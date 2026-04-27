@@ -83,7 +83,7 @@ Gemini-safe installed-CLI invocation:
 
 ```bash
 graphify-ts compare "How does auth work?" \
-  --exec 'cat {prompt_file} | gemini -p --output-format json' \
+  --exec 'cat {prompt_file} | gemini -p "" --output-format json' \
   --yes
 ```
 

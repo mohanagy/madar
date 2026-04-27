@@ -145,7 +145,7 @@ Gemini-safe installed-CLI invocation:
 
 ```bash
 graphify-ts compare "How does auth work?" \
-  --exec 'cat {prompt_file} | gemini -p --output-format json' \
+  --exec 'cat {prompt_file} | gemini -p "" --output-format json' \
   --yes
 ```
 
@@ -178,7 +178,7 @@ graphify-ts compare "How does auth work?" --exec 'cat {prompt_file} | claude -p'
 
 # Gemini-safe compare runner with structured usage capture
 graphify-ts compare "How does auth work?" \
-  --exec 'cat {prompt_file} | gemini -p --output-format json' \
+  --exec 'cat {prompt_file} | gemini -p "" --output-format json' \
   --yes
 
 # Set up your AI agent
