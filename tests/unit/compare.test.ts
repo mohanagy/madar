@@ -611,6 +611,131 @@ describe('compare runtime', () => {
     )
   })
 
+  it('captures Claude-reported usage from structured runner output and saves plain answers', async () => {
+    const graph = makeGraph()
+    writeProjectFiles()
+    const graphPath = writeGraphFixture(graph)
+
+    const result = await executeCompareRuns(
+      {
+        graphPath,
+        question: 'how does login create a session',
+        outputDir: COMPARE_OUTPUT_ROOT,
+        execTemplate: 'runner --prompt {prompt_file} --mode {mode} --out {output_file}',
+        baselineMode: 'full',
+        now: new Date('2026-04-24T19:30:00.000Z'),
+      },
+      {
+        runner: async (execution) => ({
+          exitCode: 0,
+          stdout: JSON.stringify({
+            type: 'result',
+            subtype: 'success',
+            result: `${execution.mode} answer\n`,
+            usage:
+              execution.mode === 'baseline'
+                ? {
+                    input_tokens: 1200,
+                    output_tokens: 90,
+                    cache_creation_input_tokens: 100,
+                    cache_read_input_tokens: 20,
+                  }
+                : {
+                    input_tokens: 400,
+                    output_tokens: 70,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 10,
+                  },
+          }),
+          stderr: '',
+          elapsedMs: execution.mode === 'baseline' ? 11 : 17,
+        }),
+      },
+    )
+
+    const report = result.reports[0]!
+    expect(readFileSync(report.answer_paths.baseline, 'utf8')).toBe('baseline answer\n')
+    expect(readFileSync(report.answer_paths.graphify, 'utf8')).toBe('graphify answer\n')
+    expect(report.baseline_prompt_tokens).toBe(1320)
+    expect(report.graphify_prompt_tokens).toBe(410)
+    expect(report.prompt_token_source).toEqual({
+      baseline: 'claude_reported_input',
+      graphify: 'claude_reported_input',
+    })
+    expect(report.usage).toEqual({
+      baseline: {
+        provider: 'claude',
+        source: 'structured_stdout',
+        input_tokens: 1200,
+        output_tokens: 90,
+        cache_creation_input_tokens: 100,
+        cache_read_input_tokens: 20,
+        input_total_tokens: 1320,
+        total_tokens: 1410,
+      },
+      graphify: {
+        provider: 'claude',
+        source: 'structured_stdout',
+        input_tokens: 400,
+        output_tokens: 70,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 10,
+        input_total_tokens: 410,
+        total_tokens: 480,
+      },
+    })
+    expect(report.baseline_total_tokens).toBe(1410)
+    expect(report.graphify_total_tokens).toBe(480)
+    expect(formatCompareSummary(result)).toContain('Input tokens (Claude reported): baseline 1320 · graphify 410')
+    expect(formatCompareSummary(result)).toContain('Total tokens (Claude reported): baseline 1410 · graphify 480')
+  })
+
+  it('reports when graphify uses more Claude-reported tokens than the baseline', async () => {
+    const graph = makeGraph()
+    writeProjectFiles()
+    const graphPath = writeGraphFixture(graph)
+
+    const result = await executeCompareRuns(
+      {
+        graphPath,
+        question: 'how does login create a session',
+        outputDir: COMPARE_OUTPUT_ROOT,
+        execTemplate: 'runner --prompt {prompt_file} --mode {mode} --out {output_file}',
+        baselineMode: 'full',
+        now: new Date('2026-04-24T19:30:00.000Z'),
+      },
+      {
+        runner: async (execution) => ({
+          exitCode: 0,
+          stdout: JSON.stringify({
+            type: 'result',
+            subtype: 'success',
+            result: `${execution.mode} answer\n`,
+            usage:
+              execution.mode === 'baseline'
+                ? {
+                    input_tokens: 300,
+                    output_tokens: 50,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 0,
+                  }
+                : {
+                    input_tokens: 500,
+                    output_tokens: 80,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 0,
+                  },
+          }),
+          stderr: '',
+          elapsedMs: 1,
+        }),
+      },
+    )
+
+    expect(formatCompareSummary(result)).toContain('Input tokens (Claude reported): baseline 300 · graphify 500 · 1.7x larger')
+    expect(formatCompareSummary(result)).toContain('Total tokens (Claude reported): baseline 350 · graphify 580 · 1.7x larger')
+  })
+
   it('preserves partial compare results when one side fails', async () => {
     const graph = makeGraph()
     writeProjectFiles()
