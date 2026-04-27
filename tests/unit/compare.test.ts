@@ -792,11 +792,18 @@ describe('compare runtime', () => {
                 },
               },
             ],
-            usageMetadata: {
-              promptTokenCount: 400,
-              candidatesTokenCount: 80,
-              totalTokenCount: 480,
-            },
+            usageMetadata:
+              execution.mode === 'baseline'
+                ? {
+                    promptTokenCount: 1200,
+                    candidatesTokenCount: 90,
+                    totalTokenCount: 1290,
+                  }
+                : {
+                    promptTokenCount: 400,
+                    candidatesTokenCount: 70,
+                    totalTokenCount: 470,
+                  },
           }),
           stderr: '',
           elapsedMs: execution.mode === 'baseline' ? 11 : 17,
@@ -810,17 +817,17 @@ describe('compare runtime', () => {
     expect(report.usage.baseline).toEqual(
       expect.objectContaining({
         provider: 'gemini',
-        input_tokens: 400,
-        output_tokens: 80,
-        total_tokens: 480,
+        input_tokens: 1200,
+        output_tokens: 90,
+        total_tokens: 1290,
       }),
     )
     expect(report.usage.graphify).toEqual(
       expect.objectContaining({
         provider: 'gemini',
         input_tokens: 400,
-        output_tokens: 80,
-        total_tokens: 480,
+        output_tokens: 70,
+        total_tokens: 470,
       }),
     )
 
@@ -833,17 +840,17 @@ describe('compare runtime', () => {
     expect(savedReport.usage.baseline).toEqual(
       expect.objectContaining({
         provider: 'gemini',
-        input_tokens: 400,
-        output_tokens: 80,
-        total_tokens: 480,
+        input_tokens: 1200,
+        output_tokens: 90,
+        total_tokens: 1290,
       }),
     )
     expect(savedReport.usage.graphify).toEqual(
       expect.objectContaining({
         provider: 'gemini',
         input_tokens: 400,
-        output_tokens: 80,
-        total_tokens: 480,
+        output_tokens: 70,
+        total_tokens: 470,
       }),
     )
   })
@@ -873,11 +880,18 @@ describe('compare runtime', () => {
                 },
               },
             ],
-            usageMetadata: {
-              promptTokenCount: 400,
-              candidatesTokenCount: 80,
-              totalTokenCount: 480,
-            },
+            usageMetadata:
+              execution.mode === 'baseline'
+                ? {
+                    promptTokenCount: 1200,
+                    candidatesTokenCount: 90,
+                    totalTokenCount: 1290,
+                  }
+                : {
+                    promptTokenCount: 400,
+                    candidatesTokenCount: 70,
+                    totalTokenCount: 470,
+                  },
           }),
           stderr: '',
           elapsedMs: execution.mode === 'baseline' ? 11 : 17,
@@ -886,13 +900,13 @@ describe('compare runtime', () => {
     )
 
     const report = result.reports[0]!
-    expect(report.baseline_prompt_tokens).toBe(400)
+    expect(report.baseline_prompt_tokens).toBe(1200)
     expect(report.graphify_prompt_tokens).toBe(400)
-    expect(report.baseline_total_tokens).toBe(480)
-    expect(report.graphify_total_tokens).toBe(480)
-    expect(formatCompareSummary(result)).toContain('Input tokens (Gemini reported): baseline 400 · graphify 400')
-    expect(formatCompareSummary(result)).toContain('Total tokens (Gemini reported): baseline 480 · graphify 480')
-    expect(formatCompareSummary(result)).toContain('reported')
+    expect(report.baseline_total_tokens).toBe(1290)
+    expect(report.graphify_total_tokens).toBe(470)
+    const summary = formatCompareSummary(result)
+    expect(summary).toContain('Input tokens (Gemini reported): baseline 1200 · graphify 400')
+    expect(summary).toContain('Total tokens (Gemini reported): baseline 1290 · graphify 470')
   })
 
   it('reports when graphify uses more Claude-reported tokens than the baseline', async () => {
