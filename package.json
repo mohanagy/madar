@@ -52,7 +52,7 @@
         "postinstall": "node -e \"try{const g=process.env.npm_config_global==='true';const d=!process.env.INIT_CWD;if(g||d)console.log('\\n  graphify-ts updated — re-run your platform install for latest agent rules:\\n  graphify-ts claude install | cursor install | gemini install\\n')}catch{}\""
     },
     "devDependencies": {
-        "@types/node": "^24.0.0",
+        "@types/node": "^25.6.0",
         "@vitest/coverage-v8": "^4.1.5",
         "vitest": "^4.1.5"
     },
