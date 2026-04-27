@@ -173,7 +173,7 @@ export interface ExecuteCompareRunsDependencies {
 }
 
 interface ParsedCompareRunnerOutput {
-  answerText: string
+  answerText: string | null
   usage: ComparePromptUsage | null
 }
 
@@ -276,7 +276,7 @@ function parseStructuredCompareRunnerOutput(stdout: string): ParsedCompareRunner
   }
 
   return {
-    answerText: answerText ?? stdout,
+    answerText,
     usage,
   }
 }
@@ -983,7 +983,10 @@ export async function executeCompareRuns(
           command,
         })
         const parsedOutput = parseStructuredCompareRunnerOutput(executionResult.stdout)
-        ensureCompareAnswerFile(execution.outputFile, parsedOutput?.answerText ?? executionResult.stdout)
+        ensureCompareAnswerFile(
+          execution.outputFile,
+          parsedOutput === null ? executionResult.stdout : parsedOutput.answerText ?? '',
+        )
         const contextOverflowEvidence =
           executionResult.exitCode === 0 ? null : extractContextOverflowEvidence(executionResult.stdout, executionResult.stderr)
         report.usage[execution.mode] = executionResult.exitCode === 0 ? parsedOutput?.usage ?? null : null

@@ -690,6 +690,83 @@ describe('compare runtime', () => {
     expect(formatCompareSummary(result)).toContain('Total tokens (Claude reported): baseline 1410 · graphify 480')
   })
 
+  it('does not write structured stdout JSON into answer artifacts when usage is present without answer text', async () => {
+    const graph = makeGraph()
+    writeProjectFiles()
+    const graphPath = writeGraphFixture(graph)
+
+    const result = await executeCompareRuns(
+      {
+        graphPath,
+        question: 'how does login create a session',
+        outputDir: COMPARE_OUTPUT_ROOT,
+        execTemplate: 'runner --prompt {prompt_file} --mode {mode} --out {output_file}',
+        baselineMode: 'full',
+        now: new Date('2026-04-24T19:30:00.000Z'),
+      },
+      {
+        runner: async () => ({
+          exitCode: 0,
+          stdout: JSON.stringify({
+            type: 'result',
+            subtype: 'success',
+            usage: {
+              input_tokens: 1200,
+              output_tokens: 90,
+              cache_creation_input_tokens: 100,
+              cache_read_input_tokens: 20,
+            },
+          }),
+          stderr: '',
+          elapsedMs: 11,
+        }),
+      },
+    )
+
+    const report = result.reports[0]!
+    expect(readFileSync(report.answer_paths.baseline, 'utf8')).toBe('')
+    expect(readFileSync(report.answer_paths.graphify, 'utf8')).toBe('')
+    expect(report.usage.baseline?.total_tokens).toBe(1410)
+    expect(report.usage.graphify?.total_tokens).toBe(1410)
+  })
+
+  it('falls back to raw stdout for unrecognized structured JSON output', async () => {
+    const graph = makeGraph()
+    writeProjectFiles()
+    const graphPath = writeGraphFixture(graph)
+
+    const stdout = JSON.stringify({
+      type: 'result',
+      subtype: 'success',
+      message: 'runner emitted raw JSON without parsed answer metadata',
+    })
+
+    const result = await executeCompareRuns(
+      {
+        graphPath,
+        question: 'how does login create a session',
+        outputDir: COMPARE_OUTPUT_ROOT,
+        execTemplate: 'runner --prompt {prompt_file} --mode {mode} --out {output_file}',
+        baselineMode: 'full',
+        now: new Date('2026-04-24T19:30:00.000Z'),
+      },
+      {
+        runner: async () => ({
+          exitCode: 0,
+          stdout,
+          stderr: '',
+          elapsedMs: 11,
+        }),
+      },
+    )
+
+    const report = result.reports[0]!
+    expect(readFileSync(report.answer_paths.baseline, 'utf8')).toBe(stdout)
+    expect(readFileSync(report.answer_paths.graphify, 'utf8')).toBe(stdout)
+    expect(report.usage.baseline).toBeNull()
+    expect(report.usage.graphify).toBeNull()
+  })
+
   it('reports when graphify uses more Claude-reported tokens than the baseline', async () => {
     const graph = makeGraph()
     writeProjectFiles()
