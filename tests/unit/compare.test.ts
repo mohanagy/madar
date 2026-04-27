@@ -855,6 +855,50 @@ describe('compare runtime', () => {
     )
   })
 
+  it('saves Gemini answers when structured usage metadata is missing and keeps estimate summaries', async () => {
+    const graph = makeGraph()
+    writeProjectFiles()
+    const graphPath = writeGraphFixture(graph)
+
+    const result = await executeCompareRuns(
+      {
+        graphPath,
+        question: 'how does login create a session',
+        outputDir: COMPARE_OUTPUT_ROOT,
+        execTemplate: 'runner --prompt {prompt_file} --mode {mode} --out {output_file}',
+        baselineMode: 'full',
+        now: new Date('2026-04-24T19:30:00.000Z'),
+      },
+      {
+        runner: async (execution) => ({
+          exitCode: 0,
+          stdout: JSON.stringify({
+            candidates: [
+              {
+                content: {
+                  parts: [{ text: `${execution.mode} answer\n` }],
+                },
+              },
+            ],
+          }),
+          stderr: '',
+          elapsedMs: execution.mode === 'baseline' ? 11 : 17,
+        }),
+      },
+    )
+
+    const report = result.reports[0]!
+    expect(readFileSync(report.answer_paths.baseline, 'utf8')).toBe('baseline answer\n')
+    expect(readFileSync(report.answer_paths.graphify, 'utf8')).toBe('graphify answer\n')
+    expect(report.usage.baseline).toBeNull()
+    expect(report.usage.graphify).toBeNull()
+    expect(report.prompt_token_source).toEqual({
+      baseline: 'estimated_cl100k_base',
+      graphify: 'estimated_cl100k_base',
+    })
+    expect(formatCompareSummary(result)).toContain('estimate')
+  })
+
   it('concatenates Gemini text parts from the first candidate into answer artifacts', async () => {
     const graph = makeGraph()
     writeProjectFiles()
@@ -900,6 +944,37 @@ describe('compare runtime', () => {
     const report = result.reports[0]!
     expect(readFileSync(report.answer_paths.baseline, 'utf8')).toBe('baseline answer\n')
     expect(readFileSync(report.answer_paths.graphify, 'utf8')).toBe('graphify answer\n')
+  })
+
+  it('preserves malformed Gemini JSON stdout as the answer artifact without capturing usage', async () => {
+    const graph = makeGraph()
+    writeProjectFiles()
+    const graphPath = writeGraphFixture(graph)
+
+    const result = await executeCompareRuns(
+      {
+        graphPath,
+        question: 'how does login create a session',
+        outputDir: COMPARE_OUTPUT_ROOT,
+        execTemplate: 'runner --prompt {prompt_file} --mode {mode} --out {output_file}',
+        baselineMode: 'full',
+        now: new Date('2026-04-24T19:30:00.000Z'),
+      },
+      {
+        runner: async () => ({
+          exitCode: 0,
+          stdout: '{not valid json',
+          stderr: '',
+          elapsedMs: 11,
+        }),
+      },
+    )
+
+    const report = result.reports[0]!
+    expect(readFileSync(report.answer_paths.baseline, 'utf8')).toContain('{not valid json')
+    expect(readFileSync(report.answer_paths.graphify, 'utf8')).toContain('{not valid json')
+    expect(report.usage.baseline).toBeNull()
+    expect(report.usage.graphify).toBeNull()
   })
 
   it('promotes Gemini-reported input and total tokens into compare summaries', async () => {
