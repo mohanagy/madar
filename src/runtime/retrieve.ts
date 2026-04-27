@@ -290,7 +290,6 @@ function relationBetweenNodes(graph: KnowledgeGraph, source: string, target: str
 function isPrimaryExpansionRelation(relation: string): boolean {
   return relation === 'calls' || relation === 'imports_from' || relation === 'defines' || relation === 'contains'
 }
-
 export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions): RetrieveResult {
   const { question, budget } = options
   const questionTokens = tokenizeQuestion(question)
