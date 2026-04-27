@@ -767,6 +767,134 @@ describe('compare runtime', () => {
     expect(report.usage.graphify).toBeNull()
   })
 
+  it('captures Gemini-reported usage from structured runner output and saves plain answers', async () => {
+    const graph = makeGraph()
+    writeProjectFiles()
+    const graphPath = writeGraphFixture(graph)
+
+    const result = await executeCompareRuns(
+      {
+        graphPath,
+        question: 'how does login create a session',
+        outputDir: COMPARE_OUTPUT_ROOT,
+        execTemplate: 'runner --prompt {prompt_file} --mode {mode} --out {output_file}',
+        baselineMode: 'full',
+        now: new Date('2026-04-24T19:30:00.000Z'),
+      },
+      {
+        runner: async (execution) => ({
+          exitCode: 0,
+          stdout: JSON.stringify({
+            candidates: [
+              {
+                content: {
+                  parts: [{ text: `${execution.mode} answer\n` }],
+                },
+              },
+            ],
+            usageMetadata: {
+              promptTokenCount: 400,
+              candidatesTokenCount: 80,
+              totalTokenCount: 480,
+            },
+          }),
+          stderr: '',
+          elapsedMs: execution.mode === 'baseline' ? 11 : 17,
+        }),
+      },
+    )
+
+    const report = result.reports[0]!
+    expect(readFileSync(report.answer_paths.baseline, 'utf8')).toBe('baseline answer\n')
+    expect(readFileSync(report.answer_paths.graphify, 'utf8')).toBe('graphify answer\n')
+    expect(report.usage.baseline).toEqual(
+      expect.objectContaining({
+        provider: 'gemini',
+        input_tokens: 400,
+        output_tokens: 80,
+        total_tokens: 480,
+      }),
+    )
+    expect(report.usage.graphify).toEqual(
+      expect.objectContaining({
+        provider: 'gemini',
+        input_tokens: 400,
+        output_tokens: 80,
+        total_tokens: 480,
+      }),
+    )
+
+    const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as {
+      usage: {
+        baseline: Record<string, unknown> | null
+        graphify: Record<string, unknown> | null
+      }
+    }
+    expect(savedReport.usage.baseline).toEqual(
+      expect.objectContaining({
+        provider: 'gemini',
+        input_tokens: 400,
+        output_tokens: 80,
+        total_tokens: 480,
+      }),
+    )
+    expect(savedReport.usage.graphify).toEqual(
+      expect.objectContaining({
+        provider: 'gemini',
+        input_tokens: 400,
+        output_tokens: 80,
+        total_tokens: 480,
+      }),
+    )
+  })
+
+  it('promotes Gemini-reported input and total tokens into compare summaries', async () => {
+    const graph = makeGraph()
+    writeProjectFiles()
+    const graphPath = writeGraphFixture(graph)
+
+    const result = await executeCompareRuns(
+      {
+        graphPath,
+        question: 'how does login create a session',
+        outputDir: COMPARE_OUTPUT_ROOT,
+        execTemplate: 'runner --prompt {prompt_file} --mode {mode} --out {output_file}',
+        baselineMode: 'full',
+        now: new Date('2026-04-24T19:30:00.000Z'),
+      },
+      {
+        runner: async (execution) => ({
+          exitCode: 0,
+          stdout: JSON.stringify({
+            candidates: [
+              {
+                content: {
+                  parts: [{ text: `${execution.mode} answer\n` }],
+                },
+              },
+            ],
+            usageMetadata: {
+              promptTokenCount: 400,
+              candidatesTokenCount: 80,
+              totalTokenCount: 480,
+            },
+          }),
+          stderr: '',
+          elapsedMs: execution.mode === 'baseline' ? 11 : 17,
+        }),
+      },
+    )
+
+    const report = result.reports[0]!
+    expect(report.baseline_prompt_tokens).toBe(400)
+    expect(report.graphify_prompt_tokens).toBe(400)
+    expect(report.baseline_total_tokens).toBe(480)
+    expect(report.graphify_total_tokens).toBe(480)
+    expect(formatCompareSummary(result)).toContain('Input tokens (Gemini reported): baseline 400 · graphify 400')
+    expect(formatCompareSummary(result)).toContain('Total tokens (Gemini reported): baseline 480 · graphify 480')
+    expect(formatCompareSummary(result)).toContain('reported')
+  })
+
   it('reports when graphify uses more Claude-reported tokens than the baseline', async () => {
     const graph = makeGraph()
     writeProjectFiles()
