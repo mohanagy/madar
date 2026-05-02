@@ -4,6 +4,17 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+## [0.10.9] - 2026-05-02
+
+### Added
+
+- **Public proof and distribution assets**: added the benchmark hub and hosted benchmark pages under `docs/benchmarks/`, committed a real GoValidate Platform PR-review benchmark artifact, and added repo-side marketplace listing assets for Smithery and awesome-mcp submissions.
+
+### Fixed
+
+- **Benchmark artifact privacy**: `review-compare` now sanitizes path-derived identifier fields before persisting prompt artifacts, preventing workstation or username fragments from leaking into committed PR-review benchmark evidence.
+- **Pages workflow hardening**: pinned the GitHub Pages workflow actions to immutable SHAs and cleaned up the benchmark page monospace font stack.
+
 ## [0.10.8] - 2026-05-02
 
 ### Changed
