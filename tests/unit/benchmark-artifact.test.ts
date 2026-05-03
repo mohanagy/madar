@@ -140,6 +140,10 @@ describe('hosted benchmark stylesheet', () => {
     expect(styles).not.toMatch(/\.bar-row \.bar \.fill\.graphify \{\s+background: var\(--bar-graphify\);/s)
   })
 
+  it('makes the fill element block-level so inline width styles render visible bars', () => {
+    expect(styles).toMatch(/\.bar-row \.bar \.fill \{\s+height: 100%;\s+display: block;/s)
+  })
+
   it('removes inline code chip styling inside terminal pre blocks', () => {
     expect(styles).toMatch(/\.terminal code,\s*pre code \{\s*background: transparent;\s*border: 0;\s*padding: 0;\s*color: inherit;\s*font-weight: inherit;\s*font-size: inherit;\s*border-radius: 0;\s*\}/s)
   })
