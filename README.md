@@ -176,6 +176,15 @@ The only command that hits an external service is the optional `compare` / `revi
 
 graphify-ts is a Node/TypeScript implementation of the [original `graphify`](https://github.com/safishamsi/graphify) by [Safi Shamsi](https://github.com/safishamsi), adapted for local graph workflows and AI agent integration.
 
+## Contributors
+
+Thanks to everyone shaping graphify-ts. The list below is regenerated automatically on every push to `main` by [`.github/workflows/contributors.yml`](.github/workflows/contributors.yml).
+
+<!-- readme: contributors -start -->
+<!-- readme: contributors -end -->
+
+A specific shout-out to [@jamemackson](https://github.com/jamemackson) for [#54](https://github.com/mohanagy/graphify-ts/pull/54) — adding OpenCode MCP installer support, the first community-contributed feature in graphify-ts.
+
 ## License
 
 MIT. Use it, fork it, ship it.

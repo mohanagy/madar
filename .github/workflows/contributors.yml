@@ -1,0 +1,33 @@
+name: Update contributors
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    # Weekly safety net in case a push doesn't trigger (e.g. release tag pushes only).
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-contributors:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Update contributors list in README
+        uses: akhilmhdh/contributors-readme-action@v2.3.10
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          readme_path: README.md
+          image_size: 80
+          columns_per_row: 6
+          use_username: true
+          commit_message: 'docs: update contributors list'
