@@ -4,6 +4,13 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-05-05
+
+### Added
+
+- **OpenCode MCP installer support**: `graphify-ts opencode install` now wires graphify-ts into [OpenCode](https://opencode.ai), extending the agent-installer matrix beyond Claude Code, Cursor, Copilot, Gemini CLI, and Aider. Thanks to [@jamemackson](https://github.com/jamemackson) for contributing this feature in [#54](https://github.com/mohanagy/graphify-ts/pull/54) — the first community-contributed agent integration in graphify-ts.
+- **Auto-updating contributors list in README**: a new GitHub Actions workflow (`.github/workflows/contributors.yml`) regenerates the contributors table on every push to `main`, so new contributors are credited automatically without manual README maintenance.
+
 ## [0.10.12] - 2026-05-03
 
 ### Fixed
