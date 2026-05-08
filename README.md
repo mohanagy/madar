@@ -141,7 +141,7 @@ graphify-ts --help                              # full surface
 graphify-ts ships two complementary public surfaces:
 
 - **CLI context compiler** — `graphify-ts pack` builds compact explain/review/impact payloads for automation, and `graphify-ts prompt` compiles provider-ready prompts for `claude` or `gemini`.
-- **MCP context plane** — in `GRAPHIFY_TOOL_PROFILE=full`, the server also exposes `context_pack`, `context_expand`, `context_prompt`, and `context_session_reset` so agents can request the same surfaces without leaving the MCP session.
+- **MCP context plane** — by default, graphify-ts exposes the **core** MCP profile with 6 tools for the most common workflows. Set `GRAPHIFY_TOOL_PROFILE=full` to expose `context_pack`, `context_expand`, `context_prompt`, `context_session_reset`, and the rest of the advanced MCP surface without leaving the session.
 
 Use `context_pack` when you want expandable refs plus `claims`, `coverage`, `missing_context`, and the newer **semantic coverage** contract. The planner layer now classifies prompt intent, applies a task-specific evidence recipe, and reports both evidence-class coverage and semantic buckets like `implementation`, `impact`, `tests`, `configuration`, and `structure`. Use `context_expand` when the pack says omitted context is still relevant and you want to expand a stable `handle_id` inside the same MCP session. Use `context_prompt` when you want the provider-ready prompt directly; for Claude, reuse a `session_id` so follow-up prompts resend only deltas and report `effective_token_count` / `reused_context_tokens`.
 
@@ -149,7 +149,7 @@ Use `context_pack` when you want expandable refs plus `claims`, `coverage`, `mis
 
 ## What you actually get
 
-These six MCP tools handle the most common agent workflows. The full surface is 25 tools, opt-in via `GRAPHIFY_TOOL_PROFILE=full`.
+These six MCP tools handle the most common agent workflows in the default **core** profile. The full surface is 25 tools, opt-in via `GRAPHIFY_TOOL_PROFILE=full`.
 
 | Tool | When the agent uses it |
 |---|---|
