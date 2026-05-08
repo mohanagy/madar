@@ -1,6 +1,6 @@
 {
     "name": "@mohammednagy/graphify-ts",
-    "version": "0.13.0",
+    "version": "0.13.2",
     "description": "Build a local context plane and context compiler from code, docs, and mixed project folders.",
     "license": "MIT",
     "author": "mohanagy",

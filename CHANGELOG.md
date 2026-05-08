@@ -4,6 +4,13 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+## [0.13.2] - 2026-05-08
+
+### Fixed
+
+- **Native-agent compare fallback**: preserve exit-0 plain-text `compare --baseline-mode native_agent` runs as answer-only artifacts instead of misclassifying them as failures when Anthropic JSON usage blocks are unavailable.
+- **Release metadata alignment**: realigned the package version and changelog with the post-merge release tag workflow so GitHub release validation passes on the next tagged cut.
+
 ## [0.13.0] - 2026-05-08
 
 ### Added
