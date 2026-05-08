@@ -54,7 +54,7 @@ export interface BenchmarkSuccessResult {
   effective_reduction_ratio?: number
   provider_proof?: {
     input_tokens_basis: 'provider_reported' | 'mixed' | 'estimated'
-    effective_tokens_basis: 'provider_cache_read_tokens' | 'mixed' | 'session_reuse_estimate'
+    effective_tokens_basis: 'provider_cache_read_tokens' | 'provider_input_minus_zero_cache' | 'mixed' | 'session_reuse_estimate'
     total_tokens_basis: 'provider_reported' | 'mixed' | 'not_available'
     usage_runs: number
     total_runs: number
@@ -114,6 +114,7 @@ function finalizeBenchmarkResult(
   const avgEffectiveQueryTokens = averageEffectiveQueryTokens(perQuestion)
   const usageRuns = perQuestion.reduce((count, entry) => count + (entry.usage ? 1 : 0), 0)
   const totalTokenRuns = perQuestion.reduce((count, entry) => count + (entry.total_tokens === null || entry.total_tokens === undefined ? 0 : 1), 0)
+  const cacheReportedRuns = perQuestion.reduce((count, entry) => count + ((entry.usage?.cache_read_input_tokens ?? 0) > 0 ? 1 : 0), 0)
   return {
     corpus_tokens: baseline.tokens,
     corpus_words: baseline.words,
@@ -143,8 +144,10 @@ function finalizeBenchmarkResult(
       effective_tokens_basis:
         usageRuns === 0
           ? 'session_reuse_estimate'
-          : usageRuns === perQuestion.length
+          : usageRuns === perQuestion.length && cacheReportedRuns === perQuestion.length
             ? 'provider_cache_read_tokens'
+            : usageRuns === perQuestion.length && cacheReportedRuns === 0
+              ? 'provider_input_minus_zero_cache'
             : 'mixed',
       total_tokens_basis:
         totalTokenRuns === 0
@@ -163,6 +166,7 @@ function finalizeBenchmarkResult(
 function benchmarkProviderProofSummary(result: BenchmarkSuccessResult): string {
   const usageRuns = result.per_question.reduce((count, entry) => count + (entry.usage ? 1 : 0), 0)
   const totalTokenRuns = result.per_question.reduce((count, entry) => count + (entry.total_tokens === null || entry.total_tokens === undefined ? 0 : 1), 0)
+  const cacheReportedRuns = result.per_question.reduce((count, entry) => count + ((entry.usage?.cache_read_input_tokens ?? 0) > 0 ? 1 : 0), 0)
   const proof = result.provider_proof ?? {
     input_tokens_basis:
       usageRuns === 0
@@ -173,8 +177,10 @@ function benchmarkProviderProofSummary(result: BenchmarkSuccessResult): string {
     effective_tokens_basis:
       usageRuns === 0
         ? 'session_reuse_estimate'
-        : usageRuns === result.per_question.length
+        : usageRuns === result.per_question.length && cacheReportedRuns === result.per_question.length
           ? 'provider_cache_read_tokens'
+          : usageRuns === result.per_question.length && cacheReportedRuns === 0
+            ? 'provider_input_minus_zero_cache'
           : 'mixed',
     total_tokens_basis:
       totalTokenRuns === 0
@@ -203,6 +209,14 @@ function benchmarkProviderProofSummary(result: BenchmarkSuccessResult): string {
     && proof.total_tokens_basis === 'provider_reported'
   ) {
     return `${providerLabel} reported input, cache, and total tokens for ${proof.usage_runs}/${proof.total_runs} matched questions`
+  }
+
+  if (
+    proof.input_tokens_basis === 'provider_reported'
+    && proof.effective_tokens_basis === 'provider_input_minus_zero_cache'
+    && proof.total_tokens_basis === 'provider_reported'
+  ) {
+    return `${providerLabel} reported input and total tokens; no provider cache-read tokens were reported for ${proof.usage_runs}/${proof.total_runs} matched questions`
   }
 
   return `mixed provider-reported usage (${proof.usage_runs}/${proof.total_runs} matched questions) with local estimate fallback`

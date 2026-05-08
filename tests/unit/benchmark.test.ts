@@ -756,6 +756,67 @@ describe('printBenchmark', () => {
     spy.mockRestore()
   })
 
+  test('does not claim provider cache reporting when structured usage has no cache-read tokens', () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    printBenchmark({
+      corpus_tokens: 1000,
+      corpus_words: 750,
+      corpus_source: 'manifest',
+      nodes: 5,
+      edges: 4,
+      structure_signals: null,
+      question_count: 1,
+      matched_question_count: 1,
+      unmatched_questions: [],
+      expected_label_count: 0,
+      matched_expected_label_count: 0,
+      missing_expected_labels: [],
+      avg_query_tokens: 410,
+      avg_effective_query_tokens: 410,
+      avg_reused_context_tokens: 0,
+      avg_total_tokens: 480,
+      reduction_ratio: 2.4,
+      effective_reduction_ratio: 2.4,
+      provider_proof: {
+        input_tokens_basis: 'provider_reported',
+        effective_tokens_basis: 'provider_input_minus_zero_cache',
+        total_tokens_basis: 'provider_reported',
+        usage_runs: 1,
+        total_runs: 1,
+        providers: ['gemini'],
+      },
+      per_question: [
+        {
+          question: 'how does authentication work',
+          query_tokens: 410,
+          effective_query_tokens: 410,
+          reused_context_tokens: 0,
+          total_tokens: 480,
+          reduction: 2.4,
+          expected_labels: [],
+          matched_expected_labels: [],
+          missing_expected_labels: [],
+          prompt_token_source: 'gemini_reported_input',
+          usage: {
+            provider: 'gemini',
+            source: 'structured_stdout',
+            input_tokens: 410,
+            output_tokens: 70,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+            input_total_tokens: 410,
+            total_tokens: 480,
+          },
+        },
+      ],
+    } as any)
+    const output = spy.mock.calls.flat().join('\n')
+    expect(output).toContain('Avg input tokens (Gemini reported): ~410')
+    expect(output).toContain('Avg total tokens (Gemini reported): ~480')
+    expect(output).toContain('Provider/runtime proof: Gemini reported input and total tokens; no provider cache-read tokens were reported for 1/1 matched questions')
+    spy.mockRestore()
+  })
+
   test('labels estimate fallback only when structured usage is unavailable', () => {
     const spy = vi.spyOn(console, 'log').mockImplementation(() => undefined)
     printBenchmark({

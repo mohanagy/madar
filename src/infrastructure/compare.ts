@@ -23,7 +23,7 @@ export type ComparePromptTokenSource = 'estimated_cl100k_base' | 'claude_reporte
 export interface ComparePromptProviderProofEntry {
   provider: 'claude' | 'gemini' | null
   input_tokens_source: ComparePromptTokenSource
-  effective_tokens_source: 'provider_cache_read_tokens' | 'session_reuse_estimate'
+  effective_tokens_source: 'provider_cache_read_tokens' | 'provider_input_minus_zero_cache' | 'session_reuse_estimate'
   total_tokens_source: 'provider_reported_total' | 'not_available'
 }
 
@@ -562,7 +562,12 @@ function buildCompareProviderProofEntry(
   return {
     provider: compareProviderForUsage(usage),
     input_tokens_source: source,
-    effective_tokens_source: usage === null ? 'session_reuse_estimate' : 'provider_cache_read_tokens',
+    effective_tokens_source:
+      usage === null
+        ? 'session_reuse_estimate'
+        : usage.cache_read_input_tokens > 0
+          ? 'provider_cache_read_tokens'
+          : 'provider_input_minus_zero_cache',
     total_tokens_source: usage === null ? 'not_available' : 'provider_reported_total',
   }
 }
@@ -1225,6 +1230,7 @@ function formatCompareProviderProof(result: GenerateCompareArtifactsResult): str
   const totalRuns = result.reports.length * 2
   const providerReportedRuns = proofs.filter((proof) => proof.input_tokens_source !== 'estimated_cl100k_base').length
   const cacheReportedRuns = proofs.filter((proof) => proof.effective_tokens_source === 'provider_cache_read_tokens').length
+  const zeroCacheProviderRuns = proofs.filter((proof) => proof.effective_tokens_source === 'provider_input_minus_zero_cache').length
   const totalReportedRuns = proofs.filter((proof) => proof.total_tokens_source === 'provider_reported_total').length
   const providers = [...new Set(proofs.flatMap((proof) => (proof.provider ? [proof.provider] : [])))]
   const providerLabel =
@@ -1240,6 +1246,10 @@ function formatCompareProviderProof(result: GenerateCompareArtifactsResult): str
 
   if (providerReportedRuns === totalRuns && cacheReportedRuns === totalRuns && totalReportedRuns === totalRuns) {
     return `${providerLabel} reported input, cache, and total tokens for ${providerReportedRuns}/${totalRuns} prompt runs`
+  }
+
+  if (providerReportedRuns === totalRuns && zeroCacheProviderRuns === totalRuns && totalReportedRuns === totalRuns) {
+    return `${providerLabel} reported input and total tokens; no provider cache-read tokens were reported for ${providerReportedRuns}/${totalRuns} prompt runs`
   }
 
   return `mixed provider-reported usage (${providerReportedRuns}/${totalRuns} prompt runs) with local estimate fallback`

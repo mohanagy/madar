@@ -11,6 +11,7 @@ import type {
   ContextPackNode,
   ContextPackTaskContract,
 } from '../contracts/context-pack.js'
+import type { TaskIntentKind } from '../contracts/task-intent.js'
 import { KnowledgeGraph } from '../contracts/graph.js'
 import { godNodes, workspaceBridges } from '../pipeline/analyze.js'
 import { type Communities } from '../pipeline/cluster.js'
@@ -50,6 +51,7 @@ const averageLabelLengthCache = new WeakMap<KnowledgeGraph, number>()
 export interface RetrieveOptions {
   question: string
   budget: number
+  taskIntent?: TaskIntentKind
   community?: number
   fileType?: string
   semantic?: boolean
@@ -1042,6 +1044,7 @@ function buildRetrieveResultFromOrderedCandidates(
   const taskContract = classifyTaskContract('explain', {
     budget: options.budget,
     prompt: options.question,
+    ...(options.taskIntent ? { task_intent: options.taskIntent } : {}),
   })
   const orderedCandidateIds = new Set(orderedCandidates.map((node) => node.id))
   const orderedCommunities = new Set<number>(orderedCandidates.flatMap((node) => (node.community === null ? [] : [node.community])))
@@ -1146,7 +1149,11 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
 
   if (questionTokens.length === 0) {
     const emptyPack = compileContextPack({
-      task_contract: classifyTaskContract('explain', { budget, prompt: question }),
+      task_contract: classifyTaskContract('explain', {
+        budget,
+        prompt: question,
+        ...(options.taskIntent ? { task_intent: options.taskIntent } : {}),
+      }),
       nodes: [],
       relationships: [],
       community_context: [],

@@ -1026,13 +1026,13 @@ describe('compare runtime', () => {
       baseline: {
         provider: 'gemini',
         input_tokens_source: 'gemini_reported_input',
-        effective_tokens_source: 'provider_cache_read_tokens',
+        effective_tokens_source: 'provider_input_minus_zero_cache',
         total_tokens_source: 'provider_reported_total',
       },
       graphify: {
         provider: 'gemini',
         input_tokens_source: 'gemini_reported_input',
-        effective_tokens_source: 'provider_cache_read_tokens',
+        effective_tokens_source: 'provider_input_minus_zero_cache',
         total_tokens_source: 'provider_reported_total',
       },
       reduction_basis: 'provider_reported',
@@ -1053,6 +1053,8 @@ describe('compare runtime', () => {
         total_tokens: 470,
       }),
     )
+    expect(formatCompareSummary(result))
+      .toContain('Provider/runtime proof: Gemini reported input and total tokens; no provider cache-read tokens were reported for 2/2 prompt runs')
 
     const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as {
       usage: {
@@ -1078,7 +1080,8 @@ describe('compare runtime', () => {
     )
     expect(formatCompareSummary(result)).toContain('Input tokens (Gemini reported): baseline 1200 · graphify 400')
     expect(formatCompareSummary(result)).toContain('Total tokens (Gemini reported): baseline 1290 · graphify 470')
-    expect(formatCompareSummary(result)).toContain('Provider/runtime proof: Gemini reported input, cache, and total tokens for 2/2 prompt runs')
+    expect(formatCompareSummary(result))
+      .toContain('Provider/runtime proof: Gemini reported input and total tokens; no provider cache-read tokens were reported for 2/2 prompt runs')
   })
 
   it('does not write Gemini structured stdout JSON into answer artifacts when usage metadata is present without answer text', async () => {

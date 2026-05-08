@@ -57,7 +57,8 @@ type McpLogLevel = 'debug' | 'info' | 'notice' | 'warning' | 'error' | 'critical
 
 interface StdioSessionState extends ResourceSessionState {
   logLevel: McpLogLevel
-  contextPromptSessions: Map<string, ContextSessionState>
+  contextPromptSessions?: Map<string, ContextSessionState>
+  contextPackHandles?: Map<string, unknown>
 }
 
 interface JsonRpcNotification {
@@ -89,6 +90,7 @@ function createSessionState(): StdioSessionState {
     resourceVersions: new Map<string, string>(),
     resourceListSignature: null,
     contextPromptSessions: new Map<string, ContextSessionState>(),
+    contextPackHandles: new Map<string, unknown>(),
   }
 }
 
@@ -161,6 +163,14 @@ function ensureContextPromptSessions(state: StdioSessionState): Map<string, Cont
   }
 
   return state.contextPromptSessions
+}
+
+function ensureContextPackHandles(state: StdioSessionState): Map<string, unknown> {
+  if (!state.contextPackHandles) {
+    state.contextPackHandles = new Map<string, unknown>()
+  }
+
+  return state.contextPackHandles
 }
 
 function requestId(request: StdioRequest): string | number | null {
@@ -585,19 +595,30 @@ export function handleStdioRequest(
             const projectRoot = dirname(dirname(safeGraphPath))
             return await (toolOverrides.compareRefs ?? compareRefs)(input, { rootDir: projectRoot })
           },
-          getContextPromptSession: (sessionId) => ensureContextPromptSessions(sessionState).get(sessionId),
-          setContextPromptSession: (sessionId, nextState) => {
-            const sessions = ensureContextPromptSessions(sessionState)
-            if (!sessions.has(sessionId) && sessions.size >= MAX_CONTEXT_PROMPT_SESSIONS) {
-              const oldestSessionId = sessions.keys().next().value as string | undefined
+           getContextPromptSession: (sessionId) => ensureContextPromptSessions(sessionState).get(sessionId),
+           setContextPromptSession: (sessionId, nextState) => {
+             const sessions = ensureContextPromptSessions(sessionState)
+             if (!sessions.has(sessionId) && sessions.size >= MAX_CONTEXT_PROMPT_SESSIONS) {
+               const oldestSessionId = sessions.keys().next().value as string | undefined
               if (oldestSessionId !== undefined) {
                 sessions.delete(oldestSessionId)
               }
-            }
-            sessions.set(sessionId, nextState)
-          },
-          clearContextPromptSession: (sessionId) => ensureContextPromptSessions(sessionState).delete(sessionId),
-          readStoredCommunityLabels,
+             }
+             sessions.set(sessionId, nextState)
+           },
+           clearContextPromptSession: (sessionId) => ensureContextPromptSessions(sessionState).delete(sessionId),
+           getContextPackHandle: (handleId) => ensureContextPackHandles(sessionState).get(handleId),
+           setContextPackHandle: (handleId, expansion) => {
+             const handles = ensureContextPackHandles(sessionState)
+             if (!handles.has(handleId) && handles.size >= MAX_CONTEXT_PROMPT_SESSIONS) {
+               const oldestHandleId = handles.keys().next().value as string | undefined
+               if (oldestHandleId !== undefined) {
+                 handles.delete(oldestHandleId)
+               }
+             }
+             handles.set(handleId, expansion)
+           },
+           readStoredCommunityLabels,
           jsonrpcInvalidParams: JSONRPC_INVALID_PARAMS,
           jsonrpcServerError: JSONRPC_SERVER_ERROR,
           maxStdioTextLength: MAX_STDIO_TEXT_LENGTH,

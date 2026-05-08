@@ -12,6 +12,7 @@ import type {
   ContextPackTaskContract,
 } from '../contracts/context-pack.js'
 import { KnowledgeGraph } from '../contracts/graph.js'
+import type { TaskIntentKind } from '../contracts/task-intent.js'
 import { godNodes, workspaceBridges } from '../pipeline/analyze.js'
 import { communitiesFromGraph } from './serve.js'
 import { buildCommunityLabels } from '../pipeline/community-naming.js'
@@ -55,6 +56,7 @@ export interface PrImpactOptions {
   baseBranch?: string
   depth?: number
   budget?: number
+  taskIntent?: TaskIntentKind
 }
 
 export interface ChangedNode {
@@ -780,6 +782,7 @@ function buildReviewBundle(
   graph: KnowledgeGraph,
   seedNodes: readonly PrImpactSeedNode[],
   budget: number,
+  taskIntent: TaskIntentKind | undefined,
   communities: ReturnType<typeof communitiesFromGraph>,
   communityLabels: Record<number, string>,
   rootPath: string,
@@ -928,6 +931,7 @@ function buildReviewBundle(
     task_contract: classifyTaskContract('review', {
       budget,
       prompt: 'Review current changes',
+      ...(taskIntent ? { task_intent: taskIntent } : {}),
     }),
     nodes: nodeCandidates,
     relationships: collectRelationships(graph, new Set(nodeCandidates.map((node) => node.node_id).filter((nodeId): nodeId is string => typeof nodeId === 'string'))),
@@ -967,6 +971,7 @@ export function analyzePrImpact(
       task_contract: classifyTaskContract('review', {
         budget: options.budget ?? DEFAULT_REVIEW_BUDGET,
         prompt: 'Review current changes',
+        ...(options.taskIntent ? { task_intent: options.taskIntent } : {}),
       }),
       nodes: [],
       relationships: [],
@@ -1011,7 +1016,7 @@ export function analyzePrImpact(
   const changedNodes = findNodesInFiles(graph, changedFiles, resolvedDir, communityLabels)
   const seedNodes = selectSeedNodes(changedNodes, changedFiles, resolvedDir)
   const reviewBudget = options.budget ?? DEFAULT_REVIEW_BUDGET
-  const reviewBundle = buildReviewBundle(graph, seedNodes, reviewBudget, communities, communityLabels, resolvedDir)
+  const reviewBundle = buildReviewBundle(graph, seedNodes, reviewBudget, options.taskIntent, communities, communityLabels, resolvedDir)
   const reviewContext = buildReviewContext(
     graph,
     resolvedDir,

@@ -1,20 +1,31 @@
 import { dirname } from 'node:path'
 
 import { buildGraphifyPromptPack } from '../../infrastructure/compare.js'
+import type { TaskContextPlan } from '../../contracts/task-context-plan.js'
 import type { CompareRefsInput } from '../../infrastructure/time-travel.js'
-import type { ContextPackClaim, ContextPackCoverage, ContextPackEvidenceClass, ContextPackExpandableRef, ContextPackNode } from '../../contracts/context-pack.js'
+import type {
+  ContextPackClaim,
+  ContextPackCoverage,
+  ContextPackEvidenceClass,
+  ContextPackExpandableFollowUp,
+  ContextPackExpandableRef,
+  ContextPackNode,
+} from '../../contracts/context-pack.js'
 import type { ContextSessionState } from '../../contracts/context-session.js'
 import { buildCommunityLabels } from '../../pipeline/community-naming.js'
 import { communityDetailsAtZoom, communityDetailsMicro, type CommunityZoomLevel } from '../../pipeline/community-details.js'
+import { lineNumberFromSourceLocation, lineRangeFromSourceLocation } from '../../shared/source-location.js'
 import { validateGraphPath } from '../../shared/security.js'
 import { featureMap } from '../feature-map.js'
 import { implementationChecklist } from '../implementation-checklist.js'
 import { classifyTaskContract, compileContextPack, estimateContextPackEntryTokens, type ContextPackNodeCandidate } from '../context-pack.js'
+import { pickImpactTarget } from '../context-pack-target.js'
 import { analyzeImpact, callChains, compactImpactResult, type ImpactResult } from '../impact.js'
 import { analyzePrImpact, compactPrImpactResult } from '../pr-impact.js'
 import { relevantFiles } from '../relevant-files.js'
-import { compactRetrieveResult, retrieveContext, retrieveContextAsync, type RetrieveResult } from '../retrieve.js'
+import { collectRelationships, compactRetrieveResult, retrieveContext, retrieveContextAsync, type RetrieveResult } from '../retrieve.js'
 import { riskMap } from '../risk-map.js'
+import { buildTaskContextPlan } from '../task-context-planner.js'
 import type { TimeTravelView } from '../time-travel.js'
 import {
   communitiesFromGraph,
@@ -54,6 +65,8 @@ interface ToolHelpers {
   getContextPromptSession(sessionId: string): ContextSessionState | undefined
   setContextPromptSession(sessionId: string, nextState: ContextSessionState): void
   clearContextPromptSession(sessionId: string): boolean
+  getContextPackHandle(handleId: string): unknown
+  setContextPackHandle(handleId: string, expansion: unknown): void
   readStoredCommunityLabels(graphPath: string): Record<number, string>
   jsonrpcInvalidParams: number
   jsonrpcServerError: number
@@ -69,6 +82,14 @@ interface ContextPlaneMetadata {
   expandable: ContextPackExpandableRef[]
   coverage: ContextPackCoverage
   missing_context: ContextPackEvidenceClass[]
+  missing_semantic: ContextPackCoverage['missing_semantic']
+}
+
+interface StoredContextPackHandle {
+  prompt: string
+  task: 'explain' | 'review' | 'impact'
+  task_intent: TaskContextPlan['evidence']['recipe_id']
+  follow_up: ContextPackExpandableFollowUp
 }
 
 function emptyCoverage(): ContextPackCoverage {
@@ -98,6 +119,7 @@ function contextMetadata(
     expandable: payload.expandable ?? [],
     coverage,
     missing_context: coverage.missing_required,
+    missing_semantic: coverage.missing_semantic,
   }
 }
 
@@ -134,19 +156,6 @@ function parseContextSessionState(raw: unknown): ContextSessionState | null {
     revision: record.revision,
     refs,
   }
-}
-
-function pickImpactTarget(result: RetrieveResult): string {
-  const directMatch = result.matched_nodes.find((node) => node.relevance_band === 'direct' && node.label.trim().length > 0)
-  if (directMatch) {
-    return directMatch.label
-  }
-
-  const bestMatch = [...result.matched_nodes]
-    .sort((left, right) => (right.match_score ?? 0) - (left.match_score ?? 0))
-    .find((node) => node.label.trim().length > 0)
-
-  return bestMatch?.label ?? result.question
 }
 
 function createImpactCandidate(
@@ -202,13 +211,19 @@ function createImpactCandidate(
   }
 }
 
-function impactMetadata(result: ImpactResult, budget: number, prompt: string): ContextPlaneMetadata {
+function impactMetadata(
+  result: ImpactResult,
+  budget: number,
+  prompt: string,
+  taskIntent: TaskContextPlan['evidence']['recipe_id'],
+): ContextPlaneMetadata {
   const candidates: ContextPackNodeCandidate<ContextPackNode>[] = []
 
   if (result.target_file.trim().length > 0) {
     candidates.push(createImpactCandidate({
       label: result.target,
       source_file: result.target_file,
+      ...(result.target_file_type ? { file_type: result.target_file_type } : {}),
     }, 'primary'))
   }
 
@@ -218,12 +233,230 @@ function impactMetadata(result: ImpactResult, budget: number, prompt: string): C
   )
 
   const pack = compileContextPack({
-    task_contract: classifyTaskContract('impact', { budget, prompt }),
+    task_contract: classifyTaskContract('impact', { budget, prompt, task_intent: taskIntent }),
     nodes: candidates,
     community_context: result.affected_communities,
   })
 
   return contextMetadata(pack)
+}
+
+function portableSourcePath(path: string): string {
+  return path.replaceAll('\\', '/')
+}
+
+function sourceFileMatchesFocus(sourceFile: string, focusFiles: readonly string[]): boolean {
+  const normalizedSource = portableSourcePath(sourceFile)
+  return focusFiles.some((focusFile) => {
+    const normalizedFocus = portableSourcePath(focusFile)
+    return normalizedSource === normalizedFocus
+      || normalizedSource.endsWith(`/${normalizedFocus}`)
+      || normalizedFocus.endsWith(`/${normalizedSource}`)
+  })
+}
+
+function rangeOverlaps(
+  sourceRange: ReturnType<typeof lineRangeFromSourceLocation>,
+  focusRange: ContextPackExpandableFollowUp['focus_ranges'][number],
+): boolean {
+  if (sourceRange === null) {
+    return false
+  }
+
+  return sourceRange.start <= focusRange.end_line && focusRange.start_line <= sourceRange.end
+}
+
+function relevanceBandForEvidenceClass(evidenceClass: ContextPackEvidenceClass): RetrieveResult['matched_nodes'][number]['relevance_band'] {
+  switch (evidenceClass) {
+    case 'primary':
+    case 'change':
+      return 'direct'
+    case 'supporting':
+    case 'impact':
+      return 'related'
+    case 'structural':
+      return 'peripheral'
+  }
+}
+
+function contextPackBasePayload(
+  task: 'explain' | 'review' | 'impact',
+  prompt: string,
+  budget: number,
+  graphPath: string,
+  plan: TaskContextPlan,
+) {
+  return {
+    task,
+    task_intent: plan.evidence.recipe_id,
+    prompt,
+    budget,
+    graph_path: graphPath,
+    plan,
+  }
+}
+
+function storeExpandableHandles(
+  prompt: string,
+  task: 'explain' | 'review' | 'impact',
+  taskIntent: TaskContextPlan['evidence']['recipe_id'],
+  expandable: readonly ContextPackExpandableRef[],
+  helpers: ToolHelpers,
+): void {
+  for (const entry of expandable) {
+    helpers.setContextPackHandle(entry.handle_id, {
+      prompt,
+      task,
+      task_intent: taskIntent,
+      follow_up: entry.follow_up,
+    } satisfies StoredContextPackHandle)
+  }
+}
+
+function buildFocusedExpansionPayload(
+  graph: KnowledgeGraph,
+  graphPath: string,
+  handleId: string,
+  stored: StoredContextPackHandle,
+  budget: number,
+  helpers: ToolHelpers,
+): Record<string, unknown> {
+  const plannerBudget = Math.max(budget, 3)
+  const communities = communitiesFromGraph(graph)
+  const communityLabels = {
+    ...buildCommunityLabels(graph, communities),
+    ...helpers.readStoredCommunityLabels(graphPath),
+  }
+  const focusFiles = stored.follow_up.focus_files
+  const focusRanges = stored.follow_up.focus_ranges
+  const nodeCandidates: Array<ContextPackNodeCandidate<ContextPackNode>> = []
+  const communityIds = new Set<number>()
+  const includedIds = new Set<string>()
+
+  for (const [nodeId, attributes] of graph.nodeEntries()) {
+    const sourceFile = String(attributes.source_file ?? '').trim()
+    if (sourceFile.length === 0 || !sourceFileMatchesFocus(sourceFile, focusFiles)) {
+      continue
+    }
+
+    const sourceRange = lineRangeFromSourceLocation(attributes.source_location)
+    const matchingRanges = focusRanges.filter((range) => sourceFileMatchesFocus(sourceFile, [range.source_file]))
+    if (matchingRanges.length > 0 && sourceRange !== null && !matchingRanges.some((range) => rangeOverlaps(sourceRange, range))) {
+      continue
+    }
+
+    const community = typeof attributes.community === 'number' ? attributes.community : null
+    if (community !== null) {
+      communityIds.add(community)
+    }
+    includedIds.add(nodeId)
+    let builtEntry: ContextPackNode | undefined
+    let tokenCost: number | undefined
+    const lineNumber = lineNumberFromSourceLocation(attributes.source_location)
+
+    nodeCandidates.push({
+      label: String(attributes.label ?? nodeId),
+      node_id: nodeId,
+      evidence_class: stored.follow_up.evidence_class,
+      ...(community !== null ? { community } : {}),
+      estimate_tokens: () => {
+        if (tokenCost !== undefined) {
+          return tokenCost
+        }
+
+        tokenCost = estimateContextPackEntryTokens(
+          String(attributes.label ?? nodeId),
+          sourceFile,
+          lineNumber,
+          null,
+        )
+        return tokenCost
+      },
+      build_entry: () => {
+        if (builtEntry) {
+          return builtEntry
+        }
+
+        builtEntry = {
+          node_id: nodeId,
+          label: String(attributes.label ?? nodeId),
+          source_file: sourceFile,
+          line_number: lineNumber,
+          snippet: null,
+          file_type: String(attributes.file_type ?? '') || undefined,
+          community,
+          community_label: community !== null ? (communityLabels[community] ?? null) : null,
+          node_kind: String(attributes.node_kind ?? '') || undefined,
+          framework_role: String(attributes.framework_role ?? '') || undefined,
+          relevance_band: relevanceBandForEvidenceClass(stored.follow_up.evidence_class),
+          evidence_class: stored.follow_up.evidence_class,
+        }
+        return builtEntry
+      },
+    })
+  }
+
+  const plan = buildTaskContextPlan({
+    task_kind: stored.task,
+    prompt: stored.prompt,
+    budget: plannerBudget,
+    task_intent: stored.task_intent,
+    focus_paths: focusFiles,
+  })
+  const pack = compileContextPack({
+    task_contract: classifyTaskContract(stored.task, {
+      budget,
+      prompt: stored.prompt,
+      task_intent: stored.task_intent,
+    }),
+    nodes: nodeCandidates,
+    relationships: collectRelationships(graph, includedIds),
+    community_context: [...communityIds]
+      .map((communityId) => ({
+        id: communityId,
+        label: communityLabels[communityId] ?? `Community ${communityId}`,
+        node_count: (communities[communityId] ?? []).length,
+      }))
+      .sort((left, right) => right.node_count - left.node_count),
+  })
+  const retrieval: RetrieveResult = {
+    question: stored.prompt,
+    token_count: pack.token_count,
+    matched_nodes: pack.nodes.map((node) => ({
+      ...(node.node_id ? { node_id: node.node_id } : {}),
+      label: node.label,
+      source_file: node.source_file,
+      line_number: node.line_number,
+      ...(node.node_kind ? { node_kind: node.node_kind } : {}),
+      ...(node.framework ? { framework: node.framework } : {}),
+      ...(node.framework_role ? { framework_role: node.framework_role } : {}),
+      ...(node.framework_boost !== undefined ? { framework_boost: node.framework_boost } : {}),
+      file_type: node.file_type ?? '',
+      snippet: node.snippet,
+      match_score: node.match_score ?? 0,
+      relevance_band: node.relevance_band ?? relevanceBandForEvidenceClass(node.evidence_class ?? stored.follow_up.evidence_class),
+      community: node.community ?? null,
+      community_label: node.community_label ?? null,
+      ...(node.evidence_class ? { evidence_class: node.evidence_class } : {}),
+    })),
+    relationships: pack.relationships,
+    community_context: pack.community_context,
+    graph_signals: { god_nodes: [], bridge_nodes: [] },
+    task_contract: pack.task_contract,
+    claims: pack.claims,
+    expandable: pack.expandable,
+    coverage: pack.coverage,
+  }
+  const metadata = contextMetadata(pack)
+  storeExpandableHandles(stored.prompt, stored.task, stored.task_intent, metadata.expandable, helpers)
+
+  return {
+    ...contextPackBasePayload(stored.task, stored.prompt, budget, graphPath, plan),
+    handle_id: handleId,
+    pack: compactRetrieveResult(retrieval),
+    matched_focus: nodeCandidates.length,
+    ...metadata,
+  }
 }
 
 export function handleToolCall(id: string | number | null, graphPath: string, params: unknown, helpers: ToolHelpers): StdioResponse | Promise<StdioResponse> {
@@ -456,18 +689,33 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         return helpers.failure(id, helpers.jsonrpcInvalidParams, `budget must be a number between 1 and ${helpers.maxStdioTokenBudget}`)
       }
       const resolvedBudget = budget ?? 3000
+      const plannerBudget = Math.max(resolvedBudget, 3)
+      const initialPlan = buildTaskContextPlan({
+        task_kind: task,
+        prompt,
+        budget: plannerBudget,
+      })
 
       if (task === 'review') {
         const graphDir = dirname(validateGraphPath(graphPath))
         const projectRoot = dirname(graphDir)
-        const prResult = analyzePrImpact(graph, projectRoot, { budget: resolvedBudget })
+        const prResult = analyzePrImpact(graph, projectRoot, {
+          budget: resolvedBudget,
+          taskIntent: initialPlan.evidence.recipe_id,
+        })
         const compactPack = compactPrImpactResult(prResult)
         const reviewMetadata = contextMetadata(prResult.review_bundle)
-        return helpers.ok(id, helpers.textToolResult(JSON.stringify({
-          task,
+        storeExpandableHandles(prompt, task, initialPlan.evidence.recipe_id, reviewMetadata.expandable, helpers)
+        const plan = buildTaskContextPlan({
+          task_kind: 'review',
           prompt,
-          budget: resolvedBudget,
-          graph_path: graphPath,
+          budget: plannerBudget,
+          task_intent: initialPlan.evidence.recipe_id,
+          changed_paths: prResult.changed_files,
+          focus_paths: [...prResult.review_context.supporting_paths, ...prResult.review_context.test_paths],
+        })
+        return helpers.ok(id, helpers.textToolResult(JSON.stringify({
+          ...contextPackBasePayload(task, prompt, resolvedBudget, graphPath, plan),
           pack: compactPack,
           ...reviewMetadata,
         })))
@@ -476,6 +724,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       const retrieval = retrieveContext(graph, {
         question: prompt,
         budget: resolvedBudget,
+        taskIntent: initialPlan.evidence.recipe_id,
       })
 
       if (task === 'impact') {
@@ -489,12 +738,10 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
           depth: 3,
         })
         const impactPack = compactImpactResult(impactResult)
-        const metadata = impactMetadata(impactResult, resolvedBudget, prompt)
+        const metadata = impactMetadata(impactResult, resolvedBudget, prompt, initialPlan.evidence.recipe_id)
+        storeExpandableHandles(prompt, task, initialPlan.evidence.recipe_id, metadata.expandable, helpers)
         return helpers.ok(id, helpers.textToolResult(JSON.stringify({
-          task,
-          prompt,
-          budget: resolvedBudget,
-          graph_path: graphPath,
+          ...contextPackBasePayload(task, prompt, resolvedBudget, graphPath, initialPlan),
           target: impactTarget,
           pack: impactPack,
           ...metadata,
@@ -502,18 +749,37 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       }
 
       const compactPack = compactRetrieveResult(retrieval)
-      const { claims, expandable, coverage, missing_context } = contextMetadata(retrieval)
+      const metadata = contextMetadata(retrieval)
+      storeExpandableHandles(prompt, task, initialPlan.evidence.recipe_id, metadata.expandable, helpers)
       return helpers.ok(id, helpers.textToolResult(JSON.stringify({
-        task,
-        prompt,
-        budget: resolvedBudget,
-        graph_path: graphPath,
+        ...contextPackBasePayload(task, prompt, resolvedBudget, graphPath, initialPlan),
         pack: compactPack,
-        claims,
-        expandable,
-        coverage,
-        missing_context,
+        ...metadata,
       })))
+    }
+    case 'context_expand': {
+      const handleId = helpers.stringParamAlias(toolArguments, ['handle_id', 'handleId'])
+      if (!handleId) {
+        return helpers.failure(id, helpers.jsonrpcInvalidParams, `context_expand requires a string handle_id parameter <= ${helpers.maxStdioTextLength} characters`)
+      }
+      const budget = helpers.numberParamAlias(toolArguments, ['budget'], { min: 1, max: helpers.maxStdioTokenBudget })
+      if (Object.hasOwn(toolArguments, 'budget') && budget === null) {
+        return helpers.failure(id, helpers.jsonrpcInvalidParams, `budget must be a number between 1 and ${helpers.maxStdioTokenBudget}`)
+      }
+      const stored = helpers.getContextPackHandle(handleId)
+      if (!stored || typeof stored !== 'object' || Array.isArray(stored)) {
+        return helpers.failure(id, helpers.jsonrpcInvalidParams, `Unknown context_pack handle_id '${handleId}'. Expand handles are only available within the MCP session that produced them.`)
+      }
+
+      const payload = buildFocusedExpansionPayload(
+        graph,
+        graphPath,
+        handleId,
+        stored as StoredContextPackHandle,
+        budget ?? 1500,
+        helpers,
+      )
+      return helpers.ok(id, helpers.textToolResult(JSON.stringify(payload)))
     }
     case 'context_prompt': {
       const prompt = helpers.stringParam(toolArguments, 'prompt')

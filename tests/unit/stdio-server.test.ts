@@ -916,6 +916,17 @@ describe('stdio runtime', () => {
           },
         },
       }, sessionState))
+      const explainPackPayload = JSON.parse((explainPack?.result as { content: Array<{ text: string }> }).content[0]!.text)
+      const expandedPack = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 12,
+        method: 'tools/call',
+        params: {
+          name: 'context_expand',
+          arguments: {
+            handle_id: explainPackPayload.expandable[0].handle_id,
+          },
+        },
+      }, sessionState))
       const firstPrompt = await Promise.resolve(handleStdioRequest(graphPath, {
         id: 3,
         method: 'tools/call',
@@ -975,20 +986,27 @@ describe('stdio runtime', () => {
       }, sessionState))
 
       const toolNames = (tools?.result as { tools: Array<{ name: string }> }).tools.map((tool) => tool.name)
-      const explainPackPayload = JSON.parse((explainPack?.result as { content: Array<{ text: string }> }).content[0]!.text)
       const impactPackPayload = JSON.parse((impactPack?.result as { content: Array<{ text: string }> }).content[0]!.text)
+      const expandedPackPayload = JSON.parse((expandedPack?.result as { content: Array<{ text: string }> }).content[0]!.text)
       const firstPromptPayload = JSON.parse((firstPrompt?.result as { content: Array<{ text: string }> }).content[0]!.text)
       const geminiPromptPayload = JSON.parse((geminiPrompt?.result as { content: Array<{ text: string }> }).content[0]!.text)
       const followUpPromptPayload = JSON.parse((followUpPrompt?.result as { content: Array<{ text: string }> }).content[0]!.text)
       const resetSessionPayload = JSON.parse((resetSession?.result as { content: Array<{ text: string }> }).content[0]!.text)
       const resetPromptPayload = JSON.parse((resetPrompt?.result as { content: Array<{ text: string }> }).content[0]!.text)
 
-      expect(toolNames).toEqual(expect.arrayContaining(['context_pack', 'context_prompt', 'context_session_reset']))
+      expect(toolNames).toEqual(expect.arrayContaining(['context_pack', 'context_expand', 'context_prompt', 'context_session_reset']))
 
       expect(explainPackPayload).toEqual(expect.objectContaining({
         task: 'explain',
+        task_intent: 'explain',
         prompt: 'How does AuthService reach Transport?',
         budget: 1,
+        plan: expect.objectContaining({
+          task_kind: 'explain',
+          evidence: expect.objectContaining({
+            recipe_id: 'explain',
+          }),
+        }),
         pack: expect.objectContaining({
           matched_nodes: expect.any(Array),
           community_context: expect.any(Array),
@@ -997,21 +1015,40 @@ describe('stdio runtime', () => {
       expect(explainPackPayload.coverage).toEqual(expect.objectContaining({
         missing_required: expect.arrayContaining(['supporting', 'structural']),
       }))
+      expect(explainPackPayload.missing_semantic).toEqual(expect.arrayContaining(['structure']))
       expect(explainPackPayload.expandable).toEqual(expect.arrayContaining([
         expect.objectContaining({ kind: 'nodes' }),
       ]))
       expect(explainPackPayload.missing_context).toEqual(expect.arrayContaining(['supporting', 'structural']))
       expect(impactPackPayload).toEqual(expect.objectContaining({
         task: 'impact',
+        task_intent: 'impact',
         prompt: 'What breaks if HttpClient changes?',
         target: 'HttpClient',
       }))
       expect(impactPackPayload.coverage).toEqual(expect.objectContaining({
         required_evidence: ['primary', 'impact', 'structural'],
+        semantic_entries: expect.arrayContaining([
+          expect.objectContaining({
+            category: 'implementation',
+            status: 'covered',
+          }),
+        ]),
       }))
       expect(impactPackPayload.coverage.required_evidence).not.toContain('supporting')
       expect(impactPackPayload.missing_context).toEqual(impactPackPayload.coverage.missing_required)
       expect(impactPackPayload.missing_context).not.toContain('supporting')
+      expect(impactPackPayload.missing_semantic).not.toContain('implementation')
+      expect(expandedPackPayload).toEqual(expect.objectContaining({
+        handle_id: explainPackPayload.expandable[0].handle_id,
+        task: 'explain',
+        task_intent: 'explain',
+        pack: expect.objectContaining({
+          matched_nodes: expect.any(Array),
+        }),
+      }))
+      expect(expandedPackPayload.matched_focus).toBeGreaterThan(0)
+      expect(expandedPackPayload.pack.matched_nodes.length).toBeGreaterThan(0)
 
       expect(firstPromptPayload).toEqual(expect.objectContaining({
         provider: 'claude',

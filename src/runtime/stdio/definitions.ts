@@ -248,6 +248,19 @@ export const MCP_TOOLS: McpToolDefinition[] = [
     },
   },
   {
+    name: 'context_expand',
+    description:
+      'Expand a previously returned context_pack handle_id into a focused follow-up pack. Use when a context_pack response omitted supporting nodes that now need exact expansion.',
+    inputSchema: {
+      type: 'object',
+      required: ['handle_id'],
+      properties: {
+        handle_id: { type: 'string', description: 'Stable handle_id from a prior context_pack response in the same MCP session' },
+        budget: { type: 'number', description: 'Optional: maximum token budget for the focused expansion (default 1500)' },
+      },
+    },
+  },
+  {
     name: 'context_prompt',
     description:
       'Compile a provider-ready context prompt. Use provider=claude with session_id for cache-aware follow-ups, or provider=gemini for a plain prompt string.',

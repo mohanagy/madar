@@ -88,8 +88,9 @@ describe('MCP tool profile', () => {
       const fullToolNames = activeMcpTools('full').map((tool) => tool.name)
       const coreToolNames = activeMcpTools('core').map((tool) => tool.name)
 
-      expect(fullToolNames).toEqual(expect.arrayContaining(['context_pack', 'context_prompt', 'context_session_reset']))
+      expect(fullToolNames).toEqual(expect.arrayContaining(['context_pack', 'context_expand', 'context_prompt', 'context_session_reset']))
       expect(coreToolNames).not.toContain('context_pack')
+      expect(coreToolNames).not.toContain('context_expand')
       expect(coreToolNames).not.toContain('context_prompt')
       expect(coreToolNames).not.toContain('context_session_reset')
     })
@@ -218,6 +219,7 @@ describe('MCP tool profile', () => {
         await withProfile('core', async () => {
           for (const [name, args] of [
             ['context_pack', { prompt: 'unused', task: 'explain' }],
+            ['context_expand', { handle_id: 'expand:explain:structural:demo' }],
             ['context_prompt', { prompt: 'unused', provider: 'claude' }],
             ['context_session_reset', { session_id: 'session-1' }],
           ] as const) {

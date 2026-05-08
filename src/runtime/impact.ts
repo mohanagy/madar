@@ -26,6 +26,7 @@ export interface ImpactNode {
 export interface ImpactResult {
   target: string
   target_file: string
+  target_file_type?: string
   depth: number
   direct_dependents: ImpactNode[]
   transitive_dependents: ImpactNode[]
@@ -311,6 +312,7 @@ export function analyzeImpact(
   return {
     target: String(targetAttributes.label ?? targetNodeId),
     target_file: relativizeSourceFile(String(targetAttributes.source_file ?? ''), rootPath),
+    ...(String(targetAttributes.file_type ?? '').trim().length > 0 ? { target_file_type: String(targetAttributes.file_type) } : {}),
     depth: maxDepth,
     direct_dependents: directDependents.sort(
       (a, b) =>
