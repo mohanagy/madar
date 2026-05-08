@@ -216,18 +216,24 @@ describe('MCP tool profile', () => {
       const root = createMinimalGraphRoot()
       try {
         await withProfile('core', async () => {
-          const response = await Promise.resolve(
-            handleStdioRequest(join(root, 'graph.json'), {
-              id: 102,
-              method: 'tools/call',
-              params: { name: 'context_pack', arguments: { prompt: 'unused' } },
-            }),
-          )
-          expect(response).not.toBeNull()
-          const error = (response as { error?: { code: number; message: string } }).error
-          expect(error?.code).toBe(-32601)
-          expect(error?.message).toContain('context_pack')
-          expect(error?.message).toContain('GRAPHIFY_TOOL_PROFILE=full')
+          for (const [name, args] of [
+            ['context_pack', { prompt: 'unused', task: 'explain' }],
+            ['context_prompt', { prompt: 'unused', provider: 'claude' }],
+            ['context_session_reset', { session_id: 'session-1' }],
+          ] as const) {
+            const response = await Promise.resolve(
+              handleStdioRequest(join(root, 'graph.json'), {
+                id: 102,
+                method: 'tools/call',
+                params: { name, arguments: args },
+              }),
+            )
+            expect(response).not.toBeNull()
+            const error = (response as { error?: { code: number; message: string } }).error
+            expect(error?.code).toBe(-32601)
+            expect(error?.message).toContain(name)
+            expect(error?.message).toContain('GRAPHIFY_TOOL_PROFILE=full')
+          }
         })
       } finally {
         rmSync(root, { recursive: true, force: true })

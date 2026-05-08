@@ -928,6 +928,17 @@ describe('stdio runtime', () => {
           },
         },
       }, sessionState))
+      const geminiPrompt = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 9,
+        method: 'tools/call',
+        params: {
+          name: 'context_prompt',
+          arguments: {
+            prompt: 'How does AuthService reach Transport?',
+            provider: 'gemini',
+          },
+        },
+      }, sessionState))
       const followUpPrompt = await Promise.resolve(handleStdioRequest(graphPath, {
         id: 4,
         method: 'tools/call',
@@ -967,6 +978,7 @@ describe('stdio runtime', () => {
       const explainPackPayload = JSON.parse((explainPack?.result as { content: Array<{ text: string }> }).content[0]!.text)
       const impactPackPayload = JSON.parse((impactPack?.result as { content: Array<{ text: string }> }).content[0]!.text)
       const firstPromptPayload = JSON.parse((firstPrompt?.result as { content: Array<{ text: string }> }).content[0]!.text)
+      const geminiPromptPayload = JSON.parse((geminiPrompt?.result as { content: Array<{ text: string }> }).content[0]!.text)
       const followUpPromptPayload = JSON.parse((followUpPrompt?.result as { content: Array<{ text: string }> }).content[0]!.text)
       const resetSessionPayload = JSON.parse((resetSession?.result as { content: Array<{ text: string }> }).content[0]!.text)
       const resetPromptPayload = JSON.parse((resetPrompt?.result as { content: Array<{ text: string }> }).content[0]!.text)
@@ -1003,17 +1015,29 @@ describe('stdio runtime', () => {
 
       expect(firstPromptPayload).toEqual(expect.objectContaining({
         provider: 'claude',
-        task: 'explain',
         prompt: 'How does AuthService reach Transport?',
         compiled: expect.objectContaining({
           provider: 'claude',
           format: 'session_payload',
           session_id: 'auth-thread',
+          token_count: expect.any(Number),
+          session_payload_token_count: expect.any(Number),
           reused_context_tokens: 0,
           session_state: expect.objectContaining({ revision: 1 }),
         }),
       }))
+      expect(firstPromptPayload).not.toHaveProperty('task')
       expect(firstPromptPayload.missing_context).toEqual(expect.any(Array))
+      expect(geminiPromptPayload).toEqual(expect.objectContaining({
+        provider: 'gemini',
+        prompt: 'How does AuthService reach Transport?',
+        compiled: expect.objectContaining({
+          provider: 'gemini',
+          format: 'prompt',
+          token_count: firstPromptPayload.compiled.token_count,
+        }),
+      }))
+      expect(geminiPromptPayload).not.toHaveProperty('task')
       expect(followUpPromptPayload.compiled.session_id).toBe('auth-thread')
       expect(followUpPromptPayload.compiled.session_state.revision).toBe(2)
       expect(followUpPromptPayload.compiled.reused_context_tokens).toBeGreaterThan(0)
@@ -1025,6 +1049,47 @@ describe('stdio runtime', () => {
       })
       expect(resetPromptPayload.compiled.session_state.revision).toBe(1)
       expect(resetPromptPayload.compiled.reused_context_tokens).toBe(0)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('evicts the oldest stored context prompt session when the session cache is full', async () => {
+    const root = createGraphFixtureRoot()
+    try {
+      const graphPath = join(root, 'graph.json')
+      const contextPromptSessions = new Map(
+        Array.from({ length: 256 }, (_, index) => [
+          `session-${index}`,
+          { version: 1 as const, revision: index, refs: {} },
+        ] as const),
+      )
+      const sessionState = {
+        logLevel: 'info' as const,
+        subscribedResourceUris: new Set<string>(),
+        resourceVersions: new Map<string, string>(),
+        resourceListSignature: null,
+        contextPromptSessions,
+      }
+
+      const response = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 10,
+        method: 'tools/call',
+        params: {
+          name: 'context_prompt',
+          arguments: {
+            prompt: 'How does AuthService reach Transport?',
+            provider: 'claude',
+            session_id: 'session-256',
+          },
+        },
+      }, sessionState))
+
+      expect(response).not.toBeNull()
+      expect(contextPromptSessions.size).toBe(256)
+      expect(contextPromptSessions.has('session-0')).toBe(false)
+      expect(contextPromptSessions.has('session-1')).toBe(true)
+      expect(contextPromptSessions.has('session-256')).toBe(true)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

@@ -27,7 +27,7 @@ export interface RelevantFilesResult {
   claims: ContextPackClaim[]
   expandable: ContextPackExpandableRef[]
   coverage?: ContextPackCoverage
-  missing_context: ContextPackEvidenceClass[]
+  missing_context?: ContextPackEvidenceClass[]
 }
 
 interface FileAggregate {
@@ -148,7 +148,11 @@ export function relevantFiles(graph: KnowledgeGraph, options: RelevantFilesOptio
     relevant_files,
     claims: retrieveResult.claims ?? [],
     expandable: retrieveResult.expandable ?? [],
-    ...(retrieveResult.coverage ? { coverage: retrieveResult.coverage } : {}),
-    missing_context: retrieveResult.coverage?.missing_required ?? [],
+    ...(retrieveResult.coverage
+      ? {
+          coverage: retrieveResult.coverage,
+          missing_context: retrieveResult.coverage.missing_required,
+        }
+      : {}),
   }
 }

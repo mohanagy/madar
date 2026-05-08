@@ -48,6 +48,7 @@ const MAX_STDIO_HOPS = 20
 const MAX_STDIO_RESOURCE_BYTES = 5_000_000
 const MAX_STDIO_DIFF_ITEMS = 100
 const MAX_RESOURCE_SUBSCRIPTIONS = 16
+const MAX_CONTEXT_PROMPT_SESSIONS = 256
 const graphCache = new Map<string, { mtimeMs: number; graph: ReturnType<typeof loadGraph> }>()
 const MAX_COMPLETION_VALUES = 25
 const MAX_LOG_NOTIFICATION_CHARS = 10_000
@@ -586,7 +587,14 @@ export function handleStdioRequest(
           },
           getContextPromptSession: (sessionId) => ensureContextPromptSessions(sessionState).get(sessionId),
           setContextPromptSession: (sessionId, nextState) => {
-            ensureContextPromptSessions(sessionState).set(sessionId, nextState)
+            const sessions = ensureContextPromptSessions(sessionState)
+            if (!sessions.has(sessionId) && sessions.size >= MAX_CONTEXT_PROMPT_SESSIONS) {
+              const oldestSessionId = sessions.keys().next().value as string | undefined
+              if (oldestSessionId !== undefined) {
+                sessions.delete(oldestSessionId)
+              }
+            }
+            sessions.set(sessionId, nextState)
           },
           clearContextPromptSession: (sessionId) => ensureContextPromptSessions(sessionState).delete(sessionId),
           readStoredCommunityLabels,

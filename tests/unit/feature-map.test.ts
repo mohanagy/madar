@@ -1,3 +1,5 @@
+import { vi } from 'vitest'
+
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
 import { featureMap } from '../../src/runtime/feature-map.js'
 
@@ -86,5 +88,28 @@ describe('featureMap', () => {
       }),
     )
     expect(result.relevant_files[0]?.path).toBe('src/routes/users.ts')
+  })
+
+  it('omits missing_context when retrieve coverage was not computed', async () => {
+    vi.resetModules()
+    vi.doMock('../../src/runtime/retrieve.js', () => ({
+      retrieveContext: vi.fn().mockReturnValue({
+        question: 'where should I edit auth',
+        token_count: 42,
+        matched_nodes: [],
+        relationships: [],
+        community_context: [],
+        graph_signals: { god_nodes: [], bridge_nodes: [] },
+      }),
+    }))
+
+    const { featureMap: mockedFeatureMap } = await import('../../src/runtime/feature-map.js')
+    const result = mockedFeatureMap(new KnowledgeGraph(), {
+      question: 'where should I edit auth',
+      budget: 2500,
+    })
+
+    expect(result).not.toHaveProperty('coverage')
+    expect(result).not.toHaveProperty('missing_context')
   })
 })

@@ -30,12 +30,10 @@ export function buildContextSession(
   previous: ContextSessionState | undefined,
 ): { session_state: ContextSessionState; session_delta: ContextSessionDelta } {
   const baseState = previous ?? createContextSessionState()
-  const orderedRefs = [...refs]
   const sortedRefs = [...refs].sort(compareRefs)
   const added: ContextSessionDelta['added'] = []
   const updated: ContextSessionDelta['updated'] = []
   const reused_refs: string[] = []
-  const reusedRefSet = new Set<string>()
 
   const nextRefs: ContextSessionState['refs'] = {}
   for (const ref of sortedRefs) {
@@ -68,16 +66,12 @@ export function buildContextSession(
     }
 
     reused_refs.push(ref.ref)
-    reusedRefSet.add(ref.ref)
   }
 
   const invalidated = Object.keys(baseState.refs)
     .filter((ref) => !(ref in nextRefs))
     .sort((left, right) => left.localeCompare(right))
-  const reusedContent = orderedRefs
-    .filter((ref) => reusedRefSet.has(ref.ref))
-    .map((ref) => ref.content)
-    .join('')
+  const reusedTokenCount = reused_refs.reduce((total, ref) => total + (baseState.refs[ref]?.token_count ?? nextRefs[ref]?.token_count ?? 0), 0)
 
   return {
     session_state: {
@@ -93,7 +87,7 @@ export function buildContextSession(
       updated,
       invalidated,
       reused_refs,
-      reused_token_count: reusedContent.length > 0 ? estimateQueryTokens(reusedContent) : 0,
+      reused_token_count: reusedTokenCount,
     },
   }
 }

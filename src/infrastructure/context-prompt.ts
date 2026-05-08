@@ -134,6 +134,7 @@ export function buildContextPrompt(input: BuildContextPromptInput): BuiltContext
   const dynamic_suffix = renderDynamicSuffix(input.dynamic_sections)
   const prompt = joinBlocks([stable_prefix, dynamic_suffix])
   const { session_state, session_delta } = buildContextSession(session_refs, input.session)
+  const stable_prefix_tokens = Object.values(session_state.refs).reduce((total, ref) => total + ref.token_count, 0)
 
   const session_payload =
     session_delta.previous_revision === null
@@ -156,7 +157,7 @@ export function buildContextPrompt(input: BuildContextPromptInput): BuiltContext
     session_delta,
     metrics: {
       raw_prompt_tokens,
-      stable_prefix_tokens: estimateQueryTokens(stable_prefix),
+      stable_prefix_tokens,
       dynamic_suffix_tokens: estimateQueryTokens(dynamic_suffix),
       session_payload_tokens,
       effective_prompt_tokens,

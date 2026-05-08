@@ -41,7 +41,7 @@ export interface FeatureMapResult {
   claims: ContextPackClaim[]
   expandable: ContextPackExpandableRef[]
   coverage?: ContextPackCoverage
-  missing_context: ContextPackEvidenceClass[]
+  missing_context?: ContextPackEvidenceClass[]
 }
 
 interface CommunityAggregate {
@@ -192,7 +192,11 @@ export function featureMap(graph: KnowledgeGraph, options: FeatureMapOptions): F
     relevant_files,
     claims: retrieveResult.claims ?? [],
     expandable: retrieveResult.expandable ?? [],
-    ...(retrieveResult.coverage ? { coverage: retrieveResult.coverage } : {}),
-    missing_context: retrieveResult.coverage?.missing_required ?? [],
+    ...(retrieveResult.coverage
+      ? {
+          coverage: retrieveResult.coverage,
+          missing_context: retrieveResult.coverage.missing_required,
+        }
+      : {}),
   }
 }

@@ -45,14 +45,14 @@ describe('context-prompt-command', () => {
     })
     expect(output).toBe(JSON.stringify({
       provider: 'claude',
-      task: 'explain',
       prompt: 'how does auth work',
       graph_path: 'graphify-out/graph.json',
       compiled: {
         provider: 'claude',
         format: 'session_payload',
         prompt: 'claude session payload',
-        token_count: 140,
+        token_count: 120,
+        session_payload_token_count: 140,
         effective_token_count: 118,
         reused_context_tokens: 22,
         session_state: {
@@ -101,7 +101,6 @@ describe('context-prompt-command', () => {
 
     expect(output).toBe(JSON.stringify({
       provider: 'gemini',
-      task: 'explain',
       prompt: 'how does auth work',
       graph_path: 'graphify-out/graph.json',
       compiled: {

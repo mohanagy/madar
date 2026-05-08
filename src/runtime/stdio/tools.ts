@@ -559,7 +559,6 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
 
       return helpers.ok(id, helpers.textToolResult(JSON.stringify({
         provider,
-        task: 'explain',
         prompt,
         graph_path: graphPath,
         compiled: provider === 'claude'
@@ -567,7 +566,8 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
               provider,
               format: 'session_payload',
               prompt: promptPack.session_payload,
-              token_count: promptPack.session_payload_token_count,
+              token_count: promptPack.token_count,
+              session_payload_token_count: promptPack.session_payload_token_count,
               effective_token_count: promptPack.effective_token_count,
               reused_context_tokens: promptPack.reused_context_tokens,
               session_state: promptPack.session_state,

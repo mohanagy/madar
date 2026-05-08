@@ -24,6 +24,7 @@ type CompiledProviderPrompt =
       format: 'session_payload'
       prompt: string
       token_count: number
+      session_payload_token_count: number
       effective_token_count: number
       reused_context_tokens: number
       session_state: ComparePromptPack['session_state']
@@ -41,7 +42,8 @@ function compilePromptForProvider(provider: PromptCliProvider, promptPack: Compa
       provider,
       format: 'session_payload',
       prompt: promptPack.session_payload,
-      token_count: promptPack.session_payload_token_count,
+      token_count: promptPack.token_count,
+      session_payload_token_count: promptPack.session_payload_token_count,
       effective_token_count: promptPack.effective_token_count,
       reused_context_tokens: promptPack.reused_context_tokens,
       session_state: promptPack.session_state,
@@ -73,7 +75,6 @@ export async function runContextPromptCommand(
 
   return JSON.stringify({
     provider: options.provider,
-    task: 'explain',
     prompt: options.prompt,
     graph_path: options.graphPath,
     compiled: providerCompiled,
