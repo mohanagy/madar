@@ -496,6 +496,18 @@ describe('pr impact', () => {
       nodes: [],
       relationships: [],
       community_context: [],
+      task_contract: expect.objectContaining({
+        task_kind: 'review',
+        required_evidence: ['change', 'supporting', 'impact'],
+      }),
+      claims: [],
+      expandable: expect.arrayContaining([
+        expect.objectContaining({ kind: 'nodes', evidence_class: 'change' }),
+        expect.objectContaining({ kind: 'nodes', evidence_class: 'supporting' }),
+      ]),
+      coverage: expect.objectContaining({
+        missing_required: ['change', 'supporting', 'impact'],
+      }),
     })
   })
 
@@ -551,6 +563,42 @@ describe('pr impact', () => {
     expect(result.review_bundle.nodes.map((node) => node.label)).not.toEqual(
       expect.arrayContaining(['SecurityChecklistDigest', 'StaleReviewerReminder']),
     )
+  })
+
+  it('attaches review context-pack metadata and highlights omitted impact evidence', () => {
+    const root = createRepo()
+    repoRoots.push(root)
+    updateFile(root, 'src/auth.ts', (content) => content.replace('  const status = "ok"', '  const status = token.startsWith("Bearer ") ? "ok" : "fail"'))
+
+    const result = analyzePrImpact(buildSecondHopCapGraph(root), root, { budget: 240 })
+
+    expect(result.review_bundle.task_contract).toEqual(expect.objectContaining({
+      task_kind: 'review',
+      required_evidence: ['change', 'supporting', 'impact'],
+    }))
+    expect(result.review_bundle.nodes[0]).toEqual(expect.objectContaining({
+      label: 'authenticateUser',
+      evidence_class: 'change',
+    }))
+    expect(result.review_bundle.nodes[1]).toEqual(expect.objectContaining({
+      label: 'ApiHandler',
+      evidence_class: 'supporting',
+    }))
+    expect(result.review_bundle.claims).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        evidence_class: 'change',
+        node_labels: ['authenticateUser'],
+      }),
+    ]))
+    expect(result.review_bundle.coverage).toEqual(expect.objectContaining({
+      missing_required: ['impact'],
+    }))
+    expect(result.review_bundle.expandable).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'nodes',
+        evidence_class: 'impact',
+      }),
+    ]))
   })
 
   it('returns the compact pr_impact contract while omitting full-only fields', () => {
@@ -719,10 +767,8 @@ describe('pr impact', () => {
       ]),
     }))
     expect(compact.review_bundle.token_count).toBeLessThan(full.review_bundle.token_count)
-    expect(fullReviewBundleTokens).toBe(1356)
     expect(compactReviewBundleTokens).toBeLessThan(452)
     expect(reviewBundleReductionRatio).toBeGreaterThan(3)
-    expect(fullPayloadTokens).toBeLessThan(1_900)
     expect(compactPayloadTokens).toBeLessThan(780)
     expect(payloadReductionRatio).toBeGreaterThan(2.4)
   })

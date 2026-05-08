@@ -1,12 +1,28 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 
+import type {
+  CompiledContextPack,
+  ContextPackClaim,
+  ContextPackCoverage,
+  ContextPackEvidenceClass,
+  ContextPackExpandableRef,
+  ContextPackNode,
+  ContextPackTaskContract,
+} from '../contracts/context-pack.js'
 import { KnowledgeGraph } from '../contracts/graph.js'
 import { godNodes, workspaceBridges } from '../pipeline/analyze.js'
 import { type Communities } from '../pipeline/cluster.js'
 import { buildCommunityLabels } from '../pipeline/community-naming.js'
 import { lineNumberFromSourceLocation } from '../shared/source-location.js'
 import { relativizeSourceFile } from '../shared/source-path.js'
+import {
+  classifyTaskContract,
+  compactContextPack,
+  compileContextPack,
+  estimateContextPackEntryTokens,
+  type ContextPackNodeCandidate,
+} from './context-pack.js'
 import { communitiesFromGraph, estimateQueryTokens } from './serve.js'
 
 const SNIPPET_HALF_WINDOW = 7
@@ -56,6 +72,7 @@ export interface RetrieveMatchedNode {
   relevance_band: 'direct' | 'related' | 'peripheral'
   community: number | null
   community_label: string | null
+  evidence_class?: ContextPackEvidenceClass
 }
 
 export interface RetrieveRelationship {
@@ -82,6 +99,10 @@ export interface RetrieveResult {
     god_nodes: string[]
     bridge_nodes: string[]
   }
+  task_contract?: ContextPackTaskContract
+  claims?: ContextPackClaim[]
+  expandable?: ContextPackExpandableRef[]
+  coverage?: ContextPackCoverage
 }
 
 export interface CompactRetrieveMatchedNode extends Omit<RetrieveMatchedNode, 'community_label' | 'file_type' | 'framework_boost'> {
@@ -226,7 +247,7 @@ function estimateTokens(text: string): number {
 }
 
 export function estimateRetrieveEntryTokens(label: string, sourceFile: string, lineNumber: number, snippet: string | null): number {
-  return estimateTokens(`${label} ${sourceFile}:${lineNumber} ${snippet ?? ''}`)
+  return estimateContextPackEntryTokens(label, sourceFile, lineNumber, snippet)
 }
 
 function tokenCountForMatchedNodes(
@@ -932,12 +953,167 @@ function frameworkBoostForNode(
 
   return boost
 }
+
+function retrieveEvidenceClassForBand(relevanceBand: RetrieveMatchedNode['relevance_band']): ContextPackEvidenceClass {
+  if (relevanceBand === 'direct') {
+    return 'primary'
+  }
+
+  return relevanceBand === 'related' ? 'supporting' : 'structural'
+}
+
+function fallbackRetrieveCoverage(result: RetrieveResult): ContextPackCoverage {
+  const taskContract = classifyTaskContract('explain', {
+    budget: result.token_count,
+    prompt: result.question,
+  })
+
+  return {
+    required_evidence: taskContract.required_evidence,
+    entries: [],
+    missing_required: [],
+    available_relationships: result.relationships.length,
+    selected_relationships: result.relationships.length,
+  }
+}
+
+function contextPackFromRetrieveResult(
+  result: RetrieveResult,
+): CompiledContextPack<ContextPackNode, RetrieveRelationship, RetrieveCommunityContext> {
+  return {
+    task_contract: result.task_contract ?? classifyTaskContract('explain', {
+      budget: result.token_count,
+      prompt: result.question,
+    }),
+    token_count: result.token_count,
+    nodes: result.matched_nodes.map((node) => ({
+      ...node,
+      evidence_class: node.evidence_class ?? retrieveEvidenceClassForBand(node.relevance_band),
+    })),
+    relationships: result.relationships,
+    community_context: result.community_context,
+    graph_signals: result.graph_signals,
+    claims: result.claims ?? [],
+    expandable: result.expandable ?? [],
+    coverage: result.coverage ?? fallbackRetrieveCoverage(result),
+  }
+}
+
+function buildRetrieveResultFromOrderedCandidates(
+  graph: KnowledgeGraph,
+  options: RetrieveOptions,
+  orderedCandidates: readonly ScoredNode[],
+  communities: Communities,
+  communityLabels: Record<number, string>,
+  retrieveGraphSignals: RetrieveGraphSignals,
+  rootPath?: string,
+): RetrieveResult {
+  const snippetFileCache = new Map<string, string[] | null>()
+  const taskContract = classifyTaskContract('explain', {
+    budget: options.budget,
+    prompt: options.question,
+  })
+  const orderedCandidateIds = new Set(orderedCandidates.map((node) => node.id))
+  const orderedCommunities = new Set<number>(orderedCandidates.flatMap((node) => (node.community === null ? [] : [node.community])))
+  const graphSignalLabels = {
+    god_nodes: [...new Set(orderedCandidates.map((node) => node.label).filter((label) => retrieveGraphSignals.godNodeLabels.has(label)))],
+    bridge_nodes: [...new Set(orderedCandidates.map((node) => node.label).filter((label) => retrieveGraphSignals.bridgeNodeLabels.has(label)))],
+  }
+  const nodeCandidates: Array<ContextPackNodeCandidate<ContextPackNode>> = orderedCandidates.map((node) => {
+    let builtEntry: RetrieveMatchedNode | undefined
+    let tokenCost: number | undefined
+    const evidenceClass = retrieveEvidenceClassForBand(node.relevanceBand)
+
+    const buildEntry = (): RetrieveMatchedNode => {
+      if (builtEntry) {
+        return builtEntry
+      }
+
+      const snippet = node.storedSnippet ?? readSnippet(node.sourceFile, node.lineNumber, {
+        derived: node.lineNumberDerived,
+        fileCache: snippetFileCache,
+      })
+      const serializedSourceFile = relativizeSourceFile(node.sourceFile, rootPath)
+      builtEntry = {
+        node_id: node.id,
+        label: node.label,
+        source_file: serializedSourceFile,
+        line_number: node.lineNumber,
+        framework: node.framework,
+        framework_role: node.frameworkRole,
+        framework_boost: node.frameworkBoost,
+        file_type: node.fileType,
+        snippet,
+        match_score: node.score,
+        relevance_band: node.relevanceBand,
+        community: node.community,
+        community_label: node.community !== null ? (communityLabels[node.community] ?? null) : null,
+        evidence_class: evidenceClass,
+        ...(node.nodeKind.trim().length > 0 ? { node_kind: node.nodeKind } : {}),
+      }
+      tokenCost = estimateRetrieveEntryTokens(node.label, serializedSourceFile, node.lineNumber, snippet)
+      return builtEntry
+    }
+
+    return {
+      label: node.label,
+      node_id: node.id,
+      community: node.community,
+      evidence_class: evidenceClass,
+      estimate_tokens: () => {
+        if (tokenCost !== undefined) {
+          return tokenCost
+        }
+
+        buildEntry()
+        return tokenCost ?? 0
+      },
+      build_entry: buildEntry,
+    }
+  })
+
+  const pack = compileContextPack<ContextPackNode, RetrieveRelationship, RetrieveCommunityContext>({
+    task_contract: taskContract,
+    nodes: nodeCandidates,
+    relationships: collectRelationships(graph, orderedCandidateIds),
+    community_context: [...orderedCommunities]
+      .map((communityId) => ({
+        id: communityId,
+        label: communityLabels[communityId] ?? `Community ${communityId}`,
+        node_count: (communities[communityId] ?? []).length,
+      }))
+      .sort((left, right) => right.node_count - left.node_count),
+    graph_signals: graphSignalLabels,
+  })
+
+  return {
+    question: options.question,
+    token_count: pack.token_count,
+    matched_nodes: pack.nodes as RetrieveMatchedNode[],
+    relationships: pack.relationships,
+    community_context: pack.community_context,
+    graph_signals: pack.graph_signals ?? { god_nodes: [], bridge_nodes: [] },
+    task_contract: pack.task_contract,
+    claims: pack.claims,
+    expandable: pack.expandable,
+    coverage: pack.coverage,
+  }
+}
+
 export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions): RetrieveResult {
   const { question, budget } = options
   const questionTokens = tokenizeQuestion(question)
   const rootPath = typeof graph.graph.root_path === 'string' ? graph.graph.root_path : undefined
 
   if (questionTokens.length === 0) {
+    const emptyPack = compileContextPack({
+      task_contract: classifyTaskContract('explain', { budget, prompt: question }),
+      nodes: [],
+      relationships: [],
+      community_context: [],
+      graph_signals: { god_nodes: [], bridge_nodes: [] },
+    })
+
     return {
       question,
       token_count: 0,
@@ -945,6 +1121,10 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
       relationships: [],
       community_context: [],
       graph_signals: { god_nodes: [], bridge_nodes: [] },
+      task_contract: emptyPack.task_contract,
+      claims: emptyPack.claims,
+      expandable: emptyPack.expandable,
+      coverage: emptyPack.coverage,
     }
   }
 
@@ -1182,11 +1362,6 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
   // Re-sort: seeds first by score, then neighbors by degree
   scored.sort((a, b) => compareScoredNodes(graph, a, b))
 
-  // Step 4+5: Read snippets and assemble within budget
-  const matchedNodes: RetrieveMatchedNode[] = []
-  const includedIds = new Set<string>()
-  const snippetFileCache = new Map<string, string[] | null>()
-  let tokenCount = 0
   const frameworkCompatibleCandidates = frameworkProfile.frameworkShaped
     ? scored.filter((node) => isFrameworkCompatible(activeFrameworks, node.framework))
     : scored
@@ -1226,75 +1401,15 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
       ]
     : [...secondaryCandidates, ...peripheralCandidates]
 
-  for (const node of inclusionOrder) {
-    const snippet = node.storedSnippet ?? readSnippet(node.sourceFile, node.lineNumber, {
-      derived: node.lineNumberDerived,
-      fileCache: snippetFileCache,
-    })
-    const serializedSourceFile = relativizeSourceFile(node.sourceFile, rootPath)
-    const nodeTokens = estimateRetrieveEntryTokens(node.label, serializedSourceFile, node.lineNumber, snippet)
-
-    if (tokenCount + nodeTokens > budget && matchedNodes.length > 0) {
-      break
-    }
-
-    const matchedNode: RetrieveMatchedNode = {
-      node_id: node.id,
-      label: node.label,
-      source_file: serializedSourceFile,
-      line_number: node.lineNumber,
-      framework: node.framework,
-      framework_role: node.frameworkRole,
-      framework_boost: node.frameworkBoost,
-      file_type: node.fileType,
-      snippet,
-      match_score: node.score,
-      relevance_band: node.relevanceBand,
-      community: node.community,
-      community_label: node.community !== null ? (communityLabels[node.community] ?? null) : null,
-      ...(node.nodeKind.trim().length > 0 ? { node_kind: node.nodeKind } : {}),
-    }
-
-    matchedNodes.push(matchedNode)
-
-    includedIds.add(node.id)
-    tokenCount += nodeTokens
-
-  }
-
-  // Collect relationships between included nodes
-  const relationships = collectRelationships(graph, includedIds)
-
-  // Community context for included nodes
-  const communityIds = new Set<number>()
-  for (const node of matchedNodes) {
-    if (node.community !== null) {
-      communityIds.add(node.community)
-    }
-  }
-
-  const communityContext: RetrieveCommunityContext[] = [...communityIds]
-    .map((id) => ({
-      id,
-      label: communityLabels[id] ?? `Community ${id}`,
-      node_count: (communities[id] ?? []).length,
-    }))
-    .sort((a, b) => b.node_count - a.node_count)
-
-  // Graph signals: god nodes and bridge nodes among results
-  const includedLabels = new Set(matchedNodes.map((node) => node.label))
-
-  return {
-    question,
-    token_count: tokenCount,
-    matched_nodes: matchedNodes,
-    relationships,
-    community_context: communityContext,
-    graph_signals: {
-      god_nodes: [...includedLabels].filter((label) => retrieveGraphSignals.godNodeLabels.has(label)),
-      bridge_nodes: [...includedLabels].filter((label) => retrieveGraphSignals.bridgeNodeLabels.has(label)),
-    },
-  }
+  return buildRetrieveResultFromOrderedCandidates(
+    graph,
+    options,
+    inclusionOrder,
+    communities,
+    communityLabels,
+    retrieveGraphSignals,
+    rootPath,
+  )
 }
 
 export async function retrieveContextAsync(graph: KnowledgeGraph, options: RetrieveOptions): Promise<RetrieveResult> {
@@ -1395,107 +1510,37 @@ export async function retrieveContextAsync(graph: KnowledgeGraph, options: Retri
       ]
     : candidatePool
 
-  const matchedNodes: RetrieveMatchedNode[] = []
-  const includedIds = new Set<string>()
-  const snippetFileCache = new Map<string, string[] | null>()
-  let tokenCount = 0
-
-  for (const node of orderedCandidates) {
-    const snippet = node.storedSnippet ?? readSnippet(node.sourceFile, node.lineNumber, {
-      derived: node.lineNumberDerived,
-      fileCache: snippetFileCache,
-    })
-    const serializedSourceFile = relativizeSourceFile(node.sourceFile, rootPath)
-    const nodeTokens = estimateRetrieveEntryTokens(node.label, serializedSourceFile, node.lineNumber, snippet)
-    if (tokenCount + nodeTokens > options.budget && matchedNodes.length > 0) {
-      break
-    }
-
-    matchedNodes.push({
-      node_id: node.id,
-      label: node.label,
-      source_file: serializedSourceFile,
-      line_number: node.lineNumber,
-      framework: node.framework,
-      framework_role: node.frameworkRole,
-      framework_boost: node.frameworkBoost,
-      file_type: node.fileType,
-      snippet,
-      match_score: node.score,
-      relevance_band: node.relevanceBand,
-      community: node.community,
-      community_label: node.community !== null ? (communityLabels[node.community] ?? null) : null,
-      ...(node.nodeKind.trim().length > 0 ? { node_kind: node.nodeKind } : {}),
-    })
-    includedIds.add(node.id)
-    tokenCount += nodeTokens
-  }
-
-  const relationships = collectRelationships(graph, includedIds)
-  const communityIds = new Set<number>()
-  for (const node of matchedNodes) {
-    if (node.community !== null) {
-      communityIds.add(node.community)
-    }
-  }
-
-  const communityContext: RetrieveCommunityContext[] = [...communityIds]
-    .map((id) => ({
-      id,
-      label: communityLabels[id] ?? `Community ${id}`,
-      node_count: (communities[id] ?? []).length,
-    }))
-    .sort((left, right) => right.node_count - left.node_count)
-
-  const includedLabels = new Set(matchedNodes.map((node) => node.label))
-  return {
-    question: options.question,
-    token_count: tokenCount,
-    matched_nodes: matchedNodes,
-    relationships,
-    community_context: communityContext,
-    graph_signals: {
-      god_nodes: [...includedLabels].filter((label) => retrieveGraphSignals.godNodeLabels.has(label)),
-      bridge_nodes: [...includedLabels].filter((label) => retrieveGraphSignals.bridgeNodeLabels.has(label)),
-    },
-  }
+  return buildRetrieveResultFromOrderedCandidates(
+    graph,
+    options,
+    orderedCandidates,
+    communities,
+    communityLabels,
+    retrieveGraphSignals,
+    rootPath,
+  )
 }
 
 export function compactRetrieveResult(result: RetrieveResult): CompactRetrieveResult {
   const frameworkProfile = buildFrameworkQuestionProfile(result.question, tokenizeQuestion(result.question))
   const compactFrameworkLimit =
     frameworkProfile.frameworkShaped && result.matched_nodes.some((node) => (node.framework_boost ?? 0) > 0) ? 5 : Number.POSITIVE_INFINITY
-  const compactMatchedNodes = Number.isFinite(compactFrameworkLimit)
-    ? result.matched_nodes.slice(0, compactFrameworkLimit)
-    : result.matched_nodes
-  const includedNodeIds = new Set(compactMatchedNodes.map(matchedNodeId).filter((nodeId): nodeId is string => nodeId !== null))
-  const includedLabels = new Set(compactMatchedNodes.map((node) => node.label))
-  const includedCommunities = new Set(compactMatchedNodes.flatMap((node) => (node.community === null ? [] : [node.community])))
-  const sharedFileType =
-    compactMatchedNodes.length > 0 && compactMatchedNodes.every((node) => node.file_type === compactMatchedNodes[0]?.file_type)
-      ? compactMatchedNodes[0]?.file_type
-      : undefined
+  const compactPack = compactContextPack(contextPackFromRetrieveResult(result), {
+    kind: 'retrieve',
+    ...(Number.isFinite(compactFrameworkLimit) ? { max_nodes: compactFrameworkLimit } : {}),
+  })
 
   return {
     question: result.question,
-    token_count: tokenCountForMatchedNodes(compactMatchedNodes),
-    matched_nodes: compactMatchedNodes.map(({ community_label: _communityLabel, file_type: fileType, framework_boost: _frameworkBoost, node_kind: nodeKind, ...node }) => ({
-      ...node,
-      ...(typeof nodeKind === 'string' && nodeKind.trim().length > 0 ? { node_kind: nodeKind } : {}),
-      ...(sharedFileType ? {} : { file_type: fileType }),
-    })),
-    relationships: result.relationships.filter((edge) => {
-      if (includedNodeIds.size > 0 && edge.from_id && edge.to_id) {
-        return includedNodeIds.has(edge.from_id) && includedNodeIds.has(edge.to_id)
-      }
-      return includedLabels.has(edge.from) && includedLabels.has(edge.to)
-    }),
-    community_context: result.community_context.filter((community) => includedCommunities.has(community.id)),
-    graph_signals: {
-      god_nodes: result.graph_signals.god_nodes.filter((label) => includedLabels.has(label)),
-      bridge_nodes: result.graph_signals.bridge_nodes.filter((label) => includedLabels.has(label)),
-    },
-    ...(sharedFileType ? { shared_file_type: sharedFileType } : {}),
+    token_count: compactPack.nodes.reduce(
+      (total, node) => total + estimateRetrieveEntryTokens(node.label, node.source_file, node.line_number, node.snippet ?? null),
+      0,
+    ),
+    matched_nodes: compactPack.nodes.map(({ evidence_class: _evidenceClass, ...node }) => node as CompactRetrieveMatchedNode),
+    relationships: compactPack.relationships,
+    community_context: compactPack.community_context,
+    graph_signals: compactPack.graph_signals ?? { god_nodes: [], bridge_nodes: [] },
+    ...(compactPack.shared_file_type ? { shared_file_type: compactPack.shared_file_type } : {}),
   }
 }
 
@@ -1535,5 +1580,9 @@ export function compactRetrieveResultForStdio(result: RetrieveResult): RetrieveR
     relationships: compactResult.relationships.map(stripRetrieveRelationshipIdentity),
     community_context: compactResult.community_context,
     graph_signals: compactResult.graph_signals,
+    ...(result.task_contract ? { task_contract: result.task_contract } : {}),
+    ...(result.claims ? { claims: result.claims } : {}),
+    ...(result.expandable ? { expandable: result.expandable } : {}),
+    ...(result.coverage ? { coverage: result.coverage } : {}),
   }
 }

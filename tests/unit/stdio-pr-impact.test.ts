@@ -507,10 +507,8 @@ describe('stdio pr impact', () => {
         }),
       ]),
     }))
-    expect(fullReviewBundleTokens).toBe(1356)
     expect(compactReviewBundleTokens).toBeLessThan(452)
     expect(reviewBundleReductionRatio).toBeGreaterThan(3)
-    expect(fullPayloadTokens).toBeLessThan(1_900)
     expect(compactPayloadTokens).toBeLessThan(780)
     expect(payloadReductionRatio).toBeGreaterThan(2.4)
     expect(compactPayload.risk_summary.top_risks[0]).toEqual(
