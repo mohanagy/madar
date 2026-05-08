@@ -63,6 +63,12 @@ describe('public marketing copy honesty', () => {
       expect(content).toContain('`graph_stats`')
     })
 
+    it('states that core is the default MCP profile and full is opt-in', () => {
+      expect(lower).toContain('by default')
+      expect(content).toContain('core')
+      expect(content).toContain('GRAPHIFY_TOOL_PROFILE=full')
+    })
+
     it('keeps the README full MCP additions list aligned with the shipped get_neighbors tool', () => {
       expect(content).toContain('The full surface is 25 tools')
       expect(content).toContain('`context_expand`')

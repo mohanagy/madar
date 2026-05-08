@@ -576,7 +576,7 @@ export function handleStdioRequest(
           return failure(
             id,
             JSONRPC_METHOD_NOT_FOUND,
-            `Tool '${toolName}' is not enabled in the active graphify-ts MCP tool profile. Set GRAPHIFY_TOOL_PROFILE=full in your MCP server config (e.g. .mcp.json for Claude, .cursor/mcp.json for Cursor, .vscode/mcp.json for VS Code Copilot) to enable advanced tools.`,
+            `Tool '${toolName}' is not enabled in the active graphify-ts MCP tool profile. Default profile: core. Set GRAPHIFY_TOOL_PROFILE=full in your MCP server config (e.g. .mcp.json for Claude, .cursor/mcp.json for Cursor, .vscode/mcp.json for VS Code Copilot) to enable advanced tools.`,
           )
         }
         return handleToolCallRequest(id, graphPath, params, {

@@ -202,6 +202,7 @@ describe('MCP tool profile', () => {
           expect(error).toBeDefined()
           expect(error?.code).toBe(-32601)
           expect(error?.message).toContain('not enabled in the active graphify-ts MCP tool profile')
+          expect(error?.message).toContain('Default profile: core')
           expect(error?.message).toContain('GRAPHIFY_TOOL_PROFILE=full')
           expect(error?.message).toContain('.mcp.json')
           expect(error?.message).toContain('.cursor/mcp.json')
@@ -234,6 +235,7 @@ describe('MCP tool profile', () => {
             const error = (response as { error?: { code: number; message: string } }).error
             expect(error?.code).toBe(-32601)
             expect(error?.message).toContain(name)
+            expect(error?.message).toContain('Default profile: core')
             expect(error?.message).toContain('GRAPHIFY_TOOL_PROFILE=full')
           }
         })
