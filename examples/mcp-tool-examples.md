@@ -171,7 +171,7 @@ These examples show what your AI agent sees when it calls graphify-ts MCP tools.
         "label": "BillingModule",
         "source_file": "backend/src/modules/billing/billing.module.ts",
         "line_number": 1,
-        "snippet": "@Module({ providers: [StripeGatewayService, TransactionService] })",
+        "snippet": null,
         "match_score": 0,
         "relevance_band": "related",
         "community": 8,
