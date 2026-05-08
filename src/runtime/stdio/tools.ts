@@ -2,14 +2,15 @@ import { dirname } from 'node:path'
 
 import { buildGraphifyPromptPack } from '../../infrastructure/compare.js'
 import type { CompareRefsInput } from '../../infrastructure/time-travel.js'
-import type { ContextPackClaim, ContextPackCoverage, ContextPackEvidenceClass, ContextPackExpandableRef } from '../../contracts/context-pack.js'
+import type { ContextPackClaim, ContextPackCoverage, ContextPackEvidenceClass, ContextPackExpandableRef, ContextPackNode } from '../../contracts/context-pack.js'
 import type { ContextSessionState } from '../../contracts/context-session.js'
 import { buildCommunityLabels } from '../../pipeline/community-naming.js'
 import { communityDetailsAtZoom, communityDetailsMicro, type CommunityZoomLevel } from '../../pipeline/community-details.js'
 import { validateGraphPath } from '../../shared/security.js'
 import { featureMap } from '../feature-map.js'
 import { implementationChecklist } from '../implementation-checklist.js'
-import { analyzeImpact, callChains, compactImpactResult } from '../impact.js'
+import { classifyTaskContract, compileContextPack, estimateContextPackEntryTokens, type ContextPackNodeCandidate } from '../context-pack.js'
+import { analyzeImpact, callChains, compactImpactResult, type ImpactResult } from '../impact.js'
 import { analyzePrImpact, compactPrImpactResult } from '../pr-impact.js'
 import { relevantFiles } from '../relevant-files.js'
 import { compactRetrieveResult, retrieveContext, retrieveContextAsync, type RetrieveResult } from '../retrieve.js'
@@ -142,6 +143,83 @@ function pickImpactTarget(result: RetrieveResult): string {
     .find((node) => node.label.trim().length > 0)
 
   return bestMatch?.label ?? result.question
+}
+
+function createImpactCandidate(
+  node: {
+    label: string
+    source_file: string
+    file_type?: string
+    community?: number | null
+    community_label?: string | null
+    node_kind?: string
+    framework_role?: string | null
+  },
+  evidenceClass: ContextPackEvidenceClass,
+): ContextPackNodeCandidate<ContextPackNode> {
+  let builtEntry: ContextPackNode | undefined
+  let tokenCost: number | undefined
+  const sourceFile = node.source_file
+
+  const buildEntry = (): ContextPackNode => {
+    if (builtEntry) {
+      return builtEntry
+    }
+
+    builtEntry = {
+      label: node.label,
+      source_file: sourceFile,
+      line_number: 0,
+      snippet: null,
+      ...(node.file_type ? { file_type: node.file_type } : {}),
+      ...(typeof node.community === 'number' ? { community: node.community } : {}),
+      ...(node.community_label !== undefined ? { community_label: node.community_label } : {}),
+      ...(node.node_kind ? { node_kind: node.node_kind } : {}),
+      ...(node.framework_role ? { framework_role: node.framework_role } : {}),
+      evidence_class: evidenceClass,
+    }
+    tokenCost = estimateContextPackEntryTokens(node.label, sourceFile, 0, null)
+    return builtEntry
+  }
+
+  return {
+    label: node.label,
+    evidence_class: evidenceClass,
+    ...(node.community !== undefined ? { community: node.community } : {}),
+    estimate_tokens: () => {
+      if (tokenCost !== undefined) {
+        return tokenCost
+      }
+
+      buildEntry()
+      return tokenCost ?? 0
+    },
+    build_entry: buildEntry,
+  }
+}
+
+function impactMetadata(result: ImpactResult, budget: number, prompt: string): ContextPlaneMetadata {
+  const candidates: ContextPackNodeCandidate<ContextPackNode>[] = []
+
+  if (result.target_file.trim().length > 0) {
+    candidates.push(createImpactCandidate({
+      label: result.target,
+      source_file: result.target_file,
+    }, 'primary'))
+  }
+
+  candidates.push(
+    ...result.direct_dependents.map((node) => createImpactCandidate(node, 'impact')),
+    ...result.transitive_dependents.map((node) => createImpactCandidate(node, 'structural')),
+  )
+
+  const pack = compileContextPack({
+    task_contract: classifyTaskContract('impact', { budget, prompt }),
+    nodes: candidates,
+    community_context: result.affected_communities,
+  })
+
+  return contextMetadata(pack)
 }
 
 export function handleToolCall(id: string | number | null, graphPath: string, params: unknown, helpers: ToolHelpers): StdioResponse | Promise<StdioResponse> {
@@ -402,10 +480,12 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
           ...helpers.readStoredCommunityLabels(graphPath),
         }
         const impactTarget = pickImpactTarget(retrieval)
-        const impactPack = compactImpactResult(analyzeImpact(graph, communityLabels, {
+        const impactResult = analyzeImpact(graph, communityLabels, {
           label: impactTarget,
           depth: 3,
-        }))
+        })
+        const impactPack = compactImpactResult(impactResult)
+        const metadata = impactMetadata(impactResult, resolvedBudget, prompt)
         return helpers.ok(id, helpers.textToolResult(JSON.stringify({
           task,
           prompt,
@@ -413,7 +493,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
           graph_path: graphPath,
           target: impactTarget,
           pack: impactPack,
-          ...contextMetadata(retrieval),
+          ...metadata,
         })))
       }
 

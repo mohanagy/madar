@@ -1,5 +1,6 @@
+import { execFileSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { PassThrough } from 'node:stream'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 
@@ -78,6 +79,82 @@ function createTimeTravelResult(view: 'summary' | 'risk' | 'drift' | 'timeline' 
     drift: { movedNodes: [] },
     timeline: { events: [] },
   }
+}
+
+function createPrImpactFixtureRoot(): string {
+  const parentDir = resolve('graphify-out', 'test-runtime')
+  mkdirSync(parentDir, { recursive: true })
+  const root = mkdtempSync(join(parentDir, 'graphify-ts-stdio-pr-impact-'))
+  mkdirSync(join(root, 'src'), { recursive: true })
+  mkdirSync(join(root, 'tests'), { recursive: true })
+  mkdirSync(join(root, 'graphify-out'), { recursive: true })
+
+  const authLines = Array.from({ length: 16 }, (_, index) => `// auth filler ${index + 1}`)
+  authLines[4] = 'export function authenticateUser(token: string) {'
+  authLines[5] = '  const status = "ok"'
+  authLines[6] = '  return token.trim().length > 0 ? status : "fail"'
+  authLines[7] = '}'
+
+  const apiLines = Array.from({ length: 12 }, (_, index) => `// api filler ${index + 1}`)
+  apiLines[3] = 'import { authenticateUser } from "./auth"'
+  apiLines[4] = 'export function ApiHandler(token: string) {'
+  apiLines[5] = '  return authenticateUser(token)'
+  apiLines[6] = '}'
+
+  writeFileSync(join(root, 'src', 'auth.ts'), `${authLines.join('\n')}\n`, 'utf8')
+  writeFileSync(join(root, 'src', 'api.ts'), `${apiLines.join('\n')}\n`, 'utf8')
+  writeFileSync(join(root, 'tests', 'auth.test.ts'), 'describe("auth", () => {})\n', 'utf8')
+  writeFileSync(join(root, 'tests', 'api.test.ts'), 'describe("api", () => {})\n', 'utf8')
+  writeFileSync(
+    join(root, 'graphify-out', 'graph.json'),
+    JSON.stringify({
+      directed: true,
+      community_labels: {
+        '0': 'Auth Layer',
+        '1': 'API Layer',
+      },
+      nodes: [
+        {
+          id: 'auth_user',
+          label: 'authenticateUser',
+          source_file: join(root, 'src', 'auth.ts'),
+          source_location: 'L5-L8',
+          node_kind: 'function',
+          file_type: 'code',
+          community: 0,
+        },
+        {
+          id: 'api_handler',
+          label: 'ApiHandler',
+          source_file: join(root, 'src', 'api.ts'),
+          source_location: 'L5-L7',
+          node_kind: 'function',
+          file_type: 'code',
+          community: 1,
+        },
+      ],
+      edges: [
+        {
+          source: 'api_handler',
+          target: 'auth_user',
+          relation: 'calls',
+          confidence: 'EXTRACTED',
+          source_file: join(root, 'src', 'api.ts'),
+        },
+      ],
+      hyperedges: [],
+      root_path: root,
+    }),
+    'utf8',
+  )
+
+  execFileSync('git', ['init', '-b', 'main'], { cwd: root, stdio: 'pipe' })
+  execFileSync('git', ['config', 'user.email', 'graphify@example.com'], { cwd: root, stdio: 'pipe' })
+  execFileSync('git', ['config', 'user.name', 'Graphify Test'], { cwd: root, stdio: 'pipe' })
+  execFileSync('git', ['add', '.'], { cwd: root, stdio: 'pipe' })
+  execFileSync('git', ['commit', '-m', 'Initial commit'], { cwd: root, stdio: 'pipe' })
+
+  return root
 }
 
 describe('stdio runtime', () => {
@@ -739,6 +816,70 @@ describe('stdio runtime', () => {
     }
   })
 
+  it('returns compact pr_impact payloads by default and keeps verbose mode as an escape hatch', async () => {
+    const root = createPrImpactFixtureRoot()
+    try {
+      writeFileSync(
+        join(root, 'src', 'auth.ts'),
+        readFileSync(join(root, 'src', 'auth.ts'), 'utf8').replace('  const status = "ok"', '  const status = token.startsWith("Bearer ") ? "ok" : "fail"'),
+        'utf8',
+      )
+
+      const graphPath = join(root, 'graphify-out', 'graph.json')
+      const prImpactDefault = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 50,
+        method: 'tools/call',
+        params: {
+          name: 'pr_impact',
+          arguments: {
+            budget: 240,
+          },
+        },
+      }))
+      const prImpactVerbose = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 51,
+        method: 'tools/call',
+        params: {
+          name: 'pr_impact',
+          arguments: {
+            budget: 240,
+            verbose: true,
+          },
+        },
+      }))
+
+      const prImpactDefaultPayload = JSON.parse((prImpactDefault?.result as { content: Array<{ text: string }> }).content[0]!.text)
+      const prImpactVerbosePayload = JSON.parse((prImpactVerbose?.result as { content: Array<{ text: string }> }).content[0]!.text)
+      const defaultSeedNode = prImpactDefaultPayload.review_bundle.nodes.find((node: { label: string }) => node.label === 'authenticateUser')
+      const verboseSeedNode = prImpactVerbosePayload.review_bundle.nodes.find((node: { label: string }) => node.label === 'authenticateUser')
+
+      expect(prImpactDefaultPayload).not.toHaveProperty('changed_nodes')
+      expect(prImpactDefaultPayload).not.toHaveProperty('affected_files')
+      expect(prImpactDefaultPayload.review_bundle).toEqual(expect.objectContaining({
+        budget: 240,
+      }))
+      expect(defaultSeedNode).toEqual(expect.objectContaining({
+        label: 'authenticateUser',
+      }))
+      expect(defaultSeedNode).not.toHaveProperty('evidence_class')
+      expect(defaultSeedNode).not.toHaveProperty('file_type')
+      expect(prImpactDefaultPayload.missing_context).toEqual(expect.any(Array))
+
+      expect(prImpactVerbosePayload.changed_nodes).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          label: 'authenticateUser',
+        }),
+      ]))
+      expect(verboseSeedNode).toEqual(expect.objectContaining({
+        label: 'authenticateUser',
+        evidence_class: 'change',
+        file_type: 'code',
+      }))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('exposes context-pack and context-prompt MCP flows with reusable prompt sessions', async () => {
     const root = createGraphFixtureRoot()
     try {
@@ -760,6 +901,18 @@ describe('stdio runtime', () => {
             prompt: 'How does AuthService reach Transport?',
             task: 'explain',
             budget: 1,
+          },
+        },
+      }, sessionState))
+      const impactPack = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 7,
+        method: 'tools/call',
+        params: {
+          name: 'context_pack',
+          arguments: {
+            prompt: 'What breaks if HttpClient changes?',
+            task: 'impact',
+            budget: 200,
           },
         },
       }, sessionState))
@@ -812,6 +965,7 @@ describe('stdio runtime', () => {
 
       const toolNames = (tools?.result as { tools: Array<{ name: string }> }).tools.map((tool) => tool.name)
       const explainPackPayload = JSON.parse((explainPack?.result as { content: Array<{ text: string }> }).content[0]!.text)
+      const impactPackPayload = JSON.parse((impactPack?.result as { content: Array<{ text: string }> }).content[0]!.text)
       const firstPromptPayload = JSON.parse((firstPrompt?.result as { content: Array<{ text: string }> }).content[0]!.text)
       const followUpPromptPayload = JSON.parse((followUpPrompt?.result as { content: Array<{ text: string }> }).content[0]!.text)
       const resetSessionPayload = JSON.parse((resetSession?.result as { content: Array<{ text: string }> }).content[0]!.text)
@@ -835,6 +989,17 @@ describe('stdio runtime', () => {
         expect.objectContaining({ kind: 'nodes' }),
       ]))
       expect(explainPackPayload.missing_context).toEqual(expect.arrayContaining(['supporting', 'structural']))
+      expect(impactPackPayload).toEqual(expect.objectContaining({
+        task: 'impact',
+        prompt: 'What breaks if HttpClient changes?',
+        target: 'HttpClient',
+      }))
+      expect(impactPackPayload.coverage).toEqual(expect.objectContaining({
+        required_evidence: ['primary', 'impact', 'structural'],
+      }))
+      expect(impactPackPayload.coverage.required_evidence).not.toContain('supporting')
+      expect(impactPackPayload.missing_context).toEqual(impactPackPayload.coverage.missing_required)
+      expect(impactPackPayload.missing_context).not.toContain('supporting')
 
       expect(firstPromptPayload).toEqual(expect.objectContaining({
         provider: 'claude',
