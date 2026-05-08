@@ -2,6 +2,8 @@
 
 These benchmarks were measured on [GoValidate](https://govalidate.app), a production NestJS + Next.js SaaS with 1,268 files and ~860,000 words of code.
 
+The product surface is no longer "just export a graph." graphify-ts is now a cost-first **context plane** with a **context compiler** layered on top: the graph is the substrate, while the shipped value is compact retrieval, provider-aware prompts, and proof surfaces that show smaller context still meets the required coverage contract.
+
 ## The Problem
 
 You have a large codebase. Your AI agent (Claude, Copilot, Cursor) can read files, but:
@@ -12,14 +14,18 @@ You have a large codebase. Your AI agent (Claude, Copilot, Cursor) can read file
 
 ## What graphify-ts Does
 
-One command generates a knowledge graph:
+Generate the graph once, then use graphify-ts as both the local context plane and the context compiler:
 
 ```bash
 graphify-ts generate .
 graphify-ts claude install   # or cursor, copilot
+graphify-ts pack "how does auth work?" --task explain
+graphify-ts prompt "how does auth work?" --provider claude
 ```
 
-The agent gets a lean 6-tool MCP surface by default (retrieve, impact, call_chain, community_overview, pr_impact, graph_stats). Set `GRAPHIFY_TOOL_PROFILE=full` in your MCP config (`.mcp.json` for Claude, `.cursor/mcp.json` for Cursor, `.vscode/mcp.json` for VS Code Copilot) to opt into the full 21-tool advanced surface. Here's what changes:
+The agent gets a lean 6-tool MCP surface by default (retrieve, impact, call_chain, community_overview, pr_impact, graph_stats). Set `GRAPHIFY_TOOL_PROFILE=full` in your MCP config (`.mcp.json` for Claude, `.cursor/mcp.json` for Cursor, `.vscode/mcp.json` for VS Code Copilot) to opt into the full 24-tool advanced surface, including `context_pack`, `context_prompt`, and `context_session_reset`.
+
+`pack` is the CLI context payload surface. `prompt` is the provider-aware context compiler: Claude payloads expose `effective_token_count`, `reused_context_tokens`, and `session_state`; Gemini payloads stay plain-text. The matching MCP tools expose the same flows inside the active agent session, with `context_pack` also returning `claims`, `coverage`, and `missing_context`.
 
 ---
 
@@ -34,7 +40,7 @@ The credible measurement is end-to-end against a real coding agent, not against 
 | Total input tokens (Anthropic-reported) | 615,190 | **233,508** | 2.63× less |
 | Cost per session | $0.62 | $0.70 | +13% on cold start; cheaper on multi-question sessions |
 
-Headline: **3× fewer turns**, ~2.8× faster, 2.6× fewer total input tokens. Graphify is unambiguously faster and uses fewer turns. Cold-start sessions pay an MCP-overhead premium of ~13%; multi-question sessions amortize and flip below baseline.
+Headline: **3× fewer turns**, ~2.8× faster, 2.6× fewer total input tokens. Graphify is unambiguously faster and uses fewer turns. Cold-start sessions pay an MCP-overhead premium of ~13%; multi-question sessions amortize and flip below baseline. That is why the honest cost language here is **effective cost**: once stable context is reused across prompt-compiler follow-ups, the number that matters is effective tokens after cache reuse rather than raw cold-start bytes.
 
 Raw evidence (both `claude --output-format json` outputs and a `verify.sh` reproducer) is committed under [`docs/benchmarks/2026-04-30-govalidate/`](../docs/benchmarks/2026-04-30-govalidate/).
 
@@ -129,8 +135,8 @@ node dist/src/cli/bin.js eval examples/demo-repo/graphify-out/graph.json --quest
 
 What each command proves:
 
-- `benchmark` proves token reduction, question coverage, expected-evidence coverage, and structure-signal reporting on a known question set. On the checked-in demo repo it should report `Question coverage: 5/5 matched`, `Expected evidence: 17/17 labels found`, and roughly `1.7x` fewer tokens per query.
-- `eval` proves retrieval quality on that same labeled question set: recall, ranking quality (MRR), and snippet coverage. On the checked-in demo repo it should report `Recall: 100.0%`, `MRR: 1.000`, `Snippet coverage: 100.0%`, and roughly `2.7x` fewer tokens at query time.
+- `benchmark` proves the **coverage contract** for the smaller context bundle: question coverage, expected-evidence coverage, structure-signal reporting, and runner-backed token deltas on a known question set. On the checked-in demo repo it should report `Question coverage: 5/5 matched`, `Expected evidence: 17/17 labels found`, and roughly `1.7x` fewer tokens per query.
+- `eval` proves the retrieval-quality side of that same coverage contract: recall, ranking quality (MRR), and snippet coverage. On the checked-in demo repo it should report `Recall: 100.0%`, `MRR: 1.000`, `Snippet coverage: 100.0%`, and roughly `2.7x` fewer tokens at query time.
 
 The demo repo is intentionally tiny, so its token-reduction numbers are modest. It exists to make the flow reproducible, not to maximize the headline ratio. Demo outputs land in `examples/demo-repo/graphify-out/`, which is ignored so you can rerun the flow locally without polluting git status.
 
@@ -229,8 +235,8 @@ For an internal team rollout, the most convincing sequence is usually:
 That progression keeps the proof honest:
 
 - `benchmark` and `eval` are runner-backed graph-quality measurements on labeled prompts
-- `compare` is the model-facing proof, with reported usage when the runner emits structured JSON and labeled estimates otherwise
-- `review-compare` is the PR-review proof, comparing verbose and compact `pr_impact` prompts on the same diff
+- `compare` is the model-facing proof, with reported usage when the runner emits structured JSON, labeled estimates otherwise, and effective-cost framing for cache-aware follow-ups
+- `review-compare` is the PR-review proof, comparing verbose and compact `pr_impact` prompts on the same diff while preserving the same review coverage contract
 - `federate` is the production architecture proof for frontend/backend/shared or microservice splits
 
 ## Capability Coverage Matters

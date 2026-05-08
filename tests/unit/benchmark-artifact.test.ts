@@ -53,6 +53,11 @@ describe('public benchmark artifact (2026-04-30 govalidate)', () => {
     expect(readme).toContain(`$${graphify.total_cost_usd.toFixed(2)}`)
   })
 
+  it('README frames the benchmark around effective cost, not just raw prompt size', () => {
+    expect(readme.toLowerCase()).toContain('effective cost')
+    expect(readme.toLowerCase()).toContain('effective prompt tokens')
+  })
+
   it('hosted retrieval benchmark page uses only defined warning color tokens', () => {
     const page = readFileSync(resolve(ARTIFACT_DIR, 'index.html'), 'utf8')
     expect(page).not.toContain('var(--amber-400)')
@@ -105,6 +110,12 @@ describe('public benchmark artifact (2026-05-02 govalidate pr review)', () => {
     expect(typeof report.verbose_prompt_tokens).toBe('number')
     expect(typeof report.compact_prompt_tokens).toBe('number')
     expect(readme).toContain('GoValidate PR review benchmark')
+  })
+
+  it('README describes the review proof as a coverage contract with effective-cost framing', () => {
+    const lower = readme.toLowerCase()
+    expect(lower).toContain('coverage contract')
+    expect(lower).toContain('effective cost')
   })
 
   it('review prompt artifacts do not contain absolute or username-derived node ids', () => {

@@ -25,6 +25,8 @@ This directory contains the raw evidence for graphify-ts's real PR-review benchm
 
 This benchmark captures a real branch diff in `govalidate/platform` and shows the prompt-size reduction from compact `pr_impact` packaging without changing the underlying review target.
 
+The right way to read it is as a **coverage contract** proof: verbose and compact mode keep the same changed files, seed set, and hotspot counts, so the smaller prompt is not buying its win by dropping review surface. The newer product framing calls that an **effective cost** win for the same review contract — smaller review prompts for the same diff-backed evidence.
+
 ## Output files in this directory
 
 - `report.json` — raw `review-compare` metrics and run metadata

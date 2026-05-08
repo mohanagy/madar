@@ -1,7 +1,7 @@
 {
     "name": "@mohammednagy/graphify-ts",
     "version": "0.11.0",
-    "description": "Build local knowledge graphs from code, docs, and mixed project folders with a TypeScript CLI.",
+    "description": "Build a local context plane and context compiler from code, docs, and mixed project folders.",
     "license": "MIT",
     "author": "mohanagy",
     "bin": {
@@ -18,6 +18,8 @@
     "keywords": [
         "cli",
         "codebase",
+        "context-compiler",
+        "context-plane",
         "graph",
         "graphrag",
         "knowledge-graph",
@@ -54,7 +56,7 @@
     "devDependencies": {
         "@types/node": "^25.6.0",
         "@vitest/coverage-v8": "^4.1.5",
-        "vite": "^8.0.10",
+        "vite": "^6.4.2",
         "vitest": "^4.1.5"
     },
     "dependencies": {

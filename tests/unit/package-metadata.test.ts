@@ -4,8 +4,13 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 interface PackageManifest {
+  description?: string
   dependencies?: Record<string, string>
   devDependencies?: Record<string, string>
+  engines?: {
+    node?: string
+  }
+  keywords?: string[]
   license?: string
   overrides?: Record<string, string>
 }
@@ -95,6 +100,26 @@ describe('package metadata', () => {
     expect(loadContributingGuide()).toContain("licensed under this project's MIT license")
   })
 
+  it('positions package metadata around the context plane and context compiler surface', () => {
+    const manifest = loadPackageManifest()
+    const readme = loadReadme().toLowerCase()
+
+    expect(manifest.description?.toLowerCase()).toContain('context plane')
+    expect(manifest.description?.toLowerCase()).toContain('context compiler')
+    expect(manifest.keywords ?? []).toEqual(expect.arrayContaining(['context-plane', 'context-compiler']))
+    expect(readme).toContain('context plane')
+    expect(readme).toContain('context compiler')
+  })
+
+  it('keeps the README command surface aligned with pack and prompt automation flows', () => {
+    const readme = loadReadme()
+
+    expect(readme).toContain('graphify-ts pack')
+    expect(readme).toContain('graphify-ts prompt')
+    expect(readme).toContain('context_pack')
+    expect(readme).toContain('context_prompt')
+  })
+
   it('avoids circular maintainer guidance in the contributing guide', () => {
     const contributingGuide = loadContributingGuide()
 
@@ -131,6 +156,8 @@ describe('package metadata', () => {
     const dependencies = manifest.dependencies ?? {}
 
     expect(isAtLeastVersion(devDependencies.vite, [6, 4, 2])).toBe(true)
+    expect(devDependencies.vite).toMatch(/^[~^]?6\./)
+    expect(manifest.engines?.node).toBe('>=20')
     expect(dependencies['@xenova/transformers']).toBeUndefined()
     expect(typeof dependencies['@huggingface/transformers']).toBe('string')
   })
