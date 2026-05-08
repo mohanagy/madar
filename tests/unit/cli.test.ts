@@ -6,6 +6,7 @@ import {
   parseAddArgs,
   parseBenchmarkArgs,
   parseCompareArgs,
+  parsePackArgs,
   parseDiffArgs,
   parseExplainArgs,
   parseGenerateArgs,
@@ -13,6 +14,7 @@ import {
   parseInstallArgs,
   parsePathArgs,
   parsePlatformActionArgs,
+  parsePromptArgs,
   parseQueryArgs,
   parseReviewCompareArgs,
   parseSaveResultArgs,
@@ -103,6 +105,8 @@ function createDependencies(): CliDependencies {
     runCompare: async () => 'compare command is not implemented yet',
     runReviewCompare: async () => 'review compare command is not implemented yet',
     runTimeTravel: async () => 'time-travel command is not implemented yet',
+    runContextPack: async () => 'context pack command is not implemented yet',
+    runContextPrompt: async () => 'context prompt command is not implemented yet',
     confirm: async () => true,
     printBenchmark: () => {},
     installHooks: () => 'hooks installed',
@@ -188,6 +192,51 @@ describe('cli parser', () => {
     expect(() => parseQueryArgs(['test', '--rank-by', 'centrality'])).toThrow('error: --rank-by must be one of relevance, degree')
     expect(() => parseQueryArgs(['test', '--community', '-1'])).toThrow('error: --community must be a non-negative integer')
     expect(() => parseQueryArgs(['test', '--wat'])).toThrow('error: unknown option for query: --wat')
+  })
+
+  it('parses pack args with defaults and overrides', () => {
+    expect(parsePackArgs(['how does auth work', '--budget', '1800', '--task', 'explain'])).toEqual({
+      prompt: 'how does auth work',
+      budget: 1800,
+      task: 'explain',
+      graphPath: 'graphify-out/graph.json',
+    })
+
+    expect(parsePackArgs(['review current diff', '--task=review', '--graph', 'custom.json'])).toEqual({
+      prompt: 'review current diff',
+      budget: 3000,
+      task: 'review',
+      graphPath: 'custom.json',
+    })
+  })
+
+  it('rejects invalid pack args', () => {
+    expect(() => parsePackArgs([])).toThrow('Usage: graphify-ts pack')
+    expect(() => parsePackArgs(['how does auth work', '--budget', '0'])).toThrow('error: --budget must be a positive integer')
+    expect(() => parsePackArgs(['how does auth work', '--budget', '100001'])).toThrow('error: --budget must be <= 100000')
+    expect(() => parsePackArgs(['how does auth work', '--task', 'summarize'])).toThrow('error: --task must be one of explain, review, impact')
+    expect(() => parsePackArgs(['how does auth work', '--wat'])).toThrow('error: unknown option for pack: --wat')
+  })
+
+  it('parses prompt args with defaults and overrides', () => {
+    expect(parsePromptArgs(['how does auth work', '--provider', 'claude'])).toEqual({
+      prompt: 'how does auth work',
+      provider: 'claude',
+      graphPath: 'graphify-out/graph.json',
+    })
+
+    expect(parsePromptArgs(['review current diff', '--provider=gemini', '--graph', 'custom.json'])).toEqual({
+      prompt: 'review current diff',
+      provider: 'gemini',
+      graphPath: 'custom.json',
+    })
+  })
+
+  it('rejects invalid prompt args', () => {
+    expect(() => parsePromptArgs([])).toThrow('Usage: graphify-ts prompt')
+    expect(() => parsePromptArgs(['how does auth work'])).toThrow('error: --provider is required')
+    expect(() => parsePromptArgs(['how does auth work', '--provider', 'openai'])).toThrow('error: --provider must be one of claude, gemini')
+    expect(() => parsePromptArgs(['how does auth work', '--wat'])).toThrow('error: unknown option for prompt: --wat')
   })
 
   it('parses path args with defaults and overrides', () => {
@@ -1016,6 +1065,51 @@ describe('cli main', () => {
       io,
     })
     expect(logs).toEqual(['time-travel result'])
+    expect(errors).toEqual([])
+  })
+
+  it('routes pack through the injected dependency after parsing args', async () => {
+    const { io, logs, errors } = createIo()
+    const runContextPack = vi.fn<NonNullable<CliDependencies['runContextPack']>>().mockResolvedValue('{"task":"explain"}')
+    const dependencies: CliDependencies = {
+      ...createDependencies(),
+      runContextPack,
+    }
+
+    await expect(executeCli(['pack', 'how does auth work', '--budget', '1800', '--task', 'explain'], io, dependencies)).resolves.toBe(0)
+
+    expect(runContextPack).toHaveBeenCalledWith({
+      options: {
+        prompt: 'how does auth work',
+        budget: 1800,
+        task: 'explain',
+        graphPath: 'graphify-out/graph.json',
+      },
+      io,
+    })
+    expect(logs).toEqual(['{"task":"explain"}'])
+    expect(errors).toEqual([])
+  })
+
+  it('routes prompt through the injected dependency after parsing args', async () => {
+    const { io, logs, errors } = createIo()
+    const runContextPrompt = vi.fn<NonNullable<CliDependencies['runContextPrompt']>>().mockResolvedValue('{"provider":"claude"}')
+    const dependencies: CliDependencies = {
+      ...createDependencies(),
+      runContextPrompt,
+    }
+
+    await expect(executeCli(['prompt', 'how does auth work', '--provider', 'claude'], io, dependencies)).resolves.toBe(0)
+
+    expect(runContextPrompt).toHaveBeenCalledWith({
+      options: {
+        prompt: 'how does auth work',
+        provider: 'claude',
+        graphPath: 'graphify-out/graph.json',
+      },
+      io,
+    })
+    expect(logs).toEqual(['{"provider":"claude"}'])
     expect(errors).toEqual([])
   })
 
