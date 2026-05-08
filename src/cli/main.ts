@@ -22,9 +22,11 @@ import {
   defaultInstallPlatform,
   geminiInstall,
   geminiUninstall,
+  installCopilotMcp,
   installSkill,
   isAgentPlatform,
   type AgentPlatform,
+  uninstallCopilotMcp,
   uninstallSkill,
 } from '../infrastructure/install.js'
 import { pushGraphToNeo4j } from '../infrastructure/neo4j.js'
@@ -127,6 +129,8 @@ export interface CliDependencies {
   uninstallSkill: typeof uninstallSkill
   cursorInstall: typeof cursorInstall
   cursorUninstall: typeof cursorUninstall
+  installCopilotMcp: typeof installCopilotMcp
+  uninstallCopilotMcp: typeof uninstallCopilotMcp
   pushGraphToNeo4j: typeof pushGraphToNeo4j
   generateGraph: typeof generateGraph
   watchGraph: typeof watchGraph
@@ -216,6 +220,8 @@ const DEFAULT_DEPENDENCIES: CliDependencies = {
   uninstallSkill,
   cursorInstall,
   cursorUninstall,
+  installCopilotMcp,
+  uninstallCopilotMcp,
   pushGraphToNeo4j,
   generateGraph,
   watchGraph,
@@ -371,10 +377,10 @@ export function formatHelp(binaryName = 'graphify-ts'): string {
     '    uninstall            remove graphify hook sections',
     '    status               show whether graphify hooks are installed',
     '  aider <install|uninstall>   manage local AGENTS.md rules',
-    '  claude <install|uninstall>  manage local CLAUDE.md graphify rules',
-    '  cursor <install|uninstall>  manage local Cursor graphify rules',
+    '  claude <install|uninstall> [--profile core|full]  manage local CLAUDE.md graphify rules',
+    '  cursor <install|uninstall> [--profile core|full]  manage local Cursor graphify rules',
     '  gemini <install|uninstall>  manage local GEMINI.md rules and Gemini CLI hook config',
-    '  copilot <install|uninstall> install or remove the GitHub Copilot skill',
+    '  copilot <install|uninstall> [--profile core|full] install or remove the GitHub Copilot skill',
     '  codex <install|uninstall>   manage local AGENTS.md + Codex hook rules',
     '  opencode <install|uninstall> manage local AGENTS.md + OpenCode plugin/MCP rules',
     '  claw <install|uninstall>    manage local AGENTS.md rules',
@@ -821,7 +827,9 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
       if (options.action === 'install' && !existsSync('graphify-out/graph.json')) {
         io.log("Warning: graphify-out/graph.json not found. Run 'graphify-ts generate .' first, then re-run this command.")
       }
-      io.log(options.action === 'install' ? dependencies.claudeInstall('.') : dependencies.claudeUninstall('.'))
+      io.log(options.action === 'install'
+        ? dependencies.claudeInstall('.', options.profile ? { profile: options.profile } : {})
+        : dependencies.claudeUninstall('.'))
       return 0
     }
 
@@ -830,7 +838,9 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
       if (options.action === 'install' && !existsSync('graphify-out/graph.json')) {
         io.log("Warning: graphify-out/graph.json not found. Run 'graphify-ts generate .' first, then re-run this command.")
       }
-      io.log(options.action === 'install' ? dependencies.cursorInstall('.') : dependencies.cursorUninstall('.'))
+      io.log(options.action === 'install'
+        ? dependencies.cursorInstall('.', options.profile ? { profile: options.profile } : {})
+        : dependencies.cursorUninstall('.'))
       return 0
     }
 
@@ -850,10 +860,9 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
           io.log("Warning: graphify-out/graph.json not found. Run 'graphify-ts generate .' first, then re-run this command.")
         }
         io.log(dependencies.installSkill('copilot'))
-        // Also install project-level MCP server for VS Code Copilot
-        const { installCopilotMcp } = await import('../infrastructure/install.js')
-        io.log(installCopilotMcp('.'))
+        io.log(dependencies.installCopilotMcp('.', options.profile ? { profile: options.profile } : {}))
       } else {
+        io.log(dependencies.uninstallCopilotMcp('.'))
         io.log(dependencies.uninstallSkill('copilot'))
       }
       return 0

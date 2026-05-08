@@ -38,11 +38,12 @@ npm install -g @mohammednagy/graphify-ts
 cd your-project
 graphify-ts generate .          # builds graphify-out/graph.json
 graphify-ts claude install      # wires Claude Code to use it
+# graphify-ts claude install --profile full   # opt into the full 25-tool MCP surface
 ```
 
 Now ask Claude something about your codebase. It calls `retrieve` once, gets back labeled snippets with file paths and community context, and answers — instead of running multiple `Read` / `Grep` / `Glob` calls and accumulating tokens at every turn.
 
-Other agents: `cursor install`, `copilot install`, `gemini install`, `aider install`, `opencode install`.
+Other agents: `cursor install`, `copilot install`, `gemini install`, `aider install`, `opencode install`. If you want the advanced MCP surface immediately, use `claude install --profile full`, `cursor install --profile full`, or `copilot install --profile full`.
 
 Need the automation surface, not just the installed MCP server?
 

@@ -880,18 +880,18 @@ function buildReviewBundle(
     let builtEntry: RetrieveMatchedNode | undefined
     let tokenCost: number | undefined
     const evidenceClass = reviewEvidenceClassForCandidateKind(candidateKinds.get(candidateId))
+    const normalizedSourceFile = normalizeProjectPath(rootPath, candidate.sourceFile)
+    const serializedSourceFile = relativizeSourceFile(normalizedSourceFile, rootPath)
 
     const buildEntry = (): RetrieveMatchedNode => {
       if (builtEntry) {
         return builtEntry
       }
 
-      const normalizedSourceFile = normalizeProjectPath(rootPath, candidate.sourceFile)
       const snippet = readSnippet(normalizedSourceFile, candidate.lineNumber, {
         derived: candidate.lineNumberDerived,
         fileCache: snippetFileCache,
       })
-      const serializedSourceFile = relativizeSourceFile(normalizedSourceFile, rootPath)
       builtEntry = {
         node_id: candidate.id,
         label: candidate.label,
@@ -914,6 +914,10 @@ function buildReviewBundle(
       label: candidate.label,
       node_id: candidate.id,
       community: candidate.community,
+      source_file: serializedSourceFile,
+      line_number: candidate.lineNumber,
+      file_type: candidate.fileType,
+      ...(candidate.nodeKind.trim().length > 0 ? { node_kind: candidate.nodeKind } : {}),
       evidence_class: evidenceClass,
       estimate_tokens: () => {
         if (tokenCost !== undefined) {

@@ -19,11 +19,12 @@ Generate the graph once, then use graphify-ts as both the local context plane an
 ```bash
 graphify-ts generate .
 graphify-ts claude install   # or cursor, copilot
+# graphify-ts claude install --profile full   # opt straight into the advanced MCP surface
 graphify-ts pack "how does auth work?" --task explain
 graphify-ts prompt "how does auth work?" --provider claude
 ```
 
-The agent gets a lean 6-tool MCP surface by default (retrieve, impact, call_chain, community_overview, pr_impact, graph_stats). Set `GRAPHIFY_TOOL_PROFILE=full` in your MCP config (`.mcp.json` for Claude, `.cursor/mcp.json` for Cursor, `.vscode/mcp.json` for VS Code Copilot) to opt into the full 25-tool advanced surface, including `context_pack`, `context_expand`, `context_prompt`, and `context_session_reset`.
+The agent gets a lean 6-tool MCP surface by default (retrieve, impact, call_chain, community_overview, pr_impact, graph_stats). Set `GRAPHIFY_TOOL_PROFILE=full` in your MCP config (`.mcp.json` for Claude, `.cursor/mcp.json` for Cursor, `.vscode/mcp.json` for VS Code Copilot) or install with `--profile full` to opt into the full 25-tool advanced surface, including `context_pack`, `context_expand`, `context_prompt`, and `context_session_reset`.
 
 `pack` is the CLI context payload surface. `prompt` is the provider-aware context compiler: Claude payloads expose `effective_token_count`, `reused_context_tokens`, and `session_state`; Gemini payloads stay plain-text. The matching MCP tools expose the same flows inside the active agent session, with `context_pack` now returning not only `claims`, `coverage`, and `missing_context`, but also planner-driven **semantic coverage** and stable expandable handles that agents can reopen with `context_expand`.
 

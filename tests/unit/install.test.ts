@@ -17,6 +17,7 @@ import {
   installSkill,
   isAgentPlatform,
   isInstallPlatform,
+  uninstallCopilotMcp,
   uninstallSkill,
 } from '../../src/infrastructure/install.js'
 import { normalizeAssertionPath } from './helpers/platform.js'
@@ -397,6 +398,23 @@ describe('install helpers', () => {
     })
   })
 
+  it('writes GRAPHIFY_TOOL_PROFILE=full when the Claude installer opts into the full MCP profile', () => {
+    withTempDir((projectDir) => {
+      const installClaudeWithProfile = claudeInstall as (projectDir?: string, options?: { profile?: 'core' | 'full' }) => string
+      installClaudeWithProfile(projectDir, { profile: 'full' })
+
+      const mcpConfig = JSON.parse(readFileSync(join(projectDir, '.mcp.json'), 'utf8')) as {
+        mcpServers?: {
+          'graphify-ts'?: {
+            env?: Record<string, string>
+          }
+        }
+      }
+
+      expect(mcpConfig.mcpServers?.['graphify-ts']?.env?.GRAPHIFY_TOOL_PROFILE).toBe('full')
+    })
+  })
+
   it('writes GRAPHIFY_TOOL_PROFILE=core in the generated Cursor .cursor/mcp.json env block', () => {
     withTempDir((projectDir) => {
       cursorInstall(projectDir)
@@ -448,6 +466,53 @@ describe('install helpers', () => {
       }
 
       expect(mcpConfig.servers?.['graphify-ts']?.env?.GRAPHIFY_TOOL_PROFILE).toBe('core')
+    })
+  })
+
+  it('writes GRAPHIFY_TOOL_PROFILE=full when the VS Code Copilot installer opts into the full MCP profile', () => {
+    withTempDir((projectDir) => {
+      const installCopilotWithProfile = installCopilotMcp as (projectDir?: string, options?: { profile?: 'core' | 'full' }) => string
+      installCopilotWithProfile(projectDir, { profile: 'full' })
+
+      const mcpConfig = JSON.parse(readFileSync(join(projectDir, '.vscode', 'mcp.json'), 'utf8')) as {
+        servers?: {
+          'graphify-ts'?: {
+            env?: Record<string, string>
+          }
+        }
+      }
+
+      expect(mcpConfig.servers?.['graphify-ts']?.env?.GRAPHIFY_TOOL_PROFILE).toBe('full')
+    })
+  })
+
+  it('removes the VS Code Copilot MCP server while preserving unrelated workspace entries', () => {
+    withTempDir((projectDir) => {
+      installCopilotMcp(projectDir)
+
+      const mcpPath = join(projectDir, '.vscode', 'mcp.json')
+      const config = JSON.parse(readFileSync(mcpPath, 'utf8')) as {
+        servers?: Record<string, Record<string, unknown>>
+      }
+      config.servers = {
+        ...config.servers,
+        companion: {
+          command: 'node',
+          args: ['companion.js'],
+        },
+      }
+      writeFileSync(mcpPath, JSON.stringify(config, null, 2), 'utf8')
+
+      uninstallCopilotMcp(projectDir)
+
+      const uninstalled = JSON.parse(readFileSync(mcpPath, 'utf8')) as {
+        servers?: Record<string, Record<string, unknown>>
+      }
+      expect(uninstalled.servers?.['graphify-ts']).toBeUndefined()
+      expect(uninstalled.servers?.companion).toEqual({
+        command: 'node',
+        args: ['companion.js'],
+      })
     })
   })
 

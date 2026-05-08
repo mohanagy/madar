@@ -118,6 +118,8 @@ function createDependencies(): CliDependencies {
     uninstallSkill: (platform) => `removed ${platform}`,
     cursorInstall: () => 'cursor local rules installed',
     cursorUninstall: () => 'cursor local rules removed',
+    installCopilotMcp: () => 'copilot mcp installed',
+    uninstallCopilotMcp: () => 'copilot mcp removed',
     pushGraphToNeo4j: async (_graph, options) => ({
       uri: options.uri,
       database: options.database ?? 'neo4j',
@@ -724,11 +726,14 @@ describe('cli parser', () => {
     expect(() => parseInstallArgs(['--platform', 'unknown'], 'claude')).toThrow("error: unknown platform 'unknown'")
 
     expect(parsePlatformActionArgs('claude', ['install'])).toEqual({ action: 'install' })
+    expect(parsePlatformActionArgs('claude', ['install', '--profile', 'full'])).toEqual({ action: 'install', profile: 'full' })
     expect(parsePlatformActionArgs('aider', ['install'])).toEqual({ action: 'install' })
     expect(parsePlatformActionArgs('gemini', ['install'])).toEqual({ action: 'install' })
     expect(parsePlatformActionArgs('copilot', ['uninstall'])).toEqual({ action: 'uninstall' })
     expect(parsePlatformActionArgs('cursor', ['uninstall'])).toEqual({ action: 'uninstall' })
     expect(parsePlatformActionArgs('codex', ['uninstall'])).toEqual({ action: 'uninstall' })
+    expect(() => parsePlatformActionArgs('claude', ['install', '--profile', 'wide'])).toThrow('error: --profile must be one of core, full')
+    expect(() => parsePlatformActionArgs('claude', ['uninstall', '--profile', 'full'])).toThrow('Usage: graphify-ts claude <install|uninstall> [--profile core|full]')
     expect(() => parsePlatformActionArgs('trae', [])).toThrow('Usage: graphify-ts trae <install|uninstall>')
   })
 })
@@ -795,10 +800,10 @@ describe('cli main', () => {
     expect(help).toContain('hook <action>')
     expect(help).toContain('install [--platform P]')
     expect(help).toContain('aider <install|uninstall>')
-    expect(help).toContain('claude <install|uninstall>')
-    expect(help).toContain('cursor <install|uninstall>')
+    expect(help).toContain('claude <install|uninstall> [--profile core|full]')
+    expect(help).toContain('cursor <install|uninstall> [--profile core|full]')
     expect(help).toContain('gemini <install|uninstall>')
-    expect(help).toContain('copilot <install|uninstall>')
+    expect(help).toContain('copilot <install|uninstall> [--profile core|full]')
     expect(help).toContain('codex <install|uninstall>')
     expect(help).toContain('opencode <install|uninstall>')
   })
@@ -1523,6 +1528,38 @@ describe('cli main', () => {
     expect(logs).toContain('removed copilot')
     expect(logs).toContain('codex local rules removed')
     expect(logs).toContain('opencode local rules installed')
+  })
+
+  it('passes the requested MCP profile into claude, cursor, and copilot installs', async () => {
+    const { io } = createIo()
+    const dependencies = createDependencies()
+    const claudeInstall = vi.fn().mockReturnValue('claude full install')
+    const cursorInstall = vi.fn().mockReturnValue('cursor full install')
+    const installCopilotMcp = vi.fn().mockReturnValue('copilot full install')
+
+    dependencies.claudeInstall = claudeInstall as unknown as CliDependencies['claudeInstall']
+    dependencies.cursorInstall = cursorInstall as unknown as CliDependencies['cursorInstall']
+    dependencies.installCopilotMcp = installCopilotMcp as unknown as CliDependencies['installCopilotMcp']
+
+    await expect(executeCli(['claude', 'install', '--profile', 'full'], io, dependencies)).resolves.toBe(0)
+    await expect(executeCli(['cursor', 'install', '--profile', 'full'], io, dependencies)).resolves.toBe(0)
+    await expect(executeCli(['copilot', 'install', '--profile', 'full'], io, dependencies)).resolves.toBe(0)
+
+    expect(claudeInstall).toHaveBeenCalledWith('.', { profile: 'full' })
+    expect(cursorInstall).toHaveBeenCalledWith('.', { profile: 'full' })
+    expect(installCopilotMcp).toHaveBeenCalledWith('.', { profile: 'full' })
+  })
+
+  it('removes the Copilot MCP config during copilot uninstall', async () => {
+    const { io } = createIo()
+    const dependencies = createDependencies()
+    const uninstallCopilotMcp = vi.fn().mockReturnValue('copilot mcp removed')
+
+    dependencies.uninstallCopilotMcp = uninstallCopilotMcp as unknown as CliDependencies['uninstallCopilotMcp']
+
+    await expect(executeCli(['copilot', 'uninstall'], io, dependencies)).resolves.toBe(0)
+
+    expect(uninstallCopilotMcp).toHaveBeenCalledWith('.')
   })
 
   it('executes watch and serve commands via injected dependencies', async () => {

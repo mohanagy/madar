@@ -12,6 +12,9 @@ function createGraphFixtureRoot(): string {
   const parentDir = resolve('graphify-out', 'test-runtime')
   mkdirSync(parentDir, { recursive: true })
   const root = mkdtempSync(join(parentDir, 'graphify-ts-stdio-'))
+  writeFileSync(join(root, 'auth.ts'), 'export function AuthService() {\n  return new HttpClient()\n}\n', 'utf8')
+  writeFileSync(join(root, 'client.ts'), 'export class HttpClient {\n  request() {\n    return new Transport()\n  }\n}\n', 'utf8')
+  writeFileSync(join(root, 'transport.ts'), 'export class Transport {}\n', 'utf8')
   writeFileSync(
     join(root, 'baseline.graph.json'),
     JSON.stringify({
@@ -1049,6 +1052,7 @@ describe('stdio runtime', () => {
       }))
       expect(expandedPackPayload.matched_focus).toBeGreaterThan(0)
       expect(expandedPackPayload.pack.matched_nodes.length).toBeGreaterThan(0)
+      expect(expandedPackPayload.pack.matched_nodes.some((node: { snippet: string | null }) => typeof node.snippet === 'string' && node.snippet.length > 0)).toBe(true)
 
       expect(firstPromptPayload).toEqual(expect.objectContaining({
         provider: 'claude',
@@ -1126,6 +1130,146 @@ describe('stdio runtime', () => {
         },
       })
     } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('prefers explicit node line_number values when expanding focused context', async () => {
+    const root = createGraphFixtureRoot()
+    try {
+      const graphPath = join(root, 'graph.json')
+      const sourcePath = join(root, 'line-number.ts')
+      writeFileSync(sourcePath, 'const first = 1\nconst second = process.env.SECRET\n', 'utf8')
+
+      const graph = JSON.parse(readFileSync(graphPath, 'utf8')) as {
+        nodes: Array<Record<string, unknown>>
+      }
+      graph.nodes.push({
+        id: 'line-node',
+        label: 'LineNode',
+        source_file: sourcePath,
+        line_number: 2,
+        file_type: 'code',
+        community: 0,
+      })
+      writeFileSync(graphPath, JSON.stringify(graph), 'utf8')
+
+      const sessionState = {
+        logLevel: 'info' as const,
+        subscribedResourceUris: new Set<string>(),
+        resourceVersions: new Map<string, string>(),
+        resourceListSignature: null,
+        contextPromptSessions: new Map(),
+        contextPackHandles: new Map<string, unknown>([
+          ['line-number-handle', {
+            prompt: 'Show the configuration line',
+            task: 'explain',
+            task_intent: 'runtime-config',
+            follow_up: {
+              kind: 'context_pack',
+              task_kind: 'explain',
+              evidence_class: 'supporting',
+              focus_files: [sourcePath],
+              focus_ranges: [],
+            },
+          }],
+        ]),
+      }
+
+      const response = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 2,
+        method: 'tools/call',
+        params: {
+          name: 'context_expand',
+          arguments: {
+            handle_id: 'line-number-handle',
+          },
+        },
+      }, sessionState))
+
+      const payload = JSON.parse((response as { result: { content: Array<{ text: string }> } }).result.content[0]?.text ?? '{}') as {
+        pack?: {
+          matched_nodes?: Array<{ label: string; line_number: number; snippet: string | null }>
+        }
+      }
+      expect(payload.pack?.matched_nodes).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          label: 'LineNode',
+          line_number: 2,
+          snippet: expect.stringContaining('const second = process.env.SECRET'),
+        }),
+      ]))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('does not read focused expansion snippets from files outside the graph workspace', async () => {
+    const root = createGraphFixtureRoot()
+    const outsidePath = resolve(root, '..', 'outside-secret.ts')
+    try {
+      const graphPath = join(root, 'graph.json')
+      writeFileSync(outsidePath, 'const first = 1\nconst secret = process.env.OUTSIDE_SECRET\n', 'utf8')
+
+      const graph = JSON.parse(readFileSync(graphPath, 'utf8')) as {
+        nodes: Array<Record<string, unknown>>
+      }
+      graph.nodes.push({
+        id: 'outside-node',
+        label: 'OutsideSecret',
+        source_file: outsidePath,
+        line_number: 2,
+        file_type: 'code',
+        community: 0,
+      })
+      writeFileSync(graphPath, JSON.stringify(graph), 'utf8')
+
+      const sessionState = {
+        logLevel: 'info' as const,
+        subscribedResourceUris: new Set<string>(),
+        resourceVersions: new Map<string, string>(),
+        resourceListSignature: null,
+        contextPromptSessions: new Map(),
+        contextPackHandles: new Map<string, unknown>([
+          ['outside-handle', {
+            prompt: 'Show the outside secret line',
+            task: 'explain',
+            task_intent: 'runtime-config',
+            follow_up: {
+              kind: 'context_pack',
+              task_kind: 'explain',
+              evidence_class: 'supporting',
+              focus_files: [outsidePath],
+              focus_ranges: [],
+            },
+          }],
+        ]),
+      }
+
+      const response = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 3,
+        method: 'tools/call',
+        params: {
+          name: 'context_expand',
+          arguments: {
+            handle_id: 'outside-handle',
+          },
+        },
+      }, sessionState))
+
+      const payload = JSON.parse((response as { result: { content: Array<{ text: string }> } }).result.content[0]?.text ?? '{}') as {
+        pack?: {
+          matched_nodes?: Array<{ label: string; snippet: string | null }>
+        }
+      }
+      expect(payload.pack?.matched_nodes).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          label: 'OutsideSecret',
+          snippet: null,
+        }),
+      ]))
+    } finally {
+      rmSync(outsidePath, { force: true })
       rmSync(root, { recursive: true, force: true })
     }
   })

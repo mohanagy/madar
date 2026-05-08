@@ -16,6 +16,10 @@ export const AGENT_PLATFORMS = ['codex', 'opencode', 'aider', 'claw', 'droid', '
 
 export type AgentPlatform = (typeof AGENT_PLATFORMS)[number]
 
+export const MCP_TOOL_PROFILES = ['core', 'full'] as const
+
+export type McpToolProfile = (typeof MCP_TOOL_PROFILES)[number]
+
 interface InstallPlatformConfig {
   skillFile: string
   skillDestination: string
@@ -26,6 +30,10 @@ interface InstallSkillOptions {
   homeDir?: string
   packageRoot?: string
   version?: string
+}
+
+interface McpInstallOptions {
+  profile?: McpToolProfile
 }
 
 const SKILL_SLUG = 'graphify-ts'
@@ -1190,7 +1198,12 @@ function installPackageSpecifier(packageRoot = findPackageRoot()): string {
   return `${NPM_PACKAGE_NAME}@${version}`
 }
 
-function installMcpServer(projectDir: string, target: McpConfigTarget = 'claude', nodePlatform = process.platform): string {
+function installMcpServer(
+  projectDir: string,
+  target: McpConfigTarget = 'claude',
+  nodePlatform = process.platform,
+  options: McpInstallOptions = {},
+): string {
   const mcpJsonPath = join(projectDir, MCP_CONFIG_PATHS[target])
   ensureParentDirectory(mcpJsonPath)
   const mcpConfig = readJsonObject(mcpJsonPath)
@@ -1208,15 +1221,17 @@ function installMcpServer(projectDir: string, target: McpConfigTarget = 'claude'
   const npxCommand = nodePlatform === 'win32' ? 'npx.cmd' : 'npx'
   const npxArgs = ['--yes', installPackageSpecifier(), 'serve', '--stdio', graphPath]
   // Default to the lean MCP tool surface ("core" = 6 tools). Reduces cache_creation
-  // overhead per session vs. advertising all tools. Users can opt into the legacy
-  // 21-tool surface by setting GRAPHIFY_TOOL_PROFILE=full in this env block.
+  // overhead per session vs. advertising all tools. Users can opt into the full
+  // 25-tool surface by setting GRAPHIFY_TOOL_PROFILE=full in this env block.
   //
   // Re-running install must NOT silently downgrade an existing user-customized env
-  // (e.g. GRAPHIFY_TOOL_PROFILE=full) or drop unrelated user-set env keys, so we
-  // merge: defaults first, then the existing entry on top so user values win.
+  // or drop unrelated user-set env keys. Without an explicit profile flag we merge
+  // defaults first, then the existing entry on top so user values win.
   const existingServer = existed ? (mcpServers[SKILL_SLUG] as Record<string, unknown>) : null
   const existingEnv = existingServer && isRecord(existingServer.env) ? (existingServer.env as Record<string, string>) : {}
-  const env: Record<string, string> = { GRAPHIFY_TOOL_PROFILE: 'core', ...existingEnv }
+  const env: Record<string, string> = options.profile
+    ? { ...existingEnv, GRAPHIFY_TOOL_PROFILE: options.profile }
+    : { GRAPHIFY_TOOL_PROFILE: 'core', ...existingEnv }
   const serverConfig = isVscode
     ? { type: 'stdio', command: npxCommand, args: npxArgs, env }
     : { command: npxCommand, args: npxArgs, env }
@@ -1238,6 +1253,24 @@ function installMcpServer(projectDir: string, target: McpConfigTarget = 'claude'
 
   const displayPath = MCP_CONFIG_PATHS[target]
   return existed ? `${displayPath} -> MCP server updated` : `${displayPath} -> MCP server registered`
+}
+
+function uninstallMcpServer(projectDir: string, target: McpConfigTarget): string | undefined {
+  const mcpJsonPath = join(projectDir, MCP_CONFIG_PATHS[target])
+  if (!existsSync(mcpJsonPath)) {
+    return undefined
+  }
+
+  const isVscode = target === 'copilot'
+  const mcpConfig = readJsonObject(mcpJsonPath)
+  const serversKey = isVscode ? 'servers' : 'mcpServers'
+  if (!isRecord(mcpConfig[serversKey]) || !Object.hasOwn(mcpConfig[serversKey], SKILL_SLUG)) {
+    return undefined
+  }
+
+  delete (mcpConfig[serversKey] as Record<string, unknown>)[SKILL_SLUG]
+  writeJson(mcpJsonPath, mcpConfig)
+  return `${MCP_CONFIG_PATHS[target]} -> MCP server removed`
 }
 
 function installClaudeHook(projectDir: string): string {
@@ -1506,6 +1539,10 @@ export function isAgentPlatform(value: string): value is AgentPlatform {
   return AGENT_PLATFORMS.includes(value as AgentPlatform)
 }
 
+export function isMcpToolProfile(value: string): value is McpToolProfile {
+  return MCP_TOOL_PROFILES.includes(value as McpToolProfile)
+}
+
 export function installSkill(platform: SkillInstallPlatform, options: InstallSkillOptions = {}): string {
   const homeDir = resolve(options.homeDir ?? homedir())
   const packageRoot = resolve(options.packageRoot ?? findPackageRoot())
@@ -1564,11 +1601,15 @@ export function geminiUninstall(projectDir = '.', options: Pick<InstallSkillOpti
   return messages.join('\n')
 }
 
-export function installCopilotMcp(projectDir = '.'): string {
-  return installMcpServer(resolve(projectDir), 'copilot')
+export function installCopilotMcp(projectDir = '.', options: McpInstallOptions = {}): string {
+  return installMcpServer(resolve(projectDir), 'copilot', process.platform, options)
 }
 
-export function cursorInstall(projectDir = '.'): string {
+export function uninstallCopilotMcp(projectDir = '.'): string {
+  return uninstallMcpServer(resolve(projectDir), 'copilot') ?? 'No graphify-ts Copilot MCP server found - nothing to do'
+}
+
+export function cursorInstall(projectDir = '.', options: McpInstallOptions = {}): string {
   const resolvedProjectDir = resolve(projectDir)
   const rulePath = join(resolvedProjectDir, CURSOR_RULE_RELATIVE_PATH)
   ensureParentDirectory(rulePath)
@@ -1582,7 +1623,7 @@ export function cursorInstall(projectDir = '.'): string {
     messages.push(`graphify-ts Cursor rule written to ${rulePath}`)
   }
 
-  messages.push(installMcpServer(resolvedProjectDir, 'cursor'))
+  messages.push(installMcpServer(resolvedProjectDir, 'cursor', process.platform, options))
   return messages.join('\n')
 }
 
@@ -1598,22 +1639,21 @@ export function cursorUninstall(projectDir = '.'): string {
     messages.push('No graphify-ts Cursor rule found - nothing to do')
   }
 
-  const mcpJsonPath = join(resolvedProjectDir, MCP_CONFIG_PATHS.cursor)
-  if (existsSync(mcpJsonPath)) {
-    const mcpConfig = readJsonObject(mcpJsonPath)
-    if (isRecord(mcpConfig.mcpServers) && Object.hasOwn(mcpConfig.mcpServers, SKILL_SLUG)) {
-      delete (mcpConfig.mcpServers as Record<string, unknown>)[SKILL_SLUG]
-      writeJson(mcpJsonPath, mcpConfig)
-      messages.push('.cursor/mcp.json -> MCP server removed')
-    }
+  const mcpMessage = uninstallMcpServer(resolvedProjectDir, 'cursor')
+  if (mcpMessage) {
+    messages.push(mcpMessage)
   }
 
   return messages.join('\n')
 }
 
-export function claudeInstall(projectDir = '.'): string {
+export function claudeInstall(projectDir = '.', options: McpInstallOptions = {}): string {
   const resolvedProjectDir = resolve(projectDir)
-  const messages = [writeSection(join(resolvedProjectDir, 'CLAUDE.md'), CLAUDE_MD_SECTION), installClaudeHook(resolvedProjectDir), installMcpServer(resolvedProjectDir)]
+  const messages = [
+    writeSection(join(resolvedProjectDir, 'CLAUDE.md'), CLAUDE_MD_SECTION),
+    installClaudeHook(resolvedProjectDir),
+    installMcpServer(resolvedProjectDir, 'claude', process.platform, options),
+  ]
   messages.push('', 'Claude Code will now start with the matching graphify MCP tool', 'BEFORE searching raw files for any codebase question.')
   return messages.join('\n')
 }
@@ -1626,14 +1666,9 @@ export function claudeUninstall(projectDir = '.'): string {
     messages.push(hookMessage)
   }
 
-  const mcpJsonPath = join(resolvedProjectDir, '.mcp.json')
-  if (existsSync(mcpJsonPath)) {
-    const mcpConfig = readJsonObject(mcpJsonPath)
-    if (isRecord(mcpConfig.mcpServers) && Object.hasOwn(mcpConfig.mcpServers, SKILL_SLUG)) {
-      delete (mcpConfig.mcpServers as Record<string, unknown>)[SKILL_SLUG]
-      writeJson(mcpJsonPath, mcpConfig)
-      messages.push('.mcp.json -> MCP server removed')
-    }
+  const mcpMessage = uninstallMcpServer(resolvedProjectDir, 'claude')
+  if (mcpMessage) {
+    messages.push(mcpMessage)
   }
 
   // Clean up legacy location

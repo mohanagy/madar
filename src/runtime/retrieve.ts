@@ -1092,6 +1092,11 @@ function buildRetrieveResultFromOrderedCandidates(
       label: node.label,
       node_id: node.id,
       community: node.community,
+      source_file: relativizeSourceFile(node.sourceFile, rootPath),
+      line_number: node.lineNumber,
+      file_type: node.fileType,
+      ...(node.nodeKind.trim().length > 0 ? { node_kind: node.nodeKind } : {}),
+      ...(node.storedSnippet !== null ? { snippet: node.storedSnippet } : {}),
       evidence_class: evidenceClass,
       expandable_ref: {
         node_id: node.id,

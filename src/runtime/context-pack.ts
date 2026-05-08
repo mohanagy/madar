@@ -35,6 +35,11 @@ export interface ContextPackNodeCandidate<TNode extends ContextPackNode = Contex
   label: string
   node_id?: string | undefined
   community?: number | null
+  source_file?: string
+  line_number?: number
+  file_type?: string
+  node_kind?: string
+  snippet?: string | null
   evidence_class: ContextPackEvidenceClass
   expandable_ref?: ContextPackExpandablePreview
   estimate_tokens: () => number
@@ -66,10 +71,12 @@ export type CompactContextPackMode =
     max_supporting_nodes?: number
   }
 
-interface MaterializedNodeCandidate<TNode extends ContextPackNode = ContextPackNode> {
-  candidate: ContextPackNodeCandidate<TNode>
-  entry: TNode
+interface CoverageNodeCandidate {
+  candidate: ContextPackNodeCandidate
+  entry: Pick<ContextPackNode, 'label' | 'source_file' | 'file_type' | 'node_kind' | 'snippet'>
 }
+
+type CoverageEntry = CoverageNodeCandidate['entry']
 
 const TEST_PATH_PATTERN = /(?:^|\/)(?:__tests__|tests?|fixtures?)(?:\/|$)|\.(?:test|spec)\.[^/]+$/i
 const CONFIG_PATH_PATTERN = /(?:^|\/)(?:config|configs?|settings|env)(?:\/|$)|(?:^|\/)\.env(?:\.[^/]+)?$|(?:^|\/)(?:package|tsconfig|vite|vitest|jest|eslint|prettier|rollup|webpack)\.(?:json|[cm]?js|ts|mjs|cjs)$/i
@@ -125,8 +132,8 @@ function classifyCoverageStatus(required: boolean, availableNodes: number, selec
 
 function coverageEntriesForCandidates(
   taskContract: ContextPackTaskContract,
-  nodes: readonly MaterializedNodeCandidate[],
-  selectedNodes: readonly MaterializedNodeCandidate[],
+  nodes: readonly CoverageNodeCandidate[],
+  selectedNodes: readonly CoverageNodeCandidate[],
   selectedCounts: ReadonlyMap<ContextPackEvidenceClass, number>,
   relationshipCounts: { available: number; selected: number },
 ): ContextPackCoverage {
@@ -210,11 +217,11 @@ function orderedSemanticCategories(
   return ordered
 }
 
-function isTestEntry(entry: ContextPackNode): boolean {
+function isTestEntry(entry: CoverageEntry): boolean {
   return TEST_PATH_PATTERN.test(entry.source_file)
 }
 
-function isConfigurationEntry(entry: ContextPackNode): boolean {
+function isConfigurationEntry(entry: CoverageEntry): boolean {
   if (CONFIG_PATH_PATTERN.test(entry.source_file)) {
     return true
   }
@@ -223,19 +230,19 @@ function isConfigurationEntry(entry: ContextPackNode): boolean {
   return text.includes('process.env') || text.includes('import.meta.env')
 }
 
-function isContractEntry(entry: ContextPackNode): boolean {
+function isContractEntry(entry: CoverageEntry): boolean {
   return CONTRACT_PATH_PATTERN.test(entry.source_file)
     || (typeof entry.node_kind === 'string' && CONTRACT_NODE_KINDS.has(entry.node_kind.toLowerCase()))
 }
 
-function isImplementationEntry(entry: ContextPackNode): boolean {
+function isImplementationEntry(entry: CoverageEntry): boolean {
   return entry.file_type === 'code'
     && !isTestEntry(entry)
     && !isConfigurationEntry(entry)
     && !isContractEntry(entry)
 }
 
-function semanticCategoryMatches(category: ContextPackSemanticCategory, node: MaterializedNodeCandidate): boolean {
+function semanticCategoryMatches(category: ContextPackSemanticCategory, node: CoverageNodeCandidate): boolean {
   switch (category) {
     case 'implementation':
       return isImplementationEntry(node.entry)
@@ -255,7 +262,7 @@ function semanticCategoryMatches(category: ContextPackSemanticCategory, node: Ma
 }
 
 function semanticCategoryCounts(
-  nodes: readonly MaterializedNodeCandidate[],
+  nodes: readonly CoverageNodeCandidate[],
 ): ReadonlyMap<ContextPackSemanticCategory, number> {
   const counts = new Map<ContextPackSemanticCategory, number>()
 
@@ -352,11 +359,11 @@ function expandablePreviewForCandidate(candidate: ContextPackNodeCandidate): Con
   }
   const providedLineRange = normalizeExpandableLineRange(candidate.expandable_ref?.line_range)
   const lineRange = providedLineRange ?? (() => {
-    const entry = fallbackEntry()
-    return Number.isFinite(entry.line_number) && Number.isInteger(entry.line_number) && entry.line_number > 0
+    const lineNumber = typeof candidate.line_number === 'number' ? candidate.line_number : fallbackEntry().line_number
+    return Number.isFinite(lineNumber) && Number.isInteger(lineNumber) && lineNumber > 0
       ? {
-          start_line: entry.line_number,
-          end_line: entry.line_number,
+          start_line: lineNumber,
+          end_line: lineNumber,
         }
       : undefined
   })()
@@ -365,7 +372,10 @@ function expandablePreviewForCandidate(candidate: ContextPackNodeCandidate): Con
     : typeof fallback?.node_id === 'string'
       ? fallback.node_id
       : undefined
-  const sourceFile = candidate.expandable_ref?.source_file ?? fallback?.source_file ?? fallbackEntry().source_file
+  const sourceFile = candidate.expandable_ref?.source_file
+    ?? candidate.source_file
+    ?? fallback?.source_file
+    ?? fallbackEntry().source_file
 
   return {
     ...(typeof candidate.expandable_ref?.node_id === 'string'
@@ -516,6 +526,59 @@ function sortCandidatesByEvidence<TNode extends ContextPackNode>(
     .map((entry) => entry.node)
 }
 
+function coverageEntryForCandidate(candidate: ContextPackNodeCandidate): CoverageNodeCandidate {
+  if (
+    typeof candidate.source_file === 'string'
+    && candidate.source_file.length > 0
+    && !needsMaterializedCoverageEntry(candidate)
+  ) {
+    return {
+      candidate,
+      entry: {
+        label: candidate.label,
+        source_file: candidate.source_file,
+        file_type: candidate.file_type,
+        node_kind: candidate.node_kind,
+        snippet: candidate.snippet ?? null,
+      },
+    }
+  }
+
+  const entry = candidate.build_entry()
+  return {
+    candidate,
+    entry: {
+      label: entry.label,
+      source_file: entry.source_file,
+      file_type: entry.file_type,
+      node_kind: entry.node_kind,
+      snippet: entry.snippet ?? null,
+    },
+  }
+}
+
+function needsMaterializedCoverageEntry(candidate: ContextPackNodeCandidate): boolean {
+  if (typeof candidate.source_file !== 'string' || candidate.source_file.length === 0) {
+    return true
+  }
+  if (typeof candidate.snippet === 'string' && candidate.snippet.length > 0) {
+    return false
+  }
+
+  const entry = {
+    label: candidate.label,
+    source_file: candidate.source_file,
+    file_type: candidate.file_type,
+    node_kind: candidate.node_kind,
+    snippet: null,
+  } satisfies CoverageEntry
+
+  return candidate.file_type === 'code'
+    && !isTestEntry(entry)
+    && !isConfigurationEntry(entry)
+    && !isContractEntry(entry)
+}
+
 export function estimateContextPackEntryTokens(
   label: string,
   sourceFile: string,
@@ -533,28 +596,34 @@ export function compileContextPack<
   input: CompileContextPackInput<TNode, TRelationship, TCommunity>,
 ): CompiledContextPack<TNode, TRelationship, TCommunity> {
   const orderedNodes = sortCandidatesByEvidence(input.task_contract, input.nodes)
-  const materializedNodes = orderedNodes.map((candidate) => ({
-    candidate,
-    entry: candidate.build_entry(),
-  }))
+  const coverageNodes = orderedNodes.map((candidate) => coverageEntryForCandidate(candidate))
   const selectedNodes: TNode[] = []
-  const selectedMaterialized: MaterializedNodeCandidate<TNode>[] = []
+  const selectedCoverage: CoverageNodeCandidate[] = []
   const selectedCounts = new Map<ContextPackEvidenceClass, number>()
   const selectedLabelsByEvidence = new Map<ContextPackEvidenceClass, string[]>()
   const selectedCommunities = new Set<number>()
   let tokenCount = 0
-  let breakIndex = materializedNodes.length
+  let breakIndex = orderedNodes.length
 
-  for (const [index, materialized] of materializedNodes.entries()) {
-    const { candidate, entry } = materialized
+  for (const [index, candidate] of orderedNodes.entries()) {
     const candidateTokens = candidate.estimate_tokens()
     if (tokenCount + candidateTokens > input.task_contract.budget && selectedNodes.length > 0) {
       breakIndex = index
       break
     }
 
+    const entry = candidate.build_entry()
     selectedNodes.push(entry)
-    selectedMaterialized.push(materialized)
+    selectedCoverage.push({
+      candidate,
+      entry: {
+        label: entry.label,
+        source_file: entry.source_file,
+        file_type: entry.file_type,
+        node_kind: entry.node_kind,
+        snippet: entry.snippet ?? null,
+      },
+    })
     tokenCount += candidateTokens
     selectedCounts.set(candidate.evidence_class, (selectedCounts.get(candidate.evidence_class) ?? 0) + 1)
 
@@ -569,7 +638,7 @@ export function compileContextPack<
     }
   }
 
-  const omittedNodes = materializedNodes.slice(breakIndex).map(({ candidate }) => candidate)
+  const omittedNodes = orderedNodes.slice(breakIndex)
   const relationships = filterRelationships(input.relationships ?? [], selectedNodes)
   const includedLabels = new Set(selectedNodes.map((node) => node.label))
 
@@ -583,8 +652,8 @@ export function compileContextPack<
     expandable: buildExpandableRefs(input.task_contract, omittedNodes),
     coverage: coverageEntriesForCandidates(
       input.task_contract,
-      materializedNodes,
-      selectedMaterialized,
+      coverageNodes,
+      selectedCoverage,
       selectedCounts,
       {
         available: input.relationships?.length ?? 0,
