@@ -1,15 +1,19 @@
 import { dirname } from 'node:path'
 
+import { buildGraphifyPromptPack } from '../../infrastructure/compare.js'
 import type { CompareRefsInput } from '../../infrastructure/time-travel.js'
+import type { ContextPackClaim, ContextPackCoverage, ContextPackEvidenceClass, ContextPackExpandableRef, ContextPackNode } from '../../contracts/context-pack.js'
+import type { ContextSessionState } from '../../contracts/context-session.js'
 import { buildCommunityLabels } from '../../pipeline/community-naming.js'
 import { communityDetailsAtZoom, communityDetailsMicro, type CommunityZoomLevel } from '../../pipeline/community-details.js'
 import { validateGraphPath } from '../../shared/security.js'
 import { featureMap } from '../feature-map.js'
 import { implementationChecklist } from '../implementation-checklist.js'
-import { analyzeImpact, callChains, compactImpactResult } from '../impact.js'
+import { classifyTaskContract, compileContextPack, estimateContextPackEntryTokens, type ContextPackNodeCandidate } from '../context-pack.js'
+import { analyzeImpact, callChains, compactImpactResult, type ImpactResult } from '../impact.js'
 import { analyzePrImpact, compactPrImpactResult } from '../pr-impact.js'
 import { relevantFiles } from '../relevant-files.js'
-import { compactRetrieveResult, retrieveContext, retrieveContextAsync } from '../retrieve.js'
+import { compactRetrieveResult, retrieveContext, retrieveContextAsync, type RetrieveResult } from '../retrieve.js'
 import { riskMap } from '../risk-map.js'
 import type { TimeTravelView } from '../time-travel.js'
 import {
@@ -47,6 +51,9 @@ interface ToolHelpers {
   queryOptionsFromParams(id: string | number | null, params: unknown): { failureResponse?: StdioResponse; queryOptions?: Record<string, unknown> }
   handleGraphDiff(id: string | number | null, currentGraphPath: string, params: unknown): StdioResponse
   compareRefs(input: CompareRefsInput): Promise<unknown>
+  getContextPromptSession(sessionId: string): ContextSessionState | undefined
+  setContextPromptSession(sessionId: string, nextState: ContextSessionState): void
+  clearContextPromptSession(sessionId: string): boolean
   readStoredCommunityLabels(graphPath: string): Record<number, string>
   jsonrpcInvalidParams: number
   jsonrpcServerError: number
@@ -56,6 +63,164 @@ interface ToolHelpers {
 }
 
 const TIME_TRAVEL_VIEWS = new Set<TimeTravelView>(['summary', 'risk', 'drift', 'timeline'])
+
+interface ContextPlaneMetadata {
+  claims: ContextPackClaim[]
+  expandable: ContextPackExpandableRef[]
+  coverage: ContextPackCoverage
+  missing_context: ContextPackEvidenceClass[]
+}
+
+function emptyCoverage(): ContextPackCoverage {
+  return {
+    required_evidence: [],
+    entries: [],
+    missing_required: [],
+    available_relationships: 0,
+    selected_relationships: 0,
+  }
+}
+
+function contextMetadata(
+  payload: Partial<{
+    claims: ContextPackClaim[]
+    expandable: ContextPackExpandableRef[]
+    coverage: ContextPackCoverage
+  }>,
+): ContextPlaneMetadata {
+  const coverage = payload.coverage ?? emptyCoverage()
+  return {
+    claims: payload.claims ?? [],
+    expandable: payload.expandable ?? [],
+    coverage,
+    missing_context: coverage.missing_required,
+  }
+}
+
+function parseContextSessionState(raw: unknown): ContextSessionState | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return null
+  }
+
+  const record = raw as Record<string, unknown>
+  if (record.version !== 1 || typeof record.revision !== 'number' || !Number.isInteger(record.revision) || record.revision < 0) {
+    return null
+  }
+  if (!record.refs || typeof record.refs !== 'object' || Array.isArray(record.refs)) {
+    return null
+  }
+
+  const refs: ContextSessionState['refs'] = {}
+  for (const [ref, value] of Object.entries(record.refs as Record<string, unknown>)) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return null
+    }
+    const stored = value as Record<string, unknown>
+    if (typeof stored.hash !== 'string' || typeof stored.token_count !== 'number' || !Number.isFinite(stored.token_count)) {
+      return null
+    }
+    refs[ref] = {
+      hash: stored.hash,
+      token_count: stored.token_count,
+    }
+  }
+
+  return {
+    version: 1,
+    revision: record.revision,
+    refs,
+  }
+}
+
+function pickImpactTarget(result: RetrieveResult): string {
+  const directMatch = result.matched_nodes.find((node) => node.relevance_band === 'direct' && node.label.trim().length > 0)
+  if (directMatch) {
+    return directMatch.label
+  }
+
+  const bestMatch = [...result.matched_nodes]
+    .sort((left, right) => (right.match_score ?? 0) - (left.match_score ?? 0))
+    .find((node) => node.label.trim().length > 0)
+
+  return bestMatch?.label ?? result.question
+}
+
+function createImpactCandidate(
+  node: {
+    label: string
+    source_file: string
+    file_type?: string
+    community?: number | null
+    community_label?: string | null
+    node_kind?: string
+    framework_role?: string | null
+  },
+  evidenceClass: ContextPackEvidenceClass,
+): ContextPackNodeCandidate<ContextPackNode> {
+  let builtEntry: ContextPackNode | undefined
+  let tokenCost: number | undefined
+  const sourceFile = node.source_file
+
+  const buildEntry = (): ContextPackNode => {
+    if (builtEntry) {
+      return builtEntry
+    }
+
+    builtEntry = {
+      label: node.label,
+      source_file: sourceFile,
+      line_number: 0,
+      snippet: null,
+      ...(node.file_type ? { file_type: node.file_type } : {}),
+      ...(typeof node.community === 'number' ? { community: node.community } : {}),
+      ...(node.community_label !== undefined ? { community_label: node.community_label } : {}),
+      ...(node.node_kind ? { node_kind: node.node_kind } : {}),
+      ...(node.framework_role ? { framework_role: node.framework_role } : {}),
+      evidence_class: evidenceClass,
+    }
+    tokenCost = estimateContextPackEntryTokens(node.label, sourceFile, 0, null)
+    return builtEntry
+  }
+
+  return {
+    label: node.label,
+    evidence_class: evidenceClass,
+    ...(node.community !== undefined ? { community: node.community } : {}),
+    estimate_tokens: () => {
+      if (tokenCost !== undefined) {
+        return tokenCost
+      }
+
+      buildEntry()
+      return tokenCost ?? 0
+    },
+    build_entry: buildEntry,
+  }
+}
+
+function impactMetadata(result: ImpactResult, budget: number, prompt: string): ContextPlaneMetadata {
+  const candidates: ContextPackNodeCandidate<ContextPackNode>[] = []
+
+  if (result.target_file.trim().length > 0) {
+    candidates.push(createImpactCandidate({
+      label: result.target,
+      source_file: result.target_file,
+    }, 'primary'))
+  }
+
+  candidates.push(
+    ...result.direct_dependents.map((node) => createImpactCandidate(node, 'impact')),
+    ...result.transitive_dependents.map((node) => createImpactCandidate(node, 'structural')),
+  )
+
+  const pack = compileContextPack({
+    task_contract: classifyTaskContract('impact', { budget, prompt }),
+    nodes: candidates,
+    community_context: result.affected_communities,
+  })
+
+  return contextMetadata(pack)
+}
 
 export function handleToolCall(id: string | number | null, graphPath: string, params: unknown, helpers: ToolHelpers): StdioResponse | Promise<StdioResponse> {
   const toolName = helpers.stringParam(params, 'name')
@@ -169,7 +334,14 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         ...(edgeTypes && edgeTypes.length > 0 ? { edgeTypes } : {}),
       })
       const useVerboseImpact = toolArguments.verbose === true || toolArguments.compact === false
-      return helpers.ok(id, helpers.textToolResult(JSON.stringify(useVerboseImpact ? impactResult : compactImpactResult(impactResult))))
+      return helpers.ok(id, helpers.textToolResult(JSON.stringify(
+        useVerboseImpact
+          ? impactResult
+          : {
+              ...compactImpactResult(impactResult),
+              missing_context: [],
+            },
+      )))
     }
     case 'call_chain': {
       const chainSource = helpers.stringParam(toolArguments, 'source')
@@ -204,7 +376,14 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         ...(prBudget !== null ? { budget: prBudget } : {}),
       })
       const useVerbosePrImpact = toolArguments.verbose === true || toolArguments.compact === false
-      return helpers.ok(id, helpers.textToolResult(JSON.stringify(useVerbosePrImpact ? prResult : compactPrImpactResult(prResult))))
+      if (useVerbosePrImpact) {
+        return helpers.ok(id, helpers.textToolResult(JSON.stringify(prResult)))
+      }
+      const compactPrImpact = compactPrImpactResult(prResult)
+      return helpers.ok(id, helpers.textToolResult(JSON.stringify({
+        ...compactPrImpact,
+        missing_context: (prResult.review_bundle.coverage ?? emptyCoverage()).missing_required,
+      })))
     }
     case 'retrieve': {
       const question = helpers.stringParam(toolArguments, 'question')
@@ -246,10 +425,172 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         question,
         budget: retrieveBudget,
         ...(retrieveCommunity !== null ? { community: retrieveCommunity } : {}),
-        ...(retrieveFileType ? { fileType: retrieveFileType } : {}),
-      }))
+          ...(retrieveFileType ? { fileType: retrieveFileType } : {}),
+        }))
       const useVerboseRetrieve = toolArguments.verbose === true || toolArguments.compact === false
-      return retrieval.then((result) => helpers.ok(id, helpers.textToolResult(JSON.stringify(useVerboseRetrieve ? result : compactRetrieveResult(result)))))
+      return retrieval.then((result) => helpers.ok(id, helpers.textToolResult(JSON.stringify(
+        useVerboseRetrieve
+          ? result
+          : {
+              ...compactRetrieveResult(result),
+              ...contextMetadata(result),
+            },
+      ))))
+    }
+    case 'context_pack': {
+      const prompt = helpers.stringParam(toolArguments, 'prompt')
+      if (!prompt) {
+        return helpers.failure(id, helpers.jsonrpcInvalidParams, `context_pack requires a string prompt parameter <= ${helpers.maxStdioTextLength} characters`)
+      }
+
+      const task = helpers.stringParam(toolArguments, 'task') ?? 'explain'
+      if (task !== 'explain' && task !== 'review' && task !== 'impact') {
+        return helpers.failure(id, helpers.jsonrpcInvalidParams, 'task must be one of explain, review, impact')
+      }
+      const budget = helpers.numberParamAlias(toolArguments, ['budget'], { min: 1, max: helpers.maxStdioTokenBudget })
+      if (Object.hasOwn(toolArguments, 'budget') && budget === null) {
+        return helpers.failure(id, helpers.jsonrpcInvalidParams, `budget must be a number between 1 and ${helpers.maxStdioTokenBudget}`)
+      }
+      const resolvedBudget = budget ?? 3000
+
+      if (task === 'review') {
+        const graphDir = dirname(validateGraphPath(graphPath))
+        const projectRoot = dirname(graphDir)
+        const prResult = analyzePrImpact(graph, projectRoot, { budget: resolvedBudget })
+        const compactPack = compactPrImpactResult(prResult)
+        const reviewMetadata = contextMetadata(prResult.review_bundle)
+        return helpers.ok(id, helpers.textToolResult(JSON.stringify({
+          task,
+          prompt,
+          budget: resolvedBudget,
+          graph_path: graphPath,
+          pack: compactPack,
+          ...reviewMetadata,
+        })))
+      }
+
+      const retrieval = retrieveContext(graph, {
+        question: prompt,
+        budget: resolvedBudget,
+      })
+
+      if (task === 'impact') {
+        const communityLabels = {
+          ...buildCommunityLabels(graph, communitiesFromGraph(graph)),
+          ...helpers.readStoredCommunityLabels(graphPath),
+        }
+        const impactTarget = pickImpactTarget(retrieval)
+        const impactResult = analyzeImpact(graph, communityLabels, {
+          label: impactTarget,
+          depth: 3,
+        })
+        const impactPack = compactImpactResult(impactResult)
+        const metadata = impactMetadata(impactResult, resolvedBudget, prompt)
+        return helpers.ok(id, helpers.textToolResult(JSON.stringify({
+          task,
+          prompt,
+          budget: resolvedBudget,
+          graph_path: graphPath,
+          target: impactTarget,
+          pack: impactPack,
+          ...metadata,
+        })))
+      }
+
+      const compactPack = compactRetrieveResult(retrieval)
+      const { claims, expandable, coverage, missing_context } = contextMetadata(retrieval)
+      return helpers.ok(id, helpers.textToolResult(JSON.stringify({
+        task,
+        prompt,
+        budget: resolvedBudget,
+        graph_path: graphPath,
+        pack: compactPack,
+        claims,
+        expandable,
+        coverage,
+        missing_context,
+      })))
+    }
+    case 'context_prompt': {
+      const prompt = helpers.stringParam(toolArguments, 'prompt')
+      if (!prompt) {
+        return helpers.failure(id, helpers.jsonrpcInvalidParams, `context_prompt requires a string prompt parameter <= ${helpers.maxStdioTextLength} characters`)
+      }
+      const provider = helpers.stringParam(toolArguments, 'provider')
+      if (provider !== 'claude' && provider !== 'gemini') {
+        return helpers.failure(id, helpers.jsonrpcInvalidParams, 'provider must be one of claude, gemini')
+      }
+      const budget = helpers.numberParamAlias(toolArguments, ['budget'], { min: 1, max: helpers.maxStdioTokenBudget })
+      if (Object.hasOwn(toolArguments, 'budget') && budget === null) {
+        return helpers.failure(id, helpers.jsonrpcInvalidParams, `budget must be a number between 1 and ${helpers.maxStdioTokenBudget}`)
+      }
+      const sessionId = helpers.stringParamAlias(toolArguments, ['session_id', 'sessionId'])
+      const explicitSessionStateRaw = toolArguments.session_state ?? toolArguments.sessionState
+      const explicitSessionState = explicitSessionStateRaw === undefined ? undefined : parseContextSessionState(explicitSessionStateRaw)
+      if (explicitSessionStateRaw !== undefined && explicitSessionState === null) {
+        return helpers.failure(id, helpers.jsonrpcInvalidParams, 'session_state must be a valid context session payload')
+      }
+      if (Object.hasOwn(toolArguments, 'reset_session') && typeof toolArguments.reset_session !== 'boolean') {
+        return helpers.failure(id, helpers.jsonrpcInvalidParams, 'reset_session must be a boolean')
+      }
+      if (Object.hasOwn(toolArguments, 'resetSession') && typeof toolArguments.resetSession !== 'boolean') {
+        return helpers.failure(id, helpers.jsonrpcInvalidParams, 'resetSession must be a boolean')
+      }
+      const resetSession = toolArguments.reset_session === true || toolArguments.resetSession === true
+      if (resetSession && sessionId) {
+        helpers.clearContextPromptSession(sessionId)
+      }
+
+      const retrieval = retrieveContext(graph, {
+        question: prompt,
+        budget: budget ?? 3000,
+      })
+      const previousSession =
+        explicitSessionState
+        ?? (sessionId ? helpers.getContextPromptSession(sessionId) : undefined)
+      const promptPack = buildGraphifyPromptPack({
+        question: prompt,
+        retrieval,
+        ...(provider === 'claude' && previousSession ? { session: previousSession } : {}),
+      })
+      if (provider === 'claude' && sessionId) {
+        helpers.setContextPromptSession(sessionId, promptPack.session_state)
+      }
+
+      return helpers.ok(id, helpers.textToolResult(JSON.stringify({
+        provider,
+        prompt,
+        graph_path: graphPath,
+        compiled: provider === 'claude'
+          ? {
+              provider,
+              format: 'session_payload',
+              prompt: promptPack.session_payload,
+              token_count: promptPack.token_count,
+              session_payload_token_count: promptPack.session_payload_token_count,
+              effective_token_count: promptPack.effective_token_count,
+              reused_context_tokens: promptPack.reused_context_tokens,
+              session_state: promptPack.session_state,
+              ...(sessionId ? { session_id: sessionId } : {}),
+            }
+          : {
+              provider,
+              format: 'prompt',
+              prompt: promptPack.prompt,
+              token_count: promptPack.token_count,
+            },
+        ...contextMetadata(retrieval),
+      })))
+    }
+    case 'context_session_reset': {
+      const sessionId = helpers.stringParamAlias(toolArguments, ['session_id', 'sessionId'])
+      if (!sessionId) {
+        return helpers.failure(id, helpers.jsonrpcInvalidParams, `context_session_reset requires a string session_id parameter <= ${helpers.maxStdioTextLength} characters`)
+      }
+      return helpers.ok(id, helpers.textToolResult(JSON.stringify({
+        session_id: sessionId,
+        cleared: helpers.clearContextPromptSession(sessionId),
+      })))
     }
     case 'relevant_files': {
       const question = helpers.stringParam(toolArguments, 'question')

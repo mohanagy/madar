@@ -184,6 +184,23 @@ export function promptDefinitionsForGraph(graphPath: string): McpPromptDefinitio
           ...prompt,
           description: exampleCommunities.length > 0 ? `Summarize a detected community such as ${exampleCommunities.join(' or ')}.` : prompt.description,
         }
+      case 'context_pack_prompt':
+        return {
+          ...prompt,
+          description: exampleCommunities.length > 0
+            ? `Prepare a compact explain/review/impact pack for graph areas such as ${exampleCommunities.join(' or ')}.`
+            : prompt.description,
+        }
+      case 'context_prompt_prompt':
+        return {
+          ...prompt,
+          description: `Compile a provider-ready context prompt for this graph. Use claude for cache-aware follow-ups and gemini for plain prompt text.`,
+        }
+      case 'context_session_reset_prompt':
+        return {
+          ...prompt,
+          description: 'Reset a stored context prompt session before switching topics or starting a fresh Claude thread.',
+        }
       default:
         return prompt
     }
@@ -337,6 +354,71 @@ export function handlePromptGet(id: string | number | null, graphPath: string, p
         ],
       })
     }
+    case 'context_pack_prompt': {
+      const prompt = sanitizePromptValue(helpers.stringParam(promptArguments, 'prompt'), '<prompt>')
+      const task = sanitizePromptValue(helpers.stringParam(promptArguments, 'task'), 'explain')
+      const budget = helpers.integerLikeParamAlias(promptArguments, ['budget'], { min: 1 })
+      return helpers.ok(id, {
+        description: 'Prepare a compact context pack with expandable refs and missing-context hints.',
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text: [
+                snapshot,
+                'Suggested follow-up questions:',
+                suggestedQuestionsText,
+                '',
+                `Prepare a compact ${task} context pack for: ${prompt}.`,
+                'Include coverage gaps, expandable references, and the minimum graph evidence a downstream agent needs to continue without re-scanning the repo.',
+                budget === null ? '' : `Target pack budget: ${budget} tokens.`,
+              ].filter((line) => line.length > 0).join('\n'),
+            },
+          },
+        ],
+      })
+    }
+    case 'context_prompt_prompt': {
+      const prompt = sanitizePromptValue(helpers.stringParam(promptArguments, 'prompt'), '<prompt>')
+      const provider = sanitizePromptValue(helpers.stringParam(promptArguments, 'provider'), 'claude')
+      const sessionId = sanitizePromptValue(helpers.stringParamAlias(promptArguments, ['session_id', 'sessionId']), '')
+      return helpers.ok(id, {
+        description: 'Compile a provider-ready context prompt.',
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text: [
+                snapshot,
+                '',
+                `Compile a ${provider} context prompt for: ${prompt}.`,
+                provider === 'claude'
+                  ? `Reuse session_id ${sessionId || '<session_id>'} when you want delta-only follow-up payloads and effective-token tracking.`
+                  : 'Return a plain provider-agnostic prompt body with no session delta envelope.',
+                'Keep the output compact and preserve any missing-context or expandable-reference hints that the retrieval surface emits.',
+              ].join('\n'),
+            },
+          },
+        ],
+      })
+    }
+    case 'context_session_reset_prompt': {
+      const sessionId = sanitizePromptValue(helpers.stringParamAlias(promptArguments, ['session_id', 'sessionId']), '<session_id>')
+      return helpers.ok(id, {
+        description: 'Reset a stored context prompt session.',
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text: `Reset the stored context prompt session ${sessionId} before starting a fresh Claude thread or switching to a different task. Confirm that the next context_prompt call should resend the full stable context.`,
+            },
+          },
+        ],
+      })
+    }
     default:
       return helpers.failure(id, helpers.jsonrpcInvalidParams, `Unknown prompt: ${promptName}`)
   }
@@ -442,6 +524,18 @@ export function handleCompletion(id: string | number | null, graphPath: string, 
         argumentValue,
         helpers.maxCompletionValues,
       )
+      break
+    case 'context_pack_prompt':
+      if (argumentName !== 'task') {
+        return helpers.failure(id, helpers.jsonrpcInvalidParams, `Unsupported completion argument for ${refName}: ${argumentName}`)
+      }
+      values = completionValuesForPrefix(['explain', 'impact', 'review'], argumentValue, helpers.maxCompletionValues)
+      break
+    case 'context_prompt_prompt':
+      if (argumentName !== 'provider') {
+        return helpers.failure(id, helpers.jsonrpcInvalidParams, `Unsupported completion argument for ${refName}: ${argumentName}`)
+      }
+      values = completionValuesForPrefix(['claude', 'gemini'], argumentValue, helpers.maxCompletionValues)
       break
     default:
       return helpers.failure(id, helpers.jsonrpcInvalidParams, `Unknown completion reference: ${refName}`)

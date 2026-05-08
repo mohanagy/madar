@@ -90,12 +90,26 @@ describe('stdio prompt helpers', () => {
         ref: { type: 'ref/prompt', name: 'graph_community_summary_prompt' },
         argument: { name: 'community_id', value: '' },
       }, helpers)
+      const contextTaskCompletion = handleCompletion(2, graphPath, {
+        ref: { type: 'ref/prompt', name: 'context_pack_prompt' },
+        argument: { name: 'task', value: '' },
+      }, helpers)
+      const contextProviderCompletion = handleCompletion(3, graphPath, {
+        ref: { type: 'ref/prompt', name: 'context_prompt_prompt' },
+        argument: { name: 'provider', value: '' },
+      }, helpers)
 
       const explainPrompt = prompts.find((prompt) => prompt.name === 'graph_explain_prompt')
       const communityPrompt = prompts.find((prompt) => prompt.name === 'graph_community_summary_prompt')
+      const contextPackPrompt = prompts.find((prompt) => prompt.name === 'context_pack_prompt')
+      const contextPrompt = prompts.find((prompt) => prompt.name === 'context_prompt_prompt')
+      const contextSessionPrompt = prompts.find((prompt) => prompt.name === 'context_session_reset_prompt')
 
       expect(explainPrompt?.description).toContain('AuthService')
       expect(communityPrompt?.description).toContain('Auth Services')
+      expect(contextPackPrompt?.description).toContain('Auth Services')
+      expect(contextPrompt?.description).toContain('claude')
+      expect(contextSessionPrompt?.description).toContain('session')
       expect(completion).toMatchObject({
         jsonrpc: '2.0',
         id: 1,
@@ -103,6 +117,24 @@ describe('stdio prompt helpers', () => {
           completion: {
             values: ['0', '1'],
             hasMore: false,
+          },
+        },
+      })
+      expect(contextTaskCompletion).toMatchObject({
+        jsonrpc: '2.0',
+        id: 2,
+        result: {
+          completion: {
+            values: ['explain', 'impact', 'review'],
+          },
+        },
+      })
+      expect(contextProviderCompletion).toMatchObject({
+        jsonrpc: '2.0',
+        id: 3,
+        result: {
+          completion: {
+            values: ['claude', 'gemini'],
           },
         },
       })

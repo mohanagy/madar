@@ -3,6 +3,8 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, 
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
 import { KnowledgeGraph } from '../contracts/graph.js'
+import type { ContextSessionState } from '../contracts/context-session.js'
+import { buildContextPrompt, type ContextPromptStableSection } from './context-prompt.js'
 import { CODE_EXTENSIONS, DOC_EXTENSIONS, MANIFEST_METADATA_KEY, OFFICE_EXTENSIONS, PAPER_EXTENSIONS } from '../pipeline/detect.js'
 import { extractCompareBaselineNonCodeText } from '../pipeline/extract/non-code.js'
 import { loadBenchmarkQuestions } from './benchmark/questions.js'
@@ -22,7 +24,12 @@ export interface ComparePromptPack {
   kind: 'baseline' | 'graphify'
   question: string
   prompt: string
+  session_payload: string
   token_count: number
+  session_payload_token_count: number
+  effective_token_count: number
+  reused_context_tokens: number
+  session_state: ContextSessionState
 }
 
 export interface BuildBaselinePromptPackInput {
@@ -31,11 +38,13 @@ export interface BuildBaselinePromptPackInput {
   corpusText: string
   mode: CompareBaselineMode
   maxTokens?: number
+  session?: ContextSessionState
 }
 
 export interface BuildGraphifyPromptPackInput {
   question: string
   retrieval: RetrieveResult
+  session?: ContextSessionState
 }
 
 export interface ComparePromptArtifactPaths {
@@ -72,6 +81,11 @@ export interface ComparePromptReport {
   baseline_prompt_tokens: number
   graphify_prompt_tokens: number
   reduction_ratio: number
+  baseline_effective_prompt_tokens: number
+  graphify_effective_prompt_tokens: number
+  effective_reduction_ratio: number
+  baseline_reused_context_tokens: number
+  graphify_reused_context_tokens: number
   baseline_total_tokens: number | null
   graphify_total_tokens: number | null
   total_reduction_ratio: number | null
@@ -366,31 +380,54 @@ function createCompareOutputRoot(outputDir: string, date: Date): string {
   throw new Error(`Unable to create a unique compare output directory inside ${outputDir}`)
 }
 
-function renderBaselinePrompt(question: string, graph: KnowledgeGraph, corpusBody: string, mode: CompareBaselineMode): string {
+function baselinePromptSections(graph: KnowledgeGraph, corpusBody: string, mode: CompareBaselineMode): ContextPromptStableSection[] {
   return [
-    'Answer the question using only the provided project corpus.',
-    'If the corpus does not contain the answer, say so.',
-    '',
-    `Question:\n${question}`,
-    '',
-    'Project graph summary:',
-    `- Nodes: ${graph.numberOfNodes()}`,
-    `- Edges: ${graph.numberOfEdges()}`,
-    '',
-    `Corpus (${mode}):`,
-    corpusBody,
-    '',
-    'Answer:',
-  ].join('\n')
+    {
+      ref: 'graph_summary',
+      sort_key: '10-graph-summary',
+      title: 'Project graph summary',
+      body: [
+        `- Nodes: ${graph.numberOfNodes()}`,
+        `- Edges: ${graph.numberOfEdges()}`,
+      ].join('\n'),
+    },
+    {
+      ref: 'project_corpus',
+      sort_key: '20-project-corpus',
+      title: `Corpus (${mode})`,
+      body: corpusBody,
+    },
+  ]
+}
+
+function buildBaselinePromptArtifact(
+  question: string,
+  graph: KnowledgeGraph,
+  corpusBody: string,
+  mode: CompareBaselineMode,
+  session?: ContextSessionState,
+) {
+  return buildContextPrompt({
+    instructions: [
+      'Answer the question using only the provided project corpus.',
+      'If the corpus does not contain the answer, say so.',
+    ],
+    stable_sections: baselinePromptSections(graph, corpusBody, mode),
+    dynamic_sections: [
+      { title: 'Question', body: question },
+      { body: 'Answer:' },
+    ],
+    ...(session ? { session } : {}),
+  })
 }
 
 function buildBoundedCorpusExcerpt(question: string, graph: KnowledgeGraph, corpusText: string, maxTokens: number): string {
   const note = '[bounded baseline excerpt]'
   let excerpt = corpusText.trim()
-  let prompt = renderBaselinePrompt(question, graph, `${note}\n${excerpt}`, 'bounded')
+  let prompt = buildBaselinePromptArtifact(question, graph, `${note}\n${excerpt}`, 'bounded').prompt
   while (estimateQueryTokens(prompt) > maxTokens && excerpt.length > 0) {
     excerpt = excerpt.slice(0, Math.max(0, Math.floor(excerpt.length * 0.9))).trimEnd()
-    prompt = renderBaselinePrompt(question, graph, `${note}\n${excerpt}`, 'bounded')
+    prompt = buildBaselinePromptArtifact(question, graph, `${note}\n${excerpt}`, 'bounded').prompt
   }
 
   if (estimateQueryTokens(prompt) > maxTokens) {
@@ -400,7 +437,7 @@ function buildBoundedCorpusExcerpt(question: string, graph: KnowledgeGraph, corp
   return `${note}\n${excerpt}`.trimEnd()
 }
 
-function formatGraphifyContext(retrieval: RetrieveResult): string {
+function formatGraphifyContextSections(retrieval: RetrieveResult): ContextPromptStableSection[] {
   const nodeLines = retrieval.matched_nodes.map((node) => {
     const source = node.source_file ? ` @ ${node.source_file}${node.line_number > 0 ? `:${node.line_number}` : ''}` : ''
     const community = node.community_label ? ` [${node.community_label}]` : ''
@@ -411,14 +448,36 @@ function formatGraphifyContext(retrieval: RetrieveResult): string {
   const communityLines = retrieval.community_context.map((community) => `- ${community.label} (${community.node_count} nodes)`)
   const signalLines = [...retrieval.graph_signals.god_nodes, ...retrieval.graph_signals.bridge_nodes]
 
-  const sections = [
-    ['Matched nodes:', ...(nodeLines.length > 0 ? nodeLines : ['- (none)'])],
-    ['Relationships:', ...(relationshipLines.length > 0 ? relationshipLines : ['- (none)'])],
-    ...(communityLines.length > 0 ? [['Community context:', ...communityLines]] : []),
-    ...(signalLines.length > 0 ? [['Graph signals:', `- ${signalLines.join(', ')}`]] : []),
+  return [
+    {
+      ref: 'matched_nodes',
+      sort_key: '10-matched-nodes',
+      title: 'Matched nodes',
+      body: nodeLines.length > 0 ? nodeLines.join('\n') : '- (none)',
+    },
+    {
+      ref: 'relationships',
+      sort_key: '20-relationships',
+      title: 'Relationships',
+      body: relationshipLines.length > 0 ? relationshipLines.join('\n') : '- (none)',
+    },
+    ...(communityLines.length > 0
+      ? [{
+          ref: 'community_context',
+          sort_key: '30-community-context',
+          title: 'Community context',
+          body: communityLines.join('\n'),
+        }]
+      : []),
+    ...(signalLines.length > 0
+      ? [{
+          ref: 'graph_signals',
+          sort_key: '40-graph-signals',
+          title: 'Graph signals',
+          body: `- ${signalLines.join(', ')}`,
+        }]
+      : []),
   ]
-
-  return sections.map((section) => section.join('\n')).join('\n\n')
 }
 
 function computeReductionRatio(baselinePromptTokens: number, graphifyPromptTokens: number): number {
@@ -445,6 +504,20 @@ function syncComparePromptMetrics(report: ComparePromptReport): void {
   report.baseline_prompt_tokens = report.usage.baseline?.input_total_tokens ?? report.baseline_prompt_tokens_estimated
   report.graphify_prompt_tokens = report.usage.graphify?.input_total_tokens ?? report.graphify_prompt_tokens_estimated
   report.reduction_ratio = computeReductionRatio(report.baseline_prompt_tokens, report.graphify_prompt_tokens)
+  report.baseline_effective_prompt_tokens =
+    report.usage.baseline !== null
+      ? report.usage.baseline.input_total_tokens - report.usage.baseline.cache_read_input_tokens
+      : report.baseline_effective_prompt_tokens
+  report.graphify_effective_prompt_tokens =
+    report.usage.graphify !== null
+      ? report.usage.graphify.input_total_tokens - report.usage.graphify.cache_read_input_tokens
+      : report.graphify_effective_prompt_tokens
+  report.effective_reduction_ratio = computeReductionRatio(
+    report.baseline_effective_prompt_tokens,
+    report.graphify_effective_prompt_tokens,
+  )
+  report.baseline_reused_context_tokens = report.usage.baseline?.cache_read_input_tokens ?? report.baseline_reused_context_tokens
+  report.graphify_reused_context_tokens = report.usage.graphify?.cache_read_input_tokens ?? report.graphify_reused_context_tokens
   report.baseline_total_tokens = report.usage.baseline?.total_tokens ?? null
   report.graphify_total_tokens = report.usage.graphify?.total_tokens ?? null
   report.total_reduction_ratio =
@@ -762,34 +835,46 @@ export function buildBaselinePromptPack(input: BuildBaselinePromptPackInput): Co
     input.mode === 'bounded'
       ? buildBoundedCorpusExcerpt(input.question, input.graph, corpusText, input.maxTokens ?? DEFAULT_BOUNDED_BASELINE_TOKENS)
       : corpusText
-  const prompt = renderBaselinePrompt(input.question, input.graph, corpusBody, input.mode)
+  const builtPrompt = buildBaselinePromptArtifact(input.question, input.graph, corpusBody, input.mode, input.session)
 
   return {
     kind: 'baseline',
     question: input.question,
-    prompt,
-    token_count: estimateQueryTokens(prompt),
+    prompt: builtPrompt.prompt,
+    session_payload: builtPrompt.session_payload,
+    token_count: builtPrompt.metrics.raw_prompt_tokens,
+    session_payload_token_count: builtPrompt.metrics.session_payload_tokens,
+    effective_token_count: builtPrompt.metrics.effective_prompt_tokens,
+    reused_context_tokens: builtPrompt.metrics.reused_context_tokens,
+    session_state: builtPrompt.session_state,
   }
 }
 
 export function buildGraphifyPromptPack(input: BuildGraphifyPromptPackInput): ComparePromptPack {
-  const prompt = [
-    'Answer the question using only the provided graph-guided retrieval output.',
-    'If the retrieval does not contain the answer, say so.',
-    '',
-    `Question:\n${input.question}`,
-    '',
-    'Retrieved graph context:',
-    formatGraphifyContext(input.retrieval),
-    '',
-    'Answer:',
-  ].join('\n')
+  const builtPrompt = buildContextPrompt({
+    instructions: [
+      'Answer the question using only the provided graph-guided retrieval output.',
+      'If the retrieval does not contain the answer, say so.',
+    ],
+    stable_prefix_title: 'Retrieved graph context',
+    stable_sections: formatGraphifyContextSections(input.retrieval),
+    dynamic_sections: [
+      { title: 'Question', body: input.question },
+      { body: 'Answer:' },
+    ],
+    ...(input.session ? { session: input.session } : {}),
+  })
 
   return {
     kind: 'graphify',
     question: input.question,
-    prompt,
-    token_count: estimateQueryTokens(prompt),
+    prompt: builtPrompt.prompt,
+    session_payload: builtPrompt.session_payload,
+    token_count: builtPrompt.metrics.raw_prompt_tokens,
+    session_payload_token_count: builtPrompt.metrics.session_payload_tokens,
+    effective_token_count: builtPrompt.metrics.effective_prompt_tokens,
+    reused_context_tokens: builtPrompt.metrics.reused_context_tokens,
+    session_state: builtPrompt.session_state,
   }
 }
 
@@ -831,6 +916,8 @@ export function generateCompareArtifacts(input: GenerateCompareArtifactsInput): 
   const outputDir = validateGraphOutputPath(input.outputDir)
   const now = input.now ?? new Date()
   const outputRoot = createCompareOutputRoot(outputDir, now)
+  let baselineSession: ContextSessionState | undefined
+  let graphifySession: ContextSessionState | undefined
 
   const reports = questions.map((question, index) => {
     const questionOutputDir = questions.length === 1 ? outputRoot : join(outputRoot, `question-${String(index + 1).padStart(3, '0')}`)
@@ -842,11 +929,18 @@ export function generateCompareArtifacts(input: GenerateCompareArtifactsInput): 
       corpusText,
       mode: input.baselineMode,
       ...(input.baselineMaxTokens !== undefined ? { maxTokens: input.baselineMaxTokens } : {}),
+      ...(baselineSession ? { session: baselineSession } : {}),
     })
+    baselineSession = baselinePrompt.session_state
     const projectRoot = realpathSync(inferProjectRootFromGraphPath(graphPath))
     const retrievalBudget = input.retrievalBudget ?? DEFAULT_RETRIEVAL_BUDGET
     const retrieval = retrieveCompareContext(graph, question, retrievalBudget, projectRoot)
-    const graphifyPrompt = buildGraphifyPromptPack({ question, retrieval })
+    const graphifyPrompt = buildGraphifyPromptPack({
+      question,
+      retrieval,
+      ...(graphifySession ? { session: graphifySession } : {}),
+    })
+    graphifySession = graphifyPrompt.session_state
 
     const paths: ComparePromptArtifactPaths = {
       output_dir: questionOutputDir,
@@ -859,14 +953,14 @@ export function generateCompareArtifacts(input: GenerateCompareArtifactsInput): 
       graphify: answerFilePath(questionOutputDir, 'graphify'),
     }
 
-    const baselinePromptText = baselinePrompt.prompt
-    const graphifyPromptText = graphifyPrompt.prompt
+    const baselinePromptText = baselinePrompt.session_payload
+    const graphifyPromptText = graphifyPrompt.session_payload
 
     writeFileSync(paths.baseline_prompt, baselinePromptText, 'utf8')
     writeFileSync(paths.graphify_prompt, graphifyPromptText, 'utf8')
 
-    const baselinePromptTokens = estimateQueryTokens(baselinePromptText)
-    const graphifyPromptTokens = estimateQueryTokens(graphifyPromptText)
+    const baselinePromptTokens = baselinePrompt.token_count
+    const graphifyPromptTokens = graphifyPrompt.token_count
 
     const report: ComparePromptReport = {
       question,
@@ -876,6 +970,11 @@ export function generateCompareArtifacts(input: GenerateCompareArtifactsInput): 
       baseline_prompt_tokens: baselinePromptTokens,
       graphify_prompt_tokens: graphifyPromptTokens,
       reduction_ratio: computeReductionRatio(baselinePromptTokens, graphifyPromptTokens),
+      baseline_effective_prompt_tokens: baselinePrompt.effective_token_count,
+      graphify_effective_prompt_tokens: graphifyPrompt.effective_token_count,
+      effective_reduction_ratio: computeReductionRatio(baselinePrompt.effective_token_count, graphifyPrompt.effective_token_count),
+      baseline_reused_context_tokens: baselinePrompt.reused_context_tokens,
+      graphify_reused_context_tokens: graphifyPrompt.reused_context_tokens,
       baseline_total_tokens: null,
       graphify_total_tokens: null,
       total_reduction_ratio: null,
@@ -1015,6 +1114,20 @@ function sumPromptTokens(reports: readonly ComparePromptReport[], mode: CompareR
   return reports.reduce((total, report) => total + (mode === 'baseline' ? report.baseline_prompt_tokens : report.graphify_prompt_tokens), 0)
 }
 
+function sumEffectivePromptTokens(reports: readonly ComparePromptReport[], mode: CompareRunMode): number {
+  return reports.reduce(
+    (total, report) => total + (mode === 'baseline' ? report.baseline_effective_prompt_tokens : report.graphify_effective_prompt_tokens),
+    0,
+  )
+}
+
+function sumReusedContextTokens(reports: readonly ComparePromptReport[], mode: CompareRunMode): number {
+  return reports.reduce(
+    (total, report) => total + (mode === 'baseline' ? report.baseline_reused_context_tokens : report.graphify_reused_context_tokens),
+    0,
+  )
+}
+
 function sumTotalTokens(reports: readonly ComparePromptReport[], mode: CompareRunMode): number | null {
   let total = 0
   for (const report of reports) {
@@ -1062,6 +1175,10 @@ function usageProviderSummaryLabel(reports: readonly ComparePromptReport[]): str
 export function formatCompareSummary(result: GenerateCompareArtifactsResult): string {
   const baselineTokens = sumPromptTokens(result.reports, 'baseline')
   const graphifyTokens = sumPromptTokens(result.reports, 'graphify')
+  const baselineEffectiveTokens = sumEffectivePromptTokens(result.reports, 'baseline')
+  const graphifyEffectiveTokens = sumEffectivePromptTokens(result.reports, 'graphify')
+  const baselineReusedTokens = sumReusedContextTokens(result.reports, 'baseline')
+  const graphifyReusedTokens = sumReusedContextTokens(result.reports, 'graphify')
   const baselineTotalTokens = sumTotalTokens(result.reports, 'baseline')
   const graphifyTotalTokens = sumTotalTokens(result.reports, 'graphify')
   const totalReductionRatio =
@@ -1093,6 +1210,7 @@ export function formatCompareSummary(result: GenerateCompareArtifactsResult): st
       failedRuns > 0 ? ` · ${failedRuns} failed` : ''
     }`,
     `- ${promptTokenLabel}: baseline ${baselineTokens} · graphify ${graphifyTokens} · ${formatTokenComparison(baselineTokens, graphifyTokens)}`,
+    `- Effective input tokens (cache-adjusted): baseline ${baselineEffectiveTokens} · graphify ${graphifyEffectiveTokens} · ${formatTokenComparison(baselineEffectiveTokens, graphifyEffectiveTokens)}`,
   ]
 
   if (usesSyntheticBaseline) {
@@ -1104,6 +1222,7 @@ export function formatCompareSummary(result: GenerateCompareArtifactsResult): st
   } else if (usageRuns > 0 && usageRuns < totalRuns) {
     lines.push(`- Usage capture: ${usageProviderLabel} reported usage for ${usageRuns}/${totalRuns} prompt runs; remaining runs used local estimate fallback`)
   }
+  lines.push(`- Reused context tokens: baseline ${baselineReusedTokens} · graphify ${graphifyReusedTokens}`)
 
   return lines.join('\n')
 }

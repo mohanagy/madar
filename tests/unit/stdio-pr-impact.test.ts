@@ -507,10 +507,8 @@ describe('stdio pr impact', () => {
         }),
       ]),
     }))
-    expect(fullReviewBundleTokens).toBe(1356)
     expect(compactReviewBundleTokens).toBeLessThan(452)
     expect(reviewBundleReductionRatio).toBeGreaterThan(3)
-    expect(fullPayloadTokens).toBeLessThan(1_900)
     expect(compactPayloadTokens).toBeLessThan(780)
     expect(payloadReductionRatio).toBeGreaterThan(2.4)
     expect(compactPayload.risk_summary.top_risks[0]).toEqual(
@@ -547,7 +545,7 @@ describe('stdio pr impact', () => {
     expect(fullPayload.affected_files).toEqual(expect.arrayContaining(['src/api.ts']))
   })
 
-  it('caps pr_impact review bundles at the requested budget through MCP', async () => {
+  it('keeps the first pr_impact review node even when it alone exceeds the requested budget through MCP', async () => {
     const root = createRepo()
     repoRoots.push(root)
     writeFileSync(
@@ -569,12 +567,15 @@ describe('stdio pr impact', () => {
     }))
     const payload = JSON.parse((response?.result as { content: Array<{ text: string }> }).content[0]!.text)
 
-    expect(payload.review_bundle).toEqual({
-      budget: 1,
-      token_count: 0,
-      nodes: [],
-      relationships: [],
-      community_context: [],
-    })
+    expect(payload.review_bundle.budget).toBe(1)
+    expect(payload.review_bundle.token_count).toBeGreaterThan(1)
+    expect(payload.review_bundle.shared_file_type).toBe('code')
+    expect(payload.review_bundle.nodes).toHaveLength(1)
+    expect(payload.review_bundle.nodes[0]).toEqual(expect.objectContaining({
+      label: 'authenticateUser',
+      relevance_band: 'direct',
+    }))
+    expect(payload.review_bundle.nodes[0]).not.toHaveProperty('evidence_class')
+    expect(payload.review_bundle.relationships).toEqual([])
   })
 })

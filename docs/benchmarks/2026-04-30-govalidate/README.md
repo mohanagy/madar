@@ -32,7 +32,11 @@ The honest framing is:
 
 - **Graphify is unambiguously faster** (~2.77×) and uses **3× fewer tool-call turns**.
 - **Graphify uses 2.63× fewer total input tokens** end-to-end.
-- **On cold-start sessions, graphify costs ~13% more** because the MCP server's tool schemas occupy `cache_creation_input_tokens` (priced at 1.25× input rate) that the no-MCP baseline does not pay. This is why v0.10.1 ships the `core` tool profile (6 tools instead of 21) by default — it cuts `cache_creation_input_tokens` enough to flip cost parity below baseline at multi-question session lengths.
+- **On cold-start sessions, graphify costs ~13% more** because the MCP server's tool schemas occupy `cache_creation_input_tokens` (priced at 1.25× input rate) that the no-MCP baseline does not pay. This is why the current product ships the `core` tool profile (6 tools instead of 24) by default — it cuts `cache_creation_input_tokens` enough to flip cost parity below baseline at multi-question session lengths.
+
+## Effective-cost framing
+
+This artifact is a cold-start native-agent receipt, so the headline dollar numbers above are still the source of truth. But the public proof language now uses **effective cost** for cache-aware prompt compilation: once a long-lived session can reuse stable context, the more honest number becomes **effective prompt tokens** after reuse, not raw cold-start prompt bytes. That is why newer `prompt`, `compare`, and `review-compare` surfaces report cache-reuse-aware token metrics alongside the raw totals.
 
 ## Reproducing the totals from this directory
 

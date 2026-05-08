@@ -10,6 +10,7 @@ import { extractJs } from '../../src/pipeline/extract.js'
 import { inspectReduxModuleExports } from '../../src/pipeline/extract/frameworks/redux.js'
 import {
   compactRetrieveResult,
+  compactRetrieveResultForStdio,
   reciprocalRankFuse,
   retrieveContext,
   scoreNode,
@@ -2283,6 +2284,27 @@ describe('retrieve', () => {
       expect(result.token_count).toBe(exactTokenCount)
     })
 
+    it('attaches explain context-pack metadata and coverage when the budget truncates support evidence', () => {
+      const graph = buildExpansionGraph()
+      const result = retrieveContext(graph, { question: 'auth', budget: 1 })
+
+      expect(result.task_contract).toEqual(expect.objectContaining({
+        task_kind: 'explain',
+        required_evidence: ['primary', 'supporting', 'structural'],
+      }))
+      expect(result.matched_nodes[0]?.evidence_class).toBe('primary')
+      expect(result.claims?.[0]).toEqual(expect.objectContaining({
+        evidence_class: 'primary',
+        node_labels: expect.arrayContaining([result.matched_nodes[0]?.label]),
+      }))
+      expect(result.coverage).toEqual(expect.objectContaining({
+        missing_required: expect.arrayContaining(['supporting', 'structural']),
+      }))
+      expect(result.expandable).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: 'nodes', evidence_class: 'supporting' }),
+      ]))
+    })
+
     it('reuses cached graph signals for repeated retrieve calls on the same graph', () => {
       const graph = buildTestGraph()
       const godNodesSpy = vi.spyOn(analyze, 'godNodes')
@@ -2691,6 +2713,22 @@ describe('retrieve', () => {
       })
 
       expect(compactResult.matched_nodes[0]).not.toHaveProperty('node_kind')
+    })
+
+    it('strips evidence_class from compact stdio retrieve payloads', () => {
+      const graph = buildExpansionGraph()
+      const rawResult = retrieveContext(graph, { question: 'auth', budget: 1 })
+
+      expect(rawResult.matched_nodes[0]?.evidence_class).toBe('primary')
+
+      const compactResult = compactRetrieveResultForStdio(rawResult)
+
+      expect(compactResult.matched_nodes[0]).toEqual(expect.objectContaining({
+        label: rawResult.matched_nodes[0]?.label,
+      }))
+      expect(compactResult.matched_nodes[0]).not.toHaveProperty('evidence_class')
+      expect(compactResult.claims).toEqual(rawResult.claims)
+      expect(compactResult.coverage).toEqual(rawResult.coverage)
     })
 
     it('assigns higher match_score to direct matches than neighbors', () => {

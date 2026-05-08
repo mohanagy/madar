@@ -4,6 +4,8 @@ import { createInterface } from 'node:readline/promises'
 import { loadBenchmarkQuestions, type BenchmarkResult, printBenchmark, runBenchmark } from '../infrastructure/benchmark.js'
 import { evaluateRetrievalQuality, formatQualityReport } from '../infrastructure/benchmark/quality.js'
 import { runCompareCommand } from '../infrastructure/compare.js'
+import { runContextPackCommand } from '../infrastructure/context-pack-command.js'
+import { runContextPromptCommand } from '../infrastructure/context-prompt-command.js'
 import { runReviewCompareCommand } from '../infrastructure/review-compare.js'
 import { compareRefs } from '../infrastructure/time-travel.js'
 import { federate } from '../pipeline/federate.js'
@@ -37,6 +39,7 @@ import {
   parseAddArgs,
   type BenchmarkCliOptions,
   parseCompareArgs,
+  parsePackArgs,
   parseDiffArgs,
   parseExplainArgs,
   parseGenerateArgs,
@@ -44,11 +47,14 @@ import {
   parseInstallArgs,
   parsePathArgs,
   parsePlatformActionArgs,
+  parsePromptArgs,
   parseQueryArgs,
   parseReviewCompareArgs,
   parseSaveResultArgs,
   parseServeArgs,
   parseTimeTravelArgs,
+  type PackCliOptions,
+  type PromptCliOptions,
   parseWatchArgs,
   type CompareCliOptions,
   type ReviewCompareCliOptions,
@@ -88,6 +94,16 @@ export interface TimeTravelCommandContext {
   io: CliIO
 }
 
+export interface ContextPackCommandContext {
+  options: PackCliOptions
+  io: CliIO
+}
+
+export interface ContextPromptCommandContext {
+  options: PromptCliOptions
+  io: CliIO
+}
+
 export interface CliDependencies {
   loadGraph: typeof loadGraph
   queryGraph: typeof queryGraph
@@ -98,6 +114,8 @@ export interface CliDependencies {
   runCompare: (context: CompareCommandContext) => Promise<string | void> | string | void
   runReviewCompare: (context: ReviewCompareCommandContext) => Promise<string | void> | string | void
   runTimeTravel: (context: TimeTravelCommandContext) => Promise<string | void> | string | void
+  runContextPack: (context: ContextPackCommandContext) => Promise<string | void> | string | void
+  runContextPrompt: (context: ContextPromptCommandContext) => Promise<string | void> | string | void
   confirm: (message: string) => Promise<boolean>
   printBenchmark: (result: BenchmarkResult) => void
   installHooks: typeof installHooks
@@ -166,6 +184,12 @@ const DEFAULT_DEPENDENCIES: CliDependencies = {
   runTimeTravel: async ({ options }) => {
     const result = await compareRefs(options)
     return options.json ? JSON.stringify(result, null, 2) : formatTimeTravelResult(result)
+  },
+  runContextPack: async ({ options }) => {
+    return await runContextPackCommand(options)
+  },
+  runContextPrompt: async ({ options }) => {
+    return await runContextPromptCommand(options)
   },
   confirm: async (message) => {
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
@@ -288,6 +312,13 @@ export function formatHelp(binaryName = 'graphify-ts'): string {
     '    --rank-by MODE        rank matches by relevance or degree (default relevance)',
     '    --community ID        limit traversal to one community id',
     '    --file-type TYPE      limit traversal to one file type (for example code or document)',
+    '  pack "<prompt>"       compile a compact context payload for automation',
+    '    --budget N            cap context pack assembly at N tokens (default 3000)',
+    '    --task KIND          explain|review|impact (default explain)',
+    '    --graph <path>       path to graph.json (default graphify-out/graph.json)',
+    '  prompt "<prompt>"     compile a provider-ready prompt payload',
+    '    --provider NAME      claude|gemini',
+    '    --graph <path>       path to graph.json (default graphify-out/graph.json)',
     '  diff <baseline-graph.json> compare a baseline graph.json to the current graph snapshot',
     '    --graph <path>        path to the current graph.json (default graphify-out/graph.json)',
     '    --limit N             maximum items to show per change section (default 10)',
@@ -535,6 +566,24 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
     if (command === 'time-travel') {
       const options = parseTimeTravelArgs(args)
       const output = await dependencies.runTimeTravel({ options, io })
+      if (output !== undefined) {
+        io.log(output)
+      }
+      return 0
+    }
+
+    if (command === 'pack') {
+      const options = parsePackArgs(args)
+      const output = await dependencies.runContextPack({ options, io })
+      if (output !== undefined) {
+        io.log(output)
+      }
+      return 0
+    }
+
+    if (command === 'prompt') {
+      const options = parsePromptArgs(args)
+      const output = await dependencies.runContextPrompt({ options, io })
       if (output !== undefined) {
         io.log(output)
       }

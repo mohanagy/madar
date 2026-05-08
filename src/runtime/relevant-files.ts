@@ -1,4 +1,5 @@
 import { KnowledgeGraph } from '../contracts/graph.js'
+import type { ContextPackClaim, ContextPackCoverage, ContextPackEvidenceClass, ContextPackExpandableRef } from '../contracts/context-pack.js'
 import { relativizeSourceFile } from '../shared/source-path.js'
 import { retrieveContext } from './retrieve.js'
 
@@ -23,6 +24,10 @@ export interface RelevantFilesResult {
   question: string
   token_count: number
   relevant_files: RelevantFileEntry[]
+  claims: ContextPackClaim[]
+  expandable: ContextPackExpandableRef[]
+  coverage?: ContextPackCoverage
+  missing_context?: ContextPackEvidenceClass[]
 }
 
 interface FileAggregate {
@@ -141,5 +146,13 @@ export function relevantFiles(graph: KnowledgeGraph, options: RelevantFilesOptio
     question: options.question,
     token_count: retrieveResult.token_count,
     relevant_files,
+    claims: retrieveResult.claims ?? [],
+    expandable: retrieveResult.expandable ?? [],
+    ...(retrieveResult.coverage
+      ? {
+          coverage: retrieveResult.coverage,
+          missing_context: retrieveResult.coverage.missing_required,
+        }
+      : {}),
   }
 }

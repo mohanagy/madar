@@ -159,9 +159,25 @@ describe('review compare', () => {
     expect(result.report.verbose_prompt_tokens).toBe(estimateQueryTokens(verbosePrompt))
     expect(result.report.compact_prompt_tokens).toBe(estimateQueryTokens(compactPrompt))
     expect(result.report.reduction_ratio).toBeGreaterThan(1)
+    expect(result.report.verbose_effective_prompt_tokens).toBe(result.report.verbose_prompt_tokens)
+    expect(result.report.compact_effective_prompt_tokens).toBe(result.report.compact_prompt_tokens)
+    expect(result.report.effective_reduction_ratio).toBe(result.report.reduction_ratio)
     expect(verbosePrompt).toContain('"changed_files"')
     expect(compactPrompt).toContain('"review_context"')
     expect(compactPrompt).toContain('"supporting_paths"')
+    expect(verbosePrompt.indexOf('Mode: verbose')).toBeGreaterThan(verbosePrompt.indexOf('"changed_files"'))
+    expect(compactPrompt.indexOf('Mode: compact')).toBeGreaterThan(compactPrompt.indexOf('"review_context"'))
+    expect(formatReviewCompareSummary(result)).toContain('Effective prompt tokens')
+  })
+
+  it('uses the shared review prompt helper instead of duplicating buildContextPrompt calls inline', () => {
+    const source = readFileSync(join(process.cwd(), 'src', 'infrastructure', 'review-compare.ts'), 'utf8')
+    const functionStart = source.indexOf('export function generateReviewCompareArtifacts')
+    const functionEnd = source.indexOf('const paths: ReviewComparePromptArtifactPaths', functionStart)
+    const functionBody = source.slice(functionStart, functionEnd)
+
+    expect(functionBody).toContain('renderReviewPrompt(')
+    expect(functionBody).not.toContain('buildContextPrompt(')
   })
 
   it('allows nested output directories whose parent does not exist yet', () => {

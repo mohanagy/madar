@@ -2,12 +2,27 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, realpathSync } from 'node:fs'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
+import type {
+  CompiledContextPack,
+  ContextPackClaim,
+  ContextPackCoverage,
+  ContextPackEvidenceClass,
+  ContextPackExpandableRef,
+  ContextPackNode,
+  ContextPackTaskContract,
+} from '../contracts/context-pack.js'
 import { KnowledgeGraph } from '../contracts/graph.js'
 import { godNodes, workspaceBridges } from '../pipeline/analyze.js'
 import { communitiesFromGraph } from './serve.js'
 import { buildCommunityLabels } from '../pipeline/community-naming.js'
 import { analyzeImpact, type ImpactResult } from './impact.js'
 import { estimateQueryTokens } from './serve.js'
+import {
+  classifyTaskContract,
+  compactContextPack,
+  compileContextPack,
+  type ContextPackNodeCandidate,
+} from './context-pack.js'
 import type {
   CompactRetrieveMatchedNode,
   RetrieveCommunityContext,
@@ -68,6 +83,10 @@ export interface PrReviewBundle {
   nodes: RetrieveMatchedNode[]
   relationships: RetrieveRelationship[]
   community_context: RetrieveCommunityContext[]
+  task_contract?: ContextPackTaskContract
+  claims?: ContextPackClaim[]
+  expandable?: ContextPackExpandableRef[]
+  coverage?: ContextPackCoverage
 }
 
 export interface PrImpactResult {
@@ -142,72 +161,74 @@ function stripReviewRelationshipIdentity(relationship: RetrieveRelationship): Co
   return rest
 }
 
+function reviewEvidenceClassForCandidateKind(candidateKind: 'seed' | 'first_hop' | 'second_hop' | undefined): ContextPackEvidenceClass {
+  if (candidateKind === 'seed') {
+    return 'change'
+  }
+
+  return candidateKind === 'first_hop' ? 'supporting' : 'impact'
+}
+
+function fallbackReviewCoverage(reviewBundle: PrReviewBundle): ContextPackCoverage {
+  const taskContract = classifyTaskContract('review', {
+    budget: reviewBundle.budget,
+    prompt: 'Review current changes',
+  })
+
+  return {
+    required_evidence: taskContract.required_evidence,
+    entries: [],
+    missing_required: [],
+    available_relationships: reviewBundle.relationships.length,
+    selected_relationships: reviewBundle.relationships.length,
+  }
+}
+
+function contextPackFromReviewBundle(
+  reviewBundle: PrReviewBundle,
+): CompiledContextPack<ContextPackNode, RetrieveRelationship, RetrieveCommunityContext> {
+  return {
+    task_contract: reviewBundle.task_contract ?? classifyTaskContract('review', {
+      budget: reviewBundle.budget,
+      prompt: 'Review current changes',
+    }),
+    token_count: reviewBundle.token_count,
+    nodes: reviewBundle.nodes.map((node) => ({
+      ...node,
+      evidence_class: node.evidence_class ?? reviewEvidenceClassForCandidateKind(
+        node.relevance_band === 'direct' ? 'seed' : node.relevance_band === 'related' ? 'first_hop' : 'second_hop',
+      ),
+    })),
+    relationships: reviewBundle.relationships,
+    community_context: reviewBundle.community_context,
+    claims: reviewBundle.claims ?? [],
+    expandable: reviewBundle.expandable ?? [],
+    coverage: reviewBundle.coverage ?? fallbackReviewCoverage(reviewBundle),
+  }
+}
+
 function compactReviewBundle(
   reviewBundle: PrReviewBundle,
   seedNodes: readonly PrImpactSeedNode[],
 ): CompactPrReviewBundle {
-  const seedIds = new Set(seedNodes.map((node) => node.node_id))
-  const seedLabels = new Set(seedNodes.map((node) => node.label))
-  const compactNodes: CompactPrReviewNode[] = []
-  const includedRelationshipIds = new Set<string>()
-  let supportNodes = 0
-
-  for (const node of reviewBundle.nodes) {
-    const isSeed = (typeof node.node_id === 'string' && seedIds.has(node.node_id)) || seedLabels.has(node.label)
-    if (!isSeed && supportNodes >= MAX_COMPACT_REVIEW_SUPPORT_NODES) {
-      continue
-    }
-
-    const {
-      community_label: _communityLabel,
-      framework_boost: _frameworkBoost,
-      file_type: fileType,
-      node_id: nodeId,
-      match_score: matchScore,
-      ...rest
-    } = node
-
-    if (typeof nodeId === 'string' && nodeId.length > 0) {
-      includedRelationshipIds.add(nodeId)
-    }
-
-    compactNodes.push({
-      ...rest,
-      ...(isSeed && typeof nodeId === 'string' && nodeId.length > 0 ? { node_id: nodeId } : {}),
-      ...(isSeed ? { match_score: matchScore } : {}),
-      ...(isSeed ? { snippet: node.snippet } : { snippet: null }),
-      ...(fileType !== undefined ? { file_type: fileType } : {}),
-    })
-    if (!isSeed) {
-      supportNodes += 1
-    }
-  }
-
-  const includedLabels = new Set(compactNodes.map((node) => node.label))
-  const includedCommunities = new Set(compactNodes.flatMap((node) => (node.community === null ? [] : [node.community])))
-  const sharedFileType =
-    compactNodes.length > 0 && compactNodes.every((node) => node.file_type === compactNodes[0]?.file_type)
-      ? compactNodes[0]?.file_type
-      : undefined
-  const compactNodesWithoutSharedFileType = sharedFileType !== undefined
-    ? compactNodes.map(({ file_type: _fileType, ...node }) => node)
+  const compactPack = compactContextPack(contextPackFromReviewBundle(reviewBundle), {
+    kind: 'review',
+    seed_node_ids: seedNodes.map((node) => node.node_id),
+    seed_labels: seedNodes.map((node) => node.label),
+    max_supporting_nodes: MAX_COMPACT_REVIEW_SUPPORT_NODES,
+  })
+  const compactNodes = compactPack.nodes.map(({ evidence_class: _evidenceClass, ...node }) => node as CompactPrReviewNode)
+  const compactNodePayload = typeof compactPack.shared_file_type === 'string'
+    ? { shared_file_type: compactPack.shared_file_type, nodes: compactNodes }
     : compactNodes
-  const compactNodePayload = sharedFileType !== undefined
-    ? { shared_file_type: sharedFileType, nodes: compactNodesWithoutSharedFileType }
-    : compactNodesWithoutSharedFileType
 
   return {
     budget: reviewBundle.budget,
-    token_count: compactNodesWithoutSharedFileType.length === 0 ? 0 : estimateQueryTokens(JSON.stringify(compactNodePayload)),
-    nodes: compactNodesWithoutSharedFileType,
-    relationships: reviewBundle.relationships.filter((relationship) => {
-      if (includedRelationshipIds.size > 0 && relationship.from_id && relationship.to_id) {
-        return includedRelationshipIds.has(relationship.from_id) && includedRelationshipIds.has(relationship.to_id)
-      }
-      return includedLabels.has(relationship.from) && includedLabels.has(relationship.to)
-    }).map(stripReviewRelationshipIdentity),
-    community_context: reviewBundle.community_context.filter((community) => includedCommunities.has(community.id)),
-    ...(sharedFileType !== undefined ? { shared_file_type: sharedFileType } : {}),
+    token_count: compactNodes.length === 0 ? 0 : estimateQueryTokens(JSON.stringify(compactNodePayload)),
+    nodes: compactNodes,
+    relationships: compactPack.relationships.map(stripReviewRelationshipIdentity),
+    community_context: compactPack.community_context,
+    ...(compactPack.shared_file_type !== undefined ? { shared_file_type: compactPack.shared_file_type } : {}),
   }
 }
 
@@ -836,67 +857,95 @@ function buildReviewBundle(
       || left.localeCompare(right)
   })
 
-  const matchedNodes: RetrieveMatchedNode[] = []
-  const includedIds = new Set<string>()
   const snippetFileCache = new Map<string, string[] | null>()
-  let tokenCount = 0
-
-  for (const candidateId of orderedCandidateIds) {
+  const orderedCommunities = new Set<number>()
+  const nodeCandidates: Array<ContextPackNodeCandidate<ContextPackNode>> = orderedCandidateIds.flatMap((candidateId) => {
     const attributes = graph.nodeAttributes(candidateId)
     const candidate = candidateNodeFromGraphEntry(candidateId, attributes)
     if (!candidate.sourceFile) {
-      continue
+      return []
     }
 
-    const normalizedSourceFile = normalizeProjectPath(rootPath, candidate.sourceFile)
-    const snippet = readSnippet(normalizedSourceFile, candidate.lineNumber, {
-      derived: candidate.lineNumberDerived,
-      fileCache: snippetFileCache,
-    })
-    const serializedSourceFile = relativizeSourceFile(normalizedSourceFile, rootPath)
-    const nodeTokens = estimateRetrieveEntryTokens(candidate.label, serializedSourceFile, candidate.lineNumber, snippet)
-    if (tokenCount + nodeTokens > budget) {
-      break
+    if (candidate.community !== null) {
+      orderedCommunities.add(candidate.community)
     }
 
-    matchedNodes.push({
-      node_id: candidate.id,
+    let builtEntry: RetrieveMatchedNode | undefined
+    let tokenCost: number | undefined
+    const evidenceClass = reviewEvidenceClassForCandidateKind(candidateKinds.get(candidateId))
+
+    const buildEntry = (): RetrieveMatchedNode => {
+      if (builtEntry) {
+        return builtEntry
+      }
+
+      const normalizedSourceFile = normalizeProjectPath(rootPath, candidate.sourceFile)
+      const snippet = readSnippet(normalizedSourceFile, candidate.lineNumber, {
+        derived: candidate.lineNumberDerived,
+        fileCache: snippetFileCache,
+      })
+      const serializedSourceFile = relativizeSourceFile(normalizedSourceFile, rootPath)
+      builtEntry = {
+        node_id: candidate.id,
+        label: candidate.label,
+        source_file: serializedSourceFile,
+        line_number: candidate.lineNumber,
+        file_type: candidate.fileType,
+        snippet,
+        match_score: candidateScores.get(candidateId) ?? 0,
+        relevance_band: seedIds.has(candidateId) ? 'direct' : candidateKinds.get(candidateId) === 'first_hop' ? 'related' : 'peripheral',
+        community: candidate.community,
+        community_label: candidate.community !== null ? (communityLabels[candidate.community] ?? null) : null,
+        evidence_class: evidenceClass,
+        ...(candidate.nodeKind.trim().length > 0 ? { node_kind: candidate.nodeKind } : {}),
+      }
+      tokenCost = estimateRetrieveEntryTokens(candidate.label, serializedSourceFile, candidate.lineNumber, snippet)
+      return builtEntry
+    }
+
+    return [{
       label: candidate.label,
-      source_file: serializedSourceFile,
-      line_number: candidate.lineNumber,
-      file_type: candidate.fileType,
-      snippet,
-      match_score: candidateScores.get(candidateId) ?? 0,
-      relevance_band: seedIds.has(candidateId) ? 'direct' : candidateKinds.get(candidateId) === 'first_hop' ? 'related' : 'peripheral',
+      node_id: candidate.id,
       community: candidate.community,
-      community_label: candidate.community !== null ? (communityLabels[candidate.community] ?? null) : null,
-      ...(candidate.nodeKind.trim().length > 0 ? { node_kind: candidate.nodeKind } : {}),
-    })
-    includedIds.add(candidateId)
-    tokenCount += nodeTokens
-  }
+      evidence_class: evidenceClass,
+      estimate_tokens: () => {
+        if (tokenCost !== undefined) {
+          return tokenCost
+        }
 
-  const communityIds = new Set<number>()
-  for (const node of matchedNodes) {
-    if (node.community !== null) {
-      communityIds.add(node.community)
-    }
-  }
+        buildEntry()
+        return tokenCost ?? 0
+      },
+      build_entry: buildEntry,
+    }]
+  })
 
-  const communityContext: RetrieveCommunityContext[] = [...communityIds]
-    .map((communityId) => ({
-      id: communityId,
-      label: communityLabels[communityId] ?? `Community ${communityId}`,
-      node_count: (communities[communityId] ?? []).length,
-    }))
-    .sort((left, right) => right.node_count - left.node_count)
+  const pack = compileContextPack<ContextPackNode, RetrieveRelationship, RetrieveCommunityContext>({
+    task_contract: classifyTaskContract('review', {
+      budget,
+      prompt: 'Review current changes',
+    }),
+    nodes: nodeCandidates,
+    relationships: collectRelationships(graph, new Set(nodeCandidates.map((node) => node.node_id).filter((nodeId): nodeId is string => typeof nodeId === 'string'))),
+    community_context: [...orderedCommunities]
+      .map((communityId) => ({
+        id: communityId,
+        label: communityLabels[communityId] ?? `Community ${communityId}`,
+        node_count: (communities[communityId] ?? []).length,
+      }))
+      .sort((left, right) => right.node_count - left.node_count),
+  })
 
   return {
     budget,
-    token_count: tokenCount,
-    nodes: matchedNodes,
-    relationships: collectRelationships(graph, includedIds),
-    community_context: communityContext,
+    token_count: pack.token_count,
+    nodes: pack.nodes as RetrieveMatchedNode[],
+    relationships: pack.relationships,
+    community_context: pack.community_context,
+    task_contract: pack.task_contract,
+    claims: pack.claims,
+    expandable: pack.expandable,
+    coverage: pack.coverage,
   }
 }
 
@@ -910,6 +959,16 @@ export function analyzePrImpact(
   const changedFiles = gitDiffFiles(graph, resolvedDir, baseBranch)
 
   if (changedFiles.length === 0) {
+    const emptyPack = compileContextPack<ContextPackNode, RetrieveRelationship, RetrieveCommunityContext>({
+      task_contract: classifyTaskContract('review', {
+        budget: options.budget ?? DEFAULT_REVIEW_BUDGET,
+        prompt: 'Review current changes',
+      }),
+      nodes: [],
+      relationships: [],
+      community_context: [],
+    })
+
     return {
       base_branch: baseBranch,
       changed_files: [],
@@ -931,6 +990,10 @@ export function analyzePrImpact(
         nodes: [],
         relationships: [],
         community_context: [],
+        task_contract: emptyPack.task_contract,
+        claims: emptyPack.claims,
+        expandable: emptyPack.expandable,
+        coverage: emptyPack.coverage,
       },
       risk_summary: { high_impact_nodes: [], cross_community_changes: 0, top_risks: [] },
     }

@@ -1,3 +1,5 @@
+import { vi } from 'vitest'
+
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
 import { relevantFiles } from '../../src/runtime/relevant-files.js'
 
@@ -76,5 +78,28 @@ describe('relevantFiles', () => {
     )
     expect(result.relevant_files[0]?.why).toContain('GET /users/:id')
     expect(result.relevant_files[1]?.why).toContain('getUserProfile')
+  })
+
+  it('omits missing_context when retrieve coverage was not computed', async () => {
+    vi.resetModules()
+    vi.doMock('../../src/runtime/retrieve.js', () => ({
+      retrieveContext: vi.fn().mockReturnValue({
+        question: 'where should I edit auth',
+        token_count: 42,
+        matched_nodes: [],
+        relationships: [],
+        community_context: [],
+        graph_signals: { god_nodes: [], bridge_nodes: [] },
+      }),
+    }))
+
+    const { relevantFiles: mockedRelevantFiles } = await import('../../src/runtime/relevant-files.js')
+    const result = mockedRelevantFiles(new KnowledgeGraph(), {
+      question: 'where should I edit auth',
+      budget: 2500,
+    })
+
+    expect(result).not.toHaveProperty('coverage')
+    expect(result).not.toHaveProperty('missing_context')
   })
 })

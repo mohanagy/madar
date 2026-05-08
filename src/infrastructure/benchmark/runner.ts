@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from
 import { basename, dirname, join, relative, resolve } from 'node:path'
 
 import { KnowledgeGraph } from '../../contracts/graph.js'
+import type { ContextSessionState } from '../../contracts/context-session.js'
 import { type RetrieveResult, retrieveContext } from '../../runtime/retrieve.js'
 import { QUERY_TOKEN_ESTIMATOR } from '../../runtime/serve.js'
 import { validateGraphOutputPath } from '../../shared/security.js'
@@ -47,18 +48,22 @@ export interface RunBenchmarkPromptOptions {
   now?: Date
   retrievalBudget?: number
   retrieval?: RetrieveResult
+  session?: ContextSessionState
   runner?: (execution: BenchmarkPromptExecution) => Promise<BenchmarkPromptRunnerResult>
 }
 
 export interface BenchmarkPromptRun {
   prompt_tokens_estimated: number
   query_tokens: number
+  effective_query_tokens: number
+  reused_context_tokens: number
   total_tokens: number | null
   prompt_token_source: BenchmarkPromptTokenSource
   usage: PromptRunnerUsage | null
   answer_text: string | null
   elapsed_ms: number
   artifacts: BenchmarkPromptArtifacts
+  session_state: ContextSessionState
 }
 
 function timestampDirectoryName(date: Date): string {
@@ -188,16 +193,20 @@ export async function runBenchmarkPrompt(options: RunBenchmarkPromptOptions): Pr
   const retrieval = options.retrieval ?? retrieveBenchmarkContext(
     options.graph,
     options.graphPath,
-    options.question,
-    options.retrievalBudget ?? DEFAULT_RETRIEVAL_BUDGET,
+      options.question,
+      options.retrievalBudget ?? DEFAULT_RETRIEVAL_BUDGET,
   )
-  const promptPack = buildGraphifyPromptPack({ question: options.question, retrieval })
+  const promptPack = buildGraphifyPromptPack({
+    question: options.question,
+    retrieval,
+    ...(options.session ? { session: options.session } : {}),
+  })
   const artifacts: BenchmarkPromptArtifacts = {
     prompt: join(outputRoot, 'graphify-prompt.txt'),
     answer: join(outputRoot, 'graphify-answer.txt'),
     report: join(outputRoot, 'report.json'),
   }
-  writeFileSync(artifacts.prompt, promptPack.prompt, 'utf8')
+  writeFileSync(artifacts.prompt, promptPack.session_payload, 'utf8')
 
   const command = expandCompareExecTemplate(options.execTemplate, {
     promptFile: artifacts.prompt,
@@ -222,14 +231,20 @@ export async function runBenchmarkPrompt(options: RunBenchmarkPromptOptions): Pr
 
   const usage = parsedOutput.usage
   const run: BenchmarkPromptRun = {
-    prompt_tokens_estimated: promptPack.token_count,
-    query_tokens: usage?.input_total_tokens ?? promptPack.token_count,
+    prompt_tokens_estimated: promptPack.session_payload_token_count,
+    query_tokens: usage?.input_total_tokens ?? promptPack.session_payload_token_count,
+    effective_query_tokens:
+      usage?.input_total_tokens !== undefined
+        ? usage.input_total_tokens - usage.cache_read_input_tokens
+        : promptPack.effective_token_count,
+    reused_context_tokens: usage?.cache_read_input_tokens ?? promptPack.reused_context_tokens,
     total_tokens: usage?.total_tokens ?? null,
     prompt_token_source: benchmarkPromptTokenSource(usage),
     usage,
     answer_text: parsedOutput.answerText,
     elapsed_ms: execution.elapsedMs,
     artifacts,
+    session_state: promptPack.session_state,
   }
 
   writeFileSync(
@@ -237,10 +252,12 @@ export async function runBenchmarkPrompt(options: RunBenchmarkPromptOptions): Pr
     `${JSON.stringify(
       {
         question: options.question,
-        prompt_tokens_estimated: run.prompt_tokens_estimated,
-        query_tokens: run.query_tokens,
-        total_tokens: run.total_tokens,
-        prompt_token_source: run.prompt_token_source,
+          prompt_tokens_estimated: run.prompt_tokens_estimated,
+          query_tokens: run.query_tokens,
+          effective_query_tokens: run.effective_query_tokens,
+          reused_context_tokens: run.reused_context_tokens,
+          total_tokens: run.total_tokens,
+          prompt_token_source: run.prompt_token_source,
         usage: run.usage,
         elapsed_ms: run.elapsed_ms,
         prompt_token_estimator: QUERY_TOKEN_ESTIMATOR,

@@ -6,6 +6,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { analyzePrImpact, compactPrImpactResult } from '../runtime/pr-impact.js'
 import { estimateQueryTokens, loadGraph } from '../runtime/serve.js'
 import { findNearestExistingAncestor, validateGraphPath } from '../shared/security.js'
+import { buildContextPrompt } from './context-prompt.js'
 
 export type ReviewCompareMode = 'verbose' | 'compact'
 export type ReviewCompareRunStatus = 'not_run' | 'succeeded' | 'failed'
@@ -60,6 +61,11 @@ export interface ReviewCompareReport {
   verbose_prompt_tokens: number
   compact_prompt_tokens: number
   reduction_ratio: number
+  verbose_effective_prompt_tokens: number
+  compact_effective_prompt_tokens: number
+  effective_reduction_ratio: number
+  verbose_reused_context_tokens: number
+  compact_reused_context_tokens: number
   started_at: string
   completed_at: string
   elapsed_ms: Record<ReviewCompareMode, number>
@@ -276,17 +282,24 @@ function sanitizePersistedReviewPayload<T>(value: T): T {
   return value
 }
 
-function renderReviewPrompt(payload: unknown, mode: ReviewCompareMode): string {
-  return [
-    'Review the current git diff using only the provided pr_impact payload.',
-    'Summarize the changed areas, top risks, supporting files to inspect, likely tests to run, and structural hotspots to watch.',
-    `Mode: ${mode}`,
-    '',
-    'pr_impact payload:',
-    JSON.stringify(payload, null, 2),
-    '',
-    'Answer:',
-  ].join('\n')
+function renderReviewPrompt(payload: unknown, mode: ReviewCompareMode): ReturnType<typeof buildContextPrompt> {
+  return buildContextPrompt({
+    instructions: [
+      'Review the current git diff using only the provided pr_impact payload.',
+      'Summarize the changed areas, top risks, supporting files to inspect, likely tests to run, and structural hotspots to watch.',
+    ],
+    stable_prefix_title: 'pr_impact payload',
+    stable_sections: [
+      {
+        ref: 'pr_impact_payload',
+        body: JSON.stringify(payload, null, 2),
+      },
+    ],
+    dynamic_sections: [
+      { body: `Mode: ${mode}` },
+      { body: 'Answer:' },
+    ],
+  })
 }
 
 function writeReport(report: ReviewCompareReport): void {
@@ -328,8 +341,10 @@ export function generateReviewCompareArtifacts(input: ReviewCompareInput): Revie
   const compactPayload = compactPrImpactResult(verbosePayload)
   const persistedVerbosePayload = sanitizePersistedReviewPayload(verbosePayload)
   const persistedCompactPayload = sanitizePersistedReviewPayload(compactPayload)
-  const verbosePrompt = renderReviewPrompt(persistedVerbosePayload, 'verbose')
-  const compactPrompt = renderReviewPrompt(persistedCompactPayload, 'compact')
+  const verbosePromptArtifact = renderReviewPrompt(persistedVerbosePayload, 'verbose')
+  const compactPromptArtifact = renderReviewPrompt(persistedCompactPayload, 'compact')
+  const verbosePrompt = verbosePromptArtifact.prompt
+  const compactPrompt = compactPromptArtifact.prompt
 
   const paths: ReviewComparePromptArtifactPaths = {
     output_dir: outputRoot,
@@ -365,6 +380,14 @@ export function generateReviewCompareArtifacts(input: ReviewCompareInput): Revie
     verbose_prompt_tokens: verbosePromptTokens,
     compact_prompt_tokens: compactPromptTokens,
     reduction_ratio: computeReductionRatio(verbosePromptTokens, compactPromptTokens),
+    verbose_effective_prompt_tokens: verbosePromptArtifact.metrics.effective_prompt_tokens,
+    compact_effective_prompt_tokens: compactPromptArtifact.metrics.effective_prompt_tokens,
+    effective_reduction_ratio: computeReductionRatio(
+      verbosePromptArtifact.metrics.effective_prompt_tokens,
+      compactPromptArtifact.metrics.effective_prompt_tokens,
+    ),
+    verbose_reused_context_tokens: verbosePromptArtifact.metrics.reused_context_tokens,
+    compact_reused_context_tokens: compactPromptArtifact.metrics.reused_context_tokens,
     started_at: now.toISOString(),
     completed_at: now.toISOString(),
     elapsed_ms: {
@@ -448,6 +471,7 @@ export function formatReviewCompareSummary(result: ReviewCompareResult): string 
     '[graphify review-compare] completed current diff comparison',
     `- Output: ${result.output_root}`,
     `- Prompt tokens: verbose ${result.report.verbose_prompt_tokens} · compact ${result.report.compact_prompt_tokens} · ${formatTokenComparison(result.report.verbose_prompt_tokens, result.report.compact_prompt_tokens)}`,
+    `- Effective prompt tokens: verbose ${result.report.verbose_effective_prompt_tokens} · compact ${result.report.compact_effective_prompt_tokens} · ${formatTokenComparison(result.report.verbose_effective_prompt_tokens, result.report.compact_effective_prompt_tokens)}`,
     `- Payload tokens: verbose ${result.report.verbose_payload_tokens} · compact ${result.report.compact_payload_tokens} · ${formatTokenComparison(result.report.verbose_payload_tokens, result.report.compact_payload_tokens)}`,
     `- Prompt runs: verbose ${result.report.status.verbose} (${result.report.elapsed_ms.verbose} ms) · compact ${result.report.status.compact} (${result.report.elapsed_ms.compact} ms)`,
   ].join('\n')

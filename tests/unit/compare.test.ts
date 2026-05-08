@@ -441,9 +441,91 @@ describe('compare runtime', () => {
     expect(fullPack.prompt).toContain('Question:\nhow does login create a session')
     expect(fullPack.prompt).toContain('authenticateUser')
     expect(fullPack.prompt).toContain('SessionManager')
+    expect(fullPack.prompt.indexOf('Question:\nhow does login create a session')).toBeGreaterThan(
+      fullPack.prompt.indexOf('Corpus (full):'),
+    )
+    expect(fullPack.effective_token_count).toBe(fullPack.token_count)
+    expect(fullPack.reused_context_tokens).toBe(0)
     expect(boundedPack.prompt).toContain('[bounded baseline excerpt]')
     expect(boundedPack.prompt.length).toBeLessThan(fullPack.prompt.length)
     expect(estimateQueryTokens(boundedPack.prompt)).toBeLessThanOrEqual(120)
+  })
+
+  it('reuses stable compare context across session-aware prompt packs', () => {
+    const graph = makeGraph()
+    const corpusText = makeCorpusText()
+
+    const firstPack = buildBaselinePromptPack({
+      question: 'how does login create a session',
+      graph,
+      corpusText,
+      mode: 'full',
+    })
+    const secondPack = buildBaselinePromptPack({
+      question: 'where is session storage defined',
+      graph,
+      corpusText,
+      mode: 'full',
+      session: firstPack.session_state,
+    })
+
+    expect(secondPack.prompt.indexOf('Question:\nwhere is session storage defined')).toBeGreaterThan(
+      secondPack.prompt.indexOf('Corpus (full):'),
+    )
+    expect(secondPack.reused_context_tokens).toBeGreaterThan(0)
+    expect(secondPack.effective_token_count).toBe(Math.max(0, secondPack.token_count - secondPack.reused_context_tokens))
+  })
+
+  it('writes delta-oriented follow-up prompt artifacts for multi-question compare runs', () => {
+    const graph = makeGraph()
+    const corpusText = makeCorpusText()
+    writeProjectFiles()
+    const graphPath = writeGraphFixture(graph)
+    const questionsPath = join(GRAPH_FIXTURE_ROOT, 'session-compare-questions.json')
+    writeFileSync(
+      questionsPath,
+      JSON.stringify(
+        [
+          { question: 'how does login create a session' },
+          { question: 'where is session storage defined' },
+        ],
+        null,
+        2,
+      ),
+      'utf8',
+    )
+
+    const result = generateCompareArtifacts({
+      graphPath,
+      corpusText,
+      questionsPath,
+      outputDir: COMPARE_OUTPUT_ROOT,
+      execTemplate: 'runner --prompt {prompt_file} --question {question} --mode {mode} --out {output_file}',
+      baselineMode: 'full',
+      now: new Date('2026-04-24T19:30:00.000Z'),
+    })
+
+    expect(result.reports).toHaveLength(2)
+    expect(readFileSync(result.reports[0]!.paths.baseline_prompt, 'utf8')).toContain('Corpus (full):')
+    expect(readFileSync(result.reports[0]!.paths.graphify_prompt, 'utf8')).toContain('Retrieved graph context:')
+    const followUpReport = result.reports[1]!
+    const followUpBaselinePrompt = readFileSync(result.reports[1]!.paths.baseline_prompt, 'utf8')
+    const followUpGraphifyPrompt = readFileSync(result.reports[1]!.paths.graphify_prompt, 'utf8')
+
+    expect(followUpBaselinePrompt).toContain('Session delta:')
+    expect(followUpBaselinePrompt).toContain('Question:\nwhere is session storage defined')
+    expect(followUpBaselinePrompt).not.toContain('Corpus (full):')
+    expect(followUpReport.baseline_prompt_tokens_estimated).toBeGreaterThan(estimateQueryTokens(followUpBaselinePrompt))
+    expect(followUpReport.baseline_effective_prompt_tokens).toBe(
+      Math.max(0, followUpReport.baseline_prompt_tokens_estimated - followUpReport.baseline_reused_context_tokens),
+    )
+    expect(followUpGraphifyPrompt).toContain('Session delta:')
+    expect(followUpGraphifyPrompt).toContain('Question:\nwhere is session storage defined')
+    expect(followUpGraphifyPrompt).not.toContain('Retrieved graph context:')
+    expect(followUpReport.graphify_prompt_tokens_estimated).toBeGreaterThan(estimateQueryTokens(followUpGraphifyPrompt))
+    expect(followUpReport.graphify_effective_prompt_tokens).toBe(
+      Math.max(0, followUpReport.graphify_prompt_tokens_estimated - followUpReport.graphify_reused_context_tokens),
+    )
   })
 
   it('builds bounded baseline excerpts for token-dense corpus text', () => {
@@ -737,6 +819,10 @@ describe('compare runtime', () => {
     expect(readFileSync(report.answer_paths.graphify, 'utf8')).toBe('graphify answer\n')
     expect(report.baseline_prompt_tokens).toBe(1320)
     expect(report.graphify_prompt_tokens).toBe(410)
+    expect(report.baseline_effective_prompt_tokens).toBe(1300)
+    expect(report.graphify_effective_prompt_tokens).toBe(400)
+    expect(report.baseline_reused_context_tokens).toBe(20)
+    expect(report.graphify_reused_context_tokens).toBe(10)
     expect(report.prompt_token_source).toEqual({
       baseline: 'claude_reported_input',
       graphify: 'claude_reported_input',
@@ -765,7 +851,9 @@ describe('compare runtime', () => {
     })
     expect(report.baseline_total_tokens).toBe(1410)
     expect(report.graphify_total_tokens).toBe(480)
+    expect(report.effective_reduction_ratio).toBe(Number((1300 / 400).toFixed(1)))
     expect(formatCompareSummary(result)).toContain('Input tokens (Claude reported): baseline 1320 · graphify 410')
+    expect(formatCompareSummary(result)).toContain('Effective input tokens (cache-adjusted): baseline 1300 · graphify 400')
     expect(formatCompareSummary(result)).toContain('Total tokens (Claude reported): baseline 1410 · graphify 480')
   })
 

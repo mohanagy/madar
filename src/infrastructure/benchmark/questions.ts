@@ -9,6 +9,8 @@ import { type BenchmarkPromptArtifacts, type BenchmarkPromptTokenSource } from '
 export interface BenchmarkQuestionResult {
   question: string
   query_tokens: number
+  effective_query_tokens?: number
+  reused_context_tokens?: number
   reduction: number
   expected_labels: string[]
   matched_expected_labels: string[]

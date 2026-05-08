@@ -1,5 +1,6 @@
+import { execFileSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { PassThrough } from 'node:stream'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 
@@ -78,6 +79,82 @@ function createTimeTravelResult(view: 'summary' | 'risk' | 'drift' | 'timeline' 
     drift: { movedNodes: [] },
     timeline: { events: [] },
   }
+}
+
+function createPrImpactFixtureRoot(): string {
+  const parentDir = resolve('graphify-out', 'test-runtime')
+  mkdirSync(parentDir, { recursive: true })
+  const root = mkdtempSync(join(parentDir, 'graphify-ts-stdio-pr-impact-'))
+  mkdirSync(join(root, 'src'), { recursive: true })
+  mkdirSync(join(root, 'tests'), { recursive: true })
+  mkdirSync(join(root, 'graphify-out'), { recursive: true })
+
+  const authLines = Array.from({ length: 16 }, (_, index) => `// auth filler ${index + 1}`)
+  authLines[4] = 'export function authenticateUser(token: string) {'
+  authLines[5] = '  const status = "ok"'
+  authLines[6] = '  return token.trim().length > 0 ? status : "fail"'
+  authLines[7] = '}'
+
+  const apiLines = Array.from({ length: 12 }, (_, index) => `// api filler ${index + 1}`)
+  apiLines[3] = 'import { authenticateUser } from "./auth"'
+  apiLines[4] = 'export function ApiHandler(token: string) {'
+  apiLines[5] = '  return authenticateUser(token)'
+  apiLines[6] = '}'
+
+  writeFileSync(join(root, 'src', 'auth.ts'), `${authLines.join('\n')}\n`, 'utf8')
+  writeFileSync(join(root, 'src', 'api.ts'), `${apiLines.join('\n')}\n`, 'utf8')
+  writeFileSync(join(root, 'tests', 'auth.test.ts'), 'describe("auth", () => {})\n', 'utf8')
+  writeFileSync(join(root, 'tests', 'api.test.ts'), 'describe("api", () => {})\n', 'utf8')
+  writeFileSync(
+    join(root, 'graphify-out', 'graph.json'),
+    JSON.stringify({
+      directed: true,
+      community_labels: {
+        '0': 'Auth Layer',
+        '1': 'API Layer',
+      },
+      nodes: [
+        {
+          id: 'auth_user',
+          label: 'authenticateUser',
+          source_file: join(root, 'src', 'auth.ts'),
+          source_location: 'L5-L8',
+          node_kind: 'function',
+          file_type: 'code',
+          community: 0,
+        },
+        {
+          id: 'api_handler',
+          label: 'ApiHandler',
+          source_file: join(root, 'src', 'api.ts'),
+          source_location: 'L5-L7',
+          node_kind: 'function',
+          file_type: 'code',
+          community: 1,
+        },
+      ],
+      edges: [
+        {
+          source: 'api_handler',
+          target: 'auth_user',
+          relation: 'calls',
+          confidence: 'EXTRACTED',
+          source_file: join(root, 'src', 'api.ts'),
+        },
+      ],
+      hyperedges: [],
+      root_path: root,
+    }),
+    'utf8',
+  )
+
+  execFileSync('git', ['init', '-b', 'main'], { cwd: root, stdio: 'pipe' })
+  execFileSync('git', ['config', 'user.email', 'graphify@example.com'], { cwd: root, stdio: 'pipe' })
+  execFileSync('git', ['config', 'user.name', 'Graphify Test'], { cwd: root, stdio: 'pipe' })
+  execFileSync('git', ['add', '.'], { cwd: root, stdio: 'pipe' })
+  execFileSync('git', ['commit', '-m', 'Initial commit'], { cwd: root, stdio: 'pipe' })
+
+  return root
 }
 
 describe('stdio runtime', () => {
@@ -709,9 +786,15 @@ describe('stdio runtime', () => {
           node_id: expect.any(String),
         }),
       )
+      expect(retrieveDefaultPayload.matched_nodes[0]).not.toHaveProperty('evidence_class')
       expect(retrieveDefaultPayload.matched_nodes[0]).not.toHaveProperty('file_type')
       expect(retrieveDefaultPayload.matched_nodes[0]).not.toHaveProperty('community_label')
       expect(retrieveDefaultPayload.matched_nodes[0]).not.toHaveProperty('framework_boost')
+      expect(retrieveDefaultPayload.coverage).toEqual(expect.objectContaining({
+        required_evidence: expect.arrayContaining(['primary', 'supporting', 'structural']),
+      }))
+      expect(retrieveDefaultPayload.expandable).toEqual(expect.any(Array))
+      expect(retrieveDefaultPayload.missing_context).toEqual(expect.any(Array))
 
       expect(impactDefaultPayload.shared_file_type).toBe('code')
       expect(impactDefaultPayload.direct_dependents).toEqual(
@@ -727,6 +810,286 @@ describe('stdio runtime', () => {
       expect(impactDefaultPayload.direct_dependents[0]).not.toHaveProperty('file_type')
       expect(impactDefaultPayload.direct_dependents[0]).not.toHaveProperty('framework_role')
       expect(impactDefaultPayload.direct_dependents[0]).not.toHaveProperty('community_label')
+      expect(impactDefaultPayload.missing_context).toEqual(expect.any(Array))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('returns compact pr_impact payloads by default and keeps verbose mode as an escape hatch', async () => {
+    const root = createPrImpactFixtureRoot()
+    try {
+      writeFileSync(
+        join(root, 'src', 'auth.ts'),
+        readFileSync(join(root, 'src', 'auth.ts'), 'utf8').replace('  const status = "ok"', '  const status = token.startsWith("Bearer ") ? "ok" : "fail"'),
+        'utf8',
+      )
+
+      const graphPath = join(root, 'graphify-out', 'graph.json')
+      const prImpactDefault = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 50,
+        method: 'tools/call',
+        params: {
+          name: 'pr_impact',
+          arguments: {
+            budget: 240,
+          },
+        },
+      }))
+      const prImpactVerbose = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 51,
+        method: 'tools/call',
+        params: {
+          name: 'pr_impact',
+          arguments: {
+            budget: 240,
+            verbose: true,
+          },
+        },
+      }))
+
+      const prImpactDefaultPayload = JSON.parse((prImpactDefault?.result as { content: Array<{ text: string }> }).content[0]!.text)
+      const prImpactVerbosePayload = JSON.parse((prImpactVerbose?.result as { content: Array<{ text: string }> }).content[0]!.text)
+      const defaultSeedNode = prImpactDefaultPayload.review_bundle.nodes.find((node: { label: string }) => node.label === 'authenticateUser')
+      const verboseSeedNode = prImpactVerbosePayload.review_bundle.nodes.find((node: { label: string }) => node.label === 'authenticateUser')
+
+      expect(prImpactDefaultPayload).not.toHaveProperty('changed_nodes')
+      expect(prImpactDefaultPayload).not.toHaveProperty('affected_files')
+      expect(prImpactDefaultPayload.review_bundle).toEqual(expect.objectContaining({
+        budget: 240,
+      }))
+      expect(defaultSeedNode).toEqual(expect.objectContaining({
+        label: 'authenticateUser',
+      }))
+      expect(defaultSeedNode).not.toHaveProperty('evidence_class')
+      expect(defaultSeedNode).not.toHaveProperty('file_type')
+      expect(prImpactDefaultPayload.missing_context).toEqual(expect.any(Array))
+
+      expect(prImpactVerbosePayload.changed_nodes).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          label: 'authenticateUser',
+        }),
+      ]))
+      expect(verboseSeedNode).toEqual(expect.objectContaining({
+        label: 'authenticateUser',
+        evidence_class: 'change',
+        file_type: 'code',
+      }))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('exposes context-pack and context-prompt MCP flows with reusable prompt sessions', async () => {
+    const root = createGraphFixtureRoot()
+    try {
+      const graphPath = join(root, 'graph.json')
+      const sessionState = {
+        logLevel: 'info' as const,
+        subscribedResourceUris: new Set<string>(),
+        resourceVersions: new Map<string, string>(),
+        resourceListSignature: null,
+        contextPromptSessions: new Map(),
+      }
+      const tools = await Promise.resolve(handleStdioRequest(graphPath, { id: 1, method: 'tools/list' }))
+      const explainPack = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 2,
+        method: 'tools/call',
+        params: {
+          name: 'context_pack',
+          arguments: {
+            prompt: 'How does AuthService reach Transport?',
+            task: 'explain',
+            budget: 1,
+          },
+        },
+      }, sessionState))
+      const impactPack = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 7,
+        method: 'tools/call',
+        params: {
+          name: 'context_pack',
+          arguments: {
+            prompt: 'What breaks if HttpClient changes?',
+            task: 'impact',
+            budget: 200,
+          },
+        },
+      }, sessionState))
+      const firstPrompt = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 3,
+        method: 'tools/call',
+        params: {
+          name: 'context_prompt',
+          arguments: {
+            prompt: 'How does AuthService reach Transport?',
+            provider: 'claude',
+            session_id: 'auth-thread',
+          },
+        },
+      }, sessionState))
+      const geminiPrompt = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 9,
+        method: 'tools/call',
+        params: {
+          name: 'context_prompt',
+          arguments: {
+            prompt: 'How does AuthService reach Transport?',
+            provider: 'gemini',
+          },
+        },
+      }, sessionState))
+      const followUpPrompt = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 4,
+        method: 'tools/call',
+        params: {
+          name: 'context_prompt',
+          arguments: {
+            prompt: 'Which file defines HttpClient?',
+            provider: 'claude',
+            session_id: 'auth-thread',
+          },
+        },
+      }, sessionState))
+      const resetSession = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 5,
+        method: 'tools/call',
+        params: {
+          name: 'context_session_reset',
+          arguments: {
+            session_id: 'auth-thread',
+          },
+        },
+      }, sessionState))
+      const resetPrompt = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 6,
+        method: 'tools/call',
+        params: {
+          name: 'context_prompt',
+          arguments: {
+            prompt: 'How does AuthService reach Transport?',
+            provider: 'claude',
+            session_id: 'auth-thread',
+          },
+        },
+      }, sessionState))
+
+      const toolNames = (tools?.result as { tools: Array<{ name: string }> }).tools.map((tool) => tool.name)
+      const explainPackPayload = JSON.parse((explainPack?.result as { content: Array<{ text: string }> }).content[0]!.text)
+      const impactPackPayload = JSON.parse((impactPack?.result as { content: Array<{ text: string }> }).content[0]!.text)
+      const firstPromptPayload = JSON.parse((firstPrompt?.result as { content: Array<{ text: string }> }).content[0]!.text)
+      const geminiPromptPayload = JSON.parse((geminiPrompt?.result as { content: Array<{ text: string }> }).content[0]!.text)
+      const followUpPromptPayload = JSON.parse((followUpPrompt?.result as { content: Array<{ text: string }> }).content[0]!.text)
+      const resetSessionPayload = JSON.parse((resetSession?.result as { content: Array<{ text: string }> }).content[0]!.text)
+      const resetPromptPayload = JSON.parse((resetPrompt?.result as { content: Array<{ text: string }> }).content[0]!.text)
+
+      expect(toolNames).toEqual(expect.arrayContaining(['context_pack', 'context_prompt', 'context_session_reset']))
+
+      expect(explainPackPayload).toEqual(expect.objectContaining({
+        task: 'explain',
+        prompt: 'How does AuthService reach Transport?',
+        budget: 1,
+        pack: expect.objectContaining({
+          matched_nodes: expect.any(Array),
+          community_context: expect.any(Array),
+        }),
+      }))
+      expect(explainPackPayload.coverage).toEqual(expect.objectContaining({
+        missing_required: expect.arrayContaining(['supporting', 'structural']),
+      }))
+      expect(explainPackPayload.expandable).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: 'nodes' }),
+      ]))
+      expect(explainPackPayload.missing_context).toEqual(expect.arrayContaining(['supporting', 'structural']))
+      expect(impactPackPayload).toEqual(expect.objectContaining({
+        task: 'impact',
+        prompt: 'What breaks if HttpClient changes?',
+        target: 'HttpClient',
+      }))
+      expect(impactPackPayload.coverage).toEqual(expect.objectContaining({
+        required_evidence: ['primary', 'impact', 'structural'],
+      }))
+      expect(impactPackPayload.coverage.required_evidence).not.toContain('supporting')
+      expect(impactPackPayload.missing_context).toEqual(impactPackPayload.coverage.missing_required)
+      expect(impactPackPayload.missing_context).not.toContain('supporting')
+
+      expect(firstPromptPayload).toEqual(expect.objectContaining({
+        provider: 'claude',
+        prompt: 'How does AuthService reach Transport?',
+        compiled: expect.objectContaining({
+          provider: 'claude',
+          format: 'session_payload',
+          session_id: 'auth-thread',
+          token_count: expect.any(Number),
+          session_payload_token_count: expect.any(Number),
+          reused_context_tokens: 0,
+          session_state: expect.objectContaining({ revision: 1 }),
+        }),
+      }))
+      expect(firstPromptPayload).not.toHaveProperty('task')
+      expect(firstPromptPayload.missing_context).toEqual(expect.any(Array))
+      expect(geminiPromptPayload).toEqual(expect.objectContaining({
+        provider: 'gemini',
+        prompt: 'How does AuthService reach Transport?',
+        compiled: expect.objectContaining({
+          provider: 'gemini',
+          format: 'prompt',
+          token_count: firstPromptPayload.compiled.token_count,
+        }),
+      }))
+      expect(geminiPromptPayload).not.toHaveProperty('task')
+      expect(followUpPromptPayload.compiled.session_id).toBe('auth-thread')
+      expect(followUpPromptPayload.compiled.session_state.revision).toBe(2)
+      expect(followUpPromptPayload.compiled.reused_context_tokens).toBeGreaterThan(0)
+      expect(followUpPromptPayload.compiled.effective_token_count).toBeLessThan(followUpPromptPayload.compiled.token_count)
+
+      expect(resetSessionPayload).toEqual({
+        session_id: 'auth-thread',
+        cleared: true,
+      })
+      expect(resetPromptPayload.compiled.session_state.revision).toBe(1)
+      expect(resetPromptPayload.compiled.reused_context_tokens).toBe(0)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('evicts the oldest stored context prompt session when the session cache is full', async () => {
+    const root = createGraphFixtureRoot()
+    try {
+      const graphPath = join(root, 'graph.json')
+      const contextPromptSessions = new Map(
+        Array.from({ length: 256 }, (_, index) => [
+          `session-${index}`,
+          { version: 1 as const, revision: index, refs: {} },
+        ] as const),
+      )
+      const sessionState = {
+        logLevel: 'info' as const,
+        subscribedResourceUris: new Set<string>(),
+        resourceVersions: new Map<string, string>(),
+        resourceListSignature: null,
+        contextPromptSessions,
+      }
+
+      const response = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 10,
+        method: 'tools/call',
+        params: {
+          name: 'context_prompt',
+          arguments: {
+            prompt: 'How does AuthService reach Transport?',
+            provider: 'claude',
+            session_id: 'session-256',
+          },
+        },
+      }, sessionState))
+
+      expect(response).not.toBeNull()
+      expect(contextPromptSessions.size).toBe(256)
+      expect(contextPromptSessions.has('session-0')).toBe(false)
+      expect(contextPromptSessions.has('session-1')).toBe(true)
+      expect(contextPromptSessions.has('session-256')).toBe(true)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

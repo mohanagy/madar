@@ -3,6 +3,7 @@ import { statSync } from 'node:fs'
 import { basename, dirname } from 'node:path'
 import type { Readable, Writable } from 'node:stream'
 
+import type { ContextSessionState } from '../contracts/context-session.js'
 import { compareRefs } from '../infrastructure/time-travel.js'
 import { diffGraphs } from './diff.js'
 import { MCP_PROMPTS, MCP_TOOLS, activeMcpTools, isCoreToolName, resolveToolProfileFromEnv, type McpPromptDefinition } from './stdio/definitions.js'
@@ -47,6 +48,7 @@ const MAX_STDIO_HOPS = 20
 const MAX_STDIO_RESOURCE_BYTES = 5_000_000
 const MAX_STDIO_DIFF_ITEMS = 100
 const MAX_RESOURCE_SUBSCRIPTIONS = 16
+const MAX_CONTEXT_PROMPT_SESSIONS = 256
 const graphCache = new Map<string, { mtimeMs: number; graph: ReturnType<typeof loadGraph> }>()
 const MAX_COMPLETION_VALUES = 25
 const MAX_LOG_NOTIFICATION_CHARS = 10_000
@@ -55,6 +57,7 @@ type McpLogLevel = 'debug' | 'info' | 'notice' | 'warning' | 'error' | 'critical
 
 interface StdioSessionState extends ResourceSessionState {
   logLevel: McpLogLevel
+  contextPromptSessions: Map<string, ContextSessionState>
 }
 
 interface JsonRpcNotification {
@@ -85,6 +88,7 @@ function createSessionState(): StdioSessionState {
     subscribedResourceUris: new Set<string>(),
     resourceVersions: new Map<string, string>(),
     resourceListSignature: null,
+    contextPromptSessions: new Map<string, ContextSessionState>(),
   }
 }
 
@@ -149,6 +153,14 @@ function ensureResourceVersions(state: StdioSessionState): Map<string, string> {
   }
 
   return state.resourceVersions
+}
+
+function ensureContextPromptSessions(state: StdioSessionState): Map<string, ContextSessionState> {
+  if (!state.contextPromptSessions) {
+    state.contextPromptSessions = new Map<string, ContextSessionState>()
+  }
+
+  return state.contextPromptSessions
 }
 
 function requestId(request: StdioRequest): string | number | null {
@@ -573,6 +585,18 @@ export function handleStdioRequest(
             const projectRoot = dirname(dirname(safeGraphPath))
             return await (toolOverrides.compareRefs ?? compareRefs)(input, { rootDir: projectRoot })
           },
+          getContextPromptSession: (sessionId) => ensureContextPromptSessions(sessionState).get(sessionId),
+          setContextPromptSession: (sessionId, nextState) => {
+            const sessions = ensureContextPromptSessions(sessionState)
+            if (!sessions.has(sessionId) && sessions.size >= MAX_CONTEXT_PROMPT_SESSIONS) {
+              const oldestSessionId = sessions.keys().next().value as string | undefined
+              if (oldestSessionId !== undefined) {
+                sessions.delete(oldestSessionId)
+              }
+            }
+            sessions.set(sessionId, nextState)
+          },
+          clearContextPromptSession: (sessionId) => ensureContextPromptSessions(sessionState).delete(sessionId),
           readStoredCommunityLabels,
           jsonrpcInvalidParams: JSONRPC_INVALID_PARAMS,
           jsonrpcServerError: JSONRPC_SERVER_ERROR,

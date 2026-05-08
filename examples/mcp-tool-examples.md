@@ -1,6 +1,164 @@
 # MCP Tool Examples
 
-These examples show what your AI agent sees when it calls graphify-ts MCP tools. All output is real data from a production codebase.
+These examples show what your AI agent sees when it calls graphify-ts MCP tools. Think of this surface as the MCP half of the graphify-ts **context plane**: retrieval for discovery, impact for blast radius, and context-compiler tools for compact packs and provider-ready prompts. All output is real data from a production codebase.
+
+## context_pack — Compact Context Pack
+
+**Agent calls:**
+```json
+{ "name": "context_pack", "arguments": { "prompt": "how does payment processing work?", "task": "explain", "budget": 2000 } }
+```
+
+**Agent receives:**
+```json
+{
+  "task": "explain",
+  "prompt": "how does payment processing work?",
+  "budget": 2000,
+  "graph_path": "graphify-out/graph.json",
+  "pack": {
+    "question": "how does payment processing work?",
+    "token_count": 1847,
+    "matched_nodes": [
+      {
+        "label": "StripeGatewayService",
+        "source_file": "backend/src/modules/billing/services/stripe-gateway.service.ts",
+        "line_number": 15,
+        "snippet": "export class StripeGatewayService implements PaymentGateway { ... }",
+        "match_score": 3,
+        "relevance_band": "direct",
+        "community": 8,
+        "community_label": "Backend Billing"
+      },
+      {
+        "label": "TransactionService",
+        "source_file": "backend/src/modules/billing/services/transaction.service.ts",
+        "line_number": 22,
+        "snippet": "export class TransactionService { ... }",
+        "match_score": 2,
+        "relevance_band": "related",
+        "community": 12,
+        "community_label": "Backend Transaction"
+      }
+    ],
+    "relationships": [
+      { "from": "StripeGatewayService", "to": "TransactionService", "relation": "calls" }
+    ],
+    "community_context": [
+      { "id": 8, "label": "Backend Billing", "node_count": 23 },
+      { "id": 12, "label": "Backend Transaction", "node_count": 12 }
+    ],
+    "graph_signals": {
+      "god_nodes": ["User"],
+      "bridge_nodes": ["StripeGatewayService"]
+    },
+    "shared_file_type": "code"
+  },
+  "claims": [
+    {
+      "evidence_class": "primary",
+      "text": "primary evidence: StripeGatewayService",
+      "node_labels": ["StripeGatewayService"]
+    },
+    {
+      "evidence_class": "supporting",
+      "text": "supporting evidence: TransactionService",
+      "node_labels": ["TransactionService"]
+    }
+  ],
+  "expandable": [
+    {
+      "kind": "nodes",
+      "evidence_class": "structural",
+      "count": 3,
+      "preview_labels": ["BillingModule", "WebhookController", "CustomerLedger"]
+    }
+  ],
+  "coverage": {
+    "required_evidence": ["primary", "supporting", "structural"],
+    "entries": [
+      { "evidence_class": "primary", "required": true, "available_nodes": 1, "selected_nodes": 1, "status": "covered" },
+      { "evidence_class": "supporting", "required": true, "available_nodes": 2, "selected_nodes": 1, "status": "covered" },
+      { "evidence_class": "structural", "required": true, "available_nodes": 3, "selected_nodes": 0, "status": "missing" }
+    ],
+    "missing_required": ["structural"],
+    "available_relationships": 7,
+    "selected_relationships": 1
+  },
+  "missing_context": ["structural"]
+}
+```
+
+**What the agent does with this:** Uses the compact pack as a coverage contract: answer with the selected evidence now, and only expand omitted structural refs if the question needs more detail.
+
+---
+
+## context_prompt — Provider-Aware Prompt Compilation
+
+**Agent calls:**
+```json
+{ "name": "context_prompt", "arguments": { "prompt": "how does payment processing work?", "provider": "claude", "session_id": "billing-thread" } }
+```
+
+**Agent receives:**
+```json
+{
+  "provider": "claude",
+  "task": "explain",
+  "prompt": "how does payment processing work?",
+  "graph_path": "graphify-out/graph.json",
+  "compiled": {
+    "provider": "claude",
+    "format": "session_payload",
+    "prompt": "Session delta:\n{\n  \"previous_revision\": 6,\n  \"next_revision\": 7,\n  \"added\": [\"billing:transaction-service\"],\n  \"updated\": [\"billing:stripe-gateway\"],\n  \"invalidated\": []\n}\n\nUser question:\nhow does payment processing work?",
+    "token_count": 1420,
+    "effective_token_count": 914,
+    "reused_context_tokens": 506,
+    "session_state": {
+      "version": 1,
+      "revision": 7,
+      "refs": {
+        "billing:stripe-gateway": { "hash": "8f7b", "token_count": 210 },
+        "billing:transaction-service": { "hash": "f1a2", "token_count": 184 }
+      }
+    },
+    "session_id": "billing-thread"
+  },
+  "claims": [],
+  "expandable": [],
+  "coverage": {
+    "required_evidence": [],
+    "entries": [],
+    "missing_required": [],
+    "available_relationships": 0,
+    "selected_relationships": 0
+  },
+  "missing_context": []
+}
+```
+
+**What the agent does with this:** Sends the compiled prompt directly to Claude and tracks **effective_token_count** / `reused_context_tokens` as the real effective-cost signal for follow-up turns. For `provider: "gemini"`, the same tool returns `format: "prompt"` with plain prompt text.
+
+---
+
+## context_session_reset — Reset Claude Prompt Cache State
+
+**Agent calls:**
+```json
+{ "name": "context_session_reset", "arguments": { "session_id": "billing-thread" } }
+```
+
+**Agent receives:**
+```json
+{
+  "session_id": "billing-thread",
+  "cleared": true
+}
+```
+
+**What the agent does with this:** Clears the stored Claude prompt session before switching topics so the next `context_prompt` call resends the full stable context instead of a delta.
+
+---
 
 ## retrieve — Context Retrieval
 

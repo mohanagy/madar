@@ -8,7 +8,7 @@
 [![No API keys](https://img.shields.io/badge/API%20keys-none%20required-111827)](#what-stays-local)
 [![license MIT](https://img.shields.io/badge/license-MIT-16a34a)](https://github.com/mohanagy/graphify-ts/blob/main/LICENSE)
 
-graphify-ts builds a local knowledge graph of your code (no upload, no API key) and lets your AI agent answer codebase questions in **fewer turns** by retrieving structured context in a single MCP call instead of running many sequential `Read` / `Grep` / `Glob` calls.
+graphify-ts is a local, cost-first **context plane** and **context compiler** for codebases. It builds a knowledge graph on your machine (no upload, no API key), then turns that graph into MCP retrieval, compact automation packs, and provider-aware prompts so agents spend fewer turns and lower effective cost on the right context instead of repeated `Read` / `Grep` / `Glob` loops.
 
 ---
 
@@ -43,6 +43,15 @@ graphify-ts claude install      # wires Claude Code to use it
 Now ask Claude something about your codebase. It calls `retrieve` once, gets back labeled snippets with file paths and community context, and answers — instead of running multiple `Read` / `Grep` / `Glob` calls and accumulating tokens at every turn.
 
 Other agents: `cursor install`, `copilot install`, `gemini install`, `aider install`, `opencode install`.
+
+Need the automation surface, not just the installed MCP server?
+
+```bash
+graphify-ts pack "review the auth flow" --task explain
+graphify-ts prompt "review the auth flow" --provider claude
+```
+
+`pack` emits a compact JSON context payload for automation. `prompt` is the provider-aware context compiler: Claude output includes cache-aware `effective_token_count`, `reused_context_tokens`, and `session_state`; Gemini output returns a plain prompt string.
 
 ---
 
@@ -116,6 +125,8 @@ The short version: graphify-ts is local-first, MCP-native, diff-aware for PR rev
 graphify-ts generate .                          # build the graph
 graphify-ts claude install                      # wire to Claude Code
 graphify-ts watch .                             # rebuild on file change
+graphify-ts pack "how does auth work?" --task explain          # compact CLI context payload
+graphify-ts prompt "how does auth work?" --provider claude     # provider-ready compiled prompt
 graphify-ts review-compare graphify-out/graph.json --exec '...' --yes  # PR review benchmark
 graphify-ts compare "How does auth work?" --exec '...' --yes           # general benchmark
 graphify-ts time-travel main HEAD --view risk   # what changed between two refs
@@ -125,19 +136,38 @@ graphify-ts --help                              # full surface
 
 ---
 
+## Context-plane surfaces
+
+graphify-ts ships two complementary public surfaces:
+
+- **CLI context compiler** — `graphify-ts pack` builds compact explain/review/impact payloads for automation, and `graphify-ts prompt` compiles provider-ready prompts for `claude` or `gemini`.
+- **MCP context plane** — in `GRAPHIFY_TOOL_PROFILE=full`, the server also exposes `context_pack`, `context_prompt`, and `context_session_reset` so agents can request the same surfaces without leaving the MCP session.
+
+Use `context_pack` when you want expandable refs plus `claims`, `coverage`, and `missing_context` signals. Use `context_prompt` when you want the provider-ready prompt directly; for Claude, reuse a `session_id` so follow-up prompts resend only deltas and report `effective_token_count` / `reused_context_tokens`.
+
+---
+
 ## What you actually get
 
-These five MCP tools handle the most common agent workflows. The full surface is 21 tools, opt-in via `GRAPHIFY_TOOL_PROFILE=full`.
+These six MCP tools handle the most common agent workflows. The full surface is 24 tools, opt-in via `GRAPHIFY_TOOL_PROFILE=full`.
 
 | Tool | When the agent uses it |
 |---|---|
 | `retrieve` | "How does X work?" — returns ranked nodes with code snippets and community context |
 | `pr_impact` | "Is this PR safe to merge?" — diff-aware blast radius, ranked review risks, structural hotspots |
 | `impact` | "What breaks if I refactor X?" — directed dependents, affected communities, top propagation paths |
-| `relevant_files` | "Where do I edit to add feature Y?" — ranked starter files with reasoning |
+| `call_chain` | "How does request flow from X to Y?" — shortest execution paths across the graph |
 | `community_overview` | "Show me the architecture" — communities + sizes + bridges across the codebase |
+| `graph_stats` | "How big and deep is this graph?" — node/edge counts, density, and file-type mix |
 
-Plus `risk_map`, `implementation_checklist`, `call_chain`, `feature_map`, `time_travel_compare`, `community_details`, `query_graph`, `get_node`, `explain_node`, `shortest_path`, `graph_diff`, `god_nodes`, `semantic_anomalies`, `get_community`, `graph_stats`. Full reference: [examples/mcp-tool-examples.md](examples/mcp-tool-examples.md).
+Full-profile additions include the context-plane tools `context_pack`, `context_prompt`, and `context_session_reset`, plus `risk_map`, `implementation_checklist`, `relevant_files`, `feature_map`, `time_travel_compare`, `community_details`, `query_graph`, `get_node`, `get_neighbors`, `explain_node`, `shortest_path`, `graph_diff`, `god_nodes`, `semantic_anomalies`, `get_community`. Full reference: [examples/mcp-tool-examples.md](examples/mcp-tool-examples.md).
+
+---
+
+## Proof story: effective cost and coverage contracts
+
+- **Effective cost** is the honest prompt-compiler number for long-lived sessions: compare raw `token_count` to Claude's `effective_token_count` and `reused_context_tokens` to see what cache reuse actually saves.
+- **Coverage contracts** are the proof surfaces that show smaller context did not lose the required evidence. `benchmark` / `eval` cover question coverage, expected evidence, and snippet coverage; `review-compare` covers the same diff, seed, and hotspot surface while shrinking the review payload.
 
 ---
 

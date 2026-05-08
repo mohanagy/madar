@@ -234,6 +234,49 @@ export const MCP_TOOLS: McpToolDefinition[] = [
     },
   },
   {
+    name: 'context_pack',
+    description:
+      'Build a compact explain/review/impact context pack for a downstream agent. Use when you need expandable refs plus coverage and missing-context signals instead of the full graph payload.',
+    inputSchema: {
+      type: 'object',
+      required: ['prompt'],
+      properties: {
+        prompt: { type: 'string', description: 'Task prompt or question to build context for' },
+        task: { type: 'string', enum: ['explain', 'review', 'impact'], description: 'Context-pack mode (default: explain)' },
+        budget: { type: 'number', description: 'Optional: maximum token budget for the pack (default 3000)' },
+      },
+    },
+  },
+  {
+    name: 'context_prompt',
+    description:
+      'Compile a provider-ready context prompt. Use provider=claude with session_id for cache-aware follow-ups, or provider=gemini for a plain prompt string.',
+    inputSchema: {
+      type: 'object',
+      required: ['prompt', 'provider'],
+      properties: {
+        prompt: { type: 'string', description: 'Task prompt or question to compile' },
+        provider: { type: 'string', enum: ['claude', 'gemini'], description: 'Target prompt consumer' },
+        budget: { type: 'number', description: 'Optional: retrieval budget used to gather graph evidence (default 3000)' },
+        session_id: { type: 'string', description: 'Optional: server-managed Claude session key for cache-aware follow-ups.' },
+        reset_session: { type: 'boolean', description: 'Optional: clear any stored server-side session before compiling this prompt.' },
+        session_state: { type: 'object', description: 'Optional: explicit previous session_state payload to continue without using session_id.' },
+      },
+    },
+  },
+  {
+    name: 'context_session_reset',
+    description:
+      'Reset a stored context_prompt session when switching topics or when you want the next Claude prompt to resend the full stable context.',
+    inputSchema: {
+      type: 'object',
+      required: ['session_id'],
+      properties: {
+        session_id: { type: 'string', description: 'Server-managed context_prompt session key to clear' },
+      },
+    },
+  },
+  {
     name: 'relevant_files',
     description:
       'Return the most relevant files for a feature or change question, ranked with short explanations of why each file matters.',
@@ -378,5 +421,31 @@ export const MCP_PROMPTS: McpPromptDefinition[] = [
     title: 'Graph Community Summary',
     description: 'Summarize one community, its key nodes, and its boundaries.',
     arguments: [{ name: 'community_id', description: 'Numeric community id to summarize', required: true }],
+  },
+  {
+    name: 'context_pack_prompt',
+    title: 'Context Pack Request',
+    description: 'Prepare a compact explain/review/impact context pack with expandable refs and missing-context hints.',
+    arguments: [
+      { name: 'prompt', description: 'Task prompt or question to gather context for', required: true },
+      { name: 'task', description: 'Pack mode: explain, review, or impact' },
+      { name: 'budget', description: 'Optional token budget for the pack' },
+    ],
+  },
+  {
+    name: 'context_prompt_prompt',
+    title: 'Context Prompt Compilation',
+    description: 'Compile a provider-ready context prompt. Reuse a Claude session_id for follow-up prompts that send only deltas.',
+    arguments: [
+      { name: 'prompt', description: 'Task prompt or question to compile', required: true },
+      { name: 'provider', description: 'Target provider: claude or gemini', required: true },
+      { name: 'session_id', description: 'Optional Claude session id to reuse stable context' },
+    ],
+  },
+  {
+    name: 'context_session_reset_prompt',
+    title: 'Context Session Reset',
+    description: 'Reset a stored context_prompt session before starting a fresh Claude thread or changing topics.',
+    arguments: [{ name: 'session_id', description: 'Server-managed context_prompt session id to reset', required: true }],
   },
 ]

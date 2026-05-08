@@ -1,5 +1,6 @@
 import { QUERY_TOKEN_ESTIMATOR, loadGraph } from '../runtime/serve.js'
 import { KnowledgeGraph } from '../contracts/graph.js'
+import type { ContextSessionState } from '../contracts/context-session.js'
 import { graphStructureMetrics, type GraphStructureMetrics } from '../pipeline/analyze.js'
 import { formatTokenRatio, resolveCorpusBaseline, type CorpusBaselineSource } from './benchmark/corpus.js'
 import {
@@ -46,8 +47,11 @@ export interface BenchmarkSuccessResult {
   matched_expected_label_count: number
   missing_expected_labels: BenchmarkMissingExpectedLabels[]
   avg_query_tokens: number
+  avg_effective_query_tokens?: number
+  avg_reused_context_tokens?: number
   avg_total_tokens?: number | null
   reduction_ratio: number
+  effective_reduction_ratio?: number
   per_question: BenchmarkQuestionResult[]
 }
 
@@ -77,6 +81,16 @@ function averageQueryTokens(perQuestion: readonly BenchmarkQuestionResult[]): nu
   return Math.floor(perQuestion.reduce((sum, entry) => sum + entry.query_tokens, 0) / perQuestion.length)
 }
 
+function averageEffectiveQueryTokens(perQuestion: readonly BenchmarkQuestionResult[]): number {
+  return Math.floor(
+    perQuestion.reduce((sum, entry) => sum + (entry.effective_query_tokens ?? entry.query_tokens), 0) / perQuestion.length,
+  )
+}
+
+function averageReusedContextTokens(perQuestion: readonly BenchmarkQuestionResult[]): number {
+  return Math.floor(perQuestion.reduce((sum, entry) => sum + (entry.reused_context_tokens ?? 0), 0) / perQuestion.length)
+}
+
 function finalizeBenchmarkResult(
   graph: KnowledgeGraph,
   structureSignals: GraphStructureMetrics | null,
@@ -89,6 +103,7 @@ function finalizeBenchmarkResult(
   perQuestion: BenchmarkQuestionResult[],
 ): BenchmarkSuccessResult {
   const avgQueryTokens = averageQueryTokens(perQuestion)
+  const avgEffectiveQueryTokens = averageEffectiveQueryTokens(perQuestion)
   return {
     corpus_tokens: baseline.tokens,
     corpus_words: baseline.words,
@@ -103,8 +118,11 @@ function finalizeBenchmarkResult(
     matched_expected_label_count: matchedExpectedLabelCount,
     missing_expected_labels: missingExpectedLabels,
     avg_query_tokens: avgQueryTokens,
+    avg_effective_query_tokens: avgEffectiveQueryTokens,
+    avg_reused_context_tokens: averageReusedContextTokens(perQuestion),
     avg_total_tokens: averageReportedTotalTokens(perQuestion),
     reduction_ratio: avgQueryTokens > 0 ? Number((baseline.tokens / avgQueryTokens).toFixed(1)) : 0,
+    effective_reduction_ratio: avgEffectiveQueryTokens > 0 ? Number((baseline.tokens / avgEffectiveQueryTokens).toFixed(1)) : 0,
     per_question: perQuestion,
   }
 }
@@ -122,6 +140,7 @@ async function runRunnerBackedBenchmark(
   }
 
   const perQuestion: BenchmarkQuestionResult[] = []
+  let sessionState: ContextSessionState | undefined
   for (const evaluation of evaluations) {
     const run = await runBenchmarkPrompt({
       graphPath,
@@ -131,11 +150,15 @@ async function runRunnerBackedBenchmark(
       ...(options.outputDir !== undefined ? { outputDir: options.outputDir } : {}),
       ...(options.now !== undefined ? { now: options.now } : {}),
       ...(options.retrievalBudget !== undefined ? { retrievalBudget: options.retrievalBudget } : {}),
+      ...(sessionState ? { session: sessionState } : {}),
       ...(options.runner !== undefined ? { runner: options.runner } : {}),
     })
+    sessionState = run.session_state
     perQuestion.push({
       ...evaluation,
       query_tokens: run.query_tokens,
+      effective_query_tokens: run.effective_query_tokens,
+      reused_context_tokens: run.reused_context_tokens,
       total_tokens: run.total_tokens,
       prompt_tokens_estimated: run.prompt_tokens_estimated,
       prompt_token_source: run.prompt_token_source,
@@ -277,6 +300,12 @@ export function printBenchmark(result: BenchmarkResult): void {
     console.log('  Structure signals: unavailable for graph artifacts without source_file provenance')
   }
   console.log(`  ${averageInputTokenLabel(result.per_question)}: ~${result.avg_query_tokens.toLocaleString()}`)
+  if (
+    typeof result.avg_effective_query_tokens === 'number' &&
+    (result.avg_effective_query_tokens !== result.avg_query_tokens || (result.avg_reused_context_tokens ?? 0) > 0)
+  ) {
+    console.log(`  Avg effective input tokens (cache-adjusted): ~${result.avg_effective_query_tokens.toLocaleString()}`)
+  }
   const totalTokensLine = totalTokenLabel(result)
   if (totalTokensLine) {
     console.log(totalTokensLine)

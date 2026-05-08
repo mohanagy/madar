@@ -1,6 +1,7 @@
 import { isAbsolute, resolve } from 'node:path'
 
-import { validateGraphOutputPath } from '../shared/security.js'
+import type { ContextPackTaskKind } from '../contracts/context-pack.js'
+import { validateGraphOutputPath, validateGraphPath } from '../shared/security.js'
 import { type InstallPlatform, isInstallPlatform } from '../infrastructure/install.js'
 
 export class UsageError extends Error {
@@ -20,6 +21,21 @@ export interface QueryCliOptions {
   rankBy: QueryRankBy
   community: number | null
   fileType: string | null
+}
+
+export interface PackCliOptions {
+  prompt: string
+  budget: number
+  task: ContextPackTaskKind
+  graphPath: string
+}
+
+export type PromptCliProvider = 'claude' | 'gemini'
+
+export interface PromptCliOptions {
+  prompt: string
+  provider: PromptCliProvider
+  graphPath: string
 }
 
 export interface PathCliOptions {
@@ -246,6 +262,22 @@ function parseTimeTravelView(value: string): 'summary' | 'risk' | 'drift' | 'tim
   throw new UsageError('error: --view must be one of summary, risk, drift, timeline')
 }
 
+function parseContextPackTask(value: string): ContextPackTaskKind {
+  const normalized = value.trim().toLowerCase()
+  if (normalized === 'explain' || normalized === 'review' || normalized === 'impact') {
+    return normalized
+  }
+  throw new UsageError('error: --task must be one of explain, review, impact')
+}
+
+function parsePromptProvider(value: string): PromptCliProvider {
+  const normalized = value.trim().toLowerCase()
+  if (normalized === 'claude' || normalized === 'gemini') {
+    return normalized
+  }
+  throw new UsageError('error: --provider must be one of claude, gemini')
+}
+
 function validateCliText(field: string, value: string): string {
   if (value.length > MAX_CLI_LABEL_LENGTH) {
     throw new UsageError(`error: ${field} exceeds maximum length of ${MAX_CLI_LABEL_LENGTH} characters`)
@@ -253,8 +285,19 @@ function validateCliText(field: string, value: string): string {
   return value
 }
 
+function validateCliQuestionText(field: string, value: string): string {
+  if (value.length > MAX_QUESTION_LENGTH) {
+    throw new UsageError(`error: ${field} exceeds maximum length of ${MAX_QUESTION_LENGTH} characters`)
+  }
+  return value
+}
+
 function validateReviewCompareOutputDir(outputDir: string): string {
   return isAbsolute(outputDir) ? resolve(outputDir) : validateGraphOutputPath(outputDir)
+}
+
+function parseValidatedGraphPath(flag: string, value: string | undefined): string {
+  return validateGraphPath(requireOptionValue(flag, value))
 }
 
 export function parseQueryArgs(args: string[]): QueryCliOptions {
@@ -345,6 +388,136 @@ export function parseQueryArgs(args: string[]): QueryCliOptions {
   }
 
   return { question, mode, tokenBudget, graphPath, rankBy, community, fileType }
+}
+
+export function parsePackArgs(args: string[]): PackCliOptions {
+  const usage = 'Usage: graphify-ts pack "<prompt>" [--budget N] [--task KIND] [--graph path]'
+  const prompt = args[0]?.trim()
+  if (!prompt) {
+    throw new UsageError(usage)
+  }
+
+  let budget = 3000
+  let task: ContextPackTaskKind = 'explain'
+  let graphPath = 'graphify-out/graph.json'
+
+  const normalizedPrompt = validateCliQuestionText('prompt', prompt)
+
+  for (let index = 1; index < args.length; index += 1) {
+    const argument = args[index]
+    if (!argument) {
+      continue
+    }
+
+    if (!argument.startsWith('--')) {
+      throw new UsageError(usage)
+    }
+
+    if (argument === '--budget') {
+      budget = parseBudget(requireOptionValue('--budget', args[index + 1]))
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--budget=')) {
+      const [, value] = argument.split('=', 2)
+      budget = parseBudget(requireOptionValue('--budget', value))
+      continue
+    }
+
+    if (argument === '--task') {
+      task = parseContextPackTask(requireOptionValue('--task', args[index + 1]))
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--task=')) {
+      const [, value] = argument.split('=', 2)
+      task = parseContextPackTask(requireOptionValue('--task', value))
+      continue
+    }
+
+    if (argument === '--graph') {
+      graphPath = parseValidatedGraphPath('--graph', args[index + 1])
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--graph=')) {
+      const [, value] = argument.split('=', 2)
+      graphPath = parseValidatedGraphPath('--graph', value)
+      continue
+    }
+
+    throw new UsageError(`error: unknown option for pack: ${argument}`)
+  }
+
+  return {
+    prompt: normalizedPrompt,
+    budget,
+    task,
+    graphPath,
+  }
+}
+
+export function parsePromptArgs(args: string[]): PromptCliOptions {
+  const usage = 'Usage: graphify-ts prompt "<prompt>" --provider NAME [--graph path]'
+  const prompt = args[0]?.trim()
+  if (!prompt) {
+    throw new UsageError(usage)
+  }
+
+  let provider: PromptCliProvider | null = null
+  let graphPath = 'graphify-out/graph.json'
+
+  const normalizedPrompt = validateCliQuestionText('prompt', prompt)
+
+  for (let index = 1; index < args.length; index += 1) {
+    const argument = args[index]
+    if (!argument) {
+      continue
+    }
+
+    if (!argument.startsWith('--')) {
+      throw new UsageError(usage)
+    }
+
+    if (argument === '--provider') {
+      provider = parsePromptProvider(requireOptionValue('--provider', args[index + 1]))
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--provider=')) {
+      const [, value] = argument.split('=', 2)
+      provider = parsePromptProvider(requireOptionValue('--provider', value))
+      continue
+    }
+
+    if (argument === '--graph') {
+      graphPath = parseValidatedGraphPath('--graph', args[index + 1])
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--graph=')) {
+      const [, value] = argument.split('=', 2)
+      graphPath = parseValidatedGraphPath('--graph', value)
+      continue
+    }
+
+    throw new UsageError(`error: unknown option for prompt: ${argument}`)
+  }
+
+  if (provider === null) {
+    throw new UsageError('error: --provider is required')
+  }
+
+  return {
+    prompt: normalizedPrompt,
+    provider,
+    graphPath,
+  }
 }
 
 export function parsePathArgs(args: string[]): PathCliOptions {
