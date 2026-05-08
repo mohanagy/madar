@@ -89,10 +89,11 @@ function validateRuleDefinition(definition: TaskIntentDefinition, rule: TaskInte
   const hasAnyPhrases = (rule.any_phrases?.length ?? 0) > 0
   const hasAnyKeywords = (rule.any_keywords?.length ?? 0) > 0
   const hasKeywordGroups = (rule.keyword_groups?.length ?? 0) > 0
+  const matcherFieldCount = [hasAnyPhrases, hasAnyKeywords, hasKeywordGroups].filter(Boolean).length
 
-  if (!hasAnyPhrases && !hasAnyKeywords && !hasKeywordGroups) {
+  if (matcherFieldCount !== 1) {
     throw new Error(
-      `Invalid task intent rule ${taskIntentRuleLabel(definition, rule)}: must define at least one any_phrases, any_keywords, or keyword_groups entry`,
+      `Invalid task intent rule ${taskIntentRuleLabel(definition, rule)}: must define exactly one of any_phrases, any_keywords, or keyword_groups`,
     )
   }
 
@@ -113,13 +114,18 @@ function validateRuleDefinition(definition: TaskIntentDefinition, rule: TaskInte
   })
 }
 
-function validateTaskIntentDefinitions(): void {
+export function validateTaskIntentDefinitions(): void {
   TASK_INTENT_DEFINITIONS.forEach((definition) => {
     definition.rules.forEach((rule) => {
       validateRuleDefinition(definition, rule)
     })
   })
 }
+
+const VALIDATED_TASK_INTENT_DEFINITIONS = (() => {
+  validateTaskIntentDefinitions()
+  return TASK_INTENT_DEFINITIONS
+})()
 
 function evaluateRule(
   definition: TaskIntentDefinition,
@@ -187,8 +193,8 @@ function compareScores(left: TaskIntentScore, right: TaskIntentScore): number {
     return right.score - left.score
   }
 
-  const leftDefinition = TASK_INTENT_DEFINITIONS.find((definition) => definition.kind === left.kind)
-  const rightDefinition = TASK_INTENT_DEFINITIONS.find((definition) => definition.kind === right.kind)
+  const leftDefinition = VALIDATED_TASK_INTENT_DEFINITIONS.find((definition) => definition.kind === left.kind)
+  const rightDefinition = VALIDATED_TASK_INTENT_DEFINITIONS.find((definition) => definition.kind === right.kind)
   if (!leftDefinition || !rightDefinition) {
     return left.kind.localeCompare(right.kind)
   }
@@ -211,14 +217,13 @@ export function normalizeTaskIntentPrompt(prompt: string): string {
 }
 
 export function classifyTaskIntent(prompt: string): TaskIntentClassification {
-  validateTaskIntentDefinitions()
   const normalizedPrompt = normalizeTaskIntentPrompt(prompt)
   const tokens = promptTokens(normalizedPrompt)
-  const ruleMatches = TASK_INTENT_DEFINITIONS
+  const ruleMatches = VALIDATED_TASK_INTENT_DEFINITIONS
     .flatMap((definition) => definition.rules.map((rule) => evaluateRule(definition, normalizedPrompt, tokens, rule)))
     .filter((match): match is RuleMatch => match !== null)
 
-  const scores = TASK_INTENT_DEFINITIONS
+  const scores = VALIDATED_TASK_INTENT_DEFINITIONS
     .map((definition): TaskIntentScore => ({
       kind: definition.kind,
       score: ruleMatches
@@ -228,7 +233,7 @@ export function classifyTaskIntent(prompt: string): TaskIntentClassification {
     .sort(compareScores)
 
   const winningKind = scores[0]?.kind ?? 'explain'
-  const winningDefinition = TASK_INTENT_DEFINITIONS.find((definition) => definition.kind === winningKind)
+  const winningDefinition = VALIDATED_TASK_INTENT_DEFINITIONS.find((definition) => definition.kind === winningKind)
   if (!winningDefinition) {
     throw new Error(`Missing task intent definition for ${winningKind}`)
   }

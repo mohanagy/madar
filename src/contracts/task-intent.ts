@@ -17,6 +17,9 @@ export type TaskIntentContextKind = 'explain' | 'review' | 'impact'
 
 export type TaskIntentConfidence = 'low' | 'medium' | 'high'
 
+/**
+ * Each rule must define exactly one matcher field so signal semantics stay unambiguous.
+ */
 export interface TaskIntentSignalRule {
   id: string
   score: number

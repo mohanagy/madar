@@ -5,7 +5,11 @@ import {
   TASK_INTENT_KINDS,
   type TaskIntentKind,
 } from '../../src/contracts/task-intent.js'
-import { classifyTaskIntent, normalizeTaskIntentPrompt } from '../../src/runtime/task-intent.js'
+import {
+  classifyTaskIntent,
+  normalizeTaskIntentPrompt,
+  validateTaskIntentDefinitions,
+} from '../../src/runtime/task-intent.js'
 
 function defaultContextKindFor(kind: TaskIntentKind): 'explain' | 'review' | 'impact' {
   const definition = TASK_INTENT_DEFINITIONS.find((entry) => entry.kind === kind)
@@ -116,6 +120,24 @@ describe('task-intent', () => {
       expect(classification.scores[0]).toEqual({ kind: 'explain', score: 0 })
     })
 
+    it('does not revalidate static definitions on each classification call', () => {
+      expect(classifyTaskIntent('What breaks if we remove ContextPackTaskKind from the runtime?').kind)
+        .toBe('impact')
+
+      withTemporaryDefinitions((definitions) => {
+        definitions[1]!.rules = [
+          {
+            id: 'review-invalid-keywords',
+            score: 7,
+            any_keywords: ['pull request'],
+          },
+        ]
+      }, () => {
+        expect(classifyTaskIntent('What breaks if we remove ContextPackTaskKind from the runtime?').kind)
+          .toBe('impact')
+      })
+    })
+
     it('rejects multi-word any_keywords entries after normalization', () => {
       withTemporaryDefinitions((definitions) => {
         definitions[1]!.rules = [
@@ -126,7 +148,7 @@ describe('task-intent', () => {
           },
         ]
       }, () => {
-        expect(() => classifyTaskIntent('Review the pull request for regressions.'))
+        expect(() => validateTaskIntentDefinitions())
           .toThrow(/review\.review-invalid-keywords.*any_keywords\[0\].*pull request/i)
       })
     })
@@ -144,8 +166,24 @@ describe('task-intent', () => {
           },
         ]
       }, () => {
-        expect(() => classifyTaskIntent('What is the blast radius if we change this?'))
+        expect(() => validateTaskIntentDefinitions())
           .toThrow(/impact\.impact-invalid-keyword-groups.*keyword_groups\[0\]\[0\].*blast radius/i)
+      })
+    })
+
+    it('rejects rules that combine multiple signal matcher fields', () => {
+      withTemporaryDefinitions((definitions) => {
+        definitions[0]!.rules = [
+          {
+            id: 'explain-ambiguous-matchers',
+            score: 3,
+            any_phrases: ['explain'],
+            any_keywords: ['explain'],
+          },
+        ]
+      }, () => {
+        expect(() => validateTaskIntentDefinitions())
+          .toThrow(/explain\.explain-ambiguous-matchers.*exactly one of any_phrases, any_keywords, or keyword_groups/i)
       })
     })
 
@@ -158,8 +196,8 @@ describe('task-intent', () => {
           },
         ]
       }, () => {
-        expect(() => classifyTaskIntent('Explain the graph pipeline.'))
-          .toThrow(/explain\.explain-invalid-empty-rule.*must define at least one/i)
+        expect(() => validateTaskIntentDefinitions())
+          .toThrow(/explain\.explain-invalid-empty-rule.*exactly one of any_phrases, any_keywords, or keyword_groups/i)
       })
     })
   })
