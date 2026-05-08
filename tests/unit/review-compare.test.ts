@@ -170,6 +170,16 @@ describe('review compare', () => {
     expect(formatReviewCompareSummary(result)).toContain('Effective prompt tokens')
   })
 
+  it('uses the shared review prompt helper instead of duplicating buildContextPrompt calls inline', () => {
+    const source = readFileSync(join(process.cwd(), 'src', 'infrastructure', 'review-compare.ts'), 'utf8')
+    const functionStart = source.indexOf('export function generateReviewCompareArtifacts')
+    const functionEnd = source.indexOf('const paths: ReviewComparePromptArtifactPaths', functionStart)
+    const functionBody = source.slice(functionStart, functionEnd)
+
+    expect(functionBody).toContain('renderReviewPrompt(')
+    expect(functionBody).not.toContain('buildContextPrompt(')
+  })
+
   it('allows nested output directories whose parent does not exist yet', () => {
     const root = createRepo()
     repoRoots.push(root)

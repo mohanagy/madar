@@ -24,7 +24,9 @@ export interface ComparePromptPack {
   kind: 'baseline' | 'graphify'
   question: string
   prompt: string
+  session_payload: string
   token_count: number
+  session_payload_token_count: number
   effective_token_count: number
   reused_context_tokens: number
   session_state: ContextSessionState
@@ -839,8 +841,10 @@ export function buildBaselinePromptPack(input: BuildBaselinePromptPackInput): Co
     kind: 'baseline',
     question: input.question,
     prompt: builtPrompt.prompt,
+    session_payload: builtPrompt.session_payload,
     token_count: builtPrompt.metrics.raw_prompt_tokens,
-    effective_token_count: builtPrompt.metrics.effective_prompt_tokens,
+    session_payload_token_count: builtPrompt.metrics.session_payload_tokens,
+    effective_token_count: builtPrompt.metrics.session_payload_tokens,
     reused_context_tokens: builtPrompt.metrics.reused_context_tokens,
     session_state: builtPrompt.session_state,
   }
@@ -865,8 +869,10 @@ export function buildGraphifyPromptPack(input: BuildGraphifyPromptPackInput): Co
     kind: 'graphify',
     question: input.question,
     prompt: builtPrompt.prompt,
+    session_payload: builtPrompt.session_payload,
     token_count: builtPrompt.metrics.raw_prompt_tokens,
-    effective_token_count: builtPrompt.metrics.effective_prompt_tokens,
+    session_payload_token_count: builtPrompt.metrics.session_payload_tokens,
+    effective_token_count: builtPrompt.metrics.session_payload_tokens,
     reused_context_tokens: builtPrompt.metrics.reused_context_tokens,
     session_state: builtPrompt.session_state,
   }
@@ -947,8 +953,8 @@ export function generateCompareArtifacts(input: GenerateCompareArtifactsInput): 
       graphify: answerFilePath(questionOutputDir, 'graphify'),
     }
 
-    const baselinePromptText = baselinePrompt.prompt
-    const graphifyPromptText = graphifyPrompt.prompt
+    const baselinePromptText = baselinePrompt.session_payload
+    const graphifyPromptText = graphifyPrompt.session_payload
 
     writeFileSync(paths.baseline_prompt, baselinePromptText, 'utf8')
     writeFileSync(paths.graphify_prompt, graphifyPromptText, 'utf8')

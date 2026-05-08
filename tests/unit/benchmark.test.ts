@@ -548,6 +548,9 @@ describe('runBenchmark', () => {
       expect(executions[0]?.command).toContain("--mode 'graphify'")
       expect(readFileSync(executions[0]!.promptFile, 'utf8')).toContain('Retrieved graph context:')
       expect(readFileSync(executions[0]!.promptFile, 'utf8')).toContain('Question:\nhow does authentication work')
+      expect(readFileSync(executions[1]!.promptFile, 'utf8')).toContain('Session delta:')
+      expect(readFileSync(executions[1]!.promptFile, 'utf8')).toContain('Question:\nwhat is the main entry point')
+      expect(readFileSync(executions[1]!.promptFile, 'utf8')).not.toContain('Retrieved graph context:')
       expect(readFileSync(executions[0]!.outputFile, 'utf8')).toBe('Answer for how does authentication work\n')
       expect(readFileSync(executions[1]!.outputFile, 'utf8')).toBe('Answer for what is the main entry point\n')
 

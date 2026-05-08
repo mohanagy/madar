@@ -476,6 +476,47 @@ describe('compare runtime', () => {
     expect(secondPack.effective_token_count).toBeLessThan(secondPack.token_count)
   })
 
+  it('writes delta-oriented follow-up prompt artifacts for multi-question compare runs', () => {
+    const graph = makeGraph()
+    writeProjectFiles()
+    const graphPath = writeGraphFixture(graph)
+    const questionsPath = join(GRAPH_FIXTURE_ROOT, 'session-compare-questions.json')
+    writeFileSync(
+      questionsPath,
+      JSON.stringify(
+        [
+          { question: 'how does login create a session' },
+          { question: 'where is session storage defined' },
+        ],
+        null,
+        2,
+      ),
+      'utf8',
+    )
+
+    const result = generateCompareArtifacts({
+      graphPath,
+      questionsPath,
+      outputDir: COMPARE_OUTPUT_ROOT,
+      execTemplate: 'runner --prompt {prompt_file} --question {question} --mode {mode} --out {output_file}',
+      baselineMode: 'full',
+      now: new Date('2026-04-24T19:30:00.000Z'),
+    })
+
+    expect(result.reports).toHaveLength(2)
+    expect(readFileSync(result.reports[0]!.paths.baseline_prompt, 'utf8')).toContain('Corpus (full):')
+    expect(readFileSync(result.reports[0]!.paths.graphify_prompt, 'utf8')).toContain('Retrieved graph context:')
+    const followUpBaselinePrompt = readFileSync(result.reports[1]!.paths.baseline_prompt, 'utf8')
+    const followUpGraphifyPrompt = readFileSync(result.reports[1]!.paths.graphify_prompt, 'utf8')
+
+    expect(followUpBaselinePrompt).toContain('Session delta:')
+    expect(followUpBaselinePrompt).toContain('Question:\nwhere is session storage defined')
+    expect(followUpBaselinePrompt).not.toContain('Corpus (full):')
+    expect(followUpGraphifyPrompt).toContain('Session delta:')
+    expect(followUpGraphifyPrompt).toContain('Question:\nwhere is session storage defined')
+    expect(followUpGraphifyPrompt).not.toContain('Retrieved graph context:')
+  })
+
   it('builds bounded baseline excerpts for token-dense corpus text', () => {
     const graph = makeGraph()
     const corpusText = '😀'.repeat(500)

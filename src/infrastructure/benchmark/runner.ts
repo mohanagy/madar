@@ -206,7 +206,7 @@ export async function runBenchmarkPrompt(options: RunBenchmarkPromptOptions): Pr
     answer: join(outputRoot, 'graphify-answer.txt'),
     report: join(outputRoot, 'report.json'),
   }
-  writeFileSync(artifacts.prompt, promptPack.prompt, 'utf8')
+  writeFileSync(artifacts.prompt, promptPack.session_payload, 'utf8')
 
   const command = expandCompareExecTemplate(options.execTemplate, {
     promptFile: artifacts.prompt,
@@ -231,8 +231,8 @@ export async function runBenchmarkPrompt(options: RunBenchmarkPromptOptions): Pr
 
   const usage = parsedOutput.usage
   const run: BenchmarkPromptRun = {
-    prompt_tokens_estimated: promptPack.token_count,
-    query_tokens: usage?.input_total_tokens ?? promptPack.token_count,
+    prompt_tokens_estimated: promptPack.session_payload_token_count,
+    query_tokens: usage?.input_total_tokens ?? promptPack.session_payload_token_count,
     effective_query_tokens:
       usage?.input_total_tokens !== undefined
         ? usage.input_total_tokens - usage.cache_read_input_tokens

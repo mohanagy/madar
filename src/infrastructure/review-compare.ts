@@ -282,7 +282,7 @@ function sanitizePersistedReviewPayload<T>(value: T): T {
   return value
 }
 
-function renderReviewPrompt(payload: unknown, mode: ReviewCompareMode): string {
+function renderReviewPrompt(payload: unknown, mode: ReviewCompareMode): ReturnType<typeof buildContextPrompt> {
   return buildContextPrompt({
     instructions: [
       'Review the current git diff using only the provided pr_impact payload.',
@@ -299,7 +299,7 @@ function renderReviewPrompt(payload: unknown, mode: ReviewCompareMode): string {
       { body: `Mode: ${mode}` },
       { body: 'Answer:' },
     ],
-  }).prompt
+  })
 }
 
 function writeReport(report: ReviewCompareReport): void {
@@ -341,40 +341,8 @@ export function generateReviewCompareArtifacts(input: ReviewCompareInput): Revie
   const compactPayload = compactPrImpactResult(verbosePayload)
   const persistedVerbosePayload = sanitizePersistedReviewPayload(verbosePayload)
   const persistedCompactPayload = sanitizePersistedReviewPayload(compactPayload)
-  const verbosePromptArtifact = buildContextPrompt({
-    instructions: [
-      'Review the current git diff using only the provided pr_impact payload.',
-      'Summarize the changed areas, top risks, supporting files to inspect, likely tests to run, and structural hotspots to watch.',
-    ],
-    stable_prefix_title: 'pr_impact payload',
-    stable_sections: [
-      {
-        ref: 'pr_impact_payload',
-        body: JSON.stringify(persistedVerbosePayload, null, 2),
-      },
-    ],
-    dynamic_sections: [
-      { body: 'Mode: verbose' },
-      { body: 'Answer:' },
-    ],
-  })
-  const compactPromptArtifact = buildContextPrompt({
-    instructions: [
-      'Review the current git diff using only the provided pr_impact payload.',
-      'Summarize the changed areas, top risks, supporting files to inspect, likely tests to run, and structural hotspots to watch.',
-    ],
-    stable_prefix_title: 'pr_impact payload',
-    stable_sections: [
-      {
-        ref: 'pr_impact_payload',
-        body: JSON.stringify(persistedCompactPayload, null, 2),
-      },
-    ],
-    dynamic_sections: [
-      { body: 'Mode: compact' },
-      { body: 'Answer:' },
-    ],
-  })
+  const verbosePromptArtifact = renderReviewPrompt(persistedVerbosePayload, 'verbose')
+  const compactPromptArtifact = renderReviewPrompt(persistedCompactPayload, 'compact')
   const verbosePrompt = verbosePromptArtifact.prompt
   const compactPrompt = compactPromptArtifact.prompt
 
