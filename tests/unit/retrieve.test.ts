@@ -197,7 +197,7 @@ describe('retrieve', () => {
       graph.addNode('session_mgr', {
         label: 'SessionManager',
         source_file: '/src/session.ts',
-        line_number: 5,
+        source_location: 'L5-L8',
         node_kind: 'class',
         file_type: 'code',
         community: 2,
@@ -2301,7 +2301,35 @@ describe('retrieve', () => {
         missing_required: expect.arrayContaining(['supporting', 'structural']),
       }))
       expect(result.expandable).toEqual(expect.arrayContaining([
-        expect.objectContaining({ kind: 'nodes', evidence_class: 'supporting' }),
+        expect.objectContaining({
+          kind: 'nodes',
+          handle_id: expect.stringMatching(/^expand:explain:supporting:/),
+          evidence_class: 'supporting',
+          preview: expect.arrayContaining([
+            expect.objectContaining({
+              node_id: 'session_mgr',
+              label: 'SessionManager',
+              source_file: '/src/session.ts',
+              line_range: {
+                start_line: 5,
+                end_line: 8,
+              },
+            }),
+          ]),
+          follow_up: expect.objectContaining({
+            kind: 'context_pack',
+            task_kind: 'explain',
+            evidence_class: 'supporting',
+            focus_files: expect.arrayContaining(['/src/session-policy.ts', '/src/session-router.ts', '/src/session-validator.ts', '/src/session.ts']),
+            focus_ranges: expect.arrayContaining([
+              {
+                source_file: '/src/session.ts',
+                start_line: 5,
+                end_line: 8,
+              },
+            ]),
+          }),
+        }),
       ]))
     })
 

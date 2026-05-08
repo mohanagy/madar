@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto'
+
 import type {
   CompiledContextPack,
   ContextPackClaim,
@@ -5,7 +7,11 @@ import type {
   ContextPackCoverage,
   ContextPackCoverageEntry,
   ContextPackEvidenceClass,
+  ContextPackExpandableFollowUp,
+  ContextPackExpandableLineRange,
+  ContextPackExpandablePreview,
   ContextPackExpandableRef,
+  ContextPackExpandableSourceRange,
   ContextPackGraphSignals,
   ContextPackNode,
   ContextPackRelationship,
@@ -28,6 +34,7 @@ export interface ContextPackNodeCandidate<TNode extends ContextPackNode = Contex
   node_id?: string | undefined
   community?: number | null
   evidence_class: ContextPackEvidenceClass
+  expandable_ref?: ContextPackExpandablePreview
   estimate_tokens: () => number
   build_entry: () => TNode
 }
@@ -159,28 +166,155 @@ function buildExpandableRefs(
   taskContract: ContextPackTaskContract,
   omittedNodes: readonly ContextPackNodeCandidate[],
 ): ContextPackExpandableRef[] {
-  const omittedByEvidence = new Map<ContextPackEvidenceClass, string[]>()
+  const omittedByEvidence = new Map<ContextPackEvidenceClass, ContextPackExpandablePreview[]>()
   for (const node of omittedNodes) {
-    const labels = omittedByEvidence.get(node.evidence_class) ?? []
-    labels.push(node.label)
-    omittedByEvidence.set(node.evidence_class, labels)
+    const previews = omittedByEvidence.get(node.evidence_class) ?? []
+    previews.push(expandablePreviewForCandidate(node))
+    omittedByEvidence.set(node.evidence_class, previews)
   }
 
   const evidenceOrder = orderedEvidence(taskContract, omittedByEvidence.keys())
 
   return evidenceOrder.flatMap((evidence_class) => {
-    const labels = omittedByEvidence.get(evidence_class) ?? []
-    if (labels.length === 0) {
+    const previews = omittedByEvidence.get(evidence_class) ?? []
+    if (previews.length === 0) {
       return []
     }
 
+    const handleId = stableExpandableHandleId(taskContract, evidence_class, previews)
     return [{
       kind: 'nodes',
+      handle_id: handleId,
       evidence_class,
-      count: labels.length,
-      preview_labels: labels.slice(0, 3),
+      count: previews.length,
+      preview: previews.slice(0, 3),
+      follow_up: expandableFollowUp(taskContract, evidence_class, previews),
     }]
   })
+}
+
+function normalizeExpandableLineRange(range: ContextPackExpandableLineRange | undefined): ContextPackExpandableLineRange | undefined {
+  if (!range) {
+    return undefined
+  }
+
+  const start = Math.trunc(range.start_line)
+  const end = Math.trunc(range.end_line)
+  if (start < 1 || end < 1) {
+    return undefined
+  }
+
+  return {
+    start_line: Math.min(start, end),
+    end_line: Math.max(start, end),
+  }
+}
+
+function expandablePreviewForCandidate(candidate: ContextPackNodeCandidate): ContextPackExpandablePreview {
+  let fallback: ContextPackNode | undefined
+  const fallbackEntry = (): ContextPackNode => {
+    fallback ??= candidate.build_entry()
+    return fallback
+  }
+  const providedLineRange = normalizeExpandableLineRange(candidate.expandable_ref?.line_range)
+  const lineRange = providedLineRange ?? (() => {
+    const entry = fallbackEntry()
+    return entry.line_number > 0
+      ? {
+          start_line: entry.line_number,
+          end_line: entry.line_number,
+        }
+      : undefined
+  })()
+  const fallbackNodeId = typeof candidate.node_id === 'string'
+    ? candidate.node_id
+    : typeof fallback?.node_id === 'string'
+      ? fallback.node_id
+      : undefined
+  const sourceFile = candidate.expandable_ref?.source_file ?? fallback?.source_file ?? fallbackEntry().source_file
+
+  return {
+    ...(typeof candidate.expandable_ref?.node_id === 'string'
+      ? { node_id: candidate.expandable_ref.node_id }
+      : typeof fallbackNodeId === 'string'
+        ? { node_id: fallbackNodeId }
+      : {}),
+    label: candidate.expandable_ref?.label ?? candidate.label,
+    source_file: sourceFile,
+    ...(lineRange ? { line_range: lineRange } : {}),
+  }
+}
+
+function expandablePreviewSignature(preview: ContextPackExpandablePreview): string {
+  const range = preview.line_range
+    ? `${preview.line_range.start_line}-${preview.line_range.end_line}`
+    : ''
+  return [
+    preview.node_id ?? '',
+    preview.label,
+    preview.source_file,
+    range,
+  ].join('\u0000')
+}
+
+function stableExpandableHandleId(
+  taskContract: ContextPackTaskContract,
+  evidenceClass: ContextPackEvidenceClass,
+  previews: readonly ContextPackExpandablePreview[],
+): string {
+  const digest = createHash('sha1')
+    .update(previews.map(expandablePreviewSignature).sort().join('\u0001'))
+    .digest('hex')
+    .slice(0, 12)
+  return `expand:${taskContract.task_kind}:${evidenceClass}:${digest}`
+}
+
+function sourceRangeSignature(range: ContextPackExpandableSourceRange): string {
+  return `${range.source_file}\u0000${range.start_line}\u0000${range.end_line}`
+}
+
+function expandableFollowUp(
+  taskContract: ContextPackTaskContract,
+  evidenceClass: ContextPackEvidenceClass,
+  previews: readonly ContextPackExpandablePreview[],
+): ContextPackExpandableFollowUp {
+  const focus_files = [...new Set(previews.map((preview) => preview.source_file).filter((sourceFile) => sourceFile.length > 0))]
+    .sort((left, right) => left.localeCompare(right))
+  const seenRanges = new Set<string>()
+  const focus_ranges: ContextPackExpandableSourceRange[] = []
+
+  for (const preview of previews) {
+    if (!preview.line_range) {
+      continue
+    }
+
+    const range = {
+      source_file: preview.source_file,
+      start_line: preview.line_range.start_line,
+      end_line: preview.line_range.end_line,
+    }
+    const signature = sourceRangeSignature(range)
+    if (seenRanges.has(signature)) {
+      continue
+    }
+
+    seenRanges.add(signature)
+    focus_ranges.push(range)
+  }
+
+  focus_ranges.sort((left, right) => {
+    return left.source_file.localeCompare(right.source_file)
+      || left.start_line - right.start_line
+      || left.end_line - right.end_line
+  })
+
+  return {
+    kind: 'context_pack',
+    task_kind: taskContract.task_kind,
+    evidence_class: evidenceClass,
+    focus_files,
+    focus_ranges,
+  }
 }
 
 export function classifyTaskContract(

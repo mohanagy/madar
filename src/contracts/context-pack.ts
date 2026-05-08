@@ -58,11 +58,37 @@ export interface ContextPackClaim {
   node_labels: string[]
 }
 
+export interface ContextPackExpandableLineRange {
+  start_line: number
+  end_line: number
+}
+
+export interface ContextPackExpandablePreview {
+  node_id?: string
+  label: string
+  source_file: string
+  line_range?: ContextPackExpandableLineRange
+}
+
+export interface ContextPackExpandableSourceRange extends ContextPackExpandableLineRange {
+  source_file: string
+}
+
+export interface ContextPackExpandableFollowUp {
+  kind: 'context_pack'
+  task_kind: ContextPackTaskKind
+  evidence_class: ContextPackEvidenceClass
+  focus_files: string[]
+  focus_ranges: ContextPackExpandableSourceRange[]
+}
+
 export interface ContextPackExpandableRef {
   kind: 'nodes'
+  handle_id: string
   evidence_class: ContextPackEvidenceClass
   count: number
-  preview_labels: string[]
+  preview: ContextPackExpandablePreview[]
+  follow_up: ContextPackExpandableFollowUp
 }
 
 export type ContextPackCoverageStatus = 'covered' | 'missing' | 'available'

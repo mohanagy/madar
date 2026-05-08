@@ -153,12 +153,36 @@ describe('context-pack', () => {
         expect.objectContaining({ evidence_class: 'structural', status: 'missing', selected_nodes: 0 }),
       ]))
       expect(pack.expandable).toEqual([
-        {
+        expect.objectContaining({
           kind: 'nodes',
+          handle_id: expect.stringMatching(/^expand:explain:structural:/),
           evidence_class: 'structural',
           count: 1,
-          preview_labels: ['Logger'],
-        },
+          preview: [
+            {
+              node_id: 'logger',
+              label: 'Logger',
+              source_file: 'src/logger.ts',
+              line_range: {
+                start_line: 3,
+                end_line: 3,
+              },
+            },
+          ],
+          follow_up: {
+            kind: 'context_pack',
+            task_kind: 'explain',
+            evidence_class: 'structural',
+            focus_files: ['src/logger.ts'],
+            focus_ranges: [
+              {
+                source_file: 'src/logger.ts',
+                start_line: 3,
+                end_line: 3,
+              },
+            ],
+          },
+        }),
       ])
       expect(pack.graph_signals).toEqual({
         god_nodes: [],
@@ -205,12 +229,36 @@ describe('context-pack', () => {
         expect.objectContaining({ evidence_class: 'supporting', status: 'missing', selected_nodes: 0 }),
       ]))
       expect(pack.expandable).toEqual([
-        {
+        expect.objectContaining({
           kind: 'nodes',
+          handle_id: expect.stringMatching(/^expand:review:supporting:/),
           evidence_class: 'supporting',
           count: 1,
-          preview_labels: ['ApiHandler'],
-        },
+          preview: [
+            {
+              node_id: 'api_handler',
+              label: 'ApiHandler',
+              source_file: 'src/api.ts',
+              line_range: {
+                start_line: 20,
+                end_line: 20,
+              },
+            },
+          ],
+          follow_up: {
+            kind: 'context_pack',
+            task_kind: 'review',
+            evidence_class: 'supporting',
+            focus_files: ['src/api.ts'],
+            focus_ranges: [
+              {
+                source_file: 'src/api.ts',
+                start_line: 20,
+                end_line: 20,
+              },
+            ],
+          },
+        }),
       ])
     })
 
@@ -278,6 +326,111 @@ describe('context-pack', () => {
         evidence_class: 'impact',
         node_labels: ['AuthBypassPath'],
       }))
+    })
+
+    it('builds stable expandable handle ids for the same omitted evidence set', () => {
+      const first = compileContextPack({
+        task_contract: classifyTaskContract('explain', { budget: 10, prompt: 'Explain auth flow' }),
+        nodes: [
+          nodeCandidate({
+            node_id: 'auth_service',
+            label: 'AuthService',
+            source_file: 'src/auth.ts',
+            line_number: 10,
+            file_type: 'code',
+            snippet: 'export function AuthService() {}',
+            match_score: 9,
+            relevance_band: 'direct',
+            community: 0,
+            community_label: 'Auth',
+          }, 'primary', 10),
+          nodeCandidate({
+            node_id: 'session_manager',
+            label: 'SessionManager',
+            source_file: 'src/session.ts',
+            line_number: 20,
+            file_type: 'code',
+            snippet: 'export class SessionManager {}',
+            match_score: 5,
+            relevance_band: 'related',
+            community: 1,
+            community_label: 'Session',
+          }, 'supporting', 9),
+          nodeCandidate({
+            node_id: 'session_policy',
+            label: 'SessionPolicy',
+            source_file: 'src/session-policy.ts',
+            line_number: 24,
+            file_type: 'code',
+            snippet: 'export class SessionPolicy {}',
+            match_score: 4,
+            relevance_band: 'related',
+            community: 1,
+            community_label: 'Session',
+          }, 'supporting', 8),
+        ],
+      })
+      const second = compileContextPack({
+        task_contract: classifyTaskContract('explain', { budget: 10, prompt: 'Explain auth flow' }),
+        nodes: [
+          nodeCandidate({
+            node_id: 'auth_service',
+            label: 'AuthService',
+            source_file: 'src/auth.ts',
+            line_number: 10,
+            file_type: 'code',
+            snippet: 'export function AuthService() {}',
+            match_score: 9,
+            relevance_band: 'direct',
+            community: 0,
+            community_label: 'Auth',
+          }, 'primary', 10),
+          nodeCandidate({
+            node_id: 'session_policy',
+            label: 'SessionPolicy',
+            source_file: 'src/session-policy.ts',
+            line_number: 24,
+            file_type: 'code',
+            snippet: 'export class SessionPolicy {}',
+            match_score: 4,
+            relevance_band: 'related',
+            community: 1,
+            community_label: 'Session',
+          }, 'supporting', 8),
+          nodeCandidate({
+            node_id: 'session_manager',
+            label: 'SessionManager',
+            source_file: 'src/session.ts',
+            line_number: 20,
+            file_type: 'code',
+            snippet: 'export class SessionManager {}',
+            match_score: 5,
+            relevance_band: 'related',
+            community: 1,
+            community_label: 'Session',
+          }, 'supporting', 9),
+        ],
+      })
+
+      expect(first.expandable[0]?.handle_id).toBe(second.expandable[0]?.handle_id)
+      expect(first.expandable[0]?.follow_up).toEqual({
+        kind: 'context_pack',
+        task_kind: 'explain',
+        evidence_class: 'supporting',
+        focus_files: ['src/session-policy.ts', 'src/session.ts'],
+        focus_ranges: [
+          {
+            source_file: 'src/session-policy.ts',
+            start_line: 24,
+            end_line: 24,
+          },
+          {
+            source_file: 'src/session.ts',
+            start_line: 20,
+            end_line: 20,
+          },
+        ],
+      })
     })
   })
 
