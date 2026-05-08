@@ -12,6 +12,9 @@ function createGraphFixtureRoot(): string {
   const parentDir = resolve('graphify-out', 'test-runtime')
   mkdirSync(parentDir, { recursive: true })
   const root = mkdtempSync(join(parentDir, 'graphify-ts-stdio-'))
+  writeFileSync(join(root, 'auth.ts'), 'export function AuthService() {\n  return new HttpClient()\n}\n', 'utf8')
+  writeFileSync(join(root, 'client.ts'), 'export class HttpClient {\n  request() {\n    return new Transport()\n  }\n}\n', 'utf8')
+  writeFileSync(join(root, 'transport.ts'), 'export class Transport {}\n', 'utf8')
   writeFileSync(
     join(root, 'baseline.graph.json'),
     JSON.stringify({
@@ -1049,6 +1052,7 @@ describe('stdio runtime', () => {
       }))
       expect(expandedPackPayload.matched_focus).toBeGreaterThan(0)
       expect(expandedPackPayload.pack.matched_nodes.length).toBeGreaterThan(0)
+      expect(expandedPackPayload.pack.matched_nodes.some((node: { snippet: string | null }) => typeof node.snippet === 'string' && node.snippet.length > 0)).toBe(true)
 
       expect(firstPromptPayload).toEqual(expect.objectContaining({
         provider: 'claude',

@@ -2,7 +2,7 @@ import { isAbsolute, resolve } from 'node:path'
 
 import type { ContextPackTaskKind } from '../contracts/context-pack.js'
 import { validateGraphOutputPath, validateGraphPath } from '../shared/security.js'
-import { type InstallPlatform, isInstallPlatform } from '../infrastructure/install.js'
+import { type InstallPlatform, isInstallPlatform, type McpToolProfile, isMcpToolProfile } from '../infrastructure/install.js'
 
 export class UsageError extends Error {
   constructor(message: string) {
@@ -155,7 +155,10 @@ export interface InstallCliOptions {
 
 export interface PlatformActionCliOptions {
   action: 'install' | 'uninstall'
+  profile?: McpToolProfile
 }
+
+const PROFILE_AWARE_PLATFORM_COMMANDS = new Set(['claude', 'cursor', 'copilot'])
 
 const MAX_CLI_SOURCE_NODES = 50
 const MAX_CLI_LABEL_LENGTH = 512
@@ -1506,9 +1509,53 @@ export function parseInstallArgs(args: string[], defaultPlatform: InstallPlatfor
 
 export function parsePlatformActionArgs(command: string, args: string[]): PlatformActionCliOptions {
   const action = args[0]
-  if ((action === 'install' || action === 'uninstall') && args.length === 1) {
-    return { action }
+  const profileAware = PROFILE_AWARE_PLATFORM_COMMANDS.has(command)
+  const usage = profileAware
+    ? `Usage: graphify-ts ${command} <install|uninstall> [--profile core|full]`
+    : `Usage: graphify-ts ${command} <install|uninstall>`
+  if (action !== 'install' && action !== 'uninstall') {
+    throw new UsageError(usage)
   }
 
-  throw new UsageError(`Usage: graphify-ts ${command} <install|uninstall>`)
+  if (action === 'uninstall') {
+    if (args.length === 1) {
+      return { action }
+    }
+    throw new UsageError(usage)
+  }
+
+  let profile: McpToolProfile | undefined
+  for (let index = 1; index < args.length; index += 1) {
+    const argument = args[index]
+    if (!argument) {
+      continue
+    }
+    if (!profileAware) {
+      throw new UsageError(usage)
+    }
+
+    if (argument === '--profile') {
+      const value = requireNonEmptyValue('--profile', args[index + 1])
+      if (!isMcpToolProfile(value)) {
+        throw new UsageError('error: --profile must be one of core, full')
+      }
+      profile = value
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--profile=')) {
+      const [, value] = argument.split('=', 2)
+      const normalizedValue = requireNonEmptyValue('--profile', value)
+      if (!isMcpToolProfile(normalizedValue)) {
+        throw new UsageError('error: --profile must be one of core, full')
+      }
+      profile = normalizedValue
+      continue
+    }
+
+    throw new UsageError(usage)
+  }
+
+  return profile ? { action, profile } : { action }
 }

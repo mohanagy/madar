@@ -1,4 +1,4 @@
-import { dirname } from 'node:path'
+import { dirname, isAbsolute, resolve } from 'node:path'
 
 import { buildGraphifyPromptPack } from '../../infrastructure/compare.js'
 import type { TaskContextPlan } from '../../contracts/task-context-plan.js'
@@ -23,7 +23,7 @@ import { pickImpactTarget } from '../context-pack-target.js'
 import { analyzeImpact, callChains, compactImpactResult, type ImpactResult } from '../impact.js'
 import { analyzePrImpact, compactPrImpactResult } from '../pr-impact.js'
 import { relevantFiles } from '../relevant-files.js'
-import { collectRelationships, compactRetrieveResult, retrieveContext, retrieveContextAsync, type RetrieveResult } from '../retrieve.js'
+import { collectRelationships, compactRetrieveResult, readSnippet, retrieveContext, retrieveContextAsync, type RetrieveResult } from '../retrieve.js'
 import { riskMap } from '../risk-map.js'
 import { buildTaskContextPlan } from '../task-context-planner.js'
 import type { TimeTravelView } from '../time-travel.js'
@@ -224,6 +224,10 @@ function createImpactCandidate(
 
   return {
     label: node.label,
+    source_file: sourceFile,
+    line_number: 0,
+    ...(node.file_type ? { file_type: node.file_type } : {}),
+    ...(node.node_kind ? { node_kind: node.node_kind } : {}),
     evidence_class: evidenceClass,
     ...(node.community !== undefined ? { community: node.community } : {}),
     estimate_tokens: () => {
@@ -236,6 +240,39 @@ function createImpactCandidate(
     },
     build_entry: buildEntry,
   }
+}
+
+function snippetSourcePathCandidates(graphPath: string, sourceFile: string): string[] {
+  if (sourceFile.trim().length === 0) {
+    return []
+  }
+  if (isAbsolute(sourceFile)) {
+    return [sourceFile]
+  }
+
+  const graphDir = dirname(graphPath)
+  const projectDir = graphDir.endsWith('/graphify-out') ? dirname(graphDir) : graphDir
+  return [...new Set([
+    resolve(projectDir, sourceFile),
+    resolve(graphDir, sourceFile),
+    resolve(sourceFile),
+  ])]
+}
+
+function readFocusedSnippet(
+  graphPath: string,
+  sourceFile: string,
+  lineNumber: number,
+  options: { derived?: boolean; fileCache?: Map<string, string[] | null> } = {},
+): string | null {
+  for (const candidatePath of snippetSourcePathCandidates(graphPath, sourceFile)) {
+    const snippet = readSnippet(candidatePath, lineNumber, options)
+    if (snippet !== null) {
+      return snippet
+    }
+  }
+
+  return null
 }
 
 function impactMetadata(
@@ -359,6 +396,7 @@ function buildFocusedExpansionPayload(
   const nodeCandidates: Array<ContextPackNodeCandidate<ContextPackNode>> = []
   const communityIds = new Set<number>()
   const includedIds = new Set<string>()
+  const snippetFileCache = new Map<string, string[] | null>()
 
   for (const [nodeId, attributes] of graph.nodeEntries()) {
     const sourceFile = String(attributes.source_file ?? '').trim()
@@ -384,8 +422,12 @@ function buildFocusedExpansionPayload(
     nodeCandidates.push({
       label: String(attributes.label ?? nodeId),
       node_id: nodeId,
+      source_file: sourceFile,
+      line_number: lineNumber,
       evidence_class: stored.follow_up.evidence_class,
       ...(community !== null ? { community } : {}),
+      ...(String(attributes.file_type ?? '').trim().length > 0 ? { file_type: String(attributes.file_type ?? '').trim() } : {}),
+      ...(String(attributes.node_kind ?? '').trim().length > 0 ? { node_kind: String(attributes.node_kind ?? '').trim() } : {}),
       estimate_tokens: () => {
         if (tokenCost !== undefined) {
           return tokenCost
@@ -395,7 +437,7 @@ function buildFocusedExpansionPayload(
           String(attributes.label ?? nodeId),
           sourceFile,
           lineNumber,
-          null,
+          builtEntry?.snippet ?? null,
         )
         return tokenCost
       },
@@ -404,12 +446,16 @@ function buildFocusedExpansionPayload(
           return builtEntry
         }
 
+        const snippet = readFocusedSnippet(graphPath, sourceFile, lineNumber, {
+          derived: sourceRange === null,
+          fileCache: snippetFileCache,
+        })
         builtEntry = {
           node_id: nodeId,
           label: String(attributes.label ?? nodeId),
           source_file: sourceFile,
           line_number: lineNumber,
-          snippet: null,
+          snippet,
           file_type: String(attributes.file_type ?? '') || undefined,
           community,
           community_label: community !== null ? (communityLabels[community] ?? null) : null,
@@ -418,6 +464,7 @@ function buildFocusedExpansionPayload(
           relevance_band: relevanceBandForEvidenceClass(stored.follow_up.evidence_class),
           evidence_class: stored.follow_up.evidence_class,
         }
+        tokenCost = estimateContextPackEntryTokens(String(attributes.label ?? nodeId), sourceFile, lineNumber, snippet)
         return builtEntry
       },
     })
