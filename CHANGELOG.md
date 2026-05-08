@@ -4,6 +4,24 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-05-08
+
+### Added
+
+- **Context-pack compiler surface**: added shared context-pack contracts plus the new `graphify-ts pack` CLI command for compact explain, review, and impact packs with claims, coverage, expandable refs, and missing-context reporting.
+- **Context-session prompt compilation**: added shared context-session state/delta contracts plus the new `graphify-ts prompt` CLI command for provider-ready prompts, session payloads, and cache-aware follow-up reuse accounting.
+- **MCP context-plane tools**: added `context_pack`, `context_prompt`, and `context_session_reset` to the full MCP tool profile so agents can request compact context packs, provider-ready prompts, and session resets over stdio.
+
+### Changed
+
+- **Context-plane product surface**: refreshed the README, MCP examples, benchmark docs, and package metadata around the shipped “context plane” / “context compiler” positioning.
+- **Cache-aware compare and review flows**: unified `compare`, `review-compare`, and benchmark reporting around effective token metrics, coverage metadata, and session-aware prompt packaging.
+
+### Fixed
+
+- **Clean-install compatibility on this environment**: restored the Vite 6.x floor so fresh installs continue to work on the current Node 22.9 setup used during release verification.
+- **Prompt/session release hardening**: fixed provider token-count consistency, removed misleading hardcoded prompt task metadata, bounded stored context-prompt sessions, and reject duplicate context session refs.
+
 ## [0.11.0] - 2026-05-05
 
 ### Added
