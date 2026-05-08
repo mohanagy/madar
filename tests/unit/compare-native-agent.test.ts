@@ -324,7 +324,7 @@ describe('executeNativeAgentCompare', () => {
     }
   })
 
-  it('falls back to runner_error when stdout has no parseable result event', async () => {
+  it('preserves answer-only runs when stdout has no parseable result event but the runner exits cleanly', async () => {
     const { projectDir, graphPath, outputDir } = makeFixtureProject()
     try {
       const garbledRunner: NativeAgentRunner = async () => ({
@@ -349,10 +349,12 @@ describe('executeNativeAgentCompare', () => {
       )
 
       const report = result.reports[0] as NativeAgentCompareReport
-      expect(report.baseline.kind).toBe('runner_error')
-      if (report.baseline.kind === 'runner_error') {
+      expect(report.baseline.kind).toBe('answer_only')
+      if (report.baseline.kind === 'answer_only') {
         expect(report.baseline.evidence).toContain('not JSON')
+        expect(report.baseline.exit_code).toBe(0)
       }
+      expect(report.graphify.kind).toBe('answer_only')
       expect(report.reductions).toBeNull()
     } finally {
       rmSync(projectDir, { recursive: true, force: true })

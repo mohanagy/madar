@@ -1317,7 +1317,7 @@ export async function runCompareCommand(
 ): Promise<string> {
   if (input.baselineMode === 'native_agent') {
     const nativeResult = await executeNativeAgentCompare(input, dependencies)
-    const failed = nativeResult.reports.filter((report) => report.baseline.kind !== 'succeeded' || report.graphify.kind !== 'succeeded').length
+    const failed = nativeResult.reports.filter((report) => isNativeAgentRunFailure(report.baseline) || isNativeAgentRunFailure(report.graphify)).length
     if (failed > 0) {
       throw new Error(`[graphify compare] ${failed} native_agent run(s) failed. Partial artifacts were saved under ${nativeResult.output_root}`)
     }
@@ -1379,6 +1379,7 @@ export interface AnthropicResultEvent {
 
 export type NativeAgentRunStatus =
   | { kind: 'succeeded'; model: string | null; usage: AnthropicUsageBlock; total_input_tokens_anthropic_exact: number; total_cost_usd: number | null; num_turns: number; duration_ms: number; result_path: string }
+  | { kind: 'answer_only'; evidence: string | null; exit_code: number; stderr: string | null; result_path: string }
   | { kind: 'runner_error'; evidence: string | null; exit_code: number | null; stderr: string | null }
 
 export interface NativeAgentCompareReport {
@@ -1596,6 +1597,10 @@ function computeReduction(baseline: number, graphify: number): number | null {
   return Number((baseline / graphify).toFixed(2))
 }
 
+function isNativeAgentRunFailure(run: NativeAgentRunStatus): boolean {
+  return run.kind === 'runner_error'
+}
+
 function totalAnthropicInputTokens(usage: AnthropicUsageBlock): number {
   return usage.input_tokens + usage.cache_creation_input_tokens + usage.cache_read_input_tokens
 }
@@ -1708,12 +1713,21 @@ export async function executeNativeAgentCompare(
           }
           ensureCompareAnswerFile(baselineAnswerPath, event.result ?? baselineRun.stdout)
         } else {
-          reportShell.baseline = {
-            kind: 'runner_error',
-            evidence: baselineRun.stdout.slice(0, 2000),
-            exit_code: baselineRun.exitCode,
-            stderr: sanitizeCompareStderr(baselineRun.stderr),
-          }
+          reportShell.baseline =
+            baselineRun.exitCode === 0
+              ? {
+                  kind: 'answer_only',
+                  evidence: baselineRun.stdout.slice(0, 2000),
+                  exit_code: baselineRun.exitCode,
+                  stderr: sanitizeCompareStderr(baselineRun.stderr),
+                  result_path: baselineAnswerPath,
+                }
+              : {
+                  kind: 'runner_error',
+                  evidence: baselineRun.stdout.slice(0, 2000),
+                  exit_code: baselineRun.exitCode,
+                  stderr: sanitizeCompareStderr(baselineRun.stderr),
+                }
           ensureCompareAnswerFile(baselineAnswerPath, baselineRun.stdout)
         }
       }
@@ -1772,12 +1786,21 @@ export async function executeNativeAgentCompare(
         }
         ensureCompareAnswerFile(graphifyAnswerPath, event.result ?? graphifyRun.stdout)
       } else {
-        reportShell.graphify = {
-          kind: 'runner_error',
-          evidence: graphifyRun.stdout.slice(0, 2000),
-          exit_code: graphifyRun.exitCode,
-          stderr: sanitizeCompareStderr(graphifyRun.stderr),
-        }
+        reportShell.graphify =
+          graphifyRun.exitCode === 0
+            ? {
+                kind: 'answer_only',
+                evidence: graphifyRun.stdout.slice(0, 2000),
+                exit_code: graphifyRun.exitCode,
+                stderr: sanitizeCompareStderr(graphifyRun.stderr),
+                result_path: graphifyAnswerPath,
+              }
+            : {
+                kind: 'runner_error',
+                evidence: graphifyRun.stdout.slice(0, 2000),
+                exit_code: graphifyRun.exitCode,
+                stderr: sanitizeCompareStderr(graphifyRun.stderr),
+              }
         ensureCompareAnswerFile(graphifyAnswerPath, graphifyRun.stdout)
       }
     }
@@ -1845,16 +1868,28 @@ export function formatNativeAgentCompareSummary(result: NativeAgentCompareResult
     `- Output: ${result.output_root}`,
   ]
   for (const report of result.reports) {
-    if (report.baseline.kind !== 'succeeded' || report.graphify.kind !== 'succeeded') {
+    if (isNativeAgentRunFailure(report.baseline) || isNativeAgentRunFailure(report.graphify)) {
       lines.push(`- "${report.question}" → runner error (see ${portablePath(report.paths.report)})`)
       continue
     }
+    if (report.baseline.kind === 'answer_only' || report.graphify.kind === 'answer_only') {
+      lines.push(`- "${report.question}" → answer-only run saved; no Anthropic usage block was available, so provider-proof reductions were not computed (see ${portablePath(report.paths.report)})`)
+      continue
+    }
+
+    const baseline = report.baseline
+    const graphify = report.graphify
+    if (baseline.kind !== 'succeeded' || graphify.kind !== 'succeeded') {
+      lines.push(`- "${report.question}" → runner error (see ${portablePath(report.paths.report)})`)
+      continue
+    }
+
     const reductions = report.reductions
     lines.push(
       `- "${report.question}"`,
-      `    num_turns: baseline ${report.baseline.num_turns} → graphify ${report.graphify.num_turns}${reductions?.num_turns ? ` (${reductions.num_turns}x fewer)` : ''}`,
-      `    latency:   baseline ${report.baseline.duration_ms}ms → graphify ${report.graphify.duration_ms}ms${reductions?.duration_ms ? ` (${reductions.duration_ms}x faster)` : ''}`,
-      `    input_tokens (Anthropic-reported): baseline ${report.baseline.total_input_tokens_anthropic_exact} → graphify ${report.graphify.total_input_tokens_anthropic_exact}${reductions?.input_tokens ? ` (${reductions.input_tokens}x less)` : ''}`,
+      `    num_turns: baseline ${baseline.num_turns} → graphify ${graphify.num_turns}${reductions?.num_turns ? ` (${reductions.num_turns}x fewer)` : ''}`,
+      `    latency:   baseline ${baseline.duration_ms}ms → graphify ${graphify.duration_ms}ms${reductions?.duration_ms ? ` (${reductions.duration_ms}x faster)` : ''}`,
+      `    input_tokens (Anthropic-reported): baseline ${baseline.total_input_tokens_anthropic_exact} → graphify ${graphify.total_input_tokens_anthropic_exact}${reductions?.input_tokens ? ` (${reductions.input_tokens}x less)` : ''}`,
       `    provider/runtime proof: Anthropic reported input, cache, and total tokens for both runs`,
     )
   }
