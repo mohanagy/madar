@@ -31,6 +31,15 @@ describe('context-inventory', () => {
     })).toThrow('Unsupported context inventory source kind: wiki')
 
     expect(() => normalizeContextInventorySource({
+      kind: 'code',
+      locator: 'src/runtime/context-inventory.ts',
+      metadata: {
+        base_ref: 'HEAD~1',
+        head_ref: 'HEAD',
+      },
+    })).toThrow('Only diff context inventory sources may specify base_ref/head_ref metadata')
+
+    expect(() => normalizeContextInventorySource({
       kind: 'diff',
       locator: 'HEAD~1..HEAD',
       metadata: {
@@ -46,6 +55,25 @@ describe('context-inventory', () => {
         line_end: 3,
       },
     })).toThrow('Context inventory line_end must be greater than or equal to line_start')
+  })
+
+  it('preserves diff refs when both are provided', () => {
+    expect(normalizeContextInventorySource({
+      kind: 'diff',
+      locator: 'HEAD~1..HEAD',
+      metadata: {
+        base_ref: 'HEAD~1',
+        head_ref: 'HEAD',
+      },
+    })).toEqual({
+      kind: 'diff',
+      locator: 'HEAD~1..HEAD',
+      label: 'HEAD~1..HEAD',
+      metadata: {
+        base_ref: 'HEAD~1',
+        head_ref: 'HEAD',
+      },
+    })
   })
 
   it('creates serializable inventory entries with normalized source metadata', () => {

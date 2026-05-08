@@ -87,7 +87,12 @@ function normalizeSourceMetadata(
 
   const baseRef = normalizeString(metadata?.base_ref)
   const headRef = normalizeString(metadata?.head_ref)
-  if (kind === 'diff' && Boolean(baseRef) !== Boolean(headRef)) {
+  const hasBaseRef = baseRef !== undefined
+  const hasHeadRef = headRef !== undefined
+  if (kind !== 'diff' && (hasBaseRef || hasHeadRef)) {
+    throw new Error('Only diff context inventory sources may specify base_ref/head_ref metadata')
+  }
+  if (kind === 'diff' && hasBaseRef !== hasHeadRef) {
     throw new Error('Diff inventory source metadata requires both base_ref and head_ref')
   }
 
