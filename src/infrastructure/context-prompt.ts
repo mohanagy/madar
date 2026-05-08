@@ -42,6 +42,9 @@ export interface BuiltContextPrompt {
   metrics: ContextPromptMetrics
 }
 
+const STABLE_PREFIX_INSTRUCTIONS_REF = '__stable_prefix:instructions'
+const STABLE_PREFIX_TITLE_REF = '__stable_prefix:title'
+
 function joinBlocks(blocks: readonly string[]): string {
   return blocks.map((block) => block.trim()).filter((block) => block.length > 0).join('\n\n')
 }
@@ -62,17 +65,45 @@ function compareStableSections(left: ContextPromptStableSection, right: ContextP
 function renderStablePrefix(input: Pick<BuildContextPromptInput, 'instructions' | 'stable_sections' | 'stable_prefix_title'>): {
   ordered_sections: ContextPromptStableSection[]
   stable_prefix: string
+  session_refs: { ref: string; content: string }[]
 } {
   const ordered_sections = [...input.stable_sections].sort(compareStableSections)
-  const stableSectionBody = ordered_sections.map(renderSection).join('\n\n')
-  const stableBody =
-    input.stable_prefix_title && stableSectionBody.length > 0
-      ? `${input.stable_prefix_title}:\n${stableSectionBody}`
-      : stableSectionBody
+  const session_refs: { ref: string; content: string }[] = []
+  const instructions = input.instructions.join('\n').trim()
+
+  if (instructions.length > 0) {
+    session_refs.push({
+      ref: STABLE_PREFIX_INSTRUCTIONS_REF,
+      content: instructions,
+    })
+  }
+
+  const [firstSection, ...remainingSections] = ordered_sections
+  if (input.stable_prefix_title && firstSection) {
+    session_refs.push({
+      ref: STABLE_PREFIX_TITLE_REF,
+      content: `${session_refs.length > 0 ? '\n\n' : ''}${input.stable_prefix_title}:`,
+    })
+  }
+
+  if (firstSection) {
+    session_refs.push({
+      ref: firstSection.ref,
+      content: `${input.stable_prefix_title ? '\n' : session_refs.length > 0 ? '\n\n' : ''}${renderSection(firstSection)}`,
+    })
+  }
+
+  for (const section of remainingSections) {
+    session_refs.push({
+      ref: section.ref,
+      content: `\n\n${renderSection(section)}`,
+    })
+  }
 
   return {
     ordered_sections,
-    stable_prefix: joinBlocks([input.instructions.join('\n'), stableBody]),
+    stable_prefix: session_refs.map((ref) => ref.content).join(''),
+    session_refs,
   }
 }
 
@@ -99,16 +130,10 @@ function renderSessionPayload(sessionDelta: ContextSessionDelta, dynamicSuffix: 
 }
 
 export function buildContextPrompt(input: BuildContextPromptInput): BuiltContextPrompt {
-  const { ordered_sections, stable_prefix } = renderStablePrefix(input)
+  const { ordered_sections, stable_prefix, session_refs } = renderStablePrefix(input)
   const dynamic_suffix = renderDynamicSuffix(input.dynamic_sections)
   const prompt = joinBlocks([stable_prefix, dynamic_suffix])
-  const { session_state, session_delta } = buildContextSession(
-    ordered_sections.map((section) => ({
-      ref: section.ref,
-      content: renderSection(section),
-    })),
-    input.session,
-  )
+  const { session_state, session_delta } = buildContextSession(session_refs, input.session)
 
   const session_payload =
     session_delta.previous_revision === null
