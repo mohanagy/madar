@@ -135,6 +135,8 @@ graphify-ts federate frontend/graph.json backend/graph.json  # multi-repo merge
 graphify-ts --help                              # full surface
 ```
 
+For `compare --baseline-mode native_agent`, use a structured Anthropic runner like `cat {prompt_file} | claude -p --output-format json` when you want billed-token reductions. Plain-text Claude runs still save both answers, but the report becomes answer-only and cannot compute provider-proof reductions.
+
 ---
 
 ## Context-plane surfaces

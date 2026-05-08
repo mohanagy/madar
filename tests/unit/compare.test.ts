@@ -1533,6 +1533,52 @@ describe('compare runtime', () => {
     ).resolves.toContain('context overflow')
   })
 
+  it('does not fail native_agent compare when the runner returns plain-text answers without provider usage metadata', async () => {
+    const graph = makeGraph()
+    writeProjectFiles()
+    const graphPath = writeGraphFixture(graph)
+    const outputTimestamp = '2026-04-24T19-30-00'
+
+    await expect(
+      runCompareCommand(
+        {
+          graphPath,
+          question: 'how does login create a session',
+          outputDir: COMPARE_OUTPUT_ROOT,
+          execTemplate: 'runner --prompt {prompt_file} --mode {mode} --out {output_file}',
+          baselineMode: 'native_agent',
+          now: new Date('2026-04-24T19:30:00.000Z'),
+        },
+        {
+          now: () => new Date('2026-04-24T19:30:00.000Z'),
+          runner: async (execution) => ({
+            exitCode: 0,
+            stdout: execution.mode === 'baseline' ? 'baseline answer\n' : 'graphify answer\n',
+            stderr: '',
+            elapsedMs: 5,
+          }),
+        },
+      ),
+    ).resolves.toContain('no Anthropic usage block')
+
+    const report = JSON.parse(readFileSync(join(COMPARE_OUTPUT_ROOT, outputTimestamp, 'report.json'), 'utf8')) as Record<string, unknown>
+    expect(report).toEqual(
+      expect.objectContaining({
+        baseline: expect.objectContaining({
+          kind: 'answer_only',
+          exit_code: 0,
+        }),
+        graphify: expect.objectContaining({
+          kind: 'answer_only',
+          exit_code: 0,
+        }),
+        reductions: null,
+      }),
+    )
+    expect(readFileSync(join(COMPARE_OUTPUT_ROOT, outputTimestamp, 'baseline-answer.txt'), 'utf8')).toBe('baseline answer\n')
+    expect(readFileSync(join(COMPARE_OUTPUT_ROOT, outputTimestamp, 'graphify-answer.txt'), 'utf8')).toBe('graphify answer\n')
+  })
+
   it('marks invalid compare placeholders as failed runs in persisted reports', async () => {
     const graph = makeGraph()
     writeProjectFiles()
