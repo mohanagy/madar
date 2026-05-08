@@ -1,4 +1,5 @@
 import { KnowledgeGraph } from '../contracts/graph.js'
+import type { ContextPackClaim, ContextPackCoverage, ContextPackEvidenceClass, ContextPackExpandableRef } from '../contracts/context-pack.js'
 import { relativizeSourceFile } from '../shared/source-path.js'
 import { relevantFiles, type RelevantFileEntry } from './relevant-files.js'
 import { retrieveContext, type RetrieveMatchedNode } from './retrieve.js'
@@ -37,6 +38,10 @@ export interface FeatureMapResult {
   communities: FeatureMapCommunity[]
   entry_points: FeatureMapEntryPoint[]
   relevant_files: RelevantFileEntry[]
+  claims: ContextPackClaim[]
+  expandable: ContextPackExpandableRef[]
+  coverage?: ContextPackCoverage
+  missing_context: ContextPackEvidenceClass[]
 }
 
 interface CommunityAggregate {
@@ -185,5 +190,9 @@ export function featureMap(graph: KnowledgeGraph, options: FeatureMapOptions): F
     communities,
     entry_points,
     relevant_files,
+    claims: retrieveResult.claims ?? [],
+    expandable: retrieveResult.expandable ?? [],
+    ...(retrieveResult.coverage ? { coverage: retrieveResult.coverage } : {}),
+    missing_context: retrieveResult.coverage?.missing_required ?? [],
   }
 }

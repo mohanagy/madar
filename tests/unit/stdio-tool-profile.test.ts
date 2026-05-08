@@ -83,6 +83,16 @@ describe('MCP tool profile', () => {
       const actualOrder = activeMcpTools('core').map((tool) => tool.name)
       expect(actualOrder).toEqual(expectedOrder)
     })
+
+    it('adds the context-plane tools only to the full profile', () => {
+      const fullToolNames = activeMcpTools('full').map((tool) => tool.name)
+      const coreToolNames = activeMcpTools('core').map((tool) => tool.name)
+
+      expect(fullToolNames).toEqual(expect.arrayContaining(['context_pack', 'context_prompt', 'context_session_reset']))
+      expect(coreToolNames).not.toContain('context_pack')
+      expect(coreToolNames).not.toContain('context_prompt')
+      expect(coreToolNames).not.toContain('context_session_reset')
+    })
   })
 
   describe('resolveToolProfileFromEnv', () => {
@@ -196,6 +206,28 @@ describe('MCP tool profile', () => {
           expect(error?.message).toContain('.cursor/mcp.json')
           expect(error?.message).toContain('.vscode/mcp.json')
           expect(error?.message).toContain('feature_map')
+        })
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+
+    it('tools/call blocks context-plane tools behind the full profile gate', async () => {
+      const root = createMinimalGraphRoot()
+      try {
+        await withProfile('core', async () => {
+          const response = await Promise.resolve(
+            handleStdioRequest(join(root, 'graph.json'), {
+              id: 102,
+              method: 'tools/call',
+              params: { name: 'context_pack', arguments: { prompt: 'unused' } },
+            }),
+          )
+          expect(response).not.toBeNull()
+          const error = (response as { error?: { code: number; message: string } }).error
+          expect(error?.code).toBe(-32601)
+          expect(error?.message).toContain('context_pack')
+          expect(error?.message).toContain('GRAPHIFY_TOOL_PROFILE=full')
         })
       } finally {
         rmSync(root, { recursive: true, force: true })

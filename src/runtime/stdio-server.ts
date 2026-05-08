@@ -3,6 +3,7 @@ import { statSync } from 'node:fs'
 import { basename, dirname } from 'node:path'
 import type { Readable, Writable } from 'node:stream'
 
+import type { ContextSessionState } from '../contracts/context-session.js'
 import { compareRefs } from '../infrastructure/time-travel.js'
 import { diffGraphs } from './diff.js'
 import { MCP_PROMPTS, MCP_TOOLS, activeMcpTools, isCoreToolName, resolveToolProfileFromEnv, type McpPromptDefinition } from './stdio/definitions.js'
@@ -55,6 +56,7 @@ type McpLogLevel = 'debug' | 'info' | 'notice' | 'warning' | 'error' | 'critical
 
 interface StdioSessionState extends ResourceSessionState {
   logLevel: McpLogLevel
+  contextPromptSessions: Map<string, ContextSessionState>
 }
 
 interface JsonRpcNotification {
@@ -85,6 +87,7 @@ function createSessionState(): StdioSessionState {
     subscribedResourceUris: new Set<string>(),
     resourceVersions: new Map<string, string>(),
     resourceListSignature: null,
+    contextPromptSessions: new Map<string, ContextSessionState>(),
   }
 }
 
@@ -149,6 +152,14 @@ function ensureResourceVersions(state: StdioSessionState): Map<string, string> {
   }
 
   return state.resourceVersions
+}
+
+function ensureContextPromptSessions(state: StdioSessionState): Map<string, ContextSessionState> {
+  if (!state.contextPromptSessions) {
+    state.contextPromptSessions = new Map<string, ContextSessionState>()
+  }
+
+  return state.contextPromptSessions
 }
 
 function requestId(request: StdioRequest): string | number | null {
@@ -573,6 +584,11 @@ export function handleStdioRequest(
             const projectRoot = dirname(dirname(safeGraphPath))
             return await (toolOverrides.compareRefs ?? compareRefs)(input, { rootDir: projectRoot })
           },
+          getContextPromptSession: (sessionId) => ensureContextPromptSessions(sessionState).get(sessionId),
+          setContextPromptSession: (sessionId, nextState) => {
+            ensureContextPromptSessions(sessionState).set(sessionId, nextState)
+          },
+          clearContextPromptSession: (sessionId) => ensureContextPromptSessions(sessionState).delete(sessionId),
           readStoredCommunityLabels,
           jsonrpcInvalidParams: JSONRPC_INVALID_PARAMS,
           jsonrpcServerError: JSONRPC_SERVER_ERROR,

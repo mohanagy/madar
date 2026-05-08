@@ -713,6 +713,11 @@ describe('stdio runtime', () => {
       expect(retrieveDefaultPayload.matched_nodes[0]).not.toHaveProperty('file_type')
       expect(retrieveDefaultPayload.matched_nodes[0]).not.toHaveProperty('community_label')
       expect(retrieveDefaultPayload.matched_nodes[0]).not.toHaveProperty('framework_boost')
+      expect(retrieveDefaultPayload.coverage).toEqual(expect.objectContaining({
+        required_evidence: expect.arrayContaining(['primary', 'supporting', 'structural']),
+      }))
+      expect(retrieveDefaultPayload.expandable).toEqual(expect.any(Array))
+      expect(retrieveDefaultPayload.missing_context).toEqual(expect.any(Array))
 
       expect(impactDefaultPayload.shared_file_type).toBe('code')
       expect(impactDefaultPayload.direct_dependents).toEqual(
@@ -728,6 +733,133 @@ describe('stdio runtime', () => {
       expect(impactDefaultPayload.direct_dependents[0]).not.toHaveProperty('file_type')
       expect(impactDefaultPayload.direct_dependents[0]).not.toHaveProperty('framework_role')
       expect(impactDefaultPayload.direct_dependents[0]).not.toHaveProperty('community_label')
+      expect(impactDefaultPayload.missing_context).toEqual(expect.any(Array))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('exposes context-pack and context-prompt MCP flows with reusable prompt sessions', async () => {
+    const root = createGraphFixtureRoot()
+    try {
+      const graphPath = join(root, 'graph.json')
+      const sessionState = {
+        logLevel: 'info' as const,
+        subscribedResourceUris: new Set<string>(),
+        resourceVersions: new Map<string, string>(),
+        resourceListSignature: null,
+        contextPromptSessions: new Map(),
+      }
+      const tools = await Promise.resolve(handleStdioRequest(graphPath, { id: 1, method: 'tools/list' }))
+      const explainPack = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 2,
+        method: 'tools/call',
+        params: {
+          name: 'context_pack',
+          arguments: {
+            prompt: 'How does AuthService reach Transport?',
+            task: 'explain',
+            budget: 1,
+          },
+        },
+      }, sessionState))
+      const firstPrompt = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 3,
+        method: 'tools/call',
+        params: {
+          name: 'context_prompt',
+          arguments: {
+            prompt: 'How does AuthService reach Transport?',
+            provider: 'claude',
+            session_id: 'auth-thread',
+          },
+        },
+      }, sessionState))
+      const followUpPrompt = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 4,
+        method: 'tools/call',
+        params: {
+          name: 'context_prompt',
+          arguments: {
+            prompt: 'Which file defines HttpClient?',
+            provider: 'claude',
+            session_id: 'auth-thread',
+          },
+        },
+      }, sessionState))
+      const resetSession = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 5,
+        method: 'tools/call',
+        params: {
+          name: 'context_session_reset',
+          arguments: {
+            session_id: 'auth-thread',
+          },
+        },
+      }, sessionState))
+      const resetPrompt = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 6,
+        method: 'tools/call',
+        params: {
+          name: 'context_prompt',
+          arguments: {
+            prompt: 'How does AuthService reach Transport?',
+            provider: 'claude',
+            session_id: 'auth-thread',
+          },
+        },
+      }, sessionState))
+
+      const toolNames = (tools?.result as { tools: Array<{ name: string }> }).tools.map((tool) => tool.name)
+      const explainPackPayload = JSON.parse((explainPack?.result as { content: Array<{ text: string }> }).content[0]!.text)
+      const firstPromptPayload = JSON.parse((firstPrompt?.result as { content: Array<{ text: string }> }).content[0]!.text)
+      const followUpPromptPayload = JSON.parse((followUpPrompt?.result as { content: Array<{ text: string }> }).content[0]!.text)
+      const resetSessionPayload = JSON.parse((resetSession?.result as { content: Array<{ text: string }> }).content[0]!.text)
+      const resetPromptPayload = JSON.parse((resetPrompt?.result as { content: Array<{ text: string }> }).content[0]!.text)
+
+      expect(toolNames).toEqual(expect.arrayContaining(['context_pack', 'context_prompt', 'context_session_reset']))
+
+      expect(explainPackPayload).toEqual(expect.objectContaining({
+        task: 'explain',
+        prompt: 'How does AuthService reach Transport?',
+        budget: 1,
+        pack: expect.objectContaining({
+          matched_nodes: expect.any(Array),
+          community_context: expect.any(Array),
+        }),
+      }))
+      expect(explainPackPayload.coverage).toEqual(expect.objectContaining({
+        missing_required: expect.arrayContaining(['supporting', 'structural']),
+      }))
+      expect(explainPackPayload.expandable).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: 'nodes' }),
+      ]))
+      expect(explainPackPayload.missing_context).toEqual(expect.arrayContaining(['supporting', 'structural']))
+
+      expect(firstPromptPayload).toEqual(expect.objectContaining({
+        provider: 'claude',
+        task: 'explain',
+        prompt: 'How does AuthService reach Transport?',
+        compiled: expect.objectContaining({
+          provider: 'claude',
+          format: 'session_payload',
+          session_id: 'auth-thread',
+          reused_context_tokens: 0,
+          session_state: expect.objectContaining({ revision: 1 }),
+        }),
+      }))
+      expect(firstPromptPayload.missing_context).toEqual(expect.any(Array))
+      expect(followUpPromptPayload.compiled.session_id).toBe('auth-thread')
+      expect(followUpPromptPayload.compiled.session_state.revision).toBe(2)
+      expect(followUpPromptPayload.compiled.reused_context_tokens).toBeGreaterThan(0)
+      expect(followUpPromptPayload.compiled.effective_token_count).toBeLessThan(followUpPromptPayload.compiled.token_count)
+
+      expect(resetSessionPayload).toEqual({
+        session_id: 'auth-thread',
+        cleared: true,
+      })
+      expect(resetPromptPayload.compiled.session_state.revision).toBe(1)
+      expect(resetPromptPayload.compiled.reused_context_tokens).toBe(0)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
