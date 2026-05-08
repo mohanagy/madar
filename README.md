@@ -160,7 +160,7 @@ These six MCP tools handle the most common agent workflows. The full surface is 
 | `community_overview` | "Show me the architecture" — communities + sizes + bridges across the codebase |
 | `graph_stats` | "How big and deep is this graph?" — node/edge counts, density, and file-type mix |
 
-Full-profile additions include the context-plane tools `context_pack`, `context_prompt`, and `context_session_reset`, plus `risk_map`, `implementation_checklist`, `relevant_files`, `feature_map`, `time_travel_compare`, `community_details`, `query_graph`, `get_node`, `explain_node`, `shortest_path`, `graph_diff`, `god_nodes`, `semantic_anomalies`, `get_community`. Full reference: [examples/mcp-tool-examples.md](examples/mcp-tool-examples.md).
+Full-profile additions include the context-plane tools `context_pack`, `context_prompt`, and `context_session_reset`, plus `risk_map`, `implementation_checklist`, `relevant_files`, `feature_map`, `time_travel_compare`, `community_details`, `query_graph`, `get_node`, `get_neighbors`, `explain_node`, `shortest_path`, `graph_diff`, `god_nodes`, `semantic_anomalies`, `get_community`. Full reference: [examples/mcp-tool-examples.md](examples/mcp-tool-examples.md).
 
 ---
 

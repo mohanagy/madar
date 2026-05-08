@@ -62,6 +62,11 @@ describe('public marketing copy honesty', () => {
       expect(content).toContain('These six MCP tools')
       expect(content).toContain('`graph_stats`')
     })
+
+    it('keeps the README full MCP additions list aligned with the shipped get_neighbors tool', () => {
+      expect(content).toContain('The full surface is 24 tools')
+      expect(content).toContain('`get_neighbors`')
+    })
   })
 
   describe('examples/mcp-tool-examples.md', () => {
