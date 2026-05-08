@@ -144,7 +144,58 @@ These examples show what your AI agent sees when it calls graphify-ts MCP tools.
 }
 ```
 
-**What the agent does with this:** Uses the compact pack as a coverage contract: answer with the selected evidence now, inspect `semantic_entries` to see whether implementation/structure/tests are sufficiently covered, and use the stable `handle_id` + `follow_up` metadata only when omitted context is still needed.
+**What the agent does with this:** Uses the compact pack as a coverage contract: answer with the selected evidence now, inspect `semantic_entries` to see whether implementation/structure/tests are sufficiently covered, and call `context_expand` with the stable `handle_id` only when omitted context is still needed.
+
+---
+
+## context_expand — Reopen Omitted Context
+
+**Agent calls:**
+```json
+{ "name": "context_expand", "arguments": { "handle_id": "expand:explain:structural:9e7d4c2a11f0", "budget": 900 } }
+```
+
+**Agent receives:**
+```json
+{
+  "handle_id": "expand:explain:structural:9e7d4c2a11f0",
+  "task": "explain",
+  "task_intent": "explain",
+  "prompt": "how does payment processing work?",
+  "budget": 900,
+  "pack": {
+    "question": "how does payment processing work?",
+    "token_count": 612,
+    "matched_nodes": [
+      {
+        "label": "BillingModule",
+        "source_file": "backend/src/modules/billing/billing.module.ts",
+        "line_number": 1,
+        "snippet": "@Module({ providers: [StripeGatewayService, TransactionService] })",
+        "match_score": 0,
+        "relevance_band": "related",
+        "community": 8,
+        "community_label": "Backend Billing",
+        "evidence_class": "structural"
+      }
+    ],
+    "relationships": [],
+    "community_context": [
+      { "id": 8, "label": "Backend Billing", "node_count": 23 }
+    ]
+  },
+  "claims": [
+    {
+      "evidence_class": "structural",
+      "text": "structural evidence: BillingModule",
+      "node_labels": ["BillingModule"]
+    }
+  ],
+  "missing_context": []
+}
+```
+
+**What the agent does with this:** Expands only the omitted slice that mattered, without regenerating the whole pack or losing the original task/session context.
 
 ---
 
