@@ -1,6 +1,6 @@
 # graphify-ts
 
-**Make Claude Code, Cursor, and Copilot faster on your codebase — locally, without sending code to anyone.**
+**Stop making AI agents re-read your repo.** A local context compiler for Claude Code, Codex CLI, Copilot CLI, Cursor, Windsurf, and Aider — turn your TypeScript/Node workspace and PR diffs into compact, verifiable context packs.
 
 [![npm](https://img.shields.io/npm/v/@mohammednagy/graphify-ts)](https://www.npmjs.com/package/@mohammednagy/graphify-ts)
 [![node >=20](https://img.shields.io/badge/node-%E2%89%A520-3c873a)](https://nodejs.org/)
@@ -8,7 +8,89 @@
 [![No API keys](https://img.shields.io/badge/API%20keys-none%20required-111827)](#what-stays-local)
 [![license MIT](https://img.shields.io/badge/license-MIT-16a34a)](https://github.com/mohanagy/graphify-ts/blob/main/LICENSE)
 
-graphify-ts is a local, cost-first **context plane** and **context compiler** for codebases. It builds a knowledge graph on your machine (no upload, no API key), then turns that graph into MCP retrieval, compact automation packs, and provider-aware prompts so agents spend fewer turns and lower effective cost on the right context instead of repeated `Read` / `Grep` / `Glob` loops.
+> **AI coding agents keep re-reading your repo. graphify-ts gives them structural memory.**
+
+graphify-ts indexes a TypeScript/Node workspace (and PR diffs) into a local knowledge graph, then compiles that graph into the **smallest verifiable context pack** the agent actually needs for the task at hand. No cloud upload, no API key for indexing, no SaaS dashboard — just a local subprocess your agent talks to over MCP.
+
+---
+
+## Why graphify-ts?
+
+Modern AI coding agents have one expensive habit: they discover your codebase from scratch every session.
+
+- They `grep`, then `Read`, then summarize, then forget, then repeat — every prompt.
+- Dumping the whole repo as context is too expensive and busts the context window.
+- Generic vector RAG loses the structural relationships agents actually need (who calls whom, what depends on what, what changed).
+- PR review needs the **changed-code neighborhood** — call sites, dependents, likely test files — not the whole repo.
+
+graphify-ts fixes the loop: build the graph once, then compile a task-specific context pack on demand. The agent answers in fewer turns, reads fewer files, and stays grounded in real structure.
+
+---
+
+## What it does
+
+- **Builds a local graph of your TypeScript/Node workspace** — files, symbols, imports, exports, call edges, dependents, communities, and changed-line ranges.
+- **Compiles compact context packs from that graph** for any agent task: explain, review, impact, plan.
+- **Diff-aware PR review** via `pr_impact` and `review-compare` — turns the *current git diff* into ranked review risks, structural hotspots, and likely test files.
+- **Provider-aware prompt compilation** via `prompt` — Claude payloads expose cache-aware `effective_token_count`, `reused_context_tokens`, and `session_state`; Gemini gets a plain prompt string.
+- **Native MCP server** that runs as a local subprocess of Claude Code, Cursor, Copilot CLI, Gemini CLI, Aider, or OpenCode. Default exposes a 6-tool **core** profile; opt into the 25-tool **full** profile when you want the advanced context-plane surface.
+- **Multi-repo federation** — merge frontend + backend + shared graphs so one agent session can reason across repo boundaries.
+- **Local-first by design**: tree-sitter AST extraction, BM25 lexical retrieval, optional ONNX embeddings (`Xenova/all-MiniLM-L6-v2`), optional cross-encoder reranker — all on your machine.
+
+> Deepest extraction is for **TypeScript/JavaScript** with framework-aware passes for Express, Redux Toolkit, React Router, NestJS, and Next.js. Python, Ruby, Go, Java, and Rust use tree-sitter AST. C / Kotlin / C# / Scala / PHP / Swift / Zig use a generic structural extractor. Full matrix: [`docs/language-capability-matrix.md`](docs/language-capability-matrix.md).
+
+---
+
+## Core concept
+
+graphify-ts does **not** try to send the whole graph to your AI agent.
+
+It compiles the **minimum useful context for one task**:
+
+```
+your prompt
+  → workspace graph (built once, reused)
+    → relevant nodes + edges + snippets
+      → compact context pack (claims, coverage, missing_context)
+        → AI coding agent
+```
+
+When the agent says "tell me more," it expands a stable `handle_id` inside the same MCP session instead of re-reading the repo from scratch.
+
+---
+
+## 60-second quickstart
+
+```bash
+npm install -g @mohammednagy/graphify-ts
+
+cd your-project
+graphify-ts generate .          # builds graphify-out/graph.json (no API key, no cloud)
+graphify-ts claude install      # wires Claude Code to use it via MCP
+
+# graphify-ts claude install --profile full   # opt into the full 25-tool MCP surface
+```
+
+Now ask Claude something about your codebase. It calls `retrieve` once, gets back labeled snippets with file paths and community context, and answers — instead of running multiple `Read` / `Grep` / `Glob` calls and accumulating tokens at every turn.
+
+Other agents:
+
+```bash
+graphify-ts cursor install
+graphify-ts copilot install
+graphify-ts gemini install
+graphify-ts aider install
+graphify-ts opencode install
+```
+
+If you only want a one-shot context pack from the CLI (no MCP):
+
+```bash
+graphify-ts pack "review the auth flow" --task explain
+graphify-ts prompt "review the auth flow" --provider claude
+```
+
+`pack` emits a compact JSON context payload for automation. `prompt` is the provider-aware context compiler.
 
 ---
 
@@ -20,39 +102,21 @@ NestJS + Next.js SaaS, 1,268 files, ~860K words. Same question, same Claude Opus
 |------------------------|---------------------|------------------|------------|
 | **Tool-call turns**    | 9                   | **3**            | **3× fewer** |
 | **Latency**            | 96 sec              | **35 sec**       | **2.8× faster** |
-| **Input tokens**       | 615,190             | **233,508**      | **2.6× fewer** |
+| **Input tokens** (provider-reported) | 615,190 | **233,508**      | **2.6× fewer** |
 | **API keys**           | —                   | **0**            | local + private |
 | **Cloud services**     | —                   | **0**            | local + private |
 
-**[Reproduce these numbers](docs/benchmarks/2026-04-30-govalidate/verify.sh)** with one shell script against the committed evidence files.
+These are **provider-reported** numbers from `claude --output-format json`, not local estimates. **[Reproduce them](docs/benchmarks/2026-04-30-govalidate/verify.sh)** with one shell script against the committed evidence files.
 
-> **The honest summary**: graphify-ts adds a one-time MCP/tool overhead at session start, but in the measured run it still cut turns and latency substantially. Cost trade-offs depend on session length; see **Honest disclosure** below.
+PR-review proof on a real diff:
 
----
+|                        | Verbose `pr_impact` | Compact `pr_impact` | Difference |
+|------------------------|---------------------|---------------------|------------|
+| Prompt tokens          | 63,024              | **8,690**           | **7.25× fewer** |
 
-## 60-second quickstart
+Receipts: [`docs/benchmarks/2026-05-02-govalidate-pr-review/`](docs/benchmarks/2026-05-02-govalidate-pr-review/).
 
-```bash
-npm install -g @mohammednagy/graphify-ts
-
-cd your-project
-graphify-ts generate .          # builds graphify-out/graph.json
-graphify-ts claude install      # wires Claude Code to use it
-# graphify-ts claude install --profile full   # opt into the full 25-tool MCP surface
-```
-
-Now ask Claude something about your codebase. It calls `retrieve` once, gets back labeled snippets with file paths and community context, and answers — instead of running multiple `Read` / `Grep` / `Glob` calls and accumulating tokens at every turn.
-
-Other agents: `cursor install`, `copilot install`, `gemini install`, `aider install`, `opencode install`. If you want the advanced MCP surface immediately, use `claude install --profile full`, `cursor install --profile full`, or `copilot install --profile full`.
-
-Need the automation surface, not just the installed MCP server?
-
-```bash
-graphify-ts pack "review the auth flow" --task explain
-graphify-ts prompt "review the auth flow" --provider claude
-```
-
-`pack` emits a compact JSON context payload for automation. `prompt` is the provider-aware context compiler: Claude output includes cache-aware `effective_token_count`, `reused_context_tokens`, and `session_state`; Gemini output returns a plain prompt string.
+> **The honest summary**: graphify-ts adds a one-time MCP/tool overhead at session start (~13% on cold starts). Multi-question sessions amortize this and end up cheaper. Cost trade-offs depend on session length; see **Honest disclosure** below.
 
 ---
 
@@ -83,40 +147,37 @@ files and produce detailed end-to-end explanations of the pipeline.
 
 ---
 
+## Works with your AI tools
+
+graphify-ts produces **local context packs** that any modern coding agent can consume — either over its native MCP integration or by piping the compiled prompt to its CLI.
+
+| Agent | How it connects | Install command |
+|---|---|---|
+| Claude Code | MCP via `.mcp.json` | `graphify-ts claude install` |
+| Cursor | MCP via `.cursor/mcp.json` | `graphify-ts cursor install` |
+| GitHub Copilot CLI | MCP via `.vscode/mcp.json` | `graphify-ts copilot install` |
+| Gemini CLI | MCP server | `graphify-ts gemini install` |
+| Aider | MCP server | `graphify-ts aider install` |
+| OpenCode | MCP server | `graphify-ts opencode install` |
+| Codex CLI / Windsurf / others | Pipe `graphify-ts prompt` output | `graphify-ts prompt "..." --provider claude` |
+
+These are local installers that write the agent's own MCP config to point at the graphify-ts subprocess. No code is uploaded; no service-side integration is implied.
+
+---
+
 ## What's it for
 
-graphify-ts is most valuable when one of these is true.
+### "Our AI-agent bill is rising and we can't explain why."
 
-### "Our Claude Code bill is rising and I can't explain why."
-
-A team of 5 engineers asking 20 codebase questions/day each is roughly **$60/day** in baseline Claude session costs. graphify-ts cuts per-session input tokens by 2.6× and finishes in a third of the turns on the codebase the team is asking about. Because cold starts add MCP overhead, the right finance story is **"measure your own session mix: graphify-ts is reliably faster, and multi-question sessions can amortize the overhead"** — verifiable on your own repo with `graphify-ts compare`.
+A team of 5 engineers asking 20 codebase questions/day each is roughly **$60/day** in baseline session costs. graphify-ts cuts per-session input tokens by 2.6× and finishes in a third of the turns on the codebase the team is asking about. Because cold starts add MCP overhead, the right finance story is **"measure your own session mix: graphify-ts is reliably faster, and multi-question sessions amortize the overhead"** — verifiable on your own repo with `graphify-ts compare`.
 
 ### "Code review takes our seniors hours."
 
-The `pr_impact` MCP tool parses the actual git diff into line-aware seed nodes, returns ranked review risks with severity, supporting paths, likely test files, and structural hotspots — **for the changed lines, not the whole repo**. Pair with the `review-compare` CLI to prove the compact review prompt is materially smaller than the verbose one on your real PRs.
+The `pr_impact` MCP tool parses the actual git diff into line-aware seed nodes, returns ranked review risks with severity, supporting paths, likely test files, and structural hotspots — **for the changed lines, not the whole repo**. Pair with `review-compare` to prove the compact review prompt is materially smaller on your real PRs (7.25× smaller on the GoValidate diff above).
 
 ### "We can't ship our codebase to a hosted index."
 
 Regulated industries, defense contractors, enterprise legal, anything covered by NDA or export control. graphify-ts runs **fully local**: tree-sitter, BM25, optional ONNX embeddings — all on your machine. No SaaS dashboard. No "private cloud" tier. Your code never leaves the laptop unless you explicitly invoke a model you've configured yourself.
-
----
-
-## Honest disclosure
-
-We measure and publish honest numbers, including the trade-offs.
-
-1. **Cold-start sessions cost about 13% more than no-graph baseline** because the MCP server adds ~5K of tool-schema overhead at session init. Multi-question sessions amortize this and end up cheaper. We're tightening it further; watch the changelog.
-2. **Deep extraction is best on JS/TS** with framework-aware passes for Express, Redux Toolkit, React Router, NestJS, and Next.js. Python / Ruby / Go / Java / Rust use tree-sitter AST. C / Kotlin / C# / Scala / PHP / Swift / Zig use a generic structural extractor. Full matrix: [`docs/language-capability-matrix.md`](docs/language-capability-matrix.md).
-3. **The graph is opinionated, not exhaustive.** It's a structural map for an agent, not a complete program-analysis database. Runtime-generated routes and heavily meta-programmed decorators fall back to the base AST graph rather than pretending to be first-class semantics.
-4. **Comparable tools exist.** `token-savior` publishes a stronger benchmark on a different surface (general agent tasks, MCP-only). `aider`'s repo-map ships a battle-tested PageRank approach that doesn't use MCP at all. **Our angle is local-first plus PR-review-specific tools (`pr_impact`, `risk_map`, `review-compare`) plus multi-repo federation.**
-
----
-
-## How it's different (in two sentences)
-
-The combination we have not found in a single comparable tool today: **local-only** (no cloud, no API key) plus **MCP-protocol native** (works with Claude / Cursor / Copilot / Gemini / Aider via install commands) plus **diff-aware PR-review tools** (`pr_impact`, `risk_map`, `review-compare`) plus **multi-repo federation** (`federate`). aider's repo-map is local but aider-only; Cursor's `@codebase` is MCP-friendly but cloud-indexed; Sourcegraph Cody self-hosts but is enterprise-priced.
-
-The short version: graphify-ts is local-first, MCP-native, diff-aware for PR review, and built to work across multiple repos without sending code to a hosted indexing service.
 
 ---
 
@@ -135,24 +196,13 @@ graphify-ts federate frontend/graph.json backend/graph.json  # multi-repo merge
 graphify-ts --help                              # full surface
 ```
 
-For `compare --baseline-mode native_agent`, use a structured Anthropic runner like `cat {prompt_file} | claude -p --output-format json` when you want billed-token reductions. Plain-text Claude runs still save both answers, but the report becomes answer-only and cannot compute provider-proof reductions.
+For `compare --baseline-mode native_agent`, use a structured Anthropic runner like `cat {prompt_file} | claude -p --output-format json` when you want billed-token reductions. Plain-text Claude runs still save both answers, but the report becomes answer-only.
 
 ---
 
-## Context-plane surfaces
+## What you actually get (MCP tools)
 
-graphify-ts ships two complementary public surfaces:
-
-- **CLI context compiler** — `graphify-ts pack` builds compact explain/review/impact payloads for automation, and `graphify-ts prompt` compiles provider-ready prompts for `claude` or `gemini`.
-- **MCP context plane** — by default, graphify-ts exposes the **core** MCP profile with 6 tools for the most common workflows. Set `GRAPHIFY_TOOL_PROFILE=full` to expose `context_pack`, `context_expand`, `context_prompt`, `context_session_reset`, and the rest of the advanced MCP surface without leaving the session.
-
-Use `context_pack` when you want expandable refs plus `claims`, `coverage`, `missing_context`, and the newer **semantic coverage** contract. The planner layer now classifies prompt intent, applies a task-specific evidence recipe, and reports both evidence-class coverage and semantic buckets like `implementation`, `impact`, `tests`, `configuration`, and `structure`. Use `context_expand` when the pack says omitted context is still relevant and you want to expand a stable `handle_id` inside the same MCP session. Use `context_prompt` when you want the provider-ready prompt directly; for Claude, reuse a `session_id` so follow-up prompts resend only deltas and report `effective_token_count` / `reused_context_tokens`.
-
----
-
-## What you actually get
-
-These six MCP tools handle the most common agent workflows in the default **core** profile. The full surface is 25 tools, opt-in via `GRAPHIFY_TOOL_PROFILE=full`.
+These six MCP tools handle the most common agent workflows in the default **core** profile. The full surface is 25 tools, opt-in via `GRAPHIFY_TOOL_PROFILE=full` or `--profile full` on install.
 
 | Tool | When the agent uses it |
 |---|---|
@@ -161,17 +211,9 @@ These six MCP tools handle the most common agent workflows in the default **core
 | `impact` | "What breaks if I refactor X?" — directed dependents, affected communities, top propagation paths |
 | `call_chain` | "How does request flow from X to Y?" — shortest execution paths across the graph |
 | `community_overview` | "Show me the architecture" — communities + sizes + bridges across the codebase |
-| `graph_stats` | "How big and deep is this graph?" — node/edge counts, density, and file-type mix |
+| `graph_stats` | "How big and deep is this graph?" — node/edge counts, density, file-type mix |
 
-Full-profile additions include the context-plane tools `context_pack`, `context_expand`, `context_prompt`, and `context_session_reset`, plus `risk_map`, `implementation_checklist`, `relevant_files`, `feature_map`, `time_travel_compare`, `community_details`, `query_graph`, `get_node`, `get_neighbors`, `explain_node`, `shortest_path`, `graph_diff`, `god_nodes`, `semantic_anomalies`, `get_community`. Full reference: [examples/mcp-tool-examples.md](examples/mcp-tool-examples.md).
-
----
-
-## Proof story: effective cost and coverage contracts
-
-- **Effective cost** is the honest prompt-compiler number for long-lived sessions: compare raw `token_count` to Claude's `effective_token_count` and `reused_context_tokens` to see what cache reuse actually saves.
-- **Coverage contracts** are the proof surfaces that show smaller context did not lose the required evidence. `benchmark` / `eval` cover question coverage, expected evidence, and snippet coverage; `review-compare` covers the same diff, seed, and hotspot surface while shrinking the review payload.
-- **Provider/runtime proof** explains what backs the token claims. `compare` / `benchmark` now distinguish provider-reported input/cache/total-token numbers from local `cl100k_base` + session-reuse estimates, and `review-compare` makes it explicit when a result is estimate-backed rather than provider-billed.
+Full-profile additions: `context_pack`, `context_expand`, `context_prompt`, `context_session_reset`, `risk_map`, `implementation_checklist`, `relevant_files`, `feature_map`, `time_travel_compare`, `community_details`, `query_graph`, `get_node`, `get_neighbors`, `explain_node`, `shortest_path`, `graph_diff`, `god_nodes`, `semantic_anomalies`, `get_community`. Full reference: [examples/mcp-tool-examples.md](examples/mcp-tool-examples.md).
 
 ---
 
@@ -187,9 +229,57 @@ The only command that hits an external service is the optional `compare` / `revi
 
 ---
 
+## Honest disclosure / limitations
+
+We measure and publish honest numbers, including the trade-offs. Smaller context is not automatically better unless the selected context is relevant — which is why graphify-ts ships coverage contracts (`benchmark`, `eval`, `review-compare`) that prove the smaller pack still contains the required evidence.
+
+1. **Cold-start sessions cost about 13% more than no-graph baseline** because the MCP server adds ~5K of tool-schema overhead at session init. Multi-question sessions amortize this and end up cheaper. We're tightening it further; watch the changelog.
+2. **Deep extraction is best on JS/TS** with framework-aware passes for Express, Redux Toolkit, React Router, NestJS, and Next.js. Python / Ruby / Go / Java / Rust use tree-sitter AST. C / Kotlin / C# / Scala / PHP / Swift / Zig use a generic structural extractor.
+3. **Static analysis cannot resolve every dynamic runtime behavior.** Runtime-generated routes, heavy meta-programmed decorators, and string-built imports fall back to the base AST graph rather than pretending to be first-class semantics.
+4. **Token reduction depends on project structure and task type.** "How does auth work?" benefits more than "fix this typo." Always validate important code changes with tests and review.
+5. **Some workflows still need full file reads** — large multi-file refactors, generated-code spelunking, or anything where you actively need to see whole-file context. graphify-ts narrows the agent's first read; it doesn't replace its ability to read.
+6. **Comparable tools exist.** `token-savior` publishes a stronger benchmark on a different surface (general agent tasks, MCP-only). `aider`'s repo-map ships a battle-tested PageRank approach that doesn't use MCP at all. **Our angle is local-first plus PR-review-specific tools (`pr_impact`, `risk_map`, `review-compare`) plus multi-repo federation.**
+
+---
+
+## Roadmap
+
+Implemented today:
+
+- ✅ Local graph build for TS/JS/Python/Ruby/Go/Java/Rust + framework-aware TS/JS
+- ✅ MCP server with core (6 tools) and full (25 tools) profiles
+- ✅ `pr_impact` + `review-compare` for diff-aware PR review
+- ✅ Provider-aware prompt compiler (`prompt`) with Claude cache-reuse semantics
+- ✅ Multi-repo federation (`federate`)
+- ✅ Time-travel compare across git refs (`time-travel`)
+- ✅ Coverage contracts (`benchmark`, `eval`)
+- ✅ Native installers for Claude Code, Cursor, Copilot CLI, Gemini CLI, Aider, OpenCode
+
+Planned:
+
+- 🔜 Better PR-impact coverage scoring on diff hotspots
+- 🔜 Cache-aware prompt layout that minimizes Claude session-cache invalidation
+- 🔜 Delta-only context packs between runs (only ship what the agent doesn't already have)
+- 🔜 Tighter cold-start MCP overhead (currently ~5K of tool schema)
+- 🔜 More framework-aware passes (Prisma, tRPC, Hono, Fastify)
+- 🔜 Deeper Python / Go semantic passes beyond tree-sitter AST
+
+---
+
+## Context-plane surfaces
+
+graphify-ts ships two complementary public surfaces:
+
+- **CLI context compiler** — `graphify-ts pack` builds compact explain/review/impact payloads for automation, and `graphify-ts prompt` compiles provider-ready prompts for `claude` or `gemini`.
+- **MCP context plane** — by default, graphify-ts exposes the **core** MCP profile with 6 tools. Set `GRAPHIFY_TOOL_PROFILE=full` to expose `context_pack`, `context_expand`, `context_prompt`, `context_session_reset`, and the rest of the advanced MCP surface without leaving the session.
+
+Use `context_pack` when you want expandable refs plus `claims`, `coverage`, `missing_context`, and the **semantic coverage** contract. The planner classifies prompt intent, applies a task-specific evidence recipe, and reports both evidence-class coverage and semantic buckets like `implementation`, `impact`, `tests`, `configuration`, and `structure`. Use `context_expand` to expand a stable `handle_id` inside the same MCP session. Use `context_prompt` for the provider-ready prompt directly; for Claude, reuse a `session_id` so follow-up prompts resend only deltas and report `effective_token_count` / `reused_context_tokens`.
+
+---
+
 ## Public proof
 
-- [Benchmark proof hub (repo artifacts)](https://github.com/mohanagy/graphify-ts/tree/main/docs/benchmarks) — live now; browse the committed benchmark wrappers and evidence in GitHub
+- [Benchmark proof hub (repo artifacts)](https://github.com/mohanagy/graphify-ts/tree/main/docs/benchmarks) — committed benchmark wrappers and evidence
 - [GitHub Pages benchmark hub](https://mohanagy.github.io/graphify-ts/) — post-deploy wrapper once Pages is live from `main`
 - [Retrieval benchmark artifact](docs/benchmarks/2026-04-30-govalidate/) — raw `claude --output-format json` evidence + `verify.sh`
 - [PR review benchmark artifact](docs/benchmarks/2026-05-02-govalidate-pr-review/) — `review-compare` report, prompts, answers, `verify.sh`

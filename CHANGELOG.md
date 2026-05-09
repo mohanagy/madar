@@ -4,6 +4,13 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+## [0.13.3] - 2026-05-10
+
+### Changed
+
+- **Marketing positioning**: rewrote the README to lead with AI coding-agent value ("stop making AI agents re-read your repo") and added explicit Why graphify-ts, What it does, Core concept, Works with your AI tools, Limitations, and Roadmap sections. All measured numbers and CLI commands are unchanged.
+- **Package discoverability**: refreshed `package.json` description and expanded keywords (`ai`, `ai-agents`, `claude-code`, `codex`, `copilot`, `cursor`, `code-intelligence`, `pr-review`, `static-analysis`) so the package surfaces for AI-agent users on npm search.
+
 ## [0.13.2] - 2026-05-08
 
 ### Fixed
