@@ -12,6 +12,10 @@
 
 graphify-ts indexes a TypeScript/Node workspace (and PR diffs) into a local knowledge graph, then compiles that graph into the **smallest verifiable context pack** the agent actually needs for the task at hand. No cloud upload, no API key for indexing, no SaaS dashboard — just a local subprocess your agent talks to over MCP.
 
+### See it in action
+
+https://github.com/user-attachments/assets/a502185f-fa12-4a8f-80d2-172847f209fd
+
 ---
 
 ## Why graphify-ts?
