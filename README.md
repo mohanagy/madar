@@ -202,7 +202,7 @@ For `compare --baseline-mode native_agent`, use a structured Anthropic runner li
 
 ## What you actually get (MCP tools)
 
-The default **core** profile exposes 6 tools — the most common agent workflows. The full surface is 25 tools, opt-in via `GRAPHIFY_TOOL_PROFILE=full` or `--profile full` on install.
+These six MCP tools handle the most common agent workflows in the default **core** profile. The full surface is 25 tools, opt-in via `GRAPHIFY_TOOL_PROFILE=full` or `--profile full` on install.
 
 | Tool | When the agent uses it |
 |---|---|
