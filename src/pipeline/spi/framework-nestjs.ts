@@ -399,18 +399,16 @@ function emitControllerRoutes(
 
   // Per-method overload counters mirror build.ts emitClassMethods so the
   // method symbol id we link to here matches the one the symbol layer emits.
+  // Increment for every named method declaration (including non-route ones)
+  // so the index of a route method on, say, the third overload of `foo`
+  // resolves to `foo#2` — the same id the symbol layer minted.
   const overloadCounts = new Map<string, number>()
 
   for (const member of classDecl.members) {
     if (!ts.isMethodDeclaration(member) || !member.name || !ts.isIdentifier(member.name)) {
-      if (
-        ts.isMethodDeclaration(member) &&
-        member.name &&
-        ts.isIdentifier(member.name)
-      ) {
-        const k = `${className}.${member.name.text}`
-        overloadCounts.set(k, (overloadCounts.get(k) ?? 0) + 1)
-      }
+      // Constructors, accessors, and properties keep their own counters in
+      // build.ts emitClassMethods (different name keys), so skipping them
+      // here does not desync indices for method declarations.
       continue
     }
 
