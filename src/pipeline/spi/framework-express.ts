@@ -1,4 +1,5 @@
-// SPI v1 — Express framework layer (slices 1c-ii.b + 1c-ii.c of #72).
+// SPI v1 — Express framework layer (slices 1c-ii.b + 1c-ii.c + 1c-ii.d
+// of #72).
 //
 // Slice 1c-ii.b — substrate: detects Express's `app = express()` and
 // `router = Router()` factory call patterns and tags the resulting
@@ -10,19 +11,26 @@
 // the LAST argument is a named identifier (function or variable symbol
 // in the same file), the handler is tagged framework_role: 'express_route'
 // and a `route_handler` SpiEdge is emitted from the binding's symbol to
-// the handler's symbol with confidence 'high'. Inline arrow handlers
-// (`app.get('/p', (req, res) => {...})`) are intentionally NOT tagged in
-// this slice — they require synthesizing route nodes from anonymous
-// callbacks, which is slice 1c-ii.e territory.
+// the handler's symbol with confidence 'high'.
 //
-// Future slices:
+// Slice 1c-ii.d — middleware detection: walks `<binding>.use(...)` call
+// expressions. Every Identifier argument that resolves to a top-level
+// function/constant/variable in the same file is tagged with
+// framework_role: 'express_middleware'. The optional first string-
+// literal path argument (`app.use('/api', mw1, mw2)`) is skipped. No
+// edge is emitted for middleware — the framework_role tag plus
+// projector layer (slice 1c-ii.a's framework propagation) is enough to
+// surface 'framework: express, framework_role: express_middleware' on
+// the consumer side. Inline arrow middleware is deferred to slice
+// 1c-ii.e (same anonymous-callback synthesis territory as inline route
+// handlers).
 //
-//   * 1c-ii.d — middleware detection: app.use(...) tags handlers with
-//     framework_role: 'express_middleware'.
+// Future slice:
+//
 //   * 1c-ii.e — full byte-equivalence with the legacy
 //     extract/frameworks/express.ts surface (~1,669 lines): synthetic
 //     route nodes with route_path, mounted-router prefix resolution,
-//     dynamic compositions.
+//     dynamic compositions, anonymous-callback handler synthesis.
 
 import ts from 'typescript'
 
@@ -131,16 +139,47 @@ function walkRouteCalls(
       const callee = node.expression
       if (ts.isIdentifier(callee.expression) && ts.isIdentifier(callee.name)) {
         const bindingName = callee.expression.text
-        const httpMethod = callee.name.text
+        const methodName = callee.name.text
         const bindingRecord = expressBindings.get(bindingName)
-        if (bindingRecord && HTTP_ROUTE_METHODS.has(httpMethod) && receiverMatchesBinding(callee.expression, bindingRecord, ctx.checker)) {
-          emitRouteForCall(ctx, bindingRecord.spiSymbol, node, seenEdgeKeys)
+        if (bindingRecord && receiverMatchesBinding(callee.expression, bindingRecord, ctx.checker)) {
+          if (HTTP_ROUTE_METHODS.has(methodName)) {
+            emitRouteForCall(ctx, bindingRecord.spiSymbol, node, seenEdgeKeys)
+          } else if (methodName === 'use') {
+            // Slice 1c-ii.d — middleware detection.
+            emitMiddlewareForCall(ctx, node)
+          }
         }
       }
     }
     ts.forEachChild(node, visit)
   }
   visit(ctx.sourceFile)
+}
+
+function emitMiddlewareForCall(
+  ctx: DetectExpressFrameworkContext,
+  callExpr: ts.CallExpression,
+): void {
+  // Iterate every argument. String-literal path prefixes (e.g.,
+  // `app.use('/api', mw)`) are skipped — they're routing metadata, not
+  // middleware. Every Identifier that resolves to a top-level
+  // function/const/var in the same file is tagged with
+  // framework_role: 'express_middleware'. Inline arrow middleware
+  // (`app.use((req, res, next) => {...})`) is intentionally skipped;
+  // tagging anonymous callbacks requires the symbol-synthesis layer
+  // that lands in slice 1c-ii.e.
+  for (const arg of callExpr.arguments) {
+    if (!ts.isIdentifier(arg)) continue
+    const handlerSymbol = resolveHandlerSymbol(arg, ctx)
+    if (!handlerSymbol) continue
+    // If a symbol is BOTH used as a route handler and a middleware in the
+    // same file, the route-handler tag wins (it carries more semantic
+    // weight). The express_route role is set first because route
+    // detection runs in the same walk; only set express_middleware when
+    // the symbol isn't already framework-role-tagged.
+    if (handlerSymbol.framework_role === 'express_route') continue
+    handlerSymbol.framework_role = 'express_middleware'
+  }
 }
 
 /** Returns true iff the call-site receiver identifier resolves to the

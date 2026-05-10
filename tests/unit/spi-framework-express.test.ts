@@ -264,6 +264,122 @@ describe('SPI Express framework detector (slice 1c-ii.b)', () => {
     })
   })
 
+  describe('middleware detection (slice 1c-ii.d)', () => {
+    it('tags app.use(middleware) handler with express_middleware', () => {
+      writeFile(sandbox, 'src/server.ts', [
+        'import express from "express"',
+        'export const app = express()',
+        'export function logger(_req: unknown, _res: unknown, next: () => void): void { next() }',
+        'app.use(logger)',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+      const handler = findSymbol(spi, 'src/server.ts', 'logger')
+      expect(handler?.framework_role).toBe('express_middleware')
+    })
+
+    it('skips the optional path-prefix string argument', () => {
+      writeFile(sandbox, 'src/server.ts', [
+        'import express from "express"',
+        'export const app = express()',
+        'export function authMiddleware(): void {}',
+        'app.use("/api", authMiddleware)',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+      const handler = findSymbol(spi, 'src/server.ts', 'authMiddleware')
+      expect(handler?.framework_role).toBe('express_middleware')
+    })
+
+    it('tags every middleware in a chain `app.use(mw1, mw2, mw3)`', () => {
+      writeFile(sandbox, 'src/server.ts', [
+        'import express from "express"',
+        'export const app = express()',
+        'export function mw1(): void {}',
+        'export function mw2(): void {}',
+        'export function mw3(): void {}',
+        'app.use(mw1, mw2, mw3)',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+      expect(findSymbol(spi, 'src/server.ts', 'mw1')?.framework_role).toBe('express_middleware')
+      expect(findSymbol(spi, 'src/server.ts', 'mw2')?.framework_role).toBe('express_middleware')
+      expect(findSymbol(spi, 'src/server.ts', 'mw3')?.framework_role).toBe('express_middleware')
+    })
+
+    it('tags `router.use(...)` middleware too', () => {
+      writeFile(sandbox, 'src/routes.ts', [
+        'import { Router } from "express"',
+        'export const router = Router()',
+        'export function middleware(): void {}',
+        'router.use(middleware)',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+      const handler = findSymbol(spi, 'src/routes.ts', 'middleware')
+      expect(handler?.framework_role).toBe('express_middleware')
+    })
+
+    it('does not emit a route_handler edge for `use` calls (middleware ≠ route)', () => {
+      writeFile(sandbox, 'src/server.ts', [
+        'import express from "express"',
+        'export const app = express()',
+        'export function logger(): void {}',
+        'app.use(logger)',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+      const app = findSymbol(spi, 'src/server.ts', 'app')
+      const logger = findSymbol(spi, 'src/server.ts', 'logger')
+      const edges = spi.edges.filter((e) =>
+        e.from === app?.id && e.to === logger?.id && e.kind === 'route_handler',
+      )
+      expect(edges).toHaveLength(0)
+    })
+
+    it('does not downgrade an express_route tag to express_middleware when a fn is used as both', () => {
+      // A handler used as a route AND as middleware should retain its
+      // route tag — route is the more semantic role. (Convention: route
+      // wins; middleware is the fallback.)
+      writeFile(sandbox, 'src/server.ts', [
+        'import express from "express"',
+        'export const app = express()',
+        'export function dual(): void {}',
+        'app.get("/x", dual)',
+        'app.use(dual)',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+      const dual = findSymbol(spi, 'src/server.ts', 'dual')
+      expect(dual?.framework_role).toBe('express_route')
+    })
+
+    it('does not tag inline arrow middleware (deferred to slice 1c-ii.e)', () => {
+      writeFile(sandbox, 'src/server.ts', [
+        'import express from "express"',
+        'export const app = express()',
+        'app.use((_req, _res, next) => next())',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+      // No top-level handler symbol exists for the arrow, so nothing to
+      // tag. The detector silently skips. Sanity: no shadow false-tags.
+      const allFunctionSymbols = spi.symbols.filter((s) => s.framework_role === 'express_middleware')
+      expect(allFunctionSymbols).toHaveLength(0)
+    })
+
+    it('does not tag handlers when the receiver is a shadowed local `app`', () => {
+      writeFile(sandbox, 'src/server.ts', [
+        'import express from "express"',
+        'export const app = express()',
+        'export function outerMiddleware(): void {}',
+        'function setup(): void {',
+        '  const app = { use: (_h: () => void): void => {} }',
+        '  app.use(outerMiddleware)',
+        '}',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+      const outer = findSymbol(spi, 'src/server.ts', 'outerMiddleware')
+      // The shadowed inner `app.use(outerMiddleware)` resolves the
+      // receiver to the LOCAL `const app`, not the outer express()
+      // binding. The detector's declaration-identity check rejects it.
+      expect(outer?.framework_role).toBeUndefined()
+    })
+  })
+
   describe('projector — framework propagation through to ExtractionNode', () => {
     it('an express_app variable surfaces with framework=express on the projected ExtractionNode', async () => {
       writeFile(sandbox, 'src/server.ts', [
