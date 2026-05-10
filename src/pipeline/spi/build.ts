@@ -47,6 +47,7 @@ import type {
   SpiSymbolKind,
 } from './types.js'
 import { addTestLayerEdges } from './test-layer.js'
+import { visitNestJsClass } from './framework-nestjs.js'
 
 export type BuildSpiOptions = {
   root: string
@@ -94,7 +95,7 @@ export function buildSpi(opts: BuildSpiOptions): SemanticProgramIndex {
   if (!existsSync(root) || !statSync(root).isDirectory()) {
     throw new Error(`SPI build: workspace root not found or not a directory: ${root}`)
   }
-  const extractorVersion = opts.extractorVersion ?? 'spi-v1.0.0-slice-3c'
+  const extractorVersion = opts.extractorVersion ?? 'spi-v1.0.0-slice-3b'
   const now = opts.now ?? (() => new Date())
 
   const files: SpiFile[] = []
@@ -583,6 +584,8 @@ function addTypeCheckerEdges(ctx: TypeCheckerEdgeContext): void {
   const checker = program.getTypeChecker()
   const seenCalls = new Set<string>()
   const seenTypeEdges = new Set<string>()
+  const seenNestEdges = new Set<string>()
+  const symbolsById = new Map(ctx.symbols.map((s) => [s.id, s] as const))
 
   for (const file of files) {
     const abs = toPosix(join(root, file.path))
@@ -590,7 +593,35 @@ function addTypeCheckerEdges(ctx: TypeCheckerEdgeContext): void {
     if (!sourceFile) continue
     walkCallExpressions(sourceFile, file.id, checker, pathToFileId, edges, seenCalls)
     walkTypeReferences(sourceFile, file.id, checker, pathToFileId, edges, seenTypeEdges)
+    walkNestJsClasses(sourceFile, file.id, checker, pathToFileId, symbolsById, edges, seenNestEdges)
   }
+}
+
+function walkNestJsClasses(
+  sourceFile: ts.SourceFile,
+  fileId: string,
+  checker: ts.TypeChecker,
+  pathToFileId: Map<string, string>,
+  symbolsById: Map<string, SpiSymbol>,
+  edges: SpiEdge[],
+  seen: Set<string>,
+): void {
+  const visit = (node: ts.Node): void => {
+    if (ts.isClassDeclaration(node)) {
+      visitNestJsClass({
+        classNode: node,
+        fileId,
+        sourceFile,
+        checker,
+        pathToFileId,
+        symbolsById,
+        edges,
+        seen,
+      })
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sourceFile)
 }
 
 function walkCallExpressions(
