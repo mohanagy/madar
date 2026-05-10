@@ -16,22 +16,23 @@
 //   4 = cross-module impact
 //   5 = full PR impact pack
 //
-// This module is intentionally small and dependency-free so the gate can
-// be imported anywhere the runtime needs to make a retrieval decision
-// without pulling the rest of the retrieve pipeline.
+// The output type lives in src/contracts/retrieval-gate.ts so callers
+// (e.g. CompiledContextPack) can carry the decision without depending on
+// the runtime classifier itself.
 
-export type RetrievalLevel = 0 | 1 | 2 | 3 | 4 | 5
+import type {
+  RetrievalGateDecision,
+  RetrievalGateSignals,
+  RetrievalIntent,
+  RetrievalLevel,
+} from '../contracts/retrieval-gate.js'
 
-export type RetrievalIntent =
-  | 'rename'
-  | 'explain'
-  | 'debug'
-  | 'refactor'
-  | 'test'
-  | 'review'
-  | 'impact'
-  | 'chitchat'
-  | 'unknown'
+export type {
+  RetrievalGateDecision,
+  RetrievalGateSignals,
+  RetrievalIntent,
+  RetrievalLevel,
+} from '../contracts/retrieval-gate.js'
 
 export type RetrievalGateInput = {
   /** The user's prompt or task description. Required. */
@@ -52,25 +53,6 @@ export type RetrievalGateInput = {
    * #75 require the gate be overridable via CLI/MCP options.
    */
   manualOverride?: RetrievalLevel
-}
-
-export type RetrievalGateSignals = {
-  has_pr_diff: boolean
-  has_stack_trace: boolean
-  mentioned_paths: ReadonlyArray<string>
-  mentioned_symbols: ReadonlyArray<string>
-}
-
-export type RetrievalGateDecision = {
-  level: RetrievalLevel
-  /** True iff level === 0 — caller can short-circuit retrieval entirely. */
-  skipped_retrieval: boolean
-  /** Human-readable explanation of why this level was selected. */
-  reason: string
-  /** Intent the gate inferred (or that the caller supplied). */
-  intent: RetrievalIntent
-  /** Signals the gate detected from the prompt + caller hints. */
-  signals: RetrievalGateSignals
 }
 
 // Heuristic patterns. Order matters where alternatives overlap (e.g. an
