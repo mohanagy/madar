@@ -1179,6 +1179,25 @@ export function compactPrImpactResult(result: PrImpactResult): CompactPrImpactRe
   }
   const compactChangedFileSet = new Set(compactChangedFiles)
 
+  // Compute coverage_score against the POST-compaction review bundle so
+  // the compact result doesn't inherit the full result's coverage_score
+  // verbatim if compactReviewBundle drops a node that was counted as
+  // covered. This is the fix for the CodeRabbit follow-up to #79: claims
+  // about coverage have to match what the consumer actually sees.
+  const compactedReviewBundle = compactReviewBundle(result.review_bundle, result.seed_nodes)
+  const compactedReviewLabels = new Set(compactedReviewBundle.nodes.map((node) => node.label))
+  const compactHighImpactSet = new Set(result.risk_summary.high_impact_nodes)
+  const compactTotalHighImpact = compactHighImpactSet.size
+  let compactCoveredHighImpact = 0
+  for (const label of compactHighImpactSet) {
+    if (compactedReviewLabels.has(label)) compactCoveredHighImpact += 1
+  }
+  const compactCoverageScore = compactTotalHighImpact === 0
+    ? 1
+    : compactCoveredHighImpact / compactTotalHighImpact
+  const compactUncoveredHotspots = result.changed_nodes
+    .filter((node) => compactHighImpactSet.has(node.label) && !compactedReviewLabels.has(node.label))
+
   return {
     base_branch: result.base_branch,
     changed_files: compactChangedFiles,
@@ -1194,12 +1213,17 @@ export function compactPrImpactResult(result: PrImpactResult): CompactPrImpactRe
     total_blast_radius: result.total_blast_radius,
     affected_communities: result.affected_communities.slice(0, MAX_COMPACT_AFFECTED_COMMUNITIES),
     review_context: result.review_context,
-    review_bundle: compactReviewBundle(result.review_bundle, result.seed_nodes),
+    review_bundle: compactedReviewBundle,
     risk_summary: {
       ...result.risk_summary,
       high_impact_nodes: result.risk_summary.high_impact_nodes.slice(0, MAX_COMPACT_HIGH_IMPACT_NODES),
     },
-    coverage_score: result.coverage_score,
-    uncovered_hotspots: result.uncovered_hotspots,
+    // #79 + CodeRabbit follow-up: recompute coverage against the
+    // post-compaction review bundle so the compact result doesn't claim
+    // coverage that compactReviewBundle has dropped. A high-impact node
+    // is "covered" only if it survived into compactedReviewBundle.nodes;
+    // otherwise it shows up in compactUncoveredHotspots.
+    coverage_score: compactCoverageScore,
+    uncovered_hotspots: compactUncoveredHotspots,
   }
 }

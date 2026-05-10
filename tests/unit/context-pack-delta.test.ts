@@ -82,19 +82,20 @@ describe('computeDeltaContextPack (#81)', () => {
     expect(result.bytes_saved).toBeGreaterThan(0)
   })
 
-  it('drops relationships whose endpoints are now referenced (the receiver already has them)', () => {
+  it('drops relationships only when BOTH endpoints are referenced (mixed edges are kept)', () => {
     const original = pack(
-      [node('a', 'A'), node('b', 'B'), node('c', 'C')],
+      [node('a', 'A'), node('b', 'B'), node('c', 'C'), node('d', 'D')],
       [
-        relationship('a', 'b', 'A', 'B'), // both new — keep
-        relationship('a', 'c', 'A', 'C'), // c is referenced — drop
-        relationship('b', 'c', 'B', 'C'), // c is referenced — drop
+        relationship('a', 'b', 'A', 'B'), // both new (a, b not referenced) — keep
+        relationship('a', 'c', 'A', 'C'), // mixed (a new, c referenced) — keep (novel link)
+        relationship('b', 'c', 'B', 'C'), // mixed (b new, c referenced) — keep (novel link)
+        relationship('c', 'd', 'C', 'D'), // both referenced — DROP (receiver already has it)
       ],
     )
-    const result = computeDeltaContextPack(original, ['c'])
-    expect(result.delta_pack.relationships).toHaveLength(1)
-    expect(result.delta_pack.relationships[0]?.from_id).toBe('a')
-    expect(result.delta_pack.relationships[0]?.to_id).toBe('b')
+    const result = computeDeltaContextPack(original, ['c', 'd'])
+    expect(result.delta_pack.relationships).toHaveLength(3)
+    const keptKinds = result.delta_pack.relationships.map((r) => `${r.from_id}->${r.to_id}`)
+    expect(keptKinds).toEqual(['a->b', 'a->c', 'b->c'])
   })
 
   it('passes through nodes that have no node_id (cannot be deduplicated by handle)', () => {

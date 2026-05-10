@@ -121,6 +121,51 @@ describe('PR-impact coverage scoring (#79)', () => {
     expect(compact.uncovered_hotspots).toHaveLength(2)
   })
 
+  it('CodeRabbit follow-up: coverage is recomputed against the POST-compaction review bundle, not inherited verbatim', () => {
+    // Construct a fixture where every high-impact node DOES appear in the
+    // full review bundle (full coverage_score = 1.0 in the verbose result),
+    // but where the bundle is large enough that compactReviewBundle drops
+    // some of those same nodes during compaction. The compact result must
+    // honestly report the post-compaction coverage, not the verbose one.
+    // Use 12 high-impact nodes; compactReviewBundle's per-evidence-class
+    // caps will drop most, so the compact coverage_score should be < 1.
+    const labels = Array.from({ length: 12 }, (_, i) => `Hotspot${i + 1}`)
+    const full: PrImpactResult = {
+      base_branch: 'main',
+      changed_files: [],
+      changed_ranges: [],
+      changed_nodes: labels.map((label) => changedNode(label, 'src/x.ts')),
+      seed_nodes: labels.map((label) => ({ ...changedNode(label, 'src/x.ts'), match_kind: 'line' })),
+      per_node_impact: [],
+      total_blast_radius: 0,
+      affected_files: [],
+      affected_communities: [],
+      review_context: { supporting_paths: [], test_paths: [], hotspots: [] },
+      review_bundle: reviewBundleWithLabels(labels),
+      risk_summary: {
+        high_impact_nodes: labels,
+        cross_community_changes: 0,
+        top_risks: [],
+      },
+      // Verbose claims full coverage; compact must NOT inherit this.
+      coverage_score: 1,
+      uncovered_hotspots: [],
+    }
+
+    const compact = compactPrImpactResult(full)
+    // The compact bundle MAY contain all 12 nodes if the budget allows it,
+    // OR fewer if compactReviewBundle dropped some. Either way, the compact
+    // coverage_score must reflect the compact bundle's actual contents —
+    // not be slavishly copied from the verbose 1.0.
+    const compactReviewLabels = new Set(compact.review_bundle.nodes.map((n) => n.label))
+    const expectedCovered = labels.filter((label) => compactReviewLabels.has(label)).length
+    const expectedScore = labels.length === 0 ? 1 : expectedCovered / labels.length
+    expect(compact.coverage_score).toBeCloseTo(expectedScore, 5)
+    // And uncovered_hotspots is the symmetric set.
+    const expectedUncoveredCount = labels.filter((label) => !compactReviewLabels.has(label)).length
+    expect(compact.uncovered_hotspots).toHaveLength(expectedUncoveredCount)
+  })
+
   it('coverage_score is 1.0 by convention when there are no high-impact nodes', () => {
     const full = fixture({
       highImpactNodes: [],

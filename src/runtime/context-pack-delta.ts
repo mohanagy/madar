@@ -73,17 +73,22 @@ export function computeDeltaContextPack<
     return true
   })
 
-  // Filter relationships: drop edges where either endpoint is now a
-  // referenced id (the receiver already has it). The relationship's
-  // semantic meaning is preserved on the receiver side via the explicit
-  // referenced_ids list, so the agent can still reconstruct the edge if
-  // it needs to.
+  // Filter relationships: drop edges only when BOTH endpoints are already
+  // in the receiver's session. Mixed edges (one new endpoint, one
+  // referenced) carry novel information about how the new node connects
+  // to the known one, so they're kept. Edges between two new nodes are
+  // also kept. Only edges where the receiver already has both ends and
+  // the relation between them are redundant.
   const referencedSet = new Set(referencedIds)
   const keptRelationships = pack.relationships.filter((rel) => {
     const fromId = typeof rel.from_id === 'string' ? rel.from_id : null
     const toId = typeof rel.to_id === 'string' ? rel.to_id : null
-    if (fromId !== null && referencedSet.has(fromId)) return false
-    if (toId !== null && referencedSet.has(toId)) return false
+    if (
+      fromId !== null && toId !== null &&
+      referencedSet.has(fromId) && referencedSet.has(toId)
+    ) {
+      return false
+    }
     return true
   })
 
