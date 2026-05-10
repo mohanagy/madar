@@ -227,16 +227,18 @@ export function projectSpiToExtraction(
 }
 
 function frameworkForRole(role: NonNullable<SpiSymbol['framework_role']>): string {
-  // Every SpiFrameworkRole today is a NestJS role (nest_*); future SPI
-  // additions for other frameworks will branch here.
   if (role.startsWith('nest_')) return 'nestjs'
+  if (role.startsWith('express_')) return 'express'
   return 'unknown'
 }
 
 function nodeKindForRole(role: NonNullable<SpiSymbol['framework_role']>): NonNullable<ExtractionNode['node_kind']> | null {
   switch (role) {
     case 'nest_route':
+    case 'express_route':
       return 'route'
+    case 'express_router':
+      return 'router'
     case 'nest_controller':
     case 'nest_module':
     case 'nest_provider':
@@ -244,6 +246,9 @@ function nodeKindForRole(role: NonNullable<SpiSymbol['framework_role']>): NonNul
     case 'nest_pipe':
     case 'nest_interceptor':
       return 'class'
+    case 'express_app':
+    case 'express_middleware':
+      return 'function'
     default:
       return null
   }

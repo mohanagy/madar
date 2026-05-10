@@ -66,3 +66,8 @@ export {
   projectSpiToExtraction,
   type ProjectSpiToExtractionOptions,
 } from './projector.js'
+
+export {
+  detectExpressFramework,
+  type DetectExpressFrameworkContext,
+} from './framework-express.js'
