@@ -25,7 +25,7 @@ import {
   estimateContextPackEntryTokens,
   type ContextPackNodeCandidate,
 } from './context-pack.js'
-import type { RetrievalGateDecision } from '../contracts/retrieval-gate.js'
+import type { RetrievalGateDecision, RetrievalLevel } from '../contracts/retrieval-gate.js'
 import { classifyRetrievalLevel } from './retrieval-gate.js'
 import { communitiesFromGraph, estimateQueryTokens } from './serve.js'
 
@@ -60,6 +60,11 @@ export interface RetrieveOptions {
   semanticModel?: string
   rerank?: boolean
   rerankerModel?: string
+  /** #75 manual override for the retrieval gate. When set (0-5), the gate
+   *  bypasses heuristic classification and emits a decision with reason
+   *  'manual override' at the supplied level. Caller-side surface for the
+   *  acceptance criterion that the gate be overridable via CLI/MCP. */
+  retrievalLevel?: RetrievalLevel
 }
 
 export interface RetrieveMatchedNode {
@@ -1134,7 +1139,10 @@ function buildRetrieveResultFromOrderedCandidates(
       }))
       .sort((left, right) => right.node_count - left.node_count),
     graph_signals: graphSignalLabels,
-    retrieval_gate: classifyRetrievalLevel({ prompt: options.question }),
+    retrieval_gate: classifyRetrievalLevel({
+      prompt: options.question,
+      ...(options.retrievalLevel !== undefined ? { manualOverride: options.retrievalLevel } : {}),
+    }),
   })
 
   return {
@@ -1168,7 +1176,10 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
       relationships: [],
       community_context: [],
       graph_signals: { god_nodes: [], bridge_nodes: [] },
-      retrieval_gate: classifyRetrievalLevel({ prompt: question }),
+      retrieval_gate: classifyRetrievalLevel({
+        prompt: question,
+        ...(options.retrievalLevel !== undefined ? { manualOverride: options.retrievalLevel } : {}),
+      }),
     })
 
     return {

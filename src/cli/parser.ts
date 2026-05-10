@@ -28,6 +28,10 @@ export interface PackCliOptions {
   budget: number
   task: ContextPackTaskKind
   graphPath: string
+  /** #75 manual override for the retrieval gate. When set (0-5), the gate
+   *  emits a decision with reason 'manual override' at the supplied level
+   *  instead of running its heuristic classifier on the prompt. */
+  retrievalLevel?: 0 | 1 | 2 | 3 | 4 | 5
 }
 
 export type PromptCliProvider = 'claude' | 'gemini'
@@ -394,7 +398,7 @@ export function parseQueryArgs(args: string[]): QueryCliOptions {
 }
 
 export function parsePackArgs(args: string[]): PackCliOptions {
-  const usage = 'Usage: graphify-ts pack "<prompt>" [--budget N] [--task KIND] [--graph path]'
+  const usage = 'Usage: graphify-ts pack "<prompt>" [--budget N] [--task KIND] [--graph path] [--retrieval-level 0-5]'
   const prompt = args[0]?.trim()
   if (!prompt) {
     throw new UsageError(usage)
@@ -403,6 +407,7 @@ export function parsePackArgs(args: string[]): PackCliOptions {
   let budget = 3000
   let task: ContextPackTaskKind = 'explain'
   let graphPath = 'graphify-out/graph.json'
+  let retrievalLevel: PackCliOptions['retrievalLevel'] | undefined
 
   const normalizedPrompt = validateCliQuestionText('prompt', prompt)
 
@@ -452,6 +457,18 @@ export function parsePackArgs(args: string[]): PackCliOptions {
       continue
     }
 
+    if (argument === '--retrieval-level') {
+      retrievalLevel = parseRetrievalLevel(requireOptionValue('--retrieval-level', args[index + 1]))
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--retrieval-level=')) {
+      const [, value] = argument.split('=', 2)
+      retrievalLevel = parseRetrievalLevel(requireOptionValue('--retrieval-level', value))
+      continue
+    }
+
     throw new UsageError(`error: unknown option for pack: ${argument}`)
   }
 
@@ -460,7 +477,16 @@ export function parsePackArgs(args: string[]): PackCliOptions {
     budget,
     task,
     graphPath,
+    ...(retrievalLevel !== undefined ? { retrievalLevel } : {}),
   }
+}
+
+function parseRetrievalLevel(value: string): PackCliOptions['retrievalLevel'] {
+  const parsed = Number(value)
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 5) {
+    throw new UsageError(`error: --retrieval-level must be an integer between 0 and 5 (got ${JSON.stringify(value)})`)
+  }
+  return parsed as PackCliOptions['retrievalLevel']
 }
 
 export function parsePromptArgs(args: string[]): PromptCliOptions {

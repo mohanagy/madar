@@ -302,6 +302,7 @@ function impactMetadata(
   budget: number,
   prompt: string,
   taskIntent: TaskContextPlan['evidence']['recipe_id'],
+  retrievalLevelOverride?: 0 | 1 | 2 | 3 | 4 | 5,
 ): ContextPlaneMetadata {
   const candidates: ContextPackNodeCandidate<ContextPackNode>[] = []
 
@@ -322,7 +323,10 @@ function impactMetadata(
     task_contract: classifyTaskContract('impact', { budget, prompt, task_intent: taskIntent }),
     nodes: candidates,
     community_context: result.affected_communities,
-    retrieval_gate: classifyRetrievalLevel({ prompt }),
+    retrieval_gate: classifyRetrievalLevel({
+      prompt,
+      ...(retrievalLevelOverride !== undefined ? { manualOverride: retrievalLevelOverride } : {}),
+    }),
   })
 
   return contextMetadata(pack)
@@ -747,6 +751,15 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       const retrieveRerank = toolArguments.rerank === true
       const retrieveSemanticModel = helpers.stringParamAlias(toolArguments, ['semantic_model', 'semanticModel'])
       const retrieveRerankModel = helpers.stringParamAlias(toolArguments, ['rerank_model', 'rerankModel'])
+      // #75 manual override: numeric retrieval_level argument (0-5) bypasses
+      // the gate's heuristics and forces the supplied level. numberParamAlias
+      // already enforces the range and returns null for absent/out-of-range
+      // values, so we only forward when the argument is present.
+      const retrieveLevelOverride = helpers.numberParamAlias(toolArguments, ['retrieval_level', 'retrievalLevel'], { min: 0, max: 5 })
+      if (Object.hasOwn(toolArguments, 'retrieval_level') && retrieveLevelOverride === null) {
+        return helpers.failure(id, helpers.jsonrpcInvalidParams, 'retrieval_level must be an integer between 0 and 5')
+      }
+      const retrieveLevelTyped = retrieveLevelOverride === null ? null : (retrieveLevelOverride as 0 | 1 | 2 | 3 | 4 | 5)
       const retrieval = retrieveSemantic || retrieveRerank ? retrieveContextAsync(graph, {
         question,
         budget: retrieveBudget,
@@ -756,11 +769,13 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         ...(retrieveSemanticModel ? { semanticModel: retrieveSemanticModel } : {}),
         ...(retrieveRerank ? { rerank: true } : {}),
         ...(retrieveRerankModel ? { rerankerModel: retrieveRerankModel } : {}),
+        ...(retrieveLevelTyped !== null ? { retrievalLevel: retrieveLevelTyped } : {}),
       }) : Promise.resolve(retrieveContext(graph, {
         question,
         budget: retrieveBudget,
         ...(retrieveCommunity !== null ? { community: retrieveCommunity } : {}),
           ...(retrieveFileType ? { fileType: retrieveFileType } : {}),
+          ...(retrieveLevelTyped !== null ? { retrievalLevel: retrieveLevelTyped } : {}),
         }))
       const useVerboseRetrieve = toolArguments.verbose === true || toolArguments.compact === false
       return retrieval.then((result) => helpers.ok(id, helpers.textToolResult(JSON.stringify(
@@ -819,10 +834,16 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         })))
       }
 
+      const contextPackLevelOverride = helpers.numberParamAlias(toolArguments, ['retrieval_level', 'retrievalLevel'], { min: 0, max: 5 })
+      if (Object.hasOwn(toolArguments, 'retrieval_level') && contextPackLevelOverride === null) {
+        return helpers.failure(id, helpers.jsonrpcInvalidParams, 'retrieval_level must be an integer between 0 and 5')
+      }
+      const contextPackLevelTyped = contextPackLevelOverride === null ? null : (contextPackLevelOverride as 0 | 1 | 2 | 3 | 4 | 5)
       const retrieval = retrieveContext(graph, {
         question: prompt,
         budget: resolvedBudget,
         taskIntent: initialPlan.evidence.recipe_id,
+        ...(contextPackLevelTyped !== null ? { retrievalLevel: contextPackLevelTyped } : {}),
       })
 
       if (task === 'impact') {
@@ -836,7 +857,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
           depth: 3,
         })
         const impactPack = compactImpactResult(impactResult)
-        const metadata = impactMetadata(impactResult, resolvedBudget, prompt, initialPlan.evidence.recipe_id)
+        const metadata = impactMetadata(impactResult, resolvedBudget, prompt, initialPlan.evidence.recipe_id, contextPackLevelTyped ?? undefined)
         storeExpandableHandles(prompt, task, initialPlan.evidence.recipe_id, metadata.expandable, helpers)
         return helpers.ok(id, helpers.textToolResult(JSON.stringify({
           ...contextPackBasePayload(task, prompt, resolvedBudget, graphPath, initialPlan),

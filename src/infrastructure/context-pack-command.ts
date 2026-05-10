@@ -17,7 +17,7 @@ const DEFAULT_IMPACT_DEPTH = 3
 
 export interface ContextPackCommandDependencies {
   loadGraph: (graphPath: string) => KnowledgeGraph
-  retrieveContext: (graph: KnowledgeGraph, options: { question: string; budget: number; taskIntent?: TaskContextPlan['evidence']['recipe_id'] }) => RetrieveResult
+  retrieveContext: (graph: KnowledgeGraph, options: Pick<import('../runtime/retrieve.js').RetrieveOptions, 'question' | 'budget' | 'taskIntent' | 'retrievalLevel'>) => RetrieveResult
   compactRetrieveResult: typeof compactRetrieveResult
   analyzePrImpact: (graph: KnowledgeGraph, projectDir?: string, options?: { baseBranch?: string; depth?: number; budget?: number; taskIntent?: TaskContextPlan['evidence']['recipe_id'] }) => PrImpactResult
   compactPrImpactResult: typeof compactPrImpactResult
@@ -134,6 +134,7 @@ function impactMetadata(
   budget: number,
   prompt: string,
   taskIntent: TaskContextPlan['evidence']['recipe_id'],
+  retrievalLevelOverride?: PackCliOptions['retrievalLevel'],
 ): ContextPlaneMetadata {
   const candidates: ContextPackNodeCandidate<ContextPackNode>[] = []
 
@@ -154,7 +155,10 @@ function impactMetadata(
     task_contract: classifyTaskContract('impact', { budget, prompt, task_intent: taskIntent }),
     nodes: candidates,
     community_context: result.affected_communities,
-    retrieval_gate: classifyRetrievalLevel({ prompt }),
+    retrieval_gate: classifyRetrievalLevel({
+      prompt,
+      ...(retrievalLevelOverride !== undefined ? { manualOverride: retrievalLevelOverride } : {}),
+    }),
   })
 
   return contextMetadata(pack)
@@ -213,6 +217,7 @@ export async function runContextPackCommand(
       question: options.prompt,
       budget: plannerBudget,
       taskIntent: initialPlan.evidence.recipe_id,
+      ...(options.retrievalLevel !== undefined ? { retrievalLevel: options.retrievalLevel } : {}),
     })
     const impactTarget = pickImpactTarget(retrieval)
     const communityLabels = buildCommunityLabels(graph, communitiesFromGraph(graph))
@@ -226,7 +231,7 @@ export async function runContextPackCommand(
       ...baseResponse(options, initialPlan, plannerBudget),
       target: impactTarget,
       pack: impactPack,
-      ...impactMetadata(impactResult, plannerBudget, options.prompt, initialPlan.evidence.recipe_id),
+      ...impactMetadata(impactResult, plannerBudget, options.prompt, initialPlan.evidence.recipe_id, options.retrievalLevel),
     })
   }
 
@@ -234,6 +239,7 @@ export async function runContextPackCommand(
     question: options.prompt,
     budget: plannerBudget,
     taskIntent: initialPlan.evidence.recipe_id,
+    ...(options.retrievalLevel !== undefined ? { retrievalLevel: options.retrievalLevel } : {}),
   })
   const explainPack = dependencies.compactRetrieveResult(retrieval)
 
