@@ -1,32 +1,32 @@
-// SPI v1 — Express framework layer (slice 1c-ii.b of #72).
+// SPI v1 — Express framework layer (slices 1c-ii.b + 1c-ii.c of #72).
 //
-// Detects Express's `app = express()` and `router = Router()` factory call
-// patterns and tags the resulting variable symbols with framework_role.
-// Slice 1c-ii.b is the SUBSTRATE layer of the Express port: it adds the
-// minimum SPI tagging the projector needs to surface 'framework: express'
-// on the produced ExtractionNode (via slice 1c-ii.a's framework_role
-// propagation).
+// Slice 1c-ii.b — substrate: detects Express's `app = express()` and
+// `router = Router()` factory call patterns and tags the resulting
+// variable symbols with framework_role.
 //
-// Future slices extend this:
+// Slice 1c-ii.c — route detection: walks `<binding>.get/post/put/patch/
+// delete/all/options/head(...)` call expressions. When the receiver
+// resolves to a previously-tagged express_app/express_router binding and
+// the LAST argument is a named identifier (function or variable symbol
+// in the same file), the handler is tagged framework_role: 'express_route'
+// and a `route_handler` SpiEdge is emitted from the binding's symbol to
+// the handler's symbol with confidence 'high'. Inline arrow handlers
+// (`app.get('/p', (req, res) => {...})`) are intentionally NOT tagged in
+// this slice — they require synthesizing route nodes from anonymous
+// callbacks, which is slice 1c-ii.e territory.
 //
-//   * 1c-ii.c — call-site route detection: walk app.get / app.post / etc.
-//     emit `controller_route`-equivalent edges from app/router symbols
-//     to the route handler.
-//   * 1c-ii.d — middleware detection: app.use(...) tags middleware
-//     functions with framework_role: 'express_middleware'.
+// Future slices:
+//
+//   * 1c-ii.d — middleware detection: app.use(...) tags handlers with
+//     framework_role: 'express_middleware'.
 //   * 1c-ii.e — full byte-equivalence with the legacy
 //     extract/frameworks/express.ts surface (~1,669 lines): synthetic
-//     route nodes with route_path, framework metadata, mounted-router
-//     resolution.
-//
-// Confidence rules: high when the factory binding resolves to the
-// 'express' module specifier; otherwise the tagging is skipped (no
-// best-effort low-confidence tags here, since Express's runtime patterns
-// are too dynamic for cheap heuristics to reliably distinguish).
+//     route nodes with route_path, mounted-router prefix resolution,
+//     dynamic compositions.
 
 import ts from 'typescript'
 
-import type { SpiFrameworkRole, SpiSymbol } from './types.js'
+import type { SpiEdge, SpiFrameworkRole, SpiSymbol } from './types.js'
 
 const EXPRESS_MODULE_SPECIFIER = 'express'
 
@@ -44,15 +44,30 @@ export type DetectExpressFrameworkContext = {
   sourceFile: ts.SourceFile
   fileId: string
   symbolsByFile: Map<string, SpiSymbol[]>
+  /** Slice 1c-ii.c writes route_handler SpiEdges into this array when a
+   *  named handler is resolved from a `<binding>.<httpMethod>(...)` call. */
+  edges: SpiEdge[]
 }
+
+const HTTP_ROUTE_METHODS: ReadonlySet<string> = new Set([
+  'get',
+  'post',
+  'put',
+  'patch',
+  'delete',
+  'all',
+  'options',
+  'head',
+])
 
 export function detectExpressFramework(ctx: DetectExpressFrameworkContext): void {
   const bindings = collectExpressBindings(ctx.sourceFile)
   if (!hasAnyBinding(bindings)) return
 
-  // Walk top-level variable statements looking for `const name = express()`
-  // or `const name = Router()` patterns. Tag the variable symbol with the
-  // matching framework_role.
+  // Slice 1c-ii.b — substrate: tag app/router factory variables.
+  // Track the (variable name → symbol) map for slice 1c-ii.c's route
+  // walker so we can resolve `app.get(...)` against the tagged binding.
+  const expressBindingSymbols = new Map<string, SpiSymbol>()
   for (const stmt of ctx.sourceFile.statements) {
     if (!ts.isVariableStatement(stmt)) continue
     const isConst = (stmt.declarationList.flags & ts.NodeFlags.Const) !== 0
@@ -61,9 +76,86 @@ export function detectExpressFramework(ctx: DetectExpressFrameworkContext): void
       if (!ts.isIdentifier(decl.name) || !decl.initializer) continue
       const role = factoryCallRole(decl.initializer, bindings)
       if (!role) continue
-      tagSymbol(ctx.symbolsByFile, ctx.fileId, symbolKind, decl.name.text, role)
+      const tagged = tagSymbol(ctx.symbolsByFile, ctx.fileId, symbolKind, decl.name.text, role)
+      if (tagged && (role === 'express_app' || role === 'express_router')) {
+        expressBindingSymbols.set(decl.name.text, tagged)
+      }
     }
   }
+
+  // Slice 1c-ii.c — route detection: walk every call expression in the
+  // file. When the callee is `<binding>.<httpMethod>(...)` and `<binding>`
+  // is a tagged express_app/express_router, resolve the LAST argument to
+  // a named handler symbol in the same file. If found, tag the handler
+  // with framework_role: 'express_route' and emit a route_handler edge.
+  if (expressBindingSymbols.size === 0) return
+  walkRouteCalls(ctx, expressBindingSymbols)
+}
+
+function walkRouteCalls(
+  ctx: DetectExpressFrameworkContext,
+  expressBindingSymbols: Map<string, SpiSymbol>,
+): void {
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+      const callee = node.expression
+      if (ts.isIdentifier(callee.expression) && ts.isIdentifier(callee.name)) {
+        const bindingName = callee.expression.text
+        const httpMethod = callee.name.text
+        const bindingSymbol = expressBindingSymbols.get(bindingName)
+        if (bindingSymbol && HTTP_ROUTE_METHODS.has(httpMethod)) {
+          emitRouteForCall(ctx, bindingSymbol, node)
+        }
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(ctx.sourceFile)
+}
+
+function emitRouteForCall(
+  ctx: DetectExpressFrameworkContext,
+  bindingSymbol: SpiSymbol,
+  callExpr: ts.CallExpression,
+): void {
+  // The route handler is the last argument. Earlier args may be the path
+  // string, parameter regexes, or middleware functions.
+  const args = callExpr.arguments
+  if (args.length === 0) return
+  const handlerArg = args[args.length - 1]
+  if (!handlerArg || !ts.isIdentifier(handlerArg)) return
+
+  // Look up the handler in the file's symbol list. Match function or
+  // constant/variable symbols by exact name; method symbols (with
+  // ClassName.foo) and namespace symbols don't match the bare identifier
+  // pattern callers use here.
+  const handlerName = handlerArg.text
+  const symbols = ctx.symbolsByFile.get(ctx.fileId) ?? []
+  const handlerSymbol = symbols.find((s) =>
+    s.name === handlerName && (s.kind === 'function' || s.kind === 'constant' || s.kind === 'variable'),
+  )
+  if (!handlerSymbol) return
+
+  // Tag and emit edge. Multiple route registrations against the same
+  // handler are common (the same fn registered on / and /alias). The
+  // framework_role assignment is idempotent; the edge dedupe is the
+  // caller's job (build.ts already passes edges through addUniqueEdge-
+  // free push semantics, so we dedupe here).
+  handlerSymbol.framework_role = 'express_route'
+  const range = handlerSymbol.range
+  const edgeKey = `${bindingSymbol.id}|${handlerSymbol.id}|route_handler`
+  if (ctx.edges.some((e) => e.from === bindingSymbol.id && e.to === handlerSymbol.id && e.kind === 'route_handler')) {
+    return
+  }
+  void edgeKey
+  ctx.edges.push({
+    from: bindingSymbol.id,
+    to: handlerSymbol.id,
+    kind: 'route_handler',
+    confidence: 'high',
+    source: 'framework-decorator',
+    evidence: { file_id: ctx.fileId, range },
+  })
 }
 
 function collectExpressBindings(sourceFile: ts.SourceFile): ExpressBindings {
@@ -147,13 +239,14 @@ function tagSymbol(
   kind: SpiSymbol['kind'],
   name: string,
   role: SpiFrameworkRole,
-): void {
+): SpiSymbol | null {
   const symbols = symbolsByFile.get(fileId)
-  if (!symbols) return
+  if (!symbols) return null
   for (const symbol of symbols) {
     if (symbol.kind === kind && symbol.name === name) {
       symbol.framework_role = role
-      return
+      return symbol
     }
   }
+  return null
 }

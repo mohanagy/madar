@@ -120,6 +120,118 @@ describe('SPI Express framework detector (slice 1c-ii.b)', () => {
     })
   })
 
+  describe('route detection (slice 1c-ii.c)', () => {
+    it('tags a named handler referenced by app.get() with framework_role=express_route', () => {
+      writeFile(sandbox, 'src/server.ts', [
+        'import express from "express"',
+        'export const app = express()',
+        'export function listUsers(req: unknown, res: unknown): void { void req; void res }',
+        'app.get("/users", listUsers)',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+      const handler = findSymbol(spi, 'src/server.ts', 'listUsers')
+      expect(handler?.framework_role).toBe('express_route')
+    })
+
+    it('emits a route_handler edge from the express binding to the handler', () => {
+      writeFile(sandbox, 'src/server.ts', [
+        'import express from "express"',
+        'export const app = express()',
+        'export function listUsers(req: unknown, res: unknown): void { void req; void res }',
+        'app.get("/users", listUsers)',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+      const app = findSymbol(spi, 'src/server.ts', 'app')
+      const handler = findSymbol(spi, 'src/server.ts', 'listUsers')
+      const edge = spi.edges.find((e) => e.from === app?.id && e.to === handler?.id && e.kind === 'route_handler')
+      expect(edge).toBeTruthy()
+      expect(edge?.confidence).toBe('high')
+      expect(edge?.source).toBe('framework-decorator')
+    })
+
+    it('detects every standard HTTP route method', () => {
+      writeFile(sandbox, 'src/server.ts', [
+        'import express from "express"',
+        'export const app = express()',
+        'export function a(): void {}',
+        'export function b(): void {}',
+        'export function c(): void {}',
+        'export function d(): void {}',
+        'export function e(): void {}',
+        'export function f(): void {}',
+        'export function g(): void {}',
+        'export function h(): void {}',
+        'app.get("/a", a)',
+        'app.post("/b", b)',
+        'app.put("/c", c)',
+        'app.patch("/d", d)',
+        'app.delete("/e", e)',
+        'app.all("/f", f)',
+        'app.options("/g", g)',
+        'app.head("/h", h)',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+      const app = findSymbol(spi, 'src/server.ts', 'app')
+      const routeEdges = spi.edges.filter((edge) => edge.from === app?.id && edge.kind === 'route_handler')
+      expect(routeEdges).toHaveLength(8)
+    })
+
+    it('works for router.<method> too (router from express.Router())', () => {
+      writeFile(sandbox, 'src/routes.ts', [
+        'import { Router } from "express"',
+        'export const router = Router()',
+        'export function listUsers(): void {}',
+        'router.get("/users", listUsers)',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+      const handler = findSymbol(spi, 'src/routes.ts', 'listUsers')
+      expect(handler?.framework_role).toBe('express_route')
+    })
+
+    it('does not tag handlers when the receiver is not an express binding', () => {
+      writeFile(sandbox, 'src/server.ts', [
+        'function notExpress(): { get: (path: string, fn: () => void) => void } {',
+        '  return { get: (_path, _fn) => {} }',
+        '}',
+        'const fakeApp = notExpress()',
+        'export function handler(): void {}',
+        'fakeApp.get("/x", handler)',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+      const handler = findSymbol(spi, 'src/server.ts', 'handler')
+      expect(handler?.framework_role).toBeUndefined()
+    })
+
+    it('skips inline arrow handlers (deferred to slice 1c-ii.e)', () => {
+      writeFile(sandbox, 'src/server.ts', [
+        'import express from "express"',
+        'export const app = express()',
+        'app.get("/x", (_req, _res) => { void 0 })',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+      const app = findSymbol(spi, 'src/server.ts', 'app')
+      const routeEdges = spi.edges.filter((edge) => edge.from === app?.id && edge.kind === 'route_handler')
+      // No named handler symbol → no edge emitted in this slice.
+      expect(routeEdges).toHaveLength(0)
+    })
+
+    it('dedupes route_handler edges when the same handler is registered on multiple paths', () => {
+      writeFile(sandbox, 'src/server.ts', [
+        'import express from "express"',
+        'export const app = express()',
+        'export function handler(): void {}',
+        'app.get("/a", handler)',
+        'app.get("/alias", handler)',
+        'app.post("/a", handler)',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+      const app = findSymbol(spi, 'src/server.ts', 'app')
+      const handler = findSymbol(spi, 'src/server.ts', 'handler')
+      const routeEdges = spi.edges.filter((e) => e.from === app?.id && e.to === handler?.id && e.kind === 'route_handler')
+      expect(routeEdges).toHaveLength(1)
+    })
+  })
+
   describe('projector — framework propagation through to ExtractionNode', () => {
     it('an express_app variable surfaces with framework=express on the projected ExtractionNode', async () => {
       writeFile(sandbox, 'src/server.ts', [

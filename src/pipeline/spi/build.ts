@@ -640,13 +640,15 @@ function addTypeCheckerEdges(ctx: TypeCheckerEdgeContext): void {
       checker,
       tokenMap,
     })
-    // Slice 1c-ii.b: substrate-only Express detector. Tags app/router
-    // factory variables with framework_role; route + middleware detection
-    // lands in 1c-ii.c and 1c-ii.d.
+    // Slice 1c-ii.b + 1c-ii.c: Express detector. Tags app/router factory
+    // variables (1c-ii.b) and named-handler route registrations (1c-ii.c)
+    // emitting route_handler edges from binding→handler. Middleware and
+    // synthetic route nodes land in 1c-ii.d and 1c-ii.e respectively.
     detectExpressFramework({
       sourceFile,
       fileId: file.id,
       symbolsByFile,
+      edges,
     })
   }
 }
