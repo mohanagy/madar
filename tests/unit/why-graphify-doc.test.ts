@@ -156,6 +156,77 @@ describe('public marketing copy honesty', () => {
     })
   })
 
+  describe('docs/experiments/2026-05-10-current-vs-slicing/', () => {
+    const readme = readDoc('docs/experiments/2026-05-10-current-vs-slicing/README.md')
+    const runSh = readDoc('docs/experiments/2026-05-10-current-vs-slicing/run.sh')
+    const aggregateSh = readDoc('docs/experiments/2026-05-10-current-vs-slicing/aggregate.sh')
+    const stubSh = readDoc('docs/experiments/2026-05-10-current-vs-slicing/strategies/slicer-stub.sh')
+    const lexicalSh = readDoc('docs/experiments/2026-05-10-current-vs-slicing/strategies/lexical-baseline.sh')
+    const fullSh = readDoc('docs/experiments/2026-05-10-current-vs-slicing/strategies/full-context.sh')
+    const currentSh = readDoc('docs/experiments/2026-05-10-current-vs-slicing/strategies/current-graphify.sh')
+    const prompts = JSON.parse(readDoc('docs/experiments/2026-05-10-current-vs-slicing/prompts.json')) as {
+      version: number
+      prompts: Array<{ id: string; task: string; text: string }>
+    }
+
+    it('declares the spike scope and links the tracking issue (#71)', () => {
+      expect(readme).toMatch(/#71|issues\/71/)
+      expect(readme).toContain('v0.14-substrate')
+      expect(readme).toContain('Current retrieval vs task-conditioned slicing')
+    })
+
+    it('explicitly marks the slicer as a stub blocked on #73', () => {
+      expect(stubSh).toContain('issues/73')
+      expect(stubSh).toContain('exit 78')
+      expect(readme).toContain('#73')
+    })
+
+    it('ships four strategy adapters with the documented contract', () => {
+      for (const script of [currentSh, lexicalSh, stubSh, fullSh]) {
+        expect(script).toContain('#!/usr/bin/env bash')
+        expect(script).toContain('--prompt')
+        expect(script).toContain('--workspace')
+        expect(script).toContain('--out')
+      }
+    })
+
+    it('uses portable Date.now() millisecond timing (no GNU-only date +%s%3N)', () => {
+      for (const script of [runSh, currentSh, lexicalSh, fullSh]) {
+        expect(script).not.toMatch(/date \+%s%3N/)
+      }
+    })
+
+    it('keeps the prompts.json contract: 8 prompts, all four task modes covered', () => {
+      expect(prompts.version).toBe(1)
+      expect(prompts.prompts).toHaveLength(8)
+      const tasks = new Set(prompts.prompts.map((p) => p.task))
+      for (const expected of ['explain', 'debug', 'review', 'impact']) {
+        expect(tasks.has(expected)).toBe(true)
+      }
+      for (const prompt of prompts.prompts) {
+        expect(prompt.id).toMatch(/^[a-z0-9-]+$/)
+        expect(['explain', 'debug', 'review', 'impact']).toContain(prompt.task)
+        expect(prompt.text.length).toBeGreaterThan(20)
+      }
+    })
+
+    it('ships the orchestrator and aggregator with the documented argument surface', () => {
+      expect(runSh).toContain('--workspace')
+      expect(runSh).toContain('--strategies')
+      expect(runSh).toContain('--exec')
+      expect(runSh).toContain('--prompt-ids')
+      expect(aggregateSh).toContain('summary.json')
+    })
+  })
+
+  describe('docs/benchmarks/2026-05-10-backend-vs-monorepo/ portability', () => {
+    const runSh = readDoc('docs/benchmarks/2026-05-10-backend-vs-monorepo/run.sh')
+
+    it('uses portable Date.now() millisecond timing (no GNU-only date +%s%3N)', () => {
+      expect(runSh).not.toMatch(/date \+%s%3N/)
+    })
+  })
+
   describe('examples/mcp-tool-examples.md', () => {
     const content = readDoc('examples/mcp-tool-examples.md')
     const lower = content.toLowerCase()

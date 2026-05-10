@@ -1,0 +1,46 @@
+{
+  "$comment": "Prompt set for the 2026-05-10 current-vs-slicing experiment (issue #71). 8 prompts across the four task modes #71 calls out (explain / debug / review / impact). Designed so each prompt has at least one obvious failure mode for naive retrieval (hub-dominated) and one obvious slicing win (cross-module behavior path).",
+  "version": 1,
+  "prompts": [
+    {
+      "id": "explain-auth-flow",
+      "task": "explain",
+      "text": "Explain the authentication flow end to end, from the HTTP entry point to session persistence."
+    },
+    {
+      "id": "explain-controller-to-persistence",
+      "task": "explain",
+      "text": "Trace the request path from the report controller to the final report persistence call. Include any queue, worker, or background job hops."
+    },
+    {
+      "id": "debug-report-slow",
+      "task": "debug",
+      "text": "Why is report generation slow? Walk through the request path and call out the slowest hops, including any external service or LLM calls."
+    },
+    {
+      "id": "debug-config-env",
+      "task": "debug",
+      "text": "Where does the SESSION_TTL environment variable affect runtime behavior? Trace it from config load through every code path that reads it."
+    },
+    {
+      "id": "review-pr-onboarding",
+      "task": "review",
+      "text": "Can a PR that touches the onboarding flow break user creation, billing, or auth? Identify the call paths and risk hotspots."
+    },
+    {
+      "id": "review-guard-coverage",
+      "task": "review",
+      "text": "Which controllers have an authentication guard but no authorization check? List the routes and the missing checks."
+    },
+    {
+      "id": "impact-service-change",
+      "task": "impact",
+      "text": "What can break if the research-agent service changes its public interface? List dependents, callers, and tests that would need to update."
+    },
+    {
+      "id": "impact-billing-credits",
+      "task": "impact",
+      "text": "When a user is charged, where are credits debited and how is the audit trail recorded? Identify all code paths that adjust the credit balance."
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+# Local run outputs from run.sh — never commit.
+# Promote a specific bundle deliberately by force-adding it next to a curated
+# findings.md.
+results/
