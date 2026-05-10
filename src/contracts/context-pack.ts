@@ -1,3 +1,4 @@
+import type { RetrievalGateDecision } from './retrieval-gate.js'
 import type { TaskIntentKind } from './task-intent.js'
 
 export type ContextPackTaskKind = 'explain' | 'review' | 'impact'
@@ -148,4 +149,11 @@ export interface CompiledContextPack<
   coverage: ContextPackCoverage
   graph_signals?: ContextPackGraphSignals
   shared_file_type?: string
+  /**
+   * Retrieval-gate decision (#75) attached when the caller invoked the
+   * gate before building the pack. Carries `level`, `reason`, `intent`,
+   * `skipped_retrieval`, and the underlying signals so consumers can
+   * audit why a retrieval depth was chosen.
+   */
+  retrieval_gate?: RetrievalGateDecision
 }

@@ -20,6 +20,7 @@ import type {
   ContextPackTaskContract,
   ContextPackTaskKind,
 } from '../contracts/context-pack.js'
+import type { RetrievalGateDecision } from '../contracts/retrieval-gate.js'
 import type { TaskIntentKind } from '../contracts/task-intent.js'
 import { estimateQueryTokens } from './serve.js'
 import { resolveTaskEvidenceRecipe } from './task-evidence-recipes.js'
@@ -56,6 +57,13 @@ export interface CompileContextPackInput<
   relationships?: readonly TRelationship[]
   community_context?: readonly TCommunity[]
   graph_signals?: ContextPackGraphSignals
+  /**
+   * Retrieval-gate decision (#75). When supplied, the resulting
+   * CompiledContextPack carries it through unchanged so consumers can
+   * audit retrieval scope. The gate is *not* re-classified here — callers
+   * compute it once and pass the result down.
+   */
+  retrieval_gate?: RetrievalGateDecision
 }
 
 export type CompactContextPackMode =
@@ -668,6 +676,7 @@ export function compileContextPack<
           },
         }
       : {}),
+    ...(input.retrieval_gate ? { retrieval_gate: input.retrieval_gate } : {}),
   }
 }
 
