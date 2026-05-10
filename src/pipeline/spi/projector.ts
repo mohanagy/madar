@@ -147,11 +147,26 @@ export function projectSpiToExtraction(
     symbolIdToSourceFile.set(symbol.id, absPath)
     symbolIdToLine.set(symbol.id, symbol.range.start.line)
 
-    addNode(
-      nodes,
-      seenNodeIds,
-      createNode(projection.id, projection.label, absPath, symbol.range.start.line, 'code'),
-    )
+    const node = createNode(projection.id, projection.label, absPath, symbol.range.start.line, 'code')
+
+    // Slice 1c-ii (projector framework propagation): if SPI tagged this
+    // symbol with a framework_role (e.g. NestJS slice 3b set
+    // 'nest_module'), surface that on the projected node so downstream
+    // consumers can route framework-aware UX without re-classifying. Maps
+    // SPI roles back onto the legacy extractor's `framework` + `node_kind`
+    // shape for the role types we cover today; full byte-equivalence on
+    // demo-repo's framework-specific synthetic nodes (e.g. NestJS route
+    // nodes with `node_kind: 'route'`) remains in slice 1c-iii.
+    if (symbol.framework_role) {
+      node.framework = frameworkForRole(symbol.framework_role)
+      node.framework_role = symbol.framework_role
+      const inferredKind = nodeKindForRole(symbol.framework_role)
+      if (inferredKind) {
+        node.node_kind = inferredKind
+      }
+    }
+
+    addNode(nodes, seenNodeIds, node)
   }
 
   // 3) Structural edges derived from SPI's `declares` layer:
@@ -208,6 +223,29 @@ export function projectSpiToExtraction(
     hyperedges: [],
     input_tokens: 0,
     output_tokens: 0,
+  }
+}
+
+function frameworkForRole(role: NonNullable<SpiSymbol['framework_role']>): string {
+  // Every SpiFrameworkRole today is a NestJS role (nest_*); future SPI
+  // additions for other frameworks will branch here.
+  if (role.startsWith('nest_')) return 'nestjs'
+  return 'unknown'
+}
+
+function nodeKindForRole(role: NonNullable<SpiSymbol['framework_role']>): NonNullable<ExtractionNode['node_kind']> | null {
+  switch (role) {
+    case 'nest_route':
+      return 'route'
+    case 'nest_controller':
+    case 'nest_module':
+    case 'nest_provider':
+    case 'nest_guard':
+    case 'nest_pipe':
+    case 'nest_interceptor':
+      return 'class'
+    default:
+      return null
   }
 }
 

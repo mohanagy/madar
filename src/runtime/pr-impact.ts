@@ -121,6 +121,19 @@ export interface PrImpactResult {
       reason: string
     }>
   }
+  /**
+   * #79 — Coverage score in [0, 1] for the compact review_bundle's coverage
+   * of high-impact nodes. 1.0 = every high-impact node has at least one
+   * representative in the review_bundle. Lower values mean the compact
+   * pack risks silently dropping a hotspot.
+   */
+  coverage_score: number
+  /**
+   * #79 — High-impact changed nodes that are NOT represented in the
+   * review_bundle. Surfaced so reviewers and AI agents can audit the
+   * compact pack before trusting it as the basis for review decisions.
+   */
+  uncovered_hotspots: ChangedNode[]
 }
 
 export interface CompactPrImpactNodeImpact {
@@ -153,6 +166,8 @@ export interface CompactPrImpactResult extends Pick<
   | 'affected_communities'
   | 'review_context'
   | 'risk_summary'
+  | 'coverage_score'
+  | 'uncovered_hotspots'
 > {
   per_node_impact: CompactPrImpactNodeImpact[]
   review_bundle: CompactPrReviewBundle
@@ -1009,6 +1024,8 @@ export function analyzePrImpact(
         coverage: emptyPack.coverage,
       },
       risk_summary: { high_impact_nodes: [], cross_community_changes: 0, top_risks: [] },
+      coverage_score: 1,
+      uncovered_hotspots: [],
     }
   }
 
@@ -1097,6 +1114,24 @@ export function analyzePrImpact(
 
   const changedCommunityIds = new Set(impactTargets.map((node) => node.community).filter((id): id is number => id !== null))
 
+  // #79 — coverage scoring. A high-impact changed node is "covered" when at
+  // least one node with the same label survives into review_bundle.nodes.
+  // Score is the ratio of covered high-impact nodes to total high-impact
+  // nodes, defaulting to 1.0 when there are no high-impact nodes (i.e., no
+  // coverage gap to score). Uncovered hotspots are the ChangedNode entries
+  // whose labels appear in high_impact_nodes but not in the review_bundle.
+  const reviewBundleLabels = new Set(reviewBundle.nodes.map((node) => node.label))
+  const highImpactLabelSet = new Set(highImpactNodes)
+  const totalHighImpact = highImpactLabelSet.size
+  let coveredHighImpact = 0
+  for (const label of highImpactLabelSet) {
+    if (reviewBundleLabels.has(label)) coveredHighImpact += 1
+  }
+  const coverageScore = totalHighImpact === 0 ? 1 : coveredHighImpact / totalHighImpact
+  const uncoveredHotspots = changedNodes
+    .map((node) => node.serialized)
+    .filter((node) => highImpactLabelSet.has(node.label) && !reviewBundleLabels.has(node.label))
+
   return {
     base_branch: baseBranch,
     changed_files: changedFiles.map((changedFile) => changedFile.path),
@@ -1123,6 +1158,8 @@ export function analyzePrImpact(
         .slice(0, MAX_TOP_REVIEW_RISKS)
         .map(({ label, severity, reason }) => ({ label, severity, reason })),
     },
+    coverage_score: coverageScore,
+    uncovered_hotspots: uncoveredHotspots,
   }
 }
 
@@ -1142,6 +1179,25 @@ export function compactPrImpactResult(result: PrImpactResult): CompactPrImpactRe
   }
   const compactChangedFileSet = new Set(compactChangedFiles)
 
+  // Compute coverage_score against the POST-compaction review bundle so
+  // the compact result doesn't inherit the full result's coverage_score
+  // verbatim if compactReviewBundle drops a node that was counted as
+  // covered. This is the fix for the CodeRabbit follow-up to #79: claims
+  // about coverage have to match what the consumer actually sees.
+  const compactedReviewBundle = compactReviewBundle(result.review_bundle, result.seed_nodes)
+  const compactedReviewLabels = new Set(compactedReviewBundle.nodes.map((node) => node.label))
+  const compactHighImpactSet = new Set(result.risk_summary.high_impact_nodes)
+  const compactTotalHighImpact = compactHighImpactSet.size
+  let compactCoveredHighImpact = 0
+  for (const label of compactHighImpactSet) {
+    if (compactedReviewLabels.has(label)) compactCoveredHighImpact += 1
+  }
+  const compactCoverageScore = compactTotalHighImpact === 0
+    ? 1
+    : compactCoveredHighImpact / compactTotalHighImpact
+  const compactUncoveredHotspots = result.changed_nodes
+    .filter((node) => compactHighImpactSet.has(node.label) && !compactedReviewLabels.has(node.label))
+
   return {
     base_branch: result.base_branch,
     changed_files: compactChangedFiles,
@@ -1157,10 +1213,17 @@ export function compactPrImpactResult(result: PrImpactResult): CompactPrImpactRe
     total_blast_radius: result.total_blast_radius,
     affected_communities: result.affected_communities.slice(0, MAX_COMPACT_AFFECTED_COMMUNITIES),
     review_context: result.review_context,
-    review_bundle: compactReviewBundle(result.review_bundle, result.seed_nodes),
+    review_bundle: compactedReviewBundle,
     risk_summary: {
       ...result.risk_summary,
       high_impact_nodes: result.risk_summary.high_impact_nodes.slice(0, MAX_COMPACT_HIGH_IMPACT_NODES),
     },
+    // #79 + CodeRabbit follow-up: recompute coverage against the
+    // post-compaction review bundle so the compact result doesn't claim
+    // coverage that compactReviewBundle has dropped. A high-impact node
+    // is "covered" only if it survived into compactedReviewBundle.nodes;
+    // otherwise it shows up in compactUncoveredHotspots.
+    coverage_score: compactCoverageScore,
+    uncovered_hotspots: compactUncoveredHotspots,
   }
 }

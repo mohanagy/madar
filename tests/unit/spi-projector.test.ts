@@ -307,6 +307,57 @@ describe('projectSpiToExtraction (slice 1c-i of #72)', () => {
     })
   })
 
+  describe('framework_role propagation (slice 1c-ii)', () => {
+    it('propagates SPI nest_module role onto the projected ExtractionNode', () => {
+      writeFile(sandbox, 'src/app.module.ts', [
+        'import { Module } from "@nestjs/common"',
+        '@Module({})',
+        'export class AppModule {}',
+      ].join('\n') + '\n')
+      const extraction = project(sandbox)
+      const node = findNode(extraction, 'app_module_appmodule')
+      expect(node?.framework).toBe('nestjs')
+      expect(node?.framework_role).toBe('nest_module')
+      expect(node?.node_kind).toBe('class')
+    })
+
+    it('propagates nest_controller role and class node_kind', () => {
+      writeFile(sandbox, 'src/users.controller.ts', [
+        'import { Controller } from "@nestjs/common"',
+        '@Controller("users")',
+        'export class UsersController {}',
+      ].join('\n') + '\n')
+      const extraction = project(sandbox)
+      const node = findNode(extraction, 'users_controller_userscontroller')
+      expect(node?.framework).toBe('nestjs')
+      expect(node?.framework_role).toBe('nest_controller')
+      expect(node?.node_kind).toBe('class')
+    })
+
+    it('propagates nest_route on route methods with route node_kind', () => {
+      writeFile(sandbox, 'src/users.controller.ts', [
+        'import { Controller, Get } from "@nestjs/common"',
+        '@Controller()',
+        'export class UsersController {',
+        '  @Get() list(): void {}',
+        '}',
+      ].join('\n') + '\n')
+      const extraction = project(sandbox)
+      const method = extraction.nodes.find((n) => n.source_file.endsWith('users.controller.ts') && n.label === '.list()')
+      expect(method?.framework).toBe('nestjs')
+      expect(method?.framework_role).toBe('nest_route')
+      expect(method?.node_kind).toBe('route')
+    })
+
+    it('does not tag plain (non-nest) classes with framework metadata', () => {
+      writeFile(sandbox, 'src/plain.ts', 'export class Plain {}\n')
+      const extraction = project(sandbox)
+      const node = findNode(extraction, 'plain_plain')
+      expect(node?.framework).toBeUndefined()
+      expect(node?.framework_role).toBeUndefined()
+    })
+  })
+
   describe('comparison against the legacy extractor', () => {
     it('produces the same file + class + method node ids as extract() on a small fixture', () => {
       // Hand-crafted fixture exercising the legacy extractor's "core" surface

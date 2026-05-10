@@ -863,6 +863,8 @@ describe('pr impact', () => {
         cross_community_changes: 0,
         top_risks: [],
       },
+      coverage_score: 1,
+      uncovered_hotspots: [],
     }
 
     expect(compactPrImpactResult(full).per_node_impact.map((impact) => impact.node)).toEqual([
@@ -923,6 +925,8 @@ describe('pr impact', () => {
         cross_community_changes: 0,
         top_risks: [],
       },
+      coverage_score: 1,
+      uncovered_hotspots: [],
     }
 
     const compact = compactPrImpactResult(full)
@@ -982,6 +986,8 @@ describe('pr impact', () => {
         cross_community_changes: 0,
         top_risks: [],
       },
+      coverage_score: 1,
+      uncovered_hotspots: [],
     }
 
     const compact = compactPrImpactResult(full)
@@ -1055,6 +1061,8 @@ describe('pr impact', () => {
           },
         ],
       },
+      coverage_score: 1,
+      uncovered_hotspots: [],
     }
 
     const compact = compactPrImpactResult(full)

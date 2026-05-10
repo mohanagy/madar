@@ -2,6 +2,23 @@ import type { ContextSessionDelta, ContextSessionState } from '../contracts/cont
 import { buildContextSession } from '../runtime/context-session.js'
 import { estimateQueryTokens } from '../runtime/serve.js'
 
+/**
+ * #80 — cache-aware prompt layout: order stable_sections so the most stable
+ * content (workspace manifest, language summary) sits first and the most
+ * task-volatile content (current question, recent changes) sits last. The
+ * compiler sorts on `sort_key ?? ref`; recommended sort_key prefixes:
+ *
+ *   "01_workspace_*"   — repository manifest, language summary (most stable)
+ *   "10_communities_*" — community / structure overview (semi-stable)
+ *   "20_evidence_*"    — task-relevant evidence (semi-stable; rebuilds when
+ *                        anchor changes but stays stable across follow-ups
+ *                        in the same session)
+ *   "90_anchor_*"      — current task anchor (least stable; emits last)
+ *
+ * The stable_prefix is byte-stable when the underlying graph + anchor are
+ * unchanged across follow-ups, so Anthropic's automatic prompt cache can
+ * reuse the entire prefix.
+ */
 export interface ContextPromptStableSection {
   ref: string
   title?: string
