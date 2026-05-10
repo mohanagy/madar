@@ -756,7 +756,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       // already enforces the range and returns null for absent/out-of-range
       // values, so we only forward when the argument is present.
       const retrieveLevelOverride = helpers.numberParamAlias(toolArguments, ['retrieval_level', 'retrievalLevel'], { min: 0, max: 5 })
-      if (Object.hasOwn(toolArguments, 'retrieval_level') && retrieveLevelOverride === null) {
+      if ((Object.hasOwn(toolArguments, 'retrieval_level') || Object.hasOwn(toolArguments, 'retrievalLevel')) && retrieveLevelOverride === null) {
         return helpers.failure(id, helpers.jsonrpcInvalidParams, 'retrieval_level must be an integer between 0 and 5')
       }
       const retrieveLevelTyped = retrieveLevelOverride === null ? null : (retrieveLevelOverride as 0 | 1 | 2 | 3 | 4 | 5)
@@ -835,7 +835,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       }
 
       const contextPackLevelOverride = helpers.numberParamAlias(toolArguments, ['retrieval_level', 'retrievalLevel'], { min: 0, max: 5 })
-      if (Object.hasOwn(toolArguments, 'retrieval_level') && contextPackLevelOverride === null) {
+      if ((Object.hasOwn(toolArguments, 'retrieval_level') || Object.hasOwn(toolArguments, 'retrievalLevel')) && contextPackLevelOverride === null) {
         return helpers.failure(id, helpers.jsonrpcInvalidParams, 'retrieval_level must be an integer between 0 and 5')
       }
       const contextPackLevelTyped = contextPackLevelOverride === null ? null : (contextPackLevelOverride as 0 | 1 | 2 | 3 | 4 | 5)
