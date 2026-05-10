@@ -65,6 +65,7 @@ export type SpiRange = {
 }
 
 export type SpiFrameworkRole =
+  // NestJS roles (slice 3b base)
   | 'nest_module'
   | 'nest_controller'
   | 'nest_route'
@@ -72,6 +73,11 @@ export type SpiFrameworkRole =
   | 'nest_guard'
   | 'nest_pipe'
   | 'nest_interceptor'
+  // Express roles (slice 1c-ii.b)
+  | 'express_app'
+  | 'express_router'
+  | 'express_route'
+  | 'express_middleware'
 
 export type SpiSymbol = {
   id: string

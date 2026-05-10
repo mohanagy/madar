@@ -63,6 +63,7 @@ import type {
 } from './types.js'
 import { addTestLayerEdges } from './test-layer.js'
 import { collectNestTokenMap, detectNestFramework } from './framework-nestjs.js'
+import { detectExpressFramework } from './framework-express.js'
 
 export type BuildSpiOptions = {
   root: string
@@ -638,6 +639,14 @@ function addTypeCheckerEdges(ctx: TypeCheckerEdgeContext): void {
       pathToFileId,
       checker,
       tokenMap,
+    })
+    // Slice 1c-ii.b: substrate-only Express detector. Tags app/router
+    // factory variables with framework_role; route + middleware detection
+    // lands in 1c-ii.c and 1c-ii.d.
+    detectExpressFramework({
+      sourceFile,
+      fileId: file.id,
+      symbolsByFile,
     })
   }
 }
