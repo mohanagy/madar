@@ -113,9 +113,9 @@ echo
 generate_one() {
   local label=$1 path=$2 logfile=$3
   echo "[harness] generating graph for $label scope: $path"
-  local start=$(date +%s%3N)
+  local start=$(node -e 'process.stdout.write(String(Date.now()))')
   ( cd "$path" && graphify-ts generate . ) > "$logfile" 2>&1
-  local end=$(date +%s%3N)
+  local end=$(node -e 'process.stdout.write(String(Date.now()))')
   local ms=$((end - start))
   jq -n --arg label "$label" --arg path "$path" --arg ms "$ms" \
     '{label: $label, path: $path, duration_ms: ($ms | tonumber)}' \
