@@ -1,8 +1,8 @@
 // SPI v1 — public re-exports.
 //
-// Slice 1a: types + file-layer builder. Symbol/call/type/test/diff/framework
-// layers and the projection back to today's graph.json land in subsequent
-// slices of #72.
+// Slices 1a + 1b: types + file layer + symbol layer + declares edges.
+// Call/type/test/diff/framework layers and the projection back to today's
+// graph.json land in subsequent slices of #72.
 
 export type {
   SpiVersion,
@@ -26,4 +26,9 @@ export type {
   SpiDiffOverlay,
 } from './types.js'
 
-export { buildSpiFileLayer, type BuildSpiFileLayerOptions } from './build.js'
+export {
+  buildSpi,
+  buildSpiFileLayer,
+  type BuildSpiOptions,
+  type BuildSpiFileLayerOptions,
+} from './build.js'

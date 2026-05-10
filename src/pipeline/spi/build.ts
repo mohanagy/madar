@@ -1,13 +1,16 @@
-// SPI v1 — file-layer builder (slice 1a of #72).
+// SPI v1 — file + symbol layer builder (slices 1a + 1b of #72).
 //
 // Produces a SemanticProgramIndex containing:
 //   - workspace metadata + fingerprint
 //   - one SpiFile per supported source file under the workspace root
 //   - imports / exports edges between files (syntactic only — no type checker)
+//   - one SpiSymbol per declared function/class/interface/type/enum/method/
+//     constant/variable/namespace in each file
+//   - declares edges (file -> symbol) for every emitted symbol
 //
-// Symbols, calls, types, framework, and diff overlay land in subsequent
-// slices of #72. This module never touches the existing pipeline; it is
-// pure additive substrate.
+// Calls, type relationships, tests, framework, and diff overlay land in
+// subsequent slices of #72. This module never touches the existing pipeline;
+// it is pure additive substrate.
 
 import { createHash } from 'node:crypto'
 import {
@@ -27,9 +30,11 @@ import type {
   SpiFile,
   SpiLanguage,
   SpiRange,
+  SpiSymbol,
+  SpiSymbolKind,
 } from './types.js'
 
-export type BuildSpiFileLayerOptions = {
+export type BuildSpiOptions = {
   root: string
   graphifyVersion: string
   extractorVersion?: string
@@ -37,6 +42,10 @@ export type BuildSpiFileLayerOptions = {
   // so snapshot tests can assert deterministic output.
   now?: () => Date
 }
+
+// Backward-compat alias for the slice-1a name. New callers should use
+// BuildSpiOptions / buildSpi directly.
+export type BuildSpiFileLayerOptions = BuildSpiOptions
 
 const SKIP_DIRS = new Set<string>([
   'node_modules',
@@ -66,15 +75,16 @@ const INDEX_RESOLUTION_CANDIDATES = [
   '/index.jsx',
 ] as const
 
-export function buildSpiFileLayer(opts: BuildSpiFileLayerOptions): SemanticProgramIndex {
+export function buildSpi(opts: BuildSpiOptions): SemanticProgramIndex {
   const root = resolve(opts.root)
   if (!existsSync(root) || !statSync(root).isDirectory()) {
     throw new Error(`SPI build: workspace root not found or not a directory: ${root}`)
   }
-  const extractorVersion = opts.extractorVersion ?? 'spi-v1.0.0-slice-1a'
+  const extractorVersion = opts.extractorVersion ?? 'spi-v1.0.0-slice-1b'
   const now = opts.now ?? (() => new Date())
 
   const files: SpiFile[] = []
+  const symbols: SpiSymbol[] = []
   const edges: SpiEdge[] = []
   const diagnostics: SpiDiagnostic[] = []
 
@@ -109,10 +119,11 @@ export function buildSpiFileLayer(opts: BuildSpiFileLayerOptions): SemanticProgr
       true,
       scriptKindFor(file.language),
     )
-    visitFile(sourceFile, file, root, pathToFileId, edges, diagnostics)
+    visitFile(sourceFile, file, root, pathToFileId, symbols, edges, diagnostics)
   }
 
   files.sort((a, b) => a.path.localeCompare(b.path))
+  symbols.sort((a, b) => a.id.localeCompare(b.id))
   edges.sort((a, b) =>
     `${a.from}|${a.to}|${a.kind}`.localeCompare(`${b.from}|${b.to}|${b.kind}`),
   )
@@ -128,11 +139,15 @@ export function buildSpiFileLayer(opts: BuildSpiFileLayerOptions): SemanticProgr
       graphify_version: opts.graphifyVersion,
     },
     files,
-    symbols: [],
+    symbols,
     edges,
     diagnostics,
   }
 }
+
+// Backward-compat alias for the slice-1a entry point. New callers should use
+// buildSpi directly.
+export const buildSpiFileLayer = buildSpi
 
 function collectFiles(dir: string, out: string[]): void {
   let entries: import('node:fs').Dirent<string>[]
@@ -158,9 +173,53 @@ function visitFile(
   file: SpiFile,
   root: string,
   pathToFileId: Map<string, string>,
+  symbols: SpiSymbol[],
   edges: SpiEdge[],
   diagnostics: SpiDiagnostic[],
 ): void {
+  // Per-(class+method-name) overload counters so duplicate method names in the
+  // same class get deterministic #0/#1/... suffixes in source order.
+  const methodOverloadCounts = new Map<string, number>()
+
+  const emitTopLevelDeclarations = (parent: ts.Node): void => {
+    ts.forEachChild(parent, (node) => {
+      const exported = hasExportModifier(node) || hasDefaultModifier(node)
+
+      if (ts.isFunctionDeclaration(node) && node.name) {
+        emitSymbol({ name: node.name.text, kind: 'function', node, exported, sourceFile, file, symbols, edges })
+      } else if (ts.isClassDeclaration(node) && node.name) {
+        emitSymbol({ name: node.name.text, kind: 'class', node, exported, sourceFile, file, symbols, edges })
+        emitClassMethods(node, file, symbols, edges, sourceFile, methodOverloadCounts)
+      } else if (ts.isInterfaceDeclaration(node)) {
+        emitSymbol({ name: node.name.text, kind: 'interface', node, exported, sourceFile, file, symbols, edges })
+      } else if (ts.isTypeAliasDeclaration(node)) {
+        emitSymbol({ name: node.name.text, kind: 'type-alias', node, exported, sourceFile, file, symbols, edges })
+      } else if (ts.isEnumDeclaration(node)) {
+        emitSymbol({ name: node.name.text, kind: 'enum', node, exported, sourceFile, file, symbols, edges })
+      } else if (ts.isVariableStatement(node)) {
+        const isConst = (node.declarationList.flags & ts.NodeFlags.Const) !== 0
+        const kind: SpiSymbolKind = isConst ? 'constant' : 'variable'
+        for (const decl of node.declarationList.declarations) {
+          if (ts.isIdentifier(decl.name)) {
+            emitSymbol({ name: decl.name.text, kind, node: decl, exported, sourceFile, file, symbols, edges })
+          }
+          // Destructured declarations (`const { a, b } = ...`) are intentionally
+          // skipped in slice 1b: there's no single-source-name to mint a stable
+          // ID from. They re-enter when the symbol layer ships destructure
+          // tracking in slice 2.
+        }
+      } else if (ts.isModuleDeclaration(node) && node.name && ts.isIdentifier(node.name)) {
+        // Namespace declaration (`namespace Foo { ... }` or
+        // `module Foo { ... }`). External module augmentations
+        // (`declare module 'foo'`) use a string-literal name and are skipped.
+        emitSymbol({ name: node.name.text, kind: 'namespace', node, exported, sourceFile, file, symbols, edges })
+        // Members of namespaces are deferred: SPI v1 represents the namespace
+        // itself but does not enumerate its inner declarations. Slice 2 can
+        // expand this once cross-namespace references matter.
+      }
+    })
+  }
+
   const visit = (node: ts.Node): void => {
     if (ts.isImportDeclaration(node)) {
       const moduleSpec = node.moduleSpecifier
@@ -192,6 +251,94 @@ function visitFile(
     ts.forEachChild(node, visit)
   }
   visit(sourceFile)
+  emitTopLevelDeclarations(sourceFile)
+}
+
+type EmitSymbolArgs = {
+  name: string
+  kind: SpiSymbolKind
+  node: ts.Node
+  exported: boolean
+  sourceFile: ts.SourceFile
+  file: SpiFile
+  symbols: SpiSymbol[]
+  edges: SpiEdge[]
+}
+
+function emitSymbol(args: EmitSymbolArgs): SpiSymbol {
+  const { name, kind, node, exported, sourceFile, file, symbols, edges } = args
+  const symbol: SpiSymbol = {
+    id: makeSymbolId(file.id, kind, name),
+    file_id: file.id,
+    name,
+    kind,
+    range: rangeOf(node, sourceFile),
+    exported,
+  }
+  symbols.push(symbol)
+  edges.push({
+    from: file.id,
+    to: symbol.id,
+    kind: 'declares',
+    confidence: 'high',
+    source: 'typescript-syntactic',
+    evidence: { file_id: file.id, range: symbol.range },
+  })
+  return symbol
+}
+
+function emitClassMethods(
+  classNode: ts.ClassDeclaration,
+  file: SpiFile,
+  symbols: SpiSymbol[],
+  edges: SpiEdge[],
+  sourceFile: ts.SourceFile,
+  methodOverloadCounts: Map<string, number>,
+): void {
+  if (!classNode.name) return
+  const className = classNode.name.text
+  for (const member of classNode.members) {
+    let methodName: string | null = null
+    if (ts.isMethodDeclaration(member) && member.name && ts.isIdentifier(member.name)) {
+      methodName = member.name.text
+    } else if (ts.isConstructorDeclaration(member)) {
+      methodName = 'constructor'
+    } else if (
+      (ts.isGetAccessorDeclaration(member) || ts.isSetAccessorDeclaration(member)) &&
+      member.name &&
+      ts.isIdentifier(member.name)
+    ) {
+      methodName = member.name.text
+    }
+    if (methodName === null) continue
+
+    const overloadKey = `${file.id}/${className}/${methodName}`
+    const overloadIndex = methodOverloadCounts.get(overloadKey) ?? 0
+    methodOverloadCounts.set(overloadKey, overloadIndex + 1)
+    const qualifiedName = `${className}.${methodName}`
+    const baseId = makeSymbolId(file.id, 'method', qualifiedName)
+    const id = overloadIndex === 0 ? baseId : `${baseId}#${overloadIndex}`
+
+    const symbol: SpiSymbol = {
+      id,
+      file_id: file.id,
+      name: qualifiedName,
+      kind: 'method',
+      range: rangeOf(member, sourceFile),
+      // Methods inherit their containing class's export status for v1; SPI's
+      // selector layer can refine this when public-API surface scoring lands.
+      exported: hasExportModifier(classNode) || hasDefaultModifier(classNode),
+    }
+    symbols.push(symbol)
+    edges.push({
+      from: file.id,
+      to: symbol.id,
+      kind: 'declares',
+      confidence: 'high',
+      source: 'typescript-syntactic',
+      evidence: { file_id: file.id, range: symbol.range },
+    })
+  }
 }
 
 function addImportEdge(
@@ -265,6 +412,15 @@ function hasExportModifier(node: ts.Node): boolean {
   return false
 }
 
+function hasDefaultModifier(node: ts.Node): boolean {
+  const modifiers = ts.canHaveModifiers(node) ? ts.getModifiers(node) : undefined
+  if (!modifiers) return false
+  for (const mod of modifiers) {
+    if (mod.kind === ts.SyntaxKind.DefaultKeyword) return true
+  }
+  return false
+}
+
 function resolveRelativeImport(
   spec: string,
   fromPath: string,
@@ -314,6 +470,10 @@ function rangeOf(node: ts.Node, sourceFile: ts.SourceFile): SpiRange {
 
 function makeFileId(relPath: string): string {
   return 'file:' + sha256(relPath).slice(0, 16)
+}
+
+function makeSymbolId(fileId: string, kind: SpiSymbolKind, name: string): string {
+  return `symbol:${fileId}/${kind}/${name}`
 }
 
 function sha256(text: string): string {
