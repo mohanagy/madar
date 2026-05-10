@@ -1,6 +1,6 @@
 // SPI v1 — public re-exports.
 //
-// Slices 1a + 1b + 2a + 2b + 3a + 3c + 3b + 3b-ii:
+// Slices 1a + 1b + 2a + 2b + 3a + 3c + 3b + 3b-ii + 1c-i:
 //   * types + file layer + imports/exports edges
 //   * symbol layer + declares edges
 //   * call layer + type layer (extends/implements/param_type/return_type)
@@ -11,8 +11,10 @@
 //   * NestJS framework quality-of-life: guards/pipes/intercepts edges,
 //     injects edges from constructor types and @Inject('TOKEN'),
 //     dynamic Module.forRoot/forRootAsync handling.
-//
-// The projection back to today's graph.json (slice 1c) lands separately.
+//   * Structural projector — projectSpiToExtraction(spi, { root }) bridges
+//     the SPI substrate to the existing graph.json pipeline by producing
+//     ExtractionData of the same shape buildFromJson() consumes. Slice
+//     1c-ii will extend it to byte-equivalence on examples/demo-repo/.
 
 export type {
   SpiVersion,
@@ -59,3 +61,8 @@ export {
   type NestTokenMap,
   type NestTokenBinding,
 } from './framework-nestjs.js'
+
+export {
+  projectSpiToExtraction,
+  type ProjectSpiToExtractionOptions,
+} from './projector.js'
