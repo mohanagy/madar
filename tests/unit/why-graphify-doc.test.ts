@@ -75,6 +75,38 @@ describe('public marketing copy honesty', () => {
       expect(content).toContain('`context_expand`')
       expect(content).toContain('`get_neighbors`')
     })
+
+    it('pins the 2026-05-09 demo-video caption headline reductions', () => {
+      expect(content).toMatch(/2[,]?811[,]?682/)
+      expect(content).toMatch(/532[,]?021/)
+      expect(content).toMatch(/5\.28x|5\.28×/i)
+      expect(content).toMatch(/2\.21x|2\.21×/i)
+      expect(content).toMatch(/1\.58x|1\.58×/i)
+    })
+
+    it('links the 2026-05-09 auth-e2e benchmark folder from the README', () => {
+      expect(content).toContain('docs/benchmarks/2026-05-09-govalidate-auth-e2e/')
+    })
+  })
+
+  describe('docs/benchmarks/2026-05-09-govalidate-auth-e2e/', () => {
+    const content = readDoc('docs/benchmarks/2026-05-09-govalidate-auth-e2e/README.md')
+    const verify = readDoc('docs/benchmarks/2026-05-09-govalidate-auth-e2e/verify.sh')
+
+    it('pins the captured Anthropic-reported reductions in the benchmark README', () => {
+      expect(content).toMatch(/5\.28x|5\.28×/i)
+      expect(content).toMatch(/2\.21x|2\.21×/i)
+      expect(content).toMatch(/1\.58x|1\.58×/i)
+      expect(content).toContain('Anthropic-reported')
+      expect(content).toContain('--baseline-mode native_agent')
+    })
+
+    it('ships a verify.sh reproducer that reads report.json and exits cleanly when missing', () => {
+      expect(verify).toContain('#!/usr/bin/env bash')
+      expect(verify).toContain('report.json')
+      expect(verify).toContain('not found')
+      expect(verify).toContain('graphify-out/compare/2026-05-09T23-21-35')
+    })
   })
 
   describe('examples/mcp-tool-examples.md', () => {

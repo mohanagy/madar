@@ -12,6 +12,12 @@
 
 graphify-ts indexes a TypeScript/Node workspace (and PR diffs) into a local knowledge graph, then compiles that graph into the **smallest verifiable context pack** the agent actually needs for the task at hand. No cloud upload, no API key for indexing, no SaaS dashboard — just a local subprocess your agent talks to over MCP.
 
+### See it in action
+
+https://github.com/user-attachments/assets/a502185f-fa12-4a8f-80d2-172847f209fd
+
+> 30-second demo: install → `graphify-ts generate .` on the GoValidate repo (1,048 files) → `graphify-ts claude install --profile core` → `graphify-ts compare "Explain the auth flow End to End" --baseline-mode native_agent`. Anthropic-reported result on the same Claude Opus run: **31 → 14 turns (2.21× fewer)**, **170 s → 107 s (1.58× faster)**, **2,811,682 → 532,021 input tokens (5.28× fewer)**. Receipts: [`docs/benchmarks/2026-05-09-govalidate-auth-e2e/`](docs/benchmarks/2026-05-09-govalidate-auth-e2e/).
+
 ---
 
 ## Why graphify-ts?
@@ -282,6 +288,7 @@ Use `context_pack` when you want expandable refs plus `claims`, `coverage`, `mis
 - [Benchmark proof hub (repo artifacts)](https://github.com/mohanagy/graphify-ts/tree/main/docs/benchmarks) — committed benchmark wrappers and evidence
 - [GitHub Pages benchmark hub](https://mohanagy.github.io/graphify-ts/) — post-deploy wrapper once Pages is live from `main`
 - [Retrieval benchmark artifact](docs/benchmarks/2026-04-30-govalidate/) — raw `claude --output-format json` evidence + `verify.sh`
+- [Auth-flow `compare` benchmark](docs/benchmarks/2026-05-09-govalidate-auth-e2e/) — provider-reported `compare --baseline-mode native_agent` reductions on the same codebase (5.28× input tokens, 2.21× turns, 1.58× latency)
 - [PR review benchmark artifact](docs/benchmarks/2026-05-02-govalidate-pr-review/) — `review-compare` report, prompts, answers, `verify.sh`
 
 ---
