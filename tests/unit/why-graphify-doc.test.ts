@@ -109,6 +109,53 @@ describe('public marketing copy honesty', () => {
     })
   })
 
+  describe('docs/benchmarks/2026-05-10-backend-vs-monorepo/', () => {
+    const readme = readDoc('docs/benchmarks/2026-05-10-backend-vs-monorepo/README.md')
+    const runSh = readDoc('docs/benchmarks/2026-05-10-backend-vs-monorepo/run.sh')
+    const aggregateSh = readDoc('docs/benchmarks/2026-05-10-backend-vs-monorepo/aggregate.sh')
+    const prompts = JSON.parse(readDoc('docs/benchmarks/2026-05-10-backend-vs-monorepo/prompts.json')) as {
+      version: number
+      quick_subset: string[]
+      prompts: Array<{ id: string; task: string; text: string }>
+    }
+
+    it('declares the spike scope and links the tracking issue (#69)', () => {
+      expect(readme).toContain('issue #69')
+      expect(readme).toContain('v0.14-substrate')
+      expect(readme).toContain('Backend-only vs monorepo')
+    })
+
+    it('ships a runnable harness with the documented argument surface', () => {
+      expect(runSh).toContain('#!/usr/bin/env bash')
+      expect(runSh).toContain('--backend-path')
+      expect(runSh).toContain('--monorepo-path')
+      expect(runSh).toContain('--exec')
+      expect(runSh).toContain('--quick')
+      expect(runSh).toContain('graphify-ts compare')
+      expect(runSh).toContain('--baseline-mode native_agent')
+    })
+
+    it('ships an aggregator that reads summary.json from a results bundle', () => {
+      expect(aggregateSh).toContain('#!/usr/bin/env bash')
+      expect(aggregateSh).toContain('summary.json')
+    })
+
+    it('keeps the prompts.json contract: 12 prompts, 3 in the quick subset, every quick id present', () => {
+      expect(prompts.version).toBe(1)
+      expect(prompts.prompts).toHaveLength(12)
+      expect(prompts.quick_subset).toHaveLength(3)
+      const ids = new Set(prompts.prompts.map((p) => p.id))
+      for (const quickId of prompts.quick_subset) {
+        expect(ids.has(quickId)).toBe(true)
+      }
+      for (const prompt of prompts.prompts) {
+        expect(prompt.id).toMatch(/^[a-z0-9-]+$/)
+        expect(['explain', 'debug', 'review', 'impact']).toContain(prompt.task)
+        expect(prompt.text.length).toBeGreaterThan(20)
+      }
+    })
+  })
+
   describe('examples/mcp-tool-examples.md', () => {
     const content = readDoc('examples/mcp-tool-examples.md')
     const lower = content.toLowerCase()

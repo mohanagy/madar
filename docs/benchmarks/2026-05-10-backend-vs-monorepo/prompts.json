@@ -1,0 +1,71 @@
+{
+  "$comment": "Prompt set for the 2026-05-10 backend-vs-monorepo spike (issue #69). The first three prompts are the --quick subset; all twelve are the --full set. Each prompt is intentionally end-to-end so retrieval differences between backend-only and monorepo graphs surface clearly.",
+  "version": 1,
+  "quick_subset": [
+    "explain-auth-flow",
+    "report-generation-slow",
+    "tests-for-recent-change"
+  ],
+  "prompts": [
+    {
+      "id": "explain-auth-flow",
+      "task": "explain",
+      "text": "Explain the authentication flow end to end, from the HTTP entry point to session persistence."
+    },
+    {
+      "id": "report-generation-slow",
+      "task": "debug",
+      "text": "Why is report generation slow? Walk through the request path and call out the slowest hops, including any external service or LLM calls."
+    },
+    {
+      "id": "tests-for-recent-change",
+      "task": "explain",
+      "text": "Which tests are most likely relevant to recent changes in the report-generation pipeline, and which areas are under-covered?"
+    },
+    {
+      "id": "pr-risk-onboarding",
+      "task": "review",
+      "text": "Can a PR that touches the onboarding flow break user creation, billing, or auth? Identify the call paths and risk hotspots."
+    },
+    {
+      "id": "service-change-blast-radius",
+      "task": "impact",
+      "text": "What can break if the research-agent service changes its public interface? List dependents, callers, and tests that would need to update."
+    },
+    {
+      "id": "config-env-impact",
+      "task": "debug",
+      "text": "Where does the SESSION_TTL environment variable affect runtime behavior? Trace it from config load through every code path that reads it."
+    },
+    {
+      "id": "controller-to-persistence",
+      "task": "explain",
+      "text": "Trace the request path from the report controller to the final report persistence call. Include any queue, worker, or background job hops."
+    },
+    {
+      "id": "websocket-event-flow",
+      "task": "explain",
+      "text": "How do real-time WebSocket events propagate from server emission to the frontend handler? List the event names and their consumers."
+    },
+    {
+      "id": "billing-credits-flow",
+      "task": "impact",
+      "text": "When a user is charged, where are credits debited and how is the audit trail recorded? Identify all code paths that adjust the credit balance."
+    },
+    {
+      "id": "guard-coverage",
+      "task": "review",
+      "text": "Which controllers have an authentication guard but no authorization check? List the routes and the missing checks."
+    },
+    {
+      "id": "queue-job-failures",
+      "task": "debug",
+      "text": "How are queue job failures handled? Trace the retry, dead-letter, and operator-notification paths for the report-generation queue."
+    },
+    {
+      "id": "module-boundary-leaks",
+      "task": "review",
+      "text": "Identify modules that import directly from another module's internal files instead of going through its public exports. List the offending import sites."
+    }
+  ]
+}
