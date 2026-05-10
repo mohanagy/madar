@@ -162,9 +162,13 @@ function decideLevel(opts: {
         ? { level: 2, reason: 'explain intent with explicit reference — direct dependencies' }
         : { level: 1, reason: 'explain intent without explicit reference — local context' }
     case 'refactor':
+      // Both branches stay within the 0–2 band: a refactor without an
+      // explicit target is still a code-modification intent, not a
+      // debugging trace, so direct dependencies are sufficient and a
+      // behavior slice would over-retrieve.
       return mentions > 0
         ? { level: 2, reason: 'refactor intent with explicit reference — direct dependencies' }
-        : { level: 3, reason: 'refactor intent without explicit reference — behavior slice' }
+        : { level: 2, reason: 'refactor intent without explicit reference — direct dependencies' }
     case 'rename':
       return mentions > 0
         ? { level: 1, reason: 'rename intent with explicit reference — local symbol/file' }

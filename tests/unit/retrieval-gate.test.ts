@@ -170,6 +170,24 @@ describe('classifyRetrievalLevel — signal extraction', () => {
   })
 })
 
+describe('classifyRetrievalLevel — refactor intent stays in the 0-2 band', () => {
+  it('refactor with explicit reference → level 2', () => {
+    const decision = classify({ prompt: 'Refactor `UsersService.findById`' })
+    expect(decision.intent).toBe('refactor')
+    expect(decision.signals.mentioned_symbols).toContain('UsersService.findById')
+    expect(decision.level).toBe(2)
+  })
+
+  it('refactor without any explicit reference → level 2 (not over-escalated to behavior slice)', () => {
+    const decision = classify({ prompt: 'Refactor this module' })
+    expect(decision.intent).toBe('refactor')
+    expect(decision.signals.mentioned_symbols).toEqual([])
+    expect(decision.signals.mentioned_paths).toEqual([])
+    expect(decision.level).toBe(2)
+    expect(decision.reason).toMatch(/direct dependencies/i)
+  })
+})
+
 describe('classifyRetrievalLevel — caller-supplied intent', () => {
   it('uses caller-supplied intent verbatim and skips prompt classification', () => {
     const decision = classify({ prompt: 'arbitrary text', intent: 'impact' })
