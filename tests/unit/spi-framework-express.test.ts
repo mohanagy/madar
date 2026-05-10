@@ -361,6 +361,36 @@ describe('SPI Express framework detector (slice 1c-ii.b)', () => {
       expect(allFunctionSymbols).toHaveLength(0)
     })
 
+    it('mounting a Router via app.use(router) does NOT downgrade its express_router role to express_middleware (CodeRabbit fix)', () => {
+      // Real bug: previously the middleware emit only excluded
+      // express_route, so app.use(router) would overwrite the router's
+      // existing express_router framework_role with express_middleware.
+      // The mount call attaches the router to the app, but the router's
+      // own identity remains the more specific role.
+      writeFile(sandbox, 'src/server.ts', [
+        'import express, { Router } from "express"',
+        'export const app = express()',
+        'export const router = Router()',
+        'app.use(router)',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+      const router = findSymbol(spi, 'src/server.ts', 'router')
+      expect(router?.framework_role).toBe('express_router')
+      expect(router?.framework_role).not.toBe('express_middleware')
+    })
+
+    it('mounting a router with a path prefix preserves express_router too', () => {
+      writeFile(sandbox, 'src/server.ts', [
+        'import express, { Router } from "express"',
+        'export const app = express()',
+        'export const usersRouter = Router()',
+        'app.use("/api/users", usersRouter)',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+      const router = findSymbol(spi, 'src/server.ts', 'usersRouter')
+      expect(router?.framework_role).toBe('express_router')
+    })
+
     it('does not tag handlers when the receiver is a shadowed local `app`', () => {
       writeFile(sandbox, 'src/server.ts', [
         'import express from "express"',

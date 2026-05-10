@@ -172,12 +172,17 @@ function emitMiddlewareForCall(
     if (!ts.isIdentifier(arg)) continue
     const handlerSymbol = resolveHandlerSymbol(arg, ctx)
     if (!handlerSymbol) continue
-    // If a symbol is BOTH used as a route handler and a middleware in the
-    // same file, the route-handler tag wins (it carries more semantic
-    // weight). The express_route role is set first because route
-    // detection runs in the same walk; only set express_middleware when
-    // the symbol isn't already framework-role-tagged.
-    if (handlerSymbol.framework_role === 'express_route') continue
+    // Never overwrite an existing framework_role. A symbol that already
+    // has a role carries more semantic weight than the middleware
+    // fallback:
+    //   * express_route — the symbol was already detected as a route
+    //     handler earlier in the same walk; route wins.
+    //   * express_router — the symbol is a Router instance being mounted
+    //     via `app.use(router)`. The mount call attaches the router to
+    //     the app but the router's own role stays the more specific tag.
+    //   * any future express_* role — same reasoning; middleware is the
+    //     fallback for symbols that have no other Express identity.
+    if (handlerSymbol.framework_role !== undefined) continue
     handlerSymbol.framework_role = 'express_middleware'
   }
 }
