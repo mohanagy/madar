@@ -1,5 +1,6 @@
-// SPI v1 — file + symbol + call + type layer builder
-// (slices 1a, 1b, 2a, 2b of #72).
+// SPI v1 — file + symbol + call + type + test + framework layer builder
+// (slices 1a + 1b + 2a + 2b + 3a + 3c + 3b of #72; the diff overlay is
+// surfaced separately via diff-overlay.ts).
 //
 // Produces a SemanticProgramIndex containing:
 //   - workspace metadata + fingerprint
@@ -20,8 +21,15 @@
 //     All emitted at high confidence; skipped silently for builtins
 //     (string, number, etc.), inline object types, generic parameters,
 //     and unions/intersections that don't map to a single declaration.
+//   - covered_by edges (heuristic test layer, slice 3c) from source files
+//     to test files that import them.
+//   - NestJS framework edges (slice 3b base): module_imports/provides/exports
+//     and controller_route, plus framework_role tagging on detected
+//     module/controller/provider classes and route methods. The 3b-ii
+//     slice layers @UseGuards/@UsePipes/@UseInterceptors, constructor
+//     injection, @Inject('TOKEN') string tokens, and dynamic
+//     Module.forRoot/forRootAsync resolution on top of this base.
 //
-// Tests, framework, and diff overlay land in subsequent slices of #72.
 // This module never touches the existing pipeline; it is pure additive
 // substrate.
 
@@ -47,6 +55,7 @@ import type {
   SpiSymbolKind,
 } from './types.js'
 import { addTestLayerEdges } from './test-layer.js'
+import { detectNestFramework } from './framework-nestjs.js'
 
 export type BuildSpiOptions = {
   root: string
@@ -94,7 +103,7 @@ export function buildSpi(opts: BuildSpiOptions): SemanticProgramIndex {
   if (!existsSync(root) || !statSync(root).isDirectory()) {
     throw new Error(`SPI build: workspace root not found or not a directory: ${root}`)
   }
-  const extractorVersion = opts.extractorVersion ?? 'spi-v1.0.0-slice-3c'
+  const extractorVersion = opts.extractorVersion ?? 'spi-v1.0.0-slice-3b'
   const now = opts.now ?? (() => new Date())
 
   const files: SpiFile[] = []
@@ -561,7 +570,7 @@ type TypeCheckerEdgeContext = {
 }
 
 function addTypeCheckerEdges(ctx: TypeCheckerEdgeContext): void {
-  const { files, root, pathToFileId, edges, diagnostics } = ctx
+  const { files, root, pathToFileId, symbols, edges, diagnostics } = ctx
   const rootNames = files.map((f) => toPosix(join(root, f.path)))
   if (rootNames.length === 0) return
 
@@ -584,12 +593,31 @@ function addTypeCheckerEdges(ctx: TypeCheckerEdgeContext): void {
   const seenCalls = new Set<string>()
   const seenTypeEdges = new Set<string>()
 
+  // Pre-index symbols by file so the framework pass can tag framework_role
+  // in O(symbols-in-this-file) instead of scanning the whole symbol list per
+  // class.
+  const symbolsByFile = new Map<string, SpiSymbol[]>()
+  for (const sym of symbols) {
+    const list = symbolsByFile.get(sym.file_id)
+    if (list) list.push(sym)
+    else symbolsByFile.set(sym.file_id, [sym])
+  }
+
   for (const file of files) {
     const abs = toPosix(join(root, file.path))
     const sourceFile = program.getSourceFile(abs)
     if (!sourceFile) continue
     walkCallExpressions(sourceFile, file.id, checker, pathToFileId, edges, seenCalls)
     walkTypeReferences(sourceFile, file.id, checker, pathToFileId, edges, seenTypeEdges)
+    detectNestFramework({
+      sourceFile,
+      fileId: file.id,
+      symbolsByFile,
+      edges,
+      diagnostics,
+      pathToFileId,
+      checker,
+    })
   }
 }
 
