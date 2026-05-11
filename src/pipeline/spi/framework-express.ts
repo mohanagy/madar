@@ -186,6 +186,20 @@ function emitMiddlewareForCall(
       handlerSymbol = mintSyntheticHandlerSymbol(ctx, callExpr, arg, 'express_middleware')
     }
     if (!handlerSymbol) continue
+
+    // Slice 1c-ii.g — record mount_path on the router's symbol even when
+    // the router already has its own express_router role. The mount call
+    // attaches the router to the app at the given prefix; downstream
+    // consumers + the finalizer use this to compute resolved route paths.
+    // Setting mount_path BEFORE the role guard so a router being mounted
+    // gets its prefix while keeping its express_router identity.
+    if (mountPath !== null) {
+      handlerSymbol.framework_metadata = {
+        ...(handlerSymbol.framework_metadata ?? {}),
+        mount_path: mountPath,
+      }
+    }
+
     // Never overwrite an existing framework_role. A symbol that already
     // has a role carries more semantic weight than the middleware
     // fallback:
@@ -198,13 +212,66 @@ function emitMiddlewareForCall(
     //     fallback for symbols that have no other Express identity.
     if (handlerSymbol.framework_role !== undefined && handlerSymbol.framework_role !== 'express_middleware') continue
     handlerSymbol.framework_role = 'express_middleware'
-    if (mountPath !== null) {
-      handlerSymbol.framework_metadata = {
-        ...(handlerSymbol.framework_metadata ?? {}),
-        mount_path: mountPath,
-      }
+  }
+}
+
+/**
+ * Slice 1c-ii.g — workspace-level finalizer that applies mounted-router
+ * prefixes to the route_path on each route handler. Called once by
+ * buildSpi after all per-file detectors have run, so it works even when
+ * the mount call lives in a different file than the route registrations
+ * (the router symbol is mutated workspace-wide).
+ *
+ * Mechanism:
+ *   1. Index every express_router symbol by id; capture its mount_path
+ *      (set by emitMiddlewareForCall when the binding appeared as the
+ *      second arg of an `app.use('/prefix', router)` call).
+ *   2. Walk every route_handler edge in the SPI. For each edge whose
+ *      from-symbol is a router with a mount_path, look up the to-symbol
+ *      and prepend the mount_path to its route_path.
+ *
+ * The finalizer is idempotent: route_paths that already include the
+ * mount prefix (e.g., a previous run propagated them) stay correct
+ * because the joinRoutePath helper detects an already-prefixed path
+ * and is conservative about double-application. In practice the
+ * finalizer runs exactly once per buildSpi invocation.
+ */
+export function finalizeExpressMountPrefixes(opts: {
+  symbols: SpiSymbol[]
+  edges: SpiEdge[]
+}): void {
+  const routerById = new Map<string, SpiSymbol>()
+  const routeHandlerById = new Map<string, SpiSymbol>()
+  for (const sym of opts.symbols) {
+    if (sym.framework_role === 'express_router') routerById.set(sym.id, sym)
+    if (sym.framework_role === 'express_route') routeHandlerById.set(sym.id, sym)
+  }
+
+  for (const edge of opts.edges) {
+    if (edge.kind !== 'route_handler') continue
+    const router = routerById.get(edge.from)
+    if (!router) continue
+    const mountPath = router.framework_metadata?.mount_path
+    if (typeof mountPath !== 'string' || mountPath.length === 0) continue
+    const handler = routeHandlerById.get(edge.to)
+    if (!handler) continue
+    const existingPath = handler.framework_metadata?.route_path
+    if (typeof existingPath !== 'string') continue
+    handler.framework_metadata = {
+      ...(handler.framework_metadata ?? {}),
+      route_path: joinRoutePath(mountPath, existingPath),
     }
   }
+}
+
+function joinRoutePath(prefix: string, path: string): string {
+  const cleanPrefix = prefix.replace(/\/+$/, '')
+  const cleanPath = path.startsWith('/') ? path : '/' + path
+  // Skip double application: if the existing path already starts with
+  // the prefix, return it as-is. Defends against re-runs of the
+  // finalizer over the same SPI.
+  if (cleanPath.startsWith(cleanPrefix + '/') || cleanPath === cleanPrefix) return cleanPath
+  return cleanPrefix + cleanPath
 }
 
 /** Returns true iff the call-site receiver identifier resolves to the

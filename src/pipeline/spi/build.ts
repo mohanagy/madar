@@ -63,7 +63,7 @@ import type {
 } from './types.js'
 import { addTestLayerEdges } from './test-layer.js'
 import { collectNestTokenMap, detectNestFramework } from './framework-nestjs.js'
-import { detectExpressFramework } from './framework-express.js'
+import { detectExpressFramework, finalizeExpressMountPrefixes } from './framework-express.js'
 import { detectNextjsFramework } from './framework-nextjs.js'
 import { detectReactRouterFramework } from './framework-react-router.js'
 import { detectReduxFramework } from './framework-redux.js'
@@ -684,6 +684,14 @@ function addTypeCheckerEdges(ctx: TypeCheckerEdgeContext): void {
       symbolsByFile,
     })
   }
+
+  // Slice 1c-ii.g — workspace-level finalizer that applies mounted-router
+  // prefixes to route handlers. Runs once after every per-file detector
+  // has had a chance to record the necessary metadata (each router's
+  // mount_path + each route handler's route_path). Works cross-file
+  // because the per-router symbol is mutated regardless of which file
+  // detected the mount call.
+  finalizeExpressMountPrefixes({ symbols, edges })
 }
 
 function walkCallExpressions(
