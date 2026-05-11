@@ -67,6 +67,10 @@ import { detectExpressFramework, finalizeExpressMountPrefixes } from './framewor
 import { detectNextjsFramework } from './framework-nextjs.js'
 import { detectReactRouterFramework } from './framework-react-router.js'
 import { detectReduxFramework } from './framework-redux.js'
+import { detectHonoFramework } from './framework-hono.js'
+import { detectFastifyFramework } from './framework-fastify.js'
+import { detectTrpcFramework } from './framework-trpc.js'
+import { detectPrismaFramework } from './framework-prisma.js'
 
 export type BuildSpiOptions = {
   root: string
@@ -682,6 +686,36 @@ function addTypeCheckerEdges(ctx: TypeCheckerEdgeContext): void {
     // configureStore / createSelector / createAsyncThunk / createApi
     // factory results in files importing from a Redux module.
     detectReduxFramework({
+      sourceFile,
+      fileId: file.id,
+      symbolsByFile,
+    })
+    // v0.17 (#83): Hono substrate. Tags `new Hono()` apps, http-method
+    // route registrations, and `app.use(...)` middleware.
+    detectHonoFramework({
+      sourceFile,
+      fileId: file.id,
+      symbolsByFile,
+    })
+    // v0.17 (#83): Fastify substrate. Tags `Fastify()` apps, route
+    // registrations, and `app.register(plugin)` plugin registrations.
+    detectFastifyFramework({
+      sourceFile,
+      fileId: file.id,
+      symbolsByFile,
+    })
+    // v0.17 (#83): tRPC substrate. Tags `t.router({...})` results and
+    // synthesizes procedure entries for `.query` / `.mutation` /
+    // `.subscription` properties. Needs the global symbols array
+    // because procedure synthesis appends new entries.
+    detectTrpcFramework({
+      sourceFile,
+      fileId: file.id,
+      symbolsByFile,
+      symbols,
+    })
+    // v0.17 (#83): Prisma substrate. Tags `new PrismaClient()` bindings.
+    detectPrismaFramework({
       sourceFile,
       fileId: file.id,
       symbolsByFile,

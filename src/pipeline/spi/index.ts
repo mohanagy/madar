@@ -95,3 +95,23 @@ export {
   detectReduxFramework,
   type DetectReduxFrameworkContext,
 } from './framework-redux.js'
+
+export {
+  detectHonoFramework,
+  type DetectHonoFrameworkContext,
+} from './framework-hono.js'
+
+export {
+  detectFastifyFramework,
+  type DetectFastifyFrameworkContext,
+} from './framework-fastify.js'
+
+export {
+  detectTrpcFramework,
+  type DetectTrpcFrameworkContext,
+} from './framework-trpc.js'
+
+export {
+  detectPrismaFramework,
+  type DetectPrismaFrameworkContext,
+} from './framework-prisma.js'

@@ -98,6 +98,22 @@ export type SpiFrameworkRole =
   | 'redux_selector'
   | 'redux_async_thunk'
   | 'redux_rtk_query_api'
+  // Hono roles (v0.17 #83)
+  | 'hono_app'
+  | 'hono_route'
+  | 'hono_middleware'
+  // Fastify roles (v0.17 #83)
+  | 'fastify_app'
+  | 'fastify_route'
+  | 'fastify_plugin'
+  // tRPC roles (v0.17 #83)
+  | 'trpc_router'
+  | 'trpc_procedure_query'
+  | 'trpc_procedure_mutation'
+  | 'trpc_procedure_subscription'
+  // Prisma roles (v0.17 #83)
+  | 'prisma_client'
+  | 'prisma_model_access'
 
 export type SpiSymbol = {
   id: string
