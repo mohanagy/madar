@@ -9,6 +9,7 @@ import type {
   ContextPackExpandableLineRange,
   ContextPackExpandableRef,
   ContextPackNode,
+  ContextPackSelectionDiagnostics,
   ContextPackTaskContract,
 } from '../contracts/context-pack.js'
 import type { TaskIntentKind } from '../contracts/task-intent.js'
@@ -23,10 +24,17 @@ import {
   compactContextPack,
   compileContextPack,
   estimateContextPackEntryTokens,
+  type ContextPackSelectionStrategy,
   type ContextPackNodeCandidate,
 } from './context-pack.js'
 import type { RetrievalGateDecision, RetrievalLevel } from '../contracts/retrieval-gate.js'
 import { classifyRetrievalLevel } from './retrieval-gate.js'
+import {
+  expansionPolicyForLevel,
+  predecessorAllowedForPolicy,
+  relationAllowedForPolicy,
+  relationIsPrimaryForPolicy,
+} from './retrieve/expansion.js'
 import { communitiesFromGraph, estimateQueryTokens } from './serve.js'
 
 const SNIPPET_HALF_WINDOW = 7
@@ -65,6 +73,8 @@ export interface RetrieveOptions {
    *  'manual override' at the supplied level. Caller-side surface for the
    *  acceptance criterion that the gate be overridable via CLI/MCP. */
   retrievalLevel?: RetrievalLevel
+  /** Internal additive override for benchmarks/tests. */
+  selectionStrategy?: ContextPackSelectionStrategy
 }
 
 export interface RetrieveMatchedNode {
@@ -113,6 +123,7 @@ export interface RetrieveResult {
   claims?: ContextPackClaim[]
   expandable?: ContextPackExpandableRef[]
   coverage?: ContextPackCoverage
+  selection_diagnostics?: ContextPackSelectionDiagnostics
   retrieval_gate?: RetrievalGateDecision
 }
 
@@ -627,6 +638,18 @@ function normalizeSeedText(value: string): string {
   return tokenizeLabel(value).join('')
 }
 
+function normalizeMentionedSymbol(value: string): string {
+  return normalizeSeedText(value.replace(/\(\)$/, '').split('.').at(-1) ?? value)
+}
+
+function sourceFileMatchesMentionedPath(sourceFile: string, mentionedPaths: readonly string[]): boolean {
+  if (sourceFile.length === 0) {
+    return false
+  }
+
+  return mentionedPaths.some((path) => sourceFile === path || sourceFile.endsWith(`/${path}`))
+}
+
 function isFileNodeLike(label: string, sourceFile: string): boolean {
   if (!label || !sourceFile) {
     return false
@@ -747,34 +770,6 @@ function relationWeight(relation: string): number {
     default:
       return 0.35
   }
-}
-
-function relationBetweenNodes(graph: KnowledgeGraph, source: string, target: string): string {
-  try {
-    return String(graph.edgeAttributes(source, target).relation ?? 'related_to')
-  } catch {
-    try {
-      return String(graph.edgeAttributes(target, source).relation ?? 'related_to')
-    } catch {
-      return 'related_to'
-    }
-  }
-}
-
-function isPrimaryExpansionRelation(relation: string): boolean {
-  return (
-    relation === 'calls' ||
-    relation === 'imports_from' ||
-    relation === 'defines' ||
-    relation === 'defines_action' ||
-    relation === 'defines_selector' ||
-    relation === 'contains' ||
-    relation === 'renders' ||
-    relation === 'loads_route' ||
-    relation === 'submits_route' ||
-    relation === 'registered_in_store' ||
-    relation === 'updates_slice'
-  )
 }
 
 function includesAnyToken(tokens: readonly string[], candidates: readonly string[]): boolean {
@@ -1218,6 +1213,7 @@ export function contextPackFromRetrieveResult(
     claims: result.claims ?? [],
     expandable: result.expandable ?? [],
     coverage: result.coverage ?? fallbackRetrieveCoverage(result),
+    ...(result.selection_diagnostics ? { selection_diagnostics: result.selection_diagnostics } : {}),
   }
 }
 
@@ -1228,6 +1224,7 @@ function buildRetrieveResultFromOrderedCandidates(
   communities: Communities,
   communityLabels: Record<number, string>,
   retrieveGraphSignals: RetrieveGraphSignals,
+  retrievalGate: RetrievalGateDecision,
   rootPath?: string,
 ): RetrieveResult {
   const snippetFileCache = new Map<string, string[] | null>()
@@ -1246,6 +1243,11 @@ function buildRetrieveResultFromOrderedCandidates(
     let builtEntry: RetrieveMatchedNode | undefined
     let tokenCost: number | undefined
     const evidenceClass = retrieveEvidenceClassForBand(node.relevanceBand)
+    const graphSignal = retrieveGraphSignals.bridgeNodeIds.has(node.id)
+      ? 'bridge'
+      : retrieveGraphSignals.godNodeIds.has(node.id)
+        ? 'god'
+        : undefined
 
     const buildEntry = (): RetrieveMatchedNode => {
       if (builtEntry) {
@@ -1262,8 +1264,6 @@ function buildRetrieveResultFromOrderedCandidates(
         label: node.label,
         source_file: serializedSourceFile,
         line_number: node.lineNumber,
-        framework: node.framework,
-        framework_role: node.frameworkRole,
         framework_boost: node.frameworkBoost,
         file_type: node.fileType,
         snippet,
@@ -1272,6 +1272,8 @@ function buildRetrieveResultFromOrderedCandidates(
         community: node.community,
         community_label: node.community !== null ? (communityLabels[node.community] ?? null) : null,
         evidence_class: evidenceClass,
+        ...(node.framework ? { framework: node.framework } : {}),
+        ...(node.frameworkRole ? { framework_role: node.frameworkRole } : {}),
         ...(node.nodeKind.trim().length > 0 ? { node_kind: node.nodeKind } : {}),
       }
       tokenCost = estimateRetrieveEntryTokens(node.label, serializedSourceFile, node.lineNumber, snippet)
@@ -1286,6 +1288,15 @@ function buildRetrieveResultFromOrderedCandidates(
       line_number: node.lineNumber,
       file_type: node.fileType,
       ...(node.nodeKind.trim().length > 0 ? { node_kind: node.nodeKind } : {}),
+      framework_boost: node.frameworkBoost,
+      match_score: node.score,
+      exact_anchor_match: node.exactLabelMatch,
+      direct_symbol_match: node.exactLabelMatch,
+      source_path_match: node.sourcePathMatch,
+      ...(node.framework ? { framework: node.framework } : {}),
+      ...(node.frameworkRole ? { framework_role: node.frameworkRole } : {}),
+      ...(graphSignal ? { graph_signal: graphSignal } : {}),
+      graph_degree: graph.degree(node.id),
       ...(node.storedSnippet !== null ? { snippet: node.storedSnippet } : {}),
       evidence_class: evidenceClass,
       expandable_ref: {
@@ -1321,10 +1332,8 @@ function buildRetrieveResultFromOrderedCandidates(
       }))
       .sort((left, right) => right.node_count - left.node_count),
     graph_signals: graphSignalLabels,
-    retrieval_gate: classifyRetrievalLevel({
-      prompt: options.question,
-      ...(options.retrievalLevel !== undefined ? { manualOverride: options.retrievalLevel } : {}),
-    }),
+    selection_strategy: options.selectionStrategy ?? 'value-per-token',
+    retrieval_gate: retrievalGate,
   })
 
   return {
@@ -1338,6 +1347,7 @@ function buildRetrieveResultFromOrderedCandidates(
     claims: pack.claims,
     expandable: pack.expandable,
     coverage: pack.coverage,
+    ...(pack.selection_diagnostics ? { selection_diagnostics: pack.selection_diagnostics } : {}),
     ...(pack.retrieval_gate ? { retrieval_gate: pack.retrieval_gate } : {}),
   }
 }
@@ -1346,6 +1356,15 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
   const { question, budget } = options
   const questionTokens = tokenizeQuestion(question)
   const rootPath = typeof graph.graph.root_path === 'string' ? graph.graph.root_path : undefined
+  const retrievalGate = classifyRetrievalLevel({
+    prompt: question,
+    ...(options.retrievalLevel !== undefined ? { manualOverride: options.retrievalLevel } : {}),
+  })
+  const effectiveRetrievalLevel: RetrievalLevel = options.retrievalLevel !== undefined
+    ? retrievalGate.level
+    : retrievalGate.level === 0
+      ? 0
+      : (Math.max(retrievalGate.level, 3) as RetrievalLevel)
 
   if (questionTokens.length === 0) {
     const emptyPack = compileContextPack({
@@ -1358,10 +1377,36 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
       relationships: [],
       community_context: [],
       graph_signals: { god_nodes: [], bridge_nodes: [] },
-      retrieval_gate: classifyRetrievalLevel({
+      retrieval_gate: retrievalGate,
+    })
+
+    return {
+      question,
+      token_count: 0,
+      matched_nodes: [],
+      relationships: [],
+      community_context: [],
+      graph_signals: { god_nodes: [], bridge_nodes: [] },
+      task_contract: emptyPack.task_contract,
+      claims: emptyPack.claims,
+      expandable: emptyPack.expandable,
+      coverage: emptyPack.coverage,
+      ...(emptyPack.retrieval_gate ? { retrieval_gate: emptyPack.retrieval_gate } : {}),
+    }
+  }
+
+  if (effectiveRetrievalLevel === 0) {
+    const emptyPack = compileContextPack({
+      task_contract: classifyTaskContract('explain', {
+        budget,
         prompt: question,
-        ...(options.retrievalLevel !== undefined ? { manualOverride: options.retrievalLevel } : {}),
+        ...(options.taskIntent ? { task_intent: options.taskIntent } : {}),
       }),
+      nodes: [],
+      relationships: [],
+      community_context: [],
+      graph_signals: { god_nodes: [], bridge_nodes: [] },
+      retrieval_gate: retrievalGate,
     })
 
     return {
@@ -1391,6 +1436,8 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
     ...buildCommunityLabels(graph, communities),
     ...storedCommunityLabelsFromGraph(graph),
   }
+  const mentionedSymbols = new Set(retrievalGate.signals.mentioned_symbols.map(normalizeMentionedSymbol))
+  const mentionedPaths = retrievalGate.signals.mentioned_paths
 
   // Step 1+2: Score all nodes with explicit seed evidence weights.
   const tokenWeights = tokenWeightsForQuestion(graph, questionTokens)
@@ -1411,6 +1458,8 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
     const sourceFile = String(attributes.source_file ?? '')
     const nodeKind = String(attributes.node_kind ?? '')
     const fileNodeLike = isFileNodeLike(label, sourceFile)
+    const exactAnchorMatch = mentionedSymbols.has(normalizeMentionedSymbol(label))
+    const mentionedPathMatch = sourceFileMatchesMentionedPath(sourceFile, mentionedPaths)
     const framework = typeof attributes.framework === 'string' ? attributes.framework : undefined
     const frameworkRole = String(attributes.framework_role ?? '')
     const score = scoreSeedCandidate(
@@ -1456,14 +1505,14 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
         community,
         frameworkBoost: metadataBoost,
         seedScore: score,
-        exactLabelMatch: score.labelExactScore > 0,
-        sourcePathMatch: score.sourcePathScore > 0,
+        exactLabelMatch: score.labelExactScore > 0 || exactAnchorMatch,
+        sourcePathMatch: score.sourcePathScore > 0 || mentionedPathMatch,
         // When the seed only made it in via metadata boost, give it at
         // least evidence tier 1 so it's not at the bottom of the heap.
         evidenceTier: metadataBoost > 0
           ? (Math.max(evidenceTierForSeedScore(score), 1) as 0 | 1 | 2)
           : evidenceTierForSeedScore(score),
-        relevanceBand: score.labelExactScore > 0 || score.labelTokenScore > 0 ? 'direct' : 'related',
+        relevanceBand: score.labelExactScore > 0 || exactAnchorMatch || score.labelTokenScore > 0 ? 'direct' : 'related',
       })
     }
   }
@@ -1499,35 +1548,72 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
   }))
 
   scored.sort((a, b) => compareScoredNodes(graph, a, b))
+  const expansionPolicy = expansionPolicyForLevel(effectiveRetrievalLevel, budget)
+  const anchoredSeedPool = (mentionedSymbols.size > 0 || mentionedPaths.length > 0)
+    ? scored.filter((node) => mentionedSymbols.has(normalizeMentionedSymbol(node.label)) || sourceFileMatchesMentionedPath(node.sourceFile, mentionedPaths))
+    : []
+  const seedPool = effectiveRetrievalLevel <= 2 && anchoredSeedPool.length > 0 ? anchoredSeedPool : scored
 
   // Step 3: Multi-hop expansion — take top seeds, expand 2 hops with decaying scores
-  const seedCount = Math.min(scored.length, 10)
-  const hasExactSeedMatch = scored.some((node) => node.exactLabelMatch)
-  const seedIds = new Set(scored.slice(0, seedCount).map((node) => node.id))
-  const directSeeds = scored
+  const hasExactSeedMatch = seedPool.some((node) => node.exactLabelMatch)
+  const seedCount = effectiveRetrievalLevel === 1 && hasExactSeedMatch
+    ? Math.min(seedPool.length, 1)
+    : Math.min(seedPool.length, expansionPolicy.seed_limit)
+  const seedIds = new Set(seedPool.slice(0, seedCount).map((node) => node.id))
+  const directSeeds = seedPool
     .filter((node) => node.relevanceBand === 'direct')
-    .slice(0, 4)
-  const expansionSeedIds = new Set((directSeeds.length > 0 ? directSeeds : scored.slice(0, seedCount)).map((node) => node.id))
+    .slice(0, seedCount)
+  const expansionSeedIds = new Set((directSeeds.length > 0 ? directSeeds : seedPool.slice(0, seedCount)).map((node) => node.id))
   const hopScores = new Map<string, number>()
   const hopDistances = new Map<string, 1 | 2>()
   const hopEvidenceTiers = new Map<string, 0 | 1>()
   const hop1Ids = new Set<string>()
+  const seedCommunity = seedPool[0]?.community ?? null
+
+  const recordHop = (neighborId: string, relation: string, sourceScore: number, hopDistance: 1 | 2): void => {
+    const hopScore = sourceScore * 0.5 * relationWeight(relation)
+    const hopEvidenceTier = relationIsPrimaryForPolicy(effectiveRetrievalLevel, relation) ? 1 : 0
+    const existingHopScore = hopScores.get(neighborId) ?? 0
+    const existingHopEvidenceTier = hopEvidenceTiers.get(neighborId) ?? 0
+    if (hopScore > existingHopScore || (hopScore === existingHopScore && hopEvidenceTier > existingHopEvidenceTier)) {
+      hopScores.set(neighborId, hopScore)
+      hopDistances.set(neighborId, hopDistance)
+      hopEvidenceTiers.set(neighborId, hopEvidenceTier)
+    }
+    if (hopDistance === 1) {
+      hop1Ids.add(neighborId)
+    }
+  }
 
   // Hop 1: direct neighbors inherit a relation-weighted slice of each strong seed's score.
-  for (const seed of directSeeds.length > 0 ? directSeeds : scored.slice(0, seedCount)) {
-    for (const neighborId of graph.incidentNeighbors(seed.id)) {
-      if (!expansionSeedIds.has(neighborId)) {
-        const relation = relationBetweenNodes(graph, seed.id, neighborId)
-        const hopScore = seed.score * 0.5 * relationWeight(relation)
-        const hopEvidenceTier = isPrimaryExpansionRelation(relation) ? 1 : 0
-        const existingHopScore = hopScores.get(neighborId) ?? 0
-        const existingHopEvidenceTier = hopEvidenceTiers.get(neighborId) ?? 0
-        if (hopScore > existingHopScore || (hopScore === existingHopScore && hopEvidenceTier > existingHopEvidenceTier)) {
-          hopScores.set(neighborId, hopScore)
-          hopDistances.set(neighborId, 1)
-          hopEvidenceTiers.set(neighborId, hopEvidenceTier)
+  if (expansionPolicy.hop1_relations) {
+    for (const seed of directSeeds.length > 0 ? directSeeds : seedPool.slice(0, seedCount)) {
+      for (const neighborId of graph.successors(seed.id)) {
+        if (expansionSeedIds.has(neighborId)) {
+          continue
         }
-        hop1Ids.add(neighborId)
+        const relation = String(graph.edgeAttributes(seed.id, neighborId).relation ?? 'related_to')
+        if (!relationAllowedForPolicy(expansionPolicy.hop1_relations, relation)) {
+          continue
+        }
+        recordHop(neighborId, relation, seed.score, 1)
+      }
+
+      if (expansionPolicy.predecessor_mode !== 'none') {
+        for (const predecessorId of graph.predecessors(seed.id)) {
+          if (expansionSeedIds.has(predecessorId)) {
+            continue
+          }
+          const predecessorCommunity = parseCommunityId(graph.nodeAttributes(predecessorId).community)
+          if (!predecessorAllowedForPolicy(expansionPolicy.predecessor_mode, seedCommunity, predecessorCommunity)) {
+            continue
+          }
+          const relation = String(graph.edgeAttributes(predecessorId, seed.id).relation ?? 'related_to')
+          if (!relationAllowedForPolicy(expansionPolicy.hop1_relations, relation)) {
+            continue
+          }
+          recordHop(predecessorId, relation, seed.score, 1)
+        }
       }
     }
   }
@@ -1556,26 +1642,49 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
   }
 
   // Hop 2: neighbors-of-neighbors decay again, but keep this pool small and relation-aware.
-  if (budget >= 2000 && !hasExactSeedMatch) {
+  if (expansionPolicy.hop2_relations && (effectiveRetrievalLevel >= 4 || !hasExactSeedMatch)) {
     const hop2Scores = new Map<string, number>()
     for (const hop1Id of hop1Ids) {
       const hop1Score = hopScores.get(hop1Id) ?? 0
       if (hop1Score <= 0) continue
-      for (const hop2Id of graph.incidentNeighbors(hop1Id)) {
-        if (!seedIds.has(hop2Id) && !hop1Ids.has(hop2Id)) {
-          const relation = relationBetweenNodes(graph, hop1Id, hop2Id)
+      for (const hop2Id of graph.successors(hop1Id)) {
+        if (seedIds.has(hop2Id) || hop1Ids.has(hop2Id)) {
+          continue
+        }
+        const relation = String(graph.edgeAttributes(hop1Id, hop2Id).relation ?? 'related_to')
+        if (!relationAllowedForPolicy(expansionPolicy.hop2_relations, relation)) {
+          continue
+        }
+        const hop2Score = hop1Score * 0.5 * relationWeight(relation)
+        if (hop2Score > (hop2Scores.get(hop2Id) ?? 0)) {
+          hop2Scores.set(hop2Id, hop2Score)
+        }
+      }
+
+      if (expansionPolicy.predecessor_mode !== 'none') {
+        for (const predecessorId of graph.predecessors(hop1Id)) {
+          if (seedIds.has(predecessorId) || hop1Ids.has(predecessorId)) {
+            continue
+          }
+          const predecessorCommunity = parseCommunityId(graph.nodeAttributes(predecessorId).community)
+          if (!predecessorAllowedForPolicy(expansionPolicy.predecessor_mode, seedCommunity, predecessorCommunity)) {
+            continue
+          }
+          const relation = String(graph.edgeAttributes(predecessorId, hop1Id).relation ?? 'related_to')
+          if (!relationAllowedForPolicy(expansionPolicy.hop2_relations, relation)) {
+            continue
+          }
           const hop2Score = hop1Score * 0.5 * relationWeight(relation)
-          if (hop2Score > (hop2Scores.get(hop2Id) ?? 0)) {
-            hop2Scores.set(hop2Id, hop2Score)
+          if (hop2Score > (hop2Scores.get(predecessorId) ?? 0)) {
+            hop2Scores.set(predecessorId, hop2Score)
           }
         }
       }
     }
 
-    const maxSecondHopAdds = budget >= 5000 ? 6 : 3
     for (const [hop2Id, hop2Score] of [...hop2Scores.entries()]
       .sort(([leftId, leftScore], [rightId, rightScore]) => rightScore - leftScore || graph.degree(rightId) - graph.degree(leftId))
-      .slice(0, maxSecondHopAdds)) {
+      .slice(0, expansionPolicy.max_second_hop_adds)) {
       hopScores.set(hop2Id, Math.max(hopScores.get(hop2Id) ?? 0, hop2Score))
       hopDistances.set(hop2Id, 2)
     }
@@ -1626,14 +1735,14 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
 
   // Apply structural signal boosts before final sort
   const retrieveGraphSignals = graphSignalsForRetrieve(graph, communities, communityLabels)
-  const topSeed = scored.length > 0 ? scored[0] : undefined
-  const seedCommunity = topSeed?.community
+  const topSeed = seedPool.length > 0 ? seedPool[0] : scored[0]
+  const boostedSeedCommunity = topSeed?.community
 
   for (const node of scored) {
     if (node.score === 0) continue
     if (retrieveGraphSignals.bridgeNodeIds.has(node.id)) node.score += 0.3
     if (retrieveGraphSignals.godNodeIds.has(node.id)) node.score -= 0.2
-    if (seedCommunity !== undefined && node.community === seedCommunity && node.community !== -1) node.score += 0.1
+    if (boostedSeedCommunity !== undefined && node.community === boostedSeedCommunity && node.community !== -1) node.score += 0.1
   }
 
   // Re-sort: seeds first by score, then neighbors by degree
@@ -1667,7 +1776,7 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
   const fallbackInclusionOrder = compatibleCandidateCount < 4
     ? [...fallbackPrimaryCandidates, ...fallbackPeripheralCandidates]
     : []
-  const inclusionOrder = frameworkProfile.frameworkShaped
+  const frameworkOrderedCandidates = frameworkProfile.frameworkShaped
     ? [
         ...prioritizedFrameworkCandidates.slice(0, prioritizedFrameworkHeadCount),
         ...secondaryCandidates.slice(0, reservedSupportingSlots),
@@ -1677,6 +1786,9 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
         ...fallbackInclusionOrder,
       ]
     : [...secondaryCandidates, ...peripheralCandidates]
+  const inclusionOrder = expansionPolicy.include_peripheral
+    ? frameworkOrderedCandidates
+    : frameworkOrderedCandidates.filter((node) => node.relevanceBand !== 'peripheral')
 
   return buildRetrieveResultFromOrderedCandidates(
     graph,
@@ -1685,6 +1797,7 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
     communities,
     communityLabels,
     retrieveGraphSignals,
+    retrievalGate,
     rootPath,
   )
 }
@@ -1801,6 +1914,10 @@ export async function retrieveContextAsync(graph: KnowledgeGraph, options: Retri
     communities,
     communityLabels,
     retrieveGraphSignals,
+    lexicalResult.retrieval_gate ?? classifyRetrievalLevel({
+      prompt: options.question,
+      ...(options.retrievalLevel !== undefined ? { manualOverride: options.retrievalLevel } : {}),
+    }),
     rootPath,
   )
 }
@@ -1868,5 +1985,6 @@ export function compactRetrieveResultForStdio(result: RetrieveResult): RetrieveR
     ...(result.claims ? { claims: result.claims } : {}),
     ...(result.expandable ? { expandable: result.expandable } : {}),
     ...(result.coverage ? { coverage: result.coverage } : {}),
+    ...(result.selection_diagnostics ? { selection_diagnostics: result.selection_diagnostics } : {}),
   }
 }

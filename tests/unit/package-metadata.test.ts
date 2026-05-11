@@ -132,6 +132,8 @@ describe('package metadata', () => {
     expect(ciWorkflow).toContain('--yes')
     expect(ciWorkflow).toContain('Snippet coverage:')
     expect(ciWorkflow).toContain('snippet_coverage')
+    expect(ciWorkflow).toContain('recall < 90')
+    expect(ciWorkflow).toContain('mrr < 0.95')
   })
 
   it('documents framework-aware JS/TS support explicitly in the language capability matrix', () => {

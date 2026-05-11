@@ -4,6 +4,17 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **Context-pack value scoring and diagnostics**: `selection_strategy: 'value-per-token'` now scores optional candidates with deterministic evidence-aware signals instead of candidate order, and compiled packs can carry `selection_diagnostics` with per-candidate score, density, reasons, and penalties.
+- **Operational retrieval levels**: `retrieval_level` now constrains expansion in runtime retrieval instead of acting as metadata only. Level 0 can short-circuit broad retrieval, level 1 stays seed-local, levels 2–4 progressively add direct dependencies, behavior-slice signals, and broader impact/caller context.
+- **Deterministic compressed representations**: `applyContextPackResolution()` now supports `resolution: 'sketch'`, emitting graph-derived `behavior_sketch` / `dependency_record` representations with `representation_type` and `representation_reason`, falling back to `signature` when graph links are unavailable.
+- **Context-pack MCP surface**: `context_pack` now accepts `resolution: 'signature' | 'sketch'` in addition to the existing modes, and `verbose: true` can include extended `selection_diagnostics` without bloating the default compact response.
+
+### Docs
+
+- **SPI benchmark harness/report**: `docs/benchmarks/2026-05-11-spi-vs-legacy/` now emits `spi-cold.analysis.json` with selection-strategy comparisons and retrieval-level 1–4 sweeps. The latest bundled fixture run still shows substrate-correct SPI answers plus operational retrieval-level expansion, but no measured `value-per-token` token win over evidence-order on that fixture.
+
 ## [0.20.0] - 2026-05-11
 
 > Consolidated release covering both the v0.19-spi-payoff and v0.20-context-compiler milestones. v0.19 was never tagged in isolation — its work (#129, #130, #133) is shipped together with v0.20's items (#131, #132, #134) here.

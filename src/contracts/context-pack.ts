@@ -14,6 +14,33 @@ export type ContextPackSemanticCategory =
   | 'contracts'
   | 'structure'
 
+export interface ContextPackSelectionRankingEntry {
+  id: string
+  label: string
+  evidence_class: ContextPackEvidenceClass
+  score: number
+  token_cost: number
+  density: number
+  included: boolean
+  reasons: string[]
+  penalties: string[]
+}
+
+export interface ContextPackSelectionDiagnostics {
+  selection_strategy: 'evidence-order' | 'value-per-token'
+  budget: number
+  used_tokens: number
+  required_overflow: boolean
+  ranking: ContextPackSelectionRankingEntry[]
+}
+
+export type ContextRepresentationType =
+  | 'detail'
+  | 'summary'
+  | 'signature'
+  | 'behavior_sketch'
+  | 'dependency_record'
+
 export interface ContextPackTaskContract {
   version: 1
   task_kind: ContextPackTaskKind
@@ -43,6 +70,8 @@ export interface ContextPackNode {
   framework_role?: string | undefined
   framework_boost?: number | undefined
   evidence_class?: ContextPackEvidenceClass | undefined
+  representation_type?: ContextRepresentationType | undefined
+  representation_reason?: string | undefined
 }
 
 export interface ContextPackRelationship {
@@ -149,6 +178,7 @@ export interface CompiledContextPack<
   coverage: ContextPackCoverage
   graph_signals?: ContextPackGraphSignals
   shared_file_type?: string
+  selection_diagnostics?: ContextPackSelectionDiagnostics
   /**
    * Retrieval-gate decision (#75) attached when the caller invoked the
    * gate before building the pack. Carries `level`, `reason`, `intent`,

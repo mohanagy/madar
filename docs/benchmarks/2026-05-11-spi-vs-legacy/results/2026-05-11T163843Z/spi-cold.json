@@ -1,0 +1,7 @@
+{
+  "variant": "spi-cold",
+  "build_time_ms": 706,
+  "graph_size_bytes": 42925,
+  "node_count": 30,
+  "prompts": [{"id":"express-route","text":"Show me the Express route that handles GET /api/users/:id","pack_token_count":54,"pack_node_count":2,"top_labels":["getUserById()","listUsers()"]},{"id":"hono-route","text":"Find the Hono route for listProducts","pack_token_count":50,"pack_node_count":2,"top_labels":["listProducts()","createProduct()"]},{"id":"trpc-mutations","text":"Which tRPC mutations exist in this app and what do they do","pack_token_count":101,"pack_node_count":2,"top_labels":["appRouter.cancelOrder()","appRouter.createOrder()"]},{"id":"prisma-client","text":"Where is the Prisma database client used","pack_token_count":45,"pack_node_count":2,"top_labels":["prisma","createOrder()"]},{"id":"auth-middleware","text":"How is authentication middleware wired up","pack_token_count":50,"pack_node_count":2,"top_labels":["authMiddleware()","app"]},{"id":"generic-utils","text":"How does debounce work in this codebase","pack_token_count":26,"pack_node_count":1,"top_labels":["debounce()"]},{"id":"cross-framework","text":"What routes exist across all the HTTP frameworks in this project","pack_token_count":52,"pack_node_count":2,"top_labels":["createUser()","getUserById()"]}]
+}

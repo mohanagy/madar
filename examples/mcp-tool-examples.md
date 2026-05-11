@@ -9,6 +9,20 @@ These examples show what your AI agent sees when it calls graphify-ts MCP tools.
 { "name": "context_pack", "arguments": { "prompt": "how does payment processing work?", "task": "explain", "budget": 2000 } }
 ```
 
+**Compressed / diagnostic variant:**
+```json
+{
+  "name": "context_pack",
+  "arguments": {
+    "prompt": "trace the auth callback flow",
+    "task": "explain",
+    "budget": 2000,
+    "resolution": "sketch",
+    "verbose": true
+  }
+}
+```
+
 **Agent receives:**
 ```json
 {

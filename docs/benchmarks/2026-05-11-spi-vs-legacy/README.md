@@ -1,38 +1,69 @@
 # 2026-05-11 — `graphify-ts generate --spi` vs legacy `extract()`
 
-> **Tracking issue:** [#130](https://github.com/mohanagy/graphify-ts/issues/130) — *Benchmark v0.18 --spi vs legacy on backend-only and monorepo workspaces.*
+> **Tracking issues:** [#130](https://github.com/mohanagy/graphify-ts/issues/130) and the v0.20 context-compiler payoff follow-up.
 
-## TL;DR (one fixture, ~30 nodes, 7 prompts)
+## TL;DR (latest measured run: `results/2026-05-11T163843Z/`)
 
 | Metric | Legacy | `--spi` | Δ |
-|---|---|---|---|
-| Build time (cold) | 506 ms | 710 ms | **+40%** (slower) |
-| Build time (cache-hit) | n/a | **368 ms** | **−27% vs legacy, −48% vs spi-cold** |
-| `graph.json` size | 62.8 KB | 42.8 KB | **−32%** |
+|---|---:|---:|---:|
+| Build time (cold) | 500 ms | 706 ms | **+41.2%** |
+| Build time (cache-hit) | n/a | 366 ms | **−26.8% vs legacy**, **−48.2% vs spi-cold** |
+| `graph.json` size | 62.8 KB | 42.9 KB | **−31.6%** |
 | Node count | 29 | 30 | +1 |
-| **Total pack tokens (7 prompts)** | **1284** | **946** | **−26%** |
+| Total explain-pack tokens (7 prompts, budget 2000) | 330 | 378 | **+14.5%** |
 
-The slower cold build is the cost; everything else is the payoff. On a real repo where you rebuild repeatedly, the cache-hit path dominates and the token savings are the headline.
+The current v0.20 runtime changes do **not** reduce total explain-pack tokens on this bundled fixture. The benchmark still shows two concrete payoffs:
 
-## Per-prompt breakdown
+1. `--spi` keeps returning the structurally correct substrate for framework-shaped prompts (`prisma_client`, `trpc_procedure_*`) while legacy still misroutes some of them.
+2. `retrieval_level` is now operational: the same prompt expands from tight seed-only packs at level 1 to materially broader cross-module packs at level 4.
 
-| Prompt | Intent | Legacy tokens | `--spi` tokens | Δ | Comment |
-|---|---|---|---|---|---|
-| `express-route` | framework | 157 | 128 | **−18%** | Same node count, leaner labels (`getUserById()` vs `GET /api/users/:id` separate route nodes) |
-| `hono-route` | framework | 179 | 126 | **−30%** | spi includes `honoApp`; legacy noises with `findUserById` |
-| `trpc-mutations` | framework | 298 | 231 | **−22%** | **Legacy returned Express nodes** (wrong); spi returned actual tRPC procedures |
-| `prisma-client` | framework | 260 | 93 | **−64%** | **Legacy returned Express middleware**; spi returned `prisma` client correctly |
-| `auth-middleware` | framework | 128 | 120 | −6% | Both correct; slight metadata overhead diff |
-| `generic-utils` | code | 124 | 123 | −1% | Non-framework query unaffected (as designed) |
-| `cross-framework` | framework | 138 | 125 | −9% | spi returns function nodes vs legacy's synthesized `GET /` routes |
+## Base prompt breakdown
 
-## Key qualitative finding
+| Prompt | Legacy top labels | `--spi` top labels | Token Δ |
+|---|---|---|---:|
+| `express-route` | `GET /api/users/:id`, `GET /api/users` | `getUserById()`, `listUsers()` | -9 |
+| `hono-route` | `listProducts()`, `createProduct()` | `listProducts()`, `createProduct()` | 0 |
+| `trpc-mutations` | `app` | `appRouter.cancelOrder()`, `appRouter.createOrder()` | +79 |
+| `prisma-client` | `USE /`, `USE /api/users` | `prisma`, `createOrder()` | -9 |
+| `auth-middleware` | `authMiddleware()`, `listUsers()` | `authMiddleware()`, `app` | -5 |
+| `generic-utils` | `debounce()` | `debounce()` | -1 |
+| `cross-framework` | `GET /`, `GET /:id` | `createUser()`, `getUserById()` | -7 |
 
-**Legacy retrieval routed framework-shaped prompts to the wrong substrate.**
-- `trpc-mutations` → legacy returned Express `app`, `usersRouter`, `USE /`. **None of these are tRPC.** spi returned the 5 actual tRPC procedures.
-- `prisma-client` → legacy returned Express middleware nodes. spi returned the `prisma` client + `prisma-client.ts` file.
+Two prompts still show the correctness gap clearly:
 
-This is the v0.18 SPI substrate (via the v0.19 retrieval-boost extensions for Hono / Fastify / tRPC / Prisma) paying off: framework_role-based ranking surfaces the structurally-correct nodes for substrate-shaped queries.
+- `trpc-mutations`: legacy surfaces the generic `app`; `--spi` surfaces `trpc_procedure_mutation` nodes.
+- `prisma-client`: legacy surfaces Express middleware; `--spi` surfaces the `prisma_client`.
+
+## Selection strategy comparison (`value-per-token` vs `evidence-order`)
+
+The benchmark runner now emits `spi-cold.analysis.json`, which compares both strategies on the same SPI graph and records ranking reasons, penalties, selected labels, quality score, and warnings.
+
+On the bundled fixture, **there is no measured token or node-count delta across the 7 prompts**. `value-per-token` changes the internal ranking diagnostics, but this workload does not create enough optional-candidate competition to separate the final packs.
+
+That means this fixture is now a **regression baseline for determinism and diagnostics**, not proof of a token win for the strategy itself. The behavioral difference is covered by focused runtime tests instead:
+
+- framework-relevant nodes can beat generic label matches,
+- smaller higher-value candidates can beat larger low-value ones,
+- selection diagnostics explain why entries were included or omitted.
+
+## Retrieval-level sweep (`retrieval_level`)
+
+The same SPI graph was measured at retrieval levels 1–4 for every prompt. A few representative examples:
+
+| Prompt | Level 1 | Level 4 | What changed |
+|---|---|---|---|
+| `express-route` | 54 tokens / 2 nodes | 223 tokens / 9 nodes | expands from route seeds to router/app/middleware/file context |
+| `trpc-mutations` | 101 tokens / 2 nodes | 303 tokens / 8 nodes | expands from mutation seeds to router, query/subscription siblings, and backing file |
+| `prisma-client` | 45 tokens / 2 nodes | 93 tokens / 4 nodes | expands from the client seed to file + dependent usage sites |
+
+Selected framework roles stay explicit in the analysis output:
+
+- level 1 `prisma-client` includes `prisma_client`
+- level 1 `trpc-mutations` includes `trpc_procedure_mutation`
+- level 4 `trpc-mutations` expands to `trpc_router`, `trpc_procedure_query`, and `trpc_procedure_subscription`
+- level 4 `express-route` expands to `express_route`, `express_router`, `express_app`, and `express_middleware`
+
+Diagnostics also become more useful at higher levels on this fixture. For example, `trpc-mutations` carries `undersized_retrieval` / `orphan_nodes` warnings at level 1, but level 4 clears them.
 
 ## How to reproduce
 
@@ -41,31 +72,47 @@ This is the v0.18 SPI substrate (via the v0.19 retrieval-boost extensions for Ho
 bash docs/benchmarks/2026-05-11-spi-vs-legacy/run.sh
 ```
 
-The script:
-1. Builds `graphify-ts` (if `dist/` missing)
-2. Copies the bundled fixture into `results/<timestamp>/fixture-{legacy,spi-cold}`
-3. Runs `graphify-ts generate <fixture>` against each variant
-4. Runs `graphify-ts pack <prompt> --task explain --budget 2000` for every prompt in `prompts.json`
-5. Re-runs `--spi` on the same fixture to measure cache-hit time
-6. Aggregates everything into `results/<timestamp>/summary.json`
+The runner now produces:
+
+1. `legacy.json`, `spi-cold.json`, `spi-warm.json`
+2. `spi-cold.analysis.json` — strategy comparison + retrieval-level sweep
+3. `summary.json` — top-level aggregate report
+
+### Optional: point the runner at another local repo
+
+If you have a local backend-only or monorepo workspace, you can reuse the same runner without committing private paths:
+
+```bash
+GRAPHIFY_BENCH_FIXTURE=/absolute/path/to/repo \
+GRAPHIFY_BENCH_PROMPTS=docs/benchmarks/2026-05-11-spi-vs-legacy/prompts.json \
+bash docs/benchmarks/2026-05-11-spi-vs-legacy/run.sh
+```
+
+For a fully manual flow:
+
+```bash
+npm run build
+node dist/src/cli/bin.js generate /absolute/path/to/repo --no-html
+node dist/src/cli/bin.js generate /absolute/path/to/repo --spi --no-html
+node docs/benchmarks/2026-05-11-spi-vs-legacy/probe.mjs \
+  /absolute/path/to/repo/graphify-out/graph.json \
+  docs/benchmarks/2026-05-11-spi-vs-legacy/prompts.json
+```
+
+If GoValidate is available locally, use the template above for both the backend-only checkout and the monorepo checkout. This repo does **not** commit any private-path defaults or fake results for those runs.
 
 ## Caveats / limitations
 
-- **Fixture is synthetic.** ~10 files, no real-world signal volume. Real repos will see different absolute numbers and (hopefully) directionally similar relative deltas.
-- **No model-quality assertion.** Token counts are objective; whether the agent answers BETTER with `--spi` requires a downstream eval against ground-truth answers — that's a separate benchmark (closer to the `2026-04-30-govalidate` shape).
-- **Budget chosen as 2000.** Different budgets stress the budget-bounded selection differently — repeat with budgets 500 / 1000 / 4000 / 8000 to see how token deltas scale.
-- **No retrieval-gate parameter.** All runs use default retrieval level. Future runs should sweep retrieval_level 0–5.
+- **Fixture is synthetic.** It is still small enough that the new `value-per-token` scorer does not beat evidence-order on final pack size.
+- **No universal token-win claim.** The current bundled SPI run is **+14.5%** total explain-pack tokens vs legacy.
+- **Selection payoff is still real but narrower here.** The main measured benefits on this fixture are substrate correctness, explicit diagnostics, and retrieval-level control.
+- **No diff-aware level-5 benchmark here.** The bundled fixture has no PR/change overlay, so the sweep stops at levels 1–4.
 
 ## Files
 
-- `fixture/` — synthetic TypeScript codebase covering Express, Hono, tRPC, Prisma, and plain utility code
-- `prompts.json` — 7 representative prompts (6 framework-shaped, 1 code-comprehension)
-- `run.sh` — the benchmark runner
-- `summarize.mjs` — aggregator that produces `summary.json`
-- `results/<timestamp>/` — per-run artifacts (legacy.json, spi-cold.json, summary.json, generate logs)
-
-## Next steps (issues blocked on this)
-
-- **#133** — Audit retrieval boost rules across ALL 9 substrates; PR #129 only covered Hono/Fastify/tRPC/Prisma. Now we know which prompts misbehave on legacy and can target the boost gaps.
-- **#131** — Wire `selectByValuePerToken` into retrieve. Should reduce token counts further by favouring high-density candidates.
-- **#134** — Default-readiness criteria. 40% slower cold build is the headline cost; cache-hit recovery + 26% token saving is the headline payoff. Numbers in this report inform the threshold debate.
+- `fixture/` — synthetic TypeScript workspace covering Express, Hono, tRPC, Prisma, and utility code
+- `prompts.json` — benchmark prompts
+- `run.sh` — runner (`GRAPHIFY_BENCH_FIXTURE` / `GRAPHIFY_BENCH_PROMPTS` overrides supported)
+- `probe.mjs` — strategy comparison + retrieval-level sweep
+- `summarize.mjs` — aggregate summary builder
+- `results/<timestamp>/` — measured run artifacts

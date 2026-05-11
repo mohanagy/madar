@@ -10,6 +10,8 @@ import type {
   ContextPackExpandableFollowUp,
   ContextPackExpandableRef,
   ContextPackNode,
+  ContextPackRelationship,
+  ContextRepresentationType,
 } from '../../contracts/context-pack.js'
 import type { ContextSessionState } from '../../contracts/context-session.js'
 import { buildCommunityLabels } from '../../pipeline/community-naming.js'
@@ -894,26 +896,33 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       const fullPack = contextPackFromRetrieveResult(retrieval)
       const compactPack = compactRetrieveResult(retrieval)
       const metadata = contextMetadata(retrieval)
+      const includeSelectionDiagnostics = toolArguments.verbose === true
       storeExpandableHandles(prompt, task, initialPlan.evidence.recipe_id, metadata.expandable, helpers)
       // Slice #78: emit context-pack quality diagnostics so callers can
       // detect bad runs (missing required evidence, zero claims, weak
       // retrieval, etc.) without re-implementing the heuristics.
       const diagnostics = computeContextPackDiagnostics(fullPack)
 
-      // Slice #76: multi-resolution context. Default 'detail' preserves
-      // existing behavior; 'summary' drops snippet bodies; 'mixed' keeps
-      // top-N most relevant nodes in detail and summarizes the rest.
+      // Slice #76/#135: multi-resolution context. Default 'detail'
+      // preserves existing behavior; 'summary' drops snippet bodies;
+      // 'mixed' keeps top-N most relevant nodes in detail; 'signature'
+      // keeps declaration shape; 'sketch' emits graph-derived behavior /
+      // dependency compression when relationship data exists.
       const resolutionParam = helpers.stringParam(toolArguments, 'resolution')
       const resolution: ContextPackResolution =
-        resolutionParam === 'summary' || resolutionParam === 'mixed'
+        resolutionParam === 'summary'
+          || resolutionParam === 'mixed'
+          || resolutionParam === 'signature'
+          || resolutionParam === 'sketch'
           ? resolutionParam
           : 'detail'
       const applyResolutionToNodes = <T>(
         nodes: T[],
+        relationships?: readonly ContextPackRelationship[],
       ): {
         nodes: T[]
         bytes_saved: number
-        resolution_map: Array<{ node_id: string | undefined; resolution: 'detail' | 'summary' | 'signature' }>
+        resolution_map: Array<{ node_id: string | undefined; resolution: ContextRepresentationType }>
       } => {
         if (resolution === 'detail') {
           return {
@@ -933,7 +942,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         // nodes were summarized vs kept in detail.
         const result = applyContextPackResolution(
           nodes as unknown as ContextPackNode[],
-          { resolution },
+          relationships ? { resolution, relationships } : { resolution },
         )
         return {
           nodes: result.nodes as unknown as T[],
@@ -959,7 +968,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
           const { evidence_class: _evidenceClass, ...rest } = node
           return rest
         })
-        const resolvedDeltaNodes = applyResolutionToNodes(deltaNodesStripped)
+        const resolvedDeltaNodes = applyResolutionToNodes(deltaNodesStripped, deltaResult.delta_pack.relationships)
         return helpers.ok(id, helpers.textToolResult(JSON.stringify({
           ...contextPackBasePayload(task, prompt, resolvedBudget, graphPath, initialPlan),
           mode: 'delta',
@@ -977,10 +986,13 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
             graph_signals: deltaResult.delta_pack.graph_signals ?? { god_nodes: [], bridge_nodes: [] },
           },
           diagnostics: computeContextPackDiagnostics(deltaResult.delta_pack, { skipBudgetUnderutilization: true }),
+          ...(includeSelectionDiagnostics && deltaResult.delta_pack.selection_diagnostics
+            ? { selection_diagnostics: deltaResult.delta_pack.selection_diagnostics }
+            : {}),
           ...metadata,
         })))
       }
-      const resolvedNodes = applyResolutionToNodes(compactPack.matched_nodes)
+      const resolvedNodes = applyResolutionToNodes(compactPack.matched_nodes, compactPack.relationships)
       return helpers.ok(id, helpers.textToolResult(JSON.stringify({
         ...contextPackBasePayload(task, prompt, resolvedBudget, graphPath, initialPlan),
         resolution,
@@ -992,6 +1004,9 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
           ? { bytes_saved_by_resolution: resolvedNodes.bytes_saved, resolution_map: resolvedNodes.resolution_map }
           : {}),
         diagnostics,
+        ...(includeSelectionDiagnostics && fullPack.selection_diagnostics
+          ? { selection_diagnostics: fullPack.selection_diagnostics }
+          : {}),
         ...metadata,
       })))
     }

@@ -1,0 +1,3548 @@
+{
+  "timestamp_iso": "2026-05-11T17:19:27.929Z",
+  "variants": {
+    "legacy": {
+      "variant": "legacy",
+      "build_time_ms": 500,
+      "graph_size_bytes": 62783,
+      "node_count": 29,
+      "prompts": [
+        {
+          "id": "express-route",
+          "text": "Show me the Express route that handles GET /api/users/:id",
+          "pack_token_count": 63,
+          "pack_node_count": 2,
+          "top_labels": [
+            "GET /api/users/:id",
+            "GET /api/users"
+          ]
+        },
+        {
+          "id": "hono-route",
+          "text": "Find the Hono route for listProducts",
+          "pack_token_count": 50,
+          "pack_node_count": 2,
+          "top_labels": [
+            "listProducts()",
+            "createProduct()"
+          ]
+        },
+        {
+          "id": "trpc-mutations",
+          "text": "Which tRPC mutations exist in this app and what do they do",
+          "pack_token_count": 22,
+          "pack_node_count": 1,
+          "top_labels": [
+            "app"
+          ]
+        },
+        {
+          "id": "prisma-client",
+          "text": "Where is the Prisma database client used",
+          "pack_token_count": 54,
+          "pack_node_count": 2,
+          "top_labels": [
+            "USE /",
+            "USE /api/users"
+          ]
+        },
+        {
+          "id": "auth-middleware",
+          "text": "How is authentication middleware wired up",
+          "pack_token_count": 55,
+          "pack_node_count": 2,
+          "top_labels": [
+            "authMiddleware()",
+            "listUsers()"
+          ]
+        },
+        {
+          "id": "generic-utils",
+          "text": "How does debounce work in this codebase",
+          "pack_token_count": 27,
+          "pack_node_count": 1,
+          "top_labels": [
+            "debounce()"
+          ]
+        },
+        {
+          "id": "cross-framework",
+          "text": "What routes exist across all the HTTP frameworks in this project",
+          "pack_token_count": 59,
+          "pack_node_count": 2,
+          "top_labels": [
+            "GET /",
+            "GET /:id"
+          ]
+        }
+      ]
+    },
+    "spi-cold": {
+      "variant": "spi-cold",
+      "build_time_ms": 706,
+      "graph_size_bytes": 42925,
+      "node_count": 30,
+      "prompts": [
+        {
+          "id": "express-route",
+          "text": "Show me the Express route that handles GET /api/users/:id",
+          "pack_token_count": 54,
+          "pack_node_count": 2,
+          "top_labels": [
+            "getUserById()",
+            "listUsers()"
+          ]
+        },
+        {
+          "id": "hono-route",
+          "text": "Find the Hono route for listProducts",
+          "pack_token_count": 50,
+          "pack_node_count": 2,
+          "top_labels": [
+            "listProducts()",
+            "createProduct()"
+          ]
+        },
+        {
+          "id": "trpc-mutations",
+          "text": "Which tRPC mutations exist in this app and what do they do",
+          "pack_token_count": 101,
+          "pack_node_count": 2,
+          "top_labels": [
+            "appRouter.cancelOrder()",
+            "appRouter.createOrder()"
+          ]
+        },
+        {
+          "id": "prisma-client",
+          "text": "Where is the Prisma database client used",
+          "pack_token_count": 45,
+          "pack_node_count": 2,
+          "top_labels": [
+            "prisma",
+            "createOrder()"
+          ]
+        },
+        {
+          "id": "auth-middleware",
+          "text": "How is authentication middleware wired up",
+          "pack_token_count": 50,
+          "pack_node_count": 2,
+          "top_labels": [
+            "authMiddleware()",
+            "app"
+          ]
+        },
+        {
+          "id": "generic-utils",
+          "text": "How does debounce work in this codebase",
+          "pack_token_count": 26,
+          "pack_node_count": 1,
+          "top_labels": [
+            "debounce()"
+          ]
+        },
+        {
+          "id": "cross-framework",
+          "text": "What routes exist across all the HTTP frameworks in this project",
+          "pack_token_count": 52,
+          "pack_node_count": 2,
+          "top_labels": [
+            "createUser()",
+            "getUserById()"
+          ]
+        }
+      ]
+    },
+    "spi-warm": {
+      "variant": "spi-warm",
+      "build_time_ms": 366,
+      "graph_size_bytes": 42925,
+      "node_count": 30,
+      "note": "Same fixture as spi-cold, re-run to measure cache-hit path. Prompts not re-evaluated; pack tokens match spi-cold."
+    }
+  },
+  "analysis": {
+    "spi-cold": {
+      "graph_path": "docs/benchmarks/2026-05-11-spi-vs-legacy/results/2026-05-11T163843Z/fixture-spi-cold/graphify-out/graph.json",
+      "budget": 2000,
+      "prompts": [
+        {
+          "id": "express-route",
+          "intent": "framework-shaped",
+          "text": "Show me the Express route that handles GET /api/users/:id",
+          "strategies": {
+            "evidence_order": {
+              "token_count": 200,
+              "node_count": 8,
+              "labels": [
+                "getUserById()",
+                "listUsers()",
+                "createUser()",
+                "usersRouter",
+                "express-server.ts",
+                "hono-server.ts",
+                "app",
+                "authMiddleware()"
+              ],
+              "framework_roles": [
+                "express_app",
+                "express_middleware",
+                "express_route",
+                "express_router"
+              ],
+              "quality_score": 0.7,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic"
+              ],
+              "used_tokens": 200,
+              "required_overflow": false,
+              "ranking": []
+            },
+            "value_per_token": {
+              "token_count": 200,
+              "node_count": 8,
+              "labels": [
+                "getUserById()",
+                "listUsers()",
+                "createUser()",
+                "usersRouter",
+                "express-server.ts",
+                "hono-server.ts",
+                "app",
+                "authMiddleware()"
+              ],
+              "framework_roles": [
+                "express_app",
+                "express_middleware",
+                "express_route",
+                "express_router"
+              ],
+              "quality_score": 0.7,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic"
+              ],
+              "selection_strategy": "value-per-token",
+              "used_tokens": 200,
+              "required_overflow": false,
+              "ranking": [
+                {
+                  "label": "getUserById()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 25.625,
+                  "token_cost": 27,
+                  "density": 0.9490740740740741,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "listUsers()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 25.625,
+                  "token_cost": 27,
+                  "density": 0.9490740740740741,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "createUser()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 23.75,
+                  "token_cost": 25,
+                  "density": 0.95,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "usersRouter",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 17.546,
+                  "token_cost": 22,
+                  "density": 0.7975454545454546,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "express-server.ts",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 13.5,
+                  "token_cost": 23,
+                  "density": 0.5869565217391305,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence"
+                  ],
+                  "penalties": []
+                }
+              ]
+            }
+          },
+          "deltas": {
+            "token_count": 0,
+            "node_count": 0
+          },
+          "retrieval_levels": [
+            {
+              "level": 1,
+              "token_count": 54,
+              "node_count": 2,
+              "labels": [
+                "getUserById()",
+                "listUsers()"
+              ],
+              "framework_roles": [
+                "express_route"
+              ],
+              "quality_score": 0.5,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic",
+                "orphan_nodes",
+                "undersized_retrieval"
+              ],
+              "selection_strategy": "value-per-token",
+              "used_tokens": 54,
+              "required_overflow": false,
+              "ranking": [
+                {
+                  "label": "getUserById()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 25.625,
+                  "token_cost": 27,
+                  "density": 0.9490740740740741,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "listUsers()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 25.625,
+                  "token_cost": 27,
+                  "density": 0.9490740740740741,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                }
+              ]
+            },
+            {
+              "level": 2,
+              "token_count": 124,
+              "node_count": 5,
+              "labels": [
+                "getUserById()",
+                "listUsers()",
+                "createUser()",
+                "usersRouter",
+                "express-server.ts"
+              ],
+              "framework_roles": [
+                "express_route",
+                "express_router"
+              ],
+              "quality_score": 0.6,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic",
+                "no_graph_signals"
+              ],
+              "selection_strategy": "value-per-token",
+              "used_tokens": 124,
+              "required_overflow": false,
+              "ranking": [
+                {
+                  "label": "getUserById()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 25.625,
+                  "token_cost": 27,
+                  "density": 0.9490740740740741,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "listUsers()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 25.625,
+                  "token_cost": 27,
+                  "density": 0.9490740740740741,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "createUser()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 23.75,
+                  "token_cost": 25,
+                  "density": 0.95,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "usersRouter",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 17.546,
+                  "token_cost": 22,
+                  "density": 0.7975454545454546,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "express-server.ts",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 13.5,
+                  "token_cost": 23,
+                  "density": 0.5869565217391305,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence"
+                  ],
+                  "penalties": []
+                }
+              ]
+            },
+            {
+              "level": 3,
+              "token_count": 200,
+              "node_count": 8,
+              "labels": [
+                "getUserById()",
+                "listUsers()",
+                "createUser()",
+                "usersRouter",
+                "express-server.ts",
+                "hono-server.ts",
+                "app",
+                "authMiddleware()"
+              ],
+              "framework_roles": [
+                "express_app",
+                "express_middleware",
+                "express_route",
+                "express_router"
+              ],
+              "quality_score": 0.7,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic"
+              ],
+              "selection_strategy": "value-per-token",
+              "used_tokens": 200,
+              "required_overflow": false,
+              "ranking": [
+                {
+                  "label": "getUserById()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 25.625,
+                  "token_cost": 27,
+                  "density": 0.9490740740740741,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "listUsers()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 25.625,
+                  "token_cost": 27,
+                  "density": 0.9490740740740741,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "createUser()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 23.75,
+                  "token_cost": 25,
+                  "density": 0.95,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "usersRouter",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 17.546,
+                  "token_cost": 22,
+                  "density": 0.7975454545454546,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "express-server.ts",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 13.5,
+                  "token_cost": 23,
+                  "density": 0.5869565217391305,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence"
+                  ],
+                  "penalties": []
+                }
+              ]
+            },
+            {
+              "level": 4,
+              "token_count": 223,
+              "node_count": 9,
+              "labels": [
+                "getUserById()",
+                "listUsers()",
+                "createUser()",
+                "usersRouter",
+                "express-server.ts",
+                "hono-server.ts",
+                "app",
+                "authMiddleware()",
+                "trpc-router.ts"
+              ],
+              "framework_roles": [
+                "express_app",
+                "express_middleware",
+                "express_route",
+                "express_router"
+              ],
+              "quality_score": 0.7,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic"
+              ],
+              "selection_strategy": "value-per-token",
+              "used_tokens": 223,
+              "required_overflow": false,
+              "ranking": [
+                {
+                  "label": "getUserById()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 25.625,
+                  "token_cost": 27,
+                  "density": 0.9490740740740741,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "listUsers()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 25.625,
+                  "token_cost": 27,
+                  "density": 0.9490740740740741,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "createUser()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 23.75,
+                  "token_cost": 25,
+                  "density": 0.95,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "usersRouter",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 17.546,
+                  "token_cost": 22,
+                  "density": 0.7975454545454546,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "express-server.ts",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 13.5,
+                  "token_cost": 23,
+                  "density": 0.5869565217391305,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence"
+                  ],
+                  "penalties": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "hono-route",
+          "intent": "framework-shaped",
+          "text": "Find the Hono route for listProducts",
+          "strategies": {
+            "evidence_order": {
+              "token_count": 177,
+              "node_count": 7,
+              "labels": [
+                "listProducts()",
+                "createProduct()",
+                "getProductById()",
+                "honoApp",
+                "hono-server.ts",
+                "trpc-router.ts",
+                "logRequest()"
+              ],
+              "framework_roles": [
+                "hono_app",
+                "hono_middleware",
+                "hono_route"
+              ],
+              "quality_score": 0.6,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic",
+                "no_graph_signals"
+              ],
+              "used_tokens": 177,
+              "required_overflow": false,
+              "ranking": []
+            },
+            "value_per_token": {
+              "token_count": 177,
+              "node_count": 7,
+              "labels": [
+                "listProducts()",
+                "createProduct()",
+                "getProductById()",
+                "honoApp",
+                "hono-server.ts",
+                "trpc-router.ts",
+                "logRequest()"
+              ],
+              "framework_roles": [
+                "hono_app",
+                "hono_middleware",
+                "hono_route"
+              ],
+              "quality_score": 0.6,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic",
+                "no_graph_signals"
+              ],
+              "selection_strategy": "value-per-token",
+              "used_tokens": 177,
+              "required_overflow": false,
+              "ranking": [
+                {
+                  "label": "listProducts()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 19.945,
+                  "token_cost": 29,
+                  "density": 0.6877586206896552,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "createProduct()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 19.463,
+                  "token_cost": 20,
+                  "density": 0.9731500000000001,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "getProductById()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 19.306,
+                  "token_cost": 21,
+                  "density": 0.9193333333333333,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "honoApp",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 14.054,
+                  "token_cost": 32,
+                  "density": 0.4391875,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "hono-server.ts",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 11.227,
+                  "token_cost": 26,
+                  "density": 0.43180769230769234,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence"
+                  ],
+                  "penalties": []
+                }
+              ]
+            }
+          },
+          "deltas": {
+            "token_count": 0,
+            "node_count": 0
+          },
+          "retrieval_levels": [
+            {
+              "level": 1,
+              "token_count": 49,
+              "node_count": 2,
+              "labels": [
+                "listProducts()",
+                "createProduct()"
+              ],
+              "framework_roles": [
+                "hono_route"
+              ],
+              "quality_score": 0.5,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic",
+                "orphan_nodes",
+                "undersized_retrieval"
+              ],
+              "selection_strategy": "value-per-token",
+              "used_tokens": 49,
+              "required_overflow": false,
+              "ranking": [
+                {
+                  "label": "listProducts()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 19.945,
+                  "token_cost": 29,
+                  "density": 0.6877586206896552,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "createProduct()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 19.463,
+                  "token_cost": 20,
+                  "density": 0.9731500000000001,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                }
+              ]
+            },
+            {
+              "level": 2,
+              "token_count": 128,
+              "node_count": 5,
+              "labels": [
+                "listProducts()",
+                "createProduct()",
+                "getProductById()",
+                "honoApp",
+                "hono-server.ts"
+              ],
+              "framework_roles": [
+                "hono_app",
+                "hono_route"
+              ],
+              "quality_score": 0.6,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic",
+                "no_graph_signals"
+              ],
+              "selection_strategy": "value-per-token",
+              "used_tokens": 128,
+              "required_overflow": false,
+              "ranking": [
+                {
+                  "label": "listProducts()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 19.945,
+                  "token_cost": 29,
+                  "density": 0.6877586206896552,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "createProduct()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 19.463,
+                  "token_cost": 20,
+                  "density": 0.9731500000000001,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "getProductById()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 19.306,
+                  "token_cost": 21,
+                  "density": 0.9193333333333333,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "honoApp",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 14.054,
+                  "token_cost": 32,
+                  "density": 0.4391875,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "hono-server.ts",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 11.227,
+                  "token_cost": 26,
+                  "density": 0.43180769230769234,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence"
+                  ],
+                  "penalties": []
+                }
+              ]
+            },
+            {
+              "level": 3,
+              "token_count": 177,
+              "node_count": 7,
+              "labels": [
+                "listProducts()",
+                "createProduct()",
+                "getProductById()",
+                "honoApp",
+                "hono-server.ts",
+                "trpc-router.ts",
+                "logRequest()"
+              ],
+              "framework_roles": [
+                "hono_app",
+                "hono_middleware",
+                "hono_route"
+              ],
+              "quality_score": 0.6,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic",
+                "no_graph_signals"
+              ],
+              "selection_strategy": "value-per-token",
+              "used_tokens": 177,
+              "required_overflow": false,
+              "ranking": [
+                {
+                  "label": "listProducts()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 19.945,
+                  "token_cost": 29,
+                  "density": 0.6877586206896552,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "createProduct()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 19.463,
+                  "token_cost": 20,
+                  "density": 0.9731500000000001,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "getProductById()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 19.306,
+                  "token_cost": 21,
+                  "density": 0.9193333333333333,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "honoApp",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 14.054,
+                  "token_cost": 32,
+                  "density": 0.4391875,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "hono-server.ts",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 11.227,
+                  "token_cost": 26,
+                  "density": 0.43180769230769234,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence"
+                  ],
+                  "penalties": []
+                }
+              ]
+            },
+            {
+              "level": 4,
+              "token_count": 197,
+              "node_count": 8,
+              "labels": [
+                "listProducts()",
+                "createProduct()",
+                "getProductById()",
+                "honoApp",
+                "hono-server.ts",
+                "trpc-router.ts",
+                "logRequest()",
+                "t"
+              ],
+              "framework_roles": [
+                "hono_app",
+                "hono_middleware",
+                "hono_route"
+              ],
+              "quality_score": 0.6,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic",
+                "no_graph_signals"
+              ],
+              "selection_strategy": "value-per-token",
+              "used_tokens": 197,
+              "required_overflow": false,
+              "ranking": [
+                {
+                  "label": "listProducts()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 19.945,
+                  "token_cost": 29,
+                  "density": 0.6877586206896552,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "createProduct()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 19.463,
+                  "token_cost": 20,
+                  "density": 0.9731500000000001,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "getProductById()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 19.306,
+                  "token_cost": 21,
+                  "density": 0.9193333333333333,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "honoApp",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 14.054,
+                  "token_cost": 32,
+                  "density": 0.4391875,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "hono-server.ts",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 11.227,
+                  "token_cost": 26,
+                  "density": 0.43180769230769234,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence"
+                  ],
+                  "penalties": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "trpc-mutations",
+          "intent": "framework-shaped",
+          "text": "Which tRPC mutations exist in this app and what do they do",
+          "strategies": {
+            "evidence_order": {
+              "token_count": 283,
+              "node_count": 7,
+              "labels": [
+                "appRouter.cancelOrder()",
+                "appRouter.createOrder()",
+                "appRouter.getOrder()",
+                "appRouter.listOrders()",
+                "appRouter.onOrderUpdate()",
+                "appRouter",
+                "trpc-router.ts"
+              ],
+              "framework_roles": [
+                "trpc_procedure_mutation",
+                "trpc_procedure_query",
+                "trpc_procedure_subscription",
+                "trpc_router"
+              ],
+              "quality_score": 0.7,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic"
+              ],
+              "used_tokens": 283,
+              "required_overflow": false,
+              "ranking": []
+            },
+            "value_per_token": {
+              "token_count": 283,
+              "node_count": 7,
+              "labels": [
+                "appRouter.cancelOrder()",
+                "appRouter.createOrder()",
+                "appRouter.getOrder()",
+                "appRouter.listOrders()",
+                "appRouter.onOrderUpdate()",
+                "appRouter",
+                "trpc-router.ts"
+              ],
+              "framework_roles": [
+                "trpc_procedure_mutation",
+                "trpc_procedure_query",
+                "trpc_procedure_subscription",
+                "trpc_router"
+              ],
+              "quality_score": 0.7,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic"
+              ],
+              "selection_strategy": "value-per-token",
+              "used_tokens": 283,
+              "required_overflow": false,
+              "ranking": [
+                {
+                  "label": "appRouter.cancelOrder()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 16.346,
+                  "token_cost": 51,
+                  "density": 0.32050980392156864,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "appRouter.createOrder()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 16.275,
+                  "token_cost": 50,
+                  "density": 0.32549999999999996,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "appRouter.getOrder()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 16.212,
+                  "token_cost": 42,
+                  "density": 0.386,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "appRouter.listOrders()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 16.157,
+                  "token_cost": 48,
+                  "density": 0.33660416666666665,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "appRouter.onOrderUpdate()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 16.108,
+                  "token_cost": 40,
+                  "density": 0.4027,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match"
+                  ],
+                  "penalties": []
+                }
+              ]
+            }
+          },
+          "deltas": {
+            "token_count": 0,
+            "node_count": 0
+          },
+          "retrieval_levels": [
+            {
+              "level": 1,
+              "token_count": 101,
+              "node_count": 2,
+              "labels": [
+                "appRouter.cancelOrder()",
+                "appRouter.createOrder()"
+              ],
+              "framework_roles": [
+                "trpc_procedure_mutation"
+              ],
+              "quality_score": 0.5,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic",
+                "orphan_nodes",
+                "undersized_retrieval"
+              ],
+              "selection_strategy": "value-per-token",
+              "used_tokens": 101,
+              "required_overflow": false,
+              "ranking": [
+                {
+                  "label": "appRouter.cancelOrder()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 16.346,
+                  "token_cost": 51,
+                  "density": 0.32050980392156864,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "appRouter.createOrder()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 16.275,
+                  "token_cost": 50,
+                  "density": 0.32549999999999996,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match"
+                  ],
+                  "penalties": []
+                }
+              ]
+            },
+            {
+              "level": 2,
+              "token_count": 214,
+              "node_count": 5,
+              "labels": [
+                "appRouter.cancelOrder()",
+                "appRouter.createOrder()",
+                "appRouter.getOrder()",
+                "appRouter.listOrders()",
+                "trpc-router.ts"
+              ],
+              "framework_roles": [
+                "trpc_procedure_mutation",
+                "trpc_procedure_query"
+              ],
+              "quality_score": 0.7,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic"
+              ],
+              "selection_strategy": "value-per-token",
+              "used_tokens": 214,
+              "required_overflow": false,
+              "ranking": [
+                {
+                  "label": "appRouter.cancelOrder()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 16.346,
+                  "token_cost": 51,
+                  "density": 0.32050980392156864,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "appRouter.createOrder()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 16.275,
+                  "token_cost": 50,
+                  "density": 0.32549999999999996,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "appRouter.getOrder()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 16.212,
+                  "token_cost": 42,
+                  "density": 0.386,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "appRouter.listOrders()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 16.157,
+                  "token_cost": 48,
+                  "density": 0.33660416666666665,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "trpc-router.ts",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 10.343,
+                  "token_cost": 23,
+                  "density": 0.44969565217391305,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence"
+                  ],
+                  "penalties": []
+                }
+              ]
+            },
+            {
+              "level": 3,
+              "token_count": 283,
+              "node_count": 7,
+              "labels": [
+                "appRouter.cancelOrder()",
+                "appRouter.createOrder()",
+                "appRouter.getOrder()",
+                "appRouter.listOrders()",
+                "appRouter.onOrderUpdate()",
+                "appRouter",
+                "trpc-router.ts"
+              ],
+              "framework_roles": [
+                "trpc_procedure_mutation",
+                "trpc_procedure_query",
+                "trpc_procedure_subscription",
+                "trpc_router"
+              ],
+              "quality_score": 0.7,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic"
+              ],
+              "selection_strategy": "value-per-token",
+              "used_tokens": 283,
+              "required_overflow": false,
+              "ranking": [
+                {
+                  "label": "appRouter.cancelOrder()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 16.346,
+                  "token_cost": 51,
+                  "density": 0.32050980392156864,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "appRouter.createOrder()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 16.275,
+                  "token_cost": 50,
+                  "density": 0.32549999999999996,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "appRouter.getOrder()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 16.212,
+                  "token_cost": 42,
+                  "density": 0.386,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "appRouter.listOrders()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 16.157,
+                  "token_cost": 48,
+                  "density": 0.33660416666666665,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "appRouter.onOrderUpdate()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 16.108,
+                  "token_cost": 40,
+                  "density": 0.4027,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match"
+                  ],
+                  "penalties": []
+                }
+              ]
+            },
+            {
+              "level": 4,
+              "token_count": 303,
+              "node_count": 8,
+              "labels": [
+                "appRouter.cancelOrder()",
+                "appRouter.createOrder()",
+                "appRouter.getOrder()",
+                "appRouter.listOrders()",
+                "appRouter.onOrderUpdate()",
+                "appRouter",
+                "trpc-router.ts",
+                "t"
+              ],
+              "framework_roles": [
+                "trpc_procedure_mutation",
+                "trpc_procedure_query",
+                "trpc_procedure_subscription",
+                "trpc_router"
+              ],
+              "quality_score": 1,
+              "warnings": [],
+              "selection_strategy": "value-per-token",
+              "used_tokens": 303,
+              "required_overflow": false,
+              "ranking": [
+                {
+                  "label": "appRouter.cancelOrder()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 16.346,
+                  "token_cost": 51,
+                  "density": 0.32050980392156864,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "appRouter.createOrder()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 16.275,
+                  "token_cost": 50,
+                  "density": 0.32549999999999996,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "appRouter.getOrder()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 16.212,
+                  "token_cost": 42,
+                  "density": 0.386,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "appRouter.listOrders()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 16.157,
+                  "token_cost": 48,
+                  "density": 0.33660416666666665,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "appRouter.onOrderUpdate()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 16.108,
+                  "token_cost": 40,
+                  "density": 0.4027,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match"
+                  ],
+                  "penalties": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "prisma-client",
+          "intent": "framework-shaped",
+          "text": "Where is the Prisma database client used",
+          "strategies": {
+            "evidence_order": {
+              "token_count": 93,
+              "node_count": 4,
+              "labels": [
+                "prisma",
+                "prisma-client.ts",
+                "createOrder()",
+                "findUserById()"
+              ],
+              "framework_roles": [
+                "prisma_client"
+              ],
+              "quality_score": 0.7,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic"
+              ],
+              "used_tokens": 93,
+              "required_overflow": false,
+              "ranking": []
+            },
+            "value_per_token": {
+              "token_count": 93,
+              "node_count": 4,
+              "labels": [
+                "prisma",
+                "prisma-client.ts",
+                "createOrder()",
+                "findUserById()"
+              ],
+              "framework_roles": [
+                "prisma_client"
+              ],
+              "quality_score": 0.7,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic"
+              ],
+              "selection_strategy": "value-per-token",
+              "used_tokens": 93,
+              "required_overflow": false,
+              "ranking": [
+                {
+                  "label": "prisma",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 17.895,
+                  "token_cost": 20,
+                  "density": 0.8947499999999999,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "prisma-client.ts",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 10.627,
+                  "token_cost": 21,
+                  "density": 0.5060476190476191,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "createOrder()",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 9.525,
+                  "token_cost": 25,
+                  "density": 0.381,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "findUserById()",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 9.477,
+                  "token_cost": 27,
+                  "density": 0.35100000000000003,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "source path match"
+                  ],
+                  "penalties": []
+                }
+              ]
+            }
+          },
+          "deltas": {
+            "token_count": 0,
+            "node_count": 0
+          },
+          "retrieval_levels": [
+            {
+              "level": 1,
+              "token_count": 45,
+              "node_count": 2,
+              "labels": [
+                "prisma",
+                "createOrder()"
+              ],
+              "framework_roles": [
+                "prisma_client"
+              ],
+              "quality_score": 0.5,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic",
+                "orphan_nodes",
+                "undersized_retrieval"
+              ],
+              "selection_strategy": "value-per-token",
+              "used_tokens": 45,
+              "required_overflow": false,
+              "ranking": [
+                {
+                  "label": "prisma",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 17.895,
+                  "token_cost": 20,
+                  "density": 0.8947499999999999,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "createOrder()",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 9.525,
+                  "token_cost": 25,
+                  "density": 0.381,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "source path match"
+                  ],
+                  "penalties": []
+                }
+              ]
+            },
+            {
+              "level": 2,
+              "token_count": 93,
+              "node_count": 4,
+              "labels": [
+                "prisma",
+                "prisma-client.ts",
+                "createOrder()",
+                "findUserById()"
+              ],
+              "framework_roles": [
+                "prisma_client"
+              ],
+              "quality_score": 0.7,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic"
+              ],
+              "selection_strategy": "value-per-token",
+              "used_tokens": 93,
+              "required_overflow": false,
+              "ranking": [
+                {
+                  "label": "prisma",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 17.895,
+                  "token_cost": 20,
+                  "density": 0.8947499999999999,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "prisma-client.ts",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 10.627,
+                  "token_cost": 21,
+                  "density": 0.5060476190476191,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "createOrder()",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 9.525,
+                  "token_cost": 25,
+                  "density": 0.381,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "findUserById()",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 9.477,
+                  "token_cost": 27,
+                  "density": 0.35100000000000003,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "source path match"
+                  ],
+                  "penalties": []
+                }
+              ]
+            },
+            {
+              "level": 3,
+              "token_count": 93,
+              "node_count": 4,
+              "labels": [
+                "prisma",
+                "prisma-client.ts",
+                "createOrder()",
+                "findUserById()"
+              ],
+              "framework_roles": [
+                "prisma_client"
+              ],
+              "quality_score": 0.7,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic"
+              ],
+              "selection_strategy": "value-per-token",
+              "used_tokens": 93,
+              "required_overflow": false,
+              "ranking": [
+                {
+                  "label": "prisma",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 17.895,
+                  "token_cost": 20,
+                  "density": 0.8947499999999999,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "prisma-client.ts",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 10.627,
+                  "token_cost": 21,
+                  "density": 0.5060476190476191,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "createOrder()",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 9.525,
+                  "token_cost": 25,
+                  "density": 0.381,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "findUserById()",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 9.477,
+                  "token_cost": 27,
+                  "density": 0.35100000000000003,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "source path match"
+                  ],
+                  "penalties": []
+                }
+              ]
+            },
+            {
+              "level": 4,
+              "token_count": 93,
+              "node_count": 4,
+              "labels": [
+                "prisma",
+                "prisma-client.ts",
+                "createOrder()",
+                "findUserById()"
+              ],
+              "framework_roles": [
+                "prisma_client"
+              ],
+              "quality_score": 0.7,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic"
+              ],
+              "selection_strategy": "value-per-token",
+              "used_tokens": 93,
+              "required_overflow": false,
+              "ranking": [
+                {
+                  "label": "prisma",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 17.895,
+                  "token_cost": 20,
+                  "density": 0.8947499999999999,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "prisma-client.ts",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 10.627,
+                  "token_cost": 21,
+                  "density": 0.5060476190476191,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "createOrder()",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 9.525,
+                  "token_cost": 25,
+                  "density": 0.381,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "findUserById()",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 9.477,
+                  "token_cost": 27,
+                  "density": 0.35100000000000003,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "source path match"
+                  ],
+                  "penalties": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "auth-middleware",
+          "intent": "framework-shaped",
+          "text": "How is authentication middleware wired up",
+          "strategies": {
+            "evidence_order": {
+              "token_count": 95,
+              "node_count": 4,
+              "labels": [
+                "authMiddleware()",
+                "usersRouter",
+                "app",
+                "express-server.ts"
+              ],
+              "framework_roles": [
+                "express_app",
+                "express_middleware",
+                "express_router"
+              ],
+              "quality_score": 0.7,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic"
+              ],
+              "used_tokens": 95,
+              "required_overflow": false,
+              "ranking": []
+            },
+            "value_per_token": {
+              "token_count": 95,
+              "node_count": 4,
+              "labels": [
+                "authMiddleware()",
+                "usersRouter",
+                "app",
+                "express-server.ts"
+              ],
+              "framework_roles": [
+                "express_app",
+                "express_middleware",
+                "express_router"
+              ],
+              "quality_score": 0.7,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic"
+              ],
+              "selection_strategy": "value-per-token",
+              "used_tokens": 95,
+              "required_overflow": false,
+              "ranking": [
+                {
+                  "label": "authMiddleware()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 14.389,
+                  "token_cost": 28,
+                  "density": 0.5138928571428572,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "usersRouter",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 8.725,
+                  "token_cost": 22,
+                  "density": 0.39659090909090905,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "app",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 8.525,
+                  "token_cost": 22,
+                  "density": 0.3875,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "express-server.ts",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 9.918,
+                  "token_cost": 23,
+                  "density": 0.4312173913043478,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence"
+                  ],
+                  "penalties": []
+                }
+              ]
+            }
+          },
+          "deltas": {
+            "token_count": 0,
+            "node_count": 0
+          },
+          "retrieval_levels": [
+            {
+              "level": 1,
+              "token_count": 50,
+              "node_count": 2,
+              "labels": [
+                "authMiddleware()",
+                "app"
+              ],
+              "framework_roles": [
+                "express_app",
+                "express_middleware"
+              ],
+              "quality_score": 0.5,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic",
+                "orphan_nodes",
+                "undersized_retrieval"
+              ],
+              "selection_strategy": "value-per-token",
+              "used_tokens": 50,
+              "required_overflow": false,
+              "ranking": [
+                {
+                  "label": "authMiddleware()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 14.389,
+                  "token_cost": 28,
+                  "density": 0.5138928571428572,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "app",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 8.525,
+                  "token_cost": 22,
+                  "density": 0.3875,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match"
+                  ],
+                  "penalties": []
+                }
+              ]
+            },
+            {
+              "level": 2,
+              "token_count": 95,
+              "node_count": 4,
+              "labels": [
+                "authMiddleware()",
+                "usersRouter",
+                "app",
+                "express-server.ts"
+              ],
+              "framework_roles": [
+                "express_app",
+                "express_middleware",
+                "express_router"
+              ],
+              "quality_score": 0.7,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic"
+              ],
+              "selection_strategy": "value-per-token",
+              "used_tokens": 95,
+              "required_overflow": false,
+              "ranking": [
+                {
+                  "label": "authMiddleware()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 14.389,
+                  "token_cost": 28,
+                  "density": 0.5138928571428572,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "usersRouter",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 8.725,
+                  "token_cost": 22,
+                  "density": 0.39659090909090905,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "app",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 8.525,
+                  "token_cost": 22,
+                  "density": 0.3875,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "express-server.ts",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 9.918,
+                  "token_cost": 23,
+                  "density": 0.4312173913043478,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence"
+                  ],
+                  "penalties": []
+                }
+              ]
+            },
+            {
+              "level": 3,
+              "token_count": 95,
+              "node_count": 4,
+              "labels": [
+                "authMiddleware()",
+                "usersRouter",
+                "app",
+                "express-server.ts"
+              ],
+              "framework_roles": [
+                "express_app",
+                "express_middleware",
+                "express_router"
+              ],
+              "quality_score": 0.7,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic"
+              ],
+              "selection_strategy": "value-per-token",
+              "used_tokens": 95,
+              "required_overflow": false,
+              "ranking": [
+                {
+                  "label": "authMiddleware()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 14.389,
+                  "token_cost": 28,
+                  "density": 0.5138928571428572,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "usersRouter",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 8.725,
+                  "token_cost": 22,
+                  "density": 0.39659090909090905,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "app",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 8.525,
+                  "token_cost": 22,
+                  "density": 0.3875,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "express-server.ts",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 9.918,
+                  "token_cost": 23,
+                  "density": 0.4312173913043478,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence"
+                  ],
+                  "penalties": []
+                }
+              ]
+            },
+            {
+              "level": 4,
+              "token_count": 174,
+              "node_count": 7,
+              "labels": [
+                "authMiddleware()",
+                "usersRouter",
+                "app",
+                "express-server.ts",
+                "createUser()",
+                "getUserById()",
+                "listUsers()"
+              ],
+              "framework_roles": [
+                "express_app",
+                "express_middleware",
+                "express_route",
+                "express_router"
+              ],
+              "quality_score": 1,
+              "warnings": [],
+              "selection_strategy": "value-per-token",
+              "used_tokens": 174,
+              "required_overflow": false,
+              "ranking": [
+                {
+                  "label": "authMiddleware()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 14.389,
+                  "token_cost": 28,
+                  "density": 0.5138928571428572,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "usersRouter",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 8.725,
+                  "token_cost": 22,
+                  "density": 0.39659090909090905,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "app",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 8.525,
+                  "token_cost": 22,
+                  "density": 0.3875,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "express-server.ts",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 9.918,
+                  "token_cost": 23,
+                  "density": 0.4312173913043478,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "createUser()",
+                  "evidence_class": "structural",
+                  "included": true,
+                  "score": 11.291,
+                  "token_cost": 25,
+                  "density": 0.45164000000000004,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "structure evidence"
+                  ],
+                  "penalties": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "generic-utils",
+          "intent": "code-comprehension",
+          "text": "How does debounce work in this codebase",
+          "strategies": {
+            "evidence_order": {
+              "token_count": 41,
+              "node_count": 2,
+              "labels": [
+                "debounce()",
+                "utils.ts"
+              ],
+              "framework_roles": [],
+              "quality_score": 0.6,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic",
+                "undersized_retrieval"
+              ],
+              "used_tokens": 41,
+              "required_overflow": false,
+              "ranking": []
+            },
+            "value_per_token": {
+              "token_count": 41,
+              "node_count": 2,
+              "labels": [
+                "debounce()",
+                "utils.ts"
+              ],
+              "framework_roles": [],
+              "quality_score": 0.6,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic",
+                "undersized_retrieval"
+              ],
+              "selection_strategy": "value-per-token",
+              "used_tokens": 41,
+              "required_overflow": false,
+              "ranking": [
+                {
+                  "label": "debounce()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 8.764,
+                  "token_cost": 26,
+                  "density": 0.33707692307692305,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "utils.ts",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 8.418,
+                  "token_cost": 15,
+                  "density": 0.5611999999999999,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence"
+                  ],
+                  "penalties": []
+                }
+              ]
+            }
+          },
+          "deltas": {
+            "token_count": 0,
+            "node_count": 0
+          },
+          "retrieval_levels": [
+            {
+              "level": 1,
+              "token_count": 26,
+              "node_count": 1,
+              "labels": [
+                "debounce()"
+              ],
+              "framework_roles": [],
+              "quality_score": 0.6,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic",
+                "undersized_retrieval"
+              ],
+              "selection_strategy": "value-per-token",
+              "used_tokens": 26,
+              "required_overflow": false,
+              "ranking": [
+                {
+                  "label": "debounce()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 8.764,
+                  "token_cost": 26,
+                  "density": 0.33707692307692305,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence"
+                  ],
+                  "penalties": []
+                }
+              ]
+            },
+            {
+              "level": 2,
+              "token_count": 41,
+              "node_count": 2,
+              "labels": [
+                "debounce()",
+                "utils.ts"
+              ],
+              "framework_roles": [],
+              "quality_score": 0.6,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic",
+                "undersized_retrieval"
+              ],
+              "selection_strategy": "value-per-token",
+              "used_tokens": 41,
+              "required_overflow": false,
+              "ranking": [
+                {
+                  "label": "debounce()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 8.764,
+                  "token_cost": 26,
+                  "density": 0.33707692307692305,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "utils.ts",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 8.418,
+                  "token_cost": 15,
+                  "density": 0.5611999999999999,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence"
+                  ],
+                  "penalties": []
+                }
+              ]
+            },
+            {
+              "level": 3,
+              "token_count": 41,
+              "node_count": 2,
+              "labels": [
+                "debounce()",
+                "utils.ts"
+              ],
+              "framework_roles": [],
+              "quality_score": 0.6,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic",
+                "undersized_retrieval"
+              ],
+              "selection_strategy": "value-per-token",
+              "used_tokens": 41,
+              "required_overflow": false,
+              "ranking": [
+                {
+                  "label": "debounce()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 8.764,
+                  "token_cost": 26,
+                  "density": 0.33707692307692305,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "utils.ts",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 8.418,
+                  "token_cost": 15,
+                  "density": 0.5611999999999999,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence"
+                  ],
+                  "penalties": []
+                }
+              ]
+            },
+            {
+              "level": 4,
+              "token_count": 123,
+              "node_count": 5,
+              "labels": [
+                "debounce()",
+                "utils.ts",
+                "parseQueryString()",
+                "clamp()",
+                "formatDate()"
+              ],
+              "framework_roles": [],
+              "quality_score": 1,
+              "warnings": [],
+              "selection_strategy": "value-per-token",
+              "used_tokens": 123,
+              "required_overflow": false,
+              "ranking": [
+                {
+                  "label": "debounce()",
+                  "evidence_class": "primary",
+                  "included": true,
+                  "score": 8.764,
+                  "token_cost": 26,
+                  "density": 0.33707692307692305,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "utils.ts",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 8.418,
+                  "token_cost": 15,
+                  "density": 0.5611999999999999,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "parseQueryString()",
+                  "evidence_class": "structural",
+                  "included": true,
+                  "score": 10.591,
+                  "token_cost": 23,
+                  "density": 0.46047826086956517,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "structure evidence"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "clamp()",
+                  "evidence_class": "structural",
+                  "included": true,
+                  "score": 10.391,
+                  "token_cost": 37,
+                  "density": 0.28083783783783783,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "structure evidence"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "formatDate()",
+                  "evidence_class": "structural",
+                  "included": true,
+                  "score": 10.391,
+                  "token_cost": 22,
+                  "density": 0.4723181818181818,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "structure evidence"
+                  ],
+                  "penalties": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "cross-framework",
+          "intent": "framework-shaped",
+          "text": "What routes exist across all the HTTP frameworks in this project",
+          "strategies": {
+            "evidence_order": {
+              "token_count": 174,
+              "node_count": 7,
+              "labels": [
+                "createUser()",
+                "getUserById()",
+                "listUsers()",
+                "usersRouter",
+                "express-server.ts",
+                "app",
+                "authMiddleware()"
+              ],
+              "framework_roles": [
+                "express_app",
+                "express_middleware",
+                "express_route",
+                "express_router"
+              ],
+              "quality_score": 0.7,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic"
+              ],
+              "used_tokens": 174,
+              "required_overflow": false,
+              "ranking": []
+            },
+            "value_per_token": {
+              "token_count": 174,
+              "node_count": 7,
+              "labels": [
+                "createUser()",
+                "getUserById()",
+                "listUsers()",
+                "usersRouter",
+                "express-server.ts",
+                "app",
+                "authMiddleware()"
+              ],
+              "framework_roles": [
+                "express_app",
+                "express_middleware",
+                "express_route",
+                "express_router"
+              ],
+              "quality_score": 0.7,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic"
+              ],
+              "selection_strategy": "value-per-token",
+              "used_tokens": 174,
+              "required_overflow": false,
+              "ranking": [
+                {
+                  "label": "createUser()",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 18.138,
+                  "token_cost": 25,
+                  "density": 0.72552,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "getUserById()",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 18.127,
+                  "token_cost": 27,
+                  "density": 0.6713703703703703,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "listUsers()",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 18.117,
+                  "token_cost": 27,
+                  "density": 0.671,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "usersRouter",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 12.738,
+                  "token_cost": 22,
+                  "density": 0.579,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "express-server.ts",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 10.143,
+                  "token_cost": 23,
+                  "density": 0.441,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence"
+                  ],
+                  "penalties": []
+                }
+              ]
+            }
+          },
+          "deltas": {
+            "token_count": 0,
+            "node_count": 0
+          },
+          "retrieval_levels": [
+            {
+              "level": 1,
+              "token_count": 52,
+              "node_count": 2,
+              "labels": [
+                "createUser()",
+                "getUserById()"
+              ],
+              "framework_roles": [
+                "express_route"
+              ],
+              "quality_score": 0.5,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic",
+                "orphan_nodes",
+                "undersized_retrieval"
+              ],
+              "selection_strategy": "value-per-token",
+              "used_tokens": 52,
+              "required_overflow": false,
+              "ranking": [
+                {
+                  "label": "createUser()",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 18.138,
+                  "token_cost": 25,
+                  "density": 0.72552,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "getUserById()",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 18.127,
+                  "token_cost": 27,
+                  "density": 0.6713703703703703,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                }
+              ]
+            },
+            {
+              "level": 2,
+              "token_count": 124,
+              "node_count": 5,
+              "labels": [
+                "createUser()",
+                "getUserById()",
+                "listUsers()",
+                "app",
+                "express-server.ts"
+              ],
+              "framework_roles": [
+                "express_app",
+                "express_route"
+              ],
+              "quality_score": 0.7,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic"
+              ],
+              "selection_strategy": "value-per-token",
+              "used_tokens": 124,
+              "required_overflow": false,
+              "ranking": [
+                {
+                  "label": "createUser()",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 18.138,
+                  "token_cost": 25,
+                  "density": 0.72552,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "getUserById()",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 18.127,
+                  "token_cost": 27,
+                  "density": 0.6713703703703703,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "listUsers()",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 18.117,
+                  "token_cost": 27,
+                  "density": 0.671,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "app",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 12.553,
+                  "token_cost": 22,
+                  "density": 0.5705909090909091,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "express-server.ts",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 10.143,
+                  "token_cost": 23,
+                  "density": 0.441,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence"
+                  ],
+                  "penalties": []
+                }
+              ]
+            },
+            {
+              "level": 3,
+              "token_count": 174,
+              "node_count": 7,
+              "labels": [
+                "createUser()",
+                "getUserById()",
+                "listUsers()",
+                "usersRouter",
+                "express-server.ts",
+                "app",
+                "authMiddleware()"
+              ],
+              "framework_roles": [
+                "express_app",
+                "express_middleware",
+                "express_route",
+                "express_router"
+              ],
+              "quality_score": 0.7,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic"
+              ],
+              "selection_strategy": "value-per-token",
+              "used_tokens": 174,
+              "required_overflow": false,
+              "ranking": [
+                {
+                  "label": "createUser()",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 18.138,
+                  "token_cost": 25,
+                  "density": 0.72552,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "getUserById()",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 18.127,
+                  "token_cost": 27,
+                  "density": 0.6713703703703703,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "listUsers()",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 18.117,
+                  "token_cost": 27,
+                  "density": 0.671,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "usersRouter",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 12.738,
+                  "token_cost": 22,
+                  "density": 0.579,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "express-server.ts",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 10.143,
+                  "token_cost": 23,
+                  "density": 0.441,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence"
+                  ],
+                  "penalties": []
+                }
+              ]
+            },
+            {
+              "level": 4,
+              "token_count": 174,
+              "node_count": 7,
+              "labels": [
+                "createUser()",
+                "getUserById()",
+                "listUsers()",
+                "usersRouter",
+                "express-server.ts",
+                "app",
+                "authMiddleware()"
+              ],
+              "framework_roles": [
+                "express_app",
+                "express_middleware",
+                "express_route",
+                "express_router"
+              ],
+              "quality_score": 0.7,
+              "warnings": [
+                "missing_required_evidence",
+                "missing_required_semantic"
+              ],
+              "selection_strategy": "value-per-token",
+              "used_tokens": 174,
+              "required_overflow": false,
+              "ranking": [
+                {
+                  "label": "createUser()",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 18.138,
+                  "token_cost": 25,
+                  "density": 0.72552,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "getUserById()",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 18.127,
+                  "token_cost": 27,
+                  "density": 0.6713703703703703,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "listUsers()",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 18.117,
+                  "token_cost": 27,
+                  "density": 0.671,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "usersRouter",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 12.738,
+                  "token_cost": 22,
+                  "density": 0.579,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence",
+                    "framework role match",
+                    "source path match"
+                  ],
+                  "penalties": []
+                },
+                {
+                  "label": "express-server.ts",
+                  "evidence_class": "supporting",
+                  "included": true,
+                  "score": 10.143,
+                  "token_cost": 23,
+                  "density": 0.441,
+                  "reasons": [
+                    "match score",
+                    "required evidence",
+                    "implementation evidence"
+                  ],
+                  "penalties": []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "comparison": {
+    "build_time_delta_ms": 206,
+    "build_time_delta_pct": "41.2",
+    "graph_size_delta_bytes": -19858,
+    "graph_size_delta_pct": "-31.6",
+    "node_count_delta": 1,
+    "per_prompt": [
+      {
+        "id": "express-route",
+        "legacy_tokens": 63,
+        "spi_tokens": 54,
+        "token_delta": -9,
+        "legacy_nodes": 2,
+        "spi_nodes": 2,
+        "legacy_top_labels": [
+          "GET /api/users/:id",
+          "GET /api/users"
+        ],
+        "spi_top_labels": [
+          "getUserById()",
+          "listUsers()"
+        ]
+      },
+      {
+        "id": "hono-route",
+        "legacy_tokens": 50,
+        "spi_tokens": 50,
+        "token_delta": 0,
+        "legacy_nodes": 2,
+        "spi_nodes": 2,
+        "legacy_top_labels": [
+          "listProducts()",
+          "createProduct()"
+        ],
+        "spi_top_labels": [
+          "listProducts()",
+          "createProduct()"
+        ]
+      },
+      {
+        "id": "trpc-mutations",
+        "legacy_tokens": 22,
+        "spi_tokens": 101,
+        "token_delta": 79,
+        "legacy_nodes": 1,
+        "spi_nodes": 2,
+        "legacy_top_labels": [
+          "app"
+        ],
+        "spi_top_labels": [
+          "appRouter.cancelOrder()",
+          "appRouter.createOrder()"
+        ]
+      },
+      {
+        "id": "prisma-client",
+        "legacy_tokens": 54,
+        "spi_tokens": 45,
+        "token_delta": -9,
+        "legacy_nodes": 2,
+        "spi_nodes": 2,
+        "legacy_top_labels": [
+          "USE /",
+          "USE /api/users"
+        ],
+        "spi_top_labels": [
+          "prisma",
+          "createOrder()"
+        ]
+      },
+      {
+        "id": "auth-middleware",
+        "legacy_tokens": 55,
+        "spi_tokens": 50,
+        "token_delta": -5,
+        "legacy_nodes": 2,
+        "spi_nodes": 2,
+        "legacy_top_labels": [
+          "authMiddleware()",
+          "listUsers()"
+        ],
+        "spi_top_labels": [
+          "authMiddleware()",
+          "app"
+        ]
+      },
+      {
+        "id": "generic-utils",
+        "legacy_tokens": 27,
+        "spi_tokens": 26,
+        "token_delta": -1,
+        "legacy_nodes": 1,
+        "spi_nodes": 1,
+        "legacy_top_labels": [
+          "debounce()"
+        ],
+        "spi_top_labels": [
+          "debounce()"
+        ]
+      },
+      {
+        "id": "cross-framework",
+        "legacy_tokens": 59,
+        "spi_tokens": 52,
+        "token_delta": -7,
+        "legacy_nodes": 2,
+        "spi_nodes": 2,
+        "legacy_top_labels": [
+          "GET /",
+          "GET /:id"
+        ],
+        "spi_top_labels": [
+          "createUser()",
+          "getUserById()"
+        ]
+      }
+    ]
+  }
+}

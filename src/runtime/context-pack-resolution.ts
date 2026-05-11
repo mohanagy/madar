@@ -19,15 +19,20 @@
 // is about taking the OUTER LIMIT (max_nodes); resolution is about
 // shaping each node's payload so the agent can decide whether to expand.
 
-import type { ContextPackNode } from '../contracts/context-pack.js'
+import type {
+  ContextPackNode,
+  ContextPackRelationship,
+  ContextRepresentationType,
+} from '../contracts/context-pack.js'
 
-export type ContextPackResolution = 'detail' | 'summary' | 'mixed' | 'signature'
+export type ContextPackResolution = 'detail' | 'summary' | 'mixed' | 'signature' | 'sketch'
 
 export interface ApplyResolutionOptions {
   resolution: ContextPackResolution
   /** For 'mixed': number of top nodes that retain full detail. Defaults
    *  to ceil(nodes.length / 3) so a 12-node pack keeps 4 detail nodes. */
   detail_top_n?: number
+  relationships?: readonly ContextPackRelationship[]
 }
 
 export interface ApplyResolutionResult<T extends ContextPackNode> {
@@ -35,7 +40,7 @@ export interface ApplyResolutionResult<T extends ContextPackNode> {
   /** Per-node resolution after applying. Useful for diagnostics.
    *  v0.20 #132: includes 'signature' for nodes where the body was
    *  dropped but the function signature retained. */
-  resolution_map: Array<{ node_id: string | undefined; resolution: 'detail' | 'summary' | 'signature' }>
+  resolution_map: Array<{ node_id: string | undefined; resolution: ContextRepresentationType }>
   /** Estimated bytes saved (rough — based on dropped snippet length). */
   bytes_saved: number
 }
@@ -62,6 +67,10 @@ export function applyContextPackResolution<T extends ContextPackNode>(
     return signatureResolution(nodes)
   }
 
+  if (options.resolution === 'sketch') {
+    return sketchResolution(nodes, options.relationships ?? [])
+  }
+
   // mixed: top-N detail by match_score desc, rest summary.
   const n = options.detail_top_n ?? Math.ceil(nodes.length / 3)
   return mixedResolution(nodes, Math.max(0, n))
@@ -83,7 +92,12 @@ function signatureResolution<T extends ContextPackNode>(
     if (typeof node.snippet !== 'string' || node.snippet.length === 0) return node
     const sig = extractSignature(node.snippet)
     bytesSaved += Math.max(0, node.snippet.length - sig.length)
-    return { ...node, snippet: sig } as T
+    return {
+      ...node,
+      snippet: sig,
+      representation_type: 'signature',
+      representation_reason: 'signature compression',
+    } as T
   })
   return {
     nodes: transformed,
@@ -159,9 +173,206 @@ function summarizeNode<T extends ContextPackNode>(node: T): T {
   // Drop the snippet body. Preserve all other metadata so the agent can
   // still rank/filter/expand. Casts back to T because the shape is the
   // same — only the snippet content changed.
-  return { ...node, snippet: null } as T
+  return {
+    ...node,
+    snippet: null,
+    representation_type: 'summary',
+    representation_reason: 'summary compression',
+  } as T
 }
 
 function dropSnippetBytes(node: ContextPackNode): number {
   return typeof node.snippet === 'string' ? node.snippet.length : 0
+}
+
+function sketchResolution<T extends ContextPackNode>(
+  nodes: ReadonlyArray<T>,
+  relationships: readonly ContextPackRelationship[],
+): ApplyResolutionResult<T> {
+  const relationIndex = buildRelationshipIndex(relationships, nodes)
+  let bytesSaved = 0
+  const resolutionMap: Array<{ node_id: string | undefined; resolution: ContextRepresentationType }> = []
+  const transformed = nodes.map((node) => {
+    const rendered = renderSketchRepresentation(node, relationIndex)
+    if (!rendered) {
+      const signature = signatureNode(node)
+      bytesSaved += Math.max(0, dropSnippetBytes(node) - (signature.snippet?.length ?? 0))
+      resolutionMap.push({ node_id: node.node_id, resolution: 'signature' })
+      return signature as T
+    }
+
+    bytesSaved += Math.max(0, dropSnippetBytes(node) - rendered.snippet.length)
+    resolutionMap.push({ node_id: node.node_id, resolution: rendered.type })
+    return {
+      ...node,
+      snippet: rendered.snippet,
+      representation_type: rendered.type,
+      representation_reason: rendered.reason,
+    } as T
+  })
+
+  return {
+    nodes: transformed,
+    resolution_map: resolutionMap,
+    bytes_saved: bytesSaved,
+  }
+}
+
+function signatureNode<T extends ContextPackNode>(node: T): T {
+  if (typeof node.snippet !== 'string' || node.snippet.length === 0) {
+    return {
+      ...node,
+      representation_type: 'signature',
+      representation_reason: 'fallback signature',
+    } as T
+  }
+
+  return {
+    ...node,
+    snippet: extractSignature(node.snippet),
+    representation_type: 'signature',
+    representation_reason: 'fallback signature',
+  } as T
+}
+
+type RelationIndex = {
+  outgoing: Map<string, ContextPackRelationship[]>
+  incoming: Map<string, ContextPackRelationship[]>
+  labelsById: Map<string, string>
+}
+
+function preferredRelationKeys(id: string | undefined, label: string): string[] {
+  return typeof id === 'string' && id.length > 0 ? [id] : [label]
+}
+
+function buildRelationshipIndex(
+  relationships: readonly ContextPackRelationship[],
+  nodes: readonly ContextPackNode[],
+): RelationIndex {
+  const outgoing = new Map<string, ContextPackRelationship[]>()
+  const incoming = new Map<string, ContextPackRelationship[]>()
+  const labelsById = new Map<string, string>()
+  const labelIds = new Map<string, Set<string>>()
+
+  for (const node of nodes) {
+    if (typeof node.node_id === 'string' && node.node_id.length > 0) {
+      labelsById.set(node.node_id, node.label)
+      const ids = labelIds.get(node.label) ?? new Set<string>()
+      ids.add(node.node_id)
+      labelIds.set(node.label, ids)
+    }
+  }
+
+  const uniqueIdsByLabel = new Map<string, string>()
+  for (const [label, ids] of labelIds) {
+    if (ids.size === 1) {
+      uniqueIdsByLabel.set(label, [...ids][0]!)
+    }
+  }
+
+  const canonicalizeRelationKeys = (id: string | undefined, label: string): string[] => {
+    if (typeof id === 'string' && id.length > 0) {
+      return [id]
+    }
+    const uniqueId = uniqueIdsByLabel.get(label)
+    return uniqueId ? [uniqueId] : [label]
+  }
+
+  for (const relationship of relationships) {
+    const fromKeys = canonicalizeRelationKeys(relationship.from_id, relationship.from)
+    const toKeys = canonicalizeRelationKeys(relationship.to_id, relationship.to)
+
+    for (const key of fromKeys) {
+      outgoing.set(key, [...(outgoing.get(key) ?? []), relationship])
+    }
+    for (const key of toKeys) {
+      incoming.set(key, [...(incoming.get(key) ?? []), relationship])
+    }
+  }
+
+  return { outgoing, incoming, labelsById }
+}
+
+function relationKey(node: ContextPackNode): string[] {
+  return preferredRelationKeys(node.node_id, node.label)
+}
+
+function relationLabels(
+  node: ContextPackNode,
+  relationIndex: RelationIndex,
+  direction: 'outgoing' | 'incoming',
+  relationTypes: readonly string[],
+): string[] {
+  const seen = new Set<string>()
+  const labels: string[] = []
+  const index = direction === 'outgoing' ? relationIndex.outgoing : relationIndex.incoming
+
+  for (const key of relationKey(node)) {
+    for (const relationship of index.get(key) ?? []) {
+      if (!relationTypes.includes(relationship.relation)) {
+        continue
+      }
+      const label = direction === 'outgoing'
+        ? relationIndex.labelsById.get(relationship.to_id ?? '') ?? relationship.to
+        : relationIndex.labelsById.get(relationship.from_id ?? '') ?? relationship.from
+      if (!seen.has(label)) {
+        seen.add(label)
+        labels.push(label)
+      }
+    }
+  }
+
+  return labels
+}
+
+function renderSketchRepresentation(
+  node: ContextPackNode,
+  relationIndex: RelationIndex,
+): { type: 'behavior_sketch' | 'dependency_record'; reason: string; snippet: string } | null {
+  const behaviorEdges = relationLabels(node, relationIndex, 'outgoing', ['calls', 'route_handler', 'controller_route', 'method', 'contains'])
+  const tests = relationLabels(node, relationIndex, 'outgoing', ['covered_by'])
+  const config = relationLabels(node, relationIndex, 'outgoing', ['uses_config', 'reads_env'])
+  const outgoingDeps = relationLabels(node, relationIndex, 'outgoing', ['calls', 'injects', 'depends_on'])
+  const incomingDeps = relationLabels(node, relationIndex, 'incoming', ['calls', 'injects', 'depends_on'])
+
+  if (tests.length > 0 || config.length > 0 || behaviorEdges.length > 1 || node.framework_role) {
+    const lines = [node.label]
+    for (const label of behaviorEdges.slice(0, 5)) {
+      lines.push(`-> ${label}`)
+    }
+    if (tests.length > 0) {
+      lines.push(`tests: ${tests.slice(0, 3).join(', ')}`)
+    }
+    if (config.length > 0) {
+      lines.push(`config: ${config.slice(0, 3).join(', ')}`)
+    }
+    if (node.framework_role) {
+      lines.push(`framework: ${node.framework_role}`)
+    }
+    return {
+      type: 'behavior_sketch',
+      reason: 'graph-derived behavior sketch',
+      snippet: lines.join('\n'),
+    }
+  }
+
+  if (outgoingDeps.length > 0 || incomingDeps.length > 0 || node.framework_role) {
+    const lines = [node.label]
+    if (outgoingDeps.length > 0) {
+      lines.push(`calls: ${outgoingDeps.slice(0, 3).join(', ')}`)
+    }
+    if (incomingDeps.length > 0) {
+      lines.push(`called by: ${incomingDeps.slice(0, 3).join(', ')}`)
+    }
+    if (node.framework_role) {
+      lines.push(`framework: ${node.framework_role}`)
+    }
+    return {
+      type: 'dependency_record',
+      reason: 'graph-derived dependency record',
+      snippet: lines.join('\n'),
+    }
+  }
+
+  return null
 }

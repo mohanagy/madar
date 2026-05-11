@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type {
+  ContextPackNode,
   ContextPackTaskContract,
 } from '../../src/contracts/context-pack.js'
 import {
@@ -28,24 +29,30 @@ function candidate(
   label: string,
   evidenceClass: 'primary' | 'supporting' | 'structural' | 'change' | 'impact',
   tokenCost: number,
-): ContextPackNodeCandidate {
+  overrides: Partial<ContextPackNodeCandidate> = {},
+): ContextPackNodeCandidate<ContextPackNode> {
+  const sourceFile = overrides.source_file ?? '/src/' + label + '.ts'
+  const lineNumber = overrides.line_number ?? 1
+  const snippet = overrides.snippet ?? `// ${label} body`
   return {
     label,
-    node_id: label,
-    source_file: '/src/' + label + '.ts',
-    line_number: 1,
-    file_type: 'code',
-    snippet: `// ${label} body`,
+    node_id: overrides.node_id ?? label,
+    source_file: sourceFile,
+    line_number: lineNumber,
+    file_type: overrides.file_type ?? 'code',
+    snippet,
     evidence_class: evidenceClass,
     estimate_tokens: () => tokenCost,
     build_entry: () => ({
       label,
-      node_id: label,
-      source_file: '/src/' + label + '.ts',
-      line_number: 1,
-      snippet: `// ${label} body`,
+      node_id: overrides.node_id ?? label,
+      source_file: sourceFile,
+      line_number: lineNumber,
+      file_type: overrides.file_type ?? 'code',
+      snippet,
       evidence_class: evidenceClass,
     }),
+    ...overrides,
   }
 }
 
@@ -120,5 +127,127 @@ describe('compileContextPack selection_strategy=value-per-token (#131)', () => {
 
     expect(pack.nodes.map((n) => n.label)).toEqual(['primary-a'])
     expect(pack.expandable.length).toBeGreaterThan(0)
+  })
+
+  it('prefers framework-relevant candidates over generic label matches for framework-shaped prompts', () => {
+    const pack = compileContextPack({
+      task_contract: task({
+        budget: 50,
+        prompt: 'Which express route handles POST /users?',
+        required_evidence: [],
+        preferred_evidence: ['supporting'],
+        semantic_required: ['implementation'],
+      }),
+      nodes: [
+        candidate('usersIndex', 'supporting', 45, {
+          source_file: '/src/users/index.ts',
+          match_score: 8.5,
+          framework_boost: 0,
+        }),
+        candidate('createUser', 'supporting', 25, {
+          source_file: '/src/routes/users.ts',
+          match_score: 5.5,
+          framework: 'express',
+          framework_role: 'express_route',
+          framework_boost: 4,
+          exact_anchor_match: true,
+        }),
+      ],
+      selection_strategy: 'value-per-token',
+    })
+
+    expect(pack.nodes.map((node) => node.label)).toEqual(['createUser'])
+    expect(pack.selection_diagnostics?.ranking.map((entry) => ({
+      label: entry.label,
+      included: entry.included,
+    }))).toEqual([
+      { label: 'createUser', included: true },
+      { label: 'usersIndex', included: false },
+    ])
+  })
+
+  it('favors smaller high-value candidates over larger low-value ones', () => {
+    const pack = compileContextPack({
+      task_contract: task({
+        budget: 60,
+        prompt: 'Explain the login flow',
+        required_evidence: ['primary'],
+      }),
+      nodes: [
+        candidate('loginFlow', 'primary', 20, {
+          match_score: 9,
+          exact_anchor_match: true,
+        }),
+        candidate('AuthController', 'supporting', 35, {
+          match_score: 5,
+          framework_role: 'express_handler',
+          framework_boost: 1.5,
+        }),
+        candidate('AuthArchitectureOverview', 'supporting', 80, {
+          source_file: '/src/docs/auth-architecture.md',
+          file_type: 'document',
+          match_score: 4.5,
+        }),
+      ],
+      selection_strategy: 'value-per-token',
+    })
+
+    expect(pack.nodes.map((node) => node.label)).toEqual(['loginFlow', 'AuthController'])
+    expect(pack.nodes.map((node) => node.label)).not.toContain('AuthArchitectureOverview')
+  })
+
+  it('records deterministic selection reasons and penalties for included and omitted candidates', () => {
+    const pack = compileContextPack({
+      task_contract: task({
+        budget: 50,
+        prompt: 'Review the auth route contract and tests',
+        required_evidence: [],
+        preferred_evidence: ['supporting'],
+        semantic_required: ['contracts'],
+        semantic_optional: ['tests', 'implementation'],
+      }),
+      nodes: [
+        candidate('AuthRouteContract', 'supporting', 18, {
+          source_file: '/src/contracts/auth-route.ts',
+          match_score: 6,
+          framework_role: 'express_route',
+          framework_boost: 2,
+          exact_anchor_match: true,
+        }),
+        candidate('authRoute.test', 'supporting', 16, {
+          source_file: '/tests/auth-route.test.ts',
+          match_score: 4.5,
+        }),
+        candidate('index', 'supporting', 26, {
+          source_file: '/src/auth/index.ts',
+          match_score: 7,
+        }),
+      ],
+      selection_strategy: 'value-per-token',
+    })
+
+    expect(pack.selection_diagnostics).toEqual(expect.objectContaining({
+      selection_strategy: 'value-per-token',
+      budget: 50,
+      used_tokens: 34,
+      required_overflow: false,
+    }))
+
+    const byLabel = new Map(pack.selection_diagnostics?.ranking.map((entry) => [entry.label, entry]) ?? [])
+    expect(byLabel.get('AuthRouteContract')).toEqual(expect.objectContaining({
+      included: true,
+      reasons: expect.arrayContaining(['exact anchor match', 'contracts evidence', 'framework role match']),
+      penalties: [],
+    }))
+    expect(byLabel.get('authRoute.test')).toEqual(expect.objectContaining({
+      included: true,
+      reasons: expect.arrayContaining(['tests evidence']),
+      penalties: [],
+    }))
+    expect(byLabel.get('index')).toEqual(expect.objectContaining({
+      included: false,
+      reasons: expect.arrayContaining(['match score']),
+      penalties: expect.arrayContaining(['barrel export penalty']),
+    }))
   })
 })

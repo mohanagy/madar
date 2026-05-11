@@ -22,7 +22,13 @@ for (const variant of variants) {
 const summary = {
   timestamp_iso: new Date().toISOString(),
   variants: results,
+  analysis: {},
   comparison: {},
+}
+
+const analysisPath = join(resultsDir, 'spi-cold.analysis.json')
+if (existsSync(analysisPath)) {
+  summary.analysis['spi-cold'] = JSON.parse(readFileSync(analysisPath, 'utf8'))
 }
 
 if (results.legacy && results['spi-cold']) {

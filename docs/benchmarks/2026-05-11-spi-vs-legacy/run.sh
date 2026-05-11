@@ -19,8 +19,8 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
-FIXTURE_SRC="$HERE/fixture"
-PROMPTS_FILE="$HERE/prompts.json"
+FIXTURE_SRC="${GRAPHIFY_BENCH_FIXTURE:-$HERE/fixture}"
+PROMPTS_FILE="${GRAPHIFY_BENCH_PROMPTS:-$HERE/prompts.json}"
 
 # Create a clean copy of the fixture for each variant so cache state and
 # graphify-out are independent.
@@ -137,6 +137,9 @@ cat > "$RESULTS_DIR/spi-warm.json" <<EOF
 EOF
 
 # Summary.
+echo "[spi-cold] probe selection_strategy + retrieval_level"
+node "$HERE/probe.mjs" "$RESULTS_DIR/fixture-spi-cold/graphify-out/graph.json" "$PROMPTS_FILE" > "$RESULTS_DIR/spi-cold.analysis.json"
+
 node "$HERE/summarize.mjs" "$RESULTS_DIR" > "$RESULTS_DIR/summary.json"
 cat "$RESULTS_DIR/summary.json"
 

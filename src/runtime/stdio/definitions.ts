@@ -238,7 +238,12 @@ export const MCP_TOOLS: McpToolDefinition[] = [
         task: { type: 'string', enum: ['explain', 'review', 'impact'], description: 'Context-pack mode (default: explain)' },
         budget: { type: 'number', description: 'Optional: maximum token budget for the pack (default 3000)' },
         delta_session_id: { type: 'string', description: 'Optional (#81): delta-pack session key for per-session dedup.' },
-        resolution: { type: 'string', enum: ['detail', 'summary', 'mixed'], description: 'Optional (#76): node resolution.' },
+        verbose: { type: 'boolean', description: 'Optional: include extended selection diagnostics.' },
+        resolution: {
+          type: 'string',
+          enum: ['detail', 'summary', 'mixed', 'signature', 'sketch'],
+          description: 'Optional (#76/#135): node resolution.',
+        },
       },
     },
   },
