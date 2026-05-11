@@ -969,8 +969,11 @@ function frameworkBoostForNode(
     // CodeRabbit fix: word-boundary check so http_method 'GET' doesn't
     // match 'budget' / 'forget' / 'target' / etc. Verb is lowercased to
     // match questionLower which is already lowercased upstream.
+    // CodeRabbit follow-up: escape regex metacharacters so an unexpected
+    // verb (e.g. user-supplied data leaking in via SPI metadata) can't
+    // break the RegExp constructor or match unintended substrings.
     const verb = metadata.http_method.toLowerCase()
-    if (verb && new RegExp(`\\b${verb}\\b`).test(questionLower)) {
+    if (verb && new RegExp(`\\b${verb.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')}\\b`).test(questionLower)) {
       boost += 1.5
     }
   }
@@ -1770,7 +1773,13 @@ export async function retrieveContextAsync(graph: KnowledgeGraph, options: Retri
     const lexicalScore = lexicalScoresById.get(candidate.id) ?? 0
     const semanticScore = semanticScores.get(candidate.id) ?? 0
     const rerankScore = rerankScores.get(candidate.id) ?? 0
-    candidate.score = lexicalScore + candidate.frameworkBoost + (semanticScore * 3) + (rerankScore * 4)
+    // CodeRabbit fix: when this candidate already won lexical retrieval
+    // (lexicalScore > 0), frameworkBoost is ALREADY baked into
+    // match_score by retrieveContext upstream — adding it here would
+    // double-count. Only add it for semantic-only candidates where the
+    // lexical pass missed but the metadata signal is real.
+    const additionalFrameworkBoost = lexicalScore > 0 ? 0 : candidate.frameworkBoost
+    candidate.score = lexicalScore + additionalFrameworkBoost + (semanticScore * 3) + (rerankScore * 4)
     candidate.evidenceTier = lexicalScore > 0 ? 2 : semanticScore > 0 || rerankScore > 0 ? 1 : 0
     candidate.relevanceBand = lexicalBandsById.get(candidate.id) ?? (semanticScore >= 0.75 || rerankScore >= 0.75 ? 'direct' : 'related')
     candidate.exactLabelMatch = lexicalScore > 0
