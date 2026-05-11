@@ -28,6 +28,7 @@ import { relevantFiles } from '../relevant-files.js'
 import { collectRelationships, compactRetrieveResult, contextPackFromRetrieveResult, readSnippet, retrieveContext, retrieveContextAsync, type RetrieveResult } from '../retrieve.js'
 import { computeContextPackDiagnostics } from '../context-pack-diagnostics.js'
 import { collectPackNodeIds, computeDeltaContextPack } from '../context-pack-delta.js'
+import { applyContextPackResolution, type ContextPackResolution } from '../context-pack-resolution.js'
 import { riskMap } from '../risk-map.js'
 import { buildTaskContextPlan } from '../task-context-planner.js'
 import type { TimeTravelView } from '../time-travel.js'
@@ -817,6 +818,21 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         budget: plannerBudget,
       })
 
+      // CodeRabbit fix: validate resolution BEFORE the review/impact
+      // early returns so callers can't pass resolution: 'summary' or
+      // 'mixed' for review/impact tasks and get silent no-ops. The
+      // resolution feature only applies to the explain branch in this
+      // slice; review and impact branches produce different pack
+      // taxonomies that would need their own adapters.
+      const earlyResolutionParam = helpers.stringParam(toolArguments, 'resolution')
+      if (earlyResolutionParam && (task === 'review' || task === 'impact')) {
+        return helpers.failure(
+          id,
+          helpers.jsonrpcInvalidParams,
+          `resolution is only supported for task=explain (got task=${task}). Drop the parameter or switch tasks.`,
+        )
+      }
+
       if (task === 'review') {
         const graphDir = dirname(validateGraphPath(graphPath))
         const projectRoot = dirname(graphDir)
@@ -884,6 +900,48 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       // retrieval, etc.) without re-implementing the heuristics.
       const diagnostics = computeContextPackDiagnostics(fullPack)
 
+      // Slice #76: multi-resolution context. Default 'detail' preserves
+      // existing behavior; 'summary' drops snippet bodies; 'mixed' keeps
+      // top-N most relevant nodes in detail and summarizes the rest.
+      const resolutionParam = helpers.stringParam(toolArguments, 'resolution')
+      const resolution: ContextPackResolution =
+        resolutionParam === 'summary' || resolutionParam === 'mixed'
+          ? resolutionParam
+          : 'detail'
+      const applyResolutionToNodes = <T>(
+        nodes: T[],
+      ): {
+        nodes: T[]
+        bytes_saved: number
+        resolution_map: Array<{ node_id: string | undefined; resolution: 'detail' | 'summary' }>
+      } => {
+        if (resolution === 'detail') {
+          return {
+            nodes,
+            bytes_saved: 0,
+            resolution_map: (nodes as unknown as ContextPackNode[]).map((n) => ({
+              node_id: n.node_id,
+              resolution: 'detail' as const,
+            })),
+          }
+        }
+        // applyContextPackResolution preserves all fields and only
+        // mutates `snippet` to null, so the shape is structurally
+        // compatible with T. The exactOptionalPropertyTypes rule can't
+        // see through the spread; the as-cast bridges it.
+        // CodeRabbit fix: forward resolution_map so callers know which
+        // nodes were summarized vs kept in detail.
+        const result = applyContextPackResolution(
+          nodes as unknown as ContextPackNode[],
+          { resolution },
+        )
+        return {
+          nodes: result.nodes as unknown as T[],
+          bytes_saved: result.bytes_saved,
+          resolution_map: result.resolution_map,
+        }
+      }
+
       // Slice #81: delta-only context packs. When the caller passes a
       // delta_session_id we filter out nodes the agent has already
       // received in earlier turns of the same session, ship only the
@@ -897,20 +955,23 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         // Record the newly-shipped node ids so the next call's delta is
         // computed against the union of everything sent so far.
         helpers.recordContextPackNodeIds(deltaSessionId, collectPackNodeIds(deltaResult.delta_pack))
+        const deltaNodesStripped = deltaResult.delta_pack.nodes.map((node) => {
+          const { evidence_class: _evidenceClass, ...rest } = node
+          return rest
+        })
+        const resolvedDeltaNodes = applyResolutionToNodes(deltaNodesStripped)
         return helpers.ok(id, helpers.textToolResult(JSON.stringify({
           ...contextPackBasePayload(task, prompt, resolvedBudget, graphPath, initialPlan),
           mode: 'delta',
           delta_session_id: deltaSessionId,
           delta_applied: deltaResult.delta_applied,
           referenced_ids: deltaResult.referenced_ids,
-          bytes_saved: deltaResult.bytes_saved,
+          bytes_saved: deltaResult.bytes_saved + resolvedDeltaNodes.bytes_saved,
+          resolution,
           pack: {
             question: prompt,
             token_count: deltaResult.delta_pack.token_count,
-            matched_nodes: deltaResult.delta_pack.nodes.map((node) => {
-              const { evidence_class: _evidenceClass, ...rest } = node
-              return rest
-            }),
+            matched_nodes: resolvedDeltaNodes.nodes,
             relationships: deltaResult.delta_pack.relationships,
             community_context: deltaResult.delta_pack.community_context,
             graph_signals: deltaResult.delta_pack.graph_signals ?? { god_nodes: [], bridge_nodes: [] },
@@ -919,9 +980,17 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
           ...metadata,
         })))
       }
+      const resolvedNodes = applyResolutionToNodes(compactPack.matched_nodes)
       return helpers.ok(id, helpers.textToolResult(JSON.stringify({
         ...contextPackBasePayload(task, prompt, resolvedBudget, graphPath, initialPlan),
-        pack: compactPack,
+        resolution,
+        pack: {
+          ...compactPack,
+          matched_nodes: resolvedNodes.nodes,
+        },
+        ...(resolvedNodes.bytes_saved > 0
+          ? { bytes_saved_by_resolution: resolvedNodes.bytes_saved, resolution_map: resolvedNodes.resolution_map }
+          : {}),
         diagnostics,
         ...metadata,
       })))

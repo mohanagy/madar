@@ -134,6 +134,29 @@ export interface PrImpactResult {
    * compact pack before trusting it as the basis for review decisions.
    */
   uncovered_hotspots: ChangedNode[]
+  /**
+   * #79 (v0.16 refinement) — weighted coverage score in [0, 1]. Bridge
+   * and god-node hotspots count 3x more than regular high-impact nodes
+   * because their uncoverage carries asymmetric review risk: missing a
+   * bridge node in the review pack means an entire downstream community
+   * goes unreviewed. The unweighted `coverage_score` field above
+   * remains for back-compat; consumers should prefer `coverage_score_weighted`.
+   */
+  coverage_score_weighted: number
+  /**
+   * #79 (v0.16 refinement) — per-hotspot severity tiers. Same labels as
+   * `uncovered_hotspots`, plus a `severity` field of 'critical' (bridge
+   * or god node), 'high' (regular high-impact), or 'medium' (any other
+   * uncovered changed node).
+   */
+  uncovered_hotspot_severities: Array<{ label: string; severity: 'critical' | 'high' | 'medium' }>
+  /**
+   * #79 (v0.16 refinement) — labels among the high-impact set that are
+   * bridge / god nodes. Used by `compactPrImpactResult` so it can
+   * recompute the weighted coverage score against the compacted review
+   * bundle without re-deriving graph centrality.
+   */
+  critical_labels: string[]
 }
 
 export interface CompactPrImpactNodeImpact {
@@ -168,6 +191,8 @@ export interface CompactPrImpactResult extends Pick<
   | 'risk_summary'
   | 'coverage_score'
   | 'uncovered_hotspots'
+  | 'coverage_score_weighted'
+  | 'uncovered_hotspot_severities'
 > {
   per_node_impact: CompactPrImpactNodeImpact[]
   review_bundle: CompactPrReviewBundle
@@ -1026,6 +1051,9 @@ export function analyzePrImpact(
       risk_summary: { high_impact_nodes: [], cross_community_changes: 0, top_risks: [] },
       coverage_score: 1,
       uncovered_hotspots: [],
+      coverage_score_weighted: 1,
+      uncovered_hotspot_severities: [],
+      critical_labels: [],
     }
   }
 
@@ -1132,6 +1160,39 @@ export function analyzePrImpact(
     .map((node) => node.serialized)
     .filter((node) => highImpactLabelSet.has(node.label) && !reviewBundleLabels.has(node.label))
 
+  // #79 (v0.16) — weighted coverage score: bridge / god nodes count 3x.
+  // Total weight = Σ weight(hotspot); covered weight = same sum but only
+  // over labels that survive into the review_bundle. Default 1.0 when
+  // there are no high-impact hotspots (vacuously full coverage).
+  const CRITICAL_HOTSPOT_WEIGHT = 3
+  const REGULAR_HOTSPOT_WEIGHT = 1
+  const labelWeight = (label: string): number =>
+    (bridgeSet.has(label) || godSet.has(label)) ? CRITICAL_HOTSPOT_WEIGHT : REGULAR_HOTSPOT_WEIGHT
+  let totalWeight = 0
+  let coveredWeight = 0
+  for (const label of highImpactLabelSet) {
+    const weight = labelWeight(label)
+    totalWeight += weight
+    if (reviewBundleLabels.has(label)) coveredWeight += weight
+  }
+  const coverageScoreWeighted = totalWeight === 0 ? 1 : coveredWeight / totalWeight
+
+  // #79 (v0.16) — severity tiers on uncovered hotspots so reviewers can
+  // see at a glance which gaps need attention first.
+  // CodeRabbit nitpick fix: `uncoveredHotspots` is already pre-filtered
+  // to labels in `highImpactLabelSet`, so the 'medium' branch is
+  // unreachable. The full PrImpactResult.uncovered_hotspot_severities
+  // type still permits 'medium' for future expansion (e.g. non-high-
+  // impact changed nodes), but the construction here only produces
+  // 'critical' or 'high'.
+  const uncoveredHotspotSeverities: Array<{ label: string; severity: 'critical' | 'high' | 'medium' }> =
+    uncoveredHotspots.map((node) => {
+      const label = node.label
+      const severity: 'critical' | 'high' =
+        (bridgeSet.has(label) || godSet.has(label)) ? 'critical' : 'high'
+      return { label, severity }
+    })
+
   return {
     base_branch: baseBranch,
     changed_files: changedFiles.map((changedFile) => changedFile.path),
@@ -1160,6 +1221,9 @@ export function analyzePrImpact(
     },
     coverage_score: coverageScore,
     uncovered_hotspots: uncoveredHotspots,
+    coverage_score_weighted: coverageScoreWeighted,
+    uncovered_hotspot_severities: uncoveredHotspotSeverities,
+    critical_labels: [...highImpactLabelSet].filter((label) => bridgeSet.has(label) || godSet.has(label)),
   }
 }
 
@@ -1198,6 +1262,30 @@ export function compactPrImpactResult(result: PrImpactResult): CompactPrImpactRe
   const compactUncoveredHotspots = result.changed_nodes
     .filter((node) => compactHighImpactSet.has(node.label) && !compactedReviewLabels.has(node.label))
 
+  // #79 (v0.16) — recompute weighted score + severities against the
+  // post-compaction review bundle, reusing critical_labels from the
+  // full result (centrality is graph-derived and doesn't change under
+  // compaction).
+  const criticalSet = new Set(result.critical_labels)
+  let compactTotalWeight = 0
+  let compactCoveredWeight = 0
+  for (const label of compactHighImpactSet) {
+    const weight = criticalSet.has(label) ? 3 : 1
+    compactTotalWeight += weight
+    if (compactedReviewLabels.has(label)) compactCoveredWeight += weight
+  }
+  const compactCoverageScoreWeighted = compactTotalWeight === 0
+    ? 1
+    : compactCoveredWeight / compactTotalWeight
+  const compactUncoveredHotspotSeverities: Array<{ label: string; severity: 'critical' | 'high' | 'medium' }> =
+    compactUncoveredHotspots.map((node) => {
+      const label = node.label
+      let severity: 'critical' | 'high' | 'medium' = 'medium'
+      if (criticalSet.has(label)) severity = 'critical'
+      else if (compactHighImpactSet.has(label)) severity = 'high'
+      return { label, severity }
+    })
+
   return {
     base_branch: result.base_branch,
     changed_files: compactChangedFiles,
@@ -1225,5 +1313,7 @@ export function compactPrImpactResult(result: PrImpactResult): CompactPrImpactRe
     // otherwise it shows up in compactUncoveredHotspots.
     coverage_score: compactCoverageScore,
     uncovered_hotspots: compactUncoveredHotspots,
+    coverage_score_weighted: compactCoverageScoreWeighted,
+    uncovered_hotspot_severities: compactUncoveredHotspotSeverities,
   }
 }

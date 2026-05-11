@@ -70,6 +70,9 @@ function fixture(opts: {
     },
     coverage_score: opts.coverageScore,
     uncovered_hotspots: opts.uncoveredLabels.map((label) => changedNode(label, 'src/x.ts')),
+    coverage_score_weighted: opts.coverageScore,
+    uncovered_hotspot_severities: opts.uncoveredLabels.map((label) => ({ label, severity: 'high' as const })),
+    critical_labels: [],
   }
 }
 
@@ -150,6 +153,9 @@ describe('PR-impact coverage scoring (#79)', () => {
       // Verbose claims full coverage; compact must NOT inherit this.
       coverage_score: 1,
       uncovered_hotspots: [],
+      coverage_score_weighted: 1,
+      uncovered_hotspot_severities: [],
+      critical_labels: [],
     }
 
     const compact = compactPrImpactResult(full)

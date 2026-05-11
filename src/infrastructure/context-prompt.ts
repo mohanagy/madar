@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto'
+
 import type { ContextSessionDelta, ContextSessionState } from '../contracts/context-session.js'
 import { buildContextSession } from '../runtime/context-session.js'
 import { estimateQueryTokens } from '../runtime/serve.js'
@@ -57,6 +59,15 @@ export interface BuiltContextPrompt {
   session_state: ContextSessionState
   session_delta: ContextSessionDelta
   metrics: ContextPromptMetrics
+  /**
+   * #80 (v0.16) — sha256-16 of the stable_prefix. Byte-stable across
+   * runs whenever the underlying graph/anchor are unchanged. Consumers
+   * can compare this hash between runs to verify that Anthropic's
+   * automatic prompt cache will reuse the prefix (cache-aware prompt
+   * layout). When the hash changes, the cache will miss; when it
+   * stays the same, the cache should hit.
+   */
+  stable_prefix_hash: string
 }
 
 const STABLE_PREFIX_INSTRUCTIONS_REF = '__stable_prefix:instructions'
@@ -164,9 +175,12 @@ export function buildContextPrompt(input: BuildContextPromptInput): BuiltContext
       ? raw_prompt_tokens
       : Math.max(0, raw_prompt_tokens - session_delta.reused_token_count)
 
+  const stable_prefix_hash = createHash('sha256').update(stable_prefix).digest('hex').slice(0, 16)
+
   return {
     prompt,
     stable_prefix,
+    stable_prefix_hash,
     dynamic_suffix,
     session_payload,
     ordered_stable_refs: ordered_sections.map((section) => section.ref),

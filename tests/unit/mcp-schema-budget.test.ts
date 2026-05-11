@@ -17,7 +17,7 @@ import { activeMcpTools, MCP_TOOLS } from '../../src/runtime/stdio/definitions.j
 // small growth buffer without permitting a silent regression.
 
 const CORE_PROFILE_BYTE_CEILING = 3_100
-const FULL_PROFILE_BYTE_CEILING = 12_000
+const FULL_PROFILE_BYTE_CEILING = 12_200  // v0.16: raised from 12,000 to accommodate the #76 resolution parameter on context_pack
 
 function payloadBytes(tools: ReadonlyArray<unknown>): number {
   return JSON.stringify({ tools }).length
