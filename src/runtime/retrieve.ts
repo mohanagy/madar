@@ -966,10 +966,11 @@ function frameworkBoostForNode(
     }
   }
   if (metadata.http_method && questionLower) {
-    // Question mentioning the verb literally — uppercase compare since
-    // questionLower is already lowercased.
+    // CodeRabbit fix: word-boundary check so http_method 'GET' doesn't
+    // match 'budget' / 'forget' / 'target' / etc. Verb is lowercased to
+    // match questionLower which is already lowercased upstream.
     const verb = metadata.http_method.toLowerCase()
-    if (verb && questionLower.includes(verb)) {
+    if (verb && new RegExp(`\\b${verb}\\b`).test(questionLower)) {
       boost += 1.5
     }
   }
@@ -1420,7 +1421,19 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
       { fileNodeLike, fileOrientedQuestion },
     )
 
-    if (score.total > 0) {
+    // CodeRabbit fix: compute framework boost BEFORE the seed gate so
+    // metadata-only matches (e.g. a `handler()` node tagged with
+    // route_path that the question names verbatim) can become a seed
+    // even when the label has no token overlap.
+    const metadataBoost = frameworkBoostForNode(
+      frameworkProfile,
+      nodeKind,
+      frameworkRole,
+      frameworkMetadataFromAttributes(attributes),
+      questionLower,
+    )
+
+    if (score.total > 0 || metadataBoost > 0) {
       const resolvedLine = resolvedLineNumber(attributes)
       seedCandidates.push({
         id,
@@ -1438,11 +1451,15 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
         fileType,
         fileNodeLike,
         community,
-        frameworkBoost: frameworkBoostForNode(frameworkProfile, nodeKind, frameworkRole, frameworkMetadataFromAttributes(attributes), questionLower),
+        frameworkBoost: metadataBoost,
         seedScore: score,
         exactLabelMatch: score.labelExactScore > 0,
         sourcePathMatch: score.sourcePathScore > 0,
-        evidenceTier: evidenceTierForSeedScore(score),
+        // When the seed only made it in via metadata boost, give it at
+        // least evidence tier 1 so it's not at the bottom of the heap.
+        evidenceTier: metadataBoost > 0
+          ? (Math.max(evidenceTierForSeedScore(score), 1) as 0 | 1 | 2)
+          : evidenceTierForSeedScore(score),
         relevanceBand: score.labelExactScore > 0 || score.labelTokenScore > 0 ? 'direct' : 'related',
       })
     }

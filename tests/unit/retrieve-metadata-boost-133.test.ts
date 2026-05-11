@@ -131,6 +131,63 @@ describe('Framework metadata-aware retrieval boost (#133)', () => {
     expect((cancel?.framework_boost ?? 0)).toBeGreaterThan(getUser?.framework_boost ?? 0)
   })
 
+  it('seeds a node whose ONLY evidence is metadata match — label has no token overlap (CodeRabbit fix)', () => {
+    // The handler is named `h` — no token overlap with the question. The
+    // ONLY way it ends up in the seed set is via route_path metadata
+    // matching the question's '/orders/:id' substring. Before the
+    // CodeRabbit fix this node was invisible to lexical retrieval and
+    // would never be ranked.
+    writeFile(sandbox, 'src/server.ts', [
+      'import express from "express"',
+      'export const app = express()',
+      'export function h(): void {}',
+      'app.get("/orders/:id", h)',
+    ].join('\n') + '\n')
+
+    const result = generateGraph(sandbox, { useSpi: true, noHtml: true })
+    const graph = loadGraph(result.graphPath)
+    const retrieved = retrieveContext(graph, {
+      question: 'Find the handler for the /orders/:id endpoint',
+      budget: 2000,
+    })
+
+    const h = retrieved.matched_nodes.find((n) => n.label === 'h()')
+    expect(h).toBeDefined()
+    expect(h?.framework_boost ?? 0).toBeGreaterThan(0)
+  })
+
+  it('http_method match uses word boundaries — "GET" does NOT match "budget" (CodeRabbit fix)', () => {
+    writeFile(sandbox, 'src/server.ts', [
+      'import express from "express"',
+      'export const app = express()',
+      'export function listItems(): void {}',
+      'app.get("/items", listItems)',
+    ].join('\n') + '\n')
+
+    const result = generateGraph(sandbox, { useSpi: true, noHtml: true })
+    const graph = loadGraph(result.graphPath)
+    // Question mentions "budget" (which CONTAINS the substring "get")
+    // but NOT the literal verb GET. The word-boundary regex must not
+    // fire here.
+    const retrieved = retrieveContext(graph, {
+      question: 'How does the project manage its budget for items',
+      budget: 2000,
+    })
+
+    const node = retrieved.matched_nodes.find((n) => n.label === 'listItems()')
+    // Some boost may still apply from route_path '/items' matching, but
+    // the http_method +1.5 should NOT fire. The strongest assertion we
+    // can make: the boost should be less than it would be if the verb
+    // genuinely matched. We check by comparing against a query that
+    // DOES use the verb literally.
+    const retrievedVerb = retrieveContext(graph, {
+      question: 'GET request to /items',
+      budget: 2000,
+    })
+    const nodeVerb = retrievedVerb.matched_nodes.find((n) => n.label === 'listItems()')
+    expect((nodeVerb?.framework_boost ?? 0)).toBeGreaterThan(node?.framework_boost ?? 0)
+  })
+
   it('does NOT apply metadata boost when the question contains no matching substring', () => {
     writeFile(sandbox, 'src/server.ts', [
       'import express from "express"',
