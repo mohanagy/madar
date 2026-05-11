@@ -12,7 +12,22 @@
 
 graphify-ts indexes a TypeScript/Node workspace (and PR diffs) into a local knowledge graph, then compiles that graph into the **smallest verifiable context pack** the agent actually needs for the task at hand. No cloud upload, no API key for indexing, no SaaS dashboard — just a local subprocess your agent talks to over MCP.
 
+> **What's new in v0.20** — `graphify-ts generate --spi` ships framework metadata (`route_path`, `http_method`, slice names, tRPC procedure names, etc.) into `graph.json` for 9 substrates (Express, NestJS, Next.js, React Router, Redux Toolkit, Hono, Fastify, tRPC, Prisma). Measured on the bundled fixture: **−26% pack tokens** and **−32% graph.json size** vs the legacy pipeline. See [`docs/benchmarks/2026-05-11-spi-vs-legacy/`](docs/benchmarks/2026-05-11-spi-vs-legacy/) and [`CHANGELOG.md`](CHANGELOG.md#0200---2026-05-11).
+>
+> **Try it:**
+> ```bash
+> graphify-ts generate . --spi                                  # framework metadata flows into graph.json
+> jq '.nodes[] | select(.framework_role)' graphify-out/graph.json | head -40
+> graphify-ts generate . --spi                                  # second run = SPI cache hit (≈48% faster)
+> ```
+> The new `resolution`, `delta_session_id`, and `selection_strategy` options are available on the MCP `context_pack` tool — see [examples/mcp-tool-examples.md](examples/mcp-tool-examples.md).
+
 ### See it in action
+
+[![▶ Watch the 30-second demo](https://img.shields.io/badge/%E2%96%B6%EF%B8%8E-Watch%20the%2030%E2%80%91second%20demo-3c873a?style=for-the-badge)](https://github.com/mohanagy/graphify-ts#see-it-in-action)
+
+<!-- GitHub auto-embeds the user-attachment video below; npm renders it as a link only.
+     The shields.io button above is the npm-visible affordance back to the inline player on GitHub. -->
 
 https://github.com/user-attachments/assets/a502185f-fa12-4a8f-80d2-172847f209fd
 
@@ -43,7 +58,7 @@ graphify-ts fixes the loop: build the graph once, then compile a task-specific c
 - **Multi-repo federation** — merge frontend + backend + shared graphs so one agent session can reason across repo boundaries.
 - **Local-first by design**: tree-sitter AST extraction, BM25 lexical retrieval, optional ONNX embeddings (`Xenova/all-MiniLM-L6-v2`), optional cross-encoder reranker — all on your machine.
 
-> Deepest extraction is for **TypeScript/JavaScript** with framework-aware passes for Express, Redux Toolkit, React Router, NestJS, and Next.js. Python, Ruby, Go, Java, and Rust use tree-sitter AST. C / Kotlin / C# / Scala / PHP / Swift / Zig use a generic structural extractor. Full matrix: [`docs/language-capability-matrix.md`](docs/language-capability-matrix.md).
+> Deepest extraction is for **TypeScript/JavaScript** with framework-aware passes for **Express, NestJS, Next.js, React Router, Redux Toolkit, Hono, Fastify, tRPC, and Prisma** (9 substrates, opt in via `graphify-ts generate --spi`). Python, Ruby, Go, Java, and Rust use tree-sitter AST. C / Kotlin / C# / Scala / PHP / Swift / Zig use a generic structural extractor. Full matrix: [`docs/language-capability-matrix.md`](docs/language-capability-matrix.md).
 
 ---
 
@@ -240,7 +255,7 @@ The only command that hits an external service is the optional `compare` / `revi
 We measure and publish honest numbers, including the trade-offs. Smaller context is not automatically better unless the selected context is relevant — which is why graphify-ts ships coverage contracts (`benchmark`, `eval`, `review-compare`) that prove the smaller pack still contains the required evidence.
 
 1. **Cold-start sessions add a one-time MCP/tool-schema cost at session init.** As of #82 the core (6-tool) profile emits **~3,000 bytes / ~750 tokens** on `tools/list` (down from ~4,270 bytes / ~1,070 tokens, a 30% reduction). The cold-start premium against the no-graph baseline scales with that number; the previously documented "~13%" figure was measured against the older 5K overhead and will be re-benchmarked in the next release. Multi-question sessions amortize this overhead and end up cheaper. A regression test (`tests/unit/mcp-schema-budget.test.ts`) pins the byte ceiling so future tool additions can't silently re-inflate it.
-2. **Deep extraction is best on JS/TS** with framework-aware passes for Express, Redux Toolkit, React Router, NestJS, and Next.js. Python / Ruby / Go / Java / Rust use tree-sitter AST. C / Kotlin / C# / Scala / PHP / Swift / Zig use a generic structural extractor.
+2. **Deep extraction is best on JS/TS** with framework-aware passes for Express, NestJS, Next.js, React Router, Redux Toolkit, Hono, Fastify, tRPC, and Prisma. Python / Ruby / Go / Java / Rust use tree-sitter AST. C / Kotlin / C# / Scala / PHP / Swift / Zig use a generic structural extractor.
 3. **Static analysis cannot resolve every dynamic runtime behavior.** Runtime-generated routes, heavy meta-programmed decorators, and string-built imports fall back to the base AST graph rather than pretending to be first-class semantics.
 4. **Token reduction depends on project structure and task type.** "How does auth work?" benefits more than "fix this typo." Always validate important code changes with tests and review.
 5. **Some workflows still need full file reads** — large multi-file refactors, generated-code spelunking, or anything where you actively need to see whole-file context. graphify-ts narrows the agent's first read; it doesn't replace its ability to read.
@@ -253,7 +268,7 @@ We measure and publish honest numbers, including the trade-offs. Smaller context
 Implemented today:
 
 - ✅ Local graph build for TS/JS/Python/Ruby/Go/Java/Rust + framework-aware TS/JS
-- ✅ Semantic Program Index (SPI) v1 — TypeScript type-checker-backed substrate with NestJS / Express / Next.js / React Router / Redux Toolkit / **Hono / Fastify / tRPC / Prisma** framework metadata (`route_path`, slice/store keys, RTK Query endpoints, mount-prefix resolution, tRPC procedure synthesis). Opt in via `graphify-ts generate --spi` to ship framework metadata in `graph.json` and use the SPI disk cache.
+- ✅ Semantic Program Index (SPI) v1 — TypeScript type-checker-backed substrate with NestJS / Express / Next.js / React Router / Redux Toolkit / **Hono / Fastify / tRPC / Prisma** framework metadata (`route_path`, `http_method`, slice/store keys, RTK Query endpoints, mount-prefix resolution, tRPC procedure synthesis). Opt in via `graphify-ts generate --spi` to ship framework metadata in `graph.json` and use the SPI disk cache.
 - ✅ MCP server with core (6 tools) and full (25 tools) profiles
 - ✅ `pr_impact` + `review-compare` for diff-aware PR review
 - ✅ Provider-aware prompt compiler (`prompt`) with Claude cache-reuse semantics
@@ -263,16 +278,20 @@ Implemented today:
 - ✅ Native installers for Claude Code, Cursor, Copilot CLI, Gemini CLI, Aider, OpenCode
 - ✅ Tighter cold-start MCP overhead (core profile ~3,000 bytes, down from ~4,270 — 30% drop, see #82)
 - ✅ Incremental SPI cache — `buildSpiCached` skips the ts.Program pass on unchanged workspaces (#77)
-- ✅ Multi-resolution context — `resolution: detail | summary | mixed` on `context_pack` (#76)
-- ✅ Better PR-impact coverage scoring — `coverage_score_weighted` (3x for bridge/god hotspots) + severity tiers (#79)
+- ✅ Multi-resolution context — `resolution: detail | summary | mixed | signature` on `context_pack` (#76 / #132)
+- ✅ Better PR-impact coverage scoring — `coverage_score_weighted` (3× for bridge/god hotspots) + severity tiers (#79)
 - ✅ Cache-aware prompt layout — `stable_prefix_hash` makes cache-reuse measurable across runs (#80)
 - ✅ Delta-only context packs between runs — `delta_session_id` on `context_pack` ships only new nodes per session (#81)
 - ✅ Context-pack quality diagnostics & bad-run detection — `quality_score` + structural warnings on every pack (#78)
-- ✅ Budgeted value-per-token selection helper — density-greedy `selectByValuePerToken` (#74)
+- ✅ Framework-aware retrieval — `framework_role` boost + metadata-aware match on `route_path` / `http_method` / `slice_name` / `procedure_name` (#129, #133)
+- ✅ `--spi` benchmark proves the substrate moves tokens — measured **−26%** pack tokens, **−32%** graph.json size on the bundled framework fixture (#130; receipts in [`docs/benchmarks/2026-05-11-spi-vs-legacy/`](docs/benchmarks/2026-05-11-spi-vs-legacy/))
+- ✅ Value-per-token selection_strategy on `compileContextPack` — density-greedy candidate selection under budget (#74 / #131)
+- ✅ SPI default-readiness criteria — graduation checklist for flipping `--spi` to default (#134; see [`docs/decisions/2026-05-11-spi-default-readiness.md`](docs/decisions/2026-05-11-spi-default-readiness.md))
 
 Planned:
 
-- 🔜 Deeper Python / Go semantic passes beyond tree-sitter AST
+- 🔜 Task-conditioned program slicing v1 — `task → anchors → backward/forward behavior slice → budgeted pack` integration (#135)
+- 🔜 Deeper Python / Go semantic passes beyond tree-sitter AST (#84)
 
 ---
 
