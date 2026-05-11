@@ -1017,7 +1017,13 @@ function fallbackRetrieveCoverage(result: RetrieveResult): ContextPackCoverage {
   }
 }
 
-function contextPackFromRetrieveResult(
+/**
+ * Build the full CompiledContextPack representation of a RetrieveResult.
+ * Exported in v0.15 so the context-pack diagnostics scorer (#78) can
+ * compute structural quality signals against the same shape the compact
+ * stdio response is derived from.
+ */
+export function contextPackFromRetrieveResult(
   result: RetrieveResult,
 ): CompiledContextPack<ContextPackNode, RetrieveRelationship, RetrieveCommunityContext> {
   return {

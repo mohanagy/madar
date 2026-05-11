@@ -25,7 +25,8 @@ import { pickImpactTarget } from '../context-pack-target.js'
 import { analyzeImpact, callChains, compactImpactResult, type ImpactResult } from '../impact.js'
 import { analyzePrImpact, compactPrImpactResult } from '../pr-impact.js'
 import { relevantFiles } from '../relevant-files.js'
-import { collectRelationships, compactRetrieveResult, readSnippet, retrieveContext, retrieveContextAsync, type RetrieveResult } from '../retrieve.js'
+import { collectRelationships, compactRetrieveResult, contextPackFromRetrieveResult, readSnippet, retrieveContext, retrieveContextAsync, type RetrieveResult } from '../retrieve.js'
+import { computeContextPackDiagnostics } from '../context-pack-diagnostics.js'
 import { riskMap } from '../risk-map.js'
 import { buildTaskContextPlan } from '../task-context-planner.js'
 import type { TimeTravelView } from '../time-travel.js'
@@ -870,9 +871,14 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       const compactPack = compactRetrieveResult(retrieval)
       const metadata = contextMetadata(retrieval)
       storeExpandableHandles(prompt, task, initialPlan.evidence.recipe_id, metadata.expandable, helpers)
+      // Slice #78: emit context-pack quality diagnostics so callers can
+      // detect bad runs (missing required evidence, zero claims, weak
+      // retrieval, etc.) without re-implementing the heuristics.
+      const diagnostics = computeContextPackDiagnostics(contextPackFromRetrieveResult(retrieval))
       return helpers.ok(id, helpers.textToolResult(JSON.stringify({
         ...contextPackBasePayload(task, prompt, resolvedBudget, graphPath, initialPlan),
         pack: compactPack,
+        diagnostics,
         ...metadata,
       })))
     }
