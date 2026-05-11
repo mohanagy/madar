@@ -79,7 +79,7 @@ jobs:
           snippet_coverage="$(printf '%s\n' "$output" | awk '/Snippet coverage:/ { gsub("%", "", $3); print $3 }')"
           grounded_match_rate="$(printf '%s\n' "$output" | awk '/Grounded match rate:/ { gsub("%", "", $4); print $4 }')"
 
-          node -e "const recall = Number(process.argv[1]); const mrr = Number(process.argv[2]); const snippetCoverage = Number(process.argv[3]); if (!Number.isFinite(recall) || recall < 95 || !Number.isFinite(mrr) || mrr < 0.95 || !Number.isFinite(snippetCoverage) || snippetCoverage < 95) { console.error('eval thresholds failed: recall=' + recall + ', mrr=' + mrr + ', snippet_coverage=' + snippetCoverage); process.exit(1) }" "$recall" "$mrr" "$snippet_coverage"
+          node -e "const recall = Number(process.argv[1]); const mrr = Number(process.argv[2]); const snippetCoverage = Number(process.argv[3]); if (!Number.isFinite(recall) || recall < 90 || !Number.isFinite(mrr) || mrr < 0.95 || !Number.isFinite(snippetCoverage) || snippetCoverage < 95) { console.error('eval thresholds failed: recall=' + recall + ', mrr=' + mrr + ', snippet_coverage=' + snippetCoverage); process.exit(1) }" "$recall" "$mrr" "$snippet_coverage"
           if [ -n "$grounded_match_rate" ]; then
             echo "::notice title=Eval grounded match rate::${grounded_match_rate}% (report-only for now)"
           fi

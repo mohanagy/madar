@@ -241,6 +241,10 @@ type RelationIndex = {
   labelsById: Map<string, string>
 }
 
+function preferredRelationKeys(id: string | undefined, label: string): string[] {
+  return typeof id === 'string' && id.length > 0 ? [id] : [label]
+}
+
 function buildRelationshipIndex(
   relationships: readonly ContextPackRelationship[],
   nodes: readonly ContextPackNode[],
@@ -256,8 +260,8 @@ function buildRelationshipIndex(
   }
 
   for (const relationship of relationships) {
-    const fromKeys = [relationship.from_id, relationship.from].filter((value): value is string => typeof value === 'string' && value.length > 0)
-    const toKeys = [relationship.to_id, relationship.to].filter((value): value is string => typeof value === 'string' && value.length > 0)
+    const fromKeys = preferredRelationKeys(relationship.from_id, relationship.from)
+    const toKeys = preferredRelationKeys(relationship.to_id, relationship.to)
 
     for (const key of fromKeys) {
       outgoing.set(key, [...(outgoing.get(key) ?? []), relationship])
@@ -271,7 +275,7 @@ function buildRelationshipIndex(
 }
 
 function relationKey(node: ContextPackNode): string[] {
-  return [node.node_id, node.label].filter((value): value is string => typeof value === 'string' && value.length > 0)
+  return preferredRelationKeys(node.node_id, node.label)
 }
 
 function relationLabels(

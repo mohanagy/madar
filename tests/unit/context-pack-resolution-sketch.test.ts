@@ -102,4 +102,30 @@ describe('applyContextPackResolution sketch mode', () => {
     expect(result.nodes[0]?.snippet).toBe('export function standalone(input: string): string {')
     expect(result.resolution_map).toEqual([{ node_id: 'standalone', resolution: 'signature' }])
   })
+
+  it('does not conflate distinct nodes that share the same label when ids are available', () => {
+    const result = applyContextPackResolution(
+      [
+        node({ node_id: 'controller_auth', label: 'AuthService', snippet: 'export class AuthService {}' }),
+        node({ node_id: 'controller_dep', label: 'CookieService.set', snippet: 'export function set() {}' }),
+        node({ node_id: 'worker_auth', label: 'AuthService', snippet: 'export class AuthService {}' }),
+        node({ node_id: 'worker_dep', label: 'QueueClient.publish', snippet: 'export function publish() {}' }),
+      ],
+      {
+        resolution: 'sketch',
+        relationships: [
+          relationship('controller_auth', 'controller_dep', 'calls'),
+          relationship('worker_auth', 'worker_dep', 'calls'),
+        ],
+      },
+    )
+
+    const controllerAuth = result.nodes.find((entry) => entry.node_id === 'controller_auth')
+    const workerAuth = result.nodes.find((entry) => entry.node_id === 'worker_auth')
+
+    expect(controllerAuth?.snippet).toContain('calls: CookieService.set')
+    expect(controllerAuth?.snippet).not.toContain('QueueClient.publish')
+    expect(workerAuth?.snippet).toContain('calls: QueueClient.publish')
+    expect(workerAuth?.snippet).not.toContain('CookieService.set')
+  })
 })

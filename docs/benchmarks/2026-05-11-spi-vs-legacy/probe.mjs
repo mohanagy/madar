@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { readFileSync } from 'node:fs'
+import { basename, relative, resolve } from 'node:path'
 
 import { computeContextPackDiagnostics } from '../../../dist/src/runtime/context-pack-diagnostics.js'
 import { contextPackFromRetrieveResult, retrieveContext } from '../../../dist/src/runtime/retrieve.js'
@@ -17,6 +18,10 @@ const graph = loadGraph(graphPath)
 const prompts = JSON.parse(readFileSync(promptsPath, 'utf8')).prompts
 const budget = 2000
 const retrievalLevels = [1, 2, 3, 4]
+const graphPathForOutput = (() => {
+  const normalized = relative(resolve(process.cwd()), resolve(graphPath))
+  return normalized.length > 0 && !normalized.startsWith('..') ? normalized : basename(graphPath)
+})()
 
 function summarizeRun(result) {
   const pack = contextPackFromRetrieveResult(result)
@@ -91,7 +96,7 @@ const promptAnalyses = prompts.map((prompt) => {
 })
 
 console.log(JSON.stringify({
-  graph_path: graphPath,
+  graph_path: graphPathForOutput,
   budget,
   prompts: promptAnalyses,
 }, null, 2))
