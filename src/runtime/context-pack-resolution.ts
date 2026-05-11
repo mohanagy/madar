@@ -21,7 +21,7 @@
 
 import type { ContextPackNode } from '../contracts/context-pack.js'
 
-export type ContextPackResolution = 'detail' | 'summary' | 'mixed'
+export type ContextPackResolution = 'detail' | 'summary' | 'mixed' | 'signature'
 
 export interface ApplyResolutionOptions {
   resolution: ContextPackResolution
@@ -56,9 +56,52 @@ export function applyContextPackResolution<T extends ContextPackNode>(
     return summarizeAll(nodes)
   }
 
+  if (options.resolution === 'signature') {
+    return signatureResolution(nodes)
+  }
+
   // mixed: top-N detail by match_score desc, rest summary.
   const n = options.detail_top_n ?? Math.ceil(nodes.length / 3)
   return mixedResolution(nodes, Math.max(0, n))
+}
+
+/** Signature resolution: keep the first 1-2 lines of the snippet (the
+ *  function/class signature) and drop the body. Middle ground between
+ *  full `detail` and bare `summary`. Useful when the agent needs to see
+ *  parameter types and return shape but doesn't need the body.
+ *
+ *  Heuristic: keep lines up to and including the line that ends with `{`
+ *  (the opening brace), then drop the rest. If no `{` is found in the
+ *  first 3 lines, keep the first 2 lines as a best-effort signature. */
+function signatureResolution<T extends ContextPackNode>(
+  nodes: ReadonlyArray<T>,
+): ApplyResolutionResult<T> {
+  let bytesSaved = 0
+  const transformed = nodes.map((node) => {
+    if (typeof node.snippet !== 'string' || node.snippet.length === 0) return node
+    const sig = extractSignature(node.snippet)
+    bytesSaved += Math.max(0, node.snippet.length - sig.length)
+    return { ...node, snippet: sig } as T
+  })
+  return {
+    nodes: transformed,
+    resolution_map: nodes.map((n) => ({ node_id: n.node_id, resolution: 'summary' as const })),
+    bytes_saved: bytesSaved,
+  }
+}
+
+function extractSignature(snippet: string): string {
+  const lines = snippet.split('\n')
+  for (let i = 0; i < Math.min(3, lines.length); i += 1) {
+    const line = lines[i]
+    if (line === undefined) continue
+    if (line.trimEnd().endsWith('{') || line.trimEnd().endsWith('=>')) {
+      return lines.slice(0, i + 1).join('\n')
+    }
+  }
+  // No brace found in the first 3 lines — take the first 2 as the
+  // best-effort signature, or the whole snippet if it's shorter.
+  return lines.slice(0, Math.min(2, lines.length)).join('\n')
 }
 
 function summarizeAll<T extends ContextPackNode>(
