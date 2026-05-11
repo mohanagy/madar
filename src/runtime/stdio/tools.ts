@@ -913,7 +913,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       ): {
         nodes: T[]
         bytes_saved: number
-        resolution_map: Array<{ node_id: string | undefined; resolution: 'detail' | 'summary' }>
+        resolution_map: Array<{ node_id: string | undefined; resolution: 'detail' | 'summary' | 'signature' }>
       } => {
         if (resolution === 'detail') {
           return {

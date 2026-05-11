@@ -32,8 +32,10 @@ export interface ApplyResolutionOptions {
 
 export interface ApplyResolutionResult<T extends ContextPackNode> {
   nodes: T[]
-  /** Per-node resolution after applying. Useful for diagnostics. */
-  resolution_map: Array<{ node_id: string | undefined; resolution: 'detail' | 'summary' }>
+  /** Per-node resolution after applying. Useful for diagnostics.
+   *  v0.20 #132: includes 'signature' for nodes where the body was
+   *  dropped but the function signature retained. */
+  resolution_map: Array<{ node_id: string | undefined; resolution: 'detail' | 'summary' | 'signature' }>
   /** Estimated bytes saved (rough — based on dropped snippet length). */
   bytes_saved: number
 }
@@ -85,7 +87,10 @@ function signatureResolution<T extends ContextPackNode>(
   })
   return {
     nodes: transformed,
-    resolution_map: nodes.map((n) => ({ node_id: n.node_id, resolution: 'summary' as const })),
+    // CodeRabbit fix: signature mode is its own resolution, NOT 'summary'.
+    // Downstream diagnostics differentiate 'has signature info' from
+    // 'has no body at all'.
+    resolution_map: nodes.map((n) => ({ node_id: n.node_id, resolution: 'signature' as const })),
     bytes_saved: bytesSaved,
   }
 }
@@ -136,7 +141,7 @@ function mixedResolution<T extends ContextPackNode>(
 
   let bytesSaved = 0
   const out: T[] = []
-  const resolutionMap: Array<{ node_id: string | undefined; resolution: 'detail' | 'summary' }> = []
+  const resolutionMap: Array<{ node_id: string | undefined; resolution: 'detail' | 'summary' | 'signature' }> = []
   nodes.forEach((node, idx) => {
     if (detailIndices.has(idx)) {
       out.push(node)

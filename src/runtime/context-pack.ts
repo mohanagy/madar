@@ -622,10 +622,16 @@ export function compileContextPack<
   const selectedCounts = new Map<ContextPackEvidenceClass, number>()
   const selectedLabelsByEvidence = new Map<ContextPackEvidenceClass, string[]>()
   const selectedCommunities = new Set<number>()
+  // CodeRabbit fix: track placed candidate objects directly. Earlier
+  // version derived omittedNodes from materialized label:source_file:line
+  // triples, which can mis-attribute when build_entry fills in missing
+  // source metadata or when two distinct candidates share the same triple.
+  const placedCandidates = new Set<ContextPackNodeCandidate<TNode>>()
   let tokenCount = 0
   let breakIndex = orderedNodes.length
 
   const placeCandidate = (candidate: ContextPackNodeCandidate<TNode>, candidateTokens: number): void => {
+    placedCandidates.add(candidate)
     const entry = candidate.build_entry()
     selectedNodes.push(entry)
     selectedCoverage.push({
@@ -671,26 +677,36 @@ export function compileContextPack<
         optionalCandidates.push(candidate)
       }
     }
+    // CodeRabbit fix: skip individual oversize required candidates with
+    // `continue` instead of `break`, so one fat required entry doesn't
+    // kill subsequent smaller required ones. The break-on-first-overflow
+    // mirrored the evidence-order loop but is wrong here — required
+    // candidates each have an independent must-include semantic.
     for (const candidate of requiredCandidates) {
       const candidateTokens = candidate.estimate_tokens()
       if (tokenCount + candidateTokens > input.task_contract.budget && selectedNodes.length > 0) {
-        break
+        continue
       }
       placeCandidate(candidate, candidateTokens)
     }
     const remainingBudget = Math.max(0, input.task_contract.budget - tokenCount)
-    // ContextPackNodeCandidate doesn't expose a numeric relevance score
-    // directly (it was lost during materialization upstream), so use the
-    // candidate's position in orderedNodes as a rank proxy: earlier
-    // candidates are higher-evidence and get a higher score. The
-    // value-per-token selector then balances this rank against token
-    // cost so dense/cheap candidates outrank expensive low-rank ones.
-    const valueCandidates: Array<ValuePerTokenCandidate<ContextPackNodeCandidate<TNode>>> = optionalCandidates.map((candidate, idx) => ({
-      id: `${candidate.label}:${candidate.source_file}:${candidate.line_number}`,
-      payload: candidate,
-      score: 1 / (idx + 1),
-      token_cost: candidate.estimate_tokens(),
-    }))
+    // CodeRabbit fix: rank score uses each optional's position in
+    // orderedNodes (the global rank), not its index within
+    // optionalCandidates. Otherwise a leading run of required
+    // candidates would compress the optional rank space and inflate
+    // every optional's score.
+    const orderedNodeIndex = new Map<ContextPackNodeCandidate<TNode>, number>(
+      orderedNodes.map((c, i) => [c, i] as const),
+    )
+    const valueCandidates: Array<ValuePerTokenCandidate<ContextPackNodeCandidate<TNode>>> = optionalCandidates.map((candidate) => {
+      const orderedIdx = orderedNodeIndex.get(candidate) ?? orderedNodes.length
+      return {
+        id: `${candidate.label}:${candidate.source_file}:${candidate.line_number}`,
+        payload: candidate,
+        score: 1 / (orderedIdx + 1),
+        token_cost: candidate.estimate_tokens(),
+      }
+    })
     const valueResult = selectByValuePerToken(valueCandidates, { budget: remainingBudget })
     for (const sel of valueResult.selected) {
       placeCandidate(sel.payload, sel.token_cost)
@@ -709,11 +725,10 @@ export function compileContextPack<
 
   // omittedNodes is what we couldn't fit. For evidence-order it's the
   // tail after the break; for value-per-token it's the set difference
-  // between orderedNodes and what placeCandidate accepted.
-  const placedLabelKey = (c: ContextPackNodeCandidate<TNode>): string => `${c.label}:${c.source_file}:${c.line_number}`
-  const placedKeys = new Set(selectedNodes.map((n) => `${n.label}:${n.source_file}:${n.line_number}`))
+  // between orderedNodes and what placeCandidate accepted (CodeRabbit
+  // fix: use the candidate-identity Set instead of materialized triples).
   const omittedNodes = input.selection_strategy === 'value-per-token'
-    ? orderedNodes.filter((c) => !placedKeys.has(placedLabelKey(c)))
+    ? orderedNodes.filter((c) => !placedCandidates.has(c))
     : orderedNodes.slice(breakIndex)
   const relationships = filterRelationships(input.relationships ?? [], selectedNodes)
   const includedLabels = new Set(selectedNodes.map((node) => node.label))
