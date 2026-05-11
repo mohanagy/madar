@@ -132,21 +132,39 @@ describe('SPI Express mount-prefix resolution (slice 1c-ii.g)', () => {
     })
   })
 
-  describe('finalizer idempotence', () => {
-    it('does not double-apply the prefix when the route_path already starts with it', () => {
+  describe('Express mount semantics: prefix is ALWAYS prepended', () => {
+    it('prepends the mount prefix even when the router-local path equals the prefix (CodeRabbit fix)', () => {
+      // Express semantics: a router mounted at '/api' that has a route
+      // registered at '/api' answers requests to '/api/api', NOT '/api'.
+      // The previous slice 1c-ii.g implementation incorrectly collapsed
+      // this case via a misguided idempotence check; the regression
+      // pins the corrected behavior.
       writeFile(sandbox, 'src/server.ts', [
         'import express, { Router } from "express"',
         'export const app = express()',
         'export const usersRouter = Router()',
         'export function listUsers(): void {}',
-        // Path that already includes the mount prefix — the finalizer
-        // must not produce /api/api/users.
+        'usersRouter.get("/api", listUsers)',
+        'app.use("/api", usersRouter)',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+      const handler = findSymbol(spi, 'src/server.ts', 'listUsers')
+      expect(handler?.framework_metadata?.route_path).toBe('/api/api')
+    })
+
+    it('prepends the mount prefix even when the router-local path begins with the prefix (CodeRabbit fix)', () => {
+      // Same correction. /api + /api/users → /api/api/users, not /api/users.
+      writeFile(sandbox, 'src/server.ts', [
+        'import express, { Router } from "express"',
+        'export const app = express()',
+        'export const usersRouter = Router()',
+        'export function listUsers(): void {}',
         'usersRouter.get("/api/users", listUsers)',
         'app.use("/api", usersRouter)',
       ].join('\n') + '\n')
       const spi = build(sandbox)
       const handler = findSymbol(spi, 'src/server.ts', 'listUsers')
-      expect(handler?.framework_metadata?.route_path).toBe('/api/users')
+      expect(handler?.framework_metadata?.route_path).toBe('/api/api/users')
     })
   })
 

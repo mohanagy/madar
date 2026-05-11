@@ -218,23 +218,32 @@ function emitMiddlewareForCall(
 /**
  * Slice 1c-ii.g — workspace-level finalizer that applies mounted-router
  * prefixes to the route_path on each route handler. Called once by
- * buildSpi after all per-file detectors have run, so it works even when
- * the mount call lives in a different file than the route registrations
- * (the router symbol is mutated workspace-wide).
+ * buildSpi after all per-file detectors have run.
+ *
+ * **Same-file only in this slice.** The mount-call detection itself
+ * (in emitMiddlewareForCall) resolves the second-positional argument
+ * via the current file's symbol list, so a mount call that imports
+ * the router from another file does not get a mount_path recorded on
+ * the imported router's SpiSymbol. As a result, the finalizer below
+ * has nothing to apply for cross-file mounts. Cross-file resolution
+ * (plumbing pathToFileId through the detector context and following
+ * the type checker across boundaries) is slice 1c-ii.h.
  *
  * Mechanism:
  *   1. Index every express_router symbol by id; capture its mount_path
  *      (set by emitMiddlewareForCall when the binding appeared as the
- *      second arg of an `app.use('/prefix', router)` call).
+ *      second arg of an `app.use('/prefix', router)` call in the SAME
+ *      file as the router's declaration).
  *   2. Walk every route_handler edge in the SPI. For each edge whose
  *      from-symbol is a router with a mount_path, look up the to-symbol
  *      and prepend the mount_path to its route_path.
  *
- * The finalizer is idempotent: route_paths that already include the
- * mount prefix (e.g., a previous run propagated them) stay correct
- * because the joinRoutePath helper detects an already-prefixed path
- * and is conservative about double-application. In practice the
- * finalizer runs exactly once per buildSpi invocation.
+ * The finalizer runs exactly once per buildSpi invocation — it does
+ * NOT guard against being re-run with idempotence checks because:
+ *   (a) such checks confuse legitimate Express semantics where a route
+ *       path can match its mount prefix (e.g., usersRouter.get('/api')
+ *       mounted at '/api' must resolve to '/api/api', not '/api'), and
+ *   (b) the single-run invariant is enforced by build.ts.
  */
 export function finalizeExpressMountPrefixes(opts: {
   symbols: SpiSymbol[]
@@ -265,12 +274,14 @@ export function finalizeExpressMountPrefixes(opts: {
 }
 
 function joinRoutePath(prefix: string, path: string): string {
+  // Express mount semantics: the mount prefix is ALWAYS prepended to
+  // each router-local route path, even when the path happens to equal
+  // or begin with the prefix. A router mounted at '/api' with a route
+  // literally at '/api' answers '/api/api', not '/api'. The function
+  // is intentionally unconditional — caller's single-run invariant
+  // prevents double-application.
   const cleanPrefix = prefix.replace(/\/+$/, '')
   const cleanPath = path.startsWith('/') ? path : '/' + path
-  // Skip double application: if the existing path already starts with
-  // the prefix, return it as-is. Defends against re-runs of the
-  // finalizer over the same SPI.
-  if (cleanPath.startsWith(cleanPrefix + '/') || cleanPath === cleanPrefix) return cleanPath
   return cleanPrefix + cleanPath
 }
 
