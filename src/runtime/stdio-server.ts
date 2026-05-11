@@ -55,10 +55,17 @@ const MAX_LOG_NOTIFICATION_CHARS = 10_000
 
 type McpLogLevel = 'debug' | 'info' | 'notice' | 'warning' | 'error' | 'critical' | 'alert' | 'emergency'
 
+/** Per-session record of node ids already shipped to a given `delta_session_id`.
+ *  Used by the context_pack delta surface (#81) so subsequent calls return
+ *  only nodes the agent hasn't already received. */
+type ContextPackNodeIdStore = Map<string, Set<string>>
+
 interface StdioSessionState extends ResourceSessionState {
   logLevel: McpLogLevel
   contextPromptSessions?: Map<string, ContextSessionState>
   contextPackHandles?: Map<string, unknown>
+  /** Slice #81 — per-delta-session node ids already shipped. */
+  contextPackNodeIds?: ContextPackNodeIdStore
 }
 
 interface JsonRpcNotification {
@@ -91,6 +98,7 @@ function createSessionState(): StdioSessionState {
     resourceListSignature: null,
     contextPromptSessions: new Map<string, ContextSessionState>(),
     contextPackHandles: new Map<string, unknown>(),
+    contextPackNodeIds: new Map<string, Set<string>>(),
   }
 }
 
@@ -171,6 +179,13 @@ function ensureContextPackHandles(state: StdioSessionState): Map<string, unknown
   }
 
   return state.contextPackHandles
+}
+
+function ensureContextPackNodeIds(state: StdioSessionState): ContextPackNodeIdStore {
+  if (!state.contextPackNodeIds) {
+    state.contextPackNodeIds = new Map<string, Set<string>>()
+  }
+  return state.contextPackNodeIds
 }
 
 function requestId(request: StdioRequest): string | number | null {
@@ -607,6 +622,26 @@ export function handleStdioRequest(
              sessions.set(sessionId, nextState)
            },
            clearContextPromptSession: (sessionId) => ensureContextPromptSessions(sessionState).delete(sessionId),
+           getContextPackNodeIds: (sessionId) => {
+             const store = ensureContextPackNodeIds(sessionState).get(sessionId)
+             return store ? Array.from(store) : []
+           },
+           recordContextPackNodeIds: (sessionId, nodeIds) => {
+             const store = ensureContextPackNodeIds(sessionState)
+             let bucket = store.get(sessionId)
+             if (!bucket) {
+               if (store.size >= MAX_CONTEXT_PROMPT_SESSIONS) {
+                 const oldestSessionId = store.keys().next().value as string | undefined
+                 if (oldestSessionId !== undefined) {
+                   store.delete(oldestSessionId)
+                 }
+               }
+               bucket = new Set<string>()
+               store.set(sessionId, bucket)
+             }
+             for (const id of nodeIds) bucket.add(id)
+           },
+           clearContextPackNodeIds: (sessionId) => ensureContextPackNodeIds(sessionState).delete(sessionId),
            getContextPackHandle: (handleId) => ensureContextPackHandles(sessionState).get(handleId),
            setContextPackHandle: (handleId, expansion) => {
              const handles = ensureContextPackHandles(sessionState)

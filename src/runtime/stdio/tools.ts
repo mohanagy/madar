@@ -25,7 +25,9 @@ import { pickImpactTarget } from '../context-pack-target.js'
 import { analyzeImpact, callChains, compactImpactResult, type ImpactResult } from '../impact.js'
 import { analyzePrImpact, compactPrImpactResult } from '../pr-impact.js'
 import { relevantFiles } from '../relevant-files.js'
-import { collectRelationships, compactRetrieveResult, readSnippet, retrieveContext, retrieveContextAsync, type RetrieveResult } from '../retrieve.js'
+import { collectRelationships, compactRetrieveResult, contextPackFromRetrieveResult, readSnippet, retrieveContext, retrieveContextAsync, type RetrieveResult } from '../retrieve.js'
+import { computeContextPackDiagnostics } from '../context-pack-diagnostics.js'
+import { collectPackNodeIds, computeDeltaContextPack } from '../context-pack-delta.js'
 import { riskMap } from '../risk-map.js'
 import { buildTaskContextPlan } from '../task-context-planner.js'
 import type { TimeTravelView } from '../time-travel.js'
@@ -69,6 +71,12 @@ interface ToolHelpers {
   clearContextPromptSession(sessionId: string): boolean
   getContextPackHandle(handleId: string): unknown
   setContextPackHandle(handleId: string, expansion: unknown): void
+  /** Slice #81 — returns node ids already shipped to this delta session. */
+  getContextPackNodeIds(sessionId: string): string[]
+  /** Slice #81 — records additional node ids shipped to a delta session. */
+  recordContextPackNodeIds(sessionId: string, nodeIds: string[]): void
+  /** Slice #81 — clears the recorded node-id set for a delta session. */
+  clearContextPackNodeIds(sessionId: string): boolean
   readStoredCommunityLabels(graphPath: string): Record<number, string>
   jsonrpcInvalidParams: number
   jsonrpcServerError: number
@@ -867,13 +875,65 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         })))
       }
 
+      const fullPack = contextPackFromRetrieveResult(retrieval)
       const compactPack = compactRetrieveResult(retrieval)
       const metadata = contextMetadata(retrieval)
       storeExpandableHandles(prompt, task, initialPlan.evidence.recipe_id, metadata.expandable, helpers)
+      // Slice #78: emit context-pack quality diagnostics so callers can
+      // detect bad runs (missing required evidence, zero claims, weak
+      // retrieval, etc.) without re-implementing the heuristics.
+      const diagnostics = computeContextPackDiagnostics(fullPack)
+
+      // Slice #81: delta-only context packs. When the caller passes a
+      // delta_session_id we filter out nodes the agent has already
+      // received in earlier turns of the same session, ship only the
+      // delta + referenced_ids, and record the new ids for the next call.
+      // The session store is per-MCP-process (in-memory) so two parallel
+      // agents using the same id naturally diverge — that's intentional.
+      const deltaSessionId = helpers.stringParamAlias(toolArguments, ['delta_session_id', 'deltaSessionId'])
+      if (deltaSessionId) {
+        const previouslySent = helpers.getContextPackNodeIds(deltaSessionId)
+        const deltaResult = computeDeltaContextPack(fullPack, previouslySent)
+        // Record the newly-shipped node ids so the next call's delta is
+        // computed against the union of everything sent so far.
+        helpers.recordContextPackNodeIds(deltaSessionId, collectPackNodeIds(deltaResult.delta_pack))
+        return helpers.ok(id, helpers.textToolResult(JSON.stringify({
+          ...contextPackBasePayload(task, prompt, resolvedBudget, graphPath, initialPlan),
+          mode: 'delta',
+          delta_session_id: deltaSessionId,
+          delta_applied: deltaResult.delta_applied,
+          referenced_ids: deltaResult.referenced_ids,
+          bytes_saved: deltaResult.bytes_saved,
+          pack: {
+            question: prompt,
+            token_count: deltaResult.delta_pack.token_count,
+            matched_nodes: deltaResult.delta_pack.nodes.map((node) => {
+              const { evidence_class: _evidenceClass, ...rest } = node
+              return rest
+            }),
+            relationships: deltaResult.delta_pack.relationships,
+            community_context: deltaResult.delta_pack.community_context,
+            graph_signals: deltaResult.delta_pack.graph_signals ?? { god_nodes: [], bridge_nodes: [] },
+          },
+          diagnostics: computeContextPackDiagnostics(deltaResult.delta_pack, { skipBudgetUnderutilization: true }),
+          ...metadata,
+        })))
+      }
       return helpers.ok(id, helpers.textToolResult(JSON.stringify({
         ...contextPackBasePayload(task, prompt, resolvedBudget, graphPath, initialPlan),
         pack: compactPack,
+        diagnostics,
         ...metadata,
+      })))
+    }
+    case 'context_pack_session_reset': {
+      const sessionId = helpers.stringParamAlias(toolArguments, ['delta_session_id', 'deltaSessionId', 'session_id', 'sessionId'])
+      if (!sessionId) {
+        return helpers.failure(id, helpers.jsonrpcInvalidParams, 'context_pack_session_reset requires a string delta_session_id parameter')
+      }
+      return helpers.ok(id, helpers.textToolResult(JSON.stringify({
+        delta_session_id: sessionId,
+        cleared: helpers.clearContextPackNodeIds(sessionId),
       })))
     }
     case 'context_expand': {

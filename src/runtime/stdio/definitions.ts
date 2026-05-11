@@ -229,7 +229,7 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   {
     name: 'context_pack',
     description:
-      'Build a compact explain/review/impact context pack for a downstream agent. Use when you need expandable refs plus coverage and missing-context signals instead of the full graph payload.',
+      'Build a compact explain/review/impact context pack for a downstream agent. Use when you need expandable refs plus coverage and missing-context signals instead of the full graph payload. Pass delta_session_id to ship only new nodes.',
     inputSchema: {
       type: 'object',
       required: ['prompt'],
@@ -237,6 +237,18 @@ export const MCP_TOOLS: McpToolDefinition[] = [
         prompt: { type: 'string', description: 'Task prompt or question to build context for' },
         task: { type: 'string', enum: ['explain', 'review', 'impact'], description: 'Context-pack mode (default: explain)' },
         budget: { type: 'number', description: 'Optional: maximum token budget for the pack (default 3000)' },
+        delta_session_id: { type: 'string', description: 'Optional (#81): delta-pack session key for per-session dedup.' },
+      },
+    },
+  },
+  {
+    name: 'context_pack_session_reset',
+    description: 'Reset a delta-pack session so the next context_pack ships the full pack.',
+    inputSchema: {
+      type: 'object',
+      required: ['delta_session_id'],
+      properties: {
+        delta_session_id: { type: 'string', description: 'Delta session key' },
       },
     },
   },
