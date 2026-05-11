@@ -602,6 +602,7 @@ describe('cli parser', () => {
       neo4jDatabase: null,
       includeDocs: false,
       docs: false,
+      useSpi: false,
     })
 
     expect(
@@ -651,6 +652,7 @@ describe('cli parser', () => {
       neo4jDatabase: 'graphify',
       includeDocs: false,
       docs: false,
+      useSpi: false,
     })
 
     expect(() => parseGenerateArgs(['src', 'other'])).toThrow('Usage: graphify-ts generate')
@@ -1352,6 +1354,7 @@ describe('cli main', () => {
       neo4j: true,
       includeDocs: false,
       docs: false,
+      useSpi: false,
     })
     expect(typeof capturedOptions?.onProgress).toBe('function')
   })

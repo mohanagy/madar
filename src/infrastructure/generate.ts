@@ -11,6 +11,8 @@ import { type DetectResult, detect, detectIncremental, FileType, saveManifest } 
 import { generateDocs as generateDocsArtifacts } from '../pipeline/docs.js'
 import { toCypher, toGraphml, toHtml, toJson, toObsidian, toSvg } from '../pipeline/export.js'
 import { extract, EXTRACTOR_CACHE_VERSION } from '../pipeline/extract.js'
+import { buildSpiCached } from '../pipeline/spi/cache.js'
+import { projectSpiToExtraction } from '../pipeline/spi/projector.js'
 import { generate as generateReport } from '../pipeline/report.js'
 import { toWiki } from '../pipeline/wiki.js'
 import { loadGraph } from '../runtime/serve.js'
@@ -38,6 +40,13 @@ export interface GenerateGraphOptions {
   neo4j?: boolean
   includeDocs?: boolean
   docs?: boolean
+  /** v0.18 — opt-in: use the SPI v1 pipeline (buildSpiCached +
+   *  projectSpiToExtraction) instead of the legacy extract() call site.
+   *  When true, framework_role + framework_metadata flow into graph.json
+   *  for all 9 framework substrates (NestJS, Express, Next.js, React
+   *  Router, Redux, Hono, Fastify, tRPC, Prisma) and repeat builds on an
+   *  unchanged workspace hit the on-disk SPI cache. Default false. */
+  useSpi?: boolean
   onProgress?: (progress: ProgressStep) => void
 }
 
@@ -283,8 +292,29 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     progress?.({ step: 'extract', message: `Extracting ${extractableFiles.length} files...`, current: 0, total: extractableFiles.length })
   }
 
+  // v0.18 — opt-in SPI pipeline. When useSpi is true, ignore the
+  // incremental branch entirely: buildSpiCached handles the
+  // "unchanged workspace" case at the SPI layer via its all-or-nothing
+  // disk cache (#77), so we always do a full SPI build + projection.
+  const buildViaSpi = (): ReturnType<typeof buildFromJson> | null => {
+    if (extractableFiles.length === 0) return null
+    const built = buildSpiCached({
+      root: resolvedRootPath,
+      graphifyVersion: `spi-extractor-${EXTRACTOR_CACHE_VERSION}`,
+    })
+    const extraction = projectSpiToExtraction(built.spi, { root: resolvedRootPath })
+    if (built.cache.hit) {
+      notes.push(`SPI cache hit (${built.cache.file_count} files, key ${built.cache.cache_key.slice(0, 8)}).`)
+    } else {
+      notes.push(`SPI build via projector (${built.cache.file_count} files, reason=${built.cache.reason}).`)
+    }
+    return buildFromJson(extraction, { directed })
+  }
+
   const graph = options.clusterOnly
     ? existingGraph
+    : options.useSpi
+      ? buildViaSpi()
     : options.update && existingGraph && isIncrementalDetectResult(detected)
       ? (() => {
           if (existingGraphExtractorVersion == null || existingGraphExtractorVersion !== EXTRACTOR_CACHE_VERSION) {

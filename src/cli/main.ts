@@ -613,6 +613,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         neo4j: options.neo4j,
         includeDocs: options.includeDocs,
         docs: options.docs,
+        useSpi: options.useSpi,
         onProgress: (step) => io.log(formatProgress(step)),
       })
       io.log(formatGenerateSummary(result))

@@ -133,6 +133,11 @@ export interface GenerateCliOptions {
   neo4jDatabase: string | null
   includeDocs: boolean
   docs: boolean
+  /** v0.18 (#85 candidate): opt-in to the SPI v1 build pipeline.
+   *  When true, `buildSpiCached` + `projectSpiToExtraction` replace the
+   *  legacy `extract()` call site so framework_role / framework_metadata
+   *  flows into graph.json. Default false — same output as before v0.14. */
+  useSpi: boolean
 }
 
 export interface WatchCliOptions {
@@ -1179,6 +1184,7 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
   let neo4jDatabase: string | null = null
   let includeDocs = false
   let docs = false
+  let useSpi = false
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index]
@@ -1186,10 +1192,15 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
       continue
     }
 
+    if (argument === '--spi') {
+      useSpi = true
+      continue
+    }
+
     if (!argument.startsWith('--')) {
       if (path !== '.') {
         throw new UsageError(
-          'Usage: graphify-ts generate [path] [--update] [--cluster-only] [--watch] [--directed] [--follow-symlinks] [--debounce S] [--no-html] [--wiki] [--obsidian] [--obsidian-dir DIR] [--svg] [--graphml] [--neo4j] [--neo4j-push URI] [--neo4j-user USER] [--neo4j-password PW] [--neo4j-database DB]',
+          'Usage: graphify-ts generate [path] [--update] [--cluster-only] [--watch] [--directed] [--follow-symlinks] [--debounce S] [--no-html] [--wiki] [--obsidian] [--obsidian-dir DIR] [--svg] [--graphml] [--neo4j] [--neo4j-push URI] [--neo4j-user USER] [--neo4j-password PW] [--neo4j-database DB] [--spi]',
         )
       }
       path = argument
@@ -1363,6 +1374,7 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
     neo4jDatabase,
     includeDocs,
     docs,
+    useSpi,
   }
 }
 
