@@ -775,7 +775,7 @@ describe('pr impact', () => {
     expect(compact.review_bundle.token_count).toBeLessThan(full.review_bundle.token_count)
     expect(compactReviewBundleTokens).toBeLessThan(452)
     expect(reviewBundleReductionRatio).toBeGreaterThan(3)
-    expect(compactPayloadTokens).toBeLessThan(780)
+    expect(compactPayloadTokens).toBeLessThan(820)  // v0.16 #79 added 3 compact fields
     expect(payloadReductionRatio).toBeGreaterThan(2.4)
   })
 
@@ -865,6 +865,9 @@ describe('pr impact', () => {
       },
       coverage_score: 1,
       uncovered_hotspots: [],
+      coverage_score_weighted: 1,
+      uncovered_hotspot_severities: [],
+      critical_labels: [],
     }
 
     expect(compactPrImpactResult(full).per_node_impact.map((impact) => impact.node)).toEqual([
@@ -927,6 +930,9 @@ describe('pr impact', () => {
       },
       coverage_score: 1,
       uncovered_hotspots: [],
+      coverage_score_weighted: 1,
+      uncovered_hotspot_severities: [],
+      critical_labels: [],
     }
 
     const compact = compactPrImpactResult(full)
@@ -988,6 +994,9 @@ describe('pr impact', () => {
       },
       coverage_score: 1,
       uncovered_hotspots: [],
+      coverage_score_weighted: 1,
+      uncovered_hotspot_severities: [],
+      critical_labels: [],
     }
 
     const compact = compactPrImpactResult(full)
@@ -1063,6 +1072,9 @@ describe('pr impact', () => {
       },
       coverage_score: 1,
       uncovered_hotspots: [],
+      coverage_score_weighted: 1,
+      uncovered_hotspot_severities: [],
+      critical_labels: [],
     }
 
     const compact = compactPrImpactResult(full)

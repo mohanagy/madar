@@ -46,6 +46,15 @@ export {
 } from './build.js'
 
 export {
+  buildSpiCached,
+  clearSpiCache,
+  type BuildSpiCachedOptions,
+  type BuildSpiCachedResult,
+  type SpiCacheIndex,
+  type SpiCacheStats,
+} from './cache.js'
+
+export {
   computeSpiDiffOverlay,
   type ComputeSpiDiffOverlayOptions,
   type GitDiffRunner,
