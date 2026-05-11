@@ -4,6 +4,20 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-05-11
+
+### Added
+
+- **Hono framework substrate (#83)**: detects `new Hono()` apps, http-method route registrations (`app.get` / `.post` / etc.) with `route_path` + `http_method` metadata, and `app.use([path], middleware)` registrations with optional `mount_path`. New SpiFrameworkRole values: `hono_app`, `hono_route`, `hono_middleware`.
+- **Fastify framework substrate (#83)**: detects `Fastify()` / `fastify()` factory calls (default and named imports) → `fastify_app`, `app.<method>(path, [opts,] handler)` → `fastify_route` with `route_path` + `http_method`, and `app.register(plugin, { prefix })` → `fastify_plugin` with optional `mount_path`.
+- **tRPC framework substrate (#83)**: detects `<builder>.router({...})` calls → `trpc_router`, and **synthesizes** procedure SpiSymbol entries (`<routerName>.<procedureName>`) for object-literal properties whose value chains end in `.query` / `.mutation` / `.subscription`, with `procedure_name` + `router_name` on framework_metadata. Synthesis mirrors the Express inline-handler pattern from slice 1c-ii.e since tRPC procedures don't have top-level SpiSymbols by default.
+- **Prisma framework substrate (#83)**: detects `new PrismaClient()` bindings → `prisma_client`. Schema.prisma parsing and model-access tagging (`prisma.user.findMany`) intentionally deferred — they're substantial slice trains in their own right.
+
+### Notes
+
+- v0.17.0 is the **framework-breadth** release: four new TypeScript framework detectors slot cleanly into the existing SPI substrate, bringing total framework coverage to nine (NestJS, Express, Next.js, React Router, Redux Toolkit, Hono, Fastify, tRPC, Prisma).
+- #84 (deeper Python / Go semantic passes) deferred — each language needs its own runtime substrate beyond tree-sitter AST, multi-PR effort. Tree-sitter coverage for Python / Go / Ruby / Java / Rust remains shipped as today.
+
 ## [0.16.0] - 2026-05-11
 
 ### Added

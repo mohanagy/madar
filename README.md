@@ -253,7 +253,7 @@ We measure and publish honest numbers, including the trade-offs. Smaller context
 Implemented today:
 
 - ✅ Local graph build for TS/JS/Python/Ruby/Go/Java/Rust + framework-aware TS/JS
-- ✅ Semantic Program Index (SPI) v1 — TypeScript type-checker-backed substrate with NestJS / Express / Next.js / React Router / Redux Toolkit framework metadata (`route_path`, slice/store keys, RTK Query endpoints, mount-prefix resolution)
+- ✅ Semantic Program Index (SPI) v1 — TypeScript type-checker-backed substrate with NestJS / Express / Next.js / React Router / Redux Toolkit / **Hono / Fastify / tRPC / Prisma** framework metadata (`route_path`, slice/store keys, RTK Query endpoints, mount-prefix resolution, tRPC procedure synthesis)
 - ✅ MCP server with core (6 tools) and full (25 tools) profiles
 - ✅ `pr_impact` + `review-compare` for diff-aware PR review
 - ✅ Provider-aware prompt compiler (`prompt`) with Claude cache-reuse semantics
@@ -272,7 +272,6 @@ Implemented today:
 
 Planned:
 
-- 🔜 More framework-aware passes (Prisma, tRPC, Hono, Fastify)
 - 🔜 Deeper Python / Go semantic passes beyond tree-sitter AST
 
 ---
