@@ -43,7 +43,13 @@ run_variant() {
   echo "[$variant] generate"
   local t0 t1 elapsed
   t0=$(node -e 'console.log(Date.now())')
-  node "$GRAPHIFY" generate "$fixture_copy" --no-html $extra_flag > "$RESULTS_DIR/$variant.generate.log" 2>&1
+  # CodeRabbit follow-up: build args as a quoted array instead of relying
+  # on unquoted $extra_flag word-splitting.
+  local generate_args=(generate "$fixture_copy" --no-html)
+  if [[ -n "$extra_flag" ]]; then
+    generate_args+=("$extra_flag")
+  fi
+  node "$GRAPHIFY" "${generate_args[@]}" > "$RESULTS_DIR/$variant.generate.log" 2>&1
   t1=$(node -e 'console.log(Date.now())')
   elapsed=$((t1 - t0))
 
@@ -65,7 +71,10 @@ run_variant() {
     prompt_id=$(node -e "const p=require('$PROMPTS_FILE'); console.log(p.prompts[$i].id)")
     prompt_text=$(node -e "const p=require('$PROMPTS_FILE'); console.log(p.prompts[$i].text)")
     local pack_out
-    pack_out=$(node "$GRAPHIFY" pack "$prompt_text" --task explain --budget 2000 --graph "$graph_path" 2>/dev/null || echo '{}')
+    # CodeRabbit follow-up: do NOT mask pack failures. Let stderr surface
+    # and let set -euo pipefail abort if pack fails — false zero metrics
+    # are worse than a loud failure.
+    pack_out=$(node "$GRAPHIFY" pack "$prompt_text" --task explain --budget 2000 --graph "$graph_path")
     local pack_tokens pack_nodes
     # Pass pack_out via env var (PACK_OUT) to avoid shell-quote breakage when
     # the JSON contains single quotes. CodeRabbit fix on PR #136.

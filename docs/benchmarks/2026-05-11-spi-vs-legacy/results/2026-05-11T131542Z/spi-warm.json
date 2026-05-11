@@ -1,6 +1,6 @@
 {
   "variant": "spi-warm",
-  "build_time_ms": 344,
+  "build_time_ms": 397,
   "graph_size_bytes": 42840,
   "node_count": 30,
   "note": "Same fixture as spi-cold, re-run to measure cache-hit path. Prompts not re-evaluated; pack tokens match spi-cold."

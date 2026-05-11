@@ -1,9 +1,9 @@
 {
-  "timestamp_iso": "2026-05-11T12:34:18.216Z",
+  "timestamp_iso": "2026-05-11T13:15:53.332Z",
   "variants": {
     "legacy": {
       "variant": "legacy",
-      "build_time_ms": 548,
+      "build_time_ms": 519,
       "graph_size_bytes": 62783,
       "node_count": 29,
       "prompts": [
@@ -102,7 +102,7 @@
     },
     "spi-cold": {
       "variant": "spi-cold",
-      "build_time_ms": 710,
+      "build_time_ms": 707,
       "graph_size_bytes": 42840,
       "node_count": 30,
       "prompts": [
@@ -200,15 +200,15 @@
     },
     "spi-warm": {
       "variant": "spi-warm",
-      "build_time_ms": 344,
+      "build_time_ms": 397,
       "graph_size_bytes": 42840,
       "node_count": 30,
       "note": "Same fixture as spi-cold, re-run to measure cache-hit path. Prompts not re-evaluated; pack tokens match spi-cold."
     }
   },
   "comparison": {
-    "build_time_delta_ms": 162,
-    "build_time_delta_pct": "29.6",
+    "build_time_delta_ms": 188,
+    "build_time_delta_pct": "36.2",
     "graph_size_delta_bytes": -19943,
     "graph_size_delta_pct": "-31.8",
     "node_count_delta": 1,

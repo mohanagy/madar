@@ -6,12 +6,12 @@
 [graphify cluster] Found 5 communities
 [graphify analyze] Analyzing structure...
 [graphify export] Writing outputs...
-[graphify generate] generate completed for /Users/mohammednaji/Desktop/projects/graphify-ts/docs/benchmarks/2026-05-11-spi-vs-legacy/results/2026-05-11T123407Z/fixture-spi-cold
+[graphify generate] generate completed for /Users/mohammednaji/Desktop/projects/graphify-ts/docs/benchmarks/2026-05-11-spi-vs-legacy/results/2026-05-11T131542Z/fixture-spi-cold
 - Corpus: 5 file(s) · ~306 words
 - Extracted: 5 code file(s)
 - Graph: 30 nodes · 25 edges · 5 communities
 - Semantic anomalies: 0 high-signal item(s)
-- Outputs: /Users/mohammednaji/Desktop/projects/graphify-ts/docs/benchmarks/2026-05-11-spi-vs-legacy/results/2026-05-11T123407Z/fixture-spi-cold/graphify-out/graph.json, /Users/mohammednaji/Desktop/projects/graphify-ts/docs/benchmarks/2026-05-11-spi-vs-legacy/results/2026-05-11T123407Z/fixture-spi-cold/graphify-out/GRAPH_REPORT.md
+- Outputs: /Users/mohammednaji/Desktop/projects/graphify-ts/docs/benchmarks/2026-05-11-spi-vs-legacy/results/2026-05-11T131542Z/fixture-spi-cold/graphify-out/graph.json, /Users/mohammednaji/Desktop/projects/graphify-ts/docs/benchmarks/2026-05-11-spi-vs-legacy/results/2026-05-11T131542Z/fixture-spi-cold/graphify-out/GRAPH_REPORT.md
 - Warning: Corpus is ~306 words - fits in a single context window. You may not need a graph.
 - Note: SPI build via projector (5 files, reason=no-cache).
 

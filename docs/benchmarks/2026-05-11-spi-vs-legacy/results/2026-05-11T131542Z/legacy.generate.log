@@ -6,12 +6,12 @@
 [graphify cluster] Found 10 communities
 [graphify analyze] Analyzing structure...
 [graphify export] Writing outputs...
-[graphify generate] generate completed for /Users/mohammednaji/Desktop/projects/graphify-ts/docs/benchmarks/2026-05-11-spi-vs-legacy/results/2026-05-11T123407Z/fixture-legacy
+[graphify generate] generate completed for /Users/mohammednaji/Desktop/projects/graphify-ts/docs/benchmarks/2026-05-11-spi-vs-legacy/results/2026-05-11T131542Z/fixture-legacy
 - Corpus: 5 file(s) · ~306 words
 - Extracted: 5 code file(s)
 - Graph: 29 nodes · 40 edges · 10 communities
 - Semantic anomalies: 3 high-signal item(s)
-- Outputs: /Users/mohammednaji/Desktop/projects/graphify-ts/docs/benchmarks/2026-05-11-spi-vs-legacy/results/2026-05-11T123407Z/fixture-legacy/graphify-out/graph.json, /Users/mohammednaji/Desktop/projects/graphify-ts/docs/benchmarks/2026-05-11-spi-vs-legacy/results/2026-05-11T123407Z/fixture-legacy/graphify-out/GRAPH_REPORT.md
+- Outputs: /Users/mohammednaji/Desktop/projects/graphify-ts/docs/benchmarks/2026-05-11-spi-vs-legacy/results/2026-05-11T131542Z/fixture-legacy/graphify-out/graph.json, /Users/mohammednaji/Desktop/projects/graphify-ts/docs/benchmarks/2026-05-11-spi-vs-legacy/results/2026-05-11T131542Z/fixture-legacy/graphify-out/GRAPH_REPORT.md
 - Warning: Corpus is ~306 words - fits in a single context window. You may not need a graph.
 
 Next: connect your AI assistant:
