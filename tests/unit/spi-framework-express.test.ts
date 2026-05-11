@@ -202,7 +202,13 @@ describe('SPI Express framework detector (slice 1c-ii.b)', () => {
       expect(handler?.framework_role).toBeUndefined()
     })
 
-    it('skips inline arrow handlers (deferred to slice 1c-ii.e)', () => {
+    it('after slice 1c-ii.e, inline arrow handlers ARE tagged via synthesis (covered in detail in the inline-handler-synthesis suite)', () => {
+      // This test was originally a slice 1c-ii.c "skip" assertion. Now
+      // that 1c-ii.e mints synthetic symbols for arrow handlers, the
+      // behavior is the inverse: there IS a route_handler edge to a
+      // synthetic symbol. Detailed assertions live in the synthesis
+      // suite below; this just preserves the original test's coverage
+      // intent with the updated expectation.
       writeFile(sandbox, 'src/server.ts', [
         'import express from "express"',
         'export const app = express()',
@@ -211,8 +217,7 @@ describe('SPI Express framework detector (slice 1c-ii.b)', () => {
       const spi = build(sandbox)
       const app = findSymbol(spi, 'src/server.ts', 'app')
       const routeEdges = spi.edges.filter((edge) => edge.from === app?.id && edge.kind === 'route_handler')
-      // No named handler symbol → no edge emitted in this slice.
-      expect(routeEdges).toHaveLength(0)
+      expect(routeEdges).toHaveLength(1)
     })
 
     it('does NOT tag the outer handler when a lexical shadow uses the same identifier (CodeRabbit fix)', () => {
@@ -348,17 +353,18 @@ describe('SPI Express framework detector (slice 1c-ii.b)', () => {
       expect(dual?.framework_role).toBe('express_route')
     })
 
-    it('does not tag inline arrow middleware (deferred to slice 1c-ii.e)', () => {
+    it('after slice 1c-ii.e, inline arrow middleware IS tagged via synthesis (covered in detail in the synthesis suite)', () => {
+      // Originally a 1c-ii.d "skip" assertion. 1c-ii.e now synthesizes
+      // a symbol for the anonymous middleware callback. Detailed
+      // expectations live in the synthesis suite below.
       writeFile(sandbox, 'src/server.ts', [
         'import express from "express"',
         'export const app = express()',
         'app.use((_req, _res, next) => next())',
       ].join('\n') + '\n')
       const spi = build(sandbox)
-      // No top-level handler symbol exists for the arrow, so nothing to
-      // tag. The detector silently skips. Sanity: no shadow false-tags.
-      const allFunctionSymbols = spi.symbols.filter((s) => s.framework_role === 'express_middleware')
-      expect(allFunctionSymbols).toHaveLength(0)
+      const tagged = spi.symbols.filter((s) => s.framework_role === 'express_middleware')
+      expect(tagged).toHaveLength(1)
     })
 
     it('mounting a Router via app.use(router) does NOT downgrade its express_router role to express_middleware (CodeRabbit fix)', () => {
@@ -407,6 +413,111 @@ describe('SPI Express framework detector (slice 1c-ii.b)', () => {
       // receiver to the LOCAL `const app`, not the outer express()
       // binding. The detector's declaration-identity check rejects it.
       expect(outer?.framework_role).toBeUndefined()
+    })
+  })
+
+  describe('inline-handler synthesis (slice 1c-ii.e)', () => {
+    it('mints a synthetic SpiSymbol for an inline arrow route handler', () => {
+      writeFile(sandbox, 'src/server.ts', [
+        'import express from "express"',
+        'export const app = express()',
+        'app.get("/users", (_req, _res) => { void 0 })',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+      const synthetic = spi.symbols.find((s) => s.framework_role === 'express_route' && s.kind === 'function')
+      expect(synthetic).toBeTruthy()
+      // Deterministic name pattern: <binding>.<method>.L<line>
+      expect(synthetic?.name).toMatch(/^app\.get\.L\d+$/)
+      expect(synthetic?.file_id).toBe(spi.files.find((f) => f.path === 'src/server.ts')?.id)
+      expect(synthetic?.exported).toBe(false)
+    })
+
+    it('emits a route_handler edge from the binding to the synthetic handler', () => {
+      writeFile(sandbox, 'src/server.ts', [
+        'import express from "express"',
+        'export const app = express()',
+        'app.post("/users", (_req, _res) => { void 0 })',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+      const app = findSymbol(spi, 'src/server.ts', 'app')
+      const synthetic = spi.symbols.find((s) => s.framework_role === 'express_route' && s.kind === 'function')
+      const edge = spi.edges.find((e) =>
+        e.from === app?.id && e.to === synthetic?.id && e.kind === 'route_handler',
+      )
+      expect(edge).toBeTruthy()
+      expect(edge?.confidence).toBe('high')
+    })
+
+    it('synthesizes distinct symbols for multiple inline handlers in the same file', () => {
+      writeFile(sandbox, 'src/server.ts', [
+        'import express from "express"',
+        'export const app = express()',
+        'app.get("/a", (_req, _res) => { void 0 })',
+        'app.post("/b", (_req, _res) => { void 0 })',
+        'app.delete("/c", (_req, _res) => { void 0 })',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+      const synthetics = spi.symbols.filter((s) => s.framework_role === 'express_route' && s.kind === 'function')
+      expect(synthetics).toHaveLength(3)
+      const names = synthetics.map((s) => s.name).sort()
+      expect(names[0]).toMatch(/^app\.delete\.L\d+$/)
+      expect(names[1]).toMatch(/^app\.get\.L\d+$/)
+      expect(names[2]).toMatch(/^app\.post\.L\d+$/)
+    })
+
+    it('synthesizes for plain function expressions too (function (req, res) { ... })', () => {
+      writeFile(sandbox, 'src/server.ts', [
+        'import express from "express"',
+        'export const app = express()',
+        'app.get("/x", function (_req, _res): void { void 0 })',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+      const synthetic = spi.symbols.find((s) => s.framework_role === 'express_route' && s.kind === 'function')
+      expect(synthetic).toBeTruthy()
+      expect(synthetic?.name).toMatch(/^app\.get\.L\d+$/)
+    })
+
+    it('mints synthetic symbols for inline middleware too (slice 1c-ii.d + 1c-ii.e)', () => {
+      writeFile(sandbox, 'src/server.ts', [
+        'import express from "express"',
+        'export const app = express()',
+        'app.use((_req, _res, next) => next())',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+      const synthetic = spi.symbols.find((s) => s.framework_role === 'express_middleware' && s.kind === 'function')
+      expect(synthetic).toBeTruthy()
+      expect(synthetic?.name).toMatch(/^app\.use\.L\d+$/)
+    })
+
+    it('still skips inline handlers when the receiver is a shadowed local binding', () => {
+      writeFile(sandbox, 'src/server.ts', [
+        'import express from "express"',
+        'export const app = express()',
+        'function setup(): void {',
+        '  const app = { get: (_p: string, _h: () => void): void => {} }',
+        '  app.get("/x", (_req, _res) => { void 0 })',
+        '}',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+      const synthetics = spi.symbols.filter((s) => s.framework_role === 'express_route' && s.kind === 'function')
+      // Receiver doesn't resolve to the outer express() binding so no
+      // synthesis happens. (Slice 1c-ii.c's declaration-identity check
+      // protects us.)
+      expect(synthetics).toHaveLength(0)
+    })
+
+    it('synthesized symbols project to ExtractionNodes with framework=express and node_kind=function', async () => {
+      writeFile(sandbox, 'src/server.ts', [
+        'import express from "express"',
+        'export const app = express()',
+        'app.get("/x", (_req, _res) => { void 0 })',
+      ].join('\n') + '\n')
+      const { projectSpiToExtraction } = await import('../../src/pipeline/spi/projector.js')
+      const spi = build(sandbox)
+      const extraction = projectSpiToExtraction(spi, { root: sandbox })
+      const projected = extraction.nodes.find((n) => n.framework === 'express' && n.framework_role === 'express_route')
+      expect(projected).toBeTruthy()
+      expect(projected?.node_kind).toBe('route') // nodeKindForRole maps express_route → 'route'
     })
   })
 

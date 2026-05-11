@@ -650,6 +650,7 @@ function addTypeCheckerEdges(ctx: TypeCheckerEdgeContext): void {
       sourceFile,
       fileId: file.id,
       symbolsByFile,
+      symbols,
       edges,
       checker,
     })

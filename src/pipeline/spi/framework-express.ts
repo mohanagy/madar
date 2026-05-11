@@ -1,5 +1,5 @@
-// SPI v1 — Express framework layer (slices 1c-ii.b + 1c-ii.c + 1c-ii.d
-// of #72).
+// SPI v1 — Express framework layer (slices 1c-ii.b through 1c-ii.e of
+// #72).
 //
 // Slice 1c-ii.b — substrate: detects Express's `app = express()` and
 // `router = Router()` factory call patterns and tags the resulting
@@ -10,27 +10,32 @@
 // resolves to a previously-tagged express_app/express_router binding and
 // the LAST argument is a named identifier (function or variable symbol
 // in the same file), the handler is tagged framework_role: 'express_route'
-// and a `route_handler` SpiEdge is emitted from the binding's symbol to
-// the handler's symbol with confidence 'high'.
+// and a `route_handler` SpiEdge is emitted with confidence 'high'.
 //
 // Slice 1c-ii.d — middleware detection: walks `<binding>.use(...)` call
 // expressions. Every Identifier argument that resolves to a top-level
 // function/constant/variable in the same file is tagged with
-// framework_role: 'express_middleware'. The optional first string-
-// literal path argument (`app.use('/api', mw1, mw2)`) is skipped. No
-// edge is emitted for middleware — the framework_role tag plus
-// projector layer (slice 1c-ii.a's framework propagation) is enough to
-// surface 'framework: express, framework_role: express_middleware' on
-// the consumer side. Inline arrow middleware is deferred to slice
-// 1c-ii.e (same anonymous-callback synthesis territory as inline route
-// handlers).
+// framework_role: 'express_middleware' (only when no other express_*
+// role already exists; mounted routers keep their express_router tag).
+//
+// Slice 1c-ii.e — anonymous handler synthesis: when the route/middleware
+// argument is an ArrowFunction or FunctionExpression instead of an
+// Identifier (the common `app.get('/p', (req, res) => {...})` pattern),
+// the detector mints a synthetic SpiSymbol with kind 'function' and a
+// deterministic id derived from (file_id, binding name, http method,
+// handler line). The synthetic symbol is tagged with the matching
+// framework_role and pushed into BOTH the flat symbols list and the
+// per-file index so it survives into the projector. For routes, the
+// matching route_handler edge is emitted from the binding to the
+// synthetic symbol.
 //
 // Future slice:
 //
-//   * 1c-ii.e — full byte-equivalence with the legacy
-//     extract/frameworks/express.ts surface (~1,669 lines): synthetic
-//     route nodes with route_path, mounted-router prefix resolution,
-//     dynamic compositions, anonymous-callback handler synthesis.
+//   * 1c-ii.f — full byte-equivalence with the legacy
+//     extract/frameworks/express.ts surface: route_path metadata on the
+//     synthetic symbols (extends SpiSymbol with framework_metadata field),
+//     mounted-router prefix resolution (`app.use('/api', usersRouter)` →
+//     /api/... path prefix), dynamic compositions.
 
 import ts from 'typescript'
 
@@ -52,6 +57,12 @@ export type DetectExpressFrameworkContext = {
   sourceFile: ts.SourceFile
   fileId: string
   symbolsByFile: Map<string, SpiSymbol[]>
+  /** Slice 1c-ii.e pushes synthesized inline-handler SpiSymbols into
+   *  this flat list so they survive into the SPI's symbol set. The
+   *  per-file index (symbolsByFile) is updated in lockstep — both
+   *  references point to the same symbol objects, but only `symbols`
+   *  is what buildSpi sorts/returns. */
+  symbols: SpiSymbol[]
   /** Slice 1c-ii.c writes route_handler SpiEdges into this array when a
    *  named handler is resolved from a `<binding>.<httpMethod>(...)` call. */
   edges: SpiEdge[]
@@ -163,14 +174,16 @@ function emitMiddlewareForCall(
   // Iterate every argument. String-literal path prefixes (e.g.,
   // `app.use('/api', mw)`) are skipped — they're routing metadata, not
   // middleware. Every Identifier that resolves to a top-level
-  // function/const/var in the same file is tagged with
-  // framework_role: 'express_middleware'. Inline arrow middleware
-  // (`app.use((req, res, next) => {...})`) is intentionally skipped;
-  // tagging anonymous callbacks requires the symbol-synthesis layer
-  // that lands in slice 1c-ii.e.
+  // function/const/var is tagged with framework_role:
+  // 'express_middleware'. Inline arrow/function-expression middleware
+  // gets a synthesized SpiSymbol via slice 1c-ii.e.
   for (const arg of callExpr.arguments) {
-    if (!ts.isIdentifier(arg)) continue
-    const handlerSymbol = resolveHandlerSymbol(arg, ctx)
+    let handlerSymbol: SpiSymbol | null = null
+    if (ts.isIdentifier(arg)) {
+      handlerSymbol = resolveHandlerSymbol(arg, ctx)
+    } else if (ts.isArrowFunction(arg) || ts.isFunctionExpression(arg)) {
+      handlerSymbol = mintSyntheticHandlerSymbol(ctx, callExpr, arg, 'express_middleware')
+    }
     if (!handlerSymbol) continue
     // Never overwrite an existing framework_role. A symbol that already
     // has a role carries more semantic weight than the middleware
@@ -182,7 +195,7 @@ function emitMiddlewareForCall(
     //     the app but the router's own role stays the more specific tag.
     //   * any future express_* role — same reasoning; middleware is the
     //     fallback for symbols that have no other Express identity.
-    if (handlerSymbol.framework_role !== undefined) continue
+    if (handlerSymbol.framework_role !== undefined && handlerSymbol.framework_role !== 'express_middleware') continue
     handlerSymbol.framework_role = 'express_middleware'
   }
 }
@@ -216,13 +229,23 @@ function emitRouteForCall(
   const args = callExpr.arguments
   if (args.length === 0) return
   const handlerArg = args[args.length - 1]
-  if (!handlerArg || !ts.isIdentifier(handlerArg)) return
+  if (!handlerArg) return
 
-  // Resolve the handler. With a checker, prefer declaration-identity
-  // resolution so shadowed inner handlers don't tag the outer symbol.
-  const handlerSymbol = resolveHandlerSymbol(handlerArg, ctx)
+  // Resolve the handler in priority order:
+  //   1. Identifier — existing slice 1c-ii.c path.
+  //   2. ArrowFunction / FunctionExpression — slice 1c-ii.e synthesizes
+  //      a deterministic SpiSymbol for the anonymous callback.
+  let handlerSymbol: SpiSymbol | null = null
+  if (ts.isIdentifier(handlerArg)) {
+    handlerSymbol = resolveHandlerSymbol(handlerArg, ctx)
+  } else if (ts.isArrowFunction(handlerArg) || ts.isFunctionExpression(handlerArg)) {
+    handlerSymbol = mintSyntheticHandlerSymbol(ctx, callExpr, handlerArg, 'express_route')
+  }
   if (!handlerSymbol) return
 
+  // Named-handler path may need framework_role assignment; synthetic
+  // symbols already carry it from the mint helper. The assignment is
+  // idempotent.
   handlerSymbol.framework_role = 'express_route'
   const range = handlerSymbol.range
   const edgeKey = `${bindingSymbol.id}|${handlerSymbol.id}|route_handler`
@@ -236,6 +259,66 @@ function emitRouteForCall(
     source: 'framework-decorator',
     evidence: { file_id: ctx.fileId, range },
   })
+}
+
+/**
+ * Slice 1c-ii.e — synthesize a SpiSymbol for an inline arrow or function
+ * expression used as a route/middleware handler. The symbol's id is
+ * deterministic across builds for the same source: derived from the
+ * file_id, the binding identifier, the HTTP method (or "use" for
+ * middleware), and the handler's starting line number. Two route
+ * registrations at the same line on the same binding/method are rare
+ * but would collide — accept the collision; the second push is a no-op
+ * thanks to the seenEdgeKeys dedupe downstream.
+ */
+function mintSyntheticHandlerSymbol(
+  ctx: DetectExpressFrameworkContext,
+  callExpr: ts.CallExpression,
+  handler: ts.ArrowFunction | ts.FunctionExpression,
+  role: SpiFrameworkRole,
+): SpiSymbol | null {
+  const callee = callExpr.expression
+  if (!ts.isPropertyAccessExpression(callee)) return null
+  if (!ts.isIdentifier(callee.expression) || !ts.isIdentifier(callee.name)) return null
+  const bindingName = callee.expression.text
+  const methodName = callee.name.text
+  const range = rangeOfNode(handler, ctx.sourceFile)
+  const name = `${bindingName}.${methodName}.L${range.start.line}`
+  const id = `symbol:${ctx.fileId}/function/${name}`
+
+  // Don't re-mint if we already minted this one (e.g., on a second walk
+  // over the same source file in a future pipeline change).
+  const fileSymbols = ctx.symbolsByFile.get(ctx.fileId)
+  if (fileSymbols) {
+    const existing = fileSymbols.find((s) => s.id === id)
+    if (existing) {
+      existing.framework_role = role
+      return existing
+    }
+  }
+
+  const synthetic: SpiSymbol = {
+    id,
+    file_id: ctx.fileId,
+    name,
+    kind: 'function',
+    range,
+    exported: false,
+    framework_role: role,
+  }
+  ctx.symbols.push(synthetic)
+  if (fileSymbols) fileSymbols.push(synthetic)
+  else ctx.symbolsByFile.set(ctx.fileId, [synthetic])
+  return synthetic
+}
+
+function rangeOfNode(node: ts.Node, sourceFile: ts.SourceFile): SpiSymbol['range'] {
+  const start = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile))
+  const end = sourceFile.getLineAndCharacterOfPosition(node.getEnd())
+  return {
+    start: { line: start.line + 1, column: start.character + 1 },
+    end: { line: end.line + 1, column: end.character + 1 },
+  }
 }
 
 function resolveHandlerSymbol(
