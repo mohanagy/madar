@@ -261,15 +261,17 @@ Implemented today:
 - ✅ Time-travel compare across git refs (`time-travel`)
 - ✅ Coverage contracts (`benchmark`, `eval`)
 - ✅ Native installers for Claude Code, Cursor, Copilot CLI, Gemini CLI, Aider, OpenCode
-
-Planned:
-
-- 🔜 Better PR-impact coverage scoring on diff hotspots
-- 🔜 Cache-aware prompt layout that minimizes Claude session-cache invalidation
+- ✅ Tighter cold-start MCP overhead (core profile ~3,000 bytes, down from ~4,270 — 30% drop, see #82)
+- ✅ Incremental SPI cache — `buildSpiCached` skips the ts.Program pass on unchanged workspaces (#77)
+- ✅ Multi-resolution context — `resolution: detail | summary | mixed` on `context_pack` (#76)
+- ✅ Better PR-impact coverage scoring — `coverage_score_weighted` (3x for bridge/god hotspots) + severity tiers (#79)
+- ✅ Cache-aware prompt layout — `stable_prefix_hash` makes cache-reuse measurable across runs (#80)
 - ✅ Delta-only context packs between runs — `delta_session_id` on `context_pack` ships only new nodes per session (#81)
 - ✅ Context-pack quality diagnostics & bad-run detection — `quality_score` + structural warnings on every pack (#78)
 - ✅ Budgeted value-per-token selection helper — density-greedy `selectByValuePerToken` (#74)
-- ✅ Tighter cold-start MCP overhead (core profile ~3,000 bytes, down from ~4,270 — 30% drop, see #82)
+
+Planned:
+
 - 🔜 More framework-aware passes (Prisma, tRPC, Hono, Fastify)
 - 🔜 Deeper Python / Go semantic passes beyond tree-sitter AST
 

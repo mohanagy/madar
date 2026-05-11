@@ -4,6 +4,24 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-05-11
+
+### Added
+
+- **Incremental SPI cache (#77)**: new `buildSpiCached(opts)` wraps `buildSpi` with disk-backed all-or-nothing caching. Cache key = sha256 of workspace root + extractor_version + graphify_version + tsconfig content + per-file `(path, mtime, size, sha256)`. Repeat builds on an unchanged workspace skip the full ts.Program pass and return the cached SemanticProgramIndex. Public API: `buildSpiCached`, `clearSpiCache`, `BuildSpiCachedOptions`, `BuildSpiCachedResult`, `SpiCacheStats`, `SpiCacheIndex`. Cache lives in `<root>/graphify-out/.spi-cache/` and is format-versioned for clean invalidation on future schema changes.
+- **Multi-resolution context (#76)**: new `applyContextPackResolution(nodes, options)` helper adapts a node list to `detail` (no-op), `summary` (drop snippet bodies, keep label/source_file/line_number/match_score), or `mixed` (top-N by match_score get detail, rest summary). New stdio `context_pack` parameter `resolution: 'detail' | 'summary' | 'mixed'` (default `detail`). Response includes `resolution_map` (per-node summary/detail decisions) and `bytes_saved_by_resolution`. Currently supported on the explain branch only; review/impact return a clear `jsonrpcInvalidParams` error when `resolution` is requested with an unsupported task.
+- **Weighted PR-impact coverage scoring (#79)**: new `PrImpactResult` fields:
+  - `coverage_score_weighted` — bridge/god labels count 3x, regular high-impact 1x. Penalises uncoverage of high-centrality hotspots more aggressively than the unweighted score.
+  - `uncovered_hotspot_severities[]` — per-label `'critical'` (bridge/god) / `'high'` (regular high-impact) tier so reviewers can prioritise gaps.
+  - `critical_labels[]` — bridge+god subset of high-impact labels (consumer-readable).
+  - Compact result recomputes weighted score + severities against the post-compaction review bundle, same correctness contract as the unweighted `coverage_score`.
+- **Cache-aware prompt layout (#80)**: new `stable_prefix_hash` field on every `BuiltContextPrompt` (sha256-16 of `stable_prefix`). Byte-stable across re-runs when the underlying graph/anchor is unchanged; invariant under dynamic-suffix changes. Consumers can compare the hash across calls to verify Anthropic's automatic prompt cache will reuse the prefix.
+
+### Notes
+
+- v0.16.0 is the **runtime-efficiency** release: the SPI cache eliminates the repeat-build penalty, multi-resolution gives callers token-budget control, weighted coverage gives reviewers prioritisation, and the prompt-cache hash gives consumers a measurable cache-reuse signal.
+- v0.17-language-expansion is next: Prisma / tRPC / Hono / Fastify substrates (#83), deeper Python / Go semantic passes (#84).
+
 ## [0.15.0] - 2026-05-11
 
 ### Added
