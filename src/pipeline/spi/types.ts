@@ -87,6 +87,26 @@ export type SpiSymbol = {
   range: SpiRange
   exported: boolean
   framework_role?: SpiFrameworkRole
+  /**
+   * #72 slice 1c-ii.f — opt-in framework metadata bag. Populated by
+   * framework detectors when the symbol carries framework-specific data
+   * that doesn't fit the generic SpiSymbol shape:
+   *
+   *   - Express route handler (\`express_route\` role):
+   *       \`route_path: string\`  — the route path string from the first
+   *                                argument of \`<binding>.<method>(path, handler)\`.
+   *                                e.g. \`'/users/:id'\`.
+   *   - Express middleware (\`express_middleware\` role):
+   *       \`mount_path?: string\` — the optional prefix from
+   *                                \`app.use('/api', middleware)\`. Absent
+   *                                when middleware is registered globally.
+   *
+   * Per the SPI v1 design's open questions: the schema is intentionally
+   * \`unknown\` so framework extensions can store framework-specific
+   * fields without rev-ing the SpiSymbol type. A consumer that wants to
+   * type-narrow should do so against the symbol's \`framework_role\`.
+   */
+  framework_metadata?: Record<string, unknown>
 }
 
 export type SpiEdgeKind =

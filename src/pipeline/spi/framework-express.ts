@@ -171,13 +171,14 @@ function emitMiddlewareForCall(
   ctx: DetectExpressFrameworkContext,
   callExpr: ts.CallExpression,
 ): void {
-  // Iterate every argument. String-literal path prefixes (e.g.,
-  // `app.use('/api', mw)`) are skipped — they're routing metadata, not
-  // middleware. Every Identifier that resolves to a top-level
-  // function/const/var is tagged with framework_role:
-  // 'express_middleware'. Inline arrow/function-expression middleware
-  // gets a synthesized SpiSymbol via slice 1c-ii.e.
-  for (const arg of callExpr.arguments) {
+  // Slice 1c-ii.f — extract the optional path-prefix from the first arg
+  // if it's a string literal. `app.use('/api', mw1, mw2)` → mount_path:
+  // '/api'. Attached to every middleware symbol in the same call so
+  // downstream consumers can see which prefix triggered the middleware.
+  const args = callExpr.arguments
+  const mountPath = args.length > 0 ? stringLiteralValue(args[0]) : null
+
+  for (const arg of args) {
     let handlerSymbol: SpiSymbol | null = null
     if (ts.isIdentifier(arg)) {
       handlerSymbol = resolveHandlerSymbol(arg, ctx)
@@ -197,6 +198,12 @@ function emitMiddlewareForCall(
     //     fallback for symbols that have no other Express identity.
     if (handlerSymbol.framework_role !== undefined && handlerSymbol.framework_role !== 'express_middleware') continue
     handlerSymbol.framework_role = 'express_middleware'
+    if (mountPath !== null) {
+      handlerSymbol.framework_metadata = {
+        ...(handlerSymbol.framework_metadata ?? {}),
+        mount_path: mountPath,
+      }
+    }
   }
 }
 
@@ -231,6 +238,13 @@ function emitRouteForCall(
   const handlerArg = args[args.length - 1]
   if (!handlerArg) return
 
+  // Slice 1c-ii.f — extract the route path string from the FIRST
+  // argument if it's a string literal. \`app.get('/users/:id', ...)\` →
+  // route_path: '/users/:id'. Dynamic paths (template literals, computed
+  // expressions) are skipped — the metadata only carries statically
+  // known values; consumers shouldn't trust a partial path.
+  const routePath = stringLiteralValue(args[0])
+
   // Resolve the handler in priority order:
   //   1. Identifier — existing slice 1c-ii.c path.
   //   2. ArrowFunction / FunctionExpression — slice 1c-ii.e synthesizes
@@ -243,10 +257,14 @@ function emitRouteForCall(
   }
   if (!handlerSymbol) return
 
-  // Named-handler path may need framework_role assignment; synthetic
-  // symbols already carry it from the mint helper. The assignment is
-  // idempotent.
   handlerSymbol.framework_role = 'express_route'
+  if (routePath !== null) {
+    handlerSymbol.framework_metadata = {
+      ...(handlerSymbol.framework_metadata ?? {}),
+      route_path: routePath,
+    }
+  }
+
   const range = handlerSymbol.range
   const edgeKey = `${bindingSymbol.id}|${handlerSymbol.id}|route_handler`
   if (seenEdgeKeys.has(edgeKey)) return
@@ -259,6 +277,17 @@ function emitRouteForCall(
     source: 'framework-decorator',
     evidence: { file_id: ctx.fileId, range },
   })
+}
+
+/** Extract the value of a string-literal node (single or double-quoted,
+ *  or a no-substitution template literal). Returns null for anything
+ *  more complex — template literals with expressions, computed
+ *  identifiers, etc. */
+function stringLiteralValue(node: ts.Expression | undefined): string | null {
+  if (!node) return null
+  if (ts.isStringLiteral(node)) return node.text
+  if (ts.isNoSubstitutionTemplateLiteral(node)) return node.text
+  return null
 }
 
 /**

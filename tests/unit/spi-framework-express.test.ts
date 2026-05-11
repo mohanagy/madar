@@ -521,6 +521,96 @@ describe('SPI Express framework detector (slice 1c-ii.b)', () => {
     })
   })
 
+  describe('route_path metadata (slice 1c-ii.f)', () => {
+    it('attaches route_path to a named route handler', () => {
+      writeFile(sandbox, 'src/server.ts', [
+        'import express from "express"',
+        'export const app = express()',
+        'export function listUsers(): void {}',
+        'app.get("/users/:id", listUsers)',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+      const handler = findSymbol(spi, 'src/server.ts', 'listUsers')
+      expect(handler?.framework_metadata).toEqual({ route_path: '/users/:id' })
+    })
+
+    it('attaches route_path to a synthesized inline route handler', () => {
+      writeFile(sandbox, 'src/server.ts', [
+        'import express from "express"',
+        'export const app = express()',
+        'app.post("/users", (_req, _res) => { void 0 })',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+      const synthetic = spi.symbols.find((s) => s.framework_role === 'express_route' && s.kind === 'function')
+      expect(synthetic?.framework_metadata).toEqual({ route_path: '/users' })
+    })
+
+    it('extracts route_path from a no-substitution template literal', () => {
+      writeFile(sandbox, 'src/server.ts', [
+        'import express from "express"',
+        'export const app = express()',
+        'export function h(): void {}',
+        'app.delete(`/orders/:id`, h)',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+      const handler = findSymbol(spi, 'src/server.ts', 'h')
+      expect(handler?.framework_metadata?.route_path).toBe('/orders/:id')
+    })
+
+    it('does NOT attach route_path when the path is a dynamic expression (template with substitution)', () => {
+      writeFile(sandbox, 'src/server.ts', [
+        'import express from "express"',
+        'export const app = express()',
+        'export function h(): void {}',
+        'const prefix = "/v1"',
+        'app.get(`${prefix}/users`, h)',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+      const handler = findSymbol(spi, 'src/server.ts', 'h')
+      // Dynamic path → no route_path metadata. Consumers should not
+      // see a partial path; absent is honest.
+      expect(handler?.framework_metadata).toBeUndefined()
+    })
+
+    it('attaches mount_path to middleware registered with a path prefix', () => {
+      writeFile(sandbox, 'src/server.ts', [
+        'import express from "express"',
+        'export const app = express()',
+        'export function authMw(): void {}',
+        'app.use("/api", authMw)',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+      const handler = findSymbol(spi, 'src/server.ts', 'authMw')
+      expect(handler?.framework_metadata).toEqual({ mount_path: '/api' })
+    })
+
+    it('does NOT attach mount_path to middleware registered globally (app.use(mw) with no prefix)', () => {
+      writeFile(sandbox, 'src/server.ts', [
+        'import express from "express"',
+        'export const app = express()',
+        'export function globalMw(): void {}',
+        'app.use(globalMw)',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+      const handler = findSymbol(spi, 'src/server.ts', 'globalMw')
+      expect(handler?.framework_role).toBe('express_middleware')
+      expect(handler?.framework_metadata).toBeUndefined()
+    })
+
+    it('attaches the same mount_path to every middleware in a chained registration', () => {
+      writeFile(sandbox, 'src/server.ts', [
+        'import express from "express"',
+        'export const app = express()',
+        'export function mw1(): void {}',
+        'export function mw2(): void {}',
+        'app.use("/admin", mw1, mw2)',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+      expect(findSymbol(spi, 'src/server.ts', 'mw1')?.framework_metadata?.mount_path).toBe('/admin')
+      expect(findSymbol(spi, 'src/server.ts', 'mw2')?.framework_metadata?.mount_path).toBe('/admin')
+    })
+  })
+
   describe('projector — framework propagation through to ExtractionNode', () => {
     it('an express_app variable surfaces with framework=express on the projected ExtractionNode', async () => {
       writeFile(sandbox, 'src/server.ts', [
