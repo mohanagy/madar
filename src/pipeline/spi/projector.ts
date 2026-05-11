@@ -166,6 +166,23 @@ export function projectSpiToExtraction(
       }
     }
 
+    // Propagate framework_metadata onto the ExtractionNode. Today's
+    // callers set keys like `route_path` (Express routes), `mount_path`
+    // (Express middleware), and future framework slices may add more.
+    // The legacy extractor uses `route_path` as a top-level field on
+    // ExtractionNodes, so spreading the bag onto the node brings parity
+    // and keeps consumers (graph.json shape, downstream retrieval) able
+    // to filter by these fields without round-tripping through the SPI
+    // substrate. ExtractionNode's index signature allows arbitrary keys,
+    // so the spread is type-safe.
+    if (symbol.framework_metadata) {
+      for (const [key, value] of Object.entries(symbol.framework_metadata)) {
+        if (value !== undefined) {
+          node[key] = value
+        }
+      }
+    }
+
     addNode(nodes, seenNodeIds, node)
   }
 
