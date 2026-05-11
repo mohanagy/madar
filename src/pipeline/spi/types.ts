@@ -88,6 +88,10 @@ export type SpiFrameworkRole =
   | 'nextjs_pages_page'
   | 'nextjs_pages_api'
   | 'nextjs_middleware'
+  // React Router roles (slice 1c-v.a)
+  | 'react_router_router'
+  | 'react_router_loader'
+  | 'react_router_action'
 
 export type SpiSymbol = {
   id: string

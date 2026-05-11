@@ -230,6 +230,7 @@ function frameworkForRole(role: NonNullable<SpiSymbol['framework_role']>): strin
   if (role.startsWith('nest_')) return 'nestjs'
   if (role.startsWith('express_')) return 'express'
   if (role.startsWith('nextjs_')) return 'nextjs'
+  if (role.startsWith('react_router_')) return 'react-router'
   return 'unknown'
 }
 
@@ -258,7 +259,11 @@ function nodeKindForRole(role: NonNullable<SpiSymbol['framework_role']>): NonNul
     case 'nextjs_app_error':
     case 'nextjs_app_template':
     case 'nextjs_pages_page':
+    case 'react_router_loader':
+    case 'react_router_action':
       return 'function'
+    case 'react_router_router':
+      return 'router'
     default:
       return null
   }

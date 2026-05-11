@@ -76,3 +76,8 @@ export {
   detectNextjsFramework,
   type DetectNextjsFrameworkContext,
 } from './framework-nextjs.js'
+
+export {
+  detectReactRouterFramework,
+  type DetectReactRouterFrameworkContext,
+} from './framework-react-router.js'

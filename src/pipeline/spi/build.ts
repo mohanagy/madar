@@ -65,6 +65,7 @@ import { addTestLayerEdges } from './test-layer.js'
 import { collectNestTokenMap, detectNestFramework } from './framework-nestjs.js'
 import { detectExpressFramework } from './framework-express.js'
 import { detectNextjsFramework } from './framework-nextjs.js'
+import { detectReactRouterFramework } from './framework-react-router.js'
 
 export type BuildSpiOptions = {
   root: string
@@ -663,6 +664,14 @@ function addTypeCheckerEdges(ctx: TypeCheckerEdgeContext): void {
       sourceFile,
       fileId: file.id,
       filePath: file.path,
+      symbolsByFile,
+    })
+    // Slice 1c-v.a: React Router substrate. Tags createBrowserRouter
+    // results and named loader/action exports in files importing
+    // react-router(-dom).
+    detectReactRouterFramework({
+      sourceFile,
+      fileId: file.id,
       symbolsByFile,
     })
   }
