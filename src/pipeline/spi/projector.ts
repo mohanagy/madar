@@ -249,6 +249,10 @@ function frameworkForRole(role: NonNullable<SpiSymbol['framework_role']>): strin
   if (role.startsWith('nextjs_')) return 'nextjs'
   if (role.startsWith('react_router_')) return 'react-router'
   if (role.startsWith('redux_')) return 'redux'
+  if (role.startsWith('hono_')) return 'hono'
+  if (role.startsWith('fastify_')) return 'fastify'
+  if (role.startsWith('trpc_')) return 'trpc'
+  if (role.startsWith('prisma_')) return 'prisma'
   return 'unknown'
 }
 
@@ -258,9 +262,27 @@ function nodeKindForRole(role: NonNullable<SpiSymbol['framework_role']>): NonNul
     case 'express_route':
     case 'nextjs_app_route':
     case 'nextjs_pages_api':
+    case 'hono_route':
+    case 'fastify_route':
       return 'route'
     case 'express_router':
       return 'router'
+    case 'hono_app':
+    case 'fastify_app':
+      return 'class'
+    case 'hono_middleware':
+    case 'fastify_plugin':
+      return 'function'
+    case 'trpc_router':
+      return 'router'
+    case 'trpc_procedure_query':
+    case 'trpc_procedure_mutation':
+    case 'trpc_procedure_subscription':
+      return 'route'
+    case 'prisma_client':
+      return 'class'
+    case 'prisma_model_access':
+      return 'function'
     case 'nest_controller':
     case 'nest_module':
     case 'nest_provider':
