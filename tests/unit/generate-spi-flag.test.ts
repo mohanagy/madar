@@ -62,13 +62,11 @@ describe('generateGraph useSpi:true (v0.18)', () => {
     expect(hasSpiNote).toBe(true)
   })
 
-  it('produces nodes for Express handlers via the SPI pipeline', () => {
-    // SPI projector emits an ExtractionNode for every projectable symbol.
-    // The full framework_role / route_path propagation through to
-    // graph.json depends on the graph serializer preserving arbitrary
-    // node attributes — pinned separately by spi-projector-express-parity
-    // tests. Here we just verify the SPI pipeline produces a usable
-    // graph from an Express sandbox.
+  it('framework_role + route_path flow end-to-end into graph.json with --spi', () => {
+    // Confirms the v0.18 user-visible win: the SPI projector tags
+    // Express route handlers with framework=express + framework_role=
+    // express_route + node_kind=route + route_path, and the graph.json
+    // serializer preserves all of these as plain node attributes.
     writeFile(sandbox, 'src/server.ts', [
       'import express from "express"',
       'export const app = express()',
@@ -77,11 +75,15 @@ describe('generateGraph useSpi:true (v0.18)', () => {
     ].join('\n') + '\n')
 
     const result = generateGraph(sandbox, { useSpi: true, noHtml: true })
-    const raw = readFileSync(result.graphPath, 'utf8')
-
-    expect(result.nodeCount).toBeGreaterThan(0)
-    // The handler function should be in graph.json under some shape.
-    expect(raw).toContain('listUsers')
+    const parsed = JSON.parse(readFileSync(result.graphPath, 'utf8')) as {
+      nodes: Array<Record<string, unknown>>
+    }
+    const listUsersNode = parsed.nodes.find((n) => n.label === 'listUsers()')
+    expect(listUsersNode).toBeDefined()
+    expect(listUsersNode?.framework).toBe('express')
+    expect(listUsersNode?.framework_role).toBe('express_route')
+    expect(listUsersNode?.node_kind).toBe('route')
+    expect(listUsersNode?.route_path).toBe('/users')
   })
 
   it('uses the SPI cache on the second call (notes include "cache hit")', () => {

@@ -555,6 +555,13 @@ interface FrameworkQuestionProfile {
   reactRouter: boolean
   nest: boolean
   next: boolean
+  // v0.19 — v0.17 framework slots added to the boost surface so
+  // questions about Hono / Fastify / tRPC / Prisma actually route to
+  // the right substrate nodes.
+  hono: boolean
+  fastify: boolean
+  trpc: boolean
+  prisma: boolean
   routeIntent: boolean
   middlewareIntent: boolean
   handlerIntent: boolean
@@ -575,6 +582,13 @@ interface FrameworkQuestionProfile {
   guardIntent: boolean
   interceptorIntent: boolean
   pipeIntent: boolean
+  // v0.19 — new intents for the new substrates.
+  pluginIntent: boolean
+  procedureIntent: boolean
+  queryIntent: boolean
+  mutationIntent: boolean
+  subscriptionIntent: boolean
+  modelIntent: boolean
 }
 
 function activeFrameworksForProfile(profile: FrameworkQuestionProfile): ReadonlySet<string> {
@@ -584,6 +598,10 @@ function activeFrameworksForProfile(profile: FrameworkQuestionProfile): Readonly
   if (profile.reactRouter) frameworks.add('react-router')
   if (profile.nest) frameworks.add('nestjs')
   if (profile.next) frameworks.add('nextjs')
+  if (profile.hono) frameworks.add('hono')
+  if (profile.fastify) frameworks.add('fastify')
+  if (profile.trpc) frameworks.add('trpc')
+  if (profile.prisma) frameworks.add('prisma')
   return frameworks
 }
 
@@ -791,6 +809,17 @@ function buildFrameworkQuestionProfile(question: string, questionTokens: readonl
   const explicitRedux = includesAnyToken(questionTokens, ['redux', 'toolkit'])
   const explicitNest = includesAnyToken(questionTokens, ['nest', 'nestjs'])
   const explicitNext = includesAnyToken(questionTokens, ['next', 'nextjs'])
+  // v0.19 — explicit mentions of the v0.17 substrates.
+  const explicitHono = includesAnyToken(questionTokens, ['hono'])
+  const explicitFastify = includesAnyToken(questionTokens, ['fastify'])
+  const explicitTrpc = includesAnyToken(questionTokens, ['trpc', 'procedure', 'procedures'])
+  const explicitPrisma = includesAnyToken(questionTokens, ['prisma'])
+  const pluginIntent = includesAnyToken(questionTokens, ['plugin', 'plugins'])
+  const procedureIntent = includesAnyToken(questionTokens, ['procedure', 'procedures', 'rpc'])
+  const queryIntent = includesAnyToken(questionTokens, ['query', 'queries'])
+  const mutationIntent = includesAnyToken(questionTokens, ['mutation', 'mutations'])
+  const subscriptionIntent = includesAnyToken(questionTokens, ['subscription', 'subscriptions', 'subscribe'])
+  const modelIntent = includesAnyToken(questionTokens, ['model', 'models', 'schema', 'orm', 'database', 'db'])
   const explicitNextText = /\bnext(?:\.js)?\b/i.test(question)
   const explicitNextPagesArtifact = /\b(_app|_document|not-found)\b/i.test(question)
   const mentionsReact = includesAnyToken(questionTokens, ['react'])
@@ -822,7 +851,13 @@ function buildFrameworkQuestionProfile(question: string, questionTokens: readonl
     clientIntent ||
     serverIntent ||
     apiIntent
-  const express = explicitExpress || hasHttpVerb || middlewareIntent || handlerIntent
+  const hono = explicitHono
+  const fastify = explicitFastify || pluginIntent
+  const trpc = explicitTrpc || procedureIntent || queryIntent || mutationIntent || subscriptionIntent
+  const prisma = explicitPrisma || modelIntent
+  // Express still wins on bare http-verb/middleware/handler intent unless
+  // a more specific framework is named.
+  const express = (explicitExpress || hasHttpVerb || middlewareIntent || handlerIntent) && !hono && !fastify
   const redux = explicitRedux || selectorIntent || sliceIntent || storeIntent
   const reactRouter =
     routeIntent &&
@@ -837,12 +872,16 @@ function buildFrameworkQuestionProfile(question: string, questionTokens: readonl
       includesAnyToken(questionTokens, ['route', 'routes', 'middleware', 'action', 'actions', 'page', 'pages']))
 
   return {
-    frameworkShaped: express || redux || reactRouter || nest || next,
+    frameworkShaped: express || redux || reactRouter || nest || next || hono || fastify || trpc || prisma,
     express,
     redux,
     reactRouter,
     nest,
     next,
+    hono,
+    fastify,
+    trpc,
+    prisma,
     routeIntent,
     middlewareIntent,
     handlerIntent,
@@ -863,6 +902,12 @@ function buildFrameworkQuestionProfile(question: string, questionTokens: readonl
     guardIntent,
     interceptorIntent,
     pipeIntent,
+    pluginIntent,
+    procedureIntent,
+    queryIntent,
+    mutationIntent,
+    subscriptionIntent,
+    modelIntent,
   }
 }
 
@@ -980,6 +1025,57 @@ function frameworkBoostForNode(
     }
     if (frameworkRole === 'next_client_component') {
       boost += profile.clientIntent || profile.renderIntent ? 3.25 : 1.25
+    }
+  }
+
+  // v0.19 — Hono / Fastify / tRPC / Prisma boost rules. Mirrors the
+  // weights used for Express/NestJS/etc. so questions about these
+  // substrates route to the right nodes.
+  if (profile.hono) {
+    if (frameworkRole === 'hono_route') {
+      boost += profile.routeIntent ? 4 : 1.5
+    }
+    if (frameworkRole === 'hono_middleware') {
+      boost += profile.middlewareIntent ? 2.5 : 1
+    }
+    if (frameworkRole === 'hono_app') {
+      boost += profile.routeIntent ? 1.5 : 0.5
+    }
+  }
+
+  if (profile.fastify) {
+    if (frameworkRole === 'fastify_route') {
+      boost += profile.routeIntent ? 4 : 1.5
+    }
+    if (frameworkRole === 'fastify_plugin') {
+      boost += profile.pluginIntent || profile.middlewareIntent ? 2.5 : 1
+    }
+    if (frameworkRole === 'fastify_app') {
+      boost += profile.routeIntent ? 1.5 : 0.5
+    }
+  }
+
+  if (profile.trpc) {
+    if (frameworkRole === 'trpc_procedure_query') {
+      boost += profile.queryIntent || profile.procedureIntent ? 3.5 : 1.5
+    }
+    if (frameworkRole === 'trpc_procedure_mutation') {
+      boost += profile.mutationIntent || profile.procedureIntent ? 3.5 : 1.5
+    }
+    if (frameworkRole === 'trpc_procedure_subscription') {
+      boost += profile.subscriptionIntent || profile.procedureIntent ? 3.5 : 1.5
+    }
+    if (frameworkRole === 'trpc_router') {
+      boost += profile.routeIntent || profile.procedureIntent ? 2 : 0.75
+    }
+  }
+
+  if (profile.prisma) {
+    if (frameworkRole === 'prisma_client') {
+      boost += profile.modelIntent ? 3 : 1.5
+    }
+    if (frameworkRole === 'prisma_model_access') {
+      boost += profile.modelIntent ? 3 : 1
     }
   }
 
