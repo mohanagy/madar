@@ -10,6 +10,8 @@
 // rather than from a model judgement. That keeps the surface fully
 // deterministic and CI-asseratable.
 
+import type { SourceDomain } from '../shared/source-discovery.js'
+
 /** The categories of structural problems a context-pack can exhibit. Each
  *  enum value maps to one rule in computeContextPackDiagnostics. */
 export type ContextPackDiagnosticKind =
@@ -22,6 +24,13 @@ export type ContextPackDiagnosticKind =
   | 'low_avg_match_score'
   | 'orphan_nodes'
   | 'no_graph_signals'
+  | 'excluded_domain_selected'
+  | 'test_dominated_pack'
+  | 'controller_only_pipeline_pack'
+  | 'missing_method_anchor'
+  | 'missing_runtime_pipeline'
+  | 'polluted_source_path_selected'
+  | 'missing_structural_evidence'
 
 export type ContextPackDiagnosticSeverity = 'info' | 'warn' | 'error'
 
@@ -48,6 +57,12 @@ export interface ContextPackQualitySignals {
   /** token_count from the pack as a fraction of task_contract.budget.
    *  Capped at 1.0 for over-budget packs. */
   budget_utilization: number
+  /** Source-domain distribution across selected nodes. */
+  domain_distribution: Partial<Record<SourceDomain, number>>
+  /** Domains the prompt explicitly excluded. */
+  excluded_domains: string[]
+  /** Number of selected nodes from polluted/generated paths. */
+  polluted_source_path_count: number
 }
 
 export interface ContextPackDiagnostics {

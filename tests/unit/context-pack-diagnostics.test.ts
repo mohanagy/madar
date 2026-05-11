@@ -12,6 +12,7 @@ import type {
   ContextPackRelationship,
   ContextPackTaskContract,
 } from '../../src/contracts/context-pack.js'
+import type { RetrievalGateDecision } from '../../src/contracts/retrieval-gate.js'
 import { computeContextPackDiagnostics } from '../../src/runtime/context-pack-diagnostics.js'
 
 function taskContract(overrides: Partial<ContextPackTaskContract> = {}): ContextPackTaskContract {
@@ -78,6 +79,22 @@ function makePack(overrides: Partial<CompiledContextPack> = {}): CompiledContext
     graph_signals: { god_nodes: ['Logger'], bridge_nodes: [] },
   }
   return { ...base, ...overrides }
+}
+
+function retrievalGate(overrides: Partial<RetrievalGateDecision> = {}): RetrievalGateDecision {
+  return {
+    level: 2,
+    skipped_retrieval: false,
+    reason: 'test helper',
+    intent: 'explain',
+    signals: {
+      has_pr_diff: false,
+      has_stack_trace: false,
+      mentioned_paths: [],
+      mentioned_symbols: [],
+    },
+    ...overrides,
+  }
 }
 
 describe('computeContextPackDiagnostics', () => {
@@ -269,6 +286,94 @@ describe('computeContextPackDiagnostics', () => {
     expect(diag.quality_score).toBeGreaterThanOrEqual(0)
     expect(diag.quality_score).toBeLessThanOrEqual(1)
     expect(diag.quality_score).toEqual(Number(diag.quality_score.toFixed(3)))
+  })
+
+  it('flags excluded_domain_selected when excluded test files survive into the final pack', () => {
+    const pack = makePack({
+      nodes: [
+        makeNode({ node_id: 'a', source_file: '/repo/src/service.ts' }),
+        makeNode({ node_id: 'b', source_file: '/repo/tests/service.spec.ts' }),
+        makeNode({ node_id: 'c', source_file: '/repo/src/controller.ts' }),
+      ],
+      retrieval_gate: {
+        ...retrievalGate(),
+        signals: {
+          ...retrievalGate().signals,
+          excluded_domains: ['test'],
+        } as RetrievalGateDecision['signals'] & { excluded_domains: string[] },
+      },
+    })
+
+    const diag = computeContextPackDiagnostics(pack)
+    expect(diag.warnings.map((warning) => warning.kind)).toContain('excluded_domain_selected')
+  })
+
+  it('flags polluted_source_path_selected for worktree and graphify output pollution', () => {
+    const diag = computeContextPackDiagnostics(makePack({
+      nodes: [
+        makeNode({ node_id: 'a', source_file: '/repo/src/service.ts' }),
+        makeNode({ node_id: 'b', source_file: '/repo/backend/.worktrees/task-1/src/service.ts' }),
+        makeNode({ node_id: 'c', source_file: '/repo/graphify-out/graph.json' }),
+      ],
+    }))
+
+    expect(diag.warnings.map((warning) => warning.kind)).toContain('polluted_source_path_selected')
+  })
+
+  it('flags controller-only pipeline packs and missing method anchors for runtime prompts', () => {
+    const diag = computeContextPackDiagnostics(makePack({
+      nodes: [
+        makeNode({ node_id: 'controller', label: 'IdeasController', source_file: '/repo/src/ideas.controller.ts', framework_role: 'nest_controller' }),
+        makeNode({ node_id: 'method', label: 'IdeasController.generateFromProblem', source_file: '/repo/src/ideas.controller.ts', framework_role: 'nest_controller' }),
+        makeNode({ node_id: 'sibling', label: 'IdeasController.listIdeas', source_file: '/repo/src/ideas.controller.ts', framework_role: 'nest_controller' }),
+      ],
+      relationships: [
+        makeRelationship('IdeasController', 'IdeasController.generateFromProblem', 'controller_route'),
+      ],
+      retrieval_gate: {
+        ...retrievalGate({
+          reason: 'pipeline prompt',
+        }),
+        signals: {
+          ...retrievalGate().signals,
+          mentioned_symbols: ['IdeasController.generateFromProblem'],
+        },
+      },
+      task_contract: taskContract({
+        prompt: 'Explain the runtime pipeline for IdeasController.generateFromProblem through the service and orchestrator path.',
+      }),
+      slice: {
+        mode: 'explain',
+        anchors: [{ label: 'IdeasController', reason: 'symbol mention' }],
+        directions: ['forward'],
+        selected_paths: [{ from: 'IdeasController', to: 'IdeasController.generateFromProblem', relation: 'controller_route', direction: 'forward' }],
+      },
+    }))
+
+    expect(diag.warnings.map((warning) => warning.kind)).toEqual(expect.arrayContaining([
+      'controller_only_pipeline_pack',
+      'missing_method_anchor',
+      'missing_runtime_pipeline',
+    ]))
+  })
+
+  it('flags test-dominated production packs and missing structural evidence', () => {
+    const diag = computeContextPackDiagnostics(makePack({
+      nodes: [
+        makeNode({ node_id: 'a', source_file: '/repo/tests/service.spec.ts', framework_role: 'nest_controller' }),
+        makeNode({ node_id: 'b', source_file: '/repo/benchmarks/service.bench.ts' }),
+        makeNode({ node_id: 'c', source_file: '/repo/tests/helper.ts' }),
+      ],
+      relationships: [],
+      task_contract: taskContract({
+        prompt: 'Explain the production runtime pipeline for report generation.',
+      }),
+    }))
+
+    expect(diag.warnings.map((warning) => warning.kind)).toEqual(expect.arrayContaining([
+      'test_dominated_pack',
+      'missing_structural_evidence',
+    ]))
   })
 
   it('signals.avg_match_score is NaN when no scored nodes exist', () => {

@@ -4,6 +4,13 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **Default graph discovery is stricter on duplicate/generated paths**: legacy detect and `--spi` now share hard ignores for nested worktrees, VCS metadata, `graphify-out`, dependency stores, and common build/cache outputs, while keeping tests, benchmarks, fixtures, and mocks indexable unless the user excludes them.
+- **Retrieval exclusions are intent-aware**: prompts like "exclude tests" or "do not include benchmarks" no longer classify as `test` intent, and the parsed excluded domains/terms now suppress matching retrieval candidates instead of only affecting wording.
+- **Slice-v1 anchors and traversal are more truthful for production prompts**: literal file-path mentions are distinguished from lexical source-path overlap, explicit `Class.method` prompts anchor the method instead of the class, and pipeline-shaped NestJS prompts now walk backward/forward through controller, service, orchestrator, and persistence paths without exploding into sibling controller methods.
+- **Context-pack diagnostics catch semantically wrong packs**: diagnostics now flag excluded-domain selections, polluted source paths, controller-only pipeline packs, missing method anchors/runtime pipeline evidence, and test-dominated production packs.
+
 ## [0.22.0] - 2026-05-11
 
 ### Added

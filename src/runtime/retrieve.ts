@@ -20,6 +20,11 @@ import { godNodes, workspaceBridges } from '../pipeline/analyze.js'
 import { type Communities } from '../pipeline/cluster.js'
 import { buildCommunityLabels } from '../pipeline/community-naming.js'
 import { lineNumberFromSourceLocation, lineRangeFromSourceLocation } from '../shared/source-location.js'
+import {
+  classifySourceDomain,
+  isPollutedSourcePath,
+  type SourceDomain,
+} from '../shared/source-discovery.js'
 import { relativizeSourceFile } from '../shared/source-path.js'
 import {
   classifyTaskContract,
@@ -90,6 +95,7 @@ export interface RetrieveMatchedNode {
   framework?: string | undefined
   framework_role?: string | undefined
   framework_boost?: number
+  source_domain?: SourceDomain
   file_type: string
   snippet: string | null
   match_score: number
@@ -448,6 +454,7 @@ function scoredNodeFromGraphEntry(
   attributes: Record<string, unknown>,
   frameworkProfile: FrameworkQuestionProfile,
   questionLower = '',
+  rootPath?: string,
 ): ScoredNode {
   const resolvedLine = resolvedLineNumber(attributes)
   const nodeKind = String(attributes.node_kind ?? '')
@@ -467,11 +474,13 @@ function scoredNodeFromGraphEntry(
     nodeKind,
     framework: typeof attributes.framework === 'string' ? attributes.framework : undefined,
     frameworkRole: frameworkRole || undefined,
+    sourceDomain: classifySourceDomain(String(attributes.source_file ?? ''), rootPath),
     fileType: String(attributes.file_type ?? '').trim().toLowerCase(),
     fileNodeLike: isFileNodeLike(String(attributes.label ?? ''), String(attributes.source_file ?? '')),
     community: parseCommunityId(attributes.community),
     frameworkBoost: frameworkBoostForNode(frameworkProfile, nodeKind, frameworkRole, frameworkMetadataFromAttributes(attributes), questionLower),
     exactLabelMatch: false,
+    literalPathMatch: false,
     sourcePathMatch: false,
     evidenceTier: 0,
     score: 0,
@@ -542,12 +551,14 @@ interface SeedCandidate {
   nodeKind: string
   framework?: string | undefined
   frameworkRole?: string | undefined
+  sourceDomain: SourceDomain
   fileType: string
   fileNodeLike: boolean
   community: number | null
   frameworkBoost: number
   seedScore: SeedScoreBreakdown
   exactLabelMatch: boolean
+  literalPathMatch: boolean
   sourcePathMatch: boolean
   evidenceTier: 0 | 1 | 2
   relevanceBand: 'direct' | 'related' | 'peripheral'
@@ -564,18 +575,20 @@ interface ScoredNode {
   nodeKind: string
   framework?: string | undefined
   frameworkRole?: string | undefined
+  sourceDomain: SourceDomain
   fileType: string
   fileNodeLike: boolean
   community: number | null
   frameworkBoost: number
   exactLabelMatch: boolean
+  literalPathMatch: boolean
   sourcePathMatch: boolean
   evidenceTier: 0 | 1 | 2
   score: number
   relevanceBand: 'direct' | 'related' | 'peripheral'
 }
 
-function scoredNodeFromGraph(graph: KnowledgeGraph, nodeId: string, score: number): ScoredNode {
+function scoredNodeFromGraph(graph: KnowledgeGraph, nodeId: string, score: number, rootPath?: string): ScoredNode {
   const attributes = graph.nodeAttributes(nodeId)
   const resolvedLine = resolvedLineNumber(attributes)
   return {
@@ -591,11 +604,13 @@ function scoredNodeFromGraph(graph: KnowledgeGraph, nodeId: string, score: numbe
     nodeKind: String(attributes.node_kind ?? ''),
     framework: typeof attributes.framework === 'string' ? attributes.framework : undefined,
     frameworkRole: typeof attributes.framework_role === 'string' ? attributes.framework_role : undefined,
+    sourceDomain: classifySourceDomain(String(attributes.source_file ?? ''), rootPath),
     fileType: String(attributes.file_type ?? '').trim().toLowerCase(),
     fileNodeLike: isFileNodeLike(String(attributes.label ?? ''), String(attributes.source_file ?? '')),
     community: parseCommunityId(attributes.community),
     frameworkBoost: 0,
     exactLabelMatch: false,
+    literalPathMatch: false,
     sourcePathMatch: false,
     evidenceTier: 0,
     score,
@@ -646,6 +661,13 @@ interface FrameworkQuestionProfile {
   modelIntent: boolean
 }
 
+interface SymbolReference {
+  raw: string
+  bareName: string
+  className?: string
+  methodName?: string
+}
+
 function activeFrameworksForProfile(profile: FrameworkQuestionProfile): ReadonlySet<string> {
   const frameworks = new Set<string>()
   if (profile.express) frameworks.add('express')
@@ -672,8 +694,90 @@ function normalizeSeedText(value: string): string {
   return tokenizeLabel(value).join('')
 }
 
-function normalizeMentionedSymbol(value: string): string {
-  return normalizeSeedText(value.replace(/\(\)$/, '').split('.').at(-1) ?? value)
+function normalizeIdentifier(value: string): string {
+  return normalizeSeedText(value.replace(/\(\)$/, ''))
+}
+
+function parseSymbolReference(value: string): SymbolReference {
+  const trimmed = value.trim().replace(/`/g, '')
+  const withoutCall = trimmed.replace(/\(\)$/, '')
+  const separatorMatch = withoutCall.match(/^([A-Za-z_$][\w$]*)(?:\.|#|::)([A-Za-z_$][\w$]*)$/)
+  if (separatorMatch?.[1] && separatorMatch[2]) {
+    return {
+      raw: trimmed,
+      bareName: separatorMatch[2],
+      className: separatorMatch[1],
+      methodName: separatorMatch[2],
+    }
+  }
+
+  return {
+    raw: trimmed,
+    bareName: withoutCall,
+    ...(trimmed.endsWith('()') ? { methodName: withoutCall } : {}),
+  }
+}
+
+function labelSymbolParts(label: string): { className?: string; methodName?: string; normalized: string } {
+  const trimmed = label.trim().replace(/`/g, '')
+  const normalized = normalizeIdentifier(trimmed)
+  const dotted = trimmed.replace(/\(\)$/, '')
+  const separatorMatch = dotted.match(/^([A-Za-z_$][\w$]*)(?:\.|#|::)([A-Za-z_$][\w$]*)$/)
+  if (separatorMatch?.[1] && separatorMatch[2]) {
+    return {
+      className: separatorMatch[1],
+      methodName: separatorMatch[2],
+      normalized,
+    }
+  }
+
+  const methodOnlyMatch = dotted.match(/^\.?([A-Za-z_$][\w$]*)$/)
+  return {
+    ...(methodOnlyMatch?.[1] ? { methodName: methodOnlyMatch[1] } : {}),
+    normalized,
+  }
+}
+
+function symbolReferenceMatchScore(
+  label: string,
+  sourceFile: string,
+  references: readonly SymbolReference[],
+): number {
+  const parts = labelSymbolParts(label)
+  const normalizedSource = normalizeSeedText(sourceFile)
+  let best = 0
+
+  for (const reference of references) {
+    const normalizedRaw = normalizeIdentifier(reference.raw)
+    if (parts.normalized === normalizedRaw) {
+      best = Math.max(best, 4)
+      continue
+    }
+
+    const normalizedBare = normalizeIdentifier(reference.bareName)
+    if (reference.className && reference.methodName) {
+      const classMatches = normalizeIdentifier(parts.className ?? '') === normalizeIdentifier(reference.className)
+      const methodMatches = normalizeIdentifier(parts.methodName ?? '') === normalizeIdentifier(reference.methodName)
+      if (classMatches && methodMatches) {
+        best = Math.max(best, 4)
+        continue
+      }
+      if (methodMatches && normalizedSource.includes(normalizeIdentifier(reference.className))) {
+        best = Math.max(best, 3.5)
+        continue
+      }
+    }
+
+    if (normalizeIdentifier(parts.methodName ?? '') === normalizedBare) {
+      best = Math.max(best, reference.methodName ? 3 : 2.5)
+      continue
+    }
+    if (parts.normalized === normalizedBare) {
+      best = Math.max(best, 2.5)
+    }
+  }
+
+  return best
 }
 
 function sourceFileMatchesMentionedPath(sourceFile: string, mentionedPaths: readonly string[]): boolean {
@@ -682,6 +786,65 @@ function sourceFileMatchesMentionedPath(sourceFile: string, mentionedPaths: read
   }
 
   return mentionedPaths.some((path) => sourceFile === path || sourceFile.endsWith(`/${path}`))
+}
+
+function excludedTermMatches(value: string, excludedTerms: readonly string[], excludedPathHints: readonly string[]): boolean {
+  const lowerValue = value.toLowerCase()
+  return excludedTerms.some((term) => lowerValue.includes(term.toLowerCase()))
+    || excludedPathHints.some((hint) => lowerValue.includes(hint.toLowerCase()))
+}
+
+function promptAllowsSourceDomain(domain: SourceDomain, intent: string, prompt: string, questionTokens: readonly string[]): boolean {
+  const lowerPrompt = prompt.toLowerCase()
+  switch (domain) {
+    case 'test':
+      return intent === 'test' || includesAnyToken(questionTokens, ['test', 'tests', 'spec', 'coverage', 'e2e'])
+    case 'benchmark':
+      return includesAnyToken(questionTokens, ['bench', 'benchmark', 'benchmarks', 'perf', 'performance'])
+        || /\b(html reporter|reporter utilities?)\b/i.test(lowerPrompt)
+    case 'fixture':
+      return includesAnyToken(questionTokens, ['fixture', 'fixtures', 'mock', 'mocks'])
+    case 'generated':
+      return includesAnyToken(questionTokens, ['generated', 'codegen'])
+    case 'docs':
+      return includesAnyToken(questionTokens, ['doc', 'docs', 'readme', 'changelog'])
+    case 'config':
+      return includesAnyToken(questionTokens, ['config', 'configs', 'env', 'docker', 'compose', 'settings'])
+    case 'build_artifact':
+      return includesAnyToken(questionTokens, ['dist', 'build', 'artifact', 'artifacts'])
+    case 'production':
+    case 'unknown':
+      return true
+  }
+}
+
+function defaultSourceDomainPenalty(
+  domain: SourceDomain,
+  intent: string,
+  prompt: string,
+  questionTokens: readonly string[],
+): number {
+  if (promptAllowsSourceDomain(domain, intent, prompt, questionTokens)) {
+    return 0
+  }
+
+  switch (domain) {
+    case 'test':
+    case 'benchmark':
+      return 3
+    case 'fixture':
+      return 2.5
+    case 'generated':
+    case 'build_artifact':
+      return 3.5
+    case 'docs':
+      return 1.25
+    case 'config':
+      return 0.75
+    case 'production':
+    case 'unknown':
+      return 0
+  }
 }
 
 function isFileNodeLike(label: string, sourceFile: string): boolean {
@@ -1303,6 +1466,7 @@ function buildRetrieveResultFromOrderedCandidates(
         source_file: serializedSourceFile,
         line_number: node.lineNumber,
         framework_boost: node.frameworkBoost,
+        source_domain: node.sourceDomain,
         file_type: node.fileType,
         snippet,
         match_score: node.score,
@@ -1327,6 +1491,7 @@ function buildRetrieveResultFromOrderedCandidates(
       file_type: node.fileType,
       ...(node.nodeKind.trim().length > 0 ? { node_kind: node.nodeKind } : {}),
       framework_boost: node.frameworkBoost,
+      source_domain: node.sourceDomain,
       match_score: node.score,
       exact_anchor_match: node.exactLabelMatch,
       direct_symbol_match: node.exactLabelMatch,
@@ -1395,7 +1560,7 @@ function buildRetrieveResultFromOrderedCandidates(
 export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions): RetrieveResult {
   const { question, budget } = options
   const questionTokens = tokenizeQuestion(question)
-  const rootPath = typeof graph.graph.root_path === 'string' ? graph.graph.root_path : undefined
+  const rootPath = typeof graph.graph.root_path === 'string' ? graph.graph.root_path : process.cwd()
   const retrievalGate = classifyRetrievalLevel({
     prompt: question,
     ...(options.retrievalLevel !== undefined ? { manualOverride: options.retrievalLevel } : {}),
@@ -1478,8 +1643,11 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
     ...buildCommunityLabels(graph, communities),
     ...storedCommunityLabelsFromGraph(graph),
   }
-  const mentionedSymbols = new Set(retrievalGate.signals.mentioned_symbols.map(normalizeMentionedSymbol))
+  const mentionedSymbolRefs = retrievalGate.signals.mentioned_symbols.map(parseSymbolReference)
   const mentionedPaths = retrievalGate.signals.mentioned_paths
+  const excludedDomains = retrievalGate.signals.excluded_domains ?? []
+  const excludedTerms = retrievalGate.signals.excluded_terms ?? []
+  const excludedPathHints = retrievalGate.signals.excluded_path_hints ?? []
 
   // Step 1+2: Score all nodes with explicit seed evidence weights.
   const tokenWeights = tokenWeightsForQuestion(graph, questionTokens)
@@ -1499,8 +1667,10 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
     const label = String(attributes.label ?? '')
     const sourceFile = String(attributes.source_file ?? '')
     const nodeKind = String(attributes.node_kind ?? '')
+    const sourceDomain = classifySourceDomain(sourceFile, rootPath)
     const fileNodeLike = isFileNodeLike(label, sourceFile)
-    const exactAnchorMatch = mentionedSymbols.has(normalizeMentionedSymbol(label))
+    const symbolMatch = symbolReferenceMatchScore(label, sourceFile, mentionedSymbolRefs)
+    const exactAnchorMatch = symbolMatch >= 3
     const mentionedPathMatch = sourceFileMatchesMentionedPath(sourceFile, mentionedPaths)
     const framework = typeof attributes.framework === 'string' ? attributes.framework : undefined
     const frameworkRole = String(attributes.framework_role ?? '')
@@ -1514,6 +1684,14 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
       averageLabelLength,
       { fileNodeLike, fileOrientedQuestion },
     )
+    const anchorScore = symbolMatch
+    const exclusionMatches = excludedDomains.includes(sourceDomain as never)
+      || excludedTermMatches(label, excludedTerms, excludedPathHints)
+      || excludedTermMatches(sourceFile, excludedTerms, excludedPathHints)
+    if ((isPollutedSourcePath(sourceFile, rootPath) || exclusionMatches) && !exactAnchorMatch && !mentionedPathMatch) {
+      continue
+    }
+    const sourceDomainPenalty = defaultSourceDomainPenalty(sourceDomain, retrievalGate.intent, question, questionTokens)
 
     // CodeRabbit fix: compute framework boost BEFORE the seed gate so
     // metadata-only matches (e.g. a `handler()` node tagged with
@@ -1527,7 +1705,9 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
       questionLower,
     )
 
-    if (score.total > 0 || metadataBoost > 0) {
+    const totalSeedScore = score.total + anchorScore + metadataBoost - sourceDomainPenalty
+    const hasPositiveSeedEvidence = score.total > 0 || anchorScore > 0 || metadataBoost > 0 || mentionedPathMatch
+    if (hasPositiveSeedEvidence) {
       const resolvedLine = resolvedLineNumber(attributes)
       seedCandidates.push({
         id,
@@ -1542,32 +1722,49 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
         nodeKind,
         framework,
         frameworkRole: frameworkRole || undefined,
+        sourceDomain,
         fileType,
         fileNodeLike,
         community,
         frameworkBoost: metadataBoost,
-        seedScore: score,
+        seedScore: {
+          ...score,
+          labelExactScore: score.labelExactScore + anchorScore,
+          total: totalSeedScore,
+        },
         exactLabelMatch: score.labelExactScore > 0 || exactAnchorMatch,
+        literalPathMatch: mentionedPathMatch,
         sourcePathMatch: score.sourcePathScore > 0 || mentionedPathMatch,
         // When the seed only made it in via metadata boost, give it at
         // least evidence tier 1 so it's not at the bottom of the heap.
         evidenceTier: metadataBoost > 0
           ? (Math.max(evidenceTierForSeedScore(score), 1) as 0 | 1 | 2)
-          : evidenceTierForSeedScore(score),
+          : (exactAnchorMatch || mentionedPathMatch ? 2 : evidenceTierForSeedScore(score)),
         relevanceBand: score.labelExactScore > 0 || exactAnchorMatch || score.labelTokenScore > 0 ? 'direct' : 'related',
       })
     }
   }
 
+  const cleanExactLabels = new Set(
+    seedCandidates
+    .filter((candidate) => !isPollutedSourcePath(candidate.sourceFile, rootPath))
+      .map((candidate) => normalizeSeedText(candidate.label)),
+  )
+  const filteredSeedCandidates = seedCandidates.filter((candidate) => (
+    !isPollutedSourcePath(candidate.sourceFile, rootPath)
+      || candidate.literalPathMatch
+      || !cleanExactLabels.has(normalizeSeedText(candidate.label))
+  ))
+
   const fusedSeedScores = reciprocalRankFuse([
-    rankedSeedCandidateIds(graph, seedCandidates, (candidate) => candidate.seedScore.labelExactScore),
-    rankedSeedCandidateIds(graph, seedCandidates, (candidate) => candidate.seedScore.labelTokenScore),
-    rankedSeedCandidateIds(graph, seedCandidates, (candidate) => candidate.seedScore.sourcePathScore),
-    rankedSeedCandidateIds(graph, seedCandidates, (candidate) => candidate.seedScore.communityScore),
+    rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.labelExactScore),
+    rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.labelTokenScore),
+    rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.sourcePathScore),
+    rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.communityScore),
   ], {
     weights: [2, 1.5, 0.5, 0.25],
   })
-  const scored: ScoredNode[] = seedCandidates.map((candidate) => ({
+  const scored: ScoredNode[] = filteredSeedCandidates.map((candidate) => ({
     id: candidate.id,
     label: candidate.label,
     sourceFile: candidate.sourceFile,
@@ -1583,16 +1780,18 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
     community: candidate.community,
     frameworkBoost: candidate.frameworkBoost,
     exactLabelMatch: candidate.exactLabelMatch,
+    literalPathMatch: candidate.literalPathMatch,
     sourcePathMatch: candidate.sourcePathMatch,
     evidenceTier: candidate.evidenceTier,
-    score: ((fusedSeedScores.get(candidate.id) ?? 0) * SEED_FUSION_SCORE_SCALE) + candidate.frameworkBoost,
+      score: Math.max(0.05, ((fusedSeedScores.get(candidate.id) ?? 0) * SEED_FUSION_SCORE_SCALE) + candidate.frameworkBoost - defaultSourceDomainPenalty(candidate.sourceDomain, retrievalGate.intent, question, questionTokens)),
     relevanceBand: candidate.relevanceBand,
+    sourceDomain: candidate.sourceDomain,
   }))
 
   scored.sort((a, b) => compareScoredNodes(graph, a, b))
   const expansionPolicy = expansionPolicyForLevel(effectiveRetrievalLevel, budget)
-  const anchoredSeedPool = (mentionedSymbols.size > 0 || mentionedPaths.length > 0)
-    ? scored.filter((node) => mentionedSymbols.has(normalizeMentionedSymbol(node.label)) || sourceFileMatchesMentionedPath(node.sourceFile, mentionedPaths))
+  const anchoredSeedPool = (mentionedSymbolRefs.length > 0 || mentionedPaths.length > 0)
+    ? scored.filter((node) => symbolReferenceMatchScore(node.label, node.sourceFile, mentionedSymbolRefs) > 0 || sourceFileMatchesMentionedPath(node.sourceFile, mentionedPaths))
     : []
   const seedPool = effectiveRetrievalLevel <= 2 && anchoredSeedPool.length > 0 ? anchoredSeedPool : scored
 
@@ -1748,12 +1947,24 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
     if (options.fileType && fileType !== options.fileType.trim().toLowerCase()) {
       continue
     }
+    const label = String(attributes.label ?? '')
+    const sourceFile = String(attributes.source_file ?? '')
+    const sourceDomain = classifySourceDomain(sourceFile, rootPath)
+    const symbolMatch = symbolReferenceMatchScore(label, sourceFile, mentionedSymbolRefs)
+    const pathMatch = sourceFileMatchesMentionedPath(sourceFile, mentionedPaths)
+    const exclusionMatches = excludedDomains.includes(sourceDomain as never)
+      || excludedTermMatches(label, excludedTerms, excludedPathHints)
+      || excludedTermMatches(sourceFile, excludedTerms, excludedPathHints)
+    if ((isPollutedSourcePath(sourceFile, rootPath) || exclusionMatches) && symbolMatch <= 0 && !pathMatch) {
+      continue
+    }
+    const sourceDomainPenalty = defaultSourceDomainPenalty(sourceDomain, retrievalGate.intent, question, questionTokens)
 
     const resolvedLine = resolvedLineNumber(attributes)
     scored.push({
       id: nodeId,
-      label: String(attributes.label ?? ''),
-      sourceFile: String(attributes.source_file ?? ''),
+      label,
+      sourceFile,
       sourceLocation: typeof attributes.source_location === 'string' && attributes.source_location.length > 0
         ? attributes.source_location
         : null,
@@ -1763,14 +1974,16 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
       nodeKind: String(attributes.node_kind ?? ''),
       framework: typeof attributes.framework === 'string' ? attributes.framework : undefined,
       frameworkRole: typeof attributes.framework_role === 'string' ? attributes.framework_role : undefined,
+      sourceDomain,
       fileType,
-      fileNodeLike: isFileNodeLike(String(attributes.label ?? ''), String(attributes.source_file ?? '')),
+      fileNodeLike: isFileNodeLike(label, sourceFile),
       community,
       frameworkBoost: 0,
-      exactLabelMatch: false,
-      sourcePathMatch: false,
+      exactLabelMatch: symbolMatch >= 3,
+      literalPathMatch: pathMatch,
+      sourcePathMatch: pathMatch,
       evidenceTier: hopDistances.get(nodeId) === 1 ? (hopEvidenceTiers.get(nodeId) ?? 0) : 0,
-      score: hopScore,
+      score: Math.max(0.05, hopScore - sourceDomainPenalty),
       relevanceBand: hopDistances.get(nodeId) === 1 ? 'related' : 'peripheral',
     })
   }
@@ -1840,16 +2053,27 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
         label: node.label,
         sourceFile: node.sourceFile,
         exactLabelMatch: node.exactLabelMatch,
-        sourcePathMatch: node.sourcePathMatch,
-        score: node.score,
+      sourcePathMatch: node.sourcePathMatch,
+      literalPathMatch: node.literalPathMatch,
+      score: node.score,
+      nodeKind: node.nodeKind,
+      frameworkRole: node.frameworkRole,
       })),
       retrievalGate.intent,
+      {
+        prompt: question,
+        mentionedSymbols: retrievalGate.signals.mentioned_symbols,
+        excludedDomains: retrievalGate.signals.excluded_domains,
+        excludedTerms: retrievalGate.signals.excluded_terms,
+        excludedPathHints: retrievalGate.signals.excluded_path_hints,
+        rootPath,
+      },
     )
 
     if (sliced) {
       const scoredById = new Map(scored.map((node) => [node.id, node]))
       const sliceCandidates = sliced.ordered_ids.map((nodeId, index) => (
-        scoredById.get(nodeId) ?? scoredNodeFromGraph(graph, nodeId, Math.max(0.25, 2 - (index * 0.1)))
+        scoredById.get(nodeId) ?? scoredNodeFromGraph(graph, nodeId, Math.max(0.25, 2 - (index * 0.1)), rootPath)
       ))
 
       return buildRetrieveResultFromOrderedCandidates(
@@ -1891,7 +2115,7 @@ export async function retrieveContextAsync(graph: KnowledgeGraph, options: Retri
 
   const frameworkProfile = buildFrameworkQuestionProfile(options.question, questionTokens)
   const activeFrameworks = activeFrameworksForProfile(frameworkProfile)
-  const rootPath = typeof graph.graph.root_path === 'string' ? graph.graph.root_path : undefined
+  const rootPath = typeof graph.graph.root_path === 'string' ? graph.graph.root_path : process.cwd()
   const communities = communitiesFromGraph(graph)
   const communityLabels: Record<number, string> = {
     ...buildCommunityLabels(graph, communities),
@@ -1922,7 +2146,7 @@ export async function retrieveContextAsync(graph: KnowledgeGraph, options: Retri
   const questionLower = options.question.toLowerCase()
   const candidatesById = new Map(
     eligibleNodeEntries(graph, options)
-      .map(([id, attributes]) => [id, scoredNodeFromGraphEntry(id, attributes, frameworkProfile, questionLower)] as const),
+      .map(([id, attributes]) => [id, scoredNodeFromGraphEntry(id, attributes, frameworkProfile, questionLower, rootPath)] as const),
   )
   if (candidatesById.size === 0) {
     return lexicalResult

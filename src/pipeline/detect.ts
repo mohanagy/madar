@@ -1,7 +1,12 @@
-import { Dirent, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs'
+import { Dirent, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, extname, relative, resolve, sep } from 'node:path'
 
 import { sidecarAwareFileFingerprint } from '../shared/binary-ingest-sidecar.js'
+import {
+  isDiscoveryPathIgnored,
+  isIgnoredByPatterns,
+  loadGraphifyignorePatterns,
+} from '../shared/source-discovery.js'
 
 export const FileType = {
   CODE: 'code',
@@ -109,14 +114,8 @@ const SKIP_DIRS = new Set([
   '.venv',
   'env',
   '.env',
-  'graphify-out',
-  'node_modules',
   '__pycache__',
-  '.git',
-  'dist',
-  'build',
   'target',
-  'out',
   'site-packages',
   'lib64',
   '.pytest_cache',
@@ -124,29 +123,11 @@ const SKIP_DIRS = new Set([
   '.ruff_cache',
   '.tox',
   '.eggs',
-  'test',
-  'tests',
-  '__tests__',
-  'spec',
-  'specs',
-  'e2e',
-  'cypress',
-  'playwright',
-  'coverage',
   'storybook-static',
-  'fixtures',
-  '__fixtures__',
-  '__mocks__',
-  'mocks',
 ])
 
 const NOISE_FILE_PATTERNS: RegExp[] = [
-  /\.(test|spec)\.(ts|tsx|js|jsx|mjs|cjs)$/i,
   /\.stories\.(ts|tsx|js|jsx)$/i,
-  /\.mock\.(ts|tsx|js|jsx)$/i,
-  /^(vitest|jest|webpack|rollup|vite|babel)\.config\./i,
-  /^setupTests\.(ts|tsx|js|jsx)$/i,
-  /^jest\.setup\.(ts|tsx|js|jsx)$/i,
 ]
 
 function isNoiseFile(name: string): boolean {
@@ -155,21 +136,6 @@ function isNoiseFile(name: string): boolean {
 
 function toPosixPath(path: string): string {
   return path.split(sep).join('/')
-}
-
-function globToRegExp(pattern: string): RegExp {
-  const wildcardCount = [...pattern].filter((character) => character === '*').length
-  if (pattern.length > 512 || wildcardCount > 32) {
-    return /^$/
-  }
-
-  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&')
-  const wildcarded = escaped.replace(/\*/g, '.*').replace(/\?/g, '.')
-  return new RegExp(`^${wildcarded}$`)
-}
-
-function matchesPattern(value: string, pattern: string): boolean {
-  return globToRegExp(pattern).test(value)
 }
 
 function isNoiseDir(part: string): boolean {
@@ -234,53 +200,11 @@ export function countWords(path: string): number {
 }
 
 export function _loadGraphifyignore(root: string): string[] {
-  try {
-    const content = readFileSync(resolve(root, '.graphifyignore'), 'utf8')
-    return content
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0 && !line.startsWith('#'))
-  } catch {
-    return []
-  }
+  return loadGraphifyignorePatterns(root)
 }
 
 export function _isIgnored(path: string, root: string, patterns: string[]): boolean {
-  if (patterns.length === 0) {
-    return false
-  }
-
-  const relativePath = toPosixPath(relative(resolve(root), resolve(path)))
-  if (relativePath.startsWith('..')) {
-    return false
-  }
-
-  const pathParts = relativePath.split('/')
-  const fileName = basename(path)
-
-  for (const rawPattern of patterns) {
-    const pattern = rawPattern.replace(/^\/+|\/+$/g, '')
-    if (!pattern) {
-      continue
-    }
-
-    if (matchesPattern(relativePath, pattern) || matchesPattern(fileName, pattern)) {
-      return true
-    }
-
-    for (let index = 0; index < pathParts.length; index += 1) {
-      const part = pathParts[index]
-      if (!part) {
-        continue
-      }
-      const prefix = pathParts.slice(0, index + 1).join('/')
-      if (matchesPattern(part, pattern) || matchesPattern(prefix, pattern)) {
-        return true
-      }
-    }
-  }
-
-  return false
+  return isIgnoredByPatterns(path, root, patterns)
 }
 
 function isWithinRoot(rootRealPath: string, candidateRealPath: string): boolean {
@@ -312,7 +236,7 @@ function visitDirectory(
       continue
     }
 
-    if (_isIgnored(entryPath, root, ignorePatterns)) {
+    if (isDiscoveryPathIgnored(entryPath, root, ignorePatterns)) {
       continue
     }
 
@@ -389,11 +313,6 @@ function collectFiles(root: string, followSymlinks: boolean, ignorePatterns: str
   }
 
   visitDirectory(resolvedRoot, resolvedRoot, followSymlinks, ignorePatterns, [rootRealPath], rootRealPath, files)
-
-  const memoryDir = resolve(resolvedRoot, 'graphify-out', 'memory')
-  if (existsSync(memoryDir)) {
-    visitDirectory(memoryDir, resolvedRoot, followSymlinks, ignorePatterns, [rootRealPath], rootRealPath, files)
-  }
 
   return [...new Set(files)].sort()
 }

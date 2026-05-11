@@ -37,6 +37,7 @@ import type {
   ContextPackDiagnostics,
   ContextPackQualitySignals,
 } from '../contracts/context-pack-diagnostics.js'
+import { classifySourceDomain, isPollutedSourcePath, type SourceDomain } from '../shared/source-discovery.js'
 
 const RULE_WEIGHTS: ReadonlyMap<ContextPackDiagnosticKind, number> = new Map([
   ['missing_required_evidence', 2],
@@ -48,6 +49,13 @@ const RULE_WEIGHTS: ReadonlyMap<ContextPackDiagnosticKind, number> = new Map([
   ['low_avg_match_score', 1],
   ['orphan_nodes', 1],
   ['no_graph_signals', 1],
+  ['excluded_domain_selected', 1],
+  ['test_dominated_pack', 1],
+  ['controller_only_pipeline_pack', 1],
+  ['missing_method_anchor', 1],
+  ['missing_runtime_pipeline', 1],
+  ['polluted_source_path_selected', 2],
+  ['missing_structural_evidence', 1],
 ])
 
 const SEVERITY_ORDER: Record<ContextPackDiagnosticSeverity, number> = {
@@ -176,6 +184,74 @@ export function computeContextPackDiagnostics(
     })
   }
 
+  if (signals.polluted_source_path_count > 0) {
+    warnings.push({
+      kind: 'polluted_source_path_selected',
+      severity: 'error',
+      message: 'Pack selected nodes from polluted paths such as nested worktrees or generated outputs.',
+      detail: { count: signals.polluted_source_path_count },
+    })
+  }
+
+  if (signals.excluded_domains.length > 0) {
+    const selectedExcludedDomains = Object.entries(signals.domain_distribution)
+      .filter(([domain, count]) => signals.excluded_domains.includes(domain) && (count ?? 0) > 0)
+      .map(([domain]) => domain)
+    if (selectedExcludedDomains.length > 0) {
+      warnings.push({
+        kind: 'excluded_domain_selected',
+        severity: 'warn',
+        message: `Pack selected nodes from excluded domains: ${selectedExcludedDomains.join(', ')}.`,
+        detail: { domains: selectedExcludedDomains },
+      })
+    }
+  }
+
+  if (productionPrompt(pack) && dominatedByDomains(signals.domain_distribution, ['test', 'benchmark', 'fixture'])) {
+    warnings.push({
+      kind: 'test_dominated_pack',
+      severity: 'warn',
+      message: 'Pack is dominated by test, benchmark, or fixture nodes for a production-oriented prompt.',
+      detail: { domain_distribution: signals.domain_distribution },
+    })
+  }
+
+  if (pipelinePrompt(pack) && (pack.coverage.selected_relationships === 0 || signals.relationship_count === 0)) {
+    warnings.push({
+      kind: 'missing_structural_evidence',
+      severity: 'warn',
+      message: 'Pack is missing structural relationships for a pipeline-oriented prompt.',
+      detail: {
+        selected_relationships: pack.coverage.selected_relationships,
+        relationship_count: signals.relationship_count,
+      },
+    })
+  }
+
+  if (pipelinePrompt(pack) && controllerOnlyPipelinePack(pack)) {
+    warnings.push({
+      kind: 'controller_only_pipeline_pack',
+      severity: 'warn',
+      message: 'Pack stayed at controller-level context for a pipeline-oriented prompt.',
+    })
+  }
+
+  if (pipelinePrompt(pack) && missingRuntimePipeline(pack)) {
+    warnings.push({
+      kind: 'missing_runtime_pipeline',
+      severity: 'warn',
+      message: 'Pack did not follow the runtime path into service/orchestrator/persistence nodes.',
+    })
+  }
+
+  if (requestedMethodAnchor(pack) && !selectedMethodAnchor(pack)) {
+    warnings.push({
+      kind: 'missing_method_anchor',
+      severity: 'warn',
+      message: 'Prompt requested a specific method anchor but the selected slice did not anchor that method.',
+    })
+  }
+
   warnings.sort((a, b) => {
     const sevDelta = SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]
     if (sevDelta !== 0) return sevDelta
@@ -199,11 +275,18 @@ function computeSignals(pack: CompiledContextPack): ContextPackQualitySignals {
   let snippetNodes = 0
   let scoreSum = 0
   let scoreCount = 0
+  let pollutedSourcePathCount = 0
+  const domainDistribution: Partial<Record<SourceDomain, number>> = {}
   for (const node of pack.nodes) {
     if (typeof node.snippet === 'string' && node.snippet.length > 0) snippetNodes += 1
     if (typeof node.match_score === 'number' && Number.isFinite(node.match_score)) {
       scoreSum += node.match_score
       scoreCount += 1
+    }
+    const domain = node.source_domain ?? classifySourceDomain(node.source_file)
+    domainDistribution[domain] = (domainDistribution[domain] ?? 0) + 1
+    if (isPollutedSourcePath(node.source_file)) {
+      pollutedSourcePathCount += 1
     }
   }
 
@@ -219,13 +302,77 @@ function computeSignals(pack: CompiledContextPack): ContextPackQualitySignals {
     snippet_coverage: snippetCoverage,
     avg_match_score: avgMatchScore,
     budget_utilization: budgetUtilization,
+    domain_distribution: domainDistribution,
+    excluded_domains: [...(pack.retrieval_gate?.signals.excluded_domains ?? [])],
+    polluted_source_path_count: pollutedSourcePathCount,
   }
 }
 
+function productionPrompt(pack: CompiledContextPack): boolean {
+  const prompt = pack.task_contract.prompt?.toLowerCase() ?? ''
+  return prompt.length > 0
+    && /\b(production|runtime|pipeline|service|orchestrator|persistence|repository)\b/.test(prompt)
+    && pack.retrieval_gate?.intent !== 'test'
+}
+
+function pipelinePrompt(pack: CompiledContextPack): boolean {
+  return /\b(runtime|pipeline|service|orchestrator|job|agent|scoring|persistence|repository)\b/i.test(pack.task_contract.prompt ?? '')
+}
+
+function dominatedByDomains(
+  distribution: Partial<Record<SourceDomain, number>>,
+  domains: readonly SourceDomain[],
+): boolean {
+  const total = Object.values(distribution).reduce((sum, count) => sum + (count ?? 0), 0)
+  if (total === 0) {
+    return false
+  }
+
+  const dominated = domains.reduce((sum, domain) => sum + (distribution[domain] ?? 0), 0)
+  return dominated / total >= 0.5
+}
+
+function controllerOnlyPipelinePack(pack: CompiledContextPack): boolean {
+  const controllerNodes = pack.nodes.filter((node) => (node.framework_role ?? '').toLowerCase().includes('controller')).length
+  return controllerNodes > 0 && controllerNodes === pack.nodes.length
+}
+
+function missingRuntimePipeline(pack: CompiledContextPack): boolean {
+  const pipelineNodeCount = pack.nodes.filter((node) => {
+    const role = (node.framework_role ?? '').toLowerCase()
+    const label = node.label.toLowerCase()
+    return role.includes('service')
+      || role.includes('provider')
+      || role.includes('repository')
+      || role.includes('orchestrator')
+      || label.includes('service')
+      || label.includes('orchestrator')
+      || label.includes('repository')
+      || label.includes('agent')
+  }).length
+  const structuralRelations = pack.relationships.filter((relationship) => ['calls', 'injects', 'depends_on', 'reads_env', 'uses_config'].includes(relationship.relation)).length
+  return pipelinePrompt(pack) && (pipelineNodeCount === 0 || structuralRelations === 0)
+}
+
+function requestedMethodAnchor(pack: CompiledContextPack): boolean {
+  const mentionedSymbols = pack.retrieval_gate?.signals.mentioned_symbols ?? []
+  return mentionedSymbols.some((symbol) => /(?:\.|#|::)[A-Za-z_$][\w$]*$/.test(symbol) || /\(\)$/.test(symbol))
+}
+
+function selectedMethodAnchor(pack: CompiledContextPack): boolean {
+  const mentionedSymbols = pack.retrieval_gate?.signals.mentioned_symbols ?? []
+  const anchors = pack.slice?.anchors ?? []
+  return mentionedSymbols.some((symbol) => {
+    const normalizedSymbol = symbol.replace(/`/g, '').replace(/\(\)$/, '').toLowerCase()
+    return anchors.some((anchor) => anchor.label.replace(/`/g, '').replace(/\(\)$/, '').toLowerCase() === normalizedSymbol)
+  })
+}
+
 function computeQualityScore(warnings: ContextPackDiagnosticWarning[]): number {
-  let totalWeight = 0
-  for (const weight of RULE_WEIGHTS.values()) totalWeight += weight
-  if (totalWeight === 0) return 1
+  // Keep the quality-score denominator stable as diagnostics expand so
+  // historical scores remain comparable. New warnings still deduct via the
+  // numerator, but don't dilute the old baseline.
+  const totalWeight = 10
   let triggeredWeight = 0
   for (const warning of warnings) {
     triggeredWeight += RULE_WEIGHTS.get(warning.kind) ?? 1

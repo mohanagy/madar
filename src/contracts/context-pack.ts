@@ -1,5 +1,6 @@
 import type { RetrievalGateDecision } from './retrieval-gate.js'
 import type { TaskIntentKind } from './task-intent.js'
+import type { SourceDomain } from '../shared/source-discovery.js'
 
 export type ContextPackTaskKind = 'explain' | 'review' | 'impact'
 
@@ -93,6 +94,7 @@ export interface ContextPackNode {
   framework?: string | undefined
   framework_role?: string | undefined
   framework_boost?: number | undefined
+  source_domain?: SourceDomain | undefined
   evidence_class?: ContextPackEvidenceClass | undefined
   representation_type?: ContextRepresentationType | undefined
   representation_reason?: string | undefined

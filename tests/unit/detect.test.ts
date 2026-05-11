@@ -60,7 +60,7 @@ describe('detect', () => {
     }
   })
 
-  it('includes saved graphify memory notes while keeping generated artifacts ignored', () => {
+  it('ignores graphify-out artifacts entirely by default', () => {
     const root = createTempRoot()
     try {
       mkdirSync(join(root, 'graphify-out', 'memory'), { recursive: true })
@@ -70,7 +70,7 @@ describe('detect', () => {
 
       const result = detect(root)
 
-      expect(normalizeAssertionPaths(result.files.document)).toContain(normalizeAssertionPath(join(root, 'graphify-out', 'memory', 'query_auth.md')))
+      expect(normalizeAssertionPaths(result.files.document)).not.toContain(normalizeAssertionPath(join(root, 'graphify-out', 'memory', 'query_auth.md')))
       expect(result.files.document.some((filePath) => filePath.endsWith('GRAPH_REPORT.md'))).toBe(false)
       expect(
         Object.values(result.files)
@@ -195,11 +195,8 @@ describe('detect', () => {
 
   describe('noise filtering', () => {
     const noiseDirs = [
-      '__tests__', 'tests', 'test', 'spec', 'specs',
-      'e2e', 'cypress', 'playwright',
       'coverage', '.nyc_output',
-      '.storybook', 'storybook-static',
-      'fixtures', '__fixtures__', '__mocks__', 'mocks',
+      'storybook-static',
     ]
 
     for (const dir of noiseDirs) {
@@ -220,7 +217,7 @@ describe('detect', () => {
       })
     }
 
-    it('excludes *.test.ts files even outside test dirs', () => {
+    it('indexes *.test.ts files even outside test dirs', () => {
       const root = createTempRoot()
       try {
         writeFileSync(join(root, 'util.test.ts'), 'export {}', 'utf8')
@@ -228,14 +225,14 @@ describe('detect', () => {
 
         const result = detect(root)
 
-        expect(result.files.code.some((f) => f.endsWith('util.test.ts'))).toBe(false)
+        expect(result.files.code.some((f) => f.endsWith('util.test.ts'))).toBe(true)
         expect(result.files.code.some((f) => f.endsWith('util.ts'))).toBe(true)
       } finally {
         rmSync(root, { recursive: true, force: true })
       }
     })
 
-    it('excludes *.spec.tsx files', () => {
+    it('indexes *.spec.tsx files', () => {
       const root = createTempRoot()
       try {
         writeFileSync(join(root, 'Button.spec.tsx'), 'export {}', 'utf8')
@@ -243,7 +240,7 @@ describe('detect', () => {
 
         const result = detect(root)
 
-        expect(result.files.code.some((f) => f.endsWith('Button.spec.tsx'))).toBe(false)
+        expect(result.files.code.some((f) => f.endsWith('Button.spec.tsx'))).toBe(true)
         expect(result.files.code.some((f) => f.endsWith('Button.tsx'))).toBe(true)
       } finally {
         rmSync(root, { recursive: true, force: true })
@@ -265,7 +262,7 @@ describe('detect', () => {
       }
     })
 
-    it('excludes vitest.config.ts', () => {
+    it('indexes vitest.config.ts', () => {
       const root = createTempRoot()
       try {
         writeFileSync(join(root, 'vitest.config.ts'), 'export default {}', 'utf8')
@@ -273,14 +270,14 @@ describe('detect', () => {
 
         const result = detect(root)
 
-        expect(result.files.code.some((f) => f.endsWith('vitest.config.ts'))).toBe(false)
+        expect(result.files.code.some((f) => f.endsWith('vitest.config.ts'))).toBe(true)
         expect(result.files.code.some((f) => f.endsWith('real.ts'))).toBe(true)
       } finally {
         rmSync(root, { recursive: true, force: true })
       }
     })
 
-    it('excludes jest.config.js', () => {
+    it('indexes jest.config.js', () => {
       const root = createTempRoot()
       try {
         writeFileSync(join(root, 'jest.config.js'), 'module.exports = {}', 'utf8')
@@ -288,7 +285,7 @@ describe('detect', () => {
 
         const result = detect(root)
 
-        expect(result.files.code.some((f) => f.endsWith('jest.config.js'))).toBe(false)
+        expect(result.files.code.some((f) => f.endsWith('jest.config.js'))).toBe(true)
         expect(result.files.code.some((f) => f.endsWith('real.ts'))).toBe(true)
       } finally {
         rmSync(root, { recursive: true, force: true })
@@ -308,7 +305,7 @@ describe('detect', () => {
       }
     })
 
-    it('excludes setupTests.ts', () => {
+    it('indexes setupTests.ts', () => {
       const root = createTempRoot()
       try {
         writeFileSync(join(root, 'setupTests.ts'), 'export {}', 'utf8')
@@ -316,14 +313,14 @@ describe('detect', () => {
 
         const result = detect(root)
 
-        expect(result.files.code.some((f) => f.endsWith('setupTests.ts'))).toBe(false)
+        expect(result.files.code.some((f) => f.endsWith('setupTests.ts'))).toBe(true)
         expect(result.files.code.some((f) => f.endsWith('real.ts'))).toBe(true)
       } finally {
         rmSync(root, { recursive: true, force: true })
       }
     })
 
-    it('excludes *.mock.ts files', () => {
+    it('indexes *.mock.ts files', () => {
       const root = createTempRoot()
       try {
         writeFileSync(join(root, 'api.mock.ts'), 'export {}', 'utf8')
@@ -331,14 +328,14 @@ describe('detect', () => {
 
         const result = detect(root)
 
-        expect(result.files.code.some((f) => f.endsWith('api.mock.ts'))).toBe(false)
+        expect(result.files.code.some((f) => f.endsWith('api.mock.ts'))).toBe(true)
         expect(result.files.code.some((f) => f.endsWith('api.ts'))).toBe(true)
       } finally {
         rmSync(root, { recursive: true, force: true })
       }
     })
 
-    it('excludes jest.setup.ts', () => {
+    it('indexes jest.setup.ts', () => {
       const root = createTempRoot()
       try {
         writeFileSync(join(root, 'jest.setup.ts'), 'export {}', 'utf8')
@@ -346,11 +343,38 @@ describe('detect', () => {
 
         const result = detect(root)
 
-        expect(result.files.code.some((f) => f.endsWith('jest.setup.ts'))).toBe(false)
+        expect(result.files.code.some((f) => f.endsWith('jest.setup.ts'))).toBe(true)
         expect(result.files.code.some((f) => f.endsWith('real.ts'))).toBe(true)
       } finally {
         rmSync(root, { recursive: true, force: true })
       }
     })
+  })
+
+  it('hard-ignores nested worktrees, graphify-out artifacts, and build outputs but keeps tests and benchmarks', () => {
+    const root = createTempRoot()
+    try {
+      mkdirSync(join(root, 'backend', '.worktrees', 'copy', 'src'), { recursive: true })
+      mkdirSync(join(root, 'graphify-out'), { recursive: true })
+      mkdirSync(join(root, 'dist'), { recursive: true })
+      mkdirSync(join(root, 'src', '__tests__'), { recursive: true })
+      mkdirSync(join(root, 'benchmarks'), { recursive: true })
+      writeFileSync(join(root, 'backend', '.worktrees', 'copy', 'src', 'foo.ts'), 'export const stale = true', 'utf8')
+      writeFileSync(join(root, 'graphify-out', 'graph.json'), '{}', 'utf8')
+      writeFileSync(join(root, 'dist', 'compiled.js'), 'module.exports = 1', 'utf8')
+      writeFileSync(join(root, 'src', '__tests__', 'foo.spec.ts'), 'export {}', 'utf8')
+      writeFileSync(join(root, 'benchmarks', 'report.bench.ts'), 'export {}', 'utf8')
+
+      const result = detect(root)
+      const codePaths = normalizeAssertionPaths(result.files.code)
+
+      expect(codePaths.some((filePath) => filePath.includes('/.worktrees/'))).toBe(false)
+      expect(codePaths.some((filePath) => filePath.endsWith('/graphify-out/graph.json'))).toBe(false)
+      expect(codePaths.some((filePath) => filePath.endsWith('/dist/compiled.js'))).toBe(false)
+      expect(codePaths).toContain(normalizeAssertionPath(join(root, 'src', '__tests__', 'foo.spec.ts')))
+      expect(codePaths).toContain(normalizeAssertionPath(join(root, 'benchmarks', 'report.bench.ts')))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })

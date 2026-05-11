@@ -19,11 +19,23 @@ export type RetrievalIntent =
   | 'chitchat'
   | 'unknown'
 
+export type RetrievalExcludedDomain =
+  | 'test'
+  | 'benchmark'
+  | 'fixture'
+  | 'generated'
+  | 'docs'
+  | 'config'
+  | 'build_artifact'
+
 export interface RetrievalGateSignals {
   has_pr_diff: boolean
   has_stack_trace: boolean
   mentioned_paths: ReadonlyArray<string>
   mentioned_symbols: ReadonlyArray<string>
+  excluded_domains?: ReadonlyArray<RetrievalExcludedDomain>
+  excluded_terms?: ReadonlyArray<string>
+  excluded_path_hints?: ReadonlyArray<string>
 }
 
 export interface RetrievalGateDecision {

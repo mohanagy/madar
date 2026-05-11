@@ -90,13 +90,15 @@ describe('buildSpiFileLayer (slice 1a of #72)', () => {
       expect(findFile(spi, 'src/script.js').language).toBe('javascript')
     })
 
-    it('skips node_modules, dist, build, .next, coverage, .git, graphify-out, .test-artifacts', () => {
-      for (const dir of ['node_modules', 'dist', 'build', '.next', 'coverage', '.git', 'graphify-out', '.test-artifacts']) {
+    it('skips nested worktrees and generated/build outputs while keeping test sources indexable', () => {
+      for (const dir of ['node_modules', 'dist', 'build', '.next', 'coverage', '.git', 'graphify-out', '.test-artifacts', '.worktrees']) {
         writeFile(sandbox, `${dir}/leak.ts`, 'export const x = 1\n')
       }
+      writeFile(sandbox, 'backend/.worktrees/task-1/src/duplicate.ts', 'export const duplicate = 1\n')
+      writeFile(sandbox, 'src/__tests__/keep.spec.ts', 'export const keep = 1\n')
       writeFile(sandbox, 'src/keep.ts', 'export const k = 1\n')
       const spi = build(sandbox)
-      expect(spi.files.map((f) => f.path)).toEqual(['src/keep.ts'])
+      expect(spi.files.map((f) => f.path)).toEqual(['src/__tests__/keep.spec.ts', 'src/keep.ts'])
     })
 
     it('produces deterministic output between two runs of the same workspace', { timeout: 30_000 }, () => {

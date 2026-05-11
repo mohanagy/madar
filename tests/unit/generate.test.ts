@@ -4304,7 +4304,7 @@ describe('generateGraph', () => {
     })
   })
 
-  test('includes saved memory notes from graphify-out/memory with frontmatter metadata and references', () => {
+  test('does not re-index saved memory notes from graphify-out/memory by default', () => {
     withTempDir((tempDir) => {
       writeFileSync(join(tempDir, 'auth.ts'), 'export function authenticate() {\n  return true\n}\n', 'utf8')
       mkdirSync(join(tempDir, 'graphify-out', 'memory'), { recursive: true })
@@ -4333,15 +4333,9 @@ describe('generateGraph', () => {
         links: Array<Record<string, unknown>>
       }
       const noteNode = graphData.nodes.find((node) => node.label === 'query_auth.md')
-      const authNode = graphData.nodes.find((node) => node.label === 'authenticate()')
 
-      expect(noteNode).toMatchObject({
-        title: 'Auth result',
-        source_url: 'https://example.com/auth',
-        captured_at: '2026-04-11T00:00:00Z',
-      })
-      expect(authNode).toBeTruthy()
-      expect(graphData.links.some((edge) => edge.source === noteNode?.id && edge.target === authNode?.id && edge.relation === 'references')).toBe(true)
+      expect(noteNode).toBeUndefined()
+      expect(graphData.links.some((edge) => edge.relation === 'references')).toBe(false)
     })
   })
 

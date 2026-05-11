@@ -168,6 +168,47 @@ describe('classifyRetrievalLevel — signal extraction', () => {
     // mentions present → level 2
     expect(decision.level).toBe(2)
   })
+
+  it('extracts explicit Class.method references even without backticks', () => {
+    const decision = classify({ prompt: 'Trace IdeasController.generateFromProblem through the runtime pipeline' })
+    expect(decision.signals.mentioned_symbols).toContain('IdeasController.generateFromProblem')
+  })
+})
+
+describe('classifyRetrievalLevel — exclusions and negation', () => {
+  it('does not classify excluded test terms as test intent', () => {
+    const decision = classify({ prompt: 'Exclude tests but explain the runtime path for report generation.' })
+    const signals = decision.signals as typeof decision.signals & { excluded_domains?: string[] }
+
+    expect(decision.intent).toBe('explain')
+    expect(decision.level).toBe(1)
+    expect(signals.excluded_domains).toContain('test')
+  })
+
+  it('keeps positive test prompts classified as test intent', () => {
+    const decision = classify({ prompt: 'Which tests cover report generation?' })
+    expect(decision.intent).toBe('test')
+  })
+
+  it('tracks benchmark exclusions without promoting benchmark/test intent', () => {
+    const decision = classify({ prompt: 'Do not include benchmarks; explain the production pipeline.' })
+    const signals = decision.signals as typeof decision.signals & { excluded_domains?: string[] }
+
+    expect(decision.intent).toBe('explain')
+    expect(signals.excluded_domains).toContain('benchmark')
+  })
+
+  it('captures fixture and reporter exclusions', () => {
+    const decision = classify({ prompt: 'Ignore fixtures and html reporters when you explain the backend flow.' })
+    const signals = decision.signals as typeof decision.signals & {
+      excluded_domains?: string[]
+      excluded_terms?: string[]
+    }
+
+    expect(decision.intent).toBe('explain')
+    expect(signals.excluded_domains).toContain('fixture')
+    expect(signals.excluded_terms).toEqual(expect.arrayContaining(['html reporters', 'reporters']))
+  })
 })
 
 describe('classifyRetrievalLevel — refactor intent stays in the 0-2 band', () => {
