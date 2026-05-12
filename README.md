@@ -153,6 +153,16 @@ graphify-ts --help                              # full surface
 
 ---
 
+## Default discovery rules
+
+`graphify-ts generate` now hard-ignores nested VCS/worktree copies and generated/build output by default: `.worktrees/`, `worktrees/`, `.git/`, `graphify-out/`, `node_modules/`, `dist/`, `build/`, `coverage/`, cache folders, source maps, lock/build artifacts, and temp/log files.
+
+Tests, benchmarks, fixtures, mocks, and config files are **not** hard-ignored anymore. They still get indexed so retrieval can use them when you ask for them, but production/runtime prompts now soft-penalize them and honor prompt exclusions like "exclude tests, benchmarks, fixtures".
+
+`.graphifyignore` still adds extra ignore rules, and negated entries such as `!vendor/**` or `!lib/**` can re-include a default hard-ignore when you intentionally want it indexed.
+
+---
+
 ## Trust + limitations
 
 Everything stays local by default. No telemetry, no cloud upload, no API key required.

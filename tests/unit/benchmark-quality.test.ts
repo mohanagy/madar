@@ -1,4 +1,5 @@
-import { mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { existsSync } from 'node:fs'
@@ -238,8 +239,7 @@ describe('retrieval quality benchmark', () => {
   })
 
   it('reports grounded match rate and query buckets alongside label metrics', () => {
-    const tempDir = join(process.cwd(), 'graphify-out', 'benchmark-quality-grounding-fixture')
-    mkdirSync(tempDir, { recursive: true })
+    const tempDir = mkdtempSync(join(tmpdir(), 'graphify-benchmark-quality-'))
     const routeFile = join(tempDir, 'auth-route.ts')
     writeFileSync(routeFile, ['export function AuthRoute() {', '  return true', '}'].join('\n'), 'utf8')
 

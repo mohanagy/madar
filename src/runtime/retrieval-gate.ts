@@ -22,6 +22,7 @@
 
 import type {
   RetrievalGateDecision,
+  RetrievalExcludedDomain,
   RetrievalGateSignals,
   RetrievalIntent,
   RetrievalLevel,
@@ -29,6 +30,7 @@ import type {
 
 export type {
   RetrievalGateDecision,
+  RetrievalExcludedDomain,
   RetrievalGateSignals,
   RetrievalIntent,
   RetrievalLevel,
@@ -70,21 +72,38 @@ const PATTERNS: ReadonlyArray<{ intent: RetrievalIntent; re: RegExp }> = [
 
 const PATH_RE = /(?:^|\s|`)((?:[\w@./-]+\/)*[\w./@-]+\.[A-Za-z]{1,8})(?=\b|`|$)/g
 const SYMBOL_BACKTICK_RE = /`([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\(?\)?)`/g
+const SYMBOL_EXPLICIT_RE = /\b((?:[A-Za-z_$][\w$]*\.)*[A-Za-z_$][\w$]*(?:\.|#|::)[A-Za-z_$][\w$]*\(?\)?|[A-Za-z_$][\w$]{2,}\(\))\b/g
 const STACK_TRACE_RE = /(?:^|\n)\s*at\s+\S+\s*\([^)]*:\d+(?::\d+)?\)|Error[:\s]\s+\S/
+const EXCLUSION_SPAN_RE = /\b(?:exclude|excluding|ignore|ignoring|omit|omitting|skip|skipping|without|do not include|don't include|not|no)\b\s+(.+?)(?=(?:\s+\b(?:but|while|however|when)\b|[.;\n]|$))/gi
+
+const EXCLUDED_DOMAIN_HINTS: ReadonlyArray<{ domain: RetrievalExcludedDomain; pattern: RegExp; pathHints: string[] }> = [
+  { domain: 'test', pattern: /\b(?:tests?|specs?|coverage|__tests__|e2e|cypress|playwright)\b/i, pathHints: ['test', 'tests', '__tests__', 'spec', 'specs', 'coverage'] },
+  { domain: 'benchmark', pattern: /\b(?:bench(?:mark|marks)?|performance|perf)\b/i, pathHints: ['bench', 'benchmark', 'benchmarks', 'perf', 'performance'] },
+  { domain: 'fixture', pattern: /\b(?:fixtures?|mocks?|__fixtures__|__mocks__)\b/i, pathHints: ['fixture', 'fixtures', 'mock', 'mocks', '__fixtures__', '__mocks__'] },
+  { domain: 'generated', pattern: /\b(?:generated|codegen|__generated__)\b/i, pathHints: ['generated', '__generated__'] },
+  { domain: 'docs', pattern: /\b(?:docs?|readme|changelog|markdown|mdx?)\b/i, pathHints: ['docs', 'readme', 'changelog'] },
+  { domain: 'config', pattern: /\b(?:config|configs?|settings|env|docker|compose|k8s|helm|package\.json|tsconfig)\b/i, pathHints: ['config', 'configs', 'settings', 'env', 'docker', 'compose', 'k8s', 'helm', 'package.json', 'tsconfig'] },
+  { domain: 'build_artifact', pattern: /\b(?:build artifacts?|dist|coverage|graphify-out|node_modules)\b/i, pathHints: ['build', 'dist', 'coverage', 'graphify-out', 'node_modules'] },
+]
 
 export function classifyRetrievalLevel(input: RetrievalGateInput): RetrievalGateDecision {
   const prompt = input.prompt ?? ''
-  const detectedPaths = input.mentionedPaths ?? detectPaths(prompt)
-  const detectedSymbols = input.mentionedSymbols ?? detectSymbols(prompt)
+  const exclusions = extractPromptExclusions(prompt)
+  const positivePrompt = exclusions.positivePrompt
+  const detectedPaths = input.mentionedPaths ?? detectPaths(positivePrompt)
+  const detectedSymbols = input.mentionedSymbols ?? detectSymbols(positivePrompt)
   const hasStackTrace = input.hasStackTrace ?? STACK_TRACE_RE.test(prompt)
   const hasPrDiff = input.hasPrDiff === true
-  const intent = input.intent ?? detectIntent(prompt)
+  const intent = input.intent ?? detectIntent(positivePrompt)
 
   const signals: RetrievalGateSignals = {
     has_pr_diff: hasPrDiff,
     has_stack_trace: hasStackTrace,
     mentioned_paths: detectedPaths,
     mentioned_symbols: detectedSymbols,
+    ...(exclusions.excludedDomains.length > 0 ? { excluded_domains: exclusions.excludedDomains } : {}),
+    ...(exclusions.excludedTerms.length > 0 ? { excluded_terms: exclusions.excludedTerms } : {}),
+    ...(exclusions.excludedPathHints.length > 0 ? { excluded_path_hints: exclusions.excludedPathHints } : {}),
   }
 
   if (input.manualOverride !== undefined) {
@@ -184,5 +203,95 @@ function detectSymbols(prompt: string): string[] {
   for (const match of prompt.matchAll(SYMBOL_BACKTICK_RE)) {
     if (match[1]) out.add(match[1])
   }
+  for (const match of prompt.matchAll(SYMBOL_EXPLICIT_RE)) {
+    const candidate = match[1]?.trim()
+    if (!candidate) {
+      continue
+    }
+    if (/\.(?:ts|tsx|js|jsx|mjs|cjs|json|md|mdx)$/i.test(candidate) || candidate.includes('/')) {
+      continue
+    }
+    out.add(candidate)
+  }
   return [...out]
+}
+
+export function extractPromptExclusions(prompt: string): {
+  excludedTerms: string[]
+  excludedPathHints: string[]
+  excludedDomains: RetrievalExcludedDomain[]
+  positivePrompt: string
+} {
+  const excludedTerms = new Set<string>()
+  const excludedPathHints = new Set<string>()
+  const excludedDomains = new Set<RetrievalExcludedDomain>()
+  const spans: Array<{ start: number; end: number }> = []
+
+  for (const match of prompt.matchAll(EXCLUSION_SPAN_RE)) {
+    const phrase = match[1]?.trim()
+    const index = match.index
+    if (!phrase || index === undefined) {
+      continue
+    }
+    spans.push({ start: index, end: index + match[0].length })
+    for (const term of splitExclusionPhrase(phrase)) {
+      excludedTerms.add(term)
+      const hint = normalizeExclusionPathHint(term)
+      if (hint) {
+        excludedPathHints.add(hint)
+      }
+      const trailingWord = term.split(/\s+/).at(-1)
+      if (trailingWord && trailingWord !== term) {
+        excludedTerms.add(trailingWord)
+      }
+      for (const mapping of EXCLUDED_DOMAIN_HINTS) {
+        if (mapping.pattern.test(term)) {
+          excludedDomains.add(mapping.domain)
+          mapping.pathHints.forEach((pathHint) => excludedPathHints.add(pathHint))
+        }
+      }
+    }
+  }
+
+  const positivePrompt = spans.length === 0
+    ? prompt
+    : compressPrompt(excludePromptSpans(prompt, spans))
+
+  return {
+    excludedTerms: [...excludedTerms],
+    excludedPathHints: [...excludedPathHints],
+    excludedDomains: [...excludedDomains],
+    positivePrompt,
+  }
+}
+
+function splitExclusionPhrase(phrase: string): string[] {
+  return phrase
+    .split(/\s*(?:,| and | or )\s*/i)
+    .map((part) => part.trim().replace(/^[^A-Za-z0-9_]+|[^A-Za-z0-9_]+$/g, ''))
+    .map((part) => part.replace(/^(?:the|any|and)\s+/i, ''))
+    .filter((part) => part.length > 0)
+}
+
+function normalizeExclusionPathHint(term: string): string | null {
+  const normalized = term
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return normalized.length > 0 ? normalized : null
+}
+
+function excludePromptSpans(prompt: string, spans: ReadonlyArray<{ start: number; end: number }>): string {
+  let cursor = 0
+  let out = ''
+  for (const span of [...spans].sort((left, right) => left.start - right.start)) {
+    out += prompt.slice(cursor, span.start)
+    cursor = span.end
+  }
+  out += prompt.slice(cursor)
+  return out
+}
+
+function compressPrompt(prompt: string): string {
+  return prompt.replace(/\s+/g, ' ').replace(/\s+([,.;])/g, '$1').trim()
 }

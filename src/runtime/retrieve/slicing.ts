@@ -5,14 +5,27 @@ import type {
 } from '../../contracts/context-pack.js'
 import type { KnowledgeGraph } from '../../contracts/graph.js'
 import type { RetrievalIntent } from '../../contracts/retrieval-gate.js'
+import { classifySourceDomain, isPollutedSourcePath } from '../../shared/source-discovery.js'
 
 export interface SliceScoredNode {
   id: string
   label: string
   sourceFile: string
+  nodeKind?: string | undefined
+  frameworkRole?: string | undefined
   exactLabelMatch: boolean
+  literalPathMatch?: boolean
   sourcePathMatch: boolean
   score: number
+}
+
+interface SliceOptions {
+  prompt?: string | undefined
+  mentionedSymbols?: readonly string[] | undefined
+  excludedDomains?: readonly string[] | undefined
+  excludedTerms?: readonly string[] | undefined
+  excludedPathHints?: readonly string[] | undefined
+  rootPath?: string | undefined
 }
 
 function sliceNodeFromGraph(graph: KnowledgeGraph, nodeId: string): SliceScoredNode {
@@ -21,7 +34,10 @@ function sliceNodeFromGraph(graph: KnowledgeGraph, nodeId: string): SliceScoredN
     id: nodeId,
     label: String(attributes.label ?? nodeId),
     sourceFile: String(attributes.source_file ?? ''),
+    nodeKind: typeof attributes.node_kind === 'string' ? attributes.node_kind : undefined,
+    frameworkRole: typeof attributes.framework_role === 'string' ? attributes.framework_role : undefined,
     exactLabelMatch: false,
+    literalPathMatch: false,
     sourcePathMatch: false,
     score: 0.25,
   }
@@ -95,6 +111,49 @@ function policyForIntent(intent: RetrievalIntent): SlicePolicy {
   }
 }
 
+function promptWantsRuntimePipeline(prompt: string | undefined): boolean {
+  if (!prompt) {
+    return false
+  }
+
+  return /\b(runtime|pipeline|service|orchestrator|job|agent|scoring|report builder|persistence|repository)\b/i.test(prompt)
+}
+
+function methodLikeNode(node: SliceScoredNode): boolean {
+  return node.nodeKind?.toLowerCase() === 'method' || /(?:[.#:]|^\.)[A-Za-z_$][\w$]*\(?\)?$/u.test(node.label)
+}
+
+function effectivePolicy(intent: RetrievalIntent, anchors: readonly SliceScoredNode[], prompt: string | undefined): SlicePolicy {
+  const base = policyForIntent(intent)
+  const hasMethodAnchor = anchors.some((anchor) => methodLikeNode(anchor))
+  const pipelinePrompt = promptWantsRuntimePipeline(prompt)
+
+  if (!hasMethodAnchor && !pipelinePrompt) {
+    return base
+  }
+
+  const forwardRelations = new Set(base.forward_relations)
+  if (hasMethodAnchor) {
+    forwardRelations.delete('contains')
+    forwardRelations.delete('method')
+  }
+
+  const helperRelations = new Set(base.helper_relations)
+  if (pipelinePrompt) {
+    helperRelations.add('injects')
+    helperRelations.add('depends_on')
+    helperRelations.add('module_provides')
+  }
+
+  return {
+    ...base,
+    forward_relations: forwardRelations,
+    helper_relations: helperRelations,
+    backward_depth: pipelinePrompt ? Math.max(base.backward_depth, 3) : base.backward_depth,
+    forward_depth: pipelinePrompt ? Math.max(base.forward_depth, 3) : base.forward_depth,
+  }
+}
+
 function isBarrelLike(label: string, sourceFile: string): boolean {
   return label.trim().toLowerCase() === 'index.ts' || /(?:^|\/)index\.ts$/i.test(sourceFile)
 }
@@ -103,9 +162,22 @@ function shouldSuppressNode(
   graph: KnowledgeGraph,
   node: SliceScoredNode,
   anchoredIds: ReadonlySet<string>,
+  options: SliceOptions,
 ): boolean {
   if (anchoredIds.has(node.id)) {
     return false
+  }
+
+  const sourceDomain = classifySourceDomain(node.sourceFile, options.rootPath)
+  if ((options.excludedDomains ?? []).includes(sourceDomain)) {
+    return true
+  }
+  if (isPollutedSourcePath(node.sourceFile, options.rootPath)) {
+    return true
+  }
+  const excludedTerms = [...(options.excludedTerms ?? []), ...(options.excludedPathHints ?? [])].map((term) => term.toLowerCase())
+  if (excludedTerms.some((term) => node.label.toLowerCase().includes(term) || node.sourceFile.toLowerCase().includes(term))) {
+    return true
   }
 
   if (isBarrelLike(node.label, node.sourceFile)) {
@@ -119,16 +191,21 @@ function buildAnchors(scored: readonly SliceScoredNode[]): ContextPackSliceAncho
   const anchors: ContextPackSliceAnchor[] = []
   const seen = new Set<string>()
   const matchedAnchors = scored.filter((node) => node.exactLabelMatch || node.sourcePathMatch)
+  const exactMethodAnchors = matchedAnchors.filter((node) => node.exactLabelMatch && methodLikeNode(node))
   const nonBarrelMatchedAnchors = matchedAnchors.filter((node) => !isBarrelLike(node.label, node.sourceFile))
-  const anchorPool = matchedAnchors.length > 0
+  const anchorPool = exactMethodAnchors.length > 0
+    ? exactMethodAnchors
+    : matchedAnchors.length > 0
     ? (nonBarrelMatchedAnchors.length > 0 ? nonBarrelMatchedAnchors : matchedAnchors)
     : scored.filter((node) => !isBarrelLike(node.label, node.sourceFile)).slice(0, 1)
 
   for (const node of anchorPool) {
     const reason = node.exactLabelMatch
       ? 'symbol mention'
-      : node.sourcePathMatch
+      : node.literalPathMatch
         ? 'path mention'
+        : node.sourcePathMatch
+          ? 'source path token match'
         : 'top lexical match'
     if (!reason || seen.has(node.id)) {
       continue
@@ -169,6 +246,7 @@ function traverseDirection(
   pathSeen: Set<string>,
   selectedPaths: ContextPackSlicePath[],
   anchoredIds: ReadonlySet<string>,
+  options: SliceOptions,
   direction: 'forward' | 'backward',
   relations: ReadonlySet<string>,
   maxDepth: number,
@@ -193,7 +271,7 @@ function traverseDirection(
 
       const neighbor = scoredById.get(neighborId) ?? sliceNodeFromGraph(graph, neighborId)
       scoredById.set(neighborId, neighbor)
-      if (shouldSuppressNode(graph, neighbor, anchoredIds)) {
+      if (shouldSuppressNode(graph, neighbor, anchoredIds, options)) {
         continue
       }
 
@@ -229,6 +307,7 @@ function addHelperNeighbors(
   pathSeen: Set<string>,
   selectedPaths: ContextPackSlicePath[],
   anchoredIds: ReadonlySet<string>,
+  options: SliceOptions,
 ): void {
   for (const currentId of [...orderedIds]) {
     const currentNode = scoredById.get(currentId)
@@ -244,7 +323,7 @@ function addHelperNeighbors(
 
       const neighbor = scoredById.get(neighborId) ?? sliceNodeFromGraph(graph, neighborId)
       scoredById.set(neighborId, neighbor)
-      if (shouldSuppressNode(graph, neighbor, anchoredIds)) {
+      if (shouldSuppressNode(graph, neighbor, anchoredIds, options)) {
         continue
       }
 
@@ -269,6 +348,7 @@ export function sliceCandidatesForRetrieve(
   graph: KnowledgeGraph,
   scoredCandidates: readonly SliceScoredNode[],
   intent: RetrievalIntent,
+  options: SliceOptions = {},
 ): { ordered_ids: string[]; metadata: ContextPackSliceMetadata } | null {
   if (scoredCandidates.length === 0) {
     return null
@@ -279,7 +359,10 @@ export function sliceCandidatesForRetrieve(
     return null
   }
 
-  const policy = policyForIntent(intent)
+  const anchorNodes = anchors
+    .map((anchor) => scoredCandidates.find((candidate) => candidate.id === anchor.node_id))
+    .filter((candidate): candidate is SliceScoredNode => candidate !== undefined)
+  const policy = effectivePolicy(intent, anchorNodes, options.prompt)
   const anchorIds = anchors.map((anchor) => anchor.node_id).filter((id): id is string => typeof id === 'string')
   const orderedIds = [...anchorIds]
   const selectedIds = new Set(anchorIds)
@@ -298,6 +381,7 @@ export function sliceCandidatesForRetrieve(
       pathSeen,
       selectedPaths,
       anchoredIds,
+      options,
       'backward',
       policy.backward_relations,
       policy.backward_depth,
@@ -314,6 +398,7 @@ export function sliceCandidatesForRetrieve(
       pathSeen,
       selectedPaths,
       anchoredIds,
+      options,
       'forward',
       policy.forward_relations,
       policy.forward_depth,
@@ -329,6 +414,7 @@ export function sliceCandidatesForRetrieve(
     pathSeen,
     selectedPaths,
     anchoredIds,
+    options,
   )
 
   return {

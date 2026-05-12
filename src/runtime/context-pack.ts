@@ -24,6 +24,7 @@ import type {
 } from '../contracts/context-pack.js'
 import type { RetrievalGateDecision } from '../contracts/retrieval-gate.js'
 import type { TaskIntentKind } from '../contracts/task-intent.js'
+import { classifySourceDomain, type SourceDomain } from '../shared/source-discovery.js'
 import { estimateQueryTokens } from './serve.js'
 import { resolveTaskEvidenceRecipe } from './task-evidence-recipes.js'
 import { selectByValuePerToken, type ValuePerTokenCandidate } from './value-per-token.js'
@@ -46,6 +47,7 @@ export interface ContextPackNodeCandidate<TNode extends ContextPackNode = Contex
   framework?: string
   framework_role?: string
   framework_boost?: number
+  source_domain?: SourceDomain
   match_score?: number
   exact_anchor_match?: boolean
   direct_symbol_match?: boolean
@@ -114,6 +116,7 @@ interface CandidateScoringView extends CoverageEntry {
   framework?: string
   framework_role?: string
   framework_boost: number
+  source_domain: SourceDomain
   exact_anchor_match: boolean
   direct_symbol_match: boolean
   source_path_match: boolean
@@ -139,7 +142,6 @@ interface RankedValueCandidate<TNode extends ContextPackNode> {
 
 type CoverageEntry = CoverageNodeCandidate['entry']
 
-const TEST_PATH_PATTERN = /(?:^|\/)(?:__tests__|tests?|fixtures?)(?:\/|$)|\.(?:test|spec)\.[^/]+$/i
 const CONFIG_PATH_PATTERN = /(?:^|\/)(?:config|configs?|settings|env)(?:\/|$)|(?:^|\/)\.env(?:\.[^/]+)?$|(?:^|\/)(?:package|tsconfig|vite|vitest|jest|eslint|prettier|rollup|webpack)\.(?:json|[cm]?js|ts|mjs|cjs)$/i
 const CONTRACT_PATH_PATTERN = /(?:^|\/)(?:contracts?|schemas?|dto|types?|interfaces?|openapi|graphql)(?:\/|$)|(?:^|\/)[^/]*\.d\.ts$/i
 const CONTRACT_NODE_KINDS = new Set(['interface', 'type', 'type_alias', 'typealias', 'enum', 'schema', 'contract'])
@@ -279,10 +281,13 @@ function orderedSemanticCategories(
 }
 
 function isTestEntry(entry: CoverageEntry): boolean {
-  return TEST_PATH_PATTERN.test(entry.source_file)
+  return classifySourceDomain(entry.source_file) === 'test'
 }
 
 function isConfigurationEntry(entry: CoverageEntry): boolean {
+  if (classifySourceDomain(entry.source_file) === 'config') {
+    return true
+  }
   if (CONFIG_PATH_PATTERN.test(entry.source_file)) {
     return true
   }
@@ -660,6 +665,7 @@ function scoringViewForCandidate(candidate: ContextPackNodeCandidate): Candidate
   const snippet = candidate.snippet ?? builtEntry().snippet ?? null
   const framework = candidate.framework ?? builtEntry().framework
   const frameworkRole = candidate.framework_role ?? builtEntry().framework_role
+  const sourceDomain = candidate.source_domain ?? builtEntry().source_domain ?? classifySourceDomain(source_file)
 
   return {
     label: candidate.label,
@@ -673,6 +679,7 @@ function scoringViewForCandidate(candidate: ContextPackNodeCandidate): Candidate
     framework_boost: candidate.framework_boost
       ?? builtEntry().framework_boost
       ?? 0,
+    source_domain: sourceDomain,
     exact_anchor_match: candidate.exact_anchor_match ?? false,
     direct_symbol_match: candidate.direct_symbol_match ?? false,
     source_path_match: candidate.source_path_match ?? false,
@@ -704,6 +711,26 @@ function looksGenerated(sourceFile: string, label: string, snippet: string | nul
 
 function looksArtifact(sourceFile: string): boolean {
   return /(?:^|\/)(?:package-lock\.json|pnpm-lock\.yaml|yarn\.lock|dist\/|build\/|coverage\/|graphify-out\/)/i.test(sourceFile)
+}
+
+function sourceDomainPenalty(view: CandidateScoringView, taskContract: ContextPackTaskContract): number {
+  switch (view.source_domain) {
+    case 'test':
+      return taskContract.semantic_required.includes('tests') || taskContract.semantic_optional.includes('tests') ? 0 : 2
+    case 'benchmark':
+    case 'fixture':
+      return 2
+    case 'generated':
+    case 'build_artifact':
+      return 3
+    case 'docs':
+      return 1
+    case 'config':
+      return taskContract.semantic_required.includes('configuration') || taskContract.semantic_optional.includes('configuration') ? 0 : 0.5
+    case 'production':
+    case 'unknown':
+      return 0
+  }
 }
 
 function looksTypeOnly(view: CoverageEntry): boolean {
@@ -833,6 +860,14 @@ function computeContextCandidateValue(
     pushUnique(reasons, 'source path match')
   }
 
+  // Reward explicitly tagged non-production domains once they survive the
+  // penalty gate above so score/reasons reflect why pushUnique records that
+  // this candidate matched a permitted test/benchmark/config-style source.
+  if (view.source_domain !== 'production' && view.source_domain !== 'unknown') {
+    score += 0.25
+    pushUnique(reasons, `${view.source_domain} domain`)
+  }
+
   if (looksLikeBarrelFile(view.source_file) && !view.exact_anchor_match && !view.source_path_match) {
     score -= 2.5
     pushUnique(penalties, 'barrel export penalty')
@@ -862,6 +897,12 @@ function computeContextCandidateValue(
   if (typeof view.graph_degree === 'number' && view.graph_degree >= 12 && !view.exact_anchor_match) {
     score -= 1.25
     pushUnique(penalties, 'hub node penalty')
+  }
+
+  const domainPenalty = sourceDomainPenalty(view, taskContract)
+  if (domainPenalty > 0) {
+    score -= domainPenalty
+    pushUnique(penalties, `${view.source_domain.replace('_', ' ')} penalty`)
   }
 
   if (exactCodeRequested(taskContract) && (!view.source_file || typeof view.snippet !== 'string' || view.snippet.length === 0)) {

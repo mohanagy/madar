@@ -50,6 +50,10 @@ import {
 import { dirname, extname, join, relative, resolve } from 'node:path'
 import ts from 'typescript'
 
+import {
+  isDiscoveryPathIgnored,
+  loadGraphifyignorePatterns,
+} from '../../shared/source-discovery.js'
 import type {
   SemanticProgramIndex,
   SpiDiagnostic,
@@ -85,19 +89,6 @@ export type BuildSpiOptions = {
 // BuildSpiOptions / buildSpi directly.
 export type BuildSpiFileLayerOptions = BuildSpiOptions
 
-const SKIP_DIRS = new Set<string>([
-  'node_modules',
-  'dist',
-  'build',
-  '.next',
-  'coverage',
-  '.git',
-  'graphify-out',
-  '.test-artifacts',
-  '.turbo',
-  '.vercel',
-])
-
 const EXT_TO_LANG: Record<string, SpiLanguage> = {
   '.ts': 'typescript',
   '.tsx': 'tsx',
@@ -127,7 +118,8 @@ export function buildSpi(opts: BuildSpiOptions): SemanticProgramIndex {
   const diagnostics: SpiDiagnostic[] = []
 
   const absPaths: string[] = []
-  collectFiles(root, absPaths)
+  const ignorePatterns = loadGraphifyignorePatterns(root)
+  collectFiles(root, root, ignorePatterns, absPaths)
 
   const pathToFileId = new Map<string, string>()
   for (const abs of absPaths) {
@@ -199,7 +191,7 @@ export function buildSpi(opts: BuildSpiOptions): SemanticProgramIndex {
 // buildSpi directly.
 export const buildSpiFileLayer = buildSpi
 
-function collectFiles(dir: string, out: string[]): void {
+function collectFiles(root: string, dir: string, ignorePatterns: readonly string[], out: string[]): void {
   let entries: import('node:fs').Dirent<string>[]
   try {
     entries = readdirSync(dir, { withFileTypes: true, encoding: 'utf8' })
@@ -207,11 +199,11 @@ function collectFiles(dir: string, out: string[]): void {
     return
   }
   for (const entry of entries) {
-    if (SKIP_DIRS.has(entry.name)) continue
     if (entry.isSymbolicLink()) continue
     const full = join(dir, entry.name)
+    if (isDiscoveryPathIgnored(full, root, ignorePatterns)) continue
     if (entry.isDirectory()) {
-      collectFiles(full, out)
+      collectFiles(root, full, ignorePatterns, out)
     } else if (entry.isFile()) {
       out.push(full)
     }
