@@ -173,6 +173,11 @@ describe('classifyRetrievalLevel — signal extraction', () => {
     const decision = classify({ prompt: 'Trace IdeasController.generateFromProblem through the runtime pipeline' })
     expect(decision.signals.mentioned_symbols).toContain('IdeasController.generateFromProblem')
   })
+
+  it('extracts lowercase module.function references', () => {
+    const decision = classify({ prompt: 'Trace utils.parseDate through the runtime pipeline' })
+    expect(decision.signals.mentioned_symbols).toContain('utils.parseDate')
+  })
 })
 
 describe('classifyRetrievalLevel — exclusions and negation', () => {

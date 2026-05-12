@@ -94,8 +94,16 @@ function globToRegExp(pattern: string): RegExp {
     return /^$/
   }
 
+  const globstarSegmentToken = '\u0000'
+  const globstarToken = '\u0001'
   const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&')
-  const wildcarded = escaped.replace(/\*/g, '.*').replace(/\?/g, '.')
+  const wildcarded = escaped
+    .replace(/\*\*\//g, globstarSegmentToken)
+    .replace(/\*\*/g, globstarToken)
+    .replace(/\*/g, '[^/]*')
+    .replace(/\?/g, '[^/]')
+    .replaceAll(globstarSegmentToken, '(?:.*/)?')
+    .replaceAll(globstarToken, '.*')
   return new RegExp(`^${wildcarded}$`)
 }
 
@@ -104,6 +112,23 @@ function matchesPatternValue(value: string, pattern: string): boolean {
 }
 
 function relativeWorkspacePath(path: string, root: string): string | null {
+  const normalizedRoot = normalizePathLike(root)
+  const normalizedPath = normalizePathLike(path)
+  const windowsAbsoluteRoot = /^[A-Za-z]:\//.test(normalizedRoot)
+  const windowsAbsolutePath = /^[A-Za-z]:\//.test(normalizedPath)
+  if (windowsAbsoluteRoot || windowsAbsolutePath) {
+    const rootPrefix = normalizedRoot.endsWith('/') ? normalizedRoot : `${normalizedRoot}/`
+    const lowerRoot = normalizedRoot.toLowerCase()
+    const lowerRootPrefix = rootPrefix.toLowerCase()
+    const lowerPath = normalizedPath.toLowerCase()
+    if (lowerPath === lowerRoot) {
+      return ''
+    }
+    return lowerPath.startsWith(lowerRootPrefix)
+      ? normalizedPath.slice(rootPrefix.length)
+      : null
+  }
+
   const resolvedRoot = resolve(root)
   const resolvedPath = path.startsWith(sep) ? resolve(path) : resolve(resolvedRoot, path)
   const relativePath = normalizePathLike(relative(resolvedRoot, resolvedPath))

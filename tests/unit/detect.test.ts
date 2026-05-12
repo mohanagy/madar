@@ -142,6 +142,21 @@ describe('detect', () => {
     }
   })
 
+  it('preserves gitignore-style segment semantics in graphifyignore helpers', () => {
+    const root = createTempRoot()
+    try {
+      const srcFile = join(root, 'src', 'main.ts')
+      const nestedFile = join(root, 'src', 'nested', 'main.ts')
+      const rootFile = join(root, 'index.ts')
+
+      expect(_isIgnored(srcFile, root, ['src/*.ts'])).toBe(true)
+      expect(_isIgnored(nestedFile, root, ['src/*.ts'])).toBe(false)
+      expect(_isIgnored(rootFile, root, ['**/*.ts'])).toBe(true)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('follows symlinked directories when requested', () => {
     const root = createTempRoot()
     try {

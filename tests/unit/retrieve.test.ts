@@ -2965,6 +2965,39 @@ describe('retrieve', () => {
       }
     })
 
+    it('does not suppress absolute tmp sources when graph.root_path is unset', () => {
+      const graph = new KnowledgeGraph()
+      const sourceFile = process.platform === 'win32' ? 'C:/tmp/auth.ts' : '/tmp/auth.ts'
+      graph.addNode('auth_service', {
+        label: 'AuthService',
+        file_type: 'code',
+        source_file: sourceFile,
+        source_location: 'L2',
+      })
+
+      const result = retrieveContext(graph, { question: 'AuthService', budget: 3000 })
+
+      expect(result.matched_nodes).toHaveLength(1)
+      expect(result.matched_nodes[0]?.label).toBe('AuthService')
+      expect(result.matched_nodes[0]?.line_number).toBe(2)
+    })
+
+    it('does not suppress windows-style absolute tmp sources on non-windows hosts', () => {
+      const graph = new KnowledgeGraph()
+      graph.addNode('auth_service', {
+        label: 'AuthService',
+        file_type: 'code',
+        source_file: 'C:/tmp/auth.ts',
+        source_location: 'L2',
+      })
+
+      const result = retrieveContext(graph, { question: 'AuthService', budget: 3000 })
+
+      expect(result.matched_nodes).toHaveLength(1)
+      expect(result.matched_nodes[0]?.label).toBe('AuthService')
+      expect(result.matched_nodes[0]?.line_number).toBe(2)
+    })
+
     it('relativizes in-root source files while preserving outside-root matches', () => {
       const graph = new KnowledgeGraph({ directed: true })
       graph.graph.root_path = '/workspace/app'

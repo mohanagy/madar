@@ -233,6 +233,54 @@ function averageLabelLengthForGraph(graph: KnowledgeGraph): number {
   return averageLength
 }
 
+function normalizeAbsoluteGraphPath(sourceFile: string): string | undefined {
+  const normalized = sourceFile.replace(/\\/g, '/')
+  if (normalized.startsWith('/') || /^[A-Za-z]:\//.test(normalized)) {
+    return normalized
+  }
+  return undefined
+}
+
+function inferredGraphRoot(graph: KnowledgeGraph): string | undefined {
+  if (typeof graph.graph.root_path === 'string' && graph.graph.root_path.length > 0) {
+    return graph.graph.root_path
+  }
+
+  const absoluteSourceDirs = graph
+    .nodeEntries()
+    .map(([, attributes]) => normalizeAbsoluteGraphPath(String(attributes.source_file ?? '')))
+    .filter((sourceFile): sourceFile is string => sourceFile !== undefined)
+    .map((sourceFile) => {
+      const lastSlash = sourceFile.lastIndexOf('/')
+      return lastSlash > 0 ? sourceFile.slice(0, lastSlash) : '/'
+    })
+
+  const first = absoluteSourceDirs[0]
+  if (!first) {
+    return undefined
+  }
+
+  const segments = first.split('/')
+  let sharedLength = segments.length
+  for (const dir of absoluteSourceDirs.slice(1)) {
+    const parts = dir.split('/')
+    let matchLength = 0
+    while (matchLength < sharedLength && matchLength < parts.length && segments[matchLength] === parts[matchLength]) {
+      matchLength += 1
+    }
+    sharedLength = matchLength
+    if (sharedLength === 0) {
+      break
+    }
+  }
+
+  const shared = segments.slice(0, sharedLength).join('/')
+  if (/^[A-Za-z]:$/.test(shared)) {
+    return `${shared}/`
+  }
+  return shared.length > 0 ? shared : '/'
+}
+
 function buildTokenWeights(graph: KnowledgeGraph, questionTokens: readonly string[]): Map<string, number> {
   const totalNodes = graph.numberOfNodes()
   if (totalNodes === 0) return new Map()
@@ -738,6 +786,13 @@ function labelSymbolParts(label: string): { className?: string; methodName?: str
   }
 }
 
+/**
+ * Scores explicit symbol-reference strength on a 0-4 scale.
+ * 4 = exact qualified match, 3.5 = method match with qualifier context in the
+ * source path, 3 = strong qualified/method context match, 2.5 = bare-name
+ * match, 0 = no symbol evidence. Callers use >= 3 as the "strong anchor"
+ * threshold when deciding whether a match should be treated as exact.
+ */
 function symbolReferenceMatchScore(
   label: string,
   sourceFile: string,
@@ -1560,7 +1615,10 @@ function buildRetrieveResultFromOrderedCandidates(
 export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions): RetrieveResult {
   const { question, budget } = options
   const questionTokens = tokenizeQuestion(question)
-  const rootPath = typeof graph.graph.root_path === 'string' ? graph.graph.root_path : process.cwd()
+  const graphRootPath = typeof graph.graph.root_path === 'string' && graph.graph.root_path.length > 0
+    ? graph.graph.root_path
+    : undefined
+  const classificationRootPath = inferredGraphRoot(graph)
   const retrievalGate = classifyRetrievalLevel({
     prompt: question,
     ...(options.retrievalLevel !== undefined ? { manualOverride: options.retrievalLevel } : {}),
@@ -1667,7 +1725,7 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
     const label = String(attributes.label ?? '')
     const sourceFile = String(attributes.source_file ?? '')
     const nodeKind = String(attributes.node_kind ?? '')
-    const sourceDomain = classifySourceDomain(sourceFile, rootPath)
+    const sourceDomain = classifySourceDomain(sourceFile, classificationRootPath)
     const fileNodeLike = isFileNodeLike(label, sourceFile)
     const symbolMatch = symbolReferenceMatchScore(label, sourceFile, mentionedSymbolRefs)
     const exactAnchorMatch = symbolMatch >= 3
@@ -1688,7 +1746,7 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
     const exclusionMatches = excludedDomains.includes(sourceDomain as never)
       || excludedTermMatches(label, excludedTerms, excludedPathHints)
       || excludedTermMatches(sourceFile, excludedTerms, excludedPathHints)
-    if ((isPollutedSourcePath(sourceFile, rootPath) || exclusionMatches) && !exactAnchorMatch && !mentionedPathMatch) {
+    if ((isPollutedSourcePath(sourceFile, classificationRootPath) || exclusionMatches) && !exactAnchorMatch && !mentionedPathMatch) {
       continue
     }
     const sourceDomainPenalty = defaultSourceDomainPenalty(sourceDomain, retrievalGate.intent, question, questionTokens)
@@ -1747,11 +1805,11 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
 
   const cleanExactLabels = new Set(
     seedCandidates
-    .filter((candidate) => !isPollutedSourcePath(candidate.sourceFile, rootPath))
+      .filter((candidate) => !isPollutedSourcePath(candidate.sourceFile, classificationRootPath))
       .map((candidate) => normalizeSeedText(candidate.label)),
   )
   const filteredSeedCandidates = seedCandidates.filter((candidate) => (
-    !isPollutedSourcePath(candidate.sourceFile, rootPath)
+    !isPollutedSourcePath(candidate.sourceFile, classificationRootPath)
       || candidate.literalPathMatch
       || !cleanExactLabels.has(normalizeSeedText(candidate.label))
   ))
@@ -1949,13 +2007,13 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
     }
     const label = String(attributes.label ?? '')
     const sourceFile = String(attributes.source_file ?? '')
-    const sourceDomain = classifySourceDomain(sourceFile, rootPath)
+    const sourceDomain = classifySourceDomain(sourceFile, classificationRootPath)
     const symbolMatch = symbolReferenceMatchScore(label, sourceFile, mentionedSymbolRefs)
     const pathMatch = sourceFileMatchesMentionedPath(sourceFile, mentionedPaths)
     const exclusionMatches = excludedDomains.includes(sourceDomain as never)
       || excludedTermMatches(label, excludedTerms, excludedPathHints)
       || excludedTermMatches(sourceFile, excludedTerms, excludedPathHints)
-    if ((isPollutedSourcePath(sourceFile, rootPath) || exclusionMatches) && symbolMatch <= 0 && !pathMatch) {
+    if ((isPollutedSourcePath(sourceFile, classificationRootPath) || exclusionMatches) && symbolMatch <= 0 && !pathMatch) {
       continue
     }
     const sourceDomainPenalty = defaultSourceDomainPenalty(sourceDomain, retrievalGate.intent, question, questionTokens)
@@ -2066,14 +2124,14 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
         excludedDomains: retrievalGate.signals.excluded_domains,
         excludedTerms: retrievalGate.signals.excluded_terms,
         excludedPathHints: retrievalGate.signals.excluded_path_hints,
-        rootPath,
+        rootPath: classificationRootPath,
       },
     )
 
     if (sliced) {
       const scoredById = new Map(scored.map((node) => [node.id, node]))
       const sliceCandidates = sliced.ordered_ids.map((nodeId, index) => (
-        scoredById.get(nodeId) ?? scoredNodeFromGraph(graph, nodeId, Math.max(0.25, 2 - (index * 0.1)), rootPath)
+        scoredById.get(nodeId) ?? scoredNodeFromGraph(graph, nodeId, Math.max(0.25, 2 - (index * 0.1)), classificationRootPath)
       ))
 
       return buildRetrieveResultFromOrderedCandidates(
@@ -2084,7 +2142,7 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
         communityLabels,
         retrieveGraphSignals,
         retrievalGate,
-        rootPath,
+        graphRootPath,
         sliced.metadata,
       )
     }
@@ -2098,7 +2156,7 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
     communityLabels,
     retrieveGraphSignals,
     retrievalGate,
-    rootPath,
+    graphRootPath,
   )
 }
 
@@ -2115,7 +2173,10 @@ export async function retrieveContextAsync(graph: KnowledgeGraph, options: Retri
 
   const frameworkProfile = buildFrameworkQuestionProfile(options.question, questionTokens)
   const activeFrameworks = activeFrameworksForProfile(frameworkProfile)
-  const rootPath = typeof graph.graph.root_path === 'string' ? graph.graph.root_path : process.cwd()
+  const graphRootPath = typeof graph.graph.root_path === 'string' && graph.graph.root_path.length > 0
+    ? graph.graph.root_path
+    : undefined
+  const classificationRootPath = inferredGraphRoot(graph)
   const communities = communitiesFromGraph(graph)
   const communityLabels: Record<number, string> = {
     ...buildCommunityLabels(graph, communities),
@@ -2146,7 +2207,7 @@ export async function retrieveContextAsync(graph: KnowledgeGraph, options: Retri
   const questionLower = options.question.toLowerCase()
   const candidatesById = new Map(
     eligibleNodeEntries(graph, options)
-      .map(([id, attributes]) => [id, scoredNodeFromGraphEntry(id, attributes, frameworkProfile, questionLower, rootPath)] as const),
+      .map(([id, attributes]) => [id, scoredNodeFromGraphEntry(id, attributes, frameworkProfile, questionLower, classificationRootPath)] as const),
   )
   if (candidatesById.size === 0) {
     return lexicalResult
@@ -2228,7 +2289,7 @@ export async function retrieveContextAsync(graph: KnowledgeGraph, options: Retri
       prompt: options.question,
       ...(options.retrievalLevel !== undefined ? { manualOverride: options.retrievalLevel } : {}),
     }),
-    rootPath,
+    graphRootPath,
     lexicalResult.slice,
   )
 }

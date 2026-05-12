@@ -860,6 +860,9 @@ function computeContextCandidateValue(
     pushUnique(reasons, 'source path match')
   }
 
+  // Reward explicitly tagged non-production domains once they survive the
+  // penalty gate above so score/reasons reflect why pushUnique records that
+  // this candidate matched a permitted test/benchmark/config-style source.
   if (view.source_domain !== 'production' && view.source_domain !== 'unknown') {
     score += 0.25
     pushUnique(reasons, `${view.source_domain} domain`)

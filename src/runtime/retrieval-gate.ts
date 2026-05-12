@@ -72,7 +72,7 @@ const PATTERNS: ReadonlyArray<{ intent: RetrievalIntent; re: RegExp }> = [
 
 const PATH_RE = /(?:^|\s|`)((?:[\w@./-]+\/)*[\w./@-]+\.[A-Za-z]{1,8})(?=\b|`|$)/g
 const SYMBOL_BACKTICK_RE = /`([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\(?\)?)`/g
-const SYMBOL_EXPLICIT_RE = /\b([A-Z][A-Za-z0-9_$]*(?:\.|#|::)[A-Za-z_$][\w$]*\(?\)?|[A-Za-z_$][\w$]{2,}\(\))\b/g
+const SYMBOL_EXPLICIT_RE = /\b((?:[A-Za-z_$][\w$]*\.)*[A-Za-z_$][\w$]*(?:\.|#|::)[A-Za-z_$][\w$]*\(?\)?|[A-Za-z_$][\w$]{2,}\(\))\b/g
 const STACK_TRACE_RE = /(?:^|\n)\s*at\s+\S+\s*\([^)]*:\d+(?::\d+)?\)|Error[:\s]\s+\S/
 const EXCLUSION_SPAN_RE = /\b(?:exclude|excluding|ignore|ignoring|omit|omitting|skip|skipping|without|do not include|don't include|not|no)\b\s+(.+?)(?=(?:\s+\b(?:but|while|however|when)\b|[.;\n]|$))/gi
 

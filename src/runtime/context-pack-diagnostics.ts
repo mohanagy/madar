@@ -371,7 +371,9 @@ function selectedMethodAnchor(pack: CompiledContextPack): boolean {
 function computeQualityScore(warnings: ContextPackDiagnosticWarning[]): number {
   // Keep the quality-score denominator stable as diagnostics expand so
   // historical scores remain comparable. New warnings still deduct via the
-  // numerator, but don't dilute the old baseline.
+  // numerator (triggeredWeight via RULE_WEIGHTS), but don't dilute the old
+  // baseline. Raw scores can dip below zero when triggeredWeight exceeds
+  // totalWeight; the clamp intentionally floors those expanded warning sets at 0.
   const totalWeight = 10
   let triggeredWeight = 0
   for (const warning of warnings) {
