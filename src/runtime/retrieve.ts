@@ -843,10 +843,19 @@ function sourceFileMatchesMentionedPath(sourceFile: string, mentionedPaths: read
   return mentionedPaths.some((path) => sourceFile === path || sourceFile.endsWith(`/${path}`))
 }
 
+function exclusionTokens(value: string): Set<string> {
+  return new Set(tokenizeLabel(value))
+}
+
 function excludedTermMatches(value: string, excludedTerms: readonly string[], excludedPathHints: readonly string[]): boolean {
-  const lowerValue = value.toLowerCase()
-  return excludedTerms.some((term) => lowerValue.includes(term.toLowerCase()))
-    || excludedPathHints.some((hint) => lowerValue.includes(hint.toLowerCase()))
+  const valueTokens = exclusionTokens(value)
+  if (valueTokens.size === 0) {
+    return false
+  }
+
+  return [...excludedTerms, ...excludedPathHints]
+    .flatMap((term) => tokenizeLabel(term))
+    .some((termToken) => valueTokens.has(termToken))
 }
 
 function promptAllowsSourceDomain(domain: SourceDomain, intent: string, prompt: string, questionTokens: readonly string[]): boolean {

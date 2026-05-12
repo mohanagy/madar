@@ -2965,6 +2965,33 @@ describe('retrieve', () => {
       }
     })
 
+    it('does not treat exclusion terms as substrings inside production identifiers', () => {
+      const graph = new KnowledgeGraph()
+      graph.addNode('contest_service', {
+        label: 'ContestService',
+        file_type: 'code',
+        source_file: '/src/contest/service.ts',
+        line_number: 12,
+        node_kind: 'class',
+      })
+      graph.addNode('contest_service_test', {
+        label: 'ContestService.spec',
+        file_type: 'code',
+        source_file: '/src/__tests__/contest.service.spec.ts',
+        line_number: 4,
+        node_kind: 'function',
+      })
+
+      const result = retrieveContext(graph, {
+        question: 'Explain ContestService runtime path. Exclude tests.',
+        budget: 3000,
+      })
+
+      expect(result.matched_nodes).toHaveLength(1)
+      expect(result.matched_nodes[0]?.label).toBe('ContestService')
+      expect(result.matched_nodes[0]?.source_file).toBe('/src/contest/service.ts')
+    })
+
     it('does not suppress absolute tmp sources when graph.root_path is unset', () => {
       const graph = new KnowledgeGraph()
       const sourceFile = process.platform === 'win32' ? 'C:/tmp/auth.ts' : '/tmp/auth.ts'
