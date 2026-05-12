@@ -56,6 +56,7 @@ const RULE_WEIGHTS: ReadonlyMap<ContextPackDiagnosticKind, number> = new Map([
   ['missing_method_anchor', 1],
   ['missing_provider_call_edges', 1],
   ['missing_runtime_pipeline', 1],
+  ['slice_path_nodes_not_promoted', 1],
   ['polluted_source_path_selected', 2],
   ['missing_structural_evidence', 1],
 ])
@@ -262,6 +263,19 @@ export function computeContextPackDiagnostics(
     })
   }
 
+  const omittedSlicePathTargets = slicePathTargetsNotPromoted(pack)
+  if (omittedSlicePathTargets.length > 0) {
+    warnings.push({
+      kind: 'slice_path_nodes_not_promoted',
+      severity: 'warn',
+      message: 'slice-v1 found runtime path nodes that were omitted from the final context pack. This usually means pack assembly is under-promoting selected path evidence.',
+      detail: {
+        ids: omittedSlicePathTargets.slice(0, 10).flatMap((entry) => entry.id ? [entry.id] : []),
+        labels: omittedSlicePathTargets.slice(0, 10).map((entry) => entry.label),
+      },
+    })
+  }
+
   if (requestedMethodAnchor(pack) && !selectedMethodAnchor(pack)) {
     warnings.push({
       kind: 'missing_method_anchor',
@@ -428,6 +442,73 @@ function outgoingCallTargets(
     .filter((target): target is ContextPackNode => target !== undefined)
 }
 
+function supportingPolicyOrLoggerLabel(label: string): boolean {
+  return /planenforcement|guard|interceptor|swagger|apioperation|apiresponse|apitags|logger|\.info\(\)|\.error\(\)|\.warn\(\)|\.debug\(\)/i.test(label)
+}
+
+function slicePathTargetsNotPromoted(
+  pack: CompiledContextPack,
+): Array<{ id?: string; label: string }> {
+  const anchors = pack.slice?.anchors ?? []
+  const selectedPaths = pack.slice?.selected_paths ?? []
+  if (anchors.length === 0 || selectedPaths.length === 0) {
+    return []
+  }
+
+  const anchorIds = new Set(
+    anchors
+      .map((anchor) => anchor.node_id)
+      .filter((anchorId): anchorId is string => typeof anchorId === 'string' && anchorId.length > 0),
+  )
+  const anchorLabels = new Set(anchors.map((anchor) => anchor.label))
+  const includedIds = new Set(
+    pack.nodes
+      .map((node) => node.node_id)
+      .filter((nodeId): nodeId is string => typeof nodeId === 'string' && nodeId.length > 0),
+  )
+  const includedLabels = new Set(pack.nodes.map((node) => node.label))
+  const omitted = new Map<string, { id?: string; label: string }>()
+  const reachableIds = new Set(anchorIds)
+  const reachableLabels = new Set(anchorLabels)
+  let changed = true
+
+  while (changed) {
+    changed = false
+    for (const path of selectedPaths) {
+      if (path.direction !== 'forward' || path.relation !== 'calls') {
+        continue
+      }
+      const reachableFrom = typeof path.from_id === 'string' && path.from_id.length > 0
+        ? reachableIds.has(path.from_id)
+        : reachableLabels.has(path.from)
+      if (!reachableFrom || supportingPolicyOrLoggerLabel(path.to)) {
+        continue
+      }
+      const included = typeof path.to_id === 'string' && path.to_id.length > 0
+        ? includedIds.has(path.to_id)
+        : includedLabels.has(path.to)
+      if (!included) {
+        const key = typeof path.to_id === 'string' && path.to_id.length > 0 ? path.to_id : path.to
+        omitted.set(key, typeof path.to_id === 'string' && path.to_id.length > 0
+          ? { id: path.to_id, label: path.to }
+          : { label: path.to })
+      }
+
+      if (typeof path.to_id === 'string' && path.to_id.length > 0) {
+        if (!reachableIds.has(path.to_id)) {
+          reachableIds.add(path.to_id)
+          changed = true
+        }
+      } else if (!reachableLabels.has(path.to)) {
+        reachableLabels.add(path.to)
+        changed = true
+      }
+    }
+  }
+
+  return [...omitted.values()]
+}
+
 function isolatedRouteMethod(pack: CompiledContextPack): boolean {
   const routeNodes = anchoredRouteNodes(pack)
   if (routeNodes.length === 0) {
@@ -453,6 +534,10 @@ function missingProviderCallEdges(pack: CompiledContextPack): boolean {
 }
 
 function missingRuntimePipeline(pack: CompiledContextPack): boolean {
+  if (runtimeSliceCallChainPresent(pack)) {
+    return false
+  }
+
   const pipelineNodeCount = pack.nodes.filter((node) => {
     const role = (node.framework_role ?? '').toLowerCase()
     const label = node.label.toLowerCase()
@@ -478,9 +563,83 @@ function selectedMethodAnchor(pack: CompiledContextPack): boolean {
   const mentionedSymbols = pack.retrieval_gate?.signals.mentioned_symbols ?? []
   const anchors = pack.slice?.anchors ?? []
   return mentionedSymbols.some((symbol) => {
-    const normalizedSymbol = symbol.replace(/`/g, '').replace(/\(\)$/, '').toLowerCase()
-    return anchors.some((anchor) => anchor.label.replace(/`/g, '').replace(/\(\)$/, '').toLowerCase() === normalizedSymbol)
+    const normalizedSymbol = normalizeSymbol(symbol)
+    const normalizedMethod = normalizeMethodName(symbol)
+    return anchors.some((anchor) => {
+      const normalizedAnchor = normalizeSymbol(anchor.label)
+      return normalizedAnchor === normalizedSymbol
+        || (normalizedMethod !== undefined && normalizeMethodName(anchor.label) === normalizedMethod)
+    })
   })
+}
+
+function normalizeSymbol(value: string): string {
+  return value.replace(/`/g, '').replace(/\(\)$/, '').replace(/^\.*/, '').trim().toLowerCase()
+}
+
+function normalizeMethodName(value: string): string | undefined {
+  const normalized = normalizeSymbol(value)
+  if (normalized.length === 0) {
+    return undefined
+  }
+  const segments = normalized.split(/[.#:]/).filter((segment) => segment.length > 0)
+  return segments.at(-1)
+}
+
+function runtimeSliceCallChainPresent(pack: CompiledContextPack): boolean {
+  if (!pack.slice || pack.slice.selected_paths.length === 0) {
+    return false
+  }
+
+  const nodesById = new Map<string, ContextPackNode>()
+  const nodesByLabel = new Map<string, ContextPackNode[]>()
+  for (const node of pack.nodes) {
+    if (typeof node.node_id === 'string' && node.node_id.length > 0) {
+      nodesById.set(node.node_id, node)
+    }
+    const labeled = nodesByLabel.get(node.label)
+    if (labeled) {
+      labeled.push(node)
+    } else {
+      nodesByLabel.set(node.label, [node])
+    }
+  }
+  let forwardCallCount = 0
+  let crossFileCount = 0
+  let pipelineSemanticCount = 0
+
+  for (const path of pack.slice.selected_paths) {
+    if (path.direction !== 'forward' || path.relation !== 'calls') {
+      continue
+    }
+    const fromNode = (
+      typeof path.from_id === 'string' && path.from_id.length > 0
+        ? nodesById.get(path.from_id)
+        : undefined
+    ) ?? nodesByLabel.get(path.from)?.[0]
+    const toNode = (
+      typeof path.to_id === 'string' && path.to_id.length > 0
+        ? nodesById.get(path.to_id)
+        : undefined
+    ) ?? nodesByLabel.get(path.to)?.[0]
+    if (!fromNode || !toNode) {
+      continue
+    }
+    forwardCallCount += 1
+    if (fromNode.source_file !== toNode.source_file) {
+      crossFileCount += 1
+    }
+    if (pipelineRuntimeLikeNode(fromNode) || pipelineRuntimeLikeNode(toNode)) {
+      pipelineSemanticCount += 1
+    }
+  }
+
+  return forwardCallCount >= 2 && crossFileCount >= 1 && pipelineSemanticCount >= 1
+}
+
+function pipelineRuntimeLikeNode(node: ContextPackNode): boolean {
+  const lower = `${node.label} ${node.framework_role ?? ''} ${node.source_file} ${node.node_kind ?? ''}`.toLowerCase()
+  return /\bpipeline|trigger|queue|job|worker|orchestrator|planner|research|agent|scoring|report|repository|persistence|save|process|search|score\b/.test(lower)
 }
 
 function computeQualityScore(warnings: ContextPackDiagnosticWarning[]): number {

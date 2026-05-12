@@ -56,6 +56,49 @@ function retrieve(prompt: string) {
   })
 }
 
+function buildBidirectionalHubGraph() {
+  return build(
+    [
+      {
+        schema_version: 1,
+        nodes: [
+          { id: 'route', label: '.generateFromProblem()', file_type: 'code', source_file: '/src/ideas/idea-generation.controller.ts', source_location: 'L20', node_kind: 'route', framework: 'nestjs', framework_role: 'nest_route', community: 0 },
+          { id: 'auth_helper', label: 'requireIdeasUserId', file_type: 'code', source_file: '/src/ideas/ideas-authenticated-request.ts', source_location: 'L6', node_kind: 'function', community: 0 },
+          { id: 'create_idea', label: '.createIdea()', file_type: 'code', source_file: '/src/ideas/ideas.service.ts', source_location: 'L30', node_kind: 'method', framework_role: 'nest_provider', community: 1 },
+          { id: 'start_pipeline', label: '.startPipeline()', file_type: 'code', source_file: '/src/pipeline/pipeline-trigger.service.ts', source_location: 'L40', node_kind: 'method', framework_role: 'nest_provider', community: 1 },
+          { id: 'add_job', label: '.addJob()', file_type: 'code', source_file: '/src/queue/queue-registry.service.ts', source_location: 'L11', node_kind: 'method', framework_role: 'queue', community: 2 },
+          { id: 'call_llm', label: '.callLlm()', file_type: 'code', source_file: '/src/llm/llm-provider-resolver.service.ts', source_location: 'L14', node_kind: 'method', community: 3 },
+          { id: 'resolve_llm', label: '.resolve()', file_type: 'code', source_file: '/src/llm/llm-provider-resolver.service.ts', source_location: 'L8', node_kind: 'method', community: 3 },
+          { id: 'other_controller_a', label: '.exportIdeaToPdf()', file_type: 'code', source_file: '/src/ideas/export.controller.ts', source_location: 'L18', node_kind: 'method', framework: 'nestjs', framework_role: 'nest_route', community: 4 },
+          { id: 'other_controller_b', label: '.publishIdea()', file_type: 'code', source_file: '/src/ideas/publish.controller.ts', source_location: 'L18', node_kind: 'method', framework: 'nestjs', framework_role: 'nest_route', community: 4 },
+          { id: 'other_worker', label: '.queueLetsBuild()', file_type: 'code', source_file: '/src/pipeline/lets-build.worker.ts', source_location: 'L22', node_kind: 'method', community: 5 },
+          { id: 'plan_enforcement', label: 'PlanEnforcement', file_type: 'code', source_file: '/src/guards/plan-enforcement.ts', source_location: 'L5', node_kind: 'function', community: 6 },
+        ],
+        edges: [
+          { source: 'route', target: 'auth_helper', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/idea-generation.controller.ts' },
+          { source: 'route', target: 'create_idea', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/idea-generation.controller.ts' },
+          { source: 'route', target: 'start_pipeline', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/idea-generation.controller.ts' },
+          { source: 'route', target: 'plan_enforcement', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/idea-generation.controller.ts' },
+          { source: 'start_pipeline', target: 'add_job', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/pipeline-trigger.service.ts' },
+          { source: 'call_llm', target: 'resolve_llm', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/llm/llm-provider-resolver.service.ts' },
+          { source: 'resolve_llm', target: 'create_idea', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/llm/llm-provider-resolver.service.ts' },
+
+          // Simulate the real GoValidate graph shape where call edges can appear in both directions.
+          { source: 'auth_helper', target: 'route', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/ideas-authenticated-request.ts' },
+          { source: 'create_idea', target: 'route', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/ideas.service.ts' },
+          { source: 'start_pipeline', target: 'route', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/pipeline-trigger.service.ts' },
+          { source: 'add_job', target: 'start_pipeline', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/queue/queue-registry.service.ts' },
+
+          { source: 'other_controller_a', target: 'auth_helper', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/export.controller.ts' },
+          { source: 'other_controller_b', target: 'auth_helper', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/publish.controller.ts' },
+          { source: 'other_worker', target: 'add_job', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/lets-build.worker.ts' },
+        ],
+      },
+    ],
+    { directed: true },
+  )
+}
+
 describe('retrieveContext production retrieval regressions', () => {
   it('follows the production runtime path while suppressing excluded test and benchmark domains', () => {
     const result = retrieve(
@@ -140,5 +183,32 @@ describe('retrieveContext production retrieval regressions', () => {
     expect(warningKinds).not.toContain('missing_runtime_pipeline')
     expect(warningKinds).not.toContain('excluded_domain_selected')
     expect(warningKinds).not.toContain('polluted_source_path_selected')
+  })
+
+  it('keeps slice-v1 paths forward and suppresses shared-hub fan-in for exact method pipeline prompts', () => {
+    const result = retrieveContext(buildBidirectionalHubGraph(), {
+      question:
+        'Explain the production runtime path for IdeaGenerationController.generateFromProblem and how it creates a validation report. Follow the controller into service/orchestrator/job/research agents/scoring/report builder/persistence.',
+      budget: 4000,
+      retrievalLevel: 4,
+      retrievalStrategy: 'slice-v1',
+    })
+
+    expect(result.slice?.selected_paths).toEqual(expect.arrayContaining([
+      expect.objectContaining({ from: '.generateFromProblem()', to: '.createIdea()', relation: 'calls', direction: 'forward' }),
+      expect.objectContaining({ from: '.generateFromProblem()', to: '.startPipeline()', relation: 'calls', direction: 'forward' }),
+      expect.objectContaining({ from: '.startPipeline()', to: '.addJob()', relation: 'calls', direction: 'forward' }),
+    ]))
+
+    const forbiddenPaths = [
+      { from: '.createIdea()', to: '.generateFromProblem()', relation: 'calls' },
+      { from: '.exportIdeaToPdf()', to: 'requireIdeasUserId', relation: 'calls' },
+      { from: '.publishIdea()', to: 'requireIdeasUserId', relation: 'calls' },
+      { from: '.queueLetsBuild()', to: '.addJob()', relation: 'calls' },
+      { from: '.callLlm()', to: '.resolve()', relation: 'calls' },
+    ]
+    for (const path of forbiddenPaths) {
+      expect(result.slice?.selected_paths).not.toContainEqual(expect.objectContaining(path))
+    }
   })
 })

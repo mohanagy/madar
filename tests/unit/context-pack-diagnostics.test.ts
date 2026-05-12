@@ -411,6 +411,149 @@ describe('computeContextPackDiagnostics', () => {
     ]))
   })
 
+  it('flags slice_path_nodes_not_promoted when compacted packs drop direct runtime path nodes', () => {
+    const diag = computeContextPackDiagnostics(makePack({
+      nodes: [
+        makeNode({
+          node_id: 'route',
+          label: '.generateFromProblem()',
+          source_file: '/repo/src/idea-generation.controller.ts',
+          framework_role: 'nest_route',
+          node_kind: 'route',
+        }),
+        makeNode({
+          node_id: 'helper',
+          label: 'requireIdeasUserId',
+          source_file: '/repo/src/ideas-authenticated-request.ts',
+          node_kind: 'function',
+        }),
+      ],
+      relationships: [
+        makeRelationship('route', 'helper', 'calls'),
+      ],
+      retrieval_gate: {
+        ...retrievalGate({
+          reason: 'pipeline prompt',
+        }),
+        signals: {
+          ...retrievalGate().signals,
+          mentioned_symbols: ['IdeaGenerationController.generateFromProblem'],
+        },
+      },
+      task_contract: taskContract({
+        prompt: 'Explain the production runtime path for IdeaGenerationController.generateFromProblem through the service and orchestrator pipeline.',
+      }),
+      slice: {
+        mode: 'explain',
+        anchors: [{ node_id: 'route', label: '.generateFromProblem()', reason: 'symbol mention' }],
+        directions: ['forward'],
+        selected_paths: [
+          {
+            from_id: 'route',
+            from: '.generateFromProblem()',
+            to_id: 'helper',
+            to: 'requireIdeasUserId',
+            relation: 'calls',
+            direction: 'forward',
+          },
+          {
+            from_id: 'route',
+            from: '.generateFromProblem()',
+            to_id: 'create',
+            to: '.createIdea()',
+            relation: 'calls',
+            direction: 'forward',
+          },
+          {
+            from_id: 'route',
+            from: '.generateFromProblem()',
+            to_id: 'start',
+            to: '.startPipeline()',
+            relation: 'calls',
+            direction: 'forward',
+          },
+        ],
+      },
+    }))
+
+    const warning = diag.warnings.find((entry) => entry.kind === 'slice_path_nodes_not_promoted')
+    expect(warning).toEqual(expect.objectContaining({
+      severity: 'warn',
+      detail: {
+        ids: ['create', 'start'],
+        labels: ['.createIdea()', '.startPipeline()'],
+      },
+    }))
+  })
+
+  it('flags deeper slice_path_nodes_not_promoted targets beyond the first hop from anchors', () => {
+    const diag = computeContextPackDiagnostics(makePack({
+      nodes: [
+        makeNode({
+          node_id: 'route',
+          label: '.generateFromProblem()',
+          source_file: '/repo/src/idea-generation.controller.ts',
+          framework_role: 'nest_route',
+          node_kind: 'route',
+        }),
+        makeNode({
+          node_id: 'helper',
+          label: '.startPipeline()',
+          source_file: '/repo/src/pipeline-trigger.service.ts',
+          framework_role: 'provider',
+          node_kind: 'method',
+        }),
+      ],
+      relationships: [
+        makeRelationship('route', 'helper', 'calls'),
+      ],
+      retrieval_gate: {
+        ...retrievalGate({
+          reason: 'pipeline prompt',
+        }),
+        signals: {
+          ...retrievalGate().signals,
+          mentioned_symbols: ['IdeaGenerationController.generateFromProblem'],
+        },
+      },
+      task_contract: taskContract({
+        prompt: 'Explain the production runtime path for IdeaGenerationController.generateFromProblem through the service and orchestrator pipeline.',
+      }),
+      slice: {
+        mode: 'explain',
+        anchors: [{ node_id: 'route', label: '.generateFromProblem()', reason: 'symbol mention' }],
+        directions: ['forward'],
+        selected_paths: [
+          {
+            from_id: 'route',
+            from: '.generateFromProblem()',
+            to_id: 'helper',
+            to: '.startPipeline()',
+            relation: 'calls',
+            direction: 'forward',
+          },
+          {
+            from_id: 'helper',
+            from: '.startPipeline()',
+            to_id: 'worker',
+            to: '.dispatchWave()',
+            relation: 'calls',
+            direction: 'forward',
+          },
+        ],
+      },
+    }))
+
+    const warning = diag.warnings.find((entry) => entry.kind === 'slice_path_nodes_not_promoted')
+    expect(warning).toEqual(expect.objectContaining({
+      severity: 'warn',
+      detail: {
+        ids: ['worker'],
+        labels: ['.dispatchWave()'],
+      },
+    }))
+  })
+
   it('does not borrow same-label call edges from a different node when the route node_id is known', () => {
     const diag = computeContextPackDiagnostics(makePack({
       nodes: [
@@ -464,6 +607,68 @@ describe('computeContextPackDiagnostics', () => {
     expect(diag.warnings.map((warning) => warning.kind)).not.toEqual(expect.arrayContaining([
       'missing_provider_call_edges',
     ]))
+  })
+
+  it('does not flag missing_runtime_pipeline when the slice chain is label-only but structurally present', () => {
+    const diag = computeContextPackDiagnostics(makePack({
+      nodes: [
+        makeNode({
+          node_id: '',
+          label: '.generateFromProblem()',
+          source_file: '/repo/src/idea-generation.controller.ts',
+          framework_role: 'nest_route',
+          node_kind: 'route',
+        }),
+        makeNode({
+          node_id: '',
+          label: '.startPipeline()',
+          source_file: '/repo/src/pipeline-trigger.service.ts',
+          framework_role: 'provider',
+          node_kind: 'method',
+        }),
+        makeNode({
+          node_id: '',
+          label: '.addJob()',
+          source_file: '/repo/src/queue-registry.service.ts',
+          framework_role: 'provider',
+          node_kind: 'method',
+        }),
+      ],
+      relationships: [],
+      retrieval_gate: {
+        ...retrievalGate({
+          reason: 'pipeline prompt',
+        }),
+        signals: {
+          ...retrievalGate().signals,
+          mentioned_symbols: ['IdeaGenerationController.generateFromProblem'],
+        },
+      },
+      task_contract: taskContract({
+        prompt: 'Explain the production runtime path for IdeaGenerationController.generateFromProblem through the service and orchestrator pipeline.',
+      }),
+      slice: {
+        mode: 'explain',
+        anchors: [{ label: '.generateFromProblem()', reason: 'symbol mention' }],
+        directions: ['forward'],
+        selected_paths: [
+          {
+            from: '.generateFromProblem()',
+            to: '.startPipeline()',
+            relation: 'calls',
+            direction: 'forward',
+          },
+          {
+            from: '.startPipeline()',
+            to: '.addJob()',
+            relation: 'calls',
+            direction: 'forward',
+          },
+        ],
+      },
+    }))
+
+    expect(diag.warnings.map((warning) => warning.kind)).not.toContain('missing_runtime_pipeline')
   })
 
   it('flags test-dominated production packs and missing structural evidence', () => {

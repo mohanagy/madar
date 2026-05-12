@@ -54,6 +54,7 @@ interface SlicePolicy {
   backward_depth: number
   forward_depth: number
   helper_relations: ReadonlySet<string>
+  runtime_flow_only?: boolean
 }
 
 const EXPLAIN_BACKWARD = new Set(['calls', 'controller_route', 'route_handler'])
@@ -124,13 +125,54 @@ function methodLikeNode(node: SliceScoredNode): boolean {
   return node.nodeKind?.toLowerCase() === 'method' || /(?:[.#:]|^\.)[A-Za-z_$][\w$]*\(?\)?$/u.test(node.label)
 }
 
-function effectivePolicy(intent: RetrievalIntent, anchors: readonly SliceScoredNode[], prompt: string | undefined): SlicePolicy {
+function methodNameFromLabel(label: string): string | undefined {
+  const trimmed = label.trim().replace(/`/g, '').replace(/\(\)$/, '')
+  const qualified = trimmed.match(/(?:\.|#|::)([A-Za-z_$][\w$]*)$/)
+  if (qualified?.[1]) {
+    return qualified[1].toLowerCase()
+  }
+  const dotted = trimmed.match(/^\.([A-Za-z_$][\w$]*)$/)
+  if (dotted?.[1]) {
+    return dotted[1].toLowerCase()
+  }
+  return undefined
+}
+
+function effectivePolicy(
+  intent: RetrievalIntent,
+  anchors: readonly ContextPackSliceAnchor[],
+  anchorNodes: readonly SliceScoredNode[],
+  prompt: string | undefined,
+): SlicePolicy {
   const base = policyForIntent(intent)
-  const hasMethodAnchor = anchors.some((anchor) => methodLikeNode(anchor))
+  const hasMethodAnchor = anchorNodes.some((anchor) => methodLikeNode(anchor))
+  const hasExactMethodAnchor = anchors.some((anchor, index) => {
+    const node = anchorNodes[index]
+    return node !== undefined
+      && methodLikeNode(node)
+      && (anchor.reason === 'symbol mention' || anchor.reason === 'path mention')
+  })
   const pipelinePrompt = promptWantsRuntimePipeline(prompt)
 
   if (!hasMethodAnchor && !pipelinePrompt) {
     return base
+  }
+
+  if (hasExactMethodAnchor && pipelinePrompt) {
+    return {
+      ...base,
+      backward_relations: new Set(['controller_route', 'route_handler', 'method']),
+      forward_relations: new Set(['calls']),
+      helper_relations: new Set([
+        ...base.helper_relations,
+        'injects',
+        'depends_on',
+        'module_provides',
+      ]),
+      backward_depth: 1,
+      forward_depth: Math.max(base.forward_depth, 4),
+      runtime_flow_only: true,
+    }
   }
 
   const forwardRelations = new Set(base.forward_relations)
@@ -196,7 +238,7 @@ function buildAnchors(scored: readonly SliceScoredNode[]): ContextPackSliceAncho
   const exactMethodAnchors = matchedAnchors.filter((node) => node.exactLabelMatch && methodLikeNode(node))
   const nonBarrelMatchedAnchors = matchedAnchors.filter((node) => !isBarrelLike(node.label, node.sourceFile))
   const anchorPool = exactMethodAnchors.length > 0
-    ? exactMethodAnchors
+    ? exactMethodAnchors.slice(0, 1)
     : matchedAnchors.length > 0
     ? (nonBarrelMatchedAnchors.length > 0 ? nonBarrelMatchedAnchors : matchedAnchors)
     : scored.filter((node) => !isBarrelLike(node.label, node.sourceFile)).slice(0, 1)
@@ -252,13 +294,27 @@ function traverseDirection(
   direction: 'forward' | 'backward',
   relations: ReadonlySet<string>,
   maxDepth: number,
+  runtimeFlowOnly: boolean = false,
+  anchorMethodNames: ReadonlySet<string> = new Set(),
 ): void {
   const queue = anchorIds.map((id) => ({ id, depth: 0 }))
   const seen = new Set<string>(anchorIds)
+  const depths = new Map<string, number>(anchorIds.map((id) => [id, 0]))
 
   while (queue.length > 0) {
     const current = queue.shift()!
     if (current.depth >= maxDepth) {
+      continue
+    }
+
+    const currentNode = scoredById.get(current.id) ?? sliceNodeFromGraph(graph, current.id)
+    scoredById.set(current.id, currentNode)
+    if (
+      direction === 'forward'
+      && runtimeFlowOnly
+      && current.depth > 0
+      && !shouldExpandRuntimePathNode(graph, currentNode, anchorMethodNames)
+    ) {
       continue
     }
 
@@ -268,6 +324,11 @@ function traverseDirection(
       const targetId = direction === 'forward' ? neighborId : current.id
       const relation = String(graph.edgeAttributes(sourceId, targetId).relation ?? 'related_to')
       if (!relations.has(relation)) {
+        continue
+      }
+
+      const neighborDepth = depths.get(neighborId)
+      if (neighborDepth !== undefined && neighborDepth <= current.depth) {
         continue
       }
 
@@ -282,7 +343,6 @@ function traverseDirection(
         orderedIds.push(neighborId)
       }
 
-      const currentNode = scoredById.get(current.id)
       recordPath(selectedPaths, pathSeen, {
         from_id: sourceId,
         from: direction === 'forward' ? currentNode?.label ?? sourceId : neighbor.label,
@@ -294,10 +354,54 @@ function traverseDirection(
 
       if (!seen.has(neighborId)) {
         seen.add(neighborId)
+        depths.set(neighborId, current.depth + 1)
         queue.push({ id: neighborId, depth: current.depth + 1 })
       }
     }
   }
+}
+
+function pipelineBridgeLikeNode(node: SliceScoredNode): boolean {
+  const lower = `${node.label} ${node.frameworkRole ?? ''} ${node.sourceFile}`.toLowerCase()
+  return /\bpipeline|trigger|queue|job|worker|orchestrator|planner|research|agent|scoring|report|repository|persistence|save|process|search|score|addjob\b/.test(lower)
+}
+
+function highValueRuntimeExpansionNode(node: SliceScoredNode): boolean {
+  const lower = `${node.label} ${node.frameworkRole ?? ''} ${node.sourceFile}`.toLowerCase()
+  return /\bpipeline|trigger|worker|orchestrator|planner|research|agent|scoring|report|repository|persistence|save|process|search|score|dispatch|assemble|persist|builder\b/.test(lower)
+}
+
+function sharedHubLikeNode(graph: KnowledgeGraph, node: SliceScoredNode): boolean {
+  const lower = `${node.label} ${node.frameworkRole ?? ''}`.toLowerCase()
+  return graph.degree(node.id) >= 12
+    || /requireideasuserid|addjob|callllm|resolve|logger|\.info\(\)|\.error\(\)|\.warn\(\)|planenforcement/.test(lower)
+}
+
+function shouldExpandRuntimePathNode(
+  graph: KnowledgeGraph,
+  node: SliceScoredNode,
+  anchorMethodNames: ReadonlySet<string>,
+): boolean {
+  if (sharedHubLikeNode(graph, node) && !highValueRuntimeExpansionNode(node)) {
+    return false
+  }
+
+  if (highValueRuntimeExpansionNode(node)) {
+    return true
+  }
+
+  const methodName = methodNameFromLabel(node.label)
+  if (methodName && anchorMethodNames.has(methodName)) {
+    return true
+  }
+
+  const role = (node.frameworkRole ?? '').toLowerCase()
+  const kind = (node.nodeKind ?? '').toLowerCase()
+  if (role.includes('controller') || role.includes('route') || kind === 'class') {
+    return false
+  }
+
+  return false
 }
 
 function addHelperNeighbors(
@@ -346,6 +450,51 @@ function addHelperNeighbors(
   }
 }
 
+function addAnchorPredecessors(
+  graph: KnowledgeGraph,
+  scoredById: Map<string, SliceScoredNode>,
+  anchorIds: readonly string[],
+  selectedIds: Set<string>,
+  orderedIds: string[],
+  pathSeen: Set<string>,
+  selectedPaths: ContextPackSlicePath[],
+  anchoredIds: ReadonlySet<string>,
+  options: SliceOptions,
+  relations: ReadonlySet<string>,
+): void {
+  for (const anchorId of anchorIds) {
+    const anchorNode = scoredById.get(anchorId) ?? sliceNodeFromGraph(graph, anchorId)
+    scoredById.set(anchorId, anchorNode)
+
+    for (const predecessorId of graph.predecessors(anchorId)) {
+      const relation = String(graph.edgeAttributes(predecessorId, anchorId).relation ?? 'related_to')
+      if (!relations.has(relation)) {
+        continue
+      }
+
+      const predecessor = scoredById.get(predecessorId) ?? sliceNodeFromGraph(graph, predecessorId)
+      scoredById.set(predecessorId, predecessor)
+      if (shouldSuppressNode(graph, predecessor, anchoredIds, options)) {
+        continue
+      }
+
+      if (!selectedIds.has(predecessorId)) {
+        selectedIds.add(predecessorId)
+        orderedIds.push(predecessorId)
+      }
+
+      recordPath(selectedPaths, pathSeen, {
+        from_id: predecessorId,
+        from: predecessor.label,
+        to_id: anchorId,
+        to: anchorNode.label,
+        relation,
+        direction: 'backward',
+      })
+    }
+  }
+}
+
 export function sliceCandidatesForRetrieve(
   graph: KnowledgeGraph,
   scoredCandidates: readonly SliceScoredNode[],
@@ -364,7 +513,7 @@ export function sliceCandidatesForRetrieve(
   const anchorNodes = anchors
     .map((anchor) => scoredCandidates.find((candidate) => candidate.id === anchor.node_id))
     .filter((candidate): candidate is SliceScoredNode => candidate !== undefined)
-  const policy = effectivePolicy(intent, anchorNodes, options.prompt)
+  const policy = effectivePolicy(intent, anchors, anchorNodes, options.prompt)
   const anchorIds = anchors.map((anchor) => anchor.node_id).filter((id): id is string => typeof id === 'string')
   const orderedIds = [...anchorIds]
   const selectedIds = new Set(anchorIds)
@@ -372,6 +521,11 @@ export function sliceCandidatesForRetrieve(
   const scoredById = new Map(scoredCandidates.map((candidate) => [candidate.id, candidate]))
   const selectedPaths: ContextPackSlicePath[] = []
   const pathSeen = new Set<string>()
+  const anchorMethodNames = new Set(
+    anchors
+      .map((anchor) => methodNameFromLabel(anchor.label))
+      .filter((methodName): methodName is string => typeof methodName === 'string' && methodName.length > 0),
+  )
 
   if (policy.directions.includes('backward')) {
     traverseDirection(
@@ -387,6 +541,21 @@ export function sliceCandidatesForRetrieve(
       'backward',
       policy.backward_relations,
       policy.backward_depth,
+      false,
+      anchorMethodNames,
+    )
+
+    addAnchorPredecessors(
+      graph,
+      scoredById,
+      anchorIds,
+      selectedIds,
+      orderedIds,
+      pathSeen,
+      selectedPaths,
+      anchoredIds,
+      options,
+      policy.backward_relations,
     )
   }
 
@@ -404,6 +573,8 @@ export function sliceCandidatesForRetrieve(
       'forward',
       policy.forward_relations,
       policy.forward_depth,
+      policy.runtime_flow_only === true,
+      anchorMethodNames,
     )
   }
 

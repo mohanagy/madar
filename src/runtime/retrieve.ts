@@ -1066,6 +1066,216 @@ function hasHttpVerbIntent(question: string, questionTokens: readonly string[], 
   return hasHeadVerb && includesAnyToken(questionTokens, ['request', 'requests'])
 }
 
+function promptWantsRuntimePipeline(question: string): boolean {
+  return /\b(runtime|pipeline|service|orchestrator|job|agent|scoring|report(?: builder)?|persistence|repository|queue|worker)\b/i.test(question)
+}
+
+function methodLikeLabel(label: string): boolean {
+  return /(?:[.#:]|^\.)[A-Za-z_$][\w$]*\(?\)?$/u.test(label)
+}
+
+function fileLikeNodeLabel(label: string): boolean {
+  return /(?:^|\/)[^/]+\.[cm]?[jt]sx?$/i.test(label)
+}
+
+function pipelineBridgeText(
+  label: string,
+  frameworkRole: string | undefined,
+  sourceFile: string,
+  nodeKind?: string,
+): boolean {
+  const lower = `${label} ${frameworkRole ?? ''} ${sourceFile} ${nodeKind ?? ''}`.toLowerCase()
+  return /\bpipeline|trigger|queue|job|worker|orchestrator|planner|research|agent|scoring|report|repository|persistence|save|process|search|score|addjob\b/.test(lower)
+}
+
+function supportingPolicyOrLoggerNode(
+  node: Pick<RetrieveMatchedNode, 'label' | 'framework_role' | 'source_file'>,
+): boolean {
+  const lower = `${node.label} ${node.framework_role ?? ''} ${node.source_file}`.toLowerCase()
+  return /planenforcement|guard|interceptor|swagger|apioperation|apiresponse|apitags|logger|\.info\(\)|\.error\(\)|\.warn\(\)|\.debug\(\)/.test(lower)
+}
+
+function pipelineBridgeNode(
+  node: Pick<RetrieveMatchedNode, 'label' | 'framework_role' | 'source_file' | 'node_kind'>,
+): boolean {
+  return pipelineBridgeText(node.label, node.framework_role, node.source_file, node.node_kind)
+}
+
+function compactSlicePromotionApplies(result: RetrieveResult): boolean {
+  if (result.retrieval_strategy !== 'slice-v1' || !promptWantsRuntimePipeline(result.question)) {
+    return false
+  }
+
+  return (result.slice?.anchors ?? []).some((anchor) =>
+    anchor.reason === 'symbol mention' && methodLikeLabel(anchor.label),
+  )
+}
+
+function promotedSliceCompactNodeIds(result: RetrieveResult): string[] {
+  if (!compactSlicePromotionApplies(result) || !result.slice) {
+    return []
+  }
+
+  const promoted = new Set<string>(
+    result.slice.anchors
+      .map((anchor) => anchor.node_id)
+      .filter((anchorId): anchorId is string => typeof anchorId === 'string' && anchorId.length > 0),
+  )
+
+  for (const path of result.slice.selected_paths) {
+    if (path.direction !== 'forward' || path.relation !== 'calls' || typeof path.to_id !== 'string') {
+      continue
+    }
+    const target = result.matched_nodes.find((node) => node.node_id === path.to_id)
+    if (!target || supportingPolicyOrLoggerNode(target)) {
+      continue
+    }
+    promoted.add(path.to_id)
+  }
+
+  for (const node of result.matched_nodes) {
+    if (typeof node.node_id !== 'string' || node.node_id.length === 0) {
+      continue
+    }
+    if (supportingPolicyOrLoggerNode(node)) {
+      continue
+    }
+    if (fileLikeNodeLabel(node.label) || node.node_kind === 'class') {
+      continue
+    }
+    if (node.relevance_band === 'direct' || pipelineBridgeNode(node)) {
+      promoted.add(node.node_id)
+    }
+  }
+
+  return result.matched_nodes
+    .flatMap((node) => (typeof node.node_id === 'string' && promoted.has(node.node_id) ? [node.node_id] : []))
+    .slice(0, 24)
+}
+
+function structuralSliceNodeIds(
+  sliceMetadata: ContextPackSliceMetadata | undefined,
+  orderedCandidates: readonly ScoredNode[],
+  question: string,
+): ReadonlySet<string> {
+  if (!sliceMetadata || !compactSlicePromotionApplies({
+    question,
+    matched_nodes: [],
+    relationships: [],
+    community_context: [],
+    graph_signals: { god_nodes: [], bridge_nodes: [] },
+    retrieval_strategy: 'slice-v1',
+    slice: sliceMetadata,
+    token_count: 0,
+  } as RetrieveResult)) {
+    return new Set()
+  }
+
+  const nodesById = new Map(orderedCandidates.map((node) => [node.id, node]))
+  const forwardCalls = new Map<string, ContextPackSliceMetadata['selected_paths']>()
+  for (const path of sliceMetadata.selected_paths) {
+    if (path.direction !== 'forward' || path.relation !== 'calls' || typeof path.from_id !== 'string' || typeof path.to_id !== 'string') {
+      continue
+    }
+    const current = forwardCalls.get(path.from_id) ?? []
+    current.push(path)
+    forwardCalls.set(path.from_id, current)
+  }
+
+  const structural = new Set<string>()
+  const seen = new Set<string>()
+  const queue = sliceMetadata.anchors
+    .map((anchor) => anchor.node_id)
+    .filter((anchorId): anchorId is string => typeof anchorId === 'string' && anchorId.length > 0)
+    .map((id) => ({ id, depth: 0 }))
+
+  for (const { id } of queue) {
+    seen.add(id)
+  }
+
+  while (queue.length > 0) {
+    const current = queue.shift()!
+    if (current.depth >= 4) {
+      continue
+    }
+
+    for (const path of forwardCalls.get(current.id) ?? []) {
+      const target = nodesById.get(path.to_id!)
+      if (!target) {
+        continue
+      }
+
+      const nextDepth = current.depth + 1
+      if (nextDepth >= 2 || pipelineBridgeText(target.label, target.frameworkRole, target.sourceFile, target.nodeKind)) {
+        structural.add(target.id)
+      }
+
+      if (!seen.has(target.id)) {
+        seen.add(target.id)
+        queue.push({ id: target.id, depth: nextDepth })
+      }
+    }
+  }
+
+  return structural
+}
+
+function augmentSliceCandidateIdsForDebug(
+  graph: KnowledgeGraph,
+  orderedIds: readonly string[],
+  metadata: ContextPackSliceMetadata,
+): string[] {
+  if (metadata.mode !== 'debug') {
+    return [...orderedIds]
+  }
+
+  const expanded = [...orderedIds]
+  const seen = new Set(expanded)
+  const helperRelations = new Set(['uses_guard', 'guarded_by', 'reads_env', 'uses_config', 'depends_on', 'covered_by', 'injects'])
+
+  for (const anchor of metadata.anchors) {
+    if (typeof anchor.node_id !== 'string' || anchor.node_id.length === 0) {
+      continue
+    }
+    const anchorCommunity = parseCommunityId(graph.nodeAttributes(anchor.node_id).community)
+
+    for (const predecessorId of graph.predecessors(anchor.node_id)) {
+      const relation = String(graph.edgeAttributes(predecessorId, anchor.node_id).relation ?? 'related_to')
+      if (!['calls', 'controller_route', 'route_handler'].includes(relation)) {
+        continue
+      }
+
+      const predecessorAttributes = graph.nodeAttributes(predecessorId)
+      const predecessorRole = String(predecessorAttributes.framework_role ?? '').toLowerCase()
+      const predecessorCommunity = parseCommunityId(predecessorAttributes.community)
+      if (
+        anchorCommunity !== null
+        && predecessorCommunity !== anchorCommunity
+        && !predecessorRole.includes('controller')
+        && !predecessorRole.includes('route')
+      ) {
+        continue
+      }
+
+      if (!seen.has(predecessorId)) {
+        seen.add(predecessorId)
+        expanded.push(predecessorId)
+      }
+
+      for (const helperId of graph.successors(predecessorId)) {
+        const helperRelation = String(graph.edgeAttributes(predecessorId, helperId).relation ?? 'related_to')
+        if (!helperRelations.has(helperRelation) || seen.has(helperId)) {
+          continue
+        }
+        seen.add(helperId)
+        expanded.push(helperId)
+      }
+    }
+  }
+
+  return expanded
+}
+
 function buildFrameworkQuestionProfile(question: string, questionTokens: readonly string[]): FrameworkQuestionProfile {
   const hasRoutePath = containsUrlLikeRoutePath(question)
   const hasRouteKeyword = includesAnyToken(questionTokens, ['route', 'routes', 'router', 'endpoint', 'endpoints'])
@@ -1504,10 +1714,13 @@ function buildRetrieveResultFromOrderedCandidates(
     god_nodes: [...new Set(orderedCandidates.map((node) => node.label).filter((label) => retrieveGraphSignals.godNodeLabels.has(label)))],
     bridge_nodes: [...new Set(orderedCandidates.map((node) => node.label).filter((label) => retrieveGraphSignals.bridgeNodeLabels.has(label)))],
   }
+  const structuralIds = structuralSliceNodeIds(sliceMetadata, orderedCandidates, options.question)
   const nodeCandidates: Array<ContextPackNodeCandidate<ContextPackNode>> = orderedCandidates.map((node) => {
     let builtEntry: RetrieveMatchedNode | undefined
     let tokenCost: number | undefined
-    const evidenceClass = retrieveEvidenceClassForBand(node.relevanceBand)
+    const evidenceClass = structuralIds.has(node.id)
+      ? 'structural'
+      : retrieveEvidenceClassForBand(node.relevanceBand)
     const graphSignal = retrieveGraphSignals.bridgeNodeIds.has(node.id)
       ? 'bridge'
       : retrieveGraphSignals.godNodeIds.has(node.id)
@@ -2139,7 +2352,8 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
 
     if (sliced) {
       const scoredById = new Map(scored.map((node) => [node.id, node]))
-      const sliceCandidates = sliced.ordered_ids.map((nodeId, index) => (
+      const orderedSliceIds = augmentSliceCandidateIdsForDebug(graph, sliced.ordered_ids, sliced.metadata)
+      const sliceCandidates = orderedSliceIds.map((nodeId, index) => (
         scoredById.get(nodeId) ?? scoredNodeFromGraph(graph, nodeId, Math.max(0.25, 2 - (index * 0.1)), classificationRootPath)
       ))
 
@@ -2307,10 +2521,18 @@ export function compactRetrieveResult(result: RetrieveResult): CompactRetrieveRe
   const frameworkProfile = buildFrameworkQuestionProfile(result.question, tokenizeQuestion(result.question))
   const compactFrameworkLimit =
     frameworkProfile.frameworkShaped && result.matched_nodes.some((node) => (node.framework_boost ?? 0) > 0) ? 5 : Number.POSITIVE_INFINITY
-  const compactPack = compactContextPack(contextPackFromRetrieveResult(result), {
-    kind: 'retrieve',
-    ...(Number.isFinite(compactFrameworkLimit) ? { max_nodes: compactFrameworkLimit } : {}),
-  })
+  const fullPack = contextPackFromRetrieveResult(result)
+  const promotedSliceNodeIds = promotedSliceCompactNodeIds(result)
+  const compactPack = promotedSliceNodeIds.length > 0
+    ? compactContextPack(fullPack, {
+        kind: 'review',
+        seed_node_ids: promotedSliceNodeIds,
+        max_supporting_nodes: 0,
+      })
+    : compactContextPack(fullPack, {
+        kind: 'retrieve',
+        ...(Number.isFinite(compactFrameworkLimit) ? { max_nodes: compactFrameworkLimit } : {}),
+      })
 
   return {
     question: result.question,

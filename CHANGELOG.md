@@ -4,6 +4,14 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+## [0.22.4] - 2026-05-12
+
+### Changed
+
+- **Slice-v1 now keeps runtime-path compaction aligned with the selected slice**: exact method pipeline prompts promote direct runtime path nodes from the slice/full retrieve result into compact `pack.matched_nodes` instead of collapsing back to a 5-node framework summary.
+- **Shared-hub fan-in is suppressed for exact pipeline slices**: bidirectional `calls` graphs no longer pull unrelated callers of shared helpers/queue hubs back into `selected_paths`, and explicit `Class.method` anchors now prefer a single strongest method anchor instead of seeding sibling method anchors.
+- **Diagnostics now flag omitted slice path evidence**: `slice_path_nodes_not_promoted` warns when direct runtime path nodes found by slice-v1 are missing from the final context pack.
+
 ## [0.22.3] - 2026-05-12
 
 ### Changed

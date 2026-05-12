@@ -18,7 +18,7 @@ import type {
   SpiSymbolKind,
 } from '../../src/pipeline/spi/types.js'
 import { computeContextPackDiagnostics } from '../../src/runtime/context-pack-diagnostics.js'
-import { contextPackFromRetrieveResult, retrieveContext } from '../../src/runtime/retrieve.js'
+import { compactRetrieveResult, contextPackFromRetrieveResult, retrieveContext } from '../../src/runtime/retrieve.js'
 
 const FROZEN_NOW = () => new Date('2026-05-12T00:00:00.000Z')
 const FIXTURE_ROOT = pathResolve(
@@ -267,5 +267,39 @@ describe('SPI realistic Nest DI runtime-call fixture', () => {
         'polluted_source_path_selected',
       ]),
     )
+  })
+
+  it('keeps direct runtime-path nodes in the compact pack for exact method pipeline prompts', () => {
+    const result = retrieveContext(buildFixtureGraph(), {
+      question:
+        'Explain the production runtime path for IdeaGenerationController.generateFromProblem and how it creates a validation report. Follow the controller into service/orchestrator/job/research agents/scoring/report builder/persistence. Exclude tests, benchmarks, fixtures, html reporters, and reporter utilities.',
+      budget: 4000,
+      retrievalLevel: 4,
+      retrievalStrategy: 'slice-v1',
+    })
+
+    const compact = compactRetrieveResult(result)
+    const labels = compact.matched_nodes.map((node) => node.label)
+    const sourceFiles = compact.matched_nodes.map((node) => node.source_file)
+
+    expect(labels).toEqual(
+      expect.arrayContaining([
+        '.generateFromProblem()',
+        '.createIdea()',
+        '.generateTitle()',
+        '.updateTitle()',
+        '.startPipeline()',
+        '.claimQueuedPipelineRun()',
+        '.cancelPipeline()',
+        '.process()',
+      ]),
+    )
+    expect(
+      sourceFiles.some((sourceFile) =>
+        normalizePathForAssertion(sourceFile).includes('/__tests__/')
+        || normalizePathForAssertion(sourceFile).includes('/benchmark/')
+        || normalizePathForAssertion(sourceFile).includes('/fixtures/'),
+      ),
+    ).toBe(false)
   })
 })

@@ -31,6 +31,7 @@ export type ContextPackDiagnosticKind =
   | 'missing_method_anchor'
   | 'missing_provider_call_edges'
   | 'missing_runtime_pipeline'
+  | 'slice_path_nodes_not_promoted'
   | 'polluted_source_path_selected'
   | 'missing_structural_evidence'
 
