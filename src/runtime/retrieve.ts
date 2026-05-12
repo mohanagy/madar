@@ -1231,6 +1231,17 @@ function compactSlicePromotionApplies(result: RetrieveResult): boolean {
   )
 }
 
+function structuralSlicePromotionApplies(
+  sliceMetadata: ContextPackSliceMetadata | undefined,
+  question: string,
+): boolean {
+  if (!sliceMetadata || !promptWantsRuntimePipeline(question)) {
+    return false
+  }
+
+  return sliceMetadata.anchors.some((anchor) => methodLikeLabel(anchor.label))
+}
+
 function promotedSliceCompactNodeIds(result: RetrieveResult): string[] {
   if (!compactSlicePromotionApplies(result) || !result.slice) {
     return []
@@ -1278,16 +1289,7 @@ function structuralSliceNodeIds(
   orderedCandidates: readonly ScoredNode[],
   question: string,
 ): ReadonlySet<string> {
-  if (!sliceMetadata || !compactSlicePromotionApplies({
-    question,
-    matched_nodes: [],
-    relationships: [],
-    community_context: [],
-    graph_signals: { god_nodes: [], bridge_nodes: [] },
-    retrieval_strategy: 'slice-v1',
-    slice: sliceMetadata,
-    token_count: 0,
-  } as RetrieveResult)) {
+  if (!sliceMetadata || !structuralSlicePromotionApplies(sliceMetadata, question)) {
     return new Set()
   }
 
