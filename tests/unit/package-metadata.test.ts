@@ -38,6 +38,10 @@ function loadReadme(): string {
   return readFileSync(join(process.cwd(), 'README.md'), 'utf8')
 }
 
+function loadChangelog(): string {
+  return readFileSync(join(process.cwd(), 'CHANGELOG.md'), 'utf8')
+}
+
 function loadContributingGuide(): string {
   return readFileSync(join(process.cwd(), 'CONTRIBUTING.md'), 'utf8')
 }
@@ -115,6 +119,12 @@ describe('package metadata', () => {
     expect(packageLock.packages?.['']?.version).toBe(manifest.version)
   })
 
+  it('documents the current package version in the changelog', () => {
+    const manifest = loadPackageManifest()
+
+    expect(loadChangelog()).toContain(`## [${manifest.version}]`)
+  })
+
   it('positions package metadata around the context plane and context compiler surface', () => {
     const manifest = loadPackageManifest()
     const readme = loadReadme().toLowerCase()
@@ -133,6 +143,13 @@ describe('package metadata', () => {
     expect(readme).toContain('graphify-ts prompt')
     expect(readme).toContain('context_pack')
     expect(readme).toContain('context_prompt')
+  })
+
+  it('documents broad runtime-generation pack compaction in the README', () => {
+    const readme = loadReadme().toLowerCase()
+
+    expect(readme).toContain('runtime-generation prompts stay compact')
+    expect(readme).toContain('shared-hub fan-out')
   })
 
   it('avoids circular maintainer guidance in the contributing guide', () => {

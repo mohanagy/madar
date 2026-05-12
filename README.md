@@ -96,6 +96,8 @@ PR-review proof on a real diff: prompt tokens 63,024 → **8,690** (**7.25× few
 
 `--spi` benchmark (bundled fixture, 7 prompts): **better framework-shaped correctness**, **operational retrieval-level expansion**, **graph.json size −32%**, **cache-hit rebuild −27% vs legacy**, but **no measured explain-pack token win on that fixture**. Receipts: [`docs/benchmarks/2026-05-11-spi-vs-legacy/`](docs/benchmarks/2026-05-11-spi-vs-legacy/).
 
+Latest runtime-pack refinement: **runtime-generation prompts stay compact** by following the strongest backend runtime path and suppressing sibling routes, script/migration noise, and shared-hub fan-out on broad backend-generation questions.
+
 [Reproduce them](docs/benchmarks/2026-04-30-govalidate/verify.sh) with one shell script against the committed evidence files.
 
 ---

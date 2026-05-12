@@ -13,6 +13,7 @@
     "src/**/*.ts",
     "platform/**/*.tsx",
     "benchmark/**/*.ts",
-    "fixtures/**/*.ts"
+    "fixtures/**/*.ts",
+    "src/scripts/**/*.ts"
   ]
 }

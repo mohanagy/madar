@@ -4,6 +4,15 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+## [0.22.6] - 2026-05-12
+
+### Changed
+
+- **Broad runtime-generation packs stay compact**: slice-v1 now follows the strongest backend runtime anchor forward through runtime `calls` while preserving bounded controller/provider context and suppressing sibling route families, shared-hub fan-out, and script/migration noise for broad report-generation prompts.
+- **Cross-platform runtime path scoring is consistent**: retrieval tokenization and source-path matching now normalize Windows-style paths so the same backend runtime anchors win across Linux, macOS, and Windows runs.
+- **Graph seed prompts no longer bypass script penalties**: bare `seed` phrasing no longer grants script/migration permission, so graph seed and seed-node questions still penalize migration/script candidates unless the prompt explicitly asks for seeding or scripts.
+- **Runtime over-expansion diagnostics and regressions are stronger**: context-pack diagnostics now flag overfilled runtime-generation packs, and the realistic NestJS SPI fixture covers noisy sibling controllers, shared auth/LLM hubs, queue registration, migration scripts, and input-validation review fixes.
+
 ## [0.22.5] - 2026-05-12
 
 ### Changed

@@ -34,6 +34,7 @@ export type ContextPackDiagnosticKind =
   | 'slice_path_nodes_not_promoted'
   | 'polluted_source_path_selected'
   | 'missing_structural_evidence'
+  | 'runtime_pack_overexpanded'
 
 export type ContextPackDiagnosticSeverity = 'info' | 'warn' | 'error'
 

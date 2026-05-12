@@ -59,6 +59,7 @@ const RULE_WEIGHTS: ReadonlyMap<ContextPackDiagnosticKind, number> = new Map([
   ['slice_path_nodes_not_promoted', 1],
   ['polluted_source_path_selected', 2],
   ['missing_structural_evidence', 1],
+  ['runtime_pack_overexpanded', 1],
 ])
 
 const SEVERITY_ORDER: Record<ContextPackDiagnosticSeverity, number> = {
@@ -281,6 +282,16 @@ export function computeContextPackDiagnostics(
       kind: 'missing_method_anchor',
       severity: 'warn',
       message: 'Prompt requested a specific method anchor but the selected slice did not anchor that method.',
+    })
+  }
+
+  const overexpandedRuntimePack = runtimePackOverexpanded(pack, signals)
+  if (overexpandedRuntimePack !== undefined) {
+    warnings.push({
+      kind: 'runtime_pack_overexpanded',
+      severity: 'warn',
+      message: 'Runtime-generation pack filled the budget with sibling routes, shared hubs, or script/migration noise after covering the core runtime path.',
+      detail: overexpandedRuntimePack,
     })
   }
 
@@ -640,6 +651,83 @@ function runtimeSliceCallChainPresent(pack: CompiledContextPack): boolean {
 function pipelineRuntimeLikeNode(node: ContextPackNode): boolean {
   const lower = `${node.label} ${node.framework_role ?? ''} ${node.source_file} ${node.node_kind ?? ''}`.toLowerCase()
   return /\bpipeline|trigger|queue|job|worker|orchestrator|planner|research|agent|scoring|report|repository|persistence|save|process|search|score\b/.test(lower)
+}
+
+function runtimePackOverexpanded(
+  pack: CompiledContextPack,
+  signals: ContextPackQualitySignals,
+): Record<string, unknown> | undefined {
+  const gate = pack.retrieval_gate
+  if (
+    gate?.signals.generation_intent !== 'runtime_generation'
+    || gate.signals.target_domain_hint !== 'backend_runtime'
+    || !pipelinePrompt(pack)
+    || signals.budget_utilization < 0.9
+    || !runtimeSliceCallChainPresent(pack)
+  ) {
+    return undefined
+  }
+
+  const anchors = new Set((pack.slice?.anchors ?? []).flatMap((anchor) => {
+    const values = [anchor.label]
+    if (typeof anchor.node_id === 'string') values.push(anchor.node_id)
+    return values
+  }))
+  let siblingRouteCount = 0
+  let sharedHubCount = 0
+  let scriptMigrationCount = 0
+  const relationshipDegree = relationshipDegreeByNode(pack)
+  for (const node of pack.nodes) {
+    const key = typeof node.node_id === 'string' ? node.node_id : node.label
+    if (!anchors.has(key) && siblingRouteLikeNode(node)) {
+      siblingRouteCount += 1
+    }
+    if (sharedRuntimeHubLikeNode(node, relationshipDegree.get(key) ?? relationshipDegree.get(node.label) ?? 0)) {
+      sharedHubCount += 1
+    }
+    if (scriptMigrationLikeNode(node)) {
+      scriptMigrationCount += 1
+    }
+  }
+
+  if (siblingRouteCount + sharedHubCount + scriptMigrationCount < 3) {
+    return undefined
+  }
+
+  return {
+    budget_utilization: signals.budget_utilization,
+    sibling_route_count: siblingRouteCount,
+    shared_hub_count: sharedHubCount,
+    script_migration_count: scriptMigrationCount,
+  }
+}
+
+function siblingRouteLikeNode(node: ContextPackNode): boolean {
+  const lower = `${node.label} ${node.framework_role ?? ''} ${node.source_file} ${node.node_kind ?? ''}`.toLowerCase()
+  return (lower.includes('controller') || lower.includes('route'))
+    && /\b(?:get|list|publish|delete|retry|status|export|share|sign|validate|lifecycle|artifact)\b/.test(lower)
+}
+
+function sharedRuntimeHubLikeNode(node: ContextPackNode, degree: number): boolean {
+  const label = node.label.toLowerCase()
+  return degree >= 12 || /\b(?:requireideasuserid|callllm|resolve|logger|registry|provider)\b/.test(label)
+}
+
+function scriptMigrationLikeNode(node: ContextPackNode): boolean {
+  const lower = `${node.label} ${node.source_file}`.toLowerCase()
+  return /(?:^|\/)(?:scripts?|migrations?|seeds?|backfills?)(?:\/|$)|\b(?:migrate|migration|backfill|seed)\b/.test(lower)
+}
+
+function relationshipDegreeByNode(pack: CompiledContextPack): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const relationship of pack.relationships) {
+    for (const key of [relationship.from_id, relationship.from, relationship.to_id, relationship.to]) {
+      if (typeof key === 'string' && key.length > 0) {
+        counts.set(key, (counts.get(key) ?? 0) + 1)
+      }
+    }
+  }
+  return counts
 }
 
 function computeQualityScore(warnings: ContextPackDiagnosticWarning[]): number {

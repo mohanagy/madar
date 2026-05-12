@@ -173,7 +173,7 @@ export function tokenizeQuestion(question: string): string[] {
   return question
     .replace(/([a-z])([A-Z])/g, '$1 $2')
     .toLowerCase()
-    .split(/[\s_\-./,:;!?'"()[\]{}]+/)
+    .split(/[\s_\\\-./,:;!?'"()[\]{}]+/)
     .filter((token) => token.length > 1 && !STOP_WORDS.has(token))
 }
 
@@ -181,7 +181,7 @@ export function tokenizeLabel(label: string): string[] {
   return label
     .replace(/([a-z])([A-Z])/g, '$1 $2')
     .toLowerCase()
-    .split(/[\s_\-./,:;!?'"()[\]{}]+/)
+    .split(/[\s_\\\-./,:;!?'"()[\]{}]+/)
     .filter((token) => token.length > 1)
 }
 
@@ -840,7 +840,11 @@ function sourceFileMatchesMentionedPath(sourceFile: string, mentionedPaths: read
     return false
   }
 
-  return mentionedPaths.some((path) => sourceFile === path || sourceFile.endsWith(`/${path}`))
+  const normalizedSourceFile = sourceFile.replace(/\\/g, '/')
+  return mentionedPaths.some((path) => {
+    const normalizedPath = path.replace(/\\/g, '/')
+    return normalizedSourceFile === normalizedPath || normalizedSourceFile.endsWith(`/${normalizedPath}`)
+  })
 }
 
 function exclusionTokens(value: string): Set<string> {
@@ -1051,6 +1055,33 @@ function runtimeGenerationSourceDomainPenalty(
     case 'unknown':
       return 0
   }
+}
+
+function promptAllowsScriptMigration(question: string): boolean {
+  return /\b(?:scripts?|migrat(?:e|ed|es|ing|ion)|backfill|cli|one-off|repair|old pipeline|seed(?:ing|ers?)|seeds?\s+(?:data|db|database|scripts?|files?))\b/i.test(question)
+}
+
+function scriptMigrationPathPenalty(
+  retrievalGate: RetrievalGateDecision,
+  sourceFile: string,
+  label: string,
+  question: string,
+  explicitlyAnchored: boolean,
+): number {
+  if (
+    explicitlyAnchored
+    || retrievalGate.signals.generation_intent !== 'runtime_generation'
+    || retrievalGate.signals.target_domain_hint !== 'backend_runtime'
+    || promptAllowsScriptMigration(question)
+  ) {
+    return 0
+  }
+
+  const normalizedSourceFile = sourceFile.replace(/\\/g, '/')
+  return /(?:^|\/)(?:scripts?|migrations?|seeds?|backfills?)(?:\/|$)|\b(?:migrate|migration|backfill|seed)\b/i.test(normalizedSourceFile)
+    || /\b(?:migrate|migration|backfill|seed)\b/i.test(label)
+    ? 6
+    : 0
 }
 
 function shouldDemoteSourcePathMatchForIntent(
@@ -2128,8 +2159,10 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
         }
       : score
 
-    const domainIntentPenalty = runtimeGenerationSourceDomainPenalty(retrievalGate, sourceDomain, exactAnchorMatch || mentionedPathMatch)
-    const totalSeedScore = effectiveScore.total + anchorScore + metadataBoost + domainAdjustment - sourceDomainPenalty - domainIntentPenalty
+    const explicitlyAnchored = exactAnchorMatch || mentionedPathMatch
+    const domainIntentPenalty = runtimeGenerationSourceDomainPenalty(retrievalGate, sourceDomain, explicitlyAnchored)
+    const scriptMigrationPenalty = scriptMigrationPathPenalty(retrievalGate, sourceFile, label, question, explicitlyAnchored)
+    const totalSeedScore = effectiveScore.total + anchorScore + metadataBoost + domainAdjustment - sourceDomainPenalty - domainIntentPenalty - scriptMigrationPenalty
     const hasPositiveSeedEvidence = totalSeedScore > 0 || exactAnchorMatch || mentionedPathMatch
     if (hasPositiveSeedEvidence) {
       const resolvedLine = resolvedLineNumber(attributes)
@@ -2213,7 +2246,8 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
         + candidate.frameworkBoost
         + retrievalDomainAdjustment(retrievalGate, candidate)
         - defaultSourceDomainPenalty(candidate.sourceDomain, retrievalGate.intent, question, questionTokens)
-        - runtimeGenerationSourceDomainPenalty(retrievalGate, candidate.sourceDomain, candidate.exactLabelMatch || candidate.literalPathMatch),
+        - runtimeGenerationSourceDomainPenalty(retrievalGate, candidate.sourceDomain, candidate.exactLabelMatch || candidate.literalPathMatch)
+        - scriptMigrationPathPenalty(retrievalGate, candidate.sourceFile, candidate.label, question, candidate.exactLabelMatch || candidate.literalPathMatch),
     ),
     relevanceBand: candidate.relevanceBand,
     sourceDomain: candidate.sourceDomain,
@@ -2390,7 +2424,9 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
       continue
     }
     const sourceDomainPenalty = defaultSourceDomainPenalty(sourceDomain, retrievalGate.intent, question, questionTokens)
-    const domainIntentPenalty = runtimeGenerationSourceDomainPenalty(retrievalGate, sourceDomain, symbolMatch > 0 || pathMatch)
+    const explicitlyAnchored = symbolMatch > 0 || pathMatch
+    const domainIntentPenalty = runtimeGenerationSourceDomainPenalty(retrievalGate, sourceDomain, explicitlyAnchored)
+    const scriptMigrationPenalty = scriptMigrationPathPenalty(retrievalGate, sourceFile, label, question, explicitlyAnchored)
     const domainAdjustment = retrievalDomainAdjustment(retrievalGate, {
       label,
       sourceFile,
@@ -2421,7 +2457,7 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
       literalPathMatch: pathMatch,
       sourcePathMatch: pathMatch,
       evidenceTier: hopDistances.get(nodeId) === 1 ? (hopEvidenceTiers.get(nodeId) ?? 0) : 0,
-      score: Math.max(0.05, hopScore + domainAdjustment - sourceDomainPenalty - domainIntentPenalty),
+      score: Math.max(0.05, hopScore + domainAdjustment - sourceDomainPenalty - domainIntentPenalty - scriptMigrationPenalty),
       relevanceBand: hopDistances.get(nodeId) === 1 ? 'related' : 'peripheral',
     })
   }

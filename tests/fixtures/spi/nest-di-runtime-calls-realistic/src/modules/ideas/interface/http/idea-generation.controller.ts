@@ -15,7 +15,7 @@ import { InputValidationService } from '../../infrastructure/services/input-vali
 import { ProblemSuggestionService } from '../../infrastructure/services/problem-suggestion.service'
 import { TitleGenerationService } from '../../infrastructure/services/title-generation.service'
 import { GenerateFromProblemDto } from './dto/generate-from-problem.dto'
-import type { AuthenticatedIdeasRequest } from './ideas-authenticated-request'
+import { requireIdeasUserId, type AuthenticatedIdeasRequest } from './ideas-authenticated-request'
 
 class AuthGuard {}
 class LoggingInterceptor {}
@@ -32,10 +32,6 @@ function createIdeasControllerLogger(
       appLogger.log(`${context}:${message}`)
     },
   }
-}
-
-function requireIdeasUserId(req: AuthenticatedIdeasRequest): string {
-  return req.userId
 }
 
 @Controller('ideas')

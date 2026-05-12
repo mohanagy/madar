@@ -713,6 +713,16 @@ function looksArtifact(sourceFile: string): boolean {
   return /(?:^|\/)(?:package-lock\.json|pnpm-lock\.yaml|yarn\.lock|dist\/|build\/|coverage\/|graphify-out\/)/i.test(sourceFile)
 }
 
+function looksScriptMigration(sourceFile: string, label: string): boolean {
+  const normalizedSourceFile = sourceFile.replace(/\\/g, '/')
+  return /(?:^|\/)(?:scripts?|migrations?|seeds?|backfills?)(?:\/|$)|\b(?:migrate|migration|backfill|seed)\b/i.test(normalizedSourceFile)
+    || /\b(?:migrate|migration|backfill|seed)\b/i.test(label)
+}
+
+function promptAllowsScriptMigration(prompt: string | undefined): boolean {
+  return /\b(?:scripts?|migrat(?:e|ed|es|ing|ion)|backfill|cli|one-off|repair|old pipeline|seed(?:ing|ers?)|seeds?\s+(?:data|db|database|scripts?|files?))\b/i.test(prompt ?? '')
+}
+
 function sourceDomainPenalty(view: CandidateScoringView, taskContract: ContextPackTaskContract): number {
   switch (view.source_domain) {
     case 'test':
@@ -881,6 +891,11 @@ function computeContextCandidateValue(
   if (looksArtifact(view.source_file)) {
     score -= 4
     pushUnique(penalties, 'build artifact penalty')
+  }
+
+  if (looksScriptMigration(view.source_file, view.label) && !promptAllowsScriptMigration(taskContract.prompt)) {
+    score -= 3
+    pushUnique(penalties, 'script/migration penalty')
   }
 
   if (looksTypeOnly(view) && !taskContract.semantic_required.includes('contracts') && !taskContract.semantic_optional.includes('contracts')) {

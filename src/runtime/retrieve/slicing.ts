@@ -148,7 +148,7 @@ function effectivePolicy(
   intent: RetrievalIntent,
   anchors: readonly ContextPackSliceAnchor[],
   anchorNodes: readonly SliceScoredNode[],
-  prompt: string | undefined,
+  options: SliceOptions,
 ): SlicePolicy {
   const base = policyForIntent(intent)
   const hasMethodAnchor = anchorNodes.some((anchor) => methodLikeNode(anchor))
@@ -158,10 +158,26 @@ function effectivePolicy(
       && methodLikeNode(node)
       && (anchor.reason === 'symbol mention' || anchor.reason === 'path mention')
   })
-  const pipelinePrompt = promptWantsRuntimePipeline(prompt)
+  const pipelinePrompt = promptWantsRuntimePipeline(options.prompt)
+  const broadRuntimeGeneration = options.generationIntent === 'runtime_generation'
+    && options.targetDomainHint === 'backend_runtime'
+    && !hasExactMethodAnchor
 
   if (!hasMethodAnchor && !pipelinePrompt) {
     return base
+  }
+
+  if (broadRuntimeGeneration && hasMethodAnchor && pipelinePrompt) {
+    return {
+      ...base,
+      directions: ['backward', 'forward'],
+      backward_relations: new Set(['controller_route', 'route_handler', 'method']),
+      forward_relations: new Set(['calls']),
+      helper_relations: new Set(['injects', 'depends_on', 'module_provides']),
+      backward_depth: 1,
+      forward_depth: Math.max(base.forward_depth, 4),
+      runtime_flow_only: true,
+    }
   }
 
   if (hasExactMethodAnchor && pipelinePrompt) {
@@ -204,7 +220,30 @@ function effectivePolicy(
 }
 
 function isBarrelLike(label: string, sourceFile: string): boolean {
-  return label.trim().toLowerCase() === 'index.ts' || /(?:^|\/)index\.ts$/i.test(sourceFile)
+  return label.trim().toLowerCase() === 'index.ts' || /(?:^|\/)index\.ts$/i.test(sourceFile.replace(/\\/g, '/'))
+}
+
+function broadRuntimeGenerationPrompt(options: SliceOptions): boolean {
+  return options.generationIntent === 'runtime_generation'
+    && options.targetDomainHint === 'backend_runtime'
+    && promptWantsRuntimePipeline(options.prompt)
+}
+
+function promptAllowsScriptMigration(options: SliceOptions): boolean {
+  const prompt = options.prompt ?? ''
+  return /\b(?:scripts?|migrat(?:e|ed|es|ing|ion)|backfill|cli|one-off|repair|old pipeline|seed(?:ing|ers?)|seeds?\s+(?:data|db|database|scripts?|files?))\b/i.test(prompt)
+}
+
+function scriptMigrationLikeNode(node: SliceScoredNode): boolean {
+  const normalizedSourceFile = node.sourceFile.replace(/\\/g, '/')
+  return /(?:^|\/)(?:scripts?|migrations?|seeds?|backfills?)(?:\/|$)|\b(?:migrate|migration|backfill|seed)\b/i.test(normalizedSourceFile)
+    || /\b(?:migrate|migration|backfill|seed)\b/i.test(node.label)
+}
+
+function routeOrControllerLikeNode(node: SliceScoredNode): boolean {
+  const lower = `${node.label} ${node.nodeKind ?? ''} ${node.frameworkRole ?? ''} ${node.sourceFile.replace(/\\/g, '/')}`.toLowerCase()
+  return /\b(?:route|controller|nest_route|nest_controller)\b/.test(lower)
+    || /(?:^|\/)(?:controllers?|interface\/http)(?:\/|$)/.test(lower)
 }
 
 function frontendDisplayLikeNode(node: SliceScoredNode): boolean {
@@ -269,6 +308,9 @@ function shouldSuppressNode(
   if (isBarrelLike(node.label, node.sourceFile)) {
     return true
   }
+  if (broadRuntimeGenerationPrompt(options) && !promptAllowsScriptMigration(options) && scriptMigrationLikeNode(node)) {
+    return true
+  }
 
   return graph.degree(node.id) >= 40
 }
@@ -279,6 +321,7 @@ function buildAnchors(scored: readonly SliceScoredNode[], options: SliceOptions)
   const matchedAnchors = scored.filter((node) => node.exactLabelMatch || node.sourcePathMatch)
   const exactMethodAnchors = matchedAnchors.filter((node) => node.exactLabelMatch && methodLikeNode(node))
   const nonBarrelMatchedAnchors = matchedAnchors.filter((node) => !isBarrelLike(node.label, node.sourceFile))
+  const broadRuntimeGeneration = broadRuntimeGenerationPrompt(options)
   const intentAnchors = (() => {
     if (options.generationIntent === 'runtime_generation' && options.targetDomainHint === 'backend_runtime') {
       return matchedAnchors
@@ -303,7 +346,7 @@ function buildAnchors(scored: readonly SliceScoredNode[], options: SliceOptions)
   const anchorPool = exactMethodAnchors.length > 0
     ? exactMethodAnchors.slice(0, 1)
     : intentAnchors.length > 0
-    ? intentAnchors.slice(0, 2)
+    ? intentAnchors.slice(0, broadRuntimeGeneration ? 1 : 2)
     : matchedAnchors.length > 0
     ? (nonBarrelMatchedAnchors.length > 0 ? nonBarrelMatchedAnchors : matchedAnchors)
     : scored.filter((node) => !isBarrelLike(node.label, node.sourceFile)).slice(0, 1)
@@ -399,6 +442,15 @@ function traverseDirection(
 
       const neighbor = scoredById.get(neighborId) ?? sliceNodeFromGraph(graph, neighborId)
       scoredById.set(neighborId, neighbor)
+      if (
+        direction === 'forward'
+        && runtimeFlowOnly
+        && broadRuntimeGenerationPrompt(options)
+        && routeOrControllerLikeNode(neighbor)
+        && !anchoredIds.has(neighborId)
+      ) {
+        continue
+      }
       if (shouldSuppressNode(graph, neighbor, anchoredIds, options)) {
         continue
       }
@@ -578,7 +630,7 @@ export function sliceCandidatesForRetrieve(
   const anchorNodes = anchors
     .map((anchor) => scoredCandidates.find((candidate) => candidate.id === anchor.node_id))
     .filter((candidate): candidate is SliceScoredNode => candidate !== undefined)
-  const policy = effectivePolicy(intent, anchors, anchorNodes, options.prompt)
+  const policy = effectivePolicy(intent, anchors, anchorNodes, options)
   const anchorIds = anchors.map((anchor) => anchor.node_id).filter((id): id is string => typeof id === 'string')
   const orderedIds = [...anchorIds]
   const selectedIds = new Set(anchorIds)
