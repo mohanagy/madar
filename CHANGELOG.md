@@ -4,6 +4,13 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+## [0.22.2] - 2026-05-12
+
+### Changed
+
+- **Fixture-backed NestJS runtime-path coverage**: adds a real SPI workspace fixture that locks in DI-aware route-method call chains from controller -> service -> worker -> repository retrieval, while keeping tests/benchmarks/fixtures available as wrong-domain noise for exclusion-aware prompts.
+- **Route-isolation diagnostics**: context-pack diagnostics now warn when a pipeline-shaped slice anchors a route method but never leaves controller-local helper calls (`isolated_route_method`, `missing_provider_call_edges`), which helps distinguish stale/under-linked graphs from healthy runtime-path packs.
+
 ## [0.22.1] - 2026-05-12
 
 ### Changed

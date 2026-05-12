@@ -6,6 +6,7 @@ import type {
 import type { KnowledgeGraph } from '../../contracts/graph.js'
 import type { RetrievalIntent } from '../../contracts/retrieval-gate.js'
 import { classifySourceDomain, isPollutedSourcePath } from '../../shared/source-discovery.js'
+import { relativizeSourceFile } from '../../shared/source-path.js'
 
 export interface SliceScoredNode {
   id: string
@@ -175,8 +176,9 @@ function shouldSuppressNode(
   if (isPollutedSourcePath(node.sourceFile, options.rootPath)) {
     return true
   }
+  const comparableSourceFile = relativizeSourceFile(node.sourceFile, options.rootPath).toLowerCase()
   const excludedTerms = [...(options.excludedTerms ?? []), ...(options.excludedPathHints ?? [])].map((term) => term.toLowerCase())
-  if (excludedTerms.some((term) => node.label.toLowerCase().includes(term) || node.sourceFile.toLowerCase().includes(term))) {
+  if (excludedTerms.some((term) => node.label.toLowerCase().includes(term) || comparableSourceFile.includes(term))) {
     return true
   }
 

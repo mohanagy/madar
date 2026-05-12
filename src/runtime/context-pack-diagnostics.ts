@@ -29,7 +29,7 @@
 // The score is computed as 1 - sum(weight * triggered) / sum(weight) where
 // every rule has a weight ∈ {1, 2}. Errors weight 2, warns and infos weight 1.
 
-import type { CompiledContextPack } from '../contracts/context-pack.js'
+import type { CompiledContextPack, ContextPackNode } from '../contracts/context-pack.js'
 import type {
   ContextPackDiagnosticKind,
   ContextPackDiagnosticSeverity,
@@ -52,7 +52,9 @@ const RULE_WEIGHTS: ReadonlyMap<ContextPackDiagnosticKind, number> = new Map([
   ['excluded_domain_selected', 1],
   ['test_dominated_pack', 1],
   ['controller_only_pipeline_pack', 1],
+  ['isolated_route_method', 1],
   ['missing_method_anchor', 1],
+  ['missing_provider_call_edges', 1],
   ['missing_runtime_pipeline', 1],
   ['polluted_source_path_selected', 2],
   ['missing_structural_evidence', 1],
@@ -236,6 +238,22 @@ export function computeContextPackDiagnostics(
     })
   }
 
+  if (pipelinePrompt(pack) && isolatedRouteMethod(pack)) {
+    warnings.push({
+      kind: 'isolated_route_method',
+      severity: 'warn',
+      message: 'Selected route method did not leave controller-local helper context.',
+    })
+  }
+
+  if (pipelinePrompt(pack) && missingProviderCallEdges(pack)) {
+    warnings.push({
+      kind: 'missing_provider_call_edges',
+      severity: 'warn',
+      message: 'Selected route method only reached same-file helper calls; provider/service call edges are missing.',
+    })
+  }
+
   if (pipelinePrompt(pack) && missingRuntimePipeline(pack)) {
     warnings.push({
       kind: 'missing_runtime_pipeline',
@@ -335,6 +353,103 @@ function dominatedByDomains(
 function controllerOnlyPipelinePack(pack: CompiledContextPack): boolean {
   const controllerNodes = pack.nodes.filter((node) => (node.framework_role ?? '').toLowerCase().includes('controller')).length
   return controllerNodes > 0 && controllerNodes === pack.nodes.length
+}
+
+function anchoredRouteNodes(pack: CompiledContextPack): ContextPackNode[] {
+  const anchors = pack.slice?.anchors ?? []
+  if (anchors.length === 0) {
+    return []
+  }
+
+  const nodesById = new Map<string, ContextPackNode>()
+  const nodesByLabel = new Map<string, ContextPackNode[]>()
+  for (const node of pack.nodes) {
+    if (typeof node.node_id === 'string' && node.node_id.length > 0) {
+      nodesById.set(node.node_id, node)
+    }
+    const labeled = nodesByLabel.get(node.label)
+    if (labeled) {
+      labeled.push(node)
+    } else {
+      nodesByLabel.set(node.label, [node])
+    }
+  }
+
+  return anchors
+    .map((anchor) => {
+      if (typeof anchor.node_id === 'string' && anchor.node_id.length > 0) {
+        return nodesById.get(anchor.node_id)
+      }
+      return nodesByLabel.get(anchor.label)?.[0]
+    })
+    .filter((node): node is ContextPackNode =>
+      node !== undefined
+      && (
+        node.node_kind === 'route'
+        || (node.framework_role ?? '').toLowerCase().includes('route')
+      ),
+    )
+}
+
+function outgoingCallTargets(
+  pack: CompiledContextPack,
+  node: ContextPackNode,
+): ContextPackNode[] {
+  const nodesById = new Map<string, ContextPackNode>()
+  const nodesByLabel = new Map<string, ContextPackNode[]>()
+  for (const candidate of pack.nodes) {
+    if (typeof candidate.node_id === 'string' && candidate.node_id.length > 0) {
+      nodesById.set(candidate.node_id, candidate)
+    }
+    const labeled = nodesByLabel.get(candidate.label)
+    if (labeled) {
+      labeled.push(candidate)
+    } else {
+      nodesByLabel.set(candidate.label, [candidate])
+    }
+  }
+
+  return pack.relationships
+    .filter((relationship) => {
+      if (relationship.relation !== 'calls') {
+        return false
+      }
+      if (typeof node.node_id === 'string' && node.node_id.length > 0) {
+        return relationship.from_id === node.node_id
+      }
+      return relationship.from === node.label
+    })
+    .map((relationship) => {
+      if (typeof relationship.to_id === 'string' && relationship.to_id.length > 0) {
+        return nodesById.get(relationship.to_id)
+      }
+      return nodesByLabel.get(relationship.to)?.[0]
+    })
+    .filter((target): target is ContextPackNode => target !== undefined)
+}
+
+function isolatedRouteMethod(pack: CompiledContextPack): boolean {
+  const routeNodes = anchoredRouteNodes(pack)
+  if (routeNodes.length === 0) {
+    return false
+  }
+
+  return routeNodes.some((routeNode) => {
+    const targets = outgoingCallTargets(pack, routeNode)
+    return targets.length === 0 || targets.every((target) => target.source_file === routeNode.source_file)
+  })
+}
+
+function missingProviderCallEdges(pack: CompiledContextPack): boolean {
+  const routeNodes = anchoredRouteNodes(pack)
+  if (routeNodes.length === 0) {
+    return false
+  }
+
+  return routeNodes.some((routeNode) => {
+    const targets = outgoingCallTargets(pack, routeNode)
+    return targets.length > 0 && targets.every((target) => target.source_file === routeNode.source_file)
+  })
 }
 
 function missingRuntimePipeline(pack: CompiledContextPack): boolean {

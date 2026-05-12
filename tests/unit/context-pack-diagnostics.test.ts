@@ -357,6 +357,115 @@ describe('computeContextPackDiagnostics', () => {
     ]))
   })
 
+  it('flags isolated route methods that only reach same-file helpers', () => {
+    const diag = computeContextPackDiagnostics(makePack({
+      nodes: [
+        makeNode({
+          node_id: 'route',
+          label: '.generateFromProblem()',
+          source_file: '/repo/src/idea-generation.controller.ts',
+          framework_role: 'nest_route',
+          node_kind: 'route',
+        }),
+        makeNode({
+          node_id: 'helper',
+          label: '.getStatusMessage()',
+          source_file: '/repo/src/idea-generation.controller.ts',
+          node_kind: 'method',
+        }),
+      ],
+      relationships: [
+        makeRelationship('route', 'helper', 'calls'),
+      ],
+      retrieval_gate: {
+        ...retrievalGate({
+          reason: 'pipeline prompt',
+        }),
+        signals: {
+          ...retrievalGate().signals,
+          mentioned_symbols: ['IdeaGenerationController.generateFromProblem'],
+        },
+      },
+      task_contract: taskContract({
+        prompt: 'Explain the production runtime path for IdeaGenerationController.generateFromProblem through the service and orchestrator pipeline.',
+      }),
+      slice: {
+        mode: 'explain',
+        anchors: [{ node_id: 'route', label: '.generateFromProblem()', reason: 'symbol mention' }],
+        directions: ['forward'],
+        selected_paths: [{
+          from_id: 'route',
+          from: '.generateFromProblem()',
+          to_id: 'helper',
+          to: '.getStatusMessage()',
+          relation: 'calls',
+          direction: 'forward',
+        }],
+      },
+    }))
+
+    expect(diag.warnings.map((warning) => warning.kind)).toEqual(expect.arrayContaining([
+      'isolated_route_method',
+      'missing_provider_call_edges',
+      'missing_runtime_pipeline',
+    ]))
+  })
+
+  it('does not borrow same-label call edges from a different node when the route node_id is known', () => {
+    const diag = computeContextPackDiagnostics(makePack({
+      nodes: [
+        makeNode({
+          node_id: 'route',
+          label: '.generateFromProblem()',
+          source_file: '/repo/src/idea-generation.controller.ts',
+          framework_role: 'nest_route',
+          node_kind: 'route',
+        }),
+        makeNode({
+          node_id: 'other-route',
+          label: '.generateFromProblem()',
+          source_file: '/repo/src/other.controller.ts',
+          framework_role: 'nest_route',
+          node_kind: 'route',
+        }),
+        makeNode({
+          node_id: 'helper',
+          label: '.helper()',
+          source_file: '/repo/src/other.controller.ts',
+          node_kind: 'method',
+        }),
+      ],
+      relationships: [
+        makeRelationship('other-route', 'helper', 'calls'),
+      ],
+      retrieval_gate: {
+        ...retrievalGate({
+          reason: 'pipeline prompt',
+        }),
+        signals: {
+          ...retrievalGate().signals,
+          mentioned_symbols: ['IdeaGenerationController.generateFromProblem'],
+        },
+      },
+      task_contract: taskContract({
+        prompt: 'Explain the production runtime path for IdeaGenerationController.generateFromProblem through the service and orchestrator pipeline.',
+      }),
+      slice: {
+        mode: 'explain',
+        anchors: [{ node_id: 'route', label: '.generateFromProblem()', reason: 'symbol mention' }],
+        directions: ['forward'],
+        selected_paths: [],
+      },
+    }))
+
+    expect(diag.warnings.map((warning) => warning.kind)).toEqual(expect.arrayContaining([
+      'isolated_route_method',
+    ]))
+    expect(diag.warnings.map((warning) => warning.kind)).not.toEqual(expect.arrayContaining([
+      'missing_provider_call_edges',
+    ]))
+  })
+
   it('flags test-dominated production packs and missing structural evidence', () => {
     const diag = computeContextPackDiagnostics(makePack({
       nodes: [
