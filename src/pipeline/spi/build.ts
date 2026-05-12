@@ -470,20 +470,115 @@ function resolveRelativeImport(
   pathToFileId: Map<string, string>,
 ): string | null {
   const fromAbs = resolve(root, fromPath)
+  const resolvedPath = resolveRelativeImportAbsolute(spec, fromAbs, pathToFileId)
+  return resolvedPath ? pathToFileId.get(resolvedPath) ?? null : null
+}
+
+function resolveRelativeImportAbsolute(
+  spec: string,
+  fromAbs: string,
+  pathToFileId: Map<string, string>,
+): string | null {
   const fromDir = dirname(fromAbs)
   const variants = expandJsToTsVariants(spec)
 
   for (const variant of variants) {
     for (const ext of RESOLUTION_CANDIDATE_EXTS) {
-      const id = pathToFileId.get(toPosix(resolve(fromDir, variant + ext)))
-      if (id) return id
+      const candidate = toPosix(resolve(fromDir, variant + ext))
+      if (pathToFileId.has(candidate)) return candidate
     }
     for (const tail of INDEX_RESOLUTION_CANDIDATES) {
-      const id = pathToFileId.get(toPosix(resolve(fromDir, variant + tail)))
-      if (id) return id
+      const candidate = toPosix(resolve(fromDir, variant + tail))
+      if (pathToFileId.has(candidate)) return candidate
     }
   }
   return null
+}
+
+function createSpiCompilerHost(
+  compilerOptions: ts.CompilerOptions,
+  pathToFileId: Map<string, string>,
+): ts.CompilerHost {
+  const host = ts.createCompilerHost(compilerOptions, true)
+  const baseResolveModuleNames = host.resolveModuleNames?.bind(host)
+
+  host.resolveModuleNames = (moduleNames, containingFile, reusedNames, redirectedReference, options) => {
+    const resolutionHost: ts.ModuleResolutionHost = {
+      fileExists: host.fileExists.bind(host),
+      readFile: host.readFile.bind(host),
+      getCurrentDirectory: host.getCurrentDirectory.bind(host),
+      ...(host.directoryExists ? { directoryExists: host.directoryExists.bind(host) } : {}),
+      ...(host.getDirectories ? { getDirectories: host.getDirectories.bind(host) } : {}),
+      ...(host.realpath ? { realpath: host.realpath.bind(host) } : {}),
+    }
+
+    const fallbackResolve = (moduleName: string) =>
+      resolveModuleWithRelativeFallback(
+        moduleName,
+        containingFile,
+        options,
+        resolutionHost,
+        pathToFileId,
+      )
+
+    if (baseResolveModuleNames) {
+      const resolved = baseResolveModuleNames(
+        moduleNames,
+        containingFile,
+        reusedNames,
+        redirectedReference,
+        options,
+      )
+      return resolved.map((entry, index) => {
+        const moduleName = moduleNames[index]
+        return entry ?? (moduleName ? fallbackResolve(moduleName) : undefined)
+      })
+    }
+
+    return moduleNames.map((moduleName) => fallbackResolve(moduleName))
+  }
+
+  return host
+}
+
+function resolveModuleWithRelativeFallback(
+  moduleName: string,
+  containingFile: string,
+  compilerOptions: ts.CompilerOptions,
+  host: ts.ModuleResolutionHost,
+  pathToFileId: Map<string, string>,
+): ts.ResolvedModuleFull | undefined {
+  const resolved = ts.resolveModuleName(
+    moduleName,
+    containingFile,
+    compilerOptions,
+    host,
+  ).resolvedModule
+  if (resolved) {
+    return resolved
+  }
+
+  if (!moduleName.startsWith('.') && !moduleName.startsWith('/')) {
+    return undefined
+  }
+
+  const resolvedPath = resolveRelativeImportAbsolute(moduleName, containingFile, pathToFileId)
+  if (!resolvedPath) {
+    return undefined
+  }
+
+  return {
+    resolvedFileName: resolvedPath,
+    extension: extensionForResolvedFile(resolvedPath),
+    isExternalLibraryImport: false,
+  }
+}
+
+function extensionForResolvedFile(filePath: string): ts.Extension {
+  if (filePath.endsWith('.tsx')) return ts.Extension.Tsx
+  if (filePath.endsWith('.jsx')) return ts.Extension.Jsx
+  if (filePath.endsWith('.js')) return ts.Extension.Js
+  return ts.Extension.Ts
 }
 
 // Node ESM with TypeScript convention: relative imports keep the `.js` suffix
@@ -582,9 +677,10 @@ function addTypeCheckerEdges(ctx: TypeCheckerEdgeContext): void {
   if (rootNames.length === 0) return
 
   const compilerOptions = loadCompilerOptions(root)
+  const compilerHost = createSpiCompilerHost(compilerOptions, pathToFileId)
   let program: ts.Program
   try {
-    program = ts.createProgram({ rootNames, options: compilerOptions })
+    program = ts.createProgram({ rootNames, options: compilerOptions, host: compilerHost })
   } catch (err) {
     // ts.createProgram can throw on misconfigured workspaces (e.g., circular
     // path mappings). Record a diagnostic so the failure is visible without
@@ -807,6 +903,19 @@ function resolveCallee(
   checker: ts.TypeChecker,
   pathToFileId: Map<string, string>,
 ): { id: string; confidence: 'high' | 'medium' | 'low' } | null {
+  const signatureResolved = resolveCalleeFromSignature(callExpr, checker, pathToFileId)
+  if (signatureResolved) {
+    return signatureResolved
+  }
+
+  return resolveThisPropertyAccessFallback(callExpr, checker, pathToFileId)
+}
+
+function resolveCalleeFromSignature(
+  callExpr: ts.CallExpression,
+  checker: ts.TypeChecker,
+  pathToFileId: Map<string, string>,
+): { id: string; confidence: 'high' | 'medium' | 'low' } | null {
   const signature = checker.getResolvedSignature(callExpr)
   if (!signature) return null
   const decl = signature.getDeclaration() as ts.Declaration | undefined
@@ -829,6 +938,195 @@ function resolveCallee(
   const overloadCount = exprSymbol?.declarations?.length ?? 1
   const confidence: 'high' | 'medium' = overloadCount > 1 ? 'medium' : 'high'
   return { id, confidence }
+}
+
+function resolveThisPropertyAccessFallback(
+  callExpr: ts.CallExpression,
+  checker: ts.TypeChecker,
+  pathToFileId: Map<string, string>,
+): { id: string; confidence: 'high' | 'medium' | 'low' } | null {
+  if (!ts.isPropertyAccessExpression(callExpr.expression)) {
+    return null
+  }
+
+  const methodName = callExpr.expression.name.text
+  const receiver = callExpr.expression.expression
+
+  if (receiver.kind === ts.SyntaxKind.ThisKeyword) {
+    const sameClassMethodId = resolveSameClassMethodFallback(callExpr, methodName, pathToFileId)
+    return sameClassMethodId ? { id: sameClassMethodId, confidence: 'medium' } : null
+  }
+
+  if (
+    !ts.isPropertyAccessExpression(receiver)
+    || receiver.expression.kind !== ts.SyntaxKind.ThisKeyword
+  ) {
+    return null
+  }
+
+  const propertyTarget = resolveMethodFromReceiverType(receiver, methodName, checker, pathToFileId)
+  if (propertyTarget) {
+    return { id: propertyTarget, confidence: 'medium' }
+  }
+
+  const enclosingClass = findEnclosingClassDeclaration(callExpr)
+  if (!enclosingClass) {
+    return null
+  }
+
+  const constructorParam = findConstructorParameterProperty(enclosingClass, receiver.name.text)
+  if (!constructorParam) {
+    return null
+  }
+
+  const targetClass = resolveProviderClassFromParameter(constructorParam, checker, pathToFileId)
+  if (!targetClass) {
+    return null
+  }
+
+  const targetMethodId = lookupUniqueMethodOnClass(targetClass, methodName, pathToFileId)
+  return targetMethodId ? { id: targetMethodId, confidence: 'low' } : null
+}
+
+function resolveSameClassMethodFallback(
+  callExpr: ts.CallExpression,
+  methodName: string,
+  pathToFileId: Map<string, string>,
+): string | null {
+  const enclosingClass = findEnclosingClassDeclaration(callExpr)
+  if (!enclosingClass) {
+    return null
+  }
+
+  return lookupUniqueMethodOnClass(enclosingClass, methodName, pathToFileId)
+}
+
+function resolveMethodFromReceiverType(
+  receiver: ts.PropertyAccessExpression,
+  methodName: string,
+  checker: ts.TypeChecker,
+  pathToFileId: Map<string, string>,
+): string | null {
+  const receiverType = checker.getTypeAtLocation(receiver)
+  const methodSymbol = followAlias(checker.getPropertyOfType(receiverType, methodName), checker)
+  const declaration = methodSymbol?.declarations?.find((decl) =>
+    ts.isMethodDeclaration(decl)
+    || ts.isGetAccessorDeclaration(decl)
+    || ts.isSetAccessorDeclaration(decl))
+  if (!declaration) {
+    return null
+  }
+
+  const sourceFile = declaration.getSourceFile()
+  if (sourceFile.isDeclarationFile) {
+    return null
+  }
+
+  const targetFileId = pathToFileId.get(sourceFile.fileName)
+  return targetFileId ? lookupSpiSymbolForDeclaration(declaration, targetFileId) : null
+}
+
+function findEnclosingClassDeclaration(node: ts.Node): ts.ClassDeclaration | null {
+  let current: ts.Node | undefined = node.parent
+  while (current) {
+    if (ts.isClassDeclaration(current)) {
+      return current
+    }
+    current = current.parent
+  }
+  return null
+}
+
+function findConstructorParameterProperty(
+  classDecl: ts.ClassDeclaration,
+  propertyName: string,
+): ts.ParameterDeclaration | null {
+  const ctor = classDecl.members.find((member): member is ts.ConstructorDeclaration =>
+    ts.isConstructorDeclaration(member))
+  if (!ctor) {
+    return null
+  }
+
+  for (const param of ctor.parameters) {
+    if (ts.isIdentifier(param.name) && param.name.text === propertyName) {
+      return param
+    }
+  }
+
+  return null
+}
+
+function resolveProviderClassFromParameter(
+  param: ts.ParameterDeclaration,
+  checker: ts.TypeChecker,
+  pathToFileId: Map<string, string>,
+): ts.ClassDeclaration | null {
+  if (param.type) {
+    const fromTypeNode = resolveClassDeclarationFromTypeNode(param.type, checker)
+    if (fromTypeNode?.name) {
+      const targetFileId = pathToFileId.get(fromTypeNode.getSourceFile().fileName)
+      if (targetFileId) {
+        return fromTypeNode
+      }
+    }
+  }
+
+  const parameterType = checker.getTypeAtLocation(param)
+  const symbol = followAlias(parameterType.getSymbol(), checker)
+  const declaration = symbol?.declarations?.find((decl): decl is ts.ClassDeclaration =>
+    ts.isClassDeclaration(decl) && !!decl.name)
+  if (!declaration || declaration.getSourceFile().isDeclarationFile) {
+    return null
+  }
+
+  const targetFileId = pathToFileId.get(declaration.getSourceFile().fileName)
+  return targetFileId ? declaration : null
+}
+
+function resolveClassDeclarationFromTypeNode(
+  typeNode: ts.TypeNode,
+  checker: ts.TypeChecker,
+): ts.ClassDeclaration | null {
+  if (!ts.isTypeReferenceNode(typeNode)) {
+    return null
+  }
+
+  const typeName = ts.isQualifiedName(typeNode.typeName)
+    ? typeNode.typeName.right
+    : typeNode.typeName
+  const symbol = followAlias(checker.getSymbolAtLocation(typeName), checker)
+  const declaration = symbol?.declarations?.find((decl): decl is ts.ClassDeclaration =>
+    ts.isClassDeclaration(decl) && !!decl.name)
+  return declaration ?? null
+}
+
+function lookupUniqueMethodOnClass(
+  classDecl: ts.ClassDeclaration,
+  methodName: string,
+  pathToFileId: Map<string, string>,
+): string | null {
+  if (!classDecl.name || classDecl.getSourceFile().isDeclarationFile) {
+    return null
+  }
+
+  const matches = classDecl.members.filter((member) =>
+    (ts.isMethodDeclaration(member)
+      || ts.isGetAccessorDeclaration(member)
+      || ts.isSetAccessorDeclaration(member))
+    && !!member.name
+    && ts.isIdentifier(member.name)
+    && member.name.text === methodName)
+
+  if (matches.length !== 1) {
+    return null
+  }
+
+  const targetFileId = pathToFileId.get(classDecl.getSourceFile().fileName)
+  if (!targetFileId) {
+    return null
+  }
+
+  return makeSymbolId(targetFileId, 'method', `${classDecl.name.text}.${methodName}`)
 }
 
 function lookupSpiSymbolForDeclaration(decl: ts.Declaration, fileId: string): string | null {
