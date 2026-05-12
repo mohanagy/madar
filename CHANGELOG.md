@@ -4,6 +4,13 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+## [0.22.3] - 2026-05-12
+
+### Changed
+
+- **Real NestJS provider-call edges now survive SPI graph generation**: `buildSpi` now resolves GoValidate-shaped `this.service.method()` calls from constructor-injected providers even when the workspace uses NodeNext-style extensionless deep relative imports, so projected `nest_route` nodes keep outgoing `calls` links to provider methods instead of collapsing to same-class helpers only.
+- **Realistic NestJS SPI regression coverage**: adds a GoValidate-shaped fixture with deep extensionless imports, decorators, `@Inject()` parameter properties, nested module paths, and graph/projection/retrieval assertions so future releases catch missing provider-call links before shipping.
+
 ## [0.22.2] - 2026-05-12
 
 ### Changed
