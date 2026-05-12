@@ -207,6 +207,9 @@ function detectGenerationIntent(prompt: string): RetrievalGenerationIntent {
   if (generationShaped && explanationShaped) {
     return 'runtime_generation'
   }
+  if (generationShaped && !displayShaped) {
+    return 'runtime_generation'
+  }
   if (displayShaped) {
     return 'display_rendering'
   }

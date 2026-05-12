@@ -328,6 +328,11 @@ describe('SPI realistic Nest DI runtime-call fixture', () => {
     )
     expect(labels.filter((label) => frontendLabels.includes(label))).toHaveLength(0)
     expect(sourceFiles.some((sourceFile) => sourceFile.includes('platform/src/features/idea-detail/components/ReportFooter.tsx'))).toBe(false)
+    expect(sourceFiles.some((sourceFile) =>
+      sourceFile.includes('/benchmark/')
+      || sourceFile.includes('/fixtures/')
+      || sourceFile.includes('/__tests__/'),
+    )).toBe(false)
     expect(result.slice?.anchors.some((anchor) => frontendLabels.includes(anchor.label))).toBe(false)
   })
 

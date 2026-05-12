@@ -76,7 +76,7 @@ describe('public benchmark artifact (2026-04-30 govalidate)', () => {
     expect(existsSync(verifyPath)).toBe(true)
   })
 
-  it('verify.sh exits 0 against the committed JSON files (skipped if jq is missing)', () => {
+  it.skipIf(process.platform === 'win32')('verify.sh exits 0 against the committed JSON files (skipped if jq is missing)', () => {
     const which = spawnSync('which', ['jq'])
     if (which.status !== 0) {
       // CI may not have jq installed; verify.sh's prereq check exits 1 and

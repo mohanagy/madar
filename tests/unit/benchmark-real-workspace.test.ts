@@ -119,7 +119,7 @@ describe('real-workspace benchmark support', () => {
     expect(template).toContain('If GoValidate is unavailable, no GoValidate-specific numbers are claimed.')
   })
 
-  it('fails fast when the real-workspace prompts file is missing', () => {
+  it.skipIf(process.platform === 'win32')('fails fast when the real-workspace prompts file is missing', () => {
     withTempDir((dir) => {
       expect(() => execFileSync('bash', [
         'docs/benchmarks/2026-05-11-spi-vs-legacy/run-real-workspace.sh',

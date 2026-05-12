@@ -196,6 +196,12 @@ describe('classifyRetrievalLevel — signal extraction', () => {
     expect(decision.signals.generation_intent).toBe('runtime_generation')
     expect(decision.signals.target_domain_hint).toBe('backend_runtime')
   })
+
+  it('detects broad generation noun prompts without explanation verbs', () => {
+    const decision = classify({ prompt: 'idea report generation pipeline' })
+    expect(decision.signals.generation_intent).toBe('runtime_generation')
+    expect(decision.signals.target_domain_hint).toBe('backend_runtime')
+  })
 })
 
 describe('classifyRetrievalLevel — exclusions and negation', () => {

@@ -1025,6 +1025,34 @@ function retrievalDomainAdjustment(
   return 0
 }
 
+function runtimeGenerationSourceDomainPenalty(
+  retrievalGate: RetrievalGateDecision,
+  sourceDomain: SourceDomain,
+  explicitlyAnchored: boolean,
+): number {
+  if (
+    explicitlyAnchored
+    || retrievalGate.signals.generation_intent !== 'runtime_generation'
+    || retrievalGate.signals.target_domain_hint !== 'backend_runtime'
+  ) {
+    return 0
+  }
+
+  switch (sourceDomain) {
+    case 'test':
+    case 'benchmark':
+    case 'fixture':
+    case 'generated':
+    case 'docs':
+    case 'build_artifact':
+      return 6
+    case 'config':
+    case 'production':
+    case 'unknown':
+      return 0
+  }
+}
+
 function shouldDemoteSourcePathMatchForIntent(
   retrievalGate: RetrievalGateDecision,
   node: {
@@ -2098,7 +2126,8 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
         }
       : score
 
-    const totalSeedScore = effectiveScore.total + anchorScore + metadataBoost + domainAdjustment - sourceDomainPenalty
+    const domainIntentPenalty = runtimeGenerationSourceDomainPenalty(retrievalGate, sourceDomain, exactAnchorMatch || mentionedPathMatch)
+    const totalSeedScore = effectiveScore.total + anchorScore + metadataBoost + domainAdjustment - sourceDomainPenalty - domainIntentPenalty
     const hasPositiveSeedEvidence = totalSeedScore > 0 || exactAnchorMatch || mentionedPathMatch
     if (hasPositiveSeedEvidence) {
       const resolvedLine = resolvedLineNumber(attributes)
@@ -2177,12 +2206,13 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
     sourcePathMatch: candidate.sourcePathMatch,
     evidenceTier: candidate.evidenceTier,
     score: Math.max(
-        0.05,
-        ((fusedSeedScores.get(candidate.id) ?? 0) * SEED_FUSION_SCORE_SCALE)
-          + candidate.frameworkBoost
-          + retrievalDomainAdjustment(retrievalGate, candidate)
-          - defaultSourceDomainPenalty(candidate.sourceDomain, retrievalGate.intent, question, questionTokens),
-      ),
+      0.05,
+      ((fusedSeedScores.get(candidate.id) ?? 0) * SEED_FUSION_SCORE_SCALE)
+        + candidate.frameworkBoost
+        + retrievalDomainAdjustment(retrievalGate, candidate)
+        - defaultSourceDomainPenalty(candidate.sourceDomain, retrievalGate.intent, question, questionTokens)
+        - runtimeGenerationSourceDomainPenalty(retrievalGate, candidate.sourceDomain, candidate.exactLabelMatch || candidate.literalPathMatch),
+    ),
     relevanceBand: candidate.relevanceBand,
     sourceDomain: candidate.sourceDomain,
   }))
@@ -2358,6 +2388,7 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
       continue
     }
     const sourceDomainPenalty = defaultSourceDomainPenalty(sourceDomain, retrievalGate.intent, question, questionTokens)
+    const domainIntentPenalty = runtimeGenerationSourceDomainPenalty(retrievalGate, sourceDomain, symbolMatch > 0 || pathMatch)
     const domainAdjustment = retrievalDomainAdjustment(retrievalGate, {
       label,
       sourceFile,
@@ -2388,7 +2419,7 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
       literalPathMatch: pathMatch,
       sourcePathMatch: pathMatch,
       evidenceTier: hopDistances.get(nodeId) === 1 ? (hopEvidenceTiers.get(nodeId) ?? 0) : 0,
-      score: Math.max(0.05, hopScore + domainAdjustment - sourceDomainPenalty),
+      score: Math.max(0.05, hopScore + domainAdjustment - sourceDomainPenalty - domainIntentPenalty),
       relevanceBand: hopDistances.get(nodeId) === 1 ? 'related' : 'peripheral',
     })
   }
