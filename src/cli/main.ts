@@ -36,6 +36,7 @@ import { diffGraphs } from '../runtime/diff.js'
 import { serveGraphStdio } from '../runtime/stdio-server.js'
 import { getNeighbors, getNode, loadGraph, queryGraph, shortestPath } from '../runtime/serve.js'
 import { formatTimeTravelResult } from '../runtime/time-travel.js'
+import { findPackageRoot, readPackageVersion } from '../shared/package-metadata.js'
 import {
   parseBenchmarkArgs,
   parseAddArgs,
@@ -275,7 +276,7 @@ export function formatHelp(binaryName = 'graphify-ts'): string {
   return [
     `Usage: ${binaryName} <command>`,
     '',
-    'Run with --help or -h to see this message.',
+    'Run with --help or -h to see this message, or --version / -v to print the installed version.',
     '',
     'Commands:',
     '  generate [path]       build graph artifacts for a folder (default .)',
@@ -517,6 +518,11 @@ function handleAgentCommand(command: AgentPlatform, args: string[], io: CliIO, d
 
 export async function executeCli(argv: string[], io: CliIO = console, dependencies: CliDependencies = DEFAULT_DEPENDENCIES): Promise<number> {
   const [command, ...args] = argv
+
+  if (command === '-v' || command === '--version') {
+    io.log(readPackageVersion(findPackageRoot()))
+    return 0
+  }
 
   if (!command || command === '-h' || command === '--help') {
     io.log(formatHelp())

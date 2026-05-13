@@ -98,6 +98,8 @@ PR-review proof on a real diff: prompt tokens 63,024 → **8,690** (**7.25× few
 
 Latest runtime-pack refinement: **runtime-generation prompts stay compact** by following the strongest backend runtime path and suppressing sibling routes, script/migration noise, and shared-hub fan-out on broad backend-generation questions.
 
+Single-prompt backend benchmark snapshot: in one real GoValidate `compare --baseline-mode native_agent` run for `"Explain how idea report is getting generated"`, graphify-ts reduced Anthropic-reported input tokens from **1,653,307** to **498,280** (~**69.9%** lower). Details and caveats: [`docs/benchmarks/2026-05-12-govalidate-report-generation/`](docs/benchmarks/2026-05-12-govalidate-report-generation/).
+
 [Reproduce them](docs/benchmarks/2026-04-30-govalidate/verify.sh) with one shell script against the committed evidence files.
 
 ---

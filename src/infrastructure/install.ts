@@ -1,8 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, rmdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { getBuiltInSkillContent } from './install-skill-templates.js'
+import { findPackageRoot as resolvePackageRoot, readPackageVersion as resolvePackageVersion } from '../shared/package-metadata.js'
 
 export const SKILL_INSTALL_PLATFORMS = ['claude', 'gemini', 'codex', 'opencode', 'aider', 'claw', 'droid', 'trae', 'trae-cn', 'copilot', 'windows'] as const
 
@@ -1018,21 +1018,8 @@ function removeInstalledSkill(destinationPath: string, stopDirectory: string, la
   return `${label} -> ${destinationPath}`
 }
 
-function findPackageRoot(startDirectory = dirname(fileURLToPath(import.meta.url))): string {
-  let currentDirectory = resolve(startDirectory)
-
-  while (true) {
-    const packageJsonPath = join(currentDirectory, 'package.json')
-    if (existsSync(packageJsonPath)) {
-      return currentDirectory
-    }
-
-    const parentDirectory = dirname(currentDirectory)
-    if (parentDirectory === currentDirectory) {
-      throw new Error('Could not locate package root from install helper module')
-    }
-    currentDirectory = parentDirectory
-  }
+function findPackageRoot(startDirectory?: string): string {
+  return resolvePackageRoot(startDirectory)
 }
 
 function formatPlatformDisplayName(platform: AgentPlatform): string {
@@ -1081,16 +1068,7 @@ function removeEmptyDirectories(startDirectory: string, stopDirectory: string): 
 }
 
 function readPackageVersion(packageRoot: string): string {
-  try {
-    const packageJson = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'))
-    if (isRecord(packageJson) && typeof packageJson.version === 'string') {
-      return packageJson.version
-    }
-  } catch {
-    // ignore and fall back below
-  }
-
-  return 'unknown'
+  return resolvePackageVersion(packageRoot)
 }
 
 function resolvePackageCliPath(packageRoot = findPackageRoot()): string {

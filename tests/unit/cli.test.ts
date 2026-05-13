@@ -1,4 +1,4 @@
-import { mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { type CliDependencies, executeCli, formatHelp } from '../../src/cli/main.js'
@@ -39,6 +39,14 @@ function createIo() {
       },
     },
   }
+}
+
+function loadPackageVersion(): string {
+  const packageJson = JSON.parse(readFileSync(resolve('package.json'), 'utf8')) as { version?: string }
+  if (typeof packageJson.version !== 'string' || packageJson.version.length === 0) {
+    throw new Error('package.json is missing version')
+  }
+  return packageJson.version
 }
 
 function createDependencies(): CliDependencies {
@@ -751,9 +759,24 @@ describe('cli main', () => {
     expect(logs[0]).toContain('Usage: graphify-ts <command>')
   })
 
+  it('prints the package version for --version and -v', async () => {
+    const expectedVersion = loadPackageVersion()
+    const longFlag = createIo()
+    const shortFlag = createIo()
+
+    await expect(executeCli(['--version'], longFlag.io, createDependencies())).resolves.toBe(0)
+    await expect(executeCli(['-v'], shortFlag.io, createDependencies())).resolves.toBe(0)
+
+    expect(longFlag.errors).toHaveLength(0)
+    expect(shortFlag.errors).toHaveLength(0)
+    expect(longFlag.logs).toEqual([expectedVersion])
+    expect(shortFlag.logs).toEqual([expectedVersion])
+  })
+
   it('formats help text with supported commands', () => {
     const help = formatHelp()
     expect(help).toContain('--help')
+    expect(help).toContain('--version')
     expect(help).toContain('generate [path]')
     expect(help).toContain('watch [path]')
     expect(help).toContain('serve [graph.json]')
