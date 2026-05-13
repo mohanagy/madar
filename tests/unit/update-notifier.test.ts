@@ -36,7 +36,7 @@ describe('update notifier', () => {
     }
   })
 
-  it('uses a fresh cache instead of refetching the registry', async () => {
+  it('uses a fresh cache instead of refetching the registry or repeating the banner', async () => {
     const cacheRoot = mkdtempSync(join(tmpdir(), 'graphify-update-notifier-'))
     let fetchCalls = 0
 
@@ -68,7 +68,7 @@ describe('update notifier', () => {
       })
 
       expect(firstNotice).toContain('0.22.9')
-      expect(secondNotice).toContain('0.22.9')
+      expect(secondNotice).toBeNull()
       expect(fetchCalls).toBe(1)
     } finally {
       rmSync(cacheRoot, { recursive: true, force: true })
