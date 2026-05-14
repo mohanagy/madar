@@ -1,51 +1,73 @@
-name: Research or design
-description: Propose a design direction, research spike, or architecture decision.
-title: "[Research]: "
-labels:
-  - type:research
-  - research
+# .github/ISSUE_TEMPLATE/research_design.yml
+# Research/Design issue template
+name: Research / Design
+about: Propose or discuss research, design, or architectural changes
+title: "[Research] <short description>"
+labels: [research, design]
+assignees: ''
+
 body:
-  - type: markdown
-    attributes:
-      value: |
-        Use this for design and research work that needs evidence before implementation. Keep it practical and scoped.
+- type: markdown
+  attributes:
+    value: |
+      ## Research / Design Proposal
 
-  - type: textarea
-    id: problem
-    attributes:
-      label: Problem or decision
-      description: What needs to be understood, decided, or de-risked?
-    validations:
-      required: true
+- type: input
+  id: summary
+  attributes:
+    label: Summary
+    description: Brief one-line summary of the research or design.
+    placeholder: e.g., Evaluate new caching strategy for query layer
+  validations:
+    required: true
 
-  - type: textarea
-    id: context
-    attributes:
-      label: Context
-      description: Relevant issues, docs, code paths, benchmarks, or prior decisions.
-      placeholder: Roadmap item, affected CLI/MCP command, related benchmark artifact.
-    validations:
-      required: true
+- type: textarea
+  id: motivation
+  attributes:
+    label: Motivation
+    description: Why is this research needed? What problem does it solve?
+    placeholder: Provide context and rationale...
+  validations:
+    required: true
 
-  - type: textarea
-    id: options
-    attributes:
-      label: Options considered
-      description: List the realistic approaches and trade-offs.
-    validations:
-      required: true
+- type: textarea
+  id: approach
+  attributes:
+    label: Proposed Approach
+    description: Outline the research methodology or design direction.
+    placeholder: Steps, hypotheses, alternatives...
+  validations:
+    required: false
 
-  - type: textarea
-    id: evidence
-    attributes:
-      label: Evidence needed
-      description: Tests, fixtures, measurements, prototypes, or docs needed before implementation.
-    validations:
-      required: true
+- type: textarea
+  id: expected_outcome
+  attributes:
+    label: Expected Outcome
+    description: What deliverables or decisions should result from this?
+    placeholder: e.g., A design document, decision on approach, benchmark results
+  validations:
+    required: false
 
-  - type: textarea
-    id: non-goals
-    attributes:
-      label: Non-goals
-      description: What should stay out of scope?
-      placeholder: Do not require private corpora, secrets, paid benchmarks, or broad governance changes.
+- type: dropdown
+  id: priority
+  attributes:
+    label: Priority
+    options:
+      - Low
+      - Medium
+      - High
+      - Critical
+    default: 0
+  validations:
+    required: true
+
+- type: checkboxes
+  id: definition_of_done
+  attributes:
+    label: Definition of Done
+    description: Check all that apply before closing.
+    options:
+      - label: Research completed and documented
+      - label: Design review conducted
+      - label: Decision recorded in ADR or similar
+      - label: Open questions resolved or noted

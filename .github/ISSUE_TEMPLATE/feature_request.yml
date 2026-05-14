@@ -1,53 +1,540 @@
-name: Feature request
-description: Suggest a new capability, parser improvement, workflow, or maintenance enhancement.
-title: "[Feature]: "
+python
+#!/usr/bin/env python3
+"""Generate GitHub contributing documentation and issue templates.
+
+This script creates the standard files expected by an open-source project:
+
+* ``CONTRIBUTING.md``
+* ``.github/ISSUE_TEMPLATE/*.yml`` (bug, feature, benchmark, docs, research/design)
+* ``.github/pull_request_template.md`` (optional update)
+* Updates ``README.md`` and ``CHANGELOG.md`` with a link to the public roadmap.
+
+The script is **idempotent**: it will not overwrite existing files unless they are
+missing or need to be updated (e.g., the roadmap link). All actions are logged.
+
+Usage::
+
+    python generate_contributing_docs.py [--project-root PATH] [--roadmap-url URL]
+
+Requirements:
+    - Python 3.8+
+    - Standard library only.
+"""
+
+from __future__ import annotations
+
+import argparse
+import logging
+import os
+import re
+import sys
+from pathlib import Path
+from typing import Dict, List, NoReturn, Optional, Tuple
+
+# ---------------------------------------------------------------------------
+# Logging configuration
+# ---------------------------------------------------------------------------
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+DEFAULT_PROJECT_ROOT: Path = Path.cwd().resolve()
+ENV_ROADMAP_URL_KEY: str = "ROADMAP_URL"
+DEFAULT_ROADMAP_URL: str = "https://github.com/orgs/your-org/projects/1"
+
+# Acceptable URL schemes for validation
+_ACCEPTABLE_ROADMAP_SCHEMES: Tuple[str, ...] = ("https", "http")
+
+# Regex to find existing roadmap link line in markdown files
+_ROADMAP_LINE_PATTERN: re.Pattern = re.compile(
+    r"^\s*\-?\s*\[(?:public )?roadmap\]\s*[\(\[]\s*(https?://[^\s\)\]]+)\s*[\)\]]\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+# Newline to insert after the roadmap link if none exists (used in README/CHANGELOG)
+_ROADMAP_LINE_TEMPLATE: str = "- [Public Roadmap]({url})"
+
+# ---------------------------------------------------------------------------
+# Template definitions
+# ---------------------------------------------------------------------------
+_TEMPLATES: Dict[str, str] = {
+    "CONTRIBUTING.md": r"""# Contributing to [Project Name]
+
+Thank you for your interest in contributing! This document provides guidelines and instructions.
+
+## Local Setup
+
+1. Clone the repository.
+2. Install Go (version 1.21+).
+3. Run `go mod download`.
+4. Verify with `go build ./...`.
+
+## Testing
+
+- Run all tests: `go test ./...`
+- Lint: `golangci-lint run`
+- Type check (if applicable): `npm run typecheck`
+- Build: `npm run build`
+
+## Pull Request Checklist
+
+- [ ] Code follows existing style.
+- [ ] Tests are added/updated.
+- [ ] All tests pass.
+- [ ] Documentation is updated (README, CHANGELOG, as needed).
+- [ ] No private corpora or secrets are included.
+
+## Non‑goals
+
+- We do **not** require contributors to run paid benchmarks.
+- We avoid heavy governance processes. Keep PRs focused and concise.
+
+## Roadmap
+
+See the [public roadmap]({roadmap_url}) for upcoming work.
+
+## Issue Templates
+
+Please use the provided templates when opening issues:
+- [Bug Report](.github/ISSUE_TEMPLATE/bug_report.yml)
+- [Feature Request](.github/ISSUE_TEMPLATE/feature_request.yml)
+- [Benchmark](.github/ISSUE_TEMPLATE/benchmark.yml)
+- [Documentation](.github/ISSUE_TEMPLATE/documentation.yml)
+- [Research / Design](.github/ISSUE_TEMPLATE/research_design.yml)
+""",
+    ".github/ISSUE_TEMPLATE/bug_report.yml": r"""name: Bug Report
+description: Report a bug to help us improve.
+title: "[BUG] "
+labels: ["bug"]
 body:
-  - type: markdown
-    attributes:
-      value: |
-        Thanks for the idea. Please focus on the user problem first, then the proposed solution.
-
   - type: textarea
-    id: problem
+    id: description
     attributes:
-      label: Problem to solve
-      description: What is hard, missing, or frustrating today?
+      label: Description
+      description: A clear and concise description of the bug.
+      placeholder: What happened?
     validations:
       required: true
-
   - type: textarea
-    id: proposal
+    id: steps
     attributes:
-      label: Proposed solution
-      description: What do you want graphify-ts to do?
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior.
+      placeholder: |
+        1. Go to '...'
+        2. Click on '....'
+        3. See error
     validations:
       required: true
-
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What you expected to happen.
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Go version, etc.
+      placeholder: |
+        - OS: Ubuntu 22.04
+        - Go: 1.22
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Logs, screenshots, or other info.
+""",
+    ".github/ISSUE_TEMPLATE/feature_request.yml": r"""name: Feature Request
+description: Suggest a new feature for the project.
+title: "[FEATURE] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear and concise description of the feature.
+      placeholder: What would you like to see added?
+    validations:
+      required: true
+  - type: textarea
+    id: usecase
+    attributes:
+      label: Use Case
+      description: Why is this feature important? How will it be used?
+      placeholder: Describe the scenario.
+    validations:
+      required: true
   - type: textarea
     id: alternatives
     attributes:
-      label: Alternatives considered
-      description: Workarounds, competing tools, or lower-scope options.
-
-  - type: dropdown
-    id: area
-    attributes:
-      label: Area
-      options:
-        - extraction / parsers
-        - graph analysis / clustering
-        - CLI / install flow
-        - AI assistant integration
-        - docs / examples
-        - CI / release / maintainer tooling
-        - other
-    validations:
-      required: true
-
+      label: Alternatives Considered
+      description: Any workarounds or alternative solutions you've thought of.
+      placeholder: Explain other approaches.
   - type: textarea
-    id: success
+    id: acceptance
     attributes:
-      label: What would success look like?
-      description: Describe the outcome from an end-user perspective.
+      label: Acceptance Criteria
+      description: What must be true for this feature to be considered complete?
+      placeholder: |
+        - [ ] Feature works.
+        - [ ] Tests pass.
+        - [ ] Documentation updated.
     validations:
       required: true
+""",
+    ".github/ISSUE_TEMPLATE/benchmark.yml": r"""name: Benchmark
+description: Report a benchmark result or request a comparison.
+title: "[BENCH] "
+labels: ["benchmark"]
+body:
+  - type: textarea
+    id: scope
+    attributes:
+      label: Benchmark Scope
+      description: What is being benchmarked?
+      placeholder: Describe the test scenario.
+    validations:
+      required: true
+  - type: textarea
+    id: results
+    attributes:
+      label: Results
+      description: Attach or describe the results.
+  - type: textarea
+    id: hardware
+    attributes:
+      label: Hardware / Environment
+      description: CPU, RAM, Go version, etc.
+  - type: checkboxes
+    id: consent
+    attributes:
+      label: Consent
+      options:
+        - label: I understand this benchmark is voluntary and not required.
+          required: true
+""",
+    ".github/ISSUE_TEMPLATE/documentation.yml": r"""name: Documentation
+description: Report missing or incorrect documentation.
+title: "[DOCS] "
+labels: ["documentation"]
+body:
+  - type: textarea
+    id: location
+    attributes:
+      label: Location
+      description: Which file or section?
+      placeholder: e.g., README.md, CONTRIBUTING.md
+    validations:
+      required: true
+  - type: textarea
+    id: issue
+    attributes:
+      label: Issue
+      description: What is wrong or missing?
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested Improvement
+      description: How would you fix it?
+""",
+    ".github/ISSUE_TEMPLATE/research_design.yml": r"""name: Research / Design
+description: Propose research or design discussions.
+title: "[RD] "
+labels: ["research", "design"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: What problem are we trying to solve?
+    validations:
+      required: true
+  - type: textarea
+    id: approach
+    attributes:
+      label: Proposed Approach
+      description: High-level design or research direction.
+      placeholder: Outline the idea.
+  - type: textarea
+    id: tradeoffs
+    attributes:
+      label: Trade-offs and Risks
+      description: Any potential drawbacks or risks.
+""",
+}
+
+# ---------------------------------------------------------------------------
+# Helper functions
+# ---------------------------------------------------------------------------
+
+
+def _validate_roadmap_url(url: str) -> bool:
+    """Validate the given roadmap URL.
+
+    Args:
+        url: The URL to validate.
+
+    Returns:
+        True if the URL is syntactically valid, False otherwise.
+    """
+    if not url:
+        return False
+    try:
+        parsed = re.match(r'^https?://[^\s/$.?#].[^\s]*$', url)
+        return bool(parsed)
+    except re.error:
+        logger.exception("Regex error during URL validation")
+        return False
+
+
+def _get_effective_roadmap_url(args_url: Optional[str]) -> str:
+    """Determine the roadmap URL from argument, environment, or default.
+
+    Args:
+        args_url: URL provided via command line argument.
+
+    Returns:
+        The URL to use.
+
+    Raises:
+        ValueError: If the URL is invalid and no fallback works.
+    """
+    url = args_url or os.environ.get(ENV_ROADMAP_URL_KEY) or DEFAULT_ROADMAP_URL
+    if not _validate_roadmap_url(url):
+        raise ValueError(f"Invalid or missing roadmap URL: {url!r}")
+    return url
+
+
+def _update_roadmap_link(file_path: Path, roadmap_url: str) -> bool:
+    """Update or add the roadmap link in the given markdown file.
+
+    Args:
+        file_path: Path to the markdown file.
+        roadmap_url: The roadmap URL to insert.
+
+    Returns:
+        True if the file was modified, False otherwise.
+
+    Raises:
+        FileNotFoundError: If the file does not exist.
+        PermissionError: If the file cannot be read/written.
+        UnicodeDecodeError: If the file is not valid UTF-8.
+    """
+    logger.debug("Checking roadmap link in %s", file_path)
+    try:
+        content = file_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        raise
+    except UnicodeDecodeError:
+        logger.error("File %s is not valid UTF-8; skipping", file_path)
+        raise
+    except PermissionError:
+        logger.error("Permission denied reading %s", file_path)
+        raise
+
+    # Check if a roadmap link already exists
+    match = _ROADMAP_LINE_PATTERN.search(content)
+    if match and match.group(1) == roadmap_url:
+        logger.debug("Roadmap link is already correct in %s", file_path)
+        return False
+
+    # Replace or insert
+    new_line = _ROADMAP_LINE_TEMPLATE.format(url=roadmap_url)
+    if match:
+        # Replace existing line
+        new_content = content[:match.start()] + new_line + content[match.end():]
+        logger.info("Updated roadmap link in %s", file_path)
+    else:
+        # Append after last heading or at end? Heuristic: add after first heading
+        # For simplicity, add at the end as a new section
+        new_content = content.rstrip() + "\n\n## Roadmap\n\n" + new_line + "\n"
+        logger.info("Added roadmap link to %s", file_path)
+
+    try:
+        file_path.write_text(new_content, encoding="utf-8")
+    except PermissionError:
+        logger.error("Permission denied writing %s", file_path)
+        raise
+    return True
+
+
+def _write_file_if_changed(file_path: Path, content: str, description: str = "") -> bool:
+    """Write content to a file only if it would change the existing content.
+
+    Args:
+        file_path: Path to the target file.
+        content: The new text content.
+        description: Human-readable description for logging (e.g., "bug report template").
+
+    Returns:
+        True if the file was written or updated, False if it already matches.
+
+    Raises:
+        OSError: If the file cannot be written.
+    """
+    logger.debug("Checking file %s", file_path)
+    try:
+        if file_path.exists():
+            existing = file_path.read_text(encoding="utf-8")
+            if existing == content:
+                logger.debug("No change needed for %s", file_path)
+                return False
+    except (OSError, UnicodeDecodeError) as e:
+        logger.warning("Could not read %s: %s. Will overwrite.", file_path, e)
+        # Continue to write anyway if there is a read error
+
+    # Create parent directories if needed
+    try:
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+    except PermissionError:
+        logger.error("Cannot create directory %s", file_path.parent)
+        raise
+
+    try:
+        file_path.write_text(content, encoding="utf-8")
+    except PermissionError:
+        logger.error("Permission denied writing %s", file_path)
+        raise
+    logger.info("%s written: %s", description or "File", file_path)
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+
+def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
+    """Parse command-line arguments.
+
+    Args:
+        argv: List of argument strings (default: sys.argv[1:]).
+
+    Returns:
+        Namespace with parsed arguments.
+    """
+    parser = argparse.ArgumentParser(
+        description="Generate GitHub contributing documentation and issue templates."
+    )
+    parser.add_argument(
+        "--project-root",
+        type=Path,
+        default=DEFAULT_PROJECT_ROOT,
+        help="Path to the project root directory (default: current working directory).",
+    )
+    parser.add_argument(
+        "--roadmap-url",
+        type=str,
+        default=None,
+        help="URL to the public roadmap (default: from env ROADMAP_URL or a placeholder).",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: Optional[List[str]] = None) -> NoReturn:
+    """Execute the documentation generation.
+
+    Args:
+        argv: Command-line arguments (default: sys.argv[1:]).
+
+    Returns:
+        Never returns; calls sys.exit().
+    """
+    try:
+        args = _parse_args(argv)
+        project_root: Path = args.project_root.resolve()
+        if not project_root.is_dir():
+            logger.error("Project root does not exist or is not a directory: %s", project_root)
+            sys.exit(1)
+
+        roadmap_url = _get_effective_roadmap_url(args.roadmap_url)
+        logger.info("Using roadmap URL: %s", roadmap_url)
+    except (ValueError, argparse.ArgumentError) as e:
+        logger.error("Configuration error: %s", e)
+        sys.exit(1)
+
+    # Define file paths
+    contributing_path = project_root / "CONTRIBUTING.md"
+    templates_dir = project_root / ".github" / "ISSUE_TEMPLATE"
+    pr_template_path = project_root / ".github" / "pull_request_template.md"
+    readme_path = project_root / "README.md"
+    changelog_path = project_root / "CHANGELOG.md"
+
+    # Ensure templates directory exists
+    try:
+        templates_dir.mkdir(parents=True, exist_ok=True)
+    except PermissionError:
+        logger.error("Cannot create templates directory %s", templates_dir)
+        sys.exit(1)
+
+    errors: int = 0
+
+    # Write CONTRIBUTING.md
+    try:
+        contrib_content = _TEMPLATES["CONTRIBUTING.md"].format(roadmap_url=roadmap_url)
+        _write_file_if_changed(contributing_path, contrib_content, "CONTRIBUTING.md")
+    except OSError as e:
+        logger.error("Failed to write CONTRIBUTING.md: %s", e)
+        errors += 1
+
+    # Write issue templates
+    for filename, template in _TEMPLATES.items():
+        if filename == "CONTRIBUTING.md":
+            continue
+        file_path = templates_dir / filename
+        try:
+            _write_file_if_changed(file_path, template, description=filename)
+        except OSError as e:
+            logger.error("Failed to write %s: %s", filename, e)
+            errors += 1
+
+    # Optional: write PR template (simple version)
+    pr_content = (
+        "## Description\n\n"
+        "Please include a summary of the change.\n\n"
+        "## Checklist\n\n"
+        "- [ ] Code follows existing style.\n"
+        "- [ ] Tests are added/updated.\n"
+        "- [ ] All tests pass.\n"
+        "- [ ] Documentation is updated (README, CHANGELOG, as needed).\n"
+        "- [ ] No private corpora or secrets are included.\n"
+    )
+    try:
+        _write_file_if_changed(pr_template_path, pr_content, "pull_request_template.md")
+    except OSError as e:
+        logger.error("Failed to write pull_request_template.md: %s", e)
+        errors += 1
+
+    # Update README.md and CHANGELOG.md with roadmap link
+    for doc_path in (readme_path, changelog_path):
+        if doc_path.exists():
+            try:
+                changed = _update_roadmap_link(doc_path, roadmap_url)
+                if changed:
+                    logger.info("Updated roadmap link in %s", doc_path)
+            except (FileNotFoundError, PermissionError, UnicodeDecodeError) as e:
+                logger.warning("Skipping %s: %s", doc_path, e)
+                # Not a fatal error
+        else:
+            logger.debug("File %s does not exist; skipping", doc_path)
+
+    if errors:
+        logger.error("Completed with %d error(s).", errors)
+        sys.exit(1)
+    else:
+        logger.info("All files generated/updated successfully.")
+        sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

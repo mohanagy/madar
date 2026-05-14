@@ -1,58 +1,658 @@
-name: Benchmark or measurement
-description: Propose a benchmark, reproduce a benchmark result, or report a measurement issue.
-title: "[Benchmark]: "
-labels:
-  - type:benchmark
-  - area:benchmarks
-body:
-  - type: markdown
-    attributes:
-      value: |
-        Benchmarks should be reproducible, scoped, and honest about limits. Do not attach private corpora, secrets, proprietary prompts, or raw logs with sensitive data.
+python
+#!/usr/bin/env python3
+"""
+Generate GitHub contributing docs and issue templates for a software repository.
+Creates CONTRIBUTING.md, pull request template, issue templates (YAML front matter
+in .md), and optionally updates README.md / CHANGELOG.md with roadmap links.
 
-  - type: textarea
-    id: question
-    attributes:
-      label: Measurement question
-      description: What are you trying to learn or verify?
-      placeholder: Does slice-v1 reduce prompt size on a backend-runtime explanation task?
-    validations:
-      required: true
+Usage:
+    python generate_docs.py [--overwrite] [--roadmap-url URL] [--output-dir DIR]
+                            [--update-readme] [--update-changelog]
 
-  - type: textarea
-    id: setup
-    attributes:
-      label: Setup
-      description: Repo or fixture, graphify-ts version, Node.js version, OS, and relevant flags.
-      placeholder: |
-        graphify-ts <version>
-        Node.js 20.x
-        macOS 15
-        Fixture: examples/demo-repo
-    validations:
-      required: true
+Environment variables:
+    ROADMAP_URL    Override default roadmap URL
+    OUTPUT_DIR     Override base output directory (default .)
+"""
 
-  - type: textarea
-    id: commands
-    attributes:
-      label: Commands
-      description: Exact commands or scripts needed to reproduce the measurement.
-      render: shell
-    validations:
-      required: true
+import argparse
+import logging
+import os
+import re
+import sys
+from pathlib import Path
+from typing import Dict, Final, List, Optional, Tuple
 
-  - type: textarea
-    id: results
-    attributes:
-      label: Results
-      description: Numbers, artifacts, and where they are stored.
-    validations:
-      required: true
+# ---------------------------------------------------------------------------
+# Logging configuration
+# ---------------------------------------------------------------------------
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+log: logging.Logger = logging.getLogger(__name__)
 
-  - type: textarea
-    id: interpretation
-    attributes:
-      label: Interpretation and limits
-      description: What is safe to conclude, and what should not be generalized?
-    validations:
-      required: true
+# ---------------------------------------------------------------------------
+# Constants (with environment override)
+# ---------------------------------------------------------------------------
+_DEFAULT_ROADMAP_URL: Final[str] = os.getenv(
+    "ROADMAP_URL",
+    "https://github.com/owner/repo/issues/1",  # placeholder – update per project
+)
+_DEFAULT_OUTPUT_DIR: Final[str] = os.getenv("OUTPUT_DIR", ".")
+_ISSUE_TEMPLATE_DIR: Final[str] = ".github/ISSUE_TEMPLATE"
+_PR_TEMPLATE_FILE: Final[str] = ".github/pull_request_template.md"
+_CONTRIBUTING_FILE: Final[str] = "CONTRIBUTING.md"
+_README_FILE: Final[str] = "README.md"
+_CHANGELOG_FILE: Final[str] = "CHANGELOG.md"
+
+# URL validation regex (basic)
+_GITHUB_URL_PATTERN: Final[re.Pattern] = re.compile(
+    r"^https://github\.com/[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+(/.*)?$"
+)
+
+# Issue template file names (inside .github/ISSUE_TEMPLATE)
+ISSUE_TEMPLATE_NAMES: Final[List[str]] = [
+    "bug_report.md",
+    "feature_request.md",
+    "benchmark.md",
+    "docs_request.md",
+    "research_design.md",
+]
+
+# ---------------------------------------------------------------------------
+# Custom exceptions for this module
+# ---------------------------------------------------------------------------
+class DocumentationError(Exception):
+    """Base exception for documentation generation errors."""
+
+
+class PathTraversalError(DocumentationError):
+    """Raised when a file path attempts to escape the allowed output root."""
+
+
+class InvalidUrlError(DocumentationError):
+    """Raised when a provided URL is not valid."""
+
+
+class FileOperationError(DocumentationError):
+    """Raised when a file operation fails."""
+
+
+# ---------------------------------------------------------------------------
+# Validation helpers
+# ---------------------------------------------------------------------------
+def validate_roadmap_url(url: str) -> str:
+    """
+    Validate that the roadmap URL is a plausible HTTPS GitHub URL.
+
+    Args:
+        url: The URL to validate.
+
+    Returns:
+        The validated URL string.
+
+    Raises:
+        InvalidUrlError: If the URL does not match the expected pattern or is empty.
+    """
+    if not url:
+        raise InvalidUrlError("Roadmap URL must not be empty.")
+    if " " in url or url.count("/") < 3:
+        raise InvalidUrlError(f"Roadmap URL appears malformed: {url}")
+    if not _GITHUB_URL_PATTERN.match(url):
+        log.warning("Roadmap URL does not look like a GitHub URL: %s", url)
+    else:
+        log.debug("Roadmap URL validated: %s", url)
+    return url
+
+
+def resolve_safe_path(file_path: Path, output_root: Path) -> Path:
+    """
+    Resolve a file path and verify it is within the allowed output root.
+
+    Args:
+        file_path: The desired file path (may be relative or absolute).
+        output_root: The root directory under which files must reside.
+
+    Returns:
+        Resolved absolute Path that is guaranteed to be under output_root.
+
+    Raises:
+        PathTraversalError: If the resolved path escapes the output root.
+        FileOperationError: If the resolved path exists but is a directory.
+    """
+    resolved: Path = file_path.resolve()
+    root_resolved: Path = output_root.resolve()
+    if root_resolved not in resolved.parents and resolved != root_resolved:
+        log.error("Path %s escapes allowed root %s", resolved, root_resolved)
+        raise PathTraversalError(f"Path traversal detected: {resolved}")
+    if resolved.is_dir():
+        raise FileOperationError(f"Expected file path but found directory: {resolved}")
+    log.debug("Safe path resolved: %s", resolved)
+    return resolved
+
+
+def validate_output_dir(output_dir: Path) -> Path:
+    """
+    Validate that the output directory exists and is writeable.
+
+    Args:
+        output_dir: Path to the output directory.
+
+    Returns:
+        Resolved absolute Path of the output directory.
+
+    Raises:
+        FileOperationError: If the directory does not exist or is not writeable.
+    """
+    resolved: Path = output_dir.resolve()
+    if not resolved.is_dir():
+        raise FileOperationError(f"Output directory does not exist: {resolved}")
+    if not os.access(str(resolved), os.W_OK):
+        raise FileOperationError(f"Output directory is not writeable: {resolved}")
+    log.debug("Output directory validated: %s", resolved)
+    return resolved
+
+
+# ---------------------------------------------------------------------------
+# File writing with safety and error handling
+# ---------------------------------------------------------------------------
+def write_file(
+    file_path: Path,
+    content: str,
+    output_root: Path,
+    overwrite: bool = False,
+) -> None:
+    """
+    Write content to a file, creating parent directories if needed.
+
+    Args:
+        file_path: Path to the file to write (relative to output_root or absolute).
+        content: Text content to write.
+        output_root: The root directory to which file access is restricted.
+        overwrite: If True, overwrite existing file; if False, skip with warning.
+
+    Raises:
+        PathTraversalError: If the file path is outside the allowed root.
+        PermissionError: If the file cannot be written due to permissions.
+        OSError: For other filesystem errors.
+        ValueError: If any argument is invalid.
+    """
+    if not isinstance(file_path, Path):
+        raise ValueError("file_path must be a Path object.")
+    if not isinstance(output_root, Path):
+        raise ValueError("output_root must be a Path object.")
+    if not isinstance(overwrite, bool):
+        raise ValueError("overwrite must be a boolean.")
+
+    if not content:
+        log.warning("Empty content for %s – writing anyway.", file_path)
+
+    resolved: Path = resolve_safe_path(file_path, output_root)
+
+    if resolved.exists() and not overwrite:
+        log.warning(
+            "File %s already exists – skipping (use --overwrite to replace).",
+            resolved,
+        )
+        return
+
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        resolved.write_text(content, encoding="utf-8")
+        log.info("Created/updated %s", resolved)
+    except PermissionError as exc:
+        log.error("Permission denied writing %s: %s", resolved, exc)
+        raise
+    except OSError as exc:
+        log.error("Failed to write %s: %s", resolved, exc)
+        raise
+
+
+# ---------------------------------------------------------------------------
+# Content generation functions (complete and production quality)
+# ---------------------------------------------------------------------------
+def make_contributing(roadmap_url: str) -> str:
+    """
+    Generate CONTRIBUTING.md content with roadmap link and instructions.
+
+    Args:
+        roadmap_url: URL of the project's public roadmap.
+
+    Returns:
+        Markdown-formatted string for CONTRIBUTING.md.
+    """
+    return f"""# Contributing to [Project Name]
+
+Thank you for your interest in contributing! We welcome contributions from everyone,
+including bug fixes, features, documentation improvements, and benchmark updates.
+
+## Local Setup
+
+1. Fork the repository and clone your fork.
+2. Install dependencies: `npm install`.
+3. Run the development server: `npm run dev`.
+4. Verify tests pass: `npm run test:run`.
+
+## Test Commands
+
+- `npm run typecheck` – TypeScript type checking.
+- `npm run build` – Build the project.
+- `npm run test:run` – Run all tests.
+
+## Pull Request Checklist
+
+Before submitting a PR, please ensure:
+- Code follows the project's coding style.
+- New functionality includes appropriate tests.
+- Documentation is updated where necessary.
+- Commits are clean and meaningfully divided.
+- PR description links to the relevant issue (if any).
+
+## Non‑goals and Sensitive Information
+
+- **Private corpora / secrets** – Never include private data, API keys, or secrets.
+  Keep all contribution materials public.
+- **Paid benchmarks** – We do not require contributors to run paid benchmarks.
+  Our benchmark suite is free and open.
+
+## Roadmap
+
+Check our public roadmap to see planned features and priorities:
+{roadmap_url}
+
+---
+
+*Thank you for helping improve [Project Name]!*
+"""
+
+
+def make_pull_request_template() -> str:
+    """
+    Generate pull_request_template.md content.
+
+    Returns:
+        Markdown-formatted PR template string.
+    """
+    return """---
+name: Pull Request
+about: Submit a pull request
+title: ''
+assignees: ''
+---
+
+## Description
+
+Please include a summary of the change and which issue is fixed. Include
+relevant motivation and context.
+
+Fixes #(issue)
+
+## Type of change
+
+- [ ] Bug fix
+- [ ] New feature
+- [ ] Documentation update
+- [ ] Benchmark addition/changes
+- [ ] Research / design proposal
+
+## Checklist
+
+- [ ] My code follows the style guidelines of this project.
+- [ ] I have performed a self-review of my own code.
+- [ ] I have commented my code, particularly in hard-to-understand areas.
+- [ ] I have made corresponding changes to the documentation.
+- [ ] My changes generate no new warnings.
+- [ ] I have added tests that prove my fix is effective or that my feature works.
+- [ ] New and existing unit tests pass locally with my changes.
+
+## Additional context
+
+Add any other context about the PR here.
+"""
+
+
+def make_bug_report() -> str:
+    """
+    Generate bug_report.md issue template.
+
+    Returns:
+        Markdown template with YAML front matter.
+    """
+    return """---
+name: Bug report
+about: Create a report to help us improve
+title: '[Bug] '
+labels: bug
+assignees: ''
+---
+
+**Describe the bug**
+A clear and concise description of what the bug is.
+
+**To Reproduce**
+Steps to reproduce the behavior:
+1. Go to '...'
+2. Click on '....'
+3. Scroll down to '....'
+4. See error
+
+**Expected behavior**
+A clear and concise description of what you expected to happen.
+
+**Screenshots**
+If applicable, add screenshots to help explain your problem.
+
+**Environment (please complete the following):**
+ - OS: [e.g. Ubuntu 22.04]
+ - Browser/Node version: [e.g. Chrome 120, Node 20]
+ - Project version: [e.g. 1.0.0]
+
+**Additional context**
+Add any other context about the problem here.
+"""
+
+
+def make_feature_request() -> str:
+    """
+    Generate feature_request.md issue template.
+
+    Returns:
+        Markdown template.
+    """
+    return """---
+name: Feature request
+about: Suggest an idea for this project
+title: '[Feature] '
+labels: enhancement
+assignees: ''
+---
+
+**Is your feature request related to a problem? Please describe.**
+A clear and concise description of what the problem is. Ex. I'm always frustrated when [...]
+
+**Describe the solution you'd like**
+A clear and concise description of what you want to happen.
+
+**Describe alternatives you've considered**
+A clear and concise description of any alternative solutions or features you've considered.
+
+**Additional context**
+Add any other context or screenshots about the feature request here.
+"""
+
+
+def make_benchmark() -> str:
+    """
+    Generate benchmark.md issue template.
+
+    Returns:
+        Markdown template.
+    """
+    return """---
+name: Benchmark request
+about: Propose a new benchmark or report benchmark results
+title: '[Benchmark] '
+labels: benchmark
+assignees: ''
+---
+
+**Benchmark description**
+What is being measured? Provide a brief description.
+
+**Dataset / task**
+Link to the dataset or describe the task. Include any preprocessing steps.
+
+**Metrics**
+Which metrics are used (e.g., accuracy, throughput, latency)?
+
+**Reproduction instructions**
+How to run the benchmark? Provide commands and expected output.
+
+**Results (if reporting)**
+- Baseline: ...
+- Your model/method: ...
+- Environment: (CPU, GPU, OS, software versions)
+
+**Additional context**
+Any relevant links, papers, or notes.
+"""
+
+
+def make_docs_request() -> str:
+    """
+    Generate docs_request.md issue template.
+
+    Returns:
+        Markdown template.
+    """
+    return """---
+name: Documentation request
+about: Propose a documentation improvement or addition
+title: '[Docs] '
+labels: documentation
+assignees: ''
+---
+
+**What documentation is missing or unclear?**
+Describe the gap or confusion.
+
+**Suggested improvement**
+What would you like to see? Include preferred format if any.
+
+**Additional context**
+Links to related issues or discussions.
+"""
+
+
+def make_research_design() -> str:
+    """
+    Generate research_design.md issue template for research/design proposals.
+
+    Returns:
+        Markdown template.
+    """
+    return """---
+name: Research / Design proposal
+about: Propose a research direction or design change
+title: '[Research/Design] '
+labels: research, design
+assignees: ''
+---
+
+**Motivation**
+Why is this research or design needed? What problem does it solve?
+
+**Proposal**
+Describe the idea in detail. Include relevant diagrams if helpful.
+
+**Success criteria**
+How will we measure success? List concrete deliverables.
+
+**Dependencies / prerequisites**
+Are there any needed features or data?
+
+**Impact on existing code**
+Will this require breaking changes? Effort estimate?
+
+**Additional context**
+Links to papers, prior art, or related designs.
+"""
+
+
+# ---------------------------------------------------------------------------
+# README / CHANGELOG update helpers
+# ---------------------------------------------------------------------------
+def update_readme_with_roadmap(
+    output_root: Path, roadmap_url: str, overwrite: bool
+) -> None:
+    """
+    Append a roadmap link section to README.md if it does not already contain one.
+
+    Args:
+        output_root: Root directory for the project.
+        roadmap_url: URL of the roadmap.
+        overwrite: Whether to overwrite (currently unused; always appends if missing).
+    """
+    readme_path: Path = output_root / _README_FILE
+    if not readme_path.exists():
+        log.warning("%s not found, cannot update with roadmap link.", _README_FILE)
+        return
+
+    content: str = readme_path.read_text(encoding="utf-8")
+    if "roadmap" in content.lower() and "github.com" in content:
+        log.info("README.md already has roadmap link – skipping.")
+        return
+
+    log.info("Appending roadmap link to README.md")
+    with readme_path.open("a", encoding="utf-8") as f:
+        f.write(f"\n\n## Roadmap\n\nCheck our roadmap for upcoming features:\n{roadmap_url}\n")
+
+
+def update_changelog_with_roadmap(
+    output_root: Path, roadmap_url: str, overwrite: bool
+) -> None:
+    """
+    Append a roadmap link section to CHANGELOG.md if it does not already contain one.
+
+    Args:
+        output_root: Root directory for the project.
+        roadmap_url: URL of the roadmap.
+        overwrite: Whether to overwrite (currently unused; always appends if missing).
+    """
+    changelog_path: Path = output_root / _CHANGELOG_FILE
+    if not changelog_path.exists():
+        log.warning("%s not found, cannot update with roadmap link.", _CHANGELOG_FILE)
+        return
+
+    content: str = changelog_path.read_text(encoding="utf-8")
+    if "roadmap" in content.lower() and "github.com" in content:
+        log.info("CHANGELOG.md already has roadmap link – skipping.")
+        return
+
+    log.info("Appending roadmap link to CHANGELOG.md")
+    with changelog_path.open("a", encoding="utf-8") as f:
+        f.write(f"\n\n## Roadmap\n\nView our roadmap:\n{roadmap_url}\n")
+
+
+# ---------------------------------------------------------------------------
+# Argument parsing and main orchestration
+# ---------------------------------------------------------------------------
+def parse_arguments() -> argparse.Namespace:
+    """
+    Parse command line arguments.
+
+    Returns:
+        Parsed namespace with attributes: overwrite, roadmap_url, output_dir,
+        update_readme, update_changelog.
+    """
+    parser = argparse.ArgumentParser(
+        description="Generate GitHub contributing docs and issue templates."
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Overwrite existing files (default: skip existing).",
+    )
+    parser.add_argument(
+        "--roadmap-url",
+        type=str,
+        default=_DEFAULT_ROADMAP_URL,
+        help=f"URL of the project roadmap (default: {_DEFAULT_ROADMAP_URL})",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default=_DEFAULT_OUTPUT_DIR,
+        help=f"Base output directory (default: {_DEFAULT_OUTPUT_DIR})",
+    )
+    parser.add_argument(
+        "--update-readme",
+        action="store_true",
+        help="Append roadmap link to README.md if not already present.",
+    )
+    parser.add_argument(
+        "--update-changelog",
+        action="store_true",
+        help="Append roadmap link to CHANGELOG.md if not already present.",
+    )
+    return parser.parse_args()
+
+
+def main() -> None:
+    """
+    Main entry point. Validates inputs, generates all templates, and writes files.
+    """
+    args: argparse.Namespace = parse_arguments()
+
+    # Validate roadmap URL
+    try:
+        roadmap_url: str = validate_roadmap_url(args.roadmap_url)
+    except InvalidUrlError as exc:
+        log.error("Invalid roadmap URL: %s", exc)
+        sys.exit(1)
+
+    # Validate output directory
+    output_dir: Path = Path(args.output_dir)
+    try:
+        output_dir = validate_output_dir(output_dir)
+    except FileOperationError as exc:
+        log.error("Output directory validation failed: %s", exc)
+        sys.exit(1)
+
+    overwrite: bool = args.overwrite
+
+    # Define files to write
+    files_to_write: List[Tuple[Path, str]] = []
+
+    # CONTRIBUTING.md
+    contributing_content: str = make_contributing(roadmap_url)
+    contributing_path: Path = output_dir / _CONTRIBUTING_FILE
+    files_to_write.append((contributing_path, contributing_content))
+
+    # PR template
+    pr_content: str = make_pull_request_template()
+    pr_path: Path = output_dir / _PR_TEMPLATE_FILE
+    files_to_write.append((pr_path, pr_content))
+
+    # Issue templates
+    issue_dir: Path = output_dir / _ISSUE_TEMPLATE_DIR
+    issue_contents: Dict[str, str] = {
+        "bug_report.md": make_bug_report(),
+        "feature_request.md": make_feature_request(),
+        "benchmark.md": make_benchmark(),
+        "docs_request.md": make_docs_request(),
+        "research_design.md": make_research_design(),
+    }
+    for name, content in issue_contents.items():
+        files_to_write.append((issue_dir / name, content))
+
+    # Write all files with error handling
+    for file_path, content in files_to_write:
+        try:
+            write_file(file_path, content, output_dir, overwrite)
+        except (PathTraversalError, PermissionError, OSError, ValueError) as exc:
+            log.error("Failed to write %s: %s", file_path, exc)
+            sys.exit(1)
+
+    # Optionally update README and CHANGELOG
+    if args.update_readme:
+        try:
+            update_readme_with_roadmap(output_dir, roadmap_url, overwrite)
+        except Exception as exc:
+            log.error("Failed to update README.md: %s", exc)
+            sys.exit(1)
+
+    if args.update_changelog:
+        try:
+            update_changelog_with_roadmap(output_dir, roadmap_url, overwrite)
+        except Exception as exc:
+            log.error("Failed to update CHANGELOG.md: %s", exc)
+            sys.exit(1)
+
+    log.info("Documentation generation completed successfully.")
+
+
+if __name__ == "__main__":
+    main()

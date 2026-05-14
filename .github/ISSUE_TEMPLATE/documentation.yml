@@ -1,0 +1,355 @@
+python
+#!/usr/bin/env python3
+"""
+Generate GitHub contributing documentation and issue templates.
+
+Creates:
+- CONTRIBUTING.md
+- .github/ISSUE_TEMPLATE/{bug_report,feature_request,benchmark,documentation,research_design}.yml
+- Optionally updates .github/pull_request_template.md, README.md, CHANGELOG.md.
+
+This module follows production-quality standards: strict error handling,
+comprehensive type hints, docstrings, logging, input validation, security
+checks, and clean code.
+"""
+
+from __future__ import annotations
+
+import argparse
+import logging
+import os
+import shutil
+import sys
+import tempfile
+from pathlib import Path
+from typing import Dict, List, Optional, Sequence, Union
+
+# ----------------------------------------------------------------------
+# Constants
+# ----------------------------------------------------------------------
+UTF_ENCODING: str = "utf-8"
+LOGGER: logging.Logger = logging.getLogger(__name__)
+
+
+def setup_logging(level: int = logging.INFO, force: bool = True) -> None:
+    """
+    Configure logging with consistent format.
+
+    Args:
+        level: Logging threshold (e.g. logging.DEBUG, logging.INFO).
+        force: Override any existing root logger configuration.
+
+    Returns:
+        None
+    """
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        force=force,
+    )
+    LOGGER.debug("Logging configured at level '%s'", logging.getLevelName(level))
+
+
+# ----------------------------------------------------------------------
+# Validation helpers
+# ----------------------------------------------------------------------
+def validate_url(url: str) -> bool:
+    """
+    Basic URL validation (must start with http:// or https://).
+
+    Args:
+        url: The URL string to validate.
+
+    Returns:
+        True if valid, False otherwise.
+    """
+    return isinstance(url, str) and url.lower().startswith(("http://", "https://"))
+
+
+def validate_output_path(path: Path, base_dir: Path) -> Path:
+    """
+    Validate that the given path is under *base_dir* (prevents directory traversal).
+
+    Args:
+        path: A file or directory path (may be relative).
+        base_dir: The allowed base directory (will be resolved).
+
+    Returns:
+        Resolved absolute path guaranteed to be under base_dir.
+
+    Raises:
+        ValueError: If the resolved path is not under base_dir.
+    """
+    resolved: Path = path.resolve()
+    base_resolved: Path = base_dir.resolve()
+    try:
+        resolved.relative_to(base_resolved)
+    except ValueError as exc:
+        raise ValueError(
+            f"Path '{resolved}' is not under base directory '{base_resolved}'. "
+            "Refusing to write outside the project tree."
+        ) from exc
+    LOGGER.debug("Path validated: '%s' (under '%s')", resolved, base_resolved)
+    return resolved
+
+
+# ----------------------------------------------------------------------
+# Directory & file helpers (safe, atomic writes)
+# ----------------------------------------------------------------------
+def ensure_directory(path: Path) -> Path:
+    """
+    Create directory (and parents) if missing.
+
+    Args:
+        path: Directory path.
+
+    Returns:
+        Resolved absolute path.
+
+    Raises:
+        PermissionError: If permissions prevent creation.
+        OSError: For other filesystem errors.
+    """
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        LOGGER.debug("Ensured directory exists: '%s'", path)
+        return path.resolve()
+    except PermissionError:
+        LOGGER.exception("Permission denied creating directory '%s'", path)
+        raise
+    except OSError:
+        LOGGER.exception("Failed to create directory '%s'", path)
+        raise
+
+
+def write_file_safe(path: Path, content: str, encoding: str = UTF_ENCODING) -> None:
+    """
+    Write *content* to *path* atomically (via temp file + rename).
+
+    Parent directories are created if necessary. The temporary file is placed
+    in the same parent directory to keep the rename atomic and avoid cross‑device
+    issues.
+
+    Args:
+        path: Destination file path.
+        content: Text to write.
+        encoding: Character encoding (default UTF-8).
+
+    Returns:
+        None
+
+    Raises:
+        PermissionError: If file cannot be written.
+        OSError: For other filesystem errors.
+    """
+    parent: Path = ensure_directory(path.parent)
+    fd: int
+    tmp_path_str: str
+    try:
+        fd, tmp_path_str = tempfile.mkstemp(
+            dir=str(parent),
+            prefix=f".{path.name}.tmp_",
+            suffix=".tmp",
+        )
+    except OSError as exc:
+        LOGGER.error("Failed to create temporary file in '%s': %s", parent, exc)
+        raise
+
+    tmp_path: Path = Path(tmp_path_str)
+    try:
+        with os.fdopen(fd, "w", encoding=encoding) as f:
+            f.write(content)
+            f.flush()
+            os.fsync(fd)  # ensure data is on disk
+        shutil.move(str(tmp_path), str(path))
+        LOGGER.info("Written file (atomic): '%s'", path.resolve())
+    except (PermissionError, OSError) as exc:
+        LOGGER.exception("Failed to write file '%s'", path)
+        # Clean up temp file on failure
+        if tmp_path.exists():
+            tmp_path.unlink(missing_ok=True)
+        raise exc from exc
+
+
+# ----------------------------------------------------------------------
+# Issue template content generators
+# ----------------------------------------------------------------------
+def generate_bug_template() -> str:
+    """
+    Generate YAML for bug report issue template.
+
+    Returns:
+        Valid YAML string.
+    """
+    return """\
+name: Bug report
+description: Report a reproducible problem
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report.
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear and concise description of the bug.
+      placeholder: Tell us what happened.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Steps to reproduce the behavior.
+      placeholder: 1. Go to ... 2. Click ... 3. See error
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version, project version, etc.
+      placeholder: OS: macOS 14, Python 3.12, v0.3.1
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: Copy and paste any relevant log output (no markdown formatting).
+      render: shell
+"""
+
+
+def generate_feature_template() -> str:
+    """
+    Generate YAML for feature request issue template.
+
+    Returns:
+        Valid YAML string.
+    """
+    return """\
+name: Feature request
+description: Suggest an improvement or new functionality
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for sharing your idea! Please check existing issues first.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / Motivation
+      description: What problem does this feature solve? Why is it valuable?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How would you like this to work?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe any workarounds or alternative approaches.
+"""
+
+
+def generate_benchmark_template() -> str:
+    """
+    Generate YAML for benchmark submission template.
+
+    Returns:
+        Valid YAML string.
+    """
+    return """\
+name: Benchmark submission
+description: Submit a benchmark result or proposal for a new benchmark
+labels: [benchmark]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for contributing benchmarks! Please ensure your submission
+        does not include any private or sensitive data.
+  - type: dropdown
+    id: type
+    attributes:
+      label: Type
+      options:
+        - Result
+        - Proposal
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What benchmark does this relate to? Provide context.
+    validations:
+      required: true
+  - type: textarea
+    id: results
+    attributes:
+      label: Results / Data
+      description: |
+        For results: include metrics, environment, and reproducibility info.
+        For proposals: describe the benchmark's purpose, tasks, and evaluation criteria.
+      render: yaml
+    validations:
+      required: true
+  - type: textarea
+    id: references
+    attributes:
+      label: References
+      description: Links to related issues, papers, or discussions.
+"""
+
+
+def generate_docs_template() -> str:
+    """
+    Generate YAML for documentation improvement template.
+
+    Returns:
+        Valid YAML string.
+    """
+    return """\
+name: Documentation
+description: Report missing, incorrect, or unclear documentation
+labels: [documentation]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Help us make the documentation better!
+  - type: textarea
+    id: location
+    attributes:
+      label: Location
+      description: Which file or page needs attention?
+      placeholder: CONTRIBUTING.md, API reference, README, ...
+    validations:
+      required: true
+  - type: textarea
+    id: issue
+    attributes:
+      label: What's wrong?
+      description: Missing, outdated, or unclear content.
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label:
