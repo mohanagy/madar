@@ -6,6 +6,7 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ### Added
 
+- **Codex CLI integration profile**: `graphify-ts codex install` now writes Codex-specific context-pack-first AGENTS.md guidance, registers a Codex hook reminder, documents uninstall behavior, and includes generated-text/config tests without requiring Codex during automated runs.
 - **Interactive CLI update notices**: interactive `graphify-ts` runs now check npm for newer releases using a cached user-level registry lookup, print a short upgrade hint when a newer version exists, and stay silent for `--help`, `--version`, `--json`, CI, and explicitly disabled runs (`GRAPHIFY_DISABLE_UPDATE_NOTIFIER=1`).
 
 ## [0.22.8] - 2026-05-13

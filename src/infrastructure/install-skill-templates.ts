@@ -205,7 +205,7 @@ function semanticDispatchSection(kind: PlatformKind): string {
   if (kind === 'codex') {
     return `**Step B2 - Dispatch with Codex workers**
 
-Use ${CODE_SPAN_START}spawn_agent${CODE_SPAN_END} once per chunk and launch all workers in the same response so they run in parallel. Collect results with ${CODE_SPAN_START}wait(handle)${CODE_SPAN_END} and then ${CODE_SPAN_START}close_agent(handle)${CODE_SPAN_END}.
+Use ${CODE_SPAN_START}spawn_agent${CODE_SPAN_END} only after the context pack identifies the files and risks worth parallelizing. Launch all workers in the same response so they run in parallel. Collect results with ${CODE_SPAN_START}wait(handle)${CODE_SPAN_END} and then ${CODE_SPAN_START}close_agent(handle)${CODE_SPAN_END}.
 `
   }
 
@@ -285,6 +285,41 @@ Worker output schema:
 ${CODE_BLOCK_START}json
 {"schema_version":2,"nodes":[{"id":"filestem_entityname","label":"Human Readable Name","file_type":"code|document|paper|image|audio|video|rationale","source_file":"relative/path","source_location":"L1","layer":"base|semantic|media","provenance":[{"capability_id":"builtin:extract:markdown","stage":"extract","source_file":"relative/path","source_location":"L1"}],"source_url":null,"captured_at":null,"author":null,"contributor":null}],"edges":[{"source":"node_id","target":"node_id","relation":"calls|implements|references|cites|conceptually_related_to|shares_data_with|semantically_similar_to|rationale_for","confidence":"EXTRACTED|INFERRED|AMBIGUOUS","confidence_score":1.0,"source_file":"relative/path","source_location":"L1","layer":"base|semantic|media","provenance":[{"capability_id":"builtin:extract:markdown","stage":"extract","source_file":"relative/path","source_location":"L1"}],"weight":1.0}],"hyperedges":[{"id":"snake_case_id","label":"Human Readable Label","nodes":["node_id1","node_id2","node_id3"],"relation":"participate_in|implement|form","confidence":"EXTRACTED|INFERRED","confidence_score":0.75,"source_file":"relative/path","layer":"base|semantic|media","provenance":[{"capability_id":"builtin:extract:markdown","stage":"extract","source_file":"relative/path","source_location":"L1"}]}],"input_tokens":0,"output_tokens":0}
 ${CODE_BLOCK_END}
+`
+}
+
+function codexProfileSection(kind: PlatformKind): string {
+  if (kind !== 'codex') {
+    return ''
+  }
+
+  return `## Codex CLI profile
+
+Use graphify-ts as a context-pack-first layer for Codex CLI. Before broad shell search, raw file reads, or ${CODE_SPAN_START}spawn_agent${CODE_SPAN_END} worker dispatch, generate or refresh the graph and compile the narrow task context:
+
+${CODE_BLOCK_START}bash
+graphify-ts generate .
+graphify-ts pack "<task or question>" --task explain
+# Use --task review, --task debug, or --task impact when that better matches the work.
+${CODE_BLOCK_END}
+
+Install or remove the always-on Codex project profile with:
+
+${CODE_BLOCK_START}bash
+graphify-ts codex install
+graphify-ts codex uninstall
+${CODE_BLOCK_END}
+
+Manual verification:
+1. Run ${CODE_SPAN_START}graphify-ts generate .${CODE_SPAN_END}.
+2. Run ${CODE_SPAN_START}graphify-ts codex install${CODE_SPAN_END}.
+3. Confirm ${CODE_SPAN_START}AGENTS.md${CODE_SPAN_END} contains this context-pack-first rule and ${CODE_SPAN_START}.codex/hooks.json${CODE_SPAN_END} contains the graphify hook.
+4. Run ${CODE_SPAN_START}graphify-ts codex uninstall${CODE_SPAN_END} and confirm unrelated AGENTS.md or hook content remains.
+
+Codex limitations:
+- Automated tests do not require the Codex binary; they verify generated text and hook config.
+- The Codex hook can remind before Bash when ${CODE_SPAN_START}graphify-out/graph.json${CODE_SPAN_END} exists, but AGENTS.md remains the durable always-on instruction.
+- Context packs narrow first-pass discovery. They do not replace targeted reads, tests, or review for code changes.
 `
 }
 
@@ -395,6 +430,7 @@ function buildSkillDocument(kind: PlatformKind): string {
   const parts = [
     FRONTMATTER[kind],
     commonOverview(),
+    codexProfileSection(kind),
     kind === 'windows' ? windowsInstallStep() : posixInstallStep(),
     detectStep(kind === 'windows' ? 'powershell' : 'bash'),
     extractionRules(),

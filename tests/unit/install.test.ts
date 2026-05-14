@@ -114,6 +114,14 @@ function readJsoncConfig(filePath: string): OpenCodeConfig {
   return parsed.config as OpenCodeConfig
 }
 
+function decodeHookPayloads(content: string): string {
+  return [...content.matchAll(/'([A-Za-z0-9+/=]{40,})'/g)]
+    .map((match) => match[1])
+    .filter((value): value is string => typeof value === 'string')
+    .map((b64) => Buffer.from(b64, 'base64').toString('utf8'))
+    .join('\n')
+}
+
 describe('install helpers', () => {
   it('chooses the default platform from the host OS', () => {
     expect(defaultInstallPlatform('win32')).toBe('windows')
@@ -567,6 +575,25 @@ describe('install helpers', () => {
           enabled: true,
         })
       })
+    })
+  })
+
+  it('writes Codex-specific context-pack-first guidance and uninstall behavior', () => {
+    withTempDir((projectDir) => {
+      const installMessage = agentsInstall(projectDir, 'codex')
+      const agentsMd = readFileSync(join(projectDir, 'AGENTS.md'), 'utf8')
+      const codexHooks = readFileSync(join(projectDir, '.codex', 'hooks.json'), 'utf8')
+      const decodedHookPayload = decodeHookPayloads(codexHooks)
+
+      expect(installMessage).toContain('Codex')
+      expect(installMessage).toContain('graphify-ts codex uninstall')
+      expect(agentsMd).toContain('Codex CLI profile')
+      expect(agentsMd).toContain('context-pack-first')
+      expect(agentsMd).toContain('graphify-ts pack')
+      expect(agentsMd).toContain('graphify-ts codex uninstall')
+      expect(agentsMd).toContain('Manual verification')
+      expect(decodedHookPayload).toContain('context-pack-first')
+      expect(decodedHookPayload).toContain('graphify-ts pack')
     })
   })
 

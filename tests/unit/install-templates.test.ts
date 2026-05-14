@@ -4,7 +4,8 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { claudeInstall } from '../../src/infrastructure/install.js'
+import { agentsInstall, claudeInstall } from '../../src/infrastructure/install.js'
+import { getBuiltInSkillContent } from '../../src/infrastructure/install-skill-templates.js'
 
 const STALE_PHRASES = ['384x', '397x', '897x', '384×', '397×', '897×']
 
@@ -76,5 +77,30 @@ describe('install hook payload', () => {
       expect(decoded).toContain('implementation_checklist')
       expect(decoded).toContain('impact')
     })
+  })
+
+  it('decoded Codex hook payload includes context-pack-first guidance', () => {
+    withTempDir((projectDir) => {
+      agentsInstall(projectDir, 'codex')
+      const settings = readFileSync(join(projectDir, '.codex', 'hooks.json'), 'utf8')
+      const decoded = decodeHookPayload(settings)
+      expect(decoded).toContain('context-pack-first')
+      expect(decoded).toContain('graphify-ts pack')
+    })
+  })
+})
+
+describe('built-in install templates', () => {
+  it('documents the Codex profile, limitations, manual verification, and uninstall path', () => {
+    const content = getBuiltInSkillContent('codex')
+
+    expect(content).toContain('Codex CLI profile')
+    expect(content).toContain('context-pack-first')
+    expect(content).toContain('graphify-ts pack')
+    expect(content).toContain('graphify-ts codex install')
+    expect(content).toContain('graphify-ts codex uninstall')
+    expect(content).toContain('Manual verification')
+    expect(content).toContain('Codex limitations')
+    expect(content).toContain('spawn_agent')
   })
 })

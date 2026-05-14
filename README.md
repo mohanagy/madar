@@ -45,6 +45,7 @@ graphify-ts cursor install      # Cursor
 graphify-ts copilot install     # GitHub Copilot CLI
 graphify-ts gemini install      # Gemini CLI
 graphify-ts aider install       # Aider
+graphify-ts codex install       # Codex CLI
 graphify-ts opencode install    # OpenCode
 ```
 
@@ -116,9 +117,12 @@ graphify-ts produces local context packs that any modern coding agent can consum
 | Gemini CLI | MCP server | `graphify-ts gemini install` |
 | Aider | MCP server | `graphify-ts aider install` |
 | OpenCode | MCP server | `graphify-ts opencode install` |
-| Codex CLI / Windsurf / others | Pipe `graphify-ts prompt` output | `graphify-ts prompt "..." --provider claude` |
+| Codex CLI | AGENTS.md + `.codex/hooks.json` context-pack-first profile | `graphify-ts codex install` |
+| Windsurf / others | Pipe `graphify-ts prompt` output | `graphify-ts prompt "..." --provider claude` |
 
 These are local installers that write the agent's own MCP config to point at the graphify-ts subprocess. No code is uploaded.
+
+Codex is intentionally context-pack-first: run `graphify-ts generate .`, install with `graphify-ts codex install`, and start broad codebase work with `graphify-ts pack "<task>" --task explain` before raw file search. To remove the profile, run `graphify-ts codex uninstall`; it removes the graphify-ts AGENTS.md section and Codex hook while preserving unrelated content. Manual verification does not require Codex to be installed: inspect `AGENTS.md` and `.codex/hooks.json` after install, then confirm uninstall removes only graphify-ts content.
 
 ---
 

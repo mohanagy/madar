@@ -62,7 +62,7 @@
         "pack:dry-run": "npm pack --dry-run",
         "publish:public": "npm publish --access public",
         "publish:dry-run": "npm publish --dry-run",
-        "postinstall": "node -e \"try{const g=process.env.npm_config_global==='true';const d=!process.env.INIT_CWD;if(g||d)console.log('\\n  graphify-ts updated — re-run your platform install for latest agent rules:\\n  graphify-ts claude install | cursor install | gemini install\\n')}catch{}\""
+        "postinstall": "node -e \"try{const g=process.env.npm_config_global==='true';const d=!process.env.INIT_CWD;if(g||d)console.log('\\n  graphify-ts updated — re-run your platform install for latest agent rules:\\n  graphify-ts claude install | cursor install | gemini install | codex install\\n')}catch{}\""
     },
     "devDependencies": {
         "@types/node": "^25.6.0",
