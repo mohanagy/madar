@@ -1,0 +1,56 @@
+name: Documentation
+description: Improve README, guides, examples, benchmark notes, or contributor docs.
+title: "[Docs]: "
+labels:
+  - type:docs
+  - area:docs
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for improving the docs. Keep the request focused on one page, workflow, or confusing gap.
+
+  - type: textarea
+    id: gap
+    attributes:
+      label: Documentation gap
+      description: What is missing, unclear, stale, or hard to follow?
+      placeholder: The quickstart explains X, but it does not show how to verify Y.
+    validations:
+      required: true
+
+  - type: input
+    id: location
+    attributes:
+      label: Affected page or file
+      description: Link or path if known.
+      placeholder: README.md, docs/proof-workflows.md, examples/mcp-tool-examples.md
+
+  - type: dropdown
+    id: audience
+    attributes:
+      label: Audience
+      options:
+        - new user
+        - contributor
+        - maintainer
+        - benchmark reader
+        - AI agent / MCP user
+        - other
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-change
+    attributes:
+      label: Proposed change
+      description: Describe the smallest useful docs update.
+    validations:
+      required: true
+
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      description: How should the docs change be reviewed or checked?
+      placeholder: Read-through only; npm run typecheck; npm run build.

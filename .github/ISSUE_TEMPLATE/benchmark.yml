@@ -1,0 +1,58 @@
+name: Benchmark or measurement
+description: Propose a benchmark, reproduce a benchmark result, or report a measurement issue.
+title: "[Benchmark]: "
+labels:
+  - type:benchmark
+  - area:benchmarks
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Benchmarks should be reproducible, scoped, and honest about limits. Do not attach private corpora, secrets, proprietary prompts, or raw logs with sensitive data.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Measurement question
+      description: What are you trying to learn or verify?
+      placeholder: Does slice-v1 reduce prompt size on a backend-runtime explanation task?
+    validations:
+      required: true
+
+  - type: textarea
+    id: setup
+    attributes:
+      label: Setup
+      description: Repo or fixture, graphify-ts version, Node.js version, OS, and relevant flags.
+      placeholder: |
+        graphify-ts 0.22.8
+        Node.js 20.x
+        macOS 15
+        Fixture: examples/demo-repo
+    validations:
+      required: true
+
+  - type: textarea
+    id: commands
+    attributes:
+      label: Commands
+      description: Exact commands or scripts needed to reproduce the measurement.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: results
+    attributes:
+      label: Results
+      description: Numbers, artifacts, and where they are stored.
+    validations:
+      required: true
+
+  - type: textarea
+    id: interpretation
+    attributes:
+      label: Interpretation and limits
+      description: What is safe to conclude, and what should not be generalized?
+    validations:
+      required: true

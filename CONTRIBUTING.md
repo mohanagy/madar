@@ -14,6 +14,8 @@ A few high-value ways to help:
 - tighten CI, release, or repository hygiene
 - reduce graph noise or improve community labeling
 
+The public roadmap lives in [#155](https://github.com/mohanagy/graphify-ts/issues/155). If you are unsure where to start, pick a small issue linked from the roadmap or one tagged `good first issue` / `help wanted`, and keep the pull request scoped to that issue.
+
 ## Development setup
 
 Prerequisites:
@@ -29,6 +31,8 @@ npm run typecheck
 npm run test:run
 npm run build
 ```
+
+For documentation-only changes, still run `npm run typecheck` and `npm run build` when practical so broken links in generated docs or TypeScript examples do not slip through. If a command is not relevant or cannot be run locally, note that in the pull request.
 
 If you are changing packaging or install behavior, also run:
 
@@ -47,6 +51,12 @@ Before opening a pull request:
 5. Avoid committing secrets, private corpora, or accidental generated artifacts.
 
 If your change affects extraction behavior, prefer adding a small fixture and a targeted test under `tests/unit/` or `tests/fixtures/`.
+
+## Data, benchmarks, and private material
+
+Do not include private repositories, private corpora, proprietary prompts, API keys, tokens, credentials, customer data, or raw logs that may contain sensitive data.
+
+Benchmark and research contributions should be reproducible from committed fixtures or clearly anonymized summaries. When real-world measurements are useful, document the environment, command, and interpretation limits without requiring maintainers or contributors to run paid benchmarks.
 
 ## Documentation expectations
 

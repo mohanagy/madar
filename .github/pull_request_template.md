@@ -21,3 +21,7 @@
 ## Related issues
 
 <!-- Closes #123 -->
+
+## Data safety
+
+- [ ] This PR does not include private corpora, secrets, credentials, proprietary prompts, or sensitive raw logs

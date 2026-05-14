@@ -6,3 +6,6 @@ contact_links:
   - name: Contribution guide
     url: https://github.com/mohanagy/graphify-ts/blob/main/CONTRIBUTING.md
     about: Read local setup, testing, and pull request expectations before contributing.
+  - name: Public roadmap
+    url: https://github.com/mohanagy/graphify-ts/issues/155
+    about: See planned work and roadmap-linked issues before proposing larger changes.
