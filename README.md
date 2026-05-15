@@ -117,12 +117,14 @@ graphify-ts produces local context packs that any modern coding agent can consum
 | Cursor | MCP via `.cursor/mcp.json` | `graphify-ts cursor install` |
 | GitHub Copilot CLI | MCP via `.vscode/mcp.json` | `graphify-ts copilot install` |
 | Gemini CLI | MCP server | `graphify-ts gemini install` |
-| Aider | MCP server | `graphify-ts aider install` |
-| OpenCode | MCP server | `graphify-ts opencode install` |
+| Aider | AGENTS.md context-pack-first profile | `graphify-ts aider install` |
+| OpenCode | AGENTS.md + `.opencode/plugins/graphify-ts.js` + MCP via `opencode.json` / `opencode.jsonc` | `graphify-ts opencode install` |
 | Codex CLI | AGENTS.md + `.codex/hooks.json` context-pack-first profile | `graphify-ts codex install` |
 | Windsurf / others | Pipe `graphify-ts prompt` output | `graphify-ts prompt "..." --provider claude` |
 
-These are local installers that write the agent's own MCP config to point at the graphify-ts subprocess. No code is uploaded.
+These are local installers that write project instructions and, when the platform supports it, local MCP config or plugin files that point at the graphify-ts subprocess. No code is uploaded.
+
+Aider and OpenCode are intentionally context-pack-first: run `graphify-ts generate .`, install the profile, and start broad codebase work with `graphify-ts pack "<task>" --task explain` before raw file search. `graphify-ts aider install` writes an AGENTS.md profile only; remove it with `graphify-ts aider uninstall`. `graphify-ts opencode install` writes the AGENTS.md profile, `.opencode/plugins/graphify-ts.js`, and the graphify MCP entry in `opencode.json` or `opencode.jsonc`; remove only graphify-ts-owned content with `graphify-ts opencode uninstall`. Manual verification does not require either agent binary: inspect the generated files after install, then confirm uninstall removes only the graphify-ts entries.
 
 Codex is intentionally context-pack-first: run `graphify-ts generate .`, install with `graphify-ts codex install`, and start broad codebase work with `graphify-ts pack "<task>" --task explain` before raw file search. To remove the profile, run `graphify-ts codex uninstall`; it removes the graphify-ts AGENTS.md section and Codex hook while preserving unrelated content. Manual verification does not require Codex to be installed: inspect `AGENTS.md` and `.codex/hooks.json` after install, then confirm uninstall removes only graphify-ts content.
 

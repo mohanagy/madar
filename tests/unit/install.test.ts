@@ -597,6 +597,41 @@ describe('install helpers', () => {
     })
   })
 
+  it('writes Aider-specific context-pack-first guidance and uninstall behavior', () => {
+    withTempDir((projectDir) => {
+      const installMessage = agentsInstall(projectDir, 'aider')
+      const agentsMd = readFileSync(join(projectDir, 'AGENTS.md'), 'utf8')
+
+      expect(installMessage).toContain('Aider')
+      expect(installMessage).toContain('graphify-ts aider uninstall')
+      expect(agentsMd).toContain('Aider profile')
+      expect(agentsMd).toContain('context-pack-first')
+      expect(agentsMd).toContain('graphify-ts pack')
+      expect(agentsMd).toContain('graphify-ts aider uninstall')
+      expect(agentsMd).toContain('Manual verification')
+      expect(agentsMd).toContain('AGENTS.md')
+    })
+  })
+
+  it('writes OpenCode-specific context-pack-first guidance and uninstall behavior', () => {
+    withTempDir((projectDir) => {
+      withOpenCodePackageRoot((packageRoot) => {
+        const installMessage = agentsInstall(projectDir, 'opencode', { packageRoot })
+        const agentsMd = readFileSync(join(projectDir, 'AGENTS.md'), 'utf8')
+
+        expect(installMessage).toContain('OpenCode')
+        expect(installMessage).toContain('graphify-ts opencode uninstall')
+        expect(agentsMd).toContain('OpenCode profile')
+        expect(agentsMd).toContain('context-pack-first')
+        expect(agentsMd).toContain('graphify-ts pack')
+        expect(agentsMd).toContain('graphify-ts opencode uninstall')
+        expect(agentsMd).toContain('Manual verification')
+        expect(agentsMd).toContain('.opencode/plugins/graphify-ts.js')
+        expect(agentsMd).toContain('opencode.json')
+      })
+    })
+  })
+
   it('updates existing Codex graphify hooks during reinstall', () => {
     withTempDir((projectDir) => {
       const stalePayload = JSON.stringify({
