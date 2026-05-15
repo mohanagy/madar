@@ -1,5 +1,17 @@
 {
   "name": "sample-password-reset-workspace",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "graph:generate": "graphify-ts generate . --no-html",
+    "graph:generate:spi": "graphify-ts generate . --no-html --spi",
+    "graph:pack:enqueue": "graphify-ts pack \"how does password reset request enqueue the reset email\" --graph graphify-out/graph.json --task explain",
+    "graph:pack:token": "graphify-ts pack \"where is reset token persisted before the email job runs\" --graph graphify-out/graph.json --task explain",
+    "graph:pack:complete": "graphify-ts pack \"what updates the password after a reset token is verified\" --graph graphify-out/graph.json --task explain"
+  },
+  "devDependencies": {
+    "@types/node": "^25.8.0",
+    "typescript": "^5.4.0"
+  }
 }

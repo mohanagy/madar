@@ -5,8 +5,8 @@ Use `examples/sample-workspace/` when you want a fast, reproducible TypeScript w
 ## Generate the graph
 
 ```bash
-npm run build # run from the repository root to build graphify-ts locally
-graphify-ts generate examples/sample-workspace --no-html
+cd examples/sample-workspace
+npm run graph:generate
 ```
 
 This creates `examples/sample-workspace/graphify-out/graph.json`.
@@ -14,9 +14,7 @@ This creates `examples/sample-workspace/graphify-out/graph.json`.
 ## Run a compact pack query
 
 ```bash
-graphify-ts pack "how does password reset request enqueue the reset email" \
-  --graph examples/sample-workspace/graphify-out/graph.json \
-  --task explain
+npm run graph:pack:enqueue
 ```
 
 That prompt should surface the route → service → queue-like job flow around password reset email delivery.
