@@ -56,6 +56,8 @@ graphify-ts pack "how does auth work?" --task explain          # compact CLI con
 graphify-ts prompt "how does auth work?" --provider claude     # provider-ready compiled prompt
 ```
 
+Want a tiny reproducible workspace for local demos? Start with [`examples/sample-workspace/`](examples/sample-workspace/) and the [sample workspace tutorial](docs/tutorials/sample-workspace.md).
+
 ---
 
 ## What graphify-ts is
