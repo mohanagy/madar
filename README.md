@@ -216,6 +216,13 @@ Thanks to everyone shaping graphify-ts. The list below is regenerated automatica
                 </a>
             </td>
             <td align="center">
+                <a href="https://github.com/Gunselheli">
+                    <img src="https://avatars.githubusercontent.com/u/125200242?v=4" width="80;" alt="Gunselheli"/>
+                    <br />
+                    <sub><b>Gunselheli</b></sub>
+                </a>
+            </td>
+            <td align="center">
                 <a href="https://github.com/zhengjynicolas">
                     <img src="https://avatars.githubusercontent.com/u/32067765?v=4" width="80;" alt="zhengjynicolas"/>
                     <br />
