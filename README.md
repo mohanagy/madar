@@ -198,6 +198,7 @@ Everything stays local by default. No telemetry, no cloud upload, no API key req
 ## Documentation & receipts
 
 - [Quick start guide](docs/proof-workflows.md) — three reproducible workflows: local proof, A/B compare, federated proof
+- [Public roadmap](docs/roadmap.md) — contributor-facing priority tracks and issue links
 - [Language and capability matrix](docs/language-capability-matrix.md) — exactly what each file type and language gets
 - [MCP tool examples](examples/mcp-tool-examples.md) — real input/output for every tool
 - [Benchmark hub](https://github.com/mohanagy/graphify-ts/tree/main/docs/benchmarks) — committed wrappers and provider-reported evidence
