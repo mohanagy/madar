@@ -116,6 +116,13 @@ interface ContextPackCacheEnvelope {
   graph_version: string
 }
 
+interface CachedExplainContextPackPayload extends Record<string, unknown> {
+  task: 'explain'
+  prompt: string
+  task_intent: TaskContextPlan['evidence']['recipe_id']
+  expandable: ContextPackExpandableRef[]
+}
+
 function isStoredContextPackHandle(value: unknown): value is StoredContextPackHandle {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return false
@@ -155,6 +162,71 @@ function parseRetrievalStrategyParam(
     return raw
   }
   return 'invalid'
+}
+
+function isContextPackEvidenceClass(value: unknown): value is ContextPackEvidenceClass {
+  return value === 'primary'
+    || value === 'supporting'
+    || value === 'structural'
+    || value === 'change'
+    || value === 'impact'
+}
+
+function isContextPackTaskKind(value: unknown): value is 'explain' | 'review' | 'impact' {
+  return value === 'explain' || value === 'review' || value === 'impact'
+}
+
+function isExpandableSourceRange(value: unknown): value is ContextPackExpandableFollowUp['focus_ranges'][number] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false
+  }
+  const candidate = value as Record<string, unknown>
+  return typeof candidate.source_file === 'string'
+    && typeof candidate.start_line === 'number'
+    && Number.isInteger(candidate.start_line)
+    && typeof candidate.end_line === 'number'
+    && Number.isInteger(candidate.end_line)
+}
+
+function isContextPackExpandableFollowUp(value: unknown): value is ContextPackExpandableFollowUp {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false
+  }
+  const candidate = value as Record<string, unknown>
+  return candidate.kind === 'context_pack'
+    && isContextPackTaskKind(candidate.task_kind)
+    && isContextPackEvidenceClass(candidate.evidence_class)
+    && Array.isArray(candidate.focus_files)
+    && candidate.focus_files.every((entry) => typeof entry === 'string')
+    && Array.isArray(candidate.focus_ranges)
+    && candidate.focus_ranges.every((entry) => isExpandableSourceRange(entry))
+}
+
+function isContextPackExpandableRef(value: unknown): value is ContextPackExpandableRef {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false
+  }
+  const candidate = value as Record<string, unknown>
+  return candidate.kind === 'nodes'
+    && typeof candidate.handle_id === 'string'
+    && isContextPackEvidenceClass(candidate.evidence_class)
+    && typeof candidate.count === 'number'
+    && Number.isInteger(candidate.count)
+    && candidate.count >= 0
+    && Array.isArray(candidate.preview)
+    && isContextPackExpandableFollowUp(candidate.follow_up)
+}
+
+function isCachedExplainContextPackPayload(value: unknown): value is CachedExplainContextPackPayload {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false
+  }
+  const candidate = value as Record<string, unknown>
+  return candidate.task === 'explain'
+    && typeof candidate.prompt === 'string'
+    && typeof candidate.task_intent === 'string'
+    && Array.isArray(candidate.expandable)
+    && candidate.expandable.every((entry) => isContextPackExpandableRef(entry))
 }
 
 function parseContextPackResolution(raw: string | null): ContextPackResolution {
@@ -945,7 +1017,17 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         const cachedPayloadText = helpers.getContextPackCache(cacheKey)
         if (cachedPayloadText) {
           try {
-            const cachedPayload = JSON.parse(cachedPayloadText) as Record<string, unknown>
+            const cachedPayload = JSON.parse(cachedPayloadText)
+            if (!isCachedExplainContextPackPayload(cachedPayload)) {
+              throw new Error('Malformed cached explain context_pack payload')
+            }
+            storeExpandableHandles(
+              cachedPayload.prompt,
+              'explain',
+              cachedPayload.task_intent,
+              cachedPayload.expandable,
+              helpers,
+            )
             return helpers.ok(id, helpers.textToolResult(JSON.stringify(withContextPackCache(cachedPayload, {
               status: 'hit',
               graph_version: cacheGraphVersion!,

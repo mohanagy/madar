@@ -1147,6 +1147,77 @@ describe('stdio runtime', () => {
     }
   })
 
+  it('rehydrates cached explain context_pack expandable handles before returning a cache hit', async () => {
+    const root = createGraphFixtureRoot()
+    try {
+      const graphPath = join(root, 'graph.json')
+      const sessionState = {
+        logLevel: 'info' as const,
+        subscribedResourceUris: new Set<string>(),
+        resourceVersions: new Map<string, string>(),
+        resourceListSignature: null,
+        contextPackHandles: new Map<string, unknown>(),
+      }
+
+      const first = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 1,
+        method: 'tools/call',
+        params: {
+          name: 'context_pack',
+          arguments: {
+            prompt: 'How does AuthService reach Transport?',
+            task: 'explain',
+            budget: 1,
+          },
+        },
+      }, sessionState))
+
+      const firstPayload = JSON.parse((first?.result as { content: Array<{ text: string }> }).content[0]!.text)
+      expect(firstPayload.expandable).toEqual(expect.arrayContaining([
+        expect.objectContaining({ handle_id: expect.any(String) }),
+      ]))
+      sessionState.contextPackHandles.clear()
+
+      const second = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 2,
+        method: 'tools/call',
+        params: {
+          name: 'context_pack',
+          arguments: {
+            prompt: 'How does AuthService reach Transport?',
+            task: 'explain',
+            budget: 1,
+          },
+        },
+      }, sessionState))
+
+      const secondPayload = JSON.parse((second?.result as { content: Array<{ text: string }> }).content[0]!.text)
+      const expanded = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 3,
+        method: 'tools/call',
+        params: {
+          name: 'context_expand',
+          arguments: {
+            handle_id: secondPayload.expandable[0].handle_id,
+          },
+        },
+      }, sessionState))
+
+      const expandedPayload = JSON.parse((expanded?.result as { content: Array<{ text: string }> }).content[0]!.text)
+
+      expect(firstPayload.expandable[0].handle_id).toBe(secondPayload.expandable[0].handle_id)
+      expect(secondPayload.cache).toEqual(expect.objectContaining({ status: 'hit' }))
+      expect(expandedPayload).toEqual(expect.objectContaining({
+        handle_id: secondPayload.expandable[0].handle_id,
+        pack: expect.objectContaining({
+          matched_nodes: expect.any(Array),
+        }),
+      }))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('invalidates cached context_pack responses after graph.json changes', async () => {
     const root = createGraphFixtureRoot()
     try {
@@ -1278,6 +1349,55 @@ describe('stdio runtime', () => {
             resolution: 'detail',
             verbose: false,
           }), '{'],
+        ]),
+      }
+
+      const response = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 1,
+        method: 'tools/call',
+        params: {
+          name: 'context_pack',
+          arguments: {
+            prompt: 'How does AuthService reach Transport?',
+            task: 'explain',
+            budget: 150,
+          },
+        },
+      }, sessionState))
+
+      const payload = JSON.parse((response?.result as { content: Array<{ text: string }> }).content[0]!.text)
+
+      expect(payload.cache).toEqual(expect.objectContaining({ status: 'miss' }))
+      expect(payload.pack).toEqual(expect.objectContaining({
+        matched_nodes: expect.any(Array),
+      }))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('falls back to a fresh explain context_pack response when a cached entry has the wrong shape', async () => {
+    const root = createGraphFixtureRoot()
+    try {
+      const graphPath = join(root, 'graph.json')
+      const sessionState = {
+        logLevel: 'info' as const,
+        subscribedResourceUris: new Set<string>(),
+        resourceVersions: new Map<string, string>(),
+        resourceListSignature: null,
+        contextPackCache: new Map<string, string>([
+          [JSON.stringify({
+            graph_path: graphPath,
+            graph_version: graphFreshnessMetadata(graphPath).graphVersion,
+            tool: 'context_pack',
+            prompt: 'How does AuthService reach Transport?',
+            task: 'explain',
+            budget: 150,
+            retrieval_level: null,
+            retrieval_strategy: null,
+            resolution: 'detail',
+            verbose: false,
+          }), JSON.stringify({ task: 'explain', prompt: 'How does AuthService reach Transport?' })],
         ]),
       }
 
