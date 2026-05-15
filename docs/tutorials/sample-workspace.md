@@ -5,7 +5,7 @@ Use `examples/sample-workspace/` when you want a fast, reproducible TypeScript w
 ## Generate the graph
 
 ```bash
-npm run build
+npm run build # run from the repository root to build graphify-ts locally
 graphify-ts generate examples/sample-workspace --no-html
 ```
 

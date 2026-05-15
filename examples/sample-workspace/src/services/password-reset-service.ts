@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto'
+
 import { enqueueResetEmailJob } from '../jobs/reset-email-job.js'
 import type { UserRepository } from '../persistence/user-repository.js'
 import { recordAuditEvent } from '../shared/audit-log.js'
@@ -10,13 +12,13 @@ export interface PasswordResetDependencies {
 export class PasswordResetService {
   constructor(private readonly dependencies: PasswordResetDependencies) {}
 
-  requestPasswordReset(email: string): { queued: boolean; token: string | null } {
+  requestPasswordReset(email: string): { queued: boolean } {
     const user = this.dependencies.userRepository.findUserByEmail(email)
     if (!user) {
-      return { queued: false, token: null }
+      return { queued: false }
     }
 
-    const token = `reset-${user.id}`
+    const token = randomUUID()
     this.dependencies.userRepository.saveResetToken(user.id, token)
     enqueueResetEmailJob({
       email: user.email,
@@ -25,7 +27,7 @@ export class PasswordResetService {
     })
     recordAuditEvent('password-reset-requested', user.id)
 
-    return { queued: true, token }
+    return { queued: true }
   }
 
   completePasswordReset(token: string, passwordHash: string): boolean {

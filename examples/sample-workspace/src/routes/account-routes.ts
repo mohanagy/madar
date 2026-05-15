@@ -1,5 +1,5 @@
 export interface PasswordResetPort {
-  requestPasswordReset(email: string): { queued: boolean; token: string | null }
+  requestPasswordReset(email: string): { queued: boolean }
   completePasswordReset(token: string, passwordHash: string): boolean
 }
 

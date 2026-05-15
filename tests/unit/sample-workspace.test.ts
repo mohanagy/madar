@@ -6,6 +6,8 @@ import { describe, expect, it } from 'vitest'
 
 import { generateGraph } from '../../src/infrastructure/generate.js'
 import { runContextPackCommand } from '../../src/infrastructure/context-pack-command.js'
+import { UserRepository } from '../../examples/sample-workspace/src/persistence/user-repository.js'
+import { createPasswordResetService } from '../../examples/sample-workspace/src/services/password-reset-service.js'
 
 interface PromptExample {
   question: string
@@ -82,9 +84,27 @@ describe('examples/sample-workspace', () => {
     const tutorial = readFileSync(resolve('docs/tutorials/sample-workspace.md'), 'utf8')
     const readme = readFileSync(resolve('README.md'), 'utf8')
 
+    if (tutorial.includes('npm run build')) {
+      expect(tutorial.toLowerCase()).toContain('repository root')
+    }
     expect(tutorial).toContain('graphify-ts generate examples/sample-workspace')
     expect(tutorial).toContain('graphify-ts pack')
     expect(tutorial).toContain('prompt-examples.json')
     expect(readme).toContain('examples/sample-workspace')
+  })
+
+  it('does not return the password reset token to the caller', () => {
+    const userRepository = new UserRepository()
+    const passwordResetService = createPasswordResetService({
+      userRepository,
+      sendPasswordResetEmail: () => ({ delivered: true, channel: 'email' }),
+    })
+
+    const result = passwordResetService.requestPasswordReset('sam@example.test')
+    const user = userRepository.findUserByEmail('sam@example.test')
+
+    expect(result).toEqual({ queued: true })
+    expect(user?.resetToken).toBeTruthy()
+    expect(user?.resetToken).not.toBe('reset-u-1')
   })
 })
