@@ -15,6 +15,10 @@ All notable changes to the TypeScript package will be documented in this file.
 - **Release checklist page**: adds `docs/release.md` with a repeatable maintainer checklist covering version bumps, changelog updates, verification commands, package dry-runs, CLI smoke checks, and post-release verification.
 - **Public roadmap page**: adds `docs/roadmap.md` with contributor-facing P0/P1/P2 tracks, issue links, label explanations, and a README pointer back to the main roadmap tracker.
 
+### Changed
+
+- **MCP context-pack duplicate suppression**: identical `context_pack` explain calls within one MCP stdio session now reuse the prior payload when graph version and relevant options match, expose cache hit/miss metadata, and automatically miss again after `graph.json` changes.
+
 ## [0.22.8] - 2026-05-13
 
 ### Added

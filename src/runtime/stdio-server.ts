@@ -49,6 +49,7 @@ const MAX_STDIO_RESOURCE_BYTES = 5_000_000
 const MAX_STDIO_DIFF_ITEMS = 100
 const MAX_RESOURCE_SUBSCRIPTIONS = 16
 const MAX_CONTEXT_PROMPT_SESSIONS = 256
+const MAX_CONTEXT_PACK_CACHE_ENTRIES = 256
 const graphCache = new Map<string, { mtimeMs: number; graph: ReturnType<typeof loadGraph> }>()
 const MAX_COMPLETION_VALUES = 25
 const MAX_LOG_NOTIFICATION_CHARS = 10_000
@@ -59,11 +60,13 @@ type McpLogLevel = 'debug' | 'info' | 'notice' | 'warning' | 'error' | 'critical
  *  Used by the context_pack delta surface (#81) so subsequent calls return
  *  only nodes the agent hasn't already received. */
 type ContextPackNodeIdStore = Map<string, Set<string>>
+type ContextPackCacheStore = Map<string, string>
 
 interface StdioSessionState extends ResourceSessionState {
   logLevel: McpLogLevel
   contextPromptSessions?: Map<string, ContextSessionState>
   contextPackHandles?: Map<string, unknown>
+  contextPackCache?: ContextPackCacheStore
   /** Slice #81 — per-delta-session node ids already shipped. */
   contextPackNodeIds?: ContextPackNodeIdStore
 }
@@ -98,6 +101,7 @@ function createSessionState(): StdioSessionState {
     resourceListSignature: null,
     contextPromptSessions: new Map<string, ContextSessionState>(),
     contextPackHandles: new Map<string, unknown>(),
+    contextPackCache: new Map<string, string>(),
     contextPackNodeIds: new Map<string, Set<string>>(),
   }
 }
@@ -179,6 +183,14 @@ function ensureContextPackHandles(state: StdioSessionState): Map<string, unknown
   }
 
   return state.contextPackHandles
+}
+
+function ensureContextPackCache(state: StdioSessionState): ContextPackCacheStore {
+  if (!state.contextPackCache) {
+    state.contextPackCache = new Map<string, string>()
+  }
+
+  return state.contextPackCache
 }
 
 function ensureContextPackNodeIds(state: StdioSessionState): ContextPackNodeIdStore {
@@ -643,19 +655,31 @@ export function handleStdioRequest(
            },
            clearContextPackNodeIds: (sessionId) => ensureContextPackNodeIds(sessionState).delete(sessionId),
            getContextPackHandle: (handleId) => ensureContextPackHandles(sessionState).get(handleId),
-           setContextPackHandle: (handleId, expansion) => {
-             const handles = ensureContextPackHandles(sessionState)
-             if (!handles.has(handleId) && handles.size >= MAX_CONTEXT_PROMPT_SESSIONS) {
-               const oldestHandleId = handles.keys().next().value as string | undefined
-               if (oldestHandleId !== undefined) {
+            setContextPackHandle: (handleId, expansion) => {
+              const handles = ensureContextPackHandles(sessionState)
+              if (!handles.has(handleId) && handles.size >= MAX_CONTEXT_PROMPT_SESSIONS) {
+                const oldestHandleId = handles.keys().next().value as string | undefined
+                if (oldestHandleId !== undefined) {
                  handles.delete(oldestHandleId)
                }
-             }
-             handles.set(handleId, expansion)
-           },
-           readStoredCommunityLabels,
-          jsonrpcInvalidParams: JSONRPC_INVALID_PARAMS,
-          jsonrpcServerError: JSONRPC_SERVER_ERROR,
+              }
+              handles.set(handleId, expansion)
+            },
+            getContextPackCache: (cacheKey) => ensureContextPackCache(sessionState).get(cacheKey),
+            setContextPackCache: (cacheKey, payloadText) => {
+              const cache = ensureContextPackCache(sessionState)
+              if (!cache.has(cacheKey) && cache.size >= MAX_CONTEXT_PACK_CACHE_ENTRIES) {
+                const oldestKey = cache.keys().next().value as string | undefined
+                if (oldestKey !== undefined) {
+                  cache.delete(oldestKey)
+                }
+              }
+              cache.set(cacheKey, payloadText)
+            },
+            clearContextPackCache: (cacheKey) => ensureContextPackCache(sessionState).delete(cacheKey),
+            readStoredCommunityLabels,
+           jsonrpcInvalidParams: JSONRPC_INVALID_PARAMS,
+           jsonrpcServerError: JSONRPC_SERVER_ERROR,
           maxStdioTextLength: MAX_STDIO_TEXT_LENGTH,
           maxStdioHops: MAX_STDIO_HOPS,
           maxStdioTokenBudget: MAX_STDIO_TOKEN_BUDGET,

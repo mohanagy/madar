@@ -35,6 +35,7 @@ import { applyContextPackResolution, type ContextPackResolution } from '../conte
 import { riskMap } from '../risk-map.js'
 import { buildTaskContextPlan } from '../task-context-planner.js'
 import type { TimeTravelView } from '../time-travel.js'
+import { graphFreshnessMetadata } from '../freshness.js'
 import {
   communitiesFromGraph,
   getCommunity,
@@ -75,6 +76,9 @@ interface ToolHelpers {
   clearContextPromptSession(sessionId: string): boolean
   getContextPackHandle(handleId: string): unknown
   setContextPackHandle(handleId: string, expansion: unknown): void
+  getContextPackCache(cacheKey: string): string | undefined
+  setContextPackCache(cacheKey: string, payloadText: string): void
+  clearContextPackCache(cacheKey: string): boolean
   /** Slice #81 — returns node ids already shipped to this delta session. */
   getContextPackNodeIds(sessionId: string): string[]
   /** Slice #81 — records additional node ids shipped to a delta session. */
@@ -105,6 +109,11 @@ interface StoredContextPackHandle {
   task: 'explain' | 'review' | 'impact'
   task_intent: TaskContextPlan['evidence']['recipe_id']
   follow_up: ContextPackExpandableFollowUp
+}
+
+interface ContextPackCacheEnvelope {
+  status: 'hit' | 'miss'
+  graph_version: string
 }
 
 function isStoredContextPackHandle(value: unknown): value is StoredContextPackHandle {
@@ -146,6 +155,50 @@ function parseRetrievalStrategyParam(
     return raw
   }
   return 'invalid'
+}
+
+function parseContextPackResolution(raw: string | null): ContextPackResolution {
+  return raw === 'summary'
+    || raw === 'mixed'
+    || raw === 'signature'
+    || raw === 'sketch'
+    ? raw
+    : 'detail'
+}
+
+function buildContextPackCacheKey(input: {
+  graphPath: string
+  graphVersion: string
+  prompt: string
+  task: 'explain'
+  budget: number
+  retrievalLevel: 0 | 1 | 2 | 3 | 4 | 5 | null
+  retrievalStrategy: ContextPackRetrievalStrategy | null
+  resolution: ContextPackResolution
+  verbose: boolean
+}): string {
+  return JSON.stringify({
+    graph_path: input.graphPath,
+    graph_version: input.graphVersion,
+    tool: 'context_pack',
+    prompt: input.prompt,
+    task: input.task,
+    budget: input.budget,
+    retrieval_level: input.retrievalLevel,
+    retrieval_strategy: input.retrievalStrategy,
+    resolution: input.resolution,
+    verbose: input.verbose,
+  })
+}
+
+function withContextPackCache<T extends Record<string, unknown>>(
+  payload: T,
+  cache: ContextPackCacheEnvelope,
+): T & { cache: ContextPackCacheEnvelope } {
+  return {
+    ...payload,
+    cache,
+  }
 }
 
 function emptyCoverage(): ContextPackCoverage {
@@ -864,6 +917,45 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         return helpers.failure(id, helpers.jsonrpcInvalidParams, 'retrieval_strategy is not supported for task=review')
       }
 
+      const contextPackLevelOverride = helpers.numberParamAlias(toolArguments, ['retrieval_level', 'retrievalLevel'], { min: 0, max: 5 })
+      if ((Object.hasOwn(toolArguments, 'retrieval_level') || Object.hasOwn(toolArguments, 'retrievalLevel')) && contextPackLevelOverride === null) {
+        return helpers.failure(id, helpers.jsonrpcInvalidParams, 'retrieval_level must be an integer between 0 and 5')
+      }
+      const contextPackLevelTyped = contextPackLevelOverride === null ? null : (contextPackLevelOverride as 0 | 1 | 2 | 3 | 4 | 5)
+      const resolution = parseContextPackResolution(earlyResolutionParam)
+      const includeSelectionDiagnostics = toolArguments.verbose === true
+      const deltaSessionId = helpers.stringParamAlias(toolArguments, ['delta_session_id', 'deltaSessionId'])
+      const cacheGraphVersion = !deltaSessionId && task === 'explain'
+        ? graphFreshnessMetadata(graphPath).graphVersion
+        : null
+      const cacheKey = cacheGraphVersion
+        ? buildContextPackCacheKey({
+            graphPath,
+            graphVersion: cacheGraphVersion,
+            prompt,
+            task: 'explain',
+            budget: resolvedBudget,
+            retrievalLevel: contextPackLevelTyped ?? null,
+            retrievalStrategy: contextPackStrategy,
+            resolution,
+            verbose: includeSelectionDiagnostics,
+          })
+        : null
+      if (cacheKey) {
+        const cachedPayloadText = helpers.getContextPackCache(cacheKey)
+        if (cachedPayloadText) {
+          try {
+            const cachedPayload = JSON.parse(cachedPayloadText) as Record<string, unknown>
+            return helpers.ok(id, helpers.textToolResult(JSON.stringify(withContextPackCache(cachedPayload, {
+              status: 'hit',
+              graph_version: cacheGraphVersion!,
+            }))))
+          } catch {
+            helpers.clearContextPackCache(cacheKey)
+          }
+        }
+      }
+
       if (task === 'review') {
         const graphDir = dirname(validateGraphPath(graphPath))
         const projectRoot = dirname(graphDir)
@@ -882,18 +974,14 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
           changed_paths: prResult.changed_files,
           focus_paths: [...prResult.review_context.supporting_paths, ...prResult.review_context.test_paths],
         })
-        return helpers.ok(id, helpers.textToolResult(JSON.stringify({
+        const payload = {
           ...contextPackBasePayload(task, prompt, resolvedBudget, graphPath, plan),
           pack: compactPack,
           ...reviewMetadata,
-        })))
+        }
+        return helpers.ok(id, helpers.textToolResult(JSON.stringify(payload)))
       }
 
-      const contextPackLevelOverride = helpers.numberParamAlias(toolArguments, ['retrieval_level', 'retrievalLevel'], { min: 0, max: 5 })
-      if ((Object.hasOwn(toolArguments, 'retrieval_level') || Object.hasOwn(toolArguments, 'retrievalLevel')) && contextPackLevelOverride === null) {
-        return helpers.failure(id, helpers.jsonrpcInvalidParams, 'retrieval_level must be an integer between 0 and 5')
-      }
-      const contextPackLevelTyped = contextPackLevelOverride === null ? null : (contextPackLevelOverride as 0 | 1 | 2 | 3 | 4 | 5)
       const retrieval = retrieveContext(graph, {
         question: prompt,
         budget: resolvedBudget,
@@ -926,7 +1014,6 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       const fullPack = contextPackFromRetrieveResult(retrieval)
       const compactPack = compactRetrieveResult(retrieval)
       const metadata = contextMetadata(retrieval)
-      const includeSelectionDiagnostics = toolArguments.verbose === true
       storeExpandableHandles(prompt, task, initialPlan.evidence.recipe_id, metadata.expandable, helpers)
       // Slice #78: emit context-pack quality diagnostics so callers can
       // detect bad runs (missing required evidence, zero claims, weak
@@ -938,17 +1025,9 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       // 'mixed' keeps top-N most relevant nodes in detail; 'signature'
       // keeps declaration shape; 'sketch' emits graph-derived behavior /
       // dependency compression when relationship data exists.
-      const resolutionParam = helpers.stringParam(toolArguments, 'resolution')
-      const resolution: ContextPackResolution =
-        resolutionParam === 'summary'
-          || resolutionParam === 'mixed'
-          || resolutionParam === 'signature'
-          || resolutionParam === 'sketch'
-          ? resolutionParam
-          : 'detail'
-      const applyResolutionToNodes = <T>(
-        nodes: T[],
-        relationships?: readonly ContextPackRelationship[],
+       const applyResolutionToNodes = <T>(
+         nodes: T[],
+         relationships?: readonly ContextPackRelationship[],
       ): {
         nodes: T[]
         bytes_saved: number
@@ -987,7 +1066,6 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       // delta + referenced_ids, and record the new ids for the next call.
       // The session store is per-MCP-process (in-memory) so two parallel
       // agents using the same id naturally diverge — that's intentional.
-      const deltaSessionId = helpers.stringParamAlias(toolArguments, ['delta_session_id', 'deltaSessionId'])
       if (deltaSessionId) {
         const previouslySent = helpers.getContextPackNodeIds(deltaSessionId)
         const deltaResult = computeDeltaContextPack(fullPack, previouslySent)
@@ -1023,7 +1101,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         })))
       }
       const resolvedNodes = applyResolutionToNodes(compactPack.matched_nodes, compactPack.relationships)
-      return helpers.ok(id, helpers.textToolResult(JSON.stringify({
+      const basePayload = {
         ...contextPackBasePayload(task, prompt, resolvedBudget, graphPath, initialPlan),
         resolution,
         pack: {
@@ -1038,7 +1116,16 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
           ? { selection_diagnostics: fullPack.selection_diagnostics }
           : {}),
         ...metadata,
-      })))
+      }
+      if (!cacheKey || !cacheGraphVersion) {
+        return helpers.ok(id, helpers.textToolResult(JSON.stringify(basePayload)))
+      }
+      const payloadText = JSON.stringify(withContextPackCache(basePayload, {
+        status: 'miss',
+        graph_version: cacheGraphVersion,
+      }))
+      helpers.setContextPackCache(cacheKey, payloadText)
+      return helpers.ok(id, helpers.textToolResult(payloadText))
     }
     case 'context_pack_session_reset': {
       const sessionId = helpers.stringParamAlias(toolArguments, ['delta_session_id', 'deltaSessionId', 'session_id', 'sessionId'])
