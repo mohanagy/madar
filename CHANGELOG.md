@@ -4,6 +4,8 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+## [0.22.9] - 2026-05-16
+
 ### Added
 
 - **Small sample TypeScript workspace**: adds `examples/sample-workspace/` plus a short tutorial and checked-in prompt examples so new users can run `generate` and `pack` against a compact TypeScript demo without needing a private repo or the larger benchmark demo corpus.
