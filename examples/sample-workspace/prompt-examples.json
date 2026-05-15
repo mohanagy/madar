@@ -1,0 +1,26 @@
+[
+  {
+    "question": "how does password reset request enqueue the reset email",
+    "expected_labels": [
+      "PasswordResetService",
+      ".requestPasswordReset()",
+      "enqueueResetEmailJob()"
+    ]
+  },
+  {
+    "question": "where is reset token persisted before the email job runs",
+    "expected_labels": [
+      "UserRepository",
+      "saveResetToken()",
+      "password-reset-service.ts"
+    ]
+  },
+  {
+    "question": "what updates the password after a reset token is verified",
+    "expected_labels": [
+      ".completePasswordReset()",
+      "updatePasswordHash()",
+      "UserRepository"
+    ]
+  }
+]

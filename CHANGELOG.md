@@ -6,6 +6,7 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ### Added
 
+- **Small sample TypeScript workspace**: adds `examples/sample-workspace/` plus a short tutorial and checked-in prompt examples so new users can run `generate` and `pack` against a compact TypeScript demo without needing a private repo or the larger benchmark demo corpus.
 - **Agent orchestration guide**: adds `docs/integrations/agent-orchestration.md` with conservative multi-agent workflows for Claude Code, Codex, Copilot, Cursor, and Gemini, including when to use installed rules, MCP, `pack`, and `prompt`, plus guidance for avoiding repeated context expansion.
 - **Codex CLI integration profile**: `graphify-ts codex install` now writes Codex-specific context-pack-first AGENTS.md guidance, registers a Codex hook reminder, documents uninstall behavior, and includes generated-text/config tests without requiring Codex during automated runs.
 - **Interactive CLI update notices**: interactive `graphify-ts` runs now check npm for newer releases using a cached user-level registry lookup, print a short upgrade hint when a newer version exists, and stay silent for `--help`, `--version`, `--json`, CI, and explicitly disabled runs (`GRAPHIFY_DISABLE_UPDATE_NOTIFIER=1`).
