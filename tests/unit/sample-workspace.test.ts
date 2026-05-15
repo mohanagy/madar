@@ -107,4 +107,19 @@ describe('examples/sample-workspace', () => {
     expect(user?.resetToken).toBeTruthy()
     expect(user?.resetToken).not.toBe('reset-u-1')
   })
+
+  it('returns the same queued response for unknown email addresses', () => {
+    const userRepository = new UserRepository()
+    const passwordResetService = createPasswordResetService({
+      userRepository,
+      sendPasswordResetEmail: () => ({ delivered: true, channel: 'email' }),
+    })
+
+    const existingUserResult = passwordResetService.requestPasswordReset('sam@example.test')
+    const unknownUserResult = passwordResetService.requestPasswordReset('missing@example.test')
+
+    expect(existingUserResult).toEqual({ queued: true })
+    expect(unknownUserResult).toEqual({ queued: true })
+    expect(userRepository.findUserByEmail('missing@example.test')).toBeUndefined()
+  })
 })

@@ -15,7 +15,7 @@ export class PasswordResetService {
   requestPasswordReset(email: string): { queued: boolean } {
     const user = this.dependencies.userRepository.findUserByEmail(email)
     if (!user) {
-      return { queued: false }
+      return { queued: true }
     }
 
     const token = randomUUID()
