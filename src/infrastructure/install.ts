@@ -257,6 +257,32 @@ IMPORTANT: This project has a graphify-ts knowledge graph. You MUST follow these
 3. **Only fall back to raw file tools** if the graph tools cannot answer the question or the MCP server is unavailable. In that case, read graphify-out/GRAPH_REPORT.md first.
 `
 
+const AIDER_AGENTS_MD_SECTION = `${SECTION_MARKER}
+
+### Aider profile
+
+IMPORTANT: This project has a graphify-ts knowledge graph. Use a strict context-pack-first workflow:
+
+1. **Before broad code search or manual file expansion**, compile a task-specific context pack:
+   - \`graphify-ts pack "<task or question>" --task explain\`
+   - use \`--task review\`, \`--task debug\`, or \`--task impact\` when that better matches the work
+2. **Regenerate before expanding manually** when the pack is stale or missing:
+   - run \`graphify-ts generate .\`
+   - if you still need raw file reads, inspect \`graphify-out/GRAPH_REPORT.md\` first
+3. **This profile writes AGENTS.md only.** Aider does not get an auto-installed MCP server or hook from this installer, so the AGENTS.md rule plus explicit \`graphify-ts pack\` calls are the enforcement mechanism.
+4. **Uninstall behavior:** run \`graphify-ts aider uninstall\` to remove this AGENTS.md section while preserving unrelated content.
+
+Manual verification:
+
+\`\`\`bash
+graphify-ts generate .
+graphify-ts aider install
+test -f AGENTS.md
+graphify-ts pack "how does auth work?" --task explain
+graphify-ts aider uninstall
+\`\`\`
+`
+
 const CODEX_AGENTS_MD_SECTION = `${SECTION_MARKER}
 
 ### Codex CLI profile
@@ -284,6 +310,37 @@ graphify-ts generate .
 graphify-ts codex install
 test -f AGENTS.md && test -f .codex/hooks.json
 graphify-ts codex uninstall
+\`\`\`
+`
+
+const OPENCODE_AGENTS_MD_SECTION = `${SECTION_MARKER}
+
+### OpenCode profile
+
+IMPORTANT: This project has a graphify-ts knowledge graph. Use a strict context-pack-first workflow:
+
+1. **Before broad code search, bash-heavy exploration, or worker dispatch**, compile a task-specific context pack:
+   - \`graphify-ts pack "<task or question>" --task explain\`
+   - use \`--task review\`, \`--task debug\`, or \`--task impact\` when that better matches the work
+2. After the pack, use MCP graph tools when available inside OpenCode:
+   - \`retrieve\` for direct codebase questions
+   - \`relevant_files\` for where to open first
+   - \`feature_map\` for involved areas and entry points
+   - \`risk_map\` before editing
+   - \`implementation_checklist\` for edit order and validation checkpoints
+   - \`impact\` for blast radius
+3. **Install artifacts:** this profile writes this AGENTS.md section, \`.opencode/plugins/graphify-ts.js\`, and the graphify MCP server entry in \`opencode.json\` or \`opencode.jsonc\`.
+4. **Only fall back to raw file tools** when the context pack or graph tools are missing, stale, or insufficient. In that case, read \`graphify-out/GRAPH_REPORT.md\` first.
+5. **Uninstall behavior:** run \`graphify-ts opencode uninstall\` to remove the graphify-ts AGENTS.md section, plugin entry, plugin file, and graphify MCP config while preserving unrelated content.
+
+Manual verification:
+
+\`\`\`bash
+graphify-ts generate .
+graphify-ts opencode install
+test -f AGENTS.md && test -f .opencode/plugins/graphify-ts.js
+test -f opencode.json || test -f opencode.jsonc
+graphify-ts opencode uninstall
 \`\`\`
 `
 
@@ -1755,7 +1812,14 @@ export function agentsInstall(projectDir = '.', platform: AgentPlatform, options
   const resolvedProjectDir = resolve(projectDir)
   const packageRoot = options.packageRoot ? resolve(options.packageRoot) : undefined
   const displayName = formatPlatformDisplayName(platform)
-  const agentsSection = platform === 'codex' ? CODEX_AGENTS_MD_SECTION : AGENTS_MD_SECTION
+  const agentsSection =
+    platform === 'codex'
+      ? CODEX_AGENTS_MD_SECTION
+      : platform === 'aider'
+        ? AIDER_AGENTS_MD_SECTION
+        : platform === 'opencode'
+          ? OPENCODE_AGENTS_MD_SECTION
+          : AGENTS_MD_SECTION
   const messages = [writeSection(join(resolvedProjectDir, 'AGENTS.md'), agentsSection)]
 
   if (platform === 'codex') {
@@ -1767,6 +1831,10 @@ export function agentsInstall(projectDir = '.', platform: AgentPlatform, options
 
   if (platform === 'codex') {
     messages.push('', 'Codex will now use the graphify-ts context-pack-first profile before broad codebase discovery.', 'Uninstall with: graphify-ts codex uninstall')
+  } else if (platform === 'aider') {
+    messages.push('', 'Aider will now use the graphify-ts context-pack-first AGENTS.md profile before broad codebase discovery.', 'Uninstall with: graphify-ts aider uninstall')
+  } else if (platform === 'opencode') {
+    messages.push('', 'OpenCode will now use the graphify-ts context-pack-first profile before broad codebase discovery.', 'Uninstall with: graphify-ts opencode uninstall')
   } else {
     messages.push('', `${displayName} will now check the knowledge graph before answering`, 'codebase questions and rebuild it after code changes.')
   }
