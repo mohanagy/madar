@@ -14,6 +14,7 @@ All notable changes to the TypeScript package will be documented in this file.
 - **Contributor issue templates**: contributor docs now link the public roadmap and GitHub issue forms cover docs, benchmark, and research/design requests with explicit private-data and reproducibility expectations.
 - **Release checklist page**: adds `docs/release.md` with a repeatable maintainer checklist covering version bumps, changelog updates, verification commands, package dry-runs, CLI smoke checks, and post-release verification.
 - **Public roadmap page**: adds `docs/roadmap.md` with contributor-facing P0/P1/P2 tracks, issue links, label explanations, and a README pointer back to the main roadmap tracker.
+- **End-to-end getting started tutorial**: adds `docs/tutorials/getting-started.md` with a local-first sample-workspace walkthrough covering install, graph generation, `pack`, `prompt`, and a safe `compare` smoke check without requiring paid model usage.
 
 ## [0.22.8] - 2026-05-13
 

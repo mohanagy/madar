@@ -58,6 +58,8 @@ graphify-ts prompt "how does auth work?" --provider claude     # provider-ready 
 
 Want a tiny reproducible workspace for local demos? Start with [`examples/sample-workspace/`](examples/sample-workspace/) and the [sample workspace tutorial](docs/tutorials/sample-workspace.md).
 
+Want a broader local-first walkthrough that also covers install, `prompt`, and a safe `compare` smoke check? Use the [end-to-end getting started tutorial](docs/tutorials/getting-started.md).
+
 ---
 
 ## What graphify-ts is
