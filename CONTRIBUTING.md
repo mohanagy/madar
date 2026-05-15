@@ -64,6 +64,8 @@ When a change affects how end users install, run, or interpret the tool, update:
 
 - `README.md` for user-facing behavior
 
+For release preparation and publish verification, follow the maintainer checklist in [`docs/release.md`](docs/release.md).
+
 ## Pull requests
 
 Use the pull request template and include:
