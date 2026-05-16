@@ -238,6 +238,13 @@ Thanks to everyone shaping graphify-ts. The list below is regenerated automatica
                 </a>
             </td>
             <td align="center">
+                <a href="https://github.com/qorexdevs">
+                    <img src="https://avatars.githubusercontent.com/u/277760369?v=4" width="80;" alt="qorexdevs"/>
+                    <br />
+                    <sub><b>qorexdevs</b></sub>
+                </a>
+            </td>
+            <td align="center">
                 <a href="https://github.com/zhengjynicolas">
                     <img src="https://avatars.githubusercontent.com/u/32067765?v=4" width="80;" alt="zhengjynicolas"/>
                     <br />
