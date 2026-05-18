@@ -23,6 +23,7 @@ export interface BenchmarkPromptArtifacts {
   prompt: string
   answer: string
   report: string
+  share_safe_report: string
 }
 
 export interface BenchmarkPromptExecution {
@@ -206,6 +207,7 @@ export async function runBenchmarkPrompt(options: RunBenchmarkPromptOptions): Pr
     prompt: join(outputRoot, 'graphify-prompt.txt'),
     answer: join(outputRoot, 'graphify-answer.txt'),
     report: join(outputRoot, 'report.json'),
+    share_safe_report: join(outputRoot, 'report.share-safe.json'),
   }
   writeFileSync(artifacts.prompt, promptPack.session_payload, 'utf8')
 
@@ -263,28 +265,28 @@ export async function runBenchmarkPrompt(options: RunBenchmarkPromptOptions): Pr
       prompt: portablePath(artifacts.prompt),
       answer: portablePath(artifacts.answer),
       report: portablePath(artifacts.report),
+      share_safe_report: portablePath(artifacts.share_safe_report),
     },
   }
   const shareSafeRoots = {
     artifactRoot: outputRoot,
     projectRoot: inferProjectRootFromGraphPath(options.graphPath),
   }
-  const shareSafeReportPath = join(outputRoot, 'report.share-safe.json')
-
   writeFileSync(
     artifacts.report,
     `${JSON.stringify(localReport, null, 2)}\n`,
     'utf8',
   )
   writeFileSync(
-    shareSafeReportPath,
+    artifacts.share_safe_report,
     `${JSON.stringify(
       {
         ...localReport,
         artifacts: {
           prompt: toShareSafeArtifactPath(artifacts.prompt, shareSafeRoots),
           answer: toShareSafeArtifactPath(artifacts.answer, shareSafeRoots),
-          report: toShareSafeArtifactPath(shareSafeReportPath, shareSafeRoots),
+          report: toShareSafeArtifactPath(artifacts.report, shareSafeRoots),
+          share_safe_report: toShareSafeArtifactPath(artifacts.share_safe_report, shareSafeRoots),
         },
       },
       null,

@@ -544,7 +544,15 @@ describe('runBenchmark', () => {
 
       const run = benchmark.per_question[0]
       expect(run?.artifacts).toBeDefined()
-      const shareSafePath = join(dirname(run!.artifacts!.report), 'report.share-safe.json')
+      expect(run?.artifacts).toEqual(
+        expect.objectContaining({
+          prompt: executions[0]!.promptFile,
+          answer: executions[0]!.outputFile,
+          report: join(dirname(executions[0]!.promptFile), 'report.json'),
+          share_safe_report: join(dirname(executions[0]!.promptFile), 'report.share-safe.json'),
+        }),
+      )
+      const shareSafePath = run!.artifacts!.share_safe_report
       const shareSafeReport = JSON.parse(readFileSync(shareSafePath, 'utf8')) as Record<string, unknown>
 
       expect(shareSafeReport).toEqual(
@@ -553,7 +561,8 @@ describe('runBenchmark', () => {
           artifacts: expect.objectContaining({
             prompt: '<artifact-root>/graphify-prompt.txt',
             answer: '<artifact-root>/graphify-answer.txt',
-            report: '<artifact-root>/report.share-safe.json',
+            report: '<artifact-root>/report.json',
+            share_safe_report: '<artifact-root>/report.share-safe.json',
           }),
         }),
       )
