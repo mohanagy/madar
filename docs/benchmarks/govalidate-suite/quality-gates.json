@@ -1,0 +1,16 @@
+{
+  "docs-artifact": {
+    "prompt": "Explain how idea report is getting generated",
+    "required_labels": [
+      "IdeaReportController",
+      "GenerateIdeaReportService"
+    ],
+    "forbidden_labels": [
+      "IdeaReportSharePage",
+      "GenerateIdeaReportScript"
+    ],
+    "max_pack_tokens": 1456,
+    "max_matched_nodes": 38,
+    "max_relationships": 57
+  }
+}

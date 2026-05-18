@@ -68,6 +68,15 @@ function buildFrameworkSupportGraph(): KnowledgeGraph {
 
 const RUNNER_GRAPH_PATH = join(process.cwd(), 'graphify-out', 'graph.json')
 const RUNNER_OUTPUT_DIR = join(process.cwd(), 'graphify-out', 'benchmark-quality-test-output')
+const SHARED_PACK_QUALITY_GATES_PATH = join(process.cwd(), 'docs', 'benchmarks', 'govalidate-suite', 'quality-gates.json')
+
+interface SharedPackQualityGate {
+  required_labels: string[]
+  forbidden_labels: string[]
+  max_pack_tokens: number
+  max_matched_nodes: number
+  max_relationships: number
+}
 
 function resetRunnerOutputDir(): void {
   rmSync(RUNNER_OUTPUT_DIR, { recursive: true, force: true })
@@ -489,5 +498,26 @@ describe('retrieval quality benchmark', () => {
     expect(report.avg_recall).toBeGreaterThanOrEqual(0.9)
     expect(report.avg_snippet_coverage).toBe(1)
     expect(report.mrr).toBeGreaterThanOrEqual(0.95)
+  })
+})
+
+describe('shared GoValidate pack-quality gate config', () => {
+  it('defines explicit label allow/deny lists and pack ceilings for each shared gate entry', () => {
+    const gateConfig = JSON.parse(readFileSync(SHARED_PACK_QUALITY_GATES_PATH, 'utf8')) as Record<string, SharedPackQualityGate>
+    const entries = Object.entries(gateConfig)
+
+    expect(entries.length).toBeGreaterThan(0)
+
+    for (const [gateName, gate] of entries) {
+      expect(gateName.length).toBeGreaterThan(0)
+      expect(gate.required_labels.length).toBeGreaterThan(0)
+      expect(Array.isArray(gate.forbidden_labels)).toBe(true)
+      expect(Number.isFinite(gate.max_pack_tokens)).toBe(true)
+      expect(gate.max_pack_tokens).toBeGreaterThan(0)
+      expect(Number.isInteger(gate.max_matched_nodes)).toBe(true)
+      expect(gate.max_matched_nodes).toBeGreaterThan(0)
+      expect(Number.isInteger(gate.max_relationships)).toBe(true)
+      expect(gate.max_relationships).toBeGreaterThanOrEqual(0)
+    }
   })
 })

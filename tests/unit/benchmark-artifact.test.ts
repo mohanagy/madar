@@ -1,12 +1,148 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
+
+import type { CompareReportPack } from '../../src/infrastructure/compare.js'
 
 const ARTIFACT_DIR = resolve('docs', 'benchmarks', '2026-04-30-govalidate')
 const REVIEW_ARTIFACT_DIR = resolve('docs', 'benchmarks', '2026-05-02-govalidate-pr-review')
 const BENCHMARK_STYLESHEET = resolve('docs', 'benchmarks', 'styles.css')
+const PACK_VERIFIER_PATH = resolve('docs', 'benchmarks', 'govalidate-suite', 'verify-pack-quality.js')
+
+interface PackQualityGateDefinition {
+  required_labels: string[]
+  forbidden_labels: string[]
+  max_pack_tokens: number
+  max_matched_nodes: number
+  max_relationships: number
+}
+
+const DOCS_ARTIFACT_GATE: PackQualityGateDefinition = {
+  required_labels: ['IdeaReportController', 'GenerateIdeaReportService'],
+  forbidden_labels: ['IdeaReportSharePage', 'GenerateIdeaReportScript'],
+  max_pack_tokens: 1_456,
+  max_matched_nodes: 38,
+  max_relationships: 57,
+}
+
+function buildMatchedNodes(totalCount: number, labels: readonly string[]): CompareReportPack['matched_nodes'] {
+  const nodes: CompareReportPack['matched_nodes'] = labels.map(
+    (label, index): CompareReportPack['matched_nodes'][number] => ({
+      label,
+      source_file: `src/runtime/report-${index + 1}.ts`,
+      line_number: index + 1,
+      snippet: `// ${label}`,
+      match_score: totalCount - index,
+      relevance_band: index === 0 ? 'direct' : 'related',
+      community: 1,
+      file_type: 'code',
+    }),
+  )
+
+  while (nodes.length < totalCount) {
+    const index = nodes.length + 1
+    nodes.push({
+      label: `SupportingReportNode${index}`,
+      source_file: `src/runtime/supporting-${index}.ts`,
+      line_number: index,
+      snippet: `// SupportingReportNode${index}`,
+      match_score: totalCount - index,
+      relevance_band: 'peripheral',
+      community: 1,
+      file_type: 'code',
+    })
+  }
+
+  return nodes
+}
+
+function buildRelationships(
+  totalCount: number,
+  matchedNodes: CompareReportPack['matched_nodes'],
+): CompareReportPack['relationships'] {
+  const labels = matchedNodes.map(({ label }) => label)
+
+  return Array.from({ length: totalCount }, (_, index) => ({
+    from: labels[index % labels.length]!,
+    to: labels[(index + 1) % labels.length]!,
+    relation: 'calls',
+  }))
+}
+
+function buildPackFixture(overrides: Partial<Pick<CompareReportPack, 'token_count' | 'matched_nodes' | 'relationships'>> = {}): CompareReportPack {
+  const matched_nodes = overrides.matched_nodes
+    ?? buildMatchedNodes(DOCS_ARTIFACT_GATE.max_matched_nodes, DOCS_ARTIFACT_GATE.required_labels)
+  const relationships = overrides.relationships ?? buildRelationships(DOCS_ARTIFACT_GATE.max_relationships, matched_nodes)
+
+  return {
+    question: 'Explain how idea report is getting generated',
+    token_count: DOCS_ARTIFACT_GATE.max_pack_tokens,
+    matched_nodes,
+    relationships,
+    community_context: [{ id: 1, label: 'Report Generation', node_count: 38 }],
+    graph_signals: { god_nodes: [], bridge_nodes: [] },
+    retrieval_strategy: 'default',
+    ...overrides,
+  }
+}
+
+function writeCompareStyleReport(reportPath: string, pack: CompareReportPack): void {
+  writeFileSync(
+    reportPath,
+    `${JSON.stringify(
+      {
+        question: pack.question,
+        graph_path: 'graphify-out/graph.json',
+        baseline_mode: 'pack_only',
+        pack,
+        paths: {
+          output_dir: '.',
+          baseline_prompt: 'baseline-prompt.txt',
+          graphify_prompt: 'graphify-prompt.txt',
+          report: 'report.json',
+          share_safe_report: 'report.share-safe.json',
+        },
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  )
+}
+
+function runPackVerifier(
+  testName: string,
+  pack: CompareReportPack,
+  gateConfig: Record<string, PackQualityGateDefinition> = { 'docs-artifact': DOCS_ARTIFACT_GATE },
+): ReturnType<typeof spawnSync> {
+  const fixtureRoot = join(
+    process.cwd(),
+    'graphify-out',
+    'benchmark-artifact-pack-quality',
+    `${testName}-${process.pid}-${Date.now()}`,
+  )
+  const reportPath = join(fixtureRoot, 'report.json')
+  const configPath = join(fixtureRoot, 'quality-gates.json')
+  mkdirSync(fixtureRoot, { recursive: true })
+  writeCompareStyleReport(reportPath, pack)
+  writeFileSync(configPath, `${JSON.stringify(gateConfig, null, 2)}\n`, 'utf8')
+
+  try {
+    return spawnSync(
+      process.execPath,
+      [PACK_VERIFIER_PATH, '--gate', 'docs-artifact', '--config', configPath, '--report', reportPath],
+      { encoding: 'utf8' },
+    )
+  } finally {
+    rmSync(fixtureRoot, { recursive: true, force: true })
+  }
+}
+
+function combinedOutput(result: ReturnType<typeof spawnSync>): string {
+  return `${result.stdout ?? ''}${result.stderr ?? ''}`.trim()
+}
 
 describe('public benchmark artifact (2026-04-30 govalidate)', () => {
   const baseline = JSON.parse(readFileSync(resolve(ARTIFACT_DIR, 'baseline-session.json'), 'utf8')) as {
@@ -131,6 +267,59 @@ describe('public benchmark artifact (2026-05-02 govalidate pr review)', () => {
     expect(result.status).toBe(0)
     expect(result.stdout).toContain('verbose_prompt_tokens')
     expect(result.stdout).toContain('compact_prompt_tokens')
+  })
+})
+
+describe('shared GoValidate pack-quality verifier contract', () => {
+  it('accepts docs-artifact packs that satisfy required labels and pack ceilings', () => {
+    const result = runPackVerifier('pass', buildPackFixture())
+    const output = combinedOutput(result)
+
+    expect(result.status).toBe(0)
+    expect(output).toContain('docs-artifact')
+    expect(output).toContain('PASS')
+  })
+
+  it('fails docs-artifact packs with a useful per-gate summary when any pack gate is violated', () => {
+    const matched_nodes = buildMatchedNodes(
+      DOCS_ARTIFACT_GATE.max_matched_nodes + 1,
+      ['IdeaReportController', 'IdeaReportSharePage'],
+    )
+    const result = runPackVerifier(
+      'fail',
+      buildPackFixture({
+        token_count: DOCS_ARTIFACT_GATE.max_pack_tokens + 1,
+        matched_nodes,
+        relationships: buildRelationships(DOCS_ARTIFACT_GATE.max_relationships + 1, matched_nodes),
+      }),
+    )
+    const output = combinedOutput(result)
+
+    expect(result.status).not.toBe(0)
+    expect(output).toContain('docs-artifact')
+    expect(output).toContain('missing required labels: GenerateIdeaReportService')
+    expect(output).toContain('forbidden labels present: IdeaReportSharePage')
+    expect(output).toContain('pack.token_count 1457 exceeds max_pack_tokens 1456')
+    expect(output).toContain('pack.matched_nodes count 39 exceeds max_matched_nodes 38')
+    expect(output).toContain('pack.relationships count 58 exceeds max_relationships 57')
+  })
+
+  it('rejects gate configs whose labels normalize to empty strings', () => {
+    const result = runPackVerifier(
+      'invalid-label-config',
+      buildPackFixture(),
+      {
+        'docs-artifact': {
+          ...DOCS_ARTIFACT_GATE,
+          required_labels: ['---'],
+        },
+      },
+    )
+    const output = combinedOutput(result)
+
+    expect(result.status).not.toBe(0)
+    expect(output).toContain('Malformed gate definition for docs-artifact')
+    expect(output).toContain('labels must contain at least one alphanumeric character after normalization')
   })
 })
 
