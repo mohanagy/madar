@@ -1,5 +1,5 @@
 import { realpathSync } from 'node:fs'
-import { basename, relative, resolve, sep } from 'node:path'
+import { relative, resolve, sep } from 'node:path'
 
 export interface ShareSafePathRoots {
   artifactRoot: string
@@ -95,16 +95,22 @@ function splitTrailingPathPunctuation(token: string): { path: string; suffix: st
   }
 }
 
+function externalPathFallback(path: string): string {
+  const normalizedPath = path.replaceAll('\\', '/')
+  const lastSegment = normalizedPath.split('/').pop()
+  return lastSegment && lastSegment.length > 0 ? lastSegment : '<external-path>'
+}
+
 export function toShareSafeArtifactPath(path: string, roots: ShareSafePathRoots): string {
   const rewrittenPath = toShareSafeRootedPath(path, roots)
   if (rewrittenPath !== null) return rewrittenPath
-  return basename(path)
+  return externalPathFallback(path)
 }
 
 export function sanitizeShareSafeText(text: string, roots: ShareSafePathRoots): string {
   return text.replace(ABSOLUTE_PATH_TOKEN_PATTERN, (token) => {
     const { path, suffix } = splitTrailingPathPunctuation(token)
     const rewrittenPath = toShareSafeRootedPath(path, roots)
-    return rewrittenPath === null ? token : `${rewrittenPath}${suffix}`
+    return rewrittenPath === null ? `${externalPathFallback(path)}${suffix}` : `${rewrittenPath}${suffix}`
   })
 }

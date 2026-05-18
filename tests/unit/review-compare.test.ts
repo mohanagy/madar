@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -309,6 +309,7 @@ describe('review compare', () => {
   it('redacts local artifact paths from share-safe stderr on failed runs', async () => {
     const root = createRepo()
     repoRoots.push(root)
+    const externalAbsolutePath = process.platform === 'win32' ? 'C:\\Users\\alice\\.ssh\\config' : '/Users/alice/.ssh/config'
 
     const result = await executeReviewCompareRuns(
       {
@@ -326,6 +327,7 @@ describe('review compare', () => {
             `output=${execution.outputFile}`,
             `graph=${join(root, 'graphify-out', 'graph.json')}`,
             `project=${root}`,
+            `external=${externalAbsolutePath}`,
           ].join('\n'),
           elapsedMs: execution.mode === 'verbose' ? 15 : 9,
         }),
@@ -333,17 +335,22 @@ describe('review compare', () => {
     )
 
     const localReport = JSON.parse(readFileSync(result.report.paths.report, 'utf8')) as ReviewCompareReport
-    const shareSafeReport = JSON.parse(readFileSync(result.report.paths.share_safe_report, 'utf8')) as ReviewCompareReport
+    const shareSafeRaw = readFileSync(result.report.paths.share_safe_report, 'utf8')
+    const shareSafeReport = JSON.parse(shareSafeRaw) as ReviewCompareReport
 
     expect(localReport.stderr.verbose).toContain(`prompt=${result.report.paths.verbose_prompt}`)
     expect(localReport.stderr.verbose).toContain(`output=${result.report.answer_paths.verbose}`)
     expect(localReport.stderr.verbose).toContain(`graph=${join(root, 'graphify-out', 'graph.json')}`)
     expect(localReport.stderr.verbose).toContain(`project=${root}`)
+    expect(localReport.stderr.verbose).toContain(`external=${externalAbsolutePath}`)
 
     expect(shareSafeReport.stderr.verbose).toContain('prompt=<artifact-root>/verbose-prompt.txt')
     expect(shareSafeReport.stderr.verbose).toContain('output=<artifact-root>/verbose-answer.txt')
     expect(shareSafeReport.stderr.verbose).toContain('graph=<project-root>/graphify-out/graph.json')
     expect(shareSafeReport.stderr.verbose).toContain('project=<project-root>')
+    expect(shareSafeReport.stderr.verbose).toContain(`external=${basename(externalAbsolutePath)}`)
     expect(shareSafeReport.stderr.verbose).not.toContain(root)
+    expect(shareSafeReport.stderr.verbose).not.toContain(externalAbsolutePath)
+    expect(shareSafeRaw).not.toContain(externalAbsolutePath)
   })
 })
