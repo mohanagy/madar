@@ -34,6 +34,14 @@ This is the exact compare summary captured for the run:
     provider/runtime proof: Anthropic reported input, cache, and total tokens for both runs
 ```
 
+Current `compare --baseline-mode native_agent` reports keep the raw Anthropic `usage` block and also persist derived token-accounting fields for each run:
+
+- `total_input_tokens_anthropic_exact` = `input_tokens + cache_creation_input_tokens + cache_read_input_tokens`
+- `uncached_input_tokens_anthropic_exact` = `input_tokens + cache_creation_input_tokens`
+- `cached_input_tokens_anthropic_exact` = `cache_read_input_tokens`
+
+The terminal summary only prints the extra uncached/cache lines when at least one run reported non-zero cache activity, so zero-cache runs stay compact while cached runs make the cold-vs-reused split explicit.
+
 ## Commands
 
 `0.22.7` is the version used for this benchmark. Future versions may improve or regress; do not read this as “install 0.22.7 forever.”
@@ -100,7 +108,7 @@ The script recomputes the saved-token, saved-turn, and latency deltas directly f
 - This is a **single prompt / single project** benchmark.
 - Native-agent behavior is stochastic; reruns can vary.
 - Claude MCP/tool usage can change turn count and token totals.
-- Anthropic provider-reported tokens include cache creation/read details; `compare` records provider/runtime proof for both runs.
+- Anthropic provider-reported tokens include cache creation/read details; `compare` records the raw provider `usage` block plus derived total/uncached/cached input-token fields for both runs.
 - This benchmark does **not** prove universal token reduction.
 - More benchmark cases are needed across prompts, repositories, and task types.
 

@@ -113,6 +113,8 @@ function buildSummaryResult(overrides: {
             output_tokens: 100,
           },
           total_input_tokens_anthropic_exact: overrides.baselineInputTokens,
+          uncached_input_tokens_anthropic_exact: overrides.baselineInputTokens,
+          cached_input_tokens_anthropic_exact: 0,
           total_cost_usd: 1,
           num_turns: overrides.baselineTurns,
           duration_ms: overrides.baselineDurationMs,
@@ -128,6 +130,8 @@ function buildSummaryResult(overrides: {
             output_tokens: 100,
           },
           total_input_tokens_anthropic_exact: overrides.graphifyInputTokens,
+          uncached_input_tokens_anthropic_exact: overrides.graphifyInputTokens,
+          cached_input_tokens_anthropic_exact: 0,
           total_cost_usd: 1,
           num_turns: overrides.graphifyTurns,
           duration_ms: overrides.graphifyDurationMs,
@@ -245,6 +249,21 @@ describe('executeNativeAgentCompare', () => {
       expect(report.graphify.usage).toEqual(GRAPHIFY_USAGE_PAYLOAD.usage)
       expect(report.graphify.num_turns).toBe(3)
       expect(report.graphify.total_cost_usd).toBe(0.7)
+
+      const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as {
+        baseline: Record<string, unknown>
+        graphify: Record<string, unknown>
+      }
+      expect(savedReport.baseline).toEqual(expect.objectContaining({
+        total_input_tokens_anthropic_exact: 615190,
+        uncached_input_tokens_anthropic_exact: 40662,
+        cached_input_tokens_anthropic_exact: 574528,
+      }))
+      expect(savedReport.graphify).toEqual(expect.objectContaining({
+        total_input_tokens_anthropic_exact: 233508,
+        uncached_input_tokens_anthropic_exact: 92846,
+        cached_input_tokens_anthropic_exact: 140662,
+      }))
 
       // Reductions match the spec table (3x turns, 2.6x input, 2.77x duration).
       expect(report.reductions).not.toBeNull()
@@ -460,7 +479,7 @@ describe('executeNativeAgentCompare', () => {
 
 describe('formatNativeAgentCompareSummary', () => {
   it('describes wins as fewer, less, and faster', () => {
-    const summary = formatNativeAgentCompareSummary(buildSummaryResult({
+    const result = buildSummaryResult({
       question: 'win case',
       baselineTurns: 9,
       graphifyTurns: 3,
@@ -474,11 +493,36 @@ describe('formatNativeAgentCompareSummary', () => {
         input_tokens: 3,
         cost_usd: 1,
       },
-    }))
+    })
+    const report = result.reports[0]
+    if (!report || report.baseline.kind !== 'succeeded' || report.graphify.kind !== 'succeeded') {
+      throw new Error('summary fixture should produce succeeded runs')
+    }
+    report.baseline.usage = {
+      input_tokens: 600,
+      cache_creation_input_tokens: 200,
+      cache_read_input_tokens: 100,
+      output_tokens: 100,
+    }
+    report.baseline.uncached_input_tokens_anthropic_exact = 800
+    report.baseline.cached_input_tokens_anthropic_exact = 100
+    report.graphify.usage = {
+      input_tokens: 150,
+      cache_creation_input_tokens: 100,
+      cache_read_input_tokens: 50,
+      output_tokens: 100,
+    }
+    report.graphify.uncached_input_tokens_anthropic_exact = 250
+    report.graphify.cached_input_tokens_anthropic_exact = 50
+
+    const summary = formatNativeAgentCompareSummary(result)
 
     expect(summary).toContain('num_turns: baseline 9 → graphify 3 (3x fewer)')
     expect(summary).toContain('latency:   baseline 9000ms → graphify 3000ms (3x faster)')
     expect(summary).toContain('input_tokens (Anthropic-reported): baseline 900 → graphify 300 (3x less)')
+    expect(summary).toContain('uncached_input_tokens (Anthropic-reported): baseline 800 → graphify 250 (3.2x less)')
+    expect(summary).toContain('cache_creation_input_tokens (Anthropic-reported): baseline 200 → graphify 100 (2x less)')
+    expect(summary).toContain('cache_read_input_tokens (Anthropic-reported): baseline 100 → graphify 50 (2x less)')
   })
 
   it('describes regressions as more and slower instead of fewer and faster', () => {
@@ -504,6 +548,28 @@ describe('formatNativeAgentCompareSummary', () => {
     expect(summary).not.toContain('0.33x fewer')
     expect(summary).not.toContain('0.33x faster')
     expect(summary).not.toContain('0.33x less')
+  })
+
+  it('omits cache-detail lines when neither run reported cache activity', () => {
+    const summary = formatNativeAgentCompareSummary(buildSummaryResult({
+      question: 'no cache case',
+      baselineTurns: 9,
+      graphifyTurns: 3,
+      baselineDurationMs: 9000,
+      graphifyDurationMs: 3000,
+      baselineInputTokens: 900,
+      graphifyInputTokens: 300,
+      reductions: {
+        num_turns: 3,
+        duration_ms: 3,
+        input_tokens: 3,
+        cost_usd: 1,
+      },
+    }))
+
+    expect(summary).not.toContain('uncached_input_tokens (Anthropic-reported)')
+    expect(summary).not.toContain('cache_creation_input_tokens (Anthropic-reported)')
+    expect(summary).not.toContain('cache_read_input_tokens (Anthropic-reported)')
   })
 
   it('summarizes all-win native_agent suites with aggregate win counts and reductions', () => {
