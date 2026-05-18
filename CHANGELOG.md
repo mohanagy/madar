@@ -4,6 +4,10 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **Native-agent compare suite summary**: multi-question `compare --baseline-mode native_agent` runs now roll up wins/losses for input tokens, turns, and latency, report mean/median input-token reduction, and highlight the best win and worst regression prompt in the terminal summary.
+
 ## [0.22.9] - 2026-05-16
 
 ### Added

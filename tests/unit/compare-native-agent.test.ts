@@ -167,6 +167,16 @@ function buildSummaryResult(overrides: {
   }
 }
 
+type SummaryOverrides = Parameters<typeof buildSummaryResult>[0]
+
+function buildSuiteSummaryResult(overridesList: SummaryOverrides[]): NativeAgentCompareResult {
+  return {
+    graph_path: '/tmp/project/graphify-out/graph.json',
+    output_root: '/tmp/project/graphify-out/compare/2026-05-12T00-00-00Z',
+    reports: overridesList.map((overrides) => buildSummaryResult(overrides).reports[0]!),
+  }
+}
+
 describe('parseAnthropicResultEvent', () => {
   it('parses a single non-stream JSON object from stdout', () => {
     const stdout = `${JSON.stringify(BASELINE_USAGE_PAYLOAD)}\n`
@@ -493,5 +503,83 @@ describe('formatNativeAgentCompareSummary', () => {
     expect(summary).not.toContain('0.33x fewer')
     expect(summary).not.toContain('0.33x faster')
     expect(summary).not.toContain('0.33x less')
+  })
+
+  it('summarizes all-win native_agent suites with aggregate win counts and reductions', () => {
+    const summary = formatNativeAgentCompareSummary(buildSuiteSummaryResult([
+      {
+        question: 'win a',
+        baselineTurns: 9,
+        graphifyTurns: 3,
+        baselineDurationMs: 9000,
+        graphifyDurationMs: 3000,
+        baselineInputTokens: 900,
+        graphifyInputTokens: 300,
+        reductions: {
+          num_turns: 3,
+          duration_ms: 3,
+          input_tokens: 3,
+          cost_usd: 1,
+        },
+      },
+      {
+        question: 'win b',
+        baselineTurns: 8,
+        graphifyTurns: 2,
+        baselineDurationMs: 8000,
+        graphifyDurationMs: 2000,
+        baselineInputTokens: 800,
+        graphifyInputTokens: 200,
+        reductions: {
+          num_turns: 4,
+          duration_ms: 4,
+          input_tokens: 4,
+          cost_usd: 1,
+        },
+      },
+    ]))
+
+    expect(summary).toContain('Suite input_tokens (Anthropic-reported): 2 wins · 0 losses · mean reduction 70.8% · median reduction 70.8% · best win: "win b" (75% less) · worst regression: none')
+    expect(summary).toContain('Suite num_turns: 2 wins · 0 losses · best win: "win b" (75% fewer) · worst regression: none')
+    expect(summary).toContain('Suite latency: 2 wins · 0 losses · best win: "win b" (75% faster) · worst regression: none')
+  })
+
+  it('summarizes mixed native_agent suites with wins, losses, and regressions', () => {
+    const summary = formatNativeAgentCompareSummary(buildSuiteSummaryResult([
+      {
+        question: 'win case',
+        baselineTurns: 10,
+        graphifyTurns: 5,
+        baselineDurationMs: 10000,
+        graphifyDurationMs: 5000,
+        baselineInputTokens: 1000,
+        graphifyInputTokens: 500,
+        reductions: {
+          num_turns: 2,
+          duration_ms: 2,
+          input_tokens: 2,
+          cost_usd: 1,
+        },
+      },
+      {
+        question: 'loss case',
+        baselineTurns: 4,
+        graphifyTurns: 6,
+        baselineDurationMs: 4000,
+        graphifyDurationMs: 6000,
+        baselineInputTokens: 400,
+        graphifyInputTokens: 500,
+        reductions: {
+          num_turns: 0.67,
+          duration_ms: 0.67,
+          input_tokens: 0.8,
+          cost_usd: 1,
+        },
+      },
+    ]))
+
+    expect(summary).toContain('Suite input_tokens (Anthropic-reported): 1 win · 1 loss · mean reduction 12.5% · median reduction 12.5% · best win: "win case" (50% less) · worst regression: "loss case" (25% more)')
+    expect(summary).toContain('Suite num_turns: 1 win · 1 loss · best win: "win case" (50% fewer) · worst regression: "loss case" (50% more)')
+    expect(summary).toContain('Suite latency: 1 win · 1 loss · best win: "win case" (50% faster) · worst regression: "loss case" (50% slower)')
   })
 })

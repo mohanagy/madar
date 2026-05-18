@@ -1614,6 +1614,123 @@ function formatDirectionalDelta(
   return ` (${Number((graphify / baseline).toFixed(2))}x ${increasedLabel})`
 }
 
+type NativeAgentComparableReport = NativeAgentCompareReport & {
+  baseline: Extract<NativeAgentRunStatus, { kind: 'succeeded' }>
+  graphify: Extract<NativeAgentRunStatus, { kind: 'succeeded' }>
+}
+
+interface NativeAgentSuiteChange {
+  question: string
+  percentReduction: number
+}
+
+function isComparableNativeAgentReport(report: NativeAgentCompareReport): report is NativeAgentComparableReport {
+  return report.baseline.kind === 'succeeded' && report.graphify.kind === 'succeeded'
+}
+
+function computeReductionPercent(baseline: number, graphify: number): number | null {
+  if (baseline <= 0 || graphify <= 0) {
+    return null
+  }
+  return Number((((baseline - graphify) / baseline) * 100).toFixed(1))
+}
+
+function formatPercent(value: number): string {
+  return Number(value.toFixed(1)).toString()
+}
+
+function formatCount(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`
+}
+
+function mean(values: number[]): number | null {
+  if (values.length === 0) {
+    return null
+  }
+  return values.reduce((total, value) => total + value, 0) / values.length
+}
+
+function median(values: number[]): number | null {
+  if (values.length === 0) {
+    return null
+  }
+  const sorted = [...values].sort((left, right) => left - right)
+  const middle = Math.floor(sorted.length / 2)
+  if (sorted.length % 2 === 1) {
+    return sorted[middle] ?? null
+  }
+  const left = sorted[middle - 1]
+  const right = sorted[middle]
+  if (left === undefined || right === undefined) {
+    return null
+  }
+  return (left + right) / 2
+}
+
+function nativeAgentSuiteChanges(
+  reports: readonly NativeAgentComparableReport[],
+  metric: (report: NativeAgentComparableReport) => { baseline: number; graphify: number },
+): NativeAgentSuiteChange[] {
+  return reports.flatMap((report) => {
+    const values = metric(report)
+    const percentReduction = computeReductionPercent(values.baseline, values.graphify)
+    return percentReduction === null ? [] : [{ question: report.question, percentReduction }]
+  })
+}
+
+function bestWin(changes: readonly NativeAgentSuiteChange[]): NativeAgentSuiteChange | null {
+  const wins = changes.filter((change) => change.percentReduction > 0)
+  if (wins.length === 0) {
+    return null
+  }
+  return wins.reduce((best, change) => (change.percentReduction > best.percentReduction ? change : best))
+}
+
+function worstRegression(changes: readonly NativeAgentSuiteChange[]): NativeAgentSuiteChange | null {
+  const losses = changes.filter((change) => change.percentReduction < 0)
+  if (losses.length === 0) {
+    return null
+  }
+  return losses.reduce((worst, change) => (change.percentReduction < worst.percentReduction ? change : worst))
+}
+
+function formatSuiteOutcome(change: NativeAgentSuiteChange | null, decreasedLabel: string, increasedLabel: string): string {
+  if (change === null) {
+    return 'none'
+  }
+  const amount = formatPercent(Math.abs(change.percentReduction))
+  const direction = change.percentReduction > 0 ? decreasedLabel : increasedLabel
+  return `"${change.question}" (${amount}% ${direction})`
+}
+
+function formatNativeAgentSuiteMetricLine(
+  label: string,
+  changes: readonly NativeAgentSuiteChange[],
+  decreasedLabel: string,
+  increasedLabel: string,
+  includeMeanMedian = false,
+): string {
+  const wins = changes.filter((change) => change.percentReduction > 0).length
+  const losses = changes.filter((change) => change.percentReduction < 0).length
+  const parts = [
+    `- Suite ${label}: ${formatCount(wins, 'win', 'wins')} · ${formatCount(losses, 'loss', 'losses')}`,
+  ]
+
+  if (includeMeanMedian) {
+    const reductions = changes.map((change) => change.percentReduction)
+    const meanReduction = mean(reductions)
+    const medianReduction = median(reductions)
+    if (meanReduction !== null && medianReduction !== null) {
+      parts.push(`mean reduction ${formatPercent(meanReduction)}%`)
+      parts.push(`median reduction ${formatPercent(medianReduction)}%`)
+    }
+  }
+
+  parts.push(`best win: ${formatSuiteOutcome(bestWin(changes), decreasedLabel, increasedLabel)}`)
+  parts.push(`worst regression: ${formatSuiteOutcome(worstRegression(changes), decreasedLabel, increasedLabel)}`)
+  return parts.join(' · ')
+}
+
 function isNativeAgentRunFailure(run: NativeAgentRunStatus): boolean {
   return run.kind === 'runner_error'
 }
@@ -1884,6 +2001,39 @@ export function formatNativeAgentCompareSummary(result: NativeAgentCompareResult
     `[graphify compare] completed ${result.reports.length} native_agent question(s)`,
     `- Output: ${result.output_root}`,
   ]
+  const comparableReports = result.reports.filter(isComparableNativeAgentReport)
+  if (comparableReports.length > 1) {
+    lines.push(
+      formatNativeAgentSuiteMetricLine(
+        'input_tokens (Anthropic-reported)',
+        nativeAgentSuiteChanges(comparableReports, (report) => ({
+          baseline: report.baseline.total_input_tokens_anthropic_exact,
+          graphify: report.graphify.total_input_tokens_anthropic_exact,
+        })),
+        'less',
+        'more',
+        true,
+      ),
+      formatNativeAgentSuiteMetricLine(
+        'num_turns',
+        nativeAgentSuiteChanges(comparableReports, (report) => ({
+          baseline: report.baseline.num_turns,
+          graphify: report.graphify.num_turns,
+        })),
+        'fewer',
+        'more',
+      ),
+      formatNativeAgentSuiteMetricLine(
+        'latency',
+        nativeAgentSuiteChanges(comparableReports, (report) => ({
+          baseline: report.baseline.duration_ms,
+          graphify: report.graphify.duration_ms,
+        })),
+        'faster',
+        'slower',
+      ),
+    )
+  }
   for (const report of result.reports) {
     if (isNativeAgentRunFailure(report.baseline) || isNativeAgentRunFailure(report.graphify)) {
       lines.push(`- "${report.question}" → runner error (see ${portablePath(report.paths.report)})`)
