@@ -1314,25 +1314,41 @@ describe('compare runtime', () => {
       {
         runner: async (execution) => ({
           exitCode: 0,
-          stdout: JSON.stringify({
-            type: 'result',
-            subtype: 'success',
-            result: `${execution.mode} answer\n`,
-            usage:
-              execution.mode === 'baseline'
-                ? {
+          stdout:
+            execution.mode === 'baseline'
+              ? JSON.stringify({
+                  type: 'result',
+                  subtype: 'success',
+                  result: `${execution.mode} answer\n`,
+                  usage: {
                     input_tokens: 1200,
                     output_tokens: 90,
                     cache_creation_input_tokens: 100,
                     cache_read_input_tokens: 20,
-                  }
-                : {
+                  },
+                })
+              : makeClaudeStructuredCompareStdout({
+                  result: 'graphify answer\n',
+                  usage: {
                     input_tokens: 400,
                     output_tokens: 70,
                     cache_creation_input_tokens: 0,
                     cache_read_input_tokens: 10,
                   },
-          }),
+                  assistant_turns: [
+                    {
+                      turn: 1,
+                      content: [
+                        { type: 'tool_use', name: 'retrieve', input: { question: 'login session flow' } },
+                        { type: 'tool_use', name: 'mcp__graphify-ts__impact', input: { label: 'SessionManager' } },
+                      ],
+                    },
+                    {
+                      turn: 2,
+                      content: [{ type: 'tool_use', name: 'retrieve', input: { question: 'session follow-up' } }],
+                    },
+                  ],
+                }),
           stderr: '',
           elapsedMs: execution.mode === 'baseline' ? 11 : 17,
         }),
@@ -1396,6 +1412,9 @@ describe('compare runtime', () => {
     expect(formatCompareSummary(result)).toContain('Effective input tokens (cache-adjusted): baseline 1300 · graphify 400')
     expect(formatCompareSummary(result)).toContain('Total tokens (Claude reported): baseline 1410 · graphify 480')
     expect(formatCompareSummary(result)).toContain('Provider/runtime proof: Claude reported input, cache, and total tokens for 2/2 prompt runs')
+    expect(formatCompareSummary(result)).toContain(
+      'Graphify trace: 3 tool calls across 2 turns · top tools: retrieve×2, mcp__graphify-ts__impact×1',
+    )
   })
 
   it('does not write structured stdout JSON into answer artifacts when usage is present without answer text', async () => {

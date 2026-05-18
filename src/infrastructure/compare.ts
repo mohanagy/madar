@@ -1510,6 +1510,30 @@ function formatCompareProviderProof(result: GenerateCompareArtifactsResult): str
   return `mixed provider-reported usage (${providerReportedRuns}/${totalRuns} prompt runs) with local estimate fallback`
 }
 
+function formatCompareGraphifyTraceSummary(result: GenerateCompareArtifactsResult): string | null {
+  const traces = result.reports.flatMap((report) => (report.graphify_trace ? [report.graphify_trace] : []))
+  if (traces.length === 0) {
+    return null
+  }
+
+  const toolCallsByName = new Map<string, number>()
+  const totalToolCalls = traces.reduce((total, trace) => {
+    for (const [toolName, count] of Object.entries(trace.tool_calls_by_name)) {
+      toolCallsByName.set(toolName, (toolCallsByName.get(toolName) ?? 0) + count)
+    }
+    return total + trace.tool_call_count
+  }, 0)
+  const totalTurns = traces.reduce((total, trace) => total + trace.per_turn.length, 0)
+  const topTools = [...toolCallsByName.entries()]
+    .sort((leftEntry, rightEntry) => rightEntry[1] - leftEntry[1] || leftEntry[0].localeCompare(rightEntry[0]))
+    .slice(0, 3)
+    .map(([toolName, count]) => `${toolName}×${count}`)
+  const traceCoverage = traces.length === result.reports.length ? '' : ` · traces for ${traces.length}/${result.reports.length} graphify runs`
+  const topToolsSummary = topTools.length > 0 ? ` · top tools: ${topTools.join(', ')}` : ''
+
+  return `Graphify trace: ${totalToolCalls} tool call${totalToolCalls === 1 ? '' : 's'} across ${totalTurns} turn${totalTurns === 1 ? '' : 's'}${traceCoverage}${topToolsSummary}`
+}
+
 export function formatCompareSummary(result: GenerateCompareArtifactsResult): string {
   const baselineTokens = sumPromptTokens(result.reports, 'baseline')
   const graphifyTokens = sumPromptTokens(result.reports, 'graphify')
@@ -1562,6 +1586,10 @@ export function formatCompareSummary(result: GenerateCompareArtifactsResult): st
   }
   lines.push(`- Reused context tokens: baseline ${baselineReusedTokens} · graphify ${graphifyReusedTokens}`)
   lines.push(`- Provider/runtime proof: ${formatCompareProviderProof(result)}`)
+  const graphifyTraceSummary = formatCompareGraphifyTraceSummary(result)
+  if (graphifyTraceSummary !== null) {
+    lines.push(`- ${graphifyTraceSummary}`)
+  }
 
   return lines.join('\n')
 }
