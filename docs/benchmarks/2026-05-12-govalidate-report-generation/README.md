@@ -85,6 +85,11 @@ coverage: primary/supporting/structural/implementation/structure covered
 diagnostics: none
 ```
 
+Exact labels used for that gate:
+
+- required runtime path labels: `IdeaReportController`, `GenerateIdeaReportService`
+- forbidden sibling/script/share labels: `IdeaReportSharePage`, `GenerateIdeaReportScript`
+
 Why this matters: a 3.32x input-token reduction is not persuasive if the compiled pack still expands to the full budget. Here the pack stayed compact **and** preserved the required runtime path.
 
 ## Reproducing from this directory
