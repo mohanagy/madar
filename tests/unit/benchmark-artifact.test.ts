@@ -8,8 +8,10 @@ import type { CompareReportPack } from '../../src/infrastructure/compare.js'
 
 const ARTIFACT_DIR = resolve('docs', 'benchmarks', '2026-04-30-govalidate')
 const REVIEW_ARTIFACT_DIR = resolve('docs', 'benchmarks', '2026-05-02-govalidate-pr-review')
+const REPORT_GENERATION_ARTIFACT_DIR = resolve('docs', 'benchmarks', '2026-05-12-govalidate-report-generation')
 const BENCHMARK_STYLESHEET = resolve('docs', 'benchmarks', 'styles.css')
 const PACK_VERIFIER_PATH = resolve('docs', 'benchmarks', 'govalidate-suite', 'verify-pack-quality.js')
+const PACK_GATE_CONFIG_PATH = resolve('docs', 'benchmarks', 'govalidate-suite', 'quality-gates.json')
 
 interface PackQualityGateDefinition {
   required_labels: string[]
@@ -276,6 +278,20 @@ describe('public benchmark artifact (2026-05-02 govalidate pr review)', () => {
     expect(result.status).toBe(0)
     expect(result.stdout).toContain('verbose_prompt_tokens')
     expect(result.stdout).toContain('compact_prompt_tokens')
+  })
+})
+
+describe('public benchmark artifact (2026-05-12 govalidate report generation)', () => {
+  const readme = readFileSync(resolve(REPORT_GENERATION_ARTIFACT_DIR, 'README.md'), 'utf8')
+
+  it('README explains that pack quality is necessary but not sufficient for answer quality', () => {
+    const lower = readme.toLowerCase()
+    expect(lower).toContain('pack quality is necessary but not sufficient for answer quality')
+  })
+
+  it('README points readers to the shared suite verifier and gate config', () => {
+    expect(readme).toContain(relative(process.cwd(), PACK_VERIFIER_PATH))
+    expect(readme).toContain(relative(process.cwd(), PACK_GATE_CONFIG_PATH))
   })
 })
 

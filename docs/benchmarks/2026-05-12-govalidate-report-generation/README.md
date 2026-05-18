@@ -71,7 +71,21 @@ If you want a machine-readable copy of the pack output for archival, redirect th
 
 The compare win only became credible after the runtime pack stopped filling the full 4000-token budget and returned a compact runtime slice instead of near-whole-backend noise.
 
-The `v0.22.7` pack quality gate for this prompt was:
+Pack quality is necessary but not sufficient for answer quality: a small pack can still miss the runtime path and produce a worse answer. The win here is only worth publishing because the saved pack stayed compact **and** preserved the report-generation route that the answer needed.
+
+The shared gate definition now lives in:
+
+- `docs/benchmarks/govalidate-suite/quality-gates.json`
+- `docs/benchmarks/govalidate-suite/verify-pack-quality.js`
+
+For this prompt, the shared `docs-artifact` gate encodes the same runtime-path requirements and ceilings that were checked for the `v0.22.7` run:
+
+Exact labels used for that gate:
+
+- required runtime path labels: `IdeaReportController`, `GenerateIdeaReportService`
+- forbidden sibling/script/share labels: `IdeaReportSharePage`, `GenerateIdeaReportScript`
+
+Observed report pack for this saved benchmark:
 
 ```text
 token_count: 1456
@@ -85,12 +99,14 @@ coverage: primary/supporting/structural/implementation/structure covered
 diagnostics: none
 ```
 
-Exact labels used for that gate:
+Run the shared verifier against a saved compare report with:
 
-- required runtime path labels: `IdeaReportController`, `GenerateIdeaReportService`
-- forbidden sibling/script/share labels: `IdeaReportSharePage`, `GenerateIdeaReportScript`
-
-Why this matters: a 3.32x input-token reduction is not persuasive if the compiled pack still expands to the full budget. Here the pack stayed compact **and** preserved the required runtime path.
+```bash
+node docs/benchmarks/govalidate-suite/verify-pack-quality.js \
+  --report docs/benchmarks/2026-05-12-govalidate-report-generation/report.json \
+  --config docs/benchmarks/govalidate-suite/quality-gates.json \
+  --gate docs-artifact
+```
 
 ## Reproducing from this directory
 
@@ -100,7 +116,7 @@ Drop the `report.json` from:
 graphify-out/compare/2026-05-12T19-18-26/report.json
 ```
 
-into this directory, then run:
+into this directory, then run the shared verifier command above and:
 
 ```bash
 bash docs/benchmarks/2026-05-12-govalidate-report-generation/verify.sh
