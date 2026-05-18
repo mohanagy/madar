@@ -210,6 +210,42 @@ describe('review compare', () => {
     expect(readFileSync(result.report.paths.compact_prompt, 'utf8')).toContain('"review_context"')
   })
 
+  it('writes a companion share-safe report without changing the local report contract', () => {
+    const root = createRepo()
+    repoRoots.push(root)
+
+    const result = generateReviewCompareArtifacts({
+      graphPath: join(root, 'graphify-out', 'graph.json'),
+      outputDir: join(root, 'graphify-out', 'review-compare'),
+      execTemplate: 'claude -p "$(cat {prompt_file})"',
+      now: new Date('2026-05-01T21:00:00.000Z'),
+    })
+
+    const localReport = JSON.parse(readFileSync(result.report.paths.report, 'utf8')) as Record<string, unknown>
+    const shareSafePath = join(result.report.paths.output_dir, 'report.share-safe.json')
+    const shareSafeReport = JSON.parse(readFileSync(shareSafePath, 'utf8')) as Record<string, unknown>
+
+    expect(localReport).toEqual(
+      expect.objectContaining({
+        graph_path: expect.stringContaining('graphify-out/graph.json'),
+        paths: expect.objectContaining({
+          report: expect.stringContaining('report.json'),
+        }),
+      }),
+    )
+    expect(shareSafeReport).toEqual(
+      expect.objectContaining({
+        graph_path: '<project-root>/graphify-out/graph.json',
+        paths: expect.objectContaining({
+          output_dir: '<artifact-root>',
+          report: '<artifact-root>/report.json',
+          share_safe_report: '<artifact-root>/report.share-safe.json',
+        }),
+      }),
+    )
+    expect(JSON.stringify(shareSafeReport)).not.toContain(root)
+  })
+
   it('sanitizes path-derived node ids in persisted review prompts', () => {
     const root = createRepo({ pathLikeNodeIds: true })
     repoRoots.push(root)
