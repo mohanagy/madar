@@ -1,0 +1,161 @@
+{
+  "schema_version": 1,
+  "fixture_path": "/Users/mohammednaji/Desktop/projects/graphify-ts/.worktrees/issue-178-spi-cache-bench/docs/benchmarks/performance/fixture",
+  "work_dir": "/Users/mohammednaji/Desktop/projects/graphify-ts/.worktrees/issue-178-spi-cache-bench/docs/benchmarks/performance/results/2026-05-18T15-30-07.522Z",
+  "metrics_tracked": [
+    "wall_clock_ms",
+    "total_files",
+    "code_files",
+    "non_code_files",
+    "extractable_files",
+    "extracted_files",
+    "changed_files",
+    "deleted_files",
+    "node_count",
+    "edge_count",
+    "cache_hit",
+    "cache_reason",
+    "cache_file_count",
+    "graph_size_bytes",
+    "output_size_bytes"
+  ],
+  "variants": {
+    "generate-legacy": {
+      "mode": "generate",
+      "strategy": "legacy",
+      "wall_clock_ms": 30,
+      "total_files": 3,
+      "code_files": 2,
+      "non_code_files": 1,
+      "extractable_files": 3,
+      "extracted_files": 3,
+      "changed_files": 0,
+      "deleted_files": 0,
+      "node_count": 6,
+      "edge_count": 6,
+      "output_size_bytes": 13301,
+      "graph_size_bytes": 10163,
+      "cache_hit": null,
+      "cache_reason": null,
+      "cache_file_count": null,
+      "notes": [
+        "1 non-code file(s) were included in extraction alongside source code."
+      ]
+    },
+    "generate-spi-cold": {
+      "mode": "generate",
+      "strategy": "spi",
+      "wall_clock_ms": 238,
+      "total_files": 3,
+      "code_files": 2,
+      "non_code_files": 1,
+      "extractable_files": 3,
+      "extracted_files": 2,
+      "changed_files": 0,
+      "deleted_files": 0,
+      "node_count": 4,
+      "edge_count": 4,
+      "output_size_bytes": 14290,
+      "graph_size_bytes": 7507,
+      "cache_hit": false,
+      "cache_reason": "no-cache",
+      "cache_file_count": 2,
+      "notes": [
+        "1 non-code file(s) were included in extraction alongside source code.",
+        "SPI build via projector (2 files, reason=no-cache)."
+      ]
+    },
+    "generate-spi-warm": {
+      "mode": "generate",
+      "strategy": "spi",
+      "wall_clock_ms": 2,
+      "total_files": 3,
+      "code_files": 2,
+      "non_code_files": 1,
+      "extractable_files": 3,
+      "extracted_files": 0,
+      "changed_files": 0,
+      "deleted_files": 0,
+      "node_count": 4,
+      "edge_count": 4,
+      "output_size_bytes": 14293,
+      "graph_size_bytes": 7507,
+      "cache_hit": true,
+      "cache_reason": "fresh-cache",
+      "cache_file_count": 2,
+      "notes": [
+        "1 non-code file(s) were included in extraction alongside source code.",
+        "SPI cache hit (2 files, key 63d7dcc5)."
+      ]
+    },
+    "update-noop": {
+      "mode": "update",
+      "strategy": "legacy",
+      "wall_clock_ms": 2,
+      "total_files": 3,
+      "code_files": 2,
+      "non_code_files": 1,
+      "extractable_files": 3,
+      "extracted_files": 0,
+      "changed_files": 0,
+      "deleted_files": 0,
+      "node_count": 6,
+      "edge_count": 6,
+      "output_size_bytes": 13180,
+      "graph_size_bytes": 10063,
+      "cache_hit": null,
+      "cache_reason": null,
+      "cache_file_count": null,
+      "notes": [
+        "1 non-code file(s) were included in extraction alongside source code.",
+        "No changed files detected - reused the existing graph."
+      ]
+    },
+    "update-changed": {
+      "mode": "update",
+      "strategy": "legacy",
+      "wall_clock_ms": 3,
+      "total_files": 3,
+      "code_files": 2,
+      "non_code_files": 1,
+      "extractable_files": 3,
+      "extracted_files": 1,
+      "changed_files": 1,
+      "deleted_files": 0,
+      "node_count": 6,
+      "edge_count": 3,
+      "output_size_bytes": 10617,
+      "graph_size_bytes": 7534,
+      "cache_hit": null,
+      "cache_reason": null,
+      "cache_file_count": null,
+      "notes": [
+        "1 non-code file(s) were included in extraction alongside source code.",
+        "Incremental update re-extracted 1 changed file(s) and retained 2 unchanged file(s) from the existing graph."
+      ]
+    },
+    "cluster-only": {
+      "mode": "cluster-only",
+      "strategy": "legacy",
+      "wall_clock_ms": 1,
+      "total_files": 3,
+      "code_files": 2,
+      "non_code_files": 1,
+      "extractable_files": 3,
+      "extracted_files": 0,
+      "changed_files": 0,
+      "deleted_files": 0,
+      "node_count": 6,
+      "edge_count": 6,
+      "output_size_bytes": 13211,
+      "graph_size_bytes": 10088,
+      "cache_hit": null,
+      "cache_reason": null,
+      "cache_file_count": null,
+      "notes": [
+        "Re-clustered the existing graph without re-extracting source files.",
+        "1 non-code file(s) were included in extraction alongside source code."
+      ]
+    }
+  }
+}

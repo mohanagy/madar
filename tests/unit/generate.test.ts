@@ -4826,4 +4826,62 @@ describe('generateGraph', () => {
       expect(proxyEdges).toHaveLength(0)
     })
   })
+
+  test('returns structured extraction and cache metrics for generate, update, and cluster-only flows', () => {
+    withTempDir((tempDir) => {
+      mkdirSync(join(tempDir, 'src'), { recursive: true })
+      mkdirSync(join(tempDir, 'docs'), { recursive: true })
+      writeFileSync(join(tempDir, 'src', 'alpha.ts'), 'export function alpha(): number { return 1 }\n', 'utf8')
+      writeFileSync(
+        join(tempDir, 'src', 'beta.ts'),
+        'import { alpha } from "./alpha"\nexport function beta(): number { return alpha() }\n',
+        'utf8',
+      )
+      writeFileSync(join(tempDir, 'docs', 'notes.md'), '# Notes\n', 'utf8')
+
+      const legacy = generateGraph(tempDir, { noHtml: true })
+      expect(legacy.extractableFiles).toBe(3)
+      expect(legacy.extractedFiles).toBe(3)
+      expect(legacy.cache).toBeNull()
+
+      const spiCold = generateGraph(tempDir, { useSpi: true, noHtml: true })
+      expect(spiCold.extractableFiles).toBe(3)
+      expect(spiCold.extractedFiles).toBe(2)
+      expect(spiCold.cache).toEqual(expect.objectContaining({
+        strategy: 'spi',
+        hit: false,
+        reason: 'no-cache',
+        fileCount: 2,
+      }))
+
+      const spiWarm = generateGraph(tempDir, { useSpi: true, noHtml: true })
+      expect(spiWarm.extractableFiles).toBe(3)
+      expect(spiWarm.extractedFiles).toBe(0)
+      expect(spiWarm.cache).toEqual(expect.objectContaining({
+        strategy: 'spi',
+        hit: true,
+        reason: 'fresh-cache',
+        fileCount: 2,
+      }))
+
+      const updateNoop = generateGraph(tempDir, { update: true, noHtml: true })
+      expect(updateNoop.extractableFiles).toBe(3)
+      expect(updateNoop.changedFiles).toBe(0)
+      expect(updateNoop.extractedFiles).toBe(0)
+      expect(updateNoop.cache).toBeNull()
+
+      writeFileSync(join(tempDir, 'src', 'beta.ts'), 'export function beta(): number { return 2 }\n', 'utf8')
+      const updateChanged = generateGraph(tempDir, { update: true, noHtml: true })
+      expect(updateChanged.extractableFiles).toBe(3)
+      expect(updateChanged.changedFiles).toBe(1)
+      expect(updateChanged.extractedFiles).toBe(1)
+      expect(updateChanged.cache).toBeNull()
+
+      const clusterOnly = generateGraph(tempDir, { clusterOnly: true, noHtml: true })
+      expect(clusterOnly.mode).toBe('cluster-only')
+      expect(clusterOnly.extractableFiles).toBe(3)
+      expect(clusterOnly.extractedFiles).toBe(0)
+      expect(clusterOnly.cache).toBeNull()
+    })
+  })
 })
