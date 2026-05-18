@@ -346,7 +346,7 @@ function looksLikeLiteralSchemeSuffix(suffix: string): boolean {
   const firstLooksShareLike =
     WINDOWS_SHARE_SEGMENT_HINTS.has(firstSegment) ||
     firstSegment.endsWith('$') ||
-    /^[A-Z][A-Za-z0-9_$-]*$/.test(rawFirstSegment)
+    (/^[A-Z][A-Za-z0-9_$-]*$/.test(rawFirstSegment) && /\d/.test(hostHint))
   if (firstLooksShareLike) {
     return false
   }
@@ -360,6 +360,9 @@ function looksLikeLiteralSchemeSuffix(suffix: string): boolean {
   const lastExtension = lastExtensionIndex >= 0 ? lastSegment.slice(lastExtensionIndex + 1).toLowerCase() : ''
   if (URL_PATH_SEGMENT_HINTS.has(firstSegment) || URL_ASSET_EXTENSIONS.has(lastExtension)) {
     return true
+  }
+  if (hostHint === 'eng' && pathSegments.length >= 2) {
+    return false
   }
 
   if (!lastSegment.includes('.')) {

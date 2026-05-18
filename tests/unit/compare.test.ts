@@ -2148,6 +2148,24 @@ describe('compare runtime', () => {
     ).toBe('//example.com/api/v1/users')
     expect(
       sanitizeShareSafeText(
+        '//api.example.com/v1/users',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('//api.example.com/v1/users')
+    expect(
+      sanitizeShareSafeText(
+        '//eng.example.com/api/v1/users',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('//eng.example.com/api/v1/users')
+    expect(
+      sanitizeShareSafeText(
+        '//example.com/API/v1/users',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('//example.com/API/v1/users')
+    expect(
+      sanitizeShareSafeText(
         'See //example.com/blog/2026/launch for details',
         { artifactRoot, projectRoot },
       ),
@@ -2178,6 +2196,18 @@ describe('compare runtime', () => {
     ).toBe('<project-root>/safe://example.com/docs/getting-started')
     expect(
       sanitizeShareSafeText(
+        '<project-root>/safe://api.example.com/v1/users',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('<project-root>/safe://api.example.com/v1/users')
+    expect(
+      sanitizeShareSafeText(
+        '<project-root>/safe://eng.example.com/api/v1/users',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('<project-root>/safe://eng.example.com/api/v1/users')
+    expect(
+      sanitizeShareSafeText(
         '<project-root>/src/auth.ts://github.com/openai/gpt-5',
         { artifactRoot, projectRoot },
       ),
@@ -2194,6 +2224,12 @@ describe('compare runtime', () => {
         { artifactRoot, projectRoot },
       ),
     ).toBe('//cdn.example.com/assets/app.js')
+    expect(
+      sanitizeShareSafeText(
+        '//img.example.com/a/b',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('//img.example.com/a/b')
     expect(
       sanitizeShareSafeText(
         '<project-root>/safe://cdn.example.com/assets/app.js',
@@ -2238,6 +2274,12 @@ describe('compare runtime', () => {
     ).toBe('secret.txt')
     expect(
       sanitizeShareSafeText(
+        '//printer01.example.com/Engineering/secret',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('secret')
+    expect(
+      sanitizeShareSafeText(
         '//server.example.com/engineering/secret',
         { artifactRoot, projectRoot },
       ),
@@ -2245,6 +2287,12 @@ describe('compare runtime', () => {
     expect(
       sanitizeShareSafeText(
         '//corp.example.com/alice/secret',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('secret')
+    expect(
+      sanitizeShareSafeText(
+        '//eng.example.com/alice/secret',
         { artifactRoot, projectRoot },
       ),
     ).toBe('secret')
@@ -2275,6 +2323,12 @@ describe('compare runtime', () => {
     expect(
       sanitizeShareSafeText(
         '<project-root>/safe://corp.example.com/alice/secret',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('<project-root>/safe:<external-path>secret')
+    expect(
+      sanitizeShareSafeText(
+        '<project-root>/safe://eng.example.com/alice/secret',
         { artifactRoot, projectRoot },
       ),
     ).toBe('<project-root>/safe:<external-path>secret')
