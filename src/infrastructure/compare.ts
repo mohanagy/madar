@@ -12,6 +12,7 @@ import { parsePromptRunnerOutput, type PromptRunnerUsage } from './prompt-runner
 import { compactRetrieveResult, retrieveContext, tokenizeLabel, type CompactRetrieveResult, type RetrieveResult } from '../runtime/retrieve.js'
 import { QUERY_TOKEN_ESTIMATOR, estimateQueryTokens, loadGraph } from '../runtime/serve.js'
 import { sidecarAwareFileFingerprint } from '../shared/binary-ingest-sidecar.js'
+import { toShareSafeArtifactPath } from '../shared/share-safe-artifacts.js'
 import { MAX_TEXT_BYTES, validateGraphOutputPath, validateGraphPath } from '../shared/security.js'
 
 export type CompareBaselineMode = 'full' | 'bounded' | 'pack_only' | 'native_agent'
@@ -65,6 +66,7 @@ export interface ComparePromptArtifactPaths {
   baseline_prompt: string
   graphify_prompt: string
   report: string
+  share_safe_report: string
 }
 
 export interface CompareAnswerArtifactPaths {
@@ -269,26 +271,49 @@ export function expandCompareExecTemplate(
 }
 
 function writeCompareReport(report: ComparePromptReport): void {
+  const shareSafeRoots = {
+    artifactRoot: report.paths.output_dir,
+    projectRoot: inferProjectRootFromGraphPath(report.graph_path),
+  }
+  const serializedReport = {
+    ...report,
+    graph_path: portablePath(report.graph_path),
+    answer_paths: {
+      baseline: portablePath(report.answer_paths.baseline),
+      graphify: portablePath(report.answer_paths.graphify),
+    },
+    paths: {
+      output_dir: portablePath(report.paths.output_dir),
+      baseline_prompt: portablePath(report.paths.baseline_prompt),
+      graphify_prompt: portablePath(report.paths.graphify_prompt),
+      report: portablePath(report.paths.report),
+      share_safe_report: portablePath(report.paths.share_safe_report),
+    },
+  }
+  const shareSafeReport = {
+    ...report,
+    graph_path: toShareSafeArtifactPath(report.graph_path, shareSafeRoots),
+    answer_paths: {
+      baseline: toShareSafeArtifactPath(report.answer_paths.baseline, shareSafeRoots),
+      graphify: toShareSafeArtifactPath(report.answer_paths.graphify, shareSafeRoots),
+    },
+    paths: {
+      output_dir: toShareSafeArtifactPath(report.paths.output_dir, shareSafeRoots),
+      baseline_prompt: toShareSafeArtifactPath(report.paths.baseline_prompt, shareSafeRoots),
+      graphify_prompt: toShareSafeArtifactPath(report.paths.graphify_prompt, shareSafeRoots),
+      report: toShareSafeArtifactPath(report.paths.share_safe_report, shareSafeRoots),
+      share_safe_report: toShareSafeArtifactPath(report.paths.share_safe_report, shareSafeRoots),
+    },
+  }
+
   writeFileSync(
     report.paths.report,
-    `${JSON.stringify(
-      {
-        ...report,
-        graph_path: portablePath(report.graph_path),
-        answer_paths: {
-          baseline: portablePath(report.answer_paths.baseline),
-          graphify: portablePath(report.answer_paths.graphify),
-        },
-        paths: {
-          output_dir: portablePath(report.paths.output_dir),
-          baseline_prompt: portablePath(report.paths.baseline_prompt),
-          graphify_prompt: portablePath(report.paths.graphify_prompt),
-          report: portablePath(report.paths.report),
-        },
-      },
-      null,
-      2,
-    )}\n`,
+    `${JSON.stringify(serializedReport, null, 2)}\n`,
+    'utf8',
+  )
+  writeFileSync(
+    report.paths.share_safe_report,
+    `${JSON.stringify(shareSafeReport, null, 2)}\n`,
     'utf8',
   )
 }
@@ -1021,6 +1046,7 @@ export function generateCompareArtifacts(input: GenerateCompareArtifactsInput): 
       baseline_prompt: join(questionOutputDir, 'baseline-prompt.txt'),
       graphify_prompt: join(questionOutputDir, 'graphify-prompt.txt'),
       report: join(questionOutputDir, 'report.json'),
+      share_safe_report: join(questionOutputDir, 'report.share-safe.json'),
     }
     const answerPaths: CompareAnswerArtifactPaths = {
       baseline: answerFilePath(questionOutputDir, 'baseline'),

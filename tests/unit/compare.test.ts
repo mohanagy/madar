@@ -695,10 +695,14 @@ describe('compare runtime', () => {
     expect(existsSync(report!.paths.baseline_prompt)).toBe(true)
     expect(existsSync(report!.paths.graphify_prompt)).toBe(true)
     expect(existsSync(report!.paths.report)).toBe(true)
+    expect(report?.paths.share_safe_report).toBe(join(report!.paths.output_dir, 'report.share-safe.json'))
+    expect(existsSync(report!.paths.share_safe_report)).toBe(true)
 
     const baselinePrompt = readFileSync(report!.paths.baseline_prompt, 'utf8')
     const graphifyPrompt = readFileSync(report!.paths.graphify_prompt, 'utf8')
     const savedReport = JSON.parse(readFileSync(report!.paths.report, 'utf8')) as Record<string, unknown>
+    const shareSafePath = join(report!.paths.output_dir, 'report.share-safe.json')
+    const shareSafeReport = JSON.parse(readFileSync(shareSafePath, 'utf8')) as Record<string, unknown>
 
     expect(baselinePrompt).toContain('Question:\nhow does login create a session')
     expect(baselinePrompt).toContain('return new SessionManager().createSession(credentials.userId)')
@@ -729,11 +733,22 @@ describe('compare runtime', () => {
           baseline_prompt: join('graphify-out', 'compare', 'test-runtime', '2026-04-24T19-30-00', 'baseline-prompt.txt'),
           graphify_prompt: join('graphify-out', 'compare', 'test-runtime', '2026-04-24T19-30-00', 'graphify-prompt.txt'),
           report: join('graphify-out', 'compare', 'test-runtime', '2026-04-24T19-30-00', 'report.json'),
+          share_safe_report: join('graphify-out', 'compare', 'test-runtime', '2026-04-24T19-30-00', 'report.share-safe.json'),
         },
+      }),
+    )
+    expect(shareSafeReport).toEqual(
+      expect.objectContaining({
+        graph_path: '<project-root>/graphify-out/graph.json',
+        paths: expect.objectContaining({
+          output_dir: '<artifact-root>',
+          report: '<artifact-root>/report.share-safe.json',
+        }),
       }),
     )
     expect(JSON.stringify(savedReport)).not.toContain('super-secret')
     expect(JSON.stringify(savedReport)).not.toContain(execTemplate)
+    expect(JSON.stringify(shareSafeReport)).not.toContain(report!.paths.output_dir)
   })
 
   it('runs compare prompts sequentially and saves answer artifacts', async () => {
