@@ -90,7 +90,7 @@ export interface CompareCliOptions {
   execTemplate: string
   questionsPath: string | null
   outputDir: string
-  baselineMode: 'full' | 'bounded' | 'native_agent'
+  baselineMode: 'full' | 'bounded' | 'pack_only' | 'native_agent'
   yes: boolean
   limit: number | null
 }
@@ -263,12 +263,12 @@ function parseQueryRankBy(value: string): QueryRankBy {
   throw new UsageError('error: --rank-by must be one of relevance, degree')
 }
 
-function parseCompareBaselineMode(value: string): 'full' | 'bounded' | 'native_agent' {
+function parseCompareBaselineMode(value: string): 'full' | 'bounded' | 'pack_only' | 'native_agent' {
   const normalized = value.trim().toLowerCase()
-  if (normalized === 'full' || normalized === 'bounded' || normalized === 'native_agent') {
+  if (normalized === 'full' || normalized === 'bounded' || normalized === 'pack_only' || normalized === 'native_agent') {
     return normalized
   }
-  throw new UsageError('error: --baseline-mode must be one of full, bounded, native_agent')
+  throw new UsageError('error: --baseline-mode must be one of full, bounded, pack_only, native_agent')
 }
 
 function parseTimeTravelView(value: string): 'summary' | 'risk' | 'drift' | 'timeline' {
@@ -901,7 +901,7 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
   let execTemplate = ''
   let questionsPath: string | null = null
   let outputDir = 'graphify-out/compare'
-  let baselineMode: 'full' | 'bounded' | 'native_agent' = 'full'
+  let baselineMode: 'full' | 'bounded' | 'pack_only' | 'native_agent' = 'full'
   let yes = false
   let limit: number | null = null
 

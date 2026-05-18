@@ -4,9 +4,14 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Pack-only compare mode**: `graphify-ts compare --baseline-mode pack_only` now compares one bounded raw-context baseline prompt against one compiled graphify pack, persists the compact pack audit fields in `report.json`, and keeps `native_agent` as the provider-reported runtime benchmark path.
+- **Share-safe proof reports**: `compare`, `review-compare`, and runner-backed `benchmark --exec ...` executions now emit a companion `report.share-safe.json` with stable path placeholders while keeping the full local `report.json`.
+
 ### Changed
 
-- **Native-agent compare suite summary**: multi-question `compare --baseline-mode native_agent` runs now roll up wins/losses for input tokens, turns, and latency, report mean/median input-token reduction, and highlight the best win and worst regression prompt in the terminal summary.
+- **Native-agent compare suite summary**: multi-question `compare --baseline-mode native_agent` runs now roll up comparable-question wins/losses for input tokens, turns, and latency, report mean/median input-token reduction, surface comparable-question counts when some runs are excluded from the aggregate, and highlight the best win and worst regression prompt in the terminal summary.
 
 ## [0.22.9] - 2026-05-16
 

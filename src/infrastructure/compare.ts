@@ -9,12 +9,13 @@ import { CODE_EXTENSIONS, DOC_EXTENSIONS, MANIFEST_METADATA_KEY, OFFICE_EXTENSIO
 import { extractCompareBaselineNonCodeText } from '../pipeline/extract/non-code.js'
 import { loadBenchmarkQuestions } from './benchmark/questions.js'
 import { parsePromptRunnerOutput, type PromptRunnerUsage } from './prompt-runner.js'
-import { retrieveContext, tokenizeLabel, type RetrieveResult } from '../runtime/retrieve.js'
+import { compactRetrieveResult, retrieveContext, tokenizeLabel, type CompactRetrieveResult, type RetrieveResult } from '../runtime/retrieve.js'
 import { QUERY_TOKEN_ESTIMATOR, estimateQueryTokens, loadGraph } from '../runtime/serve.js'
 import { sidecarAwareFileFingerprint } from '../shared/binary-ingest-sidecar.js'
+import { sanitizeShareSafeText, toShareSafeArtifactPath, type ShareSafePathRoots } from '../shared/share-safe-artifacts.js'
 import { MAX_TEXT_BYTES, validateGraphOutputPath, validateGraphPath } from '../shared/security.js'
 
-export type CompareBaselineMode = 'full' | 'bounded' | 'native_agent'
+export type CompareBaselineMode = 'full' | 'bounded' | 'pack_only' | 'native_agent'
 export type CompareRunMode = 'baseline' | 'graphify'
 export type CompareRunStatus = 'not_run' | 'succeeded' | 'failed' | 'context_overflow'
 export type CompareFailureReason = 'prompt_too_long' | 'runner_error' | 'exec_error'
@@ -65,6 +66,7 @@ export interface ComparePromptArtifactPaths {
   baseline_prompt: string
   graphify_prompt: string
   report: string
+  share_safe_report: string
 }
 
 export interface CompareAnswerArtifactPaths {
@@ -85,6 +87,12 @@ export interface ComparePromptTokenEstimator {
 }
 
 export type ComparePromptUsage = PromptRunnerUsage
+
+export interface CompareReportPack extends CompactRetrieveResult {
+  claims?: NonNullable<RetrieveResult['claims']>
+  coverage?: NonNullable<RetrieveResult['coverage']>
+  selection_diagnostics?: NonNullable<RetrieveResult['selection_diagnostics']>
+}
 
 export interface ComparePromptReport {
   question: string
@@ -142,6 +150,7 @@ export interface ComparePromptReport {
     graphify: string | null
   }
   provider_proof?: ComparePromptProviderProof
+  pack?: CompareReportPack
   paths: ComparePromptArtifactPaths
 }
 
@@ -262,28 +271,139 @@ export function expandCompareExecTemplate(
 }
 
 function writeCompareReport(report: ComparePromptReport): void {
+  const shareSafeRoots = {
+    artifactRoot: report.paths.output_dir,
+    projectRoot: inferProjectRootFromGraphPath(report.graph_path),
+  }
+  const serializedReport = {
+    ...report,
+    graph_path: portablePath(report.graph_path),
+    answer_paths: {
+      baseline: portablePath(report.answer_paths.baseline),
+      graphify: portablePath(report.answer_paths.graphify),
+    },
+    paths: {
+      output_dir: portablePath(report.paths.output_dir),
+      baseline_prompt: portablePath(report.paths.baseline_prompt),
+      graphify_prompt: portablePath(report.paths.graphify_prompt),
+      report: portablePath(report.paths.report),
+      share_safe_report: portablePath(report.paths.share_safe_report),
+    },
+  }
+  const shareSafeReport = sanitizeCompareShareSafeValue(report, shareSafeRoots)
+
   writeFileSync(
     report.paths.report,
-    `${JSON.stringify(
-      {
-        ...report,
-        graph_path: portablePath(report.graph_path),
-        answer_paths: {
-          baseline: portablePath(report.answer_paths.baseline),
-          graphify: portablePath(report.answer_paths.graphify),
-        },
-        paths: {
-          output_dir: portablePath(report.paths.output_dir),
-          baseline_prompt: portablePath(report.paths.baseline_prompt),
-          graphify_prompt: portablePath(report.paths.graphify_prompt),
-          report: portablePath(report.paths.report),
-        },
-      },
-      null,
-      2,
-    )}\n`,
+    `${JSON.stringify(serializedReport, null, 2)}\n`,
     'utf8',
   )
+  writeFileSync(
+    report.paths.share_safe_report,
+    `${JSON.stringify(shareSafeReport, null, 2)}\n`,
+    'utf8',
+  )
+}
+
+function isAbsolutePathLike(value: string): boolean {
+  const normalized = value.replaceAll('\\', '/')
+  return normalized.startsWith('/') || /^[A-Za-z]:\//.test(normalized)
+}
+
+function compareShareSafePathRoots(path: readonly string[], roots: ShareSafePathRoots): string[] {
+  const key = path[path.length - 1]
+  const parentKey = path[path.length - 2]
+
+  if (parentKey === 'paths' || parentKey === 'answer_paths') {
+    return [roots.artifactRoot]
+  }
+
+  if (key === 'graph_path' || key === 'source_file' || key === 'focus_files') {
+    return [roots.projectRoot]
+  }
+
+  return [roots.projectRoot, roots.artifactRoot]
+}
+
+function isCompareArtifactRootField(path: readonly string[]): boolean {
+  const parentKey = path[path.length - 2]
+  return parentKey === 'paths' || parentKey === 'answer_paths'
+}
+
+function compareExternalPathFallback(path: string): string {
+  const normalizedPath = path.replaceAll('\\', '/')
+  const lastSegment = normalizedPath.split('/').pop()
+  return lastSegment && lastSegment.length > 0 ? lastSegment : '<external-path>'
+}
+
+function sanitizeCompareShareSafePath(value: string, roots: ShareSafePathRoots, path: readonly string[]): string {
+  if (isCompareArtifactRootField(path)) {
+    if (isAbsolutePathLike(value)) {
+      return isPathWithinRoot(resolve(value), roots.artifactRoot)
+        ? toShareSafeArtifactPath(value, roots)
+        : compareExternalPathFallback(value)
+    }
+
+    return isPathWithinRoot(resolve(roots.artifactRoot, value), roots.artifactRoot)
+      ? value
+      : compareExternalPathFallback(value)
+  }
+
+  if (isAbsolutePathLike(value)) {
+    return toShareSafeArtifactPath(value, roots)
+  }
+
+  const candidateRoots = compareShareSafePathRoots(path, roots)
+  for (const root of candidateRoots) {
+    if (isPathWithinRoot(resolve(root, value), root)) {
+      return value
+    }
+  }
+
+  const fallbackRoot = candidateRoots[0] ?? roots.projectRoot
+  return toShareSafeArtifactPath(resolve(fallbackRoot, value), roots)
+}
+
+function shouldSanitizeCompareShareSafeText(path: readonly string[]): boolean {
+  const rootKey = path[0]
+  return rootKey === 'stderr' || rootKey === 'evidence'
+}
+
+function shouldSanitizeCompareShareSafePath(path: readonly string[]): boolean {
+  const key = path[path.length - 1]
+  const parentKey = path[path.length - 2]
+
+  return (
+    key === 'graph_path' ||
+    key === 'result_path' ||
+    key === 'source_file' ||
+    key === 'focus_files' ||
+    parentKey === 'paths' ||
+    parentKey === 'answer_paths'
+  )
+}
+
+function sanitizeCompareShareSafeValue(value: unknown, roots: ShareSafePathRoots, path: string[] = []): unknown {
+  if (typeof value === 'string') {
+    if (shouldSanitizeCompareShareSafeText(path)) {
+      return sanitizeShareSafeText(value, roots)
+    }
+    if (shouldSanitizeCompareShareSafePath(path)) {
+      return sanitizeCompareShareSafePath(value, roots, path)
+    }
+    return value
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => sanitizeCompareShareSafeValue(entry, roots, path))
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [key, sanitizeCompareShareSafeValue(entry, roots, [...path, key])]),
+    )
+  }
+
+  return value
 }
 
 async function defaultComparePromptRunner(execution: ComparePromptExecution): Promise<ComparePromptRunnerResult> {
@@ -492,6 +612,16 @@ function formatGraphifyContextSections(retrieval: RetrieveResult): ContextPrompt
         }]
       : []),
   ]
+}
+
+function compareReportPackFromRetrieveResult(retrieval: RetrieveResult): CompareReportPack {
+  const compact = compactRetrieveResult(retrieval)
+  return {
+    ...compact,
+    ...(retrieval.claims ? { claims: retrieval.claims } : {}),
+    ...(retrieval.coverage ? { coverage: retrieval.coverage } : {}),
+    ...(retrieval.selection_diagnostics ? { selection_diagnostics: retrieval.selection_diagnostics } : {}),
+  }
 }
 
 function computeReductionRatio(baselinePromptTokens: number, graphifyPromptTokens: number): number {
@@ -884,7 +1014,7 @@ function deriveBaselineCorpusText(graphPath: string, graph: KnowledgeGraph): str
 export function buildBaselinePromptPack(input: BuildBaselinePromptPackInput): ComparePromptPack {
   const corpusText = input.corpusText.trim()
   const corpusBody =
-    input.mode === 'bounded'
+    input.mode === 'bounded' || input.mode === 'pack_only'
       ? buildBoundedCorpusExcerpt(input.question, input.graph, corpusText, input.maxTokens ?? DEFAULT_BOUNDED_BASELINE_TOKENS)
       : corpusText
   const builtPrompt = buildBaselinePromptArtifact(input.question, input.graph, corpusBody, input.mode, input.session)
@@ -968,6 +1098,8 @@ export function generateCompareArtifacts(input: GenerateCompareArtifactsInput): 
   const outputDir = validateGraphOutputPath(input.outputDir)
   const now = input.now ?? new Date()
   const outputRoot = createCompareOutputRoot(outputDir, now)
+  const projectRoot = realpathSync(inferProjectRootFromGraphPath(graphPath))
+  const retrievalBudget = input.retrievalBudget ?? DEFAULT_RETRIEVAL_BUDGET
   let baselineSession: ContextSessionState | undefined
   let graphifySession: ContextSessionState | undefined
 
@@ -975,17 +1107,6 @@ export function generateCompareArtifacts(input: GenerateCompareArtifactsInput): 
     const questionOutputDir = questions.length === 1 ? outputRoot : join(outputRoot, `question-${String(index + 1).padStart(3, '0')}`)
     mkdirSync(questionOutputDir, { recursive: true })
 
-    const baselinePrompt = buildBaselinePromptPack({
-      question,
-      graph,
-      corpusText,
-      mode: input.baselineMode,
-      ...(input.baselineMaxTokens !== undefined ? { maxTokens: input.baselineMaxTokens } : {}),
-      ...(baselineSession ? { session: baselineSession } : {}),
-    })
-    baselineSession = baselinePrompt.session_state
-    const projectRoot = realpathSync(inferProjectRootFromGraphPath(graphPath))
-    const retrievalBudget = input.retrievalBudget ?? DEFAULT_RETRIEVAL_BUDGET
     const retrieval = retrieveCompareContext(graph, question, retrievalBudget, projectRoot)
     const graphifyPrompt = buildGraphifyPromptPack({
       question,
@@ -993,12 +1114,27 @@ export function generateCompareArtifacts(input: GenerateCompareArtifactsInput): 
       ...(graphifySession ? { session: graphifySession } : {}),
     })
     graphifySession = graphifyPrompt.session_state
+    const comparePack = input.baselineMode === 'pack_only' ? compareReportPackFromRetrieveResult(retrieval) : undefined
+    const baselineMaxTokens =
+      input.baselineMode === 'pack_only'
+        ? graphifyPrompt.token_count
+        : input.baselineMaxTokens
+    const baselinePrompt = buildBaselinePromptPack({
+      question,
+      graph,
+      corpusText,
+      mode: input.baselineMode,
+      ...(baselineMaxTokens !== undefined ? { maxTokens: baselineMaxTokens } : {}),
+      ...(baselineSession ? { session: baselineSession } : {}),
+    })
+    baselineSession = baselinePrompt.session_state
 
     const paths: ComparePromptArtifactPaths = {
       output_dir: questionOutputDir,
       baseline_prompt: join(questionOutputDir, 'baseline-prompt.txt'),
       graphify_prompt: join(questionOutputDir, 'graphify-prompt.txt'),
       report: join(questionOutputDir, 'report.json'),
+      share_safe_report: join(questionOutputDir, 'report.share-safe.json'),
     }
     const answerPaths: CompareAnswerArtifactPaths = {
       baseline: answerFilePath(questionOutputDir, 'baseline'),
@@ -1069,6 +1205,7 @@ export function generateCompareArtifacts(input: GenerateCompareArtifactsInput): 
         baseline: null,
         graphify: null,
       },
+      ...(comparePack ? { pack: comparePack } : {}),
       paths,
     }
 
@@ -1284,7 +1421,7 @@ export function formatCompareSummary(result: GenerateCompareArtifactsResult): st
   // (not a real agent's behavior) so reduction_ratio is a synthetic estimate;
   // append an explicit disclosure line. native_agent mode is preferred for shipping.
   const baselineModes = new Set<CompareBaselineMode>(result.reports.map((report) => report.baseline_mode))
-  const usesSyntheticBaseline = baselineModes.has('full') || baselineModes.has('bounded')
+  const usesSyntheticBaseline = baselineModes.has('full') || baselineModes.has('bounded') || baselineModes.has('pack_only')
 
   const lines = [
     `[graphify compare] completed ${result.reports.length} question(s)`,
@@ -1419,6 +1556,7 @@ export interface NativeAgentCompareReport {
   paths: {
     output_dir: string
     report: string
+    share_safe_report: string
     baseline_answer: string
     graphify_answer: string
     prompt_file: string
@@ -1770,6 +1908,7 @@ export async function executeNativeAgentCompare(
     const baselineAnswerPath = answerFilePath(questionDir, 'baseline')
     const graphifyAnswerPath = answerFilePath(questionDir, 'graphify')
     const reportPath = join(questionDir, 'report.json')
+    const shareSafeReportPath = join(questionDir, 'report.share-safe.json')
 
     const reportShell: NativeAgentCompareReport = {
       baseline_mode: 'native_agent',
@@ -1803,6 +1942,7 @@ export async function executeNativeAgentCompare(
       paths: {
         output_dir: questionDir,
         report: reportPath,
+        share_safe_report: shareSafeReportPath,
         baseline_answer: baselineAnswerPath,
         graphify_answer: graphifyAnswerPath,
         prompt_file: promptFile,
@@ -1979,23 +2119,32 @@ export async function executeNativeAgentCompare(
 }
 
 function writeNativeAgentReport(report: NativeAgentCompareReport): void {
+  const shareSafeRoots = {
+    artifactRoot: report.paths.output_dir,
+    projectRoot: inferProjectRootFromGraphPath(report.graph_path),
+  }
+  const serializedReport = {
+    ...report,
+    graph_path: portablePath(report.graph_path),
+    paths: {
+      output_dir: portablePath(report.paths.output_dir),
+      report: portablePath(report.paths.report),
+      share_safe_report: portablePath(report.paths.share_safe_report),
+      baseline_answer: portablePath(report.paths.baseline_answer),
+      graphify_answer: portablePath(report.paths.graphify_answer),
+      prompt_file: portablePath(report.paths.prompt_file),
+    },
+  }
+  const shareSafeReport = sanitizeCompareShareSafeValue(report, shareSafeRoots)
+
   writeFileSync(
     report.paths.report,
-    `${JSON.stringify(
-      {
-        ...report,
-        graph_path: portablePath(report.graph_path),
-        paths: {
-          output_dir: portablePath(report.paths.output_dir),
-          report: portablePath(report.paths.report),
-          baseline_answer: portablePath(report.paths.baseline_answer),
-          graphify_answer: portablePath(report.paths.graphify_answer),
-          prompt_file: portablePath(report.paths.prompt_file),
-        },
-      },
-      null,
-      2,
-    )}\n`,
+    `${JSON.stringify(serializedReport, null, 2)}\n`,
+    'utf8',
+  )
+  writeFileSync(
+    report.paths.share_safe_report,
+    `${JSON.stringify(shareSafeReport, null, 2)}\n`,
     'utf8',
   )
 }

@@ -467,6 +467,27 @@ describe('cli parser', () => {
     })
   })
 
+  it('parses compare args with pack_only baseline mode', () => {
+    expect(
+      parseCompareArgs([
+        'how does login work',
+        '--exec',
+        'claude -p "$(cat {prompt_file})"',
+        '--baseline-mode',
+        'pack_only',
+      ]),
+    ).toEqual({
+      question: 'how does login work',
+      graphPath: 'graphify-out/graph.json',
+      execTemplate: 'claude -p "$(cat {prompt_file})"',
+      questionsPath: null,
+      outputDir: resolve('graphify-out/compare'),
+      baselineMode: 'pack_only',
+      yes: false,
+      limit: null,
+    })
+  })
+
   it('rejects invalid compare args', () => {
     expect(() => parseCompareArgs(['how does login work'])).toThrow('error: --exec is required')
     expect(() => parseCompareArgs(['how does login work', '--questions', 'benchmark-questions.json', '--exec', 'claude -p "$(cat {prompt_file})"'])).toThrow(
@@ -875,7 +896,7 @@ describe('cli main', () => {
     expect(help).toContain('    --exec TEMPLATE       required command template; supports {prompt_file}, {question}, {mode}, and {output_file}')
     expect(help).toContain('    --questions PATH      load questions from a JSON file instead of a positional question')
     expect(help).toContain('    --output-dir DIR      compare output directory (default graphify-out/compare)')
-    expect(help).toContain('    --baseline-mode MODE  full | bounded | native_agent (default full; native_agent runs --exec twice, uses Anthropic JSON usage when available, and otherwise saves answer-only artifacts)')
+    expect(help).toContain('    --baseline-mode MODE  full | bounded | pack_only | native_agent (default full; pack_only compares one bounded raw-context prompt against one compiled graphify pack; native_agent runs --exec twice, uses Anthropic JSON usage when available, and otherwise saves answer-only artifacts)')
     expect(help).toContain('    --yes                 skip confirmation before running the paid prompt comparison')
     expect(help).toContain('    --limit N             cap processed prompts/questions for the comparison run')
     expect(help).toContain('review-compare [graph.json] compare full vs compact pr_impact review prompts on the current git diff')

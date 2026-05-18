@@ -56,7 +56,7 @@ This does **not** measure model quality. It is a safe local smoke check that pro
 - `generate` should write `examples/sample-workspace/graphify-out/graph.json`
 - `pack` should print a compact JSON payload with matched nodes from the password reset flow
 - `prompt` should print a provider-ready prompt payload
-- `compare` should create an artifact directory under `graphify-out/compare/` containing prompt and answer files plus `report.json`
+- `compare` should create an artifact directory under `graphify-out/compare/` containing prompt and answer files plus both `report.json` and `report.share-safe.json`
 
 ## Troubleshooting
 

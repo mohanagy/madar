@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -9,11 +9,17 @@ import {
   executeReviewCompareRuns,
   formatReviewCompareSummary,
   generateReviewCompareArtifacts,
+  type ReviewCompareReport,
 } from '../../src/infrastructure/review-compare.js'
 import { estimateQueryTokens } from '../../src/runtime/serve.js'
 
-function createRepo(options: { pathLikeNodeIds?: boolean } = {}): string {
-  const root = mkdtempSync(join(tmpdir(), 'graphify-ts-review-compare-'))
+function normalizePortablePath(path: string): string {
+  return path.replaceAll('\\', '/')
+}
+
+function createRepo(options: { pathLikeNodeIds?: boolean; pathWithSpaces?: boolean } = {}): string {
+  const repoPrefix = options.pathWithSpaces ? 'graphify ts review compare repo-' : 'graphify-ts-review-compare-'
+  const root = mkdtempSync(join(tmpdir(), repoPrefix))
   mkdirSync(join(root, 'src'), { recursive: true })
   mkdirSync(join(root, 'tests'), { recursive: true })
   mkdirSync(join(root, 'graphify-out'), { recursive: true })
@@ -210,6 +216,36 @@ describe('review compare', () => {
     expect(readFileSync(result.report.paths.compact_prompt, 'utf8')).toContain('"review_context"')
   })
 
+  it('writes a companion share-safe report without changing the local report contract', () => {
+    const root = createRepo()
+    repoRoots.push(root)
+
+    const result = generateReviewCompareArtifacts({
+      graphPath: join(root, 'graphify-out', 'graph.json'),
+      outputDir: join(root, 'graphify-out', 'review-compare'),
+      execTemplate: 'claude -p "$(cat {prompt_file})"',
+      now: new Date('2026-05-01T21:00:00.000Z'),
+    })
+
+    const localReport = JSON.parse(readFileSync(result.report.paths.report, 'utf8')) as Record<string, unknown>
+    const shareSafePath = join(result.report.paths.output_dir, 'report.share-safe.json')
+    const shareSafeReport = JSON.parse(readFileSync(shareSafePath, 'utf8')) as Record<string, unknown>
+
+    expect(normalizePortablePath(String(localReport.graph_path))).toContain('graphify-out/graph.json')
+    expect((localReport.paths as Record<string, unknown>).report).toEqual(expect.stringContaining('report.json'))
+    expect(shareSafeReport).toEqual(
+      expect.objectContaining({
+        graph_path: '<project-root>/graphify-out/graph.json',
+        paths: expect.objectContaining({
+          output_dir: '<artifact-root>',
+          report: '<artifact-root>/report.json',
+          share_safe_report: '<artifact-root>/report.share-safe.json',
+        }),
+      }),
+    )
+    expect(JSON.stringify(shareSafeReport)).not.toContain(root)
+  })
+
   it('sanitizes path-derived node ids in persisted review prompts', () => {
     const root = createRepo({ pathLikeNodeIds: true })
     repoRoots.push(root)
@@ -267,5 +303,66 @@ describe('review compare', () => {
       compact: 9,
     })
     expect(formatReviewCompareSummary(result)).toContain('Prompt tokens')
+  })
+
+  it('redacts local artifact paths from share-safe stderr on failed runs', async () => {
+    const root = createRepo({ pathWithSpaces: true })
+    repoRoots.push(root)
+    const externalAbsolutePath = process.platform === 'win32'
+      ? 'C:\\Users\\alice\\Desktop\\Quarterly Reports\\review notes.txt'
+      : '/Users/alice/Desktop/Quarterly Reports/review notes.txt'
+    const diagnosticUrl = 'https://example.com/errors/review-compare?path=/docs/reference'
+
+    const result = await executeReviewCompareRuns(
+      {
+        graphPath: join(root, 'graphify-out', 'graph.json'),
+        outputDir: join(root, 'graphify-out', 'review compare'),
+        execTemplate: 'runner --prompt {prompt_file} --mode {mode} --out {output_file}',
+        now: new Date('2026-05-01T21:00:00.000Z'),
+      },
+      {
+        runner: async (execution) => ({
+          exitCode: 1,
+          stdout: '',
+          stderr: [
+            `prompt=${execution.promptFile}`,
+            `output=${execution.outputFile}`,
+            `graph=${join(root, 'graphify-out', 'graph.json')}`,
+            `project=${root}`,
+            `external=${externalAbsolutePath}`,
+            'OPENAI_API_KEY=super-secret',
+            'Authorization: Bearer abc123',
+            `url=${diagnosticUrl}`,
+          ].join('\n'),
+          elapsedMs: execution.mode === 'verbose' ? 15 : 9,
+        }),
+      },
+    )
+
+    const localReport = JSON.parse(readFileSync(result.report.paths.report, 'utf8')) as ReviewCompareReport
+    const shareSafeRaw = readFileSync(result.report.paths.share_safe_report, 'utf8')
+    const shareSafeReport = JSON.parse(shareSafeRaw) as ReviewCompareReport
+
+    expect(localReport.stderr.verbose).toContain(`prompt=${result.report.paths.verbose_prompt}`)
+    expect(localReport.stderr.verbose).toContain(`output=${result.report.answer_paths.verbose}`)
+    expect(localReport.stderr.verbose).toContain(`graph=${join(root, 'graphify-out', 'graph.json')}`)
+    expect(localReport.stderr.verbose).toContain(`project=${root}`)
+    expect(localReport.stderr.verbose).toContain(`external=${externalAbsolutePath}`)
+    expect(localReport.stderr.verbose).toContain('OPENAI_API_KEY=super-secret')
+    expect(localReport.stderr.verbose).toContain('Authorization: Bearer abc123')
+
+    expect(shareSafeReport.stderr.verbose).toContain('prompt=<artifact-root>/verbose-prompt.txt')
+    expect(shareSafeReport.stderr.verbose).toContain('output=<artifact-root>/verbose-answer.txt')
+    expect(shareSafeReport.stderr.verbose).toContain('graph=<project-root>/graphify-out/graph.json')
+    expect(shareSafeReport.stderr.verbose).toContain('project=<project-root>')
+    expect(shareSafeReport.stderr.verbose).toContain(`external=${basename(externalAbsolutePath)}`)
+    expect(shareSafeReport.stderr.verbose).toContain('OPENAI_API_KEY=[REDACTED]')
+    expect(shareSafeReport.stderr.verbose).toContain('Authorization: Bearer [REDACTED]')
+    expect(shareSafeReport.stderr.verbose).not.toContain('super-secret')
+    expect(shareSafeReport.stderr.verbose).not.toContain('abc123')
+    expect(shareSafeReport.stderr.verbose).toContain(`url=${diagnosticUrl}`)
+    expect(shareSafeReport.stderr.verbose).not.toContain(root)
+    expect(shareSafeReport.stderr.verbose).not.toContain(externalAbsolutePath)
+    expect(shareSafeRaw).not.toContain(externalAbsolutePath)
   })
 })

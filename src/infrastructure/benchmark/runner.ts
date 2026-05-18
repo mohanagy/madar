@@ -6,6 +6,7 @@ import { KnowledgeGraph } from '../../contracts/graph.js'
 import type { ContextSessionState } from '../../contracts/context-session.js'
 import { type RetrieveResult, retrieveContext } from '../../runtime/retrieve.js'
 import { QUERY_TOKEN_ESTIMATOR } from '../../runtime/serve.js'
+import { toShareSafeArtifactPath } from '../../shared/share-safe-artifacts.js'
 import { validateGraphOutputPath } from '../../shared/security.js'
 import { buildGraphifyPromptPack, expandCompareExecTemplate } from '../compare.js'
 import { parsePromptRunnerOutput, type PromptRunnerUsage } from '../prompt-runner.js'
@@ -22,6 +23,7 @@ export interface BenchmarkPromptArtifacts {
   prompt: string
   answer: string
   report: string
+  share_safe_report: string
 }
 
 export interface BenchmarkPromptExecution {
@@ -205,6 +207,7 @@ export async function runBenchmarkPrompt(options: RunBenchmarkPromptOptions): Pr
     prompt: join(outputRoot, 'graphify-prompt.txt'),
     answer: join(outputRoot, 'graphify-answer.txt'),
     report: join(outputRoot, 'report.json'),
+    share_safe_report: join(outputRoot, 'report.share-safe.json'),
   }
   writeFileSync(artifacts.prompt, promptPack.session_payload, 'utf8')
 
@@ -247,26 +250,46 @@ export async function runBenchmarkPrompt(options: RunBenchmarkPromptOptions): Pr
     session_state: promptPack.session_state,
   }
 
+  const localReportArtifacts = {
+    prompt: portablePath(artifacts.prompt),
+    answer: portablePath(artifacts.answer),
+    report: portablePath(artifacts.report),
+  }
+  const localReport = {
+    question: options.question,
+    prompt_tokens_estimated: run.prompt_tokens_estimated,
+    query_tokens: run.query_tokens,
+    effective_query_tokens: run.effective_query_tokens,
+    reused_context_tokens: run.reused_context_tokens,
+    total_tokens: run.total_tokens,
+    prompt_token_source: run.prompt_token_source,
+    usage: run.usage,
+    elapsed_ms: run.elapsed_ms,
+    prompt_token_estimator: QUERY_TOKEN_ESTIMATOR,
+    artifacts: localReportArtifacts,
+  }
+  const shareSafeRoots = {
+    artifactRoot: outputRoot,
+    projectRoot: inferProjectRootFromGraphPath(options.graphPath),
+  }
   writeFileSync(
     artifacts.report,
-    `${JSON.stringify(
-      {
-        question: options.question,
-          prompt_tokens_estimated: run.prompt_tokens_estimated,
-          query_tokens: run.query_tokens,
-          effective_query_tokens: run.effective_query_tokens,
-          reused_context_tokens: run.reused_context_tokens,
-          total_tokens: run.total_tokens,
-          prompt_token_source: run.prompt_token_source,
-        usage: run.usage,
-        elapsed_ms: run.elapsed_ms,
-        prompt_token_estimator: QUERY_TOKEN_ESTIMATOR,
-        artifacts: {
-          prompt: portablePath(artifacts.prompt),
-          answer: portablePath(artifacts.answer),
-          report: portablePath(artifacts.report),
+    `${JSON.stringify(localReport, null, 2)}\n`,
+    'utf8',
+  )
+  writeFileSync(
+    artifacts.share_safe_report,
+      `${JSON.stringify(
+        {
+          ...localReport,
+          share_safe_report: true,
+          artifacts: {
+            ...Object.fromEntries(
+              Object.entries(localReportArtifacts).map(([key, path]) => [key, toShareSafeArtifactPath(path, shareSafeRoots)]),
+            ),
+            share_safe_report: toShareSafeArtifactPath(artifacts.share_safe_report, shareSafeRoots),
+          },
         },
-      },
       null,
       2,
     )}\n`,

@@ -25,6 +25,8 @@ Expected signals on the checked-in demo:
 
 This is still the most reproducible question-set proof path because the corpus, labels, and expected signals are checked in here. It now runs through your configured terminal runner, so use `--yes` for CI/non-interactive runs and expect model-token usage unless your runner is purely local.
 
+Runner-backed `benchmark` executions (`--exec ...`) keep the per-run prompt/answer files and full `report.json` as local artifacts. That path also writes a companion `report.share-safe.json` with stable placeholders, preserving the per-run usage/proof fields plus sanitized artifact paths for sharing without exposing real local paths. The benchmark-wide coverage/evidence totals still live in the aggregate benchmark result and terminal summary rather than inside each per-run share-safe file. Treat that share-safe report as publishing evidence, not as a guarantee that every possible project detail has been fully redacted.
+
 ## 2. Same-question, same-model A/B proof
 
 `compare` is the real showcase path. It builds one baseline prompt and one graph-guided prompt for the same question, runs both through your own terminal model command, and saves the artifact bundle.
@@ -36,7 +38,9 @@ node dist/src/cli/bin.js compare "How does login create a session?" \
   --yes
 ```
 
-If you switch to `--baseline-mode native_agent`, prefer a structured Anthropic runner such as `cat {prompt_file} | claude -p --output-format json`. Plain-text Claude runs still save paired answers, but the report cannot compute Anthropic-billed reductions without the trailing JSON usage block. Multi-question native-agent runs also emit suite-level wins/losses for input tokens, turns, and latency, plus mean/median input-token reduction and best/worst prompt outcomes in the terminal summary.
+If you want to isolate the context-compiler claim without MCP/tool-call behavior, switch to `--baseline-mode pack_only`. That mode compares one bounded raw-context baseline prompt against one compiled graphify pack and persists the compact pack audit fields (`token_count`, matched nodes, relationships, coverage, and selection diagnostics) in `report.json`.
+
+If you switch to `--baseline-mode native_agent`, prefer a structured Anthropic runner such as `cat {prompt_file} | claude -p --output-format json`. Plain-text Claude runs still save paired answers, but the report cannot compute Anthropic-billed reductions without the trailing JSON usage block. Multi-question native-agent runs also emit suite-level comparable-question wins/losses for input tokens, turns, and latency, plus mean/median input-token reduction, comparable-question denominators when some runs are excluded from the aggregate, and best/worst prompt outcomes in the terminal summary.
 
 Gemini-safe installed-CLI invocation:
 
@@ -53,8 +57,11 @@ What gets saved under `graphify-out/compare/<timestamp>/`:
 - `baseline-answer.txt`
 - `graphify-answer.txt`
 - `report.json`
+- `report.share-safe.json`
 
 When Gemini emits structured JSON with `usageMetadata`, `compare` captures real reported input and total tokens in `report.json` and the terminal summary. If the runner only returns answer text or malformed JSON, `compare` falls back to labeled local `cl100k_base` prompt estimates instead.
+
+`report.json` keeps the real local artifact paths. `report.share-safe.json` preserves the compare metrics with stable placeholders for sharing, including sanitized placeholder paths to the prompt/answer artifacts; only the prompt and answer file contents remain local. That makes the companion report safe to publish for path hygiene, but it still does not promise perfect redaction of every possible project detail.
 
 Recent report versions also add a **provider/runtime proof** block so you can see whether a reduction is backed by provider-reported input/cache/total-token numbers or by local estimate + session-reuse accounting. Use this when you need customer-facing proof or your own apples-to-apples answer comparison.
 
@@ -77,8 +84,11 @@ What gets saved under `graphify-out/review-compare/<timestamp>/`:
 - `verbose-answer.txt`
 - `compact-answer.txt`
 - `report.json`
+- `report.share-safe.json`
 
 Use this when the question is not "graphify vs. naive baseline", but "did compact review mode make the PR-review prompt materially smaller while keeping the same review surface shape?" The report includes prompt-token deltas, payload-token deltas, run statuses, elapsed times for both modes, and a provider/runtime proof block that makes it explicit when review-compare is using local estimate + session-reuse accounting rather than provider-billed usage.
+
+As with `compare` and `benchmark`, the prompt and answer file contents stay local, while `report.share-safe.json` keeps the review metrics plus sanitized placeholder paths to those artifacts so you can share evidence without publishing your exact local artifact paths.
 
 ## 4. Production and multi-repo proof
 

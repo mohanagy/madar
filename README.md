@@ -105,7 +105,7 @@ PR-review proof on a real diff: prompt tokens 63,024 → **8,690** (**7.25× few
 
 Latest runtime-pack refinement: **runtime-generation prompts stay compact** by following the strongest backend runtime path and suppressing sibling routes, script/migration noise, and shared-hub fan-out on broad backend-generation questions.
 
-Single-prompt backend benchmark snapshot: in one real GoValidate `compare --baseline-mode native_agent` run for `"Explain how idea report is getting generated"`, graphify-ts reduced Anthropic-reported input tokens from **1,653,307** to **498,280** (~**69.9%** lower). Multi-question native-agent compare runs now also roll up suite wins/losses for input tokens, turns, and latency, report mean/median input-token reduction, and highlight the best win and worst regression prompt. Details and caveats: [`docs/benchmarks/2026-05-12-govalidate-report-generation/`](docs/benchmarks/2026-05-12-govalidate-report-generation/).
+Single-prompt backend benchmark snapshot: in one real GoValidate `compare --baseline-mode native_agent` run for `"Explain how idea report is getting generated"`, graphify-ts reduced Anthropic-reported input tokens from **1,653,307** to **498,280** (~**69.9%** lower). Multi-question native-agent compare runs now also roll up suite wins/losses for input tokens, turns, and latency, report mean/median input-token reduction, call out comparable-question counts when some runs are excluded from the aggregate, and highlight the best win and worst regression prompt. Details and caveats: [`docs/benchmarks/2026-05-12-govalidate-report-generation/`](docs/benchmarks/2026-05-12-govalidate-report-generation/).
 
 [Reproduce them](docs/benchmarks/2026-04-30-govalidate/verify.sh) with one shell script against the committed evidence files.
 
@@ -168,6 +168,7 @@ graphify-ts pack "why does auth fail?" --task explain --retrieval-strategy slice
 graphify-ts prompt "how does auth work?" --provider claude     # provider-ready compiled prompt
 graphify-ts review-compare graphify-out/graph.json --exec '...' --yes  # PR review benchmark
 graphify-ts compare "How does auth work?" --exec '...' --yes           # general benchmark
+graphify-ts compare "How does auth work?" --baseline-mode pack_only --exec '...' --yes  # bounded raw context vs compiled graphify pack
 graphify-ts time-travel main HEAD --view risk   # what changed between two refs
 graphify-ts federate frontend/graph.json backend/graph.json  # multi-repo merge
 graphify-ts --help                              # full surface

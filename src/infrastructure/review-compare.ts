@@ -5,6 +5,11 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 
 import { analyzePrImpact, compactPrImpactResult } from '../runtime/pr-impact.js'
 import { estimateQueryTokens, loadGraph } from '../runtime/serve.js'
+import {
+  sanitizeShareSafeText,
+  toShareSafeArtifactPath,
+  type ShareSafePathRoots,
+} from '../shared/share-safe-artifacts.js'
 import { findNearestExistingAncestor, validateGraphPath } from '../shared/security.js'
 import { buildContextPrompt } from './context-prompt.js'
 
@@ -16,6 +21,7 @@ export interface ReviewComparePromptArtifactPaths {
   verbose_prompt: string
   compact_prompt: string
   report: string
+  share_safe_report: string
 }
 
 export interface ReviewCompareAnswerArtifactPaths {
@@ -126,6 +132,42 @@ function timestampDirectoryName(date: Date): string {
 
 function portablePath(path: string): string {
   return relative(process.cwd(), path) || '.'
+}
+
+function rewriteAnswerPaths(paths: ReviewCompareAnswerArtifactPaths, roots: ShareSafePathRoots): ReviewCompareAnswerArtifactPaths {
+  return {
+    verbose: toShareSafeArtifactPath(paths.verbose, roots),
+    compact: toShareSafeArtifactPath(paths.compact, roots),
+  }
+}
+
+function rewriteReviewComparePaths(
+  paths: ReviewComparePromptArtifactPaths,
+  roots: ShareSafePathRoots,
+): ReviewComparePromptArtifactPaths {
+  return {
+    output_dir: toShareSafeArtifactPath(paths.output_dir, roots),
+    verbose_prompt: toShareSafeArtifactPath(paths.verbose_prompt, roots),
+    compact_prompt: toShareSafeArtifactPath(paths.compact_prompt, roots),
+    report: toShareSafeArtifactPath(paths.report, roots),
+    share_safe_report: toShareSafeArtifactPath(paths.share_safe_report, roots),
+  }
+}
+
+function redactCredentialLikeText(text: string): string {
+  return text
+    .replaceAll(/\b([A-Z0-9_]*(?:TOKEN|KEY|SECRET|PASSWORD|PASS)[A-Z0-9_]*)=([^\s]+)/gi, '$1=[REDACTED]')
+    .replaceAll(/(Bearer)\s+[^\s]+/gi, '$1 [REDACTED]')
+}
+
+function rewriteShareSafeStderr(
+  stderr: Record<ReviewCompareMode, string | null>,
+  roots: ShareSafePathRoots,
+): Record<ReviewCompareMode, string | null> {
+  return {
+    verbose: stderr.verbose === null ? null : sanitizeShareSafeText(redactCredentialLikeText(stderr.verbose), roots),
+    compact: stderr.compact === null ? null : sanitizeShareSafeText(redactCredentialLikeText(stderr.compact), roots),
+  }
 }
 
 function inferProjectRootFromGraphPath(graphPath: string): string {
@@ -316,26 +358,41 @@ function renderReviewPrompt(payload: unknown, mode: ReviewCompareMode): ReturnTy
 }
 
 function writeReport(report: ReviewCompareReport): void {
+  const roots = {
+    artifactRoot: report.paths.output_dir,
+    projectRoot: inferProjectRootFromGraphPath(report.graph_path),
+  }
+  const serializedReport = {
+    ...report,
+    graph_path: portablePath(report.graph_path),
+    answer_paths: {
+      verbose: portablePath(report.answer_paths.verbose),
+      compact: portablePath(report.answer_paths.compact),
+    },
+    paths: {
+      output_dir: portablePath(report.paths.output_dir),
+      verbose_prompt: portablePath(report.paths.verbose_prompt),
+      compact_prompt: portablePath(report.paths.compact_prompt),
+      report: portablePath(report.paths.report),
+      share_safe_report: portablePath(report.paths.share_safe_report),
+    },
+  }
+  const shareSafeReport = {
+    ...report,
+    graph_path: toShareSafeArtifactPath(report.graph_path, roots),
+    answer_paths: rewriteAnswerPaths(report.answer_paths, roots),
+    stderr: rewriteShareSafeStderr(report.stderr, roots),
+    paths: rewriteReviewComparePaths(report.paths, roots),
+  }
+
   writeFileSync(
     report.paths.report,
-    `${JSON.stringify(
-      {
-        ...report,
-        graph_path: portablePath(report.graph_path),
-        answer_paths: {
-          verbose: portablePath(report.answer_paths.verbose),
-          compact: portablePath(report.answer_paths.compact),
-        },
-        paths: {
-          output_dir: portablePath(report.paths.output_dir),
-          verbose_prompt: portablePath(report.paths.verbose_prompt),
-          compact_prompt: portablePath(report.paths.compact_prompt),
-          report: portablePath(report.paths.report),
-        },
-      },
-      null,
-      2,
-    )}\n`,
+    `${JSON.stringify(serializedReport, null, 2)}\n`,
+    'utf8',
+  )
+  writeFileSync(
+    report.paths.share_safe_report,
+    `${JSON.stringify(shareSafeReport, null, 2)}\n`,
     'utf8',
   )
 }
@@ -364,6 +421,7 @@ export function generateReviewCompareArtifacts(input: ReviewCompareInput): Revie
     verbose_prompt: join(outputRoot, 'verbose-prompt.txt'),
     compact_prompt: join(outputRoot, 'compact-prompt.txt'),
     report: join(outputRoot, 'report.json'),
+    share_safe_report: join(outputRoot, 'report.share-safe.json'),
   }
   const answerPaths: ReviewCompareAnswerArtifactPaths = {
     verbose: answerFilePath(outputRoot, 'verbose'),
