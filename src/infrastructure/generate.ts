@@ -11,7 +11,7 @@ import { type DetectResult, detect, detectIncremental, FileType, saveManifest } 
 import { generateDocs as generateDocsArtifacts } from '../pipeline/docs.js'
 import { toCypher, toGraphml, toHtml, toJson, toObsidian, toSvg } from '../pipeline/export.js'
 import { extract, EXTRACTOR_CACHE_VERSION } from '../pipeline/extract.js'
-import { buildSpiCached } from '../pipeline/spi/cache.js'
+import { buildSpiCached, type SpiCacheStats } from '../pipeline/spi/cache.js'
 import { projectSpiToExtraction } from '../pipeline/spi/projector.js'
 import { generate as generateReport } from '../pipeline/report.js'
 import { toWiki } from '../pipeline/wiki.js'
@@ -66,6 +66,8 @@ export interface GenerateGraphResult {
   totalFiles: number
   codeFiles: number
   nonCodeFiles: number
+  extractableFiles: number
+  extractedFiles: number
   totalWords: number
   nodeCount: number
   edgeCount: number
@@ -73,8 +75,16 @@ export interface GenerateGraphResult {
   semanticAnomalyCount?: number
   changedFiles: number
   deletedFiles: number
+  cache: GenerateGraphCacheSummary | null
   warning: string | null
   notes: string[]
+}
+
+export interface GenerateGraphCacheSummary {
+  strategy: 'spi'
+  hit: boolean
+  reason: SpiCacheStats['reason']
+  fileCount: number
 }
 
 type IncrementalDetectResult = ReturnType<typeof detectIncremental>
@@ -281,6 +291,15 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
 
   const codeFiles = detected.files[FileType.CODE]
   const extractableFiles = collectExtractableFiles(detected.files)
+  const nonCodeExtractableFiles = [
+    ...detected.files[FileType.DOCUMENT],
+    ...detected.files[FileType.PAPER],
+    ...detected.files[FileType.IMAGE],
+    ...detected.files[FileType.AUDIO],
+    ...detected.files[FileType.VIDEO],
+  ]
+  let extractedFiles = options.clusterOnly ? 0 : extractableFiles.length
+  let cacheSummary: GenerateGraphCacheSummary | null = null
 
   progress?.({ step: 'detect', message: `Found ${detected.total_files} files (~${detected.total_words.toLocaleString()} words)` })
 
@@ -298,17 +317,40 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   // disk cache (#77), so we always do a full SPI build + projection.
   const buildViaSpi = (): ReturnType<typeof buildFromJson> | null => {
     if (extractableFiles.length === 0) return null
-    const built = buildSpiCached({
-      root: resolvedRootPath,
-      graphifyVersion: `spi-extractor-${EXTRACTOR_CACHE_VERSION}`,
-    })
-    const extraction = projectSpiToExtraction(built.spi, { root: resolvedRootPath })
-    if (built.cache.hit) {
-      notes.push(`SPI cache hit (${built.cache.file_count} files, key ${built.cache.cache_key.slice(0, 8)}).`)
-    } else {
-      notes.push(`SPI build via projector (${built.cache.file_count} files, reason=${built.cache.reason}).`)
+    const built =
+      codeFiles.length > 0
+        ? buildSpiCached({
+            root: resolvedRootPath,
+            graphifyVersion: `spi-extractor-${EXTRACTOR_CACHE_VERSION}`,
+          })
+        : null
+    const spiExtraction = built ? projectSpiToExtraction(built.spi, { root: resolvedRootPath }) : emptyExtraction()
+    const nonCodeExtraction =
+      nonCodeExtractableFiles.length > 0
+        ? extract(nonCodeExtractableFiles, {
+            allowedTargets: extractableFiles,
+            contextNodes: spiExtraction.nodes,
+          })
+        : emptyExtraction()
+
+    extractedFiles = (built ? (built.cache.hit ? 0 : built.cache.file_count) : 0) + nonCodeExtractableFiles.length
+    cacheSummary = built
+      ? {
+          strategy: 'spi',
+          hit: built.cache.hit,
+          reason: built.cache.reason,
+          fileCount: built.cache.file_count,
+        }
+      : null
+
+    if (built) {
+      if (built.cache.hit) {
+        notes.push(`SPI cache hit (${built.cache.file_count} files, key ${built.cache.cache_key.slice(0, 8)}).`)
+      } else {
+        notes.push(`SPI build via projector (${built.cache.file_count} files, reason=${built.cache.reason}).`)
+      }
     }
-    return buildFromJson(extraction, { directed })
+    return buildFromJson(mergeExtractions([spiExtraction, nonCodeExtraction]), { directed })
   }
 
   const graph = options.clusterOnly
@@ -316,36 +358,39 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     : options.useSpi
       ? buildViaSpi()
     : options.update && existingGraph && isIncrementalDetectResult(detected)
-      ? (() => {
-          if (existingGraphExtractorVersion == null || existingGraphExtractorVersion !== EXTRACTOR_CACHE_VERSION) {
+        ? (() => {
+            if (existingGraphExtractorVersion == null || existingGraphExtractorVersion !== EXTRACTOR_CACHE_VERSION) {
+              notes.push(
+                existingGraphExtractorVersion == null
+                  ? 'Existing graph predates extractor version metadata, so --update rebuilt the full graph.'
+                  : `Existing graph uses extractor version ${existingGraphExtractorVersion}, so --update rebuilt the full graph.`,
+              )
+              extractedFiles = extractableFiles.length
+              return extractableFiles.length > 0 ? buildFromJson(extract(extractableFiles), { directed }) : null
+            }
+
+            const changedExtractableFiles = collectExtractableFiles(detected.new_files)
+            const removedSourceFiles = new Set([...changedExtractableFiles, ...detected.deleted_files].map((filePath) => resolve(filePath)))
+
+            if (changedExtractableFiles.length === 0 && detected.deleted_files.length === 0) {
+              notes.push('No changed files detected - reused the existing graph.')
+              extractedFiles = 0
+              return existingGraph
+            }
+
+            const retainedExtraction = retainedExtractionFromGraph(existingGraph, removedSourceFiles)
+            const changedExtraction =
+              changedExtractableFiles.length > 0
+                ? extract(changedExtractableFiles, {
+                    allowedTargets: extractableFiles,
+                    contextNodes: retainedExtraction.nodes,
+                  })
+                : emptyExtraction()
+            extractedFiles = changedExtractableFiles.length
+
             notes.push(
-              existingGraphExtractorVersion == null
-                ? 'Existing graph predates extractor version metadata, so --update rebuilt the full graph.'
-                : `Existing graph uses extractor version ${existingGraphExtractorVersion}, so --update rebuilt the full graph.`,
+              `Incremental update re-extracted ${changedExtractableFiles.length} changed file(s) and retained ${new Set(retainedExtraction.nodes.map((node) => node.source_file)).size} unchanged file(s) from the existing graph.`,
             )
-            return extractableFiles.length > 0 ? buildFromJson(extract(extractableFiles), { directed }) : null
-          }
-
-          const changedExtractableFiles = collectExtractableFiles(detected.new_files)
-          const removedSourceFiles = new Set([...changedExtractableFiles, ...detected.deleted_files].map((filePath) => resolve(filePath)))
-
-          if (changedExtractableFiles.length === 0 && detected.deleted_files.length === 0) {
-            notes.push('No changed files detected - reused the existing graph.')
-            return existingGraph
-          }
-
-          const retainedExtraction = retainedExtractionFromGraph(existingGraph, removedSourceFiles)
-          const changedExtraction =
-            changedExtractableFiles.length > 0
-              ? extract(changedExtractableFiles, {
-                  allowedTargets: extractableFiles,
-                  contextNodes: retainedExtraction.nodes,
-                })
-              : emptyExtraction()
-
-          notes.push(
-            `Incremental update re-extracted ${changedExtractableFiles.length} changed file(s) and retained ${new Set(retainedExtraction.nodes.map((node) => node.source_file)).size} unchanged file(s) from the existing graph.`,
-          )
 
           return buildFromJson(mergeExtractions([retainedExtraction, changedExtraction]), { directed })
         })()
@@ -451,6 +496,8 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     totalFiles: detected.total_files,
     codeFiles: codeFiles.length,
     nonCodeFiles,
+    extractableFiles: extractableFiles.length,
+    extractedFiles,
     totalWords: detected.total_words,
     nodeCount: graph.numberOfNodes(),
     edgeCount: graph.numberOfEdges(),
@@ -458,6 +505,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     semanticAnomalyCount: semanticAnomalyList.length,
     changedFiles,
     deletedFiles,
+    cache: cacheSummary,
     warning: detected.warning,
     notes,
   }

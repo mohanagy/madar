@@ -96,6 +96,40 @@ describe('generateGraph useSpi:true (v0.18)', () => {
     expect(second.notes.some((n) => n.toLowerCase().includes('cache hit'))).toBe(true)
   })
 
+  it('keeps non-code extraction alongside SPI-projected code and reports only the code subset as cached', () => {
+    writeFile(sandbox, 'src/foo.ts', 'export function foo(): number { return 1 }\n')
+    writeFile(sandbox, 'docs/notes.md', '# Notes\nGraph docs\n')
+
+    const first = generateGraph(sandbox, { useSpi: true, noHtml: true })
+    const firstGraph = JSON.parse(readFileSync(first.graphPath, 'utf8')) as {
+      nodes: Array<Record<string, unknown>>
+    }
+    expect(first.extractableFiles).toBe(2)
+    expect(first.extractedFiles).toBe(2)
+    expect(first.cache).toEqual(expect.objectContaining({
+      strategy: 'spi',
+      hit: false,
+      reason: 'no-cache',
+      fileCount: 1,
+    }))
+    expect(firstGraph.nodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: 'foo()', file_type: 'code' }),
+        expect.objectContaining({ label: 'notes.md', file_type: 'document' }),
+      ]),
+    )
+
+    const second = generateGraph(sandbox, { useSpi: true, noHtml: true })
+    expect(second.extractableFiles).toBe(2)
+    expect(second.extractedFiles).toBe(1)
+    expect(second.cache).toEqual(expect.objectContaining({
+      strategy: 'spi',
+      hit: true,
+      reason: 'fresh-cache',
+      fileCount: 1,
+    }))
+  })
+
   it('useSpi:false (default) still uses the legacy extract pipeline', () => {
     writeFile(sandbox, 'src/foo.ts', 'export function foo(): number { return 1 }\n')
 
