@@ -61,7 +61,7 @@ What gets saved under `graphify-out/compare/<timestamp>/`:
 
 When Gemini emits structured JSON with `usageMetadata`, `compare` captures real reported input and total tokens in `report.json` and the terminal summary. If the runner only returns answer text or malformed JSON, `compare` falls back to labeled local `cl100k_base` prompt estimates instead.
 
-`report.json` keeps the real local artifact paths. `report.share-safe.json` preserves the compare metrics with stable placeholders for sharing, while the prompt and answer text files remain local-only artifacts. That makes the companion report safe to publish for path hygiene, but it still does not promise perfect redaction of every possible project detail.
+`report.json` keeps the real local artifact paths. `report.share-safe.json` preserves the compare metrics with stable placeholders for sharing, including sanitized placeholder paths to the prompt/answer artifacts; only the prompt and answer file contents remain local. That makes the companion report safe to publish for path hygiene, but it still does not promise perfect redaction of every possible project detail.
 
 Recent report versions also add a **provider/runtime proof** block so you can see whether a reduction is backed by provider-reported input/cache/total-token numbers or by local estimate + session-reuse accounting. Use this when you need customer-facing proof or your own apples-to-apples answer comparison.
 
@@ -88,7 +88,7 @@ What gets saved under `graphify-out/review-compare/<timestamp>/`:
 
 Use this when the question is not "graphify vs. naive baseline", but "did compact review mode make the PR-review prompt materially smaller while keeping the same review surface shape?" The report includes prompt-token deltas, payload-token deltas, run statuses, elapsed times for both modes, and a provider/runtime proof block that makes it explicit when review-compare is using local estimate + session-reuse accounting rather than provider-billed usage.
 
-As with `compare` and `benchmark`, the prompt and answer files stay local, while `report.share-safe.json` keeps the review metrics with stable placeholders so you can share evidence without publishing your exact local artifact paths.
+As with `compare` and `benchmark`, the prompt and answer file contents stay local, while `report.share-safe.json` keeps the review metrics plus sanitized placeholder paths to those artifacts so you can share evidence without publishing your exact local artifact paths.
 
 ## 4. Production and multi-repo proof
 
