@@ -63,6 +63,9 @@ function buildRelationships(
   matchedNodes: CompareReportPack['matched_nodes'],
 ): CompareReportPack['relationships'] {
   const labels = matchedNodes.map(({ label }) => label)
+  if (labels.length === 0) {
+    return []
+  }
 
   return Array.from({ length: totalCount }, (_, index) => ({
     from: labels[index % labels.length]!,
@@ -277,6 +280,10 @@ describe('public benchmark artifact (2026-05-02 govalidate pr review)', () => {
 })
 
 describe('shared GoValidate pack-quality verifier contract', () => {
+  it('builds no relationships when a fixture has no matched nodes', () => {
+    expect(buildRelationships(3, [])).toEqual([])
+  })
+
   it('accepts docs-artifact packs that satisfy required labels and pack ceilings', () => {
     const result = runPackVerifier('pass', buildPackFixture())
     const output = combinedOutput(result)
