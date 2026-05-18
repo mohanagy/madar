@@ -12,6 +12,7 @@ All notable changes to the TypeScript package will be documented in this file.
 ### Changed
 
 - **Native-agent compare suite summary**: multi-question `compare --baseline-mode native_agent` runs now roll up comparable-question wins/losses for input tokens, turns, and latency, report mean/median input-token reduction, surface comparable-question counts when some runs are excluded from the aggregate, and highlight the best win and worst regression prompt in the terminal summary.
+- **Native-agent cache-aware compare accounting**: `compare --baseline-mode native_agent` now persists derived total/uncached/cached Anthropic input-token fields alongside the raw provider `usage` block, and the terminal summary breaks out uncached/cache creation/cache read lines when cache activity is present.
 
 ## [0.22.9] - 2026-05-16
 

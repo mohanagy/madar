@@ -1515,7 +1515,18 @@ export interface AnthropicResultEvent {
 }
 
 export type NativeAgentRunStatus =
-  | { kind: 'succeeded'; model: string | null; usage: AnthropicUsageBlock; total_input_tokens_anthropic_exact: number; total_cost_usd: number | null; num_turns: number; duration_ms: number; result_path: string }
+  | {
+      kind: 'succeeded'
+      model: string | null
+      usage: AnthropicUsageBlock
+      total_input_tokens_anthropic_exact: number
+      uncached_input_tokens_anthropic_exact: number
+      cached_input_tokens_anthropic_exact: number
+      total_cost_usd: number | null
+      num_turns: number
+      duration_ms: number
+      result_path: string
+    }
   | { kind: 'answer_only'; evidence: string | null; exit_code: number; stderr: string | null; result_path: string }
   | { kind: 'runner_error'; evidence: string | null; exit_code: number | null; stderr: string | null }
 
@@ -1881,6 +1892,14 @@ function totalAnthropicInputTokens(usage: AnthropicUsageBlock): number {
   return usage.input_tokens + usage.cache_creation_input_tokens + usage.cache_read_input_tokens
 }
 
+function uncachedAnthropicInputTokens(usage: AnthropicUsageBlock): number {
+  return usage.input_tokens + usage.cache_creation_input_tokens
+}
+
+function cachedAnthropicInputTokens(usage: AnthropicUsageBlock): number {
+  return usage.cache_read_input_tokens
+}
+
 export async function executeNativeAgentCompare(
   input: GenerateCompareArtifactsInput,
   dependencies: ExecuteNativeAgentCompareDependencies = {},
@@ -1975,6 +1994,8 @@ export async function executeNativeAgentCompare(
             model: event.model,
             usage: event.usage,
             total_input_tokens_anthropic_exact: totalAnthropicInputTokens(event.usage),
+            uncached_input_tokens_anthropic_exact: uncachedAnthropicInputTokens(event.usage),
+            cached_input_tokens_anthropic_exact: cachedAnthropicInputTokens(event.usage),
             total_cost_usd: event.total_cost_usd,
             num_turns: event.num_turns,
             duration_ms: event.duration_ms,
@@ -2048,6 +2069,8 @@ export async function executeNativeAgentCompare(
           model: event.model,
           usage: event.usage,
           total_input_tokens_anthropic_exact: totalAnthropicInputTokens(event.usage),
+          uncached_input_tokens_anthropic_exact: uncachedAnthropicInputTokens(event.usage),
+          cached_input_tokens_anthropic_exact: cachedAnthropicInputTokens(event.usage),
           total_cost_usd: event.total_cost_usd,
           num_turns: event.num_turns,
           duration_ms: event.duration_ms,
@@ -2210,13 +2233,26 @@ export function formatNativeAgentCompareSummary(result: NativeAgentCompareResult
       continue
     }
 
+    const hasCacheActivity =
+      baseline.usage.cache_creation_input_tokens > 0 ||
+      baseline.cached_input_tokens_anthropic_exact > 0 ||
+      graphify.usage.cache_creation_input_tokens > 0 ||
+      graphify.cached_input_tokens_anthropic_exact > 0
+
     lines.push(
       `- "${report.question}"`,
       `    num_turns: baseline ${baseline.num_turns} → graphify ${graphify.num_turns}${formatDirectionalDelta(baseline.num_turns, graphify.num_turns, 'fewer', 'more')}`,
       `    latency:   baseline ${baseline.duration_ms}ms → graphify ${graphify.duration_ms}ms${formatDirectionalDelta(baseline.duration_ms, graphify.duration_ms, 'faster', 'slower')}`,
       `    input_tokens (Anthropic-reported): baseline ${baseline.total_input_tokens_anthropic_exact} → graphify ${graphify.total_input_tokens_anthropic_exact}${formatDirectionalDelta(baseline.total_input_tokens_anthropic_exact, graphify.total_input_tokens_anthropic_exact, 'less', 'more')}`,
-      `    provider/runtime proof: Anthropic reported input, cache, and total tokens for both runs`,
     )
+    if (hasCacheActivity) {
+      lines.push(
+        `    uncached_input_tokens (Anthropic-reported): baseline ${baseline.uncached_input_tokens_anthropic_exact} → graphify ${graphify.uncached_input_tokens_anthropic_exact}${formatDirectionalDelta(baseline.uncached_input_tokens_anthropic_exact, graphify.uncached_input_tokens_anthropic_exact, 'less', 'more')}`,
+        `    cache_creation_input_tokens (Anthropic-reported): baseline ${baseline.usage.cache_creation_input_tokens} → graphify ${graphify.usage.cache_creation_input_tokens}${formatDirectionalDelta(baseline.usage.cache_creation_input_tokens, graphify.usage.cache_creation_input_tokens, 'less', 'more')}`,
+        `    cache_read_input_tokens (Anthropic-reported): baseline ${baseline.usage.cache_read_input_tokens} → graphify ${graphify.usage.cache_read_input_tokens}${formatDirectionalDelta(baseline.usage.cache_read_input_tokens, graphify.usage.cache_read_input_tokens, 'less', 'more')}`,
+      )
+    }
+    lines.push(`    provider/runtime proof: Anthropic reported input, cache, and total tokens for both runs`)
   }
   return lines.join('\n')
 }
