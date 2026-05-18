@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import { join, relative, sep } from 'node:path'
+import { dirname, join, relative, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 
 import { describe, expect, test, vi } from 'vitest'
@@ -541,6 +541,22 @@ describe('runBenchmark', () => {
       expect(readFileSync(executions[1]!.promptFile, 'utf8')).not.toContain('Retrieved graph context:')
       expect(readFileSync(executions[0]!.outputFile, 'utf8')).toBe('Answer for how does authentication work\n')
       expect(readFileSync(executions[1]!.outputFile, 'utf8')).toBe('Answer for what is the main entry point\n')
+
+      const run = benchmark.per_question[0]
+      expect(run?.artifacts).toBeDefined()
+      const shareSafePath = join(dirname(run!.artifacts!.report), 'report.share-safe.json')
+      const shareSafeReport = JSON.parse(readFileSync(shareSafePath, 'utf8')) as Record<string, unknown>
+
+      expect(shareSafeReport).toEqual(
+        expect.objectContaining({
+          question: 'how does authentication work',
+          artifacts: expect.objectContaining({
+            prompt: '<artifact-root>/graphify-prompt.txt',
+            answer: '<artifact-root>/graphify-answer.txt',
+            report: '<artifact-root>/report.share-safe.json',
+          }),
+        }),
+      )
 
       expect(benchmark.matched_question_count).toBe(2)
       expect(benchmark.unmatched_questions).toEqual(['xyzzy plugh zorkmid'])

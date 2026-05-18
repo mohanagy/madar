@@ -6,6 +6,7 @@ import { KnowledgeGraph } from '../../contracts/graph.js'
 import type { ContextSessionState } from '../../contracts/context-session.js'
 import { type RetrieveResult, retrieveContext } from '../../runtime/retrieve.js'
 import { QUERY_TOKEN_ESTIMATOR } from '../../runtime/serve.js'
+import { toShareSafeArtifactPath } from '../../shared/share-safe-artifacts.js'
 import { validateGraphOutputPath } from '../../shared/security.js'
 import { buildGraphifyPromptPack, expandCompareExecTemplate } from '../compare.js'
 import { parsePromptRunnerOutput, type PromptRunnerUsage } from '../prompt-runner.js'
@@ -247,24 +248,43 @@ export async function runBenchmarkPrompt(options: RunBenchmarkPromptOptions): Pr
     session_state: promptPack.session_state,
   }
 
+  const localReport = {
+    question: options.question,
+    prompt_tokens_estimated: run.prompt_tokens_estimated,
+    query_tokens: run.query_tokens,
+    effective_query_tokens: run.effective_query_tokens,
+    reused_context_tokens: run.reused_context_tokens,
+    total_tokens: run.total_tokens,
+    prompt_token_source: run.prompt_token_source,
+    usage: run.usage,
+    elapsed_ms: run.elapsed_ms,
+    prompt_token_estimator: QUERY_TOKEN_ESTIMATOR,
+    artifacts: {
+      prompt: portablePath(artifacts.prompt),
+      answer: portablePath(artifacts.answer),
+      report: portablePath(artifacts.report),
+    },
+  }
+  const shareSafeRoots = {
+    artifactRoot: outputRoot,
+    projectRoot: inferProjectRootFromGraphPath(options.graphPath),
+  }
+  const shareSafeReportPath = join(outputRoot, 'report.share-safe.json')
+
   writeFileSync(
     artifacts.report,
+    `${JSON.stringify(localReport, null, 2)}\n`,
+    'utf8',
+  )
+  writeFileSync(
+    shareSafeReportPath,
     `${JSON.stringify(
       {
-        question: options.question,
-          prompt_tokens_estimated: run.prompt_tokens_estimated,
-          query_tokens: run.query_tokens,
-          effective_query_tokens: run.effective_query_tokens,
-          reused_context_tokens: run.reused_context_tokens,
-          total_tokens: run.total_tokens,
-          prompt_token_source: run.prompt_token_source,
-        usage: run.usage,
-        elapsed_ms: run.elapsed_ms,
-        prompt_token_estimator: QUERY_TOKEN_ESTIMATOR,
+        ...localReport,
         artifacts: {
-          prompt: portablePath(artifacts.prompt),
-          answer: portablePath(artifacts.answer),
-          report: portablePath(artifacts.report),
+          prompt: toShareSafeArtifactPath(artifacts.prompt, shareSafeRoots),
+          answer: toShareSafeArtifactPath(artifacts.answer, shareSafeRoots),
+          report: toShareSafeArtifactPath(shareSafeReportPath, shareSafeRoots),
         },
       },
       null,
