@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 
 import { strToU8, zipSync } from 'fflate'
 import { vi } from 'vitest'
@@ -1898,6 +1898,76 @@ describe('compare runtime', () => {
         }),
       }),
     )
+  })
+
+  it('sanitizes escaped artifact-root answer path traversals without reclassifying them under the project root', async () => {
+    const graph = makeGraph()
+    writeProjectFiles()
+    const secretPath = join(PROJECT_FIXTURE_ROOT, 'src', 'secret.ts')
+    writeFileSync(secretPath, 'export const secret = true\n', 'utf8')
+    const graphPath = writeGraphFixture(graph)
+    const outputTimestamp = '2026-04-24T19-30-00'
+    const questionOutputDir = join(COMPARE_OUTPUT_ROOT, outputTimestamp)
+    const escapedAnswerPath = relative(questionOutputDir, secretPath)
+    const originalCwd = process.cwd()
+
+    vi.resetModules()
+    vi.doMock('node:path', async () => {
+      const actual = await vi.importActual<typeof import('node:path')>('node:path')
+      return {
+        ...actual,
+        join: (...args: string[]) => {
+          if (args[0] === questionOutputDir && args[1] === 'baseline-answer.txt') {
+            return escapedAnswerPath
+          }
+          return actual.join(...args)
+        },
+      }
+    })
+
+    try {
+      const { executeCompareRuns: executeCompareRunsWithForgedAnswerPath } = await import('../../src/infrastructure/compare.js')
+      const result = await executeCompareRunsWithForgedAnswerPath(
+        {
+          graphPath,
+          question: 'how does login create a session',
+          outputDir: COMPARE_OUTPUT_ROOT,
+          execTemplate: 'runner --prompt {prompt_file} --mode {mode} --out {output_file}',
+          baselineMode: 'full',
+          now: new Date('2026-04-24T19:30:00.000Z'),
+        },
+        {
+          runner: async (execution) => {
+            process.chdir(questionOutputDir)
+            return {
+              exitCode: 0,
+              stdout: `${execution.mode} answer\n`,
+              stderr: '',
+              elapsedMs: 3,
+            }
+          },
+        },
+      )
+
+      const report = result.reports[0]!
+      const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
+      const shareSafeReport = JSON.parse(readFileSync(report.paths.share_safe_report, 'utf8')) as {
+        answer_paths: {
+          baseline: string
+          graphify: string
+        }
+      }
+
+      expect(report.answer_paths.baseline).toBe(escapedAnswerPath)
+      expect((savedReport.answer_paths as { baseline: string }).baseline).toBe(escapedAnswerPath)
+      expect(shareSafeReport.answer_paths.baseline).toBe('secret.ts')
+      expect(shareSafeReport.answer_paths.baseline).not.toBe('<project-root>/src/secret.ts')
+      expect(JSON.stringify(shareSafeReport)).not.toContain('<project-root>/src/secret.ts')
+    } finally {
+      process.chdir(originalCwd)
+      vi.doUnmock('node:path')
+      vi.resetModules()
+    }
   })
 
   it('loads graphify snippets when compare runs from outside the inferred project root', () => {

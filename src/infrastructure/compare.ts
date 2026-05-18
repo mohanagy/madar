@@ -324,7 +324,30 @@ function compareShareSafePathRoots(path: readonly string[], roots: ShareSafePath
   return [roots.projectRoot, roots.artifactRoot]
 }
 
+function isCompareArtifactRootField(path: readonly string[]): boolean {
+  const parentKey = path[path.length - 2]
+  return parentKey === 'paths' || parentKey === 'answer_paths'
+}
+
+function compareExternalPathFallback(path: string): string {
+  const normalizedPath = path.replaceAll('\\', '/')
+  const lastSegment = normalizedPath.split('/').pop()
+  return lastSegment && lastSegment.length > 0 ? lastSegment : '<external-path>'
+}
+
 function sanitizeCompareShareSafePath(value: string, roots: ShareSafePathRoots, path: readonly string[]): string {
+  if (isCompareArtifactRootField(path)) {
+    if (isAbsolutePathLike(value)) {
+      return isPathWithinRoot(resolve(value), roots.artifactRoot)
+        ? toShareSafeArtifactPath(value, roots)
+        : compareExternalPathFallback(value)
+    }
+
+    return isPathWithinRoot(resolve(roots.artifactRoot, value), roots.artifactRoot)
+      ? value
+      : compareExternalPathFallback(value)
+  }
+
   if (isAbsolutePathLike(value)) {
     return toShareSafeArtifactPath(value, roots)
   }
