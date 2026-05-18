@@ -1743,6 +1743,7 @@ describe('compare runtime', () => {
     ).resolves.toContain('no Anthropic usage block')
 
     const report = JSON.parse(readFileSync(join(COMPARE_OUTPUT_ROOT, outputTimestamp, 'report.json'), 'utf8')) as Record<string, unknown>
+    const shareSafeReport = JSON.parse(readFileSync(join(COMPARE_OUTPUT_ROOT, outputTimestamp, 'report.share-safe.json'), 'utf8')) as Record<string, unknown>
     expect(report).toEqual(
       expect.objectContaining({
         baseline: expect.objectContaining({
@@ -1756,6 +1757,28 @@ describe('compare runtime', () => {
         reductions: null,
       }),
     )
+    expect(shareSafeReport).toEqual(
+      expect.objectContaining({
+        graph_path: '<project-root>/graphify-out/graph.json',
+        paths: expect.objectContaining({
+          output_dir: '<artifact-root>',
+          report: '<artifact-root>/report.json',
+          share_safe_report: '<artifact-root>/report.share-safe.json',
+          baseline_answer: '<artifact-root>/baseline-answer.txt',
+          graphify_answer: '<artifact-root>/graphify-answer.txt',
+          prompt_file: '<artifact-root>/native_agent-prompt.txt',
+        }),
+        baseline: expect.objectContaining({
+          kind: 'answer_only',
+          result_path: '<artifact-root>/baseline-answer.txt',
+        }),
+        graphify: expect.objectContaining({
+          kind: 'answer_only',
+          result_path: '<artifact-root>/graphify-answer.txt',
+        }),
+      }),
+    )
+    expect(JSON.stringify(shareSafeReport)).not.toContain(PROJECT_FIXTURE_ROOT)
     expect(readFileSync(join(COMPARE_OUTPUT_ROOT, outputTimestamp, 'baseline-answer.txt'), 'utf8')).toBe('baseline answer\n')
     expect(readFileSync(join(COMPARE_OUTPUT_ROOT, outputTimestamp, 'graphify-answer.txt'), 'utf8')).toBe('graphify answer\n')
   })
@@ -1886,14 +1909,18 @@ describe('compare runtime', () => {
     const report = result.reports[0]!
     const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
     const shareSafeReport = JSON.parse(readFileSync(report.paths.share_safe_report, 'utf8')) as Record<string, unknown>
+    const savedReportEvidence = (savedReport.evidence as Record<string, string | null>).baseline
+    const savedReportStderr = (savedReport.stderr as Record<string, string | null>).graphify
     const shareSafeEvidence = (shareSafeReport.evidence as Record<string, string | null>).baseline
     const shareSafeStderr = (shareSafeReport.stderr as Record<string, string | null>).graphify
 
     expect(report.evidence.baseline).toContain(`${overflowPath} for details`)
     expect(report.stderr.graphify).toContain(`${overflowPath} for details`)
-    expect(JSON.stringify(savedReport)).toContain(`${overflowPath} for details`)
+    expect(savedReportEvidence).toContain(`${overflowPath} for details`)
+    expect(savedReportStderr).toContain(`${overflowPath} for details`)
 
-    expect(JSON.stringify(shareSafeReport)).not.toContain(overflowPath)
+    expect(shareSafeEvidence).not.toContain(overflowPath)
+    expect(shareSafeStderr).not.toContain(overflowPath)
     expect(shareSafeEvidence).not.toMatch(/\.\.[\\/A-Za-z0-9_-]/)
     expect(shareSafeStderr).not.toMatch(/\.\.[\\/A-Za-z0-9_-]/)
     expect(shareSafeEvidence).toContain(`${expectedShareSafeSecretPath} for details`)

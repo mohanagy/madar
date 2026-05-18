@@ -13,6 +13,10 @@ import {
 } from '../../src/infrastructure/review-compare.js'
 import { estimateQueryTokens } from '../../src/runtime/serve.js'
 
+function normalizePortablePath(path: string): string {
+  return path.replaceAll('\\', '/')
+}
+
 function createRepo(options: { pathLikeNodeIds?: boolean; pathWithSpaces?: boolean } = {}): string {
   const repoPrefix = options.pathWithSpaces ? 'graphify ts review compare repo-' : 'graphify-ts-review-compare-'
   const root = mkdtempSync(join(tmpdir(), repoPrefix))
@@ -227,14 +231,8 @@ describe('review compare', () => {
     const shareSafePath = join(result.report.paths.output_dir, 'report.share-safe.json')
     const shareSafeReport = JSON.parse(readFileSync(shareSafePath, 'utf8')) as Record<string, unknown>
 
-    expect(localReport).toEqual(
-      expect.objectContaining({
-        graph_path: expect.stringContaining('graphify-out/graph.json'),
-        paths: expect.objectContaining({
-          report: expect.stringContaining('report.json'),
-        }),
-      }),
-    )
+    expect(normalizePortablePath(String(localReport.graph_path))).toContain('graphify-out/graph.json')
+    expect((localReport.paths as Record<string, unknown>).report).toEqual(expect.stringContaining('report.json'))
     expect(shareSafeReport).toEqual(
       expect.objectContaining({
         graph_path: '<project-root>/graphify-out/graph.json',
@@ -332,6 +330,8 @@ describe('review compare', () => {
             `graph=${join(root, 'graphify-out', 'graph.json')}`,
             `project=${root}`,
             `external=${externalAbsolutePath}`,
+            'OPENAI_API_KEY=super-secret',
+            'Authorization: Bearer abc123',
             `url=${diagnosticUrl}`,
           ].join('\n'),
           elapsedMs: execution.mode === 'verbose' ? 15 : 9,
@@ -348,12 +348,18 @@ describe('review compare', () => {
     expect(localReport.stderr.verbose).toContain(`graph=${join(root, 'graphify-out', 'graph.json')}`)
     expect(localReport.stderr.verbose).toContain(`project=${root}`)
     expect(localReport.stderr.verbose).toContain(`external=${externalAbsolutePath}`)
+    expect(localReport.stderr.verbose).toContain('OPENAI_API_KEY=super-secret')
+    expect(localReport.stderr.verbose).toContain('Authorization: Bearer abc123')
 
     expect(shareSafeReport.stderr.verbose).toContain('prompt=<artifact-root>/verbose-prompt.txt')
     expect(shareSafeReport.stderr.verbose).toContain('output=<artifact-root>/verbose-answer.txt')
     expect(shareSafeReport.stderr.verbose).toContain('graph=<project-root>/graphify-out/graph.json')
     expect(shareSafeReport.stderr.verbose).toContain('project=<project-root>')
     expect(shareSafeReport.stderr.verbose).toContain(`external=${basename(externalAbsolutePath)}`)
+    expect(shareSafeReport.stderr.verbose).toContain('OPENAI_API_KEY=[REDACTED]')
+    expect(shareSafeReport.stderr.verbose).toContain('Authorization: Bearer [REDACTED]')
+    expect(shareSafeReport.stderr.verbose).not.toContain('super-secret')
+    expect(shareSafeReport.stderr.verbose).not.toContain('abc123')
     expect(shareSafeReport.stderr.verbose).toContain(`url=${diagnosticUrl}`)
     expect(shareSafeReport.stderr.verbose).not.toContain(root)
     expect(shareSafeReport.stderr.verbose).not.toContain(externalAbsolutePath)

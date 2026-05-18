@@ -154,13 +154,19 @@ function rewriteReviewComparePaths(
   }
 }
 
+function redactCredentialLikeText(text: string): string {
+  return text
+    .replaceAll(/\b([A-Z0-9_]*(?:TOKEN|KEY|SECRET|PASSWORD|PASS)[A-Z0-9_]*)=([^\s]+)/gi, '$1=[REDACTED]')
+    .replaceAll(/(Bearer)\s+[^\s]+/gi, '$1 [REDACTED]')
+}
+
 function rewriteShareSafeStderr(
   stderr: Record<ReviewCompareMode, string | null>,
   roots: ShareSafePathRoots,
 ): Record<ReviewCompareMode, string | null> {
   return {
-    verbose: stderr.verbose === null ? null : sanitizeShareSafeText(stderr.verbose, roots),
-    compact: stderr.compact === null ? null : sanitizeShareSafeText(stderr.compact, roots),
+    verbose: stderr.verbose === null ? null : sanitizeShareSafeText(redactCredentialLikeText(stderr.verbose), roots),
+    compact: stderr.compact === null ? null : sanitizeShareSafeText(redactCredentialLikeText(stderr.compact), roots),
   }
 }
 

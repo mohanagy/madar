@@ -374,6 +374,7 @@ function shouldSanitizeCompareShareSafePath(path: readonly string[]): boolean {
 
   return (
     key === 'graph_path' ||
+    key === 'result_path' ||
     key === 'source_file' ||
     key === 'focus_files' ||
     parentKey === 'paths' ||
@@ -1555,6 +1556,7 @@ export interface NativeAgentCompareReport {
   paths: {
     output_dir: string
     report: string
+    share_safe_report: string
     baseline_answer: string
     graphify_answer: string
     prompt_file: string
@@ -1785,6 +1787,7 @@ export async function executeNativeAgentCompare(
     const baselineAnswerPath = answerFilePath(questionDir, 'baseline')
     const graphifyAnswerPath = answerFilePath(questionDir, 'graphify')
     const reportPath = join(questionDir, 'report.json')
+    const shareSafeReportPath = join(questionDir, 'report.share-safe.json')
 
     const reportShell: NativeAgentCompareReport = {
       baseline_mode: 'native_agent',
@@ -1818,6 +1821,7 @@ export async function executeNativeAgentCompare(
       paths: {
         output_dir: questionDir,
         report: reportPath,
+        share_safe_report: shareSafeReportPath,
         baseline_answer: baselineAnswerPath,
         graphify_answer: graphifyAnswerPath,
         prompt_file: promptFile,
@@ -1994,23 +1998,32 @@ export async function executeNativeAgentCompare(
 }
 
 function writeNativeAgentReport(report: NativeAgentCompareReport): void {
+  const shareSafeRoots = {
+    artifactRoot: report.paths.output_dir,
+    projectRoot: inferProjectRootFromGraphPath(report.graph_path),
+  }
+  const serializedReport = {
+    ...report,
+    graph_path: portablePath(report.graph_path),
+    paths: {
+      output_dir: portablePath(report.paths.output_dir),
+      report: portablePath(report.paths.report),
+      share_safe_report: portablePath(report.paths.share_safe_report),
+      baseline_answer: portablePath(report.paths.baseline_answer),
+      graphify_answer: portablePath(report.paths.graphify_answer),
+      prompt_file: portablePath(report.paths.prompt_file),
+    },
+  }
+  const shareSafeReport = sanitizeCompareShareSafeValue(report, shareSafeRoots)
+
   writeFileSync(
     report.paths.report,
-    `${JSON.stringify(
-      {
-        ...report,
-        graph_path: portablePath(report.graph_path),
-        paths: {
-          output_dir: portablePath(report.paths.output_dir),
-          report: portablePath(report.paths.report),
-          baseline_answer: portablePath(report.paths.baseline_answer),
-          graphify_answer: portablePath(report.paths.graphify_answer),
-          prompt_file: portablePath(report.paths.prompt_file),
-        },
-      },
-      null,
-      2,
-    )}\n`,
+    `${JSON.stringify(serializedReport, null, 2)}\n`,
+    'utf8',
+  )
+  writeFileSync(
+    report.paths.share_safe_report,
+    `${JSON.stringify(shareSafeReport, null, 2)}\n`,
     'utf8',
   )
 }

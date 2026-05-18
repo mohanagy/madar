@@ -158,6 +158,7 @@ function buildSummaryResult(overrides: {
         paths: {
           output_dir: '/tmp/project/graphify-out/compare/2026-05-12T00-00-00Z',
           report: '/tmp/project/graphify-out/compare/2026-05-12T00-00-00Z/report.json',
+          share_safe_report: '/tmp/project/graphify-out/compare/2026-05-12T00-00-00Z/report.share-safe.json',
           baseline_answer: '/tmp/project/graphify-out/compare/2026-05-12T00-00-00Z/baseline.md',
           graphify_answer: '/tmp/project/graphify-out/compare/2026-05-12T00-00-00Z/graphify.md',
           prompt_file: '/tmp/project/graphify-out/compare/2026-05-12T00-00-00Z/prompt.txt',
