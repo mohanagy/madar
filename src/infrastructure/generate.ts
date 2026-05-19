@@ -317,11 +317,13 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   // disk cache (#77), so we always do a full SPI build + projection.
   const buildViaSpi = (): ReturnType<typeof buildFromJson> | null => {
     if (extractableFiles.length === 0) return null
+    const spiExtractorVersion = `spi-v1.0.0-enqueues-job-${EXTRACTOR_CACHE_VERSION}`
     const built =
       codeFiles.length > 0
         ? buildSpiCached({
             root: resolvedRootPath,
             graphifyVersion: `spi-extractor-${EXTRACTOR_CACHE_VERSION}`,
+            extractorVersion: spiExtractorVersion,
           })
         : null
     const spiExtraction = built ? projectSpiToExtraction(built.spi, { root: resolvedRootPath }) : emptyExtraction()

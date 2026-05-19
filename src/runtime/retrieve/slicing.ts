@@ -63,12 +63,12 @@ interface SlicePolicy {
   runtime_flow_only?: boolean
 }
 
-const EXPLAIN_BACKWARD = new Set(['calls', 'controller_route', 'route_handler'])
-const EXPLAIN_FORWARD = new Set(['calls', 'contains', 'method', 'route_handler', 'controller_route'])
-const DEBUG_BACKWARD = new Set(['calls', 'controller_route', 'route_handler'])
-const DEBUG_FORWARD = new Set(['calls', 'contains', 'method', 'route_handler', 'controller_route'])
-const IMPACT_BACKWARD = new Set(['calls', 'controller_route', 'route_handler'])
-const IMPACT_FORWARD = new Set(['calls', 'contains', 'method', 'route_handler', 'controller_route'])
+const EXPLAIN_BACKWARD = new Set(['calls', 'enqueues_job', 'controller_route', 'route_handler'])
+const EXPLAIN_FORWARD = new Set(['calls', 'enqueues_job', 'contains', 'method', 'route_handler', 'controller_route'])
+const DEBUG_BACKWARD = new Set(['calls', 'enqueues_job', 'controller_route', 'route_handler'])
+const DEBUG_FORWARD = new Set(['calls', 'enqueues_job', 'contains', 'method', 'route_handler', 'controller_route'])
+const IMPACT_BACKWARD = new Set(['calls', 'enqueues_job', 'controller_route', 'route_handler'])
+const IMPACT_FORWARD = new Set(['calls', 'enqueues_job', 'contains', 'method', 'route_handler', 'controller_route'])
 const DEBUG_HELPERS = new Set(['uses_guard', 'guarded_by', 'reads_env', 'uses_config', 'depends_on', 'covered_by', 'injects'])
 const EXPLAIN_HELPERS = new Set(['covered_by', 'reads_env', 'uses_config'])
 const IMPACT_HELPERS = new Set(['covered_by', 'reads_env', 'uses_config', 'depends_on', 'exports'])
@@ -172,7 +172,7 @@ function effectivePolicy(
       ...base,
       directions: ['backward', 'forward'],
       backward_relations: new Set(['controller_route', 'route_handler', 'method']),
-      forward_relations: new Set(['calls']),
+        forward_relations: new Set(['calls', 'enqueues_job']),
       helper_relations: new Set(['injects', 'depends_on', 'module_provides']),
       backward_depth: 1,
       forward_depth: Math.max(base.forward_depth, 4),
@@ -184,7 +184,7 @@ function effectivePolicy(
     return {
       ...base,
       backward_relations: new Set(['controller_route', 'route_handler', 'method']),
-      forward_relations: new Set(['calls']),
+        forward_relations: new Set(['calls', 'enqueues_job']),
       helper_relations: new Set([
         ...base.helper_relations,
         'injects',
@@ -485,7 +485,7 @@ function pipelineBridgeLikeNode(node: SliceScoredNode): boolean {
 
 function highValueRuntimeExpansionNode(node: SliceScoredNode): boolean {
   const lower = `${node.label} ${node.frameworkRole ?? ''} ${node.sourceFile}`.toLowerCase()
-  return /\bpipeline|trigger|worker|orchestrator|planner|research|agent|scoring|report|repository|persistence|save|process|search|score|dispatch|assemble|persist|builder\b/.test(lower)
+  return /\bpipeline|trigger|queue|job|worker|orchestrator|planner|research|agent|scoring|report|repository|persistence|save|process|search|score|dispatch|assemble|persist|builder|addjob\b/.test(lower)
 }
 
 function sharedHubLikeNode(graph: KnowledgeGraph, node: SliceScoredNode): boolean {

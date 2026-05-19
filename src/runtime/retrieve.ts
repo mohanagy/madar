@@ -1166,6 +1166,7 @@ function rankedSeedCandidateIds(
 function relationWeight(relation: string): number {
   switch (relation) {
     case 'calls':
+    case 'enqueues_job':
     case 'imports_from':
     case 'defines':
     case 'defines_action':
