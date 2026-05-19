@@ -714,8 +714,8 @@ function parseTraceToolName(value: unknown): string | null {
 }
 
 function parseTraceTurnNumber(value: unknown, fallbackTurn: number): number {
-  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
-    return Math.trunc(value)
+  if (typeof value === 'number' && Number.isInteger(value) && value > 0) {
+    return value
   }
   return fallbackTurn
 }
