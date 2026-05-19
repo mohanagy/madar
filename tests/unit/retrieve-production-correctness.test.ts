@@ -67,6 +67,10 @@ function buildBidirectionalHubGraph() {
           { id: 'create_idea', label: '.createIdea()', file_type: 'code', source_file: '/src/ideas/ideas.service.ts', source_location: 'L30', node_kind: 'method', framework_role: 'nest_provider', community: 1 },
           { id: 'start_pipeline', label: '.startPipeline()', file_type: 'code', source_file: '/src/pipeline/pipeline-trigger.service.ts', source_location: 'L40', node_kind: 'method', framework_role: 'nest_provider', community: 1 },
           { id: 'add_job', label: '.addJob()', file_type: 'code', source_file: '/src/queue/queue-registry.service.ts', source_location: 'L11', node_kind: 'method', framework_role: 'queue', community: 2 },
+          { id: 'process', label: '.process()', file_type: 'code', source_file: '/src/pipeline/orchestrator.worker.ts', source_location: 'L12', node_kind: 'method', framework_role: 'worker', community: 2 },
+          { id: 'search', label: '.search()', file_type: 'code', source_file: '/src/research/research-agent.service.ts', source_location: 'L11', node_kind: 'method', community: 3 },
+          { id: 'score', label: '.score()', file_type: 'code', source_file: '/src/scoring/metrics-scoring.service.ts', source_location: 'L12', node_kind: 'method', community: 3 },
+          { id: 'save', label: '.save()', file_type: 'code', source_file: '/src/persistence/report.repository.ts', source_location: 'L8', node_kind: 'method', framework_role: 'repository', community: 3 },
           { id: 'call_llm', label: '.callLlm()', file_type: 'code', source_file: '/src/llm/llm-provider-resolver.service.ts', source_location: 'L14', node_kind: 'method', community: 3 },
           { id: 'resolve_llm', label: '.resolve()', file_type: 'code', source_file: '/src/llm/llm-provider-resolver.service.ts', source_location: 'L8', node_kind: 'method', community: 3 },
           { id: 'other_controller_a', label: '.exportIdeaToPdf()', file_type: 'code', source_file: '/src/ideas/export.controller.ts', source_location: 'L18', node_kind: 'method', framework: 'nestjs', framework_role: 'nest_route', community: 4 },
@@ -80,6 +84,10 @@ function buildBidirectionalHubGraph() {
           { source: 'route', target: 'start_pipeline', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/idea-generation.controller.ts' },
           { source: 'route', target: 'plan_enforcement', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/idea-generation.controller.ts' },
           { source: 'start_pipeline', target: 'add_job', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/pipeline-trigger.service.ts' },
+          { source: 'add_job', target: 'process', relation: 'enqueues_job', confidence: 'EXTRACTED', source_file: '/src/queue/queue-registry.service.ts' },
+          { source: 'process', target: 'search', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/orchestrator.worker.ts' },
+          { source: 'process', target: 'score', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/orchestrator.worker.ts' },
+          { source: 'process', target: 'save', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/orchestrator.worker.ts' },
           { source: 'call_llm', target: 'resolve_llm', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/llm/llm-provider-resolver.service.ts' },
           { source: 'resolve_llm', target: 'create_idea', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/llm/llm-provider-resolver.service.ts' },
 
@@ -198,6 +206,16 @@ describe('retrieveContext production retrieval regressions', () => {
       expect.objectContaining({ from: '.generateFromProblem()', to: '.createIdea()', relation: 'calls', direction: 'forward' }),
       expect.objectContaining({ from: '.generateFromProblem()', to: '.startPipeline()', relation: 'calls', direction: 'forward' }),
       expect.objectContaining({ from: '.startPipeline()', to: '.addJob()', relation: 'calls', direction: 'forward' }),
+      expect.objectContaining({ from: '.addJob()', to: '.process()', relation: 'enqueues_job', direction: 'forward' }),
+      expect.objectContaining({ from: '.process()', to: '.search()', relation: 'calls', direction: 'forward' }),
+      expect.objectContaining({ from: '.process()', to: '.score()', relation: 'calls', direction: 'forward' }),
+      expect.objectContaining({ from: '.process()', to: '.save()', relation: 'calls', direction: 'forward' }),
+    ]))
+    expect(result.matched_nodes.map((node) => node.label)).toEqual(expect.arrayContaining([
+      '.process()',
+      '.search()',
+      '.score()',
+      '.save()',
     ]))
 
     const forbiddenPaths = [

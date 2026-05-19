@@ -100,6 +100,17 @@ function findCallsEdge(
   )
 }
 
+function findEdgeOfKind(
+  spi: SemanticProgramIndex,
+  fromId: string,
+  toId: string,
+  kind: string,
+): SpiEdge | undefined {
+  return spi.edges.find(
+    (edge) => (edge.kind as string) === kind && edge.from === fromId && edge.to === toId,
+  )
+}
+
 function findNode(
   extraction: ExtractionData,
   predicate: (node: ExtractionNode) => boolean,
@@ -173,6 +184,12 @@ describe('SPI realistic Nest DI runtime-call fixture', () => {
       'PipelineTriggerService.startPipeline',
       'method',
     )
+    const addJob = findSymbol(
+      spi,
+      'src/modules/pipeline/api/queue-registry.service.ts',
+      'QueueRegistryService.addJob',
+      'method',
+    )
     const process = findSymbol(
       spi,
       'src/modules/pipeline/workers/orchestrator.worker.ts',
@@ -198,7 +215,13 @@ describe('SPI realistic Nest DI runtime-call fixture', () => {
       'method',
     )
 
-    expect(findCallsEdge(spi, startPipeline.id, process.id)).toBeTruthy()
+    expect(findCallsEdge(spi, startPipeline.id, addJob.id)).toBeTruthy()
+    expect(findCallsEdge(spi, startPipeline.id, process.id)).toBeUndefined()
+    expect(findEdgeOfKind(spi, addJob.id, process.id, 'enqueues_job')).toEqual(
+      expect.objectContaining({
+        kind: 'enqueues_job',
+      }),
+    )
     expect(findCallsEdge(spi, process.id, search.id)).toBeTruthy()
     expect(findCallsEdge(spi, process.id, score.id)).toBeTruthy()
     expect(findCallsEdge(spi, process.id, save.id)).toBeTruthy()
@@ -256,6 +279,12 @@ describe('SPI realistic Nest DI runtime-call fixture', () => {
         reason: 'symbol mention',
       }),
     )
+    expect(result.slice?.selected_paths).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ from: '.startPipeline()', to: '.addJob()', relation: 'calls', direction: 'forward' }),
+        expect.objectContaining({ from: '.addJob()', to: '.process()', relation: 'enqueues_job', direction: 'forward' }),
+      ]),
+    )
     expect(labels).toEqual(
       expect.arrayContaining([
         '.generateFromProblem()',
@@ -264,6 +293,7 @@ describe('SPI realistic Nest DI runtime-call fixture', () => {
         '.generateTitle()',
         '.updateTitle()',
         '.startPipeline()',
+        '.addJob()',
         '.claimQueuedPipelineRun()',
         '.cancelPipeline()',
         '.process()',
@@ -310,6 +340,7 @@ describe('SPI realistic Nest DI runtime-call fixture', () => {
         '.generateTitle()',
         '.updateTitle()',
         '.startPipeline()',
+        '.addJob()',
         '.claimQueuedPipelineRun()',
         '.cancelPipeline()',
         '.process()',
