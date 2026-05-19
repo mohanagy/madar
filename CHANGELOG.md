@@ -6,7 +6,7 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ### Added
 
-- **Execution-slice context packs**: runtime-generation backend explain packs now expose a separate `execution_slice` section with ordered runtime steps and partial-path signaling while preserving the raw `slice` metadata for compatibility.
+- **Execution-slice context packs**: runtime-generation backend packs now expose a separate `execution_slice` section with ordered runtime steps and partial-path signaling while preserving the raw `slice` metadata for compatibility.
 - **Pack-only compare mode**: `graphify-ts compare --baseline-mode pack_only` now compares one bounded raw-context baseline prompt against one compiled graphify pack, persists the compact pack audit fields in `report.json`, and keeps `native_agent` as the provider-reported runtime benchmark path.
 - **Share-safe proof reports**: `compare`, `review-compare`, and runner-backed `benchmark --exec ...` executions now emit a companion `report.share-safe.json` with stable path placeholders while keeping the full local `report.json`.
 - **Generate performance benchmark harness**: adds a small synthetic benchmark flow for `generate`, `update`, `cluster-only`, and SPI cold/warm cache runs, with structured metrics for wall-clock time, file/extraction counts, graph size, output bytes, and cache-hit reasons plus new docs for manual large-repo measurements.
