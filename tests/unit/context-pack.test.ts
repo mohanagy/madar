@@ -5,6 +5,7 @@ import {
   classifyTaskContract,
   compactContextPack,
   compileContextPack,
+  estimateContextPackEntryTokens,
   type ContextPackNodeCandidate,
 } from '../../src/runtime/context-pack.js'
 
@@ -26,6 +27,13 @@ function nodeCandidate(
     estimate_tokens: () => tokenCost,
     build_entry: () => ({ ...entry, evidence_class: evidenceClass }),
   }
+}
+
+function renderedTokenCount(nodes: readonly ContextPackNode[]): number {
+  return nodes.reduce(
+    (total, node) => total + estimateContextPackEntryTokens(node.label, node.source_file, node.line_number, node.snippet ?? null),
+    0,
+  )
 }
 
 describe('context-pack', () => {
@@ -148,7 +156,7 @@ describe('context-pack', () => {
           relation: 'calls',
         },
       ])
-      expect(pack.token_count).toBe(19)
+      expect(pack.token_count).toBe(renderedTokenCount(pack.nodes))
       expect(pack.claims).toEqual([
         expect.objectContaining({ evidence_class: 'primary', node_labels: ['AuthService'] }),
         expect.objectContaining({ evidence_class: 'supporting', node_labels: ['SessionManager'] }),
@@ -237,7 +245,7 @@ describe('context-pack', () => {
       })
 
       expect(pack.nodes.map((node) => node.label)).toEqual(['authenticateUser'])
-      expect(pack.token_count).toBe(8)
+      expect(pack.token_count).toBe(renderedTokenCount(pack.nodes))
       expect(pack.coverage.missing_required).toEqual(['supporting', 'impact'])
       expect(pack.coverage.entries).toEqual(expect.arrayContaining([
         expect.objectContaining({ evidence_class: 'change', status: 'covered', selected_nodes: 1 }),
@@ -275,6 +283,74 @@ describe('context-pack', () => {
           },
         }),
       ])
+    })
+
+    it('keeps the same selected labels while task-aware rendering changes representation cost after selection', () => {
+      const nodes = [
+        nodeCandidate({
+          node_id: 'auth_service',
+          label: 'AuthService.login',
+          source_file: 'src/auth/service.ts',
+          line_number: 18,
+          file_type: 'code',
+          snippet: [
+            'export class AuthService {',
+            '  async login(input: LoginInput) {',
+            '    return this.sessionStore.create(input.userId)',
+            '  }',
+            '}',
+          ].join('\n'),
+          match_score: 10,
+          relevance_band: 'direct',
+          community: 0,
+          community_label: 'Auth',
+        }, 'primary', 18),
+        nodeCandidate({
+          node_id: 'auth_controller',
+          label: 'AuthController.callback',
+          source_file: 'src/auth/controller.ts',
+          line_number: 10,
+          file_type: 'code',
+          snippet: [
+            'export class AuthController {',
+            '  async callback(input: LoginInput) {',
+            '    return this.authService.login(input)',
+            '  }',
+            '}',
+          ].join('\n'),
+          match_score: 8,
+          relevance_band: 'related',
+          community: 0,
+          community_label: 'Auth',
+        }, 'structural', 17),
+      ] as const
+      const relationships = [
+        {
+          from_id: 'auth_controller',
+          from: 'AuthController.callback',
+          to_id: 'auth_service',
+          to: 'AuthService.login',
+          relation: 'calls',
+        },
+      ] as const
+
+      const explainPack = compileContextPack({
+        task_contract: classifyTaskContract('explain', { budget: 64, prompt: 'Explain the auth callback flow' }),
+        nodes,
+        relationships,
+      })
+      const reviewPack = compileContextPack({
+        task_contract: classifyTaskContract('review', { budget: 64, prompt: 'Review the auth callback changes' }),
+        nodes,
+        relationships,
+      })
+
+      expect(explainPack.nodes.map((node) => node.label).sort()).toEqual(reviewPack.nodes.map((node) => node.label).sort())
+      expect(explainPack.nodes.find((node) => node.node_id === 'auth_controller')?.representation_type).toBe('call_chain')
+      expect(reviewPack.nodes.find((node) => node.node_id === 'auth_controller')?.representation_type).toBe('signature')
+      expect(reviewPack.token_count).toBeLessThan(explainPack.token_count)
+      expect(explainPack.token_count).toBe(renderedTokenCount(explainPack.nodes))
+      expect(reviewPack.token_count).toBe(renderedTokenCount(reviewPack.nodes))
     })
 
     it('does not materialize omitted entries when candidate metadata already covers previews and semantics', () => {

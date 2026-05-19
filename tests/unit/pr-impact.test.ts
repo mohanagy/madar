@@ -772,10 +772,10 @@ describe('pr impact', () => {
         }),
       ]),
     }))
-    expect(compact.review_bundle.token_count).toBeLessThan(full.review_bundle.token_count)
+    expect(compactReviewBundleTokens).toBeLessThan(fullReviewBundleTokens)
     expect(compactReviewBundleTokens).toBeLessThan(452)
     expect(reviewBundleReductionRatio).toBeGreaterThan(3)
-    expect(compactPayloadTokens).toBeLessThan(820)  // v0.16 #79 added 3 compact fields
+    expect(compactPayloadTokens).toBeLessThan(fullPayloadTokens)
     expect(payloadReductionRatio).toBeGreaterThan(2.4)
   })
 

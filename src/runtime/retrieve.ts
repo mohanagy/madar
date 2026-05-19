@@ -11,6 +11,7 @@ import type {
   ContextPackExpandableLineRange,
   ContextPackExpandableRef,
   ContextPackNode,
+  ContextRepresentationType,
   ContextPackRetrievalStrategy,
   ContextPackSelectionDiagnostics,
   ContextPackSliceMetadata,
@@ -33,6 +34,7 @@ import {
   compactContextPack,
   compileContextPack,
   estimateContextPackEntryTokens,
+  renderCompiledContextPackNodes,
   type ContextPackSelectionStrategy,
   type ContextPackNodeCandidate,
 } from './context-pack.js'
@@ -105,6 +107,8 @@ export interface RetrieveMatchedNode {
   community: number | null
   community_label: string | null
   evidence_class?: ContextPackEvidenceClass
+  representation_type?: ContextRepresentationType
+  representation_reason?: string
 }
 
 export interface RetrieveRelationship {
@@ -2091,16 +2095,23 @@ function fallbackRetrieveCoverage(result: RetrieveResult): ContextPackCoverage {
 export function contextPackFromRetrieveResult(
   result: RetrieveResult,
 ): CompiledContextPack<ContextPackNode, RetrieveRelationship, RetrieveCommunityContext> {
-  return {
-    task_contract: result.task_contract ?? classifyTaskContract('explain', {
-      budget: result.token_count,
-      prompt: result.question,
-    }),
-    token_count: result.token_count,
-    nodes: result.matched_nodes.map((node) => ({
+  const taskContract = result.task_contract ?? classifyTaskContract('explain', {
+    budget: result.token_count,
+    prompt: result.question,
+  })
+  const renderedNodes = renderCompiledContextPackNodes(
+    taskContract,
+    result.matched_nodes.map((node) => ({
       ...node,
       evidence_class: node.evidence_class ?? retrieveEvidenceClassForBand(node.relevance_band),
     })),
+    result.relationships,
+  )
+
+  return {
+    task_contract: taskContract,
+    token_count: renderedNodes.token_count,
+    nodes: renderedNodes.nodes,
     relationships: result.relationships,
     community_context: result.community_context,
     graph_signals: result.graph_signals,
