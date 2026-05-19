@@ -80,6 +80,9 @@ export type ContextRepresentationType =
   | 'signature'
   | 'behavior_sketch'
   | 'dependency_record'
+  | 'call_chain'
+  | 'contract_view'
+  | 'implementation_excerpt'
 
 export interface ContextPackTaskContract {
   version: 1
