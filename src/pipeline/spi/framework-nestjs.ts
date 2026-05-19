@@ -897,6 +897,10 @@ function looksLikeQueueCandidate(candidate: string): boolean {
     .flatMap((segment) => segment.match(/[A-Z]+(?=[A-Z][a-z0-9])|[A-Z]?[a-z0-9]+/g) ?? [])
     .map((token) => token.toLowerCase())
 
+  if (tokens.length === 2 && tokens[0] === 'de' && tokens[1] === 'queue') {
+    return false
+  }
+
   return tokens.at(-1) === 'queue'
 }
 

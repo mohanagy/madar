@@ -245,7 +245,7 @@ describe('SPI realistic Nest DI runtime-call fixture', () => {
     expect(findEdgeOfKind(spi, recordPipelineStage.id, process.id, 'enqueues_job')).toBeUndefined()
   })
 
-  it('does not treat dequeue-style receivers as queue enqueue edges', () => {
+  it('does not treat deQueue-style receivers as queue enqueue edges', () => {
     const spi = buildFixtureSpi()
     const drainPipelineStage = findSymbol(
       spi,

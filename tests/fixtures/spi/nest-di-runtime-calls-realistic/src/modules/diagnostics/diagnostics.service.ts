@@ -4,7 +4,7 @@ class TagAccumulator {
   }
 }
 
-class DequeueAdapter {
+class DeQueue {
   add(jobName: string, value: string): string {
     return `${jobName}:${value}`
   }
@@ -12,13 +12,13 @@ class DequeueAdapter {
 
 export class DiagnosticsService {
   private readonly tagAccumulator = new TagAccumulator()
-  private readonly dequeue = new DequeueAdapter()
+  private readonly deQueue = new DeQueue()
 
   recordPipelineStage(stage: string): string {
     return this.tagAccumulator.add('pipeline.orchestrator.process', stage)
   }
 
   drainPipelineStage(stage: string): string {
-    return this.dequeue.add('pipeline.orchestrator.process', stage)
+    return this.deQueue.add('pipeline.orchestrator.process', stage)
   }
 }
