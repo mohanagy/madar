@@ -1,8 +1,18 @@
 import { describe, expect, it } from 'vitest'
 
-import type { ContextPackExecutionSlice } from '../../src/contracts/context-pack.js'
 import { build } from '../../src/pipeline/build.js'
 import { compactRetrieveResult, retrieveContext } from '../../src/runtime/retrieve.js'
+
+interface ExecutionSliceExpectation {
+  status: 'complete' | 'partial'
+  steps: Array<{
+    node_id?: string
+    label: string
+    source_file?: string
+    line_number?: number
+  }>
+  boundary_reason?: string
+}
 
 function buildSliceGraph(options: { includePersistenceStep?: boolean } = {}) {
   const { includePersistenceStep = true } = options
@@ -59,7 +69,7 @@ function compactFor(prompt: string, graph = buildSliceGraph()) {
   } as never)
 
   return compactRetrieveResult(retrieval) as ReturnType<typeof compactRetrieveResult> & {
-    execution_slice?: ContextPackExecutionSlice
+    execution_slice?: ExecutionSliceExpectation
   }
 }
 

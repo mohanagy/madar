@@ -59,19 +59,6 @@ export interface ContextPackSliceMetadata {
   selected_paths: ContextPackSlicePath[]
 }
 
-export interface ContextPackExecutionStep {
-  node_id?: string
-  label: string
-  source_file?: string
-  line_number?: number
-}
-
-export interface ContextPackExecutionSlice {
-  status: 'complete' | 'partial'
-  steps: ContextPackExecutionStep[]
-  boundary_reason?: string
-}
-
 export type ContextRepresentationType =
   | 'detail'
   | 'summary'
@@ -220,7 +207,6 @@ export interface CompiledContextPack<
   selection_diagnostics?: ContextPackSelectionDiagnostics
   retrieval_strategy?: ContextPackRetrievalStrategy
   slice?: ContextPackSliceMetadata
-  execution_slice?: ContextPackExecutionSlice
   /**
    * Retrieval-gate decision (#75) attached when the caller invoked the
    * gate before building the pack. Carries `level`, `reason`, `intent`,

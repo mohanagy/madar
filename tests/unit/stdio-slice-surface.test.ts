@@ -1,16 +1,19 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { tmpdir } from 'node:os'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { handleStdioRequest } from '../../src/runtime/stdio-server.js'
 
 const tempRoots: string[] = []
+const scratchRoot = join(process.cwd(), '.test-artifacts', 'stdio-slice-surface')
 let previousToolProfile: string | undefined
 
 function createGraphPath(): string {
-  const root = mkdtempSync(join(tmpdir(), 'graphify-stdio-slice-'))
+  mkdirSync(scratchRoot, { recursive: true })
+  const root = join(scratchRoot, `graphify-stdio-slice-${randomUUID()}`)
+  mkdirSync(root, { recursive: true })
   tempRoots.push(root)
   const graphifyOut = join(root, 'graphify-out')
   const graphPath = join(graphifyOut, 'graph.json')

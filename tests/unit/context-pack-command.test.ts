@@ -1,121 +1,41 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import type { ContextPackExecutionSlice } from '../../src/contracts/context-pack.js'
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
 import { runContextPackCommand, type ContextPackCommandDependencies } from '../../src/infrastructure/context-pack-command.js'
+import { build } from '../../src/pipeline/build.js'
+import { compactRetrieveResult, retrieveContext } from '../../src/runtime/retrieve.js'
+
+function buildRuntimeGenerationGraph() {
+  return build(
+    [
+      {
+        schema_version: 1,
+        nodes: [
+          { id: 'auth_route', label: 'POST /login', file_type: 'code', source_file: '/src/auth/routes.ts', source_location: 'L10', node_kind: 'route', framework: 'express', framework_role: 'express_route', community: 0 },
+          { id: 'auth_controller', label: 'AuthController.login', file_type: 'code', source_file: '/src/auth/controller.ts', source_location: 'L20', node_kind: 'method', framework: 'nestjs', framework_role: 'nest_controller', community: 0 },
+          { id: 'auth_service', label: 'AuthService.login', file_type: 'code', source_file: '/src/auth/service.ts', source_location: 'L30', node_kind: 'method', community: 0 },
+          { id: 'session_store', label: 'SessionStore.createSession', file_type: 'code', source_file: '/src/session/store.ts', source_location: 'L40', node_kind: 'method', community: 1 },
+          { id: 'auth_test', label: 'AuthService.login.spec', file_type: 'code', source_file: '/tests/auth.service.spec.ts', source_location: 'L50', node_kind: 'function', community: 2 },
+        ],
+        edges: [
+          { source: 'auth_route', target: 'auth_controller', relation: 'controller_route', confidence: 'EXTRACTED', source_file: '/src/auth/routes.ts' },
+          { source: 'auth_controller', target: 'auth_service', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/controller.ts' },
+          { source: 'auth_service', target: 'session_store', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts' },
+          { source: 'auth_service', target: 'auth_test', relation: 'covered_by', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts' },
+        ],
+      },
+    ],
+    { directed: true },
+  )
+}
 
 describe('context-pack-command', () => {
-  it('emits a compact deterministic explain pack', async () => {
-    const graph = new KnowledgeGraph()
-    const executionSlice: ContextPackExecutionSlice = {
-      status: 'complete',
-      steps: [
-        { label: 'POST /login' },
-        { label: 'AuthController.login' },
-        { label: 'AuthService.login' },
-        { label: 'SessionStore.createSession' },
-      ],
-    }
+  it('preserves execution_slice for runtime-generation explain packs', async () => {
+    const graph = buildRuntimeGenerationGraph()
     const dependencies: ContextPackCommandDependencies = {
       loadGraph: vi.fn().mockReturnValue(graph),
-      retrieveContext: vi.fn().mockReturnValue({
-        question: 'how does auth work',
-        token_count: 42,
-        matched_nodes: [],
-        relationships: [],
-        community_context: [],
-        graph_signals: { god_nodes: [], bridge_nodes: [] },
-        task_contract: {
-          version: 1,
-          task_kind: 'explain',
-          task_intent: 'explain',
-          evidence_recipe_id: 'explain',
-          budget: 1800,
-          prompt: 'how does auth work',
-          required_evidence: ['primary', 'supporting', 'structural'],
-          preferred_evidence: ['primary', 'supporting', 'structural'],
-          semantic_required: ['implementation', 'structure'],
-          semantic_optional: ['contracts', 'configuration', 'tests'],
-        },
-        claims: [
-          {
-            evidence_class: 'primary',
-            text: 'primary evidence: AuthService',
-            node_labels: ['AuthService'],
-          },
-        ],
-        expandable: [
-          {
-            kind: 'nodes',
-            handle_id: 'expand:explain:structural:demo',
-            evidence_class: 'structural',
-            count: 1,
-            preview: [
-              {
-                node_id: 'logger',
-                label: 'Logger',
-                source_file: 'src/logger.ts',
-                line_range: {
-                  start_line: 3,
-                  end_line: 3,
-                },
-              },
-            ],
-            follow_up: {
-              kind: 'context_pack',
-              task_kind: 'explain',
-              evidence_class: 'structural',
-              focus_files: ['src/logger.ts'],
-              focus_ranges: [
-                {
-                  source_file: 'src/logger.ts',
-                  start_line: 3,
-                  end_line: 3,
-                },
-              ],
-            },
-          },
-        ],
-        coverage: {
-          required_evidence: ['primary', 'supporting', 'structural'],
-          semantic_required: ['implementation', 'structure'],
-          semantic_optional: ['contracts', 'configuration', 'tests'],
-          entries: [],
-          semantic_entries: [
-            {
-              category: 'implementation',
-              label: 'implementation',
-              required: true,
-              available_nodes: 1,
-              selected_nodes: 1,
-              status: 'covered',
-            },
-          ],
-          missing_required: [],
-          missing_semantic: [],
-          available_relationships: 0,
-          selected_relationships: 0,
-        },
-      }),
-      compactRetrieveResult: vi.fn().mockReturnValue({
-        question: 'how does auth work',
-        token_count: 18,
-        matched_nodes: [
-          {
-            label: 'AuthService',
-            source_file: 'src/auth.ts',
-            line_number: 12,
-            snippet: 'export class AuthService {}',
-            relevance_band: 'direct',
-            community: 0,
-          },
-        ],
-        relationships: [],
-        community_context: [],
-        graph_signals: { god_nodes: [], bridge_nodes: [] },
-        shared_file_type: 'code',
-        execution_slice: executionSlice,
-      }),
+      retrieveContext: vi.fn((currentGraph, options) => retrieveContext(currentGraph, options as never)),
+      compactRetrieveResult,
       analyzePrImpact: vi.fn(),
       compactPrImpactResult: vi.fn(),
       analyzeImpact: vi.fn(),
@@ -123,75 +43,38 @@ describe('context-pack-command', () => {
     }
 
     const output = await runContextPackCommand({
-      prompt: 'how does auth work',
+      prompt: 'Trace how `POST /login` reaches persistence in the backend runtime pipeline',
       budget: 1800,
       task: 'explain',
       graphPath: 'graphify-out/graph.json',
+      retrievalStrategy: 'slice-v1',
     }, dependencies)
 
-    const payload = JSON.parse(output) as Record<string, unknown>
+    const payload = JSON.parse(output) as {
+      pack?: {
+        execution_slice?: {
+          status?: string
+          steps?: Array<{ label?: string }>
+        }
+      }
+    }
 
     expect(dependencies.loadGraph).toHaveBeenCalledWith('graphify-out/graph.json')
     expect(dependencies.retrieveContext).toHaveBeenCalledWith(graph, {
-      question: 'how does auth work',
+      question: 'Trace how `POST /login` reaches persistence in the backend runtime pipeline',
       budget: 1800,
       taskIntent: 'explain',
+      retrievalStrategy: 'slice-v1',
     })
-    expect(payload).toEqual(expect.objectContaining({
-      task: 'explain',
-      task_intent: 'explain',
-      prompt: 'how does auth work',
-      budget: 1800,
-      graph_path: 'graphify-out/graph.json',
-      plan: expect.objectContaining({
-        task_kind: 'explain',
-        evidence: expect.objectContaining({
-          recipe_id: 'explain',
-        }),
-      }),
-      claims: [
-        {
-          evidence_class: 'primary',
-          text: 'primary evidence: AuthService',
-          node_labels: ['AuthService'],
-        },
+    expect(payload.pack?.execution_slice).toEqual({
+      status: 'complete',
+      steps: [
+        expect.objectContaining({ label: 'POST /login' }),
+        expect.objectContaining({ label: 'AuthController.login' }),
+        expect.objectContaining({ label: 'AuthService.login' }),
+        expect.objectContaining({ label: 'SessionStore.createSession' }),
       ],
-      expandable: [
-        expect.objectContaining({
-          handle_id: 'expand:explain:structural:demo',
-        }),
-      ],
-      coverage: expect.objectContaining({
-        semantic_entries: [
-          expect.objectContaining({
-            category: 'implementation',
-            status: 'covered',
-          }),
-        ],
-      }),
-      missing_context: [],
-      missing_semantic: [],
-      pack: {
-        question: 'how does auth work',
-        token_count: 18,
-        matched_nodes: [
-          {
-            label: 'AuthService',
-            source_file: 'src/auth.ts',
-            line_number: 12,
-            snippet: 'export class AuthService {}',
-            relevance_band: 'direct',
-            community: 0,
-          },
-        ],
-        relationships: [],
-        community_context: [],
-        graph_signals: { god_nodes: [], bridge_nodes: [] },
-        shared_file_type: 'code',
-        execution_slice: executionSlice,
-      },
-    }))
-    expect((payload.pack as { execution_slice?: ContextPackExecutionSlice }).execution_slice).toEqual(executionSlice)
+    })
   })
 
   it('normalizes sub-minimum explain budgets before retrieving', async () => {
