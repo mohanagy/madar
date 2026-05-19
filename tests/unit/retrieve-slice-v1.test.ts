@@ -147,6 +147,30 @@ describe('retrieveContext retrievalStrategy=slice-v1', () => {
     })
   })
 
+  it('anchors route-shaped backend runtime prompts on the route path', () => {
+    const sliced = retrieveContext(buildSliceGraph(), {
+      question: 'Trace how `POST /login` reaches persistence in the backend runtime pipeline',
+      budget: 3000,
+      retrievalLevel: 4,
+      retrievalStrategy: 'slice-v1',
+    } as never)
+    const compact = compactRetrieveResult(sliced) as ReturnType<typeof compactRetrieveResult> & {
+      execution_slice?: ExecutionSliceExpectation
+    }
+
+    expect((sliced as any).slice.anchors).toEqual([
+      expect.objectContaining({ label: 'POST /login' }),
+    ])
+    expect((sliced as any).slice.anchors).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: 'LoginValidator.validate' }),
+      ]),
+    )
+    expect(compact.execution_slice?.steps[0]).toEqual(
+      expect.objectContaining({ label: 'POST /login' }),
+    )
+  })
+
   it('marks execution slices partial when the route cannot reach persistence', () => {
     const compact = compactFor(
       'Trace how `POST /login` reaches persistence in the backend runtime pipeline',
