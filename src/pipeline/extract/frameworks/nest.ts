@@ -4,14 +4,18 @@ import { basename, extname, resolve } from 'node:path'
 import * as ts from 'typescript'
 
 import type { ExtractionNode } from '../../../contracts/types.js'
+import { detect } from '../../detect.js'
 import { addNode, addUniqueEdge, createEdge, createNode, _makeId } from '../core.js'
 import type { ExtractionFragment } from '../dispatch.js'
 import { unparenthesizeExpression } from '../typescript-utils.js'
 import { resolveImportPath, scriptKindForPath } from './js-import-paths.js'
 import type { JsFrameworkAdapter, JsFrameworkContext } from './types.js'
 
-const NEST_MATCH_PATTERN = /@nestjs\/common|\b@Controller\s*\(|\b@Module\s*\(|\b@Injectable\s*\(|\b@(?:Get|Post|Put|Patch|Delete|Options|Head|All)\s*\(/
+const NEST_MATCH_PATTERN = /@nestjs\/common|\b@Controller\s*\(|\b@Module\s*\(|\b@Injectable\s*\(|\b@(?:Get|Post|Put|Patch|Delete|Options|Head|All|Processor|Process)\s*\(|\.add\s*\(\s*['"`][^'"`\n]+\.[^'"`\n]+['"`]/
 const NEST_COMMON_MODULE_SPECIFIERS = new Set(['@nestjs/common'])
+const BULL_CLASS_DECORATOR_NAMES = new Set(['Processor'])
+const BULL_METHOD_DECORATOR_NAMES = new Set(['Process'])
+const TS_LIKE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mts', '.cts', '.mjs', '.cjs'])
 const ROUTE_DECORATOR_METHODS = new Map<string, string>([
   ['Get', 'GET'],
   ['Post', 'POST'],
@@ -50,6 +54,18 @@ interface NestDecoratorCall {
   name: string
   args: readonly ts.Expression[]
 }
+
+interface BullWorkerIndex {
+  handlersByKey: Map<string, Set<string>>
+  handlersByQueue: Map<string, Set<string>>
+}
+
+interface BullWorkerIndexCacheEntry {
+  files: Set<string>
+  index: BullWorkerIndex
+}
+
+const BULL_WORKER_INDEX_CACHE = new Map<string, BullWorkerIndexCacheEntry>()
 
 function lineOf(node: ts.Node, sourceFile: ts.SourceFile): number {
   return sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1
@@ -448,6 +464,396 @@ function moduleMetadataProperty(decorator: NestDecoratorCall, key: string): ts.A
   return null
 }
 
+function bullProcessorQueueName(classDecl: ts.ClassDeclaration): string | null {
+  for (const decorator of getDecorators(classDecl)) {
+    const call = decoratorCallInfo(decorator)
+    if (!call || !BULL_CLASS_DECORATOR_NAMES.has(call.name)) {
+      continue
+    }
+
+    const queueName = stringLiteralValue(call.args[0])
+    if (queueName) {
+      return queueName
+    }
+  }
+
+  return null
+}
+
+function bullProcessJobName(methodDecl: ts.MethodDeclaration): string | null {
+  for (const decorator of getDecorators(methodDecl)) {
+    const call = decoratorCallInfo(decorator)
+    if (!call || !BULL_METHOD_DECORATOR_NAMES.has(call.name)) {
+      continue
+    }
+
+    const jobName = stringLiteralValue(call.args[0])
+    if (jobName) {
+      return jobName
+    }
+  }
+
+  return null
+}
+
+function bullEnqueueJobNameLiteral(callExpr: ts.CallExpression): ts.StringLiteralLike | null {
+  const callee = unparenthesizeExpression(callExpr.expression)
+  if (!ts.isPropertyAccessExpression(callee) || callee.name.text !== 'add') {
+    return null
+  }
+
+  const [firstArg] = callExpr.arguments
+  return firstArg && ts.isStringLiteralLike(firstArg) ? firstArg : null
+}
+
+function bullQualifiedJobKey(jobName: string): string | null {
+  if (!jobName.includes('.')) {
+    return null
+  }
+
+  const segments = jobName.split('.')
+  return segments.some((segment) => segment.length === 0) ? null : jobName
+}
+
+function bullWorkerKey(queueName: string, jobName: string): string {
+  return jobName.startsWith(`${queueName}.`) ? jobName : `${queueName}.${jobName}`
+}
+
+function expressionNameText(expression: ts.Expression): string | null {
+  const unwrapped = unparenthesizeExpression(expression)
+  if (ts.isIdentifier(unwrapped)) {
+    return unwrapped.text
+  }
+  if (ts.isPropertyAccessExpression(unwrapped)) {
+    return unwrapped.name.text
+  }
+  if (ts.isElementAccessExpression(unwrapped) && ts.isStringLiteralLike(unwrapped.argumentExpression)) {
+    return unwrapped.argumentExpression.text
+  }
+  if (ts.isAsExpression(unwrapped) || ts.isTypeAssertionExpression(unwrapped)) {
+    return expressionNameText(unwrapped.expression)
+  }
+  if (ts.isCallExpression(unwrapped)) {
+    return expressionNameText(unwrapped.expression)
+  }
+  if (ts.isNewExpression(unwrapped)) {
+    return expressionNameText(unwrapped.expression)
+  }
+  if (unwrapped.kind === ts.SyntaxKind.ThisKeyword) {
+    return 'this'
+  }
+  return null
+}
+
+function declarationNameText(node: ts.Node): string | null {
+  const namedNode = node as ts.Node & { name?: ts.DeclarationName }
+  const name = namedNode.name
+  if (!name) {
+    return null
+  }
+  if (ts.isIdentifier(name) || ts.isStringLiteralLike(name)) {
+    return name.text
+  }
+  return null
+}
+
+function typeNodeNameText(typeNode: ts.TypeNode): string | null {
+  if (ts.isTypeReferenceNode(typeNode)) {
+    return ts.isIdentifier(typeNode.typeName) ? typeNode.typeName.text : typeNode.typeName.right.text
+  }
+  return null
+}
+
+function queueNameCandidatesFromClass(classDecl: ts.ClassDeclaration | null, propertyName: string): string[] {
+  if (!classDecl) {
+    return []
+  }
+
+  const candidates = new Set<string>()
+  const addCandidate = (value: string | null | undefined): void => {
+    if (value) {
+      candidates.add(value)
+    }
+  }
+
+  for (const member of classDecl.members) {
+    if (
+      (ts.isPropertyDeclaration(member) || ts.isParameter(member))
+      && declarationNameText(member) === propertyName
+    ) {
+      if (member.type) {
+        addCandidate(typeNodeNameText(member.type))
+      }
+      if ('initializer' in member && member.initializer && ts.isNewExpression(member.initializer)) {
+        addCandidate(expressionNameText(member.initializer.expression))
+      }
+    }
+  }
+
+  return [...candidates]
+}
+
+function looksLikeQueueCandidate(candidate: string): boolean {
+  const trimmed = candidate.trim()
+  if (!trimmed) {
+    return false
+  }
+
+  if (/(?:^|[.)])Queue(?:<|$)/.test(trimmed)) {
+    return true
+  }
+
+  const tokens = trimmed
+    .split(/[^A-Za-z0-9]+/)
+    .flatMap((segment) => segment.match(/[A-Z]+(?=[A-Z][a-z0-9])|[A-Z]?[a-z0-9]+/g) ?? [])
+    .map((token) => token.toLowerCase())
+
+  if (tokens.length === 2 && tokens[0] === 'de' && tokens[1] === 'queue') {
+    return false
+  }
+
+  return tokens.at(-1) === 'queue'
+}
+
+function bullReceiverLooksLikeQueue(expression: ts.Expression, classDecl: ts.ClassDeclaration | null): boolean {
+  const candidates = new Set<string>()
+  const addCandidate = (value: string | null | undefined): void => {
+    if (value) {
+      candidates.add(value)
+    }
+  }
+
+  const unwrapped = unparenthesizeExpression(expression)
+  addCandidate(expressionNameText(unwrapped))
+
+  if (ts.isPropertyAccessExpression(unwrapped)) {
+    addCandidate(unwrapped.name.text)
+    if (unwrapped.expression.kind === ts.SyntaxKind.ThisKeyword) {
+      for (const candidate of queueNameCandidatesFromClass(classDecl, unwrapped.name.text)) {
+        addCandidate(candidate)
+      }
+    }
+  }
+
+  return [...candidates].some(looksLikeQueueCandidate)
+}
+
+function uniqueBullWorkerTarget(workerIndex: BullWorkerIndex, key: string): string | null {
+  const targets = workerIndex.handlersByKey.get(key)
+  if (targets?.size === 1) {
+    return [...targets][0] ?? null
+  }
+
+  const queueTargets = new Set<string>()
+  for (const [queueName, queueHandlers] of workerIndex.handlersByQueue) {
+    if (key !== queueName && !key.startsWith(`${queueName}.`)) {
+      continue
+    }
+    for (const target of queueHandlers) {
+      queueTargets.add(target)
+    }
+  }
+
+  if (queueTargets.size !== 1) {
+    return null
+  }
+  return [...queueTargets][0] ?? null
+}
+
+function addBullWorkerTarget(index: Map<string, Set<string>>, key: string, methodId: string): void {
+  let targets = index.get(key)
+  if (!targets) {
+    targets = new Set<string>()
+    index.set(key, targets)
+  }
+  targets.add(methodId)
+}
+
+function classExtendsNamedBase(classDecl: ts.ClassDeclaration, baseName: string): boolean {
+  for (const clause of classDecl.heritageClauses ?? []) {
+    if (clause.token !== ts.SyntaxKind.ExtendsKeyword) {
+      continue
+    }
+    for (const type of clause.types) {
+      if (expressionNameText(type.expression) === baseName) {
+        return true
+      }
+    }
+  }
+  return false
+}
+
+function isBullWorkerHostProcessMethod(classDecl: ts.ClassDeclaration, methodDecl: ts.MethodDeclaration): boolean {
+  return !!methodDecl.name
+    && ts.isIdentifier(methodDecl.name)
+    && methodDecl.name.text === 'process'
+    && classExtendsNamedBase(classDecl, 'WorkerHost')
+}
+
+function buildBullWorkerIndex(filePaths: readonly string[]): BullWorkerIndex {
+  const handlersByKey = new Map<string, Set<string>>()
+  const handlersByQueue = new Map<string, Set<string>>()
+
+  for (const filePath of filePaths) {
+    let sourceText: string
+    try {
+      sourceText = readFileSync(filePath, 'utf8')
+    } catch {
+      continue
+    }
+
+    if (!/@Processor\s*\(|@Process\s*\(/.test(sourceText)) {
+      continue
+    }
+
+    const sourceFile = ts.createSourceFile(filePath, sourceText, ts.ScriptTarget.Latest, true, scriptKindForPath(filePath))
+    for (const statement of sourceFile.statements) {
+      if (!ts.isClassDeclaration(statement) || !statement.name) {
+        continue
+      }
+
+      const queueName = bullProcessorQueueName(statement)
+      if (!queueName) {
+        continue
+      }
+
+      const classId = _makeId(moduleStem(filePath), statement.name.text)
+      for (const member of statement.members) {
+        if (!ts.isMethodDeclaration(member) || !member.name || !ts.isIdentifier(member.name)) {
+          continue
+        }
+
+        const methodId = _makeId(classId, member.name.text)
+        const jobName = bullProcessJobName(member)
+        if (jobName) {
+          addBullWorkerTarget(handlersByKey, bullWorkerKey(queueName, jobName), methodId)
+        }
+        if (isBullWorkerHostProcessMethod(statement, member)) {
+          addBullWorkerTarget(handlersByQueue, queueName, methodId)
+        }
+      }
+    }
+  }
+
+  return { handlersByKey, handlersByQueue }
+}
+
+function sameFileSet(left: ReadonlySet<string>, right: ReadonlySet<string>): boolean {
+  if (left.size !== right.size) {
+    return false
+  }
+
+  for (const value of left) {
+    if (!right.has(value)) {
+      return false
+    }
+  }
+
+  return true
+}
+
+function getBullWorkerIndex(currentFilePath: string): BullWorkerIndex {
+  const workspaceRoot = resolve(process.cwd())
+  const cached = BULL_WORKER_INDEX_CACHE.get(workspaceRoot)
+  const resolvedCurrentFilePath = resolve(currentFilePath)
+  if (cached && cached.files.has(resolvedCurrentFilePath)) {
+    return cached.index
+  }
+
+  const files = new Set(
+    detect(workspaceRoot).files.code
+      .map((filePath) => resolve(filePath))
+      .filter((filePath) => TS_LIKE_EXTENSIONS.has(extname(filePath))),
+  )
+  files.add(resolvedCurrentFilePath)
+  if (cached && sameFileSet(cached.files, files)) {
+    return cached.index
+  }
+
+  const index = buildBullWorkerIndex([...files])
+  BULL_WORKER_INDEX_CACHE.set(workspaceRoot, { files, index })
+  return index
+}
+
+function emitBullEnqueueEdgesInBody(
+  context: JsFrameworkContext,
+  edges: NonNullable<ExtractionFragment['edges']>,
+  seenEdges: Set<string>,
+  workerIndex: BullWorkerIndex,
+  callerId: string,
+  body: ts.Block | ts.ConciseBody | undefined,
+  classDecl: ts.ClassDeclaration | null,
+): void {
+  if (!body || !context.baseExtraction.nodes?.some((node) => node.id === callerId)) {
+    return
+  }
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node)) {
+      const jobNameLiteral = bullEnqueueJobNameLiteral(node)
+      const callee = unparenthesizeExpression(node.expression)
+      if (jobNameLiteral && ts.isPropertyAccessExpression(callee) && bullReceiverLooksLikeQueue(callee.expression, classDecl)) {
+        const workerKey = bullQualifiedJobKey(jobNameLiteral.text)
+        const targetId = workerKey ? uniqueBullWorkerTarget(workerIndex, workerKey) : null
+        if (targetId && targetId !== callerId) {
+          addUniqueEdge(edges, seenEdges, createEdge(callerId, targetId, 'enqueues_job', context.filePath, lineOf(jobNameLiteral, context.sourceFile)))
+        }
+      }
+    }
+
+    ts.forEachChild(node, visit)
+  }
+
+  visit(body)
+}
+
+function emitBullEnqueueEdges(
+  context: JsFrameworkContext,
+  edges: NonNullable<ExtractionFragment['edges']>,
+  seenEdges: Set<string>,
+): void {
+  const workerIndex = getBullWorkerIndex(context.filePath)
+  if (workerIndex.handlersByKey.size === 0 && workerIndex.handlersByQueue.size === 0) {
+    return
+  }
+
+  for (const statement of context.sourceFile.statements) {
+    if (ts.isFunctionDeclaration(statement) && statement.name) {
+      emitBullEnqueueEdgesInBody(
+        context,
+        edges,
+        seenEdges,
+        workerIndex,
+        _makeId(moduleStem(context.filePath), statement.name.text),
+        statement.body,
+        null,
+      )
+      continue
+    }
+
+    if (!ts.isClassDeclaration(statement) || !statement.name) {
+      continue
+    }
+
+    const classId = _makeId(moduleStem(context.filePath), statement.name.text)
+    for (const member of statement.members) {
+      if (!ts.isMethodDeclaration(member) || !member.name || !ts.isIdentifier(member.name)) {
+        continue
+      }
+
+      emitBullEnqueueEdgesInBody(
+        context,
+        edges,
+        seenEdges,
+        workerIndex,
+        _makeId(classId, member.name.text),
+        member.body,
+        statement,
+      )
+    }
+  }
+}
+
 export const nestAdapter: JsFrameworkAdapter = {
   id: 'nestjs',
   matches(_filePath, sourceText) {
@@ -593,6 +999,8 @@ export const nestAdapter: JsFrameworkAdapter = {
         }
       }
     }
+
+    emitBullEnqueueEdges(context, edges, seenEdges)
 
     return { nodes, edges }
   },

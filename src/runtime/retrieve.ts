@@ -1166,6 +1166,7 @@ function rankedSeedCandidateIds(
 function relationWeight(relation: string): number {
   switch (relation) {
     case 'calls':
+    case 'enqueues_job':
     case 'imports_from':
     case 'defines':
     case 'defines_action':
@@ -1255,6 +1256,10 @@ function pipelineBridgeNode(
   return pipelineBridgeText(node.label, node.framework_role, node.source_file, node.node_kind)
 }
 
+function runtimeFlowRelation(relation: string): boolean {
+  return relation === 'calls' || relation === 'enqueues_job'
+}
+
 function compactSlicePromotionApplies(result: RetrieveResult): boolean {
   if (result.retrieval_strategy !== 'slice-v1' || !promptWantsRuntimePipeline(result.question)) {
     return false
@@ -1288,7 +1293,7 @@ function promotedSliceCompactNodeIds(result: RetrieveResult): string[] {
   )
 
   for (const path of result.slice.selected_paths) {
-    if (path.direction !== 'forward' || path.relation !== 'calls' || typeof path.to_id !== 'string') {
+    if (path.direction !== 'forward' || !runtimeFlowRelation(path.relation) || typeof path.to_id !== 'string') {
       continue
     }
     const target = result.matched_nodes.find((node) => node.node_id === path.to_id)
@@ -1328,14 +1333,14 @@ function structuralSliceNodeIds(
   }
 
   const nodesById = new Map(orderedCandidates.map((node) => [node.id, node]))
-  const forwardCalls = new Map<string, ContextPackSliceMetadata['selected_paths']>()
+  const forwardRuntimeFlow = new Map<string, ContextPackSliceMetadata['selected_paths']>()
   for (const path of sliceMetadata.selected_paths) {
-    if (path.direction !== 'forward' || path.relation !== 'calls' || typeof path.from_id !== 'string' || typeof path.to_id !== 'string') {
+    if (path.direction !== 'forward' || !runtimeFlowRelation(path.relation) || typeof path.from_id !== 'string' || typeof path.to_id !== 'string') {
       continue
     }
-    const current = forwardCalls.get(path.from_id) ?? []
+    const current = forwardRuntimeFlow.get(path.from_id) ?? []
     current.push(path)
-    forwardCalls.set(path.from_id, current)
+    forwardRuntimeFlow.set(path.from_id, current)
   }
 
   const structural = new Set<string>()
@@ -1355,7 +1360,7 @@ function structuralSliceNodeIds(
       continue
     }
 
-    for (const path of forwardCalls.get(current.id) ?? []) {
+    for (const path of forwardRuntimeFlow.get(current.id) ?? []) {
       const target = nodesById.get(path.to_id!)
       if (!target) {
         continue
@@ -1444,7 +1449,23 @@ function runtimeGenerationExecutionSliceApplies(
 }
 
 function executionSliceFlowRelation(relation: string): boolean {
-  return relation === 'calls' || relation === 'controller_route' || relation === 'route_handler' || relation === 'method'
+  return runtimeFlowRelation(relation)
+    || relation === 'controller_route'
+    || relation === 'route_handler'
+    || relation === 'method'
+}
+
+function executionSliceEdgePriority(relation: string): number {
+  if (relation === 'enqueues_job') {
+    return 3
+  }
+  if (relation === 'calls') {
+    return 2
+  }
+  if (relation === 'controller_route' || relation === 'route_handler' || relation === 'method') {
+    return 1
+  }
+  return 0
 }
 
 function promptExpectsPersistenceStep(question: string): boolean {
@@ -1463,16 +1484,32 @@ function executionSliceStepPriority(
   question: string,
 ): number {
   const lower = `${node.label} ${node.source_file} ${node.node_kind ?? ''} ${node.framework_role ?? ''}`.toLowerCase()
+  const label = node.label
   let value = 0
 
   if (promptExpectsPersistenceStep(question) && persistenceLikeExecutionStep(node)) {
     value += 100
   }
-  if (/\b(?:route|controller|service|worker|job|pipeline|orchestrator|repository|store)\b/.test(lower)) {
+  if (promptWantsRuntimePipeline(question) && /\b(?:queue|job|worker|pipeline|orchestrator)\b/.test(lower)) {
+    value += 25
+  }
+  if (promptWantsRuntimePipeline(question) && (
+    /(?:^|[.#])(?:start|enqueue|process|search|score|save|create|generate|dispatch|persist|add)[A-Za-z_$\w]*\(?\)?$/i.test(label)
+    || /\baddjob\b/i.test(label)
+  )) {
+    value += 15
+  }
+  if (/\b(?:route|controller|service|queue|worker|job|pipeline|orchestrator|repository|store)\b/.test(lower)) {
     value += 10
   }
   if (/\b(?:validate|validator|schema|dto|spec|test|guard|config|env)\b/.test(lower)) {
     value -= 5
+  }
+  if (promptWantsRuntimePipeline(question) && (
+    /(?:^|[.#])(?:cancel|claim|status|get|list|retry|suggest|validate|update)[A-Za-z_$\w]*\(?\)?$/i.test(label)
+    || /\b(?:cancel|claim|status|suggest)\b/.test(lower)
+  )) {
+    value -= 20
   }
 
   return value
@@ -1565,11 +1602,17 @@ function collectExecutionSliceScope(
 
 function pickExecutionSliceStart(
   graph: KnowledgeGraph,
+  anchorIds: readonly string[],
   orderedIds: readonly string[],
   idSet: ReadonlySet<string>,
   nodeById: ReadonlyMap<string, ContextPackExecutionSliceStep>,
   question: string,
 ): string | undefined {
+  const anchoredStart = anchorIds.find((nodeId) => idSet.has(nodeId))
+  if (anchoredStart) {
+    return anchoredStart
+  }
+
   const roots = orderedIds.filter((nodeId) =>
     [...graph.predecessors(nodeId)].every((predecessorId) =>
       !idSet.has(predecessorId)
@@ -1608,9 +1651,12 @@ function walkExecutionSlice(
         && executionSliceFlowRelation(String(graph.edgeAttributes(currentId!, candidateId).relation ?? 'related_to')),
       )
       .sort((left, right) => {
+        const leftRelation = String(graph.edgeAttributes(currentId!, left).relation ?? 'related_to')
+        const rightRelation = String(graph.edgeAttributes(currentId!, right).relation ?? 'related_to')
         const leftStep = nodeById.get(left)
         const rightStep = nodeById.get(right)
-        return (rightStep ? executionSliceStepPriority(rightStep, question) : 0)
+        return executionSliceEdgePriority(rightRelation) - executionSliceEdgePriority(leftRelation)
+          || (rightStep ? executionSliceStepPriority(rightStep, question) : 0)
           - (leftStep ? executionSliceStepPriority(leftStep, question) : 0)
       })[0]
 
@@ -1663,7 +1709,7 @@ function buildExecutionSlice(
     orderedIds
       .map((nodeId) => [nodeId, executionSliceStepFromGraph(graph, nodeId, rootPath)] as const),
   )
-  const startId = pickExecutionSliceStart(graph, orderedIds, idSet, nodeById, question)
+  const startId = pickExecutionSliceStart(graph, anchorIds, orderedIds, idSet, nodeById, question)
   if (!startId) {
     return {
       status: 'partial',

@@ -1,8 +1,10 @@
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { resolve as pathResolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
 import { buildFromJson } from '../../src/pipeline/build.js'
+import { extractJs } from '../../src/pipeline/extract.js'
 import { buildSpi } from '../../src/pipeline/spi/build.js'
 import { projectSpiToExtraction } from '../../src/pipeline/spi/projector.js'
 import type {
@@ -25,6 +27,7 @@ const FIXTURE_ROOT = pathResolve(
   __dirname,
   '../fixtures/spi/nest-di-runtime-calls',
 )
+const TEST_ARTIFACTS_DIR = pathResolve(process.cwd(), '.test-artifacts', 'spi-nest-di-runtime-calls')
 
 function normalizePathForAssertion(value: string): string {
   return value.replaceAll('\\', '/')
@@ -46,6 +49,116 @@ function buildFixtureExtraction(): ExtractionData {
 function buildFixtureGraph(): KnowledgeGraph {
   const extraction = buildFixtureExtraction()
   return buildFromJson({ ...extraction, root_path: FIXTURE_ROOT }, { directed: true })
+}
+
+function buildLegacyQueueBridgeGraph(): KnowledgeGraph {
+  const scratchDir = pathResolve(TEST_ARTIFACTS_DIR, 'legacy-queue-bridge')
+  mkdirSync(scratchDir, { recursive: true })
+  const fixturePath = pathResolve(scratchDir, 'pipeline.ts')
+  writeFileSync(fixturePath, [
+    "import { Controller, Injectable, Post } from '@nestjs/common'",
+    '',
+    'function Processor(_queueName: string): ClassDecorator {',
+    '  return () => undefined',
+    '}',
+    '',
+    'function Process(_jobName: string): MethodDecorator {',
+    '  return () => undefined',
+    '}',
+    '',
+    'type PipelineJobPayload = {',
+    '  problem: string',
+    '  ideaId: string',
+    '}',
+    '',
+    'class PipelineQueue {',
+    '  async add(jobName: string, input: PipelineJobPayload) {',
+    '    return {',
+    '      id: `${input.ideaId}:${jobName}`,',
+    '      data: input,',
+    '    }',
+    '  }',
+    '}',
+    '',
+    '@Injectable()',
+    'class QueueRegistryService {',
+    '  private readonly pipelineQueue = new PipelineQueue()',
+    '',
+    '  async addJob(input: PipelineJobPayload) {',
+    "    return this.pipelineQueue.add('legacy.pipeline.bridge.process', input)",
+    '  }',
+    '}',
+    '',
+    '@Injectable()',
+    'class ResearchAgentService {',
+    '  async search(problem: string) {',
+    '    return `research:${problem}`',
+    '  }',
+    '}',
+    '',
+    '@Injectable()',
+    'class MetricsScoringService {',
+    '  async score(research: string) {',
+    '    return `score:${research}`',
+    '  }',
+    '}',
+    '',
+    '@Injectable()',
+    'class ReportRepository {',
+    '  async save(ideaId: string, score: string) {',
+    '    return { ideaId, score }',
+    '  }',
+    '}',
+    '',
+    "@Processor('legacy.pipeline.bridge')",
+    'class OrchestratorWorker {',
+    '  constructor(',
+    '    private readonly researchAgent: ResearchAgentService,',
+    '    private readonly scoringService: MetricsScoringService,',
+    '    private readonly reportRepository: ReportRepository,',
+    '  ) {}',
+    '',
+    "  @Process('legacy.pipeline.bridge.process')",
+    '  async process(job: { data: PipelineJobPayload }) {',
+    '    const research = await this.researchAgent.search(job.data.problem)',
+    '    const score = await this.scoringService.score(research)',
+    '    return this.reportRepository.save(job.data.ideaId, score)',
+    '  }',
+    '}',
+    '',
+    '@Injectable()',
+    'class PipelineTriggerService {',
+    '  constructor(private readonly queueRegistryService: QueueRegistryService) {}',
+    '',
+    '  async startPipeline(problem: string, ideaId: string) {',
+    '    return this.queueRegistryService.addJob({ problem, ideaId })',
+    '  }',
+    '}',
+    '',
+    '@Injectable()',
+    'class IdeasService {',
+    '  async createIdea(problem: string) {',
+    '    return { id: problem }',
+    '  }',
+    '}',
+    '',
+    "@Controller('ideas')",
+    'class IdeaGenerationController {',
+    '  constructor(',
+    '    private readonly ideasService: IdeasService,',
+    '    private readonly pipelineTriggerService: PipelineTriggerService,',
+    '  ) {}',
+    '',
+    "  @Post('generate')",
+    '  async generateFromProblem(problem: string, ideaId: string) {',
+    '    await this.ideasService.createIdea(problem)',
+    '    return this.pipelineTriggerService.startPipeline(problem, ideaId)',
+    '  }',
+    '}',
+  ].join('\n'))
+
+  const extraction = extractJs(fixturePath)
+  return buildFromJson({ ...extraction, root_path: scratchDir }, { directed: true })
 }
 
 function findSymbol(
@@ -263,5 +376,39 @@ describe('SPI Nest DI runtime-call fixture', () => {
         'missing_provider_call_edges',
       ]),
     )
+  })
+
+  it('preserves queue-to-worker linkage when the runtime path crosses an enqueue boundary', () => {
+    try {
+      const graph = buildLegacyQueueBridgeGraph()
+      const result = retrieveContext(graph, {
+        question:
+          'Explain the production runtime path for IdeaGenerationController.generateFromProblem and how it creates a validation report. Follow the controller into service/orchestrator/job/research agents/scoring/report builder/persistence.',
+        budget: 4000,
+        retrievalLevel: 4,
+        retrievalStrategy: 'slice-v1',
+      })
+
+      expect(result.slice?.selected_paths).toEqual(expect.arrayContaining([
+        expect.objectContaining({ from: '.generateFromProblem()', to: '.startPipeline()', relation: 'calls', direction: 'forward' }),
+        expect.objectContaining({ from: '.startPipeline()', to: '.addJob()', relation: 'calls', direction: 'forward' }),
+        expect.objectContaining({ from: '.addJob()', to: '.process()', relation: 'enqueues_job', direction: 'forward' }),
+        expect.objectContaining({ from: '.process()', to: '.search()', relation: 'calls', direction: 'forward' }),
+        expect.objectContaining({ from: '.process()', to: '.score()', relation: 'calls', direction: 'forward' }),
+        expect.objectContaining({ from: '.process()', to: '.save()', relation: 'calls', direction: 'forward' }),
+      ]))
+      expect(result.slice?.selected_paths).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({ from: '.startPipeline()', to: '.process()', relation: 'calls', direction: 'forward' }),
+      ]))
+      expect(result.matched_nodes.map((node) => node.label)).toEqual(expect.arrayContaining([
+        '.addJob()',
+        '.process()',
+        '.search()',
+        '.score()',
+        '.save()',
+      ]))
+    } finally {
+      rmSync(TEST_ARTIFACTS_DIR, { recursive: true, force: true })
+    }
   })
 })

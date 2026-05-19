@@ -28,11 +28,20 @@
 //                     `module_imports` edge to the receiver Module class
 //                     plus an info-level diagnostic recording that the
 //                     runtime providers list could not be enumerated.
+//   * `enqueues_job` — producer method symbol → worker handler method symbol.
+//                     A workspace-wide worker index collects literal
+//                     `@Processor('queue')` + `@Process('job')` handlers keyed
+//                     by a canonical `queue.job` string. Producer methods emit
+//                     a high-confidence semantic edge only when a queue-like
+//                     receiver calls `.add('queue.job', payload)` and that
+//                     fully qualified literal resolves unambiguously to one
+//                     worker handler.
 //
 // Confidence rules (per docs/designs/2026-05-10-spi-v1.md):
 //   * `high`   — both decorator binding and target identifier resolve
 //                through ts.TypeChecker to a class declaration in a file
-//                we have indexed.
+//                we have indexed, or a literal enqueue site maps to exactly
+//                one literal worker handler.
 //   * `medium` — `@Inject('TOKEN')` whose token resolves through the
 //                workspace token map (useClass / useExisting providers).
 //   * `low`    — dynamic module shape (`forRoot` / `forRootAsync`) where
@@ -78,6 +87,14 @@ const DYNAMIC_MODULE_FACTORY_METHODS: ReadonlySet<string> = new Set([
   'registerAsync',
 ])
 
+const BULL_CLASS_DECORATOR_NAMES: ReadonlySet<string> = new Set([
+  'Processor',
+])
+
+const BULL_METHOD_DECORATOR_NAMES: ReadonlySet<string> = new Set([
+  'Process',
+])
+
 type NestBindings = {
   module: Set<string>
   controller: Set<string>
@@ -102,6 +119,7 @@ export type NestTokenBinding = {
 export type NestTokenMap = Map<string, NestTokenBinding>
 
 export type DetectNestFrameworkContext = {
+  program: ts.Program
   sourceFile: ts.SourceFile
   fileId: string
   symbolsByFile: Map<string, SpiSymbol[]>
@@ -111,6 +129,18 @@ export type DetectNestFrameworkContext = {
   checker: ts.TypeChecker
   tokenMap: NestTokenMap
 }
+
+type BullWorkerIndex = {
+  handlersByKey: Map<string, Set<string>>
+  handlersByQueue: Map<string, Set<string>>
+}
+
+type BullEnqueueSite = {
+  jobNameLiteral: ts.StringLiteralLike
+  workerKey: string
+}
+
+const BULL_WORKER_INDEX_CACHE = new WeakMap<ts.Program, BullWorkerIndex>()
 
 // Workspace-level token-binding collector. Walks every source file's
 // @Module decorator and registers `{ provide: 'TOKEN', useClass: X }` /
@@ -167,31 +197,38 @@ function registerProviderTokens(
 
 export function detectNestFramework(ctx: DetectNestFrameworkContext): void {
   const bindings = collectNestBindings(ctx.sourceFile)
-  if (!hasAnyBinding(bindings)) return
+  const hasBullEnqueueSites = sourceFileHasBullEnqueueSite(ctx.sourceFile)
+  if (!hasAnyBinding(bindings) && !hasBullEnqueueSites) return
 
-  for (const stmt of ctx.sourceFile.statements) {
-    if (!ts.isClassDeclaration(stmt) || !stmt.name) continue
+  if (hasAnyBinding(bindings)) {
+    for (const stmt of ctx.sourceFile.statements) {
+      if (!ts.isClassDeclaration(stmt) || !stmt.name) continue
 
-    const classDecorators = decoratorsOf(stmt)
-    const decoratorRole = classDecoratorRole(classDecorators, bindings)
-    if (decoratorRole.role === null) continue
+      const classDecorators = decoratorsOf(stmt)
+      const decoratorRole = classDecoratorRole(classDecorators, bindings)
+      if (decoratorRole.role === null) continue
 
-    const classId = symbolIdFor(ctx.fileId, 'class', stmt.name.text)
-    setFrameworkRole(ctx.symbolsByFile, ctx.fileId, classId, decoratorRole.role)
+      const classId = symbolIdFor(ctx.fileId, 'class', stmt.name.text)
+      setFrameworkRole(ctx.symbolsByFile, ctx.fileId, classId, decoratorRole.role)
 
-    if (decoratorRole.role === 'nest_module' && decoratorRole.decorator) {
-      emitModuleEdges(ctx, classId, decoratorRole.decorator)
-      // A module class can itself have constructor injection (rare but legal).
-      emitConstructorInjects(ctx, classId, stmt, bindings)
-    } else if (decoratorRole.role === 'nest_controller') {
-      emitClassUseEdges(ctx, classId, classDecorators, bindings)
-      emitConstructorInjects(ctx, classId, stmt, bindings)
-      emitControllerRoutes(ctx, classId, stmt, bindings)
-    } else if (decoratorRole.role === 'nest_provider') {
-      // Providers (services, guards, pipes, interceptors marked @Injectable)
-      // don't have routes but absolutely have constructor injection.
-      emitConstructorInjects(ctx, classId, stmt, bindings)
+      if (decoratorRole.role === 'nest_module' && decoratorRole.decorator) {
+        emitModuleEdges(ctx, classId, decoratorRole.decorator)
+        // A module class can itself have constructor injection (rare but legal).
+        emitConstructorInjects(ctx, classId, stmt, bindings)
+      } else if (decoratorRole.role === 'nest_controller') {
+        emitClassUseEdges(ctx, classId, classDecorators, bindings)
+        emitConstructorInjects(ctx, classId, stmt, bindings)
+        emitControllerRoutes(ctx, classId, stmt, bindings)
+      } else if (decoratorRole.role === 'nest_provider') {
+        // Providers (services, guards, pipes, interceptors marked @Injectable)
+        // don't have routes but absolutely have constructor injection.
+        emitConstructorInjects(ctx, classId, stmt, bindings)
+      }
     }
+  }
+
+  if (hasBullEnqueueSites) {
+    emitEnqueueJobEdges(ctx)
   }
 }
 
@@ -586,6 +623,357 @@ function emitConstructorInjects(
   }
 }
 
+function emitEnqueueJobEdges(ctx: DetectNestFrameworkContext): void {
+  const workerIndex = getBullWorkerIndex(ctx)
+  if (workerIndex.handlersByKey.size === 0 && workerIndex.handlersByQueue.size === 0) return
+
+  const emitted = new Set<string>()
+
+  for (const stmt of ctx.sourceFile.statements) {
+    if (ts.isFunctionDeclaration(stmt) && stmt.name) {
+      const functionId = symbolIdFor(ctx.fileId, 'function', stmt.name.text)
+      emitEnqueueEdgesInCallable(ctx, workerIndex, functionId, stmt.body, emitted)
+      continue
+    }
+
+    if (!ts.isClassDeclaration(stmt) || !stmt.name) continue
+
+    const className = stmt.name.text
+    const overloadCounts = new Map<string, number>()
+    for (const member of stmt.members) {
+      if (!ts.isMethodDeclaration(member) || !member.name || !ts.isIdentifier(member.name)) {
+        continue
+      }
+
+      const methodName = member.name.text
+      const overloadKey = `${className}.${methodName}`
+      const overloadIndex = overloadCounts.get(overloadKey) ?? 0
+      overloadCounts.set(overloadKey, overloadIndex + 1)
+
+      const baseId = symbolIdFor(ctx.fileId, 'method', `${className}.${methodName}`)
+      const methodId = overloadIndex === 0 ? baseId : `${baseId}#${overloadIndex}`
+      emitEnqueueEdgesInCallable(ctx, workerIndex, methodId, member.body, emitted)
+    }
+  }
+}
+
+function emitEnqueueEdgesInCallable(
+  ctx: DetectNestFrameworkContext,
+  workerIndex: BullWorkerIndex,
+  callerId: string,
+  body: ts.Block | ts.ConciseBody | undefined,
+  emitted: Set<string>,
+): void {
+  if (!body || !symbolExists(ctx.symbolsByFile, ctx.fileId, callerId)) return
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node)) {
+      const enqueueSite = resolveBullEnqueueSite(node, ctx)
+      if (enqueueSite) {
+        const targetId = uniqueBullWorkerTarget(workerIndex, enqueueSite.workerKey)
+        if (targetId && targetId !== callerId) {
+          const edgeKey = `${callerId}|${targetId}|${enqueueSite.workerKey}`
+          if (!emitted.has(edgeKey)) {
+            emitted.add(edgeKey)
+            ctx.edges.push({
+              from: callerId,
+              to: targetId,
+              kind: 'enqueues_job',
+              confidence: 'high',
+              source: 'heuristic',
+              evidence: { file_id: ctx.fileId, range: rangeOf(enqueueSite.jobNameLiteral, ctx.sourceFile) },
+            })
+          }
+        }
+      }
+    }
+
+    ts.forEachChild(node, visit)
+  }
+
+  visit(body)
+}
+
+function sourceFileHasBullEnqueueSite(sourceFile: ts.SourceFile): boolean {
+  let found = false
+
+  const visit = (node: ts.Node): void => {
+    if (found) return
+    if (ts.isCallExpression(node) && bullEnqueueJobNameLiteral(node)) {
+      found = true
+      return
+    }
+    ts.forEachChild(node, visit)
+  }
+
+  visit(sourceFile)
+  return found
+}
+
+function getBullWorkerIndex(ctx: DetectNestFrameworkContext): BullWorkerIndex {
+  const program = ctx.program
+  const cached = BULL_WORKER_INDEX_CACHE.get(program)
+  if (cached) return cached
+
+  const index = buildBullWorkerIndex(program, ctx.pathToFileId)
+  BULL_WORKER_INDEX_CACHE.set(program, index)
+  return index
+}
+
+function buildBullWorkerIndex(program: ts.Program, pathToFileId: Map<string, string>): BullWorkerIndex {
+  const handlersByKey = new Map<string, Set<string>>()
+  const handlersByQueue = new Map<string, Set<string>>()
+
+  for (const sourceFile of program.getSourceFiles()) {
+    if (sourceFile.isDeclarationFile) continue
+    const fileId = pathToFileId.get(sourceFile.fileName)
+    if (!fileId) continue
+
+    for (const stmt of sourceFile.statements) {
+      if (!ts.isClassDeclaration(stmt) || !stmt.name) continue
+
+      const queueName = bullProcessorQueueName(stmt)
+      if (!queueName) continue
+
+      const className = stmt.name.text
+        const overloadCounts = new Map<string, number>()
+        for (const member of stmt.members) {
+        if (!ts.isMethodDeclaration(member) || !member.name || !ts.isIdentifier(member.name)) {
+          continue
+        }
+
+        const methodName = member.name.text
+        const overloadKey = `${className}.${methodName}`
+        const overloadIndex = overloadCounts.get(overloadKey) ?? 0
+        overloadCounts.set(overloadKey, overloadIndex + 1)
+
+        const jobName = bullProcessJobName(member)
+        const baseId = symbolIdFor(fileId, 'method', `${className}.${methodName}`)
+        const methodId = overloadIndex === 0 ? baseId : `${baseId}#${overloadIndex}`
+        if (jobName) {
+          addBullWorkerTarget(handlersByKey, bullWorkerKey(queueName, jobName), methodId)
+        }
+        if (isBullWorkerHostProcessMethod(stmt, member)) {
+          addBullWorkerTarget(handlersByQueue, queueName, methodId)
+        }
+      }
+    }
+  }
+
+  return { handlersByKey, handlersByQueue }
+}
+
+function addBullWorkerTarget(index: Map<string, Set<string>>, key: string, methodId: string): void {
+  let targets = index.get(key)
+  if (!targets) {
+    targets = new Set<string>()
+    index.set(key, targets)
+  }
+  targets.add(methodId)
+}
+
+function classExtendsNamedBase(classDecl: ts.ClassDeclaration, baseName: string): boolean {
+  for (const clause of classDecl.heritageClauses ?? []) {
+    if (clause.token !== ts.SyntaxKind.ExtendsKeyword) continue
+    for (const type of clause.types) {
+      if (expressionNameText(type.expression) === baseName) {
+        return true
+      }
+    }
+  }
+  return false
+}
+
+function isBullWorkerHostProcessMethod(classDecl: ts.ClassDeclaration, methodDecl: ts.MethodDeclaration): boolean {
+  return !!methodDecl.name
+    && ts.isIdentifier(methodDecl.name)
+    && methodDecl.name.text === 'process'
+    && classExtendsNamedBase(classDecl, 'WorkerHost')
+}
+
+function bullProcessorQueueName(classDecl: ts.ClassDeclaration): string | null {
+  for (const decorator of decoratorsOf(classDecl)) {
+    const decoratorName = decoratorIdentifierName(decorator)
+    if (!decoratorName || !BULL_CLASS_DECORATOR_NAMES.has(decoratorName)) continue
+    if (!ts.isCallExpression(decorator.expression)) continue
+    const arg = decorator.expression.arguments[0]
+    if (!arg) continue
+    if (ts.isStringLiteralLike(arg)) return arg.text
+  }
+
+  return null
+}
+
+function bullProcessJobName(methodDecl: ts.MethodDeclaration): string | null {
+  for (const decorator of decoratorsOf(methodDecl)) {
+    const decoratorName = decoratorIdentifierName(decorator)
+    if (!decoratorName || !BULL_METHOD_DECORATOR_NAMES.has(decoratorName)) continue
+    if (!ts.isCallExpression(decorator.expression)) continue
+    const arg = decorator.expression.arguments[0]
+    if (!arg) continue
+    if (ts.isStringLiteralLike(arg)) return arg.text
+  }
+
+  return null
+}
+
+function bullEnqueueJobNameLiteral(callExpr: ts.CallExpression): ts.StringLiteralLike | null {
+  const callee = callExpr.expression
+  if (!ts.isPropertyAccessExpression(callee) || callee.name.text !== 'add') return null
+  const arg = callExpr.arguments[0]
+  if (!arg) return null
+  return ts.isStringLiteralLike(arg) ? arg : null
+}
+
+function resolveBullEnqueueSite(
+  callExpr: ts.CallExpression,
+  ctx: DetectNestFrameworkContext,
+): BullEnqueueSite | null {
+  const jobNameLiteral = bullEnqueueJobNameLiteral(callExpr)
+  if (!jobNameLiteral) return null
+
+  const callee = callExpr.expression
+  if (!ts.isPropertyAccessExpression(callee)) return null
+  if (!bullReceiverLooksLikeQueue(callee.expression, ctx.checker)) return null
+
+  const workerKey = bullQualifiedJobKey(jobNameLiteral.text)
+  if (!workerKey) return null
+
+  return { jobNameLiteral, workerKey }
+}
+
+function bullWorkerKey(queueName: string, jobName: string): string {
+  if (jobName.startsWith(`${queueName}.`)) {
+    return jobName
+  }
+
+  return `${queueName}.${jobName}`
+}
+
+function bullQualifiedJobKey(jobName: string): string | null {
+  if (!jobName.includes('.')) return null
+  const segments = jobName.split('.')
+  if (segments.some((segment) => segment.length === 0)) return null
+  return jobName
+}
+
+function uniqueBullWorkerTarget(workerIndex: BullWorkerIndex, key: string): string | null {
+  const targets = workerIndex.handlersByKey.get(key)
+  if (targets?.size === 1) return [...targets][0] ?? null
+
+  const queueTargets = new Set<string>()
+  for (const [queueName, queueHandlers] of workerIndex.handlersByQueue) {
+    if (key !== queueName && !key.startsWith(`${queueName}.`)) {
+      continue
+    }
+    for (const target of queueHandlers) {
+      queueTargets.add(target)
+    }
+  }
+
+  if (queueTargets.size !== 1) return null
+  return [...queueTargets][0] ?? null
+}
+
+function bullReceiverLooksLikeQueue(expr: ts.Expression, checker: ts.TypeChecker): boolean {
+  return bullQueueNameCandidates(expr, checker).some(looksLikeQueueCandidate)
+}
+
+function bullQueueNameCandidates(expr: ts.Expression, checker: ts.TypeChecker): string[] {
+  const candidates = new Set<string>()
+  const addCandidate = (value: string | null | undefined): void => {
+    if (value && value.length > 0) candidates.add(value)
+  }
+
+  addCandidate(expressionNameText(expr))
+
+  const type = checker.getTypeAtLocation(expr)
+  addCandidate(type.symbol?.getName())
+  addCandidate(type.aliasSymbol?.getName())
+
+  const typeText = checker.typeToString(type)
+  if (typeText && !typeText.startsWith('{')) {
+    addCandidate(typeText)
+  }
+
+  const symbol = checker.getSymbolAtLocation(queueReceiverSymbolNode(expr))
+  if (!symbol) return [...candidates]
+
+  addCandidate(symbol.getName())
+  for (const declaration of symbol.declarations ?? []) {
+    addCandidate(declarationNameText(declaration))
+    if (
+      (ts.isPropertyDeclaration(declaration)
+        || ts.isPropertySignature(declaration)
+        || ts.isParameter(declaration)
+        || ts.isVariableDeclaration(declaration))
+      && declaration.type
+    ) {
+      addCandidate(checker.typeToString(checker.getTypeFromTypeNode(declaration.type)))
+    }
+    if (
+      (ts.isPropertyDeclaration(declaration) || ts.isVariableDeclaration(declaration))
+      && declaration.initializer
+      && ts.isNewExpression(declaration.initializer)
+    ) {
+      addCandidate(expressionNameText(declaration.initializer.expression))
+    }
+  }
+
+  return [...candidates]
+}
+
+function looksLikeQueueCandidate(candidate: string): boolean {
+  const trimmed = candidate.trim()
+  if (!trimmed) return false
+
+  if (/(?:^|[.)])Queue(?:<|$)/.test(trimmed)) {
+    return true
+  }
+
+  const tokens = trimmed
+    .split(/[^A-Za-z0-9]+/)
+    .flatMap((segment) => segment.match(/[A-Z]+(?=[A-Z][a-z0-9])|[A-Z]?[a-z0-9]+/g) ?? [])
+    .map((token) => token.toLowerCase())
+
+  if (tokens.length === 2 && tokens[0] === 'de' && tokens[1] === 'queue') {
+    return false
+  }
+
+  return tokens.at(-1) === 'queue'
+}
+
+function queueReceiverSymbolNode(expr: ts.Expression): ts.Node {
+  if (ts.isPropertyAccessExpression(expr)) return expr.name
+  if (ts.isElementAccessExpression(expr)) return expr.argumentExpression ?? expr.expression
+  return expr
+}
+
+function expressionNameText(expr: ts.Expression): string | null {
+  if (ts.isIdentifier(expr)) return expr.text
+  if (ts.isPropertyAccessExpression(expr)) return expr.name.text
+  if (expr.kind === ts.SyntaxKind.ThisKeyword) return 'this'
+  if (ts.isParenthesizedExpression(expr)) return expressionNameText(expr.expression)
+  if (ts.isAsExpression(expr) || ts.isTypeAssertionExpression(expr)) {
+    return expressionNameText(expr.expression)
+  }
+  if (ts.isNewExpression(expr)) return expressionNameText(expr.expression)
+  if (ts.isCallExpression(expr)) return expressionNameText(expr.expression)
+  return null
+}
+
+function declarationNameText(node: ts.Node): string | null {
+  const namedNode = node as ts.Node & { name?: ts.DeclarationName }
+  const name = namedNode.name
+  if (!name) return null
+  if (ts.isIdentifier(name)) return name.text
+  if (ts.isStringLiteralLike(name)) return name.text
+  if (ts.isComputedPropertyName(name) && ts.isStringLiteralLike(name.expression)) {
+    return name.expression.text
+  }
+  return null
+}
+
 // Returns the string token of an `@Inject('TOKEN')` decorator on this
 // parameter, or null if the parameter has no @Inject decorator. A
 // non-string @Inject argument (e.g. `@Inject(SomeSymbol)`) returns null
@@ -670,6 +1058,15 @@ function setFrameworkRole(
       return
     }
   }
+}
+
+function symbolExists(
+  symbolsByFile: Map<string, SpiSymbol[]>,
+  fileId: string,
+  symbolId: string,
+): boolean {
+  const symbols = symbolsByFile.get(fileId)
+  return symbols?.some((symbol) => symbol.id === symbolId) === true
 }
 
 function symbolIdFor(fileId: string, kind: SpiSymbolKind, name: string): string {
