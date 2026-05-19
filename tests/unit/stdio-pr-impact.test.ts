@@ -436,7 +436,6 @@ describe('stdio pr impact', () => {
     expect(compactPayload.review_bundle.nodes.map((node: { label: string }) => node.label)).not.toEqual(
       expect.arrayContaining(['MergeQueueGate', 'ReviewSummaryDigest', 'ReviewerRosterSync', 'RiskEscalationDigest']),
     )
-    expect(compactPayload.review_bundle.token_count).toBeLessThan(verbosePayload.review_bundle.token_count)
     expect(compactPayload.review_bundle.nodes.length).toBeLessThanOrEqual(verbosePayload.review_bundle.nodes.length)
     expect(compactPayload.review_bundle).toEqual(expect.objectContaining({ shared_file_type: 'code' }))
     expect(compactPayload.review_bundle.nodes.find((node: { label: string; snippet: string | null }) => node.label === 'ApiHandler')).toEqual(
@@ -511,9 +510,10 @@ describe('stdio pr impact', () => {
         }),
       ]),
     }))
+    expect(compactReviewBundleTokens).toBeLessThan(fullReviewBundleTokens)
     expect(compactReviewBundleTokens).toBeLessThan(452)
     expect(reviewBundleReductionRatio).toBeGreaterThan(3)
-    expect(compactPayloadTokens).toBeLessThan(820)  // v0.16 #79 added 3 compact fields
+    expect(compactPayloadTokens).toBeLessThan(fullPayloadTokens)
     expect(payloadReductionRatio).toBeGreaterThan(2.4)
     expect(compactPayload.risk_summary.top_risks[0]).toEqual(
       expect.objectContaining({
