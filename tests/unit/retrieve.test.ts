@@ -2458,7 +2458,8 @@ describe('retrieve', () => {
       const compactReview = compactRetrieveResult(reviewResult)
 
       expect(explainPack.nodes.map((node) => node.label)).toEqual(reviewPack.nodes.map((node) => node.label))
-      expect(explainPack.nodes.find((node) => node.node_id === 'auth_controller')?.representation_type).toBe('call_chain')
+      expect(explainPack.nodes.find((node) => node.node_id === 'auth_controller')?.representation_type).toBe('detail')
+      expect(explainPack.nodes.find((node) => node.node_id === 'auth_controller')?.representation_reason).toBe('explain detail preserved')
       expect(reviewPack.nodes.find((node) => node.node_id === 'auth_controller')?.representation_type).toBe('signature')
       expect(reviewPack.token_count).toBeLessThan(explainPack.token_count)
       expect(compactReview.shared_file_type).toBe('code')

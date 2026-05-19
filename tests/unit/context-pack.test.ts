@@ -346,7 +346,8 @@ describe('context-pack', () => {
       })
 
       expect(explainPack.nodes.map((node) => node.label).sort()).toEqual(reviewPack.nodes.map((node) => node.label).sort())
-      expect(explainPack.nodes.find((node) => node.node_id === 'auth_controller')?.representation_type).toBe('call_chain')
+      expect(explainPack.nodes.find((node) => node.node_id === 'auth_controller')?.representation_type).toBe('detail')
+      expect(explainPack.nodes.find((node) => node.node_id === 'auth_controller')?.representation_reason).toBe('explain detail preserved')
       expect(reviewPack.nodes.find((node) => node.node_id === 'auth_controller')?.representation_type).toBe('signature')
       expect(explainPack.nodes.find((node) => node.node_id === 'auth_controller')?.snippet).toContain('return this.authService.login(input)')
       expect(explainPack.nodes.find((node) => node.node_id === 'auth_service')?.snippet).toContain('return this.sessionStore.create(input.userId)')

@@ -1038,6 +1038,8 @@ export function renderCompiledContextPackNodes<
         if (taskContract.task_kind === 'explain' && hasOriginalSnippet) {
           return {
             ...node,
+            representation_type: 'detail',
+            representation_reason: 'explain detail preserved',
             snippet: originalNode.snippet,
           } as TNode
         }
