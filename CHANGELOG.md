@@ -14,6 +14,7 @@ All notable changes to the TypeScript package will be documented in this file.
 
 - **Native-agent compare suite summary**: multi-question `compare --baseline-mode native_agent` runs now roll up comparable-question wins/losses for input tokens, turns, and latency, report mean/median input-token reduction, surface comparable-question counts when some runs are excluded from the aggregate, and highlight the best win and worst regression prompt in the terminal summary.
 - **Native-agent cache-aware compare accounting**: `compare --baseline-mode native_agent` now persists derived total/uncached/cached Anthropic input-token fields alongside the raw provider `usage` block, and the terminal summary breaks out uncached/cache creation/cache read lines when cache activity is present.
+- **Compact compare trace summaries**: compare summaries now add a single `Graphify trace:` line when `report.json` includes `graphify_trace`, and the benchmark docs clarify that the persisted field stores only compact, share-safe metadata (counts, tool names, per-turn summaries).
 
 ## [0.22.9] - 2026-05-16
 

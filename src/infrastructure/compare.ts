@@ -8,7 +8,7 @@ import { buildContextPrompt, type ContextPromptStableSection } from './context-p
 import { CODE_EXTENSIONS, DOC_EXTENSIONS, MANIFEST_METADATA_KEY, OFFICE_EXTENSIONS, PAPER_EXTENSIONS } from '../pipeline/detect.js'
 import { extractCompareBaselineNonCodeText } from '../pipeline/extract/non-code.js'
 import { loadBenchmarkQuestions } from './benchmark/questions.js'
-import { parsePromptRunnerOutput, type PromptRunnerUsage } from './prompt-runner.js'
+import { parsePromptRunnerJsonRecord, parsePromptRunnerOutput, type PromptRunnerUsage } from './prompt-runner.js'
 import { compactRetrieveResult, retrieveContext, tokenizeLabel, type CompactRetrieveResult, type RetrieveResult } from '../runtime/retrieve.js'
 import { QUERY_TOKEN_ESTIMATOR, estimateQueryTokens, loadGraph } from '../runtime/serve.js'
 import { sidecarAwareFileFingerprint } from '../shared/binary-ingest-sidecar.js'
@@ -94,6 +94,20 @@ export interface CompareReportPack extends CompactRetrieveResult {
   selection_diagnostics?: NonNullable<RetrieveResult['selection_diagnostics']>
 }
 
+export interface CompareGraphifyTraceTurnSummary {
+  turn: number
+  tool_call_count: number
+  tools: string[]
+}
+
+export interface CompareGraphifyTrace {
+  source: 'claude_messages_tool_use'
+  summary: string
+  tool_call_count: number
+  tool_calls_by_name: Record<string, number>
+  per_turn: CompareGraphifyTraceTurnSummary[]
+}
+
 export interface ComparePromptReport {
   question: string
   graph_path: string
@@ -150,6 +164,7 @@ export interface ComparePromptReport {
     graphify: string | null
   }
   provider_proof?: ComparePromptProviderProof
+  graphify_trace?: CompareGraphifyTrace
   pack?: CompareReportPack
   paths: ComparePromptArtifactPaths
 }
@@ -683,6 +698,95 @@ function comparePromptTokenSource(usage: ComparePromptUsage | null): CompareProm
 
 function compareProviderForUsage(usage: ComparePromptUsage | null): 'claude' | 'gemini' | null {
   return usage?.provider ?? null
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function parseTraceToolName(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null
+  }
+
+  const trimmedValue = value.trim()
+  return trimmedValue.length > 0 ? trimmedValue : null
+}
+
+function parseTraceTurnNumber(value: unknown, fallbackTurn: number): number {
+  if (typeof value === 'number' && Number.isInteger(value) && value > 0) {
+    return value
+  }
+  return fallbackTurn
+}
+
+function extractGraphifyTrace(stdout: string): CompareGraphifyTrace | undefined {
+  const payload = parsePromptRunnerJsonRecord(stdout)
+  if (payload === null || !Array.isArray(payload.messages)) {
+    return undefined
+  }
+
+  const toolCallsByName: Record<string, number> = {}
+  const perTurnIndex = new Map<number, CompareGraphifyTraceTurnSummary>()
+  let fallbackTurn = 1
+  let totalToolCalls = 0
+
+  for (const message of payload.messages) {
+    if (!isRecord(message) || message.role !== 'assistant' || !Array.isArray(message.content)) {
+      continue
+    }
+
+    const tools: string[] = []
+    for (const contentPart of message.content) {
+      if (!isRecord(contentPart) || contentPart.type !== 'tool_use') {
+        continue
+      }
+
+      const toolName = parseTraceToolName(contentPart.name)
+      if (toolName === null) {
+        continue
+      }
+
+      tools.push(toolName)
+      toolCallsByName[toolName] = (toolCallsByName[toolName] ?? 0) + 1
+      totalToolCalls += 1
+    }
+
+    if (tools.length === 0) {
+      continue
+    }
+
+    const turn = parseTraceTurnNumber(message.turn, fallbackTurn)
+    fallbackTurn = Math.max(fallbackTurn, turn + 1)
+    const existingTurn = perTurnIndex.get(turn)
+    if (existingTurn) {
+      existingTurn.tool_call_count += tools.length
+      existingTurn.tools.push(...tools)
+      continue
+    }
+
+    perTurnIndex.set(turn, {
+      turn,
+      tool_call_count: tools.length,
+      tools,
+    })
+  }
+
+  if (totalToolCalls === 0) {
+    return undefined
+  }
+
+  const sortedTurns = [...perTurnIndex.keys()].sort((leftTurn, rightTurn) => leftTurn - rightTurn)
+
+  return {
+    source: 'claude_messages_tool_use',
+    summary: `${totalToolCalls} tool calls across ${sortedTurns.length} turns`,
+    tool_call_count: totalToolCalls,
+    tool_calls_by_name: Object.fromEntries(
+      Object.entries(toolCallsByName).sort(([leftName], [rightName]) => leftName.localeCompare(rightName)),
+    ),
+    per_turn: sortedTurns.map((turn) => perTurnIndex.get(turn)!),
+  }
 }
 
 function buildCompareProviderProofEntry(
@@ -1248,6 +1352,7 @@ export async function executeCompareRuns(
     ]
 
     for (const execution of executions) {
+      let graphifyTrace: CompareGraphifyTrace | undefined
       try {
         validateCompareExecTemplate(input.execTemplate)
         const command = expandCompareExecTemplate(input.execTemplate, {
@@ -1261,6 +1366,9 @@ export async function executeCompareRuns(
           question: report.question,
           command,
         })
+        if (execution.mode === 'graphify') {
+          graphifyTrace = extractGraphifyTrace(executionResult.stdout)
+        }
         const parsedOutput = parsePromptRunnerOutput(executionResult.stdout)
         ensureCompareAnswerFile(
           execution.outputFile,
@@ -1277,6 +1385,13 @@ export async function executeCompareRuns(
         report.failure_reason[execution.mode] =
           executionResult.exitCode === 0 ? null : contextOverflowEvidence !== null ? 'prompt_too_long' : 'runner_error'
         report.evidence[execution.mode] = contextOverflowEvidence
+        if (execution.mode === 'graphify') {
+          if (graphifyTrace) {
+            report.graphify_trace = graphifyTrace
+          } else {
+            delete report.graphify_trace
+          }
+        }
       } catch (error) {
         ensureCompareAnswerFile(execution.outputFile, '')
         report.usage[execution.mode] = null
@@ -1288,6 +1403,9 @@ export async function executeCompareRuns(
         report.stderr[execution.mode] = sanitizeCompareStderr(errorMessage)
         report.failure_reason[execution.mode] = contextOverflowEvidence !== null ? 'prompt_too_long' : 'exec_error'
         report.evidence[execution.mode] = contextOverflowEvidence
+        if (execution.mode === 'graphify') {
+          delete report.graphify_trace
+        }
       }
 
       syncComparePromptMetrics(report)
@@ -1392,6 +1510,30 @@ function formatCompareProviderProof(result: GenerateCompareArtifactsResult): str
   return `mixed provider-reported usage (${providerReportedRuns}/${totalRuns} prompt runs) with local estimate fallback`
 }
 
+function formatCompareGraphifyTraceSummary(result: GenerateCompareArtifactsResult): string | null {
+  const traces = result.reports.flatMap((report) => (report.graphify_trace ? [report.graphify_trace] : []))
+  if (traces.length === 0) {
+    return null
+  }
+
+  const toolCallsByName = new Map<string, number>()
+  const totalToolCalls = traces.reduce((total, trace) => {
+    for (const [toolName, count] of Object.entries(trace.tool_calls_by_name)) {
+      toolCallsByName.set(toolName, (toolCallsByName.get(toolName) ?? 0) + count)
+    }
+    return total + trace.tool_call_count
+  }, 0)
+  const totalTurns = traces.reduce((total, trace) => total + trace.per_turn.length, 0)
+  const topTools = [...toolCallsByName.entries()]
+    .sort((leftEntry, rightEntry) => rightEntry[1] - leftEntry[1] || leftEntry[0].localeCompare(rightEntry[0]))
+    .slice(0, 3)
+    .map(([toolName, count]) => `${toolName}×${count}`)
+  const traceCoverage = traces.length === result.reports.length ? '' : ` · traces for ${traces.length}/${result.reports.length} graphify runs`
+  const topToolsSummary = topTools.length > 0 ? ` · top tools: ${topTools.join(', ')}` : ''
+
+  return `Graphify trace: ${totalToolCalls} tool call${totalToolCalls === 1 ? '' : 's'} across ${totalTurns} turn${totalTurns === 1 ? '' : 's'}${traceCoverage}${topToolsSummary}`
+}
+
 export function formatCompareSummary(result: GenerateCompareArtifactsResult): string {
   const baselineTokens = sumPromptTokens(result.reports, 'baseline')
   const graphifyTokens = sumPromptTokens(result.reports, 'graphify')
@@ -1444,6 +1586,10 @@ export function formatCompareSummary(result: GenerateCompareArtifactsResult): st
   }
   lines.push(`- Reused context tokens: baseline ${baselineReusedTokens} · graphify ${graphifyReusedTokens}`)
   lines.push(`- Provider/runtime proof: ${formatCompareProviderProof(result)}`)
+  const graphifyTraceSummary = formatCompareGraphifyTraceSummary(result)
+  if (graphifyTraceSummary !== null) {
+    lines.push(`- ${graphifyTraceSummary}`)
+  }
 
   return lines.join('\n')
 }

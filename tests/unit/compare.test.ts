@@ -263,6 +263,44 @@ function writeManifestFixture(
   return manifestPath
 }
 
+function makeClaudeStructuredCompareStdout(options: {
+  result: string
+  usage?: {
+    input_tokens: number
+    output_tokens: number
+    cache_creation_input_tokens?: number
+    cache_read_input_tokens?: number
+  }
+  assistant_turns?: Array<{
+    turn: number
+    content: Array<Record<string, unknown>>
+  }>
+}): string {
+  return JSON.stringify({
+    type: 'result',
+    subtype: 'success',
+    result: options.result,
+    ...(options.usage
+      ? {
+          usage: {
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+            ...options.usage,
+          },
+        }
+      : {}),
+    ...(options.assistant_turns
+      ? {
+          messages: options.assistant_turns.map((turn) => ({
+            role: 'assistant',
+            turn: turn.turn,
+            content: turn.content,
+          })),
+        }
+      : {}),
+  })
+}
+
 beforeEach(() => {
   rmSync(PROJECT_FIXTURE_ROOT, { recursive: true, force: true })
   rmSync(GRAPH_FIXTURE_ROOT, { recursive: true, force: true })
@@ -953,6 +991,387 @@ describe('compare runtime', () => {
     )
   })
 
+  it('persists compact graphify trace metadata in report.json without raw tool payload content', async () => {
+    const graph = makeGraph()
+    writeProjectFiles()
+    const graphPath = writeGraphFixture(graph)
+    const privateQuestionPayload = 'PRIVATE_QUESTION_PAYLOAD'
+    const privateToolArgument = 'PRIVATE_TOOL_ARGUMENT'
+
+    const result = await executeCompareRuns(
+      {
+        graphPath,
+        question: 'how does login create a session',
+        outputDir: COMPARE_OUTPUT_ROOT,
+        execTemplate: 'runner --prompt {prompt_file} --mode {mode} --out {output_file}',
+        baselineMode: 'full',
+        now: new Date('2026-04-24T19:30:00.000Z'),
+      },
+      {
+        runner: async (execution) => ({
+          exitCode: 0,
+          stdout:
+            execution.mode === 'baseline'
+              ? makeClaudeStructuredCompareStdout({
+                  result: 'baseline answer\n',
+                  usage: {
+                    input_tokens: 1200,
+                    output_tokens: 90,
+                    cache_creation_input_tokens: 100,
+                    cache_read_input_tokens: 20,
+                  },
+                })
+              : makeClaudeStructuredCompareStdout({
+                  result: 'graphify answer\n',
+                  usage: {
+                    input_tokens: 400,
+                    output_tokens: 70,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 10,
+                  },
+                  assistant_turns: [
+                    {
+                      turn: 1,
+                      content: [
+                        { type: 'text', text: 'Let me inspect the graph.' },
+                        {
+                          type: 'tool_use',
+                          name: 'retrieve',
+                          input: { question: privateQuestionPayload },
+                        },
+                        {
+                          type: 'tool_use',
+                          name: 'mcp__graphify-ts__impact',
+                          input: { label: 'SessionManager', note: privateToolArgument },
+                        },
+                      ],
+                    },
+                    {
+                      turn: 2,
+                      content: [
+                        {
+                          type: 'tool_use',
+                          name: 'retrieve',
+                          input: { question: `${privateQuestionPayload}_FOLLOW_UP` },
+                        },
+                      ],
+                    },
+                  ],
+                }),
+          stderr: '',
+          elapsedMs: execution.mode === 'baseline' ? 11 : 17,
+        }),
+      },
+    )
+
+    const report = result.reports[0]!
+    const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
+    const graphifyTrace = savedReport.graphify_trace as Record<string, unknown> | undefined
+    const graphifyTraceJson = JSON.stringify(graphifyTrace ?? null)
+
+    expect(graphifyTrace).toEqual(
+      expect.objectContaining({
+        tool_call_count: 3,
+        tool_calls_by_name: {
+          retrieve: 2,
+          'mcp__graphify-ts__impact': 1,
+        },
+        per_turn: [
+          expect.objectContaining({
+            turn: 1,
+            tool_call_count: 2,
+            tools: ['retrieve', 'mcp__graphify-ts__impact'],
+          }),
+          expect.objectContaining({
+            turn: 2,
+            tool_call_count: 1,
+            tools: ['retrieve'],
+          }),
+        ],
+      }),
+    )
+    expect(graphifyTraceJson).not.toContain(privateQuestionPayload)
+    expect(graphifyTraceJson).not.toContain(privateToolArgument)
+  })
+
+  it('sorts graphify_trace per_turn by numeric turn when structured messages arrive out of order', async () => {
+    const graph = makeGraph()
+    writeProjectFiles()
+    const graphPath = writeGraphFixture(graph)
+
+    const result = await executeCompareRuns(
+      {
+        graphPath,
+        question: 'how does login create a session',
+        outputDir: COMPARE_OUTPUT_ROOT,
+        execTemplate: 'runner --prompt {prompt_file} --mode {mode} --out {output_file}',
+        baselineMode: 'full',
+        now: new Date('2026-04-24T19:30:00.000Z'),
+      },
+      {
+        runner: async (execution) => ({
+          exitCode: 0,
+          stdout:
+            execution.mode === 'baseline'
+              ? makeClaudeStructuredCompareStdout({
+                  result: 'baseline answer\n',
+                  usage: {
+                    input_tokens: 1200,
+                    output_tokens: 90,
+                    cache_creation_input_tokens: 100,
+                    cache_read_input_tokens: 20,
+                  },
+                })
+              : makeClaudeStructuredCompareStdout({
+                  result: 'graphify answer\n',
+                  usage: {
+                    input_tokens: 400,
+                    output_tokens: 70,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 10,
+                  },
+                  assistant_turns: [
+                    {
+                      turn: 2,
+                      content: [{ type: 'tool_use', name: 'retrieve', input: { question: 'follow-up' } }],
+                    },
+                    {
+                      turn: 1,
+                      content: [{ type: 'tool_use', name: 'mcp__graphify-ts__impact', input: { label: 'SessionManager' } }],
+                    },
+                  ],
+                }),
+          stderr: '',
+          elapsedMs: execution.mode === 'baseline' ? 11 : 17,
+        }),
+      },
+    )
+
+    const report = result.reports[0]!
+    const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
+    const graphifyTrace = savedReport.graphify_trace as Record<string, unknown> | undefined
+
+    expect(graphifyTrace).toEqual(
+      expect.objectContaining({
+        per_turn: [
+          expect.objectContaining({
+            turn: 1,
+            tool_call_count: 1,
+            tools: ['mcp__graphify-ts__impact'],
+          }),
+          expect.objectContaining({
+            turn: 2,
+            tool_call_count: 1,
+            tools: ['retrieve'],
+          }),
+        ],
+      }),
+    )
+  })
+
+  it('falls back to sequential turn numbers when structured messages use fractional turns', async () => {
+    const graph = makeGraph()
+    writeProjectFiles()
+    const graphPath = writeGraphFixture(graph)
+
+    const result = await executeCompareRuns(
+      {
+        graphPath,
+        question: 'how does login create a session',
+        outputDir: COMPARE_OUTPUT_ROOT,
+        execTemplate: 'runner --prompt {prompt_file} --mode {mode} --out {output_file}',
+        baselineMode: 'full',
+        now: new Date('2026-04-24T19:30:00.000Z'),
+      },
+      {
+        runner: async (execution) => ({
+          exitCode: 0,
+          stdout:
+            execution.mode === 'baseline'
+              ? makeClaudeStructuredCompareStdout({
+                  result: 'baseline answer\n',
+                  usage: {
+                    input_tokens: 1200,
+                    output_tokens: 90,
+                    cache_creation_input_tokens: 100,
+                    cache_read_input_tokens: 20,
+                  },
+                })
+              : makeClaudeStructuredCompareStdout({
+                  result: 'graphify answer\n',
+                  usage: {
+                    input_tokens: 400,
+                    output_tokens: 70,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 10,
+                  },
+                  assistant_turns: [
+                    {
+                      turn: 1,
+                      content: [{ type: 'tool_use', name: 'retrieve', input: { question: 'initial lookup' } }],
+                    },
+                    {
+                      turn: 1.9,
+                      content: [{ type: 'tool_use', name: 'mcp__graphify-ts__impact', input: { label: 'SessionManager' } }],
+                    },
+                  ],
+                }),
+          stderr: '',
+          elapsedMs: execution.mode === 'baseline' ? 11 : 17,
+        }),
+      },
+    )
+
+    const report = result.reports[0]!
+    const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
+    const graphifyTrace = savedReport.graphify_trace as Record<string, unknown> | undefined
+
+    expect(graphifyTrace).toEqual(
+      expect.objectContaining({
+        per_turn: [
+          expect.objectContaining({
+            turn: 1,
+            tool_call_count: 1,
+            tools: ['retrieve'],
+          }),
+          expect.objectContaining({
+            turn: 2,
+            tool_call_count: 1,
+            tools: ['mcp__graphify-ts__impact'],
+          }),
+        ],
+      }),
+    )
+  })
+
+  it('preserves compact graphify trace metadata when graphify exits non-zero with structured stdout', async () => {
+    const graph = makeGraph()
+    writeProjectFiles()
+    const graphPath = writeGraphFixture(graph)
+    const privateQuestionPayload = 'PRIVATE_FAILED_QUESTION_PAYLOAD'
+    const privateToolArgument = 'PRIVATE_FAILED_TOOL_ARGUMENT'
+
+    const result = await executeCompareRuns(
+      {
+        graphPath,
+        question: 'how does login create a session',
+        outputDir: COMPARE_OUTPUT_ROOT,
+        execTemplate: 'runner --prompt {prompt_file} --mode {mode} --out {output_file}',
+        baselineMode: 'full',
+        now: new Date('2026-04-24T19:30:00.000Z'),
+      },
+      {
+        runner: async (execution) => ({
+          exitCode: execution.mode === 'graphify' ? 23 : 0,
+          stdout:
+            execution.mode === 'baseline'
+              ? makeClaudeStructuredCompareStdout({
+                  result: 'baseline answer\n',
+                  usage: {
+                    input_tokens: 1200,
+                    output_tokens: 90,
+                    cache_creation_input_tokens: 100,
+                    cache_read_input_tokens: 20,
+                  },
+                })
+              : makeClaudeStructuredCompareStdout({
+                  result: 'graphify partial output\n',
+                  usage: {
+                    input_tokens: 400,
+                    output_tokens: 70,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 10,
+                  },
+                  assistant_turns: [
+                    {
+                      turn: 1,
+                      content: [
+                        {
+                          type: 'tool_use',
+                          name: 'retrieve',
+                          input: { question: privateQuestionPayload },
+                        },
+                        {
+                          type: 'tool_use',
+                          name: 'mcp__graphify-ts__impact',
+                          input: { label: 'SessionManager', note: privateToolArgument },
+                        },
+                      ],
+                    },
+                  ],
+                }),
+          stderr: execution.mode === 'graphify' ? 'runner exited with a failure\n' : '',
+          elapsedMs: execution.mode === 'baseline' ? 11 : 17,
+        }),
+      },
+    )
+
+    const report = result.reports[0]!
+    const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
+    const graphifyTrace = savedReport.graphify_trace as Record<string, unknown> | undefined
+    const graphifyTraceJson = JSON.stringify(graphifyTrace ?? null)
+
+    expect(report.status.graphify).toBe('failed')
+    expect(report.usage.graphify).toBeNull()
+    expect(readFileSync(report.answer_paths.graphify, 'utf8')).toBe('graphify partial output\n')
+    expect(graphifyTrace).toEqual(
+      expect.objectContaining({
+        tool_call_count: 2,
+        tool_calls_by_name: {
+          'mcp__graphify-ts__impact': 1,
+          retrieve: 1,
+        },
+        per_turn: [
+          expect.objectContaining({
+            turn: 1,
+            tool_call_count: 2,
+            tools: ['retrieve', 'mcp__graphify-ts__impact'],
+          }),
+        ],
+      }),
+    )
+    expect(graphifyTraceJson).not.toContain(privateQuestionPayload)
+    expect(graphifyTraceJson).not.toContain(privateToolArgument)
+  })
+
+  it('keeps graphify_trace absent when compare stdout does not expose trace data', async () => {
+    const graph = makeGraph()
+    writeProjectFiles()
+    const graphPath = writeGraphFixture(graph)
+
+    const result = await executeCompareRuns(
+      {
+        graphPath,
+        question: 'how does login create a session',
+        outputDir: COMPARE_OUTPUT_ROOT,
+        execTemplate: 'runner --prompt {prompt_file} --mode {mode} --out {output_file}',
+        baselineMode: 'full',
+        now: new Date('2026-04-24T19:30:00.000Z'),
+      },
+      {
+        runner: async (execution) => ({
+          exitCode: 0,
+          stdout: makeClaudeStructuredCompareStdout({
+            result: `${execution.mode} answer\n`,
+            usage: {
+              input_tokens: execution.mode === 'baseline' ? 1200 : 400,
+              output_tokens: execution.mode === 'baseline' ? 90 : 70,
+              cache_creation_input_tokens: execution.mode === 'baseline' ? 100 : 0,
+              cache_read_input_tokens: execution.mode === 'baseline' ? 20 : 10,
+            },
+          }),
+          stderr: '',
+          elapsedMs: execution.mode === 'baseline' ? 11 : 17,
+        }),
+      },
+    )
+
+    const report = result.reports[0]!
+    const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
+
+    expect(savedReport).not.toHaveProperty('graphify_trace')
+  })
+
   it('preserves Claude structured usage parsing through compare execution', async () => {
     const graph = makeGraph()
     writeProjectFiles()
@@ -970,25 +1389,41 @@ describe('compare runtime', () => {
       {
         runner: async (execution) => ({
           exitCode: 0,
-          stdout: JSON.stringify({
-            type: 'result',
-            subtype: 'success',
-            result: `${execution.mode} answer\n`,
-            usage:
-              execution.mode === 'baseline'
-                ? {
+          stdout:
+            execution.mode === 'baseline'
+              ? JSON.stringify({
+                  type: 'result',
+                  subtype: 'success',
+                  result: `${execution.mode} answer\n`,
+                  usage: {
                     input_tokens: 1200,
                     output_tokens: 90,
                     cache_creation_input_tokens: 100,
                     cache_read_input_tokens: 20,
-                  }
-                : {
+                  },
+                })
+              : makeClaudeStructuredCompareStdout({
+                  result: 'graphify answer\n',
+                  usage: {
                     input_tokens: 400,
                     output_tokens: 70,
                     cache_creation_input_tokens: 0,
                     cache_read_input_tokens: 10,
                   },
-          }),
+                  assistant_turns: [
+                    {
+                      turn: 1,
+                      content: [
+                        { type: 'tool_use', name: 'retrieve', input: { question: 'login session flow' } },
+                        { type: 'tool_use', name: 'mcp__graphify-ts__impact', input: { label: 'SessionManager' } },
+                      ],
+                    },
+                    {
+                      turn: 2,
+                      content: [{ type: 'tool_use', name: 'retrieve', input: { question: 'session follow-up' } }],
+                    },
+                  ],
+                }),
           stderr: '',
           elapsedMs: execution.mode === 'baseline' ? 11 : 17,
         }),
@@ -1052,6 +1487,9 @@ describe('compare runtime', () => {
     expect(formatCompareSummary(result)).toContain('Effective input tokens (cache-adjusted): baseline 1300 · graphify 400')
     expect(formatCompareSummary(result)).toContain('Total tokens (Claude reported): baseline 1410 · graphify 480')
     expect(formatCompareSummary(result)).toContain('Provider/runtime proof: Claude reported input, cache, and total tokens for 2/2 prompt runs')
+    expect(formatCompareSummary(result)).toContain(
+      'Graphify trace: 3 tool calls across 2 turns · top tools: retrieve×2, mcp__graphify-ts__impact×1',
+    )
   })
 
   it('does not write structured stdout JSON into answer artifacts when usage is present without answer text', async () => {
@@ -1829,6 +2267,7 @@ describe('compare runtime', () => {
         },
       }),
     )
+    expect(savedReport).not.toHaveProperty('graphify_trace')
   })
 
   it('redacts persisted compare stderr summaries', async () => {
