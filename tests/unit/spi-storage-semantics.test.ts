@@ -100,6 +100,20 @@ function expectStorageOperation(
   expect(symbol?.framework_metadata?.storage_operation).toBe(expected.operation)
 }
 
+const REPOSITORY_PERSISTENCE_READER_ROLE = /^repository(?:_(?:reader|read))?$/
+const REPOSITORY_PERSISTENCE_WRITER_ROLE = /^repository(?:_(?:writer|write))?$/
+
+function expectRepositoryPersistenceOperation(
+  symbol: StorageTaggedEntity | Pick<SpiSymbol, 'framework_role' | 'framework_metadata'> | undefined,
+  expected: {
+    operation: string
+    role: RegExp
+  },
+): void {
+  expectStorageOperation(symbol, expected)
+  expect(symbol?.framework_role).not.toBe('prisma_model_access')
+}
+
 describe('SPI storage operation semantics regressions (#185)', () => {
   let sandbox: string
 
@@ -196,29 +210,29 @@ describe('SPI storage operation semantics regressions (#185)', () => {
 
     const spi = build(sandbox)
 
-    expectStorageOperation(
+    expectRepositoryPersistenceOperation(
       findSymbol(spi, 'src/report.repository.ts', 'ReportRepository.save', 'method'),
-      { operation: 'save' },
+      { role: REPOSITORY_PERSISTENCE_WRITER_ROLE, operation: 'save' },
     )
-    expectStorageOperation(
+    expectRepositoryPersistenceOperation(
       findSymbol(spi, 'src/report.repository.ts', 'ReportRepository.create', 'method'),
-      { operation: 'create' },
+      { role: REPOSITORY_PERSISTENCE_WRITER_ROLE, operation: 'create' },
     )
-    expectStorageOperation(
+    expectRepositoryPersistenceOperation(
       findSymbol(spi, 'src/report.repository.ts', 'ReportRepository.update', 'method'),
-      { operation: 'update' },
+      { role: REPOSITORY_PERSISTENCE_WRITER_ROLE, operation: 'update' },
     )
-    expectStorageOperation(
+    expectRepositoryPersistenceOperation(
       findSymbol(spi, 'src/report.repository.ts', 'ReportRepository.upsert', 'method'),
-      { operation: 'upsert' },
+      { role: REPOSITORY_PERSISTENCE_WRITER_ROLE, operation: 'upsert' },
     )
-    expectStorageOperation(
+    expectRepositoryPersistenceOperation(
       findSymbol(spi, 'src/report.repository.ts', 'ReportRepository.findUnique', 'method'),
-      { operation: 'findUnique' },
+      { role: REPOSITORY_PERSISTENCE_READER_ROLE, operation: 'findUnique' },
     )
-    expectStorageOperation(
+    expectRepositoryPersistenceOperation(
       findSymbol(spi, 'src/report.repository.ts', 'ReportRepository.findMany', 'method'),
-      { operation: 'findMany' },
+      { role: REPOSITORY_PERSISTENCE_READER_ROLE, operation: 'findMany' },
     )
   })
 
