@@ -1,46 +1,46 @@
 {
-  "$comment": "Prompt set for the 2026-05-10 current-vs-slicing experiment (issue #71). 8 prompts across the four task modes #71 calls out (explain / debug / review / impact). Designed so each prompt has at least one obvious failure mode for naive retrieval (hub-dominated) and one obvious slicing win (cross-module behavior path).",
+  "$comment": "Prompt set for the 2026-05-10 current-vs-slicing experiment (issue #71). These prompts are anchored to the committed examples/demo-repo corpus so the experiment is reproducible in a fresh checkout.",
   "version": 1,
   "prompts": [
     {
-      "id": "explain-auth-flow",
+      "id": "explain-auth-session",
       "task": "explain",
-      "text": "Explain the authentication flow end to end, from the HTTP entry point to session persistence."
+      "text": "Explain how password policy login creates a tenant session. Include where tenant context enters and where the session is persisted."
     },
     {
-      "id": "explain-controller-to-persistence",
+      "id": "explain-monthly-close",
       "task": "explain",
-      "text": "Trace the request path from the report controller to the final report persistence call. Include any queue, worker, or background job hops."
+      "text": "Trace what runs the monthly billing close and how execution reaches the monthly revenue report builder."
     },
     {
-      "id": "debug-report-slow",
+      "id": "debug-missing-receipt",
       "task": "debug",
-      "text": "Why is report generation slow? Walk through the request path and call out the slowest hops, including any external service or LLM calls."
+      "text": "A customer was billed but never got a receipt email. Which code path should you inspect first, and which modules participate in sending the receipt?"
     },
     {
-      "id": "debug-config-env",
+      "id": "debug-report-snapshot",
       "task": "debug",
-      "text": "Where does the SESSION_TTL environment variable affect runtime behavior? Trace it from config load through every code path that reads it."
+      "text": "Finance says the monthly revenue snapshot looks wrong. Trace how the report is built and where invoice data flows into the final snapshot."
     },
     {
-      "id": "review-pr-onboarding",
+      "id": "review-invoice-service-change",
       "task": "review",
-      "text": "Can a PR that touches the onboarding flow break user creation, billing, or auth? Identify the call paths and risk hotspots."
+      "text": "If a PR changes InvoiceService.sendInvoiceReceipt, what adjacent code paths should a reviewer inspect for receipt delivery or monthly close regressions?"
     },
     {
-      "id": "review-guard-coverage",
+      "id": "review-tenant-context-change",
       "task": "review",
-      "text": "Which controllers have an authentication guard but no authorization check? List the routes and the missing checks."
+      "text": "If a PR changes TenantContext or auth login wiring, which modules are most at risk of breaking and why?"
     },
     {
-      "id": "impact-service-change",
+      "id": "impact-password-policy-contract",
       "task": "impact",
-      "text": "What can break if the research-agent service changes its public interface? List dependents, callers, and tests that would need to update."
+      "text": "What can break if PasswordPolicy.allows changes its public contract? List direct callers and downstream behavior that depends on it."
     },
     {
-      "id": "impact-billing-credits",
+      "id": "impact-tenant-context-shape",
       "task": "impact",
-      "text": "When a user is charged, where are credits debited and how is the audit trail recorded? Identify all code paths that adjust the credit balance."
+      "text": "What can break if the TenantContext shape changes? Identify the files and workflows that would need to update."
     }
   ]
 }
