@@ -24,6 +24,10 @@ function writeFile(root: string, rel: string, content: string): void {
   writeFileSync(abs, content, 'utf8')
 }
 
+function normalizePathForAssertion(value: string): string {
+  return value.replaceAll('\\', '/')
+}
+
 describe('Framework-aware retrieval boost for v0.17 substrates (#83 → v0.19)', () => {
   let sandbox: string
   beforeEach(() => { sandbox = mkSandbox('retrieve-fwk-boost-') })
@@ -136,11 +140,11 @@ describe('Framework-aware retrieval boost for v0.17 substrates (#83 → v0.19)',
     })
 
     const repoSaveIndex = retrieved.matched_nodes.findIndex((node) =>
-      node.label === '.save()' && node.source_file.endsWith('/src/persistence/report.repository.ts'))
+      node.label === '.save()' && normalizePathForAssertion(node.source_file).endsWith('src/persistence/report.repository.ts'))
     const repoClassIndex = retrieved.matched_nodes.findIndex((node) =>
-      node.label === 'ReportRepository' && node.source_file.endsWith('/src/persistence/report.repository.ts'))
+      node.label === 'ReportRepository' && normalizePathForAssertion(node.source_file).endsWith('src/persistence/report.repository.ts'))
     const helperSaveIndex = retrieved.matched_nodes.findIndex((node) =>
-      node.label === '.save()' && node.source_file.endsWith('/src/ui/report-footer.ts'))
+      node.label === '.save()' && normalizePathForAssertion(node.source_file).endsWith('src/ui/report-footer.ts'))
     const repoSave = repoSaveIndex >= 0 ? retrieved.matched_nodes[repoSaveIndex] : undefined
 
     expect(repoSaveIndex).toBeGreaterThanOrEqual(0)

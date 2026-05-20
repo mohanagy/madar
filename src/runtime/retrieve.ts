@@ -490,8 +490,13 @@ function eligibleNodeEntries(graph: KnowledgeGraph, options: Pick<RetrieveOption
 
 function frameworkMetadataFromAttributes(attributes: Record<string, unknown>): FrameworkNodeMetadata {
   const out: FrameworkNodeMetadata = {}
-  for (const key of ['route_path', 'http_method', 'mount_path', 'slice_name', 'procedure_name', 'router_name'] as const) {
-    const value = attributes[key]
+  const metadataBag = attributes.framework_metadata
+  const metadata = metadataBag && typeof metadataBag === 'object' && !Array.isArray(metadataBag)
+    ? metadataBag as Record<string, unknown>
+    : null
+
+  for (const key of ['route_path', 'http_method', 'mount_path', 'slice_name', 'procedure_name', 'router_name', 'storage_operation'] as const) {
+    const value = attributes[key] ?? metadata?.[key]
     if (typeof value === 'string' && value.length > 0) out[key] = value
   }
   return out
@@ -673,6 +678,7 @@ interface FrameworkQuestionProfile {
   reactRouter: boolean
   nest: boolean
   next: boolean
+  repository: boolean
   // v0.19 — v0.17 framework slots added to the boost surface so
   // questions about Hono / Fastify / tRPC / Prisma actually route to
   // the right substrate nodes.
@@ -707,6 +713,10 @@ interface FrameworkQuestionProfile {
   mutationIntent: boolean
   subscriptionIntent: boolean
   modelIntent: boolean
+  persistenceIntent: boolean
+  storageEndpointIntent: boolean
+  storageReadIntent: boolean
+  storageWriteIntent: boolean
 }
 
 interface SymbolReference {
@@ -723,6 +733,7 @@ function activeFrameworksForProfile(profile: FrameworkQuestionProfile): Readonly
   if (profile.reactRouter) frameworks.add('react-router')
   if (profile.nest) frameworks.add('nestjs')
   if (profile.next) frameworks.add('nextjs')
+  if (profile.repository) frameworks.add('repository')
   if (profile.hono) frameworks.add('hono')
   if (profile.fastify) frameworks.add('fastify')
   if (profile.trpc) frameworks.add('trpc')
@@ -1449,6 +1460,41 @@ function buildFrameworkQuestionProfile(question: string, questionTokens: readonl
   const mutationIntent = includesAnyToken(questionTokens, ['mutation', 'mutations'])
   const subscriptionIntent = includesAnyToken(questionTokens, ['subscription', 'subscriptions', 'subscribe'])
   const modelIntent = includesAnyToken(questionTokens, ['model', 'models', 'schema', 'orm', 'database', 'db'])
+  const persistenceIntent = /\bpersistence\s+boundar(?:y|ies)\b/i.test(question)
+    || includesAnyToken(questionTokens, ['persistence', 'storage', 'persist', 'persisted', 'persisting'])
+  const repositoryIntent = includesAnyToken(questionTokens, ['repository', 'repositories'])
+  const storageReadIntent = queryIntent || includesAnyToken(questionTokens, ['read', 'reads'])
+  const storageWriteIntent = mutationIntent || includesAnyToken(questionTokens, [
+    'write',
+    'writes',
+    'save',
+    'saves',
+    'saved',
+    'update',
+    'updates',
+    'updated',
+    'upsert',
+    'upserts',
+    'persist',
+    'persists',
+    'persisted',
+    'stored',
+    'storing',
+  ])
+  const repositoryBoundaryIntent = repositoryIntent && (
+    modelIntent
+    || persistenceIntent
+    || storageReadIntent
+    || storageWriteIntent
+    || includesAnyToken(questionTokens, ['method', 'methods', 'boundary', 'boundaries'])
+  )
+  const storageEndpointIntent =
+    persistenceIntent
+    || repositoryBoundaryIntent
+    || (
+      (storageReadIntent || storageWriteIntent)
+      && (modelIntent || explicitPrisma || persistenceIntent || repositoryIntent)
+    )
   const explicitNextText = /\bnext(?:\.js)?\b/i.test(question)
   const explicitNextPagesArtifact = /\b(_app|_document|not-found)\b/i.test(question)
   const mentionsReact = includesAnyToken(questionTokens, ['react'])
@@ -1483,7 +1529,11 @@ function buildFrameworkQuestionProfile(question: string, questionTokens: readonl
   const hono = explicitHono
   const fastify = explicitFastify || pluginIntent
   const trpc = explicitTrpc || procedureIntent || queryIntent || mutationIntent || subscriptionIntent
-  const prisma = explicitPrisma || modelIntent
+  const repository = storageEndpointIntent
+  const prisma = explicitPrisma || modelIntent || persistenceIntent || (
+    (storageReadIntent || storageWriteIntent)
+    && (modelIntent || explicitPrisma || persistenceIntent)
+  )
   // Express still wins on bare http-verb/middleware/handler intent unless
   // a more specific framework is named.
   const express = (explicitExpress || hasHttpVerb || middlewareIntent || handlerIntent) && !hono && !fastify
@@ -1501,12 +1551,13 @@ function buildFrameworkQuestionProfile(question: string, questionTokens: readonl
       includesAnyToken(questionTokens, ['route', 'routes', 'middleware', 'action', 'actions', 'page', 'pages']))
 
   return {
-    frameworkShaped: express || redux || reactRouter || nest || next || hono || fastify || trpc || prisma,
+    frameworkShaped: express || redux || reactRouter || nest || next || repository || hono || fastify || trpc || prisma,
     express,
     redux,
     reactRouter,
     nest,
     next,
+    repository,
     hono,
     fastify,
     trpc,
@@ -1537,6 +1588,10 @@ function buildFrameworkQuestionProfile(question: string, questionTokens: readonl
     mutationIntent,
     subscriptionIntent,
     modelIntent,
+    persistenceIntent,
+    storageEndpointIntent,
+    storageReadIntent,
+    storageWriteIntent,
   }
 }
 
@@ -1557,6 +1612,8 @@ interface FrameworkNodeMetadata {
   procedure_name?: string
   /** tRPC router-name prefix on synthesized procedures. */
   router_name?: string
+  /** Storage endpoint operation (e.g. 'save', 'update', 'findMany'). */
+  storage_operation?: string
 }
 
 function frameworkBoostForNode(
@@ -1618,6 +1675,12 @@ function frameworkBoostForNode(
     const rn = metadata.router_name.toLowerCase()
     if (rn.length >= 2 && questionLower.includes(rn)) {
       boost += 1
+    }
+  }
+  if (metadata.storage_operation && questionLower) {
+    const storageOperation = metadata.storage_operation.toLowerCase()
+    if (storageOperation.length >= 2 && questionLower.includes(storageOperation)) {
+      boost += 1.75
     }
   }
 
@@ -1727,6 +1790,15 @@ function frameworkBoostForNode(
     }
   }
 
+  if (profile.repository) {
+    if (frameworkRole === 'repository_reader') {
+      boost += profile.storageReadIntent ? 4 : profile.storageEndpointIntent ? 2.5 : 0
+    }
+    if (frameworkRole === 'repository_writer') {
+      boost += profile.storageWriteIntent ? 4 : profile.storageEndpointIntent ? 2.5 : 0
+    }
+  }
+
   // v0.19 — Hono / Fastify / tRPC / Prisma boost rules. Mirrors the
   // weights used for Express/NestJS/etc. so questions about these
   // substrates route to the right nodes.
@@ -1771,10 +1843,36 @@ function frameworkBoostForNode(
 
   if (profile.prisma) {
     if (frameworkRole === 'prisma_client') {
-      boost += profile.modelIntent ? 3 : 1.5
+      boost += profile.storageEndpointIntent
+        ? 1
+        : profile.modelIntent
+          ? 3
+          : 1.5
     }
     if (frameworkRole === 'prisma_model_access') {
-      boost += profile.modelIntent ? 3 : 1
+      boost += profile.storageEndpointIntent
+        ? 2.25
+        : profile.modelIntent
+          ? 3
+          : 1
+    }
+    if (frameworkRole === 'prisma_model_reader') {
+      boost += profile.storageReadIntent
+        ? 4
+        : profile.storageEndpointIntent
+          ? 2.5
+          : profile.modelIntent
+            ? 2
+            : 0.75
+    }
+    if (frameworkRole === 'prisma_model_writer') {
+      boost += profile.storageWriteIntent
+        ? 4
+        : profile.storageEndpointIntent
+          ? 2.5
+          : profile.modelIntent
+            ? 2
+            : 0.75
     }
   }
 

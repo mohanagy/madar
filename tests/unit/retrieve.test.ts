@@ -3083,7 +3083,7 @@ describe('retrieve', () => {
       expect(result.matched_nodes[0]?.source_file).toBe('src/repositories/report.repository.ts')
     })
 
-    it('does not add retrieval boosts for repository storage-operation metadata', () => {
+    it('adds repository storage boosts only for storage-oriented prompts', () => {
       const graph = new KnowledgeGraph()
       graph.addNode('report_repository_save', {
         label: 'save()',
@@ -3104,9 +3104,16 @@ describe('retrieve', () => {
         budget: 3000,
         fileType: 'code',
       })
+      const unrelated = retrieveContext(graph, {
+        question: 'how does the report footer work',
+        budget: 3000,
+        fileType: 'code',
+      })
 
       expect(result.matched_nodes).toHaveLength(1)
-      expect(result.matched_nodes[0]?.framework_boost).toBe(0)
+      expect(result.matched_nodes[0]?.framework_boost ?? 0).toBeGreaterThan(0)
+      expect(unrelated.matched_nodes).toHaveLength(1)
+      expect(unrelated.matched_nodes[0]?.framework_boost ?? 0).toBe(0)
     })
 
     it('preserves question in result', () => {
