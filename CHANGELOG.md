@@ -4,6 +4,10 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **First-pass storage semantics for SPI retrieval**: `--spi` now tags Prisma model operations as read/write endpoints, classifies repository CRUD methods as persistence readers/writers, projects `storage_operation` metadata into extraction nodes, and lets retrieval prefer likely persistence endpoints for storage-oriented prompts. Coverage is intentionally static first-pass only; it does not infer full ORM dataflow.
+
 ## [0.22.9] - 2026-05-16
 
 ### Added

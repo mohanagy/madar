@@ -197,7 +197,7 @@ Everything stays local by default. No telemetry, no cloud upload, no API key req
 
 1. **Cold-start sessions add a one-time MCP/tool-schema cost.** Core profile is ~3,000 bytes / ~750 tokens (down 30% from the original 4,270-byte surface). Multi-question sessions amortize this and end up cheaper.
 2. **Deep extraction is best on JS/TS.** Python / Ruby / Go / Java / Rust use tree-sitter AST. C / Kotlin / C# / Scala / PHP / Swift / Zig use a generic structural extractor.
-3. **Static analysis can't resolve every dynamic runtime behavior.** Runtime-generated routes, heavy meta-programmed decorators, and string-built imports fall back to the base AST graph.
+3. **Static analysis can't resolve every dynamic runtime behavior.** Runtime-generated routes, heavy meta-programmed decorators, and string-built imports fall back to the base AST graph. SPI can tag common Prisma model operations and repository read/write methods so persistence-oriented prompts prefer likely storage endpoints, but that remains first-pass static coverage rather than full ORM/dataflow understanding.
 4. **Token reduction depends on project + task.** "How does auth work?" benefits more than "fix this typo." Always validate important code changes with tests and review.
 5. **Some workflows still need full file reads** — large multi-file refactors, generated-code spelunking. graphify narrows the agent's first read; it doesn't replace its ability to read.
 
