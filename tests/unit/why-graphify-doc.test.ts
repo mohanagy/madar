@@ -206,6 +206,14 @@ describe('public marketing copy honesty', () => {
       }
     })
 
+    it('avoids re-walking snippet payloads in the current-graphify pack renderer', () => {
+      expect(currentSh).toContain('Object.entries(o)')
+      for (const key of ['snippet', 'snippets', 'body', 'claim', 'text']) {
+        expect(currentSh).toContain(`key === "${key}"`)
+      }
+      expect(currentSh).not.toContain('Object.values(o).forEach(walk)')
+    })
+
     it('uses portable Date.now() millisecond timing (no GNU-only date +%s%3N)', () => {
       for (const script of [runSh, currentSh, lexicalSh, sliceV1Sh, fullSh]) {
         expect(script).not.toMatch(/date \+%s%3N/)

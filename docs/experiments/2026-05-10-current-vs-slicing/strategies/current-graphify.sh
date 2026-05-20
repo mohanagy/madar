@@ -84,7 +84,12 @@ node -e '
           pushSnippet(o.snippet ?? o.body ?? o.claim ?? o.text);
           if (Array.isArray(o.snippets)) o.snippets.forEach(pushSnippet);
         }
-        Object.values(o).forEach(walk);
+        for (const [key, value] of Object.entries(o)) {
+          if (key === "snippet" || key === "snippets" || key === "body" || key === "claim" || key === "text") {
+            continue;
+          }
+          walk(value);
+        }
       }
     }
     walk(pack);
