@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
-// @ts-expect-error -- red test for runtime graph summary module prior to implementation.
 import { buildGraphSummary } from '../../src/runtime/graph-summary.js'
 
 const SUMMARY_ARRAY_CAP = 10
