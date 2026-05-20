@@ -132,4 +132,21 @@ describe('projector — framework_metadata propagation onto ExtractionNode', () 
       expect((node as Record<string, unknown> | undefined)?.some_future_key).toBe(42)
     })
   })
+
+  describe('Next.js runtime_boundary metadata', () => {
+    it('surfaces runtime_boundary on projected Next.js nodes', () => {
+      writeFile(sandbox, 'app/users/page.tsx', [
+        "'use client'",
+        '',
+        'export default function UsersPage(): null { return null }',
+      ].join('\n') + '\n')
+      const extraction = project(sandbox)
+      const node = extraction.nodes.find((candidate) => candidate.label === 'UsersPage()')
+
+      expect(node?.framework).toBe('nextjs')
+      expect(node?.framework_role).toBe('nextjs_app_page')
+      expect((node as Record<string, unknown> | undefined)?.runtime_boundary).toBe('client')
+      expect((node as Record<string, unknown> | undefined)?.route_path).toBe('/users')
+    })
+  })
 })

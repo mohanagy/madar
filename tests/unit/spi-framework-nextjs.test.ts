@@ -99,6 +99,29 @@ describe('SPI Next.js framework detector (slice 1c-iv.a)', () => {
       const taggedCount = spi.symbols.filter((s) => s.framework_role === 'nextjs_app_route').length
       expect(taggedCount).toBe(7)
     })
+
+    it('records runtime_boundary metadata for visible app-router server and client boundaries', () => {
+      writeFile(sandbox, 'app/server/page.tsx', 'export default function ServerPage(): null { return null }\n')
+      writeFile(sandbox, 'app/client/error.tsx', [
+        "'use client'",
+        '',
+        'export default function ClientError(): null { return null }',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+      const serverPage = findSymbol(spi, 'app/server/page.tsx', 'ServerPage')
+      const clientError = findSymbol(spi, 'app/client/error.tsx', 'ClientError')
+
+      expect(serverPage?.framework_role).toBe('nextjs_app_page')
+      expect(serverPage?.framework_metadata).toEqual(expect.objectContaining({
+        route_path: '/server',
+        runtime_boundary: 'server',
+      }))
+      expect(clientError?.framework_role).toBe('nextjs_app_error')
+      expect(clientError?.framework_metadata).toEqual(expect.objectContaining({
+        route_path: '/client',
+        runtime_boundary: 'client',
+      }))
+    })
   })
 
   describe('pages router file conventions', () => {
@@ -189,6 +212,83 @@ describe('SPI Next.js framework detector (slice 1c-iv.a)', () => {
       const spi = build(sandbox)
       expect(findSymbol(spi, 'src/lib/utils.ts', 'helper')?.framework_role).toBeUndefined()
       expect(findSymbol(spi, 'components/Button.tsx', 'Button')?.framework_role).toBeUndefined()
+    })
+  })
+
+  describe('static client/server boundary roles', () => {
+    it('tags exported app-directory callables in use client modules as nextjs_client_component', () => {
+      writeFile(sandbox, 'app/users/ClientPanel.tsx', [
+        "'use client'",
+        '',
+        'export function ClientPanel(): null { return null }',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+      const sym = findSymbol(spi, 'app/users/ClientPanel.tsx', 'ClientPanel')
+
+      expect(sym?.framework_role).toBe('nextjs_client_component')
+      expect(sym?.framework_metadata).toEqual(expect.objectContaining({
+        runtime_boundary: 'client',
+      }))
+    })
+
+    it('tags only exported top-level server actions when use server is statically visible', () => {
+      writeFile(sandbox, 'app/users/actions.ts', [
+        "'use server'",
+        '',
+        'function localHelper(): number { return 1 }',
+        '',
+        'export async function saveSettings(): Promise<number> { return 2 }',
+        '',
+        'export const publish = async (): Promise<number> => 3',
+        '',
+        "export const config = { runtime: 'nodejs' }",
+      ].join('\n') + '\n')
+      writeFile(sandbox, 'app/users/inline-action.ts', [
+        'export async function renameUser(): Promise<number> {',
+        "  'use server'",
+        '  return 4',
+        '}',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+
+      expect(findSymbol(spi, 'app/users/actions.ts', 'saveSettings')).toEqual(expect.objectContaining({
+        framework_role: 'nextjs_server_action',
+        framework_metadata: expect.objectContaining({
+          runtime_boundary: 'server',
+        }),
+      }))
+      expect(findSymbol(spi, 'app/users/actions.ts', 'publish')).toEqual(expect.objectContaining({
+        framework_role: 'nextjs_server_action',
+        framework_metadata: expect.objectContaining({
+          runtime_boundary: 'server',
+        }),
+      }))
+      expect(findSymbol(spi, 'app/users/inline-action.ts', 'renameUser')).toEqual(expect.objectContaining({
+        framework_role: 'nextjs_server_action',
+        framework_metadata: expect.objectContaining({
+          runtime_boundary: 'server',
+        }),
+      }))
+      expect(findSymbol(spi, 'app/users/actions.ts', 'localHelper')?.framework_role).toBeUndefined()
+      expect(findSymbol(spi, 'app/users/actions.ts', 'config')?.framework_role).toBeUndefined()
+    })
+
+    it('prefers inline use server over file-level use client for exported actions', () => {
+      writeFile(sandbox, 'app/users/client-actions.tsx', [
+        "'use client'",
+        '',
+        'export const submitForm = async (): Promise<number> => {',
+        "  'use server'",
+        '  return 1',
+        '}',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+      const sym = findSymbol(spi, 'app/users/client-actions.tsx', 'submitForm')
+
+      expect(sym?.framework_role).toBe('nextjs_server_action')
+      expect(sym?.framework_metadata).toEqual(expect.objectContaining({
+        runtime_boundary: 'server',
+      }))
     })
   })
 

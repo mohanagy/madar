@@ -88,6 +88,8 @@ export type SpiFrameworkRole =
   | 'nextjs_pages_page'
   | 'nextjs_pages_api'
   | 'nextjs_middleware'
+  | 'nextjs_client_component'
+  | 'nextjs_server_action'
   // React Router roles (slice 1c-v.a)
   | 'react_router_router'
   | 'react_router_loader'
@@ -129,8 +131,11 @@ export type SpiStorageOperation =
   | 'findMany'
   | '$transaction'
 
+export type SpiRuntimeBoundary = 'client' | 'server'
+
 export type SpiFrameworkMetadata = {
   storage_operation?: SpiStorageOperation
+  runtime_boundary?: SpiRuntimeBoundary
   [key: string]: unknown
 }
 

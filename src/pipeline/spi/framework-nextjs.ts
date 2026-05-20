@@ -37,7 +37,12 @@
 
 import ts from 'typescript'
 
-import type { SpiFrameworkRole, SpiSymbol } from './types.js'
+import type {
+  SpiFrameworkMetadata,
+  SpiFrameworkRole,
+  SpiRuntimeBoundary,
+  SpiSymbol,
+} from './types.js'
 
 const APP_FILE_CONVENTIONS: ReadonlyMap<string, SpiFrameworkRole> = new Map([
   ['page', 'nextjs_app_page'],
@@ -65,12 +70,21 @@ export type DetectNextjsFrameworkContext = {
 
 export function detectNextjsFramework(ctx: DetectNextjsFrameworkContext): void {
   const match = matchConvention(ctx.filePath)
-  if (!match) return
 
-  if (match.kind === 'default') {
-    tagDefaultExport(ctx, match.role, match.routePath)
-  } else {
-    tagHttpMethodExports(ctx, match.role, match.routePath)
+  if (match) {
+    if (match.kind === 'default') {
+      const metadata: SpiFrameworkMetadata = { route_path: match.routePath }
+      if (isAppDirectoryFile(ctx.filePath)) {
+        metadata.runtime_boundary = sourceFileBoundary(ctx.sourceFile) ?? 'server'
+      }
+      tagDefaultExport(ctx, match.role, metadata)
+    } else {
+      tagHttpMethodExports(ctx, match.role, match.routePath)
+    }
+  }
+
+  if (isAppDirectoryFile(ctx.filePath)) {
+    tagStaticAppBoundaryExports(ctx)
   }
 }
 
@@ -183,6 +197,10 @@ function stripLeadingSrc(filePath: string): string {
   return filePath.startsWith('src/') ? filePath.slice(4) : filePath
 }
 
+function isAppDirectoryFile(filePath: string): boolean {
+  return stripLeadingSrc(filePath).startsWith('app/')
+}
+
 function getBasename(filePath: string): string {
   const slash = filePath.lastIndexOf('/')
   return slash === -1 ? filePath : filePath.slice(slash + 1)
@@ -193,7 +211,90 @@ function stripExtension(name: string): string {
   return dot === -1 ? name : name.slice(0, dot)
 }
 
-function tagDefaultExport(ctx: DetectNextjsFrameworkContext, role: SpiFrameworkRole, routePath: string): void {
+function hasDirectivePrologue(statements: readonly ts.Statement[], directive: string): boolean {
+  for (const statement of statements) {
+    if (!ts.isExpressionStatement(statement) || !ts.isStringLiteral(statement.expression)) {
+      break
+    }
+    if (statement.expression.text === directive) {
+      return true
+    }
+  }
+  return false
+}
+
+function sourceFileBoundary(sourceFile: ts.SourceFile): SpiRuntimeBoundary | undefined {
+  if (hasDirectivePrologue(sourceFile.statements, 'use client')) return 'client'
+  if (hasDirectivePrologue(sourceFile.statements, 'use server')) return 'server'
+  return undefined
+}
+
+function functionBoundary(node: ts.FunctionLikeDeclarationBase): SpiRuntimeBoundary | undefined {
+  if (!node.body || !ts.isBlock(node.body)) return undefined
+  if (hasDirectivePrologue(node.body.statements, 'use server')) return 'server'
+  if (hasDirectivePrologue(node.body.statements, 'use client')) return 'client'
+  return undefined
+}
+
+function isCallableClientComponentInitializer(initializer: ts.Expression): boolean {
+  return ts.isArrowFunction(initializer)
+    || ts.isFunctionExpression(initializer)
+    || ts.isClassExpression(initializer)
+}
+
+function serverActionBoundaryForInitializer(
+  initializer: ts.Expression,
+  fileBoundary: SpiRuntimeBoundary | undefined,
+): SpiRuntimeBoundary | undefined {
+  if (!ts.isArrowFunction(initializer) && !ts.isFunctionExpression(initializer)) {
+    return undefined
+  }
+  return functionBoundary(initializer) ?? (fileBoundary === 'server' ? 'server' : undefined)
+}
+
+function tagStaticAppBoundaryExports(ctx: DetectNextjsFrameworkContext): void {
+  const fileBoundary = sourceFileBoundary(ctx.sourceFile)
+
+  for (const statement of ctx.sourceFile.statements) {
+    if (ts.isFunctionDeclaration(statement) && statement.name && hasExportModifier(statement)) {
+      const boundary = functionBoundary(statement) ?? (fileBoundary === 'server' ? 'server' : undefined)
+      if (boundary === 'server') {
+        tagSymbolByName(ctx, statement.name.text, 'nextjs_server_action', { runtime_boundary: 'server' })
+        continue
+      }
+
+      if (fileBoundary === 'client') {
+        tagSymbolByName(ctx, statement.name.text, 'nextjs_client_component', { runtime_boundary: 'client' })
+      }
+      continue
+    }
+
+    if (ts.isClassDeclaration(statement) && statement.name && hasExportModifier(statement)) {
+      if (fileBoundary === 'client') {
+        tagSymbolByName(ctx, statement.name.text, 'nextjs_client_component', { runtime_boundary: 'client' })
+      }
+      continue
+    }
+
+    if (!ts.isVariableStatement(statement) || !hasExportModifier(statement)) continue
+
+    for (const declaration of statement.declarationList.declarations) {
+      if (!ts.isIdentifier(declaration.name) || !declaration.initializer) continue
+
+      const boundary = serverActionBoundaryForInitializer(declaration.initializer, fileBoundary)
+      if (boundary === 'server') {
+        tagSymbolByName(ctx, declaration.name.text, 'nextjs_server_action', { runtime_boundary: 'server' })
+        continue
+      }
+
+      if (fileBoundary === 'client' && isCallableClientComponentInitializer(declaration.initializer)) {
+        tagSymbolByName(ctx, declaration.name.text, 'nextjs_client_component', { runtime_boundary: 'client' })
+      }
+    }
+  }
+}
+
+function tagDefaultExport(ctx: DetectNextjsFrameworkContext, role: SpiFrameworkRole, metadata: SpiFrameworkMetadata): void {
   // A Next.js page/layout/etc. is whatever symbol the file exports as
   // its default. Two AST shapes produce a default export:
   //   1. `export default function Foo() {}` — direct on a declaration.
@@ -205,7 +306,7 @@ function tagDefaultExport(ctx: DetectNextjsFrameworkContext, role: SpiFrameworkR
   // in a follow-up slice mirroring slice 1c-ii.e's pattern.
   const defaultExportName = findDefaultExportName(ctx.sourceFile)
   if (defaultExportName === null) return
-  tagSymbolByName(ctx, defaultExportName, role, routePath)
+  tagSymbolByName(ctx, defaultExportName, role, metadata)
 }
 
 function tagHttpMethodExports(ctx: DetectNextjsFrameworkContext, role: SpiFrameworkRole, routePath: string): void {
@@ -217,7 +318,10 @@ function tagHttpMethodExports(ctx: DetectNextjsFrameworkContext, role: SpiFramew
     if (!ts.isFunctionDeclaration(stmt) || !stmt.name) continue
     if (!hasExportModifier(stmt)) continue
     if (!ROUTE_HTTP_NAMES.has(stmt.name.text)) continue
-    tagSymbolByName(ctx, stmt.name.text, role, routePath, stmt.name.text)
+    tagSymbolByName(ctx, stmt.name.text, role, {
+      route_path: routePath,
+      http_method: stmt.name.text,
+    })
   }
 }
 
@@ -264,18 +368,17 @@ function tagSymbolByName(
   ctx: DetectNextjsFrameworkContext,
   name: string,
   role: SpiFrameworkRole,
-  routePath: string,
-  httpMethod?: string,
+  metadata: SpiFrameworkMetadata,
 ): void {
   const symbols = ctx.symbolsByFile.get(ctx.fileId)
   if (!symbols) return
   for (const symbol of symbols) {
     if (symbol.name === name && symbol.framework_role === undefined) {
       symbol.framework_role = role
-      const metadata: Record<string, unknown> = { ...(symbol.framework_metadata ?? {}) }
-      metadata.route_path = routePath
-      if (httpMethod) metadata.http_method = httpMethod
-      symbol.framework_metadata = metadata
+      symbol.framework_metadata = {
+        ...(symbol.framework_metadata ?? {}),
+        ...metadata,
+      }
       return
     }
   }

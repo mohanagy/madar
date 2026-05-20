@@ -301,12 +301,15 @@ function nodeKindForRole(role: NonNullable<SpiSymbol['framework_role']>): NonNul
     case 'express_app':
     case 'express_middleware':
     case 'nextjs_middleware':
+    case 'nextjs_client_component':
     case 'nextjs_app_page':
     case 'nextjs_app_layout':
     case 'nextjs_app_loading':
     case 'nextjs_app_error':
     case 'nextjs_app_template':
     case 'nextjs_pages_page':
+      return role === 'nextjs_client_component' ? 'component' : 'function'
+    case 'nextjs_server_action':
     case 'react_router_loader':
     case 'react_router_action':
       return 'function'
