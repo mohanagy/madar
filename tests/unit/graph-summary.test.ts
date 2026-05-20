@@ -3,6 +3,12 @@ import { describe, expect, it } from 'vitest'
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
 import { buildGraphSummary } from '../../src/runtime/graph-summary.js'
 
+const SUMMARY_ARRAY_CAP = 10
+
+function padIndex(index: number): string {
+  return index.toString().padStart(2, '0')
+}
+
 function makeRichGraph(options?: {
   graphVersion?: string
   generatedAt?: string
@@ -38,6 +44,69 @@ function makeRichGraph(options?: {
   }
   if (options?.generatedAt) {
     graph.graph.generated_at = options.generatedAt
+  }
+
+  return graph
+}
+
+function makeManyEntrypointsGraph(count = SUMMARY_ARRAY_CAP + 2): KnowledgeGraph {
+  const graph = new KnowledgeGraph(true)
+
+  for (let index = count - 1; index >= 0; index--) {
+    const suffix = padIndex(index)
+    graph.addNode(`entry-${suffix}`, {
+      label: `Entry${suffix}`,
+      source_file: `src/entry-${suffix}.ts`,
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+    })
+  }
+
+  return graph
+}
+
+function makeManyRuntimePathsGraph(count = SUMMARY_ARRAY_CAP + 2): KnowledgeGraph {
+  const graph = new KnowledgeGraph(true)
+
+  for (let index = count - 1; index >= 0; index--) {
+    const suffix = padIndex(index)
+    graph.addNode(`runtime-entry-${suffix}`, {
+      label: `RuntimeEntry${suffix}`,
+      source_file: `src/runtime/entry-${suffix}.ts`,
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+    })
+    graph.addNode(`runtime-handler-${suffix}`, {
+      label: `RuntimeHandler${suffix}`,
+      source_file: `src/runtime/handler-${suffix}.ts`,
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+    })
+    graph.addNode(`runtime-sink-${suffix}`, {
+      label: `RuntimeSink${suffix}`,
+      source_file: `src/runtime/sink-${suffix}.ts`,
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+    })
+
+    graph.addEdge(`runtime-entry-${suffix}`, `runtime-handler-${suffix}`, {
+      relation: 'calls',
+      confidence: 'EXTRACTED',
+      source_file: `src/runtime/entry-${suffix}.ts`,
+    })
+    graph.addEdge(`runtime-handler-${suffix}`, `runtime-sink-${suffix}`, {
+      relation: 'calls',
+      confidence: 'EXTRACTED',
+      source_file: `src/runtime/handler-${suffix}.ts`,
+    })
   }
 
   return graph
@@ -169,33 +238,43 @@ describe('buildGraphSummary', () => {
     }
 
     const summary = buildGraphSummary(graph)
-    expect(summary.top_modules.length).toBeLessThanOrEqual(10)
+    expect(summary.top_modules.length).toBeLessThanOrEqual(SUMMARY_ARRAY_CAP)
   })
 
-  it('caps entrypoints at 10 entries even when many exist', () => {
-    const graph = new KnowledgeGraph(true)
-    for (let index = 0; index < 15; index++) {
-      graph.addNode(`n${index}`, {
-        label: `Entry${index}`,
-        source_file: `src/entry${index}.ts`,
-        source_location: 'L1',
-        file_type: 'code',
-        community: 0,
-        source_domain: 'production',
-      })
-    }
-    // No edges → all 15 are entrypoints
-
+  it('caps entrypoints at the planned bound with deterministic truncation order', () => {
+    const graph = makeManyEntrypointsGraph()
     const summary = buildGraphSummary(graph)
-    expect(summary.entrypoints.length).toBeLessThanOrEqual(10)
+    const expectedEntrypoints = Array.from({ length: SUMMARY_ARRAY_CAP }, (_, index) => {
+      const suffix = padIndex(index)
+      return {
+        label: `Entry${suffix}`,
+        source_file: `src/entry-${suffix}.ts`,
+      }
+    })
+
+    expect(summary.entrypoints).toHaveLength(SUMMARY_ARRAY_CAP)
+    expect(summary.entrypoints.map(({ label, source_file }) => ({ label, source_file }))).toEqual(expectedEntrypoints)
+    expect(summary.entrypoints.map(({ label }) => label)).not.toContain('Entry10')
+    expect(summary.entrypoints.map(({ label }) => label)).not.toContain('Entry11')
+
+    const repeatedSummary = buildGraphSummary(graph)
+    expect(repeatedSummary.entrypoints).toEqual(summary.entrypoints)
   })
 
-  it('returns high-signal runtime_paths as a bounded array', () => {
-    const graph = makeRichGraph()
+  it('caps runtime_paths at the planned bound with deterministic truncation order', () => {
+    const graph = makeManyRuntimePathsGraph()
     const summary = buildGraphSummary(graph)
+    const expectedRuntimePaths = Array.from({ length: SUMMARY_ARRAY_CAP }, (_, index) => {
+      const suffix = padIndex(index)
+      return {
+        from: `RuntimeEntry${suffix}`,
+        to: `RuntimeSink${suffix}`,
+        hops: 2,
+      }
+    })
 
     expect(summary.runtime_paths).toBeInstanceOf(Array)
-    expect(summary.runtime_paths.length).toBeLessThanOrEqual(10)
+    expect(summary.runtime_paths).toHaveLength(SUMMARY_ARRAY_CAP)
 
     for (const path of summary.runtime_paths) {
       expect(typeof path.from).toBe('string')
@@ -204,13 +283,12 @@ describe('buildGraphSummary', () => {
       expect(path.hops).toBeGreaterThanOrEqual(1)
     }
 
-    expect(summary.runtime_paths).toContainEqual(
-      expect.objectContaining({
-        from: 'ApiRouter',
-        to: 'TokenValidator',
-        hops: 2,
-      }),
-    )
+    expect(summary.runtime_paths).toEqual(expectedRuntimePaths)
+    expect(summary.runtime_paths.map(({ from }) => from)).not.toContain('RuntimeEntry10')
+    expect(summary.runtime_paths.map(({ from }) => from)).not.toContain('RuntimeEntry11')
+
+    const repeatedSummary = buildGraphSummary(graph)
+    expect(repeatedSummary.runtime_paths).toEqual(summary.runtime_paths)
   })
 
   it('produces deterministic output on repeated calls', () => {
