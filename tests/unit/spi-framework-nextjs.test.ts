@@ -272,6 +272,24 @@ describe('SPI Next.js framework detector (slice 1c-iv.a)', () => {
       expect(findSymbol(spi, 'app/users/actions.ts', 'localHelper')?.framework_role).toBeUndefined()
       expect(findSymbol(spi, 'app/users/actions.ts', 'config')?.framework_role).toBeUndefined()
     })
+
+    it('prefers inline use server over file-level use client for exported actions', () => {
+      writeFile(sandbox, 'app/users/client-actions.tsx', [
+        "'use client'",
+        '',
+        'export const submitForm = async (): Promise<number> => {',
+        "  'use server'",
+        '  return 1',
+        '}',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+      const sym = findSymbol(spi, 'app/users/client-actions.tsx', 'submitForm')
+
+      expect(sym?.framework_role).toBe('nextjs_server_action')
+      expect(sym?.framework_metadata).toEqual(expect.objectContaining({
+        runtime_boundary: 'server',
+      }))
+    })
   })
 
   describe('projector — framework propagation', () => {

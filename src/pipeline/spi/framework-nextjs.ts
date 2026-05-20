@@ -257,13 +257,14 @@ function tagStaticAppBoundaryExports(ctx: DetectNextjsFrameworkContext): void {
 
   for (const statement of ctx.sourceFile.statements) {
     if (ts.isFunctionDeclaration(statement) && statement.name && hasExportModifier(statement)) {
-      if (fileBoundary === 'client') {
-        tagSymbolByName(ctx, statement.name.text, 'nextjs_client_component', { runtime_boundary: 'client' })
-      }
-
       const boundary = functionBoundary(statement) ?? (fileBoundary === 'server' ? 'server' : undefined)
       if (boundary === 'server') {
         tagSymbolByName(ctx, statement.name.text, 'nextjs_server_action', { runtime_boundary: 'server' })
+        continue
+      }
+
+      if (fileBoundary === 'client') {
+        tagSymbolByName(ctx, statement.name.text, 'nextjs_client_component', { runtime_boundary: 'client' })
       }
       continue
     }
@@ -280,13 +281,14 @@ function tagStaticAppBoundaryExports(ctx: DetectNextjsFrameworkContext): void {
     for (const declaration of statement.declarationList.declarations) {
       if (!ts.isIdentifier(declaration.name) || !declaration.initializer) continue
 
-      if (fileBoundary === 'client' && isCallableClientComponentInitializer(declaration.initializer)) {
-        tagSymbolByName(ctx, declaration.name.text, 'nextjs_client_component', { runtime_boundary: 'client' })
-      }
-
       const boundary = serverActionBoundaryForInitializer(declaration.initializer, fileBoundary)
       if (boundary === 'server') {
         tagSymbolByName(ctx, declaration.name.text, 'nextjs_server_action', { runtime_boundary: 'server' })
+        continue
+      }
+
+      if (fileBoundary === 'client' && isCallableClientComponentInitializer(declaration.initializer)) {
+        tagSymbolByName(ctx, declaration.name.text, 'nextjs_client_component', { runtime_boundary: 'client' })
       }
     }
   }
