@@ -220,9 +220,9 @@ describe('buildGraphSummary', () => {
     expect(summary.entrypoints).toBeInstanceOf(Array)
 
     const labels = summary.entrypoints.map((entrypoint: GraphSummaryEntrypoint) => entrypoint.label)
-    expect(labels).toContain('ApiRouter')
     expect(labels).toContain('AuthServiceTest')
     expect(labels).toContain('ApiRouterTest')
+    expect(labels).not.toContain('ApiRouter')
     expect(labels).not.toContain('README')
   })
 
