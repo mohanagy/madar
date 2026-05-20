@@ -15,11 +15,10 @@ Usage:
 
 Required:
   --workspace   Path to the repo under test (must contain graphify-out/graph.json
-                if you include the current-graphify strategy).
+                if you include the current-graphify or slice-v1 strategies).
   --strategies  Comma-separated list of strategy names (matching scripts in strategies/).
                 Examples:
-                  current-graphify,lexical-baseline,full-context
-                  current-graphify,lexical-baseline,slicer-stub,full-context
+                  current-graphify,lexical-baseline,slice-v1,full-context
 
 Optional:
   --exec        Runner template for piping the strategy's context.txt through a
@@ -74,7 +73,10 @@ done
 if [ -n "$PROMPT_IDS" ]; then
   IFS=',' read -ra ID_ARR <<< "$PROMPT_IDS"
 else
-  mapfile -t ID_ARR < <(jq -r '.prompts[].id' "$PROMPTS_FILE")
+  ID_ARR=()
+  while IFS= read -r prompt_id; do
+    ID_ARR+=("$prompt_id")
+  done < <(jq -r '.prompts[].id' "$PROMPTS_FILE")
 fi
 
 TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
@@ -102,7 +104,7 @@ echo "[harness] exec: ${EXEC:-<none, context-only>}"
 echo
 
 run_strategy_for_prompt() {
-  local prompt_id=$1 prompt_text=$2 strategy=$3
+  local prompt_id=$1 prompt_task=$2 prompt_text=$3 strategy=$4
   local outdir="$RUN_DIR/prompts/$prompt_id/$strategy"
   mkdir -p "$outdir"
   echo "[harness]   $strategy"
@@ -110,6 +112,7 @@ run_strategy_for_prompt() {
   set +e
   "$HERE/strategies/$strategy.sh" \
     --prompt    "$prompt_text" \
+    --task      "$prompt_task" \
     --workspace "$WORKSPACE" \
     --out       "$outdir" \
     > "$outdir/strategy.log" 2>&1
@@ -117,8 +120,6 @@ run_strategy_for_prompt() {
   set -e
   echo "$rc" > "$outdir/strategy.exit"
 
-  # If the strategy explicitly stubbed out (rc == 78), skip the model call.
-  if [ "$rc" -eq 78 ]; then return 0; fi
   if [ "$rc" -ne 0 ]; then
     echo "[harness]     strategy exited rc=$rc (see $outdir/strategy.log)"
     return 0
@@ -127,7 +128,7 @@ run_strategy_for_prompt() {
   if [ -n "$EXEC" ] && [ -f "$outdir/context.txt" ]; then
     # Build a single combined prompt for the runner: question + context.
     {
-      printf 'Question:\n%s\n\nContext:\n' "$prompt_text"
+      printf 'Task: %s\nQuestion:\n%s\n\nContext:\n' "$prompt_task" "$prompt_text"
       cat "$outdir/context.txt"
     } > "$outdir/merged-prompt.txt"
     local runner="${EXEC//\{prompt_file\}/$outdir/merged-prompt.txt}"
@@ -140,14 +141,15 @@ run_strategy_for_prompt() {
 }
 
 for prompt_id in "${ID_ARR[@]}"; do
+  prompt_task=$(jq -r --arg id "$prompt_id" '.prompts[] | select(.id == $id) | .task' "$PROMPTS_FILE")
   prompt_text=$(jq -r --arg id "$prompt_id" '.prompts[] | select(.id == $id) | .text' "$PROMPTS_FILE")
-  if [ -z "$prompt_text" ] || [ "$prompt_text" = "null" ]; then
+  if [ -z "$prompt_task" ] || [ "$prompt_task" = "null" ] || [ -z "$prompt_text" ] || [ "$prompt_text" = "null" ]; then
     echo "[harness] prompt id '$prompt_id' missing in prompts.json — skipping"
     continue
   fi
-  echo "[harness] prompt: $prompt_id"
+  echo "[harness] prompt: $prompt_id ($prompt_task)"
   for s in "${STRAT_ARR[@]}"; do
-    run_strategy_for_prompt "$prompt_id" "$prompt_text" "$s"
+    run_strategy_for_prompt "$prompt_id" "$prompt_task" "$prompt_text" "$s"
   done
 done
 

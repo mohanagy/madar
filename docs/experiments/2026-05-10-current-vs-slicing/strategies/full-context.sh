@@ -5,17 +5,18 @@
 # Adapter contract: see ../README.md "Strategy adapter contract".
 
 set -euo pipefail
-PROMPT="" WORKSPACE="" OUT=""
+PROMPT="" TASK="" WORKSPACE="" OUT=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --prompt)    PROMPT="$2"; shift 2 ;;
+    --task)      TASK="$2"; shift 2 ;;
     --workspace) WORKSPACE="$2"; shift 2 ;;
     --out)       OUT="$2"; shift 2 ;;
     *) echo "[full-context] unknown arg: $1" >&2; exit 1 ;;
   esac
 done
-[ -n "$WORKSPACE" ] && [ -n "$OUT" ] || {
-  echo "[full-context] usage: $0 --prompt <text> --workspace <path> --out <dir>" >&2; exit 1; }
+[ -n "$PROMPT" ] && [ -n "$TASK" ] && [ -n "$WORKSPACE" ] && [ -n "$OUT" ] || {
+  echo "[full-context] usage: $0 --prompt <text> --task <kind> --workspace <path> --out <dir>" >&2; exit 1; }
 
 mkdir -p "$OUT"
 CHAR_BUDGET=400000   # ~100K cl100k_base tokens — large but bounded.
@@ -54,10 +55,11 @@ EST_TOKENS=$(node -e '
     const text = fs.readFileSync(path.join(process.argv[1], "context.txt"), "utf8");
     process.stdout.write(String(encode(text).length));
   } catch {
+    process.stderr.write("[full-context] gpt-tokenizer unavailable; using char/4 estimate\n");
     const text = fs.readFileSync(path.join(process.argv[1], "context.txt"), "utf8");
     process.stdout.write(String(Math.ceil(text.length / 4)));
   }
 ' "$OUT")
 
-printf '{ "strategy": "full-context", "duration_ms": %d, "est_tokens": %s, "file_count": %d, "notes": "char_budget=%d (truncated)" }\n' \
-  "$((END - START))" "$EST_TOKENS" "$COUNT" "$CHAR_BUDGET" > "$OUT/meta.json"
+printf '{ "strategy": "full-context", "duration_ms": %d, "est_tokens": %s, "file_count": %d, "notes": "task=%s, char_budget=%d (truncated)" }\n' \
+  "$((END - START))" "$EST_TOKENS" "$COUNT" "$TASK" "$CHAR_BUDGET" > "$OUT/meta.json"

@@ -1,8 +1,8 @@
 # 2026-05-10 — Current retrieval vs task-conditioned slicing experiment
 
 > **Tracking issue:** [#71](https://github.com/mohanagy/graphify-ts/issues/71) — *Research spike: compare current graph retrieval vs task-conditioned program slicing.*
-> **Milestone:** `v0.14-substrate`. Findings here gate [#73](https://github.com/mohanagy/graphify-ts/issues/73) (slicer prototype) and inform [#70](https://github.com/mohanagy/graphify-ts/issues/70) (SPI v1 design).
-> **Scope of this scaffold:** strategies 1, 2, and 4 are runnable today. Strategy 3 (slicer) is intentionally a stub — it ships when #73 lands. The honest framing of this experiment is "what we can already measure" plus "what the slicer needs to beat."
+> **Milestone:** `v0.14-substrate`. Findings here inform follow-up retrieval tuning and the longer-term substrate / SPI direction.
+> **Scope of this scaffold:** all four strategies are runnable today against the committed `examples/demo-repo/` corpus, so the comparison is reproducible in a fresh checkout.
 
 ## Why this exists
 
@@ -10,10 +10,10 @@
 
 1. **Current graphify-ts retrieval** (`graphify-ts pack`) — today's behavior.
 2. **Lexical baseline** — ripgrep + window expansion. The dumb-but-fast strawman.
-3. **Task-conditioned slicer prototype** — the candidate replacement. *Stub only until #73.*
+3. **Task-conditioned slicer prototype** (`graphify-ts pack --retrieval-strategy slice-v1`) — the candidate tighter path-selection behavior.
 4. **Full-context baseline** *(optional)* — concatenate every TS file under a budget. The "what could the agent have known" upper bound.
 
-The experiment compares the four context packs side-by-side on the same prompt set. If strategy 1 ≈ strategy 2 in quality, the current retrieval isn't pulling its weight. If strategy 4 ≫ strategy 1, the agent is starving for context. If strategy 3 (when it lands) ≫ strategy 1, the slicing pivot is justified.
+The experiment compares the four context packs side-by-side on the same prompt set. If strategy 1 ≈ strategy 2 in quality, the current retrieval isn't pulling its weight. If strategy 4 ≫ strategy 1, the agent is starving for context. If strategy 3 consistently preserves the same critical path with fewer tokens than strategy 1, the slicing direction is justified.
 
 ## Strategy adapter contract
 
@@ -22,6 +22,7 @@ Every strategy is a script under `strategies/` that accepts:
 ```bash
 strategies/<name>.sh \
   --prompt "<text>" \
+  --task <explain|debug|review|impact> \
   --workspace <abs path to repo under test> \
   --out <abs path to output dir>
 ```
@@ -33,33 +34,39 @@ strategies/<name>.sh \
 
 The orchestrator (`run.sh`) calls each adapter for each prompt, optionally pipes the resulting `context.txt` through a model runner via `--exec`, and writes one `summary.json` per run bundle.
 
+For the graph-backed adapters, the harness normalizes unsupported task kinds to the closest shipped pack mode so the comparison stays about retrieval rather than CLI surface gaps:
+
+- `debug` prompts run through `graphify-ts pack --task explain`
+- `review` prompts run through `graphify-ts pack --task impact`
+
+The original prompt task is still preserved in `prompts.json`, and the adapter records both the requested task and the effective pack task in `meta.json`.
+
 ## How to run
 
-> **You need:** `graphify-ts` (≥ 0.13.3) on PATH for strategy 1, `rg` (ripgrep) for strategy 2, `node` ≥ 20, `jq`, and a TS/Node monorepo to test against. If you pass `--exec`, you also need that runner installed (e.g. `claude -p`).
+> **You need:** `graphify-ts` on PATH for strategies 1 and 3, `rg` (ripgrep) for strategy 2, `node` ≥ 20, and `jq`. This scaffold is wired to the committed `examples/demo-repo/` workspace so a fresh checkout can reproduce the run exactly. If you pass `--exec`, you also need that runner installed (for example `claude -p`).
+
+Prepare the demo workspace once:
+
+```bash
+cd examples/demo-repo
+graphify-ts generate .
+cd ../..
+```
 
 Quick run, no model spend (just produce context packs):
 
 ```bash
 bash docs/experiments/2026-05-10-current-vs-slicing/run.sh \
-  --workspace /path/to/your-monorepo \
-  --strategies current-graphify,lexical-baseline,full-context
+  --workspace "$PWD/examples/demo-repo" \
+  --strategies current-graphify,lexical-baseline,slice-v1,full-context
 ```
 
 Quick run, with model answers (recommended for the actual recommendation):
 
 ```bash
 bash docs/experiments/2026-05-10-current-vs-slicing/run.sh \
-  --workspace /path/to/your-monorepo \
-  --strategies current-graphify,lexical-baseline,full-context \
-  --exec 'cat {prompt_file} | claude -p --output-format json'
-```
-
-Once the slicer prototype from #73 exists, add it:
-
-```bash
-bash docs/experiments/2026-05-10-current-vs-slicing/run.sh \
-  --workspace /path/to/your-monorepo \
-  --strategies current-graphify,lexical-baseline,slicer-stub,full-context \
+  --workspace "$PWD/examples/demo-repo" \
+  --strategies current-graphify,lexical-baseline,slice-v1,full-context \
   --exec 'cat {prompt_file} | claude -p --output-format json'
 ```
 
@@ -80,27 +87,27 @@ This is a **research spike**, not an engine rewrite. The deliverable is a `findi
 | Is current retrieval close to full-context quality at a fraction of the tokens? | `est_tokens` ratio + qualitative answer comparison if `--exec` was used |
 | What does current retrieval miss that lexical catches (or vice versa)? | Diff `context.txt` files for the same prompt — record systematic gaps |
 | Where does retrieval pull in noise (hubs, barrels, generated files)? | Inspect `current-graphify` `context.txt` for top-token contributors |
-| Recommendation: keep current method, adjust it, or pivot to slicing? | Concluding paragraph in `findings.md` with concrete next-steps for #73 / #70 |
+| Recommendation: keep current method, adjust it, or pivot to slicing? | Concluding paragraph in `findings.md` with concrete next-steps for retrieval tuning / slice-v1 follow-up |
 
 The recommendation is the load-bearing output. Without it, this spike has not paid back the work that went into running it.
 
 ## Files in this directory
 
 - `README.md` — this file
-- `prompts.json` — the prompt set (8 prompts spanning explain / debug / review / impact tasks)
+- `prompts.json` — the prompt set (8 prompts spanning explain / debug / review / impact tasks against `examples/demo-repo/`)
 - `strategies/`
   - `current-graphify.sh` — strategy 1, runnable today
   - `lexical-baseline.sh` — strategy 2, runnable today (needs `rg`)
-  - `slicer-stub.sh` — strategy 3, intentionally exits with "blocked on #73"
+  - `slice-v1.sh` — strategy 3, runnable today via `graphify-ts pack --retrieval-strategy slice-v1`
   - `full-context.sh` — strategy 4, runnable today
 - `run.sh` — orchestrator
 - `aggregate.sh` — side-by-side summary printer
 - `results/` — gitignored; run outputs land here
-- `findings.md` — *to be added* once a real run completes; this is the user-facing deliverable for #71
+- `findings.md` — the user-facing deliverable for #71
 
 ## Honesty notes
 
-- The slicer adapter is a stub. The recommendation in `findings.md` cannot be "pivot to slicing" until strategy 3 produces measurable output. Until then the spike answers the *narrower* question: "is current retrieval clearly better than dumb lexical at the same budget?"
 - All token estimates use `cl100k_base` (the existing graphify-ts tokenizer). They're not provider-billed unless you also pass `--exec` and the runner emits a JSON usage block.
 - `--exec` calls spend real model tokens. Always use `--strategies` to limit the run; don't let an accidentally broad set 4× your bill.
-- Single-codebase, single-prompt-set measurement. A second monorepo of a different shape may show a different pattern; the report should say so explicitly.
+- This is a single-codebase, single-prompt-set measurement. The committed demo corpus is intentionally reproducible, but smaller and tidier than a production monorepo. The report should say so explicitly instead of overselling the result.
+- The graph-backed adapters intentionally map `debug → explain` and `review → impact` because the current pack surface does not expose a stable `debug` mode and `slice-v1` is only comparable on the explain / impact path today.

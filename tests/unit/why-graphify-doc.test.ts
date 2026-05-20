@@ -171,9 +171,10 @@ describe('public marketing copy honesty', () => {
 
   describe('docs/experiments/2026-05-10-current-vs-slicing/', () => {
     const readme = readDoc('docs/experiments/2026-05-10-current-vs-slicing/README.md')
+    const findings = readDoc('docs/experiments/2026-05-10-current-vs-slicing/findings.md')
     const runSh = readDoc('docs/experiments/2026-05-10-current-vs-slicing/run.sh')
     const aggregateSh = readDoc('docs/experiments/2026-05-10-current-vs-slicing/aggregate.sh')
-    const stubSh = readDoc('docs/experiments/2026-05-10-current-vs-slicing/strategies/slicer-stub.sh')
+    const sliceV1Sh = readDoc('docs/experiments/2026-05-10-current-vs-slicing/strategies/slice-v1.sh')
     const lexicalSh = readDoc('docs/experiments/2026-05-10-current-vs-slicing/strategies/lexical-baseline.sh')
     const fullSh = readDoc('docs/experiments/2026-05-10-current-vs-slicing/strategies/full-context.sh')
     const currentSh = readDoc('docs/experiments/2026-05-10-current-vs-slicing/strategies/current-graphify.sh')
@@ -188,28 +189,31 @@ describe('public marketing copy honesty', () => {
       expect(readme).toContain('Current retrieval vs task-conditioned slicing')
     })
 
-    it('explicitly marks the slicer as a stub blocked on #73', () => {
-      expect(stubSh).toContain('issues/73')
-      expect(stubSh).toContain('exit 78')
-      expect(readme).toContain('#73')
+    it('ships a real slice-v1 strategy adapter instead of the old stub', () => {
+      expect(sliceV1Sh).toContain('slice-v1')
+      expect(sliceV1Sh).toContain('--retrieval-strategy slice-v1')
+      expect(readme).toContain('slice-v1')
+      expect(readme).not.toContain('slicer-stub')
     })
 
     it('ships four strategy adapters with the documented contract', () => {
-      for (const script of [currentSh, lexicalSh, stubSh, fullSh]) {
+      for (const script of [currentSh, lexicalSh, sliceV1Sh, fullSh]) {
         expect(script).toContain('#!/usr/bin/env bash')
         expect(script).toContain('--prompt')
+        expect(script).toContain('--task')
         expect(script).toContain('--workspace')
         expect(script).toContain('--out')
       }
     })
 
     it('uses portable Date.now() millisecond timing (no GNU-only date +%s%3N)', () => {
-      for (const script of [runSh, currentSh, lexicalSh, fullSh]) {
+      for (const script of [runSh, currentSh, lexicalSh, sliceV1Sh, fullSh]) {
         expect(script).not.toMatch(/date \+%s%3N/)
       }
+      expect(runSh).not.toContain('mapfile')
     })
 
-    it('keeps the prompts.json contract: 8 prompts, all four task modes covered', () => {
+    it('keeps the prompts.json contract: 8 demo-repo prompts across all four task modes', () => {
       expect(prompts.version).toBe(1)
       expect(prompts.prompts).toHaveLength(8)
       const tasks = new Set(prompts.prompts.map((p) => p.task))
@@ -229,6 +233,12 @@ describe('public marketing copy honesty', () => {
       expect(runSh).toContain('--exec')
       expect(runSh).toContain('--prompt-ids')
       expect(aggregateSh).toContain('summary.json')
+    })
+
+    it('includes a findings doc with a concrete recommendation', () => {
+      expect(findings).toContain('## Recommendation')
+      expect(findings).toContain('examples/demo-repo')
+      expect(findings).toMatch(/slice-v1|current-graphify|lexical-baseline|full-context/)
     })
   })
 

@@ -5,17 +5,18 @@
 # Adapter contract: see ../README.md "Strategy adapter contract".
 
 set -euo pipefail
-PROMPT="" WORKSPACE="" OUT=""
+PROMPT="" TASK="" WORKSPACE="" OUT=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --prompt)    PROMPT="$2"; shift 2 ;;
+    --task)      TASK="$2"; shift 2 ;;
     --workspace) WORKSPACE="$2"; shift 2 ;;
     --out)       OUT="$2"; shift 2 ;;
     *) echo "[lexical-baseline] unknown arg: $1" >&2; exit 1 ;;
   esac
 done
-[ -n "$PROMPT" ] && [ -n "$WORKSPACE" ] && [ -n "$OUT" ] || {
-  echo "[lexical-baseline] usage: $0 --prompt <text> --workspace <path> --out <dir>" >&2; exit 1; }
+[ -n "$PROMPT" ] && [ -n "$TASK" ] && [ -n "$WORKSPACE" ] && [ -n "$OUT" ] || {
+  echo "[lexical-baseline] usage: $0 --prompt <text> --task <kind> --workspace <path> --out <dir>" >&2; exit 1; }
 command -v rg >/dev/null 2>&1 || { echo "[lexical-baseline] ripgrep (rg) is required (brew install ripgrep)." >&2; exit 2; }
 
 mkdir -p "$OUT"
@@ -40,13 +41,12 @@ CHAR_BUDGET=20000   # rough proxy for ~5K cl100k_base tokens; pessimistic on pur
 WINDOW=20           # lines of context around each match
 TOTAL_CHARS=0
 > "$OUT/context.txt"
-FILES_SEEN=()
 
 while IFS= read -r term; do
   [ -z "$term" ] && continue
   # 5 best file matches per term, each expanded with WINDOW lines around the hit.
   rg --no-heading --line-number --max-count 5 --type ts --type js \
-     --context "$WINDOW" --color never -- "$term" "$WORKSPACE" 2>/dev/null \
+     --context "$WINDOW" --color never -i -- "$term" "$WORKSPACE" 2>/dev/null \
     | head -c $((CHAR_BUDGET - TOTAL_CHARS)) >> "$OUT/context.txt" || true
   TOTAL_CHARS=$(wc -c < "$OUT/context.txt" | tr -d ' ')
   if [ "$TOTAL_CHARS" -ge "$CHAR_BUDGET" ]; then break; fi
@@ -60,11 +60,12 @@ EST_TOKENS=$(node -e '
     const text = fs.readFileSync(path.join(process.argv[1], "context.txt"), "utf8");
     process.stdout.write(String(encode(text).length));
   } catch {
+    process.stderr.write("[lexical-baseline] gpt-tokenizer unavailable; using char/4 estimate\n");
     const text = fs.readFileSync(path.join(process.argv[1], "context.txt"), "utf8");
     process.stdout.write(String(Math.ceil(text.length / 4)));
   }
 ' "$OUT")
-FILE_COUNT=$(grep -E '^[^[:space:]].*:[0-9]+:' "$OUT/context.txt" | awk -F: '{print $1}' | sort -u | wc -l | tr -d ' ')
+FILE_COUNT=$( (grep -E '^[^[:space:]].*:[0-9]+:' "$OUT/context.txt" || true) | awk -F: '{print $1}' | sort -u | wc -l | tr -d ' ' )
 
-printf '{ "strategy": "lexical-baseline", "duration_ms": %d, "est_tokens": %s, "file_count": %s, "notes": "char_budget=%d, window=%d" }\n' \
-  "$((END - START))" "$EST_TOKENS" "$FILE_COUNT" "$CHAR_BUDGET" "$WINDOW" > "$OUT/meta.json"
+printf '{ "strategy": "lexical-baseline", "duration_ms": %d, "est_tokens": %s, "file_count": %s, "notes": "task=%s, char_budget=%d, window=%d" }\n' \
+  "$((END - START))" "$EST_TOKENS" "$FILE_COUNT" "$TASK" "$CHAR_BUDGET" "$WINDOW" > "$OUT/meta.json"
