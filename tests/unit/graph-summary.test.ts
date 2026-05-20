@@ -313,6 +313,88 @@ describe('buildGraphSummary', () => {
     expect(repeatedSummary.runtime_paths).toEqual(summary.runtime_paths)
   })
 
+  it('keeps distinct runtime paths when labels contain control characters', () => {
+    const graph = new KnowledgeGraph(true)
+
+    graph.addNode('entry-1', {
+      label: 'Entry',
+      source_file: 'src/runtime/entry-1.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+    })
+    graph.addNode('handler-1', {
+      label: 'Handler1',
+      source_file: 'src/runtime/handler-1.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+    })
+    graph.addNode('sink-1', {
+      label: 'A\u0000B',
+      source_file: 'src/runtime/sink-1.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+    })
+
+    graph.addNode('entry-2', {
+      label: 'Entry\u0000A',
+      source_file: 'src/runtime/entry-2.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+    })
+    graph.addNode('handler-2', {
+      label: 'Handler2',
+      source_file: 'src/runtime/handler-2.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+    })
+    graph.addNode('sink-2', {
+      label: 'B',
+      source_file: 'src/runtime/sink-2.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+    })
+
+    graph.addEdge('entry-1', 'handler-1', {
+      relation: 'calls',
+      confidence: 'EXTRACTED',
+      source_file: 'src/runtime/entry-1.ts',
+    })
+    graph.addEdge('handler-1', 'sink-1', {
+      relation: 'calls',
+      confidence: 'EXTRACTED',
+      source_file: 'src/runtime/handler-1.ts',
+    })
+    graph.addEdge('entry-2', 'handler-2', {
+      relation: 'calls',
+      confidence: 'EXTRACTED',
+      source_file: 'src/runtime/entry-2.ts',
+    })
+    graph.addEdge('handler-2', 'sink-2', {
+      relation: 'calls',
+      confidence: 'EXTRACTED',
+      source_file: 'src/runtime/handler-2.ts',
+    })
+
+    const summary = buildGraphSummary(graph)
+
+    expect(summary.runtime_paths).toEqual([
+      { from: 'Entry', to: 'AB', hops: 2 },
+      { from: 'EntryA', to: 'B', hops: 2 },
+    ])
+  })
+
   it('produces deterministic output on repeated calls', () => {
     const graph = makeRichGraph()
     const s1 = buildGraphSummary(graph)

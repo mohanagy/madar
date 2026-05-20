@@ -1,4 +1,5 @@
 import { KnowledgeGraph } from '../contracts/graph.js'
+import { sanitizeLabel } from '../shared/security.js'
 import { communitiesFromGraph, communityLabelsFromGraph } from './serve.js'
 
 const SUMMARY_ARRAY_CAP = 10
@@ -51,6 +52,10 @@ type NodeSummary = {
 
 function normalizeString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
+}
+
+function normalizeLabel(value: unknown): string {
+  return sanitizeLabel(normalizeString(value)).trim()
 }
 
 function normalizeBoolean(value: unknown): boolean {
@@ -110,25 +115,25 @@ function normalizedFramework(attributes: Record<string, unknown>): string {
 
 function nodeLabel(graph: KnowledgeGraph, nodeId: string, communityLabels: Record<number, string>): string {
   const attributes = graph.nodeAttributes(nodeId)
-  const label = normalizeString(attributes.label)
+  const label = normalizeLabel(attributes.label)
   if (label.length > 0) {
     return label
   }
 
-  const sourceFile = normalizeString(attributes.source_file)
+  const sourceFile = normalizeLabel(attributes.source_file)
   if (sourceFile.length > 0) {
     return sourceFile
   }
 
   const community = attributes.community
   if (typeof community === 'number' && Number.isFinite(community) && communityLabels[community]) {
-    return communityLabels[community]!
+    return normalizeLabel(communityLabels[community]!)
   }
   if (typeof community === 'string' && community.trim() !== '' && !Number.isNaN(Number(community)) && communityLabels[Number(community)]) {
-    return communityLabels[Number(community)]!
+    return normalizeLabel(communityLabels[Number(community)]!)
   }
 
-  return nodeId
+  return normalizeLabel(nodeId)
 }
 
 function buildNodeSummaries(graph: KnowledgeGraph, communityLabels: Record<number, string>): NodeSummary[] {
@@ -287,7 +292,7 @@ function runtimePaths(graph: KnowledgeGraph, nodes: readonly NodeSummary[]): Gra
       to: best.node.label,
       hops: best.hops,
     }
-    paths.set(`${path.from}\u0000${path.to}`, path)
+    paths.set(JSON.stringify([path.from, path.to]), path)
   }
 
   return sortedBounded(
