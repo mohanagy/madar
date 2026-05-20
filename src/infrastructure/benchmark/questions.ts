@@ -7,6 +7,8 @@ import { type PromptRunnerUsage } from '../prompt-runner.js'
 import { type BenchmarkPromptArtifacts, type BenchmarkPromptTokenSource } from './runner.js'
 
 export interface BenchmarkQuestionResult {
+  id?: string
+  description?: string
   question: string
   query_tokens: number
   effective_query_tokens?: number
@@ -25,6 +27,8 @@ export interface BenchmarkQuestionResult {
 }
 
 export interface BenchmarkQuestionSpec {
+  id?: string
+  description?: string
   question: string
   expected_labels?: string[]
 }
@@ -53,6 +57,10 @@ export function normalizeBenchmarkQuestion(question: BenchmarkQuestionInput): Be
     return { question, expected_labels: [] }
   }
   return {
+    ...(typeof question.id === 'string' && question.id.trim().length > 0 ? { id: question.id.trim() } : {}),
+    ...(typeof question.description === 'string' && question.description.trim().length > 0
+      ? { description: question.description.trim() }
+      : {}),
     question: question.question.trim(),
     expected_labels: Array.isArray(question.expected_labels) ? question.expected_labels.filter((label) => label.trim().length > 0) : [],
   }
@@ -74,12 +82,24 @@ export function loadBenchmarkQuestions(questionsPath: string): BenchmarkQuestion
       throw new Error(`Question file entry ${index + 1} must include a non-empty question string`)
     }
 
+    const id = 'id' in entry ? entry.id : undefined
+    if (id !== undefined && (typeof id !== 'string' || id.trim().length === 0)) {
+      throw new Error(`Question file entry ${index + 1} id must be a non-empty string when provided`)
+    }
+
+    const description = 'description' in entry ? entry.description : undefined
+    if (description !== undefined && (typeof description !== 'string' || description.trim().length === 0)) {
+      throw new Error(`Question file entry ${index + 1} description must be a non-empty string when provided`)
+    }
+
     const expectedLabels = 'expected_labels' in entry ? entry.expected_labels : undefined
     if (expectedLabels !== undefined && (!Array.isArray(expectedLabels) || expectedLabels.some((label) => typeof label !== 'string'))) {
       throw new Error(`Question file entry ${index + 1} expected_labels must be an array of strings`)
     }
 
     return normalizeBenchmarkQuestion({
+      ...(id !== undefined ? { id: id as string } : {}),
+      ...(description !== undefined ? { description: description as string } : {}),
       question,
       ...(expectedLabels !== undefined ? { expected_labels: expectedLabels as string[] } : {}),
     })
@@ -134,6 +154,8 @@ export function evaluateBenchmarkQuestion(graph: KnowledgeGraph, question: Bench
   return {
     question: questionSpec.question,
     result: {
+      ...(questionSpec.id ? { id: questionSpec.id } : {}),
+      ...(questionSpec.description ? { description: questionSpec.description } : {}),
       question: questionSpec.question,
       query_tokens: match.queryTokens,
       reduction: Number((corpusTokens / match.queryTokens).toFixed(1)),

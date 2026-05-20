@@ -13,6 +13,7 @@ const BENCHMARK_STYLESHEET = resolve('docs', 'benchmarks', 'styles.css')
 const PACK_VERIFIER_PATH = resolve('docs', 'benchmarks', 'govalidate-suite', 'verify-pack-quality.js')
 const ANSWER_VERIFIER_PATH = resolve('docs', 'benchmarks', 'govalidate-suite', 'verify-answer-quality.js')
 const PACK_GATE_CONFIG_PATH = resolve('docs', 'benchmarks', 'govalidate-suite', 'quality-gates.json')
+const SUITE_QUESTIONS_PATH = resolve('docs', 'benchmarks', 'govalidate-suite', 'questions.json')
 const SUITE_README_PATH = resolve('docs', 'benchmarks', 'govalidate-suite', 'README.md')
 
 interface PackQualityGateDefinition {
@@ -495,6 +496,43 @@ describe('shared GoValidate benchmark suite README', () => {
     expect(readme).toContain('verify-answer-quality.js')
     expect(readme).toContain('--answer <answer.txt>')
     expect(readme.toLowerCase()).toContain('deterministic answer-term checks')
+  })
+
+  it('ships a public multi-prompt suite with stable ids and no private expected labels', () => {
+    expect(existsSync(SUITE_QUESTIONS_PATH)).toBe(true)
+
+    const questions = JSON.parse(readFileSync(SUITE_QUESTIONS_PATH, 'utf8')) as Array<{
+      id?: unknown
+      description?: unknown
+      question?: unknown
+      expected_labels?: unknown
+    }>
+
+    expect(questions.length).toBeGreaterThanOrEqual(8)
+    expect(questions.length).toBeLessThanOrEqual(12)
+
+    const ids = questions.map((entry) => entry.id)
+    expect(new Set(ids).size).toBe(questions.length)
+
+    for (const entry of questions) {
+      expect(typeof entry.id).toBe('string')
+      expect((entry.id as string).trim().length).toBeGreaterThan(0)
+      expect(typeof entry.description).toBe('string')
+      expect((entry.description as string).trim().length).toBeGreaterThan(0)
+      expect(typeof entry.question).toBe('string')
+      expect((entry.question as string).trim().length).toBeGreaterThan(0)
+      expect(entry.expected_labels ?? []).toEqual([])
+    }
+  })
+
+  it('documents the suite as conservative and separate from the single-prompt benchmark artifact', () => {
+    const lower = readme.toLowerCase()
+
+    expect(lower).toContain('questions.json')
+    expect(lower).toContain('single-prompt benchmark')
+    expect(lower).toContain('do not commit private')
+    expect(lower).toContain('do not invent benchmark numbers')
+    expect(lower).toContain('native_agent')
   })
 })
 

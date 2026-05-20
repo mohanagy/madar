@@ -1,12 +1,35 @@
-# GoValidate shared benchmark quality gates
+# GoValidate shared benchmark suite
 
-This directory holds the shared pack-quality and answer-quality gates for committed GoValidate benchmark artifacts.
+This directory holds the public GoValidate benchmark suite inputs plus the shared pack-quality and answer-quality gates for committed benchmark artifacts.
 
 ## Files
 
+- `questions.json` - public multi-prompt suite with stable prompt `id` values, human-readable descriptions, and realistic questions contributors can run locally
 - `quality-gates.json` — named gate definitions plus the prompt text they apply to
 - `verify-pack-quality.js` — deterministic verifier for persisted `graphify-ts compare` reports
 - `verify-answer-quality.js` — deterministic verifier for saved `*-answer.txt` artifacts
+
+## Public suite usage
+
+`questions.json` is the conservative public prompt set for multi-prompt GoValidate runs. It is intentionally public-only:
+
+- do not commit private GoValidate source labels or snippets to this file
+- do not invent benchmark numbers in this directory
+- keep the current dated single-prompt benchmark artifact separate from this suite
+
+The suite is meant to widen prompt coverage across realistic tasks, not to claim universal token reduction or universal answer quality.
+
+Example compare command:
+
+```bash
+graphify-ts compare \
+  --questions docs/benchmarks/govalidate-suite/questions.json \
+  --exec "cat {prompt_file} | claude -p --output-format json" \
+  --yes \
+  --baseline-mode native_agent
+```
+
+Run the suite locally against your own checked-out GoValidate workspace and review the saved reports before making any public claims.
 
 ## Usage
 

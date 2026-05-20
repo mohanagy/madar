@@ -11,6 +11,7 @@ All notable changes to the TypeScript package will be documented in this file.
 - **Share-safe proof reports**: `compare`, `review-compare`, and runner-backed `benchmark --exec ...` executions now emit a companion `report.share-safe.json` with stable path placeholders while keeping the full local `report.json`.
 - **Generate performance benchmark harness**: adds a small synthetic benchmark flow for `generate`, `update`, `cluster-only`, and SPI cold/warm cache runs, with structured metrics for wall-clock time, file/extraction counts, graph size, output bytes, and cache-hit reasons plus new docs for manual large-repo measurements.
 - **Deterministic answer-quality rubric skeleton**: shared GoValidate benchmark gates now include answer-term checks plus manual-review concept notes, and `verify-answer-quality.js` can validate saved benchmark answer artifacts without calling an LLM.
+- **Public GoValidate benchmark suite**: adds `docs/benchmarks/govalidate-suite/questions.json` with stable prompt ids and descriptions for ten realistic product questions, preserves optional `id`/`description` metadata in shared benchmark question files, and documents the suite as a conservative public prompt set that stays separate from the dated single-prompt benchmark artifact.
 
 ### Changed
 
