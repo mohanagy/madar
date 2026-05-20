@@ -19,11 +19,30 @@ import {
   parseQueryArgs,
   parseReviewCompareArgs,
   parseSaveResultArgs,
+  parseSummaryArgs,
   parseServeArgs,
   parseTimeTravelArgs,
   parseWatchArgs,
 } from '../../src/cli/parser.js'
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
+
+type GraphSummaryPayload = {
+  graph_version?: string
+  generated_at?: string
+  node_count: number
+  edge_count: number
+  file_count: number
+  community_count: number
+  source_domains: Record<string, number>
+  top_modules: Array<{ label: string; degree: number }>
+  entrypoints: Array<{ label: string; source_file: string }>
+  frameworks: string[]
+  runtime_paths: Array<{ from: string; to: string; hops: number }>
+}
+
+type CliTestDependencies = CliDependencies & {
+  runGraphSummary?: (graphPath: string) => GraphSummaryPayload
+}
 
 function createIo() {
   const logs: string[] = []
@@ -50,7 +69,7 @@ function loadPackageVersion(): string {
   return packageJson.version
 }
 
-function createDependencies(): CliDependencies {
+function createDependencies(): CliTestDependencies {
   return {
     loadGraph: (graphPath) => {
       const graph = new KnowledgeGraph()
@@ -153,6 +172,8 @@ function createDependencies(): CliDependencies {
       totalFiles: 3,
       codeFiles: 2,
       nonCodeFiles: 1,
+      extractableFiles: 3,
+      extractedFiles: options.useSpi ? 2 : 3,
       totalWords: 120,
       nodeCount: 5,
       edgeCount: 4,
@@ -160,6 +181,7 @@ function createDependencies(): CliDependencies {
       semanticAnomalyCount: 2,
       changedFiles: options.update ? 1 : 0,
       deletedFiles: 0,
+      cache: options.useSpi ? { strategy: 'spi', hit: false, reason: 'no-cache', fileCount: 2 } : null,
       warning: null,
       notes: ['test note'],
     }),
@@ -464,6 +486,27 @@ describe('cli parser', () => {
       baselineMode: 'bounded',
       yes: true,
       limit: 5,
+    })
+  })
+
+  it('parses compare args with pack_only baseline mode', () => {
+    expect(
+      parseCompareArgs([
+        'how does login work',
+        '--exec',
+        'claude -p "$(cat {prompt_file})"',
+        '--baseline-mode',
+        'pack_only',
+      ]),
+    ).toEqual({
+      question: 'how does login work',
+      graphPath: 'graphify-out/graph.json',
+      execTemplate: 'claude -p "$(cat {prompt_file})"',
+      questionsPath: null,
+      outputDir: resolve('graphify-out/compare'),
+      baselineMode: 'pack_only',
+      yes: false,
+      limit: null,
     })
   })
 
@@ -875,7 +918,7 @@ describe('cli main', () => {
     expect(help).toContain('    --exec TEMPLATE       required command template; supports {prompt_file}, {question}, {mode}, and {output_file}')
     expect(help).toContain('    --questions PATH      load questions from a JSON file instead of a positional question')
     expect(help).toContain('    --output-dir DIR      compare output directory (default graphify-out/compare)')
-    expect(help).toContain('    --baseline-mode MODE  full | bounded | native_agent (default full; native_agent runs --exec twice, uses Anthropic JSON usage when available, and otherwise saves answer-only artifacts)')
+    expect(help).toContain('    --baseline-mode MODE  full | bounded | pack_only | native_agent (default full; pack_only compares one bounded raw-context prompt against one compiled graphify pack; native_agent runs --exec twice, uses Anthropic JSON usage when available, and otherwise saves answer-only artifacts)')
     expect(help).toContain('    --yes                 skip confirmation before running the paid prompt comparison')
     expect(help).toContain('    --limit N             cap processed prompts/questions for the comparison run')
     expect(help).toContain('review-compare [graph.json] compare full vs compact pr_impact review prompts on the current git diff')
@@ -898,6 +941,7 @@ describe('cli main', () => {
     expect(help).toContain('copilot <install|uninstall> [--profile core|full|strict]')
     expect(help).toContain('codex <install|uninstall>')
     expect(help).toContain('opencode <install|uninstall>')
+    expect(help).toContain('summary [graph.json]')
   })
 
   it('routes compare through the injected dependency after parsing args', async () => {
@@ -1433,12 +1477,15 @@ describe('cli main', () => {
         totalFiles: 3,
         codeFiles: 2,
         nonCodeFiles: 1,
+        extractableFiles: 3,
+        extractedFiles: options.useSpi ? 2 : 3,
         totalWords: 120,
         nodeCount: 5,
         edgeCount: 4,
         communityCount: 2,
         changedFiles: 0,
         deletedFiles: 0,
+        cache: options.useSpi ? { strategy: 'spi', hit: false, reason: 'no-cache', fileCount: 2 } : null,
         warning: null,
         notes: [],
       }
@@ -1729,5 +1776,74 @@ describe('cli main', () => {
 
     expect(exitCode).toBe(1)
     expect(errors[0]).toContain("error: unknown command 'mystery'")
+  })
+})
+
+describe('summary command', () => {
+  it('parses summary args with positional and --graph forms', () => {
+    expect(parseSummaryArgs([])).toEqual({
+      graphPath: 'graphify-out/graph.json',
+    })
+
+    expect(parseSummaryArgs(['custom.json'])).toEqual({
+      graphPath: 'custom.json',
+    })
+
+    expect(parseSummaryArgs(['--graph', 'custom.json'])).toEqual({
+      graphPath: 'custom.json',
+    })
+
+    expect(parseSummaryArgs(['--graph=custom.json'])).toEqual({
+      graphPath: 'custom.json',
+    })
+  })
+
+  it('formatHelp documents the summary command', () => {
+    const help = formatHelp()
+    expect(help).toContain('summary [graph.json]')
+  })
+
+  it('dispatches summary to the runGraphSummary dependency and prints JSON', async () => {
+    const { io, logs } = createIo()
+    const dependencies = createDependencies()
+    let capturedGraphPath: string | undefined
+    const expectedPayload = {
+      graph_version: 'abc123def456',
+      generated_at: '2026-05-12T10:00:00.000Z',
+      node_count: 3,
+      edge_count: 2,
+      file_count: 3,
+      community_count: 2,
+      source_domains: { production: 3 },
+      top_modules: [{ label: 'AuthService', degree: 2 }],
+      entrypoints: [{ label: 'AuthService', source_file: 'src/auth/service.ts' }],
+      frameworks: [],
+      runtime_paths: [],
+    }
+    dependencies.runGraphSummary = (graphPath: string) => {
+      capturedGraphPath = graphPath
+      return expectedPayload
+    }
+
+    const exitCode = await executeCli(['summary', 'graphify-out/graph.json'], io, dependencies)
+
+    expect(exitCode).toBe(0)
+    expect(capturedGraphPath).toBe('graphify-out/graph.json')
+    expect(logs).toEqual([JSON.stringify(expectedPayload, null, 2)])
+  })
+
+  it('dispatches summary with default graph path when no argument is given', async () => {
+    const { io } = createIo()
+    const dependencies = createDependencies()
+    let capturedGraphPath: string | undefined
+    dependencies.runGraphSummary = (graphPath: string) => {
+      capturedGraphPath = graphPath
+      return { node_count: 0, edge_count: 0, file_count: 0, community_count: 0, source_domains: {}, top_modules: [], entrypoints: [], frameworks: [], runtime_paths: [] }
+    }
+
+    const exitCode = await executeCli(['summary'], io, dependencies)
+
+    expect(exitCode).toBe(0)
+    expect(capturedGraphPath).toBe('graphify-out/graph.json')
   })
 })

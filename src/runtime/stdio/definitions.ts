@@ -116,6 +116,14 @@ export const MCP_TOOLS: McpToolDefinition[] = [
     },
   },
   {
+    name: 'graph_summary',
+    description: 'Return a compact deterministic repo summary for coding agents.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  {
     name: 'god_nodes',
     description: 'Return the most connected non-file nodes in the graph.',
     inputSchema: {
@@ -390,7 +398,7 @@ export type McpToolProfile = 'core' | 'full'
  * low on Claude Code session start. Opt into the full surface by setting
  * GRAPHIFY_TOOL_PROFILE=full in the MCP server env block.
  */
-export const CORE_TOOL_NAMES = ['retrieve', 'impact', 'call_chain', 'community_overview', 'pr_impact', 'graph_stats'] as const
+export const CORE_TOOL_NAMES = ['retrieve', 'impact', 'call_chain', 'community_overview', 'pr_impact', 'graph_stats', 'graph_summary'] as const
 
 export type McpCoreToolName = (typeof CORE_TOOL_NAMES)[number]
 

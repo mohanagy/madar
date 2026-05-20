@@ -113,6 +113,8 @@ function buildSummaryResult(overrides: {
             output_tokens: 100,
           },
           total_input_tokens_anthropic_exact: overrides.baselineInputTokens,
+          uncached_input_tokens_anthropic_exact: overrides.baselineInputTokens,
+          cached_input_tokens_anthropic_exact: 0,
           total_cost_usd: 1,
           num_turns: overrides.baselineTurns,
           duration_ms: overrides.baselineDurationMs,
@@ -128,6 +130,8 @@ function buildSummaryResult(overrides: {
             output_tokens: 100,
           },
           total_input_tokens_anthropic_exact: overrides.graphifyInputTokens,
+          uncached_input_tokens_anthropic_exact: overrides.graphifyInputTokens,
+          cached_input_tokens_anthropic_exact: 0,
           total_cost_usd: 1,
           num_turns: overrides.graphifyTurns,
           duration_ms: overrides.graphifyDurationMs,
@@ -158,12 +162,23 @@ function buildSummaryResult(overrides: {
         paths: {
           output_dir: '/tmp/project/graphify-out/compare/2026-05-12T00-00-00Z',
           report: '/tmp/project/graphify-out/compare/2026-05-12T00-00-00Z/report.json',
+          share_safe_report: '/tmp/project/graphify-out/compare/2026-05-12T00-00-00Z/report.share-safe.json',
           baseline_answer: '/tmp/project/graphify-out/compare/2026-05-12T00-00-00Z/baseline.md',
           graphify_answer: '/tmp/project/graphify-out/compare/2026-05-12T00-00-00Z/graphify.md',
           prompt_file: '/tmp/project/graphify-out/compare/2026-05-12T00-00-00Z/prompt.txt',
         },
       },
     ],
+  }
+}
+
+type SummaryOverrides = Parameters<typeof buildSummaryResult>[0]
+
+function buildSuiteSummaryResult(overridesList: SummaryOverrides[]): NativeAgentCompareResult {
+  return {
+    graph_path: '/tmp/project/graphify-out/graph.json',
+    output_root: '/tmp/project/graphify-out/compare/2026-05-12T00-00-00Z',
+    reports: overridesList.map((overrides) => buildSummaryResult(overrides).reports[0]!),
   }
 }
 
@@ -234,6 +249,21 @@ describe('executeNativeAgentCompare', () => {
       expect(report.graphify.usage).toEqual(GRAPHIFY_USAGE_PAYLOAD.usage)
       expect(report.graphify.num_turns).toBe(3)
       expect(report.graphify.total_cost_usd).toBe(0.7)
+
+      const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as {
+        baseline: Record<string, unknown>
+        graphify: Record<string, unknown>
+      }
+      expect(savedReport.baseline).toEqual(expect.objectContaining({
+        total_input_tokens_anthropic_exact: 615190,
+        uncached_input_tokens_anthropic_exact: 40662,
+        cached_input_tokens_anthropic_exact: 574528,
+      }))
+      expect(savedReport.graphify).toEqual(expect.objectContaining({
+        total_input_tokens_anthropic_exact: 233508,
+        uncached_input_tokens_anthropic_exact: 92846,
+        cached_input_tokens_anthropic_exact: 140662,
+      }))
 
       // Reductions match the spec table (3x turns, 2.6x input, 2.77x duration).
       expect(report.reductions).not.toBeNull()
@@ -449,7 +479,7 @@ describe('executeNativeAgentCompare', () => {
 
 describe('formatNativeAgentCompareSummary', () => {
   it('describes wins as fewer, less, and faster', () => {
-    const summary = formatNativeAgentCompareSummary(buildSummaryResult({
+    const result = buildSummaryResult({
       question: 'win case',
       baselineTurns: 9,
       graphifyTurns: 3,
@@ -463,11 +493,36 @@ describe('formatNativeAgentCompareSummary', () => {
         input_tokens: 3,
         cost_usd: 1,
       },
-    }))
+    })
+    const report = result.reports[0]
+    if (!report || report.baseline.kind !== 'succeeded' || report.graphify.kind !== 'succeeded') {
+      throw new Error('summary fixture should produce succeeded runs')
+    }
+    report.baseline.usage = {
+      input_tokens: 600,
+      cache_creation_input_tokens: 200,
+      cache_read_input_tokens: 100,
+      output_tokens: 100,
+    }
+    report.baseline.uncached_input_tokens_anthropic_exact = 800
+    report.baseline.cached_input_tokens_anthropic_exact = 100
+    report.graphify.usage = {
+      input_tokens: 150,
+      cache_creation_input_tokens: 100,
+      cache_read_input_tokens: 50,
+      output_tokens: 100,
+    }
+    report.graphify.uncached_input_tokens_anthropic_exact = 250
+    report.graphify.cached_input_tokens_anthropic_exact = 50
+
+    const summary = formatNativeAgentCompareSummary(result)
 
     expect(summary).toContain('num_turns: baseline 9 → graphify 3 (3x fewer)')
     expect(summary).toContain('latency:   baseline 9000ms → graphify 3000ms (3x faster)')
     expect(summary).toContain('input_tokens (Anthropic-reported): baseline 900 → graphify 300 (3x less)')
+    expect(summary).toContain('uncached_input_tokens (Anthropic-reported): baseline 800 → graphify 250 (3.2x less)')
+    expect(summary).toContain('cache_creation_input_tokens (Anthropic-reported): baseline 200 → graphify 100 (2x less)')
+    expect(summary).toContain('cache_read_input_tokens (Anthropic-reported): baseline 100 → graphify 50 (2x less)')
   })
 
   it('describes regressions as more and slower instead of fewer and faster', () => {
@@ -493,5 +548,173 @@ describe('formatNativeAgentCompareSummary', () => {
     expect(summary).not.toContain('0.33x fewer')
     expect(summary).not.toContain('0.33x faster')
     expect(summary).not.toContain('0.33x less')
+  })
+
+  it('omits cache-detail lines when neither run reported cache activity', () => {
+    const summary = formatNativeAgentCompareSummary(buildSummaryResult({
+      question: 'no cache case',
+      baselineTurns: 9,
+      graphifyTurns: 3,
+      baselineDurationMs: 9000,
+      graphifyDurationMs: 3000,
+      baselineInputTokens: 900,
+      graphifyInputTokens: 300,
+      reductions: {
+        num_turns: 3,
+        duration_ms: 3,
+        input_tokens: 3,
+        cost_usd: 1,
+      },
+    }))
+
+    expect(summary).not.toContain('uncached_input_tokens (Anthropic-reported)')
+    expect(summary).not.toContain('cache_creation_input_tokens (Anthropic-reported)')
+    expect(summary).not.toContain('cache_read_input_tokens (Anthropic-reported)')
+  })
+
+  it('summarizes all-win native_agent suites with aggregate win counts and reductions', () => {
+    const summary = formatNativeAgentCompareSummary(buildSuiteSummaryResult([
+      {
+        question: 'win a',
+        baselineTurns: 9,
+        graphifyTurns: 3,
+        baselineDurationMs: 9000,
+        graphifyDurationMs: 3000,
+        baselineInputTokens: 900,
+        graphifyInputTokens: 300,
+        reductions: {
+          num_turns: 3,
+          duration_ms: 3,
+          input_tokens: 3,
+          cost_usd: 1,
+        },
+      },
+      {
+        question: 'win b',
+        baselineTurns: 8,
+        graphifyTurns: 2,
+        baselineDurationMs: 8000,
+        graphifyDurationMs: 2000,
+        baselineInputTokens: 800,
+        graphifyInputTokens: 200,
+        reductions: {
+          num_turns: 4,
+          duration_ms: 4,
+          input_tokens: 4,
+          cost_usd: 1,
+        },
+      },
+    ]))
+
+    expect(summary).toContain('Suite input_tokens (Anthropic-reported): 2 wins · 0 losses · mean reduction 70.8% · median reduction 70.8% · best win: "win b" (75% less) · worst regression: none')
+    expect(summary).toContain('Suite num_turns: 2 wins · 0 losses · best win: "win b" (75% fewer) · worst regression: none')
+    expect(summary).toContain('Suite latency: 2 wins · 0 losses · best win: "win b" (75% faster) · worst regression: none')
+  })
+
+  it('summarizes mixed native_agent suites with wins, losses, and regressions', () => {
+    const summary = formatNativeAgentCompareSummary(buildSuiteSummaryResult([
+      {
+        question: 'win case',
+        baselineTurns: 10,
+        graphifyTurns: 5,
+        baselineDurationMs: 10000,
+        graphifyDurationMs: 5000,
+        baselineInputTokens: 1000,
+        graphifyInputTokens: 500,
+        reductions: {
+          num_turns: 2,
+          duration_ms: 2,
+          input_tokens: 2,
+          cost_usd: 1,
+        },
+      },
+      {
+        question: 'loss case',
+        baselineTurns: 4,
+        graphifyTurns: 6,
+        baselineDurationMs: 4000,
+        graphifyDurationMs: 6000,
+        baselineInputTokens: 400,
+        graphifyInputTokens: 500,
+        reductions: {
+          num_turns: 0.67,
+          duration_ms: 0.67,
+          input_tokens: 0.8,
+          cost_usd: 1,
+        },
+      },
+    ]))
+
+    expect(summary).toContain('Suite input_tokens (Anthropic-reported): 1 win · 1 loss · mean reduction 12.5% · median reduction 12.5% · best win: "win case" (50% less) · worst regression: "loss case" (25% more)')
+    expect(summary).toContain('Suite num_turns: 1 win · 1 loss · best win: "win case" (50% fewer) · worst regression: "loss case" (50% more)')
+    expect(summary).toContain('Suite latency: 1 win · 1 loss · best win: "win case" (50% faster) · worst regression: "loss case" (50% slower)')
+  })
+
+  it('calls out the comparable-question denominator when answer-only runs are excluded from suite aggregates', () => {
+    const result = buildSuiteSummaryResult([
+      {
+        question: 'win a',
+        baselineTurns: 9,
+        graphifyTurns: 3,
+        baselineDurationMs: 9000,
+        graphifyDurationMs: 3000,
+        baselineInputTokens: 900,
+        graphifyInputTokens: 300,
+        reductions: {
+          num_turns: 3,
+          duration_ms: 3,
+          input_tokens: 3,
+          cost_usd: 1,
+        },
+      },
+      {
+        question: 'win b',
+        baselineTurns: 8,
+        graphifyTurns: 2,
+        baselineDurationMs: 8000,
+        graphifyDurationMs: 2000,
+        baselineInputTokens: 800,
+        graphifyInputTokens: 200,
+        reductions: {
+          num_turns: 4,
+          duration_ms: 4,
+          input_tokens: 4,
+          cost_usd: 1,
+        },
+      },
+      {
+        question: 'answer only',
+        baselineTurns: 5,
+        graphifyTurns: 5,
+        baselineDurationMs: 5000,
+        graphifyDurationMs: 5000,
+        baselineInputTokens: 500,
+        graphifyInputTokens: 500,
+        reductions: {
+          num_turns: 1,
+          duration_ms: 1,
+          input_tokens: 1,
+          cost_usd: 1,
+        },
+      },
+    ])
+    result.reports[2] = {
+      ...result.reports[2]!,
+      graphify: {
+        kind: 'answer_only',
+        evidence: null,
+        exit_code: 0,
+        stderr: null,
+        result_path: '/tmp/project/answer-only.txt',
+      },
+      reductions: null,
+    }
+
+    const summary = formatNativeAgentCompareSummary(result)
+
+    expect(summary).toContain('Suite input_tokens (Anthropic-reported): 2 wins · 0 losses · 2/3 comparable · mean reduction 70.8% · median reduction 70.8% · best win: "win b" (75% less) · worst regression: none')
+    expect(summary).toContain('Suite num_turns: 2 wins · 0 losses · 2/3 comparable · best win: "win b" (75% fewer) · worst regression: none')
+    expect(summary).toContain('Suite latency: 2 wins · 0 losses · 2/3 comparable · best win: "win b" (75% faster) · worst regression: none')
+    expect(summary).toContain('"answer only" → answer-only run saved; no Anthropic usage block was available, so provider-proof reductions were not computed')
   })
 })

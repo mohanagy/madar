@@ -25,6 +25,7 @@ import type {
 import type { RetrievalGateDecision } from '../contracts/retrieval-gate.js'
 import type { TaskIntentKind } from '../contracts/task-intent.js'
 import { classifySourceDomain, type SourceDomain } from '../shared/source-discovery.js'
+import { applyContextPackResolution } from './context-pack-resolution.js'
 import { estimateQueryTokens } from './serve.js'
 import { resolveTaskEvidenceRecipe } from './task-evidence-recipes.js'
 import { selectByValuePerToken, type ValuePerTokenCandidate } from './value-per-token.js'
@@ -987,6 +988,71 @@ export function estimateContextPackEntryTokens(
   return estimateQueryTokens(`${label} ${sourceFile}:${lineNumber} ${snippet ?? ''}`)
 }
 
+function tokenCountForRenderedNodes(nodes: readonly Pick<ContextPackNode, 'label' | 'source_file' | 'line_number' | 'snippet'>[]): number {
+  return nodes.reduce(
+    (total, node) => total + estimateContextPackEntryTokens(node.label, node.source_file, node.line_number, node.snippet),
+    0,
+  )
+}
+
+export function renderCompiledContextPackNodes<
+  TNode extends ContextPackNode = ContextPackNode,
+  TRelationship extends ContextPackRelationship = ContextPackRelationship,
+>(
+  taskContract: ContextPackTaskContract,
+  nodes: readonly TNode[],
+  relationships: readonly TRelationship[],
+): {
+  nodes: TNode[]
+  token_count: number
+} {
+  if (nodes.length === 0) {
+    return {
+      nodes: [],
+      token_count: 0,
+    }
+  }
+
+  const renderedNodes = nodes.some((node) => typeof node.representation_type === 'string')
+    ? [...nodes]
+    : applyContextPackResolution(nodes, {
+        resolution: 'sketch',
+        relationships,
+        task_kind: taskContract.task_kind,
+      }).nodes.map((node, index) => {
+        const originalNode = nodes[index]!
+        const originalCost = estimateContextPackEntryTokens(
+          originalNode.label,
+          originalNode.source_file,
+          originalNode.line_number,
+          originalNode.snippet ?? null,
+        )
+        const renderedCost = estimateContextPackEntryTokens(
+          node.label,
+          node.source_file,
+          node.line_number,
+          node.snippet ?? null,
+        )
+        const hasOriginalSnippet = typeof originalNode.snippet === 'string'
+          && originalNode.snippet.length > 0
+        if (taskContract.task_kind === 'explain' && hasOriginalSnippet) {
+          return {
+            ...node,
+            representation_type: 'detail',
+            representation_reason: 'explain detail preserved',
+            snippet: originalNode.snippet,
+          } as TNode
+        }
+
+        return renderedCost <= originalCost ? node : originalNode
+      }) as TNode[]
+
+  return {
+    nodes: renderedNodes,
+    token_count: tokenCountForRenderedNodes(renderedNodes),
+  }
+}
+
 export function compileContextPack<
   TNode extends ContextPackNode = ContextPackNode,
   TRelationship extends ContextPackRelationship = ContextPackRelationship,
@@ -1131,12 +1197,13 @@ export function compileContextPack<
     ? orderedNodes.filter((c) => !placedCandidates.has(c))
     : orderedNodes.slice(breakIndex)
   const relationships = filterRelationships(input.relationships ?? [], selectedNodes)
-  const includedLabels = new Set(selectedNodes.map((node) => node.label))
+  const renderedNodes = renderCompiledContextPackNodes(input.task_contract, selectedNodes, relationships)
+  const includedLabels = new Set(renderedNodes.nodes.map((node) => node.label))
 
   return {
     task_contract: input.task_contract,
-    token_count: tokenCount,
-    nodes: selectedNodes,
+    token_count: renderedNodes.token_count,
+    nodes: renderedNodes.nodes,
     relationships,
     community_context: (input.community_context ?? []).filter((community) => selectedCommunities.has(community.id)),
     claims: buildClaims(input.task_contract, selectedLabelsByEvidence),
@@ -1216,9 +1283,6 @@ export function compactContextPack<
     const compactNodesWithoutSharedFileType = sharedFileType !== undefined
       ? compactNodes.map(({ file_type: _fileType, ...node }) => node)
       : compactNodes
-    const compactNodePayload = sharedFileType !== undefined
-      ? { shared_file_type: sharedFileType, nodes: compactNodesWithoutSharedFileType }
-      : compactNodesWithoutSharedFileType
     const includedLabels = new Set(compactNodesWithoutSharedFileType.map((node) => node.label))
     const relationships = pack.relationships.filter((relationship) => {
       if (includedRelationshipIds.size > 0 && relationship.from_id && relationship.to_id) {
@@ -1234,7 +1298,10 @@ export function compactContextPack<
 
     return {
       ...pack,
-      token_count: compactNodesWithoutSharedFileType.length === 0 ? 0 : estimateQueryTokens(JSON.stringify(compactNodePayload)),
+      token_count: compactNodesWithoutSharedFileType.reduce(
+        (total, node) => total + estimateContextPackEntryTokens(node.label, node.source_file, node.line_number, node.snippet ?? null),
+        0,
+      ),
       nodes: compactNodesWithoutSharedFileType,
       relationships,
       community_context: pack.community_context.filter((community) => includedCommunities.has(community.id)),

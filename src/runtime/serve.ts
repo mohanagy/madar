@@ -183,7 +183,7 @@ function storedSemanticAnomalies(rawAnomalies: unknown, topN: number): SemanticA
   return results
 }
 
-function communityLabelsFromGraph(graph: KnowledgeGraph, communities: Communities): Record<number, string> {
+export function communityLabelsFromGraph(graph: KnowledgeGraph, communities: Communities): Record<number, string> {
   return {
     ...buildCommunityLabels(graph, communities),
     ...storedCommunityLabels(graph.graph.community_labels),

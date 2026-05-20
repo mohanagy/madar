@@ -22,6 +22,7 @@
 import type {
   ContextPackNode,
   ContextPackRelationship,
+  ContextPackTaskKind,
   ContextRepresentationType,
 } from '../contracts/context-pack.js'
 
@@ -33,6 +34,7 @@ export interface ApplyResolutionOptions {
    *  to ceil(nodes.length / 3) so a 12-node pack keeps 4 detail nodes. */
   detail_top_n?: number
   relationships?: readonly ContextPackRelationship[]
+  task_kind?: ContextPackTaskKind
 }
 
 export interface ApplyResolutionResult<T extends ContextPackNode> {
@@ -68,7 +70,7 @@ export function applyContextPackResolution<T extends ContextPackNode>(
   }
 
   if (options.resolution === 'sketch') {
-    return sketchResolution(nodes, options.relationships ?? [])
+    return sketchResolution(nodes, options.relationships ?? [], options.task_kind)
   }
 
   // mixed: top-N detail by match_score desc, rest summary.
@@ -188,12 +190,13 @@ function dropSnippetBytes(node: ContextPackNode): number {
 function sketchResolution<T extends ContextPackNode>(
   nodes: ReadonlyArray<T>,
   relationships: readonly ContextPackRelationship[],
+  taskKind?: ContextPackTaskKind,
 ): ApplyResolutionResult<T> {
   const relationIndex = buildRelationshipIndex(relationships, nodes)
   let bytesSaved = 0
   const resolutionMap: Array<{ node_id: string | undefined; resolution: ContextRepresentationType }> = []
   const transformed = nodes.map((node) => {
-    const rendered = renderSketchRepresentation(node, relationIndex)
+    const rendered = renderSketchRepresentation(node, relationIndex, taskKind)
     if (!rendered) {
       const signature = signatureNode(node)
       bytesSaved += Math.max(0, dropSnippetBytes(node) - (signature.snippet?.length ?? 0))
@@ -239,6 +242,32 @@ type RelationIndex = {
   outgoing: Map<string, ContextPackRelationship[]>
   incoming: Map<string, ContextPackRelationship[]>
   labelsById: Map<string, string>
+}
+
+type SketchRepresentationType =
+  | 'behavior_sketch'
+  | 'dependency_record'
+  | 'call_chain'
+  | 'contract_view'
+  | 'implementation_excerpt'
+
+type RenderedRepresentation = {
+  type: SketchRepresentationType
+  reason: string
+  snippet: string
+}
+
+type RepresentationSignals = {
+  behaviorEdges: string[]
+  executionEdges: string[]
+  tests: string[]
+  config: string[]
+  readsEnv: string[]
+  outgoingDeps: string[]
+  incomingDeps: string[]
+  callTraces: string[]
+  sideEffects: string[]
+  latencySensitive: string[]
 }
 
 function preferredRelationKeys(id: string | undefined, label: string): string[] {
@@ -325,6 +354,199 @@ function relationLabels(
   return labels
 }
 
+function relationEntriesForRef(
+  ref: Pick<ContextPackNode, 'node_id' | 'label'>,
+  relationIndex: RelationIndex,
+  direction: 'outgoing' | 'incoming',
+  relationTypes: readonly string[],
+): ContextPackRelationship[] {
+  const seen = new Set<string>()
+  const entries: ContextPackRelationship[] = []
+  const index = direction === 'outgoing' ? relationIndex.outgoing : relationIndex.incoming
+
+  for (const key of preferredRelationKeys(ref.node_id, ref.label)) {
+    for (const relationship of index.get(key) ?? []) {
+      if (!relationTypes.includes(relationship.relation)) {
+        continue
+      }
+      const signature = `${relationship.from_id ?? relationship.from}:${relationship.relation}:${relationship.to_id ?? relationship.to}`
+      if (!seen.has(signature)) {
+        seen.add(signature)
+        entries.push(relationship)
+      }
+    }
+  }
+
+  return entries
+}
+
+function buildCallTraces(
+  node: ContextPackNode,
+  relationIndex: RelationIndex,
+  maxHops = 2,
+  maxTraces = 3,
+): string[] {
+  const traces: string[] = []
+
+  const visit = (
+    ref: Pick<ContextPackNode, 'node_id' | 'label'>,
+    path: string[],
+    hops: number,
+    seen: Set<string>,
+  ): void => {
+    const edges = relationEntriesForRef(ref, relationIndex, 'outgoing', ['calls'])
+
+    if (edges.length === 0 || hops >= maxHops) {
+      if (path.length > 1) {
+        traces.push(path.join(' -> '))
+      }
+      return
+    }
+
+    for (const edge of edges) {
+      const nextLabel = relationIndex.labelsById.get(edge.to_id ?? '') ?? edge.to
+      const nextKey = edge.to_id ?? nextLabel
+      if (seen.has(nextKey)) {
+        continue
+      }
+      const nextSeen = new Set(seen)
+      nextSeen.add(nextKey)
+      visit(
+        { node_id: edge.to_id, label: nextLabel },
+        [...path, nextLabel],
+        hops + 1,
+        nextSeen,
+      )
+      if (traces.length >= maxTraces) {
+        return
+      }
+    }
+
+    if (traces.length === 0 && path.length > 1) {
+      traces.push(path.join(' -> '))
+    }
+  }
+
+  visit(
+    { node_id: node.node_id, label: node.label },
+    [node.label],
+    0,
+    new Set([node.node_id ?? node.label]),
+  )
+
+  return traces.slice(0, maxTraces)
+}
+
+function collectRepresentationSignals(
+  node: ContextPackNode,
+  relationIndex: RelationIndex,
+): RepresentationSignals {
+  const behaviorEdges = relationLabels(node, relationIndex, 'outgoing', ['calls', 'route_handler', 'controller_route', 'method', 'contains'])
+  const executionEdges = relationLabels(node, relationIndex, 'outgoing', ['calls'])
+  const tests = relationLabels(node, relationIndex, 'outgoing', ['covered_by'])
+  const config = relationLabels(node, relationIndex, 'outgoing', ['uses_config'])
+  const readsEnv = relationLabels(node, relationIndex, 'outgoing', ['reads_env'])
+  const outgoingDeps = relationLabels(node, relationIndex, 'outgoing', ['calls', 'injects', 'depends_on'])
+  const incomingDeps = relationLabels(node, relationIndex, 'incoming', ['calls', 'injects', 'depends_on'])
+  const { sideEffects, latencySensitive } = sideEffectHints(executionEdges)
+  const callTraces = buildCallTraces(node, relationIndex)
+
+  return {
+    behaviorEdges,
+    executionEdges,
+    tests,
+    config,
+    readsEnv,
+    outgoingDeps,
+    incomingDeps,
+    callTraces,
+    sideEffects,
+    latencySensitive,
+  }
+}
+
+function hasBehaviorSignals(node: ContextPackNode, signals: RepresentationSignals): boolean {
+  return (
+    signals.tests.length > 0
+    || signals.config.length > 0
+    || signals.readsEnv.length > 0
+    || signals.behaviorEdges.length > 1
+    || !!node.framework_role
+  )
+}
+
+function hasDependencySignals(node: ContextPackNode, signals: RepresentationSignals): boolean {
+  return (
+    signals.outgoingDeps.length > 0
+    || signals.incomingDeps.length > 0
+    || !!node.framework_role
+  )
+}
+
+function isContractLikeNode(node: ContextPackNode): boolean {
+  const normalizedKind = node.node_kind?.toLowerCase()
+  if (
+    normalizedKind === 'interface'
+    || normalizedKind === 'type'
+    || normalizedKind === 'type_alias'
+    || normalizedKind === 'enum'
+    || normalizedKind === 'property'
+    || normalizedKind === 'field'
+  ) {
+    return true
+  }
+
+  const normalizedPath = node.source_file.toLowerCase()
+  if (/(?:contract|contracts|schema|schemas|types?|dto|interface)/.test(normalizedPath)) {
+    return true
+  }
+
+  const normalizedSnippet = node.snippet?.trimStart().toLowerCase()
+  return normalizedSnippet !== undefined
+    && (
+      normalizedSnippet.startsWith('export interface ')
+      || normalizedSnippet.startsWith('interface ')
+      || normalizedSnippet.startsWith('export type ')
+      || normalizedSnippet.startsWith('type ')
+      || normalizedSnippet.startsWith('export enum ')
+      || normalizedSnippet.startsWith('enum ')
+    )
+}
+
+function selectRepresentationType(
+  node: ContextPackNode,
+  signals: RepresentationSignals,
+  taskKind?: ContextPackTaskKind,
+): SketchRepresentationType | null {
+  if (taskKind === 'review') {
+    if (isContractLikeNode(node)) {
+      return 'contract_view'
+    }
+    if (node.evidence_class === 'change' && typeof node.snippet === 'string' && node.snippet.length > 0) {
+      return 'implementation_excerpt'
+    }
+    return null
+  }
+
+  if (taskKind === 'explain' && node.evidence_class === 'structural' && signals.callTraces.length > 0) {
+    return 'call_chain'
+  }
+
+  if (taskKind === 'impact' && hasDependencySignals(node, signals)) {
+    return 'dependency_record'
+  }
+
+  if (hasBehaviorSignals(node, signals)) {
+    return 'behavior_sketch'
+  }
+
+  if (hasDependencySignals(node, signals)) {
+    return 'dependency_record'
+  }
+
+  return null
+}
+
 function sideEffectHints(labels: readonly string[]): {
   sideEffects: string[]
   latencySensitive: string[]
@@ -375,72 +597,134 @@ function sideEffectHints(labels: readonly string[]): {
 function renderSketchRepresentation(
   node: ContextPackNode,
   relationIndex: RelationIndex,
-): { type: 'behavior_sketch' | 'dependency_record'; reason: string; snippet: string } | null {
-  const behaviorEdges = relationLabels(node, relationIndex, 'outgoing', ['calls', 'route_handler', 'controller_route', 'method', 'contains'])
-  const executionEdges = relationLabels(node, relationIndex, 'outgoing', ['calls'])
-  const tests = relationLabels(node, relationIndex, 'outgoing', ['covered_by'])
-  const config = relationLabels(node, relationIndex, 'outgoing', ['uses_config'])
-  const readsEnv = relationLabels(node, relationIndex, 'outgoing', ['reads_env'])
-  const outgoingDeps = relationLabels(node, relationIndex, 'outgoing', ['calls', 'injects', 'depends_on'])
-  const incomingDeps = relationLabels(node, relationIndex, 'incoming', ['calls', 'injects', 'depends_on'])
-  const { sideEffects, latencySensitive } = sideEffectHints(executionEdges)
+  taskKind?: ContextPackTaskKind,
+): RenderedRepresentation | null {
+  const signals = collectRepresentationSignals(node, relationIndex)
+  const selectedRepresentation = selectRepresentationType(node, signals, taskKind)
 
-  if (
-    tests.length > 0
-    || config.length > 0
-    || readsEnv.length > 0
-    || behaviorEdges.length > 1
-    || node.framework_role
-  ) {
-    const lines = [node.label]
-    for (const label of behaviorEdges.slice(0, 5)) {
-      lines.push(`-> ${label}`)
-    }
-    if (tests.length > 0) {
-      lines.push(`tests: ${tests.slice(0, 3).join(', ')}`)
-    }
-    if (readsEnv.length > 0) {
-      lines.push(`reads env: ${readsEnv.slice(0, 3).join(', ')}`)
-    }
-    if (config.length > 0) {
-      lines.push(`config: ${config.slice(0, 3).join(', ')}`)
-    }
-    if (sideEffects.length > 0) {
-      lines.push(`side effects: ${sideEffects.join(', ')}`)
-    }
-    if (latencySensitive.length > 0) {
-      lines.push(`latency-sensitive: ${latencySensitive.join(', ')}`)
-    }
-    if (node.framework_role) {
-      lines.push(`framework: ${node.framework_role}`)
-    }
-    return {
-      type: 'behavior_sketch',
-      reason: 'graph-derived behavior sketch',
-      snippet: lines.join('\n'),
-    }
+  switch (selectedRepresentation) {
+    case 'behavior_sketch':
+      return renderBehaviorSketch(node, signals)
+    case 'dependency_record':
+      return renderDependencyRecord(node, signals)
+    case 'call_chain':
+      return renderCallChain(node, signals)
+    case 'contract_view':
+      return renderContractView(node)
+    case 'implementation_excerpt':
+      return renderImplementationExcerpt(node)
+    default:
+      return null
+  }
+}
+
+function renderBehaviorSketch(
+  node: ContextPackNode,
+  signals: RepresentationSignals,
+): RenderedRepresentation {
+  const lines = [node.label]
+  for (const label of signals.behaviorEdges.slice(0, 5)) {
+    lines.push(`-> ${label}`)
+  }
+  if (signals.tests.length > 0) {
+    lines.push(`tests: ${signals.tests.slice(0, 3).join(', ')}`)
+  }
+  if (signals.readsEnv.length > 0) {
+    lines.push(`reads env: ${signals.readsEnv.slice(0, 3).join(', ')}`)
+  }
+  if (signals.config.length > 0) {
+    lines.push(`config: ${signals.config.slice(0, 3).join(', ')}`)
+  }
+  if (signals.sideEffects.length > 0) {
+    lines.push(`side effects: ${signals.sideEffects.join(', ')}`)
+  }
+  if (signals.latencySensitive.length > 0) {
+    lines.push(`latency-sensitive: ${signals.latencySensitive.join(', ')}`)
+  }
+  if (node.framework_role) {
+    lines.push(`framework: ${node.framework_role}`)
+  }
+  return {
+    type: 'behavior_sketch',
+    reason: 'graph-derived behavior sketch',
+    snippet: lines.join('\n'),
+  }
+}
+
+function renderDependencyRecord(
+  node: ContextPackNode,
+  signals: RepresentationSignals,
+): RenderedRepresentation {
+  const lines = [node.label]
+  if (signals.outgoingDeps.length > 0) {
+    lines.push(`calls: ${signals.outgoingDeps.slice(0, 3).join(', ')}`)
+  }
+  if (signals.incomingDeps.length > 0) {
+    lines.push(`called by: ${signals.incomingDeps.slice(0, 3).join(', ')}`)
+  }
+  if (node.framework_role) {
+    lines.push(`framework: ${node.framework_role}`)
+  }
+  if (signals.sideEffects.length > 0) {
+    lines.push(`side effects: ${signals.sideEffects.join(', ')}`)
+  }
+  return {
+    type: 'dependency_record',
+    reason: 'graph-derived dependency record',
+    snippet: lines.join('\n'),
+  }
+}
+
+function renderCallChain(
+  node: ContextPackNode,
+  signals: RepresentationSignals,
+): RenderedRepresentation | null {
+  if (signals.callTraces.length === 0) {
+    return null
   }
 
-  if (outgoingDeps.length > 0 || incomingDeps.length > 0 || node.framework_role) {
-    const lines = [node.label]
-    if (outgoingDeps.length > 0) {
-      lines.push(`calls: ${outgoingDeps.slice(0, 3).join(', ')}`)
-    }
-    if (incomingDeps.length > 0) {
-      lines.push(`called by: ${incomingDeps.slice(0, 3).join(', ')}`)
-    }
-    if (node.framework_role) {
-      lines.push(`framework: ${node.framework_role}`)
-    }
-    if (sideEffects.length > 0) {
-      lines.push(`side effects: ${sideEffects.join(', ')}`)
-    }
-    return {
-      type: 'dependency_record',
-      reason: 'graph-derived dependency record',
-      snippet: lines.join('\n'),
-    }
+  return {
+    type: 'call_chain',
+    reason: 'selected call chain',
+    snippet: signals.callTraces.join('\n'),
+  }
+}
+
+function renderContractView(node: ContextPackNode): RenderedRepresentation | null {
+  if (typeof node.snippet !== 'string' || node.snippet.length === 0) {
+    return null
   }
 
-  return null
+  const lines = node.snippet
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim().length > 0)
+
+  if (lines.length === 0) {
+    return null
+  }
+
+  const header = lines[0] ?? extractSignature(node.snippet)
+  const members = lines
+    .slice(1)
+    .filter((line) => line.trim() !== '}')
+    .slice(0, 4)
+
+  return {
+    type: 'contract_view',
+    reason: 'contract-focused view',
+    snippet: [header, ...members].join('\n'),
+  }
+}
+
+function renderImplementationExcerpt(node: ContextPackNode): RenderedRepresentation | null {
+  if (typeof node.snippet !== 'string' || node.snippet.length === 0) {
+    return null
+  }
+
+  return {
+    type: 'implementation_excerpt',
+    reason: 'review-focused implementation excerpt',
+    snippet: node.snippet,
+  }
 }

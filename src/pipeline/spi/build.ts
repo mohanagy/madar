@@ -726,6 +726,7 @@ function addTypeCheckerEdges(ctx: TypeCheckerEdgeContext): void {
     walkCallExpressions(sourceFile, file.id, checker, pathToFileId, edges, seenCalls)
     walkTypeReferences(sourceFile, file.id, checker, pathToFileId, edges, seenTypeEdges)
     detectNestFramework({
+      program,
       sourceFile,
       fileId: file.id,
       symbolsByFile,

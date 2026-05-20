@@ -52,15 +52,17 @@ describe('public marketing copy honesty', () => {
       expect(content).toMatch(/96 sec|96 ?s/i)
     })
 
-    it('documents the pack and prompt command surfaces', () => {
+    it('documents the pack, prompt, and summary command surfaces', () => {
       expect(content).toContain('graphify-ts pack')
       expect(content).toContain('graphify-ts prompt')
+      expect(content).toContain('graphify-ts summary')
       expect(lower).toContain('context plane')
     })
 
-    it('keeps the README core MCP surface aligned with the shipped graph_stats tool', () => {
-      expect(content).toContain('These six MCP tools')
+    it('keeps the README core MCP surface aligned with the shipped graph_summary tool', () => {
+      expect(content).toContain('These seven MCP tools')
       expect(content).toContain('`graph_stats`')
+      expect(content).toContain('`graph_summary`')
     })
 
     it('states that core is the default MCP profile and full is opt-in', () => {
@@ -71,7 +73,7 @@ describe('public marketing copy honesty', () => {
     })
 
     it('keeps the README full MCP additions list aligned with the shipped get_neighbors tool', () => {
-      expect(content).toContain('The full surface is 25 tools')
+      expect(content).toContain('The full surface is 26 tools')
       expect(content).toContain('`context_expand`')
       expect(content).toContain('`get_neighbors`')
     })
@@ -82,9 +84,9 @@ describe('public marketing copy honesty', () => {
       // current measurement. If a future PR reduces it further, update both
       // the README number and the regex below in the same PR. The matched
       // numbers come straight from tests/unit/mcp-schema-budget.test.ts.
-      expect(lower).toMatch(/~\s*750\s*tokens/)
-      expect(lower).toMatch(/~?\s*3[,.]?000\s*bytes/)
-      expect(lower).toMatch(/30%/)
+      expect(lower).toMatch(/~\s*800\s*tokens/)
+      expect(lower).toMatch(/~?\s*3[,.]?200\s*bytes/)
+      expect(lower).toMatch(/25%/)
     })
 
     it('pins the 2026-05-09 demo-video caption headline reductions', () => {

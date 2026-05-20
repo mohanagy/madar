@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest'
 import type { ContextPackNode, ContextPackRelationship } from '../../src/contracts/context-pack.js'
 import { applyContextPackResolution } from '../../src/runtime/context-pack-resolution.js'
 
+type TaskAwareResolutionOptions = Parameters<typeof applyContextPackResolution>[1]
+
 function node(overrides: Partial<ContextPackNode> = {}): ContextPackNode {
   return {
     node_id: overrides.node_id ?? 'auth_service',
@@ -280,5 +282,111 @@ describe('applyContextPackResolution sketch mode', () => {
     expect(workerModule?.representation_type).toBe('behavior_sketch')
     expect(workerModule?.snippet).not.toContain('side effects:')
     expect(workerModule?.snippet).toContain('framework: nest_module')
+  })
+
+  it('renders structural explain nodes as call chains when selected call edges exist', () => {
+    const result = applyContextPackResolution(
+      [
+        node({
+          node_id: 'auth_controller',
+          label: 'AuthController.callback',
+          framework_role: 'nest_controller',
+          snippet: [
+            'export class AuthController {',
+            '  async callback(input: LoginInput) {',
+            '    return this.authService.login(input)',
+            '  }',
+            '}',
+          ].join('\n'),
+          evidence_class: 'structural',
+        }),
+        node({
+          node_id: 'auth_service',
+          label: 'AuthService.login',
+          framework_role: 'nest_provider',
+          snippet: [
+            'export class AuthService {',
+            '  async login(input: LoginInput) {',
+            '    return this.sessionStore.create(input.userId)',
+            '  }',
+            '}',
+          ].join('\n'),
+          evidence_class: 'primary',
+        }),
+        node({
+          node_id: 'session_store',
+          label: 'SessionStore.create',
+          snippet: 'export function create() {}',
+          evidence_class: 'supporting',
+        }),
+      ],
+      {
+        resolution: 'sketch',
+        relationships: [
+          relationship('auth_controller', 'auth_service', 'calls'),
+          relationship('auth_service', 'session_store', 'calls'),
+        ],
+        task_kind: 'explain',
+      } as TaskAwareResolutionOptions,
+    )
+
+    const authController = result.nodes.find((entry) => entry.node_id === 'auth_controller')
+
+    expect(authController?.representation_type).toBe('call_chain')
+    expect(authController?.snippet).toContain('AuthController.callback')
+    expect(authController?.snippet).toContain('AuthService.login')
+    expect(authController?.snippet).toContain('SessionStore.create')
+  })
+
+  it('renders contract and changed review nodes with review-oriented representations', () => {
+    const result = applyContextPackResolution(
+      [
+        node({
+          node_id: 'login_input',
+          label: 'LoginInput',
+          source_file: '/src/auth/contracts.ts',
+          node_kind: 'interface',
+          snippet: [
+            'export interface LoginInput {',
+            '  userId: string',
+            '  callbackUrl?: string',
+            '}',
+          ].join('\n'),
+          evidence_class: 'supporting',
+        }),
+        node({
+          node_id: 'token_service',
+          label: 'TokenService.sign',
+          snippet: [
+            'export function sign(userId: string) {',
+            '  const token = signer.sign({ sub: userId })',
+            '  return cookieService.set(token)',
+            '}',
+          ].join('\n'),
+          evidence_class: 'change',
+        }),
+        node({
+          node_id: 'cookie_service',
+          label: 'CookieService.set',
+          snippet: 'export function set() {}',
+          evidence_class: 'supporting',
+        }),
+      ],
+      {
+        resolution: 'sketch',
+        relationships: [
+          relationship('token_service', 'cookie_service', 'calls'),
+        ],
+        task_kind: 'review',
+      } as TaskAwareResolutionOptions,
+    )
+
+    const loginInput = result.nodes.find((entry) => entry.node_id === 'login_input')
+    const tokenService = result.nodes.find((entry) => entry.node_id === 'token_service')
+
+    expect(loginInput?.representation_type).toBe('contract_view')
+    expect(loginInput?.snippet).toContain('interface LoginInput')
+    expect(tokenService?.representation_type).toBe('implementation_excerpt')
+    expect(tokenService?.snippet).toContain('const token = signer.sign({ sub: userId })')
   })
 })

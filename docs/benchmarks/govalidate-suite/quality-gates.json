@@ -1,0 +1,32 @@
+{
+  "docs-artifact": {
+    "prompt": "Explain how idea report is getting generated",
+    "required_labels": [
+      "IdeaReportController",
+      "GenerateIdeaReportService"
+    ],
+    "required_answer_terms": [
+      "idea report",
+      "GenerateIdeaReportService"
+    ],
+    "forbidden_labels": [
+      "IdeaReportSharePage",
+      "GenerateIdeaReportScript"
+    ],
+    "forbidden_answer_terms": [
+      "IdeaReportSharePage"
+    ],
+    "required_concepts": [
+      "runtime path stays on controller -> service flow"
+    ],
+    "answer_quality_notes": [
+      "Deterministic answer checks are necessary but not sufficient for benchmark claims."
+    ],
+    "manual_review_notes": [
+      "Confirm the answer explains how the report is generated, not just where files exist."
+    ],
+    "max_pack_tokens": 1456,
+    "max_matched_nodes": 38,
+    "max_relationships": 57
+  }
+}

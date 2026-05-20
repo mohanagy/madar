@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest'
 import type { ContextPackNode } from '../../src/contracts/context-pack.js'
 import { applyContextPackResolution } from '../../src/runtime/context-pack-resolution.js'
 
+type TaskAwareResolutionOptions = Parameters<typeof applyContextPackResolution>[1]
+
 function makeNode(snippet: string): ContextPackNode {
   return {
     node_id: 'n1',
@@ -72,5 +74,25 @@ describe('applyContextPackResolution signature mode (#132)', () => {
     const r1 = applyContextPackResolution([small], { resolution: 'signature' })
     const r2 = applyContextPackResolution([big], { resolution: 'signature' })
     expect(r2.bytes_saved).toBeGreaterThan(r1.bytes_saved)
+  })
+
+  it('reuses signature extraction when task-aware rendering falls back', () => {
+    const snippet = [
+      'export function normalizeToken(input: string): string {',
+      '  return input.trim()',
+      '}',
+    ].join('\n')
+    const result = applyContextPackResolution(
+      [makeNode(snippet)],
+      {
+        resolution: 'sketch',
+        relationships: [],
+        task_kind: 'review',
+      } as TaskAwareResolutionOptions,
+    )
+
+    expect(result.nodes[0]?.representation_type).toBe('signature')
+    expect(result.nodes[0]?.representation_reason).toBe('fallback signature')
+    expect(result.nodes[0]?.snippet).toBe('export function normalizeToken(input: string): string {')
   })
 })

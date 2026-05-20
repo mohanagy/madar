@@ -1,30 +1,42 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { tmpdir } from 'node:os'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { handleStdioRequest } from '../../src/runtime/stdio-server.js'
 
 const tempRoots: string[] = []
+const scratchRoot = join(process.cwd(), '.test-artifacts', 'stdio-slice-surface')
 let previousToolProfile: string | undefined
 
 function createGraphPath(): string {
-  const root = mkdtempSync(join(tmpdir(), 'graphify-stdio-slice-'))
+  mkdirSync(scratchRoot, { recursive: true })
+  const root = join(scratchRoot, `graphify-stdio-slice-${randomUUID()}`)
+  mkdirSync(root, { recursive: true })
   tempRoots.push(root)
   const graphifyOut = join(root, 'graphify-out')
   const graphPath = join(graphifyOut, 'graph.json')
   mkdirSync(graphifyOut, { recursive: true })
-  writeFileSync(join(root, 'auth.ts'), 'export function login() {}\n', 'utf8')
+  writeFileSync(join(root, 'routes.ts'), 'export const loginRoute = "POST /login"\n', 'utf8')
+  writeFileSync(join(root, 'controller.ts'), 'export class AuthController { login() {} }\n', 'utf8')
+  writeFileSync(join(root, 'auth.ts'), 'export class AuthService { login() {} }\n', 'utf8')
+  writeFileSync(join(root, 'session-store.ts'), 'export class SessionStore { createSession() {} }\n', 'utf8')
   writeFileSync(join(root, 'auth.spec.ts'), 'test("login", () => {})\n', 'utf8')
   writeFileSync(join(graphifyOut, 'GRAPH_REPORT.md'), '# Graph report\n', 'utf8')
   writeFileSync(graphPath, JSON.stringify({
     root_path: root,
     nodes: [
-      { id: 'auth_service', label: 'AuthService.login', source_file: join(root, 'auth.ts'), source_location: 'L1', file_type: 'code', community: 0 },
-      { id: 'auth_test', label: 'AuthService.login.spec', source_file: join(root, 'auth.spec.ts'), source_location: 'L2', file_type: 'code', community: 1 },
+      { id: 'auth_route', label: 'POST /login', source_file: join(root, 'routes.ts'), source_location: 'L1', file_type: 'code', node_kind: 'route', framework: 'express', framework_role: 'express_route', community: 0 },
+      { id: 'auth_controller', label: 'AuthController.login', source_file: join(root, 'controller.ts'), source_location: 'L1', file_type: 'code', node_kind: 'method', framework: 'nestjs', framework_role: 'nest_controller', community: 0 },
+      { id: 'auth_service', label: 'AuthService.login', source_file: join(root, 'auth.ts'), source_location: 'L1', file_type: 'code', node_kind: 'method', community: 0 },
+      { id: 'session_store', label: 'SessionStore.createSession', source_file: join(root, 'session-store.ts'), source_location: 'L1', file_type: 'code', node_kind: 'method', community: 1 },
+      { id: 'auth_test', label: 'AuthService.login.spec', source_file: join(root, 'auth.spec.ts'), source_location: 'L2', file_type: 'code', node_kind: 'function', community: 2 },
     ],
     edges: [
+      { source: 'auth_route', target: 'auth_controller', relation: 'controller_route', confidence: 'EXTRACTED', source_file: join(root, 'routes.ts') },
+      { source: 'auth_controller', target: 'auth_service', relation: 'calls', confidence: 'EXTRACTED', source_file: join(root, 'controller.ts') },
+      { source: 'auth_service', target: 'session_store', relation: 'calls', confidence: 'EXTRACTED', source_file: join(root, 'auth.ts') },
       { source: 'auth_service', target: 'auth_test', relation: 'covered_by', confidence: 'EXTRACTED', source_file: join(root, 'auth.ts') },
     ],
     hyperedges: [],
@@ -123,6 +135,29 @@ describe('stdio slice-v1 surface', () => {
 
     expect(JSON.stringify(retrieveResponse)).toContain('retrieval_strategy must be one of default, slice-v1')
     expect(JSON.stringify(contextPackResponse)).toContain('retrieval_strategy must be one of default, slice-v1')
+  })
+
+  it('includes execution_slice in runtime-generation context_pack responses', async () => {
+    const graphPath = createGraphPath()
+
+    const contextPackResponse = await Promise.resolve(handleStdioRequest(graphPath, {
+      id: 4,
+      method: 'tools/call',
+      params: {
+        name: 'context_pack',
+        arguments: {
+          prompt: 'Trace how `POST /login` reaches persistence in the backend runtime pipeline',
+          budget: 1000,
+          task: 'explain',
+          retrieval_strategy: 'slice-v1',
+          verbose: true,
+        },
+      },
+    }))
+
+    const contextPackText = ((contextPackResponse as { result?: { content?: Array<{ text: string }> } }).result?.content ?? [])[0]?.text ?? ''
+
+    expect(contextPackText).toContain('"execution_slice"')
   })
 
   it('rejects retrieval_strategy for review context packs instead of ignoring it', async () => {

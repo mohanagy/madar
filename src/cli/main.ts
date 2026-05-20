@@ -34,6 +34,7 @@ import { pushGraphToNeo4j } from '../infrastructure/neo4j.js'
 import { watch as watchGraph } from '../infrastructure/watch.js'
 import { serveGraph } from '../runtime/http-server.js'
 import { diffGraphs } from '../runtime/diff.js'
+import { buildGraphSummary, type GraphSummary } from '../runtime/graph-summary.js'
 import { serveGraphStdio } from '../runtime/stdio-server.js'
 import { getNeighbors, getNode, loadGraph, queryGraph, shortestPath } from '../runtime/serve.js'
 import { formatTimeTravelResult } from '../runtime/time-travel.js'
@@ -57,6 +58,7 @@ import {
   parseQueryArgs,
   parseReviewCompareArgs,
   parseSaveResultArgs,
+  parseSummaryArgs,
   parseServeArgs,
   parseTimeTravelArgs,
   type PackCliOptions,
@@ -124,6 +126,7 @@ export interface CliDependencies {
   runContextPrompt: (context: ContextPromptCommandContext) => Promise<string | void> | string | void
   runDoctor: (graphPath: string) => string
   runStatus: (graphPath: string) => string
+  runGraphSummary?: (graphPath: string) => Promise<GraphSummary> | GraphSummary
   confirm: (message: string) => Promise<boolean>
   printBenchmark: (result: BenchmarkResult) => void
   installHooks: typeof installHooks
@@ -205,6 +208,7 @@ const DEFAULT_DEPENDENCIES: CliDependencies = {
   },
   runDoctor: (graphPath) => runDoctorCommand({ graphPath }),
   runStatus: (graphPath) => runStatusCommand({ graphPath }),
+  runGraphSummary: (graphPath) => buildGraphSummary(loadGraph(graphPath)),
   confirm: async (message) => {
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
       throw new UsageError('error: compare requires --yes in non-interactive mode.')
@@ -326,6 +330,7 @@ export function formatHelp(binaryName = 'graphify-ts'): string {
     '    --http               explicit alias for HTTP transport',
     '    --stdio              serve graph query methods over stdio (JSON lines)',
     '    --mcp                alias for --stdio for installer/runtime parity',
+    '  summary [graph.json]  print a compact deterministic graph summary as JSON',
     '  query "<question>"     traverse graph.json for a question',
     '    --dfs                 use depth-first instead of breadth-first',
     '    --budget N            cap output at N tokens (default 2000)',
@@ -371,7 +376,7 @@ export function formatHelp(binaryName = 'graphify-ts'): string {
     '    --exec TEMPLATE       required command template; supports {prompt_file}, {question}, {mode}, and {output_file}',
     '    --questions PATH      load questions from a JSON file instead of a positional question',
     '    --output-dir DIR      compare output directory (default graphify-out/compare)',
-    '    --baseline-mode MODE  full | bounded | native_agent (default full; native_agent runs --exec twice, uses Anthropic JSON usage when available, and otherwise saves answer-only artifacts)',
+    '    --baseline-mode MODE  full | bounded | pack_only | native_agent (default full; pack_only compares one bounded raw-context prompt against one compiled graphify pack; native_agent runs --exec twice, uses Anthropic JSON usage when available, and otherwise saves answer-only artifacts)',
     '    --yes                 skip confirmation before running the paid prompt comparison',
     '    --limit N             cap processed prompts/questions for the comparison run',
     '  review-compare [graph.json] compare full vs compact pr_impact review prompts on the current git diff',
@@ -623,6 +628,13 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
     if (command === 'status') {
       const options = parseDoctorArgs(args, 'status')
       io.log(dependencies.runStatus(options.graphPath))
+      return 0
+    }
+
+    if (command === 'summary') {
+      const options = parseSummaryArgs(args)
+      const runGraphSummary = dependencies.runGraphSummary ?? ((graphPath: string) => buildGraphSummary(dependencies.loadGraph(graphPath)))
+      io.log(JSON.stringify(await runGraphSummary(options.graphPath), null, 2))
       return 0
     }
 

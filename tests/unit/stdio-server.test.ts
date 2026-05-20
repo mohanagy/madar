@@ -2060,3 +2060,56 @@ describe('stdio runtime', () => {
     }
   })
 })
+
+describe('graph_summary MCP tool', () => {
+  it('is listed by tools/list in the default (core) tool profile', async () => {
+    const root = createGraphFixtureRoot()
+    try {
+      const graphPath = join(root, 'graph.json')
+      const response = await Promise.resolve(handleStdioRequest(graphPath, { id: 200, method: 'tools/list' }))
+      expect(response).not.toBeNull()
+      const toolNames = (response as { result?: { tools: Array<{ name: string }> } }).result?.tools.map((tool) => tool.name)
+      expect(toolNames).toContain('graph_summary')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('tools/call graph_summary returns structured JSON text payload', async () => {
+    const root = createGraphFixtureRoot()
+    try {
+      const graphPath = join(root, 'graph.json')
+      const response = await Promise.resolve(
+        handleStdioRequest(graphPath, {
+          id: 201,
+          method: 'tools/call',
+          params: { name: 'graph_summary', arguments: {} },
+        }),
+      )
+      expect(response).not.toBeNull()
+      const error = (response as { error?: unknown }).error
+      expect(error).toBeUndefined()
+
+      const text = (response as { result: { content: Array<{ type: string; text: string }> } }).result.content[0]?.text
+      expect(typeof text).toBe('string')
+
+       const payload = JSON.parse(text!) as Record<string, unknown>
+       expect(typeof payload['node_count']).toBe('number')
+       expect(typeof payload['edge_count']).toBe('number')
+       expect(typeof payload['file_count']).toBe('number')
+       expect(typeof payload['community_count']).toBe('number')
+        expect(Array.isArray(payload['top_modules'])).toBe(true)
+        expect(Array.isArray(payload['entrypoints'])).toBe(true)
+        expect(Array.isArray(payload['frameworks'])).toBe(true)
+        expect(Array.isArray(payload['runtime_paths'])).toBe(true)
+        const sourceDomains = payload['source_domains']
+        expect(sourceDomains).not.toBeNull()
+        expect(sourceDomains).not.toBeUndefined()
+        expect(typeof sourceDomains).toBe('object')
+        expect(Array.isArray(sourceDomains)).toBe(false)
+        expect(Object.prototype.toString.call(sourceDomains)).toBe('[object Object]')
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+})

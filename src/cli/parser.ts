@@ -90,7 +90,7 @@ export interface CompareCliOptions {
   execTemplate: string
   questionsPath: string | null
   outputDir: string
-  baselineMode: 'full' | 'bounded' | 'native_agent'
+  baselineMode: 'full' | 'bounded' | 'pack_only' | 'native_agent'
   yes: boolean
   limit: number | null
 }
@@ -156,6 +156,10 @@ export interface ServeCliOptions {
 }
 
 export interface DoctorCliOptions {
+  graphPath: string
+}
+
+export interface SummaryCliOptions {
   graphPath: string
 }
 
@@ -263,12 +267,12 @@ function parseQueryRankBy(value: string): QueryRankBy {
   throw new UsageError('error: --rank-by must be one of relevance, degree')
 }
 
-function parseCompareBaselineMode(value: string): 'full' | 'bounded' | 'native_agent' {
+function parseCompareBaselineMode(value: string): 'full' | 'bounded' | 'pack_only' | 'native_agent' {
   const normalized = value.trim().toLowerCase()
-  if (normalized === 'full' || normalized === 'bounded' || normalized === 'native_agent') {
+  if (normalized === 'full' || normalized === 'bounded' || normalized === 'pack_only' || normalized === 'native_agent') {
     return normalized
   }
-  throw new UsageError('error: --baseline-mode must be one of full, bounded, native_agent')
+  throw new UsageError('error: --baseline-mode must be one of full, bounded, pack_only, native_agent')
 }
 
 function parseTimeTravelView(value: string): 'summary' | 'risk' | 'drift' | 'timeline' {
@@ -901,7 +905,7 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
   let execTemplate = ''
   let questionsPath: string | null = null
   let outputDir = 'graphify-out/compare'
-  let baselineMode: 'full' | 'bounded' | 'native_agent' = 'full'
+  let baselineMode: 'full' | 'bounded' | 'pack_only' | 'native_agent' = 'full'
   let yes = false
   let limit: number | null = null
 
@@ -1556,6 +1560,42 @@ export function parseDoctorArgs(args: string[], commandName: 'doctor' | 'status'
     }
 
     throw new UsageError(`error: unknown option for ${commandName}: ${argument}`)
+  }
+
+  return { graphPath }
+}
+
+export function parseSummaryArgs(args: string[]): SummaryCliOptions {
+  const usage = 'Usage: graphify-ts summary [graph.json]'
+  let graphPath = 'graphify-out/graph.json'
+
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index]
+    if (!argument) {
+      continue
+    }
+
+    if (argument === '--graph') {
+      graphPath = requireOptionValue('--graph', args[index + 1])
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--graph=')) {
+      const [, value] = argument.split('=', 2)
+      graphPath = requireOptionValue('--graph', value)
+      continue
+    }
+
+    if (argument.startsWith('--')) {
+      throw new UsageError(`error: unknown option for summary: ${argument}`)
+    }
+
+    if (graphPath !== 'graphify-out/graph.json') {
+      throw new UsageError(usage)
+    }
+
+    graphPath = argument
   }
 
   return { graphPath }

@@ -51,10 +51,10 @@ function withProfile(profile: 'core' | 'full' | undefined, fn: () => void | Prom
 
 describe('MCP tool profile', () => {
   describe('activeMcpTools', () => {
-    it('returns exactly the 6 core tools when profile is "core"', () => {
+    it('returns exactly the 7 core tools when profile is "core"', () => {
       const tools = activeMcpTools('core')
       expect(tools.map((tool) => tool.name).sort()).toEqual([...CORE_TOOL_NAMES].sort())
-      expect(tools).toHaveLength(6)
+      expect(tools).toHaveLength(7)
     })
 
     it('returns the full MCP_TOOLS list when profile is "full"', () => {
@@ -145,15 +145,15 @@ describe('MCP tool profile', () => {
   })
 
   describe('core profile composition', () => {
-    it('contains exactly retrieve, impact, call_chain, community_overview, pr_impact, graph_stats', () => {
+    it('contains exactly retrieve, impact, call_chain, community_overview, pr_impact, graph_stats, graph_summary', () => {
       expect([...CORE_TOOL_NAMES].sort()).toEqual(
-        ['retrieve', 'impact', 'call_chain', 'community_overview', 'pr_impact', 'graph_stats'].sort(),
+        ['retrieve', 'impact', 'call_chain', 'community_overview', 'pr_impact', 'graph_stats', 'graph_summary'].sort(),
       )
     })
   })
 
   describe('stdio-server tool profile gating', () => {
-    it('tools/list returns exactly the 6 core tools when GRAPHIFY_TOOL_PROFILE=core', async () => {
+    it('tools/list returns exactly the 7 core tools when GRAPHIFY_TOOL_PROFILE=core', async () => {
       const root = createMinimalGraphRoot()
       try {
         await withProfile('core', async () => {

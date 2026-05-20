@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 
 import { strToU8, zipSync } from 'fflate'
+import { vi } from 'vitest'
 
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
 import {
@@ -17,9 +18,11 @@ import {
 import { parsePromptRunnerOutput } from '../../src/infrastructure/prompt-runner.js'
 import { saveManifest } from '../../src/pipeline/manifest.js'
 import { toJson } from '../../src/pipeline/export.js'
+import * as retrieveRuntime from '../../src/runtime/retrieve.js'
 import { retrieveContext } from '../../src/runtime/retrieve.js'
 import { estimateQueryTokens } from '../../src/runtime/serve.js'
 import { MAX_TEXT_BYTES } from '../../src/shared/security.js'
+import { sanitizeShareSafeText } from '../../src/shared/share-safe-artifacts.js'
 
 const PROJECT_FIXTURE_ROOT = resolve('graphify-out', 'test-runtime', 'compare-runtime-project')
 const GRAPH_FIXTURE_ROOT = join(PROJECT_FIXTURE_ROOT, 'graphify-out')
@@ -258,6 +261,44 @@ function writeManifestFixture(
     manifestPath,
   )
   return manifestPath
+}
+
+function makeClaudeStructuredCompareStdout(options: {
+  result: string
+  usage?: {
+    input_tokens: number
+    output_tokens: number
+    cache_creation_input_tokens?: number
+    cache_read_input_tokens?: number
+  }
+  assistant_turns?: Array<{
+    turn: number
+    content: Array<Record<string, unknown>>
+  }>
+}): string {
+  return JSON.stringify({
+    type: 'result',
+    subtype: 'success',
+    result: options.result,
+    ...(options.usage
+      ? {
+          usage: {
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+            ...options.usage,
+          },
+        }
+      : {}),
+    ...(options.assistant_turns
+      ? {
+          messages: options.assistant_turns.map((turn) => ({
+            role: 'assistant',
+            turn: turn.turn,
+            content: turn.content,
+          })),
+        }
+      : {}),
+  })
 }
 
 beforeEach(() => {
@@ -544,6 +585,168 @@ describe('compare runtime', () => {
     expect(estimateQueryTokens(boundedPack.prompt)).toBeLessThanOrEqual(120)
   })
 
+  it('builds pack_only compare artifacts with a bounded baseline and persisted pack metadata', () => {
+    const graph = makeGraph()
+    writeProjectFiles()
+    const graphPath = writeGraphFixture(graph)
+
+    const result = generateCompareArtifacts({
+      graphPath,
+      question: 'how does login create a session',
+      outputDir: COMPARE_OUTPUT_ROOT,
+      execTemplate: 'runner --prompt {prompt_file} --question {question} --mode {mode} --out {output_file}',
+      baselineMode: 'pack_only',
+      now: new Date('2026-04-24T19:30:00.000Z'),
+    })
+
+    const report = result.reports[0]!
+    const baselinePrompt = readFileSync(report.paths.baseline_prompt, 'utf8')
+    const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
+    const savedPack = savedReport.pack as Record<string, unknown>
+
+    expect(report.baseline_mode).toBe('pack_only')
+    expect(baselinePrompt).toContain('[bounded baseline excerpt]')
+    expect(report.baseline_prompt_tokens).toBeLessThanOrEqual(report.graphify_prompt_tokens)
+    expect(savedReport.baseline_mode).toBe('pack_only')
+    expect(savedPack.token_count).toEqual(expect.any(Number))
+    expect(savedPack.matched_nodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: 'authenticateUser',
+        }),
+      ]),
+    )
+    expect(savedPack.relationships).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          relation: 'calls',
+        }),
+      ]),
+    )
+    expect(savedPack.coverage).toEqual(
+      expect.objectContaining({
+        entries: expect.any(Array),
+      }),
+    )
+    expect(savedPack.selection_diagnostics).toEqual(
+      expect.objectContaining({
+        selection_strategy: 'value-per-token',
+      }),
+    )
+  })
+
+  it('preserves repo-relative pack_only source_file paths while sanitizing absolute ones in share-safe compare reports', () => {
+    const graph = makeGraph()
+    writeProjectFiles()
+    const graphPath = writeGraphFixture(graph)
+    const outsideSourcePath = resolve(PROJECT_FIXTURE_ROOT, '..', '..', '..', 'vault', 'private', 'auth.ts')
+    const originalRetrieveContext = retrieveRuntime.retrieveContext
+    const retrieveSpy = vi.spyOn(retrieveRuntime, 'retrieveContext').mockImplementation((inputGraph, options) => ({
+      ...originalRetrieveContext(inputGraph, options),
+      matched_nodes: originalRetrieveContext(inputGraph, options).matched_nodes.map((node) =>
+        node.label === 'authenticateUser' ? { ...node, source_file: outsideSourcePath } : node,
+      ),
+    }))
+
+    try {
+      const result = generateCompareArtifacts({
+        graphPath,
+        question: 'how does login create a session',
+        corpusText: makeCorpusText(),
+        outputDir: COMPARE_OUTPUT_ROOT,
+        execTemplate: 'runner --prompt {prompt_file} --question {question} --mode {mode} --out {output_file}',
+        baselineMode: 'pack_only',
+        now: new Date('2026-04-24T19:30:00.000Z'),
+      })
+
+      const report = result.reports[0]!
+      const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
+      const shareSafeReport = JSON.parse(readFileSync(report.paths.share_safe_report, 'utf8')) as Record<string, unknown>
+      const savedPack = savedReport.pack as { matched_nodes: Array<{ label: string; source_file: string }> }
+      const shareSafePack = shareSafeReport.pack as { matched_nodes: Array<{ label: string; source_file: string }> }
+
+      expect(savedPack.matched_nodes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            label: 'authenticateUser',
+            source_file: outsideSourcePath,
+          }),
+          expect.objectContaining({
+            label: 'SessionManager',
+            source_file: 'src/session.ts',
+          }),
+        ]),
+      )
+      expect(shareSafePack.matched_nodes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            label: 'authenticateUser',
+            source_file: 'auth.ts',
+          }),
+          expect.objectContaining({
+            label: 'SessionManager',
+            source_file: 'src/session.ts',
+          }),
+        ]),
+      )
+      expect(JSON.stringify(shareSafeReport)).not.toContain(outsideSourcePath)
+    } finally {
+      retrieveSpy.mockRestore()
+    }
+  })
+
+  it('sanitizes outside-root relative traversal source_file paths in share-safe compare reports', () => {
+    const graph = makeGraph()
+    writeProjectFiles()
+    const graphPath = writeGraphFixture(graph)
+    const outsideTraversalPath = '../../vault/private/auth.ts'
+    const originalRetrieveContext = retrieveRuntime.retrieveContext
+    const retrieveSpy = vi.spyOn(retrieveRuntime, 'retrieveContext').mockImplementation((inputGraph, options) => ({
+      ...originalRetrieveContext(inputGraph, options),
+      matched_nodes: originalRetrieveContext(inputGraph, options).matched_nodes.map((node) =>
+        node.label === 'authenticateUser' ? { ...node, source_file: outsideTraversalPath } : node,
+      ),
+    }))
+
+    try {
+      const result = generateCompareArtifacts({
+        graphPath,
+        question: 'how does login create a session',
+        corpusText: makeCorpusText(),
+        outputDir: COMPARE_OUTPUT_ROOT,
+        execTemplate: 'runner --prompt {prompt_file} --question {question} --mode {mode} --out {output_file}',
+        baselineMode: 'pack_only',
+        now: new Date('2026-04-24T19:30:00.000Z'),
+      })
+
+      const report = result.reports[0]!
+      const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
+      const shareSafeReport = JSON.parse(readFileSync(report.paths.share_safe_report, 'utf8')) as Record<string, unknown>
+      const savedPack = savedReport.pack as { matched_nodes: Array<{ label: string; source_file: string }> }
+      const shareSafePack = shareSafeReport.pack as { matched_nodes: Array<{ label: string; source_file: string }> }
+
+      expect(savedPack.matched_nodes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            label: 'authenticateUser',
+            source_file: outsideTraversalPath,
+          }),
+        ]),
+      )
+      expect(shareSafePack.matched_nodes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            label: 'authenticateUser',
+            source_file: 'auth.ts',
+          }),
+        ]),
+      )
+      expect(JSON.stringify(shareSafeReport)).not.toContain(outsideTraversalPath)
+    } finally {
+      retrieveSpy.mockRestore()
+    }
+  })
+
   it('rejects bounded baseline budgets below the prompt floor', () => {
     const graph = makeGraph()
     const corpusText = makeCorpusText()
@@ -645,10 +848,14 @@ describe('compare runtime', () => {
     expect(existsSync(report!.paths.baseline_prompt)).toBe(true)
     expect(existsSync(report!.paths.graphify_prompt)).toBe(true)
     expect(existsSync(report!.paths.report)).toBe(true)
+    expect(report?.paths.share_safe_report).toBe(join(report!.paths.output_dir, 'report.share-safe.json'))
+    expect(existsSync(report!.paths.share_safe_report)).toBe(true)
 
     const baselinePrompt = readFileSync(report!.paths.baseline_prompt, 'utf8')
     const graphifyPrompt = readFileSync(report!.paths.graphify_prompt, 'utf8')
     const savedReport = JSON.parse(readFileSync(report!.paths.report, 'utf8')) as Record<string, unknown>
+    const shareSafePath = join(report!.paths.output_dir, 'report.share-safe.json')
+    const shareSafeReport = JSON.parse(readFileSync(shareSafePath, 'utf8')) as Record<string, unknown>
 
     expect(baselinePrompt).toContain('Question:\nhow does login create a session')
     expect(baselinePrompt).toContain('return new SessionManager().createSession(credentials.userId)')
@@ -679,11 +886,23 @@ describe('compare runtime', () => {
           baseline_prompt: join('graphify-out', 'compare', 'test-runtime', '2026-04-24T19-30-00', 'baseline-prompt.txt'),
           graphify_prompt: join('graphify-out', 'compare', 'test-runtime', '2026-04-24T19-30-00', 'graphify-prompt.txt'),
           report: join('graphify-out', 'compare', 'test-runtime', '2026-04-24T19-30-00', 'report.json'),
+          share_safe_report: join('graphify-out', 'compare', 'test-runtime', '2026-04-24T19-30-00', 'report.share-safe.json'),
         },
+      }),
+    )
+    expect(shareSafeReport).toEqual(
+      expect.objectContaining({
+        graph_path: '<project-root>/graphify-out/graph.json',
+        paths: expect.objectContaining({
+          output_dir: '<artifact-root>',
+          report: '<artifact-root>/report.json',
+          share_safe_report: '<artifact-root>/report.share-safe.json',
+        }),
       }),
     )
     expect(JSON.stringify(savedReport)).not.toContain('super-secret')
     expect(JSON.stringify(savedReport)).not.toContain(execTemplate)
+    expect(JSON.stringify(shareSafeReport)).not.toContain(report!.paths.output_dir)
   })
 
   it('runs compare prompts sequentially and saves answer artifacts', async () => {
@@ -772,6 +991,387 @@ describe('compare runtime', () => {
     )
   })
 
+  it('persists compact graphify trace metadata in report.json without raw tool payload content', async () => {
+    const graph = makeGraph()
+    writeProjectFiles()
+    const graphPath = writeGraphFixture(graph)
+    const privateQuestionPayload = 'PRIVATE_QUESTION_PAYLOAD'
+    const privateToolArgument = 'PRIVATE_TOOL_ARGUMENT'
+
+    const result = await executeCompareRuns(
+      {
+        graphPath,
+        question: 'how does login create a session',
+        outputDir: COMPARE_OUTPUT_ROOT,
+        execTemplate: 'runner --prompt {prompt_file} --mode {mode} --out {output_file}',
+        baselineMode: 'full',
+        now: new Date('2026-04-24T19:30:00.000Z'),
+      },
+      {
+        runner: async (execution) => ({
+          exitCode: 0,
+          stdout:
+            execution.mode === 'baseline'
+              ? makeClaudeStructuredCompareStdout({
+                  result: 'baseline answer\n',
+                  usage: {
+                    input_tokens: 1200,
+                    output_tokens: 90,
+                    cache_creation_input_tokens: 100,
+                    cache_read_input_tokens: 20,
+                  },
+                })
+              : makeClaudeStructuredCompareStdout({
+                  result: 'graphify answer\n',
+                  usage: {
+                    input_tokens: 400,
+                    output_tokens: 70,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 10,
+                  },
+                  assistant_turns: [
+                    {
+                      turn: 1,
+                      content: [
+                        { type: 'text', text: 'Let me inspect the graph.' },
+                        {
+                          type: 'tool_use',
+                          name: 'retrieve',
+                          input: { question: privateQuestionPayload },
+                        },
+                        {
+                          type: 'tool_use',
+                          name: 'mcp__graphify-ts__impact',
+                          input: { label: 'SessionManager', note: privateToolArgument },
+                        },
+                      ],
+                    },
+                    {
+                      turn: 2,
+                      content: [
+                        {
+                          type: 'tool_use',
+                          name: 'retrieve',
+                          input: { question: `${privateQuestionPayload}_FOLLOW_UP` },
+                        },
+                      ],
+                    },
+                  ],
+                }),
+          stderr: '',
+          elapsedMs: execution.mode === 'baseline' ? 11 : 17,
+        }),
+      },
+    )
+
+    const report = result.reports[0]!
+    const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
+    const graphifyTrace = savedReport.graphify_trace as Record<string, unknown> | undefined
+    const graphifyTraceJson = JSON.stringify(graphifyTrace ?? null)
+
+    expect(graphifyTrace).toEqual(
+      expect.objectContaining({
+        tool_call_count: 3,
+        tool_calls_by_name: {
+          retrieve: 2,
+          'mcp__graphify-ts__impact': 1,
+        },
+        per_turn: [
+          expect.objectContaining({
+            turn: 1,
+            tool_call_count: 2,
+            tools: ['retrieve', 'mcp__graphify-ts__impact'],
+          }),
+          expect.objectContaining({
+            turn: 2,
+            tool_call_count: 1,
+            tools: ['retrieve'],
+          }),
+        ],
+      }),
+    )
+    expect(graphifyTraceJson).not.toContain(privateQuestionPayload)
+    expect(graphifyTraceJson).not.toContain(privateToolArgument)
+  })
+
+  it('sorts graphify_trace per_turn by numeric turn when structured messages arrive out of order', async () => {
+    const graph = makeGraph()
+    writeProjectFiles()
+    const graphPath = writeGraphFixture(graph)
+
+    const result = await executeCompareRuns(
+      {
+        graphPath,
+        question: 'how does login create a session',
+        outputDir: COMPARE_OUTPUT_ROOT,
+        execTemplate: 'runner --prompt {prompt_file} --mode {mode} --out {output_file}',
+        baselineMode: 'full',
+        now: new Date('2026-04-24T19:30:00.000Z'),
+      },
+      {
+        runner: async (execution) => ({
+          exitCode: 0,
+          stdout:
+            execution.mode === 'baseline'
+              ? makeClaudeStructuredCompareStdout({
+                  result: 'baseline answer\n',
+                  usage: {
+                    input_tokens: 1200,
+                    output_tokens: 90,
+                    cache_creation_input_tokens: 100,
+                    cache_read_input_tokens: 20,
+                  },
+                })
+              : makeClaudeStructuredCompareStdout({
+                  result: 'graphify answer\n',
+                  usage: {
+                    input_tokens: 400,
+                    output_tokens: 70,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 10,
+                  },
+                  assistant_turns: [
+                    {
+                      turn: 2,
+                      content: [{ type: 'tool_use', name: 'retrieve', input: { question: 'follow-up' } }],
+                    },
+                    {
+                      turn: 1,
+                      content: [{ type: 'tool_use', name: 'mcp__graphify-ts__impact', input: { label: 'SessionManager' } }],
+                    },
+                  ],
+                }),
+          stderr: '',
+          elapsedMs: execution.mode === 'baseline' ? 11 : 17,
+        }),
+      },
+    )
+
+    const report = result.reports[0]!
+    const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
+    const graphifyTrace = savedReport.graphify_trace as Record<string, unknown> | undefined
+
+    expect(graphifyTrace).toEqual(
+      expect.objectContaining({
+        per_turn: [
+          expect.objectContaining({
+            turn: 1,
+            tool_call_count: 1,
+            tools: ['mcp__graphify-ts__impact'],
+          }),
+          expect.objectContaining({
+            turn: 2,
+            tool_call_count: 1,
+            tools: ['retrieve'],
+          }),
+        ],
+      }),
+    )
+  })
+
+  it('falls back to sequential turn numbers when structured messages use fractional turns', async () => {
+    const graph = makeGraph()
+    writeProjectFiles()
+    const graphPath = writeGraphFixture(graph)
+
+    const result = await executeCompareRuns(
+      {
+        graphPath,
+        question: 'how does login create a session',
+        outputDir: COMPARE_OUTPUT_ROOT,
+        execTemplate: 'runner --prompt {prompt_file} --mode {mode} --out {output_file}',
+        baselineMode: 'full',
+        now: new Date('2026-04-24T19:30:00.000Z'),
+      },
+      {
+        runner: async (execution) => ({
+          exitCode: 0,
+          stdout:
+            execution.mode === 'baseline'
+              ? makeClaudeStructuredCompareStdout({
+                  result: 'baseline answer\n',
+                  usage: {
+                    input_tokens: 1200,
+                    output_tokens: 90,
+                    cache_creation_input_tokens: 100,
+                    cache_read_input_tokens: 20,
+                  },
+                })
+              : makeClaudeStructuredCompareStdout({
+                  result: 'graphify answer\n',
+                  usage: {
+                    input_tokens: 400,
+                    output_tokens: 70,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 10,
+                  },
+                  assistant_turns: [
+                    {
+                      turn: 1,
+                      content: [{ type: 'tool_use', name: 'retrieve', input: { question: 'initial lookup' } }],
+                    },
+                    {
+                      turn: 1.9,
+                      content: [{ type: 'tool_use', name: 'mcp__graphify-ts__impact', input: { label: 'SessionManager' } }],
+                    },
+                  ],
+                }),
+          stderr: '',
+          elapsedMs: execution.mode === 'baseline' ? 11 : 17,
+        }),
+      },
+    )
+
+    const report = result.reports[0]!
+    const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
+    const graphifyTrace = savedReport.graphify_trace as Record<string, unknown> | undefined
+
+    expect(graphifyTrace).toEqual(
+      expect.objectContaining({
+        per_turn: [
+          expect.objectContaining({
+            turn: 1,
+            tool_call_count: 1,
+            tools: ['retrieve'],
+          }),
+          expect.objectContaining({
+            turn: 2,
+            tool_call_count: 1,
+            tools: ['mcp__graphify-ts__impact'],
+          }),
+        ],
+      }),
+    )
+  })
+
+  it('preserves compact graphify trace metadata when graphify exits non-zero with structured stdout', async () => {
+    const graph = makeGraph()
+    writeProjectFiles()
+    const graphPath = writeGraphFixture(graph)
+    const privateQuestionPayload = 'PRIVATE_FAILED_QUESTION_PAYLOAD'
+    const privateToolArgument = 'PRIVATE_FAILED_TOOL_ARGUMENT'
+
+    const result = await executeCompareRuns(
+      {
+        graphPath,
+        question: 'how does login create a session',
+        outputDir: COMPARE_OUTPUT_ROOT,
+        execTemplate: 'runner --prompt {prompt_file} --mode {mode} --out {output_file}',
+        baselineMode: 'full',
+        now: new Date('2026-04-24T19:30:00.000Z'),
+      },
+      {
+        runner: async (execution) => ({
+          exitCode: execution.mode === 'graphify' ? 23 : 0,
+          stdout:
+            execution.mode === 'baseline'
+              ? makeClaudeStructuredCompareStdout({
+                  result: 'baseline answer\n',
+                  usage: {
+                    input_tokens: 1200,
+                    output_tokens: 90,
+                    cache_creation_input_tokens: 100,
+                    cache_read_input_tokens: 20,
+                  },
+                })
+              : makeClaudeStructuredCompareStdout({
+                  result: 'graphify partial output\n',
+                  usage: {
+                    input_tokens: 400,
+                    output_tokens: 70,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 10,
+                  },
+                  assistant_turns: [
+                    {
+                      turn: 1,
+                      content: [
+                        {
+                          type: 'tool_use',
+                          name: 'retrieve',
+                          input: { question: privateQuestionPayload },
+                        },
+                        {
+                          type: 'tool_use',
+                          name: 'mcp__graphify-ts__impact',
+                          input: { label: 'SessionManager', note: privateToolArgument },
+                        },
+                      ],
+                    },
+                  ],
+                }),
+          stderr: execution.mode === 'graphify' ? 'runner exited with a failure\n' : '',
+          elapsedMs: execution.mode === 'baseline' ? 11 : 17,
+        }),
+      },
+    )
+
+    const report = result.reports[0]!
+    const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
+    const graphifyTrace = savedReport.graphify_trace as Record<string, unknown> | undefined
+    const graphifyTraceJson = JSON.stringify(graphifyTrace ?? null)
+
+    expect(report.status.graphify).toBe('failed')
+    expect(report.usage.graphify).toBeNull()
+    expect(readFileSync(report.answer_paths.graphify, 'utf8')).toBe('graphify partial output\n')
+    expect(graphifyTrace).toEqual(
+      expect.objectContaining({
+        tool_call_count: 2,
+        tool_calls_by_name: {
+          'mcp__graphify-ts__impact': 1,
+          retrieve: 1,
+        },
+        per_turn: [
+          expect.objectContaining({
+            turn: 1,
+            tool_call_count: 2,
+            tools: ['retrieve', 'mcp__graphify-ts__impact'],
+          }),
+        ],
+      }),
+    )
+    expect(graphifyTraceJson).not.toContain(privateQuestionPayload)
+    expect(graphifyTraceJson).not.toContain(privateToolArgument)
+  })
+
+  it('keeps graphify_trace absent when compare stdout does not expose trace data', async () => {
+    const graph = makeGraph()
+    writeProjectFiles()
+    const graphPath = writeGraphFixture(graph)
+
+    const result = await executeCompareRuns(
+      {
+        graphPath,
+        question: 'how does login create a session',
+        outputDir: COMPARE_OUTPUT_ROOT,
+        execTemplate: 'runner --prompt {prompt_file} --mode {mode} --out {output_file}',
+        baselineMode: 'full',
+        now: new Date('2026-04-24T19:30:00.000Z'),
+      },
+      {
+        runner: async (execution) => ({
+          exitCode: 0,
+          stdout: makeClaudeStructuredCompareStdout({
+            result: `${execution.mode} answer\n`,
+            usage: {
+              input_tokens: execution.mode === 'baseline' ? 1200 : 400,
+              output_tokens: execution.mode === 'baseline' ? 90 : 70,
+              cache_creation_input_tokens: execution.mode === 'baseline' ? 100 : 0,
+              cache_read_input_tokens: execution.mode === 'baseline' ? 20 : 10,
+            },
+          }),
+          stderr: '',
+          elapsedMs: execution.mode === 'baseline' ? 11 : 17,
+        }),
+      },
+    )
+
+    const report = result.reports[0]!
+    const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
+
+    expect(savedReport).not.toHaveProperty('graphify_trace')
+  })
+
   it('preserves Claude structured usage parsing through compare execution', async () => {
     const graph = makeGraph()
     writeProjectFiles()
@@ -789,25 +1389,41 @@ describe('compare runtime', () => {
       {
         runner: async (execution) => ({
           exitCode: 0,
-          stdout: JSON.stringify({
-            type: 'result',
-            subtype: 'success',
-            result: `${execution.mode} answer\n`,
-            usage:
-              execution.mode === 'baseline'
-                ? {
+          stdout:
+            execution.mode === 'baseline'
+              ? JSON.stringify({
+                  type: 'result',
+                  subtype: 'success',
+                  result: `${execution.mode} answer\n`,
+                  usage: {
                     input_tokens: 1200,
                     output_tokens: 90,
                     cache_creation_input_tokens: 100,
                     cache_read_input_tokens: 20,
-                  }
-                : {
+                  },
+                })
+              : makeClaudeStructuredCompareStdout({
+                  result: 'graphify answer\n',
+                  usage: {
                     input_tokens: 400,
                     output_tokens: 70,
                     cache_creation_input_tokens: 0,
                     cache_read_input_tokens: 10,
                   },
-          }),
+                  assistant_turns: [
+                    {
+                      turn: 1,
+                      content: [
+                        { type: 'tool_use', name: 'retrieve', input: { question: 'login session flow' } },
+                        { type: 'tool_use', name: 'mcp__graphify-ts__impact', input: { label: 'SessionManager' } },
+                      ],
+                    },
+                    {
+                      turn: 2,
+                      content: [{ type: 'tool_use', name: 'retrieve', input: { question: 'session follow-up' } }],
+                    },
+                  ],
+                }),
           stderr: '',
           elapsedMs: execution.mode === 'baseline' ? 11 : 17,
         }),
@@ -871,6 +1487,9 @@ describe('compare runtime', () => {
     expect(formatCompareSummary(result)).toContain('Effective input tokens (cache-adjusted): baseline 1300 · graphify 400')
     expect(formatCompareSummary(result)).toContain('Total tokens (Claude reported): baseline 1410 · graphify 480')
     expect(formatCompareSummary(result)).toContain('Provider/runtime proof: Claude reported input, cache, and total tokens for 2/2 prompt runs')
+    expect(formatCompareSummary(result)).toContain(
+      'Graphify trace: 3 tool calls across 2 turns · top tools: retrieve×2, mcp__graphify-ts__impact×1',
+    )
   })
 
   it('does not write structured stdout JSON into answer artifacts when usage is present without answer text', async () => {
@@ -1562,6 +2181,7 @@ describe('compare runtime', () => {
     ).resolves.toContain('no Anthropic usage block')
 
     const report = JSON.parse(readFileSync(join(COMPARE_OUTPUT_ROOT, outputTimestamp, 'report.json'), 'utf8')) as Record<string, unknown>
+    const shareSafeReport = JSON.parse(readFileSync(join(COMPARE_OUTPUT_ROOT, outputTimestamp, 'report.share-safe.json'), 'utf8')) as Record<string, unknown>
     expect(report).toEqual(
       expect.objectContaining({
         baseline: expect.objectContaining({
@@ -1575,6 +2195,28 @@ describe('compare runtime', () => {
         reductions: null,
       }),
     )
+    expect(shareSafeReport).toEqual(
+      expect.objectContaining({
+        graph_path: '<project-root>/graphify-out/graph.json',
+        paths: expect.objectContaining({
+          output_dir: '<artifact-root>',
+          report: '<artifact-root>/report.json',
+          share_safe_report: '<artifact-root>/report.share-safe.json',
+          baseline_answer: '<artifact-root>/baseline-answer.txt',
+          graphify_answer: '<artifact-root>/graphify-answer.txt',
+          prompt_file: '<artifact-root>/native_agent-prompt.txt',
+        }),
+        baseline: expect.objectContaining({
+          kind: 'answer_only',
+          result_path: '<artifact-root>/baseline-answer.txt',
+        }),
+        graphify: expect.objectContaining({
+          kind: 'answer_only',
+          result_path: '<artifact-root>/graphify-answer.txt',
+        }),
+      }),
+    )
+    expect(JSON.stringify(shareSafeReport)).not.toContain(PROJECT_FIXTURE_ROOT)
     expect(readFileSync(join(COMPARE_OUTPUT_ROOT, outputTimestamp, 'baseline-answer.txt'), 'utf8')).toBe('baseline answer\n')
     expect(readFileSync(join(COMPARE_OUTPUT_ROOT, outputTimestamp, 'graphify-answer.txt'), 'utf8')).toBe('graphify answer\n')
   })
@@ -1625,6 +2267,7 @@ describe('compare runtime', () => {
         },
       }),
     )
+    expect(savedReport).not.toHaveProperty('graphify_trace')
   })
 
   it('redacts persisted compare stderr summaries', async () => {
@@ -1663,6 +2306,598 @@ describe('compare runtime', () => {
     expect(savedReport).toContain('stderr omitted for safety')
     expect(savedReport).not.toContain('super-secret')
     expect(savedReport).not.toContain('abc123')
+  })
+
+  it('sanitizes share-safe compare stderr and evidence paths without changing the local report', async () => {
+    const graph = makeGraph()
+    writeProjectFiles()
+    const secretPath = join(PROJECT_FIXTURE_ROOT, 'Quarterly Reports', 'review notes.txt')
+    mkdirSync(dirname(secretPath), { recursive: true })
+    writeFileSync(secretPath, 'export const secret = true\n', 'utf8')
+    const graphPath = writeGraphFixture(graph)
+    const outputTimestamp = '2026-04-24T19-30-00'
+    const questionOutputDir = join(COMPARE_OUTPUT_ROOT, outputTimestamp)
+    const overflowPath = relative(questionOutputDir, secretPath)
+    const expectedShareSafeSecretPath = '<project-root>/Quarterly Reports/review notes.txt'
+
+    const result = await executeCompareRuns(
+      {
+        graphPath,
+        question: 'how does login create a session',
+        outputDir: COMPARE_OUTPUT_ROOT,
+        execTemplate: 'runner --prompt {prompt_file} --mode {mode} --out {output_file}',
+        baselineMode: 'full',
+        now: new Date('2026-04-24T19:30:00.000Z'),
+      },
+      {
+        runner: async (execution) => {
+          if (execution.mode === 'baseline') {
+            return {
+              exitCode: 1,
+              stdout: `Prompt is too long while loading ${overflowPath} for details\n`,
+              stderr: '',
+              elapsedMs: 3,
+            }
+          }
+
+          throw new Error(`Runner crashed while reading ${overflowPath} for details`)
+        },
+      },
+    )
+
+    const report = result.reports[0]!
+    const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
+    const shareSafeReport = JSON.parse(readFileSync(report.paths.share_safe_report, 'utf8')) as Record<string, unknown>
+    const savedReportEvidence = (savedReport.evidence as Record<string, string | null>).baseline
+    const savedReportStderr = (savedReport.stderr as Record<string, string | null>).graphify
+    const shareSafeEvidence = (shareSafeReport.evidence as Record<string, string | null>).baseline
+    const shareSafeStderr = (shareSafeReport.stderr as Record<string, string | null>).graphify
+
+    expect(report.evidence.baseline).toContain(`${overflowPath} for details`)
+    expect(report.stderr.graphify).toContain(`${overflowPath} for details`)
+    expect(savedReportEvidence).toContain(`${overflowPath} for details`)
+    expect(savedReportStderr).toContain(`${overflowPath} for details`)
+
+    expect(shareSafeEvidence).not.toContain(overflowPath)
+    expect(shareSafeStderr).not.toContain(overflowPath)
+    expect(shareSafeEvidence).not.toMatch(/\.\.[\\/A-Za-z0-9_-]/)
+    expect(shareSafeStderr).not.toMatch(/\.\.[\\/A-Za-z0-9_-]/)
+    expect(shareSafeEvidence).toContain(`${expectedShareSafeSecretPath} for details`)
+    expect(shareSafeStderr).toContain(`${expectedShareSafeSecretPath} for details`)
+    expect(shareSafeEvidence).toContain('for details')
+    expect(shareSafeStderr).toContain('for details')
+    expect(shareSafeReport).toEqual(
+      expect.objectContaining({
+        evidence: expect.objectContaining({
+          baseline: expect.stringContaining(`${expectedShareSafeSecretPath} for details`),
+        }),
+        stderr: expect.objectContaining({
+          graphify: expect.stringContaining(`${expectedShareSafeSecretPath} for details`),
+        }),
+      }),
+    )
+  })
+
+  it('continues redacting later absolute paths after spaced share-safe placeholders', () => {
+    const projectRoot = PROJECT_FIXTURE_ROOT
+    const artifactRoot = join(COMPARE_OUTPUT_ROOT, 'placeholder-run')
+    const secretPath = join(PROJECT_FIXTURE_ROOT, 'Quarterly Reports', 'review notes.txt')
+
+    mkdirSync(dirname(secretPath), { recursive: true })
+    mkdirSync(artifactRoot, { recursive: true })
+    writeFileSync(secretPath, 'export const secret = true\n', 'utf8')
+
+    expect(
+      sanitizeShareSafeText(
+        '<project-root>/Quarterly Reports/review notes.txt and /etc/passwd',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('<project-root>/Quarterly Reports/review notes.txt and passwd')
+  })
+
+  it('preserves spaced share-safe placeholders even when the referenced file does not exist', () => {
+    const projectRoot = PROJECT_FIXTURE_ROOT
+    const artifactRoot = join(COMPARE_OUTPUT_ROOT, 'placeholder-run')
+
+    mkdirSync(artifactRoot, { recursive: true })
+
+    expect(
+      sanitizeShareSafeText(
+        '<project-root>/Quarterly Reports/missing notes.txt and /etc/passwd',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('<project-root>/Quarterly Reports/missing notes.txt and passwd')
+    expect(
+      sanitizeShareSafeText(
+        '<project-root>/Quarterly Reports/missing notes.txt',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('<project-root>/Quarterly Reports/missing notes.txt')
+  })
+
+  it('does not let dotted prose inside a spaced placeholder hide later absolute paths', () => {
+    const projectRoot = PROJECT_FIXTURE_ROOT
+    const artifactRoot = join(COMPARE_OUTPUT_ROOT, 'placeholder-run')
+
+    mkdirSync(artifactRoot, { recursive: true })
+
+    expect(
+      sanitizeShareSafeText(
+        '<project-root>/foo v1.2 beta.3 /etc/passwd',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('<project-root>/foo v1.2 beta.3 passwd')
+  })
+
+  it('preserves non-existent spaced placeholder directories without hiding later absolute paths', () => {
+    const projectRoot = PROJECT_FIXTURE_ROOT
+    const artifactRoot = join(COMPARE_OUTPUT_ROOT, 'placeholder-run')
+
+    mkdirSync(artifactRoot, { recursive: true })
+
+    expect(
+      sanitizeShareSafeText(
+        '<project-root>/dir with space/subdir and /etc/passwd',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('<project-root>/dir with space/subdir and passwd')
+    expect(
+      sanitizeShareSafeText(
+        '<project-root>/dir with space/subdir',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('<project-root>/dir with space/subdir')
+  })
+
+  it('keeps redacting punctuation-attached absolute paths after spaced placeholders', () => {
+    const projectRoot = PROJECT_FIXTURE_ROOT
+    const artifactRoot = join(COMPARE_OUTPUT_ROOT, 'placeholder-run')
+    const secretPath = join(PROJECT_FIXTURE_ROOT, 'Quarterly Reports', 'review notes.txt')
+
+    mkdirSync(dirname(secretPath), { recursive: true })
+    mkdirSync(artifactRoot, { recursive: true })
+    writeFileSync(secretPath, 'export const secret = true\n', 'utf8')
+
+    const traversalPath = relative(artifactRoot, secretPath)
+    expect(
+      sanitizeShareSafeText(
+        '<project-root>/dir with space,/etc/passwd',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('<project-root>/dir with space,passwd')
+    expect(
+      sanitizeShareSafeText(
+        `${traversalPath},/etc/passwd`,
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('<project-root>/Quarterly Reports/review notes.txt,passwd')
+  })
+
+  it('keeps redacting punctuation-attached Windows absolute paths after protected prefixes', () => {
+    const projectRoot = PROJECT_FIXTURE_ROOT
+    const artifactRoot = join(COMPARE_OUTPUT_ROOT, 'placeholder-run')
+    const secretPath = join(PROJECT_FIXTURE_ROOT, 'Quarterly Reports', 'review notes.txt')
+    const uncWindowsPath = String.raw`\\server\share\secret.txt`
+
+    mkdirSync(dirname(secretPath), { recursive: true })
+    mkdirSync(artifactRoot, { recursive: true })
+    writeFileSync(secretPath, 'export const secret = true\n', 'utf8')
+
+    const traversalPath = relative(artifactRoot, secretPath)
+    const windowsSlashPath = 'C:/Windows/system32/drivers/etc/hosts'
+    const windowsBackslashPath = 'C:\\Windows\\system32\\drivers\\etc\\hosts'
+    const spacedWindowsPath = 'C:/Users/Alice/My Secrets/secret.txt'
+
+    expect(
+      sanitizeShareSafeText(
+        `<project-root>/Quarterly Reports/review notes.txt,${windowsSlashPath}`,
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('<project-root>/Quarterly Reports/review notes.txt,hosts')
+    expect(
+      sanitizeShareSafeText(
+        `<project-root>/Quarterly Reports/review notes.txt,${windowsBackslashPath}`,
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('<project-root>/Quarterly Reports/review notes.txt,hosts')
+    expect(
+      sanitizeShareSafeText(
+        `${traversalPath},${windowsSlashPath}`,
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('<project-root>/Quarterly Reports/review notes.txt,hosts')
+    expect(
+      sanitizeShareSafeText(
+        `<project-root>/Quarterly Reports,${spacedWindowsPath}`,
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('<project-root>/Quarterly Reports,secret.txt')
+    expect(
+      sanitizeShareSafeText(
+        `<project-root>/Quarterly Reports/review notes.txt,${uncWindowsPath}`,
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('<project-root>/Quarterly Reports/review notes.txt,secret.txt')
+    expect(
+      sanitizeShareSafeText(
+        `before ${uncWindowsPath} after`,
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('before secret.txt after')
+    expect(
+      sanitizeShareSafeText(
+        'x,C:/Windows/notepad.exe,C:/Windows/system.ini',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('x,notepad.exe,system.ini')
+  })
+
+  it('keeps redacting separator-restarted absolute paths after protected prefixes', () => {
+    const projectRoot = PROJECT_FIXTURE_ROOT
+    const artifactRoot = join(COMPARE_OUTPUT_ROOT, 'placeholder-run')
+
+    mkdirSync(artifactRoot, { recursive: true })
+
+    expect(
+      sanitizeShareSafeText(
+        '<project-root>/foo//etc/passwd',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('<project-root>/foo/passwd')
+    expect(
+      sanitizeShareSafeText(
+        '<project-root>/foo/C:/Users/alice/secret.txt',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('<project-root>/foo/secret.txt')
+    expect(
+      sanitizeShareSafeText(
+        '<project-root>/dir with space/subdir:/Users/alice/secret.txt',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('<project-root>/dir with space/subdir:secret.txt')
+    expect(
+      sanitizeShareSafeText(
+        '<project-root>/missing notes:/etc/passwd',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('<project-root>/missing notes:passwd')
+  })
+
+  it('preserves punctuation-delimited prose after sanitizing traversal paths with spaces', () => {
+    const projectRoot = PROJECT_FIXTURE_ROOT
+    const artifactRoot = join(COMPARE_OUTPUT_ROOT, 'placeholder-run')
+    const secretPath = join(PROJECT_FIXTURE_ROOT, 'Quarterly Reports', 'review notes.txt')
+
+    mkdirSync(dirname(secretPath), { recursive: true })
+    mkdirSync(artifactRoot, { recursive: true })
+    writeFileSync(secretPath, 'export const secret = true\n', 'utf8')
+
+    const traversalPath = relative(artifactRoot, secretPath)
+    expect(
+      sanitizeShareSafeText(
+        `${traversalPath}: details`,
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('<project-root>/Quarterly Reports/review notes.txt: details')
+    expect(
+      sanitizeShareSafeText(
+        `${traversalPath}:${traversalPath}`,
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('<project-root>/Quarterly Reports/review notes.txt:<project-root>/Quarterly Reports/review notes.txt')
+  })
+
+  it('preserves protocol-relative URLs while still sanitizing double-slash paths', () => {
+    const projectRoot = PROJECT_FIXTURE_ROOT
+    const artifactRoot = join(COMPARE_OUTPUT_ROOT, 'placeholder-run')
+
+    mkdirSync(artifactRoot, { recursive: true })
+
+    expect(
+      sanitizeShareSafeText(
+        '//example.com/foo',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('//example.com/foo')
+    expect(
+      sanitizeShareSafeText(
+        'See //example.com/foo for docs',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('See //example.com/foo for docs')
+    expect(
+      sanitizeShareSafeText(
+        '//example.com/api/v1/users',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('//example.com/api/v1/users')
+    expect(
+      sanitizeShareSafeText(
+        '//api.example.com/v1/users',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('//api.example.com/v1/users')
+    expect(
+      sanitizeShareSafeText(
+        '//eng.example.com/api/v1/users',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('//eng.example.com/api/v1/users')
+    expect(
+      sanitizeShareSafeText(
+        '//example.com/API/v1/users',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('//example.com/API/v1/users')
+    expect(
+      sanitizeShareSafeText(
+        'See //example.com/blog/2026/launch for details',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('See //example.com/blog/2026/launch for details')
+    expect(
+      sanitizeShareSafeText(
+        '//example.com/docs/getting-started',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('//example.com/docs/getting-started')
+    expect(
+      sanitizeShareSafeText(
+        '//github.com/openai/gpt-5',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('//github.com/openai/gpt-5')
+    expect(
+      sanitizeShareSafeText(
+        'See //example.com/foo/bar for docs',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('See //example.com/foo/bar for docs')
+    expect(
+      sanitizeShareSafeText(
+        '<project-root>/safe://example.com/docs/getting-started',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('<project-root>/safe://example.com/docs/getting-started')
+    expect(
+      sanitizeShareSafeText(
+        '<project-root>/safe://api.example.com/v1/users',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('<project-root>/safe://api.example.com/v1/users')
+    expect(
+      sanitizeShareSafeText(
+        '<project-root>/safe://eng.example.com/api/v1/users',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('<project-root>/safe://eng.example.com/api/v1/users')
+    expect(
+      sanitizeShareSafeText(
+        '<project-root>/src/auth.ts://github.com/openai/gpt-5',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('<project-root>/src/auth.ts://github.com/openai/gpt-5')
+    expect(
+      sanitizeShareSafeText(
+        '<project-root>/safe://example.com/foo/bar',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('<project-root>/safe://example.com/foo/bar')
+    expect(
+      sanitizeShareSafeText(
+        '//cdn.example.com/assets/app.js',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('//cdn.example.com/assets/app.js')
+    expect(
+      sanitizeShareSafeText(
+        '//img.example.com/a/b',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('//img.example.com/a/b')
+    expect(
+      sanitizeShareSafeText(
+        '<project-root>/safe://cdn.example.com/assets/app.js',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('<project-root>/safe://cdn.example.com/assets/app.js')
+    expect(
+      sanitizeShareSafeText(
+        '<project-root>/Quarterly Reports/review notes.txt://example.com/foo',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('<project-root>/Quarterly Reports/review notes.txt://example.com/foo')
+    expect(
+      sanitizeShareSafeText(
+        'foo.bar://example.com/a/b',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('foo.bar://example.com/a/b')
+    expect(
+      sanitizeShareSafeText(
+        '//server/share/secret.txt',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('secret.txt')
+    expect(
+      sanitizeShareSafeText(
+        '//server.example.com/share/secret.txt',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('secret.txt')
+    expect(
+      sanitizeShareSafeText(
+        '//server.example.com/share/secret',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('secret')
+    expect(
+      sanitizeShareSafeText(
+        '//server.example.com/Engineering/secret.txt',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('secret.txt')
+    expect(
+      sanitizeShareSafeText(
+        '//printer01.example.com/Engineering/secret',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('secret')
+    expect(
+      sanitizeShareSafeText(
+        '//server.example.com/engineering/secret',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('secret')
+    expect(
+      sanitizeShareSafeText(
+        '//corp.example.com/alice/secret',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('secret')
+    expect(
+      sanitizeShareSafeText(
+        '//eng.example.com/alice/secret',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('secret')
+    expect(
+      sanitizeShareSafeText(
+        '//server.example.com/Engineering',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('Engineering')
+    expect(
+      sanitizeShareSafeText(
+        '<project-root>/foo//server.example.com/share/secret.txt',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('<project-root>/foo/secret.txt')
+    expect(
+      sanitizeShareSafeText(
+        '<project-root>/foo//server.example.com/share/secret',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('<project-root>/foo/secret')
+    expect(
+      sanitizeShareSafeText(
+        '<project-root>/foo//server.example.com/Engineering/secret.txt',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('<project-root>/foo/secret.txt')
+    expect(
+      sanitizeShareSafeText(
+        '<project-root>/safe://corp.example.com/alice/secret',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('<project-root>/safe:<external-path>secret')
+    expect(
+      sanitizeShareSafeText(
+        '<project-root>/safe://eng.example.com/alice/secret',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('<project-root>/safe:<external-path>secret')
+    expect(
+      sanitizeShareSafeText(
+        'See //server.example.com/Engineering for access',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('See Engineering for access')
+    expect(
+      sanitizeShareSafeText(
+        '<project-root>/safe://etc/passwd',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('<project-root>/safe:<external-path>passwd')
+    expect(
+      sanitizeShareSafeText(
+        '<project-root>/safe://C:/Users/alice/secret.txt',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('<project-root>/safe:<external-path>secret.txt')
+    expect(
+      sanitizeShareSafeText(
+        'see file:///etc/passwd and file:///C:/Users/alice/Documents/secret.txt',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('see file://passwd and file://secret.txt')
+    expect(
+      sanitizeShareSafeText(
+        'See.file:///etc/passwd',
+        { artifactRoot, projectRoot },
+      ),
+    ).toBe('See.file://passwd')
+  })
+
+  it('sanitizes escaped artifact-root answer path traversals without reclassifying them under the project root', async () => {
+    const graph = makeGraph()
+    writeProjectFiles()
+    const secretPath = join(PROJECT_FIXTURE_ROOT, 'src', 'secret.ts')
+    writeFileSync(secretPath, 'export const secret = true\n', 'utf8')
+    const graphPath = writeGraphFixture(graph)
+    const outputTimestamp = '2026-04-24T19-30-00'
+    const questionOutputDir = join(COMPARE_OUTPUT_ROOT, outputTimestamp)
+    const escapedAnswerPath = relative(questionOutputDir, secretPath)
+    const originalCwd = process.cwd()
+
+    vi.resetModules()
+    vi.doMock('node:path', async () => {
+      const actual = await vi.importActual<typeof import('node:path')>('node:path')
+      return {
+        ...actual,
+        join: (...args: string[]) => {
+          if (args[0] === questionOutputDir && args[1] === 'baseline-answer.txt') {
+            return escapedAnswerPath
+          }
+          return actual.join(...args)
+        },
+      }
+    })
+
+    try {
+      const { executeCompareRuns: executeCompareRunsWithForgedAnswerPath } = await import('../../src/infrastructure/compare.js')
+      const result = await executeCompareRunsWithForgedAnswerPath(
+        {
+          graphPath,
+          question: 'how does login create a session',
+          outputDir: COMPARE_OUTPUT_ROOT,
+          execTemplate: 'runner --prompt {prompt_file} --mode {mode} --out {output_file}',
+          baselineMode: 'full',
+          now: new Date('2026-04-24T19:30:00.000Z'),
+        },
+        {
+          runner: async (execution) => {
+            process.chdir(questionOutputDir)
+            return {
+              exitCode: 0,
+              stdout: `${execution.mode} answer\n`,
+              stderr: '',
+              elapsedMs: 3,
+            }
+          },
+        },
+      )
+
+      const report = result.reports[0]!
+      const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
+      const shareSafeReport = JSON.parse(readFileSync(report.paths.share_safe_report, 'utf8')) as {
+        answer_paths: {
+          baseline: string
+          graphify: string
+        }
+      }
+
+      expect(report.answer_paths.baseline).toBe(escapedAnswerPath)
+      expect((savedReport.answer_paths as { baseline: string }).baseline).toBe(escapedAnswerPath)
+      expect(shareSafeReport.answer_paths.baseline).toBe('secret.ts')
+      expect(shareSafeReport.answer_paths.baseline).not.toBe('<project-root>/src/secret.ts')
+      expect(JSON.stringify(shareSafeReport)).not.toContain('<project-root>/src/secret.ts')
+    } finally {
+      process.chdir(originalCwd)
+      vi.doUnmock('node:path')
+      vi.resetModules()
+    }
   })
 
   it('loads graphify snippets when compare runs from outside the inferred project root', () => {

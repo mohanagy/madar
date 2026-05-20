@@ -2,11 +2,16 @@
 
 import { describe, expect, it } from 'vitest'
 
-import type { ContextPackNode } from '../../src/contracts/context-pack.js'
+import type {
+  ContextPackNode,
+  ContextPackRelationship,
+} from '../../src/contracts/context-pack.js'
 import {
   applyContextPackResolution,
   type ContextPackResolution,
 } from '../../src/runtime/context-pack-resolution.js'
+
+type TaskAwareResolutionOptions = Parameters<typeof applyContextPackResolution>[1]
 
 function makeNode(overrides: Partial<ContextPackNode> = {}): ContextPackNode {
   return {
@@ -18,6 +23,10 @@ function makeNode(overrides: Partial<ContextPackNode> = {}): ContextPackNode {
     match_score: 0.8,
     ...overrides,
   }
+}
+
+function makeRelationship(from: string, to: string, relation: string): ContextPackRelationship {
+  return { from_id: from, from, to_id: to, to, relation }
 }
 
 describe('applyContextPackResolution (#76)', () => {
@@ -108,5 +117,75 @@ describe('applyContextPackResolution (#76)', () => {
     const result = applyContextPackResolution(nodes, { resolution: 'summary' })
     expect(result.bytes_saved).toBe(0)
     expect(result.nodes[0]?.snippet).toBe(null)
+  })
+
+  it('keeps selected node ids stable while task-aware sketch rendering changes representations', () => {
+    const nodes = [
+      makeNode({
+        node_id: 'entrypoint',
+        label: 'AuthController.callback',
+        source_file: '/repo/src/auth/controller.ts',
+        snippet: 'export async function callback() { return authService.login() }',
+        evidence_class: 'structural',
+      }),
+      makeNode({
+        node_id: 'contract',
+        label: 'LoginInput',
+        source_file: '/repo/src/auth/contracts.ts',
+        snippet: 'export interface LoginInput {\n  userId: string\n}',
+        node_kind: 'interface',
+        evidence_class: 'supporting',
+      }),
+      makeNode({
+        node_id: 'impl',
+        label: 'TokenService.sign',
+        source_file: '/repo/src/auth/token.ts',
+        snippet: 'export function sign() {\n  return cookieService.set("token")\n}',
+        evidence_class: 'change',
+      }),
+      makeNode({
+        node_id: 'cookie',
+        label: 'CookieService.set',
+        source_file: '/repo/src/http/cookies.ts',
+        snippet: 'export function set() {}',
+        evidence_class: 'supporting',
+      }),
+    ]
+    const relationships = [
+      makeRelationship('entrypoint', 'impl', 'calls'),
+      makeRelationship('impl', 'cookie', 'calls'),
+    ]
+
+    const explain = applyContextPackResolution(
+      nodes,
+      {
+        resolution: 'sketch',
+        relationships,
+        task_kind: 'explain',
+      } as TaskAwareResolutionOptions,
+    )
+    const review = applyContextPackResolution(
+      nodes,
+      {
+        resolution: 'sketch',
+        relationships,
+        task_kind: 'review',
+      } as TaskAwareResolutionOptions,
+    )
+    const impact = applyContextPackResolution(
+      nodes,
+      {
+        resolution: 'sketch',
+        relationships,
+        task_kind: 'impact',
+      } as TaskAwareResolutionOptions,
+    )
+
+    expect(explain.nodes.map((node) => node.node_id)).toEqual(nodes.map((node) => node.node_id))
+    expect(review.nodes.map((node) => node.node_id)).toEqual(nodes.map((node) => node.node_id))
+    expect(impact.nodes.map((node) => node.node_id)).toEqual(nodes.map((node) => node.node_id))
+    expect(explain.nodes.find((node) => node.node_id === 'entrypoint')?.representation_type).toBe('call_chain')
+    expect(review.nodes.find((node) => node.node_id === 'contract')?.representation_type).toBe('contract_view')
+    expect(impact.nodes.find((node) => node.node_id === 'impl')?.representation_type).toBe('dependency_record')
   })
 })

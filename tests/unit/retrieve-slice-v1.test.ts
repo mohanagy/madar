@@ -1,9 +1,22 @@
 import { describe, expect, it } from 'vitest'
 
 import { build } from '../../src/pipeline/build.js'
-import { retrieveContext } from '../../src/runtime/retrieve.js'
+import { compactRetrieveResult, retrieveContext } from '../../src/runtime/retrieve.js'
 
-function buildSliceGraph() {
+interface ExecutionSliceExpectation {
+  status: 'complete' | 'partial'
+  steps: Array<{
+    node_id?: string
+    label: string
+    source_file?: string
+    line_number?: number
+  }>
+  boundary_reason?: string
+}
+
+function buildSliceGraph(options: { includePersistenceStep?: boolean } = {}) {
+  const { includePersistenceStep = true } = options
+
   return build(
     [
       {
@@ -29,7 +42,9 @@ function buildSliceGraph() {
           { source: 'auth_controller', target: 'auth_guard', relation: 'uses_guard', confidence: 'EXTRACTED', source_file: '/src/auth/controller.ts' },
           { source: 'auth_controller', target: 'auth_service', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/controller.ts' },
           { source: 'auth_service', target: 'login_validator', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts' },
-          { source: 'auth_service', target: 'session_store', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts' },
+          ...(includePersistenceStep
+            ? [{ source: 'auth_service', target: 'session_store', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts' } as const]
+            : []),
           { source: 'auth_service', target: 'auth_env', relation: 'reads_env', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts' },
           { source: 'auth_service', target: 'auth_contract', relation: 'depends_on', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts' },
           { source: 'auth_service', target: 'auth_test', relation: 'covered_by', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts' },
@@ -43,6 +58,19 @@ function buildSliceGraph() {
     ],
     { directed: true },
   )
+}
+
+function compactFor(prompt: string, graph = buildSliceGraph()) {
+  const retrieval = retrieveContext(graph, {
+    question: prompt,
+    budget: 3000,
+    retrievalLevel: 4,
+    retrievalStrategy: 'slice-v1',
+  } as never)
+
+  return compactRetrieveResult(retrieval) as ReturnType<typeof compactRetrieveResult> & {
+    execution_slice?: ExecutionSliceExpectation
+  }
 }
 
 function labelsFor(prompt: string, overrides: Record<string, unknown> = {}): string[] {
@@ -103,6 +131,56 @@ describe('retrieveContext retrievalStrategy=slice-v1', () => {
     expect(labels).not.toContain('index.ts')
     expect((sliced as any).slice.mode).toBe('debug')
     expect((sliced as any).slice.directions).toEqual(['backward', 'forward'])
+  })
+
+  it('surfaces an execution slice for runtime-generation backend prompts', () => {
+    const compact = compactFor('Trace how `POST /login` reaches persistence in the backend runtime pipeline')
+
+    expect(compact.execution_slice).toEqual({
+      status: 'complete',
+      steps: [
+        expect.objectContaining({ label: 'POST /login' }),
+        expect.objectContaining({ label: 'AuthController.login' }),
+        expect.objectContaining({ label: 'AuthService.login' }),
+        expect.objectContaining({ label: 'SessionStore.createSession' }),
+      ],
+    })
+  })
+
+  it('anchors route-shaped backend runtime prompts on the route path', () => {
+    const sliced = retrieveContext(buildSliceGraph(), {
+      question: 'Trace how `POST /login` reaches persistence in the backend runtime pipeline',
+      budget: 3000,
+      retrievalLevel: 4,
+      retrievalStrategy: 'slice-v1',
+    } as never)
+    const compact = compactRetrieveResult(sliced) as ReturnType<typeof compactRetrieveResult> & {
+      execution_slice?: ExecutionSliceExpectation
+    }
+
+    expect((sliced as any).slice.anchors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: 'POST /login' }),
+      ]),
+    )
+    expect((sliced as any).slice.anchors).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: 'LoginValidator.validate' }),
+      ]),
+    )
+    expect(compact.execution_slice?.steps[0]).toEqual(
+      expect.objectContaining({ label: 'POST /login' }),
+    )
+  })
+
+  it('marks execution slices partial when the route cannot reach persistence', () => {
+    const compact = compactFor(
+      'Trace how `POST /login` reaches persistence in the backend runtime pipeline',
+      buildSliceGraph({ includePersistenceStep: false }),
+    )
+
+    expect(compact.execution_slice?.status).toBe('partial')
+    expect(compact.execution_slice?.boundary_reason).toMatch(/missing|boundary|stops/i)
   })
 
   it('can pull direct graph neighbors into a level-1 slice even when they do not lexically match', () => {

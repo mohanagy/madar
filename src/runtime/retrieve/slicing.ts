@@ -63,15 +63,16 @@ interface SlicePolicy {
   runtime_flow_only?: boolean
 }
 
-const EXPLAIN_BACKWARD = new Set(['calls', 'controller_route', 'route_handler'])
-const EXPLAIN_FORWARD = new Set(['calls', 'contains', 'method', 'route_handler', 'controller_route'])
-const DEBUG_BACKWARD = new Set(['calls', 'controller_route', 'route_handler'])
-const DEBUG_FORWARD = new Set(['calls', 'contains', 'method', 'route_handler', 'controller_route'])
-const IMPACT_BACKWARD = new Set(['calls', 'controller_route', 'route_handler'])
-const IMPACT_FORWARD = new Set(['calls', 'contains', 'method', 'route_handler', 'controller_route'])
+const EXPLAIN_BACKWARD = new Set(['calls', 'enqueues_job', 'controller_route', 'route_handler'])
+const EXPLAIN_FORWARD = new Set(['calls', 'enqueues_job', 'contains', 'method', 'route_handler', 'controller_route'])
+const DEBUG_BACKWARD = new Set(['calls', 'enqueues_job', 'controller_route', 'route_handler'])
+const DEBUG_FORWARD = new Set(['calls', 'enqueues_job', 'contains', 'method', 'route_handler', 'controller_route'])
+const IMPACT_BACKWARD = new Set(['calls', 'enqueues_job', 'controller_route', 'route_handler'])
+const IMPACT_FORWARD = new Set(['calls', 'enqueues_job', 'contains', 'method', 'route_handler', 'controller_route'])
 const DEBUG_HELPERS = new Set(['uses_guard', 'guarded_by', 'reads_env', 'uses_config', 'depends_on', 'covered_by', 'injects'])
 const EXPLAIN_HELPERS = new Set(['covered_by', 'reads_env', 'uses_config'])
 const IMPACT_HELPERS = new Set(['covered_by', 'reads_env', 'uses_config', 'depends_on', 'exports'])
+const RUNTIME_FLOW_RELATIONS = ['calls', 'enqueues_job'] as const
 
 function policyForIntent(intent: RetrievalIntent): SlicePolicy {
   switch (intent) {
@@ -127,6 +128,14 @@ function promptWantsRuntimePipeline(prompt: string | undefined): boolean {
   return /\b(runtime|pipeline|service|orchestrator|job|agent|scoring|report(?: builder)?|persistence|repository|generat(?:e|ed|es|ing|ion)|create|created)\b/i.test(prompt)
 }
 
+function promptMentionsHttpRoute(prompt: string | undefined): boolean {
+  if (!prompt) {
+    return false
+  }
+
+  return /\b(?:get|post|put|patch|delete|head|options)\b\s+\/[^\s`'")]+/i.test(prompt)
+}
+
 function methodLikeNode(node: SliceScoredNode): boolean {
   return node.nodeKind?.toLowerCase() === 'method' || /(?:[.#:]|^\.)[A-Za-z_$][\w$]*\(?\)?$/u.test(node.label)
 }
@@ -172,7 +181,7 @@ function effectivePolicy(
       ...base,
       directions: ['backward', 'forward'],
       backward_relations: new Set(['controller_route', 'route_handler', 'method']),
-      forward_relations: new Set(['calls']),
+      forward_relations: new Set(RUNTIME_FLOW_RELATIONS),
       helper_relations: new Set(['injects', 'depends_on', 'module_provides']),
       backward_depth: 1,
       forward_depth: Math.max(base.forward_depth, 4),
@@ -184,7 +193,7 @@ function effectivePolicy(
     return {
       ...base,
       backward_relations: new Set(['controller_route', 'route_handler', 'method']),
-      forward_relations: new Set(['calls']),
+      forward_relations: new Set(RUNTIME_FLOW_RELATIONS),
       helper_relations: new Set([
         ...base.helper_relations,
         'injects',
@@ -246,6 +255,12 @@ function routeOrControllerLikeNode(node: SliceScoredNode): boolean {
     || /(?:^|\/)(?:controllers?|interface\/http)(?:\/|$)/.test(lower)
 }
 
+function routeLikeNode(node: SliceScoredNode): boolean {
+  const lower = `${node.label} ${node.nodeKind ?? ''} ${node.frameworkRole ?? ''}`.toLowerCase()
+  return /\b(?:route|nest_route|express_route|route_handler)\b/.test(lower)
+    || /^(?:get|post|put|patch|delete|head|options)\s+\//i.test(node.label)
+}
+
 function frontendDisplayLikeNode(node: SliceScoredNode): boolean {
   const lower = `${node.label} ${node.nodeKind ?? ''} ${node.frameworkRole ?? ''} ${node.sourceFile}`.toLowerCase()
   return /\.(?:tsx|jsx)\b/.test(lower)
@@ -262,11 +277,26 @@ function runtimeGenerationAnchorValue(node: SliceScoredNode): number {
   if (methodLikeNode(node)) value += 1
   if (/\b(?:nest_route|route|controller)\b/.test(lower)) value += 5
   if (/\b(?:src|server|backend|api|modules)\b/.test(lower)) value += 1
-  if (/\b(?:generate|generation|create|start|pipeline|process|orchestrator|worker|job|repository|save|report|scoring|research|agent)\b/.test(lower)) value += 2
+  if (/\b(?:generate|generation|create|start|pipeline|queue|process|orchestrator|worker|job|repository|save|report|scoring|research|agent)\b/.test(lower)) value += 2
   if (/(?:^|[.#])(?:generate|create|start|process|save|score|search|update|claim|cancel)[A-Za-z_$\w]*\(?\)?$/i.test(node.label)) value += 3
-  if (/\b(?:service|provider|repository|worker|orchestrator)\b/.test(lower)) value += 1
+  if (/\b(?:service|provider|repository|queue|worker|orchestrator)\b/.test(lower)) value += 1
   if (frontendDisplayLikeNode(node)) value -= 6
 
+  return value
+}
+
+function runtimeFlowRelationPriority(
+  relation: string,
+  node: SliceScoredNode,
+  runtimeFlowOnly: boolean,
+): number {
+  if (!runtimeFlowOnly) {
+    return 0
+  }
+
+  let value = relation === 'enqueues_job' ? 3 : relation === 'calls' ? 2 : 0
+  if (highValueRuntimeExpansionNode(node)) value += 2
+  else if (pipelineBridgeLikeNode(node)) value += 1
   return value
 }
 
@@ -322,6 +352,19 @@ function buildAnchors(scored: readonly SliceScoredNode[], options: SliceOptions)
   const exactMethodAnchors = matchedAnchors.filter((node) => node.exactLabelMatch && methodLikeNode(node))
   const nonBarrelMatchedAnchors = matchedAnchors.filter((node) => !isBarrelLike(node.label, node.sourceFile))
   const broadRuntimeGeneration = broadRuntimeGenerationPrompt(options)
+  const routePromptAnchors = broadRuntimeGeneration && promptMentionsHttpRoute(options.prompt)
+    ? scored
+      .filter((node) => routeOrControllerLikeNode(node) && !isBarrelLike(node.label, node.sourceFile) && !frontendDisplayLikeNode(node))
+      .sort((left, right) => {
+        const leftPriority = (routeLikeNode(left) ? 4 : 0)
+          + (left.exactLabelMatch || left.literalPathMatch ? 2 : 0)
+          + (left.sourcePathMatch ? 1 : 0)
+        const rightPriority = (routeLikeNode(right) ? 4 : 0)
+          + (right.exactLabelMatch || right.literalPathMatch ? 2 : 0)
+          + (right.sourcePathMatch ? 1 : 0)
+        return rightPriority - leftPriority || right.score - left.score
+      })
+    : []
   const intentAnchors = (() => {
     if (options.generationIntent === 'runtime_generation' && options.targetDomainHint === 'backend_runtime') {
       return matchedAnchors
@@ -345,6 +388,8 @@ function buildAnchors(scored: readonly SliceScoredNode[], options: SliceOptions)
   })()
   const anchorPool = exactMethodAnchors.length > 0
     ? exactMethodAnchors.slice(0, 1)
+    : routePromptAnchors.length > 0
+    ? routePromptAnchors.slice(0, 1)
     : intentAnchors.length > 0
     ? intentAnchors.slice(0, broadRuntimeGeneration ? 1 : 2)
     : matchedAnchors.length > 0
@@ -427,7 +472,26 @@ function traverseDirection(
     }
 
     const neighbors = direction === 'forward' ? graph.successors(current.id) : graph.predecessors(current.id)
-    for (const neighborId of neighbors) {
+    const orderedNeighbors = [...neighbors].sort((leftId, rightId) => {
+      const leftSourceId = direction === 'forward' ? current.id : leftId
+      const leftTargetId = direction === 'forward' ? leftId : current.id
+      const leftRelation = String(graph.edgeAttributes(leftSourceId, leftTargetId).relation ?? 'related_to')
+      const leftNode = scoredById.get(leftId) ?? sliceNodeFromGraph(graph, leftId)
+      scoredById.set(leftId, leftNode)
+
+      const rightSourceId = direction === 'forward' ? current.id : rightId
+      const rightTargetId = direction === 'forward' ? rightId : current.id
+      const rightRelation = String(graph.edgeAttributes(rightSourceId, rightTargetId).relation ?? 'related_to')
+      const rightNode = scoredById.get(rightId) ?? sliceNodeFromGraph(graph, rightId)
+      scoredById.set(rightId, rightNode)
+
+      return runtimeFlowRelationPriority(rightRelation, rightNode, runtimeFlowOnly)
+        - runtimeFlowRelationPriority(leftRelation, leftNode, runtimeFlowOnly)
+        || rightNode.score - leftNode.score
+        || graph.degree(rightId) - graph.degree(leftId)
+    })
+
+    for (const neighborId of orderedNeighbors) {
       const sourceId = direction === 'forward' ? current.id : neighborId
       const targetId = direction === 'forward' ? neighborId : current.id
       const relation = String(graph.edgeAttributes(sourceId, targetId).relation ?? 'related_to')
@@ -485,7 +549,7 @@ function pipelineBridgeLikeNode(node: SliceScoredNode): boolean {
 
 function highValueRuntimeExpansionNode(node: SliceScoredNode): boolean {
   const lower = `${node.label} ${node.frameworkRole ?? ''} ${node.sourceFile}`.toLowerCase()
-  return /\bpipeline|trigger|worker|orchestrator|planner|research|agent|scoring|report|repository|persistence|save|process|search|score|dispatch|assemble|persist|builder\b/.test(lower)
+  return /\bpipeline|trigger|queue|job|worker|orchestrator|planner|research|agent|scoring|report|repository|persistence|save|process|search|score|dispatch|assemble|persist|builder|addjob\b/.test(lower)
 }
 
 function sharedHubLikeNode(graph: KnowledgeGraph, node: SliceScoredNode): boolean {

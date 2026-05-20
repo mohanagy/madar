@@ -103,8 +103,8 @@ function expectStorageOperation(
   expect(symbol?.framework_metadata?.storage_operation).toBe(expected.operation)
 }
 
-const REPOSITORY_PERSISTENCE_READER_ROLE = /^repository(?:_(?:reader|read))?$/
-const REPOSITORY_PERSISTENCE_WRITER_ROLE = /^repository(?:_(?:writer|write))?$/
+const REPOSITORY_PERSISTENCE_READER_ROLE = /^repository_(?:reader|read)$/
+const REPOSITORY_PERSISTENCE_WRITER_ROLE = /^repository_(?:writer|write)$/
 
 function expectRepositoryPersistenceOperation(
   symbol: StorageTaggedEntity | Pick<SpiSymbol, 'framework_role' | 'framework_metadata'> | undefined,

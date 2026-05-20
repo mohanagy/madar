@@ -21,6 +21,7 @@ const EXTERNAL_TARGET_RELATIONS = new Set([
   'uses_guard',
   'uses_pipe',
   'uses_interceptor',
+  'enqueues_job',
   'defines_action',
 ])
 const EXTERNAL_SOURCE_RELATIONS = new Set(['handles_route', 'middleware', 'mounts_router', 'registers_route'])

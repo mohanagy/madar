@@ -36,6 +36,7 @@ import { riskMap } from '../risk-map.js'
 import { buildTaskContextPlan } from '../task-context-planner.js'
 import type { TimeTravelView } from '../time-travel.js'
 import { graphFreshnessMetadata } from '../freshness.js'
+import { buildGraphSummary } from '../graph-summary.js'
 import {
   communitiesFromGraph,
   getCommunity,
@@ -773,6 +774,8 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
     }
     case 'graph_stats':
       return helpers.ok(id, helpers.textToolResult(graphStats(graph)))
+    case 'graph_summary':
+      return helpers.ok(id, helpers.textToolResult(JSON.stringify(buildGraphSummary(graph))))
     case 'god_nodes':
       return helpers.ok(id, helpers.textToolResult(godNodesSummary(graph, helpers.numberParamAlias(toolArguments, ['top_n', 'topN'], { min: 1, max: 100 }) ?? 10)))
     case 'get_community': {

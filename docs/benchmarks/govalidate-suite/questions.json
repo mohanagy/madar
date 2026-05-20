@@ -1,0 +1,52 @@
+[
+  {
+    "id": "report-generation",
+    "description": "Trace the runtime path that generates idea or report-style output.",
+    "question": "Explain how idea report generation works end to end."
+  },
+  {
+    "id": "credits-accounting",
+    "description": "Find where credits are charged, decremented, or reconciled.",
+    "question": "How are user credits consumed and recorded during an AI action?"
+  },
+  {
+    "id": "waitlist-invite-codes",
+    "description": "Follow the flow for waitlist approvals, invite-code issuance, and redemption.",
+    "question": "How do waitlist approvals and invite codes work?"
+  },
+  {
+    "id": "pdf-export",
+    "description": "Identify the path that turns application data into an exported PDF.",
+    "question": "How is a PDF export generated and returned to the user?"
+  },
+  {
+    "id": "ai-landing-pages",
+    "description": "Locate the backend and rendering flow for AI-generated landing pages.",
+    "question": "How are AI landing pages generated and published?"
+  },
+  {
+    "id": "nda-sharing",
+    "description": "Cover the share flow for NDAs or similar protected documents.",
+    "question": "How does NDA sharing work, including access checks and delivery?"
+  },
+  {
+    "id": "stripe-limits",
+    "description": "Find where Stripe-related usage or plan limits are enforced.",
+    "question": "Where are Stripe billing or usage limits enforced?"
+  },
+  {
+    "id": "pipeline-status-broadcast",
+    "description": "Trace how long-running pipeline status updates are broadcast to clients.",
+    "question": "How is pipeline status broadcast while background work is running?"
+  },
+  {
+    "id": "impact-review",
+    "description": "Prompt for the main code path and dependencies involved in an impact or review flow.",
+    "question": "What code paths are involved when the app builds an impact review?"
+  },
+  {
+    "id": "provider-model-calls",
+    "description": "Identify where provider selection and model calls are issued for AI work.",
+    "question": "Where does the app choose providers or models before making AI calls?"
+  }
+]

@@ -840,4 +840,64 @@ describe('buildSpi NestJS framework layer (slice 3b-ii of #72)', () => {
       expect(diag).toBeTruthy()
     })
   })
+
+  describe('queue/job semantic edges', () => {
+    it('emits enqueues_job edges for WorkerHost-style processors without @Process decorators', () => {
+      writeFile(sandbox, 'src/pipeline.ts', [
+        'import { Injectable } from "@nestjs/common"',
+        '',
+        'function Processor(_queueName: string): ClassDecorator {',
+        '  return () => undefined',
+        '}',
+        '',
+        'type PipelineJobPayload = {',
+        '  problem: string',
+        '  ideaId: string',
+        '}',
+        '',
+        'type BullJob<T> = {',
+        '  name: string',
+        '  data: T',
+        '}',
+        '',
+        'abstract class WorkerHost {',
+        '  abstract process(job: BullJob<PipelineJobPayload>): Promise<string>',
+        '}',
+        '',
+        'class PipelineQueue {',
+        '  async add(jobName: string, input: PipelineJobPayload) {',
+        '    return { id: `${input.ideaId}:${jobName}` }',
+        '  }',
+        '}',
+        '',
+        '@Injectable()',
+        'export class QueueRegistryService {',
+        '  private readonly pipelineQueue = new PipelineQueue()',
+        '',
+        '  async addJob(input: PipelineJobPayload) {',
+        '    return this.pipelineQueue.add("legacy.pipeline.bridge.process", input)',
+        '  }',
+        '}',
+        '',
+        '@Processor("legacy.pipeline.bridge")',
+        'export class OrchestratorWorker extends WorkerHost {',
+        '  async process(job: BullJob<PipelineJobPayload>) {',
+        '    return job.data.ideaId',
+        '  }',
+        '}',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+
+      const addJob = methodSymbol(spi, 'src/pipeline.ts', 'QueueRegistryService.addJob')
+      const process = methodSymbol(spi, 'src/pipeline.ts', 'OrchestratorWorker.process')
+      const edge = spi.edges.find((entry) => entry.from === addJob.id && entry.to === process.id && entry.kind === 'enqueues_job')
+
+      expect(edge).toEqual(
+        expect.objectContaining({
+          kind: 'enqueues_job',
+        }),
+      )
+      expect(spi.edges.find((entry) => entry.from === addJob.id && entry.to === process.id && entry.kind === 'calls')).toBeUndefined()
+    })
+  })
 })

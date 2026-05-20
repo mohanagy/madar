@@ -8,13 +8,14 @@ import { buildContextPrompt, type ContextPromptStableSection } from './context-p
 import { CODE_EXTENSIONS, DOC_EXTENSIONS, MANIFEST_METADATA_KEY, OFFICE_EXTENSIONS, PAPER_EXTENSIONS } from '../pipeline/detect.js'
 import { extractCompareBaselineNonCodeText } from '../pipeline/extract/non-code.js'
 import { loadBenchmarkQuestions } from './benchmark/questions.js'
-import { parsePromptRunnerOutput, type PromptRunnerUsage } from './prompt-runner.js'
-import { retrieveContext, tokenizeLabel, type RetrieveResult } from '../runtime/retrieve.js'
+import { parsePromptRunnerJsonRecord, parsePromptRunnerOutput, type PromptRunnerUsage } from './prompt-runner.js'
+import { compactRetrieveResult, retrieveContext, tokenizeLabel, type CompactRetrieveResult, type RetrieveResult } from '../runtime/retrieve.js'
 import { QUERY_TOKEN_ESTIMATOR, estimateQueryTokens, loadGraph } from '../runtime/serve.js'
 import { sidecarAwareFileFingerprint } from '../shared/binary-ingest-sidecar.js'
+import { sanitizeShareSafeText, toShareSafeArtifactPath, type ShareSafePathRoots } from '../shared/share-safe-artifacts.js'
 import { MAX_TEXT_BYTES, validateGraphOutputPath, validateGraphPath } from '../shared/security.js'
 
-export type CompareBaselineMode = 'full' | 'bounded' | 'native_agent'
+export type CompareBaselineMode = 'full' | 'bounded' | 'pack_only' | 'native_agent'
 export type CompareRunMode = 'baseline' | 'graphify'
 export type CompareRunStatus = 'not_run' | 'succeeded' | 'failed' | 'context_overflow'
 export type CompareFailureReason = 'prompt_too_long' | 'runner_error' | 'exec_error'
@@ -65,6 +66,7 @@ export interface ComparePromptArtifactPaths {
   baseline_prompt: string
   graphify_prompt: string
   report: string
+  share_safe_report: string
 }
 
 export interface CompareAnswerArtifactPaths {
@@ -85,6 +87,26 @@ export interface ComparePromptTokenEstimator {
 }
 
 export type ComparePromptUsage = PromptRunnerUsage
+
+export interface CompareReportPack extends CompactRetrieveResult {
+  claims?: NonNullable<RetrieveResult['claims']>
+  coverage?: NonNullable<RetrieveResult['coverage']>
+  selection_diagnostics?: NonNullable<RetrieveResult['selection_diagnostics']>
+}
+
+export interface CompareGraphifyTraceTurnSummary {
+  turn: number
+  tool_call_count: number
+  tools: string[]
+}
+
+export interface CompareGraphifyTrace {
+  source: 'claude_messages_tool_use'
+  summary: string
+  tool_call_count: number
+  tool_calls_by_name: Record<string, number>
+  per_turn: CompareGraphifyTraceTurnSummary[]
+}
 
 export interface ComparePromptReport {
   question: string
@@ -142,6 +164,8 @@ export interface ComparePromptReport {
     graphify: string | null
   }
   provider_proof?: ComparePromptProviderProof
+  graphify_trace?: CompareGraphifyTrace
+  pack?: CompareReportPack
   paths: ComparePromptArtifactPaths
 }
 
@@ -262,28 +286,139 @@ export function expandCompareExecTemplate(
 }
 
 function writeCompareReport(report: ComparePromptReport): void {
+  const shareSafeRoots = {
+    artifactRoot: report.paths.output_dir,
+    projectRoot: inferProjectRootFromGraphPath(report.graph_path),
+  }
+  const serializedReport = {
+    ...report,
+    graph_path: portablePath(report.graph_path),
+    answer_paths: {
+      baseline: portablePath(report.answer_paths.baseline),
+      graphify: portablePath(report.answer_paths.graphify),
+    },
+    paths: {
+      output_dir: portablePath(report.paths.output_dir),
+      baseline_prompt: portablePath(report.paths.baseline_prompt),
+      graphify_prompt: portablePath(report.paths.graphify_prompt),
+      report: portablePath(report.paths.report),
+      share_safe_report: portablePath(report.paths.share_safe_report),
+    },
+  }
+  const shareSafeReport = sanitizeCompareShareSafeValue(report, shareSafeRoots)
+
   writeFileSync(
     report.paths.report,
-    `${JSON.stringify(
-      {
-        ...report,
-        graph_path: portablePath(report.graph_path),
-        answer_paths: {
-          baseline: portablePath(report.answer_paths.baseline),
-          graphify: portablePath(report.answer_paths.graphify),
-        },
-        paths: {
-          output_dir: portablePath(report.paths.output_dir),
-          baseline_prompt: portablePath(report.paths.baseline_prompt),
-          graphify_prompt: portablePath(report.paths.graphify_prompt),
-          report: portablePath(report.paths.report),
-        },
-      },
-      null,
-      2,
-    )}\n`,
+    `${JSON.stringify(serializedReport, null, 2)}\n`,
     'utf8',
   )
+  writeFileSync(
+    report.paths.share_safe_report,
+    `${JSON.stringify(shareSafeReport, null, 2)}\n`,
+    'utf8',
+  )
+}
+
+function isAbsolutePathLike(value: string): boolean {
+  const normalized = value.replaceAll('\\', '/')
+  return normalized.startsWith('/') || /^[A-Za-z]:\//.test(normalized)
+}
+
+function compareShareSafePathRoots(path: readonly string[], roots: ShareSafePathRoots): string[] {
+  const key = path[path.length - 1]
+  const parentKey = path[path.length - 2]
+
+  if (parentKey === 'paths' || parentKey === 'answer_paths') {
+    return [roots.artifactRoot]
+  }
+
+  if (key === 'graph_path' || key === 'source_file' || key === 'focus_files') {
+    return [roots.projectRoot]
+  }
+
+  return [roots.projectRoot, roots.artifactRoot]
+}
+
+function isCompareArtifactRootField(path: readonly string[]): boolean {
+  const parentKey = path[path.length - 2]
+  return parentKey === 'paths' || parentKey === 'answer_paths'
+}
+
+function compareExternalPathFallback(path: string): string {
+  const normalizedPath = path.replaceAll('\\', '/')
+  const lastSegment = normalizedPath.split('/').pop()
+  return lastSegment && lastSegment.length > 0 ? lastSegment : '<external-path>'
+}
+
+function sanitizeCompareShareSafePath(value: string, roots: ShareSafePathRoots, path: readonly string[]): string {
+  if (isCompareArtifactRootField(path)) {
+    if (isAbsolutePathLike(value)) {
+      return isPathWithinRoot(resolve(value), roots.artifactRoot)
+        ? toShareSafeArtifactPath(value, roots)
+        : compareExternalPathFallback(value)
+    }
+
+    return isPathWithinRoot(resolve(roots.artifactRoot, value), roots.artifactRoot)
+      ? value
+      : compareExternalPathFallback(value)
+  }
+
+  if (isAbsolutePathLike(value)) {
+    return toShareSafeArtifactPath(value, roots)
+  }
+
+  const candidateRoots = compareShareSafePathRoots(path, roots)
+  for (const root of candidateRoots) {
+    if (isPathWithinRoot(resolve(root, value), root)) {
+      return value
+    }
+  }
+
+  const fallbackRoot = candidateRoots[0] ?? roots.projectRoot
+  return toShareSafeArtifactPath(resolve(fallbackRoot, value), roots)
+}
+
+function shouldSanitizeCompareShareSafeText(path: readonly string[]): boolean {
+  const rootKey = path[0]
+  return rootKey === 'stderr' || rootKey === 'evidence'
+}
+
+function shouldSanitizeCompareShareSafePath(path: readonly string[]): boolean {
+  const key = path[path.length - 1]
+  const parentKey = path[path.length - 2]
+
+  return (
+    key === 'graph_path' ||
+    key === 'result_path' ||
+    key === 'source_file' ||
+    key === 'focus_files' ||
+    parentKey === 'paths' ||
+    parentKey === 'answer_paths'
+  )
+}
+
+function sanitizeCompareShareSafeValue(value: unknown, roots: ShareSafePathRoots, path: string[] = []): unknown {
+  if (typeof value === 'string') {
+    if (shouldSanitizeCompareShareSafeText(path)) {
+      return sanitizeShareSafeText(value, roots)
+    }
+    if (shouldSanitizeCompareShareSafePath(path)) {
+      return sanitizeCompareShareSafePath(value, roots, path)
+    }
+    return value
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => sanitizeCompareShareSafeValue(entry, roots, path))
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [key, sanitizeCompareShareSafeValue(entry, roots, [...path, key])]),
+    )
+  }
+
+  return value
 }
 
 async function defaultComparePromptRunner(execution: ComparePromptExecution): Promise<ComparePromptRunnerResult> {
@@ -494,6 +629,16 @@ function formatGraphifyContextSections(retrieval: RetrieveResult): ContextPrompt
   ]
 }
 
+function compareReportPackFromRetrieveResult(retrieval: RetrieveResult): CompareReportPack {
+  const compact = compactRetrieveResult(retrieval)
+  return {
+    ...compact,
+    ...(retrieval.claims ? { claims: retrieval.claims } : {}),
+    ...(retrieval.coverage ? { coverage: retrieval.coverage } : {}),
+    ...(retrieval.selection_diagnostics ? { selection_diagnostics: retrieval.selection_diagnostics } : {}),
+  }
+}
+
 function computeReductionRatio(baselinePromptTokens: number, graphifyPromptTokens: number): number {
   if (baselinePromptTokens <= 0 || graphifyPromptTokens <= 0) {
     return 0
@@ -553,6 +698,95 @@ function comparePromptTokenSource(usage: ComparePromptUsage | null): CompareProm
 
 function compareProviderForUsage(usage: ComparePromptUsage | null): 'claude' | 'gemini' | null {
   return usage?.provider ?? null
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function parseTraceToolName(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null
+  }
+
+  const trimmedValue = value.trim()
+  return trimmedValue.length > 0 ? trimmedValue : null
+}
+
+function parseTraceTurnNumber(value: unknown, fallbackTurn: number): number {
+  if (typeof value === 'number' && Number.isInteger(value) && value > 0) {
+    return value
+  }
+  return fallbackTurn
+}
+
+function extractGraphifyTrace(stdout: string): CompareGraphifyTrace | undefined {
+  const payload = parsePromptRunnerJsonRecord(stdout)
+  if (payload === null || !Array.isArray(payload.messages)) {
+    return undefined
+  }
+
+  const toolCallsByName: Record<string, number> = {}
+  const perTurnIndex = new Map<number, CompareGraphifyTraceTurnSummary>()
+  let fallbackTurn = 1
+  let totalToolCalls = 0
+
+  for (const message of payload.messages) {
+    if (!isRecord(message) || message.role !== 'assistant' || !Array.isArray(message.content)) {
+      continue
+    }
+
+    const tools: string[] = []
+    for (const contentPart of message.content) {
+      if (!isRecord(contentPart) || contentPart.type !== 'tool_use') {
+        continue
+      }
+
+      const toolName = parseTraceToolName(contentPart.name)
+      if (toolName === null) {
+        continue
+      }
+
+      tools.push(toolName)
+      toolCallsByName[toolName] = (toolCallsByName[toolName] ?? 0) + 1
+      totalToolCalls += 1
+    }
+
+    if (tools.length === 0) {
+      continue
+    }
+
+    const turn = parseTraceTurnNumber(message.turn, fallbackTurn)
+    fallbackTurn = Math.max(fallbackTurn, turn + 1)
+    const existingTurn = perTurnIndex.get(turn)
+    if (existingTurn) {
+      existingTurn.tool_call_count += tools.length
+      existingTurn.tools.push(...tools)
+      continue
+    }
+
+    perTurnIndex.set(turn, {
+      turn,
+      tool_call_count: tools.length,
+      tools,
+    })
+  }
+
+  if (totalToolCalls === 0) {
+    return undefined
+  }
+
+  const sortedTurns = [...perTurnIndex.keys()].sort((leftTurn, rightTurn) => leftTurn - rightTurn)
+
+  return {
+    source: 'claude_messages_tool_use',
+    summary: `${totalToolCalls} tool calls across ${sortedTurns.length} turns`,
+    tool_call_count: totalToolCalls,
+    tool_calls_by_name: Object.fromEntries(
+      Object.entries(toolCallsByName).sort(([leftName], [rightName]) => leftName.localeCompare(rightName)),
+    ),
+    per_turn: sortedTurns.map((turn) => perTurnIndex.get(turn)!),
+  }
 }
 
 function buildCompareProviderProofEntry(
@@ -884,7 +1118,7 @@ function deriveBaselineCorpusText(graphPath: string, graph: KnowledgeGraph): str
 export function buildBaselinePromptPack(input: BuildBaselinePromptPackInput): ComparePromptPack {
   const corpusText = input.corpusText.trim()
   const corpusBody =
-    input.mode === 'bounded'
+    input.mode === 'bounded' || input.mode === 'pack_only'
       ? buildBoundedCorpusExcerpt(input.question, input.graph, corpusText, input.maxTokens ?? DEFAULT_BOUNDED_BASELINE_TOKENS)
       : corpusText
   const builtPrompt = buildBaselinePromptArtifact(input.question, input.graph, corpusBody, input.mode, input.session)
@@ -968,6 +1202,8 @@ export function generateCompareArtifacts(input: GenerateCompareArtifactsInput): 
   const outputDir = validateGraphOutputPath(input.outputDir)
   const now = input.now ?? new Date()
   const outputRoot = createCompareOutputRoot(outputDir, now)
+  const projectRoot = realpathSync(inferProjectRootFromGraphPath(graphPath))
+  const retrievalBudget = input.retrievalBudget ?? DEFAULT_RETRIEVAL_BUDGET
   let baselineSession: ContextSessionState | undefined
   let graphifySession: ContextSessionState | undefined
 
@@ -975,17 +1211,6 @@ export function generateCompareArtifacts(input: GenerateCompareArtifactsInput): 
     const questionOutputDir = questions.length === 1 ? outputRoot : join(outputRoot, `question-${String(index + 1).padStart(3, '0')}`)
     mkdirSync(questionOutputDir, { recursive: true })
 
-    const baselinePrompt = buildBaselinePromptPack({
-      question,
-      graph,
-      corpusText,
-      mode: input.baselineMode,
-      ...(input.baselineMaxTokens !== undefined ? { maxTokens: input.baselineMaxTokens } : {}),
-      ...(baselineSession ? { session: baselineSession } : {}),
-    })
-    baselineSession = baselinePrompt.session_state
-    const projectRoot = realpathSync(inferProjectRootFromGraphPath(graphPath))
-    const retrievalBudget = input.retrievalBudget ?? DEFAULT_RETRIEVAL_BUDGET
     const retrieval = retrieveCompareContext(graph, question, retrievalBudget, projectRoot)
     const graphifyPrompt = buildGraphifyPromptPack({
       question,
@@ -993,12 +1218,27 @@ export function generateCompareArtifacts(input: GenerateCompareArtifactsInput): 
       ...(graphifySession ? { session: graphifySession } : {}),
     })
     graphifySession = graphifyPrompt.session_state
+    const comparePack = input.baselineMode === 'pack_only' ? compareReportPackFromRetrieveResult(retrieval) : undefined
+    const baselineMaxTokens =
+      input.baselineMode === 'pack_only'
+        ? graphifyPrompt.token_count
+        : input.baselineMaxTokens
+    const baselinePrompt = buildBaselinePromptPack({
+      question,
+      graph,
+      corpusText,
+      mode: input.baselineMode,
+      ...(baselineMaxTokens !== undefined ? { maxTokens: baselineMaxTokens } : {}),
+      ...(baselineSession ? { session: baselineSession } : {}),
+    })
+    baselineSession = baselinePrompt.session_state
 
     const paths: ComparePromptArtifactPaths = {
       output_dir: questionOutputDir,
       baseline_prompt: join(questionOutputDir, 'baseline-prompt.txt'),
       graphify_prompt: join(questionOutputDir, 'graphify-prompt.txt'),
       report: join(questionOutputDir, 'report.json'),
+      share_safe_report: join(questionOutputDir, 'report.share-safe.json'),
     }
     const answerPaths: CompareAnswerArtifactPaths = {
       baseline: answerFilePath(questionOutputDir, 'baseline'),
@@ -1069,6 +1309,7 @@ export function generateCompareArtifacts(input: GenerateCompareArtifactsInput): 
         baseline: null,
         graphify: null,
       },
+      ...(comparePack ? { pack: comparePack } : {}),
       paths,
     }
 
@@ -1111,6 +1352,7 @@ export async function executeCompareRuns(
     ]
 
     for (const execution of executions) {
+      let graphifyTrace: CompareGraphifyTrace | undefined
       try {
         validateCompareExecTemplate(input.execTemplate)
         const command = expandCompareExecTemplate(input.execTemplate, {
@@ -1124,6 +1366,9 @@ export async function executeCompareRuns(
           question: report.question,
           command,
         })
+        if (execution.mode === 'graphify') {
+          graphifyTrace = extractGraphifyTrace(executionResult.stdout)
+        }
         const parsedOutput = parsePromptRunnerOutput(executionResult.stdout)
         ensureCompareAnswerFile(
           execution.outputFile,
@@ -1140,6 +1385,13 @@ export async function executeCompareRuns(
         report.failure_reason[execution.mode] =
           executionResult.exitCode === 0 ? null : contextOverflowEvidence !== null ? 'prompt_too_long' : 'runner_error'
         report.evidence[execution.mode] = contextOverflowEvidence
+        if (execution.mode === 'graphify') {
+          if (graphifyTrace) {
+            report.graphify_trace = graphifyTrace
+          } else {
+            delete report.graphify_trace
+          }
+        }
       } catch (error) {
         ensureCompareAnswerFile(execution.outputFile, '')
         report.usage[execution.mode] = null
@@ -1151,6 +1403,9 @@ export async function executeCompareRuns(
         report.stderr[execution.mode] = sanitizeCompareStderr(errorMessage)
         report.failure_reason[execution.mode] = contextOverflowEvidence !== null ? 'prompt_too_long' : 'exec_error'
         report.evidence[execution.mode] = contextOverflowEvidence
+        if (execution.mode === 'graphify') {
+          delete report.graphify_trace
+        }
       }
 
       syncComparePromptMetrics(report)
@@ -1255,6 +1510,30 @@ function formatCompareProviderProof(result: GenerateCompareArtifactsResult): str
   return `mixed provider-reported usage (${providerReportedRuns}/${totalRuns} prompt runs) with local estimate fallback`
 }
 
+function formatCompareGraphifyTraceSummary(result: GenerateCompareArtifactsResult): string | null {
+  const traces = result.reports.flatMap((report) => (report.graphify_trace ? [report.graphify_trace] : []))
+  if (traces.length === 0) {
+    return null
+  }
+
+  const toolCallsByName = new Map<string, number>()
+  const totalToolCalls = traces.reduce((total, trace) => {
+    for (const [toolName, count] of Object.entries(trace.tool_calls_by_name)) {
+      toolCallsByName.set(toolName, (toolCallsByName.get(toolName) ?? 0) + count)
+    }
+    return total + trace.tool_call_count
+  }, 0)
+  const totalTurns = traces.reduce((total, trace) => total + trace.per_turn.length, 0)
+  const topTools = [...toolCallsByName.entries()]
+    .sort((leftEntry, rightEntry) => rightEntry[1] - leftEntry[1] || leftEntry[0].localeCompare(rightEntry[0]))
+    .slice(0, 3)
+    .map(([toolName, count]) => `${toolName}×${count}`)
+  const traceCoverage = traces.length === result.reports.length ? '' : ` · traces for ${traces.length}/${result.reports.length} graphify runs`
+  const topToolsSummary = topTools.length > 0 ? ` · top tools: ${topTools.join(', ')}` : ''
+
+  return `Graphify trace: ${totalToolCalls} tool call${totalToolCalls === 1 ? '' : 's'} across ${totalTurns} turn${totalTurns === 1 ? '' : 's'}${traceCoverage}${topToolsSummary}`
+}
+
 export function formatCompareSummary(result: GenerateCompareArtifactsResult): string {
   const baselineTokens = sumPromptTokens(result.reports, 'baseline')
   const graphifyTokens = sumPromptTokens(result.reports, 'graphify')
@@ -1284,7 +1563,7 @@ export function formatCompareSummary(result: GenerateCompareArtifactsResult): st
   // (not a real agent's behavior) so reduction_ratio is a synthetic estimate;
   // append an explicit disclosure line. native_agent mode is preferred for shipping.
   const baselineModes = new Set<CompareBaselineMode>(result.reports.map((report) => report.baseline_mode))
-  const usesSyntheticBaseline = baselineModes.has('full') || baselineModes.has('bounded')
+  const usesSyntheticBaseline = baselineModes.has('full') || baselineModes.has('bounded') || baselineModes.has('pack_only')
 
   const lines = [
     `[graphify compare] completed ${result.reports.length} question(s)`,
@@ -1307,6 +1586,10 @@ export function formatCompareSummary(result: GenerateCompareArtifactsResult): st
   }
   lines.push(`- Reused context tokens: baseline ${baselineReusedTokens} · graphify ${graphifyReusedTokens}`)
   lines.push(`- Provider/runtime proof: ${formatCompareProviderProof(result)}`)
+  const graphifyTraceSummary = formatCompareGraphifyTraceSummary(result)
+  if (graphifyTraceSummary !== null) {
+    lines.push(`- ${graphifyTraceSummary}`)
+  }
 
   return lines.join('\n')
 }
@@ -1378,7 +1661,18 @@ export interface AnthropicResultEvent {
 }
 
 export type NativeAgentRunStatus =
-  | { kind: 'succeeded'; model: string | null; usage: AnthropicUsageBlock; total_input_tokens_anthropic_exact: number; total_cost_usd: number | null; num_turns: number; duration_ms: number; result_path: string }
+  | {
+      kind: 'succeeded'
+      model: string | null
+      usage: AnthropicUsageBlock
+      total_input_tokens_anthropic_exact: number
+      uncached_input_tokens_anthropic_exact: number
+      cached_input_tokens_anthropic_exact: number
+      total_cost_usd: number | null
+      num_turns: number
+      duration_ms: number
+      result_path: string
+    }
   | { kind: 'answer_only'; evidence: string | null; exit_code: number; stderr: string | null; result_path: string }
   | { kind: 'runner_error'; evidence: string | null; exit_code: number | null; stderr: string | null }
 
@@ -1419,6 +1713,7 @@ export interface NativeAgentCompareReport {
   paths: {
     output_dir: string
     report: string
+    share_safe_report: string
     baseline_answer: string
     graphify_answer: string
     prompt_file: string
@@ -1614,12 +1909,141 @@ function formatDirectionalDelta(
   return ` (${Number((graphify / baseline).toFixed(2))}x ${increasedLabel})`
 }
 
+type NativeAgentComparableReport = NativeAgentCompareReport & {
+  baseline: Extract<NativeAgentRunStatus, { kind: 'succeeded' }>
+  graphify: Extract<NativeAgentRunStatus, { kind: 'succeeded' }>
+}
+
+interface NativeAgentSuiteChange {
+  question: string
+  percentReduction: number
+}
+
+function isComparableNativeAgentReport(report: NativeAgentCompareReport): report is NativeAgentComparableReport {
+  return report.baseline.kind === 'succeeded' && report.graphify.kind === 'succeeded'
+}
+
+function computeReductionPercent(baseline: number, graphify: number): number | null {
+  if (baseline <= 0 || graphify <= 0) {
+    return null
+  }
+  return Number((((baseline - graphify) / baseline) * 100).toFixed(1))
+}
+
+function formatPercent(value: number): string {
+  return Number(value.toFixed(1)).toString()
+}
+
+function formatCount(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`
+}
+
+function mean(values: number[]): number | null {
+  if (values.length === 0) {
+    return null
+  }
+  return values.reduce((total, value) => total + value, 0) / values.length
+}
+
+function median(values: number[]): number | null {
+  if (values.length === 0) {
+    return null
+  }
+  const sorted = [...values].sort((left, right) => left - right)
+  const middle = Math.floor(sorted.length / 2)
+  if (sorted.length % 2 === 1) {
+    return sorted[middle] ?? null
+  }
+  const left = sorted[middle - 1]
+  const right = sorted[middle]
+  if (left === undefined || right === undefined) {
+    return null
+  }
+  return (left + right) / 2
+}
+
+function nativeAgentSuiteChanges(
+  reports: readonly NativeAgentComparableReport[],
+  metric: (report: NativeAgentComparableReport) => { baseline: number; graphify: number },
+): NativeAgentSuiteChange[] {
+  return reports.flatMap((report) => {
+    const values = metric(report)
+    const percentReduction = computeReductionPercent(values.baseline, values.graphify)
+    return percentReduction === null ? [] : [{ question: report.question, percentReduction }]
+  })
+}
+
+function bestWin(changes: readonly NativeAgentSuiteChange[]): NativeAgentSuiteChange | null {
+  const wins = changes.filter((change) => change.percentReduction > 0)
+  if (wins.length === 0) {
+    return null
+  }
+  return wins.reduce((best, change) => (change.percentReduction > best.percentReduction ? change : best))
+}
+
+function worstRegression(changes: readonly NativeAgentSuiteChange[]): NativeAgentSuiteChange | null {
+  const losses = changes.filter((change) => change.percentReduction < 0)
+  if (losses.length === 0) {
+    return null
+  }
+  return losses.reduce((worst, change) => (change.percentReduction < worst.percentReduction ? change : worst))
+}
+
+function formatSuiteOutcome(change: NativeAgentSuiteChange | null, decreasedLabel: string, increasedLabel: string): string {
+  if (change === null) {
+    return 'none'
+  }
+  const amount = formatPercent(Math.abs(change.percentReduction))
+  const direction = change.percentReduction > 0 ? decreasedLabel : increasedLabel
+  return `"${change.question}" (${amount}% ${direction})`
+}
+
+function formatNativeAgentSuiteMetricLine(
+  label: string,
+  changes: readonly NativeAgentSuiteChange[],
+  decreasedLabel: string,
+  increasedLabel: string,
+  includeMeanMedian = false,
+  totalQuestionCount = changes.length,
+): string {
+  const wins = changes.filter((change) => change.percentReduction > 0).length
+  const losses = changes.filter((change) => change.percentReduction < 0).length
+  const parts = [
+    `- Suite ${label}: ${formatCount(wins, 'win', 'wins')} · ${formatCount(losses, 'loss', 'losses')}`,
+  ]
+  if (changes.length !== totalQuestionCount) {
+    parts.push(`${changes.length}/${totalQuestionCount} comparable`)
+  }
+
+  if (includeMeanMedian) {
+    const reductions = changes.map((change) => change.percentReduction)
+    const meanReduction = mean(reductions)
+    const medianReduction = median(reductions)
+    if (meanReduction !== null && medianReduction !== null) {
+      parts.push(`mean reduction ${formatPercent(meanReduction)}%`)
+      parts.push(`median reduction ${formatPercent(medianReduction)}%`)
+    }
+  }
+
+  parts.push(`best win: ${formatSuiteOutcome(bestWin(changes), decreasedLabel, increasedLabel)}`)
+  parts.push(`worst regression: ${formatSuiteOutcome(worstRegression(changes), decreasedLabel, increasedLabel)}`)
+  return parts.join(' · ')
+}
+
 function isNativeAgentRunFailure(run: NativeAgentRunStatus): boolean {
   return run.kind === 'runner_error'
 }
 
 function totalAnthropicInputTokens(usage: AnthropicUsageBlock): number {
   return usage.input_tokens + usage.cache_creation_input_tokens + usage.cache_read_input_tokens
+}
+
+function uncachedAnthropicInputTokens(usage: AnthropicUsageBlock): number {
+  return usage.input_tokens + usage.cache_creation_input_tokens
+}
+
+function cachedAnthropicInputTokens(usage: AnthropicUsageBlock): number {
+  return usage.cache_read_input_tokens
 }
 
 export async function executeNativeAgentCompare(
@@ -1649,6 +2073,7 @@ export async function executeNativeAgentCompare(
     const baselineAnswerPath = answerFilePath(questionDir, 'baseline')
     const graphifyAnswerPath = answerFilePath(questionDir, 'graphify')
     const reportPath = join(questionDir, 'report.json')
+    const shareSafeReportPath = join(questionDir, 'report.share-safe.json')
 
     const reportShell: NativeAgentCompareReport = {
       baseline_mode: 'native_agent',
@@ -1682,6 +2107,7 @@ export async function executeNativeAgentCompare(
       paths: {
         output_dir: questionDir,
         report: reportPath,
+        share_safe_report: shareSafeReportPath,
         baseline_answer: baselineAnswerPath,
         graphify_answer: graphifyAnswerPath,
         prompt_file: promptFile,
@@ -1714,6 +2140,8 @@ export async function executeNativeAgentCompare(
             model: event.model,
             usage: event.usage,
             total_input_tokens_anthropic_exact: totalAnthropicInputTokens(event.usage),
+            uncached_input_tokens_anthropic_exact: uncachedAnthropicInputTokens(event.usage),
+            cached_input_tokens_anthropic_exact: cachedAnthropicInputTokens(event.usage),
             total_cost_usd: event.total_cost_usd,
             num_turns: event.num_turns,
             duration_ms: event.duration_ms,
@@ -1787,6 +2215,8 @@ export async function executeNativeAgentCompare(
           model: event.model,
           usage: event.usage,
           total_input_tokens_anthropic_exact: totalAnthropicInputTokens(event.usage),
+          uncached_input_tokens_anthropic_exact: uncachedAnthropicInputTokens(event.usage),
+          cached_input_tokens_anthropic_exact: cachedAnthropicInputTokens(event.usage),
           total_cost_usd: event.total_cost_usd,
           num_turns: event.num_turns,
           duration_ms: event.duration_ms,
@@ -1858,23 +2288,32 @@ export async function executeNativeAgentCompare(
 }
 
 function writeNativeAgentReport(report: NativeAgentCompareReport): void {
+  const shareSafeRoots = {
+    artifactRoot: report.paths.output_dir,
+    projectRoot: inferProjectRootFromGraphPath(report.graph_path),
+  }
+  const serializedReport = {
+    ...report,
+    graph_path: portablePath(report.graph_path),
+    paths: {
+      output_dir: portablePath(report.paths.output_dir),
+      report: portablePath(report.paths.report),
+      share_safe_report: portablePath(report.paths.share_safe_report),
+      baseline_answer: portablePath(report.paths.baseline_answer),
+      graphify_answer: portablePath(report.paths.graphify_answer),
+      prompt_file: portablePath(report.paths.prompt_file),
+    },
+  }
+  const shareSafeReport = sanitizeCompareShareSafeValue(report, shareSafeRoots)
+
   writeFileSync(
     report.paths.report,
-    `${JSON.stringify(
-      {
-        ...report,
-        graph_path: portablePath(report.graph_path),
-        paths: {
-          output_dir: portablePath(report.paths.output_dir),
-          report: portablePath(report.paths.report),
-          baseline_answer: portablePath(report.paths.baseline_answer),
-          graphify_answer: portablePath(report.paths.graphify_answer),
-          prompt_file: portablePath(report.paths.prompt_file),
-        },
-      },
-      null,
-      2,
-    )}\n`,
+    `${JSON.stringify(serializedReport, null, 2)}\n`,
+    'utf8',
+  )
+  writeFileSync(
+    report.paths.share_safe_report,
+    `${JSON.stringify(shareSafeReport, null, 2)}\n`,
     'utf8',
   )
 }
@@ -1884,6 +2323,45 @@ export function formatNativeAgentCompareSummary(result: NativeAgentCompareResult
     `[graphify compare] completed ${result.reports.length} native_agent question(s)`,
     `- Output: ${result.output_root}`,
   ]
+  const totalQuestionCount = result.reports.length
+  const comparableReports = result.reports.filter(isComparableNativeAgentReport)
+  if (comparableReports.length > 1) {
+    lines.push(
+      formatNativeAgentSuiteMetricLine(
+        'input_tokens (Anthropic-reported)',
+        nativeAgentSuiteChanges(comparableReports, (report) => ({
+          baseline: report.baseline.total_input_tokens_anthropic_exact,
+          graphify: report.graphify.total_input_tokens_anthropic_exact,
+        })),
+        'less',
+        'more',
+        true,
+        totalQuestionCount,
+      ),
+      formatNativeAgentSuiteMetricLine(
+        'num_turns',
+        nativeAgentSuiteChanges(comparableReports, (report) => ({
+          baseline: report.baseline.num_turns,
+          graphify: report.graphify.num_turns,
+        })),
+        'fewer',
+        'more',
+        false,
+        totalQuestionCount,
+      ),
+      formatNativeAgentSuiteMetricLine(
+        'latency',
+        nativeAgentSuiteChanges(comparableReports, (report) => ({
+          baseline: report.baseline.duration_ms,
+          graphify: report.graphify.duration_ms,
+        })),
+        'faster',
+        'slower',
+        false,
+        totalQuestionCount,
+      ),
+    )
+  }
   for (const report of result.reports) {
     if (isNativeAgentRunFailure(report.baseline) || isNativeAgentRunFailure(report.graphify)) {
       lines.push(`- "${report.question}" → runner error (see ${portablePath(report.paths.report)})`)
@@ -1901,13 +2379,26 @@ export function formatNativeAgentCompareSummary(result: NativeAgentCompareResult
       continue
     }
 
+    const hasCacheActivity =
+      baseline.usage.cache_creation_input_tokens > 0 ||
+      baseline.cached_input_tokens_anthropic_exact > 0 ||
+      graphify.usage.cache_creation_input_tokens > 0 ||
+      graphify.cached_input_tokens_anthropic_exact > 0
+
     lines.push(
       `- "${report.question}"`,
       `    num_turns: baseline ${baseline.num_turns} → graphify ${graphify.num_turns}${formatDirectionalDelta(baseline.num_turns, graphify.num_turns, 'fewer', 'more')}`,
       `    latency:   baseline ${baseline.duration_ms}ms → graphify ${graphify.duration_ms}ms${formatDirectionalDelta(baseline.duration_ms, graphify.duration_ms, 'faster', 'slower')}`,
       `    input_tokens (Anthropic-reported): baseline ${baseline.total_input_tokens_anthropic_exact} → graphify ${graphify.total_input_tokens_anthropic_exact}${formatDirectionalDelta(baseline.total_input_tokens_anthropic_exact, graphify.total_input_tokens_anthropic_exact, 'less', 'more')}`,
-      `    provider/runtime proof: Anthropic reported input, cache, and total tokens for both runs`,
     )
+    if (hasCacheActivity) {
+      lines.push(
+        `    uncached_input_tokens (Anthropic-reported): baseline ${baseline.uncached_input_tokens_anthropic_exact} → graphify ${graphify.uncached_input_tokens_anthropic_exact}${formatDirectionalDelta(baseline.uncached_input_tokens_anthropic_exact, graphify.uncached_input_tokens_anthropic_exact, 'less', 'more')}`,
+        `    cache_creation_input_tokens (Anthropic-reported): baseline ${baseline.usage.cache_creation_input_tokens} → graphify ${graphify.usage.cache_creation_input_tokens}${formatDirectionalDelta(baseline.usage.cache_creation_input_tokens, graphify.usage.cache_creation_input_tokens, 'less', 'more')}`,
+        `    cache_read_input_tokens (Anthropic-reported): baseline ${baseline.usage.cache_read_input_tokens} → graphify ${graphify.usage.cache_read_input_tokens}${formatDirectionalDelta(baseline.usage.cache_read_input_tokens, graphify.usage.cache_read_input_tokens, 'less', 'more')}`,
+      )
+    }
+    lines.push(`    provider/runtime proof: Anthropic reported input, cache, and total tokens for both runs`)
   }
   return lines.join('\n')
 }

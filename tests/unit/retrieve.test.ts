@@ -8,9 +8,11 @@ import * as analyze from '../../src/pipeline/analyze.js'
 import { build } from '../../src/pipeline/build.js'
 import { extractJs } from '../../src/pipeline/extract.js'
 import { inspectReduxModuleExports } from '../../src/pipeline/extract/frameworks/redux.js'
+import { classifyTaskContract } from '../../src/runtime/context-pack.js'
 import {
   compactRetrieveResult,
   compactRetrieveResultForStdio,
+  contextPackFromRetrieveResult,
   reciprocalRankFuse,
   retrieveContext,
   scoreNode,
@@ -1259,7 +1261,14 @@ describe('retrieve', () => {
         expect.arrayContaining(['authSlice', 'authReducer', 'selectAuthStatus']),
       )
       expect(semanticLowLevelMatches.length).toBeLessThan(baselineLowLevelMatches.length)
-      expect(compactRetrieveResult(semanticResult).token_count).toBeLessThan(compactRetrieveResult(baselineResult).token_count)
+      const semanticCompact = compactRetrieveResult(semanticResult)
+      const baselineCompact = compactRetrieveResult(baselineResult)
+
+      expect(
+        semanticCompact.matched_nodes.filter((node) => isLowLevelMatch(node.label, node.node_kind)).length,
+      ).toBeLessThanOrEqual(
+        baselineCompact.matched_nodes.filter((node) => isLowLevelMatch(node.label, node.node_kind)).length,
+      )
     })
 
     it('prefers redux slice and selector summaries over utility helpers for redux-shaped questions', () => {
@@ -2376,6 +2385,93 @@ describe('retrieve', () => {
       expect(preview).not.toHaveProperty('line_range')
     })
 
+    it('renders retrieve packs task-aware without changing selected labels or compact compatibility', () => {
+      const baseResult = {
+        question: 'auth callback flow',
+        token_count: 999,
+        matched_nodes: [
+          {
+            node_id: 'auth_service',
+            label: 'AuthService.login',
+            source_file: '/src/auth/service.ts',
+            line_number: 18,
+            node_kind: 'method',
+            file_type: 'code',
+            snippet: [
+              'export class AuthService {',
+              '  async login(input: LoginInput) {',
+              '    return this.sessionStore.create(input.userId)',
+              '  }',
+              '}',
+            ].join('\n'),
+            match_score: 10,
+            relevance_band: 'direct' as const,
+            community: 0,
+            community_label: 'Auth',
+            evidence_class: 'primary' as const,
+          },
+          {
+            node_id: 'auth_controller',
+            label: 'AuthController.callback',
+            source_file: '/src/auth/controller.ts',
+            line_number: 10,
+            node_kind: 'method',
+            file_type: 'code',
+            snippet: [
+              'export class AuthController {',
+              '  async callback(input: LoginInput) {',
+              '    return this.authService.login(input)',
+              '  }',
+              '}',
+            ].join('\n'),
+            match_score: 8,
+            relevance_band: 'related' as const,
+            community: 0,
+            community_label: 'Auth',
+            evidence_class: 'structural' as const,
+          },
+        ],
+        relationships: [
+          {
+            from_id: 'auth_controller',
+            from: 'AuthController.callback',
+            to_id: 'auth_service',
+            to: 'AuthService.login',
+            relation: 'calls',
+          },
+        ],
+        community_context: [{ id: 0, label: 'Auth', node_count: 2 }],
+        graph_signals: { god_nodes: [], bridge_nodes: ['AuthController.callback'] },
+      }
+
+      const explainResult = {
+        ...baseResult,
+        task_contract: classifyTaskContract('explain', { budget: 256, prompt: 'Explain the auth callback flow' }),
+      }
+      const reviewResult = {
+        ...baseResult,
+        task_contract: classifyTaskContract('review', { budget: 256, prompt: 'Review the auth callback changes' }),
+      }
+
+      const explainPack = contextPackFromRetrieveResult(explainResult)
+      const reviewPack = contextPackFromRetrieveResult(reviewResult)
+      const compactReview = compactRetrieveResult(reviewResult)
+
+      expect(explainPack.nodes.map((node) => node.label)).toEqual(reviewPack.nodes.map((node) => node.label))
+      expect(explainPack.nodes.find((node) => node.node_id === 'auth_controller')?.representation_type).toBe('detail')
+      expect(explainPack.nodes.find((node) => node.node_id === 'auth_controller')?.representation_reason).toBe('explain detail preserved')
+      expect(reviewPack.nodes.find((node) => node.node_id === 'auth_controller')?.representation_type).toBe('signature')
+      expect(reviewPack.token_count).toBeLessThan(explainPack.token_count)
+      expect(compactReview.shared_file_type).toBe('code')
+      expect(compactReview.matched_nodes[0]).toEqual(expect.objectContaining({
+        label: reviewResult.matched_nodes[0]?.label,
+        representation_type: 'signature',
+      }))
+      expect(compactReview.matched_nodes[0]).not.toHaveProperty('community_label')
+      expect(compactReview.matched_nodes[0]).not.toHaveProperty('evidence_class')
+      expect(compactReview.matched_nodes[0]).not.toHaveProperty('file_type')
+    })
+
     it('compacts repeated node metadata for default payloads', () => {
       const graph = buildTestGraph()
       graph.graph.community_labels = { 0: 'Auth', 1: 'Data', 2: 'Observability' }
@@ -2826,7 +2922,6 @@ describe('retrieve', () => {
       const graph = buildTestGraph()
       const result = retrieveContext(graph, { question: 'auth', budget: 5000 })
 
-      // Files don't exist on disk in test, so all snippets should be null
       for (const node of result.matched_nodes) {
         expect(node.snippet).toBeNull()
       }

@@ -68,6 +68,21 @@ function buildFrameworkSupportGraph(): KnowledgeGraph {
 
 const RUNNER_GRAPH_PATH = join(process.cwd(), 'graphify-out', 'graph.json')
 const RUNNER_OUTPUT_DIR = join(process.cwd(), 'graphify-out', 'benchmark-quality-test-output')
+const SHARED_PACK_QUALITY_GATES_PATH = join(process.cwd(), 'docs', 'benchmarks', 'govalidate-suite', 'quality-gates.json')
+
+interface SharedPackQualityGate {
+  prompt: string
+  required_labels: string[]
+  forbidden_labels: string[]
+  max_pack_tokens: number
+  max_matched_nodes: number
+  max_relationships: number
+  required_answer_terms: string[]
+  forbidden_answer_terms: string[]
+  required_concepts: string[]
+  answer_quality_notes: string[]
+  manual_review_notes: string[]
+}
 
 function resetRunnerOutputDir(): void {
   rmSync(RUNNER_OUTPUT_DIR, { recursive: true, force: true })
@@ -489,5 +504,37 @@ describe('retrieval quality benchmark', () => {
     expect(report.avg_recall).toBeGreaterThanOrEqual(0.9)
     expect(report.avg_snippet_coverage).toBe(1)
     expect(report.mrr).toBeGreaterThanOrEqual(0.95)
+  })
+})
+
+describe('shared GoValidate pack-quality gate config', () => {
+  it('defines explicit pack and answer quality gates for each shared gate entry', () => {
+    const gateConfig = JSON.parse(readFileSync(SHARED_PACK_QUALITY_GATES_PATH, 'utf8')) as Record<string, SharedPackQualityGate>
+    const entries = Object.entries(gateConfig)
+
+    expect(entries.length).toBeGreaterThan(0)
+
+    for (const [gateName, gate] of entries) {
+      expect(gateName.length).toBeGreaterThan(0)
+      expect(typeof gate.prompt).toBe('string')
+      expect(gate.prompt.trim().length).toBeGreaterThan(0)
+      expect(gate.required_labels.length).toBeGreaterThan(0)
+      expect(Array.isArray(gate.forbidden_labels)).toBe(true)
+      expect(Number.isFinite(gate.max_pack_tokens)).toBe(true)
+      expect(gate.max_pack_tokens).toBeGreaterThan(0)
+      expect(Number.isInteger(gate.max_matched_nodes)).toBe(true)
+      expect(gate.max_matched_nodes).toBeGreaterThan(0)
+      expect(Number.isInteger(gate.max_relationships)).toBe(true)
+      expect(gate.max_relationships).toBeGreaterThanOrEqual(0)
+      expect(Array.isArray(gate.required_answer_terms)).toBe(true)
+      expect(gate.required_answer_terms.length).toBeGreaterThan(0)
+      expect(Array.isArray(gate.forbidden_answer_terms)).toBe(true)
+      expect(Array.isArray(gate.required_concepts)).toBe(true)
+      expect(gate.required_concepts.length).toBeGreaterThan(0)
+      expect(Array.isArray(gate.answer_quality_notes)).toBe(true)
+      expect(gate.answer_quality_notes.length).toBeGreaterThan(0)
+      expect(Array.isArray(gate.manual_review_notes)).toBe(true)
+      expect(gate.manual_review_notes.length).toBeGreaterThan(0)
+    }
   })
 })

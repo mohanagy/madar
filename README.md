@@ -80,6 +80,21 @@ your prompt
 
 When the agent says "tell me more," it expands a stable `handle_id` inside the same MCP session instead of re-reading the repo from scratch.
 
+### Adaptive context-pack representations
+
+Compiled context packs now have a first-pass **rendering-only** adaptive layer. Retrieval still selects the same nodes and paths first; the runtime only changes how those already-selected nodes are emitted for the task.
+
+The current deterministic core modes are:
+
+- `signature`
+- `behavior_sketch`
+- `call_chain`
+- `contract_view`
+- `implementation_excerpt`
+- `dependency_record`
+
+That means the same selected nodes can render differently for `explain`, `review`, and `impact` work without changing retrieval selection. The tradeoff is explicit: lower-token renderings carry less raw implementation detail, while explain-oriented packs keep full code snippets when the runtime already has them.
+
 **What it's good at:**
 - Cutting per-session input tokens on codebase questions (measured 2.6× fewer on the GoValidate benchmark below).
 - PR review via `pr_impact` and `review-compare` — turns the *current git diff* into ranked review risks, structural hotspots, and likely test files (measured 7.25× smaller review prompt on a real PR).
@@ -105,7 +120,7 @@ PR-review proof on a real diff: prompt tokens 63,024 → **8,690** (**7.25× few
 
 Latest runtime-pack refinement: **runtime-generation prompts stay compact** by following the strongest backend runtime path and suppressing sibling routes, script/migration noise, and shared-hub fan-out on broad backend-generation questions.
 
-Single-prompt backend benchmark snapshot: in one real GoValidate `compare --baseline-mode native_agent` run for `"Explain how idea report is getting generated"`, graphify-ts reduced Anthropic-reported input tokens from **1,653,307** to **498,280** (~**69.9%** lower). Details and caveats: [`docs/benchmarks/2026-05-12-govalidate-report-generation/`](docs/benchmarks/2026-05-12-govalidate-report-generation/).
+Single-prompt backend benchmark snapshot: in one real GoValidate `compare --baseline-mode native_agent` run for `"Explain how idea report is getting generated"`, graphify-ts reduced Anthropic-reported input tokens from **1,653,307** to **498,280** (~**69.9%** lower). Multi-question native-agent compare runs now also roll up suite wins/losses for input tokens, turns, and latency, report mean/median input-token reduction, call out comparable-question counts when some runs are excluded from the aggregate, and highlight the best win and worst regression prompt. Details and caveats: [`docs/benchmarks/2026-05-12-govalidate-report-generation/`](docs/benchmarks/2026-05-12-govalidate-report-generation/).
 
 [Reproduce them](docs/benchmarks/2026-04-30-govalidate/verify.sh) with one shell script against the committed evidence files.
 
@@ -140,7 +155,7 @@ For practical multi-agent workflows across Claude Code, Codex, Copilot, Cursor, 
 
 ## MCP tools
 
-These six MCP tools handle the most common agent workflows in the default **core** profile. The full surface is 25 tools, opt-in via `GRAPHIFY_TOOL_PROFILE=full` or `--profile full` on install. `--profile strict` still uses the lean core tool surface, but changes the installed guidance so the agent starts with one `context_pack` call and expands only when the pack diagnostics say evidence is missing.
+These seven MCP tools handle the most common agent workflows in the default **core** profile. The full surface is 26 tools, opt-in via `GRAPHIFY_TOOL_PROFILE=full` or `--profile full` on install. `--profile strict` still uses the lean core tool surface, but changes the installed guidance so the agent starts with one `context_pack` call and expands only when the pack diagnostics say evidence is missing. Start with `graph_summary` for a bounded deterministic first-turn overview, then use `retrieve` or `context_pack` when you need task-specific evidence.
 
 | Tool | When the agent uses it |
 |---|---|
@@ -150,6 +165,7 @@ These six MCP tools handle the most common agent workflows in the default **core
 | `call_chain` | "How does request flow from X to Y?" — shortest execution paths |
 | `community_overview` | "Show me the architecture" — communities + sizes + bridges |
 | `graph_stats` | "How big is this graph?" — node/edge counts, density, file-type mix |
+| `graph_summary` | "Give me the repo at a glance" — bounded deterministic overview of counts, domains, top modules, entrypoints, frameworks, and runtime paths |
 
 Full-profile additions: `context_pack`, `context_expand`, `context_prompt`, `context_session_reset`, `risk_map`, `implementation_checklist`, `relevant_files`, `feature_map`, `time_travel_compare`, `community_details`, `query_graph`, `get_node`, `get_neighbors`, `explain_node`, `shortest_path`, `graph_diff`, `god_nodes`, `semantic_anomalies`, `get_community`. Full reference: [examples/mcp-tool-examples.md](examples/mcp-tool-examples.md).
 
@@ -163,11 +179,13 @@ Within one MCP stdio session, identical `context_pack` requests for `task=explai
 graphify-ts generate .                          # build the graph
 graphify-ts generate . --spi                    # opt-in SPI pipeline (framework metadata + disk cache)
 graphify-ts watch .                             # rebuild on file change
+graphify-ts summary                             # bounded JSON overview before deeper retrieval
 graphify-ts pack "how does auth work?" --task explain          # compact CLI context payload
 graphify-ts pack "why does auth fail?" --task explain --retrieval-strategy slice-v1
 graphify-ts prompt "how does auth work?" --provider claude     # provider-ready compiled prompt
 graphify-ts review-compare graphify-out/graph.json --exec '...' --yes  # PR review benchmark
 graphify-ts compare "How does auth work?" --exec '...' --yes           # general benchmark
+graphify-ts compare "How does auth work?" --baseline-mode pack_only --exec '...' --yes  # bounded raw context vs compiled graphify pack
 graphify-ts time-travel main HEAD --view risk   # what changed between two refs
 graphify-ts federate frontend/graph.json backend/graph.json  # multi-repo merge
 graphify-ts --help                              # full surface
@@ -195,7 +213,7 @@ Everything stays local by default. No telemetry, no cloud upload, no API key req
 
 **Limitations to know:**
 
-1. **Cold-start sessions add a one-time MCP/tool-schema cost.** Core profile is ~3,000 bytes / ~750 tokens (down 30% from the original 4,270-byte surface). Multi-question sessions amortize this and end up cheaper.
+1. **Cold-start sessions add a one-time MCP/tool-schema cost.** Core profile is ~3,200 bytes / ~800 tokens (still down about 25% from the original 4,270-byte surface). Multi-question sessions amortize this and end up cheaper.
 2. **Deep extraction is best on JS/TS.** Python / Ruby / Go / Java / Rust use tree-sitter AST. C / Kotlin / C# / Scala / PHP / Swift / Zig use a generic structural extractor.
 3. **Static analysis can't resolve every dynamic runtime behavior.** Runtime-generated routes, heavy meta-programmed decorators, and string-built imports fall back to the base AST graph. SPI can tag common Prisma model operations and repository read/write methods so persistence-oriented prompts prefer likely storage endpoints, but that remains first-pass static coverage rather than full ORM/dataflow understanding.
 4. **Token reduction depends on project + task.** "How does auth work?" benefits more than "fix this typo." Always validate important code changes with tests and review.

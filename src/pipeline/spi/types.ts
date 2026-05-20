@@ -173,6 +173,7 @@ export type SpiEdgeKind =
   | 'references'
   // call layer
   | 'calls'
+  | 'enqueues_job'
   // type layer
   | 'extends'
   | 'implements'

@@ -34,6 +34,14 @@ This is the exact compare summary captured for the run:
     provider/runtime proof: Anthropic reported input, cache, and total tokens for both runs
 ```
 
+Current `compare --baseline-mode native_agent` reports keep the raw Anthropic `usage` block and also persist derived token-accounting fields for each run:
+
+- `total_input_tokens_anthropic_exact` = `input_tokens + cache_creation_input_tokens + cache_read_input_tokens`
+- `uncached_input_tokens_anthropic_exact` = `input_tokens + cache_creation_input_tokens`
+- `cached_input_tokens_anthropic_exact` = `cache_read_input_tokens`
+
+The terminal summary only prints the extra uncached/cache lines when at least one run reported non-zero cache activity, so zero-cache runs stay compact while cached runs make the cold-vs-reused split explicit.
+
 ## Commands
 
 `0.22.7` is the version used for this benchmark. Future versions may improve or regress; do not read this as “install 0.22.7 forever.”
@@ -63,7 +71,22 @@ If you want a machine-readable copy of the pack output for archival, redirect th
 
 The compare win only became credible after the runtime pack stopped filling the full 4000-token budget and returned a compact runtime slice instead of near-whole-backend noise.
 
-The `v0.22.7` pack quality gate for this prompt was:
+Pack quality is necessary but not sufficient for answer quality: a small pack can still miss the runtime path and produce a worse answer. The win here is only worth publishing because the saved pack stayed compact **and** preserved the report-generation route that the answer needed.
+
+The shared gate definition now lives in:
+
+- `docs/benchmarks/govalidate-suite/quality-gates.json`
+- `docs/benchmarks/govalidate-suite/verify-pack-quality.js`
+- `docs/benchmarks/govalidate-suite/verify-answer-quality.js`
+
+For this prompt, the shared `docs-artifact` gate encodes the same runtime-path requirements and ceilings that were checked for the `v0.22.7` run:
+
+Exact labels used for that gate:
+
+- required runtime path labels: `IdeaReportController`, `GenerateIdeaReportService`
+- forbidden sibling/script/share labels: `IdeaReportSharePage`, `GenerateIdeaReportScript`
+
+Observed report pack for this saved benchmark:
 
 ```text
 token_count: 1456
@@ -77,7 +100,25 @@ coverage: primary/supporting/structural/implementation/structure covered
 diagnostics: none
 ```
 
-Why this matters: a 3.32x input-token reduction is not persuasive if the compiled pack still expands to the full budget. Here the pack stayed compact **and** preserved the required runtime path.
+Run the shared verifier against a saved compare report with:
+
+```bash
+node docs/benchmarks/govalidate-suite/verify-pack-quality.js \
+  --report docs/benchmarks/2026-05-12-govalidate-report-generation/report.json \
+  --config docs/benchmarks/govalidate-suite/quality-gates.json \
+  --gate docs-artifact
+```
+
+Run the answer-quality verifier against the saved graphify answer with:
+
+```bash
+node docs/benchmarks/govalidate-suite/verify-answer-quality.js \
+  --answer path/to/graphify-answer.txt \
+  --config docs/benchmarks/govalidate-suite/quality-gates.json \
+  --gate docs-artifact
+```
+
+The pack check and the answer check serve different purposes: the pack verifier confirms the runtime slice stayed compact and grounded in the expected path, while the answer verifier catches obvious missing facts or forbidden claims in the saved answer text. Neither replaces manual review.
 
 ## Reproducing from this directory
 
@@ -87,7 +128,7 @@ Drop the `report.json` from:
 graphify-out/compare/2026-05-12T19-18-26/report.json
 ```
 
-into this directory, then run:
+into this directory, then run the shared verifier command above and:
 
 ```bash
 bash docs/benchmarks/2026-05-12-govalidate-report-generation/verify.sh
@@ -100,7 +141,7 @@ The script recomputes the saved-token, saved-turn, and latency deltas directly f
 - This is a **single prompt / single project** benchmark.
 - Native-agent behavior is stochastic; reruns can vary.
 - Claude MCP/tool usage can change turn count and token totals.
-- Anthropic provider-reported tokens include cache creation/read details; `compare` records provider/runtime proof for both runs.
+- Anthropic provider-reported tokens include cache creation/read details; `compare` records the raw provider `usage` block plus derived total/uncached/cached input-token fields for both runs.
 - This benchmark does **not** prove universal token reduction.
 - More benchmark cases are needed across prompts, repositories, and task types.
 

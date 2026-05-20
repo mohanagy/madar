@@ -2,6 +2,8 @@ import { existsSync, readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 
 import type {
+  ContextPackExecutionSlice,
+  ContextPackExecutionSliceStep,
   CompiledContextPack,
   ContextPackClaim,
   ContextPackCoverage,
@@ -9,6 +11,7 @@ import type {
   ContextPackExpandableLineRange,
   ContextPackExpandableRef,
   ContextPackNode,
+  ContextRepresentationType,
   ContextPackRetrievalStrategy,
   ContextPackSelectionDiagnostics,
   ContextPackSliceMetadata,
@@ -31,6 +34,7 @@ import {
   compactContextPack,
   compileContextPack,
   estimateContextPackEntryTokens,
+  renderCompiledContextPackNodes,
   type ContextPackSelectionStrategy,
   type ContextPackNodeCandidate,
 } from './context-pack.js'
@@ -103,6 +107,8 @@ export interface RetrieveMatchedNode {
   community: number | null
   community_label: string | null
   evidence_class?: ContextPackEvidenceClass
+  representation_type?: ContextRepresentationType
+  representation_reason?: string
 }
 
 export interface RetrieveRelationship {
@@ -137,6 +143,7 @@ export interface RetrieveResult {
   retrieval_gate?: RetrievalGateDecision
   retrieval_strategy?: ContextPackRetrievalStrategy
   slice?: ContextPackSliceMetadata
+  execution_slice?: ContextPackExecutionSlice
 }
 
 export interface CompactRetrieveMatchedNode extends Omit<RetrieveMatchedNode, 'community_label' | 'file_type' | 'framework_boost'> {
@@ -1174,6 +1181,7 @@ function rankedSeedCandidateIds(
 function relationWeight(relation: string): number {
   switch (relation) {
     case 'calls':
+    case 'enqueues_job':
     case 'imports_from':
     case 'defines':
     case 'defines_action':
@@ -1272,6 +1280,10 @@ function pipelineBridgeNode(
   return pipelineBridgeText(node.label, node.framework_role, node.source_file, node.node_kind)
 }
 
+function runtimeFlowRelation(relation: string): boolean {
+  return relation === 'calls' || relation === 'enqueues_job'
+}
+
 function compactSlicePromotionApplies(result: RetrieveResult): boolean {
   if (result.retrieval_strategy !== 'slice-v1' || !promptWantsRuntimePipeline(result.question)) {
     return false
@@ -1305,7 +1317,7 @@ function promotedSliceCompactNodeIds(result: RetrieveResult): string[] {
   )
 
   for (const path of result.slice.selected_paths) {
-    if (path.direction !== 'forward' || path.relation !== 'calls' || typeof path.to_id !== 'string') {
+    if (path.direction !== 'forward' || !runtimeFlowRelation(path.relation) || typeof path.to_id !== 'string') {
       continue
     }
     const target = result.matched_nodes.find((node) => node.node_id === path.to_id)
@@ -1345,14 +1357,14 @@ function structuralSliceNodeIds(
   }
 
   const nodesById = new Map(orderedCandidates.map((node) => [node.id, node]))
-  const forwardCalls = new Map<string, ContextPackSliceMetadata['selected_paths']>()
+  const forwardRuntimeFlow = new Map<string, ContextPackSliceMetadata['selected_paths']>()
   for (const path of sliceMetadata.selected_paths) {
-    if (path.direction !== 'forward' || path.relation !== 'calls' || typeof path.from_id !== 'string' || typeof path.to_id !== 'string') {
+    if (path.direction !== 'forward' || !runtimeFlowRelation(path.relation) || typeof path.from_id !== 'string' || typeof path.to_id !== 'string') {
       continue
     }
-    const current = forwardCalls.get(path.from_id) ?? []
+    const current = forwardRuntimeFlow.get(path.from_id) ?? []
     current.push(path)
-    forwardCalls.set(path.from_id, current)
+    forwardRuntimeFlow.set(path.from_id, current)
   }
 
   const structural = new Set<string>()
@@ -1372,7 +1384,7 @@ function structuralSliceNodeIds(
       continue
     }
 
-    for (const path of forwardCalls.get(current.id) ?? []) {
+    for (const path of forwardRuntimeFlow.get(current.id) ?? []) {
       const target = nodesById.get(path.to_id!)
       if (!target) {
         continue
@@ -1447,6 +1459,314 @@ function augmentSliceCandidateIdsForDebug(
   }
 
   return expanded
+}
+
+function runtimeGenerationExecutionSliceApplies(
+  taskContract: ContextPackTaskContract,
+  retrievalGate: RetrievalGateDecision,
+  sliceMetadata: ContextPackSliceMetadata | undefined,
+): boolean {
+  return retrievalGate.signals.generation_intent === 'runtime_generation'
+    && retrievalGate.signals.target_domain_hint === 'backend_runtime'
+    && taskContract.task_kind === 'explain'
+    && sliceMetadata !== undefined
+}
+
+function executionSliceFlowRelation(relation: string): boolean {
+  return runtimeFlowRelation(relation)
+    || relation === 'controller_route'
+    || relation === 'route_handler'
+    || relation === 'method'
+}
+
+function executionSliceEdgePriority(relation: string): number {
+  if (relation === 'enqueues_job') {
+    return 3
+  }
+  if (relation === 'calls') {
+    return 2
+  }
+  if (relation === 'controller_route' || relation === 'route_handler' || relation === 'method') {
+    return 1
+  }
+  return 0
+}
+
+function promptExpectsPersistenceStep(question: string): boolean {
+  return /\b(?:persist(?:ence|ent)?|repository|database|db|store|storage)\b/i.test(question)
+}
+
+function persistenceLikeExecutionStep(
+  node: Pick<RetrieveMatchedNode, 'label' | 'source_file' | 'node_kind' | 'framework_role'>,
+): boolean {
+  const lower = `${node.label} ${node.source_file} ${node.node_kind ?? ''} ${node.framework_role ?? ''}`.toLowerCase()
+  return /\b(?:persist|repository|database|db|storage|store|sessionstore|createsession|insert|write|save)\b/.test(lower)
+}
+
+function executionSliceStepPriority(
+  node: Pick<ContextPackExecutionSliceStep, 'label' | 'source_file' | 'node_kind' | 'framework_role'>,
+  question: string,
+): number {
+  const lower = `${node.label} ${node.source_file} ${node.node_kind ?? ''} ${node.framework_role ?? ''}`.toLowerCase()
+  const label = node.label
+  let value = 0
+
+  if (promptExpectsPersistenceStep(question) && persistenceLikeExecutionStep(node)) {
+    value += 100
+  }
+  if (promptWantsRuntimePipeline(question) && /\b(?:queue|job|worker|pipeline|orchestrator)\b/.test(lower)) {
+    value += 25
+  }
+  if (promptWantsRuntimePipeline(question) && (
+    /(?:^|[.#])(?:start|enqueue|process|search|score|save|create|generate|dispatch|persist|add)[A-Za-z_$\w]*\(?\)?$/i.test(label)
+    || /\baddjob\b/i.test(label)
+  )) {
+    value += 15
+  }
+  if (/\b(?:route|controller|service|queue|worker|job|pipeline|orchestrator|repository|store)\b/.test(lower)) {
+    value += 10
+  }
+  if (/\b(?:validate|validator|schema|dto|spec|test|guard|config|env)\b/.test(lower)) {
+    value -= 5
+  }
+  if (promptWantsRuntimePipeline(question) && (
+    /(?:^|[.#])(?:cancel|claim|status|get|list|retry|suggest|validate|update)[A-Za-z_$\w]*\(?\)?$/i.test(label)
+    || /\b(?:cancel|claim|status|suggest)\b/.test(lower)
+  )) {
+    value -= 20
+  }
+
+  return value
+}
+
+function executionSliceStepFromGraph(
+  graph: KnowledgeGraph,
+  nodeId: string,
+  rootPath?: string,
+): ContextPackExecutionSliceStep {
+  const attributes = graph.nodeAttributes(nodeId)
+  return {
+    node_id: nodeId,
+    label: String(attributes.label ?? nodeId),
+    source_file: relativizeSourceFile(String(attributes.source_file ?? ''), rootPath),
+    line_number: lineNumberFromSourceLocation(String(attributes.source_location ?? '')) ?? 0,
+    ...(typeof attributes.node_kind === 'string' ? { node_kind: attributes.node_kind } : {}),
+    ...(typeof attributes.framework_role === 'string' ? { framework_role: attributes.framework_role } : {}),
+  }
+}
+
+function collectExecutionSliceScope(
+  graph: KnowledgeGraph,
+  sliceMetadata: ContextPackSliceMetadata,
+  anchorIds: readonly string[],
+  resolveNodeId: (nodeId: string | undefined, label: string) => string | undefined,
+): { orderedIds: string[]; idSet: ReadonlySet<string> } {
+  const orderedIds: string[] = []
+  const idSet = new Set<string>()
+  let addedSelectedFlowPath = false
+  const addNodeId = (nodeId: string | undefined): void => {
+    if (!nodeId || idSet.has(nodeId) || !graph.hasNode(nodeId)) {
+      return
+    }
+    idSet.add(nodeId)
+    orderedIds.push(nodeId)
+  }
+
+  for (const anchorId of anchorIds) {
+    addNodeId(anchorId)
+  }
+
+  for (const path of sliceMetadata.selected_paths) {
+    if (!executionSliceFlowRelation(path.relation)) {
+      continue
+    }
+    const beforeSize = idSet.size
+    addNodeId(resolveNodeId(path.from_id, path.from))
+    addNodeId(resolveNodeId(path.to_id, path.to))
+    if (idSet.size > beforeSize) {
+      addedSelectedFlowPath = true
+    }
+  }
+
+  if (addedSelectedFlowPath) {
+    return { orderedIds, idSet }
+  }
+
+  const queue = anchorIds.map((nodeId) => ({ nodeId, depth: 0 }))
+  const bestDepthByNode = new Map(anchorIds.map((nodeId) => [nodeId, 0]))
+  const enqueueNeighbor = (nodeId: string, depth: number): void => {
+    const bestDepth = bestDepthByNode.get(nodeId)
+    if (bestDepth !== undefined && bestDepth <= depth) {
+      return
+    }
+    bestDepthByNode.set(nodeId, depth)
+    queue.push({ nodeId, depth })
+  }
+
+  while (queue.length > 0) {
+    const { nodeId, depth } = queue.shift()!
+    addNodeId(nodeId)
+    if (depth >= 6) {
+      continue
+    }
+    for (const predecessorId of graph.predecessors(nodeId)) {
+      if (executionSliceFlowRelation(String(graph.edgeAttributes(predecessorId, nodeId).relation ?? 'related_to'))) {
+        enqueueNeighbor(predecessorId, depth + 1)
+      }
+    }
+    for (const successorId of graph.successors(nodeId)) {
+      if (executionSliceFlowRelation(String(graph.edgeAttributes(nodeId, successorId).relation ?? 'related_to'))) {
+        enqueueNeighbor(successorId, depth + 1)
+      }
+    }
+  }
+
+  return { orderedIds, idSet }
+}
+
+function pickExecutionSliceStart(
+  graph: KnowledgeGraph,
+  anchorIds: readonly string[],
+  orderedIds: readonly string[],
+  idSet: ReadonlySet<string>,
+  nodeById: ReadonlyMap<string, ContextPackExecutionSliceStep>,
+  question: string,
+): string | undefined {
+  const anchoredStart = anchorIds.find((nodeId) => idSet.has(nodeId))
+  if (anchoredStart) {
+    return anchoredStart
+  }
+
+  const roots = orderedIds.filter((nodeId) =>
+    [...graph.predecessors(nodeId)].every((predecessorId) =>
+      !idSet.has(predecessorId)
+      || !executionSliceFlowRelation(String(graph.edgeAttributes(predecessorId, nodeId).relation ?? 'related_to')),
+    ),
+  )
+  const candidates = roots.length > 0 ? roots : orderedIds
+
+  return [...candidates].sort((left, right) => {
+    const leftStep = nodeById.get(left)
+    const rightStep = nodeById.get(right)
+    return (rightStep ? executionSliceStepPriority(rightStep, question) : 0)
+      - (leftStep ? executionSliceStepPriority(leftStep, question) : 0)
+  })[0]
+}
+
+function walkExecutionSlice(
+  graph: KnowledgeGraph,
+  startId: string,
+  idSet: ReadonlySet<string>,
+  nodeById: ReadonlyMap<string, ContextPackExecutionSliceStep>,
+  question: string,
+): string[] {
+  const orderedPathIds: string[] = []
+  const seen = new Set<string>()
+  let currentId: string | undefined = startId
+
+  while (currentId && !seen.has(currentId)) {
+    orderedPathIds.push(currentId)
+    seen.add(currentId)
+
+    const nextId: string | undefined = [...graph.successors(currentId)]
+      .filter((candidateId) =>
+        idSet.has(candidateId)
+        && !seen.has(candidateId)
+        && executionSliceFlowRelation(String(graph.edgeAttributes(currentId!, candidateId).relation ?? 'related_to')),
+      )
+      .sort((left, right) => {
+        const leftRelation = String(graph.edgeAttributes(currentId!, left).relation ?? 'related_to')
+        const rightRelation = String(graph.edgeAttributes(currentId!, right).relation ?? 'related_to')
+        const leftStep = nodeById.get(left)
+        const rightStep = nodeById.get(right)
+        return executionSliceEdgePriority(rightRelation) - executionSliceEdgePriority(leftRelation)
+          || (rightStep ? executionSliceStepPriority(rightStep, question) : 0)
+          - (leftStep ? executionSliceStepPriority(leftStep, question) : 0)
+      })[0]
+
+    currentId = nextId
+  }
+
+  return orderedPathIds
+}
+
+function buildExecutionSlice(
+  graph: KnowledgeGraph,
+  taskContract: ContextPackTaskContract,
+  retrievalGate: RetrievalGateDecision,
+  question: string,
+  sliceMetadata: ContextPackSliceMetadata | undefined,
+  rootPath?: string,
+): ContextPackExecutionSlice | undefined {
+  if (!runtimeGenerationExecutionSliceApplies(taskContract, retrievalGate, sliceMetadata) || !sliceMetadata) {
+    return undefined
+  }
+
+  const nodeIdByLabel = new Map<string, string>()
+  for (const [nodeId, attributes] of graph.nodeEntries()) {
+    const label = String(attributes.label ?? nodeId)
+    if (!nodeIdByLabel.has(label)) {
+      nodeIdByLabel.set(label, nodeId)
+    }
+  }
+
+  const resolveNodeId = (nodeId: string | undefined, label: string): string | undefined => {
+    if (nodeId && graph.hasNode(nodeId)) {
+      return nodeId
+    }
+    return nodeIdByLabel.get(label)
+  }
+
+  const anchorIds = sliceMetadata.anchors
+    .map((anchor) => resolveNodeId(anchor.node_id, anchor.label))
+    .filter((nodeId): nodeId is string => typeof nodeId === 'string')
+  const { orderedIds, idSet } = collectExecutionSliceScope(graph, sliceMetadata, anchorIds, resolveNodeId)
+  if (orderedIds.length === 0) {
+    return {
+      status: 'partial',
+      boundary_reason: 'slice missing runtime path',
+      steps: [],
+    }
+  }
+
+  const nodeById = new Map(
+    orderedIds
+      .map((nodeId) => [nodeId, executionSliceStepFromGraph(graph, nodeId, rootPath)] as const),
+  )
+  const startId = pickExecutionSliceStart(graph, anchorIds, orderedIds, idSet, nodeById, question)
+  if (!startId) {
+    return {
+      status: 'partial',
+      boundary_reason: 'slice missing runtime path',
+      steps: [],
+    }
+  }
+
+  const orderedPathIds = walkExecutionSlice(graph, startId, idSet, nodeById, question)
+
+  const seen = new Set<string>()
+  const steps = orderedPathIds.flatMap((nodeId) => {
+    if (seen.has(nodeId)) {
+      return []
+    }
+    seen.add(nodeId)
+    const node = nodeById.get(nodeId)
+    return node ? [node] : []
+  })
+
+  const expectsPersistence = promptExpectsPersistenceStep(question)
+  const reachedPersistence = steps.some((step) => persistenceLikeExecutionStep(step))
+
+  return expectsPersistence && !reachedPersistence
+    ? {
+        status: 'partial',
+        boundary_reason: 'slice stops before expected persistence step',
+        steps,
+      }
+    : {
+        status: 'complete',
+        steps,
+      }
 }
 
 function buildFrameworkQuestionProfile(question: string, questionTokens: readonly string[]): FrameworkQuestionProfile {
@@ -1927,16 +2247,23 @@ function fallbackRetrieveCoverage(result: RetrieveResult): ContextPackCoverage {
 export function contextPackFromRetrieveResult(
   result: RetrieveResult,
 ): CompiledContextPack<ContextPackNode, RetrieveRelationship, RetrieveCommunityContext> {
-  return {
-    task_contract: result.task_contract ?? classifyTaskContract('explain', {
-      budget: result.token_count,
-      prompt: result.question,
-    }),
-    token_count: result.token_count,
-    nodes: result.matched_nodes.map((node) => ({
+  const taskContract = result.task_contract ?? classifyTaskContract('explain', {
+    budget: result.token_count,
+    prompt: result.question,
+  })
+  const renderedNodes = renderCompiledContextPackNodes(
+    taskContract,
+    result.matched_nodes.map((node) => ({
       ...node,
       evidence_class: node.evidence_class ?? retrieveEvidenceClassForBand(node.relevance_band),
     })),
+    result.relationships,
+  )
+
+  return {
+    task_contract: taskContract,
+    token_count: renderedNodes.token_count,
+    nodes: renderedNodes.nodes,
     relationships: result.relationships,
     community_context: result.community_context,
     graph_signals: result.graph_signals,
@@ -1946,6 +2273,7 @@ export function contextPackFromRetrieveResult(
     ...(result.selection_diagnostics ? { selection_diagnostics: result.selection_diagnostics } : {}),
     ...(result.retrieval_strategy ? { retrieval_strategy: result.retrieval_strategy } : {}),
     ...(result.slice ? { slice: result.slice } : {}),
+    ...(result.execution_slice ? { execution_slice: result.execution_slice } : {}),
     ...(result.retrieval_gate ? { retrieval_gate: result.retrieval_gate } : {}),
   }
 }
@@ -1974,6 +2302,7 @@ function buildRetrieveResultFromOrderedCandidates(
     bridge_nodes: [...new Set(orderedCandidates.map((node) => node.label).filter((label) => retrieveGraphSignals.bridgeNodeLabels.has(label)))],
   }
   const structuralIds = structuralSliceNodeIds(sliceMetadata, orderedCandidates, options.question)
+  const executionSlice = buildExecutionSlice(graph, taskContract, retrievalGate, options.question, sliceMetadata, rootPath)
   const nodeCandidates: Array<ContextPackNodeCandidate<ContextPackNode>> = orderedCandidates.map((node) => {
     let builtEntry: RetrieveMatchedNode | undefined
     let tokenCost: number | undefined
@@ -2090,6 +2419,7 @@ function buildRetrieveResultFromOrderedCandidates(
     ...(pack.retrieval_gate ? { retrieval_gate: pack.retrieval_gate } : {}),
     retrieval_strategy: options.retrievalStrategy ?? 'default',
     ...(sliceMetadata ? { slice: sliceMetadata } : {}),
+    ...(executionSlice ? { execution_slice: executionSlice } : {}),
   }
 }
 
@@ -2824,6 +3154,7 @@ export function compactRetrieveResult(result: RetrieveResult): CompactRetrieveRe
   const compactFrameworkLimit =
     frameworkProfile.frameworkShaped && result.matched_nodes.some((node) => (node.framework_boost ?? 0) > 0) ? 5 : Number.POSITIVE_INFINITY
   const fullPack = contextPackFromRetrieveResult(result)
+  const executionSlice = result.execution_slice
   const promotedSliceNodeIds = promotedSliceCompactNodeIds(result)
   const compactPack = promotedSliceNodeIds.length > 0
     ? compactContextPack(fullPack, {
@@ -2849,6 +3180,7 @@ export function compactRetrieveResult(result: RetrieveResult): CompactRetrieveRe
     ...(compactPack.shared_file_type ? { shared_file_type: compactPack.shared_file_type } : {}),
     retrieval_strategy: result.retrieval_strategy ?? 'default',
     ...(result.slice ? { slice: result.slice } : {}),
+    ...(executionSlice ? { execution_slice: executionSlice } : {}),
     ...(result.retrieval_gate ? { retrieval_gate: result.retrieval_gate } : {}),
   }
 }
@@ -2896,6 +3228,7 @@ export function compactRetrieveResultForStdio(result: RetrieveResult): RetrieveR
     ...(result.selection_diagnostics ? { selection_diagnostics: result.selection_diagnostics } : {}),
     retrieval_strategy: result.retrieval_strategy ?? 'default',
     ...(result.slice ? { slice: result.slice } : {}),
+    ...(compactResult.execution_slice ? { execution_slice: compactResult.execution_slice } : {}),
     ...(result.retrieval_gate ? { retrieval_gate: result.retrieval_gate } : {}),
   }
 }

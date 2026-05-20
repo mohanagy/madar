@@ -2,6 +2,7 @@ import type { RetrievalLevel } from '../../contracts/retrieval-gate.js'
 
 const PRIMARY_RELATIONS = new Set([
   'calls',
+  'enqueues_job',
   'imports_from',
   'contains',
   'method',

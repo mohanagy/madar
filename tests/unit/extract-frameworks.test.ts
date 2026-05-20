@@ -1,9 +1,11 @@
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 
 import * as ts from 'typescript'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { build, buildFromJson } from '../../src/pipeline/build.js'
+import * as detectModule from '../../src/pipeline/detect.js'
 import { _makeId, createEdge, createNode } from '../../src/pipeline/extract/core.js'
 import { applyJsFrameworkAdapters } from '../../src/pipeline/extract/frameworks/core.js'
 import type { ExtractionFragment } from '../../src/pipeline/extract/dispatch.js'
@@ -11,9 +13,14 @@ import { resolveImportPath } from '../../src/pipeline/extract/frameworks/js-impo
 import type { JsFrameworkAdapter, JsFrameworkContext } from '../../src/pipeline/extract/frameworks/types.js'
 import { extractJs } from '../../src/pipeline/extract.js'
 import { inspectReduxModuleExports } from '../../src/pipeline/extract/frameworks/redux.js'
+ 
+const REPO_ROOT = process.cwd()
+const FIXTURES_DIR = join(REPO_ROOT, 'tests', 'fixtures')
+const TEST_ARTIFACTS_DIR = join(REPO_ROOT, '.test-artifacts', 'framework-adapter-tests')
 
-const FIXTURES_DIR = join(process.cwd(), 'tests', 'fixtures')
-const TEST_ARTIFACTS_DIR = join(process.cwd(), '.test-artifacts', 'framework-adapter-tests')
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 function normalizeFileNameForAssertion(filePath: string): string {
   return filePath.replaceAll('\\', '/')
@@ -3067,6 +3074,252 @@ describe('js framework extraction contract', () => {
           source_file: join(scratchDir, 'shared', 'auth.service.ts'),
           framework_role: 'nest_provider',
         }),
+      )
+    } finally {
+      rmSync(scratchDir, { recursive: true, force: true })
+    }
+  })
+
+  it('emits nest queue job edges for literal BullMQ-style enqueue sites without inventing direct worker calls', () => {
+    const scratchDir = join(TEST_ARTIFACTS_DIR, 'nest-queue-job-edge')
+    try {
+      writeScratchFiles(scratchDir, {
+        'pipeline.ts': [
+          "import { Controller, Injectable, Post } from '@nestjs/common'",
+          '',
+          'function Processor(_queueName: string): ClassDecorator {',
+          '  return () => undefined',
+          '}',
+          '',
+          'function Process(_jobName: string): MethodDecorator {',
+          '  return () => undefined',
+          '}',
+          '',
+          'type PipelineJobPayload = {',
+          '  problem: string',
+          '  ideaId: string',
+          '}',
+          '',
+          'class PipelineQueue {',
+          '  async add(jobName: string, input: PipelineJobPayload) {',
+          '    return {',
+          '      id: `${input.ideaId}:${jobName}`,',
+          '    }',
+          '  }',
+          '}',
+          '',
+          '@Injectable()',
+          'class QueueRegistryService {',
+          '  private readonly pipelineQueue = new PipelineQueue()',
+          '',
+          '  async addJob(input: PipelineJobPayload) {',
+          "    return this.pipelineQueue.add('legacy.pipeline.edge.process', input)",
+          '  }',
+          '}',
+          '',
+          '@Injectable()',
+          'class PipelineTriggerService {',
+          '  constructor(private readonly queueRegistryService: QueueRegistryService) {}',
+          '',
+          '  async startPipeline(problem: string, ideaId: string) {',
+          '    return this.queueRegistryService.addJob({ problem, ideaId })',
+          '  }',
+          '}',
+          '',
+          "@Processor('legacy.pipeline.edge')",
+          'class OrchestratorWorker {',
+          "  @Process('legacy.pipeline.edge.process')",
+          '  async process(job: { data: PipelineJobPayload }) {',
+          '    return job.data.ideaId',
+          '  }',
+          '}',
+          '',
+          "@Controller('ideas')",
+          'class IdeaGenerationController {',
+          '  constructor(private readonly pipelineTriggerService: PipelineTriggerService) {}',
+          '',
+          "  @Post('generate')",
+          '  async generateFromProblem(problem: string, ideaId: string) {',
+          '    return this.pipelineTriggerService.startPipeline(problem, ideaId)',
+          '  }',
+          '}',
+        ].join('\n'),
+      })
+
+      const result = extractJs(join(scratchDir, 'pipeline.ts'))
+      const addJobNodeId = nodeIdForLabel(result, '.addJob()')
+      const workerNodeId = nodeIdForLabel(result, 'OrchestratorWorker')
+      const processNodeId = result.edges.find(
+        (edge) => edge.relation === 'method' && edge.source === workerNodeId,
+      )?.target
+
+      expect(processNodeId).toBeDefined()
+
+      expect(result.edges).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ source: addJobNodeId, target: processNodeId, relation: 'enqueues_job' }),
+        ]),
+      )
+      expect(result.edges).not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ source: addJobNodeId, target: processNodeId, relation: 'calls' }),
+        ]),
+      )
+    } finally {
+      rmSync(scratchDir, { recursive: true, force: true })
+    }
+  })
+
+  it('reuses the cached bull worker index without rediscovering the workspace on repeated extracts', () => {
+    mkdirSync(TEST_ARTIFACTS_DIR, { recursive: true })
+    const scratchDir = mkdtempSync(join(TEST_ARTIFACTS_DIR, 'nest-queue-job-edge-cache-'))
+    const originalCwd = process.cwd()
+
+    try {
+      writeScratchFiles(scratchDir, {
+        'pipeline.ts': [
+          "import { Injectable } from '@nestjs/common'",
+          '',
+          'function Processor(_queueName: string): ClassDecorator {',
+          '  return () => undefined',
+          '}',
+          '',
+          'function Process(_jobName: string): MethodDecorator {',
+          '  return () => undefined',
+          '}',
+          '',
+          'type PipelineJobPayload = {',
+          '  problem: string',
+          '  ideaId: string',
+          '}',
+          '',
+          'class PipelineQueue {',
+          '  async add(jobName: string, input: PipelineJobPayload) {',
+          '    return {',
+          '      id: `${input.ideaId}:${jobName}`,',
+          '    }',
+          '  }',
+          '}',
+          '',
+          '@Injectable()',
+          'class QueueRegistryService {',
+          '  private readonly pipelineQueue = new PipelineQueue()',
+          '',
+          '  async addJob(input: PipelineJobPayload) {',
+          "    return this.pipelineQueue.add('legacy.pipeline.edge.process', input)",
+          '  }',
+          '}',
+          '',
+          "@Processor('legacy.pipeline.edge')",
+          'class OrchestratorWorker {',
+          "  @Process('legacy.pipeline.edge.process')",
+          '  async process(job: { data: PipelineJobPayload }) {',
+          '    return job.data.ideaId',
+          '  }',
+          '}',
+        ].join('\n'),
+      })
+
+      const fixturePath = join(scratchDir, 'pipeline.ts')
+      const detectSpy = vi.spyOn(detectModule, 'detect').mockReturnValue({
+        files: {
+          code: [fixturePath],
+          document: [],
+          paper: [],
+          image: [],
+          audio: [],
+          video: [],
+        },
+        total_files: 1,
+        total_words: 0,
+        needs_graph: false,
+        warning: null,
+        skipped_sensitive: [],
+        graphifyignore_patterns: 0,
+      })
+
+      process.chdir(scratchDir)
+      extractJs(fixturePath)
+      extractJs(fixturePath)
+
+      expect(detectSpy).toHaveBeenCalledTimes(1)
+    } finally {
+      process.chdir(originalCwd)
+      rmSync(scratchDir, { recursive: true, force: true })
+    }
+  })
+
+  it('emits nest queue job edges for WorkerHost-style processors without @Process decorators', () => {
+    mkdirSync(TEST_ARTIFACTS_DIR, { recursive: true })
+    const scratchDir = mkdtempSync(join(TEST_ARTIFACTS_DIR, 'nest-worker-host-queue-edge-'))
+
+    try {
+      writeScratchFiles(scratchDir, {
+        'pipeline.ts': [
+          "import { Injectable } from '@nestjs/common'",
+          '',
+          'function Processor(_queueName: string): ClassDecorator {',
+          '  return () => undefined',
+          '}',
+          '',
+          'type PipelineJobPayload = {',
+          '  problem: string',
+          '  ideaId: string',
+          '}',
+          '',
+          'type BullJob<T> = {',
+          '  name: string',
+          '  data: T',
+          '}',
+          '',
+          'abstract class WorkerHost {',
+          '  abstract process(job: BullJob<PipelineJobPayload>): Promise<string>',
+          '}',
+          '',
+          'class PipelineQueue {',
+          '  async add(jobName: string, input: PipelineJobPayload) {',
+          '    return {',
+          '      id: `${input.ideaId}:${jobName}`,',
+          '    }',
+          '  }',
+          '}',
+          '',
+          '@Injectable()',
+          'class QueueRegistryService {',
+          '  private readonly pipelineQueue = new PipelineQueue()',
+          '',
+          '  async addJob(input: PipelineJobPayload) {',
+          "    return this.pipelineQueue.add('legacy.pipeline.edge.process', input)",
+          '  }',
+          '}',
+          '',
+          "@Processor('legacy.pipeline.edge')",
+          'class OrchestratorWorker extends WorkerHost {',
+          '  async process(job: BullJob<PipelineJobPayload>) {',
+          '    return job.data.ideaId',
+          '  }',
+          '}',
+        ].join('\n'),
+      })
+
+      const result = extractJs(join(scratchDir, 'pipeline.ts'))
+      const addJobNodeId = nodeIdForLabel(result, '.addJob()')
+      const workerNodeId = nodeIdForLabel(result, 'OrchestratorWorker')
+      const processNodeId = result.edges.find(
+        (edge) => edge.relation === 'method' && edge.source === workerNodeId,
+      )?.target
+
+      expect(processNodeId).toBeDefined()
+
+      expect(result.edges).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ source: addJobNodeId, target: processNodeId, relation: 'enqueues_job' }),
+        ]),
+      )
+      expect(result.edges).not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ source: addJobNodeId, target: processNodeId, relation: 'calls' }),
+        ]),
       )
     } finally {
       rmSync(scratchDir, { recursive: true, force: true })
