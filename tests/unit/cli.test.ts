@@ -1797,7 +1797,7 @@ describe('summary command', () => {
       community_count: 2,
       source_domains: { production: 3 },
       top_modules: [{ label: 'AuthService', degree: 2 }],
-      entrypoints: [{ label: 'AuthService', source_file: 'graphify-out/graph.json' }],
+      entrypoints: [{ label: 'AuthService', source_file: 'src/auth/service.ts' }],
       frameworks: [],
       runtime_paths: [],
     }

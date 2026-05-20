@@ -213,12 +213,14 @@ describe('buildGraphSummary', () => {
     expect(summary2.frameworks).toEqual(summary.frameworks)
   })
 
-  it('identifies entrypoints (in-degree 0) in the directed graph', () => {
+  it('identifies code entrypoints as code roots, not every in-degree-0 node', () => {
     const graph = makeRichGraph()
     const summary = buildGraphSummary(graph)
 
     expect(summary.entrypoints).toBeInstanceOf(Array)
 
+    // Entrypoints are code roots in the directed graph. README also has in-degree 0,
+    // but document nodes are not part of the entrypoint contract.
     const labels = summary.entrypoints.map((entrypoint: GraphSummaryEntrypoint) => entrypoint.label)
     expect(labels).toContain('AuthServiceTest')
     expect(labels).toContain('ApiRouterTest')
@@ -258,7 +260,7 @@ describe('buildGraphSummary', () => {
     expect(summary.top_modules.length).toBeLessThanOrEqual(SUMMARY_ARRAY_CAP)
   })
 
-  it('caps entrypoints at the planned bound with deterministic truncation order', () => {
+  it('caps entrypoints after deterministic label/source_file ordering, so the first 10 sorted items survive', () => {
     const graph = makeManyEntrypointsGraph()
     const summary = buildGraphSummary(graph)
     const expectedEntrypoints = Array.from({ length: SUMMARY_ARRAY_CAP }, (_, index) => {
@@ -269,6 +271,8 @@ describe('buildGraphSummary', () => {
       }
     })
 
+    // The helper inserts nodes in reverse order. Keeping Entry00-Entry09 documents that
+    // truncation happens after deterministic label/source_file ordering, not insertion order.
     expect(summary.entrypoints).toHaveLength(SUMMARY_ARRAY_CAP)
     expect(summary.entrypoints.map(({ label, source_file }: GraphSummaryEntrypoint) => ({ label, source_file }))).toEqual(expectedEntrypoints)
     expect(summary.entrypoints.map(({ label }: GraphSummaryEntrypoint) => label)).not.toContain('Entry10')
@@ -278,7 +282,7 @@ describe('buildGraphSummary', () => {
     expect(repeatedSummary.entrypoints).toEqual(summary.entrypoints)
   })
 
-  it('caps runtime_paths at the planned bound with deterministic truncation order', () => {
+  it('caps runtime_paths after deterministic from/to ordering, so the first 10 sorted paths survive', () => {
     const graph = makeManyRuntimePathsGraph()
     const summary = buildGraphSummary(graph)
     const expectedRuntimePaths = Array.from({ length: SUMMARY_ARRAY_CAP }, (_, index) => {
@@ -300,6 +304,8 @@ describe('buildGraphSummary', () => {
       expect(path.hops).toBeGreaterThanOrEqual(1)
     }
 
+    // The helper inserts paths in reverse order. Keeping RuntimeEntry00-09 documents that
+    // truncation happens after deterministic from/to ordering, not insertion order.
     expect(summary.runtime_paths).toEqual(expectedRuntimePaths)
     expect(summary.runtime_paths.map(({ from }: GraphSummaryRuntimePath) => from)).not.toContain('RuntimeEntry10')
     expect(summary.runtime_paths.map(({ from }: GraphSummaryRuntimePath) => from)).not.toContain('RuntimeEntry11')
