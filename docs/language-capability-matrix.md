@@ -62,6 +62,17 @@ For `.ts`, `.tsx`, `.js`, and `.jsx`, the JS/TS extractor can emit framework-sem
 
 These roles are meant to be consumed as structural hints by retrieval and workflow tools. They are not guaranteed for heavily dynamic wrapper abstractions, runtime-generated routes, or custom meta-programming layers that fall back to the base AST graph.
 
+## Runtime retrieval hints users will notice
+
+The matrix above describes extraction coverage. The newer retrieval/runtime hints below describe what users should expect to see in answers and compact packs once a graph already exists:
+
+| Situation | What graphify-ts preserves | Why users care |
+|---|---|---|
+| Queue-backed NestJS / BullMQ flows | `enqueues_job` semantic edges preserve the producer → worker handoff in compact runtime-generation explain packs | Backend "what happens after enqueue?" questions keep the worker path instead of pretending the controller calls the worker directly |
+| Storage-oriented prompts with `--spi` | `storage_operation` metadata marks likely read/write endpoints on Prisma model operations and repository CRUD methods | "Where is this entity read or written?" questions rank persistence endpoints more accurately |
+| Next.js App Router with `--spi` | `runtime_boundary` metadata plus `next_client_component` and `next_server_action` roles for visible `'use client'` / `'use server'` boundaries | Client/server/server-action questions stay aligned with the app-router boundary the user actually cares about |
+| Python FastAPI workspaces | first-pass router / route / endpoint / dependency semantics on top of Python cross-file import/call resolution | FastAPI route/dependency questions return more than plain function listings, even before a deeper framework-specific pass exists |
+
 ## How to read this matrix
 
 - **Supported** means `graphify-ts` has a registered capability and a live handler for that extension or URL type.

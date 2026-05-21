@@ -18,7 +18,21 @@ graphify-ts generate examples/sample-workspace --no-html
 
 This creates `examples/sample-workspace/graphify-out/graph.json`.
 
-## 3. Build a compact pack
+If your real repo is framework-heavy TypeScript/JavaScript and you care about richer NestJS / Next.js / Prisma / tRPC retrieval hints, rerun the same step with the still-opt-in SPI pipeline:
+
+```bash
+graphify-ts generate examples/sample-workspace --spi --no-html
+```
+
+## 3. Start with a bounded summary
+
+```bash
+graphify-ts summary examples/sample-workspace/graphify-out/graph.json
+```
+
+This prints the deterministic high-signal overview first: graph counts, source domains, top modules, frameworks, entrypoints, and runtime paths. It is the fastest way to decide whether you need a deeper `pack`, `prompt`, or MCP retrieval call.
+
+## 4. Build a compact pack
 
 ```bash
 graphify-ts pack "how does password reset request enqueue the reset email" \
@@ -26,9 +40,9 @@ graphify-ts pack "how does password reset request enqueue the reset email" \
   --task explain
 ```
 
-This is the fastest way to confirm the route → service → job flow is represented in the graph.
+This is the fastest way to confirm the route → service → job flow is represented in the graph. On runtime-generation questions like this one, newer reports can also preserve an `execution_slice` so you can inspect ordered steps without reading the whole raw slice.
 
-## 4. Compile a provider-ready prompt
+## 5. Compile a provider-ready prompt
 
 ```bash
 graphify-ts prompt "where is reset token persisted before the email job runs" \
@@ -38,30 +52,34 @@ graphify-ts prompt "where is reset token persisted before the email job runs" \
 
 `prompt` only compiles the prompt payload. It does **not** call Claude or spend paid model tokens by itself.
 
-## 5. Run a safe compare smoke check
+## 6. Run a safe compare smoke check
 
 If you want to exercise `compare` without calling a paid model, use a local echo-style runner:
 
 ```bash
 graphify-ts compare "how does password reset request enqueue the reset email" \
   --graph examples/sample-workspace/graphify-out/graph.json \
+  --baseline-mode pack_only \
   --exec 'cat {prompt_file}' \
   --yes
 ```
 
-This does **not** measure model quality. It is a safe local smoke check that proves `compare` can build both prompts and save the artifact bundle without requiring a hosted model. Real model-backed compare runs are optional.
+This does **not** measure model quality. It is a safe local smoke check that proves `compare` can build both prompts, isolate one bounded raw-context baseline against one compiled graphify pack, and save the artifact bundle without requiring a hosted model. Real model-backed compare runs are optional.
 
 ## Expected output
 
 - `generate` should write `examples/sample-workspace/graphify-out/graph.json`
+- `summary` should print the bounded overview before any deeper retrieval
 - `pack` should print a compact JSON payload with matched nodes from the password reset flow
 - `prompt` should print a provider-ready prompt payload
 - `compare` should create an artifact directory under `graphify-out/compare/` containing prompt and answer files plus both `report.json` and `report.share-safe.json`
+- runtime-generation compare reports may also carry an `execution_slice` inside `report.json` when graphify-ts can preserve the ordered backend flow compactly
 
 ## Troubleshooting
 
 - **`graphify-ts: command not found`**: make sure the global npm install succeeded, or run from a local repo checkout after `npm run build`.
 - **`graph.json` missing**: rerun `graphify-ts generate examples/sample-workspace --no-html` before `pack`, `prompt`, or `compare`.
+- **Need stronger framework-aware hints?** Regenerate with `graphify-ts generate examples/sample-workspace --spi --no-html` if your real workspace relies on Next.js App Router, NestJS, Prisma, or similar framework-specific boundaries.
 - **`compare` looks noisy**: the `cat {prompt_file}` runner is only a local smoke check. Use a real terminal model runner later if you want meaningful answer comparisons.
 - **Need more questions?** Start with `examples/sample-workspace/prompt-examples.json`.
 

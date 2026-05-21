@@ -30,6 +30,7 @@ npm install -g @mohammednagy/graphify-ts
 
 cd your-project
 graphify-ts generate .          # builds graphify-out/graph.json (no API key, no cloud)
+graphify-ts summary             # bounded repo overview before deeper retrieval
 graphify-ts claude install      # wires Claude Code to use it via MCP
 graphify-ts doctor              # checks graph freshness + agent/MCP wiring
 graphify-ts status              # compact readiness summary + next commands
@@ -54,6 +55,7 @@ graphify-ts opencode install    # OpenCode
 **Or use it without MCP** — pipe the compiled prompt directly to your agent's CLI:
 
 ```bash
+graphify-ts summary                             # bounded JSON overview before pack/prompt
 graphify-ts pack "how does auth work?" --task explain          # compact CLI context payload
 graphify-ts prompt "how does auth work?" --provider claude     # provider-ready compiled prompt
 ```
@@ -61,6 +63,24 @@ graphify-ts prompt "how does auth work?" --provider claude     # provider-ready 
 Want a tiny reproducible workspace for local demos? Start with [`examples/sample-workspace/`](examples/sample-workspace/) and the [sample workspace tutorial](docs/tutorials/sample-workspace.md).
 
 Want a broader local-first walkthrough that also covers install, `prompt`, and a safe `compare` smoke check? Use the [end-to-end getting started tutorial](docs/tutorials/getting-started.md).
+
+---
+
+## What's new in 0.23.0
+
+- Start broad, then zoom in: `graphify-ts summary` and the core MCP `graph_summary` tool now provide the same bounded first-turn overview of counts, domains, top modules, frameworks, entrypoints, and high-signal runtime paths.
+- Runtime-generation explain packs can now expose an `execution_slice` with ordered steps and partial-path signaling, so backend queue/report-generation flows are easier to inspect without dumping a large raw slice.
+- Proof workflows are easier to share safely: `compare`, `review-compare`, and runner-backed `benchmark --exec ...` now emit a companion `report.share-safe.json`, and `compare --baseline-mode pack_only` isolates one bounded raw-context baseline prompt against one compiled graphify pack.
+- Public evaluation is stronger: the shared [GoValidate benchmark suite](docs/benchmarks/govalidate-suite/README.md) now ships stable prompt ids, pack-quality gates, and deterministic answer-quality checks.
+- Extraction and retrieval got smarter in places users notice: Python now has first-pass FastAPI semantics, runtime-generation packs preserve queue-to-worker handoffs, and `--spi` adds stronger storage and Next.js App Router hints.
+
+If you want the proof-oriented workflow behind those surfaces, start with [proof workflows](docs/proof-workflows.md) and the [GoValidate shared benchmark suite](docs/benchmarks/govalidate-suite/README.md).
+
+### When to use `--spi`
+
+`--spi` is **still opt-in** in 0.23.0. Use it when your repo is framework-heavy TypeScript/JavaScript and you want the extra framework-shaped metadata plus disk cache behavior.
+
+`--spi` is usually worth it for NestJS, Next.js App Router, Prisma, tRPC, Hono, Fastify, and similar repos where users ask storage-oriented prompts, client/server boundary questions, or request-flow questions. The default pipeline is still fine for simpler repos, non-JS/TS workspaces, or quick first runs when you do not need the extra framework detail yet.
 
 ---
 
@@ -171,6 +191,8 @@ Full-profile additions: `context_pack`, `context_expand`, `context_prompt`, `con
 
 Within one MCP stdio session, identical `context_pack` requests for `task=explain` are reused automatically when the graph version and relevant prompt/options match. The cache is memory-only, skips delta-session packs, and invalidates itself when `graph.json` changes.
 
+When the selected question is a runtime-generation flow, the shared compact response can also carry an `execution_slice` section with ordered steps and partial-path signaling. That gives agents a stable "what happens next" sketch without forcing them to read the full raw slice first.
+
 ---
 
 ## Common commands
@@ -224,8 +246,10 @@ Everything stays local by default. No telemetry, no cloud upload, no API key req
 ## Documentation & receipts
 
 - [Quick start guide](docs/proof-workflows.md) — three reproducible workflows: local proof, A/B compare, federated proof
+- [GoValidate shared benchmark suite](docs/benchmarks/govalidate-suite/README.md) — public prompt set plus deterministic pack/answer quality gates
 - [Public roadmap](docs/roadmap.md) — contributor-facing priority tracks and issue links
 - [Language and capability matrix](docs/language-capability-matrix.md) — exactly what each file type and language gets
+- [Performance benchmark harness](docs/benchmarks/performance/README.md) — repeatable `generate` / `update` / `cluster-only` measurements
 - [MCP tool examples](examples/mcp-tool-examples.md) — real input/output for every tool
 - [Benchmark hub](https://github.com/mohanagy/graphify-ts/tree/main/docs/benchmarks) — committed wrappers and provider-reported evidence
 - [Changelog](CHANGELOG.md) — full per-release notes

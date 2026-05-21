@@ -59,6 +59,24 @@ describe('public marketing copy honesty', () => {
       expect(lower).toContain('context plane')
     })
 
+    it('surfaces the 0.23.0 user-facing additions in the main README flow', () => {
+      expect(lower).toContain("what's new in 0.23.0")
+      expect(content).toContain('`graphify-ts summary`')
+      expect(content).toContain('`graph_summary`')
+      expect(content).toContain('`execution_slice`')
+      expect(content).toContain('report.share-safe.json')
+      expect(content).toContain('--baseline-mode pack_only')
+      expect(content).toContain('docs/benchmarks/govalidate-suite/')
+    })
+
+    it('explains when users should opt into --spi', () => {
+      expect(lower).toContain('when to use `--spi`')
+      expect(lower).toContain('still opt-in')
+      expect(lower).toContain('storage-oriented prompts')
+      expect(lower).toContain('next.js')
+      expect(lower).toContain('disk cache')
+    })
+
     it('keeps the README core MCP surface aligned with the shipped graph_summary tool', () => {
       expect(content).toContain('These seven MCP tools')
       expect(content).toContain('`graph_stats`')
@@ -99,6 +117,36 @@ describe('public marketing copy honesty', () => {
 
     it('links the 2026-05-09 auth-e2e benchmark folder from the README', () => {
       expect(content).toContain('docs/benchmarks/2026-05-09-govalidate-auth-e2e/')
+    })
+  })
+
+  describe('docs/tutorials/getting-started.md', () => {
+    const content = readDoc('docs/tutorials/getting-started.md')
+    const lower = content.toLowerCase()
+
+    it('starts the walkthrough with generate, summary, and compact retrieval surfaces', () => {
+      expect(content).toContain('graphify-ts generate examples/sample-workspace --no-html')
+      expect(content).toContain('graphify-ts summary examples/sample-workspace/graphify-out/graph.json')
+      expect(content).toContain('graphify-ts pack')
+      expect(content).toContain('graphify-ts prompt')
+    })
+
+    it('mentions the opt-in SPI path and the compare artifacts users should notice', () => {
+      expect(content).toContain('graphify-ts generate examples/sample-workspace --spi --no-html')
+      expect(content).toContain('--baseline-mode pack_only')
+      expect(content).toContain('report.share-safe.json')
+      expect(lower).toContain('execution_slice')
+    })
+  })
+
+  describe('docs/language-capability-matrix.md', () => {
+    const content = readDoc('docs/language-capability-matrix.md')
+
+    it('translates the latest runtime retrieval semantics into user-facing capability notes', () => {
+      expect(content).toContain('`enqueues_job`')
+      expect(content).toContain('`storage_operation`')
+      expect(content).toContain('`runtime_boundary`')
+      expect(content).toContain('FastAPI')
     })
   })
 
