@@ -102,6 +102,7 @@ function normalizedFramework(attributes: Record<string, unknown>): string {
 
   const frameworkRole = normalizeString(attributes.framework_role).toLowerCase()
   if (frameworkRole.startsWith('express_')) return 'express'
+  if (frameworkRole.startsWith('routing_controllers_')) return 'routing-controllers'
   if (frameworkRole.startsWith('react_router_')) return 'react-router'
   if (frameworkRole.startsWith('redux_')) return 'redux-toolkit'
   if (frameworkRole.startsWith('nest_')) return 'nestjs'

@@ -75,6 +75,7 @@ import { detectHonoFramework } from './framework-hono.js'
 import { detectFastifyFramework } from './framework-fastify.js'
 import { detectTrpcFramework } from './framework-trpc.js'
 import { detectPrismaFramework } from './framework-prisma.js'
+import { detectRoutingControllersFramework } from './framework-routing-controllers.js'
 
 export type BuildSpiOptions = {
   root: string
@@ -735,6 +736,14 @@ function addTypeCheckerEdges(ctx: TypeCheckerEdgeContext): void {
       pathToFileId,
       checker,
       tokenMap,
+    })
+    detectRoutingControllersFramework({
+      sourceFile,
+      fileId: file.id,
+      symbolsByFile,
+      edges,
+      checker,
+      pathToFileId,
     })
     // Slice 1c-ii.b + 1c-ii.c: Express detector. Tags app/router factory
     // variables (1c-ii.b) and named-handler route registrations (1c-ii.c)

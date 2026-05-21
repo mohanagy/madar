@@ -681,6 +681,7 @@ function scoredNodeFromGraph(graph: KnowledgeGraph, nodeId: string, score: numbe
 interface FrameworkQuestionProfile {
   frameworkShaped: boolean
   express: boolean
+  routingControllers: boolean
   redux: boolean
   reactRouter: boolean
   nest: boolean
@@ -736,6 +737,7 @@ interface SymbolReference {
 function activeFrameworksForProfile(profile: FrameworkQuestionProfile): ReadonlySet<string> {
   const frameworks = new Set<string>()
   if (profile.express) frameworks.add('express')
+  if (profile.routingControllers) frameworks.add('routing-controllers')
   if (profile.redux) frameworks.add('redux-toolkit')
   if (profile.reactRouter) frameworks.add('react-router')
   if (profile.nest) frameworks.add('nestjs')
@@ -1778,6 +1780,7 @@ function buildFrameworkQuestionProfile(question: string, questionTokens: readonl
   const explicitRedux = includesAnyToken(questionTokens, ['redux', 'toolkit'])
   const explicitNest = includesAnyToken(questionTokens, ['nest', 'nestjs'])
   const explicitNext = includesAnyToken(questionTokens, ['next', 'nextjs'])
+  const explicitRoutingControllers = /\brouting(?:\s|-)?controllers\b/i.test(question)
   // v0.19 — explicit mentions of the v0.17 substrates.
   const explicitHono = includesAnyToken(questionTokens, ['hono'])
   const explicitFastify = includesAnyToken(questionTokens, ['fastify'])
@@ -1879,8 +1882,9 @@ function buildFrameworkQuestionProfile(question: string, questionTokens: readonl
       includesAnyToken(questionTokens, ['route', 'routes', 'middleware', 'action', 'actions', 'page', 'pages']))
 
   return {
-    frameworkShaped: express || redux || reactRouter || nest || next || repository || hono || fastify || trpc || prisma,
+    frameworkShaped: express || explicitRoutingControllers || redux || reactRouter || nest || next || repository || hono || fastify || trpc || prisma,
     express,
+    routingControllers: explicitRoutingControllers,
     redux,
     reactRouter,
     nest,
@@ -2024,6 +2028,15 @@ function frameworkBoostForNode(
     }
     if (frameworkRole === 'express_router' || frameworkRole === 'express_app') {
       boost += profile.routeIntent ? 1.5 : 0.5
+    }
+  }
+
+  if (profile.routingControllers) {
+    if (frameworkRole === 'routing_controllers_route') {
+      boost += profile.routeIntent ? 3.75 : 1.5
+    }
+    if (frameworkRole === 'routing_controllers_controller') {
+      boost += profile.controllerIntent || profile.routeIntent ? 3.5 : 1.5
     }
   }
 
