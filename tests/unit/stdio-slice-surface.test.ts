@@ -146,9 +146,10 @@ describe('stdio slice-v1 surface', () => {
       params: {
         name: 'context_pack',
         arguments: {
-          prompt: 'Trace how `POST /login` reaches persistence in the backend runtime pipeline',
+          prompt: 'Trace how `AuthController.login` reaches persistence in the backend runtime pipeline',
           budget: 1000,
           task: 'explain',
+          retrieval_level: 4,
           retrieval_strategy: 'slice-v1',
           verbose: true,
         },

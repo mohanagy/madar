@@ -1,5 +1,5 @@
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { resolve as pathResolve } from 'node:path'
+import { relative as pathRelative, resolve as pathResolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
@@ -46,9 +46,29 @@ function buildFixtureExtraction(): ExtractionData {
   return projectSpiToExtraction(buildFixtureSpi(), { root: FIXTURE_ROOT })
 }
 
-function buildFixtureGraph(): KnowledgeGraph {
+function rebaseFixturePath(sourceFile: string, rootPath: string): string {
+  const relativePath = pathRelative(FIXTURE_ROOT, sourceFile).replaceAll('\\', '/')
+  return `${rootPath.replace(/\/+$/u, '')}/${relativePath}`
+}
+
+function buildFixtureGraph(options: { rootPath?: string } = {}): KnowledgeGraph {
   const extraction = buildFixtureExtraction()
-  return buildFromJson({ ...extraction, root_path: FIXTURE_ROOT }, { directed: true })
+  if (!options.rootPath) {
+    return buildFromJson({ ...extraction, root_path: FIXTURE_ROOT }, { directed: true })
+  }
+
+  return buildFromJson({
+    ...extraction,
+    root_path: options.rootPath,
+    nodes: extraction.nodes.map((node) => ({
+      ...node,
+      source_file: rebaseFixturePath(node.source_file, options.rootPath!),
+    })),
+    edges: extraction.edges.map((edge) => ({
+      ...edge,
+      source_file: edge.source_file ? rebaseFixturePath(edge.source_file, options.rootPath!) : undefined,
+    })),
+  }, { directed: true })
 }
 
 function buildLegacyQueueBridgeGraph(): KnowledgeGraph {
@@ -410,5 +430,28 @@ describe('SPI Nest DI runtime-call fixture', () => {
     } finally {
       rmSync(TEST_ARTIFACTS_DIR, { recursive: true, force: true })
     }
+  })
+
+  it('does not suppress runtime flow when parent directories contain migration in the name', () => {
+    const result = retrieveContext(buildFixtureGraph({
+      rootPath: '/tmp/issue-245-madar-rebrand-migration',
+    }), {
+      question:
+        'Explain the production runtime path for IdeaGenerationController.generateFromProblem and how it creates a validation report. Follow the controller into service/orchestrator/job/research agents/scoring/report builder/persistence.',
+      budget: 4000,
+      retrievalLevel: 4,
+      retrievalStrategy: 'slice-v1',
+    })
+
+    expect(result.slice?.selected_paths).toEqual(expect.arrayContaining([
+      expect.objectContaining({ from: '.generateFromProblem()', to: '.startPipeline()', relation: 'calls', direction: 'forward' }),
+      expect.objectContaining({ from: '.startPipeline()', to: '.process()', relation: 'calls', direction: 'forward' }),
+      expect.objectContaining({ from: '.process()', to: '.save()', relation: 'calls', direction: 'forward' }),
+    ]))
+    expect(result.matched_nodes.map((node) => node.label)).toEqual(expect.arrayContaining([
+      '.startPipeline()',
+      '.process()',
+      '.save()',
+    ]))
   })
 })

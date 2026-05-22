@@ -90,7 +90,7 @@ describe('detectUrlType', () => {
     expect(detectUrlType('https://www.youtube.com/live/dQw4w9WgXcQ?feature=share')).toBe('youtube')
     expect(detectUrlType('https://www.youtube.com/playlist?list=PLmadarRoadmap123&feature=share')).toBe('youtube')
     expect(detectUrlType('https://www.youtube.com/@madar?feature=share')).toBe('youtube')
-    expect(detectUrlType('https://www.youtube.com/channel/UCmadarRoadmap1234567?feature=share')).toBe('youtube')
+    expect(detectUrlType('https://www.youtube.com/channel/UCmadarRoadmap1234567890?feature=share')).toBe('youtube')
     expect(detectUrlType('https://www.youtube.com/c/madar?feature=share')).toBe('youtube')
     expect(detectUrlType('https://notyoutube.com/watch?v=dQw4w9WgXcQ')).toBe('webpage')
     expect(detectUrlType('https://www.youtube.com/playlist')).toBe('webpage')
@@ -1740,7 +1740,7 @@ describe('ingest', () => {
       expect(content).toContain('youtube_platform: "youtube"')
       expect(content).toContain('youtube_kind: "channel"')
       expect(content).toContain('youtube_channel_handle: "madar"')
-      expect(content).toContain('youtube_channel_id: "UCmadarRoadmap1234567"')
+      expect(content).toContain('youtube_channel_id: "UCmadarRoadmap1234567890"')
       expect(content).toContain('youtube_capture_status: "html"')
       expect(content).toContain('youtube_thumbnail_url: "https://yt3.googleusercontent.com/madar-channel-photo=s176"')
       expect(content).toContain('# YouTube Channel: Madar Channel')
@@ -1751,7 +1751,7 @@ describe('ingest', () => {
       expect(content).toContain('- Platform: youtube')
       expect(content).toContain('- Kind: channel')
       expect(content).toContain('- Handle: @madar')
-      expect(content).toContain('- Channel ID: UCmadarRoadmap1234567')
+      expect(content).toContain('- Channel ID: UCmadarRoadmap1234567890')
       expect(content).toContain('- Capture Status: html')
       expect(content).toContain('## Links')
       expect(content).toContain('[Open Channel](https://www.youtube.com/@madar)')
@@ -1791,7 +1791,7 @@ describe('ingest', () => {
         'fetch',
         vi.fn(async (input) => {
           const requestUrl = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
-          expect(requestUrl).toBe('https://www.youtube.com/channel/UCmadarRoadmap1234567')
+          expect(requestUrl).toBe('https://www.youtube.com/channel/UCmadarRoadmap1234567890')
           return new Response(readIngestFixture('youtube-channel.html'), {
             status: 200,
             headers: { 'content-type': 'text/html; charset=utf-8' },
@@ -1799,7 +1799,7 @@ describe('ingest', () => {
         }),
       )
 
-      const output = await ingest('https://www.youtube.com/channel/UCmadarRoadmap1234567?feature=share', join(tempDir, 'raw'), {
+      const output = await ingest('https://www.youtube.com/channel/UCmadarRoadmap1234567890?feature=share', join(tempDir, 'raw'), {
         contributor: 'madar',
       })
       const content = readFileSync(output, 'utf8')
@@ -1814,7 +1814,7 @@ describe('ingest', () => {
       expect(content).toContain('youtube_platform: "youtube"')
       expect(content).toContain('youtube_kind: "channel"')
       expect(content).toContain('youtube_channel_handle: "madar"')
-      expect(content).toContain('youtube_channel_id: "UCmadarRoadmap1234567"')
+      expect(content).toContain('youtube_channel_id: "UCmadarRoadmap1234567890"')
       expect(content).toContain('youtube_capture_status: "html"')
       expect(content).toContain('youtube_thumbnail_url: "https://yt3.googleusercontent.com/madar-channel-photo=s176"')
       expect(content).toContain('# YouTube Channel: Madar Channel')
@@ -1822,7 +1822,7 @@ describe('ingest', () => {
       expect(content).toContain('YouTube channel @madar.')
       expect(content).toContain('## Context')
       expect(content).toContain('- Handle: @madar')
-      expect(content).toContain('- Channel ID: UCmadarRoadmap1234567')
+      expect(content).toContain('- Channel ID: UCmadarRoadmap1234567890')
       expect(content).toContain('- Capture Status: html')
       expect(content).toContain('## Links')
       expect(content).toContain('[Open Channel](https://www.youtube.com/@madar)')
@@ -1860,7 +1860,7 @@ describe('ingest', () => {
       expect(content).toContain('youtube_platform: "youtube"')
       expect(content).toContain('youtube_kind: "channel"')
       expect(content).toContain('youtube_channel_handle: "madar"')
-      expect(content).toContain('youtube_channel_id: "UCmadarRoadmap1234567"')
+      expect(content).toContain('youtube_channel_id: "UCmadarRoadmap1234567890"')
       expect(content).toContain('youtube_channel_custom_slug: "madar"')
       expect(content).toContain('youtube_capture_status: "html"')
       expect(content).toContain('youtube_thumbnail_url: "https://yt3.googleusercontent.com/madar-channel-photo=s176"')
@@ -1869,7 +1869,7 @@ describe('ingest', () => {
       expect(content).toContain('YouTube channel @madar.')
       expect(content).toContain('## Context')
       expect(content).toContain('- Handle: @madar')
-      expect(content).toContain('- Channel ID: UCmadarRoadmap1234567')
+      expect(content).toContain('- Channel ID: UCmadarRoadmap1234567890')
       expect(content).toContain('- Custom URL: /c/madar')
       expect(content).toContain('- Capture Status: html')
       expect(content).toContain('## Links')
@@ -1952,7 +1952,7 @@ describe('ingest', () => {
         'fetch',
         vi.fn(async (input) => {
           const requestUrl = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
-          expect(requestUrl).toBe('https://www.youtube.com/channel/UCmadarRoadmap1234567')
+          expect(requestUrl).toBe('https://www.youtube.com/channel/UCmadarRoadmap1234567890')
           return new Response(
             '<html><head><title>Madar Channel - YouTube</title><link rel="canonical" href="https://www.youtube.com/@madar" /><meta property="og:url" content="https://www.youtube.com/@madar" /><meta property="og:title" content="Madar Channel" /><meta property="og:description" content="Deterministic roadmap demos, graph explainers, and structured ingest updates." /><meta property="og:image" content="https://yt3.googleusercontent.com/madar-channel-photo=s176" /><meta name="author" content="Madar Channel" /><script>var ytInitialData = {"header":{"c4TabbedHeaderRenderer":{"channelHandleText":{"simpleText":"@madar"}}},"metadata":{"channelMetadataRenderer":{"title":"Madar Channel","description":"Deterministic roadmap demos, graph explainers, and structured ingest updates.","vanityChannelUrl":"https://www.youtube.com/@madar"}}};</script></head><body><main><h1>Madar Channel</h1></main></body></html>',
             {
@@ -1963,13 +1963,13 @@ describe('ingest', () => {
         }),
       )
 
-      const output = await ingest('https://www.youtube.com/channel/UCmadarRoadmap1234567', join(tempDir, 'raw'))
+      const output = await ingest('https://www.youtube.com/channel/UCmadarRoadmap1234567890', join(tempDir, 'raw'))
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: youtube_channel')
       expect(content).toContain('source_url: "https://www.youtube.com/@madar"')
       expect(content).toContain('youtube_channel_handle: "madar"')
-      expect(content).toContain('youtube_channel_id: "UCmadarRoadmap1234567"')
+      expect(content).toContain('youtube_channel_id: "UCmadarRoadmap1234567890"')
       expect(content).toContain('youtube_capture_status: "html"')
       expect(content).not.toContain('type: webpage')
     })
@@ -2010,7 +2010,7 @@ describe('ingest', () => {
   test('falls back to generic webpage capture when a root YouTube @handle request resolves to a nested channel tab', async () => {
     await withTempDir(async (tempDir) => {
       stubHtmlFetch(
-        '<html><head><title>Madar Videos - YouTube</title><link rel="canonical" href="https://www.youtube.com/@madar/videos" /><meta property="og:url" content="https://www.youtube.com/@madar/videos" /><meta property="og:title" content="Madar Videos" /><meta name="description" content="Channel videos tab." /></head><body><main><script>var ytInitialData = {"channelMetadataRenderer":{"title":"Madar Channel","vanityChannelUrl":"https://www.youtube.com/@madar","externalId":"UCmadarRoadmap1234567"},"header":{"c4TabbedHeaderRenderer":{"channelHandleText":{"simpleText":"@madar"}}}};</script><p>Videos tab content.</p></main></body></html>',
+        '<html><head><title>Madar Videos - YouTube</title><link rel="canonical" href="https://www.youtube.com/@madar/videos" /><meta property="og:url" content="https://www.youtube.com/@madar/videos" /><meta property="og:title" content="Madar Videos" /><meta name="description" content="Channel videos tab." /></head><body><main><script>var ytInitialData = {"channelMetadataRenderer":{"title":"Madar Channel","vanityChannelUrl":"https://www.youtube.com/@madar","externalId":"UCmadarRoadmap1234567890"},"header":{"c4TabbedHeaderRenderer":{"channelHandleText":{"simpleText":"@madar"}}}};</script><p>Videos tab content.</p></main></body></html>',
       )
 
       const output = await ingest('https://www.youtube.com/@madar', join(tempDir, 'raw'))
@@ -2026,7 +2026,7 @@ describe('ingest', () => {
   test('falls back to generic webpage capture when a root YouTube /c/<slug> request resolves to a nested channel tab', async () => {
     await withTempDir(async (tempDir) => {
       stubHtmlFetch(
-        '<html><head><title>Madar Videos - YouTube</title><link rel="canonical" href="https://www.youtube.com/@madar/videos" /><meta property="og:url" content="https://www.youtube.com/@madar/videos" /><meta property="og:title" content="Madar Videos" /><meta name="description" content="Channel videos tab." /></head><body><main><script>var ytInitialData = {"channelMetadataRenderer":{"title":"Madar Channel","vanityChannelUrl":"https://www.youtube.com/@madar","externalId":"UCmadarRoadmap1234567"},"header":{"c4TabbedHeaderRenderer":{"channelHandleText":{"simpleText":"@madar"}}}};</script><p>Videos tab content.</p></main></body></html>',
+        '<html><head><title>Madar Videos - YouTube</title><link rel="canonical" href="https://www.youtube.com/@madar/videos" /><meta property="og:url" content="https://www.youtube.com/@madar/videos" /><meta property="og:title" content="Madar Videos" /><meta name="description" content="Channel videos tab." /></head><body><main><script>var ytInitialData = {"channelMetadataRenderer":{"title":"Madar Channel","vanityChannelUrl":"https://www.youtube.com/@madar","externalId":"UCmadarRoadmap1234567890"},"header":{"c4TabbedHeaderRenderer":{"channelHandleText":{"simpleText":"@madar"}}}};</script><p>Videos tab content.</p></main></body></html>',
       )
 
       const output = await ingest('https://www.youtube.com/c/madar', join(tempDir, 'raw'))
@@ -2042,10 +2042,10 @@ describe('ingest', () => {
   test('falls back to generic webpage capture when a root YouTube /channel/<id> request resolves to a nested channel tab', async () => {
     await withTempDir(async (tempDir) => {
       stubHtmlFetch(
-        '<html><head><title>Madar Videos - YouTube</title><link rel="canonical" href="https://www.youtube.com/@madar/videos" /><meta property="og:url" content="https://www.youtube.com/@madar/videos" /><meta property="og:title" content="Madar Videos" /><meta name="description" content="Channel videos tab." /></head><body><main><script>var ytInitialData = {"channelMetadataRenderer":{"title":"Madar Channel","vanityChannelUrl":"https://www.youtube.com/@madar","externalId":"UCmadarRoadmap1234567"},"header":{"c4TabbedHeaderRenderer":{"channelHandleText":{"simpleText":"@madar"}}}};</script><p>Videos tab content.</p></main></body></html>',
+        '<html><head><title>Madar Videos - YouTube</title><link rel="canonical" href="https://www.youtube.com/@madar/videos" /><meta property="og:url" content="https://www.youtube.com/@madar/videos" /><meta property="og:title" content="Madar Videos" /><meta name="description" content="Channel videos tab." /></head><body><main><script>var ytInitialData = {"channelMetadataRenderer":{"title":"Madar Channel","vanityChannelUrl":"https://www.youtube.com/@madar","externalId":"UCmadarRoadmap1234567890"},"header":{"c4TabbedHeaderRenderer":{"channelHandleText":{"simpleText":"@madar"}}}};</script><p>Videos tab content.</p></main></body></html>',
       )
 
-      const output = await ingest('https://www.youtube.com/channel/UCmadarRoadmap1234567', join(tempDir, 'raw'))
+      const output = await ingest('https://www.youtube.com/channel/UCmadarRoadmap1234567890', join(tempDir, 'raw'))
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: webpage')
@@ -2088,14 +2088,14 @@ describe('ingest', () => {
   test('falls back to generic webpage capture for YouTube /channel/<id> routes with a trailing slash', async () => {
     await withTempDir(async (tempDir) => {
       stubHtmlFetch(
-        '<html><head><title>Madar Channel - YouTube</title><link rel="canonical" href="https://www.youtube.com/channel/UCmadarRoadmap1234567" /><meta property="og:url" content="https://www.youtube.com/channel/UCmadarRoadmap1234567" /></head><body><main><p>Channel page.</p></main></body></html>',
+        '<html><head><title>Madar Channel - YouTube</title><link rel="canonical" href="https://www.youtube.com/channel/UCmadarRoadmap1234567890" /><meta property="og:url" content="https://www.youtube.com/channel/UCmadarRoadmap1234567890" /></head><body><main><p>Channel page.</p></main></body></html>',
       )
 
-      const output = await ingest('https://www.youtube.com/channel/UCmadarRoadmap1234567/', join(tempDir, 'raw'))
+      const output = await ingest('https://www.youtube.com/channel/UCmadarRoadmap1234567890/', join(tempDir, 'raw'))
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: webpage')
-      expect(content).toContain('source_url: "https://www.youtube.com/channel/UCmadarRoadmap1234567"')
+      expect(content).toContain('source_url: "https://www.youtube.com/channel/UCmadarRoadmap1234567890"')
       expect(content).not.toContain('type: youtube_channel')
       expect(content).not.toContain('youtube_kind:')
     })
@@ -2178,29 +2178,29 @@ describe('ingest', () => {
         vi.fn(async () => new Response('unavailable', { status: 503, headers: { 'content-type': 'text/plain' } })),
       )
 
-      const output = await ingest('https://www.youtube.com/channel/UCmadarRoadmap1234567?feature=share', join(tempDir, 'raw'), {
+      const output = await ingest('https://www.youtube.com/channel/UCmadarRoadmap1234567890?feature=share', join(tempDir, 'raw'), {
         contributor: 'madar',
       })
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: youtube_channel')
-      expect(content).toContain('source_url: "https://www.youtube.com/channel/UCmadarRoadmap1234567"')
-      expect(content).toContain('title: "YouTube Channel: UCmadarRoadmap1234567"')
+      expect(content).toContain('source_url: "https://www.youtube.com/channel/UCmadarRoadmap1234567890"')
+      expect(content).toContain('title: "YouTube Channel: UCmadarRoadmap1234567890"')
       expect(content).toContain('author: "unknown"')
       expect(content).toContain('youtube_platform: "youtube"')
       expect(content).toContain('youtube_kind: "channel"')
       expect(content).not.toContain('youtube_channel_handle:')
-      expect(content).toContain('youtube_channel_id: "UCmadarRoadmap1234567"')
+      expect(content).toContain('youtube_channel_id: "UCmadarRoadmap1234567890"')
       expect(content).toContain('youtube_capture_status: "fallback"')
-      expect(content).toContain('# YouTube Channel: UCmadarRoadmap1234567')
+      expect(content).toContain('# YouTube Channel: UCmadarRoadmap1234567890')
       expect(content).toContain('## Channel')
       expect(content).toContain('Channel metadata could not be fetched.')
       expect(content).toContain('## Context')
-      expect(content).toContain('- Channel ID: UCmadarRoadmap1234567')
+      expect(content).toContain('- Channel ID: UCmadarRoadmap1234567890')
       expect(content).toContain('- Capture Status: fallback')
       expect(content).toContain('- Note: channel metadata unavailable; preserved canonical channel URL and derived channel-id metadata only.')
       expect(content).toContain('## Links')
-      expect(content).toContain('[Open Channel](https://www.youtube.com/channel/UCmadarRoadmap1234567)')
+      expect(content).toContain('[Open Channel](https://www.youtube.com/channel/UCmadarRoadmap1234567890)')
       expect(content).not.toContain('feature=share')
       expect(content).not.toContain('provenance:')
     })
