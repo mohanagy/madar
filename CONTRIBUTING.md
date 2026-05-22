@@ -1,6 +1,6 @@
-# Contributing to sadeem
+# Contributing to madar
 
-Thanks for helping improve `sadeem`.
+Thanks for helping improve `madar`.
 
 Contributions are welcome across code, tests, fixtures, docs, release tooling, and AI-platform integrations. Good contributions are usually small, well-scoped, and easy to verify.
 
@@ -14,7 +14,7 @@ A few high-value ways to help:
 - tighten CI, release, or repository hygiene
 - reduce graph noise or improve community labeling
 
-The public roadmap lives in [#155](https://github.com/mohanagy/sadeem/issues/155). If you are unsure where to start, pick a small issue linked from the roadmap or one tagged `good first issue` / `help wanted`, and keep the pull request scoped to that issue.
+The public roadmap lives in [#155](https://github.com/mohanagy/madar/issues/155). If you are unsure where to start, pick a small issue linked from the roadmap or one tagged `good first issue` / `help wanted`, and keep the pull request scoped to that issue.
 
 ## Development setup
 

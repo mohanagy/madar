@@ -18,7 +18,7 @@ function normalizePortablePath(path: string): string {
 }
 
 function createRepo(options: { pathLikeNodeIds?: boolean; pathWithSpaces?: boolean } = {}): string {
-  const repoPrefix = options.pathWithSpaces ? 'sadeem ts review compare repo-' : 'sadeem-review-compare-'
+  const repoPrefix = options.pathWithSpaces ? 'madar ts review compare repo-' : 'madar-review-compare-'
   const root = mkdtempSync(join(tmpdir(), repoPrefix))
   mkdirSync(join(root, 'src'), { recursive: true })
   mkdirSync(join(root, 'tests'), { recursive: true })
@@ -116,8 +116,8 @@ function createRepo(options: { pathLikeNodeIds?: boolean; pathWithSpaces?: boole
   )
 
   execFileSync('git', ['init', '-b', 'main'], { cwd: root, stdio: 'pipe' })
-  execFileSync('git', ['config', 'user.email', 'sadeem@example.com'], { cwd: root, stdio: 'pipe' })
-  execFileSync('git', ['config', 'user.name', 'Sadeem Test'], { cwd: root, stdio: 'pipe' })
+  execFileSync('git', ['config', 'user.email', 'madar@example.com'], { cwd: root, stdio: 'pipe' })
+  execFileSync('git', ['config', 'user.name', 'Madar Test'], { cwd: root, stdio: 'pipe' })
   execFileSync('git', ['add', '.'], { cwd: root, stdio: 'pipe' })
   execFileSync('git', ['commit', '-m', 'Initial commit'], { cwd: root, stdio: 'pipe' })
   writeFileSync(

@@ -1,6 +1,6 @@
 # Proof workflows
 
-`sadeem` now has three distinct proof surfaces. They answer different questions, and they are meant to be used together rather than treated as one benchmark.
+`madar` now has three distinct proof surfaces. They answer different questions, and they are meant to be used together rather than treated as one benchmark.
 
 ## 1. Reproducible local proof from this repo
 
@@ -38,7 +38,7 @@ node dist/src/cli/bin.js compare "How does login create a session?" \
   --yes
 ```
 
-If you want to isolate the context-compiler claim without MCP/tool-call behavior, switch to `--baseline-mode pack_only`. That mode compares one bounded raw-context baseline prompt against one compiled sadeem pack built from the same explain-pack payload core as `sadeem pack --task explain`, and persists the compact pack audit fields (`token_count`, matched nodes, relationships, coverage, selection diagnostics, and runtime-generation explain-pack `execution_slice` details when present) in `report.json`.
+If you want to isolate the context-compiler claim without MCP/tool-call behavior, switch to `--baseline-mode pack_only`. That mode compares one bounded raw-context baseline prompt against one compiled madar pack built from the same explain-pack payload core as `madar pack --task explain`, and persists the compact pack audit fields (`token_count`, matched nodes, relationships, coverage, selection diagnostics, and runtime-generation explain-pack `execution_slice` details when present) in `report.json`.
 
 For runtime-generation prompts, those compact explain packs now also preserve NestJS/BullMQ-style enqueue-to-worker handoffs in their runtime-generation explain-pack relationships via `enqueues_job` semantic edges in both SPI and legacy extraction paths. This first pass is intentionally conservative: it applies when job names are literal and the queue receiver is statically recognizable, including WorkerHost-style BullMQ processors with a queue-scoped `process()` handler. When it matches, queue-backed worker routes survive slice selection without pretending the producer directly calls the worker.
 
@@ -47,7 +47,7 @@ If you switch to `--baseline-mode native_agent`, prefer a structured Anthropic r
 Gemini-safe installed-CLI invocation:
 
 ```bash
-sadeem compare "How does auth work?" \
+madar compare "How does auth work?" \
   --exec 'cat {prompt_file} | gemini -p "" --output-format json' \
   --yes
 ```
@@ -55,9 +55,9 @@ sadeem compare "How does auth work?" \
 What gets saved under `out/compare/<timestamp>/`:
 
 - `baseline-prompt.txt`
-- `sadeem-prompt.txt`
+- `madar-prompt.txt`
 - `baseline-answer.txt`
-- `sadeem-answer.txt`
+- `madar-answer.txt`
 - `report.json`
 - `report.share-safe.json`
 
@@ -74,7 +74,7 @@ Like runner-backed `benchmark` and `eval`, `compare` can spend paid model tokens
 `review-compare` is the proof path for review mode. It compares the **verbose** and **compact** `pr_impact` prompts for the current git diff, saves both payload-backed prompts, and can optionally run both through your own model runner.
 
 ```bash
-sadeem review-compare out/graph.json \
+madar review-compare out/graph.json \
   --exec 'cat {prompt_file} | claude -p' \
   --yes
 ```
@@ -88,7 +88,7 @@ What gets saved under `out/review-compare/<timestamp>/`:
 - `report.json`
 - `report.share-safe.json`
 
-Use this when the question is not "sadeem vs. naive baseline", but "did compact review mode make the PR-review prompt materially smaller while keeping the same review surface shape?" The report includes prompt-token deltas, payload-token deltas, run statuses, elapsed times for both modes, and a provider/runtime proof block that makes it explicit when review-compare is using local estimate + session-reuse accounting rather than provider-billed usage.
+Use this when the question is not "madar vs. naive baseline", but "did compact review mode make the PR-review prompt materially smaller while keeping the same review surface shape?" The report includes prompt-token deltas, payload-token deltas, run statuses, elapsed times for both modes, and a provider/runtime proof block that makes it explicit when review-compare is using local estimate + session-reuse accounting rather than provider-billed usage.
 
 As with `compare` and `benchmark`, the prompt and answer file contents stay local, while `report.share-safe.json` keeps the review metrics plus sanitized placeholder paths to those artifacts so you can share evidence without publishing your exact local artifact paths.
 
@@ -102,17 +102,17 @@ For real systems, the strongest proof is usually:
 4. Ask a cross-repo question or run `compare` against that federated graph.
 
 ```bash
-sadeem generate frontend
-sadeem generate backend
-sadeem generate shared
+madar generate frontend
+madar generate backend
+madar generate shared
 
-sadeem federate \
+madar federate \
   frontend/out/graph.json \
   backend/out/graph.json \
   shared/out/graph.json \
   --output federated-out
 
-sadeem serve federated-out/graph.json --stdio
+madar serve federated-out/graph.json --stdio
 ```
 
 What this proves that a single-repo demo cannot:
@@ -128,8 +128,8 @@ What this proves that a single-repo demo cannot:
 |---|---|
 | "Does the graph improve retrieval quality on a labeled set?" | `eval` |
 | "Does the graph reduce prompt size while keeping expected evidence?" | `benchmark` |
-| "Will my actual model answer better with sadeem than with a naive baseline, and optionally capture provider-reported usage + proof metadata?" | `compare` |
+| "Will my actual model answer better with madar than with a naive baseline, and optionally capture provider-reported usage + proof metadata?" | `compare` |
 | "Did compact review mode actually shrink the real PR-review prompt on my current diff?" | `review-compare` |
 | "Can this work across frontend/backend/shared repos?" | `federate` + `serve --stdio` |
 
-For the narrative production benchmark and the GoValidate numbers, see [`examples/why-sadeem.md`](../examples/why-sadeem.md). For exact support coverage by language and file type, see [`language-capability-matrix.md`](./language-capability-matrix.md).
+For the narrative production benchmark and the GoValidate numbers, see [`examples/why-madar.md`](../examples/why-madar.md). For exact support coverage by language and file type, see [`language-capability-matrix.md`](./language-capability-matrix.md).

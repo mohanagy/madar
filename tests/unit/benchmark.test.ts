@@ -18,7 +18,7 @@ const DEMO_REPO_DIR = join(process.cwd(), 'examples', 'demo-repo')
 const DEMO_QUESTIONS_PATH = join(DEMO_REPO_DIR, 'benchmark-questions.json')
 
 function withTempDir(callback: (tempDir: string) => void | Promise<void>): void | Promise<void> {
-  const tempDir = mkdtempSync(join(tmpdir(), 'sadeem-benchmark-'))
+  const tempDir = mkdtempSync(join(tmpdir(), 'madar-benchmark-'))
   const finalize = () => rmSync(tempDir, { recursive: true, force: true })
   try {
     const result = callback(tempDir)
@@ -633,8 +633,8 @@ describe('runBenchmark', () => {
         'how does authentication work',
         'what is the main entry point',
       ])
-      expect(executions.map((execution) => execution.mode)).toEqual(['sadeem', 'sadeem'])
-      expect(executions[0]?.command).toContain("--mode 'sadeem'")
+      expect(executions.map((execution) => execution.mode)).toEqual(['madar', 'madar'])
+      expect(executions[0]?.command).toContain("--mode 'madar'")
       expect(readFileSync(executions[0]!.promptFile, 'utf8')).toContain('Retrieved graph context:')
       expect(readFileSync(executions[0]!.promptFile, 'utf8')).toContain('Question:\nhow does authentication work')
       expect(readFileSync(executions[1]!.promptFile, 'utf8')).toContain('Session delta:')
@@ -673,8 +673,8 @@ describe('runBenchmark', () => {
           question: 'how does authentication work',
           share_safe_report: true,
           artifacts: expect.objectContaining({
-            prompt: '<artifact-root>/sadeem-prompt.txt',
-            answer: '<artifact-root>/sadeem-answer.txt',
+            prompt: '<artifact-root>/madar-prompt.txt',
+            answer: '<artifact-root>/madar-answer.txt',
             report: '<artifact-root>/report.json',
             share_safe_report: '<artifact-root>/report.share-safe.json',
           }),
@@ -872,13 +872,13 @@ describe('printBenchmark', () => {
       ],
     } as any)
     const output = spy.mock.calls.flat().join('\n')
-    expect(output).toContain('sadeem runner-backed benchmark')
+    expect(output).toContain('madar runner-backed benchmark')
     expect(output).toContain('Avg input tokens (Claude reported): ~410')
     expect(output).toContain('Avg effective input tokens (cache-adjusted): ~400')
     expect(output).toContain('Avg total tokens (Claude reported): ~480')
     expect(output).toContain('Provider/runtime proof: Claude reported input, cache, and total tokens for 1/1 matched questions')
     expect(output).not.toContain('estimate fallback')
-    expect(output).not.toContain('sadeem token reduction benchmark')
+    expect(output).not.toContain('madar token reduction benchmark')
     expect(output).not.toContain('naive corpus')
     spy.mockRestore()
   })

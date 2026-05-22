@@ -44,8 +44,8 @@ for (let index = 2; index < process.argv.length; index += 1) {
 }
 
 const prompt = promptFile ? readFileSync(promptFile, 'utf8') : ''
-const normalizedQuestion = question.trim() || 'sadeem eval question'
-const normalizedMode = mode.trim() || 'sadeem'
+const normalizedQuestion = question.trim() || 'madar eval question'
+const normalizedMode = mode.trim() || 'madar'
 const answer = `CI runner answer for ${normalizedQuestion} (${normalizedMode})\n`
 
 if (outputFile) {

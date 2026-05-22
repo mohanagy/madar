@@ -1,6 +1,6 @@
 # 2026-05-12 — GoValidate report-generation explanation benchmark
 
-This directory records a **single real-world** `sadeem compare --baseline-mode native_agent` benchmark on GoValidate for the prompt:
+This directory records a **single real-world** `madar compare --baseline-mode native_agent` benchmark on GoValidate for the prompt:
 
 > `"Explain how idea report is getting generated"`
 
@@ -9,14 +9,14 @@ The goal is not to claim a universal win. The goal is to publish one reproducibl
 ## Summary
 
 - **Project:** GoValidate backend / monorepo
-- **Version under test:** `@mohammednagy/sadeem@0.22.7`
-- **Mode:** `sadeem compare --baseline-mode native_agent`
+- **Version under test:** `@mohammednagy/madar@0.22.7`
+- **Mode:** `madar compare --baseline-mode native_agent`
 - **Model/runtime:** Claude CLI via `cat {prompt_file} | claude -p --output-format json`
-- **Token source:** Anthropic-reported input/cache/total token usage captured by `sadeem compare`
+- **Token source:** Anthropic-reported input/cache/total token usage captured by `madar compare`
 
 ### Result
 
-| Metric | Baseline | Sadeem | Derived change |
+| Metric | Baseline | Madar | Derived change |
 |---|---:|---:|---:|
 | Input tokens (Anthropic-reported) | 1,653,307 | 498,280 | 1,155,027 saved (**~69.9% reduction**) |
 | Turns | 19 | 8 | 11 saved (**~57.9% reduction**) |
@@ -25,12 +25,12 @@ The goal is not to claim a universal win. The goal is to publish one reproducibl
 This is the exact compare summary captured for the run:
 
 ```text
-[sadeem compare] completed 1 native_agent question(s)
+[madar compare] completed 1 native_agent question(s)
 - Output: /Users/mohammednaji/Desktop/projects/works/govalidate/out/compare/2026-05-12T19-18-26
 - "Explain how idea report is getting generated"
-    num_turns: baseline 19 → sadeem 8 (2.38x fewer)
-    latency:   baseline 116029ms → sadeem 67454ms (1.72x faster)
-    input_tokens (Anthropic-reported): baseline 1653307 → sadeem 498280 (3.32x less)
+    num_turns: baseline 19 → madar 8 (2.38x fewer)
+    latency:   baseline 116029ms → madar 67454ms (1.72x faster)
+    input_tokens (Anthropic-reported): baseline 1653307 → madar 498280 (3.32x less)
     provider/runtime proof: Anthropic reported input, cache, and total tokens for both runs
 ```
 
@@ -47,19 +47,19 @@ The terminal summary only prints the extra uncached/cache lines when at least on
 `0.22.7` is the version used for this benchmark. Future versions may improve or regress; do not read this as “install 0.22.7 forever.”
 
 ```bash
-npm install -g @mohammednagy/sadeem@0.22.7
+npm install -g @mohammednagy/madar@0.22.7
 
 rm -rf out
-sadeem generate . --spi
+madar generate . --spi
 
-sadeem pack "Explain how idea report is getting generated" \
+madar pack "Explain how idea report is getting generated" \
   --task explain \
   --retrieval-level 4 \
   --retrieval-strategy slice-v1 \
   --budget 4000 \
   --graph out/graph.json
 
-sadeem compare "Explain how idea report is getting generated" \
+madar compare "Explain how idea report is getting generated" \
   --exec 'cat {prompt_file} | claude -p --output-format json' \
   --yes \
   --baseline-mode native_agent
@@ -109,11 +109,11 @@ node docs/benchmarks/govalidate-suite/verify-pack-quality.js \
   --gate docs-artifact
 ```
 
-Run the answer-quality verifier against the saved sadeem answer with:
+Run the answer-quality verifier against the saved madar answer with:
 
 ```bash
 node docs/benchmarks/govalidate-suite/verify-answer-quality.js \
-  --answer path/to/sadeem-answer.txt \
+  --answer path/to/madar-answer.txt \
   --config docs/benchmarks/govalidate-suite/quality-gates.json \
   --gate docs-artifact
 ```
@@ -147,11 +147,11 @@ The script recomputes the saved-token, saved-turn, and latency deltas directly f
 
 ## Safe interpretation
 
-In this one real GoValidate benchmark, sadeem provided a compact runtime context that reduced Claude Code input tokens by ~70%, reduced turns by ~58%, and reduced latency by ~42% compared with the native-agent baseline.
+In this one real GoValidate benchmark, madar provided a compact runtime context that reduced Claude Code input tokens by ~70%, reduced turns by ~58%, and reduced latency by ~42% compared with the native-agent baseline.
 
 ## Unsafe claims
 
 - “Always 70% token reduction”
 - “Guaranteed faster”
 - “Works equally on every repo”
-- “Sadeem replaces code search entirely”
+- “Madar replaces code search entirely”

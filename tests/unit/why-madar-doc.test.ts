@@ -10,8 +10,8 @@ function readDoc(relativePath: string): string {
 }
 
 describe('public marketing copy honesty', () => {
-  describe('examples/why-sadeem.md', () => {
-    const content = readDoc('examples/why-sadeem.md')
+  describe('examples/why-madar.md', () => {
+    const content = readDoc('examples/why-madar.md')
     const lower = content.toLowerCase()
 
     for (const stale of STALE_PHRASES) {
@@ -30,7 +30,7 @@ describe('public marketing copy honesty', () => {
       expect(lower).toMatch(/cold[- ]start|cost parity|amortize/i)
     })
 
-    it('positions sadeem as a context plane and context compiler', () => {
+    it('positions madar as a context plane and context compiler', () => {
       expect(lower).toContain('context plane')
       expect(lower).toContain('context compiler')
     })
@@ -53,15 +53,15 @@ describe('public marketing copy honesty', () => {
     })
 
     it('documents the pack, prompt, and summary command surfaces', () => {
-      expect(content).toContain('sadeem pack')
-      expect(content).toContain('sadeem prompt')
-      expect(content).toContain('sadeem summary')
+      expect(content).toContain('madar pack')
+      expect(content).toContain('madar prompt')
+      expect(content).toContain('madar summary')
       expect(lower).toContain('context plane')
     })
 
     it('surfaces the 0.23.0 user-facing additions in the main README flow', () => {
       expect(lower).toContain("what's new in 0.23.0")
-      expect(content).toContain('`sadeem summary`')
+      expect(content).toContain('`madar summary`')
       expect(content).toContain('`graph_summary`')
       expect(content).toContain('`execution_slice`')
       expect(content).toContain('report.share-safe.json')
@@ -86,7 +86,7 @@ describe('public marketing copy honesty', () => {
     it('states that core is the default MCP profile and full is opt-in', () => {
       expect(lower).toContain('by default')
       expect(content).toContain('core')
-      expect(content).toContain('SADEEM_TOOL_PROFILE=full')
+      expect(content).toContain('MADAR_TOOL_PROFILE=full')
       expect(content).toContain('--profile full')
     })
 
@@ -125,14 +125,14 @@ describe('public marketing copy honesty', () => {
     const lower = content.toLowerCase()
 
     it('starts the walkthrough with generate, summary, and compact retrieval surfaces', () => {
-      expect(content).toContain('sadeem generate examples/sample-workspace --no-html')
-      expect(content).toContain('sadeem summary examples/sample-workspace/out/graph.json')
-      expect(content).toContain('sadeem pack')
-      expect(content).toContain('sadeem prompt')
+      expect(content).toContain('madar generate examples/sample-workspace --no-html')
+      expect(content).toContain('madar summary examples/sample-workspace/out/graph.json')
+      expect(content).toContain('madar pack')
+      expect(content).toContain('madar prompt')
     })
 
     it('mentions the opt-in SPI path and the compare artifacts users should notice', () => {
-      expect(content).toContain('sadeem generate examples/sample-workspace --spi --no-html')
+      expect(content).toContain('madar generate examples/sample-workspace --spi --no-html')
       expect(content).toContain('--baseline-mode pack_only')
       expect(content).toContain('report.share-safe.json')
       expect(lower).toContain('execution_slice')
@@ -192,7 +192,7 @@ describe('public marketing copy honesty', () => {
       expect(runSh).toContain('--monorepo-path')
       expect(runSh).toContain('--exec')
       expect(runSh).toContain('--quick')
-      expect(runSh).toContain('sadeem compare')
+      expect(runSh).toContain('madar compare')
       expect(runSh).toContain('--baseline-mode native_agent')
     })
 
@@ -225,7 +225,7 @@ describe('public marketing copy honesty', () => {
     const sliceV1Sh = readDoc('docs/experiments/2026-05-10-current-vs-slicing/strategies/slice-v1.sh')
     const lexicalSh = readDoc('docs/experiments/2026-05-10-current-vs-slicing/strategies/lexical-baseline.sh')
     const fullSh = readDoc('docs/experiments/2026-05-10-current-vs-slicing/strategies/full-context.sh')
-    const currentSh = readDoc('docs/experiments/2026-05-10-current-vs-slicing/strategies/current-sadeem.sh')
+    const currentSh = readDoc('docs/experiments/2026-05-10-current-vs-slicing/strategies/current-madar.sh')
     const prompts = JSON.parse(readDoc('docs/experiments/2026-05-10-current-vs-slicing/prompts.json')) as {
       version: number
       prompts: Array<{ id: string; task: string; text: string }>
@@ -254,7 +254,7 @@ describe('public marketing copy honesty', () => {
       }
     })
 
-    it('avoids re-walking snippet payloads in the current-sadeem pack renderer', () => {
+    it('avoids re-walking snippet payloads in the current-madar pack renderer', () => {
       expect(currentSh).toContain('Object.entries(o)')
       for (const key of ['snippet', 'snippets', 'body', 'claim', 'text']) {
         expect(currentSh).toContain(`key === "${key}"`)
@@ -294,7 +294,7 @@ describe('public marketing copy honesty', () => {
     it('includes a findings doc with a concrete recommendation', () => {
       expect(findings).toContain('## Recommendation')
       expect(findings).toContain('examples/demo-repo')
-      expect(findings).toMatch(/slice-v1|current-sadeem|lexical-baseline|full-context/)
+      expect(findings).toMatch(/slice-v1|current-madar|lexical-baseline|full-context/)
     })
   })
 

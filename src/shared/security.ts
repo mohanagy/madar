@@ -43,7 +43,7 @@ export function findNearestExistingAncestor(targetPath: string): string | null {
 export function validateGraphPath(graphPath: string, base?: string): string {
   const resolvedBase = resolve(base ?? inferGraphBase(graphPath))
   if (!existsSync(resolvedBase)) {
-    throw new Error(`Graph base directory does not exist: ${resolvedBase}. Run sadeem first to build the graph.`)
+    throw new Error(`Graph base directory does not exist: ${resolvedBase}. Run madar first to build the graph.`)
   }
 
   const resolvedPath = resolve(graphPath)
@@ -168,7 +168,7 @@ async function fetchWithRedirects(url: string, timeoutMs: number): Promise<{ res
   for (let redirectCount = 0; redirectCount < 5; redirectCount += 1) {
     validateUrl(currentUrl)
     const response = await fetch(currentUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0 sadeem/1.0' },
+      headers: { 'User-Agent': 'Mozilla/5.0 madar/1.0' },
       redirect: 'manual',
       signal: AbortSignal.timeout(timeoutMs),
     })

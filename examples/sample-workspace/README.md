@@ -13,8 +13,8 @@ The flow is compact but realistic:
 Try it locally:
 
 ```bash
-sadeem generate examples/sample-workspace --no-html
-sadeem pack "how does password reset request enqueue the reset email" \
+madar generate examples/sample-workspace --no-html
+madar pack "how does password reset request enqueue the reset email" \
   --graph examples/sample-workspace/out/graph.json \
   --task explain
 ```

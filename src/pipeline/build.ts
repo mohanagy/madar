@@ -65,7 +65,7 @@ export function buildFromJson(extraction: unknown, options: BuildGraphOptions = 
     const nonDanglingErrors = errors.filter((error) => !error.includes('does not match any node id'))
 
     if (nonDanglingErrors.length > 0) {
-      console.warn(`[sadeem] Extraction warning (${nonDanglingErrors.length} issues): ${nonDanglingErrors[0]}`)
+      console.warn(`[madar] Extraction warning (${nonDanglingErrors.length} issues): ${nonDanglingErrors[0]}`)
     }
 
     const normalizedErrors = validateExtraction(normalized)
@@ -74,7 +74,7 @@ export function buildFromJson(extraction: unknown, options: BuildGraphOptions = 
       .filter((error) => !error.includes('does not match any node id'))
 
     if (postNormalizationErrors.length > 0) {
-      console.warn(`[sadeem] Normalization warning (${postNormalizationErrors.length} issues): ${postNormalizationErrors[0]}`)
+      console.warn(`[madar] Normalization warning (${postNormalizationErrors.length} issues): ${postNormalizationErrors[0]}`)
     }
   }
 

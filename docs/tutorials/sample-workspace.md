@@ -5,8 +5,8 @@ Use `examples/sample-workspace/` when you want a fast, reproducible TypeScript w
 ## Generate the graph
 
 ```bash
-npm run build # run from the repository root to build sadeem locally
-sadeem generate examples/sample-workspace --no-html
+npm run build # run from the repository root to build madar locally
+madar generate examples/sample-workspace --no-html
 ```
 
 This creates `examples/sample-workspace/out/graph.json`.
@@ -14,7 +14,7 @@ This creates `examples/sample-workspace/out/graph.json`.
 ## Run a compact pack query
 
 ```bash
-sadeem pack "how does password reset request enqueue the reset email" \
+madar pack "how does password reset request enqueue the reset email" \
   --graph examples/sample-workspace/out/graph.json \
   --task explain
 ```

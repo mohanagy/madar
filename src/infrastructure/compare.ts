@@ -17,7 +17,7 @@ import { sanitizeShareSafeText, toShareSafeArtifactPath, type ShareSafePathRoots
 import { MAX_TEXT_BYTES, validateGraphOutputPath, validateGraphPath } from '../shared/security.js'
 
 export type CompareBaselineMode = 'full' | 'bounded' | 'pack_only' | 'native_agent'
-export type CompareRunMode = 'baseline' | 'sadeem'
+export type CompareRunMode = 'baseline' | 'madar'
 export type CompareRunStatus = 'not_run' | 'succeeded' | 'failed' | 'context_overflow'
 export type CompareFailureReason = 'prompt_too_long' | 'runner_error' | 'exec_error'
 export type ComparePromptTokenSource = 'estimated_cl100k_base' | 'claude_reported_input' | 'gemini_reported_input'
@@ -31,12 +31,12 @@ export interface ComparePromptProviderProofEntry {
 
 export interface ComparePromptProviderProof {
   baseline: ComparePromptProviderProofEntry
-  sadeem: ComparePromptProviderProofEntry
+  madar: ComparePromptProviderProofEntry
   reduction_basis: 'provider_reported' | 'mixed' | 'estimated'
 }
 
 export interface ComparePromptPack {
-  kind: 'baseline' | 'sadeem'
+  kind: 'baseline' | 'madar'
   question: string
   prompt: string
   session_payload: string
@@ -56,7 +56,7 @@ export interface BuildBaselinePromptPackInput {
   session?: ContextSessionState
 }
 
-export interface BuildSadeemPromptPackInput {
+export interface BuildMadarPromptPackInput {
   question: string
   retrieval: RetrieveResult
   session?: ContextSessionState
@@ -65,14 +65,14 @@ export interface BuildSadeemPromptPackInput {
 export interface ComparePromptArtifactPaths {
   output_dir: string
   baseline_prompt: string
-  sadeem_prompt: string
+  madar_prompt: string
   report: string
   share_safe_report: string
 }
 
 export interface CompareAnswerArtifactPaths {
   baseline: string
-  sadeem: string
+  madar: string
 }
 
 export interface CompareExecCommandSummary {
@@ -95,18 +95,18 @@ export interface CompareReportPack extends CompactRetrieveResult {
   selection_diagnostics?: NonNullable<RetrieveResult['selection_diagnostics']>
 }
 
-export interface CompareSadeemTraceTurnSummary {
+export interface CompareMadarTraceTurnSummary {
   turn: number
   tool_call_count: number
   tools: string[]
 }
 
-export interface CompareSadeemTrace {
+export interface CompareMadarTrace {
   source: 'claude_messages_tool_use'
   summary: string
   tool_call_count: number
   tool_calls_by_name: Record<string, number>
-  per_turn: CompareSadeemTraceTurnSummary[]
+  per_turn: CompareMadarTraceTurnSummary[]
 }
 
 export interface ComparePromptReport {
@@ -115,57 +115,57 @@ export interface ComparePromptReport {
   exec_command: CompareExecCommandSummary
   baseline_mode: CompareBaselineMode
   baseline_prompt_tokens: number
-  sadeem_prompt_tokens: number
+  madar_prompt_tokens: number
   reduction_ratio: number
   baseline_effective_prompt_tokens: number
-  sadeem_effective_prompt_tokens: number
+  madar_effective_prompt_tokens: number
   effective_reduction_ratio: number
   baseline_reused_context_tokens: number
-  sadeem_reused_context_tokens: number
+  madar_reused_context_tokens: number
   baseline_total_tokens: number | null
-  sadeem_total_tokens: number | null
+  madar_total_tokens: number | null
   total_reduction_ratio: number | null
   baseline_prompt_tokens_estimated: number
-  sadeem_prompt_tokens_estimated: number
+  madar_prompt_tokens_estimated: number
   reduction_ratio_estimated: number
   prompt_token_estimator: ComparePromptTokenEstimator
   prompt_token_source: {
     baseline: ComparePromptTokenSource
-    sadeem: ComparePromptTokenSource
+    madar: ComparePromptTokenSource
   }
   usage: {
     baseline: ComparePromptUsage | null
-    sadeem: ComparePromptUsage | null
+    madar: ComparePromptUsage | null
   }
   started_at: string
   completed_at: string
   elapsed_ms: {
     baseline: number
-    sadeem: number
+    madar: number
   }
   status: {
     baseline: CompareRunStatus
-    sadeem: CompareRunStatus
+    madar: CompareRunStatus
   }
   answer_paths: CompareAnswerArtifactPaths
   exit_code: {
     baseline: number | null
-    sadeem: number | null
+    madar: number | null
   }
   stderr: {
     baseline: string | null
-    sadeem: string | null
+    madar: string | null
   }
   failure_reason: {
     baseline: CompareFailureReason | null
-    sadeem: CompareFailureReason | null
+    madar: CompareFailureReason | null
   }
   evidence: {
     baseline: string | null
-    sadeem: string | null
+    madar: string | null
   }
   provider_proof?: ComparePromptProviderProof
-  sadeem_trace?: CompareSadeemTrace
+  madar_trace?: CompareMadarTrace
   pack?: CompareReportPack
   paths: ComparePromptArtifactPaths
 }
@@ -296,12 +296,12 @@ function writeCompareReport(report: ComparePromptReport): void {
     graph_path: portablePath(report.graph_path),
     answer_paths: {
       baseline: portablePath(report.answer_paths.baseline),
-      sadeem: portablePath(report.answer_paths.sadeem),
+      madar: portablePath(report.answer_paths.madar),
     },
     paths: {
       output_dir: portablePath(report.paths.output_dir),
       baseline_prompt: portablePath(report.paths.baseline_prompt),
-      sadeem_prompt: portablePath(report.paths.sadeem_prompt),
+      madar_prompt: portablePath(report.paths.madar_prompt),
       report: portablePath(report.paths.report),
       share_safe_report: portablePath(report.paths.share_safe_report),
     },
@@ -597,52 +597,52 @@ function compareReportPackFromRetrieveResult(retrieval: RetrieveResult): Compare
   }
 }
 
-function computeReductionRatio(baselinePromptTokens: number, sadeemPromptTokens: number): number {
-  if (baselinePromptTokens <= 0 || sadeemPromptTokens <= 0) {
+function computeReductionRatio(baselinePromptTokens: number, madarPromptTokens: number): number {
+  if (baselinePromptTokens <= 0 || madarPromptTokens <= 0) {
     return 0
   }
-  return Number((baselinePromptTokens / sadeemPromptTokens).toFixed(1))
+  return Number((baselinePromptTokens / madarPromptTokens).toFixed(1))
 }
 
-function formatTokenComparison(baselineTokens: number, sadeemTokens: number): string {
-  if (baselineTokens <= 0 || sadeemTokens <= 0) {
+function formatTokenComparison(baselineTokens: number, madarTokens: number): string {
+  if (baselineTokens <= 0 || madarTokens <= 0) {
     return 'n/a'
   }
-  if (baselineTokens === sadeemTokens) {
+  if (baselineTokens === madarTokens) {
     return 'same size'
   }
-  if (baselineTokens > sadeemTokens) {
-    return `${computeReductionRatio(baselineTokens, sadeemTokens)}x smaller`
+  if (baselineTokens > madarTokens) {
+    return `${computeReductionRatio(baselineTokens, madarTokens)}x smaller`
   }
-  return `${Number((sadeemTokens / baselineTokens).toFixed(1))}x larger`
+  return `${Number((madarTokens / baselineTokens).toFixed(1))}x larger`
 }
 
 function syncComparePromptMetrics(report: ComparePromptReport): void {
   report.baseline_prompt_tokens = report.usage.baseline?.input_total_tokens ?? report.baseline_prompt_tokens_estimated
-  report.sadeem_prompt_tokens = report.usage.sadeem?.input_total_tokens ?? report.sadeem_prompt_tokens_estimated
-  report.reduction_ratio = computeReductionRatio(report.baseline_prompt_tokens, report.sadeem_prompt_tokens)
+  report.madar_prompt_tokens = report.usage.madar?.input_total_tokens ?? report.madar_prompt_tokens_estimated
+  report.reduction_ratio = computeReductionRatio(report.baseline_prompt_tokens, report.madar_prompt_tokens)
   report.baseline_effective_prompt_tokens =
     report.usage.baseline !== null
       ? report.usage.baseline.input_total_tokens - report.usage.baseline.cache_read_input_tokens
       : report.baseline_effective_prompt_tokens
-  report.sadeem_effective_prompt_tokens =
-    report.usage.sadeem !== null
-      ? report.usage.sadeem.input_total_tokens - report.usage.sadeem.cache_read_input_tokens
-      : report.sadeem_effective_prompt_tokens
+  report.madar_effective_prompt_tokens =
+    report.usage.madar !== null
+      ? report.usage.madar.input_total_tokens - report.usage.madar.cache_read_input_tokens
+      : report.madar_effective_prompt_tokens
   report.effective_reduction_ratio = computeReductionRatio(
     report.baseline_effective_prompt_tokens,
-    report.sadeem_effective_prompt_tokens,
+    report.madar_effective_prompt_tokens,
   )
   report.baseline_reused_context_tokens = report.usage.baseline?.cache_read_input_tokens ?? report.baseline_reused_context_tokens
-  report.sadeem_reused_context_tokens = report.usage.sadeem?.cache_read_input_tokens ?? report.sadeem_reused_context_tokens
+  report.madar_reused_context_tokens = report.usage.madar?.cache_read_input_tokens ?? report.madar_reused_context_tokens
   report.baseline_total_tokens = report.usage.baseline?.total_tokens ?? null
-  report.sadeem_total_tokens = report.usage.sadeem?.total_tokens ?? null
+  report.madar_total_tokens = report.usage.madar?.total_tokens ?? null
   report.total_reduction_ratio =
-    report.baseline_total_tokens !== null && report.sadeem_total_tokens !== null
-      ? computeReductionRatio(report.baseline_total_tokens, report.sadeem_total_tokens)
+    report.baseline_total_tokens !== null && report.madar_total_tokens !== null
+      ? computeReductionRatio(report.baseline_total_tokens, report.madar_total_tokens)
       : null
   report.prompt_token_source.baseline = comparePromptTokenSource(report.usage.baseline)
-  report.prompt_token_source.sadeem = comparePromptTokenSource(report.usage.sadeem)
+  report.prompt_token_source.madar = comparePromptTokenSource(report.usage.madar)
   report.provider_proof = buildCompareProviderProof(report)
 }
 
@@ -678,14 +678,14 @@ function parseTraceTurnNumber(value: unknown, fallbackTurn: number): number {
   return fallbackTurn
 }
 
-function extractSadeemTrace(stdout: string): CompareSadeemTrace | undefined {
+function extractMadarTrace(stdout: string): CompareMadarTrace | undefined {
   const payload = parsePromptRunnerJsonRecord(stdout)
   if (payload === null || !Array.isArray(payload.messages)) {
     return undefined
   }
 
   const toolCallsByName: Record<string, number> = {}
-  const perTurnIndex = new Map<number, CompareSadeemTraceTurnSummary>()
+  const perTurnIndex = new Map<number, CompareMadarTraceTurnSummary>()
   let fallbackTurn = 1
   let totalToolCalls = 0
 
@@ -766,15 +766,15 @@ function buildCompareProviderProofEntry(
 
 function buildCompareProviderProof(report: Pick<ComparePromptReport, 'usage' | 'prompt_token_source'>): ComparePromptProviderProof {
   const baselineUsage = report.usage.baseline
-  const sadeemUsage = report.usage.sadeem
+  const madarUsage = report.usage.madar
 
   return {
     baseline: buildCompareProviderProofEntry(baselineUsage, report.prompt_token_source.baseline),
-    sadeem: buildCompareProviderProofEntry(sadeemUsage, report.prompt_token_source.sadeem),
+    madar: buildCompareProviderProofEntry(madarUsage, report.prompt_token_source.madar),
     reduction_basis:
-      baselineUsage !== null && sadeemUsage !== null
+      baselineUsage !== null && madarUsage !== null
         ? 'provider_reported'
-        : baselineUsage !== null || sadeemUsage !== null
+        : baselineUsage !== null || madarUsage !== null
           ? 'mixed'
           : 'estimated',
   }
@@ -1094,7 +1094,7 @@ export function buildBaselinePromptPack(input: BuildBaselinePromptPackInput): Co
   }
 }
 
-export function buildSadeemPromptPack(input: BuildSadeemPromptPackInput): ComparePromptPack {
+export function buildMadarPromptPack(input: BuildMadarPromptPackInput): ComparePromptPack {
   const explainPayload = JSON.stringify(
     buildExplainPackPayload(compactRetrieveResult(input.retrieval), input.retrieval),
     null,
@@ -1121,7 +1121,7 @@ export function buildSadeemPromptPack(input: BuildSadeemPromptPackInput): Compar
   })
 
   return {
-    kind: 'sadeem',
+    kind: 'madar',
     question: input.question,
     prompt: builtPrompt.prompt,
     session_payload: builtPrompt.session_payload,
@@ -1174,23 +1174,23 @@ export function generateCompareArtifacts(input: GenerateCompareArtifactsInput): 
   const projectRoot = realpathSync(inferProjectRootFromGraphPath(graphPath))
   const retrievalBudget = input.retrievalBudget ?? DEFAULT_RETRIEVAL_BUDGET
   let baselineSession: ContextSessionState | undefined
-  let sadeemSession: ContextSessionState | undefined
+  let madarSession: ContextSessionState | undefined
 
   const reports = questions.map((question, index) => {
     const questionOutputDir = questions.length === 1 ? outputRoot : join(outputRoot, `question-${String(index + 1).padStart(3, '0')}`)
     mkdirSync(questionOutputDir, { recursive: true })
 
     const retrieval = retrieveCompareContext(graph, question, retrievalBudget, projectRoot)
-    const sadeemPrompt = buildSadeemPromptPack({
+    const madarPrompt = buildMadarPromptPack({
       question,
       retrieval,
-      ...(sadeemSession ? { session: sadeemSession } : {}),
+      ...(madarSession ? { session: madarSession } : {}),
     })
-    sadeemSession = sadeemPrompt.session_state
+    madarSession = madarPrompt.session_state
     const comparePack = input.baselineMode === 'pack_only' ? compareReportPackFromRetrieveResult(retrieval) : undefined
     const baselineMaxTokens =
       input.baselineMode === 'pack_only'
-        ? sadeemPrompt.token_count
+        ? madarPrompt.token_count
         : input.baselineMaxTokens
     const baselinePrompt = buildBaselinePromptPack({
       question,
@@ -1205,23 +1205,23 @@ export function generateCompareArtifacts(input: GenerateCompareArtifactsInput): 
     const paths: ComparePromptArtifactPaths = {
       output_dir: questionOutputDir,
       baseline_prompt: join(questionOutputDir, 'baseline-prompt.txt'),
-      sadeem_prompt: join(questionOutputDir, 'sadeem-prompt.txt'),
+      madar_prompt: join(questionOutputDir, 'madar-prompt.txt'),
       report: join(questionOutputDir, 'report.json'),
       share_safe_report: join(questionOutputDir, 'report.share-safe.json'),
     }
     const answerPaths: CompareAnswerArtifactPaths = {
       baseline: answerFilePath(questionOutputDir, 'baseline'),
-      sadeem: answerFilePath(questionOutputDir, 'sadeem'),
+      madar: answerFilePath(questionOutputDir, 'madar'),
     }
 
     const baselinePromptText = baselinePrompt.session_payload
-    const sadeemPromptText = sadeemPrompt.session_payload
+    const madarPromptText = madarPrompt.session_payload
 
     writeFileSync(paths.baseline_prompt, baselinePromptText, 'utf8')
-    writeFileSync(paths.sadeem_prompt, sadeemPromptText, 'utf8')
+    writeFileSync(paths.madar_prompt, madarPromptText, 'utf8')
 
     const baselinePromptTokens = baselinePrompt.token_count
-    const sadeemPromptTokens = sadeemPrompt.token_count
+    const madarPromptTokens = madarPrompt.token_count
 
     const report: ComparePromptReport = {
       question,
@@ -1229,54 +1229,54 @@ export function generateCompareArtifacts(input: GenerateCompareArtifactsInput): 
       exec_command: summarizeExecTemplate(input.execTemplate),
       baseline_mode: input.baselineMode,
       baseline_prompt_tokens: baselinePromptTokens,
-      sadeem_prompt_tokens: sadeemPromptTokens,
-      reduction_ratio: computeReductionRatio(baselinePromptTokens, sadeemPromptTokens),
+      madar_prompt_tokens: madarPromptTokens,
+      reduction_ratio: computeReductionRatio(baselinePromptTokens, madarPromptTokens),
       baseline_effective_prompt_tokens: baselinePrompt.effective_token_count,
-      sadeem_effective_prompt_tokens: sadeemPrompt.effective_token_count,
-      effective_reduction_ratio: computeReductionRatio(baselinePrompt.effective_token_count, sadeemPrompt.effective_token_count),
+      madar_effective_prompt_tokens: madarPrompt.effective_token_count,
+      effective_reduction_ratio: computeReductionRatio(baselinePrompt.effective_token_count, madarPrompt.effective_token_count),
       baseline_reused_context_tokens: baselinePrompt.reused_context_tokens,
-      sadeem_reused_context_tokens: sadeemPrompt.reused_context_tokens,
+      madar_reused_context_tokens: madarPrompt.reused_context_tokens,
       baseline_total_tokens: null,
-      sadeem_total_tokens: null,
+      madar_total_tokens: null,
       total_reduction_ratio: null,
       baseline_prompt_tokens_estimated: baselinePromptTokens,
-      sadeem_prompt_tokens_estimated: sadeemPromptTokens,
-      reduction_ratio_estimated: computeReductionRatio(baselinePromptTokens, sadeemPromptTokens),
+      madar_prompt_tokens_estimated: madarPromptTokens,
+      reduction_ratio_estimated: computeReductionRatio(baselinePromptTokens, madarPromptTokens),
       prompt_token_estimator: QUERY_TOKEN_ESTIMATOR,
       prompt_token_source: {
         baseline: 'estimated_cl100k_base',
-        sadeem: 'estimated_cl100k_base',
+        madar: 'estimated_cl100k_base',
       },
       usage: {
         baseline: null,
-        sadeem: null,
+        madar: null,
       },
       started_at: now.toISOString(),
       completed_at: now.toISOString(),
       elapsed_ms: {
         baseline: 0,
-        sadeem: 0,
+        madar: 0,
       },
       status: {
         baseline: 'not_run',
-        sadeem: 'not_run',
+        madar: 'not_run',
       },
       answer_paths: answerPaths,
       exit_code: {
         baseline: null,
-        sadeem: null,
+        madar: null,
       },
       stderr: {
         baseline: null,
-        sadeem: null,
+        madar: null,
       },
       failure_reason: {
         baseline: null,
-        sadeem: null,
+        madar: null,
       },
       evidence: {
         baseline: null,
-        sadeem: null,
+        madar: null,
       },
       ...(comparePack ? { pack: comparePack } : {}),
       paths,
@@ -1314,14 +1314,14 @@ export async function executeCompareRuns(
         outputFile: report.answer_paths.baseline,
       },
       {
-        mode: 'sadeem',
-        promptFile: report.paths.sadeem_prompt,
-        outputFile: report.answer_paths.sadeem,
+        mode: 'madar',
+        promptFile: report.paths.madar_prompt,
+        outputFile: report.answer_paths.madar,
       },
     ]
 
     for (const execution of executions) {
-      let sadeemTrace: CompareSadeemTrace | undefined
+      let madarTrace: CompareMadarTrace | undefined
       try {
         validateCompareExecTemplate(input.execTemplate)
         const command = expandCompareExecTemplate(input.execTemplate, {
@@ -1335,8 +1335,8 @@ export async function executeCompareRuns(
           question: report.question,
           command,
         })
-        if (execution.mode === 'sadeem') {
-          sadeemTrace = extractSadeemTrace(executionResult.stdout)
+        if (execution.mode === 'madar') {
+          madarTrace = extractMadarTrace(executionResult.stdout)
         }
         const parsedOutput = parsePromptRunnerOutput(executionResult.stdout)
         ensureCompareAnswerFile(
@@ -1354,11 +1354,11 @@ export async function executeCompareRuns(
         report.failure_reason[execution.mode] =
           executionResult.exitCode === 0 ? null : contextOverflowEvidence !== null ? 'prompt_too_long' : 'runner_error'
         report.evidence[execution.mode] = contextOverflowEvidence
-        if (execution.mode === 'sadeem') {
-          if (sadeemTrace) {
-            report.sadeem_trace = sadeemTrace
+        if (execution.mode === 'madar') {
+          if (madarTrace) {
+            report.madar_trace = madarTrace
           } else {
-            delete report.sadeem_trace
+            delete report.madar_trace
           }
         }
       } catch (error) {
@@ -1372,8 +1372,8 @@ export async function executeCompareRuns(
         report.stderr[execution.mode] = sanitizeCompareStderr(errorMessage)
         report.failure_reason[execution.mode] = contextOverflowEvidence !== null ? 'prompt_too_long' : 'exec_error'
         report.evidence[execution.mode] = contextOverflowEvidence
-        if (execution.mode === 'sadeem') {
-          delete report.sadeem_trace
+        if (execution.mode === 'madar') {
+          delete report.madar_trace
         }
       }
 
@@ -1387,19 +1387,19 @@ export async function executeCompareRuns(
 }
 
 function sumPromptTokens(reports: readonly ComparePromptReport[], mode: CompareRunMode): number {
-  return reports.reduce((total, report) => total + (mode === 'baseline' ? report.baseline_prompt_tokens : report.sadeem_prompt_tokens), 0)
+  return reports.reduce((total, report) => total + (mode === 'baseline' ? report.baseline_prompt_tokens : report.madar_prompt_tokens), 0)
 }
 
 function sumEffectivePromptTokens(reports: readonly ComparePromptReport[], mode: CompareRunMode): number {
   return reports.reduce(
-    (total, report) => total + (mode === 'baseline' ? report.baseline_effective_prompt_tokens : report.sadeem_effective_prompt_tokens),
+    (total, report) => total + (mode === 'baseline' ? report.baseline_effective_prompt_tokens : report.madar_effective_prompt_tokens),
     0,
   )
 }
 
 function sumReusedContextTokens(reports: readonly ComparePromptReport[], mode: CompareRunMode): number {
   return reports.reduce(
-    (total, report) => total + (mode === 'baseline' ? report.baseline_reused_context_tokens : report.sadeem_reused_context_tokens),
+    (total, report) => total + (mode === 'baseline' ? report.baseline_reused_context_tokens : report.madar_reused_context_tokens),
     0,
   )
 }
@@ -1407,7 +1407,7 @@ function sumReusedContextTokens(reports: readonly ComparePromptReport[], mode: C
 function sumTotalTokens(reports: readonly ComparePromptReport[], mode: CompareRunMode): number | null {
   let total = 0
   for (const report of reports) {
-    const value = mode === 'baseline' ? report.baseline_total_tokens : report.sadeem_total_tokens
+    const value = mode === 'baseline' ? report.baseline_total_tokens : report.madar_total_tokens
     if (value === null) {
       return null
     }
@@ -1419,13 +1419,13 @@ function sumTotalTokens(reports: readonly ComparePromptReport[], mode: CompareRu
 function countPromptRuns(reports: readonly ComparePromptReport[], status: Exclude<CompareRunStatus, 'not_run'>): number {
   return reports.reduce((total, report) => {
     const baseline = report.status.baseline === status ? 1 : 0
-    const sadeem = report.status.sadeem === status ? 1 : 0
-    return total + baseline + sadeem
+    const madar = report.status.madar === status ? 1 : 0
+    return total + baseline + madar
   }, 0)
 }
 
 function countPromptUsageRuns(reports: readonly ComparePromptReport[]): number {
-  return reports.reduce((total, report) => total + (report.usage.baseline === null ? 0 : 1) + (report.usage.sadeem === null ? 0 : 1), 0)
+  return reports.reduce((total, report) => total + (report.usage.baseline === null ? 0 : 1) + (report.usage.madar === null ? 0 : 1), 0)
 }
 
 function usageProviderSummaryLabel(reports: readonly ComparePromptReport[]): string {
@@ -1435,8 +1435,8 @@ function usageProviderSummaryLabel(reports: readonly ComparePromptReport[]): str
     if (report.usage.baseline !== null) {
       providers.add(report.usage.baseline.provider)
     }
-    if (report.usage.sadeem !== null) {
-      providers.add(report.usage.sadeem.provider)
+    if (report.usage.madar !== null) {
+      providers.add(report.usage.madar.provider)
     }
   }
 
@@ -1450,7 +1450,7 @@ function usageProviderSummaryLabel(reports: readonly ComparePromptReport[]): str
 
 function formatCompareProviderProof(result: GenerateCompareArtifactsResult): string {
   const proofs = result.reports
-    .flatMap((report) => (report.provider_proof ? [report.provider_proof.baseline, report.provider_proof.sadeem] : []))
+    .flatMap((report) => (report.provider_proof ? [report.provider_proof.baseline, report.provider_proof.madar] : []))
   const totalRuns = result.reports.length * 2
   const providerReportedRuns = proofs.filter((proof) => proof.input_tokens_source !== 'estimated_cl100k_base').length
   const cacheReportedRuns = proofs.filter((proof) => proof.effective_tokens_source === 'provider_cache_read_tokens').length
@@ -1479,8 +1479,8 @@ function formatCompareProviderProof(result: GenerateCompareArtifactsResult): str
   return `mixed provider-reported usage (${providerReportedRuns}/${totalRuns} prompt runs) with local estimate fallback`
 }
 
-function formatCompareSadeemTraceSummary(result: GenerateCompareArtifactsResult): string | null {
-  const traces = result.reports.flatMap((report) => (report.sadeem_trace ? [report.sadeem_trace] : []))
+function formatCompareMadarTraceSummary(result: GenerateCompareArtifactsResult): string | null {
+  const traces = result.reports.flatMap((report) => (report.madar_trace ? [report.madar_trace] : []))
   if (traces.length === 0) {
     return null
   }
@@ -1497,23 +1497,23 @@ function formatCompareSadeemTraceSummary(result: GenerateCompareArtifactsResult)
     .sort((leftEntry, rightEntry) => rightEntry[1] - leftEntry[1] || leftEntry[0].localeCompare(rightEntry[0]))
     .slice(0, 3)
     .map(([toolName, count]) => `${toolName}×${count}`)
-  const traceCoverage = traces.length === result.reports.length ? '' : ` · traces for ${traces.length}/${result.reports.length} sadeem runs`
+  const traceCoverage = traces.length === result.reports.length ? '' : ` · traces for ${traces.length}/${result.reports.length} madar runs`
   const topToolsSummary = topTools.length > 0 ? ` · top tools: ${topTools.join(', ')}` : ''
 
-  return `Sadeem trace: ${totalToolCalls} tool call${totalToolCalls === 1 ? '' : 's'} across ${totalTurns} turn${totalTurns === 1 ? '' : 's'}${traceCoverage}${topToolsSummary}`
+  return `Madar trace: ${totalToolCalls} tool call${totalToolCalls === 1 ? '' : 's'} across ${totalTurns} turn${totalTurns === 1 ? '' : 's'}${traceCoverage}${topToolsSummary}`
 }
 
 export function formatCompareSummary(result: GenerateCompareArtifactsResult): string {
   const baselineTokens = sumPromptTokens(result.reports, 'baseline')
-  const sadeemTokens = sumPromptTokens(result.reports, 'sadeem')
+  const madarTokens = sumPromptTokens(result.reports, 'madar')
   const baselineEffectiveTokens = sumEffectivePromptTokens(result.reports, 'baseline')
-  const sadeemEffectiveTokens = sumEffectivePromptTokens(result.reports, 'sadeem')
+  const madarEffectiveTokens = sumEffectivePromptTokens(result.reports, 'madar')
   const baselineReusedTokens = sumReusedContextTokens(result.reports, 'baseline')
-  const sadeemReusedTokens = sumReusedContextTokens(result.reports, 'sadeem')
+  const madarReusedTokens = sumReusedContextTokens(result.reports, 'madar')
   const baselineTotalTokens = sumTotalTokens(result.reports, 'baseline')
-  const sadeemTotalTokens = sumTotalTokens(result.reports, 'sadeem')
+  const madarTotalTokens = sumTotalTokens(result.reports, 'madar')
   const totalReductionRatio =
-    baselineTotalTokens !== null && sadeemTotalTokens !== null ? computeReductionRatio(baselineTotalTokens, sadeemTotalTokens) : null
+    baselineTotalTokens !== null && madarTotalTokens !== null ? computeReductionRatio(baselineTotalTokens, madarTotalTokens) : null
   const failedRuns = countPromptRuns(result.reports, 'failed')
   const contextOverflowRuns = countPromptRuns(result.reports, 'context_overflow')
   const succeededRuns = countPromptRuns(result.reports, 'succeeded')
@@ -1535,29 +1535,29 @@ export function formatCompareSummary(result: GenerateCompareArtifactsResult): st
   const usesSyntheticBaseline = baselineModes.has('full') || baselineModes.has('bounded') || baselineModes.has('pack_only')
 
   const lines = [
-    `[sadeem compare] completed ${result.reports.length} question(s)`,
+    `[madar compare] completed ${result.reports.length} question(s)`,
     `- Output: ${result.output_root}`,
     `- Prompt runs: ${succeededRuns} succeeded${contextOverflowRuns > 0 ? ` · ${contextOverflowRuns} context overflow` : ''}${
       failedRuns > 0 ? ` · ${failedRuns} failed` : ''
     }`,
-    `- ${promptTokenLabel}: baseline ${baselineTokens} · sadeem ${sadeemTokens} · ${formatTokenComparison(baselineTokens, sadeemTokens)}`,
-    `- Effective input tokens (cache-adjusted): baseline ${baselineEffectiveTokens} · sadeem ${sadeemEffectiveTokens} · ${formatTokenComparison(baselineEffectiveTokens, sadeemEffectiveTokens)}`,
+    `- ${promptTokenLabel}: baseline ${baselineTokens} · madar ${madarTokens} · ${formatTokenComparison(baselineTokens, madarTokens)}`,
+    `- Effective input tokens (cache-adjusted): baseline ${baselineEffectiveTokens} · madar ${madarEffectiveTokens} · ${formatTokenComparison(baselineEffectiveTokens, madarEffectiveTokens)}`,
   ]
 
   if (usesSyntheticBaseline) {
     lines.push(`- Note: reduction_ratio above is a synthetic prompt-token estimate (${QUERY_TOKEN_ESTIMATOR.model}); use --baseline-mode native_agent for Anthropic-reported usage.`)
   }
 
-  if (baselineTotalTokens !== null && sadeemTotalTokens !== null && totalReductionRatio !== null) {
-    lines.push(`- Total tokens (${usageProviderLabel} reported): baseline ${baselineTotalTokens} · sadeem ${sadeemTotalTokens} · ${formatTokenComparison(baselineTotalTokens, sadeemTotalTokens)}`)
+  if (baselineTotalTokens !== null && madarTotalTokens !== null && totalReductionRatio !== null) {
+    lines.push(`- Total tokens (${usageProviderLabel} reported): baseline ${baselineTotalTokens} · madar ${madarTotalTokens} · ${formatTokenComparison(baselineTotalTokens, madarTotalTokens)}`)
   } else if (usageRuns > 0 && usageRuns < totalRuns) {
     lines.push(`- Usage capture: ${usageProviderLabel} reported usage for ${usageRuns}/${totalRuns} prompt runs; remaining runs used local estimate fallback`)
   }
-  lines.push(`- Reused context tokens: baseline ${baselineReusedTokens} · sadeem ${sadeemReusedTokens}`)
+  lines.push(`- Reused context tokens: baseline ${baselineReusedTokens} · madar ${madarReusedTokens}`)
   lines.push(`- Provider/runtime proof: ${formatCompareProviderProof(result)}`)
-  const sadeemTraceSummary = formatCompareSadeemTraceSummary(result)
-  if (sadeemTraceSummary !== null) {
-    lines.push(`- ${sadeemTraceSummary}`)
+  const madarTraceSummary = formatCompareMadarTraceSummary(result)
+  if (madarTraceSummary !== null) {
+    lines.push(`- ${madarTraceSummary}`)
   }
 
   return lines.join('\n')
@@ -1569,9 +1569,9 @@ export async function runCompareCommand(
 ): Promise<string> {
   if (input.baselineMode === 'native_agent') {
     const nativeResult = await executeNativeAgentCompare(input, dependencies)
-    const failed = nativeResult.reports.filter((report) => isNativeAgentRunFailure(report.baseline) || isNativeAgentRunFailure(report.sadeem)).length
+    const failed = nativeResult.reports.filter((report) => isNativeAgentRunFailure(report.baseline) || isNativeAgentRunFailure(report.madar)).length
     if (failed > 0) {
-      throw new Error(`[sadeem compare] ${failed} native_agent run(s) failed. Partial artifacts were saved under ${nativeResult.output_root}`)
+      throw new Error(`[madar compare] ${failed} native_agent run(s) failed. Partial artifacts were saved under ${nativeResult.output_root}`)
     }
     return formatNativeAgentCompareSummary(nativeResult)
   }
@@ -1579,7 +1579,7 @@ export async function runCompareCommand(
   const result = await executeCompareRuns(input, dependencies)
   const failedRuns = countPromptRuns(result.reports, 'failed')
   if (failedRuns > 0) {
-    throw new Error(`[sadeem compare] ${failedRuns} prompt run(s) failed. Partial artifacts were saved under ${result.output_root}`)
+    throw new Error(`[madar compare] ${failedRuns} prompt run(s) failed. Partial artifacts were saved under ${result.output_root}`)
   }
   return formatCompareSummary(result)
 }
@@ -1603,7 +1603,7 @@ export async function runCompareCommand(
 // `out/compare/<ts>/` — renaming the parent would make those paths
 // inaccessible during the baseline run. We additionally hide `.mcp.json`,
 // `CLAUDE.md`, and `.claude/` so the baseline agent has no MCP server, no
-// project-level sadeem rules, and no PreToolUse hooks.
+// project-level madar rules, and no PreToolUse hooks.
 const NATIVE_AGENT_SNAPSHOT_TARGETS = [
   'out/graph.json',
   'out/GRAPH_REPORT.md',
@@ -1651,7 +1651,7 @@ export interface NativeAgentCompareReport {
   graph_path: string
   exec_command: CompareExecCommandSummary
   baseline: NativeAgentRunStatus
-  sadeem: NativeAgentRunStatus
+  madar: NativeAgentRunStatus
   reductions: {
     input_tokens: number | null
     num_turns: number | null
@@ -1660,7 +1660,7 @@ export interface NativeAgentCompareReport {
   } | null
   prompt_token_source: {
     baseline: 'anthropic_provider_reported' | 'unknown'
-    sadeem: 'anthropic_provider_reported' | 'unknown'
+    madar: 'anthropic_provider_reported' | 'unknown'
   }
   provider_proof?: {
     baseline: {
@@ -1669,7 +1669,7 @@ export interface NativeAgentCompareReport {
       effective_tokens_source: 'anthropic_provider_reported' | 'unknown'
       total_tokens_source: 'anthropic_provider_reported' | 'unknown'
     }
-    sadeem: {
+    madar: {
       provider: 'anthropic' | null
       input_tokens_source: 'anthropic_provider_reported' | 'unknown'
       effective_tokens_source: 'anthropic_provider_reported' | 'unknown'
@@ -1687,7 +1687,7 @@ export interface NativeAgentCompareReport {
       missing_required_terms: string[]
       forbidden_terms_present: string[]
     }
-    sadeem: {
+    madar: {
       passed: boolean
       missing_required_terms: string[]
       forbidden_terms_present: string[]
@@ -1701,7 +1701,7 @@ export interface NativeAgentCompareReport {
     report: string
     share_safe_report: string
     baseline_answer: string
-    sadeem_answer: string
+    madar_answer: string
     prompt_file: string
   }
 }
@@ -1713,9 +1713,9 @@ export interface NativeAgentCompareResult {
   answer_quality?: {
     questions_checked: number
     baseline_passed: number
-    sadeem_passed: number
-    sadeem_required_terms_missing: number
-    sadeem_forbidden_terms_present: number
+    madar_passed: number
+    madar_required_terms_missing: number
+    madar_forbidden_terms_present: number
     manual_review_required: number
   }
 }
@@ -1832,7 +1832,7 @@ function evaluateNativeAgentAnswerQualityReport(
   gates: ReadonlyMap<string, NativeAgentAnswerQualityGate> | null,
   question: string,
   baselineAnswerPath: string,
-  sadeemAnswerPath: string,
+  madarAnswerPath: string,
 ): NativeAgentCompareReport['answer_quality'] | undefined {
   if (gates === null) {
     return undefined
@@ -1841,18 +1841,18 @@ function evaluateNativeAgentAnswerQualityReport(
   if (!match) {
     return undefined
   }
-  if (!existsSync(baselineAnswerPath) || !existsSync(sadeemAnswerPath)) {
+  if (!existsSync(baselineAnswerPath) || !existsSync(madarAnswerPath)) {
     return undefined
   }
 
   const [gateName, gate] = match
   const baselineAnswer = readFileSync(baselineAnswerPath, 'utf8')
-  const sadeemAnswer = readFileSync(sadeemAnswerPath, 'utf8')
+  const madarAnswer = readFileSync(madarAnswerPath, 'utf8')
   return {
     gate: gateName,
     prompt: gate.prompt,
     baseline: evaluateNativeAgentAnswerQualityRun(gate, baselineAnswer),
-    sadeem: evaluateNativeAgentAnswerQualityRun(gate, sadeemAnswer),
+    madar: evaluateNativeAgentAnswerQualityRun(gate, madarAnswer),
     required_concepts: gate.required_concepts,
     answer_quality_notes: gate.answer_quality_notes,
     manual_review_notes: gate.manual_review_notes,
@@ -1870,13 +1870,13 @@ function summarizeNativeAgentAnswerQuality(
   return {
     questions_checked: checkedReports.length,
     baseline_passed: checkedReports.filter((report) => report.answer_quality?.baseline.passed).length,
-    sadeem_passed: checkedReports.filter((report) => report.answer_quality?.sadeem.passed).length,
-    sadeem_required_terms_missing: checkedReports.reduce(
-      (total, report) => total + (report.answer_quality?.sadeem.missing_required_terms.length ?? 0),
+    madar_passed: checkedReports.filter((report) => report.answer_quality?.madar.passed).length,
+    madar_required_terms_missing: checkedReports.reduce(
+      (total, report) => total + (report.answer_quality?.madar.missing_required_terms.length ?? 0),
       0,
     ),
-    sadeem_forbidden_terms_present: checkedReports.reduce(
-      (total, report) => total + (report.answer_quality?.sadeem.forbidden_terms_present.length ?? 0),
+    madar_forbidden_terms_present: checkedReports.reduce(
+      (total, report) => total + (report.answer_quality?.madar.forbidden_terms_present.length ?? 0),
       0,
     ),
     manual_review_required: checkedReports.reduce(
@@ -1962,7 +1962,7 @@ interface SnapshotRecord {
   originalPath: string
 }
 
-function snapshotSadeemArtifacts(projectRoot: string, timestamp: string): SnapshotRecord[] {
+function snapshotMadarArtifacts(projectRoot: string, timestamp: string): SnapshotRecord[] {
   const records: SnapshotRecord[] = []
   for (const target of NATIVE_AGENT_SNAPSHOT_TARGETS) {
     const original = join(projectRoot, target)
@@ -1976,7 +1976,7 @@ function snapshotSadeemArtifacts(projectRoot: string, timestamp: string): Snapsh
   return records
 }
 
-function restoreSadeemArtifacts(records: readonly SnapshotRecord[]): void {
+function restoreMadarArtifacts(records: readonly SnapshotRecord[]): void {
   // Walk in reverse so any nested entries restore atomically. Each rename is
   // best-effort; a partial restore is logged via stderr but never throws,
   // because this runs from finally{} blocks where throwing would mask the real
@@ -1992,7 +1992,7 @@ function restoreSadeemArtifacts(records: readonly SnapshotRecord[]): void {
       renameSync(record.backupPath, record.originalPath)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      process.stderr.write(`[sadeem compare native_agent] restore failed for ${record.originalPath}: ${message}\n`)
+      process.stderr.write(`[madar compare native_agent] restore failed for ${record.originalPath}: ${message}\n`)
     }
   }
 }
@@ -2023,33 +2023,33 @@ async function defaultNativeAgentRunner(input: NativeAgentRunnerInput): Promise<
   })
 }
 
-function computeReduction(baseline: number, sadeem: number): number | null {
-  if (sadeem <= 0 || baseline <= 0) {
+function computeReduction(baseline: number, madar: number): number | null {
+  if (madar <= 0 || baseline <= 0) {
     return null
   }
-  return Number((baseline / sadeem).toFixed(2))
+  return Number((baseline / madar).toFixed(2))
 }
 
 function formatDirectionalDelta(
   baseline: number,
-  sadeem: number,
+  madar: number,
   decreasedLabel: string,
   increasedLabel: string,
 ): string {
-  if (baseline <= 0 || sadeem <= 0 || baseline === sadeem) {
+  if (baseline <= 0 || madar <= 0 || baseline === madar) {
     return ''
   }
 
-  if (sadeem < baseline) {
-    return ` (${Number((baseline / sadeem).toFixed(2))}x ${decreasedLabel})`
+  if (madar < baseline) {
+    return ` (${Number((baseline / madar).toFixed(2))}x ${decreasedLabel})`
   }
 
-  return ` (${Number((sadeem / baseline).toFixed(2))}x ${increasedLabel})`
+  return ` (${Number((madar / baseline).toFixed(2))}x ${increasedLabel})`
 }
 
 type NativeAgentComparableReport = NativeAgentCompareReport & {
   baseline: Extract<NativeAgentRunStatus, { kind: 'succeeded' }>
-  sadeem: Extract<NativeAgentRunStatus, { kind: 'succeeded' }>
+  madar: Extract<NativeAgentRunStatus, { kind: 'succeeded' }>
 }
 
 interface NativeAgentSuiteChange {
@@ -2058,14 +2058,14 @@ interface NativeAgentSuiteChange {
 }
 
 function isComparableNativeAgentReport(report: NativeAgentCompareReport): report is NativeAgentComparableReport {
-  return report.baseline.kind === 'succeeded' && report.sadeem.kind === 'succeeded'
+  return report.baseline.kind === 'succeeded' && report.madar.kind === 'succeeded'
 }
 
-function computeReductionPercent(baseline: number, sadeem: number): number | null {
-  if (baseline <= 0 || sadeem <= 0) {
+function computeReductionPercent(baseline: number, madar: number): number | null {
+  if (baseline <= 0 || madar <= 0) {
     return null
   }
-  return Number((((baseline - sadeem) / baseline) * 100).toFixed(1))
+  return Number((((baseline - madar) / baseline) * 100).toFixed(1))
 }
 
 function formatPercent(value: number): string {
@@ -2102,11 +2102,11 @@ function median(values: number[]): number | null {
 
 function nativeAgentSuiteChanges(
   reports: readonly NativeAgentComparableReport[],
-  metric: (report: NativeAgentComparableReport) => { baseline: number; sadeem: number },
+  metric: (report: NativeAgentComparableReport) => { baseline: number; madar: number },
 ): NativeAgentSuiteChange[] {
   return reports.flatMap((report) => {
     const values = metric(report)
-    const percentReduction = computeReductionPercent(values.baseline, values.sadeem)
+    const percentReduction = computeReductionPercent(values.baseline, values.madar)
     return percentReduction === null ? [] : [{ question: report.question, percentReduction }]
   })
 }
@@ -2210,7 +2210,7 @@ export async function executeNativeAgentCompare(
     const promptFile = join(questionDir, 'native_agent-prompt.txt')
     writeFileSync(promptFile, question, 'utf8')
     const baselineAnswerPath = answerFilePath(questionDir, 'baseline')
-    const sadeemAnswerPath = answerFilePath(questionDir, 'sadeem')
+    const madarAnswerPath = answerFilePath(questionDir, 'madar')
     const reportPath = join(questionDir, 'report.json')
     const shareSafeReportPath = join(questionDir, 'report.share-safe.json')
 
@@ -2220,11 +2220,11 @@ export async function executeNativeAgentCompare(
       graph_path: graphPath,
       exec_command: summarizeExecTemplate(input.execTemplate),
       baseline: { kind: 'runner_error', evidence: null, exit_code: null, stderr: null },
-      sadeem: { kind: 'runner_error', evidence: null, exit_code: null, stderr: null },
+      madar: { kind: 'runner_error', evidence: null, exit_code: null, stderr: null },
       reductions: null,
       prompt_token_source: {
         baseline: 'unknown',
-        sadeem: 'unknown',
+        madar: 'unknown',
       },
       provider_proof: {
         baseline: {
@@ -2233,7 +2233,7 @@ export async function executeNativeAgentCompare(
           effective_tokens_source: 'unknown',
           total_tokens_source: 'unknown',
         },
-        sadeem: {
+        madar: {
           provider: null,
           input_tokens_source: 'unknown',
           effective_tokens_source: 'unknown',
@@ -2248,17 +2248,17 @@ export async function executeNativeAgentCompare(
         report: reportPath,
         share_safe_report: shareSafeReportPath,
         baseline_answer: baselineAnswerPath,
-        sadeem_answer: sadeemAnswerPath,
+        madar_answer: madarAnswerPath,
         prompt_file: promptFile,
       },
     }
 
-    // Step 1: snapshot sadeem artifacts and run baseline.
+    // Step 1: snapshot madar artifacts and run baseline.
     const stamp = timestamp.toISOString().replace(/[^0-9]/g, '').slice(0, 14)
     let snapshot: SnapshotRecord[] = []
     let baselineCrashed: unknown = null
     try {
-      snapshot = snapshotSadeemArtifacts(projectRoot, stamp)
+      snapshot = snapshotMadarArtifacts(projectRoot, stamp)
       const baselineCommand = expandCompareExecTemplate(input.execTemplate, {
         promptFile,
         question,
@@ -2316,7 +2316,7 @@ export async function executeNativeAgentCompare(
         }
       }
     } finally {
-      restoreSadeemArtifacts(snapshot)
+      restoreMadarArtifacts(snapshot)
     }
 
     if (baselineCrashed !== null) {
@@ -2327,29 +2327,29 @@ export async function executeNativeAgentCompare(
       throw baselineCrashed instanceof Error ? baselineCrashed : new Error(String(baselineCrashed))
     }
 
-    // Step 2: run sadeem (artifacts are restored, MCP server is in place).
-    const sadeemCommand = expandCompareExecTemplate(input.execTemplate, {
+    // Step 2: run madar (artifacts are restored, MCP server is in place).
+    const madarCommand = expandCompareExecTemplate(input.execTemplate, {
       promptFile,
       question,
-      mode: 'sadeem',
-      outputFile: sadeemAnswerPath,
+      mode: 'madar',
+      outputFile: madarAnswerPath,
     })
-    let sadeemRun: NativeAgentRunnerResult | null = null
+    let madarRun: NativeAgentRunnerResult | null = null
     try {
-      sadeemRun = await runner({ mode: 'sadeem', question, promptFile, outputFile: sadeemAnswerPath, command: sadeemCommand })
+      madarRun = await runner({ mode: 'madar', question, promptFile, outputFile: madarAnswerPath, command: madarCommand })
     } catch (error) {
-      reportShell.sadeem = {
+      reportShell.madar = {
         kind: 'runner_error',
         evidence: error instanceof Error ? error.message : String(error),
         exit_code: null,
         stderr: null,
       }
-      ensureCompareAnswerFile(sadeemAnswerPath, '')
+      ensureCompareAnswerFile(madarAnswerPath, '')
     }
-    if (sadeemRun !== null) {
-      const event = parseAnthropicResultEvent(sadeemRun.stdout)
+    if (madarRun !== null) {
+      const event = parseAnthropicResultEvent(madarRun.stdout)
       if (event !== null) {
-        reportShell.sadeem = {
+        reportShell.madar = {
           kind: 'succeeded',
           model: event.model,
           usage: event.usage,
@@ -2359,57 +2359,57 @@ export async function executeNativeAgentCompare(
           total_cost_usd: event.total_cost_usd,
           num_turns: event.num_turns,
           duration_ms: event.duration_ms,
-          result_path: sadeemAnswerPath,
+          result_path: madarAnswerPath,
         }
-        reportShell.prompt_token_source.sadeem = 'anthropic_provider_reported'
+        reportShell.prompt_token_source.madar = 'anthropic_provider_reported'
         if (reportShell.provider_proof) {
-          reportShell.provider_proof.sadeem = {
+          reportShell.provider_proof.madar = {
             provider: 'anthropic',
             input_tokens_source: 'anthropic_provider_reported',
             effective_tokens_source: 'anthropic_provider_reported',
             total_tokens_source: 'anthropic_provider_reported',
           }
         }
-        ensureCompareAnswerFile(sadeemAnswerPath, event.result ?? sadeemRun.stdout)
+        ensureCompareAnswerFile(madarAnswerPath, event.result ?? madarRun.stdout)
       } else {
-        reportShell.sadeem =
-          sadeemRun.exitCode === 0
+        reportShell.madar =
+          madarRun.exitCode === 0
             ? {
                 kind: 'answer_only',
-                evidence: sadeemRun.stdout.slice(0, 2000),
-                exit_code: sadeemRun.exitCode,
-                stderr: sanitizeCompareStderr(sadeemRun.stderr),
-                result_path: sadeemAnswerPath,
+                evidence: madarRun.stdout.slice(0, 2000),
+                exit_code: madarRun.exitCode,
+                stderr: sanitizeCompareStderr(madarRun.stderr),
+                result_path: madarAnswerPath,
               }
             : {
                 kind: 'runner_error',
-                evidence: sadeemRun.stdout.slice(0, 2000),
-                exit_code: sadeemRun.exitCode,
-                stderr: sanitizeCompareStderr(sadeemRun.stderr),
+                evidence: madarRun.stdout.slice(0, 2000),
+                exit_code: madarRun.exitCode,
+                stderr: sanitizeCompareStderr(madarRun.stderr),
               }
-        ensureCompareAnswerFile(sadeemAnswerPath, sadeemRun.stdout)
+        ensureCompareAnswerFile(madarAnswerPath, madarRun.stdout)
       }
     }
 
     // Compute reductions only when both runs reported usage.
-    if (reportShell.baseline.kind === 'succeeded' && reportShell.sadeem.kind === 'succeeded') {
+    if (reportShell.baseline.kind === 'succeeded' && reportShell.madar.kind === 'succeeded') {
       reportShell.reductions = {
-        input_tokens: computeReduction(reportShell.baseline.total_input_tokens_anthropic_exact, reportShell.sadeem.total_input_tokens_anthropic_exact),
-        num_turns: computeReduction(reportShell.baseline.num_turns, reportShell.sadeem.num_turns),
-        duration_ms: computeReduction(reportShell.baseline.duration_ms, reportShell.sadeem.duration_ms),
+        input_tokens: computeReduction(reportShell.baseline.total_input_tokens_anthropic_exact, reportShell.madar.total_input_tokens_anthropic_exact),
+        num_turns: computeReduction(reportShell.baseline.num_turns, reportShell.madar.num_turns),
+        duration_ms: computeReduction(reportShell.baseline.duration_ms, reportShell.madar.duration_ms),
         cost_usd:
-          reportShell.baseline.total_cost_usd !== null && reportShell.sadeem.total_cost_usd !== null
-            ? computeReduction(reportShell.baseline.total_cost_usd, reportShell.sadeem.total_cost_usd)
+          reportShell.baseline.total_cost_usd !== null && reportShell.madar.total_cost_usd !== null
+            ? computeReduction(reportShell.baseline.total_cost_usd, reportShell.madar.total_cost_usd)
             : null,
       }
     }
     if (reportShell.provider_proof) {
       reportShell.provider_proof.reduction_basis =
         reportShell.provider_proof.baseline.input_tokens_source === 'anthropic_provider_reported'
-        && reportShell.provider_proof.sadeem.input_tokens_source === 'anthropic_provider_reported'
+        && reportShell.provider_proof.madar.input_tokens_source === 'anthropic_provider_reported'
           ? 'provider_reported'
           : reportShell.provider_proof.baseline.input_tokens_source === 'anthropic_provider_reported'
-            || reportShell.provider_proof.sadeem.input_tokens_source === 'anthropic_provider_reported'
+            || reportShell.provider_proof.madar.input_tokens_source === 'anthropic_provider_reported'
             ? 'mixed'
             : 'unknown'
     }
@@ -2417,7 +2417,7 @@ export async function executeNativeAgentCompare(
       answerQualityGates,
       question,
       baselineAnswerPath,
-      sadeemAnswerPath,
+      madarAnswerPath,
     )
     if (answerQuality !== undefined) {
       reportShell.answer_quality = answerQuality
@@ -2450,7 +2450,7 @@ function writeNativeAgentReport(report: NativeAgentCompareReport): void {
       report: portablePath(report.paths.report),
       share_safe_report: portablePath(report.paths.share_safe_report),
       baseline_answer: portablePath(report.paths.baseline_answer),
-      sadeem_answer: portablePath(report.paths.sadeem_answer),
+      madar_answer: portablePath(report.paths.madar_answer),
       prompt_file: portablePath(report.paths.prompt_file),
     },
   }
@@ -2470,7 +2470,7 @@ function writeNativeAgentReport(report: NativeAgentCompareReport): void {
 
 export function formatNativeAgentCompareSummary(result: NativeAgentCompareResult): string {
   const lines: string[] = [
-    `[sadeem compare] completed ${result.reports.length} native_agent question(s)`,
+    `[madar compare] completed ${result.reports.length} native_agent question(s)`,
     `- Output: ${result.output_root}`,
   ]
   const totalQuestionCount = result.reports.length
@@ -2481,7 +2481,7 @@ export function formatNativeAgentCompareSummary(result: NativeAgentCompareResult
         'input_tokens (Anthropic-reported)',
         nativeAgentSuiteChanges(comparableReports, (report) => ({
           baseline: report.baseline.total_input_tokens_anthropic_exact,
-          sadeem: report.sadeem.total_input_tokens_anthropic_exact,
+          madar: report.madar.total_input_tokens_anthropic_exact,
         })),
         'less',
         'more',
@@ -2492,7 +2492,7 @@ export function formatNativeAgentCompareSummary(result: NativeAgentCompareResult
         'num_turns',
         nativeAgentSuiteChanges(comparableReports, (report) => ({
           baseline: report.baseline.num_turns,
-          sadeem: report.sadeem.num_turns,
+          madar: report.madar.num_turns,
         })),
         'fewer',
         'more',
@@ -2503,7 +2503,7 @@ export function formatNativeAgentCompareSummary(result: NativeAgentCompareResult
         'latency',
         nativeAgentSuiteChanges(comparableReports, (report) => ({
           baseline: report.baseline.duration_ms,
-          sadeem: report.sadeem.duration_ms,
+          madar: report.madar.duration_ms,
         })),
         'faster',
         'slower',
@@ -2514,22 +2514,22 @@ export function formatNativeAgentCompareSummary(result: NativeAgentCompareResult
   }
   if (result.answer_quality) {
     lines.push(
-      `- Answer quality: sadeem ${result.answer_quality.sadeem_passed}/${result.answer_quality.questions_checked} passed deterministic gates · baseline ${result.answer_quality.baseline_passed}/${result.answer_quality.questions_checked} passed deterministic gates · ${formatCount(result.answer_quality.manual_review_required, 'manual-review note', 'manual-review notes')}`,
+      `- Answer quality: madar ${result.answer_quality.madar_passed}/${result.answer_quality.questions_checked} passed deterministic gates · baseline ${result.answer_quality.baseline_passed}/${result.answer_quality.questions_checked} passed deterministic gates · ${formatCount(result.answer_quality.manual_review_required, 'manual-review note', 'manual-review notes')}`,
     )
   }
   for (const report of result.reports) {
-    if (isNativeAgentRunFailure(report.baseline) || isNativeAgentRunFailure(report.sadeem)) {
+    if (isNativeAgentRunFailure(report.baseline) || isNativeAgentRunFailure(report.madar)) {
       lines.push(`- "${report.question}" → runner error (see ${portablePath(report.paths.report)})`)
       continue
     }
-    if (report.baseline.kind === 'answer_only' || report.sadeem.kind === 'answer_only') {
+    if (report.baseline.kind === 'answer_only' || report.madar.kind === 'answer_only') {
       lines.push(`- "${report.question}" → answer-only run saved; no Anthropic usage block was available, so provider-proof reductions were not computed (see ${portablePath(report.paths.report)})`)
       continue
     }
 
     const baseline = report.baseline
-    const sadeem = report.sadeem
-    if (baseline.kind !== 'succeeded' || sadeem.kind !== 'succeeded') {
+    const madar = report.madar
+    if (baseline.kind !== 'succeeded' || madar.kind !== 'succeeded') {
       lines.push(`- "${report.question}" → runner error (see ${portablePath(report.paths.report)})`)
       continue
     }
@@ -2537,20 +2537,20 @@ export function formatNativeAgentCompareSummary(result: NativeAgentCompareResult
     const hasCacheActivity =
       baseline.usage.cache_creation_input_tokens > 0 ||
       baseline.cached_input_tokens_anthropic_exact > 0 ||
-      sadeem.usage.cache_creation_input_tokens > 0 ||
-      sadeem.cached_input_tokens_anthropic_exact > 0
+      madar.usage.cache_creation_input_tokens > 0 ||
+      madar.cached_input_tokens_anthropic_exact > 0
 
     lines.push(
       `- "${report.question}"`,
-      `    num_turns: baseline ${baseline.num_turns} → sadeem ${sadeem.num_turns}${formatDirectionalDelta(baseline.num_turns, sadeem.num_turns, 'fewer', 'more')}`,
-      `    latency:   baseline ${baseline.duration_ms}ms → sadeem ${sadeem.duration_ms}ms${formatDirectionalDelta(baseline.duration_ms, sadeem.duration_ms, 'faster', 'slower')}`,
-      `    input_tokens (Anthropic-reported): baseline ${baseline.total_input_tokens_anthropic_exact} → sadeem ${sadeem.total_input_tokens_anthropic_exact}${formatDirectionalDelta(baseline.total_input_tokens_anthropic_exact, sadeem.total_input_tokens_anthropic_exact, 'less', 'more')}`,
+      `    num_turns: baseline ${baseline.num_turns} → madar ${madar.num_turns}${formatDirectionalDelta(baseline.num_turns, madar.num_turns, 'fewer', 'more')}`,
+      `    latency:   baseline ${baseline.duration_ms}ms → madar ${madar.duration_ms}ms${formatDirectionalDelta(baseline.duration_ms, madar.duration_ms, 'faster', 'slower')}`,
+      `    input_tokens (Anthropic-reported): baseline ${baseline.total_input_tokens_anthropic_exact} → madar ${madar.total_input_tokens_anthropic_exact}${formatDirectionalDelta(baseline.total_input_tokens_anthropic_exact, madar.total_input_tokens_anthropic_exact, 'less', 'more')}`,
     )
     if (hasCacheActivity) {
       lines.push(
-        `    uncached_input_tokens (Anthropic-reported): baseline ${baseline.uncached_input_tokens_anthropic_exact} → sadeem ${sadeem.uncached_input_tokens_anthropic_exact}${formatDirectionalDelta(baseline.uncached_input_tokens_anthropic_exact, sadeem.uncached_input_tokens_anthropic_exact, 'less', 'more')}`,
-        `    cache_creation_input_tokens (Anthropic-reported): baseline ${baseline.usage.cache_creation_input_tokens} → sadeem ${sadeem.usage.cache_creation_input_tokens}${formatDirectionalDelta(baseline.usage.cache_creation_input_tokens, sadeem.usage.cache_creation_input_tokens, 'less', 'more')}`,
-        `    cache_read_input_tokens (Anthropic-reported): baseline ${baseline.usage.cache_read_input_tokens} → sadeem ${sadeem.usage.cache_read_input_tokens}${formatDirectionalDelta(baseline.usage.cache_read_input_tokens, sadeem.usage.cache_read_input_tokens, 'less', 'more')}`,
+        `    uncached_input_tokens (Anthropic-reported): baseline ${baseline.uncached_input_tokens_anthropic_exact} → madar ${madar.uncached_input_tokens_anthropic_exact}${formatDirectionalDelta(baseline.uncached_input_tokens_anthropic_exact, madar.uncached_input_tokens_anthropic_exact, 'less', 'more')}`,
+        `    cache_creation_input_tokens (Anthropic-reported): baseline ${baseline.usage.cache_creation_input_tokens} → madar ${madar.usage.cache_creation_input_tokens}${formatDirectionalDelta(baseline.usage.cache_creation_input_tokens, madar.usage.cache_creation_input_tokens, 'less', 'more')}`,
+        `    cache_read_input_tokens (Anthropic-reported): baseline ${baseline.usage.cache_read_input_tokens} → madar ${madar.usage.cache_read_input_tokens}${formatDirectionalDelta(baseline.usage.cache_read_input_tokens, madar.usage.cache_read_input_tokens, 'less', 'more')}`,
       )
     }
     if (report.answer_quality) {
@@ -2558,12 +2558,12 @@ export function formatNativeAgentCompareSummary(result: NativeAgentCompareResult
         ...report.answer_quality.baseline.missing_required_terms.map((term) => `missing ${term}`),
         ...report.answer_quality.baseline.forbidden_terms_present.map((term) => `forbidden ${term}`),
       ]
-      const sadeemFindings = [
-        ...report.answer_quality.sadeem.missing_required_terms.map((term) => `missing ${term}`),
-        ...report.answer_quality.sadeem.forbidden_terms_present.map((term) => `forbidden ${term}`),
+      const madarFindings = [
+        ...report.answer_quality.madar.missing_required_terms.map((term) => `missing ${term}`),
+        ...report.answer_quality.madar.forbidden_terms_present.map((term) => `forbidden ${term}`),
       ]
       lines.push(
-        `    answer quality: baseline ${report.answer_quality.baseline.passed ? 'PASS' : `FAIL (${baselineFindings.join(', ')})`} · sadeem ${report.answer_quality.sadeem.passed ? 'PASS' : `FAIL (${sadeemFindings.join(', ')})`}${report.answer_quality.manual_review_notes.length > 0 ? ` · manual review: ${formatCount(report.answer_quality.manual_review_notes.length, 'note', 'notes')}` : ''}`,
+        `    answer quality: baseline ${report.answer_quality.baseline.passed ? 'PASS' : `FAIL (${baselineFindings.join(', ')})`} · madar ${report.answer_quality.madar.passed ? 'PASS' : `FAIL (${madarFindings.join(', ')})`}${report.answer_quality.manual_review_notes.length > 0 ? ` · manual review: ${formatCount(report.answer_quality.manual_review_notes.length, 'note', 'notes')}` : ''}`,
       )
     }
     lines.push(`    provider/runtime proof: Anthropic reported input, cache, and total tokens for both runs`)

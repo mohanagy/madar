@@ -153,7 +153,7 @@ export interface CliDependencies {
   readInstalledVersion?: () => string
 }
 
-const COMPARE_WARNING_MESSAGE = 'compare will execute a baseline prompt and a sadeem prompt for each question. This may consume paid model tokens.'
+const COMPARE_WARNING_MESSAGE = 'compare will execute a baseline prompt and a madar prompt for each question. This may consume paid model tokens.'
 const REVIEW_COMPARE_WARNING_MESSAGE = 'review-compare will execute verbose and compact pr_impact prompts for the current git diff. This may consume paid model tokens.'
 const BENCHMARK_WARNING_MESSAGE = 'benchmark will execute the benchmark/eval runner. This may consume paid model tokens.'
 const EVAL_WARNING_MESSAGE = 'eval will execute the benchmark/eval runner. This may consume paid model tokens.'
@@ -257,7 +257,7 @@ function messageFromError(error: unknown): string {
 }
 
 function formatProgress(progress: ProgressStep): string {
-  const prefix = `[sadeem ${progress.step}]`
+  const prefix = `[madar ${progress.step}]`
   if (progress.step === 'extract' && progress.current !== undefined && progress.total !== undefined && progress.total > 0) {
     return `${prefix} ${progress.message} (${progress.current}/${progress.total})`
   }
@@ -290,7 +290,7 @@ async function confirmPaidCommand(
   return true
 }
 
-export function formatHelp(binaryName = 'sadeem'): string {
+export function formatHelp(binaryName = 'madar'): string {
   return [
     `Usage: ${binaryName} <command>`,
     '',
@@ -371,12 +371,12 @@ export function formatHelp(binaryName = 'sadeem'): string {
     '    --exec TEMPLATE       required command template; supports {prompt_file}, {question}, {mode}, and {output_file}',
     '    --questions PATH      load benchmark/eval questions from a JSON file',
     '    --yes                 skip confirmation before running the paid benchmark/eval prompts',
-    '  compare [question]    run a real baseline vs sadeem prompt comparison',
+    '  compare [question]    run a real baseline vs madar prompt comparison',
     '    --graph <path>        path to graph.json (default out/graph.json)',
     '    --exec TEMPLATE       required command template; supports {prompt_file}, {question}, {mode}, and {output_file}',
     '    --questions PATH      load questions from a JSON file instead of a positional question',
     '    --output-dir DIR      compare output directory (default out/compare)',
-    '    --baseline-mode MODE  full | bounded | pack_only | native_agent (default full; pack_only compares one bounded raw-context prompt against one compiled sadeem pack; native_agent runs --exec twice, uses Anthropic JSON usage when available, and otherwise saves answer-only artifacts)',
+    '    --baseline-mode MODE  full | bounded | pack_only | native_agent (default full; pack_only compares one bounded raw-context prompt against one compiled madar pack; native_agent runs --exec twice, uses Anthropic JSON usage when available, and otherwise saves answer-only artifacts)',
     '    --yes                 skip confirmation before running the paid prompt comparison',
     '    --limit N             cap processed prompts/questions for the comparison run',
     '  review-compare [graph.json] compare full vs compact pr_impact review prompts on the current git diff',
@@ -394,15 +394,15 @@ export function formatHelp(binaryName = 'sadeem'): string {
     '    --graph <path>      path to graph.json to validate (default out/graph.json)',
     '  status [graph.json]   compact readiness summary with next commands',
     '    --graph <path>      path to graph.json to validate (default out/graph.json)',
-    '  install [--platform P] install the platform skill or local sadeem config',
+    '  install [--platform P] install the platform skill or local madar config',
     '    platforms            claude|windows|gemini|cursor|codex|opencode|aider|claw|droid|trae|trae-cn|copilot',
-    '  hook <action>          manage git hooks for sadeem rebuild reminders',
+    '  hook <action>          manage git hooks for madar rebuild reminders',
     '    install              install post-commit and post-checkout hooks',
-    '    uninstall            remove sadeem hook sections',
-    '    status               show whether sadeem hooks are installed',
+    '    uninstall            remove madar hook sections',
+    '    status               show whether madar hooks are installed',
     '  aider <install|uninstall>   manage local AGENTS.md rules',
-    '  claude <install|uninstall> [--profile core|full|strict]  manage local CLAUDE.md sadeem rules',
-    '  cursor <install|uninstall> [--profile core|full|strict]  manage local Cursor sadeem rules',
+    '  claude <install|uninstall> [--profile core|full|strict]  manage local CLAUDE.md madar rules',
+    '  cursor <install|uninstall> [--profile core|full|strict]  manage local Cursor madar rules',
     '  gemini <install|uninstall> [--profile core|full|strict]  manage local GEMINI.md rules and Gemini CLI hook config',
     '  copilot <install|uninstall> [--profile core|full|strict] install or remove the GitHub Copilot skill',
     '  codex <install|uninstall>   manage local AGENTS.md + Codex hook rules',
@@ -461,7 +461,7 @@ function isImplicitGenerateCommand(argument: string): boolean {
 
 function formatGenerateSummary(result: GenerateGraphResult): string {
   const lines = [
-    `[sadeem generate] ${result.mode} completed for ${result.rootPath}`,
+    `[madar generate] ${result.mode} completed for ${result.rootPath}`,
     `- Corpus: ${result.totalFiles} file(s) · ~${result.totalWords.toLocaleString()} words`,
     `- Extracted: ${result.codeFiles} code file(s)` + (result.nonCodeFiles > 0 ? ` (+${result.nonCodeFiles} non-code detected)` : ''),
     `- Graph: ${result.nodeCount} nodes · ${result.edgeCount} edges · ${result.communityCount} communities`,
@@ -511,10 +511,10 @@ function formatGenerateSummary(result: GenerateGraphResult): string {
 
   lines.push('')
   lines.push('Next: connect your AI assistant:')
-  lines.push('  sadeem claude install    # Claude Code')
-  lines.push('  sadeem cursor install    # Cursor')
-  lines.push('  sadeem copilot install   # GitHub Copilot')
-  lines.push('  sadeem gemini install    # Gemini CLI')
+  lines.push('  madar claude install    # Claude Code')
+  lines.push('  madar cursor install    # Cursor')
+  lines.push('  madar copilot install   # GitHub Copilot')
+  lines.push('  madar gemini install    # Gemini CLI')
 
   return lines.join('\n')
 }
@@ -687,7 +687,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
           database: options.neo4jDatabase,
           projectRoot: result.rootPath,
         })
-        io.log(`[sadeem neo4j] Pushed ${pushResult.nodes} nodes and ${pushResult.edges} edges to ${pushResult.uri} (database ${pushResult.database})`)
+        io.log(`[madar neo4j] Pushed ${pushResult.nodes} nodes and ${pushResult.edges} edges to ${pushResult.uri} (database ${pushResult.database})`)
       }
 
       if (options.watch) {
@@ -718,7 +718,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
 
     if (command === 'federate') {
       if (args.length === 0) {
-        throw new UsageError('Usage: sadeem federate <graph1.json> <graph2.json> ... [--output DIR]')
+        throw new UsageError('Usage: madar federate <graph1.json> <graph2.json> ... [--output DIR]')
       }
 
       const graphPaths: string[] = []
@@ -744,7 +744,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
 
       const result = federate(graphPaths, { outputDir })
       io.log([
-        `[sadeem federate] merged ${result.repos.length} repos: ${result.repos.join(', ')}`,
+        `[madar federate] merged ${result.repos.length} repos: ${result.repos.join(', ')}`,
         `- Graph: ${result.totalNodes} nodes · ${result.totalEdges} edges · ${result.communityCount} communities`,
         `- Cross-repo edges: ${result.crossRepoEdges} inferred connections`,
         `- Outputs: ${result.graphPath}, ${result.reportPath}`,
@@ -820,7 +820,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         noHtml: options.noHtml,
         onProgress: (step) => io.log(formatProgress(step)),
       })
-      io.log(`[sadeem add] Saved ${assetPath}`)
+      io.log(`[madar add] Saved ${assetPath}`)
       io.log(formatGenerateSummary(result))
       return 0
     }
@@ -886,7 +886,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
     if (command === 'claude') {
       const options = parsePlatformActionArgs(command, args)
       if (options.action === 'install' && !existsSync('out/graph.json')) {
-        io.log("Warning: out/graph.json not found. Run 'sadeem generate .' first, then re-run this command.")
+        io.log("Warning: out/graph.json not found. Run 'madar generate .' first, then re-run this command.")
       }
       io.log(options.action === 'install'
         ? dependencies.claudeInstall('.', options.profile ? { profile: options.profile } : {})
@@ -897,7 +897,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
     if (command === 'cursor') {
       const options = parsePlatformActionArgs(command, args)
       if (options.action === 'install' && !existsSync('out/graph.json')) {
-        io.log("Warning: out/graph.json not found. Run 'sadeem generate .' first, then re-run this command.")
+        io.log("Warning: out/graph.json not found. Run 'madar generate .' first, then re-run this command.")
       }
       io.log(options.action === 'install'
         ? dependencies.cursorInstall('.', options.profile ? { profile: options.profile } : {})
@@ -908,7 +908,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
     if (command === 'gemini') {
       const options = parsePlatformActionArgs(command, args)
       if (options.action === 'install' && !existsSync('out/graph.json')) {
-        io.log("Warning: out/graph.json not found. Run 'sadeem generate .' first, then re-run this command.")
+        io.log("Warning: out/graph.json not found. Run 'madar generate .' first, then re-run this command.")
       }
       io.log(options.action === 'install' ? dependencies.geminiInstall('.', options.profile ? { profile: options.profile } : {}) : dependencies.geminiUninstall('.'))
       return 0
@@ -918,7 +918,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
       const options = parsePlatformActionArgs(command, args)
       if (options.action === 'install') {
         if (!existsSync('out/graph.json')) {
-          io.log("Warning: out/graph.json not found. Run 'sadeem generate .' first, then re-run this command.")
+          io.log("Warning: out/graph.json not found. Run 'madar generate .' first, then re-run this command.")
         }
         io.log(dependencies.installSkill('copilot'))
         io.log(dependencies.installCopilotMcp('.', options.profile ? { profile: options.profile } : {}))
@@ -934,7 +934,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
     }
 
     io.error(`error: unknown command '${command}'`)
-    io.error(`Run 'sadeem --help' for usage.`)
+    io.error(`Run 'madar --help' for usage.`)
     return 1
   } catch (error) {
     if (error instanceof UsageError) {

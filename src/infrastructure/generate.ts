@@ -322,7 +322,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
       codeFiles.length > 0
         ? buildSpiCached({
             root: resolvedRootPath,
-            sadeemVersion: `spi-extractor-${EXTRACTOR_CACHE_VERSION}`,
+            madarVersion: `spi-extractor-${EXTRACTOR_CACHE_VERSION}`,
             extractorVersion: spiExtractorVersion,
           })
         : null

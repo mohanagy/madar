@@ -1,6 +1,6 @@
 import { basename, dirname, isAbsolute, relative, resolve } from 'node:path'
 
-import { buildSadeemPromptPack } from '../../infrastructure/compare.js'
+import { buildMadarPromptPack } from '../../infrastructure/compare.js'
 import type { TaskContextPlan } from '../../contracts/task-context-plan.js'
 import type { CompareRefsInput } from '../../infrastructure/time-travel.js'
 import type {
@@ -1286,7 +1286,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       const previousSession =
         explicitSessionState
         ?? (sessionId ? helpers.getContextPromptSession(sessionId) : undefined)
-      const promptPack = buildSadeemPromptPack({
+      const promptPack = buildMadarPromptPack({
         question: prompt,
         retrieval,
         ...(provider === 'claude' && previousSession ? { session: previousSession } : {}),

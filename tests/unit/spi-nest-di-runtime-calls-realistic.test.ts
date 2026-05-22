@@ -39,7 +39,7 @@ function toWindowsFixturePath(sourceFile: string): string {
 function buildFixtureSpi(): SemanticProgramIndex {
   return buildSpi({
     root: FIXTURE_ROOT,
-    sadeemVersion: 'test-0.0.0',
+    madarVersion: 'test-0.0.0',
     extractorVersion: 'spi-v1.0.0-nest-di-runtime-calls-realistic',
     now: FROZEN_NOW,
   })

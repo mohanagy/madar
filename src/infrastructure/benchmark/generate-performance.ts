@@ -48,14 +48,14 @@ export interface GeneratePerformanceBenchmarkSummary {
 
 const CODE_MUTATION_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.rs', '.java'])
 const CODE_MUTATION_MARKERS: Record<string, string> = {
-  '.ts': 'export const __sadeemBenchmarkTouch = true',
-  '.tsx': 'export const __sadeemBenchmarkTouch = true',
-  '.js': 'export const __sadeemBenchmarkTouch = true',
-  '.jsx': 'export const __sadeemBenchmarkTouch = true',
-  '.py': '# __sadeemBenchmarkTouch = True',
-  '.go': '// __sadeemBenchmarkTouch = true',
-  '.rs': '// __sadeemBenchmarkTouch = true',
-  '.java': '// __sadeemBenchmarkTouch = true',
+  '.ts': 'export const __madarBenchmarkTouch = true',
+  '.tsx': 'export const __madarBenchmarkTouch = true',
+  '.js': 'export const __madarBenchmarkTouch = true',
+  '.jsx': 'export const __madarBenchmarkTouch = true',
+  '.py': '# __madarBenchmarkTouch = True',
+  '.go': '// __madarBenchmarkTouch = true',
+  '.rs': '// __madarBenchmarkTouch = true',
+  '.java': '// __madarBenchmarkTouch = true',
 }
 const METRICS_TRACKED = [
   'wall_clock_ms',

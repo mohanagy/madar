@@ -36,7 +36,7 @@ function makeFixtureProject(): { projectDir: string; graphPath: string; outputDi
     'utf8',
   )
   // Plant the other snapshot targets so we can verify they round-trip.
-  writeFileSync(join(projectDir, '.mcp.json'), JSON.stringify({ mcpServers: { 'sadeem': {} } }, null, 2), 'utf8')
+  writeFileSync(join(projectDir, '.mcp.json'), JSON.stringify({ mcpServers: { 'madar': {} } }, null, 2), 'utf8')
   writeFileSync(join(projectDir, 'CLAUDE.md'), '# Project Claude rules\n', 'utf8')
   mkdirSync(join(projectDir, '.claude'), { recursive: true })
   writeFileSync(join(projectDir, '.claude', 'settings.json'), '{}\n', 'utf8')
@@ -59,13 +59,13 @@ const BASELINE_USAGE_PAYLOAD = {
   },
 }
 
-const SADEEM_USAGE_PAYLOAD = {
+const MADAR_USAGE_PAYLOAD = {
   type: 'result',
   subtype: 'success',
   is_error: false,
   duration_ms: 34744,
   num_turns: 3,
-  result: 'sadeem answer',
+  result: 'madar answer',
   total_cost_usd: 0.7,
   usage: {
     input_tokens: 13,
@@ -75,10 +75,10 @@ const SADEEM_USAGE_PAYLOAD = {
   },
 }
 
-function scriptedRunner(payloads: { baseline: unknown; sadeem: unknown }): NativeAgentRunner {
+function scriptedRunner(payloads: { baseline: unknown; madar: unknown }): NativeAgentRunner {
   return async (input) => ({
     exitCode: 0,
-    stdout: `${JSON.stringify(input.mode === 'baseline' ? payloads.baseline : payloads.sadeem)}\n`,
+    stdout: `${JSON.stringify(input.mode === 'baseline' ? payloads.baseline : payloads.madar)}\n`,
     stderr: '',
     elapsedMs: input.mode === 'baseline' ? 96368 : 34744,
   })
@@ -87,11 +87,11 @@ function scriptedRunner(payloads: { baseline: unknown; sadeem: unknown }): Nativ
 function buildSummaryResult(overrides: {
   question: string
   baselineTurns: number
-  sadeemTurns: number
+  madarTurns: number
   baselineDurationMs: number
-  sadeemDurationMs: number
+  madarDurationMs: number
   baselineInputTokens: number
-  sadeemInputTokens: number
+  madarInputTokens: number
   reductions: NonNullable<NativeAgentCompareReport['reductions']>
 }): NativeAgentCompareResult {
   return {
@@ -120,27 +120,27 @@ function buildSummaryResult(overrides: {
           duration_ms: overrides.baselineDurationMs,
           result_path: '/tmp/project/baseline.txt',
         },
-        sadeem: {
+        madar: {
           kind: 'succeeded',
           model: 'claude-sonnet',
           usage: {
-            input_tokens: overrides.sadeemInputTokens,
+            input_tokens: overrides.madarInputTokens,
             cache_creation_input_tokens: 0,
             cache_read_input_tokens: 0,
             output_tokens: 100,
           },
-          total_input_tokens_anthropic_exact: overrides.sadeemInputTokens,
-          uncached_input_tokens_anthropic_exact: overrides.sadeemInputTokens,
+          total_input_tokens_anthropic_exact: overrides.madarInputTokens,
+          uncached_input_tokens_anthropic_exact: overrides.madarInputTokens,
           cached_input_tokens_anthropic_exact: 0,
           total_cost_usd: 1,
-          num_turns: overrides.sadeemTurns,
-          duration_ms: overrides.sadeemDurationMs,
-          result_path: '/tmp/project/sadeem.txt',
+          num_turns: overrides.madarTurns,
+          duration_ms: overrides.madarDurationMs,
+          result_path: '/tmp/project/madar.txt',
         },
         reductions: overrides.reductions,
         prompt_token_source: {
           baseline: 'anthropic_provider_reported',
-          sadeem: 'anthropic_provider_reported',
+          madar: 'anthropic_provider_reported',
         },
         provider_proof: {
           baseline: {
@@ -149,7 +149,7 @@ function buildSummaryResult(overrides: {
             effective_tokens_source: 'anthropic_provider_reported',
             total_tokens_source: 'anthropic_provider_reported',
           },
-          sadeem: {
+          madar: {
             provider: 'anthropic',
             input_tokens_source: 'anthropic_provider_reported',
             effective_tokens_source: 'anthropic_provider_reported',
@@ -164,7 +164,7 @@ function buildSummaryResult(overrides: {
           report: '/tmp/project/out/compare/2026-05-12T00-00-00Z/report.json',
           share_safe_report: '/tmp/project/out/compare/2026-05-12T00-00-00Z/report.share-safe.json',
           baseline_answer: '/tmp/project/out/compare/2026-05-12T00-00-00Z/baseline.md',
-          sadeem_answer: '/tmp/project/out/compare/2026-05-12T00-00-00Z/sadeem.md',
+          madar_answer: '/tmp/project/out/compare/2026-05-12T00-00-00Z/madar.md',
           prompt_file: '/tmp/project/out/compare/2026-05-12T00-00-00Z/prompt.txt',
         },
       },
@@ -193,7 +193,7 @@ describe('parseAnthropicResultEvent', () => {
 
   it('extracts the trailing result event from a stream-json stdout', () => {
     const intermediate = JSON.stringify({ type: 'system', subtype: 'init', tools: ['retrieve'] })
-    const result = JSON.stringify({ ...SADEEM_USAGE_PAYLOAD })
+    const result = JSON.stringify({ ...MADAR_USAGE_PAYLOAD })
     const parsed = parseAnthropicResultEvent(`${intermediate}\n${result}\n`)
     expect(parsed).not.toBeNull()
     expect(parsed?.usage.input_tokens).toBe(13)
@@ -222,7 +222,7 @@ describe('executeNativeAgentCompare', () => {
           baselineMode: 'native_agent',
         },
         {
-          runner: scriptedRunner({ baseline: BASELINE_USAGE_PAYLOAD, sadeem: SADEEM_USAGE_PAYLOAD }),
+          runner: scriptedRunner({ baseline: BASELINE_USAGE_PAYLOAD, madar: MADAR_USAGE_PAYLOAD }),
           now: () => new Date('2026-05-01T00:00:00Z'),
         },
       )
@@ -242,24 +242,24 @@ describe('executeNativeAgentCompare', () => {
       expect(report.baseline.num_turns).toBe(9)
       expect(report.baseline.total_cost_usd).toBe(0.62)
 
-      expect(report.sadeem.kind).toBe('succeeded')
-      if (report.sadeem.kind !== 'succeeded') {
-        throw new Error('sadeem should have succeeded')
+      expect(report.madar.kind).toBe('succeeded')
+      if (report.madar.kind !== 'succeeded') {
+        throw new Error('madar should have succeeded')
       }
-      expect(report.sadeem.usage).toEqual(SADEEM_USAGE_PAYLOAD.usage)
-      expect(report.sadeem.num_turns).toBe(3)
-      expect(report.sadeem.total_cost_usd).toBe(0.7)
+      expect(report.madar.usage).toEqual(MADAR_USAGE_PAYLOAD.usage)
+      expect(report.madar.num_turns).toBe(3)
+      expect(report.madar.total_cost_usd).toBe(0.7)
 
       const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as {
         baseline: Record<string, unknown>
-        sadeem: Record<string, unknown>
+        madar: Record<string, unknown>
       }
       expect(savedReport.baseline).toEqual(expect.objectContaining({
         total_input_tokens_anthropic_exact: 615190,
         uncached_input_tokens_anthropic_exact: 40662,
         cached_input_tokens_anthropic_exact: 574528,
       }))
-      expect(savedReport.sadeem).toEqual(expect.objectContaining({
+      expect(savedReport.madar).toEqual(expect.objectContaining({
         total_input_tokens_anthropic_exact: 233508,
         uncached_input_tokens_anthropic_exact: 92846,
         cached_input_tokens_anthropic_exact: 140662,
@@ -274,7 +274,7 @@ describe('executeNativeAgentCompare', () => {
       // prompt_token_source must label both as Anthropic-provider-reported when
       // a usage block was present in the runner output.
       expect(report.prompt_token_source.baseline).toBe('anthropic_provider_reported')
-      expect(report.prompt_token_source.sadeem).toBe('anthropic_provider_reported')
+      expect(report.prompt_token_source.madar).toBe('anthropic_provider_reported')
     } finally {
       rmSync(projectDir, { recursive: true, force: true })
     }
@@ -283,7 +283,7 @@ describe('executeNativeAgentCompare', () => {
   it('restores out, .mcp.json, CLAUDE.md, and .claude/ when the baseline runner crashes', async () => {
     const { projectDir, graphPath, outputDir } = makeFixtureProject()
     const before = {
-      sadeemOut: readFileSync(join(projectDir, 'out', 'graph.json'), 'utf8'),
+      madarOut: readFileSync(join(projectDir, 'out', 'graph.json'), 'utf8'),
       mcpJson: readFileSync(join(projectDir, '.mcp.json'), 'utf8'),
       claudeMd: readFileSync(join(projectDir, 'CLAUDE.md'), 'utf8'),
       claudeSettings: readFileSync(join(projectDir, '.claude', 'settings.json'), 'utf8'),
@@ -295,7 +295,7 @@ describe('executeNativeAgentCompare', () => {
         }
         return {
           exitCode: 0,
-          stdout: `${JSON.stringify(SADEEM_USAGE_PAYLOAD)}\n`,
+          stdout: `${JSON.stringify(MADAR_USAGE_PAYLOAD)}\n`,
           stderr: '',
           elapsedMs: 34744,
         }
@@ -319,7 +319,7 @@ describe('executeNativeAgentCompare', () => {
 
       // Snapshot targets must be restored exactly even after the crash.
       expect(existsSync(join(projectDir, 'out', 'graph.json'))).toBe(true)
-      expect(readFileSync(join(projectDir, 'out', 'graph.json'), 'utf8')).toBe(before.sadeemOut)
+      expect(readFileSync(join(projectDir, 'out', 'graph.json'), 'utf8')).toBe(before.madarOut)
       expect(readFileSync(join(projectDir, '.mcp.json'), 'utf8')).toBe(before.mcpJson)
       expect(readFileSync(join(projectDir, 'CLAUDE.md'), 'utf8')).toBe(before.claudeMd)
       expect(readFileSync(join(projectDir, '.claude', 'settings.json'), 'utf8')).toBe(before.claudeSettings)
@@ -358,7 +358,7 @@ describe('executeNativeAgentCompare', () => {
           baselineMode: 'native_agent',
         },
         {
-          runner: scriptedRunner({ baseline: BASELINE_USAGE_PAYLOAD, sadeem: SADEEM_USAGE_PAYLOAD }),
+          runner: scriptedRunner({ baseline: BASELINE_USAGE_PAYLOAD, madar: MADAR_USAGE_PAYLOAD }),
           now: () => new Date('2026-05-01T00:00:00Z'),
         },
       )
@@ -381,7 +381,7 @@ describe('executeNativeAgentCompare', () => {
       const probeResults: Array<{ mode: CompareRunMode; promptFileExists: boolean }> = []
       const probingRunner: NativeAgentRunner = async (input) => {
         probeResults.push({ mode: input.mode, promptFileExists: existsSync(input.promptFile) })
-        const payload = input.mode === 'baseline' ? BASELINE_USAGE_PAYLOAD : SADEEM_USAGE_PAYLOAD
+        const payload = input.mode === 'baseline' ? BASELINE_USAGE_PAYLOAD : MADAR_USAGE_PAYLOAD
         return {
           exitCode: 0,
           stdout: `${JSON.stringify(payload)}\n`,
@@ -423,7 +423,7 @@ describe('executeNativeAgentCompare', () => {
           baselineMode: 'native_agent',
         },
         {
-          runner: scriptedRunner({ baseline: BASELINE_USAGE_PAYLOAD, sadeem: SADEEM_USAGE_PAYLOAD }),
+          runner: scriptedRunner({ baseline: BASELINE_USAGE_PAYLOAD, madar: MADAR_USAGE_PAYLOAD }),
           now: () => new Date('2026-05-01T00:00:00Z'),
         },
       )
@@ -469,7 +469,7 @@ describe('executeNativeAgentCompare', () => {
         expect(report.baseline.evidence).toContain('not JSON')
         expect(report.baseline.exit_code).toBe(0)
       }
-      expect(report.sadeem.kind).toBe('answer_only')
+      expect(report.madar.kind).toBe('answer_only')
       expect(report.reductions).toBeNull()
     } finally {
       rmSync(projectDir, { recursive: true, force: true })
@@ -482,11 +482,11 @@ describe('formatNativeAgentCompareSummary', () => {
     const result = buildSummaryResult({
       question: 'win case',
       baselineTurns: 9,
-      sadeemTurns: 3,
+      madarTurns: 3,
       baselineDurationMs: 9000,
-      sadeemDurationMs: 3000,
+      madarDurationMs: 3000,
       baselineInputTokens: 900,
-      sadeemInputTokens: 300,
+      madarInputTokens: 300,
       reductions: {
         num_turns: 3,
         duration_ms: 3,
@@ -495,7 +495,7 @@ describe('formatNativeAgentCompareSummary', () => {
       },
     })
     const report = result.reports[0]
-    if (!report || report.baseline.kind !== 'succeeded' || report.sadeem.kind !== 'succeeded') {
+    if (!report || report.baseline.kind !== 'succeeded' || report.madar.kind !== 'succeeded') {
       throw new Error('summary fixture should produce succeeded runs')
     }
     report.baseline.usage = {
@@ -506,34 +506,34 @@ describe('formatNativeAgentCompareSummary', () => {
     }
     report.baseline.uncached_input_tokens_anthropic_exact = 800
     report.baseline.cached_input_tokens_anthropic_exact = 100
-    report.sadeem.usage = {
+    report.madar.usage = {
       input_tokens: 150,
       cache_creation_input_tokens: 100,
       cache_read_input_tokens: 50,
       output_tokens: 100,
     }
-    report.sadeem.uncached_input_tokens_anthropic_exact = 250
-    report.sadeem.cached_input_tokens_anthropic_exact = 50
+    report.madar.uncached_input_tokens_anthropic_exact = 250
+    report.madar.cached_input_tokens_anthropic_exact = 50
 
     const summary = formatNativeAgentCompareSummary(result)
 
-    expect(summary).toContain('num_turns: baseline 9 → sadeem 3 (3x fewer)')
-    expect(summary).toContain('latency:   baseline 9000ms → sadeem 3000ms (3x faster)')
-    expect(summary).toContain('input_tokens (Anthropic-reported): baseline 900 → sadeem 300 (3x less)')
-    expect(summary).toContain('uncached_input_tokens (Anthropic-reported): baseline 800 → sadeem 250 (3.2x less)')
-    expect(summary).toContain('cache_creation_input_tokens (Anthropic-reported): baseline 200 → sadeem 100 (2x less)')
-    expect(summary).toContain('cache_read_input_tokens (Anthropic-reported): baseline 100 → sadeem 50 (2x less)')
+    expect(summary).toContain('num_turns: baseline 9 → madar 3 (3x fewer)')
+    expect(summary).toContain('latency:   baseline 9000ms → madar 3000ms (3x faster)')
+    expect(summary).toContain('input_tokens (Anthropic-reported): baseline 900 → madar 300 (3x less)')
+    expect(summary).toContain('uncached_input_tokens (Anthropic-reported): baseline 800 → madar 250 (3.2x less)')
+    expect(summary).toContain('cache_creation_input_tokens (Anthropic-reported): baseline 200 → madar 100 (2x less)')
+    expect(summary).toContain('cache_read_input_tokens (Anthropic-reported): baseline 100 → madar 50 (2x less)')
   })
 
   it('describes regressions as more and slower instead of fewer and faster', () => {
     const summary = formatNativeAgentCompareSummary(buildSummaryResult({
       question: 'loss case',
       baselineTurns: 3,
-      sadeemTurns: 9,
+      madarTurns: 9,
       baselineDurationMs: 3000,
-      sadeemDurationMs: 9000,
+      madarDurationMs: 9000,
       baselineInputTokens: 300,
-      sadeemInputTokens: 900,
+      madarInputTokens: 900,
       reductions: {
         num_turns: 0.33,
         duration_ms: 0.33,
@@ -542,9 +542,9 @@ describe('formatNativeAgentCompareSummary', () => {
       },
     }))
 
-    expect(summary).toContain('num_turns: baseline 3 → sadeem 9 (3x more)')
-    expect(summary).toContain('latency:   baseline 3000ms → sadeem 9000ms (3x slower)')
-    expect(summary).toContain('input_tokens (Anthropic-reported): baseline 300 → sadeem 900 (3x more)')
+    expect(summary).toContain('num_turns: baseline 3 → madar 9 (3x more)')
+    expect(summary).toContain('latency:   baseline 3000ms → madar 9000ms (3x slower)')
+    expect(summary).toContain('input_tokens (Anthropic-reported): baseline 300 → madar 900 (3x more)')
     expect(summary).not.toContain('0.33x fewer')
     expect(summary).not.toContain('0.33x faster')
     expect(summary).not.toContain('0.33x less')
@@ -554,11 +554,11 @@ describe('formatNativeAgentCompareSummary', () => {
     const summary = formatNativeAgentCompareSummary(buildSummaryResult({
       question: 'no cache case',
       baselineTurns: 9,
-      sadeemTurns: 3,
+      madarTurns: 3,
       baselineDurationMs: 9000,
-      sadeemDurationMs: 3000,
+      madarDurationMs: 3000,
       baselineInputTokens: 900,
-      sadeemInputTokens: 300,
+      madarInputTokens: 300,
       reductions: {
         num_turns: 3,
         duration_ms: 3,
@@ -577,11 +577,11 @@ describe('formatNativeAgentCompareSummary', () => {
       {
         question: 'win a',
         baselineTurns: 9,
-        sadeemTurns: 3,
+        madarTurns: 3,
         baselineDurationMs: 9000,
-        sadeemDurationMs: 3000,
+        madarDurationMs: 3000,
         baselineInputTokens: 900,
-        sadeemInputTokens: 300,
+        madarInputTokens: 300,
         reductions: {
           num_turns: 3,
           duration_ms: 3,
@@ -592,11 +592,11 @@ describe('formatNativeAgentCompareSummary', () => {
       {
         question: 'win b',
         baselineTurns: 8,
-        sadeemTurns: 2,
+        madarTurns: 2,
         baselineDurationMs: 8000,
-        sadeemDurationMs: 2000,
+        madarDurationMs: 2000,
         baselineInputTokens: 800,
-        sadeemInputTokens: 200,
+        madarInputTokens: 200,
         reductions: {
           num_turns: 4,
           duration_ms: 4,
@@ -616,11 +616,11 @@ describe('formatNativeAgentCompareSummary', () => {
       {
         question: 'win case',
         baselineTurns: 10,
-        sadeemTurns: 5,
+        madarTurns: 5,
         baselineDurationMs: 10000,
-        sadeemDurationMs: 5000,
+        madarDurationMs: 5000,
         baselineInputTokens: 1000,
-        sadeemInputTokens: 500,
+        madarInputTokens: 500,
         reductions: {
           num_turns: 2,
           duration_ms: 2,
@@ -631,11 +631,11 @@ describe('formatNativeAgentCompareSummary', () => {
       {
         question: 'loss case',
         baselineTurns: 4,
-        sadeemTurns: 6,
+        madarTurns: 6,
         baselineDurationMs: 4000,
-        sadeemDurationMs: 6000,
+        madarDurationMs: 6000,
         baselineInputTokens: 400,
-        sadeemInputTokens: 500,
+        madarInputTokens: 500,
         reductions: {
           num_turns: 0.67,
           duration_ms: 0.67,
@@ -655,11 +655,11 @@ describe('formatNativeAgentCompareSummary', () => {
       {
         question: 'win a',
         baselineTurns: 9,
-        sadeemTurns: 3,
+        madarTurns: 3,
         baselineDurationMs: 9000,
-        sadeemDurationMs: 3000,
+        madarDurationMs: 3000,
         baselineInputTokens: 900,
-        sadeemInputTokens: 300,
+        madarInputTokens: 300,
         reductions: {
           num_turns: 3,
           duration_ms: 3,
@@ -670,11 +670,11 @@ describe('formatNativeAgentCompareSummary', () => {
       {
         question: 'win b',
         baselineTurns: 8,
-        sadeemTurns: 2,
+        madarTurns: 2,
         baselineDurationMs: 8000,
-        sadeemDurationMs: 2000,
+        madarDurationMs: 2000,
         baselineInputTokens: 800,
-        sadeemInputTokens: 200,
+        madarInputTokens: 200,
         reductions: {
           num_turns: 4,
           duration_ms: 4,
@@ -685,11 +685,11 @@ describe('formatNativeAgentCompareSummary', () => {
       {
         question: 'answer only',
         baselineTurns: 5,
-        sadeemTurns: 5,
+        madarTurns: 5,
         baselineDurationMs: 5000,
-        sadeemDurationMs: 5000,
+        madarDurationMs: 5000,
         baselineInputTokens: 500,
-        sadeemInputTokens: 500,
+        madarInputTokens: 500,
         reductions: {
           num_turns: 1,
           duration_ms: 1,
@@ -700,7 +700,7 @@ describe('formatNativeAgentCompareSummary', () => {
     ])
     result.reports[2] = {
       ...result.reports[2]!,
-      sadeem: {
+      madar: {
         kind: 'answer_only',
         evidence: null,
         exit_code: 0,

@@ -57,8 +57,8 @@ function loadSourceGraph(graphPath: string): KnowledgeGraph {
 
 function inferRepoName(graphPath: string): string {
   // out/graph.json -> parent of out
-  const sadeemOutDir = dirname(resolve(graphPath))
-  const parentDir = dirname(sadeemOutDir)
+  const madarOutDir = dirname(resolve(graphPath))
+  const parentDir = dirname(madarOutDir)
   return basename(parentDir)
 }
 
@@ -198,7 +198,7 @@ export function federate(graphPaths: string[], options: FederateOptions = {}): F
       needs_graph: true,
       warning: null,
       skipped_sensitive: [],
-      sadeemignore_patterns: 0,
+      madarignore_patterns: 0,
     },
     { input_tokens: 0, output_tokens: 0 },
     outputDir,

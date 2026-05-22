@@ -176,7 +176,7 @@ describe('build', () => {
   })
 
   it('rebuilds derived edge metadata from pruned graph artifacts while preserving non-default weights', () => {
-    const tempDir = mkdtempSync(join(tmpdir(), 'sadeem-build-'))
+    const tempDir = mkdtempSync(join(tmpdir(), 'madar-build-'))
 
     try {
       const graph = buildFromJson(

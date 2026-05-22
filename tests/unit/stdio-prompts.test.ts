@@ -6,7 +6,7 @@ import { handleCompletion, promptDefinitionsForGraph } from '../../src/runtime/s
 function createGraphFixtureRoot(): string {
   const parentDir = resolve('out', 'test-runtime')
   mkdirSync(parentDir, { recursive: true })
-  const root = mkdtempSync(join(parentDir, 'sadeem-stdio-prompts-'))
+  const root = mkdtempSync(join(parentDir, 'madar-stdio-prompts-'))
   writeFileSync(
     join(root, 'graph.json'),
     JSON.stringify({

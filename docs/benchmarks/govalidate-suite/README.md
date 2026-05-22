@@ -6,7 +6,7 @@ This directory holds the public GoValidate benchmark suite inputs plus the share
 
 - `questions.json` - public multi-prompt suite with stable prompt `id` values, human-readable descriptions, and realistic questions contributors can run locally
 - `quality-gates.json` — named gate definitions plus the prompt text they apply to
-- `verify-pack-quality.js` — deterministic verifier for persisted `sadeem compare` reports
+- `verify-pack-quality.js` — deterministic verifier for persisted `madar compare` reports
 - `verify-answer-quality.js` — deterministic verifier for saved `*-answer.txt` artifacts
 
 ## Public suite usage
@@ -22,7 +22,7 @@ The suite is meant to widen prompt coverage across realistic tasks, not to claim
 Example compare command:
 
 ```bash
-sadeem compare \
+madar compare \
   --questions docs/benchmarks/govalidate-suite/questions.json \
   --exec "cat {prompt_file} | claude -p --output-format json" \
   --yes \
@@ -57,7 +57,7 @@ By gate name:
 
 ```bash
 node docs/benchmarks/govalidate-suite/verify-answer-quality.js \
-  --answer path/to/sadeem-answer.txt \
+  --answer path/to/madar-answer.txt \
   --gate docs-artifact
 ```
 
@@ -65,7 +65,7 @@ By prompt text:
 
 ```bash
 node docs/benchmarks/govalidate-suite/verify-answer-quality.js \
-  --answer path/to/sadeem-answer.txt \
+  --answer path/to/madar-answer.txt \
   --prompt "Explain how idea report is getting generated"
 ```
 
@@ -75,4 +75,4 @@ CLI shape: `--answer <answer.txt>` plus exactly one of `--gate <name>` or `--pro
 
 ## Compare report metadata
 
-`sadeem compare` reports may also include a `sadeem_trace` object when the sadeem-side runner emits structured Claude-style tool-use messages. The field is intentionally compact and safe: it stores only aggregate counts, tool names, and per-turn tool summaries for the sadeem run. It does **not** persist raw tool inputs, prompts, or full trace payloads. Terminal compare summaries surface the same data as one short `Sadeem trace:` line instead of dumping the trace body.
+`madar compare` reports may also include a `madar_trace` object when the madar-side runner emits structured Claude-style tool-use messages. The field is intentionally compact and safe: it stores only aggregate counts, tool names, and per-turn tool summaries for the madar run. It does **not** persist raw tool inputs, prompts, or full trace payloads. Terminal compare summaries surface the same data as one short `Madar trace:` line instead of dumping the trace body.

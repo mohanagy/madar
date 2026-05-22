@@ -241,10 +241,10 @@ export function notifyOnly(watchPath: string, logger?: WatchLogger): void {
   const output = defaultLogger(logger)
   mkdirSync(join(resolvedWatchPath, 'out'), { recursive: true })
   writeFileSync(flagPath, '1', 'utf8')
-  output.log(`\n[sadeem watch] New or changed files detected in ${resolvedWatchPath}`)
-  output.log('[sadeem watch] A manual refresh is still required for changes the watcher cannot rebuild automatically.')
-  output.log('[sadeem watch] Run sadeem generate --update to refresh the graph.')
-  output.log(`[sadeem watch] Flag written to ${flagPath}`)
+  output.log(`\n[madar watch] New or changed files detected in ${resolvedWatchPath}`)
+  output.log('[madar watch] A manual refresh is still required for changes the watcher cannot rebuild automatically.')
+  output.log('[madar watch] Run madar generate --update to refresh the graph.')
+  output.log(`[madar watch] Flag written to ${flagPath}`)
 }
 
 export function hasNonCode(changedPaths: string[]): boolean {
@@ -270,17 +270,17 @@ export function rebuildCode(watchPath: string, options: RebuildCodeOptions = {})
       unlinkSync(staleFlag)
     }
 
-    output.log(`[sadeem watch] Rebuilt: ${result.nodeCount} nodes, ${result.edgeCount} edges, ${result.communityCount} communities`)
-    output.log(`[sadeem watch] Outputs updated in ${result.outputDir}`)
+    output.log(`[madar watch] Rebuilt: ${result.nodeCount} nodes, ${result.edgeCount} edges, ${result.communityCount} communities`)
+    output.log(`[madar watch] Outputs updated in ${result.outputDir}`)
     return true
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     if (message.includes('No supported files were found')) {
-      output.log('[sadeem watch] No supported files found - nothing to rebuild.')
+      output.log('[madar watch] No supported files found - nothing to rebuild.')
       return false
     }
 
-    output.error(`[sadeem watch] Rebuild failed: ${message}`)
+    output.error(`[madar watch] Rebuild failed: ${message}`)
     return false
   }
 }
@@ -302,13 +302,13 @@ export async function watch(watchPath: string, debounce = 3, options: WatchOptio
   let lastTriggerAt = 0
   const changed = new Set<string>()
 
-  output.log(`[sadeem watch] Watching ${resolvedWatchPath} - abort the process to stop`)
+  output.log(`[madar watch] Watching ${resolvedWatchPath} - abort the process to stop`)
   output.log(
-    '[sadeem watch] Supported code, docs, papers, images, local audio/video, and office documents rebuild automatically; manual refresh is only needed for unsupported future formats.',
+    '[madar watch] Supported code, docs, papers, images, local audio/video, and office documents rebuild automatically; manual refresh is only needed for unsupported future formats.',
   )
-  output.log(`[sadeem watch] Debounce: ${debounce}s`)
+  output.log(`[madar watch] Debounce: ${debounce}s`)
   if (eventWatcher) {
-    output.log('[sadeem watch] Filesystem events enabled with polling fallback.')
+    output.log('[madar watch] Filesystem events enabled with polling fallback.')
   }
 
   try {
@@ -335,7 +335,7 @@ export async function watch(watchPath: string, debounce = 3, options: WatchOptio
         const batch = [...changed].sort()
         changed.clear()
 
-        output.log(`\n[sadeem watch] ${batch.length} file(s) changed`)
+        output.log(`\n[madar watch] ${batch.length} file(s) changed`)
         const rebuildOptions: RebuildCodeOptions = {
           logger: output,
           ...(options.followSymlinks !== undefined ? { followSymlinks: options.followSymlinks } : {}),
@@ -354,7 +354,7 @@ export async function watch(watchPath: string, debounce = 3, options: WatchOptio
       // Ignore watcher cleanup errors during shutdown.
     }
     if (options.signal?.aborted) {
-      output.log('\n[sadeem watch] Stopped.')
+      output.log('\n[madar watch] Stopped.')
     }
   }
 }

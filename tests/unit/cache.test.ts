@@ -7,7 +7,7 @@ import { normalizeAssertionPath } from './helpers/platform.js'
 
 describe('cache', () => {
   function createTempRoot(): string {
-    return mkdtempSync(join(tmpdir(), 'sadeem-cache-'))
+    return mkdtempSync(join(tmpdir(), 'madar-cache-'))
   }
 
   function createFile(root: string, name: string, content: string): string {

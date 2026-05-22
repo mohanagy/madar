@@ -22,7 +22,7 @@ function writeFile(root: string, rel: string, content: string): void {
 function build(root: string): SemanticProgramIndex {
   return buildSpi({
     root,
-    sadeemVersion: 'test-0.0.0',
+    madarVersion: 'test-0.0.0',
     extractorVersion: 'spi-v1.0.0-slice-2a',
     now: FROZEN_NOW,
   })
@@ -215,7 +215,7 @@ describe('buildSpi call layer (slice 2a of #72)', () => {
   describe('against the checked-in demo repo', () => {
     it('emits at least one cross-file calls edge between known symbols', () => {
       const root = pathResolve(__dirname, '../../examples/demo-repo')
-      const spi = buildSpi({ root, sadeemVersion: 'test-0.0.0', now: FROZEN_NOW })
+      const spi = buildSpi({ root, madarVersion: 'test-0.0.0', now: FROZEN_NOW })
 
       const allCalls = spi.edges.filter((e) => e.kind === 'calls')
       expect(allCalls.length).toBeGreaterThan(0)

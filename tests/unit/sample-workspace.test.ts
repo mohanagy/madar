@@ -15,7 +15,7 @@ interface PromptExample {
 }
 
 function withTempDir<T>(callback: (tempDir: string) => T | Promise<T>): T | Promise<T> {
-  const tempDir = mkdtempSync(join(tmpdir(), 'sadeem-sample-workspace-'))
+  const tempDir = mkdtempSync(join(tmpdir(), 'madar-sample-workspace-'))
   const finalize = () => rmSync(tempDir, { recursive: true, force: true })
   try {
     const result = callback(tempDir)
@@ -87,8 +87,8 @@ describe('examples/sample-workspace', () => {
     if (tutorial.includes('npm run build')) {
       expect(tutorial.toLowerCase()).toContain('repository root')
     }
-    expect(tutorial).toContain('sadeem generate examples/sample-workspace')
-    expect(tutorial).toContain('sadeem pack')
+    expect(tutorial).toContain('madar generate examples/sample-workspace')
+    expect(tutorial).toContain('madar pack')
     expect(tutorial).toContain('prompt-examples.json')
     expect(readme).toContain('examples/sample-workspace')
   })

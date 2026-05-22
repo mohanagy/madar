@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Benchmark: sadeem generate --spi vs legacy extract() (#130)
+# Benchmark: madar generate --spi vs legacy extract() (#130)
 #
 # Runs three variants on the bundled fixture:
-#   1. legacy   — `sadeem generate <fixture>`
-#   2. spi-cold — `sadeem generate <fixture> --spi`   (fresh cache)
-#   3. spi-warm — `sadeem generate <fixture> --spi`   (cache hit)
+#   1. legacy   — `madar generate <fixture>`
+#   2. spi-cold — `madar generate <fixture> --spi`   (fresh cache)
+#   3. spi-warm — `madar generate <fixture> --spi`   (cache hit)
 #
 # For each variant, captures:
 #   - build time (wall clock)
 #   - graph.json file size
 #   - graph node count
-#   - per-prompt pack token count (read from `sadeem pack --task explain`)
+#   - per-prompt pack token count (read from `madar pack --task explain`)
 #   - per-prompt matched node count + label list
 #
 # Writes JSON results under `results/<timestamp>/`.
@@ -19,18 +19,18 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
-FIXTURE_SRC="${SADEEM_BENCH_FIXTURE:-$HERE/fixture}"
-PROMPTS_FILE="${SADEEM_BENCH_PROMPTS:-$HERE/prompts.json}"
+FIXTURE_SRC="${MADAR_BENCH_FIXTURE:-$HERE/fixture}"
+PROMPTS_FILE="${MADAR_BENCH_PROMPTS:-$HERE/prompts.json}"
 
 # Create a clean copy of the fixture for each variant so cache state and
 # out are independent.
 TS="$(date -u +%Y-%m-%dT%H%M%SZ)"
-RESULTS_DIR="${SADEEM_BENCH_RESULTS_DIR:-$HERE/results/$TS}"
+RESULTS_DIR="${MADAR_BENCH_RESULTS_DIR:-$HERE/results/$TS}"
 mkdir -p "$RESULTS_DIR"
 
-SADEEM="$ROOT/dist/src/cli/bin.js"
-if [[ ! -f "$SADEEM" ]]; then
-  echo "[setup] building sadeem..."
+MADAR="$ROOT/dist/src/cli/bin.js"
+if [[ ! -f "$MADAR" ]]; then
+  echo "[setup] building madar..."
   (cd "$ROOT" && npm run build > /dev/null)
 fi
 
@@ -49,7 +49,7 @@ run_variant() {
   if [[ -n "$extra_flag" ]]; then
     generate_args+=("$extra_flag")
   fi
-  node "$SADEEM" "${generate_args[@]}" > "$RESULTS_DIR/$variant.generate.log" 2>&1
+  node "$MADAR" "${generate_args[@]}" > "$RESULTS_DIR/$variant.generate.log" 2>&1
   t1=$(node -e 'console.log(Date.now())')
   elapsed=$((t1 - t0))
 
@@ -76,7 +76,7 @@ run_variant() {
     # CodeRabbit follow-up: do NOT mask pack failures. Let stderr surface
     # and let set -euo pipefail abort if pack fails — false zero metrics
     # are worse than a loud failure.
-    pack_out=$(node "$SADEEM" pack "$prompt_text" --task explain --budget 2000 --graph "$graph_path")
+    pack_out=$(node "$MADAR" pack "$prompt_text" --task explain --budget 2000 --graph "$graph_path")
     local pack_tokens pack_nodes
     # Pass pack_out via env var (PACK_OUT) to avoid shell-quote breakage when
     # the JSON contains single quotes. CodeRabbit fix on PR #136.
@@ -107,7 +107,7 @@ run_variant() {
 EOF
 }
 
-echo "sadeem SPI benchmark — $TS"
+echo "madar SPI benchmark — $TS"
 echo "fixture: $FIXTURE_SRC"
 echo "results: $RESULTS_DIR"
 echo
@@ -119,7 +119,7 @@ run_variant "spi-cold" "--spi"
 echo "[spi-warm] generate (cache hit)"
 SPI_WARM_FIXTURE="$RESULTS_DIR/fixture-spi-cold"
 t0=$(node -e 'console.log(Date.now())')
-node "$SADEEM" generate "$SPI_WARM_FIXTURE" --spi --no-html > "$RESULTS_DIR/spi-warm.generate.log" 2>&1
+node "$MADAR" generate "$SPI_WARM_FIXTURE" --spi --no-html > "$RESULTS_DIR/spi-warm.generate.log" 2>&1
 t1=$(node -e 'console.log(Date.now())')
 SPI_WARM_ELAPSED=$((t1 - t0))
 # CodeRabbit follow-up: capture graph_size_bytes + node_count alongside

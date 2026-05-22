@@ -20,7 +20,7 @@ function writeFile(root: string, rel: string, content: string): void {
 }
 
 function project(root: string) {
-  const spi = buildSpi({ root, sadeemVersion: 'test-0.0.0', now: FROZEN_NOW })
+  const spi = buildSpi({ root, madarVersion: 'test-0.0.0', now: FROZEN_NOW })
   return projectSpiToExtraction(spi, { root })
 }
 
@@ -120,7 +120,7 @@ describe('projector — framework_metadata propagation onto ExtractionNode', () 
       // Direct SPI build → mutate one symbol's framework_metadata with a
       // hypothetical future key → project → assert the key surfaces.
       writeFile(sandbox, 'src/x.ts', 'export function foo(): void {}\n')
-      const spi = buildSpi({ root: sandbox, sadeemVersion: 'test-0.0.0', now: FROZEN_NOW })
+      const spi = buildSpi({ root: sandbox, madarVersion: 'test-0.0.0', now: FROZEN_NOW })
       const foo = spi.symbols.find((s) => s.name === 'foo')
       if (foo) {
         foo.framework_role = 'express_route'

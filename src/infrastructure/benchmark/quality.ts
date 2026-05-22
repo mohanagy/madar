@@ -85,7 +85,7 @@ export interface QualityOptions {
 }
 
 /**
- * Gold-standard questions for sadeem itself.
+ * Gold-standard questions for madar itself.
  * Each expected_labels entry is compared after the same normalization used by
  * benchmark matching (lowercase, non-alphanumeric stripped).
  */
@@ -379,7 +379,7 @@ export function formatQualityReport(report: QualityReport): string {
   const corpusNote = report.corpus_source === 'estimated' ? ' estimated' : ''
   const lines = [
     '',
-    'sadeem retrieval quality benchmark',
+    'madar retrieval quality benchmark',
     '─'.repeat(50),
     `  Questions:    ${report.questions_with_hits}/${report.total_questions} found expected nodes`,
     ...(report.skipped_questions > 0 ? [`  Skipped:      ${report.skipped_questions} unlabeled question(s) missing expected_labels`] : []),

@@ -6,17 +6,17 @@ This directory contains the raw evidence for the **`compare`-based** auth-flow b
 
 - **Codebase under test:** [GoValidate](https://govalidate.app), a production NestJS + Next.js SaaS.
   - 1,048 files · ~592,940 words of code (out: 5,921 nodes · 8,797 edges · 1,284 communities).
-- **Agent model:** `claude-opus-4-7`, accessed via `claude --output-format json` inside `sadeem compare --baseline-mode native_agent`.
+- **Agent model:** `claude-opus-4-7`, accessed via `claude --output-format json` inside `madar compare --baseline-mode native_agent`.
 - **Question:** `"Explain the auth flow End to End"` (a single end-to-end architecture question).
 - **MCP profile:** `core` (6 tools).
 - **Two runs (back-to-back, same model, same question):**
   1. **baseline** — `out/`, `.mcp.json`, `CLAUDE.md`, and `.claude/` were snapshotted out so the agent had no graph and no MCP server. Pure file-tools-only behavior.
-  2. **sadeem** — same project tree restored; the sadeem MCP server (core profile) was available to the agent.
+  2. **madar** — same project tree restored; the madar MCP server (core profile) was available to the agent.
 
 The full reproducer command:
 
 ```bash
-sadeem compare "Explain the auth flow End to End" \
+madar compare "Explain the auth flow End to End" \
   --exec 'cat {prompt_file} | claude -p --output-format json' \
   --yes \
   --baseline-mode native_agent
@@ -24,7 +24,7 @@ sadeem compare "Explain the auth flow End to End" \
 
 ## Headline numbers (Anthropic-reported)
 
-| Metric | Baseline (no sadeem) | Sadeem (core profile) | Δ |
+| Metric | Baseline (no madar) | Madar (core profile) | Δ |
 |---|---|---|---|
 | Tool-call turns | 31 | **14** | **2.21× fewer** |
 | Latency | 169,998 ms | **107,464 ms** | **1.58× faster** |
@@ -32,15 +32,15 @@ sadeem compare "Explain the auth flow End to End" \
 
 > **Provider/runtime proof:** Anthropic reported input, cache, and total tokens for both runs — the reduction is provider-billed, not a local `cl100k_base` estimate.
 
-This is a **deeper, more iterative question** than the 2026-04-30 benchmark (which asked about a v2 idea pipeline). The baseline agent burned 31 tool turns and 2.8M input tokens chasing the auth flow across services; with sadeem's `retrieve` available, it grounded in 14 turns and 532K input tokens.
+This is a **deeper, more iterative question** than the 2026-04-30 benchmark (which asked about a v2 idea pipeline). The baseline agent burned 31 tool turns and 2.8M input tokens chasing the auth flow across services; with madar's `retrieve` available, it grounded in 14 turns and 532K input tokens.
 
 ## Files in this directory
 
 - `README.md` — this file
 - `verify.sh` — reproducer that reads `report.json` and prints headline reductions
 - `report.json` — **drop in** the `report.json` produced at `out/compare/2026-05-09T23-21-35/report.json`
-- `baseline-prompt.txt`, `sadeem-prompt.txt` — *optional but recommended*: the paired prompts the runner sent to Claude for each run
-- `baseline-answer.txt`, `sadeem-answer.txt` — *optional but recommended*: the paired answers Claude returned for each run
+- `baseline-prompt.txt`, `madar-prompt.txt` — *optional but recommended*: the paired prompts the runner sent to Claude for each run
+- `baseline-answer.txt`, `madar-answer.txt` — *optional but recommended*: the paired answers Claude returned for each run
 
 The compare command writes all of these to its output directory verbatim. To publish this benchmark, copy them in and the verify script becomes runnable end-to-end.
 
@@ -64,10 +64,10 @@ input_token_reduction   : 5.28x
 
 ```bash
 cd /path/to/your/repo
-sadeem generate .
-sadeem claude install --profile core    # writes .mcp.json + CLAUDE.md section + hook
+madar generate .
+madar claude install --profile core    # writes .mcp.json + CLAUDE.md section + hook
 
-sadeem compare "your real question here" \
+madar compare "your real question here" \
   --baseline-mode native_agent \
   --exec 'cat {prompt_file} | claude -p --output-format json' \
   --yes

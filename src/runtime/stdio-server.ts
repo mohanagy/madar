@@ -37,8 +37,8 @@ const JSONRPC_INVALID_PARAMS = -32602
 const JSONRPC_METHOD_NOT_FOUND = -32601
 const JSONRPC_SERVER_ERROR = -32000
 const MCP_PROTOCOL_VERSION = '2025-11-25'
-const MCP_SERVER_NAME = 'sadeem'
-const MCP_SERVER_TITLE = 'Sadeem TS'
+const MCP_SERVER_NAME = 'madar'
+const MCP_SERVER_TITLE = 'Madar TS'
 const MCP_SERVER_VERSION = '0.1.0'
 const MAX_STDIO_LINE_BYTES = 1_000_000
 const MAX_STDIO_TEXT_LENGTH = 512
@@ -603,7 +603,7 @@ export function handleStdioRequest(
           return failure(
             id,
             JSONRPC_METHOD_NOT_FOUND,
-            `Tool '${toolName}' is not enabled in the active sadeem MCP tool profile. Default profile: core. Set SADEEM_TOOL_PROFILE=full in your MCP server config (e.g. .mcp.json for Claude, .cursor/mcp.json for Cursor, .vscode/mcp.json for VS Code Copilot) to enable advanced tools.`,
+            `Tool '${toolName}' is not enabled in the active madar MCP tool profile. Default profile: core. Set MADAR_TOOL_PROFILE=full in your MCP server config (e.g. .mcp.json for Claude, .cursor/mcp.json for Cursor, .vscode/mcp.json for VS Code Copilot) to enable advanced tools.`,
           )
         }
         return handleToolCallRequest(id, graphPath, params, {
@@ -757,7 +757,7 @@ export async function serveGraphStdio(options: ServeGraphStdioOptions): Promise<
   const errorOutput = options.errorOutput ?? process.stderr
   const sessionState = createSessionState()
 
-  errorOutput.write(`[sadeem serve] stdio ready for ${options.graphPath}\n`)
+  errorOutput.write(`[madar serve] stdio ready for ${options.graphPath}\n`)
 
   const readline = createInterface({ input, crlfDelay: Infinity })
 

@@ -16,7 +16,7 @@ import {
 } from '../../src/shared/security.js'
 
 function withTempDir(callback: (tempDir: string) => void): void {
-  const tempDir = mkdtempSync(join(tmpdir(), 'sadeem-security-'))
+  const tempDir = mkdtempSync(join(tmpdir(), 'madar-security-'))
   try {
     callback(tempDir)
   } finally {

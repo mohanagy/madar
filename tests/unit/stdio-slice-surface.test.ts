@@ -12,18 +12,18 @@ let previousToolProfile: string | undefined
 
 function createGraphPath(): string {
   mkdirSync(scratchRoot, { recursive: true })
-  const root = join(scratchRoot, `sadeem-stdio-slice-${randomUUID()}`)
+  const root = join(scratchRoot, `madar-stdio-slice-${randomUUID()}`)
   mkdirSync(root, { recursive: true })
   tempRoots.push(root)
-  const sadeemOut = join(root, 'out')
-  const graphPath = join(sadeemOut, 'graph.json')
-  mkdirSync(sadeemOut, { recursive: true })
+  const madarOut = join(root, 'out')
+  const graphPath = join(madarOut, 'graph.json')
+  mkdirSync(madarOut, { recursive: true })
   writeFileSync(join(root, 'routes.ts'), 'export const loginRoute = "POST /login"\n', 'utf8')
   writeFileSync(join(root, 'controller.ts'), 'export class AuthController { login() {} }\n', 'utf8')
   writeFileSync(join(root, 'auth.ts'), 'export class AuthService { login() {} }\n', 'utf8')
   writeFileSync(join(root, 'session-store.ts'), 'export class SessionStore { createSession() {} }\n', 'utf8')
   writeFileSync(join(root, 'auth.spec.ts'), 'test("login", () => {})\n', 'utf8')
-  writeFileSync(join(sadeemOut, 'GRAPH_REPORT.md'), '# Graph report\n', 'utf8')
+  writeFileSync(join(madarOut, 'GRAPH_REPORT.md'), '# Graph report\n', 'utf8')
   writeFileSync(graphPath, JSON.stringify({
     root_path: root,
     nodes: [
@@ -51,15 +51,15 @@ afterEach(() => {
 })
 
 beforeEach(() => {
-  previousToolProfile = process.env.SADEEM_TOOL_PROFILE
-  process.env.SADEEM_TOOL_PROFILE = 'full'
+  previousToolProfile = process.env.MADAR_TOOL_PROFILE
+  process.env.MADAR_TOOL_PROFILE = 'full'
 })
 
 afterEach(() => {
   if (previousToolProfile === undefined) {
-    delete process.env.SADEEM_TOOL_PROFILE
+    delete process.env.MADAR_TOOL_PROFILE
   } else {
-    process.env.SADEEM_TOOL_PROFILE = previousToolProfile
+    process.env.MADAR_TOOL_PROFILE = previousToolProfile
   }
 })
 

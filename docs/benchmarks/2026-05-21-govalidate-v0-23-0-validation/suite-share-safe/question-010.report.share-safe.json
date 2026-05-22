@@ -50,7 +50,7 @@
     "duration_ms": 48188,
     "result_path": "<artifact-root>/baseline-answer.txt"
   },
-  "sadeem": {
+  "madar": {
     "kind": "succeeded",
     "model": null,
     "usage": {
@@ -89,7 +89,7 @@
     "total_cost_usd": 0.699296,
     "num_turns": 5,
     "duration_ms": 44006,
-    "result_path": "<artifact-root>/sadeem-answer.txt"
+    "result_path": "<artifact-root>/madar-answer.txt"
   },
   "reductions": {
     "input_tokens": 1.52,
@@ -99,7 +99,7 @@
   },
   "prompt_token_source": {
     "baseline": "anthropic_provider_reported",
-    "sadeem": "anthropic_provider_reported"
+    "madar": "anthropic_provider_reported"
   },
   "provider_proof": {
     "baseline": {
@@ -108,7 +108,7 @@
       "effective_tokens_source": "anthropic_provider_reported",
       "total_tokens_source": "anthropic_provider_reported"
     },
-    "sadeem": {
+    "madar": {
       "provider": "anthropic",
       "input_tokens_source": "anthropic_provider_reported",
       "effective_tokens_source": "anthropic_provider_reported",
@@ -123,7 +123,7 @@
     "report": "<artifact-root>/report.json",
     "share_safe_report": "<artifact-root>/report.share-safe.json",
     "baseline_answer": "<artifact-root>/baseline-answer.txt",
-    "sadeem_answer": "<artifact-root>/sadeem-answer.txt",
+    "madar_answer": "<artifact-root>/madar-answer.txt",
     "prompt_file": "<artifact-root>/native_agent-prompt.txt"
   }
 }

@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
 
 function withTempGraph(graph: unknown, run: (graphPath: string) => void): void {
-  const dir = mkdtempSync(join(tmpdir(), 'sadeem-bench-stats-'))
+  const dir = mkdtempSync(join(tmpdir(), 'madar-bench-stats-'))
   const graphPath = join(dir, 'graph.json')
   try {
     writeFileSync(graphPath, JSON.stringify(graph, null, 2))
@@ -43,7 +43,7 @@ describe('benchmark graph stats helper', () => {
   })
 
   it('prints a clear error when graph.json is malformed', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'sadeem-bench-stats-bad-'))
+    const dir = mkdtempSync(join(tmpdir(), 'madar-bench-stats-bad-'))
     const graphPath = join(dir, 'graph.json')
     writeFileSync(graphPath, '{"nodes":[', 'utf8')
     try {

@@ -27,7 +27,7 @@ function writeFile(root: string, rel: string, content: string): void {
 function build(root: string): SemanticProgramIndex {
   return buildSpi({
     root,
-    sadeemVersion: 'test-0.0.0',
+    madarVersion: 'test-0.0.0',
     extractorVersion: 'spi-v1.0.0-routing-controllers',
     now: FROZEN_NOW,
   })

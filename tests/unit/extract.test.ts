@@ -14,11 +14,11 @@ const FIXTURES_DIR = join(process.cwd(), 'tests', 'fixtures')
 
 describe('extract', () => {
   function createTempRoot(): string {
-    return mkdtempSync(join(tmpdir(), 'sadeem-extract-'))
+    return mkdtempSync(join(tmpdir(), 'madar-extract-'))
   }
 
   function binaryIngestSidecarPath(assetPath: string): string {
-    return join(dirname(assetPath), `.${basename(assetPath)}.sadeem-ingest.json`)
+    return join(dirname(assetPath), `.${basename(assetPath)}.madar-ingest.json`)
   }
 
   function createTestWavBuffer(durationSeconds: number, sampleRate: number = 4_000, channelCount: number = 2, bitsPerSample: number = 16): Buffer {
@@ -908,7 +908,7 @@ describe('extract', () => {
   }
 
   function createVorbisCommentBody(metadata: { title: string; artist: string; album: string }): Buffer {
-    const vendor = Buffer.from('sadeem', 'utf8')
+    const vendor = Buffer.from('madar', 'utf8')
     const vendorLength = Buffer.alloc(4)
     vendorLength.writeUInt32LE(vendor.length, 0)
     const comments = [
@@ -2548,7 +2548,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 54,
+          __madarTsExtractorVersion: 54,
           nodes: [
             { id: 'stale_rust_file', label: 'worker.rs', file_type: 'code', source_file: filePath },
             { id: 'stale_rust_outer', label: 'outer', file_type: 'code', source_file: filePath },
@@ -2604,7 +2604,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 57,
+          __madarTsExtractorVersion: 57,
           nodes: [
             { id: 'stale_rust_file', label: 'worker.rs', file_type: 'code', source_file: filePath },
             { id: 'stale_rust_engine', label: 'engine', file_type: 'code', source_file: filePath },
@@ -2662,7 +2662,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 55,
+          __madarTsExtractorVersion: 55,
           nodes: [
             { id: 'stale_rust_file', label: 'worker.rs', file_type: 'code', source_file: filePath },
             { id: 'stale_rust_outer', label: 'outer', file_type: 'code', source_file: filePath },
@@ -2720,7 +2720,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 56,
+          __madarTsExtractorVersion: 56,
           nodes: [
             { id: 'stale_rust_file', label: 'worker.rs', file_type: 'code', source_file: filePath },
             { id: 'stale_rust_boot', label: 'boot()', file_type: 'code', source_file: filePath },
@@ -2768,7 +2768,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 53,
+          __madarTsExtractorVersion: 53,
           nodes: [
             { id: 'stale_rust_file', label: 'worker.rs', file_type: 'code', source_file: filePath },
             { id: 'stale_rust_traits', label: 'traits', file_type: 'code', source_file: filePath },
@@ -2831,7 +2831,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 45,
+          __madarTsExtractorVersion: 45,
           nodes: [
             { id: 'stale_rust_file', label: 'worker.rs', file_type: 'code', source_file: filePath },
             { id: 'stale_rust_worker', label: 'Worker', file_type: 'code', source_file: filePath },
@@ -2876,7 +2876,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 52,
+          __madarTsExtractorVersion: 52,
           nodes: [
             { id: 'stale_rust_file', label: 'worker.rs', file_type: 'code', source_file: filePath },
             { id: 'stale_rust_engine', label: 'engine', file_type: 'code', source_file: filePath },
@@ -2926,7 +2926,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 51,
+          __madarTsExtractorVersion: 51,
           nodes: [
             { id: 'stale_rust_file', label: 'worker.rs', file_type: 'code', source_file: filePath },
             { id: 'stale_rust_engine', label: 'engine', file_type: 'code', source_file: filePath },
@@ -3116,7 +3116,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 46,
+          __madarTsExtractorVersion: 46,
           nodes: [
             { id: 'stale_rust_file', label: 'worker.rs', file_type: 'code', source_file: filePath },
             { id: 'stale_rust_worker', label: 'Worker', file_type: 'code', source_file: filePath },
@@ -3247,7 +3247,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 47,
+          __madarTsExtractorVersion: 47,
           nodes: [
             { id: 'stale_rust_file', label: 'worker.rs', file_type: 'code', source_file: filePath },
             { id: 'stale_rust_worker', label: 'Worker', file_type: 'code', source_file: filePath },
@@ -3413,7 +3413,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 48,
+          __madarTsExtractorVersion: 48,
           nodes: [
             { id: 'stale_rust_file', label: 'worker.rs', file_type: 'code', source_file: filePath },
             { id: 'stale_rust_worker', label: 'Worker', file_type: 'code', source_file: filePath },
@@ -3457,7 +3457,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 50,
+          __madarTsExtractorVersion: 50,
           nodes: [
             { id: 'stale_rust_file', label: 'worker.rs', file_type: 'code', source_file: filePath },
             { id: 'stale_rust_boot', label: 'boot()', file_type: 'code', source_file: filePath },
@@ -3573,7 +3573,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 49,
+          __madarTsExtractorVersion: 49,
           nodes: [
             { id: 'stale_rust_file', label: 'worker.rs', file_type: 'code', source_file: filePath },
             { id: 'stale_rust_alpha', label: 'alpha', file_type: 'code', source_file: filePath },
@@ -3625,7 +3625,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 58,
+          __madarTsExtractorVersion: 58,
           nodes: [
             { id: 'stale_rust_file', label: 'worker.rs', file_type: 'code', source_file: filePath },
             { id: 'stale_rust_api', label: 'api', file_type: 'code', source_file: filePath },
@@ -5675,7 +5675,7 @@ describe('extract', () => {
           {
             source_url: 'https://example.com/diagram.png',
             captured_at: '2026-04-13T03:00:00Z',
-            contributor: 'sadeem',
+            contributor: 'madar',
           },
           null,
           2,
@@ -5689,7 +5689,7 @@ describe('extract', () => {
       expect(imageNode).toMatchObject({
         source_url: 'https://example.com/diagram.png',
         captured_at: '2026-04-13T03:00:00Z',
-        contributor: 'sadeem',
+        contributor: 'madar',
         layer: 'base',
         provenance: expect.arrayContaining([
           expect.objectContaining({ capability_id: 'builtin:extract:image', stage: 'extract' }),
@@ -5698,7 +5698,7 @@ describe('extract', () => {
             stage: 'ingest',
             source_url: 'https://example.com/diagram.png',
             captured_at: '2026-04-13T03:00:00Z',
-            contributor: 'sadeem',
+            contributor: 'madar',
           }),
         ]),
       })
@@ -5712,7 +5712,7 @@ describe('extract', () => {
     const root = createTempRoot()
     try {
       const paperPath = join(root, 'paper.pdf')
-      const pdfContent = '%PDF-1.4\n1 0 obj\n<< /Title (Sadeem Paper) /Subject (Runtime Notes) >>\nstream\n(Abstract) Tj\nendstream\nendobj\n'
+      const pdfContent = '%PDF-1.4\n1 0 obj\n<< /Title (Madar Paper) /Subject (Runtime Notes) >>\nstream\n(Abstract) Tj\nendstream\nendobj\n'
       writeFileSync(paperPath, pdfContent, 'latin1')
       writeFileSync(
         binaryIngestSidecarPath(paperPath),
@@ -5720,7 +5720,7 @@ describe('extract', () => {
           {
             source_url: 'https://example.com/paper.pdf',
             captured_at: '2026-04-13T04:00:00Z',
-            contributor: 'sadeem',
+            contributor: 'madar',
           },
           null,
           2,
@@ -5730,15 +5730,15 @@ describe('extract', () => {
 
       const result = extract([paperPath])
       const paperNode = result.nodes.find((node) => node.file_type === 'paper' && node.label === 'paper.pdf')
-      const titleNode = result.nodes.find((node) => node.file_type === 'paper' && node.label === 'Sadeem Paper')
+      const titleNode = result.nodes.find((node) => node.file_type === 'paper' && node.label === 'Madar Paper')
       const containsEdges = result.edges.filter((edge) => edge.source_file === paperPath && edge.relation === 'contains')
 
       expect(paperNode).toMatchObject({
-        title: 'Sadeem Paper',
+        title: 'Madar Paper',
         subject: 'Runtime Notes',
         source_url: 'https://example.com/paper.pdf',
         captured_at: '2026-04-13T04:00:00Z',
-        contributor: 'sadeem',
+        contributor: 'madar',
         content_type: 'application/pdf',
         file_bytes: Buffer.byteLength(pdfContent, 'latin1'),
         layer: 'base',
@@ -5749,7 +5749,7 @@ describe('extract', () => {
             stage: 'ingest',
             source_url: 'https://example.com/paper.pdf',
             captured_at: '2026-04-13T04:00:00Z',
-            contributor: 'sadeem',
+            contributor: 'madar',
           }),
         ]),
       })
@@ -5791,7 +5791,7 @@ describe('extract', () => {
           {
             source_url: 'https://example.com/podcast/episodes/1',
             captured_at: '2026-04-14T01:00:00Z',
-            contributor: 'sadeem',
+            contributor: 'madar',
           },
           null,
           2,
@@ -5804,7 +5804,7 @@ describe('extract', () => {
           {
             source_url: 'https://example.com/sessions/demo',
             captured_at: '2026-04-14T01:05:00Z',
-            contributor: 'sadeem',
+            contributor: 'madar',
           },
           null,
           2,
@@ -5819,7 +5819,7 @@ describe('extract', () => {
       expect(audioNode).toMatchObject({
         source_url: 'https://example.com/podcast/episodes/1',
         captured_at: '2026-04-14T01:00:00Z',
-        contributor: 'sadeem',
+        contributor: 'madar',
         content_type: 'audio/mpeg',
         file_bytes: 3,
         layer: 'base',
@@ -5830,14 +5830,14 @@ describe('extract', () => {
             stage: 'ingest',
             source_url: 'https://example.com/podcast/episodes/1',
             captured_at: '2026-04-14T01:00:00Z',
-            contributor: 'sadeem',
+            contributor: 'madar',
           }),
         ]),
       })
       expect(videoNode).toMatchObject({
         source_url: 'https://example.com/sessions/demo',
         captured_at: '2026-04-14T01:05:00Z',
-        contributor: 'sadeem',
+        contributor: 'madar',
         content_type: 'video/mp4',
         file_bytes: 8,
         layer: 'base',
@@ -5848,7 +5848,7 @@ describe('extract', () => {
             stage: 'ingest',
             source_url: 'https://example.com/sessions/demo',
             captured_at: '2026-04-14T01:05:00Z',
-            contributor: 'sadeem',
+            contributor: 'madar',
           }),
         ]),
       })
@@ -5900,7 +5900,7 @@ describe('extract', () => {
       const mp3Path = join(root, 'episode.mp3')
       const mp3Buffer = createTestMp3Id3Buffer({
         title: 'Roadmap Review',
-        artist: 'Sadeem FM',
+        artist: 'Madar FM',
         album: 'Engineering Notes',
       })
       writeFileSync(mp3Path, mp3Buffer)
@@ -5912,7 +5912,7 @@ describe('extract', () => {
         content_type: 'audio/mpeg',
         file_bytes: mp3Buffer.length,
         audio_title: 'Roadmap Review',
-        audio_artist: 'Sadeem FM',
+        audio_artist: 'Madar FM',
         audio_album: 'Engineering Notes',
         layer: 'base',
         provenance: [expect.objectContaining({ capability_id: 'builtin:extract:audio', stage: 'extract' })],
@@ -5929,12 +5929,12 @@ describe('extract', () => {
       const v24Path = join(root, 'episode-v24.mp3')
       writeFileSync(v23Path, createTestMp3Id3Buffer({
         title: 'Roadmap Review',
-        artist: 'Sadeem FM',
+        artist: 'Madar FM',
         album: 'Engineering Notes',
       }, { version: 3, extendedHeader: true }))
       writeFileSync(v24Path, createTestMp3Id3Buffer({
         title: 'Roadmap Review',
-        artist: 'Sadeem FM',
+        artist: 'Madar FM',
         album: 'Engineering Notes',
       }, { version: 4, extendedHeader: true }))
 
@@ -5944,12 +5944,12 @@ describe('extract', () => {
 
       expect(v23Node).toMatchObject({
         audio_title: 'Roadmap Review',
-        audio_artist: 'Sadeem FM',
+        audio_artist: 'Madar FM',
         audio_album: 'Engineering Notes',
       })
       expect(v24Node).toMatchObject({
         audio_title: 'Roadmap Review',
-        audio_artist: 'Sadeem FM',
+        audio_artist: 'Madar FM',
         audio_album: 'Engineering Notes',
       })
     } finally {
@@ -5987,7 +5987,7 @@ describe('extract', () => {
       const mp3Path = join(root, 'broken-size-id3.mp3')
       const mp3Buffer = createMalformedV24SynchsafeSizeMp3Buffer({
         title: 'Roadmap Review',
-        artist: 'Sadeem FM',
+        artist: 'Madar FM',
         album: 'Engineering Notes',
       })
       writeFileSync(mp3Path, mp3Buffer)
@@ -6015,7 +6015,7 @@ describe('extract', () => {
       const mp3Path = join(root, 'large-id3.mp3')
       const mp3Buffer = createLargeMp3Id3Buffer({
         title: 'Roadmap Review',
-        artist: 'Sadeem FM',
+        artist: 'Madar FM',
         album: 'Engineering Notes',
       })
       writeFileSync(mp3Path, mp3Buffer)
@@ -6027,7 +6027,7 @@ describe('extract', () => {
         content_type: 'audio/mpeg',
         file_bytes: mp3Buffer.length,
         audio_title: 'Roadmap Review',
-        audio_artist: 'Sadeem FM',
+        audio_artist: 'Madar FM',
         audio_album: 'Engineering Notes',
         layer: 'base',
         provenance: [expect.objectContaining({ capability_id: 'builtin:extract:audio', stage: 'extract' })],
@@ -6045,17 +6045,17 @@ describe('extract', () => {
       const opusPath = join(root, 'episode.opus')
       const flacBuffer = createTestFlacBuffer({
         title: 'Roadmap Review',
-        artist: 'Sadeem FM',
+        artist: 'Madar FM',
         album: 'Engineering Notes',
       })
       const oggBuffer = createTestOggVorbisBuffer({
         title: 'Release Notes',
-        artist: 'Sadeem FM',
+        artist: 'Madar FM',
         album: 'Engineering Notes',
       })
       const opusBuffer = createTestOggOpusBuffer({
         title: 'Voice Memo',
-        artist: 'Sadeem FM',
+        artist: 'Madar FM',
         album: 'Engineering Notes',
       })
       writeFileSync(flacPath, flacBuffer)
@@ -6074,7 +6074,7 @@ describe('extract', () => {
         audio_sample_rate_hz: 48000,
         audio_channel_count: 2,
         audio_title: 'Roadmap Review',
-        audio_artist: 'Sadeem FM',
+        audio_artist: 'Madar FM',
         audio_album: 'Engineering Notes',
         layer: 'base',
         provenance: [expect.objectContaining({ capability_id: 'builtin:extract:audio', stage: 'extract' })],
@@ -6086,7 +6086,7 @@ describe('extract', () => {
         audio_sample_rate_hz: 44100,
         audio_channel_count: 2,
         audio_title: 'Release Notes',
-        audio_artist: 'Sadeem FM',
+        audio_artist: 'Madar FM',
         audio_album: 'Engineering Notes',
         layer: 'base',
         provenance: [expect.objectContaining({ capability_id: 'builtin:extract:audio', stage: 'extract' })],
@@ -6098,7 +6098,7 @@ describe('extract', () => {
         audio_sample_rate_hz: 48000,
         audio_channel_count: 1,
         audio_title: 'Voice Memo',
-        audio_artist: 'Sadeem FM',
+        audio_artist: 'Madar FM',
         audio_album: 'Engineering Notes',
         layer: 'base',
         provenance: [expect.objectContaining({ capability_id: 'builtin:extract:audio', stage: 'extract' })],
@@ -6116,7 +6116,7 @@ describe('extract', () => {
         createOggSkeletonBosPage(),
         ...createOggVorbisStreamPages({
           title: 'Release Notes',
-          artist: 'Sadeem FM',
+          artist: 'Madar FM',
           album: 'Engineering Notes',
         }),
       ])
@@ -6132,7 +6132,7 @@ describe('extract', () => {
         audio_sample_rate_hz: 44100,
         audio_channel_count: 2,
         audio_title: 'Release Notes',
-        audio_artist: 'Sadeem FM',
+        audio_artist: 'Madar FM',
         audio_album: 'Engineering Notes',
         layer: 'base',
         provenance: [expect.objectContaining({ capability_id: 'builtin:extract:audio', stage: 'extract' })],
@@ -6150,7 +6150,7 @@ describe('extract', () => {
         createOggSkeletonBosPage(),
         createTestOggOpusBuffer({
           title: 'Voice Memo',
-          artist: 'Sadeem FM',
+          artist: 'Madar FM',
           album: 'Engineering Notes',
         }),
       ])
@@ -6166,7 +6166,7 @@ describe('extract', () => {
         audio_sample_rate_hz: 48000,
         audio_channel_count: 1,
         audio_title: 'Voice Memo',
-        audio_artist: 'Sadeem FM',
+        audio_artist: 'Madar FM',
         audio_album: 'Engineering Notes',
         layer: 'base',
         provenance: [expect.objectContaining({ capability_id: 'builtin:extract:audio', stage: 'extract' })],
@@ -6184,7 +6184,7 @@ describe('extract', () => {
         ...createOggFillerPages(300_000, 29),
         ...createOggVorbisStreamPages({
           title: 'Release Notes',
-          artist: 'Sadeem FM',
+          artist: 'Madar FM',
           album: 'Engineering Notes',
         }),
       ])
@@ -6200,7 +6200,7 @@ describe('extract', () => {
         audio_sample_rate_hz: 44100,
         audio_channel_count: 2,
         audio_title: 'Release Notes',
-        audio_artist: 'Sadeem FM',
+        audio_artist: 'Madar FM',
         audio_album: 'Engineering Notes',
         layer: 'base',
         provenance: [expect.objectContaining({ capability_id: 'builtin:extract:audio', stage: 'extract' })],
@@ -6218,7 +6218,7 @@ describe('extract', () => {
         ...createOggFillerPages(300_000, 29),
         createTestOggOpusBuffer({
           title: 'Voice Memo',
-          artist: 'Sadeem FM',
+          artist: 'Madar FM',
           album: 'Engineering Notes',
         }),
       ])
@@ -6234,7 +6234,7 @@ describe('extract', () => {
         audio_sample_rate_hz: 48000,
         audio_channel_count: 1,
         audio_title: 'Voice Memo',
-        audio_artist: 'Sadeem FM',
+        audio_artist: 'Madar FM',
         audio_album: 'Engineering Notes',
         layer: 'base',
         provenance: [expect.objectContaining({ capability_id: 'builtin:extract:audio', stage: 'extract' })],
@@ -6252,7 +6252,7 @@ describe('extract', () => {
       const aacBuffer = createTestAacBuffer()
       const m4aBuffer = createTestM4aBuffer({
         title: 'Roadmap Review',
-        artist: 'Sadeem FM',
+        artist: 'Madar FM',
         album: 'Engineering Notes',
       })
       writeFileSync(aacPath, aacBuffer)
@@ -6278,7 +6278,7 @@ describe('extract', () => {
         audio_sample_rate_hz: 48000,
         audio_channel_count: 2,
         audio_title: 'Roadmap Review',
-        audio_artist: 'Sadeem FM',
+        audio_artist: 'Madar FM',
         audio_album: 'Engineering Notes',
         layer: 'base',
         provenance: [expect.objectContaining({ capability_id: 'builtin:extract:audio', stage: 'extract' })],
@@ -6342,7 +6342,7 @@ describe('extract', () => {
       const m4aPath = join(root, 'broken-tags.m4a')
       const m4aBuffer = createTestM4aBuffer({
         title: 'Roadmap Review',
-        artist: 'Sadeem FM',
+        artist: 'Madar FM',
         album: 'Engineering Notes',
       }, { truncateMetadata: true })
       writeFileSync(m4aPath, m4aBuffer)
@@ -8656,7 +8656,7 @@ describe('extract', () => {
     try {
       const m4aPath = join(root, 'track.m4a')
       const m4aBuffer = createTestM4aBuffer(
-        { title: 'Fallback Song', artist: 'Sadeem FM', album: 'Parity' },
+        { title: 'Fallback Song', artist: 'Madar FM', album: 'Parity' },
         { omitMovieHeaderDuration: true, includeTrackMdhdDuration: true },
       )
       writeFileSync(m4aPath, m4aBuffer)
@@ -8671,7 +8671,7 @@ describe('extract', () => {
         audio_sample_rate_hz: 48000,
         audio_channel_count: 2,
         audio_title: 'Fallback Song',
-        audio_artist: 'Sadeem FM',
+        audio_artist: 'Madar FM',
         audio_album: 'Parity',
         layer: 'base',
         provenance: [expect.objectContaining({ capability_id: 'builtin:extract:audio', stage: 'extract' })],
@@ -8762,7 +8762,7 @@ describe('extract', () => {
       const oggBuffer = Buffer.concat([
         createTestOggVorbisBuffer({
           title: 'Release Notes',
-          artist: 'Sadeem FM',
+          artist: 'Madar FM',
           album: 'Engineering Notes',
         }, { durationSeconds: 2.5, bitstreamSerialNumber: 17 }),
         createTestOggVorbisBuffer({
@@ -8782,7 +8782,7 @@ describe('extract', () => {
         audio_sample_rate_hz: 44100,
         audio_channel_count: 2,
         audio_title: 'Release Notes',
-        audio_artist: 'Sadeem FM',
+        audio_artist: 'Madar FM',
         audio_album: 'Engineering Notes',
       })
     } finally {
@@ -8796,7 +8796,7 @@ describe('extract', () => {
       const oggPath = join(root, 'interleaved.ogg')
       const targetPages = createOggVorbisStreamPages({
         title: 'Release Notes',
-        artist: 'Sadeem FM',
+        artist: 'Madar FM',
         album: 'Engineering Notes',
       }, { bitstreamSerialNumber: 17 })
       const targetIdPage = targetPages[0]!
@@ -8825,7 +8825,7 @@ describe('extract', () => {
         audio_sample_rate_hz: 44100,
         audio_channel_count: 2,
         audio_title: 'Release Notes',
-        audio_artist: 'Sadeem FM',
+        audio_artist: 'Madar FM',
         audio_album: 'Engineering Notes',
       })
     } finally {
@@ -8840,7 +8840,7 @@ describe('extract', () => {
       const oggBuffer = Buffer.concat([
         createTestOggVorbisBuffer({
           title: 'Release Notes',
-          artist: 'Sadeem FM',
+          artist: 'Madar FM',
           album: 'Engineering Notes',
         }, { durationSeconds: 2.5, bitstreamSerialNumber: 17 }),
         ...createOggFillerPages(300_000, 29),
@@ -8856,7 +8856,7 @@ describe('extract', () => {
         audio_sample_rate_hz: 44100,
         audio_channel_count: 2,
         audio_title: 'Release Notes',
-        audio_artist: 'Sadeem FM',
+        audio_artist: 'Madar FM',
         audio_album: 'Engineering Notes',
       })
     } finally {
@@ -8870,7 +8870,7 @@ describe('extract', () => {
       const opusPath = join(root, 'voice-16k.opus')
       const opusBuffer = createTestOggOpusBuffer({
         title: 'Voice Memo',
-        artist: 'Sadeem FM',
+        artist: 'Madar FM',
         album: 'Engineering Notes',
       }, { inputSampleRate: 16_000 })
       writeFileSync(opusPath, opusBuffer)
@@ -8884,7 +8884,7 @@ describe('extract', () => {
         audio_sample_rate_hz: 48000,
         audio_channel_count: 1,
         audio_title: 'Voice Memo',
-        audio_artist: 'Sadeem FM',
+        audio_artist: 'Madar FM',
         audio_album: 'Engineering Notes',
       })
     } finally {
@@ -8898,7 +8898,7 @@ describe('extract', () => {
       const flacPath = join(root, 'large-padding.flac')
       const flacBuffer = createTestFlacBuffer({
         title: 'Roadmap Review',
-        artist: 'Sadeem FM',
+        artist: 'Madar FM',
         album: 'Engineering Notes',
       }, { leadingPaddingBytes: 300_000 })
       writeFileSync(flacPath, flacBuffer)
@@ -8912,7 +8912,7 @@ describe('extract', () => {
         audio_sample_rate_hz: 48000,
         audio_channel_count: 2,
         audio_title: 'Roadmap Review',
-        audio_artist: 'Sadeem FM',
+        audio_artist: 'Madar FM',
         audio_album: 'Engineering Notes',
       })
     } finally {
@@ -8926,7 +8926,7 @@ describe('extract', () => {
       const flacPath = join(root, 'broken-comments.flac')
       const flacBuffer = createTestFlacBuffer({
         title: 'Roadmap Review',
-        artist: 'Sadeem FM',
+        artist: 'Madar FM',
         album: 'Engineering Notes',
       }, { truncateCommentBlock: true })
       writeFileSync(flacPath, flacBuffer)
@@ -9159,7 +9159,7 @@ describe('extract', () => {
           'source_url: "https://example.com/guide"',
           'captured_at: "2026-04-13T00:00:00Z"',
           'author: "Docs Team"',
-          'contributor: "sadeem"',
+          'contributor: "madar"',
           '---',
           '',
           '# Guide',
@@ -9179,7 +9179,7 @@ describe('extract', () => {
         source_url: 'https://example.com/guide',
         captured_at: '2026-04-13T00:00:00Z',
         author: 'Docs Team',
-        contributor: 'sadeem',
+        contributor: 'madar',
         provenance: expect.arrayContaining([
           expect.objectContaining({ capability_id: 'builtin:extract:markdown', stage: 'extract' }),
           expect.objectContaining({
@@ -9188,7 +9188,7 @@ describe('extract', () => {
             source_url: 'https://example.com/guide',
             captured_at: '2026-04-13T00:00:00Z',
             author: 'Docs Team',
-            contributor: 'sadeem',
+            contributor: 'madar',
           }),
         ]),
       })
@@ -9220,7 +9220,7 @@ describe('extract', () => {
       const cases = [
         {
           fileName: 'github-notes.md',
-          sourceUrl: 'https://github.com/mohanagy/sadeem',
+          sourceUrl: 'https://github.com/mohanagy/madar',
           ingestCapabilityId: 'builtin:ingest:github',
         },
         {
@@ -9230,7 +9230,7 @@ describe('extract', () => {
         },
         {
           fileName: 'tweet-notes.md',
-          sourceUrl: 'https://x.com/sadeem/status/1234567890',
+          sourceUrl: 'https://x.com/madar/status/1234567890',
           ingestCapabilityId: 'builtin:ingest:tweet',
         },
         {
@@ -9253,8 +9253,8 @@ describe('extract', () => {
             '---',
             `source_url: "${testCase.sourceUrl}"`,
             'captured_at: "2026-04-13T00:00:00Z"',
-            'author: "Sadeem Team"',
-            'contributor: "sadeem"',
+            'author: "Madar Team"',
+            'contributor: "madar"',
             '---',
             '',
             '# Notes',
@@ -9272,8 +9272,8 @@ describe('extract', () => {
         expect(fileNode).toMatchObject({
           source_url: testCase.sourceUrl,
           captured_at: '2026-04-13T00:00:00Z',
-          author: 'Sadeem Team',
-          contributor: 'sadeem',
+          author: 'Madar Team',
+          contributor: 'madar',
           provenance: expect.arrayContaining([expect.objectContaining({ capability_id: testCase.ingestCapabilityId, stage: 'ingest' })]),
         })
         expect(headingNode).toMatchObject({
@@ -9292,7 +9292,7 @@ describe('extract', () => {
     const root = createTempRoot()
     try {
       const notePath = join(root, 'local-notes.md')
-      writeFileSync(notePath, ['---', 'title: "Local Notes"', 'author: "Sadeem Team"', 'contributor: "sadeem"', '---', '', '# Notes'].join('\n'), 'utf8')
+      writeFileSync(notePath, ['---', 'title: "Local Notes"', 'author: "Madar Team"', 'contributor: "madar"', '---', '', '# Notes'].join('\n'), 'utf8')
 
       const result = extract([notePath])
       const fileNode = result.nodes.find((node) => node.label === 'local-notes.md')
@@ -9301,8 +9301,8 @@ describe('extract', () => {
 
       expect(fileNode).toMatchObject({
         title: 'Local Notes',
-        author: 'Sadeem Team',
-        contributor: 'sadeem',
+        author: 'Madar Team',
+        contributor: 'madar',
         provenance: [expect.objectContaining({ capability_id: 'builtin:extract:markdown', stage: 'extract' })],
       })
       expect(headingNode?.provenance).toEqual([expect.objectContaining({ capability_id: 'builtin:extract:markdown', stage: 'extract' })])
@@ -9680,13 +9680,13 @@ describe('extract', () => {
     const root = createTempRoot()
     try {
       const paperPath = join(root, 'paper.pdf')
-      writeFileSync(paperPath, '%PDF-1.4\n1 0 obj\n<< /Title (Sadeem Paper) >>\nstream\n(Abstract) Tj\n(Introduction) Tj\nendstream\nendobj\n', 'latin1')
+      writeFileSync(paperPath, '%PDF-1.4\n1 0 obj\n<< /Title (Madar Paper) >>\nstream\n(Abstract) Tj\n(Introduction) Tj\nendstream\nendobj\n', 'latin1')
 
       const result = extract([paperPath])
       const labels = result.nodes.filter((node) => node.file_type === 'paper').map((node) => node.label)
 
       expect(labels).toContain('paper.pdf')
-      expect(labels).toContain('Sadeem Paper')
+      expect(labels).toContain('Madar Paper')
       expect(labels).toContain('Abstract')
       expect(labels).toContain('Introduction')
     } finally {
@@ -9700,7 +9700,7 @@ describe('extract', () => {
       const paperPath = join(root, 'paper.pdf')
       const guidePath = join(root, 'guide.md')
       writeFileSync(guidePath, '# Guide\n', 'utf8')
-      writeFileSync(paperPath, '%PDF-1.4\n1 0 obj\n<< /Title (Sadeem Paper) >>\nstream\n(Abstract) Tj\n(See guide.md for details) Tj\nendstream\nendobj\n', 'latin1')
+      writeFileSync(paperPath, '%PDF-1.4\n1 0 obj\n<< /Title (Madar Paper) >>\nstream\n(Abstract) Tj\n(See guide.md for details) Tj\nendstream\nendobj\n', 'latin1')
 
       const result = extract([paperPath, guidePath])
       const abstractId = result.nodes.find((node) => node.file_type === 'paper' && node.label === 'Abstract')?.id
@@ -9725,7 +9725,7 @@ describe('extract', () => {
       const paperPath = join(root, 'paper.pdf')
       writeFileSync(
         paperPath,
-        '%PDF-1.4\n1 0 obj\n<< /Title (Sadeem Paper) >>\nstream\n(Abstract) Tj\n(See DOI:10.1000/example.42 and arXiv:2501.12345) Tj\nendstream\nendobj\n',
+        '%PDF-1.4\n1 0 obj\n<< /Title (Madar Paper) >>\nstream\n(Abstract) Tj\n(See DOI:10.1000/example.42 and arXiv:2501.12345) Tj\nendstream\nendobj\n',
         'latin1',
       )
 
@@ -9753,7 +9753,7 @@ describe('extract', () => {
         [
           '%PDF-1.4',
           '1 0 obj',
-          '<< /Title (Sadeem Paper) /Author (Jane Doe) /Subject (Runtime Notes) >>',
+          '<< /Title (Madar Paper) /Author (Jane Doe) /Subject (Runtime Notes) >>',
           'stream',
           '[(Abstract)] TJ',
           '(We build on [1] and compare against [2].) Tj',
@@ -9790,7 +9790,7 @@ describe('extract', () => {
       )
 
       expect(paperNode).toMatchObject({
-        title: 'Sadeem Paper',
+        title: 'Madar Paper',
         author: 'Jane Doe',
         subject: 'Runtime Notes',
         layer: 'base',
@@ -9887,7 +9887,7 @@ describe('extract', () => {
         [
           '%PDF-1.4',
           '1 0 obj',
-          '<< /Title (Sadeem Paper) >>',
+          '<< /Title (Madar Paper) >>',
           'stream',
           '(Abstract) Tj',
           '([1]) Tj',
@@ -10123,7 +10123,7 @@ describe('extract', () => {
           {
             source_url: 'https://example.com/guide.docx',
             captured_at: '2026-04-14T01:00:00Z',
-            contributor: 'sadeem',
+            contributor: 'madar',
           },
           null,
           2,
@@ -10143,7 +10143,7 @@ describe('extract', () => {
         description: 'Background material for the graph runtime.',
         source_url: 'https://example.com/guide.docx',
         captured_at: '2026-04-14T01:00:00Z',
-        contributor: 'sadeem',
+        contributor: 'madar',
         layer: 'base',
         provenance: expect.arrayContaining([
           expect.objectContaining({ capability_id: 'builtin:extract:docx', stage: 'extract' }),
@@ -10152,7 +10152,7 @@ describe('extract', () => {
             stage: 'ingest',
             source_url: 'https://example.com/guide.docx',
             captured_at: '2026-04-14T01:00:00Z',
-            contributor: 'sadeem',
+            contributor: 'madar',
           }),
         ]),
       })
@@ -10362,7 +10362,7 @@ describe('extract', () => {
           {
             source_url: 'https://example.com/metrics.xlsx',
             captured_at: '2026-04-14T02:00:00Z',
-            contributor: 'sadeem',
+            contributor: 'madar',
           },
           null,
           2,
@@ -10384,7 +10384,7 @@ describe('extract', () => {
         author: 'Jane Doe',
         source_url: 'https://example.com/metrics.xlsx',
         captured_at: '2026-04-14T02:00:00Z',
-        contributor: 'sadeem',
+        contributor: 'madar',
         layer: 'base',
         provenance: expect.arrayContaining([
           expect.objectContaining({ capability_id: 'builtin:extract:xlsx', stage: 'extract' }),
@@ -10393,7 +10393,7 @@ describe('extract', () => {
             stage: 'ingest',
             source_url: 'https://example.com/metrics.xlsx',
             captured_at: '2026-04-14T02:00:00Z',
-            contributor: 'sadeem',
+            contributor: 'madar',
           }),
         ]),
       })
@@ -10502,7 +10502,7 @@ describe('extract', () => {
           {
             source_url: 'https://example.com/broken.docx',
             captured_at: '2026-04-14T03:00:00Z',
-            contributor: 'sadeem',
+            contributor: 'madar',
           },
           null,
           2,
@@ -10518,7 +10518,7 @@ describe('extract', () => {
         file_type: 'document',
         source_url: 'https://example.com/broken.docx',
         captured_at: '2026-04-14T03:00:00Z',
-        contributor: 'sadeem',
+        contributor: 'madar',
         layer: 'base',
         provenance: expect.arrayContaining([
           expect.objectContaining({ capability_id: 'builtin:extract:docx', stage: 'extract' }),
@@ -10527,7 +10527,7 @@ describe('extract', () => {
             stage: 'ingest',
             source_url: 'https://example.com/broken.docx',
             captured_at: '2026-04-14T03:00:00Z',
-            contributor: 'sadeem',
+            contributor: 'madar',
           }),
         ]),
       })
@@ -10718,7 +10718,7 @@ describe('extract', () => {
           {
             source_url: 'https://example.com/diagram-v1.png',
             captured_at: '2026-04-13T06:00:00Z',
-            contributor: 'sadeem',
+            contributor: 'madar',
           },
           null,
           2,
@@ -10738,7 +10738,7 @@ describe('extract', () => {
           {
             source_url: 'https://example.com/diagram-v2.png',
             captured_at: '2026-04-13T06:05:00Z',
-            contributor: 'sadeem',
+            contributor: 'madar',
           },
           null,
           2,
@@ -10801,7 +10801,7 @@ describe('extract', () => {
       extract([filePath])
 
       const cachePath = join(cacheDir(), `${fileHash(filePath)}.json`)
-      writeFileSync(cachePath, JSON.stringify({ __sadeemTsExtractorVersion: 0, nodes: [], edges: [] }), 'utf8')
+      writeFileSync(cachePath, JSON.stringify({ __madarTsExtractorVersion: 0, nodes: [], edges: [] }), 'utf8')
 
       const recovered = extract([filePath])
 
@@ -10821,7 +10821,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 10,
+          __madarTsExtractorVersion: 10,
           nodes: [{ id: 'stale_file', label: 'sample.py', file_type: 'code', source_file: filePath }],
           edges: [],
         }),
@@ -10854,7 +10854,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 13,
+          __madarTsExtractorVersion: 13,
           nodes: [{ id: 'stale_audio', label: 'tone.wav', file_type: 'audio', source_file: wavPath }],
           edges: [],
         }),
@@ -10884,7 +10884,7 @@ describe('extract', () => {
       const mp3Path = join(root, 'episode.mp3')
       const mp3Buffer = createTestMp3Id3Buffer({
         title: 'Roadmap Review',
-        artist: 'Sadeem FM',
+        artist: 'Madar FM',
         album: 'Engineering Notes',
       })
       writeFileSync(mp3Path, mp3Buffer)
@@ -10893,7 +10893,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 14,
+          __madarTsExtractorVersion: 14,
           nodes: [{ id: 'stale_audio', label: 'episode.mp3', file_type: 'audio', source_file: mp3Path }],
           edges: [],
         }),
@@ -10907,7 +10907,7 @@ describe('extract', () => {
         content_type: 'audio/mpeg',
         file_bytes: mp3Buffer.length,
         audio_title: 'Roadmap Review',
-        audio_artist: 'Sadeem FM',
+        audio_artist: 'Madar FM',
         audio_album: 'Engineering Notes',
         layer: 'base',
         provenance: [expect.objectContaining({ capability_id: 'builtin:extract:audio', stage: 'extract' })],
@@ -10923,7 +10923,7 @@ describe('extract', () => {
       const flacPath = join(root, 'episode.flac')
       const flacBuffer = createTestFlacBuffer({
         title: 'Roadmap Review',
-        artist: 'Sadeem FM',
+        artist: 'Madar FM',
         album: 'Engineering Notes',
       })
       writeFileSync(flacPath, flacBuffer)
@@ -10932,7 +10932,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 15,
+          __madarTsExtractorVersion: 15,
           nodes: [{ id: 'stale_audio', label: 'episode.flac', file_type: 'audio', source_file: flacPath }],
           edges: [],
         }),
@@ -10949,7 +10949,7 @@ describe('extract', () => {
         audio_sample_rate_hz: 48000,
         audio_channel_count: 2,
         audio_title: 'Roadmap Review',
-        audio_artist: 'Sadeem FM',
+        audio_artist: 'Madar FM',
         audio_album: 'Engineering Notes',
         layer: 'base',
         provenance: [expect.objectContaining({ capability_id: 'builtin:extract:audio', stage: 'extract' })],
@@ -10965,7 +10965,7 @@ describe('extract', () => {
       const m4aPath = join(root, 'episode.m4a')
       const m4aBuffer = createTestM4aBuffer({
         title: 'Roadmap Review',
-        artist: 'Sadeem FM',
+        artist: 'Madar FM',
         album: 'Engineering Notes',
       })
       writeFileSync(m4aPath, m4aBuffer)
@@ -10974,7 +10974,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 16,
+          __madarTsExtractorVersion: 16,
           nodes: [{ id: 'stale_audio', label: 'episode.m4a', file_type: 'audio', source_file: m4aPath }],
           edges: [],
         }),
@@ -10991,7 +10991,7 @@ describe('extract', () => {
         audio_sample_rate_hz: 48000,
         audio_channel_count: 2,
         audio_title: 'Roadmap Review',
-        audio_artist: 'Sadeem FM',
+        audio_artist: 'Madar FM',
         audio_album: 'Engineering Notes',
         layer: 'base',
         provenance: [expect.objectContaining({ capability_id: 'builtin:extract:audio', stage: 'extract' })],
@@ -11012,7 +11012,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 17,
+          __madarTsExtractorVersion: 17,
           nodes: [{ id: 'stale_video', label: 'session.webm', file_type: 'video', source_file: webmPath }],
           edges: [],
         }),
@@ -11047,7 +11047,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 18,
+          __madarTsExtractorVersion: 18,
           nodes: [{ id: 'stale_avi_video', label: 'recording.avi', file_type: 'video', source_file: aviPath }],
           edges: [],
         }),
@@ -11082,7 +11082,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 24,
+          __madarTsExtractorVersion: 24,
           nodes: [{ id: 'stale_avi_video_audio', label: 'clip.avi', file_type: 'video', source_file: aviPath }],
           edges: [],
         }),
@@ -11119,7 +11119,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 25,
+          __madarTsExtractorVersion: 25,
           nodes: [{ id: 'stale_matroska_video_audio', label: 'session.webm', file_type: 'video', source_file: webmPath }],
           edges: [],
         }),
@@ -11160,7 +11160,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 26,
+          __madarTsExtractorVersion: 26,
           nodes: [{ id: 'stale_matroska_window', label: 'windowed-session.webm', file_type: 'video', source_file: webmPath }],
           edges: [],
         }),
@@ -11203,7 +11203,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 27,
+          __madarTsExtractorVersion: 27,
           nodes: [{ id: 'stale_matroska_seekhead', label: 'seekhead-windowed.mkv', file_type: 'video', source_file: mkvPath }],
           edges: [],
         }),
@@ -11246,7 +11246,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 28,
+          __madarTsExtractorVersion: 28,
           nodes: [{ id: 'stale_matroska_seekhead_partial', label: 'seekhead-tracks-partial.mkv', file_type: 'video', source_file: mkvPath }],
           edges: [],
         }),
@@ -11290,7 +11290,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 32,
+          __madarTsExtractorVersion: 32,
           nodes: [{ id: 'stale_matroska_discovery_bundle', label: 'seekhead-split.mkv', file_type: 'video', source_file: mkvPath }],
           edges: [],
         }),
@@ -11332,7 +11332,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 33,
+          __madarTsExtractorVersion: 33,
           nodes: [{ id: 'stale_matroska_top_level_fallback', label: 'top-level-windowed.mkv', file_type: 'video', source_file: mkvPath }],
           edges: [],
         }),
@@ -11379,7 +11379,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 34,
+          __madarTsExtractorVersion: 34,
           nodes: [{
             id: 'stale_matroska_authoritative_clear_duration',
             label: 'seekhead-info-clear-duration.mkv',
@@ -11434,7 +11434,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 34,
+          __madarTsExtractorVersion: 34,
           nodes: [{
             id: 'stale_matroska_authoritative_clear_audio',
             label: 'seekhead-tracks-clear-audio.mkv',
@@ -11490,7 +11490,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 35,
+          __madarTsExtractorVersion: 35,
           nodes: [{
             id: 'stale_matroska_unreadable_tracks',
             label: 'seekhead-tracks-unreadable.mkv',
@@ -11538,7 +11538,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 36,
+          __madarTsExtractorVersion: 36,
           nodes: [{
             id: 'stale_matroska_unreadable_info_stale_direct',
             label: 'direct-info-unreadable-stale.mkv',
@@ -11587,7 +11587,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 37,
+          __madarTsExtractorVersion: 37,
           nodes: [{
             id: 'stale_matroska_direct_tracks_prefix_stale',
             label: 'direct-tracks-trailing-padding-corrective.mkv',
@@ -11641,7 +11641,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 38,
+          __madarTsExtractorVersion: 38,
           nodes: [{
             id: 'stale_matroska_direct_info_prefix_clear',
             label: 'direct-info-trailing-padding-clear-duration.mkv',
@@ -11687,7 +11687,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 39,
+          __madarTsExtractorVersion: 39,
           nodes: [{
             id: 'stale_matroska_direct_info_prefix_omit',
             label: 'direct-info-trailing-padding-omit-duration.mkv',
@@ -11733,7 +11733,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 40,
+          __madarTsExtractorVersion: 40,
           nodes: [{
             id: 'stale_matroska_direct_info_prefix_tail',
             label: 'direct-info-trailing-child-omit-duration.mkv',
@@ -11779,7 +11779,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 41,
+          __madarTsExtractorVersion: 41,
           nodes: [{
             id: 'stale_matroska_direct_info_prefix_tail_overrun',
             label: 'direct-info-trailing-child-overrun-stale.mkv',
@@ -11824,7 +11824,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 42,
+          __madarTsExtractorVersion: 42,
           nodes: [{
             id: 'stale_matroska_direct_info_prefix_tail_invalid_overrun',
             label: 'direct-info-trailing-child-invalid-overrun-stale.mkv',
@@ -11869,7 +11869,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 43,
+          __madarTsExtractorVersion: 43,
           nodes: [{
             id: 'stale_matroska_direct_info_prefix_tail_invalid_truncated',
             label: 'direct-info-trailing-child-invalid-truncated-stale.mkv',
@@ -11919,7 +11919,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 44,
+          __madarTsExtractorVersion: 44,
           nodes: [{
             id: 'stale_matroska_direct_tracks_prefix_tail_truncated',
             label: 'direct-tracks-trailing-child-truncated-stale.mkv',
@@ -11958,7 +11958,7 @@ describe('extract', () => {
         createOggSkeletonBosPage(),
         ...createOggVorbisStreamPages({
           title: 'Release Notes',
-          artist: 'Sadeem FM',
+          artist: 'Madar FM',
           album: 'Engineering Notes',
         }),
       ])
@@ -11968,7 +11968,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 19,
+          __madarTsExtractorVersion: 19,
           nodes: [{ id: 'stale_ogg_audio', label: 'prefixed.ogg', file_type: 'audio', source_file: oggPath }],
           edges: [],
         }),
@@ -11985,7 +11985,7 @@ describe('extract', () => {
         audio_sample_rate_hz: 44100,
         audio_channel_count: 2,
         audio_title: 'Release Notes',
-        audio_artist: 'Sadeem FM',
+        audio_artist: 'Madar FM',
         audio_album: 'Engineering Notes',
         layer: 'base',
         provenance: [expect.objectContaining({ capability_id: 'builtin:extract:audio', stage: 'extract' })],
@@ -12003,7 +12003,7 @@ describe('extract', () => {
         ...createOggFillerPages(300_000, 29),
         ...createOggVorbisStreamPages({
           title: 'Release Notes',
-          artist: 'Sadeem FM',
+          artist: 'Madar FM',
           album: 'Engineering Notes',
         }),
       ])
@@ -12013,7 +12013,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 20,
+          __madarTsExtractorVersion: 20,
           nodes: [{ id: 'stale_large_prefixed_ogg_audio', label: 'large-prefixed.ogg', file_type: 'audio', source_file: oggPath }],
           edges: [],
         }),
@@ -12030,7 +12030,7 @@ describe('extract', () => {
         audio_sample_rate_hz: 44100,
         audio_channel_count: 2,
         audio_title: 'Release Notes',
-        audio_artist: 'Sadeem FM',
+        audio_artist: 'Madar FM',
         audio_album: 'Engineering Notes',
         layer: 'base',
         provenance: [expect.objectContaining({ capability_id: 'builtin:extract:audio', stage: 'extract' })],
@@ -12051,7 +12051,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 21,
+          __madarTsExtractorVersion: 21,
           nodes: [{ id: 'stale_mp4_video', label: 'clip.mp4', file_type: 'video', source_file: mp4Path }],
           edges: [],
         }),
@@ -12095,7 +12095,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 59,
+          __madarTsExtractorVersion: 59,
           nodes: [{ id: 'auth', label: 'auth.ts', file_type: 'code', source_file: authPath }],
           edges: [],
         }),
@@ -12125,7 +12125,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 22,
+          __madarTsExtractorVersion: 22,
           nodes: [{ id: 'stale_tkhd_fallback_video', label: 'tkhd-fallback.mp4', file_type: 'video', source_file: mp4Path }],
           edges: [],
         }),
@@ -12162,7 +12162,7 @@ describe('extract', () => {
       writeFileSync(
         cachePath,
         JSON.stringify({
-          __sadeemTsExtractorVersion: 23,
+          __madarTsExtractorVersion: 23,
           nodes: [{ id: 'stale_mdhd_fallback_video', label: 'mdhd-fallback.mp4', file_type: 'video', source_file: mp4Path }],
           edges: [],
         }),

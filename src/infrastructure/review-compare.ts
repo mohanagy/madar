@@ -552,7 +552,7 @@ export async function executeReviewCompareRuns(
 
 export function formatReviewCompareSummary(result: ReviewCompareResult): string {
   return [
-    '[sadeem review-compare] completed current diff comparison',
+    '[madar review-compare] completed current diff comparison',
     `- Output: ${result.output_root}`,
     `- Prompt tokens: verbose ${result.report.verbose_prompt_tokens} · compact ${result.report.compact_prompt_tokens} · ${formatTokenComparison(result.report.verbose_prompt_tokens, result.report.compact_prompt_tokens)}`,
     `- Effective prompt tokens: verbose ${result.report.verbose_effective_prompt_tokens} · compact ${result.report.compact_effective_prompt_tokens} · ${formatTokenComparison(result.report.verbose_effective_prompt_tokens, result.report.compact_effective_prompt_tokens)}`,
@@ -569,7 +569,7 @@ export async function runReviewCompareCommand(
   const result = await executeReviewCompareRuns(input, dependencies)
   const failedRuns = [result.report.status.verbose, result.report.status.compact].filter((status) => status === 'failed').length
   if (failedRuns > 0) {
-    throw new Error(`[sadeem review-compare] ${failedRuns} prompt run(s) failed. Partial artifacts were saved under ${result.output_root}`)
+    throw new Error(`[madar review-compare] ${failedRuns} prompt run(s) failed. Partial artifacts were saved under ${result.output_root}`)
   }
   return formatReviewCompareSummary(result)
 }

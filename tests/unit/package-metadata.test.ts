@@ -122,12 +122,12 @@ describe('package metadata', () => {
     expect(packageLock.packages?.['']?.version).toBe(manifest.version)
   })
 
-  it('keeps the renamed package metadata aligned with the Sadeem-only package surface', () => {
+  it('keeps the renamed package metadata aligned with the scoped Madar package surface', () => {
     const manifest = loadPackageManifest()
 
-    expect(manifest.name).toBe('sadeem')
+    expect(manifest.name).toBe('@lubab/madar')
     expect(manifest.bin).toEqual({
-      sadeem: 'dist/src/cli/bin.js',
+      madar: 'dist/src/cli/bin.js',
     })
     expect(Object.keys(manifest.scripts ?? {})).not.toEqual(expect.arrayContaining([
       'compat:prepare',
@@ -157,8 +157,8 @@ describe('package metadata', () => {
   it('keeps the README command surface aligned with pack and prompt automation flows', () => {
     const readme = loadReadme()
 
-    expect(readme).toContain('sadeem pack')
-    expect(readme).toContain('sadeem prompt')
+    expect(readme).toContain('madar pack')
+    expect(readme).toContain('madar prompt')
     expect(readme).toContain('context_pack')
     expect(readme).toContain('context_prompt')
   })

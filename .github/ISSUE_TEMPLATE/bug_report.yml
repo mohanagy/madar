@@ -12,15 +12,15 @@ body:
     attributes:
       label: Summary
       description: One-sentence description of the problem.
-      placeholder: sadeem drops cross-file call edges for ...
+      placeholder: madar drops cross-file call edges for ...
     validations:
       required: true
 
   - type: input
     id: version
     attributes:
-      label: sadeem version
-      description: Output from `sadeem --help` or the installed package version.
+      label: madar version
+      description: Output from `madar --help` or the installed package version.
       placeholder: 0.1.0
     validations:
       required: true
@@ -28,7 +28,7 @@ body:
   - type: dropdown
     id: install-mode
     attributes:
-      label: How are you running sadeem?
+      label: How are you running madar?
       options:
         - npm global install
         - npx
@@ -44,8 +44,8 @@ body:
       label: Command or workflow
       description: Paste the exact command(s) that reproduce the problem.
       placeholder: |
-        sadeem generate .
-        sadeem query "..." --graph out/graph.json
+        madar generate .
+        madar query "..." --graph out/graph.json
     validations:
       required: true
 

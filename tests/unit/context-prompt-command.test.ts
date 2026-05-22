@@ -16,8 +16,8 @@ describe('context-prompt-command', () => {
         community_context: [],
         graph_signals: { god_nodes: [], bridge_nodes: [] },
       }),
-      buildSadeemPromptPack: vi.fn().mockReturnValue({
-        kind: 'sadeem',
+      buildMadarPromptPack: vi.fn().mockReturnValue({
+        kind: 'madar',
         question: 'how does auth work',
         prompt: 'provider-agnostic prompt',
         session_payload: 'claude session payload',
@@ -76,8 +76,8 @@ describe('context-prompt-command', () => {
         community_context: [],
         graph_signals: { god_nodes: [], bridge_nodes: [] },
       }),
-      buildSadeemPromptPack: vi.fn().mockReturnValue({
-        kind: 'sadeem',
+      buildMadarPromptPack: vi.fn().mockReturnValue({
+        kind: 'madar',
         question: 'how does auth work',
         prompt: 'provider-agnostic prompt',
         session_payload: 'claude session payload',

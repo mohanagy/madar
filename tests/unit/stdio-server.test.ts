@@ -12,7 +12,7 @@ import { graphFreshnessMetadata } from '../../src/runtime/freshness.js'
 function createGraphFixtureRoot(): string {
   const parentDir = resolve('out', 'test-runtime')
   mkdirSync(parentDir, { recursive: true })
-  const root = mkdtempSync(join(parentDir, 'sadeem-stdio-'))
+  const root = mkdtempSync(join(parentDir, 'madar-stdio-'))
   writeFileSync(join(root, 'auth.ts'), 'export function AuthService() {\n  return new HttpClient()\n}\n', 'utf8')
   writeFileSync(join(root, 'client.ts'), 'export class HttpClient {\n  request() {\n    return new Transport()\n  }\n}\n', 'utf8')
   writeFileSync(join(root, 'transport.ts'), 'export class Transport {}\n', 'utf8')
@@ -59,7 +59,7 @@ function createGraphFixtureRoot(): string {
     'utf8',
   )
   writeFileSync(join(root, 'GRAPH_REPORT.md'), '# Graph Report\n\n- AuthService calls HttpClient\n', 'utf8')
-  writeFileSync(join(root, 'graph.html'), '<!doctype html><title>sadeem</title>', 'utf8')
+  writeFileSync(join(root, 'graph.html'), '<!doctype html><title>madar</title>', 'utf8')
   return root
 }
 
@@ -88,7 +88,7 @@ function createTimeTravelResult(view: 'summary' | 'risk' | 'drift' | 'timeline' 
 function createPrImpactFixtureRoot(): string {
   const parentDir = resolve('out', 'test-runtime')
   mkdirSync(parentDir, { recursive: true })
-  const root = mkdtempSync(join(parentDir, 'sadeem-stdio-pr-impact-'))
+  const root = mkdtempSync(join(parentDir, 'madar-stdio-pr-impact-'))
   mkdirSync(join(root, 'src'), { recursive: true })
   mkdirSync(join(root, 'tests'), { recursive: true })
   mkdirSync(join(root, 'out'), { recursive: true })
@@ -153,8 +153,8 @@ function createPrImpactFixtureRoot(): string {
   )
 
   execFileSync('git', ['init', '-b', 'main'], { cwd: root, stdio: 'pipe' })
-  execFileSync('git', ['config', 'user.email', 'sadeem@example.com'], { cwd: root, stdio: 'pipe' })
-  execFileSync('git', ['config', 'user.name', 'Sadeem Test'], { cwd: root, stdio: 'pipe' })
+  execFileSync('git', ['config', 'user.email', 'madar@example.com'], { cwd: root, stdio: 'pipe' })
+  execFileSync('git', ['config', 'user.name', 'Madar Test'], { cwd: root, stdio: 'pipe' })
   execFileSync('git', ['add', '.'], { cwd: root, stdio: 'pipe' })
   execFileSync('git', ['commit', '-m', 'Initial commit'], { cwd: root, stdio: 'pipe' })
 
@@ -169,14 +169,14 @@ describe('stdio runtime', () => {
   // tests/unit/stdio-tool-profile.test.ts.
   let previousToolProfile: string | undefined
   beforeAll(() => {
-    previousToolProfile = process.env.SADEEM_TOOL_PROFILE
-    process.env.SADEEM_TOOL_PROFILE = 'full'
+    previousToolProfile = process.env.MADAR_TOOL_PROFILE
+    process.env.MADAR_TOOL_PROFILE = 'full'
   })
   afterAll(() => {
     if (previousToolProfile === undefined) {
-      delete process.env.SADEEM_TOOL_PROFILE
+      delete process.env.MADAR_TOOL_PROFILE
     } else {
-      process.env.SADEEM_TOOL_PROFILE = previousToolProfile
+      process.env.MADAR_TOOL_PROFILE = previousToolProfile
     }
   })
 
@@ -209,7 +209,7 @@ describe('stdio runtime', () => {
       const resourceRead = await Promise.resolve(handleStdioRequest(graphPath, {
         id: 7,
         method: 'resources/read',
-        params: { uri: 'sadeem://artifact/GRAPH_REPORT.md' },
+        params: { uri: 'madar://artifact/GRAPH_REPORT.md' },
       }))
       const communityPrompt = await Promise.resolve(handleStdioRequest(graphPath, {
         id: 8,
@@ -252,17 +252,17 @@ describe('stdio runtime', () => {
             resources: { subscribe: true, listChanged: true },
             tools: { listChanged: false },
           },
-          serverInfo: { name: 'sadeem' },
+          serverInfo: { name: 'madar' },
         },
       })
       expect((prompts?.result as { prompts: Array<{ name: string }> }).prompts.map((prompt) => prompt.name)).toEqual(
         expect.arrayContaining(['graph_query_prompt', 'graph_path_prompt', 'graph_explain_prompt', 'graph_community_summary_prompt']),
       )
       expect((resources?.result as { resources: Array<{ uri: string }> }).resources.map((resource) => resource.uri)).toEqual(
-        expect.arrayContaining(['sadeem://artifact/graph.json', 'sadeem://artifact/GRAPH_REPORT.md', 'sadeem://artifact/graph.html']),
+        expect.arrayContaining(['madar://artifact/graph.json', 'madar://artifact/GRAPH_REPORT.md', 'madar://artifact/graph.html']),
       )
       const graphResource = (resources?.result as { resources: Array<{ uri: string; annotations?: Record<string, unknown> }> }).resources.find(
-        (resource) => resource.uri === 'sadeem://artifact/graph.json',
+        (resource) => resource.uri === 'madar://artifact/graph.json',
       )
       const toolNames = (tools?.result as { tools: Array<{ name: string }> }).tools.map((tool) => tool.name)
       expect(toolNames).toEqual(
@@ -427,7 +427,7 @@ describe('stdio runtime', () => {
       })
 
       input.write(`${JSON.stringify({ id: 1, method: 'initialize' })}\n`)
-      input.write(`${JSON.stringify({ id: 2, method: 'resources/subscribe', params: { uri: 'sadeem://artifact/graph.json' } })}\n`)
+      input.write(`${JSON.stringify({ id: 2, method: 'resources/subscribe', params: { uri: 'madar://artifact/graph.json' } })}\n`)
 
       await delay(25)
       writeFileSync(
@@ -442,7 +442,7 @@ describe('stdio runtime', () => {
 
       input.write(`${JSON.stringify({ id: 3, method: 'ping' })}\n`)
       await delay(25)
-      input.write(`${JSON.stringify({ id: 4, method: 'resources/unsubscribe', params: { uri: 'sadeem://artifact/graph.json' } })}\n`)
+      input.write(`${JSON.stringify({ id: 4, method: 'resources/unsubscribe', params: { uri: 'madar://artifact/graph.json' } })}\n`)
 
       await delay(25)
       writeFileSync(
@@ -478,7 +478,7 @@ describe('stdio runtime', () => {
         jsonrpc: '2.0',
         method: 'notifications/resources/updated',
         params: {
-          uri: 'sadeem://artifact/graph.json',
+          uri: 'madar://artifact/graph.json',
         },
       })
     } finally {
@@ -602,8 +602,8 @@ describe('stdio runtime', () => {
         id: 1,
         result: {
           serverInfo: {
-            name: 'sadeem',
-            title: 'Sadeem TS',
+            name: 'madar',
+            title: 'Madar TS',
           },
         },
       })
@@ -1962,10 +1962,10 @@ describe('stdio runtime', () => {
       const freshnessAfter = handleStdioRequest(graphPath, { id: 12, method: 'resources/list' })
 
       const versionBefore = (freshnessBefore as { result: { resources: Array<{ uri: string; annotations?: Record<string, unknown> }> } }).result.resources.find(
-        (resource) => resource.uri === 'sadeem://artifact/graph.json',
+        (resource) => resource.uri === 'madar://artifact/graph.json',
       )?.annotations?.graph_version
       const versionAfter = (freshnessAfter as { result: { resources: Array<{ uri: string; annotations?: Record<string, unknown> }> } }).result.resources.find(
-        (resource) => resource.uri === 'sadeem://artifact/graph.json',
+        (resource) => resource.uri === 'madar://artifact/graph.json',
       )?.annotations?.graph_version
 
       expect((before as { result: string }).result).toContain('Nodes: 3')
@@ -2034,8 +2034,8 @@ describe('stdio runtime', () => {
         const notifications = responses.filter((message) => message.method === 'notifications/message')
 
         expect(consoleLog).not.toHaveBeenCalled()
-        expect(errorText).toContain('[sadeem serve] stdio ready')
-        expect(outputText).not.toContain('[sadeem serve]')
+        expect(errorText).toContain('[madar serve] stdio ready')
+        expect(outputText).not.toContain('[madar serve]')
         expect(notifications).toEqual(
           expect.arrayContaining([
             expect.objectContaining({

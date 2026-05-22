@@ -8,7 +8,7 @@ import { KnowledgeGraph } from '../../src/contracts/graph.js'
 import { bfs, communitiesFromGraph, dfs, getNode, loadGraph, queryGraph, scoreNodes, semanticAnomaliesSummary, subgraphToText } from '../../src/runtime/serve.js'
 
 function withTempDir(callback: (tempDir: string) => void): void {
-  const tempDir = mkdtempSync(join(tmpdir(), 'sadeem-serve-'))
+  const tempDir = mkdtempSync(join(tmpdir(), 'madar-serve-'))
   try {
     callback(tempDir)
   } finally {

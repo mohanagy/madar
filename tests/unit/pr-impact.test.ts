@@ -10,7 +10,7 @@ import { analyzePrImpact, compactPrImpactResult, type PrImpactResult } from '../
 import { estimateQueryTokens } from '../../src/runtime/serve.js'
 
 function createRepo(): string {
-  const root = mkdtempSync(join(tmpdir(), 'sadeem-pr-impact-'))
+  const root = mkdtempSync(join(tmpdir(), 'madar-pr-impact-'))
   mkdirSync(join(root, 'src'), { recursive: true })
   mkdirSync(join(root, 'tests'), { recursive: true })
 
@@ -35,8 +35,8 @@ function createRepo(): string {
   writeFileSync(join(root, 'tests', 'api.test.ts'), 'describe("api", () => {})\n', 'utf8')
 
   execFileSync('git', ['init', '-b', 'main'], { cwd: root, stdio: 'pipe' })
-  execFileSync('git', ['config', 'user.email', 'sadeem@example.com'], { cwd: root, stdio: 'pipe' })
-  execFileSync('git', ['config', 'user.name', 'Sadeem Test'], { cwd: root, stdio: 'pipe' })
+  execFileSync('git', ['config', 'user.email', 'madar@example.com'], { cwd: root, stdio: 'pipe' })
+  execFileSync('git', ['config', 'user.name', 'Madar Test'], { cwd: root, stdio: 'pipe' })
   execFileSync('git', ['add', '.'], { cwd: root, stdio: 'pipe' })
   execFileSync('git', ['commit', '-m', 'Initial commit'], { cwd: root, stdio: 'pipe' })
 
@@ -44,7 +44,7 @@ function createRepo(): string {
 }
 
 function createNestedRepoWorkspace(): string {
-  const root = mkdtempSync(join(tmpdir(), 'sadeem-pr-impact-workspace-'))
+  const root = mkdtempSync(join(tmpdir(), 'madar-pr-impact-workspace-'))
   const backendRoot = join(root, 'backend')
   mkdirSync(join(backendRoot, 'src'), { recursive: true })
   mkdirSync(join(backendRoot, 'tests'), { recursive: true })
@@ -66,8 +66,8 @@ function createNestedRepoWorkspace(): string {
   writeFileSync(join(backendRoot, 'tests', 'auth.test.ts'), 'describe("auth", () => {})\n', 'utf8')
 
   execFileSync('git', ['init', '-b', 'main'], { cwd: backendRoot, stdio: 'pipe' })
-  execFileSync('git', ['config', 'user.email', 'sadeem@example.com'], { cwd: backendRoot, stdio: 'pipe' })
-  execFileSync('git', ['config', 'user.name', 'Sadeem Test'], { cwd: backendRoot, stdio: 'pipe' })
+  execFileSync('git', ['config', 'user.email', 'madar@example.com'], { cwd: backendRoot, stdio: 'pipe' })
+  execFileSync('git', ['config', 'user.name', 'Madar Test'], { cwd: backendRoot, stdio: 'pipe' })
   execFileSync('git', ['add', '.'], { cwd: backendRoot, stdio: 'pipe' })
   execFileSync('git', ['commit', '-m', 'Initial commit'], { cwd: backendRoot, stdio: 'pipe' })
 

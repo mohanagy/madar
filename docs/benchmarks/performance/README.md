@@ -1,6 +1,6 @@
 # Performance benchmark plan for `generate`, `update`, and `cluster-only`
 
-> **Tracking issue:** [#178](https://github.com/mohanagy/sadeem/issues/178)
+> **Tracking issue:** [#178](https://github.com/mohanagy/madar/issues/178)
 
 This benchmark is a **measurement harness**, not a performance gate. Its job is to keep graph-generation regressions visible with a tiny reproducible fixture in CI and a repeatable manual flow for larger local repositories.
 
@@ -52,8 +52,8 @@ For a local large repository, point the same harness at another workspace:
 
 ```bash
 npm run build
-SADEEM_PERF_FIXTURE=/absolute/path/to/repo \
-SADEEM_PERF_RESULTS_DIR=/absolute/path/to/output-dir \
+MADAR_PERF_FIXTURE=/absolute/path/to/repo \
+MADAR_PERF_RESULTS_DIR=/absolute/path/to/output-dir \
 node docs/benchmarks/performance/run.mjs
 ```
 

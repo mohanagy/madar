@@ -2944,7 +2944,7 @@ describe('retrieve', () => {
     })
 
     it('reuses file contents when multiple matched nodes come from the same source file', async () => {
-      const tempDir = mkdtempSync(join(tmpdir(), 'sadeem-retrieve-cache-'))
+      const tempDir = mkdtempSync(join(tmpdir(), 'madar-retrieve-cache-'))
       try {
         const filePath = join(tempDir, 'auth.ts')
         writeFileSync(
@@ -3029,7 +3029,7 @@ describe('retrieve', () => {
     })
 
     it('derives line_number and snippet from source_location when line_number is absent', () => {
-      const tempDir = mkdtempSync(join(tmpdir(), 'sadeem-retrieve-'))
+      const tempDir = mkdtempSync(join(tmpdir(), 'madar-retrieve-'))
       try {
         const filePath = join(tempDir, 'auth.ts')
         writeFileSync(

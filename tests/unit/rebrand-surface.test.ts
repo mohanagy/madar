@@ -26,7 +26,7 @@ const LEGACY_BRAND = ['g', 'r', 'a', 'p', 'h', 'i', 'f', 'y'].join('')
 const LEGACY_OUT_DIR = `${LEGACY_BRAND}-out`
 
 describe('rebrand surface', () => {
-  it('keeps only the sadeem command and removes compatibility packaging scripts', () => {
+  it('keeps only the madar command and removes compatibility packaging scripts', () => {
     const manifest = JSON.parse(readText('package.json')) as {
       bin?: Record<string, string>
       scripts?: Record<string, string>
@@ -34,7 +34,7 @@ describe('rebrand surface', () => {
     }
 
     expect(manifest.bin).toEqual({
-      sadeem: 'dist/src/cli/bin.js',
+      madar: 'dist/src/cli/bin.js',
     })
     expect(Object.keys(manifest.scripts ?? {})).not.toEqual(
       expect.arrayContaining([
@@ -49,10 +49,10 @@ describe('rebrand surface', () => {
     expect(JSON.stringify(manifest)).not.toContain(LEGACY_BRAND)
   })
 
-  it('uses sadeem and out in help text and parser defaults', () => {
+  it('uses madar and out in help text and parser defaults', () => {
     const help = formatHelp()
 
-    expect(help).toContain('Usage: sadeem <command>')
+    expect(help).toContain('Usage: madar <command>')
     expect(help).toContain('default out/graph.json')
     expect(help).toContain('default out/compare')
     expect(help).toContain('default out/review-compare')
@@ -71,14 +71,14 @@ describe('rebrand surface', () => {
     expect(parseServeArgs([]).graphPath).toBe('out/graph.json')
   })
 
-  it('writes sadeem as the saved result contributor', () => {
-    const tempDir = mkdtempSync(join(tmpdir(), 'sadeem-save-result-'))
+  it('writes madar as the saved result contributor', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'madar-save-result-'))
 
     try {
       const outputPath = saveQueryResult('How?', 'Like this.', join(tempDir, 'memory'))
       const content = readFileSync(outputPath, 'utf8')
 
-      expect(content).toContain('contributor: "sadeem"')
+      expect(content).toContain('contributor: "madar"')
       expect(content).not.toContain(LEGACY_BRAND)
     } finally {
       rmSync(tempDir, { recursive: true, force: true })
@@ -94,7 +94,7 @@ describe('rebrand surface', () => {
     expect(readme).not.toContain(LEGACY_OUT_DIR)
     expect(readme).not.toContain('## Credit')
     expect(readme).not.toContain('Safi Shamsi')
-    expect(readme).not.toContain('original `sadeem`')
+    expect(readme).not.toContain('original `madar`')
     expect(gettingStarted).not.toContain(LEGACY_BRAND)
     expect(gettingStarted).not.toContain(LEGACY_OUT_DIR)
     expect(releaseDoc).not.toContain(LEGACY_BRAND)

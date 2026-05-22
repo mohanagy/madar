@@ -44,65 +44,65 @@ interface McpInstallOptions {
 
 type GeminiInstallOptions = InstallSkillOptions & McpInstallOptions
 
-const SKILL_SLUG = 'sadeem'
-const SKILL_COMMAND = '/sadeem'
-const SECTION_MARKER = '## sadeem'
-const HOME_SECTION_MARKER = '# sadeem'
+const SKILL_SLUG = 'madar'
+const SKILL_COMMAND = '/madar'
+const SECTION_MARKER = '## madar'
+const HOME_SECTION_MARKER = '# madar'
 
 const PLATFORM_CONFIG: Record<SkillInstallPlatform, InstallPlatformConfig> = {
   claude: {
     skillFile: 'skill.md',
-    skillDestination: '.claude/skills/sadeem/SKILL.md',
+    skillDestination: '.claude/skills/madar/SKILL.md',
     registerClaudeMd: true,
   },
   gemini: {
     skillFile: 'skill.md',
-    skillDestination: '.gemini/skills/sadeem/SKILL.md',
+    skillDestination: '.gemini/skills/madar/SKILL.md',
     registerClaudeMd: false,
   },
   aider: {
     skillFile: 'skill-aider.md',
-    skillDestination: '.aider/sadeem/SKILL.md',
+    skillDestination: '.aider/madar/SKILL.md',
     registerClaudeMd: false,
   },
   codex: {
     skillFile: 'skill-codex.md',
-    skillDestination: '.agents/skills/sadeem/SKILL.md',
+    skillDestination: '.agents/skills/madar/SKILL.md',
     registerClaudeMd: false,
   },
   copilot: {
     skillFile: 'skill-copilot.md',
-    skillDestination: '.copilot/skills/sadeem/SKILL.md',
+    skillDestination: '.copilot/skills/madar/SKILL.md',
     registerClaudeMd: false,
   },
   opencode: {
     skillFile: 'skill-opencode.md',
-    skillDestination: '.config/opencode/skills/sadeem/SKILL.md',
+    skillDestination: '.config/opencode/skills/madar/SKILL.md',
     registerClaudeMd: false,
   },
   claw: {
     skillFile: 'skill-claw.md',
-    skillDestination: '.claw/skills/sadeem/SKILL.md',
+    skillDestination: '.claw/skills/madar/SKILL.md',
     registerClaudeMd: false,
   },
   droid: {
     skillFile: 'skill-droid.md',
-    skillDestination: '.factory/skills/sadeem/SKILL.md',
+    skillDestination: '.factory/skills/madar/SKILL.md',
     registerClaudeMd: false,
   },
   trae: {
     skillFile: 'skill-trae.md',
-    skillDestination: '.trae/skills/sadeem/SKILL.md',
+    skillDestination: '.trae/skills/madar/SKILL.md',
     registerClaudeMd: false,
   },
   'trae-cn': {
     skillFile: 'skill-trae.md',
-    skillDestination: '.trae-cn/skills/sadeem/SKILL.md',
+    skillDestination: '.trae-cn/skills/madar/SKILL.md',
     registerClaudeMd: false,
   },
   windows: {
     skillFile: 'skill-windows.md',
-    skillDestination: '.claude/skills/sadeem/SKILL.md',
+    skillDestination: '.claude/skills/madar/SKILL.md',
     registerClaudeMd: true,
   },
 }
@@ -127,39 +127,39 @@ function decodeGeneratedHookPayloads(command: string): string[] {
     .map((value) => Buffer.from(value, 'base64').toString('utf8'))
 }
 
-function isSadeemCodexHookPayload(payload: string): boolean {
+function isMadarCodexHookPayload(payload: string): boolean {
   const hasCodexOutputShape = payload.includes('"systemMessage"') || payload.includes('"hookSpecificOutput"')
-  const hasSadeemGuidance =
-    payload.includes('sadeem') ||
+  const hasMadarGuidance =
+    payload.includes('madar') ||
     payload.includes('context-pack-first') ||
     payload.includes('retrieve-first') ||
     payload.includes('knowledge graph')
 
-  return hasCodexOutputShape && hasSadeemGuidance
+  return hasCodexOutputShape && hasMadarGuidance
 }
 
-function isSadeemCodexHookCommand(command: string): boolean {
+function isMadarCodexHookCommand(command: string): boolean {
   return (
     command.includes("accessSync('out/graph.json')") &&
     command.includes('process.stdout.write(Buffer.from(') &&
-    decodeGeneratedHookPayloads(command).some(isSadeemCodexHookPayload)
+    decodeGeneratedHookPayloads(command).some(isMadarCodexHookPayload)
   )
 }
 
-function isSadeemProjectHookPayload(payload: string): boolean {
+function isMadarProjectHookPayload(payload: string): boolean {
   return payload.includes('"additionalContext"')
     && (payload.includes(RETRIEVE_FIRST_MESSAGE) || payload.includes(STRICT_CONTEXT_PACK_MESSAGE))
 }
 
-function isSadeemProjectHookCommand(command: string): boolean {
+function isMadarProjectHookCommand(command: string): boolean {
   return (
     command.includes("accessSync('out/graph.json')") &&
     command.includes('process.stdout.write(Buffer.from(') &&
-    decodeGeneratedHookPayloads(command).some(isSadeemProjectHookPayload)
+    decodeGeneratedHookPayloads(command).some(isMadarProjectHookPayload)
   )
 }
 
-function isSadeemProjectHook(hook: unknown, matcher: string): boolean {
+function isMadarProjectHook(hook: unknown, matcher: string): boolean {
   if (!isRecord(hook) || hook.matcher !== matcher || !Array.isArray(hook.hooks)) {
     return false
   }
@@ -169,11 +169,11 @@ function isSadeemProjectHook(hook: unknown, matcher: string): boolean {
       isRecord(entry) &&
       entry.type === 'command' &&
       typeof entry.command === 'string' &&
-      isSadeemProjectHookCommand(entry.command),
+      isMadarProjectHookCommand(entry.command),
   )
 }
 
-function isSadeemCodexHook(hook: unknown): boolean {
+function isMadarCodexHook(hook: unknown): boolean {
   if (!isRecord(hook) || hook.matcher !== 'Bash' || !Array.isArray(hook.hooks)) {
     return false
   }
@@ -183,7 +183,7 @@ function isSadeemCodexHook(hook: unknown): boolean {
       isRecord(entry) &&
       entry.type === 'command' &&
       typeof entry.command === 'string' &&
-      isSadeemCodexHookCommand(entry.command),
+      isMadarCodexHookCommand(entry.command),
   )
 }
 
@@ -191,13 +191,13 @@ const MCP_ROUTING_GUIDANCE =
   'Use the graph tool that matches the question: retrieve for direct codebase questions, relevant_files for where to open first, feature_map for the main areas and entry points, risk_map before editing, implementation_checklist for edit order and validation, and impact for blast radius.'
 
 const RETRIEVE_FIRST_MESSAGE =
-  `STOP. This project has a sadeem knowledge graph. ${MCP_ROUTING_GUIDANCE} Sadeem answers most codebase questions in 1 focused MCP call instead of 5–10 sequential file reads (3x fewer turns, ~2.8x faster on a real production codebase). Do not use Glob, Grep, Bash, Read, or Agent tools first. Only fall back to raw file tools if the graph tools cannot answer the question or the MCP server is unavailable.`
+  `STOP. This project has a madar knowledge graph. ${MCP_ROUTING_GUIDANCE} Madar answers most codebase questions in 1 focused MCP call instead of 5–10 sequential file reads (3x fewer turns, ~2.8x faster on a real production codebase). Do not use Glob, Grep, Bash, Read, or Agent tools first. Only fall back to raw file tools if the graph tools cannot answer the question or the MCP server is unavailable.`
 
 const STRICT_CONTEXT_PACK_MESSAGE =
-  'STOP. This project has a sadeem knowledge graph. Use strict compact MCP mode: call context_pack once for the task before broader exploration, answer from the pack when coverage is complete, only expand with context_expand or focused graph tools when diagnostics show missing evidence, and avoid raw file search unless the pack is insufficient.'
+  'STOP. This project has a madar knowledge graph. Use strict compact MCP mode: call context_pack once for the task before broader exploration, answer from the pack when coverage is complete, only expand with context_expand or focused graph tools when diagnostics show missing evidence, and avoid raw file search unless the pack is insufficient.'
 
 const CODEX_CONTEXT_PACK_FIRST_MESSAGE =
-  `STOP. This project has a sadeem knowledge graph. Follow the Codex context-pack-first workflow: run sadeem pack "<task or question>" --task explain before broad Bash search, raw file reads, or spawning workers. Use --task review, --task debug, or --task impact when that better matches the work. If MCP graph tools are available, use retrieve, relevant_files, feature_map, risk_map, implementation_checklist, or impact to refine the pack. Only fall back to raw file tools when the context pack or graph tools are missing, stale, or insufficient; read out/GRAPH_REPORT.md before expanding manually.`
+  `STOP. This project has a madar knowledge graph. Follow the Codex context-pack-first workflow: run madar pack "<task or question>" --task explain before broad Bash search, raw file reads, or spawning workers. Use --task review, --task debug, or --task impact when that better matches the work. If MCP graph tools are available, use retrieve, relevant_files, feature_map, risk_map, implementation_checklist, or impact to refine the pack. Only fall back to raw file tools when the context pack or graph tools are missing, stale, or insufficient; read out/GRAPH_REPORT.md before expanding manually.`
 
 const SETTINGS_HOOK = {
   // SECURITY: Keep this command static. Do not interpolate user-controlled input here.
@@ -266,7 +266,7 @@ const SKILL_REGISTRATION =
 
 const CLAUDE_MD_SECTION = `${SECTION_MARKER}
 
-IMPORTANT: This project has a sadeem knowledge graph. You MUST follow these rules:
+IMPORTANT: This project has a madar knowledge graph. You MUST follow these rules:
 
 1. **BEFORE answering ANY codebase question**, start with the graph tool that matches the question:
    - \`retrieve\` for "how does X work?" and other direct codebase questions
@@ -282,7 +282,7 @@ IMPORTANT: This project has a sadeem knowledge graph. You MUST follow these rule
 
 const STRICT_CLAUDE_MD_SECTION = `${SECTION_MARKER}
 
-IMPORTANT: This project has a sadeem knowledge graph. You MUST follow these strict compact MCP rules:
+IMPORTANT: This project has a madar knowledge graph. You MUST follow these strict compact MCP rules:
 
 1. **Call \`context_pack\` once for the task before broader exploration.**
 2. **Answer from the pack when coverage is complete.**
@@ -292,7 +292,7 @@ IMPORTANT: This project has a sadeem knowledge graph. You MUST follow these stri
 
 const AGENTS_MD_SECTION = `${SECTION_MARKER}
 
-IMPORTANT: This project has a sadeem knowledge graph. You MUST follow these rules:
+IMPORTANT: This project has a madar knowledge graph. You MUST follow these rules:
 
 1. **BEFORE answering ANY codebase question**, start with the graph tool that matches the question:
    - \`retrieve\` for "how does X work?" and other direct codebase questions
@@ -309,25 +309,25 @@ const AIDER_AGENTS_MD_SECTION = `${SECTION_MARKER}
 
 ### Aider profile
 
-IMPORTANT: This project has a sadeem knowledge graph. Use a strict context-pack-first workflow:
+IMPORTANT: This project has a madar knowledge graph. Use a strict context-pack-first workflow:
 
 1. **Before broad code search or manual file expansion**, compile a task-specific context pack:
-   - \`sadeem pack "<task or question>" --task explain\`
+   - \`madar pack "<task or question>" --task explain\`
    - use \`--task review\`, \`--task debug\`, or \`--task impact\` when that better matches the work
 2. **Regenerate before expanding manually** when the pack is stale or missing:
-   - run \`sadeem generate .\`
+   - run \`madar generate .\`
    - if you still need raw file reads, inspect \`out/GRAPH_REPORT.md\` first
-3. **This profile writes AGENTS.md only.** Aider does not get an auto-installed MCP server or hook from this installer, so the AGENTS.md rule plus explicit \`sadeem pack\` calls are the enforcement mechanism.
-4. **Uninstall behavior:** run \`sadeem aider uninstall\` to remove this AGENTS.md section while preserving unrelated content.
+3. **This profile writes AGENTS.md only.** Aider does not get an auto-installed MCP server or hook from this installer, so the AGENTS.md rule plus explicit \`madar pack\` calls are the enforcement mechanism.
+4. **Uninstall behavior:** run \`madar aider uninstall\` to remove this AGENTS.md section while preserving unrelated content.
 
 Manual verification:
 
 \`\`\`bash
-sadeem generate .
-sadeem aider install
+madar generate .
+madar aider install
 test -f AGENTS.md
-sadeem pack "how does auth work?" --task explain
-sadeem aider uninstall
+madar pack "how does auth work?" --task explain
+madar aider uninstall
 \`\`\`
 `
 
@@ -335,10 +335,10 @@ const CODEX_AGENTS_MD_SECTION = `${SECTION_MARKER}
 
 ### Codex CLI profile
 
-IMPORTANT: This project has a sadeem knowledge graph. Use a strict context-pack-first workflow:
+IMPORTANT: This project has a madar knowledge graph. Use a strict context-pack-first workflow:
 
 1. **Before broad code search, file reads, or worker dispatch**, compile a task-specific context pack:
-   - \`sadeem pack "<task or question>" --task explain\`
+   - \`madar pack "<task or question>" --task explain\`
    - use \`--task review\`, \`--task debug\`, or \`--task impact\` when that better matches the work
 2. If MCP graph tools are available, use the focused tool that matches the question after the pack:
    - \`retrieve\` for direct codebase questions
@@ -349,15 +349,15 @@ IMPORTANT: This project has a sadeem knowledge graph. Use a strict context-pack-
    - \`impact\` for blast radius
 3. **Only fall back to raw file tools** when the context pack or graph tools are missing, stale, or insufficient. In that case, read \`out/GRAPH_REPORT.md\` first.
 4. **Do not dispatch \`spawn_agent\` workers first** for codebase discovery. Let the context pack define likely entry files, risks, and missing context before parallel work.
-5. **Uninstall behavior:** run \`sadeem codex uninstall\` to remove this AGENTS.md section and the sadeem Codex hook from \`.codex/hooks.json\` while preserving unrelated content.
+5. **Uninstall behavior:** run \`madar codex uninstall\` to remove this AGENTS.md section and the madar Codex hook from \`.codex/hooks.json\` while preserving unrelated content.
 
 Manual verification:
 
 \`\`\`bash
-sadeem generate .
-sadeem codex install
+madar generate .
+madar codex install
 test -f AGENTS.md && test -f .codex/hooks.json
-sadeem codex uninstall
+madar codex uninstall
 \`\`\`
 `
 
@@ -365,10 +365,10 @@ const OPENCODE_AGENTS_MD_SECTION = `${SECTION_MARKER}
 
 ### OpenCode profile
 
-IMPORTANT: This project has a sadeem knowledge graph. Use a strict context-pack-first workflow:
+IMPORTANT: This project has a madar knowledge graph. Use a strict context-pack-first workflow:
 
 1. **Before broad code search, bash-heavy exploration, or worker dispatch**, compile a task-specific context pack:
-   - \`sadeem pack "<task or question>" --task explain\`
+   - \`madar pack "<task or question>" --task explain\`
    - use \`--task review\`, \`--task debug\`, or \`--task impact\` when that better matches the work
 2. After the pack, use MCP graph tools when available inside OpenCode:
    - \`retrieve\` for direct codebase questions
@@ -377,24 +377,24 @@ IMPORTANT: This project has a sadeem knowledge graph. Use a strict context-pack-
    - \`risk_map\` before editing
    - \`implementation_checklist\` for edit order and validation checkpoints
    - \`impact\` for blast radius
-3. **Install artifacts:** this profile writes this AGENTS.md section, \`.opencode/plugins/sadeem.js\`, and the sadeem MCP server entry in \`opencode.json\` or \`opencode.jsonc\`.
+3. **Install artifacts:** this profile writes this AGENTS.md section, \`.opencode/plugins/madar.js\`, and the madar MCP server entry in \`opencode.json\` or \`opencode.jsonc\`.
 4. **Only fall back to raw file tools** when the context pack or graph tools are missing, stale, or insufficient. In that case, read \`out/GRAPH_REPORT.md\` first.
-5. **Uninstall behavior:** run \`sadeem opencode uninstall\` to remove the sadeem AGENTS.md section, plugin entry, plugin file, and sadeem MCP config while preserving unrelated content.
+5. **Uninstall behavior:** run \`madar opencode uninstall\` to remove the madar AGENTS.md section, plugin entry, plugin file, and madar MCP config while preserving unrelated content.
 
 Manual verification:
 
 \`\`\`bash
-sadeem generate .
-sadeem opencode install
-test -f AGENTS.md && test -f .opencode/plugins/sadeem.js
+madar generate .
+madar opencode install
+test -f AGENTS.md && test -f .opencode/plugins/madar.js
 test -f opencode.json || test -f opencode.jsonc
-sadeem opencode uninstall
+madar opencode uninstall
 \`\`\`
 `
 
 const GEMINI_MD_SECTION = `${SECTION_MARKER}
 
-IMPORTANT: This project has a sadeem knowledge graph. You MUST follow these rules:
+IMPORTANT: This project has a madar knowledge graph. You MUST follow these rules:
 
 1. **BEFORE answering ANY codebase question**, start with the graph tool that matches the question:
    - \`retrieve\` for "how does X work?" and other direct codebase questions
@@ -409,7 +409,7 @@ IMPORTANT: This project has a sadeem knowledge graph. You MUST follow these rule
 
 const STRICT_GEMINI_MD_SECTION = `${SECTION_MARKER}
 
-IMPORTANT: This project has a sadeem knowledge graph. Use strict compact MCP guidance:
+IMPORTANT: This project has a madar knowledge graph. Use strict compact MCP guidance:
 
 1. **Call \`context_pack\` once for the task before broader exploration.**
 2. **Answer from the pack when coverage is complete.**
@@ -417,21 +417,21 @@ IMPORTANT: This project has a sadeem knowledge graph. Use strict compact MCP gui
 4. **Avoid raw file search unless the pack is insufficient.** If manual expansion is still required, read \`out/GRAPH_REPORT.md\` first.
 `
 
-const SKILL_REGISTRATION_MARKER = '- **sadeem**'
+const SKILL_REGISTRATION_MARKER = '- **madar**'
 const LOCAL_SKILL_ASSET_DIRECTORY = join('assets', 'skills')
-const PRIMARY_CLI_BIN_NAME = 'sadeem'
+const PRIMARY_CLI_BIN_NAME = 'madar'
 const CLI_BIN_NAMES = [PRIMARY_CLI_BIN_NAME] as const
-const OPENCODE_PLUGIN_RELATIVE_PATH = '.opencode/plugins/sadeem.js'
+const OPENCODE_PLUGIN_RELATIVE_PATH = '.opencode/plugins/madar.js'
 const OPENCODE_JSON_CONFIG_PATH = 'opencode.json'
 const OPENCODE_JSONC_CONFIG_PATH = 'opencode.jsonc'
-const OPENCODE_MCP_SERVER_NAME = 'sadeem'
-const CURSOR_RULE_RELATIVE_PATH = '.cursor/rules/sadeem.mdc'
-const OPENCODE_PLUGIN_JS = `// sadeem OpenCode plugin
+const OPENCODE_MCP_SERVER_NAME = 'madar'
+const CURSOR_RULE_RELATIVE_PATH = '.cursor/rules/madar.mdc'
+const OPENCODE_PLUGIN_JS = `// madar OpenCode plugin
 // Injects a knowledge graph reminder before bash tool calls when the graph exists.
 import { existsSync } from "fs";
 import { join } from "path";
 
-export const SadeemPlugin = async ({ directory }) => {
+export const MadarPlugin = async ({ directory }) => {
   let reminded = false;
 
   return {
@@ -441,7 +441,7 @@ export const SadeemPlugin = async ({ directory }) => {
 
       if (input.tool === "bash") {
           output.args.command =
-            'echo "[sadeem] Knowledge graph available. Use the graph tool that matches the question: retrieve, relevant_files, feature_map, risk_map, implementation_checklist, or impact. Read out/GRAPH_REPORT.md before raw file search if needed." && ' +
+            'echo "[madar] Knowledge graph available. Use the graph tool that matches the question: retrieve, relevant_files, feature_map, risk_map, implementation_checklist, or impact. Read out/GRAPH_REPORT.md before raw file search if needed." && ' +
             output.args.command;
         reminded = true;
       }
@@ -451,11 +451,11 @@ export const SadeemPlugin = async ({ directory }) => {
 `
 
 const CURSOR_RULE = `---
-description: sadeem knowledge graph — MUST use sadeem MCP tools before searching files
+description: madar knowledge graph — MUST use madar MCP tools before searching files
 alwaysApply: true
 ---
 
-IMPORTANT: This project has a sadeem knowledge graph.
+IMPORTANT: This project has a madar knowledge graph.
 
 1. **BEFORE answering ANY codebase question**, start with the graph tool that matches the question:
    - \`retrieve\` for "how does X work?" and other direct codebase questions
@@ -469,11 +469,11 @@ IMPORTANT: This project has a sadeem knowledge graph.
 `
 
 const STRICT_CURSOR_RULE = `---
-description: sadeem strict compact MCP mode — use one context pack before broader exploration
+description: madar strict compact MCP mode — use one context pack before broader exploration
 alwaysApply: true
 ---
 
-IMPORTANT: This project has a sadeem knowledge graph. Use strict compact MCP guidance:
+IMPORTANT: This project has a madar knowledge graph. Use strict compact MCP guidance:
 
 1. **Call \`context_pack\` once for the task before broader exploration.**
 2. **Answer from the pack when coverage is complete.**
@@ -1260,7 +1260,7 @@ function removeInstalledSkill(destinationPath: string, stopDirectory: string, la
   }
 
   unlinkSync(destinationPath)
-  const versionPath = join(dirname(destinationPath), '.sadeem_version')
+  const versionPath = join(dirname(destinationPath), '.madar_version')
   if (existsSync(versionPath)) {
     unlinkSync(versionPath)
   }
@@ -1456,7 +1456,7 @@ function installMcpServer(
   const npxArgs = ['--yes', installPackageSpecifier(), 'serve', '--stdio', graphPath]
   // Default to the lean MCP tool surface ("core" = 6 tools). Reduces cache_creation
   // overhead per session vs. advertising all tools. Users can opt into the full
-  // 25-tool surface by setting SADEEM_TOOL_PROFILE=full in this env block.
+  // 25-tool surface by setting MADAR_TOOL_PROFILE=full in this env block.
   //
   // Re-running install must NOT silently downgrade an existing user-customized env
   // or drop unrelated user-set env keys. Without an explicit profile flag we merge
@@ -1465,8 +1465,8 @@ function installMcpServer(
   const existingEnv = existingServer && isRecord(existingServer.env) ? (existingServer.env as Record<string, string>) : {}
   const envProfile: McpToolProfile = options.profile === 'full' ? 'full' : 'core'
   const env: Record<string, string> = options.profile
-    ? { ...existingEnv, SADEEM_TOOL_PROFILE: envProfile }
-    : { SADEEM_TOOL_PROFILE: 'core', ...existingEnv }
+    ? { ...existingEnv, MADAR_TOOL_PROFILE: envProfile }
+    : { MADAR_TOOL_PROFILE: 'core', ...existingEnv }
   const serverConfig = isVscode
     ? { type: 'stdio', command: npxCommand, args: npxArgs, env }
     : { command: npxCommand, args: npxArgs, env }
@@ -1514,7 +1514,7 @@ function installClaudeHook(projectDir: string, profile?: InstallProfile): string
   const hooks = ensureRecord(settings, 'hooks')
   const preToolUse = ensureArray(hooks, 'PreToolUse')
 
-  const existingIndex = preToolUse.findIndex((hook) => isSadeemProjectHook(hook, 'Glob|Grep|Bash|Agent|Read'))
+  const existingIndex = preToolUse.findIndex((hook) => isMadarProjectHook(hook, 'Glob|Grep|Bash|Agent|Read'))
   if (existingIndex >= 0) {
     preToolUse[existingIndex] = settingsHook(profile)
     writeJson(settingsPath, settings)
@@ -1535,7 +1535,7 @@ function uninstallClaudeHook(projectDir: string): string | undefined {
   const settings = readJsonObject(settingsPath)
   const hooks = ensureRecord(settings, 'hooks')
   const preToolUse = ensureArray(hooks, 'PreToolUse')
-  const filtered = preToolUse.filter((hook) => !isSadeemProjectHook(hook, 'Glob|Grep|Bash|Agent|Read'))
+  const filtered = preToolUse.filter((hook) => !isMadarProjectHook(hook, 'Glob|Grep|Bash|Agent|Read'))
 
   if (filtered.length === preToolUse.length) {
     return undefined
@@ -1552,7 +1552,7 @@ function installGeminiHook(projectDir: string, profile?: InstallProfile): string
   const hooks = ensureRecord(settings, 'hooks')
   const beforeTool = ensureArray(hooks, 'BeforeTool')
   const nextHook = geminiHook(profile)
-  const existingIndex = beforeTool.findIndex((hook) => isSadeemProjectHook(hook, 'read_file|list_directory|search_for_pattern'))
+  const existingIndex = beforeTool.findIndex((hook) => isMadarProjectHook(hook, 'read_file|list_directory|search_for_pattern'))
 
   if (existingIndex >= 0) {
     if (JSON.stringify(beforeTool[existingIndex]) === JSON.stringify(nextHook)) {
@@ -1598,7 +1598,7 @@ function installCodexHook(projectDir: string): string {
   const additions = CODEX_HOOK.hooks.PreToolUse as unknown[]
   let replaced = false
   const updatedPreToolUse = preToolUse.flatMap((hook) => {
-    if (!isSadeemCodexHook(hook)) {
+    if (!isMadarCodexHook(hook)) {
       return [hook]
     }
 
@@ -1630,7 +1630,7 @@ function uninstallCodexHook(projectDir: string): string | undefined {
   const hooksConfig = readJsonObject(hooksPath)
   const hooks = ensureRecord(hooksConfig, 'hooks')
   const preToolUse = ensureArray(hooks, 'PreToolUse')
-  const filtered = preToolUse.filter((hook) => !isSadeemCodexHook(hook))
+  const filtered = preToolUse.filter((hook) => !isMadarCodexHook(hook))
 
   if (filtered.length === preToolUse.length) {
     return undefined
@@ -1651,7 +1651,7 @@ function installOpencodePlugin(projectDir: string): string[] {
   const config = readOpencodeConfig(configPath)
   const pluginWasArray = Array.isArray(config.plugin)
   const plugins = ensureArray(config, 'plugin')
-  const messages = ['.opencode/plugins/sadeem.js -> tool.execute.before hook written']
+  const messages = ['.opencode/plugins/madar.js -> tool.execute.before hook written']
 
   if (!plugins.includes(OPENCODE_PLUGIN_RELATIVE_PATH)) {
     plugins.push(OPENCODE_PLUGIN_RELATIVE_PATH)
@@ -1694,7 +1694,7 @@ function uninstallOpencodePlugin(projectDir: string): string[] {
 
   if (existsSync(pluginPath)) {
     unlinkSync(pluginPath)
-    messages.push('.opencode/plugins/sadeem.js -> removed')
+    messages.push('.opencode/plugins/madar.js -> removed')
   }
 
   const configPath = resolveOpencodeConfigPath(projectDir)
@@ -1749,7 +1749,7 @@ function writeSection(targetPath: string, section: string): string {
 
   if (!existsSync(targetPath)) {
     writeFileSync(targetPath, section, 'utf8')
-    return `sadeem section written to ${targetPath}`
+    return `madar section written to ${targetPath}`
   }
 
   const content = readFileSync(targetPath, 'utf8')
@@ -1757,11 +1757,11 @@ function writeSection(targetPath: string, section: string): string {
     const cleaned = removeSection(content).trimEnd()
     const updated = cleaned.length > 0 ? `${cleaned}\n\n${section}` : section
     writeFileSync(targetPath, updated, 'utf8')
-    return `sadeem section updated in ${targetPath}`
+    return `madar section updated in ${targetPath}`
   }
 
   writeFileSync(targetPath, `${content.trimEnd()}\n\n${section}`, 'utf8')
-  return `sadeem section written to ${targetPath}`
+  return `madar section written to ${targetPath}`
 }
 
 function removeSectionFromFile(targetPath: string): string {
@@ -1773,13 +1773,13 @@ function removeSectionFromFile(targetPath: string): string {
 
   const content = readFileSync(targetPath, 'utf8')
   if (!content.includes(SECTION_MARKER)) {
-    return `sadeem section not found in ${fileLabel} - nothing to do`
+    return `madar section not found in ${fileLabel} - nothing to do`
   }
 
   const cleaned = removeSection(content)
   if (cleaned.length > 0) {
     writeFileSync(targetPath, `${cleaned}\n`, 'utf8')
-    return `sadeem section removed from ${targetPath}`
+    return `madar section removed from ${targetPath}`
   }
 
   rmSync(targetPath, { force: true })
@@ -1815,13 +1815,13 @@ export function installSkill(platform: SkillInstallPlatform, options: InstallSki
 
   ensureParentDirectory(destinationPath)
   writeFileSync(destinationPath, skillContent, 'utf8')
-  writeFileSync(join(dirname(destinationPath), '.sadeem_version'), version, 'utf8')
+  writeFileSync(join(dirname(destinationPath), '.madar_version'), version, 'utf8')
 
   const messages = [`skill installed -> ${destinationPath}`]
   if (PLATFORM_CONFIG[platform].registerClaudeMd) {
     messages.push(registerHomeClaudeSkill(homeDir))
   }
-  messages.push('', 'Done. Open your AI coding assistant and type:', '', '  /sadeem .')
+  messages.push('', 'Done. Open your AI coding assistant and type:', '', '  /madar .')
   return messages.join('\n')
 }
 
@@ -1846,7 +1846,7 @@ export function geminiInstall(projectDir = '.', options: GeminiInstallOptions = 
   const resolvedProjectDir = resolve(projectDir)
   const messages = [installSkill('gemini', options), writeSection(join(resolvedProjectDir, 'GEMINI.md'), geminiMdSection(options.profile)), installGeminiHook(resolvedProjectDir, options.profile)]
   if (options.profile === 'strict') {
-    messages.push('', 'Gemini CLI will now use the sadeem strict compact MCP profile:', 'call context_pack once, answer from the pack when coverage is complete, and expand only when diagnostics show missing evidence.')
+    messages.push('', 'Gemini CLI will now use the madar strict compact MCP profile:', 'call context_pack once, answer from the pack when coverage is complete, and expand only when diagnostics show missing evidence.')
   } else {
     messages.push('', 'Gemini CLI will now check the knowledge graph before answering', 'codebase questions and rebuild it after code changes.')
   }
@@ -1871,13 +1871,13 @@ export function geminiUninstall(projectDir = '.', options: Pick<InstallSkillOpti
 export function installCopilotMcp(projectDir = '.', options: McpInstallOptions = {}): string {
   const message = installMcpServer(resolve(projectDir), 'copilot', process.platform, options)
   if (options.profile === 'strict') {
-    return `${message}\n\nGitHub Copilot will now use the sadeem strict compact MCP profile: call context_pack once, answer from the pack when coverage is complete, and expand only when diagnostics show missing evidence.`
+    return `${message}\n\nGitHub Copilot will now use the madar strict compact MCP profile: call context_pack once, answer from the pack when coverage is complete, and expand only when diagnostics show missing evidence.`
   }
   return message
 }
 
 export function uninstallCopilotMcp(projectDir = '.'): string {
-  return uninstallMcpServer(resolve(projectDir), 'copilot') ?? 'No sadeem Copilot MCP server found - nothing to do'
+  return uninstallMcpServer(resolve(projectDir), 'copilot') ?? 'No madar Copilot MCP server found - nothing to do'
 }
 
 export function cursorInstall(projectDir = '.', options: McpInstallOptions = {}): string {
@@ -1890,19 +1890,19 @@ export function cursorInstall(projectDir = '.', options: McpInstallOptions = {})
 
   if (existsSync(rulePath)) {
     if (readFileSync(rulePath, 'utf8') === ruleContent) {
-      messages.push(`sadeem Cursor rule already exists at ${rulePath} (no change)`)
+      messages.push(`madar Cursor rule already exists at ${rulePath} (no change)`)
     } else {
       writeFileSync(rulePath, ruleContent, 'utf8')
-      messages.push(`sadeem Cursor rule updated at ${rulePath}`)
+      messages.push(`madar Cursor rule updated at ${rulePath}`)
     }
   } else {
     writeFileSync(rulePath, ruleContent, 'utf8')
-    messages.push(`sadeem Cursor rule written to ${rulePath}`)
+    messages.push(`madar Cursor rule written to ${rulePath}`)
   }
 
   messages.push(installMcpServer(resolvedProjectDir, 'cursor', process.platform, options))
   if (options.profile === 'strict') {
-    messages.push('', 'Cursor will now use the sadeem strict compact MCP profile before broader exploration.')
+    messages.push('', 'Cursor will now use the madar strict compact MCP profile before broader exploration.')
   }
   return messages.join('\n')
 }
@@ -1914,9 +1914,9 @@ export function cursorUninstall(projectDir = '.'): string {
 
   if (existsSync(rulePath)) {
     unlinkSync(rulePath)
-    messages.push(`sadeem Cursor rule removed from ${rulePath}`)
+    messages.push(`madar Cursor rule removed from ${rulePath}`)
   } else {
-    messages.push('No sadeem Cursor rule found - nothing to do')
+    messages.push('No madar Cursor rule found - nothing to do')
   }
 
   const mcpMessage = uninstallMcpServer(resolvedProjectDir, 'cursor')
@@ -1935,9 +1935,9 @@ export function claudeInstall(projectDir = '.', options: McpInstallOptions = {})
     installMcpServer(resolvedProjectDir, 'claude', process.platform, options),
   ]
   if (options.profile === 'strict') {
-    messages.push('', 'Claude Code will now use the sadeem strict compact MCP profile:', 'call context_pack once, answer from the pack when coverage is complete, and expand only when diagnostics show missing evidence.')
+    messages.push('', 'Claude Code will now use the madar strict compact MCP profile:', 'call context_pack once, answer from the pack when coverage is complete, and expand only when diagnostics show missing evidence.')
   } else {
-    messages.push('', 'Claude Code will now start with the matching sadeem MCP tool', 'BEFORE searching raw files for any codebase question.')
+    messages.push('', 'Claude Code will now start with the matching madar MCP tool', 'BEFORE searching raw files for any codebase question.')
   }
   return messages.join('\n')
 }
@@ -1990,11 +1990,11 @@ export function agentsInstall(projectDir = '.', platform: AgentPlatform, options
   }
 
   if (platform === 'codex') {
-    messages.push('', 'Codex will now use the sadeem context-pack-first profile before broad codebase discovery.', 'Uninstall with: sadeem codex uninstall')
+    messages.push('', 'Codex will now use the madar context-pack-first profile before broad codebase discovery.', 'Uninstall with: madar codex uninstall')
   } else if (platform === 'aider') {
-    messages.push('', 'Aider will now use the sadeem context-pack-first AGENTS.md profile before broad codebase discovery.', 'Uninstall with: sadeem aider uninstall')
+    messages.push('', 'Aider will now use the madar context-pack-first AGENTS.md profile before broad codebase discovery.', 'Uninstall with: madar aider uninstall')
   } else if (platform === 'opencode') {
-    messages.push('', 'OpenCode will now use the sadeem context-pack-first profile before broad codebase discovery.', 'Uninstall with: sadeem opencode uninstall')
+    messages.push('', 'OpenCode will now use the madar context-pack-first profile before broad codebase discovery.', 'Uninstall with: madar opencode uninstall')
   } else {
     messages.push('', `${displayName} will now check the knowledge graph before answering`, 'codebase questions and rebuild it after code changes.')
   }
