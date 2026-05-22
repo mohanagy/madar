@@ -29,7 +29,7 @@ export interface ExtractionNode {
   citation_value?: string
   reference_index?: number
   rationale_kind?: 'docstring' | 'comment'
-  node_kind?: 'component' | 'function' | 'class' | 'method' | 'router' | 'route' | 'slice' | 'store'
+  node_kind?: 'component' | 'function' | 'class' | 'controller' | 'method' | 'router' | 'route' | 'slice' | 'store'
   virtual?: boolean
   [key: string]: unknown
 }

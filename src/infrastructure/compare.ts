@@ -5,6 +5,7 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } 
 import { KnowledgeGraph } from '../contracts/graph.js'
 import type { ContextSessionState } from '../contracts/context-session.js'
 import { buildContextPrompt, type ContextPromptStableSection } from './context-prompt.js'
+import { buildExplainPackPayload } from './context-pack-command.js'
 import { CODE_EXTENSIONS, DOC_EXTENSIONS, MANIFEST_METADATA_KEY, OFFICE_EXTENSIONS, PAPER_EXTENSIONS } from '../pipeline/detect.js'
 import { extractCompareBaselineNonCodeText } from '../pipeline/extract/non-code.js'
 import { loadBenchmarkQuestions } from './benchmark/questions.js'
@@ -586,49 +587,6 @@ function buildBoundedCorpusExcerpt(question: string, graph: KnowledgeGraph, corp
   return `${note}\n${excerpt}`.trimEnd()
 }
 
-function formatMadarContextSections(retrieval: RetrieveResult): ContextPromptStableSection[] {
-  const nodeLines = retrieval.matched_nodes.map((node) => {
-    const source = node.source_file ? ` @ ${node.source_file}${node.line_number > 0 ? `:${node.line_number}` : ''}` : ''
-    const community = node.community_label ? ` [${node.community_label}]` : ''
-    const snippet = node.snippet ? `\n  ${node.snippet}` : ''
-    return `- ${node.label}${source}${community}${snippet}`
-  })
-  const relationshipLines = retrieval.relationships.map((relationship) => `- ${relationship.from} -[${relationship.relation}]-> ${relationship.to}`)
-  const communityLines = retrieval.community_context.map((community) => `- ${community.label} (${community.node_count} nodes)`)
-  const signalLines = [...retrieval.graph_signals.god_nodes, ...retrieval.graph_signals.bridge_nodes]
-
-  return [
-    {
-      ref: 'matched_nodes',
-      sort_key: '10-matched-nodes',
-      title: 'Matched nodes',
-      body: nodeLines.length > 0 ? nodeLines.join('\n') : '- (none)',
-    },
-    {
-      ref: 'relationships',
-      sort_key: '20-relationships',
-      title: 'Relationships',
-      body: relationshipLines.length > 0 ? relationshipLines.join('\n') : '- (none)',
-    },
-    ...(communityLines.length > 0
-      ? [{
-          ref: 'community_context',
-          sort_key: '30-community-context',
-          title: 'Community context',
-          body: communityLines.join('\n'),
-        }]
-      : []),
-    ...(signalLines.length > 0
-      ? [{
-          ref: 'graph_signals',
-          sort_key: '40-graph-signals',
-          title: 'Graph signals',
-          body: `- ${signalLines.join(', ')}`,
-        }]
-      : []),
-  ]
-}
-
 function compareReportPackFromRetrieveResult(retrieval: RetrieveResult): CompareReportPack {
   const compact = compactRetrieveResult(retrieval)
   return {
@@ -1137,13 +1095,24 @@ export function buildBaselinePromptPack(input: BuildBaselinePromptPackInput): Co
 }
 
 export function buildMadarPromptPack(input: BuildMadarPromptPackInput): ComparePromptPack {
+  const explainPayload = JSON.stringify(
+    buildExplainPackPayload(compactRetrieveResult(input.retrieval), input.retrieval),
+    null,
+    2,
+  )
   const builtPrompt = buildContextPrompt({
     instructions: [
       'Answer the question using only the provided graph-guided retrieval output.',
       'If the retrieval does not contain the answer, say so.',
     ],
     stable_prefix_title: 'Retrieved graph context',
-    stable_sections: formatMadarContextSections(input.retrieval),
+    stable_sections: [
+      {
+        ref: 'explain_pack_payload',
+        sort_key: '10-explain-pack-payload',
+        body: explainPayload,
+      },
+    ],
     dynamic_sections: [
       { title: 'Question', body: input.question },
       { body: 'Answer:' },
@@ -1710,6 +1679,23 @@ export interface NativeAgentCompareReport {
   }
   started_at: string
   completed_at: string
+  answer_quality?: {
+    gate: string
+    prompt: string
+    baseline: {
+      passed: boolean
+      missing_required_terms: string[]
+      forbidden_terms_present: string[]
+    }
+    madar: {
+      passed: boolean
+      missing_required_terms: string[]
+      forbidden_terms_present: string[]
+    }
+    required_concepts: string[]
+    answer_quality_notes: string[]
+    manual_review_notes: string[]
+  }
   paths: {
     output_dir: string
     report: string
@@ -1724,6 +1710,14 @@ export interface NativeAgentCompareResult {
   graph_path: string
   output_root: string
   reports: NativeAgentCompareReport[]
+  answer_quality?: {
+    questions_checked: number
+    baseline_passed: number
+    madar_passed: number
+    madar_required_terms_missing: number
+    madar_forbidden_terms_present: number
+    manual_review_required: number
+  }
 }
 
 export interface NativeAgentRunnerInput {
@@ -1746,6 +1740,150 @@ export type NativeAgentRunner = (input: NativeAgentRunnerInput) => Promise<Nativ
 export interface ExecuteNativeAgentCompareDependencies {
   runner?: NativeAgentRunner
   now?: () => Date
+}
+
+interface NativeAgentAnswerQualityGate {
+  prompt: string
+  required_answer_terms: string[]
+  forbidden_answer_terms: string[]
+  required_concepts: string[]
+  answer_quality_notes: string[]
+  manual_review_notes: string[]
+}
+
+function normalizeAnswerQualityText(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, ' ').trim()
+}
+
+function parseAnswerQualityStringArray(
+  gateName: string,
+  fieldName: string,
+  value: unknown,
+  { allowEmpty = false }: { allowEmpty?: boolean } = {},
+): string[] {
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string' || entry.trim().length === 0)) {
+    throw new Error(`Malformed quality gate "${gateName}": ${fieldName} must be a string array`)
+  }
+  if (!allowEmpty && value.length === 0) {
+    throw new Error(`Malformed quality gate "${gateName}": ${fieldName} must be a non-empty string array`)
+  }
+  return value.map((entry) => entry.trim())
+}
+
+function parseNativeAgentAnswerQualityGate(gateName: string, value: unknown): NativeAgentAnswerQualityGate {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`Malformed quality gate "${gateName}": expected an object`)
+  }
+  const gate = value as Record<string, unknown>
+  if (typeof gate.prompt !== 'string' || gate.prompt.trim().length === 0) {
+    throw new Error(`Malformed quality gate "${gateName}": prompt must be a non-empty string`)
+  }
+
+  return {
+    prompt: gate.prompt.trim(),
+    required_answer_terms: parseAnswerQualityStringArray(gateName, 'required_answer_terms', gate.required_answer_terms),
+    forbidden_answer_terms: parseAnswerQualityStringArray(gateName, 'forbidden_answer_terms', gate.forbidden_answer_terms, { allowEmpty: true }),
+    required_concepts: parseAnswerQualityStringArray(gateName, 'required_concepts', gate.required_concepts),
+    answer_quality_notes: parseAnswerQualityStringArray(gateName, 'answer_quality_notes', gate.answer_quality_notes),
+    manual_review_notes: parseAnswerQualityStringArray(gateName, 'manual_review_notes', gate.manual_review_notes),
+  }
+}
+
+function loadNativeAgentAnswerQualityGates(
+  questionsPath: string | null | undefined,
+): Map<string, NativeAgentAnswerQualityGate> | null {
+  if (!questionsPath) {
+    return null
+  }
+  const configPath = join(dirname(resolve(questionsPath)), 'quality-gates.json')
+  if (!existsSync(configPath)) {
+    return null
+  }
+
+  const parsed = JSON.parse(readFileSync(configPath, 'utf8')) as unknown
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`Malformed quality gate config: expected a JSON object at ${configPath}`)
+  }
+
+  return new Map(
+    Object.entries(parsed).map(([gateName, gate]) => [gateName, parseNativeAgentAnswerQualityGate(gateName, gate)]),
+  )
+}
+
+function evaluateNativeAgentAnswerQualityRun(
+  gate: NativeAgentAnswerQualityGate,
+  answerText: string,
+): {
+  passed: boolean
+  missing_required_terms: string[]
+  forbidden_terms_present: string[]
+} {
+  const normalizedAnswer = normalizeAnswerQualityText(answerText)
+  const missingRequiredTerms = gate.required_answer_terms.filter((term) => !normalizedAnswer.includes(normalizeAnswerQualityText(term)))
+  const forbiddenTermsPresent = gate.forbidden_answer_terms.filter((term) => normalizedAnswer.includes(normalizeAnswerQualityText(term)))
+  return {
+    passed: missingRequiredTerms.length === 0 && forbiddenTermsPresent.length === 0,
+    missing_required_terms: missingRequiredTerms,
+    forbidden_terms_present: forbiddenTermsPresent,
+  }
+}
+
+function evaluateNativeAgentAnswerQualityReport(
+  gates: ReadonlyMap<string, NativeAgentAnswerQualityGate> | null,
+  question: string,
+  baselineAnswerPath: string,
+  madarAnswerPath: string,
+): NativeAgentCompareReport['answer_quality'] | undefined {
+  if (gates === null) {
+    return undefined
+  }
+  const match = [...gates.entries()].find(([gateName, gate]) => gateName === question || gate.prompt === question)
+  if (!match) {
+    return undefined
+  }
+  if (!existsSync(baselineAnswerPath) || !existsSync(madarAnswerPath)) {
+    return undefined
+  }
+
+  const [gateName, gate] = match
+  const baselineAnswer = readFileSync(baselineAnswerPath, 'utf8')
+  const madarAnswer = readFileSync(madarAnswerPath, 'utf8')
+  return {
+    gate: gateName,
+    prompt: gate.prompt,
+    baseline: evaluateNativeAgentAnswerQualityRun(gate, baselineAnswer),
+    madar: evaluateNativeAgentAnswerQualityRun(gate, madarAnswer),
+    required_concepts: gate.required_concepts,
+    answer_quality_notes: gate.answer_quality_notes,
+    manual_review_notes: gate.manual_review_notes,
+  }
+}
+
+function summarizeNativeAgentAnswerQuality(
+  reports: readonly NativeAgentCompareReport[],
+): NativeAgentCompareResult['answer_quality'] | undefined {
+  const checkedReports = reports.filter((report) => report.answer_quality !== undefined)
+  if (checkedReports.length === 0) {
+    return undefined
+  }
+
+  return {
+    questions_checked: checkedReports.length,
+    baseline_passed: checkedReports.filter((report) => report.answer_quality?.baseline.passed).length,
+    madar_passed: checkedReports.filter((report) => report.answer_quality?.madar.passed).length,
+    madar_required_terms_missing: checkedReports.reduce(
+      (total, report) => total + (report.answer_quality?.madar.missing_required_terms.length ?? 0),
+      0,
+    ),
+    madar_forbidden_terms_present: checkedReports.reduce(
+      (total, report) => total + (report.answer_quality?.madar.forbidden_terms_present.length ?? 0),
+      0,
+    ),
+    manual_review_required: checkedReports.reduce(
+      (total, report) => total + (report.answer_quality?.manual_review_notes.length ?? 0),
+      0,
+    ),
+  }
 }
 
 function isAnthropicUsageBlock(value: unknown): value is AnthropicUsageBlock {
@@ -2063,6 +2201,7 @@ export async function executeNativeAgentCompare(
   const outputRoot = createCompareOutputRoot(outputDir, timestamp)
   const runner = dependencies.runner ?? defaultNativeAgentRunner
   const reports: NativeAgentCompareReport[] = []
+  const answerQualityGates = loadNativeAgentAnswerQualityGates(input.questionsPath)
 
   for (const [index, question] of questions.entries()) {
     const questionDir = questions.length === 1 ? outputRoot : join(outputRoot, `question-${String(index + 1).padStart(3, '0')}`)
@@ -2274,16 +2413,27 @@ export async function executeNativeAgentCompare(
             ? 'mixed'
             : 'unknown'
     }
+    const answerQuality = evaluateNativeAgentAnswerQualityReport(
+      answerQualityGates,
+      question,
+      baselineAnswerPath,
+      madarAnswerPath,
+    )
+    if (answerQuality !== undefined) {
+      reportShell.answer_quality = answerQuality
+    }
 
     reportShell.completed_at = now().toISOString()
     writeNativeAgentReport(reportShell)
     reports.push(reportShell)
   }
 
+  const answerQualitySummary = summarizeNativeAgentAnswerQuality(reports)
   return {
     graph_path: graphPath,
     output_root: resolve(outputRoot),
     reports,
+    ...(answerQualitySummary ? { answer_quality: answerQualitySummary } : {}),
   }
 }
 
@@ -2362,6 +2512,11 @@ export function formatNativeAgentCompareSummary(result: NativeAgentCompareResult
       ),
     )
   }
+  if (result.answer_quality) {
+    lines.push(
+      `- Answer quality: madar ${result.answer_quality.madar_passed}/${result.answer_quality.questions_checked} passed deterministic gates · baseline ${result.answer_quality.baseline_passed}/${result.answer_quality.questions_checked} passed deterministic gates · ${formatCount(result.answer_quality.manual_review_required, 'manual-review note', 'manual-review notes')}`,
+    )
+  }
   for (const report of result.reports) {
     if (isNativeAgentRunFailure(report.baseline) || isNativeAgentRunFailure(report.madar)) {
       lines.push(`- "${report.question}" → runner error (see ${portablePath(report.paths.report)})`)
@@ -2396,6 +2551,19 @@ export function formatNativeAgentCompareSummary(result: NativeAgentCompareResult
         `    uncached_input_tokens (Anthropic-reported): baseline ${baseline.uncached_input_tokens_anthropic_exact} → madar ${madar.uncached_input_tokens_anthropic_exact}${formatDirectionalDelta(baseline.uncached_input_tokens_anthropic_exact, madar.uncached_input_tokens_anthropic_exact, 'less', 'more')}`,
         `    cache_creation_input_tokens (Anthropic-reported): baseline ${baseline.usage.cache_creation_input_tokens} → madar ${madar.usage.cache_creation_input_tokens}${formatDirectionalDelta(baseline.usage.cache_creation_input_tokens, madar.usage.cache_creation_input_tokens, 'less', 'more')}`,
         `    cache_read_input_tokens (Anthropic-reported): baseline ${baseline.usage.cache_read_input_tokens} → madar ${madar.usage.cache_read_input_tokens}${formatDirectionalDelta(baseline.usage.cache_read_input_tokens, madar.usage.cache_read_input_tokens, 'less', 'more')}`,
+      )
+    }
+    if (report.answer_quality) {
+      const baselineFindings = [
+        ...report.answer_quality.baseline.missing_required_terms.map((term) => `missing ${term}`),
+        ...report.answer_quality.baseline.forbidden_terms_present.map((term) => `forbidden ${term}`),
+      ]
+      const madarFindings = [
+        ...report.answer_quality.madar.missing_required_terms.map((term) => `missing ${term}`),
+        ...report.answer_quality.madar.forbidden_terms_present.map((term) => `forbidden ${term}`),
+      ]
+      lines.push(
+        `    answer quality: baseline ${report.answer_quality.baseline.passed ? 'PASS' : `FAIL (${baselineFindings.join(', ')})`} · madar ${report.answer_quality.madar.passed ? 'PASS' : `FAIL (${madarFindings.join(', ')})`}${report.answer_quality.manual_review_notes.length > 0 ? ` · manual review: ${formatCount(report.answer_quality.manual_review_notes.length, 'note', 'notes')}` : ''}`,
       )
     }
     lines.push(`    provider/runtime proof: Anthropic reported input, cache, and total tokens for both runs`)

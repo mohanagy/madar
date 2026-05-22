@@ -44,6 +44,10 @@ interface ContextPlaneMetadata {
   retrieval_gate?: RetrievalGateDecision
 }
 
+export interface ExplainPackPayload extends ContextPlaneMetadata {
+  pack: ReturnType<typeof compactRetrieveResult>
+}
+
 function emptyCoverage(): ContextPackCoverage {
   return {
     required_evidence: [],
@@ -74,6 +78,21 @@ function contextMetadata(
     missing_context: coverage.missing_required,
     missing_semantic: coverage.missing_semantic,
     ...(payload.retrieval_gate ? { retrieval_gate: payload.retrieval_gate } : {}),
+  }
+}
+
+export function buildExplainPackPayload(
+  pack: ReturnType<typeof compactRetrieveResult>,
+  retrieval: Partial<{
+    claims: ContextPackClaim[]
+    expandable: ContextPackExpandableRef[]
+    coverage: ContextPackCoverage
+    retrieval_gate: RetrievalGateDecision
+  }>,
+): ExplainPackPayload {
+  return {
+    pack,
+    ...contextMetadata(retrieval),
   }
 }
 
@@ -246,11 +265,8 @@ export async function runContextPackCommand(
     ...(options.retrievalLevel !== undefined ? { retrievalLevel: options.retrievalLevel } : {}),
     ...(options.retrievalStrategy !== undefined ? { retrievalStrategy: options.retrievalStrategy } : {}),
   })
-  const explainPack = dependencies.compactRetrieveResult(retrieval)
-
   return JSON.stringify({
     ...baseResponse(options, initialPlan, plannerBudget),
-    pack: explainPack,
-    ...contextMetadata(retrieval),
+    ...buildExplainPackPayload(dependencies.compactRetrieveResult(retrieval), retrieval),
   })
 }

@@ -1,0 +1,1825 @@
+{
+  "question": "Explain how idea report is getting generated",
+  "graph_path": "<project-root>/out/graph.json",
+  "exec_command": {
+    "command": null,
+    "placeholders": [
+      "{prompt_file}"
+    ],
+    "redacted": true
+  },
+  "baseline_mode": "pack_only",
+  "baseline_prompt_tokens": 2749,
+  "madar_prompt_tokens": 2835,
+  "reduction_ratio": 1,
+  "baseline_effective_prompt_tokens": 2749,
+  "madar_effective_prompt_tokens": 2835,
+  "effective_reduction_ratio": 1,
+  "baseline_reused_context_tokens": 0,
+  "madar_reused_context_tokens": 0,
+  "baseline_total_tokens": null,
+  "madar_total_tokens": null,
+  "total_reduction_ratio": null,
+  "baseline_prompt_tokens_estimated": 2749,
+  "madar_prompt_tokens_estimated": 2835,
+  "reduction_ratio_estimated": 1,
+  "prompt_token_estimator": {
+    "source": "local_tokenizer",
+    "model": "cl100k_base",
+    "exact": false
+  },
+  "prompt_token_source": {
+    "baseline": "estimated_cl100k_base",
+    "madar": "estimated_cl100k_base"
+  },
+  "usage": {
+    "baseline": null,
+    "madar": null
+  },
+  "started_at": "2026-05-21T18:08:41.720Z",
+  "completed_at": "2026-05-21T18:08:57.866Z",
+  "elapsed_ms": {
+    "baseline": 32,
+    "madar": 9
+  },
+  "status": {
+    "baseline": "succeeded",
+    "madar": "succeeded"
+  },
+  "answer_paths": {
+    "baseline": "<artifact-root>/baseline-answer.txt",
+    "madar": "<artifact-root>/madar-answer.txt"
+  },
+  "exit_code": {
+    "baseline": 0,
+    "madar": 0
+  },
+  "stderr": {
+    "baseline": null,
+    "madar": null
+  },
+  "failure_reason": {
+    "baseline": null,
+    "madar": null
+  },
+  "evidence": {
+    "baseline": null,
+    "madar": null
+  },
+  "pack": {
+    "question": "Explain how idea report is getting generated",
+    "token_count": 1456,
+    "matched_nodes": [
+      {
+        "node_id": "ideas_authenticated_request_requireideasuserid",
+        "label": "requireIdeasUserId",
+        "source_file": "backend/src/modules/ideas/interface/http/ideas-authenticated-request.ts",
+        "line_number": 16,
+        "source_domain": "production",
+        "snippet": "\nexport const requireIdeasUserId = (\n  req: AuthenticatedIdeasRequest,",
+        "match_score": 4.729932442559171,
+        "relevance_band": "direct",
+        "community": 297,
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved"
+      },
+      {
+        "node_id": "title_generation_service_titlegenerationservice_generatetitle",
+        "label": ".generateTitle()",
+        "source_file": "backend/src/modules/ideas/infrastructure/services/title-generation.service.ts",
+        "line_number": 55,
+        "source_domain": "production",
+        "snippet": "   */\n  async generateTitle(\n    problemStatement: string,",
+        "match_score": 5.763623978201635,
+        "relevance_band": "direct",
+        "community": 256,
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved"
+      },
+      {
+        "node_id": "idea_generation_controller_ideagenerationcontroller_generatefromproblem",
+        "label": ".generateFromProblem()",
+        "source_file": "backend/src/modules/ideas/interface/http/idea-generation.controller.ts",
+        "line_number": 75,
+        "source_domain": "production",
+        "snippet": "\n  @Post('analyze')\n  @UseGuards(AuthGuard, PlanEnforcementGuard)",
+        "match_score": 5.724909028578037,
+        "relevance_band": "direct",
+        "community": 299,
+        "framework": "nestjs",
+        "framework_role": "nest_route",
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved",
+        "node_kind": "route"
+      },
+      {
+        "node_id": "certificate_generator_service_certificategeneratorservice_generate",
+        "label": ".generate()",
+        "source_file": "backend/src/modules/certification/services/certificate-generator.service.ts",
+        "line_number": 36,
+        "source_domain": "production",
+        "snippet": "\n  async generate(\n    params: CertificateGenerateParams,",
+        "match_score": 6.041176470588235,
+        "relevance_band": "direct",
+        "community": 281,
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved"
+      },
+      {
+        "node_id": "title_generation_service_titlegenerationservice",
+        "label": "TitleGenerationService",
+        "source_file": "backend/src/modules/ideas/infrastructure/services/title-generation.service.ts",
+        "line_number": 34,
+        "source_domain": "production",
+        "snippet": " */\n@Injectable()\nexport class TitleGenerationService {",
+        "match_score": 6.019599108465988,
+        "relevance_band": "direct",
+        "community": 256,
+        "framework": "nestjs",
+        "framework_role": "nest_provider",
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved",
+        "node_kind": "class"
+      },
+      {
+        "node_id": "ideas_service_ideasservice_claimqueuedpipelinerun",
+        "label": ".claimQueuedPipelineRun()",
+        "source_file": "backend/src/modules/ideas/core/application/ideas.service.ts",
+        "line_number": 418,
+        "source_domain": "production",
+        "snippet": "   */\n  async claimQueuedPipelineRun(\n    ideaId: string,",
+        "match_score": 7.401121256633713,
+        "relevance_band": "direct",
+        "community": 778,
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved"
+      },
+      {
+        "node_id": "idea_generation_controller_ideagenerationcontroller",
+        "label": "IdeaGenerationController",
+        "source_file": "backend/src/modules/ideas/interface/http/idea-generation.controller.ts",
+        "line_number": 53,
+        "source_domain": "production",
+        "snippet": "\n@ApiTags('ideas')\n@Controller('ideas')",
+        "match_score": 6.1024100521296925,
+        "relevance_band": "direct",
+        "community": 299,
+        "framework": "nestjs",
+        "framework_role": "nest_controller",
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved",
+        "node_kind": "class"
+      },
+      {
+        "node_id": "badge_generator_service_badgegeneratorservice_generate",
+        "label": ".generate()",
+        "source_file": "backend/src/modules/certification/services/badge-generator.service.ts",
+        "line_number": 33,
+        "source_domain": "production",
+        "snippet": "\n  async generate(params: BadgeGenerateParams): Promise<BadgeGenerateResult> {\n    const { tier, score, verifyToken } = params;",
+        "match_score": 5.928571428571429,
+        "relevance_band": "direct",
+        "community": 483,
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved"
+      },
+      {
+        "node_id": "ideas_service_ideasservice_createidea",
+        "label": ".createIdea()",
+        "source_file": "backend/src/modules/ideas/core/application/ideas.service.ts",
+        "line_number": 78,
+        "source_domain": "production",
+        "snippet": "   */\n  async createIdea(userId: string, problem: string): Promise<Idea> {\n    this.logger.info('Creating new idea', { userId });",
+        "match_score": 7.488723661345151,
+        "relevance_band": "direct",
+        "community": 1187,
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved"
+      },
+      {
+        "node_id": "ideas_service_ideasservice_releasequeuedpipelineclaim",
+        "label": ".releaseQueuedPipelineClaim()",
+        "source_file": "backend/src/modules/ideas/core/application/ideas.service.ts",
+        "line_number": 453,
+        "source_domain": "production",
+        "snippet": "\n  async releaseQueuedPipelineClaim(\n    ideaId: string,",
+        "match_score": 6.3976311409935125,
+        "relevance_band": "direct",
+        "community": 299,
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved"
+      },
+      {
+        "node_id": "title_generation_service_titlegenerationservice_generatefallbacktitle",
+        "label": ".generateFallbackTitle()",
+        "source_file": "backend/src/modules/ideas/infrastructure/services/title-generation.service.ts",
+        "line_number": 195,
+        "source_domain": "production",
+        "snippet": "   */\n  private generateFallbackTitle(\n    problemStatement: string,",
+        "match_score": 5.665102108036891,
+        "relevance_band": "direct",
+        "community": 256,
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved"
+      },
+      {
+        "node_id": "idea_generation_compensation_service_ideagenerationcompensationservice_releaseunusedcreditreservation",
+        "label": ".releaseUnusedCreditReservation()",
+        "source_file": "backend/src/modules/credits/services/idea-generation-compensation.service.ts",
+        "line_number": 57,
+        "source_domain": "production",
+        "snippet": "\n  async releaseUnusedCreditReservation(\n    creditId?: string | null",
+        "match_score": 7.8733240795064106,
+        "relevance_band": "direct",
+        "community": 1114,
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved"
+      },
+      {
+        "node_id": "ideas_service_ideasservice_updatetitle",
+        "label": ".updateTitle()",
+        "source_file": "backend/src/modules/ideas/core/application/ideas.service.ts",
+        "line_number": 378,
+        "source_domain": "production",
+        "snippet": "   */\n  async updateTitle(ideaId: string, summarizedTitle: string): Promise<void> {\n    const objectId = new ObjectId(ideaId);",
+        "match_score": 7.399758110197487,
+        "relevance_band": "direct",
+        "community": 299,
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved"
+      },
+      {
+        "node_id": "idea_generation_controller_ideagenerationcontroller_getstatusmessage",
+        "label": ".getStatusMessage()",
+        "source_file": "backend/src/modules/ideas/interface/http/idea-generation.controller.ts",
+        "line_number": 343,
+        "source_domain": "production",
+        "snippet": "\n  private getStatusMessage(status: IdeaStatus): string {\n    const messages: Record<IdeaStatus, string> = {",
+        "match_score": 7.951321121537978,
+        "relevance_band": "direct",
+        "community": 299,
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved"
+      },
+      {
+        "node_id": "title_generation_service_titlegenerationservice_buildsystemprompt",
+        "label": ".buildSystemPrompt()",
+        "source_file": "backend/src/modules/ideas/infrastructure/services/title-generation.service.ts",
+        "line_number": 145,
+        "source_domain": "production",
+        "snippet": "   */\n  private buildSystemPrompt(): string {\n    return `You are a startup idea title generator. Your task is to create concise, engaging titles from problem statements.",
+        "match_score": 7.8926579760856335,
+        "relevance_band": "direct",
+        "community": 256,
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved"
+      },
+      {
+        "node_id": "title_generation_service_titlegenerationservice_builduserprompt",
+        "label": ".buildUserPrompt()",
+        "source_file": "backend/src/modules/ideas/infrastructure/services/title-generation.service.ts",
+        "line_number": 183,
+        "source_domain": "production",
+        "snippet": "   */\n  private buildUserPrompt(problemStatement: string): string {\n    return `Generate a concise title for this startup idea:",
+        "match_score": 7.892634499923329,
+        "relevance_band": "direct",
+        "community": 256,
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved"
+      },
+      {
+        "node_id": "title_generation_service_titlegenerationservice_extractkeyphrasestitle",
+        "label": ".extractKeyPhrasesTitle()",
+        "source_file": "backend/src/modules/ideas/infrastructure/services/title-generation.service.ts",
+        "line_number": 227,
+        "source_domain": "production",
+        "snippet": "   */\n  private extractKeyPhrasesTitle(problemStatement: string): string {\n    // Clean and normalize the text",
+        "match_score": 7.843326916087411,
+        "relevance_band": "direct",
+        "community": 256,
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved"
+      },
+      {
+        "node_id": "certificate_generator_service_certificategeneratorservice_generatepdffromhtml",
+        "label": ".generatePdfFromHtml()",
+        "source_file": "backend/src/modules/certification/services/certificate-generator.service.ts",
+        "line_number": 90,
+        "source_domain": "production",
+        "snippet": "\n  private async generatePdfFromHtml(html: string): Promise<Buffer> {\n    let browser: puppeteer.Browser | undefined;",
+        "match_score": 7.156302521008403,
+        "relevance_band": "direct",
+        "community": 281,
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved"
+      },
+      {
+        "node_id": "structured_logger_service_structuredlogger_info",
+        "label": ".info()",
+        "source_file": "backend/src/common/logger/structured-logger.service.ts",
+        "line_number": 101,
+        "source_domain": "production",
+        "snippet": "\n  info(message: string, data?: LogContext | Error) {\n    this.write('info', message, data);",
+        "match_score": 5.981811989100818,
+        "relevance_band": "related",
+        "community": 120,
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved"
+      },
+      {
+        "node_id": "structured_logger_service_structuredlogger_warn",
+        "label": ".warn()",
+        "source_file": "backend/src/common/logger/structured-logger.service.ts",
+        "line_number": 105,
+        "source_domain": "production",
+        "snippet": "\n  warn(message: string, data?: LogContext | Error) {\n    this.write('warn', message, data);",
+        "match_score": 5.981811989100818,
+        "relevance_band": "related",
+        "community": 3,
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved"
+      },
+      {
+        "node_id": "structured_logger_service_structuredlogger_error",
+        "label": ".error()",
+        "source_file": "backend/src/common/logger/structured-logger.service.ts",
+        "line_number": 113,
+        "source_domain": "production",
+        "snippet": "\n  error(message: string, data?: ErrorData) {\n    const errorData = {",
+        "match_score": 5.981811989100818,
+        "relevance_band": "related",
+        "community": 86,
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved"
+      },
+      {
+        "node_id": "llm_provider_resolver_service_llmproviderresolverservice_callllm",
+        "label": ".callLlm()",
+        "source_file": "backend/src/modules/pipeline/providers/llm-provider-resolver.service.ts",
+        "line_number": 100,
+        "source_domain": "production",
+        "snippet": "\n  async callLlm(resolved: ResolvedProvider, params: Omit<LlmChatParams, 'apiKey' | 'baseUrl'>): Promise<LlmChatResult> {\n    const client = this.getClient(resolved.clientType);",
+        "match_score": 7.681811989100818,
+        "relevance_band": "related",
+        "community": 553,
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved"
+      },
+      {
+        "node_id": "llm_provider_resolver_service_llmproviderresolverservice_resolve",
+        "label": ".resolve()",
+        "source_file": "backend/src/modules/pipeline/providers/llm-provider-resolver.service.ts",
+        "line_number": 43,
+        "source_domain": "production",
+        "snippet": "\n  async resolve(userId: string, modelTier: ModelTier, modelOverride?: string): Promise<ResolvedProvider> {\n    const tierConfig = MODEL_TIER_DEFAULTS[modelTier];",
+        "match_score": 7.681811989100818,
+        "relevance_band": "related",
+        "community": 550,
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved"
+      },
+      {
+        "node_id": "certification_service_certificationservice_claimbadge",
+        "label": ".claimBadge()",
+        "source_file": "backend/src/modules/certification/services/certification.service.ts",
+        "line_number": 126,
+        "source_domain": "production",
+        "snippet": "\n  async claimBadge(\n    ideaId: string,",
+        "match_score": 6.970588235294118,
+        "relevance_band": "related",
+        "community": 497,
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved"
+      },
+      {
+        "node_id": "certificate_html",
+        "label": "certificate-html.ts",
+        "source_file": "backend/src/modules/certification/templates/certificate-html.ts",
+        "line_number": 1,
+        "source_domain": "production",
+        "snippet": "import type {\n  CertificationMetrics,",
+        "match_score": 1.25,
+        "relevance_band": "related",
+        "community": 495,
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved"
+      },
+      {
+        "node_id": "pipeline_trigger_service_pipelinetriggerservice_startpipeline",
+        "label": ".startPipeline()",
+        "source_file": "backend/src/modules/pipeline/api/pipeline-trigger.service.ts",
+        "line_number": 24,
+        "source_domain": "production",
+        "snippet": "\n  async startPipeline(userId: string, rawIdea: string, existingIdeaId?: string): Promise<{ ideaId: string; jobId: string }> {\n    const ideaId = existingIdeaId ?? randomUUID();",
+        "match_score": 8.362454514289018,
+        "relevance_band": "related",
+        "community": 1285,
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved"
+      },
+      {
+        "node_id": "storage_service_storageservice_uploadfile",
+        "label": ".uploadFile()",
+        "source_file": "backend/src/modules/storage/storage.service.ts",
+        "line_number": 166,
+        "source_domain": "production",
+        "snippet": "   */\n  async uploadFile(\n    key: string,",
+        "match_score": 5.970588235294118,
+        "relevance_band": "related",
+        "community": 253,
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved"
+      },
+      {
+        "node_id": "error_logger_util_errorloggerutil_formaterrorforjson",
+        "label": ".formatErrorForJson()",
+        "source_file": "backend/src/common/utils/error-logger.util.ts",
+        "line_number": 248,
+        "source_domain": "production",
+        "snippet": "   */\n  static formatErrorForJson(error: unknown): Record<string, any> {\n    if (error instanceof Error) {",
+        "match_score": 4.131811989100818,
+        "relevance_band": "related",
+        "community": 382,
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved"
+      },
+      {
+        "node_id": "certificate_generator_service_certificategeneratorservice",
+        "label": "CertificateGeneratorService",
+        "source_file": "backend/src/modules/certification/services/certificate-generator.service.ts",
+        "line_number": 29,
+        "source_domain": "production",
+        "snippet": "\n@Injectable()\nexport class CertificateGeneratorService {",
+        "match_score": 4.139705882352941,
+        "relevance_band": "related",
+        "community": 281,
+        "framework": "nestjs",
+        "framework_role": "nest_provider",
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved",
+        "node_kind": "class"
+      },
+      {
+        "node_id": "badge_svg",
+        "label": "badge-svg.ts",
+        "source_file": "backend/src/modules/certification/templates/badge-svg.ts",
+        "line_number": 1,
+        "source_domain": "production",
+        "snippet": "import type { CertificationTier } from '../certification.types';\n",
+        "match_score": 1.25,
+        "relevance_band": "related",
+        "community": 484,
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved"
+      },
+      {
+        "node_id": "certificate_html_rendercertificatehtml",
+        "label": "renderCertificateHtml()",
+        "source_file": "backend/src/modules/certification/templates/certificate-html.ts",
+        "line_number": 94,
+        "source_domain": "production",
+        "snippet": "\nexport function renderCertificateHtml(params: CertificateHtmlParams): string {\n  const {",
+        "match_score": 4.220588235294118,
+        "relevance_band": "related",
+        "community": 1073,
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved"
+      },
+      {
+        "node_id": "badge_generator_service_badgegeneratorservice",
+        "label": "BadgeGeneratorService",
+        "source_file": "backend/src/modules/certification/services/badge-generator.service.ts",
+        "line_number": 26,
+        "source_domain": "production",
+        "snippet": "\n@Injectable()\nexport class BadgeGeneratorService {",
+        "match_score": 4.0375,
+        "relevance_band": "related",
+        "community": 483,
+        "framework": "nestjs",
+        "framework_role": "nest_provider",
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved",
+        "node_kind": "class"
+      },
+      {
+        "node_id": "certificate_generator_service_certificategeneratorservice_buildasseturl",
+        "label": ".buildAssetUrl()",
+        "source_file": "backend/src/modules/certification/services/certificate-generator.service.ts",
+        "line_number": 126,
+        "source_domain": "production",
+        "snippet": "\n  private buildAssetUrl(verifyToken: string, filename: string): string {\n    const cdnBase = this.config.badgeCdnBaseUrl;",
+        "match_score": 6.070588235294117,
+        "relevance_band": "related",
+        "community": 281,
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved"
+      },
+      {
+        "node_id": "certificate_generator_service_certificategeneratorservice_dataurltobuffer",
+        "label": ".dataUrlToBuffer()",
+        "source_file": "backend/src/modules/certification/services/certificate-generator.service.ts",
+        "line_number": 121,
+        "source_domain": "production",
+        "snippet": "\n  private dataUrlToBuffer(dataUrl: string): Buffer {\n    const base64Data = dataUrl.split(',')[1];",
+        "match_score": 6.070588235294117,
+        "relevance_band": "related",
+        "community": 281,
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved"
+      },
+      {
+        "node_id": "badge_generator_service_badgegeneratorservice_buildasseturl",
+        "label": ".buildAssetUrl()",
+        "source_file": "backend/src/modules/certification/services/badge-generator.service.ts",
+        "line_number": 92,
+        "source_domain": "production",
+        "snippet": "   */\n  private buildAssetUrl(verifyToken: string, filename: string): string {\n    const cdnBase = this.config.badgeCdnBaseUrl;",
+        "match_score": 5.964285714285714,
+        "relevance_band": "related",
+        "community": 483,
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved"
+      },
+      {
+        "node_id": "badge_svg_renderbadgesvg",
+        "label": "renderBadgeSvg()",
+        "source_file": "backend/src/modules/certification/templates/badge-svg.ts",
+        "line_number": 17,
+        "source_domain": "production",
+        "snippet": "\nexport function renderBadgeSvg({ tier, score }: BadgeSvgParams): string {\n  const colors = TIER_COLORS[tier];",
+        "match_score": 4.214285714285714,
+        "relevance_band": "related",
+        "community": 484,
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved"
+      },
+      {
+        "node_id": "plan_enforcement_guard_planenforcement",
+        "label": "PlanEnforcement",
+        "source_file": "backend/src/modules/auth/plan-enforcement.guard.ts",
+        "line_number": 28,
+        "source_domain": "production",
+        "snippet": "\nexport const PlanEnforcement = (usageType: UsageType) => {\n  return (",
+        "match_score": 4.117385480758447,
+        "relevance_band": "related",
+        "community": 299,
+        "representation_type": "detail",
+        "representation_reason": "explain detail preserved"
+      }
+    ],
+    "relationships": [
+      {
+        "from_id": "idea_generation_controller_ideagenerationcontroller_getstatusmessage",
+        "from": ".getStatusMessage()",
+        "to_id": "idea_generation_controller_ideagenerationcontroller",
+        "to": "IdeaGenerationController",
+        "relation": "method"
+      },
+      {
+        "from_id": "idea_generation_controller_ideagenerationcontroller_getstatusmessage",
+        "from": ".getStatusMessage()",
+        "to_id": "idea_generation_controller_ideagenerationcontroller_generatefromproblem",
+        "to": ".generateFromProblem()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "title_generation_service_titlegenerationservice_buildsystemprompt",
+        "from": ".buildSystemPrompt()",
+        "to_id": "title_generation_service_titlegenerationservice",
+        "to": "TitleGenerationService",
+        "relation": "method"
+      },
+      {
+        "from_id": "title_generation_service_titlegenerationservice_buildsystemprompt",
+        "from": ".buildSystemPrompt()",
+        "to_id": "title_generation_service_titlegenerationservice_generatetitle",
+        "to": ".generateTitle()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "title_generation_service_titlegenerationservice_builduserprompt",
+        "from": ".buildUserPrompt()",
+        "to_id": "title_generation_service_titlegenerationservice",
+        "to": "TitleGenerationService",
+        "relation": "method"
+      },
+      {
+        "from_id": "title_generation_service_titlegenerationservice_builduserprompt",
+        "from": ".buildUserPrompt()",
+        "to_id": "title_generation_service_titlegenerationservice_generatetitle",
+        "to": ".generateTitle()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "idea_generation_compensation_service_ideagenerationcompensationservice_releaseunusedcreditreservation",
+        "from": ".releaseUnusedCreditReservation()",
+        "to_id": "idea_generation_controller_ideagenerationcontroller_generatefromproblem",
+        "to": ".generateFromProblem()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "title_generation_service_titlegenerationservice_extractkeyphrasestitle",
+        "from": ".extractKeyPhrasesTitle()",
+        "to_id": "title_generation_service_titlegenerationservice",
+        "to": "TitleGenerationService",
+        "relation": "method"
+      },
+      {
+        "from_id": "title_generation_service_titlegenerationservice_extractkeyphrasestitle",
+        "from": ".extractKeyPhrasesTitle()",
+        "to_id": "title_generation_service_titlegenerationservice_generatefallbacktitle",
+        "to": ".generateFallbackTitle()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "ideas_service_ideasservice_createidea",
+        "from": ".createIdea()",
+        "to_id": "idea_generation_controller_ideagenerationcontroller_generatefromproblem",
+        "to": ".generateFromProblem()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "ideas_service_ideasservice_createidea",
+        "from": ".createIdea()",
+        "to_id": "structured_logger_service_structuredlogger_info",
+        "to": ".info()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "ideas_service_ideasservice_claimqueuedpipelinerun",
+        "from": ".claimQueuedPipelineRun()",
+        "to_id": "idea_generation_controller_ideagenerationcontroller_generatefromproblem",
+        "to": ".generateFromProblem()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "ideas_service_ideasservice_claimqueuedpipelinerun",
+        "from": ".claimQueuedPipelineRun()",
+        "to_id": "structured_logger_service_structuredlogger_info",
+        "to": ".info()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "ideas_service_ideasservice_claimqueuedpipelinerun",
+        "from": ".claimQueuedPipelineRun()",
+        "to_id": "structured_logger_service_structuredlogger_warn",
+        "to": ".warn()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "ideas_service_ideasservice_updatetitle",
+        "from": ".updateTitle()",
+        "to_id": "idea_generation_controller_ideagenerationcontroller_generatefromproblem",
+        "to": ".generateFromProblem()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "ideas_service_ideasservice_updatetitle",
+        "from": ".updateTitle()",
+        "to_id": "structured_logger_service_structuredlogger_info",
+        "to": ".info()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "certificate_generator_service_certificategeneratorservice_generatepdffromhtml",
+        "from": ".generatePdfFromHtml()",
+        "to_id": "certificate_generator_service_certificategeneratorservice",
+        "to": "CertificateGeneratorService",
+        "relation": "method"
+      },
+      {
+        "from_id": "certificate_generator_service_certificategeneratorservice_generatepdffromhtml",
+        "from": ".generatePdfFromHtml()",
+        "to_id": "certificate_generator_service_certificategeneratorservice_generate",
+        "to": ".generate()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "ideas_service_ideasservice_releasequeuedpipelineclaim",
+        "from": ".releaseQueuedPipelineClaim()",
+        "to_id": "idea_generation_controller_ideagenerationcontroller_generatefromproblem",
+        "to": ".generateFromProblem()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "ideas_service_ideasservice_releasequeuedpipelineclaim",
+        "from": ".releaseQueuedPipelineClaim()",
+        "to_id": "structured_logger_service_structuredlogger_info",
+        "to": ".info()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "ideas_service_ideasservice_releasequeuedpipelineclaim",
+        "from": ".releaseQueuedPipelineClaim()",
+        "to_id": "structured_logger_service_structuredlogger_warn",
+        "to": ".warn()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "idea_generation_controller_ideagenerationcontroller",
+        "from": "IdeaGenerationController",
+        "to_id": "idea_generation_controller_ideagenerationcontroller_generatefromproblem",
+        "to": ".generateFromProblem()",
+        "relation": "method"
+      },
+      {
+        "from_id": "certificate_generator_service_certificategeneratorservice_generate",
+        "from": ".generate()",
+        "to_id": "certificate_generator_service_certificategeneratorservice",
+        "to": "CertificateGeneratorService",
+        "relation": "method"
+      },
+      {
+        "from_id": "certificate_generator_service_certificategeneratorservice_generate",
+        "from": ".generate()",
+        "to_id": "certification_service_certificationservice_claimbadge",
+        "to": ".claimBadge()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "certificate_generator_service_certificategeneratorservice_generate",
+        "from": ".generate()",
+        "to_id": "certificate_generator_service_certificategeneratorservice_buildasseturl",
+        "to": ".buildAssetUrl()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "certificate_generator_service_certificategeneratorservice_generate",
+        "from": ".generate()",
+        "to_id": "certificate_generator_service_certificategeneratorservice_dataurltobuffer",
+        "to": ".dataUrlToBuffer()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "certificate_generator_service_certificategeneratorservice_generate",
+        "from": ".generate()",
+        "to_id": "storage_service_storageservice_uploadfile",
+        "to": ".uploadFile()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "certificate_generator_service_certificategeneratorservice_generate",
+        "from": ".generate()",
+        "to_id": "certificate_html_rendercertificatehtml",
+        "to": "renderCertificateHtml()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "title_generation_service_titlegenerationservice",
+        "from": "TitleGenerationService",
+        "to_id": "title_generation_service_titlegenerationservice_generatefallbacktitle",
+        "to": ".generateFallbackTitle()",
+        "relation": "method"
+      },
+      {
+        "from_id": "title_generation_service_titlegenerationservice",
+        "from": "TitleGenerationService",
+        "to_id": "title_generation_service_titlegenerationservice_generatetitle",
+        "to": ".generateTitle()",
+        "relation": "method"
+      },
+      {
+        "from_id": "badge_generator_service_badgegeneratorservice_generate",
+        "from": ".generate()",
+        "to_id": "badge_generator_service_badgegeneratorservice",
+        "to": "BadgeGeneratorService",
+        "relation": "method"
+      },
+      {
+        "from_id": "badge_generator_service_badgegeneratorservice_generate",
+        "from": ".generate()",
+        "to_id": "badge_generator_service_badgegeneratorservice_buildasseturl",
+        "to": ".buildAssetUrl()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "badge_generator_service_badgegeneratorservice_generate",
+        "from": ".generate()",
+        "to_id": "badge_svg_renderbadgesvg",
+        "to": "renderBadgeSvg()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "badge_generator_service_badgegeneratorservice_generate",
+        "from": ".generate()",
+        "to_id": "storage_service_storageservice_uploadfile",
+        "to": ".uploadFile()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "badge_generator_service_badgegeneratorservice_generate",
+        "from": ".generate()",
+        "to_id": "certification_service_certificationservice_claimbadge",
+        "to": ".claimBadge()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "title_generation_service_titlegenerationservice_generatetitle",
+        "from": ".generateTitle()",
+        "to_id": "title_generation_service_titlegenerationservice_generatefallbacktitle",
+        "to": ".generateFallbackTitle()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "title_generation_service_titlegenerationservice_generatetitle",
+        "from": ".generateTitle()",
+        "to_id": "structured_logger_service_structuredlogger_error",
+        "to": ".error()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "title_generation_service_titlegenerationservice_generatetitle",
+        "from": ".generateTitle()",
+        "to_id": "structured_logger_service_structuredlogger_info",
+        "to": ".info()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "title_generation_service_titlegenerationservice_generatetitle",
+        "from": ".generateTitle()",
+        "to_id": "structured_logger_service_structuredlogger_warn",
+        "to": ".warn()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "title_generation_service_titlegenerationservice_generatetitle",
+        "from": ".generateTitle()",
+        "to_id": "error_logger_util_errorloggerutil_formaterrorforjson",
+        "to": ".formatErrorForJson()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "title_generation_service_titlegenerationservice_generatetitle",
+        "from": ".generateTitle()",
+        "to_id": "llm_provider_resolver_service_llmproviderresolverservice_callllm",
+        "to": ".callLlm()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "title_generation_service_titlegenerationservice_generatetitle",
+        "from": ".generateTitle()",
+        "to_id": "llm_provider_resolver_service_llmproviderresolverservice_resolve",
+        "to": ".resolve()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "title_generation_service_titlegenerationservice_generatetitle",
+        "from": ".generateTitle()",
+        "to_id": "idea_generation_controller_ideagenerationcontroller_generatefromproblem",
+        "to": ".generateFromProblem()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "idea_generation_controller_ideagenerationcontroller_generatefromproblem",
+        "from": ".generateFromProblem()",
+        "to_id": "ideas_authenticated_request_requireideasuserid",
+        "to": "requireIdeasUserId",
+        "relation": "calls"
+      },
+      {
+        "from_id": "idea_generation_controller_ideagenerationcontroller_generatefromproblem",
+        "from": ".generateFromProblem()",
+        "to_id": "plan_enforcement_guard_planenforcement",
+        "to": "PlanEnforcement",
+        "relation": "calls"
+      },
+      {
+        "from_id": "idea_generation_controller_ideagenerationcontroller_generatefromproblem",
+        "from": ".generateFromProblem()",
+        "to_id": "pipeline_trigger_service_pipelinetriggerservice_startpipeline",
+        "to": ".startPipeline()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "title_generation_service_titlegenerationservice_generatefallbacktitle",
+        "from": ".generateFallbackTitle()",
+        "to_id": "structured_logger_service_structuredlogger_info",
+        "to": ".info()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "pipeline_trigger_service_pipelinetriggerservice_startpipeline",
+        "from": ".startPipeline()",
+        "to_id": "structured_logger_service_structuredlogger_error",
+        "to": ".error()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "pipeline_trigger_service_pipelinetriggerservice_startpipeline",
+        "from": ".startPipeline()",
+        "to_id": "structured_logger_service_structuredlogger_info",
+        "to": ".info()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "llm_provider_resolver_service_llmproviderresolverservice_resolve",
+        "from": ".resolve()",
+        "to_id": "structured_logger_service_structuredlogger_info",
+        "to": ".info()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "certification_service_certificationservice_claimbadge",
+        "from": ".claimBadge()",
+        "to_id": "storage_service_storageservice_uploadfile",
+        "to": ".uploadFile()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "certificate_generator_service_certificategeneratorservice_buildasseturl",
+        "from": ".buildAssetUrl()",
+        "to_id": "certificate_generator_service_certificategeneratorservice",
+        "to": "CertificateGeneratorService",
+        "relation": "method"
+      },
+      {
+        "from_id": "certificate_generator_service_certificategeneratorservice_dataurltobuffer",
+        "from": ".dataUrlToBuffer()",
+        "to_id": "certificate_generator_service_certificategeneratorservice",
+        "to": "CertificateGeneratorService",
+        "relation": "method"
+      },
+      {
+        "from_id": "structured_logger_service_structuredlogger_info",
+        "from": ".info()",
+        "to_id": "storage_service_storageservice_uploadfile",
+        "to": ".uploadFile()",
+        "relation": "calls"
+      },
+      {
+        "from_id": "badge_generator_service_badgegeneratorservice_buildasseturl",
+        "from": ".buildAssetUrl()",
+        "to_id": "badge_generator_service_badgegeneratorservice",
+        "to": "BadgeGeneratorService",
+        "relation": "method"
+      },
+      {
+        "from_id": "certificate_html_rendercertificatehtml",
+        "from": "renderCertificateHtml()",
+        "to_id": "certificate_html",
+        "to": "certificate-html.ts",
+        "relation": "contains"
+      },
+      {
+        "from_id": "badge_svg_renderbadgesvg",
+        "from": "renderBadgeSvg()",
+        "to_id": "badge_svg",
+        "to": "badge-svg.ts",
+        "relation": "contains"
+      }
+    ],
+    "community_context": [
+      {
+        "id": 3,
+        "label": "Backend Subscription Expiration Service",
+        "node_count": 67
+      },
+      {
+        "id": 86,
+        "label": "Backend Vercel Service",
+        "node_count": 12
+      },
+      {
+        "id": 120,
+        "label": "Backend PDF Export Service",
+        "node_count": 10
+      },
+      {
+        "id": 256,
+        "label": "Backend Title Generation Service",
+        "node_count": 7
+      },
+      {
+        "id": 253,
+        "label": "Backend Storage Service",
+        "node_count": 7
+      },
+      {
+        "id": 299,
+        "label": "Backend Idea Generation Controller",
+        "node_count": 6
+      },
+      {
+        "id": 281,
+        "label": "Backend Certificate Generator Service",
+        "node_count": 6
+      },
+      {
+        "id": 297,
+        "label": "Backend Idea Artifacts Controller",
+        "node_count": 6
+      },
+      {
+        "id": 382,
+        "label": "Backend Error Logger Util",
+        "node_count": 5
+      },
+      {
+        "id": 483,
+        "label": "Backend Badge Generator Service — Asset",
+        "node_count": 4
+      },
+      {
+        "id": 553,
+        "label": "Backend Llm Provider Resolver Service",
+        "node_count": 4
+      },
+      {
+        "id": 550,
+        "label": "Backend Lets Build Executor — Build",
+        "node_count": 4
+      },
+      {
+        "id": 497,
+        "label": "Backend Certification Service — Add",
+        "node_count": 4
+      },
+      {
+        "id": 484,
+        "label": "Backend Badge SVG",
+        "node_count": 4
+      },
+      {
+        "id": 495,
+        "label": "Backend Certificate HTML",
+        "node_count": 4
+      },
+      {
+        "id": 778,
+        "label": "Backend Ideas Service — Pipeline",
+        "node_count": 3
+      },
+      {
+        "id": 1114,
+        "label": "Backend Credits Service — Credit",
+        "node_count": 2
+      },
+      {
+        "id": 1187,
+        "label": "Backend Ideas Service — Create",
+        "node_count": 2
+      },
+      {
+        "id": 1285,
+        "label": "Backend Pipeline Controller — Pipeline",
+        "node_count": 2
+      },
+      {
+        "id": 1073,
+        "label": "Backend Certificate HTML — HTML",
+        "node_count": 2
+      }
+    ],
+    "graph_signals": {
+      "god_nodes": [
+        ".info()",
+        ".warn()",
+        ".error()"
+      ],
+      "bridge_nodes": [
+        ".info()",
+        ".warn()",
+        ".error()"
+      ]
+    },
+    "shared_file_type": "code",
+    "retrieval_strategy": "default",
+    "retrieval_gate": {
+      "level": 1,
+      "reason": "explain intent without explicit reference — local context",
+      "skipped_retrieval": false,
+      "intent": "explain",
+      "signals": {
+        "has_pr_diff": false,
+        "has_stack_trace": false,
+        "mentioned_paths": [],
+        "mentioned_symbols": [],
+        "generation_intent": "runtime_generation",
+        "target_domain_hint": "backend_runtime"
+      }
+    },
+    "claims": [
+      {
+        "evidence_class": "primary",
+        "text": "primary evidence: .getStatusMessage(), .buildSystemPrompt(), .buildUserPrompt()",
+        "node_labels": [
+          ".getStatusMessage()",
+          ".buildSystemPrompt()",
+          ".buildUserPrompt()"
+        ]
+      },
+      {
+        "evidence_class": "supporting",
+        "text": "supporting evidence: .startPipeline(), .callLlm(), .resolve()",
+        "node_labels": [
+          ".startPipeline()",
+          ".callLlm()",
+          ".resolve()"
+        ]
+      }
+    ],
+    "coverage": {
+      "required_evidence": [
+        "primary",
+        "supporting",
+        "structural"
+      ],
+      "semantic_required": [
+        "implementation",
+        "structure"
+      ],
+      "semantic_optional": [
+        "contracts",
+        "configuration",
+        "tests"
+      ],
+      "entries": [
+        {
+          "evidence_class": "primary",
+          "required": true,
+          "available_nodes": 18,
+          "selected_nodes": 18,
+          "status": "covered"
+        },
+        {
+          "evidence_class": "supporting",
+          "required": true,
+          "available_nodes": 19,
+          "selected_nodes": 19,
+          "status": "covered"
+        },
+        {
+          "evidence_class": "structural",
+          "required": true,
+          "available_nodes": 0,
+          "selected_nodes": 0,
+          "status": "missing"
+        }
+      ],
+      "semantic_entries": [
+        {
+          "category": "implementation",
+          "label": "implementation",
+          "required": true,
+          "available_nodes": 33,
+          "selected_nodes": 33,
+          "status": "covered"
+        },
+        {
+          "category": "structure",
+          "label": "structure",
+          "required": true,
+          "available_nodes": 0,
+          "selected_nodes": 0,
+          "status": "missing"
+        },
+        {
+          "category": "contracts",
+          "label": "contracts",
+          "required": false,
+          "available_nodes": 4,
+          "selected_nodes": 4,
+          "status": "covered"
+        },
+        {
+          "category": "configuration",
+          "label": "configuration",
+          "required": false,
+          "available_nodes": 0,
+          "selected_nodes": 0,
+          "status": "missing"
+        },
+        {
+          "category": "tests",
+          "label": "tests",
+          "required": false,
+          "available_nodes": 0,
+          "selected_nodes": 0,
+          "status": "missing"
+        }
+      ],
+      "missing_required": [
+        "structural"
+      ],
+      "missing_semantic": [
+        "structure"
+      ],
+      "available_relationships": 57,
+      "selected_relationships": 57
+    },
+    "selection_diagnostics": {
+      "selection_strategy": "value-per-token",
+      "budget": 3000,
+      "used_tokens": 1456,
+      "required_overflow": false,
+      "ranking": [
+        {
+          "id": "idea_generation_controller_ideagenerationcontroller_getstatusmessage",
+          "label": ".getStatusMessage()",
+          "evidence_class": "primary",
+          "score": 12.75,
+          "token_cost": 42,
+          "density": 0.30357142857142855,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "contracts evidence",
+            "source path match"
+          ],
+          "penalties": []
+        },
+        {
+          "id": "title_generation_service_titlegenerationservice_buildsystemprompt",
+          "label": ".buildSystemPrompt()",
+          "evidence_class": "primary",
+          "score": 15,
+          "token_cost": 53,
+          "density": 0.2830188679245283,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "implementation evidence",
+            "source path match"
+          ],
+          "penalties": []
+        },
+        {
+          "id": "title_generation_service_titlegenerationservice_builduserprompt",
+          "label": ".buildUserPrompt()",
+          "evidence_class": "primary",
+          "score": 15,
+          "token_cost": 45,
+          "density": 0.3333333333333333,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "implementation evidence",
+            "source path match"
+          ],
+          "penalties": []
+        },
+        {
+          "id": "idea_generation_compensation_service_ideagenerationcompensationservice_releaseunusedcreditreservation",
+          "label": ".releaseUnusedCreditReservation()",
+          "evidence_class": "primary",
+          "score": 15,
+          "token_cost": 35,
+          "density": 0.42857142857142855,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "implementation evidence",
+            "source path match"
+          ],
+          "penalties": []
+        },
+        {
+          "id": "title_generation_service_titlegenerationservice_extractkeyphrasestitle",
+          "label": ".extractKeyPhrasesTitle()",
+          "evidence_class": "primary",
+          "score": 15,
+          "token_cost": 44,
+          "density": 0.3409090909090909,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "implementation evidence",
+            "source path match"
+          ],
+          "penalties": []
+        },
+        {
+          "id": "ideas_service_ideasservice_createidea",
+          "label": ".createIdea()",
+          "evidence_class": "primary",
+          "score": 15,
+          "token_cost": 49,
+          "density": 0.30612244897959184,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "implementation evidence",
+            "source path match"
+          ],
+          "penalties": []
+        },
+        {
+          "id": "ideas_service_ideasservice_claimqueuedpipelinerun",
+          "label": ".claimQueuedPipelineRun()",
+          "evidence_class": "primary",
+          "score": 15,
+          "token_cost": 36,
+          "density": 0.4166666666666667,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "implementation evidence",
+            "source path match"
+          ],
+          "penalties": []
+        },
+        {
+          "id": "ideas_service_ideasservice_updatetitle",
+          "label": ".updateTitle()",
+          "evidence_class": "primary",
+          "score": 15,
+          "token_cost": 47,
+          "density": 0.3191489361702128,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "implementation evidence",
+            "source path match"
+          ],
+          "penalties": []
+        },
+        {
+          "id": "certificate_generator_service_certificategeneratorservice_generatepdffromhtml",
+          "label": ".generatePdfFromHtml()",
+          "evidence_class": "primary",
+          "score": 13.5,
+          "token_cost": 47,
+          "density": 0.2872340425531915,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "implementation evidence"
+          ],
+          "penalties": []
+        },
+        {
+          "id": "ideas_service_ideasservice_releasequeuedpipelineclaim",
+          "label": ".releaseQueuedPipelineClaim()",
+          "evidence_class": "primary",
+          "score": 15,
+          "token_cost": 34,
+          "density": 0.4411764705882353,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "implementation evidence",
+            "source path match"
+          ],
+          "penalties": []
+        },
+        {
+          "id": "idea_generation_controller_ideagenerationcontroller",
+          "label": "IdeaGenerationController",
+          "evidence_class": "primary",
+          "score": 12.75,
+          "token_cost": 28,
+          "density": 0.45535714285714285,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "contracts evidence",
+            "source path match"
+          ],
+          "penalties": []
+        },
+        {
+          "id": "certificate_generator_service_certificategeneratorservice_generate",
+          "label": ".generate()",
+          "evidence_class": "primary",
+          "score": 13.5,
+          "token_cost": 28,
+          "density": 0.48214285714285715,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "implementation evidence"
+          ],
+          "penalties": []
+        },
+        {
+          "id": "title_generation_service_titlegenerationservice",
+          "label": "TitleGenerationService",
+          "evidence_class": "primary",
+          "score": 15,
+          "token_cost": 28,
+          "density": 0.5357142857142857,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "implementation evidence",
+            "source path match"
+          ],
+          "penalties": []
+        },
+        {
+          "id": "badge_generator_service_badgegeneratorservice_generate",
+          "label": ".generate()",
+          "evidence_class": "primary",
+          "score": 13.429,
+          "token_cost": 46,
+          "density": 0.29193478260869565,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "implementation evidence"
+          ],
+          "penalties": []
+        },
+        {
+          "id": "title_generation_service_titlegenerationservice_generatetitle",
+          "label": ".generateTitle()",
+          "evidence_class": "primary",
+          "score": 14.764,
+          "token_cost": 31,
+          "density": 0.476258064516129,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "implementation evidence",
+            "source path match"
+          ],
+          "penalties": []
+        },
+        {
+          "id": "idea_generation_controller_ideagenerationcontroller_generatefromproblem",
+          "label": ".generateFromProblem()",
+          "evidence_class": "primary",
+          "score": 12.475,
+          "token_cost": 38,
+          "density": 0.3282894736842105,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "contracts evidence",
+            "source path match"
+          ],
+          "penalties": []
+        },
+        {
+          "id": "title_generation_service_titlegenerationservice_generatefallbacktitle",
+          "label": ".generateFallbackTitle()",
+          "evidence_class": "primary",
+          "score": 14.665,
+          "token_cost": 33,
+          "density": 0.44439393939393934,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "implementation evidence",
+            "source path match"
+          ],
+          "penalties": []
+        },
+        {
+          "id": "ideas_authenticated_request_requireideasuserid",
+          "label": "requireIdeasUserId",
+          "evidence_class": "primary",
+          "score": 10.23,
+          "token_cost": 37,
+          "density": 0.2764864864864865,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "contracts evidence",
+            "source path match"
+          ],
+          "penalties": [
+            "hub node penalty"
+          ]
+        },
+        {
+          "id": "pipeline_trigger_service_pipelinetriggerservice_startpipeline",
+          "label": ".startPipeline()",
+          "evidence_class": "supporting",
+          "score": 13.5,
+          "token_cost": 63,
+          "density": 0.21428571428571427,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "implementation evidence"
+          ],
+          "penalties": []
+        },
+        {
+          "id": "llm_provider_resolver_service_llmproviderresolverservice_callllm",
+          "label": ".callLlm()",
+          "evidence_class": "supporting",
+          "score": 12.25,
+          "token_cost": 68,
+          "density": 0.1801470588235294,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "implementation evidence"
+          ],
+          "penalties": [
+            "hub node penalty"
+          ]
+        },
+        {
+          "id": "llm_provider_resolver_service_llmproviderresolverservice_resolve",
+          "label": ".resolve()",
+          "evidence_class": "supporting",
+          "score": 12.25,
+          "token_cost": 56,
+          "density": 0.21875,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "implementation evidence"
+          ],
+          "penalties": [
+            "hub node penalty"
+          ]
+        },
+        {
+          "id": "certification_service_certificationservice_claimbadge",
+          "label": ".claimBadge()",
+          "evidence_class": "supporting",
+          "score": 12.25,
+          "token_cost": 30,
+          "density": 0.4083333333333333,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "implementation evidence"
+          ],
+          "penalties": [
+            "hub node penalty"
+          ]
+        },
+        {
+          "id": "certificate_generator_service_certificategeneratorservice_buildasseturl",
+          "label": ".buildAssetUrl()",
+          "evidence_class": "supporting",
+          "score": 13.5,
+          "token_cost": 50,
+          "density": 0.27,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "implementation evidence"
+          ],
+          "penalties": []
+        },
+        {
+          "id": "certificate_generator_service_certificategeneratorservice_dataurltobuffer",
+          "label": ".dataUrlToBuffer()",
+          "evidence_class": "supporting",
+          "score": 13.5,
+          "token_cost": 45,
+          "density": 0.3,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "implementation evidence"
+          ],
+          "penalties": []
+        },
+        {
+          "id": "structured_logger_service_structuredlogger_info",
+          "label": ".info()",
+          "evidence_class": "supporting",
+          "score": 12.232,
+          "token_cost": 39,
+          "density": 0.31364102564102564,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "implementation evidence"
+          ],
+          "penalties": [
+            "hub node penalty"
+          ]
+        },
+        {
+          "id": "structured_logger_service_structuredlogger_warn",
+          "label": ".warn()",
+          "evidence_class": "supporting",
+          "score": 12.232,
+          "token_cost": 39,
+          "density": 0.31364102564102564,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "implementation evidence"
+          ],
+          "penalties": [
+            "hub node penalty"
+          ]
+        },
+        {
+          "id": "structured_logger_service_structuredlogger_error",
+          "label": ".error()",
+          "evidence_class": "supporting",
+          "score": 12.232,
+          "token_cost": 33,
+          "density": 0.37066666666666664,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "implementation evidence"
+          ],
+          "penalties": [
+            "hub node penalty"
+          ]
+        },
+        {
+          "id": "storage_service_storageservice_uploadfile",
+          "label": ".uploadFile()",
+          "evidence_class": "supporting",
+          "score": 13.471,
+          "token_cost": 24,
+          "density": 0.5612916666666666,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "implementation evidence"
+          ],
+          "penalties": []
+        },
+        {
+          "id": "badge_generator_service_badgegeneratorservice_buildasseturl",
+          "label": ".buildAssetUrl()",
+          "evidence_class": "supporting",
+          "score": 13.464,
+          "token_cost": 51,
+          "density": 0.264,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "implementation evidence"
+          ],
+          "penalties": []
+        },
+        {
+          "id": "certificate_html_rendercertificatehtml",
+          "label": "renderCertificateHtml()",
+          "evidence_class": "supporting",
+          "score": 11.721,
+          "token_cost": 34,
+          "density": 0.3447352941176471,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "implementation evidence"
+          ],
+          "penalties": []
+        },
+        {
+          "id": "badge_svg_renderbadgesvg",
+          "label": "renderBadgeSvg()",
+          "evidence_class": "supporting",
+          "score": 11.714,
+          "token_cost": 44,
+          "density": 0.26622727272727276,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "implementation evidence"
+          ],
+          "penalties": []
+        },
+        {
+          "id": "certificate_generator_service_certificategeneratorservice",
+          "label": "CertificateGeneratorService",
+          "evidence_class": "supporting",
+          "score": 11.64,
+          "token_cost": 26,
+          "density": 0.4476923076923077,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "implementation evidence"
+          ],
+          "penalties": []
+        },
+        {
+          "id": "error_logger_util_errorloggerutil_formaterrorforjson",
+          "label": ".formatErrorForJson()",
+          "evidence_class": "supporting",
+          "score": 11.632,
+          "token_cost": 42,
+          "density": 0.27695238095238095,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "implementation evidence"
+          ],
+          "penalties": []
+        },
+        {
+          "id": "plan_enforcement_guard_planenforcement",
+          "label": "PlanEnforcement",
+          "evidence_class": "supporting",
+          "score": 11.617,
+          "token_cost": 34,
+          "density": 0.3416764705882353,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "implementation evidence"
+          ],
+          "penalties": []
+        },
+        {
+          "id": "badge_generator_service_badgegeneratorservice",
+          "label": "BadgeGeneratorService",
+          "evidence_class": "supporting",
+          "score": 11.537,
+          "token_cost": 26,
+          "density": 0.44373076923076926,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "implementation evidence"
+          ],
+          "penalties": []
+        },
+        {
+          "id": "certificate_html",
+          "label": "certificate-html.ts",
+          "evidence_class": "supporting",
+          "score": 8.75,
+          "token_cost": 23,
+          "density": 0.3804347826086957,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "implementation evidence"
+          ],
+          "penalties": []
+        },
+        {
+          "id": "badge_svg",
+          "label": "badge-svg.ts",
+          "evidence_class": "supporting",
+          "score": 8.75,
+          "token_cost": 28,
+          "density": 0.3125,
+          "included": true,
+          "reasons": [
+            "match score",
+            "required evidence",
+            "implementation evidence"
+          ],
+          "penalties": []
+        }
+      ]
+    }
+  },
+  "paths": {
+    "output_dir": "<artifact-root>",
+    "baseline_prompt": "<artifact-root>/baseline-prompt.txt",
+    "madar_prompt": "<artifact-root>/madar-prompt.txt",
+    "report": "<artifact-root>/report.json",
+    "share_safe_report": "<artifact-root>/report.share-safe.json"
+  },
+  "provider_proof": {
+    "baseline": {
+      "provider": null,
+      "input_tokens_source": "estimated_cl100k_base",
+      "effective_tokens_source": "session_reuse_estimate",
+      "total_tokens_source": "not_available"
+    },
+    "madar": {
+      "provider": null,
+      "input_tokens_source": "estimated_cl100k_base",
+      "effective_tokens_source": "session_reuse_estimate",
+      "total_tokens_source": "not_available"
+    },
+    "reduction_basis": "estimated"
+  }
+}

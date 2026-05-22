@@ -9,12 +9,15 @@ import {
   buildBaselinePromptPack,
   buildMadarPromptPack,
   executeCompareRuns,
+  executeNativeAgentCompare,
   expandCompareExecTemplate,
   formatCompareSummary,
+  formatNativeAgentCompareSummary,
   generateCompareArtifacts,
   runCompareCommand,
   resolveCompareQuestions,
 } from '../../src/infrastructure/compare.js'
+import { runContextPackCommand } from '../../src/infrastructure/context-pack-command.js'
 import { parsePromptRunnerOutput } from '../../src/infrastructure/prompt-runner.js'
 import { saveManifest } from '../../src/pipeline/manifest.js'
 import { toJson } from '../../src/pipeline/export.js'
@@ -563,7 +566,7 @@ describe('compare runtime', () => {
     expect(followUpMadarPrompt).toContain('Session delta:')
     expect(followUpMadarPrompt).toContain('Question:\nwhere is session storage defined')
     expect(followUpMadarPrompt).not.toContain('Retrieved graph context:')
-    expect(followUpReport.madar_prompt_tokens_estimated).toBeGreaterThan(estimateQueryTokens(followUpMadarPrompt))
+    expect(followUpReport.madar_reused_context_tokens).toBeGreaterThan(0)
     expect(followUpReport.madar_effective_prompt_tokens).toBe(
       Math.max(0, followUpReport.madar_prompt_tokens_estimated - followUpReport.madar_reused_context_tokens),
     )
@@ -772,19 +775,90 @@ describe('compare runtime', () => {
     ).toThrow(/too small/i)
   })
 
-  it('builds a madar prompt pack from existing retrieval output', () => {
+  it('builds a madar prompt pack from the same explain-pack payload core as madar pack', async () => {
     const graph = makeGraph()
+    writeProjectFiles()
+    const graphPath = writeGraphFixture(graph)
     const retrieval = retrieveContext(graph, {
       question: 'how does login create a session',
       budget: 3000,
     })
 
+    const explainPayload = JSON.parse(
+      await runContextPackCommand({
+        prompt: retrieval.question,
+        budget: 3000,
+        task: 'explain',
+        graphPath,
+      }),
+    ) as Record<string, unknown>
     const pack = buildMadarPromptPack({ question: retrieval.question, retrieval })
+    const expectedPromptCore = JSON.stringify({
+      pack: explainPayload.pack,
+      claims: explainPayload.claims,
+      expandable: explainPayload.expandable,
+      coverage: explainPayload.coverage,
+      missing_context: explainPayload.missing_context,
+      missing_semantic: explainPayload.missing_semantic,
+      retrieval_gate: explainPayload.retrieval_gate,
+    }, null, 2)
 
-    expect(pack.prompt).toContain('Retrieved graph context:')
-    expect(pack.prompt).toContain('authenticateUser')
-    expect(pack.prompt).toContain('SessionManager')
-    expect(pack.prompt).toContain('calls')
+    expect(pack.prompt).toContain(expectedPromptCore)
+    expect(pack.prompt).toContain('"pack"')
+    expect(pack.prompt).toContain('"coverage"')
+    expect(pack.prompt).toContain('"missing_context"')
+  })
+
+  it('includes runtime-generation execution_slice data in pack_only madar prompts when present', () => {
+    const graph = makeGraph()
+    writeProjectFiles()
+    const graphPath = writeGraphFixture(graph)
+    const originalRetrieveContext = retrieveRuntime.retrieveContext
+    const retrieveSpy = vi.spyOn(retrieveRuntime, 'retrieveContext').mockImplementation((inputGraph, options) => ({
+      ...originalRetrieveContext(inputGraph, options),
+      retrieval_strategy: 'slice-v1',
+      execution_slice: {
+        status: 'partial',
+        boundary_reason: 'slice stops before expected persistence step',
+        steps: [
+          {
+            node_id: 'auth_user',
+            label: 'authenticateUser',
+            source_file: 'src/auth.ts',
+            line_number: 10,
+            node_kind: 'function',
+          },
+          {
+            node_id: 'session_manager',
+            label: 'SessionManager',
+            source_file: 'src/session.ts',
+            line_number: 3,
+            node_kind: 'class',
+          },
+        ],
+      },
+    }))
+
+    try {
+      const result = generateCompareArtifacts({
+        graphPath,
+        question: 'Explain the runtime path for login session creation',
+        outputDir: COMPARE_OUTPUT_ROOT,
+        execTemplate: 'runner --prompt {prompt_file} --question {question} --mode {mode} --out {output_file}',
+        baselineMode: 'pack_only',
+        now: new Date('2026-04-24T19:30:00.000Z'),
+      })
+
+      const report = result.reports[0]!
+      const madarPrompt = readFileSync(report.paths.madar_prompt, 'utf8')
+
+      expect(madarPrompt).toContain('"execution_slice"')
+      expect(madarPrompt).toContain('"status": "partial"')
+      expect(madarPrompt).toContain('"boundary_reason": "slice stops before expected persistence step"')
+      expect(madarPrompt).toContain('"retrieval_strategy": "slice-v1"')
+    } finally {
+      retrieveSpy.mockRestore()
+    }
   })
 
   it('computes prompt token counts from the exact prompt text', () => {
@@ -861,6 +935,8 @@ describe('compare runtime', () => {
     expect(baselinePrompt).toContain('return new SessionManager().createSession(credentials.userId)')
     expect(baselinePrompt).toContain('export class SessionManager')
     expect(madarPrompt).toContain('Retrieved graph context:')
+    expect(madarPrompt).toContain('"pack"')
+    expect(madarPrompt).toContain('"coverage"')
     expect(savedReport).toEqual(
       expect.objectContaining({
         question: 'how does login create a session',
@@ -2221,6 +2297,196 @@ describe('compare runtime', () => {
     expect(readFileSync(join(COMPARE_OUTPUT_ROOT, outputTimestamp, 'madar-answer.txt'), 'utf8')).toBe('madar answer\n')
   })
 
+  it('adds deterministic answer-quality results to native_agent suite summaries when sibling quality gates exist', async () => {
+    const graph = makeGraph()
+    writeProjectFiles()
+    const graphPath = writeGraphFixture(graph)
+    const suiteDir = join(PROJECT_FIXTURE_ROOT, 'benchmarks', 'quality-suite')
+    mkdirSync(suiteDir, { recursive: true })
+    const questionsPath = join(suiteDir, 'questions.json')
+    writeFileSync(
+      questionsPath,
+      JSON.stringify(
+        [
+          { question: 'how does login create a session' },
+          { question: 'how does logout clear the session' },
+        ],
+        null,
+        2,
+      ),
+      'utf8',
+    )
+    writeFileSync(
+      join(suiteDir, 'quality-gates.json'),
+      JSON.stringify(
+        {
+          login: {
+            prompt: 'how does login create a session',
+            required_answer_terms: ['SessionManager'],
+            forbidden_answer_terms: ['Billing'],
+            required_concepts: ['login reaches session creation'],
+            answer_quality_notes: ['Deterministic term gates are not a full semantic grader.'],
+            manual_review_notes: ['Confirm the answer explains session creation.'],
+          },
+          logout: {
+            prompt: 'how does logout clear the session',
+            required_answer_terms: ['clearSession'],
+            forbidden_answer_terms: ['Billing'],
+            required_concepts: ['logout reaches session clearing'],
+            answer_quality_notes: ['Deterministic term gates are not a full semantic grader.'],
+            manual_review_notes: ['Confirm the answer explains session invalidation.'],
+          },
+        },
+        null,
+        2,
+      ),
+      'utf8',
+    )
+
+    const result = await executeNativeAgentCompare(
+      {
+        graphPath,
+        questionsPath,
+        outputDir: COMPARE_OUTPUT_ROOT,
+        execTemplate: 'runner --prompt {prompt_file} --mode {mode} --out {output_file}',
+        baselineMode: 'native_agent',
+        now: new Date('2026-04-24T19:30:00.000Z'),
+      },
+      {
+        now: () => new Date('2026-04-24T19:30:00.000Z'),
+        runner: async (execution) => {
+          const answer =
+            execution.question === 'how does login create a session'
+              ? 'SessionManager creates the session.\n'
+              : execution.mode === 'baseline'
+                ? 'clearSession removes the session.\n'
+                : 'Billing handles the logout.\n'
+
+          return {
+            exitCode: 0,
+            stdout: makeClaudeStructuredCompareStdout({
+              result: answer,
+              usage: {
+                input_tokens: execution.mode === 'baseline' ? 120 : 90,
+                output_tokens: 30,
+              },
+            }),
+            stderr: '',
+            elapsedMs: execution.mode === 'baseline' ? 11 : 7,
+          }
+        },
+      },
+    )
+
+    expect(result.answer_quality).toEqual({
+      questions_checked: 2,
+      baseline_passed: 2,
+      madar_passed: 1,
+      madar_required_terms_missing: 1,
+      madar_forbidden_terms_present: 1,
+      manual_review_required: 2,
+    })
+    expect(result.reports[0]?.answer_quality).toEqual(
+      expect.objectContaining({
+        gate: 'login',
+        baseline: expect.objectContaining({
+          passed: true,
+          missing_required_terms: [],
+          forbidden_terms_present: [],
+        }),
+        madar: expect.objectContaining({
+          passed: true,
+          missing_required_terms: [],
+          forbidden_terms_present: [],
+        }),
+      }),
+    )
+    expect(result.reports[1]?.answer_quality).toEqual(
+      expect.objectContaining({
+        gate: 'logout',
+        baseline: expect.objectContaining({
+          passed: true,
+        }),
+        madar: expect.objectContaining({
+          passed: false,
+          missing_required_terms: ['clearSession'],
+          forbidden_terms_present: ['Billing'],
+        }),
+      }),
+    )
+
+    const savedReport = JSON.parse(readFileSync(join(COMPARE_OUTPUT_ROOT, '2026-04-24T19-30-00', 'question-002', 'report.json'), 'utf8')) as Record<string, unknown>
+    const shareSafeReport = JSON.parse(readFileSync(join(COMPARE_OUTPUT_ROOT, '2026-04-24T19-30-00', 'question-002', 'report.share-safe.json'), 'utf8')) as Record<string, unknown>
+    expect(savedReport).toEqual(
+      expect.objectContaining({
+        answer_quality: expect.objectContaining({
+          gate: 'logout',
+          madar: expect.objectContaining({
+            missing_required_terms: ['clearSession'],
+            forbidden_terms_present: ['Billing'],
+          }),
+        }),
+      }),
+    )
+    expect(shareSafeReport).toEqual(
+      expect.objectContaining({
+        answer_quality: expect.objectContaining({
+          gate: 'logout',
+          madar: expect.objectContaining({
+            missing_required_terms: ['clearSession'],
+            forbidden_terms_present: ['Billing'],
+          }),
+        }),
+      }),
+    )
+    expect(formatNativeAgentCompareSummary(result)).toContain('Answer quality: madar 1/2 passed deterministic gates')
+    expect(formatNativeAgentCompareSummary(result)).toContain('2 manual-review notes')
+  })
+
+  it('keeps native_agent suite runs working when no sibling quality gate config exists', async () => {
+    const graph = makeGraph()
+    writeProjectFiles()
+    const graphPath = writeGraphFixture(graph)
+    const suiteDir = join(PROJECT_FIXTURE_ROOT, 'benchmarks', 'ungated-suite')
+    mkdirSync(suiteDir, { recursive: true })
+    const questionsPath = join(suiteDir, 'questions.json')
+    writeFileSync(
+      questionsPath,
+      JSON.stringify([{ question: 'how does login create a session' }], null, 2),
+      'utf8',
+    )
+
+    const result = await executeNativeAgentCompare(
+      {
+        graphPath,
+        questionsPath,
+        outputDir: COMPARE_OUTPUT_ROOT,
+        execTemplate: 'runner --prompt {prompt_file} --mode {mode} --out {output_file}',
+        baselineMode: 'native_agent',
+        now: new Date('2026-04-24T19:30:00.000Z'),
+      },
+      {
+        now: () => new Date('2026-04-24T19:30:00.000Z'),
+        runner: async () => ({
+          exitCode: 0,
+          stdout: makeClaudeStructuredCompareStdout({
+            result: 'SessionManager creates the session.\n',
+            usage: {
+              input_tokens: 100,
+              output_tokens: 20,
+            },
+          }),
+          stderr: '',
+          elapsedMs: 5,
+        }),
+      },
+    )
+
+    expect(result.answer_quality).toBeUndefined()
+    expect(result.reports[0]?.answer_quality).toBeUndefined()
+    expect(formatNativeAgentCompareSummary(result)).not.toContain('Answer quality:')
+  })
+
   it('marks invalid compare placeholders as failed runs in persisted reports', async () => {
     const graph = makeGraph()
     writeProjectFiles()
@@ -3061,8 +3327,10 @@ describe('compare runtime', () => {
       })
 
       const madarPrompt = readFileSync(result.reports[0]!.paths.madar_prompt, 'utf8')
-      expect(madarPrompt).toContain('ArchiveDash @ ../../../vault/private-notes.txt:1')
-      expect(madarPrompt).toContain('ArchiveNested @ ../../../vault/private/notes.txt:1')
+      expect(madarPrompt).toContain('"label": "ArchiveDash"')
+      expect(madarPrompt).toContain('"source_file": "../../../vault/private-notes.txt"')
+      expect(madarPrompt).toContain('"label": "ArchiveNested"')
+      expect(madarPrompt).toContain('"source_file": "../../../vault/private/notes.txt"')
       expect(madarPrompt).not.toContain('outside dash snippet')
       expect(madarPrompt).not.toContain('outside nested snippet')
     } finally {

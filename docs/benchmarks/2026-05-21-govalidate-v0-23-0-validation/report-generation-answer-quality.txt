@@ -1,0 +1,6 @@
+docs-artifact FAIL
+prompt: Explain how idea report is getting generated
+missing required answer terms: GenerateIdeaReportService
+required concepts (manual review): runtime path stays on controller -> service flow
+answer quality notes: Deterministic answer checks are necessary but not sufficient for benchmark claims.
+manual review notes: Confirm the answer explains how the report is generated, not just where files exist.

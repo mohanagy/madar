@@ -73,6 +73,9 @@ export type SpiFrameworkRole =
   | 'nest_guard'
   | 'nest_pipe'
   | 'nest_interceptor'
+  // routing-controllers roles (issue #236)
+  | 'routing_controllers_controller'
+  | 'routing_controllers_route'
   // Express roles (slice 1c-ii.b)
   | 'express_app'
   | 'express_router'
@@ -194,6 +197,7 @@ export type SpiEdgeKind =
   | 'module_exports'
   | 'controller_route'
   | 'route_handler'
+  | 'registers_controller'
   | 'injects'
   | 'guards'
   | 'intercepts'

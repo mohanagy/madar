@@ -1,0 +1,3 @@
+docs-artifact FAIL
+prompt: Explain how idea report is getting generated
+missing required labels: IdeaReportController, GenerateIdeaReportService

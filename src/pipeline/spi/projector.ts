@@ -96,6 +96,7 @@ const SPI_TO_EXTRACTION_RELATION: Partial<Record<SpiEdge['kind'], string>> = {
   enqueues_job: 'enqueues_job',
   extends: 'extends',
   implements: 'implements',
+  registers_controller: 'registers_controller',
 }
 
 const SPI_TO_EXTRACTION_CONFIDENCE: Record<SpiEdge['confidence'], ExtractionEdge['confidence']> = {
@@ -247,6 +248,7 @@ export function projectSpiToExtraction(
 
 function frameworkForRole(role: NonNullable<SpiSymbol['framework_role']>): string {
   if (role.startsWith('nest_')) return 'nestjs'
+  if (role.startsWith('routing_controllers_')) return 'routing-controllers'
   if (role.startsWith('express_')) return 'express'
   if (role.startsWith('nextjs_')) return 'nextjs'
   if (role.startsWith('react_router_')) return 'react-router'
@@ -262,12 +264,15 @@ function frameworkForRole(role: NonNullable<SpiSymbol['framework_role']>): strin
 function nodeKindForRole(role: NonNullable<SpiSymbol['framework_role']>): NonNullable<ExtractionNode['node_kind']> | null {
   switch (role) {
     case 'nest_route':
+    case 'routing_controllers_route':
     case 'express_route':
     case 'nextjs_app_route':
     case 'nextjs_pages_api':
     case 'hono_route':
     case 'fastify_route':
       return 'route'
+    case 'routing_controllers_controller':
+      return 'controller'
     case 'express_router':
       return 'router'
     case 'hono_app':

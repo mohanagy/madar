@@ -1,0 +1,129 @@
+{
+  "baseline_mode": "native_agent",
+  "question": "Where does the app choose providers or models before making AI calls?",
+  "graph_path": "<project-root>/out/graph.json",
+  "exec_command": {
+    "command": null,
+    "placeholders": [
+      "{prompt_file}"
+    ],
+    "redacted": true
+  },
+  "baseline": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 13,
+      "cache_creation_input_tokens": 42137,
+      "cache_read_input_tokens": 507814,
+      "output_tokens": 2515,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 42137,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "",
+      "iterations": [
+        {
+          "input_tokens": 1,
+          "output_tokens": 1087,
+          "cache_read_input_tokens": 76109,
+          "cache_creation_input_tokens": 643,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 643
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 549964,
+    "uncached_input_tokens_anthropic_exact": 42150,
+    "cached_input_tokens_anthropic_exact": 507814,
+    "total_cost_usd": 0.5802032500000001,
+    "num_turns": 8,
+    "duration_ms": 48188,
+    "result_path": "<artifact-root>/baseline-answer.txt"
+  },
+  "madar": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 25,
+      "cache_creation_input_tokens": 79300,
+      "cache_read_input_tokens": 282692,
+      "output_tokens": 2488,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 79300,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "",
+      "iterations": [
+        {
+          "input_tokens": 6,
+          "output_tokens": 1523,
+          "cache_read_input_tokens": 81468,
+          "cache_creation_input_tokens": 4956,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 4956
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 362017,
+    "uncached_input_tokens_anthropic_exact": 79325,
+    "cached_input_tokens_anthropic_exact": 282692,
+    "total_cost_usd": 0.699296,
+    "num_turns": 5,
+    "duration_ms": 44006,
+    "result_path": "<artifact-root>/madar-answer.txt"
+  },
+  "reductions": {
+    "input_tokens": 1.52,
+    "num_turns": 1.6,
+    "duration_ms": 1.1,
+    "cost_usd": 0.83
+  },
+  "prompt_token_source": {
+    "baseline": "anthropic_provider_reported",
+    "madar": "anthropic_provider_reported"
+  },
+  "provider_proof": {
+    "baseline": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "madar": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "reduction_basis": "provider_reported"
+  },
+  "started_at": "2026-05-21T18:22:05.302Z",
+  "completed_at": "2026-05-21T18:54:01.383Z",
+  "paths": {
+    "output_dir": "<artifact-root>",
+    "report": "<artifact-root>/report.json",
+    "share_safe_report": "<artifact-root>/report.share-safe.json",
+    "baseline_answer": "<artifact-root>/baseline-answer.txt",
+    "madar_answer": "<artifact-root>/madar-answer.txt",
+    "prompt_file": "<artifact-root>/native_agent-prompt.txt"
+  }
+}

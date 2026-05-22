@@ -1,0 +1,129 @@
+{
+  "baseline_mode": "native_agent",
+  "question": "How do waitlist approvals and invite codes work?",
+  "graph_path": "<project-root>/out/graph.json",
+  "exec_command": {
+    "command": null,
+    "placeholders": [
+      "{prompt_file}"
+    ],
+    "redacted": true
+  },
+  "baseline": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 13,
+      "cache_creation_input_tokens": 32324,
+      "cache_read_input_tokens": 158247,
+      "output_tokens": 2271,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 32324,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "",
+      "iterations": [
+        {
+          "input_tokens": 6,
+          "output_tokens": 1627,
+          "cache_read_input_tokens": 61982,
+          "cache_creation_input_tokens": 4957,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 4957
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 190584,
+    "uncached_input_tokens_anthropic_exact": 32337,
+    "cached_input_tokens_anthropic_exact": 158247,
+    "total_cost_usd": 0.6618560000000001,
+    "num_turns": 3,
+    "duration_ms": 150047,
+    "result_path": "<artifact-root>/baseline-answer.txt"
+  },
+  "madar": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 26,
+      "cache_creation_input_tokens": 98847,
+      "cache_read_input_tokens": 366549,
+      "output_tokens": 5931,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 98847,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "",
+      "iterations": [
+        {
+          "input_tokens": 6,
+          "output_tokens": 4341,
+          "cache_read_input_tokens": 83939,
+          "cache_creation_input_tokens": 22039,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 22039
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 465422,
+    "uncached_input_tokens_anthropic_exact": 98873,
+    "cached_input_tokens_anthropic_exact": 366549,
+    "total_cost_usd": 0.94947325,
+    "num_turns": 8,
+    "duration_ms": 93102,
+    "result_path": "<artifact-root>/madar-answer.txt"
+  },
+  "reductions": {
+    "input_tokens": 0.41,
+    "num_turns": 0.38,
+    "duration_ms": 1.61,
+    "cost_usd": 0.7
+  },
+  "prompt_token_source": {
+    "baseline": "anthropic_provider_reported",
+    "madar": "anthropic_provider_reported"
+  },
+  "provider_proof": {
+    "baseline": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "madar": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "reduction_basis": "provider_reported"
+  },
+  "started_at": "2026-05-21T18:22:05.302Z",
+  "completed_at": "2026-05-21T18:34:15.942Z",
+  "paths": {
+    "output_dir": "<artifact-root>",
+    "report": "<artifact-root>/report.json",
+    "share_safe_report": "<artifact-root>/report.share-safe.json",
+    "baseline_answer": "<artifact-root>/baseline-answer.txt",
+    "madar_answer": "<artifact-root>/madar-answer.txt",
+    "prompt_file": "<artifact-root>/native_agent-prompt.txt"
+  }
+}

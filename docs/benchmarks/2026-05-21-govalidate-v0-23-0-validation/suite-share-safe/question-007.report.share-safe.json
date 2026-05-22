@@ -1,0 +1,129 @@
+{
+  "baseline_mode": "native_agent",
+  "question": "Where are Stripe billing or usage limits enforced?",
+  "graph_path": "<project-root>/out/graph.json",
+  "exec_command": {
+    "command": null,
+    "placeholders": [
+      "{prompt_file}"
+    ],
+    "redacted": true
+  },
+  "baseline": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 18,
+      "cache_creation_input_tokens": 54881,
+      "cache_read_input_tokens": 930713,
+      "output_tokens": 4766,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 54881,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "",
+      "iterations": [
+        {
+          "input_tokens": 1,
+          "output_tokens": 1621,
+          "cache_read_input_tokens": 88321,
+          "cache_creation_input_tokens": 1175,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 1175
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 985612,
+    "uncached_input_tokens_anthropic_exact": 54899,
+    "cached_input_tokens_anthropic_exact": 930713,
+    "total_cost_usd": 0.9276027499999999,
+    "num_turns": 20,
+    "duration_ms": 90007,
+    "result_path": "<artifact-root>/baseline-answer.txt"
+  },
+  "madar": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 26,
+      "cache_creation_input_tokens": 75258,
+      "cache_read_input_tokens": 348249,
+      "output_tokens": 3383,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 75258,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "",
+      "iterations": [
+        {
+          "input_tokens": 1,
+          "output_tokens": 1906,
+          "cache_read_input_tokens": 75994,
+          "cache_creation_input_tokens": 6388,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 6388
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 423533,
+    "uncached_input_tokens_anthropic_exact": 75284,
+    "cached_input_tokens_anthropic_exact": 348249,
+    "total_cost_usd": 0.7291920000000001,
+    "num_turns": 9,
+    "duration_ms": 59619,
+    "result_path": "<artifact-root>/madar-answer.txt"
+  },
+  "reductions": {
+    "input_tokens": 2.33,
+    "num_turns": 2.22,
+    "duration_ms": 1.51,
+    "cost_usd": 1.27
+  },
+  "prompt_token_source": {
+    "baseline": "anthropic_provider_reported",
+    "madar": "anthropic_provider_reported"
+  },
+  "provider_proof": {
+    "baseline": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "madar": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "reduction_basis": "provider_reported"
+  },
+  "started_at": "2026-05-21T18:22:05.302Z",
+  "completed_at": "2026-05-21T18:46:54.390Z",
+  "paths": {
+    "output_dir": "<artifact-root>",
+    "report": "<artifact-root>/report.json",
+    "share_safe_report": "<artifact-root>/report.share-safe.json",
+    "baseline_answer": "<artifact-root>/baseline-answer.txt",
+    "madar_answer": "<artifact-root>/madar-answer.txt",
+    "prompt_file": "<artifact-root>/native_agent-prompt.txt"
+  }
+}

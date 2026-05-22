@@ -1,0 +1,129 @@
+{
+  "baseline_mode": "native_agent",
+  "question": "Explain how idea report generation works end to end.",
+  "graph_path": "<project-root>/out/graph.json",
+  "exec_command": {
+    "command": null,
+    "placeholders": [
+      "{prompt_file}"
+    ],
+    "redacted": true
+  },
+  "baseline": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 12,
+      "cache_creation_input_tokens": 34928,
+      "cache_read_input_tokens": 413705,
+      "output_tokens": 3087,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 34928,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "",
+      "iterations": [
+        {
+          "input_tokens": 1,
+          "output_tokens": 1376,
+          "cache_read_input_tokens": 64144,
+          "cache_creation_input_tokens": 5399,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 5399
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 448645,
+    "uncached_input_tokens_anthropic_exact": 34940,
+    "cached_input_tokens_anthropic_exact": 413705,
+    "total_cost_usd": 0.74466435,
+    "num_turns": 7,
+    "duration_ms": 191615,
+    "result_path": "<artifact-root>/baseline-answer.txt"
+  },
+  "madar": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 22,
+      "cache_creation_input_tokens": 115249,
+      "cache_read_input_tokens": 510201,
+      "output_tokens": 6790,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 115249,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "",
+      "iterations": [
+        {
+          "input_tokens": 1,
+          "output_tokens": 4631,
+          "cache_read_input_tokens": 111181,
+          "cache_creation_input_tokens": 10517,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 10517
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 625472,
+    "uncached_input_tokens_anthropic_exact": 115271,
+    "cached_input_tokens_anthropic_exact": 510201,
+    "total_cost_usd": 1.1452667499999998,
+    "num_turns": 10,
+    "duration_ms": 104147,
+    "result_path": "<artifact-root>/madar-answer.txt"
+  },
+  "reductions": {
+    "input_tokens": 0.72,
+    "num_turns": 0.7,
+    "duration_ms": 1.84,
+    "cost_usd": 0.65
+  },
+  "prompt_token_source": {
+    "baseline": "anthropic_provider_reported",
+    "madar": "anthropic_provider_reported"
+  },
+  "provider_proof": {
+    "baseline": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "madar": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "reduction_basis": "provider_reported"
+  },
+  "started_at": "2026-05-21T18:22:05.302Z",
+  "completed_at": "2026-05-21T18:27:14.986Z",
+  "paths": {
+    "output_dir": "<artifact-root>",
+    "report": "<artifact-root>/report.json",
+    "share_safe_report": "<artifact-root>/report.share-safe.json",
+    "baseline_answer": "<artifact-root>/baseline-answer.txt",
+    "madar_answer": "<artifact-root>/madar-answer.txt",
+    "prompt_file": "<artifact-root>/native_agent-prompt.txt"
+  }
+}

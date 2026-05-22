@@ -64,7 +64,7 @@ madar compare "how does password reset request enqueue the reset email" \
   --yes
 ```
 
-This does **not** measure model quality. It is a safe local smoke check that proves `compare` can build both prompts, isolate one bounded raw-context baseline against one compiled madar pack, and save the artifact bundle without requiring a hosted model. Real model-backed compare runs are optional.
+This does **not** measure model quality. It is a safe local smoke check that proves `compare` can build both prompts, isolate one bounded raw-context baseline against one compiled madar pack rendered from the same explain-pack core as `madar pack --task explain`, and save the artifact bundle without requiring a hosted model. Real model-backed compare runs are optional.
 
 ## Expected output
 

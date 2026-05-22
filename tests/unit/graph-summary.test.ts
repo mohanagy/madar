@@ -313,6 +313,132 @@ describe('buildGraphSummary', () => {
     expect(repeatedSummary.runtime_paths).toEqual(summary.runtime_paths)
   })
 
+  it('prefers production runtime paths over benchmark paths when the summary is capped', () => {
+    const graph = makeManyRuntimePathsGraph(SUMMARY_ARRAY_CAP)
+
+    graph.addNode('benchmark-entry', {
+      label: 'ABenchmarkEntry',
+      source_file: 'benchmarks/runtime/entry.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'benchmark',
+    })
+    graph.addNode('benchmark-handler', {
+      label: 'ABenchmarkHandler',
+      source_file: 'benchmarks/runtime/handler.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'benchmark',
+    })
+    graph.addNode('benchmark-sink', {
+      label: 'ABenchmarkSink',
+      source_file: 'benchmarks/runtime/sink.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'benchmark',
+    })
+
+    graph.addEdge('benchmark-entry', 'benchmark-handler', {
+      relation: 'calls',
+      confidence: 'EXTRACTED',
+      source_file: 'benchmarks/runtime/entry.ts',
+    })
+    graph.addEdge('benchmark-handler', 'benchmark-sink', {
+      relation: 'calls',
+      confidence: 'EXTRACTED',
+      source_file: 'benchmarks/runtime/handler.ts',
+    })
+
+    const summary = buildGraphSummary(graph)
+
+    expect(summary.runtime_paths).toHaveLength(SUMMARY_ARRAY_CAP)
+    expect(summary.runtime_paths).not.toContainEqual({
+      from: 'ABenchmarkEntry',
+      to: 'ABenchmarkSink',
+      hops: 2,
+    })
+    expect(summary.runtime_paths).toContainEqual({
+      from: 'RuntimeEntry09',
+      to: 'RuntimeSink09',
+      hops: 2,
+    })
+  })
+
+  it('ranks queue-backed runtime paths ahead of shallow helper paths', () => {
+    const graph = new KnowledgeGraph(true)
+
+    graph.addNode('helper-entry', {
+      label: 'AHelperEntry',
+      source_file: 'src/helpers/entry.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+    })
+    graph.addNode('helper-terminal', {
+      label: 'AHelperTerminal',
+      source_file: 'src/helpers/terminal.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+    })
+    graph.addEdge('helper-entry', 'helper-terminal', {
+      relation: 'calls',
+      confidence: 'EXTRACTED',
+      source_file: 'src/helpers/entry.ts',
+    })
+
+    graph.addNode('queue-route', {
+      label: 'ZQueueRoute',
+      source_file: 'src/routes/queue.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+      node_kind: 'route',
+      route_path: '/jobs',
+    })
+    graph.addNode('queue-dispatcher', {
+      label: 'QueueDispatcher',
+      source_file: 'src/queue/dispatcher.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+      framework_role: 'service',
+    })
+    graph.addNode('queue-worker', {
+      label: 'QueueWorker',
+      source_file: 'src/queue/worker.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+      framework_role: 'worker',
+    })
+    graph.addEdge('queue-route', 'queue-dispatcher', {
+      relation: 'calls',
+      confidence: 'EXTRACTED',
+      source_file: 'src/routes/queue.ts',
+    })
+    graph.addEdge('queue-dispatcher', 'queue-worker', {
+      relation: 'enqueues_job',
+      confidence: 'EXTRACTED',
+      source_file: 'src/queue/dispatcher.ts',
+    })
+
+    const summary = buildGraphSummary(graph)
+
+    expect(summary.runtime_paths).toEqual([
+      { from: 'ZQueueRoute', to: 'QueueWorker', hops: 2 },
+      { from: 'AHelperEntry', to: 'AHelperTerminal', hops: 1 },
+    ])
+  })
+
   it('keeps distinct runtime paths when labels contain control characters', () => {
     const graph = new KnowledgeGraph(true)
 

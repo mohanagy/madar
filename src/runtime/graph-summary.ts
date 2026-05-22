@@ -7,6 +7,19 @@ const SUMMARY_ARRAY_CAP = 10
 const ENTRY_NODE_KINDS = new Set(['route', 'router', 'controller', 'page', 'layout', 'middleware'])
 const ENTRY_FRAMEWORK_ROLE_HINTS = ['route', 'router', 'controller', 'page', 'layout', 'middleware', 'app', 'plugin', 'procedure']
 const RUNTIME_METADATA_KEYS = ['route_path', 'mount_path', 'procedure_name', 'router_name'] as const
+const MAX_RUNTIME_PATH_HOPS = 6
+const RELATION_QUALITY_SCORES: Record<string, number> = {
+  enqueues_job: 5,
+  controller_route: 4,
+  route_handler: 4,
+  calls: 4,
+  method: 3,
+  registers_controller: 2,
+  guarded_by: 1,
+  uses_authorization: 1,
+  uses_middleware: 1,
+  intercepts: 1,
+}
 
 export interface GraphSummaryTopModule {
   label: string
@@ -48,6 +61,23 @@ type NodeSummary = {
   explicitEntrySignal: boolean
   runtimeEligible: boolean
   sourceDomain: string
+}
+
+type RuntimeTraversal = {
+  hops: number
+  relationScore: number
+  minDomainScore: number
+}
+
+type RuntimePathCandidate = {
+  path: GraphSummaryRuntimePath
+  fromSourceFile: string
+  toSourceFile: string
+  entryScore: number
+  minDomainScore: number
+  relationScore: number
+  terminalScore: number
+  hopScore: number
 }
 
 function normalizeString(value: unknown): string {
@@ -102,6 +132,7 @@ function normalizedFramework(attributes: Record<string, unknown>): string {
 
   const frameworkRole = normalizeString(attributes.framework_role).toLowerCase()
   if (frameworkRole.startsWith('express_')) return 'express'
+  if (frameworkRole.startsWith('routing_controllers_')) return 'routing-controllers'
   if (frameworkRole.startsWith('react_router_')) return 'react-router'
   if (frameworkRole.startsWith('redux_')) return 'redux-toolkit'
   if (frameworkRole.startsWith('nest_')) return 'nestjs'
@@ -205,6 +236,76 @@ function entrypointScore(node: NodeSummary, exported: boolean): number {
   return score
 }
 
+function sourceDomainScore(sourceDomain: string): number {
+  switch (sourceDomain) {
+    case 'production':
+      return 7
+    case '':
+    case 'unknown':
+      return 6
+    case 'config':
+      return 5
+    case 'docs':
+      return 2
+    case 'test':
+    case 'fixture':
+    case 'benchmark':
+    case 'generated':
+      return 0
+    default:
+      return 4
+  }
+}
+
+function relationQualityScore(relation: unknown): number {
+  const normalized = normalizeString(relation).toLowerCase()
+  return RELATION_QUALITY_SCORES[normalized] ?? 1
+}
+
+function terminalNodeScore(node: NodeSummary, graph: KnowledgeGraph): number {
+  const attributes = graph.nodeAttributes(node.id)
+  const normalized = [
+    node.label,
+    node.sourceFile,
+    normalizeString(attributes.node_kind),
+    normalizeString(attributes.framework_role),
+  ].join(' ').toLowerCase()
+
+  let score = 0
+  if (/\b(worker|consumer|processor|repository|repo|store|persistence|service|gateway|client)\b/.test(normalized)) {
+    score += 3
+  }
+  if (/\b(queue|job)\b/.test(normalized)) {
+    score += 2
+  }
+  if (/\b(helper|util|utility|dto|logger|logging|log|type|schema|constant)\b/.test(normalized)) {
+    score -= 2
+  }
+  return score
+}
+
+function runtimeHopScore(hops: number): number {
+  if (hops <= 0) {
+    return 0
+  }
+  if (hops === 1) {
+    return 1
+  }
+  if (hops <= 4) {
+    return 3
+  }
+  if (hops <= MAX_RUNTIME_PATH_HOPS) {
+    return 2
+  }
+  return 0
+}
+
+function compareNodeIdentity(left: NodeSummary, right: NodeSummary): number {
+  return left.label.localeCompare(right.label)
+    || left.sourceFile.localeCompare(right.sourceFile)
+    || left.id.localeCompare(right.id)
+}
+
 function entrypoints(graph: KnowledgeGraph, nodes: readonly NodeSummary[]): GraphSummaryEntrypoint[] {
   return sortedBounded(
     nodes
@@ -236,9 +337,34 @@ function runtimeEntryCandidates(nodes: readonly NodeSummary[]): NodeSummary[] {
     })
 }
 
-function shortestRuntimeDistances(graph: KnowledgeGraph, startId: string, runtimeNodeIds: ReadonlySet<string>): Map<string, number> {
-  const distances = new Map<string, number>([[startId, 0]])
-  const queue = [startId]
+function strongerRuntimeTraversal(candidate: RuntimeTraversal, existing: RuntimeTraversal): boolean {
+  if (candidate.hops !== existing.hops) {
+    return candidate.hops < existing.hops
+  }
+  if (candidate.relationScore !== existing.relationScore) {
+    return candidate.relationScore > existing.relationScore
+  }
+  if (candidate.minDomainScore !== existing.minDomainScore) {
+    return candidate.minDomainScore > existing.minDomainScore
+  }
+  return false
+}
+
+function bestRuntimeTraversals(
+  graph: KnowledgeGraph,
+  start: NodeSummary,
+  runtimeNodeIds: ReadonlySet<string>,
+  nodeMap: ReadonlyMap<string, NodeSummary>,
+): Map<string, RuntimeTraversal> {
+  const traversals = new Map<string, RuntimeTraversal>([[
+    start.id,
+    {
+      hops: 0,
+      relationScore: 0,
+      minDomainScore: sourceDomainScore(start.sourceDomain),
+    },
+  ]])
+  const queue = [start.id]
 
   while (queue.length > 0) {
     const nodeId = queue.shift()
@@ -246,70 +372,111 @@ function shortestRuntimeDistances(graph: KnowledgeGraph, startId: string, runtim
       continue
     }
 
-    const distance = distances.get(nodeId)
-    if (distance === undefined) {
+    const traversal = traversals.get(nodeId)
+    if (!traversal) {
       continue
     }
 
-    for (const neighbor of graph.successors(nodeId)) {
-      if (!runtimeNodeIds.has(neighbor) || distances.has(neighbor)) {
+    if (traversal.hops >= MAX_RUNTIME_PATH_HOPS) {
+      continue
+    }
+
+    const neighbors = graph.successors(nodeId)
+      .filter((neighbor) => runtimeNodeIds.has(neighbor))
+      .map((neighbor) => nodeMap.get(neighbor))
+      .filter((neighbor): neighbor is NodeSummary => neighbor !== undefined)
+      .sort(compareNodeIdentity)
+
+    for (const neighbor of neighbors) {
+      const edge = graph.edgeAttributes(nodeId, neighbor.id)
+      const candidate: RuntimeTraversal = {
+        hops: traversal.hops + 1,
+        relationScore: traversal.relationScore + relationQualityScore(edge.relation),
+        minDomainScore: Math.min(traversal.minDomainScore, sourceDomainScore(neighbor.sourceDomain)),
+      }
+      const existing = traversals.get(neighbor.id)
+      if (existing && !strongerRuntimeTraversal(candidate, existing)) {
         continue
       }
-      distances.set(neighbor, distance + 1)
-      queue.push(neighbor)
+      traversals.set(neighbor.id, candidate)
+      queue.push(neighbor.id)
     }
   }
 
-  return distances
+  return traversals
 }
 
-function strongerRuntimePath(left: GraphSummaryRuntimePath, right: GraphSummaryRuntimePath): GraphSummaryRuntimePath {
-  if (right.hops > left.hops) {
-    return right
+function compareRuntimePathCandidates(left: RuntimePathCandidate, right: RuntimePathCandidate): number {
+  return right.entryScore - left.entryScore
+    || right.minDomainScore - left.minDomainScore
+    || right.relationScore - left.relationScore
+    || right.terminalScore - left.terminalScore
+    || right.hopScore - left.hopScore
+    || right.path.hops - left.path.hops
+    || left.path.from.localeCompare(right.path.from)
+    || left.path.to.localeCompare(right.path.to)
+    || left.fromSourceFile.localeCompare(right.fromSourceFile)
+    || left.toSourceFile.localeCompare(right.toSourceFile)
+}
+
+function runtimePathCandidate(
+  graph: KnowledgeGraph,
+  start: NodeSummary,
+  terminal: NodeSummary,
+  traversal: RuntimeTraversal,
+): RuntimePathCandidate {
+  const startAttributes = graph.nodeAttributes(start.id)
+  return {
+    path: {
+      from: start.label,
+      to: terminal.label,
+      hops: traversal.hops,
+    },
+    fromSourceFile: start.sourceFile,
+    toSourceFile: terminal.sourceFile,
+    entryScore: entrypointScore(start, normalizeBoolean(startAttributes.exported)),
+    minDomainScore: traversal.minDomainScore,
+    relationScore: traversal.relationScore,
+    terminalScore: terminalNodeScore(terminal, graph),
+    hopScore: runtimeHopScore(traversal.hops),
   }
-  return left
 }
 
 function runtimePaths(graph: KnowledgeGraph, nodes: readonly NodeSummary[]): GraphSummaryRuntimePath[] {
   const runtimeNodeIds = new Set(nodes.filter((node) => node.runtimeEligible).map((node) => node.id))
   const nodeMap = new Map(nodes.map((node) => [node.id, node] as const))
-  const paths = new Map<string, GraphSummaryRuntimePath>()
+  const paths = new Map<string, RuntimePathCandidate>()
 
   for (const start of runtimeEntryCandidates(nodes)) {
-    const distances = shortestRuntimeDistances(graph, start.id, runtimeNodeIds)
-    const terminals = [...distances.entries()]
-      .filter(([nodeId, hops]) => nodeId !== start.id && hops > 0)
+    const traversals = bestRuntimeTraversals(graph, start, runtimeNodeIds, nodeMap)
+    const terminals = [...traversals.entries()]
+      .filter(([nodeId, traversal]) => nodeId !== start.id && traversal.hops > 0)
       .filter(([nodeId]) => graph.successors(nodeId).filter((neighbor) => runtimeNodeIds.has(neighbor)).length === 0)
-      .map(([nodeId, hops]) => ({
+      .map(([nodeId, traversal]) => ({
         node: nodeMap.get(nodeId),
-        hops,
+        traversal,
       }))
-      .filter((entry): entry is { node: NodeSummary; hops: number } => entry.node !== undefined)
-      .sort((left, right) => right.hops - left.hops
-        || left.node.label.localeCompare(right.node.label)
-        || left.node.sourceFile.localeCompare(right.node.sourceFile))
+      .filter((entry): entry is { node: NodeSummary; traversal: RuntimeTraversal } => entry.node !== undefined)
+      .map(({ node, traversal }) => runtimePathCandidate(graph, start, node, traversal))
+      .sort(compareRuntimePathCandidates)
 
     const best = terminals[0]
     if (!best) {
       continue
     }
 
-    const path = {
-      from: start.label,
-      to: best.node.label,
-      hops: best.hops,
-    }
+    const path = best.path
     const key = JSON.stringify([path.from, path.to])
     const existing = paths.get(key)
-    paths.set(key, existing ? strongerRuntimePath(existing, path) : path)
+    if (!existing || compareRuntimePathCandidates(best, existing) < 0) {
+      paths.set(key, best)
+    }
   }
 
   return sortedBounded(
     [...paths.values()],
-    (left, right) => left.from.localeCompare(right.from)
-      || left.to.localeCompare(right.to)
-      || left.hops - right.hops,
-  )
+    compareRuntimePathCandidates,
+  ).map((candidate) => candidate.path)
 }
 
 export function buildGraphSummary(graph: KnowledgeGraph): GraphSummary {

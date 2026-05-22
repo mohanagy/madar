@@ -1,0 +1,31 @@
+Published inspection summary for the raw local `madar pack` output.
+
+The raw `report-generation-pack.json` file was not committed because it contained local absolute paths.
+
+Command under inspection:
+
+madar pack "Explain how idea report is getting generated" \
+  --task explain \
+  --retrieval-level 4 \
+  --retrieval-strategy slice-v1 \
+  --budget 4000 \
+  --graph out/graph.json
+
+Observed values:
+
+- retrieval_strategy: slice-v1
+- token_count: 1517
+- matched_nodes: 40
+- relationships: 58
+- execution_slice.status: complete
+- execution_slice.steps: 7
+
+Observed execution_slice steps:
+
+1. .generateFromProblem()
+2. .startPipeline()
+3. .addJob()
+4. .dispatchWave()
+5. .plan()
+6. .process()
+7. .broadcastRunFailed()
