@@ -21,9 +21,9 @@ export const DEFAULT_HARD_IGNORE_GLOBS = [
   '**/.repo/**',
   '**/.jj/**',
   '**/out/**',
-  '**/.madar/**',
-  '**/madar-cache/**',
-  '**/madar-report/**',
+  '**/.sadeem/**',
+  '**/sadeem-cache/**',
+  '**/sadeem-report/**',
   '**/GRAPH_REPORT.md',
   '**/node_modules/**',
   '**/.pnpm-store/**',
@@ -73,7 +73,7 @@ const HARD_IGNORE_REGEXES: ReadonlyArray<RegExp> = [
   /(?:^|\/)\.(?:git|hg|svn|repo|jj)(?:\/|$)/i,
   /(?:^|\/)\.worktrees(?:\/|$)/i,
   /(?:^|\/)worktrees(?:\/|$)/i,
-  /(?:^|\/)(?:out|\.madar|madar-cache|madar-report)(?:\/|$)/i,
+  /(?:^|\/)(?:out|\.sadeem|sadeem-cache|sadeem-report)(?:\/|$)/i,
   /(?:^|\/)GRAPH_REPORT\.md$/i,
   /(?:^|\/)(?:node_modules|bower_components|vendor|dist|build|out|lib|coverage|logs|tmp|temp)(?:\/|$)/i,
   /(?:^|\/)\.pnpm-store(?:\/|$)/i,
@@ -219,9 +219,9 @@ export function isIgnoredByPatterns(path: string, root: string, patterns: readon
   return ignored
 }
 
-export function loadMadarignorePatterns(root: string): string[] {
+export function loadSadeemignorePatterns(root: string): string[] {
   try {
-    const content = readFileSync(resolve(root, '.madarignore'), 'utf8')
+    const content = readFileSync(resolve(root, '.sadeemignore'), 'utf8')
     return content
       .split(/\r?\n/)
       .map((line) => line.trim())

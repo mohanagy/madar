@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Backend-only vs monorepo context-quality spike harness (issue #69).
 #
-# For each prompt in prompts.json, runs `madar compare --baseline-mode
+# For each prompt in prompts.json, runs `sadeem compare --baseline-mode
 # native_agent` once against a graph built from the backend-only path and once
 # against a graph built from the full monorepo path. Both runs use the same
 # model `--exec` and the same prompt, so the only varying factor is the
@@ -17,7 +17,7 @@
 #       backend/   <- contents of `out/compare/<ts>/` for the backend run
 #       monorepo/  <- same, for the monorepo run
 #
-# Requires: madar (>= 0.13.3) on PATH, jq, an --exec runner you trust to
+# Requires: sadeem (>= 0.13.3) on PATH, jq, an --exec runner you trust to
 # spend tokens (e.g. `cat {prompt_file} | claude -p --output-format json`).
 
 set -euo pipefail
@@ -67,7 +67,7 @@ if [ -z "$BACKEND" ] || [ -z "$MONOREPO" ] || [ -z "$EXEC" ]; then
 fi
 if [ ! -d "$BACKEND" ];  then echo "[harness] backend path not found: $BACKEND" >&2; exit 2; fi
 if [ ! -d "$MONOREPO" ]; then echo "[harness] monorepo path not found: $MONOREPO" >&2; exit 2; fi
-for tool in madar jq; do
+for tool in sadeem jq; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     echo "[harness] $tool is required (install: $tool)" >&2; exit 3
   fi
@@ -95,18 +95,18 @@ jq -n \
   --arg monorepo "$MONOREPO" \
   --arg exec "$EXEC" \
   --arg quick "$QUICK" \
-  --arg version "$(madar --version 2>/dev/null || echo unknown)" \
+  --arg version "$(sadeem --version 2>/dev/null || echo unknown)" \
   '{
     timestamp: $ts,
     backend_path: $backend,
     monorepo_path: $monorepo,
     exec: $exec,
     quick_subset: ($quick == "1"),
-    madar_version: $version
+    sadeem_version: $version
   }' > "$RUN_DIR/manifest.json"
 
 echo "[harness] results bundle: $RUN_DIR"
-echo "[harness] madar version: $(jq -r .madar_version "$RUN_DIR/manifest.json")"
+echo "[harness] sadeem version: $(jq -r .sadeem_version "$RUN_DIR/manifest.json")"
 echo
 
 # --- 1. Generate graphs once per scope ---
@@ -114,7 +114,7 @@ generate_one() {
   local label=$1 path=$2 logfile=$3
   echo "[harness] generating graph for $label scope: $path"
   local start=$(node -e 'process.stdout.write(String(Date.now()))')
-  ( cd "$path" && madar generate . ) > "$logfile" 2>&1
+  ( cd "$path" && sadeem generate . ) > "$logfile" 2>&1
   local end=$(node -e 'process.stdout.write(String(Date.now()))')
   local ms=$((end - start))
   jq -n --arg label "$label" --arg path "$path" --arg ms "$ms" \
@@ -133,7 +133,7 @@ run_compare_for_scope() {
   mkdir -p "$outdir"
 
   echo "[harness]   compare ($scope_label): $prompt_id"
-  ( cd "$scope_path" && madar compare "$prompt_text" \
+  ( cd "$scope_path" && sadeem compare "$prompt_text" \
       --graph "out/graph.json" \
       --baseline-mode native_agent \
       --exec "$EXEC" \
@@ -217,7 +217,7 @@ node -e '
       const report = readReport(scopeDir);
       summary.per_prompt[promptId][scope] = {
         baseline: pickRunMetrics(findRun(report, "baseline")),
-        madar: pickRunMetrics(findRun(report, "madar")),
+        sadeem: pickRunMetrics(findRun(report, "sadeem")),
       };
     }
   }

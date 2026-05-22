@@ -13,7 +13,7 @@ import { normalizeAssertionPath, normalizeAssertionPaths } from './helpers/platf
 const FIXTURES_DIR = join(process.cwd(), 'tests', 'fixtures')
 
 function withTempDir<T>(callback: (tempDir: string) => T): T {
-  const tempDir = mkdtempSync(join(tmpdir(), 'madar-generate-'))
+  const tempDir = mkdtempSync(join(tmpdir(), 'sadeem-generate-'))
   try {
     return callback(tempDir)
   } finally {
@@ -22,7 +22,7 @@ function withTempDir<T>(callback: (tempDir: string) => T): T {
 }
 
 async function withTempDirAsync<T>(callback: (tempDir: string) => Promise<T>): Promise<T> {
-  const tempDir = mkdtempSync(join(tmpdir(), 'madar-generate-'))
+  const tempDir = mkdtempSync(join(tmpdir(), 'sadeem-generate-'))
   try {
     return await callback(tempDir)
   } finally {
@@ -752,7 +752,7 @@ function createTestMp3Id3Buffer(metadata: { title: string; artist: string; album
 }
 
 function createVorbisCommentBody(metadata: { title: string; artist: string; album: string }): Buffer {
-  const vendor = Buffer.from('madar', 'utf8')
+  const vendor = Buffer.from('sadeem', 'utf8')
   const vendorLength = Buffer.alloc(4)
   vendorLength.writeUInt32LE(vendor.length, 0)
   const comments = [
@@ -972,7 +972,7 @@ describe('generateGraph', () => {
         semantic_anomalies?: unknown
       }
       const manifestData = JSON.parse(readFileSync(join(tempDir, 'out', 'manifest.json'), 'utf8')) as {
-        __madar_meta__?: { total_words?: number }
+        __sadeem_meta__?: { total_words?: number }
       }
 
       expect(result.mode).toBe('generate')
@@ -983,7 +983,7 @@ describe('generateGraph', () => {
       expect(existsSync(join(tempDir, 'out', 'GRAPH_REPORT.md'))).toBe(true)
       expect(existsSync(join(tempDir, 'out', 'graph.html'))).toBe(true)
       expect(existsSync(join(tempDir, 'out', 'manifest.json'))).toBe(true)
-      expect(manifestData.__madar_meta__?.total_words).toBe(result.totalWords)
+      expect(manifestData.__sadeem_meta__?.total_words).toBe(result.totalWords)
       expect(readFileSync(join(tempDir, 'out', 'GRAPH_REPORT.md'), 'utf8')).toContain('## God Nodes')
       expect(readFileSync(join(tempDir, 'out', 'GRAPH_REPORT.md'), 'utf8')).toContain('## Semantic Anomalies')
       expect(result.notes.join('\n')).not.toContain('semantic extraction')
@@ -1782,7 +1782,7 @@ describe('generateGraph', () => {
     withTempDir((tempDir) => {
       const mp3Buffer = createTestMp3Id3Buffer({
         title: 'Roadmap Review',
-        artist: 'Madar FM',
+        artist: 'Sadeem FM',
         album: 'Engineering Notes',
       })
       writeFileSync(join(tempDir, 'README.md'), '# Overview\nSee [Episode](episode.mp3)\n', 'utf8')
@@ -1800,7 +1800,7 @@ describe('generateGraph', () => {
             file_type: 'audio',
             label: 'episode.mp3',
             audio_title: 'Roadmap Review',
-            audio_artist: 'Madar FM',
+            audio_artist: 'Sadeem FM',
             audio_album: 'Engineering Notes',
           }),
         ]),
@@ -1812,17 +1812,17 @@ describe('generateGraph', () => {
     withTempDir((tempDir) => {
       const flacBuffer = createTestFlacBuffer({
         title: 'Roadmap Review',
-        artist: 'Madar FM',
+        artist: 'Sadeem FM',
         album: 'Engineering Notes',
       })
       const oggBuffer = createTestOggVorbisBuffer({
         title: 'Release Notes',
-        artist: 'Madar FM',
+        artist: 'Sadeem FM',
         album: 'Engineering Notes',
       })
       const opusBuffer = createTestOggOpusBuffer({
         title: 'Voice Memo',
-        artist: 'Madar FM',
+        artist: 'Sadeem FM',
         album: 'Engineering Notes',
       })
       writeFileSync(
@@ -1849,7 +1849,7 @@ describe('generateGraph', () => {
             audio_sample_rate_hz: 48000,
             audio_channel_count: 2,
             audio_title: 'Roadmap Review',
-            audio_artist: 'Madar FM',
+            audio_artist: 'Sadeem FM',
             audio_album: 'Engineering Notes',
           }),
           expect.objectContaining({
@@ -1859,7 +1859,7 @@ describe('generateGraph', () => {
             audio_sample_rate_hz: 44100,
             audio_channel_count: 2,
             audio_title: 'Release Notes',
-            audio_artist: 'Madar FM',
+            audio_artist: 'Sadeem FM',
             audio_album: 'Engineering Notes',
           }),
           expect.objectContaining({
@@ -1869,7 +1869,7 @@ describe('generateGraph', () => {
             audio_sample_rate_hz: 48000,
             audio_channel_count: 1,
             audio_title: 'Voice Memo',
-            audio_artist: 'Madar FM',
+            audio_artist: 'Sadeem FM',
             audio_album: 'Engineering Notes',
           }),
         ]),
@@ -1883,7 +1883,7 @@ describe('generateGraph', () => {
         createOggSkeletonBosPage(),
         createTestOggVorbisBuffer({
           title: 'Release Notes',
-          artist: 'Madar FM',
+          artist: 'Sadeem FM',
           album: 'Engineering Notes',
         }),
       ])
@@ -1891,7 +1891,7 @@ describe('generateGraph', () => {
         createOggSkeletonBosPage(),
         createTestOggOpusBuffer({
           title: 'Voice Memo',
-          artist: 'Madar FM',
+          artist: 'Sadeem FM',
           album: 'Engineering Notes',
         }),
       ])
@@ -1918,7 +1918,7 @@ describe('generateGraph', () => {
             audio_sample_rate_hz: 44100,
             audio_channel_count: 2,
             audio_title: 'Release Notes',
-            audio_artist: 'Madar FM',
+            audio_artist: 'Sadeem FM',
             audio_album: 'Engineering Notes',
           }),
           expect.objectContaining({
@@ -1928,7 +1928,7 @@ describe('generateGraph', () => {
             audio_sample_rate_hz: 48000,
             audio_channel_count: 1,
             audio_title: 'Voice Memo',
-            audio_artist: 'Madar FM',
+            audio_artist: 'Sadeem FM',
             audio_album: 'Engineering Notes',
           }),
         ]),
@@ -1942,7 +1942,7 @@ describe('generateGraph', () => {
         ...createOggFillerPages(300_000, 29),
         createTestOggVorbisBuffer({
           title: 'Release Notes',
-          artist: 'Madar FM',
+          artist: 'Sadeem FM',
           album: 'Engineering Notes',
         }),
       ])
@@ -1950,7 +1950,7 @@ describe('generateGraph', () => {
         ...createOggFillerPages(300_000, 31),
         createTestOggOpusBuffer({
           title: 'Voice Memo',
-          artist: 'Madar FM',
+          artist: 'Sadeem FM',
           album: 'Engineering Notes',
         }),
       ])
@@ -1977,7 +1977,7 @@ describe('generateGraph', () => {
             audio_sample_rate_hz: 44100,
             audio_channel_count: 2,
             audio_title: 'Release Notes',
-            audio_artist: 'Madar FM',
+            audio_artist: 'Sadeem FM',
             audio_album: 'Engineering Notes',
           }),
           expect.objectContaining({
@@ -1987,7 +1987,7 @@ describe('generateGraph', () => {
             audio_sample_rate_hz: 48000,
             audio_channel_count: 1,
             audio_title: 'Voice Memo',
-            audio_artist: 'Madar FM',
+            audio_artist: 'Sadeem FM',
             audio_album: 'Engineering Notes',
           }),
         ]),
@@ -2000,7 +2000,7 @@ describe('generateGraph', () => {
       const aacBuffer = createTestAacBuffer()
       const m4aBuffer = createTestM4aBuffer({
         title: 'Roadmap Review',
-        artist: 'Madar FM',
+        artist: 'Sadeem FM',
         album: 'Engineering Notes',
       })
       writeFileSync(
@@ -2033,7 +2033,7 @@ describe('generateGraph', () => {
             audio_sample_rate_hz: 48000,
             audio_channel_count: 2,
             audio_title: 'Roadmap Review',
-            audio_artist: 'Madar FM',
+            audio_artist: 'Sadeem FM',
             audio_album: 'Engineering Notes',
           }),
         ]),
@@ -4503,7 +4503,7 @@ describe('generateGraph', () => {
           {
             source_url: 'https://example.com/podcast/episodes/1',
             captured_at: '2026-04-14T02:00:00Z',
-            contributor: 'madar',
+            contributor: 'sadeem',
           },
           null,
           2,
@@ -4532,7 +4532,7 @@ describe('generateGraph', () => {
           {
             source_url: 'https://example.com/podcast/episodes/2',
             captured_at: '2026-04-14T02:05:00Z',
-            contributor: 'madar',
+            contributor: 'sadeem',
           },
           null,
           2,

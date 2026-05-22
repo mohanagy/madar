@@ -9,7 +9,7 @@ import { handleStdioRequest } from '../../src/runtime/stdio-server.js'
 import { estimateQueryTokens } from '../../src/runtime/serve.js'
 
 function createRepo(options: { reviewHeavy?: boolean } = {}): string {
-  const root = mkdtempSync(join(tmpdir(), 'madar-stdio-pr-impact-'))
+  const root = mkdtempSync(join(tmpdir(), 'sadeem-stdio-pr-impact-'))
   mkdirSync(join(root, 'src'), { recursive: true })
   mkdirSync(join(root, 'tests'), { recursive: true })
   mkdirSync(join(root, 'out'), { recursive: true })
@@ -298,8 +298,8 @@ function createRepo(options: { reviewHeavy?: boolean } = {}): string {
   )
 
   execFileSync('git', ['init', '-b', 'main'], { cwd: root, stdio: 'pipe' })
-  execFileSync('git', ['config', 'user.email', 'madar@example.com'], { cwd: root, stdio: 'pipe' })
-  execFileSync('git', ['config', 'user.name', 'Madar Test'], { cwd: root, stdio: 'pipe' })
+  execFileSync('git', ['config', 'user.email', 'sadeem@example.com'], { cwd: root, stdio: 'pipe' })
+  execFileSync('git', ['config', 'user.name', 'Sadeem Test'], { cwd: root, stdio: 'pipe' })
   execFileSync('git', ['add', '.'], { cwd: root, stdio: 'pipe' })
   execFileSync('git', ['commit', '-m', 'Initial commit'], { cwd: root, stdio: 'pipe' })
 

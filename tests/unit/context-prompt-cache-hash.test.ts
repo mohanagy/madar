@@ -7,7 +7,7 @@ import { buildContextPrompt } from '../../src/infrastructure/context-prompt.js'
 const baseInput = () => ({
   instructions: ['Read the workspace manifest.'] as const,
   stable_sections: [
-    { ref: 's:workspace', sort_key: '01_workspace_manifest', body: 'Workspace: madar\nLanguage: TypeScript' },
+    { ref: 's:workspace', sort_key: '01_workspace_manifest', body: 'Workspace: sadeem\nLanguage: TypeScript' },
     { ref: 's:communities', sort_key: '10_communities_overview', body: 'Communities: pipeline, runtime, contracts' },
     { ref: 's:evidence', sort_key: '20_evidence_token-budget', body: 'Top files: src/runtime/retrieve.ts' },
   ] as const,

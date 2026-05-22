@@ -10,18 +10,18 @@
   },
   "baseline_mode": "pack_only",
   "baseline_prompt_tokens": 2749,
-  "madar_prompt_tokens": 2835,
+  "sadeem_prompt_tokens": 2835,
   "reduction_ratio": 1,
   "baseline_effective_prompt_tokens": 2749,
-  "madar_effective_prompt_tokens": 2835,
+  "sadeem_effective_prompt_tokens": 2835,
   "effective_reduction_ratio": 1,
   "baseline_reused_context_tokens": 0,
-  "madar_reused_context_tokens": 0,
+  "sadeem_reused_context_tokens": 0,
   "baseline_total_tokens": null,
-  "madar_total_tokens": null,
+  "sadeem_total_tokens": null,
   "total_reduction_ratio": null,
   "baseline_prompt_tokens_estimated": 2749,
-  "madar_prompt_tokens_estimated": 2835,
+  "sadeem_prompt_tokens_estimated": 2835,
   "reduction_ratio_estimated": 1,
   "prompt_token_estimator": {
     "source": "local_tokenizer",
@@ -30,41 +30,41 @@
   },
   "prompt_token_source": {
     "baseline": "estimated_cl100k_base",
-    "madar": "estimated_cl100k_base"
+    "sadeem": "estimated_cl100k_base"
   },
   "usage": {
     "baseline": null,
-    "madar": null
+    "sadeem": null
   },
   "started_at": "2026-05-21T18:08:41.720Z",
   "completed_at": "2026-05-21T18:08:57.866Z",
   "elapsed_ms": {
     "baseline": 32,
-    "madar": 9
+    "sadeem": 9
   },
   "status": {
     "baseline": "succeeded",
-    "madar": "succeeded"
+    "sadeem": "succeeded"
   },
   "answer_paths": {
     "baseline": "<artifact-root>/baseline-answer.txt",
-    "madar": "<artifact-root>/madar-answer.txt"
+    "sadeem": "<artifact-root>/sadeem-answer.txt"
   },
   "exit_code": {
     "baseline": 0,
-    "madar": 0
+    "sadeem": 0
   },
   "stderr": {
     "baseline": null,
-    "madar": null
+    "sadeem": null
   },
   "failure_reason": {
     "baseline": null,
-    "madar": null
+    "sadeem": null
   },
   "evidence": {
     "baseline": null,
-    "madar": null
+    "sadeem": null
   },
   "pack": {
     "question": "Explain how idea report is getting generated",
@@ -1803,7 +1803,7 @@
   "paths": {
     "output_dir": "<artifact-root>",
     "baseline_prompt": "<artifact-root>/baseline-prompt.txt",
-    "madar_prompt": "<artifact-root>/madar-prompt.txt",
+    "sadeem_prompt": "<artifact-root>/sadeem-prompt.txt",
     "report": "<artifact-root>/report.json",
     "share_safe_report": "<artifact-root>/report.share-safe.json"
   },
@@ -1814,7 +1814,7 @@
       "effective_tokens_source": "session_reuse_estimate",
       "total_tokens_source": "not_available"
     },
-    "madar": {
+    "sadeem": {
       "provider": null,
       "input_tokens_source": "estimated_cl100k_base",
       "effective_tokens_source": "session_reuse_estimate",

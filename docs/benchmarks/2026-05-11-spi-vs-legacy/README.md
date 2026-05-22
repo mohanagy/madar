@@ -1,6 +1,6 @@
-# 2026-05-11 — `madar generate --spi` vs legacy `extract()`
+# 2026-05-11 — `sadeem generate --spi` vs legacy `extract()`
 
-> **Tracking issues:** [#130](https://github.com/mohanagy/madar/issues/130) and the v0.21 context-compiler payoff follow-up.
+> **Tracking issues:** [#130](https://github.com/mohanagy/sadeem/issues/130) and the v0.21 context-compiler payoff follow-up.
 
 ## TL;DR (latest measured run: `results/2026-05-11T163843Z/`)
 
@@ -84,8 +84,8 @@ The runner now produces:
 If you have a local backend-only or monorepo workspace, you can reuse the same runner without committing private paths:
 
 ```bash
-MADAR_BENCH_FIXTURE=/absolute/path/to/repo \
-MADAR_BENCH_PROMPTS=docs/benchmarks/2026-05-11-spi-vs-legacy/prompts.json \
+SADEEM_BENCH_FIXTURE=/absolute/path/to/repo \
+SADEEM_BENCH_PROMPTS=docs/benchmarks/2026-05-11-spi-vs-legacy/prompts.json \
 bash docs/benchmarks/2026-05-11-spi-vs-legacy/run.sh
 ```
 
@@ -107,8 +107,8 @@ If GoValidate is available locally, use the template above for both the backend-
 You can benchmark two local workspaces side by side without committing private paths or artifacts:
 
 ```bash
-MADAR_BENCH_BACKEND=/absolute/path/to/backend \
-MADAR_BENCH_MONOREPO=/absolute/path/to/monorepo \
+SADEEM_BENCH_BACKEND=/absolute/path/to/backend \
+SADEEM_BENCH_MONOREPO=/absolute/path/to/monorepo \
 bash docs/benchmarks/2026-05-11-spi-vs-legacy/run-real-workspace.sh
 ```
 
@@ -136,7 +136,7 @@ The aggregate summary keeps objective metrics separate from qualitative notes an
 
 - `fixture/` — synthetic TypeScript workspace covering Express, Hono, tRPC, Prisma, and utility code
 - `prompts.json` — benchmark prompts
-- `run.sh` — runner (`MADAR_BENCH_FIXTURE` / `MADAR_BENCH_PROMPTS` overrides supported)
+- `run.sh` — runner (`SADEEM_BENCH_FIXTURE` / `SADEEM_BENCH_PROMPTS` overrides supported)
 - `probe.mjs` — strategy comparison + retrieval-level sweep
 - `summarize.mjs` — aggregate summary builder
 - `results/<timestamp>/` — measured run artifacts

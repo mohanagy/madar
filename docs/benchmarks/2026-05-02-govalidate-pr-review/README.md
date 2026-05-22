@@ -1,6 +1,6 @@
 # 2026-05-02 — GoValidate PR review benchmark
 
-This directory contains the raw evidence for madar's real PR-review benchmark on the GoValidate Platform codebase. The numbers below come directly from the committed `report.json` produced by `review-compare`.
+This directory contains the raw evidence for sadeem's real PR-review benchmark on the GoValidate Platform codebase. The numbers below come directly from the committed `report.json` produced by `review-compare`.
 
 ## Setup
 
@@ -59,13 +59,13 @@ hotspot_count           : 3
 ## Reproducing end-to-end in the benchmark repo
 
 ```bash
-MADAR_TS_CLI=/path/to/madar/dist/src/cli/bin.js
+SADEEM_TS_CLI=/path/to/sadeem/dist/src/cli/bin.js
 PLATFORM_REPO=/path/to/govalidate/platform
 
 cd "$PLATFORM_REPO"
-node "$MADAR_TS_CLI" generate . --no-html
+node "$SADEEM_TS_CLI" generate . --no-html
 
-node "$MADAR_TS_CLI" review-compare out/graph.json \
+node "$SADEEM_TS_CLI" review-compare out/graph.json \
   --base-branch origin/main \
   --exec 'cat {prompt_file} | claude -p' \
   --yes

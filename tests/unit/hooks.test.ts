@@ -8,7 +8,7 @@ import { CHECKOUT_MARKER, HOOK_MARKER, install, status, uninstall } from '../../
 import { shouldAssertExecutableBits } from './helpers/platform.js'
 
 function withRepo(callback: (repoDir: string) => void): void {
-  const repoDir = mkdtempSync(join(tmpdir(), 'madar-hooks-'))
+  const repoDir = mkdtempSync(join(tmpdir(), 'sadeem-hooks-'))
   try {
     const gitDir = join(repoDir, '.git', 'hooks')
     mkdirSync(gitDir, { recursive: true })
@@ -58,7 +58,7 @@ describe('hooks', () => {
     })
   })
 
-  test('uninstall removes madar hook content', () => {
+  test('uninstall removes sadeem hook content', () => {
     withRepo((repoDir) => {
       install(repoDir)
       const result = uninstall(repoDir)

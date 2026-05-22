@@ -8,7 +8,7 @@ import { KnowledgeGraph } from '../../src/contracts/graph.js'
 import { type Neo4jDependencies, pushGraphToNeo4j, resolveNeo4jPushConfig, sanitizeNeo4jLabel, sanitizeNeo4jRelation } from '../../src/infrastructure/neo4j.js'
 
 function withTempDir<T>(callback: (tempDir: string) => T): T {
-  const tempDir = mkdtempSync(join(tmpdir(), 'madar-neo4j-'))
+  const tempDir = mkdtempSync(join(tmpdir(), 'sadeem-neo4j-'))
   try {
     return callback(tempDir)
   } finally {
@@ -36,7 +36,7 @@ describe('neo4j integration helpers', () => {
 
   test('resolves neo4j connection settings from .env with defaults', () => {
     withTempDir((tempDir) => {
-      writeFileSync(join(tempDir, '.env'), 'NEO4J_URI=neo4j://localhost:7687\nNEO4J_USER=madar\nNEO4J_PASSWORD=super-secret\n', 'utf8')
+      writeFileSync(join(tempDir, '.env'), 'NEO4J_URI=neo4j://localhost:7687\nNEO4J_USER=sadeem\nNEO4J_PASSWORD=super-secret\n', 'utf8')
 
       expect(
         resolveNeo4jPushConfig(
@@ -48,7 +48,7 @@ describe('neo4j integration helpers', () => {
         ),
       ).toEqual({
         uri: 'neo4j://localhost:7687',
-        user: 'madar',
+        user: 'sadeem',
         password: 'super-secret',
         database: 'neo4j',
         projectRoot: tempDir,
@@ -120,18 +120,18 @@ describe('neo4j integration helpers', () => {
         uri: 'bolt://localhost:7687',
         user: 'neo4j',
         password: 'super-secret',
-        database: 'madar',
+        database: 'sadeem',
       },
       { createDriver },
     )
 
-    expect(sessionFactory).toHaveBeenCalledWith({ database: 'madar' })
+    expect(sessionFactory).toHaveBeenCalledWith({ database: 'sadeem' })
     expect(executeWriteSpy).toHaveBeenCalledTimes(1)
     expect(run).toHaveBeenCalledWith(expect.stringContaining('MERGE (n:Code {id: $id})'), expect.objectContaining({ id: 'auth' }))
     expect(run).toHaveBeenCalledWith(expect.stringContaining('MERGE (a)-[r:DEPENDS_ON]->(b)'), expect.objectContaining({ src: 'auth', tgt: 'client' }))
     expect(result).toEqual({
       uri: 'bolt://localhost:7687',
-      database: 'madar',
+      database: 'sadeem',
       nodes: 2,
       edges: 1,
     })
@@ -151,10 +151,10 @@ describe('neo4j integration helpers', () => {
           uri: 'bolt://localhost:7687',
           user: 'neo4j',
           password: 'super-secret',
-          database: 'madar',
+          database: 'sadeem',
         },
         { createDriver },
       ),
-    ).rejects.toThrow('Failed to push graph to Neo4j at bolt://localhost:7687 (database madar)')
+    ).rejects.toThrow('Failed to push graph to Neo4j at bolt://localhost:7687 (database sadeem)')
   })
 })

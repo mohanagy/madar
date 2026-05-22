@@ -15,10 +15,10 @@ Usage:
 
 Required:
   --workspace   Path to the repo under test (must contain out/graph.json
-                if you include the current-madar or slice-v1 strategies).
+                if you include the current-sadeem or slice-v1 strategies).
   --strategies  Comma-separated list of strategy names (matching scripts in strategies/).
                 Examples:
-                  current-madar,lexical-baseline,slice-v1,full-context
+                  current-sadeem,lexical-baseline,slice-v1,full-context
 
 Optional:
   --exec        Runner template for piping the strategy's context.txt through a
@@ -88,13 +88,13 @@ jq -n \
   --arg workspace "$WORKSPACE" \
   --arg strategies "$STRATEGIES" \
   --arg exec "$EXEC" \
-  --arg version "$(madar --version 2>/dev/null || echo unknown)" \
+  --arg version "$(sadeem --version 2>/dev/null || echo unknown)" \
   '{
     timestamp: $ts,
     workspace: $workspace,
     strategies: ($strategies | split(",")),
     exec: ($exec // ""),
-    madar_version: $version
+    sadeem_version: $version
   }' > "$RUN_DIR/manifest.json"
 
 echo "[harness] results bundle: $RUN_DIR"

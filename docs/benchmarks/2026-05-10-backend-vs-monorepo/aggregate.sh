@@ -59,8 +59,8 @@ node -e '
   console.log("-".repeat(headers.join("  ").length));
 
   for (const [promptId, scopes] of Object.entries(summary.per_prompt ?? {})) {
-    const b = scopes.backend?.madar;
-    const m = scopes.monorepo?.madar;
+    const b = scopes.backend?.sadeem;
+    const m = scopes.monorepo?.sadeem;
 
     for (const [label, run, other] of [["backend", b, m], ["monorepo", m, b]]) {
       const turns = run?.num_turns ?? "—";

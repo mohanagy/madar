@@ -127,7 +127,7 @@ describe('js framework extraction contract', () => {
   })
 
   it('treats TypeScript SourceFile names as equivalent across path separators', () => {
-    const filePath = 'D:\\a\\madar\\madar\\tests\\fixtures\\app.tsx'
+    const filePath = 'D:\\a\\sadeem\\sadeem\\tests\\fixtures\\app.tsx'
     const sourceFile = ts.createSourceFile(filePath, 'export function App() { return null }', ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
 
     expect(normalizeFileNameForAssertion(sourceFile.fileName)).toBe(normalizeFileNameForAssertion(filePath))
@@ -3235,7 +3235,7 @@ describe('js framework extraction contract', () => {
         needs_graph: false,
         warning: null,
         skipped_sensitive: [],
-        madarignore_patterns: 0,
+        sadeemignore_patterns: 0,
       })
 
       process.chdir(scratchDir)

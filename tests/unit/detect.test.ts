@@ -2,14 +2,14 @@ import { mkdtempSync, rmSync, symlinkSync, writeFileSync, mkdirSync } from 'node
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 
-import { _loadMadarignore, _isIgnored, classifyFile, countWords, detect, FileType } from '../../src/pipeline/detect.js'
+import { _loadSadeemignore, _isIgnored, classifyFile, countWords, detect, FileType } from '../../src/pipeline/detect.js'
 import { normalizeAssertionPath, normalizeAssertionPaths } from './helpers/platform.js'
 
 const FIXTURES_DIR = join(process.cwd(), 'tests', 'fixtures')
 
 describe('detect', () => {
   function createTempRoot(): string {
-    return mkdtempSync(join(tmpdir(), 'madar-detect-'))
+    return mkdtempSync(join(tmpdir(), 'sadeem-detect-'))
   }
 
   it('classifies code, docs, papers, images, audio, video, and unknown files', () => {
@@ -92,10 +92,10 @@ describe('detect', () => {
     }
   })
 
-  it('loads madarignore patterns and excludes matching files', () => {
+  it('loads sadeemignore patterns and excludes matching files', () => {
     const root = createTempRoot()
     try {
-      writeFileSync(join(root, '.madarignore'), 'vendor/\n*.generated.py\n', 'utf8')
+      writeFileSync(join(root, '.sadeemignore'), 'vendor/\n*.generated.py\n', 'utf8')
       mkdirSync(join(root, 'vendor'), { recursive: true })
       writeFileSync(join(root, 'vendor', 'lib.py'), 'x = 1', 'utf8')
       writeFileSync(join(root, 'main.py'), 'print("hi")', 'utf8')
@@ -106,16 +106,16 @@ describe('detect', () => {
       expect(result.files.code.some((filePath) => filePath.includes('main.py'))).toBe(true)
       expect(result.files.code.some((filePath) => filePath.includes('vendor'))).toBe(false)
       expect(result.files.code.some((filePath) => filePath.includes('generated'))).toBe(false)
-      expect(result.madarignore_patterns).toBe(2)
+      expect(result.sadeemignore_patterns).toBe(2)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
   })
 
-  it('ignores comments in madarignore files', () => {
+  it('ignores comments in sadeemignore files', () => {
     const root = createTempRoot()
     try {
-      writeFileSync(join(root, '.madarignore'), '# comment\n\nmain.py\n', 'utf8')
+      writeFileSync(join(root, '.sadeemignore'), '# comment\n\nmain.py\n', 'utf8')
       writeFileSync(join(root, 'main.py'), 'x = 1', 'utf8')
       writeFileSync(join(root, 'other.py'), 'x = 2', 'utf8')
 
@@ -128,11 +128,11 @@ describe('detect', () => {
     }
   })
 
-  it('exposes madarignore helpers for explicit path matching', () => {
+  it('exposes sadeemignore helpers for explicit path matching', () => {
     const root = createTempRoot()
     try {
-      writeFileSync(join(root, '.madarignore'), 'vendor/\n*.generated.py\n', 'utf8')
-      const patterns = _loadMadarignore(root)
+      writeFileSync(join(root, '.sadeemignore'), 'vendor/\n*.generated.py\n', 'utf8')
+      const patterns = _loadSadeemignore(root)
 
       expect(_isIgnored(join(root, 'vendor', 'lib.py'), root, patterns)).toBe(true)
       expect(_isIgnored(join(root, 'schema.generated.py'), root, patterns)).toBe(true)
@@ -142,7 +142,7 @@ describe('detect', () => {
     }
   })
 
-  it('preserves gitignore-style segment semantics in madarignore helpers', () => {
+  it('preserves gitignore-style segment semantics in sadeemignore helpers', () => {
     const root = createTempRoot()
     try {
       const srcFile = join(root, 'src', 'main.ts')

@@ -1,8 +1,8 @@
-# Why madar? Real Numbers from a Real Codebase
+# Why sadeem? Real Numbers from a Real Codebase
 
 These benchmarks were measured on [GoValidate](https://govalidate.app), a production NestJS + Next.js SaaS with 1,268 files and ~860,000 words of code.
 
-The product surface is no longer "just export a graph." madar is now a cost-first **context plane** with a **context compiler** layered on top: the graph is the substrate, while the shipped value is compact retrieval, provider-aware prompts, and proof surfaces that show smaller context still meets the required coverage contract.
+The product surface is no longer "just export a graph." sadeem is now a cost-first **context plane** with a **context compiler** layered on top: the graph is the substrate, while the shipped value is compact retrieval, provider-aware prompts, and proof surfaces that show smaller context still meets the required coverage contract.
 
 ## The Problem
 
@@ -12,19 +12,19 @@ You have a large codebase. Your AI agent (Claude, Copilot, Cursor) can read file
 - **It doesn't know what to read** — asking "how does auth work?" requires knowing which 15 of 1,268 files matter.
 - **It can't see structure** — who depends on what, what breaks if you change something, how modules connect.
 
-## What madar Does
+## What sadeem Does
 
-Generate the graph once, then use madar as both the local context plane and the context compiler:
+Generate the graph once, then use sadeem as both the local context plane and the context compiler:
 
 ```bash
-madar generate .
-madar claude install   # or cursor, copilot
-# madar claude install --profile full   # opt straight into the advanced MCP surface
-madar pack "how does auth work?" --task explain
-madar prompt "how does auth work?" --provider claude
+sadeem generate .
+sadeem claude install   # or cursor, copilot
+# sadeem claude install --profile full   # opt straight into the advanced MCP surface
+sadeem pack "how does auth work?" --task explain
+sadeem prompt "how does auth work?" --provider claude
 ```
 
-The agent gets a lean 6-tool MCP surface by default (retrieve, impact, call_chain, community_overview, pr_impact, graph_stats). Set `MADAR_TOOL_PROFILE=full` in your MCP config (`.mcp.json` for Claude, `.cursor/mcp.json` for Cursor, `.vscode/mcp.json` for VS Code Copilot) or install with `--profile full` to opt into the full 25-tool advanced surface, including `context_pack`, `context_expand`, `context_prompt`, and `context_session_reset`.
+The agent gets a lean 6-tool MCP surface by default (retrieve, impact, call_chain, community_overview, pr_impact, graph_stats). Set `SADEEM_TOOL_PROFILE=full` in your MCP config (`.mcp.json` for Claude, `.cursor/mcp.json` for Cursor, `.vscode/mcp.json` for VS Code Copilot) or install with `--profile full` to opt into the full 25-tool advanced surface, including `context_pack`, `context_expand`, `context_prompt`, and `context_session_reset`.
 
 `pack` is the CLI context payload surface. `prompt` is the provider-aware context compiler: Claude payloads expose `effective_token_count`, `reused_context_tokens`, and `session_state`; Gemini payloads stay plain-text. The matching MCP tools expose the same flows inside the active agent session, with `context_pack` now returning not only `claims`, `coverage`, and `missing_context`, but also planner-driven **semantic coverage** and stable expandable handles that agents can reopen with `context_expand`.
 
@@ -36,14 +36,14 @@ That planner layer matters because the product is no longer doing only "compact 
 
 The credible measurement is end-to-end against a real coding agent, not against a synthetic baseline prompt. Numbers below are from `claude --output-format json` runs on a production NestJS + Next.js SaaS, captured 2026-04-30.
 
-| Metric | Baseline (no madar) | Madar | Δ |
+| Metric | Baseline (no sadeem) | Sadeem | Δ |
 |---|---|---|---|
 | Tool-call turns | 9 | **3** | 3× fewer |
 | Latency | 96s | **35s** | ~2.8× faster |
 | Total input tokens (Anthropic-reported) | 615,190 | **233,508** | 2.63× less |
 | Cost per session | $0.62 | $0.70 | +13% on cold start; cheaper on multi-question sessions |
 
-Headline: **3× fewer turns**, ~2.8× faster, 2.6× fewer total input tokens. Madar is unambiguously faster and uses fewer turns. Cold-start sessions pay an MCP-overhead premium of ~13%; multi-question sessions amortize and flip below baseline. That is why the honest cost language here is **effective cost**: once stable context is reused across prompt-compiler follow-ups, the number that matters is effective tokens after cache reuse rather than raw cold-start bytes.
+Headline: **3× fewer turns**, ~2.8× faster, 2.6× fewer total input tokens. Sadeem is unambiguously faster and uses fewer turns. Cold-start sessions pay an MCP-overhead premium of ~13%; multi-question sessions amortize and flip below baseline. That is why the honest cost language here is **effective cost**: once stable context is reused across prompt-compiler follow-ups, the number that matters is effective tokens after cache reuse rather than raw cold-start bytes.
 
 Raw evidence (both `claude --output-format json` outputs and a `verify.sh` reproducer) is committed under [`docs/benchmarks/2026-04-30-govalidate/`](../docs/benchmarks/2026-04-30-govalidate/).
 
@@ -51,10 +51,10 @@ Raw evidence (both `claude --output-format json` outputs and a `verify.sh` repro
 
 ### 2. Impact Analysis — Know What Breaks
 
-**Without madar:**
+**Without sadeem:**
 Agent greps for `User` across files. Finds some imports. Misses transitive dependencies. You refactor and break 12 services you didn't know about.
 
-**With madar (impact tool):**
+**With sadeem (impact tool):**
 ```
 Target: User entity
 Direct dependents: 67 files
@@ -69,10 +69,10 @@ One call shows the full blast radius. The agent tells you: "This touches auth, b
 
 ### 3. Community Detection — See Module Boundaries
 
-**Without madar:**
+**Without sadeem:**
 Agent reads folder structure. `src/modules/admin/` looks like one module, but actually contains 5 unrelated services with 0.1 cohesion.
 
-**With madar (community_details tool):**
+**With sadeem (community_details tool):**
 ```
 10,474 nodes clustered into 2,244 communities via Louvain algorithm
 Low-cohesion warnings: WebSocketService (0.10), ProductOverview (0.07)
@@ -85,22 +85,22 @@ The graph reveals structural problems invisible from file paths alone.
 
 ### 4. Cross-Module Understanding
 
-**Without madar:**
+**Without sadeem:**
 Agent can't see how the frontend auth flow connects to the backend session service without reading both codebases.
 
-**With madar (community_overview + retrieve):**
+**With sadeem (community_overview + retrieve):**
 The agent sees all 2,244 modules, their sizes, connections, and bridge nodes in one call. Then drills into specific modules with `community_details` at micro/mid/macro zoom levels.
 
 ---
 
 ### 5. Multi-Repo Federation
 
-**Without madar:**
+**Without sadeem:**
 Each repo is a black box. Agent can't answer "which backend services does the frontend depend on?"
 
-**With madar (federate command):**
+**With sadeem (federate command):**
 ```bash
-madar federate frontend/out/graph.json backend/out/graph.json
+sadeem federate frontend/out/graph.json backend/out/graph.json
 ```
 
 Merges graphs, infers cross-repo edges from shared types, and all MCP tools work on the unified graph.
@@ -114,10 +114,10 @@ Merges graphs, infers cross-repo edges from shared types, and all MCP tools work
 | Corpus | 1,268 files · ~860K words |
 | Graph | 10,474 nodes · 14,687 edges |
 | Communities | 2,244 (Louvain) |
-| Tool-call turns | baseline 9 → madar **3** (3× fewer) |
-| Avg session latency | baseline 96s → madar **35s** (~2.8× faster) |
-| Total input tokens (Anthropic-reported) | baseline 615,190 → madar **233,508** (2.63× less) |
-| Cost per session | baseline $0.62 → madar $0.70 cold start (~+13%); amortizes on multi-question sessions |
+| Tool-call turns | baseline 9 → sadeem **3** (3× fewer) |
+| Avg session latency | baseline 96s → sadeem **35s** (~2.8× faster) |
+| Total input tokens (Anthropic-reported) | baseline 615,190 → sadeem **233,508** (2.63× less) |
+| Cost per session | baseline $0.62 → sadeem $0.70 cold start (~+13%); amortizes on multi-question sessions |
 | Impact analysis (User entity) | 67 direct + 589 transitive dependents |
 | API keys required | **0** |
 | Cloud services required | **0** |
@@ -147,7 +147,7 @@ If you want the exact command-level proof ladder and when to use each command, s
 
 ## Real A/B Proof with Your Own Model Command
 
-`benchmark` and `eval` now use the same runner-backed prompt surface as `compare`, but they score a labeled question set instead of writing paired answer bundles. If you want a real "same question, same model, with and without madar" run, use `compare`:
+`benchmark` and `eval` now use the same runner-backed prompt surface as `compare`, but they score a labeled question set instead of writing paired answer bundles. If you want a real "same question, same model, with and without sadeem" run, use `compare`:
 
 ```bash
 node dist/src/cli/bin.js compare "How does login create a session?" \
@@ -159,14 +159,14 @@ node dist/src/cli/bin.js compare "How does login create a session?" \
 Gemini-safe installed-CLI invocation:
 
 ```bash
-madar compare "How does auth work?" \
+sadeem compare "How does auth work?" \
   --exec 'cat {prompt_file} | gemini -p "" --output-format json' \
   --yes
 ```
 
 What this gives you:
 
-- one baseline prompt and one madar prompt for the same question
+- one baseline prompt and one sadeem prompt for the same question
 - two real model answers from your own terminal runner
 - a saved proof bundle in `out/compare/<timestamp>/`
 - prompt-token counts, usage-source labels, and run statuses in `report.json`
@@ -178,7 +178,7 @@ Important: `compare` may spend paid model tokens. It prints a warning before exe
 If your question is "is compact review mode actually small enough on a real PR?" use `review-compare` instead of question-based `compare`:
 
 ```bash
-madar review-compare out/graph.json \
+sadeem review-compare out/graph.json \
   --exec 'cat {prompt_file} | claude -p' \
   --yes
 ```
@@ -196,32 +196,32 @@ Use this proof when you are validating PR-review ergonomics rather than general 
 
 ```bash
 # Install
-npm install -g madar
+npm install -g sadeem
 
 # Generate graph for your project
-madar generate .
+sadeem generate .
 
 # Run the built-in benchmark
-madar benchmark out/graph.json --exec 'cat {prompt_file} | claude -p' --yes
+sadeem benchmark out/graph.json --exec 'cat {prompt_file} | claude -p' --yes
 
 # If you have a labeled question set, also measure recall + MRR
-madar eval out/graph.json --questions benchmark-questions.json --exec 'cat {prompt_file} | claude -p' --yes
+sadeem eval out/graph.json --questions benchmark-questions.json --exec 'cat {prompt_file} | claude -p' --yes
 
 # If you want a real same-model A/B proof run
-madar compare "How does auth work?" --exec 'cat {prompt_file} | claude -p' --yes
+sadeem compare "How does auth work?" --exec 'cat {prompt_file} | claude -p' --yes
 
 # If you want a real PR-review compact-vs-verbose proof run
-madar review-compare out/graph.json --exec 'cat {prompt_file} | claude -p' --yes
+sadeem review-compare out/graph.json --exec 'cat {prompt_file} | claude -p' --yes
 
 # Gemini-safe compare runner with structured usage capture
-madar compare "How does auth work?" \
+sadeem compare "How does auth work?" \
   --exec 'cat {prompt_file} | gemini -p "" --output-format json' \
   --yes
 
 # Set up your AI agent
-madar claude install    # writes .mcp.json with MCP server
-madar cursor install    # writes .cursor/mcp.json
-madar copilot install   # writes .vscode/mcp.json
+sadeem claude install    # writes .mcp.json with MCP server
+sadeem cursor install    # writes .cursor/mcp.json
+sadeem copilot install   # writes .vscode/mcp.json
 
 # Ask your agent a question — it will use retrieve, impact, etc. automatically
 ```
@@ -231,7 +231,7 @@ madar copilot install   # writes .vscode/mcp.json
 For an internal team rollout, the most convincing sequence is usually:
 
 1. Run `benchmark` and `eval` on one repo with your chosen runner to prove the graph is smaller to query and still retrieves the expected evidence.
-2. Run `compare` with your real model command to produce a saved baseline-vs-madar answer bundle.
+2. Run `compare` with your real model command to produce a saved baseline-vs-sadeem answer bundle.
 3. If PR-review cost is the concern, run `review-compare` on a real diff to measure verbose-vs-compact review prompts directly.
 4. If your system spans multiple repos, generate each graph separately and use `federate` before showing the agent workflow.
 
@@ -244,8 +244,8 @@ That progression keeps the proof honest:
 
 ## Capability Coverage Matters
 
-`madar` does not use one extractor for everything. Today the strongest code path is TypeScript/JavaScript via the TypeScript compiler API plus a framework-semantic pass for Express, Redux Toolkit, React Router, NestJS, and Next.js; Go, Java, Python, Ruby, and Rust use tree-sitter first with local fallback; several other languages use heuristic extractors; and images/audio/video are metadata only.
+`sadeem` does not use one extractor for everything. Today the strongest code path is TypeScript/JavaScript via the TypeScript compiler API plus a framework-semantic pass for Express, Redux Toolkit, React Router, NestJS, and Next.js; Go, Java, Python, Ruby, and Rust use tree-sitter first with local fallback; several other languages use heuristic extractors; and images/audio/video are metadata only.
 
-For JS/TS specifically, the promise is deep support for **mainstream framework conventions**: Express routing/middleware, Redux Toolkit slices/selectors/store wiring, React Router routes/loaders/actions, NestJS modules/controllers/providers, and Next.js App Router + Pages Router ownership. If a codebase relies on highly dynamic wrappers, runtime-generated routes, or custom decorator meta-programming, madar still extracts the underlying AST structure but does not overclaim first-class framework semantics for those cases.
+For JS/TS specifically, the promise is deep support for **mainstream framework conventions**: Express routing/middleware, Redux Toolkit slices/selectors/store wiring, React Router routes/loaders/actions, NestJS modules/controllers/providers, and Next.js App Router + Pages Router ownership. If a codebase relies on highly dynamic wrappers, runtime-generated routes, or custom decorator meta-programming, sadeem still extracts the underlying AST structure but does not overclaim first-class framework semantics for those cases.
 
 The exact matrix is published in [`docs/language-capability-matrix.md`](../docs/language-capability-matrix.md). That distinction is important when you are evaluating the tool for a polyglot codebase rather than a single TypeScript repo.

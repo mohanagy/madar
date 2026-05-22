@@ -4,7 +4,7 @@ import { resolve } from 'node:path'
 import { graphFreshnessMetadata } from '../runtime/freshness.js'
 import { findPackageRoot, readPackageVersion } from '../shared/package-metadata.js'
 
-const MADAR_SECTION_MARKER = '## madar'
+const SADEEM_SECTION_MARKER = '## sadeem'
 const GRAPH_FRESH_THRESHOLD_MS = 60 * 60 * 1000
 const GRAPH_RECENT_THRESHOLD_MS = 24 * 60 * 60 * 1000
 
@@ -96,7 +96,7 @@ function hasSectionMarker(filePath: string): boolean {
   if (!existsSync(filePath)) {
     return false
   }
-  return readFileSync(filePath, 'utf8').includes(MADAR_SECTION_MARKER)
+  return readFileSync(filePath, 'utf8').includes(SADEEM_SECTION_MARKER)
 }
 
 function findHookEntry(settingsPath: string, hookName: 'PreToolUse' | 'BeforeTool'): boolean {
@@ -180,17 +180,17 @@ function readMcpCheck(
       label,
       configPath,
       status: 'missing',
-      reason: `missing '${serversKey}.madar' entry`,
+      reason: `missing '${serversKey}.sadeem' entry`,
     }
   }
 
-  const server = servers.madar
+  const server = servers.sadeem
   if (!isRecord(server)) {
     return {
       label,
       configPath,
       status: 'missing',
-      reason: `missing '${serversKey}.madar' entry`,
+      reason: `missing '${serversKey}.sadeem' entry`,
     }
   }
 
@@ -277,9 +277,9 @@ function computeNextCommands(report: Omit<DoctorReport, 'nextCommands' | 'health
   const nextCommands = new Set<string>()
 
   if (!report.graph.exists) {
-    nextCommands.add('madar generate .')
+    nextCommands.add('sadeem generate .')
   } else if (report.graph.freshness === 'stale') {
-    nextCommands.add('madar generate . --update')
+    nextCommands.add('sadeem generate . --update')
   }
 
   const agentByLabel = new Map(report.agents.map((entry) => [entry.label, entry]))
@@ -287,36 +287,36 @@ function computeNextCommands(report: Omit<DoctorReport, 'nextCommands' | 'health
 
   const claude = agentByLabel.get('claude')
   if (claude && claude.status !== 'configured') {
-    nextCommands.add('madar claude install')
+    nextCommands.add('sadeem claude install')
   } else {
     const claudeMcp = mcpByLabel.get('claude')
     if (claudeMcp && claudeMcp.status === 'stale') {
-      nextCommands.add('madar claude install')
+      nextCommands.add('sadeem claude install')
     }
   }
 
   const cursor = agentByLabel.get('cursor')
   if (cursor && cursor.status !== 'configured') {
-    nextCommands.add('madar cursor install')
+    nextCommands.add('sadeem cursor install')
   } else {
     const cursorMcp = mcpByLabel.get('cursor')
     if (cursorMcp && cursorMcp.status === 'stale') {
-      nextCommands.add('madar cursor install')
+      nextCommands.add('sadeem cursor install')
     }
   }
 
   const gemini = agentByLabel.get('gemini')
   if (gemini && gemini.status !== 'configured') {
-    nextCommands.add('madar gemini install')
+    nextCommands.add('sadeem gemini install')
   }
 
   const copilot = agentByLabel.get('copilot')
   if (copilot && copilot.status !== 'configured') {
-    nextCommands.add('madar copilot install')
+    nextCommands.add('sadeem copilot install')
   } else {
     const copilotMcp = mcpByLabel.get('copilot')
     if (copilotMcp && copilotMcp.status === 'stale') {
-      nextCommands.add('madar copilot install')
+      nextCommands.add('sadeem copilot install')
     }
   }
 
@@ -339,7 +339,7 @@ function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorReport {
   const claudeHookConfigured = findHookEntry(resolve(projectDir, '.claude', 'settings.json'), 'PreToolUse')
   const claudeMcpConfigured = claudeMcp.status === 'ok'
 
-  const cursorRuleConfigured = existsSync(resolve(projectDir, '.cursor', 'rules', 'madar.mdc'))
+  const cursorRuleConfigured = existsSync(resolve(projectDir, '.cursor', 'rules', 'sadeem.mdc'))
   const cursorMcpConfigured = cursorMcp.status === 'ok'
 
   const geminiRuleConfigured = hasSectionMarker(resolve(projectDir, 'GEMINI.md'))
@@ -392,7 +392,7 @@ function formatGraphLine(graph: GraphCheck): string[] {
   if (!graph.exists) {
     return [
       `- graph: missing (${graph.graphPath})`,
-      "- graph freshness: missing (run 'madar generate .')",
+      "- graph freshness: missing (run 'sadeem generate .')",
     ]
   }
 
@@ -414,7 +414,7 @@ function formatGraphLine(graph: GraphCheck): string[] {
 export function runDoctorCommand(options: DoctorCommandOptions = {}): string {
   const report = buildDoctorReport(options)
   const lines: string[] = []
-  lines.push(`[madar doctor] ${report.healthy ? 'healthy' : 'attention needed'}`)
+  lines.push(`[sadeem doctor] ${report.healthy ? 'healthy' : 'attention needed'}`)
   lines.push(`- installed version: ${report.packageVersion}`)
   lines.push(...formatGraphLine(report.graph))
   lines.push('- agent configs:')
@@ -448,7 +448,7 @@ export function runStatusCommand(options: DoctorCommandOptions = {}): string {
   const nextSummary = report.nextCommands.length === 0 ? 'none' : report.nextCommands.join('; ')
 
   return [
-    `[madar status] ${report.healthy ? 'healthy' : 'attention needed'}`,
+    `[sadeem status] ${report.healthy ? 'healthy' : 'attention needed'}`,
     `version ${report.packageVersion}`,
     `graph ${graphStatus}`,
     `agents ${agentSummary}`,

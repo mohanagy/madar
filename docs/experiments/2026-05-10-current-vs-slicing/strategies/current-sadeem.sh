@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Strategy 1: current madar retrieval (`madar pack`).
+# Strategy 1: current sadeem retrieval (`sadeem pack`).
 # Adapter contract: see ../README.md "Strategy adapter contract".
 
 set -euo pipefail
@@ -11,20 +11,20 @@ while [ $# -gt 0 ]; do
     --workspace) WORKSPACE="$2"; shift 2 ;;
     --out)       OUT="$2"; shift 2 ;;
     --retrieval-strategy) RETRIEVAL_STRATEGY="$2"; shift 2 ;;
-    *) echo "[current-madar] unknown arg: $1" >&2; exit 1 ;;
+    *) echo "[current-sadeem] unknown arg: $1" >&2; exit 1 ;;
   esac
 done
 [ -n "$PROMPT" ] && [ -n "$TASK" ] && [ -n "$WORKSPACE" ] && [ -n "$OUT" ] || {
-  echo "[current-madar] usage: $0 --prompt <text> --task <kind> --workspace <path> --out <dir> [--retrieval-strategy default|slice-v1]" >&2; exit 1; }
+  echo "[current-sadeem] usage: $0 --prompt <text> --task <kind> --workspace <path> --out <dir> [--retrieval-strategy default|slice-v1]" >&2; exit 1; }
 
 mkdir -p "$OUT"
 GRAPH="$WORKSPACE/out/graph.json"
 if [ ! -f "$GRAPH" ]; then
-  echo "[current-madar] graph.json missing at $GRAPH — run 'madar generate .' inside $WORKSPACE first." >&2
+  echo "[current-sadeem] graph.json missing at $GRAPH — run 'sadeem generate .' inside $WORKSPACE first." >&2
   exit 2
 fi
-if ! command -v madar >/dev/null 2>&1; then
-  echo "[current-madar] madar CLI required on PATH." >&2; exit 3
+if ! command -v sadeem >/dev/null 2>&1; then
+  echo "[current-sadeem] sadeem CLI required on PATH." >&2; exit 3
 fi
 
 REQUESTED_TASK="$TASK"
@@ -35,14 +35,14 @@ case "$TASK" in
 esac
 
 START=$(node -e 'process.stdout.write(String(Date.now()))')
-( cd "$WORKSPACE" && madar pack "$PROMPT" --task "$PACK_TASK" --retrieval-strategy "$RETRIEVAL_STRATEGY" ) > "$OUT/pack.json" 2> "$OUT/pack.log" || {
-  echo "[current-madar] madar pack failed — see $OUT/pack.log" >&2
+( cd "$WORKSPACE" && sadeem pack "$PROMPT" --task "$PACK_TASK" --retrieval-strategy "$RETRIEVAL_STRATEGY" ) > "$OUT/pack.json" 2> "$OUT/pack.log" || {
+  echo "[current-sadeem] sadeem pack failed — see $OUT/pack.log" >&2
   echo "" > "$OUT/context.txt"
   END=$(node -e 'process.stdout.write(String(Date.now()))')
   if [ "$RETRIEVAL_STRATEGY" = "slice-v1" ]; then
     STRATEGY_NAME="slice-v1"
   else
-    STRATEGY_NAME="current-madar"
+    STRATEGY_NAME="current-sadeem"
   fi
   printf '{ "strategy": "%s", "duration_ms": %d, "est_tokens": 0, "file_count": 0, "notes": "pack command failed (requested_task=%s, pack_task=%s, retrieval_strategy=%s)" }\n' \
     "$STRATEGY_NAME" \
@@ -108,7 +108,7 @@ EST_TOKENS=$(node -e '
     const text = fs.readFileSync(path.join(process.argv[1], "context.txt"), "utf8");
     process.stdout.write(String(encode(text).length));
   } catch (e) {
-    process.stderr.write("[current-madar] gpt-tokenizer unavailable; using char/4 estimate\n");
+    process.stderr.write("[current-sadeem] gpt-tokenizer unavailable; using char/4 estimate\n");
     const text = fs.readFileSync(path.join(process.argv[1], "context.txt"), "utf8");
     process.stdout.write(String(Math.ceil(text.length / 4)));
   }
@@ -118,7 +118,7 @@ FILE_COUNT=$(jq -r '[.. | objects | .file? // .file_path? // .source_file? // em
 if [ "$RETRIEVAL_STRATEGY" = "slice-v1" ]; then
   STRATEGY_NAME="slice-v1"
 else
-  STRATEGY_NAME="current-madar"
+  STRATEGY_NAME="current-sadeem"
 fi
 
 printf '{ "strategy": "%s", "duration_ms": %d, "est_tokens": %s, "file_count": %s, "notes": "requested_task=%s, pack_task=%s, retrieval_strategy=%s" }\n' \

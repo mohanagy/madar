@@ -1,11 +1,11 @@
 {
-    "name": "madar",
+    "name": "sadeem",
     "version": "0.24.0",
     "description": "Local context plane and context compiler for AI coding agents. Turn TypeScript/Node workspaces and PR diffs into compact, verifiable context packs for Claude Code, Codex, Copilot, Cursor, and other agents.",
     "license": "MIT",
     "author": "mohanagy",
     "bin": {
-        "madar": "dist/src/cli/bin.js"
+        "sadeem": "dist/src/cli/bin.js"
     },
     "type": "module",
     "files": [
@@ -39,12 +39,12 @@
     ],
     "repository": {
         "type": "git",
-        "url": "git+https://github.com/mohanagy/madar.git"
+        "url": "git+https://github.com/mohanagy/sadeem.git"
     },
     "bugs": {
-        "url": "https://github.com/mohanagy/madar/issues"
+        "url": "https://github.com/mohanagy/sadeem/issues"
     },
-    "homepage": "https://github.com/mohanagy/madar#readme",
+    "homepage": "https://github.com/mohanagy/sadeem#readme",
     "engines": {
         "node": ">=20"
     },
@@ -62,7 +62,7 @@
         "pack:dry-run": "npm pack --dry-run",
         "publish:public": "npm publish --access public",
         "publish:dry-run": "npm publish --dry-run",
-        "postinstall": "node -e \"try{const g=process.env.npm_config_global==='true';const d=!process.env.INIT_CWD;if(g||d)console.log('\\n  madar updated — re-run your platform install for latest agent rules:\\n  madar claude install | madar cursor install | madar gemini install | madar codex install\\n')}catch{}\""
+        "postinstall": "node -e \"try{const g=process.env.npm_config_global==='true';const d=!process.env.INIT_CWD;if(g||d)console.log('\\n  sadeem updated — re-run your platform install for latest agent rules:\\n  sadeem claude install | sadeem cursor install | sadeem gemini install | sadeem codex install\\n')}catch{}\""
     },
     "devDependencies": {
         "@types/node": "^25.6.0",

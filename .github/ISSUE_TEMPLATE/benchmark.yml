@@ -23,9 +23,9 @@ body:
     id: setup
     attributes:
       label: Setup
-      description: Repo or fixture, madar version, Node.js version, OS, and relevant flags.
+      description: Repo or fixture, sadeem version, Node.js version, OS, and relevant flags.
       placeholder: |
-        madar <version>
+        sadeem <version>
         Node.js 20.x
         macOS 15
         Fixture: examples/demo-repo

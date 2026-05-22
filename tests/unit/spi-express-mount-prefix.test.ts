@@ -22,7 +22,7 @@ function writeFile(root: string, rel: string, content: string): void {
 function build(root: string): SemanticProgramIndex {
   return buildSpi({
     root,
-    madarVersion: 'test-0.0.0',
+    sadeemVersion: 'test-0.0.0',
     extractorVersion: 'spi-v1.0.0-slice-1c-ii.g',
     now: FROZEN_NOW,
   })

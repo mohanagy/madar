@@ -7,7 +7,7 @@ import { vi } from 'vitest'
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
 import {
   buildBaselinePromptPack,
-  buildMadarPromptPack,
+  buildSadeemPromptPack,
   executeCompareRuns,
   executeNativeAgentCompare,
   expandCompareExecTemplate,
@@ -148,7 +148,7 @@ function makeGraphBackedNonCodeFixture(kind: 'pdf' | 'docx' | 'xlsx'): {
       content: [
         '%PDF-1.4',
         '1 0 obj',
-        '<< /Title (Login Flow PDF) /Author (madar) /Subject (Authentication) >>',
+        '<< /Title (Login Flow PDF) /Author (sadeem) /Subject (Authentication) >>',
         'endobj',
         'BT',
         '(PDF login flow creates a session token) Tj',
@@ -354,7 +354,7 @@ describe('shared prompt runner parsing', () => {
           candidates: [
             {
               content: {
-                parts: [{ text: 'madar answer' }, { text: '\n' }],
+                parts: [{ text: 'sadeem answer' }, { text: '\n' }],
               },
             },
           ],
@@ -366,7 +366,7 @@ describe('shared prompt runner parsing', () => {
         }),
       ),
     ).toEqual({
-      answerText: 'madar answer\n',
+      answerText: 'sadeem answer\n',
       usage: {
         provider: 'gemini',
         source: 'structured_stdout',
@@ -413,7 +413,7 @@ describe('compare runtime', () => {
         {
           promptFile: 'C:\\Users\\Jane Doe\\prompt.txt',
           question: "how's login work?",
-          mode: 'madar',
+          mode: 'sadeem',
           outputFile: 'C:\\Users\\Jane Doe\\answer.txt',
         },
         'win32',
@@ -458,10 +458,10 @@ describe('compare runtime', () => {
     expect(runnerCalls).toBe(0)
     expect(report.status).toEqual({
       baseline: 'failed',
-      madar: 'failed',
+      sadeem: 'failed',
     })
     expect(report.stderr.baseline).toContain('Use stdin or file redirection with {prompt_file}')
-    expect(report.stderr.madar).toContain('Use stdin or file redirection with {prompt_file}')
+    expect(report.stderr.sadeem).toContain('Use stdin or file redirection with {prompt_file}')
   })
 
   it('builds a baseline prompt pack from graph and corpus input', () => {
@@ -551,10 +551,10 @@ describe('compare runtime', () => {
 
     expect(result.reports).toHaveLength(2)
     expect(readFileSync(result.reports[0]!.paths.baseline_prompt, 'utf8')).toContain('Corpus (full):')
-    expect(readFileSync(result.reports[0]!.paths.madar_prompt, 'utf8')).toContain('Retrieved graph context:')
+    expect(readFileSync(result.reports[0]!.paths.sadeem_prompt, 'utf8')).toContain('Retrieved graph context:')
     const followUpReport = result.reports[1]!
     const followUpBaselinePrompt = readFileSync(result.reports[1]!.paths.baseline_prompt, 'utf8')
-    const followUpMadarPrompt = readFileSync(result.reports[1]!.paths.madar_prompt, 'utf8')
+    const followUpSadeemPrompt = readFileSync(result.reports[1]!.paths.sadeem_prompt, 'utf8')
 
     expect(followUpBaselinePrompt).toContain('Session delta:')
     expect(followUpBaselinePrompt).toContain('Question:\nwhere is session storage defined')
@@ -563,12 +563,12 @@ describe('compare runtime', () => {
     expect(followUpReport.baseline_effective_prompt_tokens).toBe(
       Math.max(0, followUpReport.baseline_prompt_tokens_estimated - followUpReport.baseline_reused_context_tokens),
     )
-    expect(followUpMadarPrompt).toContain('Session delta:')
-    expect(followUpMadarPrompt).toContain('Question:\nwhere is session storage defined')
-    expect(followUpMadarPrompt).not.toContain('Retrieved graph context:')
-    expect(followUpReport.madar_reused_context_tokens).toBeGreaterThan(0)
-    expect(followUpReport.madar_effective_prompt_tokens).toBe(
-      Math.max(0, followUpReport.madar_prompt_tokens_estimated - followUpReport.madar_reused_context_tokens),
+    expect(followUpSadeemPrompt).toContain('Session delta:')
+    expect(followUpSadeemPrompt).toContain('Question:\nwhere is session storage defined')
+    expect(followUpSadeemPrompt).not.toContain('Retrieved graph context:')
+    expect(followUpReport.sadeem_reused_context_tokens).toBeGreaterThan(0)
+    expect(followUpReport.sadeem_effective_prompt_tokens).toBe(
+      Math.max(0, followUpReport.sadeem_prompt_tokens_estimated - followUpReport.sadeem_reused_context_tokens),
     )
   })
 
@@ -609,7 +609,7 @@ describe('compare runtime', () => {
 
     expect(report.baseline_mode).toBe('pack_only')
     expect(baselinePrompt).toContain('[bounded baseline excerpt]')
-    expect(report.baseline_prompt_tokens).toBeLessThanOrEqual(report.madar_prompt_tokens)
+    expect(report.baseline_prompt_tokens).toBeLessThanOrEqual(report.sadeem_prompt_tokens)
     expect(savedReport.baseline_mode).toBe('pack_only')
     expect(savedPack.token_count).toEqual(expect.any(Number))
     expect(savedPack.matched_nodes).toEqual(
@@ -775,7 +775,7 @@ describe('compare runtime', () => {
     ).toThrow(/too small/i)
   })
 
-  it('builds a madar prompt pack from the same explain-pack payload core as madar pack', async () => {
+  it('builds a sadeem prompt pack from the same explain-pack payload core as sadeem pack', async () => {
     const graph = makeGraph()
     writeProjectFiles()
     const graphPath = writeGraphFixture(graph)
@@ -792,7 +792,7 @@ describe('compare runtime', () => {
         graphPath,
       }),
     ) as Record<string, unknown>
-    const pack = buildMadarPromptPack({ question: retrieval.question, retrieval })
+    const pack = buildSadeemPromptPack({ question: retrieval.question, retrieval })
     const expectedPromptCore = JSON.stringify({
       pack: explainPayload.pack,
       claims: explainPayload.claims,
@@ -809,7 +809,7 @@ describe('compare runtime', () => {
     expect(pack.prompt).toContain('"missing_context"')
   })
 
-  it('includes runtime-generation execution_slice data in pack_only madar prompts when present', () => {
+  it('includes runtime-generation execution_slice data in pack_only sadeem prompts when present', () => {
     const graph = makeGraph()
     writeProjectFiles()
     const graphPath = writeGraphFixture(graph)
@@ -850,12 +850,12 @@ describe('compare runtime', () => {
       })
 
       const report = result.reports[0]!
-      const madarPrompt = readFileSync(report.paths.madar_prompt, 'utf8')
+      const sadeemPrompt = readFileSync(report.paths.sadeem_prompt, 'utf8')
 
-      expect(madarPrompt).toContain('"execution_slice"')
-      expect(madarPrompt).toContain('"status": "partial"')
-      expect(madarPrompt).toContain('"boundary_reason": "slice stops before expected persistence step"')
-      expect(madarPrompt).toContain('"retrieval_strategy": "slice-v1"')
+      expect(sadeemPrompt).toContain('"execution_slice"')
+      expect(sadeemPrompt).toContain('"status": "partial"')
+      expect(sadeemPrompt).toContain('"boundary_reason": "slice stops before expected persistence step"')
+      expect(sadeemPrompt).toContain('"retrieval_strategy": "slice-v1"')
     } finally {
       retrieveSpy.mockRestore()
     }
@@ -875,13 +875,13 @@ describe('compare runtime', () => {
       corpusText,
       mode: 'full',
     })
-    const madarPack = buildMadarPromptPack({
+    const sadeemPack = buildSadeemPromptPack({
       question: retrieval.question,
       retrieval,
     })
 
     expect(baselinePack.token_count).toBe(estimateQueryTokens(baselinePack.prompt))
-    expect(madarPack.token_count).toBe(estimateQueryTokens(madarPack.prompt))
+    expect(sadeemPack.token_count).toBe(estimateQueryTokens(sadeemPack.prompt))
   })
 
   it('uses local tokenization rather than a fixed chars-per-token ratio for prompt counts', () => {
@@ -914,19 +914,19 @@ describe('compare runtime', () => {
     const report = result.reports[0]
     expect(report).toBeDefined()
     expect(report?.reduction_ratio).toBe(
-      Number(((report!.baseline_prompt_tokens || 0) / (report!.madar_prompt_tokens || 1)).toFixed(1)),
+      Number(((report!.baseline_prompt_tokens || 0) / (report!.sadeem_prompt_tokens || 1)).toFixed(1)),
     )
     expect(report?.paths.output_dir).toBe(resolve('out', 'compare', 'test-runtime', '2026-04-24T19-30-00'))
     expect(report?.status.baseline).toBe('not_run')
-    expect(report?.status.madar).toBe('not_run')
+    expect(report?.status.sadeem).toBe('not_run')
     expect(existsSync(report!.paths.baseline_prompt)).toBe(true)
-    expect(existsSync(report!.paths.madar_prompt)).toBe(true)
+    expect(existsSync(report!.paths.sadeem_prompt)).toBe(true)
     expect(existsSync(report!.paths.report)).toBe(true)
     expect(report?.paths.share_safe_report).toBe(join(report!.paths.output_dir, 'report.share-safe.json'))
     expect(existsSync(report!.paths.share_safe_report)).toBe(true)
 
     const baselinePrompt = readFileSync(report!.paths.baseline_prompt, 'utf8')
-    const madarPrompt = readFileSync(report!.paths.madar_prompt, 'utf8')
+    const sadeemPrompt = readFileSync(report!.paths.sadeem_prompt, 'utf8')
     const savedReport = JSON.parse(readFileSync(report!.paths.report, 'utf8')) as Record<string, unknown>
     const shareSafePath = join(report!.paths.output_dir, 'report.share-safe.json')
     const shareSafeReport = JSON.parse(readFileSync(shareSafePath, 'utf8')) as Record<string, unknown>
@@ -934,9 +934,9 @@ describe('compare runtime', () => {
     expect(baselinePrompt).toContain('Question:\nhow does login create a session')
     expect(baselinePrompt).toContain('return new SessionManager().createSession(credentials.userId)')
     expect(baselinePrompt).toContain('export class SessionManager')
-    expect(madarPrompt).toContain('Retrieved graph context:')
-    expect(madarPrompt).toContain('"pack"')
-    expect(madarPrompt).toContain('"coverage"')
+    expect(sadeemPrompt).toContain('Retrieved graph context:')
+    expect(sadeemPrompt).toContain('"pack"')
+    expect(sadeemPrompt).toContain('"coverage"')
     expect(savedReport).toEqual(
       expect.objectContaining({
         question: 'how does login create a session',
@@ -947,10 +947,10 @@ describe('compare runtime', () => {
         },
         graph_path: join('out', 'test-runtime', 'compare-runtime-project', 'out', 'graph.json'),
         baseline_prompt_tokens: estimateQueryTokens(baselinePrompt),
-        madar_prompt_tokens: estimateQueryTokens(madarPrompt),
+        sadeem_prompt_tokens: estimateQueryTokens(sadeemPrompt),
         reduction_ratio: report!.reduction_ratio,
         baseline_prompt_tokens_estimated: estimateQueryTokens(baselinePrompt),
-        madar_prompt_tokens_estimated: estimateQueryTokens(madarPrompt),
+        sadeem_prompt_tokens_estimated: estimateQueryTokens(sadeemPrompt),
         reduction_ratio_estimated: report!.reduction_ratio,
         prompt_token_estimator: {
           source: 'local_tokenizer',
@@ -960,7 +960,7 @@ describe('compare runtime', () => {
         paths: {
           output_dir: join('out', 'compare', 'test-runtime', '2026-04-24T19-30-00'),
           baseline_prompt: join('out', 'compare', 'test-runtime', '2026-04-24T19-30-00', 'baseline-prompt.txt'),
-          madar_prompt: join('out', 'compare', 'test-runtime', '2026-04-24T19-30-00', 'madar-prompt.txt'),
+          sadeem_prompt: join('out', 'compare', 'test-runtime', '2026-04-24T19-30-00', 'sadeem-prompt.txt'),
           report: join('out', 'compare', 'test-runtime', '2026-04-24T19-30-00', 'report.json'),
           share_safe_report: join('out', 'compare', 'test-runtime', '2026-04-24T19-30-00', 'report.share-safe.json'),
         },
@@ -986,7 +986,7 @@ describe('compare runtime', () => {
     writeProjectFiles()
     const graphPath = writeGraphFixture(graph)
     const executions: Array<{
-      mode: 'baseline' | 'madar'
+      mode: 'baseline' | 'sadeem'
       command: string
       promptFile: string
       outputFile: string
@@ -1027,29 +1027,29 @@ describe('compare runtime', () => {
     )
     expect(executions[1]).toEqual(
       expect.objectContaining({
-        mode: 'madar',
+        mode: 'sadeem',
         question: 'how does login create a session',
-        promptFile: report.paths.madar_prompt,
-        outputFile: join(report.paths.output_dir, 'madar-answer.txt'),
+        promptFile: report.paths.sadeem_prompt,
+        outputFile: join(report.paths.output_dir, 'sadeem-answer.txt'),
       }),
     )
     expect(readFileSync(report.answer_paths.baseline, 'utf8')).toBe('baseline answer\n')
-    expect(readFileSync(report.answer_paths.madar, 'utf8')).toBe('madar answer\n')
+    expect(readFileSync(report.answer_paths.sadeem, 'utf8')).toBe('sadeem answer\n')
     expect(report.status).toEqual({
       baseline: 'succeeded',
-      madar: 'succeeded',
+      sadeem: 'succeeded',
     })
     expect(report.exit_code).toEqual({
       baseline: 0,
-      madar: 0,
+      sadeem: 0,
     })
     expect(report.stderr).toEqual({
       baseline: null,
-      madar: null,
+      sadeem: null,
     })
     expect(report.elapsed_ms).toEqual({
       baseline: 11,
-      madar: 17,
+      sadeem: 17,
     })
 
     const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
@@ -1057,17 +1057,17 @@ describe('compare runtime', () => {
       expect.objectContaining({
         status: {
           baseline: 'succeeded',
-          madar: 'succeeded',
+          sadeem: 'succeeded',
         },
         exit_code: {
           baseline: 0,
-          madar: 0,
+          sadeem: 0,
         },
       }),
     )
   })
 
-  it('persists compact madar trace metadata in report.json without raw tool payload content', async () => {
+  it('persists compact sadeem trace metadata in report.json without raw tool payload content', async () => {
     const graph = makeGraph()
     writeProjectFiles()
     const graphPath = writeGraphFixture(graph)
@@ -1098,7 +1098,7 @@ describe('compare runtime', () => {
                   },
                 })
               : makeClaudeStructuredCompareStdout({
-                  result: 'madar answer\n',
+                  result: 'sadeem answer\n',
                   usage: {
                     input_tokens: 400,
                     output_tokens: 70,
@@ -1117,7 +1117,7 @@ describe('compare runtime', () => {
                         },
                         {
                           type: 'tool_use',
-                          name: 'mcp__madar__impact',
+                          name: 'mcp__sadeem__impact',
                           input: { label: 'SessionManager', note: privateToolArgument },
                         },
                       ],
@@ -1142,21 +1142,21 @@ describe('compare runtime', () => {
 
     const report = result.reports[0]!
     const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
-    const madarTrace = savedReport.madar_trace as Record<string, unknown> | undefined
-    const madarTraceJson = JSON.stringify(madarTrace ?? null)
+    const sadeemTrace = savedReport.sadeem_trace as Record<string, unknown> | undefined
+    const sadeemTraceJson = JSON.stringify(sadeemTrace ?? null)
 
-    expect(madarTrace).toEqual(
+    expect(sadeemTrace).toEqual(
       expect.objectContaining({
         tool_call_count: 3,
         tool_calls_by_name: {
           retrieve: 2,
-          'mcp__madar__impact': 1,
+          'mcp__sadeem__impact': 1,
         },
         per_turn: [
           expect.objectContaining({
             turn: 1,
             tool_call_count: 2,
-            tools: ['retrieve', 'mcp__madar__impact'],
+            tools: ['retrieve', 'mcp__sadeem__impact'],
           }),
           expect.objectContaining({
             turn: 2,
@@ -1166,11 +1166,11 @@ describe('compare runtime', () => {
         ],
       }),
     )
-    expect(madarTraceJson).not.toContain(privateQuestionPayload)
-    expect(madarTraceJson).not.toContain(privateToolArgument)
+    expect(sadeemTraceJson).not.toContain(privateQuestionPayload)
+    expect(sadeemTraceJson).not.toContain(privateToolArgument)
   })
 
-  it('sorts madar_trace per_turn by numeric turn when structured messages arrive out of order', async () => {
+  it('sorts sadeem_trace per_turn by numeric turn when structured messages arrive out of order', async () => {
     const graph = makeGraph()
     writeProjectFiles()
     const graphPath = writeGraphFixture(graph)
@@ -1199,7 +1199,7 @@ describe('compare runtime', () => {
                   },
                 })
               : makeClaudeStructuredCompareStdout({
-                  result: 'madar answer\n',
+                  result: 'sadeem answer\n',
                   usage: {
                     input_tokens: 400,
                     output_tokens: 70,
@@ -1213,7 +1213,7 @@ describe('compare runtime', () => {
                     },
                     {
                       turn: 1,
-                      content: [{ type: 'tool_use', name: 'mcp__madar__impact', input: { label: 'SessionManager' } }],
+                      content: [{ type: 'tool_use', name: 'mcp__sadeem__impact', input: { label: 'SessionManager' } }],
                     },
                   ],
                 }),
@@ -1225,15 +1225,15 @@ describe('compare runtime', () => {
 
     const report = result.reports[0]!
     const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
-    const madarTrace = savedReport.madar_trace as Record<string, unknown> | undefined
+    const sadeemTrace = savedReport.sadeem_trace as Record<string, unknown> | undefined
 
-    expect(madarTrace).toEqual(
+    expect(sadeemTrace).toEqual(
       expect.objectContaining({
         per_turn: [
           expect.objectContaining({
             turn: 1,
             tool_call_count: 1,
-            tools: ['mcp__madar__impact'],
+            tools: ['mcp__sadeem__impact'],
           }),
           expect.objectContaining({
             turn: 2,
@@ -1274,7 +1274,7 @@ describe('compare runtime', () => {
                   },
                 })
               : makeClaudeStructuredCompareStdout({
-                  result: 'madar answer\n',
+                  result: 'sadeem answer\n',
                   usage: {
                     input_tokens: 400,
                     output_tokens: 70,
@@ -1288,7 +1288,7 @@ describe('compare runtime', () => {
                     },
                     {
                       turn: 1.9,
-                      content: [{ type: 'tool_use', name: 'mcp__madar__impact', input: { label: 'SessionManager' } }],
+                      content: [{ type: 'tool_use', name: 'mcp__sadeem__impact', input: { label: 'SessionManager' } }],
                     },
                   ],
                 }),
@@ -1300,9 +1300,9 @@ describe('compare runtime', () => {
 
     const report = result.reports[0]!
     const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
-    const madarTrace = savedReport.madar_trace as Record<string, unknown> | undefined
+    const sadeemTrace = savedReport.sadeem_trace as Record<string, unknown> | undefined
 
-    expect(madarTrace).toEqual(
+    expect(sadeemTrace).toEqual(
       expect.objectContaining({
         per_turn: [
           expect.objectContaining({
@@ -1313,14 +1313,14 @@ describe('compare runtime', () => {
           expect.objectContaining({
             turn: 2,
             tool_call_count: 1,
-            tools: ['mcp__madar__impact'],
+            tools: ['mcp__sadeem__impact'],
           }),
         ],
       }),
     )
   })
 
-  it('preserves compact madar trace metadata when madar exits non-zero with structured stdout', async () => {
+  it('preserves compact sadeem trace metadata when sadeem exits non-zero with structured stdout', async () => {
     const graph = makeGraph()
     writeProjectFiles()
     const graphPath = writeGraphFixture(graph)
@@ -1338,7 +1338,7 @@ describe('compare runtime', () => {
       },
       {
         runner: async (execution) => ({
-          exitCode: execution.mode === 'madar' ? 23 : 0,
+          exitCode: execution.mode === 'sadeem' ? 23 : 0,
           stdout:
             execution.mode === 'baseline'
               ? makeClaudeStructuredCompareStdout({
@@ -1351,7 +1351,7 @@ describe('compare runtime', () => {
                   },
                 })
               : makeClaudeStructuredCompareStdout({
-                  result: 'madar partial output\n',
+                  result: 'sadeem partial output\n',
                   usage: {
                     input_tokens: 400,
                     output_tokens: 70,
@@ -1369,14 +1369,14 @@ describe('compare runtime', () => {
                         },
                         {
                           type: 'tool_use',
-                          name: 'mcp__madar__impact',
+                          name: 'mcp__sadeem__impact',
                           input: { label: 'SessionManager', note: privateToolArgument },
                         },
                       ],
                     },
                   ],
                 }),
-          stderr: execution.mode === 'madar' ? 'runner exited with a failure\n' : '',
+          stderr: execution.mode === 'sadeem' ? 'runner exited with a failure\n' : '',
           elapsedMs: execution.mode === 'baseline' ? 11 : 17,
         }),
       },
@@ -1384,33 +1384,33 @@ describe('compare runtime', () => {
 
     const report = result.reports[0]!
     const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
-    const madarTrace = savedReport.madar_trace as Record<string, unknown> | undefined
-    const madarTraceJson = JSON.stringify(madarTrace ?? null)
+    const sadeemTrace = savedReport.sadeem_trace as Record<string, unknown> | undefined
+    const sadeemTraceJson = JSON.stringify(sadeemTrace ?? null)
 
-    expect(report.status.madar).toBe('failed')
-    expect(report.usage.madar).toBeNull()
-    expect(readFileSync(report.answer_paths.madar, 'utf8')).toBe('madar partial output\n')
-    expect(madarTrace).toEqual(
+    expect(report.status.sadeem).toBe('failed')
+    expect(report.usage.sadeem).toBeNull()
+    expect(readFileSync(report.answer_paths.sadeem, 'utf8')).toBe('sadeem partial output\n')
+    expect(sadeemTrace).toEqual(
       expect.objectContaining({
         tool_call_count: 2,
         tool_calls_by_name: {
-          'mcp__madar__impact': 1,
+          'mcp__sadeem__impact': 1,
           retrieve: 1,
         },
         per_turn: [
           expect.objectContaining({
             turn: 1,
             tool_call_count: 2,
-            tools: ['retrieve', 'mcp__madar__impact'],
+            tools: ['retrieve', 'mcp__sadeem__impact'],
           }),
         ],
       }),
     )
-    expect(madarTraceJson).not.toContain(privateQuestionPayload)
-    expect(madarTraceJson).not.toContain(privateToolArgument)
+    expect(sadeemTraceJson).not.toContain(privateQuestionPayload)
+    expect(sadeemTraceJson).not.toContain(privateToolArgument)
   })
 
-  it('keeps madar_trace absent when compare stdout does not expose trace data', async () => {
+  it('keeps sadeem_trace absent when compare stdout does not expose trace data', async () => {
     const graph = makeGraph()
     writeProjectFiles()
     const graphPath = writeGraphFixture(graph)
@@ -1445,7 +1445,7 @@ describe('compare runtime', () => {
     const report = result.reports[0]!
     const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
 
-    expect(savedReport).not.toHaveProperty('madar_trace')
+    expect(savedReport).not.toHaveProperty('sadeem_trace')
   })
 
   it('preserves Claude structured usage parsing through compare execution', async () => {
@@ -1479,7 +1479,7 @@ describe('compare runtime', () => {
                   },
                 })
               : makeClaudeStructuredCompareStdout({
-                  result: 'madar answer\n',
+                  result: 'sadeem answer\n',
                   usage: {
                     input_tokens: 400,
                     output_tokens: 70,
@@ -1491,7 +1491,7 @@ describe('compare runtime', () => {
                       turn: 1,
                       content: [
                         { type: 'tool_use', name: 'retrieve', input: { question: 'login session flow' } },
-                        { type: 'tool_use', name: 'mcp__madar__impact', input: { label: 'SessionManager' } },
+                        { type: 'tool_use', name: 'mcp__sadeem__impact', input: { label: 'SessionManager' } },
                       ],
                     },
                     {
@@ -1508,16 +1508,16 @@ describe('compare runtime', () => {
 
     const report = result.reports[0]!
     expect(readFileSync(report.answer_paths.baseline, 'utf8')).toBe('baseline answer\n')
-    expect(readFileSync(report.answer_paths.madar, 'utf8')).toBe('madar answer\n')
+    expect(readFileSync(report.answer_paths.sadeem, 'utf8')).toBe('sadeem answer\n')
     expect(report.baseline_prompt_tokens).toBe(1320)
-    expect(report.madar_prompt_tokens).toBe(410)
+    expect(report.sadeem_prompt_tokens).toBe(410)
     expect(report.baseline_effective_prompt_tokens).toBe(1300)
-    expect(report.madar_effective_prompt_tokens).toBe(400)
+    expect(report.sadeem_effective_prompt_tokens).toBe(400)
     expect(report.baseline_reused_context_tokens).toBe(20)
-    expect(report.madar_reused_context_tokens).toBe(10)
+    expect(report.sadeem_reused_context_tokens).toBe(10)
     expect(report.prompt_token_source).toEqual({
       baseline: 'claude_reported_input',
-      madar: 'claude_reported_input',
+      sadeem: 'claude_reported_input',
     })
     expect(report.provider_proof).toEqual({
       baseline: {
@@ -1526,7 +1526,7 @@ describe('compare runtime', () => {
         effective_tokens_source: 'provider_cache_read_tokens',
         total_tokens_source: 'provider_reported_total',
       },
-      madar: {
+      sadeem: {
         provider: 'claude',
         input_tokens_source: 'claude_reported_input',
         effective_tokens_source: 'provider_cache_read_tokens',
@@ -1545,7 +1545,7 @@ describe('compare runtime', () => {
         input_total_tokens: 1320,
         total_tokens: 1410,
       },
-      madar: {
+      sadeem: {
         provider: 'claude',
         source: 'structured_stdout',
         input_tokens: 400,
@@ -1557,14 +1557,14 @@ describe('compare runtime', () => {
       },
     })
     expect(report.baseline_total_tokens).toBe(1410)
-    expect(report.madar_total_tokens).toBe(480)
+    expect(report.sadeem_total_tokens).toBe(480)
     expect(report.effective_reduction_ratio).toBe(Number((1300 / 400).toFixed(1)))
-    expect(formatCompareSummary(result)).toContain('Input tokens (Claude reported): baseline 1320 · madar 410')
-    expect(formatCompareSummary(result)).toContain('Effective input tokens (cache-adjusted): baseline 1300 · madar 400')
-    expect(formatCompareSummary(result)).toContain('Total tokens (Claude reported): baseline 1410 · madar 480')
+    expect(formatCompareSummary(result)).toContain('Input tokens (Claude reported): baseline 1320 · sadeem 410')
+    expect(formatCompareSummary(result)).toContain('Effective input tokens (cache-adjusted): baseline 1300 · sadeem 400')
+    expect(formatCompareSummary(result)).toContain('Total tokens (Claude reported): baseline 1410 · sadeem 480')
     expect(formatCompareSummary(result)).toContain('Provider/runtime proof: Claude reported input, cache, and total tokens for 2/2 prompt runs')
     expect(formatCompareSummary(result)).toContain(
-      'Madar trace: 3 tool calls across 2 turns · top tools: retrieve×2, mcp__madar__impact×1',
+      'Sadeem trace: 3 tool calls across 2 turns · top tools: retrieve×2, mcp__sadeem__impact×1',
     )
   })
 
@@ -1603,9 +1603,9 @@ describe('compare runtime', () => {
 
     const report = result.reports[0]!
     expect(readFileSync(report.answer_paths.baseline, 'utf8')).toBe('')
-    expect(readFileSync(report.answer_paths.madar, 'utf8')).toBe('')
+    expect(readFileSync(report.answer_paths.sadeem, 'utf8')).toBe('')
     expect(report.usage.baseline?.total_tokens).toBe(1410)
-    expect(report.usage.madar?.total_tokens).toBe(1410)
+    expect(report.usage.sadeem?.total_tokens).toBe(1410)
   })
 
   it('preserves plain-text fallback when structured parsing fails', async () => {
@@ -1640,12 +1640,12 @@ describe('compare runtime', () => {
 
     const report = result.reports[0]!
     expect(readFileSync(report.answer_paths.baseline, 'utf8')).toBe(stdout)
-    expect(readFileSync(report.answer_paths.madar, 'utf8')).toBe(stdout)
+    expect(readFileSync(report.answer_paths.sadeem, 'utf8')).toBe(stdout)
     expect(report.usage.baseline).toBeNull()
-    expect(report.usage.madar).toBeNull()
+    expect(report.usage.sadeem).toBeNull()
     expect(report.prompt_token_source).toEqual({
       baseline: 'estimated_cl100k_base',
-      madar: 'estimated_cl100k_base',
+      sadeem: 'estimated_cl100k_base',
     })
     expect(report.provider_proof).toEqual({
       baseline: {
@@ -1654,7 +1654,7 @@ describe('compare runtime', () => {
         effective_tokens_source: 'session_reuse_estimate',
         total_tokens_source: 'not_available',
       },
-      madar: {
+      sadeem: {
         provider: null,
         input_tokens_source: 'estimated_cl100k_base',
         effective_tokens_source: 'session_reuse_estimate',
@@ -1710,12 +1710,12 @@ describe('compare runtime', () => {
 
     const report = result.reports[0]!
     expect(readFileSync(report.answer_paths.baseline, 'utf8')).toBe('baseline answer\n')
-    expect(readFileSync(report.answer_paths.madar, 'utf8')).toBe('madar answer\n')
+    expect(readFileSync(report.answer_paths.sadeem, 'utf8')).toBe('sadeem answer\n')
     expect(report.baseline_prompt_tokens).toBe(1200)
-    expect(report.madar_prompt_tokens).toBe(400)
+    expect(report.sadeem_prompt_tokens).toBe(400)
     expect(report.prompt_token_source).toEqual({
       baseline: 'gemini_reported_input',
-      madar: 'gemini_reported_input',
+      sadeem: 'gemini_reported_input',
     })
     expect(report.provider_proof).toEqual({
       baseline: {
@@ -1724,7 +1724,7 @@ describe('compare runtime', () => {
         effective_tokens_source: 'provider_input_minus_zero_cache',
         total_tokens_source: 'provider_reported_total',
       },
-      madar: {
+      sadeem: {
         provider: 'gemini',
         input_tokens_source: 'gemini_reported_input',
         effective_tokens_source: 'provider_input_minus_zero_cache',
@@ -1740,7 +1740,7 @@ describe('compare runtime', () => {
         total_tokens: 1290,
       }),
     )
-    expect(report.usage.madar).toEqual(
+    expect(report.usage.sadeem).toEqual(
       expect.objectContaining({
         provider: 'gemini',
         input_tokens: 400,
@@ -1754,7 +1754,7 @@ describe('compare runtime', () => {
     const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as {
       usage: {
         baseline: Record<string, unknown> | null
-        madar: Record<string, unknown> | null
+        sadeem: Record<string, unknown> | null
       }
     }
     expect(savedReport.usage.baseline).toEqual(
@@ -1765,7 +1765,7 @@ describe('compare runtime', () => {
         total_tokens: 1290,
       }),
     )
-    expect(savedReport.usage.madar).toEqual(
+    expect(savedReport.usage.sadeem).toEqual(
       expect.objectContaining({
         provider: 'gemini',
         input_tokens: 400,
@@ -1773,8 +1773,8 @@ describe('compare runtime', () => {
         total_tokens: 470,
       }),
     )
-    expect(formatCompareSummary(result)).toContain('Input tokens (Gemini reported): baseline 1200 · madar 400')
-    expect(formatCompareSummary(result)).toContain('Total tokens (Gemini reported): baseline 1290 · madar 470')
+    expect(formatCompareSummary(result)).toContain('Input tokens (Gemini reported): baseline 1200 · sadeem 400')
+    expect(formatCompareSummary(result)).toContain('Total tokens (Gemini reported): baseline 1290 · sadeem 470')
     expect(formatCompareSummary(result))
       .toContain('Provider/runtime proof: Gemini reported input and total tokens; no provider cache-read tokens were reported for 2/2 prompt runs')
   })
@@ -1825,7 +1825,7 @@ describe('compare runtime', () => {
 
     const report = result.reports[0]!
     expect(readFileSync(report.answer_paths.baseline, 'utf8')).toBe('')
-    expect(readFileSync(report.answer_paths.madar, 'utf8')).toBe('')
+    expect(readFileSync(report.answer_paths.sadeem, 'utf8')).toBe('')
     expect(report.usage.baseline).toEqual(
       expect.objectContaining({
         provider: 'gemini',
@@ -1834,7 +1834,7 @@ describe('compare runtime', () => {
         total_tokens: 1290,
       }),
     )
-    expect(report.usage.madar).toEqual(
+    expect(report.usage.sadeem).toEqual(
       expect.objectContaining({
         provider: 'gemini',
         input_tokens: 400,
@@ -1846,7 +1846,7 @@ describe('compare runtime', () => {
     const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as {
       usage: {
         baseline: Record<string, unknown> | null
-        madar: Record<string, unknown> | null
+        sadeem: Record<string, unknown> | null
       }
     }
     expect(savedReport.usage.baseline).toEqual(
@@ -1857,7 +1857,7 @@ describe('compare runtime', () => {
         total_tokens: 1290,
       }),
     )
-    expect(savedReport.usage.madar).toEqual(
+    expect(savedReport.usage.sadeem).toEqual(
       expect.objectContaining({
         provider: 'gemini',
         input_tokens: 400,
@@ -1901,12 +1901,12 @@ describe('compare runtime', () => {
 
     const report = result.reports[0]!
     expect(readFileSync(report.answer_paths.baseline, 'utf8')).toBe('baseline answer\n')
-    expect(readFileSync(report.answer_paths.madar, 'utf8')).toBe('madar answer\n')
+    expect(readFileSync(report.answer_paths.sadeem, 'utf8')).toBe('sadeem answer\n')
     expect(report.usage.baseline).toBeNull()
-    expect(report.usage.madar).toBeNull()
+    expect(report.usage.sadeem).toBeNull()
     expect(report.prompt_token_source).toEqual({
       baseline: 'estimated_cl100k_base',
-      madar: 'estimated_cl100k_base',
+      sadeem: 'estimated_cl100k_base',
     })
     expect(formatCompareSummary(result)).toContain('estimate')
   })
@@ -1955,7 +1955,7 @@ describe('compare runtime', () => {
 
     const report = result.reports[0]!
     expect(readFileSync(report.answer_paths.baseline, 'utf8')).toBe('baseline answer\n')
-    expect(readFileSync(report.answer_paths.madar, 'utf8')).toBe('madar answer\n')
+    expect(readFileSync(report.answer_paths.sadeem, 'utf8')).toBe('sadeem answer\n')
   })
 
   it('preserves malformed Gemini JSON stdout as the answer artifact without capturing usage', async () => {
@@ -1985,9 +1985,9 @@ describe('compare runtime', () => {
 
     const report = result.reports[0]!
     expect(readFileSync(report.answer_paths.baseline, 'utf8')).toBe(rawStdout)
-    expect(readFileSync(report.answer_paths.madar, 'utf8')).toBe(rawStdout)
+    expect(readFileSync(report.answer_paths.sadeem, 'utf8')).toBe(rawStdout)
     expect(report.usage.baseline).toBeNull()
-    expect(report.usage.madar).toBeNull()
+    expect(report.usage.sadeem).toBeNull()
   })
 
   it('promotes Gemini-reported input and total tokens into compare summaries', async () => {
@@ -2036,15 +2036,15 @@ describe('compare runtime', () => {
 
     const report = result.reports[0]!
     expect(report.baseline_prompt_tokens).toBe(1200)
-    expect(report.madar_prompt_tokens).toBe(400)
+    expect(report.sadeem_prompt_tokens).toBe(400)
     expect(report.baseline_total_tokens).toBe(1290)
-    expect(report.madar_total_tokens).toBe(470)
+    expect(report.sadeem_total_tokens).toBe(470)
     const summary = formatCompareSummary(result)
-    expect(summary).toContain('Input tokens (Gemini reported): baseline 1200 · madar 400')
-    expect(summary).toContain('Total tokens (Gemini reported): baseline 1290 · madar 470')
+    expect(summary).toContain('Input tokens (Gemini reported): baseline 1200 · sadeem 400')
+    expect(summary).toContain('Total tokens (Gemini reported): baseline 1290 · sadeem 470')
   })
 
-  it('reports when madar uses more Claude-reported tokens than the baseline', async () => {
+  it('reports when sadeem uses more Claude-reported tokens than the baseline', async () => {
     const graph = makeGraph()
     writeProjectFiles()
     const graphPath = writeGraphFixture(graph)
@@ -2086,8 +2086,8 @@ describe('compare runtime', () => {
       },
     )
 
-    expect(formatCompareSummary(result)).toContain('Input tokens (Claude reported): baseline 300 · madar 500 · 1.7x larger')
-    expect(formatCompareSummary(result)).toContain('Total tokens (Claude reported): baseline 350 · madar 580 · 1.7x larger')
+    expect(formatCompareSummary(result)).toContain('Input tokens (Claude reported): baseline 300 · sadeem 500 · 1.7x larger')
+    expect(formatCompareSummary(result)).toContain('Total tokens (Claude reported): baseline 350 · sadeem 580 · 1.7x larger')
   })
 
   it('preserves partial compare results when one side fails', async () => {
@@ -2107,7 +2107,7 @@ describe('compare runtime', () => {
       {
         runner: async (execution) => ({
           exitCode: execution.mode === 'baseline' ? 23 : 0,
-          stdout: execution.mode === 'baseline' ? 'baseline partial output\n' : 'madar answer\n',
+          stdout: execution.mode === 'baseline' ? 'baseline partial output\n' : 'sadeem answer\n',
           stderr: execution.mode === 'baseline' ? 'runner exited with a failure\n' : '',
           elapsedMs: execution.mode === 'baseline' ? 5 : 9,
         }),
@@ -2116,18 +2116,18 @@ describe('compare runtime', () => {
 
     const report = result.reports[0]!
     expect(readFileSync(report.answer_paths.baseline, 'utf8')).toBe('baseline partial output\n')
-    expect(readFileSync(report.answer_paths.madar, 'utf8')).toBe('madar answer\n')
+    expect(readFileSync(report.answer_paths.sadeem, 'utf8')).toBe('sadeem answer\n')
     expect(report.status).toEqual({
       baseline: 'failed',
-      madar: 'succeeded',
+      sadeem: 'succeeded',
     })
     expect(report.exit_code).toEqual({
       baseline: 23,
-      madar: 0,
+      sadeem: 0,
     })
     expect(report.stderr).toEqual({
       baseline: expect.stringContaining('stderr omitted for safety'),
-      madar: null,
+      sadeem: null,
     })
 
     const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
@@ -2135,11 +2135,11 @@ describe('compare runtime', () => {
       expect.objectContaining({
         status: {
           baseline: 'failed',
-          madar: 'succeeded',
+          sadeem: 'succeeded',
         },
         exit_code: {
           baseline: 23,
-          madar: 0,
+          sadeem: 0,
         },
       }),
     )
@@ -2162,7 +2162,7 @@ describe('compare runtime', () => {
       {
         runner: async (execution) => ({
           exitCode: execution.mode === 'baseline' ? 1 : 0,
-          stdout: execution.mode === 'baseline' ? 'Prompt is too long\n' : 'madar answer\n',
+          stdout: execution.mode === 'baseline' ? 'Prompt is too long\n' : 'sadeem answer\n',
           stderr: '',
           elapsedMs: execution.mode === 'baseline' ? 5 : 9,
         }),
@@ -2173,11 +2173,11 @@ describe('compare runtime', () => {
     expect(readFileSync(report.answer_paths.baseline, 'utf8')).toBe('Prompt is too long\n')
     expect(report.status).toEqual({
       baseline: 'context_overflow',
-      madar: 'succeeded',
+      sadeem: 'succeeded',
     })
     expect(report.failure_reason).toEqual({
       baseline: 'prompt_too_long',
-      madar: null,
+      sadeem: null,
     })
     expect(report.evidence.baseline).toBe('Prompt is too long')
 
@@ -2186,15 +2186,15 @@ describe('compare runtime', () => {
       expect.objectContaining({
         status: {
           baseline: 'context_overflow',
-          madar: 'succeeded',
+          sadeem: 'succeeded',
         },
         failure_reason: {
           baseline: 'prompt_too_long',
-          madar: null,
+          sadeem: null,
         },
         evidence: {
           baseline: 'Prompt is too long',
-          madar: null,
+          sadeem: null,
         },
       }),
     )
@@ -2219,7 +2219,7 @@ describe('compare runtime', () => {
         {
           runner: async (execution) => ({
             exitCode: execution.mode === 'baseline' ? 1 : 0,
-            stdout: execution.mode === 'baseline' ? 'Prompt is too long\n' : 'madar answer\n',
+            stdout: execution.mode === 'baseline' ? 'Prompt is too long\n' : 'sadeem answer\n',
             stderr: '',
             elapsedMs: 1,
           }),
@@ -2248,7 +2248,7 @@ describe('compare runtime', () => {
           now: () => new Date('2026-04-24T19:30:00.000Z'),
           runner: async (execution) => ({
             exitCode: 0,
-            stdout: execution.mode === 'baseline' ? 'baseline answer\n' : 'madar answer\n',
+            stdout: execution.mode === 'baseline' ? 'baseline answer\n' : 'sadeem answer\n',
             stderr: '',
             elapsedMs: 5,
           }),
@@ -2264,7 +2264,7 @@ describe('compare runtime', () => {
           kind: 'answer_only',
           exit_code: 0,
         }),
-        madar: expect.objectContaining({
+        sadeem: expect.objectContaining({
           kind: 'answer_only',
           exit_code: 0,
         }),
@@ -2279,22 +2279,22 @@ describe('compare runtime', () => {
           report: '<artifact-root>/report.json',
           share_safe_report: '<artifact-root>/report.share-safe.json',
           baseline_answer: '<artifact-root>/baseline-answer.txt',
-          madar_answer: '<artifact-root>/madar-answer.txt',
+          sadeem_answer: '<artifact-root>/sadeem-answer.txt',
           prompt_file: '<artifact-root>/native_agent-prompt.txt',
         }),
         baseline: expect.objectContaining({
           kind: 'answer_only',
           result_path: '<artifact-root>/baseline-answer.txt',
         }),
-        madar: expect.objectContaining({
+        sadeem: expect.objectContaining({
           kind: 'answer_only',
-          result_path: '<artifact-root>/madar-answer.txt',
+          result_path: '<artifact-root>/sadeem-answer.txt',
         }),
       }),
     )
     expect(JSON.stringify(shareSafeReport)).not.toContain(PROJECT_FIXTURE_ROOT)
     expect(readFileSync(join(COMPARE_OUTPUT_ROOT, outputTimestamp, 'baseline-answer.txt'), 'utf8')).toBe('baseline answer\n')
-    expect(readFileSync(join(COMPARE_OUTPUT_ROOT, outputTimestamp, 'madar-answer.txt'), 'utf8')).toBe('madar answer\n')
+    expect(readFileSync(join(COMPARE_OUTPUT_ROOT, outputTimestamp, 'sadeem-answer.txt'), 'utf8')).toBe('sadeem answer\n')
   })
 
   it('adds deterministic answer-quality results to native_agent suite summaries when sibling quality gates exist', async () => {
@@ -2381,9 +2381,9 @@ describe('compare runtime', () => {
     expect(result.answer_quality).toEqual({
       questions_checked: 2,
       baseline_passed: 2,
-      madar_passed: 1,
-      madar_required_terms_missing: 1,
-      madar_forbidden_terms_present: 1,
+      sadeem_passed: 1,
+      sadeem_required_terms_missing: 1,
+      sadeem_forbidden_terms_present: 1,
       manual_review_required: 2,
     })
     expect(result.reports[0]?.answer_quality).toEqual(
@@ -2394,7 +2394,7 @@ describe('compare runtime', () => {
           missing_required_terms: [],
           forbidden_terms_present: [],
         }),
-        madar: expect.objectContaining({
+        sadeem: expect.objectContaining({
           passed: true,
           missing_required_terms: [],
           forbidden_terms_present: [],
@@ -2407,7 +2407,7 @@ describe('compare runtime', () => {
         baseline: expect.objectContaining({
           passed: true,
         }),
-        madar: expect.objectContaining({
+        sadeem: expect.objectContaining({
           passed: false,
           missing_required_terms: ['clearSession'],
           forbidden_terms_present: ['Billing'],
@@ -2421,7 +2421,7 @@ describe('compare runtime', () => {
       expect.objectContaining({
         answer_quality: expect.objectContaining({
           gate: 'logout',
-          madar: expect.objectContaining({
+          sadeem: expect.objectContaining({
             missing_required_terms: ['clearSession'],
             forbidden_terms_present: ['Billing'],
           }),
@@ -2432,14 +2432,14 @@ describe('compare runtime', () => {
       expect.objectContaining({
         answer_quality: expect.objectContaining({
           gate: 'logout',
-          madar: expect.objectContaining({
+          sadeem: expect.objectContaining({
             missing_required_terms: ['clearSession'],
             forbidden_terms_present: ['Billing'],
           }),
         }),
       }),
     )
-    expect(formatNativeAgentCompareSummary(result)).toContain('Answer quality: madar 1/2 passed deterministic gates')
+    expect(formatNativeAgentCompareSummary(result)).toContain('Answer quality: sadeem 1/2 passed deterministic gates')
     expect(formatNativeAgentCompareSummary(result)).toContain('2 manual-review notes')
   })
 
@@ -2519,21 +2519,21 @@ describe('compare runtime', () => {
     expect(runnerCalls).toBe(0)
     expect(report.status).toEqual({
       baseline: 'failed',
-      madar: 'failed',
+      sadeem: 'failed',
     })
     expect(report.stderr.baseline).toContain('Unknown compare exec placeholder')
-    expect(report.stderr.madar).toContain('Unknown compare exec placeholder')
+    expect(report.stderr.sadeem).toContain('Unknown compare exec placeholder')
 
     const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
     expect(savedReport).toEqual(
       expect.objectContaining({
         status: {
           baseline: 'failed',
-          madar: 'failed',
+          sadeem: 'failed',
         },
       }),
     )
-    expect(savedReport).not.toHaveProperty('madar_trace')
+    expect(savedReport).not.toHaveProperty('sadeem_trace')
   })
 
   it('redacts persisted compare stderr summaries', async () => {
@@ -2553,7 +2553,7 @@ describe('compare runtime', () => {
       {
         runner: async (execution) => ({
           exitCode: execution.mode === 'baseline' ? 1 : 0,
-          stdout: execution.mode === 'baseline' ? '' : 'madar answer\n',
+          stdout: execution.mode === 'baseline' ? '' : 'sadeem answer\n',
           stderr:
             execution.mode === 'baseline'
               ? 'OPENAI_API_KEY=super-secret\nAuthorization: Bearer abc123\nStack trace follows\n'
@@ -2615,12 +2615,12 @@ describe('compare runtime', () => {
     const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
     const shareSafeReport = JSON.parse(readFileSync(report.paths.share_safe_report, 'utf8')) as Record<string, unknown>
     const savedReportEvidence = (savedReport.evidence as Record<string, string | null>).baseline
-    const savedReportStderr = (savedReport.stderr as Record<string, string | null>).madar
+    const savedReportStderr = (savedReport.stderr as Record<string, string | null>).sadeem
     const shareSafeEvidence = (shareSafeReport.evidence as Record<string, string | null>).baseline
-    const shareSafeStderr = (shareSafeReport.stderr as Record<string, string | null>).madar
+    const shareSafeStderr = (shareSafeReport.stderr as Record<string, string | null>).sadeem
 
     expect(report.evidence.baseline).toContain(`${overflowPath} for details`)
-    expect(report.stderr.madar).toContain(`${overflowPath} for details`)
+    expect(report.stderr.sadeem).toContain(`${overflowPath} for details`)
     expect(savedReportEvidence).toContain(`${overflowPath} for details`)
     expect(savedReportStderr).toContain(`${overflowPath} for details`)
 
@@ -2638,7 +2638,7 @@ describe('compare runtime', () => {
           baseline: expect.stringContaining(`${expectedShareSafeSecretPath} for details`),
         }),
         stderr: expect.objectContaining({
-          madar: expect.stringContaining(`${expectedShareSafeSecretPath} for details`),
+          sadeem: expect.stringContaining(`${expectedShareSafeSecretPath} for details`),
         }),
       }),
     )
@@ -3150,7 +3150,7 @@ describe('compare runtime', () => {
       const shareSafeReport = JSON.parse(readFileSync(report.paths.share_safe_report, 'utf8')) as {
         answer_paths: {
           baseline: string
-          madar: string
+          sadeem: string
         }
       }
 
@@ -3166,7 +3166,7 @@ describe('compare runtime', () => {
     }
   })
 
-  it('loads madar snippets when compare runs from outside the inferred project root', () => {
+  it('loads sadeem snippets when compare runs from outside the inferred project root', () => {
     const graph = makeGraph()
     writeProjectFiles()
     const graphPath = writeGraphFixture(graph)
@@ -3188,9 +3188,9 @@ describe('compare runtime', () => {
       })
 
       expect(process.cwd()).toBe(alternateCwd)
-      const madarPrompt = readFileSync(result.reports[0]!.paths.madar_prompt, 'utf8')
-      expect(madarPrompt).toContain('createSession(userId) {')
-      expect(madarPrompt).toContain('return new SessionStore().write(userId)')
+      const sadeemPrompt = readFileSync(result.reports[0]!.paths.sadeem_prompt, 'utf8')
+      expect(sadeemPrompt).toContain('createSession(userId) {')
+      expect(sadeemPrompt).toContain('return new SessionStore().write(userId)')
     } finally {
       process.chdir(originalCwd)
       rmSync(alternateCwd, { recursive: true, force: true })
@@ -3212,13 +3212,13 @@ describe('compare runtime', () => {
       now: new Date('2026-04-24T19:30:00.000Z'),
     })
 
-    const madarPrompt = readFileSync(result.reports[0]!.paths.madar_prompt, 'utf8')
-    expect(madarPrompt).toContain('SessionManager')
-    expect(madarPrompt).toContain('export class SessionManager')
-    expect(madarPrompt).not.toContain('export class SessionStore')
+    const sadeemPrompt = readFileSync(result.reports[0]!.paths.sadeem_prompt, 'utf8')
+    expect(sadeemPrompt).toContain('SessionManager')
+    expect(sadeemPrompt).toContain('export class SessionManager')
+    expect(sadeemPrompt).not.toContain('export class SessionStore')
   })
 
-  it('does not load madar snippets from paths outside the inferred project root', () => {
+  it('does not load sadeem snippets from paths outside the inferred project root', () => {
     const graph = makeGraph()
     graph.addNode('secret_leak', {
       label: 'SecretLeak',
@@ -3244,9 +3244,9 @@ describe('compare runtime', () => {
         now: new Date('2026-04-24T19:30:00.000Z'),
       })
 
-      const madarPrompt = readFileSync(result.reports[0]!.paths.madar_prompt, 'utf8')
-      expect(madarPrompt).toContain('SecretLeak')
-      expect(madarPrompt).not.toContain('TOP SECRET compare snippet')
+      const sadeemPrompt = readFileSync(result.reports[0]!.paths.sadeem_prompt, 'utf8')
+      expect(sadeemPrompt).toContain('SecretLeak')
+      expect(sadeemPrompt).not.toContain('TOP SECRET compare snippet')
     } finally {
       rmSync(outsideSecretPath, { force: true })
     }
@@ -3279,9 +3279,9 @@ describe('compare runtime', () => {
         now: new Date('2026-04-24T19:30:00.000Z'),
       })
 
-      const madarPrompt = readFileSync(result.reports[0]!.paths.madar_prompt, 'utf8')
-      expect(madarPrompt).toContain('ArchiveNode')
-      expect(madarPrompt).not.toContain('PRIVATE snippet should never appear')
+      const sadeemPrompt = readFileSync(result.reports[0]!.paths.sadeem_prompt, 'utf8')
+      expect(sadeemPrompt).toContain('ArchiveNode')
+      expect(sadeemPrompt).not.toContain('PRIVATE snippet should never appear')
     } finally {
       rmSync(resolve(PROJECT_FIXTURE_ROOT, '..', '..', '..', 'vault'), { recursive: true, force: true })
     }
@@ -3326,13 +3326,13 @@ describe('compare runtime', () => {
         now: new Date('2026-04-24T19:30:00.000Z'),
       })
 
-      const madarPrompt = readFileSync(result.reports[0]!.paths.madar_prompt, 'utf8')
-      expect(madarPrompt).toContain('"label": "ArchiveDash"')
-      expect(madarPrompt).toContain('"source_file": "../../../vault/private-notes.txt"')
-      expect(madarPrompt).toContain('"label": "ArchiveNested"')
-      expect(madarPrompt).toContain('"source_file": "../../../vault/private/notes.txt"')
-      expect(madarPrompt).not.toContain('outside dash snippet')
-      expect(madarPrompt).not.toContain('outside nested snippet')
+      const sadeemPrompt = readFileSync(result.reports[0]!.paths.sadeem_prompt, 'utf8')
+      expect(sadeemPrompt).toContain('"label": "ArchiveDash"')
+      expect(sadeemPrompt).toContain('"source_file": "../../../vault/private-notes.txt"')
+      expect(sadeemPrompt).toContain('"label": "ArchiveNested"')
+      expect(sadeemPrompt).toContain('"source_file": "../../../vault/private/notes.txt"')
+      expect(sadeemPrompt).not.toContain('outside dash snippet')
+      expect(sadeemPrompt).not.toContain('outside nested snippet')
     } finally {
       rmSync(outsideVaultRoot, { recursive: true, force: true })
     }
@@ -3383,7 +3383,7 @@ describe('compare runtime', () => {
 
       const baselinePrompt = readFileSync(result.reports[0]!.paths.baseline_prompt, 'utf8')
       expect(baselinePrompt).toContain(fixture.expectedExcerpt)
-      expect(existsSync(result.reports[0]!.paths.madar_prompt)).toBe(true)
+      expect(existsSync(result.reports[0]!.paths.sadeem_prompt)).toBe(true)
       expect(existsSync(result.reports[0]!.paths.report)).toBe(true)
     },
   )
@@ -3413,7 +3413,7 @@ describe('compare runtime', () => {
           ? [
               '%PDF-1.4',
               '1 0 obj',
-              '<< /Producer (madar) >>',
+              '<< /Producer (sadeem) >>',
               'endobj',
             ].join('\n')
           : Buffer.from('not-a-zip-archive'),
@@ -3449,7 +3449,7 @@ describe('compare runtime', () => {
           [
             '%PDF-1.4',
             '1 0 obj',
-            '<< /Title (Login Flow PDF) /Author (madar) /Subject (Authentication) >>',
+            '<< /Title (Login Flow PDF) /Author (sadeem) /Subject (Authentication) >>',
             'endobj',
             'BT',
             `(${longExcerpt}) Tj`,

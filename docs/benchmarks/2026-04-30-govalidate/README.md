@@ -1,6 +1,6 @@
 # 2026-04-30 — GoValidate native_agent benchmark
 
-This directory contains the raw evidence for madar's headline benchmark numbers. All numbers come from `claude --output-format json` `usage` fields, not from local prompt-token estimates.
+This directory contains the raw evidence for sadeem's headline benchmark numbers. All numbers come from `claude --output-format json` `usage` fields, not from local prompt-token estimates.
 
 ## Setup
 
@@ -10,11 +10,11 @@ This directory contains the raw evidence for madar's headline benchmark numbers.
 - **Question:** identical for both runs (held internal).
 - **Two runs:**
   1. **baseline-session.json** — `out/`, `.mcp.json`, `CLAUDE.md`, and `.claude/` were renamed out of the working directory before the run, so the agent had no graph and no MCP server. Pure file-tools-only behavior.
-  2. **madar-session.json** — same project tree restored; the madar MCP server (core profile, 6 tools) was available to the agent.
+  2. **sadeem-session.json** — same project tree restored; the sadeem MCP server (core profile, 6 tools) was available to the agent.
 
 ## Headline numbers (computed from this directory's JSON)
 
-| Metric | Baseline (no madar) | Madar (core profile) | Δ |
+| Metric | Baseline (no sadeem) | Sadeem (core profile) | Δ |
 |---|---|---|---|
 | Tool-call turns | 9 | **3** | 3× fewer |
 | Latency | 96,368 ms | **34,744 ms** | ~2.77× faster |
@@ -25,14 +25,14 @@ Where the totals come from:
 
 ```text
 baseline_total_input_tokens = 14 + 40,648 + 574,528 = 615,190
-madar_total_input_tokens = 13 + 92,833 + 140,662 = 233,508
+sadeem_total_input_tokens = 13 + 92,833 + 140,662 = 233,508
 ```
 
 The honest framing is:
 
-- **Madar is unambiguously faster** (~2.77×) and uses **3× fewer tool-call turns**.
-- **Madar uses 2.63× fewer total input tokens** end-to-end.
-- **On cold-start sessions, madar costs ~13% more** because the MCP server's tool schemas occupy `cache_creation_input_tokens` (priced at 1.25× input rate) that the no-MCP baseline does not pay. This is why the current product ships the `core` tool profile (6 tools instead of 24) by default — it cuts `cache_creation_input_tokens` enough to flip cost parity below baseline at multi-question session lengths.
+- **Sadeem is unambiguously faster** (~2.77×) and uses **3× fewer tool-call turns**.
+- **Sadeem uses 2.63× fewer total input tokens** end-to-end.
+- **On cold-start sessions, sadeem costs ~13% more** because the MCP server's tool schemas occupy `cache_creation_input_tokens` (priced at 1.25× input rate) that the no-MCP baseline does not pay. This is why the current product ships the `core` tool profile (6 tools instead of 24) by default — it cuts `cache_creation_input_tokens` enough to flip cost parity below baseline at multi-question session lengths.
 
 ## Effective-cost framing
 
@@ -48,12 +48,12 @@ Output:
 
 ```text
 baseline_total_input_tokens : 615190
-madar_total_input_tokens : 233508
+sadeem_total_input_tokens : 233508
 input_token_reduction        : 2.63x
 num_turns_reduction          : 3x
 latency_reduction            : 2.77x
 baseline_total_cost_usd      : $0.62
-madar_total_cost_usd      : $0.70
+sadeem_total_cost_usd      : $0.70
 ```
 
 ## Reproducing end-to-end on your own codebase
@@ -62,16 +62,16 @@ madar_total_cost_usd      : $0.70
 # 1. From inside the repo you want to test against, generate a graph
 #    and wire up the MCP server / project rules.
 cd /path/to/your/repo
-madar generate .
-madar claude install   # writes .mcp.json + CLAUDE.md section + .claude/settings.json hook
+sadeem generate .
+sadeem claude install   # writes .mcp.json + CLAUDE.md section + .claude/settings.json hook
 
-# 2. Run a native_agent compare. madar will:
+# 2. Run a native_agent compare. sadeem will:
 #    - snapshot out/graph.json, .mcp.json, CLAUDE.md, .claude/
 #    - run --exec once without those files (baseline)
 #    - restore them
-#    - run --exec once with them in place (madar)
+#    - run --exec once with them in place (sadeem)
 #    - parse Anthropic-reported usage from each --output-format json result
-madar compare "your real question here" \
+sadeem compare "your real question here" \
   --graph out/graph.json \
   --baseline-mode native_agent \
   --exec 'claude --output-format json -p "{question}"' \
@@ -82,6 +82,6 @@ The compare report is written to `out/compare/<timestamp>/report.json` with both
 
 ## Honesty notes
 
-- The committed JSON files preserve the original Anthropic `usage` shape verbatim. Only the `result` body has been redacted because the question was madar-internal.
+- The committed JSON files preserve the original Anthropic `usage` shape verbatim. Only the `result` body has been redacted because the question was sadeem-internal.
 - These two runs are a single point measurement, not a distribution. Larger session lengths and different question types will move the cost gap.
 - The benchmark deliberately uses a real production codebase and the real Claude Code CLI — not a synthetic prompt or a mocked client.

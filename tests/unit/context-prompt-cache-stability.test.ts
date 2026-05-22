@@ -16,7 +16,7 @@ function workspacePromptInput(question: string): BuildContextPromptInput {
     instructions: ['Use only graph evidence.'],
     stable_sections: [
       // Most stable — workspace manifest. Sort key 01.
-      { ref: 'workspace_manifest', title: 'Workspace', body: 'madar (TypeScript, 148 files)', sort_key: '01_workspace_manifest' },
+      { ref: 'workspace_manifest', title: 'Workspace', body: 'sadeem (TypeScript, 148 files)', sort_key: '01_workspace_manifest' },
       // Semi-stable — community structure. Sort key 10.
       { ref: 'communities_overview', title: 'Communities', body: 'Pipeline Extract, Runtime Retrieve, Infrastructure Compare, ...', sort_key: '10_communities_overview' },
       // Anchor — current task. Sort key 90 (last).

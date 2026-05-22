@@ -44,7 +44,7 @@ describe('dispatchIngest', () => {
 
     const result = await dispatchIngest(
       'github',
-      'https://github.com/mohanagy/madar',
+      'https://github.com/mohanagy/sadeem',
       {},
       {
         'custom:ingest:webpage': async () => makeTextResult('webpage-result'),

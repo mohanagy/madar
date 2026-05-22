@@ -3,23 +3,23 @@ import { join, resolve } from 'node:path'
 
 import { findGitRoot } from '../shared/git.js'
 
-export const HOOK_MARKER = '# madar-hook-start'
-const HOOK_MARKER_END = '# madar-hook-end'
-export const CHECKOUT_MARKER = '# madar-checkout-hook-start'
-const CHECKOUT_MARKER_END = '# madar-checkout-hook-end'
+export const HOOK_MARKER = '# sadeem-hook-start'
+const HOOK_MARKER_END = '# sadeem-hook-end'
+export const CHECKOUT_MARKER = '# sadeem-checkout-hook-start'
+const CHECKOUT_MARKER_END = '# sadeem-checkout-hook-end'
 
 const HOOK_SCRIPT = `${HOOK_MARKER}
-# Installed by madar
+# Installed by sadeem
 CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || git diff --name-only HEAD 2>/dev/null)
 if [ -n "$CHANGED" ]; then
-  echo "[madar] Changes detected - rebuild the out bundle if needed."
+  echo "[sadeem] Changes detected - rebuild the out bundle if needed."
 fi
 ${HOOK_MARKER_END}
 `
 
 const CHECKOUT_SCRIPT = `${CHECKOUT_MARKER}
-# Installed by madar
-echo "[madar] Branch switched - rebuild the out bundle if needed."
+# Installed by sadeem
+echo "[sadeem] Branch switched - rebuild the out bundle if needed."
 ${CHECKOUT_MARKER_END}
 `
 
@@ -59,7 +59,7 @@ function uninstallHook(hooksDir: string, name: string, marker: string, markerEnd
 
   const content = readFileSync(hookPath, 'utf8')
   if (!content.includes(marker)) {
-    return `madar hook not found in ${name} - nothing to remove.`
+    return `sadeem hook not found in ${name} - nothing to remove.`
   }
 
   const nextContent = content.replace(new RegExp(`${escapeRegExp(marker)}[\\s\\S]*?${escapeRegExp(markerEnd)}\\n?`, 'g'), '').trim()
@@ -70,7 +70,7 @@ function uninstallHook(hooksDir: string, name: string, marker: string, markerEnd
 
   writeFileSync(hookPath, `${nextContent}\n`, 'utf8')
   ensureExecutable(hookPath)
-  return `madar removed from ${name} at ${hookPath} (other hook content preserved)`
+  return `sadeem removed from ${name} at ${hookPath} (other hook content preserved)`
 }
 
 export function install(path = '.'): string {
@@ -110,7 +110,7 @@ export function status(path = '.'): string {
     if (!existsSync(hookPath)) {
       return 'not installed'
     }
-    return readFileSync(hookPath, 'utf8').includes(marker) ? 'installed' : 'not installed (hook exists but madar not found)'
+    return readFileSync(hookPath, 'utf8').includes(marker) ? 'installed' : 'not installed (hook exists but sadeem not found)'
   }
 
   return `post-commit: ${describeHook('post-commit', HOOK_MARKER)}\npost-checkout: ${describeHook('post-checkout', CHECKOUT_MARKER)}`

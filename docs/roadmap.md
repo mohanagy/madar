@@ -1,6 +1,6 @@
 # Public roadmap
 
-This page is the contributor-facing view of the `madar` roadmap. It complements the main tracker in [issue #155](https://github.com/mohanagy/madar/issues/155): use the GitHub issue for the long-form versioned roadmap, and use this page for the current priority queue and contribution hints.
+This page is the contributor-facing view of the `sadeem` roadmap. It complements the main tracker in [issue #155](https://github.com/mohanagy/sadeem/issues/155): use the GitHub issue for the long-form versioned roadmap, and use this page for the current priority queue and contribution hints.
 
 ## How to read the labels
 
@@ -14,40 +14,40 @@ This page is the contributor-facing view of the `madar` roadmap. It complements 
 
 Highest-priority roadmap work. These issues usually change the benchmark story or the core MCP/compare flow.
 
-- [#160 — Add pack-only compare mode](https://github.com/mohanagy/madar/issues/160) (`priority:p0`, `type:feature`, `area:benchmarks`)
-- [#159 — Add strict MCP mode to prevent agent over-exploration](https://github.com/mohanagy/madar/issues/159) (`priority:p0`, `type:feature`, `area:mcp`)
-- [#158 — Add compare-suite aggregation for wins, losses, median, and regressions](https://github.com/mohanagy/madar/issues/158) (`priority:p0`, `type:feature`, `area:benchmarks`)
-- [#157 — Add pack-quality gates for benchmark prompts](https://github.com/mohanagy/madar/issues/157) (`priority:p0`, `type:benchmark`, `area:benchmarks`)
-- [#156 — Add GoValidate benchmark suite with realistic prompt set](https://github.com/mohanagy/madar/issues/156) (`priority:p0`, `type:benchmark`, `area:benchmarks`)
+- [#160 — Add pack-only compare mode](https://github.com/mohanagy/sadeem/issues/160) (`priority:p0`, `type:feature`, `area:benchmarks`)
+- [#159 — Add strict MCP mode to prevent agent over-exploration](https://github.com/mohanagy/sadeem/issues/159) (`priority:p0`, `type:feature`, `area:mcp`)
+- [#158 — Add compare-suite aggregation for wins, losses, median, and regressions](https://github.com/mohanagy/sadeem/issues/158) (`priority:p0`, `type:feature`, `area:benchmarks`)
+- [#157 — Add pack-quality gates for benchmark prompts](https://github.com/mohanagy/sadeem/issues/157) (`priority:p0`, `type:benchmark`, `area:benchmarks`)
+- [#156 — Add GoValidate benchmark suite with realistic prompt set](https://github.com/mohanagy/sadeem/issues/156) (`priority:p0`, `type:benchmark`, `area:benchmarks`)
 
 ## P1
 
 Important follow-up work for cost control, runtime slicing, benchmarks, and artifact safety.
 
-- [#189 — Add share-safe report mode](https://github.com/mohanagy/madar/issues/189) (`priority:p1`, `type:feature`)
-- [#178 — Add incremental SPI and cache benchmarks](https://github.com/mohanagy/madar/issues/178) (`priority:p1`, `type:benchmark`)
-- [#177 — Add deterministic answer-quality rubric skeleton](https://github.com/mohanagy/madar/issues/177) (`priority:p1`, `type:feature`, `area:benchmarks`)
-- [#176 — Add adaptive context representations](https://github.com/mohanagy/madar/issues/176) (`priority:p1`, `type:feature`, `area:retrieval`)
-- [#174 — Add deterministic answer quality checks](https://github.com/mohanagy/madar/issues/174) (`priority:p1`, `type:feature`, `area:benchmarks`)
-- [#173 — Add deterministic answer-quality rubric skeleton](https://github.com/mohanagy/madar/issues/173) (`priority:p1`, `type:feature`, `area:benchmarks`)
-- [#172 — Add adaptive context representations by task type](https://github.com/mohanagy/madar/issues/172) (`priority:p1`, `type:feature`, `area:retrieval`)
-- [#169 — Add cache-aware token accounting in compare reports](https://github.com/mohanagy/madar/issues/169) (`priority:p1`, `type:feature`, `area:benchmarks`)
-- [#164 — Add execution-slice output format](https://github.com/mohanagy/madar/issues/164) (`priority:p1`, `type:feature`, `area:retrieval`)
-- [#163 — Add queue/job semantic edges for runtime pipeline reconstruction](https://github.com/mohanagy/madar/issues/163) (`priority:p1`, `type:feature`, `area:spi`, `area:retrieval`)
-- [#162 — Track MCP tool-call counts and trace summaries in compare reports](https://github.com/mohanagy/madar/issues/162) (`priority:p1`, `type:feature`, `area:benchmarks`, `area:mcp`)
-- [#161 — Add MCP call cache and duplicate suppression](https://github.com/mohanagy/madar/issues/161) (`priority:p1`, `type:feature`, `area:mcp`)
+- [#189 — Add share-safe report mode](https://github.com/mohanagy/sadeem/issues/189) (`priority:p1`, `type:feature`)
+- [#178 — Add incremental SPI and cache benchmarks](https://github.com/mohanagy/sadeem/issues/178) (`priority:p1`, `type:benchmark`)
+- [#177 — Add deterministic answer-quality rubric skeleton](https://github.com/mohanagy/sadeem/issues/177) (`priority:p1`, `type:feature`, `area:benchmarks`)
+- [#176 — Add adaptive context representations](https://github.com/mohanagy/sadeem/issues/176) (`priority:p1`, `type:feature`, `area:retrieval`)
+- [#174 — Add deterministic answer quality checks](https://github.com/mohanagy/sadeem/issues/174) (`priority:p1`, `type:feature`, `area:benchmarks`)
+- [#173 — Add deterministic answer-quality rubric skeleton](https://github.com/mohanagy/sadeem/issues/173) (`priority:p1`, `type:feature`, `area:benchmarks`)
+- [#172 — Add adaptive context representations by task type](https://github.com/mohanagy/sadeem/issues/172) (`priority:p1`, `type:feature`, `area:retrieval`)
+- [#169 — Add cache-aware token accounting in compare reports](https://github.com/mohanagy/sadeem/issues/169) (`priority:p1`, `type:feature`, `area:benchmarks`)
+- [#164 — Add execution-slice output format](https://github.com/mohanagy/sadeem/issues/164) (`priority:p1`, `type:feature`, `area:retrieval`)
+- [#163 — Add queue/job semantic edges for runtime pipeline reconstruction](https://github.com/mohanagy/sadeem/issues/163) (`priority:p1`, `type:feature`, `area:spi`, `area:retrieval`)
+- [#162 — Track MCP tool-call counts and trace summaries in compare reports](https://github.com/mohanagy/sadeem/issues/162) (`priority:p1`, `type:feature`, `area:benchmarks`, `area:mcp`)
+- [#161 — Add MCP call cache and duplicate suppression](https://github.com/mohanagy/sadeem/issues/161) (`priority:p1`, `type:feature`, `area:mcp`)
 
 ## P2
 
 Good next issues for docs, examples, DX, integrations, and smaller framework retrieval improvements.
 
-- [#190 — Add public roadmap page](https://github.com/mohanagy/madar/issues/190) (`priority:p2`, `type:docs`, `area:docs`)
-- [#188 — Add compact graph summary format for agents](https://github.com/mohanagy/madar/issues/188) (`priority:p2`, `type:feature`, `area:retrieval`)
-- [#186 — Add end-to-end tutorial with a small sample app](https://github.com/mohanagy/madar/issues/186) (`priority:p2`, `type:docs`, `area:docs`, `good first issue`)
-- [#185 — Improve database operation semantics](https://github.com/mohanagy/madar/issues/185) (`priority:p2`, `type:feature`, `area:spi`, `area:retrieval`)
-- [#184 — Improve Next.js App Router and React Server Component detection](https://github.com/mohanagy/madar/issues/184) (`priority:p2`, `type:feature`, `area:spi`, `area:retrieval`)
-- [#166 — Add madar doctor and status commands](https://github.com/mohanagy/madar/issues/166) (`priority:p2`, `type:feature`, `area:dx`, `good first issue`)
-- [#165 — Design local project memory layer](https://github.com/mohanagy/madar/issues/165) (`priority:p2`, `type:research`, `area:memory`)
+- [#190 — Add public roadmap page](https://github.com/mohanagy/sadeem/issues/190) (`priority:p2`, `type:docs`, `area:docs`)
+- [#188 — Add compact graph summary format for agents](https://github.com/mohanagy/sadeem/issues/188) (`priority:p2`, `type:feature`, `area:retrieval`)
+- [#186 — Add end-to-end tutorial with a small sample app](https://github.com/mohanagy/sadeem/issues/186) (`priority:p2`, `type:docs`, `area:docs`, `good first issue`)
+- [#185 — Improve database operation semantics](https://github.com/mohanagy/sadeem/issues/185) (`priority:p2`, `type:feature`, `area:spi`, `area:retrieval`)
+- [#184 — Improve Next.js App Router and React Server Component detection](https://github.com/mohanagy/sadeem/issues/184) (`priority:p2`, `type:feature`, `area:spi`, `area:retrieval`)
+- [#166 — Add sadeem doctor and status commands](https://github.com/mohanagy/sadeem/issues/166) (`priority:p2`, `type:feature`, `area:dx`, `good first issue`)
+- [#165 — Design local project memory layer](https://github.com/mohanagy/sadeem/issues/165) (`priority:p2`, `type:research`, `area:memory`)
 
 ## Where to start
 

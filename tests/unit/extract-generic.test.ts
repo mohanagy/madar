@@ -6,7 +6,7 @@ import { extractGenericCode } from '../../src/pipeline/extract/generic.js'
 
 describe('extract generic language module', () => {
   it('extracts classes, methods, inheritance, imports, and resolved calls', () => {
-    const root = mkdtempSync(join(tmpdir(), 'madar-extract-generic-'))
+    const root = mkdtempSync(join(tmpdir(), 'sadeem-extract-generic-'))
     try {
       const filePath = join(root, 'worker.java')
       writeFileSync(
