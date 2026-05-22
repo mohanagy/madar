@@ -4,6 +4,17 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-05-22
+
+### Added
+
+- **First-pass `routing-controllers` framework support**: SPI extraction now recognizes `typestack/routing-controllers` controllers, route methods, controller-route relationships, and bootstrap registration so framework-heavy TypeScript services produce more truthful retrieval paths and graph summaries.
+
+### Changed
+
+- **Madar public package/repo surfaces are aligned for launch**: the package metadata, repository links, npm URLs, install templates, benchmark docs, examples, and generated wiki footer now consistently point to the `madar` package and the `mohanagy/madar` repository.
+- **Release-facing tooling is more precise**: benchmark harnesses now resolve `out/graph.json` correctly after changing directories, update notices print the full `madar <platform> install` commands, and doctor/install hook detection uses the actual Madar hook payload shape instead of broad substring matching.
+
 ## [0.23.1] - 2026-05-21
 
 ### Docs
