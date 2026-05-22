@@ -4,9 +4,9 @@ import { join, resolve } from 'node:path'
 import { handleCompletion, promptDefinitionsForGraph } from '../../src/runtime/stdio/prompts.js'
 
 function createGraphFixtureRoot(): string {
-  const parentDir = resolve('graphify-out', 'test-runtime')
+  const parentDir = resolve('out', 'test-runtime')
   mkdirSync(parentDir, { recursive: true })
-  const root = mkdtempSync(join(parentDir, 'graphify-ts-stdio-prompts-'))
+  const root = mkdtempSync(join(parentDir, 'madar-stdio-prompts-'))
   writeFileSync(
     join(root, 'graph.json'),
     JSON.stringify({

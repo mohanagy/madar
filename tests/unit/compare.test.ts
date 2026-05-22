@@ -7,7 +7,7 @@ import { vi } from 'vitest'
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
 import {
   buildBaselinePromptPack,
-  buildGraphifyPromptPack,
+  buildMadarPromptPack,
   executeCompareRuns,
   expandCompareExecTemplate,
   formatCompareSummary,
@@ -24,9 +24,9 @@ import { estimateQueryTokens } from '../../src/runtime/serve.js'
 import { MAX_TEXT_BYTES } from '../../src/shared/security.js'
 import { sanitizeShareSafeText } from '../../src/shared/share-safe-artifacts.js'
 
-const PROJECT_FIXTURE_ROOT = resolve('graphify-out', 'test-runtime', 'compare-runtime-project')
-const GRAPH_FIXTURE_ROOT = join(PROJECT_FIXTURE_ROOT, 'graphify-out')
-const COMPARE_OUTPUT_ROOT = resolve('graphify-out', 'compare', 'test-runtime')
+const PROJECT_FIXTURE_ROOT = resolve('out', 'test-runtime', 'compare-runtime-project')
+const GRAPH_FIXTURE_ROOT = join(PROJECT_FIXTURE_ROOT, 'out')
+const COMPARE_OUTPUT_ROOT = resolve('out', 'compare', 'test-runtime')
 
 function makeGraph(): KnowledgeGraph {
   const graph = new KnowledgeGraph()
@@ -145,7 +145,7 @@ function makeGraphBackedNonCodeFixture(kind: 'pdf' | 'docx' | 'xlsx'): {
       content: [
         '%PDF-1.4',
         '1 0 obj',
-        '<< /Title (Login Flow PDF) /Author (graphify-ts) /Subject (Authentication) >>',
+        '<< /Title (Login Flow PDF) /Author (madar) /Subject (Authentication) >>',
         'endobj',
         'BT',
         '(PDF login flow creates a session token) Tj',
@@ -351,7 +351,7 @@ describe('shared prompt runner parsing', () => {
           candidates: [
             {
               content: {
-                parts: [{ text: 'graphify answer' }, { text: '\n' }],
+                parts: [{ text: 'madar answer' }, { text: '\n' }],
               },
             },
           ],
@@ -363,7 +363,7 @@ describe('shared prompt runner parsing', () => {
         }),
       ),
     ).toEqual({
-      answerText: 'graphify answer\n',
+      answerText: 'madar answer\n',
       usage: {
         provider: 'gemini',
         source: 'structured_stdout',
@@ -410,7 +410,7 @@ describe('compare runtime', () => {
         {
           promptFile: 'C:\\Users\\Jane Doe\\prompt.txt',
           question: "how's login work?",
-          mode: 'graphify',
+          mode: 'madar',
           outputFile: 'C:\\Users\\Jane Doe\\answer.txt',
         },
         'win32',
@@ -455,10 +455,10 @@ describe('compare runtime', () => {
     expect(runnerCalls).toBe(0)
     expect(report.status).toEqual({
       baseline: 'failed',
-      graphify: 'failed',
+      madar: 'failed',
     })
     expect(report.stderr.baseline).toContain('Use stdin or file redirection with {prompt_file}')
-    expect(report.stderr.graphify).toContain('Use stdin or file redirection with {prompt_file}')
+    expect(report.stderr.madar).toContain('Use stdin or file redirection with {prompt_file}')
   })
 
   it('builds a baseline prompt pack from graph and corpus input', () => {
@@ -548,10 +548,10 @@ describe('compare runtime', () => {
 
     expect(result.reports).toHaveLength(2)
     expect(readFileSync(result.reports[0]!.paths.baseline_prompt, 'utf8')).toContain('Corpus (full):')
-    expect(readFileSync(result.reports[0]!.paths.graphify_prompt, 'utf8')).toContain('Retrieved graph context:')
+    expect(readFileSync(result.reports[0]!.paths.madar_prompt, 'utf8')).toContain('Retrieved graph context:')
     const followUpReport = result.reports[1]!
     const followUpBaselinePrompt = readFileSync(result.reports[1]!.paths.baseline_prompt, 'utf8')
-    const followUpGraphifyPrompt = readFileSync(result.reports[1]!.paths.graphify_prompt, 'utf8')
+    const followUpMadarPrompt = readFileSync(result.reports[1]!.paths.madar_prompt, 'utf8')
 
     expect(followUpBaselinePrompt).toContain('Session delta:')
     expect(followUpBaselinePrompt).toContain('Question:\nwhere is session storage defined')
@@ -560,12 +560,12 @@ describe('compare runtime', () => {
     expect(followUpReport.baseline_effective_prompt_tokens).toBe(
       Math.max(0, followUpReport.baseline_prompt_tokens_estimated - followUpReport.baseline_reused_context_tokens),
     )
-    expect(followUpGraphifyPrompt).toContain('Session delta:')
-    expect(followUpGraphifyPrompt).toContain('Question:\nwhere is session storage defined')
-    expect(followUpGraphifyPrompt).not.toContain('Retrieved graph context:')
-    expect(followUpReport.graphify_prompt_tokens_estimated).toBeGreaterThan(estimateQueryTokens(followUpGraphifyPrompt))
-    expect(followUpReport.graphify_effective_prompt_tokens).toBe(
-      Math.max(0, followUpReport.graphify_prompt_tokens_estimated - followUpReport.graphify_reused_context_tokens),
+    expect(followUpMadarPrompt).toContain('Session delta:')
+    expect(followUpMadarPrompt).toContain('Question:\nwhere is session storage defined')
+    expect(followUpMadarPrompt).not.toContain('Retrieved graph context:')
+    expect(followUpReport.madar_prompt_tokens_estimated).toBeGreaterThan(estimateQueryTokens(followUpMadarPrompt))
+    expect(followUpReport.madar_effective_prompt_tokens).toBe(
+      Math.max(0, followUpReport.madar_prompt_tokens_estimated - followUpReport.madar_reused_context_tokens),
     )
   })
 
@@ -606,7 +606,7 @@ describe('compare runtime', () => {
 
     expect(report.baseline_mode).toBe('pack_only')
     expect(baselinePrompt).toContain('[bounded baseline excerpt]')
-    expect(report.baseline_prompt_tokens).toBeLessThanOrEqual(report.graphify_prompt_tokens)
+    expect(report.baseline_prompt_tokens).toBeLessThanOrEqual(report.madar_prompt_tokens)
     expect(savedReport.baseline_mode).toBe('pack_only')
     expect(savedPack.token_count).toEqual(expect.any(Number))
     expect(savedPack.matched_nodes).toEqual(
@@ -772,14 +772,14 @@ describe('compare runtime', () => {
     ).toThrow(/too small/i)
   })
 
-  it('builds a graphify prompt pack from existing retrieval output', () => {
+  it('builds a madar prompt pack from existing retrieval output', () => {
     const graph = makeGraph()
     const retrieval = retrieveContext(graph, {
       question: 'how does login create a session',
       budget: 3000,
     })
 
-    const pack = buildGraphifyPromptPack({ question: retrieval.question, retrieval })
+    const pack = buildMadarPromptPack({ question: retrieval.question, retrieval })
 
     expect(pack.prompt).toContain('Retrieved graph context:')
     expect(pack.prompt).toContain('authenticateUser')
@@ -801,13 +801,13 @@ describe('compare runtime', () => {
       corpusText,
       mode: 'full',
     })
-    const graphifyPack = buildGraphifyPromptPack({
+    const madarPack = buildMadarPromptPack({
       question: retrieval.question,
       retrieval,
     })
 
     expect(baselinePack.token_count).toBe(estimateQueryTokens(baselinePack.prompt))
-    expect(graphifyPack.token_count).toBe(estimateQueryTokens(graphifyPack.prompt))
+    expect(madarPack.token_count).toBe(estimateQueryTokens(madarPack.prompt))
   })
 
   it('uses local tokenization rather than a fixed chars-per-token ratio for prompt counts', () => {
@@ -840,19 +840,19 @@ describe('compare runtime', () => {
     const report = result.reports[0]
     expect(report).toBeDefined()
     expect(report?.reduction_ratio).toBe(
-      Number(((report!.baseline_prompt_tokens || 0) / (report!.graphify_prompt_tokens || 1)).toFixed(1)),
+      Number(((report!.baseline_prompt_tokens || 0) / (report!.madar_prompt_tokens || 1)).toFixed(1)),
     )
-    expect(report?.paths.output_dir).toBe(resolve('graphify-out', 'compare', 'test-runtime', '2026-04-24T19-30-00'))
+    expect(report?.paths.output_dir).toBe(resolve('out', 'compare', 'test-runtime', '2026-04-24T19-30-00'))
     expect(report?.status.baseline).toBe('not_run')
-    expect(report?.status.graphify).toBe('not_run')
+    expect(report?.status.madar).toBe('not_run')
     expect(existsSync(report!.paths.baseline_prompt)).toBe(true)
-    expect(existsSync(report!.paths.graphify_prompt)).toBe(true)
+    expect(existsSync(report!.paths.madar_prompt)).toBe(true)
     expect(existsSync(report!.paths.report)).toBe(true)
     expect(report?.paths.share_safe_report).toBe(join(report!.paths.output_dir, 'report.share-safe.json'))
     expect(existsSync(report!.paths.share_safe_report)).toBe(true)
 
     const baselinePrompt = readFileSync(report!.paths.baseline_prompt, 'utf8')
-    const graphifyPrompt = readFileSync(report!.paths.graphify_prompt, 'utf8')
+    const madarPrompt = readFileSync(report!.paths.madar_prompt, 'utf8')
     const savedReport = JSON.parse(readFileSync(report!.paths.report, 'utf8')) as Record<string, unknown>
     const shareSafePath = join(report!.paths.output_dir, 'report.share-safe.json')
     const shareSafeReport = JSON.parse(readFileSync(shareSafePath, 'utf8')) as Record<string, unknown>
@@ -860,7 +860,7 @@ describe('compare runtime', () => {
     expect(baselinePrompt).toContain('Question:\nhow does login create a session')
     expect(baselinePrompt).toContain('return new SessionManager().createSession(credentials.userId)')
     expect(baselinePrompt).toContain('export class SessionManager')
-    expect(graphifyPrompt).toContain('Retrieved graph context:')
+    expect(madarPrompt).toContain('Retrieved graph context:')
     expect(savedReport).toEqual(
       expect.objectContaining({
         question: 'how does login create a session',
@@ -869,12 +869,12 @@ describe('compare runtime', () => {
           placeholders: ['{prompt_file}'],
           redacted: true,
         },
-        graph_path: join('graphify-out', 'test-runtime', 'compare-runtime-project', 'graphify-out', 'graph.json'),
+        graph_path: join('out', 'test-runtime', 'compare-runtime-project', 'out', 'graph.json'),
         baseline_prompt_tokens: estimateQueryTokens(baselinePrompt),
-        graphify_prompt_tokens: estimateQueryTokens(graphifyPrompt),
+        madar_prompt_tokens: estimateQueryTokens(madarPrompt),
         reduction_ratio: report!.reduction_ratio,
         baseline_prompt_tokens_estimated: estimateQueryTokens(baselinePrompt),
-        graphify_prompt_tokens_estimated: estimateQueryTokens(graphifyPrompt),
+        madar_prompt_tokens_estimated: estimateQueryTokens(madarPrompt),
         reduction_ratio_estimated: report!.reduction_ratio,
         prompt_token_estimator: {
           source: 'local_tokenizer',
@@ -882,17 +882,17 @@ describe('compare runtime', () => {
           exact: false,
         },
         paths: {
-          output_dir: join('graphify-out', 'compare', 'test-runtime', '2026-04-24T19-30-00'),
-          baseline_prompt: join('graphify-out', 'compare', 'test-runtime', '2026-04-24T19-30-00', 'baseline-prompt.txt'),
-          graphify_prompt: join('graphify-out', 'compare', 'test-runtime', '2026-04-24T19-30-00', 'graphify-prompt.txt'),
-          report: join('graphify-out', 'compare', 'test-runtime', '2026-04-24T19-30-00', 'report.json'),
-          share_safe_report: join('graphify-out', 'compare', 'test-runtime', '2026-04-24T19-30-00', 'report.share-safe.json'),
+          output_dir: join('out', 'compare', 'test-runtime', '2026-04-24T19-30-00'),
+          baseline_prompt: join('out', 'compare', 'test-runtime', '2026-04-24T19-30-00', 'baseline-prompt.txt'),
+          madar_prompt: join('out', 'compare', 'test-runtime', '2026-04-24T19-30-00', 'madar-prompt.txt'),
+          report: join('out', 'compare', 'test-runtime', '2026-04-24T19-30-00', 'report.json'),
+          share_safe_report: join('out', 'compare', 'test-runtime', '2026-04-24T19-30-00', 'report.share-safe.json'),
         },
       }),
     )
     expect(shareSafeReport).toEqual(
       expect.objectContaining({
-        graph_path: '<project-root>/graphify-out/graph.json',
+        graph_path: '<project-root>/out/graph.json',
         paths: expect.objectContaining({
           output_dir: '<artifact-root>',
           report: '<artifact-root>/report.json',
@@ -910,7 +910,7 @@ describe('compare runtime', () => {
     writeProjectFiles()
     const graphPath = writeGraphFixture(graph)
     const executions: Array<{
-      mode: 'baseline' | 'graphify'
+      mode: 'baseline' | 'madar'
       command: string
       promptFile: string
       outputFile: string
@@ -951,29 +951,29 @@ describe('compare runtime', () => {
     )
     expect(executions[1]).toEqual(
       expect.objectContaining({
-        mode: 'graphify',
+        mode: 'madar',
         question: 'how does login create a session',
-        promptFile: report.paths.graphify_prompt,
-        outputFile: join(report.paths.output_dir, 'graphify-answer.txt'),
+        promptFile: report.paths.madar_prompt,
+        outputFile: join(report.paths.output_dir, 'madar-answer.txt'),
       }),
     )
     expect(readFileSync(report.answer_paths.baseline, 'utf8')).toBe('baseline answer\n')
-    expect(readFileSync(report.answer_paths.graphify, 'utf8')).toBe('graphify answer\n')
+    expect(readFileSync(report.answer_paths.madar, 'utf8')).toBe('madar answer\n')
     expect(report.status).toEqual({
       baseline: 'succeeded',
-      graphify: 'succeeded',
+      madar: 'succeeded',
     })
     expect(report.exit_code).toEqual({
       baseline: 0,
-      graphify: 0,
+      madar: 0,
     })
     expect(report.stderr).toEqual({
       baseline: null,
-      graphify: null,
+      madar: null,
     })
     expect(report.elapsed_ms).toEqual({
       baseline: 11,
-      graphify: 17,
+      madar: 17,
     })
 
     const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
@@ -981,17 +981,17 @@ describe('compare runtime', () => {
       expect.objectContaining({
         status: {
           baseline: 'succeeded',
-          graphify: 'succeeded',
+          madar: 'succeeded',
         },
         exit_code: {
           baseline: 0,
-          graphify: 0,
+          madar: 0,
         },
       }),
     )
   })
 
-  it('persists compact graphify trace metadata in report.json without raw tool payload content', async () => {
+  it('persists compact madar trace metadata in report.json without raw tool payload content', async () => {
     const graph = makeGraph()
     writeProjectFiles()
     const graphPath = writeGraphFixture(graph)
@@ -1022,7 +1022,7 @@ describe('compare runtime', () => {
                   },
                 })
               : makeClaudeStructuredCompareStdout({
-                  result: 'graphify answer\n',
+                  result: 'madar answer\n',
                   usage: {
                     input_tokens: 400,
                     output_tokens: 70,
@@ -1041,7 +1041,7 @@ describe('compare runtime', () => {
                         },
                         {
                           type: 'tool_use',
-                          name: 'mcp__graphify-ts__impact',
+                          name: 'mcp__madar__impact',
                           input: { label: 'SessionManager', note: privateToolArgument },
                         },
                       ],
@@ -1066,21 +1066,21 @@ describe('compare runtime', () => {
 
     const report = result.reports[0]!
     const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
-    const graphifyTrace = savedReport.graphify_trace as Record<string, unknown> | undefined
-    const graphifyTraceJson = JSON.stringify(graphifyTrace ?? null)
+    const madarTrace = savedReport.madar_trace as Record<string, unknown> | undefined
+    const madarTraceJson = JSON.stringify(madarTrace ?? null)
 
-    expect(graphifyTrace).toEqual(
+    expect(madarTrace).toEqual(
       expect.objectContaining({
         tool_call_count: 3,
         tool_calls_by_name: {
           retrieve: 2,
-          'mcp__graphify-ts__impact': 1,
+          'mcp__madar__impact': 1,
         },
         per_turn: [
           expect.objectContaining({
             turn: 1,
             tool_call_count: 2,
-            tools: ['retrieve', 'mcp__graphify-ts__impact'],
+            tools: ['retrieve', 'mcp__madar__impact'],
           }),
           expect.objectContaining({
             turn: 2,
@@ -1090,11 +1090,11 @@ describe('compare runtime', () => {
         ],
       }),
     )
-    expect(graphifyTraceJson).not.toContain(privateQuestionPayload)
-    expect(graphifyTraceJson).not.toContain(privateToolArgument)
+    expect(madarTraceJson).not.toContain(privateQuestionPayload)
+    expect(madarTraceJson).not.toContain(privateToolArgument)
   })
 
-  it('sorts graphify_trace per_turn by numeric turn when structured messages arrive out of order', async () => {
+  it('sorts madar_trace per_turn by numeric turn when structured messages arrive out of order', async () => {
     const graph = makeGraph()
     writeProjectFiles()
     const graphPath = writeGraphFixture(graph)
@@ -1123,7 +1123,7 @@ describe('compare runtime', () => {
                   },
                 })
               : makeClaudeStructuredCompareStdout({
-                  result: 'graphify answer\n',
+                  result: 'madar answer\n',
                   usage: {
                     input_tokens: 400,
                     output_tokens: 70,
@@ -1137,7 +1137,7 @@ describe('compare runtime', () => {
                     },
                     {
                       turn: 1,
-                      content: [{ type: 'tool_use', name: 'mcp__graphify-ts__impact', input: { label: 'SessionManager' } }],
+                      content: [{ type: 'tool_use', name: 'mcp__madar__impact', input: { label: 'SessionManager' } }],
                     },
                   ],
                 }),
@@ -1149,15 +1149,15 @@ describe('compare runtime', () => {
 
     const report = result.reports[0]!
     const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
-    const graphifyTrace = savedReport.graphify_trace as Record<string, unknown> | undefined
+    const madarTrace = savedReport.madar_trace as Record<string, unknown> | undefined
 
-    expect(graphifyTrace).toEqual(
+    expect(madarTrace).toEqual(
       expect.objectContaining({
         per_turn: [
           expect.objectContaining({
             turn: 1,
             tool_call_count: 1,
-            tools: ['mcp__graphify-ts__impact'],
+            tools: ['mcp__madar__impact'],
           }),
           expect.objectContaining({
             turn: 2,
@@ -1198,7 +1198,7 @@ describe('compare runtime', () => {
                   },
                 })
               : makeClaudeStructuredCompareStdout({
-                  result: 'graphify answer\n',
+                  result: 'madar answer\n',
                   usage: {
                     input_tokens: 400,
                     output_tokens: 70,
@@ -1212,7 +1212,7 @@ describe('compare runtime', () => {
                     },
                     {
                       turn: 1.9,
-                      content: [{ type: 'tool_use', name: 'mcp__graphify-ts__impact', input: { label: 'SessionManager' } }],
+                      content: [{ type: 'tool_use', name: 'mcp__madar__impact', input: { label: 'SessionManager' } }],
                     },
                   ],
                 }),
@@ -1224,9 +1224,9 @@ describe('compare runtime', () => {
 
     const report = result.reports[0]!
     const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
-    const graphifyTrace = savedReport.graphify_trace as Record<string, unknown> | undefined
+    const madarTrace = savedReport.madar_trace as Record<string, unknown> | undefined
 
-    expect(graphifyTrace).toEqual(
+    expect(madarTrace).toEqual(
       expect.objectContaining({
         per_turn: [
           expect.objectContaining({
@@ -1237,14 +1237,14 @@ describe('compare runtime', () => {
           expect.objectContaining({
             turn: 2,
             tool_call_count: 1,
-            tools: ['mcp__graphify-ts__impact'],
+            tools: ['mcp__madar__impact'],
           }),
         ],
       }),
     )
   })
 
-  it('preserves compact graphify trace metadata when graphify exits non-zero with structured stdout', async () => {
+  it('preserves compact madar trace metadata when madar exits non-zero with structured stdout', async () => {
     const graph = makeGraph()
     writeProjectFiles()
     const graphPath = writeGraphFixture(graph)
@@ -1262,7 +1262,7 @@ describe('compare runtime', () => {
       },
       {
         runner: async (execution) => ({
-          exitCode: execution.mode === 'graphify' ? 23 : 0,
+          exitCode: execution.mode === 'madar' ? 23 : 0,
           stdout:
             execution.mode === 'baseline'
               ? makeClaudeStructuredCompareStdout({
@@ -1275,7 +1275,7 @@ describe('compare runtime', () => {
                   },
                 })
               : makeClaudeStructuredCompareStdout({
-                  result: 'graphify partial output\n',
+                  result: 'madar partial output\n',
                   usage: {
                     input_tokens: 400,
                     output_tokens: 70,
@@ -1293,14 +1293,14 @@ describe('compare runtime', () => {
                         },
                         {
                           type: 'tool_use',
-                          name: 'mcp__graphify-ts__impact',
+                          name: 'mcp__madar__impact',
                           input: { label: 'SessionManager', note: privateToolArgument },
                         },
                       ],
                     },
                   ],
                 }),
-          stderr: execution.mode === 'graphify' ? 'runner exited with a failure\n' : '',
+          stderr: execution.mode === 'madar' ? 'runner exited with a failure\n' : '',
           elapsedMs: execution.mode === 'baseline' ? 11 : 17,
         }),
       },
@@ -1308,33 +1308,33 @@ describe('compare runtime', () => {
 
     const report = result.reports[0]!
     const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
-    const graphifyTrace = savedReport.graphify_trace as Record<string, unknown> | undefined
-    const graphifyTraceJson = JSON.stringify(graphifyTrace ?? null)
+    const madarTrace = savedReport.madar_trace as Record<string, unknown> | undefined
+    const madarTraceJson = JSON.stringify(madarTrace ?? null)
 
-    expect(report.status.graphify).toBe('failed')
-    expect(report.usage.graphify).toBeNull()
-    expect(readFileSync(report.answer_paths.graphify, 'utf8')).toBe('graphify partial output\n')
-    expect(graphifyTrace).toEqual(
+    expect(report.status.madar).toBe('failed')
+    expect(report.usage.madar).toBeNull()
+    expect(readFileSync(report.answer_paths.madar, 'utf8')).toBe('madar partial output\n')
+    expect(madarTrace).toEqual(
       expect.objectContaining({
         tool_call_count: 2,
         tool_calls_by_name: {
-          'mcp__graphify-ts__impact': 1,
+          'mcp__madar__impact': 1,
           retrieve: 1,
         },
         per_turn: [
           expect.objectContaining({
             turn: 1,
             tool_call_count: 2,
-            tools: ['retrieve', 'mcp__graphify-ts__impact'],
+            tools: ['retrieve', 'mcp__madar__impact'],
           }),
         ],
       }),
     )
-    expect(graphifyTraceJson).not.toContain(privateQuestionPayload)
-    expect(graphifyTraceJson).not.toContain(privateToolArgument)
+    expect(madarTraceJson).not.toContain(privateQuestionPayload)
+    expect(madarTraceJson).not.toContain(privateToolArgument)
   })
 
-  it('keeps graphify_trace absent when compare stdout does not expose trace data', async () => {
+  it('keeps madar_trace absent when compare stdout does not expose trace data', async () => {
     const graph = makeGraph()
     writeProjectFiles()
     const graphPath = writeGraphFixture(graph)
@@ -1369,7 +1369,7 @@ describe('compare runtime', () => {
     const report = result.reports[0]!
     const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
 
-    expect(savedReport).not.toHaveProperty('graphify_trace')
+    expect(savedReport).not.toHaveProperty('madar_trace')
   })
 
   it('preserves Claude structured usage parsing through compare execution', async () => {
@@ -1403,7 +1403,7 @@ describe('compare runtime', () => {
                   },
                 })
               : makeClaudeStructuredCompareStdout({
-                  result: 'graphify answer\n',
+                  result: 'madar answer\n',
                   usage: {
                     input_tokens: 400,
                     output_tokens: 70,
@@ -1415,7 +1415,7 @@ describe('compare runtime', () => {
                       turn: 1,
                       content: [
                         { type: 'tool_use', name: 'retrieve', input: { question: 'login session flow' } },
-                        { type: 'tool_use', name: 'mcp__graphify-ts__impact', input: { label: 'SessionManager' } },
+                        { type: 'tool_use', name: 'mcp__madar__impact', input: { label: 'SessionManager' } },
                       ],
                     },
                     {
@@ -1432,16 +1432,16 @@ describe('compare runtime', () => {
 
     const report = result.reports[0]!
     expect(readFileSync(report.answer_paths.baseline, 'utf8')).toBe('baseline answer\n')
-    expect(readFileSync(report.answer_paths.graphify, 'utf8')).toBe('graphify answer\n')
+    expect(readFileSync(report.answer_paths.madar, 'utf8')).toBe('madar answer\n')
     expect(report.baseline_prompt_tokens).toBe(1320)
-    expect(report.graphify_prompt_tokens).toBe(410)
+    expect(report.madar_prompt_tokens).toBe(410)
     expect(report.baseline_effective_prompt_tokens).toBe(1300)
-    expect(report.graphify_effective_prompt_tokens).toBe(400)
+    expect(report.madar_effective_prompt_tokens).toBe(400)
     expect(report.baseline_reused_context_tokens).toBe(20)
-    expect(report.graphify_reused_context_tokens).toBe(10)
+    expect(report.madar_reused_context_tokens).toBe(10)
     expect(report.prompt_token_source).toEqual({
       baseline: 'claude_reported_input',
-      graphify: 'claude_reported_input',
+      madar: 'claude_reported_input',
     })
     expect(report.provider_proof).toEqual({
       baseline: {
@@ -1450,7 +1450,7 @@ describe('compare runtime', () => {
         effective_tokens_source: 'provider_cache_read_tokens',
         total_tokens_source: 'provider_reported_total',
       },
-      graphify: {
+      madar: {
         provider: 'claude',
         input_tokens_source: 'claude_reported_input',
         effective_tokens_source: 'provider_cache_read_tokens',
@@ -1469,7 +1469,7 @@ describe('compare runtime', () => {
         input_total_tokens: 1320,
         total_tokens: 1410,
       },
-      graphify: {
+      madar: {
         provider: 'claude',
         source: 'structured_stdout',
         input_tokens: 400,
@@ -1481,14 +1481,14 @@ describe('compare runtime', () => {
       },
     })
     expect(report.baseline_total_tokens).toBe(1410)
-    expect(report.graphify_total_tokens).toBe(480)
+    expect(report.madar_total_tokens).toBe(480)
     expect(report.effective_reduction_ratio).toBe(Number((1300 / 400).toFixed(1)))
-    expect(formatCompareSummary(result)).toContain('Input tokens (Claude reported): baseline 1320 · graphify 410')
-    expect(formatCompareSummary(result)).toContain('Effective input tokens (cache-adjusted): baseline 1300 · graphify 400')
-    expect(formatCompareSummary(result)).toContain('Total tokens (Claude reported): baseline 1410 · graphify 480')
+    expect(formatCompareSummary(result)).toContain('Input tokens (Claude reported): baseline 1320 · madar 410')
+    expect(formatCompareSummary(result)).toContain('Effective input tokens (cache-adjusted): baseline 1300 · madar 400')
+    expect(formatCompareSummary(result)).toContain('Total tokens (Claude reported): baseline 1410 · madar 480')
     expect(formatCompareSummary(result)).toContain('Provider/runtime proof: Claude reported input, cache, and total tokens for 2/2 prompt runs')
     expect(formatCompareSummary(result)).toContain(
-      'Graphify trace: 3 tool calls across 2 turns · top tools: retrieve×2, mcp__graphify-ts__impact×1',
+      'Madar trace: 3 tool calls across 2 turns · top tools: retrieve×2, mcp__madar__impact×1',
     )
   })
 
@@ -1527,9 +1527,9 @@ describe('compare runtime', () => {
 
     const report = result.reports[0]!
     expect(readFileSync(report.answer_paths.baseline, 'utf8')).toBe('')
-    expect(readFileSync(report.answer_paths.graphify, 'utf8')).toBe('')
+    expect(readFileSync(report.answer_paths.madar, 'utf8')).toBe('')
     expect(report.usage.baseline?.total_tokens).toBe(1410)
-    expect(report.usage.graphify?.total_tokens).toBe(1410)
+    expect(report.usage.madar?.total_tokens).toBe(1410)
   })
 
   it('preserves plain-text fallback when structured parsing fails', async () => {
@@ -1564,12 +1564,12 @@ describe('compare runtime', () => {
 
     const report = result.reports[0]!
     expect(readFileSync(report.answer_paths.baseline, 'utf8')).toBe(stdout)
-    expect(readFileSync(report.answer_paths.graphify, 'utf8')).toBe(stdout)
+    expect(readFileSync(report.answer_paths.madar, 'utf8')).toBe(stdout)
     expect(report.usage.baseline).toBeNull()
-    expect(report.usage.graphify).toBeNull()
+    expect(report.usage.madar).toBeNull()
     expect(report.prompt_token_source).toEqual({
       baseline: 'estimated_cl100k_base',
-      graphify: 'estimated_cl100k_base',
+      madar: 'estimated_cl100k_base',
     })
     expect(report.provider_proof).toEqual({
       baseline: {
@@ -1578,7 +1578,7 @@ describe('compare runtime', () => {
         effective_tokens_source: 'session_reuse_estimate',
         total_tokens_source: 'not_available',
       },
-      graphify: {
+      madar: {
         provider: null,
         input_tokens_source: 'estimated_cl100k_base',
         effective_tokens_source: 'session_reuse_estimate',
@@ -1634,12 +1634,12 @@ describe('compare runtime', () => {
 
     const report = result.reports[0]!
     expect(readFileSync(report.answer_paths.baseline, 'utf8')).toBe('baseline answer\n')
-    expect(readFileSync(report.answer_paths.graphify, 'utf8')).toBe('graphify answer\n')
+    expect(readFileSync(report.answer_paths.madar, 'utf8')).toBe('madar answer\n')
     expect(report.baseline_prompt_tokens).toBe(1200)
-    expect(report.graphify_prompt_tokens).toBe(400)
+    expect(report.madar_prompt_tokens).toBe(400)
     expect(report.prompt_token_source).toEqual({
       baseline: 'gemini_reported_input',
-      graphify: 'gemini_reported_input',
+      madar: 'gemini_reported_input',
     })
     expect(report.provider_proof).toEqual({
       baseline: {
@@ -1648,7 +1648,7 @@ describe('compare runtime', () => {
         effective_tokens_source: 'provider_input_minus_zero_cache',
         total_tokens_source: 'provider_reported_total',
       },
-      graphify: {
+      madar: {
         provider: 'gemini',
         input_tokens_source: 'gemini_reported_input',
         effective_tokens_source: 'provider_input_minus_zero_cache',
@@ -1664,7 +1664,7 @@ describe('compare runtime', () => {
         total_tokens: 1290,
       }),
     )
-    expect(report.usage.graphify).toEqual(
+    expect(report.usage.madar).toEqual(
       expect.objectContaining({
         provider: 'gemini',
         input_tokens: 400,
@@ -1678,7 +1678,7 @@ describe('compare runtime', () => {
     const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as {
       usage: {
         baseline: Record<string, unknown> | null
-        graphify: Record<string, unknown> | null
+        madar: Record<string, unknown> | null
       }
     }
     expect(savedReport.usage.baseline).toEqual(
@@ -1689,7 +1689,7 @@ describe('compare runtime', () => {
         total_tokens: 1290,
       }),
     )
-    expect(savedReport.usage.graphify).toEqual(
+    expect(savedReport.usage.madar).toEqual(
       expect.objectContaining({
         provider: 'gemini',
         input_tokens: 400,
@@ -1697,8 +1697,8 @@ describe('compare runtime', () => {
         total_tokens: 470,
       }),
     )
-    expect(formatCompareSummary(result)).toContain('Input tokens (Gemini reported): baseline 1200 · graphify 400')
-    expect(formatCompareSummary(result)).toContain('Total tokens (Gemini reported): baseline 1290 · graphify 470')
+    expect(formatCompareSummary(result)).toContain('Input tokens (Gemini reported): baseline 1200 · madar 400')
+    expect(formatCompareSummary(result)).toContain('Total tokens (Gemini reported): baseline 1290 · madar 470')
     expect(formatCompareSummary(result))
       .toContain('Provider/runtime proof: Gemini reported input and total tokens; no provider cache-read tokens were reported for 2/2 prompt runs')
   })
@@ -1749,7 +1749,7 @@ describe('compare runtime', () => {
 
     const report = result.reports[0]!
     expect(readFileSync(report.answer_paths.baseline, 'utf8')).toBe('')
-    expect(readFileSync(report.answer_paths.graphify, 'utf8')).toBe('')
+    expect(readFileSync(report.answer_paths.madar, 'utf8')).toBe('')
     expect(report.usage.baseline).toEqual(
       expect.objectContaining({
         provider: 'gemini',
@@ -1758,7 +1758,7 @@ describe('compare runtime', () => {
         total_tokens: 1290,
       }),
     )
-    expect(report.usage.graphify).toEqual(
+    expect(report.usage.madar).toEqual(
       expect.objectContaining({
         provider: 'gemini',
         input_tokens: 400,
@@ -1770,7 +1770,7 @@ describe('compare runtime', () => {
     const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as {
       usage: {
         baseline: Record<string, unknown> | null
-        graphify: Record<string, unknown> | null
+        madar: Record<string, unknown> | null
       }
     }
     expect(savedReport.usage.baseline).toEqual(
@@ -1781,7 +1781,7 @@ describe('compare runtime', () => {
         total_tokens: 1290,
       }),
     )
-    expect(savedReport.usage.graphify).toEqual(
+    expect(savedReport.usage.madar).toEqual(
       expect.objectContaining({
         provider: 'gemini',
         input_tokens: 400,
@@ -1825,12 +1825,12 @@ describe('compare runtime', () => {
 
     const report = result.reports[0]!
     expect(readFileSync(report.answer_paths.baseline, 'utf8')).toBe('baseline answer\n')
-    expect(readFileSync(report.answer_paths.graphify, 'utf8')).toBe('graphify answer\n')
+    expect(readFileSync(report.answer_paths.madar, 'utf8')).toBe('madar answer\n')
     expect(report.usage.baseline).toBeNull()
-    expect(report.usage.graphify).toBeNull()
+    expect(report.usage.madar).toBeNull()
     expect(report.prompt_token_source).toEqual({
       baseline: 'estimated_cl100k_base',
-      graphify: 'estimated_cl100k_base',
+      madar: 'estimated_cl100k_base',
     })
     expect(formatCompareSummary(result)).toContain('estimate')
   })
@@ -1879,7 +1879,7 @@ describe('compare runtime', () => {
 
     const report = result.reports[0]!
     expect(readFileSync(report.answer_paths.baseline, 'utf8')).toBe('baseline answer\n')
-    expect(readFileSync(report.answer_paths.graphify, 'utf8')).toBe('graphify answer\n')
+    expect(readFileSync(report.answer_paths.madar, 'utf8')).toBe('madar answer\n')
   })
 
   it('preserves malformed Gemini JSON stdout as the answer artifact without capturing usage', async () => {
@@ -1909,9 +1909,9 @@ describe('compare runtime', () => {
 
     const report = result.reports[0]!
     expect(readFileSync(report.answer_paths.baseline, 'utf8')).toBe(rawStdout)
-    expect(readFileSync(report.answer_paths.graphify, 'utf8')).toBe(rawStdout)
+    expect(readFileSync(report.answer_paths.madar, 'utf8')).toBe(rawStdout)
     expect(report.usage.baseline).toBeNull()
-    expect(report.usage.graphify).toBeNull()
+    expect(report.usage.madar).toBeNull()
   })
 
   it('promotes Gemini-reported input and total tokens into compare summaries', async () => {
@@ -1960,15 +1960,15 @@ describe('compare runtime', () => {
 
     const report = result.reports[0]!
     expect(report.baseline_prompt_tokens).toBe(1200)
-    expect(report.graphify_prompt_tokens).toBe(400)
+    expect(report.madar_prompt_tokens).toBe(400)
     expect(report.baseline_total_tokens).toBe(1290)
-    expect(report.graphify_total_tokens).toBe(470)
+    expect(report.madar_total_tokens).toBe(470)
     const summary = formatCompareSummary(result)
-    expect(summary).toContain('Input tokens (Gemini reported): baseline 1200 · graphify 400')
-    expect(summary).toContain('Total tokens (Gemini reported): baseline 1290 · graphify 470')
+    expect(summary).toContain('Input tokens (Gemini reported): baseline 1200 · madar 400')
+    expect(summary).toContain('Total tokens (Gemini reported): baseline 1290 · madar 470')
   })
 
-  it('reports when graphify uses more Claude-reported tokens than the baseline', async () => {
+  it('reports when madar uses more Claude-reported tokens than the baseline', async () => {
     const graph = makeGraph()
     writeProjectFiles()
     const graphPath = writeGraphFixture(graph)
@@ -2010,8 +2010,8 @@ describe('compare runtime', () => {
       },
     )
 
-    expect(formatCompareSummary(result)).toContain('Input tokens (Claude reported): baseline 300 · graphify 500 · 1.7x larger')
-    expect(formatCompareSummary(result)).toContain('Total tokens (Claude reported): baseline 350 · graphify 580 · 1.7x larger')
+    expect(formatCompareSummary(result)).toContain('Input tokens (Claude reported): baseline 300 · madar 500 · 1.7x larger')
+    expect(formatCompareSummary(result)).toContain('Total tokens (Claude reported): baseline 350 · madar 580 · 1.7x larger')
   })
 
   it('preserves partial compare results when one side fails', async () => {
@@ -2031,7 +2031,7 @@ describe('compare runtime', () => {
       {
         runner: async (execution) => ({
           exitCode: execution.mode === 'baseline' ? 23 : 0,
-          stdout: execution.mode === 'baseline' ? 'baseline partial output\n' : 'graphify answer\n',
+          stdout: execution.mode === 'baseline' ? 'baseline partial output\n' : 'madar answer\n',
           stderr: execution.mode === 'baseline' ? 'runner exited with a failure\n' : '',
           elapsedMs: execution.mode === 'baseline' ? 5 : 9,
         }),
@@ -2040,18 +2040,18 @@ describe('compare runtime', () => {
 
     const report = result.reports[0]!
     expect(readFileSync(report.answer_paths.baseline, 'utf8')).toBe('baseline partial output\n')
-    expect(readFileSync(report.answer_paths.graphify, 'utf8')).toBe('graphify answer\n')
+    expect(readFileSync(report.answer_paths.madar, 'utf8')).toBe('madar answer\n')
     expect(report.status).toEqual({
       baseline: 'failed',
-      graphify: 'succeeded',
+      madar: 'succeeded',
     })
     expect(report.exit_code).toEqual({
       baseline: 23,
-      graphify: 0,
+      madar: 0,
     })
     expect(report.stderr).toEqual({
       baseline: expect.stringContaining('stderr omitted for safety'),
-      graphify: null,
+      madar: null,
     })
 
     const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
@@ -2059,11 +2059,11 @@ describe('compare runtime', () => {
       expect.objectContaining({
         status: {
           baseline: 'failed',
-          graphify: 'succeeded',
+          madar: 'succeeded',
         },
         exit_code: {
           baseline: 23,
-          graphify: 0,
+          madar: 0,
         },
       }),
     )
@@ -2086,7 +2086,7 @@ describe('compare runtime', () => {
       {
         runner: async (execution) => ({
           exitCode: execution.mode === 'baseline' ? 1 : 0,
-          stdout: execution.mode === 'baseline' ? 'Prompt is too long\n' : 'graphify answer\n',
+          stdout: execution.mode === 'baseline' ? 'Prompt is too long\n' : 'madar answer\n',
           stderr: '',
           elapsedMs: execution.mode === 'baseline' ? 5 : 9,
         }),
@@ -2097,11 +2097,11 @@ describe('compare runtime', () => {
     expect(readFileSync(report.answer_paths.baseline, 'utf8')).toBe('Prompt is too long\n')
     expect(report.status).toEqual({
       baseline: 'context_overflow',
-      graphify: 'succeeded',
+      madar: 'succeeded',
     })
     expect(report.failure_reason).toEqual({
       baseline: 'prompt_too_long',
-      graphify: null,
+      madar: null,
     })
     expect(report.evidence.baseline).toBe('Prompt is too long')
 
@@ -2110,15 +2110,15 @@ describe('compare runtime', () => {
       expect.objectContaining({
         status: {
           baseline: 'context_overflow',
-          graphify: 'succeeded',
+          madar: 'succeeded',
         },
         failure_reason: {
           baseline: 'prompt_too_long',
-          graphify: null,
+          madar: null,
         },
         evidence: {
           baseline: 'Prompt is too long',
-          graphify: null,
+          madar: null,
         },
       }),
     )
@@ -2143,7 +2143,7 @@ describe('compare runtime', () => {
         {
           runner: async (execution) => ({
             exitCode: execution.mode === 'baseline' ? 1 : 0,
-            stdout: execution.mode === 'baseline' ? 'Prompt is too long\n' : 'graphify answer\n',
+            stdout: execution.mode === 'baseline' ? 'Prompt is too long\n' : 'madar answer\n',
             stderr: '',
             elapsedMs: 1,
           }),
@@ -2172,7 +2172,7 @@ describe('compare runtime', () => {
           now: () => new Date('2026-04-24T19:30:00.000Z'),
           runner: async (execution) => ({
             exitCode: 0,
-            stdout: execution.mode === 'baseline' ? 'baseline answer\n' : 'graphify answer\n',
+            stdout: execution.mode === 'baseline' ? 'baseline answer\n' : 'madar answer\n',
             stderr: '',
             elapsedMs: 5,
           }),
@@ -2188,7 +2188,7 @@ describe('compare runtime', () => {
           kind: 'answer_only',
           exit_code: 0,
         }),
-        graphify: expect.objectContaining({
+        madar: expect.objectContaining({
           kind: 'answer_only',
           exit_code: 0,
         }),
@@ -2197,28 +2197,28 @@ describe('compare runtime', () => {
     )
     expect(shareSafeReport).toEqual(
       expect.objectContaining({
-        graph_path: '<project-root>/graphify-out/graph.json',
+        graph_path: '<project-root>/out/graph.json',
         paths: expect.objectContaining({
           output_dir: '<artifact-root>',
           report: '<artifact-root>/report.json',
           share_safe_report: '<artifact-root>/report.share-safe.json',
           baseline_answer: '<artifact-root>/baseline-answer.txt',
-          graphify_answer: '<artifact-root>/graphify-answer.txt',
+          madar_answer: '<artifact-root>/madar-answer.txt',
           prompt_file: '<artifact-root>/native_agent-prompt.txt',
         }),
         baseline: expect.objectContaining({
           kind: 'answer_only',
           result_path: '<artifact-root>/baseline-answer.txt',
         }),
-        graphify: expect.objectContaining({
+        madar: expect.objectContaining({
           kind: 'answer_only',
-          result_path: '<artifact-root>/graphify-answer.txt',
+          result_path: '<artifact-root>/madar-answer.txt',
         }),
       }),
     )
     expect(JSON.stringify(shareSafeReport)).not.toContain(PROJECT_FIXTURE_ROOT)
     expect(readFileSync(join(COMPARE_OUTPUT_ROOT, outputTimestamp, 'baseline-answer.txt'), 'utf8')).toBe('baseline answer\n')
-    expect(readFileSync(join(COMPARE_OUTPUT_ROOT, outputTimestamp, 'graphify-answer.txt'), 'utf8')).toBe('graphify answer\n')
+    expect(readFileSync(join(COMPARE_OUTPUT_ROOT, outputTimestamp, 'madar-answer.txt'), 'utf8')).toBe('madar answer\n')
   })
 
   it('marks invalid compare placeholders as failed runs in persisted reports', async () => {
@@ -2253,21 +2253,21 @@ describe('compare runtime', () => {
     expect(runnerCalls).toBe(0)
     expect(report.status).toEqual({
       baseline: 'failed',
-      graphify: 'failed',
+      madar: 'failed',
     })
     expect(report.stderr.baseline).toContain('Unknown compare exec placeholder')
-    expect(report.stderr.graphify).toContain('Unknown compare exec placeholder')
+    expect(report.stderr.madar).toContain('Unknown compare exec placeholder')
 
     const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
     expect(savedReport).toEqual(
       expect.objectContaining({
         status: {
           baseline: 'failed',
-          graphify: 'failed',
+          madar: 'failed',
         },
       }),
     )
-    expect(savedReport).not.toHaveProperty('graphify_trace')
+    expect(savedReport).not.toHaveProperty('madar_trace')
   })
 
   it('redacts persisted compare stderr summaries', async () => {
@@ -2287,7 +2287,7 @@ describe('compare runtime', () => {
       {
         runner: async (execution) => ({
           exitCode: execution.mode === 'baseline' ? 1 : 0,
-          stdout: execution.mode === 'baseline' ? '' : 'graphify answer\n',
+          stdout: execution.mode === 'baseline' ? '' : 'madar answer\n',
           stderr:
             execution.mode === 'baseline'
               ? 'OPENAI_API_KEY=super-secret\nAuthorization: Bearer abc123\nStack trace follows\n'
@@ -2349,12 +2349,12 @@ describe('compare runtime', () => {
     const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
     const shareSafeReport = JSON.parse(readFileSync(report.paths.share_safe_report, 'utf8')) as Record<string, unknown>
     const savedReportEvidence = (savedReport.evidence as Record<string, string | null>).baseline
-    const savedReportStderr = (savedReport.stderr as Record<string, string | null>).graphify
+    const savedReportStderr = (savedReport.stderr as Record<string, string | null>).madar
     const shareSafeEvidence = (shareSafeReport.evidence as Record<string, string | null>).baseline
-    const shareSafeStderr = (shareSafeReport.stderr as Record<string, string | null>).graphify
+    const shareSafeStderr = (shareSafeReport.stderr as Record<string, string | null>).madar
 
     expect(report.evidence.baseline).toContain(`${overflowPath} for details`)
-    expect(report.stderr.graphify).toContain(`${overflowPath} for details`)
+    expect(report.stderr.madar).toContain(`${overflowPath} for details`)
     expect(savedReportEvidence).toContain(`${overflowPath} for details`)
     expect(savedReportStderr).toContain(`${overflowPath} for details`)
 
@@ -2372,7 +2372,7 @@ describe('compare runtime', () => {
           baseline: expect.stringContaining(`${expectedShareSafeSecretPath} for details`),
         }),
         stderr: expect.objectContaining({
-          graphify: expect.stringContaining(`${expectedShareSafeSecretPath} for details`),
+          madar: expect.stringContaining(`${expectedShareSafeSecretPath} for details`),
         }),
       }),
     )
@@ -2884,7 +2884,7 @@ describe('compare runtime', () => {
       const shareSafeReport = JSON.parse(readFileSync(report.paths.share_safe_report, 'utf8')) as {
         answer_paths: {
           baseline: string
-          graphify: string
+          madar: string
         }
       }
 
@@ -2900,17 +2900,17 @@ describe('compare runtime', () => {
     }
   })
 
-  it('loads graphify snippets when compare runs from outside the inferred project root', () => {
+  it('loads madar snippets when compare runs from outside the inferred project root', () => {
     const graph = makeGraph()
     writeProjectFiles()
     const graphPath = writeGraphFixture(graph)
     const originalCwd = process.cwd()
-    const alternateCwd = resolve('graphify-out', 'test-runtime', 'outside-compare-runner')
+    const alternateCwd = resolve('out', 'test-runtime', 'outside-compare-runner')
     mkdirSync(alternateCwd, { recursive: true })
 
     try {
       process.chdir(alternateCwd)
-      const alternateOutputRoot = join(alternateCwd, 'graphify-out', 'compare', 'alternate-cwd')
+      const alternateOutputRoot = join(alternateCwd, 'out', 'compare', 'alternate-cwd')
 
       const result = generateCompareArtifacts({
         graphPath,
@@ -2922,9 +2922,9 @@ describe('compare runtime', () => {
       })
 
       expect(process.cwd()).toBe(alternateCwd)
-      const graphifyPrompt = readFileSync(result.reports[0]!.paths.graphify_prompt, 'utf8')
-      expect(graphifyPrompt).toContain('createSession(userId) {')
-      expect(graphifyPrompt).toContain('return new SessionStore().write(userId)')
+      const madarPrompt = readFileSync(result.reports[0]!.paths.madar_prompt, 'utf8')
+      expect(madarPrompt).toContain('createSession(userId) {')
+      expect(madarPrompt).toContain('return new SessionStore().write(userId)')
     } finally {
       process.chdir(originalCwd)
       rmSync(alternateCwd, { recursive: true, force: true })
@@ -2946,13 +2946,13 @@ describe('compare runtime', () => {
       now: new Date('2026-04-24T19:30:00.000Z'),
     })
 
-    const graphifyPrompt = readFileSync(result.reports[0]!.paths.graphify_prompt, 'utf8')
-    expect(graphifyPrompt).toContain('SessionManager')
-    expect(graphifyPrompt).toContain('export class SessionManager')
-    expect(graphifyPrompt).not.toContain('export class SessionStore')
+    const madarPrompt = readFileSync(result.reports[0]!.paths.madar_prompt, 'utf8')
+    expect(madarPrompt).toContain('SessionManager')
+    expect(madarPrompt).toContain('export class SessionManager')
+    expect(madarPrompt).not.toContain('export class SessionStore')
   })
 
-  it('does not load graphify snippets from paths outside the inferred project root', () => {
+  it('does not load madar snippets from paths outside the inferred project root', () => {
     const graph = makeGraph()
     graph.addNode('secret_leak', {
       label: 'SecretLeak',
@@ -2978,9 +2978,9 @@ describe('compare runtime', () => {
         now: new Date('2026-04-24T19:30:00.000Z'),
       })
 
-      const graphifyPrompt = readFileSync(result.reports[0]!.paths.graphify_prompt, 'utf8')
-      expect(graphifyPrompt).toContain('SecretLeak')
-      expect(graphifyPrompt).not.toContain('TOP SECRET compare snippet')
+      const madarPrompt = readFileSync(result.reports[0]!.paths.madar_prompt, 'utf8')
+      expect(madarPrompt).toContain('SecretLeak')
+      expect(madarPrompt).not.toContain('TOP SECRET compare snippet')
     } finally {
       rmSync(outsideSecretPath, { force: true })
     }
@@ -3013,9 +3013,9 @@ describe('compare runtime', () => {
         now: new Date('2026-04-24T19:30:00.000Z'),
       })
 
-      const graphifyPrompt = readFileSync(result.reports[0]!.paths.graphify_prompt, 'utf8')
-      expect(graphifyPrompt).toContain('ArchiveNode')
-      expect(graphifyPrompt).not.toContain('PRIVATE snippet should never appear')
+      const madarPrompt = readFileSync(result.reports[0]!.paths.madar_prompt, 'utf8')
+      expect(madarPrompt).toContain('ArchiveNode')
+      expect(madarPrompt).not.toContain('PRIVATE snippet should never appear')
     } finally {
       rmSync(resolve(PROJECT_FIXTURE_ROOT, '..', '..', '..', 'vault'), { recursive: true, force: true })
     }
@@ -3060,11 +3060,11 @@ describe('compare runtime', () => {
         now: new Date('2026-04-24T19:30:00.000Z'),
       })
 
-      const graphifyPrompt = readFileSync(result.reports[0]!.paths.graphify_prompt, 'utf8')
-      expect(graphifyPrompt).toContain('ArchiveDash @ ../../../vault/private-notes.txt:1')
-      expect(graphifyPrompt).toContain('ArchiveNested @ ../../../vault/private/notes.txt:1')
-      expect(graphifyPrompt).not.toContain('outside dash snippet')
-      expect(graphifyPrompt).not.toContain('outside nested snippet')
+      const madarPrompt = readFileSync(result.reports[0]!.paths.madar_prompt, 'utf8')
+      expect(madarPrompt).toContain('ArchiveDash @ ../../../vault/private-notes.txt:1')
+      expect(madarPrompt).toContain('ArchiveNested @ ../../../vault/private/notes.txt:1')
+      expect(madarPrompt).not.toContain('outside dash snippet')
+      expect(madarPrompt).not.toContain('outside nested snippet')
     } finally {
       rmSync(outsideVaultRoot, { recursive: true, force: true })
     }
@@ -3115,7 +3115,7 @@ describe('compare runtime', () => {
 
       const baselinePrompt = readFileSync(result.reports[0]!.paths.baseline_prompt, 'utf8')
       expect(baselinePrompt).toContain(fixture.expectedExcerpt)
-      expect(existsSync(result.reports[0]!.paths.graphify_prompt)).toBe(true)
+      expect(existsSync(result.reports[0]!.paths.madar_prompt)).toBe(true)
       expect(existsSync(result.reports[0]!.paths.report)).toBe(true)
     },
   )
@@ -3145,7 +3145,7 @@ describe('compare runtime', () => {
           ? [
               '%PDF-1.4',
               '1 0 obj',
-              '<< /Producer (graphify-ts) >>',
+              '<< /Producer (madar) >>',
               'endobj',
             ].join('\n')
           : Buffer.from('not-a-zip-archive'),
@@ -3181,7 +3181,7 @@ describe('compare runtime', () => {
           [
             '%PDF-1.4',
             '1 0 obj',
-            '<< /Title (Login Flow PDF) /Author (graphify-ts) /Subject (Authentication) >>',
+            '<< /Title (Login Flow PDF) /Author (madar) /Subject (Authentication) >>',
             'endobj',
             'BT',
             `(${longExcerpt}) Tj`,

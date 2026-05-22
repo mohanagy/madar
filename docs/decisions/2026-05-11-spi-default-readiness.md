@@ -1,18 +1,18 @@
 # SPI default-readiness criteria + legacy-extractor fallback plan
 
-> **Tracking issue:** [#134](https://github.com/mohanagy/graphify-ts/issues/134).
+> **Tracking issue:** [#134](https://github.com/mohanagy/madar/issues/134).
 > **Status:** decision framework — codified, not yet acted on.
 
 ## What this document is
 
-A concrete, measurable contract for when `graphify-ts generate --spi` graduates from an opt-in flag (today's state, v0.18+) to the default pipeline, and what fallback escape hatch remains after the flip.
+A concrete, measurable contract for when `madar generate --spi` graduates from an opt-in flag (today's state, v0.18+) to the default pipeline, and what fallback escape hatch remains after the flip.
 
 This is **not** a code change. It's the criteria the next code change (the default flip itself) has to meet.
 
 ## Current state (v0.19 reference)
 
-- `graphify-ts generate <path>` uses the legacy `extract()` pipeline.
-- `graphify-ts generate <path> --spi` opts into the SPI pipeline.
+- `madar generate <path>` uses the legacy `extract()` pipeline.
+- `madar generate <path> --spi` opts into the SPI pipeline.
 - Benchmark on the bundled `2026-05-11-spi-vs-legacy/fixture`:
 
 | Metric | Legacy | `--spi` | Δ |

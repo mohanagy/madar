@@ -24,7 +24,7 @@ export type SpiWorkspace = {
   root: string
   fingerprint: string
   extractor_version: string
-  graphify_version: string
+  madar_version: string
 }
 
 export type SpiLanguage =

@@ -8,7 +8,7 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ### Docs
 
-- **0.23.0 release docs are easier to discover**: the README now surfaces `graphify-ts summary`, the core MCP `graph_summary` tool, `execution_slice`, share-safe compare artifacts, and `compare --baseline-mode pack_only` in the main product story instead of leaving them mostly to the changelog and proof docs.
+- **0.23.0 release docs are easier to discover**: the README now surfaces `madar summary`, the core MCP `graph_summary` tool, `execution_slice`, share-safe compare artifacts, and `compare --baseline-mode pack_only` in the main product story instead of leaving them mostly to the changelog and proof docs.
 - **SPI guidance is explicit**: the public docs now explain that `--spi` is still opt-in, when framework-heavy TypeScript/JavaScript repos should use it, and why it helps with storage-oriented prompts, Next.js App Router boundaries, and cached reruns.
 - **The getting-started walkthrough matches current behavior**: the sample flow now includes a bounded `summary` step, an optional `generate --spi` branch, pack-only compare usage, and notes that queue-backed runtime questions may surface `execution_slice` plus `report.share-safe.json`.
 - **Capability docs translate semantics into user value**: the language matrix now explains how Python FastAPI semantics, queue-worker `enqueues_job` edges, SPI `storage_operation` hints, and Next.js `runtime_boundary` metadata improve real retrieval answers.
@@ -17,9 +17,9 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ### Added
 
-- **Compact graph summary surface**: adds a bounded deterministic `graphify-ts summary [graph.json]` CLI command plus a default-core MCP `graph_summary` tool that return the same shared JSON overview of graph counts, source domains, top modules, entrypoints, frameworks, and high-signal runtime paths. This is intended as a first-turn repo overview before deeper `retrieve` / `context_pack` calls, and the README/core-profile byte-budget docs now reflect the new 7-tool default core surface.
+- **Compact graph summary surface**: adds a bounded deterministic `madar summary [graph.json]` CLI command plus a default-core MCP `graph_summary` tool that return the same shared JSON overview of graph counts, source domains, top modules, entrypoints, frameworks, and high-signal runtime paths. This is intended as a first-turn repo overview before deeper `retrieve` / `context_pack` calls, and the README/core-profile byte-budget docs now reflect the new 7-tool default core surface.
 - **Execution-slice context packs**: runtime-generation backend packs now expose a separate `execution_slice` section with ordered runtime steps and partial-path signaling while preserving the raw `slice` metadata for compatibility.
-- **Pack-only compare mode**: `graphify-ts compare --baseline-mode pack_only` now compares one bounded raw-context baseline prompt against one compiled graphify pack, persists the compact pack audit fields in `report.json`, and keeps `native_agent` as the provider-reported runtime benchmark path.
+- **Pack-only compare mode**: `madar compare --baseline-mode pack_only` now compares one bounded raw-context baseline prompt against one compiled madar pack, persists the compact pack audit fields in `report.json`, and keeps `native_agent` as the provider-reported runtime benchmark path.
 - **Share-safe proof reports**: `compare`, `review-compare`, and runner-backed `benchmark --exec ...` executions now emit a companion `report.share-safe.json` with stable path placeholders while keeping the full local `report.json`.
 - **Generate performance benchmark harness**: adds a small synthetic benchmark flow for `generate`, `update`, `cluster-only`, and SPI cold/warm cache runs, with structured metrics for wall-clock time, file/extraction counts, graph size, output bytes, and cache-hit reasons plus new docs for manual large-repo measurements.
 - **Deterministic answer-quality rubric skeleton**: shared GoValidate benchmark gates now include answer-term checks plus manual-review concept notes, and `verify-answer-quality.js` can validate saved benchmark answer artifacts without calling an LLM.
@@ -31,7 +31,7 @@ All notable changes to the TypeScript package will be documented in this file.
 - **Queue-backed runtime paths keep their worker handoff**: runtime-generation retrieval now models NestJS/BullMQ-style enqueue-to-worker boundaries with `enqueues_job` semantic edges in both SPI and legacy extraction paths. This first pass is intentionally conservative: it applies when job names are literal and the queue receiver is statically recognizable, including WorkerHost-style BullMQ processors with a queue-scoped `process()` handler. When it matches, compact runtime-generation explain-pack relationships preserve the semantic queue-to-worker handoff instead of depending on direct call chains alone or pretending the producer directly calls the worker.
 - **Native-agent compare suite summary**: multi-question `compare --baseline-mode native_agent` runs now roll up comparable-question wins/losses for input tokens, turns, and latency, report mean/median input-token reduction, surface comparable-question counts when some runs are excluded from the aggregate, and highlight the best win and worst regression prompt in the terminal summary.
 - **Native-agent cache-aware compare accounting**: `compare --baseline-mode native_agent` now persists derived total/uncached/cached Anthropic input-token fields alongside the raw provider `usage` block, and the terminal summary breaks out uncached/cache creation/cache read lines when cache activity is present.
-- **Compact compare trace summaries**: compare summaries now add a single `Graphify trace:` line when `report.json` includes `graphify_trace`, and the benchmark docs clarify that the persisted field stores only compact, share-safe metadata (counts, tool names, per-turn summaries).
+- **Compact compare trace summaries**: compare summaries now add a single `Madar trace:` line when `report.json` includes `madar_trace`, and the benchmark docs clarify that the persisted field stores only compact, share-safe metadata (counts, tool names, per-turn summaries).
 - **Adaptive context-pack render modes**: compiled and retrieved packs now choose one of six deterministic first-pass renderings (`signature`, `behavior_sketch`, `call_chain`, `contract_view`, `implementation_excerpt`, `dependency_record`) after node selection, so task kind can change emitted shape without changing retrieval selection. Lower-token review/impact renderings trade away some raw implementation detail, while explain-mode packs keep full snippets when they are already available.
 - **First-pass storage semantics for SPI retrieval**: `--spi` now tags Prisma model operations as read/write endpoints, classifies repository CRUD methods as persistence readers/writers, projects `storage_operation` metadata into extraction nodes, and lets retrieval prefer likely persistence endpoints for storage-oriented prompts. Coverage is intentionally static first-pass only; it does not infer full ORM dataflow.
 - **SPI Next.js App Router boundaries are more informative**: `--spi` now keeps app-router convention roles while projecting static `runtime_boundary` metadata for visible client/server entrypoints, tags exported client components from `'use client'` app-directory modules, and recognizes clearly exported server actions from file-level or inline `'use server'` directives. This is still a conservative static pass, not full React/Next runtime modeling.
@@ -42,14 +42,14 @@ All notable changes to the TypeScript package will be documented in this file.
 
 - **Small sample TypeScript workspace**: adds `examples/sample-workspace/` plus a short tutorial and checked-in prompt examples so new users can run `generate` and `pack` against a compact TypeScript demo without needing a private repo or the larger benchmark demo corpus.
 - **Agent orchestration guide**: adds `docs/integrations/agent-orchestration.md` with conservative multi-agent workflows for Claude Code, Codex, Copilot, Cursor, and Gemini, including when to use installed rules, MCP, `pack`, and `prompt`, plus guidance for avoiding repeated context expansion.
-- **Codex CLI integration profile**: `graphify-ts codex install` now writes Codex-specific context-pack-first AGENTS.md guidance, registers a Codex hook reminder, documents uninstall behavior, and includes generated-text/config tests without requiring Codex during automated runs.
-- **Aider and OpenCode profile verification**: `graphify-ts aider install` and `graphify-ts opencode install` now document their real generated artifacts, ship stronger context-pack-first profile text, and add regression coverage for install behavior without requiring either external agent in CI.
-- **Interactive CLI update notices**: interactive `graphify-ts` runs now check npm for newer releases using a cached user-level registry lookup, print a short upgrade hint when a newer version exists, and stay silent for `--help`, `--version`, `--json`, CI, and explicitly disabled runs (`GRAPHIFY_DISABLE_UPDATE_NOTIFIER=1`).
+- **Codex CLI integration profile**: `madar codex install` now writes Codex-specific context-pack-first AGENTS.md guidance, registers a Codex hook reminder, documents uninstall behavior, and includes generated-text/config tests without requiring Codex during automated runs.
+- **Aider and OpenCode profile verification**: `madar aider install` and `madar opencode install` now document their real generated artifacts, ship stronger context-pack-first profile text, and add regression coverage for install behavior without requiring either external agent in CI.
+- **Interactive CLI update notices**: interactive `madar` runs now check npm for newer releases using a cached user-level registry lookup, print a short upgrade hint when a newer version exists, and stay silent for `--help`, `--version`, `--json`, CI, and explicitly disabled runs (`MADAR_DISABLE_UPDATE_NOTIFIER=1`).
 - **Contributor issue templates**: contributor docs now link the public roadmap and GitHub issue forms cover docs, benchmark, and research/design requests with explicit private-data and reproducibility expectations.
 - **Release checklist page**: adds `docs/release.md` with a repeatable maintainer checklist covering version bumps, changelog updates, verification commands, package dry-runs, CLI smoke checks, and post-release verification.
 - **Public roadmap page**: adds `docs/roadmap.md` with contributor-facing P0/P1/P2 tracks, issue links, label explanations, and a README pointer back to the main roadmap tracker.
 - **End-to-end getting started tutorial**: adds `docs/tutorials/getting-started.md` with a local-first sample-workspace walkthrough covering install, graph generation, `pack`, `prompt`, and a safe `compare` smoke check without requiring paid model usage.
-- **Doctor and status health checks**: added `graphify-ts doctor` and `graphify-ts status` commands to report installed version, graph freshness, local agent wiring (Claude/Cursor/Gemini/Copilot), MCP config validity, and actionable next commands when setup is missing or stale.
+- **Doctor and status health checks**: added `madar doctor` and `madar status` commands to report installed version, graph freshness, local agent wiring (Claude/Cursor/Gemini/Copilot), MCP config validity, and actionable next commands when setup is missing or stale.
 
 ### Changed
 
@@ -60,7 +60,7 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ### Added
 
-- **CLI version flags for reproducible runs**: `graphify-ts --version` and `graphify-ts -v` now print the installed package version and exit cleanly without requiring graph generation.
+- **CLI version flags for reproducible runs**: `madar --version` and `madar -v` now print the installed package version and exit cleanly without requiring graph generation.
 
 ### Docs
 
@@ -71,7 +71,7 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ### Changed
 
-- **Native-agent compare summaries keep the right direction**: human-readable `graphify-ts compare --baseline-mode native_agent` output now says `x more` / `x slower` when Graphify uses more turns, latency, or input tokens than baseline, instead of incorrectly rendering `0.33x fewer` / `0.33x faster`.
+- **Native-agent compare summaries keep the right direction**: human-readable `madar compare --baseline-mode native_agent` output now says `x more` / `x slower` when Madar uses more turns, latency, or input tokens than baseline, instead of incorrectly rendering `0.33x fewer` / `0.33x faster`.
 
 ## [0.22.6] - 2026-05-12
 
@@ -114,7 +114,7 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ### Changed
 
-- **Default graph discovery is stricter on duplicate/generated paths**: legacy detect and `--spi` now share hard ignores for nested worktrees, VCS metadata, `graphify-out`, dependency stores, and common build/cache outputs, while keeping tests, benchmarks, fixtures, and mocks indexable unless the user excludes them.
+- **Default graph discovery is stricter on duplicate/generated paths**: legacy detect and `--spi` now share hard ignores for nested worktrees, VCS metadata, `out`, dependency stores, and common build/cache outputs, while keeping tests, benchmarks, fixtures, and mocks indexable unless the user excludes them.
 - **Retrieval exclusions are intent-aware and token-aware**: prompts like "exclude tests" or "do not include benchmarks" no longer classify as `test` intent, and the parsed excluded domains/terms now suppress matching retrieval candidates without false-positive substring hits on production identifiers such as `ContestService`.
 - **Slice-v1 anchors and traversal are more truthful for production prompts**: literal file-path mentions are distinguished from lexical source-path overlap, explicit `Class.method` prompts anchor the method instead of the class, and pipeline-shaped NestJS prompts now walk backward/forward through controller, service, orchestrator, and persistence paths without exploding into sibling controller methods.
 - **Context-pack diagnostics catch semantically wrong packs**: diagnostics now flag excluded-domain selections, polluted source paths, controller-only pipeline packs, missing method anchors/runtime pipeline evidence, and test-dominated production packs.
@@ -171,14 +171,14 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ### Added
 
-- **`graphify-ts generate . --spi`** opt-in flag wires the v0.14–v0.17 SPI substrate into the CLI for the first time. When set, `generateGraph` uses `buildSpiCached` + `projectSpiToExtraction` instead of the legacy `extract()` pipeline. Default behavior is unchanged — pass `--spi` to enable. User-visible wins:
+- **`madar generate . --spi`** opt-in flag wires the v0.14–v0.17 SPI substrate into the CLI for the first time. When set, `generateGraph` uses `buildSpiCached` + `projectSpiToExtraction` instead of the legacy `extract()` pipeline. Default behavior is unchanged — pass `--spi` to enable. User-visible wins:
   - `framework_role` + `framework_metadata` from all 9 framework substrates (NestJS, Express, Next.js, React Router, Redux Toolkit, Hono, Fastify, tRPC, Prisma) flow into the projected `ExtractionData`.
-  - Repeat builds on an unchanged workspace hit the on-disk SPI cache (`graphify-out/.spi-cache/`, see #77) — near-zero rebuild time.
+  - Repeat builds on an unchanged workspace hit the on-disk SPI cache (`out/.spi-cache/`, see #77) — near-zero rebuild time.
   - Build notes include `"SPI cache hit (N files, key XXXXXXXX)"` or `"SPI build via projector (reason=...)"` so users can see which path ran.
 
 ### Notes
 
-- v0.18 is the **CLI-integration** release: the substrate work from v0.14–v0.17 is now actually reachable from `graphify-ts generate` without writing library code.
+- v0.18 is the **CLI-integration** release: the substrate work from v0.14–v0.17 is now actually reachable from `madar generate` without writing library code.
 - The default pipeline stays on legacy `extract()` for safety — the SPI parity tests pin shape parity but not strict byte-equivalence. A future release can flip the default once `--spi` has been validated against real workspaces.
 
 ## [0.17.0] - 2026-05-11
@@ -199,7 +199,7 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ### Added
 
-- **Incremental SPI cache (#77)**: new `buildSpiCached(opts)` wraps `buildSpi` with disk-backed all-or-nothing caching. Cache key = sha256 of workspace root + extractor_version + graphify_version + tsconfig content + per-file `(path, mtime, size, sha256)`. Repeat builds on an unchanged workspace skip the full ts.Program pass and return the cached SemanticProgramIndex. Public API: `buildSpiCached`, `clearSpiCache`, `BuildSpiCachedOptions`, `BuildSpiCachedResult`, `SpiCacheStats`, `SpiCacheIndex`. Cache lives in `<root>/graphify-out/.spi-cache/` and is format-versioned for clean invalidation on future schema changes.
+- **Incremental SPI cache (#77)**: new `buildSpiCached(opts)` wraps `buildSpi` with disk-backed all-or-nothing caching. Cache key = sha256 of workspace root + extractor_version + madar_version + tsconfig content + per-file `(path, mtime, size, sha256)`. Repeat builds on an unchanged workspace skip the full ts.Program pass and return the cached SemanticProgramIndex. Public API: `buildSpiCached`, `clearSpiCache`, `BuildSpiCachedOptions`, `BuildSpiCachedResult`, `SpiCacheStats`, `SpiCacheIndex`. Cache lives in `<root>/out/.spi-cache/` and is format-versioned for clean invalidation on future schema changes.
 - **Multi-resolution context (#76)**: new `applyContextPackResolution(nodes, options)` helper adapts a node list to `detail` (no-op), `summary` (drop snippet bodies, keep label/source_file/line_number/match_score), or `mixed` (top-N by match_score get detail, rest summary). New stdio `context_pack` parameter `resolution: 'detail' | 'summary' | 'mixed'` (default `detail`). Response includes `resolution_map` (per-node summary/detail decisions) and `bytes_saved_by_resolution`. Currently supported on the explain branch only; review/impact return a clear `jsonrpcInvalidParams` error when `resolution` is requested with an unsupported task.
 - **Weighted PR-impact coverage scoring (#79)**: new `PrImpactResult` fields:
   - `coverage_score_weighted` — bridge/god labels count 3x, regular high-impact 1x. Penalises uncoverage of high-centrality hotspots more aggressively than the unweighted score.
@@ -248,13 +248,13 @@ All notable changes to the TypeScript package will be documented in this file.
 ### Notes
 
 - The SPI substrate is **additive** — the existing `extract()` pipeline remains untouched. Consumers can adopt incrementally via `buildSpi` / `projectSpiToExtraction`.
-- Full byte-equivalence with the legacy `extract()` on `examples/demo-repo/graphify-out/graph.json` is **not** asserted in this release; the parity tests pin shape parity and the documented taxonomy divergence (legacy emits separate synthesized route nodes, SPI tags handlers directly). Strict byte-equivalence is deferred to a follow-up release.
+- Full byte-equivalence with the legacy `extract()` on `examples/demo-repo/out/graph.json` is **not** asserted in this release; the parity tests pin shape parity and the documented taxonomy divergence (legacy emits separate synthesized route nodes, SPI tags handlers directly). Strict byte-equivalence is deferred to a follow-up release.
 
 ## [0.13.3] - 2026-05-10
 
 ### Changed
 
-- **Marketing positioning**: rewrote the README to lead with AI coding-agent value ("stop making AI agents re-read your repo") and added explicit Why graphify-ts, What it does, Core concept, Works with your AI tools, Limitations, and Roadmap sections. All measured numbers and CLI commands are unchanged.
+- **Marketing positioning**: rewrote the README to lead with AI coding-agent value ("stop making AI agents re-read your repo") and added explicit Why madar, What it does, Core concept, Works with your AI tools, Limitations, and Roadmap sections. All measured numbers and CLI commands are unchanged.
 - **Package discoverability**: refreshed `package.json` description and expanded keywords (`ai`, `ai-agents`, `claude-code`, `codex`, `copilot`, `cursor`, `code-intelligence`, `pr-review`, `static-analysis`) so the package surfaces for AI-agent users on npm search.
 
 ## [0.13.2] - 2026-05-08
@@ -292,8 +292,8 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ### Added
 
-- **Context-pack compiler surface**: added shared context-pack contracts plus the new `graphify-ts pack` CLI command for compact explain, review, and impact packs with claims, coverage, expandable refs, and missing-context reporting.
-- **Context-session prompt compilation**: added shared context-session state/delta contracts plus the new `graphify-ts prompt` CLI command for provider-ready prompts, session payloads, and cache-aware follow-up reuse accounting.
+- **Context-pack compiler surface**: added shared context-pack contracts plus the new `madar pack` CLI command for compact explain, review, and impact packs with claims, coverage, expandable refs, and missing-context reporting.
+- **Context-session prompt compilation**: added shared context-session state/delta contracts plus the new `madar prompt` CLI command for provider-ready prompts, session payloads, and cache-aware follow-up reuse accounting.
 - **MCP context-plane tools**: added `context_pack`, `context_prompt`, and `context_session_reset` to the full MCP tool profile so agents can request compact context packs, provider-ready prompts, and session resets over stdio.
 
 ### Changed
@@ -310,7 +310,7 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ### Added
 
-- **OpenCode MCP installer support**: `graphify-ts opencode install` now wires graphify-ts into [OpenCode](https://opencode.ai), extending the agent-installer matrix beyond Claude Code, Cursor, Copilot, Gemini CLI, and Aider. Thanks to [@jamemackson](https://github.com/jamemackson) for contributing this feature in [#54](https://github.com/mohanagy/graphify-ts/pull/54) — the first community-contributed agent integration in graphify-ts.
+- **OpenCode MCP installer support**: `madar opencode install` now wires madar into [OpenCode](https://opencode.ai), extending the agent-installer matrix beyond Claude Code, Cursor, Copilot, Gemini CLI, and Aider. Thanks to [@jamemackson](https://github.com/jamemackson) for contributing this feature in [#54](https://github.com/mohanagy/madar/pull/54) — the first community-contributed agent integration in madar.
 - **Auto-updating contributors list in README**: a new GitHub Actions workflow (`.github/workflows/contributors.yml`) regenerates the contributors table on every push to `main`, so new contributors are credited automatically without manual README maintenance.
 
 ## [0.10.12] - 2026-05-03
@@ -376,7 +376,7 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ### Added
 
-- **`review-compare` real-repo benchmark command**: added a CLI flow that compares verbose versus compact `pr_impact` prompts for the current git diff, saves prompt/report artifacts under `graphify-out/review-compare/`, and can optionally execute both prompts through a user-supplied runner template.
+- **`review-compare` real-repo benchmark command**: added a CLI flow that compares verbose versus compact `pr_impact` prompts for the current git diff, saves prompt/report artifacts under `out/review-compare/`, and can optionally execute both prompts through a user-supplied runner template.
 
 ### Changed
 
@@ -386,7 +386,7 @@ All notable changes to the TypeScript package will be documented in this file.
 ### Fixed
 
 - **Real-workspace PR diff detection**: `pr_impact` now discovers and reads diffs from nested git repositories under the graph root, so review mode works on multi-project workspaces instead of assuming the graph root itself is a git repo.
-- **Review benchmark output-dir validation**: `review-compare` now accepts nested output directories whose parents do not exist yet and correctly validates absolute external output paths against the target graph's own `graphify-out/` directory.
+- **Review benchmark output-dir validation**: `review-compare` now accepts nested output directories whose parents do not exist yet and correctly validates absolute external output paths against the target graph's own `out/` directory.
 - **CLI/runtime validation parity**: the `review-compare` parser no longer rejects valid absolute output directories before runtime can validate them against the selected graph workspace.
 
 ## [0.10.3] - 2026-05-01
@@ -419,18 +419,18 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ### Added
 
-- **`GRAPHIFY_TOOL_PROFILE` env var**: defaults to `core` (6 tools — `retrieve`, `impact`, `call_chain`, `community_overview`, `pr_impact`, `graph_stats`); set to `full` to opt into the legacy 21-tool surface. The Claude / Cursor / VS Code Copilot install templates now write `env: { GRAPHIFY_TOOL_PROFILE: "core" }` into the generated `.mcp.json`. Reduces `cache_creation_input_tokens` per session by roughly 16–22K on a Claude Code session start, flipping a +13% cold-start cost regression to cost parity at typical session lengths.
-- **`compare --baseline-mode native_agent`**: new comparison mode that runs the user's `--exec` command twice — once with `graphify-out/`, `.mcp.json`, `CLAUDE.md`, and `.claude/` snapshot-renamed out of the working directory (baseline), once with them restored (graphify) — and reports the Anthropic-billed `usage` blocks from `claude --output-format json` verbatim. Atomic rename / try-finally restore guarantees no project state is left behind even if the runner crashes.
-- **Public benchmark artifact**: committed `docs/benchmarks/2026-04-30-govalidate/` with both raw `claude --output-format json` outputs (with the answer body redacted) and a `verify.sh` reproducer. The README, `examples/why-graphify.md`, and the install hook payload all cite numbers that `verify.sh` reproduces from the committed evidence.
+- **`MADAR_TOOL_PROFILE` env var**: defaults to `core` (6 tools — `retrieve`, `impact`, `call_chain`, `community_overview`, `pr_impact`, `graph_stats`); set to `full` to opt into the legacy 21-tool surface. The Claude / Cursor / VS Code Copilot install templates now write `env: { MADAR_TOOL_PROFILE: "core" }` into the generated `.mcp.json`. Reduces `cache_creation_input_tokens` per session by roughly 16–22K on a Claude Code session start, flipping a +13% cold-start cost regression to cost parity at typical session lengths.
+- **`compare --baseline-mode native_agent`**: new comparison mode that runs the user's `--exec` command twice — once with `out/`, `.mcp.json`, `CLAUDE.md`, and `.claude/` snapshot-renamed out of the working directory (baseline), once with them restored (madar) — and reports the Anthropic-billed `usage` blocks from `claude --output-format json` verbatim. Atomic rename / try-finally restore guarantees no project state is left behind even if the runner crashes.
+- **Public benchmark artifact**: committed `docs/benchmarks/2026-04-30-govalidate/` with both raw `claude --output-format json` outputs (with the answer body redacted) and a `verify.sh` reproducer. The README, `examples/why-madar.md`, and the install hook payload all cite numbers that `verify.sh` reproduces from the committed evidence.
 
 ### Changed
 
-- **Honest benchmark numbers**: replaced the previously-published `384×` retrieve-compression headline (and the `397×` / `897×` variants used in internal-only baseline modes) in the README, in `examples/why-graphify.md`, and in the `claude install` PreToolUse hook payload with measured numbers from the 2026-04-30 native_agent comparison: **3× fewer turns**, **~2.8× faster**, **2.6× fewer total input tokens**. Documentation now also discloses the cold-start cost premium (~+13% on a single-question session, amortizing on multi-question sessions).
+- **Honest benchmark numbers**: replaced the previously-published `384×` retrieve-compression headline (and the `397×` / `897×` variants used in internal-only baseline modes) in the README, in `examples/why-madar.md`, and in the `claude install` PreToolUse hook payload with measured numbers from the 2026-04-30 native_agent comparison: **3× fewer turns**, **~2.8× faster**, **2.6× fewer total input tokens**. Documentation now also discloses the cold-start cost premium (~+13% on a single-question session, amortizing on multi-question sessions).
 - **Compare summary framing**: when `--baseline-mode` is `full` or `bounded`, the human-readable summary now appends an explicit "synthetic prompt-token estimate (cl100k_base)" disclosure line so a reader cannot mistake the synthetic ratio for an Anthropic-billed measurement. Use `--baseline-mode native_agent` for Anthropic-reported numbers.
 
 ### Fixed
 
-- **Cold-start cost regression on Claude Code session start**: shipping the lean `core` MCP tool profile by default cuts the `cache_creation_input_tokens` overhead by ~16–22K tokens per fresh session. On the 2026-04-30 govalidate measurement this is the difference between graphify costing ~13% more than the no-graphify baseline and graphify amortizing below baseline at multi-question session lengths.
+- **Cold-start cost regression on Claude Code session start**: shipping the lean `core` MCP tool profile by default cuts the `cache_creation_input_tokens` overhead by ~16–22K tokens per fresh session. On the 2026-04-30 govalidate measurement this is the difference between madar costing ~13% more than the no-madar baseline and madar amortizing below baseline at multi-question session lengths.
 
 ## [0.10.0] - 2026-04-30
 
@@ -524,12 +524,12 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ### Added
 
-- **Graph time travel CLI**: added `graphify-ts time-travel <from> <to>` to compare two git refs through local on-demand graph snapshots with `summary`, `risk`, `drift`, and `timeline` views; the default terminal output is the `summary` view
+- **Graph time travel CLI**: added `madar time-travel <from> <to>` to compare two git refs through local on-demand graph snapshots with `summary`, `risk`, `drift`, and `timeline` views; the default terminal output is the `summary` view
 - **Graph time travel MCP tool**: added `time_travel_compare` so MCP clients can run the same ref-to-ref comparison with `from_ref`, `to_ref`, optional `view`, `refresh`, and `limit` parameters
 
 ### Improved
 
-- **Time travel snapshot docs**: documented that time-travel snapshots are built on demand, stored under `graphify-out/time-travel/snapshots/`, reused from cache when compatible, and rebuilt only when `--refresh` is requested
+- **Time travel snapshot docs**: documented that time-travel snapshots are built on demand, stored under `out/time-travel/snapshots/`, reused from cache when compatible, and rebuilt only when `--refresh` is requested
 
 ## [0.8.3] - 2026-04-26
 
@@ -542,8 +542,8 @@ All notable changes to the TypeScript package will be documented in this file.
 
 - **Impact evidence**: `impact` now follows directed dependents and reports `top_paths_per_community` so blast-radius results include path evidence instead of just aggregate counts
 - **Retrieve output quality**: `retrieve` now tags matched nodes with a `relevance_band` and avoids over-expanding community-only matches, which keeps graph-guided context tighter
-- **Claude install pinning**: generated `.mcp.json` entries now pin `@mohammednagy/graphify-ts` to the installed package version so project MCP setups do not silently float
-- **Release and proof docs**: README and `examples/why-graphify.md` now explain the public capability matrix, reproducible proof ladder, federated proof workflow, and pinned project-local MCP setup
+- **Claude install pinning**: generated `.mcp.json` entries now pin `@mohammednagy/madar` to the installed package version so project MCP setups do not silently float
+- **Release and proof docs**: README and `examples/why-madar.md` now explain the public capability matrix, reproducible proof ladder, federated proof workflow, and pinned project-local MCP setup
 
 ### Fixed
 
@@ -560,20 +560,20 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ### Fixed
 
-- **Compare exec templates**: `graphify-ts compare` now rejects shell command substitution around `{prompt_file}` so full-repo prompts do not get expanded into argv and fail with OS argument-length limits
-- **Compare docs and examples**: README and `examples/why-graphify.md` now use stdin-safe runner patterns like `cat {prompt_file} | claude -p` and explicitly warn against command-substitution forms
+- **Compare exec templates**: `madar compare` now rejects shell command substitution around `{prompt_file}` so full-repo prompts do not get expanded into argv and fail with OS argument-length limits
+- **Compare docs and examples**: README and `examples/why-madar.md` now use stdin-safe runner patterns like `cat {prompt_file} | claude -p` and explicitly warn against command-substitution forms
 
 ## [0.8.0] - 2026-04-25
 
 ### Added
 
-- **`graphify-ts compare` command**: runs a real baseline-vs-graphify A/B prompt comparison through a user-supplied terminal LLM command and saves prompt/answer proof bundles under `graphify-out/compare/`
+- **`madar compare` command**: runs a real baseline-vs-madar A/B prompt comparison through a user-supplied terminal LLM command and saves prompt/answer proof bundles under `out/compare/`
 - **Compare proof artifacts**: each run now saves prompt files, answer files, and a structured `report.json` with prompt-token counts, statuses, timings, and output paths
 
 ### Improved
 
 - **Compare runner safety**: added confirmation before paid prompt runs, clean `--yes` support for non-interactive usage, safer shell execution, and redacted failure reporting in persisted compare artifacts
-- **Compare docs**: README and `examples/why-graphify.md` now explain when to use `benchmark`, `eval`, and `compare`, including runner placeholders and saved proof outputs
+- **Compare docs**: README and `examples/why-madar.md` now explain when to use `benchmark`, `eval`, and `compare`, including runner placeholders and saved proof outputs
 
 ## [0.7.3] - 2026-04-24
 
@@ -590,10 +590,10 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ### Added
 
-- **`graphify-ts eval` command**: measures retrieval quality with recall, MRR, and compression ratio against a gold-standard question set
+- **`madar eval` command**: measures retrieval quality with recall, MRR, and compression ratio against a gold-standard question set
 - **Progress output during generate**: step-by-step feedback (detect → extract → build → cluster → analyze → export) so users know the tool isn't hanging
 - **Next-steps guidance after generate**: prints platform install commands (`claude install`, `cursor install`, etc.) after graph generation completes
-- **Pre-install validation**: warns if `graphify-out/graph.json` doesn't exist when running `claude install`, `cursor install`, `gemini install`, or `copilot install`
+- **Pre-install validation**: warns if `out/graph.json` doesn't exist when running `claude install`, `cursor install`, `gemini install`, or `copilot install`
 
 ### Improved
 
@@ -613,14 +613,14 @@ All notable changes to the TypeScript package will be documented in this file.
 - **Retrieve-first enforcement**: AI agents were bypassing the `retrieve` MCP tool by dispatching Explore subagents or using Bash/find instead — strengthen CLAUDE.md, AGENTS.md, GEMINI.md, and Cursor rules with blocking "MUST call retrieve FIRST" language
 - **Hook matcher too narrow**: widened from `Glob|Grep` to `Glob|Grep|Bash|Agent|Read` so the PreToolUse hook fires on all codebase exploration tools
 - **Cross-platform hooks**: replaced POSIX `[ -f ... ]` with `node -e` + base64 payloads — hooks now work on macOS, Linux, and Windows (PowerShell/CMD)
-- **Hook idempotency**: fixed hook detection to match on `graphify-out` marker instead of hardcoded old matcher string, preventing duplicate hooks on re-install
+- **Hook idempotency**: fixed hook detection to match on `out` marker instead of hardcoded old matcher string, preventing duplicate hooks on re-install
 
 ## [0.6.2] - 2026-04-24
 
 ### Added
 
 - **MCP server config for Cursor and Copilot**: `cursor install` writes `.cursor/mcp.json`, `copilot install` writes `.vscode/mcp.json` with correct VS Code schema (`servers` + `type: "stdio"`)
-- **Examples and benchmarks**: `examples/why-graphify.md` with real production numbers (384x compression, 656-node blast radius), `examples/mcp-tool-examples.md` with real MCP tool input/output, and `examples/quick-benchmark.sh` for quick evaluation
+- **Examples and benchmarks**: `examples/why-madar.md` with real production numbers (384x compression, 656-node blast radius), `examples/mcp-tool-examples.md` with real MCP tool input/output, and `examples/quick-benchmark.sh` for quick evaluation
 - **README benchmarks section**: real numbers from a production NestJS + Next.js SaaS
 
 ### Fixed
@@ -647,8 +647,8 @@ All notable changes to the TypeScript package will be documented in this file.
 - **PR impact analysis**: new `pr_impact` MCP tool — parses git diff, maps changed files to graph nodes, computes aggregate blast radius across all changes
 - **Hierarchical community data**: new `community_details` MCP tool with micro/mid/macro zoom levels for token-efficient codebase exploration
 - **Community overview**: new `community_overview` MCP tool for quick overview of all communities
-- **Multi-repo federation**: new `graphify-ts federate` command merges graphs from multiple repos into a single queryable super-graph with cross-repo edge inference
-- **Auto-generated docs**: new `--docs` flag generates per-community markdown documentation in `graphify-out/docs/` with key components, entry/exit points, bridges, and code snippets
+- **Multi-repo federation**: new `madar federate` command merges graphs from multiple repos into a single queryable super-graph with cross-repo edge inference
+- **Auto-generated docs**: new `--docs` flag generates per-community markdown documentation in `out/docs/` with key components, entry/exit points, bridges, and code snippets
 - **Related nodes panel**: selecting a node in the HTML community explorer now shows its neighbors with edge types
 - **README rewrite**: comprehensive documentation of all MCP tools, federation, and AI agent integration
 
@@ -657,20 +657,20 @@ All notable changes to the TypeScript package will be documented in this file.
 ### Changed
 
 - **Community naming disambiguation**: duplicate community names now use operation or node-based suffixes (e.g. `Pipeline Extract — Rust`, `Pipeline Extract — Python`) instead of raw community IDs (`Pipeline Extract (27)`)
-- **MCP server auto-start**: `graphify-ts claude install` now registers an `mcpServers` entry in `.claude/settings.json` so the MCP server starts automatically when Claude Code opens the project — no manual `serve --stdio` needed
+- **MCP server auto-start**: `madar claude install` now registers an `mcpServers` entry in `.claude/settings.json` so the MCP server starts automatically when Claude Code opens the project — no manual `serve --stdio` needed
 
 ## [0.5.2] - 2026-04-23
 
 ### Fixed
 
-- **Install idempotency**: `graphify-ts claude install` (and other platforms) now updates the existing rules section instead of printing "already configured" and leaving stale instructions
+- **Install idempotency**: `madar claude install` (and other platforms) now updates the existing rules section instead of printing "already configured" and leaving stale instructions
 
 ## [0.5.1] - 2026-04-23
 
 ### Changed
 
 - **Louvain community detection**: replaced the bridge-edge-removal algorithm with proper Louvain modularity optimization, eliminating the mega-community problem where 79% of nodes collapsed into a single cluster; communities now have a max size of ~150 nodes with automatic hierarchical sub-clustering for oversized groups
-- **Install templates updated**: `graphify-ts claude install` (and other platforms) now instructs agents to use the `retrieve` MCP tool as the primary context source, falling back to `GRAPH_REPORT.md` when the MCP server is unavailable
+- **Install templates updated**: `madar claude install` (and other platforms) now instructs agents to use the `retrieve` MCP tool as the primary context source, falling back to `GRAPH_REPORT.md` when the MCP server is unavailable
 - **Postinstall reminder**: global installs now print a reminder to re-run platform install commands for the latest agent rules
 
 ### Fixed
@@ -813,9 +813,9 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ### Changed
 
-- Renamed the installed Claude skill and slash command to `graphify-ts` consistently across built-in templates, installer output, and README usage examples
-- Simplified assistant installer behavior to use only the current `graphify-ts` naming for skill paths, section markers, hooks, and generated helper files
-- Renamed generated OpenCode and Cursor integration helper files to `graphify-ts`-specific filenames for clearer project ownership
+- Renamed the installed Claude skill and slash command to `madar` consistently across built-in templates, installer output, and README usage examples
+- Simplified assistant installer behavior to use only the current `madar` naming for skill paths, section markers, hooks, and generated helper files
+- Renamed generated OpenCode and Cursor integration helper files to `madar`-specific filenames for clearer project ownership
 
 ## [0.1.1] - 2026-04-11
 
@@ -839,8 +839,8 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ### Added
 
-- Initial npm-ready TypeScript release of `graphify-ts`
-- Global CLI command support via `graphify-ts`
+- Initial npm-ready TypeScript release of `madar`
+- Global CLI command support via `madar`
 - `generate`, `watch`, `serve`, `query`, `path`, `explain`, `add`, `save-result`, `benchmark`, `install`, and `hook` commands
 - JavaScript / TypeScript extraction via the TypeScript compiler API
 - Portable tree-sitter extraction for Python, Go, and Java

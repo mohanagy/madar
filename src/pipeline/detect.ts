@@ -5,7 +5,7 @@ import { sidecarAwareFileFingerprint } from '../shared/binary-ingest-sidecar.js'
 import {
   isDiscoveryPathIgnored,
   isIgnoredByPatterns,
-  loadGraphifyignorePatterns,
+  loadMadarignorePatterns,
 } from '../shared/source-discovery.js'
 
 export const FileType = {
@@ -30,7 +30,7 @@ export interface DetectResult {
   needs_graph: boolean
   warning: string | null
   skipped_sensitive: string[]
-  graphifyignore_patterns: number
+  madarignore_patterns: number
 }
 
 export const CODE_EXTENSIONS = new Set([
@@ -75,8 +75,8 @@ export const OFFICE_EXTENSIONS = new Set(['.docx', '.xlsx'])
 const CORPUS_WARN_THRESHOLD = 50_000
 const CORPUS_UPPER_THRESHOLD = 500_000
 const FILE_COUNT_UPPER = 200
-export const DEFAULT_MANIFEST_PATH = 'graphify-out/manifest.json'
-export const MANIFEST_METADATA_KEY = '__graphify_meta__'
+export const DEFAULT_MANIFEST_PATH = 'out/manifest.json'
+export const MANIFEST_METADATA_KEY = '__madar_meta__'
 
 export interface ManifestMetadata {
   total_words?: number
@@ -199,8 +199,8 @@ export function countWords(path: string): number {
   }
 }
 
-export function _loadGraphifyignore(root: string): string[] {
-  return loadGraphifyignorePatterns(root)
+export function _loadMadarignore(root: string): string[] {
+  return loadMadarignorePatterns(root)
 }
 
 export function _isIgnored(path: string, root: string, patterns: string[]): boolean {
@@ -320,17 +320,17 @@ function collectFiles(root: string, followSymlinks: boolean, ignorePatterns: str
 function inferOutputBase(outputPath: string): string {
   const resolvedPath = resolve(outputPath)
   const parts = resolvedPath.split(sep)
-  const graphifyOutIndex = parts.lastIndexOf('graphify-out')
+  const madarOutIndex = parts.lastIndexOf('out')
 
-  if (graphifyOutIndex >= 0) {
-    const baseParts = parts.slice(0, graphifyOutIndex + 1)
+  if (madarOutIndex >= 0) {
+    const baseParts = parts.slice(0, madarOutIndex + 1)
     if (baseParts[0] === '') {
       return `${sep}${baseParts.slice(1).join(sep)}`
     }
     return baseParts.join(sep)
   }
 
-  return resolve('graphify-out')
+  return resolve('out')
 }
 
 function validateManifestPath(manifestPath: string): string {
@@ -338,14 +338,14 @@ function validateManifestPath(manifestPath: string): string {
   const resolvedBase = inferOutputBase(manifestPath)
   const basePrefix = resolvedBase.endsWith(sep) ? resolvedBase : `${resolvedBase}${sep}`
   if (resolvedPath !== resolvedBase && !resolvedPath.startsWith(basePrefix)) {
-    throw new Error(`Manifest path must stay within graphify-out/: ${manifestPath}`)
+    throw new Error(`Manifest path must stay within out/: ${manifestPath}`)
   }
   return resolvedPath
 }
 
 export function detect(root: string, options: DetectOptions = {}): DetectResult {
   const followSymlinks = options.followSymlinks ?? false
-  const ignorePatterns = _loadGraphifyignore(root)
+  const ignorePatterns = _loadMadarignore(root)
   const files: Record<FileTypeValue, string[]> = {
     [FileType.CODE]: [],
     [FileType.DOCUMENT]: [],
@@ -390,7 +390,7 @@ export function detect(root: string, options: DetectOptions = {}): DetectResult 
     needs_graph: needsGraph,
     warning,
     skipped_sensitive: skippedSensitive,
-    graphifyignore_patterns: ignorePatterns.length,
+    madarignore_patterns: ignorePatterns.length,
   }
 }
 

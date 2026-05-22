@@ -71,7 +71,7 @@ jobs:
         run: |
           set -euo pipefail
           runner_template='node .github/scripts/ci-prompt-runner.mjs --prompt {prompt_file} --output {output_file} --question {question} --mode {mode}'
-          output="$(node dist/src/cli/bin.js eval examples/demo-repo/graphify-out/graph.json --questions examples/demo-repo/benchmark-questions.json --exec "$runner_template" --yes)"
+          output="$(node dist/src/cli/bin.js eval examples/demo-repo/out/graph.json --questions examples/demo-repo/benchmark-questions.json --exec "$runner_template" --yes)"
           printf '%s\n' "$output"
 
           recall="$(printf '%s\n' "$output" | awk '/Recall:/ { gsub("%", "", $2); print $2 }')"

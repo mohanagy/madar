@@ -5,17 +5,17 @@ Use `examples/sample-workspace/` when you want a fast, reproducible TypeScript w
 ## Generate the graph
 
 ```bash
-npm run build # run from the repository root to build graphify-ts locally
-graphify-ts generate examples/sample-workspace --no-html
+npm run build # run from the repository root to build madar locally
+madar generate examples/sample-workspace --no-html
 ```
 
-This creates `examples/sample-workspace/graphify-out/graph.json`.
+This creates `examples/sample-workspace/out/graph.json`.
 
 ## Run a compact pack query
 
 ```bash
-graphify-ts pack "how does password reset request enqueue the reset email" \
-  --graph examples/sample-workspace/graphify-out/graph.json \
+madar pack "how does password reset request enqueue the reset email" \
+  --graph examples/sample-workspace/out/graph.json \
   --task explain
 ```
 

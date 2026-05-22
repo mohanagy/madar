@@ -69,7 +69,7 @@ describe('schema v2 extraction contracts', () => {
 
   it('preserves layered metadata in exported json', () => {
     const graph = buildFromJson(loadFixture())
-    const tempDir = mkdtempSync(join(tmpdir(), 'graphify-ts-schema-v2-'))
+    const tempDir = mkdtempSync(join(tmpdir(), 'madar-schema-v2-'))
 
     try {
       const outputPath = join(tempDir, 'graph.json')

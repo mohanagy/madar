@@ -48,14 +48,14 @@ export interface GeneratePerformanceBenchmarkSummary {
 
 const CODE_MUTATION_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.rs', '.java'])
 const CODE_MUTATION_MARKERS: Record<string, string> = {
-  '.ts': 'export const __graphifyBenchmarkTouch = true',
-  '.tsx': 'export const __graphifyBenchmarkTouch = true',
-  '.js': 'export const __graphifyBenchmarkTouch = true',
-  '.jsx': 'export const __graphifyBenchmarkTouch = true',
-  '.py': '# __graphifyBenchmarkTouch = True',
-  '.go': '// __graphifyBenchmarkTouch = true',
-  '.rs': '// __graphifyBenchmarkTouch = true',
-  '.java': '// __graphifyBenchmarkTouch = true',
+  '.ts': 'export const __madarBenchmarkTouch = true',
+  '.tsx': 'export const __madarBenchmarkTouch = true',
+  '.js': 'export const __madarBenchmarkTouch = true',
+  '.jsx': 'export const __madarBenchmarkTouch = true',
+  '.py': '# __madarBenchmarkTouch = True',
+  '.go': '// __madarBenchmarkTouch = true',
+  '.rs': '// __madarBenchmarkTouch = true',
+  '.java': '// __madarBenchmarkTouch = true',
 }
 const METRICS_TRACKED = [
   'wall_clock_ms',
@@ -159,7 +159,7 @@ function appendMutation(root: string): void {
         continue
       }
       if (entry.isDirectory()) {
-        if (entry.name === 'graphify-out') {
+        if (entry.name === 'out') {
           continue
         }
         stack.push(path)

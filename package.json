@@ -5,8 +5,7 @@
     "license": "MIT",
     "author": "mohanagy",
     "bin": {
-        "madar": "dist/src/cli/bin.js",
-        "graphify-ts": "dist/src/cli/bin.js"
+        "madar": "dist/src/cli/bin.js"
     },
     "type": "module",
     "files": [
@@ -61,13 +60,9 @@
         "test:coverage": "vitest run --coverage",
         "prepack": "npm run clean && npm run build",
         "pack:dry-run": "npm pack --dry-run",
-        "compat:prepare": "npm run build && node scripts/prepare-legacy-compat-package.mjs .release/legacy-graphify-ts-package",
-        "compat:pack:dry-run": "npm run compat:prepare && npm pack --dry-run .release/legacy-graphify-ts-package",
-        "compat:publish:dry-run": "npm run compat:prepare && npm publish --dry-run .release/legacy-graphify-ts-package --access public",
-        "compat:publish:public": "npm run compat:prepare && npm publish .release/legacy-graphify-ts-package --access public",
         "publish:public": "npm publish --access public",
         "publish:dry-run": "npm publish --dry-run",
-        "postinstall": "node -e \"try{const g=process.env.npm_config_global==='true';const d=!process.env.INIT_CWD;if(g||d)console.log('\\n  madar updated — re-run your platform install for latest agent rules:\\n  madar claude install | madar cursor install | madar gemini install | madar codex install\\n\\n  Compatibility note: the legacy graphify-ts command still works during migration.\\n')}catch{}\""
+        "postinstall": "node -e \"try{const g=process.env.npm_config_global==='true';const d=!process.env.INIT_CWD;if(g||d)console.log('\\n  madar updated — re-run your platform install for latest agent rules:\\n  madar claude install | madar cursor install | madar gemini install | madar codex install\\n')}catch{}\""
     },
     "devDependencies": {
         "@types/node": "^25.6.0",

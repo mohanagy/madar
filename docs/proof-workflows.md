@@ -1,6 +1,6 @@
 # Proof workflows
 
-`graphify-ts` now has three distinct proof surfaces. They answer different questions, and they are meant to be used together rather than treated as one benchmark.
+`madar` now has three distinct proof surfaces. They answer different questions, and they are meant to be used together rather than treated as one benchmark.
 
 ## 1. Reproducible local proof from this repo
 
@@ -10,10 +10,10 @@ This repo ships a checked-in demo workspace plus a labeled question set under `e
 npm install
 npm run build
 node dist/src/cli/bin.js generate examples/demo-repo --no-html
-node dist/src/cli/bin.js benchmark examples/demo-repo/graphify-out/graph.json --questions examples/demo-repo/benchmark-questions.json \
+node dist/src/cli/bin.js benchmark examples/demo-repo/out/graph.json --questions examples/demo-repo/benchmark-questions.json \
   --exec 'cat {prompt_file} | claude -p' \
   --yes
-node dist/src/cli/bin.js eval examples/demo-repo/graphify-out/graph.json --questions examples/demo-repo/benchmark-questions.json \
+node dist/src/cli/bin.js eval examples/demo-repo/out/graph.json --questions examples/demo-repo/benchmark-questions.json \
   --exec 'cat {prompt_file} | claude -p' \
   --yes
 ```
@@ -33,12 +33,12 @@ Runner-backed `benchmark` executions (`--exec ...`) keep the per-run prompt/answ
 
 ```bash
 node dist/src/cli/bin.js compare "How does login create a session?" \
-  --graph examples/demo-repo/graphify-out/graph.json \
+  --graph examples/demo-repo/out/graph.json \
   --exec 'cat {prompt_file} | claude -p' \
   --yes
 ```
 
-If you want to isolate the context-compiler claim without MCP/tool-call behavior, switch to `--baseline-mode pack_only`. That mode compares one bounded raw-context baseline prompt against one compiled graphify pack and persists the compact pack audit fields (`token_count`, matched nodes, relationships, coverage, selection diagnostics, and runtime-generation explain-pack `execution_slice` details when present) in `report.json`.
+If you want to isolate the context-compiler claim without MCP/tool-call behavior, switch to `--baseline-mode pack_only`. That mode compares one bounded raw-context baseline prompt against one compiled madar pack and persists the compact pack audit fields (`token_count`, matched nodes, relationships, coverage, selection diagnostics, and runtime-generation explain-pack `execution_slice` details when present) in `report.json`.
 
 For runtime-generation prompts, those compact explain packs now also preserve NestJS/BullMQ-style enqueue-to-worker handoffs in their runtime-generation explain-pack relationships via `enqueues_job` semantic edges in both SPI and legacy extraction paths. This first pass is intentionally conservative: it applies when job names are literal and the queue receiver is statically recognizable, including WorkerHost-style BullMQ processors with a queue-scoped `process()` handler. When it matches, queue-backed worker routes survive slice selection without pretending the producer directly calls the worker.
 
@@ -47,17 +47,17 @@ If you switch to `--baseline-mode native_agent`, prefer a structured Anthropic r
 Gemini-safe installed-CLI invocation:
 
 ```bash
-graphify-ts compare "How does auth work?" \
+madar compare "How does auth work?" \
   --exec 'cat {prompt_file} | gemini -p "" --output-format json' \
   --yes
 ```
 
-What gets saved under `graphify-out/compare/<timestamp>/`:
+What gets saved under `out/compare/<timestamp>/`:
 
 - `baseline-prompt.txt`
-- `graphify-prompt.txt`
+- `madar-prompt.txt`
 - `baseline-answer.txt`
-- `graphify-answer.txt`
+- `madar-answer.txt`
 - `report.json`
 - `report.share-safe.json`
 
@@ -74,12 +74,12 @@ Like runner-backed `benchmark` and `eval`, `compare` can spend paid model tokens
 `review-compare` is the proof path for review mode. It compares the **verbose** and **compact** `pr_impact` prompts for the current git diff, saves both payload-backed prompts, and can optionally run both through your own model runner.
 
 ```bash
-graphify-ts review-compare graphify-out/graph.json \
+madar review-compare out/graph.json \
   --exec 'cat {prompt_file} | claude -p' \
   --yes
 ```
 
-What gets saved under `graphify-out/review-compare/<timestamp>/`:
+What gets saved under `out/review-compare/<timestamp>/`:
 
 - `verbose-prompt.txt`
 - `compact-prompt.txt`
@@ -88,7 +88,7 @@ What gets saved under `graphify-out/review-compare/<timestamp>/`:
 - `report.json`
 - `report.share-safe.json`
 
-Use this when the question is not "graphify vs. naive baseline", but "did compact review mode make the PR-review prompt materially smaller while keeping the same review surface shape?" The report includes prompt-token deltas, payload-token deltas, run statuses, elapsed times for both modes, and a provider/runtime proof block that makes it explicit when review-compare is using local estimate + session-reuse accounting rather than provider-billed usage.
+Use this when the question is not "madar vs. naive baseline", but "did compact review mode make the PR-review prompt materially smaller while keeping the same review surface shape?" The report includes prompt-token deltas, payload-token deltas, run statuses, elapsed times for both modes, and a provider/runtime proof block that makes it explicit when review-compare is using local estimate + session-reuse accounting rather than provider-billed usage.
 
 As with `compare` and `benchmark`, the prompt and answer file contents stay local, while `report.share-safe.json` keeps the review metrics plus sanitized placeholder paths to those artifacts so you can share evidence without publishing your exact local artifact paths.
 
@@ -102,17 +102,17 @@ For real systems, the strongest proof is usually:
 4. Ask a cross-repo question or run `compare` against that federated graph.
 
 ```bash
-graphify-ts generate frontend
-graphify-ts generate backend
-graphify-ts generate shared
+madar generate frontend
+madar generate backend
+madar generate shared
 
-graphify-ts federate \
-  frontend/graphify-out/graph.json \
-  backend/graphify-out/graph.json \
-  shared/graphify-out/graph.json \
+madar federate \
+  frontend/out/graph.json \
+  backend/out/graph.json \
+  shared/out/graph.json \
   --output federated-out
 
-graphify-ts serve federated-out/graph.json --stdio
+madar serve federated-out/graph.json --stdio
 ```
 
 What this proves that a single-repo demo cannot:
@@ -128,8 +128,8 @@ What this proves that a single-repo demo cannot:
 |---|---|
 | "Does the graph improve retrieval quality on a labeled set?" | `eval` |
 | "Does the graph reduce prompt size while keeping expected evidence?" | `benchmark` |
-| "Will my actual model answer better with graphify than with a naive baseline, and optionally capture provider-reported usage + proof metadata?" | `compare` |
+| "Will my actual model answer better with madar than with a naive baseline, and optionally capture provider-reported usage + proof metadata?" | `compare` |
 | "Did compact review mode actually shrink the real PR-review prompt on my current diff?" | `review-compare` |
 | "Can this work across frontend/backend/shared repos?" | `federate` + `serve --stdio` |
 
-For the narrative production benchmark and the GoValidate numbers, see [`examples/why-graphify.md`](../examples/why-graphify.md). For exact support coverage by language and file type, see [`language-capability-matrix.md`](./language-capability-matrix.md).
+For the narrative production benchmark and the GoValidate numbers, see [`examples/why-madar.md`](../examples/why-madar.md). For exact support coverage by language and file type, see [`language-capability-matrix.md`](./language-capability-matrix.md).

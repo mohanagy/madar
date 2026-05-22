@@ -31,7 +31,7 @@ function createTestRoot(name: string): string {
 }
 
 function writeGraphArtifacts(root: string, relativeDir: string, schemaVersion = 2): { graphPath: string; reportPath: string } {
-  const outputDir = join(root, relativeDir, 'graphify-out')
+  const outputDir = join(root, relativeDir, 'out')
   mkdirSync(outputDir, { recursive: true })
   const graphPath = join(outputDir, 'graph.json')
   const reportPath = join(outputDir, 'GRAPH_REPORT.md')
@@ -46,7 +46,7 @@ function writeGraphArtifacts(root: string, relativeDir: string, schemaVersion = 
 }
 
 function writeCachedSnapshot(root: string, commitSha: string, schemaVersion = 2): void {
-  const snapshotDir = join(root, 'graphify-out', 'time-travel', 'snapshots', commitSha)
+  const snapshotDir = join(root, 'out', 'time-travel', 'snapshots', commitSha)
   mkdirSync(snapshotDir, { recursive: true })
   writeFileSync(join(snapshotDir, 'graph.json'), JSON.stringify({
     schema_version: schemaVersion,
@@ -83,8 +83,8 @@ function createSnapshotDependencies(rootDir: string): SnapshotDependencies & {
 
   const generateGraph = vi.fn((worktreePath: string) => {
     return {
-      graphPath: join(worktreePath, 'graphify-out', 'graph.json'),
-      reportPath: join(worktreePath, 'graphify-out', 'GRAPH_REPORT.md'),
+      graphPath: join(worktreePath, 'out', 'graph.json'),
+      reportPath: join(worktreePath, 'out', 'GRAPH_REPORT.md'),
     }
   })
 
@@ -128,7 +128,7 @@ describe('time travel infrastructure', () => {
     expect(deps.git.resolveRef).toHaveBeenCalledWith('HEAD~1')
     expect(deps.generateGraph).toHaveBeenCalled()
     expect(result.fromCache).toBe(false)
-    expect(existsSync(join(rootDir, 'graphify-out', 'time-travel', 'snapshots', 'commit-head-1', 'graph.json'))).toBe(true)
+    expect(existsSync(join(rootDir, 'out', 'time-travel', 'snapshots', 'commit-head-1', 'graph.json'))).toBe(true)
     expect(deps.git.removeWorktree).toHaveBeenCalledTimes(1)
   })
 
@@ -159,8 +159,8 @@ describe('time travel infrastructure', () => {
       buildStarted.resolve()
       await buildGate.promise
       return {
-        graphPath: join(worktreePath, 'graphify-out', 'graph.json'),
-        reportPath: join(worktreePath, 'graphify-out', 'GRAPH_REPORT.md'),
+        graphPath: join(worktreePath, 'out', 'graph.json'),
+        reportPath: join(worktreePath, 'out', 'GRAPH_REPORT.md'),
       }
     })
 
@@ -190,13 +190,13 @@ describe('time travel infrastructure', () => {
         firstBuildStarted.resolve()
         await firstBuildGate.promise
         return {
-          graphPath: join(worktreePath, 'graphify-out', 'graph.json'),
-          reportPath: join(worktreePath, 'graphify-out', 'GRAPH_REPORT.md'),
+          graphPath: join(worktreePath, 'out', 'graph.json'),
+          reportPath: join(worktreePath, 'out', 'GRAPH_REPORT.md'),
         }
       })
       .mockImplementation(async (worktreePath: string) => ({
-        graphPath: join(worktreePath, 'graphify-out', 'graph.json'),
-        reportPath: join(worktreePath, 'graphify-out', 'GRAPH_REPORT.md'),
+        graphPath: join(worktreePath, 'out', 'graph.json'),
+        reportPath: join(worktreePath, 'out', 'GRAPH_REPORT.md'),
       }))
 
     const first = loadOrBuildSnapshot({ ref: 'main', refresh: false }, deps)

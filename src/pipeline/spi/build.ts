@@ -52,7 +52,7 @@ import ts from 'typescript'
 
 import {
   isDiscoveryPathIgnored,
-  loadGraphifyignorePatterns,
+  loadMadarignorePatterns,
 } from '../../shared/source-discovery.js'
 import type {
   SemanticProgramIndex,
@@ -78,7 +78,7 @@ import { detectPrismaFramework } from './framework-prisma.js'
 
 export type BuildSpiOptions = {
   root: string
-  graphifyVersion: string
+  madarVersion: string
   extractorVersion?: string
   // Override the wall-clock used in `generated_at`. Test-only escape hatch
   // so snapshot tests can assert deterministic output.
@@ -118,7 +118,7 @@ export function buildSpi(opts: BuildSpiOptions): SemanticProgramIndex {
   const diagnostics: SpiDiagnostic[] = []
 
   const absPaths: string[] = []
-  const ignorePatterns = loadGraphifyignorePatterns(root)
+  const ignorePatterns = loadMadarignorePatterns(root)
   collectFiles(root, root, ignorePatterns, absPaths)
 
   const pathToFileId = new Map<string, string>()
@@ -178,7 +178,7 @@ export function buildSpi(opts: BuildSpiOptions): SemanticProgramIndex {
       root,
       fingerprint: workspaceFingerprint(root, extractorVersion),
       extractor_version: extractorVersion,
-      graphify_version: opts.graphifyVersion,
+      madar_version: opts.madarVersion,
     },
     files,
     symbols,

@@ -18,7 +18,7 @@ const DEMO_REPO_DIR = join(process.cwd(), 'examples', 'demo-repo')
 const DEMO_QUESTIONS_PATH = join(DEMO_REPO_DIR, 'benchmark-questions.json')
 
 function withTempDir(callback: (tempDir: string) => void | Promise<void>): void | Promise<void> {
-  const tempDir = mkdtempSync(join(tmpdir(), 'graphify-ts-benchmark-'))
+  const tempDir = mkdtempSync(join(tmpdir(), 'madar-benchmark-'))
   const finalize = () => rmSync(tempDir, { recursive: true, force: true })
   try {
     const result = callback(tempDir)
@@ -45,7 +45,7 @@ function copyDemoRepo(tempDir: string): string {
     recursive: true,
     filter: (source) => {
       const relativePath = relative(DEMO_REPO_DIR, source)
-      return relativePath !== 'graphify-out' && !relativePath.startsWith(`graphify-out${sep}`)
+      return relativePath !== 'out' && !relativePath.startsWith(`out${sep}`)
     },
   })
   return targetRoot
@@ -223,8 +223,8 @@ describe('runBenchmark', () => {
 
   test('preserves prompt metadata in benchmark per-question results', () => {
     withTempDir((tempDir) => {
-      const graphPath = join(tempDir, 'graphify-out', 'graph.json')
-      mkdirSync(join(tempDir, 'graphify-out'), { recursive: true })
+      const graphPath = join(tempDir, 'out', 'graph.json')
+      mkdirSync(join(tempDir, 'out'), { recursive: true })
       toJson(makeGraph(), { 0: ['n1', 'n2'], 1: ['n3', 'n4'], 2: ['n5'] }, graphPath)
 
       const result = runBenchmark(graphPath, 10_000, [
@@ -254,8 +254,8 @@ describe('runBenchmark', () => {
 
   test('returns reduction metrics', () => {
     withTempDir((tempDir) => {
-      const graphPath = join(tempDir, 'graphify-out', 'graph.json')
-      mkdirSync(join(tempDir, 'graphify-out'), { recursive: true })
+      const graphPath = join(tempDir, 'out', 'graph.json')
+      mkdirSync(join(tempDir, 'out'), { recursive: true })
       toJson(makeGraph(), { 0: ['n1', 'n2'], 1: ['n3', 'n4'], 2: ['n5'] }, graphPath)
       const result = runBenchmark(graphPath, 10_000)
       expect('reduction_ratio' in result).toBe(true)
@@ -269,8 +269,8 @@ describe('runBenchmark', () => {
 
   test('returns an error for empty graphs', () => {
     withTempDir((tempDir) => {
-      const graphPath = join(tempDir, 'graphify-out', 'graph.json')
-      mkdirSync(join(tempDir, 'graphify-out'), { recursive: true })
+      const graphPath = join(tempDir, 'out', 'graph.json')
+      mkdirSync(join(tempDir, 'out'), { recursive: true })
       toJson(new KnowledgeGraph(), {}, graphPath)
       const result = runBenchmark(graphPath, 1_000)
       expect(result).toEqual(expect.objectContaining({ error: expect.stringMatching(/no matching nodes/i) }))
@@ -279,8 +279,8 @@ describe('runBenchmark', () => {
 
   test('returns a specific error for an empty custom question set', () => {
     withTempDir((tempDir) => {
-      const graphPath = join(tempDir, 'graphify-out', 'graph.json')
-      mkdirSync(join(tempDir, 'graphify-out'), { recursive: true })
+      const graphPath = join(tempDir, 'out', 'graph.json')
+      mkdirSync(join(tempDir, 'out'), { recursive: true })
       toJson(makeGraph(), { 0: ['n1', 'n2'], 1: ['n3', 'n4'], 2: ['n5'] }, graphPath)
 
       const result = runBenchmark(graphPath, 1_000, [])
@@ -295,8 +295,8 @@ describe('runBenchmark', () => {
 
   test('returns a custom-question error when supplied questions do not match the graph', () => {
     withTempDir((tempDir) => {
-      const graphPath = join(tempDir, 'graphify-out', 'graph.json')
-      mkdirSync(join(tempDir, 'graphify-out'), { recursive: true })
+      const graphPath = join(tempDir, 'out', 'graph.json')
+      mkdirSync(join(tempDir, 'out'), { recursive: true })
       toJson(makeGraph(), { 0: ['n1', 'n2'], 1: ['n3', 'n4'], 2: ['n5'] }, graphPath)
 
       const result = runBenchmark(graphPath, 1_000, ['quantum entanglement physics'])
@@ -311,8 +311,8 @@ describe('runBenchmark', () => {
 
   test('does not emit extraction warnings for exported graph json nodes without source_file', () => {
     withTempDir((tempDir) => {
-      const graphPath = join(tempDir, 'graphify-out', 'graph.json')
-      mkdirSync(join(tempDir, 'graphify-out'), { recursive: true })
+      const graphPath = join(tempDir, 'out', 'graph.json')
+      mkdirSync(join(tempDir, 'out'), { recursive: true })
 
       const graph = new KnowledgeGraph()
       graph.addNode('n1', { label: 'authentication', file_type: 'code', community: 0 })
@@ -335,8 +335,8 @@ describe('runBenchmark', () => {
 
   test('treats partially-provenanced graph artifacts as unavailable for structure signals', () => {
     withTempDir((tempDir) => {
-      const graphPath = join(tempDir, 'graphify-out', 'graph.json')
-      mkdirSync(join(tempDir, 'graphify-out'), { recursive: true })
+      const graphPath = join(tempDir, 'out', 'graph.json')
+      mkdirSync(join(tempDir, 'out'), { recursive: true })
 
       const graph = new KnowledgeGraph()
       graph.addNode('n1', { label: 'authentication', file_type: 'code', community: 0, source_file: 'auth.ts' })
@@ -355,8 +355,8 @@ describe('runBenchmark', () => {
 
   test('returns workspace parity structure signals on the shared entity basis', () => {
     withTempDir((tempDir) => {
-      const graphPath = join(tempDir, 'graphify-out', 'graph.json')
-      mkdirSync(join(tempDir, 'graphify-out'), { recursive: true })
+      const graphPath = join(tempDir, 'out', 'graph.json')
+      mkdirSync(join(tempDir, 'out'), { recursive: true })
       toJson(makeWorkspaceGraph(), { 0: ['a', 'b', 'c'], 1: ['d', 'e'], 2: ['f'], 3: ['concept'] }, graphPath)
 
       const result = runBenchmark(graphPath, 12_000, ['how does authentication work'])
@@ -453,7 +453,7 @@ describe('runBenchmark', () => {
     withTempDir((tempDir) => {
       const workspaceRoot = copyDemoRepo(tempDir)
 
-      expect(existsSync(join(workspaceRoot, 'graphify-out'))).toBe(false)
+      expect(existsSync(join(workspaceRoot, 'out'))).toBe(false)
     })
   })
 
@@ -466,7 +466,7 @@ describe('runBenchmark', () => {
       .split(/\r?\n/)
       .filter(Boolean)
 
-    expect(trackedFiles.some((file) => file === 'examples/demo-repo/graphify-out' || file.startsWith('examples/demo-repo/graphify-out/'))).toBe(false)
+    expect(trackedFiles.some((file) => file === 'examples/demo-repo/out' || file.startsWith('examples/demo-repo/out/'))).toBe(false)
   })
 
   test('uses the checked-in demo repo as a reproducible benchmark and eval proof kit', () => {
@@ -567,9 +567,9 @@ describe('runBenchmark', () => {
 
   test('executes each matched question through the shared runner and captures reported usage', async () => {
     await withTempDir(async (tempDir) => {
-      const graphPath = join(tempDir, 'graphify-out', 'graph.json')
-      const benchmarkOutputDir = join(tempDir, 'graphify-out', 'benchmark')
-      mkdirSync(join(tempDir, 'graphify-out'), { recursive: true })
+      const graphPath = join(tempDir, 'out', 'graph.json')
+      const benchmarkOutputDir = join(tempDir, 'out', 'benchmark')
+      mkdirSync(join(tempDir, 'out'), { recursive: true })
       toJson(makeGraph(), { 0: ['n1', 'n2'], 1: ['n3', 'n4'], 2: ['n5'] }, graphPath)
 
       const executions: Array<{
@@ -633,8 +633,8 @@ describe('runBenchmark', () => {
         'how does authentication work',
         'what is the main entry point',
       ])
-      expect(executions.map((execution) => execution.mode)).toEqual(['graphify', 'graphify'])
-      expect(executions[0]?.command).toContain("--mode 'graphify'")
+      expect(executions.map((execution) => execution.mode)).toEqual(['madar', 'madar'])
+      expect(executions[0]?.command).toContain("--mode 'madar'")
       expect(readFileSync(executions[0]!.promptFile, 'utf8')).toContain('Retrieved graph context:')
       expect(readFileSync(executions[0]!.promptFile, 'utf8')).toContain('Question:\nhow does authentication work')
       expect(readFileSync(executions[1]!.promptFile, 'utf8')).toContain('Session delta:')
@@ -673,8 +673,8 @@ describe('runBenchmark', () => {
           question: 'how does authentication work',
           share_safe_report: true,
           artifacts: expect.objectContaining({
-            prompt: '<artifact-root>/graphify-prompt.txt',
-            answer: '<artifact-root>/graphify-answer.txt',
+            prompt: '<artifact-root>/madar-prompt.txt',
+            answer: '<artifact-root>/madar-answer.txt',
             report: '<artifact-root>/report.json',
             share_safe_report: '<artifact-root>/report.share-safe.json',
           }),
@@ -872,13 +872,13 @@ describe('printBenchmark', () => {
       ],
     } as any)
     const output = spy.mock.calls.flat().join('\n')
-    expect(output).toContain('graphify runner-backed benchmark')
+    expect(output).toContain('madar runner-backed benchmark')
     expect(output).toContain('Avg input tokens (Claude reported): ~410')
     expect(output).toContain('Avg effective input tokens (cache-adjusted): ~400')
     expect(output).toContain('Avg total tokens (Claude reported): ~480')
     expect(output).toContain('Provider/runtime proof: Claude reported input, cache, and total tokens for 1/1 matched questions')
     expect(output).not.toContain('estimate fallback')
-    expect(output).not.toContain('graphify token reduction benchmark')
+    expect(output).not.toContain('madar token reduction benchmark')
     expect(output).not.toContain('naive corpus')
     spy.mockRestore()
   })

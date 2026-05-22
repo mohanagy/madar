@@ -16,7 +16,7 @@ import {
 } from '../../src/shared/security.js'
 
 function withTempDir(callback: (tempDir: string) => void): void {
-  const tempDir = mkdtempSync(join(tmpdir(), 'graphify-ts-security-'))
+  const tempDir = mkdtempSync(join(tmpdir(), 'madar-security-'))
   try {
     callback(tempDir)
   } finally {
@@ -123,7 +123,7 @@ describe('safeFetchText', () => {
 describe('validateGraphPath', () => {
   test('allows paths inside the base directory', () => {
     withTempDir((tempDir) => {
-      const base = join(tempDir, 'graphify-out')
+      const base = join(tempDir, 'out')
       const graphPath = join(base, 'graph.json')
       mkdirSync(base, { recursive: true })
       writeFileSync(graphPath, '{}\n', 'utf8')
@@ -133,7 +133,7 @@ describe('validateGraphPath', () => {
 
   test('blocks traversal outside the base directory', () => {
     withTempDir((tempDir) => {
-      const base = join(tempDir, 'graphify-out')
+      const base = join(tempDir, 'out')
       mkdirSync(base, { recursive: true })
       const evil = join(base, '..', 'etc_passwd')
       expect(() => validateGraphPath(evil, base)).toThrow(/escapes/i)
@@ -142,14 +142,14 @@ describe('validateGraphPath', () => {
 
   test('requires the base directory to exist', () => {
     withTempDir((tempDir) => {
-      const base = join(tempDir, 'graphify-out')
+      const base = join(tempDir, 'out')
       expect(() => validateGraphPath(join(base, 'graph.json'), base)).toThrow(/does not exist/i)
     })
   })
 
   test('raises when the graph file is missing', () => {
     withTempDir((tempDir) => {
-      const base = join(tempDir, 'graphify-out')
+      const base = join(tempDir, 'out')
       mkdirSync(base, { recursive: true })
       expect(() => validateGraphPath(join(base, 'missing.json'), base)).toThrow(/not found/i)
     })
@@ -158,8 +158,8 @@ describe('validateGraphPath', () => {
 
 describe('validateGraphOutputPath', () => {
   test('blocks symlink ancestors that escape the base directory', () => {
-    const sandboxRoot = resolve('graphify-out', 'test-runtime', 'security-output-symlink')
-    const base = resolve(sandboxRoot, 'graphify-out')
+    const sandboxRoot = resolve('out', 'test-runtime', 'security-output-symlink')
+    const base = resolve(sandboxRoot, 'out')
     const outside = resolve(sandboxRoot, 'outside')
 
     rmSync(sandboxRoot, { recursive: true, force: true })
@@ -175,8 +175,8 @@ describe('validateGraphOutputPath', () => {
   })
 
   test('blocks symlinked base directories', () => {
-    const sandboxRoot = resolve('graphify-out', 'test-runtime', 'security-output-base-symlink')
-    const base = resolve(sandboxRoot, 'graphify-out')
+    const sandboxRoot = resolve('out', 'test-runtime', 'security-output-base-symlink')
+    const base = resolve(sandboxRoot, 'out')
     const outside = resolve(sandboxRoot, 'outside')
 
     rmSync(sandboxRoot, { recursive: true, force: true })
@@ -190,14 +190,14 @@ describe('validateGraphOutputPath', () => {
     }
   })
 
-  test.runIf(process.platform !== 'win32')('allows graphify-out paths inside a symlinked checkout', () => {
-    const sandboxRoot = resolve('graphify-out', 'test-runtime', 'security-output-symlinked-checkout')
+  test.runIf(process.platform !== 'win32')('allows out paths inside a symlinked checkout', () => {
+    const sandboxRoot = resolve('out', 'test-runtime', 'security-output-symlinked-checkout')
     const realCheckout = resolve(sandboxRoot, 'real-checkout')
     const symlinkCheckout = resolve(sandboxRoot, 'linked-checkout')
-    const base = resolve(symlinkCheckout, 'graphify-out')
+    const base = resolve(symlinkCheckout, 'out')
 
     rmSync(sandboxRoot, { recursive: true, force: true })
-    mkdirSync(resolve(realCheckout, 'graphify-out'), { recursive: true })
+    mkdirSync(resolve(realCheckout, 'out'), { recursive: true })
     symlinkSync(realCheckout, symlinkCheckout, 'dir')
 
     try {

@@ -4,7 +4,7 @@ import { normalizeAssertionPath, shouldAssertExecutableBits } from './helpers/pl
 
 describe('platform assertion helpers', () => {
   it('normalizes Windows-style paths for cross-platform assertions', () => {
-    expect(normalizeAssertionPath('C:\\temp\\graphify-out\\memory\\query_auth.md')).toBe('C:/temp/graphify-out/memory/query_auth.md')
+    expect(normalizeAssertionPath('C:\\temp\\out\\memory\\query_auth.md')).toBe('C:/temp/out/memory/query_auth.md')
   })
 
   it('disables executable-bit assertions on Windows only', () => {

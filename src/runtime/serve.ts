@@ -212,7 +212,7 @@ export function loadGraph(graphPath: string): KnowledgeGraph {
     parsed = JSON.parse(readFileSync(safePath, 'utf8'))
   } catch (error) {
     if (error instanceof SyntaxError) {
-      throw new Error(`graph.json is corrupted (${error.message}). Re-run graphify to rebuild.`)
+      throw new Error(`graph.json is corrupted (${error.message}). Re-run madar to rebuild.`)
     }
     throw error
   }

@@ -5,9 +5,9 @@ import { join, resolve } from 'node:path'
 import { emitResourceNotifications } from '../../src/runtime/stdio/resources.js'
 
 function createGraphFixtureRoot(): string {
-  const parentDir = resolve('graphify-out', 'test-runtime')
+  const parentDir = resolve('out', 'test-runtime')
   mkdirSync(parentDir, { recursive: true })
-  const root = mkdtempSync(join(parentDir, 'graphify-ts-stdio-resources-'))
+  const root = mkdtempSync(join(parentDir, 'madar-stdio-resources-'))
   writeFileSync(
     join(root, 'graph.json'),
     JSON.stringify({
@@ -18,7 +18,7 @@ function createGraphFixtureRoot(): string {
     'utf8',
   )
   writeFileSync(join(root, 'GRAPH_REPORT.md'), '# Graph Report\n', 'utf8')
-  writeFileSync(join(root, 'graph.html'), '<!doctype html><title>graphify-ts</title>', 'utf8')
+  writeFileSync(join(root, 'graph.html'), '<!doctype html><title>madar</title>', 'utf8')
   return root
 }
 

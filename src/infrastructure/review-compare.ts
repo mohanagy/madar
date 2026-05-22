@@ -174,7 +174,7 @@ function inferProjectRootFromGraphPath(graphPath: string): string {
   let currentPath = dirname(resolve(graphPath))
 
   while (dirname(currentPath) !== currentPath) {
-    if (basename(currentPath) === 'graphify-out') {
+    if (basename(currentPath) === 'out') {
       return dirname(currentPath)
     }
     currentPath = dirname(currentPath)
@@ -185,10 +185,10 @@ function inferProjectRootFromGraphPath(graphPath: string): string {
 
 function validateOutputDirForGraph(graphPath: string, outputDir: string): string {
   const projectRoot = realpathSync(inferProjectRootFromGraphPath(graphPath))
-  const baseDir = realpathSync(resolve(projectRoot, 'graphify-out'))
+  const baseDir = realpathSync(resolve(projectRoot, 'out'))
   const resolvedOutputDir = isAbsolute(outputDir)
     ? resolve(outputDir)
-    : outputDir === 'graphify-out' || outputDir.startsWith(`graphify-out${sep}`)
+    : outputDir === 'out' || outputDir.startsWith(`out${sep}`)
       ? resolve(projectRoot, outputDir)
       : resolve(outputDir)
   const existingAncestor = findNearestExistingAncestor(resolvedOutputDir)
@@ -198,7 +198,7 @@ function validateOutputDirForGraph(graphPath: string, outputDir: string): string
   const basePrefix = baseDir.endsWith(sep) ? baseDir : `${baseDir}${sep}`
 
   if (normalizedOutputDir !== baseDir && !normalizedOutputDir.startsWith(basePrefix)) {
-    throw new Error(`Path ${JSON.stringify(outputDir)} escapes the allowed directory ${baseDir}. Only paths inside graphify-out/ are permitted.`)
+    throw new Error(`Path ${JSON.stringify(outputDir)} escapes the allowed directory ${baseDir}. Only paths inside out/ are permitted.`)
   }
 
   return normalizedOutputDir
@@ -552,7 +552,7 @@ export async function executeReviewCompareRuns(
 
 export function formatReviewCompareSummary(result: ReviewCompareResult): string {
   return [
-    '[graphify review-compare] completed current diff comparison',
+    '[madar review-compare] completed current diff comparison',
     `- Output: ${result.output_root}`,
     `- Prompt tokens: verbose ${result.report.verbose_prompt_tokens} · compact ${result.report.compact_prompt_tokens} · ${formatTokenComparison(result.report.verbose_prompt_tokens, result.report.compact_prompt_tokens)}`,
     `- Effective prompt tokens: verbose ${result.report.verbose_effective_prompt_tokens} · compact ${result.report.compact_effective_prompt_tokens} · ${formatTokenComparison(result.report.verbose_effective_prompt_tokens, result.report.compact_effective_prompt_tokens)}`,
@@ -569,7 +569,7 @@ export async function runReviewCompareCommand(
   const result = await executeReviewCompareRuns(input, dependencies)
   const failedRuns = [result.report.status.verbose, result.report.status.compact].filter((status) => status === 'failed').length
   if (failedRuns > 0) {
-    throw new Error(`[graphify review-compare] ${failedRuns} prompt run(s) failed. Partial artifacts were saved under ${result.output_root}`)
+    throw new Error(`[madar review-compare] ${failedRuns} prompt run(s) failed. Partial artifacts were saved under ${result.output_root}`)
   }
   return formatReviewCompareSummary(result)
 }

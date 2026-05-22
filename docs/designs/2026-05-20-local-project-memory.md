@@ -1,13 +1,13 @@
 # Local project memory design
 
-> **Tracking issue:** [#165](https://github.com/mohanagy/graphify-ts/issues/165) — *Design local project memory layer.*
+> **Tracking issue:** [#165](https://github.com/mohanagy/madar/issues/165) — *Design local project memory layer.*
 > **Status:** design only — no runtime implementation in this PR.
 
 ## Problem
 
-graphify-ts compiles code evidence well, but it still loses durable repo knowledge between sessions: accepted conventions, prior investigations, known pitfalls, benchmark caveats, and architecture notes. That forces agents to rediscover the same context repeatedly and makes long-lived repo knowledge too fragile.
+madar compiles code evidence well, but it still loses durable repo knowledge between sessions: accepted conventions, prior investigations, known pitfalls, benchmark caveats, and architecture notes. That forces agents to rediscover the same context repeatedly and makes long-lived repo knowledge too fragile.
 
-At the same time, memory is dangerous if it becomes a shadow source of truth. A cached note can be stale, overbroad, or wrong. The design therefore has to preserve graphify-ts's core property: code evidence remains primary, and memory can assist only in bounded, inspectable ways.
+At the same time, memory is dangerous if it becomes a shadow source of truth. A cached note can be stale, overbroad, or wrong. The design therefore has to preserve madar's core property: code evidence remains primary, and memory can assist only in bounded, inspectable ways.
 
 ## Goals
 
@@ -31,10 +31,10 @@ At the same time, memory is dangerous if it becomes a shadow source of truth. A 
 The source of truth should extend the existing local artifact path:
 
 ```text
-graphify-out/memory/*.md
+out/memory/*.md
 ```
 
-graphify-ts already writes query-result notes there via `graphify-ts save-result`. This design keeps markdown files as the canonical memory records and treats any machine-friendly index as a rebuildable derivative.
+madar already writes query-result notes there via `madar save-result`. This design keeps markdown files as the canonical memory records and treats any machine-friendly index as a rebuildable derivative.
 
 That preserves three important properties:
 
@@ -85,7 +85,7 @@ Example:
 type: convention
 date: 2026-05-20T12:00:00.000Z
 title: Prefer context_pack before raw file search
-contributor: graphify-ts
+contributor: madar
 tags: ["retrieval", "agent-workflow"]
 source_files: ["README.md", "docs/integrations/agent-orchestration.md"]
 source_nodes: ["context_pack", "retrieve"]
@@ -99,10 +99,10 @@ when pack diagnostics show missing evidence.
 
 ## Derived index
 
-graphify-ts may build a small derived index, for example:
+madar may build a small derived index, for example:
 
 ```text
-graphify-out/memory/index.json
+out/memory/index.json
 ```
 
 This index is not a second store. It exists only to avoid reparsing arbitrary markdown on every retrieval. It should store:
@@ -114,7 +114,7 @@ This index is not a second store. It exists only to avoid reparsing arbitrary ma
 - freshness flags (`active`, `expired`, `superseded`)
 - short preview text
 
-If the index is missing or stale, graphify-ts can rebuild it from the markdown records.
+If the index is missing or stale, madar can rebuild it from the markdown records.
 
 ## Retrieval rules
 
@@ -128,7 +128,7 @@ A memory item is eligible only when at least one gate passes:
 
 The ordering matters:
 
-- graphify-ts selects code/graph evidence first
+- madar selects code/graph evidence first
 - memory ranking runs only after that first selection step
 - prompt-only memory matches are allowed only when there is already selected code evidence **or** the prompt explicitly asks for repo norms/history/investigation context
 
@@ -208,7 +208,7 @@ The existing evidence-class system should remain unchanged. Memory does **not** 
 - `memory_context` is its own explicit secondary lane
 - if an implementation later needs an evidence-class mapping for diagnostics, `supporting` is the closest fit, but memory should still remain structurally separate from ordinary code evidence
 
-This keeps memory useful without weakening graphify-ts's “verifiable context first” contract.
+This keeps memory useful without weakening madar's “verifiable context first” contract.
 
 ## Lifecycle
 
@@ -268,7 +268,7 @@ The minimum acceptable behavior is an explicit user-facing warning that memory a
    - define the typed frontmatter contract
    - parse memory markdown safely
 2. **Derived index**
-   - build and refresh `graphify-out/memory/index.json`
+   - build and refresh `out/memory/index.json`
 3. **Retrieval gating**
    - rank memory only after code evidence
    - apply freshness, anchor, and type filters
@@ -277,6 +277,6 @@ The minimum acceptable behavior is an explicit user-facing warning that memory a
 5. **Authoring UX**
    - extend or add CLI commands for typed memory creation
 
-## Why this fits graphify-ts
+## Why this fits madar
 
-graphify-ts is already a local context compiler with explicit evidence contracts and bounded output. A markdown-backed, repo-local memory layer fits that architecture better than a hidden service or heavyweight secondary store. By keeping memory typed, inspectable, freshness-aware, and explicitly secondary to code evidence, graphify-ts can preserve durable repo knowledge without turning packs into unverifiable folklore.
+madar is already a local context compiler with explicit evidence contracts and bounded output. A markdown-backed, repo-local memory layer fits that architecture better than a hidden service or heavyweight secondary store. By keeping memory typed, inspectable, freshness-aware, and explicitly secondary to code evidence, madar can preserve durable repo knowledge without turning packs into unverifiable folklore.

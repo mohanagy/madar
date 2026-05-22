@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
 
 function withTempDir(run: (dir: string) => void): void {
-  const dir = mkdtempSync(join(tmpdir(), 'graphify-real-bench-'))
+  const dir = mkdtempSync(join(tmpdir(), 'madar-real-bench-'))
   try {
     run(dir)
   } finally {
@@ -129,11 +129,11 @@ describe('real-workspace benchmark support', () => {
         stdio: 'pipe',
         env: {
           ...process.env,
-          GRAPHIFY_BENCH_BACKEND: process.cwd(),
-          GRAPHIFY_BENCH_REAL_PROMPTS: join(dir, 'missing-prompts.json'),
+          MADAR_BENCH_BACKEND: process.cwd(),
+          MADAR_BENCH_REAL_PROMPTS: join(dir, 'missing-prompts.json'),
         },
       })).toThrowError(expect.objectContaining({
-        stderr: expect.stringContaining('GRAPHIFY_BENCH_REAL_PROMPTS'),
+        stderr: expect.stringContaining('MADAR_BENCH_REAL_PROMPTS'),
       }))
     })
   })
@@ -154,11 +154,11 @@ describe('real-workspace benchmark support', () => {
         stdio: 'pipe',
         env: {
           ...process.env,
-          GRAPHIFY_BENCH_BACKEND: join(dir, 'missing-backend'),
-          GRAPHIFY_BENCH_REAL_PROMPTS: promptsPath,
+          MADAR_BENCH_BACKEND: join(dir, 'missing-backend'),
+          MADAR_BENCH_REAL_PROMPTS: promptsPath,
         },
       })).toThrowError(expect.objectContaining({
-        stderr: expect.stringContaining('GRAPHIFY_BENCH_BACKEND'),
+        stderr: expect.stringContaining('MADAR_BENCH_BACKEND'),
       }))
     })
   })

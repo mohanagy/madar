@@ -17,7 +17,7 @@ function escapeMarkdownInline(value: string): string {
 }
 
 function withTempDir<T>(callback: (tempDir: string) => T): T {
-  const tempDir = mkdtempSync(join(tmpdir(), 'graphify-ts-pipeline-'))
+  const tempDir = mkdtempSync(join(tmpdir(), 'madar-pipeline-'))
   try {
     return callback(tempDir)
   } finally {

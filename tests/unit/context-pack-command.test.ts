@@ -46,7 +46,7 @@ describe('context-pack-command', () => {
       prompt: 'Trace how `POST /login` reaches persistence in the backend runtime pipeline',
       budget: 1800,
       task: 'explain',
-      graphPath: 'graphify-out/graph.json',
+      graphPath: 'out/graph.json',
       retrievalStrategy: 'slice-v1',
     }, dependencies)
 
@@ -59,7 +59,7 @@ describe('context-pack-command', () => {
       }
     }
 
-    expect(dependencies.loadGraph).toHaveBeenCalledWith('graphify-out/graph.json')
+    expect(dependencies.loadGraph).toHaveBeenCalledWith('out/graph.json')
     expect(dependencies.retrieveContext).toHaveBeenCalledWith(graph, {
       question: 'Trace how `POST /login` reaches persistence in the backend runtime pipeline',
       budget: 1800,
@@ -107,7 +107,7 @@ describe('context-pack-command', () => {
       prompt: 'auth',
       budget: 1,
       task: 'explain',
-      graphPath: 'graphify-out/graph.json',
+      graphPath: 'out/graph.json',
     }, dependencies)
 
     expect(dependencies.retrieveContext).toHaveBeenCalledWith(graph, {
@@ -163,7 +163,7 @@ describe('context-pack-command', () => {
       prompt: 'review current diff',
       budget: 1800,
       task: 'review',
-      graphPath: 'graphify-out/graph.json',
+      graphPath: 'out/graph.json',
     }, dependencies)
 
     expect(dependencies.analyzePrImpact).toHaveBeenCalledWith(graph, '.', { budget: 1800, taskIntent: 'pr-review-risk' })
@@ -172,7 +172,7 @@ describe('context-pack-command', () => {
       task_intent: 'pr-review-risk',
       prompt: 'review current diff',
       budget: 1800,
-      graph_path: 'graphify-out/graph.json',
+      graph_path: 'out/graph.json',
       plan: expect.objectContaining({
         task_kind: 'review',
         evidence: expect.objectContaining({
@@ -280,7 +280,7 @@ describe('context-pack-command', () => {
       prompt: 'review auth diff',
       budget: 1,
       task: 'review',
-      graphPath: 'graphify-out/graph.json',
+      graphPath: 'out/graph.json',
     }, dependencies)
 
     expect(dependencies.analyzePrImpact).toHaveBeenCalledWith(graph, '.', {
@@ -360,7 +360,7 @@ describe('context-pack-command', () => {
       prompt: 'Generate regression tests for token refresh and session expiry.',
       budget: 1800,
       task: 'review',
-      graphPath: 'graphify-out/graph.json',
+      graphPath: 'out/graph.json',
     }, dependencies)
 
     const payload = JSON.parse(output) as Record<string, unknown>
@@ -434,7 +434,7 @@ describe('context-pack-command', () => {
       prompt: 'what breaks if auth changes',
       budget: 900,
       task: 'impact',
-      graphPath: 'graphify-out/graph.json',
+      graphPath: 'out/graph.json',
     }, dependencies)
 
     expect(dependencies.analyzeImpact).toHaveBeenCalledWith(graph, {}, {
@@ -447,7 +447,7 @@ describe('context-pack-command', () => {
       task_intent: 'impact',
       prompt: 'what breaks if auth changes',
       budget: 900,
-      graph_path: 'graphify-out/graph.json',
+      graph_path: 'out/graph.json',
       target: 'AuthService',
       plan: expect.objectContaining({
         evidence: expect.objectContaining({
@@ -535,7 +535,7 @@ describe('context-pack-command', () => {
       prompt: 'auth',
       budget: 1,
       task: 'impact',
-      graphPath: 'graphify-out/graph.json',
+      graphPath: 'out/graph.json',
     }, dependencies)
 
     expect(dependencies.retrieveContext).toHaveBeenCalledWith(graph, {

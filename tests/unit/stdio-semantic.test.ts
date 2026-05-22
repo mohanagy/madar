@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 function createGraphFixtureRoot(): string {
-  const root = mkdtempSync(join(tmpdir(), 'graphify-ts-stdio-semantic-'))
+  const root = mkdtempSync(join(tmpdir(), 'madar-stdio-semantic-'))
   mkdirSync(root, { recursive: true })
   writeFileSync(
     join(root, 'graph.json'),

@@ -27,7 +27,7 @@ function writeFile(root: string, rel: string, content: string): void {
 function build(root: string): SemanticProgramIndex {
   return buildSpi({
     root,
-    graphifyVersion: 'test-0.0.0',
+    madarVersion: 'test-0.0.0',
     extractorVersion: 'spi-v1.0.0-slice-3b',
     now: FROZEN_NOW,
   })
@@ -479,7 +479,7 @@ describe('buildSpi NestJS framework layer (slice 3b base of #72)', () => {
   describe('against the checked-in demo repo', () => {
     it('does not crash and emits no NestJS edges (demo-repo has no Nest files)', () => {
       const root = join(__dirname, '../../examples/demo-repo')
-      const spi = buildSpi({ root, graphifyVersion: 'test-0.0.0', now: FROZEN_NOW })
+      const spi = buildSpi({ root, madarVersion: 'test-0.0.0', now: FROZEN_NOW })
       const FRAMEWORK_KINDS: ReadonlyArray<SpiEdgeKind> = [
         'module_imports',
         'module_provides',

@@ -6,14 +6,14 @@
         {
           "kind": "t3",
           "data": {
-            "subreddit": "graphify",
+            "subreddit": "madar",
             "author": "graph_builder",
             "title": "Structured ingest roadmap update",
-            "selftext": "Graphify-ts now captures richer structured inputs.\n\nThis thread tracks the next roadmap seam.",
+            "selftext": "Madar-ts now captures richer structured inputs.\n\nThis thread tracks the next roadmap seam.",
             "score": 128,
             "num_comments": 42,
-            "permalink": "/r/graphify/comments/abc123/structured_ingest_roadmap_update/",
-            "url": "https://github.com/mohanagy/graphify-ts"
+            "permalink": "/r/madar/comments/abc123/structured_ingest_roadmap_update/",
+            "url": "https://github.com/mohanagy/madar"
           }
         }
       ]

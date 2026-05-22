@@ -9,10 +9,10 @@ import { handleStdioRequest } from '../../src/runtime/stdio-server.js'
 import { estimateQueryTokens } from '../../src/runtime/serve.js'
 
 function createRepo(options: { reviewHeavy?: boolean } = {}): string {
-  const root = mkdtempSync(join(tmpdir(), 'graphify-ts-stdio-pr-impact-'))
+  const root = mkdtempSync(join(tmpdir(), 'madar-stdio-pr-impact-'))
   mkdirSync(join(root, 'src'), { recursive: true })
   mkdirSync(join(root, 'tests'), { recursive: true })
-  mkdirSync(join(root, 'graphify-out'), { recursive: true })
+  mkdirSync(join(root, 'out'), { recursive: true })
 
   const authLines = Array.from({ length: 40 }, (_, index) => `// auth filler ${index + 1}`)
   authLines[9] = 'export function authenticateUser(token: string) {'
@@ -146,7 +146,7 @@ function createRepo(options: { reviewHeavy?: boolean } = {}): string {
     writeFileSync(join(root, fixtureFile.relativePath), fixtureFile.lines.join('\n'), 'utf8')
   }
   writeFileSync(
-    join(root, 'graphify-out', 'graph.json'),
+    join(root, 'out', 'graph.json'),
     JSON.stringify({
       directed: true,
       community_labels: {
@@ -298,8 +298,8 @@ function createRepo(options: { reviewHeavy?: boolean } = {}): string {
   )
 
   execFileSync('git', ['init', '-b', 'main'], { cwd: root, stdio: 'pipe' })
-  execFileSync('git', ['config', 'user.email', 'graphify@example.com'], { cwd: root, stdio: 'pipe' })
-  execFileSync('git', ['config', 'user.name', 'Graphify Test'], { cwd: root, stdio: 'pipe' })
+  execFileSync('git', ['config', 'user.email', 'madar@example.com'], { cwd: root, stdio: 'pipe' })
+  execFileSync('git', ['config', 'user.name', 'Madar Test'], { cwd: root, stdio: 'pipe' })
   execFileSync('git', ['add', '.'], { cwd: root, stdio: 'pipe' })
   execFileSync('git', ['commit', '-m', 'Initial commit'], { cwd: root, stdio: 'pipe' })
 
@@ -324,7 +324,7 @@ describe('stdio pr impact', () => {
       'utf8',
     )
 
-    const graphPath = join(root, 'graphify-out', 'graph.json')
+    const graphPath = join(root, 'out', 'graph.json')
     const tools = await Promise.resolve(handleStdioRequest(graphPath, { id: 1, method: 'tools/list' }))
     const tool = (tools?.result as { tools: Array<{ name: string; inputSchema: { properties: Record<string, unknown> } }> }).tools.find(
       (entry) => entry.name === 'pr_impact',
@@ -373,7 +373,7 @@ describe('stdio pr impact', () => {
       'utf8',
     )
 
-    const graphPath = join(root, 'graphify-out', 'graph.json')
+    const graphPath = join(root, 'out', 'graph.json')
     const compactResponse = await Promise.resolve(handleStdioRequest(graphPath, {
       id: 3,
       method: 'tools/call',
@@ -558,7 +558,7 @@ describe('stdio pr impact', () => {
       'utf8',
     )
 
-    const graphPath = join(root, 'graphify-out', 'graph.json')
+    const graphPath = join(root, 'out', 'graph.json')
     const response = await Promise.resolve(handleStdioRequest(graphPath, {
       id: 3,
       method: 'tools/call',

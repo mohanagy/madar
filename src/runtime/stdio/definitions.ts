@@ -396,7 +396,7 @@ export type McpToolProfile = 'core' | 'full'
 /**
  * The minimal set of tools shipped by default. Keeps cache_creation overhead
  * low on Claude Code session start. Opt into the full surface by setting
- * GRAPHIFY_TOOL_PROFILE=full in the MCP server env block.
+ * MADAR_TOOL_PROFILE=full in the MCP server env block.
  */
 export const CORE_TOOL_NAMES = ['retrieve', 'impact', 'call_chain', 'community_overview', 'pr_impact', 'graph_stats', 'graph_summary'] as const
 
@@ -411,7 +411,7 @@ export function activeMcpTools(profile: McpToolProfile = 'core'): McpToolDefinit
 }
 
 export function resolveToolProfileFromEnv(env: NodeJS.ProcessEnv = process.env): McpToolProfile {
-  const raw = (env.GRAPHIFY_TOOL_PROFILE ?? '').trim().toLowerCase()
+  const raw = (env.MADAR_TOOL_PROFILE ?? '').trim().toLowerCase()
   return raw === 'full' ? 'full' : 'core'
 }
 

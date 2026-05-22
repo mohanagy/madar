@@ -15,7 +15,7 @@ interface PromptExample {
 }
 
 function withTempDir<T>(callback: (tempDir: string) => T | Promise<T>): T | Promise<T> {
-  const tempDir = mkdtempSync(join(tmpdir(), 'graphify-ts-sample-workspace-'))
+  const tempDir = mkdtempSync(join(tmpdir(), 'madar-sample-workspace-'))
   const finalize = () => rmSync(tempDir, { recursive: true, force: true })
   try {
     const result = callback(tempDir)
@@ -37,7 +37,7 @@ function copySampleWorkspace(tempDir: string): string {
     recursive: true,
     filter: (source) => {
       const relativePath = relative(sourceRoot, source)
-      return relativePath !== 'graphify-out' && !relativePath.startsWith(`graphify-out${sep}`)
+      return relativePath !== 'out' && !relativePath.startsWith(`out${sep}`)
     },
   })
   return targetRoot
@@ -57,7 +57,7 @@ describe('examples/sample-workspace', () => {
 
       expect(firstPrompt).toBeDefined()
       const result = generateGraph(sampleRoot, { noHtml: true })
-      const graphPath = join(sampleRoot, 'graphify-out', 'graph.json')
+      const graphPath = join(sampleRoot, 'out', 'graph.json')
       const packOutput = await runContextPackCommand({
         prompt: firstPrompt?.question ?? '',
         budget: 1800,
@@ -87,8 +87,8 @@ describe('examples/sample-workspace', () => {
     if (tutorial.includes('npm run build')) {
       expect(tutorial.toLowerCase()).toContain('repository root')
     }
-    expect(tutorial).toContain('graphify-ts generate examples/sample-workspace')
-    expect(tutorial).toContain('graphify-ts pack')
+    expect(tutorial).toContain('madar generate examples/sample-workspace')
+    expect(tutorial).toContain('madar pack')
     expect(tutorial).toContain('prompt-examples.json')
     expect(readme).toContain('examples/sample-workspace')
   })

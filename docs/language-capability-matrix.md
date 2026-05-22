@@ -1,6 +1,6 @@
 # Language and capability matrix
 
-This is the public support matrix for `graphify-ts` on the current mainline. It distinguishes between:
+This is the public support matrix for `madar` on the current mainline. It distinguishes between:
 
 - **Primary extractor path** - the implementation used when the runtime has everything it needs
 - **Fallback path** - what happens when a parser is unavailable at runtime
@@ -35,7 +35,7 @@ The registry lives in `src/infrastructure/capabilities.ts`. The extractor bindin
 
 ## URL ingest
 
-`graphify-ts add <url>` has built-in ingestors for:
+`madar add <url>` has built-in ingestors for:
 
 - GitHub
 - Reddit
@@ -50,9 +50,9 @@ These ingestors fetch structured content into the local project so the normal gr
 
 ## Framework awareness
 
-For `.ts`, `.tsx`, `.js`, and `.jsx`, the JS/TS extractor can emit framework-semantic nodes directly instead of only low-level functions and imports. Those framework-shaped nodes carry `framework_role` on the graph node when graphify-ts can identify a mainstream convention reliably, and the default MCP surface now uses compact MCP payloads by default.
+For `.ts`, `.tsx`, `.js`, and `.jsx`, the JS/TS extractor can emit framework-semantic nodes directly instead of only low-level functions and imports. Those framework-shaped nodes carry `framework_role` on the graph node when madar can identify a mainstream convention reliably, and the default MCP surface now uses compact MCP payloads by default.
 
-| Framework | What graphify-ts extracts today | Example `framework_role` values |
+| Framework | What madar extracts today | Example `framework_role` values |
 |---|---|---|
 | Express | apps, routers, mounted routers, route nodes, middleware ownership, handler relationships, and route params | `express_app`, `express_router`, `express_route`, `express_middleware`, `express_handler`, `express_error_handler` |
 | Redux Toolkit | slices, actions, selectors, thunks, and store registration across common cross-file patterns | `redux_slice`, `redux_action`, `redux_selector`, `redux_thunk`, `redux_store` |
@@ -66,7 +66,7 @@ These roles are meant to be consumed as structural hints by retrieval and workfl
 
 The matrix above describes extraction coverage. The newer retrieval/runtime hints below describe what users should expect to see in answers and compact packs once a graph already exists:
 
-| Situation | What graphify-ts preserves | Why users care |
+| Situation | What madar preserves | Why users care |
 |---|---|---|
 | Queue-backed NestJS / BullMQ flows | `enqueues_job` semantic edges preserve the producer → worker handoff in compact runtime-generation explain packs | Backend "what happens after enqueue?" questions keep the worker path instead of pretending the controller calls the worker directly |
 | Storage-oriented prompts with `--spi` | `storage_operation` metadata marks likely read/write endpoints on Prisma model operations and repository CRUD methods | "Where is this entity read or written?" questions rank persistence endpoints more accurately |
@@ -75,7 +75,7 @@ The matrix above describes extraction coverage. The newer retrieval/runtime hint
 
 ## How to read this matrix
 
-- **Supported** means `graphify-ts` has a registered capability and a live handler for that extension or URL type.
+- **Supported** means `madar` has a registered capability and a live handler for that extension or URL type.
 - **Tree-sitter primary** means the runtime prefers a WASM grammar, then logs a one-time warning and falls back locally if that grammar is unavailable.
 - **Generic** means the extractor is intentionally heuristic. It is useful for structure discovery, but it is not the same depth as the TypeScript AST path.
 - **Metadata-only** means the graph will know the asset exists and keep file metadata, but it will not derive OCR, captions, or transcripts.

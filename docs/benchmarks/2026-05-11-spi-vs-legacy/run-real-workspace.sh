@@ -4,11 +4,11 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TS="$(date -u +%Y-%m-%dT%H%M%SZ)"
-BUNDLE_DIR="${GRAPHIFY_BENCH_REAL_RESULTS_DIR:-$HERE/results/real-workspaces/$TS}"
-PROMPTS_FILE="${GRAPHIFY_BENCH_REAL_PROMPTS:-$HERE/prompts.real-workspace.example.json}"
+BUNDLE_DIR="${MADAR_BENCH_REAL_RESULTS_DIR:-$HERE/results/real-workspaces/$TS}"
+PROMPTS_FILE="${MADAR_BENCH_REAL_PROMPTS:-$HERE/prompts.real-workspace.example.json}"
 
 if [[ ! -f "$PROMPTS_FILE" ]]; then
-  echo "GRAPHIFY_BENCH_REAL_PROMPTS must point to an existing prompts JSON file: $PROMPTS_FILE" >&2
+  echo "MADAR_BENCH_REAL_PROMPTS must point to an existing prompts JSON file: $PROMPTS_FILE" >&2
   exit 2
 fi
 
@@ -26,20 +26,20 @@ run_workspace() {
 
   mkdir -p "$BUNDLE_DIR/$workspace_name"
   echo "[real-workspace] $workspace_name -> $workspace_path"
-  GRAPHIFY_BENCH_FIXTURE="$workspace_path" \
-  GRAPHIFY_BENCH_PROMPTS="$PROMPTS_FILE" \
-  GRAPHIFY_BENCH_RESULTS_DIR="$BUNDLE_DIR/$workspace_name" \
+  MADAR_BENCH_FIXTURE="$workspace_path" \
+  MADAR_BENCH_PROMPTS="$PROMPTS_FILE" \
+  MADAR_BENCH_RESULTS_DIR="$BUNDLE_DIR/$workspace_name" \
   bash "$HERE/run.sh"
 }
 
-if [[ -z "${GRAPHIFY_BENCH_BACKEND:-}" && -z "${GRAPHIFY_BENCH_MONOREPO:-}" ]]; then
-  echo "Set GRAPHIFY_BENCH_BACKEND and/or GRAPHIFY_BENCH_MONOREPO before running." >&2
+if [[ -z "${MADAR_BENCH_BACKEND:-}" && -z "${MADAR_BENCH_MONOREPO:-}" ]]; then
+  echo "Set MADAR_BENCH_BACKEND and/or MADAR_BENCH_MONOREPO before running." >&2
   exit 2
 fi
 
 mkdir -p "$BUNDLE_DIR"
-run_workspace "backend" "${GRAPHIFY_BENCH_BACKEND:-}" "GRAPHIFY_BENCH_BACKEND"
-run_workspace "monorepo" "${GRAPHIFY_BENCH_MONOREPO:-}" "GRAPHIFY_BENCH_MONOREPO"
+run_workspace "backend" "${MADAR_BENCH_BACKEND:-}" "MADAR_BENCH_BACKEND"
+run_workspace "monorepo" "${MADAR_BENCH_MONOREPO:-}" "MADAR_BENCH_MONOREPO"
 
 node "$HERE/summarize-real-workspaces.mjs" "$BUNDLE_DIR" > "$BUNDLE_DIR/real-workspaces.summary.json"
 cat "$BUNDLE_DIR/real-workspaces.summary.json"

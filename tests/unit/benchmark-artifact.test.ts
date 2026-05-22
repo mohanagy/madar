@@ -114,13 +114,13 @@ function writeCompareStyleReport(reportPath: string, pack: CompareReportPack): v
     `${JSON.stringify(
       {
         question: pack.question,
-        graph_path: 'graphify-out/graph.json',
+        graph_path: 'out/graph.json',
         baseline_mode: 'pack_only',
         pack,
         paths: {
           output_dir: '.',
           baseline_prompt: 'baseline-prompt.txt',
-          graphify_prompt: 'graphify-prompt.txt',
+          madar_prompt: 'madar-prompt.txt',
           report: 'report.json',
           share_safe_report: 'report.share-safe.json',
         },
@@ -143,7 +143,7 @@ function runPackVerifier(
 ): ReturnType<typeof spawnSync> {
   const fixtureRoot = join(
     process.cwd(),
-    'graphify-out',
+    'out',
     'benchmark-artifact-pack-quality',
     `${testName}-${process.pid}-${Date.now()}`,
   )
@@ -177,11 +177,11 @@ function runAnswerVerifier(
 ): ReturnType<typeof spawnSync> {
   const fixtureRoot = join(
     process.cwd(),
-    'graphify-out',
+    'out',
     'benchmark-artifact-answer-quality',
     `${testName}-${process.pid}-${Date.now()}`,
   )
-  const answerPath = join(fixtureRoot, 'graphify-answer.txt')
+  const answerPath = join(fixtureRoot, 'madar-answer.txt')
   const configPath = join(fixtureRoot, 'quality-gates.json')
   const answerArg = options.relativeAnswerPath ? relative(process.cwd(), answerPath) : answerPath
   const configArg = options.relativeConfigPath ? relative(process.cwd(), configPath) : configPath
@@ -215,7 +215,7 @@ describe('public benchmark artifact (2026-04-30 govalidate)', () => {
     total_cost_usd: number
     usage: { input_tokens: number; cache_creation_input_tokens: number; cache_read_input_tokens: number }
   }
-  const graphify = JSON.parse(readFileSync(resolve(ARTIFACT_DIR, 'graphify-session.json'), 'utf8')) as typeof baseline
+  const madar = JSON.parse(readFileSync(resolve(ARTIFACT_DIR, 'madar-session.json'), 'utf8')) as typeof baseline
   const readme = readFileSync(resolve(ARTIFACT_DIR, 'README.md'), 'utf8')
 
   function totalInput(usage: typeof baseline.usage): number {
@@ -226,31 +226,31 @@ describe('public benchmark artifact (2026-04-30 govalidate)', () => {
     expect(typeof baseline.num_turns).toBe('number')
     expect(typeof baseline.duration_ms).toBe('number')
     expect(typeof baseline.usage.input_tokens).toBe('number')
-    expect(typeof graphify.num_turns).toBe('number')
-    expect(typeof graphify.duration_ms).toBe('number')
-    expect(typeof graphify.usage.input_tokens).toBe('number')
+    expect(typeof madar.num_turns).toBe('number')
+    expect(typeof madar.duration_ms).toBe('number')
+    expect(typeof madar.usage.input_tokens).toBe('number')
   })
 
   it('README cites num_turns numbers that match the JSON', () => {
     expect(readme).toContain(`| ${baseline.num_turns} |`)
-    expect(readme).toContain(`**${graphify.num_turns}**`)
+    expect(readme).toContain(`**${madar.num_turns}**`)
   })
 
   it('README cites latency numbers that match the JSON (in ms)', () => {
     expect(readme).toContain(baseline.duration_ms.toLocaleString('en-US'))
-    expect(readme).toContain(graphify.duration_ms.toLocaleString('en-US'))
+    expect(readme).toContain(madar.duration_ms.toLocaleString('en-US'))
   })
 
   it('README cites total input tokens that exactly equal the JSON sums', () => {
     const baselineTotal = totalInput(baseline.usage)
-    const graphifyTotal = totalInput(graphify.usage)
+    const madarTotal = totalInput(madar.usage)
     expect(readme).toContain(baselineTotal.toLocaleString('en-US'))
-    expect(readme).toContain(graphifyTotal.toLocaleString('en-US'))
+    expect(readme).toContain(madarTotal.toLocaleString('en-US'))
   })
 
   it('README cites cost numbers that match the JSON', () => {
     expect(readme).toContain(`$${baseline.total_cost_usd.toFixed(2)}`)
-    expect(readme).toContain(`$${graphify.total_cost_usd.toFixed(2)}`)
+    expect(readme).toContain(`$${madar.total_cost_usd.toFixed(2)}`)
   })
 
   it('README frames the benchmark around effective cost, not just raw prompt size', () => {
@@ -286,7 +286,7 @@ describe('public benchmark artifact (2026-04-30 govalidate)', () => {
     const result = spawnSync('bash', [resolve(ARTIFACT_DIR, 'verify.sh')], { encoding: 'utf8' })
     expect(result.status).toBe(0)
     expect(result.stdout).toContain('baseline_total_input_tokens : 615190')
-    expect(result.stdout).toContain('graphify_total_input_tokens : 233508')
+    expect(result.stdout).toContain('madar_total_input_tokens : 233508')
   }, 15_000)
 
   it('verify.sh contains no absolute paths (uses $DIR)', () => {
@@ -541,16 +541,16 @@ describe('hosted benchmark stylesheet', () => {
 
   it('uses dedicated fill and track tokens for the comparison bars', () => {
     expect(styles).toContain('--bar-baseline-fill:')
-    expect(styles).toContain('--bar-graphify-fill:')
+    expect(styles).toContain('--bar-madar-fill:')
     expect(styles).toContain('--bar-track-bg:')
     expect(styles).toContain('--bar-track-edge:')
     expect(styles).not.toContain('--bar-baseline-fill:   var(--bar-baseline);')
-    expect(styles).not.toContain('--bar-graphify-fill:   var(--bar-graphify);')
+    expect(styles).not.toContain('--bar-madar-fill:   var(--bar-madar);')
     expect(styles).toMatch(/\.bar-row \.bar \{\s+height: 18px;\s+background: var\(--bar-track-bg\);\s+border-radius: var\(--r-sm\);\s+border: 1px solid var\(--bar-track-edge\);/s)
     expect(styles).toMatch(/\.bar-row \.bar \.fill\.baseline \{\s+background: var\(--bar-baseline-fill\);/s)
-    expect(styles).toMatch(/\.bar-row \.bar \.fill\.graphify \{\s+background: var\(--bar-graphify-fill\);/s)
+    expect(styles).toMatch(/\.bar-row \.bar \.fill\.madar \{\s+background: var\(--bar-madar-fill\);/s)
     expect(styles).not.toMatch(/\.bar-row \.bar \.fill\.baseline \{\s+background: var\(--bar-baseline\);/s)
-    expect(styles).not.toMatch(/\.bar-row \.bar \.fill\.graphify \{\s+background: var\(--bar-graphify\);/s)
+    expect(styles).not.toMatch(/\.bar-row \.bar \.fill\.madar \{\s+background: var\(--bar-madar\);/s)
   })
 
   it('makes the fill element block-level so inline width styles render visible bars', () => {

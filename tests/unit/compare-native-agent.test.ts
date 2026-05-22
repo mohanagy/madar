@@ -13,18 +13,18 @@ import {
   type NativeAgentRunner,
 } from '../../src/infrastructure/compare.js'
 
-const FIXTURE_PARENT = resolve('graphify-out', 'test-runtime', 'native-agent')
-const COMPARE_OUTPUT_PARENT = resolve('graphify-out', 'compare', 'test-runtime-native-agent')
+const FIXTURE_PARENT = resolve('out', 'test-runtime', 'native-agent')
+const COMPARE_OUTPUT_PARENT = resolve('out', 'compare', 'test-runtime-native-agent')
 
 function makeFixtureProject(): { projectDir: string; graphPath: string; outputDir: string } {
   mkdirSync(FIXTURE_PARENT, { recursive: true })
   mkdirSync(COMPARE_OUTPUT_PARENT, { recursive: true })
   const projectDir = mkdtempSync(join(FIXTURE_PARENT, 'project-'))
   const outputDir = mkdtempSync(join(COMPARE_OUTPUT_PARENT, 'out-'))
-  // Build a minimal graphify-out/graph.json so the snapshot has something to rename.
-  mkdirSync(join(projectDir, 'graphify-out'), { recursive: true })
+  // Build a minimal out/graph.json so the snapshot has something to rename.
+  mkdirSync(join(projectDir, 'out'), { recursive: true })
   writeFileSync(
-    join(projectDir, 'graphify-out', 'graph.json'),
+    join(projectDir, 'out', 'graph.json'),
     JSON.stringify({
       community_labels: { '0': 'Mock' },
       nodes: [
@@ -36,11 +36,11 @@ function makeFixtureProject(): { projectDir: string; graphPath: string; outputDi
     'utf8',
   )
   // Plant the other snapshot targets so we can verify they round-trip.
-  writeFileSync(join(projectDir, '.mcp.json'), JSON.stringify({ mcpServers: { 'graphify-ts': {} } }, null, 2), 'utf8')
+  writeFileSync(join(projectDir, '.mcp.json'), JSON.stringify({ mcpServers: { 'madar': {} } }, null, 2), 'utf8')
   writeFileSync(join(projectDir, 'CLAUDE.md'), '# Project Claude rules\n', 'utf8')
   mkdirSync(join(projectDir, '.claude'), { recursive: true })
   writeFileSync(join(projectDir, '.claude', 'settings.json'), '{}\n', 'utf8')
-  return { projectDir, graphPath: join(projectDir, 'graphify-out', 'graph.json'), outputDir }
+  return { projectDir, graphPath: join(projectDir, 'out', 'graph.json'), outputDir }
 }
 
 const BASELINE_USAGE_PAYLOAD = {
@@ -59,13 +59,13 @@ const BASELINE_USAGE_PAYLOAD = {
   },
 }
 
-const GRAPHIFY_USAGE_PAYLOAD = {
+const MADAR_USAGE_PAYLOAD = {
   type: 'result',
   subtype: 'success',
   is_error: false,
   duration_ms: 34744,
   num_turns: 3,
-  result: 'graphify answer',
+  result: 'madar answer',
   total_cost_usd: 0.7,
   usage: {
     input_tokens: 13,
@@ -75,10 +75,10 @@ const GRAPHIFY_USAGE_PAYLOAD = {
   },
 }
 
-function scriptedRunner(payloads: { baseline: unknown; graphify: unknown }): NativeAgentRunner {
+function scriptedRunner(payloads: { baseline: unknown; madar: unknown }): NativeAgentRunner {
   return async (input) => ({
     exitCode: 0,
-    stdout: `${JSON.stringify(input.mode === 'baseline' ? payloads.baseline : payloads.graphify)}\n`,
+    stdout: `${JSON.stringify(input.mode === 'baseline' ? payloads.baseline : payloads.madar)}\n`,
     stderr: '',
     elapsedMs: input.mode === 'baseline' ? 96368 : 34744,
   })
@@ -87,21 +87,21 @@ function scriptedRunner(payloads: { baseline: unknown; graphify: unknown }): Nat
 function buildSummaryResult(overrides: {
   question: string
   baselineTurns: number
-  graphifyTurns: number
+  madarTurns: number
   baselineDurationMs: number
-  graphifyDurationMs: number
+  madarDurationMs: number
   baselineInputTokens: number
-  graphifyInputTokens: number
+  madarInputTokens: number
   reductions: NonNullable<NativeAgentCompareReport['reductions']>
 }): NativeAgentCompareResult {
   return {
-    graph_path: '/tmp/project/graphify-out/graph.json',
-    output_root: '/tmp/project/graphify-out/compare/2026-05-12T00-00-00Z',
+    graph_path: '/tmp/project/out/graph.json',
+    output_root: '/tmp/project/out/compare/2026-05-12T00-00-00Z',
     reports: [
       {
         baseline_mode: 'native_agent',
         question: overrides.question,
-        graph_path: '/tmp/project/graphify-out/graph.json',
+        graph_path: '/tmp/project/out/graph.json',
         exec_command: { command: null, redacted: true, placeholders: [] },
         baseline: {
           kind: 'succeeded',
@@ -120,27 +120,27 @@ function buildSummaryResult(overrides: {
           duration_ms: overrides.baselineDurationMs,
           result_path: '/tmp/project/baseline.txt',
         },
-        graphify: {
+        madar: {
           kind: 'succeeded',
           model: 'claude-sonnet',
           usage: {
-            input_tokens: overrides.graphifyInputTokens,
+            input_tokens: overrides.madarInputTokens,
             cache_creation_input_tokens: 0,
             cache_read_input_tokens: 0,
             output_tokens: 100,
           },
-          total_input_tokens_anthropic_exact: overrides.graphifyInputTokens,
-          uncached_input_tokens_anthropic_exact: overrides.graphifyInputTokens,
+          total_input_tokens_anthropic_exact: overrides.madarInputTokens,
+          uncached_input_tokens_anthropic_exact: overrides.madarInputTokens,
           cached_input_tokens_anthropic_exact: 0,
           total_cost_usd: 1,
-          num_turns: overrides.graphifyTurns,
-          duration_ms: overrides.graphifyDurationMs,
-          result_path: '/tmp/project/graphify.txt',
+          num_turns: overrides.madarTurns,
+          duration_ms: overrides.madarDurationMs,
+          result_path: '/tmp/project/madar.txt',
         },
         reductions: overrides.reductions,
         prompt_token_source: {
           baseline: 'anthropic_provider_reported',
-          graphify: 'anthropic_provider_reported',
+          madar: 'anthropic_provider_reported',
         },
         provider_proof: {
           baseline: {
@@ -149,7 +149,7 @@ function buildSummaryResult(overrides: {
             effective_tokens_source: 'anthropic_provider_reported',
             total_tokens_source: 'anthropic_provider_reported',
           },
-          graphify: {
+          madar: {
             provider: 'anthropic',
             input_tokens_source: 'anthropic_provider_reported',
             effective_tokens_source: 'anthropic_provider_reported',
@@ -160,12 +160,12 @@ function buildSummaryResult(overrides: {
         started_at: '2026-05-12T00:00:00.000Z',
         completed_at: '2026-05-12T00:00:01.000Z',
         paths: {
-          output_dir: '/tmp/project/graphify-out/compare/2026-05-12T00-00-00Z',
-          report: '/tmp/project/graphify-out/compare/2026-05-12T00-00-00Z/report.json',
-          share_safe_report: '/tmp/project/graphify-out/compare/2026-05-12T00-00-00Z/report.share-safe.json',
-          baseline_answer: '/tmp/project/graphify-out/compare/2026-05-12T00-00-00Z/baseline.md',
-          graphify_answer: '/tmp/project/graphify-out/compare/2026-05-12T00-00-00Z/graphify.md',
-          prompt_file: '/tmp/project/graphify-out/compare/2026-05-12T00-00-00Z/prompt.txt',
+          output_dir: '/tmp/project/out/compare/2026-05-12T00-00-00Z',
+          report: '/tmp/project/out/compare/2026-05-12T00-00-00Z/report.json',
+          share_safe_report: '/tmp/project/out/compare/2026-05-12T00-00-00Z/report.share-safe.json',
+          baseline_answer: '/tmp/project/out/compare/2026-05-12T00-00-00Z/baseline.md',
+          madar_answer: '/tmp/project/out/compare/2026-05-12T00-00-00Z/madar.md',
+          prompt_file: '/tmp/project/out/compare/2026-05-12T00-00-00Z/prompt.txt',
         },
       },
     ],
@@ -176,8 +176,8 @@ type SummaryOverrides = Parameters<typeof buildSummaryResult>[0]
 
 function buildSuiteSummaryResult(overridesList: SummaryOverrides[]): NativeAgentCompareResult {
   return {
-    graph_path: '/tmp/project/graphify-out/graph.json',
-    output_root: '/tmp/project/graphify-out/compare/2026-05-12T00-00-00Z',
+    graph_path: '/tmp/project/out/graph.json',
+    output_root: '/tmp/project/out/compare/2026-05-12T00-00-00Z',
     reports: overridesList.map((overrides) => buildSummaryResult(overrides).reports[0]!),
   }
 }
@@ -193,7 +193,7 @@ describe('parseAnthropicResultEvent', () => {
 
   it('extracts the trailing result event from a stream-json stdout', () => {
     const intermediate = JSON.stringify({ type: 'system', subtype: 'init', tools: ['retrieve'] })
-    const result = JSON.stringify({ ...GRAPHIFY_USAGE_PAYLOAD })
+    const result = JSON.stringify({ ...MADAR_USAGE_PAYLOAD })
     const parsed = parseAnthropicResultEvent(`${intermediate}\n${result}\n`)
     expect(parsed).not.toBeNull()
     expect(parsed?.usage.input_tokens).toBe(13)
@@ -222,7 +222,7 @@ describe('executeNativeAgentCompare', () => {
           baselineMode: 'native_agent',
         },
         {
-          runner: scriptedRunner({ baseline: BASELINE_USAGE_PAYLOAD, graphify: GRAPHIFY_USAGE_PAYLOAD }),
+          runner: scriptedRunner({ baseline: BASELINE_USAGE_PAYLOAD, madar: MADAR_USAGE_PAYLOAD }),
           now: () => new Date('2026-05-01T00:00:00Z'),
         },
       )
@@ -242,24 +242,24 @@ describe('executeNativeAgentCompare', () => {
       expect(report.baseline.num_turns).toBe(9)
       expect(report.baseline.total_cost_usd).toBe(0.62)
 
-      expect(report.graphify.kind).toBe('succeeded')
-      if (report.graphify.kind !== 'succeeded') {
-        throw new Error('graphify should have succeeded')
+      expect(report.madar.kind).toBe('succeeded')
+      if (report.madar.kind !== 'succeeded') {
+        throw new Error('madar should have succeeded')
       }
-      expect(report.graphify.usage).toEqual(GRAPHIFY_USAGE_PAYLOAD.usage)
-      expect(report.graphify.num_turns).toBe(3)
-      expect(report.graphify.total_cost_usd).toBe(0.7)
+      expect(report.madar.usage).toEqual(MADAR_USAGE_PAYLOAD.usage)
+      expect(report.madar.num_turns).toBe(3)
+      expect(report.madar.total_cost_usd).toBe(0.7)
 
       const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as {
         baseline: Record<string, unknown>
-        graphify: Record<string, unknown>
+        madar: Record<string, unknown>
       }
       expect(savedReport.baseline).toEqual(expect.objectContaining({
         total_input_tokens_anthropic_exact: 615190,
         uncached_input_tokens_anthropic_exact: 40662,
         cached_input_tokens_anthropic_exact: 574528,
       }))
-      expect(savedReport.graphify).toEqual(expect.objectContaining({
+      expect(savedReport.madar).toEqual(expect.objectContaining({
         total_input_tokens_anthropic_exact: 233508,
         uncached_input_tokens_anthropic_exact: 92846,
         cached_input_tokens_anthropic_exact: 140662,
@@ -274,16 +274,16 @@ describe('executeNativeAgentCompare', () => {
       // prompt_token_source must label both as Anthropic-provider-reported when
       // a usage block was present in the runner output.
       expect(report.prompt_token_source.baseline).toBe('anthropic_provider_reported')
-      expect(report.prompt_token_source.graphify).toBe('anthropic_provider_reported')
+      expect(report.prompt_token_source.madar).toBe('anthropic_provider_reported')
     } finally {
       rmSync(projectDir, { recursive: true, force: true })
     }
   })
 
-  it('restores graphify-out, .mcp.json, CLAUDE.md, and .claude/ when the baseline runner crashes', async () => {
+  it('restores out, .mcp.json, CLAUDE.md, and .claude/ when the baseline runner crashes', async () => {
     const { projectDir, graphPath, outputDir } = makeFixtureProject()
     const before = {
-      graphifyOut: readFileSync(join(projectDir, 'graphify-out', 'graph.json'), 'utf8'),
+      madarOut: readFileSync(join(projectDir, 'out', 'graph.json'), 'utf8'),
       mcpJson: readFileSync(join(projectDir, '.mcp.json'), 'utf8'),
       claudeMd: readFileSync(join(projectDir, 'CLAUDE.md'), 'utf8'),
       claudeSettings: readFileSync(join(projectDir, '.claude', 'settings.json'), 'utf8'),
@@ -295,7 +295,7 @@ describe('executeNativeAgentCompare', () => {
         }
         return {
           exitCode: 0,
-          stdout: `${JSON.stringify(GRAPHIFY_USAGE_PAYLOAD)}\n`,
+          stdout: `${JSON.stringify(MADAR_USAGE_PAYLOAD)}\n`,
           stderr: '',
           elapsedMs: 34744,
         }
@@ -318,15 +318,15 @@ describe('executeNativeAgentCompare', () => {
       ).rejects.toThrow(/baseline/i)
 
       // Snapshot targets must be restored exactly even after the crash.
-      expect(existsSync(join(projectDir, 'graphify-out', 'graph.json'))).toBe(true)
-      expect(readFileSync(join(projectDir, 'graphify-out', 'graph.json'), 'utf8')).toBe(before.graphifyOut)
+      expect(existsSync(join(projectDir, 'out', 'graph.json'))).toBe(true)
+      expect(readFileSync(join(projectDir, 'out', 'graph.json'), 'utf8')).toBe(before.madarOut)
       expect(readFileSync(join(projectDir, '.mcp.json'), 'utf8')).toBe(before.mcpJson)
       expect(readFileSync(join(projectDir, 'CLAUDE.md'), 'utf8')).toBe(before.claudeMd)
       expect(readFileSync(join(projectDir, '.claude', 'settings.json'), 'utf8')).toBe(before.claudeSettings)
 
       // No leftover *.compare-bak-* siblings in the project root.
       const entries = readdirSync(projectDir)
-      const leftoverBackups = ['graphify-out', '.mcp.json', 'CLAUDE.md', '.claude'].filter((target) =>
+      const leftoverBackups = ['out', '.mcp.json', 'CLAUDE.md', '.claude'].filter((target) =>
         entries.some((entry) => entry.startsWith(`${target}.compare-bak-`)),
       )
       expect(leftoverBackups).toEqual([])
@@ -335,30 +335,30 @@ describe('executeNativeAgentCompare', () => {
     }
   })
 
-  it('absent graphify-out files at start mean the baseline run sees an unmodified absent state', async () => {
+  it('absent out files at start mean the baseline run sees an unmodified absent state', async () => {
     // When CLAUDE.md / .mcp.json / .claude don't exist, snapshot is a no-op for them
     // and they should still be absent after the run.
     mkdirSync(FIXTURE_PARENT, { recursive: true })
     mkdirSync(COMPARE_OUTPUT_PARENT, { recursive: true })
     const projectDir = mkdtempSync(join(FIXTURE_PARENT, 'bare-'))
     const outputDir = mkdtempSync(join(COMPARE_OUTPUT_PARENT, 'bare-out-'))
-    mkdirSync(join(projectDir, 'graphify-out'), { recursive: true })
+    mkdirSync(join(projectDir, 'out'), { recursive: true })
     writeFileSync(
-      join(projectDir, 'graphify-out', 'graph.json'),
+      join(projectDir, 'out', 'graph.json'),
       JSON.stringify({ nodes: [], edges: [], hyperedges: [] }),
       'utf8',
     )
     try {
       await executeNativeAgentCompare(
         {
-          graphPath: join(projectDir, 'graphify-out', 'graph.json'),
+          graphPath: join(projectDir, 'out', 'graph.json'),
           question: 'bare project',
           outputDir,
           execTemplate: 'mock-runner',
           baselineMode: 'native_agent',
         },
         {
-          runner: scriptedRunner({ baseline: BASELINE_USAGE_PAYLOAD, graphify: GRAPHIFY_USAGE_PAYLOAD }),
+          runner: scriptedRunner({ baseline: BASELINE_USAGE_PAYLOAD, madar: MADAR_USAGE_PAYLOAD }),
           now: () => new Date('2026-05-01T00:00:00Z'),
         },
       )
@@ -371,17 +371,17 @@ describe('executeNativeAgentCompare', () => {
     }
   })
 
-  it('keeps graphify-out/compare/<ts> writable during the baseline run (snapshot does not hide the output dir)', async () => {
+  it('keeps out/compare/<ts> writable during the baseline run (snapshot does not hide the output dir)', async () => {
     const { projectDir, graphPath, outputDir } = makeFixtureProject()
     try {
       // The runner deliberately probes the prompt-file path during the baseline run.
-      // If the snapshot renamed graphify-out/ wholesale, the path would be missing
+      // If the snapshot renamed out/ wholesale, the path would be missing
       // and the runner would have observed it. The runner returns whether each call
       // saw the file present.
       const probeResults: Array<{ mode: CompareRunMode; promptFileExists: boolean }> = []
       const probingRunner: NativeAgentRunner = async (input) => {
         probeResults.push({ mode: input.mode, promptFileExists: existsSync(input.promptFile) })
-        const payload = input.mode === 'baseline' ? BASELINE_USAGE_PAYLOAD : GRAPHIFY_USAGE_PAYLOAD
+        const payload = input.mode === 'baseline' ? BASELINE_USAGE_PAYLOAD : MADAR_USAGE_PAYLOAD
         return {
           exitCode: 0,
           stdout: `${JSON.stringify(payload)}\n`,
@@ -423,7 +423,7 @@ describe('executeNativeAgentCompare', () => {
           baselineMode: 'native_agent',
         },
         {
-          runner: scriptedRunner({ baseline: BASELINE_USAGE_PAYLOAD, graphify: GRAPHIFY_USAGE_PAYLOAD }),
+          runner: scriptedRunner({ baseline: BASELINE_USAGE_PAYLOAD, madar: MADAR_USAGE_PAYLOAD }),
           now: () => new Date('2026-05-01T00:00:00Z'),
         },
       )
@@ -469,7 +469,7 @@ describe('executeNativeAgentCompare', () => {
         expect(report.baseline.evidence).toContain('not JSON')
         expect(report.baseline.exit_code).toBe(0)
       }
-      expect(report.graphify.kind).toBe('answer_only')
+      expect(report.madar.kind).toBe('answer_only')
       expect(report.reductions).toBeNull()
     } finally {
       rmSync(projectDir, { recursive: true, force: true })
@@ -482,11 +482,11 @@ describe('formatNativeAgentCompareSummary', () => {
     const result = buildSummaryResult({
       question: 'win case',
       baselineTurns: 9,
-      graphifyTurns: 3,
+      madarTurns: 3,
       baselineDurationMs: 9000,
-      graphifyDurationMs: 3000,
+      madarDurationMs: 3000,
       baselineInputTokens: 900,
-      graphifyInputTokens: 300,
+      madarInputTokens: 300,
       reductions: {
         num_turns: 3,
         duration_ms: 3,
@@ -495,7 +495,7 @@ describe('formatNativeAgentCompareSummary', () => {
       },
     })
     const report = result.reports[0]
-    if (!report || report.baseline.kind !== 'succeeded' || report.graphify.kind !== 'succeeded') {
+    if (!report || report.baseline.kind !== 'succeeded' || report.madar.kind !== 'succeeded') {
       throw new Error('summary fixture should produce succeeded runs')
     }
     report.baseline.usage = {
@@ -506,34 +506,34 @@ describe('formatNativeAgentCompareSummary', () => {
     }
     report.baseline.uncached_input_tokens_anthropic_exact = 800
     report.baseline.cached_input_tokens_anthropic_exact = 100
-    report.graphify.usage = {
+    report.madar.usage = {
       input_tokens: 150,
       cache_creation_input_tokens: 100,
       cache_read_input_tokens: 50,
       output_tokens: 100,
     }
-    report.graphify.uncached_input_tokens_anthropic_exact = 250
-    report.graphify.cached_input_tokens_anthropic_exact = 50
+    report.madar.uncached_input_tokens_anthropic_exact = 250
+    report.madar.cached_input_tokens_anthropic_exact = 50
 
     const summary = formatNativeAgentCompareSummary(result)
 
-    expect(summary).toContain('num_turns: baseline 9 → graphify 3 (3x fewer)')
-    expect(summary).toContain('latency:   baseline 9000ms → graphify 3000ms (3x faster)')
-    expect(summary).toContain('input_tokens (Anthropic-reported): baseline 900 → graphify 300 (3x less)')
-    expect(summary).toContain('uncached_input_tokens (Anthropic-reported): baseline 800 → graphify 250 (3.2x less)')
-    expect(summary).toContain('cache_creation_input_tokens (Anthropic-reported): baseline 200 → graphify 100 (2x less)')
-    expect(summary).toContain('cache_read_input_tokens (Anthropic-reported): baseline 100 → graphify 50 (2x less)')
+    expect(summary).toContain('num_turns: baseline 9 → madar 3 (3x fewer)')
+    expect(summary).toContain('latency:   baseline 9000ms → madar 3000ms (3x faster)')
+    expect(summary).toContain('input_tokens (Anthropic-reported): baseline 900 → madar 300 (3x less)')
+    expect(summary).toContain('uncached_input_tokens (Anthropic-reported): baseline 800 → madar 250 (3.2x less)')
+    expect(summary).toContain('cache_creation_input_tokens (Anthropic-reported): baseline 200 → madar 100 (2x less)')
+    expect(summary).toContain('cache_read_input_tokens (Anthropic-reported): baseline 100 → madar 50 (2x less)')
   })
 
   it('describes regressions as more and slower instead of fewer and faster', () => {
     const summary = formatNativeAgentCompareSummary(buildSummaryResult({
       question: 'loss case',
       baselineTurns: 3,
-      graphifyTurns: 9,
+      madarTurns: 9,
       baselineDurationMs: 3000,
-      graphifyDurationMs: 9000,
+      madarDurationMs: 9000,
       baselineInputTokens: 300,
-      graphifyInputTokens: 900,
+      madarInputTokens: 900,
       reductions: {
         num_turns: 0.33,
         duration_ms: 0.33,
@@ -542,9 +542,9 @@ describe('formatNativeAgentCompareSummary', () => {
       },
     }))
 
-    expect(summary).toContain('num_turns: baseline 3 → graphify 9 (3x more)')
-    expect(summary).toContain('latency:   baseline 3000ms → graphify 9000ms (3x slower)')
-    expect(summary).toContain('input_tokens (Anthropic-reported): baseline 300 → graphify 900 (3x more)')
+    expect(summary).toContain('num_turns: baseline 3 → madar 9 (3x more)')
+    expect(summary).toContain('latency:   baseline 3000ms → madar 9000ms (3x slower)')
+    expect(summary).toContain('input_tokens (Anthropic-reported): baseline 300 → madar 900 (3x more)')
     expect(summary).not.toContain('0.33x fewer')
     expect(summary).not.toContain('0.33x faster')
     expect(summary).not.toContain('0.33x less')
@@ -554,11 +554,11 @@ describe('formatNativeAgentCompareSummary', () => {
     const summary = formatNativeAgentCompareSummary(buildSummaryResult({
       question: 'no cache case',
       baselineTurns: 9,
-      graphifyTurns: 3,
+      madarTurns: 3,
       baselineDurationMs: 9000,
-      graphifyDurationMs: 3000,
+      madarDurationMs: 3000,
       baselineInputTokens: 900,
-      graphifyInputTokens: 300,
+      madarInputTokens: 300,
       reductions: {
         num_turns: 3,
         duration_ms: 3,
@@ -577,11 +577,11 @@ describe('formatNativeAgentCompareSummary', () => {
       {
         question: 'win a',
         baselineTurns: 9,
-        graphifyTurns: 3,
+        madarTurns: 3,
         baselineDurationMs: 9000,
-        graphifyDurationMs: 3000,
+        madarDurationMs: 3000,
         baselineInputTokens: 900,
-        graphifyInputTokens: 300,
+        madarInputTokens: 300,
         reductions: {
           num_turns: 3,
           duration_ms: 3,
@@ -592,11 +592,11 @@ describe('formatNativeAgentCompareSummary', () => {
       {
         question: 'win b',
         baselineTurns: 8,
-        graphifyTurns: 2,
+        madarTurns: 2,
         baselineDurationMs: 8000,
-        graphifyDurationMs: 2000,
+        madarDurationMs: 2000,
         baselineInputTokens: 800,
-        graphifyInputTokens: 200,
+        madarInputTokens: 200,
         reductions: {
           num_turns: 4,
           duration_ms: 4,
@@ -616,11 +616,11 @@ describe('formatNativeAgentCompareSummary', () => {
       {
         question: 'win case',
         baselineTurns: 10,
-        graphifyTurns: 5,
+        madarTurns: 5,
         baselineDurationMs: 10000,
-        graphifyDurationMs: 5000,
+        madarDurationMs: 5000,
         baselineInputTokens: 1000,
-        graphifyInputTokens: 500,
+        madarInputTokens: 500,
         reductions: {
           num_turns: 2,
           duration_ms: 2,
@@ -631,11 +631,11 @@ describe('formatNativeAgentCompareSummary', () => {
       {
         question: 'loss case',
         baselineTurns: 4,
-        graphifyTurns: 6,
+        madarTurns: 6,
         baselineDurationMs: 4000,
-        graphifyDurationMs: 6000,
+        madarDurationMs: 6000,
         baselineInputTokens: 400,
-        graphifyInputTokens: 500,
+        madarInputTokens: 500,
         reductions: {
           num_turns: 0.67,
           duration_ms: 0.67,
@@ -655,11 +655,11 @@ describe('formatNativeAgentCompareSummary', () => {
       {
         question: 'win a',
         baselineTurns: 9,
-        graphifyTurns: 3,
+        madarTurns: 3,
         baselineDurationMs: 9000,
-        graphifyDurationMs: 3000,
+        madarDurationMs: 3000,
         baselineInputTokens: 900,
-        graphifyInputTokens: 300,
+        madarInputTokens: 300,
         reductions: {
           num_turns: 3,
           duration_ms: 3,
@@ -670,11 +670,11 @@ describe('formatNativeAgentCompareSummary', () => {
       {
         question: 'win b',
         baselineTurns: 8,
-        graphifyTurns: 2,
+        madarTurns: 2,
         baselineDurationMs: 8000,
-        graphifyDurationMs: 2000,
+        madarDurationMs: 2000,
         baselineInputTokens: 800,
-        graphifyInputTokens: 200,
+        madarInputTokens: 200,
         reductions: {
           num_turns: 4,
           duration_ms: 4,
@@ -685,11 +685,11 @@ describe('formatNativeAgentCompareSummary', () => {
       {
         question: 'answer only',
         baselineTurns: 5,
-        graphifyTurns: 5,
+        madarTurns: 5,
         baselineDurationMs: 5000,
-        graphifyDurationMs: 5000,
+        madarDurationMs: 5000,
         baselineInputTokens: 500,
-        graphifyInputTokens: 500,
+        madarInputTokens: 500,
         reductions: {
           num_turns: 1,
           duration_ms: 1,
@@ -700,7 +700,7 @@ describe('formatNativeAgentCompareSummary', () => {
     ])
     result.reports[2] = {
       ...result.reports[2]!,
-      graphify: {
+      madar: {
         kind: 'answer_only',
         evidence: null,
         exit_code: 0,

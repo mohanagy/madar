@@ -5,8 +5,8 @@
   "duration_ms": 34744,
   "duration_api_ms": 34010,
   "num_turns": 3,
-  "result": "(answer body redacted from the public artifact; the question and context are graphify-ts-internal)",
-  "session_id": "2026-04-30-govalidate-graphify",
+  "result": "(answer body redacted from the public artifact; the question and context are madar-internal)",
+  "session_id": "2026-04-30-govalidate-madar",
   "total_cost_usd": 0.70,
   "model": "claude-opus-4-7",
   "usage": {

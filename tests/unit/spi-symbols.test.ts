@@ -26,7 +26,7 @@ function writeFile(root: string, rel: string, content: string): void {
 function build(root: string): SemanticProgramIndex {
   return buildSpi({
     root,
-    graphifyVersion: 'test-0.0.0',
+    madarVersion: 'test-0.0.0',
     extractorVersion: 'spi-v1.0.0-slice-1b',
     now: FROZEN_NOW,
   })
@@ -275,7 +275,7 @@ describe('buildSpi symbol layer (slice 1b of #72)', () => {
   describe('against the checked-in demo repo', () => {
     it('emits multiple symbols per source file with declares edges and no error diagnostics', () => {
       const root = pathResolve(__dirname, '../../examples/demo-repo')
-      const spi = buildSpi({ root, graphifyVersion: 'test-0.0.0', now: FROZEN_NOW })
+      const spi = buildSpi({ root, madarVersion: 'test-0.0.0', now: FROZEN_NOW })
 
       // Demo repo has classes/functions across several modules; expect at
       // least one symbol per source file.

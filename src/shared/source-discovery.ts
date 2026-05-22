@@ -20,10 +20,10 @@ export const DEFAULT_HARD_IGNORE_GLOBS = [
   '**/worktrees/**',
   '**/.repo/**',
   '**/.jj/**',
-  '**/graphify-out/**',
-  '**/.graphify/**',
-  '**/graphify-cache/**',
-  '**/graphify-report/**',
+  '**/out/**',
+  '**/.madar/**',
+  '**/madar-cache/**',
+  '**/madar-report/**',
   '**/GRAPH_REPORT.md',
   '**/node_modules/**',
   '**/.pnpm-store/**',
@@ -68,12 +68,12 @@ const FIXTURE_DOMAIN_RE = /(?:^|\/)(?:fixtures?|__fixtures__|mocks?|__mocks__)(?
 const GENERATED_DOMAIN_RE = /(?:^|\/)(?:generated|__generated__)(?:\/|$)|\.(?:generated|gen)\.[^/]+$/i
 const DOCS_DOMAIN_RE = /(?:^|\/)docs(?:\/|$)|\.(?:md|mdx|rst|txt)$/i
 const CONFIG_DOMAIN_RE = /(?:^|\/)(?:config|configs?|settings)(?:\/|$)|(?:^|\/)\.env(?:\.[^/]+)?$|(?:^|\/)(?:package|tsconfig|vite|vitest|jest|eslint|prettier|rollup|webpack|babel|docker-compose|compose|pnpm-workspace|turbo|nx)\.(?:json|ya?ml|[cm]?js|ts|mjs|cjs)$/i
-const BUILD_ARTIFACT_DOMAIN_RE = /(?:^|\/)(?:dist|build|out|coverage|graphify-out|\.next|\.nuxt|\.svelte-kit|\.astro|\.vite|\.turbo|\.nx|\.parcel-cache|\.cache|\.serverless|\.vercel|\.netlify)(?:\/|$)|\.(?:min\.(?:js|css)|map|tsbuildinfo|d\.ts\.map)$/i
+const BUILD_ARTIFACT_DOMAIN_RE = /(?:^|\/)(?:dist|build|out|coverage|out|\.next|\.nuxt|\.svelte-kit|\.astro|\.vite|\.turbo|\.nx|\.parcel-cache|\.cache|\.serverless|\.vercel|\.netlify)(?:\/|$)|\.(?:min\.(?:js|css)|map|tsbuildinfo|d\.ts\.map)$/i
 const HARD_IGNORE_REGEXES: ReadonlyArray<RegExp> = [
   /(?:^|\/)\.(?:git|hg|svn|repo|jj)(?:\/|$)/i,
   /(?:^|\/)\.worktrees(?:\/|$)/i,
   /(?:^|\/)worktrees(?:\/|$)/i,
-  /(?:^|\/)(?:graphify-out|\.graphify|graphify-cache|graphify-report)(?:\/|$)/i,
+  /(?:^|\/)(?:out|\.madar|madar-cache|madar-report)(?:\/|$)/i,
   /(?:^|\/)GRAPH_REPORT\.md$/i,
   /(?:^|\/)(?:node_modules|bower_components|vendor|dist|build|out|lib|coverage|logs|tmp|temp)(?:\/|$)/i,
   /(?:^|\/)\.pnpm-store(?:\/|$)/i,
@@ -219,9 +219,9 @@ export function isIgnoredByPatterns(path: string, root: string, patterns: readon
   return ignored
 }
 
-export function loadGraphifyignorePatterns(root: string): string[] {
+export function loadMadarignorePatterns(root: string): string[] {
   try {
-    const content = readFileSync(resolve(root, '.graphifyignore'), 'utf8')
+    const content = readFileSync(resolve(root, '.madarignore'), 'utf8')
     return content
       .split(/\r?\n/)
       .map((line) => line.trim())

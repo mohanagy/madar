@@ -2,7 +2,7 @@
 # Reproducer for the 2026-05-12 GoValidate report-generation compare benchmark.
 #
 # Drop the compare report.json from:
-#   graphify-out/compare/2026-05-12T19-18-26/report.json
+#   out/compare/2026-05-12T19-18-26/report.json
 # into this directory, then run this script to recompute the published totals.
 
 set -euo pipefail
@@ -10,14 +10,14 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 REPORT="$DIR/report.json"
 
 if [ ! -f "$REPORT" ]; then
-  echo "[graphify benchmark] $REPORT not found." >&2
-  echo "[graphify benchmark] Drop report.json from your" >&2
-  echo "[graphify benchmark] graphify-out/compare/2026-05-12T19-18-26/ here." >&2
+  echo "[madar benchmark] $REPORT not found." >&2
+  echo "[madar benchmark] Drop report.json from your" >&2
+  echo "[madar benchmark] out/compare/2026-05-12T19-18-26/ here." >&2
   exit 1
 fi
 
 if ! command -v node >/dev/null 2>&1; then
-  echo "[graphify benchmark] node is required (>= 20)." >&2
+  echo "[madar benchmark] node is required (>= 20)." >&2
   exit 1
 fi
 
@@ -48,36 +48,36 @@ function formatPercent(saved, baseline) {
   return Number(((saved / baseline) * 100).toFixed(1))
 }
 
-function formatRatio(baseline, graphify) {
-  return Number((baseline / graphify).toFixed(2))
+function formatRatio(baseline, madar) {
+  return Number((baseline / madar).toFixed(2))
 }
 
 const baseline = pickRun('baseline')
-const graphify = pickRun('graphify')
+const madar = pickRun('madar')
 
-if (baseline.kind !== 'succeeded' || graphify.kind !== 'succeeded') {
-  throw new Error('Expected succeeded baseline/graphify runs in report.json')
+if (baseline.kind !== 'succeeded' || madar.kind !== 'succeeded') {
+  throw new Error('Expected succeeded baseline/madar runs in report.json')
 }
 
 const baselineTokens = totalInputTokens(baseline.usage)
-const graphifyTokens = totalInputTokens(graphify.usage)
-const savedTokens = baselineTokens - graphifyTokens
-const savedTurns = baseline.num_turns - graphify.num_turns
-const savedLatency = baseline.duration_ms - graphify.duration_ms
+const madarTokens = totalInputTokens(madar.usage)
+const savedTokens = baselineTokens - madarTokens
+const savedTurns = baseline.num_turns - madar.num_turns
+const savedLatency = baseline.duration_ms - madar.duration_ms
 
 console.log(`report_path: ${reportPath}`)
-console.log(`input_tokens: baseline ${baselineTokens} -> graphify ${graphifyTokens}`)
+console.log(`input_tokens: baseline ${baselineTokens} -> madar ${madarTokens}`)
 console.log(`input_tokens_saved: ${savedTokens}`)
 console.log(`input_token_reduction_percent: ${formatPercent(savedTokens, baselineTokens)}%`)
-console.log(`input_token_ratio: ${formatRatio(baselineTokens, graphifyTokens)}x less`)
-console.log(`turns: baseline ${baseline.num_turns} -> graphify ${graphify.num_turns}`)
+console.log(`input_token_ratio: ${formatRatio(baselineTokens, madarTokens)}x less`)
+console.log(`turns: baseline ${baseline.num_turns} -> madar ${madar.num_turns}`)
 console.log(`turns_saved: ${savedTurns}`)
 console.log(`turn_reduction_percent: ${formatPercent(savedTurns, baseline.num_turns)}%`)
-console.log(`turn_ratio: ${formatRatio(baseline.num_turns, graphify.num_turns)}x fewer`)
-console.log(`latency_ms: baseline ${baseline.duration_ms} -> graphify ${graphify.duration_ms}`)
+console.log(`turn_ratio: ${formatRatio(baseline.num_turns, madar.num_turns)}x fewer`)
+console.log(`latency_ms: baseline ${baseline.duration_ms} -> madar ${madar.duration_ms}`)
 console.log(`latency_saved_ms: ${savedLatency}`)
 console.log(`latency_reduction_percent: ${formatPercent(savedLatency, baseline.duration_ms)}%`)
-console.log(`latency_ratio: ${formatRatio(baseline.duration_ms, graphify.duration_ms)}x faster`)
+console.log(`latency_ratio: ${formatRatio(baseline.duration_ms, madar.duration_ms)}x faster`)
 NODE
 
 echo

@@ -122,20 +122,19 @@ describe('package metadata', () => {
     expect(packageLock.packages?.['']?.version).toBe(manifest.version)
   })
 
-  it('keeps the renamed package metadata aligned with the compatibility transition', () => {
+  it('keeps the renamed package metadata aligned with the Madar-only package surface', () => {
     const manifest = loadPackageManifest()
 
     expect(manifest.name).toBe('madar')
-    expect(manifest.bin).toMatchObject({
+    expect(manifest.bin).toEqual({
       madar: 'dist/src/cli/bin.js',
-      'graphify-ts': 'dist/src/cli/bin.js',
     })
-    expect(manifest.scripts).toMatchObject({
-      'compat:prepare': expect.any(String),
-      'compat:pack:dry-run': expect.any(String),
-      'compat:publish:dry-run': expect.any(String),
-      'compat:publish:public': expect.any(String),
-    })
+    expect(Object.keys(manifest.scripts ?? {})).not.toEqual(expect.arrayContaining([
+      'compat:prepare',
+      'compat:pack:dry-run',
+      'compat:publish:dry-run',
+      'compat:publish:public',
+    ]))
   })
 
   it('documents the current package version in the changelog', () => {
@@ -158,8 +157,8 @@ describe('package metadata', () => {
   it('keeps the README command surface aligned with pack and prompt automation flows', () => {
     const readme = loadReadme()
 
-    expect(readme).toContain('graphify-ts pack')
-    expect(readme).toContain('graphify-ts prompt')
+    expect(readme).toContain('madar pack')
+    expect(readme).toContain('madar prompt')
     expect(readme).toContain('context_pack')
     expect(readme).toContain('context_prompt')
   })

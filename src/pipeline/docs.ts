@@ -167,7 +167,7 @@ function generateIndexDoc(
   const lines: string[] = []
   lines.push('# Module Documentation')
   lines.push('')
-  lines.push('Auto-generated from the graphify-ts knowledge graph.')
+  lines.push('Auto-generated from the madar knowledge graph.')
   lines.push('')
   lines.push('| Module | Nodes | File |')
   lines.push('|--------|-------|------|')

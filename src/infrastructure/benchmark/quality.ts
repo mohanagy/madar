@@ -85,7 +85,7 @@ export interface QualityOptions {
 }
 
 /**
- * Gold-standard questions for graphify-ts itself.
+ * Gold-standard questions for madar itself.
  * Each expected_labels entry is compared after the same normalization used by
  * benchmark matching (lowercase, non-alphanumeric stripped).
  */
@@ -272,7 +272,7 @@ async function evaluateRunnerBackedQuestion(
   budget: number,
   options: QualityOptions & { execTemplate: string },
 ): Promise<QualityResult> {
-  const graphPath = options.graphPath ?? 'graphify-out/graph.json'
+  const graphPath = options.graphPath ?? 'out/graph.json'
   const retrieval = qualityRetrieveContext(graph, gold.question, budget, graphPath)
   const run = await runBenchmarkPrompt({
     graphPath,
@@ -379,7 +379,7 @@ export function formatQualityReport(report: QualityReport): string {
   const corpusNote = report.corpus_source === 'estimated' ? ' estimated' : ''
   const lines = [
     '',
-    'graphify retrieval quality benchmark',
+    'madar retrieval quality benchmark',
     '─'.repeat(50),
     `  Questions:    ${report.questions_with_hits}/${report.total_questions} found expected nodes`,
     ...(report.skipped_questions > 0 ? [`  Skipped:      ${report.skipped_questions} unlabeled question(s) missing expected_labels`] : []),

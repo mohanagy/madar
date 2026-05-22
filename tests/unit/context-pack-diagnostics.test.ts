@@ -308,12 +308,12 @@ describe('computeContextPackDiagnostics', () => {
     expect(diag.warnings.map((warning) => warning.kind)).toContain('excluded_domain_selected')
   })
 
-  it('flags polluted_source_path_selected for worktree and graphify output pollution', () => {
+  it('flags polluted_source_path_selected for worktree and madar output pollution', () => {
     const diag = computeContextPackDiagnostics(makePack({
       nodes: [
         makeNode({ node_id: 'a', source_file: '/repo/src/service.ts' }),
         makeNode({ node_id: 'b', source_file: '/repo/backend/.worktrees/task-1/src/service.ts' }),
-        makeNode({ node_id: 'c', source_file: '/repo/graphify-out/graph.json' }),
+        makeNode({ node_id: 'c', source_file: '/repo/out/graph.json' }),
       ],
     }))
 

@@ -44,7 +44,7 @@ done < <(find "$WORKSPACE" \
   -not -path "*/.next/*" \
   -not -path "*/coverage/*" \
   -not -path "*/.test-artifacts/*" \
-  -not -path "*/graphify-out/*" \
+  -not -path "*/out/*" \
   | sort)
 END=$(node -e 'process.stdout.write(String(Date.now()))')
 

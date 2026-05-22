@@ -7,7 +7,7 @@ import { describe, expect, test } from 'vitest'
 import { runDoctorCommand, runStatusCommand } from '../../src/infrastructure/doctor.js'
 
 function withSandbox(run: (sandboxDir: string) => void): void {
-  const sandboxDir = mkdtempSync(join(tmpdir(), 'graphify-ts-doctor-'))
+  const sandboxDir = mkdtempSync(join(tmpdir(), 'madar-doctor-'))
   try {
     run(sandboxDir)
   } finally {
@@ -28,9 +28,9 @@ function writeText(path: string, content: string): void {
 function writeMcpServer(path: string, serversKey: 'mcpServers' | 'servers', graphPath: string): void {
   writeJson(path, {
     [serversKey]: {
-      graphify: {
+      madar: {
         command: 'npx',
-        args: ['--yes', '@mohammednagy/graphify-ts', 'serve', '--stdio', graphPath],
+        args: ['--yes', '@mohammednagy/madar', 'serve', '--stdio', graphPath],
       },
     },
   })
@@ -44,31 +44,31 @@ describe('doctor command', () => {
         now: Date.now(),
       })
 
-      expect(output).toContain('[graphify doctor] attention needed')
+      expect(output).toContain('[madar doctor] attention needed')
       expect(output).toContain('graph: missing')
-      expect(output).toContain('graphify-ts generate .')
-      expect(output).toContain('graphify-ts claude install')
-      expect(output).toContain('graphify-ts cursor install')
-      expect(output).toContain('graphify-ts gemini install')
-      expect(output).toContain('graphify-ts copilot install')
+      expect(output).toContain('madar generate .')
+      expect(output).toContain('madar claude install')
+      expect(output).toContain('madar cursor install')
+      expect(output).toContain('madar gemini install')
+      expect(output).toContain('madar copilot install')
     })
   })
 
   test('reports healthy status when graph and configs are wired', () => {
     withSandbox((sandboxDir) => {
-      const graphPath = resolve(sandboxDir, 'graphify-out', 'graph.json')
+      const graphPath = resolve(sandboxDir, 'out', 'graph.json')
       writeText(graphPath, '{"nodes":[],"edges":[]}\n')
-      writeText(resolve(sandboxDir, 'CLAUDE.md'), '## graphify-ts\n')
-      writeText(resolve(sandboxDir, 'GEMINI.md'), '## graphify-ts\n')
-      writeText(resolve(sandboxDir, '.cursor', 'rules', 'graphify-ts.mdc'), 'rule')
+      writeText(resolve(sandboxDir, 'CLAUDE.md'), '## madar\n')
+      writeText(resolve(sandboxDir, 'GEMINI.md'), '## madar\n')
+      writeText(resolve(sandboxDir, '.cursor', 'rules', 'madar.mdc'), 'rule')
       writeJson(resolve(sandboxDir, '.claude', 'settings.json'), {
         hooks: {
-          PreToolUse: [{ matcher: 'Read', hooks: [{ type: 'command', command: 'graphify-out' }] }],
+          PreToolUse: [{ matcher: 'Read', hooks: [{ type: 'command', command: 'out' }] }],
         },
       })
       writeJson(resolve(sandboxDir, '.gemini', 'settings.json'), {
         hooks: {
-          BeforeTool: [{ matcher: 'read_file', hooks: [{ type: 'command', command: 'graphify-out' }] }],
+          BeforeTool: [{ matcher: 'read_file', hooks: [{ type: 'command', command: 'out' }] }],
         },
       })
       writeMcpServer(resolve(sandboxDir, '.mcp.json'), 'mcpServers', graphPath)
@@ -84,27 +84,27 @@ describe('doctor command', () => {
         now: Date.now(),
       })
 
-      expect(doctor).toContain('[graphify doctor] healthy')
+      expect(doctor).toContain('[madar doctor] healthy')
       expect(doctor).toContain('claude: configured')
       expect(doctor).toContain('cursor: configured')
       expect(doctor).toContain('gemini: configured')
       expect(doctor).toContain('copilot: configured')
       expect(doctor).toContain('next commands: none')
 
-      expect(status).toContain('[graphify status] healthy')
+      expect(status).toContain('[madar status] healthy')
       expect(status).toContain('next none')
     })
   })
 
   test('flags stale mcp path and recommends reinstall', () => {
     withSandbox((sandboxDir) => {
-      const graphPath = resolve(sandboxDir, 'graphify-out', 'graph.json')
-      const wrongGraphPath = resolve(sandboxDir, 'graphify-out', 'old-graph.json')
+      const graphPath = resolve(sandboxDir, 'out', 'graph.json')
+      const wrongGraphPath = resolve(sandboxDir, 'out', 'old-graph.json')
       writeText(graphPath, '{"nodes":[],"edges":[]}\n')
-      writeText(resolve(sandboxDir, 'CLAUDE.md'), '## graphify-ts\n')
+      writeText(resolve(sandboxDir, 'CLAUDE.md'), '## madar\n')
       writeJson(resolve(sandboxDir, '.claude', 'settings.json'), {
         hooks: {
-          PreToolUse: [{ matcher: 'Read', hooks: [{ type: 'command', command: 'graphify-out' }] }],
+          PreToolUse: [{ matcher: 'Read', hooks: [{ type: 'command', command: 'out' }] }],
         },
       })
       writeMcpServer(resolve(sandboxDir, '.mcp.json'), 'mcpServers', wrongGraphPath)
@@ -117,7 +117,7 @@ describe('doctor command', () => {
       expect(output).toContain('claude: partial')
       expect(output).toContain('.mcp.json')
       expect(output).toContain('stale')
-      expect(output).toContain('graphify-ts claude install')
+      expect(output).toContain('madar claude install')
     })
   })
 })

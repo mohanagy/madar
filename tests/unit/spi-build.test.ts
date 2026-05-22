@@ -22,7 +22,7 @@ function writeFile(root: string, rel: string, content: string): void {
 function build(root: string): SemanticProgramIndex {
   return buildSpiFileLayer({
     root,
-    graphifyVersion: 'test-0.0.0',
+    madarVersion: 'test-0.0.0',
     extractorVersion: 'spi-v1.0.0-slice-1a',
     now: FROZEN_NOW,
   })
@@ -59,7 +59,7 @@ describe('buildSpiFileLayer (slice 1a of #72)', () => {
       expect(spi.generated_at).toBe('2026-05-10T12:34:56.000Z')
       expect(spi.workspace.root).toBe(pathResolve(sandbox))
       expect(spi.workspace.extractor_version).toBe('spi-v1.0.0-slice-1a')
-      expect(spi.workspace.graphify_version).toBe('test-0.0.0')
+      expect(spi.workspace.madar_version).toBe('test-0.0.0')
       expect(spi.workspace.fingerprint).toMatch(/^[a-f0-9]{16}$/)
     })
 
@@ -91,7 +91,7 @@ describe('buildSpiFileLayer (slice 1a of #72)', () => {
     })
 
     it('skips nested worktrees and generated/build outputs while keeping test sources indexable', () => {
-      for (const dir of ['node_modules', 'dist', 'build', '.next', 'coverage', '.git', 'graphify-out', '.test-artifacts', '.worktrees']) {
+      for (const dir of ['node_modules', 'dist', 'build', '.next', 'coverage', '.git', 'out', '.test-artifacts', '.worktrees']) {
         writeFile(sandbox, `${dir}/leak.ts`, 'export const x = 1\n')
       }
       writeFile(sandbox, 'backend/.worktrees/task-1/src/duplicate.ts', 'export const duplicate = 1\n')
@@ -193,7 +193,7 @@ describe('buildSpiFileLayer (slice 1a of #72)', () => {
   describe('against the checked-in demo repo', () => {
     it('produces a populated SPI for examples/demo-repo with cross-module imports resolved', () => {
       const root = pathResolve(__dirname, '../../examples/demo-repo')
-      const spi = buildSpiFileLayer({ root, graphifyVersion: 'test-0.0.0', now: FROZEN_NOW })
+      const spi = buildSpiFileLayer({ root, madarVersion: 'test-0.0.0', now: FROZEN_NOW })
 
       expect(spi.files.length).toBeGreaterThan(5)
       // Every file path is workspace-relative, no leading slash, POSIX.

@@ -8,7 +8,7 @@ import { KnowledgeGraph } from '../../src/contracts/graph.js'
 import { bfs, communitiesFromGraph, dfs, getNode, loadGraph, queryGraph, scoreNodes, semanticAnomaliesSummary, subgraphToText } from '../../src/runtime/serve.js'
 
 function withTempDir(callback: (tempDir: string) => void): void {
-  const tempDir = mkdtempSync(join(tmpdir(), 'graphify-ts-serve-'))
+  const tempDir = mkdtempSync(join(tmpdir(), 'madar-serve-'))
   try {
     callback(tempDir)
   } finally {
@@ -213,7 +213,7 @@ describe('subgraphToText', () => {
 describe('loadGraph', () => {
   test('loads graph json written by the TS exporter format', () => {
     withTempDir((tempDir) => {
-      const outDir = join(tempDir, 'graphify-out')
+      const outDir = join(tempDir, 'out')
       const graphPath = join(outDir, 'graph.json')
       mkdirSync(outDir, { recursive: true })
       const graphData = {
@@ -285,7 +285,7 @@ describe('loadGraph', () => {
 
   test('restores directed graph metadata when loading exported graph json', () => {
     withTempDir((tempDir) => {
-      const outDir = join(tempDir, 'graphify-out')
+      const outDir = join(tempDir, 'out')
       const graphPath = join(outDir, 'graph.json')
       mkdirSync(outDir, { recursive: true })
       const graphData = {
@@ -309,7 +309,7 @@ describe('loadGraph', () => {
 
   test('restores stored community labels for runtime bridge context', () => {
     withTempDir((tempDir) => {
-      const outDir = join(tempDir, 'graphify-out')
+      const outDir = join(tempDir, 'out')
       const graphPath = join(outDir, 'graph.json')
       mkdirSync(outDir, { recursive: true })
       writeFileSync(
@@ -341,14 +341,14 @@ describe('loadGraph', () => {
 
   test('throws when the graph file is missing', () => {
     withTempDir((tempDir) => {
-      const outDir = join(tempDir, 'graphify-out')
+      const outDir = join(tempDir, 'out')
       expect(() => loadGraph(join(outDir, 'missing.json'))).toThrow(/graph/i)
     })
   })
 
   test('rejects invalid json content', () => {
     withTempDir((tempDir) => {
-      const outDir = join(tempDir, 'graphify-out')
+      const outDir = join(tempDir, 'out')
       const graphPath = join(outDir, 'graph.json')
       mkdirSync(outDir, { recursive: true })
       writeFileSync(graphPath, '{bad-json', 'utf8')
@@ -358,7 +358,7 @@ describe('loadGraph', () => {
 
   test('summarizes semantic anomalies stored in graph artifacts', () => {
     withTempDir((tempDir) => {
-      const outDir = join(tempDir, 'graphify-out')
+      const outDir = join(tempDir, 'out')
       const graphPath = join(outDir, 'graph.json')
       mkdirSync(outDir, { recursive: true })
       writeFileSync(
@@ -394,7 +394,7 @@ describe('loadGraph', () => {
 
   test('ignores oversized stored anomaly payloads and sanitizes anomaly text', () => {
     withTempDir((tempDir) => {
-      const outDir = join(tempDir, 'graphify-out')
+      const outDir = join(tempDir, 'out')
       const graphPath = join(outDir, 'graph.json')
       mkdirSync(outDir, { recursive: true })
       writeFileSync(
