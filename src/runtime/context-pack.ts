@@ -702,7 +702,8 @@ function looksLikeBarrelFile(sourceFile: string): boolean {
 }
 
 function looksGenerated(sourceFile: string, label: string, snippet: string | null): boolean {
-  if (/generated|__snapshots__|\.min\.|dist\/|build\/|coverage\/|graphify-out\//i.test(sourceFile)) {
+  const normalizedSourceFile = sourceFile.replace(/\\/g, '/')
+  if (/(?:^|\/)(?:__snapshots__|dist|build|coverage|out)(?:\/|$)/i.test(normalizedSourceFile) || /generated|\.min\./i.test(normalizedSourceFile)) {
     return true
   }
 
@@ -711,7 +712,7 @@ function looksGenerated(sourceFile: string, label: string, snippet: string | nul
 }
 
 function looksArtifact(sourceFile: string): boolean {
-  return /(?:^|\/)(?:package-lock\.json|pnpm-lock\.yaml|yarn\.lock|dist\/|build\/|coverage\/|graphify-out\/)/i.test(sourceFile)
+  return /(?:^|\/)(?:package-lock\.json|pnpm-lock\.yaml|yarn\.lock|dist\/|build\/|coverage\/|out\/)/i.test(sourceFile)
 }
 
 function looksScriptMigration(sourceFile: string, label: string): boolean {

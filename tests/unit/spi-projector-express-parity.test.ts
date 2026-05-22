@@ -22,7 +22,7 @@ function writeFile(root: string, rel: string, content: string): void {
 }
 
 function projectFromSpi(root: string): ExtractionData {
-  const spi = buildSpi({ root, graphifyVersion: 'test-0.0.0', now: FROZEN_NOW })
+  const spi = buildSpi({ root, madarVersion: 'test-0.0.0', now: FROZEN_NOW })
   return projectSpiToExtraction(spi, { root })
 }
 

@@ -2,6 +2,11 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+type PackageJson = {
+  name?: unknown
+  version?: unknown
+}
+
 export function findPackageRoot(startDirectory = dirname(fileURLToPath(import.meta.url))): string {
   let currentDirectory = resolve(startDirectory)
 
@@ -13,20 +18,33 @@ export function findPackageRoot(startDirectory = dirname(fileURLToPath(import.me
 
     const parentDirectory = dirname(currentDirectory)
     if (parentDirectory === currentDirectory) {
-      throw new Error('Could not locate package root from graphify-ts package metadata helper')
+      throw new Error('Could not locate package root from package metadata helper')
     }
     currentDirectory = parentDirectory
   }
 }
 
-export function readPackageVersion(packageRoot = findPackageRoot()): string {
+function readPackageJson(packageRoot: string): PackageJson | null {
   try {
-    const packageJson = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')) as { version?: unknown }
-    if (typeof packageJson.version === 'string' && packageJson.version.trim().length > 0) {
-      return packageJson.version
-    }
+    return JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')) as PackageJson
   } catch {
-    // ignore and fall back below
+    return null
+  }
+}
+
+export function readPackageName(packageRoot = findPackageRoot()): string {
+  const packageJson = readPackageJson(packageRoot)
+  if (typeof packageJson?.name === 'string' && packageJson.name.trim().length > 0) {
+    return packageJson.name
+  }
+
+  return 'unknown'
+}
+
+export function readPackageVersion(packageRoot = findPackageRoot()): string {
+  const packageJson = readPackageJson(packageRoot)
+  if (typeof packageJson?.version === 'string' && packageJson.version.trim().length > 0) {
+    return packageJson.version
   }
 
   return 'unknown'

@@ -36,7 +36,7 @@
 //
 // === What's intentionally deferred to slice 1c-ii ===
 //
-// Full byte-equivalence on the checked-in `examples/demo-repo/graphify-out/
+// Full byte-equivalence on the checked-in `examples/demo-repo/out/
 // graph.json` golden fixture requires reproducing every legacy extractor
 // emission decision: framework-specific node kinds (Express/NestJS/Next.js/
 // React Router/Redux), cross-file resolution heuristics, generic call

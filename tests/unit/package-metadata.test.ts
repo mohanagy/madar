@@ -4,12 +4,15 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 interface PackageManifest {
+  bin?: Record<string, string>
   description?: string
   dependencies?: Record<string, string>
   devDependencies?: Record<string, string>
   keywords?: string[]
   license?: string
+  name?: string
   overrides?: Record<string, string>
+  scripts?: Record<string, string>
   version?: string
 }
 
@@ -119,6 +122,21 @@ describe('package metadata', () => {
     expect(packageLock.packages?.['']?.version).toBe(manifest.version)
   })
 
+  it('keeps the renamed package metadata aligned with the Madar-only package surface', () => {
+    const manifest = loadPackageManifest()
+
+    expect(manifest.name).toBe('madar')
+    expect(manifest.bin).toEqual({
+      madar: 'dist/src/cli/bin.js',
+    })
+    expect(Object.keys(manifest.scripts ?? {})).not.toEqual(expect.arrayContaining([
+      'compat:prepare',
+      'compat:pack:dry-run',
+      'compat:publish:dry-run',
+      'compat:publish:public',
+    ]))
+  })
+
   it('documents the current package version in the changelog', () => {
     const manifest = loadPackageManifest()
 
@@ -139,8 +157,8 @@ describe('package metadata', () => {
   it('keeps the README command surface aligned with pack and prompt automation flows', () => {
     const readme = loadReadme()
 
-    expect(readme).toContain('graphify-ts pack')
-    expect(readme).toContain('graphify-ts prompt')
+    expect(readme).toContain('madar pack')
+    expect(readme).toContain('madar prompt')
     expect(readme).toContain('context_pack')
     expect(readme).toContain('context_prompt')
   })

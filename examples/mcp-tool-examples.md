@@ -1,6 +1,6 @@
 # MCP Tool Examples
 
-These examples show what your AI agent sees when it calls graphify-ts MCP tools. Think of this surface as the MCP half of the graphify-ts **context plane**: retrieval for discovery, impact for blast radius, and context-compiler tools for compact packs and provider-ready prompts. All output is real data from a production codebase.
+These examples show what your AI agent sees when it calls madar MCP tools. Think of this surface as the MCP half of the madar **context plane**: retrieval for discovery, impact for blast radius, and context-compiler tools for compact packs and provider-ready prompts. All output is real data from a production codebase.
 
 ## context_pack — Compact Context Pack
 
@@ -29,7 +29,7 @@ These examples show what your AI agent sees when it calls graphify-ts MCP tools.
   "task": "explain",
   "prompt": "how does payment processing work?",
   "budget": 2000,
-  "graph_path": "graphify-out/graph.json",
+  "graph_path": "out/graph.json",
   "pack": {
     "question": "how does payment processing work?",
     "token_count": 1847,
@@ -226,7 +226,7 @@ These examples show what your AI agent sees when it calls graphify-ts MCP tools.
   "provider": "claude",
   "task": "explain",
   "prompt": "how does payment processing work?",
-  "graph_path": "graphify-out/graph.json",
+  "graph_path": "out/graph.json",
   "compiled": {
     "provider": "claude",
     "format": "session_payload",

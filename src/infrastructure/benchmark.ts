@@ -276,7 +276,7 @@ function totalTokenLabel(result: BenchmarkSuccessResult): string | null {
 }
 
 export function runBenchmark(
-  graphPath = 'graphify-out/graph.json',
+  graphPath = 'out/graph.json',
   corpusWords?: number | null,
   questions?: BenchmarkQuestionInput[],
   options: BenchmarkRunOptions = {},
@@ -360,7 +360,7 @@ export function printBenchmark(result: BenchmarkResult): void {
     return
   }
 
-  console.log('\ngraphify runner-backed benchmark')
+  console.log('\nmadar runner-backed benchmark')
   console.log(`${'─'.repeat(50)}`)
   const corpusNote = result.corpus_source === 'estimated' ? ' (estimated from graph size)' : ''
   console.log(`  Corpus baseline: ${result.corpus_words.toLocaleString()} words → ~${result.corpus_tokens.toLocaleString()} tokens${corpusNote}`)

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { federate } from '../../src/pipeline/federate.js'
 
 function withTempDir(fn: (dir: string) => void): void {
-  const dir = join(tmpdir(), `graphify-federate-test-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+  const dir = join(tmpdir(), `madar-federate-test-${Date.now()}-${Math.random().toString(36).slice(2)}`)
   mkdirSync(dir, { recursive: true })
   try {
     fn(dir)
@@ -15,7 +15,7 @@ function withTempDir(fn: (dir: string) => void): void {
 }
 
 function createMiniGraph(dir: string, repoName: string, nodes: Array<{ id: string; label: string }>, edges: Array<[string, string]>): string {
-  const repoDir = join(dir, repoName, 'graphify-out')
+  const repoDir = join(dir, repoName, 'out')
   mkdirSync(repoDir, { recursive: true })
 
   const graphData = {

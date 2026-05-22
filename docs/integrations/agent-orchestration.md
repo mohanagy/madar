@@ -1,6 +1,6 @@
 # Agent orchestration guide
 
-`graphify-ts` works best when it is the shared context layer for your local agents, not another agent doing its own independent repo discovery.
+`madar` works best when it is the shared context layer for your local agents, not another agent doing its own independent repo discovery.
 
 This guide is intentionally conservative:
 
@@ -13,29 +13,29 @@ This guide is intentionally conservative:
 
 | Surface | Use it when | Avoid it when |
 |---|---|---|
-| Installed agent rules (`graphify-ts <agent> install`) | You want the agent to keep checking the graph automatically during normal work | You only need a one-off exported prompt |
+| Installed agent rules (`madar <agent> install`) | You want the agent to keep checking the graph automatically during normal work | You only need a one-off exported prompt |
 | MCP tools | The agent supports MCP and can ask follow-up questions inside the same session | You need a static handoff to another CLI or a saved prompt artifact |
-| `graphify-ts pack` | You want a compact task-specific context bundle before broad search or before dispatching workers | You need provider-specific prompt formatting |
-| `graphify-ts prompt` | You need a provider-ready compiled prompt for a non-MCP CLI or proof workflow | The agent already has a live MCP connection and session state |
+| `madar pack` | You want a compact task-specific context bundle before broad search or before dispatching workers | You need provider-specific prompt formatting |
+| `madar prompt` | You need a provider-ready compiled prompt for a non-MCP CLI or proof workflow | The agent already has a live MCP connection and session state |
 
 ## Recommended workflow by agent
 
 ### Claude Code
 
-Use `graphify-ts claude install` when Claude is your primary interactive coding agent. Claude works best as an MCP-first agent:
+Use `madar claude install` when Claude is your primary interactive coding agent. Claude works best as an MCP-first agent:
 
-1. `graphify-ts generate .`
-2. `graphify-ts claude install`
+1. `madar generate .`
+2. `madar claude install`
 3. Ask the codebase question normally and let Claude use MCP tools like `retrieve`, `impact`, `relevant_files`, or `implementation_checklist`.
 
 Use `pack` only when you want to hand the narrowed context to another agent or when you want a deterministic snapshot before parallel work.
 
 ### Codex CLI
 
-Use `graphify-ts codex install` when Codex is participating in broad repo work. Codex should stay context-pack-first:
+Use `madar codex install` when Codex is participating in broad repo work. Codex should stay context-pack-first:
 
-1. `graphify-ts generate .`
-2. `graphify-ts pack "<task>" --task explain`
+1. `madar generate .`
+2. `madar pack "<task>" --task explain`
 3. Start Codex with the installed AGENTS.md + hook guidance
 4. Open only the files or risks identified by the pack before broad shell search or worker dispatch
 
@@ -43,19 +43,19 @@ Use `prompt` only if you need a one-shot provider-formatted prompt instead of Co
 
 ### GitHub Copilot CLI
 
-Use `graphify-ts copilot install` when Copilot CLI is your shell-facing agent. Prefer the MCP path for explain, review, and impact questions so Copilot can query the graph directly instead of repeatedly reading files.
+Use `madar copilot install` when Copilot CLI is your shell-facing agent. Prefer the MCP path for explain, review, and impact questions so Copilot can query the graph directly instead of repeatedly reading files.
 
 Use `pack` when you want to freeze the current scope before handing the task to another tool or another agent.
 
 ### Cursor
 
-Use `graphify-ts cursor install` when Cursor is the editing surface and you want graph-backed navigation inside the IDE. Cursor works well as the implementation/editor agent while another agent handles broader discovery.
+Use `madar cursor install` when Cursor is the editing surface and you want graph-backed navigation inside the IDE. Cursor works well as the implementation/editor agent while another agent handles broader discovery.
 
 If you already know the scope from Claude or Codex, hand Cursor the narrowed file list or `pack` output instead of making Cursor rediscover the repo from scratch.
 
 ### Gemini
 
-Use `graphify-ts gemini install` if you want Gemini CLI to query the graph through MCP. Use `graphify-ts prompt ... --provider gemini` when you want a provider-ready prompt for one-shot runs, proof workflows, or environments where MCP is not available.
+Use `madar gemini install` if you want Gemini CLI to query the graph through MCP. Use `madar prompt ... --provider gemini` when you want a provider-ready prompt for one-shot runs, proof workflows, or environments where MCP is not available.
 
 For Gemini, `prompt` is the better fit when you care more about a stable exported prompt than live tool use.
 
@@ -63,7 +63,7 @@ For Gemini, `prompt` is the better fit when you care more about a stable exporte
 
 The most common waste pattern is making several agents rediscover the same task independently. Prefer this order:
 
-1. Build or refresh the graph once: `graphify-ts generate .`
+1. Build or refresh the graph once: `madar generate .`
 2. Pick one discovery surface:
    - MCP for interactive graph-backed sessions
    - `pack` for compact task handoff
@@ -76,7 +76,7 @@ Practical rules:
 - Do not use `compare` or `review-compare` as routine task entrypoints; they are proof workflows.
 - Refresh the graph after structural code changes before sending the same task to another agent.
 - Let one agent own broad discovery. Other agents should receive file lists, task framing, or compact graph context.
-- If the graph tools are unavailable or stale, read `graphify-out/GRAPH_REPORT.md` before falling back to raw file exploration.
+- If the graph tools are unavailable or stale, read `out/GRAPH_REPORT.md` before falling back to raw file exploration.
 
 ## Task examples
 
@@ -85,8 +85,8 @@ Practical rules:
 **Best default:** Claude Code, Copilot CLI, Cursor, or Gemini over MCP
 
 ```bash
-graphify-ts generate .
-graphify-ts claude install
+madar generate .
+madar claude install
 ```
 
 Then ask: “How does auth work?”
@@ -94,9 +94,9 @@ Then ask: “How does auth work?”
 **Codex variant**
 
 ```bash
-graphify-ts generate .
-graphify-ts pack "How does auth work?" --task explain
-graphify-ts codex install
+madar generate .
+madar pack "How does auth work?" --task explain
+madar codex install
 ```
 
 Use the pack to decide what Codex should open first.
@@ -106,8 +106,8 @@ Use the pack to decide what Codex should open first.
 Use graph-backed review surfaces first:
 
 ```bash
-graphify-ts generate .
-graphify-ts review-compare graphify-out/graph.json --exec 'cat {prompt_file} | claude -p' --yes
+madar generate .
+madar review-compare out/graph.json --exec 'cat {prompt_file} | claude -p' --yes
 ```
 
 For live review work, prefer `pr_impact` / review-oriented MCP tools when the agent supports MCP. If a second agent needs the same review scope, hand it the compact review context instead of re-running diff discovery.
@@ -117,8 +117,8 @@ For live review work, prefer `pr_impact` / review-oriented MCP tools when the ag
 Use the graph directly for blast radius:
 
 ```bash
-graphify-ts generate .
-graphify-ts pack "What breaks if I change AuthService.login?" --task impact
+madar generate .
+madar pack "What breaks if I change AuthService.login?" --task impact
 ```
 
 For MCP-capable agents, ask the impact question normally and let the agent use `impact` or `risk_map`. For non-MCP handoffs, use the impact pack as the shared artifact.
@@ -134,8 +134,8 @@ Use a lead-agent / worker-agent split:
 Example:
 
 ```bash
-graphify-ts generate .
-graphify-ts pack "Implement password-reset audit logging" --task explain
+madar generate .
+madar pack "Implement password-reset audit logging" --task explain
 ```
 
 Good follow-up flow:
@@ -148,7 +148,7 @@ Good follow-up flow:
 
 Safe guidance:
 
-- graphify-ts can reduce repeated repo discovery across multiple local agents
+- madar can reduce repeated repo discovery across multiple local agents
 - MCP is best for live interactive workflows
 - `pack` is best for compact task handoff
 - `prompt` is best for provider-ready export

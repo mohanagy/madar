@@ -8,11 +8,11 @@ import { getUpdateNotification } from '../../src/shared/update-notifier.js'
 
 describe('update notifier', () => {
   it('returns a notice and caches the latest version when a newer release exists', async () => {
-    const cacheRoot = mkdtempSync(join(tmpdir(), 'graphify-update-notifier-'))
+    const cacheRoot = mkdtempSync(join(tmpdir(), 'madar-update-notifier-'))
 
     try {
       const notice = await getUpdateNotification({
-        packageName: '@mohammednagy/graphify-ts',
+        packageName: 'madar',
         currentVersion: '0.22.8',
         cacheRoot,
         stdoutIsTTY: true,
@@ -23,9 +23,10 @@ describe('update notifier', () => {
 
       expect(notice).toContain('0.22.8')
       expect(notice).toContain('0.22.9')
-      expect(notice).toContain('npm i -g @mohammednagy/graphify-ts@latest')
+      expect(notice).toContain('npm i -g madar@latest')
+      expect(notice).toContain('madar claude install | madar cursor install | madar gemini install')
 
-      const cacheFile = join(cacheRoot, 'graphify-ts', 'update-check.json')
+      const cacheFile = join(cacheRoot, 'madar', 'update-check.json')
       expect(JSON.parse(readFileSync(cacheFile, 'utf8'))).toEqual({
         checked_at: 1_700_000_000_000,
         latest_version: '0.22.9',
@@ -37,12 +38,12 @@ describe('update notifier', () => {
   })
 
   it('uses a fresh cache instead of refetching the registry or repeating the banner', async () => {
-    const cacheRoot = mkdtempSync(join(tmpdir(), 'graphify-update-notifier-'))
+    const cacheRoot = mkdtempSync(join(tmpdir(), 'madar-update-notifier-'))
     let fetchCalls = 0
 
     try {
       const firstNotice = await getUpdateNotification({
-        packageName: '@mohammednagy/graphify-ts',
+        packageName: 'madar',
         currentVersion: '0.22.8',
         cacheRoot,
         stdoutIsTTY: true,
@@ -55,7 +56,7 @@ describe('update notifier', () => {
       })
 
       const secondNotice = await getUpdateNotification({
-        packageName: '@mohammednagy/graphify-ts',
+        packageName: 'madar',
         currentVersion: '0.22.8',
         cacheRoot,
         stdoutIsTTY: true,
@@ -76,11 +77,11 @@ describe('update notifier', () => {
   })
 
   it('preserves the refreshed checked_at timestamp when a stale cache is re-notified', async () => {
-    const cacheRoot = mkdtempSync(join(tmpdir(), 'graphify-update-notifier-'))
-    const cacheFile = join(cacheRoot, 'graphify-ts', 'update-check.json')
+    const cacheRoot = mkdtempSync(join(tmpdir(), 'madar-update-notifier-'))
+    const cacheFile = join(cacheRoot, 'madar', 'update-check.json')
 
     try {
-      mkdirSync(join(cacheRoot, 'graphify-ts'), { recursive: true })
+      mkdirSync(join(cacheRoot, 'madar'), { recursive: true })
       writeFileSync(cacheFile, JSON.stringify({
         checked_at: 1_700_000_000_000,
         latest_version: '0.22.9',
@@ -88,7 +89,7 @@ describe('update notifier', () => {
       }))
 
       const notice = await getUpdateNotification({
-        packageName: '@mohammednagy/graphify-ts',
+        packageName: 'madar',
         currentVersion: '0.22.8',
         cacheRoot,
         stdoutIsTTY: true,
@@ -109,12 +110,12 @@ describe('update notifier', () => {
   })
 
   it('writes a backoff cache entry when the registry refresh fails', async () => {
-    const cacheRoot = mkdtempSync(join(tmpdir(), 'graphify-update-notifier-'))
-    const cacheFile = join(cacheRoot, 'graphify-ts', 'update-check.json')
+    const cacheRoot = mkdtempSync(join(tmpdir(), 'madar-update-notifier-'))
+    const cacheFile = join(cacheRoot, 'madar', 'update-check.json')
     let fetchCalls = 0
 
     try {
-      mkdirSync(join(cacheRoot, 'graphify-ts'), { recursive: true })
+      mkdirSync(join(cacheRoot, 'madar'), { recursive: true })
       writeFileSync(cacheFile, JSON.stringify({
         checked_at: 1_700_000_000_000,
         latest_version: '0.22.9',
@@ -122,7 +123,7 @@ describe('update notifier', () => {
       }))
 
       const notice = await getUpdateNotification({
-        packageName: '@mohammednagy/graphify-ts',
+        packageName: 'madar',
         currentVersion: '0.22.8',
         cacheRoot,
         stdoutIsTTY: true,
@@ -135,7 +136,7 @@ describe('update notifier', () => {
       })
 
       const secondNotice = await getUpdateNotification({
-        packageName: '@mohammednagy/graphify-ts',
+        packageName: 'madar',
         currentVersion: '0.22.8',
         cacheRoot,
         stdoutIsTTY: true,
@@ -161,12 +162,12 @@ describe('update notifier', () => {
   })
 
   it('skips checks when disabled or non-interactive', async () => {
-    const cacheRoot = mkdtempSync(join(tmpdir(), 'graphify-update-notifier-'))
+    const cacheRoot = mkdtempSync(join(tmpdir(), 'madar-update-notifier-'))
     let fetchCalls = 0
 
     try {
       await expect(getUpdateNotification({
-        packageName: '@mohammednagy/graphify-ts',
+        packageName: 'madar',
         currentVersion: '0.22.8',
         cacheRoot,
         stdoutIsTTY: false,
@@ -178,11 +179,11 @@ describe('update notifier', () => {
       })).resolves.toBeNull()
 
       await expect(getUpdateNotification({
-        packageName: '@mohammednagy/graphify-ts',
+        packageName: 'madar',
         currentVersion: '0.22.8',
         cacheRoot,
         stdoutIsTTY: true,
-        env: { GRAPHIFY_DISABLE_UPDATE_NOTIFIER: '1' },
+        env: { MADAR_DISABLE_UPDATE_NOTIFIER: '1' },
         fetchText: async () => {
           fetchCalls += 1
           return JSON.stringify({ version: '0.22.9' })

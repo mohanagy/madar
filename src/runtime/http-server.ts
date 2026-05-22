@@ -67,7 +67,7 @@ function renderIndex(outputDir: string): string {
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>graphify-ts runtime</title>
+  <title>madar runtime</title>
   <style>
     body { font-family: Arial, sans-serif; margin: 2rem; line-height: 1.5; }
     code { background: #f4f4f4; padding: 0.125rem 0.25rem; border-radius: 0.25rem; }
@@ -75,7 +75,7 @@ function renderIndex(outputDir: string): string {
   </style>
 </head>
 <body>
-  <h1>graphify-ts runtime</h1>
+  <h1>madar runtime</h1>
   <p>Serving graph artifacts from <code>${outputDir}</code>.</p>
   <ul>
     <li><a href="/graph.html">graph.html</a></li>
@@ -217,7 +217,7 @@ export async function startGraphServer(options: ServeGraphOptions = {}): Promise
   const output = defaultLogger(options.logger)
   const host = options.host ?? '127.0.0.1'
   const port = parsePort(options.port)
-  const graphPath = validateGraphPath(options.graphPath ?? 'graphify-out/graph.json')
+  const graphPath = validateGraphPath(options.graphPath ?? 'out/graph.json')
   const outputDir = graphOutputDirectory(graphPath)
   const graph = createGraphLoader(graphPath)
   const rateLimitState = new Map<string, { count: number; resetAt: number }>()
@@ -242,7 +242,7 @@ export async function startGraphServer(options: ServeGraphOptions = {}): Promise
       if (url.pathname === '/graph.html') {
         const htmlPath = join(outputDir, 'graph.html')
         if (!existsSync(htmlPath)) {
-          sendText(response, 404, 'graph.html not found. Re-run graphify-ts generate without --no-html.')
+          sendText(response, 404, 'graph.html not found. Re-run madar generate without --no-html.')
           return
         }
         sendText(response, 200, readUtf8File(htmlPath), 'text/html; charset=utf-8', resourceFreshnessHeaders(resourceFreshnessMetadata(graphPath, htmlPath)))
@@ -350,7 +350,7 @@ export async function startGraphServer(options: ServeGraphOptions = {}): Promise
         return
       }
 
-      output.error(`[graphify serve] Request failed: ${message}`)
+      output.error(`[madar serve] Request failed: ${message}`)
       sendText(response, 500, 'Internal server error')
     }
   })
@@ -402,12 +402,12 @@ export async function startGraphServer(options: ServeGraphOptions = {}): Promise
 
 export async function serveGraph(options: ServeGraphOptions = {}): Promise<void> {
   const output = defaultLogger(options.logger)
-  const graphPath = validateGraphPath(options.graphPath ?? 'graphify-out/graph.json')
+  const graphPath = validateGraphPath(options.graphPath ?? 'out/graph.json')
   const handle = await startGraphServer(options)
 
-  output.log(`[graphify serve] Serving ${graphPath}`)
-  output.log(`[graphify serve] Runtime available at ${handle.url}`)
-  output.log('[graphify serve] Press Ctrl+C to stop.')
+  output.log(`[madar serve] Serving ${graphPath}`)
+  output.log(`[madar serve] Runtime available at ${handle.url}`)
+  output.log('[madar serve] Press Ctrl+C to stop.')
 
   await new Promise<void>((resolvePromise) => {
     if (options.signal?.aborted) {

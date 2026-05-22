@@ -1,14 +1,14 @@
 # 2026-05-10 — Backend-only vs monorepo context-quality spike
 
-> **Tracking issue:** [#69](https://github.com/mohanagy/graphify-ts/issues/69) — *Spike: benchmark backend-only vs monorepo context quality and runtime.*
-> **Milestone:** `v0.14-substrate`. This spike's findings should inform [#70](https://github.com/mohanagy/graphify-ts/issues/70) (SPI v1 design).
+> **Tracking issue:** [#69](https://github.com/mohanagy/madar/issues/69) — *Spike: benchmark backend-only vs monorepo context quality and runtime.*
+> **Milestone:** `v0.14-substrate`. This spike's findings should inform [#70](https://github.com/mohanagy/madar/issues/70) (SPI v1 design).
 
 ## Why this exists
 
 Recent real usage on GoValidate showed an inconsistent shape:
 
-- Running `graphify-ts generate` on **only the backend folder** was *slower* and produced *worse / higher-token* answers.
-- Running `graphify-ts generate` on the **full monorepo** was *faster* and produced *better / lower-token* answers.
+- Running `madar generate` on **only the backend folder** was *slower* and produced *worse / higher-token* answers.
+- Running `madar generate` on the **full monorepo** was *faster* and produced *better / lower-token* answers.
 
 The hypothesis we want to test or falsify is that the problem is **methodological** (graph topology, hub nodes, workspace boundaries, missing semantic context) rather than just raw repo size.
 
@@ -20,7 +20,7 @@ For each prompt in [`prompts.json`](./prompts.json), the harness:
 
 1. Generates a graph for the **backend-only** path (e.g. `apps/backend` or `packages/api`).
 2. Generates a graph for the **monorepo** path (the workspace root).
-3. Runs `graphify-ts compare <prompt> --baseline-mode native_agent` against the **backend graph** — captures provider-reported token / turn / latency deltas vs the file-tools-only baseline.
+3. Runs `madar compare <prompt> --baseline-mode native_agent` against the **backend graph** — captures provider-reported token / turn / latency deltas vs the file-tools-only baseline.
 4. Runs the same `compare` against the **monorepo graph** — same baseline shape.
 5. Writes both `compare` reports plus a side-by-side `summary.json` under `results/<timestamp>/`.
 
@@ -28,7 +28,7 @@ Both runs use the **same model**, the **same prompt**, and the **same `--exec`**
 
 ## How to run
 
-> **You need:** the `graphify-ts` CLI on PATH, an installed terminal LLM runner (e.g. `claude -p`), and a TS/Node monorepo to test against. Output bundles land in `results/` and are gitignored — keep them local until you decide to publish a specific run.
+> **You need:** the `madar` CLI on PATH, an installed terminal LLM runner (e.g. `claude -p`), and a TS/Node monorepo to test against. Output bundles land in `results/` and are gitignored — keep them local until you decide to publish a specific run.
 
 Quick run (3 prompts, ~12 model calls):
 
@@ -63,13 +63,13 @@ This is a **measurement spike**, not an engine rewrite. The deliverable per #69 
 | Question | Where to look in the harness output |
 |---|---|
 | Is the backend-only graph slower at generate-time? | `summary.json → generate.backend.duration_ms` vs `summary.json → generate.monorepo.duration_ms` |
-| Does the backend-only graph produce more total input tokens per question? | `summary.json → per_prompt[*].backend.graphify.total_input_tokens` vs `…monorepo…` |
-| Does the backend-only graph use more turns per question? | `summary.json → per_prompt[*].backend.graphify.num_turns` vs `…monorepo…` |
+| Does the backend-only graph produce more total input tokens per question? | `summary.json → per_prompt[*].backend.madar.total_input_tokens` vs `…monorepo…` |
+| Does the backend-only graph use more turns per question? | `summary.json → per_prompt[*].backend.madar.num_turns` vs `…monorepo…` |
 | Are answers materially worse on the backend-only graph? | Read `*-answer.txt` pairs side-by-side; record qualitative notes |
-| What graph topology differs? | Compare `graphify-out/GRAPH_REPORT.md` for both scopes (god nodes, communities, low-cohesion warnings) |
+| What graph topology differs? | Compare `out/GRAPH_REPORT.md` for both scopes (god nodes, communities, low-cohesion warnings) |
 | Top suspected failure modes? | Cross-reference: hub dominance, low workspace bridges, missing tests/config edges, generic-extractor fallthrough |
 
-When the report is ready, drop it next to this README as `findings.md` and link it from the [issue #69](https://github.com/mohanagy/graphify-ts/issues/69) thread.
+When the report is ready, drop it next to this README as `findings.md` and link it from the [issue #69](https://github.com/mohanagy/madar/issues/69) thread.
 
 ## Files in this directory
 

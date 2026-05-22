@@ -1,11 +1,11 @@
 blank_issues_enabled: false
 contact_links:
   - name: Security report
-    url: https://github.com/mohanagy/graphify-ts/security/policy
+    url: https://github.com/mohanagy/madar/security/policy
     about: Report vulnerabilities privately. Do not file public security issues.
   - name: Contribution guide
-    url: https://github.com/mohanagy/graphify-ts/blob/main/CONTRIBUTING.md
+    url: https://github.com/mohanagy/madar/blob/main/CONTRIBUTING.md
     about: Read local setup, testing, and pull request expectations before contributing.
   - name: Public roadmap
-    url: https://github.com/mohanagy/graphify-ts/issues/155
+    url: https://github.com/mohanagy/madar/issues/155
     about: See planned work and roadmap-linked issues before proposing larger changes.

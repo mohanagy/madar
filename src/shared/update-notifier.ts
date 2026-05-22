@@ -44,7 +44,7 @@ function defaultCacheRoot(env: NodeJS.ProcessEnv): string {
 }
 
 function updateCacheFilePath(cacheRoot: string): string {
-  return join(cacheRoot, 'graphify-ts', 'update-check.json')
+  return join(cacheRoot, 'madar', 'update-check.json')
 }
 
 function isNotifierDisabled(env: NodeJS.ProcessEnv, stdoutIsTTY: boolean): boolean {
@@ -56,7 +56,7 @@ function isNotifierDisabled(env: NodeJS.ProcessEnv, stdoutIsTTY: boolean): boole
     return true
   }
 
-  if (env.NO_UPDATE_NOTIFIER === '1' || env.GRAPHIFY_DISABLE_UPDATE_NOTIFIER === '1') {
+  if (env.NO_UPDATE_NOTIFIER === '1' || env.MADAR_DISABLE_UPDATE_NOTIFIER === '1') {
     return true
   }
 
@@ -187,9 +187,9 @@ export function compareVersions(left: string, right: string): number {
 
 function formatUpdateNotice(packageName: string, currentVersion: string, latestVersion: string): string {
   return [
-    `A newer graphify-ts is available: ${currentVersion} -> ${latestVersion}`,
+    `A newer madar is available: ${currentVersion} -> ${latestVersion}`,
     `Update: npm i -g ${packageName}@latest`,
-    'Then re-run: graphify-ts claude install | cursor install | gemini install',
+    'Then re-run: madar claude install | madar cursor install | madar gemini install',
   ].join('\n')
 }
 

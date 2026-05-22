@@ -206,7 +206,7 @@ function isIncrementalDetectResult(detection: DetectResult | IncrementalDetectRe
 }
 
 function outputDirectory(rootPath: string): string {
-  return join(rootPath, 'graphify-out')
+  return join(rootPath, 'out')
 }
 
 function missingCodeExtractionMessage(totalFiles: number): string {
@@ -322,7 +322,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
       codeFiles.length > 0
         ? buildSpiCached({
             root: resolvedRootPath,
-            graphifyVersion: `spi-extractor-${EXTRACTOR_CACHE_VERSION}`,
+            madarVersion: `spi-extractor-${EXTRACTOR_CACHE_VERSION}`,
             extractorVersion: spiExtractorVersion,
           })
         : null

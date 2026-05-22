@@ -14,11 +14,11 @@ Usage:
   $0 --workspace <path> --strategies <csv> [--exec <runner>] [--prompt-ids <csv>] [--out-dir <path>]
 
 Required:
-  --workspace   Path to the repo under test (must contain graphify-out/graph.json
-                if you include the current-graphify or slice-v1 strategies).
+  --workspace   Path to the repo under test (must contain out/graph.json
+                if you include the current-madar or slice-v1 strategies).
   --strategies  Comma-separated list of strategy names (matching scripts in strategies/).
                 Examples:
-                  current-graphify,lexical-baseline,slice-v1,full-context
+                  current-madar,lexical-baseline,slice-v1,full-context
 
 Optional:
   --exec        Runner template for piping the strategy's context.txt through a
@@ -88,13 +88,13 @@ jq -n \
   --arg workspace "$WORKSPACE" \
   --arg strategies "$STRATEGIES" \
   --arg exec "$EXEC" \
-  --arg version "$(graphify-ts --version 2>/dev/null || echo unknown)" \
+  --arg version "$(madar --version 2>/dev/null || echo unknown)" \
   '{
     timestamp: $ts,
     workspace: $workspace,
     strategies: ($strategies | split(",")),
     exec: ($exec // ""),
-    graphify_version: $version
+    madar_version: $version
   }' > "$RUN_DIR/manifest.json"
 
 echo "[harness] results bundle: $RUN_DIR"

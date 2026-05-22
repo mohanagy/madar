@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // Mock `claude --output-format json` runner used by the compare native_agent
 // smoke test. Emits a deterministic JSON object on stdout that conforms to the
-// shape graphify's parser expects (top-level `usage`, `num_turns`, `duration_ms`,
+// shape madar's parser expects (top-level `usage`, `num_turns`, `duration_ms`,
 // `total_cost_usd`, and a `result` text body).
 //
 // Numeric fixtures are loaded from the public benchmark artifact at
-// docs/benchmarks/2026-04-30-govalidate/{baseline,graphify}-session.json so
+// docs/benchmarks/2026-04-30-govalidate/{baseline,madar}-session.json so
 // the mock and the artifact stay in sync automatically. If the artifact is
 // missing or malformed, falls back to deterministic inline defaults so smoke
 // tests still run on a fresh checkout without the docs/ tree.
@@ -14,8 +14,8 @@
 //   mock-claude-runner.mjs <prompt-file>
 //
 // Behavior:
-// - GRAPHIFY_MOCK_MODE=baseline → emits the baseline numbers.
-// - Anything else (or unset)    → emits the graphify numbers.
+// - MADAR_MOCK_MODE=baseline → emits the baseline numbers.
+// - Anything else (or unset)    → emits the madar numbers.
 
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
@@ -38,11 +38,11 @@ const FALLBACK_BASELINE = {
   },
 }
 
-const FALLBACK_GRAPHIFY = {
+const FALLBACK_MADAR = {
   duration_ms: 34744,
   duration_api_ms: 34000,
   num_turns: 3,
-  session_id: 'mock-graphify-session',
+  session_id: 'mock-madar-session',
   total_cost_usd: 0.7,
   usage: {
     input_tokens: 13,
@@ -76,10 +76,10 @@ function loadArtifactOrFallback(filename, fallback) {
 
 const promptPath = process.argv[2] ?? null
 const prompt = promptPath !== null && existsSync(promptPath) ? readFileSync(promptPath, 'utf8') : ''
-const mode = process.env.GRAPHIFY_MOCK_MODE === 'baseline' ? 'baseline' : 'graphify'
+const mode = process.env.MADAR_MOCK_MODE === 'baseline' ? 'baseline' : 'madar'
 
 const baselineSource = loadArtifactOrFallback('baseline-session.json', FALLBACK_BASELINE)
-const graphifySource = loadArtifactOrFallback('graphify-session.json', FALLBACK_GRAPHIFY)
+const madarSource = loadArtifactOrFallback('madar-session.json', FALLBACK_MADAR)
 
 const baseline = {
   type: 'result',
@@ -94,18 +94,18 @@ const baseline = {
   usage: baselineSource.usage,
 }
 
-const graphify = {
+const madar = {
   type: 'result',
   subtype: 'success',
   is_error: false,
-  duration_ms: graphifySource.duration_ms,
-  duration_api_ms: graphifySource.duration_api_ms ?? FALLBACK_GRAPHIFY.duration_api_ms,
-  num_turns: graphifySource.num_turns,
-  result: `mock graphify answer for prompt of length ${prompt.length}`,
-  session_id: graphifySource.session_id ?? FALLBACK_GRAPHIFY.session_id,
-  total_cost_usd: graphifySource.total_cost_usd ?? FALLBACK_GRAPHIFY.total_cost_usd,
-  usage: graphifySource.usage,
+  duration_ms: madarSource.duration_ms,
+  duration_api_ms: madarSource.duration_api_ms ?? FALLBACK_MADAR.duration_api_ms,
+  num_turns: madarSource.num_turns,
+  result: `mock madar answer for prompt of length ${prompt.length}`,
+  session_id: madarSource.session_id ?? FALLBACK_MADAR.session_id,
+  total_cost_usd: madarSource.total_cost_usd ?? FALLBACK_MADAR.total_cost_usd,
+  usage: madarSource.usage,
 }
 
-const payload = mode === 'baseline' ? baseline : graphify
+const payload = mode === 'baseline' ? baseline : madar
 process.stdout.write(`${JSON.stringify(payload)}\n`)

@@ -23,7 +23,7 @@ function writeFile(root: string, rel: string, content: string): void {
 function build(root: string): SemanticProgramIndex {
   return buildSpi({
     root,
-    graphifyVersion: 'test-0.0.0',
+    madarVersion: 'test-0.0.0',
     extractorVersion: 'spi-v1.0.0-slice-3c',
     now: FROZEN_NOW,
   })
@@ -174,7 +174,7 @@ describe('buildSpi test layer (slice 3c of #72)', () => {
       // This is regression protection: addTestLayerEdges must early-return
       // gracefully when there are no test files in the index.
       const root = join(__dirname, '../../examples/demo-repo')
-      const spi = buildSpi({ root, graphifyVersion: 'test-0.0.0', now: FROZEN_NOW })
+      const spi = buildSpi({ root, madarVersion: 'test-0.0.0', now: FROZEN_NOW })
       const coveredEdges = spi.edges.filter((e) => e.kind === 'covered_by')
       // Demo repo currently has no spec/test files; expect zero covered_by.
       // If/when fixtures gain tests, this should be relaxed to >= 0.

@@ -164,7 +164,7 @@
   },
   "analysis": {
     "spi-cold": {
-      "graph_path": "docs/benchmarks/2026-05-11-spi-vs-legacy/results/2026-05-11T163843Z/fixture-spi-cold/graphify-out/graph.json",
+      "graph_path": "docs/benchmarks/2026-05-11-spi-vs-legacy/results/2026-05-11T163843Z/fixture-spi-cold/out/graph.json",
       "budget": 2000,
       "prompts": [
         {

@@ -10,7 +10,7 @@ export interface BinaryIngestSidecarMetadata {
   ingest_url_type?: 'pdf' | 'image' | 'audio' | 'video'
 }
 
-export const BINARY_INGEST_SIDECAR_SUFFIX = '.graphify-ingest.json'
+export const BINARY_INGEST_SIDECAR_SUFFIX = '.madar-ingest.json'
 
 export function binaryIngestSidecarPath(assetPath: string): string {
   return join(dirname(assetPath), `.${basename(assetPath)}${BINARY_INGEST_SIDECAR_SUFFIX}`)

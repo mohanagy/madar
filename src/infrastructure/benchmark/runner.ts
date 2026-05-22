@@ -8,7 +8,7 @@ import { type RetrieveResult, retrieveContext } from '../../runtime/retrieve.js'
 import { QUERY_TOKEN_ESTIMATOR } from '../../runtime/serve.js'
 import { toShareSafeArtifactPath } from '../../shared/share-safe-artifacts.js'
 import { validateGraphOutputPath } from '../../shared/security.js'
-import { buildGraphifyPromptPack, expandCompareExecTemplate } from '../compare.js'
+import { buildMadarPromptPack, expandCompareExecTemplate } from '../compare.js'
 import { parsePromptRunnerOutput, type PromptRunnerUsage } from '../prompt-runner.js'
 
 const DEFAULT_RETRIEVAL_BUDGET = 3_000
@@ -27,7 +27,7 @@ export interface BenchmarkPromptArtifacts {
 }
 
 export interface BenchmarkPromptExecution {
-  mode: 'graphify'
+  mode: 'madar'
   question: string
   promptFile: string
   outputFile: string
@@ -80,7 +80,7 @@ function inferProjectRootFromGraphPath(graphPath: string): string {
   let currentPath = dirname(resolve(graphPath))
 
   while (dirname(currentPath) !== currentPath) {
-    if (basename(currentPath) === 'graphify-out') {
+    if (basename(currentPath) === 'out') {
       return dirname(currentPath)
     }
     currentPath = dirname(currentPath)
@@ -198,14 +198,14 @@ export async function runBenchmarkPrompt(options: RunBenchmarkPromptOptions): Pr
       options.question,
       options.retrievalBudget ?? DEFAULT_RETRIEVAL_BUDGET,
   )
-  const promptPack = buildGraphifyPromptPack({
+  const promptPack = buildMadarPromptPack({
     question: options.question,
     retrieval,
     ...(options.session ? { session: options.session } : {}),
   })
   const artifacts: BenchmarkPromptArtifacts = {
-    prompt: join(outputRoot, 'graphify-prompt.txt'),
-    answer: join(outputRoot, 'graphify-answer.txt'),
+    prompt: join(outputRoot, 'madar-prompt.txt'),
+    answer: join(outputRoot, 'madar-answer.txt'),
     report: join(outputRoot, 'report.json'),
     share_safe_report: join(outputRoot, 'report.share-safe.json'),
   }
@@ -214,12 +214,12 @@ export async function runBenchmarkPrompt(options: RunBenchmarkPromptOptions): Pr
   const command = expandCompareExecTemplate(options.execTemplate, {
     promptFile: artifacts.prompt,
     question: options.question,
-    mode: 'graphify',
+    mode: 'madar',
     outputFile: artifacts.answer,
   })
   const execute = options.runner ?? defaultBenchmarkPromptRunner
   const execution = await execute({
-    mode: 'graphify',
+    mode: 'madar',
     question: options.question,
     promptFile: artifacts.prompt,
     outputFile: artifacts.answer,

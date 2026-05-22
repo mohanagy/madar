@@ -1,6 +1,6 @@
 # Release checklist
 
-Use this checklist when preparing a new `graphify-ts` release. It is intentionally manual: the goal is to keep each version easy to verify without hiding the release steps behind automation.
+Use this checklist when preparing a new `madar` release. It is intentionally manual: the goal is to keep each version easy to verify without hiding the release steps behind automation.
 
 ## 1. Prepare the release commit
 
@@ -28,16 +28,16 @@ If the change touches packaging or installer behavior, keep the `npm pack --dry-
 These checks verify that the published surface still matches the docs and changelog:
 
 ```bash
-graphify-ts --version
-graphify-ts generate .
-graphify-ts claude install
-graphify-ts codex install
+madar --version
+madar generate .
+madar claude install
+madar codex install
 ```
 
 Recommended follow-up checks:
 
-- confirm `graphify-ts --version` prints the version you are about to publish
-- confirm `graphify-ts generate .` completes and refreshes `graphify-out/graph.json`
+- confirm `madar --version` prints the version you are about to publish
+- confirm `madar generate .` completes and refreshes `out/graph.json`
 - confirm install commands write the expected project files and instructions
 - uninstall any agent profile you enabled during the smoke test so the workspace returns to a clean state
 
@@ -58,9 +58,10 @@ After the package is live:
 2. Install the released version in a clean shell and re-run:
 
 ```bash
-graphify-ts --version
-graphify-ts generate .
-graphify-ts claude install
+madar --version
+madar generate .
+madar claude install
+madar codex install
 ```
 
 3. Verify the README, changelog, and install docs still describe the released behavior accurately.

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Reproducer for the 2026-05-09 govalidate auth-e2e compare benchmark.
 #
-# Reads `report.json` produced by `graphify-ts compare ... --baseline-mode
+# Reads `report.json` produced by `madar compare ... --baseline-mode
 # native_agent` and prints the headline reductions for human inspection.
 #
 # To publish this benchmark, drop the report.json from
-#   graphify-out/compare/2026-05-09T23-21-35/report.json
+#   out/compare/2026-05-09T23-21-35/report.json
 # (and ideally the paired prompt/answer files) into this directory.
 #
 # Requires: jq, node.
@@ -15,25 +15,25 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 REPORT="$DIR/report.json"
 
 if [ ! -f "$REPORT" ]; then
-  echo "[graphify benchmark] $REPORT not found." >&2
-  echo "[graphify benchmark] Drop report.json from your" >&2
-  echo "[graphify benchmark] graphify-out/compare/2026-05-09T23-21-35/ here." >&2
+  echo "[madar benchmark] $REPORT not found." >&2
+  echo "[madar benchmark] Drop report.json from your" >&2
+  echo "[madar benchmark] out/compare/2026-05-09T23-21-35/ here." >&2
   exit 1
 fi
 
 if ! command -v jq >/dev/null 2>&1; then
-  echo "[graphify benchmark] jq is required (brew install jq / apt-get install jq)." >&2
+  echo "[madar benchmark] jq is required (brew install jq / apt-get install jq)." >&2
   exit 1
 fi
 if ! command -v node >/dev/null 2>&1; then
-  echo "[graphify benchmark] node is required (>= 20)." >&2
+  echo "[madar benchmark] node is required (>= 20)." >&2
   exit 1
 fi
 
 echo "Report path: $REPORT"
 echo
 
-# graphify-ts compare reports nest the per-run usage under a few possible
+# madar compare reports nest the per-run usage under a few possible
 # shapes depending on version. Walk the JSON for both runs and pull
 # num_turns / duration_ms / Anthropic usage block from each.
 node -e '
@@ -70,21 +70,21 @@ node -e '
   }
 
   const baseline = findRun(report, "baseline") ?? report.baseline ?? report.runs?.baseline;
-  const graphify = findRun(report, "graphify") ?? report.graphify ?? report.runs?.graphify;
+  const madar = findRun(report, "madar") ?? report.madar ?? report.runs?.madar;
 
-  if (!baseline || !graphify) {
-    console.log("[verify] could not locate baseline+graphify run blocks in report.json.");
+  if (!baseline || !madar) {
+    console.log("[verify] could not locate baseline+madar run blocks in report.json.");
     console.log("[verify] dumping the top-level report keys for debugging:");
     console.log(Object.keys(report));
     process.exit(2);
   }
 
   const bTurns = pickNum(baseline, "num_turns", "turns");
-  const gTurns = pickNum(graphify, "num_turns", "turns");
+  const gTurns = pickNum(madar, "num_turns", "turns");
   const bMs = pickNum(baseline, "duration_ms", "latency_ms", "elapsed_ms");
-  const gMs = pickNum(graphify, "duration_ms", "latency_ms", "elapsed_ms");
+  const gMs = pickNum(madar, "duration_ms", "latency_ms", "elapsed_ms");
   const bUsage = baseline.usage ?? baseline.anthropic_usage;
-  const gUsage = graphify.usage ?? graphify.anthropic_usage;
+  const gUsage = madar.usage ?? madar.anthropic_usage;
   const bTokens = totalInput(bUsage);
   const gTokens = totalInput(gUsage);
 
@@ -102,7 +102,7 @@ node -e '
   if (bUsage && gUsage) {
     console.log();
     console.log("Anthropic usage (baseline):", JSON.stringify(bUsage, null, 2));
-    console.log("Anthropic usage (graphify):", JSON.stringify(gUsage, null, 2));
+    console.log("Anthropic usage (madar):", JSON.stringify(gUsage, null, 2));
   }
 ' "$REPORT"
 

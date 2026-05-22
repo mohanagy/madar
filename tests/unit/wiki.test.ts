@@ -8,7 +8,7 @@ import { KnowledgeGraph } from '../../src/contracts/graph.js'
 import { toWiki } from '../../src/pipeline/wiki.js'
 
 function withTempDir(callback: (tempDir: string) => void): void {
-  const tempDir = mkdtempSync(join(tmpdir(), 'graphify-ts-wiki-'))
+  const tempDir = mkdtempSync(join(tmpdir(), 'madar-wiki-'))
   try {
     callback(tempDir)
   } finally {

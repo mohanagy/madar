@@ -14,7 +14,7 @@ function makeGraph() {
 
 describe('export', () => {
   function withTempDir(callback: (tempDir: string) => void): void {
-    const tempDir = mkdtempSync(join(tmpdir(), 'graphify-ts-export-'))
+    const tempDir = mkdtempSync(join(tmpdir(), 'madar-export-'))
     try {
       callback(tempDir)
     } finally {
@@ -437,7 +437,7 @@ describe('export', () => {
           id: 'note',
           label: 'query_auth.md',
           file_type: 'document',
-          source_file: 'graphify-out/memory/query_auth.md',
+          source_file: 'out/memory/query_auth.md',
           source_url: 'https://example.com/auth',
           title: 'Auth result',
           author: 'Jane Doe',
@@ -474,7 +474,7 @@ describe('export', () => {
           id: 'note',
           label: 'query_auth.md',
           file_type: 'document',
-          source_file: 'graphify-out/memory/query_auth.md',
+          source_file: 'out/memory/query_auth.md',
           source_url: 'javascript:alert(1)',
         },
       ],

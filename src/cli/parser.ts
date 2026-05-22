@@ -324,12 +324,12 @@ function parseValidatedGraphPath(flag: string, value: string | undefined): strin
 export function parseQueryArgs(args: string[]): QueryCliOptions {
   const question = args[0]?.trim()
   if (!question) {
-    throw new UsageError('Usage: graphify-ts query "<question>" [--dfs] [--budget N] [--graph path] [--rank-by MODE] [--community ID] [--file-type TYPE]')
+    throw new UsageError('Usage: madar query "<question>" [--dfs] [--budget N] [--graph path] [--rank-by MODE] [--community ID] [--file-type TYPE]')
   }
 
   let mode: 'bfs' | 'dfs' = 'bfs'
   let tokenBudget = 2000
-  let graphPath = 'graphify-out/graph.json'
+  let graphPath = 'out/graph.json'
   let rankBy: QueryRankBy = 'relevance'
   let community: number | null = null
   let fileType: string | null = null
@@ -412,7 +412,7 @@ export function parseQueryArgs(args: string[]): QueryCliOptions {
 }
 
 export function parsePackArgs(args: string[]): PackCliOptions {
-  const usage = 'Usage: graphify-ts pack "<prompt>" [--budget N] [--task KIND] [--graph path] [--retrieval-level 0-5] [--retrieval-strategy default|slice-v1]'
+  const usage = 'Usage: madar pack "<prompt>" [--budget N] [--task KIND] [--graph path] [--retrieval-level 0-5] [--retrieval-strategy default|slice-v1]'
   const prompt = args[0]?.trim()
   if (!prompt) {
     throw new UsageError(usage)
@@ -420,7 +420,7 @@ export function parsePackArgs(args: string[]): PackCliOptions {
 
   let budget = 3000
   let task: ContextPackTaskKind = 'explain'
-  let graphPath = 'graphify-out/graph.json'
+  let graphPath = 'out/graph.json'
   let retrievalLevel: PackCliOptions['retrievalLevel'] | undefined
   let retrievalStrategy: PackCliOptions['retrievalStrategy'] | undefined
 
@@ -526,14 +526,14 @@ function parseRetrievalStrategy(value: string): PackCliOptions['retrievalStrateg
 }
 
 export function parsePromptArgs(args: string[]): PromptCliOptions {
-  const usage = 'Usage: graphify-ts prompt "<prompt>" --provider NAME [--graph path]'
+  const usage = 'Usage: madar prompt "<prompt>" --provider NAME [--graph path]'
   const prompt = args[0]?.trim()
   if (!prompt) {
     throw new UsageError(usage)
   }
 
   let provider: PromptCliProvider | null = null
-  let graphPath = 'graphify-out/graph.json'
+  let graphPath = 'out/graph.json'
 
   const normalizedPrompt = validateCliQuestionText('prompt', prompt)
 
@@ -589,10 +589,10 @@ export function parsePathArgs(args: string[]): PathCliOptions {
   const source = args[0]?.trim()
   const target = args[1]?.trim()
   if (!source || !target) {
-    throw new UsageError('Usage: graphify-ts path <source> <target> [--graph path] [--max-hops N]')
+    throw new UsageError('Usage: madar path <source> <target> [--graph path] [--max-hops N]')
   }
 
-  let graphPath = 'graphify-out/graph.json'
+  let graphPath = 'out/graph.json'
   let maxHops = 8
   const normalizedSource = validateCliText('source', source)
   const normalizedTarget = validateCliText('target', target)
@@ -636,13 +636,13 @@ export function parsePathArgs(args: string[]): PathCliOptions {
 export function parseDiffArgs(args: string[]): DiffCliOptions {
   const baselineGraphPath = args[0]?.trim()
   if (!baselineGraphPath) {
-    throw new UsageError('Usage: graphify-ts diff <baseline-graph.json> [--graph path] [--limit N]')
+    throw new UsageError('Usage: madar diff <baseline-graph.json> [--graph path] [--limit N]')
   }
   if (baselineGraphPath.length > MAX_CLI_PATH_LENGTH) {
     throw new UsageError(`error: baseline graph path exceeds maximum length of ${MAX_CLI_PATH_LENGTH} characters`)
   }
 
-  let graphPath = 'graphify-out/graph.json'
+  let graphPath = 'out/graph.json'
   let limit = 10
 
   for (let index = 1; index < args.length; index += 1) {
@@ -684,10 +684,10 @@ export function parseDiffArgs(args: string[]): DiffCliOptions {
 export function parseExplainArgs(args: string[]): ExplainCliOptions {
   const label = args[0]?.trim()
   if (!label) {
-    throw new UsageError('Usage: graphify-ts explain <label> [--graph path] [--relation REL]')
+    throw new UsageError('Usage: madar explain <label> [--graph path] [--relation REL]')
   }
 
-  let graphPath = 'graphify-out/graph.json'
+  let graphPath = 'out/graph.json'
   let relation = ''
   const normalizedLabel = validateCliText('label', label)
 
@@ -730,7 +730,7 @@ export function parseExplainArgs(args: string[]): ExplainCliOptions {
 export function parseAddArgs(args: string[]): AddCliOptions {
   const url = args[0]?.trim()
   if (!url) {
-    throw new UsageError('Usage: graphify-ts add <url> [path] [--follow-symlinks] [--no-html]')
+    throw new UsageError('Usage: madar add <url> [path] [--follow-symlinks] [--no-html]')
   }
 
   let path = '.'
@@ -745,7 +745,7 @@ export function parseAddArgs(args: string[]): AddCliOptions {
 
     if (!argument.startsWith('--')) {
       if (path !== '.') {
-        throw new UsageError('Usage: graphify-ts add <url> [path] [--follow-symlinks] [--no-html]')
+        throw new UsageError('Usage: madar add <url> [path] [--follow-symlinks] [--no-html]')
       }
       path = argument
       continue
@@ -771,7 +771,7 @@ export function parseSaveResultArgs(args: string[]): SaveResultCliOptions {
   let question = ''
   let answer = ''
   let queryType = 'query'
-  let memoryDir = 'graphify-out/memory'
+  let memoryDir = 'out/memory'
   const sourceNodes: string[] = []
 
   for (let index = 0; index < args.length; index += 1) {
@@ -824,7 +824,7 @@ export function parseSaveResultArgs(args: string[]): SaveResultCliOptions {
   }
 
   if (question.trim().length === 0 || answer.trim().length === 0) {
-    throw new UsageError('Usage: graphify-ts save-result --question Q --answer A [--type T] [--nodes N1 N2 ...] [--memory-dir DIR]')
+    throw new UsageError('Usage: madar save-result --question Q --answer A [--type T] [--nodes N1 N2 ...] [--memory-dir DIR]')
   }
 
   if (question.length > MAX_QUESTION_LENGTH) {
@@ -840,8 +840,8 @@ export function parseSaveResultArgs(args: string[]): SaveResultCliOptions {
 }
 
 export function parseBenchmarkArgs(args: string[], commandName = 'benchmark'): BenchmarkCliOptions {
-  const usage = `Usage: graphify-ts ${commandName} [graph.json] --exec TEMPLATE [--questions PATH] [--yes]`
-  let graphPath = 'graphify-out/graph.json'
+  const usage = `Usage: madar ${commandName} [graph.json] --exec TEMPLATE [--questions PATH] [--yes]`
+  let graphPath = 'out/graph.json'
   let questionsPath: string | null = null
   let execTemplate = ''
   let yes = false
@@ -853,7 +853,7 @@ export function parseBenchmarkArgs(args: string[], commandName = 'benchmark'): B
     }
 
     if (!argument.startsWith('--')) {
-      if (graphPath !== 'graphify-out/graph.json') {
+      if (graphPath !== 'out/graph.json') {
         throw new UsageError(usage)
       }
       graphPath = requireNonEmptyValue('graph path', argument)
@@ -901,10 +901,10 @@ export function parseBenchmarkArgs(args: string[], commandName = 'benchmark'): B
 
 export function parseCompareArgs(args: string[]): CompareCliOptions {
   let question: string | null = null
-  let graphPath = 'graphify-out/graph.json'
+  let graphPath = 'out/graph.json'
   let execTemplate = ''
   let questionsPath: string | null = null
-  let outputDir = 'graphify-out/compare'
+  let outputDir = 'out/compare'
   let baselineMode: 'full' | 'bounded' | 'pack_only' | 'native_agent' = 'full'
   let yes = false
   let limit: number | null = null
@@ -918,13 +918,13 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
     if (!argument.startsWith('--')) {
       if (question !== null) {
         throw new UsageError(
-          'Usage: graphify-ts compare [question] --exec TEMPLATE [--graph path] [--questions PATH] [--output-dir DIR] [--baseline-mode MODE] [--yes] [--limit N]',
+          'Usage: madar compare [question] --exec TEMPLATE [--graph path] [--questions PATH] [--output-dir DIR] [--baseline-mode MODE] [--yes] [--limit N]',
         )
       }
       const normalizedQuestion = argument.trim()
       if (normalizedQuestion.length === 0) {
         throw new UsageError(
-          'Usage: graphify-ts compare [question] --exec TEMPLATE [--graph path] [--questions PATH] [--output-dir DIR] [--baseline-mode MODE] [--yes] [--limit N]',
+          'Usage: madar compare [question] --exec TEMPLATE [--graph path] [--questions PATH] [--output-dir DIR] [--baseline-mode MODE] [--yes] [--limit N]',
         )
       }
       question = normalizedQuestion
@@ -1017,7 +1017,7 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
 
   if (question === null && questionsPath === null) {
     throw new UsageError(
-      'Usage: graphify-ts compare [question] --exec TEMPLATE [--graph path] [--questions PATH] [--output-dir DIR] [--baseline-mode MODE] [--yes] [--limit N]',
+      'Usage: madar compare [question] --exec TEMPLATE [--graph path] [--questions PATH] [--output-dir DIR] [--baseline-mode MODE] [--yes] [--limit N]',
     )
   }
 
@@ -1031,10 +1031,10 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
 }
 
 export function parseReviewCompareArgs(args: string[]): ReviewCompareCliOptions {
-  const usage = 'Usage: graphify-ts review-compare [graph.json] --exec TEMPLATE [--output-dir DIR] [--base-branch BRANCH] [--budget N] [--yes]'
-  let graphPath = 'graphify-out/graph.json'
+  const usage = 'Usage: madar review-compare [graph.json] --exec TEMPLATE [--output-dir DIR] [--base-branch BRANCH] [--budget N] [--yes]'
+  let graphPath = 'out/graph.json'
   let execTemplate = ''
-  let outputDir = 'graphify-out/review-compare'
+  let outputDir = 'out/review-compare'
   let baseBranch: string | null = null
   let budget: number | null = null
   let yes = false
@@ -1046,7 +1046,7 @@ export function parseReviewCompareArgs(args: string[]): ReviewCompareCliOptions 
     }
 
     if (!argument.startsWith('--')) {
-      if (graphPath !== 'graphify-out/graph.json') {
+      if (graphPath !== 'out/graph.json') {
         throw new UsageError(usage)
       }
       graphPath = requireNonEmptyValue('graph path', argument)
@@ -1124,7 +1124,7 @@ export function parseReviewCompareArgs(args: string[]): ReviewCompareCliOptions 
 }
 
 export function parseTimeTravelArgs(args: string[]): TimeTravelCliOptions {
-  const usage = 'Usage: graphify-ts time-travel <from> <to> [--view MODE] [--json] [--refresh] [--limit N]'
+  const usage = 'Usage: madar time-travel <from> <to> [--view MODE] [--json] [--refresh] [--limit N]'
   let fromRef: string | null = null
   let toRef: string | null = null
   let view: 'summary' | 'risk' | 'drift' | 'timeline' = 'summary'
@@ -1231,7 +1231,7 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
     if (!argument.startsWith('--')) {
       if (path !== '.') {
         throw new UsageError(
-          'Usage: graphify-ts generate [path] [--update] [--cluster-only] [--watch] [--directed] [--follow-symlinks] [--debounce S] [--no-html] [--wiki] [--obsidian] [--obsidian-dir DIR] [--svg] [--graphml] [--neo4j] [--neo4j-push URI] [--neo4j-user USER] [--neo4j-password PW] [--neo4j-database DB] [--spi]',
+          'Usage: madar generate [path] [--update] [--cluster-only] [--watch] [--directed] [--follow-symlinks] [--debounce S] [--no-html] [--wiki] [--obsidian] [--obsidian-dir DIR] [--svg] [--graphml] [--neo4j] [--neo4j-push URI] [--neo4j-user USER] [--neo4j-password PW] [--neo4j-database DB] [--spi]',
         )
       }
       path = argument
@@ -1423,7 +1423,7 @@ export function parseWatchArgs(args: string[]): WatchCliOptions {
 
     if (!argument.startsWith('--')) {
       if (path !== '.') {
-        throw new UsageError('Usage: graphify-ts watch [path] [--follow-symlinks] [--debounce S] [--no-html]')
+        throw new UsageError('Usage: madar watch [path] [--follow-symlinks] [--debounce S] [--no-html]')
       }
       path = argument
       continue
@@ -1458,7 +1458,7 @@ export function parseWatchArgs(args: string[]): WatchCliOptions {
 }
 
 export function parseServeArgs(args: string[]): ServeCliOptions {
-  let graphPath = 'graphify-out/graph.json'
+  let graphPath = 'out/graph.json'
   let host = '127.0.0.1'
   let port = 4173
   let transport: 'http' | 'stdio' = 'http'
@@ -1470,8 +1470,8 @@ export function parseServeArgs(args: string[]): ServeCliOptions {
     }
 
     if (!argument.startsWith('--')) {
-      if (graphPath !== 'graphify-out/graph.json') {
-        throw new UsageError('Usage: graphify-ts serve [graph.json] [--host H] [--port N] [--transport http|stdio] [--http|--stdio|--mcp]')
+      if (graphPath !== 'out/graph.json') {
+        throw new UsageError('Usage: madar serve [graph.json] [--host H] [--port N] [--transport http|stdio] [--http|--stdio|--mcp]')
       }
       graphPath = argument
       continue
@@ -1530,8 +1530,8 @@ export function parseServeArgs(args: string[]): ServeCliOptions {
 }
 
 export function parseDoctorArgs(args: string[], commandName: 'doctor' | 'status' = 'doctor'): DoctorCliOptions {
-  const usage = `Usage: graphify-ts ${commandName} [graph.json] [--graph path]`
-  let graphPath = 'graphify-out/graph.json'
+  const usage = `Usage: madar ${commandName} [graph.json] [--graph path]`
+  let graphPath = 'out/graph.json'
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index]
@@ -1540,7 +1540,7 @@ export function parseDoctorArgs(args: string[], commandName: 'doctor' | 'status'
     }
 
     if (!argument.startsWith('--')) {
-      if (graphPath !== 'graphify-out/graph.json') {
+      if (graphPath !== 'out/graph.json') {
         throw new UsageError(usage)
       }
       graphPath = argument
@@ -1566,8 +1566,8 @@ export function parseDoctorArgs(args: string[], commandName: 'doctor' | 'status'
 }
 
 export function parseSummaryArgs(args: string[]): SummaryCliOptions {
-  const usage = 'Usage: graphify-ts summary [graph.json]'
-  let graphPath = 'graphify-out/graph.json'
+  const usage = 'Usage: madar summary [graph.json]'
+  let graphPath = 'out/graph.json'
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index]
@@ -1591,7 +1591,7 @@ export function parseSummaryArgs(args: string[]): SummaryCliOptions {
       throw new UsageError(`error: unknown option for summary: ${argument}`)
     }
 
-    if (graphPath !== 'graphify-out/graph.json') {
+    if (graphPath !== 'out/graph.json') {
       throw new UsageError(usage)
     }
 
@@ -1605,12 +1605,12 @@ export function parseHookArgs(args: string[]): HookCliOptions {
   const action = args[0]
   if (action === 'install' || action === 'uninstall' || action === 'status') {
     if (args.length > 1) {
-      throw new UsageError('Usage: graphify-ts hook <install|uninstall|status>')
+      throw new UsageError('Usage: madar hook <install|uninstall|status>')
     }
     return { action }
   }
 
-  throw new UsageError('Usage: graphify-ts hook <install|uninstall|status>')
+  throw new UsageError('Usage: madar hook <install|uninstall|status>')
 }
 
 export function parseInstallArgs(args: string[], defaultPlatform: InstallPlatform): InstallCliOptions {
@@ -1642,7 +1642,7 @@ export function parseInstallArgs(args: string[], defaultPlatform: InstallPlatfor
       continue
     }
 
-    throw new UsageError('Usage: graphify-ts install [--platform P]')
+    throw new UsageError('Usage: madar install [--platform P]')
   }
 
   return { platform }
@@ -1652,8 +1652,8 @@ export function parsePlatformActionArgs(command: string, args: string[]): Platfo
   const action = args[0]
   const profileAware = PROFILE_AWARE_PLATFORM_COMMANDS.has(command)
   const usage = profileAware
-    ? `Usage: graphify-ts ${command} <install|uninstall> [--profile core|full|strict]`
-    : `Usage: graphify-ts ${command} <install|uninstall>`
+    ? `Usage: madar ${command} <install|uninstall> [--profile core|full|strict]`
+    : `Usage: madar ${command} <install|uninstall>`
   if (action !== 'install' && action !== 'uninstall') {
     throw new UsageError(usage)
   }

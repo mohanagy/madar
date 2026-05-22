@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 import { directorySize, runGeneratePerformanceBenchmark } from '../../src/infrastructure/benchmark/generate-performance.js'
 
 function withTempDir(run: (dir: string) => void): void {
-  const dir = mkdtempSync(join(tmpdir(), 'graphify-generate-benchmark-'))
+  const dir = mkdtempSync(join(tmpdir(), 'madar-generate-benchmark-'))
   try {
     run(dir)
   } finally {
@@ -110,10 +110,10 @@ describe('generate performance benchmark harness', () => {
     expect(readme).toContain('wall_clock_ms')
     expect(readme).toContain('cache_reason')
     expect(readme).toContain('Manual large-repo benchmark flow')
-    expect(readme).toContain('GRAPHIFY_PERF_FIXTURE')
+    expect(readme).toContain('MADAR_PERF_FIXTURE')
 
     expect(runner).toContain('runGeneratePerformanceBenchmark')
-    expect(runner).toContain('GRAPHIFY_PERF_RESULTS_DIR')
+    expect(runner).toContain('MADAR_PERF_RESULTS_DIR')
   })
 
   it.runIf(process.platform !== 'win32')('ignores symlinks when measuring output directory size', () => {
@@ -152,9 +152,9 @@ describe('generate performance benchmark harness', () => {
       const untouchedTs = readFileSync(join(workDir, 'workspaces', 'update-changed', 'z.ts'), 'utf8')
       const outsideTarget = readFileSync(join(outside, 'linked.js'), 'utf8')
 
-      expect(mutatedPython).toContain('# __graphifyBenchmarkTouch = True')
-      expect(untouchedTs).not.toContain('__graphifyBenchmarkTouch')
-      expect(outsideTarget).not.toContain('__graphifyBenchmarkTouch')
+      expect(mutatedPython).toContain('# __madarBenchmarkTouch = True')
+      expect(untouchedTs).not.toContain('__madarBenchmarkTouch')
+      expect(outsideTarget).not.toContain('__madarBenchmarkTouch')
     })
   })
 })

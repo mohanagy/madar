@@ -24,7 +24,7 @@ function writeFile(root: string, rel: string, content: string): void {
 function build(root: string): SemanticProgramIndex {
   return buildSpi({
     root,
-    graphifyVersion: 'test-0.0.0',
+    madarVersion: 'test-0.0.0',
     extractorVersion: 'spi-v1.0.0-storage-semantics',
     now: FROZEN_NOW,
   })

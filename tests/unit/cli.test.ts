@@ -119,7 +119,7 @@ function createDependencies(): CliTestDependencies {
       reduction_ratio: 10,
       per_question: [
         {
-          question: resolvedGraphPath ?? 'graphify-out/graph.json',
+          question: resolvedGraphPath ?? 'out/graph.json',
           query_tokens: 100,
           reduction: 10,
           expected_labels: [],
@@ -129,7 +129,7 @@ function createDependencies(): CliTestDependencies {
       ],
       }
     },
-    runEval: () => 'graphify retrieval quality benchmark\nRecall: 100.0%\ncreate session login',
+    runEval: () => 'madar retrieval quality benchmark\nRecall: 100.0%\ncreate session login',
     runCompare: async () => 'compare command is not implemented yet',
     runReviewCompare: async () => 'review compare command is not implemented yet',
     runTimeTravel: async () => 'time-travel command is not implemented yet',
@@ -159,15 +159,15 @@ function createDependencies(): CliTestDependencies {
     generateGraph: (rootPath = '.', options = {}) => ({
       mode: options.clusterOnly ? 'cluster-only' : options.update ? 'update' : 'generate',
       rootPath: resolve(rootPath),
-      outputDir: resolve(rootPath, 'graphify-out'),
-      graphPath: resolve(rootPath, 'graphify-out', 'graph.json'),
-      reportPath: resolve(rootPath, 'graphify-out', 'GRAPH_REPORT.md'),
-      htmlPath: options.noHtml ? null : resolve(rootPath, 'graphify-out', 'graph.html'),
-      wikiPath: options.wiki ? resolve(rootPath, 'graphify-out', 'wiki') : null,
-      obsidianPath: options.obsidian ? resolve(options.obsidianDir ?? resolve(rootPath, 'graphify-out', 'obsidian')) : null,
-      svgPath: options.svg ? resolve(rootPath, 'graphify-out', 'graph.svg') : null,
-      graphmlPath: options.graphml ? resolve(rootPath, 'graphify-out', 'graph.graphml') : null,
-      cypherPath: options.neo4j ? resolve(rootPath, 'graphify-out', 'cypher.txt') : null,
+      outputDir: resolve(rootPath, 'out'),
+      graphPath: resolve(rootPath, 'out', 'graph.json'),
+      reportPath: resolve(rootPath, 'out', 'GRAPH_REPORT.md'),
+      htmlPath: options.noHtml ? null : resolve(rootPath, 'out', 'graph.html'),
+      wikiPath: options.wiki ? resolve(rootPath, 'out', 'wiki') : null,
+      obsidianPath: options.obsidian ? resolve(options.obsidianDir ?? resolve(rootPath, 'out', 'obsidian')) : null,
+      svgPath: options.svg ? resolve(rootPath, 'out', 'graph.svg') : null,
+      graphmlPath: options.graphml ? resolve(rootPath, 'out', 'graph.graphml') : null,
+      cypherPath: options.neo4j ? resolve(rootPath, 'out', 'cypher.txt') : null,
       docsPath: null,
       totalFiles: 3,
       codeFiles: 2,
@@ -197,12 +197,12 @@ function createDependencies(): CliTestDependencies {
 
 function withGraphPathSandbox(testName: string, run: (paths: { relativeGraphPath: string; resolvedGraphPath: string }) => void) {
   const originalCwd = process.cwd()
-  const sandboxRoot = resolve('graphify-out', 'test-runtime', testName)
-  const relativeGraphPath = 'graphify-out/custom.json'
+  const sandboxRoot = resolve('out', 'test-runtime', testName)
+  const relativeGraphPath = 'out/custom.json'
   const graphPath = resolve(sandboxRoot, relativeGraphPath)
 
   rmSync(sandboxRoot, { recursive: true, force: true })
-  mkdirSync(resolve(sandboxRoot, 'graphify-out'), { recursive: true })
+  mkdirSync(resolve(sandboxRoot, 'out'), { recursive: true })
   writeFileSync(graphPath, '{}\n', 'utf8')
 
   try {
@@ -223,7 +223,7 @@ describe('cli parser', () => {
       question: 'how does auth work',
       mode: 'bfs',
       tokenBudget: 2000,
-      graphPath: 'graphify-out/graph.json',
+      graphPath: 'out/graph.json',
       rankBy: 'relevance',
       community: null,
       fileType: null,
@@ -243,7 +243,7 @@ describe('cli parser', () => {
   })
 
   it('rejects invalid query args', () => {
-    expect(() => parseQueryArgs([])).toThrow('Usage: graphify-ts query')
+    expect(() => parseQueryArgs([])).toThrow('Usage: madar query')
     expect(() => parseQueryArgs(['test', '--budget', 'abc'])).toThrow('error: --budget must be a positive integer')
     expect(() => parseQueryArgs(['test', '--budget', '100001'])).toThrow('error: --budget must be <= 100000')
     expect(() => parseQueryArgs(['test', '--rank-by', 'centrality'])).toThrow('error: --rank-by must be one of relevance, degree')
@@ -256,12 +256,12 @@ describe('cli parser', () => {
       prompt: 'how does auth work',
       budget: 1800,
       task: 'explain',
-      graphPath: 'graphify-out/graph.json',
+      graphPath: 'out/graph.json',
     })
   })
 
   it('rejects invalid pack args', () => {
-    expect(() => parsePackArgs([])).toThrow('Usage: graphify-ts pack')
+    expect(() => parsePackArgs([])).toThrow('Usage: madar pack')
     expect(() => parsePackArgs(['how does auth work', '--budget', '0'])).toThrow('error: --budget must be a positive integer')
     expect(() => parsePackArgs(['how does auth work', '--budget', '100001'])).toThrow('error: --budget must be <= 100000')
     expect(() => parsePackArgs(['how does auth work', '--task', 'summarize'])).toThrow('error: --task must be one of explain, review, impact')
@@ -272,12 +272,12 @@ describe('cli parser', () => {
     expect(parsePromptArgs(['how does auth work', '--provider', 'claude'])).toEqual({
       prompt: 'how does auth work',
       provider: 'claude',
-      graphPath: 'graphify-out/graph.json',
+      graphPath: 'out/graph.json',
     })
   })
 
   it('rejects invalid prompt args', () => {
-    expect(() => parsePromptArgs([])).toThrow('Usage: graphify-ts prompt')
+    expect(() => parsePromptArgs([])).toThrow('Usage: madar prompt')
     expect(() => parsePromptArgs(['how does auth work'])).toThrow('error: --provider is required')
     expect(() => parsePromptArgs(['how does auth work', '--provider', 'openai'])).toThrow('error: --provider must be one of claude, gemini')
     expect(() => parsePromptArgs(['how does auth work', '--wat'])).toThrow('error: unknown option for prompt: --wat')
@@ -299,10 +299,10 @@ describe('cli parser', () => {
       })
 
       expect(() => parsePackArgs(['review current diff', '--graph', '../../../outside/graph.json'])).toThrow(
-        'Only paths inside graphify-out/ are permitted',
+        'Only paths inside out/ are permitted',
       )
       expect(() => parsePromptArgs(['review current diff', '--provider', 'claude', '--graph', '../../../outside/graph.json'])).toThrow(
-        'Only paths inside graphify-out/ are permitted',
+        'Only paths inside out/ are permitted',
       )
     })
   })
@@ -311,7 +311,7 @@ describe('cli parser', () => {
     expect(parsePathArgs(['AuthService', 'Transport'])).toEqual({
       source: 'AuthService',
       target: 'Transport',
-      graphPath: 'graphify-out/graph.json',
+      graphPath: 'out/graph.json',
       maxHops: 8,
     })
 
@@ -322,7 +322,7 @@ describe('cli parser', () => {
       maxHops: 4,
     })
 
-    expect(() => parsePathArgs(['AuthService'])).toThrow('Usage: graphify-ts path')
+    expect(() => parsePathArgs(['AuthService'])).toThrow('Usage: madar path')
     expect(() => parsePathArgs(['AuthService', 'Transport', '--wat'])).toThrow('error: unknown option for path: --wat')
     expect(() => parsePathArgs(['AuthService', 'Transport', '--max-hops', '99'])).toThrow('error: --max-hops must be <= 20')
   })
@@ -330,7 +330,7 @@ describe('cli parser', () => {
   it('parses explain args', () => {
     expect(parseExplainArgs(['HttpClient'])).toEqual({
       label: 'HttpClient',
-      graphPath: 'graphify-out/graph.json',
+      graphPath: 'out/graph.json',
       relation: '',
     })
 
@@ -340,7 +340,7 @@ describe('cli parser', () => {
       relation: 'calls',
     })
 
-    expect(() => parseExplainArgs([])).toThrow('Usage: graphify-ts explain')
+    expect(() => parseExplainArgs([])).toThrow('Usage: madar explain')
     expect(() => parseExplainArgs(['HttpClient', '--wat'])).toThrow('error: unknown option for explain: --wat')
     expect(() => parseExplainArgs([`H${'x'.repeat(512)}`])).toThrow('error: label exceeds maximum length of 512 characters')
   })
@@ -348,7 +348,7 @@ describe('cli parser', () => {
   it('parses diff args', () => {
     expect(parseDiffArgs(['baseline.json'])).toEqual({
       baselineGraphPath: 'baseline.json',
-      graphPath: 'graphify-out/graph.json',
+      graphPath: 'out/graph.json',
       limit: 10,
     })
 
@@ -358,7 +358,7 @@ describe('cli parser', () => {
       limit: 5,
     })
 
-    expect(() => parseDiffArgs([])).toThrow('Usage: graphify-ts diff')
+    expect(() => parseDiffArgs([])).toThrow('Usage: madar diff')
     expect(() => parseDiffArgs(['baseline.json', '--limit', '0'])).toThrow('error: --limit must be a positive integer')
     expect(() => parseDiffArgs(['baseline.json', '--limit', '1.5'])).toThrow('error: --limit must be a positive integer')
     expect(() => parseDiffArgs(['baseline.json', '--limit', '1e2'])).toThrow('error: --limit must be a positive integer')
@@ -383,30 +383,30 @@ describe('cli parser', () => {
       noHtml: true,
     })
 
-    expect(() => parseAddArgs([])).toThrow('Usage: graphify-ts add')
-    expect(() => parseAddArgs(['https://example.com/post', 'docs', 'extra'])).toThrow('Usage: graphify-ts add')
+    expect(() => parseAddArgs([])).toThrow('Usage: madar add')
+    expect(() => parseAddArgs(['https://example.com/post', 'docs', 'extra'])).toThrow('Usage: madar add')
     expect(() => parseAddArgs(['https://example.com/post', '--wat'])).toThrow('error: unknown option for add: --wat')
   })
 
   it('parses save-result args', () => {
-    expect(parseSaveResultArgs(['--question', 'Q', '--answer', 'A', '--type', 'explain', '--nodes', 'n1', 'n2', '--memory-dir', 'graphify-out/mem'])).toEqual({
+    expect(parseSaveResultArgs(['--question', 'Q', '--answer', 'A', '--type', 'explain', '--nodes', 'n1', 'n2', '--memory-dir', 'out/mem'])).toEqual({
       question: 'Q',
       answer: 'A',
       queryType: 'explain',
       sourceNodes: ['n1', 'n2'],
-      memoryDir: resolve('graphify-out/mem'),
+      memoryDir: resolve('out/mem'),
     })
   })
 
   it('rejects invalid save-result args', () => {
-    expect(() => parseSaveResultArgs(['--question', 'Q'])).toThrow('Usage: graphify-ts save-result')
+    expect(() => parseSaveResultArgs(['--question', 'Q'])).toThrow('Usage: madar save-result')
     expect(() => parseSaveResultArgs(['--question', 'Q', '--answer', 'A', '--wat'])).toThrow('error: unknown option for save-result: --wat')
-    expect(() => parseSaveResultArgs(['--question', 'Q', '--answer', 'A', '--memory-dir', '../tmp'])).toThrow('Only paths inside graphify-out/ are permitted')
+    expect(() => parseSaveResultArgs(['--question', 'Q', '--answer', 'A', '--memory-dir', '../tmp'])).toThrow('Only paths inside out/ are permitted')
   })
 
   it('parses benchmark args', () => {
     expect(parseBenchmarkArgs(['--exec', 'claude -p "$(cat {prompt_file})"'])).toEqual({
-      graphPath: 'graphify-out/graph.json',
+      graphPath: 'out/graph.json',
       questionsPath: null,
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       yes: false,
@@ -424,14 +424,14 @@ describe('cli parser', () => {
       yes: true,
     })
     expect(parseBenchmarkArgs(['--questions=tests/fixtures/workspace-parity-questions.json', '--exec=claude -p "$(cat {prompt_file})"'])).toEqual({
-      graphPath: 'graphify-out/graph.json',
+      graphPath: 'out/graph.json',
       questionsPath: 'tests/fixtures/workspace-parity-questions.json',
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       yes: false,
     })
     expect(() => parseBenchmarkArgs([])).toThrow('error: --exec is required')
     expect(() => parseBenchmarkArgs([], 'eval')).toThrow('error: --exec is required')
-    expect(() => parseBenchmarkArgs(['one.json', 'two.json', '--exec', 'claude -p "$(cat {prompt_file})"'])).toThrow('Usage: graphify-ts benchmark')
+    expect(() => parseBenchmarkArgs(['one.json', 'two.json', '--exec', 'claude -p "$(cat {prompt_file})"'])).toThrow('Usage: madar benchmark')
     expect(() => parseBenchmarkArgs(['--questions', '--wat'])).toThrow('error: --questions requires a value')
     expect(() => parseBenchmarkArgs(['--exec', '--wat'])).toThrow('error: --exec requires a value')
     expect(() => parseBenchmarkArgs(['custom.json', '--wat'])).toThrow('error: unknown option for benchmark: --wat')
@@ -440,10 +440,10 @@ describe('cli parser', () => {
   it('parses compare args with a question or question file', () => {
     expect(parseCompareArgs(['how does login work', '--exec', 'claude -p "$(cat {prompt_file})"'])).toEqual({
       question: 'how does login work',
-      graphPath: 'graphify-out/graph.json',
+      graphPath: 'out/graph.json',
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       questionsPath: null,
-      outputDir: resolve('graphify-out/compare'),
+      outputDir: resolve('out/compare'),
       baselineMode: 'full',
       yes: false,
       limit: null,
@@ -451,10 +451,10 @@ describe('cli parser', () => {
 
     expect(parseCompareArgs(['--questions', 'benchmark-questions.json', '--exec', 'gemini -p "$(cat {prompt_file})"'])).toEqual({
       question: null,
-      graphPath: 'graphify-out/graph.json',
+      graphPath: 'out/graph.json',
       execTemplate: 'gemini -p "$(cat {prompt_file})"',
       questionsPath: 'benchmark-questions.json',
-      outputDir: resolve('graphify-out/compare'),
+      outputDir: resolve('out/compare'),
       baselineMode: 'full',
       yes: false,
       limit: null,
@@ -470,7 +470,7 @@ describe('cli parser', () => {
         '--graph',
         'custom.json',
         '--output-dir',
-        'graphify-out/compare/custom',
+        'out/compare/custom',
         '--baseline-mode',
         'bounded',
         '--yes',
@@ -482,7 +482,7 @@ describe('cli parser', () => {
       graphPath: 'custom.json',
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       questionsPath: null,
-      outputDir: resolve('graphify-out/compare/custom'),
+      outputDir: resolve('out/compare/custom'),
       baselineMode: 'bounded',
       yes: true,
       limit: 5,
@@ -500,10 +500,10 @@ describe('cli parser', () => {
       ]),
     ).toEqual({
       question: 'how does login work',
-      graphPath: 'graphify-out/graph.json',
+      graphPath: 'out/graph.json',
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       questionsPath: null,
-      outputDir: resolve('graphify-out/compare'),
+      outputDir: resolve('out/compare'),
       baselineMode: 'pack_only',
       yes: false,
       limit: null,
@@ -528,19 +528,19 @@ describe('cli parser', () => {
       'error: --limit must be a positive integer',
     )
     expect(() => parseCompareArgs(['how does login work', '--exec', 'claude -p "$(cat {prompt_file})"', '--output-dir', '../outside'])).toThrow(
-      'Only paths inside graphify-out/ are permitted',
+      'Only paths inside out/ are permitted',
     )
-    expect(() => parseCompareArgs(['   ', '--exec', 'claude -p "$(cat {prompt_file})"'])).toThrow('Usage: graphify-ts compare')
-    expect(() => parseCompareArgs(['--exec', 'claude -p "$(cat {prompt_file})"'])).toThrow('Usage: graphify-ts compare')
+    expect(() => parseCompareArgs(['   ', '--exec', 'claude -p "$(cat {prompt_file})"'])).toThrow('Usage: madar compare')
+    expect(() => parseCompareArgs(['--exec', 'claude -p "$(cat {prompt_file})"'])).toThrow('Usage: madar compare')
   })
 
   it('parses review-compare args with optional overrides', () => {
-    const externalOutputDir = resolve('/tmp', 'graphify-ts-review-compare-external')
+    const externalOutputDir = resolve('/tmp', 'madar-review-compare-external')
 
     expect(parseReviewCompareArgs(['--exec', 'claude -p "$(cat {prompt_file})"'])).toEqual({
-      graphPath: 'graphify-out/graph.json',
+      graphPath: 'out/graph.json',
       execTemplate: 'claude -p "$(cat {prompt_file})"',
-      outputDir: resolve('graphify-out/review-compare'),
+      outputDir: resolve('out/review-compare'),
       baseBranch: null,
       budget: null,
       yes: false,
@@ -551,7 +551,7 @@ describe('cli parser', () => {
       '--exec',
       'gemini -p "$(cat {prompt_file})"',
       '--output-dir',
-      'graphify-out/review-compare/custom',
+      'out/review-compare/custom',
       '--base-branch',
       'origin/main',
       '--budget',
@@ -560,7 +560,7 @@ describe('cli parser', () => {
     ])).toEqual({
       graphPath: 'custom.json',
       execTemplate: 'gemini -p "$(cat {prompt_file})"',
-      outputDir: resolve('graphify-out/review-compare/custom'),
+      outputDir: resolve('out/review-compare/custom'),
       baseBranch: 'origin/main',
       budget: 1800,
       yes: true,
@@ -584,10 +584,10 @@ describe('cli parser', () => {
 
   it('rejects invalid review-compare args', () => {
     expect(() => parseReviewCompareArgs([])).toThrow('error: --exec is required')
-    expect(() => parseReviewCompareArgs(['one.json', 'two.json', '--exec', 'claude -p "$(cat {prompt_file})"'])).toThrow('Usage: graphify-ts review-compare')
+    expect(() => parseReviewCompareArgs(['one.json', 'two.json', '--exec', 'claude -p "$(cat {prompt_file})"'])).toThrow('Usage: madar review-compare')
     expect(() => parseReviewCompareArgs(['--budget', '1.5', '--exec', 'claude -p "$(cat {prompt_file})"'])).toThrow('error: --budget must be a positive integer')
     expect(() => parseReviewCompareArgs(['--budget', '100001', '--exec', 'claude -p "$(cat {prompt_file})"'])).toThrow('error: --budget must be <= 100000')
-    expect(() => parseReviewCompareArgs(['--output-dir', '../outside', '--exec', 'claude -p "$(cat {prompt_file})"'])).toThrow('Only paths inside graphify-out/ are permitted')
+    expect(() => parseReviewCompareArgs(['--output-dir', '../outside', '--exec', 'claude -p "$(cat {prompt_file})"'])).toThrow('Only paths inside out/ are permitted')
   })
 
   it.each([
@@ -618,10 +618,10 @@ describe('cli parser', () => {
   })
 
   it('rejects invalid time-travel args', () => {
-    expect(() => parseTimeTravelArgs([])).toThrow('Usage: graphify-ts time-travel <from> <to>')
-    expect(() => parseTimeTravelArgs(['main'])).toThrow('Usage: graphify-ts time-travel <from> <to>')
-    expect(() => parseTimeTravelArgs(['  ', 'HEAD'])).toThrow('Usage: graphify-ts time-travel <from> <to>')
-    expect(() => parseTimeTravelArgs(['main', 'HEAD', 'extra'])).toThrow('Usage: graphify-ts time-travel <from> <to>')
+    expect(() => parseTimeTravelArgs([])).toThrow('Usage: madar time-travel <from> <to>')
+    expect(() => parseTimeTravelArgs(['main'])).toThrow('Usage: madar time-travel <from> <to>')
+    expect(() => parseTimeTravelArgs(['  ', 'HEAD'])).toThrow('Usage: madar time-travel <from> <to>')
+    expect(() => parseTimeTravelArgs(['main', 'HEAD', 'extra'])).toThrow('Usage: madar time-travel <from> <to>')
     expect(() => parseTimeTravelArgs(['main', 'HEAD', '--view', 'weird'])).toThrow(
       'error: --view must be one of summary, risk, drift, timeline',
     )
@@ -683,7 +683,7 @@ describe('cli parser', () => {
         '--neo4j-password',
         'secret',
         '--neo4j-database',
-        'graphify',
+        'madar',
       ]),
     ).toEqual({
       path: 'src',
@@ -703,13 +703,13 @@ describe('cli parser', () => {
       neo4jPushUri: 'bolt://localhost:7687',
       neo4jUser: 'neo4j',
       neo4jPassword: 'secret',
-      neo4jDatabase: 'graphify',
+      neo4jDatabase: 'madar',
       includeDocs: false,
       docs: false,
       useSpi: false,
     })
 
-    expect(() => parseGenerateArgs(['src', 'other'])).toThrow('Usage: graphify-ts generate')
+    expect(() => parseGenerateArgs(['src', 'other'])).toThrow('Usage: madar generate')
     expect(() => parseGenerateArgs(['--update', '--cluster-only'])).toThrow('cannot be used together')
   })
 
@@ -721,12 +721,12 @@ describe('cli parser', () => {
       noHtml: true,
     })
 
-    expect(() => parseWatchArgs(['src', 'other'])).toThrow('Usage: graphify-ts watch')
+    expect(() => parseWatchArgs(['src', 'other'])).toThrow('Usage: madar watch')
   })
 
   it('parses serve args', () => {
     expect(parseServeArgs([])).toEqual({
-      graphPath: 'graphify-out/graph.json',
+      graphPath: 'out/graph.json',
       host: '127.0.0.1',
       port: 4173,
       transport: 'http',
@@ -765,10 +765,10 @@ describe('cli parser', () => {
   })
 
   it('parses doctor and status args', () => {
-    expect(parseDoctorArgs([])).toEqual({ graphPath: 'graphify-out/graph.json' })
-    expect(parseDoctorArgs(['graphify-out/custom.json'])).toEqual({ graphPath: 'graphify-out/custom.json' })
-    expect(parseDoctorArgs(['--graph', 'graphify-out/runtime.json'])).toEqual({ graphPath: 'graphify-out/runtime.json' })
-    expect(parseDoctorArgs(['--graph=graphify-out/runtime.json'], 'status')).toEqual({ graphPath: 'graphify-out/runtime.json' })
+    expect(parseDoctorArgs([])).toEqual({ graphPath: 'out/graph.json' })
+    expect(parseDoctorArgs(['out/custom.json'])).toEqual({ graphPath: 'out/custom.json' })
+    expect(parseDoctorArgs(['--graph', 'out/runtime.json'])).toEqual({ graphPath: 'out/runtime.json' })
+    expect(parseDoctorArgs(['--graph=out/runtime.json'], 'status')).toEqual({ graphPath: 'out/runtime.json' })
     expect(() => parseDoctorArgs(['--wat'])).toThrow('error: unknown option for doctor: --wat')
     expect(() => parseDoctorArgs(['--wat'], 'status')).toThrow('error: unknown option for status: --wat')
   })
@@ -777,7 +777,7 @@ describe('cli parser', () => {
     expect(parseHookArgs(['install'])).toEqual({ action: 'install' })
     expect(parseHookArgs(['uninstall'])).toEqual({ action: 'uninstall' })
     expect(parseHookArgs(['status'])).toEqual({ action: 'status' })
-    expect(() => parseHookArgs([])).toThrow('Usage: graphify-ts hook <install|uninstall|status>')
+    expect(() => parseHookArgs([])).toThrow('Usage: madar hook <install|uninstall|status>')
   })
 
   it('parses install args and platform actions', () => {
@@ -800,8 +800,8 @@ describe('cli parser', () => {
     expect(parsePlatformActionArgs('cursor', ['uninstall'])).toEqual({ action: 'uninstall' })
     expect(parsePlatformActionArgs('codex', ['uninstall'])).toEqual({ action: 'uninstall' })
     expect(() => parsePlatformActionArgs('claude', ['install', '--profile', 'wide'])).toThrow('error: --profile must be one of core, full, strict')
-    expect(() => parsePlatformActionArgs('claude', ['uninstall', '--profile', 'full'])).toThrow('Usage: graphify-ts claude <install|uninstall> [--profile core|full|strict]')
-    expect(() => parsePlatformActionArgs('trae', [])).toThrow('Usage: graphify-ts trae <install|uninstall>')
+    expect(() => parsePlatformActionArgs('claude', ['uninstall', '--profile', 'full'])).toThrow('Usage: madar claude <install|uninstall> [--profile core|full|strict]')
+    expect(() => parsePlatformActionArgs('trae', [])).toThrow('Usage: madar trae <install|uninstall>')
   })
 })
 
@@ -813,7 +813,7 @@ describe('cli main', () => {
 
     expect(exitCode).toBe(0)
     expect(errors).toHaveLength(0)
-    expect(logs[0]).toContain('Usage: graphify-ts <command>')
+    expect(logs[0]).toContain('Usage: madar <command>')
   })
 
   it('prints the package version for --version and -v', async () => {
@@ -849,13 +849,13 @@ describe('cli main', () => {
     const { io, logs, errors } = createIo()
     const dependencies = createDependencies() as CliDependencies & { notifyUpdate: () => Promise<string | null> }
 
-    dependencies.notifyUpdate = async () => 'A newer graphify-ts is available: 0.22.8 -> 0.22.9'
+    dependencies.notifyUpdate = async () => 'A newer madar is available: 0.22.8 -> 0.22.9'
 
     const exitCode = await executeCli(['query', 'how does auth work'], io, dependencies)
 
     expect(exitCode).toBe(0)
     expect(errors).toEqual([])
-    expect(logs[0]).toBe('A newer graphify-ts is available: 0.22.8 -> 0.22.9')
+    expect(logs[0]).toBe('A newer madar is available: 0.22.8 -> 0.22.9')
     expect(logs[1]).toBe('how does auth work :: bfs :: 2000')
   })
 
@@ -868,7 +868,7 @@ describe('cli main', () => {
 
     dependencies.notifyUpdate = async () => {
       notifyCalls += 1
-      return 'A newer graphify-ts is available: 0.22.8 -> 0.22.9'
+      return 'A newer madar is available: 0.22.8 -> 0.22.9'
     }
 
     await expect(executeCli(['--help'], help.io, dependencies)).resolves.toBe(0)
@@ -876,7 +876,7 @@ describe('cli main', () => {
     await expect(executeCli(['time-travel', 'HEAD~1', 'HEAD', '--json'], json.io, dependencies)).resolves.toBe(0)
 
     expect(notifyCalls).toBe(0)
-    expect(help.logs[0]).toContain('Usage: graphify-ts <command>')
+    expect(help.logs[0]).toContain('Usage: madar <command>')
     expect(version.logs).toEqual([loadPackageVersion()])
   })
 
@@ -913,16 +913,16 @@ describe('cli main', () => {
     expect(help).toContain('--questions PATH')
     expect(help).toContain('    --yes                 skip confirmation before running the paid benchmark/eval prompts')
     expect(help).toContain('eval [graph.json]')
-    expect(help).toContain('compare [question]    run a real baseline vs graphify prompt comparison')
-    expect(help).toContain('    --graph <path>        path to graph.json (default graphify-out/graph.json)')
+    expect(help).toContain('compare [question]    run a real baseline vs madar prompt comparison')
+    expect(help).toContain('    --graph <path>        path to graph.json (default out/graph.json)')
     expect(help).toContain('    --exec TEMPLATE       required command template; supports {prompt_file}, {question}, {mode}, and {output_file}')
     expect(help).toContain('    --questions PATH      load questions from a JSON file instead of a positional question')
-    expect(help).toContain('    --output-dir DIR      compare output directory (default graphify-out/compare)')
-    expect(help).toContain('    --baseline-mode MODE  full | bounded | pack_only | native_agent (default full; pack_only compares one bounded raw-context prompt against one compiled graphify pack; native_agent runs --exec twice, uses Anthropic JSON usage when available, and otherwise saves answer-only artifacts)')
+    expect(help).toContain('    --output-dir DIR      compare output directory (default out/compare)')
+    expect(help).toContain('    --baseline-mode MODE  full | bounded | pack_only | native_agent (default full; pack_only compares one bounded raw-context prompt against one compiled madar pack; native_agent runs --exec twice, uses Anthropic JSON usage when available, and otherwise saves answer-only artifacts)')
     expect(help).toContain('    --yes                 skip confirmation before running the paid prompt comparison')
     expect(help).toContain('    --limit N             cap processed prompts/questions for the comparison run')
     expect(help).toContain('review-compare [graph.json] compare full vs compact pr_impact review prompts on the current git diff')
-    expect(help).toContain('    --output-dir DIR      review compare output directory (default graphify-out/review-compare)')
+    expect(help).toContain('    --output-dir DIR      review compare output directory (default out/review-compare)')
     expect(help).toContain('time-travel <from> <to> compare two refs using on-demand cached graph snapshots')
     expect(help).toContain('    --view MODE          summary|risk|drift|timeline (default summary)')
     expect(help).toContain('    --json               emit machine-readable JSON')
@@ -969,7 +969,7 @@ describe('cli main', () => {
         '--graph',
         'custom.json',
         '--output-dir',
-        'graphify-out/compare/custom',
+        'out/compare/custom',
         '--baseline-mode',
         'bounded',
         '--yes',
@@ -993,7 +993,7 @@ describe('cli main', () => {
       graphPath: 'custom.json',
       execTemplate: 'gemini -p "$(cat {prompt_file})"',
       questionsPath: 'benchmark-questions.json',
-      outputDir: resolve('graphify-out/compare/custom'),
+      outputDir: resolve('out/compare/custom'),
       baselineMode: 'bounded',
       yes: true,
       limit: 5,
@@ -1025,7 +1025,7 @@ describe('cli main', () => {
         '--exec',
         'claude -p "$(cat {prompt_file})"',
         '--output-dir',
-        'graphify-out/review-compare/custom',
+        'out/review-compare/custom',
         '--base-branch',
         'origin/main',
         '--budget',
@@ -1047,7 +1047,7 @@ describe('cli main', () => {
     expect(reviewCompareRequest.options).toEqual({
       graphPath: 'custom.json',
       execTemplate: 'claude -p "$(cat {prompt_file})"',
-      outputDir: resolve('graphify-out/review-compare/custom'),
+      outputDir: resolve('out/review-compare/custom'),
       baseBranch: 'origin/main',
       budget: 1800,
       yes: true,
@@ -1078,10 +1078,10 @@ describe('cli main', () => {
 
     expect(exitCode).toBe(0)
     expect(prompts).toEqual([
-      'compare will execute a baseline prompt and a graphify prompt for each question. This may consume paid model tokens.',
+      'compare will execute a baseline prompt and a madar prompt for each question. This may consume paid model tokens.',
     ])
     expect(logs).toEqual([
-      'Warning: compare will execute a baseline prompt and a graphify prompt for each question. This may consume paid model tokens.',
+      'Warning: compare will execute a baseline prompt and a madar prompt for each question. This may consume paid model tokens.',
       'compare result',
     ])
     expect(errors).toEqual([])
@@ -1107,7 +1107,7 @@ describe('cli main', () => {
     expect(exitCode).toBe(1)
     expect(compareCalls).toBe(0)
     expect(logs).toEqual([
-      'Warning: compare will execute a baseline prompt and a graphify prompt for each question. This may consume paid model tokens.',
+      'Warning: compare will execute a baseline prompt and a madar prompt for each question. This may consume paid model tokens.',
       'Compare cancelled.',
     ])
     expect(errors).toEqual([])
@@ -1125,7 +1125,7 @@ describe('cli main', () => {
       const exitCode = await executeCli(['compare', 'how does login work', '--exec', 'claude -p "$(cat {prompt_file})"'], io)
 
       expect(exitCode).toBe(2)
-      expect(logs).toEqual(['Warning: compare will execute a baseline prompt and a graphify prompt for each question. This may consume paid model tokens.'])
+      expect(logs).toEqual(['Warning: compare will execute a baseline prompt and a madar prompt for each question. This may consume paid model tokens.'])
       expect(errors).toEqual(['error: compare requires --yes in non-interactive mode.'])
     } finally {
       Object.defineProperty(process.stdin, 'isTTY', { configurable: true, value: stdinTty })
@@ -1180,13 +1180,13 @@ describe('cli main', () => {
 
     expect(exitCode).toBe(2)
     expect(logs).toEqual([])
-    expect(errors).toEqual(['Usage: graphify-ts compare [question] --exec TEMPLATE [--graph path] [--questions PATH] [--output-dir DIR] [--baseline-mode MODE] [--yes] [--limit N]'])
+    expect(errors).toEqual(['Usage: madar compare [question] --exec TEMPLATE [--graph path] [--questions PATH] [--output-dir DIR] [--baseline-mode MODE] [--yes] [--limit N]'])
   })
 
   it('prefers the explicit compare command over an implicit generate path match', async () => {
     const { io, logs, errors } = createIo()
     const originalCwd = process.cwd()
-    const sandboxRoot = resolve('graphify-out', 'test-runtime', 'compare-shadow-command')
+    const sandboxRoot = resolve('out', 'test-runtime', 'compare-shadow-command')
     const dependencies = createDependencies()
     let called = false
 
@@ -1253,11 +1253,11 @@ describe('cli main', () => {
       runStatus,
     }
 
-    await expect(executeCli(['doctor', '--graph', 'graphify-out/custom.json'], doctor.io, dependencies)).resolves.toBe(0)
+    await expect(executeCli(['doctor', '--graph', 'out/custom.json'], doctor.io, dependencies)).resolves.toBe(0)
     await expect(executeCli(['status'], status.io, dependencies)).resolves.toBe(0)
 
-    expect(runDoctor).toHaveBeenCalledWith('graphify-out/custom.json')
-    expect(runStatus).toHaveBeenCalledWith('graphify-out/graph.json')
+    expect(runDoctor).toHaveBeenCalledWith('out/custom.json')
+    expect(runStatus).toHaveBeenCalledWith('out/graph.json')
     expect(doctor.logs).toEqual(['doctor summary'])
     expect(status.logs).toEqual(['status summary'])
     expect(doctor.errors).toEqual([])
@@ -1279,7 +1279,7 @@ describe('cli main', () => {
         prompt: 'how does auth work',
         budget: 1800,
         task: 'explain',
-        graphPath: 'graphify-out/graph.json',
+        graphPath: 'out/graph.json',
       },
       io,
     })
@@ -1301,7 +1301,7 @@ describe('cli main', () => {
       options: {
         prompt: 'how does auth work',
         provider: 'claude',
-        graphPath: 'graphify-out/graph.json',
+        graphPath: 'out/graph.json',
       },
       io,
     })
@@ -1439,9 +1439,9 @@ describe('cli main', () => {
     const exitCode = await executeCli(['add', 'https://example.com/post', 'workspace', '--no-html'], io, dependencies)
 
     expect(exitCode).toBe(0)
-    expect(logs[0]).toContain('[graphify add] Saved')
+    expect(logs[0]).toContain('[madar add] Saved')
     expect(logs[0]).toContain(resolve('workspace', 'raw'))
-    expect(logs[1]).toContain('[graphify generate] update completed')
+    expect(logs[1]).toContain('[madar generate] update completed')
   })
 
   it('executes generate commands via injected dependencies', async () => {
@@ -1450,7 +1450,7 @@ describe('cli main', () => {
     const exitCode = await executeCli(['generate', 'src', '--update'], io, createDependencies())
 
     expect(exitCode).toBe(0)
-    expect(logs[0]).toContain('[graphify generate] update completed')
+    expect(logs[0]).toContain('[madar generate] update completed')
     expect(logs[0]).toContain('graph.json')
     expect(logs[0]).toContain('Semantic anomalies: 2 high-signal item(s)')
   })
@@ -1464,15 +1464,15 @@ describe('cli main', () => {
       return {
         mode: options.clusterOnly ? 'cluster-only' : options.update ? 'update' : 'generate',
         rootPath: resolve(rootPath),
-        outputDir: resolve(rootPath, 'graphify-out'),
-        graphPath: resolve(rootPath, 'graphify-out', 'graph.json'),
-        reportPath: resolve(rootPath, 'graphify-out', 'GRAPH_REPORT.md'),
-        htmlPath: options.noHtml ? null : resolve(rootPath, 'graphify-out', 'graph.html'),
-        wikiPath: options.wiki ? resolve(rootPath, 'graphify-out', 'wiki') : null,
-        obsidianPath: options.obsidian ? resolve(options.obsidianDir ?? resolve(rootPath, 'graphify-out', 'obsidian')) : null,
-        svgPath: options.svg ? resolve(rootPath, 'graphify-out', 'graph.svg') : null,
-        graphmlPath: options.graphml ? resolve(rootPath, 'graphify-out', 'graph.graphml') : null,
-        cypherPath: options.neo4j ? resolve(rootPath, 'graphify-out', 'cypher.txt') : null,
+        outputDir: resolve(rootPath, 'out'),
+        graphPath: resolve(rootPath, 'out', 'graph.json'),
+        reportPath: resolve(rootPath, 'out', 'GRAPH_REPORT.md'),
+        htmlPath: options.noHtml ? null : resolve(rootPath, 'out', 'graph.html'),
+        wikiPath: options.wiki ? resolve(rootPath, 'out', 'wiki') : null,
+        obsidianPath: options.obsidian ? resolve(options.obsidianDir ?? resolve(rootPath, 'out', 'obsidian')) : null,
+        svgPath: options.svg ? resolve(rootPath, 'out', 'graph.svg') : null,
+        graphmlPath: options.graphml ? resolve(rootPath, 'out', 'graph.graphml') : null,
+        cypherPath: options.neo4j ? resolve(rootPath, 'out', 'cypher.txt') : null,
       docsPath: null,
         totalFiles: 3,
         codeFiles: 2,
@@ -1534,7 +1534,7 @@ describe('cli main', () => {
     }
 
     const exitCode = await executeCli(
-      ['generate', 'src', '--neo4j-push', 'bolt://localhost:7687', '--neo4j-user', 'neo4j', '--neo4j-password', 'secret', '--neo4j-database', 'graphify'],
+      ['generate', 'src', '--neo4j-push', 'bolt://localhost:7687', '--neo4j-user', 'neo4j', '--neo4j-password', 'secret', '--neo4j-database', 'madar'],
       io,
       dependencies,
     )
@@ -1544,10 +1544,10 @@ describe('cli main', () => {
       uri: 'bolt://localhost:7687',
       user: 'neo4j',
       password: 'secret',
-      database: 'graphify',
+      database: 'madar',
       projectRoot: resolve('src'),
     })
-    expect(logs.some((line) => line.includes('[graphify neo4j] Pushed 4 nodes and 3 edges'))).toBe(true)
+    expect(logs.some((line) => line.includes('[madar neo4j] Pushed 4 nodes and 3 edges'))).toBe(true)
   })
 
   it('treats path-first invocations as generate commands', async () => {
@@ -1556,16 +1556,16 @@ describe('cli main', () => {
     const exitCode = await executeCli(['src', '--cluster-only'], io, createDependencies())
 
     expect(exitCode).toBe(0)
-    expect(logs[0]).toContain('[graphify generate] cluster-only completed')
+    expect(logs[0]).toContain('[madar generate] cluster-only completed')
   })
 
   it('executes save-result commands via injected dependencies', async () => {
     const { io, logs } = createIo()
 
-    const exitCode = await executeCli(['save-result', '--question', 'Q', '--answer', 'A', '--memory-dir', 'graphify-out/mem'], io, createDependencies())
+    const exitCode = await executeCli(['save-result', '--question', 'Q', '--answer', 'A', '--memory-dir', 'out/mem'], io, createDependencies())
 
     expect(exitCode).toBe(0)
-    expect(logs[0]).toBe(`Saved to ${resolve('graphify-out/mem')}/Q.md`)
+    expect(logs[0]).toBe(`Saved to ${resolve('out/mem')}/Q.md`)
   })
 
   it('executes benchmark commands with question files via injected dependencies', async () => {
@@ -1629,7 +1629,7 @@ describe('cli main', () => {
     expect(capturedContext).toEqual({
       io,
       options: {
-        graphPath: 'graphify-out/graph.json',
+        graphPath: 'out/graph.json',
         questionsPath: resolve('tests/fixtures/workspace-parity-questions.json'),
         execTemplate: 'claude -p "$(cat {prompt_file})"',
         yes: true,
@@ -1747,8 +1747,8 @@ describe('cli main', () => {
     }
 
     const watchExitCode = await executeCli(['watch', 'src', '--debounce', '1', '--no-html'], io, dependencies)
-    const serveExitCode = await executeCli(['serve', 'graphify-out/graph.json', '--port', '0'], io, dependencies)
-    const stdioExitCode = await executeCli(['serve', 'graphify-out/graph.json', '--mcp'], io, dependencies)
+    const serveExitCode = await executeCli(['serve', 'out/graph.json', '--port', '0'], io, dependencies)
+    const stdioExitCode = await executeCli(['serve', 'out/graph.json', '--mcp'], io, dependencies)
 
     expect(watchExitCode).toBe(0)
     expect(serveExitCode).toBe(0)
@@ -1757,7 +1757,7 @@ describe('cli main', () => {
     expect(served).toBe(true)
     expect(servedOverStdio).toBe(true)
     expect(lastWatchOptions?.noHtml).toBe(true)
-    expect(logs[0]).toContain('[graphify generate]')
+    expect(logs[0]).toContain('[madar generate]')
   })
 
   it('returns usage exit codes for invalid usage', async () => {
@@ -1766,7 +1766,7 @@ describe('cli main', () => {
     const exitCode = await executeCli(['query'], io, createDependencies())
 
     expect(exitCode).toBe(2)
-    expect(errors[0]).toContain('Usage: graphify-ts query')
+    expect(errors[0]).toContain('Usage: madar query')
   })
 
   it('returns command errors for unknown commands', async () => {
@@ -1782,7 +1782,7 @@ describe('cli main', () => {
 describe('summary command', () => {
   it('parses summary args with positional and --graph forms', () => {
     expect(parseSummaryArgs([])).toEqual({
-      graphPath: 'graphify-out/graph.json',
+      graphPath: 'out/graph.json',
     })
 
     expect(parseSummaryArgs(['custom.json'])).toEqual({
@@ -1825,10 +1825,10 @@ describe('summary command', () => {
       return expectedPayload
     }
 
-    const exitCode = await executeCli(['summary', 'graphify-out/graph.json'], io, dependencies)
+    const exitCode = await executeCli(['summary', 'out/graph.json'], io, dependencies)
 
     expect(exitCode).toBe(0)
-    expect(capturedGraphPath).toBe('graphify-out/graph.json')
+    expect(capturedGraphPath).toBe('out/graph.json')
     expect(logs).toEqual([JSON.stringify(expectedPayload, null, 2)])
   })
 
@@ -1844,6 +1844,6 @@ describe('summary command', () => {
     const exitCode = await executeCli(['summary'], io, dependencies)
 
     expect(exitCode).toBe(0)
-    expect(capturedGraphPath).toBe('graphify-out/graph.json')
+    expect(capturedGraphPath).toBe('out/graph.json')
   })
 })

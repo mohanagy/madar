@@ -1,15 +1,15 @@
-Published inspection summary for the raw local `graphify-ts pack` output.
+Published inspection summary for the raw local `madar pack` output.
 
 The raw `report-generation-pack.json` file was not committed because it contained local absolute paths.
 
 Command under inspection:
 
-graphify-ts pack "Explain how idea report is getting generated" \
+madar pack "Explain how idea report is getting generated" \
   --task explain \
   --retrieval-level 4 \
   --retrieval-strategy slice-v1 \
   --budget 4000 \
-  --graph graphify-out/graph.json
+  --graph out/graph.json
 
 Observed values:
 

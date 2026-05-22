@@ -7,8 +7,8 @@ import { runGeneratePerformanceBenchmark } from '../../../dist/src/infrastructur
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const timestamp = new Date().toISOString().replace(/:/g, '-')
-const fixtureRoot = resolve(process.env.GRAPHIFY_PERF_FIXTURE ?? join(here, 'fixture'))
-const workDir = resolve(process.env.GRAPHIFY_PERF_RESULTS_DIR ?? join(here, 'results', timestamp))
+const fixtureRoot = resolve(process.env.MADAR_PERF_FIXTURE ?? join(here, 'fixture'))
+const workDir = resolve(process.env.MADAR_PERF_RESULTS_DIR ?? join(here, 'results', timestamp))
 
 const summary = runGeneratePerformanceBenchmark({
   fixtureRoot,

@@ -10,7 +10,7 @@ import { getBuiltInSkillContent } from '../../src/infrastructure/install-skill-t
 const STALE_PHRASES = ['384x', '397x', '897x', '384×', '397×', '897×']
 
 function withTempDir(callback: (dir: string) => void): void {
-  const dir = mkdtempSync(join(tmpdir(), 'graphify-ts-template-'))
+  const dir = mkdtempSync(join(tmpdir(), 'madar-template-'))
   try {
     callback(dir)
   } finally {
@@ -85,7 +85,7 @@ describe('install hook payload', () => {
       const settings = readFileSync(join(projectDir, '.codex', 'hooks.json'), 'utf8')
       const decoded = decodeHookPayload(settings)
       expect(decoded).toContain('context-pack-first')
-      expect(decoded).toContain('graphify-ts pack')
+      expect(decoded).toContain('madar pack')
     })
   })
 })
@@ -96,11 +96,12 @@ describe('built-in install templates', () => {
 
     expect(content).toContain('Codex CLI profile')
     expect(content).toContain('context-pack-first')
-    expect(content).toContain('graphify-ts pack')
-    expect(content).toContain('graphify-ts codex install')
-    expect(content).toContain('graphify-ts codex uninstall')
+    expect(content).toContain('madar pack')
+    expect(content).toContain('madar codex install')
+    expect(content).toContain('madar codex uninstall')
     expect(content).toContain('Manual verification')
     expect(content).toContain('Codex limitations')
     expect(content).toContain('spawn_agent')
+    expect(content).toContain('npx --yes madar --help')
   })
 })

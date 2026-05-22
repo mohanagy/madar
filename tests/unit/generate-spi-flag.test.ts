@@ -1,4 +1,4 @@
-// v0.18 — `graphify-ts generate --spi` opt-in pipeline.
+// v0.18 — `madar generate --spi` opt-in pipeline.
 // Verifies the flag plumbs through parseGenerateArgs and that generateGraph
 // actually runs the SPI projector when set.
 

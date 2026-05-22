@@ -87,7 +87,7 @@ const EXCLUDED_DOMAIN_HINTS: ReadonlyArray<{ domain: RetrievalExcludedDomain; pa
   { domain: 'generated', pattern: /\b(?:generated|codegen|__generated__)\b/i, pathHints: ['generated', '__generated__'] },
   { domain: 'docs', pattern: /\b(?:docs?|readme|changelog|markdown|mdx?)\b/i, pathHints: ['docs', 'readme', 'changelog'] },
   { domain: 'config', pattern: /\b(?:config|configs?|settings|env|docker|compose|k8s|helm|package\.json|tsconfig)\b/i, pathHints: ['config', 'configs', 'settings', 'env', 'docker', 'compose', 'k8s', 'helm', 'package.json', 'tsconfig'] },
-  { domain: 'build_artifact', pattern: /\b(?:build artifacts?|dist|coverage|graphify-out|node_modules)\b/i, pathHints: ['build', 'dist', 'coverage', 'graphify-out', 'node_modules'] },
+  { domain: 'build_artifact', pattern: /\b(?:build artifacts?|dist|coverage|out|node_modules)\b/i, pathHints: ['build', 'dist', 'coverage', 'out', 'node_modules'] },
 ]
 
 export function classifyRetrievalLevel(input: RetrievalGateInput): RetrievalGateDecision {

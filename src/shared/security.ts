@@ -13,17 +13,17 @@ export const MAX_TEXT_BYTES = 10_485_760
 function inferGraphBase(graphPath: string): string {
   const resolved = resolve(graphPath)
   const parts = resolved.split(sep)
-  const graphifyOutIndex = parts.lastIndexOf('graphify-out')
+  const outIndex = parts.lastIndexOf('out')
 
-  if (graphifyOutIndex >= 0) {
-    const baseParts = parts.slice(0, graphifyOutIndex + 1)
+  if (outIndex >= 0) {
+    const baseParts = parts.slice(0, outIndex + 1)
     if (baseParts[0] === '') {
       return `${sep}${baseParts.slice(1).join(sep)}`
     }
     return baseParts.join(sep)
   }
 
-  return resolve('graphify-out')
+  return resolve('out')
 }
 
 export function findNearestExistingAncestor(targetPath: string): string | null {
@@ -43,13 +43,13 @@ export function findNearestExistingAncestor(targetPath: string): string | null {
 export function validateGraphPath(graphPath: string, base?: string): string {
   const resolvedBase = resolve(base ?? inferGraphBase(graphPath))
   if (!existsSync(resolvedBase)) {
-    throw new Error(`Graph base directory does not exist: ${resolvedBase}. Run graphify first to build the graph.`)
+    throw new Error(`Graph base directory does not exist: ${resolvedBase}. Run madar first to build the graph.`)
   }
 
   const resolvedPath = resolve(graphPath)
   const basePrefix = resolvedBase.endsWith(sep) ? resolvedBase : `${resolvedBase}${sep}`
   if (resolvedPath !== resolvedBase && !resolvedPath.startsWith(basePrefix)) {
-    throw new Error(`Path ${JSON.stringify(graphPath)} escapes the allowed directory ${resolvedBase}. Only paths inside graphify-out/ are permitted.`)
+    throw new Error(`Path ${JSON.stringify(graphPath)} escapes the allowed directory ${resolvedBase}. Only paths inside out/ are permitted.`)
   }
 
   if (!existsSync(resolvedPath)) {
@@ -60,24 +60,24 @@ export function validateGraphPath(graphPath: string, base?: string): string {
   const realPath = realpathSync(resolvedPath)
   const realBasePrefix = realBase.endsWith(sep) ? realBase : `${realBase}${sep}`
   if (realPath !== realBase && !realPath.startsWith(realBasePrefix)) {
-    throw new Error(`Path ${JSON.stringify(graphPath)} escapes the allowed directory ${resolvedBase}. Only paths inside graphify-out/ are permitted.`)
+    throw new Error(`Path ${JSON.stringify(graphPath)} escapes the allowed directory ${resolvedBase}. Only paths inside out/ are permitted.`)
   }
 
   return realPath
 }
 
-export function validateGraphOutputPath(targetPath: string, base = 'graphify-out'): string {
+export function validateGraphOutputPath(targetPath: string, base = 'out'): string {
   const resolvedBase = resolve(base)
   const resolvedTarget = resolve(targetPath)
   const basePrefix = resolvedBase.endsWith(sep) ? resolvedBase : `${resolvedBase}${sep}`
   if (resolvedTarget !== resolvedBase && !resolvedTarget.startsWith(basePrefix)) {
-    throw new Error(`Path ${JSON.stringify(targetPath)} escapes the allowed directory ${resolvedBase}. Only paths inside graphify-out/ are permitted.`)
+    throw new Error(`Path ${JSON.stringify(targetPath)} escapes the allowed directory ${resolvedBase}. Only paths inside out/ are permitted.`)
   }
 
   if (existsSync(resolvedBase)) {
     const realBase = realpathSync(resolvedBase)
     if (lstatSync(resolvedBase).isSymbolicLink()) {
-      throw new Error(`Path ${JSON.stringify(targetPath)} escapes the allowed directory ${resolvedBase}. Only paths inside graphify-out/ are permitted.`)
+      throw new Error(`Path ${JSON.stringify(targetPath)} escapes the allowed directory ${resolvedBase}. Only paths inside out/ are permitted.`)
     }
     const existingAncestor = findNearestExistingAncestor(resolvedTarget)
     const realTarget = existingAncestor === null
@@ -85,7 +85,7 @@ export function validateGraphOutputPath(targetPath: string, base = 'graphify-out
       : resolve(realpathSync(existingAncestor), relative(existingAncestor, resolvedTarget))
     const realBasePrefix = realBase.endsWith(sep) ? realBase : `${realBase}${sep}`
     if (realTarget !== realBase && !realTarget.startsWith(realBasePrefix)) {
-      throw new Error(`Path ${JSON.stringify(targetPath)} escapes the allowed directory ${resolvedBase}. Only paths inside graphify-out/ are permitted.`)
+      throw new Error(`Path ${JSON.stringify(targetPath)} escapes the allowed directory ${resolvedBase}. Only paths inside out/ are permitted.`)
     }
   }
 
@@ -168,7 +168,7 @@ async function fetchWithRedirects(url: string, timeoutMs: number): Promise<{ res
   for (let redirectCount = 0; redirectCount < 5; redirectCount += 1) {
     validateUrl(currentUrl)
     const response = await fetch(currentUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0 graphify-ts/1.0' },
+      headers: { 'User-Agent': 'Mozilla/5.0 madar/1.0' },
       redirect: 'manual',
       signal: AbortSignal.timeout(timeoutMs),
     })

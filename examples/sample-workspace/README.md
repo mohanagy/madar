@@ -13,9 +13,9 @@ The flow is compact but realistic:
 Try it locally:
 
 ```bash
-graphify-ts generate examples/sample-workspace --no-html
-graphify-ts pack "how does password reset request enqueue the reset email" \
-  --graph examples/sample-workspace/graphify-out/graph.json \
+madar generate examples/sample-workspace --no-html
+madar pack "how does password reset request enqueue the reset email" \
+  --graph examples/sample-workspace/out/graph.json \
   --task explain
 ```
 

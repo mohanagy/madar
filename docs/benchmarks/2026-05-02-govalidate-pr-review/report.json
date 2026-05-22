@@ -1,5 +1,5 @@
 {
-  "graph_path": "graphify-out/graph.json",
+  "graph_path": "out/graph.json",
   "base_branch": "origin/main",
   "budget": 2000,
   "changed_files": [
@@ -61,8 +61,8 @@
     "compact": "succeeded"
   },
   "answer_paths": {
-    "verbose": "graphify-out/review-compare/2026-05-02T09-44-12/verbose-answer.txt",
-    "compact": "graphify-out/review-compare/2026-05-02T09-44-12/compact-answer.txt"
+    "verbose": "out/review-compare/2026-05-02T09-44-12/verbose-answer.txt",
+    "compact": "out/review-compare/2026-05-02T09-44-12/compact-answer.txt"
   },
   "exit_code": {
     "verbose": 0,
@@ -73,9 +73,9 @@
     "compact": null
   },
   "paths": {
-    "output_dir": "graphify-out/review-compare/2026-05-02T09-44-12",
-    "verbose_prompt": "graphify-out/review-compare/2026-05-02T09-44-12/verbose-prompt.txt",
-    "compact_prompt": "graphify-out/review-compare/2026-05-02T09-44-12/compact-prompt.txt",
-    "report": "graphify-out/review-compare/2026-05-02T09-44-12/report.json"
+    "output_dir": "out/review-compare/2026-05-02T09-44-12",
+    "verbose_prompt": "out/review-compare/2026-05-02T09-44-12/verbose-prompt.txt",
+    "compact_prompt": "out/review-compare/2026-05-02T09-44-12/compact-prompt.txt",
+    "report": "out/review-compare/2026-05-02T09-44-12/report.json"
   }
 }

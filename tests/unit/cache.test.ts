@@ -7,7 +7,7 @@ import { normalizeAssertionPath } from './helpers/platform.js'
 
 describe('cache', () => {
   function createTempRoot(): string {
-    return mkdtempSync(join(tmpdir(), 'graphify-ts-cache-'))
+    return mkdtempSync(join(tmpdir(), 'madar-cache-'))
   }
 
   function createFile(root: string, name: string, content: string): string {
@@ -58,12 +58,12 @@ describe('cache', () => {
     }
   })
 
-  it('creates the graphify-out/cache directory if missing', () => {
+  it('creates the out/cache directory if missing', () => {
     const root = createTempRoot()
     try {
       const directory = cacheDir(root)
       expect(existsSync(directory)).toBe(true)
-      expect(directory.endsWith(join('graphify-out', 'cache'))).toBe(true)
+      expect(directory.endsWith(join('out', 'cache'))).toBe(true)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -123,7 +123,7 @@ describe('cache', () => {
       saveCached(filePath, { nodes: [], edges: [] }, root)
 
       const directory = cacheDir(root)
-      expect(normalizeAssertionPath(directory).endsWith('graphify-out/cache')).toBe(true)
+      expect(normalizeAssertionPath(directory).endsWith('out/cache')).toBe(true)
 
       clearCache(root)
 

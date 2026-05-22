@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Strategy 3: slice-v1 retrieval through the shipped graphify-ts pack command.
+# Strategy 3: slice-v1 retrieval through the shipped madar pack command.
 # Adapter contract: see ../README.md "Strategy adapter contract".
 
 set -euo pipefail
@@ -16,7 +16,7 @@ done
 [ -n "$PROMPT" ] && [ -n "$TASK" ] && [ -n "$WORKSPACE" ] && [ -n "$OUT" ] || {
   echo "[slice-v1] usage: $0 --prompt <text> --task <kind> --workspace <path> --out <dir>" >&2; exit 1; }
 
-"$(cd "$(dirname "$0")" && pwd)/current-graphify.sh" \
+"$(cd "$(dirname "$0")" && pwd)/current-madar.sh" \
   --prompt "$PROMPT" \
   --task "$TASK" \
   --workspace "$WORKSPACE" \

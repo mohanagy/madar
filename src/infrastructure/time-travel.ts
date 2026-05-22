@@ -84,12 +84,12 @@ function defaultGitDependencies(rootDir: string): Required<SnapshotGitDependenci
 }
 
 function snapshotBaseDir(rootDir: string): string {
-  const graphifyOutDir = join(rootDir, 'graphify-out')
-  return validateGraphOutputPath(join(graphifyOutDir, 'time-travel', 'snapshots'), graphifyOutDir)
+  const outDir = join(rootDir, 'out')
+  return validateGraphOutputPath(join(outDir, 'time-travel', 'snapshots'), outDir)
 }
 
 function snapshotDir(rootDir: string, commitSha: string): string {
-  return validateGraphOutputPath(join(snapshotBaseDir(rootDir), commitSha), join(rootDir, 'graphify-out'))
+  return validateGraphOutputPath(join(snapshotBaseDir(rootDir), commitSha), join(rootDir, 'out'))
 }
 
 function snapshotGraphPath(rootDir: string, commitSha: string): string {
@@ -119,7 +119,7 @@ function snapshotBuildKey(rootDir: string, commitSha: string, refresh: boolean):
 function snapshotTempDir(rootDir: string, commitSha: string): string {
   return validateGraphOutputPath(
     join(snapshotBaseDir(rootDir), `${commitSha}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`),
-    join(rootDir, 'graphify-out'),
+    join(rootDir, 'out'),
   )
 }
 

@@ -8,7 +8,7 @@ set -euo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
 
 if ! command -v node >/dev/null 2>&1; then
-  echo "[graphify benchmark] node is required (>= 20)." >&2
+  echo "[madar benchmark] node is required (>= 20)." >&2
   exit 1
 fi
 

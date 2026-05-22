@@ -66,8 +66,8 @@ function buildFrameworkSupportGraph(): KnowledgeGraph {
   )
 }
 
-const RUNNER_GRAPH_PATH = join(process.cwd(), 'graphify-out', 'graph.json')
-const RUNNER_OUTPUT_DIR = join(process.cwd(), 'graphify-out', 'benchmark-quality-test-output')
+const RUNNER_GRAPH_PATH = join(process.cwd(), 'out', 'graph.json')
+const RUNNER_OUTPUT_DIR = join(process.cwd(), 'out', 'benchmark-quality-test-output')
 const SHARED_PACK_QUALITY_GATES_PATH = join(process.cwd(), 'docs', 'benchmarks', 'govalidate-suite', 'quality-gates.json')
 
 interface SharedPackQualityGate {
@@ -254,7 +254,7 @@ describe('retrieval quality benchmark', () => {
   })
 
   it('reports grounded match rate and query buckets alongside label metrics', () => {
-    const tempDir = mkdtempSync(join(tmpdir(), 'graphify-benchmark-quality-'))
+    const tempDir = mkdtempSync(join(tmpdir(), 'madar-benchmark-quality-'))
     const routeFile = join(tempDir, 'auth-route.ts')
     writeFileSync(routeFile, ['export function AuthRoute() {', '  return true', '}'].join('\n'), 'utf8')
 
@@ -396,8 +396,8 @@ describe('retrieval quality benchmark', () => {
       'how does authentication work',
       'what is the database layer',
     ])
-    expect(executions.map((execution) => execution.mode)).toEqual(['graphify', 'graphify'])
-    expect(executions[0]?.command).toContain('graphify-prompt.txt')
+    expect(executions.map((execution) => execution.mode)).toEqual(['madar', 'madar'])
+    expect(executions[0]?.command).toContain('madar-prompt.txt')
     expect(report.total_questions).toBe(2)
     expect(report.skipped_questions).toBe(1)
     expect(report.avg_recall).toBeGreaterThanOrEqual(0.9)
@@ -405,7 +405,7 @@ describe('retrieval quality benchmark', () => {
     expect(report.avg_tokens_used).toBe(250)
     expect(report.avg_total_tokens).toBe(285)
     expect(report.questions[0]?.usage?.provider).toBe('claude')
-    expect(report.questions[0]?.artifacts?.prompt).toContain('graphify-prompt.txt')
+    expect(report.questions[0]?.artifacts?.prompt).toContain('madar-prompt.txt')
     expect(readFileSync(report.questions[0]!.artifacts!.answer, 'utf8')).toBe('Answer for how does authentication work\n')
 
     const output = formatQualityReport(report)
@@ -472,9 +472,9 @@ describe('retrieval quality benchmark', () => {
     expect(output).not.toContain('Avg total tokens (Claude reported)')
   })
 
-  const graphPath = 'graphify-out/graph.json'
+  const graphPath = 'out/graph.json'
   const hasGraph = existsSync(graphPath)
-  const demoGraphPath = join(process.cwd(), 'examples', 'demo-repo', 'graphify-out', 'graph.json')
+  const demoGraphPath = join(process.cwd(), 'examples', 'demo-repo', 'out', 'graph.json')
   const demoQuestionsPath = join(process.cwd(), 'examples', 'demo-repo', 'benchmark-questions.json')
   const hasDemoGraph = existsSync(demoGraphPath) && existsSync(demoQuestionsPath)
 

@@ -19,7 +19,7 @@
 // Cache layout
 // ────────────
 //
-//   <workspace>/graphify-out/.spi-cache/
+//   <workspace>/out/.spi-cache/
 //     index.json     — cache metadata: { version, key, generated_at, file_count }
 //     spi.json       — serialized SemanticProgramIndex
 //
@@ -30,7 +30,7 @@
 //
 //   workspace_root              — absolute, posix-normalized
 //   extractor_version           — from BuildSpiOptions.extractorVersion (or default)
-//   graphify_version            — from BuildSpiOptions.graphifyVersion
+//   madar_version            — from BuildSpiOptions.madarVersion
 //   tsconfig.json content       — if present, raw bytes
 //   sorted list of (path, mtime_ms, size_bytes, sha256) for every
 //     source file in the workspace (same EXT_TO_LANG matcher as buildSpi)
@@ -56,7 +56,7 @@ import { buildSpi, type BuildSpiOptions } from './build.js'
 import type { SemanticProgramIndex } from './types.js'
 
 const CACHE_DIR_NAME = '.spi-cache'
-const CACHE_DIR_PARENT = 'graphify-out'
+const CACHE_DIR_PARENT = 'out'
 const CACHE_INDEX_FILE = 'index.json'
 const CACHE_SPI_FILE = 'spi.json'
 const CACHE_FORMAT_VERSION = 1
@@ -68,7 +68,7 @@ const CACHE_SKIP_DIRS: ReadonlySet<string> = new Set([
   '.next',
   'coverage',
   '.git',
-  'graphify-out',
+  'out',
   '.test-artifacts',
   '.turbo',
   '.vercel',
@@ -101,9 +101,9 @@ export interface BuildSpiCachedOptions extends BuildSpiOptions {
   /** Disable the cache for this build (default: false). When true, the
    *  call behaves exactly like buildSpi() — no read, no write. */
   noCache?: boolean
-  /** Override the cache directory (default: `<root>/graphify-out/.spi-cache`).
+  /** Override the cache directory (default: `<root>/out/.spi-cache`).
    *  Useful for tests and for projects that want to relocate the cache
-   *  outside the default graphify-out tree. */
+   *  outside the default out tree. */
   cacheDir?: string
   /** Receives a stats payload after the call. Lets callers log/measure
    *  whether the cache was used without re-deriving the key themselves. */
@@ -224,7 +224,7 @@ function computeWorkspaceFingerprint(root: string, opts: BuildSpiCachedOptions):
   const hasher = createHash('sha256')
   hasher.update(`workspace:${root}\n`)
   hasher.update(`extractor:${opts.extractorVersion ?? 'spi-v1.0.0'}\n`)
-  hasher.update(`graphify:${opts.graphifyVersion}\n`)
+  hasher.update(`madar:${opts.madarVersion}\n`)
 
   const tsConfigPath = join(root, 'tsconfig.json')
   if (existsSync(tsConfigPath)) {

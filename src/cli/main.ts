@@ -38,7 +38,7 @@ import { buildGraphSummary, type GraphSummary } from '../runtime/graph-summary.j
 import { serveGraphStdio } from '../runtime/stdio-server.js'
 import { getNeighbors, getNode, loadGraph, queryGraph, shortestPath } from '../runtime/serve.js'
 import { formatTimeTravelResult } from '../runtime/time-travel.js'
-import { findPackageRoot, readPackageVersion } from '../shared/package-metadata.js'
+import { findPackageRoot, readPackageName, readPackageVersion } from '../shared/package-metadata.js'
 import { getUpdateNotification } from '../shared/update-notifier.js'
 import {
   parseBenchmarkArgs,
@@ -153,7 +153,7 @@ export interface CliDependencies {
   readInstalledVersion?: () => string
 }
 
-const COMPARE_WARNING_MESSAGE = 'compare will execute a baseline prompt and a graphify prompt for each question. This may consume paid model tokens.'
+const COMPARE_WARNING_MESSAGE = 'compare will execute a baseline prompt and a madar prompt for each question. This may consume paid model tokens.'
 const REVIEW_COMPARE_WARNING_MESSAGE = 'review-compare will execute verbose and compact pr_impact prompts for the current git diff. This may consume paid model tokens.'
 const BENCHMARK_WARNING_MESSAGE = 'benchmark will execute the benchmark/eval runner. This may consume paid model tokens.'
 const EVAL_WARNING_MESSAGE = 'eval will execute the benchmark/eval runner. This may consume paid model tokens.'
@@ -246,7 +246,7 @@ const DEFAULT_DEPENDENCIES: CliDependencies = {
   agentsInstall,
   agentsUninstall,
   notifyUpdate: async () => await getUpdateNotification({
-    packageName: '@mohammednagy/graphify-ts',
+  packageName: readPackageName(findPackageRoot()),
     currentVersion: readPackageVersion(findPackageRoot()),
   }),
   readInstalledVersion: () => readPackageVersion(findPackageRoot()),
@@ -257,7 +257,7 @@ function messageFromError(error: unknown): string {
 }
 
 function formatProgress(progress: ProgressStep): string {
-  const prefix = `[graphify ${progress.step}]`
+  const prefix = `[madar ${progress.step}]`
   if (progress.step === 'extract' && progress.current !== undefined && progress.total !== undefined && progress.total > 0) {
     return `${prefix} ${progress.message} (${progress.current}/${progress.total})`
   }
@@ -290,7 +290,7 @@ async function confirmPaidCommand(
   return true
 }
 
-export function formatHelp(binaryName = 'graphify-ts'): string {
+export function formatHelp(binaryName = 'madar'): string {
   return [
     `Usage: ${binaryName} <command>`,
     '',
@@ -305,9 +305,9 @@ export function formatHelp(binaryName = 'graphify-ts'): string {
     '    --follow-symlinks    include in-root symlink targets',
     '    --debounce S         watch debounce seconds (default 3)',
     '    --include-docs       include .md/.txt/.rst document files (excluded by default)',
-    '    --docs               generate module documentation in graphify-out/docs/',
+    '    --docs               generate module documentation in out/docs/',
     '    --no-html            skip graph.html generation',
-    '    --wiki               also export a crawlable wiki to graphify-out/wiki',
+    '    --wiki               also export a crawlable wiki to out/wiki',
     '    --obsidian           also export an Obsidian vault',
     '    --obsidian-dir DIR   custom Obsidian vault path (implies --obsidian)',
     '    --svg                also export graph.svg for static embeds',
@@ -318,7 +318,7 @@ export function formatHelp(binaryName = 'graphify-ts'): string {
     '    --neo4j-password PW  Neo4j password (or set NEO4J_PASSWORD/.env)',
     '    --neo4j-database DB  Neo4j database (defaults to NEO4J_DATABASE or neo4j)',
     '  federate <g1> <g2>... merge graphs from multiple repos into one',
-    '    --output DIR         output directory (default graphify-out-federated)',
+    '    --output DIR         output directory (default out-federated)',
     '  watch [path]          build once, then watch for code/doc changes',
     '    --follow-symlinks    include in-root symlink targets',
     '    --debounce S         watch debounce seconds (default 3)',
@@ -334,35 +334,35 @@ export function formatHelp(binaryName = 'graphify-ts'): string {
     '  query "<question>"     traverse graph.json for a question',
     '    --dfs                 use depth-first instead of breadth-first',
     '    --budget N            cap output at N tokens (default 2000)',
-    '    --graph <path>        path to graph.json (default graphify-out/graph.json)',
+    '    --graph <path>        path to graph.json (default out/graph.json)',
     '    --rank-by MODE        rank matches by relevance or degree (default relevance)',
     '    --community ID        limit traversal to one community id',
     '    --file-type TYPE      limit traversal to one file type (for example code or document)',
     '  pack "<prompt>"       compile a compact context payload for automation',
     '    --budget N            cap context pack assembly at N tokens (default 3000)',
     '    --task KIND          explain|review|impact (default explain)',
-    '    --graph <path>       path to graph.json (default graphify-out/graph.json)',
+    '    --graph <path>       path to graph.json (default out/graph.json)',
     '  prompt "<prompt>"     compile a provider-ready prompt payload',
     '    --provider NAME      claude|gemini',
-    '    --graph <path>       path to graph.json (default graphify-out/graph.json)',
+    '    --graph <path>       path to graph.json (default out/graph.json)',
     '  diff <baseline-graph.json> compare a baseline graph.json to the current graph snapshot',
-    '    --graph <path>        path to the current graph.json (default graphify-out/graph.json)',
+    '    --graph <path>        path to the current graph.json (default out/graph.json)',
     '    --limit N             maximum items to show per change section (default 10)',
     '  path <source> <target> find the shortest path between two concepts',
-    '    --graph <path>        path to graph.json (default graphify-out/graph.json)',
+    '    --graph <path>        path to graph.json (default out/graph.json)',
     '    --max-hops N          maximum allowed hops before reporting overflow (default 8)',
     '  explain <label>        explain one node and its neighborhood from graph evidence',
-    '    --graph <path>        path to graph.json (default graphify-out/graph.json)',
+    '    --graph <path>        path to graph.json (default out/graph.json)',
     '    --relation REL        optional relation filter for neighbors',
     '  add <url> [path]       ingest a URL into raw/ and rebuild with --update',
     '    --follow-symlinks    include in-root symlink targets during rebuild',
     '    --no-html            skip graph.html generation during rebuild',
-    '  save-result            save a Q&A result to graphify-out/memory/',
+    '  save-result            save a Q&A result to out/memory/',
     '    --question Q          the question asked',
     '    --answer A            the answer to save',
     '    --type T              query type: query|path_query|explain (default query)',
     '    --nodes N1 N2 ...     source node labels cited in the answer',
-    '    --memory-dir DIR      memory directory (default graphify-out/memory)',
+    '    --memory-dir DIR      memory directory (default out/memory)',
     '  benchmark [graph.json] measure token reduction, question coverage, and structure signals through the benchmark/eval runner. This may consume paid model tokens.',
     '    --exec TEMPLATE       required command template; supports {prompt_file}, {question}, {mode}, and {output_file}',
     '    --questions PATH      load benchmark/eval questions from a JSON file',
@@ -371,17 +371,17 @@ export function formatHelp(binaryName = 'graphify-ts'): string {
     '    --exec TEMPLATE       required command template; supports {prompt_file}, {question}, {mode}, and {output_file}',
     '    --questions PATH      load benchmark/eval questions from a JSON file',
     '    --yes                 skip confirmation before running the paid benchmark/eval prompts',
-    '  compare [question]    run a real baseline vs graphify prompt comparison',
-    '    --graph <path>        path to graph.json (default graphify-out/graph.json)',
+    '  compare [question]    run a real baseline vs madar prompt comparison',
+    '    --graph <path>        path to graph.json (default out/graph.json)',
     '    --exec TEMPLATE       required command template; supports {prompt_file}, {question}, {mode}, and {output_file}',
     '    --questions PATH      load questions from a JSON file instead of a positional question',
-    '    --output-dir DIR      compare output directory (default graphify-out/compare)',
-    '    --baseline-mode MODE  full | bounded | pack_only | native_agent (default full; pack_only compares one bounded raw-context prompt against one compiled graphify pack; native_agent runs --exec twice, uses Anthropic JSON usage when available, and otherwise saves answer-only artifacts)',
+    '    --output-dir DIR      compare output directory (default out/compare)',
+    '    --baseline-mode MODE  full | bounded | pack_only | native_agent (default full; pack_only compares one bounded raw-context prompt against one compiled madar pack; native_agent runs --exec twice, uses Anthropic JSON usage when available, and otherwise saves answer-only artifacts)',
     '    --yes                 skip confirmation before running the paid prompt comparison',
     '    --limit N             cap processed prompts/questions for the comparison run',
     '  review-compare [graph.json] compare full vs compact pr_impact review prompts on the current git diff',
     '    --exec TEMPLATE       required command template; supports {prompt_file}, {mode}, and {output_file}',
-    '    --output-dir DIR      review compare output directory (default graphify-out/review-compare)',
+    '    --output-dir DIR      review compare output directory (default out/review-compare)',
     '    --base-branch BRANCH  override the PR base branch used for diff selection',
     '    --budget N            override the pr_impact review bundle token budget',
     '    --yes                 skip confirmation before running the paid review comparison',
@@ -391,18 +391,18 @@ export function formatHelp(binaryName = 'graphify-ts'): string {
     '    --refresh            rebuild snapshots instead of using cache',
     '    --limit N            cap view items (default 10)',
     '  doctor [graph.json]   check graph freshness, agent config, and MCP wiring',
-    '    --graph <path>      path to graph.json to validate (default graphify-out/graph.json)',
+    '    --graph <path>      path to graph.json to validate (default out/graph.json)',
     '  status [graph.json]   compact readiness summary with next commands',
-    '    --graph <path>      path to graph.json to validate (default graphify-out/graph.json)',
-    '  install [--platform P] install the platform skill or local graphify config',
+    '    --graph <path>      path to graph.json to validate (default out/graph.json)',
+    '  install [--platform P] install the platform skill or local madar config',
     '    platforms            claude|windows|gemini|cursor|codex|opencode|aider|claw|droid|trae|trae-cn|copilot',
-    '  hook <action>          manage git hooks for graphify rebuild reminders',
+    '  hook <action>          manage git hooks for madar rebuild reminders',
     '    install              install post-commit and post-checkout hooks',
-    '    uninstall            remove graphify hook sections',
-    '    status               show whether graphify hooks are installed',
+    '    uninstall            remove madar hook sections',
+    '    status               show whether madar hooks are installed',
     '  aider <install|uninstall>   manage local AGENTS.md rules',
-    '  claude <install|uninstall> [--profile core|full|strict]  manage local CLAUDE.md graphify rules',
-    '  cursor <install|uninstall> [--profile core|full|strict]  manage local Cursor graphify rules',
+    '  claude <install|uninstall> [--profile core|full|strict]  manage local CLAUDE.md madar rules',
+    '  cursor <install|uninstall> [--profile core|full|strict]  manage local Cursor madar rules',
     '  gemini <install|uninstall> [--profile core|full|strict]  manage local GEMINI.md rules and Gemini CLI hook config',
     '  copilot <install|uninstall> [--profile core|full|strict] install or remove the GitHub Copilot skill',
     '  codex <install|uninstall>   manage local AGENTS.md + Codex hook rules',
@@ -461,7 +461,7 @@ function isImplicitGenerateCommand(argument: string): boolean {
 
 function formatGenerateSummary(result: GenerateGraphResult): string {
   const lines = [
-    `[graphify generate] ${result.mode} completed for ${result.rootPath}`,
+    `[madar generate] ${result.mode} completed for ${result.rootPath}`,
     `- Corpus: ${result.totalFiles} file(s) · ~${result.totalWords.toLocaleString()} words`,
     `- Extracted: ${result.codeFiles} code file(s)` + (result.nonCodeFiles > 0 ? ` (+${result.nonCodeFiles} non-code detected)` : ''),
     `- Graph: ${result.nodeCount} nodes · ${result.edgeCount} edges · ${result.communityCount} communities`,
@@ -511,10 +511,10 @@ function formatGenerateSummary(result: GenerateGraphResult): string {
 
   lines.push('')
   lines.push('Next: connect your AI assistant:')
-  lines.push('  graphify-ts claude install    # Claude Code')
-  lines.push('  graphify-ts cursor install    # Cursor')
-  lines.push('  graphify-ts copilot install   # GitHub Copilot')
-  lines.push('  graphify-ts gemini install    # Gemini CLI')
+  lines.push('  madar claude install    # Claude Code')
+  lines.push('  madar cursor install    # Cursor')
+  lines.push('  madar copilot install   # GitHub Copilot')
+  lines.push('  madar gemini install    # Gemini CLI')
 
   return lines.join('\n')
 }
@@ -687,7 +687,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
           database: options.neo4jDatabase,
           projectRoot: result.rootPath,
         })
-        io.log(`[graphify neo4j] Pushed ${pushResult.nodes} nodes and ${pushResult.edges} edges to ${pushResult.uri} (database ${pushResult.database})`)
+        io.log(`[madar neo4j] Pushed ${pushResult.nodes} nodes and ${pushResult.edges} edges to ${pushResult.uri} (database ${pushResult.database})`)
       }
 
       if (options.watch) {
@@ -718,7 +718,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
 
     if (command === 'federate') {
       if (args.length === 0) {
-        throw new UsageError('Usage: graphify-ts federate <graph1.json> <graph2.json> ... [--output DIR]')
+        throw new UsageError('Usage: madar federate <graph1.json> <graph2.json> ... [--output DIR]')
       }
 
       const graphPaths: string[] = []
@@ -744,7 +744,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
 
       const result = federate(graphPaths, { outputDir })
       io.log([
-        `[graphify federate] merged ${result.repos.length} repos: ${result.repos.join(', ')}`,
+        `[madar federate] merged ${result.repos.length} repos: ${result.repos.join(', ')}`,
         `- Graph: ${result.totalNodes} nodes · ${result.totalEdges} edges · ${result.communityCount} communities`,
         `- Cross-repo edges: ${result.crossRepoEdges} inferred connections`,
         `- Outputs: ${result.graphPath}, ${result.reportPath}`,
@@ -820,7 +820,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         noHtml: options.noHtml,
         onProgress: (step) => io.log(formatProgress(step)),
       })
-      io.log(`[graphify add] Saved ${assetPath}`)
+      io.log(`[madar add] Saved ${assetPath}`)
       io.log(formatGenerateSummary(result))
       return 0
     }
@@ -885,8 +885,8 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
 
     if (command === 'claude') {
       const options = parsePlatformActionArgs(command, args)
-      if (options.action === 'install' && !existsSync('graphify-out/graph.json')) {
-        io.log("Warning: graphify-out/graph.json not found. Run 'graphify-ts generate .' first, then re-run this command.")
+      if (options.action === 'install' && !existsSync('out/graph.json')) {
+        io.log("Warning: out/graph.json not found. Run 'madar generate .' first, then re-run this command.")
       }
       io.log(options.action === 'install'
         ? dependencies.claudeInstall('.', options.profile ? { profile: options.profile } : {})
@@ -896,8 +896,8 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
 
     if (command === 'cursor') {
       const options = parsePlatformActionArgs(command, args)
-      if (options.action === 'install' && !existsSync('graphify-out/graph.json')) {
-        io.log("Warning: graphify-out/graph.json not found. Run 'graphify-ts generate .' first, then re-run this command.")
+      if (options.action === 'install' && !existsSync('out/graph.json')) {
+        io.log("Warning: out/graph.json not found. Run 'madar generate .' first, then re-run this command.")
       }
       io.log(options.action === 'install'
         ? dependencies.cursorInstall('.', options.profile ? { profile: options.profile } : {})
@@ -907,8 +907,8 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
 
     if (command === 'gemini') {
       const options = parsePlatformActionArgs(command, args)
-      if (options.action === 'install' && !existsSync('graphify-out/graph.json')) {
-        io.log("Warning: graphify-out/graph.json not found. Run 'graphify-ts generate .' first, then re-run this command.")
+      if (options.action === 'install' && !existsSync('out/graph.json')) {
+        io.log("Warning: out/graph.json not found. Run 'madar generate .' first, then re-run this command.")
       }
       io.log(options.action === 'install' ? dependencies.geminiInstall('.', options.profile ? { profile: options.profile } : {}) : dependencies.geminiUninstall('.'))
       return 0
@@ -917,8 +917,8 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
     if (command === 'copilot') {
       const options = parsePlatformActionArgs(command, args)
       if (options.action === 'install') {
-        if (!existsSync('graphify-out/graph.json')) {
-          io.log("Warning: graphify-out/graph.json not found. Run 'graphify-ts generate .' first, then re-run this command.")
+        if (!existsSync('out/graph.json')) {
+          io.log("Warning: out/graph.json not found. Run 'madar generate .' first, then re-run this command.")
         }
         io.log(dependencies.installSkill('copilot'))
         io.log(dependencies.installCopilotMcp('.', options.profile ? { profile: options.profile } : {}))
@@ -934,7 +934,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
     }
 
     io.error(`error: unknown command '${command}'`)
-    io.error(`Run 'graphify-ts --help' for usage.`)
+    io.error(`Run 'madar --help' for usage.`)
     return 1
   } catch (error) {
     if (error instanceof UsageError) {

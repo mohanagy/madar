@@ -1,6 +1,6 @@
 import { basename, dirname, isAbsolute, relative, resolve } from 'node:path'
 
-import { buildGraphifyPromptPack } from '../../infrastructure/compare.js'
+import { buildMadarPromptPack } from '../../infrastructure/compare.js'
 import type { TaskContextPlan } from '../../contracts/task-context-plan.js'
 import type { CompareRefsInput } from '../../infrastructure/time-travel.js'
 import type {
@@ -405,7 +405,7 @@ function snippetSourcePathCandidates(graphPath: string, sourceFile: string): str
   }
 
   const graphDir = dirname(graphPath)
-  const projectDir = basename(graphDir) === 'graphify-out' ? dirname(graphDir) : graphDir
+  const projectDir = basename(graphDir) === 'out' ? dirname(graphDir) : graphDir
   const roots = [...new Set([graphDir, projectDir].map((root) => resolve(root)))]
   const candidates = isAbsolute(sourceFile)
     ? [resolve(sourceFile)]
@@ -1286,7 +1286,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       const previousSession =
         explicitSessionState
         ?? (sessionId ? helpers.getContextPromptSession(sessionId) : undefined)
-      const promptPack = buildGraphifyPromptPack({
+      const promptPack = buildMadarPromptPack({
         question: prompt,
         retrieval,
         ...(provider === 'claude' && previousSession ? { session: previousSession } : {}),

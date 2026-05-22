@@ -18,11 +18,11 @@ function normalizePortablePath(path: string): string {
 }
 
 function createRepo(options: { pathLikeNodeIds?: boolean; pathWithSpaces?: boolean } = {}): string {
-  const repoPrefix = options.pathWithSpaces ? 'graphify ts review compare repo-' : 'graphify-ts-review-compare-'
+  const repoPrefix = options.pathWithSpaces ? 'madar ts review compare repo-' : 'madar-review-compare-'
   const root = mkdtempSync(join(tmpdir(), repoPrefix))
   mkdirSync(join(root, 'src'), { recursive: true })
   mkdirSync(join(root, 'tests'), { recursive: true })
-  mkdirSync(join(root, 'graphify-out'), { recursive: true })
+  mkdirSync(join(root, 'out'), { recursive: true })
   const authNodeId = options.pathLikeNodeIds
     ? 'users_testuser_desktop_projects_demo_src_auth_ts_authenticateuser'
     : 'auth_user'
@@ -56,7 +56,7 @@ function createRepo(options: { pathLikeNodeIds?: boolean; pathWithSpaces?: boole
   writeFileSync(join(root, 'tests', 'auth.test.ts'), 'describe("auth", () => {})\n', 'utf8')
 
   writeFileSync(
-    join(root, 'graphify-out', 'graph.json'),
+    join(root, 'out', 'graph.json'),
     JSON.stringify({
       directed: true,
       community_labels: {
@@ -116,8 +116,8 @@ function createRepo(options: { pathLikeNodeIds?: boolean; pathWithSpaces?: boole
   )
 
   execFileSync('git', ['init', '-b', 'main'], { cwd: root, stdio: 'pipe' })
-  execFileSync('git', ['config', 'user.email', 'graphify@example.com'], { cwd: root, stdio: 'pipe' })
-  execFileSync('git', ['config', 'user.name', 'Graphify Test'], { cwd: root, stdio: 'pipe' })
+  execFileSync('git', ['config', 'user.email', 'madar@example.com'], { cwd: root, stdio: 'pipe' })
+  execFileSync('git', ['config', 'user.name', 'Madar Test'], { cwd: root, stdio: 'pipe' })
   execFileSync('git', ['add', '.'], { cwd: root, stdio: 'pipe' })
   execFileSync('git', ['commit', '-m', 'Initial commit'], { cwd: root, stdio: 'pipe' })
   writeFileSync(
@@ -150,8 +150,8 @@ describe('review compare', () => {
     repoRoots.push(root)
 
     const result = generateReviewCompareArtifacts({
-      graphPath: join(root, 'graphify-out', 'graph.json'),
-      outputDir: join(root, 'graphify-out', 'review-compare'),
+      graphPath: join(root, 'out', 'graph.json'),
+      outputDir: join(root, 'out', 'review-compare'),
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       now: new Date('2026-05-01T21:00:00.000Z'),
     })
@@ -205,8 +205,8 @@ describe('review compare', () => {
     repoRoots.push(root)
 
     const result = generateReviewCompareArtifacts({
-      graphPath: join(root, 'graphify-out', 'graph.json'),
-      outputDir: join(root, 'graphify-out', 'review-compare', 'session1'),
+      graphPath: join(root, 'out', 'graph.json'),
+      outputDir: join(root, 'out', 'review-compare', 'session1'),
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       now: new Date('2026-05-01T21:00:00.000Z'),
     })
@@ -221,8 +221,8 @@ describe('review compare', () => {
     repoRoots.push(root)
 
     const result = generateReviewCompareArtifacts({
-      graphPath: join(root, 'graphify-out', 'graph.json'),
-      outputDir: join(root, 'graphify-out', 'review-compare'),
+      graphPath: join(root, 'out', 'graph.json'),
+      outputDir: join(root, 'out', 'review-compare'),
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       now: new Date('2026-05-01T21:00:00.000Z'),
     })
@@ -231,11 +231,11 @@ describe('review compare', () => {
     const shareSafePath = join(result.report.paths.output_dir, 'report.share-safe.json')
     const shareSafeReport = JSON.parse(readFileSync(shareSafePath, 'utf8')) as Record<string, unknown>
 
-    expect(normalizePortablePath(String(localReport.graph_path))).toContain('graphify-out/graph.json')
+    expect(normalizePortablePath(String(localReport.graph_path))).toContain('out/graph.json')
     expect((localReport.paths as Record<string, unknown>).report).toEqual(expect.stringContaining('report.json'))
     expect(shareSafeReport).toEqual(
       expect.objectContaining({
-        graph_path: '<project-root>/graphify-out/graph.json',
+        graph_path: '<project-root>/out/graph.json',
         paths: expect.objectContaining({
           output_dir: '<artifact-root>',
           report: '<artifact-root>/report.json',
@@ -251,8 +251,8 @@ describe('review compare', () => {
     repoRoots.push(root)
 
     const result = generateReviewCompareArtifacts({
-      graphPath: join(root, 'graphify-out', 'graph.json'),
-      outputDir: join(root, 'graphify-out', 'review-compare'),
+      graphPath: join(root, 'out', 'graph.json'),
+      outputDir: join(root, 'out', 'review-compare'),
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       now: new Date('2026-05-01T21:00:00.000Z'),
     })
@@ -273,8 +273,8 @@ describe('review compare', () => {
 
     const result = await executeReviewCompareRuns(
       {
-        graphPath: join(root, 'graphify-out', 'graph.json'),
-        outputDir: join(root, 'graphify-out', 'review-compare'),
+        graphPath: join(root, 'out', 'graph.json'),
+        outputDir: join(root, 'out', 'review-compare'),
         execTemplate: 'runner --prompt {prompt_file} --mode {mode} --out {output_file}',
         now: new Date('2026-05-01T21:00:00.000Z'),
       },
@@ -315,8 +315,8 @@ describe('review compare', () => {
 
     const result = await executeReviewCompareRuns(
       {
-        graphPath: join(root, 'graphify-out', 'graph.json'),
-        outputDir: join(root, 'graphify-out', 'review compare'),
+        graphPath: join(root, 'out', 'graph.json'),
+        outputDir: join(root, 'out', 'review compare'),
         execTemplate: 'runner --prompt {prompt_file} --mode {mode} --out {output_file}',
         now: new Date('2026-05-01T21:00:00.000Z'),
       },
@@ -327,7 +327,7 @@ describe('review compare', () => {
           stderr: [
             `prompt=${execution.promptFile}`,
             `output=${execution.outputFile}`,
-            `graph=${join(root, 'graphify-out', 'graph.json')}`,
+            `graph=${join(root, 'out', 'graph.json')}`,
             `project=${root}`,
             `external=${externalAbsolutePath}`,
             'OPENAI_API_KEY=super-secret',
@@ -345,7 +345,7 @@ describe('review compare', () => {
 
     expect(localReport.stderr.verbose).toContain(`prompt=${result.report.paths.verbose_prompt}`)
     expect(localReport.stderr.verbose).toContain(`output=${result.report.answer_paths.verbose}`)
-    expect(localReport.stderr.verbose).toContain(`graph=${join(root, 'graphify-out', 'graph.json')}`)
+    expect(localReport.stderr.verbose).toContain(`graph=${join(root, 'out', 'graph.json')}`)
     expect(localReport.stderr.verbose).toContain(`project=${root}`)
     expect(localReport.stderr.verbose).toContain(`external=${externalAbsolutePath}`)
     expect(localReport.stderr.verbose).toContain('OPENAI_API_KEY=super-secret')
@@ -353,7 +353,7 @@ describe('review compare', () => {
 
     expect(shareSafeReport.stderr.verbose).toContain('prompt=<artifact-root>/verbose-prompt.txt')
     expect(shareSafeReport.stderr.verbose).toContain('output=<artifact-root>/verbose-answer.txt')
-    expect(shareSafeReport.stderr.verbose).toContain('graph=<project-root>/graphify-out/graph.json')
+    expect(shareSafeReport.stderr.verbose).toContain('graph=<project-root>/out/graph.json')
     expect(shareSafeReport.stderr.verbose).toContain('project=<project-root>')
     expect(shareSafeReport.stderr.verbose).toContain(`external=${basename(externalAbsolutePath)}`)
     expect(shareSafeReport.stderr.verbose).toContain('OPENAI_API_KEY=[REDACTED]')

@@ -1,8 +1,8 @@
-# graphify-ts
+# madar
 
 **Stop making AI agents re-read your repo.** A local **context plane** and **context compiler** for Claude Code, Codex CLI, Copilot CLI, Cursor, Windsurf, and Aider — turn your TypeScript/Node workspace and PR diffs into compact, verifiable context packs.
 
-[![npm](https://img.shields.io/npm/v/@mohammednagy/graphify-ts)](https://www.npmjs.com/package/@mohammednagy/graphify-ts)
+[![npm](https://img.shields.io/npm/v/madar)](https://www.npmjs.com/package/madar)
 [![node >=20](https://img.shields.io/badge/node-%E2%89%A520-3c873a)](https://nodejs.org/)
 [![Local first](https://img.shields.io/badge/local--first-no%20cloud%20required-0f766e)](#trust--limitations)
 [![No API keys](https://img.shields.io/badge/API%20keys-none%20required-111827)](#trust--limitations)
@@ -12,31 +12,31 @@
 
 ## Demo
 
-[![▶ Watch the 30-second demo](https://img.shields.io/badge/%E2%96%B6%EF%B8%8E-Watch%20the%2030%E2%80%91second%20demo-3c873a?style=for-the-badge)](https://github.com/mohanagy/graphify-ts#demo)
+[![▶ Watch the 30-second demo](https://img.shields.io/badge/%E2%96%B6%EF%B8%8E-Watch%20the%2030%E2%80%91second%20demo-3c873a?style=for-the-badge)](https://github.com/mohanagy/madar#demo)
 
 <!-- GitHub auto-embeds the user-attachment video below; npm renders it as a link only.
      The shields.io button above is the npm-visible affordance back to the inline player on GitHub. -->
 
 https://github.com/user-attachments/assets/a502185f-fa12-4a8f-80d2-172847f209fd
 
-30 seconds: install → `graphify-ts generate .` on the GoValidate repo (1,048 files) → `graphify-ts claude install --profile core` → `graphify-ts compare "Explain the auth flow End to End"`. Anthropic-reported on the same Claude Opus run: **31 → 14 turns (2.21× fewer)**, **170 s → 107 s (1.58× faster)**, **2,811,682 → 532,021 input tokens (5.28× fewer)**. Receipts: [`docs/benchmarks/2026-05-09-govalidate-auth-e2e/`](docs/benchmarks/2026-05-09-govalidate-auth-e2e/).
+30 seconds: install → `madar generate .` on the GoValidate repo (1,048 files) → `madar claude install --profile core` → `madar compare "Explain the auth flow End to End"`. Anthropic-reported on the same Claude Opus run: **31 → 14 turns (2.21× fewer)**, **170 s → 107 s (1.58× faster)**, **2,811,682 → 532,021 input tokens (5.28× fewer)**. Receipts: [`docs/benchmarks/2026-05-09-govalidate-auth-e2e/`](docs/benchmarks/2026-05-09-govalidate-auth-e2e/).
 
 ---
 
 ## Quickstart
 
 ```bash
-npm install -g @mohammednagy/graphify-ts
+npm install -g madar
 
 cd your-project
-graphify-ts generate .          # builds graphify-out/graph.json (no API key, no cloud)
-graphify-ts summary             # bounded repo overview before deeper retrieval
-graphify-ts claude install      # wires Claude Code to use it via MCP
-graphify-ts doctor              # checks graph freshness + agent/MCP wiring
-graphify-ts status              # compact readiness summary + next commands
+madar generate .          # builds out/graph.json (no API key, no cloud)
+madar summary             # bounded repo overview before deeper retrieval
+madar claude install      # wires Claude Code to use it via MCP
+madar doctor              # checks graph freshness + agent/MCP wiring
+madar status              # compact readiness summary + next commands
 
 # Or use the opt-in SPI pipeline for framework-aware metadata + disk cache:
-graphify-ts generate . --spi
+madar generate . --spi
 ```
 
 Now ask Claude something about your codebase. It calls `retrieve` once, gets back labeled snippets with file paths and community context, and answers — instead of running multiple `Read` / `Grep` / `Glob` calls and accumulating tokens at every turn.
@@ -44,20 +44,20 @@ Now ask Claude something about your codebase. It calls `retrieve` once, gets bac
 **Other agents:**
 
 ```bash
-graphify-ts cursor install      # Cursor
-graphify-ts copilot install     # GitHub Copilot CLI
-graphify-ts gemini install      # Gemini CLI
-graphify-ts aider install       # Aider
-graphify-ts codex install       # Codex CLI
-graphify-ts opencode install    # OpenCode
+madar cursor install      # Cursor
+madar copilot install     # GitHub Copilot CLI
+madar gemini install      # Gemini CLI
+madar aider install       # Aider
+madar codex install       # Codex CLI
+madar opencode install    # OpenCode
 ```
 
 **Or use it without MCP** — pipe the compiled prompt directly to your agent's CLI:
 
 ```bash
-graphify-ts summary                             # bounded JSON overview before pack/prompt
-graphify-ts pack "how does auth work?" --task explain          # compact CLI context payload
-graphify-ts prompt "how does auth work?" --provider claude     # provider-ready compiled prompt
+madar summary                             # bounded JSON overview before pack/prompt
+madar pack "how does auth work?" --task explain          # compact CLI context payload
+madar prompt "how does auth work?" --provider claude     # provider-ready compiled prompt
 ```
 
 Want a tiny reproducible workspace for local demos? Start with [`examples/sample-workspace/`](examples/sample-workspace/) and the [sample workspace tutorial](docs/tutorials/sample-workspace.md).
@@ -68,9 +68,9 @@ Want a broader local-first walkthrough that also covers install, `prompt`, and a
 
 ## What's new in 0.23.0
 
-- Start broad, then zoom in: `graphify-ts summary` and the core MCP `graph_summary` tool now provide the same bounded first-turn overview of counts, domains, top modules, frameworks, entrypoints, and high-signal runtime paths.
+- Start broad, then zoom in: `madar summary` and the core MCP `graph_summary` tool now provide the same bounded first-turn overview of counts, domains, top modules, frameworks, entrypoints, and high-signal runtime paths.
 - Runtime-generation explain packs can now expose an `execution_slice` with ordered steps and partial-path signaling, so backend queue/report-generation flows are easier to inspect without dumping a large raw slice.
-- Proof workflows are easier to share safely: `compare`, `review-compare`, and runner-backed `benchmark --exec ...` now emit a companion `report.share-safe.json`, and `compare --baseline-mode pack_only` isolates one bounded raw-context baseline prompt against one compiled graphify pack.
+- Proof workflows are easier to share safely: `compare`, `review-compare`, and runner-backed `benchmark --exec ...` now emit a companion `report.share-safe.json`, and `compare --baseline-mode pack_only` isolates one bounded raw-context baseline prompt against one compiled madar pack.
 - Public evaluation is stronger: the shared [GoValidate benchmark suite](docs/benchmarks/govalidate-suite/README.md) now ships stable prompt ids, pack-quality gates, and deterministic answer-quality checks.
 - Extraction and retrieval got smarter in places users notice: Python now has first-pass FastAPI semantics, runtime-generation packs preserve queue-to-worker handoffs, and `--spi` adds stronger storage and Next.js App Router hints.
 
@@ -84,11 +84,11 @@ If you want the proof-oriented workflow behind those surfaces, start with [proof
 
 ---
 
-## What graphify-ts is
+## What madar is
 
 Modern AI coding agents have one expensive habit: they discover your codebase from scratch every session. They `grep`, then `Read`, then summarize, then forget, then repeat — every prompt.
 
-graphify-ts fixes that loop. It indexes a TypeScript/Node workspace (and PR diffs) into a local knowledge graph, then compiles that graph into the **smallest verifiable context pack** the agent actually needs for the task at hand.
+madar fixes that loop. It indexes a TypeScript/Node workspace (and PR diffs) into a local knowledge graph, then compiles that graph into the **smallest verifiable context pack** the agent actually needs for the task at hand.
 
 ```
 your prompt
@@ -128,7 +128,7 @@ That means the same selected nodes can render differently for `explain`, `review
 
 NestJS + Next.js SaaS, 1,268 files, ~860K words. Same question, same Claude Opus 4.7, captured from `claude --output-format json`. Receipts: [`docs/benchmarks/2026-04-30-govalidate/`](docs/benchmarks/2026-04-30-govalidate/).
 
-|                        | Without graphify-ts | With graphify-ts | Difference |
+|                        | Without madar | With madar | Difference |
 |------------------------|---------------------|------------------|------------|
 | **Tool-call turns**    | 9                   | **3**            | **3× fewer** |
 | **Latency**            | 96 sec              | **35 sec**       | **2.8× faster** |
@@ -140,7 +140,7 @@ PR-review proof on a real diff: prompt tokens 63,024 → **8,690** (**7.25× few
 
 Latest runtime-pack refinement: **runtime-generation prompts stay compact** by following the strongest backend runtime path and suppressing sibling routes, script/migration noise, and shared-hub fan-out on broad backend-generation questions.
 
-Single-prompt backend benchmark snapshot: in one real GoValidate `compare --baseline-mode native_agent` run for `"Explain how idea report is getting generated"`, graphify-ts reduced Anthropic-reported input tokens from **1,653,307** to **498,280** (~**69.9%** lower). Multi-question native-agent compare runs now also roll up suite wins/losses for input tokens, turns, and latency, report mean/median input-token reduction, call out comparable-question counts when some runs are excluded from the aggregate, and highlight the best win and worst regression prompt. Details and caveats: [`docs/benchmarks/2026-05-12-govalidate-report-generation/`](docs/benchmarks/2026-05-12-govalidate-report-generation/).
+Single-prompt backend benchmark snapshot: in one real GoValidate `compare --baseline-mode native_agent` run for `"Explain how idea report is getting generated"`, madar reduced Anthropic-reported input tokens from **1,653,307** to **498,280** (~**69.9%** lower). Multi-question native-agent compare runs now also roll up suite wins/losses for input tokens, turns, and latency, report mean/median input-token reduction, call out comparable-question counts when some runs are excluded from the aggregate, and highlight the best win and worst regression prompt. Details and caveats: [`docs/benchmarks/2026-05-12-govalidate-report-generation/`](docs/benchmarks/2026-05-12-govalidate-report-generation/).
 
 [Reproduce them](docs/benchmarks/2026-04-30-govalidate/verify.sh) with one shell script against the committed evidence files.
 
@@ -148,26 +148,26 @@ Single-prompt backend benchmark snapshot: in one real GoValidate `compare --base
 
 ## Works with your AI tools
 
-graphify-ts produces local context packs that any modern coding agent can consume — over MCP or by piping the compiled prompt to its CLI.
+madar produces local context packs that any modern coding agent can consume — over MCP or by piping the compiled prompt to its CLI.
 
 | Agent | Connection | Install command |
 |---|---|---|
-| Claude Code | MCP via `.mcp.json` | `graphify-ts claude <install|uninstall> [--profile core|full|strict]` |
-| Cursor | MCP via `.cursor/mcp.json` | `graphify-ts cursor <install|uninstall> [--profile core|full|strict]` |
-| GitHub Copilot CLI | MCP via `.vscode/mcp.json` | `graphify-ts copilot <install|uninstall> [--profile core|full|strict]` |
-| Gemini CLI | MCP server | `graphify-ts gemini <install|uninstall> [--profile core|full|strict]` |
-| Aider | AGENTS.md context-pack-first profile | `graphify-ts aider install` |
-| OpenCode | AGENTS.md + `.opencode/plugins/graphify-ts.js` + MCP via `opencode.json` / `opencode.jsonc` | `graphify-ts opencode install` |
-| Codex CLI | AGENTS.md + `.codex/hooks.json` context-pack-first profile | `graphify-ts codex install` |
-| Windsurf / others | Pipe `graphify-ts prompt` output | `graphify-ts prompt "..." --provider claude` |
+| Claude Code | MCP via `.mcp.json` | `madar claude <install|uninstall> [--profile core|full|strict]` |
+| Cursor | MCP via `.cursor/mcp.json` | `madar cursor <install|uninstall> [--profile core|full|strict]` |
+| GitHub Copilot CLI | MCP via `.vscode/mcp.json` | `madar copilot <install|uninstall> [--profile core|full|strict]` |
+| Gemini CLI | MCP server | `madar gemini <install|uninstall> [--profile core|full|strict]` |
+| Aider | AGENTS.md context-pack-first profile | `madar aider install` |
+| OpenCode | AGENTS.md + `.opencode/plugins/madar.js` + MCP via `opencode.json` / `opencode.jsonc` | `madar opencode install` |
+| Codex CLI | AGENTS.md + `.codex/hooks.json` context-pack-first profile | `madar codex install` |
+| Windsurf / others | Pipe `madar prompt` output | `madar prompt "..." --provider claude` |
 
-These are local installers that write project instructions and, when the platform supports it, local MCP config or plugin files that point at the graphify-ts subprocess. No code is uploaded.
+These are local installers that write project instructions and, when the platform supports it, local MCP config or plugin files that point at the madar subprocess. No code is uploaded.
 
 For Claude, Cursor, Copilot, and Gemini, `--profile strict` keeps the lean core MCP tool surface but rewrites the generated guidance into a compact flow: call `context_pack` once for the task before broader exploration, answer from the pack when coverage is complete, expand only when diagnostics show missing evidence, and avoid raw file search unless the pack is insufficient.
 
-Aider and OpenCode are intentionally context-pack-first: run `graphify-ts generate .`, install the profile, and start broad codebase work with `graphify-ts pack "<task>" --task explain` before raw file search. `graphify-ts aider install` writes an AGENTS.md profile only; remove it with `graphify-ts aider uninstall`. `graphify-ts opencode install` writes the AGENTS.md profile, `.opencode/plugins/graphify-ts.js`, and the graphify MCP entry in `opencode.json` or `opencode.jsonc`; remove only graphify-ts-owned content with `graphify-ts opencode uninstall`. Manual verification does not require either agent binary: inspect the generated files after install, then confirm uninstall removes only the graphify-ts entries.
+Aider and OpenCode are intentionally context-pack-first: run `madar generate .`, install the profile, and start broad codebase work with `madar pack "<task>" --task explain` before raw file search. `madar aider install` writes an AGENTS.md profile only; remove it with `madar aider uninstall`. `madar opencode install` writes the AGENTS.md profile, `.opencode/plugins/madar.js`, and the madar MCP entry in `opencode.json` or `opencode.jsonc`; remove only madar-owned content with `madar opencode uninstall`. Manual verification does not require either agent binary: inspect the generated files after install, then confirm uninstall removes only the madar entries.
 
-Codex is intentionally context-pack-first: run `graphify-ts generate .`, install with `graphify-ts codex install`, and start broad codebase work with `graphify-ts pack "<task>" --task explain` before raw file search. To remove the profile, run `graphify-ts codex uninstall`; it removes the graphify-ts AGENTS.md section and Codex hook while preserving unrelated content. Manual verification does not require Codex to be installed: inspect `AGENTS.md` and `.codex/hooks.json` after install, then confirm uninstall removes only graphify-ts content.
+Codex is intentionally context-pack-first: run `madar generate .`, install with `madar codex install`, and start broad codebase work with `madar pack "<task>" --task explain` before raw file search. To remove the profile, run `madar codex uninstall`; it removes the madar AGENTS.md section and Codex hook while preserving unrelated content. Manual verification does not require Codex to be installed: inspect `AGENTS.md` and `.codex/hooks.json` after install, then confirm uninstall removes only madar content.
 
 For practical multi-agent workflows across Claude Code, Codex, Copilot, Cursor, and Gemini, see the [agent orchestration guide](docs/integrations/agent-orchestration.md).
 
@@ -175,7 +175,7 @@ For practical multi-agent workflows across Claude Code, Codex, Copilot, Cursor, 
 
 ## MCP tools
 
-These seven MCP tools handle the most common agent workflows in the default **core** profile. The full surface is 26 tools, opt-in via `GRAPHIFY_TOOL_PROFILE=full` or `--profile full` on install. `--profile strict` still uses the lean core tool surface, but changes the installed guidance so the agent starts with one `context_pack` call and expands only when the pack diagnostics say evidence is missing. Start with `graph_summary` for a bounded deterministic first-turn overview, then use `retrieve` or `context_pack` when you need task-specific evidence. It is intentionally a compact at-a-glance summary, not a full runtime trace.
+These seven MCP tools handle the most common agent workflows in the default **core** profile. The full surface is 26 tools, opt-in via `MADAR_TOOL_PROFILE=full` or `--profile full` on install. `--profile strict` still uses the lean core tool surface, but changes the installed guidance so the agent starts with one `context_pack` call and expands only when the pack diagnostics say evidence is missing. Start with `graph_summary` for a bounded deterministic first-turn overview, then use `retrieve` or `context_pack` when you need task-specific evidence. It is intentionally a compact at-a-glance summary, not a full runtime trace.
 
 | Tool | When the agent uses it |
 |---|---|
@@ -198,30 +198,30 @@ When the selected question is a runtime-generation flow, the shared compact resp
 ## Common commands
 
 ```bash
-graphify-ts generate .                          # build the graph
-graphify-ts generate . --spi                    # opt-in SPI pipeline (framework metadata + disk cache)
-graphify-ts watch .                             # rebuild on file change
-graphify-ts summary                             # bounded JSON overview before deeper retrieval
-graphify-ts pack "how does auth work?" --task explain          # compact CLI context payload
-graphify-ts pack "why does auth fail?" --task explain --retrieval-strategy slice-v1
-graphify-ts prompt "how does auth work?" --provider claude     # provider-ready compiled prompt
-graphify-ts review-compare graphify-out/graph.json --exec '...' --yes  # PR review benchmark
-graphify-ts compare "How does auth work?" --exec '...' --yes           # general benchmark
-graphify-ts compare "How does auth work?" --baseline-mode pack_only --exec '...' --yes  # bounded raw context vs compiled graphify pack
-graphify-ts time-travel main HEAD --view risk   # what changed between two refs
-graphify-ts federate frontend/graph.json backend/graph.json  # multi-repo merge
-graphify-ts --help                              # full surface
+madar generate .                          # build the graph
+madar generate . --spi                    # opt-in SPI pipeline (framework metadata + disk cache)
+madar watch .                             # rebuild on file change
+madar summary                             # bounded JSON overview before deeper retrieval
+madar pack "how does auth work?" --task explain          # compact CLI context payload
+madar pack "why does auth fail?" --task explain --retrieval-strategy slice-v1
+madar prompt "how does auth work?" --provider claude     # provider-ready compiled prompt
+madar review-compare out/graph.json --exec '...' --yes  # PR review benchmark
+madar compare "How does auth work?" --exec '...' --yes           # general benchmark
+madar compare "How does auth work?" --baseline-mode pack_only --exec '...' --yes  # bounded raw context vs compiled madar pack
+madar time-travel main HEAD --view risk   # what changed between two refs
+madar federate frontend/graph.json backend/graph.json  # multi-repo merge
+madar --help                              # full surface
 ```
 
 ---
 
 ## Default discovery rules
 
-`graphify-ts generate` now hard-ignores nested VCS/worktree copies and generated/build output by default: `.worktrees/`, `worktrees/`, `.git/`, `graphify-out/`, `node_modules/`, `dist/`, `build/`, `coverage/`, cache folders, source maps, lock/build artifacts, and temp/log files.
+`madar generate` now hard-ignores nested VCS/worktree copies and generated/build output by default: `.worktrees/`, `worktrees/`, `.git/`, `out/`, `node_modules/`, `dist/`, `build/`, `coverage/`, cache folders, source maps, lock/build artifacts, and temp/log files.
 
 Tests, benchmarks, fixtures, mocks, and config files are **not** hard-ignored anymore. They still get indexed so retrieval can use them when you ask for them, but production/runtime prompts now soft-penalize them and honor prompt exclusions like "exclude tests, benchmarks, fixtures".
 
-`.graphifyignore` still adds extra ignore rules, and negated entries such as `!vendor/**` or `!lib/**` can re-include a default hard-ignore when you intentionally want it indexed.
+`.madarignore` still adds extra ignore rules, and negated entries such as `!vendor/**` or `!lib/**` can re-include a default hard-ignore when you intentionally want it indexed.
 
 ---
 
@@ -239,7 +239,7 @@ Everything stays local by default. No telemetry, no cloud upload, no API key req
 2. **Deep extraction is still best on JS/TS.** Python now has cross-file import/call resolution and first-pass FastAPI route/dependency semantics, but Ruby / Go / Java / Rust still use the tree-sitter AST baseline. C / Kotlin / C# / Scala / PHP / Swift / Zig use a generic structural extractor.
 3. **Static analysis can't resolve every dynamic runtime behavior.** Runtime-generated routes, heavy meta-programmed decorators, and string-built imports fall back to the base AST graph. SPI can tag common Prisma model operations and repository read/write methods so persistence-oriented prompts prefer likely storage endpoints, but that remains first-pass static coverage rather than full ORM/dataflow understanding.
 4. **Token reduction depends on project + task.** "How does auth work?" benefits more than "fix this typo." Always validate important code changes with tests and review.
-5. **Some workflows still need full file reads** — large multi-file refactors, generated-code spelunking. graphify narrows the agent's first read; it doesn't replace its ability to read.
+5. **Some workflows still need full file reads** — large multi-file refactors, generated-code spelunking. madar narrows the agent's first read; it doesn't replace its ability to read.
 
 ---
 
@@ -251,7 +251,7 @@ Everything stays local by default. No telemetry, no cloud upload, no API key req
 - [Language and capability matrix](docs/language-capability-matrix.md) — exactly what each file type and language gets
 - [Performance benchmark harness](docs/benchmarks/performance/README.md) — repeatable `generate` / `update` / `cluster-only` measurements
 - [MCP tool examples](examples/mcp-tool-examples.md) — real input/output for every tool
-- [Benchmark hub](https://github.com/mohanagy/graphify-ts/tree/main/docs/benchmarks) — committed wrappers and provider-reported evidence
+- [Benchmark hub](https://github.com/mohanagy/madar/tree/main/docs/benchmarks) — committed wrappers and provider-reported evidence
 - [Changelog](CHANGELOG.md) — full per-release notes
 - [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
 
@@ -259,7 +259,7 @@ Everything stays local by default. No telemetry, no cloud upload, no API key req
 
 ## Contributors
 
-Thanks to everyone shaping graphify-ts. The list below is regenerated automatically on every push to `main` by [`.github/workflows/contributors.yml`](.github/workflows/contributors.yml).
+Thanks to everyone shaping madar. The list below is regenerated automatically on every push to `main` by [`.github/workflows/contributors.yml`](.github/workflows/contributors.yml).
 
 <!-- readme: contributors -start -->
 <table>
@@ -305,13 +305,9 @@ Thanks to everyone shaping graphify-ts. The list below is regenerated automatica
 </table>
 <!-- readme: contributors -end -->
 
-A specific shout-out to [@jamemackson](https://github.com/jamemackson) for [#54](https://github.com/mohanagy/graphify-ts/pull/54) — adding OpenCode MCP installer support, the first community-contributed feature in graphify-ts.
+A specific shout-out to [@jamemackson](https://github.com/jamemackson) for [#54](https://github.com/mohanagy/madar/pull/54) — adding OpenCode MCP installer support, the first community-contributed feature in madar.
 
 ---
-
-## Credit
-
-graphify-ts is a Node/TypeScript implementation of the [original `graphify`](https://github.com/safishamsi/graphify) by [Safi Shamsi](https://github.com/safishamsi), adapted for local graph workflows and AI agent integration.
 
 ## License
 

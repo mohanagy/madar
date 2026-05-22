@@ -71,7 +71,7 @@ export function resourceFreshnessMetadata(graphPath: string, resourcePath: strin
     resourceBytes: resourceStat.size,
     resourceModifiedMs,
     resourceModifiedAt: new Date(resourceModifiedMs).toUTCString(),
-    etag: `W/"graphify-${graphFreshness.graphVersion}-${resourceName}-${resourceStat.size}-${resourceModifiedMs}"`,
+    etag: `W/"madar-${graphFreshness.graphVersion}-${resourceName}-${resourceStat.size}-${resourceModifiedMs}"`,
   }
 }
 
@@ -89,9 +89,9 @@ export function freshnessAnnotations(metadata: ResourceFreshnessMetadata): Recor
 
 export function graphFreshnessHeaders(metadata: GraphFreshnessMetadata): Record<string, string> {
   return {
-    'x-graphify-graph-version': metadata.graphVersion,
-    'x-graphify-graph-modified-ms': String(metadata.graphModifiedMs),
-    'x-graphify-graph-modified-at': metadata.graphModifiedAt,
+    'x-madar-graph-version': metadata.graphVersion,
+    'x-madar-graph-modified-ms': String(metadata.graphModifiedMs),
+    'x-madar-graph-modified-at': metadata.graphModifiedAt,
   }
 }
 
@@ -100,8 +100,8 @@ export function resourceFreshnessHeaders(metadata: ResourceFreshnessMetadata): R
     ...graphFreshnessHeaders(metadata),
     etag: metadata.etag,
     'last-modified': metadata.resourceModifiedAt,
-    'x-graphify-resource-bytes': String(metadata.resourceBytes),
-    'x-graphify-resource-modified-ms': String(metadata.resourceModifiedMs),
-    'x-graphify-resource-modified-at': metadata.resourceModifiedAt,
+    'x-madar-resource-bytes': String(metadata.resourceBytes),
+    'x-madar-resource-modified-ms': String(metadata.resourceModifiedMs),
+    'x-madar-resource-modified-at': metadata.resourceModifiedAt,
   }
 }

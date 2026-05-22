@@ -3,7 +3,7 @@ import { isAbsolute, relative, sep } from 'node:path'
 import { KnowledgeGraph } from '../contracts/graph.js'
 import type { Communities } from './cluster.js'
 
-const GENERIC_PATH_SEGMENTS = new Set(['src', 'tests', 'test', 'dist', 'lib', 'graphify-out', 'worked'])
+const GENERIC_PATH_SEGMENTS = new Set(['src', 'tests', 'test', 'dist', 'lib', 'out', 'worked'])
 const GENERIC_FILE_BASES = new Set(['index', 'main', 'mod'])
 const STOP_WORDS = new Set(['a', 'an', 'and', 'at', 'by', 'for', 'from', 'get', 'has', 'have', 'in', 'is', 'of', 'on', 'or', 'set', 'the', 'to', 'with'])
 const ACRONYMS: Record<string, string> = {

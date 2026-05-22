@@ -46,7 +46,7 @@ function vectorFromOutput(output: unknown): number[] {
     }
   }
 
-  throw new Error('[graphify-ts] Semantic model returned an unsupported embedding payload.')
+  throw new Error('[madar] Semantic model returned an unsupported embedding payload.')
 }
 
 function vectorsFromOutput(output: unknown, expectedCount: number): number[][] {
@@ -70,7 +70,7 @@ function vectorsFromOutput(output: unknown, expectedCount: number): number[][] {
     return [vectorFromOutput(output)]
   }
 
-  throw new Error('[graphify-ts] Semantic model returned an unsupported batched embedding payload.')
+  throw new Error('[madar] Semantic model returned an unsupported batched embedding payload.')
 }
 
 function cosineSimilarity(left: readonly number[], right: readonly number[]): number {
@@ -109,7 +109,7 @@ async function loadPipeline(task: string, model: string): Promise<TransformerPip
       return await pipeline(task as Parameters<typeof pipeline>[0], model) as TransformerPipeline
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      throw new Error(`[graphify-ts] Failed to load local ${task} model '${model}': ${message}`)
+      throw new Error(`[madar] Failed to load local ${task} model '${model}': ${message}`)
     }
   })()
 

@@ -16,8 +16,8 @@ describe('context-prompt-command', () => {
         community_context: [],
         graph_signals: { god_nodes: [], bridge_nodes: [] },
       }),
-      buildGraphifyPromptPack: vi.fn().mockReturnValue({
-        kind: 'graphify',
+      buildMadarPromptPack: vi.fn().mockReturnValue({
+        kind: 'madar',
         question: 'how does auth work',
         prompt: 'provider-agnostic prompt',
         session_payload: 'claude session payload',
@@ -36,7 +36,7 @@ describe('context-prompt-command', () => {
     const output = await runContextPromptCommand({
       prompt: 'how does auth work',
       provider: 'claude',
-      graphPath: 'graphify-out/graph.json',
+      graphPath: 'out/graph.json',
     }, dependencies)
 
     expect(dependencies.retrieveContext).toHaveBeenCalledWith(graph, {
@@ -46,7 +46,7 @@ describe('context-prompt-command', () => {
     expect(output).toBe(JSON.stringify({
       provider: 'claude',
       prompt: 'how does auth work',
-      graph_path: 'graphify-out/graph.json',
+      graph_path: 'out/graph.json',
       compiled: {
         provider: 'claude',
         format: 'session_payload',
@@ -76,8 +76,8 @@ describe('context-prompt-command', () => {
         community_context: [],
         graph_signals: { god_nodes: [], bridge_nodes: [] },
       }),
-      buildGraphifyPromptPack: vi.fn().mockReturnValue({
-        kind: 'graphify',
+      buildMadarPromptPack: vi.fn().mockReturnValue({
+        kind: 'madar',
         question: 'how does auth work',
         prompt: 'provider-agnostic prompt',
         session_payload: 'claude session payload',
@@ -96,13 +96,13 @@ describe('context-prompt-command', () => {
     const output = await runContextPromptCommand({
       prompt: 'how does auth work',
       provider: 'gemini',
-      graphPath: 'graphify-out/graph.json',
+      graphPath: 'out/graph.json',
     }, dependencies)
 
     expect(output).toBe(JSON.stringify({
       provider: 'gemini',
       prompt: 'how does auth work',
-      graph_path: 'graphify-out/graph.json',
+      graph_path: 'out/graph.json',
       compiled: {
         provider: 'gemini',
         format: 'prompt',

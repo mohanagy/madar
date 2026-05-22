@@ -60,7 +60,7 @@ describe('slice-v1 context-pack command surface', () => {
       prompt: 'Explain auth',
       budget: 1000,
       task: 'explain',
-      graphPath: 'graphify-out/graph.json',
+      graphPath: 'out/graph.json',
       retrievalStrategy: 'slice-v1',
     } as never, dependencies)
 
@@ -91,7 +91,7 @@ describe('slice-v1 context-pack command surface', () => {
       prompt: 'Review current diff',
       budget: 1000,
       task: 'review',
-      graphPath: 'graphify-out/graph.json',
+      graphPath: 'out/graph.json',
       retrievalStrategy: 'slice-v1',
     } as never, dependencies)).rejects.toThrow(/retrievalStrategy/i)
   })

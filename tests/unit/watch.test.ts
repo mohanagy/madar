@@ -10,7 +10,7 @@ import { generateGraph } from '../../src/infrastructure/generate.js'
 import { binaryIngestSidecarPath } from '../../src/shared/binary-ingest-sidecar.js'
 
 function withTempDir(callback: (tempDir: string) => void): void {
-  const tempDir = mkdtempSync(join(tmpdir(), 'graphify-ts-watch-'))
+  const tempDir = mkdtempSync(join(tmpdir(), 'madar-watch-'))
   try {
     callback(tempDir)
   } finally {
@@ -22,7 +22,7 @@ describe('notifyOnly', () => {
   test('creates the needs_update flag', () => {
     withTempDir((tempDir) => {
       notifyOnly(tempDir)
-      const flag = join(tempDir, 'graphify-out', 'needs_update')
+      const flag = join(tempDir, 'out', 'needs_update')
       expect(existsSync(flag)).toBe(true)
       expect(readFileSync(flag, 'utf8')).toBe('1')
     })
@@ -61,14 +61,14 @@ describe('rebuildCode', () => {
   test('rebuilds graph artifacts for code-only changes and clears the update flag', () => {
     withTempDir((tempDir) => {
       writeFileSync(join(tempDir, 'main.py'), 'def hello():\n    return 1\n', 'utf8')
-      mkdirSync(join(tempDir, 'graphify-out'), { recursive: true })
-      writeFileSync(join(tempDir, 'graphify-out', 'needs_update'), '1', 'utf8')
+      mkdirSync(join(tempDir, 'out'), { recursive: true })
+      writeFileSync(join(tempDir, 'out', 'needs_update'), '1', 'utf8')
 
       expect(rebuildCode(tempDir)).toBe(true)
-      expect(existsSync(join(tempDir, 'graphify-out', 'graph.json'))).toBe(true)
-      expect(existsSync(join(tempDir, 'graphify-out', 'GRAPH_REPORT.md'))).toBe(true)
-      expect(existsSync(join(tempDir, 'graphify-out', 'needs_update'))).toBe(false)
-      expect(readFileSync(join(tempDir, 'graphify-out', 'GRAPH_REPORT.md'), 'utf8')).toContain('## God Nodes')
+      expect(existsSync(join(tempDir, 'out', 'graph.json'))).toBe(true)
+      expect(existsSync(join(tempDir, 'out', 'GRAPH_REPORT.md'))).toBe(true)
+      expect(existsSync(join(tempDir, 'out', 'needs_update'))).toBe(false)
+      expect(readFileSync(join(tempDir, 'out', 'GRAPH_REPORT.md'), 'utf8')).toContain('## God Nodes')
     })
   })
 
@@ -104,7 +104,7 @@ describe('rebuildCode', () => {
       writeFileSync(join(tempDir, 'guide.md'), '# Guide\n', 'utf8')
 
       expect(rebuildCode(tempDir)).toBe(true)
-      expect(existsSync(join(tempDir, 'graphify-out', 'graph.json'))).toBe(true)
+      expect(existsSync(join(tempDir, 'out', 'graph.json'))).toBe(true)
     })
   })
 })
@@ -187,7 +187,7 @@ describe('watch', () => {
           {
             source_url: 'https://example.com/podcast/episodes/1',
             captured_at: '2026-04-14T03:00:00Z',
-            contributor: 'graphify-ts',
+            contributor: 'madar',
           },
           null,
           2,
@@ -211,7 +211,7 @@ describe('watch', () => {
           {
             source_url: 'https://example.com/podcast/episodes/2',
             captured_at: '2026-04-14T03:05:00Z',
-            contributor: 'graphify-ts',
+            contributor: 'madar',
           },
           null,
           2,
@@ -250,7 +250,7 @@ describe('watch', () => {
           {
             source_url: 'https://example.com/podcast/episodes/1',
             captured_at: '2026-04-14T03:10:00Z',
-            contributor: 'graphify-ts',
+            contributor: 'madar',
           },
           null,
           2,
@@ -275,7 +275,7 @@ describe('watch', () => {
           {
             source_url: 'https://example.com/podcast/episodes/2',
             captured_at: '2026-04-14T03:15:00Z',
-            contributor: 'graphify-ts',
+            contributor: 'madar',
           },
           null,
           2,
@@ -388,7 +388,7 @@ describe('watch', () => {
 })
 
 async function withTempDirAsync(callback: (tempDir: string) => Promise<void>): Promise<void> {
-  const tempDir = mkdtempSync(join(tmpdir(), 'graphify-ts-watch-'))
+  const tempDir = mkdtempSync(join(tmpdir(), 'madar-watch-'))
   try {
     await callback(tempDir)
   } finally {

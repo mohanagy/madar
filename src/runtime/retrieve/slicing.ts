@@ -243,8 +243,8 @@ function promptAllowsScriptMigration(options: SliceOptions): boolean {
   return /\b(?:scripts?|migrat(?:e|ed|es|ing|ion)|backfill|cli|one-off|repair|old pipeline|seed(?:ing|ers?)|seeds?\s+(?:data|db|database|scripts?|files?))\b/i.test(prompt)
 }
 
-function scriptMigrationLikeNode(node: SliceScoredNode): boolean {
-  const normalizedSourceFile = node.sourceFile.replace(/\\/g, '/')
+function scriptMigrationLikeNode(node: SliceScoredNode, rootPath?: string): boolean {
+  const normalizedSourceFile = relativizeSourceFile(node.sourceFile, rootPath).replace(/\\/g, '/')
   return /(?:^|\/)(?:scripts?|migrations?|seeds?|backfills?)(?:\/|$)|\b(?:migrate|migration|backfill|seed)\b/i.test(normalizedSourceFile)
     || /\b(?:migrate|migration|backfill|seed)\b/i.test(node.label)
 }
@@ -338,7 +338,7 @@ function shouldSuppressNode(
   if (isBarrelLike(node.label, node.sourceFile)) {
     return true
   }
-  if (broadRuntimeGenerationPrompt(options) && !promptAllowsScriptMigration(options) && scriptMigrationLikeNode(node)) {
+  if (broadRuntimeGenerationPrompt(options) && !promptAllowsScriptMigration(options) && scriptMigrationLikeNode(node, options.rootPath)) {
     return true
   }
 

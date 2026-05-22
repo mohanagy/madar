@@ -2,14 +2,14 @@ import { mkdtempSync, rmSync, symlinkSync, writeFileSync, mkdirSync } from 'node
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 
-import { _loadGraphifyignore, _isIgnored, classifyFile, countWords, detect, FileType } from '../../src/pipeline/detect.js'
+import { _loadMadarignore, _isIgnored, classifyFile, countWords, detect, FileType } from '../../src/pipeline/detect.js'
 import { normalizeAssertionPath, normalizeAssertionPaths } from './helpers/platform.js'
 
 const FIXTURES_DIR = join(process.cwd(), 'tests', 'fixtures')
 
 describe('detect', () => {
   function createTempRoot(): string {
-    return mkdtempSync(join(tmpdir(), 'graphify-ts-detect-'))
+    return mkdtempSync(join(tmpdir(), 'madar-detect-'))
   }
 
   it('classifies code, docs, papers, images, audio, video, and unknown files', () => {
@@ -60,17 +60,17 @@ describe('detect', () => {
     }
   })
 
-  it('ignores graphify-out artifacts entirely by default', () => {
+  it('ignores out artifacts entirely by default', () => {
     const root = createTempRoot()
     try {
-      mkdirSync(join(root, 'graphify-out', 'memory'), { recursive: true })
-      writeFileSync(join(root, 'graphify-out', 'memory', 'query_auth.md'), '# Saved query\n', 'utf8')
-      writeFileSync(join(root, 'graphify-out', 'graph.json'), '{}\n', 'utf8')
-      writeFileSync(join(root, 'graphify-out', 'GRAPH_REPORT.md'), '# Report\n', 'utf8')
+      mkdirSync(join(root, 'out', 'memory'), { recursive: true })
+      writeFileSync(join(root, 'out', 'memory', 'query_auth.md'), '# Saved query\n', 'utf8')
+      writeFileSync(join(root, 'out', 'graph.json'), '{}\n', 'utf8')
+      writeFileSync(join(root, 'out', 'GRAPH_REPORT.md'), '# Report\n', 'utf8')
 
       const result = detect(root)
 
-      expect(normalizeAssertionPaths(result.files.document)).not.toContain(normalizeAssertionPath(join(root, 'graphify-out', 'memory', 'query_auth.md')))
+      expect(normalizeAssertionPaths(result.files.document)).not.toContain(normalizeAssertionPath(join(root, 'out', 'memory', 'query_auth.md')))
       expect(result.files.document.some((filePath) => filePath.endsWith('GRAPH_REPORT.md'))).toBe(false)
       expect(
         Object.values(result.files)
@@ -92,10 +92,10 @@ describe('detect', () => {
     }
   })
 
-  it('loads graphifyignore patterns and excludes matching files', () => {
+  it('loads madarignore patterns and excludes matching files', () => {
     const root = createTempRoot()
     try {
-      writeFileSync(join(root, '.graphifyignore'), 'vendor/\n*.generated.py\n', 'utf8')
+      writeFileSync(join(root, '.madarignore'), 'vendor/\n*.generated.py\n', 'utf8')
       mkdirSync(join(root, 'vendor'), { recursive: true })
       writeFileSync(join(root, 'vendor', 'lib.py'), 'x = 1', 'utf8')
       writeFileSync(join(root, 'main.py'), 'print("hi")', 'utf8')
@@ -106,16 +106,16 @@ describe('detect', () => {
       expect(result.files.code.some((filePath) => filePath.includes('main.py'))).toBe(true)
       expect(result.files.code.some((filePath) => filePath.includes('vendor'))).toBe(false)
       expect(result.files.code.some((filePath) => filePath.includes('generated'))).toBe(false)
-      expect(result.graphifyignore_patterns).toBe(2)
+      expect(result.madarignore_patterns).toBe(2)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
   })
 
-  it('ignores comments in graphifyignore files', () => {
+  it('ignores comments in madarignore files', () => {
     const root = createTempRoot()
     try {
-      writeFileSync(join(root, '.graphifyignore'), '# comment\n\nmain.py\n', 'utf8')
+      writeFileSync(join(root, '.madarignore'), '# comment\n\nmain.py\n', 'utf8')
       writeFileSync(join(root, 'main.py'), 'x = 1', 'utf8')
       writeFileSync(join(root, 'other.py'), 'x = 2', 'utf8')
 
@@ -128,11 +128,11 @@ describe('detect', () => {
     }
   })
 
-  it('exposes graphifyignore helpers for explicit path matching', () => {
+  it('exposes madarignore helpers for explicit path matching', () => {
     const root = createTempRoot()
     try {
-      writeFileSync(join(root, '.graphifyignore'), 'vendor/\n*.generated.py\n', 'utf8')
-      const patterns = _loadGraphifyignore(root)
+      writeFileSync(join(root, '.madarignore'), 'vendor/\n*.generated.py\n', 'utf8')
+      const patterns = _loadMadarignore(root)
 
       expect(_isIgnored(join(root, 'vendor', 'lib.py'), root, patterns)).toBe(true)
       expect(_isIgnored(join(root, 'schema.generated.py'), root, patterns)).toBe(true)
@@ -142,7 +142,7 @@ describe('detect', () => {
     }
   })
 
-  it('preserves gitignore-style segment semantics in graphifyignore helpers', () => {
+  it('preserves gitignore-style segment semantics in madarignore helpers', () => {
     const root = createTempRoot()
     try {
       const srcFile = join(root, 'src', 'main.ts')
@@ -366,16 +366,16 @@ describe('detect', () => {
     })
   })
 
-  it('hard-ignores nested worktrees, graphify-out artifacts, and build outputs but keeps tests and benchmarks', () => {
+  it('hard-ignores nested worktrees, out artifacts, and build outputs but keeps tests and benchmarks', () => {
     const root = createTempRoot()
     try {
       mkdirSync(join(root, 'backend', '.worktrees', 'copy', 'src'), { recursive: true })
-      mkdirSync(join(root, 'graphify-out'), { recursive: true })
+      mkdirSync(join(root, 'out'), { recursive: true })
       mkdirSync(join(root, 'dist'), { recursive: true })
       mkdirSync(join(root, 'src', '__tests__'), { recursive: true })
       mkdirSync(join(root, 'benchmarks'), { recursive: true })
       writeFileSync(join(root, 'backend', '.worktrees', 'copy', 'src', 'foo.ts'), 'export const stale = true', 'utf8')
-      writeFileSync(join(root, 'graphify-out', 'graph.json'), '{}', 'utf8')
+      writeFileSync(join(root, 'out', 'graph.json'), '{}', 'utf8')
       writeFileSync(join(root, 'dist', 'compiled.js'), 'module.exports = 1', 'utf8')
       writeFileSync(join(root, 'src', '__tests__', 'foo.spec.ts'), 'export {}', 'utf8')
       writeFileSync(join(root, 'benchmarks', 'report.bench.ts'), 'export {}', 'utf8')
@@ -384,7 +384,7 @@ describe('detect', () => {
       const codePaths = normalizeAssertionPaths(result.files.code)
 
       expect(codePaths.some((filePath) => filePath.includes('/.worktrees/'))).toBe(false)
-      expect(codePaths.some((filePath) => filePath.endsWith('/graphify-out/graph.json'))).toBe(false)
+      expect(codePaths.some((filePath) => filePath.endsWith('/out/graph.json'))).toBe(false)
       expect(codePaths.some((filePath) => filePath.endsWith('/dist/compiled.js'))).toBe(false)
       expect(codePaths).toContain(normalizeAssertionPath(join(root, 'src', '__tests__', 'foo.spec.ts')))
       expect(codePaths).toContain(normalizeAssertionPath(join(root, 'benchmarks', 'report.bench.ts')))

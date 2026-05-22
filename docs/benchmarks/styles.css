@@ -1,5 +1,5 @@
 /* ==========================================================================
-   graphify-ts benchmark proofs — Stripe-inspired design system
+   madar benchmark proofs — Stripe-inspired design system
    ========================================================================== */
 
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Source+Code+Pro:wght@400;500;700&display=swap");
@@ -45,12 +45,12 @@
   /* Swatch tints — subtle, used in the small 12px legend chips */
   --bar-baseline:        rgba(100, 116, 141, 0.18);
   --bar-baseline-edge:   rgba(100, 116, 141, 0.55);
-  --bar-graphify:        rgba(83, 58, 253, 0.18);
-  --bar-graphify-edge:   var(--c-purple);
+  --bar-madar:        rgba(83, 58, 253, 0.18);
+  --bar-madar-edge:   var(--c-purple);
   /* Bar fills — SOLID, used in the actual chart. The track behind them is
      almost-invisible so the solid fill is what your eye reads as "the bar". */
   --bar-baseline-fill:   var(--c-body);     /* solid slate #64748d */
-  --bar-graphify-fill:   var(--c-purple);   /* solid Stripe purple #533afd */
+  --bar-madar-fill:   var(--c-purple);   /* solid Stripe purple #533afd */
   --bar-track-bg:        rgba(15, 23, 42, 0.04);
   --bar-track-edge:      rgba(15, 23, 42, 0.10);
 
@@ -471,9 +471,9 @@ code {
   background: var(--bar-baseline);
   border: 1px solid var(--bar-baseline-edge);
 }
-.bar-row .legend .swatch.graphify {
-  background: var(--bar-graphify);
-  border: 1px solid var(--bar-graphify-edge);
+.bar-row .legend .swatch.madar {
+  background: var(--bar-madar);
+  border: 1px solid var(--bar-madar-edge);
 }
 .bar-row .bar {
   height: 18px;
@@ -493,8 +493,8 @@ code {
 .bar-row .bar .fill.baseline {
   background: var(--bar-baseline-fill);
 }
-.bar-row .bar .fill.graphify {
-  background: var(--bar-graphify-fill);
+.bar-row .bar .fill.madar {
+  background: var(--bar-madar-fill);
 }
 .bar-row .value {
   font-family: var(--font-mono);

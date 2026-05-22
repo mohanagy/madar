@@ -12,9 +12,9 @@ import {
 import { handleStdioRequest } from '../../src/runtime/stdio-server.js'
 
 function createMinimalGraphRoot(): string {
-  const parentDir = resolve('graphify-out', 'test-runtime')
+  const parentDir = resolve('out', 'test-runtime')
   mkdirSync(parentDir, { recursive: true })
-  const root = mkdtempSync(join(parentDir, 'graphify-ts-tool-profile-'))
+  const root = mkdtempSync(join(parentDir, 'madar-tool-profile-'))
   writeFileSync(
     join(root, 'graph.json'),
     JSON.stringify({
@@ -32,19 +32,19 @@ function createMinimalGraphRoot(): string {
 }
 
 function withProfile(profile: 'core' | 'full' | undefined, fn: () => void | Promise<void>): void | Promise<void> {
-  const previous = process.env.GRAPHIFY_TOOL_PROFILE
+  const previous = process.env.MADAR_TOOL_PROFILE
   if (profile === undefined) {
-    delete process.env.GRAPHIFY_TOOL_PROFILE
+    delete process.env.MADAR_TOOL_PROFILE
   } else {
-    process.env.GRAPHIFY_TOOL_PROFILE = profile
+    process.env.MADAR_TOOL_PROFILE = profile
   }
   try {
     return fn()
   } finally {
     if (previous === undefined) {
-      delete process.env.GRAPHIFY_TOOL_PROFILE
+      delete process.env.MADAR_TOOL_PROFILE
     } else {
-      process.env.GRAPHIFY_TOOL_PROFILE = previous
+      process.env.MADAR_TOOL_PROFILE = previous
     }
   }
 }
@@ -97,48 +97,48 @@ describe('MCP tool profile', () => {
   })
 
   describe('resolveToolProfileFromEnv', () => {
-    it('defaults to "core" when GRAPHIFY_TOOL_PROFILE is unset', () => {
+    it('defaults to "core" when MADAR_TOOL_PROFILE is unset', () => {
       expect(resolveToolProfileFromEnv({})).toBe('core')
     })
 
-    it('defaults to "core" when GRAPHIFY_TOOL_PROFILE is the empty string', () => {
-      expect(resolveToolProfileFromEnv({ GRAPHIFY_TOOL_PROFILE: '' })).toBe('core')
+    it('defaults to "core" when MADAR_TOOL_PROFILE is the empty string', () => {
+      expect(resolveToolProfileFromEnv({ MADAR_TOOL_PROFILE: '' })).toBe('core')
     })
 
     it('returns "core" for the literal "core" value', () => {
-      expect(resolveToolProfileFromEnv({ GRAPHIFY_TOOL_PROFILE: 'core' })).toBe('core')
+      expect(resolveToolProfileFromEnv({ MADAR_TOOL_PROFILE: 'core' })).toBe('core')
     })
 
     it('treats unknown values as "core" rather than throwing', () => {
-      expect(resolveToolProfileFromEnv({ GRAPHIFY_TOOL_PROFILE: 'invalid' })).toBe('core')
+      expect(resolveToolProfileFromEnv({ MADAR_TOOL_PROFILE: 'invalid' })).toBe('core')
     })
 
     it('returns "full" for the literal "full" value', () => {
-      expect(resolveToolProfileFromEnv({ GRAPHIFY_TOOL_PROFILE: 'full' })).toBe('full')
+      expect(resolveToolProfileFromEnv({ MADAR_TOOL_PROFILE: 'full' })).toBe('full')
     })
 
     it('is case-insensitive', () => {
-      expect(resolveToolProfileFromEnv({ GRAPHIFY_TOOL_PROFILE: 'FULL' })).toBe('full')
-      expect(resolveToolProfileFromEnv({ GRAPHIFY_TOOL_PROFILE: 'CORE' })).toBe('core')
+      expect(resolveToolProfileFromEnv({ MADAR_TOOL_PROFILE: 'FULL' })).toBe('full')
+      expect(resolveToolProfileFromEnv({ MADAR_TOOL_PROFILE: 'CORE' })).toBe('core')
     })
 
     it('trims whitespace before matching', () => {
-      expect(resolveToolProfileFromEnv({ GRAPHIFY_TOOL_PROFILE: ' full ' })).toBe('full')
-      expect(resolveToolProfileFromEnv({ GRAPHIFY_TOOL_PROFILE: '\tfull\n' })).toBe('full')
+      expect(resolveToolProfileFromEnv({ MADAR_TOOL_PROFILE: ' full ' })).toBe('full')
+      expect(resolveToolProfileFromEnv({ MADAR_TOOL_PROFILE: '\tfull\n' })).toBe('full')
     })
 
     it('reads from process.env when no argument is provided', () => {
-      const previous = process.env.GRAPHIFY_TOOL_PROFILE
+      const previous = process.env.MADAR_TOOL_PROFILE
       try {
-        delete process.env.GRAPHIFY_TOOL_PROFILE
+        delete process.env.MADAR_TOOL_PROFILE
         expect(resolveToolProfileFromEnv()).toBe('core')
-        process.env.GRAPHIFY_TOOL_PROFILE = 'full'
+        process.env.MADAR_TOOL_PROFILE = 'full'
         expect(resolveToolProfileFromEnv()).toBe('full')
       } finally {
         if (previous === undefined) {
-          delete process.env.GRAPHIFY_TOOL_PROFILE
+          delete process.env.MADAR_TOOL_PROFILE
         } else {
-          process.env.GRAPHIFY_TOOL_PROFILE = previous
+          process.env.MADAR_TOOL_PROFILE = previous
         }
       }
     })
@@ -153,7 +153,7 @@ describe('MCP tool profile', () => {
   })
 
   describe('stdio-server tool profile gating', () => {
-    it('tools/list returns exactly the 7 core tools when GRAPHIFY_TOOL_PROFILE=core', async () => {
+    it('tools/list returns exactly the 7 core tools when MADAR_TOOL_PROFILE=core', async () => {
       const root = createMinimalGraphRoot()
       try {
         await withProfile('core', async () => {
@@ -170,7 +170,7 @@ describe('MCP tool profile', () => {
       }
     })
 
-    it('tools/list returns the full surface when GRAPHIFY_TOOL_PROFILE=full', async () => {
+    it('tools/list returns the full surface when MADAR_TOOL_PROFILE=full', async () => {
       const root = createMinimalGraphRoot()
       try {
         await withProfile('full', async () => {
@@ -201,9 +201,9 @@ describe('MCP tool profile', () => {
           const error = (response as { error?: { code: number; message: string } }).error
           expect(error).toBeDefined()
           expect(error?.code).toBe(-32601)
-          expect(error?.message).toContain('not enabled in the active graphify-ts MCP tool profile')
+          expect(error?.message).toContain('not enabled in the active madar MCP tool profile')
           expect(error?.message).toContain('Default profile: core')
-          expect(error?.message).toContain('GRAPHIFY_TOOL_PROFILE=full')
+          expect(error?.message).toContain('MADAR_TOOL_PROFILE=full')
           expect(error?.message).toContain('.mcp.json')
           expect(error?.message).toContain('.cursor/mcp.json')
           expect(error?.message).toContain('.vscode/mcp.json')
@@ -236,7 +236,7 @@ describe('MCP tool profile', () => {
             expect(error?.code).toBe(-32601)
             expect(error?.message).toContain(name)
             expect(error?.message).toContain('Default profile: core')
-            expect(error?.message).toContain('GRAPHIFY_TOOL_PROFILE=full')
+            expect(error?.message).toContain('MADAR_TOOL_PROFILE=full')
           }
         })
       } finally {
@@ -244,7 +244,7 @@ describe('MCP tool profile', () => {
       }
     })
 
-    it('tools/call for a non-core tool succeeds when GRAPHIFY_TOOL_PROFILE=full', async () => {
+    it('tools/call for a non-core tool succeeds when MADAR_TOOL_PROFILE=full', async () => {
       const root = createMinimalGraphRoot()
       try {
         await withProfile('full', async () => {
@@ -264,7 +264,7 @@ describe('MCP tool profile', () => {
       }
     })
 
-    it('tools/call for a core tool succeeds when GRAPHIFY_TOOL_PROFILE=core', async () => {
+    it('tools/call for a core tool succeeds when MADAR_TOOL_PROFILE=core', async () => {
       const root = createMinimalGraphRoot()
       try {
         await withProfile('core', async () => {

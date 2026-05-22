@@ -7,7 +7,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 import { detectUrlType, ingest, saveQueryResult } from '../../src/infrastructure/ingest.js'
 
 async function withTempDir(callback: (tempDir: string) => void | Promise<void>): Promise<void> {
-  const tempDir = mkdtempSync(join(tmpdir(), 'graphify-ts-ingest-'))
+  const tempDir = mkdtempSync(join(tmpdir(), 'madar-ingest-'))
   try {
     await callback(tempDir)
   } finally {
@@ -16,7 +16,7 @@ async function withTempDir(callback: (tempDir: string) => void | Promise<void>):
 }
 
 function binaryIngestSidecarPath(assetPath: string): string {
-  return join(dirname(assetPath), `.${basename(assetPath)}.graphify-ingest.json`)
+  return join(dirname(assetPath), `.${basename(assetPath)}.madar-ingest.json`)
 }
 
 afterEach(() => {
@@ -64,18 +64,18 @@ describe('detectUrlType', () => {
     expect(detectUrlType('https://twitter.com/i/status/1')).toBe('webpage')
     expect(detectUrlType('https://x.com/user/status/not-a-post-id')).toBe('webpage')
     expect(detectUrlType('https://arxiv.org/abs/1706.03762')).toBe('arxiv')
-    expect(detectUrlType('https://github.com/mohanagy/graphify-ts')).toBe('github')
-    expect(detectUrlType('https://notgithub.com/mohanagy/graphify-ts')).toBe('webpage')
-    expect(detectUrlType('https://old.reddit.com/r/graphify/comments/abc123/structured_ingest_roadmap_update/?utm_source=share')).toBe('reddit')
-    expect(detectUrlType('https://www.reddit.com/r/graphify/comments/abc123/structured_ingest_roadmap_update/jkl456/?context=3')).toBe('reddit')
+    expect(detectUrlType('https://github.com/mohanagy/madar')).toBe('github')
+    expect(detectUrlType('https://notgithub.com/mohanagy/madar')).toBe('webpage')
+    expect(detectUrlType('https://old.reddit.com/r/madar/comments/abc123/structured_ingest_roadmap_update/?utm_source=share')).toBe('reddit')
+    expect(detectUrlType('https://www.reddit.com/r/madar/comments/abc123/structured_ingest_roadmap_update/jkl456/?context=3')).toBe('reddit')
     expect(detectUrlType('https://redd.it/abc123')).toBe('reddit')
     expect(detectUrlType('https://www.reddit.com/comments/abc123?utm_source=share')).toBe('reddit')
-    expect(detectUrlType('https://notreddit.com/r/graphify/comments/abc123/structured_ingest_roadmap_update/')).toBe('webpage')
-    expect(detectUrlType('https://www.reddit.com/r/graphify/about')).toBe('webpage')
-    expect(detectUrlType('https://www.reddit.com/r/graphify/comments/abc123/.json')).toBe('webpage')
-    expect(detectUrlType('https://www.reddit.com/r/graphify/comments/abc123/.json/')).toBe('webpage')
-    expect(detectUrlType('https://www.reddit.com/r/graphify/comments/abc123/structured_ingest_roadmap_update/jkl456/.json')).toBe('webpage')
-    expect(detectUrlType('https://www.reddit.com/r/graphify/comments/abc123/structured_ingest_roadmap_update/jkl456/more')).toBe('webpage')
+    expect(detectUrlType('https://notreddit.com/r/madar/comments/abc123/structured_ingest_roadmap_update/')).toBe('webpage')
+    expect(detectUrlType('https://www.reddit.com/r/madar/about')).toBe('webpage')
+    expect(detectUrlType('https://www.reddit.com/r/madar/comments/abc123/.json')).toBe('webpage')
+    expect(detectUrlType('https://www.reddit.com/r/madar/comments/abc123/.json/')).toBe('webpage')
+    expect(detectUrlType('https://www.reddit.com/r/madar/comments/abc123/structured_ingest_roadmap_update/jkl456/.json')).toBe('webpage')
+    expect(detectUrlType('https://www.reddit.com/r/madar/comments/abc123/structured_ingest_roadmap_update/jkl456/more')).toBe('webpage')
     expect(detectUrlType('https://redd.it/abc123.json')).toBe('webpage')
     expect(detectUrlType('https://www.reddit.com/comments/abc123/more')).toBe('webpage')
     expect(detectUrlType('https://news.ycombinator.com/item?id=8863')).toBe('hackernews')
@@ -84,27 +84,27 @@ describe('detectUrlType', () => {
     expect(detectUrlType('https://news.ycombinator.com/news?p=2')).toBe('webpage')
     expect(detectUrlType('https://news.ycombinator.com/item?id=not-a-thread')).toBe('webpage')
     expect(detectUrlType('https://www.youtube.com/watch?v=dQw4w9WgXcQ')).toBe('youtube')
-    expect(detectUrlType('https://youtu.be/dQw4w9WgXcQ?si=graphify')).toBe('youtube')
+    expect(detectUrlType('https://youtu.be/dQw4w9WgXcQ?si=madar')).toBe('youtube')
     expect(detectUrlType('https://www.youtube.com/shorts/dQw4w9WgXcQ?feature=share')).toBe('youtube')
     expect(detectUrlType('https://www.youtube.com/embed/dQw4w9WgXcQ?start=30')).toBe('youtube')
     expect(detectUrlType('https://www.youtube.com/live/dQw4w9WgXcQ?feature=share')).toBe('youtube')
-    expect(detectUrlType('https://www.youtube.com/playlist?list=PLgraphifyRoadmap123&feature=share')).toBe('youtube')
-    expect(detectUrlType('https://www.youtube.com/@graphify?feature=share')).toBe('youtube')
-    expect(detectUrlType('https://www.youtube.com/channel/UCgraphifyRoadmap1234567?feature=share')).toBe('youtube')
-    expect(detectUrlType('https://www.youtube.com/c/graphify?feature=share')).toBe('youtube')
+    expect(detectUrlType('https://www.youtube.com/playlist?list=PLmadarRoadmap123&feature=share')).toBe('youtube')
+    expect(detectUrlType('https://www.youtube.com/@madar?feature=share')).toBe('youtube')
+    expect(detectUrlType('https://www.youtube.com/channel/UCmadarRoadmap1234567890?feature=share')).toBe('youtube')
+    expect(detectUrlType('https://www.youtube.com/c/madar?feature=share')).toBe('youtube')
     expect(detectUrlType('https://notyoutube.com/watch?v=dQw4w9WgXcQ')).toBe('webpage')
     expect(detectUrlType('https://www.youtube.com/playlist')).toBe('webpage')
     expect(detectUrlType('https://www.youtube.com/playlist?list=')).toBe('webpage')
-    expect(detectUrlType('https://www.youtube.com/playlist/?list=PLgraphifyRoadmap123')).toBe('webpage')
-    expect(detectUrlType('https://www.youtube.com/playlist/videos?list=PLgraphifyRoadmap123')).toBe('webpage')
-    expect(detectUrlType('https://www.youtube.com/@graphify/')).toBe('webpage')
-    expect(detectUrlType('https://www.youtube.com/@graphify/videos')).toBe('webpage')
-    expect(detectUrlType('https://www.youtube.com/@graphify/community')).toBe('webpage')
-    expect(detectUrlType('https://www.youtube.com/channel/UCgraphifyRoadmap1234567/')).toBe('webpage')
-    expect(detectUrlType('https://www.youtube.com/channel/UCgraphifyRoadmap1234567/videos')).toBe('webpage')
+    expect(detectUrlType('https://www.youtube.com/playlist/?list=PLmadarRoadmap123')).toBe('webpage')
+    expect(detectUrlType('https://www.youtube.com/playlist/videos?list=PLmadarRoadmap123')).toBe('webpage')
+    expect(detectUrlType('https://www.youtube.com/@madar/')).toBe('webpage')
+    expect(detectUrlType('https://www.youtube.com/@madar/videos')).toBe('webpage')
+    expect(detectUrlType('https://www.youtube.com/@madar/community')).toBe('webpage')
+    expect(detectUrlType('https://www.youtube.com/channel/UCmadarRoadmap1234567/')).toBe('webpage')
+    expect(detectUrlType('https://www.youtube.com/channel/UCmadarRoadmap1234567/videos')).toBe('webpage')
     expect(detectUrlType('https://www.youtube.com/channel/not-a-channel-id')).toBe('webpage')
-    expect(detectUrlType('https://www.youtube.com/c/graphify/')).toBe('webpage')
-    expect(detectUrlType('https://www.youtube.com/c/graphify/videos')).toBe('webpage')
+    expect(detectUrlType('https://www.youtube.com/c/madar/')).toBe('webpage')
+    expect(detectUrlType('https://www.youtube.com/c/madar/videos')).toBe('webpage')
     expect(detectUrlType('https://www.youtube.com/shorts/dQw4w9WgXcQ/clips')).toBe('webpage')
     expect(detectUrlType('https://www.youtube.com/embed/dQw4w9WgXcQ/live_chat')).toBe('webpage')
     expect(detectUrlType('https://www.youtube.com/live/dQw4w9WgXcQ/chat')).toBe('webpage')
@@ -153,13 +153,13 @@ describe('ingest', () => {
       stubHtmlFetch(readIngestFixture('webpage-article.html'))
 
       const output = await ingest('https://example.com/articles/structured-graphs?utm_source=test', join(tempDir, 'raw'), {
-        contributor: 'graphify-ts',
+        contributor: 'madar',
       })
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('source_url: "https://example.com/articles/structured-graphs"')
       expect(content).toContain('author: "Ada Lovelace"')
-      expect(content).toContain('description: "Deterministic article ingestion for graphify-ts."')
+      expect(content).toContain('description: "Deterministic article ingestion for madar."')
       expect(content).toContain(
         'outbound_links: ["https://example.com/docs/schema", "https://external.example.com/guide", "https://example.com/blog/provenance"]',
       )
@@ -180,17 +180,17 @@ describe('ingest', () => {
     await withTempDir(async (tempDir) => {
       stubHtmlFetch(readIngestFixture('github-repository.html'))
 
-      const output = await ingest('https://github.com/mohanagy/graphify-ts?tab=readme', join(tempDir, 'raw'), { contributor: 'graphify-ts' })
+      const output = await ingest('https://github.com/mohanagy/madar?tab=readme', join(tempDir, 'raw'), { contributor: 'madar' })
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: github_repository')
-      expect(content).toContain('source_url: "https://github.com/mohanagy/graphify-ts"')
+      expect(content).toContain('source_url: "https://github.com/mohanagy/madar"')
       expect(content).toContain('github_kind: "repository"')
       expect(content).toContain('github_owner: "mohanagy"')
-      expect(content).toContain('github_repo: "graphify-ts"')
+      expect(content).toContain('github_repo: "madar"')
       expect(content).toContain('github_topics: ["typescript", "knowledge-graph"]')
-      expect(content).toContain('contributor: "graphify-ts"')
-      expect(content).toContain('# GitHub Repository: mohanagy/graphify-ts')
+      expect(content).toContain('contributor: "madar"')
+      expect(content).toContain('# GitHub Repository: mohanagy/madar')
       expect(content).toContain('## About')
       expect(content).toContain('TypeScript-native graph extraction for code and docs.')
       expect(content).not.toContain('provenance:')
@@ -201,14 +201,14 @@ describe('ingest', () => {
     await withTempDir(async (tempDir) => {
       stubHtmlFetch(readIngestFixture('github-issue.html'))
 
-      const output = await ingest('https://github.com/mohanagy/graphify-ts/issues/123', join(tempDir, 'raw'), { contributor: 'graphify-ts' })
+      const output = await ingest('https://github.com/mohanagy/madar/issues/123', join(tempDir, 'raw'), { contributor: 'madar' })
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: github_issue')
-      expect(content).toContain('source_url: "https://github.com/mohanagy/graphify-ts/issues/123"')
+      expect(content).toContain('source_url: "https://github.com/mohanagy/madar/issues/123"')
       expect(content).toContain('github_kind: "issue"')
       expect(content).toContain('github_owner: "mohanagy"')
-      expect(content).toContain('github_repo: "graphify-ts"')
+      expect(content).toContain('github_repo: "madar"')
       expect(content).toContain('github_number: "123"')
       expect(content).toContain('github_state: "open"')
       expect(content).toContain('github_labels: ["bug", "triage"]')
@@ -223,7 +223,7 @@ describe('ingest', () => {
     await withTempDir(async (tempDir) => {
       stubHtmlFetch(readIngestFixture('github-issue-nested-body.html'))
 
-      const output = await ingest('https://github.com/mohanagy/graphify-ts/issues/321', join(tempDir, 'raw'), { contributor: 'graphify-ts' })
+      const output = await ingest('https://github.com/mohanagy/madar/issues/321', join(tempDir, 'raw'), { contributor: 'madar' })
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('Before code block.')
@@ -236,16 +236,16 @@ describe('ingest', () => {
     await withTempDir(async (tempDir) => {
       stubHtmlFetch(readIngestFixture('github-pull-request.html'))
 
-      const output = await ingest('https://github.com/mohanagy/graphify-ts/pull/456', join(tempDir, 'raw'), { contributor: 'graphify-ts' })
+      const output = await ingest('https://github.com/mohanagy/madar/pull/456', join(tempDir, 'raw'), { contributor: 'madar' })
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: github_pull_request')
-      expect(content).toContain('source_url: "https://github.com/mohanagy/graphify-ts/pull/456"')
+      expect(content).toContain('source_url: "https://github.com/mohanagy/madar/pull/456"')
       expect(content).toContain('github_kind: "pull_request"')
       expect(content).toContain('github_number: "456"')
       expect(content).toContain('github_state: "merged"')
       expect(content).toContain('github_labels: ["enhancement", "tests"]')
-      expect(content).toContain('author: "graphify-maintainer"')
+      expect(content).toContain('author: "madar-maintainer"')
       expect(content).toContain('# GitHub Pull Request #456: Add structured GitHub ingest')
       expect(content).toContain('This adds route-aware GitHub ingestion without changing non-GitHub handlers.')
     })
@@ -255,11 +255,11 @@ describe('ingest', () => {
     await withTempDir(async (tempDir) => {
       stubHtmlFetch(readIngestFixture('github-discussion.html'))
 
-      const output = await ingest('https://github.com/mohanagy/graphify-ts/discussions/789', join(tempDir, 'raw'), { contributor: 'graphify-ts' })
+      const output = await ingest('https://github.com/mohanagy/madar/discussions/789', join(tempDir, 'raw'), { contributor: 'madar' })
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: github_discussion')
-      expect(content).toContain('source_url: "https://github.com/mohanagy/graphify-ts/discussions/789"')
+      expect(content).toContain('source_url: "https://github.com/mohanagy/madar/discussions/789"')
       expect(content).toContain('github_kind: "discussion"')
       expect(content).toContain('github_number: "789"')
       expect(content).toContain('github_state: "open"')
@@ -275,20 +275,20 @@ describe('ingest', () => {
       stubHtmlFetch(readIngestFixture('github-commit.html'))
 
       const output = await ingest(
-        'https://github.com/mohanagy/graphify-ts/commit/abcdef1?diff=split',
+        'https://github.com/mohanagy/madar/commit/abcdef1?diff=split',
         join(tempDir, 'raw'),
-        { contributor: 'graphify-ts' },
+        { contributor: 'madar' },
       )
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: github_commit')
-      expect(content).toContain('source_url: "https://github.com/mohanagy/graphify-ts/commit/abcdef1234567890abcdef1234567890abcdef12"')
+      expect(content).toContain('source_url: "https://github.com/mohanagy/madar/commit/abcdef1234567890abcdef1234567890abcdef12"')
       expect(content).toContain('github_kind: "commit"')
       expect(content).toContain('github_owner: "mohanagy"')
-      expect(content).toContain('github_repo: "graphify-ts"')
+      expect(content).toContain('github_repo: "madar"')
       expect(content).toContain('github_commit_sha: "abcdef1234567890abcdef1234567890abcdef12"')
-      expect(content).toContain('author: "graphify-maintainer"')
-      expect(content).toContain('contributor: "graphify-ts"')
+      expect(content).toContain('author: "madar-maintainer"')
+      expect(content).toContain('contributor: "madar"')
       expect(content).toContain('# GitHub Commit abcdef1: feat: add GitHub commit ingest')
       expect(content).toContain('## Message')
       expect(content).toContain('Teach the ingest layer about exact GitHub commit routes.')
@@ -300,14 +300,14 @@ describe('ingest', () => {
   test('falls back to generic webpage capture when fetched GitHub commit HTML does not confirm a commit page', async () => {
     await withTempDir(async (tempDir) => {
       stubHtmlFetch(
-        '<html><head><title>Commit abc1234</title><link rel="canonical" href="https://github.com/mohanagy/graphify-ts/commit/abc1234" /></head><body><p>Generic commit page.</p></body></html>',
+        '<html><head><title>Commit abc1234</title><link rel="canonical" href="https://github.com/mohanagy/madar/commit/abc1234" /></head><body><p>Generic commit page.</p></body></html>',
       )
 
-      const output = await ingest('https://github.com/mohanagy/graphify-ts/commit/abc1234', join(tempDir, 'raw'))
+      const output = await ingest('https://github.com/mohanagy/madar/commit/abc1234', join(tempDir, 'raw'))
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: webpage')
-      expect(content).toContain('Source: https://github.com/mohanagy/graphify-ts/commit/abc1234')
+      expect(content).toContain('Source: https://github.com/mohanagy/madar/commit/abc1234')
       expect(content).not.toContain('github_kind:')
     })
   })
@@ -316,19 +316,19 @@ describe('ingest', () => {
     await withTempDir(async (tempDir) => {
       stubHtmlFetch(
         readIngestFixture('github-commit.html').replace(
-          'https://github.com/mohanagy/graphify-ts/commit/abcdef1234567890abcdef1234567890abcdef12',
-          'https://github.com/mohanagy/graphify-ts/commit/abcdef1234567890abcdef1234567890abcdef12/checks',
+          'https://github.com/mohanagy/madar/commit/abcdef1234567890abcdef1234567890abcdef12',
+          'https://github.com/mohanagy/madar/commit/abcdef1234567890abcdef1234567890abcdef12/checks',
         ),
       )
 
       const output = await ingest(
-        'https://github.com/mohanagy/graphify-ts/commit/abcdef1234567890abcdef1234567890abcdef12/checks',
+        'https://github.com/mohanagy/madar/commit/abcdef1234567890abcdef1234567890abcdef12/checks',
         join(tempDir, 'raw'),
       )
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: webpage')
-      expect(content).toContain('Source: https://github.com/mohanagy/graphify-ts/commit/abcdef1234567890abcdef1234567890abcdef12/checks')
+      expect(content).toContain('Source: https://github.com/mohanagy/madar/commit/abcdef1234567890abcdef1234567890abcdef12/checks')
       expect(content).not.toContain('github_kind:')
     })
   })
@@ -336,14 +336,14 @@ describe('ingest', () => {
   test('falls back to generic webpage capture for unsupported GitHub page kinds', async () => {
     await withTempDir(async (tempDir) => {
       stubHtmlFetch(
-        '<html><head><title>Compare changes</title><link rel="canonical" href="https://github.com/mohanagy/graphify-ts/compare/main...feature" /></head><body><main><p>Compare branches.</p></main></body></html>',
+        '<html><head><title>Compare changes</title><link rel="canonical" href="https://github.com/mohanagy/madar/compare/main...feature" /></head><body><main><p>Compare branches.</p></main></body></html>',
       )
 
-      const output = await ingest('https://github.com/mohanagy/graphify-ts/compare/main...feature', join(tempDir, 'raw'))
+      const output = await ingest('https://github.com/mohanagy/madar/compare/main...feature', join(tempDir, 'raw'))
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: webpage')
-      expect(content).toContain('Source: https://github.com/mohanagy/graphify-ts/compare/main...feature')
+      expect(content).toContain('Source: https://github.com/mohanagy/madar/compare/main...feature')
       expect(content).not.toContain('github_kind:')
     })
   })
@@ -369,7 +369,7 @@ describe('ingest', () => {
         '<html><head><title>Sign in to GitHub</title><link rel="canonical" href="https://github.com/login" /></head><body><main><p>Sign in to continue.</p></main></body></html>',
       )
 
-      const output = await ingest('https://github.com/mohanagy/graphify-ts/issues/999', join(tempDir, 'raw'))
+      const output = await ingest('https://github.com/mohanagy/madar/issues/999', join(tempDir, 'raw'))
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: webpage')
@@ -385,7 +385,7 @@ describe('ingest', () => {
         vi.fn(async (input) => {
           const requestUrl = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
           expect(requestUrl).toBe(
-            'https://www.reddit.com/r/graphify/comments/abc123/structured_ingest_roadmap_update.json?limit=3&depth=1&raw_json=1',
+            'https://www.reddit.com/r/madar/comments/abc123/structured_ingest_roadmap_update.json?limit=3&depth=1&raw_json=1',
           )
           return new Response(readIngestFixture('reddit-thread.json'), {
             status: 200,
@@ -395,25 +395,25 @@ describe('ingest', () => {
       )
 
       const output = await ingest(
-        'https://old.reddit.com/r/graphify/comments/abc123/structured_ingest_roadmap_update/?utm_source=share',
+        'https://old.reddit.com/r/madar/comments/abc123/structured_ingest_roadmap_update/?utm_source=share',
         join(tempDir, 'raw'),
-        { contributor: 'graphify-ts' },
+        { contributor: 'madar' },
       )
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: reddit_thread')
-      expect(content).toContain('source_url: "https://www.reddit.com/r/graphify/comments/abc123/structured_ingest_roadmap_update"')
+      expect(content).toContain('source_url: "https://www.reddit.com/r/madar/comments/abc123/structured_ingest_roadmap_update"')
       expect(content).toContain('title: "Structured ingest roadmap update"')
       expect(content).toContain('author: "graph_builder"')
-      expect(content).toContain('contributor: "graphify-ts"')
-      expect(content).toContain('reddit_subreddit: "graphify"')
+      expect(content).toContain('contributor: "madar"')
+      expect(content).toContain('reddit_subreddit: "madar"')
       expect(content).toContain('reddit_post_id: "abc123"')
       expect(content).toContain('reddit_score: "128"')
       expect(content).toContain('reddit_comment_count: "42"')
       expect(content).toContain('reddit_capture_status: "json"')
       expect(content).toContain('# Reddit Thread: Structured ingest roadmap update')
       expect(content).toContain('## Post')
-      expect(content).toContain('Graphify-ts now captures richer structured inputs.')
+      expect(content).toContain('Madar-ts now captures richer structured inputs.')
       expect(content).toContain('## Thread Highlights')
       expect(content).toContain('### Comment by u/helper_bot')
       expect(content).toContain('Nice direction. Capture fallback boundaries explicitly.')
@@ -421,14 +421,14 @@ describe('ingest', () => {
       expect(content).toContain('The capability registry work is paying off.')
       expect(content).toContain('## Context')
       expect(content).toContain('- Platform: reddit')
-      expect(content).toContain('- Subreddit: r/graphify')
+      expect(content).toContain('- Subreddit: r/madar')
       expect(content).toContain('- Post ID: abc123')
       expect(content).toContain('- Score: 128')
       expect(content).toContain('- Comment Count: 42')
       expect(content).toContain('- Capture Status: json')
       expect(content).toContain('## Links')
-      expect(content).toContain('[Open Thread](https://www.reddit.com/r/graphify/comments/abc123/structured_ingest_roadmap_update)')
-      expect(content).toContain('[Linked URL](https://github.com/mohanagy/graphify-ts)')
+      expect(content).toContain('[Open Thread](https://www.reddit.com/r/madar/comments/abc123/structured_ingest_roadmap_update)')
+      expect(content).toContain('[Linked URL](https://github.com/mohanagy/madar)')
       expect(content).not.toContain('provenance:')
     })
   })
@@ -447,19 +447,19 @@ describe('ingest', () => {
         }),
       )
 
-      const output = await ingest('https://redd.it/abc123', join(tempDir, 'raw'), { contributor: 'graphify-ts' })
+      const output = await ingest('https://redd.it/abc123', join(tempDir, 'raw'), { contributor: 'madar' })
       const content = readFileSync(output, 'utf8')
 
-      expect(basename(output)).toBe('reddit_graphify_abc123.md')
+      expect(basename(output)).toBe('reddit_madar_abc123.md')
       expect(content).toContain('type: reddit_thread')
-      expect(content).toContain('source_url: "https://www.reddit.com/r/graphify/comments/abc123/structured_ingest_roadmap_update"')
+      expect(content).toContain('source_url: "https://www.reddit.com/r/madar/comments/abc123/structured_ingest_roadmap_update"')
       expect(content).toContain('title: "Structured ingest roadmap update"')
       expect(content).toContain('author: "graph_builder"')
-      expect(content).toContain('reddit_subreddit: "graphify"')
+      expect(content).toContain('reddit_subreddit: "madar"')
       expect(content).toContain('reddit_post_id: "abc123"')
       expect(content).toContain('reddit_capture_status: "json"')
-      expect(content).toContain('[Open Thread](https://www.reddit.com/r/graphify/comments/abc123/structured_ingest_roadmap_update)')
-      expect(content).toContain('[Linked URL](https://github.com/mohanagy/graphify-ts)')
+      expect(content).toContain('[Open Thread](https://www.reddit.com/r/madar/comments/abc123/structured_ingest_roadmap_update)')
+      expect(content).toContain('[Linked URL](https://github.com/mohanagy/madar)')
     })
   })
 
@@ -470,7 +470,7 @@ describe('ingest', () => {
         vi.fn(async (input) => {
           const requestUrl = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
           expect(requestUrl).toBe(
-            'https://www.reddit.com/r/graphify/comments/abc123/structured_ingest_roadmap_update/jkl456.json?limit=3&depth=1&raw_json=1',
+            'https://www.reddit.com/r/madar/comments/abc123/structured_ingest_roadmap_update/jkl456.json?limit=3&depth=1&raw_json=1',
           )
           return new Response(readIngestFixture('reddit-comment.json'), {
             status: 200,
@@ -480,19 +480,19 @@ describe('ingest', () => {
       )
 
       const output = await ingest(
-        'https://www.reddit.com/r/graphify/comments/abc123/structured_ingest_roadmap_update/jkl456/?context=3',
+        'https://www.reddit.com/r/madar/comments/abc123/structured_ingest_roadmap_update/jkl456/?context=3',
         join(tempDir, 'raw'),
-        { contributor: 'graphify-ts' },
+        { contributor: 'madar' },
       )
       const content = readFileSync(output, 'utf8')
 
-      expect(basename(output)).toBe('reddit_graphify_abc123_jkl456.md')
+      expect(basename(output)).toBe('reddit_madar_abc123_jkl456.md')
       expect(content).toContain('type: reddit_comment')
-      expect(content).toContain('source_url: "https://www.reddit.com/r/graphify/comments/abc123/structured_ingest_roadmap_update/jkl456"')
+      expect(content).toContain('source_url: "https://www.reddit.com/r/madar/comments/abc123/structured_ingest_roadmap_update/jkl456"')
       expect(content).toContain('title: "Comment on: Structured ingest roadmap update"')
       expect(content).toContain('author: "helper_bot"')
-      expect(content).toContain('contributor: "graphify-ts"')
-      expect(content).toContain('reddit_subreddit: "graphify"')
+      expect(content).toContain('contributor: "madar"')
+      expect(content).toContain('reddit_subreddit: "madar"')
       expect(content).toContain('reddit_post_id: "abc123"')
       expect(content).toContain('reddit_comment_id: "jkl456"')
       expect(content).toContain('reddit_comment_score: "30"')
@@ -501,10 +501,10 @@ describe('ingest', () => {
       expect(content).toContain('## Comment')
       expect(content).toContain('Nice direction. Capture fallback boundaries explicitly.')
       expect(content).toContain('## Thread')
-      expect(content).toContain('Graphify-ts now captures richer structured inputs.')
+      expect(content).toContain('Madar-ts now captures richer structured inputs.')
       expect(content).toContain('## Context')
       expect(content).toContain('- Platform: reddit')
-      expect(content).toContain('- Subreddit: r/graphify')
+      expect(content).toContain('- Subreddit: r/madar')
       expect(content).toContain('- Post ID: abc123')
       expect(content).toContain('- Comment ID: jkl456')
       expect(content).toContain('- Thread Author: graph_builder')
@@ -513,9 +513,9 @@ describe('ingest', () => {
       expect(content).toContain('- Comment Count: 42')
       expect(content).toContain('- Capture Status: json')
       expect(content).toContain('## Links')
-      expect(content).toContain('[Open Comment](https://www.reddit.com/r/graphify/comments/abc123/structured_ingest_roadmap_update/jkl456)')
-      expect(content).toContain('[Open Thread](https://www.reddit.com/r/graphify/comments/abc123/structured_ingest_roadmap_update)')
-      expect(content).toContain('[Linked URL](https://github.com/mohanagy/graphify-ts)')
+      expect(content).toContain('[Open Comment](https://www.reddit.com/r/madar/comments/abc123/structured_ingest_roadmap_update/jkl456)')
+      expect(content).toContain('[Open Thread](https://www.reddit.com/r/madar/comments/abc123/structured_ingest_roadmap_update)')
+      expect(content).toContain('[Linked URL](https://github.com/mohanagy/madar)')
       expect(content).not.toContain('provenance:')
     })
   })
@@ -527,28 +527,28 @@ describe('ingest', () => {
         vi.fn(async () => new Response('rate limited', { status: 429, headers: { 'content-type': 'text/plain' } })),
       )
 
-      const output = await ingest('https://www.reddit.com/r/graphify/comments/def456/social_thread_roadmap/?utm_source=share', join(tempDir, 'raw'), {
-        contributor: 'graphify-ts',
+      const output = await ingest('https://www.reddit.com/r/madar/comments/def456/social_thread_roadmap/?utm_source=share', join(tempDir, 'raw'), {
+        contributor: 'madar',
       })
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: reddit_thread')
-      expect(content).toContain('source_url: "https://www.reddit.com/r/graphify/comments/def456/social_thread_roadmap"')
+      expect(content).toContain('source_url: "https://www.reddit.com/r/madar/comments/def456/social_thread_roadmap"')
       expect(content).toContain('title: "Reddit Thread: def456"')
       expect(content).toContain('author: "unknown"')
-      expect(content).toContain('reddit_subreddit: "graphify"')
+      expect(content).toContain('reddit_subreddit: "madar"')
       expect(content).toContain('reddit_post_id: "def456"')
       expect(content).toContain('reddit_capture_status: "fallback"')
       expect(content).toContain('## Post')
       expect(content).toContain('Reddit thread metadata could not be fetched.')
       expect(content).toContain('## Context')
       expect(content).toContain('- Platform: reddit')
-      expect(content).toContain('- Subreddit: r/graphify')
+      expect(content).toContain('- Subreddit: r/madar')
       expect(content).toContain('- Post ID: def456')
       expect(content).toContain('- Capture Status: fallback')
       expect(content).toContain('- Note: thread JSON unavailable; preserved canonical thread URL and derived Reddit metadata only.')
       expect(content).toContain('## Links')
-      expect(content).toContain('[Open Thread](https://www.reddit.com/r/graphify/comments/def456/social_thread_roadmap)')
+      expect(content).toContain('[Open Thread](https://www.reddit.com/r/madar/comments/def456/social_thread_roadmap)')
       expect(content).not.toContain('provenance:')
     })
   })
@@ -561,7 +561,7 @@ describe('ingest', () => {
       )
 
       const output = await ingest('https://www.reddit.com/comments/def456?utm_source=share', join(tempDir, 'raw'), {
-        contributor: 'graphify-ts',
+        contributor: 'madar',
       })
       const content = readFileSync(output, 'utf8')
 
@@ -593,16 +593,16 @@ describe('ingest', () => {
         vi.fn(async () => new Response('rate limited', { status: 429, headers: { 'content-type': 'text/plain' } })),
       )
 
-      const output = await ingest('https://www.reddit.com/r/graphify/comments/def456/social_thread_roadmap/jkl456/?context=3', join(tempDir, 'raw'), {
-        contributor: 'graphify-ts',
+      const output = await ingest('https://www.reddit.com/r/madar/comments/def456/social_thread_roadmap/jkl456/?context=3', join(tempDir, 'raw'), {
+        contributor: 'madar',
       })
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: reddit_comment')
-      expect(content).toContain('source_url: "https://www.reddit.com/r/graphify/comments/def456/social_thread_roadmap/jkl456"')
+      expect(content).toContain('source_url: "https://www.reddit.com/r/madar/comments/def456/social_thread_roadmap/jkl456"')
       expect(content).toContain('title: "Reddit Comment: def456/jkl456"')
       expect(content).toContain('author: "unknown"')
-      expect(content).toContain('reddit_subreddit: "graphify"')
+      expect(content).toContain('reddit_subreddit: "madar"')
       expect(content).toContain('reddit_post_id: "def456"')
       expect(content).toContain('reddit_comment_id: "jkl456"')
       expect(content).toContain('reddit_capture_status: "fallback"')
@@ -612,14 +612,14 @@ describe('ingest', () => {
       expect(content).toContain('Reddit thread metadata could not be fetched.')
       expect(content).toContain('## Context')
       expect(content).toContain('- Platform: reddit')
-      expect(content).toContain('- Subreddit: r/graphify')
+      expect(content).toContain('- Subreddit: r/madar')
       expect(content).toContain('- Post ID: def456')
       expect(content).toContain('- Comment ID: jkl456')
       expect(content).toContain('- Capture Status: fallback')
       expect(content).toContain('- Note: comment JSON unavailable; preserved canonical comment URL and derived Reddit metadata only.')
       expect(content).toContain('## Links')
-      expect(content).toContain('[Open Comment](https://www.reddit.com/r/graphify/comments/def456/social_thread_roadmap/jkl456)')
-      expect(content).toContain('[Open Thread](https://www.reddit.com/r/graphify/comments/def456/social_thread_roadmap)')
+      expect(content).toContain('[Open Comment](https://www.reddit.com/r/madar/comments/def456/social_thread_roadmap/jkl456)')
+      expect(content).toContain('[Open Thread](https://www.reddit.com/r/madar/comments/def456/social_thread_roadmap)')
       expect(content).not.toContain('provenance:')
     })
   })
@@ -638,14 +638,14 @@ describe('ingest', () => {
                     {
                       kind: 't3',
                       data: {
-                        subreddit: 'graphify',
+                        subreddit: 'madar',
                         author: 'thread_author',
                         title: 'Self post example',
                         selftext: 'This thread should not render a duplicate Reddit self-link.',
                         score: 12,
                         num_comments: 3,
-                        permalink: '/r/graphify/comments/ghi789/self_post_example/',
-                        url: 'https://old.reddit.com/r/graphify/comments/ghi789/self_post_example/',
+                        permalink: '/r/madar/comments/ghi789/self_post_example/',
+                        url: 'https://old.reddit.com/r/madar/comments/ghi789/self_post_example/',
                       },
                     },
                   ],
@@ -663,11 +663,11 @@ describe('ingest', () => {
         ),
       )
 
-      const output = await ingest('https://www.reddit.com/r/graphify/comments/ghi789/self_post_example/', join(tempDir, 'raw'))
+      const output = await ingest('https://www.reddit.com/r/madar/comments/ghi789/self_post_example/', join(tempDir, 'raw'))
       const content = readFileSync(output, 'utf8')
 
-      expect(content).toContain('[Open Thread](https://www.reddit.com/r/graphify/comments/ghi789/self_post_example)')
-      expect(content).not.toContain('[Linked URL](https://old.reddit.com/r/graphify/comments/ghi789/self_post_example/)')
+      expect(content).toContain('[Open Thread](https://www.reddit.com/r/madar/comments/ghi789/self_post_example)')
+      expect(content).not.toContain('[Linked URL](https://old.reddit.com/r/madar/comments/ghi789/self_post_example/)')
     })
   })
 
@@ -700,7 +700,7 @@ describe('ingest', () => {
       )
 
       const output = await ingest('https://news.ycombinator.com/item?id=8863&utm_source=share', join(tempDir, 'raw'), {
-        contributor: 'graphify-ts',
+        contributor: 'madar',
       })
       const content = readFileSync(output, 'utf8')
 
@@ -709,7 +709,7 @@ describe('ingest', () => {
       expect(content).toContain('source_url: "https://news.ycombinator.com/item?id=8863"')
       expect(content).toContain('title: "My YC app: Dropbox - Throw away your USB drive"')
       expect(content).toContain('author: "dhouston"')
-      expect(content).toContain('contributor: "graphify-ts"')
+      expect(content).toContain('contributor: "madar"')
       expect(content).toContain('hackernews_item_id: "8863"')
       expect(content).toContain('hackernews_score: "104"')
       expect(content).toContain('hackernews_comment_count: "71"')
@@ -743,7 +743,7 @@ describe('ingest', () => {
       )
 
       const output = await ingest('https://news.ycombinator.com/item?id=12345', join(tempDir, 'raw'), {
-        contributor: 'graphify-ts',
+        contributor: 'madar',
       })
       const content = readFileSync(output, 'utf8')
 
@@ -839,9 +839,9 @@ describe('ingest', () => {
           if (requestUrl === 'https://www.youtube.com/oembed?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DdQw4w9WgXcQ&format=json') {
             return new Response(
               JSON.stringify({
-                title: 'Graphify Demo Walkthrough',
-                author_name: 'Graphify Channel',
-                author_url: 'https://www.youtube.com/@graphify',
+                title: 'Madar Demo Walkthrough',
+                author_name: 'Madar Channel',
+                author_url: 'https://www.youtube.com/@madar',
                 provider_name: 'YouTube',
                 thumbnail_url: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
               }),
@@ -867,7 +867,7 @@ describe('ingest', () => {
         }),
       )
 
-      const output = await ingest('https://youtu.be/dQw4w9WgXcQ?si=graphify', join(tempDir, 'raw'), { contributor: 'graphify-ts' })
+      const output = await ingest('https://youtu.be/dQw4w9WgXcQ?si=madar', join(tempDir, 'raw'), { contributor: 'madar' })
       const content = readFileSync(output, 'utf8')
 
       expect(requestUrls).toEqual([
@@ -877,14 +877,14 @@ describe('ingest', () => {
       ])
       expect(content).toContain('type: youtube_video')
       expect(content).toContain('source_url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"')
-      expect(content).toContain('title: "Graphify Demo Walkthrough"')
-      expect(content).toContain('author: "Graphify Channel"')
-      expect(content).toContain('contributor: "graphify-ts"')
+      expect(content).toContain('title: "Madar Demo Walkthrough"')
+      expect(content).toContain('author: "Madar Channel"')
+      expect(content).toContain('contributor: "madar"')
       expect(content).toContain('video_platform: "youtube"')
       expect(content).toContain('video_id: "dQw4w9WgXcQ"')
       expect(content).toContain('video_provider: "YouTube"')
       expect(content).toContain('video_capture_status: "oembed"')
-      expect(content).toContain('video_channel_url: "https://www.youtube.com/@graphify"')
+      expect(content).toContain('video_channel_url: "https://www.youtube.com/@madar"')
       expect(content).toContain('video_published_date: "2026-04-10"')
       expect(content).toContain('video_duration_seconds: 462')
       expect(content).toContain('video_transcript_available: true')
@@ -894,9 +894,9 @@ describe('ingest', () => {
       expect(content).toContain('video_transcript_segment_count: 3')
       expect(content).toContain('video_thumbnail_url: "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg"')
       expect(content).toContain('video_embed_url: "https://www.youtube.com/embed/dQw4w9WgXcQ"')
-      expect(content).toContain('# YouTube Video: Graphify Demo Walkthrough')
+      expect(content).toContain('# YouTube Video: Madar Demo Walkthrough')
       expect(content).toContain('## Video')
-      expect(content).toContain('[Graphify Channel](https://www.youtube.com/@graphify)')
+      expect(content).toContain('[Madar Channel](https://www.youtube.com/@madar)')
       expect(content).toContain('## Transcript')
       expect(content).toContain("- 00:00-00:04 Hello & welcome.")
       expect(content).toContain("- 00:15-00:20 Route-aware ingest's next step.")
@@ -932,9 +932,9 @@ describe('ingest', () => {
           if (requestUrl === 'https://www.youtube.com/oembed?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DdQw4w9WgXcQ&format=json') {
             return new Response(
               JSON.stringify({
-                title: 'Graphify Demo Walkthrough',
-                author_name: 'Graphify Channel',
-                author_url: 'https://www.youtube.com/@graphify',
+                title: 'Madar Demo Walkthrough',
+                author_name: 'Madar Channel',
+                author_url: 'https://www.youtube.com/@madar',
                 provider_name: 'YouTube',
                 thumbnail_url: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
               }),
@@ -961,7 +961,7 @@ describe('ingest', () => {
       )
 
       const output = await ingest('https://www.youtube.com/watch?v=dQw4w9WgXcQ&feature=share', join(tempDir, 'raw'), {
-        contributor: 'graphify-ts',
+        contributor: 'madar',
       })
       const content = readFileSync(output, 'utf8')
 
@@ -1013,9 +1013,9 @@ describe('ingest', () => {
           if (requestUrl === 'https://www.youtube.com/oembed?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DdQw4w9WgXcQ&format=json') {
             return new Response(
               JSON.stringify({
-                title: 'Graphify Demo Walkthrough',
-                author_name: 'Graphify Channel',
-                author_url: 'https://www.youtube.com/@graphify',
+                title: 'Madar Demo Walkthrough',
+                author_name: 'Madar Channel',
+                author_url: 'https://www.youtube.com/@madar',
                 provider_name: 'YouTube',
                 thumbnail_url: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
               }),
@@ -1042,7 +1042,7 @@ describe('ingest', () => {
 
           expect(requestUrl).toBe('https://www.youtube.com/watch?v=dQw4w9WgXcQ')
           return new Response(
-            '<html><head><title>Graphify Demo Walkthrough - YouTube</title><link rel="canonical" href="https://www.youtube.com/watch?v=dQw4w9WgXcQ" /><meta property="og:url" content="https://www.youtube.com/watch?v=dQw4w9WgXcQ" /><meta property="og:title" content="Graphify Demo Walkthrough" /><meta property="og:image" content="https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg" /><meta itemprop="datePublished" content="2026-04-10" /><meta itemprop="duration" content="PT7M42S" /><meta name="author" content="Graphify Channel" /><script>var ytInitialData = {"videoDetails":{"videoId":"dQw4w9WgXcQ","title":"Graphify Demo Walkthrough"}}; var ytInitialPlayerResponse = {"captions":{"playerCaptionsTracklistRenderer":{"captionTracks":[{"baseUrl":"https://www.youtube.com/api/timedtext?v=dQw4w9WgXcQ&lang=en&kind=asr","languageCode":"en","kind":"asr","name":{"simpleText":"English (auto-generated)"}},{"baseUrl":"https://www.youtube.com/api/timedtext?v=dQw4w9WgXcQ&lang=en","languageCode":"en","name":{"simpleText":"English"}},{"baseUrl":"https://www.youtube.com/api/timedtext?v=dQw4w9WgXcQ&lang=es","languageCode":"es","name":{"simpleText":"Español"}}]}}};</script></head><body><ytd-watch-flexy><main><h1>Graphify Demo Walkthrough</h1></main></ytd-watch-flexy></body></html>',
+            '<html><head><title>Madar Demo Walkthrough - YouTube</title><link rel="canonical" href="https://www.youtube.com/watch?v=dQw4w9WgXcQ" /><meta property="og:url" content="https://www.youtube.com/watch?v=dQw4w9WgXcQ" /><meta property="og:title" content="Madar Demo Walkthrough" /><meta property="og:image" content="https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg" /><meta itemprop="datePublished" content="2026-04-10" /><meta itemprop="duration" content="PT7M42S" /><meta name="author" content="Madar Channel" /><script>var ytInitialData = {"videoDetails":{"videoId":"dQw4w9WgXcQ","title":"Madar Demo Walkthrough"}}; var ytInitialPlayerResponse = {"captions":{"playerCaptionsTracklistRenderer":{"captionTracks":[{"baseUrl":"https://www.youtube.com/api/timedtext?v=dQw4w9WgXcQ&lang=en&kind=asr","languageCode":"en","kind":"asr","name":{"simpleText":"English (auto-generated)"}},{"baseUrl":"https://www.youtube.com/api/timedtext?v=dQw4w9WgXcQ&lang=en","languageCode":"en","name":{"simpleText":"English"}},{"baseUrl":"https://www.youtube.com/api/timedtext?v=dQw4w9WgXcQ&lang=es","languageCode":"es","name":{"simpleText":"Español"}}]}}};</script></head><body><ytd-watch-flexy><main><h1>Madar Demo Walkthrough</h1></main></ytd-watch-flexy></body></html>',
             {
               status: 200,
               headers: { 'content-type': 'text/html; charset=utf-8' },
@@ -1079,9 +1079,9 @@ describe('ingest', () => {
           if (requestUrl === 'https://www.youtube.com/oembed?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DdQw4w9WgXcQ&format=json') {
             return new Response(
               JSON.stringify({
-                title: 'Graphify Demo Walkthrough',
-                author_name: 'Graphify Channel',
-                author_url: 'https://www.youtube.com/@graphify',
+                title: 'Madar Demo Walkthrough',
+                author_name: 'Madar Channel',
+                author_url: 'https://www.youtube.com/@madar',
                 provider_name: 'YouTube',
                 thumbnail_url: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
               }),
@@ -1108,7 +1108,7 @@ describe('ingest', () => {
 
           expect(requestUrl).toBe('https://www.youtube.com/watch?v=dQw4w9WgXcQ')
           return new Response(
-            '<html><head><title>Graphify Demo Walkthrough - YouTube</title><link rel="canonical" href="https://www.youtube.com/watch?v=dQw4w9WgXcQ" /><meta property="og:url" content="https://www.youtube.com/watch?v=dQw4w9WgXcQ" /><meta property="og:title" content="Graphify Demo Walkthrough" /><meta property="og:image" content="https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg" /><meta itemprop="datePublished" content="2026-04-10" /><meta itemprop="duration" content="PT7M42S" /><meta name="author" content="Graphify Channel" /><script>var ytInitialData = {"videoDetails":{"videoId":"dQw4w9WgXcQ","title":"Graphify Demo Walkthrough"}}; var ytInitialPlayerResponse = {"captions":{"playerCaptionsTracklistRenderer":{"captionTracks":[{"baseUrl":"https://www.youtube.com/api/timedtext?v=dQw4w9WgXcQ&lang=en&kind=asr","languageCode":"en","kind":"asr","name":{"simpleText":"English (auto-generated)"}},{"baseUrl":"https://www.youtube.com/api/timedtext?v=dQw4w9WgXcQ&lang=en","languageCode":"en","name":{"simpleText":"English"}},{"baseUrl":"https://www.youtube.com/api/timedtext?v=dQw4w9WgXcQ&lang=es","languageCode":"es","name":{"simpleText":"Español"}}]}}};</script></head><body><ytd-watch-flexy><main><h1>Graphify Demo Walkthrough</h1></main></ytd-watch-flexy></body></html>',
+            '<html><head><title>Madar Demo Walkthrough - YouTube</title><link rel="canonical" href="https://www.youtube.com/watch?v=dQw4w9WgXcQ" /><meta property="og:url" content="https://www.youtube.com/watch?v=dQw4w9WgXcQ" /><meta property="og:title" content="Madar Demo Walkthrough" /><meta property="og:image" content="https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg" /><meta itemprop="datePublished" content="2026-04-10" /><meta itemprop="duration" content="PT7M42S" /><meta name="author" content="Madar Channel" /><script>var ytInitialData = {"videoDetails":{"videoId":"dQw4w9WgXcQ","title":"Madar Demo Walkthrough"}}; var ytInitialPlayerResponse = {"captions":{"playerCaptionsTracklistRenderer":{"captionTracks":[{"baseUrl":"https://www.youtube.com/api/timedtext?v=dQw4w9WgXcQ&lang=en&kind=asr","languageCode":"en","kind":"asr","name":{"simpleText":"English (auto-generated)"}},{"baseUrl":"https://www.youtube.com/api/timedtext?v=dQw4w9WgXcQ&lang=en","languageCode":"en","name":{"simpleText":"English"}},{"baseUrl":"https://www.youtube.com/api/timedtext?v=dQw4w9WgXcQ&lang=es","languageCode":"es","name":{"simpleText":"Español"}}]}}};</script></head><body><ytd-watch-flexy><main><h1>Madar Demo Walkthrough</h1></main></ytd-watch-flexy></body></html>',
             {
               status: 200,
               headers: { 'content-type': 'text/html; charset=utf-8' },
@@ -1143,9 +1143,9 @@ describe('ingest', () => {
           if (requestUrl === 'https://www.youtube.com/oembed?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DdQw4w9WgXcQ&format=json') {
             return new Response(
               JSON.stringify({
-                title: 'Graphify Demo Walkthrough',
-                author_name: 'Graphify Channel',
-                author_url: 'https://www.youtube.com/@graphify',
+                title: 'Madar Demo Walkthrough',
+                author_name: 'Madar Channel',
+                author_url: 'https://www.youtube.com/@madar',
                 provider_name: 'YouTube',
                 thumbnail_url: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
               }),
@@ -1158,7 +1158,7 @@ describe('ingest', () => {
 
           expect(requestUrl).toBe('https://www.youtube.com/watch?v=dQw4w9WgXcQ')
           return new Response(
-            '<html><head><title>Graphify Demo Walkthrough - YouTube</title><link rel="canonical" href="https://www.youtube.com/watch?v=dQw4w9WgXcQ" /><meta property="og:url" content="https://www.youtube.com/watch?v=dQw4w9WgXcQ" /><meta property="og:title" content="Graphify Demo Walkthrough" /><meta property="og:image" content="https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg" /><meta name="author" content="Graphify Channel" /></head><body><main><h1>Graphify Demo Walkthrough</h1></main></body></html>',
+            '<html><head><title>Madar Demo Walkthrough - YouTube</title><link rel="canonical" href="https://www.youtube.com/watch?v=dQw4w9WgXcQ" /><meta property="og:url" content="https://www.youtube.com/watch?v=dQw4w9WgXcQ" /><meta property="og:title" content="Madar Demo Walkthrough" /><meta property="og:image" content="https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg" /><meta name="author" content="Madar Channel" /></head><body><main><h1>Madar Demo Walkthrough</h1></main></body></html>',
             {
               status: 200,
               headers: { 'content-type': 'text/html; charset=utf-8' },
@@ -1192,9 +1192,9 @@ describe('ingest', () => {
           if (requestUrl === 'https://www.youtube.com/oembed?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DdQw4w9WgXcQ&format=json') {
             return new Response(
               JSON.stringify({
-                title: 'Graphify Demo Walkthrough',
-                author_name: 'Graphify Channel',
-                author_url: 'https://www.youtube.com/@graphify',
+                title: 'Madar Demo Walkthrough',
+                author_name: 'Madar Channel',
+                author_url: 'https://www.youtube.com/@madar',
                 provider_name: 'YouTube',
                 thumbnail_url: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
               }),
@@ -1207,7 +1207,7 @@ describe('ingest', () => {
 
           expect(requestUrl).toBe('https://www.youtube.com/watch?v=dQw4w9WgXcQ')
           return new Response(
-            '<html><head><title>Graphify Demo Walkthrough - YouTube</title><link rel="canonical" href="https://www.youtube.com/watch?v=dQw4w9WgXcQ" /><meta property="og:url" content="https://www.youtube.com/watch?v=dQw4w9WgXcQ" /><meta property="og:title" content="Graphify Demo Walkthrough" /><meta property="og:image" content="https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg" /><meta itemprop="datePublished" content="2026-04-10" /><meta itemprop="duration" content="PT7M42S" /><meta name="author" content="Graphify Channel" /><script>var ytInitialData = {"videoDetails":{"videoId":"dQw4w9WgXcQ","title":"Graphify Demo Walkthrough"}}; var ytInitialPlayerResponse = {"captions":{"playerCaptionsTracklistRenderer":{"captionTracks":[{"baseUrl":"https://www.youtube.com/api/timedtext?v=dQw4w9WgXcQ&lang=en","languageCode":"en","name":{"simpleText":"English"}},{"baseUrl":"https://www.youtube.com/api/timedtext?v=dQw4w9WgXcQ&lang=en&kind=asr","languageCode":"en","name":{"simpleText":"English (auto-generated)"}},{"baseUrl":"https://www.youtube.com/api/timedtext?v=dQw4w9WgXcQ&lang=es","languageCode":"es","name":{"simpleText":"Español"}}]}}};</script></head><body><ytd-watch-flexy><main><h1>Graphify Demo Walkthrough</h1></main></ytd-watch-flexy></body></html>',
+            '<html><head><title>Madar Demo Walkthrough - YouTube</title><link rel="canonical" href="https://www.youtube.com/watch?v=dQw4w9WgXcQ" /><meta property="og:url" content="https://www.youtube.com/watch?v=dQw4w9WgXcQ" /><meta property="og:title" content="Madar Demo Walkthrough" /><meta property="og:image" content="https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg" /><meta itemprop="datePublished" content="2026-04-10" /><meta itemprop="duration" content="PT7M42S" /><meta name="author" content="Madar Channel" /><script>var ytInitialData = {"videoDetails":{"videoId":"dQw4w9WgXcQ","title":"Madar Demo Walkthrough"}}; var ytInitialPlayerResponse = {"captions":{"playerCaptionsTracklistRenderer":{"captionTracks":[{"baseUrl":"https://www.youtube.com/api/timedtext?v=dQw4w9WgXcQ&lang=en","languageCode":"en","name":{"simpleText":"English"}},{"baseUrl":"https://www.youtube.com/api/timedtext?v=dQw4w9WgXcQ&lang=en&kind=asr","languageCode":"en","name":{"simpleText":"English (auto-generated)"}},{"baseUrl":"https://www.youtube.com/api/timedtext?v=dQw4w9WgXcQ&lang=es","languageCode":"es","name":{"simpleText":"Español"}}]}}};</script></head><body><ytd-watch-flexy><main><h1>Madar Demo Walkthrough</h1></main></ytd-watch-flexy></body></html>',
             {
               status: 200,
               headers: { 'content-type': 'text/html; charset=utf-8' },
@@ -1237,9 +1237,9 @@ describe('ingest', () => {
           if (requestUrl === 'https://www.youtube.com/oembed?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DdQw4w9WgXcQ&format=json') {
             return new Response(
               JSON.stringify({
-                title: 'Graphify Demo Walkthrough',
-                author_name: 'Graphify Channel',
-                author_url: 'https://www.youtube.com/@graphify',
+                title: 'Madar Demo Walkthrough',
+                author_name: 'Madar Channel',
+                author_url: 'https://www.youtube.com/@madar',
                 provider_name: 'YouTube',
                 thumbnail_url: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
               }),
@@ -1252,7 +1252,7 @@ describe('ingest', () => {
 
           expect(requestUrl).toBe('https://www.youtube.com/watch?v=dQw4w9WgXcQ')
           return new Response(
-            '<html><head><title>Graphify Demo Walkthrough - YouTube</title><link rel="canonical" href="https://www.youtube.com/watch?v=dQw4w9WgXcQ" /><meta property="og:url" content="https://www.youtube.com/watch?v=dQw4w9WgXcQ" /><meta property="og:title" content="Graphify Demo Walkthrough" /><meta property="og:image" content="https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg" /><meta name="author" content="Graphify Channel" /><script>var ytInitialData = {"videoDetails":{"videoId":"dQw4w9WgXcQ","title":"Graphify Demo Walkthrough"}}; var ytInitialPlayerResponse = {"captions":{"playerCaptionsTracklistRenderer":{"captionTracks":[]}}};</script></head><body><ytd-watch-flexy><main><h1>Graphify Demo Walkthrough</h1></main></ytd-watch-flexy></body></html>',
+            '<html><head><title>Madar Demo Walkthrough - YouTube</title><link rel="canonical" href="https://www.youtube.com/watch?v=dQw4w9WgXcQ" /><meta property="og:url" content="https://www.youtube.com/watch?v=dQw4w9WgXcQ" /><meta property="og:title" content="Madar Demo Walkthrough" /><meta property="og:image" content="https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg" /><meta name="author" content="Madar Channel" /><script>var ytInitialData = {"videoDetails":{"videoId":"dQw4w9WgXcQ","title":"Madar Demo Walkthrough"}}; var ytInitialPlayerResponse = {"captions":{"playerCaptionsTracklistRenderer":{"captionTracks":[]}}};</script></head><body><ytd-watch-flexy><main><h1>Madar Demo Walkthrough</h1></main></ytd-watch-flexy></body></html>',
             {
               status: 200,
               headers: { 'content-type': 'text/html; charset=utf-8' },
@@ -1284,9 +1284,9 @@ describe('ingest', () => {
           if (requestUrl === 'https://www.youtube.com/oembed?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DdQw4w9WgXcQ&format=json') {
             return new Response(
               JSON.stringify({
-                title: 'Graphify Demo Walkthrough',
-                author_name: 'Graphify Channel',
-                author_url: 'https://www.youtube.com/@graphify',
+                title: 'Madar Demo Walkthrough',
+                author_name: 'Madar Channel',
+                author_url: 'https://www.youtube.com/@madar',
                 provider_name: 'YouTube',
                 thumbnail_url: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
               }),
@@ -1349,9 +1349,9 @@ describe('ingest', () => {
           if (requestUrl === 'https://www.youtube.com/oembed?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DdQw4w9WgXcQ&format=json') {
             return new Response(
               JSON.stringify({
-                title: 'Graphify Demo Walkthrough',
-                author_name: 'Graphify Channel',
-                author_url: 'https://www.youtube.com/@graphify',
+                title: 'Madar Demo Walkthrough',
+                author_name: 'Madar Channel',
+                author_url: 'https://www.youtube.com/@madar',
                 provider_name: 'YouTube',
                 thumbnail_url: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
               }),
@@ -1400,9 +1400,9 @@ describe('ingest', () => {
           if (requestUrl === 'https://www.youtube.com/oembed?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DdQw4w9WgXcQ&format=json') {
             return new Response(
               JSON.stringify({
-                title: 'Graphify Demo Walkthrough',
-                author_name: 'Graphify Channel',
-                author_url: 'https://www.youtube.com/@graphify',
+                title: 'Madar Demo Walkthrough',
+                author_name: 'Madar Channel',
+                author_url: 'https://www.youtube.com/@madar',
                 provider_name: 'YouTube',
                 thumbnail_url: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
               }),
@@ -1415,7 +1415,7 @@ describe('ingest', () => {
 
           expect(requestUrl).toBe('https://www.youtube.com/watch?v=dQw4w9WgXcQ')
           return new Response(
-            '<html><head><title>Before you continue - YouTube</title><link rel="canonical" href="https://www.youtube.com/watch?v=dQw4w9WgXcQ" /><meta property="og:url" content="https://www.youtube.com/watch?v=dQw4w9WgXcQ" /><meta itemprop="datePublished" content="2026-04-10" /><meta itemprop="duration" content="PT7M42S" /><script>var ytInitialPlayerResponse = {"captions":{"playerCaptionsTracklistRenderer":{"captionTracks":[{"baseUrl":"https://www.youtube.com/api/timedtext?v=dQw4w9WgXcQ&lang=en","languageCode":"en","name":{"simpleText":"English"}}]}}}; var ytInitialData = {"videoDetails":{"videoId":"dQw4w9WgXcQ","title":"Graphify Demo Walkthrough"},"consentRenderer":{"message":"Consent required"},"playerOverlays":{"consentBumpRenderer":{}}};</script></head><body><div id="consent-bump">Consent required</div></body></html>',
+            '<html><head><title>Before you continue - YouTube</title><link rel="canonical" href="https://www.youtube.com/watch?v=dQw4w9WgXcQ" /><meta property="og:url" content="https://www.youtube.com/watch?v=dQw4w9WgXcQ" /><meta itemprop="datePublished" content="2026-04-10" /><meta itemprop="duration" content="PT7M42S" /><script>var ytInitialPlayerResponse = {"captions":{"playerCaptionsTracklistRenderer":{"captionTracks":[{"baseUrl":"https://www.youtube.com/api/timedtext?v=dQw4w9WgXcQ&lang=en","languageCode":"en","name":{"simpleText":"English"}}]}}}; var ytInitialData = {"videoDetails":{"videoId":"dQw4w9WgXcQ","title":"Madar Demo Walkthrough"},"consentRenderer":{"message":"Consent required"},"playerOverlays":{"consentBumpRenderer":{}}};</script></head><body><div id="consent-bump">Consent required</div></body></html>',
             {
               status: 200,
               headers: { 'content-type': 'text/html; charset=utf-8' },
@@ -1450,9 +1450,9 @@ describe('ingest', () => {
           if (requestUrl === 'https://www.youtube.com/oembed?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DdQw4w9WgXcQ&format=json') {
             return new Response(
               JSON.stringify({
-                title: 'Graphify Demo Walkthrough',
-                author_name: 'Graphify Channel',
-                author_url: 'https://www.youtube.com/@graphify',
+                title: 'Madar Demo Walkthrough',
+                author_name: 'Madar Channel',
+                author_url: 'https://www.youtube.com/@madar',
                 provider_name: 'YouTube',
                 thumbnail_url: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
               }),
@@ -1500,9 +1500,9 @@ describe('ingest', () => {
           if (requestUrl === 'https://www.youtube.com/oembed?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DdQw4w9WgXcQ&format=json') {
             return new Response(
               JSON.stringify({
-                title: 'Graphify Demo Walkthrough',
-                author_name: 'Graphify Channel',
-                author_url: 'https://www.youtube.com/@graphify',
+                title: 'Madar Demo Walkthrough',
+                author_name: 'Madar Channel',
+                author_url: 'https://www.youtube.com/@madar',
                 provider_name: 'YouTube',
                 thumbnail_url: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
               }),
@@ -1552,9 +1552,9 @@ describe('ingest', () => {
           if (requestUrl === 'https://www.youtube.com/oembed?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DdQw4w9WgXcQ&format=json') {
             return new Response(
               JSON.stringify({
-                title: 'Graphify Demo Walkthrough',
-                author_name: 'Graphify Channel',
-                author_url: 'https://www.youtube.com/@graphify',
+                title: 'Madar Demo Walkthrough',
+                author_name: 'Madar Channel',
+                author_url: 'https://www.youtube.com/@madar',
                 provider_name: 'YouTube',
                 thumbnail_url: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
               }),
@@ -1623,7 +1623,7 @@ describe('ingest', () => {
         'fetch',
         vi.fn(async (input) => {
           const requestUrl = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
-          expect(requestUrl).toBe('https://www.youtube.com/playlist?list=PLgraphifyRoadmap123')
+          expect(requestUrl).toBe('https://www.youtube.com/playlist?list=PLmadarRoadmap123')
           return new Response(readIngestFixture('youtube-playlist.html'), {
             status: 200,
             headers: { 'content-type': 'text/html; charset=utf-8' },
@@ -1631,34 +1631,34 @@ describe('ingest', () => {
         }),
       )
 
-      const output = await ingest('https://www.youtube.com/playlist?list=PLgraphifyRoadmap123&feature=share', join(tempDir, 'raw'), {
-        contributor: 'graphify-ts',
+      const output = await ingest('https://www.youtube.com/playlist?list=PLmadarRoadmap123&feature=share', join(tempDir, 'raw'), {
+        contributor: 'madar',
       })
       const content = readFileSync(output, 'utf8')
 
-      expect(basename(output)).toBe('youtube_playlist_PLgraphifyRoadmap123.md')
+      expect(basename(output)).toBe('youtube_playlist_PLmadarRoadmap123.md')
       expect(content).toContain('type: youtube_playlist')
-      expect(content).toContain('source_url: "https://www.youtube.com/playlist?list=PLgraphifyRoadmap123"')
-      expect(content).toContain('title: "Graphify Roadmap Sessions"')
-      expect(content).toContain('author: "Graphify Channel"')
-      expect(content).toContain('description: "Deterministic roadmap demos and implementation updates for graphify-ts."')
-      expect(content).toContain('contributor: "graphify-ts"')
+      expect(content).toContain('source_url: "https://www.youtube.com/playlist?list=PLmadarRoadmap123"')
+      expect(content).toContain('title: "Madar Roadmap Sessions"')
+      expect(content).toContain('author: "Madar Channel"')
+      expect(content).toContain('description: "Deterministic roadmap demos and implementation updates for madar."')
+      expect(content).toContain('contributor: "madar"')
       expect(content).toContain('youtube_platform: "youtube"')
       expect(content).toContain('youtube_kind: "playlist"')
-      expect(content).toContain('youtube_playlist_id: "PLgraphifyRoadmap123"')
+      expect(content).toContain('youtube_playlist_id: "PLmadarRoadmap123"')
       expect(content).toContain('youtube_capture_status: "html"')
       expect(content).toContain('youtube_thumbnail_url: "https://i.ytimg.com/vi_webp/playlist/default.jpg"')
-      expect(content).toContain('# YouTube Playlist: Graphify Roadmap Sessions')
+      expect(content).toContain('# YouTube Playlist: Madar Roadmap Sessions')
       expect(content).toContain('## Playlist')
-      expect(content).toContain('Playlist by Graphify Channel.')
-      expect(content).toContain('Deterministic roadmap demos and implementation updates for graphify-ts.')
+      expect(content).toContain('Playlist by Madar Channel.')
+      expect(content).toContain('Deterministic roadmap demos and implementation updates for madar.')
       expect(content).toContain('## Context')
       expect(content).toContain('- Platform: youtube')
       expect(content).toContain('- Kind: playlist')
-      expect(content).toContain('- Playlist ID: PLgraphifyRoadmap123')
+      expect(content).toContain('- Playlist ID: PLmadarRoadmap123')
       expect(content).toContain('- Capture Status: html')
       expect(content).toContain('## Links')
-      expect(content).toContain('[Open Playlist](https://www.youtube.com/playlist?list=PLgraphifyRoadmap123)')
+      expect(content).toContain('[Open Playlist](https://www.youtube.com/playlist?list=PLmadarRoadmap123)')
       expect(content).toContain('[Thumbnail](https://i.ytimg.com/vi_webp/playlist/default.jpg)')
       expect(content).not.toContain('feature=share')
       expect(content).not.toContain('provenance:')
@@ -1668,10 +1668,10 @@ describe('ingest', () => {
   test('falls back to generic webpage capture when fetched YouTube playlist HTML does not confirm a playlist page', async () => {
     await withTempDir(async (tempDir) => {
       stubHtmlFetch(
-        '<html><head><title>Graphify Demo Walkthrough - YouTube</title><link rel="canonical" href="https://www.youtube.com/watch?v=dQw4w9WgXcQ" /></head><body><main><p>Video page.</p></main></body></html>',
+        '<html><head><title>Madar Demo Walkthrough - YouTube</title><link rel="canonical" href="https://www.youtube.com/watch?v=dQw4w9WgXcQ" /></head><body><main><p>Video page.</p></main></body></html>',
       )
 
-      const output = await ingest('https://www.youtube.com/playlist?list=PLgraphifyRoadmap123', join(tempDir, 'raw'))
+      const output = await ingest('https://www.youtube.com/playlist?list=PLmadarRoadmap123', join(tempDir, 'raw'))
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: webpage')
@@ -1684,14 +1684,14 @@ describe('ingest', () => {
   test('falls back to generic webpage capture when a non-playlist YouTube page echoes the requested playlist id', async () => {
     await withTempDir(async (tempDir) => {
       stubHtmlFetch(
-        '<html><head><title>Graphify Consent - YouTube</title><link rel="canonical" href="https://www.youtube.com/playlist?list=PLgraphifyRoadmap123" /></head><body><main><script>var ytInitialData = {"playlistId":"PLgraphifyRoadmap123"};</script><p>Consent page.</p></main></body></html>',
+        '<html><head><title>Madar Consent - YouTube</title><link rel="canonical" href="https://www.youtube.com/playlist?list=PLmadarRoadmap123" /></head><body><main><script>var ytInitialData = {"playlistId":"PLmadarRoadmap123"};</script><p>Consent page.</p></main></body></html>',
       )
 
-      const output = await ingest('https://www.youtube.com/playlist?list=PLgraphifyRoadmap123', join(tempDir, 'raw'))
+      const output = await ingest('https://www.youtube.com/playlist?list=PLmadarRoadmap123', join(tempDir, 'raw'))
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: webpage')
-      expect(content).toContain('source_url: "https://www.youtube.com/playlist?list=PLgraphifyRoadmap123"')
+      expect(content).toContain('source_url: "https://www.youtube.com/playlist?list=PLmadarRoadmap123"')
       expect(content).not.toContain('type: youtube_playlist')
       expect(content).not.toContain('youtube_kind:')
     })
@@ -1701,11 +1701,11 @@ describe('ingest', () => {
     await withTempDir(async (tempDir) => {
       stubHtmlFetch(readIngestFixture('youtube-playlist.html'))
 
-      const output = await ingest('https://www.youtube.com/playlist/?list=PLgraphifyRoadmap123', join(tempDir, 'raw'))
+      const output = await ingest('https://www.youtube.com/playlist/?list=PLmadarRoadmap123', join(tempDir, 'raw'))
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: webpage')
-      expect(content).toContain('source_url: "https://www.youtube.com/playlist?list=PLgraphifyRoadmap123"')
+      expect(content).toContain('source_url: "https://www.youtube.com/playlist?list=PLmadarRoadmap123"')
       expect(content).not.toContain('type: youtube_playlist')
       expect(content).not.toContain('youtube_kind:')
     })
@@ -1717,7 +1717,7 @@ describe('ingest', () => {
         'fetch',
         vi.fn(async (input) => {
           const requestUrl = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
-          expect(requestUrl).toBe('https://www.youtube.com/@graphify')
+          expect(requestUrl).toBe('https://www.youtube.com/@madar')
           return new Response(readIngestFixture('youtube-channel.html'), {
             status: 200,
             headers: { 'content-type': 'text/html; charset=utf-8' },
@@ -1725,37 +1725,37 @@ describe('ingest', () => {
         }),
       )
 
-      const output = await ingest('https://www.youtube.com/@graphify?feature=share', join(tempDir, 'raw'), {
-        contributor: 'graphify-ts',
+      const output = await ingest('https://www.youtube.com/@madar?feature=share', join(tempDir, 'raw'), {
+        contributor: 'madar',
       })
       const content = readFileSync(output, 'utf8')
 
-      expect(basename(output)).toBe('youtube_channel_graphify.md')
+      expect(basename(output)).toBe('youtube_channel_madar.md')
       expect(content).toContain('type: youtube_channel')
-      expect(content).toContain('source_url: "https://www.youtube.com/@graphify"')
-      expect(content).toContain('title: "Graphify Channel"')
-      expect(content).toContain('author: "Graphify Channel"')
+      expect(content).toContain('source_url: "https://www.youtube.com/@madar"')
+      expect(content).toContain('title: "Madar Channel"')
+      expect(content).toContain('author: "Madar Channel"')
       expect(content).toContain('description: "Deterministic roadmap demos, graph explainers, and structured ingest updates."')
-      expect(content).toContain('contributor: "graphify-ts"')
+      expect(content).toContain('contributor: "madar"')
       expect(content).toContain('youtube_platform: "youtube"')
       expect(content).toContain('youtube_kind: "channel"')
-      expect(content).toContain('youtube_channel_handle: "graphify"')
-      expect(content).toContain('youtube_channel_id: "UCgraphifyRoadmap1234567"')
+      expect(content).toContain('youtube_channel_handle: "madar"')
+      expect(content).toContain('youtube_channel_id: "UCmadarRoadmap1234567890"')
       expect(content).toContain('youtube_capture_status: "html"')
-      expect(content).toContain('youtube_thumbnail_url: "https://yt3.googleusercontent.com/graphify-channel-photo=s176"')
-      expect(content).toContain('# YouTube Channel: Graphify Channel')
+      expect(content).toContain('youtube_thumbnail_url: "https://yt3.googleusercontent.com/madar-channel-photo=s176"')
+      expect(content).toContain('# YouTube Channel: Madar Channel')
       expect(content).toContain('## Channel')
-      expect(content).toContain('YouTube channel @graphify.')
+      expect(content).toContain('YouTube channel @madar.')
       expect(content).toContain('Deterministic roadmap demos, graph explainers, and structured ingest updates.')
       expect(content).toContain('## Context')
       expect(content).toContain('- Platform: youtube')
       expect(content).toContain('- Kind: channel')
-      expect(content).toContain('- Handle: @graphify')
-      expect(content).toContain('- Channel ID: UCgraphifyRoadmap1234567')
+      expect(content).toContain('- Handle: @madar')
+      expect(content).toContain('- Channel ID: UCmadarRoadmap1234567890')
       expect(content).toContain('- Capture Status: html')
       expect(content).toContain('## Links')
-      expect(content).toContain('[Open Channel](https://www.youtube.com/@graphify)')
-      expect(content).toContain('[Thumbnail](https://yt3.googleusercontent.com/graphify-channel-photo=s176)')
+      expect(content).toContain('[Open Channel](https://www.youtube.com/@madar)')
+      expect(content).toContain('[Thumbnail](https://yt3.googleusercontent.com/madar-channel-photo=s176)')
       expect(content).not.toContain('feature=share')
       expect(content).not.toContain('provenance:')
     })
@@ -1767,7 +1767,7 @@ describe('ingest', () => {
         'fetch',
         vi.fn(async (input) => {
           const requestUrl = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
-          expect(requestUrl).toBe('https://www.youtube.com/@graphify')
+          expect(requestUrl).toBe('https://www.youtube.com/@madar')
           return new Response(readIngestFixture('youtube-channel.html'), {
             status: 200,
             headers: { 'content-type': 'text/html; charset=utf-8' },
@@ -1775,13 +1775,13 @@ describe('ingest', () => {
         }),
       )
 
-      const output = await ingest('https://www.youtube.com/@Graphify?feature=share', join(tempDir, 'raw'))
+      const output = await ingest('https://www.youtube.com/@Madar?feature=share', join(tempDir, 'raw'))
       const content = readFileSync(output, 'utf8')
 
-      expect(basename(output)).toBe('youtube_channel_graphify.md')
+      expect(basename(output)).toBe('youtube_channel_madar.md')
       expect(content).toContain('type: youtube_channel')
-      expect(content).toContain('source_url: "https://www.youtube.com/@graphify"')
-      expect(content).not.toContain('@Graphify')
+      expect(content).toContain('source_url: "https://www.youtube.com/@madar"')
+      expect(content).not.toContain('@Madar')
     })
   })
 
@@ -1791,7 +1791,7 @@ describe('ingest', () => {
         'fetch',
         vi.fn(async (input) => {
           const requestUrl = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
-          expect(requestUrl).toBe('https://www.youtube.com/channel/UCgraphifyRoadmap1234567')
+          expect(requestUrl).toBe('https://www.youtube.com/channel/UCmadarRoadmap1234567890')
           return new Response(readIngestFixture('youtube-channel.html'), {
             status: 200,
             headers: { 'content-type': 'text/html; charset=utf-8' },
@@ -1799,33 +1799,33 @@ describe('ingest', () => {
         }),
       )
 
-      const output = await ingest('https://www.youtube.com/channel/UCgraphifyRoadmap1234567?feature=share', join(tempDir, 'raw'), {
-        contributor: 'graphify-ts',
+      const output = await ingest('https://www.youtube.com/channel/UCmadarRoadmap1234567890?feature=share', join(tempDir, 'raw'), {
+        contributor: 'madar',
       })
       const content = readFileSync(output, 'utf8')
 
-      expect(basename(output)).toBe('youtube_channel_graphify.md')
+      expect(basename(output)).toBe('youtube_channel_madar.md')
       expect(content).toContain('type: youtube_channel')
-      expect(content).toContain('source_url: "https://www.youtube.com/@graphify"')
-      expect(content).toContain('title: "Graphify Channel"')
-      expect(content).toContain('author: "Graphify Channel"')
+      expect(content).toContain('source_url: "https://www.youtube.com/@madar"')
+      expect(content).toContain('title: "Madar Channel"')
+      expect(content).toContain('author: "Madar Channel"')
       expect(content).toContain('description: "Deterministic roadmap demos, graph explainers, and structured ingest updates."')
-      expect(content).toContain('contributor: "graphify-ts"')
+      expect(content).toContain('contributor: "madar"')
       expect(content).toContain('youtube_platform: "youtube"')
       expect(content).toContain('youtube_kind: "channel"')
-      expect(content).toContain('youtube_channel_handle: "graphify"')
-      expect(content).toContain('youtube_channel_id: "UCgraphifyRoadmap1234567"')
+      expect(content).toContain('youtube_channel_handle: "madar"')
+      expect(content).toContain('youtube_channel_id: "UCmadarRoadmap1234567890"')
       expect(content).toContain('youtube_capture_status: "html"')
-      expect(content).toContain('youtube_thumbnail_url: "https://yt3.googleusercontent.com/graphify-channel-photo=s176"')
-      expect(content).toContain('# YouTube Channel: Graphify Channel')
+      expect(content).toContain('youtube_thumbnail_url: "https://yt3.googleusercontent.com/madar-channel-photo=s176"')
+      expect(content).toContain('# YouTube Channel: Madar Channel')
       expect(content).toContain('## Channel')
-      expect(content).toContain('YouTube channel @graphify.')
+      expect(content).toContain('YouTube channel @madar.')
       expect(content).toContain('## Context')
-      expect(content).toContain('- Handle: @graphify')
-      expect(content).toContain('- Channel ID: UCgraphifyRoadmap1234567')
+      expect(content).toContain('- Handle: @madar')
+      expect(content).toContain('- Channel ID: UCmadarRoadmap1234567890')
       expect(content).toContain('- Capture Status: html')
       expect(content).toContain('## Links')
-      expect(content).toContain('[Open Channel](https://www.youtube.com/@graphify)')
+      expect(content).toContain('[Open Channel](https://www.youtube.com/@madar)')
       expect(content).not.toContain('feature=share')
       expect(content).not.toContain('provenance:')
     })
@@ -1837,7 +1837,7 @@ describe('ingest', () => {
         'fetch',
         vi.fn(async (input) => {
           const requestUrl = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
-          expect(requestUrl).toBe('https://www.youtube.com/c/graphify')
+          expect(requestUrl).toBe('https://www.youtube.com/c/madar')
           return new Response(readIngestFixture('youtube-channel.html'), {
             status: 200,
             headers: { 'content-type': 'text/html; charset=utf-8' },
@@ -1845,35 +1845,35 @@ describe('ingest', () => {
         }),
       )
 
-      const output = await ingest('https://www.youtube.com/c/graphify?feature=share', join(tempDir, 'raw'), {
-        contributor: 'graphify-ts',
+      const output = await ingest('https://www.youtube.com/c/madar?feature=share', join(tempDir, 'raw'), {
+        contributor: 'madar',
       })
       const content = readFileSync(output, 'utf8')
 
-      expect(basename(output)).toBe('youtube_channel_graphify.md')
+      expect(basename(output)).toBe('youtube_channel_madar.md')
       expect(content).toContain('type: youtube_channel')
-      expect(content).toContain('source_url: "https://www.youtube.com/@graphify"')
-      expect(content).toContain('title: "Graphify Channel"')
-      expect(content).toContain('author: "Graphify Channel"')
+      expect(content).toContain('source_url: "https://www.youtube.com/@madar"')
+      expect(content).toContain('title: "Madar Channel"')
+      expect(content).toContain('author: "Madar Channel"')
       expect(content).toContain('description: "Deterministic roadmap demos, graph explainers, and structured ingest updates."')
-      expect(content).toContain('contributor: "graphify-ts"')
+      expect(content).toContain('contributor: "madar"')
       expect(content).toContain('youtube_platform: "youtube"')
       expect(content).toContain('youtube_kind: "channel"')
-      expect(content).toContain('youtube_channel_handle: "graphify"')
-      expect(content).toContain('youtube_channel_id: "UCgraphifyRoadmap1234567"')
-      expect(content).toContain('youtube_channel_custom_slug: "graphify"')
+      expect(content).toContain('youtube_channel_handle: "madar"')
+      expect(content).toContain('youtube_channel_id: "UCmadarRoadmap1234567890"')
+      expect(content).toContain('youtube_channel_custom_slug: "madar"')
       expect(content).toContain('youtube_capture_status: "html"')
-      expect(content).toContain('youtube_thumbnail_url: "https://yt3.googleusercontent.com/graphify-channel-photo=s176"')
-      expect(content).toContain('# YouTube Channel: Graphify Channel')
+      expect(content).toContain('youtube_thumbnail_url: "https://yt3.googleusercontent.com/madar-channel-photo=s176"')
+      expect(content).toContain('# YouTube Channel: Madar Channel')
       expect(content).toContain('## Channel')
-      expect(content).toContain('YouTube channel @graphify.')
+      expect(content).toContain('YouTube channel @madar.')
       expect(content).toContain('## Context')
-      expect(content).toContain('- Handle: @graphify')
-      expect(content).toContain('- Channel ID: UCgraphifyRoadmap1234567')
-      expect(content).toContain('- Custom URL: /c/graphify')
+      expect(content).toContain('- Handle: @madar')
+      expect(content).toContain('- Channel ID: UCmadarRoadmap1234567890')
+      expect(content).toContain('- Custom URL: /c/madar')
       expect(content).toContain('- Capture Status: html')
       expect(content).toContain('## Links')
-      expect(content).toContain('[Open Channel](https://www.youtube.com/@graphify)')
+      expect(content).toContain('[Open Channel](https://www.youtube.com/@madar)')
       expect(content).not.toContain('feature=share')
       expect(content).not.toContain('provenance:')
     })
@@ -1885,9 +1885,9 @@ describe('ingest', () => {
         'fetch',
         vi.fn(async (input) => {
           const requestUrl = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
-          expect(requestUrl).toBe('https://www.youtube.com/c/graphify')
+          expect(requestUrl).toBe('https://www.youtube.com/c/madar')
           return new Response(
-            '<html><head><title>Graphify Channel - YouTube</title><link rel="canonical" href="https://www.youtube.com/@graphify" /><meta property="og:url" content="https://www.youtube.com/@graphify" /><meta property="og:title" content="Graphify Channel" /><meta property="og:description" content="Deterministic roadmap demos, graph explainers, and structured ingest updates." /><meta property="og:image" content="https://yt3.googleusercontent.com/graphify-channel-photo=s176" /><meta name="author" content="Graphify Channel" /><script>var ytInitialData = {"header":{"c4TabbedHeaderRenderer":{"channelHandleText":{"simpleText":"@graphify"}}},"metadata":{"channelMetadataRenderer":{"title":"Graphify Channel","description":"Deterministic roadmap demos, graph explainers, and structured ingest updates.","vanityChannelUrl":"https://www.youtube.com/@graphify"}}};</script></head><body><main><h1>Graphify Channel</h1></main></body></html>',
+            '<html><head><title>Madar Channel - YouTube</title><link rel="canonical" href="https://www.youtube.com/@madar" /><meta property="og:url" content="https://www.youtube.com/@madar" /><meta property="og:title" content="Madar Channel" /><meta property="og:description" content="Deterministic roadmap demos, graph explainers, and structured ingest updates." /><meta property="og:image" content="https://yt3.googleusercontent.com/madar-channel-photo=s176" /><meta name="author" content="Madar Channel" /><script>var ytInitialData = {"header":{"c4TabbedHeaderRenderer":{"channelHandleText":{"simpleText":"@madar"}}},"metadata":{"channelMetadataRenderer":{"title":"Madar Channel","description":"Deterministic roadmap demos, graph explainers, and structured ingest updates.","vanityChannelUrl":"https://www.youtube.com/@madar"}}};</script></head><body><main><h1>Madar Channel</h1></main></body></html>',
             {
               status: 200,
               headers: { 'content-type': 'text/html; charset=utf-8' },
@@ -1896,13 +1896,13 @@ describe('ingest', () => {
         }),
       )
 
-      const output = await ingest('https://www.youtube.com/c/graphify', join(tempDir, 'raw'))
+      const output = await ingest('https://www.youtube.com/c/madar', join(tempDir, 'raw'))
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: youtube_channel')
-      expect(content).toContain('source_url: "https://www.youtube.com/@graphify"')
-      expect(content).toContain('youtube_channel_handle: "graphify"')
-      expect(content).toContain('youtube_channel_custom_slug: "graphify"')
+      expect(content).toContain('source_url: "https://www.youtube.com/@madar"')
+      expect(content).toContain('youtube_channel_handle: "madar"')
+      expect(content).toContain('youtube_channel_custom_slug: "madar"')
       expect(content).toContain('youtube_capture_status: "html"')
       expect(content).not.toContain('type: webpage')
     })
@@ -1914,7 +1914,7 @@ describe('ingest', () => {
         'fetch',
         vi.fn(async (input) => {
           const requestUrl = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
-          if (requestUrl === 'https://www.youtube.com/c/graphify') {
+          if (requestUrl === 'https://www.youtube.com/c/madar') {
             return new Response(null, {
               status: 302,
               headers: { location: 'https://www.youtube.com/@otherchannel' },
@@ -1932,7 +1932,7 @@ describe('ingest', () => {
         }),
       )
 
-      const output = await ingest('https://www.youtube.com/c/graphify', join(tempDir, 'raw'))
+      const output = await ingest('https://www.youtube.com/c/madar', join(tempDir, 'raw'))
       const content = readFileSync(output, 'utf8')
 
       expect(basename(output)).toBe('youtube_channel_otherchannel.md')
@@ -1941,7 +1941,7 @@ describe('ingest', () => {
       expect(content).toContain('youtube_channel_handle: "otherchannel"')
       expect(content).toContain('youtube_channel_id: "UC1234567890123456789012"')
       expect(content).not.toContain('youtube_channel_custom_slug:')
-      expect(content).not.toContain('- Custom URL: /c/graphify')
+      expect(content).not.toContain('- Custom URL: /c/madar')
       expect(content).not.toContain('type: webpage')
     })
   })
@@ -1952,9 +1952,9 @@ describe('ingest', () => {
         'fetch',
         vi.fn(async (input) => {
           const requestUrl = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
-          expect(requestUrl).toBe('https://www.youtube.com/channel/UCgraphifyRoadmap1234567')
+          expect(requestUrl).toBe('https://www.youtube.com/channel/UCmadarRoadmap1234567890')
           return new Response(
-            '<html><head><title>Graphify Channel - YouTube</title><link rel="canonical" href="https://www.youtube.com/@graphify" /><meta property="og:url" content="https://www.youtube.com/@graphify" /><meta property="og:title" content="Graphify Channel" /><meta property="og:description" content="Deterministic roadmap demos, graph explainers, and structured ingest updates." /><meta property="og:image" content="https://yt3.googleusercontent.com/graphify-channel-photo=s176" /><meta name="author" content="Graphify Channel" /><script>var ytInitialData = {"header":{"c4TabbedHeaderRenderer":{"channelHandleText":{"simpleText":"@graphify"}}},"metadata":{"channelMetadataRenderer":{"title":"Graphify Channel","description":"Deterministic roadmap demos, graph explainers, and structured ingest updates.","vanityChannelUrl":"https://www.youtube.com/@graphify"}}};</script></head><body><main><h1>Graphify Channel</h1></main></body></html>',
+            '<html><head><title>Madar Channel - YouTube</title><link rel="canonical" href="https://www.youtube.com/@madar" /><meta property="og:url" content="https://www.youtube.com/@madar" /><meta property="og:title" content="Madar Channel" /><meta property="og:description" content="Deterministic roadmap demos, graph explainers, and structured ingest updates." /><meta property="og:image" content="https://yt3.googleusercontent.com/madar-channel-photo=s176" /><meta name="author" content="Madar Channel" /><script>var ytInitialData = {"header":{"c4TabbedHeaderRenderer":{"channelHandleText":{"simpleText":"@madar"}}},"metadata":{"channelMetadataRenderer":{"title":"Madar Channel","description":"Deterministic roadmap demos, graph explainers, and structured ingest updates.","vanityChannelUrl":"https://www.youtube.com/@madar"}}};</script></head><body><main><h1>Madar Channel</h1></main></body></html>',
             {
               status: 200,
               headers: { 'content-type': 'text/html; charset=utf-8' },
@@ -1963,13 +1963,13 @@ describe('ingest', () => {
         }),
       )
 
-      const output = await ingest('https://www.youtube.com/channel/UCgraphifyRoadmap1234567', join(tempDir, 'raw'))
+      const output = await ingest('https://www.youtube.com/channel/UCmadarRoadmap1234567890', join(tempDir, 'raw'))
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: youtube_channel')
-      expect(content).toContain('source_url: "https://www.youtube.com/@graphify"')
-      expect(content).toContain('youtube_channel_handle: "graphify"')
-      expect(content).toContain('youtube_channel_id: "UCgraphifyRoadmap1234567"')
+      expect(content).toContain('source_url: "https://www.youtube.com/@madar"')
+      expect(content).toContain('youtube_channel_handle: "madar"')
+      expect(content).toContain('youtube_channel_id: "UCmadarRoadmap1234567890"')
       expect(content).toContain('youtube_capture_status: "html"')
       expect(content).not.toContain('type: webpage')
     })
@@ -1978,14 +1978,14 @@ describe('ingest', () => {
   test('falls back to generic webpage capture when fetched YouTube @handle HTML does not confirm a channel page', async () => {
     await withTempDir(async (tempDir) => {
       stubHtmlFetch(
-        '<html><head><title>Graphify Consent - YouTube</title><link rel="canonical" href="https://www.youtube.com/@graphify" /></head><body><main><script>var ytInitialData = {"vanityChannelUrl":"https://www.youtube.com/@graphify"};</script><p>Consent page.</p></main></body></html>',
+        '<html><head><title>Madar Consent - YouTube</title><link rel="canonical" href="https://www.youtube.com/@madar" /></head><body><main><script>var ytInitialData = {"vanityChannelUrl":"https://www.youtube.com/@madar"};</script><p>Consent page.</p></main></body></html>',
       )
 
-      const output = await ingest('https://www.youtube.com/@graphify', join(tempDir, 'raw'))
+      const output = await ingest('https://www.youtube.com/@madar', join(tempDir, 'raw'))
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: webpage')
-      expect(content).toContain('source_url: "https://www.youtube.com/@graphify"')
+      expect(content).toContain('source_url: "https://www.youtube.com/@madar"')
       expect(content).not.toContain('type: youtube_channel')
       expect(content).not.toContain('youtube_kind:')
     })
@@ -1994,14 +1994,14 @@ describe('ingest', () => {
   test('falls back to generic webpage capture when fetched YouTube /c/<slug> HTML does not confirm a channel page', async () => {
     await withTempDir(async (tempDir) => {
       stubHtmlFetch(
-        '<html><head><title>Graphify Consent - YouTube</title><link rel="canonical" href="https://www.youtube.com/c/graphify" /></head><body><main><script>var ytInitialData = {"vanityChannelUrl":"https://www.youtube.com/@graphify"};</script><p>Consent page.</p></main></body></html>',
+        '<html><head><title>Madar Consent - YouTube</title><link rel="canonical" href="https://www.youtube.com/c/madar" /></head><body><main><script>var ytInitialData = {"vanityChannelUrl":"https://www.youtube.com/@madar"};</script><p>Consent page.</p></main></body></html>',
       )
 
-      const output = await ingest('https://www.youtube.com/c/graphify', join(tempDir, 'raw'))
+      const output = await ingest('https://www.youtube.com/c/madar', join(tempDir, 'raw'))
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: webpage')
-      expect(content).toContain('source_url: "https://www.youtube.com/c/graphify"')
+      expect(content).toContain('source_url: "https://www.youtube.com/c/madar"')
       expect(content).not.toContain('type: youtube_channel')
       expect(content).not.toContain('youtube_kind:')
     })
@@ -2010,14 +2010,14 @@ describe('ingest', () => {
   test('falls back to generic webpage capture when a root YouTube @handle request resolves to a nested channel tab', async () => {
     await withTempDir(async (tempDir) => {
       stubHtmlFetch(
-        '<html><head><title>Graphify Videos - YouTube</title><link rel="canonical" href="https://www.youtube.com/@graphify/videos" /><meta property="og:url" content="https://www.youtube.com/@graphify/videos" /><meta property="og:title" content="Graphify Videos" /><meta name="description" content="Channel videos tab." /></head><body><main><script>var ytInitialData = {"channelMetadataRenderer":{"title":"Graphify Channel","vanityChannelUrl":"https://www.youtube.com/@graphify","externalId":"UCgraphifyRoadmap1234567"},"header":{"c4TabbedHeaderRenderer":{"channelHandleText":{"simpleText":"@graphify"}}}};</script><p>Videos tab content.</p></main></body></html>',
+        '<html><head><title>Madar Videos - YouTube</title><link rel="canonical" href="https://www.youtube.com/@madar/videos" /><meta property="og:url" content="https://www.youtube.com/@madar/videos" /><meta property="og:title" content="Madar Videos" /><meta name="description" content="Channel videos tab." /></head><body><main><script>var ytInitialData = {"channelMetadataRenderer":{"title":"Madar Channel","vanityChannelUrl":"https://www.youtube.com/@madar","externalId":"UCmadarRoadmap1234567890"},"header":{"c4TabbedHeaderRenderer":{"channelHandleText":{"simpleText":"@madar"}}}};</script><p>Videos tab content.</p></main></body></html>',
       )
 
-      const output = await ingest('https://www.youtube.com/@graphify', join(tempDir, 'raw'))
+      const output = await ingest('https://www.youtube.com/@madar', join(tempDir, 'raw'))
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: webpage')
-      expect(content).toContain('source_url: "https://www.youtube.com/@graphify/videos"')
+      expect(content).toContain('source_url: "https://www.youtube.com/@madar/videos"')
       expect(content).not.toContain('type: youtube_channel')
       expect(content).not.toContain('youtube_kind:')
     })
@@ -2026,14 +2026,14 @@ describe('ingest', () => {
   test('falls back to generic webpage capture when a root YouTube /c/<slug> request resolves to a nested channel tab', async () => {
     await withTempDir(async (tempDir) => {
       stubHtmlFetch(
-        '<html><head><title>Graphify Videos - YouTube</title><link rel="canonical" href="https://www.youtube.com/@graphify/videos" /><meta property="og:url" content="https://www.youtube.com/@graphify/videos" /><meta property="og:title" content="Graphify Videos" /><meta name="description" content="Channel videos tab." /></head><body><main><script>var ytInitialData = {"channelMetadataRenderer":{"title":"Graphify Channel","vanityChannelUrl":"https://www.youtube.com/@graphify","externalId":"UCgraphifyRoadmap1234567"},"header":{"c4TabbedHeaderRenderer":{"channelHandleText":{"simpleText":"@graphify"}}}};</script><p>Videos tab content.</p></main></body></html>',
+        '<html><head><title>Madar Videos - YouTube</title><link rel="canonical" href="https://www.youtube.com/@madar/videos" /><meta property="og:url" content="https://www.youtube.com/@madar/videos" /><meta property="og:title" content="Madar Videos" /><meta name="description" content="Channel videos tab." /></head><body><main><script>var ytInitialData = {"channelMetadataRenderer":{"title":"Madar Channel","vanityChannelUrl":"https://www.youtube.com/@madar","externalId":"UCmadarRoadmap1234567890"},"header":{"c4TabbedHeaderRenderer":{"channelHandleText":{"simpleText":"@madar"}}}};</script><p>Videos tab content.</p></main></body></html>',
       )
 
-      const output = await ingest('https://www.youtube.com/c/graphify', join(tempDir, 'raw'))
+      const output = await ingest('https://www.youtube.com/c/madar', join(tempDir, 'raw'))
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: webpage')
-      expect(content).toContain('source_url: "https://www.youtube.com/@graphify/videos"')
+      expect(content).toContain('source_url: "https://www.youtube.com/@madar/videos"')
       expect(content).not.toContain('type: youtube_channel')
       expect(content).not.toContain('youtube_kind:')
     })
@@ -2042,14 +2042,14 @@ describe('ingest', () => {
   test('falls back to generic webpage capture when a root YouTube /channel/<id> request resolves to a nested channel tab', async () => {
     await withTempDir(async (tempDir) => {
       stubHtmlFetch(
-        '<html><head><title>Graphify Videos - YouTube</title><link rel="canonical" href="https://www.youtube.com/@graphify/videos" /><meta property="og:url" content="https://www.youtube.com/@graphify/videos" /><meta property="og:title" content="Graphify Videos" /><meta name="description" content="Channel videos tab." /></head><body><main><script>var ytInitialData = {"channelMetadataRenderer":{"title":"Graphify Channel","vanityChannelUrl":"https://www.youtube.com/@graphify","externalId":"UCgraphifyRoadmap1234567"},"header":{"c4TabbedHeaderRenderer":{"channelHandleText":{"simpleText":"@graphify"}}}};</script><p>Videos tab content.</p></main></body></html>',
+        '<html><head><title>Madar Videos - YouTube</title><link rel="canonical" href="https://www.youtube.com/@madar/videos" /><meta property="og:url" content="https://www.youtube.com/@madar/videos" /><meta property="og:title" content="Madar Videos" /><meta name="description" content="Channel videos tab." /></head><body><main><script>var ytInitialData = {"channelMetadataRenderer":{"title":"Madar Channel","vanityChannelUrl":"https://www.youtube.com/@madar","externalId":"UCmadarRoadmap1234567890"},"header":{"c4TabbedHeaderRenderer":{"channelHandleText":{"simpleText":"@madar"}}}};</script><p>Videos tab content.</p></main></body></html>',
       )
 
-      const output = await ingest('https://www.youtube.com/channel/UCgraphifyRoadmap1234567', join(tempDir, 'raw'))
+      const output = await ingest('https://www.youtube.com/channel/UCmadarRoadmap1234567890', join(tempDir, 'raw'))
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: webpage')
-      expect(content).toContain('source_url: "https://www.youtube.com/@graphify/videos"')
+      expect(content).toContain('source_url: "https://www.youtube.com/@madar/videos"')
       expect(content).not.toContain('type: youtube_channel')
       expect(content).not.toContain('youtube_kind:')
     })
@@ -2059,11 +2059,11 @@ describe('ingest', () => {
     await withTempDir(async (tempDir) => {
       stubHtmlFetch(readIngestFixture('youtube-channel.html'))
 
-      const output = await ingest('https://www.youtube.com/@graphify/', join(tempDir, 'raw'))
+      const output = await ingest('https://www.youtube.com/@madar/', join(tempDir, 'raw'))
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: webpage')
-      expect(content).toContain('source_url: "https://www.youtube.com/@graphify"')
+      expect(content).toContain('source_url: "https://www.youtube.com/@madar"')
       expect(content).not.toContain('type: youtube_channel')
       expect(content).not.toContain('youtube_kind:')
     })
@@ -2072,14 +2072,14 @@ describe('ingest', () => {
   test('falls back to generic webpage capture for YouTube /c/<slug> routes with a trailing slash', async () => {
     await withTempDir(async (tempDir) => {
       stubHtmlFetch(
-        '<html><head><title>Graphify Channel - YouTube</title><link rel="canonical" href="https://www.youtube.com/c/graphify" /><meta property="og:url" content="https://www.youtube.com/c/graphify" /></head><body><main><p>Channel page.</p></main></body></html>',
+        '<html><head><title>Madar Channel - YouTube</title><link rel="canonical" href="https://www.youtube.com/c/madar" /><meta property="og:url" content="https://www.youtube.com/c/madar" /></head><body><main><p>Channel page.</p></main></body></html>',
       )
 
-      const output = await ingest('https://www.youtube.com/c/graphify/', join(tempDir, 'raw'))
+      const output = await ingest('https://www.youtube.com/c/madar/', join(tempDir, 'raw'))
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: webpage')
-      expect(content).toContain('source_url: "https://www.youtube.com/c/graphify"')
+      expect(content).toContain('source_url: "https://www.youtube.com/c/madar"')
       expect(content).not.toContain('type: youtube_channel')
       expect(content).not.toContain('youtube_kind:')
     })
@@ -2088,14 +2088,14 @@ describe('ingest', () => {
   test('falls back to generic webpage capture for YouTube /channel/<id> routes with a trailing slash', async () => {
     await withTempDir(async (tempDir) => {
       stubHtmlFetch(
-        '<html><head><title>Graphify Channel - YouTube</title><link rel="canonical" href="https://www.youtube.com/channel/UCgraphifyRoadmap1234567" /><meta property="og:url" content="https://www.youtube.com/channel/UCgraphifyRoadmap1234567" /></head><body><main><p>Channel page.</p></main></body></html>',
+        '<html><head><title>Madar Channel - YouTube</title><link rel="canonical" href="https://www.youtube.com/channel/UCmadarRoadmap1234567890" /><meta property="og:url" content="https://www.youtube.com/channel/UCmadarRoadmap1234567890" /></head><body><main><p>Channel page.</p></main></body></html>',
       )
 
-      const output = await ingest('https://www.youtube.com/channel/UCgraphifyRoadmap1234567/', join(tempDir, 'raw'))
+      const output = await ingest('https://www.youtube.com/channel/UCmadarRoadmap1234567890/', join(tempDir, 'raw'))
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: webpage')
-      expect(content).toContain('source_url: "https://www.youtube.com/channel/UCgraphifyRoadmap1234567"')
+      expect(content).toContain('source_url: "https://www.youtube.com/channel/UCmadarRoadmap1234567890"')
       expect(content).not.toContain('type: youtube_channel')
       expect(content).not.toContain('youtube_kind:')
     })
@@ -2108,29 +2108,29 @@ describe('ingest', () => {
         vi.fn(async () => new Response('unavailable', { status: 503, headers: { 'content-type': 'text/plain' } })),
       )
 
-      const output = await ingest('https://www.youtube.com/@graphify?feature=share', join(tempDir, 'raw'), {
-        contributor: 'graphify-ts',
+      const output = await ingest('https://www.youtube.com/@madar?feature=share', join(tempDir, 'raw'), {
+        contributor: 'madar',
       })
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: youtube_channel')
-      expect(content).toContain('source_url: "https://www.youtube.com/@graphify"')
-      expect(content).toContain('title: "YouTube Channel: @graphify"')
-      expect(content).toContain('author: "@graphify"')
+      expect(content).toContain('source_url: "https://www.youtube.com/@madar"')
+      expect(content).toContain('title: "YouTube Channel: @madar"')
+      expect(content).toContain('author: "@madar"')
       expect(content).toContain('youtube_platform: "youtube"')
       expect(content).toContain('youtube_kind: "channel"')
-      expect(content).toContain('youtube_channel_handle: "graphify"')
+      expect(content).toContain('youtube_channel_handle: "madar"')
       expect(content).toContain('youtube_capture_status: "fallback"')
-      expect(content).toContain('# YouTube Channel: @graphify')
+      expect(content).toContain('# YouTube Channel: @madar')
       expect(content).toContain('## Channel')
       expect(content).toContain('Channel metadata could not be fetched.')
       expect(content).toContain('## Context')
       expect(content).toContain('- Kind: channel')
-      expect(content).toContain('- Handle: @graphify')
+      expect(content).toContain('- Handle: @madar')
       expect(content).toContain('- Capture Status: fallback')
       expect(content).toContain('- Note: channel metadata unavailable; preserved canonical channel URL and derived handle metadata only.')
       expect(content).toContain('## Links')
-      expect(content).toContain('[Open Channel](https://www.youtube.com/@graphify)')
+      expect(content).toContain('[Open Channel](https://www.youtube.com/@madar)')
       expect(content).not.toContain('feature=share')
       expect(content).not.toContain('provenance:')
     })
@@ -2143,29 +2143,29 @@ describe('ingest', () => {
         vi.fn(async () => new Response('unavailable', { status: 503, headers: { 'content-type': 'text/plain' } })),
       )
 
-      const output = await ingest('https://www.youtube.com/c/graphify?feature=share', join(tempDir, 'raw'), {
-        contributor: 'graphify-ts',
+      const output = await ingest('https://www.youtube.com/c/madar?feature=share', join(tempDir, 'raw'), {
+        contributor: 'madar',
       })
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: youtube_channel')
-      expect(content).toContain('source_url: "https://www.youtube.com/c/graphify"')
-      expect(content).toContain('title: "YouTube Channel: /c/graphify"')
+      expect(content).toContain('source_url: "https://www.youtube.com/c/madar"')
+      expect(content).toContain('title: "YouTube Channel: /c/madar"')
       expect(content).toContain('author: "unknown"')
       expect(content).toContain('youtube_platform: "youtube"')
       expect(content).toContain('youtube_kind: "channel"')
       expect(content).not.toContain('youtube_channel_handle:')
-      expect(content).toContain('youtube_channel_custom_slug: "graphify"')
+      expect(content).toContain('youtube_channel_custom_slug: "madar"')
       expect(content).toContain('youtube_capture_status: "fallback"')
-      expect(content).toContain('# YouTube Channel: /c/graphify')
+      expect(content).toContain('# YouTube Channel: /c/madar')
       expect(content).toContain('## Channel')
       expect(content).toContain('Channel metadata could not be fetched.')
       expect(content).toContain('## Context')
-      expect(content).toContain('- Custom URL: /c/graphify')
+      expect(content).toContain('- Custom URL: /c/madar')
       expect(content).toContain('- Capture Status: fallback')
       expect(content).toContain('- Note: channel metadata unavailable; preserved canonical channel URL and derived custom-channel metadata only.')
       expect(content).toContain('## Links')
-      expect(content).toContain('[Open Channel](https://www.youtube.com/c/graphify)')
+      expect(content).toContain('[Open Channel](https://www.youtube.com/c/madar)')
       expect(content).not.toContain('feature=share')
       expect(content).not.toContain('provenance:')
     })
@@ -2178,29 +2178,29 @@ describe('ingest', () => {
         vi.fn(async () => new Response('unavailable', { status: 503, headers: { 'content-type': 'text/plain' } })),
       )
 
-      const output = await ingest('https://www.youtube.com/channel/UCgraphifyRoadmap1234567?feature=share', join(tempDir, 'raw'), {
-        contributor: 'graphify-ts',
+      const output = await ingest('https://www.youtube.com/channel/UCmadarRoadmap1234567890?feature=share', join(tempDir, 'raw'), {
+        contributor: 'madar',
       })
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: youtube_channel')
-      expect(content).toContain('source_url: "https://www.youtube.com/channel/UCgraphifyRoadmap1234567"')
-      expect(content).toContain('title: "YouTube Channel: UCgraphifyRoadmap1234567"')
+      expect(content).toContain('source_url: "https://www.youtube.com/channel/UCmadarRoadmap1234567890"')
+      expect(content).toContain('title: "YouTube Channel: UCmadarRoadmap1234567890"')
       expect(content).toContain('author: "unknown"')
       expect(content).toContain('youtube_platform: "youtube"')
       expect(content).toContain('youtube_kind: "channel"')
       expect(content).not.toContain('youtube_channel_handle:')
-      expect(content).toContain('youtube_channel_id: "UCgraphifyRoadmap1234567"')
+      expect(content).toContain('youtube_channel_id: "UCmadarRoadmap1234567890"')
       expect(content).toContain('youtube_capture_status: "fallback"')
-      expect(content).toContain('# YouTube Channel: UCgraphifyRoadmap1234567')
+      expect(content).toContain('# YouTube Channel: UCmadarRoadmap1234567890')
       expect(content).toContain('## Channel')
       expect(content).toContain('Channel metadata could not be fetched.')
       expect(content).toContain('## Context')
-      expect(content).toContain('- Channel ID: UCgraphifyRoadmap1234567')
+      expect(content).toContain('- Channel ID: UCmadarRoadmap1234567890')
       expect(content).toContain('- Capture Status: fallback')
       expect(content).toContain('- Note: channel metadata unavailable; preserved canonical channel URL and derived channel-id metadata only.')
       expect(content).toContain('## Links')
-      expect(content).toContain('[Open Channel](https://www.youtube.com/channel/UCgraphifyRoadmap1234567)')
+      expect(content).toContain('[Open Channel](https://www.youtube.com/channel/UCmadarRoadmap1234567890)')
       expect(content).not.toContain('feature=share')
       expect(content).not.toContain('provenance:')
     })
@@ -2213,8 +2213,8 @@ describe('ingest', () => {
         vi.fn(async () => new Response('unavailable', { status: 503, headers: { 'content-type': 'text/plain' } })),
       )
 
-      const output = await ingest('https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PLgraphify', join(tempDir, 'raw'), {
-        contributor: 'graphify-ts',
+      const output = await ingest('https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PLmadar', join(tempDir, 'raw'), {
+        contributor: 'madar',
       })
       const content = readFileSync(output, 'utf8')
 
@@ -2246,20 +2246,20 @@ describe('ingest', () => {
         vi.fn(async () => new Response('unavailable', { status: 503, headers: { 'content-type': 'text/plain' } })),
       )
 
-      const output = await ingest('https://www.youtube.com/playlist?list=PLgraphifyRoadmap123&feature=share', join(tempDir, 'raw'), {
-        contributor: 'graphify-ts',
+      const output = await ingest('https://www.youtube.com/playlist?list=PLmadarRoadmap123&feature=share', join(tempDir, 'raw'), {
+        contributor: 'madar',
       })
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: youtube_playlist')
-      expect(content).toContain('source_url: "https://www.youtube.com/playlist?list=PLgraphifyRoadmap123"')
-      expect(content).toContain('title: "YouTube Playlist: PLgraphifyRoadmap123"')
+      expect(content).toContain('source_url: "https://www.youtube.com/playlist?list=PLmadarRoadmap123"')
+      expect(content).toContain('title: "YouTube Playlist: PLmadarRoadmap123"')
       expect(content).toContain('author: "unknown"')
       expect(content).toContain('youtube_platform: "youtube"')
       expect(content).toContain('youtube_kind: "playlist"')
-      expect(content).toContain('youtube_playlist_id: "PLgraphifyRoadmap123"')
+      expect(content).toContain('youtube_playlist_id: "PLmadarRoadmap123"')
       expect(content).toContain('youtube_capture_status: "fallback"')
-      expect(content).toContain('# YouTube Playlist: PLgraphifyRoadmap123')
+      expect(content).toContain('# YouTube Playlist: PLmadarRoadmap123')
       expect(content).toContain('## Playlist')
       expect(content).toContain('Playlist metadata could not be fetched.')
       expect(content).toContain('## Context')
@@ -2267,7 +2267,7 @@ describe('ingest', () => {
       expect(content).toContain('- Capture Status: fallback')
       expect(content).toContain('- Note: playlist metadata unavailable; preserved canonical playlist URL and derived playlist metadata only.')
       expect(content).toContain('## Links')
-      expect(content).toContain('[Open Playlist](https://www.youtube.com/playlist?list=PLgraphifyRoadmap123)')
+      expect(content).toContain('[Open Playlist](https://www.youtube.com/playlist?list=PLmadarRoadmap123)')
       expect(content).not.toContain('feature=share')
       expect(content).not.toContain('provenance:')
     })
@@ -2281,7 +2281,7 @@ describe('ingest', () => {
       )
 
       const output = await ingest('https://www.youtube.com/live/dQw4w9WgXcQ?feature=share', join(tempDir, 'raw'), {
-        contributor: 'graphify-ts',
+        contributor: 'madar',
       })
       const content = readFileSync(output, 'utf8')
 
@@ -2302,13 +2302,13 @@ describe('ingest', () => {
     await withTempDir(async (tempDir) => {
       const responses = [
         {
-          title: 'Graphify Demo Walkthrough',
-          author_name: 'Graphify Channel',
+          title: 'Madar Demo Walkthrough',
+          author_name: 'Madar Channel',
           provider_name: 'YouTube',
         },
         {
-          title: 'Graphify Roadmap Update',
-          author_name: 'Graphify Channel',
+          title: 'Madar Roadmap Update',
+          author_name: 'Madar Channel',
           provider_name: 'YouTube',
         },
       ]
@@ -2344,31 +2344,31 @@ describe('ingest', () => {
         vi.fn(async (input) => {
           const requestUrl = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
           expect(requestUrl).toContain('publish.twitter.com/oembed?url=')
-          return new Response(JSON.stringify({ html: '<blockquote>Graph edges everywhere</blockquote>', author_name: 'Graphify Bot' }), {
+          return new Response(JSON.stringify({ html: '<blockquote>Graph edges everywhere</blockquote>', author_name: 'Madar Bot' }), {
             status: 200,
             headers: { 'content-type': 'application/json' },
           })
         }),
       )
 
-      const output = await ingest('https://x.com/graphify/status/1', join(tempDir, 'raw'), { contributor: 'graphify-ts' })
+      const output = await ingest('https://x.com/madar/status/1', join(tempDir, 'raw'), { contributor: 'madar' })
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: tweet')
-      expect(content).toContain('source_url: "https://x.com/graphify/status/1"')
-      expect(content).toContain('title: "Tweet by @graphify"')
-      expect(content).toContain('author: "Graphify Bot"')
-      expect(content).toContain('contributor: "graphify-ts"')
+      expect(content).toContain('source_url: "https://x.com/madar/status/1"')
+      expect(content).toContain('title: "Tweet by @madar"')
+      expect(content).toContain('author: "Madar Bot"')
+      expect(content).toContain('contributor: "madar"')
       expect(content).toContain('social_platform: "x"')
-      expect(content).toContain('social_author_handle: "graphify"')
+      expect(content).toContain('social_author_handle: "madar"')
       expect(content).toContain('social_post_id: "1"')
       expect(content).toContain('social_capture_status: "oembed"')
-      expect(content).toContain('# Tweet by @graphify')
+      expect(content).toContain('# Tweet by @madar')
       expect(content).toContain('## Post')
       expect(content).toContain('Graph edges everywhere')
       expect(content).toContain('## Context')
       expect(content).toContain('- Platform: x')
-      expect(content).toContain('- Handle: @graphify')
+      expect(content).toContain('- Handle: @madar')
       expect(content).toContain('- Post ID: 1')
       expect(content).toContain('- Capture Status: oembed')
       expect(content).not.toContain('provenance:')
@@ -2382,26 +2382,26 @@ describe('ingest', () => {
         vi.fn(async (input) => {
           const requestUrl = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
           expect(requestUrl).toContain('publish.twitter.com/oembed?url=')
-          expect(decodeURIComponent(requestUrl)).toContain('https://twitter.com/graphify/status/4')
+          expect(decodeURIComponent(requestUrl)).toContain('https://twitter.com/madar/status/4')
           expect(decodeURIComponent(requestUrl)).not.toContain('/photo/1')
-          return new Response(JSON.stringify({ html: '<blockquote>Canonical media alias capture</blockquote>', author_name: 'Graphify Bot' }), {
+          return new Response(JSON.stringify({ html: '<blockquote>Canonical media alias capture</blockquote>', author_name: 'Madar Bot' }), {
             status: 200,
             headers: { 'content-type': 'application/json' },
           })
         }),
       )
 
-      const output = await ingest('https://x.com/graphify/status/4/photo/1?utm_source=share', join(tempDir, 'raw'), {
-        contributor: 'graphify-ts',
+      const output = await ingest('https://x.com/madar/status/4/photo/1?utm_source=share', join(tempDir, 'raw'), {
+        contributor: 'madar',
       })
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: tweet')
-      expect(content).toContain('source_url: "https://x.com/graphify/status/4"')
-      expect(content).toContain('title: "Tweet by @graphify"')
-      expect(content).toContain('author: "Graphify Bot"')
+      expect(content).toContain('source_url: "https://x.com/madar/status/4"')
+      expect(content).toContain('title: "Tweet by @madar"')
+      expect(content).toContain('author: "Madar Bot"')
       expect(content).toContain('social_platform: "x"')
-      expect(content).toContain('social_author_handle: "graphify"')
+      expect(content).toContain('social_author_handle: "madar"')
       expect(content).toContain('social_post_id: "4"')
       expect(content).toContain('Canonical media alias capture')
       expect(content).not.toContain('/photo/1')
@@ -2416,14 +2416,14 @@ describe('ingest', () => {
         vi.fn(async () => new Response('rate limited', { status: 429, headers: { 'content-type': 'text/plain' } })),
       )
 
-      const output = await ingest('https://x.com/graphify/status/2', join(tempDir, 'raw'), { contributor: 'graphify-ts' })
+      const output = await ingest('https://x.com/madar/status/2', join(tempDir, 'raw'), { contributor: 'madar' })
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: tweet')
-      expect(content).toContain('source_url: "https://x.com/graphify/status/2"')
-      expect(content).toContain('title: "Tweet by @graphify"')
-      expect(content).toContain('author: "graphify"')
-      expect(content).toContain('social_author_handle: "graphify"')
+      expect(content).toContain('source_url: "https://x.com/madar/status/2"')
+      expect(content).toContain('title: "Tweet by @madar"')
+      expect(content).toContain('author: "madar"')
+      expect(content).toContain('social_author_handle: "madar"')
       expect(content).toContain('social_post_id: "2"')
       expect(content).toContain('social_capture_status: "fallback"')
       expect(content).toContain('## Post')
@@ -2443,7 +2443,7 @@ describe('ingest', () => {
       )
 
       const output = await ingest('https://twitter.com/i/web/status/5/video/1?utm_source=share', join(tempDir, 'raw'), {
-        contributor: 'graphify-ts',
+        contributor: 'madar',
       })
       const content = readFileSync(output, 'utf8')
 
@@ -2469,26 +2469,26 @@ describe('ingest', () => {
           const requestUrl = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
           expect(requestUrl).toContain('publish.twitter.com/oembed?url=')
           expect(decodeURIComponent(requestUrl)).toContain('https://twitter.com/i/web/status/3')
-          return new Response(JSON.stringify({ html: '<blockquote>Handle-less status capture</blockquote>', author_name: 'Graphify Bot' }), {
+          return new Response(JSON.stringify({ html: '<blockquote>Handle-less status capture</blockquote>', author_name: 'Madar Bot' }), {
             status: 200,
             headers: { 'content-type': 'application/json' },
           })
         }),
       )
 
-      const output = await ingest('https://twitter.com/i/web/status/3', join(tempDir, 'raw'), { contributor: 'graphify-ts' })
+      const output = await ingest('https://twitter.com/i/web/status/3', join(tempDir, 'raw'), { contributor: 'madar' })
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: tweet')
       expect(content).toContain('source_url: "https://twitter.com/i/web/status/3"')
-      expect(content).toContain('title: "Tweet by Graphify Bot"')
-      expect(content).toContain('author: "Graphify Bot"')
+      expect(content).toContain('title: "Tweet by Madar Bot"')
+      expect(content).toContain('author: "Madar Bot"')
       expect(content).toContain('social_platform: "twitter"')
       expect(content).toContain('social_post_id: "3"')
       expect(content).not.toContain('social_author_handle:')
-      expect(content).toContain('# Tweet by Graphify Bot')
+      expect(content).toContain('# Tweet by Madar Bot')
       expect(content).toContain('Handle-less status capture')
-      expect(content).not.toContain('@Graphify Bot')
+      expect(content).not.toContain('@Madar Bot')
       expect(content).not.toContain('- Handle:')
       expect(content).not.toContain('provenance:')
     })
@@ -2514,7 +2514,7 @@ describe('ingest', () => {
         }),
       )
 
-      const output = await ingest('https://arxiv.org/abs/1706.03762', join(tempDir, 'raw'), { contributor: 'graphify-ts' })
+      const output = await ingest('https://arxiv.org/abs/1706.03762', join(tempDir, 'raw'), { contributor: 'madar' })
       const content = readFileSync(output, 'utf8')
 
       expect(content).toContain('type: paper')
@@ -2522,7 +2522,7 @@ describe('ingest', () => {
       expect(content).toContain('arxiv_id: "1706.03762"')
       expect(content).toContain('title: "Attention Is All You Need"')
       expect(content).toContain('paper_authors: "Ashish Vaswani"')
-      expect(content).toContain('contributor: "graphify-ts"')
+      expect(content).toContain('contributor: "madar"')
       expect(content).not.toContain('provenance:')
     })
   })
@@ -2555,7 +2555,7 @@ describe('ingest', () => {
       ]
 
       for (const testCase of cases) {
-        const output = await ingest(testCase.url, join(tempDir, 'raw'), { contributor: 'graphify-ts' })
+        const output = await ingest(testCase.url, join(tempDir, 'raw'), { contributor: 'madar' })
         const sidecarPath = binaryIngestSidecarPath(output)
         const sidecar = JSON.parse(readFileSync(sidecarPath, 'utf8')) as Record<string, unknown>
 
@@ -2566,7 +2566,7 @@ describe('ingest', () => {
           expect.objectContaining({
             source_url: testCase.url,
             captured_at: expect.any(String),
-            contributor: 'graphify-ts',
+            contributor: 'madar',
           }),
         )
         expect(typeof sidecar.captured_at).toBe('string')
@@ -2589,7 +2589,7 @@ describe('ingest', () => {
         }),
       )
 
-      const output = await ingest('https://example.com/download/audio', join(tempDir, 'raw'), { contributor: 'graphify-ts' })
+      const output = await ingest('https://example.com/download/audio', join(tempDir, 'raw'), { contributor: 'madar' })
       const sidecarPath = binaryIngestSidecarPath(output)
       const sidecar = JSON.parse(readFileSync(sidecarPath, 'utf8')) as Record<string, unknown>
 
@@ -2601,7 +2601,7 @@ describe('ingest', () => {
           ingest_url_type: 'audio',
           source_url: 'https://example.com/download/audio',
           captured_at: expect.any(String),
-          contributor: 'graphify-ts',
+          contributor: 'madar',
         }),
       )
     })
@@ -2631,7 +2631,7 @@ describe('ingest', () => {
         }),
       )
 
-      const output = await ingest('https://example.com/video/download.mp4', join(tempDir, 'raw'), { contributor: 'graphify-ts' })
+      const output = await ingest('https://example.com/video/download.mp4', join(tempDir, 'raw'), { contributor: 'madar' })
       const sidecarPath = binaryIngestSidecarPath(output)
       const sidecar = JSON.parse(readFileSync(sidecarPath, 'utf8')) as Record<string, unknown>
 
@@ -2643,7 +2643,7 @@ describe('ingest', () => {
         expect.objectContaining({
           source_url: 'https://cdn.example.com/assets/demo.webm',
           captured_at: expect.any(String),
-          contributor: 'graphify-ts',
+          contributor: 'madar',
         }),
       )
     })
@@ -2672,7 +2672,7 @@ describe('ingest', () => {
         }),
       )
 
-      const output = await ingest('https://example.com/download/landing', join(tempDir, 'raw'), { contributor: 'graphify-ts' })
+      const output = await ingest('https://example.com/download/landing', join(tempDir, 'raw'), { contributor: 'madar' })
       const content = readFileSync(output, 'utf8')
 
       expect(requestUrls).toEqual(['https://example.com/download/landing', 'https://cdn.example.com/assets/episode.mp3'])
@@ -2705,7 +2705,7 @@ describe('ingest', () => {
         }),
       )
 
-      const output = await ingest('https://example.com/download/audio', join(tempDir, 'raw'), { contributor: 'graphify-ts' })
+      const output = await ingest('https://example.com/download/audio', join(tempDir, 'raw'), { contributor: 'madar' })
       const sidecarPath = binaryIngestSidecarPath(output)
       const sidecar = JSON.parse(readFileSync(sidecarPath, 'utf8')) as Record<string, unknown>
 
@@ -2714,7 +2714,7 @@ describe('ingest', () => {
       expect(sidecar).toEqual(
         expect.objectContaining({
           source_url: 'https://cdn.example.com/assets/episode.mp4',
-          contributor: 'graphify-ts',
+          contributor: 'madar',
         }),
       )
     })
@@ -2744,7 +2744,7 @@ describe('ingest', () => {
         }),
       )
 
-      const output = await ingest('https://example.com/short', join(tempDir, 'raw'), { contributor: 'graphify-ts' })
+      const output = await ingest('https://example.com/short', join(tempDir, 'raw'), { contributor: 'madar' })
       const content = readFileSync(output, 'utf8')
 
       expect(output.endsWith('.md')).toBe(true)
@@ -2767,7 +2767,7 @@ describe('ingest', () => {
         }),
       )
 
-      const output = await ingest('https://example.com/audio/episode.mp3', join(tempDir, 'raw'), { contributor: 'graphify-ts' })
+      const output = await ingest('https://example.com/audio/episode.mp3', join(tempDir, 'raw'), { contributor: 'madar' })
       const content = readFileSync(output, 'utf8')
 
       expect(output.endsWith('.md')).toBe(true)
@@ -2794,7 +2794,7 @@ describe('ingest', () => {
         }),
       )
 
-      const output = await ingest('https://example.com/audio/episode.mp3', join(tempDir, 'raw'), { contributor: 'graphify-ts' })
+      const output = await ingest('https://example.com/audio/episode.mp3', join(tempDir, 'raw'), { contributor: 'madar' })
       const content = readFileSync(output, 'utf8')
 
       expect(output.endsWith('.md')).toBe(true)

@@ -6,7 +6,7 @@ import type { ExtractionData, ExtractionNode } from '../../src/contracts/types.j
 import { resolveCrossFilePythonImports } from '../../src/pipeline/extract/cross-file.js'
 
 function createTempRoot(): string {
-  return mkdtempSync(join(tmpdir(), 'graphify-ts-extract-cross-file-'))
+  return mkdtempSync(join(tmpdir(), 'madar-extract-cross-file-'))
 }
 
 describe('resolveCrossFilePythonImports', () => {

@@ -2,8 +2,8 @@ node_modules/
 dist/
 coverage/
 .DS_Store
-graphify-out/
-examples/demo-repo/graphify-out/
+out/
+examples/demo-repo/out/
 .env
 .worktrees/
 docs/plans/*

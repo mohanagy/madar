@@ -56,9 +56,9 @@ function loadSourceGraph(graphPath: string): KnowledgeGraph {
 }
 
 function inferRepoName(graphPath: string): string {
-  // graphify-out/graph.json -> parent of graphify-out
-  const graphifyOutDir = dirname(resolve(graphPath))
-  const parentDir = dirname(graphifyOutDir)
+  // out/graph.json -> parent of out
+  const madarOutDir = dirname(resolve(graphPath))
+  const parentDir = dirname(madarOutDir)
   return basename(parentDir)
 }
 
@@ -173,7 +173,7 @@ export function federate(graphPaths: string[], options: FederateOptions = {}): F
   const communityLabels = buildCommunityLabels(federatedGraph, communities)
 
   // Output
-  const outputDir = resolve(options.outputDir ?? 'graphify-out-federated')
+  const outputDir = resolve(options.outputDir ?? 'out-federated')
   mkdirSync(outputDir, { recursive: true })
   const graphPath = join(outputDir, 'graph.json')
   const reportPath = join(outputDir, 'GRAPH_REPORT.md')
@@ -198,7 +198,7 @@ export function federate(graphPaths: string[], options: FederateOptions = {}): F
       needs_graph: true,
       warning: null,
       skipped_sensitive: [],
-      graphifyignore_patterns: 0,
+      madarignore_patterns: 0,
     },
     { input_tokens: 0, output_tokens: 0 },
     outputDir,

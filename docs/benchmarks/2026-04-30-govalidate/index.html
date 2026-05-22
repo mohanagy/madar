@@ -3,16 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>2026-04-30 GoValidate retrieval benchmark — graphify-ts</title>
-    <meta name="description" content="Same Claude Code question with and without graphify-ts on a 1,268-file production NestJS + Next.js codebase. 3× fewer turns, 2.77× faster, 2.63× fewer input tokens." />
+    <title>2026-04-30 GoValidate retrieval benchmark — madar</title>
+    <meta name="description" content="Same Claude Code question with and without madar on a 1,268-file production NestJS + Next.js codebase. 3× fewer turns, 2.77× faster, 2.63× fewer input tokens." />
     <link rel="stylesheet" href="../styles.css" />
   </head>
   <body>
     <header class="site-header">
-      <span class="brand"><span class="dot" aria-hidden="true"></span>graphify-ts</span>
+      <span class="brand"><span class="dot" aria-hidden="true"></span>madar</span>
       <nav>
-        <a href="https://github.com/mohanagy/graphify-ts">GitHub</a>
-        <a href="https://www.npmjs.com/package/@mohammednagy/graphify-ts">npm</a>
+        <a href="https://github.com/mohanagy/madar">GitHub</a>
+        <a href="https://www.npmjs.com/package/madar">npm</a>
       </nav>
     </header>
 
@@ -23,7 +23,7 @@
         <p class="eyebrow">Retrieval benchmark · 2026-04-30</p>
         <h1>GoValidate <code>native_agent</code> benchmark</h1>
         <p class="lede">
-          The same question — <em>"How does the v2 idea generation pipeline work end-to-end?"</em> — asked twice against a real 1,268-file NestJS + Next.js production SaaS. Once with file tools only, once with graphify-ts available. Numbers come from Anthropic's own <code>usage</code> field in <code>claude --output-format json</code>.
+          The same question — <em>"How does the v2 idea generation pipeline work end-to-end?"</em> — asked twice against a real 1,268-file NestJS + Next.js production SaaS. Once with file tools only, once with madar available. Numbers come from Anthropic's own <code>usage</code> field in <code>claude --output-format json</code>.
         </p>
         <dl class="hero-meta">
           <div class="meta-item"><dt>Codebase</dt><dd>NestJS + Next.js, 1,268 files, ~860K words</dd></div>
@@ -71,13 +71,13 @@
               <span class="delta">3× fewer</span>
             </div>
             <div class="bar-row">
-              <span class="legend"><span class="swatch baseline" aria-hidden="true"></span>Without graphify-ts</span>
+              <span class="legend"><span class="swatch baseline" aria-hidden="true"></span>Without madar</span>
               <span class="bar"><span class="fill baseline" style="width:100%"></span></span>
               <span class="value">9</span>
             </div>
             <div class="bar-row">
-              <span class="legend"><span class="swatch graphify" aria-hidden="true"></span>With graphify-ts</span>
-              <span class="bar"><span class="fill graphify" style="width:33.3%"></span></span>
+              <span class="legend"><span class="swatch madar" aria-hidden="true"></span>With madar</span>
+              <span class="bar"><span class="fill madar" style="width:33.3%"></span></span>
               <span class="value">3</span>
             </div>
           </div>
@@ -88,13 +88,13 @@
               <span class="delta">2.77× faster</span>
             </div>
             <div class="bar-row">
-              <span class="legend"><span class="swatch baseline" aria-hidden="true"></span>Without graphify-ts</span>
+              <span class="legend"><span class="swatch baseline" aria-hidden="true"></span>Without madar</span>
               <span class="bar"><span class="fill baseline" style="width:100%"></span></span>
               <span class="value">96.4 s</span>
             </div>
             <div class="bar-row">
-              <span class="legend"><span class="swatch graphify" aria-hidden="true"></span>With graphify-ts</span>
-              <span class="bar"><span class="fill graphify" style="width:36.0%"></span></span>
+              <span class="legend"><span class="swatch madar" aria-hidden="true"></span>With madar</span>
+              <span class="bar"><span class="fill madar" style="width:36.0%"></span></span>
               <span class="value">34.7 s</span>
             </div>
           </div>
@@ -105,13 +105,13 @@
               <span class="delta">2.63× fewer</span>
             </div>
             <div class="bar-row">
-              <span class="legend"><span class="swatch baseline" aria-hidden="true"></span>Without graphify-ts</span>
+              <span class="legend"><span class="swatch baseline" aria-hidden="true"></span>Without madar</span>
               <span class="bar"><span class="fill baseline" style="width:100%"></span></span>
               <span class="value">615,190</span>
             </div>
             <div class="bar-row">
-              <span class="legend"><span class="swatch graphify" aria-hidden="true"></span>With graphify-ts</span>
-              <span class="bar"><span class="fill graphify" style="width:38.0%"></span></span>
+              <span class="legend"><span class="swatch madar" aria-hidden="true"></span>With madar</span>
+              <span class="bar"><span class="fill madar" style="width:38.0%"></span></span>
               <span class="value">233,508</span>
             </div>
           </div>
@@ -122,13 +122,13 @@
               <span class="delta" style="color:var(--c-lemon)">+13% trade-off</span>
             </div>
             <div class="bar-row">
-              <span class="legend"><span class="swatch baseline" aria-hidden="true"></span>Without graphify-ts</span>
+              <span class="legend"><span class="swatch baseline" aria-hidden="true"></span>Without madar</span>
               <span class="bar"><span class="fill baseline" style="width:88.6%"></span></span>
               <span class="value">$0.62</span>
             </div>
             <div class="bar-row">
-              <span class="legend"><span class="swatch graphify" aria-hidden="true"></span>With graphify-ts</span>
-              <span class="bar"><span class="fill graphify" style="width:100%"></span></span>
+              <span class="legend"><span class="swatch madar" aria-hidden="true"></span>With madar</span>
+              <span class="bar"><span class="fill madar" style="width:100%"></span></span>
               <span class="value">$0.70</span>
             </div>
           </div>
@@ -150,8 +150,8 @@
           <dd><em>"How does the v2 idea generation pipeline work end-to-end?"</em></dd>
           <dt>Baseline runner</dt>
           <dd>Plain Claude Code with the standard <code>Read</code> / <code>Grep</code> / <code>Glob</code> file tools, no MCP server attached.</dd>
-          <dt>Graphify runner</dt>
-          <dd>Same Claude Code, with graphify-ts MCP server (<code>core</code> tool profile) attached and a fresh <code>graphify-out/graph.json</code>.</dd>
+          <dt>Madar runner</dt>
+          <dd>Same Claude Code, with madar MCP server (<code>core</code> tool profile) attached and a fresh <code>out/graph.json</code>.</dd>
           <dt>Token source</dt>
           <dd>Anthropic-reported <code>usage</code> from <code>claude --output-format json</code>. Not local <code>cl100k_base</code> estimates.</dd>
         </dl>
@@ -161,8 +161,8 @@
         <div class="section-header">
           <h2>Reproduce the headline numbers</h2>
         </div>
-        <pre class="terminal"><code><span class="prompt">$</span> <span class="cmd">git clone https://github.com/mohanagy/graphify-ts.git</span>
-<span class="prompt">$</span> <span class="cmd">cd graphify-ts</span>
+        <pre class="terminal"><code><span class="prompt">$</span> <span class="cmd">git clone https://github.com/mohanagy/madar.git</span>
+<span class="prompt">$</span> <span class="cmd">cd madar</span>
 <span class="prompt">$</span> <span class="cmd">bash docs/benchmarks/2026-04-30-govalidate/verify.sh</span>
 <span class="comment"># Recomputes the headline ratio from the committed evidence files.</span></code></pre>
       </section>
@@ -176,17 +176,17 @@
           <li><a href="./README.md"><span class="ico">MD</span>README.md</a></li>
           <li><a href="./verify.sh"><span class="ico">SH</span>verify.sh</a></li>
           <li><a href="./baseline-session.json"><span class="ico">JSON</span>baseline-session.json</a></li>
-          <li><a href="./graphify-session.json"><span class="ico">JSON</span>graphify-session.json</a></li>
+          <li><a href="./madar-session.json"><span class="ico">JSON</span>madar-session.json</a></li>
         </ul>
       </section>
     </main>
 
     <footer class="site-footer">
-      <span>graphify-ts — local-first MCP server and CLI · MIT</span>
+      <span>madar — local-first MCP server and CLI · MIT</span>
       <span>
         <a href="../">All benchmarks</a> ·
-        <a href="https://github.com/mohanagy/graphify-ts">Repo</a> ·
-        <a href="https://www.npmjs.com/package/@mohammednagy/graphify-ts">npm</a>
+        <a href="https://github.com/mohanagy/madar">Repo</a> ·
+        <a href="https://www.npmjs.com/package/madar">npm</a>
       </span>
     </footer>
   </body>

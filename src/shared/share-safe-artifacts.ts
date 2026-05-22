@@ -42,7 +42,7 @@ const WINDOWS_SHARE_SEGMENT_HINTS = new Set(['share', 'shares', 'users', 'homes'
 const SHARE_HOST_HINTS = new Set(['server', 'servers', 'file', 'files', 'nas', 'smb', 'share', 'storage', 'internal', 'intranet', 'corp'])
 const URL_PATH_SEGMENT_HINTS = new Set(['assets', 'static', 'scripts', 'styles', 'images', 'img', 'fonts', 'media', 'docs', 'doc', 'api', 'blog'])
 const URL_ASSET_EXTENSIONS = new Set(['js', 'mjs', 'cjs', 'css', 'map', 'json', 'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico', 'woff', 'woff2', 'ttf', 'eot', 'html', 'htm', 'pdf', 'xml'])
-const URL_PLACEHOLDER_PREFIX = '__GRAPHIFY_SHARE_SAFE_URL__'
+const URL_PLACEHOLDER_PREFIX = '__MADAR_SHARE_SAFE_URL__'
 
 function sameResolvedPath(path: string, root: string): boolean {
   return resolve(path) === resolve(root)
