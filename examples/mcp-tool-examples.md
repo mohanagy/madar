@@ -1,6 +1,6 @@
 # MCP Tool Examples
 
-These examples show what your AI agent sees when it calls madar MCP tools. Think of this surface as the MCP half of the madar **context plane**: retrieval for discovery, impact for blast radius, and context-compiler tools for compact packs and provider-ready prompts. All output is real data from a production codebase.
+These examples show what your AI agent sees when it calls sadeem MCP tools. Think of this surface as the MCP half of the sadeem **context plane**: retrieval for discovery, impact for blast radius, and context-compiler tools for compact packs and provider-ready prompts. All output is real data from a production codebase.
 
 ## context_pack — Compact Context Pack
 

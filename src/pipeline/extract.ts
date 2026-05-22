@@ -89,7 +89,7 @@ interface CollectFilesOptions {
 }
 
 interface CachedExtractionPayload extends ExtractionFragment {
-  __madarTsExtractorVersion: number
+  __sadeemTsExtractorVersion: number
 }
 
 interface PendingReferenceCitation {
@@ -681,7 +681,7 @@ function addReferenceNodeFromText(
 }
 
 function isCachedExtraction(value: unknown): value is CachedExtractionPayload {
-  return isRecord(value) && value.__madarTsExtractorVersion === EXTRACTOR_CACHE_VERSION && Array.isArray(value.nodes) && Array.isArray(value.edges)
+  return isRecord(value) && value.__sadeemTsExtractorVersion === EXTRACTOR_CACHE_VERSION && Array.isArray(value.nodes) && Array.isArray(value.edges)
 }
 
 function moduleSpecifierFromRequireCall(node: ts.CallExpression): string | null {
@@ -715,7 +715,7 @@ function readCachedExtraction(filePath: string): ExtractionFragment | null {
 
 function writeCachedExtraction(filePath: string, extraction: ExtractionFragment): void {
   saveCached(filePath, {
-    __madarTsExtractorVersion: EXTRACTOR_CACHE_VERSION,
+    __sadeemTsExtractorVersion: EXTRACTOR_CACHE_VERSION,
     nodes: extraction.nodes,
     edges: extraction.edges,
   })
@@ -1882,7 +1882,7 @@ function warnTreeSitterFallback(language: 'go' | 'java' | 'python' | 'ruby' | 'r
 
   TREE_SITTER_FALLBACK_WARNINGS.add(warningKey)
   const suffix = runtimeError ? ` (${runtimeError})` : ''
-  console.warn(`[madar] tree-sitter ${language} parser unavailable; falling back to the legacy extractor${suffix}`)
+  console.warn(`[sadeem] tree-sitter ${language} parser unavailable; falling back to the legacy extractor${suffix}`)
 }
 
 function collectGoImports(node: TreeSitterNode, sourceText: string): string[] {

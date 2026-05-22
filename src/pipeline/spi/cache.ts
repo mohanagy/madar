@@ -30,7 +30,7 @@
 //
 //   workspace_root              — absolute, posix-normalized
 //   extractor_version           — from BuildSpiOptions.extractorVersion (or default)
-//   madar_version            — from BuildSpiOptions.madarVersion
+//   sadeem_version            — from BuildSpiOptions.sadeemVersion
 //   tsconfig.json content       — if present, raw bytes
 //   sorted list of (path, mtime_ms, size_bytes, sha256) for every
 //     source file in the workspace (same EXT_TO_LANG matcher as buildSpi)
@@ -224,7 +224,7 @@ function computeWorkspaceFingerprint(root: string, opts: BuildSpiCachedOptions):
   const hasher = createHash('sha256')
   hasher.update(`workspace:${root}\n`)
   hasher.update(`extractor:${opts.extractorVersion ?? 'spi-v1.0.0'}\n`)
-  hasher.update(`madar:${opts.madarVersion}\n`)
+  hasher.update(`sadeem:${opts.sadeemVersion}\n`)
 
   const tsConfigPath = join(root, 'tsconfig.json')
   if (existsSync(tsConfigPath)) {

@@ -36,7 +36,7 @@ function normalizePathForAssertion(value: string): string {
 function buildFixtureSpi(): SemanticProgramIndex {
   return buildSpi({
     root: FIXTURE_ROOT,
-    madarVersion: 'test-0.0.0',
+    sadeemVersion: 'test-0.0.0',
     extractorVersion: 'spi-v1.0.0-nest-di-runtime-calls',
     now: FROZEN_NOW,
   })
@@ -434,7 +434,7 @@ describe('SPI Nest DI runtime-call fixture', () => {
 
   it('does not suppress runtime flow when parent directories contain migration in the name', () => {
     const result = retrieveContext(buildFixtureGraph({
-      rootPath: '/tmp/issue-245-madar-rebrand-migration',
+      rootPath: '/tmp/issue-245-sadeem-rebrand-migration',
     }), {
       question:
         'Explain the production runtime path for IdeaGenerationController.generateFromProblem and how it creates a validation report. Follow the controller into service/orchestrator/job/research agents/scoring/report builder/persistence.',

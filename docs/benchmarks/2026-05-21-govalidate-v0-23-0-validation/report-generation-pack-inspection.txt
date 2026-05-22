@@ -1,10 +1,10 @@
-Published inspection summary for the raw local `madar pack` output.
+Published inspection summary for the raw local `sadeem pack` output.
 
 The raw `report-generation-pack.json` file was not committed because it contained local absolute paths.
 
 Command under inspection:
 
-madar pack "Explain how idea report is getting generated" \
+sadeem pack "Explain how idea report is getting generated" \
   --task explain \
   --retrieval-level 4 \
   --retrieval-strategy slice-v1 \

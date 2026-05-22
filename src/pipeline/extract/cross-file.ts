@@ -574,7 +574,7 @@ export function resolveCrossFilePythonImports(files: readonly string[], extracti
       lines = readFileSync(filePath, 'utf8').split(/\r?\n/)
     } catch {
       if (process.env.DEBUG) {
-        console.warn(`[madar extract] Skipping unreadable Python file during cross-file linking: ${filePath}`)
+        console.warn(`[sadeem extract] Skipping unreadable Python file during cross-file linking: ${filePath}`)
       }
       continue
     }
@@ -739,7 +739,7 @@ export function resolvePythonFastApiSemantics(
       lines = readFileSync(filePath, 'utf8').split(/\r?\n/)
     } catch {
       if (process.env.DEBUG) {
-        console.warn(`[madar extract] Skipping unreadable Python file during FastAPI linking: ${filePath}`)
+        console.warn(`[sadeem extract] Skipping unreadable Python file during FastAPI linking: ${filePath}`)
       }
       continue
     }
@@ -964,7 +964,7 @@ export function resolveCrossFileRelativeJsImports(
       sourceText = readFileSync(filePath, 'utf8')
     } catch {
       if (process.env.DEBUG) {
-        console.warn(`[madar extract] Skipping unreadable JS/TS file during cross-file linking: ${filePath}`)
+        console.warn(`[sadeem extract] Skipping unreadable JS/TS file during cross-file linking: ${filePath}`)
       }
       continue
     }

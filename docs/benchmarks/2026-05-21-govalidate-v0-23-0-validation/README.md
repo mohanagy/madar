@@ -1,13 +1,13 @@
 # 2026-05-21 — GoValidate v0.23.0 validation run
 
-This folder records a real validation pass of the published `@mohammednagy/madar@0.23.0` CLI against the local GoValidate workspace.
+This folder records a real validation pass of the published `@mohammednagy/sadeem@0.23.0` CLI against the local GoValidate workspace.
 
 The goal is **not** to manufacture a clean win. The goal is to show what the released `0.23.0` surfaces did on a realistic repo, including regressions, missing context, and cases where one metric improved while another got worse.
 
 ## Scope
 
 - **Workspace:** GoValidate root workspace (`backend`, `platform`, `landing-page`, `proxy`, docs, generated artifacts)
-- **CLI under test:** published `madar 0.23.0`
+- **CLI under test:** published `sadeem 0.23.0`
 - **Model/runtime:** Claude CLI with structured JSON usage (`cat {prompt_file} | claude -p --output-format json`)
 - **Validation surfaces:** `generate --spi`, `summary`, `pack`, single-prompt `compare`, `pack_only`, and the public 10-question GoValidate suite
 
@@ -32,7 +32,7 @@ Prompt:
 
 This is the provider-reported benchmark path.
 
-| Metric | Baseline | Madar | Outcome |
+| Metric | Baseline | Sadeem | Outcome |
 | --- | ---: | ---: | ---: |
 | Input tokens (Anthropic-reported) | 259,912 | 297,784 | **1.15x more** |
 | Turns | 4 | 4 | same |
@@ -99,7 +99,7 @@ Best/worst outcomes:
 
 ### Per-prompt outcomes
 
-Percentages below are **baseline-relative change** (`1 - madar / baseline`): positive values mean madar used less/fewer/less time; negative values mean regression.
+Percentages below are **baseline-relative change** (`1 - sadeem / baseline`): positive values mean sadeem used less/fewer/less time; negative values mean regression.
 
 These rows come from the **full 10-question suite run**, not from the separate single-prompt artifact above. The suite question ids map to the committed files under `suite-share-safe/`. In particular, `report-generation` below refers to the public suite prompt `Explain how idea report generation works end to end.`, which is distinct from the separate single-prompt validation prompt `Explain how idea report is getting generated`.
 
@@ -149,32 +149,32 @@ Only files safe to publish are kept here.
 These are the public commands this validation is based on:
 
 ```bash
-npm install -g @mohammednagy/madar@0.23.0
-madar --version
+npm install -g @mohammednagy/sadeem@0.23.0
+sadeem --version
 
 rm -rf out
-madar generate . --spi
+sadeem generate . --spi
 
-madar summary out/graph.json
+sadeem summary out/graph.json
 
-madar pack "Explain how idea report is getting generated" \
+sadeem pack "Explain how idea report is getting generated" \
   --task explain \
   --retrieval-level 4 \
   --retrieval-strategy slice-v1 \
   --budget 4000 \
   --graph out/graph.json
 
-madar compare "Explain how idea report is getting generated" \
+sadeem compare "Explain how idea report is getting generated" \
   --exec 'cat {prompt_file} | claude -p --output-format json' \
   --yes \
   --baseline-mode native_agent
 
-madar compare "Explain how idea report is getting generated" \
+sadeem compare "Explain how idea report is getting generated" \
   --exec 'cat {prompt_file}' \
   --yes \
   --baseline-mode pack_only
 
-madar compare \
+sadeem compare \
   --questions docs/benchmarks/govalidate-suite/questions.json \
   --exec 'cat {prompt_file} | claude -p --output-format json' \
   --yes \

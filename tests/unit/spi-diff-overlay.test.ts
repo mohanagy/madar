@@ -21,7 +21,7 @@ function writeFile(root: string, rel: string, content: string): void {
 }
 
 function buildIndex(root: string): SemanticProgramIndex {
-  return buildSpi({ root, madarVersion: 'test-0.0.0', extractorVersion: 'spi-v1.0.0-slice-3a', now: FROZEN_NOW })
+  return buildSpi({ root, sadeemVersion: 'test-0.0.0', extractorVersion: 'spi-v1.0.0-slice-3a', now: FROZEN_NOW })
 }
 
 function findSymbol(spi: SemanticProgramIndex, filePath: string, name: string, kind: SpiSymbolKind): SpiSymbol {

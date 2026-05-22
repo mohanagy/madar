@@ -120,7 +120,7 @@ function writeCompareStyleReport(reportPath: string, pack: CompareReportPack): v
         paths: {
           output_dir: '.',
           baseline_prompt: 'baseline-prompt.txt',
-          madar_prompt: 'madar-prompt.txt',
+          sadeem_prompt: 'sadeem-prompt.txt',
           report: 'report.json',
           share_safe_report: 'report.share-safe.json',
         },
@@ -181,7 +181,7 @@ function runAnswerVerifier(
     'benchmark-artifact-answer-quality',
     `${testName}-${process.pid}-${Date.now()}`,
   )
-  const answerPath = join(fixtureRoot, 'madar-answer.txt')
+  const answerPath = join(fixtureRoot, 'sadeem-answer.txt')
   const configPath = join(fixtureRoot, 'quality-gates.json')
   const answerArg = options.relativeAnswerPath ? relative(process.cwd(), answerPath) : answerPath
   const configArg = options.relativeConfigPath ? relative(process.cwd(), configPath) : configPath
@@ -215,7 +215,7 @@ describe('public benchmark artifact (2026-04-30 govalidate)', () => {
     total_cost_usd: number
     usage: { input_tokens: number; cache_creation_input_tokens: number; cache_read_input_tokens: number }
   }
-  const madar = JSON.parse(readFileSync(resolve(ARTIFACT_DIR, 'madar-session.json'), 'utf8')) as typeof baseline
+  const sadeem = JSON.parse(readFileSync(resolve(ARTIFACT_DIR, 'sadeem-session.json'), 'utf8')) as typeof baseline
   const readme = readFileSync(resolve(ARTIFACT_DIR, 'README.md'), 'utf8')
 
   function totalInput(usage: typeof baseline.usage): number {
@@ -226,31 +226,31 @@ describe('public benchmark artifact (2026-04-30 govalidate)', () => {
     expect(typeof baseline.num_turns).toBe('number')
     expect(typeof baseline.duration_ms).toBe('number')
     expect(typeof baseline.usage.input_tokens).toBe('number')
-    expect(typeof madar.num_turns).toBe('number')
-    expect(typeof madar.duration_ms).toBe('number')
-    expect(typeof madar.usage.input_tokens).toBe('number')
+    expect(typeof sadeem.num_turns).toBe('number')
+    expect(typeof sadeem.duration_ms).toBe('number')
+    expect(typeof sadeem.usage.input_tokens).toBe('number')
   })
 
   it('README cites num_turns numbers that match the JSON', () => {
     expect(readme).toContain(`| ${baseline.num_turns} |`)
-    expect(readme).toContain(`**${madar.num_turns}**`)
+    expect(readme).toContain(`**${sadeem.num_turns}**`)
   })
 
   it('README cites latency numbers that match the JSON (in ms)', () => {
     expect(readme).toContain(baseline.duration_ms.toLocaleString('en-US'))
-    expect(readme).toContain(madar.duration_ms.toLocaleString('en-US'))
+    expect(readme).toContain(sadeem.duration_ms.toLocaleString('en-US'))
   })
 
   it('README cites total input tokens that exactly equal the JSON sums', () => {
     const baselineTotal = totalInput(baseline.usage)
-    const madarTotal = totalInput(madar.usage)
+    const sadeemTotal = totalInput(sadeem.usage)
     expect(readme).toContain(baselineTotal.toLocaleString('en-US'))
-    expect(readme).toContain(madarTotal.toLocaleString('en-US'))
+    expect(readme).toContain(sadeemTotal.toLocaleString('en-US'))
   })
 
   it('README cites cost numbers that match the JSON', () => {
     expect(readme).toContain(`$${baseline.total_cost_usd.toFixed(2)}`)
-    expect(readme).toContain(`$${madar.total_cost_usd.toFixed(2)}`)
+    expect(readme).toContain(`$${sadeem.total_cost_usd.toFixed(2)}`)
   })
 
   it('README frames the benchmark around effective cost, not just raw prompt size', () => {
@@ -286,7 +286,7 @@ describe('public benchmark artifact (2026-04-30 govalidate)', () => {
     const result = spawnSync('bash', [resolve(ARTIFACT_DIR, 'verify.sh')], { encoding: 'utf8' })
     expect(result.status).toBe(0)
     expect(result.stdout).toContain('baseline_total_input_tokens : 615190')
-    expect(result.stdout).toContain('madar_total_input_tokens : 233508')
+    expect(result.stdout).toContain('sadeem_total_input_tokens : 233508')
   }, 15_000)
 
   it('verify.sh contains no absolute paths (uses $DIR)', () => {
@@ -541,16 +541,16 @@ describe('hosted benchmark stylesheet', () => {
 
   it('uses dedicated fill and track tokens for the comparison bars', () => {
     expect(styles).toContain('--bar-baseline-fill:')
-    expect(styles).toContain('--bar-madar-fill:')
+    expect(styles).toContain('--bar-sadeem-fill:')
     expect(styles).toContain('--bar-track-bg:')
     expect(styles).toContain('--bar-track-edge:')
     expect(styles).not.toContain('--bar-baseline-fill:   var(--bar-baseline);')
-    expect(styles).not.toContain('--bar-madar-fill:   var(--bar-madar);')
+    expect(styles).not.toContain('--bar-sadeem-fill:   var(--bar-sadeem);')
     expect(styles).toMatch(/\.bar-row \.bar \{\s+height: 18px;\s+background: var\(--bar-track-bg\);\s+border-radius: var\(--r-sm\);\s+border: 1px solid var\(--bar-track-edge\);/s)
     expect(styles).toMatch(/\.bar-row \.bar \.fill\.baseline \{\s+background: var\(--bar-baseline-fill\);/s)
-    expect(styles).toMatch(/\.bar-row \.bar \.fill\.madar \{\s+background: var\(--bar-madar-fill\);/s)
+    expect(styles).toMatch(/\.bar-row \.bar \.fill\.sadeem \{\s+background: var\(--bar-sadeem-fill\);/s)
     expect(styles).not.toMatch(/\.bar-row \.bar \.fill\.baseline \{\s+background: var\(--bar-baseline\);/s)
-    expect(styles).not.toMatch(/\.bar-row \.bar \.fill\.madar \{\s+background: var\(--bar-madar\);/s)
+    expect(styles).not.toMatch(/\.bar-row \.bar \.fill\.sadeem \{\s+background: var\(--bar-sadeem\);/s)
   })
 
   it('makes the fill element block-level so inline width styles render visible bars', () => {

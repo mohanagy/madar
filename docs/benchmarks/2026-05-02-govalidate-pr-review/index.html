@@ -3,16 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>2026-05-02 GoValidate PR review benchmark — madar</title>
+    <title>2026-05-02 GoValidate PR review benchmark — sadeem</title>
     <meta name="description" content="Same PR diff, two prompt packagings. Compact pr_impact prompts shrink the review payload 7.25× without changing the review target. Real 36-file branch, measured with review-compare." />
     <link rel="stylesheet" href="../styles.css" />
   </head>
   <body>
     <header class="site-header">
-      <span class="brand"><span class="dot" aria-hidden="true"></span>madar</span>
+      <span class="brand"><span class="dot" aria-hidden="true"></span>sadeem</span>
       <nav>
-        <a href="https://github.com/mohanagy/madar">GitHub</a>
-        <a href="https://www.npmjs.com/package/madar">npm</a>
+        <a href="https://github.com/mohanagy/sadeem">GitHub</a>
+        <a href="https://www.npmjs.com/package/sadeem">npm</a>
       </nav>
     </header>
 
@@ -81,8 +81,8 @@
               <span class="value">63,024</span>
             </div>
             <div class="bar-row">
-              <span class="legend"><span class="swatch madar" aria-hidden="true"></span>Compact <code>pr_impact</code></span>
-              <span class="bar"><span class="fill madar" style="width:13.79%"></span></span>
+              <span class="legend"><span class="swatch sadeem" aria-hidden="true"></span>Compact <code>pr_impact</code></span>
+              <span class="bar"><span class="fill sadeem" style="width:13.79%"></span></span>
               <span class="value">8,690</span>
             </div>
           </div>
@@ -98,8 +98,8 @@
               <span class="value">41,969</span>
             </div>
             <div class="bar-row">
-              <span class="legend"><span class="swatch madar" aria-hidden="true"></span>Compact <code>pr_impact</code></span>
-              <span class="bar"><span class="fill madar" style="width:14.52%"></span></span>
+              <span class="legend"><span class="swatch sadeem" aria-hidden="true"></span>Compact <code>pr_impact</code></span>
+              <span class="bar"><span class="fill sadeem" style="width:14.52%"></span></span>
               <span class="value">6,093</span>
             </div>
           </div>
@@ -118,7 +118,7 @@
           <dt>Branch under review</dt>
           <dd>A real working branch with 36 changed files vs <code>origin/main</code>.</dd>
           <dt>Tool</dt>
-          <dd><code>madar review-compare</code> — runs both prompt variants against the same reviewer and writes a structured <code>report.json</code>.</dd>
+          <dd><code>sadeem review-compare</code> — runs both prompt variants against the same reviewer and writes a structured <code>report.json</code>.</dd>
           <dt>Reviewer</dt>
           <dd><code>cat {prompt_file} | claude -p</code>. Same model, same flags, both runs.</dd>
           <dt>Token source</dt>
@@ -132,8 +132,8 @@
         <div class="section-header">
           <h2>Reproduce the headline numbers</h2>
         </div>
-        <pre class="terminal"><code><span class="prompt">$</span> <span class="cmd">git clone https://github.com/mohanagy/madar.git</span>
-<span class="prompt">$</span> <span class="cmd">cd madar</span>
+        <pre class="terminal"><code><span class="prompt">$</span> <span class="cmd">git clone https://github.com/mohanagy/sadeem.git</span>
+<span class="prompt">$</span> <span class="cmd">cd sadeem</span>
 <span class="prompt">$</span> <span class="cmd">bash docs/benchmarks/2026-05-02-govalidate-pr-review/verify.sh</span>
 <span class="comment"># Recomputes prompt-token and payload-token ratios from report.json.</span></code></pre>
       </section>
@@ -156,11 +156,11 @@
     </main>
 
     <footer class="site-footer">
-      <span>madar — local-first MCP server and CLI · MIT</span>
+      <span>sadeem — local-first MCP server and CLI · MIT</span>
       <span>
         <a href="../">All benchmarks</a> ·
-        <a href="https://github.com/mohanagy/madar">Repo</a> ·
-        <a href="https://www.npmjs.com/package/madar">npm</a>
+        <a href="https://github.com/mohanagy/sadeem">Repo</a> ·
+        <a href="https://www.npmjs.com/package/sadeem">npm</a>
       </span>
     </footer>
   </body>

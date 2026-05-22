@@ -27,7 +27,7 @@ function writeFile(root: string, rel: string, content: string): void {
 function build(root: string): SemanticProgramIndex {
   return buildSpi({
     root,
-    madarVersion: 'test-0.0.0',
+    sadeemVersion: 'test-0.0.0',
     extractorVersion: 'spi-v1.0.0-slice-2b',
     now: FROZEN_NOW,
   })
@@ -209,7 +209,7 @@ describe('buildSpi type layer (slice 2b of #72)', () => {
   describe('against the checked-in demo repo', () => {
     it('emits at least one type edge that points at a demo-repo SpiSymbol', () => {
       const root = pathResolve(__dirname, '../../examples/demo-repo')
-      const spi = buildSpi({ root, madarVersion: 'test-0.0.0', now: FROZEN_NOW })
+      const spi = buildSpi({ root, sadeemVersion: 'test-0.0.0', now: FROZEN_NOW })
 
       const ourIds = new Set(spi.symbols.map((s) => s.id))
       const typeKinds = new Set<SpiEdge['kind']>(['extends', 'implements', 'param_type', 'return_type'])

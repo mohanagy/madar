@@ -8,7 +8,7 @@ import { type RetrieveResult, retrieveContext } from '../../runtime/retrieve.js'
 import { QUERY_TOKEN_ESTIMATOR } from '../../runtime/serve.js'
 import { toShareSafeArtifactPath } from '../../shared/share-safe-artifacts.js'
 import { validateGraphOutputPath } from '../../shared/security.js'
-import { buildMadarPromptPack, expandCompareExecTemplate } from '../compare.js'
+import { buildSadeemPromptPack, expandCompareExecTemplate } from '../compare.js'
 import { parsePromptRunnerOutput, type PromptRunnerUsage } from '../prompt-runner.js'
 
 const DEFAULT_RETRIEVAL_BUDGET = 3_000
@@ -27,7 +27,7 @@ export interface BenchmarkPromptArtifacts {
 }
 
 export interface BenchmarkPromptExecution {
-  mode: 'madar'
+  mode: 'sadeem'
   question: string
   promptFile: string
   outputFile: string
@@ -198,14 +198,14 @@ export async function runBenchmarkPrompt(options: RunBenchmarkPromptOptions): Pr
       options.question,
       options.retrievalBudget ?? DEFAULT_RETRIEVAL_BUDGET,
   )
-  const promptPack = buildMadarPromptPack({
+  const promptPack = buildSadeemPromptPack({
     question: options.question,
     retrieval,
     ...(options.session ? { session: options.session } : {}),
   })
   const artifacts: BenchmarkPromptArtifacts = {
-    prompt: join(outputRoot, 'madar-prompt.txt'),
-    answer: join(outputRoot, 'madar-answer.txt'),
+    prompt: join(outputRoot, 'sadeem-prompt.txt'),
+    answer: join(outputRoot, 'sadeem-answer.txt'),
     report: join(outputRoot, 'report.json'),
     share_safe_report: join(outputRoot, 'report.share-safe.json'),
   }
@@ -214,12 +214,12 @@ export async function runBenchmarkPrompt(options: RunBenchmarkPromptOptions): Pr
   const command = expandCompareExecTemplate(options.execTemplate, {
     promptFile: artifacts.prompt,
     question: options.question,
-    mode: 'madar',
+    mode: 'sadeem',
     outputFile: artifacts.answer,
   })
   const execute = options.runner ?? defaultBenchmarkPromptRunner
   const execution = await execute({
-    mode: 'madar',
+    mode: 'sadeem',
     question: options.question,
     promptFile: artifacts.prompt,
     outputFile: artifacts.answer,

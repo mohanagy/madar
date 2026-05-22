@@ -5,7 +5,7 @@
   "duration_ms": 96368,
   "duration_api_ms": 95210,
   "num_turns": 9,
-  "result": "(answer body redacted from the public artifact; the question and context are madar-internal)",
+  "result": "(answer body redacted from the public artifact; the question and context are sadeem-internal)",
   "session_id": "2026-04-30-govalidate-baseline",
   "total_cost_usd": 0.62,
   "model": "claude-opus-4-7",

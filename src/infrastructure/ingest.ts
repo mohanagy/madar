@@ -283,7 +283,7 @@ export function saveQueryResult(question: string, answer: string, memoryDir: str
     `type: ${yamlString(options.queryType ?? 'query')}`,
     `date: ${yamlString(now.toISOString())}`,
     `question: ${yamlString(question)}`,
-    `contributor: ${yamlString('madar')}`,
+    `contributor: ${yamlString('sadeem')}`,
     ...(sourceNodes.length > 0 ? [`source_nodes: [${sourceNodes.map((node) => yamlString(node)).join(', ')}]`] : []),
     '---',
     '',

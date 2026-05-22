@@ -23,7 +23,7 @@ function writeFile(root: string, rel: string, content: string): void {
 }
 
 function project(root: string): ExtractionData {
-  const spi = buildSpi({ root, madarVersion: 'test-0.0.0', now: FROZEN_NOW })
+  const spi = buildSpi({ root, sadeemVersion: 'test-0.0.0', now: FROZEN_NOW })
   return projectSpiToExtraction(spi, { root })
 }
 

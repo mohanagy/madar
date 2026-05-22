@@ -28,7 +28,7 @@ describe('buildSpiCached (#77)', () => {
   it('builds + persists the cache on first call (no-cache reason on entry)', () => {
     writeFile(sandbox, 'src/foo.ts', 'export function foo(): number { return 1 }\n')
 
-    const first = buildSpiCached({ root: sandbox, madarVersion: 'test-0.0.0', now: FROZEN_NOW })
+    const first = buildSpiCached({ root: sandbox, sadeemVersion: 'test-0.0.0', now: FROZEN_NOW })
     expect(first.cache.hit).toBe(false)
     expect(first.cache.reason).toBe('no-cache')
     expect(first.spi.files.length).toBeGreaterThan(0)
@@ -38,10 +38,10 @@ describe('buildSpiCached (#77)', () => {
   it('returns a cache hit on the second call when content is unchanged', () => {
     writeFile(sandbox, 'src/foo.ts', 'export function foo(): number { return 1 }\n')
 
-    const first = buildSpiCached({ root: sandbox, madarVersion: 'test-0.0.0', now: FROZEN_NOW })
+    const first = buildSpiCached({ root: sandbox, sadeemVersion: 'test-0.0.0', now: FROZEN_NOW })
     expect(first.cache.hit).toBe(false)
 
-    const second = buildSpiCached({ root: sandbox, madarVersion: 'test-0.0.0', now: FROZEN_NOW })
+    const second = buildSpiCached({ root: sandbox, sadeemVersion: 'test-0.0.0', now: FROZEN_NOW })
     expect(second.cache.hit).toBe(true)
     expect(second.cache.reason).toBe('fresh-cache')
     expect(second.spi.symbols.find((s) => s.name === 'foo')).toBeTruthy()
@@ -49,12 +49,12 @@ describe('buildSpiCached (#77)', () => {
 
   it('invalidates the cache when a source file changes', () => {
     writeFile(sandbox, 'src/foo.ts', 'export function foo(): number { return 1 }\n')
-    buildSpiCached({ root: sandbox, madarVersion: 'test-0.0.0', now: FROZEN_NOW })
+    buildSpiCached({ root: sandbox, sadeemVersion: 'test-0.0.0', now: FROZEN_NOW })
 
     // Modify the file — different content + different mtime.
     writeFile(sandbox, 'src/foo.ts', 'export function foo(): number { return 2 }\n')
 
-    const reBuild = buildSpiCached({ root: sandbox, madarVersion: 'test-0.0.0', now: FROZEN_NOW })
+    const reBuild = buildSpiCached({ root: sandbox, sadeemVersion: 'test-0.0.0', now: FROZEN_NOW })
     expect(reBuild.cache.hit).toBe(false)
     // CodeRabbit fix: the actual reason here is key-mismatch (the stale
     // cache exists but the file fingerprint no longer matches), NOT
@@ -64,11 +64,11 @@ describe('buildSpiCached (#77)', () => {
 
   it('invalidates when a new file appears', () => {
     writeFile(sandbox, 'src/foo.ts', 'export function foo(): number { return 1 }\n')
-    buildSpiCached({ root: sandbox, madarVersion: 'test-0.0.0', now: FROZEN_NOW })
+    buildSpiCached({ root: sandbox, sadeemVersion: 'test-0.0.0', now: FROZEN_NOW })
 
     writeFile(sandbox, 'src/bar.ts', 'export function bar(): number { return 2 }\n')
 
-    const reBuild = buildSpiCached({ root: sandbox, madarVersion: 'test-0.0.0', now: FROZEN_NOW })
+    const reBuild = buildSpiCached({ root: sandbox, sadeemVersion: 'test-0.0.0', now: FROZEN_NOW })
     expect(reBuild.cache.hit).toBe(false)
     expect(reBuild.spi.symbols.find((s) => s.name === 'bar')).toBeTruthy()
   })
@@ -76,8 +76,8 @@ describe('buildSpiCached (#77)', () => {
   it('invalidates when extractorVersion changes', () => {
     writeFile(sandbox, 'src/foo.ts', 'export function foo(): number { return 1 }\n')
 
-    buildSpiCached({ root: sandbox, madarVersion: 'test-0.0.0', extractorVersion: 'v1', now: FROZEN_NOW })
-    const second = buildSpiCached({ root: sandbox, madarVersion: 'test-0.0.0', extractorVersion: 'v2', now: FROZEN_NOW })
+    buildSpiCached({ root: sandbox, sadeemVersion: 'test-0.0.0', extractorVersion: 'v1', now: FROZEN_NOW })
+    const second = buildSpiCached({ root: sandbox, sadeemVersion: 'test-0.0.0', extractorVersion: 'v2', now: FROZEN_NOW })
     expect(second.cache.hit).toBe(false)
   })
 
@@ -85,37 +85,37 @@ describe('buildSpiCached (#77)', () => {
     writeFile(sandbox, 'src/foo.ts', 'export function foo(): number { return 1 }\n')
     writeFile(sandbox, 'tsconfig.json', '{"compilerOptions":{}}\n')
 
-    buildSpiCached({ root: sandbox, madarVersion: 'test-0.0.0', now: FROZEN_NOW })
+    buildSpiCached({ root: sandbox, sadeemVersion: 'test-0.0.0', now: FROZEN_NOW })
 
     writeFile(sandbox, 'tsconfig.json', '{"compilerOptions":{"strict":true}}\n')
 
-    const reBuild = buildSpiCached({ root: sandbox, madarVersion: 'test-0.0.0', now: FROZEN_NOW })
+    const reBuild = buildSpiCached({ root: sandbox, sadeemVersion: 'test-0.0.0', now: FROZEN_NOW })
     expect(reBuild.cache.hit).toBe(false)
   })
 
   it('respects noCache option — never reads or writes the cache', () => {
     writeFile(sandbox, 'src/foo.ts', 'export function foo(): number { return 1 }\n')
 
-    const first = buildSpiCached({ root: sandbox, madarVersion: 'test-0.0.0', now: FROZEN_NOW })
+    const first = buildSpiCached({ root: sandbox, sadeemVersion: 'test-0.0.0', now: FROZEN_NOW })
     expect(first.cache.hit).toBe(false)
 
-    const second = buildSpiCached({ root: sandbox, madarVersion: 'test-0.0.0', noCache: true, now: FROZEN_NOW })
+    const second = buildSpiCached({ root: sandbox, sadeemVersion: 'test-0.0.0', noCache: true, now: FROZEN_NOW })
     expect(second.cache.hit).toBe(false)
     expect(second.cache.reason).toBe('cache-disabled')
 
     // A third call WITHOUT noCache should still hit the cache from the first build.
-    const third = buildSpiCached({ root: sandbox, madarVersion: 'test-0.0.0', now: FROZEN_NOW })
+    const third = buildSpiCached({ root: sandbox, sadeemVersion: 'test-0.0.0', now: FROZEN_NOW })
     expect(third.cache.hit).toBe(true)
   })
 
   it('clearSpiCache removes persisted artifacts', () => {
     writeFile(sandbox, 'src/foo.ts', 'export function foo(): number { return 1 }\n')
 
-    buildSpiCached({ root: sandbox, madarVersion: 'test-0.0.0', now: FROZEN_NOW })
+    buildSpiCached({ root: sandbox, sadeemVersion: 'test-0.0.0', now: FROZEN_NOW })
     expect(clearSpiCache(sandbox)).toBe(true)
 
     // A subsequent call should rebuild (no-cache state).
-    const reBuild = buildSpiCached({ root: sandbox, madarVersion: 'test-0.0.0', now: FROZEN_NOW })
+    const reBuild = buildSpiCached({ root: sandbox, sadeemVersion: 'test-0.0.0', now: FROZEN_NOW })
     expect(reBuild.cache.hit).toBe(false)
   })
 
@@ -129,13 +129,13 @@ describe('buildSpiCached (#77)', () => {
     const captured: Array<{ hit: boolean; reason: string }> = []
     buildSpiCached({
       root: sandbox,
-      madarVersion: 'test-0.0.0',
+      sadeemVersion: 'test-0.0.0',
       now: FROZEN_NOW,
       onCacheLookup: (stats) => captured.push({ hit: stats.hit, reason: stats.reason }),
     })
     buildSpiCached({
       root: sandbox,
-      madarVersion: 'test-0.0.0',
+      sadeemVersion: 'test-0.0.0',
       now: FROZEN_NOW,
       onCacheLookup: (stats) => captured.push({ hit: stats.hit, reason: stats.reason }),
     })
@@ -152,9 +152,9 @@ describe('buildSpiCached (#77)', () => {
       'export function bar(): number { return foo() }',
     ].join('\n') + '\n')
 
-    const fresh = buildSpiCached({ root: sandbox, madarVersion: 'test-0.0.0', noCache: true, now: FROZEN_NOW })
-    const cached = buildSpiCached({ root: sandbox, madarVersion: 'test-0.0.0', now: FROZEN_NOW })  // populates cache
-    const hit = buildSpiCached({ root: sandbox, madarVersion: 'test-0.0.0', now: FROZEN_NOW })
+    const fresh = buildSpiCached({ root: sandbox, sadeemVersion: 'test-0.0.0', noCache: true, now: FROZEN_NOW })
+    const cached = buildSpiCached({ root: sandbox, sadeemVersion: 'test-0.0.0', now: FROZEN_NOW })  // populates cache
+    const hit = buildSpiCached({ root: sandbox, sadeemVersion: 'test-0.0.0', now: FROZEN_NOW })
 
     expect(hit.cache.hit).toBe(true)
     expect(hit.spi.files.length).toBe(fresh.spi.files.length)
@@ -166,12 +166,12 @@ describe('buildSpiCached (#77)', () => {
 
   it('handles a corrupt cache index gracefully', () => {
     writeFile(sandbox, 'src/foo.ts', 'export function foo(): number { return 1 }\n')
-    buildSpiCached({ root: sandbox, madarVersion: 'test-0.0.0', now: FROZEN_NOW })
+    buildSpiCached({ root: sandbox, sadeemVersion: 'test-0.0.0', now: FROZEN_NOW })
 
     // Corrupt the cache index file.
     writeFile(sandbox, 'out/.spi-cache/index.json', '{ not valid json')
 
-    const reBuild = buildSpiCached({ root: sandbox, madarVersion: 'test-0.0.0', now: FROZEN_NOW })
+    const reBuild = buildSpiCached({ root: sandbox, sadeemVersion: 'test-0.0.0', now: FROZEN_NOW })
     expect(reBuild.cache.hit).toBe(false)
     expect(reBuild.spi.symbols.find((s) => s.name === 'foo')).toBeTruthy()
   })
@@ -180,13 +180,13 @@ describe('buildSpiCached (#77)', () => {
     writeFile(sandbox, 'src/foo.ts', 'export function foo(): number { return 1 }\n')
 
     const altCacheDir = join(sandbox, '.alt-cache')
-    buildSpiCached({ root: sandbox, madarVersion: 'test-0.0.0', cacheDir: altCacheDir, now: FROZEN_NOW })
+    buildSpiCached({ root: sandbox, sadeemVersion: 'test-0.0.0', cacheDir: altCacheDir, now: FROZEN_NOW })
 
-    const second = buildSpiCached({ root: sandbox, madarVersion: 'test-0.0.0', cacheDir: altCacheDir, now: FROZEN_NOW })
+    const second = buildSpiCached({ root: sandbox, sadeemVersion: 'test-0.0.0', cacheDir: altCacheDir, now: FROZEN_NOW })
     expect(second.cache.hit).toBe(true)
 
     // A call WITHOUT the override would look in the default location and miss.
-    const defaultPath = buildSpiCached({ root: sandbox, madarVersion: 'test-0.0.0', now: FROZEN_NOW })
+    const defaultPath = buildSpiCached({ root: sandbox, sadeemVersion: 'test-0.0.0', now: FROZEN_NOW })
     expect(defaultPath.cache.hit).toBe(false)
   })
 })

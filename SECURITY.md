@@ -34,7 +34,7 @@ Please avoid publishing exploit details until the maintainer has had a reasonabl
 
 ## Scope notes
 
-Because `madar` can ingest local files, documents, and URLs, reports involving:
+Because `sadeem` can ingest local files, documents, and URLs, reports involving:
 
 - unsafe path handling
 - unsafe URL fetching

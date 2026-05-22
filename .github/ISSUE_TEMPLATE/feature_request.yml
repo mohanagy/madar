@@ -19,7 +19,7 @@ body:
     id: proposal
     attributes:
       label: Proposed solution
-      description: What do you want madar to do?
+      description: What do you want sadeem to do?
     validations:
       required: true
 

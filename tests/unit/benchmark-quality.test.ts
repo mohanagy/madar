@@ -254,7 +254,7 @@ describe('retrieval quality benchmark', () => {
   })
 
   it('reports grounded match rate and query buckets alongside label metrics', () => {
-    const tempDir = mkdtempSync(join(tmpdir(), 'madar-benchmark-quality-'))
+    const tempDir = mkdtempSync(join(tmpdir(), 'sadeem-benchmark-quality-'))
     const routeFile = join(tempDir, 'auth-route.ts')
     writeFileSync(routeFile, ['export function AuthRoute() {', '  return true', '}'].join('\n'), 'utf8')
 
@@ -396,8 +396,8 @@ describe('retrieval quality benchmark', () => {
       'how does authentication work',
       'what is the database layer',
     ])
-    expect(executions.map((execution) => execution.mode)).toEqual(['madar', 'madar'])
-    expect(executions[0]?.command).toContain('madar-prompt.txt')
+    expect(executions.map((execution) => execution.mode)).toEqual(['sadeem', 'sadeem'])
+    expect(executions[0]?.command).toContain('sadeem-prompt.txt')
     expect(report.total_questions).toBe(2)
     expect(report.skipped_questions).toBe(1)
     expect(report.avg_recall).toBeGreaterThanOrEqual(0.9)
@@ -405,7 +405,7 @@ describe('retrieval quality benchmark', () => {
     expect(report.avg_tokens_used).toBe(250)
     expect(report.avg_total_tokens).toBe(285)
     expect(report.questions[0]?.usage?.provider).toBe('claude')
-    expect(report.questions[0]?.artifacts?.prompt).toContain('madar-prompt.txt')
+    expect(report.questions[0]?.artifacts?.prompt).toContain('sadeem-prompt.txt')
     expect(readFileSync(report.questions[0]!.artifacts!.answer, 'utf8')).toBe('Answer for how does authentication work\n')
 
     const output = formatQualityReport(report)

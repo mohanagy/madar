@@ -10,7 +10,7 @@ import { generateGraph } from '../../src/infrastructure/generate.js'
 import { binaryIngestSidecarPath } from '../../src/shared/binary-ingest-sidecar.js'
 
 function withTempDir(callback: (tempDir: string) => void): void {
-  const tempDir = mkdtempSync(join(tmpdir(), 'madar-watch-'))
+  const tempDir = mkdtempSync(join(tmpdir(), 'sadeem-watch-'))
   try {
     callback(tempDir)
   } finally {
@@ -187,7 +187,7 @@ describe('watch', () => {
           {
             source_url: 'https://example.com/podcast/episodes/1',
             captured_at: '2026-04-14T03:00:00Z',
-            contributor: 'madar',
+            contributor: 'sadeem',
           },
           null,
           2,
@@ -211,7 +211,7 @@ describe('watch', () => {
           {
             source_url: 'https://example.com/podcast/episodes/2',
             captured_at: '2026-04-14T03:05:00Z',
-            contributor: 'madar',
+            contributor: 'sadeem',
           },
           null,
           2,
@@ -250,7 +250,7 @@ describe('watch', () => {
           {
             source_url: 'https://example.com/podcast/episodes/1',
             captured_at: '2026-04-14T03:10:00Z',
-            contributor: 'madar',
+            contributor: 'sadeem',
           },
           null,
           2,
@@ -275,7 +275,7 @@ describe('watch', () => {
           {
             source_url: 'https://example.com/podcast/episodes/2',
             captured_at: '2026-04-14T03:15:00Z',
-            contributor: 'madar',
+            contributor: 'sadeem',
           },
           null,
           2,
@@ -388,7 +388,7 @@ describe('watch', () => {
 })
 
 async function withTempDirAsync(callback: (tempDir: string) => Promise<void>): Promise<void> {
-  const tempDir = mkdtempSync(join(tmpdir(), 'madar-watch-'))
+  const tempDir = mkdtempSync(join(tmpdir(), 'sadeem-watch-'))
   try {
     await callback(tempDir)
   } finally {

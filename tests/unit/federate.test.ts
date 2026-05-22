@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { federate } from '../../src/pipeline/federate.js'
 
 function withTempDir(fn: (dir: string) => void): void {
-  const dir = join(tmpdir(), `madar-federate-test-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+  const dir = join(tmpdir(), `sadeem-federate-test-${Date.now()}-${Math.random().toString(36).slice(2)}`)
   mkdirSync(dir, { recursive: true })
   try {
     fn(dir)

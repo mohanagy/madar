@@ -14,7 +14,7 @@ function makeGraph() {
 
 describe('export', () => {
   function withTempDir(callback: (tempDir: string) => void): void {
-    const tempDir = mkdtempSync(join(tmpdir(), 'madar-export-'))
+    const tempDir = mkdtempSync(join(tmpdir(), 'sadeem-export-'))
     try {
       callback(tempDir)
     } finally {

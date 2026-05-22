@@ -1,7 +1,7 @@
 import type { SkillInstallPlatform } from './install.js'
 
 /**
- * Built-in skill template generation for madar.
+ * Built-in skill template generation for sadeem.
  *
  * This module programmatically generates platform-specific `SKILL.md` content so the
  * npm package stays self-contained even when `assets/skills/` is not shipped. Package
@@ -9,12 +9,12 @@ import type { SkillInstallPlatform } from './install.js'
  */
 type PlatformKind = 'default' | 'gemini' | 'codex' | 'opencode' | 'aider' | 'claw' | 'droid' | 'trae' | 'windows'
 
-const CODE_BLOCK_START = '[[[MADAR_CODE_BLOCK_START]]]'
-const CODE_BLOCK_END = '[[[MADAR_CODE_BLOCK_END]]]'
-const CODE_SPAN_START = '[[[MADAR_CODE_SPAN_START]]]'
-const CODE_SPAN_END = '[[[MADAR_CODE_SPAN_END]]]'
-const SKILL_NAME = 'madar'
-const SKILL_COMMAND = '/madar'
+const CODE_BLOCK_START = '[[[SADEEM_CODE_BLOCK_START]]]'
+const CODE_BLOCK_END = '[[[SADEEM_CODE_BLOCK_END]]]'
+const CODE_SPAN_START = '[[[SADEEM_CODE_SPAN_START]]]'
+const CODE_SPAN_END = '[[[SADEEM_CODE_SPAN_END]]]'
+const SKILL_NAME = 'sadeem'
+const SKILL_COMMAND = '/sadeem'
 
 const PLATFORM_KIND_BY_INSTALL_PLATFORM: Record<SkillInstallPlatform, PlatformKind> = {
   claude: 'default',
@@ -139,12 +139,12 @@ function posixInstallStep(): string {
 
 ${CODE_BLOCK_START}bash
 command -v node >/dev/null 2>&1 || {
-  echo "[madar] Node.js is required for madar."
+  echo "[sadeem] Node.js is required for sadeem."
   exit 1
 }
-node dist/src/cli/bin.js --help >/dev/null 2>&1 || npx --yes madar --help >/dev/null 2>&1 || {
-  echo "[madar] madar CLI is not available in this environment."
-  echo "[madar] Install or build the TypeScript package before continuing."
+node dist/src/cli/bin.js --help >/dev/null 2>&1 || npx --yes sadeem --help >/dev/null 2>&1 || {
+  echo "[sadeem] sadeem CLI is not available in this environment."
+  echo "[sadeem] Install or build the TypeScript package before continuing."
   exit 1
 }
 mkdir -p out
@@ -158,12 +158,12 @@ function windowsInstallStep(): string {
   return `### Step 1 - Ensure the TypeScript CLI is available
 
 ${CODE_BLOCK_START}powershell
-npx --yes madar --help *> $null
+npx --yes sadeem --help *> $null
 if ($LASTEXITCODE -ne 0) {
   node dist/src/cli/bin.js --help *> $null
 }
 if ($LASTEXITCODE -ne 0) {
-  Write-Error "madar CLI is not available in this environment. Install or build the TypeScript package before continuing."
+  Write-Error "sadeem CLI is not available in this environment. Install or build the TypeScript package before continuing."
   exit 1
 }
 mkdir -p out
@@ -177,8 +177,8 @@ function detectStep(codeFence: 'bash' | 'powershell'): string {
   const targetPathDeclaration = codeFence === 'bash' ? 'TARGET_PATH="."' : '$TargetPath = "."'
   const availabilityCheck =
     codeFence === 'bash'
-      ? 'node dist/src/cli/bin.js --help >/dev/null 2>&1 || npx --yes madar --help >/dev/null 2>&1'
-      : 'npx --yes madar --help *> $null; if ($LASTEXITCODE -ne 0) { node dist/src/cli/bin.js --help *> $null }'
+      ? 'node dist/src/cli/bin.js --help >/dev/null 2>&1 || npx --yes sadeem --help >/dev/null 2>&1'
+      : 'npx --yes sadeem --help *> $null; if ($LASTEXITCODE -ne 0) { node dist/src/cli/bin.js --help *> $null }'
 
   return `### Step 2 - Detect files with the TypeScript implementation
 
@@ -261,7 +261,7 @@ Run Part A (AST) and Part B (semantic) in parallel whenever possible.
 
 #### Part A - Structural extraction for code files
 
-Use the deterministic extractor for code files and write the result to ${CODE_SPAN_START}.madar_ast.json${CODE_SPAN_END}.
+Use the deterministic extractor for code files and write the result to ${CODE_SPAN_START}.sadeem_ast.json${CODE_SPAN_END}.
 
 #### Part B - Semantic extraction
 
@@ -295,26 +295,26 @@ function codexProfileSection(kind: PlatformKind): string {
 
   return `## Codex CLI profile
 
-Use madar as a context-pack-first layer for Codex CLI. Before broad shell search, raw file reads, or ${CODE_SPAN_START}spawn_agent${CODE_SPAN_END} worker dispatch, generate or refresh the graph and compile the narrow task context:
+Use sadeem as a context-pack-first layer for Codex CLI. Before broad shell search, raw file reads, or ${CODE_SPAN_START}spawn_agent${CODE_SPAN_END} worker dispatch, generate or refresh the graph and compile the narrow task context:
 
 ${CODE_BLOCK_START}bash
-madar generate .
-madar pack "<task or question>" --task explain
+sadeem generate .
+sadeem pack "<task or question>" --task explain
 # Use --task review, --task debug, or --task impact when that better matches the work.
 ${CODE_BLOCK_END}
 
 Install or remove the always-on Codex project profile with:
 
 ${CODE_BLOCK_START}bash
-madar codex install
-madar codex uninstall
+sadeem codex install
+sadeem codex uninstall
 ${CODE_BLOCK_END}
 
 Manual verification:
-1. Run ${CODE_SPAN_START}madar generate .${CODE_SPAN_END}.
-2. Run ${CODE_SPAN_START}madar codex install${CODE_SPAN_END}.
-3. Confirm ${CODE_SPAN_START}AGENTS.md${CODE_SPAN_END} contains this context-pack-first rule and ${CODE_SPAN_START}.codex/hooks.json${CODE_SPAN_END} contains the madar hook.
-4. Run ${CODE_SPAN_START}madar codex uninstall${CODE_SPAN_END} and confirm unrelated AGENTS.md or hook content remains.
+1. Run ${CODE_SPAN_START}sadeem generate .${CODE_SPAN_END}.
+2. Run ${CODE_SPAN_START}sadeem codex install${CODE_SPAN_END}.
+3. Confirm ${CODE_SPAN_START}AGENTS.md${CODE_SPAN_END} contains this context-pack-first rule and ${CODE_SPAN_START}.codex/hooks.json${CODE_SPAN_END} contains the sadeem hook.
+4. Run ${CODE_SPAN_START}sadeem codex uninstall${CODE_SPAN_END} and confirm unrelated AGENTS.md or hook content remains.
 
 Codex limitations:
 - Automated tests do not require the Codex binary; they verify generated text and hook config.
@@ -387,8 +387,8 @@ function subcommandSection(kind: PlatformKind): string {
 - ${CODE_SPAN_START}${SKILL_COMMAND} --update${CODE_SPAN_END} — incremental re-extraction; skip semantic work when all changed files are code.
 - ${CODE_SPAN_START}${SKILL_COMMAND} --cluster-only${CODE_SPAN_END} — re-cluster an existing graph.
 - ${CODE_SPAN_START}${SKILL_COMMAND} --watch${CODE_SPAN_END} — supported code, docs, papers, images, local audio/video, and office documents trigger automatic rebuilds; manual refresh is only needed for unsupported future formats.
-- ${CODE_SPAN_START}madar hook install|uninstall|status${CODE_SPAN_END} — manage git hooks for rebuild reminders.
-- ${CODE_SPAN_START}madar claude install${CODE_SPAN_END} or the platform-specific installer — write always-on instructions to ${localConfigTarget}.
+- ${CODE_SPAN_START}sadeem hook install|uninstall|status${CODE_SPAN_END} — manage git hooks for rebuild reminders.
+- ${CODE_SPAN_START}sadeem claude install${CODE_SPAN_END} or the platform-specific installer — write always-on instructions to ${localConfigTarget}.
 `
 }
 
@@ -410,7 +410,7 @@ function windowsTroubleshooting(): string {
 ### PowerShell scrolling or ANSI issues
 
 If the terminal behaves oddly after a run:
-1. upgrade madar
+1. upgrade sadeem
 2. prefer Windows Terminal over the legacy console
 3. reopen the shell if ANSI output from graph libraries corrupted rendering
 `
