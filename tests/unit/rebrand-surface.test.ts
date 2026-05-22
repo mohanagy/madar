@@ -92,6 +92,9 @@ describe('rebrand surface', () => {
 
     expect(readme).not.toContain(LEGACY_BRAND)
     expect(readme).not.toContain(LEGACY_OUT_DIR)
+    expect(readme).not.toContain('## Credit')
+    expect(readme).not.toContain('Safi Shamsi')
+    expect(readme).not.toContain('original `madar`')
     expect(gettingStarted).not.toContain(LEGACY_BRAND)
     expect(gettingStarted).not.toContain(LEGACY_OUT_DIR)
     expect(releaseDoc).not.toContain(LEGACY_BRAND)

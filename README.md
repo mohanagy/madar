@@ -309,10 +309,6 @@ A specific shout-out to [@jamemackson](https://github.com/jamemackson) for [#54]
 
 ---
 
-## Credit
-
-madar is a Node/TypeScript implementation of the [original `madar`](https://github.com/safishamsi/madar) by [Safi Shamsi](https://github.com/safishamsi), adapted for local graph workflows and AI agent integration.
-
 ## License
 
 MIT. Use it, fork it, ship it.
