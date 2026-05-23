@@ -101,6 +101,44 @@ describe('context-pack-command', () => {
     }))
   })
 
+  it('defaults runtime-generation explain packs to slice-v1 retrieval', async () => {
+    const graph = buildRuntimeGenerationGraph()
+    const dependencies: ContextPackCommandDependencies = {
+      loadGraph: vi.fn().mockReturnValue(graph),
+      retrieveContext: vi.fn((currentGraph, options) => retrieveContext(currentGraph, options as never)),
+      compactRetrieveResult,
+      analyzePrImpact: vi.fn(),
+      compactPrImpactResult: vi.fn(),
+      analyzeImpact: vi.fn(),
+      compactImpactResult: vi.fn(),
+    }
+
+    const output = await runContextPackCommand({
+      prompt: 'How `POST /login` reaches persistence in the backend runtime pipeline',
+      budget: 1800,
+      task: 'explain',
+      graphPath: 'out/graph.json',
+    }, dependencies)
+
+    const payload = JSON.parse(output) as {
+      pack?: {
+        retrieval_strategy?: string
+        execution_slice?: {
+          status?: string
+        }
+      }
+    }
+
+    expect(dependencies.retrieveContext).toHaveBeenCalledWith(graph, {
+      question: 'How `POST /login` reaches persistence in the backend runtime pipeline',
+      budget: 1800,
+      taskIntent: 'explain',
+      retrievalStrategy: 'slice-v1',
+    })
+    expect(payload.pack?.retrieval_strategy).toBe('slice-v1')
+    expect(payload.pack?.execution_slice?.status).toBe('complete')
+  })
+
   it('normalizes sub-minimum explain budgets before retrieving', async () => {
     const graph = new KnowledgeGraph()
     const dependencies: ContextPackCommandDependencies = {

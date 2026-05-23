@@ -782,6 +782,7 @@ describe('compare runtime', () => {
     const retrieval = retrieveContext(graph, {
       question: 'how does login create a session',
       budget: 3000,
+      retrievalStrategy: 'slice-v1',
     })
 
     const explainPayload = JSON.parse(

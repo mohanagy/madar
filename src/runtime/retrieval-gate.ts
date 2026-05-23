@@ -124,7 +124,13 @@ export function classifyRetrievalLevel(input: RetrievalGateInput): RetrievalGate
     }
   }
 
-  const decision = decideLevel({ intent, hasPrDiff, hasStackTrace, mentions: detectedPaths.length + detectedSymbols.length })
+  const decision = decideLevel({
+    intent,
+    generationIntent,
+    hasPrDiff,
+    hasStackTrace,
+    mentions: detectedPaths.length + detectedSymbols.length,
+  })
   return {
     ...decision,
     skipped_retrieval: decision.level === 0,
@@ -135,11 +141,12 @@ export function classifyRetrievalLevel(input: RetrievalGateInput): RetrievalGate
 
 function decideLevel(opts: {
   intent: RetrievalIntent
+  generationIntent: RetrievalGenerationIntent
   hasPrDiff: boolean
   hasStackTrace: boolean
   mentions: number
 }): { level: RetrievalLevel; reason: string } {
-  const { intent, hasPrDiff, hasStackTrace, mentions } = opts
+  const { intent, generationIntent, hasPrDiff, hasStackTrace, mentions } = opts
 
   // Stack trace is strong evidence of a behavior-tracing question regardless
   // of intent classification.
@@ -151,6 +158,10 @@ function decideLevel(opts: {
   // questions about the change.
   if (hasPrDiff && (intent === 'review' || intent === 'impact' || intent === 'test')) {
     return { level: 5, reason: `PR diff present + ${intent} intent — full PR impact pack` }
+  }
+
+  if (generationIntent === 'runtime_generation' && (intent === 'unknown' || intent === 'explain')) {
+    return { level: 3, reason: 'runtime generation intent — behavior slice retrieval' }
   }
 
   switch (intent) {

@@ -185,6 +185,14 @@ describe('classifyRetrievalLevel — signal extraction', () => {
     expect(decision.signals.target_domain_hint).toBe('backend_runtime')
   })
 
+  it('escalates natural runtime-generation prompts to behavior-slice retrieval', () => {
+    const decision = classify({ prompt: 'How idea report is being generated' })
+    expect(decision.signals.generation_intent).toBe('runtime_generation')
+    expect(decision.signals.target_domain_hint).toBe('backend_runtime')
+    expect(decision.level).toBe(3)
+    expect(decision.reason).toMatch(/runtime generation|behavior slice/i)
+  })
+
   it('detects frontend display prompts separately from runtime generation prompts', () => {
     const decision = classify({ prompt: 'Where is the generated date displayed in the report footer?' })
     expect(decision.signals.generation_intent).toBe('display_rendering')
@@ -210,7 +218,7 @@ describe('classifyRetrievalLevel — exclusions and negation', () => {
     const signals = decision.signals as typeof decision.signals & { excluded_domains?: string[] }
 
     expect(decision.intent).toBe('explain')
-    expect(decision.level).toBe(1)
+    expect(decision.level).toBe(3)
     expect(signals.excluded_domains).toContain('test')
   })
 

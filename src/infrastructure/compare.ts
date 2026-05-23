@@ -10,6 +10,7 @@ import { CODE_EXTENSIONS, DOC_EXTENSIONS, MANIFEST_METADATA_KEY, OFFICE_EXTENSIO
 import { extractCompareBaselineNonCodeText } from '../pipeline/extract/non-code.js'
 import { loadBenchmarkQuestions } from './benchmark/questions.js'
 import { parsePromptRunnerJsonRecord, parsePromptRunnerOutput, type PromptRunnerUsage } from './prompt-runner.js'
+import { classifyRetrievalLevel } from '../runtime/retrieval-gate.js'
 import { compactRetrieveResult, retrieveContext, tokenizeLabel, type CompactRetrieveResult, type RetrieveResult } from '../runtime/retrieve.js'
 import { QUERY_TOKEN_ESTIMATOR, estimateQueryTokens, loadGraph } from '../runtime/serve.js'
 import { sidecarAwareFileFingerprint } from '../shared/binary-ingest-sidecar.js'
@@ -982,7 +983,12 @@ function retrieveCompareContext(graph: KnowledgeGraph, question: string, budget:
   const originalCwd = process.cwd()
   try {
     process.chdir(projectRoot)
-    const retrieval = retrieveContext(retrievalGraph, { question, budget: Math.max(budget, 200) })
+    const gate = classifyRetrievalLevel({ prompt: question })
+    const retrieval = retrieveContext(retrievalGraph, {
+      question,
+      budget: Math.max(budget, 200),
+      ...(gate.signals.generation_intent === 'runtime_generation' ? { retrievalStrategy: 'slice-v1' as const } : {}),
+    })
     for (const matchedNode of retrieval.matched_nodes) {
       matchedNode.source_file = originalSourceFiles.get(matchedNode.source_file) ?? matchedNode.source_file
     }

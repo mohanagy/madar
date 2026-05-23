@@ -194,6 +194,18 @@ function baseResponse(options: PackCliOptions, plan: TaskContextPlan, budget: nu
   }
 }
 
+function defaultExplainRetrievalStrategy(
+  prompt: string,
+): PackCliOptions['retrievalStrategy'] | undefined {
+  const gate = classifyRetrievalLevel({
+    prompt,
+  })
+
+  return gate.signals.generation_intent === 'runtime_generation'
+    ? 'slice-v1'
+    : undefined
+}
+
 export async function runContextPackCommand(
   options: PackCliOptions,
   dependencies: ContextPackCommandDependencies = DEFAULT_DEPENDENCIES,
@@ -258,12 +270,17 @@ export async function runContextPackCommand(
     })
   }
 
+  const effectiveExplainRetrievalStrategy =
+    options.retrievalStrategy ?? defaultExplainRetrievalStrategy(options.prompt)
+
   const retrieval = dependencies.retrieveContext(graph, {
     question: options.prompt,
     budget: plannerBudget,
     taskIntent: initialPlan.evidence.recipe_id,
     ...(options.retrievalLevel !== undefined ? { retrievalLevel: options.retrievalLevel } : {}),
-    ...(options.retrievalStrategy !== undefined ? { retrievalStrategy: options.retrievalStrategy } : {}),
+    ...(effectiveExplainRetrievalStrategy !== undefined
+      ? { retrievalStrategy: effectiveExplainRetrievalStrategy }
+      : {}),
   })
   return JSON.stringify({
     ...baseResponse(options, initialPlan, plannerBudget),
