@@ -11,6 +11,7 @@ import { CODE_EXTENSIONS, FileType, classifyFile, detect } from './detect.js'
 import { mergeExtractionFragments, resolveSourceNodeReferences } from './extract/combine.js'
 import { addPendingCall, addResolvedCalls, braceDelta, normalizeImportTarget, type PendingCall, type PendingCallInput } from './extract/call-resolution.js'
 import { resolveCrossFilePythonImports, resolveCrossFileRelativeJsImports, resolveJsxRendersProxies, resolvePythonFastApiSemantics } from './extract/cross-file.js'
+import { resolveGoSemantics } from './extract/go-cross-file.js'
 import { dispatchSingleFileExtraction, type ExtractionFragment, type ExtractorHandlerMap } from './extract/dispatch.js'
 import { applyJsFrameworkAdapters } from './extract/frameworks/core.js'
 import { extractGenericCode, normalizeTypeName } from './extract/generic.js'
@@ -32,7 +33,7 @@ import { createTreeSitterWasmParser, treeSitterWasmError, type TreeSitterNode } 
 
 export { _makeId } from './extract/core.js'
 
-export const EXTRACTOR_CACHE_VERSION = 63
+export const EXTRACTOR_CACHE_VERSION = 64
 const PYTHON_KEYWORDS = new Set(['if', 'elif', 'else', 'for', 'while', 'return', 'class', 'def', 'lambda', 'with', 'print', 'sum'])
 const GENERIC_CODE_EXTENSIONS = new Set(['.go', '.rs', '.java', '.kt', '.kts', '.scala', '.cs', '.c', '.cc', '.cpp', '.cxx', '.h', '.hpp', '.swift', '.php', '.zig'])
 const RUBY_KEYWORDS = new Set(['if', 'elsif', 'else', 'unless', 'while', 'until', 'return', 'super', 'yield', 'class', 'def'])
@@ -2267,14 +2268,28 @@ function extractGoTreeSitter(filePath: string): ExtractionFragment | null {
 
   const ensureOwnerNode = (ownerName: string, line: number): string => {
     const ownerId = _makeId(stem, ownerName)
-    addNode(nodes, seenIds, createNode(ownerId, ownerName, filePath, line))
+    addNode(
+      nodes,
+      seenIds,
+      {
+        ...createNode(ownerId, ownerName, filePath, line),
+        node_kind: 'class',
+      },
+    )
     addUniqueEdge(edges, seenStructuralEdges, createEdge(fileNodeId, ownerId, 'contains', filePath, line))
     return ownerId
   }
 
   const ensureMethodNode = (ownerId: string, methodName: string, line: number): string => {
     const methodId = _makeId(ownerId, methodName)
-    addNode(nodes, seenIds, createNode(methodId, `.${methodName}()`, filePath, line))
+    addNode(
+      nodes,
+      seenIds,
+      {
+        ...createNode(methodId, `.${methodName}()`, filePath, line),
+        node_kind: 'method',
+      },
+    )
     addUniqueEdge(edges, seenStructuralEdges, createEdge(ownerId, methodId, 'method', filePath, line))
     methodIdsByClass.set(`${ownerId}:${methodName.toLowerCase()}`, methodId)
     return methodId
@@ -2346,7 +2361,14 @@ function extractGoTreeSitter(filePath: string): ExtractionFragment | null {
         }
 
         const functionId = _makeId(stem, functionName)
-        addNode(nodes, seenIds, createNode(functionId, `${functionName}()`, filePath, node.startPosition.row + 1))
+        addNode(
+          nodes,
+          seenIds,
+          {
+            ...createNode(functionId, `${functionName}()`, filePath, node.startPosition.row + 1),
+            node_kind: 'function',
+          },
+        )
         addUniqueEdge(edges, seenStructuralEdges, createEdge(fileNodeId, functionId, 'contains', filePath, node.startPosition.row + 1))
 
         const bodyNode = node.childForFieldName('body')
@@ -3607,6 +3629,8 @@ export function extract(files: string[], options: ExtractOptions = {}): Extracti
   combined = options.contextNodes
     ? resolveCrossFileRelativeJsImports(files, combined, { contextNodes: options.contextNodes })
     : resolveCrossFileRelativeJsImports(files, combined)
+
+  combined = options.contextNodes ? resolveGoSemantics(files, combined, { contextNodes: options.contextNodes }) : resolveGoSemantics(files, combined)
 
   combined = resolveJsxRendersProxies(combined)
 
