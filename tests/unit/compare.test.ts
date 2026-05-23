@@ -862,6 +862,40 @@ describe('compare runtime', () => {
     }
   })
 
+  it('tells broad runtime-generation answers not to stop at the HTTP trigger when downstream generation core evidence exists', () => {
+    const pack = buildMadarPromptPack({
+      question: 'How idea report is being generated',
+      retrieval: {
+        question: 'How idea report is being generated',
+        token_count: 120,
+        matched_nodes: [],
+        relationships: [],
+        community_context: [],
+        graph_signals: {
+          god_nodes: [],
+          bridge_nodes: [],
+        },
+        retrieval_gate: {
+          level: 3,
+          reason: 'runtime generation intent — behavior slice retrieval',
+          skipped_retrieval: false,
+          intent: 'unknown',
+          signals: {
+            has_pr_diff: false,
+            has_stack_trace: false,
+            mentioned_paths: [],
+            mentioned_symbols: [],
+            generation_intent: 'runtime_generation',
+            target_domain_hint: 'backend_runtime',
+          },
+        },
+      },
+    })
+
+    expect(pack.prompt).toContain('Treat HTTP/controller entrypoints as trigger context, not the full answer, when downstream generation-core evidence is present.')
+    expect(pack.prompt).toContain('Follow planner, research, assembly, scoring, rendering, and persistence evidence before concluding the flow.')
+  })
+
   it('computes prompt token counts from the exact prompt text', () => {
     const graph = makeGraph()
     const corpusText = makeCorpusText()

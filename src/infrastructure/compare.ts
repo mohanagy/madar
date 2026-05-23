@@ -238,6 +238,25 @@ function timestampDirectoryName(date: Date): string {
   return iso.slice(0, 19).replace(/:/g, '-')
 }
 
+function promptWantsReportGenerationCore(prompt: string): boolean {
+  return /\b(?:report(?:\s+generation)?|generated\s+report|validation\s+report|final\s+report|assembly|assemble|synthesis|renderer|render|planner|research|metrics?|scor(?:e|ing)|quality(?:\s|-)?gate)\b/i.test(prompt)
+}
+
+function generationCoreInstructions(question: string, retrieval: RetrieveResult): string[] {
+  if (
+    retrieval.retrieval_gate?.signals.generation_intent !== 'runtime_generation'
+    || retrieval.retrieval_gate?.signals.target_domain_hint !== 'backend_runtime'
+    || !promptWantsReportGenerationCore(question)
+  ) {
+    return []
+  }
+
+  return [
+    'Treat HTTP/controller entrypoints as trigger context, not the full answer, when downstream generation-core evidence is present.',
+    'Follow planner, research, assembly, scoring, rendering, and persistence evidence before concluding the flow.',
+  ]
+}
+
 function summarizeExecTemplate(execTemplate: string): CompareExecCommandSummary {
   const placeholders = [...execTemplate.matchAll(EXEC_TEMPLATE_PLACEHOLDER_PATTERN)].map((match) => match[0])
 
@@ -1110,6 +1129,7 @@ export function buildMadarPromptPack(input: BuildMadarPromptPackInput): CompareP
     instructions: [
       'Answer the question using only the provided graph-guided retrieval output.',
       'If the retrieval does not contain the answer, say so.',
+      ...generationCoreInstructions(input.question, input.retrieval),
     ],
     stable_prefix_title: 'Retrieved graph context',
     stable_sections: [

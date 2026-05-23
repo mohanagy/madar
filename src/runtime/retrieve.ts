@@ -1270,6 +1270,10 @@ function promptWantsRuntimePipeline(question: string): boolean {
   return /\b(runtime|pipeline|service|orchestrator|job|agent|scoring|report(?: builder)?|persistence|repository|queue|worker)\b/i.test(question)
 }
 
+function promptWantsReportGenerationCore(question: string): boolean {
+  return /\b(?:report(?:\s+generation)?|generated\s+report|validation\s+report|final\s+report|assembly|assemble|synthesis|renderer|render|planner|research|metrics?|scor(?:e|ing)|quality(?:\s|-)?gate)\b/i.test(question)
+}
+
 function methodLikeLabel(label: string): boolean {
   return /(?:[.#:]|^\.)[A-Za-z_$][\w$]*\(?\)?$/u.test(label)
 }
@@ -1305,9 +1309,75 @@ function runtimeFlowRelation(relation: string): boolean {
   return relation === 'calls' || relation === 'enqueues_job'
 }
 
+function lowValueReportGenerationCompactNode(
+  node: {
+    label: string
+    source_file: string
+    node_kind?: string | undefined
+    framework_role?: string | undefined
+  },
+): boolean {
+  const lower = `${node.label} ${node.source_file} ${node.node_kind ?? ''} ${node.framework_role ?? ''}`.toLowerCase()
+  return lowValueExecutionStep({
+    label: node.label,
+    source_file: node.source_file,
+    ...(node.node_kind !== undefined ? { node_kind: node.node_kind } : {}),
+    ...(node.framework_role !== undefined ? { framework_role: node.framework_role } : {}),
+  })
+    || /\b(?:title|status|suggest|guard|auth|interceptor|refund|claim|cancel|signedurl|buildperspective|letsbuild|publish|delete)\b/.test(lower)
+    || /(?:^|[.#])(?:generatefallbacktitle|generatetitle|getstatusmessage|claimqueuedpipelinerun|releasequeuedpipelineclaim|releaseunusedcreditreservation|generatebuildperspective|generatesignedurl|generateletsbuild|publishidea|getidea|listideas|deleteidea|suggestimprovements)[A-Za-z_$\w]*\(?\)?$/i.test(node.label)
+}
+
+function reportGenerationCompactApplies(result: RetrieveResult): boolean {
+  if (
+    result.retrieval_strategy !== 'slice-v1'
+    || !promptWantsRuntimePipeline(result.question)
+    || !promptWantsReportGenerationCore(result.question)
+    || !result.slice
+    || promptExpectsPersistenceStep(result.question)
+  ) {
+    return false
+  }
+
+  if (result.slice.anchors.some((anchor) => anchor.reason === 'symbol mention' || anchor.reason === 'path mention')) {
+    return false
+  }
+
+  return result.slice.anchors.some((anchor) => anchor.reason === 'generation core heuristic')
+    || (result.execution_slice?.steps.length ?? 0) >= 3
+}
+
+function reportGenerationCompactPriority(
+  node: Pick<RetrieveMatchedNode, 'label' | 'source_file' | 'node_kind' | 'framework_role' | 'relevance_band'>,
+  executionStepLabels: ReadonlySet<string>,
+): number {
+  const lower = `${node.label} ${node.source_file} ${node.node_kind ?? ''} ${node.framework_role ?? ''}`.toLowerCase()
+  let value = 0
+
+  if (executionStepLabels.has(node.label)) value += 80
+  if (/\b(?:planner|plan\b|research|assembly|assemble|renderer|render|synth|quality(?:-| )gate|dispatchwave|dispatchdbsync|broadcastrunstarted|broadcastrunfailed|queue|job|worker|orchestrator|process|persist|save)\b/.test(lower)) value += 40
+  if (/\bscoremetrics\b/.test(lower)) value += 35
+  if (pipelineBridgeNode(node)) value += 20
+  if (node.relevance_band === 'direct') value += 5
+
+  if (
+    /(?:^|[.#])(?:generatescoringledger|generatesensitivityanalysis|generatesuggestednextsteps|scoremetricbatch|deduplicateevidencerefs|mapcompositetorecommendation|normalizemetric|parsejson)\(?\)?$/i.test(node.label)
+    || /\b(?:metrichumanprompt|fallbackmetric)\b/.test(lower)
+  ) {
+    value -= 35
+  }
+  if (lowValueReportGenerationCompactNode(node)) value -= 100
+
+  return value
+}
+
 function compactSlicePromotionApplies(result: RetrieveResult): boolean {
   if (result.retrieval_strategy !== 'slice-v1' || !promptWantsRuntimePipeline(result.question)) {
     return false
+  }
+
+  if (reportGenerationCompactApplies(result)) {
+    return true
   }
 
   return (result.slice?.anchors ?? []).some((anchor) =>
@@ -1329,6 +1399,82 @@ function structuralSlicePromotionApplies(
 function promotedSliceCompactNodeIds(result: RetrieveResult): string[] {
   if (!compactSlicePromotionApplies(result) || !result.slice) {
     return []
+  }
+
+  if (reportGenerationCompactApplies(result)) {
+    const matchedById = new Map(
+      result.matched_nodes
+        .map((node) => (typeof node.node_id === 'string' && node.node_id.length > 0 ? [node.node_id, node] as const : null))
+        .filter((entry): entry is readonly [string, RetrieveMatchedNode] => entry !== null),
+    )
+    const executionStepLabels = new Set<string>()
+    const promoted = new Set<string>()
+    const addPromoted = (nodeId: string | undefined): void => {
+      if (typeof nodeId !== 'string' || nodeId.length === 0) {
+        return
+      }
+      const node = matchedById.get(nodeId)
+      if (!node || supportingPolicyOrLoggerNode(node) || lowValueReportGenerationCompactNode(node)) {
+        return
+      }
+      promoted.add(nodeId)
+    }
+    const addPromotedByLabel = (label: string): void => {
+      for (const node of result.matched_nodes) {
+        if (node.label !== label) {
+          continue
+        }
+        addPromoted(node.node_id)
+      }
+    }
+
+    for (const anchor of result.slice.anchors) {
+      addPromoted(anchor.node_id)
+    }
+
+    for (const step of result.execution_slice?.steps ?? []) {
+      executionStepLabels.add(step.label)
+      addPromoted(step.node_id)
+      addPromotedByLabel(step.label)
+    }
+    for (const step of result.execution_slice?.primary_path?.steps ?? []) {
+      executionStepLabels.add(step.label)
+      addPromoted(step.node_id)
+      addPromotedByLabel(step.label)
+    }
+
+    for (const path of result.slice.selected_paths) {
+      if (!runtimeFlowRelation(path.relation)) {
+        continue
+      }
+
+      const fromNode = typeof path.from_id === 'string' ? matchedById.get(path.from_id) : undefined
+      const toNode = typeof path.to_id === 'string' ? matchedById.get(path.to_id) : undefined
+      if (fromNode && pipelineBridgeNode(fromNode)) {
+        addPromoted(path.from_id)
+      }
+      if (toNode && pipelineBridgeNode(toNode)) {
+        addPromoted(path.to_id)
+      }
+    }
+
+    return result.matched_nodes
+      .filter((node) => typeof node.node_id === 'string' && promoted.has(node.node_id))
+      .sort((left, right) => {
+        const priorityDelta = reportGenerationCompactPriority(right, executionStepLabels)
+          - reportGenerationCompactPriority(left, executionStepLabels)
+        if (priorityDelta !== 0) {
+          return priorityDelta
+        }
+        const leftPipeline = pipelineBridgeNode(left) ? 1 : 0
+        const rightPipeline = pipelineBridgeNode(right) ? 1 : 0
+        if (leftPipeline !== rightPipeline) {
+          return rightPipeline - leftPipeline
+        }
+        return right.match_score - left.match_score
+      })
+      .flatMap((node) => (typeof node.node_id === 'string' ? [node.node_id] : []))
+      .slice(0, 24)
   }
 
   const promoted = new Set<string>(
@@ -1368,6 +1514,82 @@ function promotedSliceCompactNodeIds(result: RetrieveResult): string[] {
     .slice(0, 24)
 }
 
+function promotedSliceCompactLabels(result: RetrieveResult): string[] {
+  if (!compactSlicePromotionApplies(result) || !result.slice) {
+    return []
+  }
+
+  if (reportGenerationCompactApplies(result)) {
+    const matchedById = new Map(
+    result.matched_nodes
+      .map((node) => (typeof node.node_id === 'string' && node.node_id.length > 0 ? [node.node_id, node] as const : null))
+      .filter((entry): entry is readonly [string, RetrieveMatchedNode] => entry !== null),
+    )
+    const representativeByLabel = new Map<string, RetrieveMatchedNode>()
+    for (const node of result.matched_nodes) {
+    if (!representativeByLabel.has(node.label)) {
+      representativeByLabel.set(node.label, node)
+    }
+    }
+
+    const executionStepLabels = new Set<string>()
+    const promotedLabels = new Set<string>()
+    const addPromotedLabel = (label: string | undefined, node?: RetrieveMatchedNode): void => {
+    if (typeof label !== 'string' || label.length === 0) {
+      return
+    }
+    const candidate = node ?? representativeByLabel.get(label)
+    if (!candidate || supportingPolicyOrLoggerNode(candidate) || lowValueReportGenerationCompactNode(candidate)) {
+      return
+    }
+    promotedLabels.add(label)
+    }
+
+    for (const anchor of result.slice.anchors) {
+    addPromotedLabel(anchor.label, typeof anchor.node_id === 'string' ? matchedById.get(anchor.node_id) : undefined)
+    }
+
+    for (const step of result.execution_slice?.steps ?? []) {
+    executionStepLabels.add(step.label)
+    addPromotedLabel(step.label, typeof step.node_id === 'string' ? matchedById.get(step.node_id) : undefined)
+    }
+    for (const step of result.execution_slice?.primary_path?.steps ?? []) {
+    executionStepLabels.add(step.label)
+    addPromotedLabel(step.label, typeof step.node_id === 'string' ? matchedById.get(step.node_id) : undefined)
+    }
+
+    for (const path of result.slice.selected_paths) {
+    if (!runtimeFlowRelation(path.relation)) {
+      continue
+    }
+
+    const fromNode = typeof path.from_id === 'string' ? matchedById.get(path.from_id) : representativeByLabel.get(path.from)
+    const toNode = typeof path.to_id === 'string' ? matchedById.get(path.to_id) : representativeByLabel.get(path.to)
+    if (fromNode && pipelineBridgeNode(fromNode)) {
+      addPromotedLabel(fromNode.label, fromNode)
+    }
+    if (toNode && pipelineBridgeNode(toNode)) {
+      addPromotedLabel(toNode.label, toNode)
+    }
+    }
+
+    return [...promotedLabels]
+    .sort((left, right) => {
+      const leftNode = representativeByLabel.get(left)
+      const rightNode = representativeByLabel.get(right)
+      const priorityDelta = (rightNode ? reportGenerationCompactPriority(rightNode, executionStepLabels) : 0)
+        - (leftNode ? reportGenerationCompactPriority(leftNode, executionStepLabels) : 0)
+      if (priorityDelta !== 0) {
+        return priorityDelta
+      }
+      return left.localeCompare(right)
+    })
+    .slice(0, 24)
+  }
+
+  return result.slice.anchors.map((anchor) => anchor.label)
+}
+
 function structuralSliceNodeIds(
   sliceMetadata: ContextPackSliceMetadata | undefined,
   orderedCandidates: readonly ScoredNode[],
@@ -1378,14 +1600,20 @@ function structuralSliceNodeIds(
   }
 
   const nodesById = new Map(orderedCandidates.map((node) => [node.id, node]))
-  const forwardRuntimeFlow = new Map<string, ContextPackSliceMetadata['selected_paths']>()
+  const runtimeFlowNeighbors = new Map<string, string[]>()
+  const addRuntimeFlowNeighbor = (fromId: string, toId: string): void => {
+    const current = runtimeFlowNeighbors.get(fromId) ?? []
+    if (!current.includes(toId)) {
+      current.push(toId)
+      runtimeFlowNeighbors.set(fromId, current)
+    }
+  }
   for (const path of sliceMetadata.selected_paths) {
-    if (path.direction !== 'forward' || !runtimeFlowRelation(path.relation) || typeof path.from_id !== 'string' || typeof path.to_id !== 'string') {
+    if (!runtimeFlowRelation(path.relation) || typeof path.from_id !== 'string' || typeof path.to_id !== 'string') {
       continue
     }
-    const current = forwardRuntimeFlow.get(path.from_id) ?? []
-    current.push(path)
-    forwardRuntimeFlow.set(path.from_id, current)
+    addRuntimeFlowNeighbor(path.from_id, path.to_id)
+    addRuntimeFlowNeighbor(path.to_id, path.from_id)
   }
 
   const structural = new Set<string>()
@@ -1405,8 +1633,8 @@ function structuralSliceNodeIds(
       continue
     }
 
-    for (const path of forwardRuntimeFlow.get(current.id) ?? []) {
-      const target = nodesById.get(path.to_id!)
+    for (const neighborId of runtimeFlowNeighbors.get(current.id) ?? []) {
+      const target = nodesById.get(neighborId)
       if (!target) {
         continue
       }
@@ -1416,9 +1644,9 @@ function structuralSliceNodeIds(
         structural.add(target.id)
       }
 
-      if (!seen.has(target.id)) {
-        seen.add(target.id)
-        queue.push({ id: target.id, depth: nextDepth })
+      if (!seen.has(neighborId)) {
+        seen.add(neighborId)
+        queue.push({ id: neighborId, depth: nextDepth })
       }
     }
   }
@@ -2768,9 +2996,10 @@ function buildRetrieveResultFromOrderedCandidates(
   const nodeCandidates: Array<ContextPackNodeCandidate<ContextPackNode>> = orderedCandidates.map((node) => {
     let builtEntry: RetrieveMatchedNode | undefined
     let tokenCost: number | undefined
-    const evidenceClass = structuralIds.has(node.id)
+    const baseEvidenceClass = retrieveEvidenceClassForBand(node.relevanceBand)
+    const evidenceClass = structuralIds.has(node.id) && !(promptExpectsPersistenceStep(options.question) && node.relevanceBand === 'direct')
       ? 'structural'
-      : retrieveEvidenceClassForBand(node.relevanceBand)
+      : baseEvidenceClass
     const graphSignal = retrieveGraphSignals.bridgeNodeIds.has(node.id)
       ? 'bridge'
       : retrieveGraphSignals.godNodeIds.has(node.id)
@@ -3618,10 +3847,12 @@ export function compactRetrieveResult(result: RetrieveResult): CompactRetrieveRe
   const fullPack = contextPackFromRetrieveResult(result)
   const executionSlice = compactExecutionSlice(result.execution_slice)
   const promotedSliceNodeIds = promotedSliceCompactNodeIds(result)
-  const compactPack = promotedSliceNodeIds.length > 0
+  const promotedSliceLabels = promotedSliceCompactLabels(result)
+  const compactPack = promotedSliceNodeIds.length > 0 || promotedSliceLabels.length > 0
     ? compactContextPack(fullPack, {
         kind: 'review',
         seed_node_ids: promotedSliceNodeIds,
+        seed_labels: promotedSliceLabels,
         max_supporting_nodes: 0,
       })
     : compactContextPack(fullPack, {

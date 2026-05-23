@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { build } from '../../src/pipeline/build.js'
 import { computeContextPackDiagnostics } from '../../src/runtime/context-pack-diagnostics.js'
-import { contextPackFromRetrieveResult, retrieveContext } from '../../src/runtime/retrieve.js'
+import { compactRetrieveResult, contextPackFromRetrieveResult, retrieveContext } from '../../src/runtime/retrieve.js'
 
 function buildProductionPipelineGraph() {
   return build(
@@ -100,6 +100,113 @@ function buildBidirectionalHubGraph() {
           { source: 'other_controller_a', target: 'auth_helper', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/export.controller.ts' },
           { source: 'other_controller_b', target: 'auth_helper', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/publish.controller.ts' },
           { source: 'other_worker', target: 'add_job', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/lets-build.worker.ts' },
+        ],
+      },
+    ],
+    { directed: true },
+  )
+}
+
+function buildBroadReportGenerationGraph() {
+  return build(
+    [
+      {
+        schema_version: 1,
+        nodes: [
+          { id: 'route', label: '.generateFromProblem()', file_type: 'code', source_file: '/src/ideas/idea-generation.controller.ts', source_location: 'L20', node_kind: 'method', framework: 'nestjs', framework_role: 'nest_route', community: 0 },
+          { id: 'create_idea', label: '.createIdea()', file_type: 'code', source_file: '/src/ideas/ideas.service.ts', source_location: 'L30', node_kind: 'method', framework_role: 'nest_provider', community: 0 },
+          { id: 'start_pipeline', label: '.startPipeline()', file_type: 'code', source_file: '/src/pipeline/pipeline-trigger.service.ts', source_location: 'L40', node_kind: 'method', framework_role: 'nest_provider', community: 1 },
+          { id: 'add_job', label: '.addJob()', file_type: 'code', source_file: '/src/pipeline/queue-registry.service.ts', source_location: 'L50', node_kind: 'method', framework_role: 'queue', community: 1 },
+          { id: 'title_generation', label: '.generateTitle()', file_type: 'code', source_file: '/src/ideas/title-generation.service.ts', source_location: 'L60', node_kind: 'method', framework_role: 'nest_provider', community: 1 },
+          { id: 'status_endpoint', label: '.getIdeaStatus()', file_type: 'code', source_file: '/src/ideas/idea-status.controller.ts', source_location: 'L70', node_kind: 'method', framework_role: 'nest_route', community: 1 },
+          { id: 'planner', label: '.plan()', file_type: 'code', source_file: '/src/pipeline/planner/planner.service.ts', source_location: 'L80', node_kind: 'method', framework_role: 'worker', community: 2 },
+          { id: 'section_worker', label: '.processSection()', file_type: 'code', source_file: '/src/pipeline/research/section-research.worker.ts', source_location: 'L90', node_kind: 'method', framework_role: 'worker', community: 2 },
+          { id: 'research', label: '.search()', file_type: 'code', source_file: '/src/pipeline/research/research-agent.service.ts', source_location: 'L100', node_kind: 'method', framework_role: 'service', community: 2 },
+          { id: 'assembly', label: '.assembleReport()', file_type: 'code', source_file: '/src/pipeline/assembly/assembly.service.ts', source_location: 'L110', node_kind: 'method', framework_role: 'service', community: 3 },
+          { id: 'scoring', label: '.score()', file_type: 'code', source_file: '/src/pipeline/assembly/metrics-scoring.service.ts', source_location: 'L120', node_kind: 'method', framework_role: 'service', community: 3 },
+          { id: 'quality_gate', label: '.validateReport()', file_type: 'code', source_file: '/src/pipeline/assembly/report-quality-gate.service.ts', source_location: 'L130', node_kind: 'method', framework_role: 'service', community: 3 },
+          { id: 'renderer', label: '.renderFinalReport()', file_type: 'code', source_file: '/src/pipeline/assembly/deterministic-final-report.renderer.ts', source_location: 'L140', node_kind: 'method', framework_role: 'service', community: 3 },
+          { id: 'persist', label: '.saveStructuredReport()', file_type: 'code', source_file: '/src/pipeline/persistence/db-sync.worker.ts', source_location: 'L150', node_kind: 'method', framework_role: 'repository', community: 4 },
+        ],
+        edges: [
+          { source: 'route', target: 'create_idea', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/idea-generation.controller.ts' },
+          { source: 'route', target: 'start_pipeline', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/idea-generation.controller.ts' },
+          { source: 'route', target: 'title_generation', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/idea-generation.controller.ts' },
+          { source: 'start_pipeline', target: 'add_job', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/pipeline-trigger.service.ts' },
+          { source: 'planner', target: 'section_worker', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/planner/planner.service.ts' },
+          { source: 'section_worker', target: 'research', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/research/section-research.worker.ts' },
+          { source: 'section_worker', target: 'assembly', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/research/section-research.worker.ts' },
+          { source: 'assembly', target: 'scoring', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/assembly/assembly.service.ts' },
+          { source: 'assembly', target: 'quality_gate', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/assembly/assembly.service.ts' },
+          { source: 'assembly', target: 'renderer', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/assembly/assembly.service.ts' },
+          { source: 'assembly', target: 'persist', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/assembly/assembly.service.ts' },
+          { source: 'status_endpoint', target: 'route', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/idea-status.controller.ts' },
+        ],
+      },
+    ],
+    { directed: true },
+  )
+}
+
+function buildReportGenerationLeafHelperGraph() {
+  return build(
+    [
+      {
+        schema_version: 1,
+        nodes: [
+          { id: 'route', label: '.generateFromProblem()', file_type: 'code', source_file: '/src/ideas/idea-generation.controller.ts', source_location: 'L20', node_kind: 'method', framework: 'nestjs', framework_role: 'nest_route', community: 0 },
+          { id: 'start_pipeline', label: '.startPipeline()', file_type: 'code', source_file: '/src/pipeline/pipeline-trigger.service.ts', source_location: 'L40', node_kind: 'method', framework_role: 'service', community: 1 },
+          { id: 'planner', label: '.plan()', file_type: 'code', source_file: '/src/pipeline/planner/planner.service.ts', source_location: 'L50', node_kind: 'method', framework_role: 'worker', community: 1 },
+          { id: 'assembly', label: '.assembleReport()', file_type: 'code', source_file: '/src/pipeline/assembly/assembly.service.ts', source_location: 'L60', node_kind: 'method', framework_role: 'service', community: 2 },
+          { id: 'score_report', label: '.scoreReport()', file_type: 'code', source_file: '/src/pipeline/assembly/metrics-scoring.service.ts', source_location: 'L70', node_kind: 'method', framework_role: 'service', community: 2 },
+          { id: 'generate_scoring_ledger', label: '.generateScoringLedger()', file_type: 'code', source_file: '/src/pipeline/assembly/metrics-scoring.service.ts', source_location: 'L80', node_kind: 'method', framework_role: 'service', community: 2 },
+          { id: 'generate_sensitivity_analysis', label: '.generateSensitivityAnalysis()', file_type: 'code', source_file: '/src/pipeline/assembly/metrics-scoring.service.ts', source_location: 'L90', node_kind: 'method', framework_role: 'service', community: 2 },
+          { id: 'persist', label: '.saveStructuredReport()', file_type: 'code', source_file: '/src/pipeline/persistence/db-sync.worker.ts', source_location: 'L100', node_kind: 'method', framework_role: 'repository', community: 3 },
+          { id: 'title_generation', label: '.generateTitle()', file_type: 'code', source_file: '/src/ideas/title-generation.service.ts', source_location: 'L110', node_kind: 'method', framework_role: 'service', community: 4 },
+        ],
+        edges: [
+          { source: 'route', target: 'start_pipeline', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/idea-generation.controller.ts' },
+          { source: 'start_pipeline', target: 'planner', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/pipeline-trigger.service.ts' },
+          { source: 'planner', target: 'assembly', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/planner/planner.service.ts' },
+          { source: 'assembly', target: 'score_report', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/assembly/assembly.service.ts' },
+          { source: 'score_report', target: 'generate_scoring_ledger', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/assembly/metrics-scoring.service.ts' },
+          { source: 'score_report', target: 'generate_sensitivity_analysis', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/assembly/metrics-scoring.service.ts' },
+          { source: 'assembly', target: 'persist', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/assembly/assembly.service.ts' },
+          { source: 'route', target: 'title_generation', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/idea-generation.controller.ts' },
+        ],
+      },
+    ],
+    { directed: true },
+  )
+}
+
+function buildReverseFlowReportGenerationGraph() {
+  return build(
+    [
+      {
+        schema_version: 1,
+        nodes: [
+          { id: 'route', label: '.generateFromProblem()', file_type: 'code', source_file: '/src/ideas/idea-generation.controller.ts', source_location: 'L20', node_kind: 'method', framework: 'nestjs', framework_role: 'nest_route', community: 0 },
+          { id: 'start_pipeline', label: '.startPipeline()', file_type: 'code', source_file: '/src/pipeline/pipeline-trigger.service.ts', source_location: 'L30', node_kind: 'method', framework_role: 'service', community: 1 },
+          { id: 'add_job', label: '.addJob()', file_type: 'code', source_file: '/src/pipeline/queue-registry.service.ts', source_location: 'L40', node_kind: 'method', framework_role: 'queue', community: 1 },
+          { id: 'process', label: '.process()', file_type: 'code', source_file: '/src/pipeline/orchestrator.worker.ts', source_location: 'L50', node_kind: 'method', framework_role: 'worker', community: 2 },
+          { id: 'assemble_report', label: '.assembleReport()', file_type: 'code', source_file: '/src/pipeline/assembly/assembly.service.ts', source_location: 'L60', node_kind: 'method', framework_role: 'service', community: 2 },
+          { id: 'score_metrics', label: '.scoreMetrics()', file_type: 'code', source_file: '/src/pipeline/assembly/metrics-scoring.service.ts', source_location: 'L70', node_kind: 'method', framework_role: 'service', community: 2 },
+          { id: 'generate_scoring_ledger', label: '.generateScoringLedger()', file_type: 'code', source_file: '/src/pipeline/assembly/metrics-scoring.service.ts', source_location: 'L80', node_kind: 'method', framework_role: 'service', community: 2 },
+          { id: 'persist', label: '.saveStructuredReport()', file_type: 'code', source_file: '/src/pipeline/persistence/db-sync.worker.ts', source_location: 'L90', node_kind: 'method', framework_role: 'repository', community: 3 },
+          { id: 'status', label: '.getStatusMessage()', file_type: 'code', source_file: '/src/ideas/idea-generation.controller.ts', source_location: 'L100', node_kind: 'method', framework_role: 'service', community: 4 },
+          { id: 'title_generation', label: '.generateTitle()', file_type: 'code', source_file: '/src/ideas/title-generation.service.ts', source_location: 'L110', node_kind: 'method', framework_role: 'service', community: 4 },
+        ],
+        edges: [
+          { source: 'start_pipeline', target: 'route', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/pipeline-trigger.service.ts' },
+          { source: 'add_job', target: 'start_pipeline', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/queue-registry.service.ts' },
+          { source: 'process', target: 'add_job', relation: 'enqueues_job', confidence: 'EXTRACTED', source_file: '/src/pipeline/orchestrator.worker.ts' },
+          { source: 'assemble_report', target: 'process', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/assembly/assembly.service.ts' },
+          { source: 'score_metrics', target: 'assemble_report', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/assembly/metrics-scoring.service.ts' },
+          { source: 'generate_scoring_ledger', target: 'score_metrics', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/assembly/metrics-scoring.service.ts' },
+          { source: 'persist', target: 'assemble_report', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/persistence/db-sync.worker.ts' },
+          { source: 'status', target: 'route', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/idea-generation.controller.ts' },
+          { source: 'title_generation', target: 'route', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/title-generation.service.ts' },
         ],
       },
     ],
@@ -236,5 +343,114 @@ describe('retrieveContext production retrieval regressions', () => {
     for (const path of forbiddenPaths) {
       expect(result.slice?.selected_paths).not.toContainEqual(expect.objectContaining(path))
     }
+  })
+
+  it('adds a semantic generation-core anchor for broad report-generation prompts instead of centering only the HTTP trigger', () => {
+    const result = retrieveContext(buildBroadReportGenerationGraph(), {
+      question: 'How idea report is being generated',
+      budget: 4000,
+      retrievalLevel: 4,
+      retrievalStrategy: 'slice-v1',
+    })
+
+    expect(result.slice?.anchors.map((anchor) => anchor.label)).toEqual(expect.arrayContaining([
+      '.generateFromProblem()',
+    ]))
+    expect(
+      result.slice?.anchors.some((anchor) => [
+        '.plan()',
+        '.processSection()',
+        '.search()',
+        '.assembleReport()',
+        '.score()',
+        '.validateReport()',
+        '.renderFinalReport()',
+        '.saveStructuredReport()',
+      ].includes(anchor.label)),
+    ).toBe(true)
+    expect(result.matched_nodes.map((node) => node.label)).toEqual(expect.arrayContaining([
+      '.plan()',
+      '.processSection()',
+      '.search()',
+      '.assembleReport()',
+      '.score()',
+      '.validateReport()',
+      '.renderFinalReport()',
+      '.saveStructuredReport()',
+    ]))
+  })
+
+  it('prefers central report-generation nodes over leaf helper generators for broad report-generation prompts', () => {
+    const result = retrieveContext(buildReportGenerationLeafHelperGraph(), {
+      question: 'How idea report is being generated',
+      budget: 4000,
+      retrievalLevel: 4,
+      retrievalStrategy: 'slice-v1',
+    })
+
+    const anchorLabels = result.slice?.anchors.map((anchor) => anchor.label) ?? []
+    expect(anchorLabels).toEqual(expect.arrayContaining([
+      '.generateFromProblem()',
+    ]))
+    expect(anchorLabels).toEqual(expect.arrayContaining([
+      expect.stringMatching(/^\.plan\(\)$|^\.assembleReport\(\)$|^\.scoreReport\(\)$/),
+    ]))
+    expect(anchorLabels).not.toEqual(expect.arrayContaining([
+      '.generateScoringLedger()',
+      '.generateSensitivityAnalysis()',
+      '.generateTitle()',
+    ]))
+  })
+
+  it('keeps backward-selected runtime flow as structural evidence for broad report-generation prompts', () => {
+    const result = retrieveContext(buildReverseFlowReportGenerationGraph(), {
+      question: 'How idea report is being generated',
+      budget: 4000,
+      retrievalLevel: 4,
+      retrievalStrategy: 'slice-v1',
+    })
+
+    expect(result.slice?.selected_paths).toEqual(expect.arrayContaining([
+      expect.objectContaining({ from: '.startPipeline()', to: '.generateFromProblem()', relation: 'calls' }),
+      expect.objectContaining({ from: '.addJob()', to: '.startPipeline()', relation: 'calls' }),
+      expect.objectContaining({ from: '.process()', to: '.addJob()', relation: 'enqueues_job' }),
+      expect.objectContaining({ from: '.scoreMetrics()', to: '.assembleReport()', relation: 'calls' }),
+    ]))
+
+    const matched = result.matched_nodes.map((node) => ({ label: node.label, evidence_class: node.evidence_class }))
+    expect(matched).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: '.startPipeline()', evidence_class: 'structural' }),
+      expect.objectContaining({ label: '.addJob()', evidence_class: 'structural' }),
+      expect.objectContaining({ label: '.process()', evidence_class: 'structural' }),
+      expect.objectContaining({ label: '.assembleReport()', evidence_class: 'structural' }),
+      expect.objectContaining({ label: '.scoreMetrics()', evidence_class: 'structural' }),
+    ]))
+    expect(matched).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: '.getStatusMessage()', evidence_class: 'structural' }),
+      expect.objectContaining({ label: '.generateTitle()', evidence_class: 'structural' }),
+    ]))
+  })
+
+  it('compacts broad report-generation packs around the execution flow instead of status/title noise', () => {
+    const compact = compactRetrieveResult(retrieveContext(buildReverseFlowReportGenerationGraph(), {
+      question: 'How idea report is being generated',
+      budget: 4000,
+      retrievalLevel: 4,
+      retrievalStrategy: 'slice-v1',
+    }))
+
+    const labels = compact.matched_nodes.map((node) => node.label)
+    expect(labels).toEqual(expect.arrayContaining([
+      '.generateFromProblem()',
+      '.startPipeline()',
+      '.addJob()',
+      '.process()',
+      '.assembleReport()',
+      '.scoreMetrics()',
+    ]))
+    expect(labels).not.toEqual(expect.arrayContaining([
+      '.getStatusMessage()',
+      '.generateTitle()',
+    ]))
   })
 })
