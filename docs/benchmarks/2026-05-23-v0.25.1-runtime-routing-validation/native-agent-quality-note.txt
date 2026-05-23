@@ -1,0 +1,7 @@
+Prompt: How idea report is being generated
+
+Manual answer-quality note from the 2026-05-23 single native-agent review:
+
+- baseline answer was preferred overall
+- madar answer still surfaced the main pipeline concepts, but it was not judged the better answer for this prompt
+- treat this run as a mixed result: lower cost, worse latency, worse total input tokens, and no manual quality win

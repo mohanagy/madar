@@ -1,0 +1,1577 @@
+{
+  "generated_at": "2026-05-23T23:42:35.666Z",
+  "graph_path": "<workspace-root>/out/graph.json",
+  "workspace_root": "<workspace-root>",
+  "budget": 4000,
+  "summary": {
+    "total_prompts": 13,
+    "passed_prompts": 13,
+    "failed_prompts": []
+  },
+  "prompts": [
+    {
+      "id": "runtime-report-generated",
+      "class": "positive-backend-runtime-generation",
+      "question": "How idea report is being generated",
+      "expected_domain": "backend_runtime",
+      "retrieval_gate": {
+        "intent": "unknown",
+        "generation_intent": "runtime_generation",
+        "target_domain_hint": "backend_runtime"
+      },
+      "retrieval_strategy": "slice-v1",
+      "pack_token_count": 1033,
+      "matched_nodes": [
+        {
+          "label": ".generateFromProblem()",
+          "source_file": "backend/src/modules/ideas/interface/http/idea-generation.controller.ts"
+        },
+        {
+          "label": ".generateScoringLedger()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": ".generateSensitivityAnalysis()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": ".startPipeline()",
+          "source_file": "backend/src/modules/pipeline/api/pipeline-trigger.service.ts"
+        },
+        {
+          "label": ".scoreMetrics()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": ".startPipeline()",
+          "source_file": "backend/src/modules/pipeline/api/pipeline.controller.ts"
+        },
+        {
+          "label": ".addJob()",
+          "source_file": "backend/src/modules/pipeline/queues/queue-registry.service.ts"
+        },
+        {
+          "label": ".enrichCompetitor()",
+          "source_file": "backend/src/modules/ideas/interface/http/idea-research.controller.ts"
+        },
+        {
+          "label": ".retrySection()",
+          "source_file": "backend/src/modules/ideas/interface/http/idea-research.controller.ts"
+        },
+        {
+          "label": ".generateSuggestedNextSteps()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": "buildFallbackMetric()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": ".deduplicateEvidenceRefs()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": "buildMetricHumanPrompt()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.prompts.ts"
+        },
+        {
+          "label": ".hasCollapsedMetricValues()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": ".isMetricDecisionGrade()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": "sanitizeJobId()",
+          "source_file": "backend/src/modules/pipeline/queues/queue-registry.service.ts"
+        },
+        {
+          "label": ".handleQualityGateFailure()",
+          "source_file": "backend/src/modules/pipeline/assembly/assembly.service.ts"
+        },
+        {
+          "label": ".checkAndDispatchNext()",
+          "source_file": "backend/src/modules/pipeline/research/research-agent.service.ts"
+        },
+        {
+          "label": ".dispatchWave()",
+          "source_file": "backend/src/modules/pipeline/planner/planner.service.ts"
+        },
+        {
+          "label": ".broadcastEvent()",
+          "source_file": "backend/src/modules/pipeline/research/research-agent.service.ts"
+        },
+        {
+          "label": ".broadcastRunFailed()",
+          "source_file": "backend/src/modules/pipeline/planner/orchestrator.worker.ts"
+        },
+        {
+          "label": ".syncFailedStatus()",
+          "source_file": "backend/src/modules/pipeline/planner/orchestrator.worker.ts"
+        },
+        {
+          "label": ".broadcastEvent()",
+          "source_file": "backend/src/modules/pipeline/assembly/assembly-broadcaster.service.ts"
+        },
+        {
+          "label": ".broadcastSectionEvent()",
+          "source_file": "backend/src/modules/pipeline/assembly/assembly-broadcaster.service.ts"
+        },
+        {
+          "label": ".broadcastRunStarted()",
+          "source_file": "backend/src/modules/pipeline/planner/planner.service.ts"
+        },
+        {
+          "label": ".dispatchDbSync()",
+          "source_file": "backend/src/modules/pipeline/assembly/assembly.service.ts"
+        },
+        {
+          "label": ".dispatchDbSync()",
+          "source_file": "backend/src/modules/pipeline/research/research-agent.service.ts"
+        }
+      ],
+      "relationship_count": 21,
+      "has_execution_slice": true,
+      "execution_slice_status": "complete",
+      "execution_slice_phase_coverage": {
+        "expected": [
+          "queue",
+          "worker"
+        ],
+        "observed": [
+          "controller",
+          "service",
+          "queue",
+          "worker"
+        ],
+        "missing": []
+      },
+      "execution_slice_steps": [
+        ".generateFromProblem()",
+        ".startPipeline()",
+        ".addJob()",
+        ".broadcastRunFailed()",
+        ".process()"
+      ],
+      "routing_judgment": {
+        "checks": {
+          "generation_intent": true,
+          "target_domain_hint": true,
+          "retrieval_strategy": true,
+          "execution_slice": true
+        },
+        "passed": true,
+        "failures": [],
+        "actual_domain": "backend_runtime"
+      }
+    },
+    {
+      "id": "runtime-report-getting-generated",
+      "class": "positive-backend-runtime-generation",
+      "question": "Explain how idea report is getting generated",
+      "expected_domain": "backend_runtime",
+      "retrieval_gate": {
+        "intent": "explain",
+        "generation_intent": "runtime_generation",
+        "target_domain_hint": "backend_runtime"
+      },
+      "retrieval_strategy": "slice-v1",
+      "pack_token_count": 1033,
+      "matched_nodes": [
+        {
+          "label": ".generateFromProblem()",
+          "source_file": "backend/src/modules/ideas/interface/http/idea-generation.controller.ts"
+        },
+        {
+          "label": ".generateScoringLedger()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": ".generateSensitivityAnalysis()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": ".startPipeline()",
+          "source_file": "backend/src/modules/pipeline/api/pipeline-trigger.service.ts"
+        },
+        {
+          "label": ".scoreMetrics()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": ".startPipeline()",
+          "source_file": "backend/src/modules/pipeline/api/pipeline.controller.ts"
+        },
+        {
+          "label": ".addJob()",
+          "source_file": "backend/src/modules/pipeline/queues/queue-registry.service.ts"
+        },
+        {
+          "label": ".enrichCompetitor()",
+          "source_file": "backend/src/modules/ideas/interface/http/idea-research.controller.ts"
+        },
+        {
+          "label": ".retrySection()",
+          "source_file": "backend/src/modules/ideas/interface/http/idea-research.controller.ts"
+        },
+        {
+          "label": ".generateSuggestedNextSteps()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": "buildFallbackMetric()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": ".deduplicateEvidenceRefs()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": "buildMetricHumanPrompt()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.prompts.ts"
+        },
+        {
+          "label": ".hasCollapsedMetricValues()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": ".isMetricDecisionGrade()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": "sanitizeJobId()",
+          "source_file": "backend/src/modules/pipeline/queues/queue-registry.service.ts"
+        },
+        {
+          "label": ".handleQualityGateFailure()",
+          "source_file": "backend/src/modules/pipeline/assembly/assembly.service.ts"
+        },
+        {
+          "label": ".checkAndDispatchNext()",
+          "source_file": "backend/src/modules/pipeline/research/research-agent.service.ts"
+        },
+        {
+          "label": ".dispatchWave()",
+          "source_file": "backend/src/modules/pipeline/planner/planner.service.ts"
+        },
+        {
+          "label": ".broadcastEvent()",
+          "source_file": "backend/src/modules/pipeline/research/research-agent.service.ts"
+        },
+        {
+          "label": ".broadcastRunFailed()",
+          "source_file": "backend/src/modules/pipeline/planner/orchestrator.worker.ts"
+        },
+        {
+          "label": ".syncFailedStatus()",
+          "source_file": "backend/src/modules/pipeline/planner/orchestrator.worker.ts"
+        },
+        {
+          "label": ".broadcastEvent()",
+          "source_file": "backend/src/modules/pipeline/assembly/assembly-broadcaster.service.ts"
+        },
+        {
+          "label": ".broadcastSectionEvent()",
+          "source_file": "backend/src/modules/pipeline/assembly/assembly-broadcaster.service.ts"
+        },
+        {
+          "label": ".broadcastRunStarted()",
+          "source_file": "backend/src/modules/pipeline/planner/planner.service.ts"
+        },
+        {
+          "label": ".dispatchDbSync()",
+          "source_file": "backend/src/modules/pipeline/assembly/assembly.service.ts"
+        },
+        {
+          "label": ".dispatchDbSync()",
+          "source_file": "backend/src/modules/pipeline/research/research-agent.service.ts"
+        }
+      ],
+      "relationship_count": 21,
+      "has_execution_slice": true,
+      "execution_slice_status": "complete",
+      "execution_slice_phase_coverage": {
+        "expected": [
+          "queue",
+          "worker"
+        ],
+        "observed": [
+          "controller",
+          "service",
+          "queue",
+          "worker"
+        ],
+        "missing": []
+      },
+      "execution_slice_steps": [
+        ".generateFromProblem()",
+        ".startPipeline()",
+        ".addJob()",
+        ".broadcastRunFailed()",
+        ".process()"
+      ],
+      "routing_judgment": {
+        "checks": {
+          "generation_intent": true,
+          "target_domain_hint": true,
+          "retrieval_strategy": true,
+          "execution_slice": true
+        },
+        "passed": true,
+        "failures": [],
+        "actual_domain": "backend_runtime"
+      }
+    },
+    {
+      "id": "runtime-report-generation-pipeline",
+      "class": "positive-backend-runtime-generation",
+      "question": "idea report generation pipeline",
+      "expected_domain": "backend_runtime",
+      "retrieval_gate": {
+        "intent": "unknown",
+        "generation_intent": "runtime_generation",
+        "target_domain_hint": "backend_runtime"
+      },
+      "retrieval_strategy": "slice-v1",
+      "pack_token_count": 1155,
+      "matched_nodes": [
+        {
+          "label": ".generateFromProblem()",
+          "source_file": "backend/src/modules/ideas/interface/http/idea-generation.controller.ts"
+        },
+        {
+          "label": ".scoreMetricBatch()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": ".scoreMetrics()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": ".startPipeline()",
+          "source_file": "backend/src/modules/pipeline/api/pipeline-trigger.service.ts"
+        },
+        {
+          "label": ".updateCost()",
+          "source_file": "backend/src/modules/pipeline/state/index-manager.service.ts"
+        },
+        {
+          "label": ".updateSectionPromptIO()",
+          "source_file": "backend/src/modules/pipeline/state/index-manager.service.ts"
+        },
+        {
+          "label": ".callLlm()",
+          "source_file": "backend/src/modules/pipeline/providers/llm-provider-resolver.service.ts"
+        },
+        {
+          "label": ".call()",
+          "source_file": "backend/src/modules/pipeline/agent/master-agent.service.ts"
+        },
+        {
+          "label": ".calculateTokenUsage()",
+          "source_file": "backend/src/modules/pipeline/cost/cost-aggregator.service.ts"
+        },
+        {
+          "label": "buildFallbackMetric()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": ".normalizeMetric()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": ".hasCollapsedMetricValues()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": ".isMetricDecisionGrade()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": ".parseJson()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": "buildGroupedMetricsSystemPrompt()",
+          "source_file": "backend/src/modules/pipeline/assembly/unified-metrics.prompts.ts"
+        },
+        {
+          "label": ".generateScoringLedger()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": ".generateSensitivityAnalysis()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": ".generateSuggestedNextSteps()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": ".deduplicateEvidenceRefs()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": ".mapCompositeToRecommendation()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": "buildMetricHumanPrompt()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.prompts.ts"
+        },
+        {
+          "label": ".retryPipeline()",
+          "source_file": "backend/src/modules/ideas/interface/http/idea-pipeline.controller.ts"
+        },
+        {
+          "label": ".addJob()",
+          "source_file": "backend/src/modules/pipeline/queues/queue-registry.service.ts"
+        },
+        {
+          "label": ".startPipeline()",
+          "source_file": "backend/src/modules/pipeline/api/pipeline.controller.ts"
+        },
+        {
+          "label": ".proceedWithAnalysis()",
+          "source_file": "backend/src/modules/ideas/interface/http/idea-pipeline.controller.ts"
+        },
+        {
+          "label": ".enrichCompetitor()",
+          "source_file": "backend/src/modules/ideas/interface/http/idea-research.controller.ts"
+        },
+        {
+          "label": ".retrySection()",
+          "source_file": "backend/src/modules/ideas/interface/http/idea-research.controller.ts"
+        },
+        {
+          "label": ".updateIndex()",
+          "source_file": "backend/src/modules/pipeline/state/index-manager.service.ts"
+        }
+      ],
+      "relationship_count": 25,
+      "has_execution_slice": true,
+      "execution_slice_status": "complete",
+      "execution_slice_phase_coverage": {
+        "expected": [
+          "queue",
+          "worker"
+        ],
+        "observed": [
+          "controller",
+          "service",
+          "queue",
+          "worker"
+        ],
+        "missing": []
+      },
+      "execution_slice_steps": [
+        ".generateFromProblem()",
+        ".startPipeline()",
+        ".addJob()",
+        ".broadcastRunFailed()",
+        ".process()"
+      ],
+      "routing_judgment": {
+        "checks": {
+          "generation_intent": true,
+          "target_domain_hint": true,
+          "retrieval_strategy": true,
+          "execution_slice": true
+        },
+        "passed": true,
+        "failures": [],
+        "actual_domain": "backend_runtime"
+      }
+    },
+    {
+      "id": "runtime-report-queue-processed",
+      "class": "positive-backend-runtime-generation",
+      "question": "How does the report job get queued and processed?",
+      "expected_domain": "backend_runtime",
+      "retrieval_gate": {
+        "intent": "explain",
+        "generation_intent": "runtime_generation",
+        "target_domain_hint": "backend_runtime"
+      },
+      "retrieval_strategy": "slice-v1",
+      "pack_token_count": 1239,
+      "matched_nodes": [
+        {
+          "label": ".close()",
+          "source_file": "backend/src/modules/queue/services/email-queue.service.ts"
+        },
+        {
+          "label": ".constructor()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": ".constructor()",
+          "source_file": "backend/src/modules/pipeline/state/index-manager.service.ts"
+        },
+        {
+          "label": ".constructor()",
+          "source_file": "backend/src/modules/pipeline/providers/llm-provider-resolver.service.ts"
+        },
+        {
+          "label": ".constructor()",
+          "source_file": "backend/src/modules/pipeline/agent/master-agent.service.ts"
+        },
+        {
+          "label": ".processEmailJob()",
+          "source_file": "backend/src/modules/queue/services/email-queue.service.ts"
+        },
+        {
+          "label": ".scoreMetrics()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": ".initializeQueue()",
+          "source_file": "backend/src/modules/queue/services/email-queue.service.ts"
+        },
+        {
+          "label": "buildFallbackMetric()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": ".hasCollapsedMetricValues()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": ".isMetricDecisionGrade()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": ".constructor()",
+          "source_file": "backend/src/modules/users/email-queue.service.ts"
+        },
+        {
+          "label": ".cacheSchedule()",
+          "source_file": "backend/src/modules/users/email-queue.service.ts"
+        },
+        {
+          "label": ".dequeueDue()",
+          "source_file": "backend/src/modules/users/email-queue.service.ts"
+        },
+        {
+          "label": ".remove()",
+          "source_file": "backend/src/modules/users/email-queue.service.ts"
+        },
+        {
+          "label": ".reschedule()",
+          "source_file": "backend/src/modules/users/email-queue.service.ts"
+        },
+        {
+          "label": ".enqueue()",
+          "source_file": "backend/src/modules/users/email-queue.service.ts"
+        },
+        {
+          "label": ".researchSection()",
+          "source_file": "backend/src/modules/pipeline/research/research-agent.service.ts"
+        },
+        {
+          "label": ".runRecovery()",
+          "source_file": "backend/src/modules/pipeline/assembly/assembly-extractor.service.ts"
+        },
+        {
+          "label": ".persistCostAndIO()",
+          "source_file": "backend/src/modules/pipeline/assembly/assembly-extractor.service.ts"
+        },
+        {
+          "label": ".persistCost()",
+          "source_file": "backend/src/modules/pipeline/assembly/assembly-final-synthesis.service.ts"
+        },
+        {
+          "label": ".persistPromptIO()",
+          "source_file": "backend/src/modules/pipeline/assembly/assembly-final-synthesis.service.ts"
+        },
+        {
+          "label": ".runUnified()",
+          "source_file": "backend/src/modules/pipeline/assembly/assembly-extractor.service.ts"
+        },
+        {
+          "label": ".classifyIdea()",
+          "source_file": "backend/src/modules/pipeline/planner/planner.service.ts"
+        },
+        {
+          "label": ".run()",
+          "source_file": "backend/src/modules/pipeline/assembly/assembly-final-synthesis.service.ts"
+        },
+        {
+          "label": ".executeForStructurer()",
+          "source_file": "backend/src/modules/ideas/infrastructure/executors/micro/structurer/market-research.executor.ts"
+        },
+        {
+          "label": ".executeForStructurer()",
+          "source_file": "backend/src/modules/ideas/infrastructure/executors/micro/structurer/tech-feasibility.executor.ts"
+        },
+        {
+          "label": ".executeForStructurer()",
+          "source_file": "backend/src/modules/ideas/infrastructure/executors/micro/structurer/business-model.executor.ts"
+        },
+        {
+          "label": ".executeForStructurer()",
+          "source_file": "backend/src/modules/ideas/infrastructure/executors/micro/structurer/user-personas.executor.ts"
+        },
+        {
+          "label": ".assemble()",
+          "source_file": "backend/src/modules/pipeline/agent/prompt-assembler.ts"
+        },
+        {
+          "label": ".initializeWorker()",
+          "source_file": "backend/src/modules/background-jobs/workers/email.worker.ts"
+        },
+        {
+          "label": ".initializeWorker()",
+          "source_file": "backend/src/modules/background-jobs/workers/scraping.worker.ts"
+        },
+        {
+          "label": ".plan()",
+          "source_file": "backend/src/modules/pipeline/planner/planner.service.ts"
+        },
+        {
+          "label": ".handleQualityGateFailure()",
+          "source_file": "backend/src/modules/pipeline/assembly/assembly.service.ts"
+        }
+      ],
+      "relationship_count": 8,
+      "has_execution_slice": true,
+      "execution_slice_status": "partial",
+      "execution_slice_phase_coverage": {
+        "expected": [
+          "controller",
+          "queue",
+          "worker"
+        ],
+        "observed": [
+          "service",
+          "queue"
+        ],
+        "missing": [
+          "controller",
+          "worker"
+        ]
+      },
+      "execution_slice_steps": [
+        ".processEmailJob()",
+        ".initializeQueue()",
+        ".constructor()"
+      ],
+      "routing_judgment": {
+        "checks": {
+          "generation_intent": true,
+          "target_domain_hint": true,
+          "retrieval_strategy": true,
+          "execution_slice": true
+        },
+        "passed": true,
+        "failures": [],
+        "actual_domain": "backend_runtime"
+      }
+    },
+    {
+      "id": "runtime-report-saved",
+      "class": "positive-backend-runtime-generation",
+      "question": "Where is the generated report saved?",
+      "expected_domain": "backend_runtime",
+      "retrieval_gate": {
+        "intent": "unknown",
+        "generation_intent": "runtime_generation",
+        "target_domain_hint": "backend_runtime"
+      },
+      "retrieval_strategy": "slice-v1",
+      "pack_token_count": 1121,
+      "matched_nodes": [
+        {
+          "label": ".search()",
+          "source_file": "backend/src/modules/ideas/infrastructure/search/providers/ai-generated-search.provider.ts"
+        },
+        {
+          "label": ".generateScoringLedger()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": ".generateSensitivityAnalysis()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": ".scoreMetrics()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": ".generateSuggestedNextSteps()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": ".scoreMetricBatch()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": "buildFallbackMetric()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": ".deduplicateEvidenceRefs()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": ".mapCompositeToRecommendation()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": "buildMetricHumanPrompt()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.prompts.ts"
+        },
+        {
+          "label": ".normalizeMetric()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": ".hasCollapsedMetricValues()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": ".isMetricDecisionGrade()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": "buildGroupedMetricsSystemPrompt()",
+          "source_file": "backend/src/modules/pipeline/assembly/unified-metrics.prompts.ts"
+        },
+        {
+          "label": "clampCredibilityScore()",
+          "source_file": "backend/src/modules/pipeline/assembly/metrics-scoring.service.ts"
+        },
+        {
+          "label": ".researchSection()",
+          "source_file": "backend/src/modules/pipeline/research/research-agent.service.ts"
+        },
+        {
+          "label": ".runRecovery()",
+          "source_file": "backend/src/modules/pipeline/assembly/assembly-extractor.service.ts"
+        },
+        {
+          "label": ".runUnified()",
+          "source_file": "backend/src/modules/pipeline/assembly/assembly-extractor.service.ts"
+        },
+        {
+          "label": ".classifyIdea()",
+          "source_file": "backend/src/modules/pipeline/planner/planner.service.ts"
+        },
+        {
+          "label": ".run()",
+          "source_file": "backend/src/modules/pipeline/assembly/assembly-final-synthesis.service.ts"
+        },
+        {
+          "label": ".executeForStructurer()",
+          "source_file": "backend/src/modules/ideas/infrastructure/executors/micro/structurer/market-research.executor.ts"
+        },
+        {
+          "label": ".executeForStructurer()",
+          "source_file": "backend/src/modules/ideas/infrastructure/executors/micro/structurer/tech-feasibility.executor.ts"
+        },
+        {
+          "label": ".executeForStructurer()",
+          "source_file": "backend/src/modules/ideas/infrastructure/executors/micro/structurer/business-model.executor.ts"
+        },
+        {
+          "label": ".executeForStructurer()",
+          "source_file": "backend/src/modules/ideas/infrastructure/executors/micro/structurer/user-personas.executor.ts"
+        },
+        {
+          "label": ".persistCostAndIO()",
+          "source_file": "backend/src/modules/pipeline/assembly/assembly-extractor.service.ts"
+        },
+        {
+          "label": ".persistCost()",
+          "source_file": "backend/src/modules/pipeline/assembly/assembly-final-synthesis.service.ts"
+        },
+        {
+          "label": ".persistPromptIO()",
+          "source_file": "backend/src/modules/pipeline/assembly/assembly-final-synthesis.service.ts"
+        },
+        {
+          "label": ".assemble()",
+          "source_file": "backend/src/modules/pipeline/agent/prompt-assembler.ts"
+        }
+      ],
+      "relationship_count": 18,
+      "has_execution_slice": true,
+      "execution_slice_status": "partial",
+      "execution_slice_phase_coverage": {
+        "expected": [
+          "queue",
+          "worker"
+        ],
+        "observed": [
+          "service"
+        ],
+        "missing": [
+          "queue",
+          "worker"
+        ]
+      },
+      "execution_slice_steps": [
+        ".search()"
+      ],
+      "routing_judgment": {
+        "checks": {
+          "generation_intent": true,
+          "target_domain_hint": true,
+          "retrieval_strategy": true,
+          "execution_slice": true
+        },
+        "passed": true,
+        "failures": [],
+        "actual_domain": "backend_runtime"
+      }
+    },
+    {
+      "id": "runtime-explicit-controller-path",
+      "class": "explicit-runtime-path",
+      "question": "Explain the production runtime path for IdeaGenerationController.generateFromProblem and how it creates a GoValidate validation report.",
+      "expected_domain": "backend_runtime",
+      "retrieval_gate": {
+        "intent": "explain",
+        "generation_intent": "runtime_generation",
+        "target_domain_hint": "backend_runtime"
+      },
+      "retrieval_strategy": "slice-v1",
+      "pack_token_count": 914,
+      "matched_nodes": [
+        {
+          "label": ".generateTitle()",
+          "source_file": "backend/src/modules/ideas/infrastructure/services/title-generation.service.ts"
+        },
+        {
+          "label": ".createIdea()",
+          "source_file": "backend/src/modules/ideas/core/application/ideas.service.ts"
+        },
+        {
+          "label": ".releaseUnusedCreditReservation()",
+          "source_file": "backend/src/modules/credits/services/idea-generation-compensation.service.ts"
+        },
+        {
+          "label": ".updateTitle()",
+          "source_file": "backend/src/modules/ideas/core/application/ideas.service.ts"
+        },
+        {
+          "label": ".generateFromProblem()",
+          "source_file": "backend/src/modules/ideas/interface/http/idea-generation.controller.ts"
+        },
+        {
+          "label": ".startPipeline()",
+          "source_file": "backend/src/modules/pipeline/api/pipeline-trigger.service.ts"
+        },
+        {
+          "label": ".claimQueuedPipelineRun()",
+          "source_file": "backend/src/modules/ideas/core/application/ideas.service.ts"
+        },
+        {
+          "label": ".releaseQueuedPipelineClaim()",
+          "source_file": "backend/src/modules/ideas/core/application/ideas.service.ts"
+        },
+        {
+          "label": ".addJob()",
+          "source_file": "backend/src/modules/pipeline/queues/queue-registry.service.ts"
+        },
+        {
+          "label": ".broadcastRunFailed()",
+          "source_file": "backend/src/modules/pipeline/planner/orchestrator.worker.ts"
+        },
+        {
+          "label": ".broadcastRunStarted()",
+          "source_file": "backend/src/modules/pipeline/planner/planner.service.ts"
+        },
+        {
+          "label": "sanitizeJobId()",
+          "source_file": "backend/src/modules/pipeline/queues/queue-registry.service.ts"
+        },
+        {
+          "label": ".handleQualityGateFailure()",
+          "source_file": "backend/src/modules/pipeline/assembly/assembly.service.ts"
+        },
+        {
+          "label": ".checkAndDispatchNext()",
+          "source_file": "backend/src/modules/pipeline/research/research-agent.service.ts"
+        },
+        {
+          "label": ".dispatchWave()",
+          "source_file": "backend/src/modules/pipeline/planner/planner.service.ts"
+        },
+        {
+          "label": ".broadcastEvent()",
+          "source_file": "backend/src/modules/pipeline/research/research-agent.service.ts"
+        },
+        {
+          "label": ".syncFailedStatus()",
+          "source_file": "backend/src/modules/pipeline/planner/orchestrator.worker.ts"
+        },
+        {
+          "label": ".broadcastEvent()",
+          "source_file": "backend/src/modules/pipeline/assembly/assembly-broadcaster.service.ts"
+        },
+        {
+          "label": ".broadcastSectionEvent()",
+          "source_file": "backend/src/modules/pipeline/assembly/assembly-broadcaster.service.ts"
+        },
+        {
+          "label": ".dispatchDbSync()",
+          "source_file": "backend/src/modules/pipeline/assembly/assembly.service.ts"
+        },
+        {
+          "label": ".dispatchDbSync()",
+          "source_file": "backend/src/modules/pipeline/research/research-agent.service.ts"
+        },
+        {
+          "label": ".process()",
+          "source_file": "backend/src/modules/pipeline/planner/orchestrator.worker.ts"
+        },
+        {
+          "label": ".plan()",
+          "source_file": "backend/src/modules/pipeline/planner/planner.service.ts"
+        },
+        {
+          "label": ".removeJob()",
+          "source_file": "backend/src/modules/pipeline/queues/queue-registry.service.ts"
+        }
+      ],
+      "relationship_count": 26,
+      "has_execution_slice": true,
+      "execution_slice_status": "complete",
+      "execution_slice_phase_coverage": {
+        "expected": [
+          "controller",
+          "queue",
+          "worker"
+        ],
+        "observed": [
+          "controller",
+          "service",
+          "queue",
+          "worker"
+        ],
+        "missing": []
+      },
+      "execution_slice_steps": [
+        ".generateFromProblem()",
+        ".startPipeline()",
+        ".addJob()",
+        ".broadcastRunFailed()",
+        ".process()"
+      ],
+      "routing_judgment": {
+        "checks": {
+          "generation_intent": true,
+          "target_domain_hint": true,
+          "retrieval_strategy": true,
+          "execution_slice": true
+        },
+        "passed": true,
+        "failures": [],
+        "actual_domain": "backend_runtime"
+      }
+    },
+    {
+      "id": "display-generated-date-ui",
+      "class": "frontend-display",
+      "question": "Where is the generated date displayed in the report UI?",
+      "expected_domain": "frontend_display",
+      "retrieval_gate": {
+        "intent": "unknown",
+        "generation_intent": "display_rendering",
+        "target_domain_hint": "frontend_display"
+      },
+      "retrieval_strategy": "default",
+      "pack_token_count": 560,
+      "matched_nodes": [
+        {
+          "label": "ReportFooter()",
+          "source_file": "platform/src/features/idea-detail/components/ReportFooter.tsx"
+        },
+        {
+          "label": "ScoreDisplay",
+          "source_file": "platform/src/ui/ScoreDisplay.tsx"
+        },
+        {
+          "label": "formatDate()",
+          "source_file": "platform/src/features/certification/components/VerificationPage.tsx"
+        },
+        {
+          "label": "formatDate()",
+          "source_file": "platform/src/app/coupon-campaigns/[id]/page.tsx"
+        },
+        {
+          "label": "pickGeneratedAt()",
+          "source_file": "platform/src/features/idea-detail/components/ReportFooter.tsx"
+        },
+        {
+          "label": "formatDate()",
+          "source_file": "platform/src/features/certification/components/MyBadgesPage.tsx"
+        },
+        {
+          "label": "ScoreDisplay.tsx",
+          "source_file": "platform/src/ui/ScoreDisplay.tsx"
+        },
+        {
+          "label": "VerificationPage.tsx",
+          "source_file": "platform/src/features/certification/components/VerificationPage.tsx"
+        },
+        {
+          "label": "page.tsx",
+          "source_file": "landing-page/src/app/ai-market-research/page.tsx"
+        },
+        {
+          "label": "ReportFooter.tsx",
+          "source_file": "platform/src/features/idea-detail/components/ReportFooter.tsx"
+        },
+        {
+          "label": "MyBadgesPage.tsx",
+          "source_file": "platform/src/features/certification/components/MyBadgesPage.tsx"
+        },
+        {
+          "label": "CertificateView()",
+          "source_file": "platform/src/features/certification/components/VerificationPage.tsx"
+        },
+        {
+          "label": "CampaignMeta()",
+          "source_file": "platform/src/app/coupon-campaigns/[id]/page.tsx"
+        },
+        {
+          "label": "BadgeCard()",
+          "source_file": "platform/src/features/certification/components/MyBadgesPage.tsx"
+        },
+        {
+          "label": "getScoreColor",
+          "source_file": "platform/src/ui/ScoreDisplay.tsx"
+        },
+        {
+          "label": "ScoreBadge",
+          "source_file": "platform/src/ui/ScoreDisplay.tsx"
+        }
+      ],
+      "relationship_count": 16,
+      "has_execution_slice": false,
+      "execution_slice_status": null,
+      "execution_slice_phase_coverage": null,
+      "execution_slice_steps": [],
+      "routing_judgment": {
+        "checks": {
+          "generation_intent": true,
+          "target_domain_hint": true,
+          "retrieval_strategy": true,
+          "execution_slice": true
+        },
+        "passed": true,
+        "failures": [],
+        "actual_domain": "frontend_display"
+      }
+    },
+    {
+      "id": "display-generated-pdf-ui",
+      "class": "frontend-display",
+      "question": "How is the generated PDF rendered in the UI?",
+      "expected_domain": "frontend_display",
+      "retrieval_gate": {
+        "intent": "unknown",
+        "generation_intent": "display_rendering",
+        "target_domain_hint": "frontend_display"
+      },
+      "retrieval_strategy": "default",
+      "pack_token_count": 549,
+      "matched_nodes": [
+        {
+          "label": ".render()",
+          "source_file": "platform/src/features/idea-detail/components/IdeaDetailErrorBoundary.tsx"
+        },
+        {
+          "label": "pickGeneratedAt()",
+          "source_file": "platform/src/features/idea-detail/components/ReportFooter.tsx"
+        },
+        {
+          "label": ".render()",
+          "source_file": "platform/src/app/settings/components/ErrorBoundary.tsx"
+        },
+        {
+          "label": "renderPdfDocument()",
+          "source_file": "backend/src/modules/ideas/infrastructure/services/pdf-generator.templates.ts"
+        },
+        {
+          "label": "getPdfDecisionIcon()",
+          "source_file": "backend/src/modules/ideas/infrastructure/services/pdf-generator.templates.ts"
+        },
+        {
+          "label": ".generateHtml()",
+          "source_file": "backend/src/modules/ideas/infrastructure/services/pdf-generator.service.ts"
+        },
+        {
+          "label": "renderPdfCoverPage()",
+          "source_file": "backend/src/modules/ideas/infrastructure/services/pdf-generator.templates.ts"
+        },
+        {
+          "label": ".renderCoverPage()",
+          "source_file": "backend/src/modules/ideas/infrastructure/services/pdf-generator.service.ts"
+        },
+        {
+          "label": "ReportFooter.tsx",
+          "source_file": "platform/src/features/idea-detail/components/ReportFooter.tsx"
+        },
+        {
+          "label": "ReportFooter()",
+          "source_file": "platform/src/features/idea-detail/components/ReportFooter.tsx"
+        },
+        {
+          "label": "pickPipelineLabel()",
+          "source_file": "platform/src/features/idea-detail/components/ReportFooter.tsx"
+        },
+        {
+          "label": "IdeaDetailErrorBoundary",
+          "source_file": "platform/src/features/idea-detail/components/IdeaDetailErrorBoundary.tsx"
+        },
+        {
+          "label": "relativeTime()",
+          "source_file": "platform/src/features/idea-detail/components/ReportFooter.tsx"
+        },
+        {
+          "label": "pdf-generator.templates.ts",
+          "source_file": "backend/src/modules/ideas/infrastructure/services/pdf-generator.templates.ts"
+        },
+        {
+          "label": "SettingsErrorBoundary",
+          "source_file": "platform/src/app/settings/components/ErrorBoundary.tsx"
+        }
+      ],
+      "relationship_count": 16,
+      "has_execution_slice": false,
+      "execution_slice_status": null,
+      "execution_slice_phase_coverage": null,
+      "execution_slice_steps": [],
+      "routing_judgment": {
+        "checks": {
+          "generation_intent": true,
+          "target_domain_hint": true,
+          "retrieval_strategy": true,
+          "execution_slice": true
+        },
+        "passed": true,
+        "failures": [],
+        "actual_domain": "frontend_display"
+      }
+    },
+    {
+      "id": "display-report-footer",
+      "class": "frontend-display",
+      "question": "How is the report displayed in the footer?",
+      "expected_domain": "frontend_display",
+      "retrieval_gate": {
+        "intent": "unknown",
+        "generation_intent": "display_rendering",
+        "target_domain_hint": "frontend_display"
+      },
+      "retrieval_strategy": "default",
+      "pack_token_count": 238,
+      "matched_nodes": [
+        {
+          "label": "Footer()",
+          "source_file": "landing-page/src/components/ui/footer.tsx"
+        },
+        {
+          "label": "FOOTER_NAV",
+          "source_file": "landing-page/src/components/ui/footer.tsx"
+        },
+        {
+          "label": "FooterColumn",
+          "source_file": "landing-page/src/components/ui/footer.tsx"
+        },
+        {
+          "label": "FooterLink",
+          "source_file": "landing-page/src/components/ui/footer.tsx"
+        },
+        {
+          "label": "Footer()",
+          "source_file": "platform/src/features/certification/components/VerificationPage.tsx"
+        },
+        {
+          "label": "footer.tsx",
+          "source_file": "landing-page/src/components/ui/footer.tsx"
+        },
+        {
+          "label": "VerificationPage.tsx",
+          "source_file": "platform/src/features/certification/components/VerificationPage.tsx"
+        },
+        {
+          "label": "LEGAL_NAV",
+          "source_file": "landing-page/src/components/ui/footer.tsx"
+        },
+        {
+          "label": "CertificateView()",
+          "source_file": "platform/src/features/certification/components/VerificationPage.tsx"
+        }
+      ],
+      "relationship_count": 7,
+      "has_execution_slice": false,
+      "execution_slice_status": null,
+      "execution_slice_phase_coverage": null,
+      "execution_slice_steps": [],
+      "routing_judgment": {
+        "checks": {
+          "generation_intent": true,
+          "target_domain_hint": true,
+          "retrieval_strategy": true,
+          "execution_slice": true
+        },
+        "passed": true,
+        "failures": [],
+        "actual_domain": "frontend_display"
+      }
+    },
+    {
+      "id": "mixed-generated-and-displayed",
+      "class": "ambiguous-mixed",
+      "question": "Explain how the report is generated and displayed",
+      "expected_domain": "frontend_display",
+      "retrieval_gate": {
+        "intent": "explain",
+        "generation_intent": "display_rendering",
+        "target_domain_hint": "frontend_display"
+      },
+      "retrieval_strategy": "default",
+      "pack_token_count": 457,
+      "matched_nodes": [
+        {
+          "label": "ReportFooter()",
+          "source_file": "platform/src/features/idea-detail/components/ReportFooter.tsx"
+        },
+        {
+          "label": "CreditsDisplay()",
+          "source_file": "platform/src/features/credits/components/CreditsDisplay.tsx"
+        },
+        {
+          "label": "ScoreDisplay",
+          "source_file": "platform/src/ui/ScoreDisplay.tsx"
+        },
+        {
+          "label": "pickGeneratedAt()",
+          "source_file": "platform/src/features/idea-detail/components/ReportFooter.tsx"
+        },
+        {
+          "label": "ScoreDisplayProps",
+          "source_file": "platform/src/ui/ScoreDisplay.tsx"
+        },
+        {
+          "label": "ErrorDisplay()",
+          "source_file": "platform/src/app/admin/pipeline/[ideaId]/page.tsx"
+        },
+        {
+          "label": "CreditsDisplayProps",
+          "source_file": "platform/src/features/credits/components/CreditsDisplay.tsx"
+        },
+        {
+          "label": "CreditsDisplay.tsx",
+          "source_file": "platform/src/features/credits/components/CreditsDisplay.tsx"
+        },
+        {
+          "label": "ScoreDisplay.tsx",
+          "source_file": "platform/src/ui/ScoreDisplay.tsx"
+        },
+        {
+          "label": "ReportFooter.tsx",
+          "source_file": "platform/src/features/idea-detail/components/ReportFooter.tsx"
+        },
+        {
+          "label": "useCredits",
+          "source_file": "platform/src/features/credits/hooks/index.ts"
+        },
+        {
+          "label": "page.tsx",
+          "source_file": "landing-page/src/app/ai-market-research/page.tsx"
+        },
+        {
+          "label": "parseError()",
+          "source_file": "platform/src/app/admin/pipeline/[ideaId]/page.tsx"
+        },
+        {
+          "label": "getScoreColor",
+          "source_file": "platform/src/ui/ScoreDisplay.tsx"
+        }
+      ],
+      "relationship_count": 12,
+      "has_execution_slice": false,
+      "execution_slice_status": null,
+      "execution_slice_phase_coverage": null,
+      "execution_slice_steps": [],
+      "routing_judgment": {
+        "checks": {
+          "generation_intent": true,
+          "target_domain_hint": true,
+          "retrieval_strategy": true,
+          "execution_slice": true
+        },
+        "passed": true,
+        "failures": [],
+        "actual_domain": "frontend_display"
+      }
+    },
+    {
+      "id": "mixed-landing-page-generated",
+      "class": "ambiguous-mixed",
+      "question": "How is the landing page generated?",
+      "expected_domain": "ambiguous",
+      "retrieval_gate": {
+        "intent": "unknown",
+        "generation_intent": "unknown",
+        "target_domain_hint": "unknown"
+      },
+      "retrieval_strategy": "default",
+      "pack_token_count": 717,
+      "matched_nodes": [
+        {
+          "label": "LandingFooter()",
+          "source_file": "landing-page/src/components/landing/verdict-machine-home.tsx"
+        },
+        {
+          "label": "generateMetadata()",
+          "source_file": "landing-page/src/app/landing/ideas/[ideaId]/page.tsx"
+        },
+        {
+          "label": "getInviteData()",
+          "source_file": "platform/src/app/i/[code]/page.tsx"
+        },
+        {
+          "label": ".generate()",
+          "source_file": "backend/src/modules/certification/services/certificate-generator.service.ts"
+        },
+        {
+          "label": "page",
+          "source_file": "landing-page/src/app/ai-market-research/page.tsx"
+        },
+        {
+          "label": ".generate()",
+          "source_file": "backend/src/modules/certification/services/badge-generator.service.ts"
+        },
+        {
+          "label": ".generatePdfFromHtml()",
+          "source_file": "backend/src/modules/certification/services/certificate-generator.service.ts"
+        },
+        {
+          "label": "verdict-machine-home.tsx",
+          "source_file": "landing-page/src/components/landing/verdict-machine-home.tsx"
+        },
+        {
+          "label": "page.tsx",
+          "source_file": "landing-page/src/app/ai-market-research/page.tsx"
+        },
+        {
+          "label": ".claimBadge()",
+          "source_file": "backend/src/modules/certification/services/certification.service.ts"
+        },
+        {
+          "label": ".uploadFile()",
+          "source_file": "backend/src/modules/storage/storage.service.ts"
+        },
+        {
+          "label": "renderCertificateHtml()",
+          "source_file": "backend/src/modules/certification/templates/certificate-html.ts"
+        },
+        {
+          "label": ".buildAssetUrl()",
+          "source_file": "backend/src/modules/certification/services/certificate-generator.service.ts"
+        },
+        {
+          "label": ".dataUrlToBuffer()",
+          "source_file": "backend/src/modules/certification/services/certificate-generator.service.ts"
+        },
+        {
+          "label": ".buildAssetUrl()",
+          "source_file": "backend/src/modules/certification/services/badge-generator.service.ts"
+        },
+        {
+          "label": "renderBadgeSvg()",
+          "source_file": "backend/src/modules/certification/templates/badge-svg.ts"
+        },
+        {
+          "label": "analysisRows",
+          "source_file": "landing-page/src/components/landing/verdict-machine-home.tsx"
+        },
+        {
+          "label": "outcomes",
+          "source_file": "landing-page/src/components/landing/verdict-machine-home.tsx"
+        },
+        {
+          "label": "CertificateGeneratorService",
+          "source_file": "backend/src/modules/certification/services/certificate-generator.service.ts"
+        },
+        {
+          "label": "BadgeGeneratorService",
+          "source_file": "backend/src/modules/certification/services/badge-generator.service.ts"
+        }
+      ],
+      "relationship_count": 24,
+      "has_execution_slice": false,
+      "execution_slice_status": null,
+      "execution_slice_phase_coverage": null,
+      "execution_slice_steps": [],
+      "routing_judgment": {
+        "checks": {
+          "generation_intent": true,
+          "target_domain_hint": true,
+          "retrieval_strategy": true,
+          "execution_slice": true
+        },
+        "passed": true,
+        "failures": [],
+        "actual_domain": "ambiguous"
+      }
+    },
+    {
+      "id": "mixed-component-created",
+      "class": "ambiguous-mixed",
+      "question": "How is this component created?",
+      "expected_domain": "frontend_display",
+      "retrieval_gate": {
+        "intent": "unknown",
+        "generation_intent": "display_rendering",
+        "target_domain_hint": "frontend_display"
+      },
+      "retrieval_strategy": "default",
+      "pack_token_count": 500,
+      "matched_nodes": [
+        {
+          "label": "severityForNormal()",
+          "source_file": "platform/src/features/idea-detail/components/MetricDrawer.tsx"
+        },
+        {
+          "label": "severityForInverted()",
+          "source_file": "platform/src/features/idea-detail/components/MetricDrawer.tsx"
+        },
+        {
+          "label": "MarkdownText()",
+          "source_file": "platform/src/features/idea-detail/components/MarkdownText.tsx"
+        },
+        {
+          "label": "SummaryModule()",
+          "source_file": "platform/src/features/idea-detail/components/modules/SummaryModule.tsx"
+        },
+        {
+          "label": "renderLink()",
+          "source_file": "platform/src/features/idea-detail/components/MarkdownText.tsx"
+        },
+        {
+          "label": "ComponentRow()",
+          "source_file": "platform/src/features/idea-detail/components/MetricDrawer.tsx"
+        },
+        {
+          "label": "makeComponents()",
+          "source_file": "platform/src/features/idea-detail/components/modules/SummaryModule.tsx"
+        },
+        {
+          "label": "ComponentCard()",
+          "source_file": "platform/src/features/ideas/components/MetricDetailModal.tsx"
+        },
+        {
+          "label": "makeInlineComponents()",
+          "source_file": "platform/src/features/idea-detail/components/MarkdownText.tsx"
+        },
+        {
+          "label": "makeBlockComponents()",
+          "source_file": "platform/src/features/idea-detail/components/MarkdownText.tsx"
+        },
+        {
+          "label": "MetricDrawer.tsx",
+          "source_file": "platform/src/features/idea-detail/components/MetricDrawer.tsx"
+        },
+        {
+          "label": "SummaryModule.tsx",
+          "source_file": "platform/src/features/idea-detail/components/modules/SummaryModule.tsx"
+        },
+        {
+          "label": "MetricDetailModal.tsx",
+          "source_file": "platform/src/features/ideas/components/MetricDetailModal.tsx"
+        },
+        {
+          "label": "MarkdownText.tsx",
+          "source_file": "platform/src/features/idea-detail/components/MarkdownText.tsx"
+        },
+        {
+          "label": "MetricDrawer()",
+          "source_file": "platform/src/features/idea-detail/components/MetricDrawer.tsx"
+        },
+        {
+          "label": "severityFor()",
+          "source_file": "platform/src/features/idea-detail/components/MetricDrawer.tsx"
+        }
+      ],
+      "relationship_count": 22,
+      "has_execution_slice": false,
+      "execution_slice_status": null,
+      "execution_slice_phase_coverage": null,
+      "execution_slice_steps": [],
+      "routing_judgment": {
+        "checks": {
+          "generation_intent": true,
+          "target_domain_hint": true,
+          "retrieval_strategy": true,
+          "execution_slice": true
+        },
+        "passed": true,
+        "failures": [],
+        "actual_domain": "frontend_display"
+      }
+    },
+    {
+      "id": "mixed-nextjs-page-generated",
+      "class": "ambiguous-mixed",
+      "question": "How does Next.js generate this page?",
+      "expected_domain": "ambiguous",
+      "retrieval_gate": {
+        "intent": "explain",
+        "generation_intent": "unknown",
+        "target_domain_hint": "unknown"
+      },
+      "retrieval_strategy": "default",
+      "pack_token_count": 195,
+      "matched_nodes": [
+        {
+          "label": "nextConfig",
+          "source_file": "platform/next.config.performance.js"
+        },
+        {
+          "label": "next.config.js",
+          "source_file": "landing-page/next.config.js"
+        },
+        {
+          "label": "next.config.enhanced.js",
+          "source_file": "landing-page/next.config.enhanced.js"
+        },
+        {
+          "label": "nextConfig",
+          "source_file": "landing-page/next.config.js"
+        },
+        {
+          "label": "next.config.performance.js",
+          "source_file": "platform/next.config.performance.js"
+        },
+        {
+          "label": "nextConfig",
+          "source_file": "landing-page/next.config.enhanced.js"
+        }
+      ],
+      "relationship_count": 3,
+      "has_execution_slice": false,
+      "execution_slice_status": null,
+      "execution_slice_phase_coverage": null,
+      "execution_slice_steps": [],
+      "routing_judgment": {
+        "checks": {
+          "generation_intent": true,
+          "target_domain_hint": true,
+          "retrieval_strategy": true,
+          "execution_slice": true
+        },
+        "passed": true,
+        "failures": [],
+        "actual_domain": "ambiguous"
+      }
+    }
+  ]
+}

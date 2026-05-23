@@ -1,0 +1,113 @@
+[
+  {
+    "id": "runtime-report-generated",
+    "class": "positive-backend-runtime-generation",
+    "question": "How idea report is being generated",
+    "expected_domain": "backend_runtime",
+    "allowed_generation_intents": ["runtime_generation"],
+    "allowed_target_domain_hints": ["backend_runtime"],
+    "required_retrieval_strategy": "slice-v1"
+  },
+  {
+    "id": "runtime-report-getting-generated",
+    "class": "positive-backend-runtime-generation",
+    "question": "Explain how idea report is getting generated",
+    "expected_domain": "backend_runtime",
+    "allowed_generation_intents": ["runtime_generation"],
+    "allowed_target_domain_hints": ["backend_runtime"],
+    "required_retrieval_strategy": "slice-v1"
+  },
+  {
+    "id": "runtime-report-generation-pipeline",
+    "class": "positive-backend-runtime-generation",
+    "question": "idea report generation pipeline",
+    "expected_domain": "backend_runtime",
+    "allowed_generation_intents": ["runtime_generation"],
+    "allowed_target_domain_hints": ["backend_runtime"],
+    "required_retrieval_strategy": "slice-v1"
+  },
+  {
+    "id": "runtime-report-queue-processed",
+    "class": "positive-backend-runtime-generation",
+    "question": "How does the report job get queued and processed?",
+    "expected_domain": "backend_runtime",
+    "allowed_generation_intents": ["runtime_generation"],
+    "allowed_target_domain_hints": ["backend_runtime"],
+    "required_retrieval_strategy": "slice-v1"
+  },
+  {
+    "id": "runtime-report-saved",
+    "class": "positive-backend-runtime-generation",
+    "question": "Where is the generated report saved?",
+    "expected_domain": "backend_runtime",
+    "allowed_generation_intents": ["runtime_generation"],
+    "allowed_target_domain_hints": ["backend_runtime"],
+    "required_retrieval_strategy": "slice-v1"
+  },
+  {
+    "id": "runtime-explicit-controller-path",
+    "class": "explicit-runtime-path",
+    "question": "Explain the production runtime path for IdeaGenerationController.generateFromProblem and how it creates a GoValidate validation report.",
+    "expected_domain": "backend_runtime",
+    "allowed_generation_intents": ["runtime_generation"],
+    "allowed_target_domain_hints": ["backend_runtime"],
+    "required_retrieval_strategy": "slice-v1",
+    "require_execution_slice": true
+  },
+  {
+    "id": "display-generated-date-ui",
+    "class": "frontend-display",
+    "question": "Where is the generated date displayed in the report UI?",
+    "expected_domain": "frontend_display",
+    "allowed_generation_intents": ["display_rendering"],
+    "allowed_target_domain_hints": ["frontend_display"]
+  },
+  {
+    "id": "display-generated-pdf-ui",
+    "class": "frontend-display",
+    "question": "How is the generated PDF rendered in the UI?",
+    "expected_domain": "frontend_display",
+    "allowed_generation_intents": ["display_rendering"],
+    "allowed_target_domain_hints": ["frontend_display"]
+  },
+  {
+    "id": "display-report-footer",
+    "class": "frontend-display",
+    "question": "How is the report displayed in the footer?",
+    "expected_domain": "frontend_display",
+    "allowed_generation_intents": ["display_rendering"],
+    "allowed_target_domain_hints": ["frontend_display"]
+  },
+  {
+    "id": "mixed-generated-and-displayed",
+    "class": "ambiguous-mixed",
+    "question": "Explain how the report is generated and displayed",
+    "expected_domain": "frontend_display",
+    "allowed_generation_intents": ["display_rendering"],
+    "allowed_target_domain_hints": ["frontend_display"]
+  },
+  {
+    "id": "mixed-landing-page-generated",
+    "class": "ambiguous-mixed",
+    "question": "How is the landing page generated?",
+    "expected_domain": "ambiguous",
+    "allowed_generation_intents": ["unknown"],
+    "allowed_target_domain_hints": ["unknown"]
+  },
+  {
+    "id": "mixed-component-created",
+    "class": "ambiguous-mixed",
+    "question": "How is this component created?",
+    "expected_domain": "frontend_display",
+    "allowed_generation_intents": ["display_rendering"],
+    "allowed_target_domain_hints": ["frontend_display"]
+  },
+  {
+    "id": "mixed-nextjs-page-generated",
+    "class": "ambiguous-mixed",
+    "question": "How does Next.js generate this page?",
+    "expected_domain": "ambiguous",
+    "allowed_generation_intents": ["unknown"],
+    "allowed_target_domain_hints": ["unknown"]
+  }
+]
