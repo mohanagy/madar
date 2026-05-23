@@ -66,11 +66,11 @@ Want a broader local-first walkthrough that also covers install, `prompt`, and a
 
 ---
 
-## What's new in 0.24.1
+## What's new in 0.25.0
 
-- `madar copilot install` now writes `.vscode/mcp.json` to launch the local `madar` CLI directly through Node when the CLI is available, which trims avoidable MCP startup overhead versus going through `npx` every time.
-- Copilot installer inputs are more robust: relative `packageRoot` values are now resolved before the launcher config is written, so the generated CLI path stays absolute and stable across different working directories.
-- This is a focused patch release. For the broader package/repo alignment and public launch changes, see the [`0.24.0` changelog entry](CHANGELOG.md#0240---2026-05-22).
+- Backend runtime answers now emit a much richer `execution_slice`: you get a clearer primary runtime path, prompt-scoped `phase_coverage`, and summarized side-effect / terminal / omitted branches instead of one flattened path dump.
+- Go repos now get first-pass semantic indexing for receiver methods, local-package and cross-package calls, and common `net/http`, Gin, and Chi route entrypoints, so generated graphs and retrieval answers are much closer to real handler → service → repository flow.
+- This is a feature release on top of the `0.24.1` Copilot installer patch. For the previous MCP startup fix, see the [`0.24.1` changelog entry](CHANGELOG.md#0241---2026-05-23).
 
 The larger **What's new in 0.23.0** additions are still part of the main flow too: `madar summary`, the core MCP `graph_summary` tool, runtime `execution_slice` output, share-safe `report.share-safe.json` compare artifacts, and `compare --baseline-mode pack_only`.
 

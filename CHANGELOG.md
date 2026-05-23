@@ -4,6 +4,17 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-05-23
+
+### Added
+
+- **First-pass Go semantic indexing**: extraction now resolves conservative Go call flow across local-package imports, receiver methods, and statically resolvable cross-package calls, and it recognizes common `net/http`, Gin, and Chi route entrypoints so Go repos produce far more truthful runtime retrieval paths.
+
+### Changed
+
+- **`execution_slice` runtime answers are much more explicit**: backend runtime packs now add separated `primary_path`, `side_effects`, `terminal_boundaries`, `omitted_branches`, and `phase_coverage` output, so runtime answers no longer flatten every step and branch into one ambiguous list.
+- **Execution-phase expectations are prompt-scoped**: queue/worker/persistence questions no longer invent missing controller or service phases just because the prompt mentions requests, and observed phases now emit in canonical runtime order (`controller` → `service` → `queue` → `worker` → `persistence`).
+
 ## [0.24.1] - 2026-05-23
 
 ### Changed
