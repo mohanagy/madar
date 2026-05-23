@@ -51,8 +51,22 @@ interface ExecutionSliceExpectation {
   }
 }
 
-function buildSliceGraph(options: { includeWorkerStep?: boolean; includePersistenceStep?: boolean } = {}) {
-  const { includeWorkerStep = true, includePersistenceStep = true } = options
+function buildSliceGraph(
+  options: {
+    includeWorkerStep?: boolean
+    includePersistenceStep?: boolean
+    workerLabel?: string
+    workerSourceFile?: string
+    workerFrameworkRole?: string
+  } = {},
+) {
+  const {
+    includeWorkerStep = true,
+    includePersistenceStep = true,
+    workerLabel = 'AuthWorker.process',
+    workerSourceFile = '/src/auth/worker.ts',
+    workerFrameworkRole = 'worker',
+  } = options
 
   return build(
     [
@@ -65,7 +79,7 @@ function buildSliceGraph(options: { includeWorkerStep?: boolean; includePersiste
           { id: 'auth_service', label: 'AuthService.login', file_type: 'code', source_file: '/src/auth/service.ts', source_location: 'L40', node_kind: 'method', community: 0 },
           { id: 'login_validator', label: 'LoginValidator.validate', file_type: 'code', source_file: '/src/auth/login-validator.ts', source_location: 'L50', node_kind: 'method', community: 0 },
           { id: 'queue_registry', label: 'QueueRegistry.addJob', file_type: 'code', source_file: '/src/queue/registry.ts', source_location: 'L60', node_kind: 'method', community: 1 },
-          { id: 'auth_worker', label: 'AuthWorker.process', file_type: 'code', source_file: '/src/auth/worker.ts', source_location: 'L70', node_kind: 'method', framework_role: 'worker', community: 1 },
+          { id: 'auth_worker', label: workerLabel, file_type: 'code', source_file: workerSourceFile, source_location: 'L70', node_kind: 'method', framework_role: workerFrameworkRole, community: 1 },
           { id: 'session_store', label: 'SessionStore.createSession', file_type: 'code', source_file: '/src/session/store.ts', source_location: 'L80', node_kind: 'method', community: 1 },
           { id: 'audit_publisher', label: 'AuditPublisher.publishLogin', file_type: 'code', source_file: '/src/auth/audit.ts', source_location: 'L90', node_kind: 'method', community: 2 },
           { id: 'session_notifier', label: 'SessionNotifier.sendLoginWebhook', file_type: 'code', source_file: '/src/auth/notifier.ts', source_location: 'L100', node_kind: 'method', community: 2 },
@@ -106,6 +120,26 @@ function buildSliceGraph(options: { includeWorkerStep?: boolean; includePersiste
           { source: 'api_client', target: 'billing_exporter', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/api/client.ts' },
           { source: 'auth_service', target: 'shared_index', relation: 'imports_from', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts' },
           { source: 'shared_index', target: 'shared_cookie', relation: 'exports', confidence: 'EXTRACTED', source_file: '/src/shared/index.ts' },
+        ],
+      },
+    ],
+    { directed: true },
+  )
+}
+
+function buildWorkerSegmentGraph() {
+  return build(
+    [
+      {
+        schema_version: 1,
+        nodes: [
+          { id: 'queue_registry', label: 'QueueRegistry.addJob', file_type: 'code', source_file: '/src/queue/registry.ts', source_location: 'L10', node_kind: 'method', framework_role: 'queue', community: 0 },
+          { id: 'auth_worker', label: 'AuthWorker.process', file_type: 'code', source_file: '/src/auth/worker.ts', source_location: 'L20', node_kind: 'method', framework_role: 'worker', community: 1 },
+          { id: 'session_store', label: 'SessionStore.createSession', file_type: 'code', source_file: '/src/session/store.ts', source_location: 'L30', node_kind: 'method', framework_role: 'repository', community: 1 },
+        ],
+        edges: [
+          { source: 'queue_registry', target: 'auth_worker', relation: 'enqueues_job', confidence: 'EXTRACTED', source_file: '/src/queue/registry.ts' },
+          { source: 'auth_worker', target: 'session_store', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/worker.ts' },
         ],
       },
     ],
@@ -305,6 +339,50 @@ describe('retrieveContext retrievalStrategy=slice-v1', () => {
     expect(compact.execution_slice?.phase_coverage).toEqual(expect.objectContaining({
       expected: expect.arrayContaining(['persistence']),
       missing: expect.arrayContaining(['persistence']),
+    }))
+  })
+
+  it('marks runtime paths partial when queue work only reaches a generic orchestrator.process step', () => {
+    const compact = compactFor(
+      'Trace how `POST /login` reaches persistence in the backend runtime pipeline',
+      buildSliceGraph({
+        workerLabel: 'JobOrchestrator.process',
+        workerSourceFile: '/src/auth/orchestrator.ts',
+        workerFrameworkRole: 'orchestrator',
+      }),
+    )
+
+    expect(compact.execution_slice?.status).toBe('partial')
+    expect(compact.execution_slice?.boundary_reason).toMatch(/worker/i)
+    expect(compact.execution_slice?.phase_coverage).toEqual(expect.objectContaining({
+      missing: expect.arrayContaining(['worker']),
+    }))
+  })
+
+  it('does not require controller or service phases for queue-to-worker persistence questions', () => {
+    const compact = compactFor(
+      'Trace how `QueueRegistry.addJob` reaches persistence in the backend runtime pipeline',
+      buildWorkerSegmentGraph(),
+    )
+
+    expect(compact.execution_slice?.status).toBe('complete')
+    expect(compact.execution_slice?.phase_coverage).toEqual({
+      expected: ['queue', 'worker', 'persistence'],
+      observed: ['queue', 'worker', 'persistence'],
+      missing: [],
+    })
+  })
+
+  it('reports extra observed phases even when the prompt does not require them', () => {
+    const compact = compactFor(
+      'Trace how `QueueRegistry.addJob` runs in the backend runtime pipeline',
+      buildWorkerSegmentGraph(),
+    )
+
+    expect(compact.execution_slice?.phase_coverage).toEqual(expect.objectContaining({
+      expected: ['queue', 'worker'],
+      observed: expect.arrayContaining(['queue', 'worker', 'persistence']),
+      missing: [],
     }))
   })
 

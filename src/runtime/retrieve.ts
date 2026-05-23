@@ -1250,6 +1250,26 @@ function hasHttpVerbIntent(question: string, questionTokens: readonly string[], 
   return hasHeadVerb && includesAnyToken(questionTokens, ['request', 'requests'])
 }
 
+function promptWantsControllerStep(question: string): boolean {
+  const questionTokens = tokenizeQuestion(question)
+  const hasRoutePath = containsUrlLikeRoutePath(question)
+  const hasRouteKeyword = includesAnyToken(questionTokens, [
+    'route', 'routes', 'router', 'controller', 'controllers', 'handler', 'handlers', 'endpoint', 'endpoints', 'request', 'requests',
+  ])
+
+  return hasRoutePath || hasHttpVerbIntent(question, questionTokens, hasRoutePath, hasRouteKeyword) || hasRouteKeyword
+}
+
+function promptWantsServiceStep(question: string): boolean {
+  if (promptWantsControllerStep(question)) {
+    return true
+  }
+
+  const questionTokens = tokenizeQuestion(question)
+  return includesAnyToken(questionTokens, ['service', 'services', 'provider', 'providers', 'usecase', 'usecases', 'application', 'applications'])
+    || /\b(?:use-case|orchestrator)\b/i.test(question)
+}
+
 function promptWantsRuntimePipeline(question: string): boolean {
   return /\b(runtime|pipeline|service|orchestrator|job|agent|scoring|report(?: builder)?|persistence|repository|queue|worker)\b/i.test(question)
 }
@@ -1667,7 +1687,7 @@ function workerLikeExecutionStep(
   node: Pick<ContextPackExecutionSliceStep, 'label' | 'source_file' | 'node_kind' | 'framework_role'>,
 ): boolean {
   const lower = `${node.label} ${node.source_file} ${node.node_kind ?? ''} ${node.framework_role ?? ''}`.toLowerCase()
-  return /\b(?:worker|processor|process\b|orchestrator)\b/.test(lower)
+  return /\b(?:worker|processor|process(?:[-_/]\w+))\b/.test(lower)
 }
 
 function lowValueExecutionStep(
@@ -1699,7 +1719,13 @@ function executionPhasesForStep(step: ContextPackExecutionSliceStep): Set<Execut
 }
 
 function expectedExecutionPhases(question: string): ExecutionPhase[] {
-  const phases: ExecutionPhase[] = ['controller', 'service']
+  const phases: ExecutionPhase[] = []
+  if (promptWantsControllerStep(question)) {
+    phases.push('controller')
+  }
+  if (promptWantsServiceStep(question)) {
+    phases.push('service')
+  }
   if (promptWantsRuntimePipeline(question)) {
     phases.push('queue', 'worker')
   }
@@ -1893,7 +1919,10 @@ function phaseCoverageForPath(
       observed.add('worker')
     }
   }
-  const orderedObserved = expected.filter((phase) => observed.has(phase))
+  const orderedObserved = [
+    ...expected.filter((phase) => observed.has(phase)),
+    ...[...observed].filter((phase) => !expected.includes(phase)),
+  ]
   const missing = expected.filter((phase) => !observed.has(phase))
   return { expected, observed: orderedObserved, missing }
 }
