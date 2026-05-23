@@ -1,8 +1,10 @@
 import { join } from 'node:path'
 
 import { extract } from '../../src/pipeline/extract.js'
+import { normalizeAssertionPath } from './helpers/platform.js'
 
 const FIXTURE_ROOT = join(process.cwd(), 'tests', 'fixtures', 'go-semantic-workspace')
+const NORMALIZED_FIXTURE_ROOT = normalizeAssertionPath(FIXTURE_ROOT)
 const FIXTURE_FILES = [
   join(FIXTURE_ROOT, 'cmd', 'api', 'main.go'),
   join(FIXTURE_ROOT, 'cmd', 'chi', 'main.go'),
@@ -26,16 +28,16 @@ describe('Go semantic extraction', () => {
     const createUser = result.nodes.find((node) => node.label === '.CreateUser()')
     const createUserMultiline = result.nodes.find((node) => node.label === '.CreateUserMultiline()')
     const listService = result.nodes.find(
-      (node) => node.label === '.List()' && node.source_file === join(FIXTURE_ROOT, 'internal', 'service', 'user_service.go'),
+      (node) => node.label === '.List()' && normalizeAssertionPath(node.source_file) === `${NORMALIZED_FIXTURE_ROOT}/internal/service/user_service.go`,
     )
     const createService = result.nodes.find(
-      (node) => node.label === '.Create()' && node.source_file === join(FIXTURE_ROOT, 'internal', 'service', 'user_service.go'),
+      (node) => node.label === '.Create()' && normalizeAssertionPath(node.source_file) === `${NORMALIZED_FIXTURE_ROOT}/internal/service/user_service.go`,
     )
     const validateService = result.nodes.find(
-      (node) => node.label === '.validate()' && node.source_file === join(FIXTURE_ROOT, 'internal', 'service', 'user_service_validation.go'),
+      (node) => node.label === '.validate()' && normalizeAssertionPath(node.source_file) === `${NORMALIZED_FIXTURE_ROOT}/internal/service/user_service_validation.go`,
     )
     const insertRepository = result.nodes.find(
-      (node) => node.label === '.Insert()' && node.source_file === join(FIXTURE_ROOT, 'internal', 'repository', 'user_repository.go'),
+      (node) => node.label === '.Insert()' && normalizeAssertionPath(node.source_file) === `${NORMALIZED_FIXTURE_ROOT}/internal/repository/user_repository.go`,
     )
 
     expect(netHttpRoute).toEqual(
