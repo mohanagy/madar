@@ -15,7 +15,8 @@ The registry lives in `src/infrastructure/capabilities.ts`. The extractor bindin
 | TypeScript / JavaScript AST | `.ts` `.tsx` `.js` `.jsx` | TypeScript compiler API + framework-semantic pass | Best code-structure coverage in the repo today, including deep framework-aware semantics for mainstream Express, Redux Toolkit, React Router, NestJS, and Next.js patterns; MCP `retrieve`/`impact` now return compact payloads by default, with `verbose: true` as the legacy escape hatch |
 | Tree-sitter + semantic resolution | `.py` | Tree-sitter WASM parser + Python cross-file import/call resolution + first-pass FastAPI route/dependency semantics | Falls back to the language-specific legacy extractor if the parser is unavailable |
 | Tree-sitter primary | `.rb` | Tree-sitter WASM parser | Falls back to language-specific legacy extractor if the parser is unavailable |
-| Tree-sitter primary | `.go` `.java` `.rs` | Tree-sitter WASM parser | Falls back to the generic structural extractor if the parser is unavailable |
+| Tree-sitter + first-pass semantic resolution | `.go` | Tree-sitter WASM parser + local-package import resolution + receiver/call resolution + statically visible `net/http` / Gin / Chi route semantics | Conservative first pass only: local source-visible packages and obvious router/group patterns, not full Go type-checking or framework parity |
+| Tree-sitter primary | `.java` `.rs` | Tree-sitter WASM parser | Falls back to the generic structural extractor if the parser is unavailable |
 | Generic structural extractor | `.c` `.cc` `.cpp` `.cxx` `.h` `.hpp` `.kt` `.kts` `.cs` `.scala` `.php` `.swift` `.zig` | Generic extractor | Heuristic structure, import, inheritance, and call extraction |
 | Lightweight language-specific scanners | `.lua` `.ex` `.exs` `.jl` `.ps1` `.m` `.mm` `.toc` | Purpose-built scanners | Useful coverage, but less semantic depth than AST-backed paths |
 | Unsupported | everything else | none | No extractor capability is registered, so the file is skipped |
@@ -73,6 +74,7 @@ The matrix above describes extraction coverage. The newer retrieval/runtime hint
 | Storage-oriented prompts with `--spi` | `storage_operation` metadata marks likely read/write endpoints on Prisma model operations and repository CRUD methods | "Where is this entity read or written?" questions rank persistence endpoints more accurately |
 | Next.js App Router with `--spi` | `runtime_boundary` metadata plus `next_client_component` and `next_server_action` roles for visible `'use client'` / `'use server'` boundaries | Client/server/server-action questions stay aligned with the app-router boundary the user actually cares about |
 | Python FastAPI workspaces | first-pass router / route / endpoint / dependency semantics on top of Python cross-file import/call resolution | FastAPI route/dependency questions return more than plain function listings, even before a deeper framework-specific pass exists |
+| Go `net/http` / Gin / Chi workspaces | first-pass route nodes, route → handler edges, receiver-method calls, and local-package handler/service/repository call chains when imports and bindings stay static | Retrieval can now surface request-entry routes and downstream service/repository hops instead of only tree-sitter-level functions |
 
 ## How to read this matrix
 
