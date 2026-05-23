@@ -66,19 +66,19 @@ Want a broader local-first walkthrough that also covers install, `prompt`, and a
 
 ---
 
-## What's new in 0.23.0
+## What's new in 0.24.1
 
-- Start broad, then zoom in: `madar summary` and the core MCP `graph_summary` tool now provide the same bounded first-turn overview of counts, domains, top modules, frameworks, entrypoints, and high-signal runtime paths.
-- Runtime-generation explain packs can now expose an `execution_slice` with ordered steps and partial-path signaling, so backend queue/report-generation flows are easier to inspect without dumping a large raw slice.
-- Proof workflows are easier to share safely: `compare`, `review-compare`, and runner-backed `benchmark --exec ...` now emit a companion `report.share-safe.json`, and `compare --baseline-mode pack_only` isolates one bounded raw-context baseline prompt against one compiled madar pack.
-- Public evaluation is stronger: the shared [GoValidate benchmark suite](docs/benchmarks/govalidate-suite/README.md) now ships stable prompt ids, pack-quality gates, and deterministic answer-quality checks.
-- Extraction and retrieval got smarter in places users notice: Python now has first-pass FastAPI semantics, runtime-generation packs preserve queue-to-worker handoffs, and `--spi` adds stronger storage and Next.js App Router hints.
+- `madar copilot install` now writes `.vscode/mcp.json` to launch the local `madar` CLI directly through Node when the CLI is available, which trims avoidable MCP startup overhead versus going through `npx` every time.
+- Copilot installer inputs are more robust: relative `packageRoot` values are now resolved before the launcher config is written, so the generated CLI path stays absolute and stable across different working directories.
+- This is a focused patch release. For the broader package/repo alignment and public launch changes, see the [`0.24.0` changelog entry](CHANGELOG.md#0240---2026-05-22).
 
-If you want the proof-oriented workflow behind those surfaces, start with [proof workflows](docs/proof-workflows.md) and the [GoValidate shared benchmark suite](docs/benchmarks/govalidate-suite/README.md).
+The larger **What's new in 0.23.0** additions are still part of the main flow too: `madar summary`, the core MCP `graph_summary` tool, runtime `execution_slice` output, share-safe `report.share-safe.json` compare artifacts, and `compare --baseline-mode pack_only`.
+
+If you want the broader proof-oriented workflow behind the current surfaces, start with [proof workflows](docs/proof-workflows.md) and the [GoValidate shared benchmark suite](docs/benchmarks/govalidate-suite/README.md).
 
 ### When to use `--spi`
 
-`--spi` is **still opt-in** in 0.23.0. Use it when your repo is framework-heavy TypeScript/JavaScript and you want the extra framework-shaped metadata plus disk cache behavior.
+`--spi` is **still opt-in** in 0.24.1. Use it when your repo is framework-heavy TypeScript/JavaScript and you want the extra framework-shaped metadata plus disk cache behavior.
 
 `--spi` is usually worth it for NestJS, Next.js App Router, Prisma, tRPC, Hono, Fastify, and similar repos where users ask storage-oriented prompts, client/server boundary questions, or request-flow questions. The default pipeline is still fine for simpler repos, non-JS/TS workspaces, or quick first runs when you do not need the extra framework detail yet.
 

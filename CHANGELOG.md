@@ -4,6 +4,13 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+## [0.24.1] - 2026-05-23
+
+### Changed
+
+- **Copilot MCP startup is faster when the local CLI is available**: `madar copilot install` now writes `.vscode/mcp.json` to launch the installed `madar` CLI directly through Node instead of routing through `npx`, which reduces MCP startup overhead while keeping the existing `npx` fallback for environments without a local CLI path.
+- **Copilot install paths are more stable across working directories**: relative `packageRoot` inputs are now resolved before the MCP launcher config is generated, so the written Copilot CLI path stays absolute and does not depend on the caller's current working directory.
+
 ## [0.24.0] - 2026-05-22
 
 ### Added
