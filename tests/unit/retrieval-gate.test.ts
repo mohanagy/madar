@@ -199,6 +199,69 @@ describe('classifyRetrievalLevel — signal extraction', () => {
     expect(decision.signals.target_domain_hint).toBe('frontend_display')
   })
 
+  it('keeps generated-report UI prompts out of backend runtime routing', () => {
+    const decision = classify({ prompt: 'How is the generated report rendered in the UI?' })
+    const signals = decision.signals as typeof decision.signals & {
+      generation_debug?: {
+        display_shaped: boolean
+        generic_generation_shaped: boolean
+        backend_runtime_shaped: boolean
+        report_generation_shaped: boolean
+        build_static_shaped: boolean
+        explanation_shaped: boolean
+      }
+    }
+
+    expect(decision.level).toBe(1)
+    expect(decision.signals.generation_intent).toBe('display_rendering')
+    expect(decision.signals.target_domain_hint).toBe('frontend_display')
+    expect(signals.generation_debug).toEqual(expect.objectContaining({
+      display_shaped: true,
+      generic_generation_shaped: true,
+      backend_runtime_shaped: false,
+      build_static_shaped: false,
+    }))
+  })
+
+  it('keeps component-creation prompts out of backend runtime routing', () => {
+    const decision = classify({ prompt: 'How is this component created?' })
+    expect(decision.level).toBe(1)
+    expect(decision.signals.generation_intent).toBe('display_rendering')
+    expect(decision.signals.target_domain_hint).toBe('frontend_display')
+  })
+
+  it('keeps landing-page generation prompts out of backend runtime routing', () => {
+    const decision = classify({ prompt: 'How is the landing page generated?' })
+    const signals = decision.signals as typeof decision.signals & {
+      generation_debug?: {
+        build_static_shaped: boolean
+        backend_runtime_shaped: boolean
+      }
+    }
+
+    expect(decision.level).toBe(1)
+    expect(decision.signals.generation_intent).toBe('unknown')
+    expect(decision.signals.target_domain_hint).toBe('unknown')
+    expect(signals.generation_debug).toEqual(expect.objectContaining({
+      build_static_shaped: true,
+      backend_runtime_shaped: false,
+    }))
+  })
+
+  it('keeps Next.js page-generation prompts out of backend runtime routing', () => {
+    const decision = classify({ prompt: 'How does Next.js generate this page?' })
+    expect(decision.level).toBe(2)
+    expect(decision.signals.generation_intent).toBe('unknown')
+    expect(decision.signals.target_domain_hint).toBe('unknown')
+  })
+
+  it('prefers display rendering for mixed generated-and-displayed prompts without backend runtime markers', () => {
+    const decision = classify({ prompt: 'Explain how the report is generated and displayed' })
+    expect(decision.level).toBe(1)
+    expect(decision.signals.generation_intent).toBe('display_rendering')
+    expect(decision.signals.target_domain_hint).toBe('frontend_display')
+  })
+
   it('prefers runtime generation for explanatory prompts that also mention display terms', () => {
     const decision = classify({ prompt: 'Explain how the idea report is generated and displayed in the footer' })
     expect(decision.signals.generation_intent).toBe('runtime_generation')

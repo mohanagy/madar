@@ -579,4 +579,50 @@ describe('SPI realistic Nest DI runtime-call fixture', () => {
     expect(labels).toEqual(expect.arrayContaining(['pickPipelineLabel()', 'ReportFooter()']))
     expect(sourceFiles.some((sourceFile) => sourceFile.includes('platform/src/features/idea-detail/components/ReportFooter.tsx'))).toBe(true)
   })
+
+  it('keeps generated-report UI prompts routed to frontend display helpers', () => {
+    const result = retrieveContext(buildFixtureGraph(), {
+      question: 'How is the generated report rendered in the UI?',
+      budget: 4000,
+      retrievalLevel: 4,
+      retrievalStrategy: 'slice-v1',
+    })
+
+    const labels = result.matched_nodes.map((node) => node.label)
+    const sourceFiles = result.matched_nodes.map((node) => normalizePathForAssertion(node.source_file))
+
+    expect(result.retrieval_gate?.signals.generation_intent).toBe('display_rendering')
+    expect(result.retrieval_gate?.signals.target_domain_hint).toBe('frontend_display')
+    expect(labels).toEqual(expect.arrayContaining(['ReportFooter()', 'pickGeneratedAt()']))
+    expect(labels).not.toEqual(expect.arrayContaining([
+      '.generateFromProblem()',
+      '.startPipeline()',
+      '.addJob()',
+      '.process()',
+    ]))
+    expect(sourceFiles.some((sourceFile) => sourceFile.includes('platform/src/features/idea-detail/components/ReportFooter.tsx'))).toBe(true)
+  })
+
+  it('keeps mixed generated-and-displayed prompts routed to frontend display helpers when backend markers are absent', () => {
+    const result = retrieveContext(buildFixtureGraph(), {
+      question: 'Explain how the report is generated and displayed in the footer',
+      budget: 4000,
+      retrievalLevel: 4,
+      retrievalStrategy: 'slice-v1',
+    })
+
+    const labels = result.matched_nodes.map((node) => node.label)
+    const sourceFiles = result.matched_nodes.map((node) => normalizePathForAssertion(node.source_file))
+
+    expect(result.retrieval_gate?.signals.generation_intent).toBe('display_rendering')
+    expect(result.retrieval_gate?.signals.target_domain_hint).toBe('frontend_display')
+    expect(labels).toEqual(expect.arrayContaining(['ReportFooter()', 'pickGeneratedAt()', 'pickPipelineLabel()']))
+    expect(labels).not.toEqual(expect.arrayContaining([
+      '.generateFromProblem()',
+      '.startPipeline()',
+      '.addJob()',
+      '.process()',
+    ]))
+    expect(sourceFiles.some((sourceFile) => sourceFile.includes('platform/src/features/idea-detail/components/ReportFooter.tsx'))).toBe(true)
+  })
 })

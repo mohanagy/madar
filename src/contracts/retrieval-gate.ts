@@ -38,6 +38,15 @@ export type RetrievalTargetDomainHint =
   | 'frontend_display'
   | 'unknown'
 
+export interface RetrievalGenerationDebugSignals {
+  display_shaped: boolean
+  generic_generation_shaped: boolean
+  backend_runtime_shaped: boolean
+  report_generation_shaped: boolean
+  build_static_shaped: boolean
+  explanation_shaped: boolean
+}
+
 export interface RetrievalGateSignals {
   has_pr_diff: boolean
   has_stack_trace: boolean
@@ -45,6 +54,7 @@ export interface RetrievalGateSignals {
   mentioned_symbols: ReadonlyArray<string>
   generation_intent?: RetrievalGenerationIntent
   target_domain_hint?: RetrievalTargetDomainHint
+  generation_debug?: RetrievalGenerationDebugSignals
   excluded_domains?: ReadonlyArray<RetrievalExcludedDomain>
   excluded_terms?: ReadonlyArray<string>
   excluded_path_hints?: ReadonlyArray<string>

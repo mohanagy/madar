@@ -24,6 +24,7 @@ import type {
   RetrievalGateDecision,
   RetrievalExcludedDomain,
   RetrievalGateSignals,
+  RetrievalGenerationDebugSignals,
   RetrievalGenerationIntent,
   RetrievalIntent,
   RetrievalLevel,
@@ -99,7 +100,8 @@ export function classifyRetrievalLevel(input: RetrievalGateInput): RetrievalGate
   const hasStackTrace = input.hasStackTrace ?? STACK_TRACE_RE.test(prompt)
   const hasPrDiff = input.hasPrDiff === true
   const intent = input.intent ?? detectIntent(positivePrompt)
-  const generationIntent = detectGenerationIntent(positivePrompt)
+  const generationClassification = detectGenerationIntent(positivePrompt)
+  const generationIntent = generationClassification.intent
   const targetDomainHint = targetDomainHintForGenerationIntent(generationIntent)
 
   const signals: RetrievalGateSignals = {
@@ -109,6 +111,7 @@ export function classifyRetrievalLevel(input: RetrievalGateInput): RetrievalGate
     mentioned_symbols: detectedSymbols,
     generation_intent: generationIntent,
     target_domain_hint: targetDomainHint,
+    generation_debug: generationClassification.debug,
     ...(exclusions.excludedDomains.length > 0 ? { excluded_domains: exclusions.excludedDomains } : {}),
     ...(exclusions.excludedTerms.length > 0 ? { excluded_terms: exclusions.excludedTerms } : {}),
     ...(exclusions.excludedPathHints.length > 0 ? { excluded_path_hints: exclusions.excludedPathHints } : {}),
@@ -209,22 +212,47 @@ function detectIntent(prompt: string): RetrievalIntent {
   return 'unknown'
 }
 
-function detectGenerationIntent(prompt: string): RetrievalGenerationIntent {
+function detectGenerationIntent(prompt: string): {
+  intent: RetrievalGenerationIntent
+  debug: RetrievalGenerationDebugSignals
+} {
   const lower = prompt.toLowerCase()
   const displayShaped = /\b(?:display(?:ed|ing)?|render(?:ed|ing)?|show(?:n|ing)?|visible|view|ui|frontend|front-end|component|screen|page|footer|header|label|date|timestamp)\b/i.test(lower)
-  const generationShaped = /\b(?:generat(?:e|ed|es|ing|ion)|creat(?:e|ed|es|ing|ion)|build(?:s|ing|er)?|assembl(?:e|ed|es|ing)|produc(?:e|ed|es|ing)|persist(?:ed|ing)?|sav(?:e|ed|es|ing)|pipeline|runtime|orchestrator|worker|job|repository|service)\b/i.test(lower)
-  const explanationShaped = /\b(?:explain|how|trace|walk|flow|path|lifecycle)\b/i.test(lower)
-
-  if (generationShaped && explanationShaped) {
-    return 'runtime_generation'
+  const genericGenerationShaped = /\b(?:generat(?:e|ed|es|ing|ion)|creat(?:e|ed|es|ing|ion)|build(?:s|ing|er)?|assembl(?:e|ed|es|ing)|produc(?:e|ed|es|ing))\b/i.test(lower)
+  const backendRuntimeShaped = /\b(?:pipeline|runtime|orchestrator|worker|job|repository|service|controller|api|backend|persist(?:ed|ing)?|sav(?:e|ed|es|ing)|db(?:sync|[- ]sync)?)\b/i.test(lower)
+  const reportGenerationShaped = /\b(?:idea\s+report|report\s+generation|final\s+report|planner|research|metrics?|scor(?:e|ing)|quality(?:\s|-)?gate|renderer|synthesis|assemble|assembly)\b/i.test(lower)
+  const buildStaticShaped = /\b(?:next\.js|nextjs|app\s+router|route\s+segment|landing\s+page|static|ssg|isr|server\s+component)\b/i.test(lower)
+  const explanationShaped = /\b(?:explain|how|why|trace|walk|flow|path|lifecycle|fail(?:s|ing|ed)?)\b/i.test(lower)
+  const debug: RetrievalGenerationDebugSignals = {
+    display_shaped: displayShaped,
+    generic_generation_shaped: genericGenerationShaped,
+    backend_runtime_shaped: backendRuntimeShaped,
+    report_generation_shaped: reportGenerationShaped,
+    build_static_shaped: buildStaticShaped,
+    explanation_shaped: explanationShaped,
   }
-  if (generationShaped && !displayShaped) {
-    return 'runtime_generation'
+
+  const strongRuntimeShaped = backendRuntimeShaped || reportGenerationShaped
+
+  if (buildStaticShaped && !strongRuntimeShaped) {
+    return { intent: 'unknown', debug }
+  }
+  if (displayShaped && !strongRuntimeShaped) {
+    return { intent: 'display_rendering', debug }
+  }
+  if (strongRuntimeShaped && (genericGenerationShaped || explanationShaped)) {
+    return { intent: 'runtime_generation', debug }
+  }
+  if (genericGenerationShaped && explanationShaped && !displayShaped && !buildStaticShaped) {
+    return { intent: 'runtime_generation', debug }
+  }
+  if (genericGenerationShaped && !displayShaped && !buildStaticShaped && strongRuntimeShaped) {
+    return { intent: 'runtime_generation', debug }
   }
   if (displayShaped) {
-    return 'display_rendering'
+    return { intent: 'display_rendering', debug }
   }
-  return 'unknown'
+  return { intent: 'unknown', debug }
 }
 
 function targetDomainHintForGenerationIntent(intent: RetrievalGenerationIntent): RetrievalTargetDomainHint {
