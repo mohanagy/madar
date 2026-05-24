@@ -20,19 +20,41 @@ function withTempDir(callback: (dir: string) => void): void {
 
 function decodeHookPayload(settingsJson: string): string {
   const parsed = JSON.parse(settingsJson) as {
-    hooks?: { PreToolUse?: Array<{ hooks?: Array<{ command?: string }> }> }
+    hooks?: {
+      PreToolUse?: Array<{ hooks?: Array<{ command?: string }> }>
+      UserPromptSubmit?: Array<{ hooks?: Array<{ command?: string }> }>
+    }
   }
-  const command = parsed.hooks?.PreToolUse?.[0]?.hooks?.[0]?.command ?? ''
+  const command = parsed.hooks?.UserPromptSubmit?.[0]?.hooks?.[0]?.command
+    ?? parsed.hooks?.PreToolUse?.[0]?.hooks?.[0]?.command
+    ?? ''
   // Hook command embeds the payload as a base64 literal inside a node -e wrapper.
   // Extract every base64-looking chunk and decode each, concatenating the results
   // so we capture both the match and miss payloads when present.
-  const base64Matches = [...command.matchAll(/'([A-Za-z0-9+/=]{40,})'/g)]
-    .map((match) => match[1])
-    .filter((value): value is string => typeof value === 'string')
-  if (base64Matches.length === 0) {
-    return ''
+  const decodedPayloads: string[] = []
+  const seen = new Set<string>()
+  const queue = [command]
+
+  while (queue.length > 0) {
+    const current = queue.shift()
+    if (!current) {
+      continue
+    }
+
+    for (const match of current.matchAll(/'([A-Za-z0-9+/=]{40,})'/g)) {
+      const value = match[1]
+      if (typeof value !== 'string' || seen.has(value)) {
+        continue
+      }
+
+      seen.add(value)
+      const decoded = Buffer.from(value, 'base64').toString('utf8')
+      decodedPayloads.push(decoded)
+      queue.push(decoded)
+    }
   }
-  return base64Matches.map((b64) => Buffer.from(b64, 'base64').toString('utf8')).join('\n')
+
+  return decodedPayloads.join('\n')
 }
 
 describe('install hook payload', () => {
@@ -103,5 +125,6 @@ describe('built-in install templates', () => {
     expect(content).toContain('Codex limitations')
     expect(content).toContain('spawn_agent')
     expect(content).toContain('npx --yes madar --help')
+    expect(content).toContain('Only use madar when the task needs local repository source-code context.')
   })
 })

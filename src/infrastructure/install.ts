@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmdirSync, rmSync, statSync, unlin
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { getBuiltInSkillContent } from './install-skill-templates.js'
+import { buildPromptApplicabilityHookCommand } from '../runtime/task-applicability.js'
 import {
   findPackageRoot as resolvePackageRoot,
   readPackageName as resolvePackageName,
@@ -121,10 +122,35 @@ function hookCommandWithFallback(matchJson: string, missJson: string): string {
 }
 
 function decodeGeneratedHookPayloads(command: string): string[] {
-  return [...command.matchAll(/'([A-Za-z0-9+/=]{40,})'/g)]
-    .map((match) => match[1])
-    .filter((value): value is string => typeof value === 'string')
-    .map((value) => Buffer.from(value, 'base64').toString('utf8'))
+  const decodedPayloads: string[] = []
+  const seen = new Set<string>()
+  const queue = [command]
+
+  while (queue.length > 0) {
+    const current = queue.shift()
+    if (!current) {
+      continue
+    }
+
+    for (const match of current.matchAll(/'([A-Za-z0-9+/=]{40,})'/g)) {
+      const value = match[1]
+      if (typeof value !== 'string' || seen.has(value)) {
+        continue
+      }
+
+      seen.add(value)
+      const decoded = Buffer.from(value, 'base64').toString('utf8')
+      decodedPayloads.push(decoded)
+      queue.push(decoded)
+    }
+  }
+
+  return decodedPayloads
+}
+
+function hookCommandHasGraphCheck(command: string): boolean {
+  return command.includes("accessSync('out/graph.json')")
+    || decodeGeneratedHookPayloads(command).some((payload) => payload.includes("accessSync('out/graph.json')"))
 }
 
 function isMadarCodexHookPayload(payload: string): boolean {
@@ -153,14 +179,17 @@ function isMadarProjectHookPayload(payload: string): boolean {
 
 function isMadarProjectHookCommand(command: string): boolean {
   return (
-    command.includes("accessSync('out/graph.json')") &&
-    command.includes('process.stdout.write(Buffer.from(') &&
+    hookCommandHasGraphCheck(command) &&
     decodeGeneratedHookPayloads(command).some(isMadarProjectHookPayload)
   )
 }
 
-function isMadarProjectHook(hook: unknown, matcher: string): boolean {
-  if (!isRecord(hook) || hook.matcher !== matcher || !Array.isArray(hook.hooks)) {
+function isMadarProjectHook(hook: unknown, matcher?: string): boolean {
+  if (!isRecord(hook) || !Array.isArray(hook.hooks)) {
+    return false
+  }
+
+  if (matcher !== undefined && hook.matcher !== matcher) {
     return false
   }
 
@@ -268,41 +297,44 @@ const CLAUDE_MD_SECTION = `${SECTION_MARKER}
 
 IMPORTANT: This project has a madar knowledge graph. You MUST follow these rules:
 
-1. **BEFORE answering ANY codebase question**, start with the graph tool that matches the question:
+1. **First decide whether the task needs local repository source-code context.** Only use madar when the task needs local repository source-code context. Skip madar for GitHub Projects board reviews, external URL/WebFetch-only tasks, \`gh auth\` / \`gh project\` setup, package-registry/security pages, and Product Hunt or marketing copy work.
+2. **BEFORE answering a codebase question that needs local code context**, start with the graph tool that matches the question:
    - \`retrieve\` for "how does X work?" and other direct codebase questions
    - \`relevant_files\` for "which files should I open first?"
    - \`feature_map\` for "what parts of the codebase are involved?"
    - \`risk_map\` before editing to see likely hotspots
    - \`implementation_checklist\` for edit order and validation checkpoints
    - \`impact\` for "what breaks if I change X?"
-2. **Do NOT use Glob, Grep, Bash, Read, or dispatch Agent/Explore subagents first** for codebase questions.
-3. **Only fall back to raw file tools** if the graph tools cannot answer the question or the MCP server is unavailable. In that case, read out/GRAPH_REPORT.md first.
-4. **Do NOT dispatch Explore or research agents** for codebase questions — the knowledge graph already has the structural context they would spend tokens discovering.
+3. **Do NOT use Glob, Grep, Bash, Read, or dispatch Agent/Explore subagents first** for codebase questions.
+4. **Only fall back to raw file tools** if the graph tools cannot answer the question or the MCP server is unavailable. In that case, read out/GRAPH_REPORT.md first.
+5. **Do NOT dispatch Explore or research agents** for codebase questions — the knowledge graph already has the structural context they would spend tokens discovering.
 `
 
 const STRICT_CLAUDE_MD_SECTION = `${SECTION_MARKER}
 
 IMPORTANT: This project has a madar knowledge graph. You MUST follow these strict compact MCP rules:
 
-1. **Call \`context_pack\` once for the task before broader exploration.**
-2. **Answer from the pack when coverage is complete.**
-3. **Only expand with graph/search tools when diagnostics show missing evidence.** Use \`context_expand\` first, then focused graph tools such as \`retrieve\`, \`relevant_files\`, \`feature_map\`, \`risk_map\`, \`implementation_checklist\`, or \`impact\` only when the pack is insufficient.
-4. **Avoid raw file search unless the pack is insufficient.** If manual expansion is still required, read \`out/GRAPH_REPORT.md\` first.
+1. **First decide whether the task needs local repository source-code context.** Only use madar when the task needs local repository source-code context. Skip madar for GitHub Projects board reviews, external URL/WebFetch-only tasks, \`gh auth\` / \`gh project\` setup, package-registry/security pages, and Product Hunt or marketing copy work.
+2. **Call \`context_pack\` once for the task before broader exploration.**
+3. **Answer from the pack when coverage is complete.**
+4. **Only expand with graph/search tools when diagnostics show missing evidence.** Use \`context_expand\` first, then focused graph tools such as \`retrieve\`, \`relevant_files\`, \`feature_map\`, \`risk_map\`, \`implementation_checklist\`, or \`impact\` only when the pack is insufficient.
+5. **Avoid raw file search unless the pack is insufficient.** If manual expansion is still required, read \`out/GRAPH_REPORT.md\` first.
 `
 
 const AGENTS_MD_SECTION = `${SECTION_MARKER}
 
 IMPORTANT: This project has a madar knowledge graph. You MUST follow these rules:
 
-1. **BEFORE answering ANY codebase question**, start with the graph tool that matches the question:
+1. **First decide whether the task needs local repository source-code context.** Only use madar when the task needs local repository source-code context. Skip madar for GitHub Projects board reviews, external URL/WebFetch-only tasks, \`gh auth\` / \`gh project\` setup, package-registry/security pages, and Product Hunt or marketing copy work.
+2. **BEFORE answering a codebase question that needs local code context**, start with the graph tool that matches the question:
    - \`retrieve\` for "how does X work?" and other direct codebase questions
    - \`relevant_files\` for "which files should I open first?"
    - \`feature_map\` for "what parts of the codebase are involved?"
    - \`risk_map\` before editing to see likely hotspots
    - \`implementation_checklist\` for edit order and validation checkpoints
    - \`impact\` for "what breaks if I change X?"
-2. **Do NOT search the codebase with other tools first** for codebase questions.
-3. **Only fall back to raw file tools** if the graph tools cannot answer the question or the MCP server is unavailable. In that case, read out/GRAPH_REPORT.md first.
+3. **Do NOT search the codebase with other tools first** for codebase questions.
+4. **Only fall back to raw file tools** if the graph tools cannot answer the question or the MCP server is unavailable. In that case, read out/GRAPH_REPORT.md first.
 `
 
 const AIDER_AGENTS_MD_SECTION = `${SECTION_MARKER}
@@ -311,14 +343,15 @@ const AIDER_AGENTS_MD_SECTION = `${SECTION_MARKER}
 
 IMPORTANT: This project has a madar knowledge graph. Use a strict context-pack-first workflow:
 
-1. **Before broad code search or manual file expansion**, compile a task-specific context pack:
+1. **First decide whether the task needs local repository source-code context.** Only use madar when the task needs local repository source-code context. Skip madar for GitHub Projects board reviews, external URL/WebFetch-only tasks, \`gh auth\` / \`gh project\` setup, package-registry/security pages, and Product Hunt or marketing copy work.
+2. **Before broad code search or manual file expansion**, compile a task-specific context pack:
    - \`madar pack "<task or question>" --task explain\`
    - use \`--task review\`, \`--task debug\`, or \`--task impact\` when that better matches the work
-2. **Regenerate before expanding manually** when the pack is stale or missing:
+3. **Regenerate before expanding manually** when the pack is stale or missing:
    - run \`madar generate .\`
    - if you still need raw file reads, inspect \`out/GRAPH_REPORT.md\` first
-3. **This profile writes AGENTS.md only.** Aider does not get an auto-installed MCP server or hook from this installer, so the AGENTS.md rule plus explicit \`madar pack\` calls are the enforcement mechanism.
-4. **Uninstall behavior:** run \`madar aider uninstall\` to remove this AGENTS.md section while preserving unrelated content.
+4. **This profile writes AGENTS.md only.** Aider does not get an auto-installed MCP server or hook from this installer, so the AGENTS.md rule plus explicit \`madar pack\` calls are the enforcement mechanism.
+5. **Uninstall behavior:** run \`madar aider uninstall\` to remove this AGENTS.md section while preserving unrelated content.
 
 Manual verification:
 
@@ -337,19 +370,20 @@ const CODEX_AGENTS_MD_SECTION = `${SECTION_MARKER}
 
 IMPORTANT: This project has a madar knowledge graph. Use a strict context-pack-first workflow:
 
-1. **Before broad code search, file reads, or worker dispatch**, compile a task-specific context pack:
+1. **First decide whether the task needs local repository source-code context.** Only use madar when the task needs local repository source-code context. Skip madar for GitHub Projects board reviews, external URL/WebFetch-only tasks, \`gh auth\` / \`gh project\` setup, package-registry/security pages, and Product Hunt or marketing copy work.
+2. **Before broad code search, file reads, or worker dispatch**, compile a task-specific context pack:
    - \`madar pack "<task or question>" --task explain\`
    - use \`--task review\`, \`--task debug\`, or \`--task impact\` when that better matches the work
-2. If MCP graph tools are available, use the focused tool that matches the question after the pack:
+3. If MCP graph tools are available, use the focused tool that matches the question after the pack:
    - \`retrieve\` for direct codebase questions
    - \`relevant_files\` for where to open first
    - \`feature_map\` for involved areas and entry points
    - \`risk_map\` before editing
    - \`implementation_checklist\` for edit order and validation checkpoints
    - \`impact\` for blast radius
-3. **Only fall back to raw file tools** when the context pack or graph tools are missing, stale, or insufficient. In that case, read \`out/GRAPH_REPORT.md\` first.
-4. **Do not dispatch \`spawn_agent\` workers first** for codebase discovery. Let the context pack define likely entry files, risks, and missing context before parallel work.
-5. **Uninstall behavior:** run \`madar codex uninstall\` to remove this AGENTS.md section and the madar Codex hook from \`.codex/hooks.json\` while preserving unrelated content.
+4. **Only fall back to raw file tools** when the context pack or graph tools are missing, stale, or insufficient. In that case, read \`out/GRAPH_REPORT.md\` first.
+5. **Do not dispatch \`spawn_agent\` workers first** for codebase discovery. Let the context pack define likely entry files, risks, and missing context before parallel work.
+6. **Uninstall behavior:** run \`madar codex uninstall\` to remove this AGENTS.md section and the madar Codex hook from \`.codex/hooks.json\` while preserving unrelated content.
 
 Manual verification:
 
@@ -367,19 +401,20 @@ const OPENCODE_AGENTS_MD_SECTION = `${SECTION_MARKER}
 
 IMPORTANT: This project has a madar knowledge graph. Use a strict context-pack-first workflow:
 
-1. **Before broad code search, bash-heavy exploration, or worker dispatch**, compile a task-specific context pack:
+1. **First decide whether the task needs local repository source-code context.** Only use madar when the task needs local repository source-code context. Skip madar for GitHub Projects board reviews, external URL/WebFetch-only tasks, \`gh auth\` / \`gh project\` setup, package-registry/security pages, and Product Hunt or marketing copy work.
+2. **Before broad code search, bash-heavy exploration, or worker dispatch**, compile a task-specific context pack:
    - \`madar pack "<task or question>" --task explain\`
    - use \`--task review\`, \`--task debug\`, or \`--task impact\` when that better matches the work
-2. After the pack, use MCP graph tools when available inside OpenCode:
+3. After the pack, use MCP graph tools when available inside OpenCode:
    - \`retrieve\` for direct codebase questions
    - \`relevant_files\` for where to open first
    - \`feature_map\` for involved areas and entry points
    - \`risk_map\` before editing
    - \`implementation_checklist\` for edit order and validation checkpoints
    - \`impact\` for blast radius
-3. **Install artifacts:** this profile writes this AGENTS.md section, \`.opencode/plugins/madar.js\`, and the madar MCP server entry in \`opencode.json\` or \`opencode.jsonc\`.
-4. **Only fall back to raw file tools** when the context pack or graph tools are missing, stale, or insufficient. In that case, read \`out/GRAPH_REPORT.md\` first.
-5. **Uninstall behavior:** run \`madar opencode uninstall\` to remove the madar AGENTS.md section, plugin entry, plugin file, and madar MCP config while preserving unrelated content.
+4. **Install artifacts:** this profile writes this AGENTS.md section, \`.opencode/plugins/madar.js\`, and the madar MCP server entry in \`opencode.json\` or \`opencode.jsonc\`.
+5. **Only fall back to raw file tools** when the context pack or graph tools are missing, stale, or insufficient. In that case, read \`out/GRAPH_REPORT.md\` first.
+6. **Uninstall behavior:** run \`madar opencode uninstall\` to remove the madar AGENTS.md section, plugin entry, plugin file, and madar MCP config while preserving unrelated content.
 
 Manual verification:
 
@@ -396,25 +431,27 @@ const GEMINI_MD_SECTION = `${SECTION_MARKER}
 
 IMPORTANT: This project has a madar knowledge graph. You MUST follow these rules:
 
-1. **BEFORE answering ANY codebase question**, start with the graph tool that matches the question:
+1. **First decide whether the task needs local repository source-code context.** Only use madar when the task needs local repository source-code context. Skip madar for GitHub Projects board reviews, external URL/WebFetch-only tasks, \`gh auth\` / \`gh project\` setup, package-registry/security pages, and Product Hunt or marketing copy work.
+2. **BEFORE answering a codebase question that needs local code context**, start with the graph tool that matches the question:
    - \`retrieve\` for "how does X work?" and other direct codebase questions
    - \`relevant_files\` for "which files should I open first?"
    - \`feature_map\` for "what parts of the codebase are involved?"
    - \`risk_map\` before editing to see likely hotspots
    - \`implementation_checklist\` for edit order and validation checkpoints
    - \`impact\` for "what breaks if I change X?"
-2. **Do NOT search the codebase with other tools first** for codebase questions.
-3. **Only fall back to raw file tools** if the graph tools cannot answer the question or the MCP server is unavailable. In that case, read out/GRAPH_REPORT.md first.
+3. **Do NOT search the codebase with other tools first** for codebase questions.
+4. **Only fall back to raw file tools** if the graph tools cannot answer the question or the MCP server is unavailable. In that case, read out/GRAPH_REPORT.md first.
 `
 
 const STRICT_GEMINI_MD_SECTION = `${SECTION_MARKER}
 
 IMPORTANT: This project has a madar knowledge graph. Use strict compact MCP guidance:
 
-1. **Call \`context_pack\` once for the task before broader exploration.**
-2. **Answer from the pack when coverage is complete.**
-3. **Only expand with graph/search tools when diagnostics show missing evidence.** Use \`context_expand\` first, then focused graph tools such as \`retrieve\`, \`relevant_files\`, \`feature_map\`, \`risk_map\`, \`implementation_checklist\`, or \`impact\` only when the pack is insufficient.
-4. **Avoid raw file search unless the pack is insufficient.** If manual expansion is still required, read \`out/GRAPH_REPORT.md\` first.
+1. **First decide whether the task needs local repository source-code context.** Only use madar when the task needs local repository source-code context. Skip madar for GitHub Projects board reviews, external URL/WebFetch-only tasks, \`gh auth\` / \`gh project\` setup, package-registry/security pages, and Product Hunt or marketing copy work.
+2. **Call \`context_pack\` once for the task before broader exploration.**
+3. **Answer from the pack when coverage is complete.**
+4. **Only expand with graph/search tools when diagnostics show missing evidence.** Use \`context_expand\` first, then focused graph tools such as \`retrieve\`, \`relevant_files\`, \`feature_map\`, \`risk_map\`, \`implementation_checklist\`, or \`impact\` only when the pack is insufficient.
+5. **Avoid raw file search unless the pack is insufficient.** If manual expansion is still required, read \`out/GRAPH_REPORT.md\` first.
 `
 
 const SKILL_REGISTRATION_MARKER = '- **madar**'
@@ -457,15 +494,16 @@ alwaysApply: true
 
 IMPORTANT: This project has a madar knowledge graph.
 
-1. **BEFORE answering ANY codebase question**, start with the graph tool that matches the question:
+1. **First decide whether the task needs local repository source-code context.** Only use madar when the task needs local repository source-code context. Skip madar for GitHub Projects board reviews, external URL/WebFetch-only tasks, \`gh auth\` / \`gh project\` setup, package-registry/security pages, and Product Hunt or marketing copy work.
+2. **BEFORE answering a codebase question that needs local code context**, start with the graph tool that matches the question:
    - \`retrieve\` for "how does X work?" and other direct codebase questions
    - \`relevant_files\` for "which files should I open first?"
    - \`feature_map\` for "what parts of the codebase are involved?"
    - \`risk_map\` before editing to see likely hotspots
    - \`implementation_checklist\` for edit order and validation checkpoints
    - \`impact\` for "what breaks if I change X?"
-2. **Do NOT search the codebase with other tools first** for codebase questions.
-3. **Only fall back to raw file tools** if the graph tools cannot answer the question or the MCP server is unavailable. In that case, read out/GRAPH_REPORT.md first.
+3. **Do NOT search the codebase with other tools first** for codebase questions.
+4. **Only fall back to raw file tools** if the graph tools cannot answer the question or the MCP server is unavailable. In that case, read out/GRAPH_REPORT.md first.
 `
 
 const STRICT_CURSOR_RULE = `---
@@ -475,10 +513,11 @@ alwaysApply: true
 
 IMPORTANT: This project has a madar knowledge graph. Use strict compact MCP guidance:
 
-1. **Call \`context_pack\` once for the task before broader exploration.**
-2. **Answer from the pack when coverage is complete.**
-3. **Only expand with graph/search tools when diagnostics show missing evidence.** Use \`context_expand\` first, then focused graph tools such as \`retrieve\`, \`relevant_files\`, \`feature_map\`, \`risk_map\`, \`implementation_checklist\`, or \`impact\` only when the pack is insufficient.
-4. **Avoid raw file search unless the pack is insufficient.** If manual expansion is still required, read \`out/GRAPH_REPORT.md\` first.
+1. **First decide whether the task needs local repository source-code context.** Only use madar when the task needs local repository source-code context. Skip madar for GitHub Projects board reviews, external URL/WebFetch-only tasks, \`gh auth\` / \`gh project\` setup, package-registry/security pages, and Product Hunt or marketing copy work.
+2. **Call \`context_pack\` once for the task before broader exploration.**
+3. **Answer from the pack when coverage is complete.**
+4. **Only expand with graph/search tools when diagnostics show missing evidence.** Use \`context_expand\` first, then focused graph tools such as \`retrieve\`, \`relevant_files\`, \`feature_map\`, \`risk_map\`, \`implementation_checklist\`, or \`impact\` only when the pack is insufficient.
+5. **Avoid raw file search unless the pack is insufficient.** If manual expansion is still required, read \`out/GRAPH_REPORT.md\` first.
 `
 
 function claudeMdSection(profile?: InstallProfile): string {
@@ -495,17 +534,17 @@ function cursorRule(profile?: InstallProfile): string {
 
 function settingsHook(profile?: InstallProfile): Record<string, unknown> {
   return {
-    matcher: 'Glob|Grep|Bash|Agent|Read',
     hooks: [
       {
         type: 'command',
-        command: hookCommand(
+        command: buildPromptApplicabilityHookCommand(
           JSON.stringify({
             hookSpecificOutput: {
-              hookEventName: 'PreToolUse',
+              hookEventName: 'UserPromptSubmit',
               additionalContext: profile === 'strict' ? STRICT_CONTEXT_PACK_MESSAGE : RETRIEVE_FIRST_MESSAGE,
             },
           }),
+          'UserPromptSubmit',
         ),
       },
     ],
@@ -1535,18 +1574,21 @@ function installClaudeHook(projectDir: string, profile?: InstallProfile): string
   const settingsPath = join(projectDir, '.claude', 'settings.json')
   const settings = readJsonObject(settingsPath)
   const hooks = ensureRecord(settings, 'hooks')
+  const userPromptSubmit = ensureArray(hooks, 'UserPromptSubmit')
   const preToolUse = ensureArray(hooks, 'PreToolUse')
 
-  const existingIndex = preToolUse.findIndex((hook) => isMadarProjectHook(hook, 'Glob|Grep|Bash|Agent|Read'))
+  const existingIndex = userPromptSubmit.findIndex((hook) => isMadarProjectHook(hook))
   if (existingIndex >= 0) {
-    preToolUse[existingIndex] = settingsHook(profile)
+    userPromptSubmit[existingIndex] = settingsHook(profile)
+    hooks.PreToolUse = preToolUse.filter((hook) => !isMadarProjectHook(hook, 'Glob|Grep|Bash|Agent|Read'))
     writeJson(settingsPath, settings)
     return '.claude/settings.json -> hook updated'
   }
 
-  preToolUse.push(settingsHook(profile))
+  userPromptSubmit.push(settingsHook(profile))
+  hooks.PreToolUse = preToolUse.filter((hook) => !isMadarProjectHook(hook, 'Glob|Grep|Bash|Agent|Read'))
   writeJson(settingsPath, settings)
-  return '.claude/settings.json -> PreToolUse hook registered'
+  return '.claude/settings.json -> UserPromptSubmit hook registered'
 }
 
 function uninstallClaudeHook(projectDir: string): string | undefined {
@@ -1557,16 +1599,19 @@ function uninstallClaudeHook(projectDir: string): string | undefined {
 
   const settings = readJsonObject(settingsPath)
   const hooks = ensureRecord(settings, 'hooks')
+  const userPromptSubmit = ensureArray(hooks, 'UserPromptSubmit')
   const preToolUse = ensureArray(hooks, 'PreToolUse')
-  const filtered = preToolUse.filter((hook) => !isMadarProjectHook(hook, 'Glob|Grep|Bash|Agent|Read'))
+  const filteredUserPromptSubmit = userPromptSubmit.filter((hook) => !isMadarProjectHook(hook))
+  const filteredPreToolUse = preToolUse.filter((hook) => !isMadarProjectHook(hook, 'Glob|Grep|Bash|Agent|Read'))
 
-  if (filtered.length === preToolUse.length) {
+  if (filteredUserPromptSubmit.length === userPromptSubmit.length && filteredPreToolUse.length === preToolUse.length) {
     return undefined
   }
 
-  hooks.PreToolUse = filtered
+  hooks.UserPromptSubmit = filteredUserPromptSubmit
+  hooks.PreToolUse = filteredPreToolUse
   writeJson(settingsPath, settings)
-  return '.claude/settings.json -> PreToolUse hook removed'
+  return '.claude/settings.json -> UserPromptSubmit hook removed'
 }
 
 function installGeminiHook(projectDir: string, profile?: InstallProfile): string {

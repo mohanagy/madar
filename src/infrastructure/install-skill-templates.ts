@@ -295,6 +295,8 @@ function codexProfileSection(kind: PlatformKind): string {
 
   return `## Codex CLI profile
 
+Only use madar when the task needs local repository source-code context. Skip it for GitHub Projects board reviews, external URL/WebFetch-only tasks, ${CODE_SPAN_START}gh auth${CODE_SPAN_END} / ${CODE_SPAN_START}gh project${CODE_SPAN_END} setup, package-registry/security pages, and Product Hunt or marketing copy work.
+
 Use madar as a context-pack-first layer for Codex CLI. Before broad shell search, raw file reads, or ${CODE_SPAN_START}spawn_agent${CODE_SPAN_END} worker dispatch, generate or refresh the graph and compile the narrow task context:
 
 ${CODE_BLOCK_START}bash
