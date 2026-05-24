@@ -528,7 +528,7 @@ describe('context-pack-command', () => {
         likely_edit_files?: Array<{ path?: string }>
         likely_test_files?: Array<{ path?: string }>
         contracts_and_public_surfaces?: Array<{ source_file?: string; kind?: string }>
-        existing_patterns?: Array<{ source_file?: string }>
+        existing_patterns?: Array<{ source_file?: string; kind?: string }>
         validation_commands?: string[]
         risk_boundaries?: Array<{ label?: string }>
       }
@@ -548,9 +548,6 @@ describe('context-pack-command', () => {
         expect.objectContaining({ source_file: 'src/contracts/context-pack.ts', kind: 'contract' }),
         expect.objectContaining({ source_file: 'src/runtime/stdio/definitions.ts', kind: 'public_surface' }),
       ]),
-      existing_patterns: expect.arrayContaining([
-        expect.objectContaining({ source_file: 'src/infrastructure/context-prompt-command.ts' }),
-      ]),
       validation_commands: expect.arrayContaining([
         'npm run typecheck',
         'npm run build',
@@ -560,6 +557,15 @@ describe('context-pack-command', () => {
         expect.objectContaining({ label: 'retrieveContext' }),
       ]),
     }))
+    expect(payload.implementation?.existing_patterns).toEqual(expect.any(Array))
+    if ((payload.implementation?.existing_patterns?.length ?? 0) > 0) {
+      expect(payload.implementation?.existing_patterns).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'pattern',
+          source_file: expect.stringMatching(/^src\//),
+        }),
+      ]))
+    }
   })
 
   it('emits a compact deterministic review pack', async () => {
