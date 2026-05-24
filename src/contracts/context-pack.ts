@@ -100,6 +100,8 @@ export interface ContextPackExecutionSlicePhaseCoverage {
 
 export interface ContextPackExecutionSlice {
   status: 'complete' | 'partial'
+  confidence?: 'high' | 'medium' | 'low'
+  confidence_reasons?: string[]
   boundary_reason?: string
   steps: ContextPackExecutionSliceStep[]
   primary_path?: ContextPackExecutionSlicePrimaryPath

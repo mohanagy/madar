@@ -159,6 +159,8 @@ describe('stdio slice-v1 surface', () => {
     const contextPackText = ((contextPackResponse as { result?: { content?: Array<{ text: string }> } }).result?.content ?? [])[0]?.text ?? ''
 
     expect(contextPackText).toContain('"execution_slice"')
+    expect(contextPackText).toContain('"confidence"')
+    expect(contextPackText).toContain('"confidence_reasons"')
   })
 
   it('rejects retrieval_strategy for review context packs instead of ignoring it', async () => {

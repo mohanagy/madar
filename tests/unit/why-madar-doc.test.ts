@@ -69,6 +69,12 @@ describe('public marketing copy honesty', () => {
       expect(content).toContain('docs/benchmarks/govalidate-suite/')
     })
 
+    it('describes execution_slice as a static hypothesis rather than a live trace', () => {
+      expect(lower).toContain('static')
+      expect(lower).toContain('hypothesis')
+      expect(lower).toContain('not a live trace')
+    })
+
     it('explains when users should opt into --spi', () => {
       expect(lower).toContain('when to use `--spi`')
       expect(lower).toContain('still opt-in')
@@ -136,6 +142,21 @@ describe('public marketing copy honesty', () => {
       expect(content).toContain('--baseline-mode pack_only')
       expect(content).toContain('report.share-safe.json')
       expect(lower).toContain('execution_slice')
+    })
+
+    it('frames execution_slice as a static runtime-path hypothesis', () => {
+      expect(lower).toContain('static runtime-path hypothesis')
+      expect(lower).toContain('not a live trace')
+    })
+  })
+
+  describe('docs/proof-workflows.md', () => {
+    const content = readDoc('docs/proof-workflows.md')
+    const lower = content.toLowerCase()
+
+    it('describes execution_slice artifacts as static runtime-path hypotheses', () => {
+      expect(lower).toContain('static runtime-path hypothesis')
+      expect(lower).toContain('not a live trace')
     })
   })
 

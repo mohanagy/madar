@@ -69,6 +69,8 @@ describe('context-pack-command', () => {
         }
         execution_slice?: {
           status?: string
+          confidence?: string
+          confidence_reasons?: string[]
           steps?: Array<{ label?: string }>
           primary_path?: {
             boundaries?: Array<{ relation?: string }>
@@ -89,6 +91,12 @@ describe('context-pack-command', () => {
     })
     expect(payload.pack?.execution_slice).toEqual(expect.objectContaining({
       status: 'complete',
+      confidence: 'high',
+      confidence_reasons: expect.arrayContaining([
+        'explicit_anchor',
+        'runtime_handoff_evidence',
+        'expected_phases_covered',
+      ]),
       steps: [
         expect.objectContaining({ label: 'POST /login' }),
         expect.objectContaining({ label: 'AuthController.login' }),

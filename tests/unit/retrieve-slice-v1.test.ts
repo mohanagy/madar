@@ -5,6 +5,8 @@ import { compactRetrieveResult, retrieveContext } from '../../src/runtime/retrie
 
 interface ExecutionSliceExpectation {
   status: 'complete' | 'partial'
+  confidence?: 'high' | 'medium' | 'low'
+  confidence_reasons?: string[]
   steps: Array<{
     node_id?: string
     label: string
@@ -229,6 +231,12 @@ describe('retrieveContext retrievalStrategy=slice-v1', () => {
 
     expect(compact.execution_slice).toEqual(expect.objectContaining({
       status: 'complete',
+      confidence: 'high',
+      confidence_reasons: expect.arrayContaining([
+        'explicit_anchor',
+        'runtime_handoff_evidence',
+        'expected_phases_covered',
+      ]),
       steps: [
         expect.objectContaining({ label: 'POST /login' }),
         expect.objectContaining({ label: 'AuthController.login' }),
@@ -314,6 +322,11 @@ describe('retrieveContext retrievalStrategy=slice-v1', () => {
     )
 
     expect(compact.execution_slice?.status).toBe('partial')
+    expect(compact.execution_slice?.confidence).toBe('low')
+    expect(compact.execution_slice?.confidence_reasons).toEqual(expect.arrayContaining([
+      'no_runtime_handoff',
+      'missing_phase:worker',
+    ]))
     expect(compact.execution_slice?.boundary_reason).toMatch(/worker/i)
     expect(compact.execution_slice?.phase_coverage).toEqual(expect.objectContaining({
       expected: expect.arrayContaining(['worker']),
@@ -328,6 +341,11 @@ describe('retrieveContext retrievalStrategy=slice-v1', () => {
     )
 
     expect(compact.execution_slice?.status).toBe('partial')
+    expect(compact.execution_slice?.confidence).toBe('medium')
+    expect(compact.execution_slice?.confidence_reasons).toEqual(expect.arrayContaining([
+      'runtime_handoff_evidence',
+      'missing_phase:persistence',
+    ]))
     expect(compact.execution_slice?.boundary_reason).toMatch(/persistence/i)
     expect(compact.execution_slice?.steps.map((step) => step.label)).toEqual([
       'POST /login',

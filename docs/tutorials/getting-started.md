@@ -40,7 +40,7 @@ madar pack "how does password reset request enqueue the reset email" \
   --task explain
 ```
 
-This is the fastest way to confirm the route → service → job flow is represented in the graph. On runtime-generation questions like this one, newer reports can also preserve an `execution_slice` so you can inspect ordered steps without reading the whole raw slice.
+This is the fastest way to confirm the route → service → job flow is represented in the graph. On runtime-generation questions like this one, newer reports can also preserve an `execution_slice` so you can inspect ordered steps without reading the whole raw slice. Treat it as a static runtime-path hypothesis from the graph, not a live trace.
 
 ## 5. Compile a provider-ready prompt
 
@@ -73,7 +73,7 @@ This does **not** measure model quality. It is a safe local smoke check that pro
 - `pack` should print a compact JSON payload with matched nodes from the password reset flow
 - `prompt` should print a provider-ready prompt payload
 - `compare` should create an artifact directory under `out/compare/` containing prompt and answer files plus both `report.json` and `report.share-safe.json`
-- runtime-generation compare reports may also carry an `execution_slice` inside `report.json` when madar can preserve the ordered backend flow compactly
+- runtime-generation compare reports may also carry an `execution_slice` inside `report.json` when madar can preserve the ordered backend flow compactly; it is a static runtime-path hypothesis, not a live trace
 
 ## Troubleshooting
 

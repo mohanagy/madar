@@ -2376,7 +2376,69 @@ function runtimeGenerationContractPhaseElements(
   return [...elements]
 }
 
-function executionSliceConfidence(
+function buildExecutionSliceConfidence(
+  sliceMetadata: ContextPackSliceMetadata,
+  executionSlice: Pick<ContextPackExecutionSlice, 'status' | 'phase_coverage' | 'primary_path' | 'steps' | 'omitted_branches'>,
+): Pick<ContextPackExecutionSlice, 'confidence' | 'confidence_reasons'> | undefined {
+  const explicitAnchor = sliceMetadata.anchors.some((anchor) =>
+    anchor.reason === 'symbol mention'
+    || anchor.reason === 'path mention'
+    || methodLikeLabel(anchor.label)
+    || containsUrlLikeRoutePath(anchor.label)
+    || /\b(?:controller|route|handler|endpoint)\b/i.test(anchor.label),
+  )
+  const runtimeHandoff = executionSlice.primary_path?.boundaries?.some((boundary) => boundary.relation === 'enqueues_job')
+    || (
+      executionSlice.phase_coverage?.observed.includes('queue')
+      && executionSlice.phase_coverage?.observed.includes('worker')
+    )
+  const missingPhases = executionSlice.phase_coverage?.missing ?? []
+  const expectedPhasesCovered = missingPhases.length === 0
+  const primaryPathSteps = executionSlice.primary_path?.steps ?? executionSlice.steps
+  const lowValuePrimaryPath = primaryPathSteps.length > 0
+    && primaryPathSteps.filter((step) => lowValueExecutionStep(step)).length >= Math.ceil(primaryPathSteps.length / 2)
+
+  if (explicitAnchor && runtimeHandoff && executionSlice.status === 'complete' && expectedPhasesCovered) {
+    return {
+      confidence: 'high',
+      confidence_reasons: [
+        'explicit_anchor',
+        'runtime_handoff_evidence',
+        'expected_phases_covered',
+      ],
+    }
+  }
+
+  if (runtimeHandoff && missingPhases.length === 1) {
+    return {
+      confidence: 'medium',
+      confidence_reasons: [
+        'runtime_handoff_evidence',
+        `missing_phase:${missingPhases[0]}`,
+      ],
+    }
+  }
+
+  const lowConfidenceReasons = [
+    ...(!runtimeHandoff ? ['no_runtime_handoff'] : []),
+    ...missingPhases.map((phase) => `missing_phase:${phase}`),
+    ...((executionSlice.omitted_branches?.length ?? 0) >= 2 ? ['multiple_omitted_branches'] : []),
+    ...(lowValuePrimaryPath ? ['low_value_primary_path'] : []),
+  ]
+  if (lowConfidenceReasons.length > 0) {
+    return {
+      confidence: 'low',
+      confidence_reasons: lowConfidenceReasons,
+    }
+  }
+
+  return {
+    confidence: 'medium',
+    confidence_reasons: ['partial_runtime_path'],
+  }
+}
+
+function executionSliceAnswerContractConfidence(
   executionSlice: ContextPackExecutionSlice,
 ): ContextPackRuntimeGenerationAnswerContract['confidence'] | undefined {
   const value = (executionSlice as { confidence?: unknown }).confidence
@@ -2420,7 +2482,7 @@ function buildRuntimeGenerationAnswerContract(
     ]
   }
 
-  const confidence = executionSliceConfidence(executionSlice)
+  const confidence = executionSliceAnswerContractConfidence(executionSlice)
   if (confidence) {
     answerContract.confidence = confidence
   }
@@ -2462,6 +2524,8 @@ function buildExecutionSlice(
   if (orderedIds.length === 0) {
     return {
       status: 'partial',
+      confidence: 'low',
+      confidence_reasons: ['slice_missing_runtime_path', 'no_runtime_handoff'],
       boundary_reason: 'slice missing runtime path',
       steps: [],
     }
@@ -2475,6 +2539,8 @@ function buildExecutionSlice(
   if (!startId) {
     return {
       status: 'partial',
+      confidence: 'low',
+      confidence_reasons: ['slice_missing_runtime_path', 'no_runtime_handoff'],
       boundary_reason: 'slice missing runtime path',
       steps: [],
     }
@@ -2498,20 +2564,24 @@ function buildExecutionSlice(
   const missingPhase = phaseCoverage.missing[0]
   const boundaryReason = missingPhase ? missingExecutionPhaseBoundaryReason(missingPhase) : undefined
   const branches = collectExecutionBranches(adjacency, primaryPath, nodeById, question)
-
-  return {
+  const executionSlice: ContextPackExecutionSlice = {
     status: missingPhase ? 'partial' : 'complete',
     ...(boundaryReason ? { boundary_reason: boundaryReason } : {}),
     steps,
     primary_path: {
-    steps,
-    ...(boundaries.length > 0 ? { boundaries } : {}),
-    ...(boundaryReason ? { boundary_reason: boundaryReason } : {}),
+      steps,
+      ...(boundaries.length > 0 ? { boundaries } : {}),
+      ...(boundaryReason ? { boundary_reason: boundaryReason } : {}),
     },
     ...(branches.sideEffects.length > 0 ? { side_effects: branches.sideEffects } : {}),
     ...(branches.terminalBoundaries.length > 0 ? { terminal_boundaries: branches.terminalBoundaries } : {}),
     ...(branches.omittedBranches.length > 0 ? { omitted_branches: branches.omittedBranches } : {}),
     phase_coverage: phaseCoverage,
+  }
+
+  return {
+    ...executionSlice,
+    ...(buildExecutionSliceConfidence(sliceMetadata, executionSlice) ?? {}),
   }
 }
 
@@ -2537,6 +2607,8 @@ function compactExecutionSlice(executionSlice: ContextPackExecutionSlice | undef
 
   return {
     status: executionSlice.status,
+    ...(executionSlice.confidence ? { confidence: executionSlice.confidence } : {}),
+    ...(executionSlice.confidence_reasons ? { confidence_reasons: executionSlice.confidence_reasons } : {}),
     ...(executionSlice.boundary_reason ? { boundary_reason: executionSlice.boundary_reason } : {}),
     steps: executionSlice.steps.map(compactExecutionSliceStep),
     ...(executionSlice.primary_path

@@ -69,7 +69,7 @@ Want a broader local-first walkthrough that also covers install, `prompt`, and a
 ## What's new in 0.25.1
 
 - Natural-language runtime-generation prompts like `How idea report is being generated` now route to behavior-slice retrieval automatically, so users do not need special trace phrasing to get backend runtime answers.
-- `madar pack --task explain` now defaults to `slice-v1` for those runtime-generation prompts, which means `execution_slice` shows up without asking users to discover the extra retrieval flag.
+- `madar pack --task explain` now defaults to `slice-v1` for those runtime-generation prompts, which means `execution_slice` shows up without asking users to discover the extra retrieval flag. Treat that slice as a static runtime-path hypothesis from the graph, not a live trace.
 - `madar compare` now uses the same runtime-generation defaults as `madar pack`, so compare artifacts stay aligned with the actual CLI behavior.
 
 The larger **0.25.0** feature release is still the main capability jump: richer backend `execution_slice` output plus first-pass Go semantic indexing for handler → service → repository style flows. See the [`0.25.0` changelog entry](CHANGELOG.md#0250---2026-05-23) for that broader release.
@@ -193,7 +193,7 @@ Full-profile additions: `context_pack`, `context_expand`, `context_prompt`, `con
 
 Within one MCP stdio session, identical `context_pack` requests for `task=explain` are reused automatically when the graph version and relevant prompt/options match. The cache is memory-only, skips delta-session packs, and invalidates itself when `graph.json` changes.
 
-When the selected question is a runtime-generation flow, the shared compact response can also carry an `execution_slice` section with ordered steps and partial-path signaling. That gives agents a stable "what happens next" sketch without forcing them to read the full raw slice first.
+When the selected question is a runtime-generation flow, the shared compact response can also carry an `execution_slice` section with ordered steps and partial-path signaling. That gives agents a stable "what happens next" sketch without forcing them to read the full raw slice first. It is a static runtime-path hypothesis from graph evidence, not a live trace.
 
 ---
 
