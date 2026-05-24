@@ -1,7 +1,8 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
-import { handleCompletion, promptDefinitionsForGraph } from '../../src/runtime/stdio/prompts.js'
+import { handleCompletion, handlePromptGet, promptDefinitionsForGraph } from '../../src/runtime/stdio/prompts.js'
+import { MCP_PROMPTS } from '../../src/runtime/stdio/definitions.js'
 
 function createGraphFixtureRoot(): string {
   const parentDir = resolve('out', 'test-runtime')
@@ -104,10 +105,15 @@ describe('stdio prompt helpers', () => {
       const contextPackPrompt = prompts.find((prompt) => prompt.name === 'context_pack_prompt')
       const contextPrompt = prompts.find((prompt) => prompt.name === 'context_prompt_prompt')
       const contextSessionPrompt = prompts.find((prompt) => prompt.name === 'context_session_reset_prompt')
+      const staticContextPackPrompt = MCP_PROMPTS.find((prompt) => prompt.name === 'context_pack_prompt')
+      const staticContextPackTaskArgument = staticContextPackPrompt?.arguments?.find((argument) => argument.name === 'task')
 
       expect(explainPrompt?.description).toContain('AuthService')
       expect(communityPrompt?.description).toContain('Auth Services')
       expect(contextPackPrompt?.description).toContain('Auth Services')
+      expect(contextPackPrompt?.description).toContain('implement')
+      expect(staticContextPackPrompt?.description).toContain('implement')
+      expect(staticContextPackTaskArgument?.description).toContain('implement')
       expect(contextPrompt?.description).toContain('claude')
       expect(contextSessionPrompt?.description).toContain('session')
       expect(completion).toMatchObject({
@@ -125,7 +131,7 @@ describe('stdio prompt helpers', () => {
         id: 2,
         result: {
           completion: {
-            values: ['explain', 'impact', 'review'],
+            values: ['explain', 'impact', 'implement', 'review'],
           },
         },
       })
@@ -138,6 +144,163 @@ describe('stdio prompt helpers', () => {
           },
         },
       })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('renders implement context_pack prompts with implementation guidance sections', () => {
+    const root = createGraphFixtureRoot()
+    try {
+      const graphPath = join(root, 'graph.json')
+      const helpers = {
+        ok: (id: string | number | null, result: unknown) => ({ jsonrpc: '2.0' as const, id, result }),
+        failure: (id: string | number | null, code: number, message: string) => ({ jsonrpc: '2.0' as const, id, error: { code, message } }),
+        stringParam: (params: unknown, key: string) => {
+          if (!params || typeof params !== 'object' || !(key in params)) {
+            return null
+          }
+          const value = (params as Record<string, unknown>)[key]
+          return typeof value === 'string' ? value : null
+        },
+        stringParamAlias: (params: unknown, keys: readonly string[]) => {
+          for (const key of keys) {
+            const value = helpers.stringParam(params, key)
+            if (value !== null) {
+              return value
+            }
+          }
+          return null
+        },
+        integerLikeParamAlias: (params: unknown, keys: readonly string[], options: { min?: number; max?: number } = {}) => {
+          for (const key of keys) {
+            if (!params || typeof params !== 'object' || !(key in params)) {
+              continue
+            }
+            const rawValue = (params as Record<string, unknown>)[key]
+            const numericValue = typeof rawValue === 'number' ? rawValue : typeof rawValue === 'string' && /^\d+$/.test(rawValue.trim()) ? Number(rawValue.trim()) : null
+            if (numericValue === null) {
+              continue
+            }
+            if (options.min !== undefined && numericValue < options.min) {
+              continue
+            }
+            if (options.max !== undefined && numericValue > options.max) {
+              continue
+            }
+            return numericValue
+          }
+          return null
+        },
+        recordParam: (params: unknown, key: string) => {
+          if (!params || typeof params !== 'object' || !(key in params)) {
+            return null
+          }
+          const value = (params as Record<string, unknown>)[key]
+          return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null
+        },
+        jsonrpcInvalidParams: -32602,
+        maxStdioTextLength: 512,
+        maxCompletionValues: 25,
+      }
+
+      const response = handlePromptGet(4, graphPath, {
+        name: 'context_pack_prompt',
+        arguments: {
+          task: 'implement',
+          prompt: 'Implement workflow-centric retrieval for business capability prompts.',
+          budget: 1800,
+        },
+      }, helpers)
+
+      expect(response).toMatchObject({
+        jsonrpc: '2.0',
+        id: 4,
+        result: {
+          description: 'Prepare a compact context pack with expandable refs and missing-context hints.',
+        },
+      })
+      const text = (
+        (response.result as { messages: Array<{ content: { text: string } }> }).messages[0]?.content.text
+      )
+      expect(text).toContain('Prepare a compact implement context pack for: Implement workflow-centric retrieval for business capability prompts.')
+      expect(text).not.toContain('prompts..')
+      expect(text).toContain('Include likely edit files, likely test files, contracts/public surfaces, existing patterns, runtime context when relevant, risk boundaries, validation commands, acceptance criteria, and missing-context hints.')
+      expect(text).toContain('Target pack budget: 1800 tokens.')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('renders non-implement context_pack prompts with default coverage guidance', () => {
+    const root = createGraphFixtureRoot()
+    try {
+      const graphPath = join(root, 'graph.json')
+      const helpers = {
+        ok: (id: string | number | null, result: unknown) => ({ jsonrpc: '2.0' as const, id, result }),
+        failure: (id: string | number | null, code: number, message: string) => ({ jsonrpc: '2.0' as const, id, error: { code, message } }),
+        stringParam: (params: unknown, key: string) => {
+          if (!params || typeof params !== 'object' || !(key in params)) {
+            return null
+          }
+          const value = (params as Record<string, unknown>)[key]
+          return typeof value === 'string' ? value : null
+        },
+        stringParamAlias: (params: unknown, keys: readonly string[]) => {
+          for (const key of keys) {
+            const value = helpers.stringParam(params, key)
+            if (value !== null) {
+              return value
+            }
+          }
+          return null
+        },
+        integerLikeParamAlias: (params: unknown, keys: readonly string[], options: { min?: number; max?: number } = {}) => {
+          for (const key of keys) {
+            if (!params || typeof params !== 'object' || !(key in params)) {
+              continue
+            }
+            const rawValue = (params as Record<string, unknown>)[key]
+            const numericValue = typeof rawValue === 'number' ? rawValue : typeof rawValue === 'string' && /^\d+$/.test(rawValue.trim()) ? Number(rawValue.trim()) : null
+            if (numericValue === null) {
+              continue
+            }
+            if (options.min !== undefined && numericValue < options.min) {
+              continue
+            }
+            if (options.max !== undefined && numericValue > options.max) {
+              continue
+            }
+            return numericValue
+          }
+          return null
+        },
+        recordParam: (params: unknown, key: string) => {
+          if (!params || typeof params !== 'object' || !(key in params)) {
+            return null
+          }
+          const value = (params as Record<string, unknown>)[key]
+          return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null
+        },
+        jsonrpcInvalidParams: -32602,
+        maxStdioTextLength: 512,
+        maxCompletionValues: 25,
+      }
+
+      const response = handlePromptGet(5, graphPath, {
+        name: 'context_pack_prompt',
+        arguments: {
+          task: 'explain',
+          prompt: 'How does AuthService reach Transport?',
+        },
+      }, helpers)
+
+      const text = (
+        (response.result as { messages: Array<{ content: { text: string } }> }).messages[0]?.content.text
+      )
+      expect(text).toContain('Prepare a compact explain context pack for: How does AuthService reach Transport?')
+      expect(text).toContain('Include coverage gaps, expandable references, and the minimum graph evidence a downstream agent needs to continue without re-scanning the repo.')
+      expect(text).not.toContain('Include likely edit files')
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
