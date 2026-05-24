@@ -182,4 +182,26 @@ describe('stdio slice-v1 surface', () => {
 
     expect(JSON.stringify(contextPackResponse)).toContain('retrieval_strategy is not supported for task=review')
   })
+
+  it('infers implement task intent for context_pack when task is omitted', async () => {
+    const graphPath = createGraphPath()
+
+    const contextPackResponse = await Promise.resolve(handleStdioRequest(graphPath, {
+      id: 5,
+      method: 'tools/call',
+      params: {
+        name: 'context_pack',
+        arguments: {
+          prompt: 'Implement support for login session audit trails',
+          budget: 1000,
+          verbose: true,
+        },
+      },
+    }))
+
+    const contextPackText = ((contextPackResponse as { result?: { content?: Array<{ text: string }> } }).result?.content ?? [])[0]?.text ?? ''
+
+    expect(contextPackText).toContain('"task":"implement"')
+    expect(contextPackText).toContain('"task_intent":"implement"')
+  })
 })

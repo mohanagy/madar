@@ -86,6 +86,7 @@ describe('context-pack-command', () => {
     expect(dependencies.retrieveContext).toHaveBeenCalledWith(graph, {
       question: 'Trace how `POST /login` reaches persistence in the backend runtime pipeline',
       budget: 1800,
+      taskKind: 'explain',
       taskIntent: 'explain',
       retrievalStrategy: 'slice-v1',
     })
@@ -165,6 +166,7 @@ describe('context-pack-command', () => {
     expect(dependencies.retrieveContext).toHaveBeenCalledWith(graph, {
       question: 'How `POST /login` reaches persistence in the backend runtime pipeline',
       budget: 1800,
+      taskKind: 'explain',
       taskIntent: 'explain',
       retrievalStrategy: 'slice-v1',
     })
@@ -365,10 +367,99 @@ describe('context-pack-command', () => {
     expect(dependencies.retrieveContext).toHaveBeenCalledWith(graph, {
       question: 'auth',
       budget: 3,
+      taskKind: 'explain',
       taskIntent: 'explain',
     })
     expect(JSON.parse(output)).toEqual(expect.objectContaining({
       budget: 3,
+    }))
+  })
+
+  it('infers implement packs from imperative prompts when --task is omitted', async () => {
+    const graph = new KnowledgeGraph()
+    const retrieval = {
+      question: 'Implement issue #275 by collecting implementation context for changed files',
+      token_count: 4,
+      matched_nodes: [],
+      relationships: [],
+      community_context: [],
+      graph_signals: { god_nodes: [], bridge_nodes: [] },
+    }
+    const dependencies: ContextPackCommandDependencies = {
+      loadGraph: vi.fn().mockReturnValue(graph),
+      retrieveContext: vi.fn().mockReturnValue(retrieval),
+      compactRetrieveResult: vi.fn().mockReturnValue(retrieval),
+      analyzePrImpact: vi.fn(),
+      compactPrImpactResult: vi.fn(),
+      analyzeImpact: vi.fn(),
+      compactImpactResult: vi.fn(),
+    }
+
+    const output = await runContextPackCommand({
+      prompt: retrieval.question,
+      budget: 1800,
+      task: 'explain',
+      graphPath: 'out/graph.json',
+    }, dependencies)
+
+    expect(dependencies.retrieveContext).toHaveBeenCalledWith(graph, {
+      question: retrieval.question,
+      budget: 1800,
+      taskIntent: 'implement',
+      taskKind: 'implement',
+    })
+    expect(JSON.parse(output)).toEqual(expect.objectContaining({
+      task: 'implement',
+      task_intent: 'implement',
+      plan: expect.objectContaining({
+        task_kind: 'implement',
+        evidence: expect.objectContaining({
+          recipe_id: 'implement',
+        }),
+      }),
+    }))
+  })
+
+  it('honors explicit --task implement even for explain-shaped prompts', async () => {
+    const graph = new KnowledgeGraph()
+    const retrieval = {
+      question: 'Explain how auth works',
+      token_count: 4,
+      matched_nodes: [],
+      relationships: [],
+      community_context: [],
+      graph_signals: { god_nodes: [], bridge_nodes: [] },
+    }
+    const dependencies: ContextPackCommandDependencies = {
+      loadGraph: vi.fn().mockReturnValue(graph),
+      retrieveContext: vi.fn().mockReturnValue(retrieval),
+      compactRetrieveResult: vi.fn().mockReturnValue(retrieval),
+      analyzePrImpact: vi.fn(),
+      compactPrImpactResult: vi.fn(),
+      analyzeImpact: vi.fn(),
+      compactImpactResult: vi.fn(),
+    }
+
+    const output = await runContextPackCommand({
+      prompt: retrieval.question,
+      budget: 1800,
+      task: 'implement',
+      taskExplicit: true,
+      graphPath: 'out/graph.json',
+    } as never, dependencies)
+
+    expect(dependencies.retrieveContext).toHaveBeenCalledWith(graph, {
+      question: retrieval.question,
+      budget: 1800,
+      taskIntent: 'implement',
+      taskKind: 'implement',
+    })
+    expect(JSON.parse(output)).toEqual(expect.objectContaining({
+      task: 'implement',
+      task_intent: 'implement',
+      plan: expect.objectContaining({
+        task_kind: 'implement',
+      }),
     }))
   })
 
@@ -618,12 +709,12 @@ describe('context-pack-command', () => {
     const payload = JSON.parse(output) as Record<string, unknown>
     expect(payload).toEqual(expect.objectContaining({
       task: 'review',
-      task_intent: 'test-generation',
+      task_intent: 'review',
       plan: expect.objectContaining({
         task_kind: 'review',
         evidence: expect.objectContaining({
-          recipe_id: 'test-generation',
-          semantic_required: ['implementation', 'tests', 'structure'],
+          recipe_id: 'review',
+          semantic_required: ['changes', 'impact'],
         }),
       }),
     }))
@@ -793,6 +884,7 @@ describe('context-pack-command', () => {
     expect(dependencies.retrieveContext).toHaveBeenCalledWith(graph, {
       question: 'auth',
       budget: 3,
+      taskKind: 'impact',
       taskIntent: 'impact',
     })
     expect(JSON.parse(output)).toEqual(expect.objectContaining({

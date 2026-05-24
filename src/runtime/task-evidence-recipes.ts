@@ -34,6 +34,19 @@ const TASK_EVIDENCE_RECIPES: Record<TaskIntentKind, TaskEvidenceRecipe> = {
       ['primary', 'supporting', 'structural'],
     ],
   },
+  implement: {
+    id: 'implement',
+    task_kind: 'implement',
+    required_evidence: ['primary', 'supporting', 'structural'],
+    preferred_evidence: ['primary', 'supporting', 'structural', 'impact', 'change'],
+    semantic_required: ['implementation', 'structure'],
+    semantic_optional: ['contracts', 'configuration', 'tests', 'impact'],
+    step_evidence: [
+      ['primary'],
+      ['supporting', 'structural', 'change'],
+      ['primary', 'supporting', 'structural'],
+    ],
+  },
   review: {
     id: 'review',
     task_kind: 'review',
@@ -88,7 +101,7 @@ const TASK_EVIDENCE_RECIPES: Record<TaskIntentKind, TaskEvidenceRecipe> = {
   },
   'test-generation': {
     id: 'test-generation',
-    task_kind: 'review',
+    task_kind: 'implement',
     required_evidence: ['primary', 'supporting', 'structural'],
     preferred_evidence: ['primary', 'structural', 'supporting', 'change', 'impact'],
     semantic_required: ['implementation', 'tests', 'structure'],
@@ -101,7 +114,7 @@ const TASK_EVIDENCE_RECIPES: Record<TaskIntentKind, TaskEvidenceRecipe> = {
   },
   'refactor-module': {
     id: 'refactor-module',
-    task_kind: 'impact',
+    task_kind: 'implement',
     required_evidence: ['primary', 'structural', 'impact'],
     preferred_evidence: ['primary', 'structural', 'impact', 'supporting', 'change'],
     semantic_required: ['implementation', 'structure', 'contracts'],
@@ -114,7 +127,7 @@ const TASK_EVIDENCE_RECIPES: Record<TaskIntentKind, TaskEvidenceRecipe> = {
   },
   'dead-code': {
     id: 'dead-code',
-    task_kind: 'impact',
+    task_kind: 'implement',
     required_evidence: ['impact', 'primary', 'structural'],
     preferred_evidence: ['impact', 'primary', 'structural', 'supporting', 'change'],
     semantic_required: ['impact', 'implementation', 'structure'],
@@ -149,6 +162,32 @@ const TASK_EVIDENCE_RECIPES: Record<TaskIntentKind, TaskEvidenceRecipe> = {
       ['impact', 'primary'],
       ['impact', 'structural', 'supporting'],
       ['impact', 'structural', 'primary'],
+    ],
+  },
+  migrate: {
+    id: 'migrate',
+    task_kind: 'implement',
+    required_evidence: ['primary', 'supporting', 'structural'],
+    preferred_evidence: ['primary', 'supporting', 'structural', 'change', 'impact'],
+    semantic_required: ['implementation', 'contracts', 'structure'],
+    semantic_optional: ['configuration', 'tests', 'impact'],
+    step_evidence: [
+      ['primary', 'structural'],
+      ['supporting', 'structural', 'change'],
+      ['primary', 'supporting', 'structural'],
+    ],
+  },
+  document: {
+    id: 'document',
+    task_kind: 'implement',
+    required_evidence: ['primary', 'supporting', 'structural'],
+    preferred_evidence: ['primary', 'supporting', 'structural', 'impact'],
+    semantic_required: ['implementation', 'structure'],
+    semantic_optional: ['contracts', 'configuration', 'tests'],
+    step_evidence: [
+      ['primary'],
+      ['supporting', 'structural'],
+      ['primary', 'supporting', 'structural'],
     ],
   },
 }

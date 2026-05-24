@@ -21,6 +21,7 @@ import type {
   ContextPackSelectionDiagnostics,
   ContextPackSliceMetadata,
   ContextPackTaskContract,
+  ContextPackTaskKind,
 } from '../contracts/context-pack.js'
 import type { TaskIntentKind } from '../contracts/task-intent.js'
 import { KnowledgeGraph } from '../contracts/graph.js'
@@ -45,6 +46,7 @@ import {
 } from './context-pack.js'
 import type { RetrievalGateDecision, RetrievalLevel } from '../contracts/retrieval-gate.js'
 import { classifyRetrievalLevel } from './retrieval-gate.js'
+import { defaultContextKindForTaskIntent } from './task-intent.js'
 import {
   expansionPolicyForLevel,
   predecessorAllowedForPolicy,
@@ -78,6 +80,7 @@ const averageLabelLengthCache = new WeakMap<KnowledgeGraph, number>()
 export interface RetrieveOptions {
   question: string
   budget: number
+  taskKind?: ContextPackTaskKind
   taskIntent?: TaskIntentKind
   community?: number
   fileType?: string
@@ -93,6 +96,24 @@ export interface RetrieveOptions {
   /** Internal additive override for benchmarks/tests. */
   selectionStrategy?: ContextPackSelectionStrategy
   retrievalStrategy?: ContextPackRetrievalStrategy
+}
+
+function effectiveRetrieveTaskKind(options: RetrieveOptions): ContextPackTaskKind {
+  if (options.taskKind) {
+    return options.taskKind
+  }
+  if (options.taskIntent) {
+    return defaultContextKindForTaskIntent(options.taskIntent)
+  }
+  return 'explain'
+}
+
+function classifyRetrieveTaskContract(options: RetrieveOptions): ContextPackTaskContract {
+  return classifyTaskContract(effectiveRetrieveTaskKind(options), {
+    budget: options.budget,
+    prompt: options.question,
+    ...(options.taskIntent ? { task_intent: options.taskIntent } : {}),
+  })
 }
 
 export interface RetrieveMatchedNode {
@@ -3454,11 +3475,7 @@ function buildRetrieveResultFromOrderedCandidates(
   sliceMetadata?: ContextPackSliceMetadata,
 ): RetrieveResult {
   const snippetFileCache = new Map<string, string[] | null>()
-  const taskContract = classifyTaskContract('explain', {
-    budget: options.budget,
-    prompt: options.question,
-    ...(options.taskIntent ? { task_intent: options.taskIntent } : {}),
-  })
+  const taskContract = classifyRetrieveTaskContract(options)
   const orderedCandidateIds = new Set(orderedCandidates.map((node) => node.id))
   const orderedCommunities = new Set<number>(orderedCandidates.flatMap((node) => (node.community === null ? [] : [node.community])))
   const graphSignalLabels = {
@@ -3617,11 +3634,7 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
 
   if (questionTokens.length === 0) {
     const emptyPack = compileContextPack({
-      task_contract: classifyTaskContract('explain', {
-        budget,
-        prompt: question,
-        ...(options.taskIntent ? { task_intent: options.taskIntent } : {}),
-      }),
+      task_contract: classifyRetrieveTaskContract(options),
       nodes: [],
       relationships: [],
       community_context: [],
@@ -3647,11 +3660,7 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
 
   if (effectiveRetrievalLevel === 0) {
     const emptyPack = compileContextPack({
-      task_contract: classifyTaskContract('explain', {
-        budget,
-        prompt: question,
-        ...(options.taskIntent ? { task_intent: options.taskIntent } : {}),
-      }),
+      task_contract: classifyRetrieveTaskContract(options),
       nodes: [],
       relationships: [],
       community_context: [],

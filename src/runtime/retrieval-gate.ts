@@ -30,6 +30,7 @@ import type {
   RetrievalLevel,
   RetrievalTargetDomainHint,
 } from '../contracts/retrieval-gate.js'
+import { classifyTaskIntent } from './task-intent.js'
 
 export type {
   RetrievalGateDecision,
@@ -173,6 +174,14 @@ function decideLevel(opts: {
       return { level: 0, reason: 'conversational prompt with no code intent — no retrieval' }
     case 'impact':
       return { level: 4, reason: 'impact intent without PR diff — cross-module impact' }
+    case 'implement':
+      return { level: 2, reason: 'implementation intent — direct dependencies' }
+    case 'migrate':
+      return { level: 2, reason: 'migration intent — direct dependencies' }
+    case 'document':
+      return mentions > 0
+        ? { level: 2, reason: 'documentation intent with explicit reference — direct dependencies' }
+        : { level: 1, reason: 'documentation intent without explicit reference — local context' }
     case 'debug':
       return { level: 3, reason: 'debug/why intent — behavior slice retrieval' }
     case 'review':
@@ -207,6 +216,11 @@ function decideLevel(opts: {
 }
 
 function detectIntent(prompt: string): RetrievalIntent {
+  const taskIntent = classifyTaskIntent(prompt).kind
+  if (taskIntent === 'implement' || taskIntent === 'migrate' || taskIntent === 'document') {
+    return taskIntent
+  }
+
   for (const { intent, re } of PATTERNS) {
     if (re.test(prompt)) return intent
   }

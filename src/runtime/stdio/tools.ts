@@ -12,6 +12,7 @@ import type {
   ContextPackNode,
   ContextPackRetrievalStrategy,
   ContextPackRelationship,
+  ContextPackTaskKind,
   ContextRepresentationType,
 } from '../../contracts/context-pack.js'
 import type { ContextSessionState } from '../../contracts/context-session.js'
@@ -32,6 +33,7 @@ import { collectRelationships, compactRetrieveResult, contextPackFromRetrieveRes
 import { computeContextPackDiagnostics } from '../context-pack-diagnostics.js'
 import { collectPackNodeIds, computeDeltaContextPack } from '../context-pack-delta.js'
 import { applyContextPackResolution, type ContextPackResolution } from '../context-pack-resolution.js'
+import { resolveTaskSelection } from '../task-intent.js'
 import { riskMap } from '../risk-map.js'
 import { buildTaskContextPlan } from '../task-context-planner.js'
 import type { TimeTravelView } from '../time-travel.js'
@@ -107,7 +109,7 @@ interface ContextPlaneMetadata {
 
 interface StoredContextPackHandle {
   prompt: string
-  task: 'explain' | 'review' | 'impact'
+  task: ContextPackTaskKind
   task_intent: TaskContextPlan['evidence']['recipe_id']
   follow_up: ContextPackExpandableFollowUp
 }
@@ -133,7 +135,7 @@ function isStoredContextPackHandle(value: unknown): value is StoredContextPackHa
   if (typeof candidate.prompt !== 'string') {
     return false
   }
-  if (candidate.task !== 'explain' && candidate.task !== 'review' && candidate.task !== 'impact') {
+  if (!isContextPackTaskKind(candidate.task)) {
     return false
   }
   if (typeof candidate.task_intent !== 'string') {
@@ -145,7 +147,7 @@ function isStoredContextPackHandle(value: unknown): value is StoredContextPackHa
 
   const followUp = candidate.follow_up as Record<string, unknown>
   return followUp.kind === 'context_pack'
-    && typeof followUp.task_kind === 'string'
+    && isContextPackTaskKind(followUp.task_kind)
     && typeof followUp.evidence_class === 'string'
     && Array.isArray(followUp.focus_files)
     && Array.isArray(followUp.focus_ranges)
@@ -173,8 +175,8 @@ function isContextPackEvidenceClass(value: unknown): value is ContextPackEvidenc
     || value === 'impact'
 }
 
-function isContextPackTaskKind(value: unknown): value is 'explain' | 'review' | 'impact' {
-  return value === 'explain' || value === 'review' || value === 'impact'
+function isContextPackTaskKind(value: unknown): value is ContextPackTaskKind {
+  return value === 'explain' || value === 'implement' || value === 'review' || value === 'impact'
 }
 
 function isExpandableSourceRange(value: unknown): value is ContextPackExpandableFollowUp['focus_ranges'][number] {
@@ -523,7 +525,7 @@ function relevanceBandForEvidenceClass(evidenceClass: ContextPackEvidenceClass):
 }
 
 function contextPackBasePayload(
-  task: 'explain' | 'review' | 'impact',
+  task: ContextPackTaskKind,
   prompt: string,
   budget: number,
   graphPath: string,
@@ -541,7 +543,7 @@ function contextPackBasePayload(
 
 function storeExpandableHandles(
   prompt: string,
-  task: 'explain' | 'review' | 'impact',
+  task: ContextPackTaskKind,
   taskIntent: TaskContextPlan['evidence']['recipe_id'],
   expandable: readonly ContextPackExpandableRef[],
   helpers: ToolHelpers,
@@ -953,10 +955,12 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         return helpers.failure(id, helpers.jsonrpcInvalidParams, `context_pack requires a string prompt parameter <= ${helpers.maxStdioTextLength} characters`)
       }
 
-      const task = helpers.stringParam(toolArguments, 'task') ?? 'explain'
-      if (task !== 'explain' && task !== 'review' && task !== 'impact') {
-        return helpers.failure(id, helpers.jsonrpcInvalidParams, 'task must be one of explain, review, impact')
+      const rawTask = helpers.stringParam(toolArguments, 'task')
+      if (rawTask !== null && !isContextPackTaskKind(rawTask)) {
+        return helpers.failure(id, helpers.jsonrpcInvalidParams, 'task must be one of explain, implement, review, impact')
       }
+      const resolvedTask = resolveTaskSelection(prompt, rawTask ?? 'explain', { explicit: rawTask !== null })
+      const task = resolvedTask.task_kind
       const budget = helpers.numberParamAlias(toolArguments, ['budget'], { min: 1, max: helpers.maxStdioTokenBudget })
       if (Object.hasOwn(toolArguments, 'budget') && budget === null) {
         return helpers.failure(id, helpers.jsonrpcInvalidParams, `budget must be a number between 1 and ${helpers.maxStdioTokenBudget}`)
@@ -967,6 +971,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         task_kind: task,
         prompt,
         budget: plannerBudget,
+        task_intent: resolvedTask.task_intent,
       })
 
       // CodeRabbit fix: validate resolution BEFORE the review/impact
@@ -1070,6 +1075,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       const retrieval = retrieveContext(graph, {
         question: prompt,
         budget: resolvedBudget,
+        taskKind: task,
         taskIntent: initialPlan.evidence.recipe_id,
         ...(contextPackLevelTyped !== null ? { retrievalLevel: contextPackLevelTyped } : {}),
         ...(contextPackStrategy ? { retrievalStrategy: contextPackStrategy } : {}),

@@ -17,6 +17,7 @@ import { pickImpactTarget } from '../runtime/context-pack-target.js'
 import { analyzeImpact, compactImpactResult, type ImpactResult } from '../runtime/impact.js'
 import { analyzePrImpact, compactPrImpactResult, type PrImpactResult } from '../runtime/pr-impact.js'
 import { buildTaskContextPlan } from '../runtime/task-context-planner.js'
+import { resolveTaskSelection } from '../runtime/task-intent.js'
 import { compactRetrieveResult, retrieveContext, type RetrieveResult } from '../runtime/retrieve.js'
 import { buildRoutingDebug } from '../runtime/routing-debug.js'
 import { communitiesFromGraph, loadGraph } from '../runtime/serve.js'
@@ -25,7 +26,7 @@ const DEFAULT_IMPACT_DEPTH = 3
 
 export interface ContextPackCommandDependencies {
   loadGraph: (graphPath: string) => KnowledgeGraph
-  retrieveContext: (graph: KnowledgeGraph, options: Pick<import('../runtime/retrieve.js').RetrieveOptions, 'question' | 'budget' | 'taskIntent' | 'retrievalLevel' | 'retrievalStrategy'>) => RetrieveResult
+  retrieveContext: (graph: KnowledgeGraph, options: Pick<import('../runtime/retrieve.js').RetrieveOptions, 'question' | 'budget' | 'taskKind' | 'taskIntent' | 'retrievalLevel' | 'retrievalStrategy'>) => RetrieveResult
   compactRetrieveResult: typeof compactRetrieveResult
   analyzePrImpact: (graph: KnowledgeGraph, projectDir?: string, options?: { baseBranch?: string; depth?: number; budget?: number; taskIntent?: TaskContextPlan['evidence']['recipe_id'] }) => PrImpactResult
   compactPrImpactResult: typeof compactPrImpactResult
@@ -192,9 +193,14 @@ function impactMetadata(
   return contextMetadata(pack)
 }
 
-function baseResponse(options: PackCliOptions, plan: TaskContextPlan, budget: number) {
+function baseResponse(
+  options: PackCliOptions,
+  plan: TaskContextPlan,
+  budget: number,
+  task: TaskContextPlan['task_kind'],
+) {
   return {
-    task: options.task,
+    task,
     task_intent: plan.evidence.recipe_id,
     prompt: options.prompt,
     budget,
@@ -203,7 +209,7 @@ function baseResponse(options: PackCliOptions, plan: TaskContextPlan, budget: nu
   }
 }
 
-function defaultExplainRetrievalStrategy(
+function defaultPackRetrievalStrategy(
   prompt: string,
 ): PackCliOptions['retrievalStrategy'] | undefined {
   const gate = classifyRetrievalLevel({
@@ -221,13 +227,19 @@ export async function runContextPackCommand(
 ): Promise<string> {
   const graph = dependencies.loadGraph(options.graphPath)
   const plannerBudget = Math.max(options.budget, 3)
+  const resolvedTask = resolveTaskSelection(
+    options.prompt,
+    options.task,
+    options.taskExplicit !== undefined ? { explicit: options.taskExplicit } : {},
+  )
   const initialPlan = buildTaskContextPlan({
-    task_kind: options.task,
+    task_kind: resolvedTask.task_kind,
     prompt: options.prompt,
     budget: plannerBudget,
+    task_intent: resolvedTask.task_intent,
   })
 
-  if (options.task === 'review') {
+  if (resolvedTask.task_kind === 'review') {
     if (options.retrievalStrategy !== undefined) {
       throw new Error('retrievalStrategy is not supported for task=review')
     }
@@ -249,16 +261,17 @@ export async function runContextPackCommand(
     })
 
     return JSON.stringify({
-      ...baseResponse(options, plan, plannerBudget),
+      ...baseResponse(options, plan, plannerBudget, resolvedTask.task_kind),
       pack: reviewPack,
       ...contextMetadata(reviewResult.review_bundle ?? {}),
     })
   }
 
-  if (options.task === 'impact') {
+  if (resolvedTask.task_kind === 'impact') {
     const retrieval = dependencies.retrieveContext(graph, {
       question: options.prompt,
       budget: plannerBudget,
+      taskKind: resolvedTask.task_kind,
       taskIntent: initialPlan.evidence.recipe_id,
       ...(options.retrievalLevel !== undefined ? { retrievalLevel: options.retrievalLevel } : {}),
       ...(options.retrievalStrategy !== undefined ? { retrievalStrategy: options.retrievalStrategy } : {}),
@@ -272,7 +285,7 @@ export async function runContextPackCommand(
     const impactPack = dependencies.compactImpactResult(impactResult)
 
     return JSON.stringify({
-      ...baseResponse(options, initialPlan, plannerBudget),
+      ...baseResponse(options, initialPlan, plannerBudget, resolvedTask.task_kind),
       target: impactTarget,
       pack: impactPack,
       ...impactMetadata(impactResult, plannerBudget, options.prompt, initialPlan.evidence.recipe_id, options.retrievalLevel),
@@ -280,20 +293,21 @@ export async function runContextPackCommand(
     })
   }
 
-  const effectiveExplainRetrievalStrategy =
-    options.retrievalStrategy ?? defaultExplainRetrievalStrategy(options.prompt)
+  const effectivePackRetrievalStrategy =
+    options.retrievalStrategy ?? defaultPackRetrievalStrategy(options.prompt)
 
   const retrieval = dependencies.retrieveContext(graph, {
     question: options.prompt,
     budget: plannerBudget,
+    taskKind: resolvedTask.task_kind,
     taskIntent: initialPlan.evidence.recipe_id,
     ...(options.retrievalLevel !== undefined ? { retrievalLevel: options.retrievalLevel } : {}),
-    ...(effectiveExplainRetrievalStrategy !== undefined
-      ? { retrievalStrategy: effectiveExplainRetrievalStrategy }
+    ...(effectivePackRetrievalStrategy !== undefined
+      ? { retrievalStrategy: effectivePackRetrievalStrategy }
       : {}),
   })
   return JSON.stringify({
-    ...baseResponse(options, initialPlan, plannerBudget),
+    ...baseResponse(options, initialPlan, plannerBudget, resolvedTask.task_kind),
     ...buildExplainPackPayload(dependencies.compactRetrieveResult(retrieval), retrieval),
     ...(options.why ? { routing: buildRoutingDebug(retrieval) } : {}),
   })

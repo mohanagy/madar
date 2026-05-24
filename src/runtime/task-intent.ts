@@ -2,11 +2,13 @@ import {
   TASK_INTENT_DEFINITIONS,
   type TaskIntentClassification,
   type TaskIntentConfidence,
+  type TaskIntentContextKind,
   type TaskIntentDefinition,
   type TaskIntentKind,
   type TaskIntentScore,
   type TaskIntentSignalRule,
 } from '../contracts/task-intent.js'
+import type { ContextPackTaskKind } from '../contracts/context-pack.js'
 
 interface RuleMatch {
   kind: TaskIntentKind
@@ -188,6 +190,14 @@ function compareDefinitions(left: TaskIntentDefinition, right: TaskIntentDefinit
   return left.kind.localeCompare(right.kind)
 }
 
+function taskIntentDefinition(kind: TaskIntentKind): TaskIntentDefinition {
+  const definition = VALIDATED_TASK_INTENT_DEFINITIONS.find((entry) => entry.kind === kind)
+  if (!definition) {
+    throw new Error(`Missing task intent definition for ${kind}`)
+  }
+  return definition
+}
+
 function compareScores(left: TaskIntentScore, right: TaskIntentScore): number {
   if (left.score !== right.score) {
     return right.score - left.score
@@ -216,6 +226,51 @@ export function normalizeTaskIntentPrompt(prompt: string): string {
   return normalizeTerm(prompt)
 }
 
+export function defaultContextKindForTaskIntent(kind: TaskIntentKind): TaskIntentContextKind {
+  return taskIntentDefinition(kind).default_context_kind
+}
+
+export function fallbackTaskIntentForContextKind(kind: TaskIntentContextKind): TaskIntentKind {
+  switch (kind) {
+    case 'implement':
+      return 'implement'
+    case 'review':
+      return 'review'
+    case 'impact':
+      return 'impact'
+    case 'explain':
+    default:
+      return 'explain'
+  }
+}
+
+export interface ResolvedTaskSelection {
+  classification: TaskIntentClassification
+  explicit: boolean
+  task_kind: ContextPackTaskKind
+  task_intent: TaskIntentKind
+}
+
+export function resolveTaskSelection(
+  prompt: string,
+  requestedTask: ContextPackTaskKind = 'explain',
+  options: { explicit?: boolean } = {},
+): ResolvedTaskSelection {
+  const classification = classifyTaskIntent(prompt)
+  const explicit = options.explicit === true || requestedTask !== 'explain'
+  const task_kind = explicit ? requestedTask : classification.default_context_kind
+  const task_intent = explicit && task_kind !== classification.default_context_kind
+    ? fallbackTaskIntentForContextKind(task_kind)
+    : classification.kind
+
+  return {
+    classification,
+    explicit,
+    task_kind,
+    task_intent,
+  }
+}
+
 export function classifyTaskIntent(prompt: string): TaskIntentClassification {
   const normalizedPrompt = normalizeTaskIntentPrompt(prompt)
   const tokens = promptTokens(normalizedPrompt)
@@ -233,10 +288,7 @@ export function classifyTaskIntent(prompt: string): TaskIntentClassification {
     .sort(compareScores)
 
   const winningKind = scores[0]?.kind ?? 'explain'
-  const winningDefinition = VALIDATED_TASK_INTENT_DEFINITIONS.find((definition) => definition.kind === winningKind)
-  if (!winningDefinition) {
-    throw new Error(`Missing task intent definition for ${winningKind}`)
-  }
+  const winningDefinition = taskIntentDefinition(winningKind)
 
   return {
     version: 1,

@@ -238,13 +238,13 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   {
     name: 'context_pack',
     description:
-      'Build a compact explain/review/impact context pack with expandable refs and coverage signals.',
+      'Build a compact explain/implement/review/impact pack with expandable refs and coverage.',
     inputSchema: {
       type: 'object',
       required: ['prompt'],
       properties: {
         prompt: { type: 'string', description: 'Task prompt or question to build context for' },
-        task: { type: 'string', enum: ['explain', 'review', 'impact'], description: 'Context-pack mode (default: explain)' },
+        task: { type: 'string', enum: ['explain', 'implement', 'review', 'impact'], description: 'Optional mode override (default: infer from prompt; fallback explain)' },
         budget: { type: 'number', description: 'Optional: maximum token budget for the pack (default 3000)' },
         delta_session_id: { type: 'string', description: 'Optional (#81): delta-pack session key for per-session dedup.' },
         verbose: { type: 'boolean', description: 'Optional: include extended selection diagnostics.' },

@@ -203,9 +203,9 @@ describe('task-context-planner', () => {
     ])
   })
 
-  it('uses a test-generation evidence recipe instead of the generic review defaults', () => {
+  it('uses an implementation recipe for test-generation prompts', () => {
     const plan = buildTaskContextPlan({
-      task_kind: 'review',
+      task_kind: 'implement',
       prompt: 'Generate regression tests for token refresh and session expiry.',
       budget: 90,
       focus_paths: ['src/auth.ts', 'tests/auth.test.ts'],
@@ -214,21 +214,24 @@ describe('task-context-planner', () => {
     expect(plan.evidence).toEqual({
       recipe_id: 'test-generation',
       required: ['primary', 'supporting', 'structural'],
-      preferred: ['primary', 'structural', 'supporting', 'impact'],
+      preferred: ['primary', 'structural', 'supporting', 'change', 'impact'],
       semantic_required: ['implementation', 'tests', 'structure'],
       semantic_optional: ['contracts', 'configuration'],
     })
     expect(plan.steps).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: 'seed',
+        title: 'Collect implementation anchors',
         evidence: ['primary', 'structural'],
       }),
       expect.objectContaining({
         id: 'expand',
-        evidence: ['supporting', 'structural', 'primary'],
+        title: 'Expand implementation context',
+        evidence: ['supporting', 'structural', 'change'],
       }),
       expect.objectContaining({
         id: 'assemble',
+        title: 'Assemble implementation context',
         evidence: ['primary', 'supporting', 'structural'],
       }),
     ]))

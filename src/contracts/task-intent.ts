@@ -1,7 +1,10 @@
 export const TASK_INTENT_KINDS = [
   'explain',
+  'implement',
   'review',
   'impact',
+  'migrate',
+  'document',
   'debug-flow',
   'pr-review-risk',
   'test-generation',
@@ -13,7 +16,7 @@ export const TASK_INTENT_KINDS = [
 
 export type TaskIntentKind = (typeof TASK_INTENT_KINDS)[number]
 
-export type TaskIntentContextKind = 'explain' | 'review' | 'impact'
+export type TaskIntentContextKind = 'explain' | 'implement' | 'review' | 'impact'
 
 export type TaskIntentConfidence = 'low' | 'medium' | 'high'
 
@@ -75,11 +78,38 @@ export const TASK_INTENT_DEFINITIONS: TaskIntentDefinition[] = [
     ],
   },
   {
+    kind: 'implement',
+    label: 'Implement',
+    description: 'Build, fix, add, or wire code to change behavior.',
+    default_context_kind: 'implement',
+    priority: 1,
+    rules: [
+      {
+        id: 'implement-explicit',
+        score: 10,
+        any_keywords: ['implement'],
+      },
+      {
+        id: 'implement-phrases',
+        score: 9,
+        any_phrases: ['implement issue', 'fix issue', 'address issue', 'add support', 'wire up'],
+      },
+      {
+        id: 'implement-keywords',
+        score: 7,
+        keyword_groups: [
+          ['add', 'build', 'create', 'fix', 'support', 'wire'],
+          ['feature', 'flow', 'behavior', 'integration', 'context', 'command', 'pipeline', 'task', 'issue'],
+        ],
+      },
+    ],
+  },
+  {
     kind: 'review',
     label: 'Review',
     description: 'Inspect code or changes for quality concerns without a narrower specialty.',
     default_context_kind: 'review',
-    priority: 1,
+    priority: 2,
     rules: [
       {
         id: 'review-explicit',
@@ -98,7 +128,7 @@ export const TASK_INTENT_DEFINITIONS: TaskIntentDefinition[] = [
     label: 'Impact',
     description: 'Estimate blast radius, downstream dependencies, or likely breakage.',
     default_context_kind: 'impact',
-    priority: 2,
+    priority: 3,
     rules: [
       {
         id: 'impact-explicit',
@@ -116,11 +146,52 @@ export const TASK_INTENT_DEFINITIONS: TaskIntentDefinition[] = [
     ],
   },
   {
+    kind: 'migrate',
+    label: 'Migrate',
+    description: 'Migrate names, APIs, or integration surfaces from one shape to another.',
+    default_context_kind: 'implement',
+    priority: 4,
+    rules: [
+      {
+        id: 'migrate-explicit',
+        score: 10,
+        any_keywords: ['migrate', 'migration', 'port'],
+      },
+      {
+        id: 'migrate-phrases',
+        score: 8,
+        any_phrases: ['move from', 'move to', 'rename package', 'rebrand to'],
+      },
+    ],
+  },
+  {
+    kind: 'document',
+    label: 'Document',
+    description: 'Update README, changelog, or docs to reflect behavior and usage.',
+    default_context_kind: 'implement',
+    priority: 5,
+    rules: [
+      {
+        id: 'document-explicit',
+        score: 10,
+        any_phrases: ['document the', 'write docs', 'write documentation', 'update the readme', 'update readme', 'update the changelog', 'document how'],
+      },
+      {
+        id: 'document-keywords',
+        score: 7,
+        keyword_groups: [
+          ['document', 'docs', 'readme', 'changelog', 'documentation'],
+          ['write', 'update', 'refresh', 'capture'],
+        ],
+      },
+    ],
+  },
+  {
     kind: 'debug-flow',
     label: 'Debug flow',
     description: 'Trace failures, identify root causes, and follow error-producing paths.',
     default_context_kind: 'impact',
-    priority: 3,
+    priority: 6,
     rules: [
       {
         id: 'debug-explicit',
@@ -142,7 +213,7 @@ export const TASK_INTENT_DEFINITIONS: TaskIntentDefinition[] = [
     label: 'PR review risk',
     description: 'Review a diff or pull request with explicit attention to merge risk.',
     default_context_kind: 'review',
-    priority: 4,
+    priority: 7,
     rules: [
       {
         id: 'pr-review-explicit',
@@ -163,8 +234,8 @@ export const TASK_INTENT_DEFINITIONS: TaskIntentDefinition[] = [
     kind: 'test-generation',
     label: 'Test generation',
     description: 'Create or propose regression, unit, or integration tests.',
-    default_context_kind: 'review',
-    priority: 5,
+    default_context_kind: 'implement',
+    priority: 8,
     rules: [
       {
         id: 'test-generation-explicit',
@@ -185,8 +256,8 @@ export const TASK_INTENT_DEFINITIONS: TaskIntentDefinition[] = [
     kind: 'refactor-module',
     label: 'Refactor module',
     description: 'Restructure a module or component while preserving behavior.',
-    default_context_kind: 'impact',
-    priority: 6,
+    default_context_kind: 'implement',
+    priority: 9,
     rules: [
       {
         id: 'refactor-explicit',
@@ -207,8 +278,8 @@ export const TASK_INTENT_DEFINITIONS: TaskIntentDefinition[] = [
     kind: 'dead-code',
     label: 'Dead code',
     description: 'Find or remove unused, stale, or unreachable code.',
-    default_context_kind: 'impact',
-    priority: 7,
+    default_context_kind: 'implement',
+    priority: 10,
     rules: [
       {
         id: 'dead-code-explicit',
@@ -230,7 +301,7 @@ export const TASK_INTENT_DEFINITIONS: TaskIntentDefinition[] = [
     label: 'Security review',
     description: 'Inspect attack surface, validation, and privilege boundaries.',
     default_context_kind: 'review',
-    priority: 8,
+    priority: 11,
     rules: [
       {
         id: 'security-explicit',
@@ -252,7 +323,7 @@ export const TASK_INTENT_DEFINITIONS: TaskIntentDefinition[] = [
     label: 'Performance review',
     description: 'Inspect latency, throughput, memory, or CPU behavior.',
     default_context_kind: 'impact',
-    priority: 9,
+    priority: 12,
     rules: [
       {
         id: 'performance-explicit',

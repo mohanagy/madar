@@ -67,6 +67,7 @@ describe('slice-v1 context-pack command surface', () => {
     expect(dependencies.retrieveContext).toHaveBeenCalledWith(graph, {
       question: 'Explain auth',
       budget: 1000,
+      taskKind: 'explain',
       taskIntent: 'explain',
       retrievalStrategy: 'slice-v1',
     })

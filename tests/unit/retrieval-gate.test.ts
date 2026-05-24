@@ -38,6 +38,27 @@ describe('classifyRetrievalLevel — example decisions from issue #75', () => {
     expect(decision.intent).toBe('explain')
   })
 
+  it('implement prompt → level 2 (direct dependencies)', () => {
+    const decision = classify({ prompt: 'Implement issue #275 by collecting implementation context for changed files' })
+    expect(decision.level).toBe(2)
+    expect(decision.intent).toBe('implement')
+    expect(decision.reason).toMatch(/direct dependencies/i)
+  })
+
+  it('migrate prompt → level 2 (direct dependencies)', () => {
+    const decision = classify({ prompt: 'Migrate the pack task inference to the new implementation taxonomy' })
+    expect(decision.level).toBe(2)
+    expect(decision.intent).toBe('migrate')
+    expect(decision.reason).toMatch(/direct dependencies/i)
+  })
+
+  it('document prompt → level 1 (local context)', () => {
+    const decision = classify({ prompt: 'Document the new pack task inference behavior' })
+    expect(decision.level).toBe(1)
+    expect(decision.intent).toBe('document')
+    expect(decision.reason).toMatch(/local context/i)
+  })
+
   it('debug "why" prompt → level 3 (behavior slice)', () => {
     const decision = classify({ prompt: 'Why is report generation slow?' })
     expect(decision.level).toBe(3)

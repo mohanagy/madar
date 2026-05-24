@@ -38,10 +38,16 @@ function renderedTokenCount(nodes: readonly ContextPackNode[]): number {
 
 describe('context-pack', () => {
   describe('classifyTaskContract', () => {
-    it('classifies explain, review, and impact task contracts with required evidence classes', () => {
+    it('classifies explain, implement, review, and impact task contracts with required evidence classes', () => {
       expect(classifyTaskContract('explain', { budget: 320, prompt: 'Explain auth flow' })).toEqual(expect.objectContaining({
         task_kind: 'explain',
         budget: 320,
+        required_evidence: ['primary', 'supporting', 'structural'],
+        semantic_required: ['implementation', 'structure'],
+      }))
+      expect(classifyTaskContract('implement', { budget: 420, prompt: 'Implement auth session invalidation' })).toEqual(expect.objectContaining({
+        task_kind: 'implement',
+        budget: 420,
         required_evidence: ['primary', 'supporting', 'structural'],
         semantic_required: ['implementation', 'structure'],
       }))
@@ -73,6 +79,20 @@ describe('context-pack', () => {
         preferred_evidence: ['change', 'impact', 'supporting', 'primary', 'structural'],
         semantic_required: ['changes', 'impact', 'configuration'],
         semantic_optional: ['tests', 'contracts'],
+      }))
+    })
+
+    it('accepts implementation-oriented task intents on implement contracts', () => {
+      expect(classifyTaskContract('implement', {
+        budget: 480,
+        prompt: 'Generate regression tests for token refresh and session expiry.',
+        task_intent: 'test-generation',
+      })).toEqual(expect.objectContaining({
+        task_kind: 'implement',
+        task_intent: 'test-generation',
+        evidence_recipe_id: 'test-generation',
+        required_evidence: ['primary', 'supporting', 'structural'],
+        semantic_required: ['implementation', 'tests', 'structure'],
       }))
     })
   })

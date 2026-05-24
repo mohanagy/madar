@@ -256,6 +256,17 @@ describe('cli parser', () => {
       prompt: 'how does auth work',
       budget: 1800,
       task: 'explain',
+      taskExplicit: true,
+      graphPath: 'out/graph.json',
+    })
+  })
+
+  it('parses explicit implement task selection for pack', () => {
+    expect(parsePackArgs(['implement auth session invalidation', '--task', 'implement'])).toEqual({
+      prompt: 'implement auth session invalidation',
+      budget: 3000,
+      task: 'implement',
+      taskExplicit: true,
       graphPath: 'out/graph.json',
     })
   })
@@ -274,7 +285,7 @@ describe('cli parser', () => {
     expect(() => parsePackArgs([])).toThrow('Usage: madar pack')
     expect(() => parsePackArgs(['how does auth work', '--budget', '0'])).toThrow('error: --budget must be a positive integer')
     expect(() => parsePackArgs(['how does auth work', '--budget', '100001'])).toThrow('error: --budget must be <= 100000')
-    expect(() => parsePackArgs(['how does auth work', '--task', 'summarize'])).toThrow('error: --task must be one of explain, review, impact')
+    expect(() => parsePackArgs(['how does auth work', '--task', 'summarize'])).toThrow('error: --task must be one of explain, implement, review, impact')
     expect(() => parsePackArgs(['how does auth work', '--wat'])).toThrow('error: unknown option for pack: --wat')
   })
 
@@ -299,6 +310,7 @@ describe('cli parser', () => {
         prompt: 'review current diff',
         budget: 3000,
         task: 'review',
+        taskExplicit: true,
         graphPath: resolvedGraphPath,
       })
 
@@ -1313,6 +1325,7 @@ describe('cli main', () => {
         prompt: 'how does auth work',
         budget: 1800,
         task: 'explain',
+        taskExplicit: true,
         graphPath: 'out/graph.json',
         why: true,
       },

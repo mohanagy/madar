@@ -27,6 +27,7 @@ export interface PackCliOptions {
   prompt: string
   budget: number
   task: ContextPackTaskKind
+  taskExplicit?: boolean
   graphPath: string
   why?: boolean
   /** #75 manual override for the retrieval gate. When set (0-5), the gate
@@ -287,10 +288,10 @@ function parseTimeTravelView(value: string): 'summary' | 'risk' | 'drift' | 'tim
 
 function parseContextPackTask(value: string): ContextPackTaskKind {
   const normalized = value.trim().toLowerCase()
-  if (normalized === 'explain' || normalized === 'review' || normalized === 'impact') {
+  if (normalized === 'explain' || normalized === 'implement' || normalized === 'review' || normalized === 'impact') {
     return normalized
   }
-  throw new UsageError('error: --task must be one of explain, review, impact')
+  throw new UsageError('error: --task must be one of explain, implement, review, impact')
 }
 
 function parsePromptProvider(value: string): PromptCliProvider {
@@ -422,6 +423,7 @@ export function parsePackArgs(args: string[]): PackCliOptions {
 
   let budget = 3000
   let task: ContextPackTaskKind = 'explain'
+  let taskExplicit = false
   let graphPath = 'out/graph.json'
   let why = false
   let retrievalLevel: PackCliOptions['retrievalLevel'] | undefined
@@ -453,6 +455,7 @@ export function parsePackArgs(args: string[]): PackCliOptions {
 
     if (argument === '--task') {
       task = parseContextPackTask(requireOptionValue('--task', args[index + 1]))
+      taskExplicit = true
       index += 1
       continue
     }
@@ -460,6 +463,7 @@ export function parsePackArgs(args: string[]): PackCliOptions {
     if (argument.startsWith('--task=')) {
       const [, value] = argument.split('=', 2)
       task = parseContextPackTask(requireOptionValue('--task', value))
+      taskExplicit = true
       continue
     }
 
@@ -511,6 +515,7 @@ export function parsePackArgs(args: string[]): PackCliOptions {
     prompt: normalizedPrompt,
     budget,
     task,
+    ...(taskExplicit ? { taskExplicit: true } : {}),
     graphPath,
     ...(why ? { why: true } : {}),
     ...(retrievalLevel !== undefined ? { retrievalLevel } : {}),

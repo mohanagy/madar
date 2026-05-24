@@ -1218,6 +1218,60 @@ describe('stdio runtime', () => {
     }
   })
 
+  it('accepts implement context_pack handles in context_expand', async () => {
+    const root = createGraphFixtureRoot()
+    try {
+      const graphPath = join(root, 'graph.json')
+      const sessionState = {
+        logLevel: 'info' as const,
+        subscribedResourceUris: new Set<string>(),
+        resourceVersions: new Map<string, string>(),
+        resourceListSignature: null,
+        contextPackHandles: new Map<string, unknown>(),
+      }
+
+      const pack = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 1,
+        method: 'tools/call',
+        params: {
+          name: 'context_pack',
+          arguments: {
+            prompt: 'How does AuthService reach Transport?',
+            task: 'implement',
+            budget: 1,
+          },
+        },
+      }, sessionState))
+
+      const packPayload = JSON.parse((pack?.result as { content: Array<{ text: string }> }).content[0]!.text)
+      expect(packPayload.expandable).toEqual(expect.arrayContaining([
+        expect.objectContaining({ handle_id: expect.any(String) }),
+      ]))
+
+      const expanded = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 2,
+        method: 'tools/call',
+        params: {
+          name: 'context_expand',
+          arguments: {
+            handle_id: packPayload.expandable[0].handle_id,
+          },
+        },
+      }, sessionState))
+
+      const expandedPayload = JSON.parse((expanded?.result as { content: Array<{ text: string }> }).content[0]!.text)
+      expect(expandedPayload).toEqual(expect.objectContaining({
+        handle_id: packPayload.expandable[0].handle_id,
+        task: 'implement',
+        pack: expect.objectContaining({
+          matched_nodes: expect.any(Array),
+        }),
+      }))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('invalidates cached context_pack responses after graph.json changes', async () => {
     const root = createGraphFixtureRoot()
     try {

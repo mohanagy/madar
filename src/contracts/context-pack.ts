@@ -10,7 +10,7 @@ import type { TaskIntentKind } from './task-intent.js'
 import type { ContextPackDiagnosticWarning } from './context-pack-diagnostics.js'
 import type { SourceDomain } from '../shared/source-discovery.js'
 
-export type ContextPackTaskKind = 'explain' | 'review' | 'impact'
+export type ContextPackTaskKind = 'explain' | 'implement' | 'review' | 'impact'
 
 export type ContextPackEvidenceClass = 'primary' | 'supporting' | 'structural' | 'change' | 'impact'
 

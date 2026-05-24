@@ -11,12 +11,20 @@ import {
   validateTaskIntentDefinitions,
 } from '../../src/runtime/task-intent.js'
 
-function defaultContextKindFor(kind: TaskIntentKind): 'explain' | 'review' | 'impact' {
+function defaultContextKindFor(kind: TaskIntentKind): 'explain' | 'implement' | 'review' | 'impact' {
   const definition = TASK_INTENT_DEFINITIONS.find((entry) => entry.kind === kind)
   if (!definition) {
     throw new Error(`Missing task intent definition for ${kind}`)
   }
   return definition.default_context_kind
+}
+
+function definitionByKind(kind: TaskIntentKind) {
+  const definition = TASK_INTENT_DEFINITIONS.find((entry) => entry.kind === kind)
+  if (!definition) {
+    throw new Error(`Missing task intent definition for ${kind}`)
+  }
+  return definition
 }
 
 function withTemporaryDefinitions(
@@ -37,8 +45,11 @@ describe('task-intent', () => {
     it('publishes a serializable roadmap taxonomy in stable order', () => {
       expect(TASK_INTENT_KINDS).toEqual([
         'explain',
+        'implement',
         'review',
         'impact',
+        'migrate',
+        'document',
         'debug-flow',
         'pr-review-risk',
         'test-generation',
@@ -49,6 +60,21 @@ describe('task-intent', () => {
       ])
 
       expect(TASK_INTENT_DEFINITIONS).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'implement',
+          default_context_kind: 'implement',
+          label: 'Implement',
+        }),
+        expect.objectContaining({
+          kind: 'migrate',
+          default_context_kind: 'implement',
+          label: 'Migrate',
+        }),
+        expect.objectContaining({
+          kind: 'document',
+          default_context_kind: 'implement',
+          label: 'Document',
+        }),
         expect.objectContaining({
           kind: 'debug-flow',
           default_context_kind: 'impact',
@@ -79,8 +105,11 @@ describe('task-intent', () => {
   describe('classifyTaskIntent', () => {
     it.each([
       ['Explain how the context pack is assembled for retrieve questions.', 'explain'],
+      ['Implement issue #275 by collecting implementation context for changed files.', 'implement'],
       ['Review the recent auth changes for anything suspicious.', 'review'],
       ['What breaks if we remove ContextPackTaskKind from the runtime?', 'impact'],
+      ['Migrate graphify-ts install docs to madar naming.', 'migrate'],
+      ['Document the new pack task inference behavior in the README.', 'document'],
       ['Trace why refresh token rotation started failing after the latest auth change.', 'debug-flow'],
       ['Review this PR diff for risky auth regressions before merge.', 'pr-review-risk'],
       ['Generate regression tests for token refresh and session expiry.', 'test-generation'],
@@ -111,6 +140,13 @@ describe('task-intent', () => {
       ])
     })
 
+    it('does not let one support token satisfy both implement keyword groups', () => {
+      const classification = classifyTaskIntent('Need support')
+
+      expect(classification.kind).toBe('explain')
+      expect(classification.matched_rules).not.toContain('implement-keywords')
+    })
+
     it('falls back to explain when no roadmap signal matches', () => {
       const classification = classifyTaskIntent('Need help with the graph.')
 
@@ -125,7 +161,7 @@ describe('task-intent', () => {
         .toBe('impact')
 
       withTemporaryDefinitions((definitions) => {
-        definitions[1]!.rules = [
+        definitionByKind('review').rules = [
           {
             id: 'review-invalid-keywords',
             score: 7,
@@ -140,7 +176,7 @@ describe('task-intent', () => {
 
     it('rejects multi-word any_keywords entries after normalization', () => {
       withTemporaryDefinitions((definitions) => {
-        definitions[1]!.rules = [
+        definitionByKind('review').rules = [
           {
             id: 'review-invalid-keywords',
             score: 7,
@@ -155,7 +191,7 @@ describe('task-intent', () => {
 
     it('rejects multi-word keyword_groups entries after normalization', () => {
       withTemporaryDefinitions((definitions) => {
-        definitions[2]!.rules = [
+        definitionByKind('impact').rules = [
           {
             id: 'impact-invalid-keyword-groups',
             score: 6,

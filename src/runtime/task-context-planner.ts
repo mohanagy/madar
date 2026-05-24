@@ -25,6 +25,10 @@ const TASK_PLANNER_SHAPES: Record<ContextPackTaskKind, TaskPlannerShape> = {
     budget_shares: [35, 40, 25],
     titles: ['Collect primary evidence', 'Expand supporting context', 'Assemble final context'],
   },
+  implement: {
+    budget_shares: [35, 40, 25],
+    titles: ['Collect implementation anchors', 'Expand implementation context', 'Assemble implementation context'],
+  },
   review: {
     budget_shares: [50, 30, 20],
     titles: ['Collect changed evidence', 'Expand review context', 'Assemble review context'],
