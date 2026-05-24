@@ -157,6 +157,18 @@ function graphSnapshotLines(context: PromptContext): string[] {
   ]
 }
 
+function contextPackPromptGuidance(task: string): string {
+  if (task === 'implement') {
+    return 'Include likely edit files, likely test files, contracts/public surfaces, existing patterns, runtime context when relevant, risk boundaries, validation commands, acceptance criteria, and missing-context hints.'
+  }
+
+  return 'Include coverage gaps, expandable references, and the minimum graph evidence a downstream agent needs to continue without re-scanning the repo.'
+}
+
+function formatContextPackPromptTaskLine(task: string, prompt: string): string {
+  return `Prepare a compact ${task} context pack for: ${prompt}${/[.!?]$/.test(prompt) ? '' : '.'}`
+}
+
 export function promptDefinitionsForGraph(graphPath: string): McpPromptDefinition[] {
   const context = loadPromptContext(graphPath)
   const exampleLabels = context.topGodNodes.slice(0, 3).map((node) => node.label)
@@ -188,7 +200,7 @@ export function promptDefinitionsForGraph(graphPath: string): McpPromptDefinitio
         return {
           ...prompt,
           description: exampleCommunities.length > 0
-            ? `Prepare a compact explain/review/impact pack for graph areas such as ${exampleCommunities.join(' or ')}.`
+            ? `Prepare a compact explain/implement/review/impact pack for graph areas such as ${exampleCommunities.join(' or ')}.`
             : prompt.description,
         }
       case 'context_prompt_prompt':
@@ -370,8 +382,8 @@ export function handlePromptGet(id: string | number | null, graphPath: string, p
                 'Suggested follow-up questions:',
                 suggestedQuestionsText,
                 '',
-                `Prepare a compact ${task} context pack for: ${prompt}.`,
-                'Include coverage gaps, expandable references, and the minimum graph evidence a downstream agent needs to continue without re-scanning the repo.',
+                formatContextPackPromptTaskLine(task, prompt),
+                contextPackPromptGuidance(task),
                 budget === null ? '' : `Target pack budget: ${budget} tokens.`,
               ].filter((line) => line.length > 0).join('\n'),
             },
@@ -529,7 +541,7 @@ export function handleCompletion(id: string | number | null, graphPath: string, 
       if (argumentName !== 'task') {
         return helpers.failure(id, helpers.jsonrpcInvalidParams, `Unsupported completion argument for ${refName}: ${argumentName}`)
       }
-      values = completionValuesForPrefix(['explain', 'impact', 'review'], argumentValue, helpers.maxCompletionValues)
+      values = completionValuesForPrefix(['explain', 'impact', 'implement', 'review'], argumentValue, helpers.maxCompletionValues)
       break
     case 'context_prompt_prompt':
       if (argumentName !== 'provider') {

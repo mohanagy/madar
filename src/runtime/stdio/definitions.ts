@@ -459,10 +459,10 @@ export const MCP_PROMPTS: McpPromptDefinition[] = [
   {
     name: 'context_pack_prompt',
     title: 'Context Pack Request',
-    description: 'Prepare a compact explain/review/impact context pack with expandable refs and missing-context hints.',
+    description: 'Prepare a compact explain/implement/review/impact context pack with expandable refs and missing-context hints.',
     arguments: [
       { name: 'prompt', description: 'Task prompt or question to gather context for', required: true },
-      { name: 'task', description: 'Pack mode: explain, review, or impact' },
+      { name: 'task', description: 'Pack mode: explain, implement, review, or impact' },
       { name: 'budget', description: 'Optional token budget for the pack' },
     ],
   },
