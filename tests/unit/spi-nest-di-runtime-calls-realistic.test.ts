@@ -516,7 +516,7 @@ describe('SPI realistic Nest DI runtime-call fixture', () => {
         }),
       ]),
       phase_coverage: expect.objectContaining({
-        expected: ['external_research_or_api', 'scoring', 'persistence'],
+        expected: ['orchestrator', 'external_research_or_api', 'scoring', 'persistence'],
         observed: expect.arrayContaining([
           'controller',
           'service',

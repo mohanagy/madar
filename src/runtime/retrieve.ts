@@ -2171,10 +2171,13 @@ function expectedExecutionPhases(
     phases.push('service')
   }
   if (promptWantsDetailedReportGenerationPhases(question)) {
+    if (scopeHasExecutionPhase(scopeSteps, 'orchestrator')) phases.push('orchestrator')
     if (scopeHasExecutionPhase(scopeSteps, 'planner')) phases.push('planner')
     if (scopeHasExecutionPhase(scopeSteps, 'external_research_or_api')) phases.push('external_research_or_api')
     if (scopeHasExecutionPhase(scopeSteps, 'report_builder')) phases.push('report_builder')
     if (scopeHasExecutionPhase(scopeSteps, 'scoring')) phases.push('scoring')
+    if (scopeHasExecutionPhase(scopeSteps, 'quality_gate')) phases.push('quality_gate')
+    if (scopeHasExecutionPhase(scopeSteps, 'renderer_or_synthesis')) phases.push('renderer_or_synthesis')
     if (scopeHasExecutionPhase(scopeSteps, 'persistence')) phases.push('persistence')
   }
   if (promptExplicitlyWantsRuntimeHandoff(question) || (!promptWantsDetailedReportGenerationPhases(question) && promptWantsRuntimePipeline(question))) {

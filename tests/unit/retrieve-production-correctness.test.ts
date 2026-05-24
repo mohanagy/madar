@@ -463,7 +463,15 @@ describe('retrieveContext production retrieval regressions', () => {
     }))
 
     expect(compact.execution_slice?.phase_coverage).toEqual(expect.objectContaining({
-      expected: ['planner', 'external_research_or_api', 'report_builder', 'scoring', 'persistence'],
+      expected: [
+        'planner',
+        'external_research_or_api',
+        'report_builder',
+        'scoring',
+        'quality_gate',
+        'renderer_or_synthesis',
+        'persistence',
+      ],
       observed: expect.arrayContaining([
         'planner',
         'external_research_or_api',
