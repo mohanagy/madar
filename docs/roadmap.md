@@ -1,54 +1,69 @@
 # Public roadmap
 
-This page is the contributor-facing view of the `madar` roadmap. It complements the main tracker in [issue #155](https://github.com/mohanagy/madar/issues/155): use the GitHub issue for the long-form versioned roadmap, and use this page for the current priority queue and contribution hints.
+This page is the contributor-facing roadmap for `madar`. It is the current source of truth for post-rename roadmap work, and it intentionally separates **recently shipped** work from the **future roadmap** so contributors do not have to know the rename history to understand what is current.
 
-## How to read the labels
+## How to read the roadmap
 
-- `priority:p0` / `priority:p1` / `priority:p2` tell you how urgent the work is.
-- `area:*` points at the subsystem, such as `area:mcp`, `area:retrieval`, or `area:docs`.
+- Version headings are planning buckets, not hard release promises.
+- `priority:*` tells you how urgent the work is.
+- `area:*` points at the subsystem, such as `area:retrieval`, `area:context-pack`, or `area:docs`.
 - `type:*` explains the work shape, such as `type:feature`, `type:benchmark`, or `type:docs`.
 - `help wanted` means the issue is open for contributors.
 - `good first issue` marks smaller, lower-risk tasks that are better entry points for new contributors.
 
-## P0
+## Recently shipped
 
-Highest-priority roadmap work. These issues usually change the benchmark story or the core MCP/compare flow.
+These items already landed and are no longer part of the future roadmap:
 
-- [#160 — Add pack-only compare mode](https://github.com/mohanagy/madar/issues/160) (`priority:p0`, `type:feature`, `area:benchmarks`)
-- [#159 — Add strict MCP mode to prevent agent over-exploration](https://github.com/mohanagy/madar/issues/159) (`priority:p0`, `type:feature`, `area:mcp`)
-- [#158 — Add compare-suite aggregation for wins, losses, median, and regressions](https://github.com/mohanagy/madar/issues/158) (`priority:p0`, `type:feature`, `area:benchmarks`)
-- [#157 — Add pack-quality gates for benchmark prompts](https://github.com/mohanagy/madar/issues/157) (`priority:p0`, `type:benchmark`, `area:benchmarks`)
-- [#156 — Add GoValidate benchmark suite with realistic prompt set](https://github.com/mohanagy/madar/issues/156) (`priority:p0`, `type:benchmark`, `area:benchmarks`)
+- [#257 — Improve runtime-generation quality by selecting the semantic generation core](https://github.com/mohanagy/madar/issues/257)
+- [#259 — Add runtime-generation false-positive routing regressions](https://github.com/mohanagy/madar/issues/259)
+- [#258 — Add v0.25.1 runtime-routing validation benchmark artifact](https://github.com/mohanagy/madar/issues/258)
+- [#245 — Plan and validate Madar rebrand migration](https://github.com/mohanagy/madar/issues/245)
+- [#236 — Add typestack/routing-controllers framework detector](https://github.com/mohanagy/madar/issues/236)
+- [#233 — Add answer-quality scoring to benchmark suite summaries](https://github.com/mohanagy/madar/issues/233)
 
-## P1
+## v0.26 — Runtime trust and routing precision
 
-Important follow-up work for cost control, runtime slicing, benchmarks, and artifact safety.
+Focus: make runtime-generation output easier to trust, audit, and debug before adding broader expansion work.
 
-- [#189 — Add share-safe report mode](https://github.com/mohanagy/madar/issues/189) (`priority:p1`, `type:feature`)
-- [#178 — Add incremental SPI and cache benchmarks](https://github.com/mohanagy/madar/issues/178) (`priority:p1`, `type:benchmark`)
-- [#177 — Add deterministic answer-quality rubric skeleton](https://github.com/mohanagy/madar/issues/177) (`priority:p1`, `type:feature`, `area:benchmarks`)
-- [#176 — Add adaptive context representations](https://github.com/mohanagy/madar/issues/176) (`priority:p1`, `type:feature`, `area:retrieval`)
-- [#174 — Add deterministic answer quality checks](https://github.com/mohanagy/madar/issues/174) (`priority:p1`, `type:feature`, `area:benchmarks`)
-- [#173 — Add deterministic answer-quality rubric skeleton](https://github.com/mohanagy/madar/issues/173) (`priority:p1`, `type:feature`, `area:benchmarks`)
-- [#172 — Add adaptive context representations by task type](https://github.com/mohanagy/madar/issues/172) (`priority:p1`, `type:feature`, `area:retrieval`)
-- [#169 — Add cache-aware token accounting in compare reports](https://github.com/mohanagy/madar/issues/169) (`priority:p1`, `type:feature`, `area:benchmarks`)
-- [#164 — Add execution-slice output format](https://github.com/mohanagy/madar/issues/164) (`priority:p1`, `type:feature`, `area:retrieval`)
-- [#163 — Add queue/job semantic edges for runtime pipeline reconstruction](https://github.com/mohanagy/madar/issues/163) (`priority:p1`, `type:feature`, `area:spi`, `area:retrieval`)
-- [#162 — Track MCP tool-call counts and trace summaries in compare reports](https://github.com/mohanagy/madar/issues/162) (`priority:p1`, `type:feature`, `area:benchmarks`, `area:mcp`)
-- [#161 — Add MCP call cache and duplicate suppression](https://github.com/mohanagy/madar/issues/161) (`priority:p1`, `type:feature`, `area:mcp`)
+- [#260 — Add execution_slice confidence scoring and confidence reasons](https://github.com/mohanagy/madar/issues/260)
+- [#261 — Expand runtime phase taxonomy beyond controller/service/queue/worker/persistence](https://github.com/mohanagy/madar/issues/261)
+- [#263 — Add explain-routing output for pack and compare](https://github.com/mohanagy/madar/issues/263)
 
-## P2
+## v0.27 — Benchmark credibility and answer quality
 
-Good next issues for docs, examples, DX, integrations, and smaller framework retrieval improvements.
+Focus: make benchmark claims safer and make runtime-generation answers easier to compare against an explicit contract.
 
-- [#190 — Add public roadmap page](https://github.com/mohanagy/madar/issues/190) (`priority:p2`, `type:docs`, `area:docs`)
-- [#188 — Add compact graph summary format for agents](https://github.com/mohanagy/madar/issues/188) (`priority:p2`, `type:feature`, `area:retrieval`)
-- [#186 — Add end-to-end tutorial with a small sample app](https://github.com/mohanagy/madar/issues/186) (`priority:p2`, `type:docs`, `area:docs`, `good first issue`)
-- [#185 — Improve database operation semantics](https://github.com/mohanagy/madar/issues/185) (`priority:p2`, `type:feature`, `area:spi`, `area:retrieval`)
-- [#184 — Improve Next.js App Router and React Server Component detection](https://github.com/mohanagy/madar/issues/184) (`priority:p2`, `type:feature`, `area:spi`, `area:retrieval`)
-- [#166 — Add madar doctor and status commands](https://github.com/mohanagy/madar/issues/166) (`priority:p2`, `type:feature`, `area:dx`, `good first issue`)
-- [#165 — Design local project memory layer](https://github.com/mohanagy/madar/issues/165) (`priority:p2`, `type:research`, `area:memory`)
+- [#262 — Add context-pack answer contract for runtime-generation prompts](https://github.com/mohanagy/madar/issues/262)
+- Build on the shipped validation artifact from [#258](https://github.com/mohanagy/madar/issues/258) instead of treating benchmark credibility as a greenfield problem again.
+
+## v0.28 — TypeScript/Node framework depth
+
+Focus: deepen TypeScript and Node.js framework coverage now that the basic routing and runtime-generation path is in place.
+
+- Use the shipped framework groundwork from [#236](https://github.com/mohanagy/madar/issues/236) as the baseline.
+- Favor real framework/runtime semantics over broad language expansion.
+- Cut new framework-depth issues after the v0.26-v0.27 trust and quality work lands.
+
+## v0.29 — MCP/session efficiency
+
+Focus: reduce repeated work across packs, compares, and longer agent sessions once the runtime trust surface is stable.
+
+- Build on the shipped MCP efficiency foundation from [#159](https://github.com/mohanagy/madar/issues/159), [#161](https://github.com/mohanagy/madar/issues/161), and [#162](https://github.com/mohanagy/madar/issues/162).
+- Scope new work around duplicate suppression, trace clarity, and session-aware retrieval once current routing/answer work settles.
+
+## v0.30 — Adoption and contributor experience
+
+Focus: make Madar easier to adopt, evaluate, and contribute to after the runtime and benchmark surfaces stop moving quickly.
+
+- Refresh contributor-facing docs, examples, and onboarding after the v0.26-v0.29 work is stable.
+- Keep the near-term roadmap centered on runtime trust, answer quality, framework depth, and MCP/session efficiency before expanding into broader polish work.
+
+## Parked / not near-term
+
+- [#235 — Expand Python semantics beyond FastAPI first pass](https://github.com/mohanagy/madar/issues/235) stays open, but it is intentionally outside the near-term roadmap.
+- Go first-pass support already shipped in [#234](https://github.com/mohanagy/madar/issues/234), so near-term work stays focused on TypeScript/Node depth instead of starting a new language track.
 
 ## Where to start
 
-If you want the smallest on-ramp, start with issues tagged `good first issue` and `help wanted`. If you want the biggest near-term leverage, look at the open `priority:p0` and `priority:p1` items first. Before starting work, check the issue for active discussion, confirm there is no open PR already covering it, and keep your branch scoped to a single issue.
+Start with the open `priority:p0` and `priority:p1` issues first. Before starting work, check the issue for active discussion, confirm there is no open PR already covering it, and keep your branch scoped to a single issue.

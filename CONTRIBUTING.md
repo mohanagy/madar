@@ -14,7 +14,7 @@ A few high-value ways to help:
 - tighten CI, release, or repository hygiene
 - reduce graph noise or improve community labeling
 
-The public roadmap lives in [#155](https://github.com/mohanagy/madar/issues/155). If you are unsure where to start, pick a small issue linked from the roadmap or one tagged `good first issue` / `help wanted`, and keep the pull request scoped to that issue.
+The public roadmap lives in [`docs/roadmap.md`](docs/roadmap.md). If you want to propose a roadmap change, open or update the relevant issue first so the scope is visible before implementation. If you are unsure where to start, pick a small issue linked from the roadmap or one tagged `good first issue` / `help wanted`, and keep the pull request scoped to that issue.
 
 ## Development setup
 
