@@ -23,9 +23,25 @@ interface PythonImportableSymbolIndex {
 }
 
 interface FastApiOwnerRecord {
+  moduleStem: string
+  ownerName: string
   id: string
   prefix: string
+  dependencies: string[]
   frameworkRole: 'fastapi_router' | 'fastapi_app'
+}
+
+interface FastApiIncludeRecord {
+  parentId: string
+  childId: string
+  prefix: string
+  dependencies: string[]
+}
+
+interface FastApiOwnerContext {
+  ancestorPrefix: string
+  ancestorDependencies: string[]
+  registerOwnerIds: string[]
 }
 
 interface JsExportDefinition {
@@ -448,6 +464,135 @@ function escapedRegExpText(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+function pythonDelimiterBalance(value: string): number {
+  let balance = 0
+  let quote: '"' | "'" | null = null
+  let escaped = false
+
+  for (const character of value) {
+    if (quote) {
+      if (escaped) {
+        escaped = false
+        continue
+      }
+      if (character === '\\') {
+        escaped = true
+        continue
+      }
+      if (character === quote) {
+        quote = null
+      }
+      continue
+    }
+
+    if (character === '"' || character === "'") {
+      quote = character
+      continue
+    }
+
+    if (character === '(' || character === '[' || character === '{') {
+      balance += 1
+    } else if (character === ')' || character === ']' || character === '}') {
+      balance -= 1
+    }
+  }
+
+  return balance
+}
+
+function collectPythonStatement(lines: readonly string[], startIndex: number): { text: string; endIndex: number } {
+  const firstLine = stripHashComment(lines[startIndex] ?? '').trim()
+  if (!firstLine) {
+    return { text: '', endIndex: startIndex }
+  }
+
+  const parts = [firstLine]
+  let balance = pythonDelimiterBalance(firstLine)
+  let endIndex = startIndex
+  const needsColon = /^(?:async\s+)?def\b|^class\b/.test(firstLine)
+
+  while (endIndex + 1 < lines.length) {
+    const current = parts[parts.length - 1] ?? ''
+    const currentComplete = needsColon ? balance <= 0 && current.endsWith(':') : balance <= 0
+    if (currentComplete) {
+      break
+    }
+
+    endIndex += 1
+    const nextLine = stripHashComment(lines[endIndex] ?? '').trim()
+    if (!nextLine) {
+      continue
+    }
+
+    parts.push(nextLine)
+    balance += pythonDelimiterBalance(nextLine)
+  }
+
+  return { text: parts.join(' '), endIndex }
+}
+
+function splitTopLevelPythonArguments(argumentText: string): string[] {
+  const values: string[] = []
+  let current = ''
+  let quote: '"' | "'" | null = null
+  let escaped = false
+  let balance = 0
+
+  for (const character of argumentText) {
+    if (quote) {
+      current += character
+      if (escaped) {
+        escaped = false
+        continue
+      }
+      if (character === '\\') {
+        escaped = true
+        continue
+      }
+      if (character === quote) {
+        quote = null
+      }
+      continue
+    }
+
+    if (character === '"' || character === "'") {
+      quote = character
+      current += character
+      continue
+    }
+
+    if (character === '(' || character === '[' || character === '{') {
+      balance += 1
+      current += character
+      continue
+    }
+
+    if (character === ')' || character === ']' || character === '}') {
+      balance -= 1
+      current += character
+      continue
+    }
+
+    if (character === ',' && balance === 0) {
+      const trimmed = current.trim()
+      if (trimmed) {
+        values.push(trimmed)
+      }
+      current = ''
+      continue
+    }
+
+    current += character
+  }
+
+  const trimmed = current.trim()
+  if (trimmed) {
+    values.push(trimmed)
+  }
+
+  return values
+}
+
 function normalizeFastApiPath(path: string): string {
   const normalized = path.trim().replace(/\\/g, '/')
   const withLeadingSlash = normalized.startsWith('/') ? normalized : `/${normalized}`
@@ -467,7 +612,26 @@ function joinFastApiRoutePath(prefix: string, path: string): string {
   return normalizeFastApiPath(`${normalizedPrefix}/${normalizedPath.replace(/^\//, '')}`)
 }
 
+function joinPythonRoutePrefixes(...segments: readonly string[]): string {
+  let combined = ''
+  for (const segment of segments) {
+    if (!segment) {
+      continue
+    }
+    combined = combined ? joinFastApiRoutePath(combined, segment) : normalizeFastApiPath(segment)
+  }
+  return combined
+}
+
 function quotedPythonArgumentValue(argumentText: string, key?: string): string | null {
+  const tripleQuotedPattern = key
+    ? new RegExp(`\\b${escapedRegExpText(key)}\\s*=\\s*("""|''')([\\s\\S]*?)\\1`)
+    : /("""|''')([\s\S]*?)\1/
+  const tripleQuotedMatch = argumentText.match(tripleQuotedPattern)
+  if (tripleQuotedMatch) {
+    return tripleQuotedMatch[2] ?? null
+  }
+
   const pattern = key
     ? new RegExp(`\\b${escapedRegExpText(key)}\\s*=\\s*(['"])(.*?)\\1`)
     : /(['"])(.*?)\1/
@@ -503,7 +667,8 @@ function fastApiOwnerAssignment(
   routerFactoryBindings: ReadonlySet<string>,
   appFactoryBindings: ReadonlySet<string>,
   fastApiModuleAliases: ReadonlySet<string>,
-): { ownerName: string; prefix: string; frameworkRole: FastApiOwnerRecord['frameworkRole'] } | null {
+  dependsBindings: ReadonlySet<string>,
+): { ownerName: string; prefix: string; dependencies: string[]; frameworkRole: FastApiOwnerRecord['frameworkRole'] } | null {
   const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:([A-Za-z_][A-Za-z0-9_]*)\.)?([A-Za-z_][A-Za-z0-9_]*)\((.*)\)$/)
   if (!match?.[1] || !match[3]) {
     return null
@@ -520,14 +685,349 @@ function fastApiOwnerAssignment(
   }
 
   if (calleeName === 'FastAPI' || appFactoryBindings.has(calleeName)) {
-    return { ownerName, prefix: '', frameworkRole: 'fastapi_app' }
+    return { ownerName, prefix: '', dependencies: [], frameworkRole: 'fastapi_app' }
   }
 
   return {
     ownerName,
     prefix: quotedPythonArgumentValue(argumentText, 'prefix') ?? '',
+    dependencies: fastApiDependencyNames(argumentText, dependsBindings, fastApiModuleAliases),
     frameworkRole: 'fastapi_router',
   }
+}
+
+function fastApiIncludeRouterCall(
+  statementText: string,
+  localOwners: ReadonlyMap<string, FastApiOwnerRecord>,
+  importedOwners: ReadonlyMap<string, FastApiOwnerRecord>,
+  dependsBindings: ReadonlySet<string>,
+  fastApiModuleAliases: ReadonlySet<string>,
+): FastApiIncludeRecord | null {
+  const match = statementText.match(/^([A-Za-z_][A-Za-z0-9_]*)\.include_router\((.*)\)$/)
+  if (!match?.[1] || !match[2]) {
+    return null
+  }
+
+  const parent = localOwners.get(match[1]) ?? importedOwners.get(match[1])
+  if (!parent) {
+    return null
+  }
+
+  const argumentsText = match[2]
+  const [firstArgument] = splitTopLevelPythonArguments(argumentsText)
+  if (!firstArgument) {
+    return null
+  }
+
+  const child = localOwners.get(firstArgument) ?? importedOwners.get(firstArgument)
+  if (!child) {
+    return null
+  }
+
+  return {
+    parentId: parent.id,
+    childId: child.id,
+    prefix: quotedPythonArgumentValue(argumentsText, 'prefix') ?? '',
+    dependencies: fastApiDependencyNames(argumentsText, dependsBindings, fastApiModuleAliases),
+  }
+}
+
+function buildFastApiOwnerIndex(pythonFiles: readonly string[]): Map<string, FastApiOwnerRecord> {
+  const owners = new Map<string, FastApiOwnerRecord>()
+
+  for (const filePath of pythonFiles) {
+    const stem = basename(filePath, extname(filePath))
+    let lines: string[]
+    try {
+      lines = readFileSync(filePath, 'utf8').split(/\r?\n/)
+    } catch {
+      continue
+    }
+
+    const fastApiModuleAliases = new Set<string>()
+    const routerFactoryBindings = new Set<string>()
+    const appFactoryBindings = new Set<string>()
+    const dependsBindings = new Set<string>()
+
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index] ?? ''
+      const trimmed = stripHashComment(line).trim()
+      if (!trimmed) {
+        continue
+      }
+
+      const { text: statementText, endIndex } = collectPythonStatement(lines, index)
+      index = endIndex
+      if (!statementText) {
+        continue
+      }
+
+      const fromFastApiMatch = statementText.match(/^from\s+fastapi\s+import\s+(.+)$/)
+      if (fromFastApiMatch?.[1]) {
+        for (const entry of splitTopLevelPythonArguments(fromFastApiMatch[1].replace(/[()]/g, ''))) {
+          const [importedNamePart, aliasPart] = entry.split(/\s+as\s+/)
+          const importedName = importedNamePart?.trim()
+          const localName = aliasPart?.trim() || importedName
+          if (!importedName || !localName) {
+            continue
+          }
+          if (importedName === 'APIRouter') {
+            routerFactoryBindings.add(localName)
+          } else if (importedName === 'FastAPI') {
+            appFactoryBindings.add(localName)
+          } else if (importedName === 'Depends') {
+            dependsBindings.add(localName)
+          }
+        }
+        continue
+      }
+
+      const importFastApiMatch = statementText.match(/^import\s+fastapi(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?$/)
+      if (importFastApiMatch) {
+        fastApiModuleAliases.add(importFastApiMatch[1] ?? 'fastapi')
+        continue
+      }
+
+      const ownerAssignment = fastApiOwnerAssignment(statementText, routerFactoryBindings, appFactoryBindings, fastApiModuleAliases, dependsBindings)
+      if (!ownerAssignment) {
+        continue
+      }
+
+      const ownerId = _makeId(stem, ownerAssignment.ownerName, ownerAssignment.frameworkRole)
+      owners.set(ownerId, {
+        moduleStem: stem,
+        ownerName: ownerAssignment.ownerName,
+        id: ownerId,
+        prefix: ownerAssignment.prefix,
+        dependencies: ownerAssignment.dependencies,
+        frameworkRole: ownerAssignment.frameworkRole,
+      })
+    }
+  }
+
+  return owners
+}
+
+function buildFastApiIncludeRecords(
+  pythonFiles: readonly string[],
+  ownerIndex: ReadonlyMap<string, FastApiOwnerRecord>,
+): FastApiIncludeRecord[] {
+  const includes: FastApiIncludeRecord[] = []
+  const ownerByModuleAndName = new Map<string, FastApiOwnerRecord>()
+  for (const owner of ownerIndex.values()) {
+    ownerByModuleAndName.set(`${normalizeLabel(owner.moduleStem)}:${normalizeLabel(owner.ownerName)}`, owner)
+  }
+
+  for (const filePath of pythonFiles) {
+    const stem = basename(filePath, extname(filePath))
+    let lines: string[]
+    try {
+      lines = readFileSync(filePath, 'utf8').split(/\r?\n/)
+    } catch {
+      continue
+    }
+
+    const fastApiModuleAliases = new Set<string>()
+    const routerFactoryBindings = new Set<string>()
+    const appFactoryBindings = new Set<string>()
+    const dependsBindings = new Set<string>()
+    const localOwners = new Map<string, FastApiOwnerRecord>()
+    const importedOwners = new Map<string, FastApiOwnerRecord>()
+
+    for (const owner of ownerIndex.values()) {
+      if (owner.moduleStem === stem) {
+        localOwners.set(owner.ownerName, owner)
+      }
+    }
+
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index] ?? ''
+      const trimmed = stripHashComment(line).trim()
+      if (!trimmed) {
+        continue
+      }
+
+      const { text: statementText, endIndex } = collectPythonStatement(lines, index)
+      index = endIndex
+      if (!statementText) {
+        continue
+      }
+
+      const fromFastApiMatch = statementText.match(/^from\s+fastapi\s+import\s+(.+)$/)
+      if (fromFastApiMatch?.[1]) {
+        for (const entry of splitTopLevelPythonArguments(fromFastApiMatch[1].replace(/[()]/g, ''))) {
+          const [importedNamePart, aliasPart] = entry.split(/\s+as\s+/)
+          const importedName = importedNamePart?.trim()
+          const localName = aliasPart?.trim() || importedName
+          if (!importedName || !localName) {
+            continue
+          }
+          if (importedName === 'APIRouter') {
+            routerFactoryBindings.add(localName)
+          } else if (importedName === 'FastAPI') {
+            appFactoryBindings.add(localName)
+          } else if (importedName === 'Depends') {
+            dependsBindings.add(localName)
+          }
+        }
+        continue
+      }
+
+      const importFastApiMatch = statementText.match(/^import\s+fastapi(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?$/)
+      if (importFastApiMatch) {
+        fastApiModuleAliases.add(importFastApiMatch[1] ?? 'fastapi')
+        continue
+      }
+
+      const importFromMatch = statementText.match(/^from\s+([A-Za-z0-9_\.]+)\s+import\s+(.+)$/)
+      if (importFromMatch?.[1] && importFromMatch[2]) {
+        const moduleSpecifier = importFromMatch[1]
+        const moduleStem = moduleSpecifier.replace(/^\.+/, '').split('.').filter(Boolean).at(-1)
+        if (!moduleStem) {
+          continue
+        }
+
+        for (const entry of splitTopLevelPythonArguments(importFromMatch[2].replace(/[()]/g, ''))) {
+          const [importedNamePart, aliasPart] = entry.split(/\s+as\s+/)
+          const importedName = importedNamePart?.trim()
+          const localName = aliasPart?.trim() || importedName
+          if (!importedName || !localName) {
+            continue
+          }
+
+          const owner = ownerByModuleAndName.get(`${normalizeLabel(moduleStem)}:${normalizeLabel(importedName)}`)
+          if (owner) {
+            importedOwners.set(localName, owner)
+          }
+        }
+        continue
+      }
+
+      const includeRecord = fastApiIncludeRouterCall(statementText, localOwners, importedOwners, dependsBindings, fastApiModuleAliases)
+      if (includeRecord) {
+        includes.push(includeRecord)
+      }
+    }
+  }
+
+  return includes
+}
+
+function buildFastApiOwnerContexts(
+  ownerIndex: ReadonlyMap<string, FastApiOwnerRecord>,
+  includeRecords: readonly FastApiIncludeRecord[],
+): Map<string, FastApiOwnerContext[]> {
+  const contexts = new Map<string, FastApiOwnerContext[]>()
+  const incomingChildren = new Set(includeRecords.map((record) => record.childId))
+  const includesByParent = new Map<string, FastApiIncludeRecord[]>()
+  for (const record of includeRecords) {
+    const bucket = includesByParent.get(record.parentId)
+    if (bucket) {
+      bucket.push(record)
+    } else {
+      includesByParent.set(record.parentId, [record])
+    }
+  }
+
+  const enqueue = (ownerId: string, context: FastApiOwnerContext, lineage: readonly string[] = []): void => {
+    if (lineage.includes(ownerId)) {
+      return
+    }
+
+    const serialized = JSON.stringify(context)
+    const existing = contexts.get(ownerId) ?? []
+    if (existing.some((entry) => JSON.stringify(entry) === serialized)) {
+      return
+    }
+    contexts.set(ownerId, [...existing, context])
+    const owner = ownerIndex.get(ownerId)
+    if (!owner) {
+      return
+    }
+
+    const nextLineage = [...lineage, ownerId]
+    const propagatedPrefix = joinPythonRoutePrefixes(context.ancestorPrefix, owner.prefix)
+    const propagatedDependencies = [...new Set([...context.ancestorDependencies, ...owner.dependencies])]
+    const children = includesByParent.get(ownerId) ?? []
+    for (const includeRecord of children) {
+      if (nextLineage.includes(includeRecord.childId)) {
+        continue
+      }
+      enqueue(includeRecord.childId, {
+        ancestorPrefix: joinPythonRoutePrefixes(propagatedPrefix, includeRecord.prefix),
+        ancestorDependencies: [...new Set([...propagatedDependencies, ...includeRecord.dependencies])],
+        registerOwnerIds: [...new Set([...context.registerOwnerIds, includeRecord.childId])],
+      }, nextLineage)
+    }
+  }
+
+  const roots = [...ownerIndex.values()].filter((owner) => !incomingChildren.has(owner.id))
+  for (const owner of roots) {
+    enqueue(owner.id, {
+      ancestorPrefix: '',
+      ancestorDependencies: [],
+      registerOwnerIds: [owner.id],
+    })
+  }
+
+  for (const owner of ownerIndex.values()) {
+    if (!contexts.has(owner.id)) {
+      enqueue(owner.id, {
+        ancestorPrefix: '',
+        ancestorDependencies: [],
+        registerOwnerIds: [owner.id],
+      })
+    }
+  }
+
+  return contexts
+}
+
+function normalizeDjangoPath(path: string): string {
+  const normalized = path.trim().replace(/\\/g, '/')
+  if (!normalized) {
+    return '/'
+  }
+  return normalized.startsWith('/') ? normalized : `/${normalized}`
+}
+
+function djangoRouteDefinition(
+  statementText: string,
+  pathBindings: ReadonlySet<string>,
+): { routePath: string; viewExpression: string } | null {
+  const trimmed = statementText.replace(/,$/, '')
+  const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)\((.*)\)$/)
+  if (!match?.[1] || !match[2] || !pathBindings.has(match[1])) {
+    return null
+  }
+
+  const argumentsList = splitTopLevelPythonArguments(match[2])
+  const routePath = quotedPythonArgumentValue(argumentsList[0] ?? '')
+  const viewExpression = argumentsList[1]?.trim()
+  if (!routePath || !viewExpression) {
+    return null
+  }
+
+  return { routePath: normalizeDjangoPath(routePath), viewExpression }
+}
+
+function resolveDjangoViewTarget(
+  moduleStem: string,
+  viewExpression: string,
+  importedTargets: ReadonlyMap<string, string>,
+  nodeIdsByModuleAndName: ReadonlyMap<string, string>,
+): string | null {
+  const directMatch = viewExpression.match(/^([A-Za-z_][A-Za-z0-9_]*)$/)
+  if (directMatch?.[1]) {
+    return resolvePythonLocalOrImportedTarget(moduleStem, directMatch[1], importedTargets, nodeIdsByModuleAndName)
+  }
+
+  const asViewMatch = viewExpression.match(/^([A-Za-z_][A-Za-z0-9_]*)\.as_view\(\)$/)
+  if (asViewMatch?.[1]) {
+    return resolvePythonLocalOrImportedTarget(moduleStem, asViewMatch[1], importedTargets, nodeIdsByModuleAndName)
+  }
+
+  return null
 }
 
 function fastApiRouteDecorator(
@@ -704,6 +1204,8 @@ export function resolvePythonFastApiSemantics(
   const searchableNodes = options.contextNodes && options.contextNodes.length > 0 ? [...extraction.nodes, ...options.contextNodes] : extraction.nodes
   const searchableNodeIds = new Set(searchableNodes.map((node) => node.id))
   const { nodeIdsByModuleAndName } = buildPythonImportableSymbolIndex(searchableNodes)
+  const fastApiOwnerIndex = buildFastApiOwnerIndex(pythonFiles)
+  const fastApiOwnerContexts = buildFastApiOwnerContexts(fastApiOwnerIndex, buildFastApiIncludeRecords(pythonFiles, fastApiOwnerIndex))
   const nodes = extraction.nodes.map((node) => ({ ...node }))
   const nodeIndicesById = new Map(nodes.map((node, index) => [node.id, index] as const))
   const seenNodeIds = new Set(nodes.map((node) => node.id))
@@ -745,6 +1247,7 @@ export function resolvePythonFastApiSemantics(
     }
 
     const importedTargets = new Map<string, string>()
+    const importedOwnerTargets = new Map<string, FastApiOwnerRecord>()
     const fastApiModuleAliases = new Set<string>()
     const routerFactoryBindings = new Set<string>()
     const appFactoryBindings = new Set<string>()
@@ -755,9 +1258,18 @@ export function resolvePythonFastApiSemantics(
 
     for (let index = 0; index < lines.length; index += 1) {
       const line = lines[index] ?? ''
-      const lineNumber = index + 1
       const trimmed = stripHashComment(line).trim()
       if (!trimmed) {
+        continue
+      }
+
+      const shouldCollectBlock = !/^[A-Za-z_][A-Za-z0-9_]*\s*=\s*\[$/.test(trimmed) && pythonDelimiterBalance(trimmed) > 0
+      const { text: statementText, endIndex } = shouldCollectBlock
+        ? collectPythonStatement(lines, index)
+        : { text: trimmed, endIndex: index }
+      const lineNumber = index + 1
+      index = endIndex
+      if (!statementText) {
         continue
       }
 
@@ -766,10 +1278,9 @@ export function resolvePythonFastApiSemantics(
         classStack.pop()
       }
 
-      const fromFastApiMatch = trimmed.match(/^from\s+fastapi\s+import\s+(.+)$/)
+      const fromFastApiMatch = statementText.match(/^from\s+fastapi\s+import\s+(.+)$/)
       if (fromFastApiMatch?.[1]) {
-        for (const rawEntry of fromFastApiMatch[1].replace(/[()]/g, '').split(',')) {
-          const entry = rawEntry.trim()
+        for (const entry of splitTopLevelPythonArguments(fromFastApiMatch[1].replace(/[()]/g, ''))) {
           if (!entry) {
             continue
           }
@@ -790,18 +1301,17 @@ export function resolvePythonFastApiSemantics(
         continue
       }
 
-      const importFastApiMatch = trimmed.match(/^import\s+fastapi(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?$/)
+      const importFastApiMatch = statementText.match(/^import\s+fastapi(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?$/)
       if (importFastApiMatch) {
         fastApiModuleAliases.add(importFastApiMatch[1] ?? 'fastapi')
         continue
       }
 
-      const importFromMatch = trimmed.match(/^from\s+([A-Za-z0-9_\.]+)\s+import\s+(.+)$/)
+      const importFromMatch = statementText.match(/^from\s+([A-Za-z0-9_\.]+)\s+import\s+(.+)$/)
       if (importFromMatch?.[1] && importFromMatch[2]) {
         const moduleSpecifier = importFromMatch[1]
         const importedList = importFromMatch[2].replace(/[()]/g, '')
-        for (const rawEntry of importedList.split(',')) {
-          const entry = rawEntry.trim()
+        for (const entry of splitTopLevelPythonArguments(importedList)) {
           if (!entry) {
             continue
           }
@@ -816,24 +1326,42 @@ export function resolvePythonFastApiSemantics(
           if (targetId) {
             importedTargets.set(localName, targetId)
           }
+
+          const moduleStem = moduleSpecifier.replace(/^\.+/, '').split('.').filter(Boolean).at(-1)
+          const owner = moduleStem
+            ? [...fastApiOwnerIndex.values()].find(
+                (candidate) =>
+                  normalizeLabel(candidate.moduleStem) === normalizeLabel(moduleStem) &&
+                  normalizeLabel(candidate.ownerName) === normalizeLabel(importedName),
+              )
+            : null
+          if (owner) {
+            importedOwnerTargets.set(localName, owner)
+          }
         }
         continue
       }
 
-      const classMatch = trimmed.match(/^class\s+([A-Za-z_][A-Za-z0-9_]*)(?:\(([^)]+)\))?:/)
+      const classMatch = statementText.match(/^class\s+([A-Za-z_][A-Za-z0-9_]*)(?:\(([^)]+)\))?:/)
       if (classMatch?.[1]) {
         classStack.push({ indent, id: _makeId(stem, classMatch[1]) })
         pendingDecorators.length = 0
         continue
       }
 
-      const ownerAssignment = fastApiOwnerAssignment(trimmed, routerFactoryBindings, appFactoryBindings, fastApiModuleAliases)
+      const ownerAssignment = fastApiOwnerAssignment(statementText, routerFactoryBindings, appFactoryBindings, fastApiModuleAliases, dependsBindings)
       if (ownerAssignment) {
         const ownerId = _makeId(stem, ownerAssignment.ownerName, ownerAssignment.frameworkRole)
-        routerOwners.set(ownerAssignment.ownerName, {
+        const ownerRecord = fastApiOwnerIndex.get(ownerId) ?? {
+          moduleStem: stem,
+          ownerName: ownerAssignment.ownerName,
           id: ownerId,
           prefix: ownerAssignment.prefix,
+          dependencies: ownerAssignment.dependencies,
           frameworkRole: ownerAssignment.frameworkRole,
+        }
+        routerOwners.set(ownerAssignment.ownerName, {
+          ...ownerRecord,
         })
         addDerivedNode({
           ...createNode(ownerId, ownerAssignment.ownerName, filePath, lineNumber),
@@ -847,12 +1375,12 @@ export function resolvePythonFastApiSemantics(
         continue
       }
 
-      if (trimmed.startsWith('@')) {
-        pendingDecorators.push({ text: trimmed, line: lineNumber })
+      if (statementText.startsWith('@')) {
+        pendingDecorators.push({ text: statementText, line: lineNumber })
         continue
       }
 
-      const functionMatch = trimmed.match(/^(?:async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/)
+      const functionMatch = statementText.match(/^(?:async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/)
       if (functionMatch?.[1]) {
         const currentClass = classStack[classStack.length - 1]
         const functionId = currentClass ? _makeId(currentClass.id, functionMatch[1]) : _makeId(stem, functionMatch[1])
@@ -869,45 +1397,192 @@ export function resolvePythonFastApiSemantics(
           continue
         }
 
-        const fullRoutePath = joinFastApiRoutePath(owner.prefix, routeDecorator.parsed.routePath)
-        const routeId = _makeId(stem, routeDecorator.parsed.ownerName, routeDecorator.parsed.method, fullRoutePath, 'fastapi_route')
-        addDerivedNode({
-          ...createNode(routeId, `${routeDecorator.parsed.method} ${fullRoutePath}`, filePath, routeDecorator.line),
-          node_kind: 'route',
-          framework: 'fastapi',
-          framework_role: 'fastapi_route',
-          http_method: routeDecorator.parsed.method,
-          route_path: fullRoutePath,
-        })
+        const ownerContexts = fastApiOwnerContexts.get(owner.id) ?? [{
+          ancestorPrefix: '',
+          ancestorDependencies: [],
+          registerOwnerIds: [owner.id],
+        }]
         setNodeAttributes(functionId, {
           framework: 'fastapi',
           framework_role: 'fastapi_endpoint',
         })
-        addUniqueEdge(edges, existingEdges, createEdge(fileNodeId, routeId, 'declares', filePath, routeDecorator.line))
-        addUniqueEdge(edges, existingEdges, createEdge(owner.id, routeId, 'registers_route', filePath, routeDecorator.line))
-        addUniqueEdge(edges, existingEdges, createEdge(functionId, routeId, 'handles_route', filePath, routeDecorator.line))
-        addUniqueEdge(edges, existingEdges, createEdge(routeId, functionId, 'depends_on', filePath, routeDecorator.line))
 
-        const dependencyNames = new Set([
-          ...fastApiDependencyNames(routeDecorator.text, dependsBindings, fastApiModuleAliases),
-          ...fastApiDependencyNames(trimmed, dependsBindings, fastApiModuleAliases),
-        ])
-        for (const dependencyName of dependencyNames) {
-          const dependencyId = resolvePythonLocalOrImportedTarget(stem, dependencyName, importedTargets, nodeIdsByModuleAndName)
-          if (!dependencyId || !searchableNodeIds.has(dependencyId)) {
-            continue
-          }
-
-          setNodeAttributes(dependencyId, {
+        for (const ownerContext of ownerContexts) {
+          const fullRoutePath = joinPythonRoutePrefixes(ownerContext.ancestorPrefix, owner.prefix, routeDecorator.parsed.routePath)
+          const routeId = _makeId(stem, routeDecorator.parsed.ownerName, routeDecorator.parsed.method, fullRoutePath, 'fastapi_route')
+          addDerivedNode({
+            ...createNode(routeId, `${routeDecorator.parsed.method} ${fullRoutePath}`, filePath, routeDecorator.line),
+            node_kind: 'route',
             framework: 'fastapi',
-            framework_role: 'fastapi_dependency',
+            framework_role: 'fastapi_route',
+            http_method: routeDecorator.parsed.method,
+            route_path: fullRoutePath,
           })
-          addUniqueEdge(edges, existingEdges, createEdge(functionId, dependencyId, 'depends_on', filePath, routeDecorator.line))
+          addUniqueEdge(edges, existingEdges, createEdge(fileNodeId, routeId, 'declares', filePath, routeDecorator.line))
+          for (const registerOwnerId of ownerContext.registerOwnerIds) {
+            addUniqueEdge(edges, existingEdges, createEdge(registerOwnerId, routeId, 'registers_route', filePath, routeDecorator.line))
+          }
+          addUniqueEdge(edges, existingEdges, createEdge(functionId, routeId, 'handles_route', filePath, routeDecorator.line))
+          addUniqueEdge(edges, existingEdges, createEdge(routeId, functionId, 'depends_on', filePath, routeDecorator.line))
+
+          const dependencyNames = new Set([
+            ...ownerContext.ancestorDependencies,
+            ...owner.dependencies,
+            ...fastApiDependencyNames(routeDecorator.text, dependsBindings, fastApiModuleAliases),
+            ...fastApiDependencyNames(statementText, dependsBindings, fastApiModuleAliases),
+          ])
+          for (const dependencyName of dependencyNames) {
+            const dependencyId = resolvePythonLocalOrImportedTarget(stem, dependencyName, importedTargets, nodeIdsByModuleAndName)
+            if (!dependencyId || !searchableNodeIds.has(dependencyId)) {
+              continue
+            }
+
+            setNodeAttributes(dependencyId, {
+              framework: 'fastapi',
+              framework_role: 'fastapi_dependency',
+            })
+            addUniqueEdge(edges, existingEdges, createEdge(functionId, dependencyId, 'depends_on', filePath, routeDecorator.line))
+          }
         }
         continue
       }
 
       pendingDecorators.length = 0
+    }
+  }
+
+  return {
+    ...extraction,
+    nodes,
+    edges,
+  }
+}
+
+export function resolvePythonDjangoSemantics(
+  files: readonly string[],
+  extraction: ExtractionData,
+  options: ResolveCrossFilePythonImportsOptions = {},
+): ExtractionData {
+  const pythonFiles = files.filter((filePath) => extname(filePath).toLowerCase() === '.py')
+  if (pythonFiles.length === 0) {
+    return extraction
+  }
+
+  const searchableNodes = options.contextNodes && options.contextNodes.length > 0 ? [...extraction.nodes, ...options.contextNodes] : extraction.nodes
+  const searchableNodeIds = new Set(searchableNodes.map((node) => node.id))
+  const { nodeIdsByModuleAndName } = buildPythonImportableSymbolIndex(searchableNodes)
+  const nodes = extraction.nodes.map((node) => ({ ...node }))
+  const nodeIndicesById = new Map(nodes.map((node, index) => [node.id, index] as const))
+  const seenNodeIds = new Set(nodes.map((node) => node.id))
+  const edges = [...extraction.edges]
+  const existingEdges = new Set(edges.map((edge) => `${edge.source}|${edge.target}|${edge.relation}`))
+
+  const setNodeAttributes = (nodeId: string, attributes: Partial<ExtractionNode>): void => {
+    const nodeIndex = nodeIndicesById.get(nodeId)
+    if (nodeIndex === undefined) {
+      return
+    }
+
+    nodes[nodeIndex] = {
+      ...nodes[nodeIndex]!,
+      ...attributes,
+      id: nodes[nodeIndex]!.id,
+    }
+  }
+
+  const addDerivedNode = (node: ExtractionNode): void => {
+    if (seenNodeIds.has(node.id)) {
+      return
+    }
+    addNode(nodes, seenNodeIds, node)
+    nodeIndicesById.set(node.id, nodes.length - 1)
+  }
+
+  for (const filePath of pythonFiles) {
+    const stem = basename(filePath, extname(filePath))
+    const fileNodeId = _makeId(stem)
+    let lines: string[]
+    try {
+      lines = readFileSync(filePath, 'utf8').split(/\r?\n/)
+    } catch {
+      continue
+    }
+
+    const importedTargets = new Map<string, string>()
+    const djangoPathBindings = new Set<string>()
+
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index] ?? ''
+      const trimmed = stripHashComment(line).trim()
+      if (!trimmed) {
+        continue
+      }
+
+      const shouldCollectBlock = !/^[A-Za-z_][A-Za-z0-9_]*\s*=\s*\[$/.test(trimmed) && pythonDelimiterBalance(trimmed) > 0
+      const { text: statementText, endIndex } = shouldCollectBlock
+        ? collectPythonStatement(lines, index)
+        : { text: trimmed, endIndex: index }
+      const lineNumber = index + 1
+      index = endIndex
+      if (!statementText) {
+        continue
+      }
+
+      const djangoUrlsMatch = statementText.match(/^from\s+django\.urls\s+import\s+(.+)$/)
+      if (djangoUrlsMatch?.[1]) {
+        for (const entry of splitTopLevelPythonArguments(djangoUrlsMatch[1].replace(/[()]/g, ''))) {
+          const [importedNamePart, aliasPart] = entry.split(/\s+as\s+/)
+          const importedName = importedNamePart?.trim()
+          const localName = aliasPart?.trim() || importedName
+          if ((importedName === 'path' || importedName === 're_path') && localName) {
+            djangoPathBindings.add(localName)
+          }
+        }
+        continue
+      }
+
+      const importFromMatch = statementText.match(/^from\s+([A-Za-z0-9_\.]+)\s+import\s+(.+)$/)
+      if (importFromMatch?.[1] && importFromMatch[2]) {
+        const moduleSpecifier = importFromMatch[1]
+        for (const entry of splitTopLevelPythonArguments(importFromMatch[2].replace(/[()]/g, ''))) {
+          const [importedNamePart, aliasPart] = entry.split(/\s+as\s+/)
+          const importedName = importedNamePart?.trim()
+          const localName = aliasPart?.trim() || importedName
+          if (!importedName || !localName) {
+            continue
+          }
+          const targetId = resolveImportedPythonTarget(moduleSpecifier, importedName, nodeIdsByModuleAndName)
+          if (targetId) {
+            importedTargets.set(localName, targetId)
+          }
+        }
+      }
+
+      const routeDefinition = djangoRouteDefinition(statementText, djangoPathBindings)
+      if (!routeDefinition) {
+        continue
+      }
+
+      const viewId = resolveDjangoViewTarget(stem, routeDefinition.viewExpression, importedTargets, nodeIdsByModuleAndName)
+      if (!viewId || !searchableNodeIds.has(viewId)) {
+        continue
+      }
+
+      const routeId = _makeId(stem, routeDefinition.routePath, 'django_route')
+      addDerivedNode({
+        ...createNode(routeId, `route ${routeDefinition.routePath}`, filePath, lineNumber),
+        node_kind: 'route',
+        framework: 'django',
+        framework_role: 'django_route',
+        route_path: routeDefinition.routePath,
+      })
+      setNodeAttributes(viewId, {
+        framework: 'django',
+        framework_role: 'django_view',
+      })
+      addUniqueEdge(edges, existingEdges, createEdge(fileNodeId, routeId, 'declares', filePath, lineNumber))
+      addUniqueEdge(edges, existingEdges, createEdge(viewId, routeId, 'handles_route', filePath, lineNumber))
+      addUniqueEdge(edges, existingEdges, createEdge(routeId, viewId, 'depends_on', filePath, lineNumber))
     }
   }
 

@@ -133,6 +133,12 @@ describe('public marketing copy honesty', () => {
     it('links the 2026-05-09 auth-e2e benchmark folder from the README', () => {
       expect(content).toContain('docs/benchmarks/2026-05-09-govalidate-auth-e2e/')
     })
+
+    it('keeps the README Python support claim conservative and current', () => {
+      expect(content).toContain('FastAPI router composition')
+      expect(content).toContain('Django URL-conf')
+      expect(lower).toContain('not near js/ts parity')
+    })
   })
 
   describe('docs/tutorials/getting-started.md', () => {
@@ -177,6 +183,8 @@ describe('public marketing copy honesty', () => {
       expect(content).toContain('`storage_operation`')
       expect(content).toContain('`runtime_boundary`')
       expect(content).toContain('FastAPI')
+      expect(content).toContain('Django')
+      expect(content).toContain('router composition')
     })
   })
 

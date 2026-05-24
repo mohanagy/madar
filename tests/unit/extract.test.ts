@@ -1480,6 +1480,283 @@ describe('extract', () => {
     }
   })
 
+  it('extracts FastAPI router composition, multiline decorators, and annotated dependencies across python files', () => {
+    const root = createTempRoot()
+    try {
+      const depsPath = join(root, 'deps.py')
+      const usersPath = join(root, 'users.py')
+      const apiPath = join(root, 'api.py')
+
+      writeFileSync(
+        depsPath,
+        [
+          'class AuthContext:',
+          '    pass',
+          '',
+          'def require_auth():',
+          '    return AuthContext()',
+          '',
+          'def get_db():',
+          '    return "db"',
+        ].join('\n'),
+        'utf8',
+      )
+      writeFileSync(
+        usersPath,
+        [
+          'from typing import Annotated',
+          'from fastapi import APIRouter, Depends',
+          'from .deps import require_auth, get_db',
+          '',
+          'router = APIRouter(',
+          '    prefix="/users",',
+          '    dependencies=[Depends(require_auth)],',
+          ')',
+          '',
+          '@router.get(',
+          '    "/{user_id}",',
+          '    dependencies=[Depends(require_auth)],',
+          ')',
+          'async def get_user(',
+          '    user_id: str,',
+          '    db: Annotated[str, Depends(get_db)],',
+          '):',
+          '    return {"user_id": user_id, "db": db}',
+        ].join('\n'),
+        'utf8',
+      )
+      writeFileSync(
+        apiPath,
+        [
+          'from fastapi import FastAPI',
+          'from .users import router as users_router',
+          '',
+          'app = FastAPI()',
+          'app.include_router(users_router, prefix="/api")',
+        ].join('\n'),
+        'utf8',
+      )
+
+      const result = extract([apiPath, usersPath, depsPath])
+      const appId = result.nodes.find((node) => node.label === 'app' && node.framework_role === 'fastapi_app')?.id
+      const routerId = result.nodes.find((node) => node.label === 'router' && node.framework_role === 'fastapi_router')?.id
+      const routeId = result.nodes.find((node) => node.label === 'GET /api/users/{user_id}' && node.framework_role === 'fastapi_route')?.id
+      const endpointId = result.nodes.find((node) => node.label === 'get_user()' && node.framework_role === 'fastapi_endpoint')?.id
+      const authDependencyId = result.nodes.find((node) => node.label === 'require_auth()' && node.source_file === depsPath)?.id
+      const dbDependencyId = result.nodes.find((node) => node.label === 'get_db()' && node.source_file === depsPath)?.id
+
+      expect(appId).toBeTruthy()
+      expect(routerId).toBeTruthy()
+      expect(routeId).toBeTruthy()
+      expect(endpointId).toBeTruthy()
+      expect(authDependencyId).toBeTruthy()
+      expect(dbDependencyId).toBeTruthy()
+      expect(result.nodes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: routeId,
+            label: 'GET /api/users/{user_id}',
+            framework: 'fastapi',
+            framework_role: 'fastapi_route',
+            node_kind: 'route',
+            route_path: '/api/users/{user_id}',
+            http_method: 'GET',
+          }),
+          expect.objectContaining({
+            id: authDependencyId,
+            framework: 'fastapi',
+            framework_role: 'fastapi_dependency',
+          }),
+          expect.objectContaining({
+            id: dbDependencyId,
+            framework: 'fastapi',
+            framework_role: 'fastapi_dependency',
+          }),
+        ]),
+      )
+      expect(result.edges).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ source: routerId, target: routeId, relation: 'registers_route' }),
+          expect.objectContaining({ source: appId, target: routeId, relation: 'registers_route' }),
+          expect.objectContaining({ source: endpointId, target: routeId, relation: 'handles_route' }),
+          expect.objectContaining({ source: endpointId, target: authDependencyId, relation: 'depends_on' }),
+          expect.objectContaining({ source: endpointId, target: dbDependencyId, relation: 'depends_on' }),
+        ]),
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('extracts FastAPI prefixes and routes declared with triple-quoted strings', () => {
+    const root = createTempRoot()
+    try {
+      const apiPath = join(root, 'api.py')
+
+      writeFileSync(
+        apiPath,
+        [
+          'from fastapi import APIRouter',
+          '',
+          'router = APIRouter(prefix="""/api""")',
+          '',
+          '@router.get("""/users""")',
+          'async def list_users():',
+          '    return {"ok": True}',
+        ].join('\n'),
+        'utf8',
+      )
+
+      const result = extract([apiPath])
+      const routeId = result.nodes.find((node) => node.label === 'GET /api/users' && node.framework_role === 'fastapi_route')?.id
+
+      expect(routeId).toBeTruthy()
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('extracts Django urlconf route edges for imported function and class-based views', () => {
+    const root = createTempRoot()
+    try {
+      const viewsPath = join(root, 'views.py')
+      const urlsPath = join(root, 'urls.py')
+
+      writeFileSync(
+        viewsPath,
+        [
+          'def health_view(request):',
+          '    return {"ok": True}',
+          '',
+          'class StatusView:',
+          '    @classmethod',
+          '    def as_view(cls):',
+          '        return cls',
+        ].join('\n'),
+        'utf8',
+      )
+      writeFileSync(
+        urlsPath,
+        [
+          'from django.urls import path',
+          'from .views import health_view, StatusView',
+          '',
+          'urlpatterns = [',
+          '    path("health/", health_view, name="health"),',
+          '    path("status/", StatusView.as_view(), name="status"),',
+          ']',
+        ].join('\n'),
+        'utf8',
+      )
+
+      const result = extract([urlsPath, viewsPath])
+      const healthRouteId = result.nodes.find((node) => node.label === 'route /health/' && node.framework_role === 'django_route')?.id
+      const statusRouteId = result.nodes.find((node) => node.label === 'route /status/' && node.framework_role === 'django_route')?.id
+      const healthViewId = result.nodes.find((node) => node.label === 'health_view()' && node.source_file === viewsPath)?.id
+      const statusViewId = result.nodes.find((node) => node.label === 'StatusView' && node.source_file === viewsPath)?.id
+
+      expect(healthRouteId).toBeTruthy()
+      expect(statusRouteId).toBeTruthy()
+      expect(healthViewId).toBeTruthy()
+      expect(statusViewId).toBeTruthy()
+      expect(result.edges).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ source: healthViewId, target: healthRouteId, relation: 'handles_route' }),
+          expect.objectContaining({ source: healthRouteId, target: healthViewId, relation: 'depends_on' }),
+          expect.objectContaining({ source: statusViewId, target: statusRouteId, relation: 'handles_route' }),
+          expect.objectContaining({ source: statusRouteId, target: statusViewId, relation: 'depends_on' }),
+        ]),
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('does not invent Django route edges for unresolved include patterns', () => {
+    const root = createTempRoot()
+    try {
+      const urlsPath = join(root, 'urls.py')
+
+      writeFileSync(
+        urlsPath,
+        [
+          'from django.urls import include, path',
+          '',
+          'urlpatterns = [',
+          '    path("api/", include("project.api_urls")),',
+          ']',
+        ].join('\n'),
+        'utf8',
+      )
+
+      const result = extract([urlsPath])
+
+      expect(result.nodes.some((node) => node.framework_role === 'django_route')).toBe(false)
+      expect(result.edges.some((edge) => edge.relation === 'handles_route')).toBe(false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('does not recurse forever on circular FastAPI router includes', () => {
+    const root = createTempRoot()
+    try {
+      const appPath = join(root, 'app.py')
+      const routerAPath = join(root, 'router_a.py')
+      const routerBPath = join(root, 'router_b.py')
+
+      writeFileSync(
+        routerAPath,
+        [
+          'from fastapi import APIRouter',
+          'from .router_b import router as router_b',
+          '',
+          'router = APIRouter(prefix="/a")',
+          'router.include_router(router_b, prefix="/b")',
+          '',
+          '@router.get("/one")',
+          'async def route_one():',
+          '    return {"ok": True}',
+        ].join('\n'),
+        'utf8',
+      )
+      writeFileSync(
+        routerBPath,
+        [
+          'from fastapi import APIRouter',
+          'from .router_a import router as router_a',
+          '',
+          'router = APIRouter()',
+          'router.include_router(router_a, prefix="/loop")',
+          '',
+          '@router.get("/two")',
+          'async def route_two():',
+          '    return {"ok": True}',
+        ].join('\n'),
+        'utf8',
+      )
+      writeFileSync(
+        appPath,
+        [
+          'from fastapi import FastAPI',
+          'from .router_a import router as router_a',
+          '',
+          'app = FastAPI()',
+          'app.include_router(router_a, prefix="/api")',
+        ].join('\n'),
+        'utf8',
+      )
+
+      const result = extract([appPath, routerAPath, routerBPath])
+
+      expect(result.nodes.some((node) => node.label === 'GET /api/a/one' && node.framework_role === 'fastapi_route')).toBe(true)
+      expect(result.nodes.some((node) => node.label === 'GET /api/a/b/two' && node.framework_role === 'fastapi_route')).toBe(true)
+      expect(result.nodes.some((node) => node.label.includes('/loop/') && node.framework_role === 'fastapi_route')).toBe(false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('extracts typescript classes, methods, functions, and calls', () => {
     const result = extractJs(join(FIXTURES_DIR, 'sample.ts'))
     const labels = result.nodes.map((node) => node.label)

@@ -61,7 +61,7 @@ Focus: make Madar easier to adopt, evaluate, and contribute to after the runtime
 
 ## Parked / not near-term
 
-- [#235 — Expand Python semantics beyond FastAPI first pass](https://github.com/mohanagy/madar/issues/235) stays open, but it is intentionally outside the near-term roadmap.
+- Python extraction now covers conservative FastAPI router composition/dependency semantics and first-pass Django URL-conf mapping, but broader language-parity work still stays outside the near-term roadmap.
 - Go first-pass support already shipped in [#234](https://github.com/mohanagy/madar/issues/234), so near-term work stays focused on TypeScript/Node depth instead of starting a new language track.
 
 ## Where to start
