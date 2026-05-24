@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { readFileSync, writeFileSync } from 'node:fs'
-import { dirname, relative, resolve } from 'node:path'
+import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 
@@ -61,7 +61,10 @@ function sanitizeSourceFile(sourceFile, workspaceRoot) {
   }
   const absolute = resolve(workspaceRoot, sourceFile)
   const rel = relative(workspaceRoot, absolute)
-  return rel.startsWith('..') ? sourceFile.replaceAll('\\', '/') : rel.replaceAll('\\', '/')
+  if (rel.startsWith('..')) {
+    return isAbsolute(sourceFile) ? '<external-path>' : sourceFile.replaceAll('\\', '/')
+  }
+  return rel.replaceAll('\\', '/')
 }
 
 function inferActualDomain(targetDomainHint) {
