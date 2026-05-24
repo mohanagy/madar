@@ -61,8 +61,7 @@
         "prepack": "npm run clean && npm run build",
         "pack:dry-run": "npm pack --dry-run",
         "publish:public": "npm publish --access public",
-        "publish:dry-run": "npm publish --dry-run",
-        "postinstall": "node -e \"try{const g=process.env.npm_config_global==='true';const d=!process.env.INIT_CWD;if(g||d)console.log('\\n  madar updated — re-run your platform install for latest agent rules:\\n  madar claude install | madar cursor install | madar gemini install | madar codex install\\n')}catch{}\""
+        "publish:dry-run": "npm publish --dry-run"
     },
     "devDependencies": {
         "@types/node": "^25.6.0",

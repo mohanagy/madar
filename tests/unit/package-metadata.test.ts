@@ -137,6 +137,15 @@ describe('package metadata', () => {
     ]))
   })
 
+  it('does not ship consumer install lifecycle scripts', () => {
+    const scripts = loadPackageManifest().scripts ?? {}
+
+    expect(scripts).not.toHaveProperty('preinstall')
+    expect(scripts).not.toHaveProperty('install')
+    expect(scripts).not.toHaveProperty('postinstall')
+    expect(scripts).not.toHaveProperty('prepare')
+  })
+
   it('documents the current package version in the changelog', () => {
     const manifest = loadPackageManifest()
 

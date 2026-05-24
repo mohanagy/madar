@@ -399,6 +399,8 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --graph <path>      path to graph.json to validate (default out/graph.json)',
     '  install [--platform P] install the platform skill or local madar config',
     '    platforms            claude|windows|gemini|cursor|codex|opencode|aider|claw|droid|trae|trae-cn|copilot',
+    '    If you update madar, re-run your platform install command to refresh local agent rules:',
+    '    madar install --platform <platform>',
     '  hook <action>          manage git hooks for madar rebuild reminders',
     '    install              install post-commit and post-checkout hooks',
     '    uninstall            remove madar hook sections',

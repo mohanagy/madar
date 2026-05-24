@@ -978,6 +978,8 @@ describe('cli main', () => {
     expect(help).toContain('question coverage')
     expect(help).toContain('hook <action>')
     expect(help).toContain('install [--platform P]')
+    expect(help).toContain('If you update madar, re-run your platform install command to refresh local agent rules:')
+    expect(help).toContain('madar install --platform <platform>')
     expect(help).toContain('aider <install|uninstall>')
     expect(help).toContain('claude <install|uninstall> [--profile core|full|strict]')
     expect(help).toContain('cursor <install|uninstall> [--profile core|full|strict]')
