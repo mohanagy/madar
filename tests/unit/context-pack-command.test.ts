@@ -172,6 +172,163 @@ describe('context-pack-command', () => {
     expect(payload.pack?.execution_slice?.status).toBe('complete')
   })
 
+  it('adds routing metadata only when --why is enabled', async () => {
+    const graph = new KnowledgeGraph()
+    const retrieval = {
+      question: 'Explain the runtime path for login session creation excluding tests',
+      token_count: 120,
+      matched_nodes: [
+        {
+          label: 'POST /login',
+          source_file: '/src/auth/routes.ts',
+          line_number: 10,
+          file_type: 'code',
+          snippet: 'app.post("/login", controller.login)',
+          match_score: 0.92,
+          relevance_band: 'direct' as const,
+          community: 0,
+        },
+        {
+          label: 'AuthService.login',
+          source_file: '/src/auth/service.ts',
+          line_number: 24,
+          file_type: 'code',
+          snippet: 'return sessionStore.createSession(userId)',
+          match_score: 0.88,
+          relevance_band: 'direct' as const,
+          community: 0,
+        },
+        {
+          label: 'AuthService.login.spec',
+          source_file: '/tests/auth.service.spec.ts',
+          line_number: 12,
+          file_type: 'code',
+          snippet: 'expect(login()).toEqual(...)',
+          match_score: 0.33,
+          relevance_band: 'related' as const,
+          community: 1,
+          source_domain: 'test' as const,
+        },
+      ],
+      relationships: [
+        { from: 'POST /login', to: 'AuthService.login', relation: 'calls' },
+        { from: 'AuthService.login', to: 'AuthService.login.spec', relation: 'covered_by' },
+      ],
+      community_context: [],
+      graph_signals: { god_nodes: [], bridge_nodes: [] },
+      claims: [
+        {
+          evidence_class: 'primary' as const,
+          text: 'AuthService.login handles the login runtime path.',
+          node_labels: ['AuthService.login'],
+        },
+      ],
+      coverage: {
+        required_evidence: ['primary' as const],
+        semantic_required: ['implementation' as const],
+        semantic_optional: ['tests' as const],
+        entries: [],
+        semantic_entries: [],
+        missing_required: [],
+        missing_semantic: [],
+        available_relationships: 2,
+        selected_relationships: 2,
+      },
+      retrieval_gate: {
+        level: 3 as const,
+        skipped_retrieval: false,
+        reason: 'runtime generation intent — behavior slice retrieval',
+        intent: 'explain' as const,
+        signals: {
+          has_pr_diff: false,
+          has_stack_trace: false,
+          mentioned_paths: [],
+          mentioned_symbols: ['AuthService.login'],
+          generation_intent: 'runtime_generation' as const,
+          target_domain_hint: 'backend_runtime' as const,
+          excluded_domains: ['test' as const],
+          excluded_terms: ['tests'],
+          excluded_path_hints: ['test'],
+        },
+      },
+      retrieval_strategy: 'slice-v1' as const,
+      slice: {
+        mode: 'explain' as const,
+        anchors: [
+          { label: 'AuthService.login', reason: 'symbol mention' },
+          { label: 'POST /login', reason: 'route mention' },
+        ],
+        directions: ['forward' as const],
+        selected_paths: [],
+      },
+    }
+    const dependencies: ContextPackCommandDependencies = {
+      loadGraph: vi.fn().mockReturnValue(graph),
+      retrieveContext: vi.fn().mockReturnValue(retrieval),
+      compactRetrieveResult,
+      analyzePrImpact: vi.fn(),
+      compactPrImpactResult: vi.fn(),
+      analyzeImpact: vi.fn(),
+      compactImpactResult: vi.fn(),
+    }
+
+    const withoutWhy = JSON.parse(await runContextPackCommand({
+      prompt: retrieval.question,
+      budget: 1800,
+      task: 'explain',
+      graphPath: 'out/graph.json',
+    }, dependencies)) as Record<string, unknown>
+
+    const withWhy = JSON.parse(await runContextPackCommand({
+      prompt: retrieval.question,
+      budget: 1800,
+      task: 'explain',
+      graphPath: 'out/graph.json',
+      why: true,
+    } as never, dependencies)) as {
+      routing?: {
+        detected_intent?: string
+        generation_intent?: string
+        target_domain_hint?: string
+        retrieval_level?: number
+        effective_retrieval_strategy?: string
+        reason?: string
+        top_anchors?: Array<{ label?: string; reason?: string }>
+        exclusions?: {
+          domains?: string[]
+          terms?: string[]
+          path_hints?: string[]
+        }
+        warnings?: Array<{ kind?: string; severity?: string }>
+      }
+    }
+
+    expect(withoutWhy).not.toHaveProperty('routing')
+    expect(withWhy.routing).toEqual(expect.objectContaining({
+      detected_intent: 'explain',
+      generation_intent: 'runtime_generation',
+      target_domain_hint: 'backend_runtime',
+      retrieval_level: 3,
+      effective_retrieval_strategy: 'slice-v1',
+      reason: 'runtime generation intent — behavior slice retrieval',
+      top_anchors: [
+        { label: 'AuthService.login', reason: 'symbol mention' },
+        { label: 'POST /login', reason: 'route mention' },
+      ],
+      exclusions: {
+        domains: ['test'],
+        terms: ['tests'],
+        path_hints: ['test'],
+      },
+      warnings: expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'excluded_domain_selected',
+          severity: 'warn',
+        }),
+      ]),
+    }))
+  })
+
   it('normalizes sub-minimum explain budgets before retrieving', async () => {
     const graph = new KnowledgeGraph()
     const dependencies: ContextPackCommandDependencies = {

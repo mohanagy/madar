@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
+import type { ContextPackRoutingDebug } from '../contracts/context-pack.js'
 import { KnowledgeGraph } from '../contracts/graph.js'
 import type { ContextSessionState } from '../contracts/context-session.js'
 import { buildContextPrompt, type ContextPromptStableSection } from './context-prompt.js'
@@ -12,6 +13,7 @@ import { loadBenchmarkQuestions } from './benchmark/questions.js'
 import { parsePromptRunnerJsonRecord, parsePromptRunnerOutput, type PromptRunnerUsage } from './prompt-runner.js'
 import { classifyRetrievalLevel } from '../runtime/retrieval-gate.js'
 import { compactRetrieveResult, retrieveContext, tokenizeLabel, type CompactRetrieveResult, type RetrieveResult } from '../runtime/retrieve.js'
+import { buildRoutingDebug } from '../runtime/routing-debug.js'
 import { QUERY_TOKEN_ESTIMATOR, estimateQueryTokens, loadGraph } from '../runtime/serve.js'
 import { sidecarAwareFileFingerprint } from '../shared/binary-ingest-sidecar.js'
 import { sanitizeShareSafeText, toShareSafeArtifactPath, type ShareSafePathRoots } from '../shared/share-safe-artifacts.js'
@@ -168,6 +170,7 @@ export interface ComparePromptReport {
   provider_proof?: ComparePromptProviderProof
   madar_trace?: CompareMadarTrace
   pack?: CompareReportPack
+  routing?: ContextPackRoutingDebug
   paths: ComparePromptArtifactPaths
 }
 
@@ -178,6 +181,7 @@ export interface GenerateCompareArtifactsInput {
   outputDir: string
   execTemplate: string
   baselineMode: CompareBaselineMode
+  why?: boolean
   corpusText?: string
   limit?: number | null
   retrievalBudget?: number
@@ -469,6 +473,7 @@ function shouldSanitizeCompareShareSafePath(path: readonly string[]): boolean {
     key === 'result_path' ||
     key === 'source_file' ||
     key === 'focus_files' ||
+    (parentKey === 'exclusions' && key === 'path_hints') ||
     parentKey === 'paths' ||
     parentKey === 'answer_paths'
   )
@@ -670,6 +675,17 @@ function compareReportPackFromRetrieveResult(retrieval: RetrieveResult): Compare
     ...(retrieval.claims ? { claims: retrieval.claims } : {}),
     ...(retrieval.coverage ? { coverage: retrieval.coverage } : {}),
     ...(retrieval.selection_diagnostics ? { selection_diagnostics: retrieval.selection_diagnostics } : {}),
+  }
+}
+
+function appendRoutingSummary(lines: string[], reports: readonly ComparePromptReport[]): void {
+  const routedReports = reports.filter((report): report is ComparePromptReport & { routing: ContextPackRoutingDebug } => report.routing !== undefined)
+  for (const report of routedReports) {
+    const prefix = routedReports.length === 1 ? '' : ` (${report.question})`
+    lines.push(
+      `- Routing${prefix}: ${report.routing.detected_intent} · ${report.routing.generation_intent} · ${report.routing.target_domain_hint} · level ${report.routing.retrieval_level} · ${report.routing.effective_retrieval_strategy}`,
+    )
+    lines.push(`- Routing reason${prefix}: ${report.routing.reason}`)
   }
 }
 
@@ -1361,6 +1377,7 @@ export function generateCompareArtifacts(input: GenerateCompareArtifactsInput): 
         madar: null,
       },
       ...(comparePack ? { pack: comparePack } : {}),
+      ...(input.why ? { routing: buildRoutingDebug(retrieval) } : {}),
       paths,
     }
 
@@ -1641,6 +1658,7 @@ export function formatCompareSummary(result: GenerateCompareArtifactsResult): st
   if (madarTraceSummary !== null) {
     lines.push(`- ${madarTraceSummary}`)
   }
+  appendRoutingSummary(lines, result.reports)
 
   return lines.join('\n')
 }

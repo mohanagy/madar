@@ -185,6 +185,7 @@ const DEFAULT_DEPENDENCIES: CliDependencies = {
       execTemplate: options.execTemplate,
       baselineMode: options.baselineMode,
       limit: options.limit,
+      ...(options.why ? { why: true } : {}),
     })
   },
   runReviewCompare: async ({ options }) => {
@@ -342,6 +343,7 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --budget N            cap context pack assembly at N tokens (default 3000)',
     '    --task KIND          explain|review|impact (default explain)',
     '    --graph <path>       path to graph.json (default out/graph.json)',
+    '    --why               include retrieval-routing debug metadata in the pack output',
     '  prompt "<prompt>"     compile a provider-ready prompt payload',
     '    --provider NAME      claude|gemini',
     '    --graph <path>       path to graph.json (default out/graph.json)',
@@ -379,6 +381,7 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --baseline-mode MODE  full | bounded | pack_only | native_agent (default full; pack_only compares one bounded raw-context prompt against one compiled madar pack; native_agent runs --exec twice, uses Anthropic JSON usage when available, and otherwise saves answer-only artifacts)',
     '    --yes                 skip confirmation before running the paid prompt comparison',
     '    --limit N             cap processed prompts/questions for the comparison run',
+    '    --why                 include retrieval-routing debug metadata in the compare summary and reports',
     '  review-compare [graph.json] compare full vs compact pr_impact review prompts on the current git diff',
     '    --exec TEMPLATE       required command template; supports {prompt_file}, {mode}, and {output_file}',
     '    --output-dir DIR      review compare output directory (default out/review-compare)',
