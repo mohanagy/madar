@@ -1,5 +1,13 @@
-import type { RetrievalGateDecision } from './retrieval-gate.js'
+import type {
+  RetrievalExcludedDomain,
+  RetrievalGateDecision,
+  RetrievalGenerationIntent,
+  RetrievalIntent,
+  RetrievalLevel,
+  RetrievalTargetDomainHint,
+} from './retrieval-gate.js'
 import type { TaskIntentKind } from './task-intent.js'
+import type { ContextPackDiagnosticWarning } from './context-pack-diagnostics.js'
 import type { SourceDomain } from '../shared/source-discovery.js'
 
 export type ContextPackTaskKind = 'explain' | 'review' | 'impact'
@@ -36,6 +44,29 @@ export interface ContextPackSelectionDiagnostics {
 }
 
 export type ContextPackRetrievalStrategy = 'default' | 'slice-v1'
+
+export interface ContextPackRoutingDebugAnchor {
+  label: string
+  reason: string
+}
+
+export interface ContextPackRoutingDebugExclusions {
+  domains: RetrievalExcludedDomain[]
+  terms: string[]
+  path_hints: string[]
+}
+
+export interface ContextPackRoutingDebug {
+  detected_intent: RetrievalIntent
+  generation_intent: RetrievalGenerationIntent
+  target_domain_hint: RetrievalTargetDomainHint
+  retrieval_level: RetrievalLevel
+  effective_retrieval_strategy: ContextPackRetrievalStrategy
+  reason: string
+  top_anchors: ContextPackRoutingDebugAnchor[]
+  exclusions: ContextPackRoutingDebugExclusions
+  warnings: ContextPackDiagnosticWarning[]
+}
 
 export interface ContextPackSliceAnchor {
   node_id?: string

@@ -863,6 +863,165 @@ describe('compare runtime', () => {
     }
   })
 
+  it('adds routing debug metadata to compare reports and summaries when --why is enabled', () => {
+    const graph = makeGraph()
+    writeProjectFiles()
+    const graphPath = writeGraphFixture(graph)
+    const retrieveSpy = vi.spyOn(retrieveRuntime, 'retrieveContext').mockReturnValue({
+      question: 'Explain the runtime path for login session creation excluding tests',
+      token_count: 180,
+      matched_nodes: [
+        {
+          label: 'POST /login',
+          source_file: 'src/routes.ts',
+          line_number: 10,
+          file_type: 'code',
+          snippet: 'app.post("/login", authenticateUser)',
+          match_score: 0.95,
+          relevance_band: 'direct',
+          community: 0,
+          community_label: null,
+        },
+        {
+          label: 'authenticateUser',
+          source_file: 'src/auth.ts',
+          line_number: 1,
+          file_type: 'code',
+          snippet: 'return new SessionManager().createSession(credentials.userId)',
+          match_score: 0.91,
+          relevance_band: 'direct',
+          community: 0,
+          community_label: null,
+        },
+        {
+          label: 'authenticateUser.spec',
+          source_file: 'tests/auth.spec.ts',
+          line_number: 1,
+          file_type: 'code',
+          snippet: 'expect(authenticateUser()).toBeDefined()',
+          match_score: 0.41,
+          relevance_band: 'related',
+          community: 1,
+          community_label: null,
+          source_domain: 'test',
+        },
+      ],
+      relationships: [
+        { from: 'POST /login', to: 'authenticateUser', relation: 'calls' },
+        { from: 'authenticateUser', to: 'authenticateUser.spec', relation: 'covered_by' },
+      ],
+      community_context: [],
+      graph_signals: {
+        god_nodes: [],
+        bridge_nodes: [],
+      },
+      claims: [
+        {
+          evidence_class: 'primary',
+          text: 'authenticateUser executes the runtime login path.',
+          node_labels: ['authenticateUser'],
+        },
+      ],
+      coverage: {
+        required_evidence: ['primary'],
+        semantic_required: ['implementation'],
+        semantic_optional: ['tests'],
+        entries: [],
+        semantic_entries: [],
+        missing_required: [],
+        missing_semantic: [],
+        available_relationships: 2,
+        selected_relationships: 2,
+      },
+      retrieval_gate: {
+        level: 3,
+        skipped_retrieval: false,
+        reason: 'runtime generation intent — behavior slice retrieval',
+        intent: 'explain',
+        signals: {
+          has_pr_diff: false,
+          has_stack_trace: false,
+          mentioned_paths: [],
+          mentioned_symbols: ['authenticateUser'],
+          generation_intent: 'runtime_generation',
+          target_domain_hint: 'backend_runtime',
+          excluded_domains: ['test'],
+          excluded_terms: ['tests'],
+          excluded_path_hints: ['test'],
+        },
+      },
+      retrieval_strategy: 'slice-v1',
+      slice: {
+        mode: 'explain',
+        anchors: [
+          { label: 'authenticateUser', reason: 'symbol mention' },
+          { label: 'POST /login', reason: 'route mention' },
+        ],
+        directions: ['forward'],
+        selected_paths: [],
+      },
+    })
+
+    try {
+      const result = generateCompareArtifacts({
+        graphPath,
+        question: 'Explain the runtime path for login session creation excluding tests',
+        outputDir: COMPARE_OUTPUT_ROOT,
+        execTemplate: 'runner --prompt {prompt_file} --question {question} --mode {mode} --out {output_file}',
+        baselineMode: 'pack_only',
+        why: true,
+        now: new Date('2026-04-24T19:30:00.000Z'),
+      })
+
+      const report = result.reports[0]!
+      const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as {
+        routing?: {
+          detected_intent?: string
+          generation_intent?: string
+          target_domain_hint?: string
+          retrieval_level?: number
+          effective_retrieval_strategy?: string
+          reason?: string
+          top_anchors?: Array<{ label?: string; reason?: string }>
+          exclusions?: {
+            domains?: string[]
+            terms?: string[]
+            path_hints?: string[]
+          }
+          warnings?: Array<{ kind?: string; severity?: string }>
+        }
+      }
+
+      expect(savedReport.routing).toEqual(expect.objectContaining({
+        detected_intent: 'explain',
+        generation_intent: 'runtime_generation',
+        target_domain_hint: 'backend_runtime',
+        retrieval_level: 3,
+        effective_retrieval_strategy: 'slice-v1',
+        reason: 'runtime generation intent — behavior slice retrieval',
+        top_anchors: [
+          { label: 'authenticateUser', reason: 'symbol mention' },
+          { label: 'POST /login', reason: 'route mention' },
+        ],
+        exclusions: {
+          domains: ['test'],
+          terms: ['tests'],
+          path_hints: ['test'],
+        },
+        warnings: expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'excluded_domain_selected',
+            severity: 'warn',
+          }),
+        ]),
+      }))
+      expect(formatCompareSummary(result)).toContain('Routing: explain · runtime_generation · backend_runtime · level 3 · slice-v1')
+      expect(formatCompareSummary(result)).toContain('Routing reason: runtime generation intent — behavior slice retrieval')
+    } finally {
+      retrieveSpy.mockRestore()
+    }
+  })
+
   it('tells broad runtime-generation answers not to stop at the HTTP trigger when downstream generation core evidence exists', () => {
     const retrieval: MadarPromptPackRetrieval = {
       question: 'How idea report is being generated',

@@ -260,6 +260,16 @@ describe('cli parser', () => {
     })
   })
 
+  it('parses pack args with --why', () => {
+    expect(parsePackArgs(['how does auth work', '--why'])).toEqual({
+      prompt: 'how does auth work',
+      budget: 3000,
+      task: 'explain',
+      graphPath: 'out/graph.json',
+      why: true,
+    })
+  })
+
   it('rejects invalid pack args', () => {
     expect(() => parsePackArgs([])).toThrow('Usage: madar pack')
     expect(() => parsePackArgs(['how does auth work', '--budget', '0'])).toThrow('error: --budget must be a positive integer')
@@ -507,6 +517,27 @@ describe('cli parser', () => {
       baselineMode: 'pack_only',
       yes: false,
       limit: null,
+    })
+  })
+
+  it('parses compare args with --why', () => {
+    expect(
+    parseCompareArgs([
+      'how does login work',
+      '--exec',
+      'claude -p "$(cat {prompt_file})"',
+      '--why',
+    ]),
+    ).toEqual({
+    question: 'how does login work',
+    graphPath: 'out/graph.json',
+    execTemplate: 'claude -p "$(cat {prompt_file})"',
+    questionsPath: null,
+    outputDir: resolve('out/compare'),
+    baselineMode: 'full',
+    yes: false,
+    limit: null,
+    why: true,
     })
   })
 
@@ -921,6 +952,7 @@ describe('cli main', () => {
     expect(help).toContain('    --baseline-mode MODE  full | bounded | pack_only | native_agent (default full; pack_only compares one bounded raw-context prompt against one compiled madar pack; native_agent runs --exec twice, uses Anthropic JSON usage when available, and otherwise saves answer-only artifacts)')
     expect(help).toContain('    --yes                 skip confirmation before running the paid prompt comparison')
     expect(help).toContain('    --limit N             cap processed prompts/questions for the comparison run')
+    expect(help).toContain('    --why                 include retrieval-routing debug metadata in the compare summary and reports')
     expect(help).toContain('review-compare [graph.json] compare full vs compact pr_impact review prompts on the current git diff')
     expect(help).toContain('    --output-dir DIR      review compare output directory (default out/review-compare)')
     expect(help).toContain('time-travel <from> <to> compare two refs using on-demand cached graph snapshots')
@@ -975,9 +1007,10 @@ describe('cli main', () => {
         '--yes',
         '--limit',
         '5',
-      ],
-      io,
-      dependencies,
+        '--why',
+        ],
+        io,
+        dependencies,
     )
 
     expect(exitCode).toBe(0)
@@ -997,6 +1030,7 @@ describe('cli main', () => {
       baselineMode: 'bounded',
       yes: true,
       limit: 5,
+      why: true,
     })
     expect(compareRequest.io).toBe(io)
     await expect(compareRequest.confirm('Proceed?')).resolves.toBe(true)
@@ -1272,7 +1306,7 @@ describe('cli main', () => {
       runContextPack,
     }
 
-    await expect(executeCli(['pack', 'how does auth work', '--budget', '1800', '--task', 'explain'], io, dependencies)).resolves.toBe(0)
+    await expect(executeCli(['pack', 'how does auth work', '--budget', '1800', '--task', 'explain', '--why'], io, dependencies)).resolves.toBe(0)
 
     expect(runContextPack).toHaveBeenCalledWith({
       options: {
@@ -1280,6 +1314,7 @@ describe('cli main', () => {
         budget: 1800,
         task: 'explain',
         graphPath: 'out/graph.json',
+        why: true,
       },
       io,
     })

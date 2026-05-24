@@ -1,5 +1,12 @@
 import { buildCommunityLabels } from '../pipeline/community-naming.js'
-import type { ContextPackClaim, ContextPackCoverage, ContextPackEvidenceClass, ContextPackExpandableRef, ContextPackNode } from '../contracts/context-pack.js'
+import type {
+  ContextPackClaim,
+  ContextPackCoverage,
+  ContextPackEvidenceClass,
+  ContextPackExpandableRef,
+  ContextPackNode,
+  ContextPackRoutingDebug,
+} from '../contracts/context-pack.js'
 import type { KnowledgeGraph } from '../contracts/graph.js'
 import type { TaskContextPlan } from '../contracts/task-context-plan.js'
 import type { PackCliOptions } from '../cli/parser.js'
@@ -11,6 +18,7 @@ import { analyzeImpact, compactImpactResult, type ImpactResult } from '../runtim
 import { analyzePrImpact, compactPrImpactResult, type PrImpactResult } from '../runtime/pr-impact.js'
 import { buildTaskContextPlan } from '../runtime/task-context-planner.js'
 import { compactRetrieveResult, retrieveContext, type RetrieveResult } from '../runtime/retrieve.js'
+import { buildRoutingDebug } from '../runtime/routing-debug.js'
 import { communitiesFromGraph, loadGraph } from '../runtime/serve.js'
 
 const DEFAULT_IMPACT_DEPTH = 3
@@ -46,6 +54,7 @@ interface ContextPlaneMetadata {
 
 export interface ExplainPackPayload extends ContextPlaneMetadata {
   pack: ReturnType<typeof compactRetrieveResult>
+  routing?: ContextPackRoutingDebug
 }
 
 function emptyCoverage(): ContextPackCoverage {
@@ -267,6 +276,7 @@ export async function runContextPackCommand(
       target: impactTarget,
       pack: impactPack,
       ...impactMetadata(impactResult, plannerBudget, options.prompt, initialPlan.evidence.recipe_id, options.retrievalLevel),
+      ...(options.why ? { routing: buildRoutingDebug(retrieval) } : {}),
     })
   }
 
@@ -285,5 +295,6 @@ export async function runContextPackCommand(
   return JSON.stringify({
     ...baseResponse(options, initialPlan, plannerBudget),
     ...buildExplainPackPayload(dependencies.compactRetrieveResult(retrieval), retrieval),
+    ...(options.why ? { routing: buildRoutingDebug(retrieval) } : {}),
   })
 }

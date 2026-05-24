@@ -28,6 +28,7 @@ export interface PackCliOptions {
   budget: number
   task: ContextPackTaskKind
   graphPath: string
+  why?: boolean
   /** #75 manual override for the retrieval gate. When set (0-5), the gate
    *  emits a decision with reason 'manual override' at the supplied level
    *  instead of running its heuristic classifier on the prompt. */
@@ -93,6 +94,7 @@ export interface CompareCliOptions {
   baselineMode: 'full' | 'bounded' | 'pack_only' | 'native_agent'
   yes: boolean
   limit: number | null
+  why?: boolean
 }
 
 export interface ReviewCompareCliOptions {
@@ -421,6 +423,7 @@ export function parsePackArgs(args: string[]): PackCliOptions {
   let budget = 3000
   let task: ContextPackTaskKind = 'explain'
   let graphPath = 'out/graph.json'
+  let why = false
   let retrievalLevel: PackCliOptions['retrievalLevel'] | undefined
   let retrievalStrategy: PackCliOptions['retrievalStrategy'] | undefined
 
@@ -496,6 +499,11 @@ export function parsePackArgs(args: string[]): PackCliOptions {
       continue
     }
 
+    if (argument === '--why') {
+      why = true
+      continue
+    }
+
     throw new UsageError(`error: unknown option for pack: ${argument}`)
   }
 
@@ -504,6 +512,7 @@ export function parsePackArgs(args: string[]): PackCliOptions {
     budget,
     task,
     graphPath,
+    ...(why ? { why: true } : {}),
     ...(retrievalLevel !== undefined ? { retrievalLevel } : {}),
     ...(retrievalStrategy !== undefined ? { retrievalStrategy } : {}),
   }
@@ -908,6 +917,7 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
   let baselineMode: 'full' | 'bounded' | 'pack_only' | 'native_agent' = 'full'
   let yes = false
   let limit: number | null = null
+  let why = false
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index]
@@ -1008,6 +1018,11 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
       continue
     }
 
+    if (argument === '--why') {
+      why = true
+      continue
+    }
+
     throw new UsageError(`error: unknown option for compare: ${argument}`)
   }
 
@@ -1027,7 +1042,7 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
 
   outputDir = validateGraphOutputPath(outputDir)
 
-  return { question, graphPath, execTemplate, questionsPath, outputDir, baselineMode, yes, limit }
+  return { question, graphPath, execTemplate, questionsPath, outputDir, baselineMode, yes, limit, ...(why ? { why: true } : {}) }
 }
 
 export function parseReviewCompareArgs(args: string[]): ReviewCompareCliOptions {
