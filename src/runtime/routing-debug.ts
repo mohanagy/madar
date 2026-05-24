@@ -7,6 +7,9 @@ import type {
 import { computeContextPackDiagnostics } from './context-pack-diagnostics.js'
 import { contextPackFromRetrieveResult, type RetrieveResult } from './retrieve.js'
 
+// Treat obvious path-shaped strings as private-ish anchor candidates so
+// safeAnchorLabel can collapse them to a basename: absolute paths, any value
+// containing a slash, or bare filenames with short extensions.
 const PATH_LIKE_PATTERN = /^(?:\/|[A-Za-z]:[\\/])|[\\/]|(?:^|[\\/])[^\\/]+\.[A-Za-z0-9]{1,8}$/
 
 function safeAnchorLabel(value: string): string {
@@ -56,11 +59,11 @@ function topAnchors(retrieval: RetrieveResult): ContextPackRoutingDebugAnchor[] 
   }
 
   return dedupeAnchors(
-    retrieval.matched_nodes.slice(0, 3).map((node) => ({
+    retrieval.matched_nodes.slice(0, 10).map((node) => ({
       label: safeAnchorLabel(node.label),
       reason: 'top retrieval match',
     })),
-  )
+  ).slice(0, 3)
 }
 
 export function buildRoutingDebug(retrieval: RetrieveResult): ContextPackRoutingDebug {

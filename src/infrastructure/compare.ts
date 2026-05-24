@@ -473,6 +473,7 @@ function shouldSanitizeCompareShareSafePath(path: readonly string[]): boolean {
     key === 'result_path' ||
     key === 'source_file' ||
     key === 'focus_files' ||
+    (parentKey === 'exclusions' && key === 'path_hints') ||
     parentKey === 'paths' ||
     parentKey === 'answer_paths'
   )

@@ -867,6 +867,7 @@ describe('compare runtime', () => {
     const graph = makeGraph()
     writeProjectFiles()
     const graphPath = writeGraphFixture(graph)
+    const absolutePathHint = join(PROJECT_FIXTURE_ROOT, 'src', 'routes.ts')
     const retrieveSpy = vi.spyOn(retrieveRuntime, 'retrieveContext').mockReturnValue({
       question: 'Explain the runtime path for login session creation excluding tests',
       token_count: 180,
@@ -947,7 +948,7 @@ describe('compare runtime', () => {
           target_domain_hint: 'backend_runtime',
           excluded_domains: ['test'],
           excluded_terms: ['tests'],
-          excluded_path_hints: ['test'],
+          excluded_path_hints: [absolutePathHint, '../private/secret.ts'],
         },
       },
       retrieval_strategy: 'slice-v1',
@@ -991,6 +992,13 @@ describe('compare runtime', () => {
           warnings?: Array<{ kind?: string; severity?: string }>
         }
       }
+      const shareSafeReport = JSON.parse(readFileSync(report.paths.share_safe_report, 'utf8')) as {
+        routing?: {
+          exclusions?: {
+            path_hints?: string[]
+          }
+        }
+      }
 
       expect(savedReport.routing).toEqual(expect.objectContaining({
         detected_intent: 'explain',
@@ -1006,7 +1014,7 @@ describe('compare runtime', () => {
         exclusions: {
           domains: ['test'],
           terms: ['tests'],
-          path_hints: ['test'],
+          path_hints: [absolutePathHint, '../private/secret.ts'],
         },
         warnings: expect.arrayContaining([
           expect.objectContaining({
@@ -1015,8 +1023,29 @@ describe('compare runtime', () => {
           }),
         ]),
       }))
+      expect(shareSafeReport.routing?.exclusions?.path_hints).toEqual([
+        '<project-root>/src/routes.ts',
+        'secret.ts',
+      ])
       expect(formatCompareSummary(result)).toContain('Routing: explain · runtime_generation · backend_runtime · level 3 · slice-v1')
       expect(formatCompareSummary(result)).toContain('Routing reason: runtime generation intent — behavior slice retrieval')
+
+      const defaultResult = generateCompareArtifacts({
+        graphPath,
+        question: 'Explain the runtime path for login session creation excluding tests',
+        outputDir: COMPARE_OUTPUT_ROOT,
+        execTemplate: 'runner --prompt {prompt_file} --question {question} --mode {mode} --out {output_file}',
+        baselineMode: 'pack_only',
+        now: new Date('2026-04-24T19:31:00.000Z'),
+      })
+      const defaultReport = defaultResult.reports[0]!
+      const defaultSavedReport = JSON.parse(readFileSync(defaultReport.paths.report, 'utf8')) as {
+        routing?: unknown
+      }
+
+      expect(defaultSavedReport.routing).toBeUndefined()
+      expect(formatCompareSummary(defaultResult)).not.toContain('Routing: explain · runtime_generation · backend_runtime · level 3 · slice-v1')
+      expect(formatCompareSummary(defaultResult)).not.toContain('Routing reason: runtime generation intent — behavior slice retrieval')
     } finally {
       retrieveSpy.mockRestore()
     }
