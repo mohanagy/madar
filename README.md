@@ -167,6 +167,8 @@ Latest runtime-pack refinement: **runtime-generation prompts stay compact** by f
 
 Single-prompt backend benchmark snapshot: in one real GoValidate `compare --baseline-mode native_agent` run for `"Explain how idea report is getting generated"`, madar reduced Anthropic-reported input tokens from **1,653,307** to **498,280** (~**69.9%** lower). Multi-question native-agent compare runs now also roll up suite wins/losses for input tokens, turns, and latency, report mean/median input-token reduction, call out comparable-question counts when some runs are excluded from the aggregate, and highlight the best win and worst regression prompt. Details and caveats: [`docs/benchmarks/2026-05-12-govalidate-report-generation/`](docs/benchmarks/2026-05-12-govalidate-report-generation/).
 
+FounderCommandCenter auth-flow contrast note: one non-SPI run dropped **19 → 4 turns**, while an earlier SPI run for a similar auth prompt regressed from **2 → 19 turns**. The point is not a headline win; it is that strict context-pack-first guidance has to reduce exploration instead of merely adding context. Notes: [`docs/benchmarks/2026-05-25-founder-command-center-auth-flow/`](docs/benchmarks/2026-05-25-founder-command-center-auth-flow/).
+
 [Reproduce them](docs/benchmarks/2026-04-30-govalidate/verify.sh) with one shell script against the committed evidence files.
 
 ---
@@ -188,7 +190,7 @@ madar produces local context packs that any modern coding agent can consume — 
 
 These are local installers that write project instructions and, when the platform supports it, local MCP config or plugin files that point at the madar subprocess. No code is uploaded.
 
-For Claude, Cursor, Copilot, and Gemini, `--profile strict` keeps the lean core MCP tool surface but rewrites the generated guidance into a compact flow: call `context_pack` once for the task before broader exploration, answer from the pack when coverage is complete, expand only when diagnostics show missing evidence, and avoid raw file search unless the pack is insufficient.
+For Claude, Cursor, Copilot, and Gemini, `--profile strict` keeps the lean core MCP tool surface but rewrites the generated guidance into a compact flow: call `context_pack` once for the task before broader exploration, answer after one high- or medium-confidence pack when `diagnostics.quality_score >= 0.5` and `missing_context` is empty, expand only when `missing_context` / `missing_semantic` or diagnostics justify it (or the user asks for deeper verification), and avoid raw file search unless the pack is insufficient.
 
 Aider and OpenCode are intentionally context-pack-first: run `madar generate .`, install the profile, and start broad codebase work with `madar pack "<task>" --task explain` before raw file search. `madar aider install` writes an AGENTS.md profile only; remove it with `madar aider uninstall`. `madar opencode install` writes the AGENTS.md profile, `.opencode/plugins/madar.js`, and the madar MCP entry in `opencode.json` or `opencode.jsonc`; remove only madar-owned content with `madar opencode uninstall`. Manual verification does not require either agent binary: inspect the generated files after install, then confirm uninstall removes only the madar entries.
 

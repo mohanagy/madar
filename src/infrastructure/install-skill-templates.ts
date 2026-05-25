@@ -305,6 +305,9 @@ madar pack "<task or question>" --task explain
 # Use --task review, --task debug, or --task impact when that better matches the work.
 ${CODE_BLOCK_END}
 
+If the first pack is a high- or medium-confidence pack (diagnostics.quality_score >= 0.5, missing_context is empty, and diagnostics contain no error-severity gaps), answer from it before broader exploration.
+Only expand when missing_context or missing_semantic is non-empty, diagnostics show warn/error gaps, or the user asks for deeper verification.
+
 Install or remove the always-on Codex project profile with:
 
 ${CODE_BLOCK_START}bash
