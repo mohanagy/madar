@@ -416,12 +416,6 @@ export interface CompiledContextPack<
   slice?: ContextPackSliceMetadata
   execution_slice?: ContextPackExecutionSlice
   answer_contract?: ContextPackRuntimeGenerationAnswerContract
-  /**
-   * Retrieval-gate decision (#75) attached when the caller invoked the
-   * gate before building the pack. Carries `level`, `reason`, `intent`,
-   * `skipped_retrieval`, and the underlying signals so consumers can
-   * audit why a retrieval depth was chosen.
-   */
   retrieval_gate?: RetrievalGateDecision
 }
 
