@@ -247,6 +247,7 @@ function workflowCenters(
   task: TaskContextPlan['task_kind'],
   pack: PackPayload,
   plan: TaskContextPlan,
+  implementation?: ImplementationPackGuidance,
 ): ContextPackWorkflowCenter[] {
   const fromCommunityContext = (
     entries: Array<{ label: string; node_count?: number }>,
@@ -256,6 +257,10 @@ function workflowCenters(
     ...(typeof entry.node_count === 'number' ? { node_count: entry.node_count } : {}),
     reason,
   }))
+
+  if (task === 'implement' && implementation?.workflow_centers.length) {
+    return implementation.workflow_centers.slice(0, 4)
+  }
 
   if (
     (task === 'review' || task === 'impact')
@@ -478,7 +483,7 @@ function buildPackSchemaV1<TPack extends PackPayload>(
     target?: string
   },
 ): PackSchemaEnvelope<TPack> {
-  const centers = workflowCenters(response.task, response.pack, response.plan)
+  const centers = workflowCenters(response.task, response.pack, response.plan, response.implementation)
   const firstRead = recommendedFirstRead(response.task, response.pack, response.implementation)
   const contracts = publicContracts(response.implementation)
   const guidance = negativeGuidance(response.coverage, response.pack, response.implementation)
@@ -529,7 +534,13 @@ function renderPackSchemaText(schema: PackSchemaEnvelope): string {
     `Graph path: ${schema.graph_path}`,
     `Confidence score: ${schema.confidence_score.toFixed(2)}`,
     '',
-    ...renderTextSection('Workflow centers', schema.workflow_centers.map((entry) => `- ${entry.label}: ${entry.reason}`)),
+    ...renderTextSection('Workflow centers', schema.workflow_centers.map((entry) => {
+      const location = entry.path
+        ? `${entry.path}${typeof entry.score === 'number' ? ` [${entry.score.toFixed(2)}]` : ''}`
+        : entry.label
+      const label = entry.path && entry.label !== entry.path ? ` (${entry.label})` : ''
+      return `- ${location}${label}: ${entry.reason}`
+    })),
     ...renderTextSection('Recommended first read', schema.recommended_first_read.map((entry) => formatFileHint(entry.path, entry.reason, entry.label))),
     ...renderTextSection('Likely edit files', schema.likely_edit_files.map((entry) => formatFileHint(entry.path, entry.why, entry.matched_symbols[0]))),
     ...renderTextSection('Likely test files', schema.likely_test_files.map((entry) => formatFileHint(entry.path, entry.why, entry.matched_symbols[0]))),

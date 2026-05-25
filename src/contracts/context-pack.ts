@@ -203,6 +203,7 @@ export interface ImplementationPackRuntimeContext {
 
 export interface ImplementationPackGuidance {
   summary: string
+  workflow_centers: ContextPackWorkflowCenter[]
   likely_edit_files: ImplementationPackFileHint[]
   likely_test_files: ImplementationPackFileHint[]
   contracts_and_public_surfaces: ImplementationPackSurfaceHint[]
@@ -217,6 +218,10 @@ export interface ImplementationPackGuidance {
 export interface ContextPackWorkflowCenter {
   label: string
   node_count?: number
+  path?: string
+  score?: number
+  reasons?: string[]
+  matched_symbols?: string[]
   reason: string
 }
 

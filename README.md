@@ -115,6 +115,8 @@ When the agent says "tell me more," it expands a stable `handle_id` inside the s
 
 `madar pack` now emits a stable **Pack Schema v1** envelope around the compiled evidence bundle. In JSON mode (`--format json`), the response includes `schema_version`, `task`, `task_intent`, `workflow_centers`, `recommended_first_read`, `likely_edit_files`, `likely_test_files`, `public_contracts`, `risk_boundaries`, `validation_commands`, `negative_guidance`, `confidence_score`, and `why_explanation`, alongside the existing `pack`, `coverage`, and planner metadata.
 
+For `--task implement`, `workflow_centers` are scored workflow-owner candidates with a `path`, numeric `score`, and structural `reasons`, so orchestration files can outrank lexically louder helpers when the brief recommends where to start editing.
+
 Use `--format json` when another tool or script will consume the pack directly. Use `--format text` when you want the same schema rendered as a short human/agent-readable execution brief.
 
 ### Adaptive context-pack representations

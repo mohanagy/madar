@@ -619,7 +619,12 @@ describe('context-pack-command', () => {
       schema_version?: number
       task?: string
       task_intent?: string
-      workflow_centers?: Array<{ label?: string }>
+      workflow_centers?: Array<{
+        label?: string
+        path?: string
+        score?: number
+        reasons?: string[]
+      }>
       recommended_first_read?: Array<{ path?: string }>
       likely_edit_files?: Array<{ path?: string }>
       likely_test_files?: Array<{ path?: string }>
@@ -637,7 +642,12 @@ describe('context-pack-command', () => {
       task: 'implement',
       task_intent: 'implement',
       workflow_centers: expect.arrayContaining([
-        expect.objectContaining({ label: expect.any(String) }),
+        expect.objectContaining({
+          label: expect.any(String),
+          path: expect.stringMatching(/^src\//),
+          score: expect.any(Number),
+          reasons: expect.arrayContaining([expect.any(String)]),
+        }),
       ]),
       recommended_first_read: expect.arrayContaining([
         expect.objectContaining({ path: 'src/infrastructure/context-pack-command.ts' }),
