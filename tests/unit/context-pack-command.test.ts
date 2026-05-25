@@ -1052,7 +1052,7 @@ describe('context-pack-command', () => {
     expect(output.match(/^Workflow centers$/gm)).toHaveLength(1)
   })
 
-  it('renders a claude adapter brief with direct execution guidance', async () => {
+  it('renders a claude adapter brief with confidence-aware execution guidance', async () => {
     const graph = buildImplementationPackGraph()
     const dependencies: ContextPackCommandDependencies = {
       loadGraph: vi.fn().mockReturnValue(graph),
@@ -1075,7 +1075,7 @@ describe('context-pack-command', () => {
 
     expect(output).toContain('# Claude Code execution brief')
     expect(output).toContain('## Start here')
-    expect(output).toContain('Do not start with a broad repo search.')
+    expect(output).toContain('Use targeted verification to confirm the listed starting points before widening the search.')
     expect(output).toContain('## Workflow centers')
     expect(output).toContain('## Likely edit files')
     expect(output).toContain('## Likely test files')
@@ -1087,7 +1087,7 @@ describe('context-pack-command', () => {
     expect(output).not.toContain(': undefined')
   })
 
-  it('renders a copilot adapter brief with an implementation-oriented plan', async () => {
+  it('renders a copilot adapter brief with a confidence-aware implementation plan', async () => {
     const graph = buildImplementationPackGraph()
     const dependencies: ContextPackCommandDependencies = {
       loadGraph: vi.fn().mockReturnValue(graph),
@@ -1110,6 +1110,7 @@ describe('context-pack-command', () => {
 
     expect(output).toContain('# GitHub Copilot implementation brief')
     expect(output).toContain('## Suggested plan')
+    expect(output).toContain('Verify the suggested starting file against the prompt and workflow centers before editing.')
     expect(output).toContain('## Workflow centers')
     expect(output).toContain('## Likely edit files')
     expect(output).toContain('## Likely test files')

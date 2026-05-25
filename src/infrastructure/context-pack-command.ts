@@ -32,6 +32,7 @@ import { communitiesFromGraph, loadGraph } from '../runtime/serve.js'
 
 const DEFAULT_IMPACT_DEPTH = 3
 const IMPLEMENTATION_DISTRACTOR_PATTERN = /(?:helper|util|formatter|serializer|mapper|constant|generated|dist\/|build\/|lockfile|migration)/i
+const ADAPTER_DIRECTIVE_CONFIDENCE_THRESHOLD = 0.5
 const RUNTIME_GENERATION_DISTRACTOR_PATTERN = /(?:helper|util|formatter|serializer|mapper|constant|status|display|render|renderer|summary|footer|header|view|score|scoring|suggest(?:ed)?|next[-_\s]?steps)/i
 
 export interface ContextPackCommandDependencies {
@@ -709,6 +710,38 @@ function retrievalPipelineLines(schema: PackSchemaEnvelope): string[] {
   return schema.retrieval_pipeline?.phases.map((entry) => `- ${entry.phase}: ${entry.summary}`) ?? []
 }
 
+function hasGraphBackedWorkflowCenter(schema: PackSchemaEnvelope): boolean {
+  return schema.workflow_centers.some((entry) => typeof entry.path === 'string' && entry.path.trim().length > 0)
+}
+
+function hasGroundedFirstRead(schema: PackSchemaEnvelope): boolean {
+  const firstRead = schema.recommended_first_read[0]
+  if (!firstRead) {
+    return false
+  }
+
+  return schema.likely_edit_files.some((entry) => entry.path === firstRead.path)
+    || schema.public_contracts.some((entry) => entry.source_file === firstRead.path)
+    || schema.workflow_centers.some((entry) => entry.path === firstRead.path)
+}
+
+function useDirectiveAdapterGuidance(schema: PackSchemaEnvelope): boolean {
+  return schema.confidence_score >= ADAPTER_DIRECTIVE_CONFIDENCE_THRESHOLD
+    && schema.missing_context.length === 0
+    && hasGraphBackedWorkflowCenter(schema)
+    && hasGroundedFirstRead(schema)
+}
+
+function claudeSearchGuidanceLine(schema: PackSchemaEnvelope): string {
+  if (useDirectiveAdapterGuidance(schema)) {
+    return '- Do not start with a broad repo search. Use the listed files, contracts, and tests first.'
+  }
+
+  return schema.recommended_first_read.length > 0 || schema.workflow_centers.length > 0
+    ? '- Use targeted verification to confirm the listed starting points before widening the search.'
+    : '- Use targeted verification to identify the starting file before widening the search.'
+}
+
 function renderPackSchemaText(schema: PackSchemaEnvelope): string {
   const lines = [
     'Pack Schema v1',
@@ -775,7 +808,7 @@ function renderClaudePack(schema: PackSchemaEnvelope): string {
     ...(firstRead.length > 0
       ? firstRead
       : ['- No first-read anchor was identified; begin with the workflow centers below.']),
-    '- Do not start with a broad repo search. Use the listed files, contracts, and tests first.',
+    claudeSearchGuidanceLine(schema),
     '',
     ...renderMarkdownSection('Retrieval pipeline', retrievalPipelineLines(schema)),
     ...renderMarkdownSection('Workflow centers', workflowCenterLines(schema)),
@@ -796,11 +829,20 @@ function renderCopilotPlanSteps(schema: PackSchemaEnvelope): string[] {
   const firstRead = schema.recommended_first_read[0]
   const primaryEdit = schema.likely_edit_files[0]
   const primaryTest = schema.likely_test_files[0]
+  const directiveMode = useDirectiveAdapterGuidance(schema)
 
   steps.push(
-    firstRead
-      ? `Read \`${firstRead.path}\` first to anchor the change: ${firstRead.reason}`
-      : 'Start from the top workflow center before making edits.',
+    directiveMode
+      ? (
+          firstRead
+            ? `Read \`${firstRead.path}\` first to anchor the change: ${firstRead.reason}`
+            : 'Start from the top workflow center before making edits.'
+        )
+      : (
+          firstRead
+            ? 'Verify the suggested starting file against the prompt and workflow centers before editing.'
+            : 'Verify the top workflow center against the prompt before making edits.'
+        ),
   )
   steps.push(
     primaryEdit
