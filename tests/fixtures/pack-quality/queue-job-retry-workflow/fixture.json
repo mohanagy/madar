@@ -1,0 +1,18 @@
+{
+  "prompt": "add retry handling when report generation job fails",
+  "expected_workflow_centers": [
+    "src/services/report-generation-service.ts"
+  ],
+  "expected_likely_edit_files": [
+    "src/services/report-generation-service.ts"
+  ],
+  "expected_likely_test_files": [
+    "tests/unit/report-generation-service.test.ts"
+  ],
+  "expected_validation_commands": [
+    "npm run typecheck",
+    "npm run build",
+    "npm run test:run -- tests/unit/report-generation-service.test.ts"
+  ],
+  "expected_negative_guidance": []
+}

@@ -1,0 +1,10 @@
+{
+  "name": "pack-quality-noisy-helper-distractor",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "test:run": "vitest run"
+  }
+}

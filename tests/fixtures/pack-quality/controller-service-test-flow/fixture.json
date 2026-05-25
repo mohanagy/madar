@@ -1,0 +1,18 @@
+{
+  "prompt": "change login session creation flow in AuthService.login",
+  "expected_workflow_centers": [
+    "src/services/auth-service.ts"
+  ],
+  "expected_likely_edit_files": [
+    "src/services/auth-service.ts"
+  ],
+  "expected_likely_test_files": [
+    "tests/unit/auth-service.test.ts"
+  ],
+  "expected_validation_commands": [
+    "npm run typecheck",
+    "npm run build",
+    "npm run test:run -- tests/unit/auth-service.test.ts"
+  ],
+  "expected_negative_guidance": []
+}

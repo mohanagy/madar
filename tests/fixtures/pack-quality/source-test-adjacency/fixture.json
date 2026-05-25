@@ -1,0 +1,18 @@
+{
+  "prompt": "change profile update validation",
+  "expected_workflow_centers": [
+    "src/profile/update-profile.ts"
+  ],
+  "expected_likely_edit_files": [
+    "src/profile/update-profile.ts"
+  ],
+  "expected_likely_test_files": [
+    "tests/unit/update-profile.test.ts"
+  ],
+  "expected_validation_commands": [
+    "npm run typecheck",
+    "npm run build",
+    "npm run test:run -- tests/unit/update-profile.test.ts"
+  ],
+  "expected_negative_guidance": []
+}

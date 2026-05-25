@@ -1,0 +1,20 @@
+{
+  "prompt": "add retry when invoice generation fails",
+  "expected_workflow_centers": [
+    "src/invoices/invoice-generation-service.ts"
+  ],
+  "expected_likely_edit_files": [
+    "src/invoices/invoice-generation-service.ts"
+  ],
+  "expected_likely_test_files": [
+    "tests/unit/invoice-generation-service.test.ts"
+  ],
+  "expected_validation_commands": [
+    "npm run typecheck",
+    "npm run build",
+    "npm run test:run -- tests/unit/invoice-generation-service.test.ts"
+  ],
+  "expected_negative_guidance": [
+    "src/invoices/retry-helper.ts"
+  ]
+}

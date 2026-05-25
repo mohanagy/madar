@@ -1,0 +1,18 @@
+{
+  "prompt": "add invite expiration support across the invite workflow",
+  "expected_workflow_centers": [
+    "packages/app/src/commands/invite-user.ts"
+  ],
+  "expected_likely_edit_files": [
+    "packages/app/src/commands/invite-user.ts"
+  ],
+  "expected_likely_test_files": [
+    "packages/app/tests/unit/invite-user.test.ts"
+  ],
+  "expected_validation_commands": [
+    "npm run typecheck",
+    "npm run build",
+    "npm run test:run -- packages/app/tests/unit/invite-user.test.ts"
+  ],
+  "expected_negative_guidance": []
+}
