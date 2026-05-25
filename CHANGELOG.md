@@ -4,7 +4,17 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+## [0.27.0-next.0] - 2026-05-25
+
+### Added
+
+- **Pack Schema v1 and agent-ready brief adapters**: `madar pack` now emits a stable Pack Schema v1 envelope for implementation tasks, adds agent-specific `markdown`, `claude`, and `copilot` brief renderers alongside JSON/plain-text output, and preserves workflow centers, first-read guidance, likely edit/test files, public contracts, risk boundaries, validation commands, negative guidance, confidence, and why-explanation from one source of truth.
+- **Real pack-quality fixture coverage for workflow-owner promotion**: the pack-quality regression suite now includes fixture-backed acceptance coverage for indirect lexical seeds so workflow-owner promotion remains stable when graph expansion should beat helper-style direct matches.
+
 ### Changed
+
+- **Implementation packs are sharper, more explainable, and more testable**: implementation-mode packs now add scored workflow centers, likely edit files, likely test files, explicit Pack Schema v1 sections, budget-aware compression, helper-target preservation when the prompt explicitly names the helper, and the search → expand → promote → attach → refine → render retrieval pipeline metadata.
+- **Pack output quality is more stable across adapters and releases**: legacy `text` output stays backward-compatible, the new adapter renderers avoid malformed `: undefined` bullets, and real fixture regressions now lock down the pack surfaces that changed across the recent implementation-pack work.
 
 - **Semantic retrieval is now an explicit opt-in install**: `@huggingface/transformers` no longer ships in the default dependency set for `@lubab/madar`; install it separately to enable `--semantic` / `--rerank`, and madar now surfaces an explicit install hint when that optional package is missing.
 
