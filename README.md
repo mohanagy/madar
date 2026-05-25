@@ -117,6 +117,8 @@ When the agent says "tell me more," it expands a stable `handle_id` inside the s
 
 For `--task implement`, `workflow_centers` are scored workflow-owner candidates with a `path`, numeric `score`, and structural `reasons`, so orchestration files can outrank lexically louder helpers when the brief recommends where to start editing.
 
+The implement brief also keeps `recommended_first_read` separate from ranked `likely_edit_files` and `likely_test_files`. The edit/test sections now carry explicit `score` and `reason` fields so agents can tell orientation reads apart from the files most likely to change or validate.
+
 Use `--format json` when another tool or script will consume the pack directly. Use `--format text` when you want the same schema rendered as a short human/agent-readable execution brief.
 
 ### Adaptive context-pack representations

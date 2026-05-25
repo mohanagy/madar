@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 
 import type {
   ContextPackExecutionSlice,
@@ -25,6 +25,13 @@ const WORKFLOW_OWNER_PATTERN = /(?:service|controller|handler|worker|queue|job|w
 const HELPER_PATTERN = /(?:helper|util|format|formatter|presenter|serializer|mapper|constant|type|schema|dto)/i
 const SIDE_EFFECT_PATTERN = /(?:save|create|update|delete|persist|write|enqueue|publish|dispatch|emit|send|store|cache|repository|queue|session|database|db)/i
 const WORKFLOW_EDGE_RELATIONS = new Set(['calls', 'controller_route', 'depends_on', 'imports_from', 'enqueues_job'])
+const TEST_EDIT_PATTERN = /\b(?:add|update|modify|change|fix|write|edit|refactor|rename|remove)\b.{0,24}\b(?:test|tests|spec|specs|e2e|integration)\b|\b(?:test|tests|spec|specs|e2e|integration)\b.{0,24}\b(?:add|update|modify|change|fix|write|edit|refactor|rename|remove)\b/i
+const E2E_TEST_PATTERN = /(?:^|\/)(?:e2e|integration)(?:\/|$)|\.(?:e2e|integration)\.[^/]+$/i
+const GENERIC_MODULE_TOKENS = new Set([
+  'src', 'test', 'tests', 'unit', 'spec', 'specs', 'e2e', 'integration',
+  'app', 'apps', 'lib', 'libs', 'packages', 'package', 'modules', 'module',
+  'feature', 'features', 'http', 'api',
+])
 
 type PackageScripts = Record<string, string>
 
@@ -36,8 +43,27 @@ interface BuildImplementationPackOptions {
 
 interface FileAggregate {
   path: string
+  score: number
   direct_symbols: string[]
   related_symbols: string[]
+}
+
+interface RankedFileAccumulator {
+  path: string
+  score: number
+  matched_symbols: string[]
+  matchedSymbolSet: Set<string>
+  reasons: string[]
+  reasonSet: Set<string>
+}
+
+interface IndexedTestFile {
+  path: string
+  labels: string[]
+  labelSet: Set<string>
+  name_tokens: string[]
+  module_tokens: string[]
+  entry_surface_like: boolean
 }
 
 interface WorkflowNodeCandidate {
@@ -76,12 +102,118 @@ function rootPathFromGraph(graph: KnowledgeGraph): string | undefined {
     : undefined
 }
 
+function roundFileScore(value: number): number {
+  return Math.round(Math.max(0, value) * 100) / 100
+}
+
+function finalizeReason(reason: string): string {
+  const trimmed = reason.trim()
+  if (trimmed.length === 0) {
+    return 'Relevant file for this task.'
+  }
+  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`
+}
+
 function pushUnique(values: string[], seen: Set<string>, value: string | undefined): void {
   if (!value || value.length === 0 || seen.has(value)) {
     return
   }
   seen.add(value)
   values.push(value)
+}
+
+function createImplementationPackFileHint(
+  path: string,
+  score: number,
+  reason: string,
+  matchedSymbols: readonly string[],
+): ImplementationPackFileHint {
+  const finalReason = finalizeReason(reason)
+  return {
+    path,
+    score: roundFileScore(score),
+    reason: finalReason,
+    why: finalReason,
+    matched_symbols: [...new Set(matchedSymbols)],
+  }
+}
+
+function addRankedFileCandidate(
+  target: Map<string, RankedFileAccumulator>,
+  path: string,
+  score: number,
+  reason: string,
+  matchedSymbols: readonly string[],
+): void {
+  const entry = target.get(path) ?? {
+    path,
+    score: 0,
+    matched_symbols: [],
+    matchedSymbolSet: new Set<string>(),
+    reasons: [],
+    reasonSet: new Set<string>(),
+  }
+  entry.score += score
+  pushUnique(entry.reasons, entry.reasonSet, finalizeReason(reason))
+  for (const symbol of matchedSymbols) {
+    pushUnique(entry.matched_symbols, entry.matchedSymbolSet, symbol)
+  }
+  target.set(path, entry)
+}
+
+function rankedFileHints(
+  entries: Iterable<RankedFileAccumulator>,
+  limit: number,
+): ImplementationPackFileHint[] {
+  return [...entries]
+    .sort((left, right) => right.score - left.score
+      || right.reasons.length - left.reasons.length
+      || left.path.localeCompare(right.path))
+    .slice(0, limit)
+    .map((entry) => createImplementationPackFileHint(
+      entry.path,
+      entry.score,
+      entry.reasons[0] ?? 'Relevant file for this task.',
+      entry.matched_symbols,
+    ))
+}
+
+function tokenizePathValue(value: string): string[] {
+  return value
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .toLowerCase()
+    .split(/[\s_\\\-./,:;!?'"()[\]{}]+/)
+    .filter((token) => token.length > 1)
+}
+
+function fileNameTokens(path: string): string[] {
+  const fileName = basename(path)
+    .replace(/\.(?:test|spec|e2e|integration)(?=\.[^.]+$)/i, '')
+    .replace(/\.[^.]+$/, '')
+  return tokenizePathValue(fileName)
+}
+
+function moduleTokens(path: string): string[] {
+  return tokenizePathValue(dirname(path))
+    .filter((token) => !GENERIC_MODULE_TOKENS.has(token))
+}
+
+function overlapCount(left: readonly string[], right: readonly string[]): number {
+  if (left.length === 0 || right.length === 0) {
+    return 0
+  }
+  const rightSet = new Set(right)
+  let overlap = 0
+  for (const token of new Set(left)) {
+    if (rightSet.has(token)) {
+      overlap += 1
+    }
+  }
+  return overlap
+}
+
+function taskExplicitlyTargetsTests(question: string): boolean {
+  return TEST_EDIT_PATTERN.test(question)
 }
 
 function isWorkflowEntryPoint(node: {
@@ -416,14 +548,24 @@ function workflowCenters(
 function mergeLikelyEditFiles(
   workflowCentersValue: readonly ContextPackWorkflowCenter[],
   starterFiles: readonly ImplementationPackFileHint[],
+  rootPath: string | undefined,
+  allowTestFiles: boolean,
   limit: number,
 ): ImplementationPackFileHint[] {
   const results: ImplementationPackFileHint[] = []
   const seen = new Set<string>()
-  const starterByPath = new Map(starterFiles.map((entry) => [entry.path, entry] as const))
+  const starterByPath = new Map(
+    starterFiles
+      .filter((entry) => allowTestFiles || classifySourceDomain(entry.path, rootPath) !== 'test')
+      .map((entry) => [entry.path, entry] as const),
+  )
 
   for (const center of workflowCentersValue) {
-    if (!center.path || seen.has(center.path)) {
+    if (
+      !center.path
+      || seen.has(center.path)
+      || (!allowTestFiles && classifySourceDomain(center.path, rootPath) === 'test')
+    ) {
       continue
     }
     const existing = starterByPath.get(center.path)
@@ -433,6 +575,8 @@ function mergeLikelyEditFiles(
     ])]
     results.push({
       path: center.path,
+      score: roundFileScore((center.score ?? 0) + ((existing?.score ?? 0) * 0.25)),
+      reason: center.reason,
       why: center.reason,
       matched_symbols: matchedSymbols.length > 0 ? matchedSymbols : [center.label],
     })
@@ -443,7 +587,7 @@ function mergeLikelyEditFiles(
   }
 
   for (const entry of starterFiles) {
-    if (seen.has(entry.path)) {
+    if (seen.has(entry.path) || (!allowTestFiles && classifySourceDomain(entry.path, rootPath) === 'test')) {
       continue
     }
     results.push(entry)
@@ -470,26 +614,132 @@ function groupFiles(
     const path = relativizeSourceFile(node.source_file, rootPath)
     const existing = byPath.get(path) ?? {
       path,
+      score: 0,
       direct_symbols: [],
       related_symbols: [],
     }
     if (node.relevance_band === 'direct') {
+      existing.score += (node.match_score * 4) + 1
       if (!existing.direct_symbols.includes(node.label)) {
         existing.direct_symbols.push(node.label)
       }
     } else if (!existing.related_symbols.includes(node.label)) {
+      existing.score += (node.match_score * 2) + 0.5
       existing.related_symbols.push(node.label)
     }
     byPath.set(path, existing)
   }
 
-  return [...byPath.values()].map((entry) => ({
-    path: entry.path,
-    why: entry.direct_symbols.length > 0
-      ? `Direct evidence via ${entry.direct_symbols.slice(0, 3).join(', ')}.`
-      : `Supporting context via ${entry.related_symbols.slice(0, 2).join(', ')}.`,
-    matched_symbols: [...entry.direct_symbols, ...entry.related_symbols],
-  }))
+  return [...byPath.values()].map((entry) => {
+    const reason = entry.direct_symbols.length > 0
+      ? `Direct test evidence via ${entry.direct_symbols.slice(0, 3).join(', ')}`
+      : `Supporting test context via ${entry.related_symbols.slice(0, 2).join(', ')}`
+    return createImplementationPackFileHint(
+      entry.path,
+      entry.score,
+      reason,
+      [...entry.direct_symbols, ...entry.related_symbols],
+    )
+  })
+}
+
+function indexTestFiles(graph: KnowledgeGraph, rootPath?: string): IndexedTestFile[] {
+  const byPath = new Map<string, IndexedTestFile>()
+
+  for (const [, attributes] of graph.nodeEntries()) {
+    const sourceFile = String(attributes.source_file ?? '')
+    if (sourceFile.length === 0 || classifySourceDomain(sourceFile, rootPath) !== 'test') {
+      continue
+    }
+
+    const path = relativizeSourceFile(sourceFile, rootPath)
+    const existing = byPath.get(path) ?? {
+      path,
+      labels: [],
+      labelSet: new Set<string>(),
+      name_tokens: fileNameTokens(path),
+      module_tokens: moduleTokens(path),
+      entry_surface_like: E2E_TEST_PATTERN.test(path),
+    }
+    pushUnique(existing.labels, existing.labelSet, String(attributes.label ?? ''))
+    byPath.set(path, existing)
+  }
+
+  return [...byPath.values()]
+}
+
+function likelyTestFiles(
+  graph: KnowledgeGraph,
+  retrieval: RetrieveResult,
+  likelyEditFiles: readonly ImplementationPackFileHint[],
+  rootPath: string | undefined,
+  limit: number,
+): ImplementationPackFileHint[] {
+  const ranked = new Map<string, RankedFileAccumulator>()
+  const directAndCovered = groupFiles(
+    [
+      ...retrieval.matched_nodes.filter((node) => classifySourceDomain(node.source_file, rootPath) === 'test'),
+      ...coveredTestNodes(graph, retrieval, rootPath),
+    ],
+    rootPath,
+  )
+
+  for (const entry of directAndCovered) {
+    addRankedFileCandidate(ranked, entry.path, entry.score, entry.reason, entry.matched_symbols)
+  }
+
+  const indexedTests = indexTestFiles(graph, rootPath)
+  const publicSurfacePaths = retrieval.matched_nodes
+    .filter((node) => classifySourceDomain(node.source_file, rootPath) !== 'test')
+    .filter((node) => isPublicSurfaceNode(node))
+    .map((node) => relativizeSourceFile(node.source_file, rootPath))
+  const publicNameTokens = [...new Set(publicSurfacePaths.flatMap((path) => fileNameTokens(path)))]
+  const publicModuleTokens = [...new Set(publicSurfacePaths.flatMap((path) => moduleTokens(path)))]
+
+  for (const editFile of likelyEditFiles) {
+    const editNameTokens = fileNameTokens(editFile.path)
+    const editModuleTokens = moduleTokens(editFile.path)
+
+    for (const testFile of indexedTests) {
+      const nameOverlap = overlapCount(editNameTokens, testFile.name_tokens)
+      const moduleOverlap = overlapCount(editModuleTokens, testFile.module_tokens)
+      let score = 0
+      const reasons: string[] = []
+
+      if (nameOverlap > 0) {
+        score += 1.5 + (nameOverlap * 0.9)
+        reasons.push(`Naming overlaps with ${editFile.path}`)
+      }
+      if (moduleOverlap > 0) {
+        score += 1 + (moduleOverlap * 0.75)
+        reasons.push(`Lives in the same module area as ${editFile.path}`)
+      }
+      if (testFile.entry_surface_like) {
+        const publicOverlap = overlapCount(publicNameTokens, testFile.name_tokens) + overlapCount(publicModuleTokens, testFile.module_tokens)
+        if (publicOverlap > 0) {
+          score += 2.5
+          reasons.push('E2E/integration coverage sits near the public entry surface for this workflow')
+        }
+      }
+
+      if (score <= 0) {
+        continue
+      }
+
+      addRankedFileCandidate(
+        ranked,
+        testFile.path,
+        score,
+        reasons.join('. '),
+        [
+          ...(testFile.labels.length > 0 ? [testFile.labels[0]!] : []),
+          ...editFile.matched_symbols,
+        ],
+      )
+    }
+  }
+
+  return rankedFileHints(ranked.values(), limit)
 }
 
 function coveredTestNodes(
@@ -757,6 +1007,7 @@ export function buildImplementationPackGuidance(
 ): ImplementationPackGuidance {
   const rootPath = rootPathFromGraph(graph)
   const limit = options.limit ?? 5
+  const allowTestFilesInEditSet = taskExplicitlyTargetsTests(retrieval.question)
   const risk = riskMap(graph, {
     question: retrieval.question,
     budget: options.budget,
@@ -766,23 +1017,20 @@ export function buildImplementationPackGuidance(
     taskIntent: options.taskIntent,
   })
   const workflow_centers = workflowCenters(graph, retrieval, rootPath, limit)
+  const starterFiles = risk.starter_files.map((entry) => createImplementationPackFileHint(
+    entry.path,
+    entry.score,
+    entry.why,
+    entry.matched_symbols,
+  ))
   const likely_edit_files = mergeLikelyEditFiles(
     workflow_centers,
-    risk.starter_files.map((entry) => ({
-      path: entry.path,
-      why: entry.why,
-      matched_symbols: entry.matched_symbols,
-    })),
+    starterFiles,
+    rootPath,
+    allowTestFilesInEditSet,
     limit,
   )
-  const relatedTestNodes = coveredTestNodes(graph, retrieval, rootPath)
-  const likely_test_files = groupFiles(
-    [
-      ...retrieval.matched_nodes.filter((node) => classifySourceDomain(node.source_file, rootPath) === 'test'),
-      ...relatedTestNodes,
-    ],
-    rootPath,
-  ).slice(0, limit)
+  const likely_test_files = likelyTestFiles(graph, retrieval, likely_edit_files, rootPath, limit)
   const editPaths = new Set(likely_edit_files.map((entry) => entry.path))
   const { contracts_and_public_surfaces, existing_patterns } = buildSurfaceHints(retrieval, editPaths, rootPath)
   const validation = validationCommands(rootPath, likely_test_files)

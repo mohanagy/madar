@@ -76,6 +76,7 @@ function buildImplementationPackGraph() {
           { id: 'mcp_surface', label: 'context_pack', file_type: 'code', source_file: `${root}/src/runtime/stdio/definitions.ts`, source_location: 'L239', node_kind: 'function', community: 2 },
           { id: 'pack_test', label: 'context-pack-command.test', file_type: 'code', source_file: `${root}/tests/unit/context-pack-command.test.ts`, source_location: 'L1', node_kind: 'function', community: 3 },
           { id: 'retrieve_test', label: 'retrieve-slice-v1.test', file_type: 'code', source_file: `${root}/tests/unit/retrieve-slice-v1.test.ts`, source_location: 'L1', node_kind: 'function', community: 3 },
+          { id: 'pack_e2e_test', label: 'context-pack.e2e', file_type: 'code', source_file: `${root}/tests/e2e/context-pack.e2e.test.ts`, source_location: 'L1', node_kind: 'function', community: 3 },
           { id: 'gate_test', label: 'retrieval-gate.test', file_type: 'code', source_file: `${root}/tests/unit/retrieval-gate.test.ts`, source_location: 'L1', node_kind: 'function', community: 3 },
           { id: 'prompt_pattern', label: 'runContextPromptCommand', file_type: 'code', source_file: `${root}/src/infrastructure/context-prompt-command.ts`, source_location: 'L1', node_kind: 'function', community: 4 },
           { id: 'review_template_pattern', label: 'renderReviewTemplate', file_type: 'code', source_file: `${root}/src/infrastructure/review-template.ts`, source_location: 'L10', node_kind: 'function', community: 4 },
@@ -90,6 +91,7 @@ function buildImplementationPackGraph() {
           { source: 'retrieve_context', target: 'retrieve_test', relation: 'covered_by', confidence: 'EXTRACTED', source_file: `${root}/src/runtime/retrieve.ts` },
           { source: 'retrieve_context', target: 'gate_test', relation: 'covered_by', confidence: 'EXTRACTED', source_file: `${root}/src/runtime/retrieve.ts` },
           { source: 'pack_command', target: 'pack_test', relation: 'covered_by', confidence: 'EXTRACTED', source_file: `${root}/src/infrastructure/context-pack-command.ts` },
+          { source: 'mcp_surface', target: 'pack_e2e_test', relation: 'covered_by', confidence: 'EXTRACTED', source_file: `${root}/src/runtime/stdio/definitions.ts` },
           { source: 'pack_command', target: 'prompt_pattern', relation: 'related_to', confidence: 'EXTRACTED', source_file: `${root}/src/infrastructure/context-pack-command.ts` },
           { source: 'pack_command', target: 'review_template_pattern', relation: 'related_to', confidence: 'EXTRACTED', source_file: `${root}/src/infrastructure/context-pack-command.ts` },
         ],
@@ -552,8 +554,8 @@ describe('context-pack-command', () => {
     const payload = JSON.parse(output) as {
       task?: string
       implementation?: {
-        likely_edit_files?: Array<{ path?: string }>
-        likely_test_files?: Array<{ path?: string }>
+        likely_edit_files?: Array<{ path?: string; score?: number; reason?: string }>
+        likely_test_files?: Array<{ path?: string; score?: number; reason?: string }>
         contracts_and_public_surfaces?: Array<{ source_file?: string; kind?: string }>
         existing_patterns?: Array<{ source_file?: string; kind?: string }>
         validation_commands?: string[]
@@ -564,12 +566,12 @@ describe('context-pack-command', () => {
     expect(payload.task).toBe('implement')
     expect(payload.implementation).toEqual(expect.objectContaining({
       likely_edit_files: expect.arrayContaining([
-        expect.objectContaining({ path: 'src/infrastructure/context-pack-command.ts' }),
-        expect.objectContaining({ path: 'src/runtime/retrieve.ts' }),
+        expect.objectContaining({ path: 'src/infrastructure/context-pack-command.ts', score: expect.any(Number), reason: expect.any(String) }),
+        expect.objectContaining({ path: 'src/runtime/retrieve.ts', score: expect.any(Number), reason: expect.any(String) }),
       ]),
       likely_test_files: expect.arrayContaining([
-        expect.objectContaining({ path: 'tests/unit/context-pack-command.test.ts' }),
-        expect.objectContaining({ path: 'tests/unit/retrieve-slice-v1.test.ts' }),
+        expect.objectContaining({ path: 'tests/unit/context-pack-command.test.ts', score: expect.any(Number), reason: expect.any(String) }),
+        expect.objectContaining({ path: 'tests/e2e/context-pack.e2e.test.ts', score: expect.any(Number), reason: expect.stringMatching(/e2e|integration|entry/i) }),
       ]),
       contracts_and_public_surfaces: expect.arrayContaining([
         expect.objectContaining({ source_file: 'src/contracts/context-pack.ts', kind: 'contract' }),
@@ -590,6 +592,7 @@ describe('context-pack-command', () => {
         source_file: expect.stringMatching(/^src\//),
       }),
     ]))
+    expect(payload.implementation?.likely_edit_files?.every((entry) => !entry.path?.startsWith('tests/'))).toBe(true)
   })
 
   it('emits a pack schema v1 envelope for implement packs', async () => {
@@ -626,8 +629,8 @@ describe('context-pack-command', () => {
         reasons?: string[]
       }>
       recommended_first_read?: Array<{ path?: string }>
-      likely_edit_files?: Array<{ path?: string }>
-      likely_test_files?: Array<{ path?: string }>
+      likely_edit_files?: Array<{ path?: string; score?: number; reason?: string }>
+      likely_test_files?: Array<{ path?: string; score?: number; reason?: string }>
       public_contracts?: Array<{ source_file?: string; kind?: string }>
       risk_boundaries?: Array<{ label?: string }>
       validation_commands?: string[]
@@ -650,13 +653,16 @@ describe('context-pack-command', () => {
         }),
       ]),
       recommended_first_read: expect.arrayContaining([
-        expect.objectContaining({ path: 'src/infrastructure/context-pack-command.ts' }),
+        expect.objectContaining({ path: 'src/cli/parser.ts' }),
+        expect.objectContaining({ path: 'src/runtime/stdio/definitions.ts' }),
+        expect.objectContaining({ path: 'src/contracts/context-pack.ts' }),
       ]),
       likely_edit_files: expect.arrayContaining([
-        expect.objectContaining({ path: 'src/infrastructure/context-pack-command.ts' }),
+        expect.objectContaining({ path: 'src/infrastructure/context-pack-command.ts', score: expect.any(Number), reason: expect.any(String) }),
       ]),
       likely_test_files: expect.arrayContaining([
-        expect.objectContaining({ path: 'tests/unit/context-pack-command.test.ts' }),
+        expect.objectContaining({ path: 'tests/unit/context-pack-command.test.ts', score: expect.any(Number), reason: expect.any(String) }),
+        expect.objectContaining({ path: 'tests/e2e/context-pack.e2e.test.ts', score: expect.any(Number), reason: expect.any(String) }),
       ]),
       public_contracts: expect.arrayContaining([
         expect.objectContaining({ source_file: 'src/contracts/context-pack.ts', kind: 'contract' }),
@@ -672,6 +678,7 @@ describe('context-pack-command', () => {
       confidence_score: expect.any(Number),
       why_explanation: expect.arrayContaining([expect.any(String)]),
     }))
+    expect(payload.likely_edit_files?.some((entry) => entry.path === 'src/contracts/context-pack.ts')).toBe(false)
   })
 
   it('renders pack schema v1 as a task-aware execution brief in text mode', async () => {

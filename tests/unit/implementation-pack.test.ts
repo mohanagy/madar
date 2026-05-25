@@ -63,6 +63,49 @@ function buildWorkflowCenterGraph() {
   return graph
 }
 
+function buildLikelyTargetsGraph() {
+  const root = mkdtempSync(join(tmpdir(), 'madar-likely-targets-'))
+  tempFixtureRoots.push(root)
+  writeFileSync(join(root, 'package.json'), JSON.stringify({
+    name: 'madar-likely-targets-fixture',
+    private: true,
+    scripts: {
+      typecheck: 'tsc --noEmit',
+      build: 'tsc -p tsconfig.build.json',
+      'test:run': 'vitest run',
+    },
+  }))
+
+  const graph = build(
+    [
+      {
+        schema_version: 1,
+        nodes: [
+          { id: 'login_route', label: 'POST /login', file_type: 'code', source_file: `${root}/src/http/login-routes.ts`, source_location: 'L10', node_kind: 'route', framework_role: 'express_route', community: 0 },
+          { id: 'login_controller', label: 'LoginController.submit', file_type: 'code', source_file: `${root}/src/auth/login-controller.ts`, source_location: 'L20', node_kind: 'method', framework_role: 'nest_controller', community: 0 },
+          { id: 'login_service', label: 'LoginService.validate', file_type: 'code', source_file: `${root}/src/auth/login-service.ts`, source_location: 'L30', node_kind: 'method', framework_role: 'nest_provider', community: 1 },
+          { id: 'login_repository', label: 'LoginAuditRepository.saveAttempt', file_type: 'code', source_file: `${root}/src/auth/login-audit-repository.ts`, source_location: 'L40', node_kind: 'method', community: 1 },
+          { id: 'login_helper', label: 'normalizeLoginPayload', file_type: 'code', source_file: `${root}/src/auth/login-helper.ts`, source_location: 'L18', node_kind: 'function', community: 1 },
+          { id: 'login_unit_test', label: 'LoginService.validate.spec', file_type: 'code', source_file: `${root}/tests/unit/login-service.test.ts`, source_location: 'L1', node_kind: 'function', community: 2 },
+          { id: 'login_e2e_test', label: 'login flow e2e', file_type: 'code', source_file: `${root}/tests/e2e/login-flow.test.ts`, source_location: 'L1', node_kind: 'function', community: 2 },
+        ],
+        edges: [
+          { source: 'login_route', target: 'login_controller', relation: 'controller_route', confidence: 'EXTRACTED', source_file: `${root}/src/http/login-routes.ts` },
+          { source: 'login_controller', target: 'login_service', relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/auth/login-controller.ts` },
+          { source: 'login_service', target: 'login_repository', relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/auth/login-service.ts` },
+          { source: 'login_service', target: 'login_helper', relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/auth/login-service.ts` },
+          { source: 'login_service', target: 'login_unit_test', relation: 'covered_by', confidence: 'EXTRACTED', source_file: `${root}/src/auth/login-service.ts` },
+          { source: 'login_route', target: 'login_e2e_test', relation: 'covered_by', confidence: 'EXTRACTED', source_file: `${root}/src/http/login-routes.ts` },
+        ],
+      },
+    ],
+    { directed: true },
+  )
+
+  graph.graph.root_path = root
+  return graph
+}
+
 describe('buildImplementationPackGuidance workflow-center scoring (#295)', () => {
   it('ranks the workflow owner above a lexically stronger helper', () => {
     const graph = buildWorkflowCenterGraph()
@@ -255,5 +298,277 @@ describe('buildImplementationPackGuidance workflow-center scoring (#295)', () =>
       'InvoiceWorkflow.run',
       'formatInvoiceRetryMessage',
     ]))
+  })
+})
+
+describe('buildImplementationPackGuidance likely edit/test targets (#296)', () => {
+  it('scores likely edit files separately from likely test files', () => {
+    const graph = buildLikelyTargetsGraph()
+    const retrieval = {
+      question: 'change login validation behavior',
+      token_count: 180,
+      matched_nodes: [
+        {
+          node_id: 'login_helper',
+          label: 'normalizeLoginPayload',
+          source_file: `${graph.graph.root_path}/src/auth/login-helper.ts`,
+          line_number: 18,
+          node_kind: 'function',
+          file_type: 'code',
+          snippet: 'export function normalizeLoginPayload() {}',
+          match_score: 0.96,
+          relevance_band: 'direct' as const,
+          community: 1,
+          community_label: 'Login workflow',
+        },
+        {
+          node_id: 'login_service',
+          label: 'LoginService.validate',
+          source_file: `${graph.graph.root_path}/src/auth/login-service.ts`,
+          line_number: 30,
+          node_kind: 'method',
+          framework_role: 'nest_provider',
+          file_type: 'code',
+          snippet: 'export class LoginService { validate() {} }',
+          match_score: 0.74,
+          relevance_band: 'direct' as const,
+          community: 1,
+          community_label: 'Login workflow',
+        },
+        {
+          node_id: 'login_controller',
+          label: 'LoginController.submit',
+          source_file: `${graph.graph.root_path}/src/auth/login-controller.ts`,
+          line_number: 20,
+          node_kind: 'method',
+          framework_role: 'nest_controller',
+          file_type: 'code',
+          snippet: 'export class LoginController { submit() {} }',
+          match_score: 0.51,
+          relevance_band: 'related' as const,
+          community: 0,
+          community_label: 'Login HTTP surface',
+        },
+        {
+          node_id: 'login_route',
+          label: 'POST /login',
+          source_file: `${graph.graph.root_path}/src/http/login-routes.ts`,
+          line_number: 10,
+          node_kind: 'route',
+          framework_role: 'express_route',
+          file_type: 'code',
+          snippet: 'router.post("/login", controller.submit)',
+          match_score: 0.48,
+          relevance_band: 'related' as const,
+          community: 0,
+          community_label: 'Login HTTP surface',
+        },
+      ],
+      relationships: [],
+      community_context: [],
+      graph_signals: { god_nodes: [], bridge_nodes: [] },
+      claims: [],
+      expandable: [],
+      coverage: {
+        required_evidence: ['primary', 'supporting', 'structural'] as const,
+        semantic_required: ['implementation', 'structure'] as const,
+        semantic_optional: ['tests'] as const,
+        entries: [],
+        semantic_entries: [],
+        missing_required: [],
+        missing_semantic: [],
+        available_relationships: 0,
+        selected_relationships: 0,
+      },
+    } satisfies import('../../src/runtime/retrieve.js').RetrieveResult
+
+    const guidance = buildImplementationPackGuidance(graph, retrieval, {
+      budget: 2200,
+      taskIntent: 'implement',
+    })
+
+    expect(guidance.likely_edit_files[0]).toEqual(expect.objectContaining({
+      path: 'src/auth/login-service.ts',
+      score: expect.any(Number),
+      reason: expect.stringMatching(/workflow|entry point|side-effect|call-graph|direct/i),
+    }))
+    expect(guidance.likely_edit_files.every((entry) => !entry.path.startsWith('tests/'))).toBe(true)
+    expect(guidance.likely_test_files).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: 'tests/unit/login-service.test.ts',
+        score: expect.any(Number),
+        reason: expect.stringMatching(/covered|unit|validation|test/i),
+      }),
+      expect.objectContaining({
+        path: 'tests/e2e/login-flow.test.ts',
+        score: expect.any(Number),
+        reason: expect.stringMatching(/e2e|integration|route|entry/i),
+      }),
+    ]))
+  })
+
+  it('keeps a clear caution when no related tests are discoverable', () => {
+    const root = mkdtempSync(join(tmpdir(), 'madar-no-tests-'))
+    tempFixtureRoots.push(root)
+    writeFileSync(join(root, 'package.json'), JSON.stringify({
+      name: 'madar-no-tests-fixture',
+      private: true,
+      scripts: {
+        typecheck: 'tsc --noEmit',
+        build: 'tsc -p tsconfig.build.json',
+        'test:run': 'vitest run',
+      },
+    }))
+
+    const graph = build(
+      [
+        {
+          schema_version: 1,
+          nodes: [
+            { id: 'billing_service', label: 'BillingService.retry', file_type: 'code', source_file: `${root}/src/billing/service.ts`, source_location: 'L10', node_kind: 'method', framework_role: 'nest_provider', community: 1 },
+            { id: 'billing_helper', label: 'formatRetryWindow', file_type: 'code', source_file: `${root}/src/billing/helper.ts`, source_location: 'L20', node_kind: 'function', community: 1 },
+          ],
+          edges: [
+            { source: 'billing_service', target: 'billing_helper', relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/billing/service.ts` },
+          ],
+        },
+      ],
+      { directed: true },
+    )
+    graph.graph.root_path = root
+
+    const retrieval = {
+      question: 'adjust retry window logic',
+      token_count: 60,
+      matched_nodes: [
+        {
+          node_id: 'billing_service',
+          label: 'BillingService.retry',
+          source_file: `${root}/src/billing/service.ts`,
+          line_number: 10,
+          node_kind: 'method',
+          framework_role: 'nest_provider',
+          file_type: 'code',
+          snippet: 'export class BillingService { retry() {} }',
+          match_score: 0.72,
+          relevance_band: 'direct' as const,
+          community: 1,
+          community_label: 'Billing workflow',
+        },
+      ],
+      relationships: [],
+      community_context: [],
+      graph_signals: { god_nodes: [], bridge_nodes: [] },
+      claims: [],
+      expandable: [],
+      coverage: {
+        required_evidence: ['primary'] as const,
+        semantic_required: ['implementation'] as const,
+        semantic_optional: ['tests'] as const,
+        entries: [],
+        semantic_entries: [],
+        missing_required: [],
+        missing_semantic: [],
+        available_relationships: 0,
+        selected_relationships: 0,
+      },
+    } satisfies import('../../src/runtime/retrieve.js').RetrieveResult
+
+    const guidance = buildImplementationPackGuidance(graph, retrieval, {
+      budget: 1400,
+      taskIntent: 'implement',
+    })
+
+    expect(guidance.likely_test_files).toEqual([])
+    expect(guidance.cautions).toContain('No related tests were retrieved; validate regression coverage manually.')
+  })
+
+  it('does not leak matched test files into likely_edit_files when the task does not ask to modify tests', () => {
+    const root = mkdtempSync(join(tmpdir(), 'madar-edit-filter-'))
+    tempFixtureRoots.push(root)
+    writeFileSync(join(root, 'package.json'), JSON.stringify({
+      name: 'madar-edit-filter-fixture',
+      private: true,
+      scripts: {
+        typecheck: 'tsc --noEmit',
+        build: 'tsc -p tsconfig.build.json',
+        'test:run': 'vitest run',
+      },
+    }))
+
+    const graph = build(
+      [
+        {
+          schema_version: 1,
+          nodes: [
+            { id: 'profile_service', label: 'ProfileService.update', file_type: 'code', source_file: `${root}/src/profile/service.ts`, source_location: 'L10', node_kind: 'method', framework_role: 'nest_provider', community: 1 },
+            { id: 'profile_service_test', label: 'ProfileService.update.spec', file_type: 'code', source_file: `${root}/tests/unit/profile-service.test.ts`, source_location: 'L1', node_kind: 'function', community: 2 },
+          ],
+          edges: [
+            { source: 'profile_service', target: 'profile_service_test', relation: 'covered_by', confidence: 'EXTRACTED', source_file: `${root}/src/profile/service.ts` },
+          ],
+        },
+      ],
+      { directed: true },
+    )
+    graph.graph.root_path = root
+
+    const retrieval = {
+      question: 'change profile update validation',
+      token_count: 70,
+      matched_nodes: [
+        {
+          node_id: 'profile_service',
+          label: 'ProfileService.update',
+          source_file: `${root}/src/profile/service.ts`,
+          line_number: 10,
+          node_kind: 'method',
+          framework_role: 'nest_provider',
+          file_type: 'code',
+          snippet: 'export class ProfileService { update() {} }',
+          match_score: 0.78,
+          relevance_band: 'direct' as const,
+          community: 1,
+          community_label: 'Profile workflow',
+        },
+        {
+          node_id: 'profile_service_test',
+          label: 'ProfileService.update.spec',
+          source_file: `${root}/tests/unit/profile-service.test.ts`,
+          line_number: 1,
+          node_kind: 'function',
+          file_type: 'code',
+          snippet: 'describe("ProfileService.update", () => {})',
+          match_score: 0.74,
+          relevance_band: 'direct' as const,
+          community: 2,
+          community_label: 'Profile tests',
+        },
+      ],
+      relationships: [],
+      community_context: [],
+      graph_signals: { god_nodes: [], bridge_nodes: [] },
+      claims: [],
+      expandable: [],
+      coverage: {
+        required_evidence: ['primary'] as const,
+        semantic_required: ['implementation'] as const,
+        semantic_optional: ['tests'] as const,
+        entries: [],
+        semantic_entries: [],
+        missing_required: [],
+        missing_semantic: [],
+        available_relationships: 0,
+        selected_relationships: 0,
+      },
+    } satisfies import('../../src/runtime/retrieve.js').RetrieveResult
+
+    const guidance = buildImplementationPackGuidance(graph, retrieval, {
+      budget: 1200,
+      taskIntent: 'implement',
+      limit: 3,
+    })
+
+    expect(guidance.likely_edit_files.every((entry) => !entry.path.startsWith('tests/'))).toBe(true)
   })
 })

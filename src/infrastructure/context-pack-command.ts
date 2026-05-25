@@ -292,11 +292,44 @@ function recommendedFirstRead(
   pack: PackPayload,
   implementation?: ImplementationPackGuidance,
 ): ContextPackRecommendedFirstRead[] {
+  if (task === 'implement' && implementation) {
+    const reads: ContextPackRecommendedFirstRead[] = []
+    const seen = new Set<string>()
+    const pushRead = (path: string, reason: string, label?: string) => {
+      if (seen.has(path) || reads.length >= 3) {
+        return
+      }
+      seen.add(path)
+      reads.push({
+        path,
+        ...(label ? { label } : {}),
+        reason,
+      })
+    }
+
+    for (const entry of implementation.contracts_and_public_surfaces.filter((item) => item.kind === 'public_surface')) {
+      pushRead(entry.source_file, entry.why, entry.label)
+    }
+    for (const entry of implementation.contracts_and_public_surfaces.filter((item) => item.kind === 'contract')) {
+      pushRead(entry.source_file, entry.why, entry.label)
+    }
+    for (const entry of implementation.existing_patterns) {
+      pushRead(entry.source_file, entry.why, entry.label)
+    }
+    for (const entry of implementation.likely_edit_files) {
+      pushRead(entry.path, entry.reason, entry.matched_symbols[0])
+    }
+
+    if (reads.length > 0) {
+      return reads
+    }
+  }
+
   if (implementation?.likely_edit_files.length) {
     return implementation.likely_edit_files.slice(0, 3).map((entry) => ({
       path: entry.path,
       ...(entry.matched_symbols[0] ? { label: entry.matched_symbols[0] } : {}),
-      reason: entry.why,
+      reason: entry.reason,
     }))
   }
 
@@ -469,6 +502,9 @@ function whyExplanation(
     firstRead[0]
       ? `Start with ${firstRead[0].path} because ${firstRead[0].reason.toLowerCase()}`
       : 'No first-read anchor was available, so the brief leaves that section intentionally empty.',
+    ...(implementation && implementation.likely_test_files.length === 0
+      ? ['No related tests were identified, so the brief keeps a manual validation caution visible.']
+      : []),
     `Confidence ${score.toFixed(2)} from ${requiredCovered}/${requiredEntries.length || 0} required evidence classes and ${semanticCovered}/${semanticEntries.length || 0} required semantic categories covered.`,
   ]
 
@@ -524,6 +560,10 @@ function formatFileHint(path: string, reason: string, label?: string): string {
   return `- ${path}${label ? ` (${label})` : ''}: ${reason}`
 }
 
+function formatScoredFileHint(entry: { path: string; score: number; reason: string; matched_symbols: string[] }): string {
+  return `- ${entry.path} [${entry.score.toFixed(2)}]${entry.matched_symbols[0] ? ` (${entry.matched_symbols[0]})` : ''}: ${entry.reason}`
+}
+
 function renderPackSchemaText(schema: PackSchemaEnvelope): string {
   const lines = [
     'Pack Schema v1',
@@ -542,8 +582,8 @@ function renderPackSchemaText(schema: PackSchemaEnvelope): string {
       return `- ${location}${label}: ${entry.reason}`
     })),
     ...renderTextSection('Recommended first read', schema.recommended_first_read.map((entry) => formatFileHint(entry.path, entry.reason, entry.label))),
-    ...renderTextSection('Likely edit files', schema.likely_edit_files.map((entry) => formatFileHint(entry.path, entry.why, entry.matched_symbols[0]))),
-    ...renderTextSection('Likely test files', schema.likely_test_files.map((entry) => formatFileHint(entry.path, entry.why, entry.matched_symbols[0]))),
+    ...renderTextSection('Likely edit files', schema.likely_edit_files.map((entry) => formatScoredFileHint(entry))),
+    ...renderTextSection('Likely test files', schema.likely_test_files.map((entry) => formatScoredFileHint(entry))),
     ...renderTextSection('Public contracts', schema.public_contracts.map((entry) => `- ${entry.source_file}:${entry.line_number} (${entry.kind}) ${entry.label} — ${entry.why}`)),
     ...renderTextSection('Risk boundaries', schema.risk_boundaries.map((entry) => `- ${entry.label} [${entry.severity}]: ${entry.reason}`)),
     ...renderTextSection('Validation commands', schema.validation_commands.map((entry) => `- ${entry}`)),

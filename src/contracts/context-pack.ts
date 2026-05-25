@@ -175,7 +175,9 @@ export interface ContextPackRuntimeGenerationAnswerContract {
 
 export interface ImplementationPackFileHint {
   path: string
-  why: string
+  score: number
+  reason: string
+  why?: string
   matched_symbols: string[]
 }
 
