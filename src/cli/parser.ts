@@ -1,6 +1,6 @@
 import { isAbsolute, resolve } from 'node:path'
 
-import type { ContextPackRetrievalStrategy, ContextPackTaskKind } from '../contracts/context-pack.js'
+import type { ContextPackFormat, ContextPackRetrievalStrategy, ContextPackTaskKind } from '../contracts/context-pack.js'
 import { validateGraphOutputPath, validateGraphPath } from '../shared/security.js'
 import { type InstallPlatform, isInstallPlatform, type InstallProfile, isInstallProfile } from '../infrastructure/install.js'
 
@@ -29,6 +29,7 @@ export interface PackCliOptions {
   task: ContextPackTaskKind
   taskExplicit?: boolean
   graphPath: string
+  format?: ContextPackFormat
   why?: boolean
   /** #75 manual override for the retrieval gate. When set (0-5), the gate
    *  emits a decision with reason 'manual override' at the supplied level
@@ -415,7 +416,7 @@ export function parseQueryArgs(args: string[]): QueryCliOptions {
 }
 
 export function parsePackArgs(args: string[]): PackCliOptions {
-  const usage = 'Usage: madar pack "<prompt>" [--budget N] [--task KIND] [--graph path] [--retrieval-level 0-5] [--retrieval-strategy default|slice-v1]'
+  const usage = 'Usage: madar pack "<prompt>" [--budget N] [--task KIND] [--graph path] [--format json|text] [--retrieval-level 0-5] [--retrieval-strategy default|slice-v1]'
   const prompt = args[0]?.trim()
   if (!prompt) {
     throw new UsageError(usage)
@@ -425,6 +426,7 @@ export function parsePackArgs(args: string[]): PackCliOptions {
   let task: ContextPackTaskKind = 'explain'
   let taskExplicit = false
   let graphPath = 'out/graph.json'
+  let format: PackCliOptions['format'] | undefined
   let why = false
   let retrievalLevel: PackCliOptions['retrievalLevel'] | undefined
   let retrievalStrategy: PackCliOptions['retrievalStrategy'] | undefined
@@ -479,6 +481,18 @@ export function parsePackArgs(args: string[]): PackCliOptions {
       continue
     }
 
+    if (argument === '--format') {
+      format = parseContextPackFormat(requireOptionValue('--format', args[index + 1]))
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--format=')) {
+      const [, value] = argument.split('=', 2)
+      format = parseContextPackFormat(requireOptionValue('--format', value))
+      continue
+    }
+
     if (argument === '--retrieval-level') {
       retrievalLevel = parseRetrievalLevel(requireOptionValue('--retrieval-level', args[index + 1]))
       index += 1
@@ -517,10 +531,18 @@ export function parsePackArgs(args: string[]): PackCliOptions {
     task,
     ...(taskExplicit ? { taskExplicit: true } : {}),
     graphPath,
+    ...(format ? { format } : {}),
     ...(why ? { why: true } : {}),
     ...(retrievalLevel !== undefined ? { retrievalLevel } : {}),
     ...(retrievalStrategy !== undefined ? { retrievalStrategy } : {}),
   }
+}
+
+function parseContextPackFormat(value: string): PackCliOptions['format'] {
+  if (value === 'json' || value === 'text') {
+    return value
+  }
+  throw new UsageError('error: --format must be one of json, text')
 }
 
 function parseRetrievalLevel(value: string): PackCliOptions['retrievalLevel'] {
