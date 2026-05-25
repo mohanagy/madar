@@ -9,8 +9,10 @@ import type {
 import type { TaskIntentKind } from './task-intent.js'
 import type { ContextPackDiagnosticWarning } from './context-pack-diagnostics.js'
 import type { SourceDomain } from '../shared/source-discovery.js'
+import type { TaskContextPlan } from './task-context-plan.js'
 
 export type ContextPackTaskKind = 'explain' | 'implement' | 'review' | 'impact'
+export type ContextPackFormat = 'json' | 'text'
 
 export type ContextPackEvidenceClass = 'primary' | 'supporting' | 'structural' | 'change' | 'impact'
 
@@ -212,6 +214,26 @@ export interface ImplementationPackGuidance {
   runtime_context_if_relevant?: ImplementationPackRuntimeContext
 }
 
+export interface ContextPackWorkflowCenter {
+  label: string
+  node_count?: number
+  reason: string
+}
+
+export interface ContextPackRecommendedFirstRead {
+  path: string
+  label?: string
+  reason: string
+}
+
+export interface ContextPackPublicContract {
+  label: string
+  source_file: string
+  line_number: number
+  kind: 'contract' | 'public_surface'
+  why: string
+}
+
 export type ContextRepresentationType =
   | 'detail'
   | 'summary'
@@ -372,4 +394,32 @@ export interface CompiledContextPack<
    * audit why a retrieval depth was chosen.
    */
   retrieval_gate?: RetrievalGateDecision
+}
+
+export interface ContextPackSchemaV1<TPack = unknown> {
+  schema_version: 1
+  task: ContextPackTaskKind
+  task_intent: TaskIntentKind
+  prompt: string
+  budget: number
+  graph_path: string
+  plan: TaskContextPlan
+  workflow_centers: ContextPackWorkflowCenter[]
+  recommended_first_read: ContextPackRecommendedFirstRead[]
+  likely_edit_files: ImplementationPackFileHint[]
+  likely_test_files: ImplementationPackFileHint[]
+  public_contracts: ContextPackPublicContract[]
+  risk_boundaries: ImplementationPackRiskBoundary[]
+  validation_commands: string[]
+  negative_guidance: string[]
+  confidence_score: number
+  why_explanation: string[]
+  pack: TPack
+  claims: ContextPackClaim[]
+  expandable: ContextPackExpandableRef[]
+  coverage: ContextPackCoverage
+  missing_context: ContextPackEvidenceClass[]
+  missing_semantic: ContextPackSemanticCategory[]
+  retrieval_gate?: RetrievalGateDecision
+  routing?: ContextPackRoutingDebug
 }

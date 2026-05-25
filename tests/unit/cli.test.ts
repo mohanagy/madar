@@ -281,11 +281,29 @@ describe('cli parser', () => {
     })
   })
 
+  it('parses pack args with --format', () => {
+    expect(parsePackArgs(['how does auth work', '--format', 'text'])).toEqual({
+      prompt: 'how does auth work',
+      budget: 3000,
+      task: 'explain',
+      graphPath: 'out/graph.json',
+      format: 'text',
+    })
+    expect(parsePackArgs(['how does auth work', '--format=json'])).toEqual({
+      prompt: 'how does auth work',
+      budget: 3000,
+      task: 'explain',
+      graphPath: 'out/graph.json',
+      format: 'json',
+    })
+  })
+
   it('rejects invalid pack args', () => {
     expect(() => parsePackArgs([])).toThrow('Usage: madar pack')
     expect(() => parsePackArgs(['how does auth work', '--budget', '0'])).toThrow('error: --budget must be a positive integer')
     expect(() => parsePackArgs(['how does auth work', '--budget', '100001'])).toThrow('error: --budget must be <= 100000')
     expect(() => parsePackArgs(['how does auth work', '--task', 'summarize'])).toThrow('error: --task must be one of explain, implement, review, impact')
+    expect(() => parsePackArgs(['how does auth work', '--format', 'yaml'])).toThrow('error: --format must be one of json, text')
     expect(() => parsePackArgs(['how does auth work', '--wat'])).toThrow('error: unknown option for pack: --wat')
   })
 
@@ -957,6 +975,7 @@ describe('cli main', () => {
     expect(help).toContain('    --yes                 skip confirmation before running the paid benchmark/eval prompts')
     expect(help).toContain('eval [graph.json]')
     expect(help).toContain('compare [question]    run a real baseline vs madar prompt comparison')
+    expect(help).toContain('    --format MODE       json|text (default json)')
     expect(help).toContain('    --graph <path>        path to graph.json (default out/graph.json)')
     expect(help).toContain('    --exec TEMPLATE       required command template; supports {prompt_file}, {question}, {mode}, and {output_file}')
     expect(help).toContain('    --questions PATH      load questions from a JSON file instead of a positional question')

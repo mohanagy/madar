@@ -62,7 +62,8 @@ madar opencode install    # OpenCode
 
 ```bash
 madar summary                             # bounded JSON overview before pack/prompt
-madar pack "how does auth work?" --task explain          # compact CLI context payload
+madar pack "how does auth work?" --task explain --format text   # human-readable execution brief
+madar pack "add auth telemetry" --task implement --format json  # Pack Schema v1 for automation
 madar prompt "how does auth work?" --provider claude     # provider-ready compiled prompt
 ```
 
@@ -109,6 +110,12 @@ your prompt
 ```
 
 When the agent says "tell me more," it expands a stable `handle_id` inside the same MCP session instead of re-reading the repo from scratch.
+
+### Pack Schema v1
+
+`madar pack` now emits a stable **Pack Schema v1** envelope around the compiled evidence bundle. In JSON mode (`--format json`), the response includes `schema_version`, `task`, `task_intent`, `workflow_centers`, `recommended_first_read`, `likely_edit_files`, `likely_test_files`, `public_contracts`, `risk_boundaries`, `validation_commands`, `negative_guidance`, `confidence_score`, and `why_explanation`, alongside the existing `pack`, `coverage`, and planner metadata.
+
+Use `--format json` when another tool or script will consume the pack directly. Use `--format text` when you want the same schema rendered as a short human/agent-readable execution brief.
 
 ### Adaptive context-pack representations
 
@@ -212,7 +219,8 @@ madar generate .                          # build the graph
 madar generate . --spi                    # opt-in SPI pipeline (framework metadata + disk cache)
 madar watch .                             # rebuild on file change
 madar summary                             # bounded JSON overview before deeper retrieval
-madar pack "how does auth work?" --task explain          # compact CLI context payload
+madar pack "how does auth work?" --task explain --format text   # human-readable execution brief
+madar pack "add auth telemetry" --task implement --format json  # Pack Schema v1 for automation
 madar pack "why does auth fail?" --task explain --retrieval-strategy slice-v1
 madar prompt "how does auth work?" --provider claude     # provider-ready compiled prompt
 madar review-compare out/graph.json --exec '...' --yes  # PR review benchmark

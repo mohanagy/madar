@@ -592,6 +592,108 @@ describe('context-pack-command', () => {
     ]))
   })
 
+  it('emits a pack schema v1 envelope for implement packs', async () => {
+    const graph = buildImplementationPackGraph()
+    const dependencies: ContextPackCommandDependencies = {
+      loadGraph: vi.fn().mockReturnValue(graph),
+      retrieveContext: vi.fn((currentGraph, options) => retrieveContext(currentGraph, options as never)),
+      compactRetrieveResult,
+      analyzePrImpact: vi.fn(),
+      compactPrImpactResult: vi.fn(),
+      analyzeImpact: vi.fn(),
+      compactImpactResult: vi.fn(),
+    }
+
+    const runPack = () => runContextPackCommand({
+      prompt: 'Implement issue #275: add implementation-task context packs with validation commands for context_pack',
+      budget: 2400,
+      task: 'implement',
+      taskExplicit: true,
+      graphPath: 'out/graph.json',
+      format: 'json',
+    } as never, dependencies)
+
+    const firstOutput = await runPack()
+    const secondOutput = await runPack()
+    const payload = JSON.parse(firstOutput) as {
+      schema_version?: number
+      task?: string
+      task_intent?: string
+      workflow_centers?: Array<{ label?: string }>
+      recommended_first_read?: Array<{ path?: string }>
+      likely_edit_files?: Array<{ path?: string }>
+      likely_test_files?: Array<{ path?: string }>
+      public_contracts?: Array<{ source_file?: string; kind?: string }>
+      risk_boundaries?: Array<{ label?: string }>
+      validation_commands?: string[]
+      negative_guidance?: string[]
+      confidence_score?: number
+      why_explanation?: string[]
+    }
+
+    expect(firstOutput).toBe(secondOutput)
+    expect(payload).toEqual(expect.objectContaining({
+      schema_version: 1,
+      task: 'implement',
+      task_intent: 'implement',
+      workflow_centers: expect.arrayContaining([
+        expect.objectContaining({ label: expect.any(String) }),
+      ]),
+      recommended_first_read: expect.arrayContaining([
+        expect.objectContaining({ path: 'src/infrastructure/context-pack-command.ts' }),
+      ]),
+      likely_edit_files: expect.arrayContaining([
+        expect.objectContaining({ path: 'src/infrastructure/context-pack-command.ts' }),
+      ]),
+      likely_test_files: expect.arrayContaining([
+        expect.objectContaining({ path: 'tests/unit/context-pack-command.test.ts' }),
+      ]),
+      public_contracts: expect.arrayContaining([
+        expect.objectContaining({ source_file: 'src/contracts/context-pack.ts', kind: 'contract' }),
+      ]),
+      risk_boundaries: expect.arrayContaining([
+        expect.objectContaining({ label: 'retrieveContext' }),
+      ]),
+      validation_commands: expect.arrayContaining([
+        'npm run typecheck',
+        'npm run build',
+      ]),
+      negative_guidance: expect.arrayContaining([expect.any(String)]),
+      confidence_score: expect.any(Number),
+      why_explanation: expect.arrayContaining([expect.any(String)]),
+    }))
+  })
+
+  it('renders pack schema v1 as a task-aware execution brief in text mode', async () => {
+    const graph = buildImplementationPackGraph()
+    const dependencies: ContextPackCommandDependencies = {
+      loadGraph: vi.fn().mockReturnValue(graph),
+      retrieveContext: vi.fn((currentGraph, options) => retrieveContext(currentGraph, options as never)),
+      compactRetrieveResult,
+      analyzePrImpact: vi.fn(),
+      compactPrImpactResult: vi.fn(),
+      analyzeImpact: vi.fn(),
+      compactImpactResult: vi.fn(),
+    }
+
+    const output = await runContextPackCommand({
+      prompt: 'Implement issue #275: add implementation-task context packs with validation commands for context_pack',
+      budget: 2400,
+      task: 'implement',
+      taskExplicit: true,
+      graphPath: 'out/graph.json',
+      format: 'text',
+    } as never, dependencies)
+
+    expect(output).toContain('Pack Schema v1')
+    expect(output).toContain('Task: implement')
+    expect(output).toContain('Workflow centers')
+    expect(output).toContain('Recommended first read')
+    expect(output).toContain('Likely edit files')
+    expect(output).toContain('Validation commands')
+    expect(output).toContain('Confidence score')
+  })
+
   it('emits a compact deterministic review pack', async () => {
     const graph = new KnowledgeGraph()
     const dependencies: ContextPackCommandDependencies = {
