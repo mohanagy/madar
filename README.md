@@ -41,6 +41,12 @@ madar generate . --spi
 
 Now ask Claude something about your codebase. It calls `retrieve` once, gets back labeled snippets with file paths and community context, and answers — instead of running multiple `Read` / `Grep` / `Glob` calls and accumulating tokens at every turn.
 
+Want the opt-in semantic retrieval / rerank path too? Install the optional local model runtime in the same environment:
+
+```bash
+npm install @huggingface/transformers
+```
+
 **Other agents:**
 
 ```bash
@@ -59,6 +65,8 @@ madar summary                             # bounded JSON overview before pack/pr
 madar pack "how does auth work?" --task explain          # compact CLI context payload
 madar prompt "how does auth work?" --provider claude     # provider-ready compiled prompt
 ```
+
+If you enable `--semantic` or `--rerank` without that optional package installed, madar now fails with an explicit install hint instead of pulling the transformer/native stack into every default install.
 
 Want a tiny reproducible workspace for local demos? Start with [`examples/sample-workspace/`](examples/sample-workspace/) and the [sample workspace tutorial](docs/tutorials/sample-workspace.md).
 

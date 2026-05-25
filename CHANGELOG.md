@@ -4,6 +4,10 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **Semantic retrieval is now an explicit opt-in install**: `@huggingface/transformers` no longer ships in the default dependency set for `@lubab/madar`; install it separately to enable `--semantic` / `--rerank`, and madar now surfaces an explicit install hint when that optional package is missing.
+
 ## [0.26.1] - 2026-05-24
 
 ### Added

@@ -12,6 +12,8 @@ interface PackageManifest {
   license?: string
   name?: string
   overrides?: Record<string, string>
+  peerDependencies?: Record<string, string>
+  peerDependenciesMeta?: Record<string, { optional?: boolean }>
   scripts?: Record<string, string>
   version?: string
 }
@@ -215,11 +217,17 @@ describe('package metadata', () => {
     const manifest = loadPackageManifest()
     const devDependencies = manifest.devDependencies ?? {}
     const dependencies = manifest.dependencies ?? {}
+    const peerDependencies = manifest.peerDependencies ?? {}
+    const peerDependenciesMeta = manifest.peerDependenciesMeta ?? {}
+    const readme = loadReadme()
 
     expect(isAtLeastVersion(devDependencies.vite, [8, 0, 11])).toBe(true)
     expect(devDependencies.vite).toMatch(/^[~^]?8\./)
     expect(dependencies['@xenova/transformers']).toBeUndefined()
-    expect(typeof dependencies['@huggingface/transformers']).toBe('string')
+    expect(dependencies['@huggingface/transformers']).toBeUndefined()
+    expect(typeof peerDependencies['@huggingface/transformers']).toBe('string')
+    expect(peerDependenciesMeta['@huggingface/transformers']).toEqual({ optional: true })
+    expect(readme).toContain('npm install @huggingface/transformers')
   })
 
   it('caps vitest worker parallelism to keep the full suite stable on shared machines', () => {

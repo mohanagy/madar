@@ -65,4 +65,16 @@ describe('semantic runtime', () => {
     expect(secondScores.get('archive_store')).toBeGreaterThan(secondScores.get('invoice_service') ?? 0)
     expect(pipelineMock).toHaveBeenCalledTimes(1)
   })
+
+  it('surfaces an install hint when the optional transformers package is unavailable', async () => {
+    pipelineMock.mockImplementation(async () => {
+      throw new Error("Cannot find package '@huggingface/transformers' imported from /tmp/madar-semantic-test")
+    })
+
+    const { rankCandidatesBySemanticSimilarity } = await import('../../src/runtime/semantic.js')
+
+    await expect(rankCandidatesBySemanticSimilarity('invoice persistence', [
+      { id: 'invoice_repo', text: 'Invoice repository persistence layer' },
+    ])).rejects.toThrow(/npm install @huggingface\/transformers/)
+  })
 })
