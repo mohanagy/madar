@@ -24,6 +24,14 @@ import {
 import { normalizeAssertionPath, normalizeAssertionPaths } from './helpers/platform.js'
 
 const PACKAGE_CLI_RELATIVE_PATH = join('dist', 'src', 'cli', 'bin.js')
+const STRICT_STOP_RULE_MD =
+  'Answer after one high- or medium-confidence pack when `diagnostics.quality_score >= 0.5`, `missing_context` is empty, and diagnostics show no error-severity gaps.'
+const STRICT_EXPAND_RULE_MD =
+  'Only expand with `context_expand` or focused graph/search tools when `missing_context` / `missing_semantic` are non-empty, diagnostics show warn/error gaps, or the user asks for deeper verification.'
+const STRICT_STOP_RULE_PLAIN =
+  'answer after one high- or medium-confidence pack when diagnostics.quality_score >= 0.5, missing_context is empty, and diagnostics show no error-severity gaps'
+const STRICT_EXPAND_RULE_PLAIN =
+  'expand only when missing_context / missing_semantic is non-empty, diagnostics show warn/error gaps, or the user asks for deeper verification'
 
 const BUNDLED_ASSET_CONTENT = {
   'skill.md': '# madar\n\nLocal bundled Claude skill\n',
@@ -428,8 +436,8 @@ describe('install helpers', () => {
       const geminiMd = readFileSync(join(projectDir, 'GEMINI.md'), 'utf8')
 
       expect(geminiMd).toContain('Call `context_pack` once for the task before broader exploration.')
-      expect(geminiMd).toContain('Answer from the pack when coverage is complete.')
-      expect(geminiMd).toContain('Only expand with graph/search tools when diagnostics show missing evidence.')
+      expect(geminiMd).toContain(STRICT_STOP_RULE_MD)
+      expect(geminiMd).toContain(STRICT_EXPAND_RULE_MD)
       expect(geminiMd).toContain('Avoid raw file search unless the pack is insufficient.')
       expect(installMessage).toContain('strict compact MCP profile')
     })
@@ -466,6 +474,8 @@ describe('install helpers', () => {
 
       expect(decodedHookPayload).toContain('strict compact MCP mode')
       expect(decodedHookPayload).toContain('call context_pack once for the task before broader exploration')
+      expect(decodedHookPayload).toContain(STRICT_STOP_RULE_PLAIN)
+      expect(decodedHookPayload).toContain(STRICT_EXPAND_RULE_PLAIN)
       expect(decodedHookPayload).not.toContain('Madar answers most codebase questions in 1 focused MCP call')
     })
   })
@@ -636,8 +646,8 @@ describe('install helpers', () => {
 
       expect(mcpConfig.mcpServers?.['madar']?.env?.MADAR_TOOL_PROFILE).toBe('core')
       expect(claudeMd).toContain('Call `context_pack` once for the task before broader exploration.')
-      expect(claudeMd).toContain('Answer from the pack when coverage is complete.')
-      expect(claudeMd).toContain('Only expand with graph/search tools when diagnostics show missing evidence.')
+      expect(claudeMd).toContain(STRICT_STOP_RULE_MD)
+      expect(claudeMd).toContain(STRICT_EXPAND_RULE_MD)
       expect(claudeMd).toContain('Avoid raw file search unless the pack is insufficient.')
       expect(installMessage).toContain('strict compact MCP profile')
     })
@@ -675,8 +685,8 @@ describe('install helpers', () => {
 
       expect(mcpConfig.mcpServers?.['madar']?.env?.MADAR_TOOL_PROFILE).toBe('core')
       expect(rule).toContain('Call `context_pack` once for the task before broader exploration.')
-      expect(rule).toContain('Answer from the pack when coverage is complete.')
-      expect(rule).toContain('Only expand with graph/search tools when diagnostics show missing evidence.')
+      expect(rule).toContain(STRICT_STOP_RULE_MD)
+      expect(rule).toContain(STRICT_EXPAND_RULE_MD)
       expect(rule).toContain('Avoid raw file search unless the pack is insufficient.')
       expect(installMessage).toContain('strict compact MCP profile')
     })
@@ -821,7 +831,8 @@ describe('install helpers', () => {
       expect(mcpConfig.servers?.['madar']?.env?.MADAR_TOOL_PROFILE).toBe('core')
       expect(installMessage).toContain('strict compact MCP profile')
       expect(installMessage).toContain('call context_pack once')
-      expect(installMessage).toContain('expand only when diagnostics show missing evidence')
+      expect(installMessage).toContain(STRICT_STOP_RULE_PLAIN)
+      expect(installMessage).toContain(STRICT_EXPAND_RULE_PLAIN)
     })
   })
 

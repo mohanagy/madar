@@ -104,12 +104,20 @@ export interface CompareMadarTraceTurnSummary {
   tools: string[]
 }
 
+type CompareMadarTraceOutcome = 'reduced_exploration' | 'added_context_only' | 'no_context_pack'
+
 export interface CompareMadarTrace {
   source: 'claude_messages_tool_use'
   summary: string
   tool_call_count: number
   tool_calls_by_name: Record<string, number>
   per_turn: CompareMadarTraceTurnSummary[]
+  context_pack_call_count: number
+  focused_follow_up_tool_call_count: number
+  broad_exploration_tool_call_count: number
+  broad_exploration_tool_calls_by_name: Record<string, number>
+  exploration_outcome: CompareMadarTraceOutcome
+  exploration_summary: string
 }
 
 export interface ComparePromptReport {
@@ -763,6 +771,115 @@ function parseTraceToolName(value: unknown): string | null {
   return trimmedValue.length > 0 ? trimmedValue : null
 }
 
+const MADAR_CONTEXT_PACK_TOOL_NAMES = new Set(['context_pack'])
+const MADAR_FOCUSED_FOLLOW_UP_TOOL_NAMES = new Set([
+  'context_expand',
+  'retrieve',
+  'impact',
+  'relevant_files',
+  'feature_map',
+  'risk_map',
+  'implementation_checklist',
+  'graph_summary',
+  'graph_stats',
+  'community_overview',
+  'call_chain',
+  'pr_impact',
+])
+
+function canonicalTraceToolName(toolName: string): string {
+  return toolName.startsWith('mcp__madar__') ? toolName.slice('mcp__madar__'.length) : toolName
+}
+
+function traceToolCountSummary(toolCallsByName: Record<string, number>): string {
+  return Object.entries(toolCallsByName)
+    .sort(([leftName], [rightName]) => leftName.localeCompare(rightName))
+    .map(([toolName, count]) => `${toolName}×${count}`)
+    .join(', ')
+}
+
+function analyzeMadarTraceExploration(toolCallsByName: Record<string, number>): {
+  context_pack_call_count: number
+  focused_follow_up_tool_call_count: number
+  broad_exploration_tool_call_count: number
+  broad_exploration_tool_calls_by_name: Record<string, number>
+  exploration_outcome: CompareMadarTraceOutcome
+  exploration_summary: string
+} {
+  let contextPackCallCount = 0
+  let focusedFollowUpToolCallCount = 0
+  let broadExplorationToolCallCount = 0
+  const broadExplorationToolCallsByName: Record<string, number> = {}
+
+  for (const [toolName, count] of Object.entries(toolCallsByName)) {
+    const canonicalName = canonicalTraceToolName(toolName)
+    if (MADAR_CONTEXT_PACK_TOOL_NAMES.has(canonicalName)) {
+      contextPackCallCount += count
+      continue
+    }
+
+    if (MADAR_FOCUSED_FOLLOW_UP_TOOL_NAMES.has(canonicalName)) {
+      focusedFollowUpToolCallCount += count
+      continue
+    }
+
+    broadExplorationToolCallCount += count
+    broadExplorationToolCallsByName[toolName] = count
+  }
+
+  const sortedBroadExplorationToolCallsByName = Object.fromEntries(
+    Object.entries(broadExplorationToolCallsByName).sort(([leftName], [rightName]) => leftName.localeCompare(rightName)),
+  )
+
+  if (contextPackCallCount === 0) {
+    return {
+      context_pack_call_count: 0,
+      focused_follow_up_tool_call_count: focusedFollowUpToolCallCount,
+      broad_exploration_tool_call_count: broadExplorationToolCallCount,
+      broad_exploration_tool_calls_by_name: sortedBroadExplorationToolCallsByName,
+      exploration_outcome: 'no_context_pack',
+      exploration_summary: 'no context_pack call recorded',
+    }
+  }
+
+  const contextPackSummary = `${contextPackCallCount} context_pack ${contextPackCallCount === 1 ? 'call' : 'calls'}`
+  const focusedSummary =
+    focusedFollowUpToolCallCount > 0
+      ? `${focusedFollowUpToolCallCount} focused follow-up ${focusedFollowUpToolCallCount === 1 ? 'call' : 'calls'}`
+      : null
+
+  if (contextPackCallCount === 1 && broadExplorationToolCallCount === 0) {
+    return {
+      context_pack_call_count: contextPackCallCount,
+      focused_follow_up_tool_call_count: focusedFollowUpToolCallCount,
+      broad_exploration_tool_call_count: 0,
+      broad_exploration_tool_calls_by_name: {},
+      exploration_outcome: 'reduced_exploration',
+      exploration_summary:
+        focusedSummary === null
+          ? `${contextPackSummary}; no broad exploration recorded`
+          : `${contextPackSummary}; ${focusedSummary}; no broad exploration recorded`,
+    }
+  }
+
+  const broadSummary =
+    broadExplorationToolCallCount === 0
+      ? 'no broad exploration recorded'
+      : `${broadExplorationToolCallCount} broad exploration ${broadExplorationToolCallCount === 1 ? 'call' : 'calls'}${Object.keys(sortedBroadExplorationToolCallsByName).length > 0 ? ` (${traceToolCountSummary(sortedBroadExplorationToolCallsByName)})` : ''}`
+
+  return {
+    context_pack_call_count: contextPackCallCount,
+    focused_follow_up_tool_call_count: focusedFollowUpToolCallCount,
+    broad_exploration_tool_call_count: broadExplorationToolCallCount,
+    broad_exploration_tool_calls_by_name: sortedBroadExplorationToolCallsByName,
+    exploration_outcome: 'added_context_only',
+    exploration_summary:
+      focusedSummary === null
+        ? `${contextPackSummary}; ${broadSummary}`
+        : `${contextPackSummary}; ${focusedSummary}; ${broadSummary}`,
+  }
+}
+
 function parseTraceTurnNumber(value: unknown, fallbackTurn: number): number {
   if (typeof value === 'number' && Number.isInteger(value) && value > 0) {
     return value
@@ -827,6 +944,7 @@ function extractMadarTrace(stdout: string): CompareMadarTrace | undefined {
   }
 
   const sortedTurns = [...perTurnIndex.keys()].sort((leftTurn, rightTurn) => leftTurn - rightTurn)
+  const exploration = analyzeMadarTraceExploration(toolCallsByName)
 
   return {
     source: 'claude_messages_tool_use',
@@ -836,6 +954,7 @@ function extractMadarTrace(stdout: string): CompareMadarTrace | undefined {
       Object.entries(toolCallsByName).sort(([leftName], [rightName]) => leftName.localeCompare(rightName)),
     ),
     per_turn: sortedTurns.map((turn) => perTurnIndex.get(turn)!),
+    ...exploration,
   }
 }
 
@@ -1592,14 +1711,28 @@ function formatCompareMadarTraceSummary(result: GenerateCompareArtifactsResult):
     return total + trace.tool_call_count
   }, 0)
   const totalTurns = traces.reduce((total, trace) => total + trace.per_turn.length, 0)
+  const reducedExplorationRuns = traces.filter((trace) => trace.exploration_outcome === 'reduced_exploration').length
+  const addedContextOnlyRuns = traces.filter((trace) => trace.exploration_outcome === 'added_context_only').length
+  const noContextPackRuns = traces.filter((trace) => trace.exploration_outcome === 'no_context_pack').length
   const topTools = [...toolCallsByName.entries()]
     .sort((leftEntry, rightEntry) => rightEntry[1] - leftEntry[1] || leftEntry[0].localeCompare(rightEntry[0]))
     .slice(0, 3)
     .map(([toolName, count]) => `${toolName}×${count}`)
   const traceCoverage = traces.length === result.reports.length ? '' : ` · traces for ${traces.length}/${result.reports.length} madar runs`
   const topToolsSummary = topTools.length > 0 ? ` · top tools: ${topTools.join(', ')}` : ''
+  const outcomeParts: string[] = []
+  if (reducedExplorationRuns > 0) {
+    outcomeParts.push(`${reducedExplorationRuns} reduced exploration`)
+  }
+  if (addedContextOnlyRuns > 0) {
+    outcomeParts.push(`${addedContextOnlyRuns} added context only`)
+  }
+  if (noContextPackRuns > 0) {
+    outcomeParts.push(`${noContextPackRuns} without context_pack`)
+  }
+  const outcomeSummary = outcomeParts.length > 0 ? ` · outcomes: ${outcomeParts.join(', ')}` : ''
 
-  return `Madar trace: ${totalToolCalls} tool call${totalToolCalls === 1 ? '' : 's'} across ${totalTurns} turn${totalTurns === 1 ? '' : 's'}${traceCoverage}${topToolsSummary}`
+  return `Madar trace: ${totalToolCalls} tool call${totalToolCalls === 1 ? '' : 's'} across ${totalTurns} turn${totalTurns === 1 ? '' : 's'}${traceCoverage}${topToolsSummary}${outcomeSummary}`
 }
 
 export function formatCompareSummary(result: GenerateCompareArtifactsResult): string {
@@ -1752,6 +1885,7 @@ export interface NativeAgentCompareReport {
   exec_command: CompareExecCommandSummary
   baseline: NativeAgentRunStatus
   madar: NativeAgentRunStatus
+  madar_trace?: CompareMadarTrace
   reductions: {
     input_tokens: number | null
     num_turns: number | null
@@ -2447,6 +2581,12 @@ export async function executeNativeAgentCompare(
       ensureCompareAnswerFile(madarAnswerPath, '')
     }
     if (madarRun !== null) {
+      const madarTrace = extractMadarTrace(madarRun.stdout)
+      if (madarTrace) {
+        reportShell.madar_trace = madarTrace
+      } else {
+        delete reportShell.madar_trace
+      }
       const event = parseAnthropicResultEvent(madarRun.stdout)
       if (event !== null) {
         reportShell.madar = {
@@ -2665,6 +2805,9 @@ export function formatNativeAgentCompareSummary(result: NativeAgentCompareResult
       lines.push(
         `    answer quality: baseline ${report.answer_quality.baseline.passed ? 'PASS' : `FAIL (${baselineFindings.join(', ')})`} · madar ${report.answer_quality.madar.passed ? 'PASS' : `FAIL (${madarFindings.join(', ')})`}${report.answer_quality.manual_review_notes.length > 0 ? ` · manual review: ${formatCount(report.answer_quality.manual_review_notes.length, 'note', 'notes')}` : ''}`,
       )
+    }
+    if (report.madar_trace) {
+      lines.push(`    madar_trace: ${report.madar_trace.exploration_outcome} · ${report.madar_trace.exploration_summary}`)
     }
     lines.push(`    provider/runtime proof: Anthropic reported input, cache, and total tokens for both runs`)
   }

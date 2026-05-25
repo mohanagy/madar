@@ -134,6 +134,10 @@ describe('public marketing copy honesty', () => {
       expect(content).toContain('docs/benchmarks/2026-05-09-govalidate-auth-e2e/')
     })
 
+    it('links the FounderCommandCenter auth-flow contrast note from the README', () => {
+      expect(content).toContain('docs/benchmarks/2026-05-25-founder-command-center-auth-flow/')
+    })
+
     it('keeps the README Python support claim conservative and current', () => {
       expect(content).toContain('FastAPI router composition')
       expect(content).toContain('Django URL-conf')
@@ -252,6 +256,26 @@ describe('public marketing copy honesty', () => {
         expect(['explain', 'debug', 'review', 'impact']).toContain(prompt.task)
         expect(prompt.text.length).toBeGreaterThan(20)
       }
+    })
+
+    describe('docs/benchmarks/2026-05-25-founder-command-center-auth-flow/', () => {
+      const content = readDoc('docs/benchmarks/2026-05-25-founder-command-center-auth-flow/README.md')
+      const lower = content.toLowerCase()
+
+      it('documents both the good and bad auth-flow runs without overclaiming', () => {
+        expect(content).toMatch(/19[\s\S]{0,40}→[\s\S]{0,40}4/)
+        expect(content).toMatch(/2[\s\S]{0,40}→[\s\S]{0,40}19/)
+        expect(lower).toContain('good run')
+        expect(lower).toContain('bad run')
+        expect(lower).toContain('does not prove universal token reduction')
+      })
+
+      it('explains that agent guidance, not only pack quality, drove the contrast', () => {
+        expect(lower).toContain('pack quality alone was not enough')
+        expect(lower).toContain('strict context-pack-first guidance')
+        expect(lower).toContain('only added context')
+        expect(lower).toContain('reduced exploration')
+      })
     })
   })
 

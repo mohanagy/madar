@@ -93,6 +93,7 @@ function buildSummaryResult(overrides: {
   baselineInputTokens: number
   madarInputTokens: number
   reductions: NonNullable<NativeAgentCompareReport['reductions']>
+  madarTrace?: NativeAgentCompareReport['madar_trace']
 }): NativeAgentCompareResult {
   return {
     graph_path: '/tmp/project/out/graph.json',
@@ -157,6 +158,7 @@ function buildSummaryResult(overrides: {
           },
           reduction_basis: 'provider_reported',
         },
+        ...(overrides.madarTrace ? { madar_trace: overrides.madarTrace } : {}),
         started_at: '2026-05-12T00:00:00.000Z',
         completed_at: '2026-05-12T00:00:01.000Z',
         paths: {
@@ -716,5 +718,53 @@ describe('formatNativeAgentCompareSummary', () => {
     expect(summary).toContain('Suite num_turns: 2 wins · 0 losses · 2/3 comparable · best win: "win b" (75% fewer) · worst regression: none')
     expect(summary).toContain('Suite latency: 2 wins · 0 losses · 2/3 comparable · best win: "win b" (75% faster) · worst regression: none')
     expect(summary).toContain('"answer only" → answer-only run saved; no Anthropic usage block was available, so provider-proof reductions were not computed')
+  })
+
+  it('surfaces whether Madar reduced exploration or only added context when trace data is present', () => {
+    const summary = formatNativeAgentCompareSummary(buildSummaryResult({
+      question: 'trace case',
+      baselineTurns: 6,
+      madarTurns: 2,
+      baselineDurationMs: 6000,
+      madarDurationMs: 2000,
+      baselineInputTokens: 600,
+      madarInputTokens: 200,
+      reductions: {
+        num_turns: 3,
+        duration_ms: 3,
+        input_tokens: 3,
+        cost_usd: 1,
+      },
+      madarTrace: {
+        source: 'claude_messages_tool_use',
+        summary: '2 tool calls across 2 turns',
+        tool_call_count: 2,
+        tool_calls_by_name: {
+          context_pack: 1,
+          impact: 1,
+        },
+        per_turn: [
+          {
+            turn: 1,
+            tool_call_count: 1,
+            tools: ['context_pack'],
+          },
+          {
+            turn: 2,
+            tool_call_count: 1,
+            tools: ['impact'],
+          },
+        ],
+        context_pack_call_count: 1,
+        focused_follow_up_tool_call_count: 1,
+        broad_exploration_tool_call_count: 0,
+        broad_exploration_tool_calls_by_name: {},
+        exploration_outcome: 'reduced_exploration',
+        exploration_summary: '1 context_pack call; 1 focused follow-up call; no broad exploration recorded',
+      },
+    }))
+
+    expect(summary).toContain('madar_trace: reduced_exploration')
+    expect(summary).toContain('1 context_pack call; 1 focused follow-up call; no broad exploration recorded')
   })
 })
