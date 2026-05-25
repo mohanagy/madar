@@ -12,7 +12,7 @@ import type { SourceDomain } from '../shared/source-discovery.js'
 import type { TaskContextPlan } from './task-context-plan.js'
 
 export type ContextPackTaskKind = 'explain' | 'implement' | 'review' | 'impact'
-export type ContextPackFormat = 'json' | 'text'
+export type ContextPackFormat = 'json' | 'text' | 'markdown' | 'claude' | 'copilot'
 
 export type ContextPackEvidenceClass = 'primary' | 'supporting' | 'structural' | 'change' | 'impact'
 

@@ -565,12 +565,44 @@ function renderTextSection(title: string, lines: string[]): string[] {
   ]
 }
 
+function renderMarkdownSection(title: string, lines: string[]): string[] {
+  return [
+    `## ${title}`,
+    '',
+    ...(lines.length > 0 ? lines : ['- none identified for this task.']),
+    '',
+  ]
+}
+
 function formatFileHint(path: string, reason: string, label?: string): string {
   return `- ${path}${label ? ` (${label})` : ''}: ${reason}`
 }
 
 function formatScoredFileHint(entry: { path: string; score: number; reason: string; matched_symbols: string[] }): string {
   return `- ${entry.path} [${entry.score.toFixed(2)}]${entry.matched_symbols[0] ? ` (${entry.matched_symbols[0]})` : ''}: ${entry.reason}`
+}
+
+function workflowCenterLines(schema: PackSchemaEnvelope): string[] {
+  return schema.workflow_centers.map((entry) => {
+    const location = entry.path
+      ? `${entry.path}${typeof entry.score === 'number' ? ` [${entry.score.toFixed(2)}]` : ''}`
+      : entry.label
+    const label = entry.path && entry.label !== entry.path ? ` (${entry.label})` : ''
+    const reason = entry.reason || entry.reasons?.[0] || 'No workflow-center rationale was provided.'
+    return `- ${location}${label}: ${reason}`
+  })
+}
+
+function publicContractLines(schema: PackSchemaEnvelope): string[] {
+  return schema.public_contracts.map((entry) => `- ${entry.source_file}:${entry.line_number} (${entry.kind}) ${entry.label} — ${entry.why}`)
+}
+
+function riskBoundaryLines(schema: PackSchemaEnvelope): string[] {
+  return schema.risk_boundaries.map((entry) => `- ${entry.label} [${entry.severity}]: ${entry.reason}`)
+}
+
+function retrievalPipelineLines(schema: PackSchemaEnvelope): string[] {
+  return schema.retrieval_pipeline?.phases.map((entry) => `- ${entry.phase}: ${entry.summary}`) ?? []
 }
 
 function renderPackSchemaText(schema: PackSchemaEnvelope): string {
@@ -583,22 +615,127 @@ function renderPackSchemaText(schema: PackSchemaEnvelope): string {
     `Graph path: ${schema.graph_path}`,
     `Confidence score: ${schema.confidence_score.toFixed(2)}`,
     '',
-    ...renderTextSection('Workflow centers', schema.workflow_centers.map((entry) => {
-      const location = entry.path
-        ? `${entry.path}${typeof entry.score === 'number' ? ` [${entry.score.toFixed(2)}]` : ''}`
-        : entry.label
-      const label = entry.path && entry.label !== entry.path ? ` (${entry.label})` : ''
-      return `- ${location}${label}: ${entry.reason}`
-    })),
-    ...renderTextSection('Retrieval pipeline', schema.retrieval_pipeline?.phases.map((entry) => `- ${entry.phase}: ${entry.summary}`) ?? []),
+    ...renderTextSection('Workflow centers', workflowCenterLines(schema)),
+    ...renderTextSection('Retrieval pipeline', retrievalPipelineLines(schema)),
     ...renderTextSection('Recommended first read', schema.recommended_first_read.map((entry) => formatFileHint(entry.path, entry.reason, entry.label))),
     ...renderTextSection('Likely edit files', schema.likely_edit_files.map((entry) => formatScoredFileHint(entry))),
     ...renderTextSection('Likely test files', schema.likely_test_files.map((entry) => formatScoredFileHint(entry))),
-    ...renderTextSection('Public contracts', schema.public_contracts.map((entry) => `- ${entry.source_file}:${entry.line_number} (${entry.kind}) ${entry.label} — ${entry.why}`)),
-    ...renderTextSection('Risk boundaries', schema.risk_boundaries.map((entry) => `- ${entry.label} [${entry.severity}]: ${entry.reason}`)),
+    ...renderTextSection('Public contracts', publicContractLines(schema)),
+    ...renderTextSection('Risk boundaries', riskBoundaryLines(schema)),
     ...renderTextSection('Validation commands', schema.validation_commands.map((entry) => `- ${entry}`)),
     ...renderTextSection('Negative guidance', schema.negative_guidance.map((entry) => `- ${entry}`)),
     ...renderTextSection('Why this pack', schema.why_explanation.map((entry) => `- ${entry}`)),
+  ]
+
+  return lines.join('\n').trimEnd()
+}
+
+function renderPackSchemaMarkdown(schema: PackSchemaEnvelope): string {
+  const lines = [
+    '# Pack Schema v1',
+    '',
+    `Task: ${schema.task}`,
+    `Task intent: ${schema.task_intent}`,
+    `Prompt: ${schema.prompt}`,
+    `Budget: ${schema.budget}`,
+    `Graph path: ${schema.graph_path}`,
+    `Confidence score: ${schema.confidence_score.toFixed(2)}`,
+    '',
+    ...renderMarkdownSection('Retrieval pipeline', retrievalPipelineLines(schema)),
+    ...renderMarkdownSection('Workflow centers', workflowCenterLines(schema)),
+    ...renderMarkdownSection('Recommended first read', schema.recommended_first_read.map((entry) => formatFileHint(entry.path, entry.reason, entry.label))),
+    ...renderMarkdownSection('Likely edit files', schema.likely_edit_files.map((entry) => formatScoredFileHint(entry))),
+    ...renderMarkdownSection('Likely test files', schema.likely_test_files.map((entry) => formatScoredFileHint(entry))),
+    ...renderMarkdownSection('Public contracts', publicContractLines(schema)),
+    ...renderMarkdownSection('Risk boundaries', riskBoundaryLines(schema)),
+    ...renderMarkdownSection('Validation commands', schema.validation_commands.map((entry) => `- ${entry}`)),
+    ...renderMarkdownSection('Negative guidance', schema.negative_guidance.map((entry) => `- ${entry}`)),
+    ...renderMarkdownSection('Why this pack', schema.why_explanation.map((entry) => `- ${entry}`)),
+  ]
+
+  return lines.join('\n').trimEnd()
+}
+
+function renderClaudePack(schema: PackSchemaEnvelope): string {
+  const firstRead = schema.recommended_first_read.map((entry) => `- Read ${entry.path} first${entry.label ? ` (${entry.label})` : ''}: ${entry.reason}`)
+  const lines = [
+    '# Claude Code execution brief',
+    '',
+    `Task: ${schema.task}`,
+    `Task intent: ${schema.task_intent}`,
+    `Prompt: ${schema.prompt}`,
+    `Confidence score: ${schema.confidence_score.toFixed(2)}`,
+    '',
+    '## Start here',
+    '',
+    ...(firstRead.length > 0
+      ? firstRead
+      : ['- No first-read anchor was identified; begin with the workflow centers below.']),
+    '- Do not start with a broad repo search. Use the listed files, contracts, and tests first.',
+    '',
+    ...renderMarkdownSection('Retrieval pipeline', retrievalPipelineLines(schema)),
+    ...renderMarkdownSection('Workflow centers', workflowCenterLines(schema)),
+    ...renderMarkdownSection('Likely edit files', schema.likely_edit_files.map((entry) => formatScoredFileHint(entry))),
+    ...renderMarkdownSection('Likely test files', schema.likely_test_files.map((entry) => formatScoredFileHint(entry))),
+    ...renderMarkdownSection('Public contracts', publicContractLines(schema)),
+    ...renderMarkdownSection('Risk boundaries', riskBoundaryLines(schema)),
+    ...renderMarkdownSection('Validation commands', schema.validation_commands.map((entry) => `- ${entry}`)),
+    ...renderMarkdownSection('Negative guidance', schema.negative_guidance.map((entry) => `- ${entry}`)),
+    ...renderMarkdownSection('Why this pack', schema.why_explanation.map((entry) => `- ${entry}`)),
+  ]
+
+  return lines.join('\n').trimEnd()
+}
+
+function renderCopilotPlanSteps(schema: PackSchemaEnvelope): string[] {
+  const steps: string[] = []
+  const firstRead = schema.recommended_first_read[0]
+  const primaryEdit = schema.likely_edit_files[0]
+  const primaryTest = schema.likely_test_files[0]
+
+  steps.push(
+    firstRead
+      ? `Read \`${firstRead.path}\` first to anchor the change: ${firstRead.reason}`
+      : 'Start from the top workflow center before making edits.',
+  )
+  steps.push(
+    primaryEdit
+      ? `Implement the change in \`${primaryEdit.path}\`: ${primaryEdit.reason}`
+      : 'Use the workflow centers to identify the smallest implementation surface.',
+  )
+  steps.push(
+    primaryTest
+      ? `Update or add coverage in \`${primaryTest.path}\` once the implementation is in place.`
+      : 'Add or update tests around the impacted workflow after the implementation change.',
+  )
+  steps.push(
+    schema.validation_commands.length > 0
+      ? 'Run the listed validation commands before handoff.'
+      : 'Run the usual repository validation flow before handoff.',
+  )
+
+  return steps.map((step, index) => `${index + 1}. ${step}`)
+}
+
+function renderCopilotPack(schema: PackSchemaEnvelope): string {
+  const lines = [
+    '# GitHub Copilot implementation brief',
+    '',
+    `Task: ${schema.task}`,
+    `Task intent: ${schema.task_intent}`,
+    `Prompt: ${schema.prompt}`,
+    `Confidence score: ${schema.confidence_score.toFixed(2)}`,
+    '',
+    ...renderMarkdownSection('Suggested plan', renderCopilotPlanSteps(schema)),
+    ...renderMarkdownSection('Retrieval pipeline', retrievalPipelineLines(schema)),
+    ...renderMarkdownSection('Workflow centers', workflowCenterLines(schema)),
+    ...renderMarkdownSection('Likely edit files', schema.likely_edit_files.map((entry) => formatScoredFileHint(entry))),
+    ...renderMarkdownSection('Likely test files', schema.likely_test_files.map((entry) => formatScoredFileHint(entry))),
+    ...renderMarkdownSection('Public contracts', publicContractLines(schema)),
+    ...renderMarkdownSection('Risk boundaries', riskBoundaryLines(schema)),
+    ...renderMarkdownSection('Validation commands', schema.validation_commands.map((entry) => `- ${entry}`)),
+    ...renderMarkdownSection('Negative guidance', schema.negative_guidance.map((entry) => `- ${entry}`)),
+    ...renderMarkdownSection('Why this pack', schema.why_explanation.map((entry) => `- ${entry}`)),
   ]
 
   return lines.join('\n').trimEnd()
@@ -608,9 +745,19 @@ function renderContextPackOutput(
   format: ContextPackFormat | undefined,
   schema: PackSchemaEnvelope,
 ): string {
-  return format === 'text'
-    ? renderPackSchemaText(schema)
-    : JSON.stringify(schema)
+  switch (format) {
+    case 'text':
+      return renderPackSchemaText(schema)
+    case 'markdown':
+      return renderPackSchemaMarkdown(schema)
+    case 'claude':
+      return renderClaudePack(schema)
+    case 'copilot':
+      return renderCopilotPack(schema)
+    case 'json':
+    case undefined:
+      return JSON.stringify(schema)
+  }
 }
 
 export async function runContextPackCommand(

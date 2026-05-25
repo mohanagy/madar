@@ -343,7 +343,7 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --budget N            cap context pack assembly at N tokens (default 3000)',
     '    --task KIND          explain|implement|review|impact (default infer from prompt; fallback explain)',
     '    --graph <path>       path to graph.json (default out/graph.json)',
-    '    --format MODE       json|text (default json)',
+    '    --format MODE       json|text|markdown|claude|copilot (default json)',
     '    --why               include retrieval-routing debug metadata in the pack output',
     '  prompt "<prompt>"     compile a provider-ready prompt payload',
     '    --provider NAME      claude|gemini',

@@ -766,7 +766,43 @@ describe('context-pack-command', () => {
     ]))
   })
 
-  it('renders pack schema v1 as a task-aware execution brief in text mode', async () => {
+  it('renders pack schema v1 as a generic markdown brief', async () => {
+    const graph = buildImplementationPackGraph()
+    const dependencies: ContextPackCommandDependencies = {
+      loadGraph: vi.fn().mockReturnValue(graph),
+      retrieveContext: vi.fn((currentGraph, options) => retrieveContext(currentGraph, options as never)),
+      compactRetrieveResult,
+      analyzePrImpact: vi.fn(),
+      compactPrImpactResult: vi.fn(),
+      analyzeImpact: vi.fn(),
+      compactImpactResult: vi.fn(),
+    }
+
+    const output = await runContextPackCommand({
+      prompt: 'Implement issue #275: add implementation-task context packs with validation commands for context_pack',
+      budget: 2400,
+      task: 'implement',
+      taskExplicit: true,
+      graphPath: 'out/graph.json',
+      format: 'markdown',
+    } as never, dependencies)
+
+    expect(output).toContain('# Pack Schema v1')
+    expect(output).toContain('Task: implement')
+    expect(output).toContain('## Workflow centers')
+    expect(output).toContain('## Recommended first read')
+    expect(output).toContain('## Likely edit files')
+    expect(output).toContain('## Likely test files')
+    expect(output).toContain('## Public contracts')
+    expect(output).toContain('## Risk boundaries')
+    expect(output).toContain('## Validation commands')
+    expect(output).toContain('## Negative guidance')
+    expect(output).toContain('## Why this pack')
+    expect(output).toContain('Confidence score:')
+    expect(output).not.toContain(': undefined')
+  })
+
+  it('keeps the legacy text adapter output stable', async () => {
     const graph = buildImplementationPackGraph()
     const dependencies: ContextPackCommandDependencies = {
       loadGraph: vi.fn().mockReturnValue(graph),
@@ -794,7 +830,79 @@ describe('context-pack-command', () => {
     expect(output).toContain('Likely edit files')
     expect(output).toContain('Retrieval pipeline')
     expect(output).toContain('Validation commands')
-    expect(output).toContain('Confidence score')
+    expect(output).not.toContain('# Pack Schema v1')
+    expect(output).not.toContain('## Workflow centers')
+    expect(output).not.toContain(': undefined')
+    expect(output.match(/^Workflow centers$/gm)).toHaveLength(1)
+  })
+
+  it('renders a claude adapter brief with direct execution guidance', async () => {
+    const graph = buildImplementationPackGraph()
+    const dependencies: ContextPackCommandDependencies = {
+      loadGraph: vi.fn().mockReturnValue(graph),
+      retrieveContext: vi.fn((currentGraph, options) => retrieveContext(currentGraph, options as never)),
+      compactRetrieveResult,
+      analyzePrImpact: vi.fn(),
+      compactPrImpactResult: vi.fn(),
+      analyzeImpact: vi.fn(),
+      compactImpactResult: vi.fn(),
+    }
+
+    const output = await runContextPackCommand({
+      prompt: 'Implement issue #275: add implementation-task context packs with validation commands for context_pack',
+      budget: 2400,
+      task: 'implement',
+      taskExplicit: true,
+      graphPath: 'out/graph.json',
+      format: 'claude',
+    } as never, dependencies)
+
+    expect(output).toContain('# Claude Code execution brief')
+    expect(output).toContain('## Start here')
+    expect(output).toContain('Do not start with a broad repo search.')
+    expect(output).toContain('## Workflow centers')
+    expect(output).toContain('## Likely edit files')
+    expect(output).toContain('## Likely test files')
+    expect(output).toContain('## Public contracts')
+    expect(output).toContain('## Risk boundaries')
+    expect(output).toContain('## Validation commands')
+    expect(output).toContain('## Negative guidance')
+    expect(output).toContain('## Why this pack')
+    expect(output).not.toContain(': undefined')
+  })
+
+  it('renders a copilot adapter brief with an implementation-oriented plan', async () => {
+    const graph = buildImplementationPackGraph()
+    const dependencies: ContextPackCommandDependencies = {
+      loadGraph: vi.fn().mockReturnValue(graph),
+      retrieveContext: vi.fn((currentGraph, options) => retrieveContext(currentGraph, options as never)),
+      compactRetrieveResult,
+      analyzePrImpact: vi.fn(),
+      compactPrImpactResult: vi.fn(),
+      analyzeImpact: vi.fn(),
+      compactImpactResult: vi.fn(),
+    }
+
+    const output = await runContextPackCommand({
+      prompt: 'Implement issue #275: add implementation-task context packs with validation commands for context_pack',
+      budget: 2400,
+      task: 'implement',
+      taskExplicit: true,
+      graphPath: 'out/graph.json',
+      format: 'copilot',
+    } as never, dependencies)
+
+    expect(output).toContain('# GitHub Copilot implementation brief')
+    expect(output).toContain('## Suggested plan')
+    expect(output).toContain('## Workflow centers')
+    expect(output).toContain('## Likely edit files')
+    expect(output).toContain('## Likely test files')
+    expect(output).toContain('## Public contracts')
+    expect(output).toContain('## Risk boundaries')
+    expect(output).toContain('## Validation commands')
+    expect(output).toContain('## Negative guidance')
+    expect(output).toContain('## Why this pack')
+    expect(output).not.toContain(': undefined')
   })
 
   it('emits a compact deterministic review pack', async () => {

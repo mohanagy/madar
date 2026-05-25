@@ -416,7 +416,7 @@ export function parseQueryArgs(args: string[]): QueryCliOptions {
 }
 
 export function parsePackArgs(args: string[]): PackCliOptions {
-  const usage = 'Usage: madar pack "<prompt>" [--budget N] [--task KIND] [--graph path] [--format json|text] [--retrieval-level 0-5] [--retrieval-strategy default|slice-v1]'
+  const usage = 'Usage: madar pack "<prompt>" [--budget N] [--task KIND] [--graph path] [--format json|text|markdown|claude|copilot] [--retrieval-level 0-5] [--retrieval-strategy default|slice-v1]'
   const prompt = args[0]?.trim()
   if (!prompt) {
     throw new UsageError(usage)
@@ -539,10 +539,17 @@ export function parsePackArgs(args: string[]): PackCliOptions {
 }
 
 function parseContextPackFormat(value: string): PackCliOptions['format'] {
-  if (value === 'json' || value === 'text') {
-    return value
+  const normalized = value.trim().toLowerCase()
+  if (
+    normalized === 'json'
+    || normalized === 'text'
+    || normalized === 'markdown'
+    || normalized === 'claude'
+    || normalized === 'copilot'
+  ) {
+    return normalized as PackCliOptions['format']
   }
-  throw new UsageError('error: --format must be one of json, text')
+  throw new UsageError('error: --format must be one of json, text, markdown, claude, copilot')
 }
 
 function parseRetrievalLevel(value: string): PackCliOptions['retrievalLevel'] {
