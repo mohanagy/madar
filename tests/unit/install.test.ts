@@ -28,10 +28,16 @@ const STRICT_STOP_RULE_MD =
   'Answer after one high- or medium-confidence pack when `diagnostics.quality_score >= 0.5`, `missing_context` is empty, and diagnostics show no error-severity gaps.'
 const STRICT_EXPAND_RULE_MD =
   'Only expand with `context_expand` or focused graph/search tools when `missing_context` / `missing_semantic` are non-empty, diagnostics show warn/error gaps, or the user asks for deeper verification.'
+const STRICT_GRAPH_REPORT_RULE_MD =
+  'Do not open `out/GRAPH_REPORT.md` unless the context pack or graph tools are unavailable, stale, or insufficient. Treat it as a fallback before broader raw file exploration, not a default first read.'
 const STRICT_STOP_RULE_PLAIN =
   'answer after one high- or medium-confidence pack when diagnostics.quality_score >= 0.5, missing_context is empty, and diagnostics show no error-severity gaps'
 const STRICT_EXPAND_RULE_PLAIN =
   'expand only when missing_context / missing_semantic is non-empty, diagnostics show warn/error gaps, or the user asks for deeper verification'
+const STRICT_GRAPH_REPORT_RULE_PLAIN =
+  'do not open out/GRAPH_REPORT.md unless the context pack or graph tools are unavailable, stale, or insufficient; treat it as a fallback before broader raw file exploration, not a default first read'
+const STRICT_GRAPH_REPORT_RULE_PLAIN_SENTENCE =
+  'Do not open out/GRAPH_REPORT.md unless the context pack or graph tools are unavailable, stale, or insufficient; treat it as a fallback before broader raw file exploration, not a default first read'
 
 const BUNDLED_ASSET_CONTENT = {
   'skill.md': '# madar\n\nLocal bundled Claude skill\n',
@@ -416,6 +422,7 @@ describe('install helpers', () => {
           expect(readFileSync(join(projectDir, 'GEMINI.md'), 'utf8')).toContain('implementation_checklist')
           expect(readFileSync(join(projectDir, 'GEMINI.md'), 'utf8')).toContain('impact')
           expect(readFileSync(join(projectDir, 'GEMINI.md'), 'utf8')).toContain('Only use madar when the task needs local repository source-code context.')
+          expect(readFileSync(join(projectDir, 'GEMINI.md'), 'utf8')).toContain(STRICT_GRAPH_REPORT_RULE_MD)
           expect(readFileSync(join(projectDir, '.gemini', 'settings.json'), 'utf8')).toContain('out')
 
           const uninstallMessage = geminiUninstall(projectDir, { homeDir })
@@ -438,7 +445,8 @@ describe('install helpers', () => {
       expect(geminiMd).toContain('Call `context_pack` once for the task before broader exploration.')
       expect(geminiMd).toContain(STRICT_STOP_RULE_MD)
       expect(geminiMd).toContain(STRICT_EXPAND_RULE_MD)
-      expect(geminiMd).toContain('Avoid raw file search unless the pack is insufficient.')
+      expect(geminiMd).toContain(STRICT_GRAPH_REPORT_RULE_MD)
+      expect(geminiMd).not.toContain('If manual expansion is still required, read `out/GRAPH_REPORT.md` first.')
       expect(installMessage).toContain('strict compact MCP profile')
     })
   })
@@ -648,7 +656,8 @@ describe('install helpers', () => {
       expect(claudeMd).toContain('Call `context_pack` once for the task before broader exploration.')
       expect(claudeMd).toContain(STRICT_STOP_RULE_MD)
       expect(claudeMd).toContain(STRICT_EXPAND_RULE_MD)
-      expect(claudeMd).toContain('Avoid raw file search unless the pack is insufficient.')
+      expect(claudeMd).toContain(STRICT_GRAPH_REPORT_RULE_MD)
+      expect(claudeMd).not.toContain('If manual expansion is still required, read `out/GRAPH_REPORT.md` first.')
       expect(installMessage).toContain('strict compact MCP profile')
     })
   })
@@ -687,7 +696,8 @@ describe('install helpers', () => {
       expect(rule).toContain('Call `context_pack` once for the task before broader exploration.')
       expect(rule).toContain(STRICT_STOP_RULE_MD)
       expect(rule).toContain(STRICT_EXPAND_RULE_MD)
-      expect(rule).toContain('Avoid raw file search unless the pack is insufficient.')
+      expect(rule).toContain(STRICT_GRAPH_REPORT_RULE_MD)
+      expect(rule).not.toContain('If manual expansion is still required, read `out/GRAPH_REPORT.md` first.')
       expect(installMessage).toContain('strict compact MCP profile')
     })
   })
@@ -833,6 +843,7 @@ describe('install helpers', () => {
       expect(installMessage).toContain('call context_pack once')
       expect(installMessage).toContain(STRICT_STOP_RULE_PLAIN)
       expect(installMessage).toContain(STRICT_EXPAND_RULE_PLAIN)
+      expect(installMessage).toContain(STRICT_GRAPH_REPORT_RULE_PLAIN)
     })
   })
 
@@ -934,8 +945,12 @@ describe('install helpers', () => {
       expect(agentsMd).toContain('madar pack')
       expect(agentsMd).toContain('madar codex uninstall')
       expect(agentsMd).toContain('Manual verification')
+      expect(agentsMd).toContain(STRICT_GRAPH_REPORT_RULE_MD)
+      expect(agentsMd).not.toContain('Only fall back to raw file tools** when the context pack or graph tools are missing, stale, or insufficient. In that case, read `out/GRAPH_REPORT.md` first.')
       expect(decodedHookPayload).toContain('context-pack-first')
       expect(decodedHookPayload).toContain('madar pack')
+      expect(decodedHookPayload).toContain(STRICT_GRAPH_REPORT_RULE_PLAIN)
+      expect(decodedHookPayload).not.toContain('read out/GRAPH_REPORT.md before expanding manually')
     })
   })
 
@@ -970,6 +985,12 @@ describe('install helpers', () => {
         expect(agentsMd).toContain('Manual verification')
         expect(agentsMd).toContain('.opencode/plugins/madar.js')
         expect(agentsMd).toContain('opencode.json')
+        expect(agentsMd).toContain(STRICT_GRAPH_REPORT_RULE_MD)
+        expect(agentsMd).not.toContain('In that case, read `out/GRAPH_REPORT.md` first.')
+
+        const plugin = readFileSync(join(projectDir, '.opencode', 'plugins', 'madar.js'), 'utf8')
+        expect(plugin).toContain(STRICT_GRAPH_REPORT_RULE_PLAIN_SENTENCE)
+        expect(plugin).not.toContain('Read out/GRAPH_REPORT.md before raw file search if needed.')
       })
     })
   })
@@ -1028,6 +1049,8 @@ describe('install helpers', () => {
       expect(codexHooks).toContain('custom.log')
       expect(decodedHookPayload).toContain('context-pack-first')
       expect(decodedHookPayload).toContain('madar pack')
+      expect(decodedHookPayload).toContain(STRICT_GRAPH_REPORT_RULE_PLAIN)
+      expect(decodedHookPayload).not.toContain('read out/GRAPH_REPORT.md before expanding manually')
       expect(decodedHookPayload).not.toContain('Legacy out retrieve-first guidance')
     })
   })

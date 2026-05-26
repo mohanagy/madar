@@ -122,6 +122,8 @@ describe('built-in install templates', () => {
     expect(content).toContain('high- or medium-confidence pack')
     expect(content).toContain('missing_context')
     expect(content).toContain('deeper verification')
+    expect(content).toContain('Do not open `out/GRAPH_REPORT.md` unless the context pack or graph tools are unavailable, stale, or insufficient.')
+    expect(content).not.toContain('If manual expansion is still required, read `out/GRAPH_REPORT.md` first.')
     expect(content).toContain('madar codex install')
     expect(content).toContain('madar codex uninstall')
     expect(content).toContain('Manual verification')
