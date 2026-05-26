@@ -112,6 +112,20 @@ describe('detect', () => {
     }
   })
 
+  it('does not treat ordinary files as sensitive just because an ancestor directory contains token-like words', () => {
+    const root = mkdtempSync(join(tmpdir(), 'madar-token-root-'))
+    try {
+      writeFileSync(join(root, 'app.ts'), 'export const value = 1\n', 'utf8')
+
+      const result = detect(root)
+
+      expect(result.files.code.some((filePath) => filePath.endsWith('app.ts'))).toBe(true)
+      expect(result.skipped_sensitive).toEqual([])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('ignores comments in madarignore files', () => {
     const root = createTempRoot()
     try {

@@ -142,9 +142,15 @@ function isNoiseDir(part: string): boolean {
   return SKIP_DIRS.has(part) || part.endsWith('_venv') || part.endsWith('_env') || part.endsWith('.egg-info')
 }
 
-function isSensitive(path: string): boolean {
-  const name = basename(path)
-  return SENSITIVE_PATTERNS.some((pattern) => pattern.test(name) || pattern.test(path))
+function isSensitive(path: string, root?: string): boolean {
+  const candidates = [basename(path)]
+  if (root) {
+    const relativePath = toPosixPath(relative(root, path))
+    if (relativePath && !relativePath.startsWith('..')) {
+      candidates.push(relativePath)
+    }
+  }
+  return candidates.some((candidate) => SENSITIVE_PATTERNS.some((pattern) => pattern.test(candidate)))
 }
 
 export function _looksLikePaper(path: string): boolean {
@@ -359,7 +365,7 @@ export function detect(root: string, options: DetectOptions = {}): DetectResult 
   const skippedSensitive: string[] = []
 
   for (const filePath of collectFiles(root, followSymlinks, ignorePatterns)) {
-    if (isSensitive(filePath)) {
+    if (isSensitive(filePath, root)) {
       skippedSensitive.push(filePath)
       continue
     }
