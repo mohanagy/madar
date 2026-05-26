@@ -4,6 +4,10 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **Public claim surfaces now map directly to evidence**: README/package/docs language now separates demonstrated behavior from in-progress and not-yet-measured claims, benchmark docs point at the per-repo suite scaffold instead of a single cross-repo headline, and `docs/claims-and-evidence.md` records what each public claim is allowed to say.
+
 ## [0.27.0-next.1] - 2026-05-26
 
 ### Changed

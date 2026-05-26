@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>madar — benchmark proofs</title>
-    <meta name="description" content="Public reproducible benchmarks for madar. Same model, same question, with and without madar. Receipts committed in the repo." />
+    <meta name="description" content="Public benchmark receipts for madar. Same model, same question, with and without madar, plus explicit caveats about what each artifact does and does not prove." />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -19,9 +19,9 @@
     <main class="shell">
       <section class="hero">
         <p class="eyebrow">Benchmark proofs</p>
-        <h1>Same model. Same question. With and without madar.</h1>
+        <h1>Benchmark receipts, not a single headline number.</h1>
         <p class="lede">
-          Every number on these pages is reproduced from a committed file in the repo. Each benchmark links straight to the raw evidence (Anthropic-billed <code>usage</code> JSON, prompts, and answers) and a one-line <code>verify.sh</code> that recomputes the headline ratio from those files.
+          Every number on these pages is reproduced from a committed file in the repo. Each benchmark links straight to the raw evidence (Anthropic-billed <code>usage</code> JSON, prompts, and answers) plus a small <code>verify.sh</code>. These pages are receipts for specific repos and prompts, not a single-number cross-repo claim.
         </p>
         <dl class="hero-meta">
           <div class="meta-item"><dt>Source</dt><dd><a href="https://github.com/mohanagy/madar/tree/main/docs/benchmarks">github.com/mohanagy/madar</a></dd></div>
@@ -33,34 +33,34 @@
       <section class="section">
         <div class="section-header">
           <h2>Published benchmarks</h2>
-          <p>Two scenarios, both measured on real production code.</p>
+          <p>Two published receipts today, with broader per-repo spread tracked in the suite scaffold.</p>
         </div>
 
         <div class="benchmark-cards">
           <article class="benchmark-card">
             <p class="eyebrow">Retrieval benchmark</p>
-            <div class="card-headline">3<span class="small">× fewer turns</span></div>
+            <div class="card-headline">receipt<span class="small">retrieval run</span></div>
             <h2><a href="./2026-04-30-govalidate/">2026-04-30 — GoValidate <code>native_agent</code></a></h2>
             <p class="card-summary">
-              The same Claude Code question against a 1,268-file NestJS + Next.js production codebase, asked once with file tools only and once with madar available. Anthropic-billed <code>usage</code> from <code>claude --output-format json</code>.
+              The same Claude Code question against a 1,268-file NestJS + Next.js production codebase, asked once with file tools only and once with madar available. Read it as one dated receipt with raw evidence attached, not as a universal headline claim.
             </p>
             <div class="card-meta">
-              <span>9 → 3 turns</span>
-              <span>96 → 35 sec</span>
-              <span>615K → 234K tokens</span>
+              <span>same model</span>
+              <span>same prompt</span>
+              <span>dated artifact</span>
             </div>
           </article>
 
           <article class="benchmark-card">
             <p class="eyebrow">PR review benchmark</p>
-            <div class="card-headline">7.25<span class="small">× smaller</span></div>
+            <div class="card-headline">receipt<span class="small">PR review run</span></div>
             <h2><a href="./2026-05-02-govalidate-pr-review/">2026-05-02 — GoValidate <code>review-compare</code></a></h2>
             <p class="card-summary">
-              A real 36-file branch diff measured with <code>review-compare</code>, comparing the verbose and compact <code>pr_impact</code> prompts side by side. Same review target, smaller prompt.
+              A real 36-file branch diff measured with <code>review-compare</code>, comparing the verbose and compact <code>pr_impact</code> prompts side by side. It shows one real compact-review receipt, not a cross-repo guarantee.
             </p>
             <div class="card-meta">
-              <span>63K → 8.7K prompt</span>
-              <span>42K → 6.1K payload</span>
+              <span>same review target</span>
+              <span>share-safe artifact</span>
               <span>36 files</span>
             </div>
           </article>
@@ -74,13 +74,15 @@
         </div>
         <dl class="setup-list">
           <dt>Provider-reported numbers</dt>
-          <dd>The retrieval benchmark numbers come from Anthropic's own <code>usage</code> field in the <code>claude --output-format json</code> output. No local <code>cl100k_base</code> estimates in the headline.</dd>
+          <dd>The retrieval benchmark numbers come from Anthropic's own <code>usage</code> field in the <code>claude --output-format json</code> output. That makes the receipts inspectable, but still repo- and prompt-specific.</dd>
           <dt>One-line <code>verify.sh</code></dt>
-          <dd>Each benchmark ships a shell script that recomputes the headline number from the committed evidence files. Clone the repo, run it, get the same answer.</dd>
+          <dd>Each benchmark ships a shell script that recomputes the saved numbers from the committed evidence files. Clone the repo, run it, get the same answer for that receipt.</dd>
           <dt>Prompts and answers are committed</dt>
-          <dd>Verbose and compact prompts are in the repo, plus the runner's actual answers, plus the structured <code>report.json</code>. Nothing in the headline is sourced from a screenshot.</dd>
+          <dd>Verbose and compact prompts are in the repo, plus the runner's actual answers, plus the structured <code>report.json</code>. Nothing here is sourced from a screenshot or hand-written table.</dd>
           <dt>Privacy-sanitized</dt>
           <dd><code>review-compare</code> sanitizes path-derived identifiers before persisting artifacts; usernames and workstation paths don't leak into the committed evidence.</dd>
+          <dt>Per-repo spread comes next</dt>
+          <dd>The broader benchmark direction is a reproducible suite with per-repo spread and no single-number cross-repo headline. See <code>docs/benchmarks/suite/</code>.</dd>
         </dl>
       </section>
     </main>

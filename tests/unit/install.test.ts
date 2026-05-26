@@ -154,6 +154,11 @@ function decodeHookPayloads(content: string): string {
   return decodedPayloads.join('\n')
 }
 
+function encodeGraphCheckedHookCommand(payload: Record<string, unknown>): string {
+  const b64 = Buffer.from(JSON.stringify(payload)).toString('base64')
+  return `node -e "try{require('fs').accessSync('out/graph.json');process.stdout.write(Buffer.from('${b64}','base64').toString())}catch(e){}"`
+}
+
 function extractHookCommand(settingsJson: string, eventName: string): string {
   const parsed = JSON.parse(settingsJson) as {
     hooks?: Record<string, Array<{ hooks?: Array<{ command?: string }> }>>
@@ -559,7 +564,44 @@ describe('install helpers', () => {
       })
 
       expect(output).toContain('retrieve')
-      expect(output).toContain('3x fewer turns')
+      expect(output).not.toContain('3x fewer turns')
+      expect(output).not.toContain('2.8x faster')
+    })
+  })
+
+  it('updates a legacy Claude managed hook in place when reinstalling', () => {
+    withTempDir((projectDir) => {
+      mkdirSync(join(projectDir, '.claude'), { recursive: true })
+      mkdirSync(join(projectDir, 'out'), { recursive: true })
+      writeFileSync(join(projectDir, 'out', 'graph.json'), '{}', 'utf8')
+
+      const legacyPromptMessage =
+        'STOP. This project has a madar knowledge graph. Use the graph tool that matches the question: retrieve for direct codebase questions, relevant_files for where to open first, feature_map for the main areas and entry points, risk_map before editing, implementation_checklist for edit order and validation, and impact for blast radius. Madar answers most codebase questions in 1 focused MCP call instead of 5–10 sequential file reads (3x fewer turns, ~2.8x faster on a real production codebase). Do not use Glob, Grep, Bash, Read, or Agent tools first. Only fall back to raw file tools if the graph tools cannot answer the question or the MCP server is unavailable.'
+      const legacyHookCommand = encodeGraphCheckedHookCommand({
+        hookSpecificOutput: {
+          hookEventName: 'UserPromptSubmit',
+          additionalContext: legacyPromptMessage,
+        },
+      })
+      writeFileSync(join(projectDir, '.claude', 'settings.json'), JSON.stringify({
+        hooks: {
+          UserPromptSubmit: [{
+            hooks: [{
+              type: 'command',
+              command: legacyHookCommand,
+            }],
+          }],
+        },
+      }, null, 2), 'utf8')
+
+      const message = claudeInstall(projectDir)
+      const settings = readFileSync(join(projectDir, '.claude', 'settings.json'), 'utf8')
+      const decodedPayloads = decodeHookPayloads(settings)
+
+      expect(message).toContain('hook updated')
+      expect(countOccurrences(settings, 'UserPromptSubmit')).toBe(1)
+      expect(decodedPayloads).not.toContain('3x fewer turns')
+      expect(decodedPayloads).toContain('Use the graph result as the first bounded pass')
     })
   })
 

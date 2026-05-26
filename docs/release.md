@@ -8,6 +8,7 @@ Use this checklist when preparing a new `madar` release. It is intentionally man
 2. Review `package.json` and `package-lock.json` to confirm the new version is correct.
 3. Update `CHANGELOG.md` with the user-visible changes in the release.
 4. Make sure any linked docs, examples, or install flows reflect the new behavior.
+5. Any new public claim requires a reproducible artifact under `docs/benchmarks/suite/` and a matching update to `docs/claims-and-evidence.md` before the README or release notes can say it publicly.
 
 ## 2. Run the required verification commands
 

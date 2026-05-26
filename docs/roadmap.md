@@ -30,12 +30,15 @@ Focus: make runtime-generation output easier to trust, audit, and debug before a
 - [#261 — Expand runtime phase taxonomy beyond controller/service/queue/worker/persistence](https://github.com/mohanagy/madar/issues/261)
 - [#263 — Add explain-routing output for pack and compare](https://github.com/mohanagy/madar/issues/263)
 
-## v0.27 — Benchmark credibility and answer quality
+## v0.27 — Benchmark credibility, docs honesty, and answer quality
 
-Focus: make benchmark claims safer and make runtime-generation answers easier to compare against an explicit contract.
+Focus: make benchmark claims safer, keep public docs honest, and make runtime-generation answers easier to compare against an explicit contract.
 
 - [#262 — Add context-pack answer contract for runtime-generation prompts](https://github.com/mohanagy/madar/issues/262)
+- [#331 — Align README, package metadata, CHANGELOG and docs with demonstrated behavior](https://github.com/mohanagy/madar/issues/331)
+- [#332 — Build the reproducible benchmark suite with per-repo spread](https://github.com/mohanagy/madar/issues/332)
 - Build on the shipped validation artifact from [#258](https://github.com/mohanagy/madar/issues/258) instead of treating benchmark credibility as a greenfield problem again.
+- Keep docs honesty ahead of benchmark ambition: no single-number cross-repo headline until the suite exists.
 
 ## v0.28 — TypeScript/Node framework depth
 

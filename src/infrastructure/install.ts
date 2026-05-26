@@ -173,8 +173,18 @@ function isMadarCodexHookCommand(command: string): boolean {
 }
 
 function isMadarProjectHookPayload(payload: string): boolean {
-  return payload.includes('"additionalContext"')
-    && (payload.includes(RETRIEVE_FIRST_MESSAGE) || payload.includes(STRICT_CONTEXT_PACK_MESSAGE))
+  if (!payload.includes('"additionalContext"')) {
+    return false
+  }
+
+  const retrieveFirstSignature =
+    payload.includes('STOP. This project has a madar knowledge graph.')
+    && payload.includes('Do not use Glob, Grep, Bash, Read, or Agent tools first.')
+  const strictSignature =
+    payload.includes('strict compact MCP')
+    && payload.includes('context_pack')
+
+  return retrieveFirstSignature || strictSignature
 }
 
 function isMadarProjectHookCommand(command: string): boolean {
@@ -244,7 +254,7 @@ function strictContextPackNoBroadExplorationRule(markdown: boolean): string {
 }
 
 const RETRIEVE_FIRST_MESSAGE =
-  `STOP. This project has a madar knowledge graph. ${MCP_ROUTING_GUIDANCE} Madar answers most codebase questions in 1 focused MCP call instead of 5–10 sequential file reads (3x fewer turns, ~2.8x faster on a real production codebase). Do not use Glob, Grep, Bash, Read, or Agent tools first. Only fall back to raw file tools if the graph tools cannot answer the question or the MCP server is unavailable.`
+  `STOP. This project has a madar knowledge graph. ${MCP_ROUTING_GUIDANCE} Use the graph result as the first bounded pass for codebase questions, then validate with focused reads or tests when the graph is insufficient. Do not use Glob, Grep, Bash, Read, or Agent tools first. Only fall back to raw file tools if the graph tools cannot answer the question or the MCP server is unavailable.`
 
 const STRICT_CONTEXT_PACK_MESSAGE =
   `STOP. This project has a madar knowledge graph. Use strict compact MCP mode: call context_pack once for the task before broader exploration, ${strictContextPackStopRule(false)}, ${strictContextPackNoBroadExplorationRule(false)}, ${strictContextPackExpandRule(false)}, and avoid raw file search unless the pack is insufficient.`

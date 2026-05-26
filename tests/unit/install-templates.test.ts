@@ -58,12 +58,13 @@ function decodeHookPayload(settingsJson: string): string {
 }
 
 describe('install hook payload', () => {
-  it('decoded hook payload contains the measured "3x fewer turns" claim', () => {
+  it('decoded hook payload keeps the graph-first guidance without benchmark marketing copy', () => {
     withTempDir((projectDir) => {
       claudeInstall(projectDir)
       const settings = readFileSync(join(projectDir, '.claude', 'settings.json'), 'utf8')
       const decoded = decodeHookPayload(settings)
-      expect(decoded.toLowerCase()).toContain('3x fewer turns')
+      expect(decoded).toContain('Use the graph result as the first bounded pass')
+      expect(decoded.toLowerCase()).not.toContain('3x fewer turns')
     })
   })
 
