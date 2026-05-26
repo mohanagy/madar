@@ -1,0 +1,43 @@
+Here's the login session creation flow, traced end-to-end:
+
+**1. Controller — `src/controllers/auth-controller.ts:6`**
+```ts
+async login(input: { email: string }) {
+  return this.authService.login(input)
+}
+```
+`AuthController.login` accepts `{ email }` and delegates to an injected `AuthService` (default-constructed via the constructor parameter default at `auth-controller.ts:4`).
+
+**2. Service — `src/services/auth-service.ts:4`**
+```ts
+async login(input: { email: string }) {
+  return createSession(input.email)
+}
+```
+`AuthService.login` is a thin pass-through that unwraps `input.email` and calls the persistence function `createSession`.
+
+**3. Persistence — `src/persistence/session-store.ts:1`**
+```ts
+export function createSession(email: string) {
+  return { sessionId: `session:${email}` }
+}
+```
+`createSession` synthesizes a session object `{ sessionId: "session:<email>" }` and returns it. There is no actual storage — it's a pure function returning a derived ID.
+
+**Flow summary**
+
+```
+AuthController.login({ email })
+  → AuthService.login({ email })
+    → createSession(email)
+      → { sessionId: `session:${email}` }
+```
+
+**Observations worth flagging:**
+- No real persistence: `createSession` doesn't write to a store, DB, or cache despite the file/module name.
+- No validation: email isn't validated (no Zod/format check) — the value is interpolated directly into the session ID.
+- No password/credential check: the "login" only takes an email; there's no authentication step.
+- Deterministic, guessable IDs: `session:<email>` is trivially forgeable since any caller who knows an email can construct the same ID.
+- `async` is unnecessary in `AuthService.login` — `createSession` is synchronous.
+
+Likely this is a scaffold/legacy stub awaiting a real implementation.

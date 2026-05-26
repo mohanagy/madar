@@ -1,0 +1,12 @@
+The flow is three thin layers, each delegating straight down:
+
+**1. Controller** — `src/controllers/auth-controller.ts:6`
+`AuthController.login({ email })` takes the input DTO and forwards it to the service. The controller instantiates `AuthService` via a constructor default (`new AuthService()`), so there's no DI container.
+
+**2. Service** — `src/services/auth-service.ts:4`
+`AuthService.login({ email })` unwraps the DTO and calls the persistence-layer function `createSession(input.email)`. No business logic, validation, hashing, or token signing happens here — it's a pure pass-through.
+
+**3. Persistence** — `src/persistence/session-store.ts:1`
+`createSession(email)` returns a synchronous in-memory object `{ sessionId: \`session:${email}\` }`. Nothing is stored — the "session" is just a deterministic string derived from the email, returned to the caller.
+
+**End-to-end:** `Controller.login` → `AuthService.login` → `createSession` → `{ sessionId: "session:<email>" }` bubbles back up unchanged. No DB, no async work despite the `async` keywords, no auth check, no expiry, no cookie/JWT — it's a skeleton scaffold suitable for a benchmark or fixture, not a real auth flow.

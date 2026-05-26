@@ -1,0 +1,34 @@
+The login session creation flows through three layers:
+
+**1. Controller** (`src/controllers/auth-controller.ts:6`)
+`AuthController.login({ email })` is the entry point. It instantiates `AuthService` by default and delegates immediately:
+```ts
+async login(input: { email: string }) {
+  return this.authService.login(input)
+}
+```
+
+**2. Service** (`src/services/auth-service.ts:4`)
+`AuthService.login` is a thin pass-through — no validation, hashing, or credential check. It calls the persistence helper directly:
+```ts
+async login(input: { email: string }) {
+  return createSession(input.email)
+}
+```
+
+**3. Persistence** (`src/persistence/session-store.ts:1`)
+`createSession(email)` is a pure function that synthesizes a deterministic session object — no storage, no I/O, no expiry:
+```ts
+return { sessionId: `session:${email}` }
+```
+
+**Flow summary:** `AuthController.login` → `AuthService.login` → `createSession` → returns `{ sessionId: "session:<email>" }`.
+
+**Observations worth flagging:**
+- No password/credential verification — login succeeds for any email
+- No input validation (no Zod schema, no email format check)
+- Session ID is fully derivable from the email — not random, not signed, trivially forgeable
+- "Persistence" doesn't actually persist; it returns an object and nothing is stored
+- `AuthController` instantiates `AuthService` in its default param rather than receiving it via DI, which couples the layers and complicates testing
+
+This looks like a skeleton/legacy stub rather than a real auth flow.

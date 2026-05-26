@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { createInterface } from 'node:readline/promises'
 
 import { loadBenchmarkQuestions, type BenchmarkResult, printBenchmark, runBenchmark } from '../infrastructure/benchmark.js'
+import { runBenchmarkSuite } from '../infrastructure/benchmark/suite.js'
 import { evaluateRetrievalQuality, formatQualityReport } from '../infrastructure/benchmark/quality.js'
 import { runCompareCommand } from '../infrastructure/compare.js'
 import { runContextPackCommand } from '../infrastructure/context-pack-command.js'
@@ -42,7 +43,9 @@ import { findPackageRoot, readPackageName, readPackageVersion } from '../shared/
 import { getUpdateNotification } from '../shared/update-notifier.js'
 import {
   parseBenchmarkArgs,
+  parseBenchSuiteArgs,
   parseAddArgs,
+  type BenchSuiteCliOptions,
   type BenchmarkCliOptions,
   parseCompareArgs,
   parseDoctorArgs,
@@ -92,6 +95,11 @@ export interface BenchmarkCommandContext {
   io: CliIO
 }
 
+export interface BenchSuiteCommandContext {
+  options: BenchSuiteCliOptions
+  io: CliIO
+}
+
 export interface EvalCommandContext {
   options: BenchmarkCliOptions
   io: CliIO
@@ -118,6 +126,7 @@ export interface CliDependencies {
   saveQueryResult: typeof saveQueryResult
   ingest: typeof ingest
   runBenchmark: (context: BenchmarkCommandContext) => Promise<BenchmarkResult> | BenchmarkResult
+  runBenchSuite: (context: BenchSuiteCommandContext) => Promise<string | void> | string | void
   runEval: (context: EvalCommandContext) => Promise<string | void> | string | void
   runCompare: (context: CompareCommandContext) => Promise<string | void> | string | void
   runReviewCompare: (context: ReviewCompareCommandContext) => Promise<string | void> | string | void
@@ -156,6 +165,7 @@ export interface CliDependencies {
 const COMPARE_WARNING_MESSAGE = 'compare will execute a baseline prompt and a madar prompt for each question. This may consume paid model tokens.'
 const REVIEW_COMPARE_WARNING_MESSAGE = 'review-compare will execute verbose and compact pr_impact prompts for the current git diff. This may consume paid model tokens.'
 const BENCHMARK_WARNING_MESSAGE = 'benchmark will execute the benchmark/eval runner. This may consume paid model tokens.'
+const BENCH_SUITE_WARNING_MESSAGE = 'bench:suite will execute baseline, madar, and SPI suite prompts. This may consume paid model tokens.'
 const EVAL_WARNING_MESSAGE = 'eval will execute the benchmark/eval runner. This may consume paid model tokens.'
 
 const DEFAULT_DEPENDENCIES: CliDependencies = {
@@ -166,6 +176,10 @@ const DEFAULT_DEPENDENCIES: CliDependencies = {
   runBenchmark: ({ options }) => {
     const questions = options.questionsPath ? loadBenchmarkQuestions(options.questionsPath) : undefined
     return runBenchmark(options.graphPath, undefined, questions, { execTemplate: options.execTemplate })
+  },
+  runBenchSuite: async ({ options }) => {
+    const result = await runBenchmarkSuite(options)
+    return result.text
   },
   runEval: async ({ options }) => {
     const graph = loadGraph(options.graphPath)
@@ -370,6 +384,15 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --exec TEMPLATE       required command template; supports {prompt_file}, {question}, {mode}, and {output_file}',
     '    --questions PATH      load benchmark/eval questions from a JSON file',
     '    --yes                 skip confirmation before running the paid benchmark/eval prompts',
+    '  bench:suite           run the reproducible benchmark matrix and write results under docs/benchmarks/suite/results/',
+    '    --exec TEMPLATE       required unless --dry-run; supports {prompt_file}, {question}, {mode}, and {output_file}',
+    '    --repo ID             limit the suite to one repo id from docs/benchmarks/suite/repos.json',
+    '    --task ID             limit the suite to one task id from docs/benchmarks/suite/tasks.json',
+    '    --mode MODE           cold | warm | all (default all)',
+    '    --trials N            measured trials per runnable cell (default 3)',
+    '    --output-dir DIR      suite results directory (default docs/benchmarks/suite/results)',
+    '    --dry-run             list planned and runnable suite cells without executing prompts',
+    '    --yes                 skip confirmation before running the paid suite prompts',
     '  eval [graph.json]      measure retrieval quality: recall, MRR, and snippet coverage through the benchmark/eval runner. This may consume paid model tokens.',
     '    --exec TEMPLATE       required command template; supports {prompt_file}, {question}, {mode}, and {output_file}',
     '    --questions PATH      load benchmark/eval questions from a JSON file',
@@ -848,6 +871,20 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
       }
       const result = await dependencies.runBenchmark({ options, io })
       dependencies.printBenchmark(result)
+      return 0
+    }
+
+    if (command === 'bench:suite') {
+      const options = parseBenchSuiteArgs(args)
+      if (!options.dryRun) {
+        if (!(await confirmPaidCommand('bench:suite', BENCH_SUITE_WARNING_MESSAGE, 'Benchmark suite cancelled.', options.yes, io, dependencies))) {
+          return 1
+        }
+      }
+      const output = await dependencies.runBenchSuite({ options, io })
+      if (output) {
+        io.log(output)
+      }
       return 0
     }
 

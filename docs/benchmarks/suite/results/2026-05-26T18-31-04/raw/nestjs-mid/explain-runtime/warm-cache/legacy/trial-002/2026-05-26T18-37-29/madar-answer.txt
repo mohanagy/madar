@@ -1,0 +1,23 @@
+Login session creation traces through three layers:
+
+**1. Controller** — `src/controllers/auth-controller.ts:6-8`
+`AuthController.login({ email })` delegates straight to `AuthService.login`. No validation, no auth-token extraction, no response shaping; the controller is a pass-through.
+
+**2. Service** — `src/services/auth-service.ts:4-6`
+`AuthService.login({ email })` calls the persistence helper `createSession(input.email)`. No business logic (no password check, no user lookup, no rate limiting, no session expiry, no audit log).
+
+**3. Persistence** — `src/persistence/session-store.ts:1-3`
+`createSession(email)` returns a synthetic object `{ sessionId: \`session:${email}\` }`. Nothing is actually persisted — no store, no DB, no in-memory map. The "sessionId" is a deterministic string derived from the email.
+
+**Flow summary:**
+```
+login({email}) → AuthController.login → AuthService.login → createSession(email) → { sessionId: `session:${email}` }
+```
+
+**Caveats worth noting** (despite the "session creation" framing):
+- Not NestJS despite the project label — plain TS classes, no `@Controller`/`@Injectable` decorators, no DI container (`AuthController` instantiates `AuthService` via default-arg `new`).
+- No persistence — `createSession` is pure; sessions don't survive the call.
+- No auth — any email yields a valid sessionId; the sessionId leaks the email and is trivially guessable.
+- No expiry, revocation, or session lookup paths exist.
+
+This reads like a stub/skeleton rather than a working session subsystem.

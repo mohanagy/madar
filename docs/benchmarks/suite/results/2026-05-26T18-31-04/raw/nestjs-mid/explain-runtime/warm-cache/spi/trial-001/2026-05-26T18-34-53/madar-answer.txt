@@ -1,0 +1,21 @@
+The login session creation flow is a thin 3-layer pipeline:
+
+**1. Controller** — `src/controllers/auth-controller.ts:6`
+`AuthController.login({ email })` receives the input and delegates straight to the service. No validation or transformation happens here; it lazily instantiates `AuthService` via a default constructor parameter.
+
+**2. Service** — `src/services/auth-service.ts:4`
+`AuthService.login({ email })` forwards `input.email` to the persistence layer's `createSession`. It's a pass-through with no business logic (no password check, no rate limiting, no token issuance).
+
+**3. Persistence** — `src/persistence/session-store.ts:1`
+`createSession(email)` returns a synchronous object `{ sessionId: 'session:${email}' }`. Despite the "store" name, nothing is actually persisted — there's no DB, no in-memory map, no expiry. The session ID is just the email prefixed with `session:`.
+
+**Flow summary:**
+```
+login({ email })
+  → AuthController.login          (controllers/auth-controller.ts:6)
+  → AuthService.login              (services/auth-service.ts:4)
+  → createSession(email)           (persistence/session-store.ts:1)
+  → { sessionId: `session:${email}` }
+```
+
+**Notable gaps** (likely intentional for a benchmark skeleton): no credential verification, no session storage, no expiry/TTL, no input validation (Zod), no error handling, and the deterministic `session:${email}` ID is trivially guessable — not production-safe.

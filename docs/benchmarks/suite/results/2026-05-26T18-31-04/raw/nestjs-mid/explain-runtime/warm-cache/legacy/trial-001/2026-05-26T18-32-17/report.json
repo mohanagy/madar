@@ -1,0 +1,136 @@
+{
+  "baseline_mode": "native_agent",
+  "question": "How does login session creation flow work from controller to persistence?",
+  "graph_path": "../../../../../../../../private/var/folders/n1/l0_t90js31d0yyhbxfvgfgzr0000gn/T/madar-bench-suite-nestjs-mid-3rfNit/legacy/out/graph.json",
+  "exec_command": {
+    "command": null,
+    "placeholders": [
+      "{prompt_file}"
+    ],
+    "redacted": true
+  },
+  "baseline": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 11,
+      "cache_creation_input_tokens": 31471,
+      "cache_read_input_tokens": 352547,
+      "output_tokens": 1357,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 31471,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "",
+      "iterations": [
+        {
+          "input_tokens": 1,
+          "output_tokens": 641,
+          "cache_read_input_tokens": 65690,
+          "cache_creation_input_tokens": 192,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 192
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 384029,
+    "uncached_input_tokens_anthropic_exact": 31482,
+    "cached_input_tokens_anthropic_exact": 352547,
+    "total_cost_usd": 0.40694725,
+    "num_turns": 6,
+    "duration_ms": 35436,
+    "result_path": "/Users/mohammednaji/Desktop/projects/works/madar/.worktrees/issue-332-benchmark-suite/out/benchmark-suite-staging/2026-05-26T18-31-04/nestjs-mid/explain-runtime/warm-cache/legacy/trial-001/2026-05-26T18-32-17/baseline-answer.txt"
+  },
+  "madar": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 12,
+      "cache_creation_input_tokens": 32344,
+      "cache_read_input_tokens": 415419,
+      "output_tokens": 1502,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 32344,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "",
+      "iterations": [
+        {
+          "input_tokens": 1,
+          "output_tokens": 427,
+          "cache_read_input_tokens": 66563,
+          "cache_creation_input_tokens": 192,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 192
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 447775,
+    "uncached_input_tokens_anthropic_exact": 32356,
+    "cached_input_tokens_anthropic_exact": 415419,
+    "total_cost_usd": 0.4474695,
+    "num_turns": 7,
+    "duration_ms": 40180,
+    "result_path": "/Users/mohammednaji/Desktop/projects/works/madar/.worktrees/issue-332-benchmark-suite/out/benchmark-suite-staging/2026-05-26T18-31-04/nestjs-mid/explain-runtime/warm-cache/legacy/trial-001/2026-05-26T18-32-17/madar-answer.txt"
+  },
+  "reductions": {
+    "input_tokens": 0.86,
+    "uncached_input_tokens": 0.97,
+    "cache_creation_input_tokens": 0.97,
+    "num_turns": 0.86,
+    "duration_ms": 0.88,
+    "cost_usd": 0.91
+  },
+  "token_regression": true,
+  "token_regression_reasons": [
+    "uncached_input_tokens",
+    "cache_creation_input_tokens"
+  ],
+  "prompt_token_source": {
+    "baseline": "anthropic_provider_reported",
+    "madar": "anthropic_provider_reported"
+  },
+  "provider_proof": {
+    "baseline": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "madar": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "reduction_basis": "provider_reported"
+  },
+  "started_at": "2026-05-26T18:32:17.709Z",
+  "completed_at": "2026-05-26T18:33:39.908Z",
+  "paths": {
+    "output_dir": "out/benchmark-suite-staging/2026-05-26T18-31-04/nestjs-mid/explain-runtime/warm-cache/legacy/trial-001/2026-05-26T18-32-17",
+    "report": "out/benchmark-suite-staging/2026-05-26T18-31-04/nestjs-mid/explain-runtime/warm-cache/legacy/trial-001/2026-05-26T18-32-17/report.json",
+    "share_safe_report": "out/benchmark-suite-staging/2026-05-26T18-31-04/nestjs-mid/explain-runtime/warm-cache/legacy/trial-001/2026-05-26T18-32-17/report.share-safe.json",
+    "baseline_answer": "out/benchmark-suite-staging/2026-05-26T18-31-04/nestjs-mid/explain-runtime/warm-cache/legacy/trial-001/2026-05-26T18-32-17/baseline-answer.txt",
+    "madar_answer": "out/benchmark-suite-staging/2026-05-26T18-31-04/nestjs-mid/explain-runtime/warm-cache/legacy/trial-001/2026-05-26T18-32-17/madar-answer.txt",
+    "prompt_file": "out/benchmark-suite-staging/2026-05-26T18-31-04/nestjs-mid/explain-runtime/warm-cache/legacy/trial-001/2026-05-26T18-32-17/native_agent-prompt.txt"
+  }
+}

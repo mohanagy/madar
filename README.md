@@ -160,7 +160,7 @@ That means the same selected nodes can render differently for `explain`, `review
 
 ## In progress
 
-- **Reproducible benchmark suite with per-repo spread.** The public suite scaffold lives at [`docs/benchmarks/suite/`](docs/benchmarks/suite/); issue [#332](https://github.com/mohanagy/madar/issues/332) tracks the runner-backed matrix.
+- **Reproducible benchmark suite with per-repo spread.** The public suite now ships fixed manifests, methodology, and the `madar bench:suite` runner under [`docs/benchmarks/suite/`](docs/benchmarks/suite/).
 - **Exploration reduction as a product outcome.** Strict install guidance now pushes agents toward one graph/pack-first pass, but the public evidence is still mixed. The current counterexample note is in [`docs/benchmarks/2026-05-25-founder-command-center-auth-flow/`](docs/benchmarks/2026-05-25-founder-command-center-auth-flow/).
 - **Clearer compare evidence.** Native-agent compare traces now preserve more machine-readable metadata, but we still treat them as repo/task-specific receipts rather than a universal claim.
 
@@ -181,7 +181,7 @@ That means the same selected nodes can render differently for `explain`, `review
 
 - We publish dated artifact folders under [`docs/benchmarks/`](docs/benchmarks/) and map each public claim to evidence in [`docs/claims-and-evidence.md`](docs/claims-and-evidence.md).
 - We separate **cold-cache** and **warm-cache** observations, and we call out mixed evidence when a repo or prompt regresses.
-- The benchmark-suite direction is **per-repo spread**, fixed tasks, and reproducible artifacts under [`docs/benchmarks/suite/`](docs/benchmarks/suite/). There is **no single-number cross-repo headline** in the public docs.
+- The benchmark-suite direction is **per-repo spread**, fixed tasks, and reproducible artifacts under [`docs/benchmarks/suite/`](docs/benchmarks/suite/). Run `madar bench:suite --dry-run` to inspect the current matrix, then `madar bench:suite --repo nestjs-mid --task explain-runtime ...` to populate a wired cell. There is **no single-number cross-repo headline** in the public docs.
 - Any stronger public claim belongs behind a reproducible suite artifact, not a one-off anecdote.
 
 ---
@@ -288,7 +288,7 @@ Everything stays local by default. No telemetry, no cloud upload, no API key req
 
 - [Quick start guide](docs/proof-workflows.md) — three reproducible workflows: local proof, A/B compare, federated proof
 - [Claims and evidence map](docs/claims-and-evidence.md) — which public claims are demonstrated, in progress, or not yet measured
-- [Benchmark suite scaffold](docs/benchmarks/suite/README.md) — per-repo spread methodology and the reproducible-suite direction tracked in #332
+- [Benchmark suite](docs/benchmarks/suite/README.md) — fixed manifests, methodology, CLI runner, and per-repo spread results
 - [GoValidate shared benchmark suite](docs/benchmarks/govalidate-suite/README.md) — public prompt set plus deterministic pack/answer quality gates
 - [Public roadmap](docs/roadmap.md) — contributor-facing priority tracks and issue links
 - [Language and capability matrix](docs/language-capability-matrix.md) — exactly what each file type and language gets

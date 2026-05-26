@@ -1,0 +1,136 @@
+{
+  "baseline_mode": "native_agent",
+  "question": "How does login session creation flow work from controller to persistence?",
+  "graph_path": "<project-root>/out/graph.json",
+  "exec_command": {
+    "command": null,
+    "placeholders": [
+      "{prompt_file}"
+    ],
+    "redacted": true
+  },
+  "baseline": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 12,
+      "cache_creation_input_tokens": 31917,
+      "cache_read_input_tokens": 416797,
+      "output_tokens": 1385,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 31917,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "",
+      "iterations": [
+        {
+          "input_tokens": 1,
+          "output_tokens": 478,
+          "cache_read_input_tokens": 66137,
+          "cache_creation_input_tokens": 191,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 191
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 448726,
+    "uncached_input_tokens_anthropic_exact": 31929,
+    "cached_input_tokens_anthropic_exact": 416797,
+    "total_cost_usd": 0.44256474999999995,
+    "num_turns": 7,
+    "duration_ms": 34896,
+    "result_path": "<artifact-root>/baseline-answer.txt"
+  },
+  "madar": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 12,
+      "cache_creation_input_tokens": 32349,
+      "cache_read_input_tokens": 416541,
+      "output_tokens": 1583,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 32349,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "",
+      "iterations": [
+        {
+          "input_tokens": 1,
+          "output_tokens": 504,
+          "cache_read_input_tokens": 66569,
+          "cache_creation_input_tokens": 191,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 191
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 448902,
+    "uncached_input_tokens_anthropic_exact": 32361,
+    "cached_input_tokens_anthropic_exact": 416541,
+    "total_cost_usd": 0.45008675000000004,
+    "num_turns": 7,
+    "duration_ms": 34241,
+    "result_path": "<artifact-root>/madar-answer.txt"
+  },
+  "reductions": {
+    "input_tokens": 1,
+    "uncached_input_tokens": 0.99,
+    "cache_creation_input_tokens": 0.99,
+    "num_turns": 1,
+    "duration_ms": 1.02,
+    "cost_usd": 0.98
+  },
+  "token_regression": true,
+  "token_regression_reasons": [
+    "uncached_input_tokens",
+    "cache_creation_input_tokens"
+  ],
+  "prompt_token_source": {
+    "baseline": "anthropic_provider_reported",
+    "madar": "anthropic_provider_reported"
+  },
+  "provider_proof": {
+    "baseline": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "madar": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "reduction_basis": "provider_reported"
+  },
+  "started_at": "2026-05-26T18:40:05.011Z",
+  "completed_at": "2026-05-26T18:41:20.662Z",
+  "paths": {
+    "output_dir": "<artifact-root>",
+    "report": "<artifact-root>/report.json",
+    "share_safe_report": "<artifact-root>/report.share-safe.json",
+    "baseline_answer": "<artifact-root>/baseline-answer.txt",
+    "madar_answer": "<artifact-root>/madar-answer.txt",
+    "prompt_file": "<artifact-root>/native_agent-prompt.txt"
+  }
+}

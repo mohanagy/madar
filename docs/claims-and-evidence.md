@@ -15,8 +15,8 @@ This file is the public map between what Madar says and what the repo can actual
 
 | Claim | Current status | Next evidence |
 | --- | --- | --- |
-| Strict install guidance reduces exploration in practice. | Mixed evidence today; the FounderCommandCenter contrast note shows a regression case where the pack was treated as extra context instead of a stop condition. | Track per-repo/task tool-call spread in [`docs/benchmarks/suite/`](docs/benchmarks/suite/README.md) and linked work in [#332](https://github.com/mohanagy/madar/issues/332). |
-| Public benchmark claims should be reproducible across repos. | The repo has dated receipts and the GoValidate shared prompt set, but not the full fixed-repo matrix yet. | Suite scaffold and methodology in [`docs/benchmarks/suite/`](docs/benchmarks/suite/README.md). |
+| Strict install guidance reduces exploration in practice. | Mixed evidence today; the FounderCommandCenter contrast note shows a regression case where the pack was treated as extra context instead of a stop condition. | Track per-repo/task tool-call spread and future measured rows under [`docs/benchmarks/suite/`](docs/benchmarks/suite/README.md). |
+| Public benchmark claims should be reproducible across repos. | The repo now ships the fixed manifests, methodology, `madar bench:suite` runner, and the first measured warm-cache `nestjs-mid` / `explain-runtime` row. The broader matrix is still incomplete. | Add more measured rows under `docs/benchmarks/suite/results/` and keep the manifests/methodology current. |
 
 ## Not yet measured
 
@@ -36,4 +36,5 @@ This file is the public map between what Madar says and what the repo can actual
 
 - [`docs/benchmarks/2026-05-25-founder-command-center-auth-flow/`](docs/benchmarks/2026-05-25-founder-command-center-auth-flow/README.md) — mixed exploration evidence, including the FounderCommandCenter contrast note.
 - [`docs/benchmarks/govalidate-suite/`](docs/benchmarks/govalidate-suite/README.md) — public prompt set plus deterministic pack/answer quality gates.
-- [`docs/benchmarks/suite/`](docs/benchmarks/suite/README.md) — per-repo spread methodology and the suite direction tracked in [#332](https://github.com/mohanagy/madar/issues/332).
+- [`docs/benchmarks/suite/`](docs/benchmarks/suite/README.md) — fixed manifests, methodology, CLI runner, and per-repo spread results.
+- [`docs/benchmarks/suite/results/2026-05-26T18-31-04/summary.md`](docs/benchmarks/suite/results/2026-05-26T18-31-04/summary.md) — first measured warm-cache `nestjs-mid` / `explain-runtime` suite row.
