@@ -363,6 +363,12 @@ function recommendedFirstRead(
       })
     }
 
+    for (const center of implementation.workflow_centers) {
+      if (!center.path) {
+        continue
+      }
+      pushRead(center.path, center.reason, center.label)
+    }
     for (const entry of implementation.contracts_and_public_surfaces.filter((item) => item.kind === 'public_surface')) {
       pushRead(entry.source_file, entry.why, entry.label)
     }
@@ -447,7 +453,17 @@ function recommendedFirstRead(
   if ('matched_nodes' in pack && Array.isArray(pack.matched_nodes)) {
     const reads: ContextPackRecommendedFirstRead[] = []
     const seen = new Set<string>()
+    const runtimeGenerationFallback =
+      task === 'explain'
+      && executionSpine.length === 0
+      && retrieval?.retrieval_gate?.signals.generation_intent === 'runtime_generation'
     for (const node of pack.matched_nodes) {
+      if (
+        runtimeGenerationFallback
+        && RUNTIME_GENERATION_DISTRACTOR_PATTERN.test(`${node.label} ${node.source_file}`)
+      ) {
+        continue
+      }
       if (seen.has(node.source_file)) {
         continue
       }
@@ -455,7 +471,9 @@ function recommendedFirstRead(
       reads.push({
         path: node.source_file,
         label: node.label,
-        reason: `Direct pack evidence via ${node.label}.`,
+        reason: runtimeGenerationFallback
+          ? `Fallback pack evidence via ${node.label}; verify against workflow centers and runtime handoffs.`
+          : `Direct pack evidence via ${node.label}.`,
       })
       if (reads.length >= 3) {
         break
