@@ -771,6 +771,43 @@ function parseTraceToolName(value: unknown): string | null {
   return trimmedValue.length > 0 ? trimmedValue : null
 }
 
+function parseAnthropicTraceRecords(stdout: string): Record<string, unknown>[] {
+  const trimmed = stdout.trim()
+  if (trimmed.length === 0) {
+    return []
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown
+    if (Array.isArray(parsed)) {
+      return parsed.filter(isRecord)
+    }
+    if (isRecord(parsed)) {
+      return [parsed]
+    }
+  } catch {
+    // Fall through to line-mode parsing below.
+  }
+
+  const records: Record<string, unknown>[] = []
+  for (const line of trimmed.split(/\r?\n/)) {
+    const stripped = line.trim()
+    if (stripped.length === 0) {
+      continue
+    }
+    try {
+      const parsed = JSON.parse(stripped) as unknown
+      if (isRecord(parsed)) {
+        records.push(parsed)
+      }
+    } catch {
+      continue
+    }
+  }
+
+  return records
+}
+
 const MADAR_CONTEXT_PACK_TOOL_NAMES = new Set(['context_pack'])
 const MADAR_FOCUSED_FOLLOW_UP_TOOL_NAMES = new Set([
   'context_expand',
@@ -887,24 +924,105 @@ function parseTraceTurnNumber(value: unknown, fallbackTurn: number): number {
   return fallbackTurn
 }
 
-function extractMadarTrace(stdout: string): CompareMadarTrace | undefined {
-  const payload = parsePromptRunnerJsonRecord(stdout)
-  if (payload === null || !Array.isArray(payload.messages)) {
-    return undefined
+function emptyNativeAgentToolCallCountsEntry(): NativeAgentToolCallCountsEntry {
+  return {
+    total: 0,
+    Read: 0,
+    Bash: 0,
+    Glob: 0,
+    Grep: 0,
+    ToolSearch: 0,
+    other: {},
+  }
+}
+
+function extractNativeAgentToolCallCounts(stdout: string): NativeAgentToolCallCountsEntry | null {
+  const records = parseAnthropicTraceRecords(stdout)
+  if (records.length === 0) {
+    return null
   }
 
+  const counts = emptyNativeAgentToolCallCountsEntry()
+  for (const record of records) {
+    if (record.type !== 'assistant' || !isRecord(record.message) || !Array.isArray(record.message.content)) {
+      continue
+    }
+
+    for (const contentPart of record.message.content) {
+      if (!isRecord(contentPart) || contentPart.type !== 'tool_use') {
+        continue
+      }
+
+      const toolName = parseTraceToolName(contentPart.name)
+      if (toolName === null) {
+        continue
+      }
+
+      const canonicalName = canonicalTraceToolName(toolName)
+      const normalizedName = canonicalName.toLowerCase()
+      counts.total += 1
+      switch (normalizedName) {
+        case 'read':
+          counts.Read += 1
+          break
+        case 'bash':
+          counts.Bash += 1
+          break
+        case 'glob':
+          counts.Glob += 1
+          break
+        case 'grep':
+          counts.Grep += 1
+          break
+        case 'toolsearch':
+        case 'tool_search':
+          counts.ToolSearch += 1
+          break
+        default:
+          counts.other[canonicalName] = (counts.other[canonicalName] ?? 0) + 1
+          break
+      }
+    }
+  }
+
+  if (counts.total === 0) {
+    return null
+  }
+
+  counts.other = Object.fromEntries(
+    Object.entries(counts.other).sort(([leftName], [rightName]) => leftName.localeCompare(rightName)),
+  )
+  return counts
+}
+
+function extractMadarTrace(stdout: string): CompareMadarTrace | undefined {
+  const parsedRecords = parseAnthropicTraceRecords(stdout)
+  if (parsedRecords.length === 0) {
+    return undefined
+  }
+  const records =
+    parsedRecords.length === 1 && Array.isArray(parsedRecords[0]?.messages)
+      ? parsedRecords[0].messages.filter(isRecord)
+      : parsedRecords
   const toolCallsByName: Record<string, number> = {}
   const perTurnIndex = new Map<number, CompareMadarTraceTurnSummary>()
   let fallbackTurn = 1
   let totalToolCalls = 0
 
-  for (const message of payload.messages) {
+  for (const message of records) {
     if (!isRecord(message) || message.role !== 'assistant' || !Array.isArray(message.content)) {
-      continue
+      if (message.type !== 'assistant' || !isRecord(message.message) || !Array.isArray(message.message.content)) {
+        continue
+      }
     }
 
+    const content = Array.isArray(message.content)
+      ? message.content
+      : isRecord(message.message) && Array.isArray(message.message.content)
+        ? message.message.content
+        : []
     const tools: string[] = []
-    for (const contentPart of message.content) {
+    for (const contentPart of content) {
       if (!isRecord(contentPart) || contentPart.type !== 'tool_use') {
         continue
       }
@@ -1882,6 +2000,21 @@ export type NativeAgentTokenRegressionMetric =
   | 'uncached_input_tokens'
   | 'cache_creation_input_tokens'
 
+export interface NativeAgentToolCallCountsEntry {
+  total: number
+  Read: number
+  Bash: number
+  Glob: number
+  Grep: number
+  ToolSearch: number
+  other: Record<string, number>
+}
+
+export interface NativeAgentToolCallCounts {
+  baseline: NativeAgentToolCallCountsEntry
+  madar: NativeAgentToolCallCountsEntry
+}
+
 export interface NativeAgentCompareReport {
   baseline_mode: 'native_agent'
   question: string
@@ -1889,6 +2022,7 @@ export interface NativeAgentCompareReport {
   exec_command: CompareExecCommandSummary
   baseline: NativeAgentRunStatus
   madar: NativeAgentRunStatus
+  tool_call_counts?: NativeAgentToolCallCounts
   madar_trace?: CompareMadarTrace
   reductions: {
     input_tokens: number | null
@@ -2147,42 +2281,12 @@ function isAnthropicUsageBlock(value: unknown): value is AnthropicUsageBlock {
  * exists, so the caller can classify the run as runner_error.
  */
 export function parseAnthropicResultEvent(stdout: string): AnthropicResultEvent | null {
-  const trimmed = stdout.trim()
-  if (trimmed.length === 0) {
+  const records = parseAnthropicTraceRecords(stdout)
+  if (records.length === 0) {
     return null
   }
 
-  // Try parsing the full stdout first (non-stream mode), then fall back to
-  // reading the last JSON-looking line (stream-json mode).
-  const candidates: string[] = []
-  try {
-    JSON.parse(trimmed)
-    candidates.push(trimmed)
-  } catch {
-    // not a single object — fall through to line-mode
-  }
-  if (candidates.length === 0) {
-    const lines = trimmed.split(/\r?\n/).reverse()
-    for (const line of lines) {
-      const stripped = line.trim()
-      if (stripped.startsWith('{') && stripped.endsWith('}')) {
-        candidates.push(stripped)
-        break
-      }
-    }
-  }
-
-  for (const candidate of candidates) {
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(candidate)
-    } catch {
-      continue
-    }
-    if (!parsed || typeof parsed !== 'object') {
-      continue
-    }
-    const obj = parsed as Record<string, unknown>
+  for (const obj of [...records].reverse()) {
     if (!isAnthropicUsageBlock(obj.usage)) {
       continue
     }
@@ -2562,6 +2666,7 @@ export async function executeNativeAgentCompare(
     const stamp = timestamp.toISOString().replace(/[^0-9]/g, '').slice(0, 14)
     let snapshot: SnapshotRecord[] = []
     let baselineCrashed: unknown = null
+    let baselineToolCallCounts: NativeAgentToolCallCountsEntry | null = null
     try {
       snapshot = snapshotMadarArtifacts(projectRoot, stamp)
       const baselineCommand = expandCompareExecTemplate(input.execTemplate, {
@@ -2577,6 +2682,7 @@ export async function executeNativeAgentCompare(
         baselineCrashed = error
       }
       if (baselineRun !== null) {
+        baselineToolCallCounts = extractNativeAgentToolCallCounts(baselineRun.stdout)
         const event = parseAnthropicResultEvent(baselineRun.stdout)
         if (event !== null) {
           reportShell.baseline = {
@@ -2640,6 +2746,7 @@ export async function executeNativeAgentCompare(
       outputFile: madarAnswerPath,
     })
     let madarRun: NativeAgentRunnerResult | null = null
+    let madarToolCallCounts: NativeAgentToolCallCountsEntry | null = null
     try {
       madarRun = await runner({ mode: 'madar', question, promptFile, outputFile: madarAnswerPath, command: madarCommand })
     } catch (error) {
@@ -2652,6 +2759,7 @@ export async function executeNativeAgentCompare(
       ensureCompareAnswerFile(madarAnswerPath, '')
     }
     if (madarRun !== null) {
+      madarToolCallCounts = extractNativeAgentToolCallCounts(madarRun.stdout)
       const madarTrace = extractMadarTrace(madarRun.stdout)
       if (madarTrace) {
         reportShell.madar_trace = madarTrace
@@ -2700,6 +2808,15 @@ export async function executeNativeAgentCompare(
               }
         ensureCompareAnswerFile(madarAnswerPath, madarRun.stdout)
       }
+    }
+
+    if (baselineToolCallCounts !== null && madarToolCallCounts !== null) {
+      reportShell.tool_call_counts = {
+        baseline: baselineToolCallCounts,
+        madar: madarToolCallCounts,
+      }
+    } else {
+      delete reportShell.tool_call_counts
     }
 
     // Compute reductions only when both runs reported usage.
@@ -2866,6 +2983,11 @@ export function formatNativeAgentCompareSummary(result: NativeAgentCompareResult
         `    uncached_input_tokens (Anthropic-reported): baseline ${baseline.uncached_input_tokens_anthropic_exact} → madar ${madar.uncached_input_tokens_anthropic_exact}${formatDirectionalDelta(baseline.uncached_input_tokens_anthropic_exact, madar.uncached_input_tokens_anthropic_exact, 'less', 'more')}`,
         `    cache_creation_input_tokens (Anthropic-reported): baseline ${baseline.usage.cache_creation_input_tokens} → madar ${madar.usage.cache_creation_input_tokens}${formatDirectionalDelta(baseline.usage.cache_creation_input_tokens, madar.usage.cache_creation_input_tokens, 'less', 'more')}`,
         `    cache_read_input_tokens (Anthropic-reported): baseline ${baseline.usage.cache_read_input_tokens} → madar ${madar.usage.cache_read_input_tokens}${formatDirectionalDelta(baseline.usage.cache_read_input_tokens, madar.usage.cache_read_input_tokens, 'less', 'more')}`,
+      )
+    }
+    if (report.tool_call_counts) {
+      lines.push(
+        `    tool calls: baseline ${report.tool_call_counts.baseline.total} → madar ${report.tool_call_counts.madar.total}${formatDirectionalDelta(report.tool_call_counts.baseline.total, report.tool_call_counts.madar.total, 'fewer', 'more')}`,
       )
     }
     const derivedTokenRegressionReasons = collectTokenRegressionReasons(baseline, madar)
