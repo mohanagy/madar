@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { PassThrough } from 'node:stream'
 import { join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -2032,6 +2032,69 @@ describe('stdio runtime', () => {
       expect(versionAfter).toMatch(/^[a-f0-9]{12}$/)
       expect(versionAfter).not.toBe(versionBefore)
     } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('reloads the cached graph when graph.json size changes without an mtime change', async () => {
+    const root = createGraphFixtureRoot()
+    const graphPath = join(root, 'graph.json')
+    const originalGraphStat = statSync(graphPath)
+    let freezeGraphMtime = false
+
+    try {
+      vi.resetModules()
+      vi.doMock('node:fs', async () => {
+        const actual = await vi.importActual<typeof import('node:fs')>('node:fs')
+        return {
+          ...actual,
+          statSync(path: Parameters<typeof actual.statSync>[0], options?: Parameters<typeof actual.statSync>[1]) {
+            const stat = actual.statSync(path, options as never)
+            if (freezeGraphMtime && path === graphPath) {
+              return Object.assign(Object.create(Object.getPrototypeOf(stat)), stat, {
+                mtimeMs: originalGraphStat.mtimeMs,
+                mtime: originalGraphStat.mtime,
+              })
+            }
+            return stat
+          },
+        }
+      })
+
+      const { handleStdioRequest: isolatedHandleStdioRequest } = await import('../../src/runtime/stdio-server.js')
+
+      const before = isolatedHandleStdioRequest(graphPath, { id: 1, method: 'stats' })
+      const freshnessBefore = isolatedHandleStdioRequest(graphPath, { id: 11, method: 'resources/list' })
+
+      writeFileSync(
+        graphPath,
+        JSON.stringify({
+          nodes: [{ id: 'replacement', label: 'ReplacementNode', source_file: 'replacement.ts', source_location: '1', file_type: 'code', community: 0 }],
+          edges: [],
+          hyperedges: [],
+        }),
+        'utf8',
+      )
+      freezeGraphMtime = true
+
+      const after = isolatedHandleStdioRequest(graphPath, { id: 2, method: 'node', params: { label: 'ReplacementNode' } })
+      const freshnessAfter = isolatedHandleStdioRequest(graphPath, { id: 12, method: 'resources/list' })
+
+      const versionBefore = (freshnessBefore as { result: { resources: Array<{ uri: string; annotations?: Record<string, unknown> }> } }).result.resources.find(
+        (resource) => resource.uri === 'madar://artifact/graph.json',
+      )?.annotations?.graph_version
+      const versionAfter = (freshnessAfter as { result: { resources: Array<{ uri: string; annotations?: Record<string, unknown> }> } }).result.resources.find(
+        (resource) => resource.uri === 'madar://artifact/graph.json',
+      )?.annotations?.graph_version
+
+      expect((before as { result: string }).result).toContain('Nodes: 3')
+      expect((after as { result: string }).result).toContain('Node: ReplacementNode')
+      expect(versionBefore).toMatch(/^[a-f0-9]{12}$/)
+      expect(versionAfter).toMatch(/^[a-f0-9]{12}$/)
+      expect(versionAfter).not.toBe(versionBefore)
+    } finally {
+      vi.doUnmock('node:fs')
+      vi.resetModules()
       rmSync(root, { recursive: true, force: true })
     }
   })

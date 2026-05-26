@@ -107,6 +107,55 @@ const MADAR_TOKEN_REGRESSION_PAYLOAD = {
   },
 }
 
+const VERBOSE_BASELINE_PAYLOAD = [
+  { type: 'system', subtype: 'init' },
+  {
+    type: 'assistant',
+    turn: 1,
+    message: {
+      content: [
+        { type: 'tool_use', name: 'Read' },
+        { type: 'tool_use', name: 'Grep' },
+      ],
+    },
+  },
+  {
+    type: 'assistant',
+    turn: 2,
+    message: {
+      content: [
+        { type: 'tool_use', name: 'Read' },
+      ],
+    },
+  },
+  BASELINE_USAGE_PAYLOAD,
+] as const
+
+const VERBOSE_MADAR_PAYLOAD = [
+  { type: 'system', subtype: 'init' },
+  {
+    type: 'assistant',
+    turn: 1,
+    message: {
+      content: [
+        { type: 'tool_use', name: 'context_pack' },
+        { type: 'tool_use', name: 'Read' },
+      ],
+    },
+  },
+  {
+    type: 'assistant',
+    turn: 2,
+    message: {
+      content: [
+        { type: 'tool_use', name: 'Glob' },
+        { type: 'tool_use', name: 'Bash' },
+      ],
+    },
+  },
+  MADAR_USAGE_PAYLOAD,
+] as const
+
 function scriptedRunner(payloads: { baseline: unknown; madar: unknown }): NativeAgentRunner {
   return async (input) => ({
     exitCode: 0,
@@ -126,6 +175,7 @@ function buildSummaryResult(overrides: {
   madarInputTokens: number
   reductions: NonNullable<NativeAgentCompareReport['reductions']>
   madarTrace?: NativeAgentCompareReport['madar_trace']
+  toolCallCounts?: NativeAgentCompareReport['tool_call_counts']
 }): NativeAgentCompareResult {
   return {
     graph_path: '/tmp/project/out/graph.json',
@@ -192,6 +242,7 @@ function buildSummaryResult(overrides: {
           },
           reduction_basis: 'provider_reported',
         },
+        ...(overrides.toolCallCounts ? { tool_call_counts: overrides.toolCallCounts } : {}),
         ...(overrides.madarTrace ? { madar_trace: overrides.madarTrace } : {}),
         started_at: '2026-05-12T00:00:00.000Z',
         completed_at: '2026-05-12T00:00:01.000Z',
@@ -231,6 +282,13 @@ describe('parseAnthropicResultEvent', () => {
     const intermediate = JSON.stringify({ type: 'system', subtype: 'init', tools: ['retrieve'] })
     const result = JSON.stringify({ ...MADAR_USAGE_PAYLOAD })
     const parsed = parseAnthropicResultEvent(`${intermediate}\n${result}\n`)
+    expect(parsed).not.toBeNull()
+    expect(parsed?.usage.input_tokens).toBe(13)
+    expect(parsed?.num_turns).toBe(3)
+  })
+
+  it('extracts the trailing result event from a verbose JSON array', () => {
+    const parsed = parseAnthropicResultEvent(JSON.stringify(VERBOSE_MADAR_PAYLOAD))
     expect(parsed).not.toBeNull()
     expect(parsed?.usage.input_tokens).toBe(13)
     expect(parsed?.num_turns).toBe(3)
@@ -552,6 +610,64 @@ describe('executeNativeAgentCompare', () => {
       rmSync(projectDir, { recursive: true, force: true })
     }
   })
+
+  it('preserves reductions, provider proof, and tool-call counts for verbose JSON-array runs', async () => {
+    const { projectDir, graphPath, outputDir } = makeFixtureProject()
+    try {
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          question: 'verbose trace',
+          outputDir,
+          execTemplate: 'mock-runner',
+          baselineMode: 'native_agent',
+        },
+        {
+          runner: scriptedRunner({ baseline: VERBOSE_BASELINE_PAYLOAD, madar: VERBOSE_MADAR_PAYLOAD }),
+          now: () => new Date('2026-05-01T00:00:00Z'),
+        },
+      )
+
+      const report = result.reports[0] as NativeAgentCompareReport
+      expect(report.baseline.kind).toBe('succeeded')
+      expect(report.madar.kind).toBe('succeeded')
+      expect(report.reductions).not.toBeNull()
+      expect(report.provider_proof?.reduction_basis).toBe('provider_reported')
+      expect(report.tool_call_counts).toEqual({
+        baseline: {
+          total: 3,
+          Read: 2,
+          Bash: 0,
+          Glob: 0,
+          Grep: 1,
+          ToolSearch: 0,
+          other: {},
+        },
+        madar: {
+          total: 4,
+          Read: 1,
+          Bash: 1,
+          Glob: 1,
+          Grep: 0,
+          ToolSearch: 0,
+          other: {
+            context_pack: 1,
+          },
+        },
+      })
+
+      const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as {
+        tool_call_counts?: NativeAgentCompareReport['tool_call_counts']
+      }
+      const shareSafeReport = JSON.parse(readFileSync(report.paths.share_safe_report, 'utf8')) as {
+        tool_call_counts?: NativeAgentCompareReport['tool_call_counts']
+      }
+      expect(savedReport.tool_call_counts).toEqual(report.tool_call_counts)
+      expect(shareSafeReport.tool_call_counts).toEqual(report.tool_call_counts)
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('formatNativeAgentCompareSummary', () => {
@@ -841,6 +957,48 @@ describe('formatNativeAgentCompareSummary', () => {
 
     expect(summary).toContain('madar_trace: reduced_exploration')
     expect(summary).toContain('1 context_pack call; 1 focused follow-up call; no broad exploration recorded')
+  })
+
+  it('prints the tool-call delta when per-side tool counts are available', () => {
+    const summary = formatNativeAgentCompareSummary(buildSummaryResult({
+      question: 'tool counts',
+      baselineTurns: 6,
+      madarTurns: 3,
+      baselineDurationMs: 6000,
+      madarDurationMs: 3000,
+      baselineInputTokens: 600,
+      madarInputTokens: 300,
+      reductions: {
+        num_turns: 2,
+        duration_ms: 2,
+        input_tokens: 2,
+        cost_usd: 1,
+      },
+      toolCallCounts: {
+        baseline: {
+          total: 6,
+          Read: 3,
+          Bash: 1,
+          Glob: 1,
+          Grep: 1,
+          ToolSearch: 0,
+          other: {},
+        },
+        madar: {
+          total: 4,
+          Read: 2,
+          Bash: 1,
+          Glob: 0,
+          Grep: 0,
+          ToolSearch: 0,
+          other: {
+            context_pack: 1,
+          },
+        },
+      },
+    }))
+
+    expect(summary).toContain('tool calls: baseline 6 → madar 4 (1.5x fewer)')
   })
 
   it('warns when total input tokens show no meaningful change but fresh-token usage regresses', () => {

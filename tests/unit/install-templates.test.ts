@@ -120,6 +120,7 @@ describe('built-in install templates', () => {
     expect(content).toContain('context-pack-first')
     expect(content).toContain('madar pack')
     expect(content).toContain('high- or medium-confidence pack')
+    expect(content).toContain('Do not run broad `Glob` patterns, repo-wide `grep` / `find` searches, or raw file sweeps after a high- or medium-confidence pack.')
     expect(content).toContain('missing_context')
     expect(content).toContain('deeper verification')
     expect(content).toContain('madar codex install')
