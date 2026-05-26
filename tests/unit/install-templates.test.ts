@@ -58,12 +58,13 @@ function decodeHookPayload(settingsJson: string): string {
 }
 
 describe('install hook payload', () => {
-  it('decoded hook payload contains the measured "3x fewer turns" claim', () => {
+  it('decoded hook payload keeps the graph-first guidance without benchmark marketing copy', () => {
     withTempDir((projectDir) => {
       claudeInstall(projectDir)
       const settings = readFileSync(join(projectDir, '.claude', 'settings.json'), 'utf8')
       const decoded = decodeHookPayload(settings)
-      expect(decoded.toLowerCase()).toContain('3x fewer turns')
+      expect(decoded).toContain('Use the graph result as the first bounded pass')
+      expect(decoded.toLowerCase()).not.toContain('3x fewer turns')
     })
   })
 
@@ -120,6 +121,7 @@ describe('built-in install templates', () => {
     expect(content).toContain('context-pack-first')
     expect(content).toContain('madar pack')
     expect(content).toContain('high- or medium-confidence pack')
+    expect(content).toContain('Do not run broad `Glob` patterns, repo-wide `grep` / `find` searches, or raw file sweeps after a high- or medium-confidence pack.')
     expect(content).toContain('missing_context')
     expect(content).toContain('deeper verification')
     expect(content).toContain('Do not open `out/GRAPH_REPORT.md` unless the context pack or graph tools are unavailable, stale, or insufficient.')

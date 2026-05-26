@@ -38,7 +38,7 @@ interface PromptHelpers {
   maxCompletionValues: number
 }
 
-const promptContextCache = new Map<string, { mtimeMs: number; context: PromptContext }>()
+const promptContextCache = new Map<string, { mtimeMs: number; size: number; context: PromptContext }>()
 
 function formatCount(count: number, singular: string, plural = `${singular}s`): string {
   return `${count} ${count === 1 ? singular : plural}`
@@ -84,9 +84,9 @@ function nodeCommunityMap(communities: ReturnType<typeof communitiesFromGraph>):
 
 function loadPromptContext(graphPath: string): PromptContext {
   const safeGraphPath = validateGraphPath(graphPath)
-  const currentMtime = statSync(safeGraphPath).mtimeMs
+  const currentGraphStat = statSync(safeGraphPath)
   const cached = promptContextCache.get(safeGraphPath)
-  if (cached && cached.mtimeMs === currentMtime) {
+  if (cached && cached.mtimeMs === currentGraphStat.mtimeMs && cached.size === currentGraphStat.size) {
     return cached.context
   }
 
@@ -121,7 +121,11 @@ function loadPromptContext(graphPath: string): PromptContext {
       .filter((question): question is string => Boolean(question)),
   }
 
-  promptContextCache.set(safeGraphPath, { mtimeMs: currentMtime, context })
+  promptContextCache.set(safeGraphPath, {
+    mtimeMs: currentGraphStat.mtimeMs,
+    size: currentGraphStat.size,
+    context,
+  })
   return context
 }
 

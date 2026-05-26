@@ -87,6 +87,17 @@ export interface BenchmarkCliOptions {
   yes: boolean
 }
 
+export interface BenchSuiteCliOptions {
+  repo: string | null
+  task: string | null
+  mode: 'cold' | 'warm' | 'all'
+  trials: number
+  outputDir: string
+  execTemplate: string
+  dryRun: boolean
+  yes: boolean
+}
+
 export interface CompareCliOptions {
   question: string | null
   graphPath: string
@@ -940,6 +951,121 @@ export function parseBenchmarkArgs(args: string[], commandName = 'benchmark'): B
   }
 
   return { graphPath, questionsPath, execTemplate, yes }
+}
+
+export function parseBenchSuiteArgs(args: string[]): BenchSuiteCliOptions {
+  let repo: string | null = null
+  let task: string | null = null
+  let mode: BenchSuiteCliOptions['mode'] = 'all'
+  let trials = 3
+  let outputDir = resolve('docs/benchmarks/suite/results')
+  let execTemplate = ''
+  let dryRun = false
+  let yes = false
+
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index]
+    if (!argument) {
+      continue
+    }
+
+    if (argument === '--repo') {
+      repo = requireOptionValue('--repo', args[index + 1])
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--repo=')) {
+      const [, value] = argument.split('=', 2)
+      repo = requireOptionValue('--repo', value)
+      continue
+    }
+
+    if (argument === '--task') {
+      task = requireOptionValue('--task', args[index + 1])
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--task=')) {
+      const [, value] = argument.split('=', 2)
+      task = requireOptionValue('--task', value)
+      continue
+    }
+
+    if (argument === '--mode') {
+      const value = requireOptionValue('--mode', args[index + 1])
+      if (value !== 'cold' && value !== 'warm' && value !== 'all') {
+        throw new UsageError('error: --mode must be one of cold, warm, all')
+      }
+      mode = value
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--mode=')) {
+      const [, value] = argument.split('=', 2)
+      if (value !== 'cold' && value !== 'warm' && value !== 'all') {
+        throw new UsageError('error: --mode must be one of cold, warm, all')
+      }
+      mode = value
+      continue
+    }
+
+    if (argument === '--trials') {
+      trials = parsePositiveDecimalInteger('--trials', requireOptionValue('--trials', args[index + 1]))
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--trials=')) {
+      const [, value] = argument.split('=', 2)
+      trials = parsePositiveDecimalInteger('--trials', requireOptionValue('--trials', value))
+      continue
+    }
+
+    if (argument === '--output-dir') {
+      outputDir = resolve(requireOptionValue('--output-dir', args[index + 1]))
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--output-dir=')) {
+      const [, value] = argument.split('=', 2)
+      outputDir = resolve(requireOptionValue('--output-dir', value))
+      continue
+    }
+
+    if (argument === '--exec') {
+      execTemplate = requireOptionValue('--exec', args[index + 1])
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--exec=')) {
+      const [, value] = argument.split('=', 2)
+      execTemplate = requireOptionValue('--exec', value)
+      continue
+    }
+
+    if (argument === '--dry-run') {
+      dryRun = true
+      continue
+    }
+
+    if (argument === '--yes') {
+      yes = true
+      continue
+    }
+
+    throw new UsageError(`error: unknown option for bench:suite: ${argument}`)
+  }
+
+  if (!dryRun && execTemplate.length === 0) {
+    throw new UsageError('error: --exec is required unless --dry-run is set')
+  }
+
+  return { repo, task, mode, trials, outputDir, execTemplate, dryRun, yes }
 }
 
 export function parseCompareArgs(args: string[]): CompareCliOptions {

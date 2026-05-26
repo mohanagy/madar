@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "started_at": "2026-05-26T18:31:04.097Z",
+  "completed_at": "2026-05-26T18:46:24.848Z",
+  "output_root": "docs/benchmarks/suite/results/2026-05-26T18-31-04",
+  "filters": {
+    "repo": "nestjs-mid",
+    "task": "explain-runtime",
+    "mode": "warm",
+    "trials": 3
+  },
+  "cells": [
+    {
+      "repoId": "nestjs-mid",
+      "repoName": "NestJS-like service fixture",
+      "taskId": "explain-runtime",
+      "taskName": "Explain runtime flow",
+      "mode": "warm",
+      "prompt": "How does login session creation flow work from controller to persistence?",
+      "status": "completed",
+      "reason": null,
+      "baseline": {
+        "input_tokens": {
+          "median": 384029,
+          "min": 383969,
+          "max": 447833,
+          "n": 3
+        },
+        "total_tool_calls": null,
+        "read_calls": null,
+        "glob_grep_calls": null,
+        "wall_clock_ms": {
+          "median": 35436,
+          "min": 30246,
+          "max": 43757,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 0.40694725,
+          "min": 0.40399825,
+          "max": 0.45183675,
+          "n": 3
+        }
+      },
+      "madar": {
+        "input_tokens": {
+          "median": 383875,
+          "min": 383749,
+          "max": 447775,
+          "n": 3
+        },
+        "total_tool_calls": null,
+        "read_calls": null,
+        "glob_grep_calls": null,
+        "wall_clock_ms": {
+          "median": 31102,
+          "min": 29183,
+          "max": 40180,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 0.40613075000000004,
+          "min": 0.40165075000000006,
+          "max": 0.4474695,
+          "n": 3
+        }
+      },
+      "spi_madar": {
+        "input_tokens": {
+          "median": 448902,
+          "min": 383851,
+          "max": 448960,
+          "n": 3
+        },
+        "total_tool_calls": null,
+        "read_calls": null,
+        "glob_grep_calls": null,
+        "wall_clock_ms": {
+          "median": 34241,
+          "min": 30181,
+          "max": 34803,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 0.4476175,
+          "min": 0.40290125,
+          "max": 0.45008675000000004,
+          "n": 3
+        }
+      },
+      "artifacts": {
+        "legacy_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-05-26T18-31-04/raw/nestjs-mid/explain-runtime/warm-cache/legacy/trial-001/2026-05-26T18-32-17/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-26T18-31-04/raw/nestjs-mid/explain-runtime/warm-cache/legacy/trial-002/2026-05-26T18-37-29/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-26T18-31-04/raw/nestjs-mid/explain-runtime/warm-cache/legacy/trial-003/2026-05-26T18-42-36/report.share-safe.json"
+        ],
+        "spi_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-05-26T18-31-04/raw/nestjs-mid/explain-runtime/warm-cache/spi/trial-001/2026-05-26T18-34-53/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-26T18-31-04/raw/nestjs-mid/explain-runtime/warm-cache/spi/trial-002/2026-05-26T18-40-05/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-26T18-31-04/raw/nestjs-mid/explain-runtime/warm-cache/spi/trial-003/2026-05-26T18-45-15/report.share-safe.json"
+        ]
+      }
+    }
+  ]
+}

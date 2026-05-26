@@ -1,0 +1,30 @@
+The login session creation flow is a straightforward three-layer pass-through:
+
+**1. Controller** — `src/controllers/auth-controller.ts:6`
+```ts
+async login(input: { email: string }) {
+  return this.authService.login(input)
+}
+```
+`AuthController.login` receives `{ email }`, delegates directly to `AuthService`. No validation, no auth checks. The service is instantiated via a default-parameter `new AuthService()` in the constructor (not real DI).
+
+**2. Service** — `src/services/auth-service.ts:4`
+```ts
+async login(input: { email: string }) {
+  return createSession(input.email)
+}
+```
+`AuthService.login` unwraps the email and calls the persistence function. No password check, no rate limiting, no user lookup — there's no actual authentication happening.
+
+**3. Persistence** — `src/persistence/session-store.ts:1`
+```ts
+export function createSession(email: string) {
+  return { sessionId: `session:${email}` }
+}
+```
+`createSession` returns a synthetic object with a deterministic `sessionId` derived from the email. Nothing is actually stored — there's no DB, no in-memory map, no expiry. The session "ID" is just `"session:" + email`.
+
+**Summary of the flow:**
+`AuthController.login({ email })` → `AuthService.login({ email })` → `createSession(email)` → `{ sessionId: "session:<email>" }`
+
+**Notable gaps** (consistent with this being a `legacy` scaffold): no credential verification, no token/secret in the session ID (it's email-derived and predictable), no persistence layer despite the directory name, no Zod validation at the boundary, and no NestJS decorators despite the project being described as NestJS — these are plain classes wired manually.

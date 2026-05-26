@@ -1,0 +1,17 @@
+## Login session creation flow
+
+The flow is a three-layer chain — controller → service → persistence — with no validation, hashing, or real storage:
+
+**1. Controller** — `src/controllers/auth-controller.ts:6`
+- `AuthController.login({ email })` is the entry point.
+- It instantiates `AuthService` in its constructor default (`new AuthService()`) and delegates straight through: `this.authService.login(input)`.
+
+**2. Service** — `src/services/auth-service.ts:4`
+- `AuthService.login({ email })` does no business logic — no credential check, no user lookup, no token issuance.
+- It calls the persistence helper directly: `createSession(input.email)`.
+
+**3. Persistence** — `src/persistence/session-store.ts:1`
+- `createSession(email)` is a pure function that returns `{ sessionId: \`session:${email}\` }`.
+- Nothing is persisted — no DB, no in-memory map, no expiry. The "session" is a synthesized string returned to the caller.
+
+This is a skeleton/stub layered architecture (likely a benchmark fixture). The session ID is deterministic and trivially forgeable, and there's no authentication step before "logging in."

@@ -1,0 +1,57 @@
+[
+  {
+    "id": "ts-small",
+    "name": "TypeScript small workspace",
+    "path": "examples/sample-workspace",
+    "description": "Small TypeScript demo workspace kept in-tree for future suite expansion.",
+    "size": "small",
+    "language": "typescript",
+    "shape": "library",
+    "status": "planned",
+    "supportsSpi": true
+  },
+  {
+    "id": "nestjs-mid",
+    "name": "NestJS-like service fixture",
+    "path": "tests/fixtures/pack-quality/controller-service-test-flow/workspace",
+    "description": "Fixture-style controller/service/persistence workspace used as the first runnable mid-size service proxy.",
+    "size": "mid",
+    "language": "typescript",
+    "shape": "nestjs-service-proxy",
+    "status": "ready",
+    "supportsSpi": true
+  },
+  {
+    "id": "ts-monorepo-large",
+    "name": "TypeScript monorepo proxy",
+    "path": "tests/fixtures/pack-quality/monorepo-package-boundary/workspace",
+    "description": "Fixture-style monorepo proxy reserved for future large-workspace suite cells.",
+    "size": "large",
+    "language": "typescript",
+    "shape": "monorepo",
+    "status": "planned",
+    "supportsSpi": true
+  },
+  {
+    "id": "python-service",
+    "name": "Python service proxy",
+    "path": "docs/benchmarks/suite/fixtures/python-service",
+    "description": "Reserved slot for a public or fixture-style Python service benchmark target.",
+    "size": "mid",
+    "language": "python",
+    "shape": "fastapi-or-django",
+    "status": "planned",
+    "supportsSpi": false
+  },
+  {
+    "id": "go-service",
+    "name": "Go HTTP service proxy",
+    "path": "docs/benchmarks/suite/fixtures/go-service",
+    "description": "Reserved slot for a public or fixture-style Go HTTP benchmark target.",
+    "size": "mid",
+    "language": "go",
+    "shape": "http-service",
+    "status": "planned",
+    "supportsSpi": false
+  }
+]

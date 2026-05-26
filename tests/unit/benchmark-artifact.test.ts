@@ -533,6 +533,8 @@ describe('shared GoValidate benchmark suite README', () => {
     expect(lower).toContain('do not commit private')
     expect(lower).toContain('do not invent benchmark numbers')
     expect(lower).toContain('native_agent')
+    expect(lower).toContain('per-repo spread')
+    expect(lower).toContain('do not publish a single-number cross-repo headline')
   })
 })
 

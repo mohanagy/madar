@@ -30,6 +30,8 @@ const STRICT_EXPAND_RULE_MD =
   'Only expand with `context_expand` or focused graph/search tools when `missing_context` / `missing_semantic` are non-empty, diagnostics show warn/error gaps, or the user asks for deeper verification.'
 const STRICT_GRAPH_REPORT_RULE_MD =
   'Do not open `out/GRAPH_REPORT.md` unless the context pack or graph tools are unavailable, stale, or insufficient. Treat it as a fallback before broader raw file exploration, not a default first read.'
+const STRICT_NO_BROAD_EXPLORATION_RULE_MD =
+  'Do not run broad `Glob` patterns, repo-wide `grep` / `find` searches, or raw file sweeps after a high- or medium-confidence pack.'
 const STRICT_STOP_RULE_PLAIN =
   'answer after one high- or medium-confidence pack when diagnostics.quality_score >= 0.5, missing_context is empty, and diagnostics show no error-severity gaps'
 const STRICT_EXPAND_RULE_PLAIN =
@@ -38,6 +40,8 @@ const STRICT_GRAPH_REPORT_RULE_PLAIN =
   'do not open out/GRAPH_REPORT.md unless the context pack or graph tools are unavailable, stale, or insufficient; treat it as a fallback before broader raw file exploration, not a default first read'
 const STRICT_GRAPH_REPORT_RULE_PLAIN_SENTENCE =
   'Do not open out/GRAPH_REPORT.md unless the context pack or graph tools are unavailable, stale, or insufficient; treat it as a fallback before broader raw file exploration, not a default first read'
+const STRICT_NO_BROAD_EXPLORATION_RULE_PLAIN =
+  'do not run broad glob patterns, repo-wide grep / find searches, or raw file sweeps after a high- or medium-confidence pack'
 
 const BUNDLED_ASSET_CONTENT = {
   'skill.md': '# madar\n\nLocal bundled Claude skill\n',
@@ -154,6 +158,11 @@ function decodeHookPayloads(content: string): string {
   }
 
   return decodedPayloads.join('\n')
+}
+
+function encodeGraphCheckedHookCommand(payload: Record<string, unknown>): string {
+  const b64 = Buffer.from(JSON.stringify(payload)).toString('base64')
+  return `node -e "try{require('fs').accessSync('out/graph.json');process.stdout.write(Buffer.from('${b64}','base64').toString())}catch(e){}"`
 }
 
 function extractHookCommand(settingsJson: string, eventName: string): string {
@@ -444,6 +453,7 @@ describe('install helpers', () => {
 
       expect(geminiMd).toContain('Call `context_pack` once for the task before broader exploration.')
       expect(geminiMd).toContain(STRICT_STOP_RULE_MD)
+      expect(geminiMd).toContain(STRICT_NO_BROAD_EXPLORATION_RULE_MD)
       expect(geminiMd).toContain(STRICT_EXPAND_RULE_MD)
       expect(geminiMd).toContain(STRICT_GRAPH_REPORT_RULE_MD)
       expect(geminiMd).not.toContain('If manual expansion is still required, read `out/GRAPH_REPORT.md` first.')
@@ -483,6 +493,7 @@ describe('install helpers', () => {
       expect(decodedHookPayload).toContain('strict compact MCP mode')
       expect(decodedHookPayload).toContain('call context_pack once for the task before broader exploration')
       expect(decodedHookPayload).toContain(STRICT_STOP_RULE_PLAIN)
+      expect(decodedHookPayload).toContain(STRICT_NO_BROAD_EXPLORATION_RULE_PLAIN)
       expect(decodedHookPayload).toContain(STRICT_EXPAND_RULE_PLAIN)
       expect(decodedHookPayload).not.toContain('Madar answers most codebase questions in 1 focused MCP call')
     })
@@ -561,7 +572,44 @@ describe('install helpers', () => {
       })
 
       expect(output).toContain('retrieve')
-      expect(output).toContain('3x fewer turns')
+      expect(output).not.toContain('3x fewer turns')
+      expect(output).not.toContain('2.8x faster')
+    })
+  })
+
+  it('updates a legacy Claude managed hook in place when reinstalling', () => {
+    withTempDir((projectDir) => {
+      mkdirSync(join(projectDir, '.claude'), { recursive: true })
+      mkdirSync(join(projectDir, 'out'), { recursive: true })
+      writeFileSync(join(projectDir, 'out', 'graph.json'), '{}', 'utf8')
+
+      const legacyPromptMessage =
+        'STOP. This project has a madar knowledge graph. Use the graph tool that matches the question: retrieve for direct codebase questions, relevant_files for where to open first, feature_map for the main areas and entry points, risk_map before editing, implementation_checklist for edit order and validation, and impact for blast radius. Madar answers most codebase questions in 1 focused MCP call instead of 5–10 sequential file reads (3x fewer turns, ~2.8x faster on a real production codebase). Do not use Glob, Grep, Bash, Read, or Agent tools first. Only fall back to raw file tools if the graph tools cannot answer the question or the MCP server is unavailable.'
+      const legacyHookCommand = encodeGraphCheckedHookCommand({
+        hookSpecificOutput: {
+          hookEventName: 'UserPromptSubmit',
+          additionalContext: legacyPromptMessage,
+        },
+      })
+      writeFileSync(join(projectDir, '.claude', 'settings.json'), JSON.stringify({
+        hooks: {
+          UserPromptSubmit: [{
+            hooks: [{
+              type: 'command',
+              command: legacyHookCommand,
+            }],
+          }],
+        },
+      }, null, 2), 'utf8')
+
+      const message = claudeInstall(projectDir)
+      const settings = readFileSync(join(projectDir, '.claude', 'settings.json'), 'utf8')
+      const decodedPayloads = decodeHookPayloads(settings)
+
+      expect(message).toContain('hook updated')
+      expect(countOccurrences(settings, 'UserPromptSubmit')).toBe(1)
+      expect(decodedPayloads).not.toContain('3x fewer turns')
+      expect(decodedPayloads).toContain('Use the graph result as the first bounded pass')
     })
   })
 
@@ -655,6 +703,7 @@ describe('install helpers', () => {
       expect(mcpConfig.mcpServers?.['madar']?.env?.MADAR_TOOL_PROFILE).toBe('core')
       expect(claudeMd).toContain('Call `context_pack` once for the task before broader exploration.')
       expect(claudeMd).toContain(STRICT_STOP_RULE_MD)
+      expect(claudeMd).toContain(STRICT_NO_BROAD_EXPLORATION_RULE_MD)
       expect(claudeMd).toContain(STRICT_EXPAND_RULE_MD)
       expect(claudeMd).toContain(STRICT_GRAPH_REPORT_RULE_MD)
       expect(claudeMd).not.toContain('If manual expansion is still required, read `out/GRAPH_REPORT.md` first.')
@@ -695,6 +744,7 @@ describe('install helpers', () => {
       expect(mcpConfig.mcpServers?.['madar']?.env?.MADAR_TOOL_PROFILE).toBe('core')
       expect(rule).toContain('Call `context_pack` once for the task before broader exploration.')
       expect(rule).toContain(STRICT_STOP_RULE_MD)
+      expect(rule).toContain(STRICT_NO_BROAD_EXPLORATION_RULE_MD)
       expect(rule).toContain(STRICT_EXPAND_RULE_MD)
       expect(rule).toContain(STRICT_GRAPH_REPORT_RULE_MD)
       expect(rule).not.toContain('If manual expansion is still required, read `out/GRAPH_REPORT.md` first.')
@@ -842,6 +892,7 @@ describe('install helpers', () => {
       expect(installMessage).toContain('strict compact MCP profile')
       expect(installMessage).toContain('call context_pack once')
       expect(installMessage).toContain(STRICT_STOP_RULE_PLAIN)
+      expect(installMessage).toContain(STRICT_NO_BROAD_EXPLORATION_RULE_PLAIN)
       expect(installMessage).toContain(STRICT_EXPAND_RULE_PLAIN)
       expect(installMessage).toContain(STRICT_GRAPH_REPORT_RULE_PLAIN)
     })
@@ -943,12 +994,14 @@ describe('install helpers', () => {
       expect(agentsMd).toContain('Codex CLI profile')
       expect(agentsMd).toContain('context-pack-first')
       expect(agentsMd).toContain('madar pack')
+      expect(agentsMd).toContain(STRICT_NO_BROAD_EXPLORATION_RULE_MD)
       expect(agentsMd).toContain('madar codex uninstall')
       expect(agentsMd).toContain('Manual verification')
       expect(agentsMd).toContain(STRICT_GRAPH_REPORT_RULE_MD)
       expect(agentsMd).not.toContain('Only fall back to raw file tools** when the context pack or graph tools are missing, stale, or insufficient. In that case, read `out/GRAPH_REPORT.md` first.')
       expect(decodedHookPayload).toContain('context-pack-first')
       expect(decodedHookPayload).toContain('madar pack')
+      expect(decodedHookPayload).toContain(STRICT_NO_BROAD_EXPLORATION_RULE_PLAIN)
       expect(decodedHookPayload).toContain(STRICT_GRAPH_REPORT_RULE_PLAIN)
       expect(decodedHookPayload).not.toContain('read out/GRAPH_REPORT.md before expanding manually')
     })

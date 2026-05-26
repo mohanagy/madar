@@ -1,7 +1,7 @@
 {
     "name": "@lubab/madar",
     "version": "0.27.0-next.1",
-    "description": "Local context plane and context compiler for AI coding agents. Turn TypeScript/Node workspaces and PR diffs into compact, verifiable context packs for Claude Code, Codex, Copilot, Cursor, and other agents.",
+    "description": "Local task-aware context packs for AI coding agents. Start from what runs for this task and turn TypeScript/Node workspaces plus PR diffs into compact, verifiable context packs for Claude Code, Codex, Copilot, Cursor, and other agents.",
     "license": "MIT",
     "author": "mohanagy",
     "bin": {

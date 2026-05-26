@@ -20,6 +20,7 @@ describe('release documentation', () => {
     expect(releaseDoc).not.toContain('`madar --version` and `madar --version`')
     expect(releaseDoc).not.toContain('legacy compatibility package')
     expect(releaseDoc.toLowerCase()).toContain('post-release')
+    expect(releaseDoc).toContain('Any new public claim requires a reproducible artifact under `docs/benchmarks/suite/`')
     expect(contributing).toContain('docs/release.md')
   })
 })

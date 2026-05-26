@@ -20,19 +20,19 @@ describe('public marketing copy honesty', () => {
       })
     }
 
-    it('cites the measured benchmark headline numbers', () => {
-      expect(content).toMatch(/3x fewer turns|3× fewer turns/i)
-      expect(content).toMatch(/2\.8x|2\.8×/i)
-      expect(content).toMatch(/2\.6x|2\.6×/i)
+    it('uses execution-slice framing instead of generic context-plane marketing', () => {
+      expect(lower).toContain('what runs for this task')
+      expect(lower).toContain('execution slice')
+      expect(lower).not.toContain('context plane')
+      expect(lower).not.toContain('context compiler')
     })
 
-    it('discloses the cold-start cost premium honestly', () => {
-      expect(lower).toMatch(/cold[- ]start|cost parity|amortize/i)
-    })
-
-    it('positions madar as a context plane and context compiler', () => {
-      expect(lower).toContain('context plane')
-      expect(lower).toContain('context compiler')
+    it('separates demonstrated wins from work that is still in progress or not yet measured', () => {
+      expect(content).toContain('## Demonstrated today')
+      expect(content).toContain('## In progress')
+      expect(content).toContain('## Not yet measured')
+      expect(lower).toContain('what madar does not do today')
+      expect(lower).not.toMatch(/3x fewer turns|3× fewer turns|2\.8x|2\.8×|2\.6x|2\.6×|69\.9%/i)
     })
   })
 
@@ -46,17 +46,18 @@ describe('public marketing copy honesty', () => {
       })
     }
 
-    it('documents the measured latency benchmark with current README wording', () => {
-      expect(content).toContain('| **Latency**')
-      expect(content).toMatch(/35 sec|35 ?s/i)
-      expect(content).toMatch(/96 sec|96 ?s/i)
+    it('uses execution-slice framing and removes headline benchmark ratios from the lead', () => {
+      expect(lower).toContain('what runs for this task')
+      expect(lower).toContain('execution slice')
+      expect(lower).not.toContain('context plane')
+      expect(lower).not.toContain('context compiler')
+      expect(lower).not.toMatch(/5\.28x|5\.28×|2\.21x|2\.21×|1\.58x|1\.58×|69\.9%/i)
     })
 
     it('documents the pack, prompt, and summary command surfaces', () => {
       expect(content).toContain('madar pack')
       expect(content).toContain('madar prompt')
       expect(content).toContain('madar summary')
-      expect(lower).toContain('context plane')
     })
 
     it('surfaces the 0.23.0 user-facing additions in the main README flow', () => {
@@ -66,7 +67,7 @@ describe('public marketing copy honesty', () => {
       expect(content).toContain('`execution_slice`')
       expect(content).toContain('report.share-safe.json')
       expect(content).toContain('--baseline-mode pack_only')
-      expect(content).toContain('docs/benchmarks/govalidate-suite/')
+      expect(content).toContain('docs/benchmarks/suite/')
     })
 
     it('describes execution_slice as a static hypothesis rather than a live trace', () => {
@@ -122,19 +123,19 @@ describe('public marketing copy honesty', () => {
       expect(lower).toMatch(/25%/)
     })
 
-    it('pins the 2026-05-09 demo-video caption headline reductions', () => {
-      expect(content).toMatch(/2[,]?811[,]?682/)
-      expect(content).toMatch(/532[,]?021/)
-      expect(content).toMatch(/5\.28x|5\.28×/i)
-      expect(content).toMatch(/2\.21x|2\.21×/i)
-      expect(content).toMatch(/1\.58x|1\.58×/i)
+    it('adds explicit claim buckets and a measurement methodology section', () => {
+      expect(content).toContain('## Demonstrated today')
+      expect(content).toContain('## In progress')
+      expect(content).toContain('## Not yet measured')
+      expect(content).toContain('## What Madar does not do today')
+      expect(content).toContain('## How we measure')
+      expect(lower).toContain('per-repo spread')
+      expect(lower).toContain('no single-number cross-repo headline')
     })
 
-    it('links the 2026-05-09 auth-e2e benchmark folder from the README', () => {
-      expect(content).toContain('docs/benchmarks/2026-05-09-govalidate-auth-e2e/')
-    })
-
-    it('links the FounderCommandCenter auth-flow contrast note from the README', () => {
+    it('links the claims-and-evidence map, benchmark suite scaffold, and mixed-evidence benchmark notes', () => {
+      expect(content).toContain('docs/claims-and-evidence.md')
+      expect(content).toContain('docs/benchmarks/suite/')
       expect(content).toContain('docs/benchmarks/2026-05-25-founder-command-center-auth-flow/')
     })
 
@@ -176,6 +177,21 @@ describe('public marketing copy honesty', () => {
     it('describes execution_slice artifacts as static runtime-path hypotheses', () => {
       expect(lower).toContain('static runtime-path hypothesis')
       expect(lower).toContain('not a live trace')
+    })
+
+    describe('docs/claims-and-evidence.md', () => {
+      const content = readDoc('docs/claims-and-evidence.md')
+      const lower = content.toLowerCase()
+
+      it('maps public claims to evidence and tracks unmeasured claims explicitly', () => {
+        expect(content).toContain('# Claims and evidence')
+        expect(content).toContain('## Demonstrated today')
+        expect(content).toContain('## In progress')
+        expect(content).toContain('## Not yet measured')
+        expect(content).toContain('README.md')
+        expect(content).toContain('docs/benchmarks/suite/')
+        expect(lower).toContain('foundercommandcenter')
+      })
     })
   })
 

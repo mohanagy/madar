@@ -1,0 +1,46 @@
+[
+  {
+    "id": "explain-runtime",
+    "name": "Explain runtime flow",
+    "description": "Trace how a runtime path executes end to end for a concrete repo-specific prompt.",
+    "status": "ready",
+    "prompts": {
+      "nestjs-mid": "How does login session creation flow work from controller to persistence?"
+    }
+  },
+  {
+    "id": "explain-auth",
+    "name": "Explain auth and middleware behavior",
+    "description": "Trace auth, middleware, or request-guard behavior.",
+    "status": "planned",
+    "prompts": {}
+  },
+  {
+    "id": "implement",
+    "name": "Implement task",
+    "description": "A real edit prompt suitable for measuring likely edit-file and validation guidance quality later.",
+    "status": "planned",
+    "prompts": {}
+  },
+  {
+    "id": "review",
+    "name": "Review task",
+    "description": "A PR-style review prompt measured against a fixed diff later.",
+    "status": "planned",
+    "prompts": {}
+  },
+  {
+    "id": "impact",
+    "name": "Impact analysis task",
+    "description": "A what-breaks-if-I-change-X prompt reserved for future suite cells.",
+    "status": "planned",
+    "prompts": {}
+  },
+  {
+    "id": "applicability-skip",
+    "name": "Applicability skip task",
+    "description": "A non-code prompt that should bypass Madar entirely once the gate-specific suite cell is wired.",
+    "status": "planned",
+    "prompts": {}
+  }
+]

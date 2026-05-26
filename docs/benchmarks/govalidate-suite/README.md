@@ -17,7 +17,7 @@ This directory holds the public GoValidate benchmark suite inputs plus the share
 - do not invent benchmark numbers in this directory
 - keep the current dated single-prompt benchmark artifact separate from this suite
 
-The suite is meant to widen prompt coverage across realistic tasks, not to claim universal token reduction or universal answer quality.
+The suite is meant to widen prompt coverage across realistic tasks, not to claim universal token reduction or universal answer quality. It is one input into the broader benchmark direction: **per-repo spread** with fixed tasks and no single-number cross-repo headline.
 
 Example compare command:
 
@@ -29,7 +29,7 @@ madar compare \
   --baseline-mode native_agent
 ```
 
-Run the suite locally against your own checked-out GoValidate workspace and review the saved reports before making any public claims.
+Run the suite locally against your own checked-out GoValidate workspace and review the saved reports before making any public claims. Do not publish a single-number cross-repo headline from this directory alone.
 
 ## Usage
 

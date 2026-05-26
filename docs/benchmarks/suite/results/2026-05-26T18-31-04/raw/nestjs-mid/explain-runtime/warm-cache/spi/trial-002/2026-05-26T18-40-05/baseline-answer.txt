@@ -1,0 +1,27 @@
+The login flow goes through three thin layers — each just delegates to the next.
+
+**1. Controller** — `src/controllers/auth-controller.ts:6`
+```ts
+async login(input: { email: string }) {
+  return this.authService.login(input)
+}
+```
+Receives `{ email }` and forwards it to `AuthService`. The service is injected via a default-instantiated constructor param (`authService = new AuthService()`), so it can be swapped for tests.
+
+**2. Service** — `src/services/auth-service.ts:4`
+```ts
+async login(input: { email: string }) {
+  return createSession(input.email)
+}
+```
+Unwraps the email from the input object and calls the persistence function. No business logic (no password check, no validation, no token generation).
+
+**3. Persistence** — `src/persistence/session-store.ts:1`
+```ts
+export function createSession(email: string) {
+  return { sessionId: `session:${email}` }
+}
+```
+Synchronously returns a `{ sessionId }` object where the ID is just `"session:" + email`. There's no actual store — no database, no in-memory map, no expiration. Each call constructs a fresh object.
+
+**Flow summary:** `AuthController.login({email}) → AuthService.login({email}) → createSession(email) → {sessionId: "session:<email>"}`. It's a skeleton/stub — three files, ~15 lines total, with no auth, no persistence, and no immutability concerns since nothing is stored.

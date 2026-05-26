@@ -306,6 +306,7 @@ madar pack "<task or question>" --task explain
 ${CODE_BLOCK_END}
 
 If the first pack is a high- or medium-confidence pack (diagnostics.quality_score >= 0.5, missing_context is empty, and diagnostics contain no error-severity gaps), answer from it before broader exploration.
+Do not run broad \`Glob\` patterns, repo-wide \`grep\` / \`find\` searches, or raw file sweeps after a high- or medium-confidence pack.
 Only expand when missing_context or missing_semantic is non-empty, diagnostics show warn/error gaps, or the user asks for deeper verification.
 Do not open ${CODE_SPAN_START}out/GRAPH_REPORT.md${CODE_SPAN_END} unless the context pack or graph tools are unavailable, stale, or insufficient.
 

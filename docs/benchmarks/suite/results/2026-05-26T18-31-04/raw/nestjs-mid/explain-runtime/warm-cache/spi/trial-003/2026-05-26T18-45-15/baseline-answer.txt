@@ -1,0 +1,12 @@
+The login session creation flow is a straight three-layer pass-through:
+
+**1. Controller** — `src/controllers/auth-controller.ts:6-8`
+`AuthController.login({ email })` instantiates `AuthService` (defaulted in the constructor) and forwards the input.
+
+**2. Service** — `src/services/auth-service.ts:4-6`
+`AuthService.login` delegates straight to the persistence layer's `createSession`, passing `input.email`.
+
+**3. Persistence** — `src/persistence/session-store.ts:1-3`
+`createSession(email)` synchronously returns `{ sessionId: \`session:${email}\` }`. There is no DB, no async I/O, no validation, no error handling — the "session" is a derived string.
+
+Flow: `AuthController.login` → `AuthService.login` → `createSession` → returns `{ sessionId }` back up the chain. The whole thing is a thin skeleton; everything past the controller is one-line forwarding with no real persistence behind it.

@@ -50,7 +50,7 @@ const MAX_STDIO_DIFF_ITEMS = 100
 const MAX_RESOURCE_SUBSCRIPTIONS = 16
 const MAX_CONTEXT_PROMPT_SESSIONS = 256
 const MAX_CONTEXT_PACK_CACHE_ENTRIES = 256
-const graphCache = new Map<string, { mtimeMs: number; graph: ReturnType<typeof loadGraph> }>()
+const graphCache = new Map<string, { mtimeMs: number; size: number; graph: ReturnType<typeof loadGraph> }>()
 const MAX_COMPLETION_VALUES = 25
 const MAX_LOG_NOTIFICATION_CHARS = 10_000
 
@@ -415,14 +415,14 @@ function textToolResult(text: string): { content: Array<{ type: 'text'; text: st
 
 function loadGraphCached(graphPath: string): ReturnType<typeof loadGraph> {
   const safeGraphPath = validateGraphPath(graphPath)
-  const currentMtime = statSync(safeGraphPath).mtimeMs
+  const currentGraphStat = statSync(safeGraphPath)
   const cached = graphCache.get(safeGraphPath)
-  if (cached && cached.mtimeMs === currentMtime) {
+  if (cached && cached.mtimeMs === currentGraphStat.mtimeMs && cached.size === currentGraphStat.size) {
     return cached.graph
   }
 
   const graph = loadGraph(safeGraphPath)
-  graphCache.set(safeGraphPath, { mtimeMs: currentMtime, graph })
+  graphCache.set(safeGraphPath, { mtimeMs: currentGraphStat.mtimeMs, size: currentGraphStat.size, graph })
   return graph
 }
 

@@ -1,0 +1,12 @@
+The login session creation flow is a three-layer pass-through:
+
+**1. Controller** — `src/controllers/auth-controller.ts:6-8`
+`AuthController.login({ email })` delegates to `this.authService.login(input)`. The service is instantiated via a default constructor parameter (`new AuthService()`), so there's no DI wiring.
+
+**2. Service** — `src/services/auth-service.ts:4-6`
+`AuthService.login({ email })` calls the module-level `createSession(input.email)` from the persistence layer. The service adds no logic — no validation, no password check, no user lookup.
+
+**3. Persistence** — `src/persistence/session-store.ts:1-3`
+`createSession(email)` returns `{ sessionId: \`session:${email}\` }` synchronously. There is no actual store: no DB, no in-memory map, no expiry, no token signing — the "session ID" is just the email interpolated into a string.
+
+**Flow summary:** `controller → service → createSession` → returns `{ sessionId: "session:<email>" }`. Nothing is persisted; the function name is misleading. Notable gaps if this is meant to be real auth: no email validation, no credential verification, no session storage, no expiration, and the deterministic `session:<email>` ID is trivially guessable.
