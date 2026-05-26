@@ -235,6 +235,43 @@ function writeProjectFiles(projectRoot: string = PROJECT_FIXTURE_ROOT): void {
     mkdirSync(dirname(absolutePath), { recursive: true })
     writeFileSync(absolutePath, `${content}\n`, 'utf8')
   }
+
+  writeFileSync(
+    join(projectRoot, '.mcp.json'),
+    JSON.stringify(
+      {
+        mcpServers: {
+          madar: {
+            command: 'node',
+            args: ['dist/src/cli/bin.js', '--stdio', join(projectRoot, 'out', 'graph.json')],
+          },
+        },
+      },
+      null,
+      2,
+    ),
+    'utf8',
+  )
+  writeFileSync(join(projectRoot, 'CLAUDE.md'), '## madar\n', 'utf8')
+  mkdirSync(join(projectRoot, '.claude'), { recursive: true })
+  writeFileSync(
+    join(projectRoot, '.claude', 'settings.json'),
+    JSON.stringify(
+      {
+        hooks: {
+          UserPromptSubmit: [
+            {
+              type: 'command',
+              command: 'echo out/graph.json',
+            },
+          ],
+        },
+      },
+      null,
+      2,
+    ),
+    'utf8',
+  )
 }
 
 function writeGraphFixture(graph: KnowledgeGraph, graphFixtureRoot: string = GRAPH_FIXTURE_ROOT): string {

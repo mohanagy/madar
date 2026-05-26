@@ -549,6 +549,7 @@ describe('cli parser', () => {
       questionsPath: null,
       outputDir: resolve('out/compare'),
       baselineMode: 'full',
+      allowNoInstall: false,
       yes: false,
       limit: null,
     })
@@ -560,6 +561,7 @@ describe('cli parser', () => {
       questionsPath: 'benchmark-questions.json',
       outputDir: resolve('out/compare'),
       baselineMode: 'full',
+      allowNoInstall: false,
       yes: false,
       limit: null,
     })
@@ -577,6 +579,7 @@ describe('cli parser', () => {
         'out/compare/custom',
         '--baseline-mode',
         'bounded',
+        '--allow-no-install',
         '--yes',
         '--limit',
         '5',
@@ -588,6 +591,7 @@ describe('cli parser', () => {
       questionsPath: null,
       outputDir: resolve('out/compare/custom'),
       baselineMode: 'bounded',
+      allowNoInstall: true,
       yes: true,
       limit: 5,
     })
@@ -609,6 +613,7 @@ describe('cli parser', () => {
       questionsPath: null,
       outputDir: resolve('out/compare'),
       baselineMode: 'pack_only',
+      allowNoInstall: false,
       yes: false,
       limit: null,
     })
@@ -629,6 +634,7 @@ describe('cli parser', () => {
     questionsPath: null,
     outputDir: resolve('out/compare'),
     baselineMode: 'full',
+    allowNoInstall: false,
     yes: false,
     limit: null,
     why: true,
@@ -655,8 +661,8 @@ describe('cli parser', () => {
     expect(() => parseCompareArgs(['how does login work', '--exec', 'claude -p "$(cat {prompt_file})"', '--output-dir', '../outside'])).toThrow(
       'Only paths inside out/ are permitted',
     )
-    expect(() => parseCompareArgs(['   ', '--exec', 'claude -p "$(cat {prompt_file})"'])).toThrow('Usage: madar compare')
-    expect(() => parseCompareArgs(['--exec', 'claude -p "$(cat {prompt_file})"'])).toThrow('Usage: madar compare')
+    expect(() => parseCompareArgs(['   ', '--exec', 'claude -p "$(cat {prompt_file})"'])).toThrow('--allow-no-install')
+    expect(() => parseCompareArgs(['--exec', 'claude -p "$(cat {prompt_file})"'])).toThrow('--allow-no-install')
   })
 
   it('parses review-compare args with optional overrides', () => {
@@ -1017,6 +1023,7 @@ describe('cli main', () => {
     expect(help).toContain('--obsidian')
     expect(help).toContain('--svg')
     expect(help).toContain('--graphml')
+    expect(help).toContain('--allow-no-install')
     expect(help).toContain('--neo4j')
     expect(help).toContain('--neo4j-push')
     expect(help).toContain('--transport')
@@ -1128,6 +1135,7 @@ describe('cli main', () => {
       questionsPath: 'benchmark-questions.json',
       outputDir: resolve('out/compare/custom'),
       baselineMode: 'bounded',
+      allowNoInstall: false,
       yes: true,
       limit: 5,
       why: true,
@@ -1409,7 +1417,7 @@ describe('cli main', () => {
 
     expect(exitCode).toBe(2)
     expect(logs).toEqual([])
-    expect(errors).toEqual(['Usage: madar compare [question] --exec TEMPLATE [--graph path] [--questions PATH] [--output-dir DIR] [--baseline-mode MODE] [--yes] [--limit N]'])
+    expect(errors).toEqual(['Usage: madar compare [question] --exec TEMPLATE [--graph path] [--questions PATH] [--output-dir DIR] [--baseline-mode MODE] [--allow-no-install] [--yes] [--limit N]'])
   })
 
   it('prefers the explicit compare command over an implicit generate path match', async () => {

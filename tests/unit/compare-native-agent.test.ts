@@ -16,7 +16,46 @@ import {
 const FIXTURE_PARENT = resolve('out', 'test-runtime', 'native-agent')
 const COMPARE_OUTPUT_PARENT = resolve('out', 'compare', 'test-runtime-native-agent')
 
-function makeFixtureProject(): { projectDir: string; graphPath: string; outputDir: string } {
+function writeClaudeInstallArtifacts(projectDir: string, graphPath: string): void {
+  writeFileSync(
+    join(projectDir, '.mcp.json'),
+    JSON.stringify(
+      {
+        mcpServers: {
+          madar: {
+            command: 'node',
+            args: ['dist/src/cli/bin.js', '--stdio', graphPath],
+          },
+        },
+      },
+      null,
+      2,
+    ),
+    'utf8',
+  )
+  writeFileSync(join(projectDir, 'CLAUDE.md'), '## madar\n', 'utf8')
+  mkdirSync(join(projectDir, '.claude'), { recursive: true })
+  writeFileSync(
+    join(projectDir, '.claude', 'settings.json'),
+    JSON.stringify(
+      {
+        hooks: {
+          UserPromptSubmit: [
+            {
+              type: 'command',
+              command: 'echo out/graph.json',
+            },
+          ],
+        },
+      },
+      null,
+      2,
+    ),
+    'utf8',
+  )
+}
+
+function makeFixtureProject(options: { installState?: 'valid' | 'missing' } = {}): { projectDir: string; graphPath: string; outputDir: string } {
   mkdirSync(FIXTURE_PARENT, { recursive: true })
   mkdirSync(COMPARE_OUTPUT_PARENT, { recursive: true })
   const projectDir = mkdtempSync(join(FIXTURE_PARENT, 'project-'))
@@ -35,12 +74,11 @@ function makeFixtureProject(): { projectDir: string; graphPath: string; outputDi
     }),
     'utf8',
   )
-  // Plant the other snapshot targets so we can verify they round-trip.
-  writeFileSync(join(projectDir, '.mcp.json'), JSON.stringify({ mcpServers: { 'madar': {} } }, null, 2), 'utf8')
-  writeFileSync(join(projectDir, 'CLAUDE.md'), '# Project Claude rules\n', 'utf8')
-  mkdirSync(join(projectDir, '.claude'), { recursive: true })
-  writeFileSync(join(projectDir, '.claude', 'settings.json'), '{}\n', 'utf8')
-  return { projectDir, graphPath: join(projectDir, 'out', 'graph.json'), outputDir }
+  const graphPath = join(projectDir, 'out', 'graph.json')
+  if (options.installState !== 'missing') {
+    writeClaudeInstallArtifacts(projectDir, graphPath)
+  }
+  return { projectDir, graphPath, outputDir }
 }
 
 const BASELINE_USAGE_PAYLOAD = {
@@ -156,6 +194,35 @@ const VERBOSE_MADAR_PAYLOAD = [
   MADAR_USAGE_PAYLOAD,
 ] as const
 
+const VERBOSE_MADAR_NO_INSTALL_PAYLOAD = [
+  { type: 'system', subtype: 'init' },
+  {
+    type: 'assistant',
+    turn: 1,
+    message: {
+      content: [
+        { type: 'tool_use', name: 'Read' },
+        { type: 'tool_use', name: 'Grep' },
+      ],
+    },
+  },
+  MADAR_USAGE_PAYLOAD,
+] as const
+
+const VERBOSE_MADAR_MCP_RETRIEVE_PAYLOAD = [
+  { type: 'system', subtype: 'init' },
+  {
+    type: 'assistant',
+    turn: 1,
+    message: {
+      content: [
+        { type: 'tool_use', name: 'mcp__madar__retrieve' },
+      ],
+    },
+  },
+  MADAR_USAGE_PAYLOAD,
+] as const
+
 function scriptedRunner(payloads: { baseline: unknown; madar: unknown }): NativeAgentRunner {
   return async (input) => ({
     exitCode: 0,
@@ -176,7 +243,13 @@ function buildSummaryResult(overrides: {
   reductions: NonNullable<NativeAgentCompareReport['reductions']>
   madarTrace?: NativeAgentCompareReport['madar_trace']
   toolCallCounts?: NativeAgentCompareReport['tool_call_counts']
+  installVerified?: boolean
+  measurementValidity?: 'valid' | 'degraded' | 'invalid'
+  madarMcpCallCount?: number
 }): NativeAgentCompareResult {
+  const installVerified = overrides.installVerified ?? true
+  const madarMcpCallCount = overrides.madarMcpCallCount ?? overrides.madarTrace?.madar_mcp_call_count ?? 0
+  const measurementValidity = overrides.measurementValidity ?? (installVerified ? (madarMcpCallCount > 0 ? 'valid' : 'degraded') : 'invalid')
   return {
     graph_path: '/tmp/project/out/graph.json',
     output_root: '/tmp/project/out/compare/2026-05-12T00-00-00Z',
@@ -242,6 +315,9 @@ function buildSummaryResult(overrides: {
           },
           reduction_basis: 'provider_reported',
         },
+        install_verified: installVerified,
+        measurement_validity: measurementValidity,
+        madar_mcp_call_count: madarMcpCallCount,
         ...(overrides.toolCallCounts ? { tool_call_counts: overrides.toolCallCounts } : {}),
         ...(overrides.madarTrace ? { madar_trace: overrides.madarTrace } : {}),
         started_at: '2026-05-12T00:00:00.000Z',
@@ -304,6 +380,115 @@ describe('parseAnthropicResultEvent', () => {
 })
 
 describe('executeNativeAgentCompare', () => {
+  it('aborts when no Madar install is detected and --allow-no-install is not set', async () => {
+    const { projectDir, graphPath, outputDir } = makeFixtureProject({ installState: 'missing' })
+    try {
+      await expect(
+        executeNativeAgentCompare(
+          {
+            graphPath,
+            question: 'What is the cluster module?',
+            outputDir,
+            execTemplate: 'mock-runner',
+            baselineMode: 'native_agent',
+          },
+          {
+            runner: scriptedRunner({ baseline: BASELINE_USAGE_PAYLOAD, madar: MADAR_USAGE_PAYLOAD }),
+            now: () => new Date('2026-05-01T00:00:00Z'),
+          },
+        ),
+      ).rejects.toThrow(/No Madar install detected/)
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  it('marks runs invalid when install is missing but --allow-no-install is set', async () => {
+    const { projectDir, graphPath, outputDir } = makeFixtureProject({ installState: 'missing' })
+    try {
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          question: 'What is the cluster module?',
+          outputDir,
+          execTemplate: 'mock-runner',
+          baselineMode: 'native_agent',
+          allowNoInstall: true,
+        },
+        {
+          runner: scriptedRunner({ baseline: BASELINE_USAGE_PAYLOAD, madar: MADAR_USAGE_PAYLOAD }),
+          now: () => new Date('2026-05-01T00:00:00Z'),
+        },
+      )
+
+      const report = result.reports[0] as NativeAgentCompareReport
+      const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
+      const shareSafeReport = JSON.parse(readFileSync(report.paths.share_safe_report, 'utf8')) as Record<string, unknown>
+
+      expect(report.install_verified).toBe(false)
+      expect(report.measurement_validity).toBe('invalid')
+      expect(report.madar_mcp_call_count).toBe(0)
+      expect(savedReport.install_verified).toBe(false)
+      expect(savedReport.measurement_validity).toBe('invalid')
+      expect(shareSafeReport.install_verified).toBe(false)
+      expect(shareSafeReport.measurement_validity).toBe('invalid')
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  it('marks runs degraded when install is verified but the agent never invokes Madar', async () => {
+    const { projectDir, graphPath, outputDir } = makeFixtureProject()
+    try {
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          question: 'What is the cluster module?',
+          outputDir,
+          execTemplate: 'mock-runner',
+          baselineMode: 'native_agent',
+        },
+        {
+          runner: scriptedRunner({ baseline: VERBOSE_BASELINE_PAYLOAD, madar: VERBOSE_MADAR_NO_INSTALL_PAYLOAD }),
+          now: () => new Date('2026-05-01T00:00:00Z'),
+        },
+      )
+
+      const report = result.reports[0] as NativeAgentCompareReport
+      expect(report.install_verified).toBe(true)
+      expect(report.measurement_validity).toBe('degraded')
+      expect(report.madar_mcp_call_count).toBe(0)
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  it('marks runs valid when install is verified and Madar MCP is invoked', async () => {
+    const { projectDir, graphPath, outputDir } = makeFixtureProject()
+    try {
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          question: 'What is the cluster module?',
+          outputDir,
+          execTemplate: 'mock-runner',
+          baselineMode: 'native_agent',
+        },
+        {
+          runner: scriptedRunner({ baseline: VERBOSE_BASELINE_PAYLOAD, madar: VERBOSE_MADAR_MCP_RETRIEVE_PAYLOAD }),
+          now: () => new Date('2026-05-01T00:00:00Z'),
+        },
+      )
+
+      const report = result.reports[0] as NativeAgentCompareReport
+      expect(report.install_verified).toBe(true)
+      expect(report.measurement_validity).toBe('valid')
+      expect(report.madar_mcp_call_count).toBe(1)
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
   it('produces a report with both Anthropic-reported usage blocks and computed reductions', async () => {
     const { projectDir, graphPath, outputDir } = makeFixtureProject()
     try {
@@ -491,6 +676,7 @@ describe('executeNativeAgentCompare', () => {
           outputDir,
           execTemplate: 'mock-runner',
           baselineMode: 'native_agent',
+          allowNoInstall: true,
         },
         {
           runner: scriptedRunner({ baseline: BASELINE_USAGE_PAYLOAD, madar: MADAR_USAGE_PAYLOAD }),
@@ -908,7 +1094,8 @@ describe('formatNativeAgentCompareSummary', () => {
     expect(summary).toContain('Suite input_tokens (Anthropic-reported): 2 wins · 0 losses · 2/3 comparable · mean reduction 70.8% · median reduction 70.8% · best win: "win b" (75% less) · worst regression: none')
     expect(summary).toContain('Suite num_turns: 2 wins · 0 losses · 2/3 comparable · best win: "win b" (75% fewer) · worst regression: none')
     expect(summary).toContain('Suite latency: 2 wins · 0 losses · 2/3 comparable · best win: "win b" (75% faster) · worst regression: none')
-    expect(summary).toContain('"answer only" → answer-only run saved; no Anthropic usage block was available, so provider-proof reductions were not computed')
+    expect(summary).toContain('- "answer only"')
+    expect(summary).toContain('answer-only run saved; no Anthropic usage block was available, so provider-proof reductions were not computed')
   })
 
   it('surfaces whether Madar reduced exploration or only added context when trace data is present', () => {
@@ -946,6 +1133,7 @@ describe('formatNativeAgentCompareSummary', () => {
             tools: ['impact'],
           },
         ],
+        madar_mcp_call_count: 2,
         context_pack_call_count: 1,
         focused_follow_up_tool_call_count: 1,
         broad_exploration_tool_call_count: 0,
@@ -957,6 +1145,103 @@ describe('formatNativeAgentCompareSummary', () => {
 
     expect(summary).toContain('madar_trace: reduced_exploration')
     expect(summary).toContain('1 context_pack call; 1 focused follow-up call; no broad exploration recorded')
+    expect(summary).toContain('measurement_validity: valid')
+    expect(summary).toContain('install_verified: true')
+    expect(summary).toContain('madar_mcp_call_count: 2')
+  })
+
+  it('prints invalid measurement warnings when install is missing', () => {
+    const summary = formatNativeAgentCompareSummary(buildSummaryResult({
+      question: 'invalid case',
+      baselineTurns: 6,
+      madarTurns: 6,
+      baselineDurationMs: 6000,
+      madarDurationMs: 6000,
+      baselineInputTokens: 600,
+      madarInputTokens: 600,
+      reductions: {
+        num_turns: 1,
+        duration_ms: 1,
+        input_tokens: 1,
+        cost_usd: 1,
+      },
+      installVerified: false,
+      measurementValidity: 'invalid',
+      madarMcpCallCount: 0,
+    }))
+
+    expect(summary).toContain('measurement_validity: INVALID')
+    expect(summary).toContain('install_verified: false')
+    expect(summary).toContain('madar_mcp_call_count: 0')
+  })
+
+  it('prints install validity lines for answer-only runs', () => {
+    const result = buildSummaryResult({
+      question: 'answer-only case',
+      baselineTurns: 6,
+      madarTurns: 6,
+      baselineDurationMs: 6000,
+      madarDurationMs: 6000,
+      baselineInputTokens: 600,
+      madarInputTokens: 600,
+      reductions: {
+        num_turns: 1,
+        duration_ms: 1,
+        input_tokens: 1,
+        cost_usd: 1,
+      },
+      installVerified: false,
+      measurementValidity: 'invalid',
+      madarMcpCallCount: 0,
+    })
+    result.reports[0]!.madar = {
+      kind: 'answer_only',
+      evidence: 'madar answer',
+      exit_code: 0,
+      stderr: null,
+      result_path: '/tmp/project/madar.txt',
+    }
+
+    const summary = formatNativeAgentCompareSummary(result)
+
+    expect(summary).toContain('measurement_validity: INVALID')
+    expect(summary).toContain('install_verified: false')
+    expect(summary).toContain('madar_mcp_call_count: 0')
+    expect(summary).toContain('answer-only run saved')
+  })
+
+  it('prints install validity lines for runner-error runs', () => {
+    const result = buildSummaryResult({
+      question: 'runner-error case',
+      baselineTurns: 6,
+      madarTurns: 6,
+      baselineDurationMs: 6000,
+      madarDurationMs: 6000,
+      baselineInputTokens: 600,
+      madarInputTokens: 600,
+      reductions: {
+        num_turns: 1,
+        duration_ms: 1,
+        input_tokens: 1,
+        cost_usd: 1,
+      },
+      installVerified: true,
+      measurementValidity: 'degraded',
+      madarMcpCallCount: 0,
+    })
+    result.reports[0]!.madar = {
+      kind: 'runner_error',
+      evidence: 'runner failed',
+      exit_code: 1,
+      stderr: 'boom',
+    }
+
+    const summary = formatNativeAgentCompareSummary(result)
+
+    expect(summary).toContain('measurement_validity: degraded')
+    expect(summary).toContain('install_verified: true')
+    expect(summary).toContain('madar_mcp_call_count: 0')
+    expect(summary).toContain('runner error')
   })
 
   it('prints the tool-call delta when per-side tool counts are available', () => {

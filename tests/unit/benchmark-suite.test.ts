@@ -34,6 +34,44 @@ function createFixtureRepo(rootPath: string): string {
   writeFileSync(join(rootPath, 'package.json'), JSON.stringify({ name: 'fixture-repo', private: true }, null, 2), 'utf8')
   mkdirSync(join(rootPath, 'src'), { recursive: true })
   writeFileSync(join(rootPath, 'src', 'auth-controller.ts'), 'export const controller = true\n', 'utf8')
+  mkdirSync(join(rootPath, 'out'), { recursive: true })
+  writeFileSync(join(rootPath, 'out', 'graph.json'), '{}\n', 'utf8')
+  writeFileSync(
+    join(rootPath, '.mcp.json'),
+    JSON.stringify(
+      {
+        mcpServers: {
+          madar: {
+            command: 'node',
+            args: ['dist/src/cli/bin.js', '--stdio', join(rootPath, 'out', 'graph.json')],
+          },
+        },
+      },
+      null,
+      2,
+    ),
+    'utf8',
+  )
+  writeFileSync(join(rootPath, 'CLAUDE.md'), '## madar\n', 'utf8')
+  mkdirSync(join(rootPath, '.claude'), { recursive: true })
+  writeFileSync(
+    join(rootPath, '.claude', 'settings.json'),
+    JSON.stringify(
+      {
+        hooks: {
+          UserPromptSubmit: [
+            {
+              type: 'command',
+              command: 'echo out/graph.json',
+            },
+          ],
+        },
+      },
+      null,
+      2,
+    ),
+    'utf8',
+  )
   return rootPath
 }
 
@@ -151,6 +189,9 @@ function makeCompareResult(input: {
         other: {},
       },
     },
+    install_verified: true,
+    measurement_validity: 'valid',
+    madar_mcp_call_count: 1,
     reductions: {
       input_tokens: input.baselineInputTokens / input.madarInputTokens,
       uncached_input_tokens: input.baselineInputTokens / input.madarInputTokens,
@@ -520,6 +561,108 @@ describe('runBenchmarkSuite', () => {
       expect(summaryMarkdown).toContain('| python-service |')
       expect(summaryMarkdown).not.toContain('average across repos')
       expect(summaryMarkdown).not.toContain('headline')
+    })
+  })
+
+  it('skips runnable cells when the repo has no verified Madar install', async () => {
+    await withTempDir(async (tempDir) => {
+      const runnableRepoPath = createFixtureRepo(join(tempDir, 'repos', 'nestjs-mid'))
+      rmSync(join(runnableRepoPath, '.mcp.json'), { force: true })
+      rmSync(join(runnableRepoPath, 'CLAUDE.md'), { force: true })
+      rmSync(join(runnableRepoPath, '.claude'), { recursive: true, force: true })
+
+      const repos: BenchmarkSuiteRepo[] = [
+        {
+          id: 'nestjs-mid',
+          name: 'Fixture NestJS-like service',
+          path: runnableRepoPath,
+          description: 'Ready fixture',
+          size: 'mid',
+          language: 'typescript',
+          shape: 'service',
+          status: 'ready',
+          supportsSpi: false,
+        },
+      ]
+      const tasks: BenchmarkSuiteTask[] = [
+        {
+          id: 'explain-runtime',
+          name: 'Explain runtime flow',
+          description: 'Trace a runtime path end to end.',
+          status: 'ready',
+          prompts: {
+            'nestjs-mid': 'How does login session creation flow work?',
+          },
+        },
+      ]
+      let generateCalls = 0
+      let compareCalls = 0
+
+      const result = await runBenchmarkSuite(
+        {
+          repo: null,
+          task: 'explain-runtime',
+          mode: 'cold',
+          trials: 1,
+          outputDir: join(tempDir, 'results'),
+          execTemplate: 'mock-runner',
+          dryRun: false,
+          yes: true,
+        },
+        {
+          repos,
+          tasks,
+          generateGraph: (rootPath = '.', options = {}) => {
+            generateCalls += 1
+            return {
+              mode: options.useSpi ? 'generate' : 'generate',
+              rootPath,
+              outputDir: join(rootPath, 'out'),
+              graphPath: join(rootPath, 'out', 'graph.json'),
+              reportPath: join(rootPath, 'out', 'GRAPH_REPORT.md'),
+              htmlPath: null,
+              wikiPath: null,
+              obsidianPath: null,
+              svgPath: null,
+              graphmlPath: null,
+              cypherPath: null,
+              docsPath: null,
+              totalFiles: 1,
+              codeFiles: 1,
+              nonCodeFiles: 0,
+              extractableFiles: 1,
+              extractedFiles: 1,
+              totalWords: 10,
+              nodeCount: 1,
+              edgeCount: 0,
+              communityCount: 1,
+              changedFiles: 0,
+              deletedFiles: 0,
+              cache: null,
+              warning: null,
+              notes: [],
+            } satisfies GenerateGraphResult
+          },
+          executeNativeAgentCompare: async () => {
+            compareCalls += 1
+            throw new Error('install-skipped cells should not execute compare')
+          },
+        },
+      )
+
+      const summaryMarkdown = readFileSync(result.summaryPath!, 'utf8')
+
+      expect(generateCalls).toBe(0)
+      expect(compareCalls).toBe(0)
+      expect(result.summary?.cells[0]).toEqual(expect.objectContaining({
+        repoId: 'nestjs-mid',
+        status: 'skipped',
+        reason: expect.stringContaining('No Madar install detected'),
+      }))
+      expect(result.summary?.cells_skipped_for_install).toBe(1)
+      expect(summaryMarkdown).toContain('cells_skipped_for_install: 1')
+      expect(summaryMarkdown).toContain('skipped (no install)')
+      expect(summaryMarkdown).toContain('No Madar install detected in repo; skipped benchmark cell.')
     })
   })
 

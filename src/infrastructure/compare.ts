@@ -112,12 +112,27 @@ export interface CompareMadarTrace {
   tool_call_count: number
   tool_calls_by_name: Record<string, number>
   per_turn: CompareMadarTraceTurnSummary[]
+  madar_mcp_call_count: number
   context_pack_call_count: number
   focused_follow_up_tool_call_count: number
   broad_exploration_tool_call_count: number
   broad_exploration_tool_calls_by_name: Record<string, number>
   exploration_outcome: CompareMadarTraceOutcome
   exploration_summary: string
+}
+
+export type NativeAgentMeasurementValidity = 'valid' | 'degraded' | 'invalid'
+
+interface NativeAgentInstallArtifactCheck {
+  label: string
+  ok: boolean
+  detail: string
+  path: string
+}
+
+export interface NativeAgentInstallCheck {
+  verified: boolean
+  artifacts: NativeAgentInstallArtifactCheck[]
 }
 
 export interface ComparePromptReport {
@@ -189,6 +204,7 @@ export interface GenerateCompareArtifactsInput {
   outputDir: string
   execTemplate: string
   baselineMode: CompareBaselineMode
+  allowNoInstall?: boolean
   why?: boolean
   corpusText?: string
   limit?: number | null
@@ -836,6 +852,7 @@ function traceToolCountSummary(toolCallsByName: Record<string, number>): string 
 }
 
 function analyzeMadarTraceExploration(toolCallsByName: Record<string, number>): {
+  madar_mcp_call_count: number
   context_pack_call_count: number
   focused_follow_up_tool_call_count: number
   broad_exploration_tool_call_count: number
@@ -843,6 +860,7 @@ function analyzeMadarTraceExploration(toolCallsByName: Record<string, number>): 
   exploration_outcome: CompareMadarTraceOutcome
   exploration_summary: string
 } {
+  let madarMcpCallCount = 0
   let contextPackCallCount = 0
   let focusedFollowUpToolCallCount = 0
   let broadExplorationToolCallCount = 0
@@ -850,6 +868,13 @@ function analyzeMadarTraceExploration(toolCallsByName: Record<string, number>): 
 
   for (const [toolName, count] of Object.entries(toolCallsByName)) {
     const canonicalName = canonicalTraceToolName(toolName)
+    if (
+      toolName.startsWith('mcp__madar__')
+      || MADAR_CONTEXT_PACK_TOOL_NAMES.has(canonicalName)
+      || MADAR_FOCUSED_FOLLOW_UP_TOOL_NAMES.has(canonicalName)
+    ) {
+      madarMcpCallCount += count
+    }
     if (MADAR_CONTEXT_PACK_TOOL_NAMES.has(canonicalName)) {
       contextPackCallCount += count
       continue
@@ -870,6 +895,7 @@ function analyzeMadarTraceExploration(toolCallsByName: Record<string, number>): 
 
   if (contextPackCallCount === 0) {
     return {
+      madar_mcp_call_count: madarMcpCallCount,
       context_pack_call_count: 0,
       focused_follow_up_tool_call_count: focusedFollowUpToolCallCount,
       broad_exploration_tool_call_count: broadExplorationToolCallCount,
@@ -887,6 +913,7 @@ function analyzeMadarTraceExploration(toolCallsByName: Record<string, number>): 
 
   if (contextPackCallCount === 1 && broadExplorationToolCallCount === 0) {
     return {
+      madar_mcp_call_count: madarMcpCallCount,
       context_pack_call_count: contextPackCallCount,
       focused_follow_up_tool_call_count: focusedFollowUpToolCallCount,
       broad_exploration_tool_call_count: 0,
@@ -905,6 +932,7 @@ function analyzeMadarTraceExploration(toolCallsByName: Record<string, number>): 
       : `${broadExplorationToolCallCount} broad exploration ${broadExplorationToolCallCount === 1 ? 'call' : 'calls'}${Object.keys(sortedBroadExplorationToolCallsByName).length > 0 ? ` (${traceToolCountSummary(sortedBroadExplorationToolCallsByName)})` : ''}`
 
   return {
+    madar_mcp_call_count: madarMcpCallCount,
     context_pack_call_count: contextPackCallCount,
     focused_follow_up_tool_call_count: focusedFollowUpToolCallCount,
     broad_exploration_tool_call_count: broadExplorationToolCallCount,
@@ -2022,6 +2050,9 @@ export interface NativeAgentCompareReport {
   exec_command: CompareExecCommandSummary
   baseline: NativeAgentRunStatus
   madar: NativeAgentRunStatus
+  install_verified: boolean
+  measurement_validity: NativeAgentMeasurementValidity
+  madar_mcp_call_count: number
   tool_call_counts?: NativeAgentToolCallCounts
   madar_trace?: CompareMadarTrace
   reductions: {
@@ -2116,6 +2147,125 @@ export type NativeAgentRunner = (input: NativeAgentRunnerInput) => Promise<Nativ
 export interface ExecuteNativeAgentCompareDependencies {
   runner?: NativeAgentRunner
   now?: () => Date
+}
+
+const MADAR_SECTION_MARKER = '## madar'
+const OUT_PATH_SEGMENT_PATTERN = /(^|[^a-z0-9_])out(?:[\\/]|[^a-z0-9_]|$)/i
+
+function readJsonObject(filePath: string): Record<string, unknown> | null {
+  if (!existsSync(filePath)) {
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(readFileSync(filePath, 'utf8')) as unknown
+    return isRecord(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function containsOutPathReference(value: unknown): boolean {
+  if (typeof value === 'string') {
+    return OUT_PATH_SEGMENT_PATTERN.test(value)
+  }
+  if (Array.isArray(value)) {
+    return value.some(containsOutPathReference)
+  }
+  if (isRecord(value)) {
+    return Object.values(value).some(containsOutPathReference)
+  }
+  return false
+}
+
+function hasSectionMarker(filePath: string, marker = MADAR_SECTION_MARKER): boolean {
+  if (!existsSync(filePath)) {
+    return false
+  }
+  return readFileSync(filePath, 'utf8').includes(marker)
+}
+
+function findHookEntry(
+  settingsPath: string,
+  hookName: 'UserPromptSubmit' | 'PreToolUse' | 'BeforeTool',
+): boolean {
+  const settings = readJsonObject(settingsPath)
+  if (!settings) {
+    return false
+  }
+
+  const hooks = settings.hooks
+  if (!isRecord(hooks)) {
+    return false
+  }
+
+  const hookEntries = hooks[hookName]
+  return Array.isArray(hookEntries) && hookEntries.some(containsOutPathReference)
+}
+
+function hasMadarMcpEntry(configPath: string): boolean {
+  const config = readJsonObject(configPath)
+  if (!config) {
+    return false
+  }
+
+  return [config.mcpServers, config.servers].some((servers) => isRecord(servers) && isRecord(servers.madar))
+}
+
+export function inspectClaudeNativeAgentInstall(projectRoot: string): NativeAgentInstallCheck {
+  const mcpPath = join(projectRoot, '.mcp.json')
+  const claudeRulesPath = join(projectRoot, 'CLAUDE.md')
+  const settingsPath = join(projectRoot, '.claude', 'settings.json')
+  const artifacts: NativeAgentInstallArtifactCheck[] = [
+    {
+      label: '.mcp.json',
+      ok: hasMadarMcpEntry(mcpPath),
+      detail: '.mcp.json missing or has no `madar` entry',
+      path: mcpPath,
+    },
+    {
+      label: 'CLAUDE.md',
+      ok: hasSectionMarker(claudeRulesPath),
+      detail: 'CLAUDE.md missing `## madar` section',
+      path: claudeRulesPath,
+    },
+    {
+      label: '.claude/settings.json',
+      ok:
+        findHookEntry(settingsPath, 'UserPromptSubmit')
+        || findHookEntry(settingsPath, 'PreToolUse')
+        || findHookEntry(settingsPath, 'BeforeTool'),
+      detail: '.claude/settings.json missing Madar hook',
+      path: settingsPath,
+    },
+  ]
+
+  return {
+    verified: artifacts.every((artifact) => artifact.ok),
+    artifacts,
+  }
+}
+
+function formatNativeAgentInstallRequiredMessage(check: NativeAgentInstallCheck): string {
+  return [
+    'No Madar install detected in this directory:',
+    ...check.artifacts
+      .filter((artifact) => !artifact.ok)
+      .map((artifact) => `  x ${artifact.detail}`),
+    '',
+    'Run `madar claude install` in the target repo, then rerun compare.',
+    'To proceed without a verified install and mark the metrics INVALID, add `--allow-no-install`.',
+  ].join('\n')
+}
+
+export class NativeAgentInstallRequiredError extends Error {
+  readonly check: NativeAgentInstallCheck
+
+  constructor(check: NativeAgentInstallCheck) {
+    super(formatNativeAgentInstallRequiredMessage(check))
+    this.name = 'NativeAgentInstallRequiredError'
+    this.check = check
+  }
 }
 
 interface NativeAgentAnswerQualityGate {
@@ -2609,6 +2759,10 @@ export async function executeNativeAgentCompare(
   const runner = dependencies.runner ?? defaultNativeAgentRunner
   const reports: NativeAgentCompareReport[] = []
   const answerQualityGates = loadNativeAgentAnswerQualityGates(input.questionsPath)
+  const installCheck = inspectClaudeNativeAgentInstall(projectRoot)
+  if (!installCheck.verified && !input.allowNoInstall) {
+    throw new NativeAgentInstallRequiredError(installCheck)
+  }
 
   for (const [index, question] of questions.entries()) {
     const questionDir = questions.length === 1 ? outputRoot : join(outputRoot, `question-${String(index + 1).padStart(3, '0')}`)
@@ -2628,6 +2782,9 @@ export async function executeNativeAgentCompare(
       exec_command: summarizeExecTemplate(input.execTemplate),
       baseline: { kind: 'runner_error', evidence: null, exit_code: null, stderr: null },
       madar: { kind: 'runner_error', evidence: null, exit_code: null, stderr: null },
+      install_verified: installCheck.verified,
+      measurement_validity: installCheck.verified ? 'degraded' : 'invalid',
+      madar_mcp_call_count: 0,
       reductions: null,
       token_regression: false,
       token_regression_reasons: [],
@@ -2763,8 +2920,10 @@ export async function executeNativeAgentCompare(
       const madarTrace = extractMadarTrace(madarRun.stdout)
       if (madarTrace) {
         reportShell.madar_trace = madarTrace
+        reportShell.madar_mcp_call_count = madarTrace.madar_mcp_call_count
       } else {
         delete reportShell.madar_trace
+        reportShell.madar_mcp_call_count = 0
       }
       const event = parseAnthropicResultEvent(madarRun.stdout)
       if (event !== null) {
@@ -2845,6 +3004,12 @@ export async function executeNativeAgentCompare(
             ? 'mixed'
             : 'unknown'
     }
+    reportShell.measurement_validity =
+      reportShell.install_verified
+        ? reportShell.madar_mcp_call_count > 0
+          ? 'valid'
+          : 'degraded'
+        : 'invalid'
     const answerQuality = evaluateNativeAgentAnswerQualityReport(
       answerQualityGates,
       question,
@@ -2900,6 +3065,41 @@ function writeNativeAgentReport(report: NativeAgentCompareReport): void {
   )
 }
 
+function formatMeasurementValidityLine(report: NativeAgentCompareReport): string {
+  switch (report.measurement_validity) {
+    case 'valid':
+      return 'measurement_validity: valid'
+    case 'degraded':
+      return 'measurement_validity: degraded (install detected, but no Madar MCP call was recorded)'
+    case 'invalid':
+      return 'measurement_validity: INVALID — no Madar install was detected; do not cite these numbers'
+  }
+}
+
+function formatMadarMcpCallCountLine(report: NativeAgentCompareReport): string {
+  if (!report.madar_trace) {
+    return `madar_mcp_call_count: ${report.madar_mcp_call_count}`
+  }
+
+  const madarToolSummary = Object.entries(report.madar_trace.tool_calls_by_name)
+    .filter(([toolName]) => toolName.startsWith('mcp__madar__'))
+    .sort(([leftName], [rightName]) => leftName.localeCompare(rightName))
+    .map(([toolName]) => toolName)
+    .join(', ')
+
+  return madarToolSummary.length > 0
+    ? `madar_mcp_call_count: ${report.madar_mcp_call_count} (${madarToolSummary})`
+    : `madar_mcp_call_count: ${report.madar_mcp_call_count}`
+}
+
+function appendNativeAgentValidityLines(lines: string[], report: NativeAgentCompareReport): void {
+  lines.push(
+    `    ${formatMeasurementValidityLine(report)}`,
+    `    install_verified: ${report.install_verified}`,
+    `    ${formatMadarMcpCallCountLine(report)}`,
+  )
+}
+
 export function formatNativeAgentCompareSummary(result: NativeAgentCompareResult): string {
   const lines: string[] = [
     `[madar compare] completed ${result.reports.length} native_agent question(s)`,
@@ -2951,11 +3151,15 @@ export function formatNativeAgentCompareSummary(result: NativeAgentCompareResult
   }
   for (const report of result.reports) {
     if (isNativeAgentRunFailure(report.baseline) || isNativeAgentRunFailure(report.madar)) {
-      lines.push(`- "${report.question}" → runner error (see ${portablePath(report.paths.report)})`)
+      lines.push(`- "${report.question}"`)
+      appendNativeAgentValidityLines(lines, report)
+      lines.push(`    runner error (see ${portablePath(report.paths.report)})`)
       continue
     }
     if (report.baseline.kind === 'answer_only' || report.madar.kind === 'answer_only') {
-      lines.push(`- "${report.question}" → answer-only run saved; no Anthropic usage block was available, so provider-proof reductions were not computed (see ${portablePath(report.paths.report)})`)
+      lines.push(`- "${report.question}"`)
+      appendNativeAgentValidityLines(lines, report)
+      lines.push(`    answer-only run saved; no Anthropic usage block was available, so provider-proof reductions were not computed (see ${portablePath(report.paths.report)})`)
       continue
     }
 
@@ -2974,6 +3178,11 @@ export function formatNativeAgentCompareSummary(result: NativeAgentCompareResult
 
     lines.push(
       `- "${report.question}"`,
+      ...(() => {
+        const validityLines: string[] = []
+        appendNativeAgentValidityLines(validityLines, report)
+        return validityLines
+      })(),
       `    num_turns: baseline ${baseline.num_turns} → madar ${madar.num_turns}${formatDirectionalDelta(baseline.num_turns, madar.num_turns, 'fewer', 'more')}`,
       `    latency:   baseline ${baseline.duration_ms}ms → madar ${madar.duration_ms}ms${formatDirectionalDelta(baseline.duration_ms, madar.duration_ms, 'faster', 'slower')}`,
       `    input_tokens (Anthropic-reported): baseline ${baseline.total_input_tokens_anthropic_exact} → madar ${madar.total_input_tokens_anthropic_exact}${formatDirectionalDelta(baseline.total_input_tokens_anthropic_exact, madar.total_input_tokens_anthropic_exact, 'less', 'more', { noMeaningfulChangeThreshold: 0.1, neutralLabel: 'no meaningful change' })}`,

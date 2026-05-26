@@ -4,7 +4,7 @@ import { createInterface } from 'node:readline/promises'
 import { loadBenchmarkQuestions, type BenchmarkResult, printBenchmark, runBenchmark } from '../infrastructure/benchmark.js'
 import { runBenchmarkSuite } from '../infrastructure/benchmark/suite.js'
 import { evaluateRetrievalQuality, formatQualityReport } from '../infrastructure/benchmark/quality.js'
-import { runCompareCommand } from '../infrastructure/compare.js'
+import { NativeAgentInstallRequiredError, runCompareCommand } from '../infrastructure/compare.js'
 import { runContextPackCommand } from '../infrastructure/context-pack-command.js'
 import { runContextPromptCommand } from '../infrastructure/context-prompt-command.js'
 import { runDoctorCommand, runStatusCommand } from '../infrastructure/doctor.js'
@@ -191,16 +191,24 @@ const DEFAULT_DEPENDENCIES: CliDependencies = {
     return formatQualityReport(report)
   },
   runCompare: async ({ options }) => {
-    return await runCompareCommand({
-      graphPath: options.graphPath,
-      question: options.question,
-      questionsPath: options.questionsPath,
-      outputDir: options.outputDir,
-      execTemplate: options.execTemplate,
-      baselineMode: options.baselineMode,
-      limit: options.limit,
-      ...(options.why ? { why: true } : {}),
-    })
+    try {
+      return await runCompareCommand({
+        graphPath: options.graphPath,
+        question: options.question,
+        questionsPath: options.questionsPath,
+        outputDir: options.outputDir,
+        execTemplate: options.execTemplate,
+        baselineMode: options.baselineMode,
+        allowNoInstall: options.allowNoInstall,
+        limit: options.limit,
+        ...(options.why ? { why: true } : {}),
+      })
+    } catch (error) {
+      if (error instanceof NativeAgentInstallRequiredError) {
+        throw new UsageError(error.message)
+      }
+      throw error
+    }
   },
   runReviewCompare: async ({ options }) => {
     return await runReviewCompareCommand({
@@ -403,6 +411,7 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --questions PATH      load questions from a JSON file instead of a positional question',
     '    --output-dir DIR      compare output directory (default out/compare)',
     '    --baseline-mode MODE  full | bounded | pack_only | native_agent (default full; pack_only compares one bounded raw-context prompt against one compiled madar pack; native_agent runs --exec twice, uses Anthropic JSON usage when available, and otherwise saves answer-only artifacts)',
+    '    --allow-no-install    allow native_agent compare without a verified Madar install and mark the run invalid',
     '    --yes                 skip confirmation before running the paid prompt comparison',
     '    --limit N             cap processed prompts/questions for the comparison run',
     '    --why                 include retrieval-routing debug metadata in the compare summary and reports',

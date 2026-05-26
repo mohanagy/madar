@@ -1,0 +1,13 @@
+{
+  "baseline_mode": "native_agent",
+  "question": "How idea report is being generated",
+  "graph_path": "out/graph.json",
+  "install_verified": false,
+  "measurement_validity": "invalid",
+  "madar_mcp_call_count": 0,
+  "paths": {
+    "output_dir": "docs/benchmarks/regression/install-ab-govalidate-explain/no-install",
+    "report": "docs/benchmarks/regression/install-ab-govalidate-explain/no-install/report.json",
+    "share_safe_report": "docs/benchmarks/regression/install-ab-govalidate-explain/no-install/report.share-safe.json"
+  }
+}

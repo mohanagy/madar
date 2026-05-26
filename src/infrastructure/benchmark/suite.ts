@@ -2,7 +2,12 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, write
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 
-import { executeNativeAgentCompare, type NativeAgentCompareReport, type NativeAgentCompareResult } from '../compare.js'
+import {
+  executeNativeAgentCompare,
+  inspectClaudeNativeAgentInstall,
+  type NativeAgentCompareReport,
+  type NativeAgentCompareResult,
+} from '../compare.js'
 import { generateGraph, type GenerateGraphOptions, type GenerateGraphResult } from '../generate.js'
 
 export type BenchmarkSuiteMode = 'cold' | 'warm' | 'all'
@@ -71,7 +76,7 @@ export interface BenchmarkSuiteSummaryCell {
   taskName: string
   mode: 'cold' | 'warm'
   prompt: string | null
-  status: 'completed' | 'partial' | 'planned'
+  status: 'completed' | 'partial' | 'planned' | 'skipped'
   reason: string | null
   baseline: BenchmarkSuiteArmMetricsSummary
   madar: BenchmarkSuiteArmMetricsSummary
@@ -93,6 +98,7 @@ export interface BenchmarkSuiteSummary {
     mode: BenchmarkSuiteMode
     trials: number
   }
+  cells_skipped_for_install: number
   cells: BenchmarkSuiteSummaryCell[]
 }
 
@@ -373,9 +379,13 @@ function summarizeCellStatus(
   madar: BenchmarkSuiteArmMetricsSummary,
   spiMadar: BenchmarkSuiteArmMetricsSummary | null,
   planned: boolean,
+  skipped: boolean,
 ): BenchmarkSuiteSummaryCell['status'] {
   if (planned) {
     return 'planned'
+  }
+  if (skipped) {
+    return 'skipped'
   }
   const baselineDone = isCompletedArm(baseline)
   const madarDone = isCompletedArm(madar)
@@ -395,8 +405,12 @@ function formatMetric(stats: BenchmarkSuiteMetricStats | null, digits = 0): stri
 }
 
 function formatCellRow(cell: BenchmarkSuiteSummaryCell): string {
+  const statusLabel = cell.status === 'skipped' ? 'skipped (no install)' : cell.status
+  const reason = cell.reason ?? '—'
   return [
     cell.repoId,
+    statusLabel,
+    reason,
     formatMetric(cell.baseline.input_tokens),
     formatMetric(cell.madar.input_tokens),
     formatMetric(cell.spi_madar?.input_tokens ?? null),
@@ -424,6 +438,7 @@ function formatBenchmarkSuiteSummaryMarkdown(summary: BenchmarkSuiteSummary): st
     '',
     `- Generated: ${summary.completed_at}`,
     `- Filters: repo=${summary.filters.repo ?? 'all'}, task=${summary.filters.task ?? 'all'}, mode=${summary.filters.mode}, trials=${summary.filters.trials}`,
+    `- cells_skipped_for_install: ${summary.cells_skipped_for_install}`,
     '- Per-repo rows only.',
     '',
   ]
@@ -443,8 +458,8 @@ function formatBenchmarkSuiteSummaryMarkdown(summary: BenchmarkSuiteSummary): st
       }
       lines.push(`### ${mode === 'cold' ? 'Cold cache' : 'Warm cache'}`)
       lines.push('')
-      lines.push('| Repo | Baseline input tokens | Madar input tokens | SPI Madar input tokens | Baseline tool calls | Madar tool calls | SPI Madar tool calls | Baseline Read | Madar Read | SPI Madar Read | Baseline Glob/Grep | Madar Glob/Grep | SPI Madar Glob/Grep | Baseline wall-clock (ms) | Madar wall-clock (ms) | SPI Madar wall-clock (ms) | Baseline cost (USD) | Madar cost (USD) | SPI Madar cost (USD) |')
-      lines.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |')
+      lines.push('| Repo | Status | Reason | Baseline input tokens | Madar input tokens | SPI Madar input tokens | Baseline tool calls | Madar tool calls | SPI Madar tool calls | Baseline Read | Madar Read | SPI Madar Read | Baseline Glob/Grep | Madar Glob/Grep | SPI Madar Glob/Grep | Baseline wall-clock (ms) | Madar wall-clock (ms) | SPI Madar wall-clock (ms) | Baseline cost (USD) | Madar cost (USD) | SPI Madar cost (USD) |')
+      lines.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |')
       for (const cell of modeCells) {
         lines.push(`| ${formatCellRow(cell)} |`)
       }
@@ -525,6 +540,7 @@ export async function runBenchmarkSuite(
   const outputRoot = createSuiteOutputRoot(resolve(options.outputDir), startedAt)
   const readyPlans = plans.filter((plan) => plan.status === 'ready')
   const preparedRepos = new Map<string, { legacyGraphPath: string; spiGraphPath: string | null }>()
+  const skippedRepos = new Map<string, string>()
   const scratchRoots: string[] = []
   const stagingRoot = resolve('out/benchmark-suite-staging', timestampDirectoryName(startedAt))
   const summaryCells: BenchmarkSuiteSummaryCell[] = []
@@ -533,6 +549,20 @@ export async function runBenchmarkSuite(
     mkdirSync(stagingRoot, { recursive: true })
 
     for (const repo of [...new Set(readyPlans.map((plan) => plan.repo))]) {
+      const installCheck = inspectClaudeNativeAgentInstall(repo.path)
+      if (!installCheck.verified) {
+        skippedRepos.set(
+          repo.id,
+          [
+            'No Madar install detected in repo; skipped benchmark cell.',
+            ...installCheck.artifacts
+              .filter((artifact) => !artifact.ok)
+              .map((artifact) => artifact.detail),
+          ].join(' '),
+        )
+        continue
+      }
+
       const scratchRoot = mkdtempSync(join(tmpdir(), `madar-bench-suite-${repo.id}-`))
       scratchRoots.push(scratchRoot)
 
@@ -564,6 +594,28 @@ export async function runBenchmarkSuite(
           prompt: plan.prompt,
           status: 'planned',
           reason: plan.reason,
+          baseline: summarizeArmMetrics([], 'baseline'),
+          madar: summarizeArmMetrics([], 'madar'),
+          spi_madar: plan.repo.supportsSpi ? summarizeArmMetrics([], 'madar') : null,
+          artifacts: {
+            legacy_share_safe_reports: [],
+            spi_share_safe_reports: [],
+          },
+        })
+        continue
+      }
+
+      const skippedReason = skippedRepos.get(plan.repo.id)
+      if (skippedReason) {
+        summaryCells.push({
+          repoId: plan.repo.id,
+          repoName: plan.repo.name,
+          taskId: plan.task.id,
+          taskName: plan.task.name,
+          mode: plan.mode,
+          prompt: plan.prompt,
+          status: 'skipped',
+          reason: skippedReason,
           baseline: summarizeArmMetrics([], 'baseline'),
           madar: summarizeArmMetrics([], 'madar'),
           spi_madar: plan.repo.supportsSpi ? summarizeArmMetrics([], 'madar') : null,
@@ -636,7 +688,7 @@ export async function runBenchmarkSuite(
         taskName: plan.task.name,
         mode: plan.mode,
         prompt: plan.prompt,
-        status: summarizeCellStatus(baseline, madar, spiMadar, false),
+        status: summarizeCellStatus(baseline, madar, spiMadar, false, false),
         reason: null,
         baseline,
         madar,
@@ -666,18 +718,20 @@ export async function runBenchmarkSuite(
       mode: options.mode,
       trials: options.trials,
     },
+    cells_skipped_for_install: summaryCells.filter((cell) => cell.status === 'skipped').length,
     cells: summaryCells,
   }
   const { summaryPath, summaryJsonPath } = writeSummary(outputRoot, summary)
-  const runnableCount = summaryCells.filter((cell) => cell.status !== 'planned').length
+  const runnableCount = summaryCells.filter((cell) => cell.status !== 'planned' && cell.status !== 'skipped').length
   const plannedCount = summaryCells.filter((cell) => cell.status === 'planned').length
+  const skippedCount = summary.cells_skipped_for_install
 
   return {
     text: [
       `Wrote benchmark suite results to ${portablePath(outputRoot)}`,
       `Summary: ${portablePath(summaryPath)}`,
       `JSON: ${portablePath(summaryJsonPath)}`,
-      `Cells: ${runnableCount} measured · ${plannedCount} planned`,
+      `Cells: ${runnableCount} measured · ${plannedCount} planned · ${skippedCount} skipped for install`,
     ].join('\n'),
     outputRoot,
     summaryPath,

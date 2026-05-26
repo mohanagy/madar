@@ -105,6 +105,7 @@ export interface CompareCliOptions {
   questionsPath: string | null
   outputDir: string
   baselineMode: 'full' | 'bounded' | 'pack_only' | 'native_agent'
+  allowNoInstall: boolean
   yes: boolean
   limit: number | null
   why?: boolean
@@ -185,6 +186,8 @@ export interface HookCliOptions {
 export interface InstallCliOptions {
   platform: InstallPlatform
 }
+
+const COMPARE_USAGE = 'Usage: madar compare [question] --exec TEMPLATE [--graph path] [--questions PATH] [--output-dir DIR] [--baseline-mode MODE] [--allow-no-install] [--yes] [--limit N]'
 
 export interface PlatformActionCliOptions {
   action: 'install' | 'uninstall'
@@ -1075,6 +1078,7 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
   let questionsPath: string | null = null
   let outputDir = 'out/compare'
   let baselineMode: 'full' | 'bounded' | 'pack_only' | 'native_agent' = 'full'
+  let allowNoInstall = false
   let yes = false
   let limit: number | null = null
   let why = false
@@ -1087,15 +1091,11 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
 
     if (!argument.startsWith('--')) {
       if (question !== null) {
-        throw new UsageError(
-          'Usage: madar compare [question] --exec TEMPLATE [--graph path] [--questions PATH] [--output-dir DIR] [--baseline-mode MODE] [--yes] [--limit N]',
-        )
+        throw new UsageError(COMPARE_USAGE)
       }
       const normalizedQuestion = argument.trim()
       if (normalizedQuestion.length === 0) {
-        throw new UsageError(
-          'Usage: madar compare [question] --exec TEMPLATE [--graph path] [--questions PATH] [--output-dir DIR] [--baseline-mode MODE] [--yes] [--limit N]',
-        )
+        throw new UsageError(COMPARE_USAGE)
       }
       question = normalizedQuestion
       continue
@@ -1166,6 +1166,11 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
       continue
     }
 
+    if (argument === '--allow-no-install') {
+      allowNoInstall = true
+      continue
+    }
+
     if (argument === '--limit') {
       limit = parsePositiveDecimalInteger('--limit', requireOptionValue('--limit', args[index + 1]))
       index += 1
@@ -1191,9 +1196,7 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
   }
 
   if (question === null && questionsPath === null) {
-    throw new UsageError(
-      'Usage: madar compare [question] --exec TEMPLATE [--graph path] [--questions PATH] [--output-dir DIR] [--baseline-mode MODE] [--yes] [--limit N]',
-    )
+    throw new UsageError(COMPARE_USAGE)
   }
 
   if (execTemplate.length === 0) {
@@ -1202,7 +1205,18 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
 
   outputDir = validateGraphOutputPath(outputDir)
 
-  return { question, graphPath, execTemplate, questionsPath, outputDir, baselineMode, yes, limit, ...(why ? { why: true } : {}) }
+  return {
+    question,
+    graphPath,
+    execTemplate,
+    questionsPath,
+    outputDir,
+    baselineMode,
+    allowNoInstall,
+    yes,
+    limit,
+    ...(why ? { why: true } : {}),
+  }
 }
 
 export function parseReviewCompareArgs(args: string[]): ReviewCompareCliOptions {

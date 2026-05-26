@@ -1,0 +1,44 @@
+{
+  "baseline_mode": "native_agent",
+  "question": "How idea report is being generated",
+  "graph_path": "out/graph.json",
+  "install_verified": true,
+  "measurement_validity": "valid",
+  "madar_mcp_call_count": 2,
+  "madar_trace": {
+    "source": "claude_messages_tool_use",
+    "summary": "2 tool calls across 2 turns",
+    "tool_call_count": 2,
+    "tool_calls_by_name": {
+      "mcp__madar__retrieve": 2
+    },
+    "per_turn": [
+      {
+        "turn": 1,
+        "tool_call_count": 1,
+        "tools": [
+          "mcp__madar__retrieve"
+        ]
+      },
+      {
+        "turn": 2,
+        "tool_call_count": 1,
+        "tools": [
+          "mcp__madar__retrieve"
+        ]
+      }
+    ],
+    "madar_mcp_call_count": 2,
+    "context_pack_call_count": 0,
+    "focused_follow_up_tool_call_count": 2,
+    "broad_exploration_tool_call_count": 0,
+    "broad_exploration_tool_calls_by_name": {},
+    "exploration_outcome": "no_context_pack",
+    "exploration_summary": "no context_pack call recorded"
+  },
+  "paths": {
+    "output_dir": "docs/benchmarks/regression/install-ab-govalidate-explain/with-install",
+    "report": "docs/benchmarks/regression/install-ab-govalidate-explain/with-install/report.json",
+    "share_safe_report": "docs/benchmarks/regression/install-ab-govalidate-explain/with-install/report.share-safe.json"
+  }
+}
