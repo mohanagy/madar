@@ -661,8 +661,8 @@ describe('cli parser', () => {
     expect(() => parseCompareArgs(['how does login work', '--exec', 'claude -p "$(cat {prompt_file})"', '--output-dir', '../outside'])).toThrow(
       'Only paths inside out/ are permitted',
     )
-    expect(() => parseCompareArgs(['   ', '--exec', 'claude -p "$(cat {prompt_file})"'])).toThrow('Usage: madar compare')
-    expect(() => parseCompareArgs(['--exec', 'claude -p "$(cat {prompt_file})"'])).toThrow('Usage: madar compare')
+    expect(() => parseCompareArgs(['   ', '--exec', 'claude -p "$(cat {prompt_file})"'])).toThrow('--allow-no-install')
+    expect(() => parseCompareArgs(['--exec', 'claude -p "$(cat {prompt_file})"'])).toThrow('--allow-no-install')
   })
 
   it('parses review-compare args with optional overrides', () => {
@@ -1023,6 +1023,7 @@ describe('cli main', () => {
     expect(help).toContain('--obsidian')
     expect(help).toContain('--svg')
     expect(help).toContain('--graphml')
+    expect(help).toContain('--allow-no-install')
     expect(help).toContain('--neo4j')
     expect(help).toContain('--neo4j-push')
     expect(help).toContain('--transport')
@@ -1416,7 +1417,7 @@ describe('cli main', () => {
 
     expect(exitCode).toBe(2)
     expect(logs).toEqual([])
-    expect(errors).toEqual(['Usage: madar compare [question] --exec TEMPLATE [--graph path] [--questions PATH] [--output-dir DIR] [--baseline-mode MODE] [--yes] [--limit N]'])
+    expect(errors).toEqual(['Usage: madar compare [question] --exec TEMPLATE [--graph path] [--questions PATH] [--output-dir DIR] [--baseline-mode MODE] [--allow-no-install] [--yes] [--limit N]'])
   })
 
   it('prefers the explicit compare command over an implicit generate path match', async () => {

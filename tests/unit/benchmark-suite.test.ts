@@ -496,104 +496,6 @@ describe('runBenchmarkSuite', () => {
               baselineGrep: 1,
               madarGrep: isSpi ? 0 : 1,
             })
-
-            it('skips runnable cells when the repo has no verified Madar install', async () => {
-              await withTempDir(async (tempDir) => {
-                const runnableRepoPath = createFixtureRepo(join(tempDir, 'repos', 'nestjs-mid'))
-                rmSync(join(runnableRepoPath, '.mcp.json'), { force: true })
-                rmSync(join(runnableRepoPath, 'CLAUDE.md'), { force: true })
-                rmSync(join(runnableRepoPath, '.claude'), { recursive: true, force: true })
-
-                const repos: BenchmarkSuiteRepo[] = [
-                  {
-                    id: 'nestjs-mid',
-                    name: 'Fixture NestJS-like service',
-                    path: runnableRepoPath,
-                    description: 'Ready fixture',
-                    size: 'mid',
-                    language: 'typescript',
-                    shape: 'service',
-                    status: 'ready',
-                    supportsSpi: false,
-                  },
-                ]
-                const tasks: BenchmarkSuiteTask[] = [
-                  {
-                    id: 'explain-runtime',
-                    name: 'Explain runtime flow',
-                    description: 'Trace a runtime path end to end.',
-                    status: 'ready',
-                    prompts: {
-                      'nestjs-mid': 'How does login session creation flow work?',
-                    },
-                  },
-                ]
-                let generateCalls = 0
-                let compareCalls = 0
-
-                const result = await runBenchmarkSuite(
-                  {
-                    repo: null,
-                    task: 'explain-runtime',
-                    mode: 'cold',
-                    trials: 1,
-                    outputDir: join(tempDir, 'results'),
-                    execTemplate: 'mock-runner',
-                    dryRun: false,
-                    yes: true,
-                  },
-                  {
-                    repos,
-                    tasks,
-                    generateGraph: (rootPath = '.', options = {}) => {
-                      generateCalls += 1
-                      return {
-                        mode: options.useSpi ? 'generate' : 'generate',
-                        rootPath,
-                        outputDir: join(rootPath, 'out'),
-                        graphPath: join(rootPath, 'out', 'graph.json'),
-                        reportPath: join(rootPath, 'out', 'GRAPH_REPORT.md'),
-                        htmlPath: null,
-                        wikiPath: null,
-                        obsidianPath: null,
-                        svgPath: null,
-                        graphmlPath: null,
-                        cypherPath: null,
-                        docsPath: null,
-                        totalFiles: 1,
-                        codeFiles: 1,
-                        nonCodeFiles: 0,
-                        extractableFiles: 1,
-                        extractedFiles: 1,
-                        totalWords: 10,
-                        nodeCount: 1,
-                        edgeCount: 0,
-                        communityCount: 1,
-                        changedFiles: 0,
-                        deletedFiles: 0,
-                        cache: null,
-                        warning: null,
-                        notes: [],
-                      } satisfies GenerateGraphResult
-                    },
-                    executeNativeAgentCompare: async () => {
-                      compareCalls += 1
-                      throw new Error('install-skipped cells should not execute compare')
-                    },
-                  },
-                )
-
-                expect(generateCalls).toBe(0)
-                expect(compareCalls).toBe(0)
-                expect(result.summary?.cells[0]).toEqual(expect.objectContaining({
-                  repoId: 'nestjs-mid',
-                  status: 'skipped',
-                  reason: expect.stringContaining('No Madar install detected'),
-                }))
-                expect(result.summary?.cells_skipped_for_install).toBe(1)
-                expect(readFileSync(result.summaryPath!, 'utf8')).toContain('cells_skipped_for_install: 1')
-              })
-            })
           },
         },
       )
@@ -659,6 +561,108 @@ describe('runBenchmarkSuite', () => {
       expect(summaryMarkdown).toContain('| python-service |')
       expect(summaryMarkdown).not.toContain('average across repos')
       expect(summaryMarkdown).not.toContain('headline')
+    })
+  })
+
+  it('skips runnable cells when the repo has no verified Madar install', async () => {
+    await withTempDir(async (tempDir) => {
+      const runnableRepoPath = createFixtureRepo(join(tempDir, 'repos', 'nestjs-mid'))
+      rmSync(join(runnableRepoPath, '.mcp.json'), { force: true })
+      rmSync(join(runnableRepoPath, 'CLAUDE.md'), { force: true })
+      rmSync(join(runnableRepoPath, '.claude'), { recursive: true, force: true })
+
+      const repos: BenchmarkSuiteRepo[] = [
+        {
+          id: 'nestjs-mid',
+          name: 'Fixture NestJS-like service',
+          path: runnableRepoPath,
+          description: 'Ready fixture',
+          size: 'mid',
+          language: 'typescript',
+          shape: 'service',
+          status: 'ready',
+          supportsSpi: false,
+        },
+      ]
+      const tasks: BenchmarkSuiteTask[] = [
+        {
+          id: 'explain-runtime',
+          name: 'Explain runtime flow',
+          description: 'Trace a runtime path end to end.',
+          status: 'ready',
+          prompts: {
+            'nestjs-mid': 'How does login session creation flow work?',
+          },
+        },
+      ]
+      let generateCalls = 0
+      let compareCalls = 0
+
+      const result = await runBenchmarkSuite(
+        {
+          repo: null,
+          task: 'explain-runtime',
+          mode: 'cold',
+          trials: 1,
+          outputDir: join(tempDir, 'results'),
+          execTemplate: 'mock-runner',
+          dryRun: false,
+          yes: true,
+        },
+        {
+          repos,
+          tasks,
+          generateGraph: (rootPath = '.', options = {}) => {
+            generateCalls += 1
+            return {
+              mode: options.useSpi ? 'generate' : 'generate',
+              rootPath,
+              outputDir: join(rootPath, 'out'),
+              graphPath: join(rootPath, 'out', 'graph.json'),
+              reportPath: join(rootPath, 'out', 'GRAPH_REPORT.md'),
+              htmlPath: null,
+              wikiPath: null,
+              obsidianPath: null,
+              svgPath: null,
+              graphmlPath: null,
+              cypherPath: null,
+              docsPath: null,
+              totalFiles: 1,
+              codeFiles: 1,
+              nonCodeFiles: 0,
+              extractableFiles: 1,
+              extractedFiles: 1,
+              totalWords: 10,
+              nodeCount: 1,
+              edgeCount: 0,
+              communityCount: 1,
+              changedFiles: 0,
+              deletedFiles: 0,
+              cache: null,
+              warning: null,
+              notes: [],
+            } satisfies GenerateGraphResult
+          },
+          executeNativeAgentCompare: async () => {
+            compareCalls += 1
+            throw new Error('install-skipped cells should not execute compare')
+          },
+        },
+      )
+
+      const summaryMarkdown = readFileSync(result.summaryPath!, 'utf8')
+
+      expect(generateCalls).toBe(0)
+      expect(compareCalls).toBe(0)
+      expect(result.summary?.cells[0]).toEqual(expect.objectContaining({
+        repoId: 'nestjs-mid',
+        status: 'skipped',
+        reason: expect.stringContaining('No Madar install detected'),
+      }))
+      expect(result.summary?.cells_skipped_for_install).toBe(1)
+      expect(summaryMarkdown).toContain('cells_skipped_for_install: 1')
+      expect(summaryMarkdown).toContain('skipped (no install)')
+      expect(summaryMarkdown).toContain('No Madar install detected in repo; skipped benchmark cell.')
     })
   })
 

@@ -20,12 +20,16 @@ describe('compare install regression fixture', () => {
 
     expect(noInstallReport.install_verified).toBe(false)
     expect(noInstallReport.measurement_validity).toBe('invalid')
+    expect(noInstallReport.madar_mcp_call_count).toBe(0)
     expect(withInstallReport.install_verified).toBe(true)
     expect(withInstallReport.measurement_validity).toBe('valid')
+    expect(withInstallReport.madar_mcp_call_count).toBe(2)
 
     expect(noInstallShareSafeReport.install_verified).toBe(false)
     expect(noInstallShareSafeReport.measurement_validity).toBe('invalid')
+    expect(noInstallShareSafeReport.madar_mcp_call_count).toBe(0)
     expect(withInstallShareSafeReport.install_verified).toBe(true)
     expect(withInstallShareSafeReport.measurement_validity).toBe('valid')
+    expect(withInstallShareSafeReport.madar_mcp_call_count).toBe(2)
   })
 })
