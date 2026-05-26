@@ -4,6 +4,14 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+## [0.27.0-next.1] - 2026-05-26
+
+### Changed
+
+- **Context packs stay more trustworthy when evidence is weak**: directive adapters now switch to more cautious wording when confidence or semantic coverage is weak, implementation packs prefer workflow centers in `recommended_first_read`, and runtime-generation explain fallbacks demote helper-style nodes when no execution spine is available.
+- **Installed-agent flows expand less often and compare output explains why**: strict agent install guidance now answers after one strong pack unless diagnostics or missing-context signals justify expansion, and compare/native-agent traces now distinguish between reduced exploration and added-context-only runs.
+- **Runtime and reporting surfaces are more honest and stable**: runtime-generation `phase_coverage` no longer overstates unseen phases, graph summaries avoid empty outputs on valid graphs, compare output reports token regressions in the right direction, and sensitive-path detection is less prone to false positives.
+
 ## [0.27.0-next.0] - 2026-05-25
 
 ### Added
