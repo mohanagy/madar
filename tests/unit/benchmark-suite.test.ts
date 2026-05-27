@@ -655,7 +655,8 @@ describe('runBenchmarkSuite', () => {
             } satisfies GenerateGraphResult
           },
           executeNativeAgentCompare: async (input) => {
-            const mode = input.outputDir.includes('/cold-cache/') ? 'cold' : 'warm'
+            const normalizedOutputDir = input.outputDir.replaceAll('\\', '/')
+            const mode = normalizedOutputDir.includes('/cold-cache/') ? 'cold' : 'warm'
             graphPathsByMode.set(mode, [...(graphPathsByMode.get(mode) ?? []), input.graphPath])
             return makeCompareResult({
               question: input.question ?? 'unknown',
