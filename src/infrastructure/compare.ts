@@ -6,7 +6,7 @@ import type { ContextPackRoutingDebug } from '../contracts/context-pack.js'
 import { KnowledgeGraph } from '../contracts/graph.js'
 import type { ContextSessionState } from '../contracts/context-session.js'
 import { buildContextPrompt, type ContextPromptStableSection } from './context-prompt.js'
-import { buildExplainPackPayload } from './context-pack-command.js'
+import { buildExplainPackPayloadCore } from './context-pack-command.js'
 import { isMadarProjectHook } from './install.js'
 import { CODE_EXTENSIONS, DOC_EXTENSIONS, MANIFEST_METADATA_KEY, OFFICE_EXTENSIONS, PAPER_EXTENSIONS } from '../pipeline/detect.js'
 import { extractCompareBaselineNonCodeText } from '../pipeline/extract/non-code.js'
@@ -1624,7 +1624,7 @@ export function buildBaselinePromptPack(input: BuildBaselinePromptPackInput): Co
 
 export function buildMadarPromptPack(input: BuildMadarPromptPackInput): ComparePromptPack {
   const explainPayload = JSON.stringify(
-    buildExplainPackPayload(compactRetrieveResult(input.retrieval), input.retrieval),
+    buildExplainPackPayloadCore(compactRetrieveResult(input.retrieval), input.retrieval),
     null,
     2,
   )

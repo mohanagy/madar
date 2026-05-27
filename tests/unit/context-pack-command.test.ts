@@ -997,6 +997,11 @@ describe('context-pack-command', () => {
       schema_version?: number
       task?: string
       task_intent?: string
+      pack?: {
+        workflow_centers?: unknown
+        recommended_first_read?: unknown
+        confidence_score?: unknown
+      }
       workflow_centers?: Array<{
         label?: string
         path?: string
@@ -1066,6 +1071,9 @@ describe('context-pack-command', () => {
     expect(payload.recommended_first_read?.[0]?.path).toBe(payload.workflow_centers?.[0]?.path)
     expect(payload.recommended_first_read?.[0]?.path).toBe('src/infrastructure/context-pack-command.ts')
     expect(payload.likely_edit_files?.some((entry) => entry.path === 'src/contracts/context-pack.ts')).toBe(false)
+    expect(payload.pack?.workflow_centers).toBeUndefined()
+    expect(payload.pack?.recommended_first_read).toBeUndefined()
+    expect(payload.pack?.confidence_score).toBeUndefined()
   })
 
   it('surfaces lexical helpers as negative guidance instead of edit targets for implementation packs', async () => {
