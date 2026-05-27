@@ -7,6 +7,7 @@ import { KnowledgeGraph } from '../contracts/graph.js'
 import type { ContextSessionState } from '../contracts/context-session.js'
 import { buildContextPrompt, type ContextPromptStableSection } from './context-prompt.js'
 import { buildExplainPackPayload } from './context-pack-command.js'
+import { isMadarProjectHook } from './install.js'
 import { CODE_EXTENSIONS, DOC_EXTENSIONS, MANIFEST_METADATA_KEY, OFFICE_EXTENSIONS, PAPER_EXTENSIONS } from '../pipeline/detect.js'
 import { extractCompareBaselineNonCodeText } from '../pipeline/extract/non-code.js'
 import { loadBenchmarkQuestions } from './benchmark/questions.js'
@@ -2323,8 +2324,6 @@ export interface ExecuteNativeAgentCompareDependencies {
 }
 
 const MADAR_SECTION_MARKER = '## madar'
-const OUT_PATH_SEGMENT_PATTERN = /(^|[^a-z0-9_])out(?:[\\/]|[^a-z0-9_]|$)/i
-
 function readJsonObject(filePath: string): Record<string, unknown> | null {
   if (!existsSync(filePath)) {
     return null
@@ -2336,19 +2335,6 @@ function readJsonObject(filePath: string): Record<string, unknown> | null {
   } catch {
     return null
   }
-}
-
-function containsOutPathReference(value: unknown): boolean {
-  if (typeof value === 'string') {
-    return OUT_PATH_SEGMENT_PATTERN.test(value)
-  }
-  if (Array.isArray(value)) {
-    return value.some(containsOutPathReference)
-  }
-  if (isRecord(value)) {
-    return Object.values(value).some(containsOutPathReference)
-  }
-  return false
 }
 
 function hasSectionMarker(filePath: string, marker = MADAR_SECTION_MARKER): boolean {
@@ -2373,7 +2359,13 @@ function findHookEntry(
   }
 
   const hookEntries = hooks[hookName]
-  return Array.isArray(hookEntries) && hookEntries.some(containsOutPathReference)
+  const matcher =
+    hookName === 'PreToolUse'
+      ? 'Glob|Grep|Bash|Agent|Read'
+      : hookName === 'BeforeTool'
+        ? 'read_file|list_directory|search_for_pattern'
+        : undefined
+  return Array.isArray(hookEntries) && hookEntries.some((hook) => isMadarProjectHook(hook, matcher))
 }
 
 function hasMadarMcpEntry(configPath: string): boolean {

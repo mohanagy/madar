@@ -6,56 +6,23 @@ import { describe, expect, it } from 'vitest'
 import {
   executeNativeAgentCompare,
   formatNativeAgentCompareSummary,
+  inspectClaudeNativeAgentInstall,
   parseAnthropicResultEvent,
   type CompareRunMode,
   type NativeAgentCompareResult,
   type NativeAgentCompareReport,
   type NativeAgentRunner,
 } from '../../src/infrastructure/compare.js'
+import { claudeInstall } from '../../src/infrastructure/install.js'
 
 const FIXTURE_PARENT = resolve('out', 'test-runtime', 'native-agent')
 const COMPARE_OUTPUT_PARENT = resolve('out', 'compare', 'test-runtime-native-agent')
 
-function writeClaudeInstallArtifacts(projectDir: string, graphPath: string): void {
-  writeFileSync(
-    join(projectDir, '.mcp.json'),
-    JSON.stringify(
-      {
-        mcpServers: {
-          madar: {
-            command: 'node',
-            args: ['dist/src/cli/bin.js', '--stdio', graphPath],
-          },
-        },
-      },
-      null,
-      2,
-    ),
-    'utf8',
-  )
-  writeFileSync(join(projectDir, 'CLAUDE.md'), '## madar\n', 'utf8')
-  mkdirSync(join(projectDir, '.claude'), { recursive: true })
-  writeFileSync(
-    join(projectDir, '.claude', 'settings.json'),
-    JSON.stringify(
-      {
-        hooks: {
-          UserPromptSubmit: [
-            {
-              type: 'command',
-              command: 'echo out/graph.json',
-            },
-          ],
-        },
-      },
-      null,
-      2,
-    ),
-    'utf8',
-  )
+function writeClaudeInstallArtifacts(projectDir: string): void {
+  claudeInstall(projectDir)
 }
 
-function makeFixtureProject(options: { installState?: 'valid' | 'missing' } = {}): { projectDir: string; graphPath: string; outputDir: string } {
+function makeFixtureProject(options: { installState?: 'managed' | 'valid' | 'missing' } = {}): { projectDir: string; graphPath: string; outputDir: string } {
   mkdirSync(FIXTURE_PARENT, { recursive: true })
   mkdirSync(COMPARE_OUTPUT_PARENT, { recursive: true })
   const projectDir = mkdtempSync(join(FIXTURE_PARENT, 'project-'))
@@ -75,8 +42,10 @@ function makeFixtureProject(options: { installState?: 'valid' | 'missing' } = {}
     'utf8',
   )
   const graphPath = join(projectDir, 'out', 'graph.json')
-  if (options.installState !== 'missing') {
-    writeClaudeInstallArtifacts(projectDir, graphPath)
+  if (options.installState === 'managed') {
+    claudeInstall(projectDir)
+  } else if (options.installState !== 'missing') {
+    writeClaudeInstallArtifacts(projectDir)
   }
   return { projectDir, graphPath, outputDir }
 }
@@ -612,6 +581,67 @@ describe('executeNativeAgentCompare', () => {
         },
         exploration_outcome: 'madar_invoked',
       }))
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  it('recognizes the real Claude installer hook as a verified Madar install', async () => {
+    const { projectDir, graphPath, outputDir } = makeFixtureProject({ installState: 'managed' })
+    try {
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          question: 'What is the cluster module?',
+          outputDir,
+          execTemplate: 'mock-runner',
+          baselineMode: 'native_agent',
+        },
+        {
+          runner: scriptedRunner({ baseline: VERBOSE_BASELINE_PAYLOAD, madar: VERBOSE_MADAR_MCP_RETRIEVE_PAYLOAD }),
+          now: () => new Date('2026-05-01T00:00:00Z'),
+        },
+      )
+
+      const report = result.reports[0] as NativeAgentCompareReport
+      expect(report.install_verified).toBe(true)
+      expect(report.measurement_validity).toBe('valid')
+      expect(report.madar_mcp_call_count).toBe(1)
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  it('does not treat a non-Claude managed hook matcher as a verified Claude install', () => {
+    const { projectDir } = makeFixtureProject({ installState: 'managed' })
+    try {
+      writeFileSync(
+        join(projectDir, '.claude', 'settings.json'),
+        JSON.stringify(
+          {
+            hooks: {
+              PreToolUse: [
+                {
+                  name: 'madar',
+                  source: 'madar',
+                  matcher: 'read_file|list_directory|search_for_pattern',
+                  hooks: [
+                    {
+                      type: 'command',
+                      command: 'echo ignored',
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+          null,
+          2,
+        ),
+        'utf8',
+      )
+
+      expect(inspectClaudeNativeAgentInstall(projectDir).verified).toBe(false)
     } finally {
       rmSync(projectDir, { recursive: true, force: true })
     }

@@ -32,6 +32,8 @@ export const MCP_TOOL_PROFILES = ['core', 'full'] as const
 export type McpToolProfile = (typeof MCP_TOOL_PROFILES)[number]
 export const INSTALL_PROFILES = [...MCP_TOOL_PROFILES, 'strict'] as const
 export type InstallProfile = (typeof INSTALL_PROFILES)[number]
+const MANAGED_HOOK_NAME = 'madar'
+const MANAGED_HOOK_SOURCE = 'madar'
 
 interface InstallPlatformConfig {
   skillFile: string
@@ -200,13 +202,31 @@ function isMadarProjectHookCommand(command: string): boolean {
   )
 }
 
-function isMadarProjectHook(hook: unknown, matcher?: string): boolean {
+function hasMadarHookSentinel(hook: Record<string, unknown>): boolean {
+  return hook.name === MANAGED_HOOK_NAME
+    || hook.source === MANAGED_HOOK_SOURCE
+    || (typeof hook.source === 'string' && hook.source.startsWith(`${MANAGED_HOOK_SOURCE}:`))
+}
+
+function withManagedHookIdentity<T extends Record<string, unknown>>(hook: T): T & { name: string; source: string } {
+  return {
+    ...hook,
+    name: MANAGED_HOOK_NAME,
+    source: MANAGED_HOOK_SOURCE,
+  }
+}
+
+export function isMadarProjectHook(hook: unknown, matcher?: string): boolean {
   if (!isRecord(hook) || !Array.isArray(hook.hooks)) {
     return false
   }
 
   if (matcher !== undefined && hook.matcher !== matcher) {
     return false
+  }
+
+  if (hasMadarHookSentinel(hook)) {
+    return true
   }
 
   return hook.hooks.some(
@@ -310,7 +330,7 @@ const CODEX_HOOK = {
   // SECURITY: Keep this command static. Do not interpolate user-controlled input here.
   hooks: {
     PreToolUse: [
-      {
+      withManagedHookIdentity({
         matcher: 'Bash',
         hooks: [
           {
@@ -326,7 +346,7 @@ const CODEX_HOOK = {
             ),
           },
         ],
-      },
+      }),
     ],
   },
 }
@@ -609,7 +629,7 @@ function cursorRule(profile?: InstallProfile): string {
 }
 
 function settingsHook(profile?: InstallProfile): Record<string, unknown> {
-  return {
+  return withManagedHookIdentity({
     hooks: [
       {
         type: 'command',
@@ -624,11 +644,11 @@ function settingsHook(profile?: InstallProfile): Record<string, unknown> {
         ),
       },
     ],
-  }
+  })
 }
 
 function geminiHook(profile?: InstallProfile): Record<string, unknown> {
-  return {
+  return withManagedHookIdentity({
     matcher: 'read_file|list_directory|search_for_pattern',
     hooks: [
       {
@@ -642,7 +662,7 @@ function geminiHook(profile?: InstallProfile): Record<string, unknown> {
         ),
       },
     ],
-  }
+  })
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1722,7 +1742,7 @@ function uninstallGeminiHook(projectDir: string): string | undefined {
   const settings = readJsonObject(settingsPath)
   const hooks = ensureRecord(settings, 'hooks')
   const beforeTool = ensureArray(hooks, 'BeforeTool')
-  const filtered = beforeTool.filter((hook) => !JSON.stringify(hook).includes('out'))
+  const filtered = beforeTool.filter((hook) => !isMadarProjectHook(hook, 'read_file|list_directory|search_for_pattern'))
 
   if (filtered.length === beforeTool.length) {
     return undefined

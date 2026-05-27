@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 import type { GenerateGraphResult } from '../../src/infrastructure/generate.js'
 import type { NativeAgentCompareResult, NativeAgentCompareReport } from '../../src/infrastructure/compare.js'
 import type { BenchmarkEnvironment, BenchmarkExpectedEnvironment } from '../../src/infrastructure/benchmark/environment.js'
+import { claudeInstall } from '../../src/infrastructure/install.js'
 import {
   loadBenchmarkSuiteRepos,
   loadBenchmarkSuiteTasks,
@@ -37,42 +38,7 @@ function createFixtureRepo(rootPath: string): string {
   writeFileSync(join(rootPath, 'src', 'auth-controller.ts'), 'export const controller = true\n', 'utf8')
   mkdirSync(join(rootPath, 'out'), { recursive: true })
   writeFileSync(join(rootPath, 'out', 'graph.json'), '{}\n', 'utf8')
-  writeFileSync(
-    join(rootPath, '.mcp.json'),
-    JSON.stringify(
-      {
-        mcpServers: {
-          madar: {
-            command: 'node',
-            args: ['dist/src/cli/bin.js', '--stdio', join(rootPath, 'out', 'graph.json')],
-          },
-        },
-      },
-      null,
-      2,
-    ),
-    'utf8',
-  )
-  writeFileSync(join(rootPath, 'CLAUDE.md'), '## madar\n', 'utf8')
-  mkdirSync(join(rootPath, '.claude'), { recursive: true })
-  writeFileSync(
-    join(rootPath, '.claude', 'settings.json'),
-    JSON.stringify(
-      {
-        hooks: {
-          UserPromptSubmit: [
-            {
-              type: 'command',
-              command: 'echo out/graph.json',
-            },
-          ],
-        },
-      },
-      null,
-      2,
-    ),
-    'utf8',
-  )
+  claudeInstall(rootPath)
   return rootPath
 }
 

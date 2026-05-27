@@ -18,6 +18,7 @@ import {
   resolveCompareQuestions,
 } from '../../src/infrastructure/compare.js'
 import { runContextPackCommand } from '../../src/infrastructure/context-pack-command.js'
+import { claudeInstall } from '../../src/infrastructure/install.js'
 import { parsePromptRunnerOutput } from '../../src/infrastructure/prompt-runner.js'
 import { saveManifest } from '../../src/pipeline/manifest.js'
 import { toJson } from '../../src/pipeline/export.js'
@@ -236,42 +237,7 @@ function writeProjectFiles(projectRoot: string = PROJECT_FIXTURE_ROOT): void {
     writeFileSync(absolutePath, `${content}\n`, 'utf8')
   }
 
-  writeFileSync(
-    join(projectRoot, '.mcp.json'),
-    JSON.stringify(
-      {
-        mcpServers: {
-          madar: {
-            command: 'node',
-            args: ['dist/src/cli/bin.js', '--stdio', join(projectRoot, 'out', 'graph.json')],
-          },
-        },
-      },
-      null,
-      2,
-    ),
-    'utf8',
-  )
-  writeFileSync(join(projectRoot, 'CLAUDE.md'), '## madar\n', 'utf8')
-  mkdirSync(join(projectRoot, '.claude'), { recursive: true })
-  writeFileSync(
-    join(projectRoot, '.claude', 'settings.json'),
-    JSON.stringify(
-      {
-        hooks: {
-          UserPromptSubmit: [
-            {
-              type: 'command',
-              command: 'echo out/graph.json',
-            },
-          ],
-        },
-      },
-      null,
-      2,
-    ),
-    'utf8',
-  )
+  claudeInstall(projectRoot)
 }
 
 function writeGraphFixture(graph: KnowledgeGraph, graphFixtureRoot: string = GRAPH_FIXTURE_ROOT): string {

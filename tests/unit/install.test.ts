@@ -226,6 +226,22 @@ function extractHookCommand(settingsJson: string, eventName: string): string {
   return parsed.hooks?.[eventName]?.[0]?.hooks?.[0]?.command ?? ''
 }
 
+function extractHookEntry(settingsJson: string, eventName: string): Record<string, unknown> {
+  const parsed = JSON.parse(settingsJson) as {
+    hooks?: Record<string, Array<Record<string, unknown>>>
+  }
+  return parsed.hooks?.[eventName]?.[0] ?? {}
+}
+
+function extractCodexPreToolUseEntry(hooksJson: string): Record<string, unknown> {
+  const parsed = JSON.parse(hooksJson) as {
+    hooks?: {
+      PreToolUse?: Array<Record<string, unknown>>
+    }
+  }
+  return parsed.hooks?.PreToolUse?.[0] ?? {}
+}
+
 function shellCommandForPlatform(
   platform: NodeJS.Platform,
   command: string,
@@ -676,6 +692,22 @@ describe('install helpers', () => {
       expect(decodedPayloads).toContain('Use the graph result as the first bounded pass')
       expect(decodedPayloads).toContain(STRICT_NON_MADAR_MCP_RULE_PLAIN)
       expect(decodedPayloads).toContain(STRICT_SKILL_OVERRIDE_RULE_PLAIN)
+    })
+  })
+
+  it('writes a stable `name: madar` sentinel into installed Claude, Gemini, and Codex hook entries', () => {
+    withTempDir((projectDir) => {
+      claudeInstall(projectDir)
+      geminiInstall(projectDir)
+      agentsInstall(projectDir, 'codex')
+
+      const claudeSettings = readFileSync(join(projectDir, '.claude', 'settings.json'), 'utf8')
+      const geminiSettings = readFileSync(join(projectDir, '.gemini', 'settings.json'), 'utf8')
+      const codexHooks = readFileSync(join(projectDir, '.codex', 'hooks.json'), 'utf8')
+
+      expect(extractHookEntry(claudeSettings, 'UserPromptSubmit').name).toBe('madar')
+      expect(extractHookEntry(geminiSettings, 'BeforeTool').name).toBe('madar')
+      expect(extractCodexPreToolUseEntry(codexHooks).name).toBe('madar')
     })
   })
 
