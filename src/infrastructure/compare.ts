@@ -2783,15 +2783,9 @@ interface NativeAgentSuiteChange {
 }
 
 function nativeAgentReductionsAttributable(
-  report: Pick<NativeAgentCompareReport, 'measurement_validity' | 'madar_mcp_call_count' | 'madar_trace'>,
+  report: Pick<NativeAgentCompareReport, 'measurement_validity'>,
 ): boolean {
-  if (report.measurement_validity === 'invalid') {
-    return false
-  }
-  if (report.madar_trace) {
-    return report.madar_mcp_call_count > 0
-  }
-  return true
+  return report.measurement_validity === 'valid'
 }
 
 function isComparableNativeAgentReport(report: NativeAgentCompareReport): report is NativeAgentComparableReport {
