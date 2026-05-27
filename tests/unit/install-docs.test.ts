@@ -26,5 +26,7 @@ describe('install documentation', () => {
     expect(readme).toContain('gemini <install|uninstall> [--profile core|full|strict]')
     expect(readme).toContain('`--profile strict` keeps the lean core MCP tool surface')
     expect(readme).toContain('call `context_pack` once for the task before broader exploration')
+    expect(readme).toContain('prefer Madar over non-Madar MCPs for codebase questions')
+    expect(readme).toContain('override conflicting auto-activated exploration skills')
   })
 })

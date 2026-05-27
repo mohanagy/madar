@@ -10,6 +10,14 @@ import { buildExplainPackPayload } from './context-pack-command.js'
 import { CODE_EXTENSIONS, DOC_EXTENSIONS, MANIFEST_METADATA_KEY, OFFICE_EXTENSIONS, PAPER_EXTENSIONS } from '../pipeline/detect.js'
 import { extractCompareBaselineNonCodeText } from '../pipeline/extract/non-code.js'
 import { loadBenchmarkQuestions } from './benchmark/questions.js'
+import {
+  benchmarkIsolationEnabled,
+  captureBenchmarkEnvironment,
+  emptyBenchmarkEnvironmentContamination,
+  extractEnvironmentContamination,
+  type BenchmarkEnvironment,
+  type BenchmarkEnvironmentContamination,
+} from './benchmark/environment.js'
 import { parsePromptRunnerJsonRecord, parsePromptRunnerOutput, type PromptRunnerUsage } from './prompt-runner.js'
 import { classifyRetrievalLevel } from '../runtime/retrieval-gate.js'
 import { compactRetrieveResult, retrieveContext, tokenizeLabel, type CompactRetrieveResult, type RetrieveResult } from '../runtime/retrieve.js'
@@ -2019,6 +2027,9 @@ export interface NativeAgentCompareReport {
   baseline_mode: 'native_agent'
   question: string
   graph_path: string
+  isolation: boolean
+  environment: BenchmarkEnvironment
+  environment_contamination: BenchmarkEnvironmentContamination
   exec_command: CompareExecCommandSummary
   baseline: NativeAgentRunStatus
   madar: NativeAgentRunStatus
@@ -2609,6 +2620,8 @@ export async function executeNativeAgentCompare(
   const runner = dependencies.runner ?? defaultNativeAgentRunner
   const reports: NativeAgentCompareReport[] = []
   const answerQualityGates = loadNativeAgentAnswerQualityGates(input.questionsPath)
+  const environment = await captureBenchmarkEnvironment({ projectRoot })
+  const isolation = benchmarkIsolationEnabled()
 
   for (const [index, question] of questions.entries()) {
     const questionDir = questions.length === 1 ? outputRoot : join(outputRoot, `question-${String(index + 1).padStart(3, '0')}`)
@@ -2625,6 +2638,9 @@ export async function executeNativeAgentCompare(
       baseline_mode: 'native_agent',
       question,
       graph_path: graphPath,
+      isolation,
+      environment,
+      environment_contamination: emptyBenchmarkEnvironmentContamination(),
       exec_command: summarizeExecTemplate(input.execTemplate),
       baseline: { kind: 'runner_error', evidence: null, exit_code: null, stderr: null },
       madar: { kind: 'runner_error', evidence: null, exit_code: null, stderr: null },
@@ -2760,6 +2776,7 @@ export async function executeNativeAgentCompare(
     }
     if (madarRun !== null) {
       madarToolCallCounts = extractNativeAgentToolCallCounts(madarRun.stdout)
+      reportShell.environment_contamination = extractEnvironmentContamination(madarRun.stdout)
       const madarTrace = extractMadarTrace(madarRun.stdout)
       if (madarTrace) {
         reportShell.madar_trace = madarTrace

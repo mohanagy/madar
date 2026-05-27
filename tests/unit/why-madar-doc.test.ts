@@ -131,6 +131,8 @@ describe('public marketing copy honesty', () => {
       expect(content).toContain('## How we measure')
       expect(lower).toContain('per-repo spread')
       expect(lower).toContain('no single-number cross-repo headline')
+      expect(content).toContain('Published benchmark cells run in isolation mode')
+      expect(content).toContain('Your local numbers may differ if your Claude Code config differs.')
     })
 
     it('links the claims-and-evidence map, benchmark suite scaffold, and mixed-evidence benchmark notes', () => {

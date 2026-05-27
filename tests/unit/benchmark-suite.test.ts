@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { GenerateGraphResult } from '../../src/infrastructure/generate.js'
 import type { NativeAgentCompareResult, NativeAgentCompareReport } from '../../src/infrastructure/compare.js'
+import type { BenchmarkEnvironment, BenchmarkExpectedEnvironment } from '../../src/infrastructure/benchmark/environment.js'
 import {
   loadBenchmarkSuiteRepos,
   loadBenchmarkSuiteTasks,
@@ -87,6 +88,8 @@ function makeCompareResult(input: {
   madarGlob: number
   baselineGrep: number
   madarGrep: number
+  isolation?: boolean
+  environment?: BenchmarkEnvironment
 }): NativeAgentCompareResult {
   mkdirSync(input.outputDir, { recursive: true })
   const baselineAnswerPath = join(input.outputDir, 'baseline-answer.txt')
@@ -124,6 +127,32 @@ function makeCompareResult(input: {
     baseline_mode: 'native_agent',
     question: input.question,
     graph_path: input.graphPath,
+    isolation: input.isolation ?? false,
+    environment: input.environment ?? {
+      claude_code_version: '1.2.3',
+      host_os: 'darwin-arm64',
+      node_version: 'v22.0.0',
+      mcp_servers_active: ['madar'],
+      mcp_server_count: 1,
+      skills_loaded: [],
+      skills_loaded_count: 0,
+      plugins_active: [],
+      user_claude_md_hash: 'sha256:isolation',
+      project_claude_md_hash: null,
+      parent_claude_md_hashes: [],
+      hooks_active: {
+        user_prompt_submit: [],
+        pre_tool_use: [],
+        post_tool_use: [],
+      },
+    },
+    environment_contamination: {
+      skills_activated_during_run: [],
+      skills_conflicting_with_madar_rules: [],
+      calls_to_other_mcps: {},
+      subagent_dispatches_detected: 0,
+      skill_alignment_score: 1,
+    },
     exec_command: {
       command: null,
       placeholders: ['{prompt_file}'],
@@ -197,6 +226,21 @@ function makeCompareResult(input: {
     output_root: input.outputDir,
     reports: [report],
   }
+}
+
+const ISOLATED_EXPECTED_ENVIRONMENT: BenchmarkExpectedEnvironment = {
+  isolation_required: true,
+  mcp_servers_active: ['madar'],
+  skills_loaded: [],
+  plugins_active: [],
+  user_claude_md_hash: 'sha256:isolation',
+  project_claude_md_hash: null,
+  parent_claude_md_hashes: [],
+  hooks_active: {
+    user_prompt_submit: [],
+    pre_tool_use: [],
+    post_tool_use: [],
+  },
 }
 
 describe('benchmark suite manifests', () => {
@@ -481,6 +525,7 @@ describe('runBenchmarkSuite', () => {
           taskId: 'explain-runtime',
           mode: 'cold',
           status: 'completed',
+          isolation: false,
           baseline: expect.objectContaining({
             input_tokens: expect.objectContaining({
               median: 302,
@@ -517,7 +562,9 @@ describe('runBenchmarkSuite', () => {
       expect(summaryMarkdown).toContain('### Cold cache')
       expect(summaryMarkdown).toContain('### Warm cache')
       expect(summaryMarkdown).toContain('| nestjs-mid |')
+      expect(summaryMarkdown).toContain('| completed | false |')
       expect(summaryMarkdown).toContain('| python-service |')
+      expect(summaryMarkdown).toContain('Cells skipped for env drift: 0')
       expect(summaryMarkdown).not.toContain('average across repos')
       expect(summaryMarkdown).not.toContain('headline')
     })
@@ -741,6 +788,135 @@ describe('runBenchmarkSuite', () => {
       expect(publishedReport.graph_path).toBe('<project-root>/out/graph.json')
       expect(publishedReport.baseline.result_path).toBe('<artifact-root>/baseline-answer.txt')
       expect(publishedReport.madar.result_path).toBe('<artifact-root>/madar-answer.txt')
+    })
+  })
+
+  it('marks isolation env drift as env_mismatch and skips compare execution', async () => {
+    const previousIsolation = process.env.MADAR_BENCH_ISOLATION
+    process.env.MADAR_BENCH_ISOLATION = '1'
+    await withTempDir(async (tempDir) => {
+      try {
+        const runnableRepoPath = createFixtureRepo(join(tempDir, 'repos', 'nestjs-mid'))
+        const repos: BenchmarkSuiteRepo[] = [
+          {
+            id: 'nestjs-mid',
+            name: 'Fixture NestJS-like service',
+            path: runnableRepoPath,
+            description: 'Ready fixture',
+            size: 'mid',
+            language: 'typescript',
+            shape: 'service',
+            status: 'ready',
+            supportsSpi: false,
+          },
+        ]
+        const tasks: BenchmarkSuiteTask[] = [
+          {
+            id: 'explain-runtime',
+            name: 'Explain runtime flow',
+            description: 'Trace a runtime path end to end.',
+            status: 'ready',
+            prompts: {
+              'nestjs-mid': 'How does login session creation flow work?',
+            },
+          },
+        ]
+        let compareCalls = 0
+
+        const result = await runBenchmarkSuite(
+          {
+            repo: null,
+            task: 'explain-runtime',
+            mode: 'cold',
+            trials: 1,
+            outputDir: join(tempDir, 'results'),
+            execTemplate: 'mock-runner',
+            dryRun: false,
+            yes: true,
+          },
+          {
+            repos,
+            tasks,
+            expectedEnvironment: ISOLATED_EXPECTED_ENVIRONMENT,
+            captureBenchmarkEnvironment: async () => ({
+              claude_code_version: '1.2.3',
+              host_os: 'darwin-arm64',
+              node_version: 'v22.0.0',
+              mcp_servers_active: ['github', 'madar'],
+              mcp_server_count: 2,
+              skills_loaded: ['systematic-debugging'],
+              skills_loaded_count: 1,
+              plugins_active: ['superpowers'],
+              user_claude_md_hash: 'sha256:daily-driver',
+              project_claude_md_hash: null,
+              parent_claude_md_hashes: [],
+              hooks_active: {
+                user_prompt_submit: ['user:command:prompt'],
+                pre_tool_use: [],
+                post_tool_use: [],
+              },
+            }),
+            generateGraph: (rootPath = '.', options = {}) => {
+              const outputDir = join(rootPath, 'out')
+              mkdirSync(outputDir, { recursive: true })
+              const graphPath = join(outputDir, 'graph.json')
+              writeFileSync(graphPath, '{}\n', 'utf8')
+              return {
+                mode: options.useSpi ? 'generate' : 'generate',
+                rootPath,
+                outputDir,
+                graphPath,
+                reportPath: join(outputDir, 'GRAPH_REPORT.md'),
+                htmlPath: null,
+                wikiPath: null,
+                obsidianPath: null,
+                svgPath: null,
+                graphmlPath: null,
+                cypherPath: null,
+                docsPath: null,
+                totalFiles: 1,
+                codeFiles: 1,
+                nonCodeFiles: 0,
+                extractableFiles: 1,
+                extractedFiles: 1,
+                totalWords: 10,
+                nodeCount: 1,
+                edgeCount: 0,
+                communityCount: 1,
+                changedFiles: 0,
+                deletedFiles: 0,
+                cache: null,
+                warning: null,
+                notes: [],
+              } satisfies GenerateGraphResult
+            },
+            executeNativeAgentCompare: async () => {
+              compareCalls += 1
+              throw new Error('env-mismatch cells should not run compare')
+            },
+          },
+        )
+
+        expect(compareCalls).toBe(0)
+        expect(result.summary?.cells).toEqual([
+          expect.objectContaining({
+            repoId: 'nestjs-mid',
+            taskId: 'explain-runtime',
+            mode: 'cold',
+            status: 'env_mismatch',
+            isolation: true,
+          }),
+        ])
+        expect(result.summary?.cells_skipped_for_env_drift).toBe(1)
+        expect(result.summary?.cells[0]?.reason).toContain('mcp_servers_active')
+        expect(result.text).toContain('Cells: 0 measured · 1 env mismatch · 0 planned')
+      } finally {
+        if (previousIsolation === undefined) {
+          delete process.env.MADAR_BENCH_ISOLATION
+        } else {
+          process.env.MADAR_BENCH_ISOLATION = previousIsolation
+        }
+      }
     })
   })
 })

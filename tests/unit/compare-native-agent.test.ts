@@ -156,6 +156,34 @@ const VERBOSE_MADAR_PAYLOAD = [
   MADAR_USAGE_PAYLOAD,
 ] as const
 
+const CONTAMINATED_VERBOSE_MADAR_PAYLOAD = [
+  { type: 'system', subtype: 'init' },
+  {
+    type: 'assistant',
+    turn: 1,
+    message: {
+      content: [
+        { type: 'text', text: '<command-name>superpowers:using-superpowers</command-name>' },
+        { type: 'text', text: 'Skill tool invoked: {"skill":"superpowers:systematic-debugging"}' },
+        { type: 'tool_use', name: 'mcp__madar__context_pack' },
+      ],
+    },
+  },
+  {
+    type: 'assistant',
+    turn: 2,
+    message: {
+      content: [
+        { type: 'text', text: '<command-name>everything-claude-code:documentation-lookup</command-name>' },
+        { type: 'text', text: 'spawn_agent worker launched' },
+        { type: 'tool_use', name: 'mcp__github__search_code' },
+        { type: 'tool_use', name: 'mcp__context7__get-library-docs' },
+      ],
+    },
+  },
+  MADAR_USAGE_PAYLOAD,
+] as const
+
 function scriptedRunner(payloads: { baseline: unknown; madar: unknown }): NativeAgentRunner {
   return async (input) => ({
     exitCode: 0,
@@ -185,6 +213,32 @@ function buildSummaryResult(overrides: {
         baseline_mode: 'native_agent',
         question: overrides.question,
         graph_path: '/tmp/project/out/graph.json',
+        isolation: false,
+        environment: {
+          claude_code_version: '1.2.3',
+          host_os: 'darwin-arm64',
+          node_version: 'v22.0.0',
+          mcp_servers_active: ['madar'],
+          mcp_server_count: 1,
+          skills_loaded: [],
+          skills_loaded_count: 0,
+          plugins_active: [],
+          user_claude_md_hash: 'sha256:isolation',
+          project_claude_md_hash: null,
+          parent_claude_md_hashes: [],
+          hooks_active: {
+            user_prompt_submit: [],
+            pre_tool_use: [],
+            post_tool_use: [],
+          },
+        },
+        environment_contamination: {
+          skills_activated_during_run: [],
+          skills_conflicting_with_madar_rules: [],
+          calls_to_other_mcps: {},
+          subagent_dispatches_detected: 0,
+          skill_alignment_score: 1,
+        },
         exec_command: { command: null, redacted: true, placeholders: [] },
         baseline: {
           kind: 'succeeded',
@@ -665,6 +719,121 @@ describe('executeNativeAgentCompare', () => {
       expect(savedReport.tool_call_counts).toEqual(report.tool_call_counts)
       expect(shareSafeReport.tool_call_counts).toEqual(report.tool_call_counts)
     } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  it('writes environment and contamination blocks to report.json and report.share-safe.json', async () => {
+    const previousClaudeConfigDir = process.env.CLAUDE_CONFIG_DIR
+    const previousIsolation = process.env.MADAR_BENCH_ISOLATION
+    const { projectDir, graphPath, outputDir } = makeFixtureProject()
+    const claudeConfigDir = mkdtempSync(join(FIXTURE_PARENT, 'claude-config-'))
+    try {
+      mkdirSync(join(claudeConfigDir, 'skills', 'brainstorming'), { recursive: true })
+      mkdirSync(join(claudeConfigDir, '.agents', 'skills', 'systematic-debugging'), { recursive: true })
+      mkdirSync(join(claudeConfigDir, '.opencode', 'plugins'), { recursive: true })
+      writeFileSync(join(claudeConfigDir, 'CLAUDE.md'), '# user claude\n', 'utf8')
+      writeFileSync(
+        join(claudeConfigDir, 'settings.json'),
+        JSON.stringify({
+          hooks: {
+            UserPromptSubmit: [
+              { hooks: [{ type: 'command', command: 'echo submit' }], matcher: 'prompt' },
+            ],
+          },
+        }, null, 2),
+        'utf8',
+      )
+      writeFileSync(join(claudeConfigDir, '.opencode', 'plugins', 'context7.ts'), 'export {}\n', 'utf8')
+      mkdirSync(join(projectDir, '.vscode'), { recursive: true })
+      writeFileSync(
+        join(projectDir, '.claude', 'settings.json'),
+        JSON.stringify({
+          hooks: {
+            PreToolUse: [
+              { matcher: 'Glob|Grep|Bash|Agent|Read', hooks: [{ type: 'command', command: 'echo project-pre' }] },
+            ],
+          },
+        }, null, 2),
+        'utf8',
+      )
+      writeFileSync(
+        join(projectDir, '.vscode', 'mcp.json'),
+        JSON.stringify({
+          servers: {
+            github: {},
+          },
+        }, null, 2),
+        'utf8',
+      )
+
+      process.env.CLAUDE_CONFIG_DIR = claudeConfigDir
+      process.env.MADAR_BENCH_ISOLATION = '0'
+
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          question: 'environment capture',
+          outputDir,
+          execTemplate: 'mock-runner',
+          baselineMode: 'native_agent',
+        },
+        {
+          runner: scriptedRunner({ baseline: VERBOSE_BASELINE_PAYLOAD, madar: CONTAMINATED_VERBOSE_MADAR_PAYLOAD }),
+          now: () => new Date('2026-05-27T00:00:00Z'),
+        },
+      )
+
+      const report = result.reports[0] as NativeAgentCompareReport
+      const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
+      const shareSafeReport = JSON.parse(readFileSync(report.paths.share_safe_report, 'utf8')) as Record<string, unknown>
+
+      expect(savedReport).toEqual(expect.objectContaining({
+        isolation: false,
+        environment: expect.objectContaining({
+          mcp_servers_active: expect.arrayContaining(['github', 'madar']),
+          skills_loaded_count: 2,
+          plugins_active: ['context7'],
+          hooks_active: expect.objectContaining({
+            user_prompt_submit: ['user:command:prompt'],
+            pre_tool_use: ['project:command:Glob|Grep|Bash|Agent|Read'],
+          }),
+        }),
+        environment_contamination: {
+          skills_activated_during_run: [
+            'everything-claude-code:documentation-lookup',
+            'superpowers:systematic-debugging',
+            'superpowers:using-superpowers',
+          ],
+          skills_conflicting_with_madar_rules: [
+            'everything-claude-code:documentation-lookup',
+            'superpowers:systematic-debugging',
+          ],
+          calls_to_other_mcps: {
+            'mcp__context7__get-library-docs': 1,
+            'mcp__github__search_code': 1,
+          },
+          subagent_dispatches_detected: 1,
+          skill_alignment_score: 0.33,
+        },
+      }))
+      expect(shareSafeReport).toEqual(expect.objectContaining({
+        isolation: false,
+        environment: savedReport.environment,
+        environment_contamination: savedReport.environment_contamination,
+      }))
+    } finally {
+      if (previousClaudeConfigDir === undefined) {
+        delete process.env.CLAUDE_CONFIG_DIR
+      } else {
+        process.env.CLAUDE_CONFIG_DIR = previousClaudeConfigDir
+      }
+      if (previousIsolation === undefined) {
+        delete process.env.MADAR_BENCH_ISOLATION
+      } else {
+        process.env.MADAR_BENCH_ISOLATION = previousIsolation
+      }
+      rmSync(claudeConfigDir, { recursive: true, force: true })
       rmSync(projectDir, { recursive: true, force: true })
     }
   })
