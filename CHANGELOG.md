@@ -2,6 +2,19 @@
 
 All notable changes to the TypeScript package will be documented in this file.
 
+## [0.27.0] - 2026-05-27
+
+### Added
+
+- **Pack Schema v1 and implementation-ready pack guidance**: `madar pack` now emits a stable schema for implementation tasks, including workflow centers, likely edit/test files, public contracts, risk boundaries, validation commands, negative guidance, and agent-ready brief renderers from one source of truth.
+- **A reproducible benchmark-suite scaffold**: `madar bench:suite` now ships fixed repo/task manifests, isolation assets, share-safe result publication, and the first measured public suite row under `docs/benchmarks/suite/`.
+
+### Changed
+
+- **Installed-agent and compare flows are more reliable**: installed guidance now stays stricter about bounded exploration, explain-mode MCP responses expose top-level `evidence` metadata, and managed install detection now keys off the real generated hook structure with stable Claude/Gemini/Codex identity markers.
+- **Runtime and implementation packs are more trustworthy**: implementation-mode packs now promote workflow owners more accurately, runtime-generation answers keep more honest `execution_slice` / `phase_coverage` reporting, and weak-evidence fallbacks are more explicit about uncertainty instead of overclaiming full runtime certainty.
+- **Public proof surfaces are more honest and reproducible**: README/package/docs language now maps public claims back to dated evidence, benchmark isolation metadata is checked in, and compare artifacts keep the share-safe/reporting posture introduced across the `0.27.0-next.*` line.
+
 ## [0.27.0-next.4] - 2026-05-27
 
 ### Changed
