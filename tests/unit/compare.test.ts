@@ -1817,13 +1817,19 @@ describe('compare runtime', () => {
 
     expect(madarTrace).toEqual(
       expect.objectContaining({
+        madar_mcp_call_count: 2,
+        madar_mcp_calls_by_name: {
+          'mcp__madar__context_pack': 1,
+          'mcp__madar__impact': 1,
+        },
         context_pack_call_count: 1,
         focused_follow_up_tool_call_count: 1,
         broad_exploration_tool_call_count: 0,
         broad_exploration_tool_calls_by_name: {},
-        exploration_outcome: 'reduced_exploration',
+        exploration_outcome: 'madar_invoked',
       }),
     )
+    expect(formatCompareSummary(result)).toContain('outcomes: 1 madar invoked')
   })
 
   it('records when a context pack only added context before broad raw exploration continued', async () => {
@@ -1888,16 +1894,20 @@ describe('compare runtime', () => {
 
     expect(madarTrace).toEqual(
       expect.objectContaining({
+        madar_mcp_call_count: 1,
+        madar_mcp_calls_by_name: {
+          context_pack: 1,
+        },
         context_pack_call_count: 1,
-        focused_follow_up_tool_call_count: 0,
-        broad_exploration_tool_call_count: 2,
+        focused_follow_up_tool_call_count: 1,
+        broad_exploration_tool_call_count: 1,
         broad_exploration_tool_calls_by_name: {
           Grep: 1,
-          Read: 1,
         },
-        exploration_outcome: 'added_context_only',
+        exploration_outcome: 'madar_invoked_with_followup_exploration',
       }),
     )
+    expect(formatCompareSummary(result)).toContain('outcomes: 1 madar invoked with follow-up exploration')
   })
 
   it('keeps madar_trace absent when compare stdout does not expose trace data', async () => {

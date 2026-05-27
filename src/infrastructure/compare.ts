@@ -112,7 +112,11 @@ export interface CompareMadarTraceTurnSummary {
   tools: string[]
 }
 
-type CompareMadarTraceOutcome = 'reduced_exploration' | 'added_context_only' | 'no_context_pack'
+type CompareMadarTraceOutcome =
+  | 'no_install'
+  | 'madar_available_but_unused'
+  | 'madar_invoked'
+  | 'madar_invoked_with_followup_exploration'
 
 export interface CompareMadarTrace {
   source: 'claude_messages_tool_use'
@@ -121,6 +125,7 @@ export interface CompareMadarTrace {
   tool_calls_by_name: Record<string, number>
   per_turn: CompareMadarTraceTurnSummary[]
   madar_mcp_call_count: number
+  madar_mcp_calls_by_name: Record<string, number>
   context_pack_call_count: number
   focused_follow_up_tool_call_count: number
   broad_exploration_tool_call_count: number
@@ -848,8 +853,26 @@ const MADAR_FOCUSED_FOLLOW_UP_TOOL_NAMES = new Set([
   'pr_impact',
 ])
 
+const TRACE_FOCUSED_FOLLOW_UP_TOOL_NAMES = new Set(['read'])
+const TRACE_BROAD_EXPLORATION_TOOL_NAMES = new Set(['bash', 'glob', 'grep', 'toolsearch'])
+
 function canonicalTraceToolName(toolName: string): string {
   return toolName.startsWith('mcp__madar__') ? toolName.slice('mcp__madar__'.length) : toolName
+}
+
+function isMadarTraceToolName(toolName: string): boolean {
+  const canonicalName = canonicalTraceToolName(toolName)
+  return toolName.startsWith('mcp__madar__')
+    || MADAR_CONTEXT_PACK_TOOL_NAMES.has(canonicalName)
+    || MADAR_FOCUSED_FOLLOW_UP_TOOL_NAMES.has(canonicalName)
+}
+
+function isFocusedFollowUpTraceToolName(toolName: string): boolean {
+  return TRACE_FOCUSED_FOLLOW_UP_TOOL_NAMES.has(toolName.toLowerCase())
+}
+
+function isBroadExplorationTraceToolName(toolName: string): boolean {
+  return TRACE_BROAD_EXPLORATION_TOOL_NAMES.has(toolName.toLowerCase())
 }
 
 function traceToolCountSummary(toolCallsByName: Record<string, number>): string {
@@ -859,8 +882,9 @@ function traceToolCountSummary(toolCallsByName: Record<string, number>): string 
     .join(', ')
 }
 
-function analyzeMadarTraceExploration(toolCallsByName: Record<string, number>): {
+function analyzeMadarTraceExploration(perTurn: CompareMadarTraceTurnSummary[]): {
   madar_mcp_call_count: number
+  madar_mcp_calls_by_name: Record<string, number>
   context_pack_call_count: number
   focused_follow_up_tool_call_count: number
   broad_exploration_tool_call_count: number
@@ -872,84 +896,120 @@ function analyzeMadarTraceExploration(toolCallsByName: Record<string, number>): 
   let contextPackCallCount = 0
   let focusedFollowUpToolCallCount = 0
   let broadExplorationToolCallCount = 0
+  const madarMcpCallsByName: Record<string, number> = {}
+  const focusedFollowUpToolCallsByName: Record<string, number> = {}
   const broadExplorationToolCallsByName: Record<string, number> = {}
+  let sawFirstMadarCall = false
 
-  for (const [toolName, count] of Object.entries(toolCallsByName)) {
-    const canonicalName = canonicalTraceToolName(toolName)
-    if (
-      toolName.startsWith('mcp__madar__')
-      || MADAR_CONTEXT_PACK_TOOL_NAMES.has(canonicalName)
-      || MADAR_FOCUSED_FOLLOW_UP_TOOL_NAMES.has(canonicalName)
-    ) {
-      madarMcpCallCount += count
-    }
-    if (MADAR_CONTEXT_PACK_TOOL_NAMES.has(canonicalName)) {
-      contextPackCallCount += count
-      continue
-    }
+  for (const turn of perTurn) {
+    for (const toolName of turn.tools) {
+      const canonicalName = canonicalTraceToolName(toolName)
+      const hadSeenMadarCall = sawFirstMadarCall
+      if (isMadarTraceToolName(toolName)) {
+        madarMcpCallCount += 1
+        madarMcpCallsByName[toolName] = (madarMcpCallsByName[toolName] ?? 0) + 1
+        if (MADAR_CONTEXT_PACK_TOOL_NAMES.has(canonicalName)) {
+          contextPackCallCount += 1
+        } else if (hadSeenMadarCall) {
+          focusedFollowUpToolCallCount += 1
+          focusedFollowUpToolCallsByName[toolName] = (focusedFollowUpToolCallsByName[toolName] ?? 0) + 1
+        }
+        sawFirstMadarCall = true
+        continue
+      }
 
-    if (MADAR_FOCUSED_FOLLOW_UP_TOOL_NAMES.has(canonicalName)) {
-      focusedFollowUpToolCallCount += count
-      continue
-    }
+      if (!hadSeenMadarCall) {
+        continue
+      }
 
-    broadExplorationToolCallCount += count
-    broadExplorationToolCallsByName[toolName] = count
+      if (isFocusedFollowUpTraceToolName(toolName)) {
+        focusedFollowUpToolCallCount += 1
+        focusedFollowUpToolCallsByName[toolName] = (focusedFollowUpToolCallsByName[toolName] ?? 0) + 1
+        continue
+      }
+
+      if (!isBroadExplorationTraceToolName(toolName)) {
+        continue
+      }
+
+      broadExplorationToolCallCount += 1
+      broadExplorationToolCallsByName[toolName] = (broadExplorationToolCallsByName[toolName] ?? 0) + 1
+    }
   }
 
+  const sortedMadarMcpCallsByName = Object.fromEntries(
+    Object.entries(madarMcpCallsByName).sort(([leftName], [rightName]) => leftName.localeCompare(rightName)),
+  )
+  const sortedFocusedFollowUpToolCallsByName = Object.fromEntries(
+    Object.entries(focusedFollowUpToolCallsByName).sort(([leftName], [rightName]) => leftName.localeCompare(rightName)),
+  )
   const sortedBroadExplorationToolCallsByName = Object.fromEntries(
     Object.entries(broadExplorationToolCallsByName).sort(([leftName], [rightName]) => leftName.localeCompare(rightName)),
   )
 
-  if (contextPackCallCount === 0) {
+  if (madarMcpCallCount === 0) {
     return {
       madar_mcp_call_count: madarMcpCallCount,
+      madar_mcp_calls_by_name: sortedMadarMcpCallsByName,
       context_pack_call_count: 0,
-      focused_follow_up_tool_call_count: focusedFollowUpToolCallCount,
-      broad_exploration_tool_call_count: broadExplorationToolCallCount,
-      broad_exploration_tool_calls_by_name: sortedBroadExplorationToolCallsByName,
-      exploration_outcome: 'no_context_pack',
-      exploration_summary: 'no context_pack call recorded',
+      focused_follow_up_tool_call_count: 0,
+      broad_exploration_tool_call_count: 0,
+      broad_exploration_tool_calls_by_name: {},
+      exploration_outcome: 'madar_available_but_unused',
+      exploration_summary: 'No Madar MCP call was recorded.',
     }
   }
 
-  const contextPackSummary = `${contextPackCallCount} context_pack ${contextPackCallCount === 1 ? 'call' : 'calls'}`
+  const madarToolNames = Object.keys(sortedMadarMcpCallsByName)
+  const madarInvocationSummary = `Madar MCP invoked ${madarMcpCallCount} ${madarMcpCallCount === 1 ? 'time' : 'times'}${madarToolNames.length > 0 ? ` (${madarToolNames.join(', ')})` : ''}`
+  const contextPackSummary =
+    contextPackCallCount > 0
+      ? `${contextPackCallCount} context_pack ${contextPackCallCount === 1 ? 'call' : 'calls'}`
+      : null
   const focusedSummary =
     focusedFollowUpToolCallCount > 0
       ? `${focusedFollowUpToolCallCount} focused follow-up ${focusedFollowUpToolCallCount === 1 ? 'call' : 'calls'}`
       : null
-
-  if (contextPackCallCount === 1 && broadExplorationToolCallCount === 0) {
+  if (broadExplorationToolCallCount === 0) {
+    const summaryParts = [madarInvocationSummary]
+    if (contextPackSummary !== null) {
+      summaryParts.push(contextPackSummary)
+    }
+    if (focusedSummary !== null) {
+      summaryParts.push(focusedSummary)
+    }
+    summaryParts.push('no broad exploration after the first Madar call.')
     return {
       madar_mcp_call_count: madarMcpCallCount,
+      madar_mcp_calls_by_name: sortedMadarMcpCallsByName,
       context_pack_call_count: contextPackCallCount,
       focused_follow_up_tool_call_count: focusedFollowUpToolCallCount,
       broad_exploration_tool_call_count: 0,
       broad_exploration_tool_calls_by_name: {},
-      exploration_outcome: 'reduced_exploration',
-      exploration_summary:
-        focusedSummary === null
-          ? `${contextPackSummary}; no broad exploration recorded`
-          : `${contextPackSummary}; ${focusedSummary}; no broad exploration recorded`,
+      exploration_outcome: 'madar_invoked',
+      exploration_summary: summaryParts.join('; '),
     }
   }
 
-  const broadSummary =
-    broadExplorationToolCallCount === 0
-      ? 'no broad exploration recorded'
-      : `${broadExplorationToolCallCount} broad exploration ${broadExplorationToolCallCount === 1 ? 'call' : 'calls'}${Object.keys(sortedBroadExplorationToolCallsByName).length > 0 ? ` (${traceToolCountSummary(sortedBroadExplorationToolCallsByName)})` : ''}`
+  const broadSummary = `${broadExplorationToolCallCount} broad exploration ${broadExplorationToolCallCount === 1 ? 'call' : 'calls'} after the first Madar call${Object.keys(sortedBroadExplorationToolCallsByName).length > 0 ? ` (${traceToolCountSummary(sortedBroadExplorationToolCallsByName)})` : ''}`
+  const summaryParts = [madarInvocationSummary]
+  if (contextPackSummary !== null) {
+    summaryParts.push(contextPackSummary)
+  }
+  if (focusedSummary !== null) {
+    summaryParts.push(focusedSummary)
+  }
+  summaryParts.push(broadSummary)
 
   return {
     madar_mcp_call_count: madarMcpCallCount,
+    madar_mcp_calls_by_name: sortedMadarMcpCallsByName,
     context_pack_call_count: contextPackCallCount,
     focused_follow_up_tool_call_count: focusedFollowUpToolCallCount,
     broad_exploration_tool_call_count: broadExplorationToolCallCount,
     broad_exploration_tool_calls_by_name: sortedBroadExplorationToolCallsByName,
-    exploration_outcome: 'added_context_only',
-    exploration_summary:
-      focusedSummary === null
-        ? `${contextPackSummary}; ${broadSummary}`
-        : `${contextPackSummary}; ${focusedSummary}; ${broadSummary}`,
+    exploration_outcome: 'madar_invoked_with_followup_exploration',
+    exploration_summary: summaryParts.join('; '),
   }
 }
 
@@ -1098,7 +1158,8 @@ function extractMadarTrace(stdout: string): CompareMadarTrace | undefined {
   }
 
   const sortedTurns = [...perTurnIndex.keys()].sort((leftTurn, rightTurn) => leftTurn - rightTurn)
-  const exploration = analyzeMadarTraceExploration(toolCallsByName)
+  const perTurn = sortedTurns.map((turn) => perTurnIndex.get(turn)!)
+  const exploration = analyzeMadarTraceExploration(perTurn)
 
   return {
     source: 'claude_messages_tool_use',
@@ -1107,8 +1168,26 @@ function extractMadarTrace(stdout: string): CompareMadarTrace | undefined {
     tool_calls_by_name: Object.fromEntries(
       Object.entries(toolCallsByName).sort(([leftName], [rightName]) => leftName.localeCompare(rightName)),
     ),
-    per_turn: sortedTurns.map((turn) => perTurnIndex.get(turn)!),
+    per_turn: perTurn,
     ...exploration,
+  }
+}
+
+function applyNativeAgentMadarTraceOutcome(
+  madarTrace: CompareMadarTrace,
+  installVerified: boolean,
+): CompareMadarTrace {
+  if (madarTrace.madar_mcp_call_count > 0) {
+    return madarTrace
+  }
+
+  return {
+    ...madarTrace,
+    exploration_outcome: installVerified ? 'madar_available_but_unused' : 'no_install',
+    exploration_summary:
+      installVerified
+        ? 'Madar install was verified, but no Madar MCP call was recorded.'
+        : 'No Madar install was detected, so no Madar MCP call could be recorded.',
   }
 }
 
@@ -1865,9 +1944,11 @@ function formatCompareMadarTraceSummary(result: GenerateCompareArtifactsResult):
     return total + trace.tool_call_count
   }, 0)
   const totalTurns = traces.reduce((total, trace) => total + trace.per_turn.length, 0)
-  const reducedExplorationRuns = traces.filter((trace) => trace.exploration_outcome === 'reduced_exploration').length
-  const addedContextOnlyRuns = traces.filter((trace) => trace.exploration_outcome === 'added_context_only').length
-  const noContextPackRuns = traces.filter((trace) => trace.exploration_outcome === 'no_context_pack').length
+  const noInstallRuns = traces.filter((trace) => trace.exploration_outcome === 'no_install').length
+  const madarAvailableButUnusedRuns = traces.filter((trace) => trace.exploration_outcome === 'madar_available_but_unused').length
+  const madarInvokedRuns = traces.filter((trace) => trace.exploration_outcome === 'madar_invoked').length
+  const madarInvokedWithFollowUpExplorationRuns =
+    traces.filter((trace) => trace.exploration_outcome === 'madar_invoked_with_followup_exploration').length
   const topTools = [...toolCallsByName.entries()]
     .sort((leftEntry, rightEntry) => rightEntry[1] - leftEntry[1] || leftEntry[0].localeCompare(rightEntry[0]))
     .slice(0, 3)
@@ -1875,14 +1956,17 @@ function formatCompareMadarTraceSummary(result: GenerateCompareArtifactsResult):
   const traceCoverage = traces.length === result.reports.length ? '' : ` · traces for ${traces.length}/${result.reports.length} madar runs`
   const topToolsSummary = topTools.length > 0 ? ` · top tools: ${topTools.join(', ')}` : ''
   const outcomeParts: string[] = []
-  if (reducedExplorationRuns > 0) {
-    outcomeParts.push(`${reducedExplorationRuns} reduced exploration`)
+  if (noInstallRuns > 0) {
+    outcomeParts.push(`${noInstallRuns} no install`)
   }
-  if (addedContextOnlyRuns > 0) {
-    outcomeParts.push(`${addedContextOnlyRuns} added context only`)
+  if (madarAvailableButUnusedRuns > 0) {
+    outcomeParts.push(`${madarAvailableButUnusedRuns} available but unused`)
   }
-  if (noContextPackRuns > 0) {
-    outcomeParts.push(`${noContextPackRuns} without context_pack`)
+  if (madarInvokedRuns > 0) {
+    outcomeParts.push(`${madarInvokedRuns} madar invoked`)
+  }
+  if (madarInvokedWithFollowUpExplorationRuns > 0) {
+    outcomeParts.push(`${madarInvokedWithFollowUpExplorationRuns} madar invoked with follow-up exploration`)
   }
   const outcomeSummary = outcomeParts.length > 0 ? ` · outcomes: ${outcomeParts.join(', ')}` : ''
 
@@ -2934,7 +3018,11 @@ export async function executeNativeAgentCompare(
     if (madarRun !== null) {
       madarToolCallCounts = extractNativeAgentToolCallCounts(madarRun.stdout)
       reportShell.environment_contamination = extractEnvironmentContamination(madarRun.stdout)
-      const madarTrace = extractMadarTrace(madarRun.stdout)
+      const rawMadarTrace = extractMadarTrace(madarRun.stdout)
+      const madarTrace =
+        rawMadarTrace === undefined
+          ? undefined
+          : applyNativeAgentMadarTraceOutcome(rawMadarTrace, installCheck.verified)
       if (madarTrace) {
         reportShell.madar_trace = madarTrace
         reportShell.madar_mcp_call_count = madarTrace.madar_mcp_call_count
@@ -3098,8 +3186,7 @@ function formatMadarMcpCallCountLine(report: NativeAgentCompareReport): string {
     return `madar_mcp_call_count: ${report.madar_mcp_call_count}`
   }
 
-  const madarToolSummary = Object.entries(report.madar_trace.tool_calls_by_name)
-    .filter(([toolName]) => toolName.startsWith('mcp__madar__'))
+  const madarToolSummary = Object.entries(report.madar_trace.madar_mcp_calls_by_name)
     .sort(([leftName], [rightName]) => leftName.localeCompare(rightName))
     .map(([toolName]) => toolName)
     .join(', ')

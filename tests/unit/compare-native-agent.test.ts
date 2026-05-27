@@ -251,6 +251,39 @@ const VERBOSE_MADAR_MCP_RETRIEVE_PAYLOAD = [
   MADAR_USAGE_PAYLOAD,
 ] as const
 
+const VERBOSE_MADAR_MCP_RETRIEVE_WITH_FOLLOWUP_EXPLORATION_PAYLOAD = [
+  { type: 'system', subtype: 'init' },
+  {
+    type: 'assistant',
+    turn: 1,
+    message: {
+      content: [
+        { type: 'tool_use', name: 'ToolSearch' },
+      ],
+    },
+  },
+  {
+    type: 'assistant',
+    turn: 2,
+    message: {
+      content: [
+        { type: 'tool_use', name: 'mcp__madar__retrieve' },
+      ],
+    },
+  },
+  {
+    type: 'assistant',
+    turn: 3,
+    message: {
+      content: [
+        { type: 'tool_use', name: 'Glob' },
+        { type: 'tool_use', name: 'Read' },
+      ],
+    },
+  },
+  MADAR_USAGE_PAYLOAD,
+] as const
+
 function scriptedRunner(payloads: { baseline: unknown; madar: unknown }): NativeAgentRunner {
   return async (input) => ({
     exitCode: 0,
@@ -512,6 +545,40 @@ describe('executeNativeAgentCompare', () => {
       expect(report.install_verified).toBe(true)
       expect(report.measurement_validity).toBe('degraded')
       expect(report.madar_mcp_call_count).toBe(0)
+      expect(report.madar_trace).toEqual(expect.objectContaining({
+        madar_mcp_call_count: 0,
+        exploration_outcome: 'madar_available_but_unused',
+      }))
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  it('marks verbose missing-install runs as no_install when trace data is present', async () => {
+    const { projectDir, graphPath, outputDir } = makeFixtureProject({ installState: 'missing' })
+    try {
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          question: 'What is the cluster module?',
+          outputDir,
+          execTemplate: 'mock-runner',
+          baselineMode: 'native_agent',
+          allowNoInstall: true,
+        },
+        {
+          runner: scriptedRunner({ baseline: VERBOSE_BASELINE_PAYLOAD, madar: VERBOSE_MADAR_NO_INSTALL_PAYLOAD }),
+          now: () => new Date('2026-05-01T00:00:00Z'),
+        },
+      )
+
+      const report = result.reports[0] as NativeAgentCompareReport
+      expect(report.install_verified).toBe(false)
+      expect(report.measurement_validity).toBe('invalid')
+      expect(report.madar_trace).toEqual(expect.objectContaining({
+        madar_mcp_call_count: 0,
+        exploration_outcome: 'no_install',
+      }))
     } finally {
       rmSync(projectDir, { recursive: true, force: true })
     }
@@ -538,6 +605,43 @@ describe('executeNativeAgentCompare', () => {
       expect(report.install_verified).toBe(true)
       expect(report.measurement_validity).toBe('valid')
       expect(report.madar_mcp_call_count).toBe(1)
+      expect(report.madar_trace).toEqual(expect.objectContaining({
+        madar_mcp_call_count: 1,
+        madar_mcp_calls_by_name: {
+          'mcp__madar__retrieve': 1,
+        },
+        exploration_outcome: 'madar_invoked',
+      }))
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  it('classifies broad exploration after a Madar MCP call as madar_invoked_with_followup_exploration', async () => {
+    const { projectDir, graphPath, outputDir } = makeFixtureProject()
+    try {
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          question: 'What is the cluster module?',
+          outputDir,
+          execTemplate: 'mock-runner',
+          baselineMode: 'native_agent',
+        },
+        {
+          runner: scriptedRunner({
+            baseline: VERBOSE_BASELINE_PAYLOAD,
+            madar: VERBOSE_MADAR_MCP_RETRIEVE_WITH_FOLLOWUP_EXPLORATION_PAYLOAD,
+          }),
+          now: () => new Date('2026-05-01T00:00:00Z'),
+        },
+      )
+
+      const report = result.reports[0] as NativeAgentCompareReport
+      expect(report.madar_trace).toEqual(expect.objectContaining({
+        madar_mcp_call_count: 1,
+        exploration_outcome: 'madar_invoked_with_followup_exploration',
+      }))
     } finally {
       rmSync(projectDir, { recursive: true, force: true })
     }
@@ -1268,7 +1372,7 @@ describe('formatNativeAgentCompareSummary', () => {
     expect(summary).toContain('answer-only run saved; no Anthropic usage block was available, so provider-proof reductions were not computed')
   })
 
-  it('surfaces whether Madar reduced exploration or only added context when trace data is present', () => {
+  it('surfaces whether Madar was invoked cleanly when trace data is present', () => {
     const summary = formatNativeAgentCompareSummary(buildSummaryResult({
       question: 'trace case',
       baselineTurns: 6,
@@ -1288,36 +1392,38 @@ describe('formatNativeAgentCompareSummary', () => {
         summary: '2 tool calls across 2 turns',
         tool_call_count: 2,
         tool_calls_by_name: {
-          context_pack: 1,
-          impact: 1,
+          'mcp__madar__retrieve': 2,
         },
         per_turn: [
           {
             turn: 1,
             tool_call_count: 1,
-            tools: ['context_pack'],
+            tools: ['mcp__madar__retrieve'],
           },
           {
             turn: 2,
             tool_call_count: 1,
-            tools: ['impact'],
+            tools: ['mcp__madar__retrieve'],
           },
         ],
         madar_mcp_call_count: 2,
-        context_pack_call_count: 1,
+        madar_mcp_calls_by_name: {
+          'mcp__madar__retrieve': 2,
+        },
+        context_pack_call_count: 0,
         focused_follow_up_tool_call_count: 1,
         broad_exploration_tool_call_count: 0,
         broad_exploration_tool_calls_by_name: {},
-        exploration_outcome: 'reduced_exploration',
-        exploration_summary: '1 context_pack call; 1 focused follow-up call; no broad exploration recorded',
+        exploration_outcome: 'madar_invoked',
+        exploration_summary: 'Madar MCP invoked 2 times (mcp__madar__retrieve); 1 focused follow-up call; no broad exploration after the first Madar call.',
       },
     }))
 
-    expect(summary).toContain('madar_trace: reduced_exploration')
-    expect(summary).toContain('1 context_pack call; 1 focused follow-up call; no broad exploration recorded')
+    expect(summary).toContain('madar_trace: madar_invoked')
+    expect(summary).toContain('Madar MCP invoked 2 times (mcp__madar__retrieve); 1 focused follow-up call; no broad exploration after the first Madar call.')
     expect(summary).toContain('measurement_validity: valid')
     expect(summary).toContain('install_verified: true')
-    expect(summary).toContain('madar_mcp_call_count: 2')
+    expect(summary).toContain('madar_mcp_call_count: 2 (mcp__madar__retrieve)')
   })
 
   it('prints invalid measurement warnings when install is missing', () => {
