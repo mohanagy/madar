@@ -65,7 +65,7 @@ interface ContextPlaneMetadata {
 }
 
 export interface ExplainPackPayload extends ContextPlaneMetadata {
-  pack: ReturnType<typeof compactRetrieveResult>
+  pack: RetrievePackPayload & Partial<PackGuidanceCompatibilityFields>
   implementation?: ImplementationPackGuidance
   routing?: ContextPackRoutingDebug
 }
@@ -80,6 +80,36 @@ type PackResponseBase = ReturnType<typeof baseResponse>
 type PackSchemaEnvelope<TPack extends PackPayload = PackPayload> = ContextPackSchemaV1<TPack> & PackResponseBase & {
   implementation?: ImplementationPackGuidance
   target?: string
+}
+
+interface PackGuidanceCompatibilityFields {
+  workflow_centers: ContextPackWorkflowCenter[]
+  recommended_first_read: ContextPackRecommendedFirstRead[]
+  confidence_score: number
+}
+
+type PackPayloadWithCompatibility<TPack extends PackPayload> = TPack & PackGuidanceCompatibilityFields
+
+function packWithCompatibilityFields<TPack extends PackPayload>(
+  pack: TPack,
+  fields: PackGuidanceCompatibilityFields,
+): PackPayloadWithCompatibility<TPack> {
+  return {
+    ...pack,
+    ...fields,
+  }
+}
+
+function packForSchema<TPack extends PackPayload>(
+  task: TaskContextPlan['task_kind'],
+  pack: TPack,
+  fields: PackGuidanceCompatibilityFields,
+): TPack | PackPayloadWithCompatibility<TPack> {
+  if (task !== 'explain') {
+    return pack
+  }
+
+  return packWithCompatibilityFields(pack, fields)
 }
 
 function emptyCoverage(): ContextPackCoverage {
@@ -129,6 +159,39 @@ export function buildExplainPackPayload(
     pack,
     ...(implementation ? { implementation } : {}),
     ...contextMetadata(retrieval),
+  }
+}
+
+export function buildExplainPackPayloadCore(
+  pack: ReturnType<typeof compactRetrieveResult>,
+  retrieval: Partial<{
+    question: string
+    coverage: ContextPackCoverage
+    task_contract: { budget: number; task_intent?: string; evidence_recipe_id?: string }
+  }> & {
+    question: string
+  },
+  implementation?: ImplementationPackGuidance,
+): ExplainPackPayload {
+  const payload = buildExplainPackPayload(pack, retrieval, implementation)
+  const plan = buildTaskContextPlan({
+    task_kind: 'explain',
+    prompt: retrieval.question,
+    budget: Math.max(retrieval.task_contract?.budget ?? 3000, 3),
+    task_intent: (retrieval.task_contract?.task_intent ?? retrieval.task_contract?.evidence_recipe_id ?? 'explain') as TaskContextPlan['evidence']['recipe_id'],
+  })
+  const centers = workflowCenters('explain', pack, plan, implementation, retrieval as RetrieveResult)
+  const firstRead = recommendedFirstRead('explain', pack, implementation, retrieval as RetrieveResult)
+  const score = confidenceScore(payload.coverage, pack, implementation)
+
+  return {
+    ...payload,
+    pack: {
+      ...payload.pack,
+      workflow_centers: centers,
+      recommended_first_read: firstRead,
+      confidence_score: score,
+    },
   }
 }
 
@@ -648,17 +711,23 @@ function buildPackSchemaV1<TPack extends PackPayload>(
     target?: string
     retrieval?: RetrieveResult
   },
-): PackSchemaEnvelope<TPack> {
+): PackSchemaEnvelope<TPack | PackPayloadWithCompatibility<TPack>> {
   const { retrieval, ...serializableResponse } = response
   const centers = workflowCenters(response.task, response.pack, response.plan, response.implementation, retrieval)
   const firstRead = recommendedFirstRead(response.task, response.pack, response.implementation, retrieval)
   const contracts = publicContracts(response.implementation)
   const guidance = negativeGuidance(response.task, response.coverage, response.pack, response.implementation, retrieval)
   const score = confidenceScore(response.coverage, response.pack, response.implementation)
+  const compatibilityFields: PackGuidanceCompatibilityFields = {
+    workflow_centers: centers,
+    recommended_first_read: firstRead,
+    confidence_score: score,
+  }
 
   return {
     schema_version: 1,
     ...serializableResponse,
+    pack: packForSchema(response.task, response.pack, compatibilityFields),
     workflow_centers: centers,
     recommended_first_read: firstRead,
     likely_edit_files: response.implementation?.likely_edit_files ?? [],
@@ -1018,7 +1087,11 @@ export async function runContextPackCommand(
     : undefined
   return renderContextPackOutput(options.format, buildPackSchemaV1({
     ...baseResponse(options, initialPlan, plannerBudget, resolvedTask.task_kind),
-    ...buildExplainPackPayload(dependencies.compactRetrieveResult(retrieval), retrieval, implementation),
+    ...(
+      resolvedTask.task_kind === 'explain'
+        ? buildExplainPackPayloadCore(dependencies.compactRetrieveResult(retrieval), retrieval, implementation)
+        : buildExplainPackPayload(dependencies.compactRetrieveResult(retrieval), retrieval, implementation)
+    ),
     retrieval,
     ...(options.why ? { routing: buildRoutingDebug(retrieval) } : {}),
   }))

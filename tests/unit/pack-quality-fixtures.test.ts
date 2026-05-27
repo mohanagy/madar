@@ -66,8 +66,13 @@ describe('pack-quality fixtures (#298)', () => {
   it('generates a deterministic explain pack for runtime-generation-explain-report-flow', async () => {
     const result = await runPackQualityFixture('runtime-generation-explain-report-flow')
     const payload = result.payload as typeof result.payload & {
+      confidence_score?: number
+      workflow_centers?: Array<{ path?: string }>
       recommended_first_read?: Array<{ path?: string }>
       pack?: {
+        confidence_score?: number
+        workflow_centers?: Array<{ path?: string }>
+        recommended_first_read?: Array<{ path?: string }>
         execution_slice?: {
           steps?: Array<{ label?: string }>
           phase_coverage?: {
@@ -94,6 +99,17 @@ describe('pack-quality fixtures (#298)', () => {
         'src/modules/pipeline/api/pipeline-trigger.service.ts',
         'src/modules/pipeline/api/queue-registry.service.ts',
       ]),
+    )
+    expect(payload.confidence_score).toEqual(expect.any(Number))
+    expect(payload.confidence_score).toBeGreaterThanOrEqual(0)
+    expect(payload.confidence_score).toBeLessThanOrEqual(1)
+    expect(payload.pack?.confidence_score).toEqual(expect.any(Number))
+    expect(payload.pack?.confidence_score).toBeGreaterThanOrEqual(0)
+    expect(payload.pack?.confidence_score).toBeLessThanOrEqual(1)
+    expect(payload.pack?.confidence_score).toBe(payload.confidence_score)
+    expect(payload.pack?.workflow_centers?.map((entry) => entry.path)).toEqual(payload.workflow_centers?.map((entry) => entry.path))
+    expect(payload.pack?.recommended_first_read?.map((entry) => entry.path)).toEqual(
+      payload.recommended_first_read?.map((entry) => entry.path),
     )
     expect(payload.recommended_first_read?.map((entry) => entry.path)).not.toEqual(
       expect.arrayContaining([
