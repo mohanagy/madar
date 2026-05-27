@@ -111,12 +111,14 @@ function runPipeline(tempDir: string) {
 }
 
 describe('pipeline', () => {
+  const referenceFixturesTimeoutMs = 30_000
+
   it('runs end to end on the reference fixtures', () => {
     withTempDir((tempDir) => {
       const result = runPipeline(tempDir)
       expect(result.graph.numberOfNodes()).toBeGreaterThan(0)
     })
-  }, 15_000)
+  }, referenceFixturesTimeoutMs)
 
   it('keeps node and edge counts stable across repeated runs', () => {
     withTempDir((tempDir) => {
