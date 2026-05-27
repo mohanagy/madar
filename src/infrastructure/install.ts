@@ -234,33 +234,33 @@ function isMadarCodexHook(hook: unknown): boolean {
 
 function strictNonMadarMcpRule(markdown: boolean): string {
   if (markdown) {
-    return 'For codebase questions, use Madar tools only. Do not call other MCP servers such as `mcp__github` or `mcp__context7` unless Madar returns `agent_directive: explore_with_caution`.'
+    return 'For codebase questions, use Madar tools only. Do not call other MCP servers such as `mcp__github` or `mcp__context7` unless the latest Madar response says `evidence.agent_directive: explore_with_caution`.'
   }
 
-  return 'for codebase questions, use Madar tools only; do not call other MCP servers such as mcp__github or mcp__context7 unless Madar returns agent_directive: explore_with_caution'
+  return 'for codebase questions, use Madar tools only; do not call other MCP servers such as mcp__github or mcp__context7 unless the latest Madar response says evidence.agent_directive: explore_with_caution'
 }
 
 function strictSkillOverrideRule(markdown: boolean): string {
   if (markdown) {
-    return 'If an auto-activated skill recommends broad `Read` / `Grep` / `Glob` exploration or another MCP for a codebase question, defer to Madar\'s `agent_directive` first. A high- or medium-confidence Madar pack overrides that conflicting skill guidance.'
+    return 'If an auto-activated skill recommends broad `Read` / `Grep` / `Glob` exploration or another MCP for a codebase question, defer to Madar\'s `evidence.agent_directive` first. A high- or medium-confidence Madar pack overrides that conflicting skill guidance.'
   }
 
-  return 'if an auto-activated skill recommends broad Read / Grep / Glob exploration or another MCP for a codebase question, defer to Madar\'s agent_directive first; a high- or medium-confidence Madar pack overrides that conflicting skill guidance'
+  return 'if an auto-activated skill recommends broad Read / Grep / Glob exploration or another MCP for a codebase question, defer to Madar\'s evidence.agent_directive first; a high- or medium-confidence Madar pack overrides that conflicting skill guidance'
 }
 function strictContextPackStopRule(markdown: boolean): string {
   if (markdown) {
-    return 'Answer after one high- or medium-confidence pack when `diagnostics.quality_score >= 0.5`, `missing_context` is empty, and diagnostics show no error-severity gaps.'
+    return 'After calling a Madar tool, inspect the response\'s `evidence.agent_directive`: `answer_from_pack` means answer using the pack snippets and you may `Read` at most ONE file for verification; `verify_one_targeted_file` means answer using the pack and `Read` at most one specific supporting file; `explore_with_caution` means the pack is partial and permits at most ONE targeted `Glob` or `Grep` scoped to a single directory.'
   }
 
-  return 'answer after one high- or medium-confidence pack when diagnostics.quality_score >= 0.5, missing_context is empty, and diagnostics show no error-severity gaps'
+  return 'after calling a Madar tool, inspect the response\'s evidence.agent_directive: answer_from_pack means answer using the pack snippets and you may Read at most ONE file for verification; verify_one_targeted_file means answer using the pack and Read at most one specific supporting file; explore_with_caution means the pack is partial and permits at most ONE targeted Glob or Grep scoped to a single directory'
 }
 
 function strictContextPackExpandRule(markdown: boolean): string {
   if (markdown) {
-    return 'Only expand with `context_expand` or focused graph/search tools when `missing_context` / `missing_semantic` are non-empty, diagnostics show warn/error gaps, or the user asks for deeper verification.'
+    return 'Only widen exploration for deeper verification when `evidence.agent_directive` is `explore_with_caution`; if `missing_context` or `missing_semantic` is still non-empty, use at most ONE targeted `Glob` or `Grep` scoped to a single directory before answering.'
   }
 
-  return 'expand only when missing_context / missing_semantic is non-empty, diagnostics show warn/error gaps, or the user asks for deeper verification'
+  return 'only widen exploration for deeper verification when evidence.agent_directive is explore_with_caution; if missing_context or missing_semantic is still non-empty, use at most ONE targeted Glob or Grep scoped to a single directory before answering'
 }
 
 function strictGraphReportFallbackRule(markdown: boolean): string {

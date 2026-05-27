@@ -1,4 +1,10 @@
 import { KnowledgeGraph } from '../contracts/graph.js'
+import type {
+  ContextPackClaim,
+  ContextPackCoverage,
+  ContextPackEvidenceClass,
+  ContextPackExpandableRef,
+} from '../contracts/context-pack.js'
 import { featureMap, type FeatureMapOptions } from './feature-map.js'
 import { riskMap } from './risk-map.js'
 
@@ -24,6 +30,10 @@ export interface ImplementationChecklistResult {
   summary: string
   edit_steps: ImplementationChecklistEditStep[]
   validation_steps: ImplementationChecklistValidationStep[]
+  claims: ContextPackClaim[]
+  expandable: ContextPackExpandableRef[]
+  coverage?: ContextPackCoverage
+  missing_context?: ContextPackEvidenceClass[]
 }
 
 function formatSymbolList(symbols: readonly string[]): string {
@@ -122,5 +132,13 @@ export function implementationChecklist(graph: KnowledgeGraph, options: Implemen
     summary,
     edit_steps,
     validation_steps,
+    claims: feature.claims,
+    expandable: feature.expandable,
+    ...(feature.coverage
+      ? {
+          coverage: feature.coverage,
+          missing_context: feature.missing_context,
+        }
+      : {}),
   }
 }

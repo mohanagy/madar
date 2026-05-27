@@ -25,21 +25,21 @@ import { normalizeAssertionPath, normalizeAssertionPaths } from './helpers/platf
 
 const PACKAGE_CLI_RELATIVE_PATH = join('dist', 'src', 'cli', 'bin.js')
 const STRICT_STOP_RULE_MD =
-  'Answer after one high- or medium-confidence pack when `diagnostics.quality_score >= 0.5`, `missing_context` is empty, and diagnostics show no error-severity gaps.'
+  'After calling a Madar tool, inspect the response\'s `evidence.agent_directive`: `answer_from_pack` means answer using the pack snippets and you may `Read` at most ONE file for verification; `verify_one_targeted_file` means answer using the pack and `Read` at most one specific supporting file; `explore_with_caution` means the pack is partial and permits at most ONE targeted `Glob` or `Grep` scoped to a single directory.'
 const STRICT_EXPAND_RULE_MD =
-  'Only expand with `context_expand` or focused graph/search tools when `missing_context` / `missing_semantic` are non-empty, diagnostics show warn/error gaps, or the user asks for deeper verification.'
+  'Only widen exploration for deeper verification when `evidence.agent_directive` is `explore_with_caution`; if `missing_context` or `missing_semantic` is still non-empty, use at most ONE targeted `Glob` or `Grep` scoped to a single directory before answering.'
 const STRICT_GRAPH_REPORT_RULE_MD =
   'Do not open `out/GRAPH_REPORT.md` unless the context pack or graph tools are unavailable, stale, or insufficient. Treat it as a fallback before broader raw file exploration, not a default first read.'
 const STRICT_NO_BROAD_EXPLORATION_RULE_MD =
   'Do not run broad `Glob` patterns, repo-wide `grep` / `find` searches, or raw file sweeps after a high- or medium-confidence pack.'
 const STRICT_NON_MADAR_MCP_RULE_MD =
-  'For codebase questions, use Madar tools only. Do not call other MCP servers such as `mcp__github` or `mcp__context7` unless Madar returns `agent_directive: explore_with_caution`.'
+  'For codebase questions, use Madar tools only. Do not call other MCP servers such as `mcp__github` or `mcp__context7` unless the latest Madar response says `evidence.agent_directive: explore_with_caution`.'
 const STRICT_SKILL_OVERRIDE_RULE_MD =
-  'If an auto-activated skill recommends broad `Read` / `Grep` / `Glob` exploration or another MCP for a codebase question, defer to Madar\'s `agent_directive` first. A high- or medium-confidence Madar pack overrides that conflicting skill guidance.'
+  'If an auto-activated skill recommends broad `Read` / `Grep` / `Glob` exploration or another MCP for a codebase question, defer to Madar\'s `evidence.agent_directive` first. A high- or medium-confidence Madar pack overrides that conflicting skill guidance.'
 const STRICT_STOP_RULE_PLAIN =
-  'answer after one high- or medium-confidence pack when diagnostics.quality_score >= 0.5, missing_context is empty, and diagnostics show no error-severity gaps'
+  'after calling a Madar tool, inspect the response\'s evidence.agent_directive: answer_from_pack means answer using the pack snippets and you may Read at most ONE file for verification; verify_one_targeted_file means answer using the pack and Read at most one specific supporting file; explore_with_caution means the pack is partial and permits at most ONE targeted Glob or Grep scoped to a single directory'
 const STRICT_EXPAND_RULE_PLAIN =
-  'expand only when missing_context / missing_semantic is non-empty, diagnostics show warn/error gaps, or the user asks for deeper verification'
+  'only widen exploration for deeper verification when evidence.agent_directive is explore_with_caution; if missing_context or missing_semantic is still non-empty, use at most ONE targeted Glob or Grep scoped to a single directory before answering'
 const STRICT_GRAPH_REPORT_RULE_PLAIN =
   'do not open out/GRAPH_REPORT.md unless the context pack or graph tools are unavailable, stale, or insufficient; treat it as a fallback before broader raw file exploration, not a default first read'
 const STRICT_GRAPH_REPORT_RULE_PLAIN_SENTENCE =
@@ -47,11 +47,11 @@ const STRICT_GRAPH_REPORT_RULE_PLAIN_SENTENCE =
 const STRICT_NO_BROAD_EXPLORATION_RULE_PLAIN =
   'do not run broad glob patterns, repo-wide grep / find searches, or raw file sweeps after a high- or medium-confidence pack'
 const STRICT_NON_MADAR_MCP_RULE_PLAIN =
-  'for codebase questions, use Madar tools only; do not call other MCP servers such as mcp__github or mcp__context7 unless Madar returns agent_directive: explore_with_caution'
+  'for codebase questions, use Madar tools only; do not call other MCP servers such as mcp__github or mcp__context7 unless the latest Madar response says evidence.agent_directive: explore_with_caution'
 const STRICT_NON_MADAR_MCP_RULE_PLAIN_SENTENCE =
-  'For codebase questions, use Madar tools only; do not call other MCP servers such as mcp__github or mcp__context7 unless Madar returns agent_directive: explore_with_caution'
+  'For codebase questions, use Madar tools only; do not call other MCP servers such as mcp__github or mcp__context7 unless the latest Madar response says evidence.agent_directive: explore_with_caution'
 const STRICT_SKILL_OVERRIDE_RULE_PLAIN =
-  'if an auto-activated skill recommends broad Read / Grep / Glob exploration or another MCP for a codebase question, defer to Madar\'s agent_directive first; a high- or medium-confidence Madar pack overrides that conflicting skill guidance'
+  'if an auto-activated skill recommends broad Read / Grep / Glob exploration or another MCP for a codebase question, defer to Madar\'s evidence.agent_directive first; a high- or medium-confidence Madar pack overrides that conflicting skill guidance'
 
 function expectMarkdownRoutingTable(content: string): void {
   const normalized = content.replaceAll('\\"', '"')

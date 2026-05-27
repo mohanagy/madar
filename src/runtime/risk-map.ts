@@ -1,4 +1,10 @@
 import { KnowledgeGraph } from '../contracts/graph.js'
+import type {
+  ContextPackClaim,
+  ContextPackCoverage,
+  ContextPackEvidenceClass,
+  ContextPackExpandableRef,
+} from '../contracts/context-pack.js'
 import type { ContextPackTaskKind } from '../contracts/context-pack.js'
 import type { TaskIntentKind } from '../contracts/task-intent.js'
 import { godNodes, workspaceBridges } from '../pipeline/analyze.js'
@@ -36,6 +42,10 @@ export interface RiskMapResult {
   top_risks: RiskMapRisk[]
   structural_hotspots: RiskMapHotspot[]
   starter_files: ReturnType<typeof featureMap>['relevant_files']
+  claims: ContextPackClaim[]
+  expandable: ContextPackExpandableRef[]
+  coverage?: ContextPackCoverage
+  missing_context?: ContextPackEvidenceClass[]
 }
 
 interface RiskCandidate {
@@ -221,5 +231,13 @@ export function riskMap(graph: KnowledgeGraph, options: RiskMapOptions): RiskMap
     top_risks,
     structural_hotspots,
     starter_files: feature.relevant_files,
+    claims: retrieve.claims ?? [],
+    expandable: retrieve.expandable ?? [],
+    ...(retrieve.coverage
+      ? {
+          coverage: retrieve.coverage,
+          missing_context: retrieve.coverage.missing_required,
+        }
+      : {}),
   }
 }

@@ -110,6 +110,7 @@ export interface CompareMadarTraceTurnSummary {
   turn: number
   tool_call_count: number
   tools: string[]
+  agent_directive_seen?: string[]
 }
 
 type CompareMadarTraceOutcome =
@@ -1020,6 +1021,72 @@ function parseTraceTurnNumber(value: unknown, fallbackTurn: number): number {
   return fallbackTurn
 }
 
+function parseTraceMessageContent(message: Record<string, unknown>): unknown[] {
+  if (Array.isArray(message.content)) {
+    return message.content
+  }
+  if (message.type === 'assistant' && isRecord(message.message) && Array.isArray(message.message.content)) {
+    return message.message.content
+  }
+  return []
+}
+
+function parseTraceMessageRole(message: Record<string, unknown>): string | null {
+  if (typeof message.role === 'string') {
+    return message.role
+  }
+  if (message.type === 'assistant') {
+    return 'assistant'
+  }
+  return null
+}
+
+function parseTraceToolResultName(value: Record<string, unknown>): string | null {
+  return parseTraceToolName(value.tool_name ?? value.name)
+}
+
+function parseTraceToolResultPayload(value: unknown): Record<string, unknown> | null {
+  if (isRecord(value)) {
+    return value
+  }
+  if (typeof value !== 'string') {
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown
+    return isRecord(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function extractTraceAgentDirectives(contentPart: Record<string, unknown>): string[] {
+  if (contentPart.type !== 'tool_result') {
+    return []
+  }
+
+  const toolName = parseTraceToolResultName(contentPart)
+  if (toolName === null || !isMadarTraceToolName(toolName)) {
+    return []
+  }
+
+  const contentValues = Array.isArray(contentPart.content) ? contentPart.content : [contentPart.content]
+  const directives: string[] = []
+  for (const entry of contentValues) {
+    const payload = isRecord(entry) && typeof entry.text === 'string'
+      ? parseTraceToolResultPayload(entry.text)
+      : parseTraceToolResultPayload(entry)
+    const evidence = payload && isRecord(payload.evidence) ? payload.evidence : null
+    const directive = typeof evidence?.agent_directive === 'string' ? evidence.agent_directive.trim() : ''
+    if (directive.length > 0 && !directives.includes(directive)) {
+      directives.push(directive)
+    }
+  }
+
+  return directives
+}
+
 function emptyNativeAgentToolCallCountsEntry(): NativeAgentToolCallCountsEntry {
   return {
     total: 0,
@@ -1106,43 +1173,53 @@ function extractMadarTrace(stdout: string): CompareMadarTrace | undefined {
   let totalToolCalls = 0
 
   for (const message of records) {
-    if (!isRecord(message) || message.role !== 'assistant' || !Array.isArray(message.content)) {
-      if (message.type !== 'assistant' || !isRecord(message.message) || !Array.isArray(message.message.content)) {
-        continue
-      }
+    if (!isRecord(message)) {
+      continue
     }
 
-    const content = Array.isArray(message.content)
-      ? message.content
-      : isRecord(message.message) && Array.isArray(message.message.content)
-        ? message.message.content
-        : []
-    const tools: string[] = []
-    for (const contentPart of content) {
-      if (!isRecord(contentPart) || contentPart.type !== 'tool_use') {
-        continue
-      }
-
-      const toolName = parseTraceToolName(contentPart.name)
-      if (toolName === null) {
-        continue
-      }
-
-      tools.push(toolName)
-      toolCallsByName[toolName] = (toolCallsByName[toolName] ?? 0) + 1
-      totalToolCalls += 1
-    }
-
-    if (tools.length === 0) {
+    const role = parseTraceMessageRole(message)
+    const content = parseTraceMessageContent(message)
+    if (role === null || content.length === 0) {
       continue
     }
 
     const turn = parseTraceTurnNumber(message.turn, fallbackTurn)
     fallbackTurn = Math.max(fallbackTurn, turn + 1)
     const existingTurn = perTurnIndex.get(turn)
+    const tools: string[] = []
+    const directives: string[] = []
+    for (const contentPart of content) {
+      if (!isRecord(contentPart)) {
+        continue
+      }
+
+      if (role === 'assistant' && contentPart.type === 'tool_use') {
+        const toolName = parseTraceToolName(contentPart.name)
+        if (toolName === null) {
+          continue
+        }
+
+        tools.push(toolName)
+        toolCallsByName[toolName] = (toolCallsByName[toolName] ?? 0) + 1
+        totalToolCalls += 1
+      }
+
+      directives.push(...extractTraceAgentDirectives(contentPart))
+    }
+
+    if (tools.length === 0 && directives.length === 0) {
+      continue
+    }
+
     if (existingTurn) {
       existingTurn.tool_call_count += tools.length
       existingTurn.tools.push(...tools)
+      if (directives.length > 0) {
+        existingTurn.agent_directive_seen = [
+          ...(existingTurn.agent_directive_seen ?? []),
+          ...directives.filter((directive) => !(existingTurn.agent_directive_seen ?? []).includes(directive)),
+        ]
+      }
       continue
     }
 
@@ -1150,6 +1227,7 @@ function extractMadarTrace(stdout: string): CompareMadarTrace | undefined {
       turn,
       tool_call_count: tools.length,
       tools,
+      ...(directives.length > 0 ? { agent_directive_seen: directives } : {}),
     })
   }
 

@@ -7,6 +7,7 @@ import type {
   ContextPackClaim,
   ContextPackCoverage,
   ContextPackEvidenceClass,
+  ContextPackExecutionPhase,
   ContextPackExpandableFollowUp,
   ContextPackExpandableRef,
   ContextPackNode,
@@ -44,6 +45,7 @@ import { computeContextPackDiagnostics } from '../context-pack-diagnostics.js'
 import { collectPackNodeIds, computeDeltaContextPack } from '../context-pack-delta.js'
 import { applyContextPackResolution, type ContextPackResolution } from '../context-pack-resolution.js'
 import { buildImplementationPackGuidance } from '../implementation-pack.js'
+import { buildMadarResponseEvidence } from '../mcp-response-evidence.js'
 import { resolveTaskSelection } from '../task-intent.js'
 import { riskMap } from '../risk-map.js'
 import { buildTaskContextPlan } from '../task-context-planner.js'
@@ -318,6 +320,96 @@ function contextMetadata(
     missing_semantic: coverage.missing_semantic,
     ...(payload.retrieval_gate ? { retrieval_gate: payload.retrieval_gate } : {}),
   }
+}
+
+function collectWorkflowOwners(...groups: Array<readonly (string | null | undefined)[]>): string[] {
+  const seen = new Set<string>()
+  const owners: string[] = []
+
+  for (const group of groups) {
+    for (const value of group) {
+      const normalized = typeof value === 'string' ? value.trim() : ''
+      if (normalized.length === 0 || seen.has(normalized)) {
+        continue
+      }
+      seen.add(normalized)
+      owners.push(normalized)
+      if (owners.length >= 5) {
+        return owners
+      }
+    }
+  }
+
+  return owners
+}
+
+function missingPhasesFromPayload(
+  payload: Partial<{
+    answer_contract: { missing_phases?: readonly unknown[] }
+    execution_slice: { phase_coverage?: { missing?: readonly unknown[] } }
+  }>,
+): ContextPackExecutionPhase[] {
+  const fromAnswer = Array.isArray(payload.answer_contract?.missing_phases)
+    ? payload.answer_contract.missing_phases.filter((value): value is ContextPackExecutionPhase => typeof value === 'string')
+    : []
+  const fromSlice = Array.isArray(payload.execution_slice?.phase_coverage?.missing)
+    ? payload.execution_slice.phase_coverage.missing.filter((value): value is ContextPackExecutionPhase => typeof value === 'string')
+    : []
+  return [...new Set([...fromAnswer, ...fromSlice])]
+}
+
+function evidenceForRetrievePayload(
+  payload: Partial<Pick<RetrieveResult, 'coverage' | 'answer_contract' | 'execution_slice'>> & {
+    matched_nodes?: Array<{ source_file: string }>
+  },
+) {
+  return buildMadarResponseEvidence({
+    coverage: payload.coverage,
+    missingPhases: missingPhasesFromPayload(payload),
+    coveredWorkflowOwners: collectWorkflowOwners((payload.matched_nodes ?? []).map((node) => node.source_file)),
+  })
+}
+
+function evidenceForPathPayload(
+  payload: Partial<Pick<RetrieveResult, 'coverage' | 'answer_contract' | 'execution_slice'>> & {
+    relevant_files?: Array<{ path: string }>
+    starter_files?: Array<{ path: string }>
+    edit_steps?: Array<{ path: string }>
+  },
+) {
+  return buildMadarResponseEvidence({
+    coverage: payload.coverage,
+    missingPhases: missingPhasesFromPayload(payload),
+    coveredWorkflowOwners: collectWorkflowOwners(
+      (payload.relevant_files ?? []).map((entry) => entry.path),
+      (payload.starter_files ?? []).map((entry) => entry.path),
+      (payload.edit_steps ?? []).map((entry) => entry.path),
+    ),
+  })
+}
+
+function evidenceForImpactPayload(payload: {
+  target_file?: string
+  affected_files?: string[]
+  direct_dependents?: Array<{ source_file: string }>
+  transitive_dependents?: Array<{ source_file: string }>
+}) {
+  return buildMadarResponseEvidence({
+    coveredWorkflowOwners: collectWorkflowOwners(
+      payload.target_file ? [payload.target_file] : [],
+      payload.affected_files ?? [],
+      (payload.direct_dependents ?? []).map((entry) => entry.source_file),
+      (payload.transitive_dependents ?? []).map((entry) => entry.source_file),
+    ),
+  })
+}
+
+function evidenceForGraphSummaryPayload(payload: {
+  entrypoints?: Array<{ source_file: string }>
+}) {
+  return buildMadarResponseEvidence({
+    coveredWorkflowOwners: collectWorkflowOwners((payload.entrypoints ?? []).map((entry) => entry.source_file)),
+  })
 }
 
 function parseContextSessionState(raw: unknown): ContextSessionState | null {
@@ -723,6 +815,7 @@ function buildFocusedExpansionPayload(
     pack: compactRetrieveResult(retrieval),
     matched_focus: nodeCandidates.length,
     ...metadata,
+    evidence: evidenceForRetrievePayload(retrieval),
   }
 }
 
@@ -787,8 +880,13 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
     }
     case 'graph_stats':
       return helpers.ok(id, helpers.textToolResult(graphStats(graph)))
-    case 'graph_summary':
-      return helpers.ok(id, helpers.textToolResult(JSON.stringify(buildGraphSummary(graph))))
+    case 'graph_summary': {
+      const summary = buildGraphSummary(graph)
+      return helpers.ok(id, helpers.textToolResult(JSON.stringify({
+        ...summary,
+        evidence: evidenceForGraphSummaryPayload(summary),
+      })))
+    }
     case 'god_nodes':
       return helpers.ok(id, helpers.textToolResult(godNodesSummary(graph, helpers.numberParamAlias(toolArguments, ['top_n', 'topN'], { min: 1, max: 100 }) ?? 10)))
     case 'get_community': {
@@ -840,13 +938,17 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         ...(edgeTypes && edgeTypes.length > 0 ? { edgeTypes } : {}),
       })
       const useVerboseImpact = toolArguments.verbose === true || toolArguments.compact === false
+      const impactPayload = useVerboseImpact
+        ? impactResult
+        : {
+            ...compactImpactResult(impactResult),
+            missing_context: [],
+          }
       return helpers.ok(id, helpers.textToolResult(JSON.stringify(
-        useVerboseImpact
-          ? impactResult
-          : {
-              ...compactImpactResult(impactResult),
-              missing_context: [],
-            },
+        {
+          ...impactPayload,
+          evidence: evidenceForImpactPayload(impactResult),
+        },
       )))
     }
     case 'call_chain': {
@@ -883,12 +985,22 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       })
       const useVerbosePrImpact = toolArguments.verbose === true || toolArguments.compact === false
       if (useVerbosePrImpact) {
-        return helpers.ok(id, helpers.textToolResult(JSON.stringify(prResult)))
+        return helpers.ok(id, helpers.textToolResult(JSON.stringify({
+          ...prResult,
+          evidence: buildMadarResponseEvidence({
+            coverage: prResult.review_bundle.coverage,
+            coveredWorkflowOwners: collectWorkflowOwners(prResult.changed_files),
+          }),
+        })))
       }
       const compactPrImpact = compactPrImpactResult(prResult)
       return helpers.ok(id, helpers.textToolResult(JSON.stringify({
         ...compactPrImpact,
         missing_context: (prResult.review_bundle.coverage ?? emptyCoverage()).missing_required,
+        evidence: buildMadarResponseEvidence({
+          coverage: prResult.review_bundle.coverage,
+          coveredWorkflowOwners: collectWorkflowOwners(prResult.changed_files),
+        }),
       })))
     }
     case 'retrieve': {
@@ -963,14 +1075,18 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
           ...(retrieveStrategy ? { retrievalStrategy: retrieveStrategy } : {}),
         }))
       const useVerboseRetrieve = toolArguments.verbose === true || toolArguments.compact === false
-      return retrieval.then((result) => helpers.ok(id, helpers.textToolResult(JSON.stringify(
-        useVerboseRetrieve
+      return retrieval.then((result) => {
+        const payload = useVerboseRetrieve
           ? withRetrieveSnippetBudget(result, retrieveSnippetOptions)
           : {
               ...compactRetrieveResult(result, retrieveSnippetOptions),
               ...contextMetadata(result),
-            },
-      ))))
+            }
+        return helpers.ok(id, helpers.textToolResult(JSON.stringify({
+          ...payload,
+          evidence: evidenceForRetrievePayload(result),
+        })))
+      })
     }
     case 'context_pack': {
       const prompt = helpers.stringParam(toolArguments, 'prompt')
@@ -1219,6 +1335,11 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
             : {}),
           ...(implementation ? { implementation } : {}),
           ...metadata,
+          evidence: buildMadarResponseEvidence({
+            coverage: deltaResult.delta_pack.coverage,
+            missingPhases: missingPhasesFromPayload(deltaResult.delta_pack),
+            coveredWorkflowOwners: collectWorkflowOwners(resolvedDeltaNodes.nodes.map((node) => node.source_file)),
+          }),
         })))
       }
       const resolvedNodes = applyResolutionToNodes(compactPack.matched_nodes, compactPack.relationships)
@@ -1238,6 +1359,11 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
           : {}),
         ...(implementation ? { implementation } : {}),
         ...metadata,
+        evidence: buildMadarResponseEvidence({
+          coverage: fullPack.coverage,
+          missingPhases: missingPhasesFromPayload(fullPack),
+          coveredWorkflowOwners: collectWorkflowOwners(resolvedNodes.nodes.map((node) => node.source_file)),
+        }),
       }
       if (!cacheKey || !cacheGraphVersion) {
         return helpers.ok(id, helpers.textToolResult(JSON.stringify(basePayload)))
@@ -1355,6 +1481,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
               token_count: promptPack.token_count,
             },
         ...contextMetadata(retrieval),
+        evidence: evidenceForRetrievePayload(retrieval),
       })))
     }
     case 'context_session_reset': {
@@ -1392,7 +1519,10 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         ...(relevantCommunity !== null ? { community: relevantCommunity } : {}),
         ...(relevantFileType ? { fileType: relevantFileType } : {}),
       })
-      return helpers.ok(id, helpers.textToolResult(JSON.stringify(result)))
+      return helpers.ok(id, helpers.textToolResult(JSON.stringify({
+        ...result,
+        evidence: evidenceForPathPayload(result),
+      })))
     }
     case 'feature_map': {
       const question = helpers.stringParam(toolArguments, 'question')
@@ -1419,7 +1549,10 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         ...(featureCommunity !== null ? { community: featureCommunity } : {}),
         ...(featureFileType ? { fileType: featureFileType } : {}),
       })
-      return helpers.ok(id, helpers.textToolResult(JSON.stringify(result)))
+      return helpers.ok(id, helpers.textToolResult(JSON.stringify({
+        ...result,
+        evidence: evidenceForPathPayload(result),
+      })))
     }
     case 'risk_map': {
       const question = helpers.stringParam(toolArguments, 'question')
@@ -1446,7 +1579,10 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         ...(riskCommunity !== null ? { community: riskCommunity } : {}),
         ...(riskFileType ? { fileType: riskFileType } : {}),
       })
-      return helpers.ok(id, helpers.textToolResult(JSON.stringify(result)))
+      return helpers.ok(id, helpers.textToolResult(JSON.stringify({
+        ...result,
+        evidence: evidenceForPathPayload(result),
+      })))
     }
     case 'implementation_checklist': {
       const question = helpers.stringParam(toolArguments, 'question')
@@ -1473,7 +1609,10 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         ...(checklistCommunity !== null ? { community: checklistCommunity } : {}),
         ...(checklistFileType ? { fileType: checklistFileType } : {}),
       })
-      return helpers.ok(id, helpers.textToolResult(JSON.stringify(result)))
+      return helpers.ok(id, helpers.textToolResult(JSON.stringify({
+        ...result,
+        evidence: evidenceForPathPayload(result),
+      })))
     }
     case 'time_travel_compare': {
       const fromRef = helpers.stringParamAlias(toolArguments, ['from_ref', 'fromRef'])

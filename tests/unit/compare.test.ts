@@ -1910,6 +1910,92 @@ describe('compare runtime', () => {
     expect(formatCompareSummary(result)).toContain('outcomes: 1 madar invoked with follow-up exploration')
   })
 
+  it('records agent_directive values from Madar tool results in madar_trace per turn', async () => {
+    const graph = makeGraph()
+    writeProjectFiles()
+    const graphPath = writeGraphFixture(graph)
+
+    const result = await executeCompareRuns(
+      {
+        graphPath,
+        question: 'how does login create a session',
+        outputDir: COMPARE_OUTPUT_ROOT,
+        execTemplate: 'runner --prompt {prompt_file} --mode {mode} --out {output_file}',
+        baselineMode: 'full',
+        now: new Date('2026-04-24T19:30:00.000Z'),
+      },
+      {
+        runner: async (execution) => ({
+          exitCode: 0,
+          stdout:
+            execution.mode === 'baseline'
+              ? makeClaudeStructuredCompareStdout({
+                  result: 'baseline answer\n',
+                  usage: {
+                    input_tokens: 1200,
+                    output_tokens: 90,
+                    cache_creation_input_tokens: 100,
+                    cache_read_input_tokens: 20,
+                  },
+                })
+              : JSON.stringify({
+                  type: 'result',
+                  subtype: 'success',
+                  result: 'madar answer\n',
+                  usage: {
+                    input_tokens: 400,
+                    output_tokens: 70,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 10,
+                  },
+                  messages: [
+                    {
+                      role: 'assistant',
+                      turn: 1,
+                      content: [
+                        { type: 'tool_use', name: 'mcp__madar__retrieve', input: { question: 'auth flow' } },
+                      ],
+                    },
+                    {
+                      role: 'user',
+                      turn: 1,
+                      content: [
+                        {
+                          type: 'tool_result',
+                          tool_name: 'mcp__madar__retrieve',
+                          content: JSON.stringify({
+                            evidence: {
+                              agent_directive: 'answer_from_pack',
+                            },
+                          }),
+                        },
+                      ],
+                    },
+                  ],
+                }),
+          stderr: '',
+          elapsedMs: execution.mode === 'baseline' ? 11 : 17,
+        }),
+      },
+    )
+
+    const report = result.reports[0]!
+    const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as {
+      madar_trace?: {
+        per_turn?: Array<Record<string, unknown>>
+      }
+    }
+
+    expect(savedReport.madar_trace?.per_turn).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          turn: 1,
+          agent_directive_seen: ['answer_from_pack'],
+        }),
+      ]),
+    )
+  })
+
   it('keeps madar_trace absent when compare stdout does not expose trace data', async () => {
     const graph = makeGraph()
     writeProjectFiles()

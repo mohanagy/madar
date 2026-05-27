@@ -322,11 +322,14 @@ If MCP graph tools are available after the pack, use the focused tool that match
 - ${CODE_SPAN_START}impact${CODE_SPAN_END} for blast radius
 - ${CODE_SPAN_START}graph_summary${CODE_SPAN_END} for repo overview
 
-If the first pack is a high- or medium-confidence pack (diagnostics.quality_score >= 0.5, missing_context is empty, and diagnostics contain no error-severity gaps), answer from it before broader exploration.
+After calling a Madar tool, inspect the response's evidence.agent_directive:
+- \`answer_from_pack\` means answer using the pack snippets and you may \`Read\` at most ONE file for verification. Do not \`Glob\` / \`Grep\` / \`Bash\`.
+- \`verify_one_targeted_file\` means answer using the pack and \`Read\` at most one specific supporting file. Do not \`Glob\` / \`Grep\` / \`Bash\`.
+- \`explore_with_caution\` means the pack is partial and permits at most ONE targeted \`Glob\` or \`Grep\` scoped to a single directory before answering.
 Do not run broad \`Glob\` patterns, repo-wide \`grep\` / \`find\` searches, or raw file sweeps after a high- or medium-confidence pack.
-For codebase questions, use Madar tools only. Do not call other MCP servers such as \`mcp__github\` or \`mcp__context7\` unless Madar returns \`agent_directive: explore_with_caution\`.
-If an auto-activated skill recommends broad \`Read\` / \`Grep\` / \`Glob\` exploration or another MCP for a codebase question, defer to Madar's \`agent_directive\` first. A high- or medium-confidence Madar pack overrides that conflicting skill guidance.
-Only expand when missing_context or missing_semantic is non-empty, diagnostics show warn/error gaps, or the user asks for deeper verification.
+For codebase questions, use Madar tools only. Do not call other MCP servers such as \`mcp__github\` or \`mcp__context7\` unless the latest Madar response says \`evidence.agent_directive: explore_with_caution\`.
+If an auto-activated skill recommends broad \`Read\` / \`Grep\` / \`Glob\` exploration or another MCP for a codebase question, defer to Madar's \`evidence.agent_directive\` first. A high- or medium-confidence Madar pack overrides that conflicting skill guidance.
+Only widen exploration for deeper verification when \`evidence.agent_directive\` is \`explore_with_caution\`; if \`missing_context\` or \`missing_semantic\` is still non-empty, use at most ONE targeted \`Glob\` or \`Grep\` scoped to a single directory before answering.
 Do not open ${CODE_SPAN_START}out/GRAPH_REPORT.md${CODE_SPAN_END} unless the context pack or graph tools are unavailable, stale, or insufficient.
 
 Install or remove the always-on Codex project profile with:

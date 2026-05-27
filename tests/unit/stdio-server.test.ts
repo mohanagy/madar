@@ -820,6 +820,115 @@ describe('stdio runtime', () => {
     }
   })
 
+  it('adds an evidence block to Madar MCP responses that guide agent exploration', async () => {
+    const root = createGraphFixtureRoot()
+    try {
+      const graphPath = join(root, 'graph.json')
+      const calls = {
+        context_pack: await Promise.resolve(handleStdioRequest(graphPath, {
+          id: 100,
+          method: 'tools/call',
+          params: {
+            name: 'context_pack',
+            arguments: {
+              prompt: 'How does auth reach transport?',
+              budget: 1200,
+            },
+          },
+        })),
+        retrieve: await Promise.resolve(handleStdioRequest(graphPath, {
+          id: 101,
+          method: 'tools/call',
+          params: {
+            name: 'retrieve',
+            arguments: {
+              question: 'How does auth reach transport?',
+              budget: 1200,
+            },
+          },
+        })),
+        relevant_files: await Promise.resolve(handleStdioRequest(graphPath, {
+          id: 102,
+          method: 'tools/call',
+          params: {
+            name: 'relevant_files',
+            arguments: {
+              question: 'How does auth reach transport?',
+              budget: 1200,
+            },
+          },
+        })),
+        feature_map: await Promise.resolve(handleStdioRequest(graphPath, {
+          id: 103,
+          method: 'tools/call',
+          params: {
+            name: 'feature_map',
+            arguments: {
+              question: 'How does auth reach transport?',
+              budget: 1200,
+            },
+          },
+        })),
+        risk_map: await Promise.resolve(handleStdioRequest(graphPath, {
+          id: 104,
+          method: 'tools/call',
+          params: {
+            name: 'risk_map',
+            arguments: {
+              question: 'How does auth reach transport?',
+              budget: 1200,
+            },
+          },
+        })),
+        implementation_checklist: await Promise.resolve(handleStdioRequest(graphPath, {
+          id: 105,
+          method: 'tools/call',
+          params: {
+            name: 'implementation_checklist',
+            arguments: {
+              question: 'How does auth reach transport?',
+              budget: 1200,
+            },
+          },
+        })),
+        graph_summary: await Promise.resolve(handleStdioRequest(graphPath, {
+          id: 106,
+          method: 'tools/call',
+          params: {
+            name: 'graph_summary',
+            arguments: {},
+          },
+        })),
+        impact: await Promise.resolve(handleStdioRequest(graphPath, {
+          id: 107,
+          method: 'tools/call',
+          params: {
+            name: 'impact',
+            arguments: {
+              label: 'AuthService',
+              depth: 3,
+            },
+          },
+        })),
+      } as const
+
+      for (const response of Object.values(calls)) {
+        const payload = JSON.parse((response?.result as { content: Array<{ text: string }> }).content[0]!.text) as {
+          evidence?: Record<string, unknown>
+        }
+        expect(payload.evidence).toEqual(expect.objectContaining({
+          pack_confidence: expect.stringMatching(/^(high|medium|low)$/),
+          coverage: expect.stringMatching(/^(complete|partial|unknown)$/),
+          agent_directive: expect.stringMatching(/^(answer_from_pack|verify_one_targeted_file|explore_with_caution)$/),
+          missing_phases: expect.any(Array),
+          covered_workflow_owners: expect.any(Array),
+        }))
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('returns compact pr_impact payloads by default and keeps verbose mode as an escape hatch', async () => {
     const root = createPrImpactFixtureRoot()
     try {
