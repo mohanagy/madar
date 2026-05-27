@@ -9,6 +9,9 @@ examples/demo-repo/out/
 docs/plans/*
 CLAUDE.md
 .claude
+!docs/benchmarks/suite/isolation/.claude/
+!docs/benchmarks/suite/isolation/.claude/CLAUDE.md
+!docs/benchmarks/suite/isolation/.claude/settings.json
 .vscode
 .mcp.json
 .test-artifacts/

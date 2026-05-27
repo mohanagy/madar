@@ -45,11 +45,20 @@ Secondary metrics:
 
 Per-cell artifacts keep `report.share-safe.json` as the canonical persisted report so summaries can be inspected without leaking private local paths.
 
+## Isolation mode and canonical environment
+
+- Published benchmark cells are expected to run in isolation mode via [`docs/benchmarks/suite/isolation/`](./isolation/).
+- `./isolation/run-isolated.sh` sets `CLAUDE_CONFIG_DIR` to the shipped minimal config and exports `MADAR_BENCH_ISOLATION=1`.
+- The pinned environment contract lives in [`isolation/environment.json`](./isolation/environment.json). In isolation mode, `madar bench:suite` compares the live environment against that contract before each cell.
+- Environment drift marks the cell `status: "env_mismatch"` and excludes it from measured counts. `summary.md` records `Cells skipped for env drift: N`.
+- Development runs outside isolation mode remain useful receipts, but their cells are tagged `isolation: false` and should not be cited as published benchmark claims.
+
 ## Reporting rules
 
 - Results are written under `docs/benchmarks/suite/results/<timestamp>/`
 - `summary.json` is the machine-readable rollup
 - `summary.md` is the human-readable rollup
+- Each cell reports `status` and `isolation: true|false`
 - Keep **repos as rows**
 - Report **median + min/max + n**
 - Keep **cold** and **warm** separate
