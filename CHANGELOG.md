@@ -2,6 +2,14 @@
 
 All notable changes to the TypeScript package will be documented in this file.
 
+## [0.27.2] - 2026-05-28
+
+### Changed
+
+- **Native-agent compare now explains missing verbose traces explicitly**: `report.json` records whether Claude verbose trace data was available, and the CLI/docs clarify that `--verbose` is required for MCP-call attribution while provider usage can still come from `--output-format json`. Closes #368.
+- **Native-agent traces distinguish pre-Madar broad exploration**: verbose compare reports now classify `ToolSearch`/`Glob`/`Grep`/`Bash` before the first Madar MCP call as `madar_invoked_after_broad_exploration`, preserving valid attribution while surfacing the routing drift. Closes #369.
+- **Native-agent benchmark summaries separate routing wins from token proof**: valid attributed runs now carry `claim_assessment` so fewer tools/faster latency can be reported separately from provider-token reduction, and fresh-token regressions keep token-reduction claims marked `not_proven`. Closes #370.
+
 ## [0.27.1] - 2026-05-28
 
 ### Fixed
