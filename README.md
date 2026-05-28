@@ -88,13 +88,9 @@ Want a broader local-first walkthrough that also covers install, `prompt`, and a
 
 ---
 
-## What's new in 0.27.3
+## What's new in 0.27.4
 
-- `compare --baseline-mode native_agent` now stays honest when Madar was not actually invoked: degraded provider-only runs no longer print favorable reduction percentages or suite-summary wins.
-- Native-agent compare is more failure-tolerant: stalled baseline or Madar arms can time out, emit stderr heartbeat lines, and leave a `run-state.json` breadcrumb plus partial report artifacts instead of hanging forever.
-- `madar summary` runtime paths now stay closer to backend workflow spines instead of drifting toward helper-style endpoint chains.
-
-See the [`0.27.3` changelog entry](CHANGELOG.md#0273---2026-05-28) for the full release notes.
+See the [`0.27.4` changelog entry](CHANGELOG.md#0274---2026-05-29) for the full release notes.
 
 The larger **What's new in 0.23.0** additions are still part of the main flow too: `madar summary`, the core MCP `graph_summary` tool, runtime `execution_slice` output, share-safe `report.share-safe.json` compare artifacts, and `compare --baseline-mode pack_only`.
 
@@ -102,7 +98,7 @@ If you want the broader proof-oriented workflow behind the current surfaces, sta
 
 ### When to use `--spi`
 
-`--spi` is **still opt-in** in 0.27.3. Use it when your repo is framework-heavy TypeScript/JavaScript and you want the extra framework-shaped metadata plus disk cache behavior.
+`--spi` is **still opt-in** in 0.27.4. Use it when your repo is framework-heavy TypeScript/JavaScript and you want the extra framework-shaped metadata plus disk cache behavior.
 
 `--spi` is usually worth it for NestJS, Next.js App Router, Prisma, tRPC, Hono, Fastify, and similar repos where users ask storage-oriented prompts, client/server boundary questions, or request-flow questions. The default pipeline is still fine for simpler repos, non-JS/TS workspaces, or quick first runs when you do not need the extra framework detail yet.
 

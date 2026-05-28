@@ -1,6 +1,6 @@
 {
     "name": "@lubab/madar",
-    "version": "0.27.3",
+    "version": "0.27.4",
     "description": "Local task-aware context packs for AI coding agents. Start from what runs for this task and turn TypeScript/Node workspaces plus PR diffs into compact, verifiable context packs for Claude Code, Codex, Copilot, Cursor, and other agents.",
     "license": "MIT",
     "author": "mohanagy",
