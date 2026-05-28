@@ -1798,6 +1798,73 @@ describe('compare runtime', () => {
     expect(formatCompareSummary(result)).toContain('outcomes: 1 madar invoked')
   })
 
+  it('summarizes broad exploration before the first Madar MCP call separately', async () => {
+    const graph = makeGraph()
+    writeProjectFiles()
+    const graphPath = writeGraphFixture(graph)
+
+    const result = await executeCompareRuns(
+      {
+        graphPath,
+        question: 'how does login create a session',
+        outputDir: COMPARE_OUTPUT_ROOT,
+        execTemplate: 'runner --prompt {prompt_file} --mode {mode} --out {output_file}',
+        baselineMode: 'full',
+        now: new Date('2026-04-24T19:30:00.000Z'),
+      },
+      {
+        runner: async (execution) => ({
+          exitCode: 0,
+          stdout:
+            execution.mode === 'baseline'
+              ? makeClaudeStructuredCompareStdout({
+                  result: 'baseline answer\n',
+                  usage: {
+                    input_tokens: 1200,
+                    output_tokens: 90,
+                    cache_creation_input_tokens: 100,
+                    cache_read_input_tokens: 20,
+                  },
+                })
+              : makeClaudeStructuredCompareStdout({
+                  result: 'madar answer\n',
+                  usage: {
+                    input_tokens: 400,
+                    output_tokens: 70,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 10,
+                  },
+                  assistant_turns: [
+                    {
+                      turn: 1,
+                      content: [{ type: 'tool_use', name: 'ToolSearch', input: { query: 'login session' } }],
+                    },
+                    {
+                      turn: 2,
+                      content: [{ type: 'tool_use', name: 'mcp__madar__retrieve', input: { question: 'auth flow' } }],
+                    },
+                  ],
+                }),
+          stderr: '',
+          elapsedMs: execution.mode === 'baseline' ? 11 : 17,
+        }),
+      },
+    )
+
+    const report = result.reports[0]!
+    expect(report.madar_trace).toEqual(
+      expect.objectContaining({
+        exploration_outcome: 'madar_invoked_after_broad_exploration',
+        first_madar_turn: 2,
+        pre_madar_broad_exploration_tool_call_count: 1,
+        pre_madar_broad_exploration_tool_calls_by_name: {
+          ToolSearch: 1,
+        },
+      }),
+    )
+    expect(formatCompareSummary(result)).toContain('outcomes: 1 madar invoked after broad exploration')
+  })
+
   it('records when a context pack only added context before broad raw exploration continued', async () => {
     const graph = makeGraph()
     writeProjectFiles()

@@ -256,7 +256,7 @@ const VERBOSE_MADAR_MCP_RETRIEVE_WITH_FOLLOWUP_EXPLORATION_PAYLOAD = [
     turn: 1,
     message: {
       content: [
-        { type: 'tool_use', name: 'ToolSearch' },
+        { type: 'tool_use', name: 'mcp__madar__retrieve' },
       ],
     },
   },
@@ -265,7 +265,22 @@ const VERBOSE_MADAR_MCP_RETRIEVE_WITH_FOLLOWUP_EXPLORATION_PAYLOAD = [
     turn: 2,
     message: {
       content: [
-        { type: 'tool_use', name: 'mcp__madar__retrieve' },
+        { type: 'tool_use', name: 'Glob' },
+        { type: 'tool_use', name: 'Read' },
+      ],
+    },
+  },
+  MADAR_USAGE_PAYLOAD,
+] as const
+
+const VERBOSE_MADAR_MCP_RETRIEVE_AFTER_PRE_EXPLORATION_PAYLOAD = [
+  { type: 'system', subtype: 'init' },
+  {
+    type: 'assistant',
+    turn: 2,
+    message: {
+      content: [
+        { type: 'tool_use', name: 'ToolSearch' },
       ],
     },
   },
@@ -274,7 +289,24 @@ const VERBOSE_MADAR_MCP_RETRIEVE_WITH_FOLLOWUP_EXPLORATION_PAYLOAD = [
     turn: 3,
     message: {
       content: [
-        { type: 'tool_use', name: 'Glob' },
+        { type: 'tool_use', name: 'ToolSearch' },
+      ],
+    },
+  },
+  {
+    type: 'assistant',
+    turn: 6,
+    message: {
+      content: [
+        { type: 'tool_use', name: 'mcp__madar__retrieve' },
+      ],
+    },
+  },
+  {
+    type: 'assistant',
+    turn: 9,
+    message: {
+      content: [
         { type: 'tool_use', name: 'Read' },
       ],
     },
@@ -750,6 +782,45 @@ describe('executeNativeAgentCompare', () => {
         madar_mcp_call_count: 1,
         exploration_outcome: 'madar_invoked_with_followup_exploration',
       }))
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  it('flags broad exploration before the first Madar MCP call', async () => {
+    const { projectDir, graphPath, outputDir } = makeFixtureProject()
+    try {
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          question: 'What is the cluster module?',
+          outputDir,
+          execTemplate: 'mock-runner',
+          baselineMode: 'native_agent',
+        },
+        {
+          runner: scriptedRunner({
+            baseline: VERBOSE_BASELINE_PAYLOAD,
+            madar: VERBOSE_MADAR_MCP_RETRIEVE_AFTER_PRE_EXPLORATION_PAYLOAD,
+          }),
+          now: () => new Date('2026-05-01T00:00:00Z'),
+        },
+      )
+
+      const report = result.reports[0] as NativeAgentCompareReport
+      expect(report.measurement_validity).toBe('valid')
+      expect(report.madar_trace).toEqual(expect.objectContaining({
+        first_madar_turn: 6,
+        pre_madar_broad_exploration_tool_call_count: 2,
+        pre_madar_broad_exploration_tool_calls_by_name: {
+          ToolSearch: 2,
+        },
+        exploration_outcome: 'madar_invoked_after_broad_exploration',
+      }))
+
+      const summary = formatNativeAgentCompareSummary(result)
+      expect(summary).toContain('madar_invoked_after_broad_exploration')
+      expect(summary).toContain('2 broad exploration calls before the first Madar call')
     } finally {
       rmSync(projectDir, { recursive: true, force: true })
     }
