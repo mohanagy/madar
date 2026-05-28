@@ -3,6 +3,7 @@ import { planIdeaReport } from '../../planning/planner.service.js'
 import { processIdeaReportSection } from '../../research/workers/section-research.worker.js'
 import { assembleIdeaReport } from '../../reports/assembly.service.js'
 import { saveStructuredReport } from './db-sync.worker.js'
+import { handleQualityGateFailure, validateIdeaReportQuality } from '../../reports/quality-gate.service.js'
 
 type BullJob<T> = {
   data: T
@@ -23,6 +24,10 @@ export class OrchestratorWorker {
     const plan = await planIdeaReport(job.data.problem)
     const researchedSection = await processIdeaReportSection(plan.sections[0] ?? 'summary')
     const report = await assembleIdeaReport(plan.sections, researchedSection)
+    const quality = await validateIdeaReportQuality(report)
+    if (!quality.passed) {
+      return handleQualityGateFailure(job.data.ideaId, quality)
+    }
     return saveStructuredReport(job.data.ideaId, report)
   }
 }

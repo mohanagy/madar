@@ -75,6 +75,9 @@ describe('pack-quality fixtures (#298)', () => {
         recommended_first_read?: Array<{ path?: string }>
         execution_slice?: {
           steps?: Array<{ label?: string }>
+          primary_path?: {
+            steps?: Array<{ label?: string }>
+          }
           phase_coverage?: {
             expected?: string[]
             observed?: string[]
@@ -125,6 +128,17 @@ describe('pack-quality fixtures (#298)', () => {
         'saveStructuredReport()',
       ]),
     )
+    expect(payload.pack?.execution_slice?.primary_path?.steps?.map((entry) => entry.label)).not.toEqual(
+      expect.arrayContaining([
+        'handleQualityGateFailure()',
+        'writeRawFailureReport()',
+      ]),
+    )
+    expect(payload.pack?.execution_slice?.primary_path?.steps?.map((entry) => entry.label)).toEqual(
+      expect.arrayContaining([
+        'saveStructuredReport()',
+      ]),
+    )
     expect(payload.pack?.execution_slice?.phase_coverage).toEqual(expect.objectContaining({
       expected: expect.arrayContaining([
         'planner',
@@ -147,5 +161,28 @@ describe('pack-quality fixtures (#298)', () => {
         '.buildQueuedIdeaReportResponse()',
       ]),
     )
+  })
+
+  it('promotes the quality-gate failure branch when the explain prompt asks what happens if it fails', async () => {
+    const result = await runPackQualityFixture('runtime-generation-explain-report-flow', {
+      prompt: 'How is idea report handled when it fails',
+      task: 'explain',
+      budget: 1800,
+    })
+    const payload = result.payload as typeof result.payload & {
+      pack?: {
+        execution_slice?: {
+          primary_path?: {
+            steps?: Array<{ label?: string }>
+          }
+        }
+      }
+    }
+    const primaryLabels = payload.pack?.execution_slice?.primary_path?.steps?.map((entry) => entry.label) ?? []
+
+    expect(primaryLabels).toEqual(expect.arrayContaining([
+      'handleQualityGateFailure()',
+    ]))
+    expect(primaryLabels).not.toContain('saveStructuredReport()')
   })
 })

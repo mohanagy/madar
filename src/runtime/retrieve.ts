@@ -1552,6 +1552,10 @@ function promptWantsNotificationOrEventPhase(question: string): boolean {
   return /\b(?:notify|notification|notifications|event|events|emit|emits|broadcast|webhook|publish)\b/i.test(question)
 }
 
+function promptWantsFailureHandling(question: string): boolean {
+  return /\b(?:fail(?:s|ed|ure|ures|ing)?|error|errors|exception|exceptions|quality(?:\s|-)?gate|fallback|dead(?:\s|-)?letter)\b/i.test(question)
+}
+
 function promptExplicitlyWantsRuntimeHandoff(question: string): boolean {
   return /\b(?:runtime|pipeline|job|jobs|queue|worker|workers|enqueue|enqueues|enqueued|processed|processing|orchestrator)\b/i.test(question)
 }
@@ -2063,6 +2067,9 @@ function executionSliceStepPriority(
   )) {
     value += 15
   }
+  if (promptWantsFailureHandling(question) && (failureHandlingLikeExecutionStep(node) || qualityGateLikeExecutionStep(node))) {
+    value += 140
+  }
   if (/\b(?:route|controller|service|queue|worker|job|pipeline|orchestrator|repository|store)\b/.test(lower)) {
     value += 10
   }
@@ -2074,6 +2081,9 @@ function executionSliceStepPriority(
     || /\b(?:cancel|claim|status|suggest)\b/.test(lower)
   )) {
     value -= 20
+  }
+  if (!promptWantsFailureHandling(question) && failureHandlingLikeExecutionStep(node)) {
+    value -= 90
   }
 
   return value
@@ -2293,6 +2303,14 @@ function qualityGateLikeExecutionStep(
 ): boolean {
   const lower = `${node.label} ${node.source_file} ${node.node_kind ?? ''} ${node.framework_role ?? ''}`.toLowerCase()
   return /\b(?:quality(?:\s|-)?gate|guardrail|validate(?:report|output))\b/.test(lower)
+}
+
+function failureHandlingLikeExecutionStep(
+  node: Pick<ContextPackExecutionSliceStep, 'label' | 'source_file' | 'node_kind' | 'framework_role'>,
+): boolean {
+  const lower = `${node.label} ${node.source_file} ${node.node_kind ?? ''} ${node.framework_role ?? ''}`.toLowerCase()
+  return /\b(?:fail(?:ed|ure|ures|ing)?|error|exception|fallback|dead(?:\s|-)?letter|write(?:raw|failure)|rawfailure)\b/.test(lower)
+    || /(?:^|[.#])(?:handle|write|store|record)[A-Za-z_$\w]*(?:fail|failure|error|exception|raw)[A-Za-z_$\w]*\(?\)?$/i.test(node.label)
 }
 
 function rendererOrSynthesisLikeExecutionStep(

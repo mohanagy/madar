@@ -205,23 +205,30 @@ export function listPackQualityFixtures(): string[] {
     fixtureNames.includes(name) && existsSync(fixtureManifestPath(name)) && existsSync(fixtureWorkspaceRoot(name)))
 }
 
-export async function runPackQualityFixture(name: string): Promise<PackQualityFixtureRunResult> {
+export async function runPackQualityFixture(
+  name: string,
+  overrides: Partial<Pick<PackQualityFixtureManifest, 'prompt' | 'budget' | 'task'>> = {},
+): Promise<PackQualityFixtureRunResult> {
   const fixture = loadPackQualityFixture(name)
+  const runFixture = {
+    ...fixture,
+    ...overrides,
+  }
   return withTempDir(async (tempDir) => {
     const workspaceRoot = copyFixtureWorkspace(name, tempDir)
     const graph = generateGraph(workspaceRoot, { noHtml: true })
     const graphPath = join(workspaceRoot, 'out', 'graph.json')
     const packOutput = await runContextPackCommand({
-      prompt: fixture.prompt,
-      budget: fixture.budget ?? 1800,
-      task: fixture.task ?? 'implement',
+      prompt: runFixture.prompt,
+      budget: runFixture.budget ?? 1800,
+      task: runFixture.task ?? 'implement',
       taskExplicit: true,
       graphPath,
       format: 'json',
     } as never)
 
     return {
-      fixture,
+      fixture: runFixture,
       graph,
       payload: normalizePayload(JSON.parse(packOutput) as PackSchemaPayload),
     }
