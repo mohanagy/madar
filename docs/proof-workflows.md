@@ -60,7 +60,7 @@ What gets saved under `out/compare/<timestamp>/`:
 - `madar-prompt.txt`
 - `baseline-answer.txt`
 - `madar-answer.txt`
-- `run-state.json`
+- `run-state.json` (written when a timeout occurs)
 - `report.json`
 - `report.share-safe.json`
 

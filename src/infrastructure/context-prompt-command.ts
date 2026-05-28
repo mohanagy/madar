@@ -9,7 +9,7 @@ const DEFAULT_PROMPT_BUDGET = 3_000
 export interface ContextPromptCommandDependencies {
   loadGraph: (graphPath: string) => KnowledgeGraph
   retrieveContext: (graph: KnowledgeGraph, options: { question: string; budget: number }) => RetrieveResult
-  buildMadarPromptPack: (input: { question: string; retrieval: RetrieveResult }) => ComparePromptPack
+  buildMadarPromptPack: (input: { graphPath?: string; question: string; retrieval: RetrieveResult }) => ComparePromptPack
 }
 
 const DEFAULT_DEPENDENCIES: ContextPromptCommandDependencies = {
@@ -68,6 +68,7 @@ export async function runContextPromptCommand(
     budget: DEFAULT_PROMPT_BUDGET,
   })
   const compiled = dependencies.buildMadarPromptPack({
+    graphPath: options.graphPath,
     question: options.prompt,
     retrieval,
   })

@@ -4,7 +4,7 @@ import { createInterface } from 'node:readline/promises'
 import { loadBenchmarkQuestions, type BenchmarkResult, printBenchmark, runBenchmark } from '../infrastructure/benchmark.js'
 import { runBenchmarkSuite } from '../infrastructure/benchmark/suite.js'
 import { evaluateRetrievalQuality, formatQualityReport } from '../infrastructure/benchmark/quality.js'
-import { NativeAgentInstallRequiredError, runCompareCommand } from '../infrastructure/compare.js'
+import { BenchmarkReadinessError, NativeAgentInstallRequiredError, runCompareCommand } from '../infrastructure/compare.js'
 import { runContextPackCommand } from '../infrastructure/context-pack-command.js'
 import { runContextPromptCommand } from '../infrastructure/context-prompt-command.js'
 import { runDoctorCommand, runStatusCommand } from '../infrastructure/doctor.js'
@@ -201,12 +201,17 @@ const DEFAULT_DEPENDENCIES: CliDependencies = {
         baselineMode: options.baselineMode,
         perArmTimeoutSeconds: options.perArmTimeoutSeconds,
         heartbeatIntervalMs: options.heartbeatIntervalMs,
+        strictMadarFirst: options.strictMadarFirst,
+        strictBenchmarkReadiness: options.strictBenchmarkReadiness,
         allowNoInstall: options.allowNoInstall,
         limit: options.limit,
         ...(options.why ? { why: true } : {}),
       })
     } catch (error) {
       if (error instanceof NativeAgentInstallRequiredError) {
+        throw new UsageError(error.message)
+      }
+      if (error instanceof BenchmarkReadinessError) {
         throw new UsageError(error.message)
       }
       throw error
@@ -416,6 +421,8 @@ export function formatHelp(binaryName = 'madar'): string {
     '      For Claude MCP attribution in native_agent mode, include --verbose with --output-format json',
     '    --per-arm-timeout S   per-arm timeout seconds for native_agent runs (default 600)',
     '    --heartbeat-interval-ms N  stderr heartbeat interval for native_agent runs (default 30000; 0 disables)',
+    '    --strict-madar-first  treat pre-Madar broad exploration as degraded/non-winning in native_agent mode',
+    '    --strict / --strict-benchmark-readiness  fail native_agent compare before runner spend when benchmark readiness is degraded or not_ready',
     '    --allow-no-install    allow native_agent compare without a verified Madar install and mark the run invalid',
     '    --yes                 skip confirmation before running the paid prompt comparison',
     '    --limit N             cap processed prompts/questions for the comparison run',

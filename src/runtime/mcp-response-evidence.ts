@@ -1,4 +1,9 @@
-import type { ContextPackCoverage, ContextPackExecutionPhase } from '../contracts/context-pack.js'
+import type {
+  ContextPackCoverage,
+  ContextPackExecutionPhase,
+  ContextPackExecutionSlice,
+  ContextPackRuntimeGenerationAnswerContract,
+} from '../contracts/context-pack.js'
 
 export type MadarResponsePackConfidence = 'high' | 'medium' | 'low'
 export type MadarResponseCoverage = 'complete' | 'partial' | 'unknown'
@@ -9,11 +14,16 @@ export interface MadarResponseEvidence {
   coverage: MadarResponseCoverage
   missing_phases: ContextPackExecutionPhase[]
   covered_workflow_owners: string[]
+  confidence_reasons: string[]
   agent_directive: MadarResponseAgentDirective
 }
 
 const HIGH_CONFIDENCE_THRESHOLD = 0.85
 const MEDIUM_CONFIDENCE_THRESHOLD = 0.5
+const MEDIUM_CONFIDENCE_MAX = HIGH_CONFIDENCE_THRESHOLD - 0.01
+const LOW_CONFIDENCE_MAX = MEDIUM_CONFIDENCE_THRESHOLD - 0.01
+const GENERIC_SCOPE_SEGMENTS = new Set(['src', 'test', 'tests', 'docs', 'lib', 'libs', 'packages', 'apps'])
+const GENERIC_SCOPE_WRAPPERS = new Set(['libs', 'packages', 'apps'])
 
 function roundScore(value: number): number {
   return Math.round(Math.min(1, Math.max(0, value)) * 100) / 100
@@ -59,8 +69,9 @@ export function packConfidenceFromScore(score: number): MadarResponsePackConfide
 export function agentDirectiveForEvidence(
   packConfidence: MadarResponsePackConfidence,
   coverage: MadarResponseCoverage,
+  answerContained: boolean | undefined = undefined,
 ): MadarResponseAgentDirective {
-  if (coverage === 'complete' && packConfidence === 'high') {
+  if ((answerContained ?? true) && coverage === 'complete' && packConfidence === 'high') {
     return 'answer_from_pack'
   }
   if (coverage !== 'unknown' && packConfidence !== 'low') {
@@ -69,33 +80,272 @@ export function agentDirectiveForEvidence(
   return 'explore_with_caution'
 }
 
-export function buildMadarResponseEvidence(input: {
+export interface MadarResponseEvidenceAssessment extends MadarResponseEvidence {
+  score: number
+}
+
+function normalizeSourcePath(path: string): string {
+  return path.replaceAll('\\', '/').replace(/^\.?\//, '')
+}
+
+function confidenceCapForScore(confidence: MadarResponsePackConfidence): number {
+  switch (confidence) {
+    case 'high':
+      return 1
+    case 'medium':
+      return MEDIUM_CONFIDENCE_MAX
+    case 'low':
+      return LOW_CONFIDENCE_MAX
+  }
+}
+
+function moreRestrictiveConfidence(
+  current: MadarResponsePackConfidence,
+  next: MadarResponsePackConfidence,
+): MadarResponsePackConfidence {
+  const rank: Record<MadarResponsePackConfidence, number> = {
+    high: 2,
+    medium: 1,
+    low: 0,
+  }
+  return rank[next] < rank[current] ? next : current
+}
+
+function scopeQualityAssessment(
+  graphPath: string | undefined,
+  coveredWorkflowOwners: readonly string[],
+): {
+  confidenceCap: MadarResponsePackConfidence
+  reason: string
+} {
+  if (!graphPath) {
+    return {
+      confidenceCap: 'high',
+      reason: 'scope quality: graph scope was not provided, so scope alignment could not be checked',
+    }
+  }
+
+  const normalizedGraphPath = normalizeSourcePath(graphPath)
+  const candidateScopes = [...new Set(
+    coveredWorkflowOwners
+      .map(normalizeSourcePath)
+      .map((value) => {
+        const segments = value
+          .split('/')
+          .filter((segment) => segment.length > 0)
+        if (segments.length === 0) {
+          return ''
+        }
+        const genericIndex = segments.findIndex((segment) => GENERIC_SCOPE_SEGMENTS.has(segment.toLowerCase()))
+        if (genericIndex > 0) {
+          const candidate = segments[genericIndex - 1]
+          if (candidate && !/^[A-Za-z]:$/.test(candidate)) {
+            return candidate
+          }
+        }
+        const [firstSegment, secondSegment] = segments
+        if (segments.length > 1 && firstSegment && secondSegment && GENERIC_SCOPE_WRAPPERS.has(firstSegment.toLowerCase())) {
+          return secondSegment
+        }
+        return /^[A-Za-z]:$/.test(firstSegment ?? '') ? (secondSegment ?? '') : (firstSegment ?? '')
+      })
+      .filter((value): value is string => value.length > 0 && !GENERIC_SCOPE_SEGMENTS.has(value.toLowerCase())),
+  )]
+  if (candidateScopes.length !== 1) {
+    return {
+      confidenceCap: 'high',
+      reason: 'scope quality: retrieved workflow owners do not point to one narrower subproject scope',
+    }
+  }
+
+  const expectedGraphPath = `${candidateScopes[0]}/out/graph.json`
+  if (normalizedGraphPath === expectedGraphPath || normalizedGraphPath.endsWith(`/${expectedGraphPath}`)) {
+    return {
+      confidenceCap: 'high',
+      reason: `scope quality: graph scope is aligned with the ${candidateScopes[0]} runtime evidence`,
+    }
+  }
+
+  return {
+    confidenceCap: 'medium',
+    reason: `scope quality: runtime evidence is concentrated under ${candidateScopes[0]}/ while the graph is rooted at ${normalizedGraphPath}`,
+  }
+}
+
+function workflowLocalityAssessment(
+  executionSlice: ContextPackExecutionSlice | undefined,
+): {
+  confidenceCap: MadarResponsePackConfidence
+  reason: string
+} {
+  if (!executionSlice) {
+    return {
+      confidenceCap: 'medium',
+      reason: 'workflow locality: no execution spine was captured for this answer',
+    }
+  }
+
+  if (executionSlice.steps.length >= 2) {
+    return {
+      confidenceCap: 'high',
+      reason: 'workflow locality: runtime evidence stays on one coherent workflow spine',
+    }
+  }
+
+  return {
+    confidenceCap: 'medium',
+    reason: 'workflow locality: runtime evidence is too shallow to prove one coherent workflow spine',
+  }
+}
+
+function phaseCompletenessAssessment(
+  missingPhases: readonly ContextPackExecutionPhase[],
+): {
+  confidenceCap: MadarResponsePackConfidence
+  reason: string
+} {
+  if (missingPhases.length === 0) {
+    return {
+      confidenceCap: 'high',
+      reason: 'phase completeness: critical runtime phases are present in the pack',
+    }
+  }
+
+  return {
+    confidenceCap: missingPhases.length >= 3 ? 'low' : 'medium',
+    reason: `phase completeness: missing ${missingPhases.join(', ')}`,
+  }
+}
+
+function answerContainednessAssessment(
+  executionSlice: ContextPackExecutionSlice | undefined,
+  answerContract: ContextPackRuntimeGenerationAnswerContract | undefined,
+  missingPhases: readonly ContextPackExecutionPhase[],
+): {
+  answerContained: boolean | undefined
+  confidenceCap: MadarResponsePackConfidence
+  reason: string
+} {
+  const runtimeGeneration =
+    answerContract?.answer_focus === 'runtime_generation'
+    || executionSlice !== undefined
+    || missingPhases.length > 0
+  if (!runtimeGeneration) {
+    return {
+      answerContained: undefined,
+      confidenceCap: 'high',
+      reason: 'answer containedness: no runtime-generation containment check was needed',
+    }
+  }
+
+  const confidence = answerContract?.confidence ?? executionSlice?.confidence
+  const contained =
+    executionSlice !== undefined
+    && missingPhases.length === 0
+    && executionSlice.status !== 'partial'
+    && confidence !== 'low'
+  if (contained) {
+    return {
+      answerContained: true,
+      confidenceCap: 'high',
+      reason: 'answer containedness: the pack contains a complete runtime answer without raw reads',
+    }
+  }
+
+  return {
+    answerContained: false,
+    confidenceCap: missingPhases.length >= 3 || confidence === 'low' ? 'low' : 'medium',
+    reason: 'answer containedness: the pack does not contain a complete runtime answer without raw reads',
+  }
+}
+
+export function assessMadarResponseEvidence(input: {
+  answerContract?: ContextPackRuntimeGenerationAnswerContract | undefined
   coverage?: ContextPackCoverage | undefined
-  missingPhases?: readonly ContextPackExecutionPhase[] | undefined
   coveredWorkflowOwners?: readonly string[] | undefined
+  executionSlice?: ContextPackExecutionSlice | undefined
+  graphPath?: string | undefined
+  missingPhases?: readonly ContextPackExecutionPhase[] | undefined
   score?: number | undefined
-}): MadarResponseEvidence {
+}): MadarResponseEvidenceAssessment {
   const coverage = coverageStatusFromCoverage(input.coverage)
-  const score = typeof input.score === 'number' && Number.isFinite(input.score)
+  const baseScore = typeof input.score === 'number' && Number.isFinite(input.score)
     ? input.score
     : input.coverage
       ? confidenceScoreFromCoverage(input.coverage)
       : 0.3
-  const packConfidence = packConfidenceFromScore(score)
   const coveredWorkflowOwners = [...new Set(
     (input.coveredWorkflowOwners ?? [])
       .map((value) => value.trim())
       .filter((value) => value.length > 0),
   )].slice(0, 5)
-  const missingPhases = [...new Set((input.missingPhases ?? []).filter((value) => typeof value === 'string'))]
+  const missingPhases = [...new Set((input.missingPhases ?? []).filter((value): value is ContextPackExecutionPhase => typeof value === 'string'))]
+  const runtimeGeneration =
+    input.answerContract?.answer_focus === 'runtime_generation'
+    || input.executionSlice !== undefined
+    || missingPhases.length > 0
+
+  let confidenceCap: MadarResponsePackConfidence = 'high'
+  const confidenceReasons: string[] = []
+  let answerContained: boolean | undefined
+
+  if (runtimeGeneration) {
+    const scopeQuality = scopeQualityAssessment(input.graphPath, coveredWorkflowOwners)
+    confidenceCap = moreRestrictiveConfidence(confidenceCap, scopeQuality.confidenceCap)
+    confidenceReasons.push(scopeQuality.reason)
+
+    const workflowLocality = workflowLocalityAssessment(input.executionSlice)
+    confidenceCap = moreRestrictiveConfidence(confidenceCap, workflowLocality.confidenceCap)
+    confidenceReasons.push(workflowLocality.reason)
+
+    const phaseCompleteness = phaseCompletenessAssessment(missingPhases)
+    confidenceCap = moreRestrictiveConfidence(confidenceCap, phaseCompleteness.confidenceCap)
+    confidenceReasons.push(phaseCompleteness.reason)
+
+    const answerContainedness = answerContainednessAssessment(input.executionSlice, input.answerContract, missingPhases)
+    answerContained = answerContainedness.answerContained
+    confidenceCap = moreRestrictiveConfidence(confidenceCap, answerContainedness.confidenceCap)
+    confidenceReasons.push(answerContainedness.reason)
+
+    const runtimeConfidence = input.answerContract?.confidence ?? input.executionSlice?.confidence
+    if (runtimeConfidence) {
+      const previousConfidenceCap = confidenceCap
+      const nextConfidenceCap = moreRestrictiveConfidence(confidenceCap, runtimeConfidence)
+      if (nextConfidenceCap !== previousConfidenceCap) {
+        const source = input.answerContract?.confidence ? 'answer contract' : 'execution slice'
+        confidenceReasons.push(
+          `runtime confidence: ${source} reported ${runtimeConfidence} confidence and lowered the cap from ${previousConfidenceCap} to ${nextConfidenceCap}`,
+        )
+      }
+      confidenceCap = nextConfidenceCap
+    }
+  }
+
+  const effectiveScore = roundScore(Math.min(baseScore, confidenceCapForScore(confidenceCap)))
+  const packConfidence = packConfidenceFromScore(effectiveScore)
 
   return {
+    score: effectiveScore,
     pack_confidence: packConfidence,
     coverage,
     missing_phases: missingPhases,
     covered_workflow_owners: coveredWorkflowOwners,
-    agent_directive: agentDirectiveForEvidence(packConfidence, coverage),
+    confidence_reasons: confidenceReasons,
+    agent_directive: agentDirectiveForEvidence(packConfidence, coverage, answerContained),
   }
+}
+
+export function buildMadarResponseEvidence(input: {
+  answerContract?: ContextPackRuntimeGenerationAnswerContract | undefined
+  coverage?: ContextPackCoverage | undefined
+  missingPhases?: readonly ContextPackExecutionPhase[] | undefined
+  coveredWorkflowOwners?: readonly string[] | undefined
+  executionSlice?: ContextPackExecutionSlice | undefined
+  graphPath?: string | undefined
+  score?: number | undefined
+}): MadarResponseEvidence {
+  const { score: _score, ...evidence } = assessMadarResponseEvidence(input)
+  return evidence
 }
 
 export function collectWorkflowOwners(...groups: Array<readonly (string | null | undefined)[]>): string[] {

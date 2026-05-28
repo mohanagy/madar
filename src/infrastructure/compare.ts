@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
-import type { ContextPackRoutingDebug } from '../contracts/context-pack.js'
+import type { ContextPackExecutionPhase, ContextPackRoutingDebug } from '../contracts/context-pack.js'
 import { KnowledgeGraph } from '../contracts/graph.js'
 import type { ContextSessionState } from '../contracts/context-session.js'
 import { buildContextPrompt, type ContextPromptStableSection } from './context-prompt.js'
@@ -69,6 +69,7 @@ export interface BuildBaselinePromptPackInput {
 }
 
 export interface BuildMadarPromptPackInput {
+  graphPath?: string
   question: string
   retrieval: RetrieveResult
   session?: ContextSessionState
@@ -132,6 +133,7 @@ export interface CompareMadarTrace {
   madar_mcp_call_count: number
   madar_mcp_calls_by_name: Record<string, number>
   first_madar_turn?: number
+  first_madar_tool_name?: string
   pre_madar_broad_exploration_tool_call_count?: number
   pre_madar_broad_exploration_tool_calls_by_name?: Record<string, number>
   context_pack_call_count: number
@@ -228,6 +230,8 @@ export interface GenerateCompareArtifactsInput {
   baselineMode: CompareBaselineMode
   perArmTimeoutSeconds?: number
   heartbeatIntervalMs?: number
+  strictMadarFirst?: boolean
+  strictBenchmarkReadiness?: boolean
   allowNoInstall?: boolean
   why?: boolean
   corpusText?: string
@@ -373,6 +377,11 @@ function summarizeExecTemplate(execTemplate: string): CompareExecCommandSummary 
     placeholders: [...new Set(placeholders)],
     redacted: true,
   }
+}
+
+export interface NativeAgentPromptContractAssessment {
+  status: 'followed' | 'violated' | 'not_measured'
+  evidence: string[]
 }
 
 function validateCompareExecTemplate(template: string): void {
@@ -910,6 +919,7 @@ function analyzeMadarTraceExploration(perTurn: CompareMadarTraceTurnSummary[]): 
   madar_mcp_call_count: number
   madar_mcp_calls_by_name: Record<string, number>
   first_madar_turn?: number
+  first_madar_tool_name?: string
   pre_madar_broad_exploration_tool_call_count: number
   pre_madar_broad_exploration_tool_calls_by_name: Record<string, number>
   context_pack_call_count: number
@@ -922,6 +932,7 @@ function analyzeMadarTraceExploration(perTurn: CompareMadarTraceTurnSummary[]): 
   let madarMcpCallCount = 0
   let contextPackCallCount = 0
   let firstMadarTurn: number | null = null
+  let firstMadarToolName: string | null = null
   let preMadarBroadExplorationToolCallCount = 0
   let focusedFollowUpToolCallCount = 0
   let broadExplorationToolCallCount = 0
@@ -940,6 +951,7 @@ function analyzeMadarTraceExploration(perTurn: CompareMadarTraceTurnSummary[]): 
         madarMcpCallsByName[toolName] = (madarMcpCallsByName[toolName] ?? 0) + 1
         if (!hadSeenMadarCall) {
           firstMadarTurn = turn.turn
+          firstMadarToolName = toolName
         }
         if (MADAR_CONTEXT_PACK_TOOL_NAMES.has(canonicalName)) {
           contextPackCallCount += 1
@@ -1018,6 +1030,7 @@ function analyzeMadarTraceExploration(perTurn: CompareMadarTraceTurnSummary[]): 
       : null
   const baseTraceFields = {
     ...(firstMadarTurn !== null ? { first_madar_turn: firstMadarTurn } : {}),
+    ...(firstMadarToolName !== null ? { first_madar_tool_name: firstMadarToolName } : {}),
     pre_madar_broad_exploration_tool_call_count: preMadarBroadExplorationToolCallCount,
     pre_madar_broad_exploration_tool_calls_by_name: sortedPreMadarBroadExplorationToolCallsByName,
   }
@@ -1614,6 +1627,129 @@ function retrieveCompareContext(graph: KnowledgeGraph, question: string, budget:
   }
 }
 
+const BENCHMARK_READINESS_CRITICAL_PHASES = new Set<ContextPackExecutionPhase>([
+  'planner',
+  'external_research_or_api',
+  'report_builder',
+  'scoring',
+  'quality_gate',
+  'renderer_or_synthesis',
+  'persistence',
+])
+
+function collectBenchmarkReadinessSourceFiles(retrieval: RetrieveResult): string[] {
+  const sourceFiles = new Set<string>()
+  for (const node of retrieval.matched_nodes) {
+    sourceFiles.add(node.source_file)
+  }
+  for (const step of retrieval.execution_slice?.steps ?? []) {
+    sourceFiles.add(step.source_file)
+  }
+  for (const step of retrieval.execution_slice?.primary_path?.steps ?? []) {
+    sourceFiles.add(step.source_file)
+  }
+  return [...sourceFiles]
+}
+
+function suggestBenchmarkGraphScope(graphPath: string, sourceFiles: readonly string[]): string | null {
+  const projectRoot = inferProjectRootFromGraphPath(graphPath)
+  const normalizedGraphPath = resolve(graphPath).replaceAll('\\', '/')
+  const scopes = new Set<string>()
+  for (const sourceFile of sourceFiles) {
+    const relSourceFile = isAbsolute(sourceFile) ? relative(projectRoot, sourceFile) : sourceFile
+    const [scope] = relSourceFile.replaceAll('\\', '/').split('/', 1)
+    if (scope && !['src', 'test', 'tests', 'docs'].includes(scope)) {
+      scopes.add(scope)
+    }
+  }
+
+  if (scopes.size !== 1) {
+    return null
+  }
+
+  const [scope] = [...scopes]
+  const suggested = `${scope}/out/graph.json`
+  return normalizedGraphPath.endsWith(`/${suggested}`) ? null : suggested
+}
+
+function retrievalHasSpiEvidence(retrieval: RetrieveResult): boolean {
+  return collectBenchmarkReadinessSourceFiles(retrieval).some((sourceFile) =>
+    /(^|\/)spi(\/|$)|\.spi\./.test(sourceFile),
+  )
+}
+
+function benchmarkReadinessSeverity(current: BenchmarkReadinessStatus, next: BenchmarkReadinessStatus): BenchmarkReadinessStatus {
+  const rank: Record<BenchmarkReadinessStatus, number> = {
+    ready: 0,
+    degraded: 1,
+    not_ready: 2,
+  }
+  return rank[next] > rank[current] ? next : current
+}
+
+export function assessBenchmarkReadinessFromRetrieveResult(input: {
+  graphPath: string
+  retrieval: RetrieveResult
+}): BenchmarkReadiness {
+  const { graphPath, retrieval } = input
+  const runtimeGeneration =
+    retrieval.answer_contract?.answer_focus === 'runtime_generation'
+    || retrieval.retrieval_gate?.signals.generation_intent === 'runtime_generation'
+  if (!runtimeGeneration) {
+    return {
+      status: 'ready',
+      reasons: [],
+      suggested_graph_scope: null,
+    }
+  }
+
+  let status: BenchmarkReadinessStatus = 'ready'
+  const reasons: string[] = []
+  const sourceFiles = collectBenchmarkReadinessSourceFiles(retrieval)
+  const suggestedGraphScope = suggestBenchmarkGraphScope(graphPath, sourceFiles)
+  const missingPhases = [...new Set([
+    ...(retrieval.answer_contract?.missing_phases ?? []),
+    ...(retrieval.execution_slice?.phase_coverage?.missing ?? []),
+  ])].filter((phase) => BENCHMARK_READINESS_CRITICAL_PHASES.has(phase))
+
+  if (missingPhases.length >= 3) {
+    status = benchmarkReadinessSeverity(status, 'not_ready')
+    reasons.push(`missing downstream runtime phases: ${missingPhases.join(', ')}`)
+  } else if (missingPhases.length > 0) {
+    status = benchmarkReadinessSeverity(status, 'degraded')
+    reasons.push(`missing downstream runtime phases: ${missingPhases.join(', ')}`)
+  }
+
+  const confidence = retrieval.answer_contract?.confidence ?? retrieval.execution_slice?.confidence
+  if (confidence === 'low') {
+    status = benchmarkReadinessSeverity(status, 'not_ready')
+    reasons.push('runtime slice confidence is low')
+  } else if (confidence === 'medium') {
+    status = benchmarkReadinessSeverity(status, 'degraded')
+    reasons.push('runtime slice confidence is medium')
+  }
+
+  if (!retrievalHasSpiEvidence(retrieval)) {
+    status = benchmarkReadinessSeverity(status, suggestedGraphScope ? 'not_ready' : 'degraded')
+    reasons.push(
+      suggestedGraphScope
+        ? `no SPI evidence found in the current pack; retry with ${suggestedGraphScope} or another SPI-scoped graph`
+        : 'no SPI evidence found in the current pack',
+    )
+  }
+
+  if (suggestedGraphScope) {
+    status = benchmarkReadinessSeverity(status, status === 'ready' ? 'degraded' : status)
+    reasons.push(`root graph is broad for this question; retrieved evidence is concentrated under ${suggestedGraphScope.replace('/out/graph.json', '/')}`)
+  }
+
+  return {
+    status,
+    reasons,
+    suggested_graph_scope: suggestedGraphScope,
+  }
+}
+
 function addBaselineCorpusFile(
   files: Map<string, string>,
   candidatePath: string,
@@ -1757,6 +1893,23 @@ export function buildMadarPromptPack(input: BuildMadarPromptPackInput): CompareP
   }
 }
 
+export function buildNativeAgentPrompt(question: string): string {
+  return [
+    'Follow the Madar pack contract exactly.',
+    'Call context_pack first for explain or runtime questions before any raw file or broad repo search.',
+    'Inspect evidence.pack_confidence, evidence.coverage, evidence.agent_directive, missing_context, and recommended_first_read before deciding what to do next.',
+    'If evidence.agent_directive is answer_from_pack, answer from the pack and stop without raw search.',
+    'Allow at most one focused Madar follow-up before raw search when evidence.agent_directive is verify_one_targeted_file or explore_with_caution.',
+    'Broad raw search requires an explicit missing-context reason grounded in missing_context or coverage gaps.',
+    'Any broad search before the first Madar call violates the prompt contract.',
+    '',
+    `Question: ${question}`,
+    '',
+    'Answer:',
+    '',
+  ].join('\n')
+}
+
 export function resolveCompareQuestions(options: Pick<GenerateCompareArtifactsInput, 'question' | 'questionsPath' | 'limit'>): string[] {
   if (options.question !== undefined && options.question !== null && options.questionsPath !== undefined && options.questionsPath !== null) {
     throw new Error('Compare runtime accepts either a single question or a questions path, but not both.')
@@ -1806,6 +1959,7 @@ export function generateCompareArtifacts(input: GenerateCompareArtifactsInput): 
 
     const retrieval = retrieveCompareContext(graph, question, retrievalBudget, projectRoot)
     const madarPrompt = buildMadarPromptPack({
+      graphPath: input.graphPath,
       question,
       retrieval,
       ...(madarSession ? { session: madarSession } : {}),
@@ -2366,6 +2520,8 @@ export interface NativeAgentCompareReport {
   } | null
   token_regression: boolean
   token_regression_reasons: NativeAgentTokenRegressionMetric[]
+  benchmark_readiness?: BenchmarkReadiness
+  prompt_contract?: NativeAgentPromptContractAssessment
   claim_assessment?: NativeAgentClaimAssessment
   benchmark_outcome?: NativeAgentBenchmarkOutcome
   prompt_token_source: {
@@ -2448,10 +2604,25 @@ export interface NativeAgentRunnerResult {
 
 export type NativeAgentRunner = (input: NativeAgentRunnerInput) => Promise<NativeAgentRunnerResult>
 
+export type BenchmarkReadinessStatus = 'ready' | 'degraded' | 'not_ready'
+
+export interface BenchmarkReadiness {
+  status: BenchmarkReadinessStatus
+  reasons: string[]
+  suggested_graph_scope: string | null
+}
+
+export interface BenchmarkReadinessInput {
+  graphPath: string
+  projectRoot: string
+  question: string
+}
+
 export interface ExecuteNativeAgentCompareDependencies {
   runner?: NativeAgentRunner
   now?: () => Date
   writeStderr?: (message: string) => void
+  assessBenchmarkReadiness?: (input: BenchmarkReadinessInput) => BenchmarkReadiness
 }
 
 interface NativeAgentRunStateRecord {
@@ -2581,6 +2752,16 @@ export class NativeAgentInstallRequiredError extends Error {
     super(formatNativeAgentInstallRequiredMessage(check))
     this.name = 'NativeAgentInstallRequiredError'
     this.check = check
+  }
+}
+
+export class BenchmarkReadinessError extends Error {
+  readonly readiness: BenchmarkReadiness
+
+  constructor(readiness: BenchmarkReadiness) {
+    super(`Native-agent benchmark readiness is ${readiness.status}.`)
+    this.name = 'BenchmarkReadinessError'
+    this.readiness = readiness
   }
 }
 
@@ -2938,6 +3119,7 @@ async function runNativeAgentArmWithTimeout(
 
   return await new Promise((resolveExecution, rejectExecution) => {
     let settled = false
+    let timedOut = false
     const startedAt = Date.now()
     const heartbeatId = heartbeatIntervalMs > 0
       ? setInterval(() => {
@@ -2954,10 +3136,20 @@ async function runNativeAgentArmWithTimeout(
       if (settled) {
         return
       }
-      settled = true
+      timedOut = true
       controller.abort()
-      cleanup()
-      resolveExecution({ kind: 'timed_out' } as const)
+      // Wait for the runner to settle after abort, but don't wait forever.
+      // A 200ms grace allows well-behaved runners to flush state before we finalize.
+      Promise.race([
+        runnerPromise.then(() => {}, () => {}),
+        new Promise<void>((res) => { setTimeout(res, 200) }),
+      ]).then(() => {
+        if (!settled) {
+          settled = true
+          cleanup()
+          resolveExecution({ kind: 'timed_out' } as const)
+        }
+      }, () => {})
     }, timeoutMs)
 
     runnerPromise.then(
@@ -2967,7 +3159,7 @@ async function runNativeAgentArmWithTimeout(
         }
         settled = true
         cleanup()
-        resolveExecution({ kind: 'completed', result } as const)
+        resolveExecution(timedOut ? ({ kind: 'timed_out' } as const) : ({ kind: 'completed', result } as const))
       },
       (error) => {
         if (settled) {
@@ -2975,7 +3167,11 @@ async function runNativeAgentArmWithTimeout(
         }
         settled = true
         cleanup()
-        rejectExecution(error)
+        if (timedOut) {
+          resolveExecution({ kind: 'timed_out' } as const)
+        } else {
+          rejectExecution(error)
+        }
       },
     )
   })
@@ -3072,14 +3268,15 @@ function assessNativeAgentClaims(report: NativeAgentCompareReport): NativeAgentC
   }
 
   if (!nativeAgentReductionsAttributable(report)) {
+    const evidence = nativeAgentAttributionGapEvidence(report)
     return {
       routing_efficiency: {
         status: 'not_measured',
-        evidence: ['Madar MCP attribution is missing.'],
+        evidence: [evidence],
       },
       token_reduction: {
         status: 'not_measured',
-        evidence: ['Madar MCP attribution is missing.'],
+        evidence: [evidence],
       },
     }
   }
@@ -3244,6 +3441,98 @@ function nativeAgentReductionsAttributable(
   return report.measurement_validity === 'valid'
 }
 
+function strictMadarFirstViolated(
+  madarTrace: CompareMadarTrace | undefined,
+  strictMadarFirst: boolean | undefined,
+): boolean {
+  if (!strictMadarFirst || madarTrace === undefined) {
+    return false
+  }
+
+  return madarTrace.exploration_outcome === 'madar_invoked_after_broad_exploration'
+}
+
+function assessNativeAgentMeasurementValidity(input: {
+  installVerified: boolean
+  madarMcpCallCount: number
+  madarTrace: CompareMadarTrace | undefined
+  strictMadarFirst: boolean | undefined
+}): NativeAgentMeasurementValidity {
+  if (!input.installVerified) {
+    return 'invalid'
+  }
+
+  if (input.madarMcpCallCount === 0) {
+    return 'degraded'
+  }
+
+  if (strictMadarFirstViolated(input.madarTrace, input.strictMadarFirst)) {
+    return 'degraded'
+  }
+
+  return 'valid'
+}
+
+function nativeAgentAttributionGapEvidence(report: NativeAgentCompareReport): string {
+  if (report.measurement_validity === 'invalid') {
+    return 'No Madar install was detected.'
+  }
+
+  if (report.madar_trace?.exploration_outcome === 'madar_invoked_after_broad_exploration') {
+    return 'Broad exploration occurred before the first Madar MCP call.'
+  }
+
+  return 'Madar MCP attribution is missing.'
+}
+
+function assessNativeAgentPromptContract(report: Pick<NativeAgentCompareReport, 'trace_status' | 'madar_trace'>): NativeAgentPromptContractAssessment {
+  if (report.trace_status !== 'trace_available' || report.madar_trace === undefined) {
+    return {
+      status: 'not_measured',
+      evidence: ['Claude --verbose trace unavailable.'],
+    }
+  }
+
+  const evidence: string[] = []
+  if (report.madar_trace.madar_mcp_call_count === 0) {
+    evidence.push('no Madar MCP call was recorded')
+  }
+  if (
+    report.madar_trace.first_madar_tool_name
+    && !MADAR_CONTEXT_PACK_TOOL_NAMES.has(canonicalTraceToolName(report.madar_trace.first_madar_tool_name))
+  ) {
+    evidence.push('first Madar call was not context_pack')
+  }
+  if ((report.madar_trace.pre_madar_broad_exploration_tool_call_count ?? 0) > 0) {
+    evidence.push('broad exploration occurred before the first Madar call')
+  }
+  if (report.madar_trace.broad_exploration_tool_call_count > 0) {
+    return {
+      status: 'not_measured',
+      evidence: ['broad exploration occurred after the first Madar call, but the trace does not show whether missing_context justified it'],
+    }
+  }
+  const directives = new Set(report.madar_trace.agent_directive_seen ?? [])
+  if (
+    report.madar_trace.focused_follow_up_tool_call_count > 1
+    && (directives.has('verify_one_targeted_file') || directives.has('explore_with_caution'))
+  ) {
+    evidence.push('more than one focused Madar follow-up was used')
+  }
+
+  if (evidence.length > 0) {
+    return {
+      status: 'violated',
+      evidence,
+    }
+  }
+
+  return {
+    status: 'followed',
+    evidence: ['started with context_pack and avoided disallowed exploration'],
+  }
+}
+
 function isComparableNativeAgentReport(report: NativeAgentCompareReport): report is NativeAgentComparableReport {
   return report.baseline.kind === 'succeeded'
     && report.madar.kind === 'succeeded'
@@ -3389,9 +3678,12 @@ export async function executeNativeAgentCompare(
   const writeStderr = dependencies.writeStderr ?? ((message: string) => process.stderr.write(message))
   const timeoutMs = perArmTimeoutMs(input.perArmTimeoutSeconds)
   const heartbeatIntervalMs = compareHeartbeatIntervalMs(input.heartbeatIntervalMs)
+  const retrievalBudget = input.retrievalBudget ?? DEFAULT_RETRIEVAL_BUDGET
   const timestamp = now()
   const outputRoot = createCompareOutputRoot(outputDir, timestamp)
   const runner = dependencies.runner ?? defaultNativeAgentRunner
+  const assessBenchmarkReadiness = dependencies.assessBenchmarkReadiness
+  const graph = assessBenchmarkReadiness ? null : loadGraph(graphPath)
   const reports: NativeAgentCompareReport[] = []
   const answerQualityGates = loadNativeAgentAnswerQualityGates(input.questionsPath)
   const environment = await captureBenchmarkEnvironment({ projectRoot })
@@ -3401,12 +3693,12 @@ export async function executeNativeAgentCompare(
     throw new NativeAgentInstallRequiredError(installCheck)
   }
 
-  for (const [index, question] of questions.entries()) {
+  const preparedQuestions = questions.map((question, index) => {
     const questionDir = questions.length === 1 ? outputRoot : join(outputRoot, `question-${String(index + 1).padStart(3, '0')}`)
     mkdirSync(questionDir, { recursive: true })
 
     const promptFile = join(questionDir, 'native_agent-prompt.txt')
-    writeFileSync(promptFile, question, 'utf8')
+    writeFileSync(promptFile, buildNativeAgentPrompt(question), 'utf8')
     const baselineAnswerPath = answerFilePath(questionDir, 'baseline')
     const madarAnswerPath = answerFilePath(questionDir, 'madar')
     const reportPath = join(questionDir, 'report.json')
@@ -3460,6 +3752,54 @@ export async function executeNativeAgentCompare(
         prompt_file: promptFile,
       },
     }
+    if (assessBenchmarkReadiness) {
+      reportShell.benchmark_readiness = assessBenchmarkReadiness({
+        graphPath,
+        projectRoot,
+        question,
+      })
+    } else if (graph) {
+      reportShell.benchmark_readiness = assessBenchmarkReadinessFromRetrieveResult({
+        graphPath,
+        retrieval: retrieveCompareContext(graph, question, retrievalBudget, projectRoot),
+      })
+    }
+    if (reportShell.benchmark_readiness) {
+      reportShell.completed_at = now().toISOString()
+    }
+    return {
+      question,
+      promptFile,
+      baselineAnswerPath,
+      madarAnswerPath,
+      reportPath,
+      shareSafeReportPath,
+      runStatePath,
+      reportShell,
+    }
+  })
+
+  const strictReadinessFailure =
+    input.strictBenchmarkReadiness
+      ? preparedQuestions.find((entry) => entry.reportShell.benchmark_readiness?.status !== 'ready')
+      : undefined
+  if (strictReadinessFailure?.reportShell.benchmark_readiness) {
+    for (const entry of preparedQuestions) {
+      writeNativeAgentReport(entry.reportShell)
+    }
+    throw new BenchmarkReadinessError(strictReadinessFailure.reportShell.benchmark_readiness)
+  }
+
+  for (const entry of preparedQuestions) {
+    const {
+      question,
+      promptFile,
+      baselineAnswerPath,
+      madarAnswerPath,
+      runStatePath,
+      reportShell,
+    } = entry
+
     writeNativeAgentRunState(runStatePath, {
       phase: 'baseline_pending',
       arm: 'baseline',
@@ -3736,12 +4076,13 @@ export async function executeNativeAgentCompare(
             ? 'mixed'
             : 'unknown'
     }
-    reportShell.measurement_validity =
-      reportShell.install_verified
-        ? reportShell.madar_mcp_call_count > 0
-          ? 'valid'
-          : 'degraded'
-        : 'invalid'
+    reportShell.measurement_validity = assessNativeAgentMeasurementValidity({
+      installVerified: reportShell.install_verified,
+      madarMcpCallCount: reportShell.madar_mcp_call_count,
+      madarTrace: reportShell.madar_trace,
+      strictMadarFirst: input.strictMadarFirst,
+    })
+    reportShell.prompt_contract = assessNativeAgentPromptContract(reportShell)
     const claimAssessment = assessNativeAgentClaims(reportShell)
     if (claimAssessment !== undefined) {
       reportShell.claim_assessment = claimAssessment
@@ -3817,6 +4158,9 @@ function formatMeasurementValidityLine(report: NativeAgentCompareReport): string
     case 'valid':
       return 'measurement_validity: valid'
     case 'degraded':
+      if (report.madar_trace?.exploration_outcome === 'madar_invoked_after_broad_exploration') {
+        return 'measurement_validity: degraded (broad exploration preceded the first Madar MCP call)'
+      }
       return 'measurement_validity: degraded (install detected, but no Madar MCP call was recorded)'
     case 'invalid':
       return 'measurement_validity: INVALID — no Madar install was detected; do not cite these numbers'
@@ -3852,6 +4196,12 @@ function appendNativeAgentValidityLines(lines: string[], report: NativeAgentComp
     `    ${formatMadarMcpCallCountLine(report)}`,
     `    ${formatNativeAgentTraceStatusLine(report)}`,
   )
+  if (report.benchmark_readiness) {
+    lines.push(`    ${formatBenchmarkReadinessLine(report.benchmark_readiness)}`)
+    if (report.benchmark_readiness.suggested_graph_scope) {
+      lines.push(`    Next step: retry with ${report.benchmark_readiness.suggested_graph_scope}`)
+    }
+  }
 }
 
 function formatNativeAgentClaimAssessmentLine(assessment: NativeAgentClaimAssessment): string {
@@ -3862,6 +4212,16 @@ function formatNativeAgentClaimAssessmentLine(assessment: NativeAgentClaimAssess
     ? ` (${assessment.token_reduction.evidence.join('; ')})`
     : ''
   return `claim_assessment: routing_efficiency ${assessment.routing_efficiency.status}${routingEvidence}; token_reduction ${assessment.token_reduction.status}${tokenEvidence}`
+}
+
+function formatNativeAgentPromptContractLine(assessment: NativeAgentPromptContractAssessment): string {
+  const evidence = assessment.evidence.length > 0 ? ` (${assessment.evidence.join('; ')})` : ''
+  return `prompt_contract: ${assessment.status}${evidence}`
+}
+
+function formatBenchmarkReadinessLine(readiness: BenchmarkReadiness): string {
+  const reasons = readiness.reasons.length > 0 ? ` (${readiness.reasons.join('; ')})` : ''
+  return `benchmark_readiness: ${readiness.status}${reasons}`
 }
 
 function formatNativeAgentBenchmarkOutcomeLine(outcome: NativeAgentBenchmarkOutcome): string {
@@ -3976,6 +4336,9 @@ export function formatNativeAgentCompareSummary(result: NativeAgentCompareResult
 
     lines.push(`- "${report.question}"`)
     appendNativeAgentValidityLines(lines, report)
+    if (report.prompt_contract) {
+      lines.push(`    ${formatNativeAgentPromptContractLine(report.prompt_contract)}`)
+    }
     if (report.claim_assessment) {
       lines.push(`    ${formatNativeAgentClaimAssessmentLine(report.claim_assessment)}`)
     }

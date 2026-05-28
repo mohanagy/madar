@@ -199,6 +199,7 @@ export async function runBenchmarkPrompt(options: RunBenchmarkPromptOptions): Pr
       options.retrievalBudget ?? DEFAULT_RETRIEVAL_BUDGET,
   )
   const promptPack = buildMadarPromptPack({
+    graphPath: options.graphPath,
     question: options.question,
     retrieval,
     ...(options.session ? { session: options.session } : {}),

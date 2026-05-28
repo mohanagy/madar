@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
 import { runContextPackCommand, type ContextPackCommandDependencies } from '../../src/infrastructure/context-pack-command.js'
 import { build } from '../../src/pipeline/build.js'
-import { compactRetrieveResult, retrieveContext } from '../../src/runtime/retrieve.js'
+import { compactRetrieveResult, retrieveContext, type RetrieveResult } from '../../src/runtime/retrieve.js'
 import { estimateQueryTokens } from '../../src/runtime/serve.js'
 
 const tempFixtureRoots: string[] = []
@@ -834,6 +834,428 @@ describe('context-pack-command', () => {
     })
     expect(payload.pack?.retrieval_strategy).toBe('slice-v1')
     expect(payload.pack?.execution_slice?.status).toBe('complete')
+  })
+
+  it('downgrades root non-SPI report-generation packs with weak scope quality and missing answer-containedness', async () => {
+    const graph = buildRuntimeGenerationGraph()
+    const retrieval = {
+      question: 'How idea report is being generated',
+      token_count: 260,
+      matched_nodes: [
+        {
+          node_id: 'controller_entry',
+          label: 'IdeaGenerationController.generateFromProblem',
+          source_file: 'backend/src/modules/ideas/interface/http/idea-generation.controller.ts',
+          line_number: 58,
+          file_type: 'code',
+          snippet: 'return this.pipelineTrigger.startPipeline(problem)',
+          match_score: 0.96,
+          relevance_band: 'direct' as const,
+          community: 0,
+          community_label: 'Idea report runtime',
+        },
+        {
+          node_id: 'trigger',
+          label: 'PipelineTriggerService.startPipeline',
+          source_file: 'backend/src/modules/pipeline/infrastructure/pipeline-trigger.service.ts',
+          line_number: 24,
+          file_type: 'code',
+          snippet: 'return this.queueRegistry.addJob(payload)',
+          match_score: 0.93,
+          relevance_band: 'direct' as const,
+          community: 0,
+          community_label: 'Idea report runtime',
+        },
+      ],
+      relationships: [],
+      community_context: [{ id: 0, label: 'Idea report runtime', node_count: 12 }],
+      graph_signals: { god_nodes: [], bridge_nodes: [] },
+      claims: [],
+      expandable: [],
+      coverage: {
+        required_evidence: ['primary', 'supporting', 'structural'] as const,
+        semantic_required: ['implementation', 'structure'] as const,
+        semantic_optional: ['tests'] as const,
+        entries: [
+          { evidence_class: 'primary', required: true, available_nodes: 2, selected_nodes: 2, status: 'covered' },
+          { evidence_class: 'supporting', required: true, available_nodes: 2, selected_nodes: 2, status: 'covered' },
+          { evidence_class: 'structural', required: true, available_nodes: 1, selected_nodes: 1, status: 'covered' },
+        ],
+        semantic_entries: [
+          { category: 'implementation', label: 'implementation', required: true, available_nodes: 2, selected_nodes: 2, status: 'covered' },
+          { category: 'structure', label: 'structure', required: true, available_nodes: 2, selected_nodes: 2, status: 'covered' },
+          { category: 'tests', label: 'tests', required: false, available_nodes: 0, selected_nodes: 0, status: 'missing' },
+        ],
+        missing_required: [],
+        missing_semantic: [],
+        available_relationships: 1,
+        selected_relationships: 1,
+      },
+      retrieval_gate: {
+        level: 4,
+        skipped_retrieval: false,
+        reason: 'runtime generation intent — behavior slice retrieval',
+        intent: 'unknown',
+        signals: {
+          has_pr_diff: false,
+          has_stack_trace: false,
+          mentioned_paths: [],
+          mentioned_symbols: [],
+          generation_intent: 'runtime_generation' as const,
+          target_domain_hint: 'backend_runtime' as const,
+        },
+      },
+      retrieval_strategy: 'slice-v1' as const,
+      execution_slice: {
+        status: 'partial' as const,
+        confidence: 'low' as const,
+        confidence_reasons: ['no_runtime_handoff'],
+        steps: [
+          {
+            node_id: 'controller_entry',
+            label: 'IdeaGenerationController.generateFromProblem',
+            source_file: 'backend/src/modules/ideas/interface/http/idea-generation.controller.ts',
+            line_number: 58,
+            node_kind: 'method',
+          },
+          {
+            node_id: 'trigger',
+            label: 'PipelineTriggerService.startPipeline',
+            source_file: 'backend/src/modules/pipeline/infrastructure/pipeline-trigger.service.ts',
+            line_number: 24,
+            node_kind: 'method',
+          },
+        ],
+        phase_coverage: {
+          expected: ['planner', 'external_research_or_api', 'report_builder', 'scoring', 'quality_gate', 'renderer_or_synthesis', 'persistence'],
+          observed: ['controller', 'service'],
+          missing: ['planner', 'external_research_or_api', 'report_builder', 'scoring', 'quality_gate', 'renderer_or_synthesis', 'persistence'],
+        },
+      },
+      answer_contract: {
+        version: 1,
+        answer_focus: 'runtime_generation' as const,
+        entrypoint_scope: 'setup_context' as const,
+        required_elements: ['main_pipeline_phases', 'missing_or_uncertain_phases'],
+        do_not_claim: ['full_runtime_certainty_when_slice_is_partial'],
+        observed_phases: ['controller', 'service'],
+        missing_phases: ['planner', 'external_research_or_api', 'report_builder', 'scoring', 'quality_gate', 'renderer_or_synthesis', 'persistence'],
+        confidence: 'low' as const,
+      },
+    } satisfies RetrieveResult
+    const dependencies: ContextPackCommandDependencies = {
+      loadGraph: vi.fn().mockReturnValue(graph),
+      retrieveContext: vi.fn().mockReturnValue(retrieval),
+      compactRetrieveResult,
+      analyzePrImpact: vi.fn(),
+      compactPrImpactResult: vi.fn(),
+      analyzeImpact: vi.fn(),
+      compactImpactResult: vi.fn(),
+    }
+
+    const output = await runContextPackCommand({
+      prompt: 'How idea report is being generated',
+      budget: 1800,
+      task: 'explain',
+      graphPath: 'out/graph.json',
+      retrievalStrategy: 'slice-v1',
+      format: 'json',
+    }, dependencies)
+
+    const payload = JSON.parse(output) as {
+      evidence?: {
+        pack_confidence?: string
+        agent_directive?: string
+        confidence_reasons?: string[]
+      }
+    }
+
+    expect(payload.evidence?.pack_confidence).toBeTypeOf('string')
+    expect(payload.evidence?.agent_directive).toBeTypeOf('string')
+    expect(payload.evidence).toEqual(expect.objectContaining({
+      pack_confidence: expect.not.stringMatching(/^high$/),
+      agent_directive: expect.not.stringMatching(/^answer_from_pack$/),
+      confidence_reasons: expect.arrayContaining([
+        expect.stringContaining('scope'),
+        expect.stringContaining('answer'),
+        expect.stringContaining('phase'),
+      ]),
+    }))
+  })
+
+  it('flags root SPI report-generation packs when answer-containedness is still incomplete', async () => {
+    const graph = buildRuntimeGenerationGraph()
+    const retrieval = {
+      question: 'How idea report is being generated',
+      token_count: 260,
+      matched_nodes: [
+        {
+          node_id: 'spi_entry',
+          label: 'IdeaReportSpi.generate',
+          source_file: 'backend/src/spi/idea-report.spi.ts',
+          line_number: 12,
+          file_type: 'code',
+          snippet: 'export interface IdeaReportSpi { generate(): Promise<void> }',
+          match_score: 0.97,
+          relevance_band: 'direct' as const,
+          community: 0,
+          community_label: 'Idea report runtime',
+        },
+      ],
+      relationships: [],
+      community_context: [{ id: 0, label: 'Idea report runtime', node_count: 12 }],
+      graph_signals: { god_nodes: [], bridge_nodes: [] },
+      claims: [],
+      expandable: [],
+      coverage: {
+        required_evidence: ['primary', 'supporting', 'structural'] as const,
+        semantic_required: ['implementation', 'structure'] as const,
+        semantic_optional: ['tests'] as const,
+        entries: [
+          { evidence_class: 'primary', required: true, available_nodes: 1, selected_nodes: 1, status: 'covered' },
+          { evidence_class: 'supporting', required: true, available_nodes: 1, selected_nodes: 1, status: 'covered' },
+          { evidence_class: 'structural', required: true, available_nodes: 1, selected_nodes: 1, status: 'covered' },
+        ],
+        semantic_entries: [
+          { category: 'implementation', label: 'implementation', required: true, available_nodes: 1, selected_nodes: 1, status: 'covered' },
+          { category: 'structure', label: 'structure', required: true, available_nodes: 1, selected_nodes: 1, status: 'covered' },
+          { category: 'tests', label: 'tests', required: false, available_nodes: 0, selected_nodes: 0, status: 'missing' },
+        ],
+        missing_required: [],
+        missing_semantic: [],
+        available_relationships: 1,
+        selected_relationships: 1,
+      },
+      retrieval_gate: {
+        level: 4,
+        skipped_retrieval: false,
+        reason: 'runtime generation intent — behavior slice retrieval',
+        intent: 'unknown',
+        signals: {
+          has_pr_diff: false,
+          has_stack_trace: false,
+          mentioned_paths: [],
+          mentioned_symbols: [],
+          generation_intent: 'runtime_generation' as const,
+          target_domain_hint: 'backend_runtime' as const,
+        },
+      },
+      retrieval_strategy: 'slice-v1' as const,
+      execution_slice: {
+        status: 'partial' as const,
+        confidence: 'medium' as const,
+        confidence_reasons: ['missing_phase:persistence'],
+        steps: [
+          {
+            node_id: 'spi_entry',
+            label: 'IdeaReportSpi.generate',
+            source_file: 'backend/src/spi/idea-report.spi.ts',
+            line_number: 12,
+            node_kind: 'method',
+          },
+        ],
+        phase_coverage: {
+          expected: ['planner', 'report_builder', 'scoring', 'renderer_or_synthesis', 'persistence'],
+          observed: ['planner', 'report_builder', 'scoring', 'renderer_or_synthesis'],
+          missing: ['persistence'],
+        },
+      },
+      answer_contract: {
+        version: 1,
+        answer_focus: 'runtime_generation' as const,
+        entrypoint_scope: 'setup_context' as const,
+        required_elements: ['main_pipeline_phases', 'persistence_or_artifact_storage'],
+        do_not_claim: ['full_runtime_certainty_when_slice_is_partial'],
+        observed_phases: ['planner', 'report_builder', 'scoring', 'renderer_or_synthesis'],
+        missing_phases: ['persistence'],
+        confidence: 'medium' as const,
+      },
+    } satisfies RetrieveResult
+    const dependencies: ContextPackCommandDependencies = {
+      loadGraph: vi.fn().mockReturnValue(graph),
+      retrieveContext: vi.fn().mockReturnValue(retrieval),
+      compactRetrieveResult,
+      analyzePrImpact: vi.fn(),
+      compactPrImpactResult: vi.fn(),
+      analyzeImpact: vi.fn(),
+      compactImpactResult: vi.fn(),
+    }
+
+    const output = await runContextPackCommand({
+      prompt: 'How idea report is being generated',
+      budget: 1800,
+      task: 'explain',
+      graphPath: 'out/graph.json',
+      retrievalStrategy: 'slice-v1',
+      format: 'json',
+    }, dependencies)
+
+    const payload = JSON.parse(output) as {
+      evidence?: {
+        pack_confidence?: string
+        agent_directive?: string
+        confidence_reasons?: string[]
+      }
+    }
+
+    expect(payload.evidence?.pack_confidence).toBeTypeOf('string')
+    expect(payload.evidence?.agent_directive).toBeTypeOf('string')
+    expect(payload.evidence).toEqual(expect.objectContaining({
+      pack_confidence: expect.not.stringMatching(/^high$/),
+      agent_directive: expect.not.stringMatching(/^answer_from_pack$/),
+      confidence_reasons: expect.arrayContaining([
+        expect.stringContaining('phase'),
+        expect.stringContaining('answer'),
+      ]),
+    }))
+  })
+
+  it('keeps backend SPI report-generation packs high confidence and answer_from_pack when the answer is contained', async () => {
+    const graph = buildRuntimeGenerationGraph()
+    const retrieval = {
+      question: 'How idea report is being generated',
+      token_count: 260,
+      matched_nodes: [
+        {
+          node_id: 'spi_entry',
+          label: 'IdeaReportSpi.generate',
+          source_file: 'src/spi/idea-report.spi.ts',
+          line_number: 12,
+          file_type: 'code',
+          snippet: 'export interface IdeaReportSpi { generate(): Promise<void> }',
+          match_score: 0.97,
+          relevance_band: 'direct' as const,
+          community: 0,
+          community_label: 'Idea report runtime',
+        },
+        {
+          node_id: 'worker_entry',
+          label: 'IdeaReportWorker.process',
+          source_file: 'src/ideas/report-worker.ts',
+          line_number: 84,
+          file_type: 'code',
+          snippet: 'return this.assembler.build(job)',
+          match_score: 0.9,
+          relevance_band: 'direct' as const,
+          community: 0,
+          community_label: 'Idea report runtime',
+        },
+      ],
+      relationships: [],
+      community_context: [{ id: 0, label: 'Idea report runtime', node_count: 12 }],
+      graph_signals: { god_nodes: [], bridge_nodes: [] },
+      claims: [],
+      expandable: [],
+      coverage: {
+        required_evidence: ['primary', 'supporting', 'structural'] as const,
+        semantic_required: ['implementation', 'structure'] as const,
+        semantic_optional: ['tests'] as const,
+        entries: [
+          { evidence_class: 'primary', required: true, available_nodes: 2, selected_nodes: 2, status: 'covered' },
+          { evidence_class: 'supporting', required: true, available_nodes: 2, selected_nodes: 2, status: 'covered' },
+          { evidence_class: 'structural', required: true, available_nodes: 2, selected_nodes: 2, status: 'covered' },
+        ],
+        semantic_entries: [
+          { category: 'implementation', label: 'implementation', required: true, available_nodes: 2, selected_nodes: 2, status: 'covered' },
+          { category: 'structure', label: 'structure', required: true, available_nodes: 2, selected_nodes: 2, status: 'covered' },
+          { category: 'tests', label: 'tests', required: false, available_nodes: 1, selected_nodes: 1, status: 'covered' },
+        ],
+        missing_required: [],
+        missing_semantic: [],
+        available_relationships: 2,
+        selected_relationships: 2,
+      },
+      retrieval_gate: {
+        level: 4,
+        skipped_retrieval: false,
+        reason: 'runtime generation intent — behavior slice retrieval',
+        intent: 'unknown',
+        signals: {
+          has_pr_diff: false,
+          has_stack_trace: false,
+          mentioned_paths: [],
+          mentioned_symbols: [],
+          generation_intent: 'runtime_generation' as const,
+          target_domain_hint: 'backend_runtime' as const,
+        },
+      },
+      retrieval_strategy: 'slice-v1' as const,
+      execution_slice: {
+        status: 'complete' as const,
+        confidence: 'high' as const,
+        confidence_reasons: ['explicit_anchor', 'runtime_handoff_evidence', 'expected_phases_covered'],
+        steps: [
+          {
+            node_id: 'spi_entry',
+            label: 'IdeaReportSpi.generate',
+            source_file: 'src/spi/idea-report.spi.ts',
+            line_number: 12,
+            node_kind: 'method',
+          },
+          {
+            node_id: 'worker_entry',
+            label: 'IdeaReportWorker.process',
+            source_file: 'src/ideas/report-worker.ts',
+            line_number: 84,
+            node_kind: 'method',
+          },
+        ],
+        primary_path: {
+          steps: [],
+          boundaries: [{ relation: 'enqueues_job' }],
+        },
+        phase_coverage: {
+          expected: ['planner', 'report_builder', 'scoring', 'renderer_or_synthesis', 'persistence'],
+          observed: ['planner', 'report_builder', 'scoring', 'renderer_or_synthesis', 'persistence'],
+          missing: [],
+        },
+      },
+      answer_contract: {
+        version: 1,
+        answer_focus: 'runtime_generation' as const,
+        entrypoint_scope: 'setup_context' as const,
+        required_elements: ['main_pipeline_phases', 'persistence_or_artifact_storage'],
+        do_not_claim: [],
+        observed_phases: ['planner', 'report_builder', 'scoring', 'renderer_or_synthesis', 'persistence'],
+        missing_phases: [],
+        confidence: 'high' as const,
+      },
+    } satisfies RetrieveResult
+    const dependencies: ContextPackCommandDependencies = {
+      loadGraph: vi.fn().mockReturnValue(graph),
+      retrieveContext: vi.fn().mockReturnValue(retrieval),
+      compactRetrieveResult,
+      analyzePrImpact: vi.fn(),
+      compactPrImpactResult: vi.fn(),
+      analyzeImpact: vi.fn(),
+      compactImpactResult: vi.fn(),
+    }
+
+    const output = await runContextPackCommand({
+      prompt: 'How idea report is being generated',
+      budget: 1800,
+      task: 'explain',
+      graphPath: 'backend/out/graph.json',
+      retrievalStrategy: 'slice-v1',
+      format: 'json',
+    }, dependencies)
+
+    const payload = JSON.parse(output) as {
+      evidence?: {
+        pack_confidence?: string
+        agent_directive?: string
+        confidence_reasons?: string[]
+      }
+    }
+
+    expect(payload.evidence).toEqual(expect.objectContaining({
+      pack_confidence: 'high',
+      agent_directive: 'answer_from_pack',
+      confidence_reasons: expect.arrayContaining([
+        expect.stringContaining('scope'),
+        expect.stringContaining('answer'),
+      ]),
+    }))
   })
 
   it('adds routing metadata only when --why is enabled', async () => {

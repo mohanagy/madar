@@ -12,6 +12,8 @@ import type {
   ContextPackExpandablePreview,
   ContextPackExpandableRef,
   ContextPackExpandableSourceRange,
+  ContextPackExplainAnswerReadySummary,
+  ContextPackExecutionSlice,
   ContextPackGraphSignals,
   ContextPackNode,
   ContextPackRelationship,
@@ -1365,5 +1367,51 @@ export function compactContextPack<
         }
       : {}),
     ...(shouldHoistSharedFileType ? { shared_file_type: sharedFileType as string } : {}),
+  }
+}
+
+export function generateAnswerReadyFromExecutionSlice(
+  executionSlice: ContextPackExecutionSlice | undefined,
+  taskKind: ContextPackTaskKind,
+): ContextPackExplainAnswerReadySummary | undefined {
+  if (taskKind !== 'explain' || !executionSlice || executionSlice.confidence !== 'high') {
+    return undefined
+  }
+
+  // Generate answer_outline from primary_path steps or all steps, preferring primary_path if it has content
+  const primaryPathSteps = executionSlice.primary_path?.steps
+  const pathSteps = (primaryPathSteps && primaryPathSteps.length > 0) ? primaryPathSteps : executionSlice.steps
+  const answer_outline = pathSteps.map((step) => `${step.label} (${step.source_file}:${step.line_number})`).slice(0, 10)
+
+  // Generate must_cite from primary path steps, prioritizing first and last
+  const must_cite = []
+  if (pathSteps.length > 0) {
+    const first = pathSteps[0]
+    if (first) {
+      must_cite.push({
+        source_file: first.source_file,
+        line_number: first.line_number,
+        label: first.label,
+      })
+    }
+    if (pathSteps.length > 1) {
+      const last = pathSteps[pathSteps.length - 1]
+      if (last && first && (last.source_file !== first.source_file || last.line_number !== first.line_number)) {
+        must_cite.push({
+          source_file: last.source_file,
+          line_number: last.line_number,
+          label: last.label,
+        })
+      }
+    }
+  }
+
+  return {
+    answer_outline: answer_outline.length > 0 ? answer_outline : ['Flow execution traced'],
+    must_cite,
+    stop_condition: 'answer now; do not raw-search unless missing_context is non-empty',
+    allowed_followups: executionSlice.confidence_reasons
+      ? [`Review confidence reasons: ${executionSlice.confidence_reasons.join(', ')}`]
+      : [],
   }
 }

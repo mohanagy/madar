@@ -45,6 +45,37 @@ function createGraphPath(): string {
   return graphPath
 }
 
+function createBackendRuntimeGraphPath(): string {
+  mkdirSync(scratchRoot, { recursive: true })
+  const root = join(scratchRoot, `madar-stdio-slice-backend-${randomUUID()}`)
+  mkdirSync(join(root, 'backend', 'src', 'spi'), { recursive: true })
+  mkdirSync(join(root, 'backend', 'src', 'runtime'), { recursive: true })
+  mkdirSync(join(root, 'out'), { recursive: true })
+  tempRoots.push(root)
+  const graphPath = join(root, 'out', 'graph.json')
+  writeFileSync(join(root, 'backend', 'src', 'auth-route.ts'), 'export const loginRoute = "POST /login"\n', 'utf8')
+  writeFileSync(join(root, 'backend', 'src', 'auth-controller.ts'), 'export class AuthController { login() {} }\n', 'utf8')
+  writeFileSync(join(root, 'backend', 'src', 'spi', 'auth-service.spi.ts'), 'export interface AuthServiceSpi { login(): Promise<void> }\n', 'utf8')
+  writeFileSync(join(root, 'backend', 'src', 'runtime', 'auth-service.ts'), 'export class AuthService { login() {} }\n', 'utf8')
+  writeFileSync(join(root, 'out', 'GRAPH_REPORT.md'), '# Graph report\n', 'utf8')
+  writeFileSync(graphPath, JSON.stringify({
+    root_path: root,
+    nodes: [
+      { id: 'auth_route', label: 'POST /login', source_file: join(root, 'backend', 'src', 'auth-route.ts'), source_location: 'L1', file_type: 'code', node_kind: 'route', framework: 'express', framework_role: 'express_route', community: 0 },
+      { id: 'auth_controller', label: 'AuthController.login', source_file: join(root, 'backend', 'src', 'auth-controller.ts'), source_location: 'L1', file_type: 'code', node_kind: 'method', framework: 'nestjs', framework_role: 'nest_controller', community: 0 },
+      { id: 'auth_spi', label: 'AuthServiceSpi.login', source_file: join(root, 'backend', 'src', 'spi', 'auth-service.spi.ts'), source_location: 'L1', file_type: 'code', node_kind: 'method', community: 0 },
+      { id: 'auth_service', label: 'AuthService.login', source_file: join(root, 'backend', 'src', 'runtime', 'auth-service.ts'), source_location: 'L1', file_type: 'code', node_kind: 'method', community: 0 },
+    ],
+    edges: [
+      { source: 'auth_route', target: 'auth_controller', relation: 'controller_route', confidence: 'EXTRACTED', source_file: join(root, 'backend', 'src', 'auth-route.ts') },
+      { source: 'auth_controller', target: 'auth_spi', relation: 'calls', confidence: 'EXTRACTED', source_file: join(root, 'backend', 'src', 'auth-controller.ts') },
+      { source: 'auth_spi', target: 'auth_service', relation: 'implements', confidence: 'EXTRACTED', source_file: join(root, 'backend', 'src', 'spi', 'auth-service.spi.ts') },
+    ],
+    hyperedges: [],
+  }), 'utf8')
+  return graphPath
+}
+
 afterEach(() => {
   while (tempRoots.length > 0) {
     rmSync(tempRoots.pop()!, { recursive: true, force: true })
@@ -248,6 +279,30 @@ describe('stdio slice-v1 surface', () => {
     expect(contextPackText).toContain('"execution_slice"')
     expect(contextPackText).toContain('"confidence"')
     expect(contextPackText).toContain('"confidence_reasons"')
+  })
+
+  it('passes graphPath into verbose runtime-generation context_pack evidence', async () => {
+    const graphPath = createBackendRuntimeGraphPath()
+
+    const contextPackResponse = await Promise.resolve(handleStdioRequest(graphPath, {
+      id: 40,
+      method: 'tools/call',
+      params: {
+        name: 'context_pack',
+        arguments: {
+          prompt: 'Trace how `AuthController.login` reaches persistence in the backend runtime pipeline',
+          budget: 1000,
+          task: 'explain',
+          retrieval_level: 4,
+          retrieval_strategy: 'slice-v1',
+          verbose: true,
+        },
+      },
+    }))
+
+    const contextPackText = ((contextPackResponse as { result?: { content?: Array<{ text: string }> } }).result?.content ?? [])[0]?.text ?? ''
+
+    expect(contextPackText).toContain('"scope quality: runtime evidence is concentrated under backend/')
   })
 
   it('defaults context_pack runtime-generation output to answer-ready compact JSON and keeps verbose debug paths', async () => {

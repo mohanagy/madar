@@ -828,6 +828,149 @@ describe('parseAnthropicResultEvent', () => {
 })
 
 describe('executeNativeAgentCompare', () => {
+  it('writes a native-agent prompt that enforces the Madar pack contract', async () => {
+    const { projectDir, graphPath, outputDir } = makeFixtureProject()
+    try {
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          question: 'What is the cluster module?',
+          outputDir,
+          execTemplate: 'mock-runner',
+          baselineMode: 'native_agent',
+        },
+        {
+          runner: scriptedRunner({ baseline: VERBOSE_BASELINE_PAYLOAD, madar: VERBOSE_MADAR_MCP_RETRIEVE_PAYLOAD }),
+          now: () => new Date('2026-05-01T00:00:00Z'),
+        },
+      )
+
+      const report = result.reports[0] as NativeAgentCompareReport
+      const prompt = readFileSync(report.paths.prompt_file, 'utf8')
+
+      expect(prompt).toContain('Call context_pack first')
+      expect(prompt).toContain('Inspect evidence.pack_confidence, evidence.coverage, evidence.agent_directive, missing_context, and recommended_first_read')
+      expect(prompt).toContain('If evidence.agent_directive is answer_from_pack, answer from the pack and stop without raw search')
+      expect(prompt).toContain('Allow at most one focused Madar follow-up before raw search')
+      expect(prompt).toContain('Broad raw search requires an explicit missing-context reason')
+      expect(prompt).toContain('Question: What is the cluster module?')
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  it('fails early when strict benchmark readiness is poor', async () => {
+    const { projectDir, graphPath, outputDir } = makeFixtureProject()
+    let runnerCalled = false
+    try {
+      const reportPath = join(outputDir, '2026-05-01T00-00-00', 'report.json')
+      const runner: NativeAgentRunner = async (input) => {
+        runnerCalled = true
+        return {
+          exitCode: 0,
+          stdout: `${JSON.stringify(input.mode === 'baseline' ? VERBOSE_BASELINE_PAYLOAD : VERBOSE_MADAR_MCP_RETRIEVE_PAYLOAD)}\n`,
+          stderr: '',
+          elapsedMs: 1,
+        }
+      }
+
+      await expect(
+        executeNativeAgentCompare(
+          {
+            graphPath,
+            question: 'How idea report is being generated',
+            outputDir,
+            execTemplate: 'mock-runner',
+            baselineMode: 'native_agent',
+            strictBenchmarkReadiness: true,
+          } as Parameters<typeof executeNativeAgentCompare>[0] & { strictBenchmarkReadiness: boolean },
+          {
+            runner,
+            now: () => new Date('2026-05-01T00:00:00Z'),
+            assessBenchmarkReadiness: () => ({
+              status: 'not_ready',
+              reasons: ['SPI missing for runtime spine evidence'],
+              suggested_graph_scope: 'backend/out/graph.json',
+            }),
+          } as Parameters<typeof executeNativeAgentCompare>[1] & {
+            assessBenchmarkReadiness: () => {
+              status: 'ready' | 'degraded' | 'not_ready'
+              reasons: string[]
+              suggested_graph_scope: string | null
+            }
+          },
+        ),
+      ).rejects.toThrow('benchmark readiness is not_ready')
+      expect(runnerCalled).toBe(false)
+      expect(existsSync(reportPath)).toBe(true)
+      expect(JSON.parse(readFileSync(reportPath, 'utf8'))).toEqual(expect.objectContaining({
+        benchmark_readiness: {
+          status: 'not_ready',
+          reasons: ['SPI missing for runtime spine evidence'],
+          suggested_graph_scope: 'backend/out/graph.json',
+        },
+      }))
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  it('records benchmark readiness in the native-agent report and summary', async () => {
+    const { projectDir, graphPath, outputDir } = makeFixtureProject()
+    try {
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          question: 'How idea report is being generated',
+          outputDir,
+          execTemplate: 'mock-runner',
+          baselineMode: 'native_agent',
+        },
+        {
+          runner: scriptedRunner({ baseline: VERBOSE_BASELINE_PAYLOAD, madar: VERBOSE_MADAR_MCP_RETRIEVE_PAYLOAD }),
+          now: () => new Date('2026-05-01T00:00:00Z'),
+          assessBenchmarkReadiness: () => ({
+            status: 'not_ready',
+            reasons: ['SPI missing for runtime spine evidence', 'scope locality is weak'],
+            suggested_graph_scope: 'backend/out/graph.json',
+          }),
+        } as Parameters<typeof executeNativeAgentCompare>[1] & {
+          assessBenchmarkReadiness: () => {
+            status: 'ready' | 'degraded' | 'not_ready'
+            reasons: string[]
+            suggested_graph_scope: string | null
+          }
+        },
+      )
+
+      const report = result.reports[0] as NativeAgentCompareReport & {
+        benchmark_readiness?: {
+          status: 'ready' | 'degraded' | 'not_ready'
+          reasons: string[]
+          suggested_graph_scope: string | null
+        }
+      }
+      const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
+      const summary = formatNativeAgentCompareSummary(result)
+
+      expect(report.benchmark_readiness).toEqual({
+        status: 'not_ready',
+        reasons: ['SPI missing for runtime spine evidence', 'scope locality is weak'],
+        suggested_graph_scope: 'backend/out/graph.json',
+      })
+      expect(savedReport.benchmark_readiness).toEqual({
+        status: 'not_ready',
+        reasons: ['SPI missing for runtime spine evidence', 'scope locality is weak'],
+        suggested_graph_scope: 'backend/out/graph.json',
+      })
+      expect(summary).toContain('benchmark_readiness: not_ready')
+      expect(summary).toContain('SPI missing for runtime spine evidence')
+      expect(summary).toContain('Next step: retry with backend/out/graph.json')
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
   it('aborts when no Madar install is detected and --allow-no-install is not set', async () => {
     const { projectDir, graphPath, outputDir } = makeFixtureProject({ installState: 'missing' })
     try {
@@ -1025,6 +1168,30 @@ describe('executeNativeAgentCompare', () => {
     }
   })
 
+  it('reports a prompt-contract violation when the first Madar call is not context_pack', async () => {
+    const { projectDir, graphPath, outputDir } = makeFixtureProject()
+    try {
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          question: 'What is the cluster module?',
+          outputDir,
+          execTemplate: 'mock-runner',
+          baselineMode: 'native_agent',
+        },
+        {
+          runner: scriptedRunner({ baseline: VERBOSE_BASELINE_PAYLOAD, madar: VERBOSE_MADAR_MCP_RETRIEVE_PAYLOAD }),
+          now: () => new Date('2026-05-01T00:00:00Z'),
+        },
+      )
+
+      const summary = formatNativeAgentCompareSummary(result)
+      expect(summary).toContain('prompt_contract: violated (first Madar call was not context_pack)')
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
   it('recognizes the real Claude installer hook as a verified Madar install', async () => {
     const { projectDir, graphPath, outputDir } = makeFixtureProject({ installState: 'managed' })
     try {
@@ -1111,6 +1278,43 @@ describe('executeNativeAgentCompare', () => {
         madar_mcp_call_count: 1,
         exploration_outcome: 'madar_invoked_with_followup_exploration',
       }))
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  it('marks prompt-contract evidence after post-pack broad exploration as not measured', async () => {
+    const { projectDir, graphPath, outputDir } = makeFixtureProject()
+    try {
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          question: 'What is the cluster module?',
+          outputDir,
+          execTemplate: 'mock-runner',
+          baselineMode: 'native_agent',
+        },
+        {
+          runner: scriptedRunner({
+            baseline: VERBOSE_BASELINE_PAYLOAD,
+            madar: VERBOSE_MADAR_MCP_RETRIEVE_WITH_FOLLOWUP_EXPLORATION_PAYLOAD,
+          }),
+          now: () => new Date('2026-05-01T00:00:00Z'),
+        },
+      )
+
+      const report = result.reports[0] as NativeAgentCompareReport
+      expect(report.prompt_contract).toEqual({
+        status: 'not_measured',
+        evidence: [
+          'broad exploration occurred after the first Madar call, but the trace does not show whether missing_context justified it',
+        ],
+      })
+
+      const summary = formatNativeAgentCompareSummary(result)
+      expect(summary).toContain(
+        'prompt_contract: not_measured (broad exploration occurred after the first Madar call, but the trace does not show whether missing_context justified it)',
+      )
     } finally {
       rmSync(projectDir, { recursive: true, force: true })
     }
@@ -1247,6 +1451,55 @@ describe('executeNativeAgentCompare', () => {
       const summary = formatNativeAgentCompareSummary(result)
       expect(summary).toContain('madar_invoked_after_broad_exploration')
       expect(summary).toContain('2 broad exploration calls before the first Madar call')
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  it('degrades broad exploration before the first Madar MCP call in strict mode', async () => {
+    const { projectDir, graphPath, outputDir } = makeFixtureProject()
+    try {
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          question: 'What is the cluster module?',
+          outputDir,
+          execTemplate: 'mock-runner',
+          baselineMode: 'native_agent',
+          strictMadarFirst: true,
+        },
+        {
+          runner: scriptedRunner({
+            baseline: VERBOSE_BASELINE_PAYLOAD,
+            madar: VERBOSE_MADAR_MCP_RETRIEVE_AFTER_PRE_EXPLORATION_PAYLOAD,
+          }),
+          now: () => new Date('2026-05-01T00:00:00Z'),
+        },
+      )
+
+      const report = result.reports[0] as NativeAgentCompareReport
+      expect(report.measurement_validity).toBe('degraded')
+      expect(report.reductions).toBeNull()
+      expect(report.claim_assessment).toEqual({
+        routing_efficiency: {
+          status: 'not_measured',
+          evidence: ['Broad exploration occurred before the first Madar MCP call.'],
+        },
+        token_reduction: {
+          status: 'not_measured',
+          evidence: ['Broad exploration occurred before the first Madar MCP call.'],
+        },
+      })
+      expect(report.madar_trace).toEqual(expect.objectContaining({
+        first_madar_turn: 6,
+        pre_madar_broad_exploration_tool_call_count: 2,
+        exploration_outcome: 'madar_invoked_after_broad_exploration',
+      }))
+
+      const summary = formatNativeAgentCompareSummary(result)
+      expect(summary).toContain('measurement_validity: degraded (broad exploration preceded the first Madar MCP call)')
+      expect(summary).toContain('Cannot attribute outcome differences to Madar.')
+      expect(summary).toContain('madar_invoked_after_broad_exploration')
     } finally {
       rmSync(projectDir, { recursive: true, force: true })
     }
@@ -1657,7 +1910,7 @@ describe('executeNativeAgentCompare', () => {
           },
         ).then((result) => ({ kind: 'resolved' as const, result })),
         new Promise<{ kind: 'hung' }>((resolve) => {
-          setTimeout(() => resolve({ kind: 'hung' }), 100)
+          setTimeout(() => resolve({ kind: 'hung' }), 1000)
         }),
       ])
 
@@ -1683,6 +1936,55 @@ describe('executeNativeAgentCompare', () => {
         arm: 'madar',
       }))
       expect(readFileSync(report.paths.baseline_answer, 'utf8')).toContain('baseline answer')
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  it('waits for an aborted madar arm to settle before resolving the timeout outcome', async () => {
+    const { projectDir, graphPath, outputDir } = makeFixtureProject()
+    try {
+      let abortedRunnerSettled = false
+      const request = {
+        graphPath,
+        question: 'stalled madar arm with abort cleanup',
+        outputDir,
+        execTemplate: 'mock-runner',
+        baselineMode: 'native_agent',
+        perArmTimeoutSeconds: 0.01,
+      } as Parameters<typeof executeNativeAgentCompare>[0] & { perArmTimeoutSeconds: number }
+
+      const stalledRunner: NativeAgentRunner = async (input) => {
+        if (input.mode === 'baseline') {
+          return {
+            exitCode: 0,
+            stdout: `${JSON.stringify(BASELINE_USAGE_PAYLOAD)}\n`,
+            stderr: '',
+            elapsedMs: 10,
+          }
+        }
+        return await new Promise((_, reject) => {
+          input.signal!.addEventListener('abort', () => {
+            setTimeout(() => {
+              abortedRunnerSettled = true
+              reject(new Error('aborted after cleanup'))
+            }, 50)
+          }, { once: true })
+        })
+      }
+
+      const result = await executeNativeAgentCompare(
+        request,
+        {
+          runner: stalledRunner,
+          now: () => new Date('2026-05-28T00:00:00Z'),
+        },
+      )
+
+      const report = result.reports[0] as NativeAgentCompareReport
+      expect(abortedRunnerSettled).toBe(true)
+      expect(report.madar.kind).toBe('runner_error')
+      expect((report.madar as { failure_reason?: unknown }).failure_reason).toBe('timed_out')
     } finally {
       rmSync(projectDir, { recursive: true, force: true })
     }
@@ -1723,7 +2025,7 @@ describe('executeNativeAgentCompare', () => {
           },
         ).then((result) => ({ kind: 'resolved' as const, result })),
         new Promise<{ kind: 'hung' }>((resolve) => {
-          setTimeout(() => resolve({ kind: 'hung' }), 100)
+          setTimeout(() => resolve({ kind: 'hung' }), 1000)
         }),
       ])
 

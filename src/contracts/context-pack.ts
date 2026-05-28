@@ -178,6 +178,17 @@ export interface ContextPackRuntimeGenerationAnswerContract {
   confidence?: 'high' | 'medium' | 'low'
 }
 
+export interface ContextPackExplainAnswerReadySummary {
+  answer_outline: string[]
+  must_cite: Array<{
+    source_file: string
+    line_number: number
+    label: string
+  }>
+  stop_condition: string
+  allowed_followups: string[]
+}
+
 export type ImplementationPackPhase =
   | 'seed'
   | 'expand'
@@ -421,6 +432,7 @@ export interface CompiledContextPack<
   slice?: ContextPackSliceMetadata
   execution_slice?: ContextPackExecutionSlice
   answer_contract?: ContextPackRuntimeGenerationAnswerContract
+  answer_ready?: ContextPackExplainAnswerReadySummary
   retrieval_gate?: RetrievalGateDecision
 }
 
@@ -452,4 +464,5 @@ export interface ContextPackSchemaV1<TPack = unknown> {
   missing_semantic: ContextPackSemanticCategory[]
   retrieval_gate?: RetrievalGateDecision
   routing?: ContextPackRoutingDebug
+  answer_ready?: ContextPackExplainAnswerReadySummary
 }

@@ -6,8 +6,10 @@ import { vi } from 'vitest'
 
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
 import {
+  assessBenchmarkReadinessFromRetrieveResult,
   buildBaselinePromptPack,
   buildMadarPromptPack,
+  buildNativeAgentPrompt,
   executeCompareRuns,
   executeNativeAgentCompare,
   expandCompareExecTemplate,
@@ -1199,6 +1201,23 @@ describe('compare runtime', () => {
 
     expect(baselinePack.token_count).toBe(estimateQueryTokens(baselinePack.prompt))
     expect(madarPack.token_count).toBe(estimateQueryTokens(madarPack.prompt))
+  })
+
+  it('snapshots the native-agent prompt contract', () => {
+    expect(buildNativeAgentPrompt('What is the cluster module?')).toMatchInlineSnapshot(`
+      "Follow the Madar pack contract exactly.
+      Call context_pack first for explain or runtime questions before any raw file or broad repo search.
+      Inspect evidence.pack_confidence, evidence.coverage, evidence.agent_directive, missing_context, and recommended_first_read before deciding what to do next.
+      If evidence.agent_directive is answer_from_pack, answer from the pack and stop without raw search.
+      Allow at most one focused Madar follow-up before raw search when evidence.agent_directive is verify_one_targeted_file or explore_with_caution.
+      Broad raw search requires an explicit missing-context reason grounded in missing_context or coverage gaps.
+      Any broad search before the first Madar call violates the prompt contract.
+
+      Question: What is the cluster module?
+
+      Answer:
+      "
+    `)
   })
 
   it('uses local tokenization rather than a fixed chars-per-token ratio for prompt counts', () => {
@@ -4340,5 +4359,295 @@ describe('compare runtime', () => {
         limit: 0,
       }),
     ).toThrow(/positive integer/i)
+  })
+})
+
+describe('assessBenchmarkReadinessFromRetrieveResult', () => {
+  function makeRuntimeGenerationRetrieval(overrides: Partial<MadarPromptPackRetrieval> = {}): MadarPromptPackRetrieval {
+    return {
+      question: 'How idea report is being generated',
+      token_count: 120,
+      matched_nodes: [
+        {
+          label: 'GenerateIdeaReportService.handle',
+          source_file: 'backend/src/modules/ideas/application/generate-idea-report.service.ts',
+          line_number: 42,
+          file_type: 'code',
+          snippet: null,
+          match_score: 12,
+          relevance_band: 'direct',
+          community: null,
+          community_label: null,
+        },
+      ],
+      relationships: [],
+      community_context: [],
+      graph_signals: { god_nodes: [], bridge_nodes: [] },
+      retrieval_gate: {
+        level: 3,
+        reason: 'runtime generation intent — behavior slice retrieval',
+        skipped_retrieval: false,
+        intent: 'unknown',
+        signals: {
+          has_pr_diff: false,
+          has_stack_trace: false,
+          mentioned_paths: [],
+          mentioned_symbols: [],
+          generation_intent: 'runtime_generation',
+          target_domain_hint: 'backend_runtime',
+        },
+      },
+      coverage: {
+        required_evidence: [],
+        semantic_required: [],
+        semantic_optional: [],
+        entries: [],
+        semantic_entries: [],
+        missing_required: [],
+        missing_semantic: [],
+        available_relationships: 0,
+        selected_relationships: 0,
+      },
+      selection_diagnostics: {
+        selection_strategy: 'value-per-token',
+        budget: 4000,
+        used_tokens: 1200,
+        required_overflow: false,
+        ranking: [],
+      },
+      execution_slice: {
+        status: 'complete',
+        confidence: 'high',
+        steps: [
+          {
+            label: 'GenerateIdeaReportService.handle',
+            source_file: 'backend/src/modules/ideas/application/generate-idea-report.service.ts',
+            line_number: 42,
+            node_kind: 'method',
+          },
+        ],
+        phase_coverage: {
+          expected: ['planner', 'report_builder', 'scoring', 'renderer_or_synthesis', 'persistence'],
+          observed: ['planner', 'report_builder', 'scoring', 'renderer_or_synthesis', 'persistence'],
+          missing: [],
+        },
+      },
+      answer_contract: {
+        version: 1,
+        answer_focus: 'runtime_generation',
+        entrypoint_scope: 'setup_context',
+        required_elements: ['main_pipeline_phases'],
+        do_not_claim: [],
+        observed_phases: ['planner', 'report_builder', 'scoring', 'renderer_or_synthesis', 'persistence'],
+        missing_phases: [],
+        confidence: 'high',
+      },
+      ...overrides,
+    }
+  }
+
+  it('marks root non-SPI runtime-generation packs not ready and suggests a scoped backend graph', () => {
+    const readiness = assessBenchmarkReadinessFromRetrieveResult({
+      graphPath: '/repo/out/graph.json',
+      retrieval: makeRuntimeGenerationRetrieval({
+        execution_slice: {
+          status: 'partial',
+          confidence: 'low',
+          confidence_reasons: ['no_runtime_handoff'],
+          steps: [
+            {
+              label: 'IdeaGenerationController.generateFromProblem',
+              source_file: 'backend/src/modules/ideas/interface/http/idea-generation.controller.ts',
+              line_number: 58,
+              node_kind: 'method',
+            },
+          ],
+          phase_coverage: {
+            expected: ['planner', 'external_research_or_api', 'report_builder', 'scoring', 'quality_gate', 'renderer_or_synthesis', 'persistence'],
+            observed: ['controller', 'service'],
+            missing: ['planner', 'external_research_or_api', 'report_builder', 'scoring', 'quality_gate', 'renderer_or_synthesis', 'persistence'],
+          },
+        },
+        answer_contract: {
+          version: 1,
+          answer_focus: 'runtime_generation',
+          entrypoint_scope: 'setup_context',
+          required_elements: ['main_pipeline_phases'],
+          do_not_claim: ['full_runtime_certainty_when_slice_is_partial'],
+          observed_phases: ['controller', 'service'],
+          missing_phases: ['planner', 'external_research_or_api', 'report_builder', 'scoring', 'quality_gate', 'renderer_or_synthesis', 'persistence'],
+          confidence: 'low',
+        },
+      }),
+    })
+
+    expect(readiness.status).toBe('not_ready')
+    expect(readiness.reasons).toEqual(expect.arrayContaining([
+      expect.stringContaining('missing downstream runtime phases'),
+      expect.stringContaining('no SPI evidence'),
+      expect.stringContaining('backend/'),
+    ]))
+    expect(readiness.suggested_graph_scope).toBe('backend/out/graph.json')
+  })
+
+  it('marks root SPI runtime-generation packs degraded when downstream phases are still missing', () => {
+    const readiness = assessBenchmarkReadinessFromRetrieveResult({
+      graphPath: '/repo/out/graph.json',
+      retrieval: makeRuntimeGenerationRetrieval({
+        matched_nodes: [
+          {
+            label: 'IdeaReportSpi.generate',
+            source_file: 'backend/src/spi/idea-report.spi.ts',
+            line_number: 12,
+            file_type: 'code',
+            snippet: null,
+            match_score: 11,
+            relevance_band: 'direct',
+            community: null,
+            community_label: null,
+          },
+        ],
+        execution_slice: {
+          status: 'partial',
+          confidence: 'medium',
+          confidence_reasons: ['persistence_boundary_not_traced'],
+          steps: [
+            {
+              label: 'IdeaReportSpi.generate',
+              source_file: 'backend/src/spi/idea-report.spi.ts',
+              line_number: 12,
+              node_kind: 'method',
+            },
+          ],
+          phase_coverage: {
+            expected: ['planner', 'report_builder', 'scoring', 'renderer_or_synthesis', 'persistence'],
+            observed: ['planner', 'report_builder', 'scoring', 'renderer_or_synthesis'],
+            missing: ['persistence'],
+          },
+        },
+        answer_contract: {
+          version: 1,
+          answer_focus: 'runtime_generation',
+          entrypoint_scope: 'setup_context',
+          required_elements: ['main_pipeline_phases'],
+          do_not_claim: [],
+          observed_phases: ['planner', 'report_builder', 'scoring', 'renderer_or_synthesis'],
+          missing_phases: ['persistence'],
+          confidence: 'medium',
+        },
+      }),
+    })
+
+    expect(readiness.status).toBe('degraded')
+    expect(readiness.reasons).toEqual(expect.arrayContaining([
+      expect.stringContaining('missing downstream runtime phases'),
+      expect.stringContaining('root graph'),
+    ]))
+    expect(readiness.suggested_graph_scope).toBe('backend/out/graph.json')
+  })
+
+  it('normalizes absolute source_file paths before suggesting a scoped backend graph', () => {
+    const readiness = assessBenchmarkReadinessFromRetrieveResult({
+      graphPath: '/repo/out/graph.json',
+      retrieval: makeRuntimeGenerationRetrieval({
+        matched_nodes: [
+          {
+            label: 'IdeaReportSpi.generate',
+            source_file: '/repo/backend/src/spi/idea-report.spi.ts',
+            line_number: 12,
+            file_type: 'code',
+            snippet: null,
+            match_score: 11,
+            relevance_band: 'direct',
+            community: null,
+            community_label: null,
+          },
+        ],
+        execution_slice: {
+          status: 'partial',
+          confidence: 'medium',
+          confidence_reasons: ['persistence_boundary_not_traced'],
+          steps: [
+            {
+              label: 'IdeaReportSpi.generate',
+              source_file: '/repo/backend/src/spi/idea-report.spi.ts',
+              line_number: 12,
+              node_kind: 'method',
+            },
+          ],
+          phase_coverage: {
+            expected: ['planner', 'report_builder', 'scoring', 'renderer_or_synthesis', 'persistence'],
+            observed: ['planner', 'report_builder', 'scoring', 'renderer_or_synthesis'],
+            missing: ['persistence'],
+          },
+        },
+        answer_contract: {
+          version: 1,
+          answer_focus: 'runtime_generation',
+          entrypoint_scope: 'setup_context',
+          required_elements: ['main_pipeline_phases'],
+          do_not_claim: [],
+          observed_phases: ['planner', 'report_builder', 'scoring', 'renderer_or_synthesis'],
+          missing_phases: ['persistence'],
+          confidence: 'medium',
+        },
+      }),
+    })
+
+    expect(readiness.suggested_graph_scope).toBe('backend/out/graph.json')
+  })
+
+  it('marks backend SPI runtime-generation packs ready when runtime spine evidence is covered', () => {
+    const readiness = assessBenchmarkReadinessFromRetrieveResult({
+      graphPath: '/repo/backend/out/graph.json',
+      retrieval: makeRuntimeGenerationRetrieval({
+        matched_nodes: [
+          {
+            label: 'IdeaReportSpi.generate',
+            source_file: 'backend/src/spi/idea-report.spi.ts',
+            line_number: 12,
+            file_type: 'code',
+            snippet: null,
+            match_score: 11,
+            relevance_band: 'direct',
+            community: null,
+            community_label: null,
+          },
+        ],
+      }),
+    })
+
+    expect(readiness).toEqual({
+      status: 'ready',
+      reasons: [],
+      suggested_graph_scope: null,
+    })
+  })
+
+  it('treats top-level spi paths as SPI evidence', () => {
+    const readiness = assessBenchmarkReadinessFromRetrieveResult({
+      graphPath: '/repo/spi/out/graph.json',
+      retrieval: makeRuntimeGenerationRetrieval({
+        matched_nodes: [
+          {
+            label: 'SpiRuntime.generate',
+            source_file: 'spi/runtime.ts',
+            line_number: 12,
+            file_type: 'code',
+            snippet: null,
+            match_score: 11,
+            relevance_band: 'direct',
+            community: null,
+            community_label: null,
+          },
+        ],
+      }),
+    })
+
+    expect(readiness).toEqual({
+      status: 'ready',
+      reasons: [],
+      suggested_graph_scope: null,
+    })
   })
 })
