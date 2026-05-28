@@ -460,4 +460,5 @@ export interface ContextPackSchemaV1<TPack = unknown> {
   missing_semantic: ContextPackSemanticCategory[]
   retrieval_gate?: RetrievalGateDecision
   routing?: ContextPackRoutingDebug
+  answer_ready?: ContextPackExplainAnswerReadySummary
 }

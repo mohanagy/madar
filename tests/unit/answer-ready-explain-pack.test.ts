@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest'
-import type { ContextPackExplainAnswerReadySummary, CompiledContextPack, ContextPackTaskContract } from '../../src/contracts/context-pack.js'
+import type { ContextPackExplainAnswerReadySummary, CompiledContextPack, ContextPackTaskContract, ContextPackSchemaV1 } from '../../src/contracts/context-pack.js'
 
 describe('answer-ready explain pack', () => {
   test('defines answer_outline structure', () => {
@@ -81,5 +81,56 @@ describe('answer-ready explain pack', () => {
     expect(pack.answer_ready).toBeDefined()
     expect(pack.answer_ready?.answer_outline).toHaveLength(1)
   })
+
+  test('ContextPackSchemaV1 exposes answer_ready field', () => {
+    // Note: This test validates the type; the actual schema generation happens at runtime
+    // We use 'as' to bypass strict validation since we're just testing the optional field exists
+    const schema = {
+      schema_version: 1,
+      task: 'explain',
+      task_intent: 'explain',
+      prompt: 'Explain this flow',
+      budget: 5000,
+      graph_path: '/path/to/graph.json',
+      plan: {} as any,
+      workflow_centers: [],
+      recommended_first_read: [],
+      likely_edit_files: [],
+      likely_test_files: [],
+      public_contracts: [],
+      risk_boundaries: [],
+      validation_commands: [],
+      negative_guidance: [],
+      confidence_score: 0.95,
+      why_explanation: [],
+      pack: {},
+      evidence: {} as any,
+      claims: [],
+      expandable: [],
+      coverage: {
+        required_evidence: [],
+        semantic_required: [],
+        semantic_optional: [],
+        entries: [],
+        semantic_entries: [],
+        missing_required: [],
+        missing_semantic: [],
+        available_relationships: 0,
+        selected_relationships: 0,
+      },
+      missing_context: [],
+      missing_semantic: [],
+      answer_ready: {
+        answer_outline: ['Initialization', 'Processing', 'Completion'],
+        must_cite: [{ source_file: 'src/main.ts', line_number: 1, label: 'main()' }],
+        stop_condition: 'answer now',
+        allowed_followups: [],
+      },
+    } as const satisfies ContextPackSchemaV1
+
+    expect(schema.answer_ready).toBeDefined()
+    expect(schema.answer_ready?.answer_outline).toHaveLength(3)
+  })
 })
+
 
