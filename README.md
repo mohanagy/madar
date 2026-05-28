@@ -88,13 +88,13 @@ Want a broader local-first walkthrough that also covers install, `prompt`, and a
 
 ---
 
-## What's new in 0.27.0
+## What's new in 0.27.1
 
-- Pack Schema v1 is now the stable implementation-pack surface: workflow centers, likely edit/test files, validation commands, negative guidance, and agent-ready brief renderers all ship from one release line instead of a prerelease-only path.
-- The benchmark suite is now part of the public product surface: `madar bench:suite` ships with fixed manifests, isolation assets, share-safe artifacts, and the first measured suite row under `docs/benchmarks/suite/`.
-- Installed-agent and compare flows are more reliable: strict guidance keys off top-level response evidence, managed hook detection now matches the real generated structure, and Claude/Gemini/Codex installs share stable Madar identity markers.
+- `compare --baseline-mode native_agent` now stays honest when Madar was not actually invoked: degraded provider-only runs no longer print favorable reduction percentages or suite-summary wins.
+- Native-agent compare is more failure-tolerant: stalled baseline or Madar arms can time out, emit stderr heartbeat lines, and leave a `run-state.json` breadcrumb plus partial report artifacts instead of hanging forever.
+- `madar summary` runtime paths now stay closer to backend workflow spines instead of drifting toward helper-style endpoint chains.
 
-See the [`0.27.0` changelog entry](CHANGELOG.md#0270---2026-05-27) for the full release notes.
+See the [`0.27.1` changelog entry](CHANGELOG.md#0271---2026-05-28) for the full release notes.
 
 The larger **What's new in 0.23.0** additions are still part of the main flow too: `madar summary`, the core MCP `graph_summary` tool, runtime `execution_slice` output, share-safe `report.share-safe.json` compare artifacts, and `compare --baseline-mode pack_only`.
 
@@ -102,7 +102,7 @@ If you want the broader proof-oriented workflow behind the current surfaces, sta
 
 ### When to use `--spi`
 
-`--spi` is **still opt-in** in 0.27.0. Use it when your repo is framework-heavy TypeScript/JavaScript and you want the extra framework-shaped metadata plus disk cache behavior.
+`--spi` is **still opt-in** in 0.27.1. Use it when your repo is framework-heavy TypeScript/JavaScript and you want the extra framework-shaped metadata plus disk cache behavior.
 
 `--spi` is usually worth it for NestJS, Next.js App Router, Prisma, tRPC, Hono, Fastify, and similar repos where users ask storage-oriented prompts, client/server boundary questions, or request-flow questions. The default pipeline is still fine for simpler repos, non-JS/TS workspaces, or quick first runs when you do not need the extra framework detail yet.
 

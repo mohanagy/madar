@@ -44,6 +44,8 @@ For runtime-generation prompts, those compact explain packs now also preserve Ne
 
 If you switch to `--baseline-mode native_agent`, prefer a structured Anthropic runner such as `cat {prompt_file} | claude -p --output-format json`. Plain-text Claude runs still save paired answers, but the report cannot compute Anthropic-billed reductions without the trailing JSON usage block. Multi-question native-agent runs also emit suite-level comparable-question wins/losses for input tokens, turns, and latency, plus mean/median input-token reduction, comparable-question denominators when some runs are excluded from the aggregate, and best/worst prompt outcomes in the terminal summary. When the `--questions` file sits beside a `quality-gates.json`, the same summary also rolls up deterministic answer-quality pass/fail counts from the saved `*-answer.txt` artifacts; treat those substring gates as a smoke test, not a full semantic grader, and keep the manual-review notes.
 
+For long-running or flaky provider runs, `native_agent` also accepts `--per-arm-timeout <seconds>` and `--heartbeat-interval-ms <ms>`. Those controls let `compare` fail fast on stuck baseline/Madar arms, print periodic stderr progress lines while an arm is still running, and persist a `run-state.json` breadcrumb in the output directory when a timeout happens.
+
 Gemini-safe installed-CLI invocation:
 
 ```bash
@@ -58,6 +60,7 @@ What gets saved under `out/compare/<timestamp>/`:
 - `madar-prompt.txt`
 - `baseline-answer.txt`
 - `madar-answer.txt`
+- `run-state.json`
 - `report.json`
 - `report.share-safe.json`
 
