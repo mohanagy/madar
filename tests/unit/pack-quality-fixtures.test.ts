@@ -207,6 +207,7 @@ describe('pack-quality fixtures (#298)', () => {
         typeof preview.label === 'string' && preview.label.length > 0 ? [preview.label] : [])),
     ])
 
+    expect(primaryLabels.length).toBeGreaterThan(0)
     expect([...surfacedLabels]).toEqual(expect.arrayContaining(primaryLabels))
   })
 
@@ -236,6 +237,7 @@ describe('pack-quality fixtures (#298)', () => {
         .flatMap((warning) => warning.detail?.labels ?? []),
     )
 
+    expect(workflowCenters.size).toBeGreaterThan(0)
     expect([...workflowCenters].filter((label) => omittedLabels.has(label))).toEqual([])
   })
 })

@@ -148,6 +148,42 @@ function asUnknownArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : []
 }
 
+function runtimePrimaryPathRecordKey(record: JsonRecord | null): string | null {
+  if (!record) {
+    return null
+  }
+  if (typeof record.node_id === 'string' && record.node_id.length > 0) {
+    return `id:${record.node_id}`
+  }
+  if (typeof record.label !== 'string' || record.label.length === 0) {
+    return null
+  }
+  const sourceFile = typeof record.source_file === 'string' ? record.source_file : ''
+  return `label:${record.label}::${sourceFile}`
+}
+
+function runtimePrimaryPathPreviewEntry(record: JsonRecord): JsonRecord | null {
+  if (typeof record.label !== 'string' || record.label.length === 0) {
+    return null
+  }
+  if (typeof record.source_file !== 'string' || record.source_file.length === 0) {
+    return null
+  }
+  return {
+    ...(typeof record.node_id === 'string' && record.node_id.length > 0 ? { node_id: record.node_id } : {}),
+    label: record.label,
+    source_file: record.source_file,
+    ...(typeof record.line_number === 'number'
+      ? {
+          line_range: {
+            start_line: record.line_number,
+            end_line: record.line_number,
+          },
+        }
+      : {}),
+  }
+}
+
 function trimArrayField(record: JsonRecord, field: string, cap: number, trimmedFields: string[]): void {
   const values = asUnknownArray(record[field])
   if (values.length <= cap) {
@@ -219,44 +255,39 @@ function preserveTrimmedRuntimePrimaryPathPreview(pack: JsonRecord, trimmedField
     return
   }
 
-  const primaryLabels = primarySteps.flatMap((step) => {
-    const record = asJsonRecord(step)
-    return typeof record?.label === 'string' && record.label.length > 0 ? [record.label] : []
-  })
-  if (primaryLabels.length === 0) {
+  const primaryStepRecords = primarySteps
+    .map((step) => asJsonRecord(step))
+    .filter((record): record is JsonRecord => record !== null)
+  if (primaryStepRecords.length === 0) {
     return
   }
 
-  const keptLabels = new Set(
+  const keptKeys = new Set(
     matchedNodes
       .slice(0, ANSWER_READY_MATCHED_NODE_CAP)
       .flatMap((node) => {
-        const record = asJsonRecord(node)
-        return typeof record?.label === 'string' && record.label.length > 0 ? [record.label] : []
+        const key = runtimePrimaryPathRecordKey(asJsonRecord(node))
+        return key ? [key] : []
       }),
   )
-  const matchedByLabel = new Map<string, JsonRecord>()
+  const matchedByKey = new Map<string, JsonRecord>()
   for (const node of matchedNodes) {
     const record = asJsonRecord(node)
-    if (!record || typeof record.label !== 'string' || record.label.length === 0 || matchedByLabel.has(record.label)) {
+    const key = runtimePrimaryPathRecordKey(record)
+    if (!record || !key || matchedByKey.has(key)) {
       continue
     }
-    matchedByLabel.set(record.label, record)
+    matchedByKey.set(key, record)
   }
 
-  const preview = primaryLabels
-    .filter((label) => !keptLabels.has(label))
-    .flatMap((label) => {
-      const node = matchedByLabel.get(label)
-      if (!node || typeof node.source_file !== 'string' || node.source_file.length === 0) {
-        return []
-      }
-      return [{
-        ...(typeof node.node_id === 'string' && node.node_id.length > 0 ? { node_id: node.node_id } : {}),
-        label,
-        source_file: node.source_file,
-      }]
-    })
+  const preview: JsonRecord[] = primaryStepRecords.flatMap((stepRecord): JsonRecord[] => {
+    const key = runtimePrimaryPathRecordKey(stepRecord)
+    if (!key || keptKeys.has(key)) {
+      return []
+    }
+    const entry = runtimePrimaryPathPreviewEntry(matchedByKey.get(key) ?? stepRecord)
+    return entry ? [entry] : []
+  })
 
   if (preview.length === 0) {
     return
@@ -295,53 +326,48 @@ function preserveFinalRuntimePrimaryPathPreview(
     return
   }
 
-  const primaryLabels = primarySteps.flatMap((step) => {
-    const record = asJsonRecord(step)
-    return typeof record?.label === 'string' && record.label.length > 0 ? [record.label] : []
-  })
-  if (primaryLabels.length === 0) {
+  const primaryStepRecords = primarySteps
+    .map((step) => asJsonRecord(step))
+    .filter((record): record is JsonRecord => record !== null)
+  if (primaryStepRecords.length === 0) {
     return
   }
 
-  const keptLabels = new Set(
+  const keptKeys = new Set(
     matchedNodes
       .slice(0, matchedNodeCap)
       .flatMap((node) => {
-        const record = asJsonRecord(node)
-        return typeof record?.label === 'string' && record.label.length > 0 ? [record.label] : []
+        const key = runtimePrimaryPathRecordKey(asJsonRecord(node))
+        return key ? [key] : []
       }),
   )
-  const existingPreviewLabels = new Set(
+  const existingPreviewKeys = new Set(
     asUnknownArray(payload.expandable).flatMap((entry) => {
       const record = asJsonRecord(entry)
       return asUnknownArray(record?.preview).flatMap((preview) => {
-        const previewRecord = asJsonRecord(preview)
-        return typeof previewRecord?.label === 'string' && previewRecord.label.length > 0 ? [previewRecord.label] : []
+        const key = runtimePrimaryPathRecordKey(asJsonRecord(preview))
+        return key ? [key] : []
       })
     }),
   )
-  const matchedByLabel = new Map<string, JsonRecord>()
+  const matchedByKey = new Map<string, JsonRecord>()
   for (const node of matchedNodes) {
     const record = asJsonRecord(node)
-    if (!record || typeof record.label !== 'string' || record.label.length === 0 || matchedByLabel.has(record.label)) {
+    const key = runtimePrimaryPathRecordKey(record)
+    if (!record || !key || matchedByKey.has(key)) {
       continue
     }
-    matchedByLabel.set(record.label, record)
+    matchedByKey.set(key, record)
   }
 
-  const preview = primaryLabels
-    .filter((label) => !keptLabels.has(label) && !existingPreviewLabels.has(label))
-    .flatMap((label) => {
-      const node = matchedByLabel.get(label)
-      if (!node || typeof node.source_file !== 'string' || node.source_file.length === 0) {
-        return []
-      }
-      return [{
-        ...(typeof node.node_id === 'string' && node.node_id.length > 0 ? { node_id: node.node_id } : {}),
-        label,
-        source_file: node.source_file,
-      }]
-    })
+  const preview: JsonRecord[] = primaryStepRecords.flatMap((stepRecord): JsonRecord[] => {
+    const key = runtimePrimaryPathRecordKey(stepRecord)
+    if (!key || keptKeys.has(key) || existingPreviewKeys.has(key)) {
+      return []
+    }
+    const entry = runtimePrimaryPathPreviewEntry(matchedByKey.get(key) ?? stepRecord)
+    return entry ? [entry] : []
+  })
 
   if (preview.length === 0) {
     return
