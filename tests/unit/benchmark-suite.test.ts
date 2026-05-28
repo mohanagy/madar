@@ -186,6 +186,7 @@ function makeCompareResult(input: {
     },
     install_verified: true,
     measurement_validity: 'valid',
+    trace_status: 'trace_available',
     madar_mcp_call_count: 1,
     reductions: {
       input_tokens: input.baselineInputTokens / input.madarInputTokens,

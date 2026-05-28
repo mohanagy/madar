@@ -309,6 +309,7 @@ function buildSummaryResult(overrides: {
   const installVerified = overrides.installVerified ?? true
   const madarMcpCallCount = overrides.madarMcpCallCount ?? overrides.madarTrace?.madar_mcp_call_count ?? 0
   const measurementValidity = overrides.measurementValidity ?? (installVerified ? (madarMcpCallCount > 0 ? 'valid' : 'degraded') : 'invalid')
+  const traceStatus = overrides.madarTrace ? 'trace_available' : 'missing_verbose_trace'
   return {
     graph_path: '/tmp/project/out/graph.json',
     output_root: '/tmp/project/out/compare/2026-05-12T00-00-00Z',
@@ -402,6 +403,7 @@ function buildSummaryResult(overrides: {
         },
         install_verified: installVerified,
         measurement_validity: measurementValidity,
+        trace_status: traceStatus,
         madar_mcp_call_count: madarMcpCallCount,
         ...(overrides.toolCallCounts ? { tool_call_counts: overrides.toolCallCounts } : {}),
         ...(overrides.madarTrace ? { madar_trace: overrides.madarTrace } : {}),
@@ -580,12 +582,19 @@ describe('executeNativeAgentCompare', () => {
 
       expect(report.install_verified).toBe(true)
       expect(report.measurement_validity).toBe('degraded')
+      expect(report.trace_status).toBe('missing_verbose_trace')
       expect(report.madar_mcp_call_count).toBe(0)
       expect(report.madar_trace).toBeUndefined()
       expect(report.reductions).toBeNull()
+      expect(savedReport.trace_status).toBe('missing_verbose_trace')
+      expect(shareSafeReport.trace_status).toBe('missing_verbose_trace')
       expect(savedReport.reductions).toBeNull()
       expect(shareSafeReport.reductions).toBeNull()
       expect(report.madar.kind).toBe('succeeded')
+
+      const summary = formatNativeAgentCompareSummary(result)
+      expect(summary).toContain('trace_status: missing_verbose_trace')
+      expect(summary).toContain('Claude --verbose is required for MCP-call attribution')
     } finally {
       rmSync(projectDir, { recursive: true, force: true })
     }
@@ -641,6 +650,7 @@ describe('executeNativeAgentCompare', () => {
       const report = result.reports[0] as NativeAgentCompareReport
       expect(report.install_verified).toBe(true)
       expect(report.measurement_validity).toBe('valid')
+      expect(report.trace_status).toBe('trace_available')
       expect(report.madar_mcp_call_count).toBe(1)
       expect(report.madar_trace).toEqual(expect.objectContaining({
         madar_mcp_call_count: 1,

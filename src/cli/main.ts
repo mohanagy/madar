@@ -413,6 +413,7 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --questions PATH      load questions from a JSON file instead of a positional question',
     '    --output-dir DIR      compare output directory (default out/compare)',
     '    --baseline-mode MODE  full | bounded | pack_only | native_agent (default full; pack_only compares one bounded raw-context prompt against one compiled madar pack; native_agent runs --exec twice, uses Anthropic JSON usage when available, and otherwise saves answer-only artifacts)',
+    '      For Claude MCP attribution in native_agent mode, include --verbose with --output-format json',
     '    --per-arm-timeout S   per-arm timeout seconds for native_agent runs (default 600)',
     '    --heartbeat-interval-ms N  stderr heartbeat interval for native_agent runs (default 30000; 0 disables)',
     '    --allow-no-install    allow native_agent compare without a verified Madar install and mark the run invalid',

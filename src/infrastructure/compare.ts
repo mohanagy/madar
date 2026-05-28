@@ -138,6 +138,7 @@ export interface CompareMadarTrace {
 }
 
 export type NativeAgentMeasurementValidity = 'valid' | 'degraded' | 'invalid'
+export type NativeAgentTraceStatus = 'trace_available' | 'missing_verbose_trace'
 
 interface NativeAgentInstallArtifactCheck {
   label: string
@@ -2231,6 +2232,7 @@ export interface NativeAgentCompareReport {
   madar: NativeAgentRunStatus
   install_verified: boolean
   measurement_validity: NativeAgentMeasurementValidity
+  trace_status: NativeAgentTraceStatus
   madar_mcp_call_count: number
   tool_call_counts?: NativeAgentToolCallCounts
   madar_trace?: CompareMadarTrace
@@ -3139,6 +3141,7 @@ export async function executeNativeAgentCompare(
       madar: { kind: 'runner_error', evidence: null, exit_code: null, stderr: null },
       install_verified: installCheck.verified,
       measurement_validity: installCheck.verified ? 'degraded' : 'invalid',
+      trace_status: 'missing_verbose_trace',
       madar_mcp_call_count: 0,
       reductions: null,
       token_regression: false,
@@ -3358,9 +3361,11 @@ export async function executeNativeAgentCompare(
       if (madarTrace) {
         reportShell.madar_trace = madarTrace
         reportShell.madar_mcp_call_count = madarTrace.madar_mcp_call_count
+        reportShell.trace_status = 'trace_available'
       } else {
         delete reportShell.madar_trace
         reportShell.madar_mcp_call_count = 0
+        reportShell.trace_status = 'missing_verbose_trace'
       }
       const event = parseAnthropicResultEvent(madarRun.stdout)
       if (event !== null) {
@@ -3537,11 +3542,19 @@ function formatMadarMcpCallCountLine(report: NativeAgentCompareReport): string {
     : `madar_mcp_call_count: ${report.madar_mcp_call_count}`
 }
 
+function formatNativeAgentTraceStatusLine(report: NativeAgentCompareReport): string {
+  if (report.trace_status === 'missing_verbose_trace') {
+    return 'trace_status: missing_verbose_trace (Claude --verbose is required for MCP-call attribution)'
+  }
+  return 'trace_status: trace_available'
+}
+
 function appendNativeAgentValidityLines(lines: string[], report: NativeAgentCompareReport): void {
   lines.push(
     `    ${formatMeasurementValidityLine(report)}`,
     `    install_verified: ${report.install_verified}`,
     `    ${formatMadarMcpCallCountLine(report)}`,
+    `    ${formatNativeAgentTraceStatusLine(report)}`,
   )
 }
 
