@@ -174,6 +174,17 @@ export interface ContextPackRuntimeGenerationAnswerContract {
   confidence?: 'high' | 'medium' | 'low'
 }
 
+export interface ContextPackExplainAnswerReadySummary {
+  answer_outline: string[]
+  must_cite: Array<{
+    source_file: string
+    line_number: number
+    label: string
+  }>
+  stop_condition: string
+  allowed_followups: string[]
+}
+
 export type ImplementationPackPhase =
   | 'seed'
   | 'expand'
