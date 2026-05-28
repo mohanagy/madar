@@ -227,6 +227,7 @@ export interface GenerateCompareArtifactsInput {
   baselineMode: CompareBaselineMode
   perArmTimeoutSeconds?: number
   heartbeatIntervalMs?: number
+  strictMadarFirst?: boolean
   allowNoInstall?: boolean
   why?: boolean
   corpusText?: string
@@ -3022,14 +3023,15 @@ function assessNativeAgentClaims(report: NativeAgentCompareReport): NativeAgentC
   }
 
   if (!nativeAgentReductionsAttributable(report)) {
+    const evidence = nativeAgentAttributionGapEvidence(report)
     return {
       routing_efficiency: {
         status: 'not_measured',
-        evidence: ['Madar MCP attribution is missing.'],
+        evidence: [evidence],
       },
       token_reduction: {
         status: 'not_measured',
-        evidence: ['Madar MCP attribution is missing.'],
+        evidence: [evidence],
       },
     }
   }
@@ -3084,6 +3086,50 @@ function nativeAgentReductionsAttributable(
   report: Pick<NativeAgentCompareReport, 'measurement_validity'>,
 ): boolean {
   return report.measurement_validity === 'valid'
+}
+
+function strictMadarFirstViolated(
+  madarTrace: CompareMadarTrace | undefined,
+  strictMadarFirst: boolean | undefined,
+): boolean {
+  if (!strictMadarFirst || madarTrace === undefined) {
+    return false
+  }
+
+  return madarTrace.exploration_outcome === 'madar_invoked_after_broad_exploration'
+}
+
+function assessNativeAgentMeasurementValidity(input: {
+  installVerified: boolean
+  madarMcpCallCount: number
+  madarTrace: CompareMadarTrace | undefined
+  strictMadarFirst: boolean | undefined
+}): NativeAgentMeasurementValidity {
+  if (!input.installVerified) {
+    return 'invalid'
+  }
+
+  if (input.madarMcpCallCount === 0) {
+    return 'degraded'
+  }
+
+  if (strictMadarFirstViolated(input.madarTrace, input.strictMadarFirst)) {
+    return 'degraded'
+  }
+
+  return 'valid'
+}
+
+function nativeAgentAttributionGapEvidence(report: NativeAgentCompareReport): string {
+  if (report.measurement_validity === 'invalid') {
+    return 'No Madar install was detected.'
+  }
+
+  if (report.madar_trace?.exploration_outcome === 'madar_invoked_after_broad_exploration') {
+    return 'Broad exploration occurred before the first Madar MCP call.'
+  }
+
+  return 'Madar MCP attribution is missing.'
 }
 
 function isComparableNativeAgentReport(report: NativeAgentCompareReport): report is NativeAgentComparableReport {
@@ -3578,12 +3624,12 @@ export async function executeNativeAgentCompare(
             ? 'mixed'
             : 'unknown'
     }
-    reportShell.measurement_validity =
-      reportShell.install_verified
-        ? reportShell.madar_mcp_call_count > 0
-          ? 'valid'
-          : 'degraded'
-        : 'invalid'
+    reportShell.measurement_validity = assessNativeAgentMeasurementValidity({
+      installVerified: reportShell.install_verified,
+      madarMcpCallCount: reportShell.madar_mcp_call_count,
+      madarTrace: reportShell.madar_trace,
+      strictMadarFirst: input.strictMadarFirst,
+    })
     const claimAssessment = assessNativeAgentClaims(reportShell)
     if (claimAssessment !== undefined) {
       reportShell.claim_assessment = claimAssessment
@@ -3653,6 +3699,9 @@ function formatMeasurementValidityLine(report: NativeAgentCompareReport): string
     case 'valid':
       return 'measurement_validity: valid'
     case 'degraded':
+      if (report.madar_trace?.exploration_outcome === 'madar_invoked_after_broad_exploration') {
+        return 'measurement_validity: degraded (broad exploration preceded the first Madar MCP call)'
+      }
       return 'measurement_validity: degraded (install detected, but no Madar MCP call was recorded)'
     case 'invalid':
       return 'measurement_validity: INVALID — no Madar install was detected; do not cite these numbers'

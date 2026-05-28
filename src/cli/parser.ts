@@ -107,6 +107,7 @@ export interface CompareCliOptions {
   baselineMode: 'full' | 'bounded' | 'pack_only' | 'native_agent'
   perArmTimeoutSeconds: number
   heartbeatIntervalMs: number
+  strictMadarFirst: boolean
   allowNoInstall: boolean
   yes: boolean
   limit: number | null
@@ -189,7 +190,7 @@ export interface InstallCliOptions {
   platform: InstallPlatform
 }
 
-const COMPARE_USAGE = 'Usage: madar compare [question] --exec TEMPLATE [--graph path] [--questions PATH] [--output-dir DIR] [--baseline-mode MODE] [--per-arm-timeout S] [--heartbeat-interval-ms N] [--allow-no-install] [--yes] [--limit N]'
+const COMPARE_USAGE = 'Usage: madar compare [question] --exec TEMPLATE [--graph path] [--questions PATH] [--output-dir DIR] [--baseline-mode MODE] [--per-arm-timeout S] [--heartbeat-interval-ms N] [--strict-madar-first] [--allow-no-install] [--yes] [--limit N] [--why]'
 
 export interface PlatformActionCliOptions {
   action: 'install' | 'uninstall'
@@ -1082,6 +1083,7 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
   let baselineMode: 'full' | 'bounded' | 'pack_only' | 'native_agent' = 'full'
   let perArmTimeoutSeconds = 600
   let heartbeatIntervalMs = 30000
+  let strictMadarFirst = false
   let allowNoInstall = false
   let yes = false
   let limit: number | null = null
@@ -1194,6 +1196,11 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
       continue
     }
 
+    if (argument === '--strict-madar-first') {
+      strictMadarFirst = true
+      continue
+    }
+
     if (argument === '--allow-no-install') {
       allowNoInstall = true
       continue
@@ -1242,6 +1249,7 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
     baselineMode,
     perArmTimeoutSeconds,
     heartbeatIntervalMs,
+    strictMadarFirst,
     allowNoInstall,
     yes,
     limit,

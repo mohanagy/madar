@@ -902,6 +902,55 @@ describe('executeNativeAgentCompare', () => {
     }
   })
 
+  it('degrades broad exploration before the first Madar MCP call in strict mode', async () => {
+    const { projectDir, graphPath, outputDir } = makeFixtureProject()
+    try {
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          question: 'What is the cluster module?',
+          outputDir,
+          execTemplate: 'mock-runner',
+          baselineMode: 'native_agent',
+          strictMadarFirst: true,
+        },
+        {
+          runner: scriptedRunner({
+            baseline: VERBOSE_BASELINE_PAYLOAD,
+            madar: VERBOSE_MADAR_MCP_RETRIEVE_AFTER_PRE_EXPLORATION_PAYLOAD,
+          }),
+          now: () => new Date('2026-05-01T00:00:00Z'),
+        },
+      )
+
+      const report = result.reports[0] as NativeAgentCompareReport
+      expect(report.measurement_validity).toBe('degraded')
+      expect(report.reductions).toBeNull()
+      expect(report.claim_assessment).toEqual({
+        routing_efficiency: {
+          status: 'not_measured',
+          evidence: ['Broad exploration occurred before the first Madar MCP call.'],
+        },
+        token_reduction: {
+          status: 'not_measured',
+          evidence: ['Broad exploration occurred before the first Madar MCP call.'],
+        },
+      })
+      expect(report.madar_trace).toEqual(expect.objectContaining({
+        first_madar_turn: 6,
+        pre_madar_broad_exploration_tool_call_count: 2,
+        exploration_outcome: 'madar_invoked_after_broad_exploration',
+      }))
+
+      const summary = formatNativeAgentCompareSummary(result)
+      expect(summary).toContain('measurement_validity: degraded (broad exploration preceded the first Madar MCP call)')
+      expect(summary).toContain('Cannot attribute outcome differences to Madar.')
+      expect(summary).toContain('madar_invoked_after_broad_exploration')
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
   it('produces a report with both Anthropic-reported usage blocks and computed reductions', async () => {
     const { projectDir, graphPath, outputDir } = makeFixtureProject()
     try {

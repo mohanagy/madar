@@ -551,6 +551,7 @@ describe('cli parser', () => {
       baselineMode: 'full',
       perArmTimeoutSeconds: 600,
       heartbeatIntervalMs: 30000,
+      strictMadarFirst: false,
       allowNoInstall: false,
       yes: false,
       limit: null,
@@ -565,6 +566,7 @@ describe('cli parser', () => {
       baselineMode: 'full',
       perArmTimeoutSeconds: 600,
       heartbeatIntervalMs: 30000,
+      strictMadarFirst: false,
       allowNoInstall: false,
       yes: false,
       limit: null,
@@ -587,6 +589,7 @@ describe('cli parser', () => {
         '900',
         '--heartbeat-interval-ms',
         '15000',
+        '--strict-madar-first',
         '--allow-no-install',
         '--yes',
         '--limit',
@@ -601,6 +604,7 @@ describe('cli parser', () => {
       baselineMode: 'bounded',
       perArmTimeoutSeconds: 900,
       heartbeatIntervalMs: 15000,
+      strictMadarFirst: true,
       allowNoInstall: true,
       yes: true,
       limit: 5,
@@ -625,6 +629,7 @@ describe('cli parser', () => {
       baselineMode: 'pack_only',
       perArmTimeoutSeconds: 600,
       heartbeatIntervalMs: 30000,
+      strictMadarFirst: false,
       allowNoInstall: false,
       yes: false,
       limit: null,
@@ -648,6 +653,7 @@ describe('cli parser', () => {
     baselineMode: 'full',
     perArmTimeoutSeconds: 600,
     heartbeatIntervalMs: 30000,
+    strictMadarFirst: false,
     allowNoInstall: false,
     yes: false,
     limit: null,
@@ -1078,6 +1084,7 @@ describe('cli main', () => {
     expect(help).toContain('      For Claude MCP attribution in native_agent mode, include --verbose with --output-format json')
     expect(help).toContain('    --per-arm-timeout S   per-arm timeout seconds for native_agent runs (default 600)')
     expect(help).toContain('    --heartbeat-interval-ms N  stderr heartbeat interval for native_agent runs (default 30000; 0 disables)')
+    expect(help).toContain('    --strict-madar-first  treat pre-Madar broad exploration as degraded/non-winning in native_agent mode')
     expect(help).toContain('    --yes                 skip confirmation before running the paid prompt comparison')
     expect(help).toContain('    --limit N             cap processed prompts/questions for the comparison run')
     expect(help).toContain('    --why                 include retrieval-routing debug metadata in the compare summary and reports')
@@ -1138,6 +1145,7 @@ describe('cli main', () => {
         '900',
         '--heartbeat-interval-ms',
         '15000',
+        '--strict-madar-first',
         '--yes',
         '--limit',
         '5',
@@ -1164,6 +1172,7 @@ describe('cli main', () => {
       baselineMode: 'bounded',
       perArmTimeoutSeconds: 900,
       heartbeatIntervalMs: 15000,
+      strictMadarFirst: true,
       allowNoInstall: false,
       yes: true,
       limit: 5,
@@ -1446,7 +1455,7 @@ describe('cli main', () => {
 
     expect(exitCode).toBe(2)
     expect(logs).toEqual([])
-    expect(errors).toEqual(['Usage: madar compare [question] --exec TEMPLATE [--graph path] [--questions PATH] [--output-dir DIR] [--baseline-mode MODE] [--per-arm-timeout S] [--heartbeat-interval-ms N] [--allow-no-install] [--yes] [--limit N]'])
+    expect(errors).toEqual(['Usage: madar compare [question] --exec TEMPLATE [--graph path] [--questions PATH] [--output-dir DIR] [--baseline-mode MODE] [--per-arm-timeout S] [--heartbeat-interval-ms N] [--strict-madar-first] [--allow-no-install] [--yes] [--limit N] [--why]'])
   })
 
   it('prefers the explicit compare command over an implicit generate path match', async () => {
