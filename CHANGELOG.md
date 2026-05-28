@@ -2,6 +2,14 @@
 
 All notable changes to the TypeScript package will be documented in this file.
 
+## [0.27.1] - 2026-05-28
+
+### Fixed
+
+- **Native-agent compare no longer reports favorable reductions for degraded no-trace runs**: `report.json.reductions` and suite-summary win lines now stay suppressed unless the run is attributable to a valid Madar invocation. Closes #361.
+- **`madar summary` runtime paths stay closer to real workflow spines**: runtime-path scoring now admits worker-style starts with runtime predecessors, recognizes metadata-less worker/job file hints, and keeps helper-style endpoint pairs from outranking backend workflow boundaries. Closes #362.
+- **Native-agent compare no longer stalls silently on hung arms**: `compare --baseline-mode native_agent` now supports per-arm timeouts, stderr heartbeats, and `run-state.json` progress receipts, and it writes partial reports instead of hanging forever when the baseline or Madar arm gets stuck. Closes #363.
+
 ## [0.27.0] - 2026-05-27
 
 ### Added
