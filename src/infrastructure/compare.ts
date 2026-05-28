@@ -2265,6 +2265,17 @@ export type NativeAgentTokenRegressionMetric =
   | 'uncached_input_tokens'
   | 'cache_creation_input_tokens'
 
+export interface NativeAgentClaimAssessment {
+  routing_efficiency: {
+    status: 'improved' | 'not_improved' | 'not_measured'
+    evidence: string[]
+  }
+  token_reduction: {
+    status: 'proven' | 'not_proven' | 'not_measured'
+    evidence: string[]
+  }
+}
+
 export interface NativeAgentToolCallCountsEntry {
   total: number
   Read: number
@@ -2306,6 +2317,7 @@ export interface NativeAgentCompareReport {
   } | null
   token_regression: boolean
   token_regression_reasons: NativeAgentTokenRegressionMetric[]
+  claim_assessment?: NativeAgentClaimAssessment
   prompt_token_source: {
     baseline: 'anthropic_provider_reported' | 'unknown'
     madar: 'anthropic_provider_reported' | 'unknown'
@@ -3004,6 +3016,60 @@ function formatTokenRegressionWarning(
   return `WARNING: fresh-token regression — ${reasons.map((metric) => formatTokenRegressionMetric(metric, baseline, madar)).join('; ')}`
 }
 
+function assessNativeAgentClaims(report: NativeAgentCompareReport): NativeAgentClaimAssessment | undefined {
+  if (report.baseline.kind !== 'succeeded' || report.madar.kind !== 'succeeded') {
+    return undefined
+  }
+
+  if (!nativeAgentReductionsAttributable(report)) {
+    return {
+      routing_efficiency: {
+        status: 'not_measured',
+        evidence: ['Madar MCP attribution is missing.'],
+      },
+      token_reduction: {
+        status: 'not_measured',
+        evidence: ['Madar MCP attribution is missing.'],
+      },
+    }
+  }
+
+  const routingEvidence: string[] = []
+  const toolCallsImproved = report.tool_call_counts
+    ? report.tool_call_counts.madar.total < report.tool_call_counts.baseline.total
+    : false
+  if (report.tool_call_counts) {
+    routingEvidence.push(
+      `tool calls ${toolCallsImproved ? 'decreased' : 'did not decrease'}: baseline ${report.tool_call_counts.baseline.total} → madar ${report.tool_call_counts.madar.total}${formatDirectionalDelta(report.tool_call_counts.baseline.total, report.tool_call_counts.madar.total, 'fewer', 'more')}`,
+    )
+  }
+
+  const latencyImproved = report.madar.duration_ms < report.baseline.duration_ms
+  routingEvidence.push(
+    `latency ${latencyImproved ? 'improved' : 'did not improve'}: baseline ${report.baseline.duration_ms}ms → madar ${report.madar.duration_ms}ms${formatDirectionalDelta(report.baseline.duration_ms, report.madar.duration_ms, 'faster', 'slower')}`,
+  )
+
+  const tokenEvidence: string[] = []
+  const totalInputImproved = report.madar.total_input_tokens_anthropic_exact < report.baseline.total_input_tokens_anthropic_exact
+  tokenEvidence.push(
+    `provider input ${totalInputImproved ? 'decreased' : report.madar.total_input_tokens_anthropic_exact > report.baseline.total_input_tokens_anthropic_exact ? 'grew' : 'did not decrease'}: baseline ${report.baseline.total_input_tokens_anthropic_exact} → madar ${report.madar.total_input_tokens_anthropic_exact}${formatDirectionalDelta(report.baseline.total_input_tokens_anthropic_exact, report.madar.total_input_tokens_anthropic_exact, 'less', 'more')}`,
+  )
+  if (report.token_regression_reasons.length > 0) {
+    tokenEvidence.push(`fresh-token regression: ${report.token_regression_reasons.join(', ')}`)
+  }
+
+  return {
+    routing_efficiency: {
+      status: toolCallsImproved || latencyImproved ? 'improved' : 'not_improved',
+      evidence: routingEvidence,
+    },
+    token_reduction: {
+      status: totalInputImproved && report.token_regression_reasons.length === 0 ? 'proven' : 'not_proven',
+      evidence: tokenEvidence,
+    },
+  }
+}
+
 type NativeAgentComparableReport = NativeAgentCompareReport & {
   baseline: Extract<NativeAgentRunStatus, { kind: 'succeeded' }>
   madar: Extract<NativeAgentRunStatus, { kind: 'succeeded' }>
@@ -3518,6 +3584,12 @@ export async function executeNativeAgentCompare(
           ? 'valid'
           : 'degraded'
         : 'invalid'
+    const claimAssessment = assessNativeAgentClaims(reportShell)
+    if (claimAssessment !== undefined) {
+      reportShell.claim_assessment = claimAssessment
+    } else {
+      delete reportShell.claim_assessment
+    }
     if (!nativeAgentReductionsAttributable(reportShell)) {
       reportShell.reductions = null
     }
@@ -3618,6 +3690,16 @@ function appendNativeAgentValidityLines(lines: string[], report: NativeAgentComp
   )
 }
 
+function formatNativeAgentClaimAssessmentLine(assessment: NativeAgentClaimAssessment): string {
+  const routingEvidence = assessment.routing_efficiency.evidence.length > 0
+    ? ` (${assessment.routing_efficiency.evidence.join('; ')})`
+    : ''
+  const tokenEvidence = assessment.token_reduction.evidence.length > 0
+    ? ` (${assessment.token_reduction.evidence.join('; ')})`
+    : ''
+  return `claim_assessment: routing_efficiency ${assessment.routing_efficiency.status}${routingEvidence}; token_reduction ${assessment.token_reduction.status}${tokenEvidence}`
+}
+
 export function formatNativeAgentCompareSummary(result: NativeAgentCompareResult): string {
   const lines: string[] = [
     `[madar compare] completed ${result.reports.length} native_agent question(s)`,
@@ -3696,6 +3778,9 @@ export function formatNativeAgentCompareSummary(result: NativeAgentCompareResult
 
     lines.push(`- "${report.question}"`)
     appendNativeAgentValidityLines(lines, report)
+    if (report.claim_assessment) {
+      lines.push(`    ${formatNativeAgentClaimAssessmentLine(report.claim_assessment)}`)
+    }
     const derivedTokenRegressionReasons = collectTokenRegressionReasons(baseline, madar)
     const tokenRegressionReasons =
       report.token_regression_reasons && report.token_regression_reasons.length > 0

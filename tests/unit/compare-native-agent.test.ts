@@ -114,6 +114,42 @@ const MADAR_TOKEN_REGRESSION_PAYLOAD = {
   },
 }
 
+const GOVALIDATE_BASELINE_TOKEN_REGRESSION_PAYLOAD = {
+  type: 'result',
+  subtype: 'success',
+  is_error: false,
+  duration_ms: 166206,
+  num_turns: 5,
+  result: 'baseline answer',
+  total_cost_usd: 0.8682259,
+  usage: {
+    input_tokens: 13,
+    cache_creation_input_tokens: 38851,
+    cache_read_input_tokens: 232864,
+    output_tokens: 1200,
+  },
+}
+
+const GOVALIDATE_MADAR_TOKEN_REGRESSION_PAYLOAD = {
+  type: 'result',
+  subtype: 'success',
+  is_error: false,
+  duration_ms: 66381,
+  num_turns: 7,
+  result: 'madar answer',
+  total_cost_usd: 0.95262875,
+  usage: {
+    input_tokens: 17,
+    cache_creation_input_tokens: 96575,
+    cache_read_input_tokens: 487900,
+    output_tokens: 1000,
+  },
+}
+
+function toolUses(name: string, count: number): Array<{ type: 'tool_use'; name: string }> {
+  return Array.from({ length: count }, () => ({ type: 'tool_use', name }))
+}
+
 const VERBOSE_BASELINE_PAYLOAD = [
   { type: 'system', subtype: 'init' },
   {
@@ -247,6 +283,46 @@ const VERBOSE_MADAR_TOKEN_REGRESSION_PAYLOAD = [
     },
   },
   MADAR_TOKEN_REGRESSION_PAYLOAD,
+] as const
+
+const VERBOSE_GOVALIDATE_BASELINE_TOKEN_REGRESSION_PAYLOAD = [
+  { type: 'system', subtype: 'init' },
+  {
+    type: 'assistant',
+    turn: 1,
+    message: {
+      content: [
+        ...toolUses('Read', 12),
+        ...toolUses('Grep', 10),
+        ...toolUses('Glob', 6),
+      ],
+    },
+  },
+  GOVALIDATE_BASELINE_TOKEN_REGRESSION_PAYLOAD,
+] as const
+
+const VERBOSE_GOVALIDATE_MADAR_TOKEN_REGRESSION_PAYLOAD = [
+  { type: 'system', subtype: 'init' },
+  {
+    type: 'assistant',
+    turn: 1,
+    message: {
+      content: [
+        { type: 'tool_use', name: 'mcp__madar__retrieve' },
+        ...toolUses('Read', 3),
+      ],
+    },
+  },
+  {
+    type: 'assistant',
+    turn: 2,
+    message: {
+      content: [
+        ...toolUses('Grep', 2),
+      ],
+    },
+  },
+  GOVALIDATE_MADAR_TOKEN_REGRESSION_PAYLOAD,
 ] as const
 
 const VERBOSE_MADAR_MCP_RETRIEVE_WITH_FOLLOWUP_EXPLORATION_PAYLOAD = [
@@ -936,6 +1012,56 @@ describe('executeNativeAgentCompare', () => {
       ]))
       expect(shareSafeReductions.uncached_input_tokens).toBeCloseTo(0.72, 2)
       expect(shareSafeReport.token_regression).toBe(true)
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  it('separates routing wins from token-reduction proof for GoValidate-style token regressions', async () => {
+    const { projectDir, graphPath, outputDir } = makeFixtureProject()
+    try {
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          question: 'How idea report is being generated',
+          outputDir,
+          execTemplate: 'mock-runner',
+          baselineMode: 'native_agent',
+        },
+        {
+          runner: scriptedRunner({
+            baseline: VERBOSE_GOVALIDATE_BASELINE_TOKEN_REGRESSION_PAYLOAD,
+            madar: VERBOSE_GOVALIDATE_MADAR_TOKEN_REGRESSION_PAYLOAD,
+          }),
+          now: () => new Date('2026-05-27T00:00:00Z'),
+        },
+      )
+
+      const report = result.reports[0] as NativeAgentCompareReport
+      const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
+      const claimAssessment = savedReport.claim_assessment as Record<string, unknown> | undefined
+      const summary = formatNativeAgentCompareSummary(result)
+
+      expect(report.measurement_validity).toBe('valid')
+      expect(report.tool_call_counts?.baseline.total).toBe(28)
+      expect(report.tool_call_counts?.madar.total).toBe(6)
+      if (report.baseline.kind !== 'succeeded' || report.madar.kind !== 'succeeded') {
+        throw new Error('GoValidate fixture should produce succeeded runs')
+      }
+      expect(report.madar.duration_ms).toBeLessThan(report.baseline.duration_ms)
+      expect(savedReport.token_regression).toBe(true)
+      expect(claimAssessment).toEqual(expect.objectContaining({
+        routing_efficiency: expect.objectContaining({
+          status: 'improved',
+        }),
+        token_reduction: expect.objectContaining({
+          status: 'not_proven',
+        }),
+      }))
+      expect(summary).toContain('claim_assessment: routing_efficiency improved')
+      expect(summary).toContain('token_reduction not_proven')
+      expect(summary).toContain('provider input grew')
+      expect(summary).toContain('fresh-token regression')
     } finally {
       rmSync(projectDir, { recursive: true, force: true })
     }
