@@ -63,6 +63,7 @@ type NodeSummary = {
   predecessors: string[]
   successors: string[]
   explicitEntrySignal: boolean
+  runtimeStartSignal: boolean
   runtimeEligible: boolean
   sourceDomain: string
 }
@@ -77,11 +78,13 @@ type RuntimePathCandidate = {
   path: GraphSummaryRuntimePath
   fromSourceFile: string
   toSourceFile: string
+  startScore: number
   entryScore: number
   minDomainScore: number
   relationScore: number
   terminalScore: number
   hopScore: number
+  helperPair: boolean
 }
 
 function normalizeString(value: unknown): string {
@@ -126,6 +129,41 @@ function isExplicitEntrypoint(attributes: Record<string, unknown>): boolean {
   }
 
   return RUNTIME_METADATA_KEYS.some((key) => frameworkMetadataString(attributes, key).length > 0)
+}
+
+function normalizedRuntimeStartText(...values: unknown[]): string {
+  return values
+    .map(normalizeString)
+    .join(' ')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+function isExplicitRuntimeStart(attributes: Record<string, unknown>): boolean {
+  if (isExplicitEntrypoint(attributes)) {
+    return true
+  }
+
+  const roleText = normalizedRuntimeStartText(
+    attributes.node_kind,
+    attributes.framework_role,
+  )
+  if (/\b(worker|processor|consumer|queue consumer|event handler|job|task)\b/.test(roleText)) {
+    return true
+  }
+
+  const nodeText = normalizedRuntimeStartText(
+    attributes.label,
+    attributes.source_file,
+  )
+  if (/\b(worker|processor|consumer|queue consumer|event handler)\b/.test(nodeText)) {
+    return true
+  }
+
+  const sourceFileText = normalizedRuntimeStartText(attributes.source_file)
+  return /\bjobs?\b|\btasks?\b/.test(sourceFileText)
 }
 
 function normalizedFramework(attributes: Record<string, unknown>): string {
@@ -183,6 +221,7 @@ function buildNodeSummaries(graph: KnowledgeGraph, communityLabels: Record<numbe
       predecessors: graph.predecessors(nodeId),
       successors: graph.successors(nodeId),
       explicitEntrySignal: isExplicitEntrypoint(attributes),
+      runtimeStartSignal: isExplicitRuntimeStart(attributes),
       runtimeEligible,
       sourceDomain,
     }
@@ -266,25 +305,69 @@ function relationQualityScore(relation: unknown): number {
   return RELATION_QUALITY_SCORES[normalized] ?? 1
 }
 
-function terminalNodeScore(node: NodeSummary, graph: KnowledgeGraph): number {
+function runtimeNodeText(node: NodeSummary, graph: KnowledgeGraph): string {
   const attributes = graph.nodeAttributes(node.id)
-  const normalized = [
+  return [
     node.label,
     node.sourceFile,
     normalizeString(attributes.node_kind),
     normalizeString(attributes.framework_role),
   ].join(' ').toLowerCase()
+}
+
+function helperEndpointPenalty(normalized: string): number {
+  let score = 0
+  if (/\b(helper|util|utility|dto|logger|logging|log|type|schema|constant|formatter)\b/.test(normalized)) {
+    score -= 4
+  }
+  if (/\.(cachekey|addjob|addanalyticsjob|setcontext|info|debug|warn|warning|error|trace|build[a-z0-9_]*|calculate[a-z0-9_]*|format[a-z0-9_]*|normalize[a-z0-9_]*|sanitize[a-z0-9_]*|serialize[a-z0-9_]*)\s*\(/.test(normalized)) {
+    score -= 6
+  }
+  return score
+}
+
+function isHelperLikeEndpoint(node: NodeSummary, graph: KnowledgeGraph): boolean {
+  return helperEndpointPenalty(runtimeNodeText(node, graph)) < 0
+}
+
+function startNodeScore(node: NodeSummary, graph: KnowledgeGraph): number {
+  const normalized = runtimeNodeText(node, graph)
 
   let score = 0
-  if (/\b(worker|consumer|processor|repository|repo|store|persistence|service|gateway|client)\b/.test(normalized)) {
+  if (node.runtimeStartSignal) {
+    score += 6
+  }
+  if (node.predecessors.length === 0) {
+    score += 2
+  }
+  if (/\b(route|router|controller|page|layout|middleware|procedure|endpoint|handler)\b/.test(normalized)) {
+    score += 4
+  }
+  score += helperEndpointPenalty(normalized)
+  return score
+}
+
+function terminalNodeScore(node: NodeSummary, graph: KnowledgeGraph): number {
+  const normalized = runtimeNodeText(node, graph)
+  const normalizedLabel = normalizeLabel(node.label).toLowerCase()
+
+  let score = 0
+  if (/\b(worker|consumer|processor|repository|repo|store|persistence|sink|database|db)\b/.test(normalized)) {
+    score += 6
+  }
+  if (/\b(gateway|client)\b/.test(normalized)) {
     score += 3
   }
   if (/\b(queue|job)\b/.test(normalized)) {
     score += 2
   }
-  if (/\b(helper|util|utility|dto|logger|logging|log|type|schema|constant)\b/.test(normalized)) {
-    score -= 2
+  if (/\b(service)\b/.test(normalized)) {
+    score += 2
   }
+  if (normalizedLabel === 'job' || normalizedLabel === 'queue') {
+    score -= 4
+  }
+  score += helperEndpointPenalty(normalized)
   return score
 }
 
@@ -337,7 +420,7 @@ function runtimeEntryCandidates(nodes: readonly NodeSummary[]): NodeSummary[] {
     .filter((node) => node.runtimeEligible && node.successors.some((neighbor) => runtimeNodeIds.has(neighbor)))
     .filter((node) => {
       const runtimePredecessors = node.predecessors.filter((neighbor) => runtimeNodeIds.has(neighbor))
-      return runtimePredecessors.length === 0 || node.explicitEntrySignal
+      return runtimePredecessors.length === 0 || node.runtimeStartSignal
     })
 }
 
@@ -411,16 +494,14 @@ function bestRuntimeTraversals(
 }
 
 function compareRuntimePathCandidates(left: RuntimePathCandidate, right: RuntimePathCandidate): number {
-  return right.entryScore - left.entryScore
+  return right.startScore - left.startScore
+    || right.terminalScore - left.terminalScore
+    || right.entryScore - left.entryScore
     || right.minDomainScore - left.minDomainScore
     || right.relationScore - left.relationScore
-    || right.terminalScore - left.terminalScore
     || right.hopScore - left.hopScore
     || right.path.hops - left.path.hops
-    || left.path.from.localeCompare(right.path.from)
-    || left.path.to.localeCompare(right.path.to)
-    || left.fromSourceFile.localeCompare(right.fromSourceFile)
-    || left.toSourceFile.localeCompare(right.toSourceFile)
+    || stableRuntimePathOrder(left) - stableRuntimePathOrder(right)
 }
 
 function runtimePathCandidate(
@@ -438,12 +519,30 @@ function runtimePathCandidate(
     },
     fromSourceFile: start.sourceFile,
     toSourceFile: terminal.sourceFile,
+    startScore: startNodeScore(start, graph),
     entryScore: entrypointScore(start, normalizeBoolean(startAttributes.exported)),
     minDomainScore: traversal.minDomainScore,
     relationScore: traversal.relationScore,
     terminalScore: terminalNodeScore(terminal, graph),
     hopScore: runtimeHopScore(traversal.hops),
+    helperPair: isHelperLikeEndpoint(start, graph) && isHelperLikeEndpoint(terminal, graph),
   }
+}
+
+function stableRuntimePathOrder(candidate: RuntimePathCandidate): number {
+  const input = [
+    candidate.path.from,
+    candidate.path.to,
+    candidate.fromSourceFile,
+    candidate.toSourceFile,
+  ].join('\u0000')
+
+  let hash = 2166136261
+  for (let index = 0; index < input.length; index++) {
+    hash ^= input.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return hash >>> 0
 }
 
 function runtimePaths(graph: KnowledgeGraph, nodes: readonly NodeSummary[]): GraphSummaryRuntimePath[] {
@@ -455,21 +554,13 @@ function runtimePaths(graph: KnowledgeGraph, nodes: readonly NodeSummary[]): Gra
     const traversals = bestRuntimeTraversals(graph, start, runtimeNodeIds, nodeMap)
     const terminals = [...traversals.entries()]
       .filter(([nodeId, traversal]) => nodeId !== start.id && traversal.hops > 0)
-      .filter(([nodeId, traversal]) => graph.successors(nodeId)
-        .filter((neighbor) => runtimeNodeIds.has(neighbor))
-        .some((neighbor) => {
-          const neighborTraversal = traversals.get(neighbor)
-          if (!neighborTraversal || neighborTraversal.hops <= traversal.hops) {
-            return false
-          }
-          return relationQualityScore(graph.edgeAttributes(nodeId, neighbor).relation) > 0
-        }) === false)
       .map(([nodeId, traversal]) => ({
         node: nodeMap.get(nodeId),
         traversal,
       }))
       .filter((entry): entry is { node: NodeSummary; traversal: RuntimeTraversal } => entry.node !== undefined)
       .map(({ node, traversal }) => runtimePathCandidate(graph, start, node, traversal))
+      .filter((candidate) => !candidate.helperPair)
       .sort(compareRuntimePathCandidates)
 
     const best = terminals[0]

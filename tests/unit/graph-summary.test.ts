@@ -32,6 +32,22 @@ function padIndex(index: number): string {
   return index.toString().padStart(2, '0')
 }
 
+function stableRuntimePathOrderForTest(from: string, to: string, fromSourceFile: string, toSourceFile: string): number {
+  const input = [
+    from,
+    to,
+    fromSourceFile,
+    toSourceFile,
+  ].join('\u0000')
+
+  let hash = 2166136261
+  for (let index = 0; index < input.length; index++) {
+    hash ^= input.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return hash >>> 0
+}
+
 function makeRichGraph(options?: {
   graphVersion?: string
   generatedAt?: string
@@ -401,17 +417,23 @@ describe('buildGraphSummary', () => {
     expect(repeatedSummary.entrypoints).toEqual(summary.entrypoints)
   })
 
-  it('caps runtime_paths after deterministic from/to ordering, so the first 10 sorted paths survive', () => {
+  it('caps runtime_paths with deterministic non-lexical tie-breaking', () => {
     const graph = makeManyRuntimePathsGraph()
     const summary = buildGraphSummary(graph)
-    const expectedRuntimePaths = Array.from({ length: SUMMARY_ARRAY_CAP }, (_, index) => {
+    const expectedRuntimePaths = Array.from({ length: SUMMARY_ARRAY_CAP + 2 }, (_, index) => {
       const suffix = padIndex(index)
       return {
         from: `RuntimeEntry${suffix}`,
         to: `RuntimeSink${suffix}`,
         hops: 2,
+        fromSourceFile: `src/runtime/entry-${suffix}.ts`,
+        toSourceFile: `src/runtime/sink-${suffix}.ts`,
       }
     })
+      .sort((left, right) => stableRuntimePathOrderForTest(left.from, left.to, left.fromSourceFile, left.toSourceFile)
+        - stableRuntimePathOrderForTest(right.from, right.to, right.fromSourceFile, right.toSourceFile))
+      .slice(0, SUMMARY_ARRAY_CAP)
+      .map(({ from, to, hops }) => ({ from, to, hops }))
 
     expect(summary.runtime_paths).toBeInstanceOf(Array)
     expect(summary.runtime_paths).toHaveLength(SUMMARY_ARRAY_CAP)
@@ -423,11 +445,7 @@ describe('buildGraphSummary', () => {
       expect(path.hops).toBeGreaterThanOrEqual(1)
     }
 
-    // The helper inserts paths in reverse order. Keeping RuntimeEntry00-09 documents that
-    // truncation happens after deterministic from/to ordering, not insertion order.
     expect(summary.runtime_paths).toEqual(expectedRuntimePaths)
-    expect(summary.runtime_paths.map(({ from }: GraphSummaryRuntimePath) => from)).not.toContain('RuntimeEntry10')
-    expect(summary.runtime_paths.map(({ from }: GraphSummaryRuntimePath) => from)).not.toContain('RuntimeEntry11')
 
     const repeatedSummary = buildGraphSummary(graph)
     expect(repeatedSummary.runtime_paths).toEqual(summary.runtime_paths)
@@ -559,6 +577,154 @@ describe('buildGraphSummary', () => {
     ])
   })
 
+  it('admits worker-style runtime starts even when they have runtime predecessors', () => {
+    const graph = new KnowledgeGraph(true)
+
+    graph.addNode('registration', {
+      label: 'QueueRegistrar.register',
+      source_file: 'src/queue/register.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+    })
+    graph.addNode('worker', {
+      label: 'ReportWorker.process',
+      source_file: 'src/reports/report.worker.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+      framework_role: 'worker',
+    })
+    graph.addNode('repository', {
+      label: 'ReportRepository.save',
+      source_file: 'src/reports/report.repository.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+      framework_role: 'repository',
+    })
+
+    graph.addEdge('registration', 'worker', {
+      relation: 'calls',
+      confidence: 'EXTRACTED',
+      source_file: 'src/queue/register.ts',
+    })
+    graph.addEdge('worker', 'repository', {
+      relation: 'calls',
+      confidence: 'EXTRACTED',
+      source_file: 'src/reports/report.worker.ts',
+    })
+
+    const summary = buildGraphSummary(graph)
+
+    expect(summary.runtime_paths).toContainEqual({
+      from: 'ReportWorker.process',
+      to: 'ReportRepository.save',
+      hops: 1,
+    })
+  })
+
+  it('admits metadata-less worker starts from camel-cased labels and files', () => {
+    const graph = new KnowledgeGraph(true)
+
+    graph.addNode('registration', {
+      label: 'QueueRegistrar.register',
+      source_file: 'src/queue/register.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+    })
+    graph.addNode('worker', {
+      label: 'ReportWorker.process',
+      source_file: 'src/runtime/reportWorker.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+    })
+    graph.addNode('repository', {
+      label: 'ReportRepository.save',
+      source_file: 'src/reports/report.repository.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+      framework_role: 'repository',
+    })
+
+    graph.addEdge('registration', 'worker', {
+      relation: 'calls',
+      confidence: 'EXTRACTED',
+      source_file: 'src/queue/register.ts',
+    })
+    graph.addEdge('worker', 'repository', {
+      relation: 'calls',
+      confidence: 'EXTRACTED',
+      source_file: 'src/runtime/reportWorker.ts',
+    })
+
+    const summary = buildGraphSummary(graph)
+
+    expect(summary.runtime_paths).toContainEqual({
+      from: 'ReportWorker.process',
+      to: 'ReportRepository.save',
+      hops: 1,
+    })
+  })
+
+  it('admits metadata-less job starts from source-file hints', () => {
+    const graph = new KnowledgeGraph(true)
+
+    graph.addNode('registration', {
+      label: 'QueueRegistrar.register',
+      source_file: 'src/queue/register.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+    })
+    graph.addNode('job', {
+      label: 'SendEmail.run',
+      source_file: 'src/jobs/email-job.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+    })
+    graph.addNode('gateway', {
+      label: 'MailerGateway.deliver',
+      source_file: 'src/mail/mailer.gateway.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+      framework_role: 'gateway',
+    })
+
+    graph.addEdge('registration', 'job', {
+      relation: 'enqueues_job',
+      confidence: 'EXTRACTED',
+      source_file: 'src/queue/register.ts',
+    })
+    graph.addEdge('job', 'gateway', {
+      relation: 'calls',
+      confidence: 'EXTRACTED',
+      source_file: 'src/jobs/email-job.ts',
+    })
+
+    const summary = buildGraphSummary(graph)
+
+    expect(summary.runtime_paths).toContainEqual({
+      from: 'SendEmail.run',
+      to: 'MailerGateway.deliver',
+      hops: 1,
+    })
+  })
+
   it('keeps queue-backed runtime paths detectable even when reverse runtime edges exist', () => {
     const graph = makeBidirectionalRuntimePipelineGraph()
     const summary = buildGraphSummary(graph)
@@ -569,7 +735,278 @@ describe('buildGraphSummary', () => {
         to: 'ReportRepository.save',
         hops: 4,
       },
+      {
+        from: 'OrchestratorWorker.process',
+        to: 'ReportRepository.save',
+        hops: 1,
+      },
     ])
+  })
+
+  it('keeps workflow spines and excludes helper-only endpoint pairs', () => {
+    const graph = makeBidirectionalRuntimePipelineGraph()
+
+    graph.addNode('helper-entry', {
+      label: '.calculateBreakEven()',
+      source_file: 'src/finance/helpers.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+    })
+    graph.addNode('helper-middle', {
+      label: '.cacheKey()',
+      source_file: 'src/cache/helpers.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+    })
+    graph.addNode('helper-terminal', {
+      label: '.addJob()',
+      source_file: 'src/queue/helpers.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+    })
+
+    graph.addEdge('helper-entry', 'helper-middle', {
+      relation: 'calls',
+      confidence: 'EXTRACTED',
+      source_file: 'src/finance/helpers.ts',
+    })
+    graph.addEdge('helper-middle', 'helper-terminal', {
+      relation: 'calls',
+      confidence: 'EXTRACTED',
+      source_file: 'src/cache/helpers.ts',
+    })
+
+    const summary = buildGraphSummary(graph)
+
+    expect(summary.runtime_paths).toContainEqual({
+      from: 'IdeasController.generate',
+      to: 'ReportRepository.save',
+      hops: 4,
+    })
+    expect(summary.runtime_paths).not.toContainEqual({
+      from: '.calculateBreakEven()',
+      to: '.addJob()',
+      hops: 2,
+    })
+  })
+
+  it('prefers service boundaries over trailing job helper leaves', () => {
+    const graph = new KnowledgeGraph(true)
+
+    graph.addNode('controller', {
+      label: '.startPipeline()',
+      source_file: 'src/pipeline/pipeline.controller.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+      framework_role: 'nest_controller',
+      node_kind: 'controller',
+      route_path: '/pipeline/start',
+    })
+    graph.addNode('service', {
+      label: '.startPipeline()',
+      source_file: 'src/pipeline/pipeline-trigger.service.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+      framework_role: 'service',
+    })
+    graph.addNode('helper', {
+      label: '.addJob()',
+      source_file: 'src/pipeline/queue.helpers.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+    })
+    graph.addNode('job', {
+      label: 'job',
+      source_file: 'src/pipeline/job.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+    })
+
+    graph.addEdge('controller', 'service', {
+      relation: 'calls',
+      confidence: 'EXTRACTED',
+      source_file: 'src/pipeline/pipeline.controller.ts',
+    })
+    graph.addEdge('service', 'helper', {
+      relation: 'calls',
+      confidence: 'EXTRACTED',
+      source_file: 'src/pipeline/pipeline-trigger.service.ts',
+    })
+    graph.addEdge('helper', 'job', {
+      relation: 'calls',
+      confidence: 'EXTRACTED',
+      source_file: 'src/pipeline/queue.helpers.ts',
+    })
+
+    const summary = buildGraphSummary(graph)
+
+    expect(summary.runtime_paths).toContainEqual({
+      from: '.startPipeline()',
+      to: '.startPipeline()',
+      hops: 1,
+    })
+    expect(summary.runtime_paths).not.toContainEqual({
+      from: '.startPipeline()',
+      to: 'job',
+      hops: 3,
+    })
+  })
+
+  it('prefers service boundaries over trailing build helper leaves', () => {
+    const graph = new KnowledgeGraph(true)
+
+    graph.addNode('controller', {
+      label: '.getIdea()',
+      source_file: 'src/ideas/idea.controller.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+      framework_role: 'nest_controller',
+      node_kind: 'controller',
+      route_path: '/ideas/:id',
+    })
+    graph.addNode('service', {
+      label: '.getIdea()',
+      source_file: 'src/ideas/idea.service.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+      framework_role: 'service',
+    })
+    graph.addNode('helper', {
+      label: '.buildRequestOptions()',
+      source_file: 'src/subscription/stripe-gateway.service.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+      framework_role: 'service',
+    })
+
+    graph.addEdge('controller', 'service', {
+      relation: 'calls',
+      confidence: 'EXTRACTED',
+      source_file: 'src/ideas/idea.controller.ts',
+    })
+    graph.addEdge('service', 'helper', {
+      relation: 'calls',
+      confidence: 'EXTRACTED',
+      source_file: 'src/ideas/idea.service.ts',
+    })
+
+    const summary = buildGraphSummary(graph)
+
+    expect(summary.runtime_paths).toContainEqual({
+      from: '.getIdea()',
+      to: '.getIdea()',
+      hops: 1,
+    })
+    expect(summary.runtime_paths).not.toContainEqual({
+      from: '.getIdea()',
+      to: '.buildRequestOptions()',
+      hops: 2,
+    })
+  })
+
+  it('prefers worker boundaries over deeper gateway calls', () => {
+    const graph = new KnowledgeGraph(true)
+
+    graph.addNode('controller', {
+      label: '.proceedWithAnalysis()',
+      source_file: 'src/ideas/idea-pipeline.controller.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+      framework_role: 'nest_controller',
+      node_kind: 'controller',
+      route_path: '/ideas/analyze',
+    })
+    graph.addNode('service', {
+      label: '.proceedWithAnalysis()',
+      source_file: 'src/ideas/idea-pipeline.service.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+      framework_role: 'service',
+    })
+    graph.addNode('worker', {
+      label: '.process()',
+      source_file: 'src/pipeline/orchestrator.worker.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+      framework_role: 'worker',
+    })
+    graph.addNode('gateway-service', {
+      label: '.createCreditPurchaseSession()',
+      source_file: 'src/subscription/subscription-billing.service.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+      framework_role: 'service',
+    })
+    graph.addNode('gateway-client', {
+      label: '.createCheckoutSession()',
+      source_file: 'src/subscription/stripe-gateway.service.ts',
+      source_location: 'L1',
+      file_type: 'code',
+      community: 0,
+      source_domain: 'production',
+    })
+
+    graph.addEdge('controller', 'service', {
+      relation: 'calls',
+      confidence: 'EXTRACTED',
+      source_file: 'src/ideas/idea-pipeline.controller.ts',
+    })
+    graph.addEdge('service', 'worker', {
+      relation: 'enqueues_job',
+      confidence: 'EXTRACTED',
+      source_file: 'src/ideas/idea-pipeline.service.ts',
+    })
+    graph.addEdge('service', 'gateway-service', {
+      relation: 'calls',
+      confidence: 'EXTRACTED',
+      source_file: 'src/ideas/idea-pipeline.service.ts',
+    })
+    graph.addEdge('gateway-service', 'gateway-client', {
+      relation: 'calls',
+      confidence: 'EXTRACTED',
+      source_file: 'src/subscription/subscription-billing.service.ts',
+    })
+
+    const summary = buildGraphSummary(graph)
+
+    expect(summary.runtime_paths).toContainEqual({
+      from: '.proceedWithAnalysis()',
+      to: '.process()',
+      hops: 2,
+    })
+    expect(summary.runtime_paths).not.toContainEqual({
+      from: '.proceedWithAnalysis()',
+      to: '.createCheckoutSession()',
+      hops: 3,
+    })
   })
 
   it('explains empty runtime_paths when no bounded runtime path is detected', () => {
