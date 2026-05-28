@@ -1455,7 +1455,7 @@ describe('cli main', () => {
 
     expect(exitCode).toBe(2)
     expect(logs).toEqual([])
-    expect(errors).toEqual(['Usage: madar compare [question] --exec TEMPLATE [--graph path] [--questions PATH] [--output-dir DIR] [--baseline-mode MODE] [--per-arm-timeout S] [--heartbeat-interval-ms N] [--strict-madar-first] [--allow-no-install] [--yes] [--limit N]'])
+    expect(errors).toEqual(['Usage: madar compare [question] --exec TEMPLATE [--graph path] [--questions PATH] [--output-dir DIR] [--baseline-mode MODE] [--per-arm-timeout S] [--heartbeat-interval-ms N] [--strict-madar-first] [--allow-no-install] [--yes] [--limit N] [--why]'])
   })
 
   it('prefers the explicit compare command over an implicit generate path match', async () => {

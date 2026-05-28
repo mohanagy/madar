@@ -190,7 +190,7 @@ export interface InstallCliOptions {
   platform: InstallPlatform
 }
 
-const COMPARE_USAGE = 'Usage: madar compare [question] --exec TEMPLATE [--graph path] [--questions PATH] [--output-dir DIR] [--baseline-mode MODE] [--per-arm-timeout S] [--heartbeat-interval-ms N] [--strict-madar-first] [--allow-no-install] [--yes] [--limit N]'
+const COMPARE_USAGE = 'Usage: madar compare [question] --exec TEMPLATE [--graph path] [--questions PATH] [--output-dir DIR] [--baseline-mode MODE] [--per-arm-timeout S] [--heartbeat-interval-ms N] [--strict-madar-first] [--allow-no-install] [--yes] [--limit N] [--why]'
 
 export interface PlatformActionCliOptions {
   action: 'install' | 'uninstall'
