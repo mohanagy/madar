@@ -554,6 +554,72 @@ describe('computeContextPackDiagnostics', () => {
     }))
   })
 
+  it('does not flag slice_path_nodes_not_promoted when the runtime path node is surfaced in expandable preview', () => {
+    const diag = computeContextPackDiagnostics(makePack({
+      nodes: [
+        makeNode({
+          node_id: 'route',
+          label: '.generateFromProblem()',
+          source_file: '/repo/src/idea-generation.controller.ts',
+          framework_role: 'nest_route',
+          node_kind: 'route',
+        }),
+      ],
+      relationships: [],
+      expandable: [{
+        kind: 'nodes',
+        handle_id: 'extra-runtime-path',
+        evidence_class: 'supporting',
+        count: 1,
+        preview: [{
+          node_id: 'persist',
+          label: 'saveStructuredReport()',
+          source_file: '/repo/src/idea-report-store.service.ts',
+        }],
+        follow_up: {
+          kind: 'context_pack',
+          task_kind: 'explain',
+          evidence_class: 'supporting',
+          focus_files: ['/repo/src/idea-report-store.service.ts'],
+          focus_ranges: [{
+            source_file: '/repo/src/idea-report-store.service.ts',
+            start_line: 1,
+            end_line: 40,
+          }],
+        },
+      }],
+      retrieval_gate: {
+        ...retrievalGate({
+          reason: 'pipeline prompt',
+        }),
+        signals: {
+          ...retrievalGate().signals,
+          mentioned_symbols: ['IdeaGenerationController.generateFromProblem'],
+        },
+      },
+      task_contract: taskContract({
+        prompt: 'Explain the production runtime path for IdeaGenerationController.generateFromProblem through the service and persistence pipeline.',
+      }),
+      slice: {
+        mode: 'explain',
+        anchors: [{ node_id: 'route', label: '.generateFromProblem()', reason: 'symbol mention' }],
+        directions: ['forward'],
+        selected_paths: [
+          {
+            from_id: 'route',
+            from: '.generateFromProblem()',
+            to_id: 'persist',
+            to: 'saveStructuredReport()',
+            relation: 'calls',
+            direction: 'forward',
+          },
+        ],
+      },
+    }))
+
+    expect(diag.warnings.map((entry) => entry.kind)).not.toContain('slice_path_nodes_not_promoted')
+  })
+
   it('does not borrow same-label call edges from a different node when the route node_id is known', () => {
     const diag = computeContextPackDiagnostics(makePack({
       nodes: [

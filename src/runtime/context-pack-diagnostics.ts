@@ -473,11 +473,15 @@ function slicePathTargetsNotPromoted(
   )
   const anchorLabels = new Set(anchors.map((anchor) => anchor.label))
   const includedIds = new Set(
-    pack.nodes
-      .map((node) => node.node_id)
-      .filter((nodeId): nodeId is string => typeof nodeId === 'string' && nodeId.length > 0),
+    [
+      ...pack.nodes.map((node) => node.node_id),
+      ...pack.expandable.flatMap((entry) => entry.preview.map((preview) => preview.node_id)),
+    ].filter((nodeId): nodeId is string => typeof nodeId === 'string' && nodeId.length > 0),
   )
-  const includedLabels = new Set(pack.nodes.map((node) => node.label))
+  const includedLabels = new Set([
+    ...pack.nodes.map((node) => node.label),
+    ...pack.expandable.flatMap((entry) => entry.preview.map((preview) => preview.label)),
+  ])
   const omitted = new Map<string, { id?: string; label: string }>()
   const reachableIds = new Set(anchorIds)
   const reachableLabels = new Set(anchorLabels)

@@ -182,4 +182,62 @@ describe('pack-quality fixtures (#298)', () => {
     ]))
     expect(primaryLabels).not.toContain('saveStructuredReport()')
   })
+
+  it('surfaces runtime primary-path steps in matched nodes or expandable previews', async () => {
+    const result = await runPackQualityFixture('runtime-generation-explain-report-flow')
+    const payload = result.payload as typeof result.payload & {
+      expandable?: Array<{
+        preview?: Array<{ label?: string }>
+      }>
+      pack?: {
+        execution_slice?: {
+          primary_path?: {
+            steps?: Array<{ label?: string }>
+          }
+        }
+        matched_nodes?: Array<{ label?: string }>
+      }
+    }
+
+    const primaryLabels = (payload.pack?.execution_slice?.primary_path?.steps ?? [])
+      .flatMap((entry) => (typeof entry.label === 'string' && entry.label.length > 0 ? [entry.label] : []))
+    const surfacedLabels = new Set([
+      ...(payload.pack?.matched_nodes ?? []).flatMap((entry) => (typeof entry.label === 'string' && entry.label.length > 0 ? [entry.label] : [])),
+      ...(payload.expandable ?? []).flatMap((entry) => (entry.preview ?? []).flatMap((preview) =>
+        typeof preview.label === 'string' && preview.label.length > 0 ? [preview.label] : [])),
+    ])
+
+    expect(primaryLabels.length).toBeGreaterThan(0)
+    expect([...surfacedLabels]).toEqual(expect.arrayContaining(primaryLabels))
+  })
+
+  it('does not report workflow centers as omitted slice-path warnings on the explain fixture', async () => {
+    const result = await runPackQualityFixture('runtime-generation-explain-report-flow')
+    const payload = result.payload as typeof result.payload & {
+      pack?: {
+        routing?: {
+          warnings?: Array<{
+            kind?: string
+            detail?: {
+              labels?: string[]
+            }
+          }>
+        }
+      }
+    }
+    const workflowCenterEntries = (payload.workflow_centers ?? []) as Array<{ path?: string; label?: string }>
+
+    const workflowCenters = new Set(
+      workflowCenterEntries.flatMap((entry) =>
+        typeof entry.label === 'string' && entry.label.length > 0 ? [entry.label] : []),
+    )
+    const omittedLabels = new Set(
+      (payload.pack?.routing?.warnings ?? [])
+        .filter((warning) => warning.kind === 'slice_path_nodes_not_promoted')
+        .flatMap((warning) => warning.detail?.labels ?? []),
+    )
+
+    expect(workflowCenters.size).toBeGreaterThan(0)
+    expect([...workflowCenters].filter((label) => omittedLabels.has(label))).toEqual([])
+  })
 })

@@ -2003,6 +2003,59 @@ function augmentSliceCandidateIdsForDebug(
   return expanded
 }
 
+function runtimeGenerationSliceCandidatePromotionApplies(
+  retrievalGate: RetrievalGateDecision,
+  sliceMetadata: ContextPackSliceMetadata,
+): boolean {
+  return sliceMetadata.mode === 'explain'
+    && retrievalGate.intent === 'explain'
+    && retrievalGate.signals.generation_intent === 'runtime_generation'
+    && retrievalGate.signals.target_domain_hint === 'backend_runtime'
+}
+
+function augmentSliceCandidateIdsForRuntimeExplain(
+  graph: KnowledgeGraph,
+  orderedIds: readonly string[],
+  metadata: ContextPackSliceMetadata,
+  retrievalGate: RetrievalGateDecision,
+  question: string,
+): string[] {
+  if (!runtimeGenerationSliceCandidatePromotionApplies(retrievalGate, metadata)) {
+    return [...orderedIds]
+  }
+
+  const expanded = [...orderedIds]
+  const seen = new Set(expanded)
+  const nodeIdByLabel = new Map<string, string>()
+  for (const [nodeId, attributes] of graph.nodeEntries()) {
+    const label = String(attributes.label ?? nodeId)
+    if (!nodeIdByLabel.has(label)) {
+      nodeIdByLabel.set(label, nodeId)
+    }
+  }
+
+  const resolveNodeId = (nodeId: string | undefined, label: string): string | undefined => {
+    if (nodeId && graph.hasNode(nodeId)) {
+      return nodeId
+    }
+    return nodeIdByLabel.get(label)
+  }
+
+  const anchorIds = metadata.anchors
+    .map((anchor) => resolveNodeId(anchor.node_id, anchor.label))
+    .filter((nodeId): nodeId is string => typeof nodeId === 'string')
+  const executionScope = collectExecutionSliceScope(graph, metadata, anchorIds, question, resolveNodeId)
+
+  for (const nodeId of executionScope.orderedIds) {
+    if (!seen.has(nodeId)) {
+      seen.add(nodeId)
+      expanded.push(nodeId)
+    }
+  }
+
+  return expanded
+}
+
 function runtimeGenerationExecutionSliceApplies(
   taskContract: ContextPackTaskContract,
   retrievalGate: RetrievalGateDecision,
@@ -4428,7 +4481,14 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
 
     if (sliced) {
       const scoredById = new Map(scored.map((node) => [node.id, node]))
-      const orderedSliceIds = augmentSliceCandidateIdsForDebug(graph, sliced.ordered_ids, sliced.metadata)
+      const runtimeExpandedSliceIds = augmentSliceCandidateIdsForRuntimeExplain(
+        graph,
+        sliced.ordered_ids,
+        sliced.metadata,
+        retrievalGate,
+        options.question,
+      )
+      const orderedSliceIds = augmentSliceCandidateIdsForDebug(graph, runtimeExpandedSliceIds, sliced.metadata)
       const sliceCandidates = orderedSliceIds.map((nodeId, index) => (
         scoredById.get(nodeId) ?? scoredNodeFromGraph(graph, nodeId, Math.max(0.25, 2 - (index * 0.1)), classificationRootPath)
       ))
