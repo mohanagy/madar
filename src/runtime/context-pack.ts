@@ -1378,8 +1378,9 @@ export function generateAnswerReadyFromExecutionSlice(
     return undefined
   }
 
-  // Generate answer_outline from primary_path steps or all steps
-  const pathSteps = executionSlice.primary_path?.steps ?? executionSlice.steps
+  // Generate answer_outline from primary_path steps or all steps, preferring primary_path if it has content
+  const primaryPathSteps = executionSlice.primary_path?.steps
+  const pathSteps = (primaryPathSteps && primaryPathSteps.length > 0) ? primaryPathSteps : executionSlice.steps
   const answer_outline = pathSteps.map((step) => `${step.label} (${step.source_file}:${step.line_number})`).slice(0, 10)
 
   // Generate must_cite from primary path steps, prioritizing first and last

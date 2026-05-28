@@ -179,6 +179,44 @@ describe('answer-ready explain pack', () => {
     const result = generateAnswerReadyFromExecutionSlice(undefined, 'explain')
     expect(result).toBeUndefined()
   })
+
+  test('generateAnswerReadyFromExecutionSlice falls back to steps when primary_path.steps is empty', () => {
+    const executionSlice: ContextPackExecutionSlice = {
+      status: 'complete',
+      confidence: 'high',
+      steps: [
+        { label: 'Controller.handle()', source_file: 'src/controller.ts', line_number: 10 },
+        { label: 'Service.process()', source_file: 'src/service.ts', line_number: 25 },
+      ],
+      primary_path: {
+        steps: [],
+      },
+    }
+
+    const result = generateAnswerReadyFromExecutionSlice(executionSlice, 'explain')
+
+    expect(result).toBeDefined()
+    expect(result?.answer_outline.length).toBeGreaterThan(0)
+    expect(result?.must_cite.length).toBeGreaterThan(0)
+  })
+
+  test('generateAnswerReadyFromExecutionSlice returns undefined when no citeable steps exist', () => {
+    const executionSlice: ContextPackExecutionSlice = {
+      status: 'complete',
+      confidence: 'high',
+      steps: [],
+      primary_path: {
+        steps: [],
+      },
+    }
+
+    const result = generateAnswerReadyFromExecutionSlice(executionSlice, 'explain')
+
+    // Should have empty must_cite but still return the structure with fallback outline
+    expect(result).toBeDefined()
+    expect(result?.must_cite).toHaveLength(0)
+    expect(result?.answer_outline).toEqual(['Flow execution traced'])
+  })
 })
 
 
