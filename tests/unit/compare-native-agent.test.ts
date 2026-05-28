@@ -635,6 +635,7 @@ describe('executeNativeAgentCompare', () => {
     const { projectDir, graphPath, outputDir } = makeFixtureProject()
     let runnerCalled = false
     try {
+      const reportPath = join(outputDir, '2026-05-01T00-00-00', 'report.json')
       const runner: NativeAgentRunner = async (input) => {
         runnerCalled = true
         return {
@@ -673,6 +674,14 @@ describe('executeNativeAgentCompare', () => {
         ),
       ).rejects.toThrow('benchmark readiness is not_ready')
       expect(runnerCalled).toBe(false)
+      expect(existsSync(reportPath)).toBe(true)
+      expect(JSON.parse(readFileSync(reportPath, 'utf8'))).toEqual(expect.objectContaining({
+        benchmark_readiness: {
+          status: 'not_ready',
+          reasons: ['SPI missing for runtime spine evidence'],
+          suggested_graph_scope: 'backend/out/graph.json',
+        },
+      }))
     } finally {
       rmSync(projectDir, { recursive: true, force: true })
     }

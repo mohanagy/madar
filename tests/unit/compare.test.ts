@@ -4569,4 +4569,31 @@ describe('assessBenchmarkReadinessFromRetrieveResult', () => {
       suggested_graph_scope: null,
     })
   })
+
+  it('treats top-level spi paths as SPI evidence', () => {
+    const readiness = assessBenchmarkReadinessFromRetrieveResult({
+      graphPath: '/repo/spi/out/graph.json',
+      retrieval: makeRuntimeGenerationRetrieval({
+        matched_nodes: [
+          {
+            label: 'SpiRuntime.generate',
+            source_file: 'spi/runtime.ts',
+            line_number: 12,
+            file_type: 'code',
+            snippet: null,
+            match_score: 11,
+            relevance_band: 'direct',
+            community: null,
+            community_label: null,
+          },
+        ],
+      }),
+    })
+
+    expect(readiness).toEqual({
+      status: 'ready',
+      reasons: [],
+      suggested_graph_scope: null,
+    })
+  })
 })

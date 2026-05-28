@@ -1637,7 +1637,7 @@ function suggestBenchmarkGraphScope(graphPath: string, sourceFiles: readonly str
 
 function retrievalHasSpiEvidence(retrieval: RetrieveResult): boolean {
   return collectBenchmarkReadinessSourceFiles(retrieval).some((sourceFile) =>
-    sourceFile.includes('/spi/') || sourceFile.includes('.spi.'),
+    /(^|\/)spi(\/|$)|\.spi\./.test(sourceFile),
   )
 }
 
@@ -3512,7 +3512,7 @@ export async function executeNativeAgentCompare(
     throw new NativeAgentInstallRequiredError(installCheck)
   }
 
-  for (const [index, question] of questions.entries()) {
+  const preparedQuestions = questions.map((question, index) => {
     const questionDir = questions.length === 1 ? outputRoot : join(outputRoot, `question-${String(index + 1).padStart(3, '0')}`)
     mkdirSync(questionDir, { recursive: true })
 
@@ -3584,10 +3584,41 @@ export async function executeNativeAgentCompare(
       })
     }
     if (reportShell.benchmark_readiness) {
-      if (input.strictBenchmarkReadiness && reportShell.benchmark_readiness.status !== 'ready') {
-        throw new BenchmarkReadinessError(reportShell.benchmark_readiness)
-      }
+      reportShell.completed_at = now().toISOString()
     }
+    return {
+      question,
+      promptFile,
+      baselineAnswerPath,
+      madarAnswerPath,
+      reportPath,
+      shareSafeReportPath,
+      runStatePath,
+      reportShell,
+    }
+  })
+
+  const strictReadinessFailure =
+    input.strictBenchmarkReadiness
+      ? preparedQuestions.find((entry) => entry.reportShell.benchmark_readiness?.status !== 'ready')
+      : undefined
+  if (strictReadinessFailure?.reportShell.benchmark_readiness) {
+    for (const entry of preparedQuestions) {
+      writeNativeAgentReport(entry.reportShell)
+    }
+    throw new BenchmarkReadinessError(strictReadinessFailure.reportShell.benchmark_readiness)
+  }
+
+  for (const entry of preparedQuestions) {
+    const {
+      question,
+      promptFile,
+      baselineAnswerPath,
+      madarAnswerPath,
+      runStatePath,
+      reportShell,
+    } = entry
+
     writeNativeAgentRunState(runStatePath, {
       phase: 'baseline_pending',
       arm: 'baseline',
