@@ -25,7 +25,7 @@ import { normalizeAssertionPath, normalizeAssertionPaths } from './helpers/platf
 
 const PACKAGE_CLI_RELATIVE_PATH = join('dist', 'src', 'cli', 'bin.js')
 const STRICT_STOP_RULE_MD =
-  'After calling a Madar tool, inspect the response\'s `evidence.pack_confidence`, `recommended_first_read`, and `evidence.agent_directive`: `answer_from_pack` means answer using the pack snippets and do not read files unless `recommended_first_read` names a specific file; `verify_one_targeted_file` means answer using the pack and `Read` at most one file from `recommended_first_read`; `explore_with_caution` means the pack is low-confidence or partial.'
+  'After calling a Madar tool, inspect the response\'s `evidence.pack_confidence`, `recommended_first_read`, and `evidence.agent_directive`: `answer_from_pack` means answer using the pack snippets and do not read files unless `recommended_first_read` names a specific file; `verify_one_targeted_file` means answer using the pack and `Read` at most one file from `recommended_first_read`; `explore_with_caution` means the pack is low-confidence or coverage is unknown.'
 const STRICT_EXPAND_RULE_MD =
   'If `evidence.pack_confidence` is low or `missing_context` / `missing_semantic` is non-empty, make ONE focused follow-up Madar call (`context_expand`, `retrieve`, or `relevant_files`) before raw search; only when the follow-up still says `explore_with_caution`, use at most ONE targeted `Glob` or `Grep` scoped to a single directory before answering.'
 const STRICT_GRAPH_REPORT_RULE_MD =
@@ -37,7 +37,7 @@ const STRICT_NON_MADAR_MCP_RULE_MD =
 const STRICT_SKILL_OVERRIDE_RULE_MD =
   'If an auto-activated skill recommends broad `Read` / `Grep` / `Glob` exploration or another MCP for a codebase question, defer to Madar\'s `evidence.agent_directive` first. A high- or medium-confidence Madar pack overrides that conflicting skill guidance.'
 const STRICT_STOP_RULE_PLAIN =
-  'after calling a Madar tool, inspect the response\'s evidence.pack_confidence, recommended_first_read, and evidence.agent_directive: answer_from_pack means answer using the pack snippets and do not read files unless recommended_first_read names a specific file; verify_one_targeted_file means answer using the pack and Read at most one file from recommended_first_read; explore_with_caution means the pack is low-confidence or partial'
+  'after calling a Madar tool, inspect the response\'s evidence.pack_confidence, recommended_first_read, and evidence.agent_directive: answer_from_pack means answer using the pack snippets and do not read files unless recommended_first_read names a specific file; verify_one_targeted_file means answer using the pack and Read at most one file from recommended_first_read; explore_with_caution means the pack is low-confidence or coverage is unknown'
 const STRICT_EXPAND_RULE_PLAIN =
   'if evidence.pack_confidence is low or missing_context / missing_semantic is non-empty, make ONE focused follow-up Madar call (context_expand, retrieve, or relevant_files) before raw search; only when the follow-up still says explore_with_caution, use at most ONE targeted Glob or Grep scoped to a single directory before answering'
 const STRICT_GRAPH_REPORT_RULE_PLAIN =
