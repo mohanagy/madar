@@ -1045,6 +1045,10 @@ describe('executeNativeAgentCompare', () => {
       expect(report.measurement_validity).toBe('valid')
       expect(report.tool_call_counts?.baseline.total).toBe(28)
       expect(report.tool_call_counts?.madar.total).toBe(6)
+      if (report.baseline.kind !== 'succeeded' || report.madar.kind !== 'succeeded') {
+        throw new Error('GoValidate fixture should produce succeeded runs')
+      }
+      expect(report.madar.duration_ms).toBeLessThan(report.baseline.duration_ms)
       expect(savedReport.token_regression).toBe(true)
       expect(claimAssessment).toEqual(expect.objectContaining({
         routing_efficiency: expect.objectContaining({
