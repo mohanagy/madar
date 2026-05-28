@@ -8,6 +8,7 @@ import { KnowledgeGraph } from '../../src/contracts/graph.js'
 import {
   buildBaselinePromptPack,
   buildMadarPromptPack,
+  buildNativeAgentPrompt,
   executeCompareRuns,
   executeNativeAgentCompare,
   expandCompareExecTemplate,
@@ -1196,6 +1197,23 @@ describe('compare runtime', () => {
 
     expect(baselinePack.token_count).toBe(estimateQueryTokens(baselinePack.prompt))
     expect(madarPack.token_count).toBe(estimateQueryTokens(madarPack.prompt))
+  })
+
+  it('snapshots the native-agent prompt contract', () => {
+    expect(buildNativeAgentPrompt('What is the cluster module?')).toMatchInlineSnapshot(`
+      "Follow the Madar pack contract exactly.
+      Call context_pack first for explain or runtime questions before any raw file or broad repo search.
+      Inspect evidence.pack_confidence, evidence.coverage, evidence.agent_directive, missing_context, and recommended_first_read before deciding what to do next.
+      If evidence.agent_directive is answer_from_pack, answer from the pack and stop without raw search.
+      Allow at most one focused Madar follow-up before raw search when evidence.agent_directive is verify_one_targeted_file or explore_with_caution.
+      Broad raw search requires an explicit missing-context reason grounded in missing_context or coverage gaps.
+      Any broad search before the first Madar call violates the prompt contract.
+
+      Question: What is the cluster module?
+
+      Answer:
+      "
+    `)
   })
 
   it('uses local tokenization rather than a fixed chars-per-token ratio for prompt counts', () => {

@@ -131,6 +131,7 @@ export interface CompareMadarTrace {
   madar_mcp_call_count: number
   madar_mcp_calls_by_name: Record<string, number>
   first_madar_turn?: number
+  first_madar_tool_name?: string
   pre_madar_broad_exploration_tool_call_count?: number
   pre_madar_broad_exploration_tool_calls_by_name?: Record<string, number>
   context_pack_call_count: number
@@ -373,6 +374,11 @@ function summarizeExecTemplate(execTemplate: string): CompareExecCommandSummary 
     placeholders: [...new Set(placeholders)],
     redacted: true,
   }
+}
+
+export interface NativeAgentPromptContractAssessment {
+  status: 'followed' | 'violated' | 'not_measured'
+  evidence: string[]
 }
 
 function validateCompareExecTemplate(template: string): void {
@@ -897,6 +903,7 @@ function analyzeMadarTraceExploration(perTurn: CompareMadarTraceTurnSummary[]): 
   madar_mcp_call_count: number
   madar_mcp_calls_by_name: Record<string, number>
   first_madar_turn?: number
+  first_madar_tool_name?: string
   pre_madar_broad_exploration_tool_call_count: number
   pre_madar_broad_exploration_tool_calls_by_name: Record<string, number>
   context_pack_call_count: number
@@ -909,6 +916,7 @@ function analyzeMadarTraceExploration(perTurn: CompareMadarTraceTurnSummary[]): 
   let madarMcpCallCount = 0
   let contextPackCallCount = 0
   let firstMadarTurn: number | null = null
+  let firstMadarToolName: string | null = null
   let preMadarBroadExplorationToolCallCount = 0
   let focusedFollowUpToolCallCount = 0
   let broadExplorationToolCallCount = 0
@@ -927,6 +935,7 @@ function analyzeMadarTraceExploration(perTurn: CompareMadarTraceTurnSummary[]): 
         madarMcpCallsByName[toolName] = (madarMcpCallsByName[toolName] ?? 0) + 1
         if (!hadSeenMadarCall) {
           firstMadarTurn = turn.turn
+          firstMadarToolName = toolName
         }
         if (MADAR_CONTEXT_PACK_TOOL_NAMES.has(canonicalName)) {
           contextPackCallCount += 1
@@ -1005,6 +1014,7 @@ function analyzeMadarTraceExploration(perTurn: CompareMadarTraceTurnSummary[]): 
       : null
   const baseTraceFields = {
     ...(firstMadarTurn !== null ? { first_madar_turn: firstMadarTurn } : {}),
+    ...(firstMadarToolName !== null ? { first_madar_tool_name: firstMadarToolName } : {}),
     pre_madar_broad_exploration_tool_call_count: preMadarBroadExplorationToolCallCount,
     pre_madar_broad_exploration_tool_calls_by_name: sortedPreMadarBroadExplorationToolCallsByName,
   }
@@ -1724,6 +1734,23 @@ export function buildMadarPromptPack(input: BuildMadarPromptPackInput): CompareP
   }
 }
 
+export function buildNativeAgentPrompt(question: string): string {
+  return [
+    'Follow the Madar pack contract exactly.',
+    'Call context_pack first for explain or runtime questions before any raw file or broad repo search.',
+    'Inspect evidence.pack_confidence, evidence.coverage, evidence.agent_directive, missing_context, and recommended_first_read before deciding what to do next.',
+    'If evidence.agent_directive is answer_from_pack, answer from the pack and stop without raw search.',
+    'Allow at most one focused Madar follow-up before raw search when evidence.agent_directive is verify_one_targeted_file or explore_with_caution.',
+    'Broad raw search requires an explicit missing-context reason grounded in missing_context or coverage gaps.',
+    'Any broad search before the first Madar call violates the prompt contract.',
+    '',
+    `Question: ${question}`,
+    '',
+    'Answer:',
+    '',
+  ].join('\n')
+}
+
 export function resolveCompareQuestions(options: Pick<GenerateCompareArtifactsInput, 'question' | 'questionsPath' | 'limit'>): string[] {
   if (options.question !== undefined && options.question !== null && options.questionsPath !== undefined && options.questionsPath !== null) {
     throw new Error('Compare runtime accepts either a single question or a questions path, but not both.')
@@ -2318,6 +2345,7 @@ export interface NativeAgentCompareReport {
   } | null
   token_regression: boolean
   token_regression_reasons: NativeAgentTokenRegressionMetric[]
+  prompt_contract?: NativeAgentPromptContractAssessment
   claim_assessment?: NativeAgentClaimAssessment
   prompt_token_source: {
     baseline: 'anthropic_provider_reported' | 'unknown'
@@ -3132,6 +3160,51 @@ function nativeAgentAttributionGapEvidence(report: NativeAgentCompareReport): st
   return 'Madar MCP attribution is missing.'
 }
 
+function assessNativeAgentPromptContract(report: Pick<NativeAgentCompareReport, 'trace_status' | 'madar_trace'>): NativeAgentPromptContractAssessment {
+  if (report.trace_status !== 'trace_available' || report.madar_trace === undefined) {
+    return {
+      status: 'not_measured',
+      evidence: ['Claude --verbose trace unavailable.'],
+    }
+  }
+
+  const evidence: string[] = []
+  if (report.madar_trace.madar_mcp_call_count === 0) {
+    evidence.push('no Madar MCP call was recorded')
+  }
+  if (
+    report.madar_trace.first_madar_tool_name
+    && !MADAR_CONTEXT_PACK_TOOL_NAMES.has(canonicalTraceToolName(report.madar_trace.first_madar_tool_name))
+  ) {
+    evidence.push('first Madar call was not context_pack')
+  }
+  if ((report.madar_trace.pre_madar_broad_exploration_tool_call_count ?? 0) > 0) {
+    evidence.push('broad exploration occurred before the first Madar call')
+  }
+  if (report.madar_trace.broad_exploration_tool_call_count > 0) {
+    evidence.push('broad exploration occurred after the first Madar call')
+  }
+  const directives = new Set(report.madar_trace.agent_directive_seen ?? [])
+  if (
+    report.madar_trace.focused_follow_up_tool_call_count > 1
+    && (directives.has('verify_one_targeted_file') || directives.has('explore_with_caution'))
+  ) {
+    evidence.push('more than one focused Madar follow-up was used')
+  }
+
+  if (evidence.length > 0) {
+    return {
+      status: 'violated',
+      evidence,
+    }
+  }
+
+  return {
+    status: 'followed',
+    evidence: ['started with context_pack and avoided disallowed exploration'],
+  }
+}
+
 function isComparableNativeAgentReport(report: NativeAgentCompareReport): report is NativeAgentComparableReport {
   return report.baseline.kind === 'succeeded'
     && report.madar.kind === 'succeeded'
@@ -3294,7 +3367,7 @@ export async function executeNativeAgentCompare(
     mkdirSync(questionDir, { recursive: true })
 
     const promptFile = join(questionDir, 'native_agent-prompt.txt')
-    writeFileSync(promptFile, question, 'utf8')
+    writeFileSync(promptFile, buildNativeAgentPrompt(question), 'utf8')
     const baselineAnswerPath = answerFilePath(questionDir, 'baseline')
     const madarAnswerPath = answerFilePath(questionDir, 'madar')
     const reportPath = join(questionDir, 'report.json')
@@ -3630,6 +3703,7 @@ export async function executeNativeAgentCompare(
       madarTrace: reportShell.madar_trace,
       strictMadarFirst: input.strictMadarFirst,
     })
+    reportShell.prompt_contract = assessNativeAgentPromptContract(reportShell)
     const claimAssessment = assessNativeAgentClaims(reportShell)
     if (claimAssessment !== undefined) {
       reportShell.claim_assessment = claimAssessment
@@ -3749,6 +3823,11 @@ function formatNativeAgentClaimAssessmentLine(assessment: NativeAgentClaimAssess
   return `claim_assessment: routing_efficiency ${assessment.routing_efficiency.status}${routingEvidence}; token_reduction ${assessment.token_reduction.status}${tokenEvidence}`
 }
 
+function formatNativeAgentPromptContractLine(assessment: NativeAgentPromptContractAssessment): string {
+  const evidence = assessment.evidence.length > 0 ? ` (${assessment.evidence.join('; ')})` : ''
+  return `prompt_contract: ${assessment.status}${evidence}`
+}
+
 export function formatNativeAgentCompareSummary(result: NativeAgentCompareResult): string {
   const lines: string[] = [
     `[madar compare] completed ${result.reports.length} native_agent question(s)`,
@@ -3827,6 +3906,9 @@ export function formatNativeAgentCompareSummary(result: NativeAgentCompareResult
 
     lines.push(`- "${report.question}"`)
     appendNativeAgentValidityLines(lines, report)
+    if (report.prompt_contract) {
+      lines.push(`    ${formatNativeAgentPromptContractLine(report.prompt_contract)}`)
+    }
     if (report.claim_assessment) {
       lines.push(`    ${formatNativeAgentClaimAssessmentLine(report.claim_assessment)}`)
     }

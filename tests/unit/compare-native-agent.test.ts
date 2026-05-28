@@ -575,6 +575,37 @@ describe('parseAnthropicResultEvent', () => {
 })
 
 describe('executeNativeAgentCompare', () => {
+  it('writes a native-agent prompt that enforces the Madar pack contract', async () => {
+    const { projectDir, graphPath, outputDir } = makeFixtureProject()
+    try {
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          question: 'What is the cluster module?',
+          outputDir,
+          execTemplate: 'mock-runner',
+          baselineMode: 'native_agent',
+        },
+        {
+          runner: scriptedRunner({ baseline: VERBOSE_BASELINE_PAYLOAD, madar: VERBOSE_MADAR_MCP_RETRIEVE_PAYLOAD }),
+          now: () => new Date('2026-05-01T00:00:00Z'),
+        },
+      )
+
+      const report = result.reports[0] as NativeAgentCompareReport
+      const prompt = readFileSync(report.paths.prompt_file, 'utf8')
+
+      expect(prompt).toContain('Call context_pack first')
+      expect(prompt).toContain('Inspect evidence.pack_confidence, evidence.coverage, evidence.agent_directive, missing_context, and recommended_first_read')
+      expect(prompt).toContain('If evidence.agent_directive is answer_from_pack, answer from the pack and stop without raw search')
+      expect(prompt).toContain('Allow at most one focused Madar follow-up before raw search')
+      expect(prompt).toContain('Broad raw search requires an explicit missing-context reason')
+      expect(prompt).toContain('Question: What is the cluster module?')
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
   it('aborts when no Madar install is detected and --allow-no-install is not set', async () => {
     const { projectDir, graphPath, outputDir } = makeFixtureProject({ installState: 'missing' })
     try {
@@ -767,6 +798,30 @@ describe('executeNativeAgentCompare', () => {
         },
         exploration_outcome: 'madar_invoked',
       }))
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  it('reports a prompt-contract violation when the first Madar call is not context_pack', async () => {
+    const { projectDir, graphPath, outputDir } = makeFixtureProject()
+    try {
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          question: 'What is the cluster module?',
+          outputDir,
+          execTemplate: 'mock-runner',
+          baselineMode: 'native_agent',
+        },
+        {
+          runner: scriptedRunner({ baseline: VERBOSE_BASELINE_PAYLOAD, madar: VERBOSE_MADAR_MCP_RETRIEVE_PAYLOAD }),
+          now: () => new Date('2026-05-01T00:00:00Z'),
+        },
+      )
+
+      const summary = formatNativeAgentCompareSummary(result)
+      expect(summary).toContain('prompt_contract: violated (first Madar call was not context_pack)')
     } finally {
       rmSync(projectDir, { recursive: true, force: true })
     }
@@ -1089,16 +1144,31 @@ describe('executeNativeAgentCompare', () => {
       const report = result.reports[0] as NativeAgentCompareReport
       const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
       const claimAssessment = savedReport.claim_assessment as Record<string, unknown> | undefined
+      const promptContract = savedReport.prompt_contract as Record<string, unknown> | undefined
       const summary = formatNativeAgentCompareSummary(result)
 
       expect(report.measurement_validity).toBe('valid')
       expect(report.tool_call_counts?.baseline.total).toBe(28)
       expect(report.tool_call_counts?.madar.total).toBe(6)
+      expect(report.prompt_contract).toEqual({
+        status: 'violated',
+        evidence: [
+          'first Madar call was not context_pack',
+          'broad exploration occurred after the first Madar call',
+        ],
+      })
       if (report.baseline.kind !== 'succeeded' || report.madar.kind !== 'succeeded') {
         throw new Error('GoValidate fixture should produce succeeded runs')
       }
       expect(report.madar.duration_ms).toBeLessThan(report.baseline.duration_ms)
       expect(savedReport.token_regression).toBe(true)
+      expect(promptContract).toEqual({
+        status: 'violated',
+        evidence: [
+          'first Madar call was not context_pack',
+          'broad exploration occurred after the first Madar call',
+        ],
+      })
       expect(claimAssessment).toEqual(expect.objectContaining({
         routing_efficiency: expect.objectContaining({
           status: 'improved',
