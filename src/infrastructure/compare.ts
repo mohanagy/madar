@@ -3183,7 +3183,7 @@ function assessNativeAgentBenchmarkOutcome(report: NativeAgentCompareReport): Na
   const routingToolLatency =
     toolCallsImproved || latencyImproved
       ? 'win'
-      : latencyRegressed && (!report.tool_call_counts || toolCallsRegressed)
+      : toolCallsRegressed || latencyRegressed
         ? 'loss'
         : 'flat'
 

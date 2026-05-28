@@ -210,6 +210,22 @@ const MADAR_NO_TOOL_COUNT_LATENCY_REGRESSION_PAYLOAD = {
   },
 }
 
+const MADAR_TOOL_COUNT_REGRESSION_FLAT_LATENCY_PAYLOAD = {
+  type: 'result',
+  subtype: 'success',
+  is_error: false,
+  duration_ms: 30000,
+  num_turns: 3,
+  result: 'madar answer',
+  total_cost_usd: 0.3,
+  usage: {
+    input_tokens: 10000,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
+    output_tokens: 1000,
+  },
+}
+
 function toolUses(name: string, count: number): Array<{ type: 'tool_use'; name: string }> {
   return Array.from({ length: count }, () => ({ type: 'tool_use', name }))
 }
@@ -434,6 +450,35 @@ const VERBOSE_MADAR_NO_TOOL_COUNT_LATENCY_REGRESSION_PAYLOAD = [
     },
   },
   MADAR_NO_TOOL_COUNT_LATENCY_REGRESSION_PAYLOAD,
+] as const
+
+const VERBOSE_BASELINE_TOOL_COUNT_REGRESSION_FLAT_LATENCY_PAYLOAD = [
+  { type: 'system', subtype: 'init' },
+  {
+    type: 'assistant',
+    turn: 1,
+    message: {
+      content: [
+        { type: 'tool_use', name: 'Read' },
+      ],
+    },
+  },
+  BASELINE_NO_TOOL_COUNT_PAYLOAD,
+] as const
+
+const VERBOSE_MADAR_TOOL_COUNT_REGRESSION_FLAT_LATENCY_PAYLOAD = [
+  { type: 'system', subtype: 'init' },
+  {
+    type: 'assistant',
+    turn: 1,
+    message: {
+      content: [
+        { type: 'tool_use', name: 'mcp__madar__retrieve' },
+        { type: 'tool_use', name: 'Read' },
+      ],
+    },
+  },
+  MADAR_TOOL_COUNT_REGRESSION_FLAT_LATENCY_PAYLOAD,
 ] as const
 
 const VERBOSE_MADAR_MCP_RETRIEVE_WITH_FOLLOWUP_EXPLORATION_PAYLOAD = [
@@ -1396,6 +1441,48 @@ describe('executeNativeAgentCompare', () => {
 
       expect(report.measurement_validity).toBe('valid')
       expect(report.tool_call_counts).toBeUndefined()
+      expect(benchmarkOutcome).toEqual(expect.objectContaining({
+        outcome: 'regression',
+        checks: expect.objectContaining({
+          routing_tool_latency: 'loss',
+          token: 'flat',
+          fresh_token: 'flat',
+          cost: 'flat',
+          turns: 'flat',
+        }),
+      }))
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  it('marks routing tool usage as a loss when tool counts regress and latency is flat', async () => {
+    const { projectDir, graphPath, outputDir } = makeFixtureProject()
+    try {
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          question: 'How idea report is being generated',
+          outputDir,
+          execTemplate: 'mock-runner',
+          baselineMode: 'native_agent',
+        },
+        {
+          runner: scriptedRunner({
+            baseline: VERBOSE_BASELINE_TOOL_COUNT_REGRESSION_FLAT_LATENCY_PAYLOAD,
+            madar: VERBOSE_MADAR_TOOL_COUNT_REGRESSION_FLAT_LATENCY_PAYLOAD,
+          }),
+          now: () => new Date('2026-05-27T01:30:00Z'),
+        },
+      )
+
+      const report = result.reports[0] as NativeAgentCompareReport
+      const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as Record<string, unknown>
+      const benchmarkOutcome = savedReport.benchmark_outcome as Record<string, unknown> | undefined
+
+      expect(report.measurement_validity).toBe('valid')
+      expect(report.tool_call_counts?.baseline.total).toBe(1)
+      expect(report.tool_call_counts?.madar.total).toBe(2)
       expect(benchmarkOutcome).toEqual(expect.objectContaining({
         outcome: 'regression',
         checks: expect.objectContaining({
