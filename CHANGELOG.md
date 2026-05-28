@@ -2,6 +2,12 @@
 
 All notable changes to the TypeScript package will be documented in this file.
 
+## [0.27.4] - 2026-05-29
+
+### Fixed
+
+- **Placeholder** — fill in before publishing.
+
 ## [0.27.3] - 2026-05-28
 
 ### Added
