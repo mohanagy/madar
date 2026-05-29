@@ -1677,12 +1677,16 @@ function graphPathHasSpiMode(graphPath: string): boolean {
     return false
   }
 
-  const parsed = JSON.parse(readFileSync(graphPath, 'utf8')) as unknown
-  if (parsed === null || typeof parsed !== 'object') {
+  try {
+    const parsed = JSON.parse(readFileSync(graphPath, 'utf8')) as unknown
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return false
+    }
+
+    return (parsed as { spi_mode?: unknown }).spi_mode === true
+  } catch {
     return false
   }
-
-  return (parsed as { spi_mode?: unknown }).spi_mode === true
 }
 
 function benchmarkReadinessSeverity(current: BenchmarkReadinessStatus, next: BenchmarkReadinessStatus): BenchmarkReadinessStatus {

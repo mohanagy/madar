@@ -147,4 +147,20 @@ describe('generateGraph useSpi:true (v0.18)', () => {
     expect(hasSpiNote).toBe(false)
     expect(parsed.spi_mode).toBeUndefined()
   })
+
+  it('clears stale spi_mode on a non-SPI update after an SPI build', () => {
+    writeFile(sandbox, 'src/foo.ts', 'export function foo(): number { return 1 }\n')
+
+    const spiResult = generateGraph(sandbox, { useSpi: true, noHtml: true })
+    const spiGraph = JSON.parse(readFileSync(spiResult.graphPath, 'utf8')) as {
+      spi_mode?: unknown
+    }
+    expect(spiGraph.spi_mode).toBe(true)
+
+    const updated = generateGraph(sandbox, { update: true, noHtml: true })
+    const updatedGraph = JSON.parse(readFileSync(updated.graphPath, 'utf8')) as {
+      spi_mode?: unknown
+    }
+    expect(updatedGraph.spi_mode).toBeUndefined()
+  })
 })

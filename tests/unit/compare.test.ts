@@ -4563,6 +4563,38 @@ describe('assessBenchmarkReadinessFromRetrieveResult', () => {
     })
   })
 
+  it('fails closed when SPI graph metadata cannot be parsed', () => {
+    const graphFixtureRoot = join(PROJECT_FIXTURE_ROOT, 'backend', 'out')
+    mkdirSync(graphFixtureRoot, { recursive: true })
+    const graphPath = join(graphFixtureRoot, 'graph.json')
+    writeFileSync(graphPath, '{not-valid-json', 'utf8')
+
+    const readiness = assessBenchmarkReadinessFromRetrieveResult({
+      graphPath,
+      retrieval: makeRuntimeGenerationRetrieval({
+        matched_nodes: [
+          {
+            label: 'GenerateIdeaReportService.handle',
+            source_file: 'backend/src/modules/ideas/application/generate-idea-report.service.ts',
+            line_number: 42,
+            file_type: 'code',
+            snippet: null,
+            match_score: 12,
+            relevance_band: 'direct',
+            community: null,
+            community_label: null,
+          },
+        ],
+      }),
+    })
+
+    expect(readiness).toEqual({
+      status: 'degraded',
+      reasons: ['no SPI evidence found in the current pack'],
+      suggested_graph_scope: null,
+    })
+  })
+
   it('marks root SPI runtime-generation packs degraded when downstream phases are still missing', () => {
     const graphPath = writeReadinessGraphFixture({
       graphFixtureRoot: join(PROJECT_FIXTURE_ROOT, 'out'),
