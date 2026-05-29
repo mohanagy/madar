@@ -1672,10 +1672,17 @@ function suggestBenchmarkGraphScope(graphPath: string, sourceFiles: readonly str
   return normalizedGraphPath.endsWith(`/${suggested}`) ? null : suggested
 }
 
-function retrievalHasSpiEvidence(retrieval: RetrieveResult): boolean {
-  return collectBenchmarkReadinessSourceFiles(retrieval).some((sourceFile) =>
-    /(^|\/)spi(\/|$)|\.spi\./.test(sourceFile),
-  )
+function graphPathHasSpiMode(graphPath: string): boolean {
+  if (!existsSync(graphPath)) {
+    return false
+  }
+
+  const parsed = JSON.parse(readFileSync(graphPath, 'utf8')) as unknown
+  if (parsed === null || typeof parsed !== 'object') {
+    return false
+  }
+
+  return (parsed as { spi_mode?: unknown }).spi_mode === true
 }
 
 function benchmarkReadinessSeverity(current: BenchmarkReadinessStatus, next: BenchmarkReadinessStatus): BenchmarkReadinessStatus {
@@ -1729,7 +1736,7 @@ export function assessBenchmarkReadinessFromRetrieveResult(input: {
     reasons.push('runtime slice confidence is medium')
   }
 
-  if (!retrievalHasSpiEvidence(retrieval)) {
+  if (!graphPathHasSpiMode(graphPath)) {
     status = benchmarkReadinessSeverity(status, suggestedGraphScope ? 'not_ready' : 'degraded')
     reasons.push(
       suggestedGraphScope

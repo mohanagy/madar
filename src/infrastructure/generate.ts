@@ -438,6 +438,9 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   )
 
   graph.graph.root_path = resolvedRootPath
+  if (options.useSpi) {
+    graph.graph.spi_mode = true
+  }
 
   progress?.({ step: 'export', message: 'Writing outputs...' })
   writeFileSync(reportPath, `${report}\n`, 'utf8')

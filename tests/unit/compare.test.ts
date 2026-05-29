@@ -4445,6 +4445,17 @@ describe('assessBenchmarkReadinessFromRetrieveResult', () => {
     }
   }
 
+  function writeReadinessGraphFixture(options: {
+    graphFixtureRoot: string
+    spiMode?: boolean
+  }): string {
+    const graph = makeGraph()
+    if (options.spiMode === true) {
+      graph.graph.spi_mode = true
+    }
+    return writeGraphFixture(graph, options.graphFixtureRoot)
+  }
+
   it('marks root non-SPI runtime-generation packs not ready and suggests a scoped backend graph', () => {
     const readiness = assessBenchmarkReadinessFromRetrieveResult({
       graphPath: '/repo/out/graph.json',
@@ -4489,9 +4500,77 @@ describe('assessBenchmarkReadinessFromRetrieveResult', () => {
     expect(readiness.suggested_graph_scope).toBe('backend/out/graph.json')
   })
 
-  it('marks root SPI runtime-generation packs degraded when downstream phases are still missing', () => {
+  it('treats SPI-mode graph metadata as SPI evidence for app-file runtime packs', () => {
+    const graphPath = writeReadinessGraphFixture({
+      graphFixtureRoot: join(PROJECT_FIXTURE_ROOT, 'backend', 'out'),
+      spiMode: true,
+    })
+
     const readiness = assessBenchmarkReadinessFromRetrieveResult({
-      graphPath: '/repo/out/graph.json',
+      graphPath,
+      retrieval: makeRuntimeGenerationRetrieval({
+        matched_nodes: [
+          {
+            label: 'GenerateIdeaReportService.handle',
+            source_file: 'backend/src/modules/ideas/application/generate-idea-report.service.ts',
+            line_number: 42,
+            file_type: 'code',
+            snippet: null,
+            match_score: 12,
+            relevance_band: 'direct',
+            community: null,
+            community_label: null,
+          },
+        ],
+      }),
+    })
+
+    expect(readiness).toEqual({
+      status: 'ready',
+      reasons: [],
+      suggested_graph_scope: null,
+    })
+  })
+
+  it('keeps non-SPI app-file runtime packs flagged as missing SPI evidence', () => {
+    const graphPath = writeReadinessGraphFixture({
+      graphFixtureRoot: join(PROJECT_FIXTURE_ROOT, 'backend', 'out'),
+    })
+
+    const readiness = assessBenchmarkReadinessFromRetrieveResult({
+      graphPath,
+      retrieval: makeRuntimeGenerationRetrieval({
+        matched_nodes: [
+          {
+            label: 'GenerateIdeaReportService.handle',
+            source_file: 'backend/src/modules/ideas/application/generate-idea-report.service.ts',
+            line_number: 42,
+            file_type: 'code',
+            snippet: null,
+            match_score: 12,
+            relevance_band: 'direct',
+            community: null,
+            community_label: null,
+          },
+        ],
+      }),
+    })
+
+    expect(readiness).toEqual({
+      status: 'degraded',
+      reasons: ['no SPI evidence found in the current pack'],
+      suggested_graph_scope: null,
+    })
+  })
+
+  it('marks root SPI runtime-generation packs degraded when downstream phases are still missing', () => {
+    const graphPath = writeReadinessGraphFixture({
+      graphFixtureRoot: join(PROJECT_FIXTURE_ROOT, 'out'),
+      spiMode: true,
+    })
+
+    const readiness = assessBenchmarkReadinessFromRetrieveResult({
+      graphPath,
       retrieval: makeRuntimeGenerationRetrieval({
         matched_nodes: [
           {
@@ -4597,8 +4676,13 @@ describe('assessBenchmarkReadinessFromRetrieveResult', () => {
   })
 
   it('marks backend SPI runtime-generation packs ready when runtime spine evidence is covered', () => {
+    const graphPath = writeReadinessGraphFixture({
+      graphFixtureRoot: join(PROJECT_FIXTURE_ROOT, 'backend', 'out'),
+      spiMode: true,
+    })
+
     const readiness = assessBenchmarkReadinessFromRetrieveResult({
-      graphPath: '/repo/backend/out/graph.json',
+      graphPath,
       retrieval: makeRuntimeGenerationRetrieval({
         matched_nodes: [
           {
@@ -4623,9 +4707,13 @@ describe('assessBenchmarkReadinessFromRetrieveResult', () => {
     })
   })
 
-  it('treats top-level spi paths as SPI evidence', () => {
+  it('does not treat top-level spi paths as SPI evidence without SPI graph metadata', () => {
+    const graphPath = writeReadinessGraphFixture({
+      graphFixtureRoot: join(PROJECT_FIXTURE_ROOT, 'spi', 'out'),
+    })
+
     const readiness = assessBenchmarkReadinessFromRetrieveResult({
-      graphPath: '/repo/spi/out/graph.json',
+      graphPath,
       retrieval: makeRuntimeGenerationRetrieval({
         matched_nodes: [
           {
@@ -4644,8 +4732,8 @@ describe('assessBenchmarkReadinessFromRetrieveResult', () => {
     })
 
     expect(readiness).toEqual({
-      status: 'ready',
-      reasons: [],
+      status: 'degraded',
+      reasons: ['no SPI evidence found in the current pack'],
       suggested_graph_scope: null,
     })
   })

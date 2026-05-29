@@ -52,10 +52,14 @@ describe('generateGraph useSpi:true (v0.18)', () => {
     ].join('\n') + '\n')
 
     const result = generateGraph(sandbox, { useSpi: true, noHtml: true })
+    const parsed = JSON.parse(readFileSync(result.graphPath, 'utf8')) as {
+      spi_mode?: unknown
+    }
 
     // Standard graph.json should exist with code nodes for foo + bar.
     expect(existsSync(result.graphPath)).toBe(true)
     expect(result.nodeCount).toBeGreaterThan(0)
+    expect(parsed.spi_mode).toBe(true)
 
     // Notes should reference the SPI pipeline.
     const hasSpiNote = result.notes.some((note) => note.toLowerCase().includes('spi'))
@@ -134,9 +138,13 @@ describe('generateGraph useSpi:true (v0.18)', () => {
     writeFile(sandbox, 'src/foo.ts', 'export function foo(): number { return 1 }\n')
 
     const result = generateGraph(sandbox, { noHtml: true })
+    const parsed = JSON.parse(readFileSync(result.graphPath, 'utf8')) as {
+      spi_mode?: unknown
+    }
 
     // No SPI notes in the legacy path.
     const hasSpiNote = result.notes.some((note) => note.toLowerCase().includes('spi'))
     expect(hasSpiNote).toBe(false)
+    expect(parsed.spi_mode).toBeUndefined()
   })
 })
