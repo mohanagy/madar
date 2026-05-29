@@ -88,9 +88,11 @@ Want a broader local-first walkthrough that also covers install, `prompt`, and a
 
 ---
 
-## What's new in 0.27.4
+## What's new in 0.27.6
 
-See the [`0.27.4` changelog entry](CHANGELOG.md#0274---2026-05-29) for the full release notes.
+See the [`0.27.6` changelog entry](CHANGELOG.md#0276---2026-05-29) for the full release notes.
+
+This patch removes the legacy `madar add <url>` ingest surface, keeps `save-result` available for exporting query results, and preserves backward-compatible legacy ingest provenance for older saved artifacts.
 
 The larger **What's new in 0.23.0** additions are still part of the main flow too: `madar summary`, the core MCP `graph_summary` tool, runtime `execution_slice` output, share-safe `report.share-safe.json` compare artifacts, and `compare --baseline-mode pack_only`.
 
@@ -98,7 +100,7 @@ If you want the broader proof-oriented workflow behind the current surfaces, sta
 
 ### When to use `--spi`
 
-`--spi` is **still opt-in** in 0.27.4. Use it when your repo is framework-heavy TypeScript/JavaScript and you want the extra framework-shaped metadata plus disk cache behavior.
+`--spi` is **still opt-in** in 0.27.6. Use it when your repo is framework-heavy TypeScript/JavaScript and you want the extra framework-shaped metadata plus disk cache behavior.
 
 `--spi` is usually worth it for NestJS, Next.js App Router, Prisma, tRPC, Hono, Fastify, and similar repos where users ask storage-oriented prompts, client/server boundary questions, or request-flow questions. The default pipeline is still fine for simpler repos, non-JS/TS workspaces, or quick first runs when you do not need the extra framework detail yet.
 

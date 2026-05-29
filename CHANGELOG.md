@@ -2,6 +2,12 @@
 
 All notable changes to the TypeScript package will be documented in this file.
 
+## [0.27.6] - 2026-05-29
+
+### Changed
+
+- **The legacy `madar add <url>` surface is removed from the public CLI**: Madar now stays explicitly local-codebase-only at the command surface, while `save-result` remains available for exporting query results and older ingest-produced artifacts still preserve their legacy `builtin:ingest:*` provenance when they are read back.
+
 ## [0.27.5] - 2026-05-29
 
 ### Fixed
