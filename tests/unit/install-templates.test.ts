@@ -202,6 +202,8 @@ describe('built-in install templates', () => {
     expect(content).toContain('spawn_agent')
     expect(content).toContain('npx --yes madar --help')
     expect(content).toContain('Only use madar when the task needs local repository source-code context.')
+    expect(content).not.toContain('add <url>')
+    expect(content).not.toContain('direct audio/video URL ingests')
     expectMarkdownPackRoutingTable(content)
   })
 
@@ -209,6 +211,7 @@ describe('built-in install templates', () => {
     const content = getBuiltInSkillContent('copilot')
 
     expect(content).toContain('# /madar')
+    expect(content).not.toContain('add <url>')
     expectMarkdownRoutingTable(content)
   })
 })

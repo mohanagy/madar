@@ -1,4 +1,4 @@
-import { createBuiltinCapabilityRegistry, createCapabilityRegistry, type CapabilityDefinition } from '../../src/infrastructure/capabilities.js'
+import { builtinCapabilities, createBuiltinCapabilityRegistry, createCapabilityRegistry, type CapabilityDefinition } from '../../src/infrastructure/capabilities.js'
 
 describe('builtin capability registry', () => {
   it('resolves python files to the python extractor capability', () => {
@@ -13,23 +13,11 @@ describe('builtin capability registry', () => {
     expect(registry.resolveExtractorForPath('src/auth.ts')?.id).toBe('builtin:extract:typescript')
   })
 
-  it('resolves tweet url types to the tweet ingest capability', () => {
+  it('ships only extract capabilities in the builtin registry', () => {
     const registry = createBuiltinCapabilityRegistry()
 
-    expect(registry.resolveIngestorForUrlType('tweet')?.id).toBe('builtin:ingest:tweet')
-  })
-
-  it('resolves hackernews url types to the hackernews ingest capability', () => {
-    const registry = createBuiltinCapabilityRegistry()
-
-    expect(registry.resolveIngestorForUrlType('hackernews')?.id).toBe('builtin:ingest:hackernews')
-  })
-
-  it('resolves direct media url types to binary ingest capabilities', () => {
-    const registry = createBuiltinCapabilityRegistry()
-
-    expect(registry.resolveIngestorForUrlType('audio')?.id).toBe('builtin:ingest:audio')
-    expect(registry.resolveIngestorForUrlType('video')?.id).toBe('builtin:ingest:video')
+    expect(registry.list().every((capability) => capability.kind === 'extract')).toBe(true)
+    expect(builtinCapabilities().every((capability) => capability.kind === 'extract')).toBe(true)
   })
 
   it('rejects duplicate capability registration', () => {
@@ -80,21 +68,23 @@ describe('builtin capability registry', () => {
     ).toThrow(/already registered/i)
   })
 
-  it('rejects duplicate ingest url-type claims across capabilities', () => {
+  it('does not expose ingest capability definitions in custom registries', () => {
     const registry = createCapabilityRegistry([
       {
-        id: 'builtin:ingest:tweet',
-        kind: 'ingest',
-        urlType: 'tweet',
+        id: 'custom:extract:yaml',
+        kind: 'extract',
+        fileType: 'document',
+        extensions: ['.yaml'],
       },
     ])
 
-    expect(() =>
-      registry.register({
-        id: 'custom:ingest:tweet-copy',
-        kind: 'ingest',
-        urlType: 'tweet',
-      }),
-    ).toThrow(/already registered/i)
+    expect(registry.list()).toEqual([
+      {
+        id: 'custom:extract:yaml',
+        kind: 'extract',
+        fileType: 'document',
+        extensions: ['.yaml'],
+      },
+    ])
   })
 })

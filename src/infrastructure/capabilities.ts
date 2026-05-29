@@ -1,7 +1,6 @@
 import { extname } from 'node:path'
 
 import type { FileTypeValue } from '../pipeline/detect.js'
-import type { UrlType } from './ingest/types.js'
 
 export interface ExtractCapabilityDefinition {
   id: string
@@ -10,13 +9,7 @@ export interface ExtractCapabilityDefinition {
   extensions: string[]
 }
 
-export interface IngestCapabilityDefinition {
-  id: string
-  kind: 'ingest'
-  urlType: UrlType
-}
-
-export type CapabilityDefinition = ExtractCapabilityDefinition | IngestCapabilityDefinition
+export type CapabilityDefinition = ExtractCapabilityDefinition
 
 function normalizeExtension(extension: string): string {
   const trimmed = extension.trim().toLowerCase()
@@ -40,17 +33,16 @@ function normalizeExtractCapability(capability: ExtractCapabilityDefinition): Ex
 }
 
 function normalizeCapability(capability: CapabilityDefinition): CapabilityDefinition {
-  return capability.kind === 'extract' ? normalizeExtractCapability(capability) : capability
+  return normalizeExtractCapability(capability)
 }
 
 function cloneCapability(capability: CapabilityDefinition): CapabilityDefinition {
-  return capability.kind === 'extract' ? { ...capability, extensions: [...capability.extensions] } : { ...capability }
+  return { ...capability, extensions: [...capability.extensions] }
 }
 
 export class CapabilityRegistry {
   private readonly capabilitiesById = new Map<string, CapabilityDefinition>()
   private readonly extractCapabilitiesByExtension = new Map<string, ExtractCapabilityDefinition[]>()
-  private readonly ingestCapabilitiesByUrlType = new Map<UrlType, IngestCapabilityDefinition>()
 
   register(capability: CapabilityDefinition): void {
     const normalized = normalizeCapability(capability)
@@ -68,23 +60,10 @@ export class CapabilityRegistry {
       }
     }
 
-    if (normalized.kind === 'ingest') {
-      const existing = this.ingestCapabilitiesByUrlType.get(normalized.urlType)
-      if (existing) {
-        throw new Error(`URL type '${normalized.urlType}' is already registered to capability '${existing.id}'`)
-      }
-    }
-
     this.capabilitiesById.set(normalized.id, normalized)
-    if (normalized.kind === 'extract') {
-      for (const extension of normalized.extensions) {
-        const existing = this.extractCapabilitiesByExtension.get(extension) ?? []
-        this.extractCapabilitiesByExtension.set(extension, [...existing, normalized])
-      }
-    }
-
-    if (normalized.kind === 'ingest') {
-      this.ingestCapabilitiesByUrlType.set(normalized.urlType, normalized)
+    for (const extension of normalized.extensions) {
+      const existing = this.extractCapabilitiesByExtension.get(extension) ?? []
+      this.extractCapabilitiesByExtension.set(extension, [...existing, normalized])
     }
   }
 
@@ -115,10 +94,6 @@ export class CapabilityRegistry {
     }
 
     return candidates.length === 1 ? (candidates[0] ?? null) : null
-  }
-
-  resolveIngestorForUrlType(urlType: UrlType): IngestCapabilityDefinition | null {
-    return this.ingestCapabilitiesByUrlType.get(urlType) ?? null
   }
 }
 
@@ -155,21 +130,7 @@ const BUILTIN_EXTRACT_CAPABILITIES = [
   { id: 'builtin:extract:video', kind: 'extract', fileType: 'video', extensions: ['.avi', '.m4v', '.mkv', '.mov', '.mp4', '.webm'] },
 ] satisfies readonly ExtractCapabilityDefinition[]
 
-const BUILTIN_INGEST_CAPABILITIES = [
-  { id: 'builtin:ingest:tweet', kind: 'ingest', urlType: 'tweet' },
-  { id: 'builtin:ingest:reddit', kind: 'ingest', urlType: 'reddit' },
-  { id: 'builtin:ingest:hackernews', kind: 'ingest', urlType: 'hackernews' },
-  { id: 'builtin:ingest:arxiv', kind: 'ingest', urlType: 'arxiv' },
-  { id: 'builtin:ingest:github', kind: 'ingest', urlType: 'github' },
-  { id: 'builtin:ingest:youtube', kind: 'ingest', urlType: 'youtube' },
-  { id: 'builtin:ingest:pdf', kind: 'ingest', urlType: 'pdf' },
-  { id: 'builtin:ingest:image', kind: 'ingest', urlType: 'image' },
-  { id: 'builtin:ingest:audio', kind: 'ingest', urlType: 'audio' },
-  { id: 'builtin:ingest:video', kind: 'ingest', urlType: 'video' },
-  { id: 'builtin:ingest:webpage', kind: 'ingest', urlType: 'webpage' },
-] satisfies readonly IngestCapabilityDefinition[]
-
-const BUILTIN_CAPABILITIES = [...BUILTIN_EXTRACT_CAPABILITIES, ...BUILTIN_INGEST_CAPABILITIES] satisfies readonly CapabilityDefinition[]
+const BUILTIN_CAPABILITIES = [...BUILTIN_EXTRACT_CAPABILITIES] satisfies readonly CapabilityDefinition[]
 
 export function createCapabilityRegistry(capabilities: readonly CapabilityDefinition[] = []): CapabilityRegistry {
   const registry = new CapabilityRegistry()

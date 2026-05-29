@@ -103,9 +103,6 @@ ${SKILL_COMMAND} <path> --neo4j
 ${SKILL_COMMAND} <path> --neo4j-push bolt://localhost:7687
 ${SKILL_COMMAND} <path> --mcp
 ${SKILL_COMMAND} <path> --watch
-${SKILL_COMMAND} add <url>
-${SKILL_COMMAND} add <url> --author "Name"
-${SKILL_COMMAND} add <url> --contributor "Name"
 ${SKILL_COMMAND} query "<question>"
 ${SKILL_COMMAND} query "<question>" --dfs
 ${SKILL_COMMAND} query "<question>" --budget 1500
@@ -115,7 +112,7 @@ ${CODE_BLOCK_END}
 
 ## What ${SKILL_NAME} is for
 
-${SKILL_NAME} is built around the /raw-folder workflow: drop anything into a folder—papers, tweets, screenshots, code, notes—and get a structured knowledge graph that shows you what you did not know was connected.
+${SKILL_NAME} is built around local codebase understanding: point it at a repository or workspace and get a structured knowledge graph that helps AI coding agents understand, change, review, debug, and validate code with evidence.
 
 Three things it does that an assistant alone cannot:
 1. **Persistent graph** — relationships are stored in ${CODE_SPAN_START}out/graph.json${CODE_SPAN_END} and survive across sessions.
@@ -124,11 +121,11 @@ Three things it does that an assistant alone cannot:
 
 Use it for:
 - a codebase you are new to
-- a reading list (papers + tweets + notes)
-- a research corpus
-- a personal /raw folder that keeps growing
+- a monorepo with many services or packages
+- reviewing a change and its blast radius
+- tracing how a feature flows through code and docs
 
-Current media scope: local audio/video, plus direct audio/video URL ingests that download into the same hidden-sidecar path, currently land as deterministic file nodes only. There is no transcription or segment extraction yet.
+Current media scope: local audio/video files land as deterministic file nodes only. There is no transcription or segment extraction yet.
 
 ## What You Must Do When Invoked
 
@@ -425,7 +422,6 @@ function subcommandSection(kind: PlatformKind): string {
 - ${CODE_SPAN_START}${SKILL_COMMAND} query${CODE_SPAN_END} — choose BFS by default, DFS with ${CODE_SPAN_START}--dfs${CODE_SPAN_END}, answer only from the graph, and save the answer back with ${CODE_SPAN_START}save-result${CODE_SPAN_END}.
 - ${CODE_SPAN_START}${SKILL_COMMAND} path${CODE_SPAN_END} — find the shortest path between two concepts, explain each hop, then save the explanation back.
 - ${CODE_SPAN_START}${SKILL_COMMAND} explain${CODE_SPAN_END} — explain one node and its neighborhood using graph evidence only.
-- ${CODE_SPAN_START}${SKILL_COMMAND} add${CODE_SPAN_END} — fetch a URL into ${CODE_SPAN_START}./raw${CODE_SPAN_END} and then run ${CODE_SPAN_START}--update${CODE_SPAN_END}.
 - ${CODE_SPAN_START}${SKILL_COMMAND} --update${CODE_SPAN_END} — incremental re-extraction; skip semantic work when all changed files are code.
 - ${CODE_SPAN_START}${SKILL_COMMAND} --cluster-only${CODE_SPAN_END} — re-cluster an existing graph.
 - ${CODE_SPAN_START}${SKILL_COMMAND} --watch${CODE_SPAN_END} — supported code, docs, papers, images, local audio/video, and office documents trigger automatic rebuilds; manual refresh is only needed for unsupported future formats.

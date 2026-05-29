@@ -66,13 +66,6 @@ export interface ExplainCliOptions {
   relation: string
 }
 
-export interface AddCliOptions {
-  url: string
-  path: string
-  followSymlinks: boolean
-  noHtml: boolean
-}
-
 export interface SaveResultCliOptions {
   question: string
   answer: string
@@ -795,46 +788,6 @@ export function parseExplainArgs(args: string[]): ExplainCliOptions {
   }
 
   return { label: normalizedLabel, graphPath, relation }
-}
-
-export function parseAddArgs(args: string[]): AddCliOptions {
-  const url = args[0]?.trim()
-  if (!url) {
-    throw new UsageError('Usage: madar add <url> [path] [--follow-symlinks] [--no-html]')
-  }
-
-  let path = '.'
-  let followSymlinks = false
-  let noHtml = false
-
-  for (let index = 1; index < args.length; index += 1) {
-    const argument = args[index]
-    if (!argument) {
-      continue
-    }
-
-    if (!argument.startsWith('--')) {
-      if (path !== '.') {
-        throw new UsageError('Usage: madar add <url> [path] [--follow-symlinks] [--no-html]')
-      }
-      path = argument
-      continue
-    }
-
-    if (argument === '--follow-symlinks') {
-      followSymlinks = true
-      continue
-    }
-
-    if (argument === '--no-html') {
-      noHtml = true
-      continue
-    }
-
-    throw new UsageError(`error: unknown option for add: ${argument}`)
-  }
-
-  return { url, path, followSymlinks, noHtml }
 }
 
 export function parseSaveResultArgs(args: string[]): SaveResultCliOptions {

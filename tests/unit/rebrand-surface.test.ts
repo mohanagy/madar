@@ -16,7 +16,7 @@ import {
   parseServeArgs,
   parseSummaryArgs,
 } from '../../src/cli/parser.js'
-import { saveQueryResult } from '../../src/infrastructure/ingest.js'
+import { saveQueryResult } from '../../src/infrastructure/save-query-result.js'
 
 function readText(path: string): string {
   return readFileSync(resolve(path), 'utf8')
@@ -57,6 +57,7 @@ describe('rebrand surface', () => {
     expect(help).toContain('default out/compare')
     expect(help).toContain('default out/review-compare')
     expect(help).toContain('default out/memory')
+    expect(help).not.toContain('add <url>')
     expect(help).not.toContain(LEGACY_BRAND)
     expect(help).not.toContain(LEGACY_OUT_DIR)
 
@@ -88,6 +89,7 @@ describe('rebrand surface', () => {
   it('removes legacy branding from the main docs', () => {
     const readme = readText('README.md')
     const gettingStarted = readText('docs/tutorials/getting-started.md')
+    const capabilityMatrix = readText('docs/language-capability-matrix.md')
     const releaseDoc = readText('docs/release.md')
 
     expect(readme).not.toContain(LEGACY_BRAND)
@@ -97,6 +99,7 @@ describe('rebrand surface', () => {
     expect(readme).not.toContain('original `madar`')
     expect(gettingStarted).not.toContain(LEGACY_BRAND)
     expect(gettingStarted).not.toContain(LEGACY_OUT_DIR)
+    expect(capabilityMatrix).not.toContain('madar add <url>')
     expect(releaseDoc).not.toContain(LEGACY_BRAND)
     expect(releaseDoc).not.toContain(LEGACY_OUT_DIR)
   })

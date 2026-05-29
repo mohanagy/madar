@@ -34,20 +34,9 @@ The registry lives in `src/infrastructure/capabilities.ts`. The extractor bindin
 | Metadata-only binary assets | `.aac` `.flac` `.m4a` `.mp3` `.ogg` `.opus` `.wav` | Audio metadata node | No speech-to-text transcription |
 | Metadata-only binary assets | `.avi` `.m4v` `.mkv` `.mov` `.mp4` `.webm` | Video metadata node | No video transcript or frame analysis |
 
-## URL ingest
+## Remote content boundary
 
-`madar add <url>` has built-in ingestors for:
-
-- GitHub
-- Reddit
-- Hacker News
-- X/Twitter
-- arXiv
-- YouTube
-- direct PDF/image/audio/video URLs
-- generic webpages
-
-These ingestors fetch structured content into the local project so the normal graph build can include it. They are separate from local file extractors.
+Remote URL ingest is no longer part of `madar`. The product stays focused on local codebase understanding for AI coding agents, so supported extraction starts from files already present in the workspace rather than fetching web, social, or media URLs on demand.
 
 ## Framework awareness
 

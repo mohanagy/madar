@@ -3,7 +3,6 @@ import { resolve } from 'node:path'
 
 import { type CliDependencies, executeCli, formatHelp } from '../../src/cli/main.js'
 import {
-  parseAddArgs,
   parseBenchSuiteArgs,
   parseBenchmarkArgs,
   parseCompareArgs,
@@ -89,7 +88,6 @@ function createDependencies(): CliTestDependencies {
     },
     queryGraph: (_graph, question, options) => `${question} :: ${options?.mode ?? 'bfs'} :: ${options?.tokenBudget ?? 2000}`,
     saveQueryResult: (question, _answer, memoryDir) => `${memoryDir}/${question}.md`,
-    ingest: async (url, targetDir) => `${resolve(targetDir)}/${url.includes('arxiv') ? 'paper.md' : 'page.md'}`,
     runBenchmark: (context) => {
       const resolvedGraphPath = context.options.graphPath
       return {
@@ -429,26 +427,6 @@ describe('cli parser', () => {
     expect(() => parseDiffArgs(['baseline.json', '--limit=5abc'])).toThrow('error: --limit must be a positive integer')
     expect(() => parseDiffArgs([`/${'nested/'.repeat(700)}baseline.json`])).toThrow('error: baseline graph path exceeds maximum length')
     expect(() => parseDiffArgs(['baseline.json', '--wat'])).toThrow('error: unknown option for diff: --wat')
-  })
-
-  it('parses add args', () => {
-    expect(parseAddArgs(['https://example.com/post'])).toEqual({
-      url: 'https://example.com/post',
-      path: '.',
-      followSymlinks: false,
-      noHtml: false,
-    })
-
-    expect(parseAddArgs(['https://example.com/post', 'docs', '--follow-symlinks', '--no-html'])).toEqual({
-      url: 'https://example.com/post',
-      path: 'docs',
-      followSymlinks: true,
-      noHtml: true,
-    })
-
-    expect(() => parseAddArgs([])).toThrow('Usage: madar add')
-    expect(() => parseAddArgs(['https://example.com/post', 'docs', 'extra'])).toThrow('Usage: madar add')
-    expect(() => parseAddArgs(['https://example.com/post', '--wat'])).toThrow('error: unknown option for add: --wat')
   })
 
   it('parses save-result args', () => {
@@ -1100,7 +1078,7 @@ describe('cli main', () => {
     expect(help).toContain('--file-type TYPE')
     expect(help).toContain('path <source> <target>')
     expect(help).toContain('explain <label>')
-    expect(help).toContain('add <url> [path]')
+    expect(help).not.toContain('add <url> [path]')
     expect(help).toContain('save-result')
     expect(help).toContain('benchmark [graph.json]')
     expect(help).toContain('benchmark/eval runner. This may consume paid model tokens.')
@@ -1753,16 +1731,14 @@ describe('cli main', () => {
     expect(logs[0]).toContain('HttpClient --uses [EXTRACTED]--> Transport')
   })
 
-  it('executes add commands by ingesting into raw and rebuilding incrementally', async () => {
-    const { io, logs } = createIo()
-    const dependencies = createDependencies()
+  it('rejects add commands because URL ingest is no longer part of the CLI surface', async () => {
+    const { io, logs, errors } = createIo()
 
-    const exitCode = await executeCli(['add', 'https://example.com/post', 'workspace', '--no-html'], io, dependencies)
+    const exitCode = await executeCli(['add', 'https://example.com/post', 'workspace', '--no-html'], io, createDependencies())
 
-    expect(exitCode).toBe(0)
-    expect(logs[0]).toContain('[madar add] Saved')
-    expect(logs[0]).toContain(resolve('workspace', 'raw'))
-    expect(logs[1]).toContain('[madar generate] update completed')
+    expect(exitCode).toBe(1)
+    expect(logs).toEqual([])
+    expect(errors).toEqual(["error: unknown command 'add'", "Run 'madar --help' for usage."])
   })
 
   it('executes generate commands via injected dependencies', async () => {
