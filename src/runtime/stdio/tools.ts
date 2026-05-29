@@ -170,7 +170,10 @@ function isStoredContextPackHandle(value: unknown): value is StoredContextPackHa
     && Array.isArray(followUp.focus_files)
     && (
       !Object.hasOwn(followUp, 'focus_ranges')
-      || Array.isArray(followUp.focus_ranges)
+      || (
+        Array.isArray(followUp.focus_ranges)
+        && followUp.focus_ranges.every((entry) => isExpandableSourceRange(entry))
+      )
     )
 }
 
@@ -1364,7 +1367,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         }),
       }
       const responsePayload = task === 'explain' && !includeSelectionDiagnostics
-        ? buildAnswerReadyPackSchema(basePayload, plannerBudget, fullPack.selection_diagnostics)
+        ? buildAnswerReadyPackSchema(basePayload, resolvedBudget, fullPack.selection_diagnostics)
         : basePayload
       if (!cacheKey || !cacheGraphVersion) {
         return helpers.ok(id, helpers.textToolResult(JSON.stringify(responsePayload)))

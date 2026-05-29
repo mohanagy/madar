@@ -628,11 +628,6 @@ export function buildAnswerReadyPackSchema(
     return payload
   }
 
-  if (pack) {
-    trimArrayField(pack, 'matched_nodes', 4, trimmedFields)
-    trimArrayField(pack, 'relationships', 4, trimmedFields)
-    trimArrayField(pack, 'community_context', 3, trimmedFields)
-  }
   trimArrayField(payload, 'expandable', 3, trimmedFields)
   trimArrayField(payload, 'claims', 3, trimmedFields)
   attachSerializedBudget(payload, maxTokens, trimmedFields)

@@ -211,6 +211,29 @@ describe('stdio slice-v1 surface', () => {
       enforced: true,
     }))
     expect(contextPackPayload.serialized_budget?.token_count).toBeLessThanOrEqual(1500)
+
+    const tinyBudgetResponse = await Promise.resolve(handleStdioRequest(graphPath, {
+      id: 9,
+      method: 'tools/call',
+      params: {
+        name: 'context_pack',
+        arguments: {
+          prompt: 'Explain `AuthService.login`',
+          budget: 1,
+          task: 'explain',
+        },
+      },
+    }))
+
+    const tinyBudgetPayload = JSON.parse(((tinyBudgetResponse as { result?: { content?: Array<{ text: string }> } }).result?.content ?? [])[0]?.text ?? '') as {
+      serialized_budget?: {
+        max_tokens?: number
+      }
+    }
+
+    expect(tinyBudgetPayload.serialized_budget).toEqual(expect.objectContaining({
+      max_tokens: 1,
+    }))
   })
 
   it('accepts retrieval_strategy=slice-v1 for retrieve and context_pack', async () => {

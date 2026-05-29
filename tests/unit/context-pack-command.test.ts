@@ -809,6 +809,9 @@ describe('context-pack-command', () => {
         warnings?: Array<{ kind?: string; detail?: { dropped_node_ids?: string[] } }>
       }
     }
+    const droppedNodeIds = payload.routing?.warnings
+      ?.find((entry) => entry.kind === 'pack_culled_to_budget')
+      ?.detail?.dropped_node_ids ?? []
 
     expect(payload.serialized_budget).toEqual(expect.objectContaining({
       max_tokens: 1500,
@@ -823,8 +826,10 @@ describe('context-pack-command', () => {
       'src/runtime/controller.ts',
     ])
     expect(payload.pack?.answer_contract?.required_elements).toEqual(['main_pipeline_phases'])
+    expect(payload.pack?.matched_nodes?.map((entry) => entry.node_id)).toContain('helper-low-1')
     expect(payload.pack?.matched_nodes?.map((entry) => entry.node_id)).not.toContain('helper-low-2')
-    expect((payload.pack?.relationships ?? []).map((entry) => entry.to_id)).not.toContain('helper-low-2')
+    expect(droppedNodeIds).toContain('helper-low-2')
+    expect(droppedNodeIds).not.toContain('helper-low-1')
     expect(payload.routing?.warnings).toEqual(expect.arrayContaining([
       expect.objectContaining({
         kind: 'pack_culled_to_budget',
