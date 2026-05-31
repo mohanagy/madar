@@ -154,7 +154,8 @@ describe('public marketing copy honesty', () => {
 
     it('starts the walkthrough with generate, summary, and compact retrieval surfaces', () => {
       expect(content).toContain('madar generate examples/sample-workspace --no-html')
-      expect(content).toContain('madar summary examples/sample-workspace/out/graph.json')
+      expect(content).toContain('cd examples/sample-workspace')
+      expect(content).toContain('madar summary out/graph.json')
       expect(content).toContain('madar pack')
       expect(content).toContain('madar prompt')
     })

@@ -1,6 +1,6 @@
 # End-to-end getting started tutorial
 
-Use this walkthrough when you want to evaluate `madar` end to end without a private repository or paid model calls. It uses the checked-in `examples/sample-workspace/` demo so every step stays local and reproducible.
+Use this walkthrough when you want a 10-minute first-run path through `madar` without a private repository or paid model calls. It uses the checked-in `examples/sample-workspace/` demo so every step stays local and reproducible.
 
 ## 1. Install madar
 
@@ -24,51 +24,79 @@ If your real repo is framework-heavy TypeScript/JavaScript and you care about ri
 madar generate examples/sample-workspace --spi --no-html
 ```
 
-## 3. Start with a bounded summary
+## 3. Install one agent profile
+
+Move into the sample workspace before installing so the generated graph, agent config, and verification commands all point at the same project:
 
 ```bash
-madar summary examples/sample-workspace/out/graph.json
+cd examples/sample-workspace
+```
+
+Use one install target so the generated graph has an actual MCP or instruction surface attached to it. Claude is the shortest path here:
+
+```bash
+madar claude install
+```
+
+If you want a different runtime, use the same step with `madar codex install`, `madar cursor install`, `madar copilot install`, `madar gemini install`, `madar aider install`, or `madar opencode install`.
+
+## 4. Verify the install before asking bigger questions
+
+```bash
+madar doctor out/graph.json
+madar status out/graph.json
+```
+
+For Claude, Cursor, Gemini, and Copilot, `doctor` checks graph freshness plus the install wiring, and `status` gives you the compact readiness summary plus the next recommended commands. Codex, Aider, and OpenCode still install correctly, but these verification commands do not report them yet, so use the install output itself as confirmation for those targets.
+
+## 5. Start with a bounded summary
+
+```bash
+madar summary out/graph.json
 ```
 
 This prints the deterministic high-signal overview first: graph counts, source domains, top modules, frameworks, entrypoints, and runtime paths. It is the fastest way to decide whether you need a deeper `pack`, `prompt`, or MCP retrieval call.
 
-## 4. Build a compact pack
+## 6. Build a compact pack
 
 ```bash
 madar pack "how does password reset request enqueue the reset email" \
-  --graph examples/sample-workspace/out/graph.json \
+  --graph out/graph.json \
   --task explain
 ```
 
 This is the fastest way to confirm the route → service → job flow is represented in the graph. On runtime-generation questions like this one, newer reports can also preserve an `execution_slice` so you can inspect ordered steps without reading the whole raw slice. Treat it as a static runtime-path hypothesis from the graph, not a live trace. The nested `phase_coverage` is also static and prompt-scoped, so broader report-generation questions may show planner/research/report-builder/scoring/renderer/persistence phases when the graph supports them.
 
-## 5. Compile a provider-ready prompt
+## 7. Compile a provider-ready prompt
 
 ```bash
 madar prompt "where is reset token persisted before the email job runs" \
   --provider claude \
-  --graph examples/sample-workspace/out/graph.json
+  --graph out/graph.json
 ```
 
 `prompt` only compiles the prompt payload. It does **not** call Claude or spend paid model tokens by itself.
 
-## 6. Run a safe compare smoke check
+## 8. Run a safe compare smoke check
 
 If you want to exercise `compare` without calling a paid model, use a local echo-style runner:
 
 ```bash
 madar compare "how does password reset request enqueue the reset email" \
-  --graph examples/sample-workspace/out/graph.json \
+  --graph out/graph.json \
   --baseline-mode pack_only \
   --exec 'cat {prompt_file}' \
   --yes
 ```
 
-This does **not** measure model quality. It is a safe local smoke check that proves `compare` can build both prompts, isolate one bounded raw-context baseline against one compiled madar pack rendered from the same explain-pack core as `madar pack --task explain`, and save the artifact bundle without requiring a hosted model. Real model-backed compare runs are optional.
+This does **not** measure model quality. It is a safe local smoke check that proves `compare` can build both prompts, isolate one bounded raw-context baseline against one compiled madar pack rendered from the same explain-pack core as `madar pack --task explain`, and save the artifact bundle without requiring a hosted model. Real model-backed compare runs are optional, and compare or benchmark flows only spend paid model tokens once you replace the local smoke-check runner with a real CLI model command.
 
 ## Expected output
 
 - `generate` should write `examples/sample-workspace/out/graph.json`
+- `claude install` should register the local Madar integration for the sample workspace
+- `doctor` should confirm the graph path plus install wiring for Claude, Cursor, Gemini, or Copilot
+- `status` should print the next recommended commands for this sample workspace when you use one of those reported agents
 - `summary` should print the bounded overview before any deeper retrieval
 - `pack` should print a compact JSON payload with matched nodes from the password reset flow
 - `prompt` should print a provider-ready prompt payload
@@ -78,8 +106,9 @@ This does **not** measure model quality. It is a safe local smoke check that pro
 ## Troubleshooting
 
 - **`madar: command not found`**: make sure the global npm install succeeded, or run from a local repo checkout after `npm run build`.
-- **`graph.json` missing**: rerun `madar generate examples/sample-workspace --no-html` before `pack`, `prompt`, or `compare`.
-- **Need stronger framework-aware hints?** Regenerate with `madar generate examples/sample-workspace --spi --no-html` if your real workspace relies on Next.js App Router, NestJS, Prisma, or similar framework-specific boundaries.
+- **`graph.json` missing**: rerun `madar generate . --no-html` before `pack`, `prompt`, or `compare`.
+- **`doctor` or `status` says the install is missing**: rerun your chosen `madar <agent> install` command from the sample workspace root, then rerun the verification commands for Claude, Cursor, Gemini, or Copilot.
+- **Need stronger framework-aware hints?** Regenerate with `madar generate . --spi --no-html` if your real workspace relies on Next.js App Router, NestJS, Prisma, or similar framework-specific boundaries.
 - **`compare` looks noisy**: the `cat {prompt_file}` runner is only a local smoke check. Use a real terminal model runner later if you want meaningful answer comparisons.
 - **Need more questions?** Start with `examples/sample-workspace/prompt-examples.json`.
 

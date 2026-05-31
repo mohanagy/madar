@@ -54,13 +54,29 @@ madar generate . --spi
 
 Now ask Claude something about your codebase. It can start with one bounded `retrieve` or `context_pack` call, get labeled snippets with file paths and community context, and then decide whether focused follow-up reads are still needed.
 
+## Choose your agent
+
+Pick one install target, then rerun `madar doctor` and `madar status` so the first result is verified before you ask a broader question:
+
+- Claude Code — `madar claude install`
+- Codex CLI — `madar codex install`
+- Cursor — `madar cursor install`
+- GitHub Copilot CLI — `madar copilot install`
+- Gemini CLI — `madar gemini install`
+- Aider — `madar aider install`
+- OpenCode — `madar opencode install`
+
+For Claude Code, Cursor, Gemini CLI, and GitHub Copilot CLI, `madar doctor` and `madar status` verify the local install wiring after you generate `out/graph.json`. Codex CLI, Aider, and OpenCode still install correctly, but those verification commands do not report them yet.
+
 Want the opt-in semantic retrieval / rerank path too? Install the optional local model runtime in the same environment:
 
 ```bash
 npm install @huggingface/transformers
 ```
 
-**Other agents:**
+`madar prompt` stays local and only compiles a prompt payload. By contrast, compare and benchmark flows can spend paid model tokens when you swap the local smoke-check runner for a real model CLI or hosted model configuration.
+
+**Install commands:**
 
 ```bash
 madar cursor install      # Cursor
@@ -84,7 +100,7 @@ If you enable `--semantic` or `--rerank` without that optional package installed
 
 Want a tiny reproducible workspace for local demos? Start with [`examples/sample-workspace/`](https://github.com/mohanagy/madar/tree/main/examples/sample-workspace/) and the [sample workspace tutorial](https://github.com/mohanagy/madar/blob/main/docs/tutorials/sample-workspace.md).
 
-Want a broader local-first walkthrough that also covers install, `prompt`, and a safe `compare` smoke check? Use the [end-to-end getting started tutorial](https://github.com/mohanagy/madar/blob/main/docs/tutorials/getting-started.md).
+Want a broader local-first walkthrough that also covers install, one verified pack, and a safe `compare` smoke check? Use the [end-to-end getting started tutorial](https://github.com/mohanagy/madar/blob/main/docs/tutorials/getting-started.md).
 
 ---
 
