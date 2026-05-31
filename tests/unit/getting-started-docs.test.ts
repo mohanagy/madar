@@ -31,6 +31,7 @@ describe('getting started tutorial', () => {
     expect(tutorial).toContain('madar claude install')
     expect(tutorial).toContain('madar doctor out/graph.json')
     expect(tutorial).toContain('madar status out/graph.json')
+    expect(tutorial).toContain('`doctor`/`status` also report Codex, Aider, and OpenCode when their AGENTS/hook/plugin/MCP signals are present')
     expect(tutorial).toContain('madar pack "how does password reset request enqueue the reset email"')
     expect(tutorial).toContain('madar generate . --no-html')
     expect(tutorial).toContain('madar generate . --spi --no-html')

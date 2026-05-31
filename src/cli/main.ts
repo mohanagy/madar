@@ -8,6 +8,7 @@ import { BenchmarkReadinessError, NativeAgentInstallRequiredError, runCompareCom
 import { runContextPackCommand } from '../infrastructure/context-pack-command.js'
 import { runContextPromptCommand } from '../infrastructure/context-prompt-command.js'
 import { runDoctorCommand, runStatusCommand } from '../infrastructure/doctor.js'
+import { runProofReportCommand, type ProofReportResult } from '../infrastructure/proof-report.js'
 import { runReviewCompareCommand } from '../infrastructure/review-compare.js'
 import { compareRefs } from '../infrastructure/time-travel.js'
 import { federate } from '../pipeline/federate.js'
@@ -57,6 +58,7 @@ import {
   parseInstallArgs,
   parsePathArgs,
   parsePlatformActionArgs,
+  parseProofReportArgs,
   parsePromptArgs,
   parseQueryArgs,
   parseReviewCompareArgs,
@@ -65,6 +67,7 @@ import {
   parseServeArgs,
   parseTimeTravelArgs,
   type PackCliOptions,
+  type ProofReportCliOptions,
   type PromptCliOptions,
   parseWatchArgs,
   type CompareCliOptions,
@@ -120,6 +123,10 @@ export interface ContextPromptCommandContext {
   io: CliIO
 }
 
+export interface ProofReportCommandContext {
+  options: ProofReportCliOptions
+}
+
 export interface CliDependencies {
   loadGraph: typeof loadGraph
   queryGraph: typeof queryGraph
@@ -133,6 +140,7 @@ export interface CliDependencies {
   runTimeTravel: (context: TimeTravelCommandContext) => Promise<string | void> | string | void
   runContextPack: (context: ContextPackCommandContext) => Promise<string | void> | string | void
   runContextPrompt: (context: ContextPromptCommandContext) => Promise<string | void> | string | void
+  runProofReport: (options: ProofReportCliOptions) => ProofReportResult
   runDoctor: (graphPath: string) => string
   runStatus: (graphPath: string) => string
   runGraphSummary?: (graphPath: string) => Promise<GraphSummary> | GraphSummary
@@ -236,6 +244,7 @@ const DEFAULT_DEPENDENCIES: CliDependencies = {
   runContextPrompt: async ({ options }) => {
     return await runContextPromptCommand(options)
   },
+  runProofReport: (options) => runProofReportCommand(options),
   runDoctor: (graphPath) => runDoctorCommand({ graphPath }),
   runStatus: (graphPath) => runStatusCommand({ graphPath }),
   runGraphSummary: (graphPath) => buildGraphSummary(loadGraph(graphPath)),
@@ -442,6 +451,10 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --graph <path>      path to graph.json to validate (default out/graph.json)',
     '  status [graph.json]   compact readiness summary with next commands',
     '    --graph <path>      path to graph.json to validate (default out/graph.json)',
+    '  proof-report [graph.json]  generate a local markdown proof report from graph, pack, and compare evidence',
+    '    --output-dir DIR      proof report output directory (default out/proof-report)',
+    '    --compare-dir DIR     compare receipt directory (default out/compare)',
+    '    --pack PATH           optional saved context-pack JSON for pack-quality evidence',
     '  install [--platform P] install the platform skill or local madar config',
     '    platforms            claude|windows|gemini|cursor|codex|opencode|aider|claw|droid|trae|trae-cn|copilot',
     '    If you update madar, re-run your platform install command to refresh local agent rules:',
@@ -678,6 +691,13 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
     if (command === 'status') {
       const options = parseDoctorArgs(args, 'status')
       io.log(dependencies.runStatus(options.graphPath))
+      return 0
+    }
+
+    if (command === 'proof-report') {
+      const options = parseProofReportArgs(args)
+      const result = dependencies.runProofReport(options)
+      io.log(`Saved to ${result.outputPath}`)
       return 0
     }
 

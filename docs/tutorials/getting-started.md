@@ -47,7 +47,7 @@ madar doctor out/graph.json
 madar status out/graph.json
 ```
 
-For Claude, Cursor, Gemini, and Copilot, `doctor` checks graph freshness plus the install wiring, and `status` gives you the compact readiness summary plus the next recommended commands. Codex, Aider, and OpenCode still install correctly, but these verification commands do not report them yet, so use the install output itself as confirmation for those targets.
+For Claude, Cursor, Gemini, and Copilot, `doctor` checks graph freshness plus the install wiring, and `status` gives you the compact readiness summary plus the next recommended commands. `doctor`/`status` also report Codex, Aider, and OpenCode when their AGENTS/hook/plugin/MCP signals are present; if any of those drift, the agent is marked `partial` with a reinstall suggestion.
 
 ## 5. Start with a bounded summary
 

@@ -1,4 +1,4 @@
-import { isAbsolute, resolve } from 'node:path'
+import { dirname, isAbsolute, resolve } from 'node:path'
 
 import type { ContextPackFormat, ContextPackRetrievalStrategy, ContextPackTaskKind } from '../contracts/context-pack.js'
 import { validateGraphOutputPath, validateGraphPath } from '../shared/security.js'
@@ -182,6 +182,13 @@ export interface DoctorCliOptions {
 
 export interface SummaryCliOptions {
   graphPath: string
+}
+
+export interface ProofReportCliOptions {
+  graphPath: string
+  outputDir: string
+  compareDir: string
+  packPath: string | null
 }
 
 export interface HookCliOptions {
@@ -1842,6 +1849,75 @@ export function parseSummaryArgs(args: string[]): SummaryCliOptions {
   }
 
   return { graphPath }
+}
+
+export function parseProofReportArgs(args: string[]): ProofReportCliOptions {
+  const usage = 'Usage: madar proof-report [graph.json] [--output-dir DIR] [--compare-dir DIR] [--pack PATH]'
+  let graphPath = 'out/graph.json'
+  let outputDir: string | null = null
+  let compareDir: string | null = null
+  let packPath: string | null = null
+
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index]
+    if (!argument) {
+      continue
+    }
+
+    if (argument === '--output-dir') {
+      outputDir = validateGraphOutputPath(requireOptionValue('--output-dir', args[index + 1]))
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--output-dir=')) {
+      const [, value] = argument.split('=', 2)
+      outputDir = validateGraphOutputPath(requireOptionValue('--output-dir', value))
+      continue
+    }
+
+    if (argument === '--compare-dir') {
+      compareDir = validateGraphOutputPath(requireOptionValue('--compare-dir', args[index + 1]))
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--compare-dir=')) {
+      const [, value] = argument.split('=', 2)
+      compareDir = validateGraphOutputPath(requireOptionValue('--compare-dir', value))
+      continue
+    }
+
+    if (argument === '--pack') {
+      packPath = validateGraphOutputPath(requireOptionValue('--pack', args[index + 1]))
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--pack=')) {
+      const [, value] = argument.split('=', 2)
+      packPath = validateGraphOutputPath(requireOptionValue('--pack', value))
+      continue
+    }
+
+    if (argument.startsWith('--')) {
+      throw new UsageError(`error: unknown option for proof-report: ${argument}`)
+    }
+
+    if (graphPath !== 'out/graph.json') {
+      throw new UsageError(usage)
+    }
+
+    graphPath = argument
+  }
+
+  const graphBase = dirname(resolve(graphPath))
+  return {
+    graphPath,
+    outputDir: outputDir ?? resolve(graphBase, 'proof-report'),
+    compareDir: compareDir ?? resolve(graphBase, 'compare'),
+    packPath,
+  }
 }
 
 export function parseHookArgs(args: string[]): HookCliOptions {
