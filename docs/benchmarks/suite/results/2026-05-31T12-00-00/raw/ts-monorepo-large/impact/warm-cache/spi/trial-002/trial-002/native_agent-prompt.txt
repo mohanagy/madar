@@ -1,0 +1,1 @@
+What breaks if invite-service changes how invite tokens are validated before crossing the package boundary?

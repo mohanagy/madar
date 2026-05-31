@@ -5,7 +5,9 @@
     "description": "Trace how a runtime path executes end to end for a concrete repo-specific prompt.",
     "status": "ready",
     "prompts": {
-      "nestjs-mid": "How does login session creation flow work from controller to persistence?"
+      "ts-small": "How does the password reset flow move from account routes through the password-reset service to email delivery and audit logging?",
+      "nestjs-mid": "How does login session creation flow work from controller to persistence?",
+      "ts-monorepo-large": "How does invite creation and membership validation flow work inside the monorepo invite service?"
     }
   },
   {
@@ -18,23 +20,35 @@
   {
     "id": "implement",
     "name": "Implement task",
-    "description": "A real edit prompt suitable for measuring likely edit-file and validation guidance quality later.",
-    "status": "planned",
-    "prompts": {}
+    "description": "A bounded edit prompt suitable for measuring wrong-file edits, validation pass/fail, rework, and human intervention.",
+    "status": "ready",
+    "prompts": {
+      "ts-small": "Add audit-log context to password reset emails without changing the route contract.",
+      "nestjs-mid": "Add request-id propagation to the login session flow and keep the existing auth controller contract intact.",
+      "ts-monorepo-large": "Add invite expiry validation inside the domain invite service without widening the package boundary."
+    }
   },
   {
     "id": "review",
     "name": "Review task",
-    "description": "A PR-style review prompt measured against a fixed diff later.",
-    "status": "planned",
-    "prompts": {}
+    "description": "A PR-style review prompt suitable for measuring review-time, rework, and human intervention receipts.",
+    "status": "ready",
+    "prompts": {
+      "ts-small": "Review the password-reset flow for missing tests, route leaks, or email side effects before merge.",
+      "nestjs-mid": "Review the auth session flow for persistence bugs, missing validation, or request-boundary regressions.",
+      "ts-monorepo-large": "Review the invite-service change for package-boundary violations or incorrect invite expiry handling."
+    }
   },
   {
     "id": "impact",
     "name": "Impact analysis task",
-    "description": "A what-breaks-if-I-change-X prompt reserved for future suite cells.",
-    "status": "planned",
-    "prompts": {}
+    "description": "A what-breaks-if-I-change-X prompt used to measure concrete blast-radius answers across the fixed repo shapes.",
+    "status": "ready",
+    "prompts": {
+      "ts-small": "What breaks if I change the password-reset service so it no longer writes to the audit log?",
+      "nestjs-mid": "What breaks if I change session persistence in the auth service to stop returning stored session ids?",
+      "ts-monorepo-large": "What breaks if invite-service changes how invite tokens are validated before crossing the package boundary?"
+    }
   },
   {
     "id": "applicability-skip",

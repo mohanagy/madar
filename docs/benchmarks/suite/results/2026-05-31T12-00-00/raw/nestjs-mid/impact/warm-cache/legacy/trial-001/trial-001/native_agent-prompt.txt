@@ -1,0 +1,1 @@
+What breaks if I change session persistence in the auth service to stop returning stored session ids?

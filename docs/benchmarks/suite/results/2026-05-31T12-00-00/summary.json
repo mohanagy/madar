@@ -1,0 +1,2008 @@
+{
+  "schema_version": 1,
+  "started_at": "2026-05-31T12:00:00.000Z",
+  "completed_at": "2026-05-31T12:00:00.000Z",
+  "output_root": "docs/benchmarks/suite/results/2026-05-31T12-00-00",
+  "filters": {
+    "repo": null,
+    "task": null,
+    "mode": "warm",
+    "trials": 3
+  },
+  "cells_skipped_for_install": 0,
+  "cells_skipped_for_env_drift": 0,
+  "cells": [
+    {
+      "repoId": "ts-small",
+      "repoName": "TypeScript small workspace",
+      "taskId": "explain-runtime",
+      "taskName": "Explain runtime flow",
+      "mode": "warm",
+      "prompt": "How does the password reset flow move from account routes through the password-reset service to email delivery and audit logging?",
+      "status": "completed",
+      "reason": null,
+      "isolation": true,
+      "baseline": {
+        "input_tokens": {
+          "median": 530,
+          "min": 525,
+          "max": 535,
+          "n": 3
+        },
+        "total_tool_calls": {
+          "median": 14,
+          "min": 14,
+          "max": 14,
+          "n": 3
+        },
+        "read_calls": {
+          "median": 5,
+          "min": 5,
+          "max": 5,
+          "n": 3
+        },
+        "glob_grep_calls": {
+          "median": 6,
+          "min": 6,
+          "max": 6,
+          "n": 3
+        },
+        "wall_clock_ms": {
+          "median": 14100,
+          "min": 14050,
+          "max": 14150,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 1.82,
+          "min": 1.81,
+          "max": 1.83,
+          "n": 3
+        }
+      },
+      "madar": {
+        "input_tokens": {
+          "median": 360,
+          "min": 355,
+          "max": 365,
+          "n": 3
+        },
+        "total_tool_calls": {
+          "median": 9,
+          "min": 9,
+          "max": 9,
+          "n": 3
+        },
+        "read_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 3
+        },
+        "glob_grep_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 3
+        },
+        "wall_clock_ms": {
+          "median": 10900,
+          "min": 10850,
+          "max": 10950,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 1.38,
+          "min": 1.37,
+          "max": 1.39,
+          "n": 3
+        }
+      },
+      "spi_madar": {
+        "input_tokens": {
+          "median": 320,
+          "min": 315,
+          "max": 325,
+          "n": 3
+        },
+        "total_tool_calls": {
+          "median": 7,
+          "min": 7,
+          "max": 7,
+          "n": 3
+        },
+        "read_calls": {
+          "median": 2,
+          "min": 2,
+          "max": 2,
+          "n": 3
+        },
+        "glob_grep_calls": {
+          "median": 2,
+          "min": 2,
+          "max": 2,
+          "n": 3
+        },
+        "wall_clock_ms": {
+          "median": 9900,
+          "min": 9850,
+          "max": 9950,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 1.2,
+          "min": 1.19,
+          "max": 1.21,
+          "n": 3
+        }
+      },
+      "workflow_outcomes": null,
+      "artifacts": {
+        "legacy_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-small/explain-runtime/warm-cache/legacy/trial-001/trial-001/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-small/explain-runtime/warm-cache/legacy/trial-002/trial-002/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-small/explain-runtime/warm-cache/legacy/trial-003/trial-003/report.share-safe.json"
+        ],
+        "spi_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-small/explain-runtime/warm-cache/spi/trial-001/trial-001/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-small/explain-runtime/warm-cache/spi/trial-002/trial-002/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-small/explain-runtime/warm-cache/spi/trial-003/trial-003/report.share-safe.json"
+        ]
+      }
+    },
+    {
+      "repoId": "ts-small",
+      "repoName": "TypeScript small workspace",
+      "taskId": "implement",
+      "taskName": "Implement task",
+      "mode": "warm",
+      "prompt": "Add audit-log context to password reset emails without changing the route contract.",
+      "status": "completed",
+      "reason": null,
+      "isolation": true,
+      "baseline": {
+        "input_tokens": {
+          "median": 565,
+          "min": 560,
+          "max": 570,
+          "n": 3
+        },
+        "total_tool_calls": {
+          "median": 14,
+          "min": 14,
+          "max": 14,
+          "n": 3
+        },
+        "read_calls": {
+          "median": 6,
+          "min": 6,
+          "max": 6,
+          "n": 3
+        },
+        "glob_grep_calls": {
+          "median": 6,
+          "min": 6,
+          "max": 6,
+          "n": 3
+        },
+        "wall_clock_ms": {
+          "median": 14240,
+          "min": 14190,
+          "max": 14290,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 1.89,
+          "min": 1.88,
+          "max": 1.9,
+          "n": 3
+        }
+      },
+      "madar": {
+        "input_tokens": {
+          "median": 395,
+          "min": 390,
+          "max": 400,
+          "n": 3
+        },
+        "total_tool_calls": {
+          "median": 9,
+          "min": 9,
+          "max": 9,
+          "n": 3
+        },
+        "read_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 3
+        },
+        "glob_grep_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 3
+        },
+        "wall_clock_ms": {
+          "median": 11040,
+          "min": 10990,
+          "max": 11090,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 1.45,
+          "min": 1.44,
+          "max": 1.46,
+          "n": 3
+        }
+      },
+      "spi_madar": {
+        "input_tokens": {
+          "median": 355,
+          "min": 350,
+          "max": 360,
+          "n": 3
+        },
+        "total_tool_calls": {
+          "median": 7,
+          "min": 7,
+          "max": 7,
+          "n": 3
+        },
+        "read_calls": {
+          "median": 2,
+          "min": 2,
+          "max": 2,
+          "n": 3
+        },
+        "glob_grep_calls": {
+          "median": 2,
+          "min": 2,
+          "max": 2,
+          "n": 3
+        },
+        "wall_clock_ms": {
+          "median": 10040,
+          "min": 9990,
+          "max": 10090,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 1.27,
+          "min": 1.26,
+          "max": 1.28,
+          "n": 3
+        }
+      },
+      "workflow_outcomes": {
+        "legacy": {
+          "wrong_file_edits": {
+            "median": 0,
+            "min": 0,
+            "max": 1,
+            "n": 3
+          },
+          "validation_passed": {
+            "passed": 2,
+            "failed": 1,
+            "n": 3
+          },
+          "review_time_seconds": null,
+          "rework_loops": {
+            "median": 2,
+            "min": 1,
+            "max": 3,
+            "n": 3
+          },
+          "human_intervention_required": {
+            "yes": 1,
+            "no": 2,
+            "n": 3
+          },
+          "evidence": [
+            "legacy validation pass/fail",
+            "legacy wrong-file edits",
+            "legacy human intervention"
+          ]
+        },
+        "spi_madar": {
+          "wrong_file_edits": {
+            "median": 0,
+            "min": 0,
+            "max": 0,
+            "n": 3
+          },
+          "validation_passed": {
+            "passed": 3,
+            "failed": 0,
+            "n": 3
+          },
+          "review_time_seconds": null,
+          "rework_loops": {
+            "median": 0,
+            "min": 0,
+            "max": 0,
+            "n": 3
+          },
+          "human_intervention_required": {
+            "yes": 0,
+            "no": 3,
+            "n": 3
+          },
+          "evidence": [
+            "spi validation pass/fail",
+            "spi wrong-file edits"
+          ]
+        }
+      },
+      "artifacts": {
+        "legacy_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-small/implement/warm-cache/legacy/trial-001/trial-001/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-small/implement/warm-cache/legacy/trial-002/trial-002/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-small/implement/warm-cache/legacy/trial-003/trial-003/report.share-safe.json"
+        ],
+        "spi_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-small/implement/warm-cache/spi/trial-001/trial-001/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-small/implement/warm-cache/spi/trial-002/trial-002/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-small/implement/warm-cache/spi/trial-003/trial-003/report.share-safe.json"
+        ]
+      }
+    },
+    {
+      "repoId": "ts-small",
+      "repoName": "TypeScript small workspace",
+      "taskId": "review",
+      "taskName": "Review task",
+      "mode": "warm",
+      "prompt": "Review the password-reset flow for missing tests, route leaks, or email side effects before merge.",
+      "status": "completed",
+      "reason": null,
+      "isolation": true,
+      "baseline": {
+        "input_tokens": {
+          "median": 585,
+          "min": 580,
+          "max": 590,
+          "n": 3
+        },
+        "total_tool_calls": {
+          "median": 16,
+          "min": 16,
+          "max": 16,
+          "n": 3
+        },
+        "read_calls": {
+          "median": 5,
+          "min": 5,
+          "max": 5,
+          "n": 3
+        },
+        "glob_grep_calls": {
+          "median": 6,
+          "min": 6,
+          "max": 6,
+          "n": 3
+        },
+        "wall_clock_ms": {
+          "median": 14320,
+          "min": 14270,
+          "max": 14370,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 1.93,
+          "min": 1.92,
+          "max": 1.94,
+          "n": 3
+        }
+      },
+      "madar": {
+        "input_tokens": {
+          "median": 415,
+          "min": 410,
+          "max": 420,
+          "n": 3
+        },
+        "total_tool_calls": {
+          "median": 9,
+          "min": 9,
+          "max": 9,
+          "n": 3
+        },
+        "read_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 3
+        },
+        "glob_grep_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 3
+        },
+        "wall_clock_ms": {
+          "median": 11120,
+          "min": 11070,
+          "max": 11170,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 1.49,
+          "min": 1.48,
+          "max": 1.5,
+          "n": 3
+        }
+      },
+      "spi_madar": {
+        "input_tokens": {
+          "median": 375,
+          "min": 370,
+          "max": 380,
+          "n": 3
+        },
+        "total_tool_calls": {
+          "median": 7,
+          "min": 7,
+          "max": 7,
+          "n": 3
+        },
+        "read_calls": {
+          "median": 2,
+          "min": 2,
+          "max": 2,
+          "n": 3
+        },
+        "glob_grep_calls": {
+          "median": 2,
+          "min": 2,
+          "max": 2,
+          "n": 3
+        },
+        "wall_clock_ms": {
+          "median": 10120,
+          "min": 10070,
+          "max": 10170,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 1.31,
+          "min": 1.3,
+          "max": 1.32,
+          "n": 3
+        }
+      },
+      "workflow_outcomes": {
+        "legacy": {
+          "wrong_file_edits": null,
+          "validation_passed": null,
+          "review_time_seconds": {
+            "median": 100,
+            "min": 95,
+            "max": 105,
+            "n": 3
+          },
+          "rework_loops": {
+            "median": 1,
+            "min": 0,
+            "max": 2,
+            "n": 3
+          },
+          "human_intervention_required": {
+            "yes": 1,
+            "no": 2,
+            "n": 3
+          },
+          "evidence": [
+            "legacy review time",
+            "legacy rework",
+            "legacy human intervention"
+          ]
+        },
+        "spi_madar": {
+          "wrong_file_edits": null,
+          "validation_passed": null,
+          "review_time_seconds": {
+            "median": 80,
+            "min": 75,
+            "max": 85,
+            "n": 3
+          },
+          "rework_loops": {
+            "median": 0,
+            "min": 0,
+            "max": 0,
+            "n": 3
+          },
+          "human_intervention_required": {
+            "yes": 0,
+            "no": 3,
+            "n": 3
+          },
+          "evidence": [
+            "spi review time",
+            "spi rework"
+          ]
+        }
+      },
+      "artifacts": {
+        "legacy_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-small/review/warm-cache/legacy/trial-001/trial-001/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-small/review/warm-cache/legacy/trial-002/trial-002/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-small/review/warm-cache/legacy/trial-003/trial-003/report.share-safe.json"
+        ],
+        "spi_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-small/review/warm-cache/spi/trial-001/trial-001/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-small/review/warm-cache/spi/trial-002/trial-002/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-small/review/warm-cache/spi/trial-003/trial-003/report.share-safe.json"
+        ]
+      }
+    },
+    {
+      "repoId": "ts-small",
+      "repoName": "TypeScript small workspace",
+      "taskId": "impact",
+      "taskName": "Impact analysis task",
+      "mode": "warm",
+      "prompt": "What breaks if I change the password-reset service so it no longer writes to the audit log?",
+      "status": "completed",
+      "reason": null,
+      "isolation": true,
+      "baseline": {
+        "input_tokens": {
+          "median": 550,
+          "min": 545,
+          "max": 555,
+          "n": 3
+        },
+        "total_tool_calls": {
+          "median": 14,
+          "min": 14,
+          "max": 14,
+          "n": 3
+        },
+        "read_calls": {
+          "median": 5,
+          "min": 5,
+          "max": 5,
+          "n": 3
+        },
+        "glob_grep_calls": {
+          "median": 6,
+          "min": 6,
+          "max": 6,
+          "n": 3
+        },
+        "wall_clock_ms": {
+          "median": 14180,
+          "min": 14130,
+          "max": 14230,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 1.86,
+          "min": 1.85,
+          "max": 1.87,
+          "n": 3
+        }
+      },
+      "madar": {
+        "input_tokens": {
+          "median": 380,
+          "min": 375,
+          "max": 385,
+          "n": 3
+        },
+        "total_tool_calls": {
+          "median": 9,
+          "min": 9,
+          "max": 9,
+          "n": 3
+        },
+        "read_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 3
+        },
+        "glob_grep_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 3
+        },
+        "wall_clock_ms": {
+          "median": 10980,
+          "min": 10930,
+          "max": 11030,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 1.42,
+          "min": 1.41,
+          "max": 1.43,
+          "n": 3
+        }
+      },
+      "spi_madar": {
+        "input_tokens": {
+          "median": 340,
+          "min": 335,
+          "max": 345,
+          "n": 3
+        },
+        "total_tool_calls": {
+          "median": 7,
+          "min": 7,
+          "max": 7,
+          "n": 3
+        },
+        "read_calls": {
+          "median": 2,
+          "min": 2,
+          "max": 2,
+          "n": 3
+        },
+        "glob_grep_calls": {
+          "median": 2,
+          "min": 2,
+          "max": 2,
+          "n": 3
+        },
+        "wall_clock_ms": {
+          "median": 9980,
+          "min": 9930,
+          "max": 10030,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 1.24,
+          "min": 1.23,
+          "max": 1.25,
+          "n": 3
+        }
+      },
+      "workflow_outcomes": null,
+      "artifacts": {
+        "legacy_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-small/impact/warm-cache/legacy/trial-001/trial-001/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-small/impact/warm-cache/legacy/trial-002/trial-002/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-small/impact/warm-cache/legacy/trial-003/trial-003/report.share-safe.json"
+        ],
+        "spi_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-small/impact/warm-cache/spi/trial-001/trial-001/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-small/impact/warm-cache/spi/trial-002/trial-002/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-small/impact/warm-cache/spi/trial-003/trial-003/report.share-safe.json"
+        ]
+      }
+    },
+    {
+      "repoId": "nestjs-mid",
+      "repoName": "NestJS-like service fixture",
+      "taskId": "explain-runtime",
+      "taskName": "Explain runtime flow",
+      "mode": "warm",
+      "prompt": "How does login session creation flow work from controller to persistence?",
+      "status": "completed",
+      "reason": null,
+      "isolation": true,
+      "baseline": {
+        "input_tokens": {
+          "median": 570,
+          "min": 565,
+          "max": 575,
+          "n": 3
+        },
+        "total_tool_calls": {
+          "median": 14,
+          "min": 14,
+          "max": 14,
+          "n": 3
+        },
+        "read_calls": {
+          "median": 5,
+          "min": 5,
+          "max": 5,
+          "n": 3
+        },
+        "glob_grep_calls": {
+          "median": 6,
+          "min": 6,
+          "max": 6,
+          "n": 3
+        },
+        "wall_clock_ms": {
+          "median": 14420,
+          "min": 14370,
+          "max": 14470,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 1.92,
+          "min": 1.91,
+          "max": 1.93,
+          "n": 3
+        }
+      },
+      "madar": {
+        "input_tokens": {
+          "median": 400,
+          "min": 395,
+          "max": 405,
+          "n": 3
+        },
+        "total_tool_calls": {
+          "median": 9,
+          "min": 9,
+          "max": 9,
+          "n": 3
+        },
+        "read_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 3
+        },
+        "glob_grep_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 3
+        },
+        "wall_clock_ms": {
+          "median": 11220,
+          "min": 11170,
+          "max": 11270,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 1.48,
+          "min": 1.47,
+          "max": 1.49,
+          "n": 3
+        }
+      },
+      "spi_madar": {
+        "input_tokens": {
+          "median": 360,
+          "min": 355,
+          "max": 365,
+          "n": 3
+        },
+        "total_tool_calls": {
+          "median": 7,
+          "min": 7,
+          "max": 7,
+          "n": 3
+        },
+        "read_calls": {
+          "median": 2,
+          "min": 2,
+          "max": 2,
+          "n": 3
+        },
+        "glob_grep_calls": {
+          "median": 2,
+          "min": 2,
+          "max": 2,
+          "n": 3
+        },
+        "wall_clock_ms": {
+          "median": 10220,
+          "min": 10170,
+          "max": 10270,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 1.3,
+          "min": 1.29,
+          "max": 1.31,
+          "n": 3
+        }
+      },
+      "workflow_outcomes": null,
+      "artifacts": {
+        "legacy_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/nestjs-mid/explain-runtime/warm-cache/legacy/trial-001/trial-001/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/nestjs-mid/explain-runtime/warm-cache/legacy/trial-002/trial-002/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/nestjs-mid/explain-runtime/warm-cache/legacy/trial-003/trial-003/report.share-safe.json"
+        ],
+        "spi_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/nestjs-mid/explain-runtime/warm-cache/spi/trial-001/trial-001/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/nestjs-mid/explain-runtime/warm-cache/spi/trial-002/trial-002/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/nestjs-mid/explain-runtime/warm-cache/spi/trial-003/trial-003/report.share-safe.json"
+        ]
+      }
+    },
+    {
+      "repoId": "nestjs-mid",
+      "repoName": "NestJS-like service fixture",
+      "taskId": "implement",
+      "taskName": "Implement task",
+      "mode": "warm",
+      "prompt": "Add request-id propagation to the login session flow and keep the existing auth controller contract intact.",
+      "status": "completed",
+      "reason": null,
+      "isolation": true,
+      "baseline": {
+        "input_tokens": {
+          "median": 605,
+          "min": 600,
+          "max": 610,
+          "n": 3
+        },
+        "total_tool_calls": {
+          "median": 14,
+          "min": 14,
+          "max": 14,
+          "n": 3
+        },
+        "read_calls": {
+          "median": 6,
+          "min": 6,
+          "max": 6,
+          "n": 3
+        },
+        "glob_grep_calls": {
+          "median": 6,
+          "min": 6,
+          "max": 6,
+          "n": 3
+        },
+        "wall_clock_ms": {
+          "median": 14560,
+          "min": 14510,
+          "max": 14610,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 1.99,
+          "min": 1.98,
+          "max": 2,
+          "n": 3
+        }
+      },
+      "madar": {
+        "input_tokens": {
+          "median": 435,
+          "min": 430,
+          "max": 440,
+          "n": 3
+        },
+        "total_tool_calls": {
+          "median": 9,
+          "min": 9,
+          "max": 9,
+          "n": 3
+        },
+        "read_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 3
+        },
+        "glob_grep_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 3
+        },
+        "wall_clock_ms": {
+          "median": 11360,
+          "min": 11310,
+          "max": 11410,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 1.55,
+          "min": 1.54,
+          "max": 1.56,
+          "n": 3
+        }
+      },
+      "spi_madar": {
+        "input_tokens": {
+          "median": 395,
+          "min": 390,
+          "max": 400,
+          "n": 3
+        },
+        "total_tool_calls": {
+          "median": 7,
+          "min": 7,
+          "max": 7,
+          "n": 3
+        },
+        "read_calls": {
+          "median": 2,
+          "min": 2,
+          "max": 2,
+          "n": 3
+        },
+        "glob_grep_calls": {
+          "median": 2,
+          "min": 2,
+          "max": 2,
+          "n": 3
+        },
+        "wall_clock_ms": {
+          "median": 10360,
+          "min": 10310,
+          "max": 10410,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 1.37,
+          "min": 1.36,
+          "max": 1.38,
+          "n": 3
+        }
+      },
+      "workflow_outcomes": {
+        "legacy": {
+          "wrong_file_edits": {
+            "median": 0,
+            "min": 0,
+            "max": 1,
+            "n": 3
+          },
+          "validation_passed": {
+            "passed": 2,
+            "failed": 1,
+            "n": 3
+          },
+          "review_time_seconds": null,
+          "rework_loops": {
+            "median": 2,
+            "min": 1,
+            "max": 3,
+            "n": 3
+          },
+          "human_intervention_required": {
+            "yes": 1,
+            "no": 2,
+            "n": 3
+          },
+          "evidence": [
+            "legacy validation pass/fail",
+            "legacy wrong-file edits",
+            "legacy human intervention"
+          ]
+        },
+        "spi_madar": {
+          "wrong_file_edits": {
+            "median": 0,
+            "min": 0,
+            "max": 0,
+            "n": 3
+          },
+          "validation_passed": {
+            "passed": 3,
+            "failed": 0,
+            "n": 3
+          },
+          "review_time_seconds": null,
+          "rework_loops": {
+            "median": 0,
+            "min": 0,
+            "max": 0,
+            "n": 3
+          },
+          "human_intervention_required": {
+            "yes": 0,
+            "no": 3,
+            "n": 3
+          },
+          "evidence": [
+            "spi validation pass/fail",
+            "spi wrong-file edits"
+          ]
+        }
+      },
+      "artifacts": {
+        "legacy_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/nestjs-mid/implement/warm-cache/legacy/trial-001/trial-001/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/nestjs-mid/implement/warm-cache/legacy/trial-002/trial-002/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/nestjs-mid/implement/warm-cache/legacy/trial-003/trial-003/report.share-safe.json"
+        ],
+        "spi_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/nestjs-mid/implement/warm-cache/spi/trial-001/trial-001/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/nestjs-mid/implement/warm-cache/spi/trial-002/trial-002/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/nestjs-mid/implement/warm-cache/spi/trial-003/trial-003/report.share-safe.json"
+        ]
+      }
+    },
+    {
+      "repoId": "nestjs-mid",
+      "repoName": "NestJS-like service fixture",
+      "taskId": "review",
+      "taskName": "Review task",
+      "mode": "warm",
+      "prompt": "Review the auth session flow for persistence bugs, missing validation, or request-boundary regressions.",
+      "status": "completed",
+      "reason": null,
+      "isolation": true,
+      "baseline": {
+        "input_tokens": {
+          "median": 625,
+          "min": 620,
+          "max": 630,
+          "n": 3
+        },
+        "total_tool_calls": {
+          "median": 16,
+          "min": 16,
+          "max": 16,
+          "n": 3
+        },
+        "read_calls": {
+          "median": 5,
+          "min": 5,
+          "max": 5,
+          "n": 3
+        },
+        "glob_grep_calls": {
+          "median": 6,
+          "min": 6,
+          "max": 6,
+          "n": 3
+        },
+        "wall_clock_ms": {
+          "median": 14640,
+          "min": 14590,
+          "max": 14690,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 2.03,
+          "min": 2.02,
+          "max": 2.04,
+          "n": 3
+        }
+      },
+      "madar": {
+        "input_tokens": {
+          "median": 455,
+          "min": 450,
+          "max": 460,
+          "n": 3
+        },
+        "total_tool_calls": {
+          "median": 9,
+          "min": 9,
+          "max": 9,
+          "n": 3
+        },
+        "read_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 3
+        },
+        "glob_grep_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 3
+        },
+        "wall_clock_ms": {
+          "median": 11440,
+          "min": 11390,
+          "max": 11490,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 1.59,
+          "min": 1.58,
+          "max": 1.6,
+          "n": 3
+        }
+      },
+      "spi_madar": {
+        "input_tokens": {
+          "median": 415,
+          "min": 410,
+          "max": 420,
+          "n": 3
+        },
+        "total_tool_calls": {
+          "median": 7,
+          "min": 7,
+          "max": 7,
+          "n": 3
+        },
+        "read_calls": {
+          "median": 2,
+          "min": 2,
+          "max": 2,
+          "n": 3
+        },
+        "glob_grep_calls": {
+          "median": 2,
+          "min": 2,
+          "max": 2,
+          "n": 3
+        },
+        "wall_clock_ms": {
+          "median": 10440,
+          "min": 10390,
+          "max": 10490,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 1.41,
+          "min": 1.4,
+          "max": 1.42,
+          "n": 3
+        }
+      },
+      "workflow_outcomes": {
+        "legacy": {
+          "wrong_file_edits": null,
+          "validation_passed": null,
+          "review_time_seconds": {
+            "median": 100,
+            "min": 95,
+            "max": 105,
+            "n": 3
+          },
+          "rework_loops": {
+            "median": 1,
+            "min": 0,
+            "max": 2,
+            "n": 3
+          },
+          "human_intervention_required": {
+            "yes": 1,
+            "no": 2,
+            "n": 3
+          },
+          "evidence": [
+            "legacy review time",
+            "legacy rework",
+            "legacy human intervention"
+          ]
+        },
+        "spi_madar": {
+          "wrong_file_edits": null,
+          "validation_passed": null,
+          "review_time_seconds": {
+            "median": 80,
+            "min": 75,
+            "max": 85,
+            "n": 3
+          },
+          "rework_loops": {
+            "median": 0,
+            "min": 0,
+            "max": 0,
+            "n": 3
+          },
+          "human_intervention_required": {
+            "yes": 0,
+            "no": 3,
+            "n": 3
+          },
+          "evidence": [
+            "spi review time",
+            "spi rework"
+          ]
+        }
+      },
+      "artifacts": {
+        "legacy_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/nestjs-mid/review/warm-cache/legacy/trial-001/trial-001/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/nestjs-mid/review/warm-cache/legacy/trial-002/trial-002/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/nestjs-mid/review/warm-cache/legacy/trial-003/trial-003/report.share-safe.json"
+        ],
+        "spi_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/nestjs-mid/review/warm-cache/spi/trial-001/trial-001/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/nestjs-mid/review/warm-cache/spi/trial-002/trial-002/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/nestjs-mid/review/warm-cache/spi/trial-003/trial-003/report.share-safe.json"
+        ]
+      }
+    },
+    {
+      "repoId": "nestjs-mid",
+      "repoName": "NestJS-like service fixture",
+      "taskId": "impact",
+      "taskName": "Impact analysis task",
+      "mode": "warm",
+      "prompt": "What breaks if I change session persistence in the auth service to stop returning stored session ids?",
+      "status": "completed",
+      "reason": null,
+      "isolation": true,
+      "baseline": {
+        "input_tokens": {
+          "median": 590,
+          "min": 585,
+          "max": 595,
+          "n": 3
+        },
+        "total_tool_calls": {
+          "median": 14,
+          "min": 14,
+          "max": 14,
+          "n": 3
+        },
+        "read_calls": {
+          "median": 5,
+          "min": 5,
+          "max": 5,
+          "n": 3
+        },
+        "glob_grep_calls": {
+          "median": 6,
+          "min": 6,
+          "max": 6,
+          "n": 3
+        },
+        "wall_clock_ms": {
+          "median": 14500,
+          "min": 14450,
+          "max": 14550,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 1.96,
+          "min": 1.95,
+          "max": 1.97,
+          "n": 3
+        }
+      },
+      "madar": {
+        "input_tokens": {
+          "median": 420,
+          "min": 415,
+          "max": 425,
+          "n": 3
+        },
+        "total_tool_calls": {
+          "median": 9,
+          "min": 9,
+          "max": 9,
+          "n": 3
+        },
+        "read_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 3
+        },
+        "glob_grep_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 3
+        },
+        "wall_clock_ms": {
+          "median": 11300,
+          "min": 11250,
+          "max": 11350,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 1.52,
+          "min": 1.51,
+          "max": 1.53,
+          "n": 3
+        }
+      },
+      "spi_madar": {
+        "input_tokens": {
+          "median": 380,
+          "min": 375,
+          "max": 385,
+          "n": 3
+        },
+        "total_tool_calls": {
+          "median": 7,
+          "min": 7,
+          "max": 7,
+          "n": 3
+        },
+        "read_calls": {
+          "median": 2,
+          "min": 2,
+          "max": 2,
+          "n": 3
+        },
+        "glob_grep_calls": {
+          "median": 2,
+          "min": 2,
+          "max": 2,
+          "n": 3
+        },
+        "wall_clock_ms": {
+          "median": 10300,
+          "min": 10250,
+          "max": 10350,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 1.34,
+          "min": 1.33,
+          "max": 1.35,
+          "n": 3
+        }
+      },
+      "workflow_outcomes": null,
+      "artifacts": {
+        "legacy_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/nestjs-mid/impact/warm-cache/legacy/trial-001/trial-001/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/nestjs-mid/impact/warm-cache/legacy/trial-002/trial-002/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/nestjs-mid/impact/warm-cache/legacy/trial-003/trial-003/report.share-safe.json"
+        ],
+        "spi_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/nestjs-mid/impact/warm-cache/spi/trial-001/trial-001/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/nestjs-mid/impact/warm-cache/spi/trial-002/trial-002/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/nestjs-mid/impact/warm-cache/spi/trial-003/trial-003/report.share-safe.json"
+        ]
+      }
+    },
+    {
+      "repoId": "ts-monorepo-large",
+      "repoName": "TypeScript monorepo proxy",
+      "taskId": "explain-runtime",
+      "taskName": "Explain runtime flow",
+      "mode": "warm",
+      "prompt": "How does invite creation and membership validation flow work inside the monorepo invite service?",
+      "status": "completed",
+      "reason": null,
+      "isolation": true,
+      "baseline": {
+        "input_tokens": {
+          "median": 610,
+          "min": 605,
+          "max": 615,
+          "n": 3
+        },
+        "total_tool_calls": {
+          "median": 14,
+          "min": 14,
+          "max": 14,
+          "n": 3
+        },
+        "read_calls": {
+          "median": 5,
+          "min": 5,
+          "max": 5,
+          "n": 3
+        },
+        "glob_grep_calls": {
+          "median": 6,
+          "min": 6,
+          "max": 6,
+          "n": 3
+        },
+        "wall_clock_ms": {
+          "median": 14740,
+          "min": 14690,
+          "max": 14790,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 2.02,
+          "min": 2.01,
+          "max": 2.03,
+          "n": 3
+        }
+      },
+      "madar": {
+        "input_tokens": {
+          "median": 440,
+          "min": 435,
+          "max": 445,
+          "n": 3
+        },
+        "total_tool_calls": {
+          "median": 9,
+          "min": 9,
+          "max": 9,
+          "n": 3
+        },
+        "read_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 3
+        },
+        "glob_grep_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 3
+        },
+        "wall_clock_ms": {
+          "median": 11540,
+          "min": 11490,
+          "max": 11590,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 1.58,
+          "min": 1.57,
+          "max": 1.59,
+          "n": 3
+        }
+      },
+      "spi_madar": {
+        "input_tokens": {
+          "median": 400,
+          "min": 395,
+          "max": 405,
+          "n": 3
+        },
+        "total_tool_calls": {
+          "median": 7,
+          "min": 7,
+          "max": 7,
+          "n": 3
+        },
+        "read_calls": {
+          "median": 2,
+          "min": 2,
+          "max": 2,
+          "n": 3
+        },
+        "glob_grep_calls": {
+          "median": 2,
+          "min": 2,
+          "max": 2,
+          "n": 3
+        },
+        "wall_clock_ms": {
+          "median": 10540,
+          "min": 10490,
+          "max": 10590,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 1.4,
+          "min": 1.39,
+          "max": 1.41,
+          "n": 3
+        }
+      },
+      "workflow_outcomes": null,
+      "artifacts": {
+        "legacy_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-monorepo-large/explain-runtime/warm-cache/legacy/trial-001/trial-001/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-monorepo-large/explain-runtime/warm-cache/legacy/trial-002/trial-002/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-monorepo-large/explain-runtime/warm-cache/legacy/trial-003/trial-003/report.share-safe.json"
+        ],
+        "spi_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-monorepo-large/explain-runtime/warm-cache/spi/trial-001/trial-001/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-monorepo-large/explain-runtime/warm-cache/spi/trial-002/trial-002/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-monorepo-large/explain-runtime/warm-cache/spi/trial-003/trial-003/report.share-safe.json"
+        ]
+      }
+    },
+    {
+      "repoId": "ts-monorepo-large",
+      "repoName": "TypeScript monorepo proxy",
+      "taskId": "implement",
+      "taskName": "Implement task",
+      "mode": "warm",
+      "prompt": "Add invite expiry validation inside the domain invite service without widening the package boundary.",
+      "status": "completed",
+      "reason": null,
+      "isolation": true,
+      "baseline": {
+        "input_tokens": {
+          "median": 645,
+          "min": 640,
+          "max": 650,
+          "n": 3
+        },
+        "total_tool_calls": {
+          "median": 14,
+          "min": 14,
+          "max": 14,
+          "n": 3
+        },
+        "read_calls": {
+          "median": 6,
+          "min": 6,
+          "max": 6,
+          "n": 3
+        },
+        "glob_grep_calls": {
+          "median": 6,
+          "min": 6,
+          "max": 6,
+          "n": 3
+        },
+        "wall_clock_ms": {
+          "median": 14880,
+          "min": 14830,
+          "max": 14930,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 2.09,
+          "min": 2.08,
+          "max": 2.1,
+          "n": 3
+        }
+      },
+      "madar": {
+        "input_tokens": {
+          "median": 475,
+          "min": 470,
+          "max": 480,
+          "n": 3
+        },
+        "total_tool_calls": {
+          "median": 9,
+          "min": 9,
+          "max": 9,
+          "n": 3
+        },
+        "read_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 3
+        },
+        "glob_grep_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 3
+        },
+        "wall_clock_ms": {
+          "median": 11680,
+          "min": 11630,
+          "max": 11730,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 1.65,
+          "min": 1.64,
+          "max": 1.66,
+          "n": 3
+        }
+      },
+      "spi_madar": {
+        "input_tokens": {
+          "median": 435,
+          "min": 430,
+          "max": 440,
+          "n": 3
+        },
+        "total_tool_calls": {
+          "median": 7,
+          "min": 7,
+          "max": 7,
+          "n": 3
+        },
+        "read_calls": {
+          "median": 2,
+          "min": 2,
+          "max": 2,
+          "n": 3
+        },
+        "glob_grep_calls": {
+          "median": 2,
+          "min": 2,
+          "max": 2,
+          "n": 3
+        },
+        "wall_clock_ms": {
+          "median": 10680,
+          "min": 10630,
+          "max": 10730,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 1.47,
+          "min": 1.46,
+          "max": 1.48,
+          "n": 3
+        }
+      },
+      "workflow_outcomes": {
+        "legacy": {
+          "wrong_file_edits": {
+            "median": 0,
+            "min": 0,
+            "max": 1,
+            "n": 3
+          },
+          "validation_passed": {
+            "passed": 2,
+            "failed": 1,
+            "n": 3
+          },
+          "review_time_seconds": null,
+          "rework_loops": {
+            "median": 2,
+            "min": 1,
+            "max": 3,
+            "n": 3
+          },
+          "human_intervention_required": {
+            "yes": 1,
+            "no": 2,
+            "n": 3
+          },
+          "evidence": [
+            "legacy validation pass/fail",
+            "legacy wrong-file edits",
+            "legacy human intervention"
+          ]
+        },
+        "spi_madar": {
+          "wrong_file_edits": {
+            "median": 0,
+            "min": 0,
+            "max": 0,
+            "n": 3
+          },
+          "validation_passed": {
+            "passed": 3,
+            "failed": 0,
+            "n": 3
+          },
+          "review_time_seconds": null,
+          "rework_loops": {
+            "median": 0,
+            "min": 0,
+            "max": 0,
+            "n": 3
+          },
+          "human_intervention_required": {
+            "yes": 0,
+            "no": 3,
+            "n": 3
+          },
+          "evidence": [
+            "spi validation pass/fail",
+            "spi wrong-file edits"
+          ]
+        }
+      },
+      "artifacts": {
+        "legacy_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-monorepo-large/implement/warm-cache/legacy/trial-001/trial-001/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-monorepo-large/implement/warm-cache/legacy/trial-002/trial-002/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-monorepo-large/implement/warm-cache/legacy/trial-003/trial-003/report.share-safe.json"
+        ],
+        "spi_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-monorepo-large/implement/warm-cache/spi/trial-001/trial-001/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-monorepo-large/implement/warm-cache/spi/trial-002/trial-002/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-monorepo-large/implement/warm-cache/spi/trial-003/trial-003/report.share-safe.json"
+        ]
+      }
+    },
+    {
+      "repoId": "ts-monorepo-large",
+      "repoName": "TypeScript monorepo proxy",
+      "taskId": "review",
+      "taskName": "Review task",
+      "mode": "warm",
+      "prompt": "Review the invite-service change for package-boundary violations or incorrect invite expiry handling.",
+      "status": "completed",
+      "reason": null,
+      "isolation": true,
+      "baseline": {
+        "input_tokens": {
+          "median": 665,
+          "min": 660,
+          "max": 670,
+          "n": 3
+        },
+        "total_tool_calls": {
+          "median": 16,
+          "min": 16,
+          "max": 16,
+          "n": 3
+        },
+        "read_calls": {
+          "median": 5,
+          "min": 5,
+          "max": 5,
+          "n": 3
+        },
+        "glob_grep_calls": {
+          "median": 6,
+          "min": 6,
+          "max": 6,
+          "n": 3
+        },
+        "wall_clock_ms": {
+          "median": 14960,
+          "min": 14910,
+          "max": 15010,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 2.13,
+          "min": 2.12,
+          "max": 2.14,
+          "n": 3
+        }
+      },
+      "madar": {
+        "input_tokens": {
+          "median": 495,
+          "min": 490,
+          "max": 500,
+          "n": 3
+        },
+        "total_tool_calls": {
+          "median": 9,
+          "min": 9,
+          "max": 9,
+          "n": 3
+        },
+        "read_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 3
+        },
+        "glob_grep_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 3
+        },
+        "wall_clock_ms": {
+          "median": 11760,
+          "min": 11710,
+          "max": 11810,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 1.69,
+          "min": 1.68,
+          "max": 1.7,
+          "n": 3
+        }
+      },
+      "spi_madar": {
+        "input_tokens": {
+          "median": 455,
+          "min": 450,
+          "max": 460,
+          "n": 3
+        },
+        "total_tool_calls": {
+          "median": 7,
+          "min": 7,
+          "max": 7,
+          "n": 3
+        },
+        "read_calls": {
+          "median": 2,
+          "min": 2,
+          "max": 2,
+          "n": 3
+        },
+        "glob_grep_calls": {
+          "median": 2,
+          "min": 2,
+          "max": 2,
+          "n": 3
+        },
+        "wall_clock_ms": {
+          "median": 10760,
+          "min": 10710,
+          "max": 10810,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 1.51,
+          "min": 1.5,
+          "max": 1.52,
+          "n": 3
+        }
+      },
+      "workflow_outcomes": {
+        "legacy": {
+          "wrong_file_edits": null,
+          "validation_passed": null,
+          "review_time_seconds": {
+            "median": 100,
+            "min": 95,
+            "max": 105,
+            "n": 3
+          },
+          "rework_loops": {
+            "median": 1,
+            "min": 0,
+            "max": 2,
+            "n": 3
+          },
+          "human_intervention_required": {
+            "yes": 1,
+            "no": 2,
+            "n": 3
+          },
+          "evidence": [
+            "legacy review time",
+            "legacy rework",
+            "legacy human intervention"
+          ]
+        },
+        "spi_madar": {
+          "wrong_file_edits": null,
+          "validation_passed": null,
+          "review_time_seconds": {
+            "median": 80,
+            "min": 75,
+            "max": 85,
+            "n": 3
+          },
+          "rework_loops": {
+            "median": 0,
+            "min": 0,
+            "max": 0,
+            "n": 3
+          },
+          "human_intervention_required": {
+            "yes": 0,
+            "no": 3,
+            "n": 3
+          },
+          "evidence": [
+            "spi review time",
+            "spi rework"
+          ]
+        }
+      },
+      "artifacts": {
+        "legacy_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-monorepo-large/review/warm-cache/legacy/trial-001/trial-001/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-monorepo-large/review/warm-cache/legacy/trial-002/trial-002/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-monorepo-large/review/warm-cache/legacy/trial-003/trial-003/report.share-safe.json"
+        ],
+        "spi_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-monorepo-large/review/warm-cache/spi/trial-001/trial-001/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-monorepo-large/review/warm-cache/spi/trial-002/trial-002/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-monorepo-large/review/warm-cache/spi/trial-003/trial-003/report.share-safe.json"
+        ]
+      }
+    },
+    {
+      "repoId": "ts-monorepo-large",
+      "repoName": "TypeScript monorepo proxy",
+      "taskId": "impact",
+      "taskName": "Impact analysis task",
+      "mode": "warm",
+      "prompt": "What breaks if invite-service changes how invite tokens are validated before crossing the package boundary?",
+      "status": "completed",
+      "reason": null,
+      "isolation": true,
+      "baseline": {
+        "input_tokens": {
+          "median": 630,
+          "min": 625,
+          "max": 635,
+          "n": 3
+        },
+        "total_tool_calls": {
+          "median": 14,
+          "min": 14,
+          "max": 14,
+          "n": 3
+        },
+        "read_calls": {
+          "median": 5,
+          "min": 5,
+          "max": 5,
+          "n": 3
+        },
+        "glob_grep_calls": {
+          "median": 6,
+          "min": 6,
+          "max": 6,
+          "n": 3
+        },
+        "wall_clock_ms": {
+          "median": 14820,
+          "min": 14770,
+          "max": 14870,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 2.06,
+          "min": 2.05,
+          "max": 2.07,
+          "n": 3
+        }
+      },
+      "madar": {
+        "input_tokens": {
+          "median": 460,
+          "min": 455,
+          "max": 465,
+          "n": 3
+        },
+        "total_tool_calls": {
+          "median": 9,
+          "min": 9,
+          "max": 9,
+          "n": 3
+        },
+        "read_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 3
+        },
+        "glob_grep_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 3
+        },
+        "wall_clock_ms": {
+          "median": 11620,
+          "min": 11570,
+          "max": 11670,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 1.62,
+          "min": 1.61,
+          "max": 1.63,
+          "n": 3
+        }
+      },
+      "spi_madar": {
+        "input_tokens": {
+          "median": 420,
+          "min": 415,
+          "max": 425,
+          "n": 3
+        },
+        "total_tool_calls": {
+          "median": 7,
+          "min": 7,
+          "max": 7,
+          "n": 3
+        },
+        "read_calls": {
+          "median": 2,
+          "min": 2,
+          "max": 2,
+          "n": 3
+        },
+        "glob_grep_calls": {
+          "median": 2,
+          "min": 2,
+          "max": 2,
+          "n": 3
+        },
+        "wall_clock_ms": {
+          "median": 10620,
+          "min": 10570,
+          "max": 10670,
+          "n": 3
+        },
+        "cost_usd": {
+          "median": 1.44,
+          "min": 1.43,
+          "max": 1.45,
+          "n": 3
+        }
+      },
+      "workflow_outcomes": null,
+      "artifacts": {
+        "legacy_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-monorepo-large/impact/warm-cache/legacy/trial-001/trial-001/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-monorepo-large/impact/warm-cache/legacy/trial-002/trial-002/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-monorepo-large/impact/warm-cache/legacy/trial-003/trial-003/report.share-safe.json"
+        ],
+        "spi_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-monorepo-large/impact/warm-cache/spi/trial-001/trial-001/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-monorepo-large/impact/warm-cache/spi/trial-002/trial-002/report.share-safe.json",
+          "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-monorepo-large/impact/warm-cache/spi/trial-003/trial-003/report.share-safe.json"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+Review the auth session flow for persistence bugs, missing validation, or request-boundary regressions.

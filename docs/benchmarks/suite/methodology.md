@@ -8,7 +8,8 @@ The fixed repo set is tracked in [`repos.json`](./repos.json).
 
 - Keep the shape mix explicit: small TypeScript, mid-size service, larger TypeScript monorepo, Python service, Go service.
 - The suite may use public repos or fixture-style proxies. It must not require the private GoValidate codebase.
-- Only rows marked `status: "ready"` are runnable today. Planned rows stay visible in the manifest so the public surface shows the intended spread honestly.
+- Only rows marked `status: "ready"` are prompt-wired today. Planned rows stay visible in the manifest so the public surface shows the intended spread honestly.
+- Actual execution still verifies a local Madar install in each repo path. Ready rows without a verified install are reported as skipped, not silently treated as measured evidence.
 
 ## Task selection
 
@@ -43,6 +44,14 @@ Secondary metrics:
 - wall-clock duration
 - total cost
 
+Workflow outcome metrics, when the compare receipt provides them:
+
+- wrong-file edits
+- validation pass/fail
+- review time
+- rework
+- human intervention
+
 Per-cell artifacts keep `report.share-safe.json` as the canonical persisted report so summaries can be inspected without leaking private local paths.
 
 ## Isolation mode and canonical environment
@@ -59,6 +68,7 @@ Per-cell artifacts keep `report.share-safe.json` as the canonical persisted repo
 - `summary.json` is the machine-readable rollup
 - `summary.md` is the human-readable rollup
 - Each cell reports `status` and `isolation: true|false`
+- Implement/review cells may also report workflow outcomes beyond token, latency, and tool-call counts when the receipt includes them
 - Keep **repos as rows**
 - Report **median + min/max + n**
 - Keep **cold** and **warm** separate

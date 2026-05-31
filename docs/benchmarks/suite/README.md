@@ -25,15 +25,17 @@ The runner-backed suite now ships in this directory:
 - [`methodology.md`](./methodology.md) — trial protocol, caveats, and reporting rules
 - `madar bench:suite` — the CLI entrypoint that expands runnable cells and writes results under `docs/benchmarks/suite/results/<timestamp>/`
 
-Current wiring is intentionally conservative:
+Current wiring is still conservative, but it is no longer a single-cell scaffold:
 
-- `nestjs-mid` is the first runnable fixture-style mid-size service proxy
-- `explain-runtime` is the first runnable task kind
-- the rest of the fixed matrix is present in the manifests as planned rows so the public surface shows the intended spread without pretending those cells are already measured
+- ready repo shapes: `ts-small`, `nestjs-mid`, and `ts-monorepo-large`
+- ready task kinds: `explain-runtime`, `implement`, `review`, and `impact`
+- Python and Go stay visible as planned rows so the public surface shows the intended spread honestly
+- runner execution still verifies a local Madar install per repo; a prompt-wired row without a verified install is reported as skipped instead of silently counted
 
-First measured row:
+Latest published bundle:
 
-- [`results/2026-05-26T18-31-04/summary.md`](./results/2026-05-26T18-31-04/summary.md) — warm-cache `nestjs-mid` / `explain-runtime`, 3 trials, baseline vs Madar vs SPI Madar
+- [`results/2026-05-31T12-00-00/summary.md`](./results/2026-05-31T12-00-00/summary.md) — small-library, service, and monorepo fixture-style rows across explain, implement, review, and impact tasks, with workflow-outcome summaries on the implement/review cells
+- [`results/2026-05-26T18-31-04/summary.md`](./results/2026-05-26T18-31-04/summary.md) — the first warm-cache `nestjs-mid` / `explain-runtime` receipt kept for historical continuity
 
 Run a dry-run first:
 
@@ -41,7 +43,7 @@ Run a dry-run first:
 madar bench:suite --dry-run
 ```
 
-Run the first wired cell:
+Run one wired cell:
 
 ```bash
 madar bench:suite \
@@ -53,4 +55,4 @@ madar bench:suite \
   --yes
 ```
 
-Measured results remain repo/task-specific receipts. Public claims stay conservative and point back to dated artifact folders plus [`docs/claims-and-evidence.md`](../../claims-and-evidence.md) until the broader matrix is populated.
+Measured results remain repo/task-specific receipts. Public claims stay conservative and point back to dated artifact folders plus [`docs/claims-and-evidence.md`](../../claims-and-evidence.md) until the matrix includes more public languages, more prompts, and more independent receipts.

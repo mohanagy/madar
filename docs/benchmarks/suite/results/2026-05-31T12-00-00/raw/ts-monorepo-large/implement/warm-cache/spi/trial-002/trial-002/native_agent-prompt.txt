@@ -1,0 +1,1 @@
+Add invite expiry validation inside the domain invite service without widening the package boundary.

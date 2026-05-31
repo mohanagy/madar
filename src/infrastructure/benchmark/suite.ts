@@ -7,6 +7,7 @@ import {
   inspectClaudeNativeAgentInstall,
   type NativeAgentCompareReport,
   type NativeAgentCompareResult,
+  type NativeAgentWorkflowOutcome,
 } from '../compare.js'
 import {
   benchmarkIsolationEnabled,
@@ -67,6 +68,32 @@ interface BenchmarkSuiteArmMetricsSummary {
   cost_usd: BenchmarkSuiteMetricStats | null
 }
 
+interface BenchmarkSuitePassFailSummary {
+  passed: number
+  failed: number
+  n: number
+}
+
+interface BenchmarkSuiteYesNoSummary {
+  yes: number
+  no: number
+  n: number
+}
+
+interface BenchmarkSuiteWorkflowOutcomeSummary {
+  wrong_file_edits: BenchmarkSuiteMetricStats | null
+  validation_passed: BenchmarkSuitePassFailSummary | null
+  review_time_seconds: BenchmarkSuiteMetricStats | null
+  rework_loops: BenchmarkSuiteMetricStats | null
+  human_intervention_required: BenchmarkSuiteYesNoSummary | null
+  evidence: string[]
+}
+
+interface BenchmarkSuiteWorkflowOutcomeArms {
+  legacy: BenchmarkSuiteWorkflowOutcomeSummary | null
+  spi_madar: BenchmarkSuiteWorkflowOutcomeSummary | null
+}
+
 interface BenchmarkSuiteCellPlan {
   repo: BenchmarkSuiteRepo
   task: BenchmarkSuiteTask
@@ -89,6 +116,7 @@ export interface BenchmarkSuiteSummaryCell {
   baseline: BenchmarkSuiteArmMetricsSummary
   madar: BenchmarkSuiteArmMetricsSummary
   spi_madar: BenchmarkSuiteArmMetricsSummary | null
+  workflow_outcomes: BenchmarkSuiteWorkflowOutcomeArms | null
   artifacts: {
     legacy_share_safe_reports: string[]
     spi_share_safe_reports: string[]
@@ -395,6 +423,73 @@ function summarizeArmMetrics(
   }
 }
 
+function summarizePassFail(values: boolean[]): BenchmarkSuitePassFailSummary | null {
+  if (values.length === 0) {
+    return null
+  }
+  const passed = values.filter(Boolean).length
+  return {
+    passed,
+    failed: values.length - passed,
+    n: values.length,
+  }
+}
+
+function summarizeYesNo(values: boolean[]): BenchmarkSuiteYesNoSummary | null {
+  if (values.length === 0) {
+    return null
+  }
+  const yes = values.filter(Boolean).length
+  return {
+    yes,
+    no: values.length - yes,
+    n: values.length,
+  }
+}
+
+function collectWorkflowOutcomes(reports: readonly NativeAgentCompareReport[]): NativeAgentWorkflowOutcome[] {
+  return reports.flatMap((report) => report.workflow_outcome ? [report.workflow_outcome] : [])
+}
+
+function collectWorkflowBooleans(
+  outcomes: readonly NativeAgentWorkflowOutcome[],
+  selector: (outcome: NativeAgentWorkflowOutcome) => boolean | null | undefined,
+): boolean[] {
+  return outcomes.flatMap((outcome) => {
+    const value = selector(outcome)
+    return typeof value === 'boolean' ? [value] : []
+  })
+}
+
+function summarizeWorkflowOutcomes(
+  reports: readonly NativeAgentCompareReport[],
+): BenchmarkSuiteWorkflowOutcomeSummary | null {
+  const outcomes = collectWorkflowOutcomes(reports)
+  if (outcomes.length === 0) {
+    return null
+  }
+
+  const summary: BenchmarkSuiteWorkflowOutcomeSummary = {
+    wrong_file_edits: summarizeValues(collectNumbers(outcomes, (outcome) => outcome.wrong_file_edits ?? null)),
+    validation_passed: summarizePassFail(collectWorkflowBooleans(outcomes, (outcome) => outcome.validation_passed)),
+    review_time_seconds: summarizeValues(collectNumbers(outcomes, (outcome) => outcome.review_time_seconds ?? null)),
+    rework_loops: summarizeValues(collectNumbers(outcomes, (outcome) => outcome.rework_loops ?? null)),
+    human_intervention_required: summarizeYesNo(collectWorkflowBooleans(outcomes, (outcome) => outcome.human_intervention_required)),
+    evidence: [...new Set(outcomes.flatMap((outcome) => outcome.evidence ?? []).map((entry) => entry.trim()).filter((entry) => entry.length > 0))],
+  }
+
+  return (
+    summary.wrong_file_edits !== null
+    || summary.validation_passed !== null
+    || summary.review_time_seconds !== null
+    || summary.rework_loops !== null
+    || summary.human_intervention_required !== null
+    || summary.evidence.length > 0
+  )
+    ? summary
+    : null
+}
+
 function isCompletedArm(summary: BenchmarkSuiteArmMetricsSummary): boolean {
   return summary.input_tokens !== null
 }
@@ -455,7 +550,45 @@ function formatCellRow(cell: BenchmarkSuiteSummaryCell): string {
     formatMetric(cell.baseline.cost_usd, 2),
     formatMetric(cell.madar.cost_usd, 2),
     formatMetric(cell.spi_madar?.cost_usd ?? null, 2),
+    formatWorkflowOutcomes(cell.workflow_outcomes),
   ].join(' | ')
+}
+
+function formatSingleWorkflowOutcomes(summary: BenchmarkSuiteWorkflowOutcomeSummary): string {
+  const parts: string[] = []
+  if (summary.validation_passed) {
+    parts.push(`validation pass ${summary.validation_passed.passed}/${summary.validation_passed.n}`)
+  }
+  if (summary.wrong_file_edits) {
+    parts.push(`wrong-file edits ${formatMetric(summary.wrong_file_edits)}`)
+  }
+  if (summary.review_time_seconds) {
+    parts.push(`review time (s) ${formatMetric(summary.review_time_seconds)}`)
+  }
+  if (summary.rework_loops) {
+    parts.push(`rework ${formatMetric(summary.rework_loops)}`)
+  }
+  if (summary.human_intervention_required) {
+    parts.push(`human intervention ${summary.human_intervention_required.yes}/${summary.human_intervention_required.n}`)
+  }
+  if (parts.length === 0 && summary.evidence.length > 0) {
+    parts.push(summary.evidence.join(', '))
+  }
+  return parts.length > 0 ? parts.join('; ') : '—'
+}
+
+function formatWorkflowOutcomes(summary: BenchmarkSuiteWorkflowOutcomeArms | null): string {
+  if (summary === null) {
+    return '—'
+  }
+  const parts: string[] = []
+  if (summary.legacy) {
+    parts.push(`legacy: ${formatSingleWorkflowOutcomes(summary.legacy)}`)
+  }
+  if (summary.spi_madar) {
+    parts.push(`SPI: ${formatSingleWorkflowOutcomes(summary.spi_madar)}`)
+  }
+  return parts.length > 0 ? parts.join('; ') : '—'
 }
 
 function formatBenchmarkSuiteSummaryMarkdown(summary: BenchmarkSuiteSummary): string {
@@ -485,8 +618,8 @@ function formatBenchmarkSuiteSummaryMarkdown(summary: BenchmarkSuiteSummary): st
       }
       lines.push(`### ${mode === 'cold' ? 'Cold cache' : 'Warm cache'}`)
       lines.push('')
-      lines.push('| Repo | Status | Isolation | Reason | Baseline input tokens | Madar input tokens | SPI Madar input tokens | Baseline tool calls | Madar tool calls | SPI Madar tool calls | Baseline Read | Madar Read | SPI Madar Read | Baseline Glob/Grep | Madar Glob/Grep | SPI Madar Glob/Grep | Baseline wall-clock (ms) | Madar wall-clock (ms) | SPI Madar wall-clock (ms) | Baseline cost (USD) | Madar cost (USD) | SPI Madar cost (USD) |')
-      lines.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |')
+      lines.push('| Repo | Status | Isolation | Reason | Baseline input tokens | Madar input tokens | SPI Madar input tokens | Baseline tool calls | Madar tool calls | SPI Madar tool calls | Baseline Read | Madar Read | SPI Madar Read | Baseline Glob/Grep | Madar Glob/Grep | SPI Madar Glob/Grep | Baseline wall-clock (ms) | Madar wall-clock (ms) | SPI Madar wall-clock (ms) | Baseline cost (USD) | Madar cost (USD) | SPI Madar cost (USD) | Workflow outcomes |')
+      lines.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |')
       for (const cell of modeCells) {
         lines.push(`| ${formatCellRow(cell)} |`)
       }
@@ -645,6 +778,7 @@ export async function runBenchmarkSuite(
           baseline: summarizeArmMetrics([], 'baseline'),
           madar: summarizeArmMetrics([], 'madar'),
           spi_madar: plan.repo.supportsSpi ? summarizeArmMetrics([], 'madar') : null,
+          workflow_outcomes: null,
           artifacts: {
             legacy_share_safe_reports: [],
             spi_share_safe_reports: [],
@@ -668,6 +802,7 @@ export async function runBenchmarkSuite(
           baseline: summarizeArmMetrics([], 'baseline'),
           madar: summarizeArmMetrics([], 'madar'),
           spi_madar: plan.repo.supportsSpi ? summarizeArmMetrics([], 'madar') : null,
+          workflow_outcomes: null,
           artifacts: {
             legacy_share_safe_reports: [],
             spi_share_safe_reports: [],
@@ -699,6 +834,7 @@ export async function runBenchmarkSuite(
             baseline: summarizeArmMetrics([], 'baseline'),
             madar: summarizeArmMetrics([], 'madar'),
             spi_madar: plan.repo.supportsSpi ? summarizeArmMetrics([], 'madar') : null,
+            workflow_outcomes: null,
             artifacts: {
               legacy_share_safe_reports: [],
               spi_share_safe_reports: [],
@@ -785,6 +921,16 @@ export async function runBenchmarkSuite(
         baseline,
         madar,
         spi_madar: spiMadar,
+        workflow_outcomes: (() => {
+          const legacyWorkflowOutcomes = summarizeWorkflowOutcomes(legacyReports)
+          const spiWorkflowOutcomes = summarizeWorkflowOutcomes(spiReports)
+          return legacyWorkflowOutcomes || spiWorkflowOutcomes
+            ? {
+                legacy: legacyWorkflowOutcomes,
+                spi_madar: spiWorkflowOutcomes,
+              }
+            : null
+        })(),
         artifacts: {
           legacy_share_safe_reports: stringifyArtifacts(copiedLegacyArtifacts),
           spi_share_safe_reports: stringifyArtifacts(copiedSpiArtifacts),

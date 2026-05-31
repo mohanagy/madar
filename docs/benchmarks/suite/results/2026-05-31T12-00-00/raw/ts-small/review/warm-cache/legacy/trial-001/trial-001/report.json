@@ -1,0 +1,116 @@
+{
+  "baseline_mode": "native_agent",
+  "question": "Review the password-reset flow for missing tests, route leaks, or email side effects before merge.",
+  "graph_path": "<project-root>/out/graph.json",
+  "isolation": true,
+  "baseline": {
+    "kind": "succeeded",
+    "model": "claude-sonnet",
+    "usage": {
+      "input_tokens": 580,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 100
+    },
+    "total_input_tokens_anthropic_exact": 580,
+    "uncached_input_tokens_anthropic_exact": 580,
+    "cached_input_tokens_anthropic_exact": 0,
+    "total_cost_usd": 1.92,
+    "num_turns": 8,
+    "duration_ms": 14270,
+    "result_path": "<artifact-root>/baseline-answer.txt"
+  },
+  "madar": {
+    "kind": "succeeded",
+    "model": "claude-sonnet",
+    "usage": {
+      "input_tokens": 410,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 100
+    },
+    "total_input_tokens_anthropic_exact": 410,
+    "uncached_input_tokens_anthropic_exact": 410,
+    "cached_input_tokens_anthropic_exact": 0,
+    "total_cost_usd": 1.48,
+    "num_turns": 5,
+    "duration_ms": 11070,
+    "result_path": "<artifact-root>/madar-answer.txt"
+  },
+  "tool_call_counts": {
+    "baseline": {
+      "total": 16,
+      "Read": 5,
+      "Bash": 0,
+      "Glob": 4,
+      "Grep": 2,
+      "ToolSearch": 0,
+      "other": {}
+    },
+    "madar": {
+      "total": 9,
+      "Read": 3,
+      "Bash": 0,
+      "Glob": 2,
+      "Grep": 1,
+      "ToolSearch": 0,
+      "other": {}
+    }
+  },
+  "install_verified": true,
+  "measurement_validity": "valid",
+  "trace_status": "trace_available",
+  "madar_mcp_call_count": 1,
+  "benchmark_outcome": {
+    "outcome": "partial_win",
+    "checks": {
+      "routing_tool_latency": "win",
+      "token": "win",
+      "fresh_token": "win",
+      "cost": "win",
+      "turns": "flat"
+    },
+    "evidence": [
+      "fixture-style deterministic benchmark row"
+    ]
+  },
+  "workflow_outcome": {
+    "review_time_seconds": 95,
+    "rework_loops": 0,
+    "human_intervention_required": false,
+    "evidence": [
+      "legacy review time",
+      "legacy rework",
+      "legacy human intervention"
+    ]
+  },
+  "prompt_token_source": {
+    "baseline": "anthropic_provider_reported",
+    "madar": "anthropic_provider_reported"
+  },
+  "provider_proof": {
+    "baseline": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "madar": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "reduction_basis": "provider_reported"
+  },
+  "started_at": "2026-05-31T12:00:00.000Z",
+  "completed_at": "2026-05-31T12:00:01.000Z",
+  "paths": {
+    "output_dir": "<artifact-root>",
+    "report": "<artifact-root>/report.json",
+    "share_safe_report": "<artifact-root>/report.share-safe.json",
+    "baseline_answer": "<artifact-root>/baseline-answer.txt",
+    "madar_answer": "<artifact-root>/madar-answer.txt",
+    "prompt_file": "<artifact-root>/native_agent-prompt.txt"
+  }
+}

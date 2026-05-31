@@ -1,0 +1,1 @@
+What breaks if I change the password-reset service so it no longer writes to the audit log?

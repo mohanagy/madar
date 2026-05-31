@@ -2479,6 +2479,15 @@ export interface NativeAgentBenchmarkOutcome {
   evidence: string[]
 }
 
+export interface NativeAgentWorkflowOutcome {
+  wrong_file_edits?: number | null
+  validation_passed?: boolean | null
+  review_time_seconds?: number | null
+  rework_loops?: number | null
+  human_intervention_required?: boolean | null
+  evidence?: string[]
+}
+
 export interface NativeAgentToolCallCountsEntry {
   total: number
   Read: number
@@ -2524,6 +2533,7 @@ export interface NativeAgentCompareReport {
   prompt_contract?: NativeAgentPromptContractAssessment
   claim_assessment?: NativeAgentClaimAssessment
   benchmark_outcome?: NativeAgentBenchmarkOutcome
+  workflow_outcome?: NativeAgentWorkflowOutcome
   prompt_token_source: {
     baseline: 'anthropic_provider_reported' | 'unknown'
     madar: 'anthropic_provider_reported' | 'unknown'

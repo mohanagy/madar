@@ -198,13 +198,13 @@ Runtime-generation prompts stay compact: the pack shaping follows the strongest 
 
 ## In progress
 
-- **Reproducible benchmark suite with per-repo spread.** The public suite now ships fixed manifests, methodology, and the `madar bench:suite` runner under [`docs/benchmarks/suite/`](https://github.com/mohanagy/madar/tree/main/docs/benchmarks/suite/).
+- **Reproducible benchmark suite with per-repo spread.** The public suite now ships fixed manifests, methodology, the `madar bench:suite` runner, and published fixture-proxy rows across a small library, a service, and a monorepo under [`docs/benchmarks/suite/`](https://github.com/mohanagy/madar/tree/main/docs/benchmarks/suite/).
 - **Exploration behavior across more repos and prompts.** Strict install guidance now pushes agents toward one graph/pack-first pass, but the public evidence is still mixed. The current counterexample note is in [`docs/benchmarks/2026-05-25-founder-command-center-auth-flow/`](https://github.com/mohanagy/madar/tree/main/docs/benchmarks/2026-05-25-founder-command-center-auth-flow/).
 - **Clearer compare evidence.** Native-agent compare traces now preserve more machine-readable metadata, but we still treat them as repo/task-specific receipts rather than a universal claim.
 
 ## Not yet measured
 
-- **Implement tasks.** The demonstrated release cell is an `explain` prompt. Whether Madar improves implementation work or wrong-file edit rates is still unmeasured and belongs under [#332](https://github.com/mohanagy/madar/issues/332).
+- **Broad implement-task claims.** The suite now has initial fixture-proxy implement/review/impact rows plus workflow-outcome receipts, but that is still not enough to claim universal implementation improvement or wrong-file edit gains across repos. Broader validation stays under [#332](https://github.com/mohanagy/madar/issues/332).
 - **Lower-confidence packs.** This release cell is a strong-path, install-verified receipt; lower-confidence prompt behavior still needs its own measured cells.
 - **Repos beyond the demonstrated GoValidate backend cell.** Current public artifacts do not justify a universal turns / latency / exploration claim across repo shapes.
 - **Cross-repo aggregate benchmark marketing.** We do not publish a single-number cross-repo headline.
@@ -221,6 +221,7 @@ Runtime-generation prompts stay compact: the pack shaping follows the strongest 
 - We publish dated artifact folders under [`docs/benchmarks/`](https://github.com/mohanagy/madar/tree/main/docs/benchmarks/) and map each public claim to evidence in [`docs/claims-and-evidence.md`](https://github.com/mohanagy/madar/blob/main/docs/claims-and-evidence.md).
 - This release README cites one verified cell under [`docs/benchmarks/regression/0.27.0-next.4-govalidate-explain/`](https://github.com/mohanagy/madar/tree/main/docs/benchmarks/regression/0.27.0-next.4-govalidate-explain/), not a universal benchmark headline.
 - The benchmark-suite direction is **per-repo spread**, fixed tasks, and reproducible artifacts under [`docs/benchmarks/suite/`](https://github.com/mohanagy/madar/tree/main/docs/benchmarks/suite/). There is **no single-number cross-repo headline** in the public docs.
+- The latest suite bundle includes initial fixture-proxy implement/review/impact rows plus workflow-outcome summaries, but those rows still count as per-cell receipts rather than a universal product claim.
 - Suite runs use the same prompt against a baseline path and an install-verified Madar path, capture verbose tool traces, and keep multi-trial reporting attached to the specific repo/task cell rather than flattening it into one marketing number.
 - Published benchmark cells run in isolation mode ([`docs/benchmarks/suite/isolation/`](https://github.com/mohanagy/madar/tree/main/docs/benchmarks/suite/isolation/)). Your local numbers may differ if your Claude Code config differs.
 - Run `madar bench:suite --dry-run` to inspect the current matrix, then `madar bench:suite --repo nestjs-mid --task explain-runtime ...` to populate a wired cell.

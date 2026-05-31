@@ -1,0 +1,107 @@
+{
+  "baseline_mode": "native_agent",
+  "question": "What breaks if I change session persistence in the auth service to stop returning stored session ids?",
+  "graph_path": "<project-root>/out/graph.json",
+  "isolation": true,
+  "baseline": {
+    "kind": "succeeded",
+    "model": "claude-sonnet",
+    "usage": {
+      "input_tokens": 585,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 100
+    },
+    "total_input_tokens_anthropic_exact": 585,
+    "uncached_input_tokens_anthropic_exact": 585,
+    "cached_input_tokens_anthropic_exact": 0,
+    "total_cost_usd": 1.95,
+    "num_turns": 7,
+    "duration_ms": 14450,
+    "result_path": "<artifact-root>/baseline-answer.txt"
+  },
+  "madar": {
+    "kind": "succeeded",
+    "model": "claude-sonnet",
+    "usage": {
+      "input_tokens": 375,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 100
+    },
+    "total_input_tokens_anthropic_exact": 375,
+    "uncached_input_tokens_anthropic_exact": 375,
+    "cached_input_tokens_anthropic_exact": 0,
+    "total_cost_usd": 1.33,
+    "num_turns": 4,
+    "duration_ms": 10250,
+    "result_path": "<artifact-root>/madar-answer.txt"
+  },
+  "tool_call_counts": {
+    "baseline": {
+      "total": 14,
+      "Read": 5,
+      "Bash": 0,
+      "Glob": 4,
+      "Grep": 2,
+      "ToolSearch": 0,
+      "other": {}
+    },
+    "madar": {
+      "total": 7,
+      "Read": 2,
+      "Bash": 0,
+      "Glob": 1,
+      "Grep": 1,
+      "ToolSearch": 0,
+      "other": {}
+    }
+  },
+  "install_verified": true,
+  "measurement_validity": "valid",
+  "trace_status": "trace_available",
+  "madar_mcp_call_count": 1,
+  "benchmark_outcome": {
+    "outcome": "partial_win",
+    "checks": {
+      "routing_tool_latency": "win",
+      "token": "win",
+      "fresh_token": "win",
+      "cost": "win",
+      "turns": "flat"
+    },
+    "evidence": [
+      "fixture-style deterministic benchmark row"
+    ]
+  },
+  "workflow_outcome": null,
+  "prompt_token_source": {
+    "baseline": "anthropic_provider_reported",
+    "madar": "anthropic_provider_reported"
+  },
+  "provider_proof": {
+    "baseline": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "madar": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "reduction_basis": "provider_reported"
+  },
+  "started_at": "2026-05-31T12:00:00.000Z",
+  "completed_at": "2026-05-31T12:00:01.000Z",
+  "paths": {
+    "output_dir": "<artifact-root>",
+    "report": "<artifact-root>/report.json",
+    "share_safe_report": "<artifact-root>/report.share-safe.json",
+    "baseline_answer": "<artifact-root>/baseline-answer.txt",
+    "madar_answer": "<artifact-root>/madar-answer.txt",
+    "prompt_file": "<artifact-root>/native_agent-prompt.txt"
+  }
+}

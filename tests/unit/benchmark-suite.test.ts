@@ -1,5 +1,5 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 
 import { describe, expect, it } from 'vitest'
@@ -94,6 +94,14 @@ function makeCompareResult(input: {
   madarGrep: number
   isolation?: boolean
   environment?: BenchmarkEnvironment
+  workflowOutcome?: {
+    wrong_file_edits?: number | null
+    validation_passed?: boolean | null
+    review_time_seconds?: number | null
+    rework_loops?: number | null
+    human_intervention_required?: boolean | null
+    evidence?: string[]
+  }
 }): NativeAgentCompareResult {
   mkdirSync(input.outputDir, { recursive: true })
   const baselineAnswerPath = join(input.outputDir, 'baseline-answer.txt')
@@ -127,7 +135,7 @@ function makeCompareResult(input: {
   writeFileSync(reportPath, `${JSON.stringify(publishedReport, null, 2)}\n`, 'utf8')
   writeFileSync(shareSafeReportPath, `${JSON.stringify(shareSafeReport, null, 2)}\n`, 'utf8')
 
-  const report: NativeAgentCompareReport = {
+  const report = {
     baseline_mode: 'native_agent',
     question: input.question,
     graph_path: input.graphPath,
@@ -227,6 +235,27 @@ function makeCompareResult(input: {
       madar_answer: madarAnswerPath,
       prompt_file: promptPath,
     },
+    ...(input.workflowOutcome
+      ? {
+          workflow_outcome: {
+            wrong_file_edits: input.workflowOutcome.wrong_file_edits ?? null,
+            validation_passed: input.workflowOutcome.validation_passed ?? null,
+            review_time_seconds: input.workflowOutcome.review_time_seconds ?? null,
+            rework_loops: input.workflowOutcome.rework_loops ?? null,
+            human_intervention_required: input.workflowOutcome.human_intervention_required ?? null,
+            evidence: input.workflowOutcome.evidence ?? [],
+          },
+        }
+      : {}),
+  } as NativeAgentCompareReport & {
+    workflow_outcome?: {
+      wrong_file_edits: number | null
+      validation_passed: boolean | null
+      review_time_seconds: number | null
+      rework_loops: number | null
+      human_intervention_required: boolean | null
+      evidence: string[]
+    }
   }
 
   return {
@@ -258,8 +287,19 @@ describe('benchmark suite manifests', () => {
 
     expect(repos).toEqual(expect.arrayContaining([
       expect.objectContaining({
+        id: 'ts-small',
+        status: 'ready',
+        shape: 'library',
+      }),
+      expect.objectContaining({
         id: 'nestjs-mid',
         status: 'ready',
+        shape: 'nestjs-service-proxy',
+      }),
+      expect.objectContaining({
+        id: 'ts-monorepo-large',
+        status: 'ready',
+        shape: 'monorepo',
       }),
       expect.objectContaining({
         id: 'python-service',
@@ -272,8 +312,31 @@ describe('benchmark suite manifests', () => {
         status: 'ready',
       }),
       expect.objectContaining({
+        id: 'implement',
+        status: 'ready',
+        prompts: expect.objectContaining({
+          'ts-small': expect.any(String),
+          'nestjs-mid': expect.any(String),
+          'ts-monorepo-large': expect.any(String),
+        }),
+      }),
+      expect.objectContaining({
         id: 'review',
-        status: 'planned',
+        status: 'ready',
+        prompts: expect.objectContaining({
+          'ts-small': expect.any(String),
+          'nestjs-mid': expect.any(String),
+          'ts-monorepo-large': expect.any(String),
+        }),
+      }),
+      expect.objectContaining({
+        id: 'impact',
+        status: 'ready',
+        prompts: expect.objectContaining({
+          'ts-small': expect.any(String),
+          'nestjs-mid': expect.any(String),
+          'ts-monorepo-large': expect.any(String),
+        }),
       }),
     ]))
   })
@@ -507,6 +570,7 @@ describe('runBenchmarkSuite', () => {
               baselineGrep: 1,
               madarGrep: isSpi ? 0 : 1,
             })
+
           },
         },
       )
@@ -686,6 +750,350 @@ describe('runBenchmarkSuite', () => {
 
       expect(new Set(graphPathsByMode.get('cold') ?? []).size).toBe(2)
       expect(new Set(graphPathsByMode.get('warm') ?? []).size).toBe(1)
+    })
+  })
+
+  it('summarizes workflow outcomes for implement cells beyond cost and latency metrics', async () => {
+    await withTempDir(async (tempDir) => {
+      const runnableRepoPath = createFixtureRepo(join(tempDir, 'repos', 'nestjs-mid'))
+      const repos: BenchmarkSuiteRepo[] = [
+        {
+          id: 'nestjs-mid',
+          name: 'Fixture NestJS-like service',
+          path: runnableRepoPath,
+          description: 'Ready fixture',
+          size: 'mid',
+          language: 'typescript',
+          shape: 'service',
+          status: 'ready',
+          supportsSpi: false,
+        },
+      ]
+      const tasks: BenchmarkSuiteTask[] = [
+        {
+          id: 'implement',
+          name: 'Implement task',
+          description: 'Apply a bounded implementation change.',
+          status: 'ready',
+          prompts: {
+            'nestjs-mid': 'Add request-id propagation to the login session flow.',
+          },
+        },
+      ]
+
+      const result = await runBenchmarkSuite(
+        {
+          repo: 'nestjs-mid',
+          task: 'implement',
+          mode: 'warm',
+          trials: 3,
+          outputDir: join(tempDir, 'results'),
+          execTemplate: 'mock-runner',
+          dryRun: false,
+          yes: true,
+        },
+        {
+          repos,
+          tasks,
+          now: () => new Date('2026-06-01T00:00:00Z'),
+          generateGraph: (rootPath = '.', options = {}) => {
+            const outputDir = join(rootPath, 'out')
+            mkdirSync(outputDir, { recursive: true })
+            const graphPath = join(outputDir, 'graph.json')
+            writeFileSync(graphPath, '{}\n', 'utf8')
+            return {
+              mode: options.useSpi ? 'generate' : 'generate',
+              rootPath,
+              outputDir,
+              graphPath,
+              reportPath: join(outputDir, 'GRAPH_REPORT.md'),
+              htmlPath: null,
+              wikiPath: null,
+              obsidianPath: null,
+              svgPath: null,
+              graphmlPath: null,
+              cypherPath: null,
+              docsPath: null,
+              totalFiles: 1,
+              codeFiles: 1,
+              nonCodeFiles: 0,
+              extractableFiles: 1,
+              extractedFiles: 1,
+              totalWords: 10,
+              nodeCount: 1,
+              edgeCount: 0,
+              communityCount: 1,
+              changedFiles: 0,
+              deletedFiles: 0,
+              cache: null,
+              warning: null,
+              notes: [],
+            } satisfies GenerateGraphResult
+          },
+          executeNativeAgentCompare: async (input) => {
+            const trialMatch = input.outputDir.match(/trial-(\d+)/)
+            const trialNumber = trialMatch ? Number.parseInt(trialMatch[1] ?? '1', 10) : 1
+            return makeCompareResult({
+              question: input.question ?? 'unknown',
+              graphPath: input.graphPath,
+              outputDir: input.outputDir,
+              baselineInputTokens: 500 + trialNumber,
+              madarInputTokens: 320 + trialNumber,
+              baselineTurns: 9,
+              madarTurns: 5,
+              baselineDurationMs: 12000 + trialNumber,
+              madarDurationMs: 8000 + trialNumber,
+              baselineCostUsd: 1.6,
+              madarCostUsd: 1.1,
+              baselineToolTotal: 14,
+              madarToolTotal: 8,
+              baselineRead: 5,
+              madarRead: 3,
+              baselineGlob: 4,
+              madarGlob: 2,
+              baselineGrep: 2,
+              madarGrep: 1,
+              workflowOutcome: {
+                wrong_file_edits: trialNumber === 2 ? 1 : 0,
+                validation_passed: trialNumber !== 2,
+                rework_loops: trialNumber,
+                human_intervention_required: trialNumber === 3,
+                evidence: [
+                  'validation pass/fail',
+                  'wrong-file edits',
+                  'human intervention',
+                ],
+              },
+            })
+          },
+        },
+      )
+
+      const summaryJson = JSON.parse(readFileSync(result.summaryJsonPath!, 'utf8')) as {
+        cells: Array<{
+          taskId: string
+          workflow_outcomes?: {
+            legacy: {
+              wrong_file_edits: { median: number; min: number; max: number; n: number } | null
+              validation_passed: { passed: number; failed: number; n: number } | null
+              review_time_seconds: { median: number; min: number; max: number; n: number } | null
+              rework_loops: { median: number; min: number; max: number; n: number } | null
+              human_intervention_required: { yes: number; no: number; n: number } | null
+              evidence: string[]
+            } | null
+            spi_madar: {
+              wrong_file_edits: { median: number; min: number; max: number; n: number } | null
+              validation_passed: { passed: number; failed: number; n: number } | null
+              review_time_seconds: { median: number; min: number; max: number; n: number } | null
+              rework_loops: { median: number; min: number; max: number; n: number } | null
+              human_intervention_required: { yes: number; no: number; n: number } | null
+              evidence: string[]
+            } | null
+          }
+        }>
+      }
+      const implementCell = summaryJson.cells.find((cell) => cell.taskId === 'implement')
+      const summaryMarkdown = readFileSync(result.summaryPath!, 'utf8')
+
+      expect(implementCell?.workflow_outcomes).toEqual({
+        legacy: {
+          wrong_file_edits: {
+            median: 0,
+            min: 0,
+            max: 1,
+            n: 3,
+          },
+          validation_passed: {
+            passed: 2,
+            failed: 1,
+            n: 3,
+          },
+          review_time_seconds: null,
+          rework_loops: {
+            median: 2,
+            min: 1,
+            max: 3,
+            n: 3,
+          },
+          human_intervention_required: {
+            yes: 1,
+            no: 2,
+            n: 3,
+          },
+          evidence: [
+            'validation pass/fail',
+            'wrong-file edits',
+            'human intervention',
+          ],
+        },
+        spi_madar: null,
+      })
+      expect(summaryMarkdown).toContain('Workflow outcomes')
+      expect(summaryMarkdown).toContain('legacy: validation pass 2/3')
+      expect(summaryMarkdown).toContain('wrong-file edits 0 (0-1, n=3)')
+      expect(summaryMarkdown).toContain('human intervention 1/3')
+    })
+  })
+
+  it('keeps legacy and SPI workflow outcomes separate when both arms publish receipts', async () => {
+    await withTempDir(async (tempDir) => {
+      const runnableRepoPath = createFixtureRepo(join(tempDir, 'repos', 'ts-small'))
+      const repos: BenchmarkSuiteRepo[] = [
+        {
+          id: 'ts-small',
+          name: 'Fixture small workspace',
+          path: runnableRepoPath,
+          description: 'Ready fixture',
+          size: 'small',
+          language: 'typescript',
+          shape: 'library',
+          status: 'ready',
+          supportsSpi: true,
+        },
+      ]
+      const tasks: BenchmarkSuiteTask[] = [
+        {
+          id: 'implement',
+          name: 'Implement task',
+          description: 'Apply a bounded implementation change.',
+          status: 'ready',
+          prompts: {
+            'ts-small': 'Add audit logging to the password reset flow.',
+          },
+        },
+      ]
+
+      const result = await runBenchmarkSuite(
+        {
+          repo: 'ts-small',
+          task: 'implement',
+          mode: 'warm',
+          trials: 3,
+          outputDir: join(tempDir, 'results'),
+          execTemplate: 'mock-runner',
+          dryRun: false,
+          yes: true,
+        },
+        {
+          repos,
+          tasks,
+          now: () => new Date('2026-06-01T00:00:00Z'),
+          generateGraph: (rootPath = '.', options = {}) => {
+            const outputDir = options.useSpi ? join(rootPath, 'out', 'spi') : join(rootPath, 'out')
+            mkdirSync(outputDir, { recursive: true })
+            const graphPath = join(outputDir, 'graph.json')
+            writeFileSync(graphPath, '{}\n', 'utf8')
+            return {
+              mode: options.useSpi ? 'generate' : 'generate',
+              rootPath,
+              outputDir,
+              graphPath,
+              reportPath: join(outputDir, 'GRAPH_REPORT.md'),
+              htmlPath: null,
+              wikiPath: null,
+              obsidianPath: null,
+              svgPath: null,
+              graphmlPath: null,
+              cypherPath: null,
+              docsPath: null,
+              totalFiles: 1,
+              codeFiles: 1,
+              nonCodeFiles: 0,
+              extractableFiles: 1,
+              extractedFiles: 1,
+              totalWords: 10,
+              nodeCount: 1,
+              edgeCount: 0,
+              communityCount: 1,
+              changedFiles: 0,
+              deletedFiles: 0,
+              cache: null,
+              warning: null,
+              notes: [],
+            } satisfies GenerateGraphResult
+          },
+          executeNativeAgentCompare: async (input) => {
+            const trialMatch = input.outputDir.match(/trial-(\d+)/)
+            const trialNumber = trialMatch ? Number.parseInt(trialMatch[1] ?? '1', 10) : 1
+            const isSpi = input.outputDir.includes(`${sep}spi${sep}`)
+            return makeCompareResult({
+              question: input.question ?? 'unknown',
+              graphPath: input.graphPath,
+              outputDir: input.outputDir,
+              baselineInputTokens: 500 + trialNumber,
+              madarInputTokens: 320 + trialNumber,
+              baselineTurns: 9,
+              madarTurns: 5,
+              baselineDurationMs: 12000 + trialNumber,
+              madarDurationMs: 8000 + trialNumber,
+              baselineCostUsd: 1.6,
+              madarCostUsd: 1.1,
+              baselineToolTotal: 14,
+              madarToolTotal: 8,
+              baselineRead: 5,
+              madarRead: 3,
+              baselineGlob: 4,
+              madarGlob: 2,
+              baselineGrep: 2,
+              madarGrep: 1,
+              workflowOutcome: isSpi
+                ? {
+                    wrong_file_edits: 0,
+                    validation_passed: true,
+                    rework_loops: 0,
+                    human_intervention_required: false,
+                    evidence: ['spi validation pass/fail'],
+                  }
+                : {
+                    wrong_file_edits: trialNumber === 2 ? 1 : 0,
+                    validation_passed: trialNumber !== 2,
+                    rework_loops: trialNumber,
+                    human_intervention_required: trialNumber === 3,
+                    evidence: ['legacy validation pass/fail'],
+                  },
+            })
+          },
+        },
+      )
+
+      const summaryJson = JSON.parse(readFileSync(result.summaryJsonPath!, 'utf8')) as {
+        cells: Array<{
+          taskId: string
+          workflow_outcomes?: {
+            legacy: {
+              validation_passed: { passed: number; failed: number; n: number } | null
+              evidence: string[]
+            } | null
+            spi_madar: {
+              validation_passed: { passed: number; failed: number; n: number } | null
+              evidence: string[]
+            } | null
+          }
+        }>
+      }
+      const implementCell = summaryJson.cells.find((cell) => cell.taskId === 'implement')
+      const summaryMarkdown = readFileSync(result.summaryPath!, 'utf8')
+
+      expect(implementCell?.workflow_outcomes).toEqual({
+        legacy: expect.objectContaining({
+          validation_passed: {
+            passed: 2,
+            failed: 1,
+            n: 3,
+          },
+          evidence: ['legacy validation pass/fail'],
+        }),
+        spi_madar: expect.objectContaining({
+          validation_passed: {
+            passed: 3,
+            failed: 0,
+            n: 3,
+          },
+          evidence: ['spi validation pass/fail'],
+        }),
+      })
+      expect(summaryMarkdown).toContain('legacy: validation pass 2/3')
+      expect(summaryMarkdown).toContain('SPI: validation pass 3/3')
     })
   })
 

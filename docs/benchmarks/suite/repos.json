@@ -3,11 +3,11 @@
     "id": "ts-small",
     "name": "TypeScript small workspace",
     "path": "examples/sample-workspace",
-    "description": "Small TypeScript demo workspace kept in-tree for future suite expansion.",
+    "description": "Small TypeScript demo workspace used as the public small-library fixture proxy.",
     "size": "small",
     "language": "typescript",
     "shape": "library",
-    "status": "planned",
+    "status": "ready",
     "supportsSpi": true
   },
   {
@@ -25,11 +25,11 @@
     "id": "ts-monorepo-large",
     "name": "TypeScript monorepo proxy",
     "path": "tests/fixtures/pack-quality/monorepo-package-boundary/workspace",
-    "description": "Fixture-style monorepo proxy reserved for future large-workspace suite cells.",
+    "description": "Fixture-style monorepo proxy used as the public large-workspace suite row.",
     "size": "large",
     "language": "typescript",
     "shape": "monorepo",
-    "status": "planned",
+    "status": "ready",
     "supportsSpi": true
   },
   {
