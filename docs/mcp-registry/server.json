@@ -1,0 +1,60 @@
+{
+    "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+    "name": "io.github.mohanagy/madar",
+    "description": "Local MCP context packs for AI coding agents.",
+    "title": "Madar",
+    "websiteUrl": "https://github.com/mohanagy/madar",
+    "repository": {
+        "id": "1207912024",
+        "source": "github",
+        "url": "https://github.com/mohanagy/madar"
+    },
+    "version": "0.27.4",
+    "packages": [
+        {
+            "registryType": "npm",
+            "registryBaseUrl": "https://registry.npmjs.org",
+            "identifier": "@lubab/madar",
+            "version": "0.27.4",
+            "runtimeHint": "npx",
+            "transport": {
+                "type": "stdio"
+            },
+            "packageArguments": [
+                {
+                    "type": "positional",
+                    "value": "serve"
+                },
+                {
+                    "type": "positional",
+                    "value": "--stdio"
+                },
+                {
+                    "type": "positional",
+                    "valueHint": "graph_path",
+                    "description": "Path to out/graph.json. Run `madar generate .` first so the local MCP server has a graph artifact to serve.",
+                    "default": "out/graph.json",
+                    "format": "filepath",
+                    "isRequired": true
+                }
+            ],
+            "environmentVariables": [
+                {
+                    "name": "MADAR_TOOL_PROFILE",
+                    "description": "Optional MCP tool surface. Madar installs default to the lean core profile.",
+                    "default": "core",
+                    "choices": [
+                        "core",
+                        "full"
+                    ]
+                }
+            ]
+        }
+    ],
+    "_meta": {
+        "io.modelcontextprotocol.registry/publisher-provided": {
+            "notes": "Public npm package plus local graph artifact install flow.",
+            "source": "docs/mcp-registry/server.json"
+        }
+    }
+}

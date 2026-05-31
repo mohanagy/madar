@@ -237,6 +237,14 @@ Codex is intentionally context-pack-first: run `madar generate .`, install with 
 
 For practical multi-agent workflows across Claude Code, Codex, Copilot, Cursor, and Gemini, see the [agent orchestration guide](docs/integrations/agent-orchestration.md).
 
+### MCP Registry metadata
+
+The checked-in public registry manifest lives at [`docs/mcp-registry/server.json`](docs/mcp-registry/server.json). Validate it locally with `npm run registry:validate`.
+
+The official MCP Registry hosts metadata, not Madar code or your local graph artifact. Madar's registry entry still points back to the public npm package and the same local-first runtime flow: run `madar generate .` to create `out/graph.json`, then start the local stdio server with `npx @lubab/madar serve --stdio out/graph.json` (or let `madar <agent> install` write that wiring for you).
+
+Private registry usage stays out of scope for the public Madar listing because the official MCP Registry only accepts public package sources. Keep private or self-hosted registry workflows separate from this metadata file.
+
 ---
 
 ## MCP tools
