@@ -1,4 +1,4 @@
-import { cpSync, existsSync, lstatSync, mkdirSync, symlinkSync } from 'node:fs'
+import { cpSync, existsSync, lstatSync, mkdirSync, rmSync, symlinkSync } from 'node:fs'
 import { dirname, join, relative, sep } from 'node:path'
 
 export interface CopyWorkspaceOptions {
@@ -40,6 +40,7 @@ function linkSharedTopLevelEntries(
     }
     const targetEntryPath = join(targetRoot, entry)
     mkdirSync(dirname(targetEntryPath), { recursive: true })
+    rmSync(targetEntryPath, { recursive: true, force: true })
     symlinkSync(sourceEntryPath, targetEntryPath, symlinkKindForEntry(sourceEntryPath))
   }
 }

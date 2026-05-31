@@ -24,6 +24,7 @@ describe('copyWorkspaceForBenchmark', () => {
     mkdirSync(join(sourceRoot, 'out'), { recursive: true })
     mkdirSync(join(sourceRoot, '.git'), { recursive: true })
     mkdirSync(join(sourceRoot, 'node_modules', 'example'), { recursive: true })
+    mkdirSync(join(targetRoot, 'node_modules'), { recursive: true })
 
     writeFileSync(join(sourceRoot, 'src', 'session.ts'), 'export const ok = true\n', 'utf8')
     writeFileSync(join(sourceRoot, 'out', 'graph.json'), '{"skip":true}\n', 'utf8')
