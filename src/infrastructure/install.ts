@@ -237,7 +237,7 @@ export function isMadarProjectHook(hook: unknown, matcher?: string): boolean {
   )
 }
 
-function isMadarCodexHook(hook: unknown): boolean {
+export function isMadarCodexHook(hook: unknown): boolean {
   if (!isRecord(hook) || hook.matcher !== 'Bash' || !Array.isArray(hook.hooks)) {
     return false
   }
@@ -550,10 +550,10 @@ const SKILL_REGISTRATION_MARKER = '- **madar**'
 const LOCAL_SKILL_ASSET_DIRECTORY = join('assets', 'skills')
 const PRIMARY_CLI_BIN_NAME = 'madar'
 const CLI_BIN_NAMES = [PRIMARY_CLI_BIN_NAME] as const
-const OPENCODE_PLUGIN_RELATIVE_PATH = '.opencode/plugins/madar.js'
+export const OPENCODE_PLUGIN_RELATIVE_PATH = '.opencode/plugins/madar.js'
 const OPENCODE_JSON_CONFIG_PATH = 'opencode.json'
 const OPENCODE_JSONC_CONFIG_PATH = 'opencode.jsonc'
-const OPENCODE_MCP_SERVER_NAME = 'madar'
+export const OPENCODE_MCP_SERVER_NAME = 'madar'
 const CURSOR_RULE_RELATIVE_PATH = '.cursor/rules/madar.mdc'
 const OPENCODE_PLUGIN_REMINDER_COMMAND =
   `echo "[madar] Knowledge graph available. ${renderPlainMcpRoutingGuide()} ${strictNonMadarMcpRule(false).replace(/^for/, 'For')}. ${strictSkillOverrideRule(false)}. ${strictGraphReportFallbackRule(false).replace(/^do/, 'Do')}" && `
@@ -809,7 +809,7 @@ function writeJson(filePath: string, value: Record<string, unknown>): void {
   writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
 }
 
-function resolveOpencodeConfigPath(projectDir: string): string {
+export function resolveOpencodeConfigPath(projectDir: string): string {
   const jsonPath = join(projectDir, OPENCODE_JSON_CONFIG_PATH)
   if (existsSync(jsonPath)) {
     return jsonPath
@@ -823,7 +823,7 @@ function resolveOpencodeConfigPath(projectDir: string): string {
   return jsonPath
 }
 
-function readOpencodeConfig(filePath: string): Record<string, unknown> {
+export function readOpencodeConfig(filePath: string): Record<string, unknown> {
   return filePath.endsWith('.jsonc') ? readJsoncObject(filePath) : readJsonObject(filePath)
 }
 

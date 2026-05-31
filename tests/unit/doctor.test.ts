@@ -4,7 +4,10 @@ import { tmpdir } from 'node:os'
 
 import { describe, expect, test } from 'vitest'
 
+import { agentsInstall } from '../../src/infrastructure/install.js'
 import { runDoctorCommand, runStatusCommand } from '../../src/infrastructure/doctor.js'
+
+const PACKAGE_CLI_RELATIVE_PATH = join('dist', 'src', 'cli', 'bin.js')
 
 function withSandbox(run: (sandboxDir: string) => void): void {
   const sandboxDir = mkdtempSync(join(tmpdir(), 'madar-doctor-'))
@@ -13,6 +16,19 @@ function withSandbox(run: (sandboxDir: string) => void): void {
   } finally {
     rmSync(sandboxDir, { recursive: true, force: true })
   }
+}
+
+function withOpenCodePackageRoot(run: (packageRoot: string) => void): void {
+  withSandbox((packageRoot) => {
+    writeJson(resolve(packageRoot, 'package.json'), {
+      name: 'madar-test',
+      bin: {
+        madar: PACKAGE_CLI_RELATIVE_PATH,
+      },
+    })
+    writeText(resolve(packageRoot, PACKAGE_CLI_RELATIVE_PATH), '#!/usr/bin/env node\n')
+    run(packageRoot)
+  })
 }
 
 function writeJson(path: string, value: unknown): void {
@@ -147,6 +163,103 @@ describe('doctor command', () => {
       expect(output).toContain('gemini: partial')
       expect(output).toContain('madar claude install')
       expect(output).toContain('madar gemini install')
+    })
+  })
+
+  test('reports codex as configured when AGENTS.md and the managed hook are wired', () => {
+    withSandbox((sandboxDir) => {
+      writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
+      agentsInstall(sandboxDir, 'codex')
+
+      const doctor = runDoctorCommand({
+        projectDir: sandboxDir,
+        now: Date.now(),
+      })
+      const status = runStatusCommand({
+        projectDir: sandboxDir,
+        now: Date.now(),
+      })
+
+      expect(doctor).toContain('codex: configured')
+      expect(doctor).toContain('instructions=yes')
+      expect(doctor).toContain('hook=yes')
+      expect(status).toContain('codex:configured')
+    })
+  })
+
+  test('reports OpenCode as configured when the AGENTS profile, plugin, and MCP entry are wired', () => {
+    withSandbox((sandboxDir) => {
+      writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
+      withOpenCodePackageRoot((packageRoot) => {
+        agentsInstall(sandboxDir, 'opencode', { packageRoot })
+
+        const doctor = runDoctorCommand({
+          projectDir: sandboxDir,
+          now: Date.now(),
+        })
+        const status = runStatusCommand({
+          projectDir: sandboxDir,
+          now: Date.now(),
+        })
+
+        expect(doctor).toContain('opencode: configured')
+        expect(doctor).toContain('instructions=yes')
+        expect(doctor).toContain('plugin=yes')
+        expect(doctor).toContain('mcp=yes')
+        expect(status).toContain('opencode:configured')
+      })
+    })
+  })
+
+  test('ignores unrelated OpenCode config files that do not contain Madar wiring', () => {
+    withSandbox((sandboxDir) => {
+      writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
+      writeJson(resolve(sandboxDir, 'opencode.json'), {
+        mcp: {
+          other: {
+            type: 'local',
+            command: ['echo', 'hi'],
+          },
+        },
+      })
+
+      const doctor = runDoctorCommand({
+        projectDir: sandboxDir,
+        now: Date.now(),
+      })
+      const status = runStatusCommand({
+        projectDir: sandboxDir,
+        now: Date.now(),
+      })
+
+      expect(doctor).not.toContain('opencode:')
+      expect(doctor).not.toContain('madar opencode install')
+      expect(status).not.toContain('opencode:')
+    })
+  })
+
+  test('flags stale OpenCode AGENTS guidance and recommends reinstall', () => {
+    withSandbox((sandboxDir) => {
+      writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
+      withOpenCodePackageRoot((packageRoot) => {
+        agentsInstall(sandboxDir, 'opencode', { packageRoot })
+        writeText(resolve(sandboxDir, 'AGENTS.md'), '## madar\n\nOld guidance.\n')
+
+        const doctor = runDoctorCommand({
+          projectDir: sandboxDir,
+          now: Date.now(),
+        })
+        const status = runStatusCommand({
+          projectDir: sandboxDir,
+          now: Date.now(),
+        })
+
+        expect(doctor).toContain('opencode: partial')
+        expect(doctor).toContain('instructions=no')
+        expect(doctor).toContain('plugin=yes')
+        expect(doctor).toContain('madar opencode install')
+        expect(status).toContain('opencode:partial')
+      })
     })
   })
 })

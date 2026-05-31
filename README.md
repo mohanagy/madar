@@ -66,7 +66,7 @@ Pick one install target, then rerun `madar doctor` and `madar status` so the fir
 - Aider — `madar aider install`
 - OpenCode — `madar opencode install`
 
-For Claude Code, Cursor, Gemini CLI, and GitHub Copilot CLI, `madar doctor` and `madar status` verify the local install wiring after you generate `out/graph.json`. Codex CLI, Aider, and OpenCode still install correctly, but those verification commands do not report them yet.
+After you generate `out/graph.json`, `madar doctor` and `madar status` check the local install wiring for Claude Code, Cursor, Gemini CLI, and GitHub Copilot CLI, and they also lint the AGENTS-based Madar instruction profiles for Codex CLI, OpenCode, and Aider. If one of those AGENTS profiles goes stale or an expected hook/plugin/MCP file drifts, those commands mark the agent as `partial` and suggest the matching reinstall command.
 
 Want the opt-in semantic retrieval / rerank path too? Install the optional local model runtime in the same environment:
 
@@ -232,16 +232,16 @@ Runtime-generation prompts stay compact: the pack shaping follows the strongest 
 
 madar produces local context packs that any modern coding agent can consume — over MCP or by piping the compiled prompt to its CLI.
 
-| Agent | Connection | Install command |
-|---|---|---|
-| Claude Code | MCP via `.mcp.json` | `madar claude <install|uninstall> [--profile core|full|strict]` |
-| Cursor | MCP via `.cursor/mcp.json` | `madar cursor <install|uninstall> [--profile core|full|strict]` |
-| GitHub Copilot CLI | MCP via `.vscode/mcp.json` | `madar copilot <install|uninstall> [--profile core|full|strict]` |
-| Gemini CLI | MCP server | `madar gemini <install|uninstall> [--profile core|full|strict]` |
-| Aider | AGENTS.md context-pack-first profile | `madar aider install` |
-| OpenCode | AGENTS.md + `.opencode/plugins/madar.js` + MCP via `opencode.json` / `opencode.jsonc` | `madar opencode install` |
-| Codex CLI | AGENTS.md + `.codex/hooks.json` context-pack-first profile | `madar codex install` |
-| Windsurf / others | Pipe `madar prompt` output | `madar prompt "..." --provider claude` |
+| Agent | Connection | Install command | `doctor` / `status` lint surface |
+|---|---|---|---|
+| Claude Code | MCP via `.mcp.json` | `madar claude <install\|uninstall> [--profile core\|full\|strict]` | `CLAUDE.md` + `.claude/settings.json` hook + `.mcp.json` |
+| Cursor | MCP via `.cursor/mcp.json` | `madar cursor <install\|uninstall> [--profile core\|full\|strict]` | `.cursor/rules/madar.mdc` + `.cursor/mcp.json` |
+| GitHub Copilot CLI | MCP via `.vscode/mcp.json` | `madar copilot <install\|uninstall> [--profile core\|full\|strict]` | `.vscode/mcp.json` |
+| Gemini CLI | MCP server | `madar gemini <install\|uninstall> [--profile core\|full\|strict]` | `GEMINI.md` + `.gemini/settings.json` hook |
+| Aider | AGENTS.md context-pack-first profile | `madar aider install` | `AGENTS.md` Aider profile |
+| OpenCode | AGENTS.md + `.opencode/plugins/madar.js` + MCP via `opencode.json` / `opencode.jsonc` | `madar opencode install` | `AGENTS.md` OpenCode profile + plugin registration + MCP entry |
+| Codex CLI | AGENTS.md + `.codex/hooks.json` context-pack-first profile | `madar codex install` | `AGENTS.md` Codex profile + `.codex/hooks.json` |
+| Windsurf / others | Pipe `madar prompt` output | `madar prompt "..." --provider claude` | n/a |
 
 These are local installers that write project instructions and, when the platform supports it, local MCP config or plugin files that point at the madar subprocess. No code is uploaded.
 

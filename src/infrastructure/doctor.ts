@@ -1,6 +1,13 @@
 import { existsSync, readFileSync, statSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 
+import {
+  OPENCODE_MCP_SERVER_NAME,
+  OPENCODE_PLUGIN_RELATIVE_PATH,
+  isMadarCodexHook,
+  readOpencodeConfig,
+  resolveOpencodeConfigPath,
+} from './install.js'
 import { graphFreshnessMetadata } from '../runtime/freshness.js'
 import { findPackageRoot, readPackageVersion } from '../shared/package-metadata.js'
 
@@ -20,7 +27,7 @@ interface McpCheck {
 }
 
 interface AgentCheck {
-  label: 'claude' | 'cursor' | 'gemini' | 'copilot'
+  label: 'claude' | 'cursor' | 'gemini' | 'copilot' | 'aider' | 'codex' | 'opencode'
   status: AgentStatus
   detail: string
 }
@@ -48,6 +55,29 @@ interface JsonObject {
 }
 
 const OUT_PATH_SEGMENT_PATTERN = /(^|[^a-z0-9_])out(?:[\\/]|[^a-z0-9_]|$)/i
+const AIDER_SKILL_PATH = '.aider/madar/SKILL.md'
+const CODEX_SKILL_PATH = '.agents/skills/madar/SKILL.md'
+const OPENCODE_SKILL_PATH = '.config/opencode/skills/madar/SKILL.md'
+const AIDER_INSTRUCTION_SNIPPETS = [
+  '### Aider profile',
+  'Use a strict context-pack-first workflow',
+  'Before broad code search or manual file expansion',
+  'madar pack "<task or question>" --task explain',
+]
+const CODEX_INSTRUCTION_SNIPPETS = [
+  '### Codex CLI profile',
+  'Use a strict context-pack-first workflow',
+  'Before broad code search, file reads, or worker dispatch',
+  'madar pack "<task or question>" --task explain',
+  'Do not dispatch `spawn_agent` workers first',
+]
+const OPENCODE_INSTRUCTION_SNIPPETS = [
+  '### OpenCode profile',
+  'Use a strict context-pack-first workflow',
+  'Before broad code search, bash-heavy exploration, or worker dispatch',
+  'madar pack "<task or question>" --task explain',
+  'Install artifacts:',
+]
 
 export interface DoctorCommandOptions {
   graphPath?: string
@@ -99,6 +129,18 @@ function hasSectionMarker(filePath: string): boolean {
   return readFileSync(filePath, 'utf8').includes(MADAR_SECTION_MARKER)
 }
 
+function readText(filePath: string): string | null {
+  if (!existsSync(filePath)) {
+    return null
+  }
+  return readFileSync(filePath, 'utf8')
+}
+
+function fileContainsSnippets(filePath: string, snippets: readonly string[]): boolean {
+  const content = readText(filePath)
+  return content !== null && snippets.every((snippet) => content.includes(snippet))
+}
+
 function findHookEntry(settingsPath: string, hookName: 'PreToolUse' | 'BeforeTool'): boolean {
   const settings = readJsonObject(settingsPath)
   if (!settings) {
@@ -116,6 +158,25 @@ function findHookEntry(settingsPath: string, hookName: 'PreToolUse' | 'BeforeToo
   }
 
   return hookEntries.some(containsOutPathReference)
+}
+
+function findCodexHookEntry(settingsPath: string): boolean {
+  const settings = readJsonObject(settingsPath)
+  if (!settings) {
+    return false
+  }
+
+  const hooks = settings.hooks
+  if (!isRecord(hooks)) {
+    return false
+  }
+
+  const hookEntries = hooks.PreToolUse
+  if (!Array.isArray(hookEntries)) {
+    return false
+  }
+
+  return hookEntries.some(isMadarCodexHook)
 }
 
 function containsOutPathReference(value: unknown): boolean {
@@ -273,6 +334,49 @@ function agentStatusFromFlags(flags: boolean[]): AgentStatus {
   return 'partial'
 }
 
+function optionalAgentStatus(signals: boolean[], configuredFlags: boolean[]): AgentStatus | null {
+  if (!signals.some(Boolean)) {
+    return null
+  }
+  return configuredFlags.every(Boolean) ? 'configured' : 'partial'
+}
+
+function isOpencodePluginRegistered(config: JsonObject | null): boolean {
+  if (!config) {
+    return false
+  }
+
+  const plugin = config.plugin
+  if (!Array.isArray(plugin)) {
+    return false
+  }
+
+  return plugin.includes(OPENCODE_PLUGIN_RELATIVE_PATH)
+}
+
+function hasOpencodeMcpEntry(config: JsonObject | null): boolean {
+  return config !== null && isRecord(config.mcp) && isRecord(config.mcp[OPENCODE_MCP_SERVER_NAME])
+}
+
+function isOpencodeMcpConfigured(config: JsonObject | null, expectedGraphPath: string): boolean {
+  if (!config || !isRecord(config.mcp)) {
+    return false
+  }
+
+  const server = config.mcp[OPENCODE_MCP_SERVER_NAME]
+  if (!isRecord(server)) {
+    return false
+  }
+
+  const command = server.command
+  if (!Array.isArray(command)) {
+    return false
+  }
+
+  const declaredGraphPath = extractGraphPathFromArgs(command)
+  return declaredGraphPath !== null && resolve(declaredGraphPath) === expectedGraphPath
+}
+
 function computeNextCommands(report: Omit<DoctorReport, 'nextCommands' | 'healthy'>): string[] {
   const nextCommands = new Set<string>()
 
@@ -320,6 +424,13 @@ function computeNextCommands(report: Omit<DoctorReport, 'nextCommands' | 'health
     }
   }
 
+  for (const label of ['aider', 'codex', 'opencode'] as const) {
+    const agent = agentByLabel.get(label)
+    if (agent && agent.status !== 'configured') {
+      nextCommands.add(`madar ${label} install`)
+    }
+  }
+
   return [...nextCommands]
 }
 
@@ -347,6 +458,43 @@ function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorReport {
 
   const copilotMcpConfigured = copilotMcp.status === 'ok'
 
+  const agentsPath = resolve(projectDir, 'AGENTS.md')
+  const aiderSkillConfigured = existsSync(resolve(projectDir, AIDER_SKILL_PATH))
+  const aiderInstructionsConfigured = fileContainsSnippets(agentsPath, AIDER_INSTRUCTION_SNIPPETS)
+  const aiderStatus = optionalAgentStatus(
+    [aiderSkillConfigured, aiderInstructionsConfigured],
+    [aiderInstructionsConfigured],
+  )
+
+  const codexSkillConfigured = existsSync(resolve(projectDir, CODEX_SKILL_PATH))
+  const codexInstructionsConfigured = fileContainsSnippets(agentsPath, CODEX_INSTRUCTION_SNIPPETS)
+  const codexHookConfigured = findCodexHookEntry(resolve(projectDir, '.codex', 'hooks.json'))
+  const codexStatus = optionalAgentStatus(
+    [codexSkillConfigured, codexInstructionsConfigured, codexHookConfigured],
+    [codexInstructionsConfigured, codexHookConfigured],
+  )
+
+  const opencodeSkillConfigured = existsSync(resolve(projectDir, OPENCODE_SKILL_PATH))
+  const opencodeInstructionsConfigured = fileContainsSnippets(agentsPath, OPENCODE_INSTRUCTION_SNIPPETS)
+  const opencodePluginFileConfigured = existsSync(resolve(projectDir, OPENCODE_PLUGIN_RELATIVE_PATH))
+  const opencodeConfigPath = resolveOpencodeConfigPath(projectDir)
+  const opencodeConfig = existsSync(opencodeConfigPath)
+    ? (() => {
+      try {
+        return readOpencodeConfig(opencodeConfigPath) as JsonObject
+      } catch {
+        return null
+      }
+    })()
+    : null
+  const opencodeMcpEntryPresent = hasOpencodeMcpEntry(opencodeConfig)
+  const opencodePluginConfigured = opencodePluginFileConfigured && isOpencodePluginRegistered(opencodeConfig)
+  const opencodeMcpConfigured = isOpencodeMcpConfigured(opencodeConfig, resolvedGraphPath)
+  const opencodeStatus = optionalAgentStatus(
+    [opencodeSkillConfigured, opencodeInstructionsConfigured, opencodePluginFileConfigured, opencodeMcpEntryPresent],
+    [opencodeInstructionsConfigured, opencodePluginConfigured, opencodeMcpConfigured],
+  )
+
   const agents: AgentCheck[] = [
     {
       label: 'claude',
@@ -369,6 +517,30 @@ function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorReport {
       detail: `mcp=${copilotMcp.status}`,
     },
   ]
+
+  if (aiderStatus) {
+    agents.push({
+      label: 'aider',
+      status: aiderStatus,
+      detail: `instructions=${aiderInstructionsConfigured ? 'yes' : 'no'}`,
+    })
+  }
+
+  if (codexStatus) {
+    agents.push({
+      label: 'codex',
+      status: codexStatus,
+      detail: `instructions=${codexInstructionsConfigured ? 'yes' : 'no'}, hook=${codexHookConfigured ? 'yes' : 'no'}`,
+    })
+  }
+
+  if (opencodeStatus) {
+    agents.push({
+      label: 'opencode',
+      status: opencodeStatus,
+      detail: `instructions=${opencodeInstructionsConfigured ? 'yes' : 'no'}, plugin=${opencodePluginConfigured ? 'yes' : 'no'}, mcp=${opencodeMcpConfigured ? 'yes' : 'no'}`,
+    })
+  }
 
   const mcpChecks = [claudeMcp, cursorMcp, copilotMcp]
 
