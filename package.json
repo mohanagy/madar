@@ -61,11 +61,14 @@
         "prepack": "npm run clean && npm run build",
         "pack:dry-run": "npm pack --dry-run",
         "publish:public": "npm publish --access public",
-        "publish:dry-run": "npm publish --dry-run"
+        "publish:dry-run": "npm publish --dry-run",
+        "registry:validate": "node .github/scripts/validate-mcp-registry.mjs"
     },
     "devDependencies": {
         "@types/node": "^25.6.0",
         "@vitest/coverage-v8": "^4.1.5",
+        "ajv": "^8.20.0",
+        "ajv-formats": "^3.0.1",
         "vite": "^8.0.11",
         "vitest": "^4.1.5"
     },

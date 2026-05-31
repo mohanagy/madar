@@ -7,7 +7,7 @@ Use this checklist when preparing a new `madar` release. It is intentionally man
 1. Update the package version with `npm version <patch|minor|major>`.
 2. Review `package.json` and `package-lock.json` to confirm the new version is correct.
 3. Update `CHANGELOG.md` with the user-visible changes in the release.
-4. Make sure any linked docs, examples, or install flows reflect the new behavior.
+4. Make sure any linked docs, examples, install flows, and `docs/mcp-registry/server.json` reflect the new behavior.
 5. Any new public claim requires a reproducible artifact under `docs/benchmarks/suite/` and a matching update to `docs/claims-and-evidence.md` before the README or release notes can say it publicly.
 
 ## 2. Run the required verification commands
@@ -16,13 +16,14 @@ From the repository root:
 
 ```bash
 npm install
+npm run registry:validate
 npm run typecheck
 npm run build
 npm run test:run
 npm pack --dry-run
 ```
 
-If the change touches packaging or installer behavior, keep the `npm pack --dry-run` output with the release notes or pull request for easy review.
+If the change touches packaging, installer behavior, or public MCP Registry metadata, keep the `npm pack --dry-run` output with the release notes or pull request for easy review.
 
 ## 3. Run manual CLI smoke checks
 
