@@ -1,4 +1,4 @@
-import { isAbsolute, resolve } from 'node:path'
+import { dirname, isAbsolute, resolve } from 'node:path'
 
 import type { ContextPackFormat, ContextPackRetrievalStrategy, ContextPackTaskKind } from '../contracts/context-pack.js'
 import { validateGraphOutputPath, validateGraphPath } from '../shared/security.js'
@@ -37,6 +37,15 @@ export interface PackCliOptions {
    *  instead of running its heuristic classifier on the prompt. */
   retrievalLevel?: 0 | 1 | 2 | 3 | 4 | 5
   retrievalStrategy?: ContextPackRetrievalStrategy
+}
+
+export interface HandoffCliOptions {
+  prompt: string
+  budget: number
+  task: ContextPackTaskKind
+  graphPath: string
+  consumer: 'generic' | 'codex' | 'cursor' | 'copilot'
+  allowSnippets?: boolean
 }
 
 export type PromptCliProvider = 'claude' | 'gemini'
@@ -105,6 +114,7 @@ export interface CompareCliOptions {
   execTemplate: string
   questionsPath: string | null
   outputDir: string
+  task: 'explain' | 'implement'
   baselineMode: 'full' | 'bounded' | 'pack_only' | 'native_agent'
   perArmTimeoutSeconds: number
   heartbeatIntervalMs: number
@@ -184,6 +194,13 @@ export interface SummaryCliOptions {
   graphPath: string
 }
 
+export interface ProofReportCliOptions {
+  graphPath: string
+  outputDir: string
+  compareDir: string
+  packPath: string | null
+}
+
 export interface HookCliOptions {
   action: 'install' | 'uninstall' | 'status'
 }
@@ -192,7 +209,7 @@ export interface InstallCliOptions {
   platform: InstallPlatform
 }
 
-const COMPARE_USAGE = 'Usage: madar compare [question] --exec TEMPLATE [--graph path] [--questions PATH] [--output-dir DIR] [--baseline-mode MODE] [--per-arm-timeout S] [--heartbeat-interval-ms N] [--strict-madar-first] [--strict] [--allow-no-install] [--yes] [--limit N] [--why]'
+const COMPARE_USAGE = 'Usage: madar compare [question] --exec TEMPLATE [--graph path] [--questions PATH] [--output-dir DIR] [--task TASK] [--baseline-mode MODE] [--per-arm-timeout S] [--heartbeat-interval-ms N] [--strict-madar-first] [--strict] [--allow-no-install] [--yes] [--limit N] [--why]'
 
 export interface PlatformActionCliOptions {
   action: 'install' | 'uninstall'
@@ -314,6 +331,14 @@ function parseContextPackTask(value: string): ContextPackTaskKind {
   throw new UsageError('error: --task must be one of explain, implement, review, impact')
 }
 
+function parseCompareTask(value: string): 'explain' | 'implement' {
+  const task = parseContextPackTask(value)
+  if (task === 'explain' || task === 'implement') {
+    return task
+  }
+  throw new UsageError('error: compare --task must be one of explain, implement')
+}
+
 function parsePromptProvider(value: string): PromptCliProvider {
   const normalized = value.trim().toLowerCase()
   if (normalized === 'claude' || normalized === 'gemini') {
@@ -342,6 +367,10 @@ function validateReviewCompareOutputDir(outputDir: string): string {
 
 function parseValidatedGraphPath(flag: string, value: string | undefined): string {
   return validateGraphPath(requireOptionValue(flag, value))
+}
+
+function parseGraphPathArgument(flag: string, value: string | undefined): string {
+  return validateCliText(flag, requireOptionValue(flag, value))
 }
 
 export function parseQueryArgs(args: string[]): QueryCliOptions {
@@ -564,6 +593,97 @@ export function parsePackArgs(args: string[]): PackCliOptions {
   }
 }
 
+export function parseHandoffArgs(args: string[]): HandoffCliOptions {
+  const usage = 'Usage: madar handoff "<prompt>" [--budget N] [--task KIND] [--graph path] [--consumer generic|codex|cursor|copilot] [--allow-snippets]'
+  const prompt = args[0]?.trim()
+  if (!prompt) {
+    throw new UsageError(usage)
+  }
+
+  let budget = 3000
+  let task: ContextPackTaskKind = 'explain'
+  let graphPath = 'out/graph.json'
+  let consumer: HandoffCliOptions['consumer'] = 'generic'
+  let allowSnippets = false
+
+  const normalizedPrompt = validateCliQuestionText('prompt', prompt)
+
+  for (let index = 1; index < args.length; index += 1) {
+    const argument = args[index]
+    if (!argument) {
+      continue
+    }
+
+    if (!argument.startsWith('--')) {
+      throw new UsageError(usage)
+    }
+
+    if (argument === '--budget') {
+      budget = parseBudget(requireOptionValue('--budget', args[index + 1]))
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--budget=')) {
+      const [, value] = argument.split('=', 2)
+      budget = parseBudget(requireOptionValue('--budget', value))
+      continue
+    }
+
+    if (argument === '--task') {
+      task = parseContextPackTask(requireOptionValue('--task', args[index + 1]))
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--task=')) {
+      const [, value] = argument.split('=', 2)
+      task = parseContextPackTask(requireOptionValue('--task', value))
+      continue
+    }
+
+    if (argument === '--graph') {
+      graphPath = parseGraphPathArgument('--graph', args[index + 1])
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--graph=')) {
+      const [, value] = argument.split('=', 2)
+      graphPath = parseGraphPathArgument('--graph', value)
+      continue
+    }
+
+    if (argument === '--consumer') {
+      consumer = parseHandoffConsumer(requireOptionValue('--consumer', args[index + 1]))
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--consumer=')) {
+      const [, value] = argument.split('=', 2)
+      consumer = parseHandoffConsumer(requireOptionValue('--consumer', value))
+      continue
+    }
+
+    if (argument === '--allow-snippets') {
+      allowSnippets = true
+      continue
+    }
+
+    throw new UsageError(`error: unknown option for handoff: ${argument}`)
+  }
+
+  return {
+    prompt: normalizedPrompt,
+    budget,
+    task,
+    graphPath,
+    consumer,
+    ...(allowSnippets ? { allowSnippets: true } : {}),
+  }
+}
+
 function parseContextPackFormat(value: string): PackCliOptions['format'] {
   const normalized = value.trim().toLowerCase()
   if (
@@ -576,6 +696,14 @@ function parseContextPackFormat(value: string): PackCliOptions['format'] {
     return normalized as PackCliOptions['format']
   }
   throw new UsageError('error: --format must be one of json, text, markdown, claude, copilot')
+}
+
+function parseHandoffConsumer(value: string): HandoffCliOptions['consumer'] {
+  const normalized = value.trim().toLowerCase()
+  if (normalized === 'generic' || normalized === 'codex' || normalized === 'cursor' || normalized === 'copilot') {
+    return normalized as HandoffCliOptions['consumer']
+  }
+  throw new UsageError('error: --consumer must be one of generic, codex, cursor, copilot')
 }
 
 function parseRetrievalLevel(value: string): PackCliOptions['retrievalLevel'] {
@@ -1089,6 +1217,7 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
   let execTemplate = ''
   let questionsPath: string | null = null
   let outputDir = 'out/compare'
+  let task: 'explain' | 'implement' = 'explain'
   let baselineMode: 'full' | 'bounded' | 'pack_only' | 'native_agent' = 'full'
   let perArmTimeoutSeconds = 600
   let heartbeatIntervalMs = 30000
@@ -1162,6 +1291,18 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
     if (argument.startsWith('--output-dir=')) {
       const [, value] = argument.split('=', 2)
       outputDir = requireOptionValue('--output-dir', value)
+      continue
+    }
+
+    if (argument === '--task') {
+      task = parseCompareTask(requireOptionValue('--task', args[index + 1]))
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--task=')) {
+      const [, value] = argument.split('=', 2)
+      task = parseCompareTask(requireOptionValue('--task', value))
       continue
     }
 
@@ -1261,6 +1402,7 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
     execTemplate,
     questionsPath,
     outputDir,
+    task,
     baselineMode,
     perArmTimeoutSeconds,
     heartbeatIntervalMs,
@@ -1842,6 +1984,75 @@ export function parseSummaryArgs(args: string[]): SummaryCliOptions {
   }
 
   return { graphPath }
+}
+
+export function parseProofReportArgs(args: string[]): ProofReportCliOptions {
+  const usage = 'Usage: madar proof-report [graph.json] [--output-dir DIR] [--compare-dir DIR] [--pack PATH]'
+  let graphPath = 'out/graph.json'
+  let outputDir: string | null = null
+  let compareDir: string | null = null
+  let packPath: string | null = null
+
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index]
+    if (!argument) {
+      continue
+    }
+
+    if (argument === '--output-dir') {
+      outputDir = validateGraphOutputPath(requireOptionValue('--output-dir', args[index + 1]))
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--output-dir=')) {
+      const [, value] = argument.split('=', 2)
+      outputDir = validateGraphOutputPath(requireOptionValue('--output-dir', value))
+      continue
+    }
+
+    if (argument === '--compare-dir') {
+      compareDir = validateGraphOutputPath(requireOptionValue('--compare-dir', args[index + 1]))
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--compare-dir=')) {
+      const [, value] = argument.split('=', 2)
+      compareDir = validateGraphOutputPath(requireOptionValue('--compare-dir', value))
+      continue
+    }
+
+    if (argument === '--pack') {
+      packPath = validateGraphOutputPath(requireOptionValue('--pack', args[index + 1]))
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--pack=')) {
+      const [, value] = argument.split('=', 2)
+      packPath = validateGraphOutputPath(requireOptionValue('--pack', value))
+      continue
+    }
+
+    if (argument.startsWith('--')) {
+      throw new UsageError(`error: unknown option for proof-report: ${argument}`)
+    }
+
+    if (graphPath !== 'out/graph.json') {
+      throw new UsageError(usage)
+    }
+
+    graphPath = argument
+  }
+
+  const graphBase = dirname(resolve(graphPath))
+  return {
+    graphPath,
+    outputDir: outputDir ?? resolve(graphBase, 'proof-report'),
+    compareDir: compareDir ?? resolve(graphBase, 'compare'),
+    packPath,
+  }
 }
 
 export function parseHookArgs(args: string[]): HookCliOptions {

@@ -154,6 +154,24 @@ describe('validateGraphPath', () => {
       expect(() => validateGraphPath(join(base, 'missing.json'), base)).toThrow(/not found/i)
     })
   })
+
+  test('blocks graph files reached through symlinked directories that escape the base directory', () => {
+    const sandboxRoot = resolve('out', 'test-runtime', 'security-graph-symlink')
+    const base = resolve(sandboxRoot, 'out')
+    const outside = resolve(sandboxRoot, 'outside')
+
+    rmSync(sandboxRoot, { recursive: true, force: true })
+    mkdirSync(base, { recursive: true })
+    mkdirSync(outside, { recursive: true })
+    writeFileSync(resolve(outside, 'graph.json'), '{}\n', 'utf8')
+    symlinkSync(outside, resolve(base, 'link'), 'dir')
+
+    try {
+      expect(() => validateGraphPath(resolve(base, 'link', 'graph.json'), base)).toThrow(/escapes/i)
+    } finally {
+      rmSync(sandboxRoot, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('validateGraphOutputPath', () => {

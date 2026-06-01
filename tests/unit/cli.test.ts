@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 
 import { type CliDependencies, executeCli, formatHelp } from '../../src/cli/main.js'
 import {
@@ -8,6 +8,7 @@ import {
   parseBenchmarkArgs,
   parseCompareArgs,
   parseDoctorArgs,
+  parseHandoffArgs,
   parsePackArgs,
   parseDiffArgs,
   parseExplainArgs,
@@ -16,6 +17,7 @@ import {
   parseInstallArgs,
   parsePathArgs,
   parsePlatformActionArgs,
+  parseProofReportArgs,
   parsePromptArgs,
   parseQueryArgs,
   parseReviewCompareArgs,
@@ -136,7 +138,12 @@ function createDependencies(): CliTestDependencies {
     runReviewCompare: async () => 'review compare command is not implemented yet',
     runTimeTravel: async () => 'time-travel command is not implemented yet',
     runContextPack: async () => 'context pack command is not implemented yet',
+    runHandoff: async () => 'handoff command is not implemented yet',
     runContextPrompt: async () => 'context prompt command is not implemented yet',
+    runProofReport: (options) => ({
+      outputPath: `${options.outputDir}/proof-report.md`,
+      report: '# Local Proof Report\n',
+    }),
     runDoctor: (graphPath) => `doctor check for ${graphPath}`,
     runStatus: (graphPath) => `status check for ${graphPath}`,
     confirm: async () => true,
@@ -328,6 +335,40 @@ describe('cli parser', () => {
     expect(() => parsePackArgs(['how does auth work', '--task', 'summarize'])).toThrow('error: --task must be one of explain, implement, review, impact')
     expect(() => parsePackArgs(['how does auth work', '--format', 'yaml'])).toThrow('error: --format must be one of json, text, markdown, claude, copilot')
     expect(() => parsePackArgs(['how does auth work', '--wat'])).toThrow('error: unknown option for pack: --wat')
+  })
+
+  it('parses handoff args with defaults and overrides', () => {
+    expect(parseHandoffArgs(['ship remote auth debug brief'])).toEqual({
+      prompt: 'ship remote auth debug brief',
+      budget: 3000,
+      task: 'explain',
+      graphPath: 'out/graph.json',
+      consumer: 'generic',
+    })
+
+    expect(parseHandoffArgs([
+      'implement session handoff',
+      '--budget', '1800',
+      '--task', 'implement',
+      '--graph', 'out/custom.json',
+      '--consumer', 'copilot',
+      '--allow-snippets',
+    ])).toEqual({
+      prompt: 'implement session handoff',
+      budget: 1800,
+      task: 'implement',
+      graphPath: 'out/custom.json',
+      consumer: 'copilot',
+      allowSnippets: true,
+    })
+  })
+
+  it('rejects invalid handoff args', () => {
+    expect(() => parseHandoffArgs([])).toThrow('Usage: madar handoff')
+    expect(() => parseHandoffArgs(['task', '--budget', '0'])).toThrow('error: --budget must be a positive integer')
+    expect(() => parseHandoffArgs(['task', '--task', 'summarize'])).toThrow('error: --task must be one of explain, implement, review, impact')
+    expect(() => parseHandoffArgs(['task', '--consumer', 'claude'])).toThrow('error: --consumer must be one of generic, codex, cursor, copilot')
+    expect(() => parseHandoffArgs(['task', '--wat'])).toThrow('error: unknown option for handoff: --wat')
   })
 
   it('parses prompt args with defaults and overrides', () => {
@@ -548,6 +589,7 @@ describe('cli parser', () => {
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       questionsPath: null,
       outputDir: resolve('out/compare'),
+      task: 'explain',
       baselineMode: 'full',
       perArmTimeoutSeconds: 600,
       heartbeatIntervalMs: 30000,
@@ -564,6 +606,7 @@ describe('cli parser', () => {
       execTemplate: 'gemini -p "$(cat {prompt_file})"',
       questionsPath: 'benchmark-questions.json',
       outputDir: resolve('out/compare'),
+      task: 'explain',
       baselineMode: 'full',
       perArmTimeoutSeconds: 600,
       heartbeatIntervalMs: 30000,
@@ -604,6 +647,7 @@ describe('cli parser', () => {
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       questionsPath: null,
       outputDir: resolve('out/compare/custom'),
+      task: 'explain',
       baselineMode: 'bounded',
       perArmTimeoutSeconds: 900,
       heartbeatIntervalMs: 15000,
@@ -630,6 +674,7 @@ describe('cli parser', () => {
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       questionsPath: null,
       outputDir: resolve('out/compare'),
+      task: 'explain',
       baselineMode: 'pack_only',
       perArmTimeoutSeconds: 600,
       heartbeatIntervalMs: 30000,
@@ -638,6 +683,35 @@ describe('cli parser', () => {
       allowNoInstall: false,
       yes: false,
       limit: null,
+    })
+  })
+
+  it('parses compare args with an explicit task kind', () => {
+    expect(
+      parseCompareArgs([
+        'implement session sliding expiration',
+        '--exec',
+        'claude -p "$(cat {prompt_file})"',
+        '--baseline-mode',
+        'native_agent',
+        '--task',
+        'implement',
+      ]),
+    ).toEqual({
+      question: 'implement session sliding expiration',
+      graphPath: 'out/graph.json',
+      execTemplate: 'claude -p "$(cat {prompt_file})"',
+      questionsPath: null,
+      outputDir: resolve('out/compare'),
+      baselineMode: 'native_agent',
+      perArmTimeoutSeconds: 600,
+      heartbeatIntervalMs: 30000,
+      strictMadarFirst: false,
+      strictBenchmarkReadiness: false,
+      allowNoInstall: false,
+      yes: false,
+      limit: null,
+      task: 'implement',
     })
   })
 
@@ -655,6 +729,7 @@ describe('cli parser', () => {
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       questionsPath: null,
       outputDir: resolve('out/compare'),
+      task: 'explain',
       baselineMode: 'full',
       perArmTimeoutSeconds: 600,
       heartbeatIntervalMs: 30000,
@@ -680,6 +755,7 @@ describe('cli parser', () => {
     execTemplate: 'claude -p "$(cat {prompt_file})"',
     questionsPath: null,
     outputDir: resolve('out/compare'),
+    task: 'explain',
     baselineMode: 'full',
     perArmTimeoutSeconds: 600,
     heartbeatIntervalMs: 30000,
@@ -961,6 +1037,37 @@ describe('cli parser', () => {
     expect(() => parseDoctorArgs(['--wat'], 'status')).toThrow('error: unknown option for status: --wat')
   })
 
+  it('parses proof-report args with defaults and overrides', () => {
+    expect(parseProofReportArgs([])).toEqual({
+      graphPath: 'out/graph.json',
+      outputDir: resolve('out/proof-report'),
+      compareDir: resolve('out/compare'),
+      packPath: null,
+    })
+    expect(parseProofReportArgs(['out/custom/graph.json'])).toEqual({
+      graphPath: 'out/custom/graph.json',
+      outputDir: resolve('out/custom/proof-report'),
+      compareDir: resolve('out/custom/compare'),
+      packPath: null,
+    })
+    expect(parseProofReportArgs([
+      'custom.json',
+      '--output-dir',
+      'out/proof/custom',
+      '--compare-dir',
+      'out/compare/custom',
+      '--pack',
+      'out/proof-inputs/context-pack.json',
+    ])).toEqual({
+      graphPath: 'custom.json',
+      outputDir: resolve('out/proof/custom'),
+      compareDir: resolve('out/compare/custom'),
+      packPath: resolve('out/proof-inputs/context-pack.json'),
+    })
+    expect(() => parseProofReportArgs(['custom.json', 'second.json'])).toThrow('Usage: madar proof-report [graph.json] [--output-dir DIR] [--compare-dir DIR] [--pack PATH]')
+    expect(() => parseProofReportArgs(['--wat'])).toThrow('error: unknown option for proof-report: --wat')
+  })
+
   it('parses hook args', () => {
     expect(parseHookArgs(['install'])).toEqual({ action: 'install' })
     expect(parseHookArgs(['uninstall'])).toEqual({ action: 'uninstall' })
@@ -1111,6 +1218,7 @@ describe('cli main', () => {
     expect(help).toContain('    --exec TEMPLATE       required command template; supports {prompt_file}, {question}, {mode}, and {output_file}')
     expect(help).toContain('    --questions PATH      load questions from a JSON file instead of a positional question')
     expect(help).toContain('    --output-dir DIR      compare output directory (default out/compare)')
+    expect(help).toContain('    --task TASK           explain | implement (default explain; implement currently requires --baseline-mode native_agent)')
     expect(help).toContain('    --baseline-mode MODE  full | bounded | pack_only | native_agent (default full; pack_only compares one bounded raw-context prompt against one compiled madar pack; native_agent runs --exec twice, uses Anthropic JSON usage when available, and otherwise saves answer-only artifacts)')
     expect(help).toContain('      For Claude MCP attribution in native_agent mode, include --verbose with --output-format json')
     expect(help).toContain('    --per-arm-timeout S   per-arm timeout seconds for native_agent runs (default 600)')
@@ -1130,6 +1238,10 @@ describe('cli main', () => {
     expect(help).toContain('doctor [graph.json]')
     expect(help).toContain('status [graph.json]')
     expect(help).toContain('check graph freshness, agent config, and MCP wiring')
+    expect(help).toContain('proof-report [graph.json]')
+    expect(help).toContain('generate a local markdown proof report from graph, pack, and compare evidence')
+    expect(help).toContain('    --output-dir DIR      proof report output directory (default out/proof-report)')
+    expect(help).toContain('    --pack PATH           optional saved context-pack JSON for pack-quality evidence')
     expect(help).toContain('question coverage')
     expect(help).toContain('hook <action>')
     expect(help).toContain('install [--platform P]')
@@ -1202,6 +1314,7 @@ describe('cli main', () => {
       execTemplate: 'gemini -p "$(cat {prompt_file})"',
       questionsPath: 'benchmark-questions.json',
       outputDir: resolve('out/compare/custom'),
+      task: 'explain',
       baselineMode: 'bounded',
       perArmTimeoutSeconds: 900,
       heartbeatIntervalMs: 15000,
@@ -1212,9 +1325,86 @@ describe('cli main', () => {
       limit: 5,
       why: true,
     })
+
     expect(compareRequest.io).toBe(io)
     await expect(compareRequest.confirm('Proceed?')).resolves.toBe(true)
     expect(confirmCalls).toBe(1)
+  })
+
+  it('routes proof-report through the injected dependency after parsing args', async () => {
+    const { io, logs, errors } = createIo()
+    const dependencies = createDependencies() as CliDependencies & {
+      runProofReport?: (options: {
+        graphPath: string
+        outputDir: string
+        compareDir: string
+        packPath: string | null
+      }) => { outputPath: string; report: string }
+    }
+    let capturedOptions: unknown
+
+    dependencies.runProofReport = (options) => {
+      capturedOptions = options
+      return {
+        outputPath: resolve('out/proof-report/custom', 'proof-report.md'),
+        report: '# Local Proof Report\n',
+      }
+    }
+
+    const exitCode = await executeCli(
+      [
+        'proof-report',
+        'custom.json',
+        '--output-dir',
+        'out/proof-report/custom',
+        '--pack',
+        'out/proof-inputs/context-pack.json',
+      ],
+      io,
+      dependencies,
+    )
+
+    expect(exitCode).toBe(0)
+    expect(errors).toEqual([])
+    expect(logs).toEqual([`Saved to ${resolve('out/proof-report/custom', 'proof-report.md')}`])
+    expect(capturedOptions).toEqual({
+      graphPath: 'custom.json',
+      outputDir: resolve('out/proof-report/custom'),
+      compareDir: resolve('compare'),
+      packPath: resolve('out/proof-inputs/context-pack.json'),
+    })
+  })
+
+  it('derives proof-report default directories from a custom graph path', async () => {
+    const { io, logs } = createIo()
+    const dependencies = createDependencies() as CliDependencies & {
+      runProofReport?: (options: {
+        graphPath: string
+        outputDir: string
+        compareDir: string
+        packPath: string | null
+      }) => { outputPath: string; report: string }
+    }
+    let capturedOptions: unknown
+
+    dependencies.runProofReport = (options) => {
+      capturedOptions = options
+      return {
+        outputPath: join(options.outputDir, 'proof-report.md'),
+        report: '# Local Proof Report\n',
+      }
+    }
+
+    const exitCode = await executeCli(['proof-report', 'out/custom/graph.json'], io, dependencies)
+
+    expect(exitCode).toBe(0)
+    expect(logs).toEqual([`Saved to ${resolve('out/custom/proof-report', 'proof-report.md')}`])
+    expect(capturedOptions).toEqual({
+      graphPath: 'out/custom/graph.json',
+      outputDir: resolve('out/custom/proof-report'),
+      compareDir: resolve('out/custom/compare'),
+      packPath: null,
+    })
   })
 
   it('routes bench:suite through the injected dependency after parsing args', async () => {
@@ -1489,7 +1679,7 @@ describe('cli main', () => {
 
     expect(exitCode).toBe(2)
     expect(logs).toEqual([])
-    expect(errors).toEqual(['Usage: madar compare [question] --exec TEMPLATE [--graph path] [--questions PATH] [--output-dir DIR] [--baseline-mode MODE] [--per-arm-timeout S] [--heartbeat-interval-ms N] [--strict-madar-first] [--strict] [--allow-no-install] [--yes] [--limit N] [--why]'])
+    expect(errors).toEqual(['Usage: madar compare [question] --exec TEMPLATE [--graph path] [--questions PATH] [--output-dir DIR] [--task TASK] [--baseline-mode MODE] [--per-arm-timeout S] [--heartbeat-interval-ms N] [--strict-madar-first] [--strict] [--allow-no-install] [--yes] [--limit N] [--why]'])
   })
 
   it('prefers the explicit compare command over an implicit generate path match', async () => {
@@ -1595,6 +1785,30 @@ describe('cli main', () => {
       io,
     })
     expect(logs).toEqual(['{"task":"explain"}'])
+    expect(errors).toEqual([])
+  })
+
+  it('routes handoff through the injected dependency after parsing args', async () => {
+    const { io, logs, errors } = createIo()
+    const runHandoff = vi.fn<NonNullable<CliDependencies['runHandoff']>>().mockResolvedValue('{"share_safe":true}')
+    const dependencies: CliDependencies = {
+      ...createDependencies(),
+      runHandoff,
+    }
+
+    await expect(executeCli(['handoff', 'remote auth incident brief', '--budget', '1200', '--consumer', 'cursor'], io, dependencies)).resolves.toBe(0)
+
+    expect(runHandoff).toHaveBeenCalledWith({
+      options: {
+        prompt: 'remote auth incident brief',
+        budget: 1200,
+        task: 'explain',
+        graphPath: 'out/graph.json',
+        consumer: 'cursor',
+      },
+      io,
+    })
+    expect(logs).toEqual(['{"share_safe":true}'])
     expect(errors).toEqual([])
   })
 

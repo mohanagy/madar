@@ -22,11 +22,12 @@ npm run typecheck
 npm run build
 npm run test:run
 npm pack --dry-run
+npm sbom --sbom-format cyclonedx > sbom.cdx.json
 ```
 
 `npm run release:verify` locks the public package metadata, changelog version entry, and npm-visible README links before publish so repository/documentation drift is caught in one pass.
 
-If the change touches packaging, installer behavior, or public MCP Registry metadata, keep the `npm pack --dry-run` output with the release notes or pull request for easy review.
+If the change touches packaging, installer behavior, or public MCP Registry metadata, keep the `npm pack --dry-run` output with the release notes or pull request for easy review. Keep the generated `sbom.cdx.json` alongside the release PR or release notes as the checked supply-chain inventory snapshot for that version. Review [`docs/security/mcp-threat-model.md`](./security/mcp-threat-model.md) before publishing changes that affect MCP installs, share-safe artifacts, prompt handling, or local file boundaries.
 
 ## 3. Run manual CLI smoke checks
 
@@ -51,7 +52,7 @@ Recommended follow-up checks:
 After the verification steps are green:
 
 1. Push and merge the verified release commit so the published README links already exist on the `main` branch.
-2. Publish from that merged `main` commit with `npm publish --access public` when you are ready.
+2. Publish from that merged `main` commit with `npm publish --access public --provenance` when the release environment supports npm provenance attestations.
 3. Create the matching Git tag if `npm version` did not already do so in your workflow.
 4. Draft or publish the GitHub release notes from the changelog entry.
 

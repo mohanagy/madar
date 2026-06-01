@@ -43,3 +43,13 @@ Because `madar` can ingest local files, documents, and URLs, reports involving:
 - secret leakage from local corpora
 
 are especially helpful and should be treated as security-relevant.
+
+## Local MCP trust boundary
+
+`madar` is local-first, but local-first is not automatically safe. MCP stdio wiring, hooks, plugins, and AGENTS profiles all sit on a live trust boundary between the local agent runtime and your workstation files.
+
+- only enable Madar installs for repositories and local agent runtimes you trust
+- prefer least-privilege installs such as `--profile strict` when you only need the core MCP tools
+- treat share-safe artifacts as best-effort redacted receipts, not a guarantee that every downstream consumer is safe to share publicly
+
+See [`docs/security/mcp-threat-model.md`](docs/security/mcp-threat-model.md) for the checked-in threat model, primary threats, and current mitigations.

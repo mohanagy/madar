@@ -6,8 +6,10 @@ import { runBenchmarkSuite } from '../infrastructure/benchmark/suite.js'
 import { evaluateRetrievalQuality, formatQualityReport } from '../infrastructure/benchmark/quality.js'
 import { BenchmarkReadinessError, NativeAgentInstallRequiredError, runCompareCommand } from '../infrastructure/compare.js'
 import { runContextPackCommand } from '../infrastructure/context-pack-command.js'
+import { runHandoffCommand } from '../infrastructure/handoff-command.js'
 import { runContextPromptCommand } from '../infrastructure/context-prompt-command.js'
 import { runDoctorCommand, runStatusCommand } from '../infrastructure/doctor.js'
+import { runProofReportCommand, type ProofReportResult } from '../infrastructure/proof-report.js'
 import { runReviewCompareCommand } from '../infrastructure/review-compare.js'
 import { compareRefs } from '../infrastructure/time-travel.js'
 import { federate } from '../pipeline/federate.js'
@@ -49,6 +51,7 @@ import {
   type BenchmarkCliOptions,
   parseCompareArgs,
   parseDoctorArgs,
+  parseHandoffArgs,
   parsePackArgs,
   parseDiffArgs,
   parseExplainArgs,
@@ -57,6 +60,7 @@ import {
   parseInstallArgs,
   parsePathArgs,
   parsePlatformActionArgs,
+  parseProofReportArgs,
   parsePromptArgs,
   parseQueryArgs,
   parseReviewCompareArgs,
@@ -64,7 +68,9 @@ import {
   parseSummaryArgs,
   parseServeArgs,
   parseTimeTravelArgs,
+  type HandoffCliOptions,
   type PackCliOptions,
+  type ProofReportCliOptions,
   type PromptCliOptions,
   parseWatchArgs,
   type CompareCliOptions,
@@ -115,9 +121,18 @@ export interface ContextPackCommandContext {
   io: CliIO
 }
 
+export interface HandoffCommandContext {
+  options: HandoffCliOptions
+  io: CliIO
+}
+
 export interface ContextPromptCommandContext {
   options: PromptCliOptions
   io: CliIO
+}
+
+export interface ProofReportCommandContext {
+  options: ProofReportCliOptions
 }
 
 export interface CliDependencies {
@@ -132,7 +147,9 @@ export interface CliDependencies {
   runReviewCompare: (context: ReviewCompareCommandContext) => Promise<string | void> | string | void
   runTimeTravel: (context: TimeTravelCommandContext) => Promise<string | void> | string | void
   runContextPack: (context: ContextPackCommandContext) => Promise<string | void> | string | void
+  runHandoff: (context: HandoffCommandContext) => Promise<string | void> | string | void
   runContextPrompt: (context: ContextPromptCommandContext) => Promise<string | void> | string | void
+  runProofReport: (options: ProofReportCliOptions) => ProofReportResult
   runDoctor: (graphPath: string) => string
   runStatus: (graphPath: string) => string
   runGraphSummary?: (graphPath: string) => Promise<GraphSummary> | GraphSummary
@@ -233,9 +250,13 @@ const DEFAULT_DEPENDENCIES: CliDependencies = {
   runContextPack: async ({ options }) => {
     return await runContextPackCommand(options)
   },
+  runHandoff: async ({ options }) => {
+    return await runHandoffCommand(options)
+  },
   runContextPrompt: async ({ options }) => {
     return await runContextPromptCommand(options)
   },
+  runProofReport: (options) => runProofReportCommand(options),
   runDoctor: (graphPath) => runDoctorCommand({ graphPath }),
   runStatus: (graphPath) => runStatusCommand({ graphPath }),
   runGraphSummary: (graphPath) => buildGraphSummary(loadGraph(graphPath)),
@@ -374,6 +395,12 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --graph <path>       path to graph.json (default out/graph.json)',
     '    --format MODE       json|text|markdown|claude|copilot (default json)',
     '    --why               include retrieval-routing debug metadata in the pack output',
+    '  handoff "<prompt>"    emit a portable remote-agent handoff artifact',
+    '    --budget N            cap handoff assembly at N tokens (default 3000)',
+    '    --task KIND          explain|implement|review|impact (default explain)',
+    '    --graph <path>       path to graph.json (default out/graph.json)',
+    '    --consumer NAME      generic|codex|cursor|copilot (default generic)',
+    '    --allow-snippets     include raw snippets and mark the artifact non-share-safe',
     '  prompt "<prompt>"     compile a provider-ready prompt payload',
     '    --provider NAME      claude|gemini',
     '    --graph <path>       path to graph.json (default out/graph.json)',
@@ -417,6 +444,7 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --exec TEMPLATE       required command template; supports {prompt_file}, {question}, {mode}, and {output_file}',
     '    --questions PATH      load questions from a JSON file instead of a positional question',
     '    --output-dir DIR      compare output directory (default out/compare)',
+    '    --task TASK           explain | implement (default explain; implement currently requires --baseline-mode native_agent)',
     '    --baseline-mode MODE  full | bounded | pack_only | native_agent (default full; pack_only compares one bounded raw-context prompt against one compiled madar pack; native_agent runs --exec twice, uses Anthropic JSON usage when available, and otherwise saves answer-only artifacts)',
     '      For Claude MCP attribution in native_agent mode, include --verbose with --output-format json',
     '    --per-arm-timeout S   per-arm timeout seconds for native_agent runs (default 600)',
@@ -442,6 +470,10 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --graph <path>      path to graph.json to validate (default out/graph.json)',
     '  status [graph.json]   compact readiness summary with next commands',
     '    --graph <path>      path to graph.json to validate (default out/graph.json)',
+    '  proof-report [graph.json]  generate a local markdown proof report from graph, pack, and compare evidence',
+    '    --output-dir DIR      proof report output directory (default out/proof-report)',
+    '    --compare-dir DIR     compare receipt directory (default out/compare)',
+    '    --pack PATH           optional saved context-pack JSON for pack-quality evidence',
     '  install [--platform P] install the platform skill or local madar config',
     '    platforms            claude|windows|gemini|cursor|codex|opencode|aider|claw|droid|trae|trae-cn|copilot',
     '    If you update madar, re-run your platform install command to refresh local agent rules:',
@@ -681,6 +713,13 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
       return 0
     }
 
+    if (command === 'proof-report') {
+      const options = parseProofReportArgs(args)
+      const result = dependencies.runProofReport(options)
+      io.log(`Saved to ${result.outputPath}`)
+      return 0
+    }
+
     if (command === 'summary') {
       const options = parseSummaryArgs(args)
       const runGraphSummary = dependencies.runGraphSummary ?? ((graphPath: string) => buildGraphSummary(dependencies.loadGraph(graphPath)))
@@ -691,6 +730,15 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
     if (command === 'pack') {
       const options = parsePackArgs(args)
       const output = await dependencies.runContextPack({ options, io })
+      if (output !== undefined) {
+        io.log(output)
+      }
+      return 0
+    }
+
+    if (command === 'handoff') {
+      const options = parseHandoffArgs(args)
+      const output = await dependencies.runHandoff({ options, io })
       if (output !== undefined) {
         io.log(output)
       }

@@ -137,6 +137,7 @@ function makeCompareResult(input: {
 
   const report = {
     baseline_mode: 'native_agent',
+    task: 'explain',
     question: input.question,
     graph_path: input.graphPath,
     isolation: input.isolation ?? false,

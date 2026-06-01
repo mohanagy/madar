@@ -28,6 +28,15 @@ describe('install documentation', () => {
     expect(readme).toContain('mark the agent as `partial` and suggest the matching reinstall command')
   })
 
+  it('documents handoff as the share-safe remote-agent artifact distinct from local pack and prompt flows', () => {
+    const readme = readFileSync(resolve('README.md'), 'utf8')
+
+    expect(readme).toContain('madar handoff "add auth telemetry" --task implement --consumer copilot')
+    expect(readme).toContain('share-safe remote/background-agent artifact')
+    expect(readme).toContain('`madar pack` stays the richer local/full-context surface')
+    expect(readme).toContain('`madar prompt` stays local')
+  })
+
   it('documents the strict MCP install profile for claude, cursor, copilot, and gemini', () => {
     const readme = readFileSync(resolve('README.md'), 'utf8')
 
@@ -39,5 +48,14 @@ describe('install documentation', () => {
     expect(readme).toContain('call `context_pack` once for the task before broader exploration')
     expect(readme).toContain('prefer Madar over non-Madar MCPs for codebase questions')
     expect(readme).toContain('override conflicting auto-activated exploration skills')
+  })
+
+  it('documents the local trust boundary and least-privilege install guidance', () => {
+    const readme = readFileSync(resolve('README.md'), 'utf8')
+
+    expect(readme).toContain('Treat every Madar MCP install, plugin, hook, or AGENTS profile as a local trust boundary.')
+    expect(readme).toContain('Only enable it for repositories and local agent runtimes you trust.')
+    expect(readme).toContain('Prefer `--profile strict` when you only need the lean core MCP tools.')
+    expect(readme).toContain('docs/security/mcp-threat-model.md')
   })
 })

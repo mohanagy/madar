@@ -43,6 +43,54 @@ const SHARE_HOST_HINTS = new Set(['server', 'servers', 'file', 'files', 'nas', '
 const URL_PATH_SEGMENT_HINTS = new Set(['assets', 'static', 'scripts', 'styles', 'images', 'img', 'fonts', 'media', 'docs', 'doc', 'api', 'blog'])
 const URL_ASSET_EXTENSIONS = new Set(['js', 'mjs', 'cjs', 'css', 'map', 'json', 'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico', 'woff', 'woff2', 'ttf', 'eot', 'html', 'htm', 'pdf', 'xml'])
 const URL_PLACEHOLDER_PREFIX = '__MADAR_SHARE_SAFE_URL__'
+const SENSITIVE_CREDENTIAL_NAME_PATTERN = /(?:^|[_-])(token|key|secret|password|pass|auth|authorization|signature|sig)(?:[_-]|$)/i
+const REDACTION_SENTINEL = 'MADAR_SHARE_SAFE_REDACTED'
+
+function isSensitiveCredentialName(name: string): boolean {
+  const normalized = name.trim().toLowerCase().replace(/\[\]$/, '')
+  return SENSITIVE_CREDENTIAL_NAME_PATTERN.test(normalized)
+}
+
+function redactCredentialLikeText(text: string): string {
+  return text
+    .replaceAll(/(^|[\s([{])([A-Z0-9_]+)=([^\s]+)/gim, (match, prefix: string, name: string) =>
+      isSensitiveCredentialName(name) ? `${prefix}${name}=[REDACTED]` : match,
+    )
+    .replaceAll(/(Authorization:\s*)(Bearer|Basic)\s+[^\s]+/gi, '$1$2 [REDACTED]')
+    .replaceAll(/(Bearer)\s+[^\s]+/gi, '$1 [REDACTED]')
+}
+
+function redactRemoteUrlSecrets(url: string): string {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return url
+  }
+
+  let changed = parsed.username.length > 0 || parsed.password.length > 0
+  if (changed) {
+    parsed.username = REDACTION_SENTINEL
+    parsed.password = ''
+  }
+
+  const sensitiveQueryKeys = new Set<string>()
+  for (const [key] of parsed.searchParams.entries()) {
+    if (isSensitiveCredentialName(key)) {
+      sensitiveQueryKeys.add(key)
+    }
+  }
+  for (const key of sensitiveQueryKeys) {
+    parsed.searchParams.set(key, REDACTION_SENTINEL)
+    changed = true
+  }
+
+  if (!changed) {
+    return url
+  }
+
+  return parsed.toString().replaceAll(REDACTION_SENTINEL, '[REDACTED]')
+}
 
 function sameResolvedPath(path: string, root: string): boolean {
   return resolve(path) === resolve(root)
@@ -372,8 +420,9 @@ function looksLikeLiteralSchemeSuffix(suffix: string): boolean {
 }
 
 export function sanitizeShareSafeText(text: string, roots: ShareSafePathRoots): string {
+  const redactedText = redactCredentialLikeText(text)
   const urls: string[] = []
-  const fileProtectedText = text.replace(FILE_URL_TOKEN_PATTERN, (url) => {
+  const fileProtectedText = redactedText.replace(FILE_URL_TOKEN_PATTERN, (url) => {
     const placeholder = `${URL_PLACEHOLDER_PREFIX}${urls.length}__`
     urls.push(sanitizeFileUrl(url, roots))
     return placeholder
@@ -390,7 +439,7 @@ export function sanitizeShareSafeText(text: string, roots: ShareSafePathRoots): 
   })
   const schemeProtectedText = rootedSuffixProtectedText.replace(URL_TOKEN_PATTERN, (url) => {
     const placeholder = `${URL_PLACEHOLDER_PREFIX}${urls.length}__`
-    urls.push(url)
+    urls.push(redactRemoteUrlSecrets(url))
     return placeholder
   })
   const protectedText = schemeProtectedText.replace(PROTOCOL_RELATIVE_URL_TOKEN_PATTERN, (url) => {

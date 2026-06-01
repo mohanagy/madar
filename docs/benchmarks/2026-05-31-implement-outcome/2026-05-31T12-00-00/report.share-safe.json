@@ -1,0 +1,458 @@
+{
+  "baseline_mode": "native_agent",
+  "task": "implement",
+  "question": "Implement sliding session expiration in SessionManager",
+  "graph_path": "<project-root>/out/graph.json",
+  "isolation": false,
+  "environment": {
+    "claude_code_version": "2.1.157",
+    "host_os": "darwin-arm64",
+    "node_version": "v22.22.3",
+    "mcp_servers_active": [
+      "madar"
+    ],
+    "mcp_server_count": 1,
+    "skills_loaded": [
+      "agent-email-inbox",
+      "agent-memory-systems",
+      "ai-regression-testing",
+      "android-clean-architecture",
+      "api-design",
+      "backend-patterns",
+      "best-practices",
+      "brainstorming",
+      "code-reviewer",
+      "coding-standards",
+      "compose-multiplatform-patterns",
+      "configure-ecc",
+      "context7-auto-research",
+      "continuous-learning",
+      "continuous-learning-v2",
+      "cpp-coding-standards",
+      "cpp-testing",
+      "design-md",
+      "django-patterns",
+      "django-tdd",
+      "django-verification",
+      "e2e-testing",
+      "email-best-practices",
+      "enhance-prompt",
+      "eval-harness",
+      "figma-implement-design",
+      "find-skills",
+      "frontend-design",
+      "frontend-patterns",
+      "frontend-slides",
+      "frontend-to-backend-requirements",
+      "golang-patterns",
+      "golang-testing",
+      "iterative-retrieval",
+      "java-coding-standards",
+      "kotlin-coroutines-flows",
+      "kotlin-exposed-patterns",
+      "kotlin-ktor-patterns",
+      "kotlin-patterns",
+      "kotlin-testing",
+      "laravel-patterns",
+      "laravel-tdd",
+      "learned",
+      "mcp-server-patterns",
+      "mermaid-diagrams",
+      "microsoft-foundry",
+      "mobile-design",
+      "nodejs-best-practices",
+      "perl-patterns",
+      "perl-testing",
+      "plankton-code-quality",
+      "project-guidelines-example",
+      "python-patterns",
+      "python-testing",
+      "react-best-practices",
+      "react-email",
+      "react-ui-patterns",
+      "remotion",
+      "resend",
+      "resend-cli",
+      "rust-patterns",
+      "rust-testing",
+      "senior-architect",
+      "senior-backend",
+      "senior-frontend",
+      "senior-fullstack",
+      "shadcn-ui",
+      "skill-development",
+      "skill-stocktake",
+      "software-architecture",
+      "springboot-patterns",
+      "springboot-tdd",
+      "springboot-verification",
+      "stitch-design",
+      "stitch-loop",
+      "strategic-compact",
+      "subagent-driven-development",
+      "tailwind-patterns",
+      "taste-design",
+      "tdd-workflow",
+      "ui-design-system",
+      "using-superpowers",
+      "ux-researcher-designer",
+      "verification-before-completion",
+      "verification-loop",
+      "writing-plans"
+    ],
+    "skills_loaded_count": 86,
+    "plugins_active": [],
+    "user_claude_md_hash": "sha256:576e6cc125d7e1f236eb7b4ffa414d0b31a36562374a22202b646af08242cff2",
+    "project_claude_md_hash": "sha256:f756cedc14b026ff7879bccec92865638324e29e05860c83d7858375465d0940",
+    "parent_claude_md_hashes": [],
+    "hooks_active": {
+      "user_prompt_submit": [
+        "project:command:*"
+      ],
+      "pre_tool_use": [],
+      "post_tool_use": []
+    }
+  },
+  "environment_contamination": {
+    "skills_activated_during_run": [],
+    "skills_conflicting_with_madar_rules": [],
+    "calls_to_other_mcps": {},
+    "subagent_dispatches_detected": 0,
+    "skill_alignment_score": 1
+  },
+  "exec_command": {
+    "command": null,
+    "placeholders": [],
+    "redacted": true
+  },
+  "baseline": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 14,
+      "cache_creation_input_tokens": 40648,
+      "cache_read_input_tokens": 574528,
+      "output_tokens": 3152
+    },
+    "total_input_tokens_anthropic_exact": 615190,
+    "uncached_input_tokens_anthropic_exact": 40662,
+    "cached_input_tokens_anthropic_exact": 574528,
+    "total_cost_usd": 0.62,
+    "num_turns": 9,
+    "duration_ms": 96368,
+    "result_path": "<artifact-root>/baseline-answer.txt"
+  },
+  "madar": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 13,
+      "cache_creation_input_tokens": 92833,
+      "cache_read_input_tokens": 140662,
+      "output_tokens": 1893
+    },
+    "total_input_tokens_anthropic_exact": 233508,
+    "uncached_input_tokens_anthropic_exact": 92846,
+    "cached_input_tokens_anthropic_exact": 140662,
+    "total_cost_usd": 0.7,
+    "num_turns": 3,
+    "duration_ms": 34744,
+    "result_path": "<artifact-root>/madar-answer.txt"
+  },
+  "install_verified": true,
+  "measurement_validity": "degraded",
+  "trace_status": "missing_verbose_trace",
+  "madar_mcp_call_count": 0,
+  "reductions": null,
+  "token_regression": true,
+  "token_regression_reasons": [
+    "uncached_input_tokens",
+    "cache_creation_input_tokens"
+  ],
+  "prompt_token_source": {
+    "baseline": "anthropic_provider_reported",
+    "madar": "anthropic_provider_reported"
+  },
+  "provider_proof": {
+    "baseline": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "madar": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "reduction_basis": "provider_reported"
+  },
+  "started_at": "2026-05-31T12:00:00.000Z",
+  "completed_at": "2026-05-31T12:00:00.000Z",
+  "paths": {
+    "output_dir": "<artifact-root>",
+    "report": "<artifact-root>/report.json",
+    "share_safe_report": "<artifact-root>/report.share-safe.json",
+    "baseline_answer": "<artifact-root>/baseline-answer.txt",
+    "madar_answer": "<artifact-root>/madar-answer.txt",
+    "prompt_file": "<artifact-root>/native_agent-prompt.txt"
+  },
+  "implementation_guidance": {
+    "summary": "Start with src/session.ts, then validate the highest-risk shared boundaries before finishing.",
+    "retrieval_pipeline": {
+      "phases": [
+        {
+          "phase": "seed",
+          "summary": "Seed search matched 1 production retrieval node."
+        },
+        {
+          "phase": "expand",
+          "summary": "Graph expansion added 0 promoted workflow candidates from structural neighbors."
+        },
+        {
+          "phase": "promote",
+          "summary": "Workflow-center promotion ranked 1 owning file for the brief."
+        },
+        {
+          "phase": "attach",
+          "summary": "Attachment linked 1 test file and 0 contract/public surface files."
+        },
+        {
+          "phase": "refine",
+          "summary": "Refinement kept 1 edit file, 1 test file, and 0 supporting patterns."
+        },
+        {
+          "phase": "render",
+          "summary": "Pack Schema v1 renders the refined implementation guidance for downstream agents."
+        }
+      ]
+    },
+    "workflow_centers": [
+      {
+        "label": "SessionManager",
+        "path": "src/session.ts",
+        "score": 2.04,
+        "reasons": [
+          "Direct task evidence anchors this file in the implementation brief."
+        ],
+        "matched_symbols": [
+          "SessionManager"
+        ],
+        "reason": "Seed search matched this symbol directly from the task prompt. Workflow-center promotion preferred this file as the owning workflow surface. Direct task evidence anchors this file in the implementation brief.",
+        "phases": [
+          "seed",
+          "promote"
+        ]
+      }
+    ],
+    "likely_edit_files": [
+      {
+        "path": "src/session.ts",
+        "score": 2.47,
+        "reason": "Seed search matched this symbol directly from the task prompt. Workflow-center promotion preferred this file as the owning workflow surface. Direct task evidence anchors this file in the implementation brief.",
+        "why": "Seed search matched this symbol directly from the task prompt. Workflow-center promotion preferred this file as the owning workflow surface. Direct task evidence anchors this file in the implementation brief.",
+        "matched_symbols": [
+          "SessionManager"
+        ],
+        "phases": [
+          "seed",
+          "promote",
+          "attach",
+          "refine"
+        ]
+      }
+    ],
+    "likely_test_files": [
+      {
+        "path": "tests/session.test.ts",
+        "score": 2.4,
+        "reason": "Naming overlaps with src/session.ts.",
+        "why": "Naming overlaps with src/session.ts.",
+        "matched_symbols": [
+          "SessionManager test",
+          "SessionManager"
+        ],
+        "phases": [
+          "attach",
+          "refine"
+        ]
+      }
+    ],
+    "contracts_and_public_surfaces": [],
+    "existing_patterns": [],
+    "risk_boundaries": [
+      {
+        "label": "SessionManager",
+        "severity": "high",
+        "reason": "SessionManager propagates into 1 file across 1 community. Includes god node hotspot exposure.",
+        "affected_files": [
+          "tests/session.test.ts"
+        ],
+        "affected_communities": [
+          "Community 1"
+        ]
+      }
+    ],
+    "validation_commands": [
+      "npm run typecheck",
+      "npm run build",
+      "npm run test"
+    ],
+    "acceptance_criteria_summary": [
+      "Implement the requested change: Implement sliding session expiration in SessionManager.",
+      "Update the likely edit surface starting with src/session.ts.",
+      "Keep related tests aligned, including tests/session.test.ts.",
+      "Avoid regressions around SessionManager."
+    ],
+    "cautions": [
+      "Missing required context: supporting, structural.",
+      "Missing semantic coverage: structure.",
+      "High-risk shared boundary: SessionManager affects 1 files."
+    ]
+  },
+  "benchmark_readiness": {
+    "status": "ready",
+    "reasons": [],
+    "suggested_graph_scope": null
+  },
+  "prompt_contract": {
+    "status": "not_measured",
+    "evidence": [
+      "Claude --verbose trace unavailable."
+    ]
+  },
+  "claim_assessment": {
+    "routing_efficiency": {
+      "status": "not_measured",
+      "evidence": [
+        "Madar MCP attribution is missing."
+      ]
+    },
+    "token_reduction": {
+      "status": "not_measured",
+      "evidence": [
+        "Madar MCP attribution is missing."
+      ]
+    }
+  },
+  "benchmark_outcome": {
+    "outcome": "not_measured",
+    "checks": {
+      "routing_tool_latency": "not_measured",
+      "token": "not_measured",
+      "fresh_token": "not_measured",
+      "cost": "not_measured",
+      "turns": "not_measured"
+    },
+    "evidence": [
+      "Madar MCP attribution is missing."
+    ]
+  },
+  "implement_outcome": {
+    "baseline": {
+      "files_touched": [
+        "src/config.ts"
+      ],
+      "wrong_file_edits": [
+        "src/config.ts"
+      ],
+      "validation": {
+        "status": "failed",
+        "commands": [
+          {
+            "command": "npm run typecheck",
+            "status": "failed",
+            "exit_code": 1,
+            "stdout": "\n> typecheck\n> node scripts/check-session.mjs\n\n",
+            "stderr": "missing sliding expiration implementation\n"
+          },
+          {
+            "command": "npm run build",
+            "status": "failed",
+            "exit_code": 1,
+            "stdout": "\n> build\n> node scripts/check-session.mjs\n\n",
+            "stderr": "missing sliding expiration implementation\n"
+          },
+          {
+            "command": "npm run test",
+            "status": "failed",
+            "exit_code": 1,
+            "stdout": "\n> test\n> node scripts/check-session.mjs\n\n",
+            "stderr": "missing sliding expiration implementation\n"
+          }
+        ]
+      },
+      "reviewer_visible_correctness": {
+        "status": "failed",
+        "checks": [
+          {
+            "path": "src/session.ts",
+            "passed": false,
+            "missing_required_snippets": [
+              "slidingExpirationMs"
+            ],
+            "forbidden_snippets_present": []
+          },
+          {
+            "path": "src/config.ts",
+            "passed": false,
+            "missing_required_snippets": [],
+            "forbidden_snippets_present": [
+              "slidingExpirationMs"
+            ]
+          }
+        ]
+      }
+    },
+    "madar": {
+      "files_touched": [
+        "src/session.ts"
+      ],
+      "wrong_file_edits": [],
+      "validation": {
+        "status": "passed",
+        "commands": [
+          {
+            "command": "npm run typecheck",
+            "status": "passed",
+            "exit_code": 0,
+            "stdout": "\n> typecheck\n> node scripts/check-session.mjs\n\nvalidation ok\n",
+            "stderr": null
+          },
+          {
+            "command": "npm run build",
+            "status": "passed",
+            "exit_code": 0,
+            "stdout": "\n> build\n> node scripts/check-session.mjs\n\nvalidation ok\n",
+            "stderr": null
+          },
+          {
+            "command": "npm run test",
+            "status": "passed",
+            "exit_code": 0,
+            "stdout": "\n> test\n> node scripts/check-session.mjs\n\nvalidation ok\n",
+            "stderr": null
+          }
+        ]
+      },
+      "reviewer_visible_correctness": {
+        "status": "passed",
+        "checks": [
+          {
+            "path": "src/session.ts",
+            "passed": true,
+            "missing_required_snippets": [],
+            "forbidden_snippets_present": []
+          },
+          {
+            "path": "src/config.ts",
+            "passed": true,
+            "missing_required_snippets": [],
+            "forbidden_snippets_present": []
+          }
+        ]
+      }
+    }
+  }
+}

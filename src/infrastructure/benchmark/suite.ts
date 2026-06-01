@@ -9,6 +9,7 @@ import {
   type NativeAgentCompareResult,
   type NativeAgentWorkflowOutcome,
 } from '../compare.js'
+import { copyWorkspaceForBenchmark } from '../../shared/workspace-copy.js'
 import {
   benchmarkIsolationEnabled,
   captureBenchmarkEnvironment,
@@ -311,22 +312,8 @@ function portablePath(path: string): string {
   return relative(process.cwd(), path) || '.'
 }
 
-function filterWorkspaceCopy(sourceRoot: string, sourcePath: string): boolean {
-  const relativePath = relative(sourceRoot, sourcePath)
-  return (
-    relativePath !== 'out'
-    && !relativePath.startsWith(`out${sep}`)
-    && relativePath !== '.git'
-    && !relativePath.startsWith(`.git${sep}`)
-  )
-}
-
 function copyWorkspace(sourceRoot: string, targetRoot: string): void {
-  mkdirSync(dirname(targetRoot), { recursive: true })
-  cpSync(sourceRoot, targetRoot, {
-    recursive: true,
-    filter: (sourcePath) => filterWorkspaceCopy(sourceRoot, sourcePath),
-  })
+  copyWorkspaceForBenchmark(sourceRoot, targetRoot)
 }
 
 function shellQuote(value: string): string {

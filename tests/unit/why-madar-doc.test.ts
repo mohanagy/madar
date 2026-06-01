@@ -195,6 +195,15 @@ describe('public marketing copy honesty', () => {
         expect(content).toContain('docs/benchmarks/suite/')
         expect(lower).toContain('foundercommandcenter')
       })
+
+      it('links the dated implementation receipt while keeping generalized implementation-win claims conservative', () => {
+        expect(content).toContain('docs/benchmarks/2026-05-31-implement-outcome/')
+        expect(lower).toContain('deterministic implementation-task receipt')
+        expect(lower).toContain('files touched')
+        expect(lower).toContain('wrong-file edits')
+        expect(lower).toContain('reviewer-visible')
+        expect(lower).toContain('we do not yet have cross-repo implementation-task evidence')
+      })
     })
   })
 

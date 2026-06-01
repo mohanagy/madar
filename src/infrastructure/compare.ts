@@ -1,8 +1,9 @@
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
-import type { ContextPackExecutionPhase, ContextPackRoutingDebug } from '../contracts/context-pack.js'
+import type { ContextPackExecutionPhase, ContextPackRoutingDebug, ContextPackTaskKind, ImplementationPackGuidance } from '../contracts/context-pack.js'
 import { KnowledgeGraph } from '../contracts/graph.js'
 import type { ContextSessionState } from '../contracts/context-session.js'
 import { buildContextPrompt, type ContextPromptStableSection } from './context-prompt.js'
@@ -20,6 +21,7 @@ import {
   type BenchmarkEnvironmentContamination,
 } from './benchmark/environment.js'
 import { parsePromptRunnerJsonRecord, parsePromptRunnerOutput, type PromptRunnerUsage } from './prompt-runner.js'
+import { buildImplementationPackGuidance } from '../runtime/implementation-pack.js'
 import { classifyRetrievalLevel } from '../runtime/retrieval-gate.js'
 import { compactRetrieveResult, retrieveContext, tokenizeLabel, type CompactRetrieveResult, type RetrieveResult } from '../runtime/retrieve.js'
 import { buildRoutingDebug } from '../runtime/routing-debug.js'
@@ -27,6 +29,7 @@ import { QUERY_TOKEN_ESTIMATOR, estimateQueryTokens, loadGraph } from '../runtim
 import { sidecarAwareFileFingerprint } from '../shared/binary-ingest-sidecar.js'
 import { sanitizeShareSafeText, toShareSafeArtifactPath, type ShareSafePathRoots } from '../shared/share-safe-artifacts.js'
 import { MAX_TEXT_BYTES, validateGraphOutputPath, validateGraphPath } from '../shared/security.js'
+import { copyWorkspaceForBenchmark } from '../shared/workspace-copy.js'
 
 export type CompareBaselineMode = 'full' | 'bounded' | 'pack_only' | 'native_agent'
 export type CompareRunMode = 'baseline' | 'madar'
@@ -227,6 +230,7 @@ export interface GenerateCompareArtifactsInput {
   questionsPath?: string | null
   outputDir: string
   execTemplate: string
+  task?: 'explain' | 'implement'
   baselineMode: CompareBaselineMode
   perArmTimeoutSeconds?: number
   heartbeatIntervalMs?: number
@@ -1607,7 +1611,17 @@ function createCompareRetrievalGraph(
   return { graph: retrievalGraph, originalSourceFiles }
 }
 
-function retrieveCompareContext(graph: KnowledgeGraph, question: string, budget: number, projectRoot: string): RetrieveResult {
+function compareTaskKind(input: Pick<GenerateCompareArtifactsInput, 'task'>): 'explain' | 'implement' {
+  return input.task === 'implement' ? 'implement' : 'explain'
+}
+
+function retrieveCompareContext(
+  graph: KnowledgeGraph,
+  question: string,
+  budget: number,
+  projectRoot: string,
+  taskKind: ContextPackTaskKind = 'explain',
+): RetrieveResult {
   const { graph: retrievalGraph, originalSourceFiles } = createCompareRetrievalGraph(graph, projectRoot)
   const originalCwd = process.cwd()
   try {
@@ -1616,6 +1630,7 @@ function retrieveCompareContext(graph: KnowledgeGraph, question: string, budget:
     const retrieval = retrieveContext(retrievalGraph, {
       question,
       budget: Math.max(budget, 200),
+      taskKind,
       ...(gate.signals.generation_intent === 'runtime_generation' ? { retrievalStrategy: 'slice-v1' as const } : {}),
     })
     for (const matchedNode of retrieval.matched_nodes) {
@@ -1893,7 +1908,43 @@ export function buildMadarPromptPack(input: BuildMadarPromptPackInput): CompareP
   }
 }
 
-export function buildNativeAgentPrompt(question: string): string {
+function formatImplementationPromptGuidance(guidance: ImplementationPackGuidance): string[] {
+  return [
+    `- Summary: ${guidance.summary}`,
+    `- Likely edit files: ${guidance.likely_edit_files.map((entry) => entry.path).join(', ') || 'none identified'}`,
+    `- Likely test files: ${guidance.likely_test_files.map((entry) => entry.path).join(', ') || 'none identified'}`,
+    `- Validation commands: ${guidance.validation_commands.join(' ; ') || 'none identified'}`,
+    `- Risk boundaries: ${guidance.risk_boundaries.map((entry) => entry.label).join(', ') || 'none identified'}`,
+  ]
+}
+
+export function buildNativeAgentPrompt(
+  question: string,
+  options: {
+    task?: 'explain' | 'implement'
+    implementation?: ImplementationPackGuidance
+  } = {},
+): string {
+  if (options.task === 'implement' && options.implementation) {
+    return [
+      'Follow the Madar implementation-pack contract exactly.',
+      'Implement the requested change using the Madar implementation pack.',
+      'Call context_pack first for implementation tasks before editing files or broad raw repo search.',
+      'Inspect likely_edit_files, likely_test_files, validation_commands, cautions, and risk boundaries before making any changes.',
+      'Prefer the likely_edit_files set first; editing outside the likely_edit_files or likely_test_files set requires an explicit reason.',
+      'Run the listed validation_commands before concluding.',
+      'If Madar is unavailable, continue from raw repo evidence and say so explicitly.',
+      '',
+      'Implementation guidance:',
+      ...formatImplementationPromptGuidance(options.implementation),
+      '',
+      `Question: ${question}`,
+      '',
+      'Answer:',
+      '',
+    ].join('\n')
+  }
+
   return [
     'Follow the Madar pack contract exactly.',
     'Call context_pack first for explain or runtime questions before any raw file or broad repo search.',
@@ -2371,6 +2422,9 @@ export async function runCompareCommand(
   input: GenerateCompareArtifactsInput,
   dependencies: ExecuteCompareRunsDependencies = {},
 ): Promise<string> {
+  if (compareTaskKind(input) === 'implement' && input.baselineMode !== 'native_agent') {
+    throw new Error('[madar compare] implement task currently requires --baseline-mode native_agent')
+  }
   if (input.baselineMode === 'native_agent') {
     const nativeResult = await executeNativeAgentCompare(input, dependencies)
     const failed = nativeResult.reports.filter((report) => isNativeAgentRunFailure(report.baseline) || isNativeAgentRunFailure(report.madar)).length
@@ -2503,8 +2557,49 @@ export interface NativeAgentToolCallCounts {
   madar: NativeAgentToolCallCountsEntry
 }
 
+export type ImplementValidationStatus = 'passed' | 'failed' | 'setup_error' | 'not_run'
+export type ReviewerVisibleStatus = 'passed' | 'failed' | 'not_scored'
+
+export interface ImplementValidationCommandResult {
+  command: string
+  status: Exclude<ImplementValidationStatus, 'not_run'>
+  exit_code: number | null
+  stdout: string | null
+  stderr: string | null
+}
+
+export interface ImplementValidationResult {
+  status: ImplementValidationStatus
+  commands: ImplementValidationCommandResult[]
+}
+
+export interface ReviewerVisibleCheckResult {
+  path: string
+  passed: boolean
+  missing_required_snippets: string[]
+  forbidden_snippets_present: string[]
+}
+
+export interface ReviewerVisibleCorrectnessResult {
+  status: ReviewerVisibleStatus
+  checks: ReviewerVisibleCheckResult[]
+}
+
+export interface ImplementOutcomeArmResult {
+  files_touched: string[]
+  wrong_file_edits: string[]
+  validation: ImplementValidationResult
+  reviewer_visible_correctness: ReviewerVisibleCorrectnessResult
+}
+
+export interface ImplementOutcomeReport {
+  baseline: ImplementOutcomeArmResult
+  madar: ImplementOutcomeArmResult
+}
+
 export interface NativeAgentCompareReport {
   baseline_mode: 'native_agent'
+  task: 'explain' | 'implement'
   question: string
   graph_path: string
   isolation: boolean
@@ -2530,6 +2625,8 @@ export interface NativeAgentCompareReport {
   token_regression: boolean
   token_regression_reasons: NativeAgentTokenRegressionMetric[]
   benchmark_readiness?: BenchmarkReadiness
+  implementation_guidance?: ImplementationPackGuidance
+  implement_outcome?: ImplementOutcomeReport
   prompt_contract?: NativeAgentPromptContractAssessment
   claim_assessment?: NativeAgentClaimAssessment
   benchmark_outcome?: NativeAgentBenchmarkOutcome
@@ -2602,6 +2699,7 @@ export interface NativeAgentRunnerInput {
   promptFile: string
   outputFile: string
   command: string
+  cwd?: string
   signal?: AbortSignal
 }
 
@@ -2674,6 +2772,231 @@ function hasSectionMarker(filePath: string, marker = MADAR_SECTION_MARKER): bool
     return false
   }
   return readFileSync(filePath, 'utf8').includes(marker)
+}
+
+interface ImplementationReviewerVisibleGate {
+  checks: Array<{
+    path: string
+    must_contain: string[]
+    must_not_contain: string[]
+  }>
+}
+
+interface ImplementationWorkspace {
+  tempRoot: string
+  workspaceRoot: string
+  graphPath: string
+}
+
+function loadImplementationReviewerVisibleGates(questionsPath?: string | null): Map<string, ImplementationReviewerVisibleGate> {
+  if (!questionsPath) {
+    return new Map()
+  }
+  const gatesPath = join(dirname(questionsPath), 'implementation-gates.json')
+  const parsed = readJsonObject(gatesPath)
+  if (!parsed) {
+    return new Map()
+  }
+
+  const gates = new Map<string, ImplementationReviewerVisibleGate>()
+  for (const [question, value] of Object.entries(parsed)) {
+    if (!isRecord(value) || !Array.isArray(value.checks)) {
+      continue
+    }
+    const checks = value.checks
+      .filter((entry): entry is Record<string, unknown> => isRecord(entry))
+      .map((entry) => ({
+        path: typeof entry.path === 'string' ? entry.path : '',
+        must_contain: Array.isArray(entry.must_contain) ? entry.must_contain.filter((item): item is string => typeof item === 'string') : [],
+        must_not_contain: Array.isArray(entry.must_not_contain) ? entry.must_not_contain.filter((item): item is string => typeof item === 'string') : [],
+      }))
+      .filter((entry) => entry.path.length > 0)
+    if (checks.length > 0) {
+      gates.set(question, { checks })
+    }
+  }
+  return gates
+}
+
+function shouldTrackWorkspacePath(rootPath: string, candidatePath: string): boolean {
+  const relativePath = relative(rootPath, candidatePath).replaceAll('\\', '/')
+  if (relativePath.length === 0) {
+    return true
+  }
+  const [topLevel = ''] = relativePath.split('/', 1)
+  return !['.git', 'out', 'node_modules', 'coverage', 'dist', 'build'].includes(topLevel)
+}
+
+function snapshotWorkspaceFiles(rootPath: string): Map<string, number> {
+  const snapshot = new Map<string, number>()
+  const pending = [rootPath]
+  while (pending.length > 0) {
+    const currentPath = pending.pop()
+    if (!currentPath) {
+      continue
+    }
+    if (!shouldTrackWorkspacePath(rootPath, currentPath)) {
+      continue
+    }
+    const stats = statSync(currentPath)
+    if (stats.isDirectory()) {
+      for (const child of readdirSync(currentPath)) {
+        pending.push(join(currentPath, child))
+      }
+      continue
+    }
+    if (!stats.isFile()) {
+      continue
+    }
+    const relativePath = relative(rootPath, currentPath).replaceAll(sep, '/')
+    snapshot.set(relativePath, sidecarAwareFileFingerprint(currentPath, stats.mtimeMs))
+  }
+  return snapshot
+}
+
+function diffWorkspaceSnapshots(before: Map<string, number>, after: Map<string, number>): string[] {
+  const changed = new Set<string>()
+  for (const [relativePath, fingerprint] of before.entries()) {
+    if (after.get(relativePath) !== fingerprint) {
+      changed.add(relativePath)
+    }
+  }
+  for (const [relativePath, fingerprint] of after.entries()) {
+    if (before.get(relativePath) !== fingerprint) {
+      changed.add(relativePath)
+    }
+  }
+  return [...changed].sort()
+}
+
+function prepareImplementationWorkspace(projectRoot: string, graphPath: string): ImplementationWorkspace {
+  const tempRoot = mkdtempSync(join(tmpdir(), 'madar-compare-arm-'))
+  const workspaceRoot = join(tempRoot, 'workspace')
+  copyWorkspaceForBenchmark(projectRoot, workspaceRoot, { sharedTopLevelEntries: ['node_modules'] })
+  const relativeGraphPath = relative(projectRoot, graphPath)
+  const workspaceGraphPath = join(workspaceRoot, relativeGraphPath)
+  mkdirSync(dirname(workspaceGraphPath), { recursive: true })
+  writeFileSync(workspaceGraphPath, readFileSync(graphPath, 'utf8'), 'utf8')
+  return {
+    tempRoot,
+    workspaceRoot,
+    graphPath: workspaceGraphPath,
+  }
+}
+
+function cleanupImplementationWorkspace(workspace: ImplementationWorkspace | null | undefined): void {
+  if (!workspace) {
+    return
+  }
+  rmSync(workspace.tempRoot, { recursive: true, force: true })
+}
+
+function classifyValidationFailure(stdout: string, stderr: string): 'failed' | 'setup_error' {
+  return /cannot find module|command not found|enoent|missing script/i.test(`${stdout}\n${stderr}`) ? 'setup_error' : 'failed'
+}
+
+async function runShellCommand(command: string, options: { cwd?: string; signal?: AbortSignal } = {}): Promise<{
+  exitCode: number
+  stdout: string
+  stderr: string
+}> {
+  return await new Promise((resolveExecution, rejectExecution) => {
+    const shellCommand =
+      process.platform === 'win32'
+        ? { file: 'powershell.exe', args: ['-NoProfile', '-Command', command] }
+        : { file: '/bin/sh', args: ['-lc', command] }
+    const child = spawn(shellCommand.file, shellCommand.args, {
+      shell: false,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      ...(options.cwd ? { cwd: options.cwd } : {}),
+    })
+    let stdout = ''
+    let stderr = ''
+
+    const handleAbort = () => {
+      child.kill()
+    }
+    if (options.signal) {
+      if (options.signal.aborted) {
+        handleAbort()
+      } else {
+        options.signal.addEventListener('abort', handleAbort, { once: true })
+      }
+    }
+
+    child.stdout?.on('data', (chunk: string | Buffer) => {
+      stdout += chunk.toString()
+    })
+    child.stderr?.on('data', (chunk: string | Buffer) => {
+      stderr += chunk.toString()
+    })
+    child.on('error', (error) => {
+      rejectExecution(error)
+    })
+    child.on('close', (code) => {
+      resolveExecution({
+        exitCode: code ?? 1,
+        stdout,
+        stderr,
+      })
+    })
+  })
+}
+
+async function runImplementationValidationCommands(
+  commands: readonly string[],
+  workspaceRoot: string,
+): Promise<ImplementValidationResult> {
+  if (commands.length === 0) {
+    return { status: 'not_run', commands: [] }
+  }
+
+  const results: ImplementValidationCommandResult[] = []
+  for (const command of commands) {
+    const execution = await runShellCommand(command, { cwd: workspaceRoot })
+    results.push({
+      command,
+      status: execution.exitCode === 0 ? 'passed' : classifyValidationFailure(execution.stdout, execution.stderr),
+      exit_code: execution.exitCode,
+      stdout: execution.stdout.length > 0 ? execution.stdout : null,
+      stderr: execution.stderr.length > 0 ? execution.stderr : null,
+    })
+  }
+
+  if (results.every((entry) => entry.status === 'passed')) {
+    return { status: 'passed', commands: results }
+  }
+  if (results.some((entry) => entry.status === 'failed')) {
+    return { status: 'failed', commands: results }
+  }
+  return { status: 'setup_error', commands: results }
+}
+
+function evaluateReviewerVisibleCorrectness(
+  workspaceRoot: string,
+  gate: ImplementationReviewerVisibleGate | undefined,
+): ReviewerVisibleCorrectnessResult {
+  if (!gate) {
+    return { status: 'not_scored', checks: [] }
+  }
+
+  const checks = gate.checks.map((check) => {
+    const absolutePath = join(workspaceRoot, check.path)
+    const content = existsSync(absolutePath) ? readFileSync(absolutePath, 'utf8') : ''
+    const missingRequiredSnippets = check.must_contain.filter((snippet) => !content.includes(snippet))
+    const forbiddenSnippetsPresent = check.must_not_contain.filter((snippet) => content.includes(snippet))
+    return {
+      path: check.path,
+      passed: missingRequiredSnippets.length === 0 && forbiddenSnippetsPresent.length === 0,
+      missing_required_snippets: missingRequiredSnippets,
+      forbidden_snippets_present: forbiddenSnippetsPresent,
+    }
+  })
+
+  return {
+    status: checks.every((check) => check.passed) ? 'passed' : 'failed',
+    checks,
+  }
 }
 
 function findHookEntry(
@@ -3002,56 +3325,14 @@ function restoreMadarArtifacts(records: readonly SnapshotRecord[]): void {
 
 async function defaultNativeAgentRunner(input: NativeAgentRunnerInput): Promise<NativeAgentRunnerResult> {
   const startedAt = Date.now()
-
-  return await new Promise<NativeAgentRunnerResult>((resolveExecution, rejectExecution) => {
-    const command =
-      process.platform === 'win32'
-        ? { file: 'powershell.exe', args: ['-NoProfile', '-Command', input.command] }
-        : { file: '/bin/sh', args: ['-lc', input.command] }
-    const child = spawn(command.file, command.args, { shell: false, stdio: ['ignore', 'pipe', 'pipe'] })
-    let stdout = ''
-    let stderr = ''
-    let settled = false
-
-    const cleanupAbortListener = () => {
-      input.signal?.removeEventListener('abort', handleAbort)
-    }
-
-    const handleAbort = () => {
-      child.kill()
-    }
-
-    if (input.signal) {
-      if (input.signal.aborted) {
-        handleAbort()
-      } else {
-        input.signal.addEventListener('abort', handleAbort, { once: true })
-      }
-    }
-
-    child.stdout?.on('data', (chunk: string | Buffer) => {
-      stdout += chunk.toString()
-    })
-    child.stderr?.on('data', (chunk: string | Buffer) => {
-      stderr += chunk.toString()
-    })
-    child.on('error', (error) => {
-      if (settled) {
-        return
-      }
-      settled = true
-      cleanupAbortListener()
-      rejectExecution(error)
-    })
-    child.on('close', (code) => {
-      if (settled) {
-        return
-      }
-      settled = true
-      cleanupAbortListener()
-      resolveExecution({ exitCode: code ?? 1, stdout, stderr, elapsedMs: Date.now() - startedAt })
-    })
+  const execution = await runShellCommand(input.command, {
+    ...(input.cwd ? { cwd: input.cwd } : {}),
+    ...(input.signal ? { signal: input.signal } : {}),
   })
+  return {
+    ...execution,
+    elapsedMs: Date.now() - startedAt,
+  }
 }
 
 function perArmTimeoutMs(seconds: number | undefined): number {
@@ -3689,13 +3970,15 @@ export async function executeNativeAgentCompare(
   const timeoutMs = perArmTimeoutMs(input.perArmTimeoutSeconds)
   const heartbeatIntervalMs = compareHeartbeatIntervalMs(input.heartbeatIntervalMs)
   const retrievalBudget = input.retrievalBudget ?? DEFAULT_RETRIEVAL_BUDGET
+  const task = compareTaskKind(input)
   const timestamp = now()
   const outputRoot = createCompareOutputRoot(outputDir, timestamp)
   const runner = dependencies.runner ?? defaultNativeAgentRunner
   const assessBenchmarkReadiness = dependencies.assessBenchmarkReadiness
-  const graph = assessBenchmarkReadiness ? null : loadGraph(graphPath)
+  const graph = loadGraph(graphPath)
   const reports: NativeAgentCompareReport[] = []
   const answerQualityGates = loadNativeAgentAnswerQualityGates(input.questionsPath)
+  const reviewerVisibleGates = task === 'implement' ? loadImplementationReviewerVisibleGates(input.questionsPath) : new Map()
   const environment = await captureBenchmarkEnvironment({ projectRoot })
   const isolation = benchmarkIsolationEnabled()
   const installCheck = inspectClaudeNativeAgentInstall(projectRoot)
@@ -3706,9 +3989,20 @@ export async function executeNativeAgentCompare(
   const preparedQuestions = questions.map((question, index) => {
     const questionDir = questions.length === 1 ? outputRoot : join(outputRoot, `question-${String(index + 1).padStart(3, '0')}`)
     mkdirSync(questionDir, { recursive: true })
+    const retrieval = retrieveCompareContext(graph, question, retrievalBudget, projectRoot, task)
+    const implementationGuidance =
+      task === 'implement'
+        ? buildImplementationPackGuidance(graph, retrieval, {
+            budget: retrievalBudget,
+            taskIntent: 'implement',
+          })
+        : undefined
 
     const promptFile = join(questionDir, 'native_agent-prompt.txt')
-    writeFileSync(promptFile, buildNativeAgentPrompt(question), 'utf8')
+    writeFileSync(promptFile, buildNativeAgentPrompt(question, {
+      task,
+      ...(implementationGuidance ? { implementation: implementationGuidance } : {}),
+    }), 'utf8')
     const baselineAnswerPath = answerFilePath(questionDir, 'baseline')
     const madarAnswerPath = answerFilePath(questionDir, 'madar')
     const reportPath = join(questionDir, 'report.json')
@@ -3717,6 +4011,7 @@ export async function executeNativeAgentCompare(
 
     const reportShell: NativeAgentCompareReport = {
       baseline_mode: 'native_agent',
+      task,
       question,
       graph_path: graphPath,
       isolation,
@@ -3762,16 +4057,19 @@ export async function executeNativeAgentCompare(
         prompt_file: promptFile,
       },
     }
+    if (implementationGuidance) {
+      reportShell.implementation_guidance = implementationGuidance
+    }
     if (assessBenchmarkReadiness) {
       reportShell.benchmark_readiness = assessBenchmarkReadiness({
         graphPath,
         projectRoot,
         question,
       })
-    } else if (graph) {
+    } else {
       reportShell.benchmark_readiness = assessBenchmarkReadinessFromRetrieveResult({
         graphPath,
-        retrieval: retrieveCompareContext(graph, question, retrievalBudget, projectRoot),
+        retrieval,
       })
     }
     if (reportShell.benchmark_readiness) {
@@ -3786,6 +4084,8 @@ export async function executeNativeAgentCompare(
       shareSafeReportPath,
       runStatePath,
       reportShell,
+      implementationGuidance,
+      reviewerVisibleGate: reviewerVisibleGates.get(question),
     }
   })
 
@@ -3808,21 +4108,30 @@ export async function executeNativeAgentCompare(
       madarAnswerPath,
       runStatePath,
       reportShell,
+      implementationGuidance,
+      reviewerVisibleGate,
     } = entry
-
-    writeNativeAgentRunState(runStatePath, {
-      phase: 'baseline_pending',
-      arm: 'baseline',
-      updated_at: now().toISOString(),
-    })
-
-    // Step 1: snapshot madar artifacts and run baseline.
-    const stamp = timestamp.toISOString().replace(/[^0-9]/g, '').slice(0, 14)
-    let snapshot: SnapshotRecord[] = []
-    let baselineCrashed: unknown = null
-    let baselineToolCallCounts: NativeAgentToolCallCountsEntry | null = null
+    const baselineWorkspace = task === 'implement' ? prepareImplementationWorkspace(projectRoot, graphPath) : null
+    const madarWorkspace = task === 'implement' ? prepareImplementationWorkspace(projectRoot, graphPath) : null
+    let baselineTouchedFiles: string[] = []
+    let madarTouchedFiles: string[] = []
+    let baselineWorkspaceSnapshot = baselineWorkspace ? snapshotWorkspaceFiles(baselineWorkspace.workspaceRoot) : null
+    let madarWorkspaceSnapshot = madarWorkspace ? snapshotWorkspaceFiles(madarWorkspace.workspaceRoot) : null
     try {
-      snapshot = snapshotMadarArtifacts(projectRoot, stamp)
+
+      writeNativeAgentRunState(runStatePath, {
+        phase: 'baseline_pending',
+        arm: 'baseline',
+        updated_at: now().toISOString(),
+      })
+
+      // Step 1: snapshot madar artifacts and run baseline.
+      const stamp = timestamp.toISOString().replace(/[^0-9]/g, '').slice(0, 14)
+      let snapshot: SnapshotRecord[] = []
+      let baselineCrashed: unknown = null
+      let baselineToolCallCounts: NativeAgentToolCallCountsEntry | null = null
+      try {
+        snapshot = snapshotMadarArtifacts(baselineWorkspace?.workspaceRoot ?? projectRoot, stamp)
       const baselineCommand = expandCompareExecTemplate(input.execTemplate, {
         promptFile,
         question,
@@ -3834,7 +4143,14 @@ export async function executeNativeAgentCompare(
       try {
         const baselineExecution = await runNativeAgentArmWithTimeout(
           runner,
-          { mode: 'baseline', question, promptFile, outputFile: baselineAnswerPath, command: baselineCommand },
+          {
+            mode: 'baseline',
+            question,
+            promptFile,
+            outputFile: baselineAnswerPath,
+            command: baselineCommand,
+            ...(baselineWorkspace ? { cwd: baselineWorkspace.workspaceRoot } : {}),
+          },
           timeoutMs,
           heartbeatIntervalMs,
           writeStderr,
@@ -3913,9 +4229,16 @@ export async function executeNativeAgentCompare(
                 ...runStateDetails({ baseline: reportShell.baseline }),
         })
       }
-    } finally {
-      restoreMadarArtifacts(snapshot)
-    }
+      } finally {
+        restoreMadarArtifacts(snapshot)
+        if (baselineWorkspace && baselineWorkspaceSnapshot) {
+          baselineTouchedFiles = diffWorkspaceSnapshots(
+            baselineWorkspaceSnapshot,
+            snapshotWorkspaceFiles(baselineWorkspace.workspaceRoot),
+          )
+          baselineWorkspaceSnapshot = null
+        }
+      }
 
     if (baselineCrashed !== null) {
       // Persist a partial report before re-throwing so users can inspect it.
@@ -3933,30 +4256,37 @@ export async function executeNativeAgentCompare(
       continue
     }
 
-    // Step 2: run madar (artifacts are restored, MCP server is in place).
-    writeNativeAgentRunState(runStatePath, {
+      // Step 2: run madar (artifacts are restored, MCP server is in place).
+      writeNativeAgentRunState(runStatePath, {
       phase: 'madar_pending',
       arm: 'madar',
       updated_at: now().toISOString(),
       ...runStateDetails({ baseline: reportShell.baseline }),
-    })
-    const madarCommand = expandCompareExecTemplate(input.execTemplate, {
+      })
+      const madarCommand = expandCompareExecTemplate(input.execTemplate, {
       promptFile,
       question,
       mode: 'madar',
       outputFile: madarAnswerPath,
-    })
-    let madarRun: NativeAgentRunnerResult | null = null
-    let madarToolCallCounts: NativeAgentToolCallCountsEntry | null = null
-    try {
-      const madarExecution = await runNativeAgentArmWithTimeout(
+      })
+      let madarRun: NativeAgentRunnerResult | null = null
+      let madarToolCallCounts: NativeAgentToolCallCountsEntry | null = null
+      try {
+        const madarExecution = await runNativeAgentArmWithTimeout(
         runner,
-        { mode: 'madar', question, promptFile, outputFile: madarAnswerPath, command: madarCommand },
+        {
+          mode: 'madar',
+          question,
+          promptFile,
+          outputFile: madarAnswerPath,
+          command: madarCommand,
+          ...(madarWorkspace ? { cwd: madarWorkspace.workspaceRoot } : {}),
+        },
         timeoutMs,
         heartbeatIntervalMs,
         writeStderr,
-      )
-      if (madarExecution.kind === 'timed_out') {
+        )
+        if (madarExecution.kind === 'timed_out') {
         reportShell.madar = {
           kind: 'runner_error',
           evidence: `Timed out after ${timeoutMs}ms`,
@@ -3972,19 +4302,26 @@ export async function executeNativeAgentCompare(
           ...runStateDetails({ baseline: reportShell.baseline, madar: reportShell.madar }),
         })
         writeStderr(`[madar compare] madar arm timed out after ${timeoutMs}ms\n`)
-      } else {
-        madarRun = madarExecution.result
-      }
-    } catch (error) {
+        } else {
+          madarRun = madarExecution.result
+        }
+      } catch (error) {
       reportShell.madar = {
         kind: 'runner_error',
         evidence: error instanceof Error ? error.message : String(error),
         exit_code: null,
         stderr: null,
       }
-      ensureCompareAnswerFile(madarAnswerPath, '')
-    }
-    if (madarRun !== null) {
+        ensureCompareAnswerFile(madarAnswerPath, '')
+      }
+      if (madarWorkspace && madarWorkspaceSnapshot) {
+        madarTouchedFiles = diffWorkspaceSnapshots(
+          madarWorkspaceSnapshot,
+          snapshotWorkspaceFiles(madarWorkspace.workspaceRoot),
+        )
+        madarWorkspaceSnapshot = null
+      }
+      if (madarRun !== null) {
       madarToolCallCounts = extractNativeAgentToolCallCounts(madarRun.stdout)
       reportShell.environment_contamination = extractEnvironmentContamination(madarRun.stdout)
       const rawMadarTrace = extractMadarTrace(madarRun.stdout)
@@ -4117,10 +4454,51 @@ export async function executeNativeAgentCompare(
     if (answerQuality !== undefined) {
       reportShell.answer_quality = answerQuality
     }
+    if (task === 'implement' && implementationGuidance && baselineWorkspace && madarWorkspace) {
+      const allowedEditPaths = new Set([
+        ...implementationGuidance.likely_edit_files.map((entry) => entry.path),
+        ...implementationGuidance.likely_test_files.map((entry) => entry.path),
+      ])
+      const baselineValidation =
+        reportShell.baseline.kind === 'runner_error'
+          ? { status: 'not_run' as const, commands: [] }
+          : await runImplementationValidationCommands(implementationGuidance.validation_commands, baselineWorkspace.workspaceRoot)
+      const madarValidation =
+        reportShell.madar.kind === 'runner_error'
+          ? { status: 'not_run' as const, commands: [] }
+          : await runImplementationValidationCommands(implementationGuidance.validation_commands, madarWorkspace.workspaceRoot)
+      const baselineReviewerVisible =
+        reportShell.baseline.kind === 'runner_error'
+          ? { status: 'not_scored' as const, checks: [] }
+          : evaluateReviewerVisibleCorrectness(baselineWorkspace.workspaceRoot, reviewerVisibleGate)
+      const madarReviewerVisible =
+        reportShell.madar.kind === 'runner_error'
+          ? { status: 'not_scored' as const, checks: [] }
+          : evaluateReviewerVisibleCorrectness(madarWorkspace.workspaceRoot, reviewerVisibleGate)
 
-    reportShell.completed_at = now().toISOString()
-    writeNativeAgentReport(reportShell)
-    reports.push(reportShell)
+      reportShell.implement_outcome = {
+        baseline: {
+          files_touched: baselineTouchedFiles,
+          wrong_file_edits: baselineTouchedFiles.filter((path) => !allowedEditPaths.has(path)),
+          validation: baselineValidation,
+          reviewer_visible_correctness: baselineReviewerVisible,
+        },
+        madar: {
+          files_touched: madarTouchedFiles,
+          wrong_file_edits: madarTouchedFiles.filter((path) => !allowedEditPaths.has(path)),
+          validation: madarValidation,
+          reviewer_visible_correctness: madarReviewerVisible,
+        },
+      }
+    }
+
+      reportShell.completed_at = now().toISOString()
+      writeNativeAgentReport(reportShell)
+      reports.push(reportShell)
+    } finally {
+      cleanupImplementationWorkspace(baselineWorkspace)
+      cleanupImplementationWorkspace(madarWorkspace)
+    }
   }
 
   const answerQualitySummary = summarizeNativeAgentAnswerQuality(reports)
@@ -4264,6 +4642,15 @@ function formatNativeAgentMadarTraceOutcomeSummary(reports: NativeAgentCompareRe
   return outcomeParts.length > 0 ? `Madar trace outcomes: ${outcomeParts.join(', ')}` : null
 }
 
+function formatImplementOutcomeStatus(outcome: ImplementOutcomeArmResult): string {
+  return [
+    `${formatCount(outcome.files_touched.length, 'file touched', 'files touched')}`,
+    `${formatCount(outcome.wrong_file_edits.length, 'wrong-file edit', 'wrong-file edits')}`,
+    `validation ${outcome.validation.status}`,
+    `reviewer-visible ${outcome.reviewer_visible_correctness.status}`,
+  ].join(' · ')
+}
+
 export function formatNativeAgentCompareSummary(result: NativeAgentCompareResult): string {
   const lines: string[] = [
     `[madar compare] completed ${result.reports.length} native_agent question(s)`,
@@ -4366,6 +4753,11 @@ export function formatNativeAgentCompareSummary(result: NativeAgentCompareResult
       if (tokenRegressionWarning) {
         lines.push(`    ${tokenRegressionWarning}`)
       }
+      if (report.implement_outcome) {
+        lines.push(
+          `    implement outcome: baseline ${formatImplementOutcomeStatus(report.implement_outcome.baseline)} · madar ${formatImplementOutcomeStatus(report.implement_outcome.madar)}`,
+        )
+      }
       if (report.madar_trace) {
         lines.push(`    madar_trace: ${report.madar_trace.exploration_outcome} · ${report.madar_trace.exploration_summary}`)
       }
@@ -4410,6 +4802,11 @@ export function formatNativeAgentCompareSummary(result: NativeAgentCompareResult
       ]
       lines.push(
         `    answer quality: baseline ${report.answer_quality.baseline.passed ? 'PASS' : `FAIL (${baselineFindings.join(', ')})`} · madar ${report.answer_quality.madar.passed ? 'PASS' : `FAIL (${madarFindings.join(', ')})`}${report.answer_quality.manual_review_notes.length > 0 ? ` · manual review: ${formatCount(report.answer_quality.manual_review_notes.length, 'note', 'notes')}` : ''}`,
+      )
+    }
+    if (report.implement_outcome) {
+      lines.push(
+        `    implement outcome: baseline ${formatImplementOutcomeStatus(report.implement_outcome.baseline)} · madar ${formatImplementOutcomeStatus(report.implement_outcome.madar)}`,
       )
     }
     if (report.madar_trace) {

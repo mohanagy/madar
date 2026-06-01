@@ -130,6 +130,8 @@ Use it for:
 
 Current media scope: local audio/video, plus direct audio/video URL ingests that download into the same hidden-sidecar path, currently land as deterministic file nodes only. There is no transcription or segment extraction yet.
 
+Treat every local MCP server, hook, plugin, or AGENTS profile as a trust boundary. Only enable it for repositories and local agent runtimes you trust. Prefer the smallest installed surface that still answers the task: \`--profile strict\` for supported MCP installs, or the context-pack-first AGENTS profile where that is the only supported shape.
+
 ## What You Must Do When Invoked
 
 If no path was given, use ${CODE_SPAN_START}.${CODE_SPAN_END} (current directory). Do not ask the user for a path.

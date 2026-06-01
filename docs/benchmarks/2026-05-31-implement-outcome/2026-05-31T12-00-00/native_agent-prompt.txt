@@ -1,0 +1,18 @@
+Follow the Madar implementation-pack contract exactly.
+Implement the requested change using the Madar implementation pack.
+Call context_pack first for implementation tasks before editing files or broad raw repo search.
+Inspect likely_edit_files, likely_test_files, validation_commands, cautions, and risk boundaries before making any changes.
+Prefer the likely_edit_files set first; editing outside the likely_edit_files or likely_test_files set requires an explicit reason.
+Run the listed validation_commands before concluding.
+If Madar is unavailable, continue from raw repo evidence and say so explicitly.
+
+Implementation guidance:
+- Summary: Start with src/session.ts, then validate the highest-risk shared boundaries before finishing.
+- Likely edit files: src/session.ts
+- Likely test files: tests/session.test.ts
+- Validation commands: npm run typecheck ; npm run build ; npm run test
+- Risk boundaries: SessionManager
+
+Question: Implement sliding session expiration in SessionManager
+
+Answer:

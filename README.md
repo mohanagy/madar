@@ -74,7 +74,7 @@ Want the opt-in semantic retrieval / rerank path too? Install the optional local
 npm install @huggingface/transformers
 ```
 
-`madar prompt` stays local and only compiles a prompt payload. By contrast, compare and benchmark flows can spend paid model tokens when you swap the local smoke-check runner for a real model CLI or hosted model configuration.
+`madar prompt` stays local and only compiles a prompt payload. `madar handoff` is the share-safe remote/background-agent artifact when you need to pass a bounded brief to a cloud or async worker without shipping the richer local pack verbatim. `madar pack` stays the richer local/full-context surface. By contrast, compare and benchmark flows can spend paid model tokens when you swap the local smoke-check runner for a real model CLI or hosted model configuration.
 
 **Install commands:**
 
@@ -93,6 +93,7 @@ madar opencode install    # OpenCode
 madar summary                             # bounded JSON overview before pack/prompt
 madar pack "how does auth work?" --task explain --format text   # human-readable execution brief
 madar pack "add auth telemetry" --task implement --format json  # Pack Schema v1 for automation
+madar handoff "add auth telemetry" --task implement --consumer copilot   # share-safe remote/background-agent artifact
 madar prompt "how does auth work?" --provider claude     # provider-ready compiled prompt
 ```
 
@@ -246,6 +247,8 @@ madar produces local context packs that any modern coding agent can consume — 
 
 These are local installers that write project instructions and, when the platform supports it, local MCP config or plugin files that point at the madar subprocess. No code is uploaded.
 
+Treat every Madar MCP install, plugin, hook, or AGENTS profile as a local trust boundary. Only enable it for repositories and local agent runtimes you trust. Prefer `--profile strict` when you only need the lean core MCP tools. The checked-in threat model and mitigations live in [`docs/security/mcp-threat-model.md`](https://github.com/mohanagy/madar/blob/main/docs/security/mcp-threat-model.md).
+
 For Claude, Cursor, Copilot, and Gemini, `--profile strict` keeps the lean core MCP tool surface but rewrites the generated guidance into a compact flow: call `context_pack` once for the task before broader exploration, answer after one high- or medium-confidence pack when `diagnostics.quality_score >= 0.5` and `missing_context` is empty, do not run broad `Glob` patterns, repo-wide `grep` / `find` searches, or raw file sweeps after that strong pack, prefer Madar over non-Madar MCPs for codebase questions unless Madar returns `agent_directive: explore_with_caution`, let that Madar guidance override conflicting auto-activated exploration skills, expand only when `missing_context` / `missing_semantic` or diagnostics justify it (or the user asks for deeper verification), and keep `out/GRAPH_REPORT.md` as a fallback-only read when the pack or graph tools are unavailable, stale, or insufficient. Strict mode is about a bounded first pass, not a guarantee that exploration will always decrease.
 
 Aider and OpenCode are intentionally context-pack-first: run `madar generate .`, install the profile, and start broad codebase work with `madar pack "<task>" --task explain` before raw file search. In those installed profiles, `out/GRAPH_REPORT.md` stays a fallback-only read when the pack or graph tools are unavailable, stale, or insufficient, rather than a default first file. `madar aider install` writes an AGENTS.md profile only; remove it with `madar aider uninstall`. `madar opencode install` writes the AGENTS.md profile, `.opencode/plugins/madar.js`, and the madar MCP entry in `opencode.json` or `opencode.jsonc`; remove only madar-owned content with `madar opencode uninstall`. Manual verification does not require either agent binary: inspect the generated files after install, then confirm uninstall removes only the madar entries.
@@ -326,6 +329,7 @@ Everything stays local by default. No telemetry, no cloud upload, no API key req
 - **Build:** tree-sitter AST extraction + Louvain community detection — all CPU-local.
 - **Query:** BM25 lexical scoring + reciprocal-rank fusion + optional ONNX embeddings (`Xenova/all-MiniLM-L6-v2`, ~25 MB) + optional cross-encoder reranker.
 - **Integration:** MCP stdio server runs as a local subprocess of your agent. Your code never crosses an HTTP boundary unless you explicitly invoke `compare` against a model you've configured yourself.
+- **Security boundary:** local-first is not the same as automatically safe. An MCP install, plugin, hook, or AGENTS profile can still steer a local agent toward sensitive files or secrets, so keep installs least-privilege and review the threat model before enabling Madar on untrusted repositories or shared machines.
 
 **Limitations to know:**
 
