@@ -41,6 +41,9 @@ This file is the public map between what Madar says and what the repo can actual
 - Team and enterprise offer docs should say Madar is **not a hosted control plane** and avoid implying managed cloud hosting or source-code custody.
 - Hosted dashboard positioning should stay deferred until **explicit customer demand** exceeds the current local proof path built from `graph.html`, `GRAPH_REPORT.md`, and `report.share-safe.json`.
 - Any future hosted-dashboard note must keep the **no cloud indexing assumption** explicit and describe a share-safe-artifacts-only boundary rather than implying raw-source upload.
+- Distribution channels should stay framed around shipped local installs first: Claude, Cursor, Copilot, Gemini, Codex, Aider, and OpenCode are current surfaces; the public MCP Registry metadata already exists today as a pointer to the same local-first flow, while broader **MCP directories** and registry/listing expansion are later only when **proof/onboarding readiness** is stronger.
+- Any distribution-channel note should keep the **local trust boundary** explicit, distinguish current installers from future listing work, and avoid marketplace-scale adoption claims before stronger conversion proof exists.
+- Do not imply a hosted relay, plugin-store rollout, or source custody requirement when describing future channel work.
 - Any language expansion note should stay behind stronger **TypeScript/Node proof** plus **benchmark or fixture evidence** for the language in question.
 - Public language copy should make **no broad parity claim** across Python, Go, Rust, Java, and TypeScript unless dated evidence exists for that scope.
 - Any new public claim should link back to a dated artifact or to the reproducible suite surface under [`docs/benchmarks/suite/`](docs/benchmarks/suite/README.md).

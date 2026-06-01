@@ -285,6 +285,17 @@ describe('public marketing copy honesty', () => {
       expect(lower).toContain('no cloud indexing assumption')
     })
 
+    it('keeps distribution-channel positioning tied to shipped local installs and proof/onboarding readiness', () => {
+      expect(lower).toContain('distribution channels')
+      expect(lower).toContain('claude')
+      expect(lower).toContain('cursor')
+      expect(lower).toContain('copilot')
+      expect(lower).toContain('mcp directories')
+      expect(lower).toContain('proof/onboarding readiness')
+      expect(lower).toContain('local trust boundary')
+      expect(lower).toContain('avoid marketplace-scale adoption claims')
+    })
+
     it('keeps language-expansion claims gated on TypeScript/Node proof plus benchmark or fixture evidence', () => {
       expect(lower).toContain('language expansion')
       expect(lower).toContain('typescript/node proof')
@@ -367,6 +378,41 @@ describe('public marketing copy honesty', () => {
       expect(lower).toContain('no broad parity claim')
       expect(lower).toContain('claiming broad parity')
       expect(lower).toContain('without supporting receipts')
+    })
+  })
+
+  describe('docs/distribution-channel-research.md', () => {
+    const content = readDoc('docs/distribution-channel-research.md')
+    const lower = content.toLowerCase()
+
+    it('ranks current and future agent-ecosystem channels into near-term, later, and avoid buckets', () => {
+      expect(content).toContain('# Distribution channel research')
+      expect(lower).toContain('near-term')
+      expect(lower).toContain('later')
+      expect(lower).toContain('avoid')
+      expect(lower).toContain('claude code')
+      expect(lower).toContain('cursor')
+      expect(lower).toContain('github copilot cli')
+      expect(lower).toContain('gemini cli')
+      expect(lower).toContain('codex cli')
+      expect(lower).toContain('aider')
+      expect(lower).toContain('opencode')
+      expect(lower).toContain('mcp directories')
+    })
+
+    it('links each channel bucket back to required packaging, docs, security, and proof readiness', () => {
+      expect(lower).toContain('packaging')
+      expect(lower).toContain('docs work')
+      expect(lower).toContain('security work')
+      expect(lower).toContain('proof/onboarding readiness')
+      expect(lower).toContain('local trust boundary')
+      expect(lower).toContain('no hosted relay')
+      expect(lower).toContain('source custody')
+    })
+
+    it('distinguishes the existing MCP Registry metadata from broader future directory expansion', () => {
+      expect(lower).toContain('mcp registry metadata already exists today')
+      expect(lower).toContain('broader directory/listing expansion')
     })
   })
 
