@@ -1252,6 +1252,90 @@ describe('executeNativeAgentCompare', () => {
     }
   })
 
+  it('times out implement validation commands instead of hanging after the agent run', async () => {
+    const { projectDir, graphPath, outputDir, questionsPath } = makeImplementationFixtureProject()
+    try {
+      writeFileSync(
+        join(projectDir, 'package.json'),
+        JSON.stringify({
+          name: 'implement-timeout-fixture',
+          private: true,
+          type: 'module',
+          scripts: {
+            typecheck: 'node -e "setTimeout(() => process.exit(0), 5000)"',
+          },
+        }, null, 2),
+        'utf8',
+      )
+
+      const runner: NativeAgentRunner = async (input) => {
+        const workspaceRoot = input.cwd ?? projectDir
+        writeFileSync(
+          join(workspaceRoot, 'src', 'session.ts'),
+          [
+            'export class SessionManager {',
+            '  readonly slidingExpirationMs = 30000',
+            '',
+            '  createSession(userId: string) {',
+            '    return `session:${userId}`',
+            '  }',
+            '}',
+            '',
+          ].join('\n'),
+          'utf8',
+        )
+
+        return {
+          exitCode: 0,
+          stdout: `${JSON.stringify({
+            ...(input.mode === 'baseline' ? BASELINE_USAGE_PAYLOAD : MADAR_USAGE_PAYLOAD),
+            result: 'updated session manager',
+          })}\n`,
+          stderr: '',
+          elapsedMs: 5,
+        }
+      }
+
+      const request = {
+        graphPath,
+        questionsPath,
+        outputDir,
+        execTemplate: 'mock-runner',
+        baselineMode: 'native_agent',
+        task: 'implement',
+        validationTimeoutSeconds: 0.01,
+      } as Parameters<typeof executeNativeAgentCompare>[0] & { validationTimeoutSeconds: number }
+
+      const outcome = await Promise.race([
+        executeNativeAgentCompare(
+          request,
+          {
+            runner,
+            now: () => new Date('2026-06-01T00:00:00Z'),
+          },
+        ).then((result) => ({ kind: 'resolved' as const, result })),
+        new Promise<{ kind: 'hung' }>((resolve) => {
+          setTimeout(() => resolve({ kind: 'hung' }), 1000)
+        }),
+      ])
+
+      if (outcome.kind !== 'resolved') {
+        throw new Error('compare hung instead of timing out implement validation commands')
+      }
+
+      const report = outcome.result.reports[0] as NativeAgentCompareReport
+      expect(['failed', 'setup_error']).toContain(report.implement_outcome?.baseline.validation.status)
+      expect(['failed', 'setup_error']).toContain(report.implement_outcome?.madar.validation.status)
+      expect(report.implement_outcome?.baseline.validation.commands).toEqual([
+        expect.objectContaining({
+          command: 'npm run typecheck',
+        }),
+      ])
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
   it('fails early when strict benchmark readiness is poor', async () => {
     const { projectDir, graphPath, outputDir } = makeFixtureProject()
     let runnerCalled = false

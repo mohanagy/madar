@@ -117,6 +117,7 @@ export interface CompareCliOptions {
   task: 'explain' | 'implement'
   baselineMode: 'full' | 'bounded' | 'pack_only' | 'native_agent'
   perArmTimeoutSeconds: number
+  validationTimeoutSeconds: number
   heartbeatIntervalMs: number
   strictMadarFirst: boolean
   strictBenchmarkReadiness: boolean
@@ -213,7 +214,7 @@ export interface TelemetryCliOptions {
   action: 'enable' | 'disable' | 'status'
 }
 
-const COMPARE_USAGE = 'Usage: madar compare [question] --exec TEMPLATE [--graph path] [--questions PATH] [--output-dir DIR] [--task TASK] [--baseline-mode MODE] [--per-arm-timeout S] [--heartbeat-interval-ms N] [--strict-madar-first] [--strict] [--allow-no-install] [--yes] [--limit N] [--why]'
+const COMPARE_USAGE = 'Usage: madar compare [question] --exec TEMPLATE [--graph path] [--questions PATH] [--output-dir DIR] [--task TASK] [--baseline-mode MODE] [--per-arm-timeout S] [--validation-timeout S] [--heartbeat-interval-ms N] [--strict-madar-first] [--strict] [--allow-no-install] [--yes] [--limit N] [--why]'
 
 export interface PlatformActionCliOptions {
   action: 'install' | 'uninstall'
@@ -1224,6 +1225,7 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
   let task: 'explain' | 'implement' = 'explain'
   let baselineMode: 'full' | 'bounded' | 'pack_only' | 'native_agent' = 'full'
   let perArmTimeoutSeconds = 600
+  let validationTimeoutSeconds = 120
   let heartbeatIntervalMs = 30000
   let strictMadarFirst = false
   let strictBenchmarkReadiness = false
@@ -1334,6 +1336,18 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
       continue
     }
 
+    if (argument === '--validation-timeout') {
+      validationTimeoutSeconds = parsePositiveDecimalInteger('--validation-timeout', requireOptionValue('--validation-timeout', args[index + 1]))
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--validation-timeout=')) {
+      const [, value] = argument.split('=', 2)
+      validationTimeoutSeconds = parsePositiveDecimalInteger('--validation-timeout', requireOptionValue('--validation-timeout', value))
+      continue
+    }
+
     if (argument === '--heartbeat-interval-ms') {
       heartbeatIntervalMs = parseNonNegativeInteger('--heartbeat-interval-ms', requireOptionValue('--heartbeat-interval-ms', args[index + 1]))
       index += 1
@@ -1409,6 +1423,7 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
     task,
     baselineMode,
     perArmTimeoutSeconds,
+    validationTimeoutSeconds,
     heartbeatIntervalMs,
     strictMadarFirst,
     strictBenchmarkReadiness,

@@ -30,6 +30,14 @@ function withReleaseFixture(
   readmeLink: string,
   runAssertion: (runVerify: () => string) => void,
 ): void {
+  withReleaseReadmeFixture(version, `[release notes](${readmeLink})\n`, runAssertion)
+}
+
+function withReleaseReadmeFixture(
+  version: string,
+  readmeMarkdown: string,
+  runAssertion: (runVerify: () => string) => void,
+): void {
   const fixtureDir = mkdtempSync(join(tmpdir(), 'madar-release-hygiene-'))
 
   try {
@@ -52,7 +60,7 @@ function withReleaseFixture(
         2,
       ),
     )
-    writeFileSync(join(fixtureDir, 'README.md'), `[release notes](${readmeLink})\n`)
+    writeFileSync(join(fixtureDir, 'README.md'), readmeMarkdown)
     writeFileSync(join(fixtureDir, 'CHANGELOG.md'), `## [${version}] - 2026-05-29\n`)
 
     runAssertion(() =>
@@ -121,6 +129,21 @@ describe('release hygiene', () => {
       'https://github.com/mohanagy/madar/blob/next/CHANGELOG.md#0277-next0---2026-05-29',
       (runVerify) => {
         expect(runVerify).not.toThrow()
+      },
+    )
+  })
+
+  it('requires next-only README doc links to target next for prereleases', () => {
+    withReleaseReadmeFixture(
+      '0.27.7-next.0',
+      [
+        '[release notes](https://github.com/mohanagy/madar/blob/next/CHANGELOG.md#0277-next0---2026-05-29)',
+        '[enterprise offer](https://github.com/mohanagy/madar/blob/main/docs/team-enterprise-offer.md)',
+        '[telemetry](https://github.com/mohanagy/madar/blob/main/docs/telemetry.md)',
+        '',
+      ].join('\n'),
+      (runVerify) => {
+        expect(runVerify).toThrow(/next-only README doc links must target blob\/next/)
       },
     )
   })

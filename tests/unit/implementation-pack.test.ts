@@ -17,6 +17,39 @@ afterEach(() => {
   }
 })
 
+function buildQuotedTestPathGraph(testFilePath: string) {
+  const root = mkdtempSync(join(tmpdir(), 'madar-quoted-tests-'))
+  tempFixtureRoots.push(root)
+  writeFileSync(join(root, 'package.json'), JSON.stringify({
+    name: 'madar-quoted-tests-fixture',
+    private: true,
+    scripts: {
+      'test:run': 'vitest run',
+    },
+  }))
+
+  const graph = build(
+    [
+      {
+        schema_version: 1,
+        nodes: [
+          { id: 'route', label: 'POST /quote', file_type: 'code', source_file: `${root}/src/quote-route.ts`, source_location: 'L10', node_kind: 'route', community: 0 },
+          { id: 'service', label: 'QuoteService.run', file_type: 'code', source_file: `${root}/src/quote-service.ts`, source_location: 'L20', node_kind: 'method', community: 0 },
+          { id: 'test', label: 'QuoteService.run.spec', file_type: 'code', source_file: `${root}/${testFilePath}`, source_location: 'L1', node_kind: 'function', community: 1 },
+        ],
+        edges: [
+          { source: 'route', target: 'service', relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/quote-route.ts` },
+          { source: 'service', target: 'test', relation: 'covered_by', confidence: 'EXTRACTED', source_file: `${root}/src/quote-service.ts` },
+        ],
+      },
+    ],
+    { directed: true },
+  )
+
+  graph.graph.root_path = root
+  return graph
+}
+
 function buildWorkflowCenterGraph() {
   const root = mkdtempSync(join(tmpdir(), 'madar-workflow-center-'))
   tempFixtureRoots.push(root)
@@ -556,6 +589,104 @@ describe('buildImplementationPackGuidance workflow-center scoring (#295)', () =>
     expect(guidance.cautions).toEqual(expect.arrayContaining([
       expect.stringContaining('Treat src/http/app.ts as supporting context first'),
     ]))
+  })
+})
+
+describe('buildImplementationPackGuidance validation commands', () => {
+  it('shell-quotes test file paths with spaces and shell metacharacters', () => {
+    const graph = buildQuotedTestPathGraph('tests/unit/login flow $(touch pwned).test.ts')
+    const retrieval = {
+      question: 'implement login flow validation',
+      token_count: 120,
+      matched_nodes: [
+        {
+          node_id: 'service',
+          label: 'QuoteService.run',
+          source_file: `${graph.graph.root_path}/src/quote-service.ts`,
+          line_number: 20,
+          node_kind: 'method',
+          file_type: 'code',
+          snippet: 'export class QuoteService { run() {} }',
+          match_score: 0.9,
+          relevance_band: 'direct' as const,
+          community: 0,
+          community_label: 'Workflow',
+        },
+        {
+          node_id: 'test',
+          label: 'QuoteService.run.spec',
+          source_file: `${graph.graph.root_path}/tests/unit/login flow $(touch pwned).test.ts`,
+          line_number: 1,
+          node_kind: 'function',
+          file_type: 'code',
+          snippet: 'it("works", () => {})',
+          match_score: 0.7,
+          relevance_band: 'direct' as const,
+          community: 1,
+          community_label: 'Tests',
+        },
+      ],
+      relationships: [],
+      community_context: [],
+      graph_signals: { god_nodes: [], bridge_nodes: [] },
+    } satisfies import('../../src/runtime/retrieve.js').RetrieveResult
+
+    const guidance = buildImplementationPackGuidance(graph, retrieval, {
+      budget: 2000,
+      taskIntent: 'implement',
+    })
+
+    expect(guidance.validation_commands).toContain(
+      "npm run test:run -- 'tests/unit/login flow $(touch pwned).test.ts'",
+    )
+  })
+
+  it('prefixes repo-root test paths that start with a dash so runners do not parse them as flags', () => {
+    const graph = buildQuotedTestPathGraph('--help.test.ts')
+    const retrieval = {
+      question: 'implement login flow validation',
+      token_count: 120,
+      matched_nodes: [
+        {
+          node_id: 'service',
+          label: 'QuoteService.run',
+          source_file: `${graph.graph.root_path}/src/quote-service.ts`,
+          line_number: 20,
+          node_kind: 'method',
+          file_type: 'code',
+          snippet: 'export class QuoteService { run() {} }',
+          match_score: 0.9,
+          relevance_band: 'direct' as const,
+          community: 0,
+          community_label: 'Workflow',
+        },
+        {
+          node_id: 'test',
+          label: 'QuoteService.run.spec',
+          source_file: `${graph.graph.root_path}/--help.test.ts`,
+          line_number: 1,
+          node_kind: 'function',
+          file_type: 'code',
+          snippet: 'it("works", () => {})',
+          match_score: 0.7,
+          relevance_band: 'direct' as const,
+          community: 1,
+          community_label: 'Tests',
+        },
+      ],
+      relationships: [],
+      community_context: [],
+      graph_signals: { god_nodes: [], bridge_nodes: [] },
+    } satisfies import('../../src/runtime/retrieve.js').RetrieveResult
+
+    const guidance = buildImplementationPackGuidance(graph, retrieval, {
+      budget: 2000,
+      taskIntent: 'implement',
+    })
+
+    expect(guidance.validation_commands).toContain(
+      'npm run test:run -- ./--help.test.ts',
+    )
   })
 })
 

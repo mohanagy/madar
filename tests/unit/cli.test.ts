@@ -571,6 +571,7 @@ describe('cli parser', () => {
       task: 'explain',
       baselineMode: 'full',
       perArmTimeoutSeconds: 600,
+      validationTimeoutSeconds: 120,
       heartbeatIntervalMs: 30000,
       strictMadarFirst: false,
       strictBenchmarkReadiness: false,
@@ -588,6 +589,7 @@ describe('cli parser', () => {
       task: 'explain',
       baselineMode: 'full',
       perArmTimeoutSeconds: 600,
+      validationTimeoutSeconds: 120,
       heartbeatIntervalMs: 30000,
       strictMadarFirst: false,
       strictBenchmarkReadiness: false,
@@ -611,6 +613,8 @@ describe('cli parser', () => {
         'bounded',
         '--per-arm-timeout',
         '900',
+        '--validation-timeout',
+        '45',
         '--heartbeat-interval-ms',
         '15000',
         '--strict-madar-first',
@@ -629,6 +633,7 @@ describe('cli parser', () => {
       task: 'explain',
       baselineMode: 'bounded',
       perArmTimeoutSeconds: 900,
+      validationTimeoutSeconds: 45,
       heartbeatIntervalMs: 15000,
       strictMadarFirst: true,
       strictBenchmarkReadiness: true,
@@ -656,6 +661,7 @@ describe('cli parser', () => {
       task: 'explain',
       baselineMode: 'pack_only',
       perArmTimeoutSeconds: 600,
+      validationTimeoutSeconds: 120,
       heartbeatIntervalMs: 30000,
       strictMadarFirst: false,
       strictBenchmarkReadiness: false,
@@ -684,6 +690,7 @@ describe('cli parser', () => {
       outputDir: resolve('out/compare'),
       baselineMode: 'native_agent',
       perArmTimeoutSeconds: 600,
+      validationTimeoutSeconds: 120,
       heartbeatIntervalMs: 30000,
       strictMadarFirst: false,
       strictBenchmarkReadiness: false,
@@ -711,6 +718,7 @@ describe('cli parser', () => {
       task: 'explain',
       baselineMode: 'full',
       perArmTimeoutSeconds: 600,
+      validationTimeoutSeconds: 120,
       heartbeatIntervalMs: 30000,
       strictMadarFirst: false,
       strictBenchmarkReadiness: true,
@@ -737,6 +745,7 @@ describe('cli parser', () => {
     task: 'explain',
     baselineMode: 'full',
     perArmTimeoutSeconds: 600,
+    validationTimeoutSeconds: 120,
     heartbeatIntervalMs: 30000,
     strictMadarFirst: false,
     strictBenchmarkReadiness: false,
@@ -769,6 +778,9 @@ describe('cli parser', () => {
     )
     expect(() => parseCompareArgs(['how does login work', '--exec', 'claude -p "$(cat {prompt_file})"', '--per-arm-timeout', '0'])).toThrow(
       'error: --per-arm-timeout must be a positive integer',
+    )
+    expect(() => parseCompareArgs(['how does login work', '--exec', 'claude -p "$(cat {prompt_file})"', '--validation-timeout', '0'])).toThrow(
+      'error: --validation-timeout must be a positive integer',
     )
     expect(() => parseCompareArgs(['how does login work', '--exec', 'claude -p "$(cat {prompt_file})"', '--heartbeat-interval-ms', '-1'])).toThrow(
       'error: --heartbeat-interval-ms must be a non-negative integer',
@@ -1208,6 +1220,7 @@ describe('cli main', () => {
     expect(help).toContain('    --baseline-mode MODE  full | bounded | pack_only | native_agent (default full; pack_only compares one bounded raw-context prompt against one compiled madar pack; native_agent runs --exec twice, uses Anthropic JSON usage when available, and otherwise saves answer-only artifacts)')
     expect(help).toContain('      For Claude MCP attribution in native_agent mode, include --verbose with --output-format json')
     expect(help).toContain('    --per-arm-timeout S   per-arm timeout seconds for native_agent runs (default 600)')
+    expect(help).toContain('    --validation-timeout S  timeout seconds for implement validation commands run after native_agent compare arms (default 120)')
     expect(help).toContain('    --heartbeat-interval-ms N  stderr heartbeat interval for native_agent runs (default 30000; 0 disables)')
     expect(help).toContain('    --strict-madar-first  treat pre-Madar broad exploration as degraded/non-winning in native_agent mode')
     expect(help).toContain('    --strict / --strict-benchmark-readiness  fail native_agent compare before runner spend when benchmark readiness is degraded or not_ready')
@@ -1282,6 +1295,8 @@ describe('cli main', () => {
         'bounded',
         '--per-arm-timeout',
         '900',
+        '--validation-timeout',
+        '45',
         '--heartbeat-interval-ms',
         '15000',
         '--strict-madar-first',
@@ -1312,6 +1327,7 @@ describe('cli main', () => {
       task: 'explain',
       baselineMode: 'bounded',
       perArmTimeoutSeconds: 900,
+      validationTimeoutSeconds: 45,
       heartbeatIntervalMs: 15000,
       strictMadarFirst: true,
       strictBenchmarkReadiness: true,
@@ -1732,6 +1748,45 @@ describe('cli main', () => {
     expect(errors).toEqual([])
   })
 
+  it('warns implement compare about local validation commands and timeout', async () => {
+    const { io, logs, errors } = createIo()
+    const dependencies = createDependencies()
+    const prompts: string[] = []
+
+    dependencies.confirm = async (message) => {
+      prompts.push(message)
+      return true
+    }
+    dependencies.runCompare = async () => 'compare result'
+
+    const exitCode = await executeCli(
+      [
+        'compare',
+        'implement sliding expiration',
+        '--exec',
+        'claude -p "$(cat {prompt_file})"',
+        '--task',
+        'implement',
+        '--baseline-mode',
+        'native_agent',
+        '--validation-timeout',
+        '45',
+      ],
+      io,
+      dependencies,
+    )
+
+    expect(exitCode).toBe(0)
+    expect(prompts).toEqual([
+      'compare will execute a baseline prompt and a madar prompt for each question. This may consume paid model tokens. For --task implement with --baseline-mode native_agent, it will also run local validation commands derived from package.json scripts after each arm with a 45s timeout.',
+    ])
+    expect(logs).toEqual([
+      'Warning: compare will execute a baseline prompt and a madar prompt for each question. This may consume paid model tokens. For --task implement with --baseline-mode native_agent, it will also run local validation commands derived from package.json scripts after each arm with a 45s timeout.',
+      'compare result',
+    ])
+    expect(errors).toEqual([])
+  })
+
   it('cancels compare when confirmation is declined', async () => {
     const { io, logs, errors } = createIo()
     const dependencies = createDependencies()
@@ -1845,7 +1900,7 @@ describe('cli main', () => {
 
     expect(exitCode).toBe(2)
     expect(logs).toEqual([])
-    expect(errors).toEqual(['Usage: madar compare [question] --exec TEMPLATE [--graph path] [--questions PATH] [--output-dir DIR] [--task TASK] [--baseline-mode MODE] [--per-arm-timeout S] [--heartbeat-interval-ms N] [--strict-madar-first] [--strict] [--allow-no-install] [--yes] [--limit N] [--why]'])
+    expect(errors).toEqual(['Usage: madar compare [question] --exec TEMPLATE [--graph path] [--questions PATH] [--output-dir DIR] [--task TASK] [--baseline-mode MODE] [--per-arm-timeout S] [--validation-timeout S] [--heartbeat-interval-ms N] [--strict-madar-first] [--strict] [--allow-no-install] [--yes] [--limit N] [--why]'])
   })
 
   it('prefers the explicit compare command over an implicit generate path match', async () => {
