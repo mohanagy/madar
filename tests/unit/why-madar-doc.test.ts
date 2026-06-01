@@ -283,6 +283,13 @@ describe('public marketing copy honesty', () => {
         expect(lower).toContain('explicit customer demand')
         expect(lower).toContain('no cloud indexing assumption')
       })
+
+      it('keeps language-expansion claims gated on TypeScript/Node proof plus benchmark or fixture evidence', () => {
+        expect(lower).toContain('language expansion')
+        expect(lower).toContain('typescript/node proof')
+        expect(lower).toContain('benchmark or fixture evidence')
+        expect(lower).toContain('no broad parity claim')
+      })
     })
   })
 
@@ -336,6 +343,33 @@ describe('public marketing copy honesty', () => {
     })
   })
 
+  describe('docs/language-expansion-decision.md', () => {
+    const content = readDoc('docs/language-expansion-decision.md')
+    const lower = content.toLowerCase()
+
+    it('defines evidence gates before broader language expansion', () => {
+      expect(content).toContain('# Language expansion decision')
+      expect(lower).toContain('recommendation: defer')
+      expect(lower).toContain('typescript/node proof')
+      expect(lower).toContain('evidence gates')
+      expect(lower).toContain('benchmark or fixture evidence')
+    })
+
+    it('separates near-term, parked, and out-of-scope language requests clearly', () => {
+      expect(lower).toContain('near-term')
+      expect(lower).toContain('parked')
+      expect(lower).toContain('out of scope')
+      expect(lower).toContain('python')
+      expect(lower).toContain('go')
+      expect(lower).toContain('rust')
+      expect(lower).toContain('java')
+      expect(lower).toContain('typescript/node framework depth')
+      expect(lower).toContain('no broad parity claim')
+      expect(lower).toContain('claiming broad parity')
+      expect(lower).toContain('without supporting receipts')
+    })
+  })
+
   describe('docs/language-capability-matrix.md', () => {
     const content = readDoc('docs/language-capability-matrix.md')
 
@@ -361,6 +395,13 @@ describe('public marketing copy honesty', () => {
       expect(content).toContain('visible client/server boundaries')
       expect(content).toContain('source-visible Hono, Fastify, tRPC, and Prisma workflows get conservative deeper retrieval hints on the opt-in `--spi` pipeline')
       expect(content).toContain('Hono, Fastify, tRPC, and Prisma currently contribute conservative request-flow and storage hints only on the opt-in `--spi` path')
+    })
+
+    it('frames non-TS/Node language support as first-pass coverage, not broad parity', () => {
+      expect(content).toContain('TypeScript/Node remains the near-term depth priority')
+      expect(content).toContain('Python and Go are useful first-pass support')
+      expect(content).toContain('broader parity is parked')
+      expect(content).toContain('docs/language-expansion-decision.md')
     })
   })
 

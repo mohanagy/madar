@@ -41,6 +41,8 @@ This file is the public map between what Madar says and what the repo can actual
 - Team and enterprise offer docs should say Madar is **not a hosted control plane** and avoid implying managed cloud hosting or source-code custody.
 - Hosted dashboard positioning should stay deferred until **explicit customer demand** exceeds the current local proof path built from `graph.html`, `GRAPH_REPORT.md`, and `report.share-safe.json`.
 - Any future hosted-dashboard note must keep the **no cloud indexing assumption** explicit and describe a share-safe-artifacts-only boundary rather than implying raw-source upload.
+- Any language expansion note should stay behind stronger **TypeScript/Node proof** plus **benchmark or fixture evidence** for the language in question.
+- Public language copy should make **no broad parity claim** across Python, Go, Rust, Java, and TypeScript unless dated evidence exists for that scope.
 - Any new public claim should link back to a dated artifact or to the reproducible suite surface under [`docs/benchmarks/suite/`](docs/benchmarks/suite/README.md).
 - When evidence is mixed, the README should say that directly and point to the counterexample note or issue instead of smoothing it into marketing.
 

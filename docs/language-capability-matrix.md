@@ -8,6 +8,8 @@ This is the public support matrix for `madar` on the current mainline. It distin
 
 The registry lives in `src/infrastructure/capabilities.ts`. The extractor bindings live in `src/pipeline/extract.ts`. Tree-sitter WASM grammars are currently bundled for **Go, Java, Python, Ruby, and Rust**.
 
+**TypeScript/Node remains the near-term depth priority.** **Python and Go are useful first-pass support**, but **broader parity is parked** until the evidence gates in [`docs/language-expansion-decision.md`](./language-expansion-decision.md) are met. Java and Rust should be read as extractor coverage, not a public parity claim.
+
 ## Code extraction
 
 | Coverage tier | Extensions | Primary path | Fallback / notes |
