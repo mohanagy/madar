@@ -297,10 +297,6 @@ function compactAnswerReadyGovernance(payload: JsonRecord, trimmedFields: string
 
   const request = asJsonRecord(governance.request)
   if (request) {
-    if (surface === 'cli_pack' && typeof request.task_intent === 'string') {
-      delete request.task_intent
-      trimmedFields.push('governance.request.task_intent')
-    }
     if (typeof request.budget === 'number') {
       delete request.budget
       trimmedFields.push('governance.request.budget')
@@ -309,16 +305,16 @@ function compactAnswerReadyGovernance(payload: JsonRecord, trimmedFields: string
         trimmedFields.push('governance.request.resolution')
       }
     }
-    if (surface === 'cli_pack' && typeof request.retrieval_strategy === 'string') {
-      delete request.retrieval_strategy
-      trimmedFields.push('governance.request.retrieval_strategy')
-    }
   }
 
   const directive = asJsonRecord(governance.directive)
   if (directive && asUnknownArray(directive.missing_phases).length === 0) {
     delete directive.missing_phases
     trimmedFields.push('governance.directive.missing_phases')
+  }
+  if (surface === 'cli_pack' && directive && typeof directive.coverage === 'string') {
+    delete directive.coverage
+    trimmedFields.push('governance.directive.coverage')
   }
 
   const followUp = asJsonRecord(governance.follow_up)
@@ -659,6 +655,22 @@ export function buildAnswerReadyPackSchema(
     'validation_commands',
   ]) {
     deleteEmptyArrayField(payload, field, trimmedFields)
+  }
+  attachSerializedBudget(payload, maxTokens, trimmedFields)
+  if (estimatedJsonTokens(payload) <= maxTokens) {
+    return payload
+  }
+
+  const evidence = asJsonRecord(payload.evidence)
+  if (evidence) {
+    if (Array.isArray(evidence.covered_workflow_owners)) {
+      delete evidence.covered_workflow_owners
+      trimmedFields.push('evidence.covered_workflow_owners')
+    }
+    if (Array.isArray(evidence.confidence_reasons)) {
+      delete evidence.confidence_reasons
+      trimmedFields.push('evidence.confidence_reasons')
+    }
   }
   attachSerializedBudget(payload, maxTokens, trimmedFields)
   if (estimatedJsonTokens(payload) <= maxTokens) {

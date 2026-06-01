@@ -908,6 +908,9 @@ describe('context-pack-command', () => {
         execution_slice?: { side_effects?: unknown[] }
       }
       evidence?: { agent_directive?: string }
+      governance?: {
+        request?: { task_intent?: string; retrieval_strategy?: string }
+      }
       recommended_first_read?: Array<{ path?: string }>
     }
 
@@ -921,6 +924,10 @@ describe('context-pack-command', () => {
     expect(payload.pack?.slice?.selected_path_count).toBe(noisySelectedPaths.length)
     expect(payload.pack?.execution_slice?.side_effects).toBeUndefined()
     expect(payload.evidence?.agent_directive).toBe('answer_from_pack')
+    expect(payload.governance?.request).toEqual(expect.objectContaining({
+      task_intent: 'explain',
+      retrieval_strategy: 'slice-v1',
+    }))
     expect(payload.recommended_first_read?.map((entry) => entry.path)).toEqual([
       'src/ideas/controller.ts',
       'src/ideas/report-service.ts',
