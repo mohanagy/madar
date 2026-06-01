@@ -208,6 +208,19 @@ describe('public marketing copy honesty', () => {
       expect(content).toContain('Django')
       expect(content).toContain('router composition')
     })
+
+    it('describes deeper framework hints conservatively and keeps the generic AST fallback explicit', () => {
+      expect(content).toContain('Hono')
+      expect(content).toContain('Fastify')
+      expect(content).toContain('tRPC')
+      expect(content).toContain('Prisma')
+      expect(content).toContain('request-flow')
+      expect(content).toContain('storage')
+      expect(content).toContain('runtime-boundary')
+      expect(content).toContain('generic AST structure')
+      expect(content).toContain('source-visible')
+      expect(content).toContain('visible client/server boundaries')
+    })
   })
 
   describe('docs/benchmarks/2026-05-09-govalidate-auth-e2e/', () => {
