@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -77,9 +77,10 @@ describe('federate', () => {
 
   it('reproduces the checked-in three-repo federation receipt', () => {
     withTempDir((dir) => {
-      const frontendGraph = resolve('tests/fixtures/federation-flagship/frontend/out/graph.json')
-      const backendGraph = resolve('tests/fixtures/federation-flagship/backend/out/graph.json')
-      const sharedGraph = resolve('tests/fixtures/federation-flagship/shared/out/graph.json')
+      const fixtureRoot = mkdtempSync(join(process.cwd(), 'out', 'federation-fixture-'))
+      const frontendGraph = join(fixtureRoot, 'frontend', 'out', 'graph.json')
+      const backendGraph = join(fixtureRoot, 'backend', 'out', 'graph.json')
+      const sharedGraph = join(fixtureRoot, 'shared', 'out', 'graph.json')
       const receipt = JSON.parse(
         readFileSync(resolve('docs/benchmarks/2026-06-01-federation-flagship/federation-receipt.json'), 'utf8'),
       ) as {
@@ -90,16 +91,27 @@ describe('federate', () => {
         communityCount: number
       }
 
-      const outputDir = join(dir, 'federated')
-      const result = federate([frontendGraph, backendGraph, sharedGraph], { outputDir })
+      try {
+        mkdirSync(join(fixtureRoot, 'frontend', 'out'), { recursive: true })
+        mkdirSync(join(fixtureRoot, 'backend', 'out'), { recursive: true })
+        mkdirSync(join(fixtureRoot, 'shared', 'out'), { recursive: true })
+        writeFileSync(frontendGraph, readFileSync(resolve('tests/fixtures/federation-flagship/frontend/graph.json')))
+        writeFileSync(backendGraph, readFileSync(resolve('tests/fixtures/federation-flagship/backend/graph.json')))
+        writeFileSync(sharedGraph, readFileSync(resolve('tests/fixtures/federation-flagship/shared/graph.json')))
 
-      expect(result.repos).toEqual(receipt.repos)
-      expect(result.totalNodes).toBe(receipt.totalNodes)
-      expect(result.totalEdges).toBe(receipt.totalEdges)
-      expect(result.crossRepoEdges).toBe(receipt.crossRepoEdges)
-      expect(result.communityCount).toBe(receipt.communityCount)
-      expect(existsSync(result.graphPath)).toBe(true)
-      expect(existsSync(result.reportPath)).toBe(true)
+        const outputDir = join(dir, 'federated')
+        const result = federate([frontendGraph, backendGraph, sharedGraph], { outputDir })
+
+        expect(result.repos).toEqual(receipt.repos)
+        expect(result.totalNodes).toBe(receipt.totalNodes)
+        expect(result.totalEdges).toBe(receipt.totalEdges)
+        expect(result.crossRepoEdges).toBe(receipt.crossRepoEdges)
+        expect(result.communityCount).toBe(receipt.communityCount)
+        expect(existsSync(result.graphPath)).toBe(true)
+        expect(existsSync(result.reportPath)).toBe(true)
+      } finally {
+        rmSync(fixtureRoot, { recursive: true, force: true })
+      }
     })
   })
 })

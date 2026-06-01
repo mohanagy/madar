@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "directed": false,
+  "nodes": [
+    {
+      "id": "session-handler",
+      "label": "SessionContract",
+      "file_type": "code",
+      "source_file": "backend/src/session-handler.ts"
+    },
+    {
+      "id": "user-record",
+      "label": "UserProfile",
+      "file_type": "code",
+      "source_file": "backend/src/user-record.ts"
+    }
+  ],
+  "edges": [
+    {
+      "source": "session-handler",
+      "target": "user-record",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "backend/src/session-handler.ts"
+    }
+  ]
+}
