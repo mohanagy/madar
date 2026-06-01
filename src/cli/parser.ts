@@ -209,6 +209,10 @@ export interface InstallCliOptions {
   platform: InstallPlatform
 }
 
+export interface TelemetryCliOptions {
+  action: 'enable' | 'disable' | 'status'
+}
+
 const COMPARE_USAGE = 'Usage: madar compare [question] --exec TEMPLATE [--graph path] [--questions PATH] [--output-dir DIR] [--task TASK] [--baseline-mode MODE] [--per-arm-timeout S] [--heartbeat-interval-ms N] [--strict-madar-first] [--strict] [--allow-no-install] [--yes] [--limit N] [--why]'
 
 export interface PlatformActionCliOptions {
@@ -2065,6 +2069,18 @@ export function parseHookArgs(args: string[]): HookCliOptions {
   }
 
   throw new UsageError('Usage: madar hook <install|uninstall|status>')
+}
+
+export function parseTelemetryArgs(args: string[]): TelemetryCliOptions {
+  const action = args[0]
+  if (action === 'enable' || action === 'disable' || action === 'status') {
+    if (args.length > 1) {
+      throw new UsageError('Usage: madar telemetry <enable|disable|status>')
+    }
+    return { action }
+  }
+
+  throw new UsageError('Usage: madar telemetry <enable|disable|status>')
 }
 
 export function parseInstallArgs(args: string[], defaultPlatform: InstallPlatform): InstallCliOptions {

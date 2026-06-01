@@ -42,6 +42,15 @@ import { serveGraphStdio } from '../runtime/stdio-server.js'
 import { getNeighbors, getNode, loadGraph, queryGraph, shortestPath } from '../runtime/serve.js'
 import { formatTimeTravelResult } from '../runtime/time-travel.js'
 import { findPackageRoot, readPackageName, readPackageVersion } from '../shared/package-metadata.js'
+import {
+  disableTelemetry,
+  enableTelemetry,
+  formatTelemetryStatus,
+  getTelemetryStatus,
+  recordTelemetryEvent as persistTelemetryEvent,
+  repoSizeBucketFromFileCount,
+  type TelemetryEventInput,
+} from '../shared/telemetry.js'
 import { getUpdateNotification } from '../shared/update-notifier.js'
 import {
   parseBenchmarkArgs,
@@ -67,6 +76,7 @@ import {
   parseSaveResultArgs,
   parseSummaryArgs,
   parseServeArgs,
+  parseTelemetryArgs,
   parseTimeTravelArgs,
   type HandoffCliOptions,
   type PackCliOptions,
@@ -177,6 +187,10 @@ export interface CliDependencies {
   agentsUninstall: typeof agentsUninstall
   notifyUpdate?: () => Promise<string | null> | string | null
   readInstalledVersion?: () => string
+  enableTelemetry?: () => string
+  disableTelemetry?: () => string
+  readTelemetryStatus?: () => string
+  recordTelemetryEvent?: (event: TelemetryEventInput) => void
 }
 
 const COMPARE_WARNING_MESSAGE = 'compare will execute a baseline prompt and a madar prompt for each question. This may consume paid model tokens.'
@@ -301,6 +315,12 @@ const DEFAULT_DEPENDENCIES: CliDependencies = {
     currentVersion: readPackageVersion(findPackageRoot()),
   }),
   readInstalledVersion: () => readPackageVersion(findPackageRoot()),
+  enableTelemetry: () => enableTelemetry(),
+  disableTelemetry: () => disableTelemetry(),
+  readTelemetryStatus: () => formatTelemetryStatus(getTelemetryStatus()),
+  recordTelemetryEvent: (event) => {
+    persistTelemetryEvent(event)
+  },
 }
 
 function messageFromError(error: unknown): string {
@@ -313,6 +333,26 @@ function formatProgress(progress: ProgressStep): string {
     return `${prefix} ${progress.message} (${progress.current}/${progress.total})`
   }
   return `${prefix} ${progress.message}`
+}
+
+function readInstalledVersionForTelemetry(dependencies: CliDependencies): string {
+  const readInstalledVersion = dependencies.readInstalledVersion ?? (() => readPackageVersion(findPackageRoot()))
+  return readInstalledVersion()
+}
+
+function emitTelemetry(io: CliIO, dependencies: CliDependencies, event: TelemetryEventInput): void {
+  if (!dependencies.recordTelemetryEvent) {
+    return
+  }
+  try {
+    dependencies.recordTelemetryEvent(event)
+  } catch (error) {
+    io.error(`[madar telemetry] ${messageFromError(error)}`)
+  }
+}
+
+function repoSizeBucketForGraph(dependencies: CliDependencies, graphPath: string) {
+  return repoSizeBucketFromFileCount(buildGraphSummary(dependencies.loadGraph(graphPath)).file_count)
 }
 
 async function confirmPaidCommand(
@@ -482,6 +522,7 @@ export function formatHelp(binaryName = 'madar'): string {
     '    install              install post-commit and post-checkout hooks',
     '    uninstall            remove madar hook sections',
     '    status               show whether madar hooks are installed',
+    '  telemetry <enable|disable|status> manage opt-in source-safe local telemetry',
     '  aider <install|uninstall>   manage local AGENTS.md rules',
     '  claude <install|uninstall> [--profile core|full|strict]  manage local CLAUDE.md madar rules',
     '  cursor <install|uninstall> [--profile core|full|strict]  manage local Cursor madar rules',
@@ -614,6 +655,12 @@ function handleAgentCommand(command: AgentPlatform, args: string[], io: CliIO, d
   const options = parsePlatformActionArgs(command, args)
   if (options.action === 'install') {
     io.log(dependencies.agentsInstall('.', command))
+    emitTelemetry(io, dependencies, {
+      event: 'install_success',
+      version: readInstalledVersionForTelemetry(dependencies),
+      os: process.platform,
+      installPlatform: command,
+    })
     return 0
   }
 
@@ -665,6 +712,12 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
       if (output !== undefined) {
         io.log(output)
       }
+      emitTelemetry(io, dependencies, {
+        event: 'compare_success',
+        version: readInstalledVersionForTelemetry(dependencies),
+        os: process.platform,
+        repoSizeBucket: repoSizeBucketForGraph(dependencies, options.graphPath),
+      })
       return 0
     }
 
@@ -733,6 +786,12 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
       if (output !== undefined) {
         io.log(output)
       }
+      emitTelemetry(io, dependencies, {
+        event: 'pack_success',
+        version: readInstalledVersionForTelemetry(dependencies),
+        os: process.platform,
+        repoSizeBucket: repoSizeBucketForGraph(dependencies, options.graphPath),
+      })
       return 0
     }
 
@@ -751,6 +810,20 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
       if (output !== undefined) {
         io.log(output)
       }
+      return 0
+    }
+
+    if (command === 'telemetry') {
+      const options = parseTelemetryArgs(args)
+      if (options.action === 'enable') {
+        io.log((dependencies.enableTelemetry ?? (() => enableTelemetry()))())
+        return 0
+      }
+      if (options.action === 'disable') {
+        io.log((dependencies.disableTelemetry ?? (() => disableTelemetry()))())
+        return 0
+      }
+      io.log((dependencies.readTelemetryStatus ?? (() => formatTelemetryStatus(getTelemetryStatus())))())
       return 0
     }
 
@@ -788,6 +861,12 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         io.log(`[madar neo4j] Pushed ${pushResult.nodes} nodes and ${pushResult.edges} edges to ${pushResult.uri} (database ${pushResult.database})`)
       }
 
+      emitTelemetry(io, dependencies, {
+        event: 'generate_success',
+        version: readInstalledVersionForTelemetry(dependencies),
+        os: process.platform,
+        repoSizeBucket: repoSizeBucketFromFileCount(result.totalFiles),
+      })
       if (options.watch) {
         await dependencies.watchGraph(options.path, options.debounceSeconds, {
           followSymlinks: options.followSymlinks,
@@ -978,6 +1057,12 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
       } else {
         io.log(dependencies.installSkill(options.platform))
       }
+      emitTelemetry(io, dependencies, {
+        event: 'install_success',
+        version: readInstalledVersionForTelemetry(dependencies),
+        os: process.platform,
+        installPlatform: options.platform,
+      })
       return 0
     }
 
@@ -1003,6 +1088,14 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
       io.log(options.action === 'install'
         ? dependencies.claudeInstall('.', options.profile ? { profile: options.profile } : {})
         : dependencies.claudeUninstall('.'))
+      if (options.action === 'install') {
+        emitTelemetry(io, dependencies, {
+          event: 'install_success',
+          version: readInstalledVersionForTelemetry(dependencies),
+          os: process.platform,
+          installPlatform: 'claude',
+        })
+      }
       return 0
     }
 
@@ -1014,6 +1107,14 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
       io.log(options.action === 'install'
         ? dependencies.cursorInstall('.', options.profile ? { profile: options.profile } : {})
         : dependencies.cursorUninstall('.'))
+      if (options.action === 'install') {
+        emitTelemetry(io, dependencies, {
+          event: 'install_success',
+          version: readInstalledVersionForTelemetry(dependencies),
+          os: process.platform,
+          installPlatform: 'cursor',
+        })
+      }
       return 0
     }
 
@@ -1023,6 +1124,14 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         io.log("Warning: out/graph.json not found. Run 'madar generate .' first, then re-run this command.")
       }
       io.log(options.action === 'install' ? dependencies.geminiInstall('.', options.profile ? { profile: options.profile } : {}) : dependencies.geminiUninstall('.'))
+      if (options.action === 'install') {
+        emitTelemetry(io, dependencies, {
+          event: 'install_success',
+          version: readInstalledVersionForTelemetry(dependencies),
+          os: process.platform,
+          installPlatform: 'gemini',
+        })
+      }
       return 0
     }
 
@@ -1034,6 +1143,12 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         }
         io.log(dependencies.installSkill('copilot'))
         io.log(dependencies.installCopilotMcp('.', options.profile ? { profile: options.profile } : {}))
+        emitTelemetry(io, dependencies, {
+          event: 'install_success',
+          version: readInstalledVersionForTelemetry(dependencies),
+          os: process.platform,
+          installPlatform: 'copilot',
+        })
       } else {
         io.log(dependencies.uninstallCopilotMcp('.'))
         io.log(dependencies.uninstallSkill('copilot'))

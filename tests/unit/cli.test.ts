@@ -24,6 +24,7 @@ import {
   parseSaveResultArgs,
   parseSummaryArgs,
   parseServeArgs,
+  parseTelemetryArgs,
   parseTimeTravelArgs,
   parseWatchArgs,
 } from '../../src/cli/parser.js'
@@ -1075,6 +1076,13 @@ describe('cli parser', () => {
     expect(() => parseHookArgs([])).toThrow('Usage: madar hook <install|uninstall|status>')
   })
 
+  it('parses telemetry args', () => {
+    expect(parseTelemetryArgs(['enable'])).toEqual({ action: 'enable' })
+    expect(parseTelemetryArgs(['disable'])).toEqual({ action: 'disable' })
+    expect(parseTelemetryArgs(['status'])).toEqual({ action: 'status' })
+    expect(() => parseTelemetryArgs([])).toThrow('Usage: madar telemetry <enable|disable|status>')
+  })
+
   it('parses install args and platform actions', () => {
     expect(parseInstallArgs([], 'claude')).toEqual({ platform: 'claude' })
     expect(parseInstallArgs(['--platform', 'aider'], 'claude')).toEqual({ platform: 'aider' })
@@ -1244,6 +1252,7 @@ describe('cli main', () => {
     expect(help).toContain('    --pack PATH           optional saved context-pack JSON for pack-quality evidence')
     expect(help).toContain('question coverage')
     expect(help).toContain('hook <action>')
+    expect(help).toContain('telemetry <enable|disable|status>')
     expect(help).toContain('install [--platform P]')
     expect(help).toContain('If you update madar, re-run your platform install command to refresh local agent rules:')
     expect(help).toContain('madar install --platform <platform>')
@@ -1259,9 +1268,13 @@ describe('cli main', () => {
 
   it('routes compare through the injected dependency after parsing args', async () => {
     const { io, logs, errors } = createIo()
-    const dependencies = createDependencies()
+    const dependencies = createDependencies() as CliDependencies & {
+      recordTelemetryEvent: (event: unknown) => void
+      readInstalledVersion: () => string
+    }
     let capturedRequest: unknown
     let confirmCalls = 0
+    const telemetryEvents: unknown[] = []
 
     dependencies.runCompare = async (request) => {
       capturedRequest = request
@@ -1271,6 +1284,10 @@ describe('cli main', () => {
       confirmCalls += 1
       return true
     }
+    dependencies.recordTelemetryEvent = (event) => {
+      telemetryEvents.push(event)
+    }
+    dependencies.readInstalledVersion = () => '0.27.4'
 
     const exitCode = await executeCli(
       [
@@ -1329,6 +1346,157 @@ describe('cli main', () => {
     expect(compareRequest.io).toBe(io)
     await expect(compareRequest.confirm('Proceed?')).resolves.toBe(true)
     expect(confirmCalls).toBe(1)
+    expect(telemetryEvents).toEqual([
+      {
+        event: 'compare_success',
+        version: '0.27.4',
+        os: process.platform,
+        repoSizeBucket: '1-24',
+      },
+    ])
+  })
+
+  it('routes telemetry commands through the injected dependencies', async () => {
+    const enable = createIo()
+    const disable = createIo()
+    const status = createIo()
+    const enabledDependencies = createDependencies() as CliDependencies & {
+      enableTelemetry: () => string
+    }
+    const disabledDependencies = createDependencies() as CliDependencies & {
+      disableTelemetry: () => string
+    }
+    const statusDependencies = createDependencies() as CliDependencies & {
+      readTelemetryStatus: () => string
+    }
+
+    enabledDependencies.enableTelemetry = () => 'Telemetry enabled.'
+    disabledDependencies.disableTelemetry = () => 'Telemetry disabled.'
+    statusDependencies.readTelemetryStatus = () => 'Telemetry: disabled'
+
+    await expect(executeCli(['telemetry', 'enable'], enable.io, enabledDependencies)).resolves.toBe(0)
+    await expect(executeCli(['telemetry', 'disable'], disable.io, disabledDependencies)).resolves.toBe(0)
+    await expect(executeCli(['telemetry', 'status'], status.io, statusDependencies)).resolves.toBe(0)
+
+    expect(enable.logs).toContain('Telemetry enabled.')
+    expect(disable.logs).toContain('Telemetry disabled.')
+    expect(status.logs).toContain('Telemetry: disabled')
+  })
+
+  it('prefers the telemetry command over implicit generate when a telemetry path exists', async () => {
+    const sandboxRoot = resolve('out', 'test-runtime', 'telemetry-command-shadow')
+    const originalCwd = process.cwd()
+    const { io, logs, errors } = createIo()
+    const dependencies = createDependencies() as CliDependencies & {
+      readTelemetryStatus: () => string
+    }
+
+    rmSync(sandboxRoot, { recursive: true, force: true })
+    mkdirSync(resolve(sandboxRoot, 'telemetry'), { recursive: true })
+    dependencies.readTelemetryStatus = () => 'Telemetry: disabled'
+
+    try {
+      process.chdir(sandboxRoot)
+      await expect(executeCli(['telemetry', 'status'], io, dependencies)).resolves.toBe(0)
+    } finally {
+      process.chdir(originalCwd)
+      rmSync(sandboxRoot, { recursive: true, force: true })
+    }
+
+    expect(errors).toEqual([])
+    expect(logs).toContain('Telemetry: disabled')
+  })
+
+  it('records telemetry after pack success', async () => {
+    const { io, logs, errors } = createIo()
+    const dependencies = createDependencies() as CliDependencies & {
+      recordTelemetryEvent: (event: unknown) => void
+      readInstalledVersion: () => string
+    }
+    const telemetryEvents: unknown[] = []
+
+    dependencies.runContextPack = async () => 'pack result'
+    dependencies.recordTelemetryEvent = (event) => {
+      telemetryEvents.push(event)
+    }
+    dependencies.readInstalledVersion = () => '0.27.4'
+
+    const exitCode = await executeCli(['pack', 'explain auth flow'], io, dependencies)
+
+    expect(exitCode).toBe(0)
+    expect(errors).toEqual([])
+    expect(logs).toEqual(['pack result'])
+    expect(telemetryEvents).toEqual([
+      {
+        event: 'pack_success',
+        version: '0.27.4',
+        os: process.platform,
+        repoSizeBucket: '1-24',
+      },
+    ])
+  })
+
+  it('records telemetry after generate success', async () => {
+    const { io, logs, errors } = createIo()
+    const dependencies = createDependencies() as CliDependencies & {
+      recordTelemetryEvent: (event: unknown) => void
+      readInstalledVersion: () => string
+    }
+    const telemetryEvents: unknown[] = []
+
+    dependencies.recordTelemetryEvent = (event) => {
+      telemetryEvents.push(event)
+    }
+    dependencies.readInstalledVersion = () => '0.27.4'
+
+    const exitCode = await executeCli(['generate', '.'], io, dependencies)
+
+    expect(exitCode).toBe(0)
+    expect(errors).toEqual([])
+    expect(logs[0]).toContain('[madar generate]')
+    expect(telemetryEvents).toEqual([
+      {
+        event: 'generate_success',
+        version: '0.27.4',
+        os: process.platform,
+        repoSizeBucket: '1-24',
+      },
+    ])
+  })
+
+  it('records telemetry after install success across install entrypoints', async () => {
+    const generic = createIo()
+    const agent = createIo()
+    const dependencies = createDependencies() as CliDependencies & {
+      recordTelemetryEvent: (event: unknown) => void
+      readInstalledVersion: () => string
+    }
+    const telemetryEvents: unknown[] = []
+
+    dependencies.recordTelemetryEvent = (event) => {
+      telemetryEvents.push(event)
+    }
+    dependencies.readInstalledVersion = () => '0.27.4'
+
+    await expect(executeCli(['install', '--platform', 'aider'], generic.io, dependencies)).resolves.toBe(0)
+    await expect(executeCli(['aider', 'install'], agent.io, dependencies)).resolves.toBe(0)
+
+    expect(generic.errors).toEqual([])
+    expect(agent.errors).toEqual([])
+    expect(telemetryEvents).toEqual([
+      {
+        event: 'install_success',
+        version: '0.27.4',
+        os: process.platform,
+        installPlatform: 'aider',
+      },
+      {
+        event: 'install_success',
+        version: '0.27.4',
+        os: process.platform,
+        installPlatform: 'aider',
+      },
+    ])
   })
 
   it('routes proof-report through the injected dependency after parsing args', async () => {

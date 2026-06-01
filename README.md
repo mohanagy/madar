@@ -103,6 +103,21 @@ Want a tiny reproducible workspace for local demos? Start with [`examples/sample
 
 Want a broader local-first walkthrough that also covers install, one verified pack, and a safe `compare` smoke check? Use the [end-to-end getting started tutorial](https://github.com/mohanagy/madar/blob/main/docs/tutorials/getting-started.md).
 
+### Opt-in telemetry
+
+Telemetry is disabled unless you explicitly enable it.
+
+```bash
+madar telemetry status
+madar telemetry enable
+madar telemetry disable
+
+# One-shot opt-in for the current command only:
+MADAR_ENABLE_TELEMETRY=1 madar generate .
+```
+
+The current telemetry model is still local-first and source-safe. It records only coarse success events for `install`, `generate`, `pack`, and `compare`, plus version, OS, an optional install target, and an optional repo-size bucket. It does **not** record prompt text, answer text, source paths, or source content. Full field list and controls: [`docs/telemetry.md`](https://github.com/mohanagy/madar/blob/main/docs/telemetry.md).
+
 ---
 
 ## What's new in 0.27.4
@@ -305,6 +320,8 @@ madar prompt "how does auth work?" --provider claude     # provider-ready compil
 madar review-compare out/graph.json --exec '...' --yes  # PR review benchmark
 madar compare "How does auth work?" --exec '...' --yes           # general benchmark
 madar compare "How does auth work?" --baseline-mode pack_only --exec '...' --yes  # bounded raw context vs compiled madar pack
+madar telemetry enable                     # persist opt-in source-safe local telemetry
+madar telemetry status                     # inspect telemetry state and cache path
 madar time-travel main HEAD --view risk   # what changed between two refs
 madar federate frontend/graph.json backend/graph.json  # multi-repo merge
 madar --help                              # full surface
@@ -324,7 +341,7 @@ Tests, benchmarks, fixtures, mocks, and config files are **not** hard-ignored an
 
 ## Trust + limitations
 
-Everything stays local by default. No telemetry, no cloud upload, no API key required.
+Everything stays local by default. No cloud upload, no API key required. Telemetry is disabled unless you explicitly enable it, and the current telemetry surface stores only a bounded local event log.
 
 - **Build:** tree-sitter AST extraction + Louvain community detection — all CPU-local.
 - **Query:** BM25 lexical scoring + reciprocal-rank fusion + optional ONNX embeddings (`Xenova/all-MiniLM-L6-v2`, ~25 MB) + optional cross-encoder reranker.
@@ -352,6 +369,7 @@ Everything stays local by default. No telemetry, no cloud upload, no API key req
 - [Performance benchmark harness](https://github.com/mohanagy/madar/blob/main/docs/benchmarks/performance/README.md) — repeatable `generate` / `update` / `cluster-only` measurements
 - [MCP tool examples](https://github.com/mohanagy/madar/blob/main/examples/mcp-tool-examples.md) — real input/output for every tool
 - [Benchmark hub](https://github.com/mohanagy/madar/tree/main/docs/benchmarks) — committed wrappers and provider-reported evidence
+- [Telemetry guide](https://github.com/mohanagy/madar/blob/main/docs/telemetry.md) — opt-in controls, collected fields, excluded fields, and local storage behavior
 - [Changelog](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md) — full per-release notes
 - [Contributing](https://github.com/mohanagy/madar/blob/main/CONTRIBUTING.md) · [Security](https://github.com/mohanagy/madar/blob/main/SECURITY.md)
 
