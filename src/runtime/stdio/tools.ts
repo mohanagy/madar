@@ -239,6 +239,15 @@ function isContextPackExpandableRef(value: unknown): value is ContextPackExpanda
     && isContextPackExpandableFollowUp(candidate.follow_up)
 }
 
+function hasCachedExplainContextPackGovernance(value: Record<string, unknown>): boolean {
+  const governance = value.governance
+  if (!governance || typeof governance !== 'object' || Array.isArray(governance)) {
+    return false
+  }
+  const mcpCall = (governance as Record<string, unknown>).mcp_call
+  return !!mcpCall && typeof mcpCall === 'object' && !Array.isArray(mcpCall)
+}
+
 function isCachedExplainContextPackPayload(value: unknown): value is CachedExplainContextPackPayload {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return false
@@ -249,6 +258,7 @@ function isCachedExplainContextPackPayload(value: unknown): value is CachedExpla
     && typeof candidate.task_intent === 'string'
     && Array.isArray(candidate.expandable)
     && candidate.expandable.every((entry) => isContextPackExpandableRef(entry))
+    && hasCachedExplainContextPackGovernance(candidate)
 }
 
 function parseContextPackResolution(raw: string | null): ContextPackResolution {

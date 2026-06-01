@@ -517,7 +517,7 @@ export interface ContextPackSchemaV1<TPack = unknown> {
   why_explanation: string[]
   pack: TPack
   evidence: MadarResponseEvidence
-  governance: ContextPackGovernanceReceipt
+  governance?: ContextPackGovernanceReceipt
   claims: ContextPackClaim[]
   expandable: ContextPackExpandableRef[]
   coverage: ContextPackCoverage

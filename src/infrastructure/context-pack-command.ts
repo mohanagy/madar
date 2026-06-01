@@ -115,22 +115,6 @@ const ANSWER_READY_COMMUNITY_CAP = 6
 const ANSWER_READY_EXPLANATION_CAP = 3
 const ANSWER_READY_FIRST_READ_CAP = 3
 const ANSWER_READY_WORKFLOW_CENTER_CAP = 4
-const WORKFLOW_SPINE_BUDGET_REASON = 'budget too tight for workflow spine'
-
-interface AnswerReadyCullCandidate {
-  key: string
-  nodeId: string | null
-  label: string | null
-  density: number
-  rankIndex: number
-  preserved: boolean
-}
-
-interface AnswerReadyCullSummary {
-  droppedNodeIds: string[]
-  droppedWorkflowSpine: boolean
-}
-
 function packWithCompatibilityFields<TPack extends PackPayload>(
   pack: TPack,
   fields: PackGuidanceCompatibilityFields,
@@ -221,147 +205,6 @@ function deleteEmptyArrayField(record: JsonRecord, field: string, trimmedFields:
   trimmedFields.push(field)
 }
 
-function answerReadyNodeKey(record: JsonRecord | null): string | null {
-  if (!record) {
-    return null
-  }
-  if (typeof record.node_id === 'string' && record.node_id.length > 0) {
-    return `id:${record.node_id}`
-  }
-  if (typeof record.label !== 'string' || record.label.length === 0) {
-    return null
-  }
-  if (typeof record.source_file === 'string' && record.source_file.length > 0) {
-    return `label:${record.label}::${record.source_file}`
-  }
-  return `label:${record.label}`
-}
-
-function collectWorkflowAnchorKeys(payload: JsonRecord): Set<string> {
-  const keys = new Set<string>()
-  for (const field of ['workflow_centers', 'recommended_first_read']) {
-    for (const entry of asUnknownArray(payload[field])) {
-      const record = asJsonRecord(entry)
-      if (!record || typeof record.label !== 'string' || record.label.length === 0) {
-        continue
-      }
-      if (typeof record.path === 'string' && record.path.length > 0) {
-        keys.add(`label:${record.label}::${record.path}`)
-      }
-      keys.add(`label:${record.label}`)
-    }
-  }
-  const pack = asJsonRecord(payload.pack)
-  const executionSlice = asJsonRecord(pack?.execution_slice)
-  const executionAnchors = [
-    ...asUnknownArray(executionSlice?.steps),
-    ...asUnknownArray(asJsonRecord(executionSlice?.primary_path)?.steps),
-  ]
-  for (const entry of executionAnchors) {
-    const record = asJsonRecord(entry)
-    if (!record || typeof record.label !== 'string' || record.label.length === 0) {
-      continue
-    }
-    if (typeof record.source_file === 'string' && record.source_file.length > 0) {
-      keys.add(`label:${record.label}::${record.source_file}`)
-    }
-    keys.add(`label:${record.label}`)
-  }
-  if (keys.size === 0) {
-    for (const entry of asUnknownArray(payload.claims)) {
-      const record = asJsonRecord(entry)
-      if (!record) {
-        continue
-      }
-      for (const label of asUnknownArray(record.node_labels)) {
-        if (typeof label === 'string' && label.length > 0) {
-          keys.add(`label:${label}`)
-        }
-      }
-    }
-  }
-  return keys
-}
-
-function selectionRankingForNode(
-  record: JsonRecord,
-  diagnostics: ContextPackSelectionDiagnostics | undefined,
-): { density: number; rankIndex: number } {
-  if (!diagnostics) {
-    return {
-      density: Number.POSITIVE_INFINITY,
-      rankIndex: Number.POSITIVE_INFINITY,
-    }
-  }
-  const nodeId = typeof record.node_id === 'string' ? record.node_id : null
-  const label = typeof record.label === 'string' ? record.label : null
-  const byId = nodeId
-    ? diagnostics.ranking.findIndex((entry) => entry.id === nodeId)
-    : -1
-  if (byId >= 0) {
-    return {
-      density: diagnostics.ranking[byId]?.density ?? Number.POSITIVE_INFINITY,
-      rankIndex: byId,
-    }
-  }
-  const byLabel = label
-    ? diagnostics.ranking.findIndex((entry) => entry.label === label)
-    : -1
-  if (byLabel >= 0) {
-    return {
-      density: diagnostics.ranking[byLabel]?.density ?? Number.POSITIVE_INFINITY,
-      rankIndex: byLabel,
-    }
-  }
-  return {
-    density: Number.POSITIVE_INFINITY,
-    rankIndex: Number.POSITIVE_INFINITY,
-  }
-}
-
-function buildAnswerReadyCullCandidates(
-  payload: JsonRecord,
-  pack: JsonRecord,
-  diagnostics: ContextPackSelectionDiagnostics | undefined,
-): AnswerReadyCullCandidate[] {
-  const anchorKeys = collectWorkflowAnchorKeys(payload)
-  const strategy = diagnostics?.selection_strategy ?? 'value-per-token'
-  const candidates = asUnknownArray(pack.matched_nodes)
-    .map((entry) => asJsonRecord(entry))
-    .filter((record): record is JsonRecord => record !== null)
-    .flatMap((record): AnswerReadyCullCandidate[] => {
-      const key = answerReadyNodeKey(record)
-      if (!key) {
-        return []
-      }
-      const { density, rankIndex } = selectionRankingForNode(record, diagnostics)
-      return [{
-        key,
-        nodeId: typeof record.node_id === 'string' ? record.node_id : null,
-        label: typeof record.label === 'string' ? record.label : null,
-        density,
-        rankIndex,
-        preserved: anchorKeys.has(key) || (typeof record.label === 'string' && anchorKeys.has(`label:${record.label}`)),
-      }]
-    })
-
-  return candidates.sort((left, right) => {
-    if (left.preserved !== right.preserved) {
-      return left.preserved ? 1 : -1
-    }
-    if (strategy === 'evidence-order') {
-      if (left.rankIndex !== right.rankIndex) {
-        return right.rankIndex - left.rankIndex
-      }
-      return left.density - right.density
-    }
-    if (left.density !== right.density) {
-      return left.density - right.density
-    }
-    return right.rankIndex - left.rankIndex
-  })
-}
-
 function stripExpandableFocusRanges(payload: JsonRecord, trimmedFields: string[]): boolean {
   let stripped = false
   for (const entry of asUnknownArray(payload.expandable)) {
@@ -378,147 +221,6 @@ function stripExpandableFocusRanges(payload: JsonRecord, trimmedFields: string[]
     trimmedFields.push('expandable.follow_up.focus_ranges')
   }
   return stripped
-}
-
-function removeMatchedNode(pack: JsonRecord, key: string, trimmedFields: string[]): JsonRecord | null {
-  const nodes = asUnknownArray(pack.matched_nodes)
-  const nextNodes = nodes.filter((entry) => answerReadyNodeKey(asJsonRecord(entry)) !== key)
-  if (nextNodes.length === nodes.length) {
-    return null
-  }
-  const removed = nodes.find((entry) => answerReadyNodeKey(asJsonRecord(entry)) === key)
-  pack.matched_nodes = nextNodes
-  trimmedFields.push('pack.matched_nodes culled')
-  return asJsonRecord(removed)
-}
-
-function filterRelationshipsToRemainingNodes(pack: JsonRecord, trimmedFields: string[]): void {
-  const nodes = asUnknownArray(pack.matched_nodes)
-    .map((entry) => asJsonRecord(entry))
-    .filter((record): record is JsonRecord => record !== null)
-  const nodeIds = new Set(nodes.flatMap((record) => typeof record.node_id === 'string' ? [record.node_id] : []))
-  const labels = new Set(nodes.flatMap((record) => typeof record.label === 'string' ? [record.label] : []))
-  const relationships = asUnknownArray(pack.relationships)
-  const nextRelationships = relationships.filter((entry) => {
-    const record = asJsonRecord(entry)
-    if (!record) {
-      return false
-    }
-    const fromId = typeof record.from_id === 'string' ? record.from_id : null
-    const toId = typeof record.to_id === 'string' ? record.to_id : null
-    const fromLabel = typeof record.from === 'string' ? record.from : null
-    const toLabel = typeof record.to === 'string' ? record.to : null
-    const fromKept = fromId ? nodeIds.has(fromId) : (fromLabel ? labels.has(fromLabel) : true)
-    const toKept = toId ? nodeIds.has(toId) : (toLabel ? labels.has(toLabel) : true)
-    return fromKept && toKept
-  })
-  if (nextRelationships.length !== relationships.length) {
-    pack.relationships = nextRelationships
-    trimmedFields.push('pack.relationships culled')
-  }
-}
-
-function downgradeWorkflowSpineConfidence(payload: JsonRecord, trimmedFields: string[]): void {
-  const evidence = asJsonRecord(payload.evidence)
-  if (!evidence) {
-    return
-  }
-  const confidenceReasons = asUnknownArray(evidence.confidence_reasons)
-    .flatMap((value) => typeof value === 'string' ? [value] : [])
-  if (!confidenceReasons.includes(WORKFLOW_SPINE_BUDGET_REASON)) {
-    confidenceReasons.push(WORKFLOW_SPINE_BUDGET_REASON)
-  }
-  const coverage = typeof evidence.coverage === 'string' ? evidence.coverage : 'unknown'
-  evidence.pack_confidence = 'low'
-  evidence.confidence_reasons = confidenceReasons
-  evidence.agent_directive = agentDirectiveForEvidence(
-    'low',
-    coverage === 'complete' || coverage === 'partial' || coverage === 'unknown'
-      ? coverage
-      : 'unknown',
-  )
-  trimmedFields.push('evidence.pack_confidence downgraded')
-}
-
-function upsertPackCulledWarning(payload: JsonRecord, droppedNodeIds: readonly string[]): void {
-  if (droppedNodeIds.length === 0) {
-    return
-  }
-  const routing = asJsonRecord(payload.routing)
-  if (!routing) {
-    return
-  }
-  const warnings = asUnknownArray(routing.warnings)
-    .map((entry) => asJsonRecord(entry))
-    .filter((record): record is JsonRecord => record !== null)
-    .filter((record) => record.kind !== 'pack_culled_to_budget')
-  warnings.push({
-    kind: 'pack_culled_to_budget',
-    severity: 'warn',
-    message: 'Answer-ready payload was culled to satisfy the serialized budget.',
-    detail: {
-      dropped_node_ids: [...droppedNodeIds],
-    },
-  })
-  routing.warnings = warnings
-}
-
-function enforceAnswerReadyBudget(
-  payload: JsonRecord,
-  maxTokens: number,
-  trimmedFields: string[],
-  diagnostics?: ContextPackSelectionDiagnostics,
-): void {
-  const summary: AnswerReadyCullSummary = {
-    droppedNodeIds: [],
-    droppedWorkflowSpine: false,
-  }
-  const pack = asJsonRecord(payload.pack)
-
-  if (stripExpandableFocusRanges(payload, trimmedFields)) {
-    attachSerializedBudget(payload, maxTokens, trimmedFields)
-    if (estimatedJsonTokens(payload) <= maxTokens) {
-      return
-    }
-  }
-
-  if (!pack) {
-    attachSerializedBudget(payload, maxTokens, trimmedFields)
-    return
-  }
-
-  const candidates = buildAnswerReadyCullCandidates(payload, pack, diagnostics)
-  for (const candidate of candidates) {
-    upsertPackCulledWarning(payload, summary.droppedNodeIds)
-    if (summary.droppedWorkflowSpine) {
-      downgradeWorkflowSpineConfidence(payload, trimmedFields)
-    }
-    attachSerializedBudget(payload, maxTokens, trimmedFields)
-    if (estimatedJsonTokens(payload) <= maxTokens) {
-      return
-    }
-
-    const removed = removeMatchedNode(pack, candidate.key, trimmedFields)
-    if (!removed) {
-      continue
-    }
-    filterRelationshipsToRemainingNodes(pack, trimmedFields)
-    const removedId = typeof removed.node_id === 'string'
-      ? removed.node_id
-      : candidate.nodeId
-    if (removedId) {
-      summary.droppedNodeIds.push(removedId)
-    }
-    if (candidate.preserved) {
-      summary.droppedWorkflowSpine = true
-    }
-  }
-
-  upsertPackCulledWarning(payload, summary.droppedNodeIds)
-  if (summary.droppedWorkflowSpine) {
-    downgradeWorkflowSpineConfidence(payload, trimmedFields)
-  }
-  attachSerializedBudget(payload, maxTokens, trimmedFields)
 }
 
 function compactAnswerReadyPack(pack: JsonRecord, trimmedFields: string[]): void {
@@ -595,16 +297,21 @@ function compactAnswerReadyGovernance(payload: JsonRecord, trimmedFields: string
 
   const request = asJsonRecord(governance.request)
   if (request) {
-    if (surface === 'cli_pack') {
-      delete governance.request
-      trimmedFields.push('governance.request')
-    } else if (typeof request.budget === 'number') {
+    if (surface === 'cli_pack' && typeof request.task_intent === 'string') {
+      delete request.task_intent
+      trimmedFields.push('governance.request.task_intent')
+    }
+    if (typeof request.budget === 'number') {
       delete request.budget
       trimmedFields.push('governance.request.budget')
       if (request.resolution === 'detail') {
         delete request.resolution
         trimmedFields.push('governance.request.resolution')
       }
+    }
+    if (surface === 'cli_pack' && typeof request.retrieval_strategy === 'string') {
+      delete request.retrieval_strategy
+      trimmedFields.push('governance.request.retrieval_strategy')
     }
   }
 
@@ -629,6 +336,28 @@ function compactAnswerReadyGovernance(payload: JsonRecord, trimmedFields: string
           trimmedFields.push(`governance.follow_up.${field}`)
         }
       }
+    }
+  }
+
+  if (surface === 'cli_pack') {
+    const privacyBoundary = asJsonRecord(governance.privacy_boundary)
+    if (privacyBoundary) {
+      for (const field of ['includes_prompt', 'includes_source_content', 'includes_answer_content', 'includes_file_paths']) {
+        if (typeof privacyBoundary[field] === 'boolean') {
+          delete privacyBoundary[field]
+          trimmedFields.push(`governance.privacy_boundary.${field}`)
+        }
+      }
+    }
+
+    const graphFreshness = asJsonRecord(governance.graph_freshness)
+    if (graphFreshness && typeof graphFreshness.graph_modified_ms === 'number') {
+      delete graphFreshness.graph_modified_ms
+      trimmedFields.push('governance.graph_freshness.graph_modified_ms')
+    }
+    if (graphFreshness && typeof graphFreshness.graph_modified_at === 'string') {
+      delete graphFreshness.graph_modified_at
+      trimmedFields.push('governance.graph_freshness.graph_modified_at')
     }
   }
 }
@@ -659,10 +388,6 @@ function trimGovernanceBeforeNodeCulling(payload: JsonRecord, maxTokens: number,
       trimmedFields.push('governance.directive.pack_confidence', 'governance.directive.coverage')
     })
   }
-  attempts.push(() => {
-    delete payload.governance
-    trimmedFields.push('governance')
-  })
 
   let trimmed = false
   for (const attempt of attempts) {
@@ -912,9 +637,21 @@ export function buildAnswerReadyPackSchema(
     return payload
   }
 
+  delete payload.prompt
+  delete payload.graph_path
+  delete payload.task_intent
+  trimmedFields.push('prompt', 'graph_path', 'task_intent')
+  attachSerializedBudget(payload, maxTokens, trimmedFields)
+  if (estimatedJsonTokens(payload) <= maxTokens) {
+    return payload
+  }
+
   for (const field of [
     'claims',
     'expandable',
+    'missing_context',
+    'missing_semantic',
+    'negative_guidance',
     'likely_edit_files',
     'likely_test_files',
     'public_contracts',

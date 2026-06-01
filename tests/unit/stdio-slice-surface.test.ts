@@ -459,6 +459,60 @@ describe('stdio slice-v1 surface', () => {
     expect(JSON.stringify(deltaPayload.governance)).not.toContain(deltaSessionId)
   })
 
+  it('treats governance-less cached explain context packs as stale and rebuilds them', async () => {
+    const graphPath = createGraphPath()
+    const sessionState = {
+      logLevel: 'info' as const,
+      subscribedResourceUris: new Set<string>(),
+      resourceVersions: new Map<string, string>(),
+      resourceListSignature: null,
+      contextPromptSessions: new Map(),
+      contextPackHandles: new Map(),
+      contextPackCache: new Map<string, string>(),
+      contextPackNodeIds: new Map(),
+    }
+    const request = {
+      prompt: 'Trace how `AuthController.login` reaches persistence in the backend runtime pipeline',
+      budget: 3000,
+      task: 'explain',
+      retrieval_level: 4,
+      retrieval_strategy: 'slice-v1',
+    }
+
+    await Promise.resolve(handleStdioRequest(graphPath, {
+      id: 51,
+      method: 'tools/call',
+      params: {
+        name: 'context_pack',
+        arguments: request,
+      },
+    }, sessionState))
+
+    const cachedEntry = [...sessionState.contextPackCache.entries()][0]
+    expect(cachedEntry).toBeDefined()
+    const [cacheKey, cachedPayloadText] = cachedEntry!
+    const stalePayload = JSON.parse(cachedPayloadText) as Record<string, unknown>
+    delete stalePayload.governance
+    sessionState.contextPackCache.set(cacheKey, JSON.stringify(stalePayload))
+
+    const response = await Promise.resolve(handleStdioRequest(graphPath, {
+      id: 52,
+      method: 'tools/call',
+      params: {
+        name: 'context_pack',
+        arguments: request,
+      },
+    }, sessionState))
+
+    const payload = JSON.parse((((response as { result?: { content?: Array<{ text: string }> } }).result?.content) ?? [])[0]?.text ?? '') as {
+      cache?: { status?: string }
+      governance?: { mcp_call?: { cache_status?: string } }
+    }
+
+    expect(payload.cache?.status).toBe('miss')
+    expect(payload.governance?.mcp_call?.cache_status).toBe('miss')
+  })
+
   it('rejects retrieval_strategy for review context packs instead of ignoring it', async () => {
     const graphPath = createGraphPath()
 
