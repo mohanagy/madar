@@ -95,6 +95,17 @@ Use this when the question is not "madar vs. naive baseline", but "did compact r
 
 As with `compare` and `benchmark`, the prompt and answer file contents stay local, while `report.share-safe.json` keeps the review metrics plus sanitized placeholder paths to those artifacts so you can share evidence without publishing your exact local artifact paths.
 
+### Review/security-agent evaluation workflow
+
+Use this path when the question is not just "did Madar shrink the prompt?", but "how should a review or security agent consume bounded diff evidence, and how do we compare that workflow across tools?"
+
+1. Generate the graph locally and run `madar review-compare out/graph.json --exec ... --yes` (or capture the compact `pr_impact` payload for the current diff).
+2. Keep the local `report.json` for the full artifact bundle, and share `report.share-safe.json` when you need to hand a sanitized receipt to another system or attach evidence to a PR discussion.
+3. Run the same diff through CodeRabbit, Qodo, Codex Security, or another review/security agent and compare overlap, misses, and human follow-up against the Madar-backed receipt.
+4. Record the outcome as workflow evidence: what risks were surfaced, what needed more repo reads, and whether the compact evidence changed review/security-agent behavior.
+
+This review/security-agent evaluation workflow does not prove that Madar itself is the reviewer or that it finds more security issues than CodeRabbit, Qodo, or Codex Security. It proves whether Madar's bounded evidence surfaces make those review/security workflows easier to evaluate, reproduce, and share safely.
+
 ## 4. Production and multi-repo proof
 
 For real systems, the strongest proof is usually:

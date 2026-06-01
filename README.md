@@ -189,6 +189,14 @@ That means the same selected nodes can render differently for `explain`, `review
 - Producing deterministic, share-safe artifacts (`report.share-safe.json`, Pack Schema v1, static `execution_slice` output) that can be reviewed without sharing workstation paths.
 - Staying local-first: tree-sitter AST, BM25 retrieval, optional ONNX embeddings — all on your machine unless you explicitly invoke a model you configured yourself.
 
+### Review and security workflows
+
+Madar is a local **context/evidence layer** for review and security workflows, not a PR reviewer or vulnerability scanner. CodeRabbit, Qodo, Codex Security, and similar tools still decide findings, policy, and remediation behavior; Madar's role is to compile a bounded local-first view of the repo or diff before those tools start broader exploration.
+
+In practice, that means using `pr_impact`, `review-compare`, `madar handoff`, and `report.share-safe.json` artifacts to supply workflow ownership, likely test files, compact prompt evidence, and share-safe receipts to the review/security agent or to the human comparing multiple agents. Madar helps make those workflows more inspectable and more reproducible, but it does **not** claim better findings than CodeRabbit, Qodo, or Codex Security today.
+
+Public positioning and benchmark claims for that workflow stay grounded in [`docs/claims-and-evidence.md`](https://github.com/mohanagy/madar/blob/main/docs/claims-and-evidence.md), including what is demonstrated now versus what still needs comparative review/security evaluation evidence.
+
 > Deepest extraction is still **TypeScript/JavaScript** with framework-aware passes for Express, NestJS, Next.js, React Router, Redux Toolkit, **Hono, Fastify, tRPC, Prisma, and routing-controllers** (10 substrates via `--spi`). Python now has a conservative semantic layer for cross-file import/call resolution, FastAPI router composition plus route/dependency semantics, and first-pass Django URL-conf route-to-view mapping. Go now has a conservative first semantic pass for local-package import resolution, receiver/method call edges, and statically visible `net/http` / Gin / Chi route relationships. Ruby, Java, and Rust still use the tree-sitter AST baseline. C / Kotlin / C# / Scala / PHP / Swift / Zig use a generic structural extractor. Full matrix: [`docs/language-capability-matrix.md`](https://github.com/mohanagy/madar/blob/main/docs/language-capability-matrix.md).
 
 ---
