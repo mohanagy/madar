@@ -149,6 +149,16 @@ describe('public marketing copy honesty', () => {
       expect(content).toContain('docs/benchmarks/2026-05-25-founder-command-center-auth-flow/')
     })
 
+    it('positions Madar as a context/evidence layer for review and security tools without overclaiming outcomes', () => {
+      expect(lower).toContain('review and security workflows')
+      expect(lower).toContain('context/evidence layer')
+      expect(content).toContain('CodeRabbit')
+      expect(content).toContain('Qodo')
+      expect(content).toContain('Codex Security')
+      expect(lower).toContain('not a pr reviewer or vulnerability scanner')
+      expect(content).toContain('docs/claims-and-evidence.md')
+    })
+
     it('keeps the README Python support claim conservative and current', () => {
       expect(content).toContain('FastAPI router composition')
       expect(content).toContain('Django URL-conf')
@@ -190,6 +200,16 @@ describe('public marketing copy honesty', () => {
       expect(lower).toContain('not a live trace')
     })
 
+    it('maps a review/security-agent evaluation workflow onto review-compare and share-safe artifacts', () => {
+      expect(lower).toContain('review/security-agent evaluation workflow')
+      expect(content).toContain('review-compare')
+      expect(content).toContain('report.share-safe.json')
+      expect(content).toContain('CodeRabbit')
+      expect(content).toContain('Qodo')
+      expect(content).toContain('Codex Security')
+      expect(lower).toContain('does not prove that madar itself')
+    })
+
     describe('docs/claims-and-evidence.md', () => {
       const content = readDoc('docs/claims-and-evidence.md')
       const lower = content.toLowerCase()
@@ -211,6 +231,15 @@ describe('public marketing copy honesty', () => {
         expect(lower).toContain('wrong-file edits')
         expect(lower).toContain('reviewer-visible')
         expect(lower).toContain('we do not yet have cross-repo implementation-task evidence')
+      })
+
+      it('keeps review and security positioning tied to workflow guidance instead of unmeasured superiority claims', () => {
+        expect(lower).toContain('review and security tools')
+        expect(content).toContain('CodeRabbit')
+        expect(content).toContain('Qodo')
+        expect(content).toContain('Codex Security')
+        expect(lower).toContain('workflow guidance, not a measured superiority claim')
+        expect(lower).toContain('no comparative review/security evaluation')
       })
     })
   })
