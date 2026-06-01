@@ -220,6 +220,8 @@ describe('public marketing copy honesty', () => {
       expect(content).toContain('generic AST structure')
       expect(content).toContain('source-visible')
       expect(content).toContain('visible client/server boundaries')
+      expect(content).toContain('opt-in `--spi` JS/TS path')
+      expect(content).toContain('with `--spi`')
     })
   })
 

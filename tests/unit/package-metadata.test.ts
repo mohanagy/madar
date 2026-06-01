@@ -223,6 +223,8 @@ describe('package metadata', () => {
     expect(matrix).toContain('runtime-boundary')
     expect(matrix).toContain('generic AST structure')
     expect(matrix).toContain('visible client/server boundaries')
+    expect(matrix).toContain('opt-in `--spi` pipeline')
+    expect(matrix).toContain('with `--spi`')
   })
 
   it('pins non-vulnerable dependency floors for the CI security audit', () => {
