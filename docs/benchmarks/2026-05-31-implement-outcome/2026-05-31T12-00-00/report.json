@@ -2,7 +2,7 @@
   "baseline_mode": "native_agent",
   "task": "implement",
   "question": "Implement sliding session expiration in SessionManager",
-  "graph_path": "../../../../../../../../private/var/folders/n1/l0_t90js31d0yyhbxfvgfgzr0000gn/T/madar-implement-receipt-czm3Gy/out/graph.json",
+  "graph_path": "<project-root>/out/graph.json",
   "isolation": false,
   "environment": {
     "claude_code_version": "2.1.157",
@@ -140,7 +140,7 @@
     "total_cost_usd": 0.62,
     "num_turns": 9,
     "duration_ms": 96368,
-    "result_path": "/Users/mohammednaji/Desktop/projects/works/madar/.worktrees/issue-419-graph-schema-versioning/out/implementation-receipt-artifacts/2026-05-31T12-00-00/baseline-answer.txt"
+    "result_path": "<artifact-root>/baseline-answer.txt"
   },
   "madar": {
     "kind": "succeeded",
@@ -157,7 +157,7 @@
     "total_cost_usd": 0.7,
     "num_turns": 3,
     "duration_ms": 34744,
-    "result_path": "/Users/mohammednaji/Desktop/projects/works/madar/.worktrees/issue-419-graph-schema-versioning/out/implementation-receipt-artifacts/2026-05-31T12-00-00/madar-answer.txt"
+    "result_path": "<artifact-root>/madar-answer.txt"
   },
   "install_verified": true,
   "measurement_validity": "degraded",
@@ -191,12 +191,12 @@
   "started_at": "2026-05-31T12:00:00.000Z",
   "completed_at": "2026-05-31T12:00:00.000Z",
   "paths": {
-    "output_dir": "out/implementation-receipt-artifacts/2026-05-31T12-00-00",
-    "report": "out/implementation-receipt-artifacts/2026-05-31T12-00-00/report.json",
-    "share_safe_report": "out/implementation-receipt-artifacts/2026-05-31T12-00-00/report.share-safe.json",
-    "baseline_answer": "out/implementation-receipt-artifacts/2026-05-31T12-00-00/baseline-answer.txt",
-    "madar_answer": "out/implementation-receipt-artifacts/2026-05-31T12-00-00/madar-answer.txt",
-    "prompt_file": "out/implementation-receipt-artifacts/2026-05-31T12-00-00/native_agent-prompt.txt"
+    "output_dir": "<artifact-root>",
+    "report": "<artifact-root>/report.json",
+    "share_safe_report": "<artifact-root>/report.share-safe.json",
+    "baseline_answer": "<artifact-root>/baseline-answer.txt",
+    "madar_answer": "<artifact-root>/madar-answer.txt",
+    "prompt_file": "<artifact-root>/native_agent-prompt.txt"
   },
   "implementation_guidance": {
     "summary": "Start with src/session.ts, then validate the highest-risk shared boundaries before finishing.",
