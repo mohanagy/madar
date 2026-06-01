@@ -29,6 +29,7 @@ import { QUERY_TOKEN_ESTIMATOR, estimateQueryTokens, loadGraph } from '../runtim
 import { resolveToolProfileFromEnv, type McpToolProfile } from '../runtime/stdio/definitions.js'
 import { sidecarAwareFileFingerprint } from '../shared/binary-ingest-sidecar.js'
 import { sanitizeShareSafeText, toShareSafeArtifactPath, type ShareSafePathRoots } from '../shared/share-safe-artifacts.js'
+import { shellEscape } from '../shared/shell.js'
 import { MAX_TEXT_BYTES, validateGraphOutputPath, validateGraphPath } from '../shared/security.js'
 import { copyWorkspaceForBenchmark } from '../shared/workspace-copy.js'
 
@@ -236,6 +237,7 @@ export interface GenerateCompareArtifactsInput {
   task?: ContextPackTaskKind
   baselineMode: CompareBaselineMode
   perArmTimeoutSeconds?: number
+  validationTimeoutSeconds?: number
   heartbeatIntervalMs?: number
   strictMadarFirst?: boolean
   strictBenchmarkReadiness?: boolean
@@ -397,13 +399,6 @@ function validateCompareExecTemplate(template: string): void {
       'Exec templates must not expand {prompt_file} with shell command substitution. Use stdin or file redirection with {prompt_file}, for example: cat {prompt_file} | claude -p',
     )
   }
-}
-
-function shellEscape(value: string, platform: NodeJS.Platform = process.platform): string {
-  if (platform === 'win32') {
-    return `'${value.replaceAll("'", "''")}'`
-  }
-  return `'${value.replaceAll("'", `'\"'\"'`)}'`
 }
 
 export function expandCompareExecTemplate(
@@ -2805,6 +2800,7 @@ interface NativeAgentRunStateRecord {
 }
 
 const DEFAULT_COMPARE_PER_ARM_TIMEOUT_SECONDS = 600
+const DEFAULT_COMPARE_VALIDATION_TIMEOUT_SECONDS = 120
 const DEFAULT_COMPARE_HEARTBEAT_INTERVAL_MS = 30000
 
 const MADAR_SECTION_MARKER = '## madar'
@@ -2955,20 +2951,41 @@ async function runShellCommand(command: string, options: { cwd?: string; signal?
   stderr: string
 }> {
   return await new Promise((resolveExecution, rejectExecution) => {
+    const useProcessGroup = process.platform !== 'win32'
     const shellCommand =
-      process.platform === 'win32'
+      !useProcessGroup
         ? { file: 'powershell.exe', args: ['-NoProfile', '-Command', command] }
         : { file: '/bin/sh', args: ['-lc', command] }
     const child = spawn(shellCommand.file, shellCommand.args, {
       shell: false,
       stdio: ['ignore', 'pipe', 'pipe'],
+      ...(useProcessGroup ? { detached: true } : {}),
       ...(options.cwd ? { cwd: options.cwd } : {}),
     })
     let stdout = ''
     let stderr = ''
 
     const handleAbort = () => {
-      child.kill()
+      if (!useProcessGroup || child.pid === undefined) {
+        child.kill()
+        return
+      }
+      try {
+        process.kill(-child.pid, 'SIGTERM')
+      } catch {
+        child.kill()
+        return
+      }
+      setTimeout(() => {
+        if (child.exitCode !== null) {
+          return
+        }
+        try {
+          process.kill(-child.pid!, 'SIGKILL')
+        } catch {
+          child.kill('SIGKILL')
+        }
+      }, 250).unref()
     }
     if (options.signal) {
       if (options.signal.aborted) {
@@ -2988,6 +3005,9 @@ async function runShellCommand(command: string, options: { cwd?: string; signal?
       rejectExecution(error)
     })
     child.on('close', (code) => {
+      if (options.signal) {
+        options.signal.removeEventListener('abort', handleAbort)
+      }
       resolveExecution({
         exitCode: code ?? 1,
         stdout,
@@ -3000,6 +3020,7 @@ async function runShellCommand(command: string, options: { cwd?: string; signal?
 async function runImplementationValidationCommands(
   commands: readonly string[],
   workspaceRoot: string,
+  timeoutMs: number,
 ): Promise<ImplementValidationResult> {
   if (commands.length === 0) {
     return { status: 'not_run', commands: [] }
@@ -3007,13 +3028,28 @@ async function runImplementationValidationCommands(
 
   const results: ImplementValidationCommandResult[] = []
   for (const command of commands) {
-    const execution = await runShellCommand(command, { cwd: workspaceRoot })
+    const controller = new AbortController()
+    const timeoutHandle = setTimeout(() => {
+      controller.abort()
+    }, timeoutMs)
+    let execution: { exitCode: number; stdout: string; stderr: string }
+    try {
+      execution = await runShellCommand(command, { cwd: workspaceRoot, signal: controller.signal })
+    } finally {
+      clearTimeout(timeoutHandle)
+    }
+    const timedOut = controller.signal.aborted
+    const stderr = timedOut
+      ? execution.stderr.length > 0
+        ? `${execution.stderr}\nValidation command timed out after ${timeoutMs}ms.`
+        : `Validation command timed out after ${timeoutMs}ms.`
+      : execution.stderr
     results.push({
       command,
-      status: execution.exitCode === 0 ? 'passed' : classifyValidationFailure(execution.stdout, execution.stderr),
+      status: timedOut ? 'failed' : execution.exitCode === 0 ? 'passed' : classifyValidationFailure(execution.stdout, stderr),
       exit_code: execution.exitCode,
       stdout: execution.stdout.length > 0 ? execution.stdout : null,
-      stderr: execution.stderr.length > 0 ? execution.stderr : null,
+      stderr: stderr.length > 0 ? stderr : null,
     })
   }
 
@@ -3417,6 +3453,16 @@ function perArmTimeoutMs(seconds: number | undefined): number {
   }
   if (!Number.isFinite(seconds) || seconds <= 0) {
     throw new Error(`[madar compare] per-arm timeout must be > 0 seconds, got ${seconds}`)
+  }
+  return Math.max(1, Math.round(seconds * 1000))
+}
+
+function validationTimeoutMs(seconds: number | undefined): number {
+  if (seconds === undefined) {
+    return DEFAULT_COMPARE_VALIDATION_TIMEOUT_SECONDS * 1000
+  }
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    throw new Error(`[madar compare] validation timeout must be > 0 seconds, got ${seconds}`)
   }
   return Math.max(1, Math.round(seconds * 1000))
 }
@@ -4054,6 +4100,7 @@ export async function executeNativeAgentCompare(
   const now = dependencies.now ?? (() => new Date())
   const writeStderr = dependencies.writeStderr ?? ((message: string) => process.stderr.write(message))
   const timeoutMs = perArmTimeoutMs(input.perArmTimeoutSeconds)
+  const validationTimeout = validationTimeoutMs(input.validationTimeoutSeconds)
   const heartbeatIntervalMs = compareHeartbeatIntervalMs(input.heartbeatIntervalMs)
   const retrievalBudget = input.retrievalBudget ?? DEFAULT_RETRIEVAL_BUDGET
   const task = compareTaskKind(input)
@@ -4549,11 +4596,11 @@ export async function executeNativeAgentCompare(
       const baselineValidation =
         reportShell.baseline.kind === 'runner_error'
           ? { status: 'not_run' as const, commands: [] }
-          : await runImplementationValidationCommands(implementationGuidance.validation_commands, baselineWorkspace.workspaceRoot)
+          : await runImplementationValidationCommands(implementationGuidance.validation_commands, baselineWorkspace.workspaceRoot, validationTimeout)
       const madarValidation =
         reportShell.madar.kind === 'runner_error'
           ? { status: 'not_run' as const, commands: [] }
-          : await runImplementationValidationCommands(implementationGuidance.validation_commands, madarWorkspace.workspaceRoot)
+          : await runImplementationValidationCommands(implementationGuidance.validation_commands, madarWorkspace.workspaceRoot, validationTimeout)
       const baselineReviewerVisible =
         reportShell.baseline.kind === 'runner_error'
           ? { status: 'not_scored' as const, checks: [] }

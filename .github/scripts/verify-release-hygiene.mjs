@@ -10,6 +10,10 @@ const REPOSITORY_WEB_URL = 'https://github.com/mohanagy/madar'
 const REPOSITORY_GIT_URL = 'git+https://github.com/mohanagy/madar.git'
 const BUGS_URL = `${REPOSITORY_WEB_URL}/issues`
 const HOMEPAGE_URL = `${REPOSITORY_WEB_URL}#readme`
+const NEXT_ONLY_README_PATHS = new Set([
+  'docs/team-enterprise-offer.md',
+  'docs/telemetry.md',
+])
 
 function loadJson(path) {
   return JSON.parse(readFileSync(path, 'utf8'))
@@ -38,6 +42,23 @@ function changelogAnchorForVersion(version) {
 
 function changelogBranchForVersion(version) {
   return version.includes('-') ? 'next' : 'main'
+}
+
+function assertPrereleaseReadmeLinks(readme, version) {
+  if (!version.includes('-')) {
+    return
+  }
+
+  const invalidTargets = collectMarkdownLinkTargets(readme).filter((target) => {
+    const match = target.match(/^https:\/\/github\.com\/mohanagy\/madar\/blob\/([^/]+)\/(.+)$/)
+    return match !== null && NEXT_ONLY_README_PATHS.has(match[2]) && match[1] !== 'next'
+  })
+
+  assert.deepEqual(
+    invalidTargets,
+    [],
+    'next-only README doc links must target blob/next for prereleases',
+  )
 }
 
 function main() {
@@ -70,6 +91,7 @@ function main() {
     readme.includes(expectedVersionedChangelogLink),
     'README.md must link the current "What\'s new" section to the matching changelog entry',
   )
+  assertPrereleaseReadmeLinks(readme, packageManifest.version)
 
   console.log('Validated package metadata, changelog version, and npm-visible README links for release hygiene.')
 }

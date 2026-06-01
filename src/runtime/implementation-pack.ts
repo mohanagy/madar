@@ -14,6 +14,7 @@ import type {
 } from '../contracts/context-pack.js'
 import type { KnowledgeGraph } from '../contracts/graph.js'
 import type { TaskIntentKind } from '../contracts/task-intent.js'
+import { shellEscapeIfNeeded } from '../shared/shell.js'
 import { classifySourceDomain } from '../shared/source-discovery.js'
 import { lineNumberFromSourceLocation } from '../shared/source-location.js'
 import { relativizeSourceFile } from '../shared/source-path.js'
@@ -1335,7 +1336,7 @@ function readWorkspacePackageScripts(rootPath?: string): { scripts: PackageScrip
 function testCommandForScripts(scripts: PackageScripts, testFiles: readonly string[]): string[] {
   const commands: string[] = []
   if (testFiles.length > 0 && Object.hasOwn(scripts, 'test:run')) {
-    commands.push(`npm run test:run -- ${testFiles.slice(0, 5).join(' ')}`)
+    commands.push(`npm run test:run -- ${testFiles.slice(0, 5).map((path) => shellEscapeIfNeeded(prefixTestPathFlagLikeArg(path))).join(' ')}`)
   }
   if (Object.hasOwn(scripts, 'test:run')) {
     commands.push('npm run test:run')
@@ -1343,6 +1344,10 @@ function testCommandForScripts(scripts: PackageScripts, testFiles: readonly stri
     commands.push('npm run test')
   }
   return commands
+}
+
+function prefixTestPathFlagLikeArg(path: string): string {
+  return path.startsWith('-') ? `./${path}` : path
 }
 
 function validationCommands(rootPath: string | undefined, testFiles: readonly ImplementationPackFileHint[]): {

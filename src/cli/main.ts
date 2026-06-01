@@ -192,6 +192,13 @@ export interface CliDependencies {
 }
 
 const COMPARE_WARNING_MESSAGE = 'compare will execute a baseline prompt and a madar prompt for each question. This may consume paid model tokens.'
+function compareWarningMessage(options: CompareCliOptions): string {
+  if (options.task === 'implement' && options.baselineMode === 'native_agent') {
+    return `${COMPARE_WARNING_MESSAGE} For --task implement with --baseline-mode native_agent, it will also run local validation commands derived from package.json scripts after each arm with a ${options.validationTimeoutSeconds}s timeout.`
+  }
+  return COMPARE_WARNING_MESSAGE
+}
+
 const REVIEW_COMPARE_WARNING_MESSAGE = 'review-compare will execute verbose and compact pr_impact prompts for the current git diff. This may consume paid model tokens.'
 const BENCHMARK_WARNING_MESSAGE = 'benchmark will execute the benchmark/eval runner. This may consume paid model tokens.'
 const BENCH_SUITE_WARNING_MESSAGE = 'bench:suite will execute baseline, madar, and SPI suite prompts. This may consume paid model tokens.'
@@ -228,6 +235,7 @@ const DEFAULT_DEPENDENCIES: CliDependencies = {
         execTemplate: options.execTemplate,
         baselineMode: options.baselineMode,
         perArmTimeoutSeconds: options.perArmTimeoutSeconds,
+        validationTimeoutSeconds: options.validationTimeoutSeconds,
         heartbeatIntervalMs: options.heartbeatIntervalMs,
         strictMadarFirst: options.strictMadarFirst,
         strictBenchmarkReadiness: options.strictBenchmarkReadiness,
@@ -482,6 +490,7 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --baseline-mode MODE  full | bounded | pack_only | native_agent (default full; pack_only compares one bounded raw-context prompt against one compiled madar pack; native_agent runs --exec twice, uses Anthropic JSON usage when available, and otherwise saves answer-only artifacts)',
     '      For Claude MCP attribution in native_agent mode, include --verbose with --output-format json',
     '    --per-arm-timeout S   per-arm timeout seconds for native_agent runs (default 600)',
+    '    --validation-timeout S  timeout seconds for implement validation commands run after native_agent compare arms (default 120)',
     '    --heartbeat-interval-ms N  stderr heartbeat interval for native_agent runs (default 30000; 0 disables)',
     '    --strict-madar-first  treat pre-Madar broad exploration as degraded/non-winning in native_agent mode',
     '    --strict / --strict-benchmark-readiness  fail native_agent compare before runner spend when benchmark readiness is degraded or not_ready',
@@ -691,9 +700,10 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
     if (command === 'compare') {
       const options = parseCompareArgs(args)
       const confirm = async (message: string) => await dependencies.confirm(message)
+      const warningMessage = compareWarningMessage(options)
       if (!options.yes) {
-        io.log(`Warning: ${COMPARE_WARNING_MESSAGE}`)
-        if (!(await confirm(COMPARE_WARNING_MESSAGE))) {
+        io.log(`Warning: ${warningMessage}`)
+        if (!(await confirm(warningMessage))) {
           io.log('Compare cancelled.')
           return 1
         }
