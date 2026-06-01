@@ -1,0 +1,15 @@
+{
+  "name": "pack-quality-framework-runtime-boundary-distractor",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "next": "^15.0.0",
+    "react": "^19.0.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "next build",
+    "test:run": "vitest run"
+  }
+}

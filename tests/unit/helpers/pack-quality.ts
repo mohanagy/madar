@@ -16,6 +16,8 @@ const PACK_QUALITY_FIXTURE_ORDER = [
   'source-test-adjacency',
   'noisy-helper-distractor',
   'indirect-seed-workflow-owner',
+  'framework-request-flow-owner',
+  'framework-runtime-boundary-distractor',
   'runtime-generation-explain-report-flow',
 ] as const
 

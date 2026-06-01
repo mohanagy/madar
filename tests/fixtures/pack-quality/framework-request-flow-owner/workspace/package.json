@@ -1,0 +1,14 @@
+{
+  "name": "pack-quality-framework-request-flow-owner",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "hono": "^4.6.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "test:run": "vitest run"
+  }
+}

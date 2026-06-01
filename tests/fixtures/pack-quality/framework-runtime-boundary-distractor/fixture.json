@@ -1,0 +1,19 @@
+{
+  "prompt": "move dashboard owner filter persistence into the Next.js server action and keep the client component presentational",
+  "expected_workflow_centers": [
+    "app/dashboard/actions.ts"
+  ],
+  "expected_likely_edit_files": [
+    "app/dashboard/actions.ts"
+  ],
+  "expected_likely_test_files": [],
+  "expected_validation_commands": [
+    "npm run typecheck",
+    "npm run build",
+    "npm run test:run"
+  ],
+  "expected_negative_guidance": [
+    "Missing required context: supporting, structural.",
+    "High-risk shared boundary: DashboardPage() affects 4 files."
+  ]
+}
