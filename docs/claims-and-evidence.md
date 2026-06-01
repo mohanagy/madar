@@ -24,7 +24,7 @@ This file is the public map between what Madar says and what the repo can actual
 
 | Claim | Why it is not public copy today |
 | --- | --- |
-| Madar improves implementation outcomes across repos or consistently avoids wrong-file edits. | We now have one deterministic implementation-task receipt and initial implement/review workflow-outcome suite rows, but that is still not cross-repo evidence strong enough for a generalized public win claim. Track broader validation under [#332](https://github.com/mohanagy/madar/issues/332). |
+| Madar improves implementation outcomes across repos or consistently avoids wrong-file edits. | We now have one deterministic implementation-task receipt and initial implement/review workflow-outcome suite rows, but we do not yet have cross-repo implementation-task evidence strong enough for a generalized public win claim. Track broader validation under [#332](https://github.com/mohanagy/madar/issues/332). |
 | Lower-confidence packs behave as well as the demonstrated high-confidence release cell. | The `0.27.0` public receipt is one strong, install-verified explain cell; medium/low-confidence prompts still need their own measured rows. |
 | A universal turns / latency / exploration win across repos. | Public receipts are repo- and prompt-specific, so they do not justify a single-number cross-repo headline. |
 | The agent always stops exploring after one pack. | Madar shapes the first pass, but it does not control the runtime or guarantee tool behavior. |
