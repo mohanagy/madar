@@ -630,7 +630,7 @@ function preserveFinalRuntimePrimaryPathPreview(
   const primaryPath = executionSlice ? asJsonRecord(executionSlice.primary_path) : null
   const primarySteps = primaryPath ? asUnknownArray(primaryPath.steps) : []
   const matchedNodes = asUnknownArray(pack.matched_nodes)
-  if (primarySteps.length === 0 || matchedNodes.length <= matchedNodeCap) {
+  if (primarySteps.length === 0 || matchedNodes.length >= primarySteps.length) {
     return
   }
 
@@ -832,6 +832,7 @@ function enforceAnswerReadyBudget(
     if (candidate.preserved) {
       summary.droppedWorkflowSpine = true
     }
+    preserveFinalRuntimePrimaryPathPreview(payload, pack, asUnknownArray(pack.matched_nodes).length, trimmedFields)
   }
 
   upsertPackCulledWarning(payload, summary.droppedNodeIds)
@@ -931,10 +932,8 @@ export function buildAnswerReadyPackSchema(
     return payload
   }
 
-  delete payload.prompt
   delete payload.graph_path
-  delete payload.task_intent
-  trimmedFields.push('prompt', 'graph_path', 'task_intent')
+  trimmedFields.push('graph_path')
   attachSerializedBudget(payload, maxTokens, trimmedFields)
   if (estimatedJsonTokens(payload) <= maxTokens) {
     return payload

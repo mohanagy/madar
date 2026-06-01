@@ -128,7 +128,7 @@ The current telemetry model is still local-first and source-safe. It records onl
 
 ## What's new in 0.27.6
 
-See the [`0.27.6` changelog entry](CHANGELOG.md#0276---2026-05-29) for the full release notes.
+See the [`0.27.6` changelog entry](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md#0276---2026-05-29) for the full release notes.
 
 This patch removes the legacy `madar add <url>` ingest surface, keeps `save-result` available for exporting query results, and preserves backward-compatible legacy ingest provenance for older saved artifacts.
 
