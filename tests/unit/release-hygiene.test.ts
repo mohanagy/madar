@@ -28,7 +28,7 @@ function collectMarkdownLinkTargets(markdown: string): string[] {
 function withReleaseFixture(
   version: string,
   readmeLink: string,
-  runAssertion: (fixtureDir: string) => void,
+  runAssertion: (runVerify: () => string) => void,
 ): void {
   const fixtureDir = mkdtempSync(join(tmpdir(), 'madar-release-hygiene-'))
 
@@ -55,7 +55,13 @@ function withReleaseFixture(
     writeFileSync(join(fixtureDir, 'README.md'), `[release notes](${readmeLink})\n`)
     writeFileSync(join(fixtureDir, 'CHANGELOG.md'), `## [${version}] - 2026-05-29\n`)
 
-    runAssertion(fixtureDir)
+    runAssertion(() =>
+      execFileSync(process.execPath, [releaseVerifyScriptPath()], {
+        cwd: fixtureDir,
+        encoding: 'utf8',
+        stdio: 'pipe',
+      }),
+    )
   } finally {
     rmSync(fixtureDir, { recursive: true, force: true })
   }
@@ -86,14 +92,8 @@ describe('release hygiene', () => {
   })
 
   it('requires the README changelog link to match the current release heading exactly', () => {
-    withReleaseFixture('0.27.4', 'https://github.com/mohanagy/madar/blob/main/CHANGELOG.md#0274---wrong-date', (fixtureDir) => {
-      expect(() =>
-        execFileSync(process.execPath, [releaseVerifyScriptPath()], {
-          cwd: fixtureDir,
-          encoding: 'utf8',
-          stdio: 'pipe',
-        }),
-      ).toThrow(/matching changelog entry/)
+    withReleaseFixture('0.27.4', 'https://github.com/mohanagy/madar/blob/main/CHANGELOG.md#0274---wrong-date', (runVerify) => {
+      expect(runVerify).toThrow(/matching changelog entry/)
     })
   })
 
@@ -109,14 +109,8 @@ describe('release hygiene', () => {
     withReleaseFixture(
       '0.27.7-next.0',
       'https://github.com/mohanagy/madar/blob/main/CHANGELOG.md#0277-next0---2026-05-29',
-      (fixtureDir) => {
-      expect(() =>
-        execFileSync(process.execPath, [releaseVerifyScriptPath()], {
-          cwd: fixtureDir,
-          encoding: 'utf8',
-          stdio: 'pipe',
-        }),
-      ).toThrow(/matching changelog entry/)
+      (runVerify) => {
+        expect(runVerify).toThrow(/matching changelog entry/)
       },
     )
   })
@@ -125,14 +119,8 @@ describe('release hygiene', () => {
     withReleaseFixture(
       '0.27.7-next.0',
       'https://github.com/mohanagy/madar/blob/next/CHANGELOG.md#0277-next0---2026-05-29',
-      (fixtureDir) => {
-      expect(() =>
-        execFileSync(process.execPath, [releaseVerifyScriptPath()], {
-          cwd: fixtureDir,
-          encoding: 'utf8',
-          stdio: 'pipe',
-        }),
-      ).not.toThrow()
+      (runVerify) => {
+        expect(runVerify).not.toThrow()
       },
     )
   })
