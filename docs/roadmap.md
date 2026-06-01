@@ -21,6 +21,7 @@ These items already landed and are no longer part of the future roadmap:
 - [#245 — Plan and validate Madar rebrand migration](https://github.com/mohanagy/madar/issues/245)
 - [#236 — Add typestack/routing-controllers framework detector](https://github.com/mohanagy/madar/issues/236)
 - [#233 — Add answer-quality scoring to benchmark suite summaries](https://github.com/mohanagy/madar/issues/233)
+- [#425 — Run design-partner workflow loops and publish anonymized evidence](https://github.com/mohanagy/madar/issues/425) added **design-partner workflow loops** as **anonymized workflow notes** and synthetic reproductions under `docs/benchmarks/2026-06-01-design-partner-workflow-loops/`.
 
 ## v0.26 — Runtime trust and routing precision
 
@@ -59,6 +60,7 @@ Focus: reduce repeated work across packs, compares, and longer agent sessions on
 
 Focus: make Madar easier to adopt, evaluate, and contribute to after the runtime and benchmark surfaces stop moving quickly.
 
+- Follow the first **design-partner workflow loops** bundle with stronger partner-approved receipts once the repo can replace some **anonymized workflow notes** with repeated public outcomes.
 - Refresh contributor-facing docs, examples, and onboarding after the v0.26-v0.29 work is stable.
 - Keep the near-term roadmap centered on runtime trust, answer quality, framework depth, and MCP/session efficiency before expanding into broader polish work.
 

@@ -227,6 +227,15 @@ describe('public marketing copy honesty', () => {
       expect(content).toContain('Codex Security')
       expect(lower).toContain('does not prove that madar itself')
     })
+
+    it('links anonymized design-partner workflow notes without claiming live customer validation yet', () => {
+      expect(lower).toContain('design-partner workflow loop notes')
+      expect(lower).toContain('anonymized')
+      expect(lower).toContain('synthetic reproductions')
+      expect(lower).toContain('sensitive source')
+      expect(lower).toContain('customer details')
+      expect(content).toContain('docs/benchmarks/2026-06-01-design-partner-workflow-loops/')
+    })
   })
 
   describe('docs/claims-and-evidence.md', () => {
@@ -301,6 +310,14 @@ describe('public marketing copy honesty', () => {
       expect(lower).toContain('typescript/node proof')
       expect(lower).toContain('benchmark or fixture evidence')
       expect(lower).toContain('no broad parity claim')
+    })
+
+    it('keeps design-partner workflow proof framed as anonymized drafts instead of five live partner wins', () => {
+      expect(lower).toContain('design-partner workflow')
+      expect(lower).toContain('anonymized')
+      expect(lower).toContain('workflow-loop notes')
+      expect(lower).toContain('synthetic reproductions')
+      expect(lower).toContain('not yet five live design partners')
     })
   })
 
@@ -485,6 +502,38 @@ describe('public marketing copy honesty', () => {
       expect(readme).toContain('issue #69')
       expect(readme).toContain('v0.14-substrate')
       expect(readme).toContain('Backend-only vs monorepo')
+    })
+
+    describe('docs/benchmarks/2026-06-01-design-partner-workflow-loops/', () => {
+      const readme = readDoc('docs/benchmarks/2026-06-01-design-partner-workflow-loops/README.md')
+      const explainDraft = readDoc('docs/benchmarks/2026-06-01-design-partner-workflow-loops/01-explain-flow.md')
+      const reviewDraft = readDoc('docs/benchmarks/2026-06-01-design-partner-workflow-loops/02-review-pr.md')
+      const impactDraft = readDoc('docs/benchmarks/2026-06-01-design-partner-workflow-loops/03-impact-change.md')
+
+      it('publishes three anonymized workflow-loop drafts with a clear safety boundary', () => {
+        expect(readme).toContain('# 2026-06-01 design-partner workflow loops')
+        expect(readme).toContain('01-explain-flow.md')
+        expect(readme).toContain('02-review-pr.md')
+        expect(readme).toContain('03-impact-change.md')
+        expect(readme.toLowerCase()).toContain('anonymized')
+        expect(readme.toLowerCase()).toContain('synthetic reproductions')
+        expect(readme.toLowerCase()).toContain('sensitive source')
+        expect(readme.toLowerCase()).toContain('prompts')
+        expect(readme.toLowerCase()).toContain('customer details')
+        expect(readme.toLowerCase()).toContain('not yet five live design partners')
+      })
+
+      it('covers explain, review, and impact loops in separate drafts', () => {
+        expect(explainDraft).toContain('# Explain-flow workflow draft')
+        expect(explainDraft.toLowerCase()).toContain('anonymized repo owner')
+        expect(explainDraft.toLowerCase()).toContain('repeatable loop')
+        expect(reviewDraft).toContain('# Review-PR workflow draft')
+        expect(reviewDraft.toLowerCase()).toContain('share-safe artifact')
+        expect(reviewDraft.toLowerCase()).toContain('human follow-up')
+        expect(impactDraft).toContain('# Impact-change workflow draft')
+        expect(impactDraft.toLowerCase()).toContain('blast radius')
+        expect(impactDraft.toLowerCase()).toContain('change plan')
+      })
     })
 
     it('ships a runnable harness with the documented argument surface', () => {

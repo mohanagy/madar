@@ -136,6 +136,17 @@ What this proves that a single-repo demo cannot:
 - one MCP surface for frontend + backend + shared code
 - a realistic privacy-preserving workflow for internal systems
 
+## 5. Design-partner workflow loop notes
+
+When you do not yet have a publishable live customer receipt, the next-best public artifact is a set of **design-partner workflow loop notes** that stays explicit about what is anonymized.
+
+- Keep those notes **anonymized**.
+- Use **synthetic reproductions** or partner-approved summaries.
+- Exclude sensitive source, full prompts, and customer details.
+- Publish only the share-safe workflow evidence shape plus the outcome summary.
+
+The first public draft bundle lives under [`docs/benchmarks/2026-06-01-design-partner-workflow-loops/`](docs/benchmarks/2026-06-01-design-partner-workflow-loops/README.md). It is useful because it makes the workflow-proof target concrete, but it does **not** mean Madar already has five live design partners or a universal workflow win claim.
+
 ## Which proof to use
 
 | Question | Best command |
