@@ -2,6 +2,13 @@
 
 All notable changes to the TypeScript package will be documented in this file.
 
+## [0.27.7-next.1] - 2026-06-01
+
+### Fixed
+
+- **Implement compare validation is now safer and more transparent**: `compare --task implement` now discloses repo-local validation commands in the native-agent warning flow, supports a configurable `--validation-timeout`, aborts hung validation command process groups reliably, and safely handles targeted test paths with spaces, shell metacharacters, or repo-root flag-like names.
+- **Prerelease README links now stay on the published branch**: next-only docs links now target `blob/next`, and release hygiene rejects prerelease README links that drift back to `blob/main`.
+
 ## [0.27.7-next.0] - 2026-06-01
 
 ### Added
