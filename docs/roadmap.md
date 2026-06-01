@@ -22,6 +22,7 @@ These items already landed and are no longer part of the future roadmap:
 - [#236 — Add typestack/routing-controllers framework detector](https://github.com/mohanagy/madar/issues/236)
 - [#233 — Add answer-quality scoring to benchmark suite summaries](https://github.com/mohanagy/madar/issues/233)
 - [#425 — Run design-partner workflow loops and publish anonymized evidence](https://github.com/mohanagy/madar/issues/425) added **design-partner workflow loops** as **anonymized workflow notes** and synthetic reproductions under `docs/benchmarks/2026-06-01-design-partner-workflow-loops/`.
+- [#429 — Make federation a flagship multi-repo enterprise workflow](https://github.com/mohanagy/madar/issues/429) added a **synthetic federation receipt** for a **frontend/backend/shared** fixture so the flagship multi-repo enterprise workflow is reproducible without pretending it is already a broad benchmark.
 
 ## v0.26 — Runtime trust and routing precision
 

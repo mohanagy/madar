@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "directed": false,
+  "nodes": [
+    {
+      "id": "session-view",
+      "label": "SessionContract",
+      "file_type": "code",
+      "source_file": "frontend/src/session-view.ts"
+    },
+    {
+      "id": "user-panel",
+      "label": "UserProfile",
+      "file_type": "code",
+      "source_file": "frontend/src/user-panel.ts"
+    }
+  ],
+  "edges": [
+    {
+      "source": "user-panel",
+      "target": "session-view",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "frontend/src/user-panel.ts"
+    }
+  ]
+}

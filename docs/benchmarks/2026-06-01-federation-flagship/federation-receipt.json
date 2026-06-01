@@ -1,0 +1,7 @@
+{
+  "repos": ["frontend", "backend", "shared"],
+  "totalNodes": 6,
+  "totalEdges": 9,
+  "crossRepoEdges": 6,
+  "communityCount": 3
+}

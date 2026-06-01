@@ -236,6 +236,14 @@ describe('public marketing copy honesty', () => {
       expect(lower).toContain('customer details')
       expect(content).toContain('docs/benchmarks/2026-06-01-design-partner-workflow-loops/')
     })
+
+    it('links a synthetic federation receipt while keeping the enterprise use case concrete and bounded', () => {
+      expect(lower).toContain('enterprise differentiator')
+      expect(lower).toContain('frontend/backend/shared')
+      expect(lower).toContain('shared labels')
+      expect(lower).toContain('synthetic federation receipt')
+      expect(content).toContain('docs/benchmarks/2026-06-01-federation-flagship/')
+    })
   })
 
   describe('docs/claims-and-evidence.md', () => {
@@ -318,6 +326,14 @@ describe('public marketing copy honesty', () => {
       expect(lower).toContain('workflow-loop notes')
       expect(lower).toContain('synthetic reproductions')
       expect(lower).toContain('not yet five live design partners')
+    })
+
+    it('treats federation as a bounded synthetic proof surface instead of a broad cross-repo benchmark headline', () => {
+      expect(lower).toContain('federation')
+      expect(lower).toContain('synthetic federation receipt')
+      expect(lower).toContain('shared labels')
+      expect(lower).toContain('not a broad cross-repo benchmark headline')
+      expect(content).toContain('docs/benchmarks/2026-06-01-federation-flagship/')
     })
   })
 
@@ -533,6 +549,32 @@ describe('public marketing copy honesty', () => {
         expect(impactDraft).toContain('# Impact-change workflow draft')
         expect(impactDraft.toLowerCase()).toContain('blast radius')
         expect(impactDraft.toLowerCase()).toContain('change plan')
+      })
+    })
+
+    describe('docs/benchmarks/2026-06-01-federation-flagship/', () => {
+      const readme = readDoc('docs/benchmarks/2026-06-01-federation-flagship/README.md')
+      const receipt = JSON.parse(readDoc('docs/benchmarks/2026-06-01-federation-flagship/federation-receipt.json')) as {
+        repos: string[]
+        totalNodes: number
+        totalEdges: number
+        crossRepoEdges: number
+        communityCount: number
+      }
+
+      it('publishes a synthetic three-repo federation receipt with explicit scope limits', () => {
+        expect(readme).toContain('# 2026-06-01 federation flagship')
+        expect(readme).toContain('tests/fixtures/federation-flagship/')
+        expect(readme.toLowerCase()).toContain('synthetic federation receipt')
+        expect(readme.toLowerCase()).toContain('frontend/backend/shared')
+        expect(readme.toLowerCase()).toContain('enterprise differentiator')
+        expect(readme.toLowerCase()).toContain('shared labels')
+        expect(readme.toLowerCase()).toContain('not a broad cross-repo benchmark headline')
+        expect(receipt.repos).toEqual(['frontend', 'backend', 'shared'])
+        expect(receipt.totalNodes).toBeGreaterThan(0)
+        expect(receipt.totalEdges).toBeGreaterThan(0)
+        expect(receipt.crossRepoEdges).toBeGreaterThan(0)
+        expect(receipt.communityCount).toBeGreaterThan(0)
       })
     })
 

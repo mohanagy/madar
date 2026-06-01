@@ -129,6 +129,8 @@ madar federate \
 madar serve federated-out/graph.json --stdio
 ```
 
+The smallest checked-in version of that story now lives under [`docs/benchmarks/2026-06-01-federation-flagship/`](docs/benchmarks/2026-06-01-federation-flagship/README.md). It is a **synthetic federation receipt** built around a **frontend/backend/shared** fixture, and it exists because federation can be an **enterprise differentiator** when teams need one auditable local graph across multiple repos. The current receipt is intentionally explicit that cross-repo links come from **shared labels**, so it is a reproducible workflow note rather than a broad cross-repo benchmark headline.
+
 What this proves that a single-repo demo cannot:
 
 - cross-repo type and symbol stitching
