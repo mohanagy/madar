@@ -4,6 +4,10 @@
 
 A structural graph tells the agent what exists in your codebase. Madar tells the agent **what runs for this task** — usually a much smaller execution slice or structural subset — then returns a compact pack with inline snippets so the agent can answer from the pack before it starts searching the repo by hand.
 
+**Primary ICP (near-term):** teams using AI coding agents on medium-to-large TypeScript/Node repos where broad exploration creates cost, latency, privacy, or wrong-file-edit risk.
+
+**Not the primary ICP today:** tiny repos, throwaway scripts, teams mainly shopping for hosted dashboards, or buyers who need broad cross-language parity before the TypeScript/Node proof deepens.
+
 [![npm](https://img.shields.io/npm/v/%40lubab%2Fmadar)](https://www.npmjs.com/package/@lubab/madar)
 [![node >=20](https://img.shields.io/badge/node-%E2%89%A520-3c873a)](https://nodejs.org/)
 [![Local first](https://img.shields.io/badge/local--first-no%20cloud%20required-0f766e)](#trust--limitations)
@@ -142,7 +146,9 @@ If you want the broader proof-oriented workflow behind the current surfaces, sta
 
 A structural graph tells you what exists, but what the agent actually needs is **what runs for this task**, which is usually a much smaller set.
 
-madar indexes a TypeScript/Node workspace (and PR diffs) into local graph artifacts, then compiles those artifacts into a task-aware pack the agent can start from before it decides whether deeper reads are still necessary.
+madar is **deterministic local context compilation** for that repo/task boundary: it indexes a TypeScript/Node workspace (and PR diffs) into local graph artifacts, then compiles those artifacts into a task-aware pack the agent can start from before it decides whether deeper reads are still necessary.
+
+That means Madar **complements agents and IDE indexing** instead of replacing them. IDE indexes and structural graphs tell you what exists; Madar compiles the bounded first-pass evidence for the current task. It is **not another generic codebase index**.
 
 ```
 your prompt

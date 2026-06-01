@@ -159,6 +159,19 @@ describe('public marketing copy honesty', () => {
       expect(content).toContain('docs/claims-and-evidence.md')
     })
 
+    it('states the near-term primary ICP and non-ICP explicitly', () => {
+      expect(lower).toContain('primary icp')
+      expect(lower).toContain('medium-to-large typescript/node repos')
+      expect(lower).toContain('cost, latency, privacy, or wrong-file-edit risk')
+      expect(lower).toContain('not the primary icp today')
+    })
+
+    it('frames the core promise as deterministic local context compilation that complements indexing', () => {
+      expect(lower).toContain('deterministic local context compilation')
+      expect(lower).toContain('complements agents and ide indexing')
+      expect(lower).toContain('not another generic codebase index')
+    })
+
     it('keeps the README Python support claim conservative and current', () => {
       expect(content).toContain('FastAPI router composition')
       expect(content).toContain('Django URL-conf')
@@ -240,6 +253,13 @@ describe('public marketing copy honesty', () => {
         expect(content).toContain('Codex Security')
         expect(lower).toContain('workflow guidance, not a measured superiority claim')
         expect(lower).toContain('no comparative review/security evaluation')
+      })
+
+      it('keeps the README ICP and product-promise guidance bounded to the current evidence scope', () => {
+        expect(lower).toContain('medium-to-large typescript/node repos')
+        expect(lower).toContain('deterministic local context compilation')
+        expect(lower).toContain('complements agents and ide indexing')
+        expect(lower).toContain('not another generic codebase index')
       })
     })
   })

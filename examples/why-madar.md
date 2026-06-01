@@ -2,6 +2,10 @@
 
 Madar is for the moment when a structural graph already tells you what exists, but the agent still needs **what runs for this task** — the smaller execution slice or structural subset worth reading first.
 
+Near-term primary ICP: teams using AI coding agents on medium-to-large TypeScript/Node repos where broad exploration creates cost, latency, privacy, or wrong-file-edit risk.
+
+The core promise is deterministic local context compilation that complements agents and IDE indexing rather than trying to be another generic codebase index.
+
 ## Demonstrated today
 
 - Local graph artifacts plus task-aware packs for explain, review, impact, and implementation work.
