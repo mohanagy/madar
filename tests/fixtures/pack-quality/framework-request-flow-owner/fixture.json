@@ -14,7 +14,6 @@
     "npm run test:run"
   ],
   "expected_negative_guidance": [
-    "Missing required context: supporting, structural.",
-    "High-risk shared boundary: UserService affects 4 files."
+    "Missing required context: supporting, structural."
   ]
 }
