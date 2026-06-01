@@ -1,16 +1,62 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
+import type { ContextPackSelectionDiagnostics } from '../../src/contracts/context-pack.js'
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
-import { runContextPackCommand, type ContextPackCommandDependencies } from '../../src/infrastructure/context-pack-command.js'
+import { buildAnswerReadyPackSchema, runContextPackCommand, type ContextPackCommandDependencies } from '../../src/infrastructure/context-pack-command.js'
 import { build } from '../../src/pipeline/build.js'
 import { compactRetrieveResult, retrieveContext, type RetrieveResult } from '../../src/runtime/retrieve.js'
 import { estimateQueryTokens } from '../../src/runtime/serve.js'
 
 const tempFixtureRoots: string[] = []
+const repoGraphFixturePath = join(process.cwd(), 'out', 'graph.json')
+const repoBackendGraphFixturePath = join(process.cwd(), 'backend', 'out', 'graph.json')
+let createdRepoGraphFixture = false
+let createdRepoGraphFixtureDir = false
+let createdRepoBackendGraphFixture = false
+let createdRepoBackendGraphFixtureDir = false
+
+beforeAll(() => {
+  if (existsSync(repoGraphFixturePath)) {
+    // no-op
+  } else {
+    const repoGraphDir = dirname(repoGraphFixturePath)
+    if (!existsSync(repoGraphDir)) {
+      mkdirSync(repoGraphDir, { recursive: true })
+      createdRepoGraphFixtureDir = true
+    }
+    writeFileSync(repoGraphFixturePath, JSON.stringify({ fixture: true }))
+    createdRepoGraphFixture = true
+  }
+  if (existsSync(repoBackendGraphFixturePath)) {
+    return
+  }
+  const repoBackendGraphDir = dirname(repoBackendGraphFixturePath)
+  if (!existsSync(repoBackendGraphDir)) {
+    mkdirSync(repoBackendGraphDir, { recursive: true })
+    createdRepoBackendGraphFixtureDir = true
+  }
+  writeFileSync(repoBackendGraphFixturePath, JSON.stringify({ fixture: true }))
+  createdRepoBackendGraphFixture = true
+})
+
+afterAll(() => {
+  if (createdRepoGraphFixture) {
+    rmSync(repoGraphFixturePath, { force: true })
+  }
+  if (createdRepoGraphFixtureDir) {
+    rmSync(dirname(repoGraphFixturePath), { recursive: true, force: true })
+  }
+  if (createdRepoBackendGraphFixture) {
+    rmSync(repoBackendGraphFixturePath, { force: true })
+  }
+  if (createdRepoBackendGraphFixtureDir) {
+    rmSync(dirname(repoBackendGraphFixturePath), { recursive: true, force: true })
+  }
+})
 
 afterEach(() => {
   while (tempFixtureRoots.length > 0) {
@@ -139,6 +185,193 @@ function buildImplementationPackDistractorGraph() {
   return graph
 }
 
+function buildOversizedAnswerReadySchema() {
+  const repeatedSnippet = (name: string, repeat: number) => Array.from(
+    { length: repeat },
+    (_, index) => `function ${name}_${index}() { return "${name}-${index}"; }`,
+  ).join('\n')
+
+  return {
+    schema_version: 1,
+    task: 'explain',
+    prompt: 'Explain how the runtime pipeline works',
+    budget: 1500,
+    graph_path: 'out/graph.json',
+    evidence: {
+      pack_confidence: 'high' as const,
+      coverage: 'complete' as const,
+      missing_phases: [],
+      covered_workflow_owners: ['src/runtime/controller.ts', 'src/runtime/service.ts'],
+      confidence_reasons: ['all required evidence covered'],
+      agent_directive: 'answer_from_pack' as const,
+    },
+    governance: {
+      version: 1 as const,
+      surface: 'cli_pack' as const,
+      privacy_boundary: {
+        source_safe: true as const,
+        includes_prompt: false as const,
+        includes_source_content: false as const,
+        includes_answer_content: false as const,
+        includes_file_paths: false as const,
+      },
+      graph_freshness: {
+        graph_version: 'fixture-graph',
+        graph_modified_ms: 0,
+        graph_modified_at: new Date(0).toUTCString(),
+      },
+      request: {
+        task: 'explain' as const,
+        task_intent: 'explain' as const,
+        budget: 1500,
+        retrieval_strategy: 'slice-v1' as const,
+      },
+      directive: {
+        pack_confidence: 'high' as const,
+        coverage: 'complete' as const,
+        agent_directive: 'answer_from_pack' as const,
+        missing_phases: [],
+      },
+      follow_up: {
+        expandable_handle_count: 1,
+        expandable_evidence_classes: ['supporting'] as const,
+        expansion_task_kinds: ['explain'] as const,
+        preview_item_count: 2,
+        focus_file_count: 0,
+        focus_range_count: 16,
+      },
+    },
+    workflow_centers: [
+      { label: 'RuntimeController.handle', path: 'src/runtime/controller.ts', reason: 'controller entrypoint' },
+      { label: 'RuntimeService.execute', path: 'src/runtime/service.ts', reason: 'service handoff' },
+    ],
+    recommended_first_read: [
+      { label: 'RuntimeController.handle', path: 'src/runtime/controller.ts', reason: 'entrypoint' },
+    ],
+    pack: {
+      answer_contract: {
+        version: 1,
+        answer_focus: 'runtime_generation',
+        entrypoint_scope: 'setup_context',
+        required_elements: ['main_pipeline_phases'],
+        do_not_claim: ['unverified_background_jobs'],
+        observed_phases: ['controller', 'service'],
+        missing_phases: [],
+        confidence: 'high',
+      },
+      matched_nodes: [
+        {
+          node_id: 'workflow-controller',
+          label: 'RuntimeController.handle',
+          source_file: 'src/runtime/controller.ts',
+          line_number: 10,
+          snippet: repeatedSnippet('controller', 24),
+        },
+        {
+          node_id: 'workflow-service',
+          label: 'RuntimeService.execute',
+          source_file: 'src/runtime/service.ts',
+          line_number: 30,
+          snippet: repeatedSnippet('service', 24),
+        },
+        {
+          node_id: 'helper-low-1',
+          label: 'StatusFormatter.render',
+          source_file: 'src/runtime/status.ts',
+          line_number: 50,
+          snippet: repeatedSnippet('status', 22),
+        },
+        {
+          node_id: 'helper-low-2',
+          label: 'AuditLogger.enqueue',
+          source_file: 'src/runtime/audit.ts',
+          line_number: 70,
+          snippet: repeatedSnippet('audit', 22),
+        },
+      ],
+      relationships: [
+        { from_id: 'workflow-controller', from: 'RuntimeController.handle', to_id: 'workflow-service', to: 'RuntimeService.execute', relation: 'calls' },
+        { from_id: 'workflow-service', from: 'RuntimeService.execute', to_id: 'helper-low-1', to: 'StatusFormatter.render', relation: 'calls' },
+        { from_id: 'workflow-service', from: 'RuntimeService.execute', to_id: 'helper-low-2', to: 'AuditLogger.enqueue', relation: 'calls' },
+      ],
+    },
+    expandable: [
+      {
+        kind: 'more_matches',
+        reason: 'additional supporting nodes',
+        preview: [
+          { node_id: 'helper-low-1', label: 'StatusFormatter.render', source_file: 'src/runtime/status.ts' },
+          { node_id: 'helper-low-2', label: 'AuditLogger.enqueue', source_file: 'src/runtime/audit.ts' },
+        ],
+        follow_up: {
+          focus_ranges: Array.from({ length: 16 }, (_, index) => ({
+            source_file: `src/runtime/focus-${index}.ts`,
+            start_line: index + 1,
+            end_line: index + 12,
+            reason: 'secondary detail',
+          })),
+        },
+      },
+    ],
+    routing: {
+      warnings: [],
+    },
+  }
+}
+function buildAnswerReadySelectionDiagnostics(): ContextPackSelectionDiagnostics {
+  return {
+    selection_strategy: 'value-per-token',
+    budget: 1500,
+    used_tokens: 1400,
+    required_overflow: false,
+    ranking: [
+      {
+        id: 'workflow-controller',
+        label: 'RuntimeController.handle',
+        evidence_class: 'primary',
+        score: 0.99,
+        token_cost: 220,
+        density: 1.2,
+        included: true,
+        reasons: ['entrypoint'],
+        penalties: [],
+      },
+      {
+        id: 'workflow-service',
+        label: 'RuntimeService.execute',
+        evidence_class: 'supporting',
+        score: 0.96,
+        token_cost: 220,
+        density: 1.1,
+        included: true,
+        reasons: ['handoff'],
+        penalties: [],
+      },
+      {
+        id: 'helper-low-1',
+        label: 'StatusFormatter.render',
+        evidence_class: 'supporting',
+        score: 0.52,
+        token_cost: 240,
+        density: 0.12,
+        included: true,
+        reasons: ['secondary formatting detail'],
+        penalties: ['low load-bearing value'],
+      },
+      {
+        id: 'helper-low-2',
+        label: 'AuditLogger.enqueue',
+        evidence_class: 'supporting',
+        score: 0.48,
+        token_cost: 240,
+        density: 0.08,
+        included: true,
+        reasons: ['secondary audit detail'],
+        penalties: ['low load-bearing value'],
+      },
+    ],
+  }
+}
 describe('context-pack-command', () => {
   it('preserves execution_slice for runtime-generation explain packs', async () => {
     const graph = buildRuntimeGenerationGraph()
@@ -300,7 +533,34 @@ describe('context-pack-command', () => {
       ],
       graph_signals: { god_nodes: [], bridge_nodes: [] },
       claims: [],
-      expandable: [],
+      expandable: [
+        {
+          kind: 'nodes',
+          handle_id: 'expand-idea-runtime',
+          evidence_class: 'supporting' as const,
+          count: 2,
+          preview: [
+            {
+              node_id: 'helper-status',
+              label: 'StatusBadge.render',
+              source_file: 'src/ideas/report-status.ts',
+            },
+          ],
+          follow_up: {
+            kind: 'context_pack' as const,
+            task_kind: 'explain' as const,
+            evidence_class: 'supporting' as const,
+            focus_files: ['src/ideas/report-status.ts', 'src/ideas/next-steps.ts'],
+            focus_ranges: [
+              {
+                source_file: 'src/ideas/report-status.ts',
+                start_line: 18,
+                end_line: 42,
+              },
+            ],
+          },
+        },
+      ],
       coverage: {
         required_evidence: ['primary', 'supporting', 'structural'] as const,
         semantic_required: ['implementation', 'structure'] as const,
@@ -417,6 +677,20 @@ describe('context-pack-command', () => {
         coverage?: string
         agent_directive?: string
       }
+      governance?: {
+        version?: number
+        surface?: string
+        privacy_boundary?: {
+          source_safe?: boolean
+        }
+        directive?: {
+          agent_directive?: string
+        }
+        follow_up?: {
+          expandable_handle_count?: number
+          preview_item_count?: number
+        }
+      }
       workflow_centers?: Array<{ path?: string; label?: string }>
       recommended_first_read?: Array<{ path?: string; label?: string }>
       negative_guidance?: string[]
@@ -427,6 +701,22 @@ describe('context-pack-command', () => {
       coverage: 'complete',
       agent_directive: 'answer_from_pack',
     }))
+    expect(payload.governance).toEqual(expect.objectContaining({
+      version: 1,
+      surface: 'cli_pack',
+      privacy_boundary: {
+        source_safe: true,
+      },
+      directive: expect.objectContaining({
+        agent_directive: 'answer_from_pack',
+      }),
+      follow_up: {
+        expandable_handle_count: 1,
+        preview_item_count: 1,
+      },
+    }))
+    expect(JSON.stringify(payload.governance)).not.toContain('How idea report is being generated')
+    expect(JSON.stringify(payload.governance)).not.toContain('src/ideas/')
     expect(payload.workflow_centers?.slice(0, 4)).toEqual([
       expect.objectContaining({
         path: 'src/ideas/controller.ts',

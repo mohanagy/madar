@@ -44,6 +44,7 @@ import {
 } from '../retrieve.js'
 import { computeContextPackDiagnostics } from '../context-pack-diagnostics.js'
 import { collectPackNodeIds, computeDeltaContextPack } from '../context-pack-delta.js'
+import { buildContextPackGovernanceReceipt } from '../context-pack-governance.js'
 import { applyContextPackResolution, type ContextPackResolution } from '../context-pack-resolution.js'
 import { buildImplementationPackGuidance } from '../implementation-pack.js'
 import {
@@ -291,6 +292,67 @@ function withContextPackCache<T extends Record<string, unknown>>(
   return {
     ...payload,
     cache,
+  }
+}
+
+function withContextPackGovernance<T extends Record<string, unknown>>(
+  payload: T,
+  input: {
+    graphPath: string
+    task: ContextPackTaskKind
+    taskIntent: TaskContextPlan['evidence']['recipe_id']
+    budget: number
+    evidence: Pick<ReturnType<typeof buildMadarResponseEvidence>, 'agent_directive' | 'coverage' | 'missing_phases' | 'pack_confidence'>
+    expandable: readonly ContextPackExpandableRef[]
+    retrievalStrategy?: ContextPackRetrievalStrategy | null
+    resolution?: ContextPackResolution
+    cacheEligible: boolean
+    cacheStatus: 'hit' | 'miss' | 'bypass'
+    deltaSessionId?: string
+  },
+): T & { governance: ReturnType<typeof buildContextPackGovernanceReceipt> } {
+  return {
+    ...payload,
+    governance: buildContextPackGovernanceReceipt({
+      surface: 'mcp_context_pack',
+      graphFreshness: graphFreshnessMetadata(input.graphPath),
+      task: input.task,
+      taskIntent: input.taskIntent,
+      budget: input.budget,
+      evidence: input.evidence,
+      expandable: input.expandable,
+      ...(input.retrievalStrategy ? { retrievalStrategy: input.retrievalStrategy } : {}),
+      ...(input.resolution ? { resolution: input.resolution } : {}),
+      mcpCall: {
+        cacheEligible: input.cacheEligible,
+        cacheStatus: input.cacheStatus,
+        ...(input.deltaSessionId ? { deltaSessionId: input.deltaSessionId } : {}),
+      },
+    }),
+  }
+}
+
+function withUpdatedContextPackGovernanceCacheStatus<T extends Record<string, unknown>>(
+  payload: T,
+  cacheStatus: 'hit' | 'miss',
+): T {
+  const governance = payload.governance
+  if (!governance || typeof governance !== 'object' || Array.isArray(governance)) {
+    return payload
+  }
+  const mcpCall = (governance as Record<string, unknown>).mcp_call
+  if (!mcpCall || typeof mcpCall !== 'object' || Array.isArray(mcpCall)) {
+    return payload
+  }
+  return {
+    ...payload,
+    governance: {
+      ...governance,
+      mcp_call: {
+        ...mcpCall,
+        cache_status: cacheStatus,
+      },
+    },
   }
 }
 
@@ -1154,7 +1216,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
               cachedPayload.expandable,
               helpers,
             )
-            return helpers.ok(id, helpers.textToolResult(JSON.stringify(withContextPackCache(cachedPayload, {
+            return helpers.ok(id, helpers.textToolResult(JSON.stringify(withContextPackCache(withUpdatedContextPackGovernanceCacheStatus(cachedPayload, 'hit'), {
               status: 'hit',
               graph_version: cacheGraphVersion!,
             }))))
@@ -1182,11 +1244,30 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
           changed_paths: prResult.changed_files,
           focus_paths: [...prResult.review_context.supporting_paths, ...prResult.review_context.test_paths],
         })
-        const payload = {
+        const evidence = buildMadarResponseEvidence({
+          coverage: reviewMetadata.coverage,
+          graphPath,
+          coveredWorkflowOwners: collectWorkflowOwners(
+            prResult.changed_files,
+            prResult.review_context.supporting_paths,
+            prResult.review_context.test_paths,
+          ),
+        })
+        const payload = withContextPackGovernance({
           ...contextPackBasePayload(task, prompt, resolvedBudget, graphPath, plan),
           pack: compactPack,
           ...reviewMetadata,
-        }
+          evidence,
+        }, {
+          graphPath,
+          task,
+          taskIntent: initialPlan.evidence.recipe_id,
+          budget: resolvedBudget,
+          evidence,
+          expandable: reviewMetadata.expandable,
+          cacheEligible: false,
+          cacheStatus: 'bypass',
+        })
         return helpers.ok(id, helpers.textToolResult(JSON.stringify(payload)))
       }
 
@@ -1212,12 +1293,32 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         const impactPack = compactImpactResult(impactResult)
         const metadata = impactMetadata(impactResult, resolvedBudget, prompt, initialPlan.evidence.recipe_id, contextPackLevelTyped ?? undefined)
         storeExpandableHandles(prompt, task, initialPlan.evidence.recipe_id, metadata.expandable, helpers)
-        return helpers.ok(id, helpers.textToolResult(JSON.stringify({
+        const evidence = buildMadarResponseEvidence({
+          coverage: metadata.coverage,
+          graphPath,
+          coveredWorkflowOwners: collectWorkflowOwners(
+            impactResult.target_file ? [impactResult.target_file] : [],
+            impactResult.affected_files ?? [],
+          ),
+        })
+        return helpers.ok(id, helpers.textToolResult(JSON.stringify(withContextPackGovernance({
           ...contextPackBasePayload(task, prompt, resolvedBudget, graphPath, initialPlan),
           target: impactTarget,
           pack: impactPack,
           ...metadata,
-        })))
+          evidence,
+        }, {
+          graphPath,
+          task,
+          taskIntent: initialPlan.evidence.recipe_id,
+          budget: resolvedBudget,
+          evidence,
+          expandable: metadata.expandable,
+          ...(contextPackStrategy ? { retrievalStrategy: contextPackStrategy } : {}),
+          resolution,
+          cacheEligible: false,
+          cacheStatus: 'bypass',
+        }))))
       }
 
       const fullPack = contextPackFromRetrieveResult(retrieval)
@@ -1295,7 +1396,15 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
           return rest
         })
         const resolvedDeltaNodes = applyResolutionToNodes(deltaNodesStripped, deltaResult.delta_pack.relationships)
-        return helpers.ok(id, helpers.textToolResult(JSON.stringify({
+        const deltaEvidence = buildMadarResponseEvidence({
+          answerContract: deltaResult.delta_pack.answer_contract,
+          coverage: deltaResult.delta_pack.coverage,
+          executionSlice: deltaResult.delta_pack.execution_slice,
+          graphPath,
+          missingPhases: missingPhasesFromPayload(deltaResult.delta_pack),
+          coveredWorkflowOwners: collectWorkflowOwners(resolvedDeltaNodes.nodes.map((node) => node.source_file)),
+        })
+        return helpers.ok(id, helpers.textToolResult(JSON.stringify(withContextPackGovernance({
           ...contextPackBasePayload(task, prompt, resolvedBudget, graphPath, initialPlan),
           mode: 'delta',
           delta_session_id: deltaSessionId,
@@ -1317,18 +1426,31 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
             : {}),
           ...(implementation ? { implementation } : {}),
           ...metadata,
-          evidence: buildMadarResponseEvidence({
-            answerContract: deltaResult.delta_pack.answer_contract,
-            coverage: deltaResult.delta_pack.coverage,
-            executionSlice: deltaResult.delta_pack.execution_slice,
-            graphPath,
-            missingPhases: missingPhasesFromPayload(deltaResult.delta_pack),
-            coveredWorkflowOwners: collectWorkflowOwners(resolvedDeltaNodes.nodes.map((node) => node.source_file)),
-          }),
-        })))
+          evidence: deltaEvidence,
+        }, {
+          graphPath,
+          task,
+          taskIntent: initialPlan.evidence.recipe_id,
+          budget: resolvedBudget,
+          evidence: deltaEvidence,
+          expandable: metadata.expandable,
+          ...(contextPackStrategy ? { retrievalStrategy: contextPackStrategy } : {}),
+          resolution,
+          cacheEligible: false,
+          cacheStatus: 'bypass',
+          deltaSessionId,
+        }))))
       }
       const resolvedNodes = applyResolutionToNodes(compactPack.matched_nodes, compactPack.relationships)
-      const basePayload = {
+      const evidence = buildMadarResponseEvidence({
+        answerContract: fullPack.answer_contract,
+        coverage: fullPack.coverage,
+        executionSlice: fullPack.execution_slice,
+        graphPath,
+        missingPhases: missingPhasesFromPayload(fullPack),
+        coveredWorkflowOwners: collectWorkflowOwners(resolvedNodes.nodes.map((node) => node.source_file)),
+      })
+      const basePayload = withContextPackGovernance({
         ...contextPackBasePayload(task, prompt, resolvedBudget, graphPath, initialPlan),
         resolution,
         pack: {
@@ -1344,15 +1466,19 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
           : {}),
         ...(implementation ? { implementation } : {}),
         ...metadata,
-        evidence: buildMadarResponseEvidence({
-          answerContract: fullPack.answer_contract,
-          coverage: fullPack.coverage,
-          executionSlice: fullPack.execution_slice,
-          graphPath,
-          missingPhases: missingPhasesFromPayload(fullPack),
-          coveredWorkflowOwners: collectWorkflowOwners(resolvedNodes.nodes.map((node) => node.source_file)),
-        }),
-      }
+        evidence,
+      }, {
+        graphPath,
+        task,
+        taskIntent: initialPlan.evidence.recipe_id,
+        budget: resolvedBudget,
+        evidence,
+        expandable: metadata.expandable,
+        ...(contextPackStrategy ? { retrievalStrategy: contextPackStrategy } : {}),
+        resolution,
+        cacheEligible: cacheKey !== null && cacheGraphVersion !== null,
+        cacheStatus: cacheKey && cacheGraphVersion ? 'miss' : 'bypass',
+      })
       const responsePayload = task === 'explain' && !includeSelectionDiagnostics
         ? buildAnswerReadyPackSchema(basePayload, Math.max(plannerBudget, 3000))
         : basePayload

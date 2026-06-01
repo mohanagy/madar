@@ -106,6 +106,41 @@ describe('answer-ready explain pack', () => {
       why_explanation: [],
       pack: {},
       evidence: {} as any,
+      governance: {
+        version: 1,
+        surface: 'cli_pack',
+        privacy_boundary: {
+          source_safe: true,
+          includes_prompt: false,
+          includes_source_content: false,
+          includes_answer_content: false,
+          includes_file_paths: false,
+        },
+        graph_freshness: {
+          graph_version: 'fixture-graph',
+          graph_modified_ms: 0,
+          graph_modified_at: new Date(0).toUTCString(),
+        },
+        request: {
+          task: 'explain',
+          task_intent: 'explain',
+          budget: 5000,
+        },
+        directive: {
+          pack_confidence: 'high',
+          coverage: 'complete',
+          agent_directive: 'answer_from_pack',
+          missing_phases: [],
+        },
+        follow_up: {
+          expandable_handle_count: 0,
+          expandable_evidence_classes: [],
+          expansion_task_kinds: [],
+          preview_item_count: 0,
+          focus_file_count: 0,
+          focus_range_count: 0,
+        },
+      },
       claims: [],
       expandable: [],
       coverage: {
@@ -218,6 +253,5 @@ describe('answer-ready explain pack', () => {
     expect(result?.answer_outline).toEqual(['Flow execution traced'])
   })
 })
-
 
 

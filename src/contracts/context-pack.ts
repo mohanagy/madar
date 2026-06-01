@@ -436,6 +436,66 @@ export interface CompiledContextPack<
   retrieval_gate?: RetrievalGateDecision
 }
 
+export type ContextPackGovernanceSurface = 'cli_pack' | 'mcp_context_pack'
+export type ContextPackGovernanceResolution = 'detail' | 'summary' | 'mixed' | 'signature' | 'sketch'
+export type ContextPackGovernanceCacheStatus = 'hit' | 'miss' | 'bypass'
+
+export interface ContextPackGovernancePrivacyBoundary {
+  source_safe: true
+  includes_prompt: false
+  includes_source_content: false
+  includes_answer_content: false
+  includes_file_paths: false
+}
+
+export interface ContextPackGovernanceGraphFreshness {
+  graph_version: string
+  graph_modified_ms: number
+  graph_modified_at: string
+}
+
+export interface ContextPackGovernanceRequest {
+  task: ContextPackTaskKind
+  task_intent: TaskIntentKind
+  budget: number
+  retrieval_strategy?: ContextPackRetrievalStrategy
+  resolution?: ContextPackGovernanceResolution
+}
+
+export interface ContextPackGovernanceDirectiveSummary {
+  pack_confidence: 'high' | 'medium' | 'low'
+  coverage: 'complete' | 'partial' | 'unknown'
+  agent_directive: 'answer_from_pack' | 'verify_one_targeted_file' | 'explore_with_caution'
+  missing_phases: ContextPackExecutionPhase[]
+}
+
+export interface ContextPackGovernanceFollowUpSummary {
+  expandable_handle_count: number
+  expandable_evidence_classes: ContextPackEvidenceClass[]
+  expansion_task_kinds: ContextPackTaskKind[]
+  preview_item_count: number
+  focus_file_count: number
+  focus_range_count: number
+}
+
+export interface ContextPackGovernanceMcpCall {
+  tool_name: 'context_pack'
+  cache_eligible: boolean
+  cache_status: ContextPackGovernanceCacheStatus
+  delta_session_hash?: string
+}
+
+export interface ContextPackGovernanceReceipt {
+  version: 1
+  surface: ContextPackGovernanceSurface
+  privacy_boundary: ContextPackGovernancePrivacyBoundary
+  graph_freshness: ContextPackGovernanceGraphFreshness
+  request: ContextPackGovernanceRequest
+  directive: ContextPackGovernanceDirectiveSummary
+  follow_up: ContextPackGovernanceFollowUpSummary
+  mcp_call?: ContextPackGovernanceMcpCall
+}
+
 export interface ContextPackSchemaV1<TPack = unknown> {
   schema_version: 1
   task: ContextPackTaskKind
@@ -457,6 +517,7 @@ export interface ContextPackSchemaV1<TPack = unknown> {
   why_explanation: string[]
   pack: TPack
   evidence: MadarResponseEvidence
+  governance: ContextPackGovernanceReceipt
   claims: ContextPackClaim[]
   expandable: ContextPackExpandableRef[]
   coverage: ContextPackCoverage

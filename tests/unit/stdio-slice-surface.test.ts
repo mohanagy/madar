@@ -367,6 +367,98 @@ describe('stdio slice-v1 surface', () => {
     expect(verbosePayload.pack?.slice?.selected_path_count).toBeUndefined()
   })
 
+  it('emits source-safe governance receipts for context_pack cache and delta flows', async () => {
+    const graphPath = createGraphPath()
+    const sessionState = {
+      logLevel: 'info' as const,
+      subscribedResourceUris: new Set<string>(),
+      resourceVersions: new Map<string, string>(),
+      resourceListSignature: null,
+      contextPromptSessions: new Map(),
+      contextPackHandles: new Map(),
+      contextPackCache: new Map(),
+      contextPackNodeIds: new Map(),
+    }
+    const request = {
+      prompt: 'Trace how `AuthController.login` reaches persistence in the backend runtime pipeline',
+      budget: 3000,
+      task: 'explain',
+      retrieval_level: 4,
+      retrieval_strategy: 'slice-v1',
+    }
+
+    const firstResponse = await Promise.resolve(handleStdioRequest(graphPath, {
+      id: 41,
+      method: 'tools/call',
+      params: {
+        name: 'context_pack',
+        arguments: request,
+      },
+    }, sessionState))
+    const secondResponse = await Promise.resolve(handleStdioRequest(graphPath, {
+      id: 42,
+      method: 'tools/call',
+      params: {
+        name: 'context_pack',
+        arguments: request,
+      },
+    }, sessionState))
+    const deltaSessionId = 'delta-session-governance'
+    const deltaResponse = await Promise.resolve(handleStdioRequest(graphPath, {
+      id: 43,
+      method: 'tools/call',
+      params: {
+        name: 'context_pack',
+        arguments: {
+          ...request,
+          delta_session_id: deltaSessionId,
+        },
+      },
+    }, sessionState))
+
+    const firstPayload = JSON.parse((((firstResponse as { result?: { content?: Array<{ text: string }> } }).result?.content) ?? [])[0]?.text ?? '') as {
+      cache?: { status?: string }
+      governance?: {
+        privacy_boundary?: { source_safe?: boolean }
+        mcp_call?: { cache_eligible?: boolean; cache_status?: string }
+        request?: { retrieval_strategy?: string }
+        follow_up?: { expandable_handle_count?: number; focus_file_count?: number }
+      }
+    }
+    const secondPayload = JSON.parse((((secondResponse as { result?: { content?: Array<{ text: string }> } }).result?.content) ?? [])[0]?.text ?? '') as {
+      cache?: { status?: string }
+      governance?: { mcp_call?: { cache_status?: string } }
+    }
+    const deltaPayload = JSON.parse((((deltaResponse as { result?: { content?: Array<{ text: string }> } }).result?.content) ?? [])[0]?.text ?? '') as {
+      governance?: { mcp_call?: { cache_status?: string; delta_session_hash?: string } }
+    }
+
+    expect(firstPayload.cache?.status).toBe('miss')
+    expect(firstPayload.governance).toEqual(expect.objectContaining({
+      privacy_boundary: expect.objectContaining({
+        source_safe: true,
+      }),
+      mcp_call: expect.objectContaining({
+        cache_eligible: true,
+        cache_status: 'miss',
+      }),
+      request: expect.objectContaining({
+        retrieval_strategy: 'slice-v1',
+      }),
+      follow_up: expect.objectContaining({
+        expandable_handle_count: expect.any(Number),
+        focus_file_count: expect.any(Number),
+      }),
+    }))
+    expect(secondPayload.cache?.status).toBe('hit')
+    expect(secondPayload.governance?.mcp_call?.cache_status).toBe('hit')
+    expect(deltaPayload.governance?.mcp_call?.cache_status).toBe('bypass')
+    expect(deltaPayload.governance?.mcp_call?.delta_session_hash).toMatch(/^[a-f0-9]{12}$/)
+    expect(JSON.stringify(firstPayload.governance)).not.toContain('AuthController.login')
+    expect(JSON.stringify(firstPayload.governance)).not.toContain(graphPath)
+    expect(JSON.stringify(deltaPayload.governance)).not.toContain(deltaSessionId)
+  })
+
   it('rejects retrieval_strategy for review context packs instead of ignoring it', async () => {
     const graphPath = createGraphPath()
 

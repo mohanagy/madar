@@ -197,6 +197,41 @@ function createPackSchema(root: string): ContextPackSchemaV1<TestPack> {
       ],
     },
     evidence: sampleEvidence(root),
+    governance: {
+      version: 1,
+      surface: 'cli_pack',
+      privacy_boundary: {
+        source_safe: true,
+        includes_prompt: false,
+        includes_source_content: false,
+        includes_answer_content: false,
+        includes_file_paths: false,
+      },
+      graph_freshness: {
+        graph_version: 'fixture-graph',
+        graph_modified_ms: 0,
+        graph_modified_at: new Date(0).toUTCString(),
+      },
+      request: {
+        task: 'implement',
+        task_intent: 'implement',
+        budget: 1800,
+      },
+      directive: {
+        pack_confidence: 'high',
+        coverage: 'complete',
+        agent_directive: 'answer_from_pack',
+        missing_phases: [],
+      },
+      follow_up: {
+        expandable_handle_count: 1,
+        expandable_evidence_classes: ['primary'],
+        expansion_task_kinds: ['implement'],
+        preview_item_count: 1,
+        focus_file_count: 1,
+        focus_range_count: 1,
+      },
+    },
     claims: [
       {
         evidence_class: 'primary',

@@ -11,6 +11,7 @@ import type {
   ContextPackPublicContract,
   ContextPackRoutingDebug,
   ContextPackSchemaV1,
+  ContextPackSelectionDiagnostics,
   ContextPackWorkflowCenter,
   ContextPackRecommendedFirstRead,
 } from '../contracts/context-pack.js'
@@ -28,11 +29,14 @@ import { resolveTaskSelection } from '../runtime/task-intent.js'
 import { compactRetrieveResult, retrieveContext, type RetrieveResult } from '../runtime/retrieve.js'
 import { buildImplementationPackGuidance } from '../runtime/implementation-pack.js'
 import {
+  agentDirectiveForEvidence,
   assessMadarResponseEvidence,
   collectWorkflowOwners,
   missingPhasesFromPayload,
   type MadarResponseEvidence,
 } from '../runtime/mcp-response-evidence.js'
+import { buildContextPackGovernanceReceipt } from '../runtime/context-pack-governance.js'
+import { graphFreshnessMetadata } from '../runtime/freshness.js'
 import { buildRoutingDebug } from '../runtime/routing-debug.js'
 import { communitiesFromGraph, estimateQueryTokens, loadGraph } from '../runtime/serve.js'
 
@@ -111,6 +115,21 @@ const ANSWER_READY_COMMUNITY_CAP = 6
 const ANSWER_READY_EXPLANATION_CAP = 3
 const ANSWER_READY_FIRST_READ_CAP = 3
 const ANSWER_READY_WORKFLOW_CENTER_CAP = 4
+const WORKFLOW_SPINE_BUDGET_REASON = 'budget too tight for workflow spine'
+
+interface AnswerReadyCullCandidate {
+  key: string
+  nodeId: string | null
+  label: string | null
+  density: number
+  rankIndex: number
+  preserved: boolean
+}
+
+interface AnswerReadyCullSummary {
+  droppedNodeIds: string[]
+  droppedWorkflowSpine: boolean
+}
 
 function packWithCompatibilityFields<TPack extends PackPayload>(
   pack: TPack,
@@ -148,6 +167,42 @@ function asUnknownArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : []
 }
 
+function runtimePrimaryPathRecordKey(record: JsonRecord | null): string | null {
+  if (!record) {
+    return null
+  }
+  if (typeof record.node_id === 'string' && record.node_id.length > 0) {
+    return `id:${record.node_id}`
+  }
+  if (typeof record.label !== 'string' || record.label.length === 0) {
+    return null
+  }
+  const sourceFile = typeof record.source_file === 'string' ? record.source_file : ''
+  return `label:${record.label}::${sourceFile}`
+}
+
+function runtimePrimaryPathPreviewEntry(record: JsonRecord): JsonRecord | null {
+  if (typeof record.label !== 'string' || record.label.length === 0) {
+    return null
+  }
+  if (typeof record.source_file !== 'string' || record.source_file.length === 0) {
+    return null
+  }
+  return {
+    ...(typeof record.node_id === 'string' && record.node_id.length > 0 ? { node_id: record.node_id } : {}),
+    label: record.label,
+    source_file: record.source_file,
+    ...(typeof record.line_number === 'number'
+      ? {
+          line_range: {
+            start_line: record.line_number,
+            end_line: record.line_number,
+          },
+        }
+      : {}),
+  }
+}
+
 function trimArrayField(record: JsonRecord, field: string, cap: number, trimmedFields: string[]): void {
   const values = asUnknownArray(record[field])
   if (values.length <= cap) {
@@ -164,6 +219,306 @@ function deleteEmptyArrayField(record: JsonRecord, field: string, trimmedFields:
   }
   delete record[field]
   trimmedFields.push(field)
+}
+
+function answerReadyNodeKey(record: JsonRecord | null): string | null {
+  if (!record) {
+    return null
+  }
+  if (typeof record.node_id === 'string' && record.node_id.length > 0) {
+    return `id:${record.node_id}`
+  }
+  if (typeof record.label !== 'string' || record.label.length === 0) {
+    return null
+  }
+  if (typeof record.source_file === 'string' && record.source_file.length > 0) {
+    return `label:${record.label}::${record.source_file}`
+  }
+  return `label:${record.label}`
+}
+
+function collectWorkflowAnchorKeys(payload: JsonRecord): Set<string> {
+  const keys = new Set<string>()
+  for (const field of ['workflow_centers', 'recommended_first_read']) {
+    for (const entry of asUnknownArray(payload[field])) {
+      const record = asJsonRecord(entry)
+      if (!record || typeof record.label !== 'string' || record.label.length === 0) {
+        continue
+      }
+      if (typeof record.path === 'string' && record.path.length > 0) {
+        keys.add(`label:${record.label}::${record.path}`)
+      }
+      keys.add(`label:${record.label}`)
+    }
+  }
+  const pack = asJsonRecord(payload.pack)
+  const executionSlice = asJsonRecord(pack?.execution_slice)
+  const executionAnchors = [
+    ...asUnknownArray(executionSlice?.steps),
+    ...asUnknownArray(asJsonRecord(executionSlice?.primary_path)?.steps),
+  ]
+  for (const entry of executionAnchors) {
+    const record = asJsonRecord(entry)
+    if (!record || typeof record.label !== 'string' || record.label.length === 0) {
+      continue
+    }
+    if (typeof record.source_file === 'string' && record.source_file.length > 0) {
+      keys.add(`label:${record.label}::${record.source_file}`)
+    }
+    keys.add(`label:${record.label}`)
+  }
+  if (keys.size === 0) {
+    for (const entry of asUnknownArray(payload.claims)) {
+      const record = asJsonRecord(entry)
+      if (!record) {
+        continue
+      }
+      for (const label of asUnknownArray(record.node_labels)) {
+        if (typeof label === 'string' && label.length > 0) {
+          keys.add(`label:${label}`)
+        }
+      }
+    }
+  }
+  return keys
+}
+
+function selectionRankingForNode(
+  record: JsonRecord,
+  diagnostics: ContextPackSelectionDiagnostics | undefined,
+): { density: number; rankIndex: number } {
+  if (!diagnostics) {
+    return {
+      density: Number.POSITIVE_INFINITY,
+      rankIndex: Number.POSITIVE_INFINITY,
+    }
+  }
+  const nodeId = typeof record.node_id === 'string' ? record.node_id : null
+  const label = typeof record.label === 'string' ? record.label : null
+  const byId = nodeId
+    ? diagnostics.ranking.findIndex((entry) => entry.id === nodeId)
+    : -1
+  if (byId >= 0) {
+    return {
+      density: diagnostics.ranking[byId]?.density ?? Number.POSITIVE_INFINITY,
+      rankIndex: byId,
+    }
+  }
+  const byLabel = label
+    ? diagnostics.ranking.findIndex((entry) => entry.label === label)
+    : -1
+  if (byLabel >= 0) {
+    return {
+      density: diagnostics.ranking[byLabel]?.density ?? Number.POSITIVE_INFINITY,
+      rankIndex: byLabel,
+    }
+  }
+  return {
+    density: Number.POSITIVE_INFINITY,
+    rankIndex: Number.POSITIVE_INFINITY,
+  }
+}
+
+function buildAnswerReadyCullCandidates(
+  payload: JsonRecord,
+  pack: JsonRecord,
+  diagnostics: ContextPackSelectionDiagnostics | undefined,
+): AnswerReadyCullCandidate[] {
+  const anchorKeys = collectWorkflowAnchorKeys(payload)
+  const strategy = diagnostics?.selection_strategy ?? 'value-per-token'
+  const candidates = asUnknownArray(pack.matched_nodes)
+    .map((entry) => asJsonRecord(entry))
+    .filter((record): record is JsonRecord => record !== null)
+    .flatMap((record): AnswerReadyCullCandidate[] => {
+      const key = answerReadyNodeKey(record)
+      if (!key) {
+        return []
+      }
+      const { density, rankIndex } = selectionRankingForNode(record, diagnostics)
+      return [{
+        key,
+        nodeId: typeof record.node_id === 'string' ? record.node_id : null,
+        label: typeof record.label === 'string' ? record.label : null,
+        density,
+        rankIndex,
+        preserved: anchorKeys.has(key) || (typeof record.label === 'string' && anchorKeys.has(`label:${record.label}`)),
+      }]
+    })
+
+  return candidates.sort((left, right) => {
+    if (left.preserved !== right.preserved) {
+      return left.preserved ? 1 : -1
+    }
+    if (strategy === 'evidence-order') {
+      if (left.rankIndex !== right.rankIndex) {
+        return right.rankIndex - left.rankIndex
+      }
+      return left.density - right.density
+    }
+    if (left.density !== right.density) {
+      return left.density - right.density
+    }
+    return right.rankIndex - left.rankIndex
+  })
+}
+
+function stripExpandableFocusRanges(payload: JsonRecord, trimmedFields: string[]): boolean {
+  let stripped = false
+  for (const entry of asUnknownArray(payload.expandable)) {
+    const record = asJsonRecord(entry)
+    const followUp = asJsonRecord(record?.follow_up)
+    const focusRanges = asUnknownArray(followUp?.focus_ranges)
+    if (!followUp || focusRanges.length === 0) {
+      continue
+    }
+    delete followUp.focus_ranges
+    stripped = true
+  }
+  if (stripped) {
+    trimmedFields.push('expandable.follow_up.focus_ranges')
+  }
+  return stripped
+}
+
+function removeMatchedNode(pack: JsonRecord, key: string, trimmedFields: string[]): JsonRecord | null {
+  const nodes = asUnknownArray(pack.matched_nodes)
+  const nextNodes = nodes.filter((entry) => answerReadyNodeKey(asJsonRecord(entry)) !== key)
+  if (nextNodes.length === nodes.length) {
+    return null
+  }
+  const removed = nodes.find((entry) => answerReadyNodeKey(asJsonRecord(entry)) === key)
+  pack.matched_nodes = nextNodes
+  trimmedFields.push('pack.matched_nodes culled')
+  return asJsonRecord(removed)
+}
+
+function filterRelationshipsToRemainingNodes(pack: JsonRecord, trimmedFields: string[]): void {
+  const nodes = asUnknownArray(pack.matched_nodes)
+    .map((entry) => asJsonRecord(entry))
+    .filter((record): record is JsonRecord => record !== null)
+  const nodeIds = new Set(nodes.flatMap((record) => typeof record.node_id === 'string' ? [record.node_id] : []))
+  const labels = new Set(nodes.flatMap((record) => typeof record.label === 'string' ? [record.label] : []))
+  const relationships = asUnknownArray(pack.relationships)
+  const nextRelationships = relationships.filter((entry) => {
+    const record = asJsonRecord(entry)
+    if (!record) {
+      return false
+    }
+    const fromId = typeof record.from_id === 'string' ? record.from_id : null
+    const toId = typeof record.to_id === 'string' ? record.to_id : null
+    const fromLabel = typeof record.from === 'string' ? record.from : null
+    const toLabel = typeof record.to === 'string' ? record.to : null
+    const fromKept = fromId ? nodeIds.has(fromId) : (fromLabel ? labels.has(fromLabel) : true)
+    const toKept = toId ? nodeIds.has(toId) : (toLabel ? labels.has(toLabel) : true)
+    return fromKept && toKept
+  })
+  if (nextRelationships.length !== relationships.length) {
+    pack.relationships = nextRelationships
+    trimmedFields.push('pack.relationships culled')
+  }
+}
+
+function downgradeWorkflowSpineConfidence(payload: JsonRecord, trimmedFields: string[]): void {
+  const evidence = asJsonRecord(payload.evidence)
+  if (!evidence) {
+    return
+  }
+  const confidenceReasons = asUnknownArray(evidence.confidence_reasons)
+    .flatMap((value) => typeof value === 'string' ? [value] : [])
+  if (!confidenceReasons.includes(WORKFLOW_SPINE_BUDGET_REASON)) {
+    confidenceReasons.push(WORKFLOW_SPINE_BUDGET_REASON)
+  }
+  const coverage = typeof evidence.coverage === 'string' ? evidence.coverage : 'unknown'
+  evidence.pack_confidence = 'low'
+  evidence.confidence_reasons = confidenceReasons
+  evidence.agent_directive = agentDirectiveForEvidence(
+    'low',
+    coverage === 'complete' || coverage === 'partial' || coverage === 'unknown'
+      ? coverage
+      : 'unknown',
+  )
+  trimmedFields.push('evidence.pack_confidence downgraded')
+}
+
+function upsertPackCulledWarning(payload: JsonRecord, droppedNodeIds: readonly string[]): void {
+  if (droppedNodeIds.length === 0) {
+    return
+  }
+  const routing = asJsonRecord(payload.routing)
+  if (!routing) {
+    return
+  }
+  const warnings = asUnknownArray(routing.warnings)
+    .map((entry) => asJsonRecord(entry))
+    .filter((record): record is JsonRecord => record !== null)
+    .filter((record) => record.kind !== 'pack_culled_to_budget')
+  warnings.push({
+    kind: 'pack_culled_to_budget',
+    severity: 'warn',
+    message: 'Answer-ready payload was culled to satisfy the serialized budget.',
+    detail: {
+      dropped_node_ids: [...droppedNodeIds],
+    },
+  })
+  routing.warnings = warnings
+}
+
+function enforceAnswerReadyBudget(
+  payload: JsonRecord,
+  maxTokens: number,
+  trimmedFields: string[],
+  diagnostics?: ContextPackSelectionDiagnostics,
+): void {
+  const summary: AnswerReadyCullSummary = {
+    droppedNodeIds: [],
+    droppedWorkflowSpine: false,
+  }
+  const pack = asJsonRecord(payload.pack)
+
+  if (stripExpandableFocusRanges(payload, trimmedFields)) {
+    attachSerializedBudget(payload, maxTokens, trimmedFields)
+    if (estimatedJsonTokens(payload) <= maxTokens) {
+      return
+    }
+  }
+
+  if (!pack) {
+    attachSerializedBudget(payload, maxTokens, trimmedFields)
+    return
+  }
+
+  const candidates = buildAnswerReadyCullCandidates(payload, pack, diagnostics)
+  for (const candidate of candidates) {
+    upsertPackCulledWarning(payload, summary.droppedNodeIds)
+    if (summary.droppedWorkflowSpine) {
+      downgradeWorkflowSpineConfidence(payload, trimmedFields)
+    }
+    attachSerializedBudget(payload, maxTokens, trimmedFields)
+    if (estimatedJsonTokens(payload) <= maxTokens) {
+      return
+    }
+
+    const removed = removeMatchedNode(pack, candidate.key, trimmedFields)
+    if (!removed) {
+      continue
+    }
+    filterRelationshipsToRemainingNodes(pack, trimmedFields)
+    const removedId = typeof removed.node_id === 'string'
+      ? removed.node_id
+      : candidate.nodeId
+    if (removedId) {
+      summary.droppedNodeIds.push(removedId)
+    }
+    if (candidate.preserved) {
+      summary.droppedWorkflowSpine = true
+    }
+  }
+
+  upsertPackCulledWarning(payload, summary.droppedNodeIds)
+  if (summary.droppedWorkflowSpine) {
+    downgradeWorkflowSpineConfidence(payload, trimmedFields)
+  }
+  attachSerializedBudget(payload, maxTokens, trimmedFields)
 }
 
 function compactAnswerReadyPack(pack: JsonRecord, trimmedFields: string[]): void {
@@ -209,6 +564,264 @@ function compactAnswerReadyPack(pack: JsonRecord, trimmedFields: string[]): void
   trimArrayField(pack, 'community_context', ANSWER_READY_COMMUNITY_CAP, trimmedFields)
 }
 
+function compactAnswerReadyGovernance(payload: JsonRecord, trimmedFields: string[]): void {
+  const governance = asJsonRecord(payload.governance)
+  if (!governance) {
+    return
+  }
+  const surface = typeof governance.surface === 'string' ? governance.surface : null
+
+  const graphFreshness = asJsonRecord(governance.graph_freshness)
+  if (graphFreshness) {
+    if (typeof graphFreshness.graph_modified_at === 'string') {
+      delete graphFreshness.graph_modified_at
+      trimmedFields.push('governance.graph_freshness.graph_modified_at')
+    }
+    if (typeof graphFreshness.graph_modified_ms === 'number') {
+      delete graphFreshness.graph_modified_ms
+      trimmedFields.push('governance.graph_freshness.graph_modified_ms')
+    }
+  }
+
+  const privacyBoundary = asJsonRecord(governance.privacy_boundary)
+  if (privacyBoundary) {
+    for (const field of ['includes_prompt', 'includes_source_content', 'includes_answer_content', 'includes_file_paths']) {
+      if (Object.hasOwn(privacyBoundary, field)) {
+        delete privacyBoundary[field]
+        trimmedFields.push(`governance.privacy_boundary.${field}`)
+      }
+    }
+  }
+
+  const request = asJsonRecord(governance.request)
+  if (request) {
+    if (surface === 'cli_pack') {
+      delete governance.request
+      trimmedFields.push('governance.request')
+    } else if (typeof request.budget === 'number') {
+      delete request.budget
+      trimmedFields.push('governance.request.budget')
+      if (request.resolution === 'detail') {
+        delete request.resolution
+        trimmedFields.push('governance.request.resolution')
+      }
+    }
+  }
+
+  const directive = asJsonRecord(governance.directive)
+  if (directive && asUnknownArray(directive.missing_phases).length === 0) {
+    delete directive.missing_phases
+    trimmedFields.push('governance.directive.missing_phases')
+  }
+
+  const followUp = asJsonRecord(governance.follow_up)
+  if (followUp) {
+    for (const field of ['expandable_evidence_classes', 'expansion_task_kinds']) {
+      if (Array.isArray(followUp[field])) {
+        delete followUp[field]
+        trimmedFields.push(`governance.follow_up.${field}`)
+      }
+    }
+    if (surface === 'cli_pack') {
+      for (const field of ['focus_file_count', 'focus_range_count']) {
+        if (typeof followUp[field] === 'number') {
+          delete followUp[field]
+          trimmedFields.push(`governance.follow_up.${field}`)
+        }
+      }
+    }
+  }
+}
+
+function trimGovernanceBeforeNodeCulling(payload: JsonRecord, maxTokens: number, trimmedFields: string[]): boolean {
+  const governance = asJsonRecord(payload.governance)
+  if (!governance) {
+    return false
+  }
+  const surface = typeof governance.surface === 'string' ? governance.surface : null
+  if (surface !== 'cli_pack') {
+    return false
+  }
+
+  const attempts: Array<() => void> = []
+  const followUp = asJsonRecord(governance.follow_up)
+  if (followUp) {
+    attempts.push(() => {
+      delete governance.follow_up
+      trimmedFields.push('governance.follow_up')
+    })
+  }
+  const directive = asJsonRecord(governance.directive)
+  if (directive && (Object.hasOwn(directive, 'pack_confidence') || Object.hasOwn(directive, 'coverage'))) {
+    attempts.push(() => {
+      delete directive.pack_confidence
+      delete directive.coverage
+      trimmedFields.push('governance.directive.pack_confidence', 'governance.directive.coverage')
+    })
+  }
+  attempts.push(() => {
+    delete payload.governance
+    trimmedFields.push('governance')
+  })
+
+  let trimmed = false
+  for (const attempt of attempts) {
+    attempt()
+    trimmed = true
+    attachSerializedBudget(payload, maxTokens, trimmedFields)
+    if (estimatedJsonTokens(payload) <= maxTokens) {
+      return true
+    }
+  }
+  return trimmed
+}
+
+function preserveTrimmedRuntimePrimaryPathPreview(pack: JsonRecord, trimmedFields: string[]): void {
+  const executionSlice = asJsonRecord(pack.execution_slice)
+  const primaryPath = executionSlice ? asJsonRecord(executionSlice.primary_path) : null
+  const primarySteps = primaryPath ? asUnknownArray(primaryPath.steps) : []
+  const matchedNodes = asUnknownArray(pack.matched_nodes)
+  if (primarySteps.length === 0 || matchedNodes.length <= ANSWER_READY_MATCHED_NODE_CAP) {
+    return
+  }
+
+  const primaryStepRecords = primarySteps
+    .map((step) => asJsonRecord(step))
+    .filter((record): record is JsonRecord => record !== null)
+  if (primaryStepRecords.length === 0) {
+    return
+  }
+
+  const keptKeys = new Set(
+    matchedNodes
+      .slice(0, ANSWER_READY_MATCHED_NODE_CAP)
+      .flatMap((node) => {
+        const key = runtimePrimaryPathRecordKey(asJsonRecord(node))
+        return key ? [key] : []
+      }),
+  )
+  const matchedByKey = new Map<string, JsonRecord>()
+  for (const node of matchedNodes) {
+    const record = asJsonRecord(node)
+    const key = runtimePrimaryPathRecordKey(record)
+    if (!record || !key || matchedByKey.has(key)) {
+      continue
+    }
+    matchedByKey.set(key, record)
+  }
+
+  const preview: JsonRecord[] = primaryStepRecords.flatMap((stepRecord): JsonRecord[] => {
+    const key = runtimePrimaryPathRecordKey(stepRecord)
+    if (!key || keptKeys.has(key)) {
+      return []
+    }
+    const entry = runtimePrimaryPathPreviewEntry(matchedByKey.get(key) ?? stepRecord)
+    return entry ? [entry] : []
+  })
+
+  if (preview.length === 0) {
+    return
+  }
+
+  const expandable = asUnknownArray(pack.expandable)
+  expandable.unshift({
+    kind: 'nodes',
+    handle_id: 'runtime-primary-path',
+    evidence_class: 'supporting',
+    count: preview.length,
+    preview: preview.slice(0, 3),
+    follow_up: {
+      kind: 'context_pack',
+      task_kind: 'explain',
+      evidence_class: 'supporting',
+      focus_files: [...new Set(preview.map((entry) => entry.source_file))],
+      focus_ranges: [],
+    },
+  })
+  pack.expandable = expandable
+  trimmedFields.push('pack.matched_nodes.primary_path_promoted_to_expandable')
+}
+
+function preserveFinalRuntimePrimaryPathPreview(
+  payload: JsonRecord,
+  pack: JsonRecord,
+  matchedNodeCap: number,
+  trimmedFields: string[],
+): void {
+  const executionSlice = asJsonRecord(pack.execution_slice)
+  const primaryPath = executionSlice ? asJsonRecord(executionSlice.primary_path) : null
+  const primarySteps = primaryPath ? asUnknownArray(primaryPath.steps) : []
+  const matchedNodes = asUnknownArray(pack.matched_nodes)
+  if (primarySteps.length === 0 || matchedNodes.length <= matchedNodeCap) {
+    return
+  }
+
+  const primaryStepRecords = primarySteps
+    .map((step) => asJsonRecord(step))
+    .filter((record): record is JsonRecord => record !== null)
+  if (primaryStepRecords.length === 0) {
+    return
+  }
+
+  const keptKeys = new Set(
+    matchedNodes
+      .slice(0, matchedNodeCap)
+      .flatMap((node) => {
+        const key = runtimePrimaryPathRecordKey(asJsonRecord(node))
+        return key ? [key] : []
+      }),
+  )
+  const existingPreviewKeys = new Set(
+    asUnknownArray(payload.expandable).flatMap((entry) => {
+      const record = asJsonRecord(entry)
+      return asUnknownArray(record?.preview).flatMap((preview) => {
+        const key = runtimePrimaryPathRecordKey(asJsonRecord(preview))
+        return key ? [key] : []
+      })
+    }),
+  )
+  const matchedByKey = new Map<string, JsonRecord>()
+  for (const node of matchedNodes) {
+    const record = asJsonRecord(node)
+    const key = runtimePrimaryPathRecordKey(record)
+    if (!record || !key || matchedByKey.has(key)) {
+      continue
+    }
+    matchedByKey.set(key, record)
+  }
+
+  const preview: JsonRecord[] = primaryStepRecords.flatMap((stepRecord): JsonRecord[] => {
+    const key = runtimePrimaryPathRecordKey(stepRecord)
+    if (!key || keptKeys.has(key) || existingPreviewKeys.has(key)) {
+      return []
+    }
+    const entry = runtimePrimaryPathPreviewEntry(matchedByKey.get(key) ?? stepRecord)
+    return entry ? [entry] : []
+  })
+
+  if (preview.length === 0) {
+    return
+  }
+
+  const expandable = asUnknownArray(payload.expandable)
+  expandable.unshift({
+    kind: 'nodes',
+    handle_id: `runtime-primary-path-${matchedNodeCap}`,
+    evidence_class: 'supporting',
+    count: preview.length,
+    preview: preview.slice(0, 3),
+    follow_up: {
+      kind: 'context_pack',
+      task_kind: 'explain',
+      evidence_class: 'supporting',
+      focus_files: [...new Set(preview.map((entry) => entry.source_file))],
+      focus_ranges: [],
+    },
+  })
+  payload.expandable = expandable
+  trimmedFields.push(`pack.matched_nodes.primary_path_promoted_to_expandable_${matchedNodeCap}`)
+}
+
 function estimatedJsonTokens(payload: JsonRecord): number {
   return estimateQueryTokens(JSON.stringify(payload))
 }
@@ -247,6 +860,7 @@ function attachSerializedBudget(
 export function buildAnswerReadyPackSchema(
   schema: object,
   maxTokens: number,
+  _selectionDiagnostics?: ContextPackSelectionDiagnostics,
 ): JsonRecord {
   const payload = cloneJsonRecord(schema)
   const trimmedFields: string[] = []
@@ -274,6 +888,7 @@ export function buildAnswerReadyPackSchema(
     }
     compactAnswerReadyPack(pack, trimmedFields)
   }
+  compactAnswerReadyGovernance(payload, trimmedFields)
 
   trimArrayField(payload, 'workflow_centers', ANSWER_READY_WORKFLOW_CENTER_CAP, trimmedFields)
   trimArrayField(payload, 'recommended_first_read', ANSWER_READY_FIRST_READ_CAP, trimmedFields)
@@ -340,6 +955,12 @@ export function buildAnswerReadyPackSchema(
   delete payload.retrieval_gate
   delete payload.why_explanation
   trimmedFields.push('retrieval_gate', 'why_explanation')
+  if (trimGovernanceBeforeNodeCulling(payload, maxTokens, trimmedFields)) {
+    attachSerializedBudget(payload, maxTokens, trimmedFields)
+    if (estimatedJsonTokens(payload) <= maxTokens) {
+      return payload
+    }
+  }
   attachSerializedBudget(payload, maxTokens, trimmedFields)
   return payload
 }
@@ -991,11 +1612,28 @@ function buildPackSchemaV1<TPack extends PackPayload>(
     recommended_first_read: firstRead,
     confidence_score: score,
   }
+  const retrievalStrategy = retrieval?.retrieval_strategy ?? ('retrieval_strategy' in response.pack ? response.pack.retrieval_strategy : undefined)
+  const governanceBase = {
+    surface: 'cli_pack' as const,
+    graphFreshness: graphFreshnessMetadata(response.graph_path),
+    task: response.task,
+    taskIntent: response.task_intent,
+    budget: response.budget,
+    evidence,
+    expandable: response.expandable,
+  }
+  const governance = retrievalStrategy
+    ? buildContextPackGovernanceReceipt({
+        ...governanceBase,
+        retrievalStrategy,
+      })
+    : buildContextPackGovernanceReceipt(governanceBase)
 
   return {
     schema_version: 1,
     ...serializableResponse,
     evidence,
+    governance,
     pack: packForSchema(response.task, response.pack, compatibilityFields),
     workflow_centers: centers,
     recommended_first_read: firstRead,
