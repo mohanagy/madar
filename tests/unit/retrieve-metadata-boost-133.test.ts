@@ -263,4 +263,48 @@ describe('Framework metadata-aware retrieval boost (#133)', () => {
     expect(serverAction?.framework_boost ?? 0).toBeGreaterThan(serverDistractor?.framework_boost ?? 0)
     expect(clientComponent?.framework_boost ?? 0).toBeGreaterThan(clientDistractor?.framework_boost ?? 0)
   })
+
+  it('does not let runtime_boundary metadata alone seed unrelated server/client nodes', () => {
+    const graph = new KnowledgeGraph({ directed: true })
+    graph.addNode('relevant_server_boundary', {
+      label: 'persistDashboardOwnerFilter()',
+      source_file: '/app/dashboard/actions.ts',
+      line_number: 8,
+      node_kind: 'function',
+      file_type: 'code',
+      framework: 'nextjs',
+      runtime_boundary: 'server',
+      community: 0,
+    })
+    graph.addNode('unrelated_server_boundary', {
+      label: 'sendWelcomeEmail()',
+      source_file: '/app/onboarding/actions.ts',
+      line_number: 12,
+      node_kind: 'function',
+      file_type: 'code',
+      framework: 'nextjs',
+      runtime_boundary: 'server',
+      community: 0,
+    })
+    graph.addNode('unrelated_client_boundary', {
+      label: 'MarketingBanner()',
+      source_file: '/components/marketing-banner.tsx',
+      line_number: 4,
+      node_kind: 'function',
+      file_type: 'code',
+      framework: 'nextjs',
+      runtime_boundary: 'client',
+      community: 0,
+    })
+
+    const retrieved = retrieveContext(graph, {
+      question: 'move dashboard owner filter persistence into the Next.js server boundary',
+      budget: 2000,
+      fileType: 'code',
+    })
+
+    expect(retrieved.matched_nodes.find((node) => node.node_id === 'relevant_server_boundary')).toBeDefined()
+    expect(retrieved.matched_nodes.find((node) => node.node_id === 'unrelated_server_boundary')).toBeUndefined()
+    expect(retrieved.matched_nodes.find((node) => node.node_id === 'unrelated_client_boundary')).toBeUndefined()
+  })
 })

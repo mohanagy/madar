@@ -1,8 +1,9 @@
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import * as generateModule from '../../src/infrastructure/generate.js'
 import { listPackQualityFixtures, runPackQualityFixture } from './helpers/pack-quality.js'
 
 const tempFixtureNames: string[] = []
@@ -44,5 +45,19 @@ describe('pack-quality helper', () => {
     }), 'utf8')
 
     expect(() => listPackQualityFixtures()).toThrow(/unlisted pack-quality fixture/i)
+  })
+
+  it('uses SPI when a fixture declares SPI-only framework coverage', async () => {
+    const generateSpy = vi.spyOn(generateModule, 'generateGraph')
+
+    await runPackQualityFixture('framework-request-flow-owner')
+
+    expect(generateSpy).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        noHtml: true,
+        useSpi: true,
+      }),
+    )
   })
 })

@@ -27,6 +27,7 @@ interface PackQualityFixtureManifest {
   task?: 'implement' | 'explain'
   prompt: string
   budget?: number
+  use_spi?: boolean
   expected_workflow_centers: string[]
   expected_likely_edit_files: string[]
   expected_likely_test_files: string[]
@@ -115,6 +116,9 @@ function loadPackQualityFixture(name: string): PackQualityFixtureManifest {
   if ('budget' in parsed && parsed.budget !== undefined && typeof parsed.budget !== 'number') {
     problems.push('"budget" must be a number when provided')
   }
+  if ('use_spi' in parsed && parsed.use_spi !== undefined && typeof parsed.use_spi !== 'boolean') {
+    problems.push('"use_spi" must be a boolean when provided')
+  }
   if (
     'expected_retrieval_pipeline_phases' in parsed
     && parsed.expected_retrieval_pipeline_phases !== undefined
@@ -146,6 +150,7 @@ function loadPackQualityFixture(name: string): PackQualityFixtureManifest {
     ...(parsed.task === 'implement' || parsed.task === 'explain' ? { task: parsed.task } : {}),
     prompt,
     ...(typeof parsed.budget === 'number' ? { budget: parsed.budget } : {}),
+    ...(typeof parsed.use_spi === 'boolean' ? { use_spi: parsed.use_spi } : {}),
     expected_workflow_centers: expectedWorkflowCenters,
     expected_likely_edit_files: expectedLikelyEditFiles,
     expected_likely_test_files: expectedLikelyTestFiles,
@@ -218,7 +223,10 @@ export async function runPackQualityFixture(
   }
   return withTempDir(async (tempDir) => {
     const workspaceRoot = copyFixtureWorkspace(name, tempDir)
-    const graph = generateGraph(workspaceRoot, { noHtml: true })
+    const graph = generateGraph(workspaceRoot, {
+      noHtml: true,
+      ...(runFixture.use_spi ? { useSpi: true } : {}),
+    })
     const graphPath = join(workspaceRoot, 'out', 'graph.json')
     const packOutput = await runContextPackCommand({
       prompt: runFixture.prompt,

@@ -211,10 +211,15 @@ describe('Framework-aware retrieval boost for v0.17 substrates (#83 → v0.19)',
 
     const primaryWorkflowOwner = retrieved.matched_nodes.find((node) => node.node_id === 'primary_workflow_owner')
     const routeShell = retrieved.matched_nodes.find((node) => node.node_id === 'route_shell')
+    const primaryWorkflowOwnerIndex = retrieved.matched_nodes.findIndex((node) => node.node_id === 'primary_workflow_owner')
+    const routeShellIndex = retrieved.matched_nodes.findIndex((node) => node.node_id === 'route_shell')
 
     expect(primaryWorkflowOwner).toBeDefined()
     expect(routeShell).toBeDefined()
     expect(primaryWorkflowOwner?.framework_boost ?? 0).toBeGreaterThan(routeShell?.framework_boost ?? 0)
+    expect(primaryWorkflowOwnerIndex).toBeGreaterThanOrEqual(0)
+    expect(routeShellIndex).toBeGreaterThanOrEqual(0)
+    expect(primaryWorkflowOwnerIndex).toBeLessThan(routeShellIndex)
   })
 
   it('promotes the Hono request-flow owner for endpoint phrasing too', () => {
@@ -250,9 +255,14 @@ describe('Framework-aware retrieval boost for v0.17 substrates (#83 → v0.19)',
 
     const primaryWorkflowOwner = retrieved.matched_nodes.find((node) => node.node_id === 'primary_workflow_owner')
     const routeShell = retrieved.matched_nodes.find((node) => node.node_id === 'route_shell')
+    const primaryWorkflowOwnerIndex = retrieved.matched_nodes.findIndex((node) => node.node_id === 'primary_workflow_owner')
+    const routeShellIndex = retrieved.matched_nodes.findIndex((node) => node.node_id === 'route_shell')
 
     expect(primaryWorkflowOwner).toBeDefined()
     expect(routeShell).toBeDefined()
     expect(primaryWorkflowOwner?.framework_boost ?? 0).toBeGreaterThan(routeShell?.framework_boost ?? 0)
+    expect(primaryWorkflowOwnerIndex).toBeGreaterThanOrEqual(0)
+    expect(routeShellIndex).toBeGreaterThanOrEqual(0)
+    expect(primaryWorkflowOwnerIndex).toBeLessThan(routeShellIndex)
   })
 })

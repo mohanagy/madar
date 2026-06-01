@@ -3387,11 +3387,15 @@ function frameworkBoostForNode(
   frameworkRole: string,
   metadata: FrameworkNodeMetadata = {},
   questionLower = '',
+  options: {
+    allowRuntimeBoundaryBoost?: boolean
+  } = {},
 ): number {
   if (!profile.frameworkShaped) {
     return 0
   }
 
+  const allowRuntimeBoundaryBoost = options.allowRuntimeBoundaryBoost ?? true
   let boost = 0
 
   // #133 — metadata-aware boost. When the question contains a substring
@@ -3450,7 +3454,7 @@ function frameworkBoostForNode(
       boost += storageCue ? 2.75 : profile.prisma && requestFlowCue ? 4.75 : 1.75
     }
   }
-  if (metadata.runtime_boundary && questionLower) {
+  if (allowRuntimeBoundaryBoost && metadata.runtime_boundary && questionLower) {
     const runtimeBoundary = metadata.runtime_boundary.toLowerCase()
     const boundaryIntent =
       (runtimeBoundary === 'server' && profile.serverIntent)
@@ -4024,13 +4028,6 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
     // metadata-only matches (e.g. a `handler()` node tagged with
     // route_path that the question names verbatim) can become a seed
     // even when the label has no token overlap.
-    const metadataBoost = frameworkBoostForNode(
-      frameworkProfile,
-      nodeKind,
-      frameworkRole,
-      frameworkMetadataFromAttributes(attributes),
-      questionLower,
-    )
     const domainAdjustment = retrievalDomainAdjustment(retrievalGate, {
       label,
       sourceFile,
@@ -4052,8 +4049,18 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
           total: score.total - score.sourcePathScore,
         }
       : score
-
     const explicitlyAnchored = exactAnchorMatch || mentionedPathMatch
+    const metadataBoost = frameworkBoostForNode(
+      frameworkProfile,
+      nodeKind,
+      frameworkRole,
+      frameworkMetadataFromAttributes(attributes),
+      questionLower,
+      {
+        allowRuntimeBoundaryBoost: effectiveScore.total + anchorScore > 0 || explicitlyAnchored,
+      },
+    )
+
     const domainIntentPenalty = runtimeGenerationSourceDomainPenalty(retrievalGate, sourceDomain, explicitlyAnchored)
     const scriptMigrationPenalty = scriptMigrationPathPenalty(retrievalGate, sourceFile, label, question, explicitlyAnchored)
     const totalSeedScore = effectiveScore.total + anchorScore + metadataBoost + domainAdjustment - sourceDomainPenalty - domainIntentPenalty - scriptMigrationPenalty

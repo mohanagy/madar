@@ -1,5 +1,6 @@
 {
   "prompt": "enforce account ownership in the Hono users route handler for users/:userId before calling prisma.user.findFirst",
+  "use_spi": true,
   "expected_workflow_centers": [
     "src/users/router.ts"
   ],
@@ -13,7 +14,7 @@
     "npm run test:run"
   ],
   "expected_negative_guidance": [
-    "Missing required context: structural.",
-    "High-risk shared boundary: registerUserRoutes() affects 4 files."
+    "Missing required context: supporting, structural.",
+    "High-risk shared boundary: UserService affects 4 files."
   ]
 }

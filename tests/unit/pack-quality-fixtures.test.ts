@@ -20,7 +20,7 @@ const EXPECTED_EXPLAIN_FIXTURES = [
 ] as const
 
 const EXPECTED_TOP_WORKFLOW_CENTER = {
-  'framework-request-flow-owner': 'src/users/service.ts',
+  'framework-request-flow-owner': 'src/users/router.ts',
   'framework-runtime-boundary-distractor': 'app/dashboard/actions.ts',
 } as const
 
