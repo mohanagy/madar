@@ -378,6 +378,7 @@ Everything stays local by default. No cloud upload, no API key required. Telemet
 
 - [Quick start guide](https://github.com/mohanagy/madar/blob/main/docs/proof-workflows.md) — three reproducible workflows: local proof, A/B compare, federated proof
 - [Claims and evidence map](https://github.com/mohanagy/madar/blob/main/docs/claims-and-evidence.md) — which public claims are demonstrated, in progress, or not yet measured
+- [Team and enterprise offer](https://github.com/mohanagy/madar/blob/main/docs/team-enterprise-offer.md) — local-first benchmark setup, proof-report, and procurement/security note options without a hosted control plane
 - [Benchmark suite](https://github.com/mohanagy/madar/blob/main/docs/benchmarks/suite/README.md) — fixed manifests, methodology, CLI runner, and per-repo spread results
 - [GoValidate shared benchmark suite](https://github.com/mohanagy/madar/blob/main/docs/benchmarks/govalidate-suite/README.md) — public prompt set plus deterministic pack/answer quality gates
 - [Public roadmap](https://github.com/mohanagy/madar/blob/main/docs/roadmap.md) — contributor-facing priority tracks and issue links

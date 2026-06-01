@@ -37,6 +37,8 @@ This file is the public map between what Madar says and what the repo can actual
 - `README.md` should name the near-term primary ICP directly: teams using AI coding agents on medium-to-large TypeScript/Node repos where broad exploration creates cost, latency, privacy, or wrong-file-edit risk.
 - `README.md` should frame Madar as deterministic local context compilation that complements agents and IDE indexing, not another generic codebase index.
 - `README.md` should call out what is not the primary ICP today instead of implying Madar is already equally ready for every coding-agent workflow or repo shape.
+- The team and enterprise offer should stay service-scoped: benchmark setup, proof report support, and a procurement/security note inside the same local-first trust boundary.
+- Team and enterprise offer docs should say Madar is **not a hosted control plane** and avoid implying managed cloud hosting or source-code custody.
 - Any new public claim should link back to a dated artifact or to the reproducible suite surface under [`docs/benchmarks/suite/`](docs/benchmarks/suite/README.md).
 - When evidence is mixed, the README should say that directly and point to the counterexample note or issue instead of smoothing it into marketing.
 

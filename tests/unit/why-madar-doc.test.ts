@@ -172,6 +172,11 @@ describe('public marketing copy honesty', () => {
       expect(lower).toContain('not another generic codebase index')
     })
 
+    it('links a bounded team and enterprise offer instead of implying hosted packaging', () => {
+      expect(content).toContain('docs/team-enterprise-offer.md')
+      expect(lower).toContain('team and enterprise offer')
+    })
+
     it('keeps the README Python support claim conservative and current', () => {
       expect(content).toContain('FastAPI router composition')
       expect(content).toContain('Django URL-conf')
@@ -261,6 +266,41 @@ describe('public marketing copy honesty', () => {
         expect(lower).toContain('complements agents and ide indexing')
         expect(lower).toContain('not another generic codebase index')
       })
+
+      it('keeps the team and enterprise offer guidance local-first and service-scoped', () => {
+        expect(lower).toContain('team and enterprise offer')
+        expect(lower).toContain('benchmark setup')
+        expect(lower).toContain('proof report')
+        expect(lower).toContain('procurement/security note')
+        expect(lower).toContain('local-first trust boundary')
+        expect(lower).toContain('not a hosted control plane')
+      })
+    })
+  })
+
+  describe('docs/team-enterprise-offer.md', () => {
+    const content = readDoc('docs/team-enterprise-offer.md')
+    const lower = content.toLowerCase()
+
+    it('defines concise team and enterprise options around benchmark setup, proof reports, and local-only procurement notes', () => {
+      expect(content).toContain('# Team and enterprise offer')
+      expect(lower).toContain('team evaluation')
+      expect(lower).toContain('enterprise pilot')
+      expect(lower).toContain('benchmark setup')
+      expect(lower).toContain('proof report')
+      expect(lower).toContain('procurement/security note')
+      expect(lower).toContain('local-first trust boundary')
+      expect(lower).toContain('not a hosted control plane')
+    })
+
+    it('spells out what paid support includes and excludes', () => {
+      expect(lower).toContain('in scope')
+      expect(lower).toContain('out of scope')
+      expect(lower).toContain('shared benchmark setup')
+      expect(lower).toContain('internal proof report')
+      expect(lower).toContain('policy templates')
+      expect(lower).toContain('managed cloud hosting')
+      expect(lower).toContain('taking custody of your source code')
     })
   })
 
