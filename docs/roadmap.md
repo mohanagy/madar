@@ -66,6 +66,7 @@ Focus: make Madar easier to adopt, evaluate, and contribute to after the runtime
 
 - Python extraction now covers conservative FastAPI router composition/dependency semantics and first-pass Django URL-conf mapping, but broader language-parity work still stays outside the near-term roadmap.
 - Go first-pass support already shipped in [#234](https://github.com/mohanagy/madar/issues/234), so near-term work stays focused on TypeScript/Node depth instead of starting a new language track.
+- [#430 — Evaluate hosted dashboard for share-safe artifacts](https://github.com/mohanagy/madar/issues/430) stays parked until there is **explicit customer demand** beyond the current **local html report** path (`graph.html`, `GRAPH_REPORT.md`, `report.share-safe.json`). Any revisit must stay share-safe and keep the no-cloud-indexing assumption explicit.
 
 ## Where to start
 

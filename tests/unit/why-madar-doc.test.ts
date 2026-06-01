@@ -275,6 +275,14 @@ describe('public marketing copy honesty', () => {
         expect(lower).toContain('local-first trust boundary')
         expect(lower).toContain('not a hosted control plane')
       })
+
+      it('keeps hosted-dashboard positioning deferred until share-safe demand exceeds the local report path', () => {
+        expect(lower).toContain('hosted dashboard')
+        expect(lower).toContain('report.share-safe.json')
+        expect(lower).toContain('graph.html')
+        expect(lower).toContain('explicit customer demand')
+        expect(lower).toContain('no cloud indexing assumption')
+      })
     })
   })
 
@@ -301,6 +309,30 @@ describe('public marketing copy honesty', () => {
       expect(lower).toContain('policy templates')
       expect(lower).toContain('managed cloud hosting')
       expect(lower).toContain('taking custody of your source code')
+    })
+  })
+
+  describe('docs/share-safe-dashboard-decision.md', () => {
+    const content = readDoc('docs/share-safe-dashboard-decision.md')
+    const lower = content.toLowerCase()
+
+    it('recommends deferring a hosted dashboard in favor of the current local report bundle', () => {
+      expect(content).toContain('# Share-safe dashboard decision')
+      expect(lower).toContain('recommendation: defer')
+      expect(lower).toContain('graph.html')
+      expect(lower).toContain('graph_report.md')
+      expect(lower).toContain('report.share-safe.json')
+      expect(lower).toContain('local html report')
+    })
+
+    it('defines the trust boundary and the threshold for revisiting the idea', () => {
+      expect(lower).toContain('share-safe artifacts only')
+      expect(lower).toContain('no raw source')
+      expect(lower).toContain('no prompt or answer uploads')
+      expect(lower).toContain('no cloud indexing assumption')
+      expect(lower).toContain('explicit customer demand')
+      expect(lower).toContain('build later')
+      expect(lower).toContain('reject now')
     })
   })
 

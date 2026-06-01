@@ -39,6 +39,8 @@ This file is the public map between what Madar says and what the repo can actual
 - `README.md` should call out what is not the primary ICP today instead of implying Madar is already equally ready for every coding-agent workflow or repo shape.
 - The team and enterprise offer should stay service-scoped: benchmark setup, proof report support, and a procurement/security note inside the same local-first trust boundary.
 - Team and enterprise offer docs should say Madar is **not a hosted control plane** and avoid implying managed cloud hosting or source-code custody.
+- Hosted dashboard positioning should stay deferred until **explicit customer demand** exceeds the current local proof path built from `graph.html`, `GRAPH_REPORT.md`, and `report.share-safe.json`.
+- Any future hosted-dashboard note must keep the **no cloud indexing assumption** explicit and describe a share-safe-artifacts-only boundary rather than implying raw-source upload.
 - Any new public claim should link back to a dated artifact or to the reproducible suite surface under [`docs/benchmarks/suite/`](docs/benchmarks/suite/README.md).
 - When evidence is mixed, the README should say that directly and point to the counterexample note or issue instead of smoothing it into marketing.
 
