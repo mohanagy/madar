@@ -39,6 +39,11 @@ describe('public marketing copy honesty', () => {
   describe('README.md', () => {
     const content = readDoc('README.md')
     const lower = content.toLowerCase()
+    const contextPacks = readDoc('docs/concepts/context-packs.md')
+    const cliReference = readDoc('docs/reference/cli-and-mcp.md')
+    const claims = readDoc('docs/claims-and-evidence.md')
+    const publicDocs = [content, contextPacks, cliReference, claims].join('\n')
+    const publicLower = publicDocs.toLowerCase()
 
     for (const stale of STALE_PHRASES) {
       it(`does not contain the stale "${stale}" claim`, () => {
@@ -71,16 +76,16 @@ describe('public marketing copy honesty', () => {
     })
 
     it('describes execution_slice as a static hypothesis rather than a live trace', () => {
-      expect(lower).toMatch(
+      expect(publicLower).toMatch(
         /execution_slice[\s\S]{0,220}static runtime-path hypothesis[\s\S]{0,220}not a live trace/i,
       )
     })
 
     it('describes phase_coverage as a static prompt-scoped phase model', () => {
-      expect(lower).toMatch(
+      expect(publicLower).toMatch(
         /phase_coverage[\s\S]{0,260}static[\s\S]{0,120}prompt-scoped/i,
       )
-      expect(lower).toMatch(
+      expect(publicLower).toMatch(
         /phase_coverage[\s\S]{0,260}planner\/research\/report-builder\/scoring\/renderer\/persistence/i,
       )
     })
@@ -102,22 +107,21 @@ describe('public marketing copy honesty', () => {
     })
 
     it('keeps the README core MCP surface aligned with the shipped graph_summary tool', () => {
-      expect(content).toContain('These seven MCP tools')
-      expect(content).toContain('`graph_stats`')
-      expect(content).toContain('`graph_summary`')
+      expect(publicDocs).toContain('These seven MCP tools')
+      expect(publicDocs).toContain('`graph_stats`')
+      expect(publicDocs).toContain('`graph_summary`')
     })
 
     it('states that core is the default MCP profile and full is opt-in', () => {
-      expect(lower).toContain('by default')
-      expect(content).toContain('core')
-      expect(content).toContain('MADAR_TOOL_PROFILE=full')
-      expect(content).toContain('--profile full')
+      expect(publicLower).toContain('default core profile')
+      expect(publicDocs).toContain('MADAR_TOOL_PROFILE=full')
+      expect(publicDocs).toContain('--profile full')
     })
 
     it('keeps the README full MCP additions list aligned with the shipped get_neighbors tool', () => {
-      expect(content).toContain('The full surface is 26 tools')
-      expect(content).toContain('`context_expand`')
-      expect(content).toContain('`get_neighbors`')
+      expect(publicDocs).toContain('The full surface is 26 tools')
+      expect(publicDocs).toContain('`context_expand`')
+      expect(publicDocs).toContain('`get_neighbors`')
     })
 
     it('pins the measured post-#82 core-profile schema overhead numbers in the Honest disclosure section', () => {
@@ -131,14 +135,13 @@ describe('public marketing copy honesty', () => {
       expect(lower).toMatch(/25%/)
     })
 
-    it('adds explicit claim buckets and a measurement methodology section', () => {
-      expect(content).toContain('## Demonstrated today')
-      expect(content).toContain('## In progress')
-      expect(content).toContain('## Not yet measured')
-      expect(content).toContain('## What Madar does not do today')
-      expect(content).toContain('## How we measure')
-      expect(lower).toContain('per-repo spread')
-      expect(lower).toContain('no single-number cross-repo headline')
+    it('keeps claim buckets and measurement methodology in the evidence docs, with a compact README pointer', () => {
+      expect(claims).toContain('## Demonstrated today')
+      expect(claims).toContain('## In progress')
+      expect(claims).toContain('## Not yet measured')
+      expect(claims).toContain('How this maps to README.md')
+      expect(publicLower).toContain('per-repo spread')
+      expect(publicLower).toContain('no single-number cross-repo headline')
       expect(content).toContain('Published benchmark cells run in isolation mode')
       expect(content).toContain('Your local numbers may differ if your Claude Code config differs.')
     })
@@ -150,12 +153,12 @@ describe('public marketing copy honesty', () => {
     })
 
     it('positions Madar as a context/evidence layer for review and security tools without overclaiming outcomes', () => {
-      expect(lower).toContain('review and security workflows')
-      expect(lower).toContain('context/evidence layer')
-      expect(content).toContain('CodeRabbit')
-      expect(content).toContain('Qodo')
-      expect(content).toContain('Codex Security')
-      expect(lower).toContain('not a pr reviewer or vulnerability scanner')
+      expect(publicLower).toContain('review and security workflows')
+      expect(publicLower).toContain('context/evidence layer')
+      expect(publicDocs).toContain('CodeRabbit')
+      expect(publicDocs).toContain('Qodo')
+      expect(publicDocs).toContain('Codex Security')
+      expect(publicLower).toContain('not a pr reviewer or vulnerability scanner')
       expect(content).toContain('docs/claims-and-evidence.md')
     })
 
@@ -178,9 +181,9 @@ describe('public marketing copy honesty', () => {
     })
 
     it('keeps the README Python support claim conservative and current', () => {
-      expect(content).toContain('FastAPI router composition')
-      expect(content).toContain('Django URL-conf')
-      expect(lower).toContain('not near js/ts parity')
+      expect(publicDocs).toContain('FastAPI router composition')
+      expect(publicDocs).toContain('Django URL-conf')
+      expect(publicLower).toContain('not near js/ts parity')
     })
   })
 

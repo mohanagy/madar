@@ -5,27 +5,27 @@ import { describe, expect, it } from 'vitest'
 
 describe('install documentation', () => {
   it('documents Aider and OpenCode install artifacts and context-pack-first workflow', () => {
-    const readme = readFileSync(resolve('README.md'), 'utf8')
+    const reference = readFileSync(resolve('docs/reference/cli-and-mcp.md'), 'utf8')
 
-    expect(readme).toContain('| Aider | AGENTS.md context-pack-first profile | `madar aider install` |')
-    expect(readme).toContain(
+    expect(reference).toContain('| Aider | AGENTS.md context-pack-first profile | `madar aider install` |')
+    expect(reference).toContain(
       '| OpenCode | AGENTS.md + `.opencode/plugins/madar.js` + MCP via `opencode.json` / `opencode.jsonc` | `madar opencode install` |',
     )
-    expect(readme).toContain('Aider and OpenCode are intentionally context-pack-first')
-    expect(readme).toContain('madar pack "<task>" --task explain')
-    expect(readme).toContain('madar aider uninstall')
-    expect(readme).toContain('madar opencode uninstall')
+    expect(reference).toContain('Aider and OpenCode are intentionally context-pack-first')
+    expect(reference).toContain('madar pack "<task>" --task explain')
+    expect(reference).toContain('madar aider uninstall')
+    expect(reference).toContain('madar opencode uninstall')
   })
 
   it('documents doctor/status instruction lint surfaces per agent', () => {
-    const readme = readFileSync(resolve('README.md'), 'utf8')
+    const reference = readFileSync(resolve('docs/reference/cli-and-mcp.md'), 'utf8')
 
-    expect(readme).toContain('`doctor` / `status` lint surface')
-    expect(readme).toContain('| Claude Code | MCP via `.mcp.json` | `madar claude <install\\|uninstall> [--profile core\\|full\\|strict]` | `CLAUDE.md` + `.claude/settings.json` hook + `.mcp.json` |')
-    expect(readme).toContain('| Aider | AGENTS.md context-pack-first profile | `madar aider install` | `AGENTS.md` Aider profile |')
-    expect(readme).toContain('| OpenCode | AGENTS.md + `.opencode/plugins/madar.js` + MCP via `opencode.json` / `opencode.jsonc` | `madar opencode install` | `AGENTS.md` OpenCode profile + plugin registration + MCP entry |')
-    expect(readme).toContain('| Codex CLI | AGENTS.md + `.codex/hooks.json` context-pack-first profile | `madar codex install` | `AGENTS.md` Codex profile + `.codex/hooks.json` |')
-    expect(readme).toContain('mark the agent as `partial` and suggest the matching reinstall command')
+    expect(reference).toContain('`doctor` / `status` lint surface')
+    expect(reference).toContain('| Claude Code | MCP via `.mcp.json` | `madar claude <install\\|uninstall> [--profile core\\|full\\|strict]` | `CLAUDE.md` + `.claude/settings.json` hook + `.mcp.json` |')
+    expect(reference).toContain('| Aider | AGENTS.md context-pack-first profile | `madar aider install` | `AGENTS.md` Aider profile |')
+    expect(reference).toContain('| OpenCode | AGENTS.md + `.opencode/plugins/madar.js` + MCP via `opencode.json` / `opencode.jsonc` | `madar opencode install` | `AGENTS.md` OpenCode profile + plugin registration + MCP entry |')
+    expect(reference).toContain('| Codex CLI | AGENTS.md + `.codex/hooks.json` context-pack-first profile | `madar codex install` | `AGENTS.md` Codex profile + `.codex/hooks.json` |')
+    expect(reference).toContain('mark the agent as `partial` and suggest the matching reinstall command')
   })
 
   it('documents handoff as the share-safe remote-agent artifact distinct from local pack and prompt flows', () => {
@@ -38,16 +38,16 @@ describe('install documentation', () => {
   })
 
   it('documents the strict MCP install profile for claude, cursor, copilot, and gemini', () => {
-    const readme = readFileSync(resolve('README.md'), 'utf8')
+    const reference = readFileSync(resolve('docs/reference/cli-and-mcp.md'), 'utf8')
 
-    expect(readme).toContain('claude <install\\|uninstall> [--profile core\\|full\\|strict]')
-    expect(readme).toContain('cursor <install\\|uninstall> [--profile core\\|full\\|strict]')
-    expect(readme).toContain('copilot <install\\|uninstall> [--profile core\\|full\\|strict]')
-    expect(readme).toContain('gemini <install\\|uninstall> [--profile core\\|full\\|strict]')
-    expect(readme).toContain('`--profile strict` keeps the lean core MCP tool surface')
-    expect(readme).toContain('call `context_pack` once for the task before broader exploration')
-    expect(readme).toContain('prefer Madar over non-Madar MCPs for codebase questions')
-    expect(readme).toContain('override conflicting auto-activated exploration skills')
+    expect(reference).toContain('claude <install\\|uninstall> [--profile core\\|full\\|strict]')
+    expect(reference).toContain('cursor <install\\|uninstall> [--profile core\\|full\\|strict]')
+    expect(reference).toContain('copilot <install\\|uninstall> [--profile core\\|full\\|strict]')
+    expect(reference).toContain('gemini <install\\|uninstall> [--profile core\\|full\\|strict]')
+    expect(reference).toContain('`--profile strict` keeps the lean core MCP tool surface')
+    expect(reference).toContain('call `context_pack` once for the task before broader exploration')
+    expect(reference).toContain('prefer Madar over non-Madar MCPs for codebase questions')
+    expect(reference).toContain('override conflicting auto-activated exploration skills')
   })
 
   it('documents the local trust boundary and least-privilege install guidance', () => {

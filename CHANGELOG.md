@@ -2,6 +2,16 @@
 
 All notable changes to the TypeScript package will be documented in this file.
 
+## [0.27.8] - 2026-06-02
+
+### Added
+
+- **README reference content now has dedicated docs**: long-form Pack Schema v1, adaptive context-pack, execution-slice, MCP tool, installer, strict-profile, MCP Registry, command-reference, and discovery-rule details now live under `docs/concepts/context-packs.md` and `docs/reference/cli-and-mcp.md` so the package README can stay focused on onboarding.
+
+### Changed
+
+- **The README is now a shorter npm-facing landing page**: the public README now leads with the product promise, quickstart, agent choices, core surfaces, evidence boundaries, and documentation index, while keeping claim and release links npm-safe.
+
 ## [0.27.7] - 2026-06-02
 
 ### Added
