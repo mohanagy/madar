@@ -16,6 +16,7 @@ import { projectSpiToExtraction } from '../pipeline/spi/projector.js'
 import { generate as generateReport } from '../pipeline/report.js'
 import { toWiki } from '../pipeline/wiki.js'
 import { loadGraph } from '../runtime/serve.js'
+import { buildGraphBuildFreshnessMetadata } from '../shared/graph-build-freshness.js'
 
 export type ProgressStep =
   | { step: 'detect'; message: string }
@@ -441,6 +442,13 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   if (options.useSpi) {
     graph.graph.spi_mode = true
   }
+  graph.graph.graph_build_freshness = buildGraphBuildFreshnessMetadata(
+    resolvedRootPath,
+    graph
+      .nodeEntries()
+      .map(([, attributes]) => String(attributes.source_file ?? '').trim())
+      .filter((sourceFile) => sourceFile.length > 0),
+  )
 
   progress?.({ step: 'export', message: 'Writing outputs...' })
   writeFileSync(reportPath, `${report}\n`, 'utf8')

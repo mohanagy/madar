@@ -209,7 +209,6 @@ function createPackSchema(root: string): ContextPackSchemaV1<TestPack> {
       },
       graph_freshness: {
         status: 'fresh',
-        graph_path: 'out/graph.json',
         graph_version: 'fixture-graph',
         graph_modified_ms: 0,
         graph_modified_at: new Date(0).toUTCString(),

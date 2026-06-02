@@ -1,11 +1,20 @@
 import { createHash } from 'node:crypto'
 import { basename, dirname, isAbsolute, resolve } from 'node:path'
-import { readFileSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 
 import type { KnowledgeGraph } from '../contracts/graph.js'
+import { classifyFile } from '../pipeline/detect.js'
 import type { RetrieveResult } from './retrieve.js'
+import {
+  fileContentFingerprint,
+  isGraphBuildFreshnessMetadata,
+  normalizeFreshnessSourceFile,
+  type GraphBuildFreshnessMetadata,
+} from '../shared/graph-build-freshness.js'
+import { diffGitFilesBetweenCommits, readGitSnapshot } from '../shared/git.js'
 import { readPackageVersion } from '../shared/package-metadata.js'
 import { validateGraphPath } from '../shared/security.js'
+import { isDiscoveryPathIgnored, loadMadarignorePatterns } from '../shared/source-discovery.js'
 
 export interface GraphFreshnessMetadata {
   graphVersion: string
@@ -45,6 +54,12 @@ export interface GraphContextFreshness {
   missing_selected_context_count: number
   changed_outside_selected_context_count: number
   recommendation: string
+}
+
+interface IndexedSourceFiles {
+  rootPath: string
+  sourceFiles: string[]
+  buildFreshness: GraphBuildFreshnessMetadata | null
 }
 
 const VERSION_HASH_LENGTH = 12
@@ -107,10 +122,10 @@ function missingGraphContextFreshness(graphPath: string): GraphContextFreshness 
   }
 }
 
-function normalizedSourceFileSet(sourceFiles: readonly string[] | undefined): Set<string> {
+function normalizedSourceFileSet(rootPath: string, sourceFiles: readonly string[] | undefined): Set<string> {
   return new Set(
     (sourceFiles ?? [])
-      .map((sourceFile) => sourceFile.trim())
+      .map((sourceFile) => normalizeFreshnessSourceFile(rootPath, sourceFile))
       .filter((sourceFile) => sourceFile.length > 0),
   )
 }
@@ -194,45 +209,183 @@ function graphSourceRoot(graphPath: string, graph?: Pick<KnowledgeGraph, 'graph'
   return rootPath.length > 0 ? rootPath : dirname(graphPath)
 }
 
+function graphBuildFreshnessFromValue(value: unknown): GraphBuildFreshnessMetadata | null {
+  return isGraphBuildFreshnessMetadata(value) ? value : null
+}
+
 function indexedSourceFilesFromGraph(
   graph: Pick<KnowledgeGraph, 'graph' | 'nodeEntries'>,
   graphPath: string,
-): { rootPath: string; sourceFiles: string[] } {
+): IndexedSourceFiles {
+  const rootPath = graphSourceRoot(graphPath, graph)
   const sourceFiles = [...new Set(
     graph.nodeEntries()
-      .map(([, attributes]) => String(attributes.source_file ?? '').trim())
+      .map(([, attributes]) => normalizeFreshnessSourceFile(rootPath, String(attributes.source_file ?? '').trim()))
       .filter((sourceFile) => sourceFile.length > 0),
   )]
-
-  return {
-    rootPath: graphSourceRoot(graphPath, graph),
-    sourceFiles,
-  }
-}
-
-function indexedSourceFilesFromGraphJson(graphPath: string): { rootPath: string; sourceFiles: string[] } {
-  const parsed = JSON.parse(readFileSync(graphPath, 'utf8')) as {
-    root_path?: unknown
-    nodes?: Array<{ source_file?: unknown }>
-  }
-
-  const sourceFiles = [...new Set(
-    (Array.isArray(parsed.nodes) ? parsed.nodes : [])
-      .map((node) => typeof node?.source_file === 'string' ? node.source_file.trim() : '')
-      .filter((sourceFile) => sourceFile.length > 0),
-  )]
-  const rootPath = typeof parsed.root_path === 'string' && parsed.root_path.trim().length > 0
-    ? parsed.root_path.trim()
-    : dirname(graphPath)
 
   return {
     rootPath,
     sourceFiles,
+    buildFreshness: graphBuildFreshnessFromValue(graph.graph.graph_build_freshness),
+  }
+}
+
+function indexedSourceFilesFromGraphJson(graphPath: string): IndexedSourceFiles {
+  const parsed = JSON.parse(readFileSync(graphPath, 'utf8')) as {
+    root_path?: unknown
+    graph_build_freshness?: unknown
+    nodes?: Array<{ source_file?: unknown }>
+  }
+  const rootPath = typeof parsed.root_path === 'string' && parsed.root_path.trim().length > 0
+    ? parsed.root_path.trim()
+    : dirname(graphPath)
+  const sourceFiles = [...new Set(
+    (Array.isArray(parsed.nodes) ? parsed.nodes : [])
+      .map((node) => typeof node?.source_file === 'string' ? normalizeFreshnessSourceFile(rootPath, node.source_file) : '')
+      .filter((sourceFile) => sourceFile.length > 0),
+  )]
+
+  return {
+    rootPath,
+    sourceFiles,
+    buildFreshness: graphBuildFreshnessFromValue(parsed.graph_build_freshness),
   }
 }
 
 function resolveIndexedSourcePath(rootPath: string, sourceFile: string): string {
   return isAbsolute(sourceFile) ? sourceFile : resolve(rootPath, sourceFile)
+}
+
+function collectMissingSourceFiles(indexed: IndexedSourceFiles): Set<string> {
+  const missingSourceFiles = new Set<string>()
+  for (const sourceFile of indexed.sourceFiles) {
+    if (!existsSync(resolveIndexedSourcePath(indexed.rootPath, sourceFile))) {
+      missingSourceFiles.add(sourceFile)
+    }
+  }
+  return missingSourceFiles
+}
+
+function legacyChangedSourceFiles(
+  indexed: IndexedSourceFiles,
+  graphModifiedMs: number,
+): Set<string> {
+  const changedSourceFiles = new Set<string>()
+  for (const sourceFile of indexed.sourceFiles) {
+    const resolvedSourcePath = resolveIndexedSourcePath(indexed.rootPath, sourceFile)
+    try {
+      const sourceModifiedMs = truncateMtime(statSync(resolvedSourcePath).mtimeMs)
+      if (sourceModifiedMs > graphModifiedMs) {
+        changedSourceFiles.add(sourceFile)
+      }
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+        continue
+      }
+      throw error
+    }
+  }
+  return changedSourceFiles
+}
+
+function filesystemChangedSourceFiles(
+  indexed: IndexedSourceFiles,
+  buildFreshness: GraphBuildFreshnessMetadata,
+): Set<string> {
+  const storedFingerprints = buildFreshness.filesystem?.file_fingerprints ?? {}
+  const changedSourceFiles = new Set<string>()
+
+  for (const sourceFile of indexed.sourceFiles) {
+    const resolvedSourcePath = resolveIndexedSourcePath(indexed.rootPath, sourceFile)
+    if (!existsSync(resolvedSourcePath)) {
+      continue
+    }
+    const currentFingerprint = fileContentFingerprint(resolvedSourcePath)
+    if (storedFingerprints[sourceFile] !== currentFingerprint) {
+      changedSourceFiles.add(sourceFile)
+    }
+  }
+
+  return changedSourceFiles
+}
+
+function graphRelevantGitChangedFiles(
+  indexed: IndexedSourceFiles,
+  changedFiles: readonly string[],
+): Set<string> {
+  const indexedSourceFiles = new Set(indexed.sourceFiles)
+  const ignorePatterns = loadMadarignorePatterns(indexed.rootPath)
+  const relevantFiles = new Set<string>()
+
+  for (const rawPath of changedFiles) {
+    const sourceFile = normalizeFreshnessSourceFile(indexed.rootPath, rawPath)
+    if (sourceFile.length === 0) {
+      continue
+    }
+    if (indexedSourceFiles.has(sourceFile)) {
+      relevantFiles.add(sourceFile)
+      continue
+    }
+
+    const resolvedSourcePath = resolveIndexedSourcePath(indexed.rootPath, sourceFile)
+    if (!existsSync(resolvedSourcePath)) {
+      continue
+    }
+    if (isDiscoveryPathIgnored(resolvedSourcePath, indexed.rootPath, ignorePatterns)) {
+      continue
+    }
+    if (classifyFile(resolvedSourcePath) !== null) {
+      relevantFiles.add(sourceFile)
+    }
+  }
+
+  return relevantFiles
+}
+
+function gitChangedSourceFiles(
+  indexed: IndexedSourceFiles,
+  buildFreshness: GraphBuildFreshnessMetadata,
+): Set<string> | null {
+  const currentSnapshot = readGitSnapshot(indexed.rootPath)
+  const storedGitFreshness = buildFreshness.git
+  if (!currentSnapshot || !storedGitFreshness) {
+    return null
+  }
+
+  const changedFiles = new Set<string>(
+    diffGitFilesBetweenCommits(indexed.rootPath, storedGitFreshness.head_sha, currentSnapshot.headSha),
+  )
+  const buildDirtyFiles = new Set(storedGitFreshness.dirty_files)
+  const currentDirtyFiles = new Set(currentSnapshot.dirtyFiles)
+
+  for (const sourceFile of buildDirtyFiles) {
+    if (!currentDirtyFiles.has(sourceFile)) {
+      changedFiles.add(sourceFile)
+    }
+  }
+  for (const sourceFile of currentDirtyFiles) {
+    if (!buildDirtyFiles.has(sourceFile)) {
+      changedFiles.add(sourceFile)
+    }
+  }
+
+  for (const sourceFile of buildDirtyFiles) {
+    if (!currentDirtyFiles.has(sourceFile)) {
+      continue
+    }
+    const resolvedSourcePath = resolveIndexedSourcePath(indexed.rootPath, sourceFile)
+    const storedFingerprint = storedGitFreshness.dirty_file_fingerprints[sourceFile]
+    if (!existsSync(resolvedSourcePath) || storedFingerprint === undefined) {
+      changedFiles.add(sourceFile)
+      continue
+    }
+    if (fileContentFingerprint(resolvedSourcePath) !== storedFingerprint) {
+      changedFiles.add(sourceFile)
+    }
+  }
+
+  return graphRelevantGitChangedFiles(indexed, [...changedFiles])
 }
 
 function graphVersionForPath(graphPath: string): { graphVersion: string; mtimeMs: number } {
@@ -298,30 +451,17 @@ export function analyzeGraphContextFreshness(
     : indexedSourceFilesFromGraphJson(safeGraphPath)
   const indexedSourceFileSet = new Set(indexed.sourceFiles)
   const selectionProvided = selection?.selected_source_files !== undefined
-  const selectedSourceFiles = normalizedSourceFileSet(selection?.selected_source_files)
+  const selectedSourceFiles = normalizedSourceFileSet(indexed.rootPath, selection?.selected_source_files)
   const selectedIndexedSourceFiles = [...selectedSourceFiles].filter((sourceFile) => indexedSourceFileSet.has(sourceFile))
-
-  let changedSourceCount = 0
-  let missingSourceCount = 0
-  const changedSourceFiles = new Set<string>()
-  const missingSourceFiles = new Set<string>()
-  for (const sourceFile of indexed.sourceFiles) {
-    const resolvedSourcePath = resolveIndexedSourcePath(indexed.rootPath, sourceFile)
-    try {
-      const sourceModifiedMs = truncateMtime(statSync(resolvedSourcePath).mtimeMs)
-      if (sourceModifiedMs > graphFreshness.graphModifiedMs) {
-        changedSourceCount += 1
-        changedSourceFiles.add(sourceFile)
-      }
-    } catch (error) {
-      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
-        missingSourceCount += 1
-        missingSourceFiles.add(sourceFile)
-        continue
-      }
-      throw error
-    }
-  }
+  const missingSourceFiles = collectMissingSourceFiles(indexed)
+  const changedSourceFiles =
+    indexed.buildFreshness?.strategy === 'git'
+      ? gitChangedSourceFiles(indexed, indexed.buildFreshness) ?? legacyChangedSourceFiles(indexed, graphFreshness.graphModifiedMs)
+      : indexed.buildFreshness?.strategy === 'filesystem'
+        ? filesystemChangedSourceFiles(indexed, indexed.buildFreshness)
+        : legacyChangedSourceFiles(indexed, graphFreshness.graphModifiedMs)
+  const changedSourceCount = changedSourceFiles.size
+  const missingSourceCount = missingSourceFiles.size
 
   const changedSelectedContextCount = selectedIndexedSourceFiles.filter((sourceFile) => changedSourceFiles.has(sourceFile)).length
   const missingSelectedContextCount = selectedIndexedSourceFiles.filter((sourceFile) => missingSourceFiles.has(sourceFile)).length
@@ -348,9 +488,8 @@ export function analyzeGraphContextFreshness(
     graph_version: graphFreshness.graphVersion,
     graph_modified_ms: graphFreshness.graphModifiedMs,
     graph_modified_at: graphFreshness.graphModifiedAt,
-    // Graph JSON does not persist a generation timestamp today, so file mtime is the proxy.
-    generated_ms: graphFreshness.graphModifiedMs,
-    generated_at: new Date(graphFreshness.graphModifiedMs).toISOString(),
+    generated_ms: indexed.buildFreshness?.generated_ms ?? graphFreshness.graphModifiedMs,
+    generated_at: indexed.buildFreshness?.generated_at ?? new Date(graphFreshness.graphModifiedMs).toISOString(),
     madar_version: readPackageVersion(),
     indexed_file_count: indexed.sourceFiles.length,
     changed_source_count: changedSourceCount,

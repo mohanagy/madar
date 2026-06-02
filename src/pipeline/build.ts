@@ -114,6 +114,12 @@ export function buildFromJson(extraction: unknown, options: BuildGraphOptions = 
   if (typeof extraction.root_path === 'string' && extraction.root_path.trim().length > 0) {
     graph.graph.root_path = extraction.root_path
   }
+  if (extraction.spi_mode === true) {
+    graph.graph.spi_mode = true
+  }
+  if (isRecord(extraction.graph_build_freshness)) {
+    graph.graph.graph_build_freshness = extraction.graph_build_freshness
+  }
 
   return graph
 }
