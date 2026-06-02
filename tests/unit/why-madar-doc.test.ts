@@ -58,7 +58,7 @@ describe('public marketing copy honesty', () => {
       expect(lower).toContain('copilot')
       expect(lower).toContain('wasting tokens')
       expect(lower).toContain('large typescript/node repo')
-      expect(lower).toContain('what runs for this task')
+      expect(lower).toContain('execution paths and structures relevant to this task')
       expect(lower).toContain('execution slice')
       expect(lower).not.toContain('context plane')
       expect(lower).not.toContain('context compiler')

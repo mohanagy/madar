@@ -2,7 +2,7 @@
 
 **Stop Claude Code, Cursor, Codex, and Copilot from wasting tokens rediscovering the same large TypeScript/Node repo.**
 
-Madar compiles a task-aware local context pack from **what runs for this task**. That first pass is usually a much smaller execution slice or structural subset, with inline snippets and citations, so the agent can start from evidence before it starts searching the repo by hand.
+Madar compiles a task-aware local context pack from **the execution paths and structures relevant to this task**. That first pass is usually a much smaller execution slice or structural subset, with inline snippets and citations, so the agent can start from evidence before it starts searching the repo by hand.
 
 Madar is deterministic local context compilation. It complements agents and IDE indexing; it is **not another generic codebase index**.
 

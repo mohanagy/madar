@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
@@ -9,7 +9,11 @@ interface RepoMetadata {
 }
 
 function loadRepoMetadata(): RepoMetadata {
-  return JSON.parse(readFileSync(resolve('.github/repo-metadata.json'), 'utf8')) as RepoMetadata
+  const path = resolve('.github/repo-metadata.json')
+  if (!existsSync(path)) {
+    throw new Error('Missing .github/repo-metadata.json - repository metadata file not found')
+  }
+  return JSON.parse(readFileSync(path, 'utf8')) as RepoMetadata
 }
 
 describe('GitHub repo metadata contract', () => {
