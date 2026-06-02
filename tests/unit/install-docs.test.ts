@@ -62,6 +62,15 @@ describe('install documentation', () => {
     expect(reference).toContain('override conflicting auto-activated exploration skills')
   })
 
+  it('clarifies that strict installs still use one bounded context_pack call', () => {
+    const reference = readFileSync(resolve('docs/reference/cli-and-mcp.md'), 'utf8')
+    const readme = readFileSync(resolve('README.md'), 'utf8')
+
+    expect(reference).toContain('`--profile strict` keeps the seven core MCP tools but adds one bounded `context_pack` call per task')
+    expect(reference).toContain('Full-profile additions beyond that strict one-pack flow')
+    expect(readme).toContain('`--profile strict` keeps the lean core MCP tools but still uses one bounded `context_pack` call per task before broader exploration')
+  })
+
   it('documents the local trust boundary and least-privilege install guidance', () => {
     const readme = readFileSync(resolve('README.md'), 'utf8')
 

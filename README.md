@@ -180,7 +180,7 @@ Everything stays local by default. No cloud upload, no API key required. Your co
 - Build: tree-sitter AST extraction and Louvain community detection, CPU-local.
 - Query: BM25 lexical scoring, reciprocal-rank fusion, optional ONNX embeddings, and optional cross-encoder reranker.
 - MCP: local stdio subprocess of your agent.
-- Security boundary: local-first is not automatically safe. Treat every Madar MCP install, plugin, hook, or AGENTS profile as a local trust boundary. Only enable it for repositories and local agent runtimes you trust. Prefer `--profile strict` when you only need the lean core MCP tools. Threat model: [`docs/security/mcp-threat-model.md`](https://github.com/mohanagy/madar/blob/main/docs/security/mcp-threat-model.md).
+- Security boundary: local-first is not automatically safe. Treat every Madar MCP install, plugin, hook, or AGENTS profile as a local trust boundary. Only enable it for repositories and local agent runtimes you trust. Prefer `--profile strict` when you only need the lean core MCP tools. `--profile strict` keeps the lean core MCP tools but still uses one bounded `context_pack` call per task before broader exploration. Threat model: [`docs/security/mcp-threat-model.md`](https://github.com/mohanagy/madar/blob/main/docs/security/mcp-threat-model.md).
 
 Limitations to know:
 
