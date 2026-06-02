@@ -83,7 +83,7 @@ Pick one install target, then rerun `madar doctor` and `madar status` so the fir
 
 After you generate `out/graph.json`, `madar doctor` and `madar status` check the local install wiring for Claude Code, Cursor, Gemini CLI, and GitHub Copilot CLI. They also lint the AGENTS-based Madar instruction profiles for Codex CLI, OpenCode, and Aider; if a profile drifts, they mark the agent as `partial` and suggest the matching reinstall command.
 
-Install details, generated files, profiles, and uninstall behavior live in the [CLI and MCP reference](https://github.com/mohanagy/madar/blob/main/docs/reference/cli-and-mcp.md) and [compatibility guide](https://github.com/mohanagy/madar/blob/main/docs/integrations/compatibility.md).
+Install details, generated files, profiles, uninstall behavior, and verified copy/paste quickstarts live in the [CLI and MCP reference](https://github.com/mohanagy/madar/blob/main/docs/reference/cli-and-mcp.md), [compatibility guide](https://github.com/mohanagy/madar/blob/main/docs/integrations/compatibility.md), and [agent quickstarts](https://github.com/mohanagy/madar/blob/main/docs/tutorials/agent-quickstarts.md).
 
 **Without MCP**, compile a prompt or pack directly:
 
@@ -226,6 +226,7 @@ Limitations to know:
 | Need | Link |
 | --- | --- |
 | First run | [Getting started](https://github.com/mohanagy/madar/blob/main/docs/tutorials/getting-started.md) |
+| Agent quickstarts | [Agent quickstarts](https://github.com/mohanagy/madar/blob/main/docs/tutorials/agent-quickstarts.md) |
 | Small demo repo | [Sample workspace](https://github.com/mohanagy/madar/blob/main/docs/tutorials/sample-workspace.md) |
 | Context packs, Pack Schema v1, adaptive renderings | [Context packs and task evidence](https://github.com/mohanagy/madar/blob/main/docs/concepts/context-packs.md) |
 | CLI commands, MCP tools, agent installers | [CLI and MCP reference](https://github.com/mohanagy/madar/blob/main/docs/reference/cli-and-mcp.md) |

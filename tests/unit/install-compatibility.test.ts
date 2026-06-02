@@ -30,6 +30,15 @@ interface CompatibilityRow {
 }
 
 type HomeSkillPlatform = Exclude<InstallPlatform, 'cursor' | 'gemini'>
+const PRIMARY_QUICKSTART_PLATFORMS = new Set<InstallPlatform>([
+  'claude',
+  'cursor',
+  'copilot',
+  'gemini',
+  'aider',
+  'codex',
+  'opencode',
+])
 
 const DEDICATED_COMMAND_ROWS: CompatibilityRow[] = [
   {
@@ -355,6 +364,26 @@ describe('install compatibility guide', () => {
 
     expect(readme).toContain('compatibility guide')
     expect(readme).toContain('docs/integrations/compatibility.md')
+  })
+
+  it('publishes verified quickstarts and smoke tests for the primary agent targets', () => {
+    const readme = readFileSync(resolve('README.md'), 'utf8')
+    const quickstarts = readFileSync(resolve('docs/tutorials/agent-quickstarts.md'), 'utf8')
+
+    expect(readme).toContain('docs/tutorials/agent-quickstarts.md')
+    expect(quickstarts).toContain('# Agent quickstarts')
+    expect(quickstarts).toContain('madar try')
+    expect(quickstarts).toContain('docs/tutorials/getting-started.md')
+    expect(quickstarts).toContain('Smoke test')
+    expect(quickstarts).toContain('Common failure modes')
+    expect(quickstarts).toContain('not a supported quickstart')
+    expect(quickstarts).toContain('instruction-only')
+
+    for (const row of DEDICATED_COMMAND_ROWS.filter((candidate) => PRIMARY_QUICKSTART_PLATFORMS.has(candidate.platform))) {
+      for (const expected of [row.label, row.command, ...row.docArtifacts, row.verify, row.limitation]) {
+        expect(quickstarts).toContain(expected)
+      }
+    }
   })
 
   it('covers the documented install commands, artifacts, verification paths, profiles, and limitations', () => {
