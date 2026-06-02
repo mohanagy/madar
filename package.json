@@ -1,7 +1,7 @@
 {
     "name": "@lubab/madar",
     "version": "0.27.8",
-    "description": "Local task-aware context packs for AI coding agents. Start from what runs for this task and turn TypeScript/Node workspaces plus PR diffs into compact, verifiable context packs for Claude Code, Codex, Copilot, Cursor, and other agents.",
+    "description": "Stop AI coding agents from rediscovering large TypeScript/Node repos. Madar compiles task-aware local context packs from what runs for this task.",
     "license": "MIT",
     "author": "mohanagy",
     "bin": {
@@ -24,15 +24,15 @@
         "codebase",
         "codex",
         "context",
-        "context-compiler",
-        "context-plane",
+        "code-review",
         "coding-agents",
         "copilot",
         "cursor",
-        "graph",
+        "impact-analysis",
         "graphrag",
         "knowledge-graph",
         "mcp",
+        "nodejs",
         "pr-review",
         "static-analysis",
         "typescript"

@@ -34,6 +34,18 @@ This file is the public map between what Madar says and what the repo can actual
 | A universal turns / latency / exploration win across repos. | Public receipts are repo- and prompt-specific, so they do not justify a single-number cross-repo headline. |
 | The agent always stops exploring after one pack. | Madar shapes the first pass, but it does not control the runtime or guarantee tool behavior. |
 
+## Competitive positioning
+
+This is a capability/scope summary, not a benchmark claim or quality verdict.
+
+| Tool | Best first use | Where it stops |
+| --- | --- | --- |
+| **Madar** | Task-scoped local repo evidence for explain, review, and impact work on large TypeScript/Node repos | Not a hosted knowledge base or broad cross-language parity tool today |
+| **Repomix** | Exporting or sharing a broad repo snapshot/prompt bundle | Not a task-aware local retrieval layer, PR-impact surface, or agent install flow |
+| **Context7** | Pulling external library/framework docs into prompts | Not a local codebase analysis, PR-impact, or graph-backed repository context tool |
+
+Use this as a scope summary, not a benchmark claim. If a future README or sales surface makes a stronger comparative claim, it must link to dated evidence first.
+
 ## How this maps to README.md
 
 - `README.md` should state the demonstrated release cell, the benchmark-suite direction, and the not-yet-measured limits in the same place.

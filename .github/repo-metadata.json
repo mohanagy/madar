@@ -1,0 +1,16 @@
+{
+  "description": "Stop AI coding agents from rediscovering large TypeScript/Node repos with task-aware local context packs.",
+  "topics": [
+    "ai-coding-agents",
+    "claude-code",
+    "codex",
+    "copilot",
+    "cursor",
+    "mcp",
+    "typescript",
+    "nodejs",
+    "static-analysis",
+    "codebase-analysis",
+    "knowledge-graph"
+  ]
+}

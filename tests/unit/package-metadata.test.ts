@@ -154,14 +154,25 @@ describe('package metadata', () => {
     expect(loadChangelog()).toContain(`## [${manifest.version}]`)
   })
 
-  it('positions package metadata around execution-slice framing instead of generic graph marketing', () => {
+  it('positions package metadata around outcome-first task-aware local packs instead of generic graph marketing', () => {
     const manifest = loadPackageManifest()
     const readme = loadReadme().toLowerCase()
+    const keywords = manifest.keywords ?? []
 
+    expect(manifest.description?.toLowerCase()).toContain('stop')
+    expect(manifest.description?.toLowerCase()).toContain('typescript/node')
+    expect(manifest.description?.toLowerCase()).toContain('task-aware')
     expect(manifest.description?.toLowerCase()).toContain('what runs for this task')
-    expect(manifest.description?.toLowerCase()).toContain('verifiable context packs')
+    expect(manifest.description?.toLowerCase()).toContain('local')
     expect(manifest.description?.toLowerCase()).not.toContain('context plane')
     expect(manifest.description?.toLowerCase()).not.toContain('context compiler')
+    expect(keywords).toEqual(expect.arrayContaining(['nodejs', 'code-review', 'impact-analysis']))
+    expect(keywords).not.toEqual(expect.arrayContaining(['context-plane', 'context-compiler']))
+    expect(readme).toContain('claude code')
+    expect(readme).toContain('cursor')
+    expect(readme).toContain('codex')
+    expect(readme).toContain('copilot')
+    expect(readme).toContain('large typescript/node repo')
     expect(readme).toContain('what runs for this task')
     expect(readme).toContain('execution slice')
     expect(readme).not.toContain('context plane')

@@ -51,7 +51,13 @@ describe('public marketing copy honesty', () => {
       })
     }
 
-    it('uses execution-slice framing and removes headline benchmark ratios from the lead', () => {
+    it('leads with the urgent adoption outcome while keeping execution-slice framing honest', () => {
+      expect(lower).toContain('claude code')
+      expect(lower).toContain('cursor')
+      expect(lower).toContain('codex')
+      expect(lower).toContain('copilot')
+      expect(lower).toContain('wasting tokens')
+      expect(lower).toContain('large typescript/node repo')
       expect(lower).toContain('what runs for this task')
       expect(lower).toContain('execution slice')
       expect(lower).not.toContain('context plane')
@@ -162,11 +168,26 @@ describe('public marketing copy honesty', () => {
       expect(content).toContain('docs/claims-and-evidence.md')
     })
 
-    it('states the near-term primary ICP and non-ICP explicitly', () => {
-      expect(lower).toContain('primary icp')
+    it('states who madar is for and not for explicitly', () => {
+      expect(lower).toContain('who madar is for')
+      expect(lower).toContain('who madar is not for')
       expect(lower).toContain('medium-to-large typescript/node repos')
       expect(lower).toContain('cost, latency, privacy, or wrong-file-edit risk')
-      expect(lower).toContain('not the primary icp today')
+      expect(lower).toContain('tiny repos')
+      expect(lower).toContain('hosted-dashboard-first buyers')
+    })
+
+    it('adds a bounded competitor positioning table backed by the claims-and-evidence map', () => {
+      expect(lower).toContain('madar vs repomix vs context7')
+      expect(content).toContain('| Tool | Best first use | Where it stops |')
+      expect(content).toContain('Repomix')
+      expect(content).toContain('Context7')
+      expect(content).toContain('Capability/scope summary only')
+      expect(content).toContain('docs/claims-and-evidence.md#competitive-positioning')
+      expect(claims).toContain('## Competitive positioning')
+      expect(claims).toContain('Repomix')
+      expect(claims).toContain('Context7')
+      expect(claims).toContain('scope summary, not a benchmark claim')
     })
 
     it('frames the core promise as deterministic local context compilation that complements indexing', () => {

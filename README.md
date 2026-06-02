@@ -1,20 +1,38 @@
 # madar
 
-**Madar is a local, task-aware context-pack compiler for AI coding agents.**
+**Stop Claude Code, Cursor, Codex, and Copilot from wasting tokens rediscovering the same large TypeScript/Node repo.**
 
-A structural graph tells the agent what exists in your codebase. Madar tells the agent **what runs for this task**: usually a much smaller execution slice or structural subset. It then returns a compact pack with inline snippets so the agent can answer from evidence before it starts searching the repo by hand.
+Madar compiles a task-aware local context pack from **what runs for this task**. That first pass is usually a much smaller execution slice or structural subset, with inline snippets and citations, so the agent can start from evidence before it starts searching the repo by hand.
 
 Madar is deterministic local context compilation. It complements agents and IDE indexing; it is **not another generic codebase index**.
-
-**Primary ICP:** teams using AI coding agents on medium-to-large TypeScript/Node repos where broad exploration creates cost, latency, privacy, or wrong-file-edit risk.
-
-**Not the primary ICP today:** tiny repos, throwaway scripts, hosted-dashboard-first buyers, or teams that need broad cross-language parity before the TypeScript/Node proof deepens.
 
 [![npm](https://img.shields.io/npm/v/%40lubab%2Fmadar)](https://www.npmjs.com/package/@lubab/madar)
 [![node >=20](https://img.shields.io/badge/node-%E2%89%A520-3c873a)](https://nodejs.org/)
 [![Local first](https://img.shields.io/badge/local--first-no%20cloud%20required-0f766e)](#trust--limitations)
 [![No API keys](https://img.shields.io/badge/API%20keys-none%20required-111827)](#trust--limitations)
 [![license MIT](https://img.shields.io/badge/license-MIT-16a34a)](https://github.com/mohanagy/madar/blob/main/LICENSE)
+
+---
+
+## Who Madar is for
+
+- Teams using AI coding agents on medium-to-large TypeScript/Node repos where broad exploration creates cost, latency, privacy, or wrong-file-edit risk.
+- Explain, review, and impact workflows where a bounded first pass is more useful than a broad repo crawl.
+
+## Who Madar is not for
+
+- Tiny repos, throwaway scripts, or one-off prompts where full-repo search is already cheap.
+- Hosted-dashboard-first buyers or teams that need broad cross-language parity before the TypeScript/Node proof deepens.
+
+## Madar vs Repomix vs Context7
+
+| Tool | Best first use | Where it stops |
+| --- | --- | --- |
+| **Madar** | Task-scoped local repo evidence for explain, review, and impact work on large TypeScript/Node repos | Not a hosted knowledge base or broad cross-language parity tool today |
+| **Repomix** | Exporting or sharing a broad repo snapshot/prompt bundle | Not a task-aware local retrieval layer, PR-impact surface, or agent install flow |
+| **Context7** | Pulling external library/framework docs into prompts | Not a local codebase analysis, PR-impact, or graph-backed repository context tool |
+
+Capability/scope summary only. See the [claims-and-evidence map](https://github.com/mohanagy/madar/blob/main/docs/claims-and-evidence.md#competitive-positioning) before turning this into a stronger claim.
 
 ---
 
