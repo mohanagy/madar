@@ -155,13 +155,13 @@ describe('MCP Registry metadata', () => {
   })
 
   it('documents the public-registry decision, validation command, and local-first trust boundary', () => {
-    const readme = readFileSync(resolve('README.md'), 'utf8')
+    const reference = readFileSync(resolve('docs/reference/cli-and-mcp.md'), 'utf8')
     const releaseDoc = readFileSync(resolve('docs/release.md'), 'utf8')
 
-    expect(readme).toContain('docs/mcp-registry/server.json')
-    expect(readme).toContain('npm run registry:validate')
-    expect(readme).toContain('The official MCP Registry hosts metadata, not Madar code or your local graph artifact.')
-    expect(readme).toContain('Private registry usage stays out of scope for the public Madar listing')
+    expect(reference).toContain('docs/mcp-registry/server.json')
+    expect(reference).toContain('npm run registry:validate')
+    expect(reference).toContain('The official MCP Registry hosts metadata, not Madar code or your local graph artifact.')
+    expect(reference).toContain('Private registry usage stays out of scope for the public Madar listing')
     expect(releaseDoc).toContain('npm run registry:validate')
   })
 })

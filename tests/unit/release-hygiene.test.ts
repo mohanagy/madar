@@ -143,7 +143,22 @@ describe('release hygiene', () => {
         '',
       ].join('\n'),
       (runVerify) => {
-        expect(runVerify).toThrow(/next-only README doc links must target blob\/next/)
+        expect(runVerify).toThrow(/release-sensitive README doc links must target blob\/next/)
+      },
+    )
+  })
+
+  it('requires release-sensitive README doc links to target main for stable releases', () => {
+    withReleaseReadmeFixture(
+      '0.27.7',
+      [
+        '[release notes](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md#0277---2026-05-29)',
+        '[enterprise offer](https://github.com/mohanagy/madar/blob/next/docs/team-enterprise-offer.md)',
+        '[telemetry](https://github.com/mohanagy/madar/blob/next/docs/telemetry.md)',
+        '',
+      ].join('\n'),
+      (runVerify) => {
+        expect(runVerify).toThrow(/release-sensitive README doc links must target blob\/main/)
       },
     )
   })
