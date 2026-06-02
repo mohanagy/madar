@@ -993,6 +993,113 @@ describe('stdio runtime', () => {
     }
   })
 
+  it('records opt-in context_pack telemetry for MCP success and failure without source-sensitive payloads', async () => {
+    const root = createGraphFixtureRoot()
+    const previousEnv = {
+      XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
+      XDG_CACHE_HOME: process.env.XDG_CACHE_HOME,
+      MADAR_ENABLE_TELEMETRY: process.env.MADAR_ENABLE_TELEMETRY,
+      MADAR_DISABLE_TELEMETRY: process.env.MADAR_DISABLE_TELEMETRY,
+      DO_NOT_TRACK: process.env.DO_NOT_TRACK,
+      CI: process.env.CI,
+    }
+
+    try {
+      const graphPath = join(root, 'graph.json')
+      const configRoot = join(root, 'xdg-config')
+      const cacheRoot = join(root, 'xdg-cache')
+      mkdirSync(configRoot, { recursive: true })
+      mkdirSync(cacheRoot, { recursive: true })
+      process.env.XDG_CONFIG_HOME = configRoot
+      process.env.XDG_CACHE_HOME = cacheRoot
+      process.env.MADAR_ENABLE_TELEMETRY = '1'
+      delete process.env.MADAR_DISABLE_TELEMETRY
+      delete process.env.DO_NOT_TRACK
+      delete process.env.CI
+
+      const success = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 301,
+        method: 'tools/call',
+        params: {
+          name: 'context_pack',
+          arguments: {
+            prompt: 'How does auth reach transport?',
+            budget: 1200,
+          },
+        },
+      }))
+      const failure = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 302,
+        method: 'tools/call',
+        params: {
+          name: 'context_pack',
+          arguments: {
+            budget: 1200,
+          },
+        },
+      }))
+
+      expect(success?.error).toBeUndefined()
+      expect(failure?.error?.message).toContain('context_pack requires a string prompt parameter')
+
+      const spool = JSON.parse(readFileSync(join(cacheRoot, 'madar', 'telemetry-events.json'), 'utf8')) as {
+        schema_version: number
+        events: Array<Record<string, unknown>>
+      }
+      expect(spool).toEqual({
+        schema_version: 2,
+        events: [
+          expect.objectContaining({
+            command: 'context_pack',
+            stage: 'succeeded',
+            repo_size_bucket: '1-24',
+            graph_size_bucket: '1-99',
+          }),
+          expect.objectContaining({
+            command: 'context_pack',
+            stage: 'failed',
+            failure_bucket: 'invalid_params',
+          }),
+        ],
+      })
+      const serialized = JSON.stringify(spool)
+      expect(serialized).not.toContain('How does auth reach transport?')
+      expect(serialized).not.toContain('auth.ts')
+    } finally {
+      if (previousEnv.XDG_CONFIG_HOME === undefined) {
+        delete process.env.XDG_CONFIG_HOME
+      } else {
+        process.env.XDG_CONFIG_HOME = previousEnv.XDG_CONFIG_HOME
+      }
+      if (previousEnv.XDG_CACHE_HOME === undefined) {
+        delete process.env.XDG_CACHE_HOME
+      } else {
+        process.env.XDG_CACHE_HOME = previousEnv.XDG_CACHE_HOME
+      }
+      if (previousEnv.MADAR_ENABLE_TELEMETRY === undefined) {
+        delete process.env.MADAR_ENABLE_TELEMETRY
+      } else {
+        process.env.MADAR_ENABLE_TELEMETRY = previousEnv.MADAR_ENABLE_TELEMETRY
+      }
+      if (previousEnv.MADAR_DISABLE_TELEMETRY === undefined) {
+        delete process.env.MADAR_DISABLE_TELEMETRY
+      } else {
+        process.env.MADAR_DISABLE_TELEMETRY = previousEnv.MADAR_DISABLE_TELEMETRY
+      }
+      if (previousEnv.DO_NOT_TRACK === undefined) {
+        delete process.env.DO_NOT_TRACK
+      } else {
+        process.env.DO_NOT_TRACK = previousEnv.DO_NOT_TRACK
+      }
+      if (previousEnv.CI === undefined) {
+        delete process.env.CI
+      } else {
+        process.env.CI = previousEnv.CI
+      }
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('exposes context-pack and context-prompt MCP flows with reusable prompt sessions', async () => {
     const root = createGraphFixtureRoot()
     try {

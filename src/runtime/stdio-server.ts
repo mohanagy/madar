@@ -6,6 +6,7 @@ import type { Readable, Writable } from 'node:stream'
 import type { ContextSessionState } from '../contracts/context-session.js'
 import { compareRefs } from '../infrastructure/time-travel.js'
 import { diffGraphs } from './diff.js'
+import { buildGraphSummary } from './graph-summary.js'
 import { MCP_PROMPTS, MCP_TOOLS, activeMcpTools, isCoreToolName, resolveToolProfileFromEnv, type McpPromptDefinition } from './stdio/definitions.js'
 import { handleCompletion, handlePromptGet, promptDefinitionsForGraph, readStoredCommunityLabels } from './stdio/prompts.js'
 import {
@@ -30,6 +31,13 @@ import {
   shortestPath,
 } from './serve.js'
 import { validateGraphPath } from '../shared/security.js'
+import {
+  graphSizeBucketFromNodeCount,
+  recordTelemetryEvent,
+  repoSizeBucketFromFileCount,
+  type TelemetryFailureBucket,
+} from '../shared/telemetry.js'
+import { findPackageRoot, readPackageVersion } from '../shared/package-metadata.js'
 
 const JSONRPC_PARSE_ERROR = -32700
 const JSONRPC_INVALID_REQUEST = -32600
@@ -202,6 +210,32 @@ function ensureContextPackNodeIds(state: StdioSessionState): ContextPackNodeIdSt
 
 function requestId(request: StdioRequest): string | number | null {
   return typeof request.id === 'string' || typeof request.id === 'number' ? request.id : null
+}
+
+function readInstalledVersionForTelemetry(): string {
+  return readPackageVersion(findPackageRoot())
+}
+
+function readNodeMajorForTelemetry(): number {
+  const major = Number.parseInt(process.versions.node.split('.', 1)[0] ?? '', 10)
+  return Number.isInteger(major) && major > 0 ? major : 0
+}
+
+function classifyToolTelemetryFailure(message: string, code: number): TelemetryFailureBucket {
+  const normalizedMessage = message.toLowerCase()
+  if (code === JSONRPC_INVALID_PARAMS) {
+    return 'invalid_params'
+  }
+  if (normalizedMessage.includes('require_fresh_graph') || normalizedMessage.includes('non-fresh graph')) {
+    return 'stale_graph'
+  }
+  if (normalizedMessage.includes('require_fresh_context') || normalizedMessage.includes('stale selected context')) {
+    return 'stale_context'
+  }
+  if (normalizedMessage.includes('tool') && normalizedMessage.includes('profile')) {
+    return 'tool_profile'
+  }
+  return 'unknown'
 }
 
 function stringParam(params: unknown, key: string): string | null {
@@ -606,7 +640,7 @@ export function handleStdioRequest(
             `Tool '${toolName}' is not enabled in the active madar MCP tool profile. Default profile: core. Set MADAR_TOOL_PROFILE=full in your MCP server config (e.g. .mcp.json for Claude, .cursor/mcp.json for Cursor, .vscode/mcp.json for VS Code Copilot) to enable advanced tools.`,
           )
         }
-        return handleToolCallRequest(id, graphPath, params, {
+        const response = handleToolCallRequest(id, graphPath, params, {
           ok,
           failure,
           textToolResult,
@@ -684,6 +718,27 @@ export function handleStdioRequest(
           maxStdioHops: MAX_STDIO_HOPS,
           maxStdioTokenBudget: MAX_STDIO_TOKEN_BUDGET,
         })
+        const recordContextPackTelemetry = (toolResponse: StdioResponse): StdioResponse => {
+          if (toolName === 'context_pack') {
+            try {
+              const summary = buildGraphSummary(loadGraphCached(graphPath))
+              recordTelemetryEvent({
+                command: 'context_pack',
+                stage: toolResponse.error ? 'failed' : 'succeeded',
+                version: readInstalledVersionForTelemetry(),
+                os: process.platform,
+                nodeMajor: readNodeMajorForTelemetry(),
+                repoSizeBucket: repoSizeBucketFromFileCount(summary.file_count),
+                graphSizeBucket: graphSizeBucketFromNodeCount(summary.node_count),
+                ...(toolResponse.error ? { failureBucket: classifyToolTelemetryFailure(toolResponse.error.message, toolResponse.error.code) } : {}),
+              })
+            } catch {
+              // Telemetry is best-effort and must never break the MCP response path.
+            }
+          }
+          return toolResponse
+        }
+        return response instanceof Promise ? response.then(recordContextPackTelemetry) : recordContextPackTelemetry(response)
       }
       case 'ping':
         return ok(id, { ok: true })

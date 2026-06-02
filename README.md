@@ -117,11 +117,13 @@ Telemetry is disabled unless you explicitly enable it.
 madar telemetry status
 madar telemetry enable
 madar telemetry disable
+madar telemetry clear
+madar telemetry report
 
 MADAR_ENABLE_TELEMETRY=1 madar generate .
 ```
 
-The current telemetry model is local-first and source-safe. It records coarse success events for `install`, `generate`, `pack`, and `compare`, plus version, OS, optional install target, and optional repo-size bucket. It does **not** record prompt text, answer text, source paths, or source content. Full controls: [`docs/telemetry.md`](https://github.com/mohanagy/madar/blob/main/docs/telemetry.md).
+The current telemetry model is local-first and source-safe. It records coarse funnel events for `install`, `generate`, `pack`, `prompt`, MCP `context_pack`, `doctor`, `status`, and `compare`, plus command stage, version, OS, Node major version, and optional coarse buckets such as agent target, repo size, graph size, SPI enabled, failure bucket, and status bucket. It does **not** record prompt text, answer text, source paths, source content, or repository names. Full controls: [`docs/telemetry.md`](https://github.com/mohanagy/madar/blob/main/docs/telemetry.md).
 
 ---
 

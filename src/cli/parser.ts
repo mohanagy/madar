@@ -221,9 +221,9 @@ export interface InstallCliOptions {
   platform: InstallPlatform
 }
 
-export interface TelemetryCliOptions {
-  action: 'enable' | 'disable' | 'status'
-}
+export type TelemetryCliOptions =
+  | { action: 'enable' | 'disable' | 'status' | 'clear' }
+  | { action: 'report'; spoolPaths: string[] }
 
 const COMPARE_USAGE = 'Usage: madar compare [question] --exec TEMPLATE [--graph path] [--questions PATH] [--output-dir DIR] [--task TASK] [--baseline-mode MODE] [--per-arm-timeout S] [--validation-timeout S] [--heartbeat-interval-ms N] [--strict-madar-first] [--strict] [--allow-no-install] [--yes] [--limit N] [--why]'
 
@@ -2176,14 +2176,17 @@ export function parseHookArgs(args: string[]): HookCliOptions {
 
 export function parseTelemetryArgs(args: string[]): TelemetryCliOptions {
   const action = args[0]
-  if (action === 'enable' || action === 'disable' || action === 'status') {
+  if (action === 'enable' || action === 'disable' || action === 'status' || action === 'clear') {
     if (args.length > 1) {
-      throw new UsageError('Usage: madar telemetry <enable|disable|status>')
+      throw new UsageError('Usage: madar telemetry <enable|disable|status|clear|report [spool.json ...]>')
     }
     return { action }
   }
+  if (action === 'report') {
+    return { action, spoolPaths: args.slice(1) }
+  }
 
-  throw new UsageError('Usage: madar telemetry <enable|disable|status>')
+  throw new UsageError('Usage: madar telemetry <enable|disable|status|clear|report [spool.json ...]>')
 }
 
 export function parseInstallArgs(args: string[], defaultPlatform: InstallPlatform): InstallCliOptions {

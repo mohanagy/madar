@@ -1,16 +1,57 @@
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, platform } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 
-export type TelemetryEventName = 'install_success' | 'generate_success' | 'pack_success' | 'compare_success'
+export type TelemetryCommand =
+  | 'install'
+  | 'generate'
+  | 'pack'
+  | 'prompt'
+  | 'context_pack'
+  | 'doctor'
+  | 'status'
+  | 'compare'
+
+export type TelemetryStage = 'started' | 'succeeded' | 'failed'
 export type TelemetryRepoSizeBucket = '1-24' | '25-99' | '100-499' | '500-999' | '1000+'
+export type TelemetryGraphSizeBucket = '1-99' | '100-499' | '500-999' | '1000-4999' | '5000+'
+export type TelemetryFailureBucket =
+  | 'usage_error'
+  | 'invalid_params'
+  | 'missing_graph'
+  | 'stale_graph'
+  | 'stale_context'
+  | 'tool_profile'
+  | 'unsupported_corpus'
+  | 'install_error'
+  | 'unknown'
+export type TelemetryStatusBucket = 'healthy' | 'attention_needed'
+export type TelemetryAgentTarget =
+  | 'claude'
+  | 'cursor'
+  | 'codex'
+  | 'copilot'
+  | 'gemini'
+  | 'aider'
+  | 'opencode'
+  | 'windows'
+  | 'claw'
+  | 'droid'
+  | 'trae'
+  | 'trae-cn'
 
 export interface TelemetryEventInput {
-  event: TelemetryEventName
+  command: TelemetryCommand
+  stage: TelemetryStage
   version: string
   os: NodeJS.Platform
+  nodeMajor: number
   repoSizeBucket?: TelemetryRepoSizeBucket
-  installPlatform?: string
+  graphSizeBucket?: TelemetryGraphSizeBucket
+  agentTarget?: TelemetryAgentTarget
+  spiEnabled?: boolean
+  failureBucket?: TelemetryFailureBucket
+  statusBucket?: TelemetryStatusBucket
 }
 
 export interface TelemetryOptions {
@@ -35,8 +76,8 @@ interface TelemetryConfig {
   updated_at: number
 }
 
-interface PersistedTelemetryEvent {
-  event: TelemetryEventName
+interface LegacyPersistedTelemetryEvent {
+  event: 'install_success' | 'generate_success' | 'pack_success' | 'compare_success'
   recorded_at: string
   version: string
   os: NodeJS.Platform
@@ -44,14 +85,74 @@ interface PersistedTelemetryEvent {
   install_platform?: string
 }
 
-interface TelemetrySpool {
+interface PersistedTelemetryEvent {
+  command: TelemetryCommand
+  stage: TelemetryStage
+  recorded_at: string
+  version: string
+  os: NodeJS.Platform
+  node_major?: number
+  repo_size_bucket?: TelemetryRepoSizeBucket
+  graph_size_bucket?: TelemetryGraphSizeBucket
+  agent_target?: TelemetryAgentTarget
+  spi_enabled?: boolean
+  failure_bucket?: TelemetryFailureBucket
+  status_bucket?: TelemetryStatusBucket
+}
+
+interface LegacyTelemetrySpool {
   schema_version: 1
+  events: LegacyPersistedTelemetryEvent[]
+}
+
+interface TelemetrySpool {
+  schema_version: 2
   events: PersistedTelemetryEvent[]
 }
 
 const DEFAULT_MAX_EVENTS = 200
 const LOCK_RETRY_DELAY_MS = 10
 const LOCK_TIMEOUT_MS = 1_000
+
+const TELEMETRY_COMMANDS: readonly TelemetryCommand[] = [
+  'install',
+  'generate',
+  'pack',
+  'prompt',
+  'context_pack',
+  'doctor',
+  'status',
+  'compare',
+]
+const TELEMETRY_STAGES: readonly TelemetryStage[] = ['started', 'succeeded', 'failed']
+const TELEMETRY_REPO_SIZE_BUCKETS: readonly TelemetryRepoSizeBucket[] = ['1-24', '25-99', '100-499', '500-999', '1000+']
+const TELEMETRY_GRAPH_SIZE_BUCKETS: readonly TelemetryGraphSizeBucket[] = ['1-99', '100-499', '500-999', '1000-4999', '5000+']
+const TELEMETRY_FAILURE_BUCKETS: readonly TelemetryFailureBucket[] = [
+  'usage_error',
+  'invalid_params',
+  'missing_graph',
+  'stale_graph',
+  'stale_context',
+  'tool_profile',
+  'unsupported_corpus',
+  'install_error',
+  'unknown',
+]
+const TELEMETRY_STATUS_BUCKETS: readonly TelemetryStatusBucket[] = ['healthy', 'attention_needed']
+const TELEMETRY_AGENT_TARGETS: readonly TelemetryAgentTarget[] = [
+  'claude',
+  'cursor',
+  'codex',
+  'copilot',
+  'gemini',
+  'aider',
+  'opencode',
+  'windows',
+  'claw',
+  'droid',
+  'trae',
+  'trae-cn',
+]
 
 function defaultConfigRoot(env: NodeJS.ProcessEnv): string {
   if (typeof env.XDG_CONFIG_HOME === 'string' && env.XDG_CONFIG_HOME.trim().length > 0) {
@@ -122,28 +223,151 @@ function loadConfig(configFile: string): TelemetryConfig | null {
   return parseConfig(readFileSync(configFile, 'utf8'))
 }
 
+function isTelemetryCommand(value: unknown): value is TelemetryCommand {
+  return typeof value === 'string' && TELEMETRY_COMMANDS.includes(value as TelemetryCommand)
+}
+
+function isTelemetryStage(value: unknown): value is TelemetryStage {
+  return typeof value === 'string' && TELEMETRY_STAGES.includes(value as TelemetryStage)
+}
+
+function isTelemetryRepoSizeBucket(value: unknown): value is TelemetryRepoSizeBucket {
+  return typeof value === 'string' && TELEMETRY_REPO_SIZE_BUCKETS.includes(value as TelemetryRepoSizeBucket)
+}
+
+function isTelemetryGraphSizeBucket(value: unknown): value is TelemetryGraphSizeBucket {
+  return typeof value === 'string' && TELEMETRY_GRAPH_SIZE_BUCKETS.includes(value as TelemetryGraphSizeBucket)
+}
+
+function isTelemetryFailureBucket(value: unknown): value is TelemetryFailureBucket {
+  return typeof value === 'string' && TELEMETRY_FAILURE_BUCKETS.includes(value as TelemetryFailureBucket)
+}
+
+function isTelemetryStatusBucket(value: unknown): value is TelemetryStatusBucket {
+  return typeof value === 'string' && TELEMETRY_STATUS_BUCKETS.includes(value as TelemetryStatusBucket)
+}
+
+function isTelemetryAgentTarget(value: unknown): value is TelemetryAgentTarget {
+  return typeof value === 'string' && TELEMETRY_AGENT_TARGETS.includes(value as TelemetryAgentTarget)
+}
+
+function normalizeTelemetryEvent(record: Partial<PersistedTelemetryEvent>): PersistedTelemetryEvent | null {
+  if (!isTelemetryCommand(record.command) || !isTelemetryStage(record.stage)) {
+    return null
+  }
+  if (typeof record.recorded_at !== 'string' || record.recorded_at.length === 0) {
+    return null
+  }
+  if (typeof record.version !== 'string' || record.version.length === 0) {
+    return null
+  }
+  if (typeof record.os !== 'string') {
+    return null
+  }
+
+  const normalized: PersistedTelemetryEvent = {
+    command: record.command,
+    stage: record.stage,
+    recorded_at: record.recorded_at,
+    version: record.version,
+    os: record.os,
+  }
+
+  if (typeof record.node_major === 'number' && Number.isInteger(record.node_major) && record.node_major > 0) {
+    normalized.node_major = record.node_major
+  }
+  if (isTelemetryRepoSizeBucket(record.repo_size_bucket)) {
+    normalized.repo_size_bucket = record.repo_size_bucket
+  }
+  if (isTelemetryGraphSizeBucket(record.graph_size_bucket)) {
+    normalized.graph_size_bucket = record.graph_size_bucket
+  }
+  if (isTelemetryAgentTarget(record.agent_target)) {
+    normalized.agent_target = record.agent_target
+  }
+  if (typeof record.spi_enabled === 'boolean') {
+    normalized.spi_enabled = record.spi_enabled
+  }
+  if (isTelemetryFailureBucket(record.failure_bucket)) {
+    normalized.failure_bucket = record.failure_bucket
+  }
+  if (isTelemetryStatusBucket(record.status_bucket)) {
+    normalized.status_bucket = record.status_bucket
+  }
+
+  return normalized
+}
+
+function migrateLegacyEvent(record: Partial<LegacyPersistedTelemetryEvent>): PersistedTelemetryEvent | null {
+  if (typeof record.recorded_at !== 'string' || record.recorded_at.length === 0) {
+    return null
+  }
+  if (typeof record.version !== 'string' || record.version.length === 0) {
+    return null
+  }
+  if (typeof record.os !== 'string') {
+    return null
+  }
+
+  const base: PersistedTelemetryEvent = {
+    command: 'generate',
+    stage: 'succeeded',
+    recorded_at: record.recorded_at,
+    version: record.version,
+    os: record.os,
+  }
+
+  switch (record.event) {
+    case 'install_success':
+      base.command = 'install'
+      if (isTelemetryAgentTarget(record.install_platform)) {
+        base.agent_target = record.install_platform
+      }
+      return base
+    case 'generate_success':
+      base.command = 'generate'
+      if (isTelemetryRepoSizeBucket(record.repo_size_bucket)) {
+        base.repo_size_bucket = record.repo_size_bucket
+      }
+      return base
+    case 'pack_success':
+      base.command = 'pack'
+      if (isTelemetryRepoSizeBucket(record.repo_size_bucket)) {
+        base.repo_size_bucket = record.repo_size_bucket
+      }
+      return base
+    case 'compare_success':
+      base.command = 'compare'
+      if (isTelemetryRepoSizeBucket(record.repo_size_bucket)) {
+        base.repo_size_bucket = record.repo_size_bucket
+      }
+      return base
+    default:
+      return null
+  }
+}
+
 function parseSpool(text: string): TelemetrySpool | null {
   try {
-    const parsed = JSON.parse(text) as Partial<TelemetrySpool>
-    if (parsed.schema_version !== 1 || !Array.isArray(parsed.events)) {
+    const parsed = JSON.parse(text) as { schema_version?: unknown; events?: unknown }
+    if (parsed.schema_version === 1 && Array.isArray(parsed.events)) {
+      return {
+        schema_version: 2,
+        events: parsed.events
+          .filter((event: unknown): event is LegacyPersistedTelemetryEvent => typeof event === 'object' && event !== null)
+          .map((event) => migrateLegacyEvent(event))
+          .filter((event): event is PersistedTelemetryEvent => event !== null),
+      }
+    }
+    if (parsed.schema_version !== 2 || !Array.isArray(parsed.events)) {
       return null
     }
     return {
-      schema_version: 1,
+      schema_version: 2,
       events: parsed.events
-        .filter((event): event is PersistedTelemetryEvent => typeof event === 'object' && event !== null)
-        .map((event) => {
-          const record = event as Partial<PersistedTelemetryEvent>
-          return {
-            event: record.event as TelemetryEventName,
-            recorded_at: String(record.recorded_at ?? ''),
-            version: String(record.version ?? ''),
-            os: (record.os as NodeJS.Platform | undefined) ?? platform(),
-            ...(record.repo_size_bucket ? { repo_size_bucket: record.repo_size_bucket } : {}),
-            ...(record.install_platform ? { install_platform: String(record.install_platform) } : {}),
-          }
-        })
-        .filter((event) => event.recorded_at.length > 0 && event.version.length > 0),
+        .filter((event: unknown): event is PersistedTelemetryEvent => typeof event === 'object' && event !== null)
+        .map((event) => normalizeTelemetryEvent(event))
+        .filter((event): event is PersistedTelemetryEvent => event !== null),
     }
   } catch {
     return null
@@ -152,9 +376,9 @@ function parseSpool(text: string): TelemetrySpool | null {
 
 function loadSpool(spoolFile: string): TelemetrySpool {
   if (!existsSync(spoolFile)) {
-    return { schema_version: 1, events: [] }
+    return { schema_version: 2, events: [] }
   }
-  return parseSpool(readFileSync(spoolFile, 'utf8')) ?? { schema_version: 1, events: [] }
+  return parseSpool(readFileSync(spoolFile, 'utf8')) ?? { schema_version: 2, events: [] }
 }
 
 function uniqueTempPath(targetPath: string): string {
@@ -203,6 +427,16 @@ function writeJsonAtomic(targetPath: string, value: unknown): void {
   }
 }
 
+function summarizeCounts(values: string[]): string[] {
+  const counts = new Map<string, number>()
+  for (const value of values) {
+    counts.set(value, (counts.get(value) ?? 0) + 1)
+  }
+  return [...counts.entries()]
+    .sort(([leftLabel, leftCount], [rightLabel, rightCount]) => rightCount - leftCount || leftLabel.localeCompare(rightLabel))
+    .map(([label, count]) => `- ${label} ${count}`)
+}
+
 export function repoSizeBucketFromFileCount(fileCount: number): TelemetryRepoSizeBucket {
   if (fileCount <= 24) {
     return '1-24'
@@ -217,6 +451,22 @@ export function repoSizeBucketFromFileCount(fileCount: number): TelemetryRepoSiz
     return '500-999'
   }
   return '1000+'
+}
+
+export function graphSizeBucketFromNodeCount(nodeCount: number): TelemetryGraphSizeBucket {
+  if (nodeCount <= 99) {
+    return '1-99'
+  }
+  if (nodeCount <= 499) {
+    return '100-499'
+  }
+  if (nodeCount <= 999) {
+    return '500-999'
+  }
+  if (nodeCount <= 4_999) {
+    return '1000-4999'
+  }
+  return '5000+'
 }
 
 export function getTelemetryStatus(options: TelemetryOptions = {}): TelemetryStatus {
@@ -292,8 +542,10 @@ export function formatTelemetryStatus(status: TelemetryStatus): string {
     `Telemetry: ${status.enabled ? 'enabled' : 'disabled'}`,
     `Reason: ${status.reason}`,
     `Event cache: ${status.eventCount} event(s) at ${status.spoolFile}`,
-    'Tracked fields: event, version, os, optional install target, optional repo-size bucket',
-    'Excluded fields: prompts, answers, source paths, source content',
+    'Tracked fields: command, stage, recorded_at, version, os, node_major, optional agent_target, optional repo_size_bucket, optional graph_size_bucket, optional spi_enabled, optional failure_bucket, optional status_bucket',
+    'Tracked surfaces: install, generate, pack, prompt, context_pack, doctor, status, compare',
+    'Local controls: madar telemetry clear, madar telemetry report [spool.json ...]',
+    'Excluded fields: prompts, answers, source paths, source content, repository names',
   ].join('\n')
 }
 
@@ -303,8 +555,8 @@ function formatTelemetryPreferenceUpdate(preferenceEnabled: boolean, runtimeStat
     `Telemetry preference: ${preferenceEnabled ? 'enabled' : 'disabled'}`,
     `Config file: ${runtimeStatus.configFile}`,
     `Event cache: ${runtimeStatus.eventCount} event(s) at ${runtimeStatus.spoolFile}`,
-    'Tracked fields: event, version, os, optional install target, optional repo-size bucket',
-    'Excluded fields: prompts, answers, source paths, source content',
+    'Tracked fields: command, stage, recorded_at, version, os, node_major, optional agent_target, optional repo_size_bucket, optional graph_size_bucket, optional spi_enabled, optional failure_bucket, optional status_bucket',
+    'Excluded fields: prompts, answers, source paths, source content, repository names',
   ]
 
   if (runtimeStatus.enabled !== preferenceEnabled || runtimeStatus.reason !== persistedReason) {
@@ -346,6 +598,18 @@ export function disableTelemetry(options: TelemetryOptions = {}): string {
   return formatTelemetryPreferenceUpdate(false, getTelemetryStatus({ ...options, configRoot, cacheRoot, env }))
 }
 
+export function clearTelemetry(options: TelemetryOptions = {}): string {
+  const env = options.env ?? process.env
+  const cacheRoot = options.cacheRoot ?? defaultCacheRoot(env)
+  const spoolFile = telemetrySpoolFilePath(cacheRoot)
+  let clearedEvents = 0
+  withExclusiveLock(spoolFile, () => {
+    clearedEvents = loadSpool(spoolFile).events.length
+    writeJsonAtomic(spoolFile, { schema_version: 2, events: [] } satisfies TelemetrySpool)
+  })
+  return `Telemetry cache cleared: removed ${clearedEvents} event(s) at ${spoolFile}`
+}
+
 export function recordTelemetryEvent(input: TelemetryEventInput, options: TelemetryOptions = {}): boolean {
   const env = options.env ?? process.env
   const cacheRoot = options.cacheRoot ?? defaultCacheRoot(env)
@@ -363,12 +627,18 @@ export function recordTelemetryEvent(input: TelemetryEventInput, options: Teleme
   withExclusiveLock(spoolFile, () => {
     const spool = loadSpool(spoolFile)
     spool.events.push({
-      event: input.event,
+      command: input.command,
+      stage: input.stage,
       recorded_at: new Date(now()).toISOString(),
       version: input.version,
       os: input.os,
+      node_major: input.nodeMajor,
       ...(input.repoSizeBucket ? { repo_size_bucket: input.repoSizeBucket } : {}),
-      ...(input.installPlatform ? { install_platform: input.installPlatform } : {}),
+      ...(input.graphSizeBucket ? { graph_size_bucket: input.graphSizeBucket } : {}),
+      ...(input.agentTarget ? { agent_target: input.agentTarget } : {}),
+      ...(typeof input.spiEnabled === 'boolean' ? { spi_enabled: input.spiEnabled } : {}),
+      ...(input.failureBucket ? { failure_bucket: input.failureBucket } : {}),
+      ...(input.statusBucket ? { status_bucket: input.statusBucket } : {}),
     })
     if (spool.events.length > maxEvents) {
       spool.events = spool.events.slice(-maxEvents)
@@ -376,4 +646,51 @@ export function recordTelemetryEvent(input: TelemetryEventInput, options: Teleme
     writeJsonAtomic(spoolFile, spool)
   })
   return true
+}
+
+export function readTelemetryReport(options: TelemetryOptions = {}, spoolPaths: string[] = []): string {
+  const env = options.env ?? process.env
+  const cacheRoot = options.cacheRoot ?? defaultCacheRoot(env)
+  const resolvedPaths = [...new Set([
+    telemetrySpoolFilePath(cacheRoot),
+    ...spoolPaths.map((spoolPath) => resolve(spoolPath)),
+  ])]
+  const events = resolvedPaths.flatMap((spoolPath) => loadSpool(spoolPath).events)
+
+  const lines = [
+    'Telemetry funnel summary',
+    `Spools: ${resolvedPaths.length}`,
+    `Events: ${events.length}`,
+  ]
+
+  if (events.length === 0) {
+    lines.push('No telemetry events found.')
+    return lines.join('\n')
+  }
+
+  lines.push('Commands:')
+  lines.push(...summarizeCounts(events.map((event) => event.command)))
+
+  lines.push('Stages:')
+  lines.push(...summarizeCounts(events.map((event) => event.stage)))
+
+  const agentTargets = events.flatMap((event) => event.agent_target ? [event.agent_target] : [])
+  if (agentTargets.length > 0) {
+    lines.push('Agent targets:')
+    lines.push(...summarizeCounts(agentTargets))
+  }
+
+  const failureBuckets = events.flatMap((event) => event.failure_bucket ? [event.failure_bucket] : [])
+  if (failureBuckets.length > 0) {
+    lines.push('Failure buckets:')
+    lines.push(...summarizeCounts(failureBuckets))
+  }
+
+  const statusBuckets = events.flatMap((event) => event.status_bucket ? [event.status_bucket] : [])
+  if (statusBuckets.length > 0) {
+    lines.push('Status buckets:')
+    lines.push(...summarizeCounts(statusBuckets))
+  }
+
+  return lines.join('\n')
 }

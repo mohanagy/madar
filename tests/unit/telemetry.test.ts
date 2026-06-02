@@ -1,14 +1,17 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
 import { describe, expect, it } from 'vitest'
 
 import {
+  clearTelemetry,
   disableTelemetry,
   enableTelemetry,
   formatTelemetryStatus,
   getTelemetryStatus,
+  graphSizeBucketFromNodeCount,
+  readTelemetryReport,
   recordTelemetryEvent,
   repoSizeBucketFromFileCount,
 } from '../../src/shared/telemetry.js'
@@ -47,10 +50,12 @@ describe('telemetry', () => {
       })
 
       expect(recordTelemetryEvent({
-        event: 'generate_success',
+        command: 'generate',
+        stage: 'started',
         version: '0.27.4',
         os: 'darwin',
-        repoSizeBucket: repoSizeBucketFromFileCount(240),
+        nodeMajor: 20,
+        spiEnabled: true,
       }, {
         configRoot,
         cacheRoot,
@@ -60,10 +65,14 @@ describe('telemetry', () => {
       })).toBe(true)
 
       expect(recordTelemetryEvent({
-        event: 'pack_success',
+        command: 'generate',
+        stage: 'succeeded',
         version: '0.27.4',
         os: 'darwin',
-        repoSizeBucket: repoSizeBucketFromFileCount(12),
+        nodeMajor: 20,
+        repoSizeBucket: repoSizeBucketFromFileCount(240),
+        graphSizeBucket: graphSizeBucketFromNodeCount(1_200),
+        spiEnabled: true,
       }, {
         configRoot,
         cacheRoot,
@@ -73,10 +82,14 @@ describe('telemetry', () => {
       })).toBe(true)
 
       expect(recordTelemetryEvent({
-        event: 'compare_success',
+        command: 'context_pack',
+        stage: 'failed',
         version: '0.27.4',
         os: 'darwin',
-        repoSizeBucket: repoSizeBucketFromFileCount(2_100),
+        nodeMajor: 20,
+        repoSizeBucket: repoSizeBucketFromFileCount(12),
+        graphSizeBucket: graphSizeBucketFromNodeCount(5),
+        failureBucket: 'invalid_params',
       }, {
         configRoot,
         cacheRoot,
@@ -87,19 +100,27 @@ describe('telemetry', () => {
 
       const spoolFile = join(cacheRoot, 'madar', 'telemetry-events.json')
       expect(JSON.parse(readFileSync(spoolFile, 'utf8'))).toEqual({
-        schema_version: 1,
+        schema_version: 2,
         events: [
           expect.objectContaining({
-            event: 'pack_success',
+            command: 'generate',
+            stage: 'succeeded',
             version: '0.27.4',
             os: 'darwin',
-            repo_size_bucket: '1-24',
+            node_major: 20,
+            repo_size_bucket: '100-499',
+            graph_size_bucket: '1000-4999',
+            spi_enabled: true,
           }),
           expect.objectContaining({
-            event: 'compare_success',
+            command: 'context_pack',
+            stage: 'failed',
             version: '0.27.4',
             os: 'darwin',
-            repo_size_bucket: '1000+',
+            node_major: 20,
+            repo_size_bucket: '1-24',
+            graph_size_bucket: '1-99',
+            failure_bucket: 'invalid_params',
           }),
         ],
       })
@@ -129,9 +150,11 @@ describe('telemetry', () => {
       expect(status.enabled).toBe(false)
       expect(formatTelemetryStatus(status)).toContain('MADAR_DISABLE_TELEMETRY=1')
       expect(recordTelemetryEvent({
-        event: 'generate_success',
+        command: 'generate',
+        stage: 'succeeded',
         version: '0.27.4',
         os: 'darwin',
+        nodeMajor: 20,
         repoSizeBucket: '100-499',
       }, {
         configRoot,
@@ -190,9 +213,11 @@ describe('telemetry', () => {
       })
 
       expect(recordTelemetryEvent({
-        event: 'generate_success',
+        command: 'generate',
+        stage: 'succeeded',
         version: '0.27.4',
         os: 'darwin',
+        nodeMajor: 20,
         repoSizeBucket: '25-99',
       }, {
         configRoot,
@@ -203,9 +228,11 @@ describe('telemetry', () => {
       })).toBe(true)
 
       expect(recordTelemetryEvent({
-        event: 'pack_success',
+        command: 'pack',
+        stage: 'succeeded',
         version: '0.27.4',
         os: 'darwin',
+        nodeMajor: 20,
         repoSizeBucket: '25-99',
       }, {
         configRoot,
@@ -217,6 +244,116 @@ describe('telemetry', () => {
 
       const spoolFile = join(cacheRoot, 'madar', 'telemetry-events.json')
       expect(JSON.parse(readFileSync(spoolFile, 'utf8')).events).toHaveLength(2)
+    } finally {
+      rmSync(configRoot, { recursive: true, force: true })
+      rmSync(cacheRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('clears the local telemetry spool without deleting the persisted preference', () => {
+    const configRoot = mkdtempSync(join(tmpdir(), 'madar-telemetry-config-'))
+    const cacheRoot = mkdtempSync(join(tmpdir(), 'madar-telemetry-cache-'))
+
+    try {
+      enableTelemetry({
+        configRoot,
+        cacheRoot,
+        env: {},
+      })
+
+      expect(recordTelemetryEvent({
+        command: 'install',
+        stage: 'started',
+        version: '0.27.4',
+        os: 'darwin',
+        nodeMajor: 20,
+        agentTarget: 'copilot',
+      }, {
+        configRoot,
+        cacheRoot,
+        env: {},
+      })).toBe(true)
+
+      const message = clearTelemetry({
+        configRoot,
+        cacheRoot,
+        env: {},
+      })
+
+      expect(message).toContain('Telemetry cache cleared')
+      expect(getTelemetryStatus({
+        configRoot,
+        cacheRoot,
+        env: {},
+      }).enabled).toBe(true)
+
+      const spoolFile = join(cacheRoot, 'madar', 'telemetry-events.json')
+      expect(JSON.parse(readFileSync(spoolFile, 'utf8'))).toEqual({
+        schema_version: 2,
+        events: [],
+      })
+    } finally {
+      rmSync(configRoot, { recursive: true, force: true })
+      rmSync(cacheRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('summarizes anonymized funnel counts from both v2 and legacy v1 spools', () => {
+    const configRoot = mkdtempSync(join(tmpdir(), 'madar-telemetry-config-'))
+    const cacheRoot = mkdtempSync(join(tmpdir(), 'madar-telemetry-cache-'))
+
+    try {
+      const legacySpoolPath = join(cacheRoot, 'legacy-telemetry-events.json')
+      writeFileSync(legacySpoolPath, JSON.stringify({
+        schema_version: 1,
+        events: [
+          {
+            event: 'install_success',
+            recorded_at: '2026-06-02T00:00:00.000Z',
+            version: '0.27.4',
+            os: 'darwin',
+            install_platform: 'cursor',
+          },
+          {
+            event: 'generate_success',
+            recorded_at: '2026-06-02T00:01:00.000Z',
+            version: '0.27.4',
+            os: 'darwin',
+            repo_size_bucket: '25-99',
+          },
+        ],
+      }, null, 2))
+
+      enableTelemetry({
+        configRoot,
+        cacheRoot,
+        env: {},
+      })
+      expect(recordTelemetryEvent({
+        command: 'status',
+        stage: 'succeeded',
+        version: '0.27.8',
+        os: 'darwin',
+        nodeMajor: 20,
+        statusBucket: 'healthy',
+      }, {
+        configRoot,
+        cacheRoot,
+        env: {},
+      })).toBe(true)
+
+      const report = readTelemetryReport({
+        configRoot,
+        cacheRoot,
+        env: {},
+      }, [legacySpoolPath])
+
+      expect(report).toContain('Telemetry funnel summary')
+      expect(report).toContain('install 1')
+      expect(report).toContain('generate 1')
+      expect(report).toContain('status 1')
+      expect(report).toContain('cursor 1')
+      expect(report).toContain('healthy 1')
     } finally {
       rmSync(configRoot, { recursive: true, force: true })
       rmSync(cacheRoot, { recursive: true, force: true })

@@ -96,6 +96,8 @@ madar compare "How does auth work?" --exec '...' --yes
 madar compare "How does auth work?" --baseline-mode pack_only --exec '...' --yes
 madar telemetry enable
 madar telemetry status
+madar telemetry clear
+madar telemetry report
 madar time-travel main HEAD --view risk
 madar federate frontend/graph.json backend/graph.json
 madar --help

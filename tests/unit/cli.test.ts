@@ -1088,7 +1088,13 @@ describe('cli parser', () => {
     expect(parseTelemetryArgs(['enable'])).toEqual({ action: 'enable' })
     expect(parseTelemetryArgs(['disable'])).toEqual({ action: 'disable' })
     expect(parseTelemetryArgs(['status'])).toEqual({ action: 'status' })
-    expect(() => parseTelemetryArgs([])).toThrow('Usage: madar telemetry <enable|disable|status>')
+    expect(parseTelemetryArgs(['clear'])).toEqual({ action: 'clear' })
+    expect(parseTelemetryArgs(['report'])).toEqual({ action: 'report', spoolPaths: [] })
+    expect(parseTelemetryArgs(['report', 'one.json', 'two.json'])).toEqual({
+      action: 'report',
+      spoolPaths: ['one.json', 'two.json'],
+    })
+    expect(() => parseTelemetryArgs([])).toThrow('Usage: madar telemetry <enable|disable|status|clear|report [spool.json ...]>')
   })
 
   it('parses install args and platform actions', () => {
@@ -1261,7 +1267,7 @@ describe('cli main', () => {
     expect(help).toContain('    --pack PATH           optional saved context-pack JSON for pack-quality evidence')
     expect(help).toContain('question coverage')
     expect(help).toContain('hook <action>')
-    expect(help).toContain('telemetry <enable|disable|status>')
+    expect(help).toContain('telemetry <enable|disable|status|clear|report [spool.json ...]>')
     expect(help).toContain('install [--platform P]')
     expect(help).toContain('If you update madar, re-run your platform install command to refresh local agent rules:')
     expect(help).toContain('madar install --platform <platform>')
@@ -1362,10 +1368,45 @@ describe('cli main', () => {
     expect(confirmCalls).toBe(1)
     expect(telemetryEvents).toEqual([
       {
-        event: 'compare_success',
+        command: 'compare',
+        stage: 'succeeded',
         version: '0.27.4',
         os: process.platform,
+        nodeMajor: expect.any(Number),
         repoSizeBucket: '1-24',
+      },
+    ])
+  })
+
+  it('records telemetry after compare failures with an actionable bucket', async () => {
+    const { io, logs, errors } = createIo()
+    const dependencies = createDependencies() as CliDependencies & {
+      recordTelemetryEvent: (event: unknown) => void
+      readInstalledVersion: () => string
+    }
+    const telemetryEvents: unknown[] = []
+
+    dependencies.runCompare = async () => {
+      throw new Error('Graph file not found at out/graph.json')
+    }
+    dependencies.recordTelemetryEvent = (event) => {
+      telemetryEvents.push(event)
+    }
+    dependencies.readInstalledVersion = () => '0.27.4'
+
+    const exitCode = await executeCli(['compare', 'How does auth work?', '--exec', 'claude --print "$(cat {prompt_file})"', '--yes'], io, dependencies)
+
+    expect(exitCode).toBe(1)
+    expect(logs).toEqual([])
+    expect(errors).toContain('error: Graph file not found at out/graph.json')
+    expect(telemetryEvents).toEqual([
+      {
+        command: 'compare',
+        stage: 'failed',
+        version: '0.27.4',
+        os: process.platform,
+        nodeMajor: expect.any(Number),
+        failureBucket: 'missing_graph',
       },
     ])
   })
@@ -1374,6 +1415,8 @@ describe('cli main', () => {
     const enable = createIo()
     const disable = createIo()
     const status = createIo()
+    const clear = createIo()
+    const report = createIo()
     const enabledDependencies = createDependencies() as CliDependencies & {
       enableTelemetry: () => string
     }
@@ -1383,18 +1426,30 @@ describe('cli main', () => {
     const statusDependencies = createDependencies() as CliDependencies & {
       readTelemetryStatus: () => string
     }
+    const clearDependencies = createDependencies() as CliDependencies & {
+      clearTelemetry: () => string
+    }
+    const reportDependencies = createDependencies() as CliDependencies & {
+      readTelemetryReport: (spoolPaths?: string[]) => string
+    }
 
     enabledDependencies.enableTelemetry = () => 'Telemetry enabled.'
     disabledDependencies.disableTelemetry = () => 'Telemetry disabled.'
     statusDependencies.readTelemetryStatus = () => 'Telemetry: disabled'
+    clearDependencies.clearTelemetry = () => 'Telemetry cache cleared.'
+    reportDependencies.readTelemetryReport = (spoolPaths) => `Telemetry funnel summary for ${spoolPaths?.join(',') ?? 'default'}`
 
     await expect(executeCli(['telemetry', 'enable'], enable.io, enabledDependencies)).resolves.toBe(0)
     await expect(executeCli(['telemetry', 'disable'], disable.io, disabledDependencies)).resolves.toBe(0)
     await expect(executeCli(['telemetry', 'status'], status.io, statusDependencies)).resolves.toBe(0)
+    await expect(executeCli(['telemetry', 'clear'], clear.io, clearDependencies)).resolves.toBe(0)
+    await expect(executeCli(['telemetry', 'report', 'one.json', 'two.json'], report.io, reportDependencies)).resolves.toBe(0)
 
     expect(enable.logs).toContain('Telemetry enabled.')
     expect(disable.logs).toContain('Telemetry disabled.')
     expect(status.logs).toContain('Telemetry: disabled')
+    expect(clear.logs).toContain('Telemetry cache cleared.')
+    expect(report.logs).toContain('Telemetry funnel summary for one.json,two.json')
   })
 
   it('prefers the telemetry command over implicit generate when a telemetry path exists', async () => {
@@ -1442,9 +1497,11 @@ describe('cli main', () => {
     expect(logs).toEqual(['pack result'])
     expect(telemetryEvents).toEqual([
       {
-        event: 'pack_success',
+        command: 'pack',
+        stage: 'succeeded',
         version: '0.27.4',
         os: process.platform,
+        nodeMajor: expect.any(Number),
         repoSizeBucket: '1-24',
       },
     ])
@@ -1470,10 +1527,22 @@ describe('cli main', () => {
     expect(logs[0]).toContain('[madar generate]')
     expect(telemetryEvents).toEqual([
       {
-        event: 'generate_success',
+        command: 'generate',
+        stage: 'started',
         version: '0.27.4',
         os: process.platform,
+        nodeMajor: expect.any(Number),
+        spiEnabled: false,
+      },
+      {
+        command: 'generate',
+        stage: 'succeeded',
+        version: '0.27.4',
+        os: process.platform,
+        nodeMajor: expect.any(Number),
         repoSizeBucket: '1-24',
+        graphSizeBucket: '1-99',
+        spiEnabled: false,
       },
     ])
   })
@@ -1499,16 +1568,161 @@ describe('cli main', () => {
     expect(agent.errors).toEqual([])
     expect(telemetryEvents).toEqual([
       {
-        event: 'install_success',
+        command: 'install',
+        stage: 'started',
         version: '0.27.4',
         os: process.platform,
-        installPlatform: 'aider',
+        nodeMajor: expect.any(Number),
+        agentTarget: 'aider',
       },
       {
-        event: 'install_success',
+        command: 'install',
+        stage: 'succeeded',
         version: '0.27.4',
         os: process.platform,
-        installPlatform: 'aider',
+        nodeMajor: expect.any(Number),
+        agentTarget: 'aider',
+      },
+      {
+        command: 'install',
+        stage: 'started',
+        version: '0.27.4',
+        os: process.platform,
+        nodeMajor: expect.any(Number),
+        agentTarget: 'aider',
+      },
+      {
+        command: 'install',
+        stage: 'succeeded',
+        version: '0.27.4',
+        os: process.platform,
+        nodeMajor: expect.any(Number),
+        agentTarget: 'aider',
+      },
+    ])
+  })
+
+  it('records telemetry after direct agent install failures', async () => {
+    const { io, logs, errors } = createIo()
+    const dependencies = createDependencies() as CliDependencies & {
+      recordTelemetryEvent: (event: unknown) => void
+      readInstalledVersion: () => string
+      agentsInstall: (projectDir: string, platform: string) => string
+    }
+    const telemetryEvents: unknown[] = []
+
+    dependencies.recordTelemetryEvent = (event) => {
+      telemetryEvents.push(event)
+    }
+    dependencies.readInstalledVersion = () => '0.27.4'
+    dependencies.agentsInstall = () => {
+      throw new Error('install hook write failed')
+    }
+
+    const exitCode = await executeCli(['aider', 'install'], io, dependencies)
+
+    expect(exitCode).toBe(1)
+    expect(logs).toEqual([])
+    expect(errors).toContain('error: install hook write failed')
+    expect(telemetryEvents).toEqual([
+      {
+        command: 'install',
+        stage: 'started',
+        version: '0.27.4',
+        os: process.platform,
+        nodeMajor: expect.any(Number),
+        agentTarget: 'aider',
+      },
+      {
+        command: 'install',
+        stage: 'failed',
+        version: '0.27.4',
+        os: process.platform,
+        nodeMajor: expect.any(Number),
+        agentTarget: 'aider',
+        failureBucket: 'install_error',
+      },
+    ])
+  })
+
+  it('records telemetry for prompt failures with an actionable failure bucket', async () => {
+    const { io, logs, errors } = createIo()
+    const dependencies = createDependencies() as CliDependencies & {
+      recordTelemetryEvent: (event: unknown) => void
+      readInstalledVersion: () => string
+    }
+    const telemetryEvents: unknown[] = []
+
+    dependencies.runContextPrompt = async () => {
+      throw new Error('Graph file not found at out/graph.json')
+    }
+    dependencies.recordTelemetryEvent = (event) => {
+      telemetryEvents.push(event)
+    }
+    dependencies.readInstalledVersion = () => '0.27.4'
+
+    const exitCode = await executeCli(['prompt', 'how does auth work?', '--provider', 'claude'], io, dependencies)
+
+    expect(exitCode).toBe(1)
+    expect(logs).toEqual([])
+    expect(errors).toContain('error: Graph file not found at out/graph.json')
+    expect(telemetryEvents).toEqual([
+      {
+        command: 'prompt',
+        stage: 'failed',
+        version: '0.27.4',
+        os: process.platform,
+        nodeMajor: expect.any(Number),
+        failureBucket: 'missing_graph',
+      },
+    ])
+  })
+
+  it('records telemetry buckets after doctor and status succeed', async () => {
+    const doctor = createIo()
+    const status = createIo()
+    const doctorDependencies = createDependencies() as CliDependencies & {
+      recordTelemetryEvent: (event: unknown) => void
+      readInstalledVersion: () => string
+      readDoctorTelemetryBucket: (graphPath: string) => string
+    }
+    const statusDependencies = createDependencies() as CliDependencies & {
+      recordTelemetryEvent: (event: unknown) => void
+      readInstalledVersion: () => string
+      readStatusTelemetryBucket: (graphPath: string) => string
+    }
+    const telemetryEvents: unknown[] = []
+
+    doctorDependencies.recordTelemetryEvent = (event) => {
+      telemetryEvents.push(event)
+    }
+    statusDependencies.recordTelemetryEvent = (event) => {
+      telemetryEvents.push(event)
+    }
+    doctorDependencies.readInstalledVersion = () => '0.27.4'
+    statusDependencies.readInstalledVersion = () => '0.27.4'
+    doctorDependencies.readDoctorTelemetryBucket = () => 'attention_needed'
+    statusDependencies.readStatusTelemetryBucket = () => 'healthy'
+
+    await expect(executeCli(['doctor'], doctor.io, doctorDependencies)).resolves.toBe(0)
+    await expect(executeCli(['status'], status.io, statusDependencies)).resolves.toBe(0)
+
+    expect(telemetryEvents).toEqual([
+      {
+        command: 'doctor',
+        stage: 'succeeded',
+        version: '0.27.4',
+        os: process.platform,
+        nodeMajor: expect.any(Number),
+        statusBucket: 'attention_needed',
+      },
+      {
+        command: 'status',
+        stage: 'succeeded',
+        version: '0.27.4',
+        os: process.platform,
+        nodeMajor: expect.any(Number),
+        statusBucket: 'healthy',
       },
     ])
   })

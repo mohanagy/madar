@@ -8,7 +8,7 @@ import { BenchmarkReadinessError, NativeAgentInstallRequiredError, runCompareCom
 import { runContextPackCommand } from '../infrastructure/context-pack-command.js'
 import { runHandoffCommand } from '../infrastructure/handoff-command.js'
 import { runContextPromptCommand } from '../infrastructure/context-prompt-command.js'
-import { runDoctorCommand, runStatusCommand } from '../infrastructure/doctor.js'
+import { buildDoctorReport, runDoctorCommand, runStatusCommand } from '../infrastructure/doctor.js'
 import { runProofReportCommand, type ProofReportResult } from '../infrastructure/proof-report.js'
 import { runReviewCompareCommand } from '../infrastructure/review-compare.js'
 import { runTryCommand } from '../infrastructure/try-command.js'
@@ -47,10 +47,15 @@ import {
   disableTelemetry,
   enableTelemetry,
   formatTelemetryStatus,
+  graphSizeBucketFromNodeCount,
   getTelemetryStatus,
+  readTelemetryReport,
+  clearTelemetry,
   recordTelemetryEvent as persistTelemetryEvent,
   repoSizeBucketFromFileCount,
+  type TelemetryFailureBucket,
   type TelemetryEventInput,
+  type TelemetryStatusBucket,
 } from '../shared/telemetry.js'
 import { getUpdateNotification } from '../shared/update-notifier.js'
 import {
@@ -197,6 +202,10 @@ export interface CliDependencies {
   enableTelemetry?: () => string
   disableTelemetry?: () => string
   readTelemetryStatus?: () => string
+  clearTelemetry?: () => string
+  readTelemetryReport?: (spoolPaths?: string[]) => string
+  readDoctorTelemetryBucket?: (graphPath: string) => TelemetryStatusBucket
+  readStatusTelemetryBucket?: (graphPath: string) => TelemetryStatusBucket
   recordTelemetryEvent?: (event: TelemetryEventInput) => void
 }
 
@@ -335,6 +344,10 @@ const DEFAULT_DEPENDENCIES: CliDependencies = {
   enableTelemetry: () => enableTelemetry(),
   disableTelemetry: () => disableTelemetry(),
   readTelemetryStatus: () => formatTelemetryStatus(getTelemetryStatus()),
+  clearTelemetry: () => clearTelemetry(),
+  readTelemetryReport: (spoolPaths) => readTelemetryReport({}, spoolPaths),
+  readDoctorTelemetryBucket: (graphPath) => buildDoctorReport({ graphPath }).healthy ? 'healthy' : 'attention_needed',
+  readStatusTelemetryBucket: (graphPath) => buildDoctorReport({ graphPath }).healthy ? 'healthy' : 'attention_needed',
   recordTelemetryEvent: (event) => {
     persistTelemetryEvent(event)
   },
@@ -357,6 +370,11 @@ function readInstalledVersionForTelemetry(dependencies: CliDependencies): string
   return readInstalledVersion()
 }
 
+function readNodeMajorForTelemetry(): number {
+  const major = Number.parseInt(process.versions.node.split('.', 1)[0] ?? '', 10)
+  return Number.isInteger(major) && major > 0 ? major : 0
+}
+
 function emitTelemetry(io: CliIO, dependencies: CliDependencies, buildEvent: () => TelemetryEventInput): void {
   if (!dependencies.recordTelemetryEvent) {
     return
@@ -370,6 +388,45 @@ function emitTelemetry(io: CliIO, dependencies: CliDependencies, buildEvent: () 
 
 function repoSizeBucketForGraph(dependencies: CliDependencies, graphPath: string) {
   return repoSizeBucketFromFileCount(buildGraphSummary(dependencies.loadGraph(graphPath)).file_count)
+}
+
+function graphSizeBucketForGraph(dependencies: CliDependencies, graphPath: string) {
+  return graphSizeBucketFromNodeCount(buildGraphSummary(dependencies.loadGraph(graphPath)).node_count)
+}
+
+function telemetryBase(dependencies: CliDependencies) {
+  return {
+    version: readInstalledVersionForTelemetry(dependencies),
+    os: process.platform,
+    nodeMajor: readNodeMajorForTelemetry(),
+  } as const
+}
+
+function classifyTelemetryFailure(error: unknown): TelemetryFailureBucket {
+  if (error instanceof UsageError) {
+    return 'usage_error'
+  }
+
+  const message = messageFromError(error).toLowerCase()
+  if (message.includes('context_pack requires') || message.includes('invalid params')) {
+    return 'invalid_params'
+  }
+  if (message.includes('graph file not found') || message.includes('out/graph.json not found') || message.includes('graph.json not found')) {
+    return 'missing_graph'
+  }
+  if (message.includes('require_fresh_graph') || message.includes('non-fresh graph')) {
+    return 'stale_graph'
+  }
+  if (message.includes('require_fresh_context') || message.includes('stale selected context')) {
+    return 'stale_context'
+  }
+  if (message.includes('unsupported corpus')) {
+    return 'unsupported_corpus'
+  }
+  if (message.includes('install')) {
+    return 'install_error'
+  }
+  return 'unknown'
 }
 
 async function confirmPaidCommand(
@@ -544,7 +601,7 @@ export function formatHelp(binaryName = 'madar'): string {
     '    install              install post-commit and post-checkout hooks',
     '    uninstall            remove madar hook sections',
     '    status               show whether madar hooks are installed',
-    '  telemetry <enable|disable|status> manage opt-in source-safe local telemetry',
+    '  telemetry <enable|disable|status|clear|report [spool.json ...]> manage opt-in source-safe local telemetry',
     '  aider <install|uninstall>   manage local AGENTS.md rules',
     '  claude <install|uninstall> [--profile core|full|strict]  manage local CLAUDE.md madar rules',
     '  cursor <install|uninstall> [--profile core|full|strict]  manage local Cursor madar rules',
@@ -676,14 +733,31 @@ function formatExplainSummary(graph: ReturnType<typeof loadGraph>, label: string
 function handleAgentCommand(command: AgentPlatform, args: string[], io: CliIO, dependencies: CliDependencies): number {
   const options = parsePlatformActionArgs(command, args)
   if (options.action === 'install') {
-    io.log(dependencies.agentsInstall('.', command))
     emitTelemetry(io, dependencies, () => ({
-      event: 'install_success',
-      version: readInstalledVersionForTelemetry(dependencies),
-      os: process.platform,
-      installPlatform: command,
+      command: 'install',
+      stage: 'started',
+      ...telemetryBase(dependencies),
+      agentTarget: command,
     }))
-    return 0
+    try {
+      io.log(dependencies.agentsInstall('.', command))
+      emitTelemetry(io, dependencies, () => ({
+        command: 'install',
+        stage: 'succeeded',
+        ...telemetryBase(dependencies),
+        agentTarget: command,
+      }))
+      return 0
+    } catch (error) {
+      emitTelemetry(io, dependencies, () => ({
+        command: 'install',
+        stage: 'failed',
+        ...telemetryBase(dependencies),
+        agentTarget: command,
+        failureBucket: classifyTelemetryFailure(error),
+      }))
+      throw error
+    }
   }
 
   io.log(dependencies.agentsUninstall('.', command))
@@ -698,6 +772,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
     return 0
   }
 
+  let failureTelemetry: ((bucket: TelemetryFailureBucket) => TelemetryEventInput) | null = null
   try {
     if (command === '-v' || command === '--version') {
       const readInstalledVersion = dependencies.readInstalledVersion ?? (() => readPackageVersion(findPackageRoot()))
@@ -718,6 +793,12 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
 
     if (command === 'compare') {
       const options = parseCompareArgs(args)
+      failureTelemetry = (failureBucket) => ({
+        command: 'compare',
+        stage: 'failed',
+        ...telemetryBase(dependencies),
+        failureBucket,
+      })
       const confirm = async (message: string) => await dependencies.confirm(message)
       const warningMessage = compareWarningMessage(options)
       if (!options.yes) {
@@ -736,9 +817,9 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         io.log(output)
       }
       emitTelemetry(io, dependencies, () => ({
-        event: 'compare_success',
-        version: readInstalledVersionForTelemetry(dependencies),
-        os: process.platform,
+        command: 'compare',
+        stage: 'succeeded',
+        ...telemetryBase(dependencies),
         repoSizeBucket: repoSizeBucketForGraph(dependencies, options.graphPath),
       }))
       return 0
@@ -779,13 +860,37 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
 
     if (command === 'doctor') {
       const options = parseDoctorArgs(args, 'doctor')
+      failureTelemetry = (failureBucket) => ({
+        command: 'doctor',
+        stage: 'failed',
+        ...telemetryBase(dependencies),
+        failureBucket,
+      })
       io.log(dependencies.runDoctor(options.graphPath))
+      emitTelemetry(io, dependencies, () => ({
+        command: 'doctor',
+        stage: 'succeeded',
+        ...telemetryBase(dependencies),
+        statusBucket: (dependencies.readDoctorTelemetryBucket ?? ((graphPath: string) => buildDoctorReport({ graphPath }).healthy ? 'healthy' : 'attention_needed'))(options.graphPath),
+      }))
       return 0
     }
 
     if (command === 'status') {
       const options = parseDoctorArgs(args, 'status')
+      failureTelemetry = (failureBucket) => ({
+        command: 'status',
+        stage: 'failed',
+        ...telemetryBase(dependencies),
+        failureBucket,
+      })
       io.log(dependencies.runStatus(options.graphPath))
+      emitTelemetry(io, dependencies, () => ({
+        command: 'status',
+        stage: 'succeeded',
+        ...telemetryBase(dependencies),
+        statusBucket: (dependencies.readStatusTelemetryBucket ?? ((graphPath: string) => buildDoctorReport({ graphPath }).healthy ? 'healthy' : 'attention_needed'))(options.graphPath),
+      }))
       return 0
     }
 
@@ -814,14 +919,20 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
 
     if (command === 'pack') {
       const options = parsePackArgs(args)
+      failureTelemetry = (failureBucket) => ({
+        command: 'pack',
+        stage: 'failed',
+        ...telemetryBase(dependencies),
+        failureBucket,
+      })
       const output = await dependencies.runContextPack({ options, io })
       if (output !== undefined) {
         io.log(output)
       }
       emitTelemetry(io, dependencies, () => ({
-        event: 'pack_success',
-        version: readInstalledVersionForTelemetry(dependencies),
-        os: process.platform,
+        command: 'pack',
+        stage: 'succeeded',
+        ...telemetryBase(dependencies),
         repoSizeBucket: repoSizeBucketForGraph(dependencies, options.graphPath),
       }))
       return 0
@@ -838,10 +949,22 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
 
     if (command === 'prompt') {
       const options = parsePromptArgs(args)
+      failureTelemetry = (failureBucket) => ({
+        command: 'prompt',
+        stage: 'failed',
+        ...telemetryBase(dependencies),
+        failureBucket,
+      })
       const output = await dependencies.runContextPrompt({ options, io })
       if (output !== undefined) {
         io.log(output)
       }
+      emitTelemetry(io, dependencies, () => ({
+        command: 'prompt',
+        stage: 'succeeded',
+        ...telemetryBase(dependencies),
+        repoSizeBucket: repoSizeBucketForGraph(dependencies, options.graphPath),
+      }))
       return 0
     }
 
@@ -855,6 +978,14 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         io.log((dependencies.disableTelemetry ?? (() => disableTelemetry()))())
         return 0
       }
+      if (options.action === 'clear') {
+        io.log((dependencies.clearTelemetry ?? (() => clearTelemetry()))())
+        return 0
+      }
+      if (options.action === 'report') {
+        io.log((dependencies.readTelemetryReport ?? ((spoolPaths?: string[]) => readTelemetryReport({}, spoolPaths)))(options.spoolPaths))
+        return 0
+      }
       io.log((dependencies.readTelemetryStatus ?? (() => formatTelemetryStatus(getTelemetryStatus())))())
       return 0
     }
@@ -862,6 +993,19 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
     if (command === 'generate' || (command !== undefined && !isAgentPlatform(command) && isImplicitGenerateCommand(command))) {
       const generateArgs = command === 'generate' ? args : [command, ...args]
       const options = parseGenerateArgs(generateArgs)
+      failureTelemetry = (failureBucket) => ({
+        command: 'generate',
+        stage: 'failed',
+        ...telemetryBase(dependencies),
+        failureBucket,
+        spiEnabled: options.useSpi,
+      })
+      emitTelemetry(io, dependencies, () => ({
+        command: 'generate',
+        stage: 'started',
+        ...telemetryBase(dependencies),
+        spiEnabled: options.useSpi,
+      }))
       const result = dependencies.generateGraph(options.path, {
         update: options.update,
         clusterOnly: options.clusterOnly,
@@ -894,10 +1038,12 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
       }
 
       emitTelemetry(io, dependencies, () => ({
-        event: 'generate_success',
-        version: readInstalledVersionForTelemetry(dependencies),
-        os: process.platform,
+        command: 'generate',
+        stage: 'succeeded',
+        ...telemetryBase(dependencies),
         repoSizeBucket: repoSizeBucketFromFileCount(result.totalFiles),
+        graphSizeBucket: graphSizeBucketFromNodeCount(result.nodeCount),
+        spiEnabled: options.useSpi,
       }))
       if (options.watch) {
         await dependencies.watchGraph(options.path, options.debounceSeconds, {
@@ -1068,6 +1214,19 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
 
     if (command === 'install') {
       const options = parseInstallArgs(args, defaultInstallPlatform())
+      failureTelemetry = (failureBucket) => ({
+        command: 'install',
+        stage: 'failed',
+        ...telemetryBase(dependencies),
+        failureBucket,
+        agentTarget: options.platform,
+      })
+      emitTelemetry(io, dependencies, () => ({
+        command: 'install',
+        stage: 'started',
+        ...telemetryBase(dependencies),
+        agentTarget: options.platform,
+      }))
       if (options.platform === 'gemini') {
         io.log(dependencies.geminiInstall('.'))
       } else if (options.platform === 'cursor') {
@@ -1076,10 +1235,10 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         io.log(dependencies.installSkill(options.platform))
       }
       emitTelemetry(io, dependencies, () => ({
-        event: 'install_success',
-        version: readInstalledVersionForTelemetry(dependencies),
-        os: process.platform,
-        installPlatform: options.platform,
+        command: 'install',
+        stage: 'succeeded',
+        ...telemetryBase(dependencies),
+        agentTarget: options.platform,
       }))
       return 0
     }
@@ -1103,15 +1262,30 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
       if (options.action === 'install' && !existsSync('out/graph.json')) {
         io.log("Warning: out/graph.json not found. Run 'madar generate .' first, then re-run this command.")
       }
+      if (options.action === 'install') {
+        failureTelemetry = (failureBucket) => ({
+          command: 'install',
+          stage: 'failed',
+          ...telemetryBase(dependencies),
+          failureBucket,
+          agentTarget: 'claude',
+        })
+        emitTelemetry(io, dependencies, () => ({
+          command: 'install',
+          stage: 'started',
+          ...telemetryBase(dependencies),
+          agentTarget: 'claude',
+        }))
+      }
       io.log(options.action === 'install'
         ? dependencies.claudeInstall('.', options.profile ? { profile: options.profile } : {})
         : dependencies.claudeUninstall('.'))
       if (options.action === 'install') {
         emitTelemetry(io, dependencies, () => ({
-          event: 'install_success',
-          version: readInstalledVersionForTelemetry(dependencies),
-          os: process.platform,
-          installPlatform: 'claude',
+          command: 'install',
+          stage: 'succeeded',
+          ...telemetryBase(dependencies),
+          agentTarget: 'claude',
         }))
       }
       return 0
@@ -1122,15 +1296,30 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
       if (options.action === 'install' && !existsSync('out/graph.json')) {
         io.log("Warning: out/graph.json not found. Run 'madar generate .' first, then re-run this command.")
       }
+      if (options.action === 'install') {
+        failureTelemetry = (failureBucket) => ({
+          command: 'install',
+          stage: 'failed',
+          ...telemetryBase(dependencies),
+          failureBucket,
+          agentTarget: 'cursor',
+        })
+        emitTelemetry(io, dependencies, () => ({
+          command: 'install',
+          stage: 'started',
+          ...telemetryBase(dependencies),
+          agentTarget: 'cursor',
+        }))
+      }
       io.log(options.action === 'install'
         ? dependencies.cursorInstall('.', options.profile ? { profile: options.profile } : {})
         : dependencies.cursorUninstall('.'))
       if (options.action === 'install') {
         emitTelemetry(io, dependencies, () => ({
-          event: 'install_success',
-          version: readInstalledVersionForTelemetry(dependencies),
-          os: process.platform,
-          installPlatform: 'cursor',
+          command: 'install',
+          stage: 'succeeded',
+          ...telemetryBase(dependencies),
+          agentTarget: 'cursor',
         }))
       }
       return 0
@@ -1141,13 +1330,28 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
       if (options.action === 'install' && !existsSync('out/graph.json')) {
         io.log("Warning: out/graph.json not found. Run 'madar generate .' first, then re-run this command.")
       }
+      if (options.action === 'install') {
+        failureTelemetry = (failureBucket) => ({
+          command: 'install',
+          stage: 'failed',
+          ...telemetryBase(dependencies),
+          failureBucket,
+          agentTarget: 'gemini',
+        })
+        emitTelemetry(io, dependencies, () => ({
+          command: 'install',
+          stage: 'started',
+          ...telemetryBase(dependencies),
+          agentTarget: 'gemini',
+        }))
+      }
       io.log(options.action === 'install' ? dependencies.geminiInstall('.', options.profile ? { profile: options.profile } : {}) : dependencies.geminiUninstall('.'))
       if (options.action === 'install') {
         emitTelemetry(io, dependencies, () => ({
-          event: 'install_success',
-          version: readInstalledVersionForTelemetry(dependencies),
-          os: process.platform,
-          installPlatform: 'gemini',
+          command: 'install',
+          stage: 'succeeded',
+          ...telemetryBase(dependencies),
+          agentTarget: 'gemini',
         }))
       }
       return 0
@@ -1156,16 +1360,29 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
     if (command === 'copilot') {
       const options = parsePlatformActionArgs(command, args)
       if (options.action === 'install') {
+        failureTelemetry = (failureBucket) => ({
+          command: 'install',
+          stage: 'failed',
+          ...telemetryBase(dependencies),
+          failureBucket,
+          agentTarget: 'copilot',
+        })
+        emitTelemetry(io, dependencies, () => ({
+          command: 'install',
+          stage: 'started',
+          ...telemetryBase(dependencies),
+          agentTarget: 'copilot',
+        }))
         if (!existsSync('out/graph.json')) {
           io.log("Warning: out/graph.json not found. Run 'madar generate .' first, then re-run this command.")
         }
         io.log(dependencies.installSkill('copilot'))
         io.log(dependencies.installCopilotMcp('.', options.profile ? { profile: options.profile } : {}))
         emitTelemetry(io, dependencies, () => ({
-          event: 'install_success',
-          version: readInstalledVersionForTelemetry(dependencies),
-          os: process.platform,
-          installPlatform: 'copilot',
+          command: 'install',
+          stage: 'succeeded',
+          ...telemetryBase(dependencies),
+          agentTarget: 'copilot',
         }))
       } else {
         io.log(dependencies.uninstallCopilotMcp('.'))
@@ -1182,6 +1399,9 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
     io.error(`Run 'madar --help' for usage.`)
     return 1
   } catch (error) {
+    if (failureTelemetry) {
+      emitTelemetry(io, dependencies, () => failureTelemetry!(classifyTelemetryFailure(error)))
+    }
     if (error instanceof UsageError) {
       io.error(error.message)
       return 2

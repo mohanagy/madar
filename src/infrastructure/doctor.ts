@@ -42,7 +42,7 @@ interface GraphCheck {
   recommendation: string
 }
 
-interface DoctorReport {
+export interface DoctorReport {
   packageVersion: string
   graph: GraphCheck
   agents: AgentCheck[]
@@ -416,7 +416,7 @@ function computeNextCommands(report: Omit<DoctorReport, 'nextCommands' | 'health
   return [...nextCommands]
 }
 
-function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorReport {
+export function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorReport {
   const graphPath = options.graphPath ?? 'out/graph.json'
   const projectDir = resolve(options.projectDir ?? '.')
   const now = options.now ?? Date.now()
