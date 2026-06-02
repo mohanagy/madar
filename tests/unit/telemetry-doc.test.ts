@@ -30,6 +30,8 @@ describe('telemetry documentation', () => {
     expect(doc).toContain('status_bucket')
     expect(doc).toContain('madar telemetry clear')
     expect(doc).toContain('madar telemetry report')
+    expect(doc).toContain('`madar compare` (`succeeded`, `failed`)')
+    expect(doc).toContain('`madar doctor` and `madar status` (`succeeded`, `failed`, plus `status_bucket`)')
     expect(doc).toContain('prompt text')
     expect(doc).toContain('answer text')
     expect(doc).toContain('source paths')

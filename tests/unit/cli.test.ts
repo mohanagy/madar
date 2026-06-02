@@ -27,6 +27,7 @@ import {
   parseTimeTravelArgs,
   parseTryArgs,
   parseWatchArgs,
+  UsageError,
 } from '../../src/cli/parser.js'
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
 
@@ -1407,6 +1408,39 @@ describe('cli main', () => {
         os: process.platform,
         nodeMajor: expect.any(Number),
         failureBucket: 'missing_graph',
+      },
+    ])
+  })
+
+  it('keeps specific failure buckets when compare throws a wrapped UsageError', async () => {
+    const { io, logs, errors } = createIo()
+    const dependencies = createDependencies() as CliDependencies & {
+      recordTelemetryEvent: (event: unknown) => void
+      readInstalledVersion: () => string
+    }
+    const telemetryEvents: unknown[] = []
+
+    dependencies.runCompare = async () => {
+      throw new UsageError('error: install required before compare')
+    }
+    dependencies.recordTelemetryEvent = (event) => {
+      telemetryEvents.push(event)
+    }
+    dependencies.readInstalledVersion = () => '0.27.4'
+
+    const exitCode = await executeCli(['compare', 'How does auth work?', '--exec', 'claude --print "$(cat {prompt_file})"', '--yes'], io, dependencies)
+
+    expect(exitCode).toBe(2)
+    expect(logs).toEqual([])
+    expect(errors).toContain('error: install required before compare')
+    expect(telemetryEvents).toEqual([
+      {
+        command: 'compare',
+        stage: 'failed',
+        version: '0.27.4',
+        os: process.platform,
+        nodeMajor: expect.any(Number),
+        failureBucket: 'install_error',
       },
     ])
   })

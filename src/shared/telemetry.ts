@@ -648,6 +648,14 @@ export function recordTelemetryEvent(input: TelemetryEventInput, options: Teleme
   return true
 }
 
+function safeLoadSpool(spoolFile: string): TelemetrySpool {
+  try {
+    return loadSpool(spoolFile)
+  } catch {
+    return { schema_version: 2, events: [] }
+  }
+}
+
 export function readTelemetryReport(options: TelemetryOptions = {}, spoolPaths: string[] = []): string {
   const env = options.env ?? process.env
   const cacheRoot = options.cacheRoot ?? defaultCacheRoot(env)
@@ -655,7 +663,7 @@ export function readTelemetryReport(options: TelemetryOptions = {}, spoolPaths: 
     telemetrySpoolFilePath(cacheRoot),
     ...spoolPaths.map((spoolPath) => resolve(spoolPath)),
   ])]
-  const events = resolvedPaths.flatMap((spoolPath) => loadSpool(spoolPath).events)
+  const events = resolvedPaths.flatMap((spoolPath) => safeLoadSpool(spoolPath).events)
 
   const lines = [
     'Telemetry funnel summary',

@@ -359,4 +359,42 @@ describe('telemetry', () => {
       rmSync(cacheRoot, { recursive: true, force: true })
     }
   })
+
+  it('skips unreadable report inputs instead of crashing the summary', () => {
+    const configRoot = mkdtempSync(join(tmpdir(), 'madar-telemetry-config-'))
+    const cacheRoot = mkdtempSync(join(tmpdir(), 'madar-telemetry-cache-'))
+
+    try {
+      enableTelemetry({
+        configRoot,
+        cacheRoot,
+        env: {},
+      })
+      expect(recordTelemetryEvent({
+        command: 'status',
+        stage: 'succeeded',
+        version: '0.27.8',
+        os: 'darwin',
+        nodeMajor: 20,
+        statusBucket: 'healthy',
+      }, {
+        configRoot,
+        cacheRoot,
+        env: {},
+      })).toBe(true)
+
+      const report = readTelemetryReport({
+        configRoot,
+        cacheRoot,
+        env: {},
+      }, [cacheRoot])
+
+      expect(report).toContain('Telemetry funnel summary')
+      expect(report).toContain('status 1')
+      expect(report).toContain('healthy 1')
+    } finally {
+      rmSync(configRoot, { recursive: true, force: true })
+      rmSync(cacheRoot, { recursive: true, force: true })
+    }
+  })
 })

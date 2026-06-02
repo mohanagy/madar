@@ -69,8 +69,8 @@ When telemetry is enabled, Madar records source-safe funnel stages for:
 - `madar pack` (`succeeded`, `failed`)
 - `madar prompt` (`succeeded`, `failed`)
 - MCP `context_pack` (`succeeded`, `failed`)
-- `madar doctor` and `madar status` (`succeeded`, plus `status_bucket`)
-- `madar compare` (`succeeded`)
+- `madar doctor` and `madar status` (`succeeded`, `failed`, plus `status_bucket`)
+- `madar compare` (`succeeded`, `failed`)
 
 ## What is excluded
 

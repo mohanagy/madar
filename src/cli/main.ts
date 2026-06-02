@@ -403,10 +403,6 @@ function telemetryBase(dependencies: CliDependencies) {
 }
 
 function classifyTelemetryFailure(error: unknown): TelemetryFailureBucket {
-  if (error instanceof UsageError) {
-    return 'usage_error'
-  }
-
   const message = messageFromError(error).toLowerCase()
   if (message.includes('context_pack requires') || message.includes('invalid params')) {
     return 'invalid_params'
@@ -426,7 +422,7 @@ function classifyTelemetryFailure(error: unknown): TelemetryFailureBucket {
   if (message.includes('install')) {
     return 'install_error'
   }
-  return 'unknown'
+  return error instanceof UsageError ? 'usage_error' : 'unknown'
 }
 
 async function confirmPaidCommand(
