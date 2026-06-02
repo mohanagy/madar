@@ -240,21 +240,23 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   {
     name: 'context_pack',
     description:
-      'Build a compact explain/implement/review/impact pack with expandable refs and coverage.',
+      'Build a compact context pack.',
     inputSchema: {
       type: 'object',
       required: ['prompt'],
       properties: {
-        prompt: { type: 'string', description: 'Task prompt or question to build context for' },
-        task: { type: 'string', enum: ['explain', 'implement', 'review', 'impact'], description: 'Optional mode override (default: infer from prompt; fallback explain)' },
-        budget: { type: 'number', description: 'Optional: maximum token budget for the pack (default 3000)' },
-        delta_session_id: { type: 'string', description: 'Optional (#81): delta-pack session key for per-session dedup.' },
-        verbose: { type: 'boolean', description: 'Optional: include extended selection diagnostics.' },
-        retrieval_strategy: { type: 'string', enum: ['default', 'slice-v1'], description: 'Experimental retrieval strategy.' },
+        prompt: { type: 'string', description: 'Task prompt or question' },
+        task: { type: 'string', enum: ['explain', 'implement', 'review', 'impact'], description: 'Mode override.' },
+        budget: { type: 'number', description: 'Pack token budget.' },
+        require_fresh_graph: { type: 'boolean', description: 'Refuse repo drift.' },
+        require_fresh_context: { type: 'boolean', description: 'Refuse selected-context drift.' },
+        delta_session_id: { type: 'string', description: 'Delta-pack session key.' },
+        verbose: { type: 'boolean', description: 'Include selection diagnostics.' },
+        retrieval_strategy: { type: 'string', enum: ['default', 'slice-v1'], description: 'Retrieval strategy.' },
         resolution: {
           type: 'string',
           enum: ['detail', 'summary', 'mixed', 'signature', 'sketch'],
-          description: 'Node resolution.',
+          description: 'Resolution.',
         },
       },
     },
@@ -286,17 +288,19 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   {
     name: 'context_prompt',
     description:
-      'Compile a provider-ready context prompt. Use provider=claude with session_id for cache-aware follow-ups, or provider=gemini for a plain prompt string.',
+      'Compile a provider-ready context prompt.',
     inputSchema: {
       type: 'object',
       required: ['prompt', 'provider'],
       properties: {
         prompt: { type: 'string', description: 'Task prompt or question to compile' },
         provider: { type: 'string', enum: ['claude', 'gemini'], description: 'Target prompt consumer' },
-        budget: { type: 'number', description: 'Optional: retrieval budget used to gather graph evidence (default 3000)' },
-        session_id: { type: 'string', description: 'Optional: server-managed Claude session key for cache-aware follow-ups.' },
-        reset_session: { type: 'boolean', description: 'Optional: clear any stored server-side session before compiling this prompt.' },
-        session_state: { type: 'object', description: 'Optional: explicit previous session_state payload to continue without using session_id.' },
+        budget: { type: 'number', description: 'Retrieval token budget.' },
+        require_fresh_graph: { type: 'boolean', description: 'Refuse repo drift.' },
+        require_fresh_context: { type: 'boolean', description: 'Refuse selected-context drift.' },
+        session_id: { type: 'string', description: 'Claude session key.' },
+        reset_session: { type: 'boolean', description: 'Clear stored session first.' },
+        session_state: { type: 'object', description: 'Explicit session state.' },
       },
     },
   },

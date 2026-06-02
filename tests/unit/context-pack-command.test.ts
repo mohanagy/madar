@@ -2446,6 +2446,28 @@ describe('context-pack-command', () => {
     }))
   })
 
+  it('rejects requireFreshContext for review packs instead of silently ignoring it', async () => {
+    const graph = new KnowledgeGraph()
+    const dependencies: ContextPackCommandDependencies = {
+      loadGraph: vi.fn().mockReturnValue(graph),
+      retrieveContext: vi.fn(),
+      compactRetrieveResult: vi.fn(),
+      analyzePrImpact: vi.fn(),
+      compactPrImpactResult: vi.fn(),
+      analyzeImpact: vi.fn(),
+      compactImpactResult: vi.fn(),
+    }
+
+    await expect(runContextPackCommand({
+      prompt: 'review current diff',
+      budget: 1800,
+      task: 'review',
+      graphPath: 'out/graph.json',
+      requireFreshContext: true,
+    }, dependencies)).rejects.toThrow(/requireFreshContext.*review/i)
+    expect(dependencies.analyzePrImpact).not.toHaveBeenCalled()
+  })
+
   it('derives an impact target from the highest-signal retrieved node', async () => {
     const graph = new KnowledgeGraph()
     const dependencies: ContextPackCommandDependencies = {

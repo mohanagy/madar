@@ -206,6 +206,8 @@ export async function runHandoffCommand(
     graphPath: options.graphPath,
     format: 'json',
     verbose: true,
+    ...(options.requireFreshGraph === true ? { requireFreshGraph: true } : {}),
+    ...(options.requireFreshContext === true ? { requireFreshContext: true } : {}),
   } as const
   const contextPackPayload = dependencies.runContextPackCommand
     ? await dependencies.runContextPackCommand(packOptions)

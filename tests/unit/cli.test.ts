@@ -2055,6 +2055,106 @@ describe('cli main', () => {
     expect(errors).toEqual([])
   })
 
+  it('passes --require-fresh-graph through pack, handoff, and prompt commands', async () => {
+    const packIo = createIo()
+    const handoffIo = createIo()
+    const promptIo = createIo()
+    const runContextPack = vi.fn<NonNullable<CliDependencies['runContextPack']>>().mockResolvedValue('{"task":"explain"}')
+    const runHandoff = vi.fn<NonNullable<CliDependencies['runHandoff']>>().mockResolvedValue('{"share_safe":true}')
+    const runContextPrompt = vi.fn<NonNullable<CliDependencies['runContextPrompt']>>().mockResolvedValue('{"provider":"claude"}')
+    const dependencies: CliDependencies = {
+      ...createDependencies(),
+      runContextPack,
+      runHandoff,
+      runContextPrompt,
+    }
+
+    await expect(executeCli(['pack', 'how does auth work', '--require-fresh-graph'], packIo.io, dependencies)).resolves.toBe(0)
+    await expect(executeCli(['handoff', 'remote auth incident brief', '--consumer', 'cursor', '--require-fresh-graph'], handoffIo.io, dependencies)).resolves.toBe(0)
+    await expect(executeCli(['prompt', 'how does auth work', '--provider', 'claude', '--require-fresh-graph'], promptIo.io, dependencies)).resolves.toBe(0)
+
+    expect(runContextPack).toHaveBeenCalledWith({
+      options: {
+        prompt: 'how does auth work',
+        budget: 3000,
+        task: 'explain',
+        graphPath: 'out/graph.json',
+        requireFreshGraph: true,
+      },
+      io: packIo.io,
+    })
+    expect(runHandoff).toHaveBeenCalledWith({
+      options: {
+        prompt: 'remote auth incident brief',
+        budget: 3000,
+        task: 'explain',
+        graphPath: 'out/graph.json',
+        consumer: 'cursor',
+        requireFreshGraph: true,
+      },
+      io: handoffIo.io,
+    })
+    expect(runContextPrompt).toHaveBeenCalledWith({
+      options: {
+        prompt: 'how does auth work',
+        provider: 'claude',
+        graphPath: 'out/graph.json',
+        requireFreshGraph: true,
+      },
+      io: promptIo.io,
+    })
+  })
+
+  it('passes --require-fresh-context through pack, handoff, and prompt commands', async () => {
+    const packIo = createIo()
+    const handoffIo = createIo()
+    const promptIo = createIo()
+    const runContextPack = vi.fn<NonNullable<CliDependencies['runContextPack']>>().mockResolvedValue('{"task":"explain"}')
+    const runHandoff = vi.fn<NonNullable<CliDependencies['runHandoff']>>().mockResolvedValue('{"share_safe":true}')
+    const runContextPrompt = vi.fn<NonNullable<CliDependencies['runContextPrompt']>>().mockResolvedValue('{"provider":"claude"}')
+    const dependencies: CliDependencies = {
+      ...createDependencies(),
+      runContextPack,
+      runHandoff,
+      runContextPrompt,
+    }
+
+    await expect(executeCli(['pack', 'how does auth work', '--require-fresh-context'], packIo.io, dependencies)).resolves.toBe(0)
+    await expect(executeCli(['handoff', 'remote auth incident brief', '--consumer', 'cursor', '--require-fresh-context'], handoffIo.io, dependencies)).resolves.toBe(0)
+    await expect(executeCli(['prompt', 'how does auth work', '--provider', 'claude', '--require-fresh-context'], promptIo.io, dependencies)).resolves.toBe(0)
+
+    expect(runContextPack).toHaveBeenCalledWith({
+      options: {
+        prompt: 'how does auth work',
+        budget: 3000,
+        task: 'explain',
+        graphPath: 'out/graph.json',
+        requireFreshContext: true,
+      },
+      io: packIo.io,
+    })
+    expect(runHandoff).toHaveBeenCalledWith({
+      options: {
+        prompt: 'remote auth incident brief',
+        budget: 3000,
+        task: 'explain',
+        graphPath: 'out/graph.json',
+        consumer: 'cursor',
+        requireFreshContext: true,
+      },
+      io: handoffIo.io,
+    })
+    expect(runContextPrompt).toHaveBeenCalledWith({
+      options: {
+        prompt: 'how does auth work',
+        provider: 'claude',
+        graphPath: 'out/graph.json',
+        requireFreshContext: true,
+      },
+      io: promptIo.io,
+    })
+  })
+
   it('uses the default time-travel dependency to emit raw JSON unchanged', async () => {
     const { io, logs, errors } = createIo()
     const compareResult = {

@@ -1,6 +1,12 @@
 import type { PromptCliOptions, PromptCliProvider } from '../cli/parser.js'
 import type { KnowledgeGraph } from '../contracts/graph.js'
 import { buildMadarPromptPack, type ComparePromptPack } from './compare.js'
+import {
+  analyzeGraphContextFreshness,
+  requireFreshGraph,
+  requireFreshSelectedContext,
+  selectedContextSourceFilesFromRetrieveResult,
+} from '../runtime/freshness.js'
 import { retrieveContext, type RetrieveResult } from '../runtime/retrieve.js'
 import { loadGraph } from '../runtime/serve.js'
 
@@ -65,10 +71,20 @@ export async function runContextPromptCommand(
   dependencies: ContextPromptCommandDependencies = DEFAULT_DEPENDENCIES,
 ): Promise<string> {
   const graph = dependencies.loadGraph(options.graphPath)
+  const initialGraphFreshness = analyzeGraphContextFreshness(options.graphPath, graph)
   const retrieval = dependencies.retrieveContext(graph, {
     question: options.prompt,
     budget: DEFAULT_PROMPT_BUDGET,
   })
+  const graphFreshness = analyzeGraphContextFreshness(options.graphPath, graph, {
+    selected_source_files: selectedContextSourceFilesFromRetrieveResult(retrieval),
+  })
+  if (options.requireFreshContext === true) {
+    requireFreshSelectedContext(graphFreshness)
+  }
+  if (options.requireFreshGraph === true) {
+    requireFreshGraph(initialGraphFreshness)
+  }
   const compiled = dependencies.buildMadarPromptPack({
     graphPath: options.graphPath,
     question: options.prompt,
@@ -80,6 +96,7 @@ export async function runContextPromptCommand(
     provider: options.provider,
     prompt: options.prompt,
     graph_path: options.graphPath,
+    graph_freshness: graphFreshness,
     compiled: providerCompiled,
   })
 }

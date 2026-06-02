@@ -94,6 +94,21 @@ describe('MCP tool profile', () => {
       expect(coreToolNames).not.toContain('context_prompt')
       expect(coreToolNames).not.toContain('context_session_reset')
     })
+
+    it('advertises scoped and global freshness guards on context tools', () => {
+      const fullTools = activeMcpTools('full')
+      const contextPack = fullTools.find((tool) => tool.name === 'context_pack')
+      const contextPrompt = fullTools.find((tool) => tool.name === 'context_prompt')
+
+      expect(contextPack?.inputSchema.properties).toEqual(expect.objectContaining({
+        require_fresh_graph: expect.any(Object),
+        require_fresh_context: expect.any(Object),
+      }))
+      expect(contextPrompt?.inputSchema.properties).toEqual(expect.objectContaining({
+        require_fresh_graph: expect.any(Object),
+        require_fresh_context: expect.any(Object),
+      }))
+    })
   })
 
   describe('resolveToolProfileFromEnv', () => {
