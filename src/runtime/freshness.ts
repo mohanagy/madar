@@ -177,7 +177,7 @@ export function selectedContextSourceFilesFromRetrieveResult(
         ? scoredNodes
         : result.matched_nodes.filter((node) => node.relevance_band !== 'peripheral')
     for (const node of (fallbackNodes.length > 0 ? fallbackNodes : result.matched_nodes)) {
-      const sourceFile = node.source_file.trim()
+      const sourceFile = node?.source_file?.trim() ?? ''
       if (sourceFile.length > 0) {
         sourceFiles.add(sourceFile)
       }
@@ -348,6 +348,7 @@ export function analyzeGraphContextFreshness(
     graph_version: graphFreshness.graphVersion,
     graph_modified_ms: graphFreshness.graphModifiedMs,
     graph_modified_at: graphFreshness.graphModifiedAt,
+    // Graph JSON does not persist a generation timestamp today, so file mtime is the proxy.
     generated_ms: graphFreshness.graphModifiedMs,
     generated_at: new Date(graphFreshness.graphModifiedMs).toISOString(),
     madar_version: readPackageVersion(),

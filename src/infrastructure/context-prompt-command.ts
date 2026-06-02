@@ -72,6 +72,9 @@ export async function runContextPromptCommand(
 ): Promise<string> {
   const graph = dependencies.loadGraph(options.graphPath)
   const initialGraphFreshness = analyzeGraphContextFreshness(options.graphPath, graph)
+  if (options.requireFreshGraph === true) {
+    requireFreshGraph(initialGraphFreshness)
+  }
   const retrieval = dependencies.retrieveContext(graph, {
     question: options.prompt,
     budget: DEFAULT_PROMPT_BUDGET,
@@ -81,9 +84,6 @@ export async function runContextPromptCommand(
   })
   if (options.requireFreshContext === true) {
     requireFreshSelectedContext(graphFreshness)
-  }
-  if (options.requireFreshGraph === true) {
-    requireFreshGraph(initialGraphFreshness)
   }
   const compiled = dependencies.buildMadarPromptPack({
     graphPath: options.graphPath,

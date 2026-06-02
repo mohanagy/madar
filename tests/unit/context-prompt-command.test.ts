@@ -5,7 +5,7 @@ import { runContextPromptCommand, type ContextPromptCommandDependencies } from '
 
 function expectGraphFreshnessContract(value: unknown): void {
   expect(value).toEqual(expect.objectContaining({
-    status: expect.stringMatching(/^(fresh|possibly_stale|stale|missing)$/),
+    status: expect.stringMatching(/^(fresh|partially_stale|possibly_stale|stale|missing)$/),
     graph_path: expect.any(String),
     madar_version: expect.any(String),
     indexed_file_count: expect.any(Number),
@@ -190,4 +190,21 @@ describe('context-prompt-command', () => {
     })
     expectGraphFreshnessContract(parsed.graph_freshness)
   })
-})
+
+    it('fails fast on requireFreshGraph before retrieval begins', async () => {
+      const graph = new KnowledgeGraph()
+      const dependencies: ContextPromptCommandDependencies = {
+        loadGraph: vi.fn().mockReturnValue(graph),
+        retrieveContext: vi.fn(),
+        buildMadarPromptPack: vi.fn(),
+      }
+
+      await expect(runContextPromptCommand({
+        prompt: 'how does auth work',
+        provider: 'claude',
+        graphPath: 'out/graph.json',
+        requireFreshGraph: true,
+      }, dependencies)).rejects.toThrow(/require-fresh-graph|fresh graph/i)
+      expect(dependencies.retrieveContext).not.toHaveBeenCalled()
+    })
+  })

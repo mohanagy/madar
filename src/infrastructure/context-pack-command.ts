@@ -532,40 +532,6 @@ function compactAnswerReadyGovernance(payload: JsonRecord, trimmedFields: string
         }
       }
     }
-
-    const graphFreshness = asJsonRecord(governance.graph_freshness)
-    if (graphFreshness && typeof graphFreshness.graph_path === 'string') {
-      delete graphFreshness.graph_path
-      trimmedFields.push('governance.graph_freshness.graph_path')
-    }
-    if (graphFreshness && typeof graphFreshness.graph_version === 'string') {
-      delete graphFreshness.graph_version
-      trimmedFields.push('governance.graph_freshness.graph_version')
-    }
-    if (graphFreshness && typeof graphFreshness.graph_modified_ms === 'number') {
-      delete graphFreshness.graph_modified_ms
-      trimmedFields.push('governance.graph_freshness.graph_modified_ms')
-    }
-    if (graphFreshness && typeof graphFreshness.graph_modified_at === 'string') {
-      delete graphFreshness.graph_modified_at
-      trimmedFields.push('governance.graph_freshness.graph_modified_at')
-    }
-    if (graphFreshness && typeof graphFreshness.generated_ms === 'number') {
-      delete graphFreshness.generated_ms
-      trimmedFields.push('governance.graph_freshness.generated_ms')
-    }
-    if (graphFreshness && typeof graphFreshness.generated_at === 'string') {
-      delete graphFreshness.generated_at
-      trimmedFields.push('governance.graph_freshness.generated_at')
-    }
-    if (graphFreshness && typeof graphFreshness.madar_version === 'string') {
-      delete graphFreshness.madar_version
-      trimmedFields.push('governance.graph_freshness.madar_version')
-    }
-    if (graphFreshness && typeof graphFreshness.recommendation === 'string') {
-      delete graphFreshness.recommendation
-      trimmedFields.push('governance.graph_freshness.recommendation')
-    }
   }
 }
 

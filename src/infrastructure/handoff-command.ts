@@ -178,6 +178,8 @@ export interface HandoffCommandDependencies extends Partial<ContextPackCommandDe
     graphPath: string
     format: 'json'
     verbose: true
+    requireFreshGraph?: boolean
+    requireFreshContext?: boolean
   }) => Promise<string>
 }
 

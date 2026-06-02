@@ -1468,7 +1468,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
           ...metadata,
           evidence,
         }, {
-          graphFreshness: initialGraphContextFreshness,
+          graphFreshness: graphContextFreshness,
           task,
           taskIntent: initialPlan.evidence.recipe_id,
           budget: resolvedBudget,

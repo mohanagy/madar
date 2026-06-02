@@ -12,6 +12,8 @@ import { handleStdioRequest } from '../../src/runtime/stdio-server.js'
 
 const sandboxRoots: string[] = []
 const PACKAGE_VERSION = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as { version: string }
+const OUT_GRAPH_PATH_PATTERN = /[\\/]out[\\/]graph\.json$/
+const OUT_MISSING_GRAPH_PATH_PATTERN = /[\\/]out[\\/]missing\.json$/
 
 type FixtureState = 'fresh' | 'modified' | 'unrelated_modified' | 'deleted' | 'shared_modified'
 
@@ -29,11 +31,6 @@ afterEach(() => {
     }
   }
 })
-
-function writeText(path: string, content: string): void {
-  mkdirSync(join(path, '..'), { recursive: true })
-  writeFileSync(path, content, 'utf8')
-}
 
 function createFreshnessFixture(state: FixtureState): FreshnessFixture {
   const root = mkdtempSync(join(tmpdir(), 'madar-freshness-'))
@@ -230,7 +227,7 @@ describe('freshness surfaces', () => {
     const fresh = createFreshnessFixture('fresh')
     expect(analyzeGraphContextFreshness!(fresh.graphPath)).toEqual(expect.objectContaining({
       status: 'fresh',
-      graph_path: expect.stringContaining('/out/graph.json'),
+      graph_path: expect.stringMatching(OUT_GRAPH_PATH_PATTERN),
       generated_at: fresh.generatedAt,
       madar_version: PACKAGE_VERSION.version,
       indexed_file_count: 3,
@@ -242,7 +239,7 @@ describe('freshness surfaces', () => {
     expect(analyzeGraphContextFreshness!(modified.graphPath)).toEqual(expect.objectContaining({
       status: 'partially_stale',
       selected_context_status: 'unknown',
-      graph_path: expect.stringContaining('/out/graph.json'),
+      graph_path: expect.stringMatching(OUT_GRAPH_PATH_PATTERN),
       generated_at: modified.generatedAt,
       indexed_file_count: 3,
       changed_source_count: 1,
@@ -255,7 +252,7 @@ describe('freshness surfaces', () => {
     const deleted = createFreshnessFixture('deleted')
     expect(analyzeGraphContextFreshness!(deleted.graphPath)).toEqual(expect.objectContaining({
       status: 'stale',
-      graph_path: expect.stringContaining('/out/graph.json'),
+      graph_path: expect.stringMatching(OUT_GRAPH_PATH_PATTERN),
       indexed_file_count: 3,
       changed_source_count: 0,
       missing_source_count: 1,
@@ -264,7 +261,7 @@ describe('freshness surfaces', () => {
 
     expect(analyzeGraphContextFreshness!(join(deleted.root, 'out', 'missing.json'))).toEqual(expect.objectContaining({
       status: 'missing',
-      graph_path: expect.stringContaining('/out/missing.json'),
+      graph_path: expect.stringMatching(OUT_MISSING_GRAPH_PATH_PATTERN),
       generated_at: null,
       indexed_file_count: 0,
       changed_source_count: 0,
@@ -336,7 +333,7 @@ describe('freshness surfaces', () => {
     expect(packJson.governance?.graph_freshness).toEqual(expect.objectContaining({
       status: 'possibly_stale',
       selected_context_status: 'possibly_stale',
-      graph_path: expect.stringContaining('/out/graph.json'),
+      graph_path: expect.stringMatching(OUT_GRAPH_PATH_PATTERN),
       generated_at: fixture.generatedAt,
       madar_version: PACKAGE_VERSION.version,
       indexed_file_count: 3,
@@ -355,7 +352,7 @@ describe('freshness surfaces', () => {
     expect(promptJson.graph_freshness).toEqual(expect.objectContaining({
       status: 'possibly_stale',
       selected_context_status: 'possibly_stale',
-      graph_path: expect.stringContaining('/out/graph.json'),
+      graph_path: expect.stringMatching(OUT_GRAPH_PATH_PATTERN),
       changed_selected_context_count: 1,
       changed_outside_selected_context_count: 0,
       changed_source_count: 1,
