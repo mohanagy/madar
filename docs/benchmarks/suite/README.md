@@ -27,9 +27,10 @@ The runner-backed suite now ships in this directory:
 
 Current wiring is still conservative, but it is no longer a single-cell scaffold:
 
-- ready repo shapes: `ts-small`, `nestjs-mid`, and `ts-monorepo-large`
+- ready repo shapes: `ts-small`, `nestjs-mid`, `ts-monorepo-large`, `python-service`, and `go-service`
 - ready task kinds: `explain-runtime`, `implement`, `review`, and `impact`
-- Python and Go stay visible as planned rows so the public surface shows the intended spread honestly
+- Python and Go now ship as concrete public fixture workspaces under `docs/benchmarks/suite/fixtures/`
+- the latest published bundle still measures the three TypeScript fixture-style rows; the Python and Go fixtures are prompt-wired so future receipts can extend that public spread honestly
 - runner execution still verifies a local Madar install per repo; a prompt-wired row without a verified install is reported as skipped instead of silently counted
 
 Latest published bundle:

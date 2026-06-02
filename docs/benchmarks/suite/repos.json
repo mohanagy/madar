@@ -36,22 +36,22 @@
     "id": "python-service",
     "name": "Python service proxy",
     "path": "docs/benchmarks/suite/fixtures/python-service",
-    "description": "Reserved slot for a public or fixture-style Python service benchmark target.",
+    "description": "Public FastAPI-style session service fixture used as the Python benchmark target.",
     "size": "mid",
     "language": "python",
     "shape": "fastapi-or-django",
-    "status": "planned",
+    "status": "ready",
     "supportsSpi": false
   },
   {
     "id": "go-service",
     "name": "Go HTTP service proxy",
     "path": "docs/benchmarks/suite/fixtures/go-service",
-    "description": "Reserved slot for a public or fixture-style Go HTTP benchmark target.",
+    "description": "Public net/http login session fixture used as the Go benchmark target.",
     "size": "mid",
     "language": "go",
     "shape": "http-service",
-    "status": "planned",
+    "status": "ready",
     "supportsSpi": false
   }
 ]
