@@ -41,6 +41,11 @@ export interface PackCliOptions {
   retrievalStrategy?: ContextPackRetrievalStrategy
 }
 
+export interface TryCliOptions {
+  prompt: string
+  path: string
+}
+
 export interface HandoffCliOptions {
   prompt: string
   budget: number
@@ -615,6 +620,41 @@ export function parsePackArgs(args: string[]): PackCliOptions {
     ...(verbose ? { verbose: true } : {}),
     ...(retrievalLevel !== undefined ? { retrievalLevel } : {}),
     ...(retrievalStrategy !== undefined ? { retrievalStrategy } : {}),
+  }
+}
+
+export function parseTryArgs(args: string[]): TryCliOptions {
+  const usage = 'Usage: madar try "<question>" [path]'
+  const prompt = args[0]?.trim()
+  if (!prompt) {
+    throw new UsageError(usage)
+  }
+
+  let path = '.'
+  for (let index = 1; index < args.length; index += 1) {
+    const argument = args[index]
+    if (!argument) {
+      continue
+    }
+
+    if (argument.startsWith('--')) {
+      throw new UsageError(`error: unknown option for try: ${argument}`)
+    }
+
+    if (path !== '.') {
+      throw new UsageError(usage)
+    }
+
+    path = argument
+  }
+
+  if (path.length > MAX_CLI_PATH_LENGTH) {
+    throw new UsageError(`error: path exceeds maximum length of ${MAX_CLI_PATH_LENGTH} characters`)
+  }
+
+  return {
+    prompt: validateCliQuestionText('question', prompt),
+    path,
   }
 }
 

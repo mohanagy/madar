@@ -44,12 +44,13 @@ Capability/scope summary only. See the [claims-and-evidence map](https://github.
 
 ## Quickstart
 
-Start with the generated graph. `madar generate` creates the local graph artifact; `madar summary`, `madar pack`, `madar prompt`, and `madar handoff` can use that graph without any agent install. Run `madar <agent> install` only when you want Madar wired into an agent through MCP or local instruction files.
+Start with a one-command local proof. `madar try` builds or reuses `out/graph.json`, prints one human-readable explain-pack result, and recommends the next install command without requiring MCP first. When you want more control, drop down to `madar generate`, `madar summary`, `madar pack`, `madar prompt`, and `madar handoff` directly.
 
 ```bash
 npm install -g @lubab/madar
 
 cd your-project
+madar try "how does auth work?"  # one-command local proof before agent install
 madar generate .          # builds out/graph.json, no API key, no cloud
 madar summary             # bounded repo overview before deeper retrieval
 madar claude install      # wires Claude Code to use Madar via MCP
