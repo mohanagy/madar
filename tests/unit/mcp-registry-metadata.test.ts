@@ -44,6 +44,12 @@ interface RegistryManifest {
   $schema?: string
   name?: string
   description?: string
+  _meta?: {
+    'io.modelcontextprotocol.registry/publisher-provided'?: {
+      notes?: string
+      source?: string
+    }
+  }
   repository?: {
     id?: string
     source?: string
@@ -70,6 +76,7 @@ describe('MCP Registry metadata', () => {
     const npmPackage = registryManifest.packages?.[0]
     const graphPathArgument = npmPackage?.packageArguments?.find((entry) => entry.valueHint === 'graph_path')
     const toolProfile = npmPackage?.environmentVariables?.find((entry) => entry.name === 'MADAR_TOOL_PROFILE')
+    const publisherNotes = registryManifest._meta?.['io.modelcontextprotocol.registry/publisher-provided']
 
     expect(registryManifest.$schema).toContain('static.modelcontextprotocol.io/schemas/')
     expect(registryManifest.name).toBe('io.github.mohanagy/madar')
@@ -108,6 +115,10 @@ describe('MCP Registry metadata', () => {
       default: 'core',
     })
     expect(toolProfile?.choices).toEqual(expect.arrayContaining(['core', 'full']))
+    expect(publisherNotes?.source).toBe('docs/mcp-registry/server.json')
+    expect(publisherNotes?.notes).toContain('Madar is the renamed continuation of `graphify-ts`')
+    expect(publisherNotes?.notes).toContain('`@lubab/madar`')
+    expect(publisherNotes?.notes).toContain('`https://github.com/mohanagy/madar`')
   })
 
   it('exposes a repeatable local validation command for the checked-in registry metadata', () => {
@@ -164,6 +175,8 @@ describe('MCP Registry metadata', () => {
     expect(reference).toContain('npm run registry:validate')
     expect(reference).toContain('The official MCP Registry hosts metadata, not Madar code or your local graph artifact.')
     expect(reference).toContain('Private registry usage stays out of scope for the public Madar listing')
+    expect(reference).toContain('If you still discover older `graphify-ts` links or listings, Madar is the current project name.')
+    expect(reference).toContain('`https://github.com/mohanagy/madar`')
     expect(releaseDoc).toContain('npm run registry:validate')
   })
 })

@@ -45,6 +45,8 @@ npm run registry:validate
 
 The official MCP Registry hosts metadata, not Madar code or your local graph artifact. Madar's registry entry points back to the public npm package and the same local-first runtime flow: run `madar generate .` to create `out/graph.json`, then start the local stdio server with `npx @lubab/madar serve --stdio out/graph.json`, or let `madar <agent> install` write that wiring for you.
 
+If you still discover older `graphify-ts` links or listings, Madar is the current project name. Use `https://github.com/mohanagy/madar` and `@lubab/madar` as the canonical repository and package surfaces.
+
 Private registry usage stays out of scope for the public Madar listing because the official MCP Registry only accepts public package sources. Keep private or self-hosted registry workflows separate from this metadata file.
 
 ## MCP tools

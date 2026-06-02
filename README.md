@@ -14,6 +14,12 @@ Madar is deterministic local context compilation. It complements agents and IDE 
 
 ---
 
+## Rename and migration
+
+Madar is the current project name and package. If you arrived from older `graphify-ts` links, listings, or git remotes, use `@lubab/madar`, `https://github.com/mohanagy/madar`, and `git@github.com:mohanagy/madar.git`. Any remaining `graphify-ts` mentions in this repository are historical migration context only.
+
+---
+
 ## Who Madar is for
 
 - Teams using AI coding agents on medium-to-large TypeScript/Node repos where broad exploration creates cost, latency, privacy, or wrong-file-edit risk.

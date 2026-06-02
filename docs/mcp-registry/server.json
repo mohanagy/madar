@@ -53,7 +53,7 @@
     ],
     "_meta": {
         "io.modelcontextprotocol.registry/publisher-provided": {
-            "notes": "Public npm package plus local graph artifact install flow.",
+            "notes": "Public npm package plus local graph artifact install flow. Madar is the renamed continuation of `graphify-ts`; use `@lubab/madar` and `https://github.com/mohanagy/madar` as the canonical package and repository.",
             "source": "docs/mcp-registry/server.json"
         }
     }

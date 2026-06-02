@@ -24,6 +24,21 @@ function readText(path: string): string {
 
 const LEGACY_BRAND = ['g', 'r', 'a', 'p', 'h', 'i', 'f', 'y'].join('')
 const LEGACY_OUT_DIR = `${LEGACY_BRAND}-out`
+const RENAME_NOTE_HEADING = '## Rename and migration'
+
+function stripRenameNote(text: string): string {
+  const headingIndex = text.indexOf(RENAME_NOTE_HEADING)
+  if (headingIndex === -1) {
+    return text
+  }
+
+  const nextHeadingIndex = text.indexOf('\n## ', headingIndex + RENAME_NOTE_HEADING.length)
+  if (nextHeadingIndex === -1) {
+    return text.slice(0, headingIndex)
+  }
+
+  return `${text.slice(0, headingIndex)}${text.slice(nextHeadingIndex + 1)}`
+}
 
 describe('rebrand surface', () => {
   it('keeps only the madar command and removes compatibility packaging scripts', () => {
@@ -86,8 +101,23 @@ describe('rebrand surface', () => {
     }
   })
 
-  it('removes legacy branding from the main docs', () => {
+  it('documents the canonical Madar rename path for users arriving from legacy links', () => {
     const readme = readText('README.md')
+    const headingIndex = readme.indexOf(RENAME_NOTE_HEADING)
+
+    expect(headingIndex).toBeGreaterThanOrEqual(0)
+
+    const renameSection = readme.slice(headingIndex, readme.indexOf('\n## ', headingIndex + RENAME_NOTE_HEADING.length))
+
+    expect(renameSection).toContain('`graphify-ts`')
+    expect(renameSection).toContain('`@lubab/madar`')
+    expect(renameSection).toContain('`https://github.com/mohanagy/madar`')
+    expect(renameSection).toContain('`git@github.com:mohanagy/madar.git`')
+    expect(stripRenameNote(readme)).not.toContain(LEGACY_BRAND)
+  })
+
+  it('removes legacy branding from the main docs', () => {
+    const readme = stripRenameNote(readText('README.md'))
     const gettingStarted = readText('docs/tutorials/getting-started.md')
     const capabilityMatrix = readText('docs/language-capability-matrix.md')
     const releaseDoc = readText('docs/release.md')
