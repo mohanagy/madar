@@ -276,4 +276,19 @@ describe('runTryCommand', () => {
     expect(dependencies.generateGraph).not.toHaveBeenCalled()
     expect(dependencies.runContextPack).not.toHaveBeenCalled()
   })
+
+  it('surfaces pack failures from fresh graph reuse without rewriting them as graph read failures', async () => {
+    const workspace = resolve('/tmp/reuse-workspace')
+    const graphPath = resolve(workspace, 'out', 'graph.json')
+    const { io } = createIo()
+    const dependencies = createDependencies({
+      pathExists: vi.fn().mockImplementation((path: string) => path === graphPath),
+      runContextPack: vi.fn().mockRejectedValue(new Error('pack exploded')),
+    })
+
+    await expect(runTryCommand({ prompt: 'how does auth work?', path: workspace }, io, dependencies)).rejects.toThrow(
+      'pack exploded',
+    )
+    expect(dependencies.generateGraph).not.toHaveBeenCalled()
+  })
 })

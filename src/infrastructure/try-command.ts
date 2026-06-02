@@ -157,6 +157,7 @@ async function prepareWorkspace(
 ): Promise<TrialWorkspaceResult> {
   const graphPath = trialGraphPath(workspace)
   const notes: string[] = []
+  let reuseExistingGraph = false
 
   if (dependencies.pathExists(graphPath)) {
     try {
@@ -175,13 +176,17 @@ async function prepareWorkspace(
         }
 
         notes.push(`[madar try] Reusing ${graphPath} (${graphFreshnessStatusLabel(freshness.status)}).`)
-        return await runPackForWorkspace(workspace, prompt, graphPath, notes, io, dependencies)
+        reuseExistingGraph = true
+      } else {
+        notes.push(`[madar try] Existing graph is ${graphFreshnessStatusLabel(freshness.status)}; rebuilding ${workspace}.`)
       }
-
-      notes.push(`[madar try] Existing graph is ${graphFreshnessStatusLabel(freshness.status)}; rebuilding ${workspace}.`)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       notes.push(`[madar try] Existing graph could not be read (${message}); rebuilding ${workspace}.`)
+    }
+
+    if (reuseExistingGraph) {
+      return await runPackForWorkspace(workspace, prompt, graphPath, notes, io, dependencies)
     }
   } else {
     notes.push(`[madar try] No graph found at ${graphPath}; building one now.`)
