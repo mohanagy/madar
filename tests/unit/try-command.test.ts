@@ -2,6 +2,7 @@ import { resolve } from 'node:path'
 
 import { describe, expect, it, vi } from 'vitest'
 
+import { GenerateUnsupportedCorpusError } from '../../src/infrastructure/generate.js'
 import type { GraphContextFreshness, GraphContextFreshnessStatus } from '../../src/runtime/freshness.js'
 import type { GraphSummary } from '../../src/runtime/graph-summary.js'
 import { runTryCommand, type TryCommandDependencies } from '../../src/infrastructure/try-command.js'
@@ -164,7 +165,7 @@ describe('runTryCommand', () => {
       generateGraph: vi.fn().mockImplementation((rootPath = '.') => {
         const resolvedRoot = resolve(rootPath)
         if (resolvedRoot === workspace) {
-          throw new Error('No supported files were found in the target path.')
+          throw new GenerateUnsupportedCorpusError('NO_SUPPORTED_FILES', 'No supported files were found in the target path.')
         }
         return {
           mode: 'generate',

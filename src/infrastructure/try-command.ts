@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path'
 
 import type { TryCliOptions, PackCliOptions } from '../cli/parser.js'
 import { runContextPackCommand } from './context-pack-command.js'
-import { generateGraph } from './generate.js'
+import { generateGraph, GenerateUnsupportedCorpusError } from './generate.js'
 import { defaultInstallPlatform, type InstallPlatform } from './install.js'
 import { buildGraphSummary, type GraphSummary } from '../runtime/graph-summary.js'
 import { analyzeGraphContextFreshness, graphFreshnessStatusLabel, type GraphContextFreshness } from '../runtime/freshness.js'
@@ -75,9 +75,8 @@ function tooSmallReason(nodeCount: number): string | null {
   return `Current repo graph is too small for a useful first-run result (${nodeCount} nodes; need at least ${MIN_TRIAL_NODES}).`
 }
 
-function isFallbackEligibleGenerateError(reason: string): boolean {
-  return reason === 'No supported files were found in the target path.'
-    || reason.startsWith('No graph nodes could be generated from the detected corpus.')
+function isFallbackEligibleGenerateError(error: unknown): boolean {
+  return error instanceof GenerateUnsupportedCorpusError
 }
 
 function recommendInstallPlatform(workspace: string, dependencies: TryCommandDependencies): InstallPlatform {
@@ -210,7 +209,7 @@ async function prepareWorkspace(
       workspace,
       reason,
       notes,
-      fallbackEligible: isFallbackEligibleGenerateError(reason),
+      fallbackEligible: isFallbackEligibleGenerateError(error),
     }
   }
 }

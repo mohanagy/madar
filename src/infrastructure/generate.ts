@@ -88,6 +88,18 @@ export interface GenerateGraphCacheSummary {
   fileCount: number
 }
 
+export type GenerateUnsupportedCorpusCode = 'NO_SUPPORTED_FILES' | 'NO_GRAPH_NODES'
+
+export class GenerateUnsupportedCorpusError extends Error {
+  readonly code: GenerateUnsupportedCorpusCode
+
+  constructor(code: GenerateUnsupportedCorpusCode, message: string) {
+    super(message)
+    this.name = 'GenerateUnsupportedCorpusError'
+    this.code = code
+  }
+}
+
 type IncrementalDetectResult = ReturnType<typeof detectIncremental>
 
 function detectOptions(options: GenerateGraphOptions): { followSymlinks?: boolean } {
@@ -216,6 +228,13 @@ function missingCodeExtractionMessage(totalFiles: number): string {
   }
 
   return 'No graph nodes could be generated from the detected corpus. The current TypeScript extractor supports Python, JavaScript/TypeScript, documents, text-like papers, and image assets, but some detected formats still have shallow coverage.'
+}
+
+function missingCodeExtractionError(totalFiles: number): GenerateUnsupportedCorpusError {
+  return new GenerateUnsupportedCorpusError(
+    totalFiles === 0 ? 'NO_SUPPORTED_FILES' : 'NO_GRAPH_NODES',
+    missingCodeExtractionMessage(totalFiles),
+  )
 }
 
 export function loadGraphExtractorVersion(graphPath: string): number | null {
@@ -404,11 +423,11 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
           : null
 
   if (!graph) {
-    throw new Error(missingCodeExtractionMessage(detected.total_files))
+    throw missingCodeExtractionError(detected.total_files)
   }
 
   if (!options.clusterOnly && graph.numberOfNodes() === 0) {
-    throw new Error(missingCodeExtractionMessage(detected.total_files))
+    throw missingCodeExtractionError(detected.total_files)
   }
 
   progress?.({ step: 'build', message: `Built graph: ${graph.numberOfNodes()} nodes, ${graph.numberOfEdges()} edges` })
