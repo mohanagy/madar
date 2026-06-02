@@ -178,6 +178,8 @@ export interface HandoffCommandDependencies extends Partial<ContextPackCommandDe
     graphPath: string
     format: 'json'
     verbose: true
+    requireFreshGraph?: boolean
+    requireFreshContext?: boolean
   }) => Promise<string>
 }
 
@@ -206,6 +208,8 @@ export async function runHandoffCommand(
     graphPath: options.graphPath,
     format: 'json',
     verbose: true,
+    ...(options.requireFreshGraph === true ? { requireFreshGraph: true } : {}),
+    ...(options.requireFreshContext === true ? { requireFreshContext: true } : {}),
   } as const
   const contextPackPayload = dependencies.runContextPackCommand
     ? await dependencies.runContextPackCommand(packOptions)

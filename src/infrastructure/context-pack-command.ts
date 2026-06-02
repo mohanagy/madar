@@ -36,7 +36,13 @@ import {
   type MadarResponseEvidence,
 } from '../runtime/mcp-response-evidence.js'
 import { buildContextPackGovernanceReceipt } from '../runtime/context-pack-governance.js'
-import { graphFreshnessMetadata, type GraphFreshnessMetadata } from '../runtime/freshness.js'
+import { analyzeGraphContextFreshness,
+graphFreshnessStatusLabel,
+requireFreshGraph,
+requireFreshSelectedContext,
+selectedContextSourceFilesFromRetrieveResult,
+type GraphContextFreshness,
+} from '../runtime/freshness.js'
 import { buildRoutingDebug } from '../runtime/routing-debug.js'
 import { communitiesFromGraph, estimateQueryTokens, loadGraph } from '../runtime/serve.js'
 
@@ -432,6 +438,14 @@ function compactAnswerReadyGovernance(payload: JsonRecord, trimmedFields: string
 
   const graphFreshness = asJsonRecord(governance.graph_freshness)
   if (graphFreshness) {
+    if (typeof graphFreshness.graph_path === 'string') {
+      delete graphFreshness.graph_path
+      trimmedFields.push('governance.graph_freshness.graph_path')
+    }
+    if (typeof graphFreshness.graph_version === 'string') {
+      delete graphFreshness.graph_version
+      trimmedFields.push('governance.graph_freshness.graph_version')
+    }
     if (typeof graphFreshness.graph_modified_at === 'string') {
       delete graphFreshness.graph_modified_at
       trimmedFields.push('governance.graph_freshness.graph_modified_at')
@@ -439,6 +453,22 @@ function compactAnswerReadyGovernance(payload: JsonRecord, trimmedFields: string
     if (typeof graphFreshness.graph_modified_ms === 'number') {
       delete graphFreshness.graph_modified_ms
       trimmedFields.push('governance.graph_freshness.graph_modified_ms')
+    }
+    if (typeof graphFreshness.generated_ms === 'number') {
+      delete graphFreshness.generated_ms
+      trimmedFields.push('governance.graph_freshness.generated_ms')
+    }
+    if (typeof graphFreshness.generated_at === 'string') {
+      delete graphFreshness.generated_at
+      trimmedFields.push('governance.graph_freshness.generated_at')
+    }
+    if (typeof graphFreshness.madar_version === 'string') {
+      delete graphFreshness.madar_version
+      trimmedFields.push('governance.graph_freshness.madar_version')
+    }
+    if (typeof graphFreshness.recommendation === 'string') {
+      delete graphFreshness.recommendation
+      trimmedFields.push('governance.graph_freshness.recommendation')
     }
   }
 
@@ -501,16 +531,6 @@ function compactAnswerReadyGovernance(payload: JsonRecord, trimmedFields: string
           trimmedFields.push(`governance.privacy_boundary.${field}`)
         }
       }
-    }
-
-    const graphFreshness = asJsonRecord(governance.graph_freshness)
-    if (graphFreshness && typeof graphFreshness.graph_modified_ms === 'number') {
-      delete graphFreshness.graph_modified_ms
-      trimmedFields.push('governance.graph_freshness.graph_modified_ms')
-    }
-    if (graphFreshness && typeof graphFreshness.graph_modified_at === 'string') {
-      delete graphFreshness.graph_modified_at
-      trimmedFields.push('governance.graph_freshness.graph_modified_at')
     }
   }
 }
@@ -1026,21 +1046,6 @@ function emptyCoverage(): ContextPackCoverage {
     missing_semantic: [],
     available_relationships: 0,
     selected_relationships: 0,
-  }
-}
-
-function safeGraphFreshnessMetadata(graphPath: string): GraphFreshnessMetadata {
-  try {
-    return graphFreshnessMetadata(graphPath)
-  } catch (error) {
-    if (error instanceof Error && error.message.startsWith('Graph file not found:')) {
-      return {
-        graphVersion: 'unavailable',
-        graphModifiedMs: 0,
-        graphModifiedAt: new Date(0).toUTCString(),
-      }
-    }
-    throw error
   }
 }
 
@@ -1643,13 +1648,14 @@ function whyExplanation(
 function buildPackSchemaV1<TPack extends PackPayload>(
   response: PackResponseBase & ContextPlaneMetadata & {
     pack: TPack
+    graphFreshness: GraphContextFreshness
     implementation?: ImplementationPackGuidance
     routing?: ContextPackRoutingDebug
     target?: string
     retrieval?: RetrieveResult
   },
 ): PackSchemaEnvelope<TPack | PackPayloadWithCompatibility<TPack>> {
-  const { retrieval, ...serializableResponse } = response
+  const { retrieval, graphFreshness: _graphFreshness, ...serializableResponse } = response
   const centers = workflowCenters(response.task, response.pack, response.plan, response.implementation, retrieval)
   const firstRead = recommendedFirstRead(response.task, response.pack, response.implementation, retrieval)
   const contracts = publicContracts(response.implementation)
@@ -1680,7 +1686,7 @@ function buildPackSchemaV1<TPack extends PackPayload>(
   const retrievalStrategy = retrieval?.retrieval_strategy ?? ('retrieval_strategy' in response.pack ? response.pack.retrieval_strategy : undefined)
   const governanceBase = {
     surface: 'cli_pack' as const,
-    graphFreshness: safeGraphFreshnessMetadata(response.graph_path),
+    graphFreshness: response.graphFreshness,
     task: response.task,
     taskIntent: response.task_intent,
     budget: response.budget,
@@ -1747,6 +1753,54 @@ function formatScoredFileHint(entry: { path: string; score: number; reason: stri
   return `- ${entry.path} [${entry.score.toFixed(2)}]${entry.matched_symbols[0] ? ` (${entry.matched_symbols[0]})` : ''}: ${entry.reason}`
 }
 
+function sourceFileCountLabel(count: number): string {
+  return `${count} source file${count === 1 ? '' : 's'}`
+}
+
+function selectedContextFreshnessStatusLabel(status: GraphContextFreshness['selected_context_status']): string {
+  switch (status) {
+    case 'possibly_stale':
+      return 'possibly stale'
+    default:
+      return status
+  }
+}
+
+function graphFreshnessSummaryLines(schema: PackSchemaEnvelope): string[] {
+  const freshness = schema.governance?.graph_freshness
+  if (!freshness) {
+    return []
+  }
+
+  const lines = [
+    `Status: ${graphFreshnessStatusLabel(freshness.status)}`,
+    `Graph source: ${freshness.graph_path}`,
+    `Generated: ${freshness.generated_at ?? 'unknown'}`,
+    `Madar version: ${freshness.madar_version}`,
+    `Indexed files: ${freshness.indexed_file_count}`,
+    `Selected context: ${selectedContextFreshnessStatusLabel(freshness.selected_context_status)}`,
+  ]
+
+  if (freshness.changed_source_count > 0) {
+    lines.push(`Changed since graph: ${sourceFileCountLabel(freshness.changed_source_count)}`)
+  }
+  if (freshness.missing_source_count > 0) {
+    lines.push(`Missing since graph: ${sourceFileCountLabel(freshness.missing_source_count)}`)
+  }
+  if (freshness.changed_selected_context_count > 0) {
+    lines.push(`Changed relevant to selected context: ${sourceFileCountLabel(freshness.changed_selected_context_count)}`)
+  }
+  if (freshness.missing_selected_context_count > 0) {
+    lines.push(`Missing from selected context: ${sourceFileCountLabel(freshness.missing_selected_context_count)}`)
+  }
+  if (freshness.changed_outside_selected_context_count > 0) {
+    lines.push(`Changed outside selected context: ${sourceFileCountLabel(freshness.changed_outside_selected_context_count)}`)
+  }
+  lines.push(`Recommended: ${freshness.recommendation}`)
+
+  return lines
+}
+
 function workflowCenterLines(schema: PackSchemaEnvelope): string[] {
   return schema.workflow_centers.map((entry) => {
     const location = entry.path
@@ -1806,6 +1860,8 @@ function claudeSearchGuidanceLine(schema: PackSchemaEnvelope): string {
 }
 
 function renderPackSchemaText(schema: PackSchemaEnvelope): string {
+  const freshnessLines = graphFreshnessSummaryLines(schema)
+  const governanceFreshness = schema.governance?.graph_freshness
   const lines = [
     'Pack Schema v1',
     `Task: ${schema.task}`,
@@ -1815,6 +1871,13 @@ function renderPackSchemaText(schema: PackSchemaEnvelope): string {
     `Graph path: ${schema.graph_path}`,
     `Confidence score: ${schema.confidence_score.toFixed(2)}`,
     '',
+    ...(freshnessLines.length > 0 && governanceFreshness
+      ? [
+          `Graph freshness: ${graphFreshnessStatusLabel(governanceFreshness.status)}`,
+          ...freshnessLines.slice(1),
+          '',
+        ]
+      : []),
     ...renderTextSection('Workflow centers', workflowCenterLines(schema)),
     ...renderTextSection('Retrieval pipeline', retrievalPipelineLines(schema)),
     ...renderTextSection('Recommended first read', schema.recommended_first_read.map((entry) => formatFileHint(entry.path, entry.reason, entry.label))),
@@ -1831,6 +1894,7 @@ function renderPackSchemaText(schema: PackSchemaEnvelope): string {
 }
 
 function renderPackSchemaMarkdown(schema: PackSchemaEnvelope): string {
+  const freshnessLines = graphFreshnessSummaryLines(schema).map((entry) => `- ${entry}`)
   const lines = [
     '# Pack Schema v1',
     '',
@@ -1841,6 +1905,7 @@ function renderPackSchemaMarkdown(schema: PackSchemaEnvelope): string {
     `Graph path: ${schema.graph_path}`,
     `Confidence score: ${schema.confidence_score.toFixed(2)}`,
     '',
+    ...renderMarkdownSection('Graph freshness', freshnessLines),
     ...renderMarkdownSection('Retrieval pipeline', retrievalPipelineLines(schema)),
     ...renderMarkdownSection('Workflow centers', workflowCenterLines(schema)),
     ...renderMarkdownSection('Recommended first read', schema.recommended_first_read.map((entry) => formatFileHint(entry.path, entry.reason, entry.label))),
@@ -1858,6 +1923,7 @@ function renderPackSchemaMarkdown(schema: PackSchemaEnvelope): string {
 
 function renderClaudePack(schema: PackSchemaEnvelope): string {
   const firstRead = schema.recommended_first_read.map((entry) => `- Read ${entry.path} first${entry.label ? ` (${entry.label})` : ''}: ${entry.reason}`)
+  const freshnessLines = graphFreshnessSummaryLines(schema).map((entry) => `- ${entry}`)
   const lines = [
     '# Claude Code execution brief',
     '',
@@ -1873,6 +1939,7 @@ function renderClaudePack(schema: PackSchemaEnvelope): string {
       : ['- No first-read anchor was identified; begin with the workflow centers below.']),
     claudeSearchGuidanceLine(schema),
     '',
+    ...renderMarkdownSection('Graph freshness', freshnessLines),
     ...renderMarkdownSection('Retrieval pipeline', retrievalPipelineLines(schema)),
     ...renderMarkdownSection('Workflow centers', workflowCenterLines(schema)),
     ...renderMarkdownSection('Likely edit files', schema.likely_edit_files.map((entry) => formatScoredFileHint(entry))),
@@ -1927,6 +1994,7 @@ function renderCopilotPlanSteps(schema: PackSchemaEnvelope): string[] {
 }
 
 function renderCopilotPack(schema: PackSchemaEnvelope): string {
+  const freshnessLines = graphFreshnessSummaryLines(schema).map((entry) => `- ${entry}`)
   const lines = [
     '# GitHub Copilot implementation brief',
     '',
@@ -1935,6 +2003,7 @@ function renderCopilotPack(schema: PackSchemaEnvelope): string {
     `Prompt: ${schema.prompt}`,
     `Confidence score: ${schema.confidence_score.toFixed(2)}`,
     '',
+    ...renderMarkdownSection('Graph freshness', freshnessLines),
     ...renderMarkdownSection('Suggested plan', renderCopilotPlanSteps(schema)),
     ...renderMarkdownSection('Retrieval pipeline', retrievalPipelineLines(schema)),
     ...renderMarkdownSection('Workflow centers', workflowCenterLines(schema)),
@@ -1975,6 +2044,10 @@ export async function runContextPackCommand(
   dependencies: ContextPackCommandDependencies = DEFAULT_DEPENDENCIES,
 ): Promise<string> {
   const graph = dependencies.loadGraph(options.graphPath)
+  const initialGraphFreshness = analyzeGraphContextFreshness(options.graphPath, graph)
+  if (options.requireFreshGraph === true) {
+    requireFreshGraph(initialGraphFreshness)
+  }
   const plannerBudget = Math.max(options.budget, 3)
   const resolvedTask = resolveTaskSelection(
     options.prompt,
@@ -1990,6 +2063,9 @@ export async function runContextPackCommand(
   const renderOptions = options.verbose === undefined ? {} : { verbose: options.verbose }
 
   if (resolvedTask.task_kind === 'review') {
+    if (options.requireFreshContext === true) {
+      throw new Error('requireFreshContext is not supported for task=review')
+    }
     if (options.retrievalStrategy !== undefined) {
       throw new Error('retrievalStrategy is not supported for task=review')
     }
@@ -2013,6 +2089,7 @@ export async function runContextPackCommand(
     return renderContextPackOutput(options.format, buildPackSchemaV1({
       ...baseResponse(options, plan, plannerBudget, resolvedTask.task_kind),
       pack: reviewPack,
+      graphFreshness: initialGraphFreshness,
       ...contextMetadata(reviewResult.review_bundle ?? {}),
     }), renderOptions)
   }
@@ -2038,6 +2115,7 @@ export async function runContextPackCommand(
       ...baseResponse(options, initialPlan, plannerBudget, resolvedTask.task_kind),
       target: impactTarget,
       pack: impactPack,
+      graphFreshness: initialGraphFreshness,
       ...impactMetadata(impactResult, plannerBudget, options.prompt, initialPlan.evidence.recipe_id, options.retrievalLevel),
       ...(options.why ? { routing: buildRoutingDebug(retrieval) } : {}),
     }), renderOptions)
@@ -2062,8 +2140,15 @@ export async function runContextPackCommand(
         taskIntent: initialPlan.evidence.recipe_id,
       })
     : undefined
+  const graphFreshness = analyzeGraphContextFreshness(options.graphPath, graph, {
+    selected_source_files: selectedContextSourceFilesFromRetrieveResult(retrieval),
+  })
+  if (options.requireFreshContext === true) {
+    requireFreshSelectedContext(graphFreshness)
+  }
   return renderContextPackOutput(options.format, buildPackSchemaV1({
     ...baseResponse(options, initialPlan, plannerBudget, resolvedTask.task_kind),
+    graphFreshness,
     ...(
       resolvedTask.task_kind === 'explain'
         ? buildExplainPackPayloadCore(dependencies.compactRetrieveResult(retrieval), retrieval, implementation, options.graphPath)

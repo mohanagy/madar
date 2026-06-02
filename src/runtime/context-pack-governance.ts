@@ -9,7 +9,7 @@ import type {
   ContextPackTaskKind,
 } from '../contracts/context-pack.js'
 import type { TaskIntentKind } from '../contracts/task-intent.js'
-import type { GraphFreshnessMetadata } from './freshness.js'
+import type { GraphContextFreshness } from './freshness.js'
 import type { MadarResponseEvidence } from './mcp-response-evidence.js'
 
 const GOVERNANCE_HASH_LENGTH = 12
@@ -34,7 +34,7 @@ function summarizeFollowUp(expandable: readonly ContextPackExpandableRef[]): Con
 
 export function buildContextPackGovernanceReceipt(input: {
   surface: ContextPackGovernanceSurface
-  graphFreshness: GraphFreshnessMetadata
+  graphFreshness: GraphContextFreshness
   task: ContextPackTaskKind
   taskIntent: TaskIntentKind
   budget: number
@@ -59,9 +59,23 @@ export function buildContextPackGovernanceReceipt(input: {
       includes_file_paths: false,
     },
     graph_freshness: {
-      graph_version: input.graphFreshness.graphVersion,
-      graph_modified_ms: input.graphFreshness.graphModifiedMs,
-      graph_modified_at: input.graphFreshness.graphModifiedAt,
+      status: input.graphFreshness.status,
+      graph_path: input.graphFreshness.graph_path,
+      graph_version: input.graphFreshness.graph_version,
+      graph_modified_ms: input.graphFreshness.graph_modified_ms,
+      graph_modified_at: input.graphFreshness.graph_modified_at,
+      generated_ms: input.graphFreshness.generated_ms,
+      generated_at: input.graphFreshness.generated_at,
+      madar_version: input.graphFreshness.madar_version,
+      indexed_file_count: input.graphFreshness.indexed_file_count,
+      changed_source_count: input.graphFreshness.changed_source_count,
+      missing_source_count: input.graphFreshness.missing_source_count,
+      selected_context_status: input.graphFreshness.selected_context_status,
+      selected_context_file_count: input.graphFreshness.selected_context_file_count,
+      changed_selected_context_count: input.graphFreshness.changed_selected_context_count,
+      missing_selected_context_count: input.graphFreshness.missing_selected_context_count,
+      changed_outside_selected_context_count: input.graphFreshness.changed_outside_selected_context_count,
+      recommendation: input.graphFreshness.recommendation,
     },
     request: {
       task: input.task,
@@ -89,4 +103,3 @@ export function buildContextPackGovernanceReceipt(input: {
       : {}),
   }
 }
-

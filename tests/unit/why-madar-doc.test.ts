@@ -71,6 +71,19 @@ describe('public marketing copy honesty', () => {
       expect(content).toContain('madar summary')
     })
 
+    it('documents graph freshness status and strict freshness gating across CLI and MCP context surfaces', () => {
+      expect(publicLower).toContain('graph freshness')
+      expect(publicDocs).toContain('--require-fresh-graph')
+      expect(publicDocs).toContain('--require-fresh-context')
+      expect(publicDocs).toContain('require_fresh_graph')
+      expect(publicDocs).toContain('require_fresh_context')
+      expect(publicLower).toContain('selected context')
+      expect(publicLower).toContain('partially_stale')
+      expect(publicLower).toContain('possibly_stale')
+      expect(publicLower).toContain('madar doctor')
+      expect(publicLower).toContain('madar status')
+    })
+
     it('surfaces the 0.23.0 user-facing additions in the main README flow', () => {
       expect(lower).toContain("what's new in 0.23.0")
       expect(content).toContain('`madar summary`')

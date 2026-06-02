@@ -449,9 +449,23 @@ export interface ContextPackGovernancePrivacyBoundary {
 }
 
 export interface ContextPackGovernanceGraphFreshness {
-  graph_version: string
-  graph_modified_ms: number
-  graph_modified_at: string
+  status: 'fresh' | 'partially_stale' | 'possibly_stale' | 'stale' | 'missing'
+  graph_path: string
+  graph_version: string | null
+  graph_modified_ms: number | null
+  graph_modified_at: string | null
+  generated_ms: number | null
+  generated_at: string | null
+  madar_version: string
+  indexed_file_count: number
+  changed_source_count: number
+  missing_source_count: number
+  selected_context_status: 'fresh' | 'possibly_stale' | 'stale' | 'unknown'
+  selected_context_file_count: number
+  changed_selected_context_count: number
+  missing_selected_context_count: number
+  changed_outside_selected_context_count: number
+  recommendation: string
 }
 
 export interface ContextPackGovernanceRequest {

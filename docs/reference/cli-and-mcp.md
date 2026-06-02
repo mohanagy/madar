@@ -67,6 +67,14 @@ Full request/response examples live in [`examples/mcp-tool-examples.md`](../../e
 
 Within one MCP stdio session, identical `context_pack` requests for `task=explain` are reused automatically when the graph version and relevant prompt/options match. The cache is memory-only, skips delta-session packs, and invalidates itself when `graph.json` changes.
 
+## Graph freshness contract
+
+`madar pack`, `madar prompt`, and `madar handoff` all surface graph freshness so local callers can distinguish whole-repo drift from selected-context drift. The overall status can be `fresh`, `partially_stale`, `possibly_stale`, `stale`, or `missing`, and the receipt also reports selected context freshness so unrelated indexed changes do not block by default. `madar doctor` and `madar status` report the same statuses and recommend regeneration when the graph is not fresh.
+
+Use `--require-fresh-context` on `madar pack`, `madar prompt`, or `madar handoff` to refuse selected context drift instead of only warning. Use `--require-fresh-graph` when any repo drift should block. The MCP equivalents are `require_fresh_context` and `require_fresh_graph` on `context_pack` and `context_prompt`. For machine-readable consumers, packs expose the receipt under `governance.graph_freshness` and prompts expose it under `graph_freshness`.
+
+Cached `context_pack` explain responses still refresh the current freshness receipt before reuse, so a cache hit does not hide newly changed or missing indexed source files.
+
 ## Common commands
 
 ```bash
@@ -77,6 +85,8 @@ madar summary                             # bounded JSON overview
 madar pack "how does auth work?" --task explain --format text
 madar pack "add auth telemetry" --task implement --format json
 madar pack "why does auth fail?" --task explain --retrieval-strategy slice-v1
+madar pack "how does auth work?" --task explain --require-fresh-context
+madar pack "how does auth work?" --task explain --require-fresh-graph
 madar prompt "how does auth work?" --provider claude
 madar handoff "add auth telemetry" --task implement --consumer copilot
 madar review-compare out/graph.json --exec '...' --yes

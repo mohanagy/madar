@@ -56,7 +56,14 @@ import { resolveTaskSelection } from '../task-intent.js'
 import { riskMap } from '../risk-map.js'
 import { buildTaskContextPlan } from '../task-context-planner.js'
 import type { TimeTravelView } from '../time-travel.js'
-import { graphFreshnessMetadata } from '../freshness.js'
+import {
+  analyzeGraphContextFreshness,
+  graphFreshnessMetadata,
+  requireFreshGraph,
+  requireFreshSelectedContext,
+  selectedContextSourceFilesFromRetrieveResult,
+  type GraphContextFreshness,
+} from '../freshness.js'
 import { buildGraphSummary } from '../graph-summary.js'
 import {
   communitiesFromGraph,
@@ -273,6 +280,39 @@ function isCachedExplainContextPackPayload(value: unknown): value is CachedExpla
     && hasCachedExplainContextPackGovernance(candidate)
 }
 
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function selectedContextSourceFilesFromCachedExplainPayload(payload: CachedExplainContextPackPayload): string[] {
+  const expandableFocusFiles = (payload.expandable ?? [])
+    .flatMap((entry) => entry.follow_up.focus_files)
+    .filter((sourceFile, index, all) => sourceFile.trim().length > 0 && all.indexOf(sourceFile) === index)
+  if (expandableFocusFiles.length > 0) {
+    return expandableFocusFiles
+  }
+
+  if (!isObjectRecord(payload.pack)) {
+    return []
+  }
+
+  const pack = payload.pack
+  const selection: {
+    matched_nodes: RetrieveResult['matched_nodes']
+    execution_slice?: NonNullable<RetrieveResult['execution_slice']>
+    slice?: NonNullable<RetrieveResult['slice']>
+  } = {
+    matched_nodes: Array.isArray(pack.matched_nodes) ? pack.matched_nodes as RetrieveResult['matched_nodes'] : [],
+  }
+  if (isObjectRecord(pack.execution_slice)) {
+    selection.execution_slice = pack.execution_slice as unknown as NonNullable<RetrieveResult['execution_slice']>
+  }
+  if (isObjectRecord(pack.slice)) {
+    selection.slice = pack.slice as unknown as NonNullable<RetrieveResult['slice']>
+  }
+  return selectedContextSourceFilesFromRetrieveResult(selection as Pick<RetrieveResult, 'matched_nodes' | 'execution_slice' | 'slice'>)
+}
+
 function parseContextPackResolution(raw: string | null): ContextPackResolution {
   return raw === 'summary'
     || raw === 'mixed'
@@ -320,7 +360,7 @@ function withContextPackCache<T extends Record<string, unknown>>(
 function withContextPackGovernance<T extends Record<string, unknown>>(
   payload: T,
   input: {
-    graphPath: string
+    graphFreshness: GraphContextFreshness
     task: ContextPackTaskKind
     taskIntent: TaskContextPlan['evidence']['recipe_id']
     budget: number
@@ -337,7 +377,7 @@ function withContextPackGovernance<T extends Record<string, unknown>>(
     ...payload,
     governance: buildContextPackGovernanceReceipt({
       surface: 'mcp_context_pack',
-      graphFreshness: graphFreshnessMetadata(input.graphPath),
+      graphFreshness: input.graphFreshness,
       task: input.task,
       taskIntent: input.taskIntent,
       budget: input.budget,
@@ -351,6 +391,42 @@ function withContextPackGovernance<T extends Record<string, unknown>>(
         ...(input.deltaSessionId ? { deltaSessionId: input.deltaSessionId } : {}),
       },
     }),
+  }
+}
+
+function withUpdatedContextPackGovernanceFreshness<T extends Record<string, unknown>>(
+  payload: T,
+  graphFreshness: GraphContextFreshness,
+): T {
+  const governance = payload.governance
+  if (!governance || typeof governance !== 'object' || Array.isArray(governance)) {
+    return payload
+  }
+
+  return {
+    ...payload,
+    governance: {
+      ...governance,
+      graph_freshness: {
+        status: graphFreshness.status,
+        graph_path: graphFreshness.graph_path,
+        graph_version: graphFreshness.graph_version,
+        graph_modified_ms: graphFreshness.graph_modified_ms,
+        graph_modified_at: graphFreshness.graph_modified_at,
+        generated_ms: graphFreshness.generated_ms,
+        generated_at: graphFreshness.generated_at,
+        madar_version: graphFreshness.madar_version,
+        indexed_file_count: graphFreshness.indexed_file_count,
+        changed_source_count: graphFreshness.changed_source_count,
+        missing_source_count: graphFreshness.missing_source_count,
+        selected_context_status: graphFreshness.selected_context_status,
+        selected_context_file_count: graphFreshness.selected_context_file_count,
+        changed_selected_context_count: graphFreshness.changed_selected_context_count,
+        missing_selected_context_count: graphFreshness.missing_selected_context_count,
+        changed_outside_selected_context_count: graphFreshness.changed_outside_selected_context_count,
+        recommendation: graphFreshness.recommendation,
+      },
+    },
   }
 }
 
@@ -1178,6 +1254,30 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         budget: plannerBudget,
         task_intent: resolvedTask.task_intent,
       })
+      const requireFreshGraphInput = Object.hasOwn(toolArguments, 'require_fresh_graph')
+        ? toolArguments.require_fresh_graph
+        : toolArguments.requireFreshGraph
+      if (requireFreshGraphInput !== undefined && typeof requireFreshGraphInput !== 'boolean') {
+        return helpers.failure(id, helpers.jsonrpcInvalidParams, 'require_fresh_graph must be a boolean')
+      }
+      const requireFreshContextInput = Object.hasOwn(toolArguments, 'require_fresh_context')
+        ? toolArguments.require_fresh_context
+        : toolArguments.requireFreshContext
+      if (requireFreshContextInput !== undefined && typeof requireFreshContextInput !== 'boolean') {
+        return helpers.failure(id, helpers.jsonrpcInvalidParams, 'require_fresh_context must be a boolean')
+      }
+      const initialGraphContextFreshness = analyzeGraphContextFreshness(graphPath, graph)
+      if (requireFreshGraphInput === true) {
+        try {
+          requireFreshGraph(initialGraphContextFreshness, 'require_fresh_graph')
+        } catch (error) {
+          return helpers.failure(
+            id,
+            helpers.jsonrpcServerError,
+            error instanceof Error ? error.message : 'require_fresh_graph refused non-fresh graph context',
+          )
+        }
+      }
 
       // CodeRabbit fix: validate resolution BEFORE the review/impact
       // early returns so callers can't pass resolution: 'summary' or
@@ -1241,7 +1341,25 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
               cachedPayload.expandable ?? [],
               helpers,
             )
-            return helpers.ok(id, helpers.textToolResult(JSON.stringify(withContextPackCache(withUpdatedContextPackGovernanceCacheStatus(cachedPayload, 'hit'), {
+            const cachedGraphFreshness = analyzeGraphContextFreshness(graphPath, graph, {
+              selected_source_files: selectedContextSourceFilesFromCachedExplainPayload(cachedPayload),
+            })
+            if (requireFreshContextInput === true) {
+              try {
+                requireFreshSelectedContext(cachedGraphFreshness, 'require_fresh_context')
+              } catch (error) {
+                return helpers.failure(
+                  id,
+                  helpers.jsonrpcServerError,
+                  error instanceof Error ? error.message : 'require_fresh_context refused stale selected context',
+                )
+              }
+            }
+            const cachedWithFreshness = withUpdatedContextPackGovernanceFreshness(
+              withUpdatedContextPackGovernanceCacheStatus(cachedPayload, 'hit'),
+              cachedGraphFreshness,
+            )
+            return helpers.ok(id, helpers.textToolResult(JSON.stringify(withContextPackCache(cachedWithFreshness, {
               status: 'hit',
               graph_version: cacheGraphVersion!,
             }))))
@@ -1252,6 +1370,9 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       }
 
       if (task === 'review') {
+        if (requireFreshContextInput === true) {
+          return helpers.failure(id, helpers.jsonrpcInvalidParams, 'require_fresh_context is not supported for task=review')
+        }
         const graphDir = dirname(validateGraphPath(graphPath))
         const projectRoot = dirname(graphDir)
         const prResult = analyzePrImpact(graph, projectRoot, {
@@ -1284,7 +1405,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
           ...reviewMetadata,
           evidence,
         }, {
-          graphPath,
+          graphFreshness: initialGraphContextFreshness,
           task,
           taskIntent: initialPlan.evidence.recipe_id,
           budget: resolvedBudget,
@@ -1304,6 +1425,20 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         ...(contextPackLevelTyped !== null ? { retrievalLevel: contextPackLevelTyped } : {}),
         ...(contextPackStrategy ? { retrievalStrategy: contextPackStrategy } : {}),
       })
+      const graphContextFreshness = analyzeGraphContextFreshness(graphPath, graph, {
+        selected_source_files: selectedContextSourceFilesFromRetrieveResult(retrieval),
+      })
+      if (requireFreshContextInput === true) {
+        try {
+          requireFreshSelectedContext(graphContextFreshness, 'require_fresh_context')
+        } catch (error) {
+          return helpers.failure(
+            id,
+            helpers.jsonrpcServerError,
+            error instanceof Error ? error.message : 'require_fresh_context refused stale selected context',
+          )
+        }
+      }
 
       if (task === 'impact') {
         const communityLabels = {
@@ -1333,7 +1468,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
           ...metadata,
           evidence,
         }, {
-          graphPath,
+          graphFreshness: graphContextFreshness,
           task,
           taskIntent: initialPlan.evidence.recipe_id,
           budget: resolvedBudget,
@@ -1453,7 +1588,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
           ...metadata,
           evidence: deltaEvidence,
         }, {
-          graphPath,
+          graphFreshness: graphContextFreshness,
           task,
           taskIntent: initialPlan.evidence.recipe_id,
           budget: resolvedBudget,
@@ -1493,7 +1628,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         ...metadata,
         evidence,
       }, {
-        graphPath,
+        graphFreshness: graphContextFreshness,
         task,
         taskIntent: initialPlan.evidence.recipe_id,
         budget: resolvedBudget,
@@ -1567,6 +1702,18 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       if (Object.hasOwn(toolArguments, 'budget') && budget === null) {
         return helpers.failure(id, helpers.jsonrpcInvalidParams, `budget must be a number between 1 and ${helpers.maxStdioTokenBudget}`)
       }
+      const requireFreshGraphInput = Object.hasOwn(toolArguments, 'require_fresh_graph')
+        ? toolArguments.require_fresh_graph
+        : toolArguments.requireFreshGraph
+      if (requireFreshGraphInput !== undefined && typeof requireFreshGraphInput !== 'boolean') {
+        return helpers.failure(id, helpers.jsonrpcInvalidParams, 'require_fresh_graph must be a boolean')
+      }
+      const requireFreshContextInput = Object.hasOwn(toolArguments, 'require_fresh_context')
+        ? toolArguments.require_fresh_context
+        : toolArguments.requireFreshContext
+      if (requireFreshContextInput !== undefined && typeof requireFreshContextInput !== 'boolean') {
+        return helpers.failure(id, helpers.jsonrpcInvalidParams, 'require_fresh_context must be a boolean')
+      }
       const sessionId = helpers.stringParamAlias(toolArguments, ['session_id', 'sessionId'])
       const explicitSessionStateRaw = toolArguments.session_state ?? toolArguments.sessionState
       const explicitSessionState = explicitSessionStateRaw === undefined ? undefined : parseContextSessionState(explicitSessionStateRaw)
@@ -1583,11 +1730,37 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       if (resetSession && sessionId) {
         helpers.clearContextPromptSession(sessionId)
       }
+      const initialGraphFreshness = analyzeGraphContextFreshness(graphPath, graph)
+      if (requireFreshGraphInput === true) {
+        try {
+          requireFreshGraph(initialGraphFreshness, 'require_fresh_graph')
+        } catch (error) {
+          return helpers.failure(
+            id,
+            helpers.jsonrpcServerError,
+            error instanceof Error ? error.message : 'require_fresh_graph refused non-fresh graph context',
+          )
+        }
+      }
 
       const retrieval = retrieveContext(graph, {
         question: prompt,
         budget: budget ?? 3000,
       })
+      const graphFreshness = analyzeGraphContextFreshness(graphPath, graph, {
+        selected_source_files: selectedContextSourceFilesFromRetrieveResult(retrieval),
+      })
+      if (requireFreshContextInput === true) {
+        try {
+          requireFreshSelectedContext(graphFreshness, 'require_fresh_context')
+        } catch (error) {
+          return helpers.failure(
+            id,
+            helpers.jsonrpcServerError,
+            error instanceof Error ? error.message : 'require_fresh_context refused stale selected context',
+          )
+        }
+      }
       const previousSession =
         explicitSessionState
         ?? (sessionId ? helpers.getContextPromptSession(sessionId) : undefined)
@@ -1604,6 +1777,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         provider,
         prompt,
         graph_path: graphPath,
+        graph_freshness: graphFreshness,
         compiled: provider === 'claude'
           ? {
               provider,

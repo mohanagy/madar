@@ -8,16 +8,13 @@ import {
   readOpencodeConfig,
   resolveOpencodeConfigPath,
 } from './install.js'
-import { graphFreshnessMetadata } from '../runtime/freshness.js'
+import { analyzeGraphContextFreshness, graphFreshnessStatusLabel, type GraphContextFreshnessStatus } from '../runtime/freshness.js'
 import { findPackageRoot, readPackageVersion } from '../shared/package-metadata.js'
 
 const MADAR_SECTION_MARKER = '## madar'
-const GRAPH_FRESH_THRESHOLD_MS = 60 * 60 * 1000
-const GRAPH_RECENT_THRESHOLD_MS = 24 * 60 * 60 * 1000
 
 type AgentStatus = 'configured' | 'partial' | 'missing'
 type McpStatus = 'ok' | 'missing' | 'stale'
-type GraphFreshness = 'fresh' | 'recent' | 'stale' | 'missing'
 
 interface McpCheck {
   label: 'claude' | 'cursor' | 'copilot'
@@ -35,10 +32,14 @@ interface AgentCheck {
 interface GraphCheck {
   graphPath: string
   exists: boolean
-  freshness: GraphFreshness
+  freshness: GraphContextFreshnessStatus
   ageMs: number | null
-  modifiedAt: string | null
+  generatedAt: string | null
   graphVersion: string | null
+  indexedFileCount: number
+  changedSourceCount: number
+  missingSourceCount: number
+  recommendation: string
 }
 
 interface DoctorReport {
@@ -285,41 +286,22 @@ function readMcpCheck(
 
 function readGraphCheck(graphPath: string, now: number): GraphCheck {
   const resolvedGraphPath = resolve(graphPath)
-  if (!existsSync(resolvedGraphPath)) {
-    return {
-      graphPath: resolvedGraphPath,
-      exists: false,
-      freshness: 'missing',
-      ageMs: null,
-      modifiedAt: null,
-      graphVersion: null,
-    }
-  }
-
-  const graphStats = statSync(resolvedGraphPath)
-  const ageMs = Math.max(0, Math.trunc(now - graphStats.mtimeMs))
-
-  let freshness: GraphFreshness = 'stale'
-  if (ageMs <= GRAPH_FRESH_THRESHOLD_MS) {
-    freshness = 'fresh'
-  } else if (ageMs <= GRAPH_RECENT_THRESHOLD_MS) {
-    freshness = 'recent'
-  }
-
-  let graphVersion: string | null = null
-  try {
-    graphVersion = graphFreshnessMetadata(resolvedGraphPath).graphVersion
-  } catch {
-    graphVersion = null
-  }
+  const freshness = analyzeGraphContextFreshness(resolvedGraphPath)
+  const ageMs = freshness.generated_ms === null
+    ? null
+    : Math.max(0, Math.trunc(now - freshness.generated_ms))
 
   return {
     graphPath: resolvedGraphPath,
-    exists: true,
-    freshness,
+    exists: freshness.status !== 'missing',
+    freshness: freshness.status,
     ageMs,
-    modifiedAt: new Date(graphStats.mtimeMs).toISOString(),
-    graphVersion,
+    generatedAt: freshness.generated_at,
+    graphVersion: freshness.graph_version,
+    indexedFileCount: freshness.indexed_file_count,
+    changedSourceCount: freshness.changed_source_count,
+    missingSourceCount: freshness.missing_source_count,
+    recommendation: freshness.recommendation,
   }
 }
 
@@ -382,7 +364,7 @@ function computeNextCommands(report: Omit<DoctorReport, 'nextCommands' | 'health
 
   if (!report.graph.exists) {
     nextCommands.add('madar generate .')
-  } else if (report.graph.freshness === 'stale') {
+  } else if (report.graph.freshness === 'possibly_stale' || report.graph.freshness === 'stale') {
     nextCommands.add('madar generate . --update')
   }
 
@@ -551,7 +533,7 @@ function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorReport {
     mcpChecks,
   }
   const nextCommands = computeNextCommands(partialReport)
-  const healthy = graph.exists && graph.freshness !== 'stale' && agents.every((agent) => agent.status === 'configured') && mcpChecks.every((check) => check.status === 'ok')
+  const healthy = graph.exists && graph.freshness === 'fresh' && agents.every((agent) => agent.status === 'configured') && mcpChecks.every((check) => check.status === 'ok')
 
   return {
     ...partialReport,
@@ -568,18 +550,17 @@ function formatGraphLine(graph: GraphCheck): string[] {
     ]
   }
 
-  const freshnessText = graph.freshness === 'fresh'
-    ? 'fresh'
-    : graph.freshness === 'recent'
-      ? 'recent'
-      : 'stale'
   const ageText = graph.ageMs === null ? 'unknown' : ageLabel(graph.ageMs)
-  const modifiedText = graph.modifiedAt ?? 'unknown'
+  const generatedText = graph.generatedAt ?? 'unknown'
   const versionText = graph.graphVersion ?? 'unknown'
 
   return [
     `- graph: found (${graph.graphPath})`,
-    `- graph freshness: ${freshnessText} (${ageText} old, modified ${modifiedText}, graph_version ${versionText})`,
+    `- graph freshness: ${graphFreshnessStatusLabel(graph.freshness)} (${ageText} old, generated ${generatedText}, graph_version ${versionText})`,
+    `- indexed files: ${graph.indexedFileCount}`,
+    `- changed since graph: ${graph.changedSourceCount} source file${graph.changedSourceCount === 1 ? '' : 's'}`,
+    `- missing since graph: ${graph.missingSourceCount} source file${graph.missingSourceCount === 1 ? '' : 's'}`,
+    `- recommendation: ${graph.recommendation}`,
   ]
 }
 
@@ -613,7 +594,7 @@ export function runDoctorCommand(options: DoctorCommandOptions = {}): string {
 export function runStatusCommand(options: DoctorCommandOptions = {}): string {
   const report = buildDoctorReport(options)
   const graphStatus = report.graph.exists
-    ? `${report.graph.freshness} (${report.graph.ageMs === null ? 'unknown age' : ageLabel(report.graph.ageMs)})`
+    ? `${report.graph.freshness} (${report.graph.ageMs === null ? 'unknown age' : ageLabel(report.graph.ageMs)}, changed=${report.graph.changedSourceCount}, missing=${report.graph.missingSourceCount})`
     : 'missing'
   const agentSummary = report.agents.map((agent) => `${agent.label}:${agent.status}`).join(' ')
   const mcpSummary = report.mcpChecks.map((check) => `${check.label}:${check.status}`).join(' ')

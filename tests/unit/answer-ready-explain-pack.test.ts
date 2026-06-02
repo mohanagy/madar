@@ -117,9 +117,23 @@ describe('answer-ready explain pack', () => {
           includes_file_paths: false,
         },
         graph_freshness: {
+          status: 'fresh',
+          graph_path: 'out/graph.json',
           graph_version: 'fixture-graph',
           graph_modified_ms: 0,
           graph_modified_at: new Date(0).toUTCString(),
+          generated_ms: 0,
+          generated_at: new Date(0).toUTCString(),
+          madar_version: 'test',
+          indexed_file_count: 0,
+          changed_source_count: 0,
+          missing_source_count: 0,
+          selected_context_status: 'unknown',
+          selected_context_file_count: 0,
+          changed_selected_context_count: 0,
+          missing_selected_context_count: 0,
+          changed_outside_selected_context_count: 0,
+          recommendation: 'Graph is fresh.',
         },
         request: {
           task: 'explain',
@@ -253,5 +267,3 @@ describe('answer-ready explain pack', () => {
     expect(result?.answer_outline).toEqual(['Flow execution traced'])
   })
 })
-
-

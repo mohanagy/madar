@@ -30,6 +30,10 @@ The implement brief keeps `recommended_first_read` separate from ranked `likely_
 
 Use `--format json` when another tool or script will consume the pack directly. Use `--format text` when you want the same schema rendered as a short human/agent-readable execution brief.
 
+Packs also carry a machine-readable graph freshness receipt so the consumer can decide whether the compiled context is safe to trust as a deterministic first pass. `madar pack` / `madar handoff` expose that receipt under `governance.graph_freshness`; `madar prompt` exposes the same contract at top-level `graph_freshness`. The overall status values are `fresh`, `partially_stale`, `possibly_stale`, `stale`, and `missing`, and the receipt also reports selected context freshness so unrelated indexed changes can stay allowed by default.
+
+Use `--require-fresh-context` on `madar pack`, `madar prompt`, or `madar handoff` when you want the command to refuse selected context drift. Use `--require-fresh-graph` when you want to refuse any repo drift at all. The MCP equivalents are `require_fresh_context` and `require_fresh_graph` on `context_pack` and `context_prompt`. `madar doctor` and `madar status` reuse the same freshness model so the remediation path stays consistent before an agent starts broader exploration.
+
 ## Adaptive context-pack representations
 
 Compiled context packs have a first-pass rendering-only adaptive layer. Retrieval still selects the same nodes and paths first; the runtime only changes how those already-selected nodes are emitted for the task.

@@ -90,7 +90,9 @@ madar prompt "how does auth work?" --provider claude
 
 `madar prompt` stays local. `madar pack` stays the richer local/full-context surface. `madar handoff` is the share-safe remote/background-agent artifact for cloud or async workers. Note: compare and benchmark flows can spend paid model tokens when you point them at a real model CLI.
 
-The MCP equivalents include `context_pack`, `context_prompt`, and follow-up expansion through stable session refs. For follow-ups, reuse the same `session_id` with `context_prompt` when a conversation continues; `session_diagnostics` tells you whether the turn reused, added, updated, or invalidated prior context. Expect the biggest reuse gains with a mostly stable retrieved graph context. First turns and heavily changed retrieved context naturally show little or no reuse.
+`madar pack`, `madar prompt`, and `madar handoff` now surface graph freshness so the consumer can distinguish whole-repo drift from selected-context drift. The overall status can be `fresh`, `partially_stale`, `possibly_stale`, `stale`, or `missing`, and the receipt also reports a selected context status so unrelated changes do not block by default. `madar doctor` and `madar status` use the same freshness labels and next-step guidance. Add `--require-fresh-context` to refuse selected context that may be stale, or `--require-fresh-graph` to require a fully fresh repo snapshot.
+
+The MCP equivalents include `context_pack`, `context_prompt`, and follow-up expansion through stable session refs. `context_pack` and `context_prompt` accept both `require_fresh_context` and `require_fresh_graph` for the same scoped-vs-global strictness choices. For follow-ups, reuse the same `session_id` with `context_prompt` when a conversation continues; `session_diagnostics` tells you whether the turn reused, added, updated, or invalidated prior context. Expect the biggest reuse gains with a mostly stable retrieved graph context. First turns and heavily changed retrieved context naturally show little or no reuse.
 
 Optional semantic retrieval/rerank support is local too, but requires the model package:
 

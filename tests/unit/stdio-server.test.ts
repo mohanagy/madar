@@ -1342,6 +1342,98 @@ describe('stdio runtime', () => {
     }
   })
 
+  it('recomputes scoped freshness for cached explain context_pack hits before returning', async () => {
+    const root = createGraphFixtureRoot()
+    try {
+      const graphPath = join(root, 'graph.json')
+      const sessionState = {
+        logLevel: 'info' as const,
+        subscribedResourceUris: new Set<string>(),
+        resourceVersions: new Map<string, string>(),
+        resourceListSignature: null,
+      }
+
+      const first = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 1,
+        method: 'tools/call',
+        params: {
+          name: 'context_pack',
+          arguments: {
+            prompt: 'How does AuthService reach Transport?',
+            task: 'explain',
+            budget: 1,
+          },
+        },
+      }, sessionState))
+
+      const firstPayload = JSON.parse((first?.result as { content: Array<{ text: string }> }).content[0]!.text)
+      expect(firstPayload.cache).toEqual(expect.objectContaining({ status: 'miss' }))
+
+      writeFileSync(join(root, 'client.ts'), 'export class HttpClient {\n  request() {\n    return new Transport()\n  }\n  refresh() {\n    return true\n  }\n}\n', 'utf8')
+
+      const second = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 2,
+        method: 'tools/call',
+        params: {
+          name: 'context_pack',
+          arguments: {
+            prompt: 'How does AuthService reach Transport?',
+            task: 'explain',
+            budget: 1,
+          },
+        },
+      }, sessionState))
+
+      const secondPayload = JSON.parse((second?.result as { content: Array<{ text: string }> }).content[0]!.text)
+      expect(secondPayload.cache).toEqual(expect.objectContaining({ status: 'hit' }))
+      expect(secondPayload.governance.graph_freshness).toEqual(expect.objectContaining({
+        status: 'possibly_stale',
+        selected_context_status: 'possibly_stale',
+        changed_selected_context_count: 1,
+      }))
+
+      const strict = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 3,
+        method: 'tools/call',
+        params: {
+          name: 'context_pack',
+          arguments: {
+            prompt: 'How does AuthService reach Transport?',
+            task: 'explain',
+            budget: 1,
+            require_fresh_context: true,
+          },
+        },
+      }, sessionState))
+      expect((strict as { error?: { message?: string } }).error?.message).toMatch(/selected context/i)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects require_fresh_context for review context_pack requests instead of ignoring it', async () => {
+    const root = createGraphFixtureRoot()
+    try {
+      const graphPath = join(root, 'graph.json')
+      const response = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 1,
+        method: 'tools/call',
+        params: {
+          name: 'context_pack',
+          arguments: {
+            prompt: 'review current diff',
+            task: 'review',
+            require_fresh_context: true,
+          },
+        },
+      }))
+
+      expect((response as { error?: { message?: string } }).error?.message).toMatch(/require_fresh_context.*review/i)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('accepts implement context_pack handles in context_expand', async () => {
     const root = createGraphFixtureRoot()
     try {
