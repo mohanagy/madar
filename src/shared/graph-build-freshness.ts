@@ -37,7 +37,7 @@ function normalizeSourceFile(rootPath: string, sourceFile: string): string {
     return ''
   }
   if (relativePath === '..' || relativePath.startsWith(`..${sep}`) || isAbsolute(relativePath)) {
-    return resolve(trimmed).replaceAll('\\', '/')
+    return ''
   }
   return relativePath.replaceAll('\\', '/')
 }
@@ -50,7 +50,7 @@ export function fileContentFingerprint(filePath: string): string {
   const stats = statSync(filePath)
   if (!stats.isFile()) {
     return createHash('sha256')
-      .update(`non-file:${stats.isDirectory() ? 'dir' : 'other'}:${filePath}:${stats.size}:${stats.mtimeMs}`)
+      .update(`non-file:${stats.isDirectory() ? 'dir' : 'other'}:${stats.size}:${stats.mtimeMs}`)
       .digest('hex')
   }
   return createHash('sha256').update(readFileSync(filePath)).digest('hex')

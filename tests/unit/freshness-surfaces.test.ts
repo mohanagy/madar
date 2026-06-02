@@ -35,6 +35,12 @@ interface GitFreshnessFixture {
   sourceTime: Date
 }
 
+type AnalyzeGraphContextFreshness = (
+  graphPath: string,
+  graph?: unknown,
+  selection?: { selected_source_files?: readonly string[] },
+) => Record<string, unknown>
+
 afterEach(() => {
   while (sandboxRoots.length > 0) {
     const root = sandboxRoots.pop()
@@ -323,23 +329,16 @@ async function withFullToolProfile<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
+async function loadAnalyzeGraphContextFreshness(): Promise<AnalyzeGraphContextFreshness> {
+  const freshnessRuntime = await import('../../src/runtime/freshness.js') as Record<string, unknown>
+  const analyzeGraphContextFreshness = freshnessRuntime.analyzeGraphContextFreshness as AnalyzeGraphContextFreshness | undefined
+  expect(analyzeGraphContextFreshness).toBeTypeOf('function')
+  return analyzeGraphContextFreshness!
+}
+
 describe('freshness surfaces', () => {
   it('classifies fresh, modified, deleted, and missing graph states', async () => {
-    const freshnessRuntime = await import('../../src/runtime/freshness.js') as Record<string, unknown>
-    const analyzeGraphContextFreshness = freshnessRuntime.analyzeGraphContextFreshness as
-      | ((graphPath: string) => {
-          status: string
-          graph_path: string
-          generated_at: string | null
-          madar_version: string
-          indexed_file_count: number
-          changed_source_count: number
-          missing_source_count: number
-          recommendation: string
-        })
-      | undefined
-
-    expect(analyzeGraphContextFreshness).toBeTypeOf('function')
+    const analyzeGraphContextFreshness = await loadAnalyzeGraphContextFreshness()
 
     const fresh = createFreshnessFixture('fresh')
     expect(analyzeGraphContextFreshness!(fresh.graphPath)).toEqual(expect.objectContaining({
@@ -388,18 +387,7 @@ describe('freshness surfaces', () => {
   })
 
   it('tracks selected-context drift from git dirty files even when source mtimes stay older than the graph', async () => {
-    const freshnessRuntime = await import('../../src/runtime/freshness.js') as Record<string, unknown>
-    const analyzeGraphContextFreshness = freshnessRuntime.analyzeGraphContextFreshness as
-      | ((graphPath: string, graph?: unknown, selection?: { selected_source_files?: readonly string[] }) => {
-          status: string
-          selected_context_status: string
-          changed_source_count: number
-          changed_selected_context_count: number
-          changed_outside_selected_context_count: number
-        })
-      | undefined
-
-    expect(analyzeGraphContextFreshness).toBeTypeOf('function')
+    const analyzeGraphContextFreshness = await loadAnalyzeGraphContextFreshness()
 
     const fixture = createGitFreshnessFixture()
     setFileContentPreservingMtime(
@@ -425,18 +413,7 @@ describe('freshness surfaces', () => {
   })
 
   it('tracks git dirty files whose paths include spaces', async () => {
-    const freshnessRuntime = await import('../../src/runtime/freshness.js') as Record<string, unknown>
-    const analyzeGraphContextFreshness = freshnessRuntime.analyzeGraphContextFreshness as
-      | ((graphPath: string, graph?: unknown, selection?: { selected_source_files?: readonly string[] }) => {
-          status: string
-          selected_context_status: string
-          changed_source_count: number
-          changed_selected_context_count: number
-          changed_outside_selected_context_count: number
-        })
-      | undefined
-
-    expect(analyzeGraphContextFreshness).toBeTypeOf('function')
+    const analyzeGraphContextFreshness = await loadAnalyzeGraphContextFreshness()
 
     const fixture = createGitFreshnessFixture({ authRelativePath: 'src/auth service.ts' })
     setFileContentPreservingMtime(
@@ -462,18 +439,7 @@ describe('freshness surfaces', () => {
   })
 
   it('tracks unrelated git dirty files outside the selected context even when source mtimes stay older than the graph', async () => {
-    const freshnessRuntime = await import('../../src/runtime/freshness.js') as Record<string, unknown>
-    const analyzeGraphContextFreshness = freshnessRuntime.analyzeGraphContextFreshness as
-      | ((graphPath: string, graph?: unknown, selection?: { selected_source_files?: readonly string[] }) => {
-          status: string
-          selected_context_status: string
-          changed_source_count: number
-          changed_selected_context_count: number
-          changed_outside_selected_context_count: number
-        })
-      | undefined
-
-    expect(analyzeGraphContextFreshness).toBeTypeOf('function')
+    const analyzeGraphContextFreshness = await loadAnalyzeGraphContextFreshness()
 
     const fixture = createGitFreshnessFixture()
     setFileContentPreservingMtime(
@@ -499,18 +465,7 @@ describe('freshness surfaces', () => {
   })
 
   it('tracks git commit drift after build even when committed file mtimes stay older than the graph', async () => {
-    const freshnessRuntime = await import('../../src/runtime/freshness.js') as Record<string, unknown>
-    const analyzeGraphContextFreshness = freshnessRuntime.analyzeGraphContextFreshness as
-      | ((graphPath: string, graph?: unknown, selection?: { selected_source_files?: readonly string[] }) => {
-          status: string
-          selected_context_status: string
-          changed_source_count: number
-          changed_selected_context_count: number
-          changed_outside_selected_context_count: number
-        })
-      | undefined
-
-    expect(analyzeGraphContextFreshness).toBeTypeOf('function')
+    const analyzeGraphContextFreshness = await loadAnalyzeGraphContextFreshness()
 
     const fixture = createGitFreshnessFixture()
     setFileContentPreservingMtime(
@@ -538,18 +493,7 @@ describe('freshness surfaces', () => {
   })
 
   it('tracks additional edits to a file that was already dirty when the graph was built', async () => {
-    const freshnessRuntime = await import('../../src/runtime/freshness.js') as Record<string, unknown>
-    const analyzeGraphContextFreshness = freshnessRuntime.analyzeGraphContextFreshness as
-      | ((graphPath: string, graph?: unknown, selection?: { selected_source_files?: readonly string[] }) => {
-          status: string
-          selected_context_status: string
-          changed_source_count: number
-          changed_selected_context_count: number
-          changed_outside_selected_context_count: number
-        })
-      | undefined
-
-    expect(analyzeGraphContextFreshness).toBeTypeOf('function')
+    const analyzeGraphContextFreshness = await loadAnalyzeGraphContextFreshness()
 
     const fixture = createGitFreshnessFixture({ buildDirtyFile: 'auth' })
     setFileContentPreservingMtime(

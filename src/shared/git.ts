@@ -37,21 +37,24 @@ function mapRepoPathToProjectPath(projectDir: string, repoDir: string, repoRelat
   return relativePath.replaceAll('\\', '/')
 }
 
-function decodeGitPath(raw: string): string {
-  const trimmed = raw.trim()
-  if (trimmed.startsWith('"') && trimmed.endsWith('"') && trimmed.length >= 2) {
-    return trimmed
-      .slice(1, -1)
-      .replaceAll('\\"', '"')
-      .replaceAll('\\\\', '\\')
+function parseStatusPaths(statusOutput: string): string[] {
+  const entries = statusOutput.split('\0')
+  const paths: string[] = []
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index]
+    if (entry === undefined) {
+      continue
+    }
+    if (entry.length < 4 || entry[2] !== ' ') {
+      continue
+    }
+    const status = entry.slice(0, 2)
+    paths.push(entry.slice(3))
+    if (status.includes('R') || status.includes('C')) {
+      index += 1
+    }
   }
-  return trimmed
-}
-
-function parseStatusPath(raw: string): string {
-  const trimmed = raw.trim()
-  const renameIndex = trimmed.lastIndexOf(' -> ')
-  return decodeGitPath(renameIndex >= 0 ? trimmed.slice(renameIndex + 4).trim() : trimmed)
+  return paths
 }
 
 function dedupePaths(paths: Iterable<string>): string[] {
@@ -72,13 +75,9 @@ export function readGitSnapshot(projectDir: string): GitSnapshot | null {
 
   try {
     const headSha = gitOutput(repoRoot, ['rev-parse', '--verify', 'HEAD'])
-    const statusOutput = gitOutput(repoRoot, ['status', '--porcelain=v1', '--untracked-files=all'], false)
+    const statusOutput = gitOutput(repoRoot, ['status', '--porcelain=v1', '-z', '--untracked-files=all'], false)
     const dirtyFiles = dedupePaths(
-      statusOutput
-        .split('\n')
-        .map((line) => line.trimEnd())
-        .filter((line) => line.length >= 4)
-        .map((line) => parseStatusPath(line.slice(3)))
+      parseStatusPaths(statusOutput)
         .map((repoRelativePath) => mapRepoPathToProjectPath(projectDir, repoRoot, repoRelativePath))
         .filter((path): path is string => path !== null),
     )
@@ -104,11 +103,10 @@ export function diffGitFilesBetweenCommits(projectDir: string, fromSha: string, 
   }
 
   try {
-    const output = gitOutput(repoRoot, ['diff', '--name-only', '--find-renames=50%', '--no-ext-diff', fromSha, toSha, '--'])
+    const output = gitOutput(repoRoot, ['diff', '--name-only', '-z', '--find-renames=50%', '--no-ext-diff', fromSha, toSha, '--'], false)
     return dedupePaths(
       output
-        .split('\n')
-        .map((line) => line.trim())
+        .split('\0')
         .filter((line) => line.length > 0)
         .map((repoRelativePath) => mapRepoPathToProjectPath(projectDir, repoRoot, repoRelativePath))
         .filter((path): path is string => path !== null),
