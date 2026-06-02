@@ -225,8 +225,10 @@ describe('public marketing copy honesty', () => {
     const content = readDoc('docs/tutorials/getting-started.md')
     const lower = content.toLowerCase()
 
-    it('starts the walkthrough with generate, summary, and compact retrieval surfaces', () => {
+    it('starts the walkthrough with the one-command trial flow before the manual generate path', () => {
+      expect(content).toContain('madar try "how does password reset request enqueue the reset email" examples/sample-workspace')
       expect(content).toContain('madar generate examples/sample-workspace --no-html')
+      expect(content.indexOf('madar try')).toBeLessThan(content.indexOf('madar generate examples/sample-workspace --no-html'))
       expect(content).toContain('cd examples/sample-workspace')
       expect(content).toContain('madar summary out/graph.json')
       expect(content).toContain('madar pack')

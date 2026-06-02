@@ -10,7 +10,15 @@ npm install -g @lubab/madar
 
 If you are working from this repository instead of a published npm install, run `npm run build` from the repository root first so the local CLI is up to date.
 
-## 2. Generate a graph for the sample workspace
+## 2. Start with the one-command trial flow
+
+```bash
+madar try "how does password reset request enqueue the reset email" examples/sample-workspace
+```
+
+This builds or reuses `examples/sample-workspace/out/graph.json`, prints one human-readable local explanation, and ends with the next recommended install command without requiring Claude/Cursor/Codex/Copilot setup first.
+
+## 3. Generate a graph for the sample workspace manually
 
 ```bash
 madar generate examples/sample-workspace --no-html
@@ -24,7 +32,7 @@ If your real repo is framework-heavy TypeScript/JavaScript and you care about ri
 madar generate examples/sample-workspace --spi --no-html
 ```
 
-## 3. Install one agent profile
+## 4. Install one agent profile
 
 Move into the sample workspace before installing so the generated graph, agent config, and verification commands all point at the same project:
 
@@ -40,7 +48,7 @@ madar claude install
 
 If you want a different runtime, use the same step with `madar codex install`, `madar cursor install`, `madar copilot install`, `madar gemini install`, `madar aider install`, or `madar opencode install`.
 
-## 4. Verify the install before asking bigger questions
+## 5. Verify the install before asking bigger questions
 
 ```bash
 madar doctor out/graph.json
@@ -49,7 +57,7 @@ madar status out/graph.json
 
 For Claude, Cursor, Gemini, and Copilot, `doctor` checks graph freshness plus the install wiring, and `status` gives you the compact readiness summary plus the next recommended commands. `doctor`/`status` also report Codex, Aider, and OpenCode when their AGENTS/hook/plugin/MCP signals are present; if any of those drift, the agent is marked `partial` with a reinstall suggestion.
 
-## 5. Start with a bounded summary
+## 6. Start with a bounded summary
 
 ```bash
 madar summary out/graph.json
@@ -57,7 +65,7 @@ madar summary out/graph.json
 
 This prints the deterministic high-signal overview first: graph counts, source domains, top modules, frameworks, entrypoints, and runtime paths. It is the fastest way to decide whether you need a deeper `pack`, `prompt`, or MCP retrieval call.
 
-## 6. Build a compact pack
+## 7. Build a compact pack
 
 ```bash
 madar pack "how does password reset request enqueue the reset email" \
@@ -67,7 +75,7 @@ madar pack "how does password reset request enqueue the reset email" \
 
 This is the fastest way to confirm the route → service → job flow is represented in the graph. On runtime-generation questions like this one, newer reports can also preserve an `execution_slice` so you can inspect ordered steps without reading the whole raw slice. Treat it as a static runtime-path hypothesis from the graph, not a live trace. The nested `phase_coverage` is also static and prompt-scoped, so broader report-generation questions may show planner/research/report-builder/scoring/renderer/persistence phases when the graph supports them.
 
-## 7. Compile a provider-ready prompt
+## 8. Compile a provider-ready prompt
 
 ```bash
 madar prompt "where is reset token persisted before the email job runs" \
@@ -77,7 +85,7 @@ madar prompt "where is reset token persisted before the email job runs" \
 
 `prompt` only compiles the prompt payload. It does **not** call Claude or spend paid model tokens by itself.
 
-## 8. Run a safe compare smoke check
+## 9. Run a safe compare smoke check
 
 If you want to exercise `compare` without calling a paid model, use a local echo-style runner:
 
@@ -93,6 +101,7 @@ This does **not** measure model quality. It is a safe local smoke check that pro
 
 ## Expected output
 
+- `try` should print one human-readable local result plus a recommended install command
 - `generate` should write `examples/sample-workspace/out/graph.json`
 - `claude install` should register the local Madar integration for the sample workspace
 - `doctor` should confirm the graph path plus install wiring for Claude, Cursor, Gemini, or Copilot

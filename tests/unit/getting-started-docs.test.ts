@@ -8,6 +8,7 @@ describe('getting started tutorial', () => {
     const tutorial = readFileSync(resolve('docs/tutorials/getting-started.md'), 'utf8')
     const readme = readFileSync(resolve('README.md'), 'utf8')
 
+    expect(tutorial).toContain('madar try')
     expect(tutorial).toContain('npm install -g @lubab/madar')
     expect(tutorial).not.toContain('migration')
     expect(tutorial).toContain('madar generate examples/sample-workspace --no-html')
@@ -27,6 +28,8 @@ describe('getting started tutorial', () => {
     const tutorial = readFileSync(resolve('docs/tutorials/getting-started.md'), 'utf8')
     const readme = readFileSync(resolve('README.md'), 'utf8')
 
+    expect(tutorial.indexOf('madar try')).toBeGreaterThanOrEqual(0)
+    expect(tutorial.indexOf('madar try')).toBeLessThan(tutorial.indexOf('madar generate examples/sample-workspace --no-html'))
     expect(tutorial).toContain('cd examples/sample-workspace')
     expect(tutorial).toContain('madar claude install')
     expect(tutorial).toContain('madar doctor out/graph.json')
@@ -38,6 +41,8 @@ describe('getting started tutorial', () => {
     expect(tutorial.toLowerCase()).toContain('paid model')
     expect(tutorial.toLowerCase()).toContain('10-minute')
     expect(readme).toContain('## Choose your agent')
+    expect(readme).toContain('madar try')
+    expect(readme.indexOf('madar try')).toBeLessThan(readme.indexOf('madar generate .'))
     expect(readme).toContain('Claude Code')
     expect(readme).toContain('Codex CLI')
     expect(readme).toContain('Cursor')

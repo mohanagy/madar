@@ -5,7 +5,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 
 import { describe, expect, test, vi } from 'vitest'
 
-import { generateGraph } from '../../src/infrastructure/generate.js'
+import { generateGraph, GenerateUnsupportedCorpusError } from '../../src/infrastructure/generate.js'
 import { loadGraph } from '../../src/runtime/serve.js'
 import { binaryIngestSidecarPath } from '../../src/shared/binary-ingest-sidecar.js'
 import { normalizeAssertionPath, normalizeAssertionPaths } from './helpers/platform.js'
@@ -958,6 +958,36 @@ function createTestOggOpusBuffer(
 
 describe('generateGraph', () => {
   const generateGraphIntegrationTimeoutMs = 15_000
+
+  test('throws a stable unsupported-corpus error code when no supported files are detected', () => {
+    withTempDir((tempDir) => {
+      writeFileSync(join(tempDir, 'fixture.bin'), Buffer.from([0xde, 0xad, 0xbe, 0xef]))
+
+      try {
+        generateGraph(tempDir, { noHtml: true })
+        throw new Error('expected generateGraph() to throw')
+      } catch (error) {
+        expect(error).toBeInstanceOf(GenerateUnsupportedCorpusError)
+        expect((error as GenerateUnsupportedCorpusError).code).toBe('NO_SUPPORTED_FILES')
+        expect((error as Error).message).toContain('No supported files were found in the target path.')
+      }
+    })
+  })
+
+  test('throws a stable unsupported-corpus error code when extraction yields zero graph nodes', () => {
+    withTempDir((tempDir) => {
+      writeFileSync(join(tempDir, 'README.md'), '# Notes only\\n', 'utf8')
+
+      try {
+        generateGraph(tempDir, { includeDocs: false, noHtml: true })
+        throw new Error('expected generateGraph() to throw')
+      } catch (error) {
+        expect(error).toBeInstanceOf(GenerateUnsupportedCorpusError)
+        expect((error as GenerateUnsupportedCorpusError).code).toBe('NO_GRAPH_NODES')
+        expect((error as Error).message).toContain('No graph nodes could be generated from the detected corpus.')
+      }
+    })
+  })
 
   test('builds graph artifacts for a code corpus', () => {
     withTempDir((tempDir) => {

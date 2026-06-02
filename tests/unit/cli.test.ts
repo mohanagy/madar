@@ -25,6 +25,7 @@ import {
   parseServeArgs,
   parseTelemetryArgs,
   parseTimeTravelArgs,
+  parseTryArgs,
   parseWatchArgs,
 } from '../../src/cli/parser.js'
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
@@ -137,6 +138,7 @@ function createDependencies(): CliTestDependencies {
     runReviewCompare: async () => 'review compare command is not implemented yet',
     runTimeTravel: async () => 'time-travel command is not implemented yet',
     runContextPack: async () => 'context pack command is not implemented yet',
+    runTry: async () => 'try command is not implemented yet',
     runHandoff: async () => 'handoff command is not implemented yet',
     runContextPrompt: async () => 'context prompt command is not implemented yet',
     runProofReport: (options) => ({
@@ -1028,6 +1030,22 @@ describe('cli parser', () => {
     expect(() => parseDoctorArgs(['--wat'], 'status')).toThrow('error: unknown option for status: --wat')
   })
 
+  it('parses try args with an optional target path', () => {
+    expect(parseTryArgs(['how does auth work?'])).toEqual({
+      prompt: 'how does auth work?',
+      path: '.',
+    })
+
+    expect(parseTryArgs(['how does auth work?', 'examples/sample-workspace'])).toEqual({
+      prompt: 'how does auth work?',
+      path: 'examples/sample-workspace',
+    })
+
+    expect(() => parseTryArgs([])).toThrow('Usage: madar try "<question>" [path]')
+    expect(() => parseTryArgs(['how does auth work?', 'repo', '--wat'])).toThrow('error: unknown option for try: --wat')
+    expect(() => parseTryArgs(['how does auth work?', 'repo', 'extra'])).toThrow('Usage: madar try "<question>" [path]')
+  })
+
   it('parses proof-report args with defaults and overrides', () => {
     expect(parseProofReportArgs([])).toEqual({
       graphPath: 'out/graph.json',
@@ -1255,6 +1273,8 @@ describe('cli main', () => {
     expect(help).toContain('codex <install|uninstall>')
     expect(help).toContain('opencode <install|uninstall>')
     expect(help).toContain('summary [graph.json]')
+    expect(help).toContain('try "<question>" [path]')
+    expect(help).toContain('one-command local first proof before agent install')
   })
 
   it('routes compare through the injected dependency after parsing args', async () => {
@@ -2006,6 +2026,27 @@ describe('cli main', () => {
       io,
     })
     expect(logs).toEqual(['{"task":"explain"}'])
+    expect(errors).toEqual([])
+  })
+
+  it('routes try through the injected dependency after parsing args', async () => {
+    const { io, logs, errors } = createIo()
+    const runTry = vi.fn<NonNullable<CliDependencies['runTry']>>().mockResolvedValue('trial result')
+    const dependencies: CliDependencies = {
+      ...createDependencies(),
+      runTry,
+    }
+
+    await expect(executeCli(['try', 'how does auth work?', 'examples/sample-workspace'], io, dependencies)).resolves.toBe(0)
+
+    expect(runTry).toHaveBeenCalledWith({
+      options: {
+        prompt: 'how does auth work?',
+        path: 'examples/sample-workspace',
+      },
+      io,
+    })
+    expect(logs).toEqual(['trial result'])
     expect(errors).toEqual([])
   })
 

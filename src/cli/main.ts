@@ -11,6 +11,7 @@ import { runContextPromptCommand } from '../infrastructure/context-prompt-comman
 import { runDoctorCommand, runStatusCommand } from '../infrastructure/doctor.js'
 import { runProofReportCommand, type ProofReportResult } from '../infrastructure/proof-report.js'
 import { runReviewCompareCommand } from '../infrastructure/review-compare.js'
+import { runTryCommand } from '../infrastructure/try-command.js'
 import { saveQueryResult } from '../infrastructure/save-query-result.js'
 import { compareRefs } from '../infrastructure/time-travel.js'
 import { federate } from '../pipeline/federate.js'
@@ -77,6 +78,8 @@ import {
   parseServeArgs,
   parseTelemetryArgs,
   parseTimeTravelArgs,
+  parseTryArgs,
+  type TryCliOptions,
   type HandoffCliOptions,
   type PackCliOptions,
   type ProofReportCliOptions,
@@ -130,6 +133,11 @@ export interface ContextPackCommandContext {
   io: CliIO
 }
 
+export interface TryCommandContext {
+  options: TryCliOptions
+  io: CliIO
+}
+
 export interface HandoffCommandContext {
   options: HandoffCliOptions
   io: CliIO
@@ -155,6 +163,7 @@ export interface CliDependencies {
   runReviewCompare: (context: ReviewCompareCommandContext) => Promise<string | void> | string | void
   runTimeTravel: (context: TimeTravelCommandContext) => Promise<string | void> | string | void
   runContextPack: (context: ContextPackCommandContext) => Promise<string | void> | string | void
+  runTry: (context: TryCommandContext) => Promise<string | void> | string | void
   runHandoff: (context: HandoffCommandContext) => Promise<string | void> | string | void
   runContextPrompt: (context: ContextPromptCommandContext) => Promise<string | void> | string | void
   runProofReport: (options: ProofReportCliOptions) => ProofReportResult
@@ -268,6 +277,9 @@ const DEFAULT_DEPENDENCIES: CliDependencies = {
   },
   runContextPack: async ({ options }) => {
     return await runContextPackCommand(options)
+  },
+  runTry: async ({ options, io }) => {
+    return await runTryCommand(options, io)
   },
   runHandoff: async ({ options }) => {
     return await runHandoffCommand(options)
@@ -427,6 +439,7 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --stdio              serve graph query methods over stdio (JSON lines)',
     '    --mcp                alias for --stdio for installer/runtime parity',
     '  summary [graph.json]  print a compact deterministic graph summary as JSON',
+    '  try "<question>" [path] one-command local first proof before agent install',
     '  query "<question>"     traverse graph.json for a question',
     '    --dfs                 use depth-first instead of breadth-first',
     '    --budget N            cap output at N tokens (default 2000)',
@@ -787,6 +800,15 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
       const options = parseSummaryArgs(args)
       const runGraphSummary = dependencies.runGraphSummary ?? ((graphPath: string) => buildGraphSummary(dependencies.loadGraph(graphPath)))
       io.log(JSON.stringify(await runGraphSummary(options.graphPath), null, 2))
+      return 0
+    }
+
+    if (command === 'try') {
+      const options = parseTryArgs(args)
+      const output = await dependencies.runTry({ options, io })
+      if (output !== undefined) {
+        io.log(output)
+      }
       return 0
     }
 
