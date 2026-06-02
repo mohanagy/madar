@@ -14,11 +14,14 @@ describe('benchmark suite docs', () => {
     expect(content).toContain('ts-small')
     expect(content).toContain('nestjs-mid')
     expect(content).toContain('ts-monorepo-large')
+    expect(content).toContain('python-service')
+    expect(content).toContain('go-service')
     expect(content).toContain('explain-runtime')
     expect(content).toContain('implement')
     expect(content).toContain('review')
     expect(content).toContain('impact')
     expect(content).toContain('results/2026-05-31T12-00-00/summary.md')
+    expect(content).not.toContain('Python and Go stay visible as planned rows')
   })
 
   it('checks in full share-safe receipts for the latest published bundle', () => {

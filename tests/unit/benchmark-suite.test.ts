@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -304,13 +304,24 @@ describe('benchmark suite manifests', () => {
       }),
       expect.objectContaining({
         id: 'python-service',
-        status: 'planned',
+        status: 'ready',
+      }),
+      expect.objectContaining({
+        id: 'go-service',
+        status: 'ready',
       }),
     ]))
     expect(tasks).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: 'explain-runtime',
         status: 'ready',
+        prompts: expect.objectContaining({
+          'ts-small': expect.any(String),
+          'nestjs-mid': expect.any(String),
+          'ts-monorepo-large': expect.any(String),
+          'python-service': expect.any(String),
+          'go-service': expect.any(String),
+        }),
       }),
       expect.objectContaining({
         id: 'implement',
@@ -319,6 +330,8 @@ describe('benchmark suite manifests', () => {
           'ts-small': expect.any(String),
           'nestjs-mid': expect.any(String),
           'ts-monorepo-large': expect.any(String),
+          'python-service': expect.any(String),
+          'go-service': expect.any(String),
         }),
       }),
       expect.objectContaining({
@@ -328,6 +341,8 @@ describe('benchmark suite manifests', () => {
           'ts-small': expect.any(String),
           'nestjs-mid': expect.any(String),
           'ts-monorepo-large': expect.any(String),
+          'python-service': expect.any(String),
+          'go-service': expect.any(String),
         }),
       }),
       expect.objectContaining({
@@ -337,9 +352,28 @@ describe('benchmark suite manifests', () => {
           'ts-small': expect.any(String),
           'nestjs-mid': expect.any(String),
           'ts-monorepo-large': expect.any(String),
+          'python-service': expect.any(String),
+          'go-service': expect.any(String),
         }),
       }),
     ]))
+  })
+
+  it('keeps every documented repo path present and every ready repo/task cell prompt-wired', () => {
+    const repos = loadBenchmarkSuiteRepos()
+    const tasks = loadBenchmarkSuiteTasks()
+    const readyRepoIds = repos.filter((repo) => repo.status === 'ready').map((repo) => repo.id)
+
+    for (const repo of repos) {
+      expect(existsSync(repo.path)).toBe(true)
+    }
+
+    for (const task of tasks.filter((entry) => entry.status === 'ready')) {
+      for (const repoId of readyRepoIds) {
+        expect(task.prompts[repoId]).toEqual(expect.any(String))
+        expect(task.prompts[repoId]?.trim().length).toBeGreaterThan(0)
+      }
+    }
   })
 
   it('rejects repo ids with unsafe path characters', async () => {
