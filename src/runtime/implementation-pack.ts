@@ -31,8 +31,10 @@ const SIDE_EFFECT_PATTERN = /(?:save|create|update|delete|persist|write|enqueue|
 const RUNTIME_BOUNDARY_PATTERN = /(?:service|repository|repo|server(?:\s+action)?|actions?|worker|queue|job|processor|consumer|producer|persist|storage|database|db|prisma|session|cache)/i
 const CLIENT_SURFACE_PATTERN = /(?:client|component|view|presentational)/i
 const SHELL_SURFACE_PATH_PATTERN = /(?:^|\/)(?:app|main|root)\.[^/]+$|(?:^|\/)page\.[^/]+$|(?:^|\/)layout\.[^/]+$/i
+const ACTION_SURFACE_PATH_PATTERN = /(?:^|\/)actions\.[^/]+$/i
 const WORKFLOW_OWNER_FOCUS_PATTERN = /(?:prisma|repository|persist|storage|database|db|server(?:\s+action)?|runtime\s+boundary|before\s+calling|keep\s+the\s+client\s+component\s+presentational)/i
 const EXPLICIT_CLIENT_TARGET_PATTERN = /(?:client(?:\s+component)?|presentational|ui|component)/i
+const EXPLICIT_SERVER_ACTION_TARGET_PATTERN = /\bserver(?:\s+action)?\b/i
 const WORKFLOW_EDGE_RELATIONS = new Set(['calls', 'controller_route', 'depends_on', 'imports_from', 'enqueues_job'])
 const SURFACE_ATTACHMENT_RELATIONS = new Set(['calls', 'controller_route', 'depends_on', 'imports_from'])
 const TEST_EDIT_PATTERN = /\b(?:add|update|modify|change|fix|write|edit|refactor|rename|remove)\b.{0,24}\b(?:test|tests|spec|specs|e2e|integration)\b|\b(?:test|tests|spec|specs|e2e|integration)\b.{0,24}\b(?:add|update|modify|change|fix|write|edit|refactor|rename|remove)\b/i
@@ -235,6 +237,10 @@ function promptExplicitlyTargetsClientSurface(question?: string): boolean {
   return typeof question === 'string' && EXPLICIT_CLIENT_TARGET_PATTERN.test(question)
 }
 
+function promptExplicitlyTargetsServerAction(question?: string): boolean {
+  return typeof question === 'string' && EXPLICIT_SERVER_ACTION_TARGET_PATTERN.test(question)
+}
+
 function runtimeBoundaryLikeFileContext(
   path: string,
   labelOrSymbols: readonly string[],
@@ -306,14 +312,24 @@ function workflowIntentScoreAdjustment(
   const reasons: string[] = []
   let delta = 0
   const supportingOnlyReason = supportingOnlyWorkflowContextReason(path, labelOrSymbols, question, reason)
+  const shellLike = shellLikeFileContext(path, labelOrSymbols, reason)
+  const clientOnly = clientOnlyFileContext(path, labelOrSymbols, reason)
+  const explicitServerActionTarget = promptExplicitlyTargetsServerAction(question)
 
   if (runtimeBoundaryLikeFileContext(path, labelOrSymbols, reason)) {
     delta += 5
     reasons.push('Task wording points toward the runtime/storage owner on the route/controller/service path.')
   }
 
+  if (explicitServerActionTarget && ACTION_SURFACE_PATH_PATTERN.test(path) && runtimeBoundaryLikeFileContext(path, labelOrSymbols, reason)) {
+    delta += 2
+    reasons.push('Prompt explicitly targets the server action boundary instead of the page shell.')
+  }
+
   if (supportingOnlyReason) {
-    delta -= clientOnlyFileContext(path, labelOrSymbols, reason) ? 6 : 5.5
+    delta -= clientOnly
+      ? 6
+      : (shellLike && explicitServerActionTarget ? 7 : 5.5)
     reasons.push(supportingOnlyReason)
   }
 

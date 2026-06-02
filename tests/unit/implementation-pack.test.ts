@@ -230,6 +230,48 @@ function buildFrameworkWorkflowOwnerGraph() {
   return graph
 }
 
+function buildServerActionPreferenceGraph() {
+  const root = mkdtempSync(join(tmpdir(), 'madar-server-action-owner-'))
+  tempFixtureRoots.push(root)
+  writeFileSync(join(root, 'package.json'), JSON.stringify({
+    name: 'madar-server-action-owner-fixture',
+    private: true,
+    scripts: {
+      typecheck: 'tsc --noEmit',
+      build: 'tsc -p tsconfig.build.json',
+      'test:run': 'vitest run',
+    },
+  }))
+
+  const graph = build(
+    [
+      {
+        schema_version: 1,
+        nodes: [
+          { id: 'dashboard_page', label: 'page /dashboard', file_type: 'code', source_file: `${root}/app/dashboard/page.tsx`, source_location: 'L1', node_kind: 'route', framework_role: 'nextjs_page', community: 0 },
+          { id: 'dashboard_shell', label: 'DashboardPage()', file_type: 'code', source_file: `${root}/app/dashboard/page.tsx`, source_location: 'L4', node_kind: 'function', community: 0 },
+          { id: 'dashboard_action_file', label: 'actions.ts', file_type: 'code', source_file: `${root}/app/dashboard/actions.ts`, source_location: 'L1', community: 1 },
+          { id: 'dashboard_action', label: 'persistDashboardOwnerFilter()', file_type: 'code', source_file: `${root}/app/dashboard/actions.ts`, source_location: 'L15', node_kind: 'function', community: 1 },
+          { id: 'dashboard_prisma', label: 'prisma.dashboardFilter.upsert', file_type: 'code', source_file: `${root}/app/dashboard/actions.ts`, source_location: 'L19', community: 1 },
+          { id: 'dashboard_client', label: 'DashboardClient()', file_type: 'code', source_file: `${root}/components/dashboard-client.tsx`, source_location: 'L7', node_kind: 'function', community: 2 },
+        ],
+        edges: [
+          { source: 'dashboard_page', target: 'dashboard_shell', relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/app/dashboard/page.tsx` },
+          { source: 'dashboard_shell', target: 'dashboard_action_file', relation: 'imports_from', confidence: 'EXTRACTED', source_file: `${root}/app/dashboard/page.tsx` },
+          { source: 'dashboard_shell', target: 'dashboard_client', relation: 'imports_from', confidence: 'EXTRACTED', source_file: `${root}/app/dashboard/page.tsx` },
+          { source: 'dashboard_shell', target: 'dashboard_action', relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/app/dashboard/page.tsx` },
+          { source: 'dashboard_action_file', target: 'dashboard_action', relation: 'exports', confidence: 'EXTRACTED', source_file: `${root}/app/dashboard/actions.ts` },
+          { source: 'dashboard_action', target: 'dashboard_prisma', relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/app/dashboard/actions.ts` },
+        ],
+      },
+    ],
+    { directed: true },
+  )
+
+  graph.graph.root_path = root
+  return graph
+}
+
 describe('buildImplementationPackGuidance workflow-center scoring (#295)', () => {
   it('ranks the workflow owner above a lexically stronger helper', () => {
     const graph = buildWorkflowCenterGraph()
@@ -588,6 +630,129 @@ describe('buildImplementationPackGuidance workflow-center scoring (#295)', () =>
     ]))
     expect(guidance.cautions).toEqual(expect.arrayContaining([
       expect.stringContaining('Treat src/http/app.ts as supporting context first'),
+    ]))
+  })
+
+  it('prefers the server action owner over the page shell for runtime-boundary prompts', () => {
+    const graph = buildServerActionPreferenceGraph()
+    const retrieval = {
+      question: 'move dashboard owner filter persistence into the Next.js server action and keep the client component presentational',
+      token_count: 220,
+      matched_nodes: [
+        {
+          node_id: 'dashboard_page',
+          label: 'page /dashboard',
+          source_file: `${graph.graph.root_path}/app/dashboard/page.tsx`,
+          line_number: 1,
+          node_kind: 'page',
+          framework_role: 'nextjs_page',
+          file_type: 'code',
+          snippet: 'export default async function DashboardPage() {}',
+          match_score: 0.97,
+          relevance_band: 'direct' as const,
+          community: 0,
+          community_label: 'Dashboard shell',
+        },
+        {
+          node_id: 'dashboard_shell',
+          label: 'DashboardPage()',
+          source_file: `${graph.graph.root_path}/app/dashboard/page.tsx`,
+          line_number: 4,
+          node_kind: 'function',
+          file_type: 'code',
+          snippet: 'return <form action={persistDashboardOwnerFilter}>',
+          match_score: 0.89,
+          relevance_band: 'direct' as const,
+          community: 0,
+          community_label: 'Dashboard shell',
+        },
+        {
+          node_id: 'dashboard_action_file',
+          label: 'actions.ts',
+          source_file: `${graph.graph.root_path}/app/dashboard/actions.ts`,
+          line_number: 1,
+          node_kind: 'module',
+          file_type: 'code',
+          snippet: '\'use server\'',
+          match_score: 0.74,
+          relevance_band: 'direct' as const,
+          community: 1,
+          community_label: 'Dashboard runtime',
+        },
+        {
+          node_id: 'dashboard_action',
+          label: 'persistDashboardOwnerFilter()',
+          source_file: `${graph.graph.root_path}/app/dashboard/actions.ts`,
+          line_number: 15,
+          node_kind: 'function',
+          file_type: 'code',
+          snippet: 'export async function persistDashboardOwnerFilter(formData: FormData) {}',
+          match_score: 0.82,
+          relevance_band: 'direct' as const,
+          community: 1,
+          community_label: 'Dashboard runtime',
+        },
+        {
+          node_id: 'dashboard_prisma',
+          label: 'prisma.dashboardFilter.upsert',
+          source_file: `${graph.graph.root_path}/app/dashboard/actions.ts`,
+          line_number: 19,
+          node_kind: 'call_expression',
+          file_type: 'code',
+          snippet: 'return prisma.dashboardFilter.upsert(...)',
+          match_score: 0.78,
+          relevance_band: 'direct' as const,
+          community: 1,
+          community_label: 'Dashboard runtime',
+        },
+        {
+          node_id: 'dashboard_client',
+          label: 'DashboardClient()',
+          source_file: `${graph.graph.root_path}/components/dashboard-client.tsx`,
+          line_number: 7,
+          node_kind: 'function',
+          file_type: 'code',
+          snippet: 'export function DashboardClient() {}',
+          match_score: 0.88,
+          relevance_band: 'direct' as const,
+          community: 2,
+          community_label: 'Dashboard client',
+        },
+      ],
+      relationships: [],
+      community_context: [],
+      graph_signals: { god_nodes: [], bridge_nodes: [] },
+      claims: [],
+      expandable: [],
+      coverage: {
+        required_evidence: ['primary', 'supporting', 'structural'] as const,
+        semantic_required: ['implementation', 'structure'] as const,
+        semantic_optional: ['tests', 'contracts'] as const,
+        entries: [],
+        semantic_entries: [],
+        missing_required: [],
+        missing_semantic: [],
+        available_relationships: 0,
+        selected_relationships: 0,
+      },
+    } satisfies import('../../src/runtime/retrieve.js').RetrieveResult
+
+    const guidance = buildImplementationPackGuidance(graph, retrieval, {
+      budget: 2200,
+      taskIntent: 'implement',
+      limit: 4,
+    })
+
+    expect(guidance.workflow_centers[0]).toEqual(expect.objectContaining({
+      path: 'app/dashboard/actions.ts',
+      phases: expect.arrayContaining(['seed', 'expand', 'promote']),
+    }))
+    expect(guidance.workflow_centers[0]!.path).not.toBe('app/dashboard/page.tsx')
+    expect(guidance.likely_edit_files[0]).toEqual(expect.objectContaining({
+      path: 'app/dashboard/actions.ts',
+    }))
+    expect(guidance.cautions).toEqual(expect.arrayContaining([
+      expect.stringContaining('Treat app/dashboard/page.tsx as supporting context first'),
     ]))
   })
 })
