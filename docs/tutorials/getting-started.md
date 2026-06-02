@@ -124,5 +124,6 @@ This does **not** measure model quality. It is a safe local smoke check that pro
 ## Optional next steps
 
 - Replace the local compare runner with your real CLI model command from [`docs/proof-workflows.md`](../proof-workflows.md).
+- Turn the same workflow into a public share-safe receipt with the [design-partner program](https://github.com/mohanagy/madar/blob/main/docs/design-partners.md).
 - Install one of the agent profiles from the README after the sample graph is generated.
 - Move from `examples/sample-workspace/` to your own workspace and rerun the same `generate` → `pack` → `prompt` flow.

@@ -61,6 +61,7 @@ Focus: reduce repeated work across packs, compares, and longer agent sessions on
 
 Focus: make Madar easier to adopt, evaluate, and contribute to after the runtime and benchmark surfaces stop moving quickly.
 
+- [#472 — Create a design-partner feedback loop with reproducible receipts](https://github.com/mohanagy/madar/issues/472) so **design-partner reports**, a public 10-slot tracker, and tagged follow-up issues live in one share-safe program.
 - Follow the first **design-partner workflow loops** bundle with stronger partner-approved receipts once the repo can replace some **anonymized workflow notes** with repeated public outcomes.
 - Refresh contributor-facing docs, examples, and onboarding after the v0.26-v0.29 work is stable.
 - Keep the near-term roadmap centered on runtime trust, answer quality, framework depth, and MCP/session efficiency before expanding into broader polish work.

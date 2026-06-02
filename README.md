@@ -231,6 +231,7 @@ Limitations to know:
 | CLI commands, MCP tools, agent installers | [CLI and MCP reference](https://github.com/mohanagy/madar/blob/main/docs/reference/cli-and-mcp.md) |
 | Install matrix | [Compatibility guide](https://github.com/mohanagy/madar/blob/main/docs/integrations/compatibility.md) |
 | Proof workflows | [Proof workflows](https://github.com/mohanagy/madar/blob/main/docs/proof-workflows.md) |
+| Design partner program | [Design partners](https://github.com/mohanagy/madar/blob/main/docs/design-partners.md) |
 | Claims and evidence | [Claims and evidence map](https://github.com/mohanagy/madar/blob/main/docs/claims-and-evidence.md) |
 | Team and enterprise offer | [Team and enterprise offer](https://github.com/mohanagy/madar/blob/main/docs/team-enterprise-offer.md) |
 | Benchmark suite | [Benchmark suite](https://github.com/mohanagy/madar/blob/main/docs/benchmarks/suite/README.md) |

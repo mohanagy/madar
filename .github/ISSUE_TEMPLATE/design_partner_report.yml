@@ -1,0 +1,131 @@
+name: Design partner report
+description: Publish one share-safe Madar receipt from a real repo/task workflow.
+title: "[Design partner]: "
+labels:
+  - design-partner
+  - type:product
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for one reproducible, share-safe design-partner receipt.
+
+        Do not include source paths.
+        Do not include source code.
+        Do not include secrets, customer names, or private prompt text.
+
+  - type: dropdown
+    id: repo_size_bucket
+    attributes:
+      label: Repo size bucket
+      description: Choose the closest coarse bucket instead of sharing exact repo details.
+      options:
+        - 100-499 files
+        - 500-999 files
+        - 1000-4999 files
+        - 5000+ files
+    validations:
+      required: true
+
+  - type: input
+    id: framework
+    attributes:
+      label: Framework or repo shape
+      description: "Example: NestJS + Prisma, Next.js app router, Express API, monorepo service + web."
+      placeholder: NestJS + Prisma
+    validations:
+      required: true
+
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Agent runtime
+      options:
+        - Claude Code
+        - Cursor
+        - Codex CLI
+        - GitHub Copilot CLI
+        - Gemini CLI
+        - Aider
+        - OpenCode
+        - Other local agent
+    validations:
+      required: true
+
+  - type: dropdown
+    id: task_type
+    attributes:
+      label: Task type
+      options:
+        - explain-runtime
+        - review-diff
+        - impact-change
+        - implement-check
+        - other
+    validations:
+      required: true
+
+  - type: textarea
+    id: baseline_commands
+    attributes:
+      label: Baseline commands
+      description: Do not include source paths or source code. Use redacted or representative command shapes.
+      placeholder: |
+        claude "how does password reset enqueue the email job"
+        or
+        cursor review current diff
+    validations:
+      required: true
+
+  - type: textarea
+    id: madar_commands
+    attributes:
+      label: Madar commands
+      description: Do not include source paths or source code. Capture only the share-safe command shapes that produced the receipt.
+      placeholder: |
+        madar generate . --spi --no-html
+        madar pack "how does password reset enqueue the email job" --task explain
+    validations:
+      required: true
+
+  - type: dropdown
+    id: outcome
+    attributes:
+      label: Result
+      description: Better, neutral, and worse are all valid outcomes. Do not smooth a worse result into success.
+      options:
+        - better
+        - neutral
+        - worse
+    validations:
+      required: true
+
+  - type: textarea
+    id: result
+    attributes:
+      label: Metrics or observations
+      description: Record the bounded comparison you actually observed.
+      placeholder: |
+        - tool calls: 18 -> 6
+        - latency: lower
+        - wrong-file-edit risk: lower
+        - or explain why the result was neutral / worse
+    validations:
+      required: true
+
+  - type: textarea
+    id: caveats
+    attributes:
+      label: Caveats
+      description: Record confounders, setup drift, cache effects, or why this receipt should not be generalized.
+    validations:
+      required: true
+
+  - type: input
+    id: follow_up_issues
+    attributes:
+      label: Follow-up issues
+      description: Link any follow-up issues opened from this receipt. Add the design-partner label to those issues.
+      placeholder: "#123, #124 or none"
+    validations:
+      required: true
