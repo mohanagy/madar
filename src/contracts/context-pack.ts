@@ -450,7 +450,6 @@ export interface ContextPackGovernancePrivacyBoundary {
 
 export interface ContextPackGovernanceGraphFreshness {
   status: 'fresh' | 'partially_stale' | 'possibly_stale' | 'stale' | 'missing'
-  graph_path: string
   graph_version: string | null
   graph_modified_ms: number | null
   graph_modified_at: string | null

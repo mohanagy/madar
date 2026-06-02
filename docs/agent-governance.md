@@ -11,7 +11,7 @@ The receipt is meant for audit and governance review flows where teams need to v
 
 Each receipt is versioned (`version: 1`) and records:
 
-- graph freshness (`graph_version`, modified time)
+- graph freshness (`graph_version`, freshness status, selected-context counters, and generation/build timestamps)
 - request metadata (`task`, `task_intent`, `budget`, retrieval strategy, resolution when present)
 - agent directive summary (`pack_confidence`, `coverage`, `agent_directive`, `missing_phases`)
 - follow-up expansion summary (handle count, evidence classes, expansion task kinds, preview/focus counts)

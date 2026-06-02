@@ -1774,7 +1774,6 @@ function graphFreshnessSummaryLines(schema: PackSchemaEnvelope): string[] {
 
   const lines = [
     `Status: ${graphFreshnessStatusLabel(freshness.status)}`,
-    `Graph source: ${freshness.graph_path}`,
     `Generated: ${freshness.generated_at ?? 'unknown'}`,
     `Madar version: ${freshness.madar_version}`,
     `Indexed files: ${freshness.indexed_file_count}`,

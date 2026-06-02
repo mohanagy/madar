@@ -60,7 +60,6 @@ export function buildContextPackGovernanceReceipt(input: {
     },
     graph_freshness: {
       status: input.graphFreshness.status,
-      graph_path: input.graphFreshness.graph_path,
       graph_version: input.graphFreshness.graph_version,
       graph_modified_ms: input.graphFreshness.graph_modified_ms,
       graph_modified_at: input.graphFreshness.graph_modified_at,
