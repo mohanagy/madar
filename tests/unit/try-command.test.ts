@@ -47,7 +47,7 @@ function createFreshness(status: GraphContextFreshnessStatus, graphPath: string)
     graph_modified_at: '2026-06-01T00:00:00.000Z',
     generated_ms: 1,
     generated_at: '2026-06-01T00:00:00.000Z',
-    madar_version: '0.27.8',
+    madar_version: '0.27.9-next.0',
     indexed_file_count: 12,
     changed_source_count: status === 'fresh' ? 0 : 2,
     missing_source_count: 0,

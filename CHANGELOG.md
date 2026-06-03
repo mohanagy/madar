@@ -2,6 +2,20 @@
 
 All notable changes to the TypeScript package will be documented in this file.
 
+## [0.27.9-next.0] - 2026-06-03
+
+### Added
+
+- **Adoption proof surfaces now cover the full next-track rollout bundle**: Madar now ships a public multi-repo benchmark suite and language fixtures, the one-command `madar try` first-run flow, verified agent-specific quickstarts and smoke-tested install docs, a design-partner feedback loop with reproducible receipts, and the proof-first launch/distribution checklist. Closes #469, #470, #472, #473, and #474.
+
+### Changed
+
+- **Public adoption messaging and instrumentation are now aligned across the next track**: the README/npm discovery path now reflects the Madar positioning and legacy-name cleanup, prerelease docs stay on `blob/next`, and the opt-in telemetry funnel records coarse install/generate/pack/prompt/doctor/status/compare adoption stages without collecting source text or paths. Closes #467, #468, and #471.
+
+### Fixed
+
+- **Graph freshness and stale-context guarantees are now scoped and git-backed**: `madar pack`, `madar prompt`, `madar handoff`, `madar doctor`, and `madar status` now report whole-repo vs selected-context freshness using the graph build revision plus current git diff as the source of truth on git workspaces, with privacy-safe governance receipts and tighter stale-context behavior for follow-up flows. Closes #477 and #479.
+
 ## [0.27.8] - 2026-06-02
 
 ### Added

@@ -332,7 +332,7 @@ describe('telemetry', () => {
       expect(recordTelemetryEvent({
         command: 'status',
         stage: 'succeeded',
-        version: '0.27.8',
+        version: '0.27.9-next.0',
         os: 'darwin',
         nodeMajor: 20,
         statusBucket: 'healthy',
@@ -373,7 +373,7 @@ describe('telemetry', () => {
       expect(recordTelemetryEvent({
         command: 'status',
         stage: 'succeeded',
-        version: '0.27.8',
+        version: '0.27.9-next.0',
         os: 'darwin',
         nodeMajor: 20,
         statusBucket: 'healthy',

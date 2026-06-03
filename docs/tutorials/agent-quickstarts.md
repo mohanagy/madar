@@ -2,7 +2,7 @@
 
 Use this page when you already know which agent you want to wire and you want one verified install path plus one copy/paste Smoke test.
 
-Before any agent-specific install, start with the [getting started tutorial](https://github.com/mohanagy/madar/blob/main/docs/tutorials/getting-started.md) and its one-command trial flow so the repo has a graph and you know Madar itself is behaving locally:
+Before any agent-specific install, start with the [getting started tutorial](https://github.com/mohanagy/madar/blob/next/docs/tutorials/getting-started.md) and its one-command trial flow so the repo has a graph and you know Madar itself is behaving locally:
 
 ```bash
 madar try "how does auth work?"
