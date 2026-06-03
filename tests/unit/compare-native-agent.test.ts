@@ -1099,7 +1099,8 @@ describe('executeNativeAgentCompare', () => {
       expect(madarPrompt).toContain('Call retrieve first')
       expect(madarPrompt).toContain('Inspect matched_nodes, snippets, relationships, and community context before deciding what to do next')
       expect(madarPrompt).toContain('If retrieve already answers the question, answer from the retrieved evidence and stop without raw search')
-      expect(madarPrompt).toContain('Allow at most one focused Madar follow-up before raw search')
+      expect(madarPrompt).toContain('Do not call community_overview, graph_summary, get_community, query_graph')
+      expect(madarPrompt).toContain('Allow at most one focused raw file read or search')
       expect(madarPrompt).toContain('Broad raw search requires an explicit missing-context reason')
       expect(madarPrompt).toContain('Question: What is the cluster module?')
 
@@ -2639,6 +2640,58 @@ describe('executeNativeAgentCompare', () => {
       expect(abortedRunnerSettled).toBe(true)
       expect(report.madar.kind).toBe('runner_error')
       expect((report.madar as { failure_reason?: unknown }).failure_reason).toBe('timed_out')
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  it('saves partial madar stdout when a timed-out arm settles after abort', async () => {
+    const { projectDir, graphPath, outputDir } = makeFixtureProject()
+    try {
+      const request = {
+        graphPath,
+        question: 'stalled madar arm with partial output',
+        outputDir,
+        execTemplate: 'mock-runner',
+        baselineMode: 'native_agent',
+        perArmTimeoutSeconds: 0.01,
+      } as Parameters<typeof executeNativeAgentCompare>[0] & { perArmTimeoutSeconds: number }
+
+      const stalledRunner: NativeAgentRunner = async (input) => {
+        if (input.mode === 'baseline') {
+          return {
+            exitCode: 0,
+            stdout: `${JSON.stringify(BASELINE_USAGE_PAYLOAD)}\n`,
+            stderr: '',
+            elapsedMs: 10,
+          }
+        }
+        return await new Promise((resolve) => {
+          input.signal!.addEventListener('abort', () => {
+            resolve({
+              exitCode: 1,
+              stdout: '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"mcp__madar__retrieve"}]}}\npartial trace\n',
+              stderr: 'aborted by timeout\n',
+              elapsedMs: 10,
+            })
+          }, { once: true })
+        })
+      }
+
+      const result = await executeNativeAgentCompare(
+        request,
+        {
+          runner: stalledRunner,
+          now: () => new Date('2026-05-28T00:00:00Z'),
+        },
+      )
+
+      const report = result.reports[0] as NativeAgentCompareReport
+      expect(report.madar.kind).toBe('runner_error')
+      expect((report.madar as { failure_reason?: unknown }).failure_reason).toBe('timed_out')
+      expect((report.madar as { evidence?: unknown }).evidence).toBe('Timed out after 10ms. Partial stdout was saved to the answer artifact.')
+      expect((report.madar as { stderr?: unknown }).stderr).toBe('aborted by timeout')
+      expect(readFileSync(report.paths.madar_answer, 'utf8')).toContain('partial trace')
     } finally {
       rmSync(projectDir, { recursive: true, force: true })
     }

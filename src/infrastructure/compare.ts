@@ -1986,21 +1986,26 @@ export function buildNativeAgentPrompt(
         'Call context_pack first for explain, review, impact, or runtime questions before any raw file or broad repo search.',
         'Inspect evidence.pack_confidence, evidence.coverage, evidence.agent_directive, missing_context, and recommended_first_read before deciding what to do next.',
         'If evidence.agent_directive is answer_from_pack, answer from the pack and stop without raw search.',
-        'Allow at most one focused Madar follow-up before raw search when evidence.agent_directive is verify_one_targeted_file or explore_with_caution.',
+        'Do not call community_overview, graph_summary, get_community, query_graph, or other broad graph-navigation tools for task-specific compare runs.',
+        'Allow at most one focused raw file read or search when evidence.agent_directive is verify_one_targeted_file or explore_with_caution.',
         'Broad raw search requires an explicit missing-context reason grounded in missing_context or coverage gaps.',
+        'If the pack is low confidence or incomplete, answer with a clear caveat after that one focused follow-up instead of continuing to explore.',
       ]
     : [
-        'Call retrieve first for explain or runtime questions before any raw file or broad repo search.',
+        'Call retrieve first for explain or runtime questions before any raw file or broad repo search. If the tool is deferred, use ToolSearch only to select mcp__madar__retrieve.',
         'Inspect matched_nodes, snippets, relationships, and community context before deciding what to do next.',
         'If retrieve already answers the question, answer from the retrieved evidence and stop without raw search.',
-        'Allow at most one focused Madar follow-up before raw search when retrieve leaves a specific gap.',
+        'Do not call community_overview, graph_summary, get_community, query_graph, or other broad graph-navigation tools for task-specific compare runs.',
+        'Allow at most one focused raw file read or search when retrieve leaves a specific gap.',
         'Broad raw search requires an explicit missing-context reason grounded in gaps from the retrieve result.',
+        'If retrieve is low confidence or incomplete, answer with a clear caveat after that one focused follow-up instead of continuing to explore.',
       ]
 
   return [
     'Follow the Madar pack contract exactly.',
     ...profileInstructions,
     'Any broad search before the first Madar call violates the prompt contract.',
+    'Keep the answer concise: key steps, key files, and caveats only.',
     '',
     `Question: ${question}`,
     '',
@@ -3575,13 +3580,21 @@ function runStateDetails(statuses: {
   return details
 }
 
+function timedOutNativeAgentEvidence(timeoutMs: number, result?: NativeAgentRunnerResult): string {
+  const base = `Timed out after ${timeoutMs}ms`
+  if (!result || result.stdout.trim().length === 0) {
+    return base
+  }
+  return `${base}. Partial stdout was saved to the answer artifact.`
+}
+
 async function runNativeAgentArmWithTimeout(
   runner: NativeAgentRunner,
   input: NativeAgentRunnerInput,
   timeoutMs: number,
   heartbeatIntervalMs: number,
   writeStderr: (message: string) => void,
-): Promise<{ kind: 'completed'; result: NativeAgentRunnerResult } | { kind: 'timed_out' }> {
+): Promise<{ kind: 'completed'; result: NativeAgentRunnerResult } | { kind: 'timed_out'; result?: NativeAgentRunnerResult }> {
   const controller = new AbortController()
   const runnerPromise = runner({ ...input, signal: controller.signal })
 
@@ -3609,13 +3622,13 @@ async function runNativeAgentArmWithTimeout(
       // Wait for the runner to settle after abort, but don't wait forever.
       // A 200ms grace allows well-behaved runners to flush state before we finalize.
       Promise.race([
-        runnerPromise.then(() => {}, () => {}),
+        runnerPromise.then((result) => result, () => undefined),
         new Promise<void>((res) => { setTimeout(res, 200) }),
-      ]).then(() => {
+      ]).then((result) => {
         if (!settled) {
           settled = true
           cleanup()
-          resolveExecution({ kind: 'timed_out' } as const)
+          resolveExecution(result ? ({ kind: 'timed_out', result } as const) : ({ kind: 'timed_out' } as const))
         }
       }, () => {})
     }, timeoutMs)
@@ -3627,7 +3640,7 @@ async function runNativeAgentArmWithTimeout(
         }
         settled = true
         cleanup()
-        resolveExecution(timedOut ? ({ kind: 'timed_out' } as const) : ({ kind: 'completed', result } as const))
+        resolveExecution(timedOut ? ({ kind: 'timed_out', result } as const) : ({ kind: 'completed', result } as const))
       },
       (error) => {
         if (settled) {
@@ -4339,6 +4352,7 @@ export async function executeNativeAgentCompare(
       })
       let baselineRun: NativeAgentRunnerResult | null = null
       let baselineTimedOut = false
+      let baselineTimedOutResult: NativeAgentRunnerResult | undefined
       try {
         const baselineExecution = await runNativeAgentArmWithTimeout(
           runner,
@@ -4356,6 +4370,7 @@ export async function executeNativeAgentCompare(
         )
         if (baselineExecution.kind === 'timed_out') {
           baselineTimedOut = true
+          baselineTimedOutResult = baselineExecution.result
         } else {
           baselineRun = baselineExecution.result
         }
@@ -4363,14 +4378,15 @@ export async function executeNativeAgentCompare(
         baselineCrashed = error
       }
       if (baselineTimedOut) {
+        const partialResult = baselineTimedOutResult
         reportShell.baseline = {
           kind: 'runner_error',
-          evidence: `Timed out after ${timeoutMs}ms`,
-          exit_code: null,
-          stderr: null,
+          evidence: timedOutNativeAgentEvidence(timeoutMs, partialResult),
+          exit_code: partialResult?.exitCode ?? null,
+          stderr: partialResult ? sanitizeCompareStderr(partialResult.stderr) : null,
           failure_reason: 'timed_out',
         }
-        ensureCompareAnswerFile(baselineAnswerPath, '')
+        ensureCompareAnswerFile(baselineAnswerPath, partialResult?.stdout ?? '')
         writeNativeAgentRunState(runStatePath, {
           phase: 'baseline_timed_out',
           arm: 'baseline',
@@ -4486,14 +4502,16 @@ export async function executeNativeAgentCompare(
         writeStderr,
         )
         if (madarExecution.kind === 'timed_out') {
+        const partialResult = madarExecution.result
+        madarToolCallCounts = partialResult ? extractNativeAgentToolCallCounts(partialResult.stdout) : null
         reportShell.madar = {
           kind: 'runner_error',
-          evidence: `Timed out after ${timeoutMs}ms`,
-          exit_code: null,
-          stderr: null,
+          evidence: timedOutNativeAgentEvidence(timeoutMs, partialResult),
+          exit_code: partialResult?.exitCode ?? null,
+          stderr: partialResult ? sanitizeCompareStderr(partialResult.stderr) : null,
           failure_reason: 'timed_out',
         }
-        ensureCompareAnswerFile(madarAnswerPath, '')
+        ensureCompareAnswerFile(madarAnswerPath, partialResult?.stdout ?? '')
         writeNativeAgentRunState(runStatePath, {
           phase: 'madar_timed_out',
           arm: 'madar',
