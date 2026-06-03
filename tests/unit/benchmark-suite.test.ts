@@ -106,13 +106,18 @@ function makeCompareResult(input: {
   mkdirSync(input.outputDir, { recursive: true })
   const baselineAnswerPath = join(input.outputDir, 'baseline-answer.txt')
   const madarAnswerPath = join(input.outputDir, 'madar-answer.txt')
-  const promptPath = join(input.outputDir, 'native_agent-prompt.txt')
+  const baselinePromptPath = join(input.outputDir, 'baseline-prompt.txt')
+  const madarPromptPath = join(input.outputDir, 'madar-prompt.txt')
+  const promptPath = madarPromptPath
+  const legacyPromptPath = join(input.outputDir, 'native_agent-prompt.txt')
   const reportPath = join(input.outputDir, 'report.json')
   const shareSafeReportPath = join(input.outputDir, 'report.share-safe.json')
 
   writeFileSync(baselineAnswerPath, 'baseline\n', 'utf8')
   writeFileSync(madarAnswerPath, 'madar\n', 'utf8')
-  writeFileSync(promptPath, `${input.question}\n`, 'utf8')
+  writeFileSync(baselinePromptPath, `${input.question}\n`, 'utf8')
+  writeFileSync(madarPromptPath, `${input.question}\n`, 'utf8')
+  writeFileSync(legacyPromptPath, `${input.question}\n`, 'utf8')
 
   const publishedReport = {
     graph_path: input.graphPath,
@@ -234,6 +239,8 @@ function makeCompareResult(input: {
       share_safe_report: shareSafeReportPath,
       baseline_answer: baselineAnswerPath,
       madar_answer: madarAnswerPath,
+      baseline_prompt: baselinePromptPath,
+      madar_prompt: madarPromptPath,
       prompt_file: promptPath,
     },
     ...(input.workflowOutcome

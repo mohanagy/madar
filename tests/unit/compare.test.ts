@@ -2940,7 +2940,9 @@ describe('compare runtime', () => {
           share_safe_report: '<artifact-root>/report.share-safe.json',
           baseline_answer: '<artifact-root>/baseline-answer.txt',
           madar_answer: '<artifact-root>/madar-answer.txt',
-          prompt_file: '<artifact-root>/native_agent-prompt.txt',
+          baseline_prompt: '<artifact-root>/baseline-prompt.txt',
+          madar_prompt: '<artifact-root>/madar-prompt.txt',
+          prompt_file: '<artifact-root>/madar-prompt.txt',
         }),
         baseline: expect.objectContaining({
           kind: 'answer_only',
