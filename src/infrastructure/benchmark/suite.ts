@@ -19,6 +19,7 @@ import {
   type BenchmarkExpectedEnvironment,
 } from './environment.js'
 import { generateGraph, type GenerateGraphOptions, type GenerateGraphResult } from '../generate.js'
+import { shellEscape } from '../../shared/shell.js'
 
 export type BenchmarkSuiteMode = 'cold' | 'warm' | 'all'
 export type BenchmarkSuiteEntryStatus = 'ready' | 'planned'
@@ -333,15 +334,11 @@ function copyWorkspace(sourceRoot: string, targetRoot: string): void {
   copyWorkspaceForBenchmark(sourceRoot, targetRoot)
 }
 
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", `'\"'\"'`)}'`
-}
-
 function execTemplateForWorkspace(execTemplate: string, workspaceRoot: string): string {
   if (process.platform === 'win32') {
-    return `Set-Location -LiteralPath ${shellQuote(workspaceRoot)}; ${execTemplate}`
+    return `cd /d ${shellEscape(workspaceRoot, process.platform)} && ${execTemplate}`
   }
-  return `cd ${shellQuote(workspaceRoot)} && ${execTemplate}`
+  return `cd ${shellEscape(workspaceRoot, process.platform)} && ${execTemplate}`
 }
 
 function prepareBenchmarkWorkspace(

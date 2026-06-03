@@ -99,6 +99,8 @@ madar compare "how does password reset request enqueue the reset email" \
 
 This does **not** measure model quality. It is a safe local smoke check that proves `compare` can build both prompts, isolate one bounded raw-context baseline against one compiled madar pack rendered from the same explain-pack core as `madar pack --task explain`, and save the artifact bundle without requiring a hosted model. Real model-backed compare runs are optional, and compare or benchmark flows only spend paid model tokens once you replace the local smoke-check runner with a real CLI model command.
 
+On Windows, use `--exec "type {prompt_file}"` for the same smoke check because `compare` runs `--exec` through `cmd.exe`.
+
 ## Expected output
 
 - `try` should print one human-readable local result plus a recommended install command
@@ -118,7 +120,7 @@ This does **not** measure model quality. It is a safe local smoke check that pro
 - **`graph.json` missing**: rerun `madar generate . --no-html` before `pack`, `prompt`, or `compare`.
 - **`doctor` or `status` says the install is missing**: rerun your chosen `madar <agent> install` command from the sample workspace root, then rerun the verification commands for Claude, Cursor, Gemini, or Copilot.
 - **Need stronger framework-aware hints?** Regenerate with `madar generate . --spi --no-html` if your real workspace relies on Next.js App Router, NestJS, Prisma, or similar framework-specific boundaries.
-- **`compare` looks noisy**: the `cat {prompt_file}` runner is only a local smoke check. Use a real terminal model runner later if you want meaningful answer comparisons.
+- **`compare` looks noisy**: the `cat {prompt_file}` runner (or `type {prompt_file}` on Windows) is only a local smoke check. Use a real terminal model runner later if you want meaningful answer comparisons.
 - **Need more questions?** Start with `examples/sample-workspace/prompt-examples.json`.
 
 ## Optional next steps

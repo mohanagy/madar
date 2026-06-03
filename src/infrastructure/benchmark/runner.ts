@@ -7,6 +7,7 @@ import type { ContextSessionDiagnostics, ContextSessionState } from '../../contr
 import { type RetrieveResult, retrieveContext } from '../../runtime/retrieve.js'
 import { QUERY_TOKEN_ESTIMATOR } from '../../runtime/serve.js'
 import { toShareSafeArtifactPath } from '../../shared/share-safe-artifacts.js'
+import { resolveShellCommand } from '../../shared/shell.js'
 import { validateGraphOutputPath } from '../../shared/security.js'
 import { buildMadarPromptPack, expandCompareExecTemplate } from '../compare.js'
 import { parsePromptRunnerOutput, type PromptRunnerUsage } from '../prompt-runner.js'
@@ -124,16 +125,7 @@ async function defaultBenchmarkPromptRunner(execution: BenchmarkPromptExecution)
   const startedAt = Date.now()
 
   return await new Promise<BenchmarkPromptRunnerResult>((resolveExecution, rejectExecution) => {
-    const command =
-      process.platform === 'win32'
-        ? {
-            file: 'powershell.exe',
-            args: ['-NoProfile', '-Command', execution.command],
-          }
-        : {
-            file: '/bin/sh',
-            args: ['-lc', execution.command],
-          }
+    const command = resolveShellCommand(execution.command)
     const child = spawn(command.file, command.args, {
       shell: false,
       stdio: ['ignore', 'pipe', 'pipe'],

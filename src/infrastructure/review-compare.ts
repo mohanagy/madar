@@ -10,6 +10,7 @@ import {
   toShareSafeArtifactPath,
   type ShareSafePathRoots,
 } from '../shared/share-safe-artifacts.js'
+import { resolveShellCommand, shellEscape } from '../shared/shell.js'
 import { findNearestExistingAncestor, validateGraphPath } from '../shared/security.js'
 import { buildContextPrompt } from './context-prompt.js'
 
@@ -209,13 +210,6 @@ function createOutputRoot(outputDir: string, date: Date): string {
   return candidate
 }
 
-function shellEscape(value: string, platform: NodeJS.Platform = process.platform): string {
-  if (platform === 'win32') {
-    return `'${value.replaceAll("'", "''")}'`
-  }
-  return `'${value.replaceAll("'", `'\"'\"'`)}'`
-}
-
 function expandExecTemplate(
   template: string,
   values: Pick<ReviewCompareExecution, 'promptFile' | 'mode' | 'outputFile'>,
@@ -239,10 +233,7 @@ function expandExecTemplate(
 async function defaultRunner(execution: ReviewCompareExecution): Promise<ReviewCompareRunnerResult> {
   const startedAt = Date.now()
   return await new Promise<ReviewCompareRunnerResult>((resolveExecution, rejectExecution) => {
-    const command =
-      process.platform === 'win32'
-        ? { file: 'powershell.exe', args: ['-NoProfile', '-Command', execution.command] }
-        : { file: '/bin/sh', args: ['-lc', execution.command] }
+    const command = resolveShellCommand(execution.command)
     const child = spawn(command.file, command.args, { shell: false, stdio: ['ignore', 'pipe', 'pipe'] })
 
     let stdout = ''

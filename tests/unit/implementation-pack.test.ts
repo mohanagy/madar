@@ -801,8 +801,12 @@ describe('buildImplementationPackGuidance validation commands', () => {
       taskIntent: 'implement',
     })
 
+    const expectedQuotedTestPath = process.platform === 'win32'
+      ? 'npm run test:run -- "tests/unit/login flow $(touch pwned).test.ts"'
+      : "npm run test:run -- 'tests/unit/login flow $(touch pwned).test.ts'"
+
     expect(guidance.validation_commands).toContain(
-      "npm run test:run -- 'tests/unit/login flow $(touch pwned).test.ts'",
+      expectedQuotedTestPath,
     )
   })
 

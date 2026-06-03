@@ -634,7 +634,7 @@ describe('runBenchmark', () => {
         'what is the main entry point',
       ])
       expect(executions.map((execution) => execution.mode)).toEqual(['madar', 'madar'])
-      expect(executions[0]?.command).toContain("--mode 'madar'")
+      expect(executions[0]?.command).toMatch(/--mode ['"]madar['"]/)
       expect(readFileSync(executions[0]!.promptFile, 'utf8')).toContain('Retrieved graph context:')
       expect(readFileSync(executions[0]!.promptFile, 'utf8')).toContain('Question:\nhow does authentication work')
       expect(readFileSync(executions[1]!.promptFile, 'utf8')).toContain('Session delta:')
