@@ -817,20 +817,25 @@ describe('install helpers', () => {
     })
   })
 
-  it('pins the Claude MCP server package to the installed madar version', () => {
+  it('writes the Claude MCP server as a bare madar launcher without a pinned package version', () => {
     withTempDir((projectDir) => {
       claudeInstall(projectDir)
 
       const mcpConfig = JSON.parse(readFileSync(join(projectDir, '.mcp.json'), 'utf8')) as {
         mcpServers?: {
           'madar'?: {
+            command?: string
             args?: string[]
           }
         }
       }
-      const packageJson = JSON.parse(readFileSync('package.json', 'utf8')) as { version: string }
 
-      expect(mcpConfig.mcpServers?.['madar']?.args?.[1]).toBe(`@lubab/madar@${packageJson.version}`)
+      expect(mcpConfig.mcpServers?.['madar']?.command).toBe('madar')
+      expect(mcpConfig.mcpServers?.['madar']?.args).toEqual([
+        'serve',
+        '--stdio',
+        join(projectDir, 'out', 'graph.json'),
+      ])
     })
   })
 
@@ -908,6 +913,28 @@ describe('install helpers', () => {
       }
 
       expect(mcpConfig.mcpServers?.['madar']?.env?.MADAR_TOOL_PROFILE).toBe('core')
+    })
+  })
+
+  it('writes the Cursor MCP server as a bare madar launcher without a pinned package version', () => {
+    withTempDir((projectDir) => {
+      cursorInstall(projectDir)
+
+      const mcpConfig = JSON.parse(readFileSync(join(projectDir, '.cursor', 'mcp.json'), 'utf8')) as {
+        mcpServers?: {
+          'madar'?: {
+            command?: string
+            args?: string[]
+          }
+        }
+      }
+
+      expect(mcpConfig.mcpServers?.['madar']?.command).toBe('madar')
+      expect(mcpConfig.mcpServers?.['madar']?.args).toEqual([
+        'serve',
+        '--stdio',
+        join(projectDir, 'out', 'graph.json'),
+      ])
     })
   })
 
