@@ -133,7 +133,8 @@ See the [`0.27.9-next.0` changelog entry](https://github.com/mohanagy/madar/blob
 
 Recent highlights:
 
-- `0.27.9-next.0` adds a proof-first launch checklist so prerelease/stable distribution work starts from a dated receipt, explicit channel tracker, and benchmark-backed launch draft instead of generic launch copy.
+- `0.27.9-next.0` is the current next-track adoption release: it bundles the public benchmark suite, one-command `madar try` proof flow, opt-in funnel telemetry, verified agent quickstarts, design-partner loop, and launch checklist from issues #469-#474.
+- `0.27.9-next.0` also adds scoped graph freshness and stale-context guarantees across `madar pack`, `madar prompt`, `madar handoff`, `madar doctor`, and `madar status`, backed by the tightened git/diff freshness model from #477 and #479.
 - `0.27.8` refactors the README into a shorter npm-facing landing page and moves long-form Pack Schema, context-pack, MCP, installer, command, and discovery-rule details into dedicated docs.
 - `0.27.7` added the checked-in federation flagship proof: a reproducible frontend/backend/shared fixture plus a synthetic federation receipt.
 - Roadmap docs now cover design-partner workflow loops, plugin distribution channels, and language-expansion decisions.

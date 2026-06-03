@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
@@ -2967,6 +2967,19 @@ async function runShellCommand(command: string, options: { cwd?: string; signal?
 
     const handleAbort = () => {
       if (!useProcessGroup || child.pid === undefined) {
+        if (!useProcessGroup && child.pid !== undefined) {
+          try {
+            spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
+              shell: false,
+              stdio: 'ignore',
+              windowsHide: true,
+            })
+            return
+          } catch {
+            child.kill()
+            return
+          }
+        }
         child.kill()
         return
       }
