@@ -9,6 +9,7 @@ Use this checklist when preparing a new `madar` release. It is intentionally man
 3. Update `CHANGELOG.md` with the user-visible changes in the release.
 4. Make sure any linked docs, examples, install flows, and `docs/mcp-registry/server.json` reflect the new behavior.
 5. Any new public claim requires a reproducible artifact under `docs/benchmarks/suite/` and a matching update to `docs/claims-and-evidence.md` before the README or release notes can say it publicly.
+6. If this release will be announced outside the repo, copy the proof block and channel tracker from [`docs/launch-checklist.md`](./launch-checklist.md) into the release PR, release notes draft, or other working notes before drafting external copy.
 
 ## 2. Run the required verification commands
 
@@ -58,6 +59,7 @@ After the verification steps are green:
    If the release environment does not support npm provenance attestations, rerun the same command without `--provenance`.
 3. Create the matching Git tag if `npm version` did not already do so in your workflow.
 4. Draft or publish the GitHub release notes from the changelog entry.
+5. Before posting on npm/GitHub directories, social/news sites, or videos/blogs, complete the copied proof-first launch checklist from [`docs/launch-checklist.md`](./launch-checklist.md) so every public surface starts from a dated receipt plus caveats.
 
 ## 5. Post-release verification
 
@@ -75,3 +77,4 @@ madar codex install
 
 3. Verify the README, changelog, and install docs still describe the released behavior accurately.
 4. If anything is wrong, document the gap immediately and prepare a follow-up patch release instead of silently relying on tribal knowledge.
+5. Record the completed channel statuses in the release PR, release notes draft, or other working notes you copied from [`docs/launch-checklist.md`](./launch-checklist.md) so distribution work stays explicit without mutating the canonical template.
