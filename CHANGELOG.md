@@ -2,6 +2,12 @@
 
 All notable changes to the TypeScript package will be documented in this file.
 
+## [0.27.9-next.2] - 2026-06-03
+
+### Fixed
+
+- **Windows cmd.exe command-line length limit is now respected**: the generated `UserPromptSubmit` hook has been aggressively minified to fit within Windows cmd.exe's 8,191 character limit, resolving the `unexpected eof while looking for matching` shell parse failure on Windows systems.
+
 ## [0.27.9-next.1] - 2026-06-03
 
 ### Fixed
