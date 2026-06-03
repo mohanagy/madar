@@ -2,6 +2,12 @@
 
 All notable changes to the TypeScript package will be documented in this file.
 
+## [0.27.9-next.4] - 2026-06-03
+
+### Fixed
+
+- **Native-agent compare now keeps baseline and Madar prompt artifacts separate**: compare runs now write dedicated baseline and Madar prompt files, record both paths in `report.json`, and preserve the legacy `prompt_file` field as the Madar prompt so existing consumers stay compatible while prompt inspection becomes clearer and debuggable.
+
 ## [0.27.9-next.3] - 2026-06-03
 
 ### Fixed
