@@ -2009,6 +2009,38 @@ export function buildNativeAgentPrompt(
   ].join('\n')
 }
 
+function buildNativeAgentBaselinePrompt(
+  question: string,
+  options: {
+    task?: ContextPackTaskKind
+  } = {},
+): string {
+  if (options.task === 'implement') {
+    return [
+      'Implement the requested change using normal repository evidence.',
+      'Do not call Madar-specific tools or assume a Madar context pack is available.',
+      'Start with focused repository inspection, edit only files justified by the code you inspect, and run relevant validation before concluding.',
+      '',
+      `Question: ${question}`,
+      '',
+      'Answer:',
+      '',
+    ].join('\n')
+  }
+
+  return [
+    'Answer the question from normal repository evidence.',
+    'Do not call Madar-specific tools or assume a Madar context pack is available.',
+    'Start with focused repository inspection. Avoid broad repo-wide search unless a focused search does not find the needed files.',
+    'Name the key files and steps that support the answer.',
+    '',
+    `Question: ${question}`,
+    '',
+    'Answer:',
+    '',
+  ].join('\n')
+}
+
 export function resolveCompareQuestions(options: Pick<GenerateCompareArtifactsInput, 'question' | 'questionsPath' | 'limit'>): string[] {
   if (options.question !== undefined && options.question !== null && options.questionsPath !== undefined && options.questionsPath !== null) {
     throw new Error('Compare runtime accepts either a single question or a questions path, but not both.')
@@ -2723,6 +2755,8 @@ export interface NativeAgentCompareReport {
     share_safe_report: string
     baseline_answer: string
     madar_answer: string
+    baseline_prompt: string
+    madar_prompt: string
     prompt_file: string
   }
 }
@@ -4152,12 +4186,18 @@ export async function executeNativeAgentCompare(
           })
         : undefined
 
-    const promptFile = join(questionDir, 'native_agent-prompt.txt')
-    writeFileSync(promptFile, buildNativeAgentPrompt(question, {
+    const baselinePromptFile = join(questionDir, 'baseline-prompt.txt')
+    const madarPromptFile = join(questionDir, 'madar-prompt.txt')
+    const legacyPromptFile = join(questionDir, 'native_agent-prompt.txt')
+    const baselinePrompt = buildNativeAgentBaselinePrompt(question, { task })
+    const madarPrompt = buildNativeAgentPrompt(question, {
       profile: installCheck.tool_profile,
       task,
       ...(implementationGuidance ? { implementation: implementationGuidance } : {}),
-    }), 'utf8')
+    })
+    writeFileSync(baselinePromptFile, baselinePrompt, 'utf8')
+    writeFileSync(madarPromptFile, madarPrompt, 'utf8')
+    writeFileSync(legacyPromptFile, madarPrompt, 'utf8')
     const baselineAnswerPath = answerFilePath(questionDir, 'baseline')
     const madarAnswerPath = answerFilePath(questionDir, 'madar')
     const reportPath = join(questionDir, 'report.json')
@@ -4209,7 +4249,9 @@ export async function executeNativeAgentCompare(
         share_safe_report: shareSafeReportPath,
         baseline_answer: baselineAnswerPath,
         madar_answer: madarAnswerPath,
-        prompt_file: promptFile,
+        baseline_prompt: baselinePromptFile,
+        madar_prompt: madarPromptFile,
+        prompt_file: madarPromptFile,
       },
     }
     if (implementationGuidance) {
@@ -4232,7 +4274,8 @@ export async function executeNativeAgentCompare(
     }
     return {
       question,
-      promptFile,
+      baselinePromptFile,
+      madarPromptFile,
       baselineAnswerPath,
       madarAnswerPath,
       reportPath,
@@ -4258,7 +4301,8 @@ export async function executeNativeAgentCompare(
   for (const entry of preparedQuestions) {
     const {
       question,
-      promptFile,
+      baselinePromptFile,
+      madarPromptFile,
       baselineAnswerPath,
       madarAnswerPath,
       runStatePath,
@@ -4288,7 +4332,7 @@ export async function executeNativeAgentCompare(
       try {
         snapshot = snapshotMadarArtifacts(baselineWorkspace?.workspaceRoot ?? projectRoot, stamp)
       const baselineCommand = expandCompareExecTemplate(input.execTemplate, {
-        promptFile,
+        promptFile: baselinePromptFile,
         question,
         mode: 'baseline',
         outputFile: baselineAnswerPath,
@@ -4301,7 +4345,7 @@ export async function executeNativeAgentCompare(
           {
             mode: 'baseline',
             question,
-            promptFile,
+            promptFile: baselinePromptFile,
             outputFile: baselineAnswerPath,
             command: baselineCommand,
             ...(baselineWorkspace ? { cwd: baselineWorkspace.workspaceRoot, workspaceRoot: baselineWorkspace.workspaceRoot } : {}),
@@ -4419,7 +4463,7 @@ export async function executeNativeAgentCompare(
       ...runStateDetails({ baseline: reportShell.baseline }),
       })
       const madarCommand = expandCompareExecTemplate(input.execTemplate, {
-      promptFile,
+      promptFile: madarPromptFile,
       question,
       mode: 'madar',
       outputFile: madarAnswerPath,
@@ -4432,7 +4476,7 @@ export async function executeNativeAgentCompare(
         {
           mode: 'madar',
           question,
-          promptFile,
+          promptFile: madarPromptFile,
           outputFile: madarAnswerPath,
           command: madarCommand,
           ...(madarWorkspace ? { cwd: madarWorkspace.workspaceRoot, workspaceRoot: madarWorkspace.workspaceRoot } : {}),
@@ -4679,6 +4723,8 @@ function writeNativeAgentReport(report: NativeAgentCompareReport): void {
       share_safe_report: portablePath(report.paths.share_safe_report),
       baseline_answer: portablePath(report.paths.baseline_answer),
       madar_answer: portablePath(report.paths.madar_answer),
+      baseline_prompt: portablePath(report.paths.baseline_prompt),
+      madar_prompt: portablePath(report.paths.madar_prompt),
       prompt_file: portablePath(report.paths.prompt_file),
     },
   }
