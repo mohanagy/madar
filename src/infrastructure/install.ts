@@ -11,7 +11,6 @@ import {
 import { buildPromptApplicabilityHookScript } from '../runtime/task-applicability.js'
 import {
   findPackageRoot as resolvePackageRoot,
-  readPackageName as resolvePackageName,
   readPackageVersion as resolvePackageVersion,
 } from '../shared/package-metadata.js'
 
@@ -1468,10 +1467,6 @@ function readPackageVersion(packageRoot: string): string {
   return resolvePackageVersion(packageRoot)
 }
 
-function readPackageName(packageRoot: string): string {
-  return resolvePackageName(packageRoot)
-}
-
 function readPackageCliDeclaration(packageRoot = findPackageRoot()): { packageJsonPath: string, cliPath: string | undefined } {
   const packageJsonPath = join(packageRoot, 'package.json')
   const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'))
@@ -1587,20 +1582,9 @@ const MCP_CONFIG_PATHS: Record<McpConfigTarget, string> = {
   copilot: join('.vscode', 'mcp.json'),
 }
 
-function installPackageSpecifier(packageRoot = findPackageRoot()): string {
-  const packageName = readPackageName(packageRoot)
-  const version = readPackageVersion(packageRoot)
-  if (packageName === 'unknown' || version === 'unknown') {
-    throw new Error(`Could not determine package name and version from ${join(packageRoot, 'package.json')}`)
-  }
-
-  return `${packageName}@${version}`
-}
-
 function installMcpServer(
   projectDir: string,
   target: McpConfigTarget = 'claude',
-  nodePlatform = process.platform,
   options: McpInstallOptions = {},
   packageRoot = findPackageRoot(),
 ): string {
@@ -1610,19 +1594,15 @@ function installMcpServer(
 
   const graphPath = join(projectDir, 'out', 'graph.json')
   const isVscode = target === 'copilot'
-  // Use npx.cmd on Windows so MCP server starts without a shell wrapper.
-  // --yes skips the interactive install prompt that hangs in stdio mode.
-  // Scoped name ensures npx resolves the package on first run.
+  const cliArgs = ['serve', '--stdio', graphPath]
   // VS Code uses "servers" key, Claude/Cursor use "mcpServers"
   const serversKey = isVscode ? 'servers' : 'mcpServers'
   const mcpServers = ensureRecord(mcpConfig, serversKey)
   const existed = isRecord(mcpServers[SKILL_SLUG])
 
-  const npxCommand = nodePlatform === 'win32' ? 'npx.cmd' : 'npx'
-  const npxArgs = ['--yes', installPackageSpecifier(), 'serve', '--stdio', graphPath]
   const directCliPath = isVscode ? findPackageCliPath(packageRoot) : undefined
-  const command = directCliPath ? process.execPath : npxCommand
-  const args = directCliPath ? [directCliPath, 'serve', '--stdio', graphPath] : npxArgs
+  const command = directCliPath ? process.execPath : PRIMARY_CLI_BIN_NAME
+  const args = directCliPath ? [directCliPath, ...cliArgs] : cliArgs
   // Default to the lean MCP tool surface ("core" = 6 tools). Reduces cache_creation
   // overhead per session vs. advertising all tools. Users can opt into the full
   // 25-tool surface by setting MADAR_TOOL_PROFILE=full in this env block.
@@ -1638,7 +1618,7 @@ function installMcpServer(
     : { MADAR_TOOL_PROFILE: 'core', ...existingEnv }
   const serverConfig = isVscode
     ? { type: 'stdio', command, args, env }
-    : { command: npxCommand, args: npxArgs, env }
+    : { command, args, env }
 
   mcpServers[SKILL_SLUG] = serverConfig
   writeJson(mcpJsonPath, mcpConfig)
@@ -2050,7 +2030,7 @@ export function geminiUninstall(projectDir = '.', options: Pick<InstallSkillOpti
 }
 
 export function installCopilotMcp(projectDir = '.', options: McpInstallOptions = {}, packageRoot = findPackageRoot()): string {
-  const message = installMcpServer(resolve(projectDir), 'copilot', process.platform, options, resolve(packageRoot))
+  const message = installMcpServer(resolve(projectDir), 'copilot', options, resolve(packageRoot))
   if (options.profile === 'strict') {
     return `${message}\n\nGitHub Copilot will now use the madar strict compact MCP profile: call context_pack once, ${strictContextPackStopRule(false)}, ${strictContextPackNoBroadExplorationRule(false)}, ${strictContextPackExpandRule(false)}, and ${strictGraphReportFallbackRule(false)}.`
   }
@@ -2082,7 +2062,7 @@ export function cursorInstall(projectDir = '.', options: McpInstallOptions = {})
     messages.push(`madar Cursor rule written to ${rulePath}`)
   }
 
-  messages.push(installMcpServer(resolvedProjectDir, 'cursor', process.platform, options))
+  messages.push(installMcpServer(resolvedProjectDir, 'cursor', options))
   if (options.profile === 'strict') {
     messages.push('', 'Cursor will now use the madar strict compact MCP profile:', `call context_pack once, ${strictContextPackStopRule(false)}, ${strictContextPackNoBroadExplorationRule(false)}, ${strictContextPackExpandRule(false)}, and ${strictGraphReportFallbackRule(false)}.`)
   }
@@ -2114,7 +2094,7 @@ export function claudeInstall(projectDir = '.', options: McpInstallOptions = {})
   const messages = [
     writeSection(join(resolvedProjectDir, 'CLAUDE.md'), claudeMdSection(options.profile)),
     installClaudeHook(resolvedProjectDir, options.profile),
-    installMcpServer(resolvedProjectDir, 'claude', process.platform, options),
+    installMcpServer(resolvedProjectDir, 'claude', options),
   ]
   if (options.profile === 'strict') {
     messages.push('', 'Claude Code will now use the madar strict compact MCP profile:', `call context_pack once, ${strictContextPackStopRule(false)}, ${strictContextPackNoBroadExplorationRule(false)}, ${strictContextPackExpandRule(false)}, and ${strictGraphReportFallbackRule(false)}.`)
