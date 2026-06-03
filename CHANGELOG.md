@@ -2,6 +2,12 @@
 
 All notable changes to the TypeScript package will be documented in this file.
 
+## [0.27.9-next.6] - 2026-06-04
+
+### Fixed
+
+- **Windows native-agent `--exec` commands now run under the expected shell contract**: compare, benchmark, and review native-agent runners now use `cmd.exe` on Windows with cmd-compatible quoting and workspace wrapping, so cmd-style exec templates such as `type {prompt_file} | claude -p --output-format stream-json --verbose` no longer hang the Madar arm behind a PowerShell mismatch.
+
 ## [0.27.9-next.5] - 2026-06-04
 
 ### Fixed
