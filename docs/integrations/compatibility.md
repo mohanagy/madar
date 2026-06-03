@@ -2,7 +2,7 @@
 
 This guide is the user-facing install matrix for the current CLI contract. It focuses on the commands users actually run, the files each path writes, how to verify the result, and the most important behavior or limitation to know before choosing a surface.
 
-If you want one copy/paste walkthrough per main agent target, use the [agent quickstarts](https://github.com/mohanagy/madar/blob/main/docs/tutorials/agent-quickstarts.md) after you pick a row from this matrix.
+If you want one copy/paste walkthrough per main agent target, use the [agent quickstarts](https://github.com/mohanagy/madar/blob/next/docs/tutorials/agent-quickstarts.md) after you pick a row from this matrix.
 
 ## Dedicated project install commands
 

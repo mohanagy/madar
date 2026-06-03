@@ -202,7 +202,7 @@ describe('context-prompt-command', () => {
       await expect(runContextPromptCommand({
         prompt: 'how does auth work',
         provider: 'claude',
-        graphPath: 'out/graph.json',
+        graphPath: 'out/missing/context-prompt-graph.json',
         requireFreshGraph: true,
       }, dependencies)).rejects.toThrow(/require-fresh-graph|fresh graph/i)
       expect(dependencies.retrieveContext).not.toHaveBeenCalled()

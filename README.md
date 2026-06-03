@@ -10,7 +10,7 @@ Madar is deterministic local context compilation. It complements agents and IDE 
 [![node >=20](https://img.shields.io/badge/node-%E2%89%A520-3c873a)](https://nodejs.org/)
 [![Local first](https://img.shields.io/badge/local--first-no%20cloud%20required-0f766e)](#trust--limitations)
 [![No API keys](https://img.shields.io/badge/API%20keys-none%20required-111827)](#trust--limitations)
-[![license MIT](https://img.shields.io/badge/license-MIT-16a34a)](https://github.com/mohanagy/madar/blob/main/LICENSE)
+[![license MIT](https://img.shields.io/badge/license-MIT-16a34a)](https://github.com/mohanagy/madar/blob/next/LICENSE)
 
 ---
 
@@ -38,7 +38,7 @@ Madar is the current project name and package. If you arrived from older `graphi
 | **Repomix** | Exporting or sharing a broad repo snapshot/prompt bundle | Not a task-aware local retrieval layer, PR-impact surface, or agent install flow |
 | **Context7** | Pulling external library/framework docs into prompts | Not a local codebase analysis, PR-impact, or graph-backed repository context tool |
 
-Capability/scope summary only. See the [claims-and-evidence map](https://github.com/mohanagy/madar/blob/main/docs/claims-and-evidence.md#competitive-positioning) before turning this into a stronger claim.
+Capability/scope summary only. See the [claims-and-evidence map](https://github.com/mohanagy/madar/blob/next/docs/claims-and-evidence.md#competitive-positioning) before turning this into a stronger claim.
 
 ---
 
@@ -63,9 +63,9 @@ madar generate . --spi
 
 Now ask your agent something about the codebase. It can start with one bounded `retrieve` or `context_pack` call, get labeled snippets with file paths and community context, and then decide whether focused follow-up reads are still needed.
 
-Want a tiny reproducible workspace? Start with [`examples/sample-workspace/`](https://github.com/mohanagy/madar/tree/main/examples/sample-workspace/) and the [sample workspace tutorial](https://github.com/mohanagy/madar/blob/main/docs/tutorials/sample-workspace.md).
+Want a tiny reproducible workspace? Start with [`examples/sample-workspace/`](https://github.com/mohanagy/madar/tree/next/examples/sample-workspace/) and the [sample workspace tutorial](https://github.com/mohanagy/madar/blob/next/docs/tutorials/sample-workspace.md).
 
-Want the broader first-run walkthrough with install verification, one pack, and a safe compare smoke check? Use the [getting started tutorial](https://github.com/mohanagy/madar/blob/main/docs/tutorials/getting-started.md).
+Want the broader first-run walkthrough with install verification, one pack, and a safe compare smoke check? Use the [getting started tutorial](https://github.com/mohanagy/madar/blob/next/docs/tutorials/getting-started.md).
 
 ---
 
@@ -83,7 +83,7 @@ Pick one install target, then rerun `madar doctor` and `madar status` so the fir
 
 After you generate `out/graph.json`, `madar doctor` and `madar status` check the local install wiring for Claude Code, Cursor, Gemini CLI, and GitHub Copilot CLI. They also lint the AGENTS-based Madar instruction profiles for Codex CLI, OpenCode, and Aider; if a profile drifts, they mark the agent as `partial` and suggest the matching reinstall command.
 
-Install details, generated files, profiles, uninstall behavior, and verified copy/paste quickstarts live in the [CLI and MCP reference](https://github.com/mohanagy/madar/blob/main/docs/reference/cli-and-mcp.md), [compatibility guide](https://github.com/mohanagy/madar/blob/main/docs/integrations/compatibility.md), [agent quickstarts](https://github.com/mohanagy/madar/blob/main/docs/tutorials/agent-quickstarts.md), and the [launch checklist](https://github.com/mohanagy/madar/blob/main/docs/launch-checklist.md) for proof-first release/distribution copy.
+Install details, generated files, profiles, uninstall behavior, and verified copy/paste quickstarts live in the [CLI and MCP reference](https://github.com/mohanagy/madar/blob/next/docs/reference/cli-and-mcp.md), [compatibility guide](https://github.com/mohanagy/madar/blob/next/docs/integrations/compatibility.md), [agent quickstarts](https://github.com/mohanagy/madar/blob/next/docs/tutorials/agent-quickstarts.md), and the [launch checklist](https://github.com/mohanagy/madar/blob/next/docs/launch-checklist.md) for proof-first release/distribution copy.
 
 **Without MCP**, compile a prompt or pack directly:
 
@@ -123,31 +123,32 @@ madar telemetry report
 MADAR_ENABLE_TELEMETRY=1 madar generate .
 ```
 
-The current telemetry model is local-first and source-safe. It records coarse funnel events for `install`, `generate`, `pack`, `prompt`, MCP `context_pack`, `doctor`, `status`, and `compare`, plus command stage, version, OS, Node major version, and optional coarse buckets such as agent target, repo size, graph size, SPI enabled, failure bucket, and status bucket. It does **not** record prompt text, answer text, source paths, source content, or repository names. Full controls: [`docs/telemetry.md`](https://github.com/mohanagy/madar/blob/main/docs/telemetry.md).
+The current telemetry model is local-first and source-safe. It records coarse funnel events for `install`, `generate`, `pack`, `prompt`, MCP `context_pack`, `doctor`, `status`, and `compare`, plus command stage, version, OS, Node major version, and optional coarse buckets such as agent target, repo size, graph size, SPI enabled, failure bucket, and status bucket. It does **not** record prompt text, answer text, source paths, source content, or repository names. Full controls: [`docs/telemetry.md`](https://github.com/mohanagy/madar/blob/next/docs/telemetry.md).
 
 ---
 
 ## What's New
 
-See the [`0.27.8` changelog entry](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md#0278---2026-06-02) for the full release notes.
+See the [`0.27.9-next.0` changelog entry](https://github.com/mohanagy/madar/blob/next/CHANGELOG.md#0279-next0---2026-06-03) for the full release notes.
 
 Recent highlights:
 
+- `0.27.9-next.0` adds a proof-first launch checklist so prerelease/stable distribution work starts from a dated receipt, explicit channel tracker, and benchmark-backed launch draft instead of generic launch copy.
 - `0.27.8` refactors the README into a shorter npm-facing landing page and moves long-form Pack Schema, context-pack, MCP, installer, command, and discovery-rule details into dedicated docs.
 - `0.27.7` added the checked-in federation flagship proof: a reproducible frontend/backend/shared fixture plus a synthetic federation receipt.
 - Roadmap docs now cover design-partner workflow loops, plugin distribution channels, and language-expansion decisions.
 - The larger **What's new in 0.23.0** additions remain central: `madar summary`, the core MCP `graph_summary` tool, runtime `execution_slice` output, share-safe `report.share-safe.json` compare artifacts, and `compare --baseline-mode pack_only`.
-- Public proof workflows are organized under [`docs/proof-workflows.md`](https://github.com/mohanagy/madar/blob/main/docs/proof-workflows.md), [`docs/claims-and-evidence.md`](https://github.com/mohanagy/madar/blob/main/docs/claims-and-evidence.md), [`docs/benchmarks/suite/`](https://github.com/mohanagy/madar/tree/main/docs/benchmarks/suite/), and [`docs/launch-checklist.md`](https://github.com/mohanagy/madar/blob/main/docs/launch-checklist.md).
+- Public proof workflows are organized under [`docs/proof-workflows.md`](https://github.com/mohanagy/madar/blob/next/docs/proof-workflows.md), [`docs/claims-and-evidence.md`](https://github.com/mohanagy/madar/blob/next/docs/claims-and-evidence.md), [`docs/benchmarks/suite/`](https://github.com/mohanagy/madar/tree/next/docs/benchmarks/suite/), and [`docs/launch-checklist.md`](https://github.com/mohanagy/madar/blob/next/docs/launch-checklist.md).
 
 ---
 
 ## When To Use `--spi`
 
-`--spi` is still opt-in in `0.27.8`. Use it when your repo is framework-heavy TypeScript/JavaScript and you want extra framework-shaped metadata plus disk cache behavior.
+`--spi` is still opt-in in `0.27.9-next.0`. Use it when your repo is framework-heavy TypeScript/JavaScript and you want extra framework-shaped metadata plus disk cache behavior.
 
 It is usually worth it for NestJS, Next.js App Router, Prisma, tRPC, Hono, Fastify, and similar repos where users ask storage-oriented prompts, client/server boundary questions, or request-flow questions. The default pipeline is still fine for simpler repos, non-JS/TS workspaces, or first runs where you do not need the extra framework detail yet.
 
-More detail: [context packs and task evidence](https://github.com/mohanagy/madar/blob/main/docs/concepts/context-packs.md).
+More detail: [context packs and task evidence](https://github.com/mohanagy/madar/blob/next/docs/concepts/context-packs.md).
 
 ---
 
@@ -176,7 +177,7 @@ Runtime-generation prompts stay compact: pack shaping follows the strongest back
 
 These seven MCP tools ship in the default core profile: `retrieve`, `pr_impact`, `impact`, `call_chain`, `community_overview`, `graph_stats`, and `graph_summary`. The full surface is 26 tools, opt-in via `MADAR_TOOL_PROFILE=full` or `--profile full`, including `context_expand` and `get_neighbors`.
 
-Full command and MCP reference: [`docs/reference/cli-and-mcp.md`](https://github.com/mohanagy/madar/blob/main/docs/reference/cli-and-mcp.md).
+Full command and MCP reference: [`docs/reference/cli-and-mcp.md`](https://github.com/mohanagy/madar/blob/next/docs/reference/cli-and-mcp.md).
 
 ---
 
@@ -194,11 +195,11 @@ The current headline proof is one verified GoValidate backend service cell for t
 
 This is one cell: one prompt, one repo, one agent runtime, one verified install path. Your results will vary by repo shape, prompt type, agent runtime, and other installed tools. Published benchmark cells run in isolation mode. Your local numbers may differ if your Claude Code config differs.
 
-Current evidence also includes a public benchmark suite with per-repo spread, initial fixture-proxy implement/review/impact rows, and workflow-outcome receipts. There is still no single-number cross-repo headline. Mixed evidence and counterexamples are tracked openly, including [`docs/benchmarks/2026-05-25-founder-command-center-auth-flow/`](https://github.com/mohanagy/madar/tree/main/docs/benchmarks/2026-05-25-founder-command-center-auth-flow/).
+Current evidence also includes a public benchmark suite with per-repo spread, initial fixture-proxy implement/review/impact rows, and workflow-outcome receipts. There is still no single-number cross-repo headline. Mixed evidence and counterexamples are tracked openly, including [`docs/benchmarks/2026-05-25-founder-command-center-auth-flow/`](https://github.com/mohanagy/madar/tree/next/docs/benchmarks/2026-05-25-founder-command-center-auth-flow/).
 
 Madar is a context/evidence layer for review and security workflows, not a PR reviewer or vulnerability scanner. CodeRabbit, Qodo, Codex Security, and similar tools still decide findings, policy, and remediation behavior. Madar supplies bounded local evidence through `pr_impact`, `review-compare`, `madar handoff`, and `report.share-safe.json`.
 
-Read the public claim map before using numbers in customer-facing copy: [`docs/claims-and-evidence.md`](https://github.com/mohanagy/madar/blob/main/docs/claims-and-evidence.md).
+Read the public claim map before using numbers in customer-facing copy: [`docs/claims-and-evidence.md`](https://github.com/mohanagy/madar/blob/next/docs/claims-and-evidence.md).
 
 ---
 
@@ -209,7 +210,7 @@ Everything stays local by default. No cloud upload, no API key required. Your co
 - Build: tree-sitter AST extraction and Louvain community detection, CPU-local.
 - Query: BM25 lexical scoring, reciprocal-rank fusion, optional ONNX embeddings, and optional cross-encoder reranker.
 - MCP: local stdio subprocess of your agent.
-- Security boundary: local-first is not automatically safe. Treat every Madar MCP install, plugin, hook, or AGENTS profile as a local trust boundary. Only enable it for repositories and local agent runtimes you trust. Prefer `--profile strict` when you only need the lean core MCP tools. `--profile strict` keeps the lean core MCP tools but still uses one bounded `context_pack` call per task before broader exploration. Threat model: [`docs/security/mcp-threat-model.md`](https://github.com/mohanagy/madar/blob/main/docs/security/mcp-threat-model.md).
+- Security boundary: local-first is not automatically safe. Treat every Madar MCP install, plugin, hook, or AGENTS profile as a local trust boundary. Only enable it for repositories and local agent runtimes you trust. Prefer `--profile strict` when you only need the lean core MCP tools. `--profile strict` keeps the lean core MCP tools but still uses one bounded `context_pack` call per task before broader exploration. Threat model: [`docs/security/mcp-threat-model.md`](https://github.com/mohanagy/madar/blob/next/docs/security/mcp-threat-model.md).
 
 Limitations to know:
 
@@ -225,28 +226,28 @@ Limitations to know:
 
 | Need | Link |
 | --- | --- |
-| First run | [Getting started](https://github.com/mohanagy/madar/blob/main/docs/tutorials/getting-started.md) |
-| Agent quickstarts | [Agent quickstarts](https://github.com/mohanagy/madar/blob/main/docs/tutorials/agent-quickstarts.md) |
-| Small demo repo | [Sample workspace](https://github.com/mohanagy/madar/blob/main/docs/tutorials/sample-workspace.md) |
-| Context packs, Pack Schema v1, adaptive renderings | [Context packs and task evidence](https://github.com/mohanagy/madar/blob/main/docs/concepts/context-packs.md) |
-| CLI commands, MCP tools, agent installers | [CLI and MCP reference](https://github.com/mohanagy/madar/blob/main/docs/reference/cli-and-mcp.md) |
-| Install matrix | [Compatibility guide](https://github.com/mohanagy/madar/blob/main/docs/integrations/compatibility.md) |
-| Proof workflows | [Proof workflows](https://github.com/mohanagy/madar/blob/main/docs/proof-workflows.md) |
-| Design partner program | [Design partners](https://github.com/mohanagy/madar/blob/main/docs/design-partners.md) |
-| Claims and evidence | [Claims and evidence map](https://github.com/mohanagy/madar/blob/main/docs/claims-and-evidence.md) |
-| Team and enterprise offer | [Team and enterprise offer](https://github.com/mohanagy/madar/blob/main/docs/team-enterprise-offer.md) |
-| Benchmark suite | [Benchmark suite](https://github.com/mohanagy/madar/blob/main/docs/benchmarks/suite/README.md) |
-| Language coverage | [Language and capability matrix](https://github.com/mohanagy/madar/blob/main/docs/language-capability-matrix.md) |
-| Roadmap | [Public roadmap](https://github.com/mohanagy/madar/blob/main/docs/roadmap.md) |
-| Telemetry | [Telemetry guide](https://github.com/mohanagy/madar/blob/main/docs/telemetry.md) |
-| MCP Registry metadata | [`docs/mcp-registry/server.json`](https://github.com/mohanagy/madar/blob/main/docs/mcp-registry/server.json) |
-| Full release notes | [Changelog](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md) |
+| First run | [Getting started](https://github.com/mohanagy/madar/blob/next/docs/tutorials/getting-started.md) |
+| Agent quickstarts | [Agent quickstarts](https://github.com/mohanagy/madar/blob/next/docs/tutorials/agent-quickstarts.md) |
+| Small demo repo | [Sample workspace](https://github.com/mohanagy/madar/blob/next/docs/tutorials/sample-workspace.md) |
+| Context packs, Pack Schema v1, adaptive renderings | [Context packs and task evidence](https://github.com/mohanagy/madar/blob/next/docs/concepts/context-packs.md) |
+| CLI commands, MCP tools, agent installers | [CLI and MCP reference](https://github.com/mohanagy/madar/blob/next/docs/reference/cli-and-mcp.md) |
+| Install matrix | [Compatibility guide](https://github.com/mohanagy/madar/blob/next/docs/integrations/compatibility.md) |
+| Proof workflows | [Proof workflows](https://github.com/mohanagy/madar/blob/next/docs/proof-workflows.md) |
+| Design partner program | [Design partners](https://github.com/mohanagy/madar/blob/next/docs/design-partners.md) |
+| Claims and evidence | [Claims and evidence map](https://github.com/mohanagy/madar/blob/next/docs/claims-and-evidence.md) |
+| Team and enterprise offer | [Team and enterprise offer](https://github.com/mohanagy/madar/blob/next/docs/team-enterprise-offer.md) |
+| Benchmark suite | [Benchmark suite](https://github.com/mohanagy/madar/blob/next/docs/benchmarks/suite/README.md) |
+| Language coverage | [Language and capability matrix](https://github.com/mohanagy/madar/blob/next/docs/language-capability-matrix.md) |
+| Roadmap | [Public roadmap](https://github.com/mohanagy/madar/blob/next/docs/roadmap.md) |
+| Telemetry | [Telemetry guide](https://github.com/mohanagy/madar/blob/next/docs/telemetry.md) |
+| MCP Registry metadata | [`docs/mcp-registry/server.json`](https://github.com/mohanagy/madar/blob/next/docs/mcp-registry/server.json) |
+| Full release notes | [Changelog](https://github.com/mohanagy/madar/blob/next/CHANGELOG.md) |
 
 ---
 
 ## Contributors
 
-Thanks to everyone shaping madar. The list below is regenerated automatically on every push to `main` by [`.github/workflows/contributors.yml`](https://github.com/mohanagy/madar/blob/main/.github/workflows/contributors.yml).
+Thanks to everyone shaping madar. The list below is regenerated automatically on every push to `main` by [`.github/workflows/contributors.yml`](https://github.com/mohanagy/madar/blob/next/.github/workflows/contributors.yml).
 
 <!-- readme: contributors -start -->
 <table>

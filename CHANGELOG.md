@@ -2,6 +2,16 @@
 
 All notable changes to the TypeScript package will be documented in this file.
 
+## [0.27.9-next.0] - 2026-06-03
+
+### Added
+
+- **Proof-first launch/distribution release guidance**: Madar now ships `docs/launch-checklist.md`, a reusable release/distribution template with a required proof block, explicit channel tracker, a benchmark-backed launch draft anchored to the public `#469` suite bundle, and guardrails against generic launch copy. Closes #474.
+
+### Changed
+
+- **Prerelease README and release flow now point at the next-track launch surfaces**: the npm-visible README now links release-sensitive docs and release notes to `blob/next`, the release checklist calls out the launch-checklist working-notes flow, and the roadmap includes the new launch-checklist track on `next`.
+
 ## [0.27.8] - 2026-06-02
 
 ### Added

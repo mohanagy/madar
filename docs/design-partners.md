@@ -79,6 +79,6 @@ Use the receipt issue as the evidence anchor, then open a focused follow-up when
 
 ## Related docs
 
-- [Proof workflows](https://github.com/mohanagy/madar/blob/main/docs/proof-workflows.md)
-- [Claims and evidence map](https://github.com/mohanagy/madar/blob/main/docs/claims-and-evidence.md)
-- [Getting started](https://github.com/mohanagy/madar/blob/main/docs/tutorials/getting-started.md)
+- [Proof workflows](https://github.com/mohanagy/madar/blob/next/docs/proof-workflows.md)
+- [Claims and evidence map](https://github.com/mohanagy/madar/blob/next/docs/claims-and-evidence.md)
+- [Getting started](https://github.com/mohanagy/madar/blob/next/docs/tutorials/getting-started.md)
