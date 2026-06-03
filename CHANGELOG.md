@@ -2,6 +2,12 @@
 
 All notable changes to the TypeScript package will be documented in this file.
 
+## [0.27.9-next.3] - 2026-06-03
+
+### Fixed
+
+- **Windows Claude prompt hooks now run from a generated local script instead of an oversized inline shell command**: `claudeInstall` now writes `.claude/madar-user-prompt-submit.cjs` and points `UserPromptSubmit` at `node .claude/madar-user-prompt-submit.cjs`, eliminating the shell-length truncation that still broke `0.27.9-next.2` with `unexpected EOF while looking for matching '"'`.
+
 ## [0.27.9-next.2] - 2026-06-03
 
 ### Fixed

@@ -129,11 +129,12 @@ The current telemetry model is local-first and source-safe. It records coarse fu
 
 ## What's New
 
-See the [`0.27.9-next.2` changelog entry](https://github.com/mohanagy/madar/blob/next/CHANGELOG.md#0279-next2---2026-06-03) for the full release notes.
+See the [`0.27.9-next.3` changelog entry](https://github.com/mohanagy/madar/blob/next/CHANGELOG.md#0279-next3---2026-06-03) for the full release notes.
 
 Recent highlights:
 
-- `0.27.9-next.2` fixes the Windows cmd.exe command-line length limit issue by aggressively minifying the hook source code, ensuring the `UserPromptSubmit` hook executes successfully on Windows systems.
+- `0.27.9-next.3` replaces the Claude `UserPromptSubmit` inline shell command with a generated local `.claude/madar-user-prompt-submit.cjs` script, fixing the Windows shell truncation that still broke `0.27.9-next.2`.
+- `0.27.9-next.2` was the intermediate attempt to shrink the Windows Claude hook command, but it still left the installed shell command too large in production.
 - `0.27.9-next.1` is the prior next-track adoption release: it bundles the public benchmark suite, one-command `madar try` proof flow, opt-in funnel telemetry, verified agent quickstarts, design-partner loop, launch checklist from issues #469-#474, and the Windows-safe Claude submit-hook fix.
 - `0.27.9-next.0` also added scoped graph freshness and stale-context guarantees across `madar pack`, `madar prompt`, `madar handoff`, `madar doctor`, and `madar status`, backed by the tightened git/diff freshness model from #477 and #479.
 - `0.27.8` refactors the README into a shorter npm-facing landing page and moves long-form Pack Schema, context-pack, MCP, installer, command, and discovery-rule details into dedicated docs.
@@ -146,7 +147,7 @@ Recent highlights:
 
 ## When To Use `--spi`
 
-`--spi` is still opt-in in `0.27.9-next.2`. Use it when your repo is framework-heavy TypeScript/JavaScript and you want extra framework-shaped metadata plus disk cache behavior.
+`--spi` is still opt-in in `0.27.9-next.3`. Use it when your repo is framework-heavy TypeScript/JavaScript and you want extra framework-shaped metadata plus disk cache behavior.
 
 It is usually worth it for NestJS, Next.js App Router, Prisma, tRPC, Hono, Fastify, and similar repos where users ask storage-oriented prompts, client/server boundary questions, or request-flow questions. The default pipeline is still fine for simpler repos, non-JS/TS workspaces, or first runs where you do not need the extra framework detail yet.
 
