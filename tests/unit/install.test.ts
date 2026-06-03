@@ -198,7 +198,7 @@ function decodeHookPayloads(content: string): string {
       continue
     }
 
-    for (const match of current.matchAll(/'([A-Za-z0-9+/=]{40,})'/g)) {
+    for (const match of current.matchAll(/(?:['\"])?([A-Za-z0-9+/=]{40,})(?:['\"])?/g)) {
       const value = match[1]
       if (typeof value !== 'string' || seen.has(value)) {
         continue
@@ -637,6 +637,21 @@ describe('install helpers', () => {
       })
 
       expect(output).toBe('')
+    })
+  })
+
+  it('uses argv-based Node hook commands to stay shell-safe on Windows', () => {
+    withTempDir((projectDir) => {
+      mkdirSync(join(projectDir, 'out'), { recursive: true })
+      writeFileSync(join(projectDir, 'out', 'graph.json'), '{}', 'utf8')
+      claudeInstall(projectDir)
+
+      const settings = readFileSync(join(projectDir, '.claude', 'settings.json'), 'utf8')
+      const command = extractHookCommand(settings, 'UserPromptSubmit')
+
+      expect(command).toContain('process.argv[1]')
+      expect(command).toMatch(/"\s*[A-Za-z0-9+/=]{40,}\s*"$/)
+      expect(command).not.toContain('\\"')
     })
   })
 

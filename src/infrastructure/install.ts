@@ -116,17 +116,17 @@ const PLATFORM_CONFIG: Record<SkillInstallPlatform, InstallPlatformConfig> = {
   },
 }
 
-// Cross-platform hook: base64-encodes JSON payloads so the node -e command has
-// zero special shell characters. Works on macOS, Linux, and Windows (PowerShell/CMD).
+// Cross-platform hook: pass the base64 payload as an argv argument so the
+// node -e command stays shell-neutral on macOS, Linux, and Windows.
 function hookCommand(payloadJson: string): string {
   const b64 = Buffer.from(payloadJson).toString('base64')
-  return `node -e "try{require('fs').accessSync('out/graph.json');process.stdout.write(Buffer.from('${b64}','base64').toString())}catch(e){}"`
+  return `node -e "try{require('fs').accessSync('out/graph.json');process.stdout.write(Buffer.from(process.argv[1],'base64').toString())}catch(e){}" "${b64}"`
 }
 
 function hookCommandWithFallback(matchJson: string, missJson: string): string {
   const b64Match = Buffer.from(matchJson).toString('base64')
   const b64Miss = Buffer.from(missJson).toString('base64')
-  return `node -e "var f;try{require('fs').accessSync('out/graph.json');f='${b64Match}'}catch(e){f='${b64Miss}'}process.stdout.write(Buffer.from(f,'base64').toString())"`
+  return `node -e "var f;try{require('fs').accessSync('out/graph.json');f=process.argv[1]}catch(e){f=process.argv[2]}process.stdout.write(Buffer.from(f,'base64').toString())" "${b64Match}" "${b64Miss}"`
 }
 
 function decodeGeneratedHookPayloads(command: string): string[] {
@@ -140,8 +140,8 @@ function decodeGeneratedHookPayloads(command: string): string[] {
       continue
     }
 
-    for (const match of current.matchAll(/'([A-Za-z0-9+/=]{40,})'/g)) {
-      const value = match[1]
+    for (const match of current.matchAll(/(['"])([A-Za-z0-9+/=]{40,})\1/g)) {
+      const value = match[2]
       if (typeof value !== 'string' || seen.has(value)) {
         continue
       }

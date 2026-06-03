@@ -549,5 +549,5 @@ process.stdin.on('end', () => {
 `
 
   const b64Source = Buffer.from(source, 'utf8').toString('base64')
-  return `node -e "eval(Buffer.from('${b64Source}','base64').toString('utf8'))"`
+  return `node -e "eval(Buffer.from(process.argv[1],'base64').toString('utf8'))" "${b64Source}"`
 }

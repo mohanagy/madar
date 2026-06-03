@@ -41,8 +41,8 @@ function decodeHookPayload(settingsJson: string): string {
       continue
     }
 
-    for (const match of current.matchAll(/'([A-Za-z0-9+/=]{40,})'/g)) {
-      const value = match[1]
+    for (const match of current.matchAll(/(['"])([A-Za-z0-9+/=]{40,})\1/g)) {
+      const value = match[2]
       if (typeof value !== 'string' || seen.has(value)) {
         continue
       }
