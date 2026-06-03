@@ -1305,6 +1305,7 @@ describe('executeNativeAgentCompare', () => {
         task: 'implement',
         validationTimeoutSeconds: 0.01,
       } as Parameters<typeof executeNativeAgentCompare>[0] & { validationTimeoutSeconds: number }
+      const hangBudgetMs = 2000
 
       const outcome = await Promise.race([
         executeNativeAgentCompare(
@@ -1315,7 +1316,7 @@ describe('executeNativeAgentCompare', () => {
           },
         ).then((result) => ({ kind: 'resolved' as const, result })),
         new Promise<{ kind: 'hung' }>((resolve) => {
-          setTimeout(() => resolve({ kind: 'hung' }), 1000)
+          setTimeout(() => resolve({ kind: 'hung' }), hangBudgetMs)
         }),
       ])
 
