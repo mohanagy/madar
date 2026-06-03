@@ -412,7 +412,7 @@ describe('compare runtime', () => {
     ).toBe("runner --prompt '/tmp/prompt pack.txt' --question 'how does login work?' --mode 'baseline' --out '/tmp/output.txt'")
   })
 
-  it('expands compare exec placeholders safely for PowerShell on Windows', () => {
+  it('expands compare exec placeholders safely for cmd.exe on Windows', () => {
     expect(
       expandCompareExecTemplate(
         'runner --question {question} --prompt {prompt_file}',
@@ -424,7 +424,7 @@ describe('compare runtime', () => {
         },
         'win32',
       ),
-    ).toBe("runner --question 'how''s login work?' --prompt 'C:\\Users\\Jane Doe\\prompt.txt'")
+    ).toBe('runner --question "how\'s login work?" --prompt "C:\\Users\\Jane Doe\\prompt.txt"')
   })
 
   it.each([

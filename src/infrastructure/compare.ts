@@ -29,7 +29,7 @@ import { QUERY_TOKEN_ESTIMATOR, estimateQueryTokens, loadGraph } from '../runtim
 import { resolveToolProfileFromEnv, type McpToolProfile } from '../runtime/stdio/definitions.js'
 import { sidecarAwareFileFingerprint } from '../shared/binary-ingest-sidecar.js'
 import { sanitizeShareSafeText, toShareSafeArtifactPath, type ShareSafePathRoots } from '../shared/share-safe-artifacts.js'
-import { shellEscape } from '../shared/shell.js'
+import { resolveShellCommand, shellEscape } from '../shared/shell.js'
 import { MAX_TEXT_BYTES, validateGraphOutputPath, validateGraphPath } from '../shared/security.js'
 import { copyWorkspaceForBenchmark } from '../shared/workspace-copy.js'
 
@@ -566,16 +566,7 @@ async function defaultComparePromptRunner(execution: ComparePromptExecution): Pr
   const startedAt = Date.now()
 
   return await new Promise<ComparePromptRunnerResult>((resolveExecution, rejectExecution) => {
-    const command =
-      process.platform === 'win32'
-        ? {
-            file: 'powershell.exe',
-            args: ['-NoProfile', '-Command', execution.command],
-          }
-        : {
-            file: '/bin/sh',
-            args: ['-lc', execution.command],
-          }
+    const command = resolveShellCommand(execution.command)
     const child = spawn(command.file, command.args, {
       shell: false,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -2990,11 +2981,8 @@ async function runShellCommand(command: string, options: { cwd?: string; signal?
   stderr: string
 }> {
   return await new Promise((resolveExecution, rejectExecution) => {
-    const useProcessGroup = process.platform !== 'win32'
-    const shellCommand =
-      !useProcessGroup
-        ? { file: 'powershell.exe', args: ['-NoProfile', '-Command', command] }
-        : { file: '/bin/sh', args: ['-lc', command] }
+    const shellCommand = resolveShellCommand(command)
+    const useProcessGroup = shellCommand.useProcessGroup
     const child = spawn(shellCommand.file, shellCommand.args, {
       shell: false,
       stdio: ['ignore', 'pipe', 'pipe'],
