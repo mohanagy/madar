@@ -1787,6 +1787,17 @@ describe('executeNativeAgentCompare', () => {
     }
   })
 
+  it('does not treat a missing generated Claude hook script as a verified install', () => {
+    const { projectDir } = makeFixtureProject({ installState: 'managed' })
+    try {
+      rmSync(join(projectDir, '.claude', 'madar-user-prompt-submit.cjs'), { force: true })
+
+      expect(inspectClaudeNativeAgentInstall(projectDir).verified).toBe(false)
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
   it('classifies broad exploration after a Madar MCP call as madar_invoked_with_followup_exploration', async () => {
     const { projectDir, graphPath, outputDir } = makeFixtureProject()
     try {

@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -18,7 +18,7 @@ function withTempDir(callback: (dir: string) => void): void {
   }
 }
 
-function decodeHookPayload(settingsJson: string): string {
+function decodeHookPayload(projectDir: string, settingsJson: string): string {
   const parsed = JSON.parse(settingsJson) as {
     hooks?: {
       PreToolUse?: Array<{ hooks?: Array<{ command?: string }> }>
@@ -28,6 +28,18 @@ function decodeHookPayload(settingsJson: string): string {
   const command = parsed.hooks?.UserPromptSubmit?.[0]?.hooks?.[0]?.command
     ?? parsed.hooks?.PreToolUse?.[0]?.hooks?.[0]?.command
     ?? ''
+
+  if (command === 'node .claude/madar-user-prompt-submit.cjs') {
+    const hookScriptPath = join(projectDir, '.claude', 'madar-user-prompt-submit.cjs')
+    if (!existsSync(hookScriptPath)) {
+      return ''
+    }
+
+    const hookScript = readFileSync(hookScriptPath, 'utf8')
+    const matchPayload = hookScript.match(/const matchPayload = ("(?:\\.|[^"])*")/)
+    return matchPayload?.[1] ? JSON.parse(matchPayload[1]) : hookScript
+  }
+
   // Hook command embeds the payload as a base64 literal inside a node -e wrapper.
   // Extract every base64-looking chunk and decode each, concatenating the results
   // so we capture both the match and miss payloads when present.
@@ -124,7 +136,7 @@ describe('install hook payload', () => {
     withTempDir((projectDir) => {
       claudeInstall(projectDir)
       const settings = readFileSync(join(projectDir, '.claude', 'settings.json'), 'utf8')
-      const decoded = decodeHookPayload(settings)
+      const decoded = decodeHookPayload(projectDir, settings)
       expect(decoded).toContain('Use the graph result as the first bounded pass')
       expect(decoded.toLowerCase()).not.toContain('3x fewer turns')
     })
@@ -134,7 +146,7 @@ describe('install hook payload', () => {
     withTempDir((projectDir) => {
       claudeInstall(projectDir)
       const settings = readFileSync(join(projectDir, '.claude', 'settings.json'), 'utf8')
-      const decoded = decodeHookPayload(settings)
+      const decoded = decodeHookPayload(projectDir, settings)
       const decodedLower = decoded.toLowerCase()
       for (const stale of STALE_PHRASES) {
         expect(decodedLower).not.toContain(stale.toLowerCase())
@@ -146,7 +158,7 @@ describe('install hook payload', () => {
     withTempDir((projectDir) => {
       claudeInstall(projectDir)
       const settings = readFileSync(join(projectDir, '.claude', 'settings.json'), 'utf8')
-      const decoded = decodeHookPayload(settings)
+      const decoded = decodeHookPayload(projectDir, settings)
       expect(decoded).toContain('retrieve')
     })
   })
@@ -155,7 +167,7 @@ describe('install hook payload', () => {
     withTempDir((projectDir) => {
       claudeInstall(projectDir)
       const settings = readFileSync(join(projectDir, '.claude', 'settings.json'), 'utf8')
-      const decoded = decodeHookPayload(settings)
+      const decoded = decodeHookPayload(projectDir, settings)
       expectPlainRoutingGuide(decoded)
       expect(decoded).toContain('feature_map')
       expect(decoded).toContain('risk_map')
@@ -167,7 +179,7 @@ describe('install hook payload', () => {
     withTempDir((projectDir) => {
       agentsInstall(projectDir, 'codex')
       const settings = readFileSync(join(projectDir, '.codex', 'hooks.json'), 'utf8')
-      const decoded = decodeHookPayload(settings)
+      const decoded = decodeHookPayload(projectDir, settings)
       expect(decoded).toContain('context-pack-first')
       expect(decoded).toContain('madar pack')
       expect(decoded).toContain('use Madar tools only')

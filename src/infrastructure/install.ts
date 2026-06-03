@@ -8,7 +8,7 @@ import {
   renderPlainCodexRoutingGuide,
   renderPlainMcpRoutingGuide,
 } from './install-routing-guidance.js'
-import { buildPromptApplicabilityHookCommand } from '../runtime/task-applicability.js'
+import { buildPromptApplicabilityHookScript } from '../runtime/task-applicability.js'
 import {
   findPackageRoot as resolvePackageRoot,
   readPackageName as resolvePackageName,
@@ -34,6 +34,8 @@ export const INSTALL_PROFILES = [...MCP_TOOL_PROFILES, 'strict'] as const
 export type InstallProfile = (typeof INSTALL_PROFILES)[number]
 const MANAGED_HOOK_NAME = 'madar'
 const MANAGED_HOOK_SOURCE = 'madar'
+export const CLAUDE_PROMPT_HOOK_SCRIPT_RELATIVE_PATH = '.claude/madar-user-prompt-submit.cjs'
+const CLAUDE_PROMPT_HOOK_COMMAND = `node ${CLAUDE_PROMPT_HOOK_SCRIPT_RELATIVE_PATH}`
 
 interface InstallPlatformConfig {
   skillFile: string
@@ -632,18 +634,28 @@ function settingsHook(profile?: InstallProfile): Record<string, unknown> {
     hooks: [
       {
         type: 'command',
-        command: buildPromptApplicabilityHookCommand(
-          JSON.stringify({
-            hookSpecificOutput: {
-              hookEventName: 'UserPromptSubmit',
-              additionalContext: profile === 'strict' ? STRICT_CONTEXT_PACK_MESSAGE : RETRIEVE_FIRST_MESSAGE,
-            },
-          }),
-          'UserPromptSubmit',
-        ),
+        command: CLAUDE_PROMPT_HOOK_COMMAND,
       },
     ],
   })
+}
+
+function writeClaudePromptHookScript(projectDir: string, profile?: InstallProfile): void {
+  const hookScriptPath = join(projectDir, CLAUDE_PROMPT_HOOK_SCRIPT_RELATIVE_PATH)
+  mkdirSync(dirname(hookScriptPath), { recursive: true })
+  writeFileSync(
+    hookScriptPath,
+    buildPromptApplicabilityHookScript(
+      JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: 'UserPromptSubmit',
+          additionalContext: profile === 'strict' ? STRICT_CONTEXT_PACK_MESSAGE : RETRIEVE_FIRST_MESSAGE,
+        },
+      }),
+      'UserPromptSubmit',
+    ),
+    'utf8',
+  )
 }
 
 function geminiHook(profile?: InstallProfile): Record<string, unknown> {
@@ -1672,6 +1684,8 @@ function installClaudeHook(projectDir: string, profile?: InstallProfile): string
   const userPromptSubmit = ensureArray(hooks, 'UserPromptSubmit')
   const preToolUse = ensureArray(hooks, 'PreToolUse')
 
+  writeClaudePromptHookScript(projectDir, profile)
+
   const existingIndex = userPromptSubmit.findIndex((hook) => isMadarProjectHook(hook))
   if (existingIndex >= 0) {
     userPromptSubmit[existingIndex] = settingsHook(profile)
@@ -1687,9 +1701,13 @@ function installClaudeHook(projectDir: string, profile?: InstallProfile): string
 }
 
 function uninstallClaudeHook(projectDir: string): string | undefined {
+  const hookScriptPath = join(projectDir, CLAUDE_PROMPT_HOOK_SCRIPT_RELATIVE_PATH)
+  const removedHookScript = existsSync(hookScriptPath)
+  rmSync(hookScriptPath, { force: true })
+
   const settingsPath = join(projectDir, '.claude', 'settings.json')
   if (!existsSync(settingsPath)) {
-    return undefined
+    return removedHookScript ? `${CLAUDE_PROMPT_HOOK_SCRIPT_RELATIVE_PATH} -> hook script removed` : undefined
   }
 
   const settings = readJsonObject(settingsPath)
@@ -1700,7 +1718,7 @@ function uninstallClaudeHook(projectDir: string): string | undefined {
   const filteredPreToolUse = preToolUse.filter((hook) => !isMadarProjectHook(hook, 'Glob|Grep|Bash|Agent|Read'))
 
   if (filteredUserPromptSubmit.length === userPromptSubmit.length && filteredPreToolUse.length === preToolUse.length) {
-    return undefined
+    return removedHookScript ? `${CLAUDE_PROMPT_HOOK_SCRIPT_RELATIVE_PATH} -> hook script removed` : undefined
   }
 
   hooks.UserPromptSubmit = filteredUserPromptSubmit

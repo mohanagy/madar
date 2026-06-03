@@ -8,7 +8,7 @@ import { KnowledgeGraph } from '../contracts/graph.js'
 import type { ContextSessionDiagnostics, ContextSessionState } from '../contracts/context-session.js'
 import { buildContextPrompt, type ContextPromptStableSection } from './context-prompt.js'
 import { buildAnswerReadyPackSchema, buildExplainPackPayloadCore } from './context-pack-command.js'
-import { isMadarProjectHook } from './install.js'
+import { CLAUDE_PROMPT_HOOK_SCRIPT_RELATIVE_PATH, isMadarProjectHook } from './install.js'
 import { CODE_EXTENSIONS, DOC_EXTENSIONS, MANIFEST_METADATA_KEY, OFFICE_EXTENSIONS, PAPER_EXTENSIONS } from '../pipeline/detect.js'
 import { extractCompareBaselineNonCodeText } from '../pipeline/extract/non-code.js'
 import { loadBenchmarkQuestions } from './benchmark/questions.js'
@@ -3160,6 +3160,8 @@ export function inspectClaudeNativeAgentInstall(projectRoot: string): NativeAgen
   const mcpPath = join(projectRoot, '.mcp.json')
   const claudeRulesPath = join(projectRoot, 'CLAUDE.md')
   const settingsPath = join(projectRoot, '.claude', 'settings.json')
+  const promptHookScriptPath = join(projectRoot, CLAUDE_PROMPT_HOOK_SCRIPT_RELATIVE_PATH)
+  const hasUserPromptSubmitHook = findHookEntry(settingsPath, 'UserPromptSubmit')
   const artifacts: NativeAgentInstallArtifactCheck[] = [
     {
       label: '.mcp.json',
@@ -3181,6 +3183,12 @@ export function inspectClaudeNativeAgentInstall(projectRoot: string): NativeAgen
         || findHookEntry(settingsPath, 'BeforeTool'),
       detail: '.claude/settings.json missing Madar hook',
       path: settingsPath,
+    },
+    {
+      label: CLAUDE_PROMPT_HOOK_SCRIPT_RELATIVE_PATH,
+      ok: !hasUserPromptSubmitHook || existsSync(promptHookScriptPath),
+      detail: `${CLAUDE_PROMPT_HOOK_SCRIPT_RELATIVE_PATH} missing generated Claude prompt hook script`,
+      path: promptHookScriptPath,
     },
   ]
 
