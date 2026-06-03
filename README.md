@@ -129,12 +129,12 @@ The current telemetry model is local-first and source-safe. It records coarse fu
 
 ## What's New
 
-See the [`0.27.9-next.0` changelog entry](https://github.com/mohanagy/madar/blob/next/CHANGELOG.md#0279-next0---2026-06-03) for the full release notes.
+See the [`0.27.9-next.1` changelog entry](https://github.com/mohanagy/madar/blob/next/CHANGELOG.md#0279-next1---2026-06-03) for the full release notes.
 
 Recent highlights:
 
-- `0.27.9-next.0` is the current next-track adoption release: it bundles the public benchmark suite, one-command `madar try` proof flow, opt-in funnel telemetry, verified agent quickstarts, design-partner loop, and launch checklist from issues #469-#474.
-- `0.27.9-next.0` also adds scoped graph freshness and stale-context guarantees across `madar pack`, `madar prompt`, `madar handoff`, `madar doctor`, and `madar status`, backed by the tightened git/diff freshness model from #477 and #479.
+- `0.27.9-next.1` is the current next-track adoption release: it bundles the public benchmark suite, one-command `madar try` proof flow, opt-in funnel telemetry, verified agent quickstarts, design-partner loop, launch checklist from issues #469-#474, and the Windows-safe Claude submit-hook fix.
+- `0.27.9-next.0` also added scoped graph freshness and stale-context guarantees across `madar pack`, `madar prompt`, `madar handoff`, `madar doctor`, and `madar status`, backed by the tightened git/diff freshness model from #477 and #479.
 - `0.27.8` refactors the README into a shorter npm-facing landing page and moves long-form Pack Schema, context-pack, MCP, installer, command, and discovery-rule details into dedicated docs.
 - `0.27.7` added the checked-in federation flagship proof: a reproducible frontend/backend/shared fixture plus a synthetic federation receipt.
 - Roadmap docs now cover design-partner workflow loops, plugin distribution channels, and language-expansion decisions.
@@ -145,7 +145,7 @@ Recent highlights:
 
 ## When To Use `--spi`
 
-`--spi` is still opt-in in `0.27.9-next.0`. Use it when your repo is framework-heavy TypeScript/JavaScript and you want extra framework-shaped metadata plus disk cache behavior.
+`--spi` is still opt-in in `0.27.9-next.1`. Use it when your repo is framework-heavy TypeScript/JavaScript and you want extra framework-shaped metadata plus disk cache behavior.
 
 It is usually worth it for NestJS, Next.js App Router, Prisma, tRPC, Hono, Fastify, and similar repos where users ask storage-oriented prompts, client/server boundary questions, or request-flow questions. The default pipeline is still fine for simpler repos, non-JS/TS workspaces, or first runs where you do not need the extra framework detail yet.
 

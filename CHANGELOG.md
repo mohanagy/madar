@@ -2,6 +2,12 @@
 
 All notable changes to the TypeScript package will be documented in this file.
 
+## [0.27.9-next.1] - 2026-06-03
+
+### Fixed
+
+- **Windows Claude submit hooks are now shell-safe**: the generated `UserPromptSubmit` hook and related payload builders now pass base64 data through argv instead of embedding it in shell-quoted inline JavaScript, avoiding the Windows `unexpected eof while looking for matching` failure.
+
 ## [0.27.9-next.0] - 2026-06-03
 
 ### Added

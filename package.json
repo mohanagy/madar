@@ -1,6 +1,6 @@
 {
     "name": "@lubab/madar",
-    "version": "0.27.9-next.0",
+    "version": "0.27.9-next.1",
     "description": "Stop AI coding agents from rediscovering large TypeScript/Node repos. Madar compiles task-aware local context packs from what runs for this task.",
     "license": "MIT",
     "author": "mohanagy",
