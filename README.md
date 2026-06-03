@@ -83,7 +83,7 @@ Pick one install target, then rerun `madar doctor` and `madar status` so the fir
 
 After you generate `out/graph.json`, `madar doctor` and `madar status` check the local install wiring for Claude Code, Cursor, Gemini CLI, and GitHub Copilot CLI. They also lint the AGENTS-based Madar instruction profiles for Codex CLI, OpenCode, and Aider; if a profile drifts, they mark the agent as `partial` and suggest the matching reinstall command.
 
-Install details, generated files, profiles, uninstall behavior, and verified copy/paste quickstarts live in the [CLI and MCP reference](https://github.com/mohanagy/madar/blob/main/docs/reference/cli-and-mcp.md), [compatibility guide](https://github.com/mohanagy/madar/blob/main/docs/integrations/compatibility.md), and [agent quickstarts](https://github.com/mohanagy/madar/blob/main/docs/tutorials/agent-quickstarts.md).
+Install details, generated files, profiles, uninstall behavior, and verified copy/paste quickstarts live in the [CLI and MCP reference](https://github.com/mohanagy/madar/blob/main/docs/reference/cli-and-mcp.md), [compatibility guide](https://github.com/mohanagy/madar/blob/main/docs/integrations/compatibility.md), [agent quickstarts](https://github.com/mohanagy/madar/blob/main/docs/tutorials/agent-quickstarts.md), and the [launch checklist](https://github.com/mohanagy/madar/blob/main/docs/launch-checklist.md) for proof-first release/distribution copy.
 
 **Without MCP**, compile a prompt or pack directly:
 
@@ -137,7 +137,7 @@ Recent highlights:
 - `0.27.7` added the checked-in federation flagship proof: a reproducible frontend/backend/shared fixture plus a synthetic federation receipt.
 - Roadmap docs now cover design-partner workflow loops, plugin distribution channels, and language-expansion decisions.
 - The larger **What's new in 0.23.0** additions remain central: `madar summary`, the core MCP `graph_summary` tool, runtime `execution_slice` output, share-safe `report.share-safe.json` compare artifacts, and `compare --baseline-mode pack_only`.
-- Public proof workflows are organized under [`docs/proof-workflows.md`](https://github.com/mohanagy/madar/blob/main/docs/proof-workflows.md), [`docs/claims-and-evidence.md`](https://github.com/mohanagy/madar/blob/main/docs/claims-and-evidence.md), and [`docs/benchmarks/suite/`](https://github.com/mohanagy/madar/tree/main/docs/benchmarks/suite/).
+- Public proof workflows are organized under [`docs/proof-workflows.md`](https://github.com/mohanagy/madar/blob/main/docs/proof-workflows.md), [`docs/claims-and-evidence.md`](https://github.com/mohanagy/madar/blob/main/docs/claims-and-evidence.md), [`docs/benchmarks/suite/`](https://github.com/mohanagy/madar/tree/main/docs/benchmarks/suite/), and [`docs/launch-checklist.md`](https://github.com/mohanagy/madar/blob/main/docs/launch-checklist.md).
 
 ---
 
