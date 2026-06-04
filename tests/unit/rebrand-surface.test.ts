@@ -103,16 +103,12 @@ describe('rebrand surface', () => {
 
   it('documents the canonical Madar rename path for users arriving from legacy links', () => {
     const readme = readText('README.md')
-    const headingIndex = readme.indexOf(RENAME_NOTE_HEADING)
+    const cliReference = readText('docs/reference/cli-and-mcp.md')
 
-    expect(headingIndex).toBeGreaterThanOrEqual(0)
-
-    const renameSection = readme.slice(headingIndex, readme.indexOf('\n## ', headingIndex + RENAME_NOTE_HEADING.length))
-
-    expect(renameSection).toContain('`graphify-ts`')
-    expect(renameSection).toContain('`@lubab/madar`')
-    expect(renameSection).toContain('`https://github.com/mohanagy/madar`')
-    expect(renameSection).toContain('`git@github.com:mohanagy/madar.git`')
+    expect(readme).not.toContain(RENAME_NOTE_HEADING)
+    expect(cliReference).toContain('older `graphify-ts` links or listings')
+    expect(cliReference).toContain('`@lubab/madar`')
+    expect(cliReference).toContain('`https://github.com/mohanagy/madar`')
     expect(stripRenameNote(readme)).not.toContain(LEGACY_BRAND)
   })
 

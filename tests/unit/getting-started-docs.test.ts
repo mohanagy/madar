@@ -24,7 +24,7 @@ describe('getting started tutorial', () => {
     expect(readme).toContain('docs/tutorials/getting-started.md')
   })
 
-  it('keeps the first-run path focused on install, install verification, one pack, and a safe compare', () => {
+  it('keeps the first-run path focused on try, install, doctor/status, and the supported agent commands', () => {
     const tutorial = readFileSync(resolve('docs/tutorials/getting-started.md'), 'utf8')
     const readme = readFileSync(resolve('README.md'), 'utf8')
 
@@ -40,19 +40,24 @@ describe('getting started tutorial', () => {
     expect(tutorial).toContain('madar generate . --spi --no-html')
     expect(tutorial.toLowerCase()).toContain('paid model')
     expect(tutorial.toLowerCase()).toContain('10-minute')
-    expect(readme).toContain('## Choose your agent')
+    expect(readme).toContain('## Supported Agents')
     expect(readme).toContain('madar try')
     expect(readme.indexOf('madar try')).toBeLessThan(readme.indexOf('madar generate .'))
-    expect(readme).toContain('Claude Code')
-    expect(readme).toContain('Codex CLI')
-    expect(readme).toContain('Cursor')
-    expect(readme).toContain('GitHub Copilot CLI')
-    expect(readme).toContain('Gemini CLI')
-    expect(readme).toContain('Aider')
-    expect(readme).toContain('OpenCode')
-    expect(readme).toContain('compare and benchmark flows can spend paid model tokens')
-    expect(readme).toContain('check the local install wiring for Claude Code, Cursor, Gemini CLI, and GitHub Copilot CLI')
-    expect(readme).toContain('lint the AGENTS-based Madar instruction profiles for Codex CLI, OpenCode, and Aider')
-    expect(readme).toContain('`madar doctor` and `madar status`')
+    for (const command of [
+      'madar claude install',
+      'madar codex install',
+      'madar cursor install',
+      'madar copilot install',
+      'madar gemini install',
+      'madar aider install',
+      'madar opencode install',
+    ]) {
+      expect(readme).toContain(command)
+    }
+    expect(readme).toContain('After installing a profile, run `madar doctor` and `madar status`.')
+    expect(readme).toContain('Installer details are in the [CLI and MCP reference]')
+    expect(readme).toContain('madar pack "how does auth work?" --task explain --format text')
+    expect(readme).toContain('madar prompt "how does auth work?" --provider claude')
+    expect(readme).toContain('madar handoff "add auth telemetry" --task implement --consumer copilot')
   })
 })

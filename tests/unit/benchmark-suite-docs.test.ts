@@ -81,13 +81,13 @@ describe('benchmark suite docs', () => {
 
   it('keeps claims conservative while acknowledging initial workflow-outcome receipts', () => {
     const claims = readDoc('docs/claims-and-evidence.md')
-    const readme = readDoc('README.md')
+    const whyMadar = readDoc('examples/why-madar.md')
 
     expect(claims).toContain('small-library, service, and monorepo fixture-style rows')
     expect(claims).toContain('initial implement/review workflow-outcome receipts')
     expect(claims).toContain('results/2026-05-31T12-00-00/summary.md')
-    expect(readme).toContain('initial fixture-proxy implement/review/impact rows')
-    expect(readme).toContain('no single-number cross-repo headline')
+    expect(whyMadar).toContain('per-repo spread')
+    expect(whyMadar).toContain('no single-number cross-repo headline')
   })
 
   it('publishes the latest suite bundle under the canonical timestamp without nested trial directories', () => {
