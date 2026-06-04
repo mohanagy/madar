@@ -269,7 +269,7 @@ Thanks to everyone shaping Madar. The list below is regenerated automatically on
                 </a>
             </td>
 		</tr>
-	</tbody>
+	<tbody>
 </table>
 <!-- readme: contributors -end -->
 
