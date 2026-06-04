@@ -226,6 +226,7 @@ export type TelemetryCliOptions =
   | { action: 'report'; spoolPaths: string[] }
 
 const COMPARE_USAGE = 'Usage: madar compare [question] --exec TEMPLATE [--graph path] [--questions PATH] [--output-dir DIR] [--task TASK] [--baseline-mode MODE] [--per-arm-timeout S] [--validation-timeout S] [--heartbeat-interval-ms N] [--strict-madar-first] [--strict] [--allow-no-install] [--yes] [--limit N] [--why]'
+export const INSTALL_USAGE = 'Usage: madar install [platform|--platform P]'
 
 export interface PlatformActionCliOptions {
   action: 'install' | 'uninstall'
@@ -2191,6 +2192,7 @@ export function parseTelemetryArgs(args: string[]): TelemetryCliOptions {
 
 export function parseInstallArgs(args: string[], defaultPlatform: InstallPlatform): InstallCliOptions {
   let platform = defaultPlatform
+  let platformProvided = false
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index]
@@ -2200,10 +2202,14 @@ export function parseInstallArgs(args: string[], defaultPlatform: InstallPlatfor
 
     if (argument === '--platform') {
       const value = requireNonEmptyValue('--platform', args[index + 1])
+      if (platformProvided) {
+        throw new UsageError(INSTALL_USAGE)
+      }
       if (!isInstallPlatform(value)) {
         throw new UsageError(`error: unknown platform '${value}'`)
       }
       platform = value
+      platformProvided = true
       index += 1
       continue
     }
@@ -2211,14 +2217,27 @@ export function parseInstallArgs(args: string[], defaultPlatform: InstallPlatfor
     if (argument.startsWith('--platform=')) {
       const [, value] = argument.split('=', 2)
       const normalizedValue = requireNonEmptyValue('--platform', value)
+      if (platformProvided) {
+        throw new UsageError(INSTALL_USAGE)
+      }
       if (!isInstallPlatform(normalizedValue)) {
         throw new UsageError(`error: unknown platform '${normalizedValue}'`)
       }
       platform = normalizedValue
+      platformProvided = true
       continue
     }
 
-    throw new UsageError('Usage: madar install [--platform P]')
+    if (isInstallPlatform(argument)) {
+      if (platformProvided) {
+        throw new UsageError(INSTALL_USAGE)
+      }
+      platform = argument
+      platformProvided = true
+      continue
+    }
+
+    throw new UsageError(INSTALL_USAGE)
   }
 
   return { platform }

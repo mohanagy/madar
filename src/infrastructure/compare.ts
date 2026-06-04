@@ -118,6 +118,8 @@ export interface CompareMadarTraceTurnSummary {
   turn: number
   tool_call_count: number
   tools: string[]
+  madar_tool_discovery_count?: number
+  madar_tool_discovery_tool_indexes?: number[]
   agent_directive_seen?: string[]
 }
 
@@ -905,6 +907,31 @@ function isBroadExplorationTraceToolName(toolName: string): boolean {
   return TRACE_BROAD_EXPLORATION_TOOL_NAMES.has(toolName.toLowerCase())
 }
 
+function isToolSearchTraceToolName(toolName: string): boolean {
+  const normalizedName = canonicalTraceToolName(toolName).toLowerCase()
+  return normalizedName === 'toolsearch' || normalizedName === 'tool_search'
+}
+
+function isDeferredMadarToolSelectionQuery(value: string): boolean {
+  return value.trim().toLowerCase().startsWith('select:mcp__madar__')
+}
+
+function isMadarToolDiscoveryToolUse(toolName: string, input: unknown): boolean {
+  if (!isToolSearchTraceToolName(toolName)) {
+    return false
+  }
+  if (input === undefined || input === null) {
+    return false
+  }
+  if (typeof input === 'string') {
+    return isDeferredMadarToolSelectionQuery(input)
+  }
+  if (!isRecord(input)) {
+    return false
+  }
+  return typeof input.query === 'string' && isDeferredMadarToolSelectionQuery(input.query)
+}
+
 function traceToolCountSummary(toolCallsByName: Record<string, number>): string {
   return Object.entries(toolCallsByName)
     .sort(([leftName], [rightName]) => leftName.localeCompare(rightName))
@@ -953,7 +980,10 @@ function analyzeMadarTraceExploration(perTurn: CompareMadarTraceTurnSummary[]): 
   let sawFirstMadarCall = false
 
   for (const turn of perTurn) {
-    for (const toolName of turn.tools) {
+    const madarToolDiscoveryToolIndexes = new Set(turn.madar_tool_discovery_tool_indexes ?? [])
+    let remainingMadarToolDiscoveryCount =
+      madarToolDiscoveryToolIndexes.size === 0 ? (turn.madar_tool_discovery_count ?? 0) : 0
+    for (const [toolIndex, toolName] of turn.tools.entries()) {
       const canonicalName = canonicalTraceToolName(toolName)
       const hadSeenMadarCall = sawFirstMadarCall
       if (isMadarTraceToolName(toolName)) {
@@ -971,6 +1001,16 @@ function analyzeMadarTraceExploration(perTurn: CompareMadarTraceTurnSummary[]): 
         }
         sawFirstMadarCall = true
         continue
+      }
+
+      if (isToolSearchTraceToolName(toolName)) {
+        if (madarToolDiscoveryToolIndexes.has(toolIndex)) {
+          continue
+        }
+        if (remainingMadarToolDiscoveryCount > 0) {
+          remainingMadarToolDiscoveryCount -= 1
+          continue
+        }
       }
 
       if (!hadSeenMadarCall) {
@@ -1304,6 +1344,8 @@ function extractMadarTrace(stdout: string): CompareMadarTrace | undefined {
     const existingTurn = perTurnIndex.get(turn)
     const tools: string[] = []
     const directives: string[] = []
+    let madarToolDiscoveryCount = 0
+    const madarToolDiscoveryToolIndexes: number[] = []
     for (const contentPart of content) {
       if (!isRecord(contentPart)) {
         continue
@@ -1315,9 +1357,14 @@ function extractMadarTrace(stdout: string): CompareMadarTrace | undefined {
           continue
         }
 
+        const toolIndex = tools.length
         tools.push(toolName)
         toolCallsByName[toolName] = (toolCallsByName[toolName] ?? 0) + 1
         totalToolCalls += 1
+        if (isMadarToolDiscoveryToolUse(toolName, contentPart.input)) {
+          madarToolDiscoveryCount += 1
+          madarToolDiscoveryToolIndexes.push(toolIndex)
+        }
       }
 
       directives.push(...extractTraceAgentDirectives(contentPart))
@@ -1328,8 +1375,16 @@ function extractMadarTrace(stdout: string): CompareMadarTrace | undefined {
     }
 
     if (existingTurn) {
+      const existingToolCount = existingTurn.tools.length
       existingTurn.tool_call_count += tools.length
       existingTurn.tools.push(...tools)
+      if (madarToolDiscoveryCount > 0) {
+        existingTurn.madar_tool_discovery_count = (existingTurn.madar_tool_discovery_count ?? 0) + madarToolDiscoveryCount
+        existingTurn.madar_tool_discovery_tool_indexes = [
+          ...(existingTurn.madar_tool_discovery_tool_indexes ?? []),
+          ...madarToolDiscoveryToolIndexes.map((toolIndex) => existingToolCount + toolIndex),
+        ]
+      }
       if (directives.length > 0) {
         existingTurn.agent_directive_seen = [
           ...(existingTurn.agent_directive_seen ?? []),
@@ -1343,6 +1398,10 @@ function extractMadarTrace(stdout: string): CompareMadarTrace | undefined {
       turn,
       tool_call_count: tools.length,
       tools,
+      ...(madarToolDiscoveryCount > 0 ? { madar_tool_discovery_count: madarToolDiscoveryCount } : {}),
+      ...(madarToolDiscoveryToolIndexes.length > 0
+        ? { madar_tool_discovery_tool_indexes: madarToolDiscoveryToolIndexes }
+        : {}),
       ...(directives.length > 0 ? { agent_directive_seen: directives } : {}),
     })
   }

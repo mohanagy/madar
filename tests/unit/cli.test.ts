@@ -1106,7 +1106,13 @@ describe('cli parser', () => {
     expect(parseInstallArgs(['--platform=copilot'], 'claude')).toEqual({ platform: 'copilot' })
     expect(parseInstallArgs(['--platform=cursor'], 'claude')).toEqual({ platform: 'cursor' })
     expect(parseInstallArgs(['--platform=windows'], 'claude')).toEqual({ platform: 'windows' })
+    expect(parseInstallArgs(['claude'], 'windows')).toEqual({ platform: 'claude' })
+    expect(parseInstallArgs(['cursor'], 'claude')).toEqual({ platform: 'cursor' })
     expect(() => parseInstallArgs(['--platform', 'unknown'], 'claude')).toThrow("error: unknown platform 'unknown'")
+    expect(() => parseInstallArgs(['claude', 'cursor'], 'windows')).toThrow('Usage: madar install [platform|--platform P]')
+    expect(() => parseInstallArgs(['claude', '--platform', 'cursor'], 'windows')).toThrow(
+      'Usage: madar install [platform|--platform P]',
+    )
 
     expect(parsePlatformActionArgs('claude', ['install'])).toEqual({ action: 'install' })
     expect(parsePlatformActionArgs('claude', ['install', '--profile', 'full'])).toEqual({ action: 'install', profile: 'full' })
@@ -1269,9 +1275,9 @@ describe('cli main', () => {
     expect(help).toContain('question coverage')
     expect(help).toContain('hook <action>')
     expect(help).toContain('telemetry <enable|disable|status|clear|report [spool.json ...]>')
-    expect(help).toContain('install [--platform P]')
+    expect(help).toContain('install [platform|--platform P]')
     expect(help).toContain('If you update madar, re-run your platform install command to refresh local agent rules:')
-    expect(help).toContain('madar install --platform <platform>')
+    expect(help).toContain('madar install <platform>')
     expect(help).toContain('aider <install|uninstall>')
     expect(help).toContain('claude <install|uninstall> [--profile core|full|strict]')
     expect(help).toContain('cursor <install|uninstall> [--profile core|full|strict]')
