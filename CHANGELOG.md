@@ -2,6 +2,12 @@
 
 All notable changes to the TypeScript package will be documented in this file.
 
+## [0.27.9-next.7] - 2026-06-04
+
+### Fixed
+
+- **Generated Claude and Cursor MCP configs now launch Madar directly**: repo-local installs now write the bare `madar` command with `serve --stdio <graph path>` instead of version-pinned `npx` / `npx.cmd` launchers, so Windows installs no longer depend on the `.cmd` shim and the generated MCP config matches the installed CLI contract.
+
 ## [0.27.9-next.6] - 2026-06-04
 
 ### Fixed

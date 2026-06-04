@@ -129,10 +129,11 @@ The current telemetry model is local-first and source-safe. It records coarse fu
 
 ## What's New
 
-See the [`0.27.9-next.6` changelog entry](https://github.com/mohanagy/madar/blob/next/CHANGELOG.md#0279-next6---2026-06-04) for the full release notes.
+See the [`0.27.9-next.7` changelog entry](https://github.com/mohanagy/madar/blob/next/CHANGELOG.md#0279-next7---2026-06-04) for the full release notes.
 
 Recent highlights:
 
+- `0.27.9-next.7` makes generated Claude and Cursor MCP configs launch the installed `madar` CLI directly, so repo-local installs no longer write version-pinned `npx` / `npx.cmd` launchers into the MCP config.
 - `0.27.9-next.6` aligns Windows native-agent `--exec` handling with `cmd.exe`, so cmd-style exec templates such as `type {prompt_file} | claude -p --output-format stream-json --verbose` no longer hang the Madar arm during compare/review/benchmark flows.
 - `0.27.9-next.5` tightens native-agent compare prompts so task-specific runs stay bounded, and it preserves partial stdout/stderr when a timed-out arm settles after abort.
 - `0.27.9-next.4` splits native-agent compare prompt artifacts into explicit baseline and Madar files, records both paths in `report.json`, and keeps the legacy `prompt_file` field aligned with the Madar prompt for compatibility.
@@ -150,7 +151,7 @@ Recent highlights:
 
 ## When To Use `--spi`
 
-`--spi` is still opt-in in `0.27.9-next.6`. Use it when your repo is framework-heavy TypeScript/JavaScript and you want extra framework-shaped metadata plus disk cache behavior.
+`--spi` is still opt-in in `0.27.9-next.7`. Use it when your repo is framework-heavy TypeScript/JavaScript and you want extra framework-shaped metadata plus disk cache behavior.
 
 It is usually worth it for NestJS, Next.js App Router, Prisma, tRPC, Hono, Fastify, and similar repos where users ask storage-oriented prompts, client/server boundary questions, or request-flow questions. The default pipeline is still fine for simpler repos, non-JS/TS workspaces, or first runs where you do not need the extra framework detail yet.
 
