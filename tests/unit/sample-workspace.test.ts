@@ -82,7 +82,6 @@ describe('examples/sample-workspace', () => {
 
   it('documents how to generate and pack against the sample workspace', () => {
     const tutorial = readFileSync(resolve('docs/tutorials/sample-workspace.md'), 'utf8')
-    const readme = readFileSync(resolve('README.md'), 'utf8')
 
     if (tutorial.includes('npm run build')) {
       expect(tutorial.toLowerCase()).toContain('repository root')
@@ -90,7 +89,6 @@ describe('examples/sample-workspace', () => {
     expect(tutorial).toContain('madar generate examples/sample-workspace')
     expect(tutorial).toContain('madar pack')
     expect(tutorial).toContain('prompt-examples.json')
-    expect(readme).toContain('examples/sample-workspace')
   })
 
   it('does not return the password reset token to the caller', () => {

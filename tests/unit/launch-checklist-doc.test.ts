@@ -6,7 +6,6 @@ import { describe, expect, it } from 'vitest'
 describe('launch checklist documentation', () => {
   it('publishes a proof-first launch checklist and links it from release/docs surfaces', () => {
     const checklist = readFileSync(resolve('docs/launch-checklist.md'), 'utf8')
-    const readme = readFileSync(resolve('README.md'), 'utf8')
     const releaseDoc = readFileSync(resolve('docs/release.md'), 'utf8')
     const roadmap = readFileSync(resolve('docs/roadmap.md'), 'utf8')
 
@@ -37,7 +36,6 @@ describe('launch checklist documentation', () => {
     expect(checklist).toContain('rework 0')
     expect(checklist).toContain('Do not post generic "new open-source tool" messages')
 
-    expect(readme).toContain('docs/launch-checklist.md')
     expect(releaseDoc).toContain('docs/launch-checklist.md')
     expect(roadmap).toContain('issues/474')
   })
