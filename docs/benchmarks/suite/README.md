@@ -27,11 +27,12 @@ The runner-backed suite now ships in this directory:
 
 Current wiring is still conservative, but it is no longer a single-cell scaffold:
 
-- ready repo shapes: `ts-small`, `nestjs-mid`, `ts-monorepo-large`, `python-service`, and `go-service`
+- ready repo shapes: `ts-small`, `nestjs-mid`, `ts-monorepo-large`, `python-service`, `go-service`, `documenso`, `formbricks`, `dub`, `twenty`, `cal-diy`, and `novu`
 - ready task kinds: `explain-runtime`, `implement`, `review`, and `impact`
 - Python and Go now ship as concrete public fixture workspaces under `docs/benchmarks/suite/fixtures/`
-- the latest published bundle still measures the three TypeScript fixture-style rows; the Python and Go fixtures are prompt-wired so future receipts can extend that public spread honestly
-- runner execution still verifies a local Madar install per repo; a prompt-wired row without a verified install is reported as skipped instead of silently counted
+- six git-backed public repos are now prompt-wired as ready rows: `documenso`, `formbricks`, `dub`, `twenty`, `cal-diy`, and `novu`
+- the latest published bundle still measures the three TypeScript fixture-style rows; the Python and Go fixtures plus the git-backed public repos are runnable but not yet published as dated receipts
+- runner execution now clones or copies each ready row into a temporary benchmark workspace, normalizes repo-local Claude/MCP config there, provisions the Madar Claude install, and verifies that install before prompt spend
 
 Latest published bundle:
 

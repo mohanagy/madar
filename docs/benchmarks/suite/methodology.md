@@ -8,9 +8,10 @@ The fixed repo set is tracked in [`repos.json`](./repos.json).
 
 - Keep the shape mix explicit: small TypeScript, mid-size service, larger TypeScript monorepo, Python service, Go service.
 - The suite may use public repos or fixture-style proxies. It must not require the private GoValidate codebase.
+- The current public git-backed rows are `documenso`, `formbricks`, `dub`, `twenty`, `cal-diy`, and `novu`.
 - `status: "ready"` means the repo/task cell is prompt-wired and intended to run once the local install gate passes.
 - `status: "planned"` means the row stays visible in the manifest for roadmap clarity but must not be counted as measured evidence yet.
-- Actual execution still verifies a local Madar install in each repo path. Ready rows without a verified install are reported as skipped, not silently treated as measured evidence.
+- Actual execution clones or copies each ready repo into a temporary benchmark workspace, normalizes repo-local Claude/MCP config there, provisions the Madar Claude install, and verifies that install before prompt spend. If repo preparation or the suite-managed install fails, the cell is reported as skipped instead of silently treated as measured evidence.
 
 ## Task selection
 
