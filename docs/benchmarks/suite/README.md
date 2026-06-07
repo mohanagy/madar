@@ -36,6 +36,7 @@ Current wiring is still conservative, but it is no longer a single-cell scaffold
 - public explain-runtime reruns now load deterministic answer-quality gates from [`quality-gates.json`](./quality-gates.json); permission-blocked answers are not benchmark wins, and neither are inference-heavy answers
 - isolated Claude reruns for those public explain-runtime rows must allow `mcp__madar__retrieve` (for example with `--allowedTools mcp__madar__retrieve`)
 - runner execution now clones or copies each ready row into a temporary benchmark workspace, normalizes repo-local Claude/MCP config there, provisions the Madar Claude install, and verifies that install before prompt spend
+- `./isolation/run-isolated.sh` now treats `docs/benchmarks/suite/isolation/.claude` as a checked-in template and syncs it into a persistent runtime isolation profile outside the repo; if your normal Claude profile is logged in but that isolated runtime profile is not, the launcher fails fast and prints the exact `CLAUDE_CONFIG_DIR=... claude auth login` command to run once before rerunning the benchmark
 
 Latest published public-repo rerun receipts (these supersede the earlier permission-blocked 12:xx warm-cache runs):
 

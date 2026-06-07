@@ -62,7 +62,8 @@ For checked-in fixture bundles under `docs/benchmarks/suite/results/`, `report.j
 ## Isolation mode and canonical environment
 
 - Published benchmark cells are expected to run in isolation mode via [`docs/benchmarks/suite/isolation/`](./isolation/).
-- `./isolation/run-isolated.sh` sets `CLAUDE_CONFIG_DIR` to the shipped minimal config and exports `MADAR_BENCH_ISOLATION=1`.
+- `./isolation/run-isolated.sh` syncs the shipped minimal config into a persistent runtime isolation profile outside the repo, points `CLAUDE_CONFIG_DIR` at that runtime profile, and exports `MADAR_BENCH_ISOLATION=1`.
+- That isolation profile is separate from the user's default Claude profile; if the default profile is logged in but the isolated runtime profile is not, the launcher now fails fast and prints the exact `CLAUDE_CONFIG_DIR=... claude auth login` command to run once before a measured rerun.
 - The pinned environment contract lives in [`isolation/environment.json`](./isolation/environment.json). In isolation mode, `madar bench:suite` compares the live environment against that contract before each cell.
 - Environment drift marks the cell `status: "env_mismatch"` and excludes it from measured counts. `summary.md` records `Cells skipped for env drift: N`.
 - Development runs outside isolation mode remain useful receipts, but their cells are tagged `isolation: false` and should not be cited as published benchmark claims.
