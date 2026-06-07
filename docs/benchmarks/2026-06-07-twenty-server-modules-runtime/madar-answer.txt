@@ -1,0 +1,13 @@
+## Answer (with caveat)
+
+**The indexed graph does not contain the Twenty CRM codebase.** `retrieve` returned no Twenty API handlers, workspace services, or CRM persistence layer. Every matched node belongs to **Madar's own knowledge-graph extraction pipeline** (`src/pipeline/extract/core.ts`, `extract.ts`, `cross-file.ts`) plus a small **sample-workspace** fixture — they only matched on generic words like "record," "mutation," and "persistence," not on Twenty.
+
+So there is no API→workspace-service→persistence flow for Twenty to trace here. What the graph *does* contain that loosely resembles those layers (sample fixtures, not Twenty):
+
+- **API layer (analog):** `resolvePythonFastApiSemantics()` / `fastApiIncludeRouterCall()` in `cross-file.ts` — FastAPI router-include resolution, used for graph extraction, not request handling.
+- **Job/service (analog):** `enqueueResetEmailJob()` → `processResetEmailJob()` in `examples/sample-workspace/src/jobs/reset-email-job.ts`.
+- **Persistence (analog):** `UserRecord` in `examples/sample-workspace/src/persistence/user-repository.ts`.
+
+Coverage came back **partial / medium confidence**, with `structural` evidence reported missing — consistent with the target subject simply not being indexed.
+
+**Bottom line:** I can't describe Twenty's mutation flow from this graph because Twenty isn't in it. If you point me at the Twenty repository (or index it into Madar), I can trace the real API → workspace-service → persistence path. If you actually meant Madar's own extraction pipeline, I can explain that flow instead.

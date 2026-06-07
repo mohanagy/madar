@@ -1,0 +1,168 @@
+{
+  "documenso-explain-runtime": {
+    "prompt": "How does Documenso move a document from send preparation through recipient creation, signing state, and notification delivery?",
+    "require_direct_evidence": true,
+    "required_answer_terms": [
+      "document",
+      "recipient",
+      "notification"
+    ],
+    "forbidden_answer_terms": [
+      "mcp__madar__retrieve",
+      "approve the permission",
+      "permission hasn't been granted",
+      "tool call is waiting on your permission",
+      "ungranted permission",
+      "cannot answer the core of this question",
+      "redirect entrypoint isn't indexed",
+      "not present in this knowledge graph",
+      "not verified from indexed code"
+    ],
+    "required_concepts": [
+      "The answer should describe the runtime path instead of asking for tool approval."
+    ],
+    "answer_quality_notes": [
+      "Deterministic term checks are a publication gate, not a substitute for human review."
+    ],
+    "manual_review_notes": [
+      "Confirm the answer traces the send flow through signing state and notification delivery."
+    ]
+  },
+  "formbricks-explain-runtime": {
+    "prompt": "How does Formbricks process a survey response from request handling through persistence and analytics/event tracking?",
+    "require_direct_evidence": true,
+    "required_answer_terms": [
+      "survey",
+      "response",
+      "analytics"
+    ],
+    "forbidden_answer_terms": [
+      "mcp__madar__retrieve",
+      "approve the permission",
+      "permission hasn't been granted",
+      "tool call is waiting on your permission",
+      "ungranted permission",
+      "can't cite the persistence path from evidence here",
+      "persistence step in the middle is not in the evidence",
+      "partly inferred",
+      "did not surface the top-level handler that wires them together"
+    ],
+    "required_concepts": [
+      "The answer should describe request handling, persistence, and analytics/event tracking."
+    ],
+    "answer_quality_notes": [
+      "Permission-blocked non-answers are not benchmark wins."
+    ],
+    "manual_review_notes": [
+      "Confirm the answer follows the response path instead of only naming files."
+    ]
+  },
+  "dub-explain-runtime": {
+    "prompt": "How does Dub resolve a short-link click from request handling through analytics tracking and destination redirect?",
+    "require_direct_evidence": true,
+    "required_answer_terms": [
+      "redirect",
+      "analytics",
+      "destination"
+    ],
+    "forbidden_answer_terms": [
+      "mcp__madar__retrieve",
+      "approve the permission",
+      "permission hasn't been granted",
+      "tool call is waiting on your permission",
+      "ungranted permission",
+      "cannot answer the core of this question",
+      "redirect entrypoint isn't indexed",
+      "not present in this knowledge graph",
+      "not verified from indexed code"
+    ],
+    "required_concepts": [
+      "The answer should describe request handling, analytics, and the redirect path."
+    ],
+    "answer_quality_notes": [
+      "Deterministic answer gates should reject permission-blocked responses."
+    ],
+    "manual_review_notes": [
+      "Confirm the answer explains where analytics is recorded before redirect."
+    ]
+  },
+  "twenty-explain-runtime": {
+    "prompt": "How does Twenty process a CRM record mutation from API handling through workspace services to persistence?",
+    "require_direct_evidence": true,
+    "required_answer_terms": [
+      "mutation",
+      "workspace",
+      "persistence"
+    ],
+    "forbidden_answer_terms": [
+      "mcp__madar__retrieve",
+      "approve the permission",
+      "permission hasn't been granted",
+      "tool call is waiting on your permission",
+      "ungranted permission"
+    ],
+    "required_concepts": [
+      "The answer should describe the mutation path through workspace services to persistence."
+    ],
+    "answer_quality_notes": [
+      "A scoped Twenty receipt still needs readiness review before it becomes a claim."
+    ],
+    "manual_review_notes": [
+      "Confirm the answer reaches persistence and does not stop at API or resolver layers."
+    ]
+  },
+  "cal-diy-explain-runtime": {
+    "prompt": "How does Cal.diy turn a booking request into availability validation, scheduled event persistence, and notification delivery?",
+    "require_direct_evidence": true,
+    "required_answer_terms": [
+      "booking",
+      "availability",
+      "notification"
+    ],
+    "forbidden_answer_terms": [
+      "mcp__madar__retrieve",
+      "approve the permission",
+      "permission hasn't been granted",
+      "tool call is waiting on your permission",
+      "ungranted permission",
+      "can't cite the persistence path from evidence here",
+      "persistence step in the middle is not in the evidence",
+      "partly inferred",
+      "did not surface the top-level handler that wires them together"
+    ],
+    "required_concepts": [
+      "The answer should cover availability validation, persistence, and notification delivery."
+    ],
+    "answer_quality_notes": [
+      "Fallback raw-read answers can still be usable if they satisfy the deterministic gate."
+    ],
+    "manual_review_notes": [
+      "Confirm the answer follows the booking flow end to end and calls out the fallback caveat if needed."
+    ]
+  },
+  "novu-explain-runtime": {
+    "prompt": "How does Novu process a notification trigger from API entry through workflow orchestration to channel delivery?",
+    "require_direct_evidence": true,
+    "required_answer_terms": [
+      "notification",
+      "workflow",
+      "delivery"
+    ],
+    "forbidden_answer_terms": [
+      "mcp__madar__retrieve",
+      "approve the permission",
+      "permission hasn't been granted",
+      "tool call is waiting on your permission",
+      "ungranted permission"
+    ],
+    "required_concepts": [
+      "The answer should describe API entry, workflow orchestration, and channel delivery."
+    ],
+    "answer_quality_notes": [
+      "Publication requires a real answer, not a permission request."
+    ],
+    "manual_review_notes": [
+      "Confirm the answer traces orchestration through to delivery instead of stopping at the API surface."
+    ]
+  }
+}

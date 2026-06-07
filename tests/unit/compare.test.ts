@@ -3343,6 +3343,86 @@ describe('compare runtime', () => {
     expect(formatNativeAgentCompareSummary(result)).toContain('2 manual-review notes')
   })
 
+  it('fails direct-evidence gates when the answer admits the flow is inferred instead of directly surfaced', async () => {
+    const graph = makeGraph()
+    writeProjectFiles()
+    const graphPath = writeGraphFixture(graph)
+    const suiteDir = join(PROJECT_FIXTURE_ROOT, 'benchmarks', 'quality-direct-evidence')
+    mkdirSync(suiteDir, { recursive: true })
+    const questionsPath = join(suiteDir, 'questions.json')
+    writeFileSync(
+      questionsPath,
+      JSON.stringify([{ question: 'how does login create a session' }], null, 2),
+      'utf8',
+    )
+    writeFileSync(
+      join(suiteDir, 'quality-gates.json'),
+      JSON.stringify(
+        {
+          login: {
+            prompt: 'how does login create a session',
+            required_answer_terms: ['SessionManager'],
+            forbidden_answer_terms: [],
+            required_concepts: ['login reaches session creation'],
+            answer_quality_notes: ['Direct-evidence publication gates should reject inferred answers.'],
+            manual_review_notes: ['Confirm the answer is grounded in directly surfaced evidence.'],
+            require_direct_evidence: true,
+          },
+        },
+        null,
+        2,
+      ),
+      'utf8',
+    )
+
+    const result = await executeNativeAgentCompare(
+      {
+        graphPath,
+        questionsPath,
+        outputDir: COMPARE_OUTPUT_ROOT,
+        execTemplate: 'runner --prompt {prompt_file} --mode {mode} --out {output_file}',
+        baselineMode: 'native_agent',
+        now: new Date('2026-04-24T20:00:00.000Z'),
+      },
+      {
+        now: () => new Date('2026-04-24T20:00:00.000Z'),
+        runner: async (execution) => ({
+          exitCode: 0,
+          stdout: makeClaudeStructuredCompareStdout({
+            result: execution.mode === 'baseline'
+              ? 'SessionManager creates the session directly.'
+              : 'SessionManager creates the session, but the central handler is inferred and not directly surfaced.',
+            usage: {
+              input_tokens: execution.mode === 'baseline' ? 120 : 90,
+              output_tokens: 30,
+            },
+          }),
+          stderr: '',
+          elapsedMs: execution.mode === 'baseline' ? 11 : 7,
+        }),
+      },
+    )
+
+    expect(result.answer_quality).toEqual({
+      questions_checked: 1,
+      baseline_passed: 1,
+      madar_passed: 0,
+      madar_required_terms_missing: 0,
+      madar_forbidden_terms_present: 2,
+      manual_review_required: 1,
+    })
+    expect(result.reports[0]?.answer_quality).toEqual(
+      expect.objectContaining({
+        gate: 'login',
+        madar: expect.objectContaining({
+          passed: false,
+          missing_required_terms: [],
+          forbidden_terms_present: expect.arrayContaining(['inferred', 'not directly']),
+        }),
+      }),
+    )
+  })
+
   it('keeps native_agent suite runs working when no sibling quality gate config exists', async () => {
     const graph = makeGraph()
     writeProjectFiles()
@@ -4600,14 +4680,14 @@ describe('compare runtime', () => {
     expect(baselinePrompt).not.toContain('export class SessionManager')
   })
 
-  it('rejects ambiguous question sources and invalid limits', () => {
-    expect(() =>
+  it('prefers an explicit runtime question over questionsPath and rejects invalid limits', () => {
+    expect(
       resolveCompareQuestions({
         question: 'how does login create a session',
         questionsPath: 'compare-questions.json',
         limit: 1,
       }),
-    ).toThrow(/either a single question or a questions path/i)
+    ).toEqual(['how does login create a session'])
 
     expect(() =>
       resolveCompareQuestions({

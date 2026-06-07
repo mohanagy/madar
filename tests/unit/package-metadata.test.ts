@@ -59,6 +59,10 @@ function loadLanguageCapabilityMatrix(): string {
   return readFileSync(join(process.cwd(), 'docs', 'language-capability-matrix.md'), 'utf8')
 }
 
+function loadContextPacksDoc(): string {
+  return readFileSync(join(process.cwd(), 'docs', 'concepts', 'context-packs.md'), 'utf8')
+}
+
 function normalizeVersionRange(range: string | undefined): string {
   return (range ?? '').replace(/^[\^~]/, '')
 }
@@ -157,6 +161,7 @@ describe('package metadata', () => {
   it('positions package metadata around outcome-first task-aware local packs instead of generic graph marketing', () => {
     const manifest = loadPackageManifest()
     const readme = loadReadme().toLowerCase()
+    const contextPacks = loadContextPacksDoc().toLowerCase()
     const keywords = manifest.keywords ?? []
 
     expect(manifest.description?.toLowerCase()).toContain('stop')
@@ -173,27 +178,29 @@ describe('package metadata', () => {
     expect(readme).toContain('cursor')
     expect(readme).toContain('codex')
     expect(readme).toContain('copilot')
-    expect(readme).toContain('large typescript/node repo')
-    expect(readme).toContain('execution paths and structures relevant to this task')
-    expect(readme).toContain('execution slice')
+    expect(readme).toContain('repo context they need before they start searching')
+    expect(readme).toContain('local graph')
+    expect(readme).toContain('task-aware context pack')
+    expect(contextPacks).toContain('deterministic local context compilation')
     expect(readme).not.toContain('context plane')
     expect(readme).not.toContain('context compiler')
   })
 
-  it('keeps the README command surface aligned with pack and prompt automation flows', () => {
+  it('keeps the command surface aligned with pack/prompt automation and MCP docs', () => {
     const readme = loadReadme()
+    const examples = readFileSync(join(process.cwd(), 'examples', 'mcp-tool-examples.md'), 'utf8')
 
     expect(readme).toContain('madar pack')
     expect(readme).toContain('madar prompt')
-    expect(readme).toContain('context_pack')
-    expect(readme).toContain('context_prompt')
+    expect(examples).toContain('context_pack')
+    expect(examples).toContain('context_prompt')
   })
 
-  it('documents broad runtime-generation pack compaction in the README', () => {
-    const readme = loadReadme().toLowerCase()
+  it('documents broad runtime-generation pack compaction in the context-pack docs', () => {
+    const contextPacks = readFileSync(join(process.cwd(), 'docs', 'concepts', 'context-packs.md'), 'utf8').toLowerCase()
 
-    expect(readme).toContain('runtime-generation prompts stay compact')
-    expect(readme).toContain('shared-hub fan-out')
+    expect(contextPacks).toContain('runtime-generation prompts stay compact')
+    expect(contextPacks).toContain('shared-hub fan-out')
   })
 
   it('avoids circular maintainer guidance in the contributing guide', () => {
@@ -245,7 +252,6 @@ describe('package metadata', () => {
     const dependencies = manifest.dependencies ?? {}
     const peerDependencies = manifest.peerDependencies ?? {}
     const peerDependenciesMeta = manifest.peerDependenciesMeta ?? {}
-    const readme = loadReadme()
 
     expect(isAtLeastVersion(devDependencies.vite, [8, 0, 11])).toBe(true)
     expect(devDependencies.vite).toMatch(/^[~^]?8\./)
@@ -253,7 +259,6 @@ describe('package metadata', () => {
     expect(dependencies['@huggingface/transformers']).toBeUndefined()
     expect(typeof peerDependencies['@huggingface/transformers']).toBe('string')
     expect(peerDependenciesMeta['@huggingface/transformers']).toEqual({ optional: true })
-    expect(readme).toContain('npm install @huggingface/transformers')
   })
 
   it('caps vitest worker parallelism to keep the full suite stable on shared machines', () => {

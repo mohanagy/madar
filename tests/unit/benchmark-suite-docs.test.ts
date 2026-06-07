@@ -16,10 +16,26 @@ describe('benchmark suite docs', () => {
     expect(content).toContain('ts-monorepo-large')
     expect(content).toContain('python-service')
     expect(content).toContain('go-service')
+    expect(content).toContain('documenso')
+    expect(content).toContain('formbricks')
+    expect(content).toContain('dub')
+    expect(content).toContain('twenty')
+    expect(content).toContain('cal-diy')
+    expect(content).toContain('novu')
     expect(content).toContain('explain-runtime')
     expect(content).toContain('implement')
     expect(content).toContain('review')
     expect(content).toContain('impact')
+    expect(content).toContain('git-backed public repos')
+    expect(content).toContain('results/2026-06-07T13-42-48/summary.md')
+    expect(content).toContain('results/2026-06-07T13-48-33/summary.md')
+    expect(content).toContain('results/2026-06-07T15-37-50/summary.md')
+    expect(content).toContain('results/2026-06-07T15-42-13/summary.md')
+    expect(content).toContain('results/2026-06-07T14-09-14/summary.md')
+    expect(content).toContain('2026-06-07-twenty-server-modules-runtime')
+    expect(content).toContain('quality-gates.json')
+    expect(content).toContain('permission-blocked answers are not benchmark wins')
+    expect(content).toContain('--allowedTools mcp__madar__retrieve')
     expect(content).toContain('results/2026-05-31T12-00-00/summary.md')
     expect(content).not.toContain('Python and Go stay visible as planned rows')
   })
@@ -62,6 +78,67 @@ describe('benchmark suite docs', () => {
     expect(madarAnswer.trim().split('\n').length).toBeGreaterThan(3)
   })
 
+  it('checks in the latest public-repo summary receipts', () => {
+    const rows = [
+      {
+        path: 'docs/benchmarks/suite/results/2026-06-07T13-42-48/summary.md',
+        repo: 'documenso',
+        outcome: 'legacy: not_measured',
+      },
+      {
+        path: 'docs/benchmarks/suite/results/2026-06-07T13-48-33/summary.md',
+        repo: 'formbricks',
+        outcome: 'legacy: full_win',
+      },
+      {
+        path: 'docs/benchmarks/suite/results/2026-06-07T15-37-50/summary.md',
+        repo: 'dub',
+        outcome: 'legacy: not_measured',
+      },
+      {
+        path: 'docs/benchmarks/suite/results/2026-06-07T15-42-13/summary.md',
+        repo: 'cal-diy',
+        outcome: 'legacy: not_measured',
+      },
+      {
+        path: 'docs/benchmarks/suite/results/2026-06-07T14-09-14/summary.md',
+        repo: 'novu',
+        outcome: 'legacy: not_measured',
+      },
+    ]
+
+    for (const row of rows) {
+      const summary = readDoc(row.path)
+
+      expect(summary).toContain('# Benchmark suite summary')
+      expect(summary).toContain('## explain-runtime')
+      expect(summary).toContain('### Warm cache')
+      expect(summary).toContain('Benchmark outcomes')
+      expect(summary).toContain(`| ${row.repo} | completed | ${row.outcome}`)
+    }
+  })
+
+  it('keeps baseline prompt artifacts tool-agnostic in the latest public receipts', () => {
+    const roots = [
+      'docs/benchmarks/suite/results/2026-06-07T13-42-48/raw/documenso/explain-runtime/warm-cache/legacy/trial-001',
+      'docs/benchmarks/suite/results/2026-06-07T13-48-33/raw/formbricks/explain-runtime/warm-cache/legacy/trial-001',
+      'docs/benchmarks/suite/results/2026-06-07T14-09-14/raw/novu/explain-runtime/warm-cache/legacy/trial-001',
+      'docs/benchmarks/suite/results/2026-06-07T15-37-50/raw/dub/explain-runtime/warm-cache/legacy/trial-001',
+      'docs/benchmarks/suite/results/2026-06-07T15-42-13/raw/cal-diy/explain-runtime/warm-cache/legacy/trial-001',
+    ]
+
+    for (const root of roots) {
+      const baselinePrompt = readDoc(`${root}/baseline-prompt.txt`)
+      const nativeAgentPrompt = readDoc(`${root}/native_agent-prompt.txt`)
+      const madarPrompt = readDoc(`${root}/madar-prompt.txt`)
+
+      expect(nativeAgentPrompt).toBe(baselinePrompt)
+      expect(nativeAgentPrompt).not.toContain('Follow the Madar pack contract exactly.')
+      expect(nativeAgentPrompt).not.toContain('Call retrieve first')
+      expect(madarPrompt).toContain('Follow the Madar pack contract exactly.')
+    }
+  })
+
   it('defines workflow outcome metrics alongside token and latency reporting', () => {
     const content = readDoc('docs/benchmarks/suite/methodology.md')
 
@@ -81,13 +158,72 @@ describe('benchmark suite docs', () => {
 
   it('keeps claims conservative while acknowledging initial workflow-outcome receipts', () => {
     const claims = readDoc('docs/claims-and-evidence.md')
-    const readme = readDoc('README.md')
+    const whyMadar = readDoc('examples/why-madar.md')
 
-    expect(claims).toContain('small-library, service, and monorepo fixture-style rows')
-    expect(claims).toContain('initial implement/review workflow-outcome receipts')
+    expect(claims).toContain('original fixture-style bundle')
+    expect(claims).toContain('deterministic answer-quality gates')
+    expect(claims).toContain('permission-blocked answers are not benchmark wins')
+    expect(claims).toContain('results/2026-06-07T13-42-48/summary.md')
+    expect(claims).toContain('results/2026-06-07T13-48-33/summary.md')
+    expect(claims).toContain('results/2026-06-07T15-37-50/summary.md')
+    expect(claims).toContain('results/2026-06-07T15-42-13/summary.md')
+    expect(claims).toContain('results/2026-06-07T14-09-14/summary.md')
+    expect(claims).toContain('not_measured')
+    expect(claims).toContain('supplemental evidence')
+    expect(claims).toContain('2026-06-07-twenty-server-modules-runtime')
     expect(claims).toContain('results/2026-05-31T12-00-00/summary.md')
-    expect(readme).toContain('initial fixture-proxy implement/review/impact rows')
-    expect(readme).toContain('no single-number cross-repo headline')
+    expect(whyMadar).toContain('per-repo spread')
+    expect(whyMadar).toContain('no single-number cross-repo headline')
+  })
+
+  it('publishes a scoped Twenty receipt when the root suite graph is too large', () => {
+    const readme = readDoc('docs/benchmarks/2026-06-07-twenty-server-modules-runtime/README.md')
+    const reportAlias = readDoc('docs/benchmarks/2026-06-07-twenty-server-modules-runtime/report.json')
+    const baselineAnswer = readDoc('docs/benchmarks/2026-06-07-twenty-server-modules-runtime/baseline-answer.txt')
+    const madarAnswer = readDoc('docs/benchmarks/2026-06-07-twenty-server-modules-runtime/madar-answer.txt')
+    const report = JSON.parse(readDoc('docs/benchmarks/2026-06-07-twenty-server-modules-runtime/report.share-safe.json')) as {
+      measurement_validity?: string
+      trace_status?: string
+      madar_mcp_call_count?: number
+      benchmark_readiness?: {
+        status?: string
+      }
+      claim_assessment?: {
+        routing_efficiency?: { status?: string }
+        token_reduction?: { status?: string }
+      }
+      benchmark_outcome?: {
+        outcome?: string
+      }
+      reductions?: {
+        input_tokens?: number
+        duration_ms?: number
+        cost_usd?: number
+      }
+    }
+
+    expect(readme).toContain('packages/twenty-server/src/modules')
+    expect(readme).toContain('generated root graph exceeded the 10 MB')
+    expect(readme).toContain('compare safety guard')
+    expect(readme).toContain('--allowedTools mcp__madar__retrieve')
+    expect(readme).toContain('benchmark_outcome = "not_measured"')
+    expect(readme).toContain('baseline-answer.txt')
+    expect(readme).toContain('madar-answer.txt')
+    expect(reportAlias).toBe(readDoc('docs/benchmarks/2026-06-07-twenty-server-modules-runtime/report.share-safe.json'))
+    expect(baselineAnswer).toContain('Twenty')
+    expect(baselineAnswer.trim().split('\n').length).toBeGreaterThan(5)
+    expect(madarAnswer).toContain('##')
+    expect(madarAnswer).not.toContain('permission for `mcp__madar__retrieve`')
+    expect(report.measurement_validity).toBe('valid')
+    expect(report.trace_status).toBe('trace_available')
+    expect(report.madar_mcp_call_count).toBeGreaterThan(0)
+    expect(report.benchmark_readiness?.status).toBe('not_ready')
+    expect(report.claim_assessment?.routing_efficiency?.status).toBe('not_measured')
+    expect(report.claim_assessment?.token_reduction?.status).toBe('not_measured')
+    expect(report.benchmark_outcome?.outcome).toBe('not_measured')
+    expect(report.reductions?.input_tokens).toBeGreaterThan(1)
+    expect(report.reductions?.duration_ms).toBeGreaterThan(1)
+    expect(report.reductions?.cost_usd).toBeGreaterThan(1)
   })
 
   it('publishes the latest suite bundle under the canonical timestamp without nested trial directories', () => {

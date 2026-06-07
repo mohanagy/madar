@@ -39,13 +39,13 @@ describe('install documentation', () => {
     expect(reference).toContain('mark the agent as `partial` and suggest the matching reinstall command')
   })
 
-  it('documents handoff as the share-safe remote-agent artifact distinct from local pack and prompt flows', () => {
+  it('documents handoff as the share-safe CLI handoff distinct from local pack and prompt flows', () => {
     const readme = readFileSync(resolve('README.md'), 'utf8')
 
     expect(readme).toContain('madar handoff "add auth telemetry" --task implement --consumer copilot')
-    expect(readme).toContain('share-safe remote/background-agent artifact')
-    expect(readme).toContain('`madar pack` stays the richer local/full-context surface')
-    expect(readme).toContain('`madar prompt` stays local')
+    expect(readme).toContain('Create a share-safe handoff for another coding tool')
+    expect(readme).toContain('madar pack "how does auth work?" --task explain --format text')
+    expect(readme).toContain('madar prompt "how does auth work?" --provider claude')
   })
 
   it('documents the strict MCP install profile for claude, cursor, copilot, and gemini', () => {
@@ -62,21 +62,18 @@ describe('install documentation', () => {
     expect(reference).toContain('override conflicting auto-activated exploration skills')
   })
 
-  it('clarifies that strict installs still use one bounded context_pack call', () => {
+  it('documents that strict installs still use one bounded context_pack call in the CLI reference', () => {
     const reference = readFileSync(resolve('docs/reference/cli-and-mcp.md'), 'utf8')
-    const readme = readFileSync(resolve('README.md'), 'utf8')
 
     expect(reference).toContain('`--profile strict` keeps the seven core MCP tools but adds one bounded `context_pack` call per task')
     expect(reference).toContain('Full-profile additions beyond that strict one-pack flow')
-    expect(readme).toContain('`--profile strict` keeps the lean core MCP tools but still uses one bounded `context_pack` call per task before broader exploration')
   })
 
-  it('documents the local trust boundary and least-privilege install guidance', () => {
+  it('documents the local trust boundary and links the threat model from the README privacy section', () => {
     const readme = readFileSync(resolve('README.md'), 'utf8')
 
-    expect(readme).toContain('Treat every Madar MCP install, plugin, hook, or AGENTS profile as a local trust boundary.')
-    expect(readme).toContain('Only enable it for repositories and local agent runtimes you trust.')
-    expect(readme).toContain('Prefer `--profile strict` when you only need the lean core MCP tools.')
+    expect(readme).toContain('Your coding agent may still send prompts or selected file context to its own model provider')
+    expect(readme).toContain('Treat every local MCP install, hook, or agent profile as part of your local trust boundary.')
     expect(readme).toContain('docs/security/mcp-threat-model.md')
   })
 })

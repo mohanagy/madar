@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "started_at": "2026-06-07T15:37:50.625Z",
+  "completed_at": "2026-06-07T15:42:13.289Z",
+  "output_root": "docs/benchmarks/suite/results/2026-06-07T15-37-50",
+  "filters": {
+    "repo": "dub",
+    "task": "explain-runtime",
+    "mode": "warm",
+    "trials": 1
+  },
+  "cells_skipped_for_install": 0,
+  "cells_skipped_for_env_drift": 0,
+  "cells": [
+    {
+      "repoId": "dub",
+      "repoName": "Dub public repo",
+      "taskId": "explain-runtime",
+      "taskName": "Explain runtime flow",
+      "mode": "warm",
+      "prompt": "How does Dub resolve a short-link click from request handling through analytics tracking and destination redirect?",
+      "status": "completed",
+      "reason": null,
+      "isolation": true,
+      "baseline": {
+        "input_tokens": {
+          "median": 257000,
+          "min": 257000,
+          "max": 257000,
+          "n": 1
+        },
+        "total_tool_calls": {
+          "median": 8,
+          "min": 8,
+          "max": 8,
+          "n": 1
+        },
+        "read_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "glob_grep_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "wall_clock_ms": {
+          "median": 66474,
+          "min": 66474,
+          "max": 66474,
+          "n": 1
+        },
+        "cost_usd": {
+          "median": 0.35390475,
+          "min": 0.35390475,
+          "max": 0.35390475,
+          "n": 1
+        }
+      },
+      "madar": {
+        "input_tokens": {
+          "median": 118646,
+          "min": 118646,
+          "max": 118646,
+          "n": 1
+        },
+        "total_tool_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 1
+        },
+        "read_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "glob_grep_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "wall_clock_ms": {
+          "median": 47638,
+          "min": 47638,
+          "max": 47638,
+          "n": 1
+        },
+        "cost_usd": {
+          "median": 0.280461,
+          "min": 0.280461,
+          "max": 0.280461,
+          "n": 1
+        }
+      },
+      "spi_madar": null,
+      "workflow_outcomes": null,
+      "artifacts": {
+        "legacy_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-06-07T15-37-50/raw/dub/explain-runtime/warm-cache/legacy/trial-001/report.share-safe.json"
+        ],
+        "spi_share_safe_reports": []
+      },
+      "benchmark_outcomes": {
+        "legacy": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 0,
+            "regression": 0,
+            "not_measured": 1
+          },
+          "evidence": [
+            "answer quality failed for madar: forbidden did not surface"
+          ]
+        },
+        "spi_madar": null
+      }
+    }
+  ]
+}

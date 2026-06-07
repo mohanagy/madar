@@ -1,0 +1,22 @@
+Two focused Madar `retrieve` calls surfaced the edges of this flow (availability limit checks, the Prisma write-repository pattern, email/SMS/webhook delivery) but **not** the central `handleNewBooking` orchestrator that strings them together — both packs came back medium confidence with `structural` coverage missing. So the answer below is grounded in the retrieved evidence, with a caveat where the graph didn't expose the connecting handler.
+
+## How Cal.diy processes a booking request
+
+**1. Availability validation (request-time guards)**
+- On the booker UI, date/slot selection is gated by period/future-limit logic: `useNoFutureAvailability()` → `calculatePeriodLimits()` + `isTimeViolatingFutureLimit()`, which evaluate `ROLLING` / `RANGE` period types and surface `NoAvailabilityDialog` when no bookable slots remain (`packages/features/calendars/components/NoAvailabilityDialog.tsx`, with `DatePicker.tsx`).
+- *Caveat:* this is the client-facing availability gate. The server-side slot/conflict re-validation inside the booking handler was not directly indexed in the retrieved pack.
+
+**2. Scheduled-event persistence**
+- Writes go through Prisma write-side repositories using `dbWrite.prisma.<model>.create(...)` — e.g. `webhooks.repository.ts` (`createUserWebhook` / `createEventTypeWebhook` / `createOAuthClientWebhook`, each minting a `uuidv4()` id) and `teams.repository.ts` `create()`. This is the persistence idiom the booking record would follow (`PrismaWriteService` injected via constructor, separate `PrismaReadService` for reads).
+- *Caveat:* the specific `Booking` create call / handler wasn't returned by the graph — the repository pattern above is the structural evidence for how persistence is done.
+
+**3. Notification delivery**
+- Confirmation/notification fan-out runs through `packages/emails/email-manager.ts` for email, and the SMS managers extending `SMSManager` (e.g. `EventSuccessfullyReScheduledSMS` in `packages/sms/attendee/event-rescheduled-sms.ts`), which build localized messages with a `bookerUrl` deep-link (`/booking/{uid}`).
+- Outbound integrations are driven by the webhook subscriptions persisted in `webhooks.repository.ts`, which the booking lifecycle triggers on create/reschedule.
+
+### Key files
+- `packages/features/calendars/components/NoAvailabilityDialog.tsx` — availability/period gating
+- `apps/api/v2/src/modules/webhooks/webhooks.repository.ts` — Prisma write-repo persistence + webhook records
+- `packages/emails/email-manager.ts`, `packages/sms/attendee/*` — email/SMS notification delivery
+
+**Bottom line / caveat:** The retrieve packs confirm the three *stages* (availability gating → Prisma write persistence → email/SMS/webhook delivery) and their idioms, but the graph did not expose the central `handleNewBooking` orchestrator that sequences them. If you need the exact wiring (server-side conflict check → `booking.create` → notifier/webhook dispatch order), that one handler file is the targeted thing to open next.

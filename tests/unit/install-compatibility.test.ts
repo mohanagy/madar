@@ -359,11 +359,14 @@ describe('install compatibility guide', () => {
     expect(new Set(INSTALL_PLATFORMS)).toEqual(documentedPlatforms)
   })
 
-  it('links the README agent section to a dedicated compatibility guide', () => {
+  it('keeps README agent setup discoverable through quickstarts and the CLI reference while the CLI reference links the compatibility guide', () => {
     const readme = readFileSync(resolve('README.md'), 'utf8')
+    const reference = readFileSync(resolve('docs/reference/cli-and-mcp.md'), 'utf8')
 
-    expect(readme).toContain('compatibility guide')
-    expect(readme).toContain('docs/integrations/compatibility.md')
+    expect(readme).toContain('docs/tutorials/agent-quickstarts.md')
+    expect(readme).toContain('docs/reference/cli-and-mcp.md')
+    expect(reference).toContain('compatibility guide')
+    expect(reference).toContain('../integrations/compatibility.md')
   })
 
   it('publishes verified quickstarts and smoke tests for the primary agent targets', () => {

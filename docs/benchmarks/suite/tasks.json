@@ -9,7 +9,13 @@
       "nestjs-mid": "How does login session creation flow work from controller to persistence?",
       "ts-monorepo-large": "How does invite creation and membership validation flow work inside the monorepo invite service?",
       "python-service": "How does login session creation flow move from the FastAPI route through the session service to persistence and audit logging?",
-      "go-service": "How does login session creation flow move from the net/http handler through the session service to persistence and audit logging?"
+      "go-service": "How does login session creation flow move from the net/http handler through the session service to persistence and audit logging?",
+      "documenso": "How does Documenso move a document from send preparation through recipient creation, signing state, and notification delivery?",
+      "formbricks": "How does Formbricks process a survey response from request handling through persistence and analytics/event tracking?",
+      "dub": "How does Dub resolve a short-link click from request handling through analytics tracking and destination redirect?",
+      "twenty": "How does Twenty process a CRM record mutation from API handling through workspace services to persistence?",
+      "cal-diy": "How does Cal.diy turn a booking request into availability validation, scheduled event persistence, and notification delivery?",
+      "novu": "How does Novu process a notification trigger from API entry through workflow orchestration to channel delivery?"
     }
   },
   {
@@ -29,7 +35,13 @@
       "nestjs-mid": "Add request-id propagation to the login session flow and keep the existing auth controller contract intact.",
       "ts-monorepo-large": "Add invite expiry validation inside the domain invite service without widening the package boundary.",
       "python-service": "Add request-id propagation to the login session flow without changing the FastAPI route contract.",
-      "go-service": "Add request-id propagation to the login session flow without changing the HTTP handler contract."
+      "go-service": "Add request-id propagation to the login session flow without changing the HTTP handler contract.",
+      "documenso": "Add audit-log context to document-completed notifications without changing the document send or signing API contract.",
+      "formbricks": "Add request-id propagation through the survey response submission flow without changing the survey response API contract.",
+      "dub": "Add audit context to the short-link click analytics flow without changing the redirect contract.",
+      "twenty": "Add request-id propagation through a CRM record mutation flow without changing the public API contract.",
+      "cal-diy": "Add request-id propagation through the booking creation flow without changing the booking API contract.",
+      "novu": "Add request-id propagation through the notification trigger flow without changing the public trigger API contract."
     }
   },
   {
@@ -42,7 +54,13 @@
       "nestjs-mid": "Review the auth session flow for persistence bugs, missing validation, or request-boundary regressions.",
       "ts-monorepo-large": "Review the invite-service change for package-boundary violations or incorrect invite expiry handling.",
       "python-service": "Review the Python login session flow for missing validation, repository bugs, or audit regressions.",
-      "go-service": "Review the Go login session flow for missing validation, repository bugs, or audit regressions."
+      "go-service": "Review the Go login session flow for missing validation, repository bugs, or audit regressions.",
+      "documenso": "Review the document signing flow for missing recipient validation, notification side effects, or persistence regressions.",
+      "formbricks": "Review the survey response flow for missing validation, response persistence bugs, or analytics/event regressions.",
+      "dub": "Review the short-link redirect flow for analytics loss, redirect leaks, or persistence regressions.",
+      "twenty": "Review the CRM record mutation flow for missing validation, workspace-boundary leaks, or persistence regressions.",
+      "cal-diy": "Review the booking creation flow for availability validation bugs, notification regressions, or persistence leaks.",
+      "novu": "Review the notification trigger flow for missing validation, workflow-state bugs, or channel delivery regressions."
     }
   },
   {
@@ -55,7 +73,13 @@
       "nestjs-mid": "What breaks if I change session persistence in the auth service to stop returning stored session ids?",
       "ts-monorepo-large": "What breaks if invite-service changes how invite tokens are validated before crossing the package boundary?",
       "python-service": "What breaks if the Python session service stops writing login-session audit events?",
-      "go-service": "What breaks if the Go session service stops writing login-session audit events?"
+      "go-service": "What breaks if the Go session service stops writing login-session audit events?",
+      "documenso": "What breaks if Documenso stops enqueuing recipient notification emails after a document is sent?",
+      "formbricks": "What breaks if Formbricks stops recording survey response events after a submission is accepted?",
+      "dub": "What breaks if Dub stops persisting click analytics for redirected short links?",
+      "twenty": "What breaks if Twenty stops writing activity or audit records during CRM record updates?",
+      "cal-diy": "What breaks if Cal.diy stops sending booking confirmation notifications after an event is scheduled?",
+      "novu": "What breaks if Novu stops persisting workflow execution state before channel delivery?"
     }
   },
   {

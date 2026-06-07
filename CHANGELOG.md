@@ -2,6 +2,20 @@
 
 All notable changes to the TypeScript package will be documented in this file.
 
+## [0.27.9] - 2026-06-04
+
+### Added
+
+- **The next-track adoption bundle is now the stable `0.27.9` release**: Madar now ships the public benchmark suite and language fixtures, the one-command `madar try` proof flow, opt-in funnel telemetry, verified agent quickstarts, the design-partner loop, and the proof-first launch/distribution checklist that landed across `0.27.9-next.0` and `0.27.9-next.1`.
+
+### Changed
+
+- **Freshness, MCP routing, and native-agent reporting are tighter on the stable line**: the git-backed freshness model now covers `madar pack`, `madar prompt`, `madar handoff`, `madar doctor`, and `madar status`; native-agent compare keeps separate baseline/Madar prompt artifacts with stricter task-bounded guidance and clearer attribution; generated Claude and Cursor MCP configs now launch the installed `madar` CLI directly; and `madar install <platform>` now works alongside `--platform`.
+
+### Fixed
+
+- **Windows agent workflows are now release-ready**: Claude installs now use a generated local `.claude/madar-user-prompt-submit.cjs` script instead of an oversized inline hook, Windows native-agent `--exec` commands now honor the expected `cmd.exe` contract, timed-out native-agent arms preserve settled partial artifacts, and compare trace classification no longer mistakes deferred `ToolSearch` Madar selection for broad exploration.
+
 ## [0.27.9-next.7] - 2026-06-04
 
 ### Fixed

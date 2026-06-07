@@ -7,7 +7,6 @@ describe('design partner program docs', () => {
   it('publishes a share-safe design partner guide, tracker, and issue template', () => {
     const guide = readFileSync(resolve('docs/design-partners.md'), 'utf8')
     const template = readFileSync(resolve('.github/ISSUE_TEMPLATE/design_partner_report.yml'), 'utf8')
-    const readme = readFileSync(resolve('README.md'), 'utf8')
     const gettingStarted = readFileSync(resolve('docs/tutorials/getting-started.md'), 'utf8')
     const trackerRows = guide
       .split('\n')
@@ -42,7 +41,6 @@ describe('design partner program docs', () => {
     expect(template).toContain('Do not include source paths')
     expect(template).toContain('Do not include source code')
 
-    expect(readme).toContain('docs/design-partners.md')
     expect(gettingStarted).toContain('docs/design-partners.md')
   })
 })
