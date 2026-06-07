@@ -4070,7 +4070,6 @@ function nativeAgentBenchmarkBlockers(report: NativeAgentCompareReport): string[
       : ''
     blockers.push(`prompt contract is ${report.prompt_contract.status}${evidence}`)
   }
-
   if (report.answer_quality) {
     const baselineFindings = nativeAgentAnswerQualityFindings(report.answer_quality.baseline)
     if (!report.answer_quality.baseline.passed) {

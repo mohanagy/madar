@@ -42,6 +42,8 @@ describe('public marketing copy honesty', () => {
     const contextPacks = readDoc('docs/concepts/context-packs.md')
     const cliReference = readDoc('docs/reference/cli-and-mcp.md')
     const claims = readDoc('docs/claims-and-evidence.md')
+    const benchmarkMethodology = readDoc('docs/benchmarks/suite/methodology.md')
+    const languageMatrix = readDoc('docs/language-capability-matrix.md')
     const publicDocs = [content, contextPacks, cliReference, claims].join('\n')
     const publicLower = publicDocs.toLowerCase()
 
@@ -51,15 +53,14 @@ describe('public marketing copy honesty', () => {
       })
     }
 
-    it('leads with the urgent adoption outcome while keeping execution-slice framing honest', () => {
+    it('leads with an agent-first landing page while keeping local-graph claims honest', () => {
       expect(lower).toContain('claude code')
       expect(lower).toContain('cursor')
       expect(lower).toContain('codex')
       expect(lower).toContain('copilot')
-      expect(lower).toContain('wasting tokens')
-      expect(lower).toContain('large typescript/node repo')
-      expect(lower).toContain('execution paths and structures relevant to this task')
-      expect(lower).toContain('execution slice')
+      expect(lower).toContain('repo context they need before they start searching')
+      expect(lower).toContain('local graph')
+      expect(lower).toContain('task-aware context pack')
       expect(lower).not.toContain('context plane')
       expect(lower).not.toContain('context compiler')
       expect(lower).not.toMatch(/5\.28x|5\.28×|2\.21x|2\.21×|1\.58x|1\.58×|69\.9%/i)
@@ -84,13 +85,11 @@ describe('public marketing copy honesty', () => {
       expect(publicLower).toContain('madar status')
     })
 
-    it('surfaces the 0.23.0 user-facing additions in the main README flow', () => {
-      expect(lower).toContain("what's new in 0.23.0")
-      expect(content).toContain('`madar summary`')
-      expect(content).toContain('`graph_summary`')
-      expect(content).toContain('`execution_slice`')
-      expect(content).toContain('report.share-safe.json')
-      expect(content).toContain('--baseline-mode pack_only')
+    it('surfaces the current stable release and benchmark evidence pointers in the main README flow', () => {
+      expect(content).toContain('Current version: `0.27.9`')
+      expect(content).toContain('0.27.9 changelog')
+      expect(content).toContain('madar summary')
+      expect(content).toContain('docs/claims-and-evidence.md')
       expect(content).toContain('docs/benchmarks/suite/')
     })
 
@@ -109,20 +108,19 @@ describe('public marketing copy honesty', () => {
       )
     })
 
-    it('explains when users should opt into --spi', () => {
-      expect(lower).toContain('when to use `--spi`')
-      expect(lower).toContain('still opt-in')
-      expect(lower).toContain('storage-oriented prompts')
-      expect(lower).toContain('next.js')
-      expect(lower).toContain('disk cache')
+    it('keeps SPI guidance in the deeper docs instead of the top-level README', () => {
+      expect(publicDocs).toContain('--spi')
+      expect(publicLower).toContain('storage-oriented prompts')
+      expect(publicLower).toContain('next.js')
+      expect(publicLower).toContain('disk cache')
+      expect(content).not.toContain('## When To Use `--spi`')
     })
 
-    it('explains when follow-up prompt sessions should and should not show reuse gains', () => {
-      expect(content).toContain('reuse the same `session_id`')
-      expect(content).toContain('`session_diagnostics`')
-      expect(lower).toContain('mostly stable retrieved graph context')
-      expect(lower).toContain('first turns')
-      expect(lower).toContain('heavily changed retrieved context')
+    it('documents repeated-turn session reuse in the benchmark methodology docs', () => {
+      expect(benchmarkMethodology).toContain('one session across that list')
+      expect(benchmarkMethodology).toContain('reused_context_tokens')
+      expect(benchmarkMethodology).toContain('session_diagnostics')
+      expect(benchmarkMethodology.toLowerCase()).toContain('single-question cells remain first-turn only')
     })
 
     it('keeps the README core MCP surface aligned with the shipped graph_summary tool', () => {
@@ -143,32 +141,26 @@ describe('public marketing copy honesty', () => {
       expect(publicDocs).toContain('`get_neighbors`')
     })
 
-    it('pins the measured post-#82 core-profile schema overhead numbers in the Honest disclosure section', () => {
-      // Per the project's doc-honesty rule, a README claim about a measured
-      // number must be backed by a test that asserts the README contains the
-      // current measurement. If a future PR reduces it further, update both
-      // the README number and the regex below in the same PR. The matched
-      // numbers come straight from tests/unit/mcp-schema-budget.test.ts.
-      expect(lower).toMatch(/~\s*800\s*tokens/)
-      expect(lower).toMatch(/~?\s*3[,.]?200\s*bytes/)
-      expect(lower).toMatch(/25%/)
+    it('pins the benchmark evidence table values in the README', () => {
+      expect(content).toContain('| Tool calls | 28 | 7 |')
+      expect(content).toContain('| Input tokens | 2,366,946 | 498,688 |')
+      expect(content).toContain('| Wall-clock latency | 158,995 ms | 72,420 ms |')
+      expect(content).toContain('| Cost | $2.6595 | $0.9728 |')
     })
 
-    it('keeps claim buckets and measurement methodology in the evidence docs, with a compact README pointer', () => {
+    it('keeps claim buckets in the evidence docs while the README stays a compact pointer', () => {
       expect(claims).toContain('## Demonstrated today')
       expect(claims).toContain('## In progress')
       expect(claims).toContain('## Not yet measured')
       expect(claims).toContain('How this maps to README.md')
-      expect(publicLower).toContain('per-repo spread')
-      expect(publicLower).toContain('no single-number cross-repo headline')
-      expect(content).toContain('Published benchmark cells run in isolation mode')
-      expect(content).toContain('Your local numbers may differ if your Claude Code config differs.')
+      expect(content).toContain('This is not a universal benchmark claim.')
+      expect(content).toContain('docs/claims-and-evidence.md')
     })
 
-    it('links the claims-and-evidence map, benchmark suite scaffold, and mixed-evidence benchmark notes', () => {
+    it('links the claims-and-evidence map, benchmark suite scaffold, and mixed-evidence benchmark notes across the public docs', () => {
       expect(content).toContain('docs/claims-and-evidence.md')
       expect(content).toContain('docs/benchmarks/suite/')
-      expect(content).toContain('docs/benchmarks/2026-05-25-founder-command-center-auth-flow/')
+      expect(claims).toContain('docs/benchmarks/2026-05-25-founder-command-center-auth-flow/')
     })
 
     it('positions Madar as a context/evidence layer for review and security tools without overclaiming outcomes', () => {
@@ -181,43 +173,39 @@ describe('public marketing copy honesty', () => {
       expect(content).toContain('docs/claims-and-evidence.md')
     })
 
-    it('states who madar is for and not for explicitly', () => {
-      expect(lower).toContain('who madar is for')
-      expect(lower).toContain('who madar is not for')
-      expect(lower).toContain('medium-to-large typescript/node repos')
-      expect(lower).toContain('cost, latency, privacy, or wrong-file-edit risk')
-      expect(lower).toContain('tiny repos')
-      expect(lower).toContain('hosted-dashboard-first buyers')
+    it('frames fit and limitations directly in the shorter README', () => {
+      expect(lower).toContain('## fit')
+      expect(lower).toContain('most useful when')
+      expect(lower).toContain('your repo is medium or large')
+      expect(lower).toContain('token usage, latency, or local repo privacy matter')
+      expect(lower).toContain('it helps less when')
+      expect(lower).toContain('the repo is small')
     })
 
-    it('adds a bounded competitor positioning table backed by the claims-and-evidence map', () => {
-      expect(lower).toContain('madar vs repomix vs context7')
-      expect(content).toContain('| Tool | Best first use | Where it stops |')
-      expect(content).toContain('Repomix')
-      expect(content).toContain('Context7')
-      expect(content).toContain('Capability/scope summary only')
-      expect(content).toContain('docs/claims-and-evidence.md#competitive-positioning')
+    it('keeps competitor positioning in the claims-and-evidence doc instead of the shorter README', () => {
+      expect(content).toContain('docs/claims-and-evidence.md')
       expect(claims).toContain('## Competitive positioning')
       expect(claims).toContain('Repomix')
       expect(claims).toContain('Context7')
       expect(claims).toContain('scope summary, not a benchmark claim')
     })
 
-    it('frames the core promise as deterministic local context compilation that complements indexing', () => {
-      expect(lower).toContain('deterministic local context compilation')
-      expect(lower).toContain('complements agents and ide indexing')
-      expect(lower).toContain('not another generic codebase index')
+    it('keeps the deterministic local context compilation framing in the broader public docs', () => {
+      expect(publicLower).toContain('deterministic local context compilation')
+      expect(publicLower).toContain('complements agents and ide indexing')
+      expect(publicLower).toContain('not another generic codebase index')
     })
 
-    it('links a bounded team and enterprise offer instead of implying hosted packaging', () => {
-      expect(content).toContain('docs/team-enterprise-offer.md')
-      expect(lower).toContain('team and enterprise offer')
+    it('keeps team and enterprise positioning service-scoped in the evidence docs', () => {
+      expect(claims.toLowerCase()).toContain('team and enterprise offer')
+      expect(claims.toLowerCase()).toContain('service-scoped')
+      expect(content).toContain('docs/claims-and-evidence.md')
     })
 
-    it('keeps the README Python support claim conservative and current', () => {
+    it('keeps Python support claims conservative in the deeper public docs', () => {
       expect(publicDocs).toContain('FastAPI router composition')
       expect(publicDocs).toContain('Django URL-conf')
-      expect(publicLower).toContain('not near js/ts parity')
+      expect(languageMatrix.toLowerCase()).toContain('without claiming full framework parity')
     })
   })
 

@@ -311,7 +311,6 @@ function makeRescopedReadinessFixtureProjectWithOptions(options: {
 
   return { projectDir, graphPath, outputDir }
 }
-
 function makeImplementFixtureProject(): { projectDir: string; graphPath: string; outputDir: string } {
   const { projectDir, outputDir } = makeFixtureProject()
   mkdirSync(join(projectDir, 'src', 'auth'), { recursive: true })
@@ -2724,7 +2723,6 @@ describe('executeNativeAgentCompare', () => {
       rmSync(projectDir, { recursive: true, force: true })
     }
   })
-
   it('classifies implement outcomes from isolated touched-file overlap and passing validation', async () => {
     const { projectDir, graphPath, outputDir } = makeImplementFixtureProject()
     try {
