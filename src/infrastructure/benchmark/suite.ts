@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -10,6 +11,7 @@ import {
   type NativeAgentCompareResult,
   type NativeAgentWorkflowOutcome,
 } from '../compare.js'
+import { claudeInstall } from '../install.js'
 import { copyWorkspaceForBenchmark } from '../../shared/workspace-copy.js'
 import {
   benchmarkIsolationEnabled,
@@ -24,10 +26,24 @@ import { shellEscape } from '../../shared/shell.js'
 export type BenchmarkSuiteMode = 'cold' | 'warm' | 'all'
 export type BenchmarkSuiteEntryStatus = 'ready' | 'planned'
 
+export interface BenchmarkSuiteRepoPathSource {
+  kind: 'path'
+  path: string
+}
+
+export interface BenchmarkSuiteRepoGitSource {
+  kind: 'git'
+  url: string
+  ref?: string
+}
+
+export type BenchmarkSuiteRepoSource = BenchmarkSuiteRepoPathSource | BenchmarkSuiteRepoGitSource
+
 export interface BenchmarkSuiteRepo {
   id: string
   name: string
-  path: string
+  path?: string
+  source?: BenchmarkSuiteRepoSource
   description: string
   size: 'small' | 'mid' | 'large'
   language: string
@@ -106,6 +122,12 @@ interface BenchmarkSuiteCellPlan {
   reason: string | null
 }
 
+interface PreparedBenchmarkRepo {
+  sourceRoot: string
+  legacyGraphPath: string
+  spiGraphPath: string | null
+}
+
 export interface BenchmarkSuiteSummaryCell {
   repoId: string
   repoName: string
@@ -172,6 +194,92 @@ function readJsonFile(path: string): unknown {
   return JSON.parse(readFileSync(path, 'utf8')) as unknown
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function normalizeBenchmarkSuiteGitSource(
+  source: BenchmarkSuiteRepoGitSource,
+  repoId: string,
+): BenchmarkSuiteRepoGitSource {
+  if (typeof source.url !== 'string' || source.url.trim().length === 0) {
+    throw new Error(`Benchmark suite repo ${repoId} source.url is missing`)
+  }
+  const url = source.url.trim()
+  const ref = typeof source.ref === 'string' && source.ref.trim().length > 0 ? source.ref.trim() : undefined
+  return ref ? { kind: 'git', url, ref } : { kind: 'git', url }
+}
+
+function normalizeBenchmarkSuiteRepo(repo: BenchmarkSuiteRepo): BenchmarkSuiteRepo {
+  if (repo.source?.kind === 'path') {
+    const sourcePath = resolve(repo.source.path)
+    return {
+      ...repo,
+      path: sourcePath,
+      source: {
+        kind: 'path',
+        path: sourcePath,
+      },
+    }
+  }
+
+  if (repo.source?.kind === 'git') {
+    const { path: _ignoredPath, ...rest } = repo
+    return {
+      ...rest,
+      source: normalizeBenchmarkSuiteGitSource(repo.source, repo.id),
+    }
+  }
+
+  if (typeof repo.path === 'string' && repo.path.trim().length > 0) {
+    const sourcePath = resolve(repo.path)
+    return {
+      ...repo,
+      path: sourcePath,
+      source: {
+        kind: 'path',
+        path: sourcePath,
+      },
+    }
+  }
+
+  throw new Error(`Benchmark suite repo ${repo.id} is missing path`)
+}
+
+function parseBenchmarkSuiteRepoSource(
+  repo: Record<string, unknown>,
+  repoId: string,
+): BenchmarkSuiteRepoSource | undefined {
+  if (!isRecord(repo.source)) {
+    return undefined
+  }
+
+  if (repo.source.kind === 'path') {
+    if (typeof repo.source.path !== 'string' || repo.source.path.trim().length === 0) {
+      throw new Error(`Benchmark suite repo ${repoId} source.path is missing`)
+    }
+    return {
+      kind: 'path',
+      path: repo.source.path,
+    }
+  }
+
+  if (repo.source.kind === 'git') {
+    if (typeof repo.source.url !== 'string' || repo.source.url.trim().length === 0) {
+      throw new Error(`Benchmark suite repo ${repoId} source.url is missing`)
+    }
+    return {
+      kind: 'git',
+      url: repo.source.url,
+      ...(typeof repo.source.ref === 'string' && repo.source.ref.trim().length > 0
+        ? { ref: repo.source.ref }
+        : {}),
+    }
+  }
+
+  throw new Error(`Benchmark suite repo ${repoId} source.kind must be "path" or "git"`)
+}
+
 export function loadBenchmarkSuiteRepos(path = DEFAULT_REPOS_PATH): BenchmarkSuiteRepo[] {
   const parsed = readJsonFile(path)
   if (!Array.isArray(parsed)) {
@@ -190,27 +298,26 @@ export function loadBenchmarkSuiteRepos(path = DEFAULT_REPOS_PATH): BenchmarkSui
     if (typeof repo.name !== 'string' || repo.name.trim().length === 0) {
       throw new Error(`Benchmark suite repo ${repo.id} is missing name`)
     }
-    if (typeof repo.path !== 'string' || repo.path.trim().length === 0) {
-      throw new Error(`Benchmark suite repo ${repo.id} is missing path`)
-    }
     if (repo.status !== 'ready' && repo.status !== 'planned') {
       throw new Error(`Benchmark suite repo ${repo.id} status must be "ready" or "planned"`)
     }
     if (typeof repo.supportsSpi !== 'boolean') {
       throw new Error(`Benchmark suite repo ${repo.id} is missing supportsSpi`)
     }
+    const source = parseBenchmarkSuiteRepoSource(repo, String(repo.id))
 
-    return {
+    return normalizeBenchmarkSuiteRepo({
       id: repo.id,
       name: repo.name,
-      path: resolve(String(repo.path)),
+      ...(typeof repo.path === 'string' && repo.path.trim().length > 0 ? { path: repo.path } : {}),
+      ...(source ? { source } : {}),
       description: typeof repo.description === 'string' ? repo.description : '',
       size: repo.size === 'small' || repo.size === 'mid' || repo.size === 'large' ? repo.size : 'mid',
       language: typeof repo.language === 'string' ? repo.language : 'unknown',
       shape: typeof repo.shape === 'string' ? repo.shape : 'unknown',
       status: repo.status,
       supportsSpi: repo.supportsSpi,
-    }
+    })
   })
 }
 
@@ -334,6 +441,59 @@ function copyWorkspace(sourceRoot: string, targetRoot: string): void {
   copyWorkspaceForBenchmark(sourceRoot, targetRoot)
 }
 
+function cloneBenchmarkSuiteRepo(source: BenchmarkSuiteRepoGitSource, targetRoot: string): void {
+  mkdirSync(dirname(targetRoot), { recursive: true })
+  const args = ['clone', '--depth', '1', '--single-branch']
+  if (source.ref) {
+    args.push('--branch', source.ref)
+  }
+  args.push(source.url, targetRoot)
+  execFileSync('git', args, {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+}
+
+function materializeBenchmarkRepoSource(repo: BenchmarkSuiteRepo, scratchRoot: string): string {
+  const source = repo.source
+  if (!source) {
+    throw new Error(`Benchmark suite repo ${repo.id} has no source`)
+  }
+  const sourceRoot = join(scratchRoot, 'source')
+  if (source.kind === 'path') {
+    copyWorkspace(source.path, sourceRoot)
+    return sourceRoot
+  }
+  cloneBenchmarkSuiteRepo(source, sourceRoot)
+  return sourceRoot
+}
+
+function resetBenchmarkWorkspaceConfig(workspaceRoot: string): void {
+  rmSync(join(workspaceRoot, 'CLAUDE.md'), { force: true })
+  rmSync(join(workspaceRoot, '.mcp.json'), { force: true })
+  rmSync(join(workspaceRoot, '.claude'), { recursive: true, force: true })
+  rmSync(join(workspaceRoot, '.cursor', 'mcp.json'), { force: true })
+  rmSync(join(workspaceRoot, '.vscode', 'mcp.json'), { force: true })
+  rmSync(join(workspaceRoot, '.opencode', 'plugins'), { recursive: true, force: true })
+}
+
+function ensureBenchmarkWorkspaceInstall(workspaceRoot: string): void {
+  resetBenchmarkWorkspaceConfig(workspaceRoot)
+  claudeInstall(workspaceRoot)
+  const installCheck = inspectClaudeNativeAgentInstall(workspaceRoot)
+  if (installCheck.verified) {
+    return
+  }
+  throw new Error(
+    [
+      `Benchmark suite could not provision a Madar install inside ${portablePath(workspaceRoot)}:`,
+      ...installCheck.artifacts
+        .filter((artifact) => !artifact.ok)
+        .map((artifact) => `  x ${artifact.detail}`),
+    ].join('\n'),
+  )
+}
+
 function execTemplateForWorkspace(execTemplate: string, workspaceRoot: string): string {
   if (process.platform === 'win32') {
     return `cd /d ${shellEscape(workspaceRoot, process.platform)} && ${execTemplate}`
@@ -342,13 +502,14 @@ function execTemplateForWorkspace(execTemplate: string, workspaceRoot: string): 
 }
 
 function prepareBenchmarkWorkspace(
-  repo: BenchmarkSuiteRepo,
+  sourceRoot: string,
   runGenerateGraph: (rootPath?: string, options?: GenerateGraphOptions) => GenerateGraphResult,
   scratchRoot: string,
   kind: 'legacy' | 'spi',
 ): string {
   const workspaceRoot = join(scratchRoot, kind)
-  copyWorkspace(repo.path, workspaceRoot)
+  copyWorkspace(sourceRoot, workspaceRoot)
+  ensureBenchmarkWorkspaceInstall(workspaceRoot)
   return runGenerateGraph(workspaceRoot, kind === 'spi' ? { noHtml: true, useSpi: true } : { noHtml: true }).graphPath
 }
 
@@ -526,7 +687,7 @@ function formatMetric(stats: BenchmarkSuiteMetricStats | null, digits = 0): stri
 }
 
 function formatCellRow(cell: BenchmarkSuiteSummaryCell): string {
-  const statusLabel = cell.status === 'skipped' ? 'skipped (no install)' : cell.status
+  const statusLabel = cell.status === 'skipped' ? 'skipped' : cell.status
   const reason = cell.reason ?? '—'
   return [
     cell.repoId,
@@ -664,6 +825,11 @@ function stringifyArtifacts(paths: string[]): string[] {
   return paths.map((path) => portablePath(path))
 }
 
+function formatRepoPreparationFailure(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  return `Repo preparation failed: ${message}`
+}
+
 function loadExpectedEnvironment(path = DEFAULT_EXPECTED_ENVIRONMENT_PATH): BenchmarkExpectedEnvironment | null {
   if (!existsSync(path)) {
     return null
@@ -699,7 +865,7 @@ export async function runBenchmarkSuite(
   options: BenchmarkSuiteRunOptions,
   dependencies: BenchmarkSuiteDependencies = {},
 ): Promise<BenchmarkSuiteRunResult> {
-  const repos = dependencies.repos ?? loadBenchmarkSuiteRepos()
+  const repos = (dependencies.repos ?? loadBenchmarkSuiteRepos()).map((repo) => normalizeBenchmarkSuiteRepo(repo))
   const tasks = dependencies.tasks ?? loadBenchmarkSuiteTasks()
   const now = dependencies.now ?? (() => new Date())
   const runGenerateGraph = dependencies.generateGraph ?? generateGraph
@@ -726,7 +892,7 @@ export async function runBenchmarkSuite(
   const startedAt = now()
   const outputRoot = createSuiteOutputRoot(resolve(options.outputDir), startedAt)
   const readyPlans = plans.filter((plan) => plan.status === 'ready')
-  const preparedRepos = new Map<string, { legacyGraphPath: string; spiGraphPath: string | null }>()
+  const preparedRepos = new Map<string, PreparedBenchmarkRepo>()
   const skippedRepos = new Map<string, string>()
   const scratchRoots: string[] = []
   const stagingRoot = resolve('out/benchmark-suite-staging', timestampDirectoryName(startedAt))
@@ -736,34 +902,26 @@ export async function runBenchmarkSuite(
     mkdirSync(stagingRoot, { recursive: true })
 
     for (const repo of [...new Set(readyPlans.map((plan) => plan.repo))]) {
-      const installCheck = inspectClaudeNativeAgentInstall(repo.path)
-      if (!installCheck.verified) {
-        skippedRepos.set(
-          repo.id,
-          [
-            'No Madar install detected in repo; skipped benchmark cell.',
-            ...installCheck.artifacts
-              .filter((artifact) => !artifact.ok)
-              .map((artifact) => artifact.detail),
-          ].join(' '),
-        )
-        continue
-      }
-
       const scratchRoot = mkdtempSync(join(tmpdir(), `madar-bench-suite-${repo.id}-`))
       scratchRoots.push(scratchRoot)
+      try {
+        const sourceRoot = materializeBenchmarkRepoSource(repo, scratchRoot)
 
-      const legacyResultGraphPath = prepareBenchmarkWorkspace(repo, runGenerateGraph, scratchRoot, 'legacy')
+        const legacyResultGraphPath = prepareBenchmarkWorkspace(sourceRoot, runGenerateGraph, scratchRoot, 'legacy')
 
-      let spiGraphPath: string | null = null
-      if (repo.supportsSpi) {
-        spiGraphPath = prepareBenchmarkWorkspace(repo, runGenerateGraph, scratchRoot, 'spi')
+        let spiGraphPath: string | null = null
+        if (repo.supportsSpi) {
+          spiGraphPath = prepareBenchmarkWorkspace(sourceRoot, runGenerateGraph, scratchRoot, 'spi')
+        }
+
+        preparedRepos.set(repo.id, {
+          sourceRoot,
+          legacyGraphPath: legacyResultGraphPath,
+          spiGraphPath,
+        })
+      } catch (error) {
+        skippedRepos.set(repo.id, formatRepoPreparationFailure(error))
       }
-
-      preparedRepos.set(repo.id, {
-        legacyGraphPath: legacyResultGraphPath,
-        spiGraphPath,
-      })
     }
 
     for (const plan of plans) {
@@ -861,7 +1019,7 @@ export async function runBenchmarkSuite(
           scratchRoots.push(coldScratchRoot)
         }
         const legacyGraphPath = coldScratchRoot
-          ? prepareBenchmarkWorkspace(plan.repo, runGenerateGraph, coldScratchRoot, 'legacy')
+          ? prepareBenchmarkWorkspace(prepared.sourceRoot, runGenerateGraph, coldScratchRoot, 'legacy')
           : prepared.legacyGraphPath
         const taskKind = suiteTaskKind(plan.task.id)
         const legacyInput = {
@@ -885,7 +1043,7 @@ export async function runBenchmarkSuite(
 
         const spiGraphPath = prepared.spiGraphPath
           ? coldScratchRoot
-            ? prepareBenchmarkWorkspace(plan.repo, runGenerateGraph, coldScratchRoot, 'spi')
+            ? prepareBenchmarkWorkspace(prepared.sourceRoot, runGenerateGraph, coldScratchRoot, 'spi')
             : prepared.spiGraphPath
           : null
         if (spiGraphPath) {

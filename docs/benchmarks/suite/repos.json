@@ -53,5 +53,95 @@
     "shape": "http-service",
     "status": "ready",
     "supportsSpi": false
+  },
+  {
+    "id": "documenso",
+    "name": "Documenso public repo",
+    "source": {
+      "kind": "git",
+      "url": "https://github.com/documenso/documenso",
+      "ref": "main"
+    },
+    "description": "Public git-backed document-signing benchmark target for Documenso.",
+    "size": "large",
+    "language": "typescript",
+    "shape": "document-platform",
+    "status": "ready",
+    "supportsSpi": false
+  },
+  {
+    "id": "formbricks",
+    "name": "Formbricks public repo",
+    "source": {
+      "kind": "git",
+      "url": "https://github.com/formbricks/formbricks",
+      "ref": "main"
+    },
+    "description": "Public git-backed survey platform benchmark target for Formbricks.",
+    "size": "large",
+    "language": "typescript",
+    "shape": "survey-platform",
+    "status": "ready",
+    "supportsSpi": false
+  },
+  {
+    "id": "dub",
+    "name": "Dub public repo",
+    "source": {
+      "kind": "git",
+      "url": "https://github.com/dubinc/dub",
+      "ref": "main"
+    },
+    "description": "Public git-backed link attribution benchmark target for Dub.",
+    "size": "large",
+    "language": "typescript",
+    "shape": "link-platform",
+    "status": "ready",
+    "supportsSpi": false
+  },
+  {
+    "id": "twenty",
+    "name": "Twenty public repo",
+    "source": {
+      "kind": "git",
+      "url": "https://github.com/twentyhq/twenty",
+      "ref": "main"
+    },
+    "description": "Public git-backed CRM benchmark target for Twenty.",
+    "size": "large",
+    "language": "typescript",
+    "shape": "crm-platform",
+    "status": "ready",
+    "supportsSpi": false
+  },
+  {
+    "id": "cal-diy",
+    "name": "Cal.diy public repo",
+    "source": {
+      "kind": "git",
+      "url": "https://github.com/calcom/cal.diy",
+      "ref": "main"
+    },
+    "description": "Public git-backed scheduling benchmark target for Cal.diy.",
+    "size": "large",
+    "language": "typescript",
+    "shape": "scheduling-platform",
+    "status": "ready",
+    "supportsSpi": false
+  },
+  {
+    "id": "novu",
+    "name": "Novu public repo",
+    "source": {
+      "kind": "git",
+      "url": "https://github.com/novuhq/novu",
+      "ref": "next"
+    },
+    "description": "Public git-backed notification infrastructure benchmark target for Novu.",
+    "size": "large",
+    "language": "typescript",
+    "shape": "notification-platform",
+    "status": "ready",
+    "supportsSpi": false
   }
 ]

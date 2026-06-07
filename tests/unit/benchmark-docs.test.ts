@@ -19,6 +19,22 @@ function collectReportJsonFiles(rootDir: string): string[] {
   return files;
 }
 
+function collectHtmlFiles(rootDir: string): string[] {
+  const entries = fs.readdirSync(rootDir, { withFileTypes: true });
+  const files: string[] = [];
+  for (const entry of entries) {
+    const entryPath = path.join(rootDir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...collectHtmlFiles(entryPath));
+      continue;
+    }
+    if (entry.isFile() && entry.name.endsWith('.html')) {
+      files.push(entryPath);
+    }
+  }
+  return files;
+}
+
 function isUnsafeLocalPath(value: unknown): boolean {
   if (typeof value !== 'string') {
     return false;
@@ -47,6 +63,29 @@ describe('benchmark docs artifacts', () => {
         isUnsafeLocalPath(report.result_path),
         `${path.relative(process.cwd(), reportFile)} result_path`,
       ).toBe(false);
+    }
+  });
+
+  it('keeps benchmark pages on the canonical scoped npm package URL', () => {
+    const benchmarkDocsDir = path.join(process.cwd(), 'docs', 'benchmarks');
+    const htmlFiles = collectHtmlFiles(benchmarkDocsDir);
+
+    expect(htmlFiles.length).toBeGreaterThan(0);
+
+    for (const htmlFile of htmlFiles) {
+      const content = fs.readFileSync(htmlFile, 'utf8');
+      const relativePath = path.relative(process.cwd(), htmlFile);
+
+      if (!content.includes('npmjs.com/package/')) {
+        continue;
+      }
+
+      expect(content, `${relativePath} should not link to the unscoped npm package`).not.toContain(
+        'https://www.npmjs.com/package/madar',
+      );
+      expect(content, `${relativePath} should link to the canonical scoped npm package`).toContain(
+        'https://www.npmjs.com/package/@lubab/madar',
+      );
     }
   });
 });
