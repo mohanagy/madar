@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -31,14 +32,25 @@ function withTempDir(callback: (tempDir: string) => void | Promise<void>): void 
   }
 }
 
-function createFixtureRepo(rootPath: string): string {
+function createFixtureRepo(rootPath: string, options: { install?: boolean } = {}): string {
   mkdirSync(rootPath, { recursive: true })
   writeFileSync(join(rootPath, 'package.json'), JSON.stringify({ name: 'fixture-repo', private: true }, null, 2), 'utf8')
   mkdirSync(join(rootPath, 'src'), { recursive: true })
   writeFileSync(join(rootPath, 'src', 'auth-controller.ts'), 'export const controller = true\n', 'utf8')
   mkdirSync(join(rootPath, 'out'), { recursive: true })
   writeFileSync(join(rootPath, 'out', 'graph.json'), '{}\n', 'utf8')
-  claudeInstall(rootPath)
+  if (options.install !== false) {
+    claudeInstall(rootPath)
+  }
+  return rootPath
+}
+
+function initializeGitRepo(rootPath: string, branch = 'main'): string {
+  execFileSync('git', ['init', '-b', branch], { cwd: rootPath, stdio: 'pipe' })
+  execFileSync('git', ['config', 'user.email', 'madar@example.com'], { cwd: rootPath, stdio: 'pipe' })
+  execFileSync('git', ['config', 'user.name', 'Madar Test'], { cwd: rootPath, stdio: 'pipe' })
+  execFileSync('git', ['add', '.'], { cwd: rootPath, stdio: 'pipe' })
+  execFileSync('git', ['commit', '-m', 'Initial commit'], { cwd: rootPath, stdio: 'pipe' })
   return rootPath
 }
 
@@ -317,6 +329,60 @@ describe('benchmark suite manifests', () => {
         id: 'go-service',
         status: 'ready',
       }),
+      expect.objectContaining({
+        id: 'documenso',
+        status: 'ready',
+        source: expect.objectContaining({
+          kind: 'git',
+          url: 'https://github.com/documenso/documenso',
+          ref: expect.stringMatching(/^[0-9a-f]{40}$/),
+        }),
+      }),
+      expect.objectContaining({
+        id: 'formbricks',
+        status: 'ready',
+        source: expect.objectContaining({
+          kind: 'git',
+          url: 'https://github.com/formbricks/formbricks',
+          ref: expect.stringMatching(/^[0-9a-f]{40}$/),
+        }),
+      }),
+      expect.objectContaining({
+        id: 'dub',
+        status: 'ready',
+        source: expect.objectContaining({
+          kind: 'git',
+          url: 'https://github.com/dubinc/dub',
+          ref: expect.stringMatching(/^[0-9a-f]{40}$/),
+        }),
+      }),
+      expect.objectContaining({
+        id: 'twenty',
+        status: 'ready',
+        source: expect.objectContaining({
+          kind: 'git',
+          url: 'https://github.com/twentyhq/twenty',
+          ref: expect.stringMatching(/^[0-9a-f]{40}$/),
+        }),
+      }),
+      expect.objectContaining({
+        id: 'cal-diy',
+        status: 'ready',
+        source: expect.objectContaining({
+          kind: 'git',
+          url: 'https://github.com/calcom/cal.diy',
+          ref: expect.stringMatching(/^[0-9a-f]{40}$/),
+        }),
+      }),
+      expect.objectContaining({
+        id: 'novu',
+        status: 'ready',
+        source: expect.objectContaining({
+          kind: 'git',
+          url: 'https://github.com/novuhq/novu',
+          ref: expect.stringMatching(/^[0-9a-f]{40}$/),
+        }),
+      }),
     ]))
     expect(tasks).toEqual(expect.arrayContaining([
       expect.objectContaining({
@@ -328,6 +394,12 @@ describe('benchmark suite manifests', () => {
           'ts-monorepo-large': expect.any(String),
           'python-service': expect.any(String),
           'go-service': expect.any(String),
+          'documenso': expect.any(String),
+          'formbricks': expect.any(String),
+          'dub': expect.any(String),
+          'twenty': expect.any(String),
+          'cal-diy': expect.any(String),
+          'novu': expect.any(String),
         }),
       }),
       expect.objectContaining({
@@ -339,6 +411,12 @@ describe('benchmark suite manifests', () => {
           'ts-monorepo-large': expect.any(String),
           'python-service': expect.any(String),
           'go-service': expect.any(String),
+          'documenso': expect.any(String),
+          'formbricks': expect.any(String),
+          'dub': expect.any(String),
+          'twenty': expect.any(String),
+          'cal-diy': expect.any(String),
+          'novu': expect.any(String),
         }),
       }),
       expect.objectContaining({
@@ -350,6 +428,12 @@ describe('benchmark suite manifests', () => {
           'ts-monorepo-large': expect.any(String),
           'python-service': expect.any(String),
           'go-service': expect.any(String),
+          'documenso': expect.any(String),
+          'formbricks': expect.any(String),
+          'dub': expect.any(String),
+          'twenty': expect.any(String),
+          'cal-diy': expect.any(String),
+          'novu': expect.any(String),
         }),
       }),
       expect.objectContaining({
@@ -361,6 +445,12 @@ describe('benchmark suite manifests', () => {
           'ts-monorepo-large': expect.any(String),
           'python-service': expect.any(String),
           'go-service': expect.any(String),
+          'documenso': expect.any(String),
+          'formbricks': expect.any(String),
+          'dub': expect.any(String),
+          'twenty': expect.any(String),
+          'cal-diy': expect.any(String),
+          'novu': expect.any(String),
         }),
       }),
     ]))
@@ -372,7 +462,18 @@ describe('benchmark suite manifests', () => {
     const readyRepoIds = repos.filter((repo) => repo.status === 'ready').map((repo) => repo.id)
 
     for (const repo of repos) {
-      expect(existsSync(repo.path)).toBe(true)
+      const source =
+        repo.source
+        ?? (typeof repo.path === 'string'
+          ? { kind: 'path' as const, path: repo.path }
+          : null)
+      expect(source).not.toBeNull()
+      if (source?.kind === 'path') {
+        expect(existsSync(source.path)).toBe(true)
+      } else if (source) {
+        expect(source.url).toMatch(/^https:\/\/github\.com\//)
+        expect(source.ref?.trim().length ?? 0).toBeGreaterThan(0)
+      }
     }
 
     for (const task of tasks.filter((entry) => entry.status === 'ready')) {
@@ -413,6 +514,36 @@ describe('benchmark suite manifests', () => {
       ], null, 2), 'utf8')
 
       expect(() => loadBenchmarkSuiteTasks(manifestPath)).toThrow('task id contains unsafe path characters')
+    })
+  })
+
+  it('loads git-backed repo manifests without requiring a checked-in local path', async () => {
+    await withTempDir(async (tempDir) => {
+      const manifestPath = join(tempDir, 'repos.json')
+      writeFileSync(manifestPath, JSON.stringify([
+        {
+          id: 'documenso',
+          name: 'Documenso',
+          source: {
+            kind: 'git',
+            url: 'https://github.com/documenso/documenso',
+            ref: 'main',
+          },
+          status: 'ready',
+          supportsSpi: false,
+        },
+      ], null, 2), 'utf8')
+
+      expect(loadBenchmarkSuiteRepos(manifestPath)).toEqual([
+        expect.objectContaining({
+          id: 'documenso',
+          source: {
+            kind: 'git',
+            url: 'https://github.com/documenso/documenso',
+            ref: 'main',
+          },
+        }),
+      ])
     })
   })
 })
@@ -1373,18 +1504,18 @@ describe('runBenchmarkSuite', () => {
     })
   })
 
-  it('skips runnable cells when the repo has no verified Madar install', async () => {
+  it('provisions a suite-managed Madar install when the source repo has no verified install', async () => {
     await withTempDir(async (tempDir) => {
-      const runnableRepoPath = createFixtureRepo(join(tempDir, 'repos', 'nestjs-mid'))
-      rmSync(join(runnableRepoPath, '.mcp.json'), { force: true })
-      rmSync(join(runnableRepoPath, 'CLAUDE.md'), { force: true })
-      rmSync(join(runnableRepoPath, '.claude'), { recursive: true, force: true })
+      const runnableRepoPath = createFixtureRepo(join(tempDir, 'repos', 'nestjs-mid'), { install: false })
 
       const repos: BenchmarkSuiteRepo[] = [
         {
           id: 'nestjs-mid',
           name: 'Fixture NestJS-like service',
-          path: runnableRepoPath,
+          source: {
+            kind: 'path',
+            path: runnableRepoPath,
+          },
           description: 'Ready fixture',
           size: 'mid',
           language: 'typescript',
@@ -1406,6 +1537,7 @@ describe('runBenchmarkSuite', () => {
       ]
       let generateCalls = 0
       let compareCalls = 0
+      const generatedWorkspaceRoots: string[] = []
 
       const result = await runBenchmarkSuite(
         {
@@ -1423,6 +1555,10 @@ describe('runBenchmarkSuite', () => {
           tasks,
           generateGraph: (rootPath = '.', options = {}) => {
             generateCalls += 1
+            generatedWorkspaceRoots.push(rootPath)
+            expect(existsSync(join(rootPath, '.mcp.json'))).toBe(true)
+            expect(existsSync(join(rootPath, 'CLAUDE.md'))).toBe(true)
+            expect(existsSync(join(rootPath, '.claude', 'settings.json'))).toBe(true)
             return {
               mode: options.useSpi ? 'generate' : 'generate',
               rootPath,
@@ -1454,24 +1590,428 @@ describe('runBenchmarkSuite', () => {
           },
           executeNativeAgentCompare: async () => {
             compareCalls += 1
-            throw new Error('install-skipped cells should not execute compare')
+            return makeCompareResult({
+              question: 'How does login session creation flow work?',
+              graphPath: join(generatedWorkspaceRoots[generatedWorkspaceRoots.length - 1]!, 'out', 'graph.json'),
+              outputDir: join(tempDir, 'compare'),
+              baselineInputTokens: 300,
+              madarInputTokens: 200,
+              baselineTurns: 6,
+              madarTurns: 4,
+              baselineDurationMs: 9000,
+              madarDurationMs: 6000,
+              baselineCostUsd: 1.2,
+              madarCostUsd: 0.8,
+              baselineToolTotal: 9,
+              madarToolTotal: 5,
+              baselineRead: 4,
+              madarRead: 3,
+              baselineGlob: 2,
+              madarGlob: 1,
+              baselineGrep: 1,
+              madarGrep: 1,
+            })
           },
         },
       )
 
-      const summaryMarkdown = readFileSync(result.summaryPath!, 'utf8')
-
-      expect(generateCalls).toBe(0)
-      expect(compareCalls).toBe(0)
+      expect(generateCalls).toBe(2)
+      expect(compareCalls).toBe(1)
       expect(result.summary?.cells[0]).toEqual(expect.objectContaining({
         repoId: 'nestjs-mid',
-        status: 'skipped',
-        reason: expect.stringContaining('No Madar install detected'),
+        status: 'completed',
       }))
+      expect(result.summary?.cells_skipped_for_install).toBe(0)
+    })
+  })
+
+  it('clones git-backed repos and provisions the benchmark workspace before compare', async () => {
+    await withTempDir(async (tempDir) => {
+      const sourceRepoPath = initializeGitRepo(createFixtureRepo(join(tempDir, 'repos', 'documenso-source'), { install: false }))
+      const pinnedSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: sourceRepoPath, encoding: 'utf8', stdio: 'pipe' }).trim()
+      const repos: BenchmarkSuiteRepo[] = [
+        {
+          id: 'documenso',
+          name: 'Documenso source repo',
+          source: {
+            kind: 'git',
+            url: sourceRepoPath,
+            ref: pinnedSha,
+          },
+          description: 'Git-backed benchmark repo',
+          size: 'large',
+          language: 'typescript',
+          shape: 'monorepo',
+          status: 'ready',
+          supportsSpi: false,
+        },
+      ]
+      const tasks: BenchmarkSuiteTask[] = [
+        {
+          id: 'explain-runtime',
+          name: 'Explain runtime flow',
+          description: 'Trace a runtime path end to end.',
+          status: 'ready',
+          prompts: {
+            'documenso': 'How does the document send flow move from creation to recipient delivery?',
+          },
+        },
+      ]
+      const generatedWorkspaceRoots: string[] = []
+      let compareCalls = 0
+
+      const result = await runBenchmarkSuite(
+        {
+          repo: 'documenso',
+          task: 'explain-runtime',
+          mode: 'cold',
+          trials: 1,
+          outputDir: join(tempDir, 'results'),
+          execTemplate: 'mock-runner',
+          dryRun: false,
+          yes: true,
+        },
+        {
+          repos,
+          tasks,
+          generateGraph: (rootPath = '.', options = {}) => {
+            generatedWorkspaceRoots.push(rootPath)
+            expect(rootPath).not.toBe(sourceRepoPath)
+            expect(existsSync(join(rootPath, '.mcp.json'))).toBe(true)
+            expect(existsSync(join(rootPath, 'CLAUDE.md'))).toBe(true)
+            expect(existsSync(join(rootPath, '.claude', 'settings.json'))).toBe(true)
+            return {
+              mode: options.useSpi ? 'generate' : 'generate',
+              rootPath,
+              outputDir: join(rootPath, 'out'),
+              graphPath: join(rootPath, 'out', 'graph.json'),
+              reportPath: join(rootPath, 'out', 'GRAPH_REPORT.md'),
+              htmlPath: null,
+              wikiPath: null,
+              obsidianPath: null,
+              svgPath: null,
+              graphmlPath: null,
+              cypherPath: null,
+              docsPath: null,
+              totalFiles: 1,
+              codeFiles: 1,
+              nonCodeFiles: 0,
+              extractableFiles: 1,
+              extractedFiles: 1,
+              totalWords: 10,
+              nodeCount: 1,
+              edgeCount: 0,
+              communityCount: 1,
+              changedFiles: 0,
+              deletedFiles: 0,
+              cache: null,
+              warning: null,
+              notes: [],
+            } satisfies GenerateGraphResult
+          },
+          executeNativeAgentCompare: async () => {
+            compareCalls += 1
+            return makeCompareResult({
+              question: 'How does the document send flow move from creation to recipient delivery?',
+              graphPath: join(generatedWorkspaceRoots[generatedWorkspaceRoots.length - 1]!, 'out', 'graph.json'),
+              outputDir: join(tempDir, 'compare'),
+              baselineInputTokens: 320,
+              madarInputTokens: 210,
+              baselineTurns: 6,
+              madarTurns: 4,
+              baselineDurationMs: 9100,
+              madarDurationMs: 6100,
+              baselineCostUsd: 1.2,
+              madarCostUsd: 0.8,
+              baselineToolTotal: 9,
+              madarToolTotal: 5,
+              baselineRead: 4,
+              madarRead: 3,
+              baselineGlob: 2,
+              madarGlob: 1,
+              baselineGrep: 1,
+              madarGrep: 1,
+            })
+          },
+        },
+      )
+
+      expect(compareCalls).toBe(1)
+      expect(result.summary?.cells[0]).toEqual(expect.objectContaining({
+        repoId: 'documenso',
+        status: 'completed',
+      }))
+    })
+  })
+
+  it('normalizes repo-local Claude and MCP config before provisioning the benchmark workspace', async () => {
+    await withTempDir(async (tempDir) => {
+      const sourceRepoPath = createFixtureRepo(join(tempDir, 'repos', 'twenty-source'), { install: false })
+      writeFileSync(join(sourceRepoPath, 'CLAUDE.md'), '# repo-specific claude\n', 'utf8')
+      mkdirSync(join(sourceRepoPath, '.claude'), { recursive: true })
+      writeFileSync(
+        join(sourceRepoPath, '.claude', 'settings.json'),
+        JSON.stringify({
+          hooks: {
+            UserPromptSubmit: [
+              {
+                hooks: [{ type: 'command', command: 'echo repo-hook' }],
+              },
+            ],
+          },
+        }, null, 2),
+        'utf8',
+      )
+      writeFileSync(
+        join(sourceRepoPath, '.mcp.json'),
+        JSON.stringify({
+          mcpServers: {
+            github: {
+              command: 'github-mcp',
+              args: [],
+            },
+          },
+        }, null, 2),
+        'utf8',
+      )
+
+      const repos: BenchmarkSuiteRepo[] = [
+        {
+          id: 'twenty',
+          name: 'Twenty source repo',
+          source: {
+            kind: 'path',
+            path: sourceRepoPath,
+          },
+          description: 'Ready fixture',
+          size: 'large',
+          language: 'typescript',
+          shape: 'crm-platform',
+          status: 'ready',
+          supportsSpi: false,
+        },
+      ]
+      const tasks: BenchmarkSuiteTask[] = [
+        {
+          id: 'explain-runtime',
+          name: 'Explain runtime flow',
+          description: 'Trace a runtime path end to end.',
+          status: 'ready',
+          prompts: {
+            'twenty': 'How does Twenty process a CRM record mutation from API handling through workspace services to persistence?',
+          },
+        },
+      ]
+
+      await runBenchmarkSuite(
+        {
+          repo: 'twenty',
+          task: 'explain-runtime',
+          mode: 'cold',
+          trials: 1,
+          outputDir: join(tempDir, 'results'),
+          execTemplate: 'mock-runner',
+          dryRun: false,
+          yes: true,
+        },
+        {
+          repos,
+          tasks,
+          generateGraph: (rootPath = '.', options = {}) => {
+            const mcpConfig = JSON.parse(readFileSync(join(rootPath, '.mcp.json'), 'utf8')) as {
+              mcpServers?: Record<string, unknown>
+            }
+            const claudeRules = readFileSync(join(rootPath, 'CLAUDE.md'), 'utf8')
+
+            expect(Object.keys(mcpConfig.mcpServers ?? {})).toEqual(['madar'])
+            expect(claudeRules).not.toContain('# repo-specific claude')
+
+            return {
+              mode: options.useSpi ? 'generate' : 'generate',
+              rootPath,
+              outputDir: join(rootPath, 'out'),
+              graphPath: join(rootPath, 'out', 'graph.json'),
+              reportPath: join(rootPath, 'out', 'GRAPH_REPORT.md'),
+              htmlPath: null,
+              wikiPath: null,
+              obsidianPath: null,
+              svgPath: null,
+              graphmlPath: null,
+              cypherPath: null,
+              docsPath: null,
+              totalFiles: 1,
+              codeFiles: 1,
+              nonCodeFiles: 0,
+              extractableFiles: 1,
+              extractedFiles: 1,
+              totalWords: 10,
+              nodeCount: 1,
+              edgeCount: 0,
+              communityCount: 1,
+              changedFiles: 0,
+              deletedFiles: 0,
+              cache: null,
+              warning: null,
+              notes: [],
+            } satisfies GenerateGraphResult
+          },
+          executeNativeAgentCompare: async () => makeCompareResult({
+            question: 'How does Twenty process a CRM record mutation from API handling through workspace services to persistence?',
+            graphPath: join(tempDir, 'compare-graph', 'out', 'graph.json'),
+            outputDir: join(tempDir, 'compare'),
+            baselineInputTokens: 320,
+            madarInputTokens: 220,
+            baselineTurns: 7,
+            madarTurns: 4,
+            baselineDurationMs: 9200,
+            madarDurationMs: 6200,
+            baselineCostUsd: 1.2,
+            madarCostUsd: 0.8,
+            baselineToolTotal: 9,
+            madarToolTotal: 5,
+            baselineRead: 4,
+            madarRead: 3,
+            baselineGlob: 2,
+            madarGlob: 1,
+            baselineGrep: 1,
+            madarGrep: 1,
+          }),
+        },
+      )
+    })
+  })
+
+  it('records repo preparation failures as skipped and continues with other ready rows', async () => {
+    await withTempDir(async (tempDir) => {
+      const goodRepoPath = createFixtureRepo(join(tempDir, 'repos', 'good-repo'), { install: false })
+      const repos: BenchmarkSuiteRepo[] = [
+        {
+          id: 'broken-git',
+          name: 'Broken git repo',
+          source: {
+            kind: 'git',
+            url: join(tempDir, 'repos', 'missing-repo'),
+            ref: 'main',
+          },
+          description: 'Broken git-backed repo',
+          size: 'mid',
+          language: 'typescript',
+          shape: 'service',
+          status: 'ready',
+          supportsSpi: false,
+        },
+        {
+          id: 'good-path',
+          name: 'Good path repo',
+          source: {
+            kind: 'path',
+            path: goodRepoPath,
+          },
+          description: 'Healthy path-backed repo',
+          size: 'mid',
+          language: 'typescript',
+          shape: 'service',
+          status: 'ready',
+          supportsSpi: false,
+        },
+      ]
+      const tasks: BenchmarkSuiteTask[] = [
+        {
+          id: 'explain-runtime',
+          name: 'Explain runtime flow',
+          description: 'Trace a runtime path end to end.',
+          status: 'ready',
+          prompts: {
+            'broken-git': 'How does the broken repo flow work?',
+            'good-path': 'How does the good repo flow work?',
+          },
+        },
+      ]
+      let compareCalls = 0
+
+      const result = await runBenchmarkSuite(
+        {
+          repo: null,
+          task: 'explain-runtime',
+          mode: 'cold',
+          trials: 1,
+          outputDir: join(tempDir, 'results'),
+          execTemplate: 'mock-runner',
+          dryRun: false,
+          yes: true,
+        },
+        {
+          repos,
+          tasks,
+          generateGraph: (rootPath = '.', options = {}) => ({
+            mode: options.useSpi ? 'generate' : 'generate',
+            rootPath,
+            outputDir: join(rootPath, 'out'),
+            graphPath: join(rootPath, 'out', 'graph.json'),
+            reportPath: join(rootPath, 'out', 'GRAPH_REPORT.md'),
+            htmlPath: null,
+            wikiPath: null,
+            obsidianPath: null,
+            svgPath: null,
+            graphmlPath: null,
+            cypherPath: null,
+            docsPath: null,
+            totalFiles: 1,
+            codeFiles: 1,
+            nonCodeFiles: 0,
+            extractableFiles: 1,
+            extractedFiles: 1,
+            totalWords: 10,
+            nodeCount: 1,
+            edgeCount: 0,
+            communityCount: 1,
+            changedFiles: 0,
+            deletedFiles: 0,
+            cache: null,
+            warning: null,
+            notes: [],
+          } satisfies GenerateGraphResult),
+          executeNativeAgentCompare: async () => {
+            compareCalls += 1
+            return makeCompareResult({
+              question: 'How does the good repo flow work?',
+              graphPath: join(tempDir, 'compare-graph', 'out', 'graph.json'),
+              outputDir: join(tempDir, 'compare'),
+              baselineInputTokens: 320,
+              madarInputTokens: 220,
+              baselineTurns: 7,
+              madarTurns: 4,
+              baselineDurationMs: 9200,
+              madarDurationMs: 6200,
+              baselineCostUsd: 1.2,
+              madarCostUsd: 0.8,
+              baselineToolTotal: 9,
+              madarToolTotal: 5,
+              baselineRead: 4,
+              madarRead: 3,
+              baselineGlob: 2,
+              madarGlob: 1,
+              baselineGrep: 1,
+              madarGrep: 1,
+            })
+          },
+        },
+      )
+
+      expect(compareCalls).toBe(1)
+      expect(result.summary?.cells).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          repoId: 'broken-git',
+          status: 'skipped',
+          reason: expect.stringContaining('failed'),
+        }),
+        expect.objectContaining({
+          repoId: 'good-path',
+          status: 'completed',
+        }),
+      ]))
       expect(result.summary?.cells_skipped_for_install).toBe(1)
-      expect(summaryMarkdown).toContain('cells_skipped_for_install: 1')
-      expect(summaryMarkdown).toContain('skipped (no install)')
-      expect(summaryMarkdown).toContain('No Madar install detected in repo; skipped benchmark cell.')
+      expect(result.text).toContain('1 skipped during preparation')
     })
   })
 

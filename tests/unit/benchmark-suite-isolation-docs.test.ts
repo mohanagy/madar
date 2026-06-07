@@ -1,8 +1,12 @@
 import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
+
+import { captureBenchmarkEnvironment } from '../../src/infrastructure/benchmark/environment.js'
+import { claudeInstall } from '../../src/infrastructure/install.js'
 
 describe('benchmark suite isolation docs', () => {
   const methodology = readFileSync(resolve('docs/benchmarks/suite/methodology.md'), 'utf8')
@@ -33,23 +37,35 @@ describe('benchmark suite isolation docs', () => {
     expect(methodology).toContain('isolation: true|false')
   })
 
-  it('ships a minimal isolation config with the pinned environment hash', () => {
-    const expectedHash = `sha256:${createHash('sha256').update(isolationClaude).digest('hex')}`
+  it('ships a minimal isolation config with the pinned environment hash', async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), 'madar-bench-install-shape-'))
+    const claudeConfigDir = join(projectRoot, '.bench-user', '.claude')
+    try {
+      mkdirSync(claudeConfigDir, { recursive: true })
+      claudeInstall(projectRoot)
+      const installedEnvironment = await captureBenchmarkEnvironment({
+        projectRoot,
+        claudeConfigDir,
+        getClaudeCodeVersion: () => null,
+      })
 
-    expect(environment).toEqual({
-      isolation_required: true,
-      mcp_servers_active: ['madar'],
-      skills_loaded: [],
-      plugins_active: [],
-      user_claude_md_hash: expectedHash,
-      project_claude_md_hash: null,
-      parent_claude_md_hashes: [],
-      hooks_active: {
-        user_prompt_submit: [],
-        pre_tool_use: [],
-        post_tool_use: [],
-      },
-    })
+      expect(environment).toEqual({
+        isolation_required: true,
+        mcp_servers_active: ['madar'],
+        skills_loaded: [],
+        plugins_active: [],
+        user_claude_md_hash: `sha256:${createHash('sha256').update(isolationClaude).digest('hex')}`,
+        project_claude_md_hash: installedEnvironment.project_claude_md_hash,
+        parent_claude_md_hashes: [],
+        hooks_active: {
+          user_prompt_submit: installedEnvironment.hooks_active.user_prompt_submit,
+          pre_tool_use: installedEnvironment.hooks_active.pre_tool_use,
+          post_tool_use: installedEnvironment.hooks_active.post_tool_use,
+        },
+      })
+    } finally {
+      rmSync(projectRoot, { recursive: true, force: true })
+    }
     expect(isolationClaude).toContain('published `madar bench:suite` isolation runs')
     expect(JSON.parse(isolationSettings)).toEqual({ hooks: {} })
   })
