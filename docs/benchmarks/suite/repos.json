@@ -62,6 +62,7 @@
       "url": "https://github.com/documenso/documenso",
       "ref": "4ee789ea378d12c85daacf7dceda80b4dec80652"
     },
+    "graphRoot": "packages",
     "description": "Public git-backed document-signing benchmark target for Documenso.",
     "size": "large",
     "language": "typescript",
@@ -107,6 +108,7 @@
       "url": "https://github.com/twentyhq/twenty",
       "ref": "186d5b8faa6a0d1dd566825f29c004cf4cf3902b"
     },
+    "graphRoot": "packages/twenty-server/src/modules",
     "description": "Public git-backed CRM benchmark target for Twenty.",
     "size": "large",
     "language": "typescript",
@@ -137,6 +139,7 @@
       "url": "https://github.com/novuhq/novu",
       "ref": "f105f3d41a4405a75f803634d49f15a967524d8a"
     },
+    "graphRoot": "apps",
     "description": "Public git-backed notification infrastructure benchmark target for Novu.",
     "size": "large",
     "language": "typescript",
