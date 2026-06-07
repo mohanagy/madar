@@ -1,0 +1,5 @@
+I'm unable to proceed because the `mcp__madar__retrieve` tool requires your permission, and it hasn't been granted yet — both attempts returned a "permissions not granted" error.
+
+Per this project's contract, I must call a Madar tool first for codebase questions (no raw file/grep search is allowed before that), so I can't answer until the tool call is approved.
+
+Could you approve the `mcp__madar__retrieve` permission (or switch to a permission mode that allows Madar MCP calls)? Once it's granted, I'll run the retrieve query on Documenso's send-preparation → recipient-creation → signing-state → notification-delivery flow and answer from the matched nodes, snippets, and relationships.

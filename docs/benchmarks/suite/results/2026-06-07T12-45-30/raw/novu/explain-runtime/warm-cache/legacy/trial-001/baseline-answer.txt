@@ -1,0 +1,38 @@
+I now have the full pipeline traced. Here's the answer.
+
+## How Novu processes a notification trigger: API → orchestration → delivery
+
+Novu splits trigger handling across two deployables — the **API** (`apps/api`) accepts the request and enqueues it; the **worker** (`apps/worker`) does all orchestration and delivery. They communicate through a chain of BullMQ queues, and each stage hands off to the next via a queue rather than a direct call. The orchestration usecases live in the shared `libs/application-generic`.
+
+### 1. API entry — accept and enqueue
+- **`apps/api/src/app/events/events.controller.ts`** — `@Post('/trigger')` (`trigger()`, ~line 104). Also `/trigger/bulk` and `/trigger/broadcast`. It runs a kill-switch check, then calls the parse usecase with an `AddressingTypeEnum.MULTICAST` command.
+- **`apps/api/.../usecases/parse-event-request/parse-event-request.usecase.ts`** — `execute()` resolves the workflow: either a stored `NotificationTemplate` looked up by trigger identifier, or (for `bridgeUrl`/code-first "stateless" workflows) a DISCOVER call to the bridge. It validates the payload against the workflow's `payloadSchema`, validates recipients, generates a `transactionId` (used for dedupe/cancellation), builds `jobData`, and pushes it onto the **workflow queue** via `workflowQueueService.add(...)` (~line 410). The HTTP response is just an acknowledgement — no notification work happens in the API process.
+
+### 2. Worker: trigger fan-out (workflow queue → subscriber-process queue)
+- **`apps/worker/src/app/workflow/services/workflow.worker.ts`** — consumes the workflow queue and calls the **`TriggerEvent`** usecase.
+- **`libs/application-generic/src/usecases/trigger-event/trigger-event.usecase.ts`** — `execute()` re-resolves the template, enforces `transactionId` uniqueness, and dispatches by addressing type to **`TriggerMulticast`** or **`TriggerBroadcast`**.
+- **`.../usecases/trigger-multicast/trigger-multicast.usecase.ts`** (extending `trigger-base`) — expands recipients (direct subscribers + topic members), then chunks them onto the **subscriber-process queue** via `SubscriberProcessQueueService`. This is the fan-out point: one trigger becomes one job per subscriber.
+
+### 3. Worker: per-subscriber job creation (subscriber-process queue → standard queue)
+- **`apps/worker/.../services/subscriber-process.worker.ts`** — consumes the subscriber-process queue and calls **`SubscriberJobBound`**.
+- **`.../usecases/subscriber-job-bound/subscriber-job-bound.usecase.ts`** — upserts the subscriber (`createOrUpdateSubscriberUsecase`), then calls **`CreateNotificationJobs`** to build one job *per workflow step* (the notification + its ordered step jobs), then **`StoreSubscriberJobs`**.
+- **`.../usecases/store-subscriber-jobs`** → **`.../usecases/add-job/add-job.usecase.ts`** — `AddJob` persists the jobs and places the *first* step's job onto the **standard queue** via `StandardQueueService`. `AddJob` is also where **digest** and **delay** deferral is computed (`handleDelay`, digest amount, `getExecutionDelayAmount`, `validateDeferDuration`), so timed steps are delayed before becoming runnable.
+
+### 4. Worker: step execution and channel delivery (standard queue)
+- **`apps/worker/.../services/standard.worker.ts`** — consumes the standard queue and calls **`RunJob`**.
+- **`.../usecases/run-job/run-job.usecase.ts`** — loads the job/step, handles subscriber schedules, then calls **`SendMessage`**. After the step completes it calls `tryQueueNextJobs` → **`QueueNextJob`** → back into **`AddJob`**, which enqueues the next step onto the standard queue. This is the orchestration loop that walks the workflow step-by-step.
+- **`.../usecases/send-message/send-message.usecase.ts`** — switches on `StepTypeEnum` and delegates to the channel usecase: `SendMessageEmail`, `SendMessageSms`, `SendMessageInApp`, `SendMessagePush`, `SendMessageChat` (and the control steps `DIGEST`, `DELAY`, `THROTTLE`, `HTTP_REQUEST`, `CUSTOM`).
+- The channel usecase (e.g. **`send-message-email.usecase.ts`**) selects the active `IntegrationEntity`, renders content, and dispatches through a provider handler — e.g. `new MailFactory().getHandler(integration, from).send(...)` (~line 502). SMS/push/chat use their analogous provider factories. This is the actual outbound delivery to the external provider (SendGrid, Twilio, FCM, etc.).
+
+### Flow at a glance
+```
+POST /trigger (events.controller)
+  → ParseEventRequest → [workflow queue]
+    → workflow.worker → TriggerEvent → TriggerMulticast/Broadcast → [subscriber-process queue]
+      → subscriber-process.worker → SubscriberJobBound
+          → CreateNotificationJobs (one job per step) → StoreSubscriberJobs → AddJob (digest/delay) → [standard queue]
+            → standard.worker → RunJob → SendMessage → SendMessage{Email,Sms,InApp,Push,Chat} → provider (MailFactory…)
+                                   ↑__ QueueNextJob → AddJob → [standard queue] (next step) __|
+```
+
+**Key design points:** the API never sends notifications — it only validates and enqueues; the worker fans out per-subscriber, builds a job per workflow step, and advances the workflow one step at a time by re-enqueuing through `AddJob`/`StandardQueue`; digest/delay/throttle are handled as deferral inside `AddJob`/the control-step usecases; and the final channel send goes through pluggable provider factories selected from the environment's integrations.

@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "started_at": "2026-06-07T12:07:40.498Z",
+  "completed_at": "2026-06-07T12:12:25.266Z",
+  "output_root": "docs/benchmarks/suite/results/2026-06-07T12-07-40",
+  "filters": {
+    "repo": "formbricks",
+    "task": "explain-runtime",
+    "mode": "warm",
+    "trials": 1
+  },
+  "cells_skipped_for_install": 0,
+  "cells_skipped_for_env_drift": 0,
+  "cells": [
+    {
+      "repoId": "formbricks",
+      "repoName": "Formbricks public repo",
+      "taskId": "explain-runtime",
+      "taskName": "Explain runtime flow",
+      "mode": "warm",
+      "prompt": "How does Formbricks process a survey response from request handling through persistence and analytics/event tracking?",
+      "status": "completed",
+      "reason": null,
+      "isolation": true,
+      "baseline": {
+        "input_tokens": {
+          "median": 500542,
+          "min": 500542,
+          "max": 500542,
+          "n": 1
+        },
+        "total_tool_calls": {
+          "median": 15,
+          "min": 15,
+          "max": 15,
+          "n": 1
+        },
+        "read_calls": {
+          "median": 7,
+          "min": 7,
+          "max": 7,
+          "n": 1
+        },
+        "glob_grep_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "wall_clock_ms": {
+          "median": 95617,
+          "min": 95617,
+          "max": 95617,
+          "n": 1
+        },
+        "cost_usd": {
+          "median": 0.5528635,
+          "min": 0.5528635,
+          "max": 0.5528635,
+          "n": 1
+        }
+      },
+      "madar": {
+        "input_tokens": {
+          "median": 98099,
+          "min": 98099,
+          "max": 98099,
+          "n": 1
+        },
+        "total_tool_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 1
+        },
+        "read_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "glob_grep_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "wall_clock_ms": {
+          "median": 18907,
+          "min": 18907,
+          "max": 18907,
+          "n": 1
+        },
+        "cost_usd": {
+          "median": 0.15703899999999998,
+          "min": 0.15703899999999998,
+          "max": 0.15703899999999998,
+          "n": 1
+        }
+      },
+      "spi_madar": null,
+      "workflow_outcomes": null,
+      "artifacts": {
+        "legacy_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-06-07T12-07-40/raw/formbricks/explain-runtime/warm-cache/legacy/trial-001/report.share-safe.json"
+        ],
+        "spi_share_safe_reports": []
+      }
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+I need to call the Madar `retrieve` tool first per this project's contract, but the tool call is waiting on your permission grant — it's been declined/ungranted twice.
+
+Could you approve `mcp__madar__retrieve` so I can pull the knowledge-graph context for the survey-response flow? Once granted, I'll retrieve the matched nodes/snippets/relationships and answer from that evidence (falling back to a single focused file read only if a specific gap remains).
+
+If you'd prefer I not use Madar and instead fall back to raw file exploration, let me know and I'll proceed that way — but note that conflicts with the project's Madar-first instructions, so I want your explicit go-ahead before doing so.
