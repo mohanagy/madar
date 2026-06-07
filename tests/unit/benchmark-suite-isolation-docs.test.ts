@@ -90,6 +90,7 @@ describe('benchmark suite isolation docs', () => {
     const binDir = join(tempDir, 'bin')
     const mockCliPath = join(tempDir, 'mock-cli.js')
     const nodeCalledPath = join(tempDir, 'node-called')
+    const runtimeProfileRoot = join(tempDir, 'runtime-profile')
     try {
       mkdirSync(binDir, { recursive: true })
       writeFileSync(mockCliPath, 'console.log("mock cli")\n', 'utf8')
@@ -124,6 +125,7 @@ exit 0
         stdio: 'pipe',
         env: {
           ...process.env,
+          MADAR_BENCH_ISOLATION_PROFILE_ROOT: runtimeProfileRoot,
           MADAR_BENCH_CLI_PATH: mockCliPath,
           PATH: `${binDir}:${process.env.PATH ?? ''}`,
         },
@@ -141,6 +143,7 @@ exit 0
     const binDir = join(tempDir, 'bin')
     const mockCliPath = join(tempDir, 'mock-cli.js')
     const nodeCalledPath = join(tempDir, 'node-called')
+    const runtimeProfileRoot = join(tempDir, 'runtime-profile')
     try {
       mkdirSync(binDir, { recursive: true })
       writeFileSync(mockCliPath, 'console.log("mock cli")\n', 'utf8')
@@ -171,6 +174,7 @@ exit 0
         stdio: 'pipe',
         env: {
           ...process.env,
+          MADAR_BENCH_ISOLATION_PROFILE_ROOT: runtimeProfileRoot,
           MADAR_BENCH_CLI_PATH: mockCliPath,
           PATH: `${binDir}:${process.env.PATH ?? ''}`,
         },
@@ -186,6 +190,7 @@ exit 0
           stdio: 'pipe',
           env: {
             ...process.env,
+            MADAR_BENCH_ISOLATION_PROFILE_ROOT: runtimeProfileRoot,
             MADAR_BENCH_CLI_PATH: mockCliPath,
             PATH: `${binDir}:${process.env.PATH ?? ''}`,
           },
