@@ -99,7 +99,8 @@
           "docs/benchmarks/suite/results/2026-05-26T18-31-04/raw/nestjs-mid/explain-runtime/warm-cache/spi/trial-002/2026-05-26T18-40-05/report.share-safe.json",
           "docs/benchmarks/suite/results/2026-05-26T18-31-04/raw/nestjs-mid/explain-runtime/warm-cache/spi/trial-003/2026-05-26T18-45-15/report.share-safe.json"
         ]
-      }
+      },
+      "benchmark_outcomes": null
     }
   ]
 }

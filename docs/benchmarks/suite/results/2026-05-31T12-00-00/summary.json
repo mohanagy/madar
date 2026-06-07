@@ -148,6 +148,42 @@
           "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-small/explain-runtime/warm-cache/spi/trial-002/report.share-safe.json",
           "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-small/explain-runtime/warm-cache/spi/trial-003/report.share-safe.json"
         ]
+      },
+      "benchmark_outcomes": {
+        "legacy": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 3,
+            "regression": 0,
+            "not_measured": 0
+          },
+          "evidence": [
+            "token reduction: 32.4%",
+            "cost reduction: $0.44",
+            "fixture receipt: ts-small/explain-runtime/legacy/trial-001",
+            "token reduction: 32.1%",
+            "fixture receipt: ts-small/explain-runtime/legacy/trial-002",
+            "token reduction: 31.8%",
+            "fixture receipt: ts-small/explain-runtime/legacy/trial-003"
+          ]
+        },
+        "spi_madar": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 3,
+            "regression": 0,
+            "not_measured": 0
+          },
+          "evidence": [
+            "token reduction: 40.0%",
+            "cost reduction: $0.62",
+            "fixture receipt: ts-small/explain-runtime/spi/trial-001",
+            "token reduction: 39.6%",
+            "fixture receipt: ts-small/explain-runtime/spi/trial-002",
+            "token reduction: 39.3%",
+            "fixture receipt: ts-small/explain-runtime/spi/trial-003"
+          ]
+        }
       }
     },
     {
@@ -346,6 +382,42 @@
           "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-small/implement/warm-cache/spi/trial-002/report.share-safe.json",
           "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-small/implement/warm-cache/spi/trial-003/report.share-safe.json"
         ]
+      },
+      "benchmark_outcomes": {
+        "legacy": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 3,
+            "regression": 0,
+            "not_measured": 0
+          },
+          "evidence": [
+            "token reduction: 30.4%",
+            "cost reduction: $0.44",
+            "fixture receipt: ts-small/implement/legacy/trial-001",
+            "token reduction: 30.1%",
+            "fixture receipt: ts-small/implement/legacy/trial-002",
+            "token reduction: 29.8%",
+            "fixture receipt: ts-small/implement/legacy/trial-003"
+          ]
+        },
+        "spi_madar": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 3,
+            "regression": 0,
+            "not_measured": 0
+          },
+          "evidence": [
+            "token reduction: 37.5%",
+            "cost reduction: $0.62",
+            "fixture receipt: ts-small/implement/spi/trial-001",
+            "token reduction: 37.2%",
+            "fixture receipt: ts-small/implement/spi/trial-002",
+            "token reduction: 36.8%",
+            "fixture receipt: ts-small/implement/spi/trial-003"
+          ]
+        }
       }
     },
     {
@@ -536,6 +608,42 @@
           "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-small/review/warm-cache/spi/trial-002/report.share-safe.json",
           "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-small/review/warm-cache/spi/trial-003/report.share-safe.json"
         ]
+      },
+      "benchmark_outcomes": {
+        "legacy": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 3,
+            "regression": 0,
+            "not_measured": 0
+          },
+          "evidence": [
+            "token reduction: 29.3%",
+            "cost reduction: $0.44",
+            "fixture receipt: ts-small/review/legacy/trial-001",
+            "token reduction: 29.1%",
+            "fixture receipt: ts-small/review/legacy/trial-002",
+            "token reduction: 28.8%",
+            "fixture receipt: ts-small/review/legacy/trial-003"
+          ]
+        },
+        "spi_madar": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 3,
+            "regression": 0,
+            "not_measured": 0
+          },
+          "evidence": [
+            "token reduction: 36.2%",
+            "cost reduction: $0.62",
+            "fixture receipt: ts-small/review/spi/trial-001",
+            "token reduction: 35.9%",
+            "fixture receipt: ts-small/review/spi/trial-002",
+            "token reduction: 35.6%",
+            "fixture receipt: ts-small/review/spi/trial-003"
+          ]
+        }
       }
     },
     {
@@ -674,6 +782,42 @@
           "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-small/impact/warm-cache/spi/trial-002/report.share-safe.json",
           "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-small/impact/warm-cache/spi/trial-003/report.share-safe.json"
         ]
+      },
+      "benchmark_outcomes": {
+        "legacy": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 3,
+            "regression": 0,
+            "not_measured": 0
+          },
+          "evidence": [
+            "token reduction: 31.2%",
+            "cost reduction: $0.44",
+            "fixture receipt: ts-small/impact/legacy/trial-001",
+            "token reduction: 30.9%",
+            "fixture receipt: ts-small/impact/legacy/trial-002",
+            "token reduction: 30.6%",
+            "fixture receipt: ts-small/impact/legacy/trial-003"
+          ]
+        },
+        "spi_madar": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 3,
+            "regression": 0,
+            "not_measured": 0
+          },
+          "evidence": [
+            "token reduction: 38.5%",
+            "cost reduction: $0.62",
+            "fixture receipt: ts-small/impact/spi/trial-001",
+            "token reduction: 38.2%",
+            "fixture receipt: ts-small/impact/spi/trial-002",
+            "token reduction: 37.8%",
+            "fixture receipt: ts-small/impact/spi/trial-003"
+          ]
+        }
       }
     },
     {
@@ -812,6 +956,42 @@
           "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/nestjs-mid/explain-runtime/warm-cache/spi/trial-002/report.share-safe.json",
           "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/nestjs-mid/explain-runtime/warm-cache/spi/trial-003/report.share-safe.json"
         ]
+      },
+      "benchmark_outcomes": {
+        "legacy": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 3,
+            "regression": 0,
+            "not_measured": 0
+          },
+          "evidence": [
+            "token reduction: 30.1%",
+            "cost reduction: $0.44",
+            "fixture receipt: nestjs-mid/explain-runtime/legacy/trial-001",
+            "token reduction: 29.8%",
+            "fixture receipt: nestjs-mid/explain-runtime/legacy/trial-002",
+            "token reduction: 29.6%",
+            "fixture receipt: nestjs-mid/explain-runtime/legacy/trial-003"
+          ]
+        },
+        "spi_madar": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 3,
+            "regression": 0,
+            "not_measured": 0
+          },
+          "evidence": [
+            "token reduction: 37.2%",
+            "cost reduction: $0.62",
+            "fixture receipt: nestjs-mid/explain-runtime/spi/trial-001",
+            "token reduction: 36.8%",
+            "fixture receipt: nestjs-mid/explain-runtime/spi/trial-002",
+            "token reduction: 36.5%",
+            "fixture receipt: nestjs-mid/explain-runtime/spi/trial-003"
+          ]
+        }
       }
     },
     {
@@ -1010,6 +1190,42 @@
           "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/nestjs-mid/implement/warm-cache/spi/trial-002/report.share-safe.json",
           "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/nestjs-mid/implement/warm-cache/spi/trial-003/report.share-safe.json"
         ]
+      },
+      "benchmark_outcomes": {
+        "legacy": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 3,
+            "regression": 0,
+            "not_measured": 0
+          },
+          "evidence": [
+            "token reduction: 28.3%",
+            "cost reduction: $0.44",
+            "fixture receipt: nestjs-mid/implement/legacy/trial-001",
+            "token reduction: 28.1%",
+            "fixture receipt: nestjs-mid/implement/legacy/trial-002",
+            "token reduction: 27.9%",
+            "fixture receipt: nestjs-mid/implement/legacy/trial-003"
+          ]
+        },
+        "spi_madar": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 3,
+            "regression": 0,
+            "not_measured": 0
+          },
+          "evidence": [
+            "token reduction: 35.0%",
+            "cost reduction: $0.62",
+            "fixture receipt: nestjs-mid/implement/spi/trial-001",
+            "token reduction: 34.7%",
+            "fixture receipt: nestjs-mid/implement/spi/trial-002",
+            "token reduction: 34.4%",
+            "fixture receipt: nestjs-mid/implement/spi/trial-003"
+          ]
+        }
       }
     },
     {
@@ -1200,6 +1416,42 @@
           "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/nestjs-mid/review/warm-cache/spi/trial-002/report.share-safe.json",
           "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/nestjs-mid/review/warm-cache/spi/trial-003/report.share-safe.json"
         ]
+      },
+      "benchmark_outcomes": {
+        "legacy": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 3,
+            "regression": 0,
+            "not_measured": 0
+          },
+          "evidence": [
+            "token reduction: 27.4%",
+            "cost reduction: $0.44",
+            "fixture receipt: nestjs-mid/review/legacy/trial-001",
+            "token reduction: 27.2%",
+            "fixture receipt: nestjs-mid/review/legacy/trial-002",
+            "token reduction: 27.0%",
+            "fixture receipt: nestjs-mid/review/legacy/trial-003"
+          ]
+        },
+        "spi_madar": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 3,
+            "regression": 0,
+            "not_measured": 0
+          },
+          "evidence": [
+            "token reduction: 33.9%",
+            "cost reduction: $0.62",
+            "fixture receipt: nestjs-mid/review/spi/trial-001",
+            "token reduction: 33.6%",
+            "fixture receipt: nestjs-mid/review/spi/trial-002",
+            "token reduction: 33.3%",
+            "fixture receipt: nestjs-mid/review/spi/trial-003"
+          ]
+        }
       }
     },
     {
@@ -1338,6 +1590,42 @@
           "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/nestjs-mid/impact/warm-cache/spi/trial-002/report.share-safe.json",
           "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/nestjs-mid/impact/warm-cache/spi/trial-003/report.share-safe.json"
         ]
+      },
+      "benchmark_outcomes": {
+        "legacy": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 3,
+            "regression": 0,
+            "not_measured": 0
+          },
+          "evidence": [
+            "token reduction: 29.1%",
+            "cost reduction: $0.44",
+            "fixture receipt: nestjs-mid/impact/legacy/trial-001",
+            "token reduction: 28.8%",
+            "fixture receipt: nestjs-mid/impact/legacy/trial-002",
+            "token reduction: 28.6%",
+            "fixture receipt: nestjs-mid/impact/legacy/trial-003"
+          ]
+        },
+        "spi_madar": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 3,
+            "regression": 0,
+            "not_measured": 0
+          },
+          "evidence": [
+            "token reduction: 35.9%",
+            "cost reduction: $0.62",
+            "fixture receipt: nestjs-mid/impact/spi/trial-001",
+            "token reduction: 35.6%",
+            "fixture receipt: nestjs-mid/impact/spi/trial-002",
+            "token reduction: 35.3%",
+            "fixture receipt: nestjs-mid/impact/spi/trial-003"
+          ]
+        }
       }
     },
     {
@@ -1476,6 +1764,42 @@
           "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-monorepo-large/explain-runtime/warm-cache/spi/trial-002/report.share-safe.json",
           "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-monorepo-large/explain-runtime/warm-cache/spi/trial-003/report.share-safe.json"
         ]
+      },
+      "benchmark_outcomes": {
+        "legacy": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 3,
+            "regression": 0,
+            "not_measured": 0
+          },
+          "evidence": [
+            "token reduction: 28.1%",
+            "cost reduction: $0.44",
+            "fixture receipt: ts-monorepo-large/explain-runtime/legacy/trial-001",
+            "token reduction: 27.9%",
+            "fixture receipt: ts-monorepo-large/explain-runtime/legacy/trial-002",
+            "token reduction: 27.6%",
+            "fixture receipt: ts-monorepo-large/explain-runtime/legacy/trial-003"
+          ]
+        },
+        "spi_madar": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 3,
+            "regression": 0,
+            "not_measured": 0
+          },
+          "evidence": [
+            "token reduction: 34.7%",
+            "cost reduction: $0.62",
+            "fixture receipt: ts-monorepo-large/explain-runtime/spi/trial-001",
+            "token reduction: 34.4%",
+            "fixture receipt: ts-monorepo-large/explain-runtime/spi/trial-002",
+            "token reduction: 34.1%",
+            "fixture receipt: ts-monorepo-large/explain-runtime/spi/trial-003"
+          ]
+        }
       }
     },
     {
@@ -1674,6 +1998,42 @@
           "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-monorepo-large/implement/warm-cache/spi/trial-002/report.share-safe.json",
           "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-monorepo-large/implement/warm-cache/spi/trial-003/report.share-safe.json"
         ]
+      },
+      "benchmark_outcomes": {
+        "legacy": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 3,
+            "regression": 0,
+            "not_measured": 0
+          },
+          "evidence": [
+            "token reduction: 26.6%",
+            "cost reduction: $0.44",
+            "fixture receipt: ts-monorepo-large/implement/legacy/trial-001",
+            "token reduction: 26.4%",
+            "fixture receipt: ts-monorepo-large/implement/legacy/trial-002",
+            "token reduction: 26.2%",
+            "fixture receipt: ts-monorepo-large/implement/legacy/trial-003"
+          ]
+        },
+        "spi_madar": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 3,
+            "regression": 0,
+            "not_measured": 0
+          },
+          "evidence": [
+            "token reduction: 32.8%",
+            "cost reduction: $0.62",
+            "fixture receipt: ts-monorepo-large/implement/spi/trial-001",
+            "token reduction: 32.6%",
+            "fixture receipt: ts-monorepo-large/implement/spi/trial-002",
+            "token reduction: 32.3%",
+            "fixture receipt: ts-monorepo-large/implement/spi/trial-003"
+          ]
+        }
       }
     },
     {
@@ -1864,6 +2224,42 @@
           "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-monorepo-large/review/warm-cache/spi/trial-002/report.share-safe.json",
           "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-monorepo-large/review/warm-cache/spi/trial-003/report.share-safe.json"
         ]
+      },
+      "benchmark_outcomes": {
+        "legacy": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 3,
+            "regression": 0,
+            "not_measured": 0
+          },
+          "evidence": [
+            "token reduction: 25.8%",
+            "cost reduction: $0.44",
+            "fixture receipt: ts-monorepo-large/review/legacy/trial-001",
+            "token reduction: 25.6%",
+            "fixture receipt: ts-monorepo-large/review/legacy/trial-002",
+            "token reduction: 25.4%",
+            "fixture receipt: ts-monorepo-large/review/legacy/trial-003"
+          ]
+        },
+        "spi_madar": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 3,
+            "regression": 0,
+            "not_measured": 0
+          },
+          "evidence": [
+            "token reduction: 31.8%",
+            "cost reduction: $0.62",
+            "fixture receipt: ts-monorepo-large/review/spi/trial-001",
+            "token reduction: 31.6%",
+            "fixture receipt: ts-monorepo-large/review/spi/trial-002",
+            "token reduction: 31.3%",
+            "fixture receipt: ts-monorepo-large/review/spi/trial-003"
+          ]
+        }
       }
     },
     {
@@ -2002,6 +2398,42 @@
           "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-monorepo-large/impact/warm-cache/spi/trial-002/report.share-safe.json",
           "docs/benchmarks/suite/results/2026-05-31T12-00-00/raw/ts-monorepo-large/impact/warm-cache/spi/trial-003/report.share-safe.json"
         ]
+      },
+      "benchmark_outcomes": {
+        "legacy": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 3,
+            "regression": 0,
+            "not_measured": 0
+          },
+          "evidence": [
+            "token reduction: 27.2%",
+            "cost reduction: $0.44",
+            "fixture receipt: ts-monorepo-large/impact/legacy/trial-001",
+            "token reduction: 27.0%",
+            "fixture receipt: ts-monorepo-large/impact/legacy/trial-002",
+            "token reduction: 26.8%",
+            "fixture receipt: ts-monorepo-large/impact/legacy/trial-003"
+          ]
+        },
+        "spi_madar": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 3,
+            "regression": 0,
+            "not_measured": 0
+          },
+          "evidence": [
+            "token reduction: 33.6%",
+            "cost reduction: $0.62",
+            "fixture receipt: ts-monorepo-large/impact/spi/trial-001",
+            "token reduction: 33.3%",
+            "fixture receipt: ts-monorepo-large/impact/spi/trial-002",
+            "token reduction: 33.1%",
+            "fixture receipt: ts-monorepo-large/impact/spi/trial-003"
+          ]
+        }
       }
     }
   ]

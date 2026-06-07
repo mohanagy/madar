@@ -2097,10 +2097,6 @@ function buildNativeAgentBaselinePrompt(
 }
 
 export function resolveCompareQuestions(options: Pick<GenerateCompareArtifactsInput, 'question' | 'questionsPath' | 'limit'>): string[] {
-  if (options.question !== undefined && options.question !== null && options.questionsPath !== undefined && options.questionsPath !== null) {
-    throw new Error('Compare runtime accepts either a single question or a questions path, but not both.')
-  }
-
   if (options.limit !== undefined && options.limit !== null) {
     if (!Number.isInteger(options.limit) || options.limit <= 0) {
       throw new Error('Compare runtime limit must be a positive integer.')
@@ -2108,10 +2104,10 @@ export function resolveCompareQuestions(options: Pick<GenerateCompareArtifactsIn
   }
 
   const rawQuestions =
-    options.questionsPath !== undefined && options.questionsPath !== null
-      ? loadBenchmarkQuestions(options.questionsPath).map((entry) => entry.question)
-      : options.question !== undefined && options.question !== null
-        ? [options.question]
+    options.question !== undefined && options.question !== null
+      ? [options.question]
+      : options.questionsPath !== undefined && options.questionsPath !== null
+        ? loadBenchmarkQuestions(options.questionsPath).map((entry) => entry.question)
         : []
 
   const trimmedQuestions = rawQuestions.map((question) => question.trim()).filter((question) => question.length > 0)
@@ -3319,12 +3315,28 @@ export class BenchmarkReadinessError extends Error {
 
 interface NativeAgentAnswerQualityGate {
   prompt: string
+  require_direct_evidence: boolean
   required_answer_terms: string[]
   forbidden_answer_terms: string[]
   required_concepts: string[]
   answer_quality_notes: string[]
   manual_review_notes: string[]
 }
+
+const DIRECT_EVIDENCE_CAVEAT_TERMS = [
+  'inferred',
+  'not directly',
+  'did not surface',
+  'did not return',
+  'not present in this knowledge graph',
+  'not verified',
+  'not graph-confirmed',
+  'not in the evidence',
+  'rather than read directly',
+  'files to open are',
+  'file to open next',
+  'would need to open',
+] as const
 
 function normalizeAnswerQualityText(value: string): string {
   return value.toLowerCase().replace(/\s+/g, ' ').trim()
@@ -3353,9 +3365,13 @@ function parseNativeAgentAnswerQualityGate(gateName: string, value: unknown): Na
   if (typeof gate.prompt !== 'string' || gate.prompt.trim().length === 0) {
     throw new Error(`Malformed quality gate "${gateName}": prompt must be a non-empty string`)
   }
+  if (gate.require_direct_evidence !== undefined && typeof gate.require_direct_evidence !== 'boolean') {
+    throw new Error(`Malformed quality gate "${gateName}": require_direct_evidence must be a boolean`)
+  }
 
   return {
     prompt: gate.prompt.trim(),
+    require_direct_evidence: gate.require_direct_evidence === true,
     required_answer_terms: parseAnswerQualityStringArray(gateName, 'required_answer_terms', gate.required_answer_terms),
     forbidden_answer_terms: parseAnswerQualityStringArray(gateName, 'forbidden_answer_terms', gate.forbidden_answer_terms, { allowEmpty: true }),
     required_concepts: parseAnswerQualityStringArray(gateName, 'required_concepts', gate.required_concepts),
@@ -3395,11 +3411,25 @@ function evaluateNativeAgentAnswerQualityRun(
 } {
   const normalizedAnswer = normalizeAnswerQualityText(answerText)
   const missingRequiredTerms = gate.required_answer_terms.filter((term) => !normalizedAnswer.includes(normalizeAnswerQualityText(term)))
-  const forbiddenTermsPresent = gate.forbidden_answer_terms.filter((term) => normalizedAnswer.includes(normalizeAnswerQualityText(term)))
+  const forbiddenTermsPresent = new Map<string, string>()
+  for (const term of gate.forbidden_answer_terms) {
+    const normalizedTerm = normalizeAnswerQualityText(term)
+    if (normalizedAnswer.includes(normalizedTerm)) {
+      forbiddenTermsPresent.set(normalizedTerm, term)
+    }
+  }
+  if (gate.require_direct_evidence) {
+    for (const term of DIRECT_EVIDENCE_CAVEAT_TERMS) {
+      const normalizedTerm = normalizeAnswerQualityText(term)
+      if (normalizedAnswer.includes(normalizedTerm)) {
+        forbiddenTermsPresent.set(normalizedTerm, term)
+      }
+    }
+  }
   return {
-    passed: missingRequiredTerms.length === 0 && forbiddenTermsPresent.length === 0,
+    passed: missingRequiredTerms.length === 0 && forbiddenTermsPresent.size === 0,
     missing_required_terms: missingRequiredTerms,
-    forbidden_terms_present: forbiddenTermsPresent,
+    forbidden_terms_present: [...forbiddenTermsPresent.values()],
   }
 }
 
@@ -3809,6 +3839,20 @@ function assessNativeAgentClaims(report: NativeAgentCompareReport): NativeAgentC
     }
   }
 
+  const benchmarkBlockers = nativeAgentBenchmarkBlockers(report)
+  if (benchmarkBlockers.length > 0) {
+    return {
+      routing_efficiency: {
+        status: 'not_measured',
+        evidence: benchmarkBlockers,
+      },
+      token_reduction: {
+        status: 'not_measured',
+        evidence: benchmarkBlockers,
+      },
+    }
+  }
+
   const routingEvidence: string[] = []
   const toolCallsImproved = report.tool_call_counts
     ? report.tool_call_counts.madar.total < report.tool_call_counts.baseline.total
@@ -3878,23 +3922,69 @@ function benchmarkFreshTokenStatus(
   return 'loss'
 }
 
+function nativeAgentBenchmarkOutcomeNotMeasured(evidence: string[]): NativeAgentBenchmarkOutcome {
+  return {
+    outcome: 'not_measured',
+    checks: {
+      routing_tool_latency: 'not_measured',
+      token: 'not_measured',
+      fresh_token: 'not_measured',
+      cost: 'not_measured',
+      turns: 'not_measured',
+    },
+    evidence,
+  }
+}
+
+function nativeAgentAnswerQualityFindings(
+  result: NonNullable<NativeAgentCompareReport['answer_quality']>['baseline'],
+): string[] {
+  return [
+    ...result.missing_required_terms.map((term) => `missing ${term}`),
+    ...result.forbidden_terms_present.map((term) => `forbidden ${term}`),
+  ]
+}
+
+function nativeAgentBenchmarkBlockers(report: NativeAgentCompareReport): string[] {
+  const blockers: string[] = []
+
+  if (report.answer_quality) {
+    const baselineFindings = nativeAgentAnswerQualityFindings(report.answer_quality.baseline)
+    if (!report.answer_quality.baseline.passed) {
+      blockers.push(
+        `answer quality failed for baseline: ${baselineFindings.length > 0 ? baselineFindings.join(', ') : 'deterministic gate failed'}`,
+      )
+    }
+    const madarFindings = nativeAgentAnswerQualityFindings(report.answer_quality.madar)
+    if (!report.answer_quality.madar.passed) {
+      blockers.push(
+        `answer quality failed for madar: ${madarFindings.length > 0 ? madarFindings.join(', ') : 'deterministic gate failed'}`,
+      )
+    }
+  }
+
+  if (report.benchmark_readiness && report.benchmark_readiness.status === 'not_ready') {
+    const reasons = report.benchmark_readiness.reasons.length > 0
+      ? ` (${report.benchmark_readiness.reasons.join('; ')})`
+      : ''
+    blockers.push(`benchmark readiness is ${report.benchmark_readiness.status}${reasons}`)
+  }
+
+  return blockers
+}
+
 function assessNativeAgentBenchmarkOutcome(report: NativeAgentCompareReport): NativeAgentBenchmarkOutcome | undefined {
   if (report.baseline.kind !== 'succeeded' || report.madar.kind !== 'succeeded') {
     return undefined
   }
 
   if (!nativeAgentReductionsAttributable(report)) {
-    return {
-      outcome: 'not_measured',
-      checks: {
-        routing_tool_latency: 'not_measured',
-        token: 'not_measured',
-        fresh_token: 'not_measured',
-        cost: 'not_measured',
-        turns: 'not_measured',
-      },
-      evidence: ['Madar MCP attribution is missing.'],
-    }
+    return nativeAgentBenchmarkOutcomeNotMeasured(['Madar MCP attribution is missing.'])
+  }
+
+  const benchmarkBlockers = nativeAgentBenchmarkBlockers(report)
+  if (benchmarkBlockers.length > 0) {
+    return nativeAgentBenchmarkOutcomeNotMeasured(benchmarkBlockers)
   }
 
   const toolCallsImproved = report.tool_call_counts
@@ -4694,6 +4784,15 @@ export async function executeNativeAgentCompare(
       strictMadarFirst: input.strictMadarFirst,
     })
     reportShell.prompt_contract = assessNativeAgentPromptContract(reportShell, installCheck.tool_profile)
+    const answerQuality = evaluateNativeAgentAnswerQualityReport(
+      answerQualityGates,
+      question,
+      baselineAnswerPath,
+      madarAnswerPath,
+    )
+    if (answerQuality !== undefined) {
+      reportShell.answer_quality = answerQuality
+    }
     const claimAssessment = assessNativeAgentClaims(reportShell)
     if (claimAssessment !== undefined) {
       reportShell.claim_assessment = claimAssessment
@@ -4708,15 +4807,6 @@ export async function executeNativeAgentCompare(
     }
     if (!nativeAgentReductionsAttributable(reportShell)) {
       reportShell.reductions = null
-    }
-    const answerQuality = evaluateNativeAgentAnswerQualityReport(
-      answerQualityGates,
-      question,
-      baselineAnswerPath,
-      madarAnswerPath,
-    )
-    if (answerQuality !== undefined) {
-      reportShell.answer_quality = answerQuality
     }
     if (task === 'implement' && implementationGuidance && baselineWorkspace && madarWorkspace) {
       const allowedEditPaths = new Set([

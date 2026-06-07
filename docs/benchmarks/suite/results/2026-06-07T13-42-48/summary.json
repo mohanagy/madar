@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "started_at": "2026-06-07T13:42:48.852Z",
+  "completed_at": "2026-06-07T13:47:59.743Z",
+  "output_root": "docs/benchmarks/suite/results/2026-06-07T13-42-48",
+  "filters": {
+    "repo": "documenso",
+    "task": "explain-runtime",
+    "mode": "warm",
+    "trials": 1
+  },
+  "cells_skipped_for_install": 0,
+  "cells_skipped_for_env_drift": 0,
+  "cells": [
+    {
+      "repoId": "documenso",
+      "repoName": "Documenso public repo",
+      "taskId": "explain-runtime",
+      "taskName": "Explain runtime flow",
+      "mode": "warm",
+      "prompt": "How does Documenso move a document from send preparation through recipient creation, signing state, and notification delivery?",
+      "status": "completed",
+      "reason": null,
+      "isolation": true,
+      "baseline": {
+        "input_tokens": {
+          "median": 459239,
+          "min": 459239,
+          "max": 459239,
+          "n": 1
+        },
+        "total_tool_calls": {
+          "median": 13,
+          "min": 13,
+          "max": 13,
+          "n": 1
+        },
+        "read_calls": {
+          "median": 6,
+          "min": 6,
+          "max": 6,
+          "n": 1
+        },
+        "glob_grep_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "wall_clock_ms": {
+          "median": 98034,
+          "min": 98034,
+          "max": 98034,
+          "n": 1
+        },
+        "cost_usd": {
+          "median": 0.5587105,
+          "min": 0.5587105,
+          "max": 0.5587105,
+          "n": 1
+        }
+      },
+      "madar": {
+        "input_tokens": {
+          "median": 109648,
+          "min": 109648,
+          "max": 109648,
+          "n": 1
+        },
+        "total_tool_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 1
+        },
+        "read_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "glob_grep_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "wall_clock_ms": {
+          "median": 39751,
+          "min": 39751,
+          "max": 39751,
+          "n": 1
+        },
+        "cost_usd": {
+          "median": 0.25264949999999997,
+          "min": 0.25264949999999997,
+          "max": 0.25264949999999997,
+          "n": 1
+        }
+      },
+      "spi_madar": null,
+      "workflow_outcomes": null,
+      "artifacts": {
+        "legacy_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-06-07T13-42-48/raw/documenso/explain-runtime/warm-cache/legacy/trial-001/report.share-safe.json"
+        ],
+        "spi_share_safe_reports": []
+      },
+      "benchmark_outcomes": {
+        "legacy": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 0,
+            "regression": 0,
+            "not_measured": 1
+          },
+          "evidence": [
+            "benchmark readiness is not_ready (runtime slice confidence is low; no SPI evidence found in the current pack; retry with packages/out/graph.json or another SPI-scoped graph; root graph is broad for this question; retrieved evidence is concentrated under packages/)"
+          ]
+        },
+        "spi_madar": null
+      }
+    }
+  ]
+}

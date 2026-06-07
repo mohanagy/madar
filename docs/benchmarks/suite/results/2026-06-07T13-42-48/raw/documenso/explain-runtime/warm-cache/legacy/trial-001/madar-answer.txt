@@ -1,0 +1,17 @@
+Two focused Madar `retrieve` passes did **not** surface the core send-orchestration code (e.g. `sendDocument`, `setRecipientsForDocument`, `completeDocumentWithToken`, `sealDocument`, the send-document email job). The graph repeatedly returned the **email transport** and **email-domain/sender configuration** layers instead. So I'll answer from the evidence I do have and flag the gap rather than launch a broad raw search.
+
+## What the graph evidence supports
+
+**Notification delivery (well-covered, `pack_confidence: direct`)**
+- Outbound document mail goes through a pluggable Nodemailer-style `Transport`. The Cloudflare path is `MailChannelsTransport` (`packages/email/transports/mailchannels.ts:28`).
+- Its `.send()` (`:47`) validates required `to`/`from`, normalizes every address field (`to`/`cc`/`bcc`/`from`) via `.toMailChannelsAddresses()` (`:125`), then `POST`s the payload to the MailChannels API (`https://api.mailchannels.net/tx/v1/send`), attaching `X-Auth-Token` when an API key is configured.
+
+**Sender identity / email config (medium confidence)**
+- Which verified domain/address a document is sent *from* is resolved through tRPC routers: `findEmailDomains()` (admin, `packages/trpc/server/admin-router/find-email-domains.ts:24`) and the enterprise equivalents `findOrganisationEmailDomains()`, `findOrganisationEmails()`, `getOrganisationEmailDomain()` — these gate sending on an organisation's verified `EmailDomain`/`OrganisationEmail` records.
+- A `webhook-router/router.ts` exists, indicating document-lifecycle events also fan out to webhook subscribers alongside email.
+
+## Gap / caveat
+
+The graph did **not** return the send-preparation → recipient-creation → signing-status-transition pipeline itself. Based on standard Documenso structure these typically live under `packages/lib/server-only/document/` (`send-document.ts`, `seal-document.ts`), `packages/lib/server-only/recipient/set-recipients-for-document.ts`, and `packages/lib/server-only/document/complete-document-with-token.ts`, with status enums like `DRAFT → PENDING → COMPLETED` and recipient `signingStatus`. **I could not confirm those specific files/transitions from the knowledge graph** — they weren't in the retrieved nodes.
+
+If you want the full lifecycle verified, the most useful next step is one targeted read of `packages/lib/server-only/document/send-document.ts` (the orchestrator that flips status to PENDING, iterates recipients, and enqueues the per-recipient signing emails that ultimately hit the transport above).

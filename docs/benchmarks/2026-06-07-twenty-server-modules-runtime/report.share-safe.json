@@ -46,98 +46,101 @@
     "kind": "succeeded",
     "model": null,
     "usage": {
-      "input_tokens": 5181,
-      "cache_creation_input_tokens": 23125,
-      "cache_read_input_tokens": 205059,
-      "output_tokens": 8013,
+      "input_tokens": 6061,
+      "cache_creation_input_tokens": 23648,
+      "cache_read_input_tokens": 320268,
+      "output_tokens": 7360,
       "server_tool_use": {
         "web_search_requests": 0,
         "web_fetch_requests": 0
       },
       "service_tier": "standard",
       "cache_creation": {
-        "ephemeral_1h_input_tokens": 23125,
-        "ephemeral_5m_input_tokens": 0
-      },
-      "inference_geo": "not_available",
-      "iterations": [
-        {
-          "input_tokens": 131,
-          "output_tokens": 3778,
-          "cache_read_input_tokens": 37864,
-          "cache_creation_input_tokens": 1082,
-          "cache_creation": {
-            "ephemeral_5m_input_tokens": 0,
-            "ephemeral_1h_input_tokens": 1082
-          },
-          "type": "message"
-        }
-      ],
-      "speed": "standard"
-    },
-    "total_input_tokens_anthropic_exact": 233365,
-    "uncached_input_tokens_anthropic_exact": 28306,
-    "cached_input_tokens_anthropic_exact": 205059,
-    "total_cost_usd": 0.7958848499999999,
-    "num_turns": 7,
-    "duration_ms": 361671,
-    "result_path": "<artifact-root>/baseline-answer.txt"
-  },
-  "madar": {
-    "kind": "succeeded",
-    "model": null,
-    "usage": {
-      "input_tokens": 5855,
-      "cache_creation_input_tokens": 22376,
-      "cache_read_input_tokens": 86245,
-      "output_tokens": 858,
-      "server_tool_use": {
-        "web_search_requests": 0,
-        "web_fetch_requests": 0
-      },
-      "service_tier": "standard",
-      "cache_creation": {
-        "ephemeral_1h_input_tokens": 22376,
+        "ephemeral_1h_input_tokens": 23648,
         "ephemeral_5m_input_tokens": 0
       },
       "inference_geo": "not_available",
       "iterations": [
         {
           "input_tokens": 2,
-          "output_tokens": 464,
-          "cache_read_input_tokens": 27330,
-          "cache_creation_input_tokens": 3214,
+          "output_tokens": 3020,
+          "cache_read_input_tokens": 37337,
+          "cache_creation_input_tokens": 2132,
           "cache_creation": {
             "ephemeral_5m_input_tokens": 0,
-            "ephemeral_1h_input_tokens": 3214
+            "ephemeral_1h_input_tokens": 2132
           },
           "type": "message"
         }
       ],
       "speed": "standard"
     },
-    "total_input_tokens_anthropic_exact": 114476,
-    "uncached_input_tokens_anthropic_exact": 28231,
-    "cached_input_tokens_anthropic_exact": 86245,
-    "total_cost_usd": 0.23446450000000002,
-    "num_turns": 4,
-    "duration_ms": 18850,
+    "total_input_tokens_anthropic_exact": 349977,
+    "uncached_input_tokens_anthropic_exact": 29709,
+    "cached_input_tokens_anthropic_exact": 320268,
+    "total_cost_usd": 0.522845,
+    "num_turns": 15,
+    "duration_ms": 105673,
+    "result_path": "<artifact-root>/baseline-answer.txt"
+  },
+  "madar": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 4568,
+      "cache_creation_input_tokens": 33066,
+      "cache_read_input_tokens": 60347,
+      "output_tokens": 1311,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 33066,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2332,
+          "output_tokens": 1019,
+          "cache_read_input_tokens": 28612,
+          "cache_creation_input_tokens": 10643,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 10643
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 97981,
+    "uncached_input_tokens_anthropic_exact": 37634,
+    "cached_input_tokens_anthropic_exact": 60347,
+    "total_cost_usd": 0.293223,
+    "num_turns": 3,
+    "duration_ms": 23471,
     "result_path": "<artifact-root>/madar-answer.txt"
   },
   "install_verified": true,
   "measurement_validity": "valid",
   "trace_status": "trace_available",
-  "madar_mcp_call_count": 2,
+  "madar_mcp_call_count": 1,
   "reductions": {
-    "input_tokens": 2.04,
-    "uncached_input_tokens": 1,
-    "cache_creation_input_tokens": 1.03,
-    "num_turns": 1.75,
-    "duration_ms": 19.19,
-    "cost_usd": 3.39
+    "input_tokens": 3.57,
+    "uncached_input_tokens": 0.79,
+    "cache_creation_input_tokens": 0.72,
+    "num_turns": 5,
+    "duration_ms": 4.5,
+    "cost_usd": 1.78
   },
-  "token_regression": false,
-  "token_regression_reasons": [],
+  "token_regression": true,
+  "token_regression_reasons": [
+    "uncached_input_tokens",
+    "cache_creation_input_tokens"
+  ],
   "prompt_token_source": {
     "baseline": "anthropic_provider_reported",
     "madar": "anthropic_provider_reported"
@@ -157,8 +160,8 @@
     },
     "reduction_basis": "provider_reported"
   },
-  "started_at": "2026-06-07T13:02:04.312Z",
-  "completed_at": "2026-06-07T13:08:28.159Z",
+  "started_at": "2026-06-07T14:26:26.805Z",
+  "completed_at": "2026-06-07T14:28:38.561Z",
   "paths": {
     "output_dir": "<artifact-root>",
     "report": "<artifact-root>/report.json",
@@ -181,10 +184,10 @@
   },
   "madar_trace": {
     "source": "claude_messages_tool_use",
-    "summary": "3 tool calls across 3 turns",
-    "tool_call_count": 3,
+    "summary": "2 tool calls across 2 turns",
+    "tool_call_count": 2,
     "tool_calls_by_name": {
-      "mcp__madar__retrieve": 2,
+      "mcp__madar__retrieve": 1,
       "ToolSearch": 1
     },
     "per_turn": [
@@ -205,51 +208,42 @@
         "tools": [
           "mcp__madar__retrieve"
         ]
-      },
-      {
-        "turn": 5,
-        "tool_call_count": 1,
-        "tools": [
-          "mcp__madar__retrieve"
-        ]
       }
     ],
-    "madar_mcp_call_count": 2,
+    "madar_mcp_call_count": 1,
     "madar_mcp_calls_by_name": {
-      "mcp__madar__retrieve": 2
+      "mcp__madar__retrieve": 1
     },
     "first_madar_turn": 3,
     "first_madar_tool_name": "mcp__madar__retrieve",
     "pre_madar_broad_exploration_tool_call_count": 0,
     "pre_madar_broad_exploration_tool_calls_by_name": {},
     "context_pack_call_count": 0,
-    "focused_follow_up_tool_call_count": 1,
+    "focused_follow_up_tool_call_count": 0,
     "broad_exploration_tool_call_count": 0,
     "broad_exploration_tool_calls_by_name": {},
     "exploration_outcome": "madar_invoked",
-    "exploration_summary": "Madar MCP invoked 2 times (mcp__madar__retrieve); 1 focused follow-up call; no broad exploration after the first Madar call."
+    "exploration_summary": "Madar MCP invoked 1 time (mcp__madar__retrieve); no broad exploration after the first Madar call."
   },
   "tool_call_counts": {
     "baseline": {
-      "total": 68,
-      "Read": 17,
-      "Bash": 49,
+      "total": 14,
+      "Read": 0,
+      "Bash": 14,
       "Glob": 0,
       "Grep": 0,
       "ToolSearch": 0,
-      "other": {
-        "Agent": 2
-      }
+      "other": {}
     },
     "madar": {
-      "total": 3,
+      "total": 2,
       "Read": 0,
       "Bash": 0,
       "Glob": 0,
       "Grep": 0,
       "ToolSearch": 1,
       "other": {
-        "retrieve": 2
+        "retrieve": 1
       }
     }
   },
@@ -261,34 +255,29 @@
   },
   "claim_assessment": {
     "routing_efficiency": {
-      "status": "improved",
+      "status": "not_measured",
       "evidence": [
-        "tool calls decreased: baseline 68 → madar 3 (22.67x fewer)",
-        "latency improved: baseline 361671ms → madar 18850ms (19.19x faster)"
+        "benchmark readiness is not_ready (missing downstream runtime phases: persistence; runtime slice confidence is low; no SPI evidence found in the current pack; retry with messaging/out/graph.json or another SPI-scoped graph; root graph is broad for this question; retrieved evidence is concentrated under messaging/)"
       ]
     },
     "token_reduction": {
-      "status": "proven",
+      "status": "not_measured",
       "evidence": [
-        "provider input decreased: baseline 233365 → madar 114476 (2.04x less)"
+        "benchmark readiness is not_ready (missing downstream runtime phases: persistence; runtime slice confidence is low; no SPI evidence found in the current pack; retry with messaging/out/graph.json or another SPI-scoped graph; root graph is broad for this question; retrieved evidence is concentrated under messaging/)"
       ]
     }
   },
   "benchmark_outcome": {
-    "outcome": "full_win",
+    "outcome": "not_measured",
     "checks": {
-      "routing_tool_latency": "win",
-      "token": "win",
-      "fresh_token": "win",
-      "cost": "win",
-      "turns": "win"
+      "routing_tool_latency": "not_measured",
+      "token": "not_measured",
+      "fresh_token": "not_measured",
+      "cost": "not_measured",
+      "turns": "not_measured"
     },
     "evidence": [
-      "routing/tool/latency win: tool calls 68 → 3, latency 361671ms → 18850ms",
-      "provider input win: baseline 233365 → madar 114476",
-      "turns win: baseline 7 → madar 4",
-      "fresh_token win: baseline 28306 → madar 28231",
-      "cost win: baseline 0.7958848499999999 → madar 0.23446450000000002"
+      "benchmark readiness is not_ready (missing downstream runtime phases: persistence; runtime slice confidence is low; no SPI evidence found in the current pack; retry with messaging/out/graph.json or another SPI-scoped graph; root graph is broad for this question; retrieved evidence is concentrated under messaging/)"
     ]
   }
 }

@@ -1,0 +1,19 @@
+Both Madar retrieve calls (the second being the one allowed focused follow-up) came back **medium confidence** and drifted to peripheral nodes. The graph indexed for this snapshot does **not** appear to contain the core click-resolution path (the edge middleware, `recordClick`, and Tinybird ingestion). I'll answer from what the graph actually surfaced, with a clear caveat rather than continuing to explore.
+
+## Answer (with caveat)
+
+**Caveat first:** The Madar knowledge graph for this repo snapshot did not surface the primary request-handling → redirect path. Neither retrieve call returned the edge middleware, the click-recording function, or the analytics-ingest call. What the graph *does* contain are nodes *adjacent* to clicks — reward aggregation, usage-limit emails, and OAuth redirects — not the hot redirect path itself. So the end-to-end flow below is only partially evidenced by the graph; the middle of the pipeline is a gap, not a confirmed chain.
+
+### What the graph evidence supports
+
+- **Click-driven downstream processing (cron, post-redirect):** `resolveClickRewardAmount()` in `apps/web/app/(ee)/api/cron/aggregate-clicks/resolve-click-reward-amount.ts` evaluates reward conditions per click (country/source) — i.e., clicks are aggregated asynchronously via cron *after* they're recorded, not synchronously during the redirect.
+- **Usage accounting off clicks:** `ClicksExceeded()` / `ClicksSummary()` email templates (`packages/email/src/templates/`) consume per-workspace click totals — confirming clicks feed a usage/billing pipeline.
+- **Redirect utilities (unrelated to short links):** the `getRedirectUrl()` / `getOAuthUrl()` nodes are Stripe-app OAuth redirects, not short-link destination resolution — a false-positive match on "redirect."
+
+### The gap (not evidenced in this graph)
+
+The actual click-resolution pipeline — typically (1) **edge middleware** matching `domain/key`, (2) link lookup (often Redis/edge cache → DB fallback), (3) **`recordClick`** firing analytics to **Tinybird** plus deciding bot/geo/device, and (4) issuing the redirect to the destination URL with passthrough/cloaking — did **not** appear in either retrieve result. I can't cite specific files for these stages from the graph.
+
+### Recommendation
+
+To resolve the gap, one targeted raw read would settle it — the middleware entry (`apps/web/middleware.ts` and `apps/web/lib/middleware/link.ts`) and the click recorder (search for `recordClick` under `apps/web/lib/`). I held off on that broad read since the contract limits me to the graph plus one focused follow-up, both of which are now spent. Let me know if you'd like me to open those files directly to confirm the full chain.

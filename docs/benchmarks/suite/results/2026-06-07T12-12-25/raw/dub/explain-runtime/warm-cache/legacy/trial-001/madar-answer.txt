@@ -1,9 +1,0 @@
-I need permission to use the Madar `retrieve` tool to answer this. The contract here requires me to call `mcp__madar__retrieve` first for an "explain/runtime" question before any raw file or broad search — and I'm blocked from raw exploration until that runs.
-
-Two requests so far for `mcp__madar__retrieve` were not granted. Could you approve the `mcp__madar__retrieve` permission (or run with the Madar MCP allowed)? Once it's granted I'll:
-
-1. Call `retrieve` with the click-resolution question.
-2. Inspect `matched_nodes`, `snippets`, `relationships`, and community context.
-3. Answer from that evidence — key steps (request handling → analytics tracking → redirect), key files, and caveats — using at most one focused follow-up read only if a specific gap remains.
-
-Let me know and I'll proceed.

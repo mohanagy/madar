@@ -1,0 +1,307 @@
+{
+  "baseline_mode": "native_agent",
+  "task": "explain",
+  "question": "How does Documenso move a document from send preparation through recipient creation, signing state, and notification delivery?",
+  "graph_path": "<project-root>/out/graph.json",
+  "isolation": true,
+  "environment": {
+    "claude_code_version": "2.1.168",
+    "host_os": "darwin-arm64",
+    "node_version": "v22.22.3",
+    "mcp_servers_active": [
+      "madar"
+    ],
+    "mcp_server_count": 1,
+    "skills_loaded": [],
+    "skills_loaded_count": 0,
+    "plugins_active": [],
+    "user_claude_md_hash": "sha256:0cf98a0a8f9c27017a0bebc7b017fc17518d9103c62ca384da20b2776b0aade7",
+    "project_claude_md_hash": "sha256:f756cedc14b026ff7879bccec92865638324e29e05860c83d7858375465d0940",
+    "parent_claude_md_hashes": [],
+    "hooks_active": {
+      "user_prompt_submit": [
+        "project:command:*"
+      ],
+      "pre_tool_use": [],
+      "post_tool_use": []
+    }
+  },
+  "environment_contamination": {
+    "skills_activated_during_run": [],
+    "skills_conflicting_with_madar_rules": [],
+    "calls_to_other_mcps": {},
+    "subagent_dispatches_detected": 0,
+    "skill_alignment_score": 1
+  },
+  "exec_command": {
+    "command": null,
+    "placeholders": [
+      "{prompt_file}"
+    ],
+    "redacted": true
+  },
+  "baseline": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 4599,
+      "cache_creation_input_tokens": 33306,
+      "cache_read_input_tokens": 421334,
+      "output_tokens": 4651,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 33306,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 2029,
+          "cache_read_input_tokens": 48305,
+          "cache_creation_input_tokens": 822,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 822
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 459239,
+    "uncached_input_tokens_anthropic_exact": 37905,
+    "cached_input_tokens_anthropic_exact": 421334,
+    "total_cost_usd": 0.5587105,
+    "num_turns": 14,
+    "duration_ms": 98034,
+    "result_path": "<artifact-root>/baseline-answer.txt"
+  },
+  "madar": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 2338,
+      "cache_creation_input_tokens": 21810,
+      "cache_read_input_tokens": 85500,
+      "output_tokens": 2445,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 18996,
+        "ephemeral_5m_input_tokens": 2814
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 1642,
+          "cache_read_input_tokens": 26331,
+          "cache_creation_input_tokens": 8579,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 8579
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 109648,
+    "uncached_input_tokens_anthropic_exact": 24148,
+    "cached_input_tokens_anthropic_exact": 85500,
+    "total_cost_usd": 0.25264949999999997,
+    "num_turns": 4,
+    "duration_ms": 39751,
+    "result_path": "<artifact-root>/madar-answer.txt"
+  },
+  "install_verified": true,
+  "measurement_validity": "valid",
+  "trace_status": "trace_available",
+  "madar_mcp_call_count": 2,
+  "reductions": {
+    "input_tokens": 4.19,
+    "uncached_input_tokens": 1.57,
+    "cache_creation_input_tokens": 1.53,
+    "num_turns": 3.5,
+    "duration_ms": 2.47,
+    "cost_usd": 2.21
+  },
+  "token_regression": false,
+  "token_regression_reasons": [],
+  "prompt_token_source": {
+    "baseline": "anthropic_provider_reported",
+    "madar": "anthropic_provider_reported"
+  },
+  "provider_proof": {
+    "baseline": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "madar": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "reduction_basis": "provider_reported"
+  },
+  "started_at": "2026-06-07T13:45:38.970Z",
+  "completed_at": "2026-06-07T13:47:59.200Z",
+  "paths": {
+    "output_dir": "<artifact-root>",
+    "report": "<artifact-root>/report.json",
+    "share_safe_report": "<artifact-root>/report.share-safe.json",
+    "baseline_answer": "<artifact-root>/baseline-answer.txt",
+    "madar_answer": "<artifact-root>/madar-answer.txt",
+    "baseline_prompt": "<artifact-root>/baseline-prompt.txt",
+    "madar_prompt": "<artifact-root>/madar-prompt.txt",
+    "prompt_file": "<artifact-root>/madar-prompt.txt"
+  },
+  "benchmark_readiness": {
+    "status": "not_ready",
+    "reasons": [
+      "runtime slice confidence is low",
+      "no SPI evidence found in the current pack; retry with packages/out/graph.json or another SPI-scoped graph",
+      "root graph is broad for this question; retrieved evidence is concentrated under packages/"
+    ],
+    "suggested_graph_scope": "packages/out/graph.json"
+  },
+  "madar_trace": {
+    "source": "claude_messages_tool_use",
+    "summary": "3 tool calls across 3 turns",
+    "tool_call_count": 3,
+    "tool_calls_by_name": {
+      "mcp__madar__retrieve": 2,
+      "ToolSearch": 1
+    },
+    "per_turn": [
+      {
+        "turn": 2,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ],
+        "madar_tool_discovery_count": 1,
+        "madar_tool_discovery_tool_indexes": [
+          0
+        ]
+      },
+      {
+        "turn": 3,
+        "tool_call_count": 1,
+        "tools": [
+          "mcp__madar__retrieve"
+        ]
+      },
+      {
+        "turn": 6,
+        "tool_call_count": 1,
+        "tools": [
+          "mcp__madar__retrieve"
+        ]
+      }
+    ],
+    "madar_mcp_call_count": 2,
+    "madar_mcp_calls_by_name": {
+      "mcp__madar__retrieve": 2
+    },
+    "first_madar_turn": 3,
+    "first_madar_tool_name": "mcp__madar__retrieve",
+    "pre_madar_broad_exploration_tool_call_count": 0,
+    "pre_madar_broad_exploration_tool_calls_by_name": {},
+    "context_pack_call_count": 0,
+    "focused_follow_up_tool_call_count": 1,
+    "broad_exploration_tool_call_count": 0,
+    "broad_exploration_tool_calls_by_name": {},
+    "exploration_outcome": "madar_invoked",
+    "exploration_summary": "Madar MCP invoked 2 times (mcp__madar__retrieve); 1 focused follow-up call; no broad exploration after the first Madar call."
+  },
+  "tool_call_counts": {
+    "baseline": {
+      "total": 13,
+      "Read": 6,
+      "Bash": 7,
+      "Glob": 0,
+      "Grep": 0,
+      "ToolSearch": 0,
+      "other": {}
+    },
+    "madar": {
+      "total": 3,
+      "Read": 0,
+      "Bash": 0,
+      "Glob": 0,
+      "Grep": 0,
+      "ToolSearch": 1,
+      "other": {
+        "retrieve": 2
+      }
+    }
+  },
+  "prompt_contract": {
+    "status": "followed",
+    "evidence": [
+      "started with retrieve and avoided disallowed exploration"
+    ]
+  },
+  "answer_quality": {
+    "gate": "documenso-explain-runtime",
+    "prompt": "How does Documenso move a document from send preparation through recipient creation, signing state, and notification delivery?",
+    "baseline": {
+      "passed": true,
+      "missing_required_terms": [],
+      "forbidden_terms_present": []
+    },
+    "madar": {
+      "passed": true,
+      "missing_required_terms": [],
+      "forbidden_terms_present": []
+    },
+    "required_concepts": [
+      "The answer should describe the runtime path instead of asking for tool approval."
+    ],
+    "answer_quality_notes": [
+      "Deterministic term checks are a publication gate, not a substitute for human review."
+    ],
+    "manual_review_notes": [
+      "Confirm the answer traces the send flow through signing state and notification delivery."
+    ]
+  },
+  "claim_assessment": {
+    "routing_efficiency": {
+      "status": "not_measured",
+      "evidence": [
+        "benchmark readiness is not_ready (runtime slice confidence is low; no SPI evidence found in the current pack; retry with packages/out/graph.json or another SPI-scoped graph; root graph is broad for this question; retrieved evidence is concentrated under packages/)"
+      ]
+    },
+    "token_reduction": {
+      "status": "not_measured",
+      "evidence": [
+        "benchmark readiness is not_ready (runtime slice confidence is low; no SPI evidence found in the current pack; retry with packages/out/graph.json or another SPI-scoped graph; root graph is broad for this question; retrieved evidence is concentrated under packages/)"
+      ]
+    }
+  },
+  "benchmark_outcome": {
+    "outcome": "not_measured",
+    "checks": {
+      "routing_tool_latency": "not_measured",
+      "token": "not_measured",
+      "fresh_token": "not_measured",
+      "cost": "not_measured",
+      "turns": "not_measured"
+    },
+    "evidence": [
+      "benchmark readiness is not_ready (runtime slice confidence is low; no SPI evidence found in the current pack; retry with packages/out/graph.json or another SPI-scoped graph; root graph is broad for this question; retrieved evidence is concentrated under packages/)"
+    ]
+  }
+}

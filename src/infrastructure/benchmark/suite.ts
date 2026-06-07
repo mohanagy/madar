@@ -113,6 +113,23 @@ interface BenchmarkSuiteWorkflowOutcomeArms {
   spi_madar: BenchmarkSuiteWorkflowOutcomeSummary | null
 }
 
+interface BenchmarkSuiteBenchmarkOutcomeCounts {
+  full_win: number
+  partial_win: number
+  regression: number
+  not_measured: number
+}
+
+interface BenchmarkSuiteBenchmarkOutcomeSummary {
+  counts: BenchmarkSuiteBenchmarkOutcomeCounts
+  evidence: string[]
+}
+
+interface BenchmarkSuiteBenchmarkOutcomeArms {
+  legacy: BenchmarkSuiteBenchmarkOutcomeSummary | null
+  spi_madar: BenchmarkSuiteBenchmarkOutcomeSummary | null
+}
+
 interface BenchmarkSuiteCellPlan {
   repo: BenchmarkSuiteRepo
   task: BenchmarkSuiteTask
@@ -141,6 +158,7 @@ export interface BenchmarkSuiteSummaryCell {
   baseline: BenchmarkSuiteArmMetricsSummary
   madar: BenchmarkSuiteArmMetricsSummary
   spi_madar: BenchmarkSuiteArmMetricsSummary | null
+  benchmark_outcomes: BenchmarkSuiteBenchmarkOutcomeArms | null
   workflow_outcomes: BenchmarkSuiteWorkflowOutcomeArms | null
   artifacts: {
     legacy_share_safe_reports: string[]
@@ -175,6 +193,7 @@ export interface BenchmarkSuiteRunResult {
 export interface BenchmarkSuiteDependencies {
   repos?: BenchmarkSuiteRepo[]
   tasks?: BenchmarkSuiteTask[]
+  tasksPath?: string
   now?: () => Date
   generateGraph?: (rootPath?: string, options?: GenerateGraphOptions) => GenerateGraphResult
   captureBenchmarkEnvironment?: (
@@ -674,6 +693,57 @@ function summarizeWorkflowOutcomes(
     : null
 }
 
+const BENCHMARK_OUTCOME_KEYS = ['full_win', 'partial_win', 'regression', 'not_measured'] as const
+
+function emptyBenchmarkOutcomeCounts(): BenchmarkSuiteBenchmarkOutcomeCounts {
+  return {
+    full_win: 0,
+    partial_win: 0,
+    regression: 0,
+    not_measured: 0,
+  }
+}
+
+function summarizeBenchmarkOutcomeArm(
+  reports: readonly NativeAgentCompareReport[],
+): BenchmarkSuiteBenchmarkOutcomeSummary | null {
+  const countedReports = reports.flatMap((report) => report.benchmark_outcome ? [report.benchmark_outcome] : [])
+  if (countedReports.length === 0) {
+    return null
+  }
+
+  const counts = emptyBenchmarkOutcomeCounts()
+  const evidence = new Set<string>()
+  for (const outcome of countedReports) {
+    counts[outcome.outcome] += 1
+    for (const entry of outcome.evidence) {
+      const normalized = entry.trim()
+      if (normalized.length > 0) {
+        evidence.add(normalized)
+      }
+    }
+  }
+
+  return {
+    counts,
+    evidence: [...evidence],
+  }
+}
+
+function summarizeBenchmarkOutcomes(
+  legacyReports: readonly NativeAgentCompareReport[],
+  spiReports: readonly NativeAgentCompareReport[],
+): BenchmarkSuiteBenchmarkOutcomeArms | null {
+  const legacy = summarizeBenchmarkOutcomeArm(legacyReports)
+  const spiMadar = summarizeBenchmarkOutcomeArm(spiReports)
+  return legacy || spiMadar
+    ? {
+        legacy,
+        spi_madar: spiMadar,
+      }
+    : null
+}
+
 function isCompletedArm(summary: BenchmarkSuiteArmMetricsSummary): boolean {
   return summary.input_tokens !== null
 }
@@ -708,12 +778,38 @@ function formatMetric(stats: BenchmarkSuiteMetricStats | null, digits = 0): stri
   return `${formatter(stats.median)} (${formatter(stats.min)}-${formatter(stats.max)}, n=${stats.n})`
 }
 
+function formatSingleBenchmarkOutcome(summary: BenchmarkSuiteBenchmarkOutcomeSummary): string {
+  const parts = BENCHMARK_OUTCOME_KEYS
+    .filter((key) => summary.counts[key] > 0)
+    .map((key) => summary.counts[key] === 1 ? key : `${key} x${summary.counts[key]}`)
+  if (parts.length === 0) {
+    return '—'
+  }
+  return summary.evidence.length > 0 ? `${parts.join(', ')} (${summary.evidence.join('; ')})` : parts.join(', ')
+}
+
+function formatBenchmarkOutcomes(summary: BenchmarkSuiteBenchmarkOutcomeArms | null): string {
+  if (summary === null) {
+    return '—'
+  }
+
+  const parts: string[] = []
+  if (summary.legacy) {
+    parts.push(`legacy: ${formatSingleBenchmarkOutcome(summary.legacy)}`)
+  }
+  if (summary.spi_madar) {
+    parts.push(`SPI: ${formatSingleBenchmarkOutcome(summary.spi_madar)}`)
+  }
+  return parts.length > 0 ? parts.join('; ') : '—'
+}
+
 function formatCellRow(cell: BenchmarkSuiteSummaryCell): string {
   const statusLabel = cell.status === 'skipped' ? 'skipped' : cell.status
   const reason = cell.reason ?? '—'
   return [
     cell.repoId,
     statusLabel,
+    formatBenchmarkOutcomes(cell.benchmark_outcomes),
     cell.isolation === null ? '—' : String(cell.isolation),
     reason,
     formatMetric(cell.baseline.input_tokens),
@@ -802,8 +898,8 @@ function formatBenchmarkSuiteSummaryMarkdown(summary: BenchmarkSuiteSummary): st
       }
       lines.push(`### ${mode === 'cold' ? 'Cold cache' : 'Warm cache'}`)
       lines.push('')
-      lines.push('| Repo | Status | Isolation | Reason | Baseline input tokens | Madar input tokens | SPI Madar input tokens | Baseline tool calls | Madar tool calls | SPI Madar tool calls | Baseline Read | Madar Read | SPI Madar Read | Baseline Glob/Grep | Madar Glob/Grep | SPI Madar Glob/Grep | Baseline wall-clock (ms) | Madar wall-clock (ms) | SPI Madar wall-clock (ms) | Baseline cost (USD) | Madar cost (USD) | SPI Madar cost (USD) | Workflow outcomes |')
-      lines.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |')
+      lines.push('| Repo | Status | Benchmark outcomes | Isolation | Reason | Baseline input tokens | Madar input tokens | SPI Madar input tokens | Baseline tool calls | Madar tool calls | SPI Madar tool calls | Baseline Read | Madar Read | SPI Madar Read | Baseline Glob/Grep | Madar Glob/Grep | SPI Madar Glob/Grep | Baseline wall-clock (ms) | Madar wall-clock (ms) | SPI Madar wall-clock (ms) | Baseline cost (USD) | Madar cost (USD) | SPI Madar cost (USD) | Workflow outcomes |')
+      lines.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |')
       for (const cell of modeCells) {
         lines.push(`| ${formatCellRow(cell)} |`)
       }
@@ -888,7 +984,8 @@ export async function runBenchmarkSuite(
   dependencies: BenchmarkSuiteDependencies = {},
 ): Promise<BenchmarkSuiteRunResult> {
   const repos = (dependencies.repos ?? loadBenchmarkSuiteRepos()).map((repo) => normalizeBenchmarkSuiteRepo(repo))
-  const tasks = dependencies.tasks ?? loadBenchmarkSuiteTasks()
+  const tasksPath = dependencies.tasksPath ?? (dependencies.tasks === undefined ? DEFAULT_TASKS_PATH : null)
+  const tasks = dependencies.tasks ?? loadBenchmarkSuiteTasks(tasksPath ?? DEFAULT_TASKS_PATH)
   const now = dependencies.now ?? (() => new Date())
   const runGenerateGraph = dependencies.generateGraph ?? generateGraph
   const getBenchmarkEnvironment = dependencies.captureBenchmarkEnvironment ?? captureBenchmarkEnvironment
@@ -961,6 +1058,7 @@ export async function runBenchmarkSuite(
           baseline: summarizeArmMetrics([], 'baseline'),
           madar: summarizeArmMetrics([], 'madar'),
           spi_madar: plan.repo.supportsSpi ? summarizeArmMetrics([], 'madar') : null,
+          benchmark_outcomes: null,
           workflow_outcomes: null,
           artifacts: {
             legacy_share_safe_reports: [],
@@ -985,6 +1083,7 @@ export async function runBenchmarkSuite(
           baseline: summarizeArmMetrics([], 'baseline'),
           madar: summarizeArmMetrics([], 'madar'),
           spi_madar: plan.repo.supportsSpi ? summarizeArmMetrics([], 'madar') : null,
+          benchmark_outcomes: null,
           workflow_outcomes: null,
           artifacts: {
             legacy_share_safe_reports: [],
@@ -1017,6 +1116,7 @@ export async function runBenchmarkSuite(
             baseline: summarizeArmMetrics([], 'baseline'),
             madar: summarizeArmMetrics([], 'madar'),
             spi_madar: plan.repo.supportsSpi ? summarizeArmMetrics([], 'madar') : null,
+            benchmark_outcomes: null,
             workflow_outcomes: null,
             artifacts: {
               legacy_share_safe_reports: [],
@@ -1047,6 +1147,7 @@ export async function runBenchmarkSuite(
         const legacyInput = {
           graphPath: legacyGraphPath,
           question: plan.prompt,
+          ...(tasksPath ? { questionsPath: tasksPath } : {}),
           outputDir: join(stagingRoot, plan.repo.id, plan.task.id, `${plan.mode}-cache`, 'legacy', trialLabel),
           execTemplate: execTemplateForWorkspace(options.execTemplate, dirname(dirname(legacyGraphPath))),
           ...(taskKind ? { task: taskKind } : {}),
@@ -1072,6 +1173,7 @@ export async function runBenchmarkSuite(
           const spiInput = {
             graphPath: spiGraphPath,
             question: plan.prompt,
+            ...(tasksPath ? { questionsPath: tasksPath } : {}),
             outputDir: join(stagingRoot, plan.repo.id, plan.task.id, `${plan.mode}-cache`, 'spi', trialLabel),
             execTemplate: execTemplateForWorkspace(options.execTemplate, dirname(dirname(spiGraphPath))),
             ...(taskKind ? { task: taskKind } : {}),
@@ -1107,6 +1209,7 @@ export async function runBenchmarkSuite(
         baseline,
         madar,
         spi_madar: spiMadar,
+        benchmark_outcomes: summarizeBenchmarkOutcomes(legacyReports, spiReports),
         workflow_outcomes: (() => {
           const legacyWorkflowOutcomes = summarizeWorkflowOutcomes(legacyReports)
           const spiWorkflowOutcomes = summarizeWorkflowOutcomes(spiReports)

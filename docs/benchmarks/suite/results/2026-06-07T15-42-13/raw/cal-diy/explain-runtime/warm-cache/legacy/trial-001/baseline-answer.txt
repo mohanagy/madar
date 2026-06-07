@@ -1,0 +1,37 @@
+I now have the complete picture. Here's the answer.
+
+## How Cal.diy turns a booking request into validation → persistence → notification
+
+The whole flow is orchestrated by one large `handler` function exported through **`RegularBookingService`** (`packages/features/bookings/lib/service/RegularBookingService.ts`, ~2,690 lines). The pipeline runs in three logical stages.
+
+### Entry point
+- **`apps/web/pages/api/book/event.ts`** — the public `POST /api/book/event` route. It runs Turnstile/bot/rate-limit checks, attaches the session and `creationSource`, then calls `getRegularBookingService().createBooking({ bookingData, bookingMeta })`.
+- `RegularBookingService.createBooking()` (line 2653) binds and invokes the big `handler` orchestrator. (API v2 enters via `apps/api/v2/.../regular-booking.service.ts` onto the same service.) Request parsing/validation lives in `handleNewBooking/getBookingData.ts` + `getBookingDataSchema.ts`, and event-type loading in `handleNewBooking/getEventTypesFromDB.ts` / `loadAndValidateUsers.ts`.
+
+### 1. Availability validation
+- The handler resolves the candidate hosts (fixed users + round-robin/lucky users) and calls **`ensureAvailableUsers()`** (`packages/features/bookings/lib/handleNewBooking/ensureAvailableUsers.ts`) at `RegularBookingService.ts:902/917/936` — once per recurring slot, plus a fallback path (962) for round-robin when qualified users aren't free.
+- Inside `ensureAvailableUsers` (`_ensureAvailableUsers`):
+  - Parses booking/duration limits and fetches busy time via `getBusyTimesService().getBusyTimesForLimitChecks` and `getUserAvailabilityService().getUsersAvailability` (DI containers under `packages/features/di/containers`).
+  - Optionally enforces an event-type **restriction schedule** using `buildDateRanges` (`packages/features/schedules/lib/date-ranges.ts`) and `hasDateRangeForBooking`.
+  - For each user, checks the slot falls inside their date ranges and runs **`checkForConflicts`** (`packages/features/bookings/lib/conflictChecker/checkForConflicts`) against buffered busy times.
+  - Throws `ErrorCode.NoAvailableUsersFound` if nobody is free; otherwise returns the available users (with availability snapshot).
+- Adjacent guards in the same dir also run here: `validateBookingTimeIsNotOutOfBounds.ts`, `validateEventLength.ts`, `checkBookingAndDurationLimits.ts`, `checkActiveBookingsLimitForBooker.ts`, `checkIfBookerEmailIsBlocked.ts`.
+
+### 2. Scheduled-event persistence
+- The handler builds the `CalendarEvent` (`CalendarEventBuilder`) and calls **`createBooking()`** at `RegularBookingService.ts:1707` (from `handleNewBooking/createBooking.ts`).
+  - `createBooking` → `saveBooking` wraps a `prisma.$transaction` that does `tx.booking.create(...)` (`createBooking.ts:139-146`), writing the booking row with attendees, status (`ACCEPTED` vs `PENDING` based on `isConfirmedByDefault`), references, etc. Seat bookings additionally write `bookingSeat` rows (`RegularBookingService.ts:1777`).
+- For confirmed bookings, **`EventManager`** (`packages/features/bookings/lib/EventManager.ts`) does the external side of persistence: `eventManager.create(evt, …)` at `RegularBookingService.ts:2052` creates the calendar entries and video/conferencing meetings (Google Meet handling at 2080-2128), returning `results` + `referencesToCreate`. Those references are persisted back (`booking.update` / reference rows, e.g. `RegularBookingService.ts:2141`, 2446, 2455), and the `iCalUID`/`videoCallUrl` are saved.
+- Reschedules go through `eventManager.reschedule` (~line 1920) and delete the old event via `originalHostEventManager.deleteEventsAndMeetings`.
+
+### 3. Notification delivery
+- Notifications are dispatched through **`BookingEmailSmsHandler`** (`packages/features/bookings/lib/BookingEmailSmsHandler.ts`), instantiated at `RegularBookingService.ts:578`. Its `send({ action, data })` (line 94) branches on a `BookingActionMap`:
+  - `confirmed` → `_handleConfirmed` → `sendScheduledEmailsAndSMS` (`RegularBookingService.ts:2153`) — confirmation emails + SMS to organizer/attendees.
+  - `requested` → `_handleRequested` → `sendOrganizerRequestEmail` + `sendAttendeeRequestEmailAndSMS` when the booking needs confirmation (`RegularBookingService.ts:2197`).
+  - `rescheduled` → `sendRescheduledEmailsAndSMS` (`RegularBookingService.ts:2031`). The underlying senders come from `@calcom/emails/email-manager` (`packages/emails`).
+- **Webhooks**: `handleWebhookTrigger` (`packages/features/bookings/lib/handleWebhookTrigger.ts`) fires `BOOKING_CREATED`/`BOOKING_RESCHEDULED` (`RegularBookingService.ts:2433`) and `BOOKING_PAYMENT_INITIATED` (2319). Future `MEETING_STARTED`/`MEETING_ENDED` webhooks are queued via `scheduleTrigger` (2392-2414), and stale ones cleaned up via `deleteWebhookScheduledTriggers` / `cancelNoShowTasksForBooking`.
+- **Side-effect events**: `fireBookingEvents()` (line 2588) calls `BookingEventHandlerService.onBookingCreated/onBookingRescheduled` (`packages/features/bookings/lib/onBookingEvents/BookingEventHandlerService.ts`) for post-booking tasks (e.g., hashed-link usage). No-show triggers are scheduled via `handleNewBooking/scheduleNoShowTriggers.ts`.
+
+### Summary of the path
+`api/book/event.ts` → `RegularBookingService.createBooking` → `handler` → **validate** (`ensureAvailableUsers` + bounds/limit guards) → **persist** (`createBooking`/Prisma transaction, then `EventManager.create` for calendar + video and reference rows) → **notify** (`BookingEmailSmsHandler.send` for email/SMS, `handleWebhookTrigger` + `scheduleTrigger` for webhooks, `fireBookingEvents` for post-event side effects).
+
+One branch note: if the event requires confirmation, the booking is saved `PENDING`, `EventManager` is skipped, and only "requested" emails are sent (`RegularBookingService.ts:2171-2203`); if payment is required, it routes through `handlePayment` before final confirmation.

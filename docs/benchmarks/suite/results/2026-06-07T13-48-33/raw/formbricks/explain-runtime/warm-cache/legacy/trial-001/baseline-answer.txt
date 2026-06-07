@@ -1,0 +1,47 @@
+I now have the complete flow. Here's the trace.
+
+## How Formbricks processes a survey response
+
+The flow splits into two halves: a **synchronous request path** that validates and persists the response, and an **asynchronous pipeline** (a background job queue) that handles webhooks, integrations, emails, billing meters, and analytics.
+
+### 1. Request handling — `POST` route
+**`apps/web/app/api/v2/client/[workspaceId]/responses/route.ts`**
+
+The `POST` handler is the entry point for SDK/client submissions:
+1. **ID resolution** — `resolveClientApiIds()` accepts either an `environmentId` (old SDK) or `workspaceId` (new SDK).
+2. **Parse & validate body** — `parseAndValidateResponseInput()` runs the JSON body through the `ZResponseInputV2` Zod schema (`parse-and-validate-json-body.ts`).
+3. **License/contact gate** — `getContactsDisabledResponse()` rejects `contactId` submissions unless contacts (enterprise) are enabled.
+4. **Load survey** — `getSurvey()` (`@/lib/survey/service`); 404 if missing.
+5. **Validate submission** — `validateResponseSubmission()` calls `checkSurveyValidity`, `validateClientFileUploads`, `validateOtherOptionLengthForMultipleChoice`, and `validateResponseData` (validates answers against `survey.blocks`/`questions`).
+6. **Build metadata** — `createResponseForRequest()` parses the `user-agent` (`ua-parser-js`) into browser/device/OS, derives `country` from `CF-IPCountry`/`CloudFront-Viewer-Country` headers, and optionally captures `ipAddress` when `survey.isCaptureIpEnabled`.
+
+### 2. Persistence (transactional, with quota evaluation)
+- `createResponseForRequest` → `createResponseWithQuotaEvaluation` (**`.../responses/lib/response.ts`**) → the shared wrapper in **`apps/web/app/api/client/[workspaceId]/responses/lib/response.ts`**.
+- That wrapper opens a **`prisma.$transaction`**: inside it, `createResponse` writes the row, then `evaluateResponseQuotas` runs in the same `tx`, so persistence + quota check are atomic.
+- `createResponse` (in v2 `lib/response.ts`) resolves the organization and optional contact, computes `ttc` (time-to-complete via `calculateTtcTotal`), asserts display ownership, builds `Prisma.ResponseCreateInput` (`buildPrismaResponseData`), and calls `prismaClient.response.create({ data, select: responseSelection })`. It maps Prisma errors to domain errors (`UniqueConstraintError` for single-use links / duplicate `displayId`, `DatabaseError`).
+- Result is shaped by `buildClientResponse` and returned with an optional `quotaFull`.
+
+### 3. Enqueue pipeline events
+Back in the route, after persistence the handler calls **`sendToPipeline()`** (`apps/web/app/lib/pipelines.ts`):
+- Always enqueues `responseCreated`.
+- Additionally enqueues `responseFinished` if `responseData.finished`.
+- `sendToPipeline` uses the BullMQ producer `getBackgroundJobProducer().enqueueResponsePipeline(job)` (`@formbricks/jobs`) — so the response is committed before any side effects run. The route then returns the response `id` plus a quota object (`createQuotaFullObject`).
+
+### 4. Asynchronous pipeline / side effects & analytics
+A background worker consumes the queue and runs **`processResponsePipelineJob`** (`apps/web/modules/response-pipeline/lib/process-response-pipeline-job.ts`):
+- Loads org, survey, and matching webhooks in parallel; validates survey↔workspace ownership (throws `UnrecoverableError` otherwise).
+- **Webhooks** — `deliverWebhooks` POSTs to subscribed webhooks with Standard-Webhooks signatures, timeout, SSRF protections (`redirect: manual`, IP-pinned dispatcher), and retry-on-failure.
+- On **`responseFinished`** (`runResponseFinishedSideEffects`): `handleIntegrations` (`handle-integrations.ts` — e.g. Sheets/Airbnb/Notion), `handleFeedbackSourcePipeline`, `sendFollowUpsForResponse`, alert notification emails (`sendResponseFinishedEmail` to owners/managers/team members with `notificationSettings`), and survey **auto-complete** (marks survey `completed` once `responseCount >= survey.autoComplete`, with an audit-log event).
+- On **`responseCreated`** (`runResponseCreatedSideEffects`) — this is the **analytics/event tracking**:
+  - `recordResponseCreatedMeterEvent` — Stripe billing meter.
+  - **PostHog** — `captureSurveyResponsePostHogEvent` (`response-pipeline/lib/posthog.ts`), fires the `survey_response_received` event at milestones (1st, every 10th to 100, then every 100th), gated on `POSTHOG_KEY`.
+  - `sendTelemetryEvents` (`telemetry.ts`) — self-host telemetry.
+
+### Key files
+- Request: `apps/web/app/api/v2/client/[workspaceId]/responses/route.ts`
+- Persistence: `.../responses/lib/response.ts` + `apps/web/app/api/client/[workspaceId]/responses/lib/response.ts` (transaction + quota)
+- Queueing: `apps/web/app/lib/pipelines.ts` (`@formbricks/jobs` BullMQ producer)
+- Pipeline worker: `apps/web/modules/response-pipeline/lib/process-response-pipeline-job.ts`
+- Analytics: `apps/web/modules/response-pipeline/lib/posthog.ts`, `telemetry.ts`, `handle-integrations.ts`
+
+The key architectural point: **persistence is synchronous and transactional (response + quota), while all event tracking, webhooks, integrations, and analytics run asynchronously via the BullMQ pipeline**, decoupled from the submission request.

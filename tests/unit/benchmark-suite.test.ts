@@ -106,6 +106,7 @@ function makeCompareResult(input: {
   madarGrep: number
   isolation?: boolean
   environment?: BenchmarkEnvironment
+  benchmarkOutcome?: NativeAgentCompareReport['benchmark_outcome']
   workflowOutcome?: {
     wrong_file_edits?: number | null
     validation_passed?: boolean | null
@@ -267,6 +268,7 @@ function makeCompareResult(input: {
           },
         }
       : {}),
+    ...(input.benchmarkOutcome ? { benchmark_outcome: input.benchmarkOutcome } : {}),
   } as NativeAgentCompareReport & {
     workflow_outcome?: {
       wrong_file_edits: number | null
@@ -482,6 +484,59 @@ describe('benchmark suite manifests', () => {
         expect(task.prompts[repoId]?.trim().length).toBeGreaterThan(0)
       }
     }
+  })
+
+  it('ships deterministic answer-quality gates for the public explain-runtime rows', () => {
+    const gates = JSON.parse(readFileSync(resolve('docs/benchmarks/suite/quality-gates.json'), 'utf8')) as Record<string, {
+      prompt: string
+      required_answer_terms: string[]
+      forbidden_answer_terms: string[]
+    }>
+
+    expect(Object.values(gates).map((gate) => gate.prompt)).toEqual(expect.arrayContaining([
+      'How does Documenso move a document from send preparation through recipient creation, signing state, and notification delivery?',
+      'How does Formbricks process a survey response from request handling through persistence and analytics/event tracking?',
+      'How does Dub resolve a short-link click from request handling through analytics tracking and destination redirect?',
+      'How does Twenty process a CRM record mutation from API handling through workspace services to persistence?',
+      'How does Cal.diy turn a booking request into availability validation, scheduled event persistence, and notification delivery?',
+      'How does Novu process a notification trigger from API entry through workflow orchestration to channel delivery?',
+    ]))
+
+    for (const gate of Object.values(gates)) {
+      expect(gate.required_answer_terms.length).toBeGreaterThan(0)
+      expect(gate.forbidden_answer_terms).toEqual(expect.arrayContaining(['mcp__madar__retrieve']))
+    }
+
+    expect(gates['documenso-explain-runtime'] as Record<string, unknown>).toEqual(expect.objectContaining({
+      require_direct_evidence: true,
+    }))
+    expect(gates['formbricks-explain-runtime'] as Record<string, unknown>).toEqual(expect.objectContaining({
+      require_direct_evidence: true,
+    }))
+    expect(gates['dub-explain-runtime'] as Record<string, unknown>).toEqual(expect.objectContaining({
+      require_direct_evidence: true,
+    }))
+    expect(gates['twenty-explain-runtime'] as Record<string, unknown>).toEqual(expect.objectContaining({
+      require_direct_evidence: true,
+    }))
+    expect(gates['cal-diy-explain-runtime'] as Record<string, unknown>).toEqual(expect.objectContaining({
+      require_direct_evidence: true,
+    }))
+    expect(gates['novu-explain-runtime'] as Record<string, unknown>).toEqual(expect.objectContaining({
+      require_direct_evidence: true,
+    }))
+    expect(gates['dub-explain-runtime']?.forbidden_answer_terms).toEqual(expect.arrayContaining([
+      'cannot answer the core of this question',
+      "redirect entrypoint isn't indexed",
+      'not present in this knowledge graph',
+      'not verified from indexed code',
+    ]))
+    expect(gates['cal-diy-explain-runtime']?.forbidden_answer_terms).toEqual(expect.arrayContaining([
+      "can't cite the persistence path from evidence here",
+      'persistence step in the middle is not in the evidence',
+      'partly inferred',
+      'did not surface the top-level handler that wires them together',
+    ]))
   })
 
   it('rejects repo ids with unsafe path characters', async () => {
@@ -806,12 +861,151 @@ describe('runBenchmarkSuite', () => {
       expect(summaryMarkdown).toContain('## explain-runtime')
       expect(summaryMarkdown).toContain('### Cold cache')
       expect(summaryMarkdown).toContain('### Warm cache')
+      expect(summaryMarkdown).toContain('Benchmark outcomes')
       expect(summaryMarkdown).toContain('| nestjs-mid |')
-      expect(summaryMarkdown).toContain('| completed | false |')
+      expect(summaryMarkdown).toContain('| completed | — | false |')
       expect(summaryMarkdown).toContain('| python-service |')
       expect(summaryMarkdown).toContain('Cells skipped for env drift: 0')
       expect(summaryMarkdown).not.toContain('average across repos')
       expect(summaryMarkdown).not.toContain('headline')
+    })
+  })
+
+  it('surfaces non-claimable benchmark outcomes in suite summaries', async () => {
+    await withTempDir(async (tempDir) => {
+      const runnableRepoPath = createFixtureRepo(join(tempDir, 'repos', 'dub-fixture'))
+      const repos: BenchmarkSuiteRepo[] = [
+        {
+          id: 'dub-fixture',
+          name: 'Fixture Dub-like service',
+          path: runnableRepoPath,
+          description: 'Ready fixture',
+          size: 'mid',
+          language: 'typescript',
+          shape: 'service',
+          status: 'ready',
+          supportsSpi: false,
+        },
+      ]
+      const tasks: BenchmarkSuiteTask[] = [
+        {
+          id: 'explain-runtime',
+          name: 'Explain runtime flow',
+          description: 'Trace a runtime path end to end.',
+          status: 'ready',
+          prompts: {
+            'dub-fixture': 'How does the redirect flow work?',
+          },
+        },
+      ]
+
+      const result = await runBenchmarkSuite(
+        {
+          repo: null,
+          task: 'explain-runtime',
+          mode: 'warm',
+          trials: 1,
+          outputDir: join(tempDir, 'results'),
+          execTemplate: 'mock-runner',
+          dryRun: false,
+          yes: true,
+        },
+        {
+          repos,
+          tasks,
+          generateGraph: (rootPath = '.', options = {}) => {
+            const outputDir = join(rootPath, 'out')
+            mkdirSync(outputDir, { recursive: true })
+            const graphPath = join(outputDir, 'graph.json')
+            writeFileSync(graphPath, '{}\n', 'utf8')
+            return {
+              mode: options.useSpi ? 'generate' : 'generate',
+              rootPath,
+              outputDir,
+              graphPath,
+              reportPath: join(outputDir, 'GRAPH_REPORT.md'),
+              htmlPath: null,
+              wikiPath: null,
+              obsidianPath: null,
+              svgPath: null,
+              graphmlPath: null,
+              cypherPath: null,
+              docsPath: null,
+              totalFiles: 1,
+              codeFiles: 1,
+              nonCodeFiles: 0,
+              extractableFiles: 1,
+              extractedFiles: 1,
+              totalWords: 10,
+              nodeCount: 1,
+              edgeCount: 0,
+              communityCount: 1,
+              changedFiles: 0,
+              deletedFiles: 0,
+              cache: null,
+              warning: null,
+              notes: [],
+            } satisfies GenerateGraphResult
+          },
+          executeNativeAgentCompare: async (input) => makeCompareResult({
+            question: input.question ?? 'unknown',
+            graphPath: input.graphPath,
+            outputDir: input.outputDir,
+            baselineInputTokens: 300,
+            madarInputTokens: 200,
+            baselineTurns: 6,
+            madarTurns: 4,
+            baselineDurationMs: 9000,
+            madarDurationMs: 6000,
+            baselineCostUsd: 1.2,
+            madarCostUsd: 0.8,
+            baselineToolTotal: 9,
+            madarToolTotal: 5,
+            baselineRead: 4,
+            madarRead: 3,
+            baselineGlob: 2,
+            madarGlob: 1,
+            baselineGrep: 1,
+            madarGrep: 1,
+            benchmarkOutcome: {
+              outcome: 'not_measured',
+              checks: {
+                routing_tool_latency: 'not_measured',
+                token: 'not_measured',
+                fresh_token: 'not_measured',
+                cost: 'not_measured',
+                turns: 'not_measured',
+              },
+              evidence: ['answer quality failed for madar: forbidden did not surface'],
+            },
+          }),
+        },
+      )
+
+      const summaryJson = JSON.parse(readFileSync(result.summaryJsonPath!, 'utf8')) as {
+        cells: Array<{
+          repoId: string
+          benchmark_outcomes?: unknown
+        }>
+      }
+      const summaryMarkdown = readFileSync(result.summaryPath!, 'utf8')
+      const cell = summaryJson.cells.find((entry) => entry.repoId === 'dub-fixture')
+
+      expect(cell?.benchmark_outcomes).toEqual({
+        legacy: {
+          counts: {
+            full_win: 0,
+            partial_win: 0,
+            regression: 0,
+            not_measured: 1,
+          },
+          evidence: ['answer quality failed for madar: forbidden did not surface'],
+        },
+        spi_madar: null,
+      })
+      expect(summaryMarkdown).toContain('Benchmark outcomes')
+      expect(summaryMarkdown).toContain('legacy: not_measured')
+      expect(summaryMarkdown).toContain('answer quality failed for madar: forbidden did not surface')
     })
   })
 
@@ -921,6 +1115,117 @@ describe('runBenchmarkSuite', () => {
       )
 
       expect(seenTasks).toEqual(['implement', 'implement'])
+    })
+  })
+
+  it('passes tasksPath through as questionsPath so suite quality gates can run', async () => {
+    await withTempDir(async (tempDir) => {
+      const runnableRepoPath = createFixtureRepo(join(tempDir, 'repos', 'nestjs-mid'))
+      const repos: BenchmarkSuiteRepo[] = [
+        {
+          id: 'nestjs-mid',
+          name: 'Fixture NestJS-like service',
+          path: runnableRepoPath,
+          description: 'Ready fixture',
+          size: 'mid',
+          language: 'typescript',
+          shape: 'service',
+          status: 'ready',
+          supportsSpi: false,
+        },
+      ]
+      const tasksPath = join(tempDir, 'tasks.json')
+      writeFileSync(tasksPath, JSON.stringify([
+        {
+          id: 'explain-runtime',
+          name: 'Explain runtime flow',
+          description: 'Trace a runtime path end to end.',
+          status: 'ready',
+          prompts: {
+            'nestjs-mid': 'How does login session creation flow work?',
+          },
+        },
+      ], null, 2), 'utf8')
+
+      const seenQuestionsPaths: Array<string | null | undefined> = []
+
+      await runBenchmarkSuite(
+        {
+          repo: 'nestjs-mid',
+          task: 'explain-runtime',
+          mode: 'cold',
+          trials: 1,
+          outputDir: join(tempDir, 'results'),
+          execTemplate: 'mock-runner',
+          dryRun: false,
+          yes: true,
+        },
+        {
+          repos,
+          now: () => new Date('2026-05-27T12:34:56Z'),
+          tasksPath,
+          generateGraph: (rootPath = '.', options = {}) => {
+            const outputDir = join(rootPath, 'out')
+            mkdirSync(outputDir, { recursive: true })
+            const graphPath = join(outputDir, 'graph.json')
+            writeFileSync(graphPath, '{}\n', 'utf8')
+            return {
+              mode: options.useSpi ? 'generate' : 'generate',
+              rootPath,
+              outputDir,
+              graphPath,
+              reportPath: join(outputDir, 'GRAPH_REPORT.md'),
+              htmlPath: null,
+              wikiPath: null,
+              obsidianPath: null,
+              svgPath: null,
+              graphmlPath: null,
+              cypherPath: null,
+              docsPath: null,
+              totalFiles: 1,
+              codeFiles: 1,
+              nonCodeFiles: 0,
+              extractableFiles: 1,
+              extractedFiles: 1,
+              totalWords: 10,
+              nodeCount: 1,
+              edgeCount: 0,
+              communityCount: 1,
+              changedFiles: 0,
+              deletedFiles: 0,
+              cache: null,
+              warning: null,
+              notes: [],
+            } satisfies GenerateGraphResult
+          },
+          executeNativeAgentCompare: async (input) => {
+            seenQuestionsPaths.push((input as { questionsPath?: string | null }).questionsPath)
+            return makeCompareResult({
+              question: input.question ?? 'unknown',
+              graphPath: input.graphPath,
+              outputDir: input.outputDir,
+              baselineInputTokens: 300,
+              madarInputTokens: 200,
+              baselineTurns: 6,
+              madarTurns: 4,
+              baselineDurationMs: 9000,
+              madarDurationMs: 6000,
+              baselineCostUsd: 1.2,
+              madarCostUsd: 0.8,
+              baselineToolTotal: 9,
+              madarToolTotal: 5,
+              baselineRead: 4,
+              madarRead: 3,
+              baselineGlob: 2,
+              madarGlob: 1,
+              baselineGrep: 1,
+              madarGrep: 1,
+            })
+          },
+        } as Parameters<typeof runBenchmarkSuite>[1] & { tasksPath: string },
+      )
+
+      expect(seenQuestionsPaths).toEqual([tasksPath])
     })
   })
 

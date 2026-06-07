@@ -1,0 +1,33 @@
+## Important framing first
+
+The Twenty source is **not checked out in this worktree**. In this repo it exists only as a *benchmark target reference*:
+
+- `docs/benchmarks/suite/repos.json` — entry `id: "twenty"`, pinned to `github.com/twentyhq/twenty` at ref `186d5b8faa6a0d1dd566825f29c004cf4cf3902b`, shape `crm-platform`, size `large`.
+- `docs/benchmarks/suite/tasks.json` — this exact question is benchmark task #1 for the `twenty` row.
+- `docs/benchmarks/2026-06-07-twenty-server-modules-runtime/README.md` — a scoped compare receipt noting the relevant graph root is `packages/twenty-server/src/modules`, and that the recorded run *missed* the downstream persistence phase (it pointed at `messaging/out/graph.json` as the next slice).
+
+So I can't cite line numbers from local inspection here. The recorded receipt (`report.json`) contains only run metadata, not an answer. The architecture below is from knowledge of `twentyhq/twenty` at roughly that pinned ref; treat the file paths as the well-known locations in that project rather than locally-verified citations.
+
+## How a CRM record mutation flows in Twenty (`packages/twenty-server`)
+
+Twenty is a NestJS + GraphQL, metadata-driven, multi-tenant CRM. A write (`createOne`/`updateOne`/`deleteOne<Object>`) moves through four layers:
+
+**1. API handling — dynamic GraphQL (`src/engine/api/graphql/`)**
+- There's no hand-written resolver per object. The workspace GraphQL schema is generated at runtime from object/field **metadata**. `WorkspaceResolverFactory` + the `workspace-resolver-builder/` factories synthesize mutation resolvers (`createOne`, `updateMany`, `deleteOne`, `destroyOne`, …) for every object.
+- The request first passes auth/tenant resolution (JWT → workspace + user guards/interceptors), so the active `workspaceId` is on the request context before any resolver runs.
+
+**2. Workspace orchestration — the query runner (`src/engine/api/graphql/workspace-query-runner/`)**
+- The generated resolver delegates to `WorkspaceQueryRunnerService`. This is the heart of a mutation: it validates/parses args against metadata, runs **pre-hooks** (`WorkspaceQueryHookService`), builds the operation, executes it, then runs **post-hooks** and fires events. This is the "workspace services" middle the question asks about.
+
+**3. Persistence — Twenty ORM over per-workspace Postgres schemas (`src/engine/twenty-orm/` + `src/engine/metadata-modules` / datasource services)**
+- `TwentyORMManager` / `TwentyORMGlobalManager` resolve a `WorkspaceDataSource` for the tenant. `WorkspaceDataSourceService` maps the workspace to its dedicated Postgres schema (`workspace_<id>`) — multi-tenancy is schema-per-workspace, not row-level.
+- A custom `WorkspaceRepository` (extending TypeORM's repository) issues the actual `INSERT/UPDATE/DELETE` against that workspace schema. So persistence = TypeORM → PostgreSQL, scoped to the tenant schema.
+
+**4. Side effects — events and feature modules (`src/engine/core-modules/event-emitter` → `src/modules/...`)**
+- After the row is written, `WorkspaceEventEmitter` emits `ObjectRecordCreate/Update/DeleteEvent`. Listeners drive search indexing, timeline/activity records, audit logs, webhooks, and async jobs queued on BullMQ (message-queue module).
+- The domain listeners live under `src/modules/` (e.g. `messaging`, `calendar`, `view`, `workflow`) — which is exactly why the benchmark scoped the graph to `src/modules` and why its receipt flagged that the *core* persistence pipeline (under `src/engine`) was the missing downstream piece.
+
+### End-to-end summary
+GraphQL mutation → auth/tenant guard → metadata-generated resolver (`WorkspaceResolverFactory`) → `WorkspaceQueryRunnerService` (validation + pre/post hooks) → Twenty ORM `WorkspaceRepository` on the tenant's `WorkspaceDataSource` → write to the `workspace_<id>` Postgres schema → `WorkspaceEventEmitter` fires `ObjectRecord*Event` → feature-module listeners in `src/modules/` handle search/activity/webhooks/queued jobs.
+
+If you want this verified against the actual pinned ref, I'd need the Twenty repo cloned into the workspace (or scoped to `packages/twenty-server/src/{engine,modules}`) — say the word and I can walk the real files.

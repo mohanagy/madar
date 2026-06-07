@@ -1,0 +1,32 @@
+I have enough to answer the full flow with the route confirmed and the pipeline/analytics pieces from the graph.
+
+## How Formbricks processes a survey response
+
+The flow runs **request → validation → persistence → async pipeline → analytics/events**. The public submission endpoint is the orchestrator.
+
+### 1. Request handling — `POST` in `apps/web/app/api/v2/client/[workspaceId]/responses/route.ts:201`
+- Resolves the client id (`resolveClientApiIds` — accepts old SDK `environmentId` or new SDK `workspaceId`).
+- Parses + schema-validates the JSON body against `ZResponseInputV2` (`parseAndValidateResponseInput`).
+- Gates contact identification behind the enterprise license check (`getContactsDisabledResponse`).
+- Loads the survey (`getSurvey`) and runs submission validation (`validateResponseSubmission`): survey validity, file uploads, "other"-option length, and full `validateResponseData` against survey blocks/questions.
+
+### 2. Building & persisting the response — `createResponseForRequest()` (`route.ts:137`)
+- Assembles `meta` from the request: parses `user-agent` via `UAParser` (browser/device/os), captures `source`/`url`/`action`, derives `country` from CF/CloudFront headers, and conditionally records `ipAddress` when `survey.isCaptureIpEnabled`.
+- Persists by calling `createResponseWithQuotaEvaluation(...)` (`./lib/response`), which writes the response and evaluates quotas in one step, returning the response plus `quotaFull`.
+- Maps domain errors to HTTP: `InvalidInputError` → 400, `UniqueConstraintError` → 409, anything else → reported via `reportApiError` and returned as a generic 500.
+
+### 3. Dispatch to the async pipeline — back in `POST` (`route.ts:249`)
+After persistence the handler fires pipeline events via `sendToPipeline` (`@/app/lib/pipelines`):
+- always `responseCreated`,
+- additionally `responseFinished` when `responseData.finished` is true.
+
+Each carries `{ event, workspaceId, surveyId, response }`. The endpoint then returns `{ id, ...quotaObj }` (quota state from `createQuotaFullObject`) — so the heavy downstream work is deferred off the request path.
+
+### 4. Analytics / event tracking (downstream, async)
+- The pipeline job is handled by `processResponsePipelineJob()` in `packages/jobs/src/processors/response-pipeline.ts` (a BullMQ processor; the file holds a fallback that errors if the runtime didn't register the real override). This is where webhooks, integrations, follow-up emails, etc. are driven off `responseCreated`/`responseFinished`.
+- Follow-up / notification emails consume the response via `ProcessedResponseElement` (`packages/email/src/types/follow-up.ts`), feeding `response-finished-email.tsx` and `follow-up-email.tsx`.
+- Client-side action/event tracking is separate: the JS SDK's `track()` (`packages/js-core/src/index.ts:78`) queues coded actions that can trigger surveys.
+- Aggregated reporting is the analysis EE module — `AnalyticsResponse` / `ZChartQuery` in `apps/web/modules/ee/analysis/types/analysis.ts:118` shape the chart queries over stored responses.
+
+### Caveats
+- Madar pack was **medium confidence**; I confirmed stages 1–3 directly from `route.ts`. The downstream stage 4 details (exact webhook/integration/email steps inside the registered BullMQ processor override) are inferred from the graph — the production processor body lives outside the fallback shown in `response-pipeline.ts` and wasn't read here. If you need the precise downstream side-effects, the registered processor override (referenced by TODO #1548) is the file to open next.

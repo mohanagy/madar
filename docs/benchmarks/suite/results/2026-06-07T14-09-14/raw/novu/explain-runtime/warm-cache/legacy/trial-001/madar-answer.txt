@@ -1,0 +1,20 @@
+## How Novu processes a notification trigger
+
+Based on the Madar pack (medium confidence) plus the verified entry-point file, the pipeline is a classic API → queue → worker handoff:
+
+**1. API entry & request parsing** (`apps/api/src/app/events/`)
+- A trigger hits the events API. For batches, `ProcessBulkTrigger.execute()` (`process-bulk-trigger.usecase.ts:18`) collects unique workflow identifiers and bulk-loads the matching workflows (`NotificationTemplateRepository.find` on `triggers.identifier`).
+- Each event is run through **`ParseEventRequest`** (`parse-event-request.usecase.ts`) via a `ParseEventRequestMulticastCommand`. This is the validation/normalization stage: it resolves the workflow, validates the payload against `payloadSchema`/`validatePayload`, resolves addressing (`AddressingTypeEnum.MULTICAST`), actor/tenant/overrides, and produces `jobData` with a `transactionId`. Events are processed in batches of 5.
+
+**2. Workflow orchestration handoff (queue)**
+- Successfully parsed events (`status === PROCESSED`, with `jobData`) are mapped to `IWorkflowBulkJobDto` and pushed onto the workflow queue via **`WorkflowQueueService.addBulk()`** (`process-bulk-trigger.usecase.ts:98-111`), grouped by `organizationId`. The bulk path uses `skipQueueInsertion: true` so the API does the enqueue once at the end rather than per-event.
+- This is the API↔worker boundary: orchestration runs asynchronously in the **worker app** (`apps/worker/src/app/workflow/`), which consumes these jobs and walks the workflow's steps (digest, delay, channel steps). Supporting evidence: worker usecases like `process-unsnooze-job.usecase.ts` operate on these queued `JobRepository` records and emit per-step `ExecutionDetails`.
+
+**3. Channel delivery**
+- The worker expands the workflow into per-step/per-channel jobs and dispatches to channel providers (e.g. email via integrations such as those provisioned in `NovuEmailProvisioningService`, plus in-app/SMS/push/chat).
+
+### Caveats
+- **High confidence:** the API entry → parse/validate → `WorkflowQueueService` enqueue handoff (directly verified in `process-bulk-trigger.usecase.ts`).
+- **Lower confidence / partial:** the worker-side step orchestration (digest/delay sequencing, job chaining) and the channel-provider send path were only *partially* covered by retrieve — the pack's structural evidence was flagged "missing." The single trigger path (non-bulk) lives in a sibling `trigger-event` usecase that wasn't surfaced.
+
+If you want the worker-side orchestration and exact channel-send chain nailed down, I'd suggest a follow-up `context_pack`/`call_chain` query targeting the worker's `WorkflowQueueConsumer` / `run-job` → `send-message` usecases.
