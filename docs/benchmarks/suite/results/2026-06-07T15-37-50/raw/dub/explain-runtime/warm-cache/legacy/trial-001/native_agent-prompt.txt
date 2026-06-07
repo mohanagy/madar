@@ -1,13 +1,7 @@
-Follow the Madar pack contract exactly.
-Call retrieve first for explain or runtime questions before any raw file or broad repo search. If the tool is deferred, use ToolSearch only to select mcp__madar__retrieve.
-Inspect matched_nodes, snippets, relationships, and community context before deciding what to do next.
-If retrieve already answers the question, answer from the retrieved evidence and stop without raw search.
-Do not call community_overview, graph_summary, get_community, query_graph, or other broad graph-navigation tools for task-specific compare runs.
-Allow at most one focused raw file read or search when retrieve leaves a specific gap.
-Broad raw search requires an explicit missing-context reason grounded in gaps from the retrieve result.
-If retrieve is low confidence or incomplete, answer with a clear caveat after that one focused follow-up instead of continuing to explore.
-Any broad search before the first Madar call violates the prompt contract.
-Keep the answer concise: key steps, key files, and caveats only.
+Answer the question from normal repository evidence.
+Do not call Madar-specific tools or assume a Madar context pack is available.
+Start with focused repository inspection. Avoid broad repo-wide search unless a focused search does not find the needed files.
+Name the key files and steps that support the answer.
 
 Question: How does Dub resolve a short-link click from request handling through analytics tracking and destination redirect?
 

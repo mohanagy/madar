@@ -118,6 +118,27 @@ describe('benchmark suite docs', () => {
     }
   })
 
+  it('keeps baseline prompt artifacts tool-agnostic in the latest public receipts', () => {
+    const roots = [
+      'docs/benchmarks/suite/results/2026-06-07T13-42-48/raw/documenso/explain-runtime/warm-cache/legacy/trial-001',
+      'docs/benchmarks/suite/results/2026-06-07T13-48-33/raw/formbricks/explain-runtime/warm-cache/legacy/trial-001',
+      'docs/benchmarks/suite/results/2026-06-07T14-09-14/raw/novu/explain-runtime/warm-cache/legacy/trial-001',
+      'docs/benchmarks/suite/results/2026-06-07T15-37-50/raw/dub/explain-runtime/warm-cache/legacy/trial-001',
+      'docs/benchmarks/suite/results/2026-06-07T15-42-13/raw/cal-diy/explain-runtime/warm-cache/legacy/trial-001',
+    ]
+
+    for (const root of roots) {
+      const baselinePrompt = readDoc(`${root}/baseline-prompt.txt`)
+      const nativeAgentPrompt = readDoc(`${root}/native_agent-prompt.txt`)
+      const madarPrompt = readDoc(`${root}/madar-prompt.txt`)
+
+      expect(nativeAgentPrompt).toBe(baselinePrompt)
+      expect(nativeAgentPrompt).not.toContain('Follow the Madar pack contract exactly.')
+      expect(nativeAgentPrompt).not.toContain('Call retrieve first')
+      expect(madarPrompt).toContain('Follow the Madar pack contract exactly.')
+    }
+  })
+
   it('defines workflow outcome metrics alongside token and latency reporting', () => {
     const content = readDoc('docs/benchmarks/suite/methodology.md')
 
