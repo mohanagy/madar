@@ -1158,6 +1158,7 @@ describe('executeNativeAgentCompare', () => {
       const report = result.reports[0] as NativeAgentCompareReport
       const baselinePrompt = readFileSync(report.paths.baseline_prompt, 'utf8')
       const madarPrompt = readFileSync(report.paths.madar_prompt, 'utf8')
+      const legacyPrompt = readFileSync(join(dirname(report.paths.baseline_prompt), 'native_agent-prompt.txt'), 'utf8')
 
       expect(baselinePrompt).toContain('Answer the question from normal repository evidence.')
       expect(baselinePrompt).toContain('Do not call Madar-specific tools')
@@ -1172,6 +1173,10 @@ describe('executeNativeAgentCompare', () => {
       expect(madarPrompt).toContain('Allow at most one focused raw file read or search')
       expect(madarPrompt).toContain('Broad raw search requires an explicit missing-context reason')
       expect(madarPrompt).toContain('Question: What is the cluster module?')
+
+      expect(legacyPrompt).toBe(baselinePrompt)
+      expect(legacyPrompt).not.toContain('Call retrieve first')
+      expect(legacyPrompt).not.toContain('Follow the Madar pack contract')
 
       expect(report.paths.prompt_file).toBe(report.paths.madar_prompt)
     } finally {

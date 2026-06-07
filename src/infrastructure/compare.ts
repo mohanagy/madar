@@ -4347,7 +4347,7 @@ export async function executeNativeAgentCompare(
     })
     writeFileSync(baselinePromptFile, baselinePrompt, 'utf8')
     writeFileSync(madarPromptFile, madarPrompt, 'utf8')
-    writeFileSync(legacyPromptFile, madarPrompt, 'utf8')
+    writeFileSync(legacyPromptFile, baselinePrompt, 'utf8')
     const baselineAnswerPath = answerFilePath(questionDir, 'baseline')
     const madarAnswerPath = answerFilePath(questionDir, 'madar')
     const reportPath = join(questionDir, 'report.json')
