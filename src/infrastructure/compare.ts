@@ -1783,10 +1783,7 @@ export function assessBenchmarkReadinessFromRetrieveResult(input: {
   retrieval: RetrieveResult
 }): BenchmarkReadiness {
   const { graphPath, retrieval } = input
-  const runtimeGeneration =
-    retrieval.answer_contract?.answer_focus === 'runtime_generation'
-    || retrieval.retrieval_gate?.signals.generation_intent === 'runtime_generation'
-  if (!runtimeGeneration) {
+  if (!strictRuntimeProofModeApplies(retrieval)) {
     return {
       status: 'ready',
       reasons: [],
@@ -1838,6 +1835,103 @@ export function assessBenchmarkReadinessFromRetrieveResult(input: {
     status,
     reasons,
     suggested_graph_scope: suggestedGraphScope,
+  }
+}
+
+function strictRuntimeProofModeApplies(retrieval: RetrieveResult): boolean {
+  return retrieval.retrieval_gate?.signals.generation_intent === 'runtime_generation'
+    && retrieval.retrieval_gate?.signals.target_domain_hint === 'backend_runtime'
+    && retrieval.retrieval_gate?.signals.generation_debug?.flow_proof_shaped === true
+}
+
+function strictRuntimeProofPromptOptions(
+  retrieval: RetrieveResult,
+  benchmarkReadiness: BenchmarkReadiness,
+): {
+  missingPhases?: string[]
+  rescopedTo?: string | null
+} | undefined {
+  if (!strictRuntimeProofModeApplies(retrieval)) {
+    return undefined
+  }
+
+  const missingPhases = [...new Set([
+    ...(retrieval.answer_contract?.missing_phases ?? []),
+    ...(retrieval.execution_slice?.phase_coverage?.missing ?? []),
+  ])]
+
+  return {
+    ...(missingPhases.length > 0 ? { missingPhases } : {}),
+    ...(benchmarkReadiness.rescoped_to ? { rescopedTo: benchmarkReadiness.rescoped_to } : {}),
+  }
+}
+
+function prepareNativeAgentBenchmarkReadiness(input: {
+  graphPath: string
+  graph: KnowledgeGraph
+  question: string
+  budget: number
+  projectRoot: string
+  taskKind: ContextPackTaskKind
+  graphCache: Map<string, KnowledgeGraph>
+  assessBenchmarkReadiness?: (input: BenchmarkReadinessInput) => BenchmarkReadiness
+}): {
+  retrieval: RetrieveResult
+  benchmarkReadiness: BenchmarkReadiness
+} {
+  const assessReadiness = (graphPath: string, retrieval: RetrieveResult): BenchmarkReadiness =>
+    input.assessBenchmarkReadiness
+      ? input.assessBenchmarkReadiness({
+          graphPath,
+          projectRoot: input.projectRoot,
+          question: input.question,
+        })
+      : assessBenchmarkReadinessFromRetrieveResult({ graphPath, retrieval })
+
+  const retrieval = retrieveCompareContext(input.graph, input.question, input.budget, input.projectRoot, input.taskKind)
+  const benchmarkReadiness = assessReadiness(input.graphPath, retrieval)
+  if (
+    input.assessBenchmarkReadiness
+    || !strictRuntimeProofModeApplies(retrieval)
+    || !benchmarkReadiness.suggested_graph_scope
+  ) {
+    return { retrieval, benchmarkReadiness }
+  }
+
+  const rescopedTo = benchmarkReadiness.suggested_graph_scope
+  const rescopedGraphPath = resolve(input.projectRoot, rescopedTo)
+  if (!existsSync(rescopedGraphPath)) {
+    return {
+      retrieval,
+      benchmarkReadiness: {
+        ...benchmarkReadiness,
+        rescope_attempted: true,
+        rescoped_to: null,
+      },
+    }
+  }
+
+  const rescopedGraph = input.graphCache.get(rescopedGraphPath) ?? loadGraph(rescopedGraphPath)
+  input.graphCache.set(rescopedGraphPath, rescopedGraph)
+  const rescopedRetrieval = retrieveCompareContext(
+    rescopedGraph,
+    input.question,
+    input.budget,
+    input.projectRoot,
+    input.taskKind,
+  )
+  const rescopedReadiness = assessBenchmarkReadinessFromRetrieveResult({
+    graphPath: rescopedGraphPath,
+    retrieval: rescopedRetrieval,
+  })
+
+  return {
+    retrieval: rescopedRetrieval,
+    benchmarkReadiness: {
+      ...rescopedReadiness,
+      rescope_attempted: true,
+      rescoped_to: rescopedTo,
+    },
   }
 }
 
@@ -2004,6 +2098,10 @@ export function buildNativeAgentPrompt(
       profile?: McpToolProfile
       task?: ContextPackTaskKind
       implementation?: ImplementationPackGuidance
+      strictRuntimeProof?: {
+        missingPhases?: string[]
+        rescopedTo?: string | null
+      }
     } = 'core',
 ): string {
   const options = typeof optionsOrProfile === 'string'
@@ -2050,10 +2148,26 @@ export function buildNativeAgentPrompt(
         'Broad raw search requires an explicit missing-context reason grounded in gaps from the retrieve result.',
         'If retrieve is low confidence or incomplete, answer with a clear caveat after that one focused follow-up instead of continuing to explore.',
       ]
+  const strictRuntimeProofInstructions = options.strictRuntimeProof
+    ? [
+        'This question requires strict runtime proof.',
+        ...(options.strictRuntimeProof.rescopedTo
+          ? [`Start from the auto-rescoped graph scope: ${options.strictRuntimeProof.rescopedTo}.`]
+          : []),
+        ...(options.strictRuntimeProof.missingPhases && options.strictRuntimeProof.missingPhases.length > 0
+          ? [
+              `Use at most one focused follow-up to surface the missing ${options.strictRuntimeProof.missingPhases.join(', ')} phase.`,
+              `If the flow still cannot be proven, answer: not enough evidence; missing ${options.strictRuntimeProof.missingPhases.join(', ')}`,
+            ]
+          : ['If the flow still cannot be proven, answer: not enough evidence']),
+        'Do not give a confident partial flow answer.',
+      ]
+    : []
 
   return [
     'Follow the Madar pack contract exactly.',
     ...profileInstructions,
+    ...strictRuntimeProofInstructions,
     'Any broad search before the first Madar call violates the prompt contract.',
     'Keep the answer concise: key steps, key files, and caveats only.',
     '',
@@ -2852,6 +2966,8 @@ export interface BenchmarkReadiness {
   status: BenchmarkReadinessStatus
   reasons: string[]
   suggested_graph_scope: string | null
+  rescope_attempted?: boolean
+  rescoped_to?: string | null
 }
 
 export interface BenchmarkReadinessInput {
@@ -3948,6 +4064,13 @@ function nativeAgentAnswerQualityFindings(
 function nativeAgentBenchmarkBlockers(report: NativeAgentCompareReport): string[] {
   const blockers: string[] = []
 
+  if (report.prompt_contract && report.prompt_contract.status !== 'followed') {
+    const evidence = report.prompt_contract.evidence.length > 0
+      ? ` (${report.prompt_contract.evidence.join('; ')})`
+      : ''
+    blockers.push(`prompt contract is ${report.prompt_contract.status}${evidence}`)
+  }
+
   if (report.answer_quality) {
     const baselineFindings = nativeAgentAnswerQualityFindings(report.answer_quality.baseline)
     if (!report.answer_quality.baseline.passed) {
@@ -3963,7 +4086,7 @@ function nativeAgentBenchmarkBlockers(report: NativeAgentCompareReport): string[
     }
   }
 
-  if (report.benchmark_readiness && report.benchmark_readiness.status === 'not_ready') {
+  if (report.benchmark_readiness && report.benchmark_readiness.status !== 'ready') {
     const reasons = report.benchmark_readiness.reasons.length > 0
       ? ` (${report.benchmark_readiness.reasons.join('; ')})`
       : ''
@@ -4314,6 +4437,7 @@ export async function executeNativeAgentCompare(
   const runner = dependencies.runner ?? defaultNativeAgentRunner
   const assessBenchmarkReadiness = dependencies.assessBenchmarkReadiness
   const graph = loadGraph(graphPath)
+  const graphCache = new Map<string, KnowledgeGraph>([[graphPath, graph]])
   const reports: NativeAgentCompareReport[] = []
   const answerQualityGates = loadNativeAgentAnswerQualityGates(input.questionsPath)
   const reviewerVisibleGates = task === 'implement' ? loadImplementationReviewerVisibleGates(input.questionsPath) : new Map()
@@ -4327,7 +4451,16 @@ export async function executeNativeAgentCompare(
   const preparedQuestions = questions.map((question, index) => {
     const questionDir = questions.length === 1 ? outputRoot : join(outputRoot, `question-${String(index + 1).padStart(3, '0')}`)
     mkdirSync(questionDir, { recursive: true })
-    const retrieval = retrieveCompareContext(graph, question, retrievalBudget, projectRoot, task)
+    const { retrieval, benchmarkReadiness } = prepareNativeAgentBenchmarkReadiness({
+      graphPath,
+      graph,
+      question,
+      budget: retrievalBudget,
+      projectRoot,
+      taskKind: task,
+      graphCache,
+      ...(assessBenchmarkReadiness ? { assessBenchmarkReadiness } : {}),
+    })
     const implementationGuidance =
       task === 'implement'
         ? buildImplementationPackGuidance(graph, retrieval, {
@@ -4340,9 +4473,13 @@ export async function executeNativeAgentCompare(
     const madarPromptFile = join(questionDir, 'madar-prompt.txt')
     const legacyPromptFile = join(questionDir, 'native_agent-prompt.txt')
     const baselinePrompt = buildNativeAgentBaselinePrompt(question, { task })
+    const strictRuntimeProof = benchmarkReadiness
+      ? strictRuntimeProofPromptOptions(retrieval, benchmarkReadiness)
+      : undefined
     const madarPrompt = buildNativeAgentPrompt(question, {
       profile: installCheck.tool_profile,
       task,
+      ...(strictRuntimeProof ? { strictRuntimeProof } : {}),
       ...(implementationGuidance ? { implementation: implementationGuidance } : {}),
     })
     writeFileSync(baselinePromptFile, baselinePrompt, 'utf8')
@@ -4407,18 +4544,7 @@ export async function executeNativeAgentCompare(
     if (implementationGuidance) {
       reportShell.implementation_guidance = implementationGuidance
     }
-    if (assessBenchmarkReadiness) {
-      reportShell.benchmark_readiness = assessBenchmarkReadiness({
-        graphPath,
-        projectRoot,
-        question,
-      })
-    } else {
-      reportShell.benchmark_readiness = assessBenchmarkReadinessFromRetrieveResult({
-        graphPath,
-        retrieval,
-      })
-    }
+    reportShell.benchmark_readiness = benchmarkReadiness
     if (reportShell.benchmark_readiness) {
       reportShell.completed_at = now().toISOString()
     }
@@ -4965,7 +5091,10 @@ function formatNativeAgentPromptContractLine(assessment: NativeAgentPromptContra
 
 function formatBenchmarkReadinessLine(readiness: BenchmarkReadiness): string {
   const reasons = readiness.reasons.length > 0 ? ` (${readiness.reasons.join('; ')})` : ''
-  return `benchmark_readiness: ${readiness.status}${reasons}`
+  const rescope = readiness.rescope_attempted && readiness.rescoped_to
+    ? `; auto-rescoped to ${readiness.rescoped_to}`
+    : ''
+  return `benchmark_readiness: ${readiness.status}${reasons}${rescope}`
 }
 
 function formatNativeAgentBenchmarkOutcomeLine(outcome: NativeAgentBenchmarkOutcome): string {

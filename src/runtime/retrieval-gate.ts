@@ -238,6 +238,12 @@ function detectGenerationIntent(prompt: string): {
   const reportGenerationShaped = /\b(?:idea\s+report|report\s+generation|final\s+report|planner|research|metrics?|scor(?:e|ing)|quality(?:\s|-)?gate|renderer|synthesis|assemble|assembly)\b/i.test(lower)
   const buildStaticShaped = /\b(?:next\.js|nextjs|app\s+router|route\s+segment|landing\s+page|static|ssg|isr|server\s+component)\b/i.test(lower)
   const explanationShaped = /\b(?:explain|how|why|trace|walk|flow|path|lifecycle|fail(?:s|ing|ed)?)\b/i.test(lower)
+  const flowProofShaped =
+    /\b(?:trace|walk(?:\s+me)?\s+through|flow|path|lifecycle|end-to-end|what happens when|through(?:\s+the)?\s+(?:runtime|pipeline)|reaches?)\b/i.test(lower)
+    || (
+      /\b(?:how|explain)\b/i.test(lower)
+      && /\b(?:generated|built|assembled|produced|created|persist(?:ed|ing)?|saved?|handoff|handoffs)\b/i.test(lower)
+    )
   const debug: RetrievalGenerationDebugSignals = {
     display_shaped: displayShaped,
     generic_generation_shaped: genericGenerationShaped,
@@ -245,6 +251,7 @@ function detectGenerationIntent(prompt: string): {
     report_generation_shaped: reportGenerationShaped,
     build_static_shaped: buildStaticShaped,
     explanation_shaped: explanationShaped,
+    flow_proof_shaped: flowProofShaped,
   }
 
   const strongRuntimeShaped = backendRuntimeShaped || reportGenerationShaped

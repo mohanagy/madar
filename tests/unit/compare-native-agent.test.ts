@@ -29,6 +29,7 @@ function makeFixtureProject(
   options: {
     installState?: 'managed' | 'valid' | 'missing'
     profile?: 'core' | 'full'
+    spiMode?: boolean
   } = {},
 ): { projectDir: string; graphPath: string; outputDir: string } {
   mkdirSync(FIXTURE_PARENT, { recursive: true })
@@ -41,6 +42,7 @@ function makeFixtureProject(
     join(projectDir, 'out', 'graph.json'),
     JSON.stringify({
       community_labels: { '0': 'Mock' },
+      ...(options.spiMode === true ? { spi_mode: true } : {}),
       nodes: [
         { id: 'a', label: 'Alpha', source_file: 'a.ts', source_location: '1', file_type: 'code', community: 0 },
       ],
@@ -228,6 +230,86 @@ function makeExplainQualityFixtureProject(): {
   )
 
   return { projectDir, graphPath, outputDir, questionsPath }
+}
+
+function makeRescopedReadinessFixtureProject(): {
+  projectDir: string
+  graphPath: string
+  outputDir: string
+} {
+  return makeRescopedReadinessFixtureProjectWithOptions()
+}
+
+function makeRescopedReadinessFixtureProjectWithOptions(options: {
+  includePersistenceStep?: boolean
+  includeScopedGraph?: boolean
+} = {}): {
+  projectDir: string
+  graphPath: string
+  outputDir: string
+} {
+  const { projectDir, outputDir } = makeFixtureProject()
+  const includePersistenceStep = options.includePersistenceStep ?? true
+  const includeScopedGraph = options.includeScopedGraph ?? true
+  if (includeScopedGraph) {
+    mkdirSync(join(projectDir, 'backend', 'out'), { recursive: true })
+  }
+
+  const graph = build(
+    [
+      {
+        schema_version: 1,
+        nodes: [
+          { id: 'login_route', label: 'POST /login', file_type: 'code', source_file: join(projectDir, 'backend', 'src', 'auth', 'routes.ts'), source_location: 'L10', line_number: 10, node_kind: 'route', framework_role: 'express_route', community: 0 },
+          { id: 'login_controller', label: 'AuthController.login', file_type: 'code', source_file: join(projectDir, 'backend', 'src', 'auth', 'controller.ts'), source_location: 'L20', line_number: 20, node_kind: 'method', framework_role: 'nest_controller', community: 0 },
+          { id: 'login_service', label: 'AuthService.login', file_type: 'code', source_file: join(projectDir, 'backend', 'src', 'auth', 'service.ts'), source_location: 'L30', line_number: 30, node_kind: 'method', framework_role: 'nest_provider', community: 0 },
+          { id: 'queue_registry', label: 'QueueRegistry.addJob', file_type: 'code', source_file: join(projectDir, 'backend', 'src', 'queue', 'registry.ts'), source_location: 'L40', line_number: 40, node_kind: 'method', framework_role: 'queue', community: 1 },
+          { id: 'login_worker', label: 'AuthWorker.process', file_type: 'code', source_file: join(projectDir, 'backend', 'src', 'auth', 'worker.ts'), source_location: 'L50', line_number: 50, node_kind: 'method', framework_role: 'worker', community: 1 },
+          ...(includePersistenceStep
+            ? [{ id: 'session_store', label: 'SessionStore.createSession', file_type: 'code', source_file: join(projectDir, 'backend', 'src', 'session', 'store.ts'), source_location: 'L60', line_number: 60, node_kind: 'method', framework_role: 'repository', community: 1 } as const]
+            : []),
+        ],
+        edges: [
+          { source: 'login_route', target: 'login_controller', relation: 'controller_route', confidence: 'EXTRACTED', source_file: join(projectDir, 'backend', 'src', 'auth', 'routes.ts') },
+          { source: 'login_controller', target: 'login_service', relation: 'calls', confidence: 'EXTRACTED', source_file: join(projectDir, 'backend', 'src', 'auth', 'controller.ts') },
+          { source: 'login_service', target: 'queue_registry', relation: 'calls', confidence: 'EXTRACTED', source_file: join(projectDir, 'backend', 'src', 'auth', 'service.ts') },
+          { source: 'queue_registry', target: 'login_worker', relation: 'enqueues_job', confidence: 'EXTRACTED', source_file: join(projectDir, 'backend', 'src', 'queue', 'registry.ts') },
+          ...(includePersistenceStep
+            ? [{ source: 'login_worker', target: 'session_store', relation: 'calls', confidence: 'EXTRACTED', source_file: join(projectDir, 'backend', 'src', 'auth', 'worker.ts') } as const]
+            : []),
+        ],
+      },
+    ],
+    { directed: true },
+  )
+  graph.graph.root_path = projectDir
+
+  const graphPath = join(projectDir, 'out', 'graph.json')
+  toJson(
+    graph,
+    {
+      0: ['login_route', 'login_controller', 'login_service'],
+      1: includePersistenceStep ? ['queue_registry', 'login_worker', 'session_store'] : ['queue_registry', 'login_worker'],
+    },
+    graphPath,
+  )
+
+  if (includeScopedGraph) {
+    const scopedGraphPath = join(projectDir, 'backend', 'out', 'graph.json')
+    toJson(
+      graph,
+      {
+        0: ['login_route', 'login_controller', 'login_service'],
+        1: includePersistenceStep ? ['queue_registry', 'login_worker', 'session_store'] : ['queue_registry', 'login_worker'],
+      },
+      scopedGraphPath,
+    )
+    const scopedGraph = JSON.parse(readFileSync(scopedGraphPath, 'utf8')) as Record<string, unknown>
+    scopedGraph.spi_mode = true
+    writeFileSync(scopedGraphPath, `${JSON.stringify(scopedGraph, null, 2)}\n`, 'utf8')
+  }
+
+  return { projectDir, graphPath, outputDir }
 }
 
 function makeImplementFixtureProject(): { projectDir: string; graphPath: string; outputDir: string } {
@@ -676,7 +758,7 @@ const VERBOSE_GOVALIDATE_MADAR_TOKEN_REGRESSION_PAYLOAD = [
     turn: 2,
     message: {
       content: [
-        ...toolUses('Grep', 2),
+        ...toolUses('Read', 2),
       ],
     },
   },
@@ -1559,6 +1641,194 @@ describe('executeNativeAgentCompare', () => {
     }
   })
 
+  it('suppresses runtime benchmark wins when benchmark readiness is degraded', async () => {
+    const { projectDir, graphPath, outputDir } = makeFixtureProject()
+    try {
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          question: 'How idea report is being generated',
+          outputDir,
+          execTemplate: 'mock-runner',
+          baselineMode: 'native_agent',
+        },
+        {
+          runner: scriptedRunner({
+            baseline: VERBOSE_BASELINE_FULL_WIN_PAYLOAD,
+            madar: VERBOSE_MADAR_FULL_WIN_PAYLOAD,
+          }),
+          now: () => new Date('2026-05-27T00:45:00Z'),
+          assessBenchmarkReadiness: () => ({
+            status: 'degraded',
+            reasons: ['missing downstream runtime phases: persistence'],
+            suggested_graph_scope: null,
+          }),
+        } as Parameters<typeof executeNativeAgentCompare>[1] & {
+          assessBenchmarkReadiness: () => {
+            status: 'ready' | 'degraded' | 'not_ready'
+            reasons: string[]
+            suggested_graph_scope: string | null
+          }
+        },
+      )
+
+      const report = result.reports[0] as NativeAgentCompareReport & {
+        benchmark_readiness?: {
+          status: 'ready' | 'degraded' | 'not_ready'
+          reasons: string[]
+          suggested_graph_scope: string | null
+        }
+      }
+      const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as {
+        benchmark_outcome?: {
+          outcome?: string
+          evidence?: string[]
+        }
+      }
+      const summary = formatNativeAgentCompareSummary(result)
+
+      expect(report.benchmark_readiness).toEqual({
+        status: 'degraded',
+        reasons: ['missing downstream runtime phases: persistence'],
+        suggested_graph_scope: null,
+      })
+      expect(savedReport.benchmark_outcome).toEqual(expect.objectContaining({
+        outcome: 'not_measured',
+        evidence: expect.arrayContaining([
+          expect.stringContaining('benchmark readiness is degraded'),
+        ]),
+      }))
+      expect(summary).toContain('benchmark_readiness: degraded')
+      expect(summary).toContain('benchmark_outcome: not_measured')
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  it('auto-rescopes strict runtime benchmark readiness once when the root graph is too broad', async () => {
+    const { projectDir, graphPath, outputDir } = makeRescopedReadinessFixtureProject()
+    try {
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          question: 'Trace how `POST /login` reaches persistence in the backend runtime pipeline',
+          outputDir,
+          execTemplate: 'mock-runner',
+          baselineMode: 'native_agent',
+        },
+        {
+          runner: scriptedRunner({
+            baseline: VERBOSE_BASELINE_FULL_WIN_PAYLOAD,
+            madar: VERBOSE_MADAR_FULL_WIN_PAYLOAD,
+          }),
+          now: () => new Date('2026-05-27T00:45:00Z'),
+        },
+      )
+
+      const report = result.reports[0] as NativeAgentCompareReport & {
+        benchmark_readiness?: {
+          status: 'ready' | 'degraded' | 'not_ready'
+          reasons: string[]
+          suggested_graph_scope: string | null
+          rescope_attempted?: boolean
+          rescoped_to?: string | null
+        }
+      }
+      const summary = formatNativeAgentCompareSummary(result)
+
+      expect(report.benchmark_readiness).toEqual(expect.objectContaining({
+        status: 'ready',
+        suggested_graph_scope: null,
+        rescope_attempted: true,
+        rescoped_to: 'backend/out/graph.json',
+      }))
+      expect(summary).toContain('benchmark_readiness: ready')
+      expect(summary).toContain('auto-rescoped to backend/out/graph.json')
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  it('passes strict missing-phase proof guidance into the native-agent prompt after auto-rescope', async () => {
+    const { projectDir, graphPath, outputDir } = makeRescopedReadinessFixtureProjectWithOptions({
+      includePersistenceStep: false,
+    })
+    try {
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          question: 'Trace how `POST /login` reaches persistence in the backend runtime pipeline',
+          outputDir,
+          execTemplate: 'mock-runner',
+          baselineMode: 'native_agent',
+        },
+        {
+          runner: scriptedRunner({
+            baseline: VERBOSE_BASELINE_FULL_WIN_PAYLOAD,
+            madar: VERBOSE_MADAR_FULL_WIN_PAYLOAD,
+          }),
+          now: () => new Date('2026-05-27T00:45:00Z'),
+        },
+      )
+
+      const report = result.reports[0] as NativeAgentCompareReport
+      const madarPrompt = readFileSync(report.paths.madar_prompt, 'utf8')
+
+      expect(madarPrompt).toContain('This question requires strict runtime proof.')
+      expect(madarPrompt).toContain('Start from the auto-rescoped graph scope: backend/out/graph.json.')
+      expect(madarPrompt).toContain('Use at most one focused follow-up to surface the missing persistence phase.')
+      expect(madarPrompt).toContain('If the flow still cannot be proven, answer: not enough evidence; missing persistence')
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  it('does not claim auto-rescope when the suggested scoped graph is unavailable', async () => {
+    const { projectDir, graphPath, outputDir } = makeRescopedReadinessFixtureProjectWithOptions({
+      includeScopedGraph: false,
+    })
+    try {
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          question: 'Trace how `POST /login` reaches persistence in the backend runtime pipeline',
+          outputDir,
+          execTemplate: 'mock-runner',
+          baselineMode: 'native_agent',
+        },
+        {
+          runner: scriptedRunner({
+            baseline: VERBOSE_BASELINE_FULL_WIN_PAYLOAD,
+            madar: VERBOSE_MADAR_FULL_WIN_PAYLOAD,
+          }),
+          now: () => new Date('2026-05-27T00:45:00Z'),
+        },
+      )
+
+      const report = result.reports[0] as NativeAgentCompareReport & {
+        benchmark_readiness?: {
+          status: 'ready' | 'degraded' | 'not_ready'
+          reasons: string[]
+          suggested_graph_scope: string | null
+          rescope_attempted?: boolean
+          rescoped_to?: string | null
+        }
+      }
+      const summary = formatNativeAgentCompareSummary(result)
+      const madarPrompt = readFileSync(report.paths.madar_prompt, 'utf8')
+
+      expect(report.benchmark_readiness).toEqual(expect.objectContaining({
+        suggested_graph_scope: 'backend/out/graph.json',
+        rescope_attempted: true,
+        rescoped_to: null,
+      }))
+      expect(summary).not.toContain('auto-rescoped to backend/out/graph.json')
+      expect(madarPrompt).not.toContain('Start from the auto-rescoped graph scope: backend/out/graph.json.')
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
   it('aborts when no Madar install is detected and --allow-no-install is not set', async () => {
     const { projectDir, graphPath, outputDir } = makeFixtureProject({ installState: 'missing' })
     try {
@@ -2276,7 +2546,7 @@ describe('executeNativeAgentCompare', () => {
   })
 
   it('classifies native-agent benchmark outcomes as full wins only when every measured gate passes', async () => {
-    const { projectDir, graphPath, outputDir } = makeFixtureProject()
+    const { projectDir, graphPath, outputDir } = makeFixtureProject({ spiMode: true })
     try {
       const result = await executeNativeAgentCompare(
         {
@@ -2409,6 +2679,52 @@ describe('executeNativeAgentCompare', () => {
     }
   })
 
+  it('suppresses runtime benchmark wins when the prompt contract is violated', async () => {
+    const { projectDir, graphPath, outputDir } = makeFixtureProject({ profile: 'full' })
+    try {
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          question: 'How idea report is being generated',
+          outputDir,
+          execTemplate: 'mock-runner',
+          baselineMode: 'native_agent',
+        },
+        {
+          runner: scriptedRunner({
+            baseline: VERBOSE_BASELINE_FULL_WIN_PAYLOAD,
+            madar: VERBOSE_MADAR_FULL_WIN_PAYLOAD,
+          }),
+          now: () => new Date('2026-05-27T00:45:00Z'),
+        },
+      )
+
+      const report = result.reports[0] as NativeAgentCompareReport
+      const savedReport = JSON.parse(readFileSync(report.paths.report, 'utf8')) as {
+        benchmark_outcome?: {
+          outcome?: string
+          evidence?: string[]
+        }
+      }
+      const summary = formatNativeAgentCompareSummary(result)
+
+      expect(report.prompt_contract).toEqual({
+        status: 'violated',
+        evidence: ['first Madar call was not context_pack'],
+      })
+      expect(savedReport.benchmark_outcome).toEqual(expect.objectContaining({
+        outcome: 'not_measured',
+        evidence: expect.arrayContaining([
+          expect.stringContaining('prompt contract'),
+        ]),
+      }))
+      expect(summary).toContain('prompt_contract: violated')
+      expect(summary).toContain('benchmark_outcome: not_measured')
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
   it('classifies implement outcomes from isolated touched-file overlap and passing validation', async () => {
     const { projectDir, graphPath, outputDir } = makeImplementFixtureProject()
     try {
@@ -2504,7 +2820,7 @@ describe('executeNativeAgentCompare', () => {
   }, 30_000)
 
   it('marks routing latency as a loss when latency regresses and tool counts are unavailable', async () => {
-    const { projectDir, graphPath, outputDir } = makeFixtureProject()
+    const { projectDir, graphPath, outputDir } = makeFixtureProject({ spiMode: true })
     try {
       const result = await executeNativeAgentCompare(
         {
@@ -2545,7 +2861,7 @@ describe('executeNativeAgentCompare', () => {
   })
 
   it('marks routing tool usage as a loss when tool counts regress and latency is flat', async () => {
-    const { projectDir, graphPath, outputDir } = makeFixtureProject()
+    const { projectDir, graphPath, outputDir } = makeFixtureProject({ spiMode: true })
     try {
       const result = await executeNativeAgentCompare(
         {
@@ -2587,7 +2903,7 @@ describe('executeNativeAgentCompare', () => {
   })
 
   it('separates routing wins from token-reduction proof for GoValidate-style token regressions', async () => {
-    const { projectDir, graphPath, outputDir } = makeFixtureProject()
+    const { projectDir, graphPath, outputDir } = makeFixtureProject({ spiMode: true })
     try {
       const result = await executeNativeAgentCompare(
         {

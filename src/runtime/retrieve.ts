@@ -2623,7 +2623,11 @@ function expectedExecutionPhases(
     if (scopeHasExecutionPhase(scopeSteps, 'renderer_or_synthesis')) phases.push('renderer_or_synthesis')
     if (scopeHasExecutionPhase(scopeSteps, 'persistence')) phases.push('persistence')
   }
-  if (promptExplicitlyWantsRuntimeHandoff(question) || (!promptWantsDetailedReportGenerationPhases(question) && promptWantsRuntimePipeline(question))) {
+  const scopeHasRuntimeHandoff = scopeHasExecutionPhase(scopeSteps, 'queue') || scopeHasExecutionPhase(scopeSteps, 'worker')
+  if (
+    promptExplicitlyWantsRuntimeHandoff(question)
+    || (!promptWantsDetailedReportGenerationPhases(question) && promptWantsRuntimePipeline(question) && scopeHasRuntimeHandoff)
+  ) {
     phases.push('queue', 'worker')
   }
   if (promptExpectsPersistenceStep(question)) {
@@ -3127,32 +3131,63 @@ function buildExecutionSliceConfidence(
   const missingPhases = executionSlice.phase_coverage?.missing ?? []
   const expectedPhasesCovered = missingPhases.length === 0
   const primaryPathSteps = executionSlice.primary_path?.steps ?? executionSlice.steps
+  const observedPhases = new Set(executionSlice.phase_coverage?.observed ?? [])
+  const hasEntrypoint =
+    observedPhases.has('controller')
+    || primaryPathSteps.some((step) => /\b(?:route|controller|handler|endpoint)\b/i.test(`${step.label} ${step.framework_role ?? ''} ${step.node_kind ?? ''}`))
+  const hasOrchestration =
+    runtimeHandoff
+    || observedPhases.has('service')
+    || observedPhases.has('orchestrator')
+    || observedPhases.has('planner')
+    || observedPhases.has('queue')
+    || observedPhases.has('worker')
+  const hasTerminalEffect =
+    observedPhases.has('persistence')
+    || observedPhases.has('notification_or_event')
+    || observedPhases.has('renderer_or_synthesis')
+    || observedPhases.has('report_builder')
+    || observedPhases.has('quality_gate')
+    || observedPhases.has('scoring')
+  const missingRuntimeHandoffForPipeline =
+    !runtimeHandoff
+    && promptWantsRuntimePipeline(question)
+    && !hasTerminalEffect
   const lowValuePrimaryPath = primaryPathSteps.length > 0
     && primaryPathSteps.filter((step) => lowValueExecutionStepForQuestion(step, question)).length >= Math.ceil(primaryPathSteps.length / 2)
 
-  if (explicitAnchor && runtimeHandoff && executionSlice.status === 'complete' && expectedPhasesCovered) {
+  if (
+    explicitAnchor
+    && hasEntrypoint
+    && hasOrchestration
+    && hasTerminalEffect
+    && executionSlice.status === 'complete'
+    && expectedPhasesCovered
+  ) {
     return {
       confidence: 'high',
       confidence_reasons: [
         'explicit_anchor',
-        'runtime_handoff_evidence',
+        ...(runtimeHandoff ? ['runtime_handoff_evidence'] : ['orchestration_evidence']),
         'expected_phases_covered',
+        'terminal_effect_evidence',
       ],
     }
   }
 
-  if (runtimeHandoff && missingPhases.length === 1) {
+  if (hasOrchestration && missingPhases.length === 1) {
     return {
       confidence: 'medium',
       confidence_reasons: [
-        'runtime_handoff_evidence',
+        ...(runtimeHandoff ? ['runtime_handoff_evidence'] : ['orchestration_evidence']),
         `missing_phase:${missingPhases[0]}`,
       ],
     }
   }
 
   const lowConfidenceReasons = [
-    ...(!runtimeHandoff ? ['no_runtime_handoff'] : []),
+    ...(!hasOrchestration ? ['missing_orchestration'] : []),
+    ...(missingRuntimeHandoffForPipeline || (!runtimeHandoff && promptExplicitlyWantsRuntimeHandoff(question)) ? ['no_runtime_handoff'] : []),
     ...missingPhases.map((phase) => `missing_phase:${phase}`),
     ...((executionSlice.omitted_branches?.length ?? 0) >= 2 ? ['multiple_omitted_branches'] : []),
     ...(lowValuePrimaryPath ? ['low_value_primary_path'] : []),

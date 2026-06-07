@@ -149,6 +149,28 @@ function buildWorkerSegmentGraph() {
   )
 }
 
+function buildDirectPersistenceGraph() {
+  return build(
+    [
+      {
+        schema_version: 1,
+        nodes: [
+          { id: 'login_route', label: 'POST /login', file_type: 'code', source_file: '/src/auth/routes.ts', source_location: 'L10', node_kind: 'route', framework_role: 'express_route', community: 0 },
+          { id: 'login_controller', label: 'AuthController.login', file_type: 'code', source_file: '/src/auth/controller.ts', source_location: 'L20', node_kind: 'method', framework_role: 'nest_controller', community: 0 },
+          { id: 'login_service', label: 'AuthService.login', file_type: 'code', source_file: '/src/auth/service.ts', source_location: 'L30', node_kind: 'method', framework_role: 'nest_provider', community: 0 },
+          { id: 'session_store', label: 'SessionStore.createSession', file_type: 'code', source_file: '/src/session/store.ts', source_location: 'L40', node_kind: 'method', framework_role: 'repository', community: 1 },
+        ],
+        edges: [
+          { source: 'login_route', target: 'login_controller', relation: 'controller_route', confidence: 'EXTRACTED', source_file: '/src/auth/routes.ts' },
+          { source: 'login_controller', target: 'login_service', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/controller.ts' },
+          { source: 'login_service', target: 'session_store', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts' },
+        ],
+      },
+    ],
+    { directed: true },
+  )
+}
+
 function compactFor(prompt: string, graph = buildSliceGraph()) {
   const retrieval = retrieveContext(graph, {
     question: prompt,
@@ -389,6 +411,29 @@ describe('retrieveContext retrievalStrategy=slice-v1', () => {
       observed: ['queue', 'worker', 'persistence'],
       missing: [],
     })
+  })
+
+  it('treats direct controller-to-store flows as complete when persistence is reached without queue work', () => {
+    const compact = compactFor(
+      'Trace how `POST /login` reaches persistence in the backend flow',
+      buildDirectPersistenceGraph(),
+    )
+
+    expect(compact.execution_slice).toEqual(expect.objectContaining({
+      status: 'complete',
+      confidence: 'high',
+      steps: [
+        expect.objectContaining({ label: 'POST /login' }),
+        expect.objectContaining({ label: 'AuthController.login' }),
+        expect.objectContaining({ label: 'AuthService.login' }),
+        expect.objectContaining({ label: 'SessionStore.createSession' }),
+      ],
+      phase_coverage: expect.objectContaining({
+        expected: expect.arrayContaining(['controller', 'persistence']),
+        observed: expect.arrayContaining(['controller', 'service', 'persistence']),
+        missing: [],
+      }),
+    }))
   })
 
   it('does not infer controller or service phases from generic request wording on worker questions', () => {

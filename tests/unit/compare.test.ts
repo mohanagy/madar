@@ -1086,6 +1086,15 @@ describe('compare runtime', () => {
           mentioned_symbols: [],
           generation_intent: 'runtime_generation',
           target_domain_hint: 'backend_runtime',
+          generation_debug: {
+            display_shaped: false,
+            generic_generation_shaped: true,
+            backend_runtime_shaped: true,
+            report_generation_shaped: true,
+            build_static_shaped: false,
+            explanation_shaped: true,
+            flow_proof_shaped: true,
+          },
         },
       },
     }
@@ -1122,6 +1131,15 @@ describe('compare runtime', () => {
           mentioned_symbols: [],
           generation_intent: 'runtime_generation',
           target_domain_hint: 'backend_runtime',
+          generation_debug: {
+            display_shaped: false,
+            generic_generation_shaped: true,
+            backend_runtime_shaped: true,
+            report_generation_shaped: true,
+            build_static_shaped: false,
+            explanation_shaped: true,
+            flow_proof_shaped: true,
+          },
         },
       },
       execution_slice: {
@@ -1245,6 +1263,29 @@ describe('compare runtime', () => {
       Answer:
       "
     `)
+  })
+
+  it('adds strict runtime-proof guidance for flow questions with one missing phase', () => {
+    const prompt = buildNativeAgentPrompt(
+      'How idea report is being generated',
+      {
+        profile: 'core',
+        strictRuntimeProof: {
+          missingPhases: ['persistence'],
+          rescopedTo: 'backend/out/graph.json',
+        },
+      } as Parameters<typeof buildNativeAgentPrompt>[1] & {
+        strictRuntimeProof: {
+          missingPhases: string[]
+          rescopedTo: string
+        }
+      },
+    )
+
+    expect(prompt).toContain('This question requires strict runtime proof.')
+    expect(prompt).toContain('Use at most one focused follow-up to surface the missing persistence phase.')
+    expect(prompt).toContain('If the flow still cannot be proven, answer: not enough evidence; missing persistence')
+    expect(prompt).toContain('Start from the auto-rescoped graph scope: backend/out/graph.json.')
   })
 
   it('uses local tokenization rather than a fixed chars-per-token ratio for prompt counts', () => {
@@ -4731,6 +4772,15 @@ describe('assessBenchmarkReadinessFromRetrieveResult', () => {
           mentioned_symbols: [],
           generation_intent: 'runtime_generation',
           target_domain_hint: 'backend_runtime',
+          generation_debug: {
+            display_shaped: false,
+            generic_generation_shaped: true,
+            backend_runtime_shaped: true,
+            report_generation_shaped: true,
+            build_static_shaped: false,
+            explanation_shaped: true,
+            flow_proof_shaped: true,
+          },
         },
       },
       coverage: {
@@ -4835,6 +4885,72 @@ describe('assessBenchmarkReadinessFromRetrieveResult', () => {
       expect.stringContaining('backend/'),
     ]))
     expect(readiness.suggested_graph_scope).toBe('backend/out/graph.json')
+  })
+
+  it('treats generic backend explain questions outside strict proof mode as ready', () => {
+    const readiness = assessBenchmarkReadinessFromRetrieveResult({
+      graphPath: '/repo/out/graph.json',
+      retrieval: makeRuntimeGenerationRetrieval({
+        question: 'Explain the auth service layer',
+        retrieval_gate: {
+          level: 3,
+          reason: 'runtime generation intent — behavior slice retrieval',
+          skipped_retrieval: false,
+          intent: 'explain',
+          signals: {
+            has_pr_diff: false,
+            has_stack_trace: false,
+            mentioned_paths: [],
+            mentioned_symbols: [],
+            generation_intent: 'runtime_generation',
+            target_domain_hint: 'backend_runtime',
+            generation_debug: {
+              display_shaped: false,
+              generic_generation_shaped: false,
+              backend_runtime_shaped: true,
+              report_generation_shaped: false,
+              build_static_shaped: false,
+              explanation_shaped: true,
+              flow_proof_shaped: false,
+            },
+          },
+        },
+        execution_slice: {
+          status: 'partial',
+          confidence: 'low',
+          confidence_reasons: ['missing_phase:persistence'],
+          steps: [
+            {
+              label: 'AuthService.login',
+              source_file: 'backend/src/auth/service.ts',
+              line_number: 42,
+              node_kind: 'method',
+            },
+          ],
+          phase_coverage: {
+            expected: ['controller', 'service', 'persistence'],
+            observed: ['service'],
+            missing: ['controller', 'persistence'],
+          },
+        },
+        answer_contract: {
+          version: 1,
+          answer_focus: 'runtime_generation',
+          entrypoint_scope: 'setup_context',
+          required_elements: ['main_pipeline_phases'],
+          do_not_claim: [],
+          observed_phases: ['service'],
+          missing_phases: ['controller', 'persistence'],
+          confidence: 'low',
+        },
+      }),
+    })
+
+    expect(readiness).toEqual({
+      status: 'ready',
+      reasons: [],
+      suggested_graph_scope: null,
+    })
   })
 
   it('treats SPI-mode graph metadata as SPI evidence for app-file runtime packs', () => {
