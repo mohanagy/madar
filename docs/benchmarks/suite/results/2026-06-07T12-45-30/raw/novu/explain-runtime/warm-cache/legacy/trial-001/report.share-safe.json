@@ -1,0 +1,307 @@
+{
+  "baseline_mode": "native_agent",
+  "task": "explain",
+  "question": "How does Novu process a notification trigger from API entry through workflow orchestration to channel delivery?",
+  "graph_path": "<project-root>/out/graph.json",
+  "isolation": true,
+  "environment": {
+    "claude_code_version": "2.1.168",
+    "host_os": "darwin-arm64",
+    "node_version": "v22.22.3",
+    "mcp_servers_active": [
+      "madar"
+    ],
+    "mcp_server_count": 1,
+    "skills_loaded": [],
+    "skills_loaded_count": 0,
+    "plugins_active": [],
+    "user_claude_md_hash": "sha256:0cf98a0a8f9c27017a0bebc7b017fc17518d9103c62ca384da20b2776b0aade7",
+    "project_claude_md_hash": "sha256:f756cedc14b026ff7879bccec92865638324e29e05860c83d7858375465d0940",
+    "parent_claude_md_hashes": [],
+    "hooks_active": {
+      "user_prompt_submit": [
+        "project:command:*"
+      ],
+      "pre_tool_use": [],
+      "post_tool_use": []
+    }
+  },
+  "environment_contamination": {
+    "skills_activated_during_run": [],
+    "skills_conflicting_with_madar_rules": [],
+    "calls_to_other_mcps": {},
+    "subagent_dispatches_detected": 0,
+    "skill_alignment_score": 1
+  },
+  "exec_command": {
+    "command": null,
+    "placeholders": [
+      "{prompt_file}"
+    ],
+    "redacted": true
+  },
+  "baseline": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 4777,
+      "cache_creation_input_tokens": 23261,
+      "cache_read_input_tokens": 951578,
+      "output_tokens": 10593,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 23261,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 2736,
+          "cache_read_input_tokens": 41281,
+          "cache_creation_input_tokens": 517,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 517
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 979616,
+    "uncached_input_tokens_anthropic_exact": 28038,
+    "cached_input_tokens_anthropic_exact": 951578,
+    "total_cost_usd": 0.9105032499999999,
+    "num_turns": 31,
+    "duration_ms": 205001,
+    "result_path": "<artifact-root>/baseline-answer.txt"
+  },
+  "madar": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 2680,
+      "cache_creation_input_tokens": 16940,
+      "cache_read_input_tokens": 131844,
+      "output_tokens": 1472,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 14126,
+        "ephemeral_5m_input_tokens": 2814
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 696,
+          "cache_read_input_tokens": 26574,
+          "cache_creation_input_tokens": 382,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 382
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 151464,
+    "uncached_input_tokens_anthropic_exact": 19620,
+    "cached_input_tokens_anthropic_exact": 131844,
+    "total_cost_usd": 0.222766,
+    "num_turns": 6,
+    "duration_ms": 33502,
+    "result_path": "<artifact-root>/madar-answer.txt"
+  },
+  "install_verified": true,
+  "measurement_validity": "valid",
+  "trace_status": "trace_available",
+  "madar_mcp_call_count": 3,
+  "reductions": {
+    "input_tokens": 6.47,
+    "uncached_input_tokens": 1.43,
+    "cache_creation_input_tokens": 1.37,
+    "num_turns": 5.17,
+    "duration_ms": 6.12,
+    "cost_usd": 4.09
+  },
+  "token_regression": false,
+  "token_regression_reasons": [],
+  "prompt_token_source": {
+    "baseline": "anthropic_provider_reported",
+    "madar": "anthropic_provider_reported"
+  },
+  "provider_proof": {
+    "baseline": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "madar": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "reduction_basis": "provider_reported"
+  },
+  "started_at": "2026-06-07T12:54:24.008Z",
+  "completed_at": "2026-06-07T12:58:28.240Z",
+  "paths": {
+    "output_dir": "<artifact-root>",
+    "report": "<artifact-root>/report.json",
+    "share_safe_report": "<artifact-root>/report.share-safe.json",
+    "baseline_answer": "<artifact-root>/baseline-answer.txt",
+    "madar_answer": "<artifact-root>/madar-answer.txt",
+    "baseline_prompt": "<artifact-root>/baseline-prompt.txt",
+    "madar_prompt": "<artifact-root>/madar-prompt.txt",
+    "prompt_file": "<artifact-root>/madar-prompt.txt"
+  },
+  "benchmark_readiness": {
+    "status": "not_ready",
+    "reasons": [
+      "runtime slice confidence is low",
+      "no SPI evidence found in the current pack; retry with apps/out/graph.json or another SPI-scoped graph",
+      "root graph is broad for this question; retrieved evidence is concentrated under apps/"
+    ],
+    "suggested_graph_scope": "apps/out/graph.json"
+  },
+  "madar_trace": {
+    "source": "claude_messages_tool_use",
+    "summary": "5 tool calls across 5 turns",
+    "tool_call_count": 5,
+    "tool_calls_by_name": {
+      "mcp__madar__retrieve": 3,
+      "ToolSearch": 2
+    },
+    "per_turn": [
+      {
+        "turn": 2,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ],
+        "madar_tool_discovery_count": 1,
+        "madar_tool_discovery_tool_indexes": [
+          0
+        ]
+      },
+      {
+        "turn": 4,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ],
+        "madar_tool_discovery_count": 1,
+        "madar_tool_discovery_tool_indexes": [
+          0
+        ]
+      },
+      {
+        "turn": 6,
+        "tool_call_count": 1,
+        "tools": [
+          "mcp__madar__retrieve"
+        ]
+      },
+      {
+        "turn": 8,
+        "tool_call_count": 1,
+        "tools": [
+          "mcp__madar__retrieve"
+        ]
+      },
+      {
+        "turn": 10,
+        "tool_call_count": 1,
+        "tools": [
+          "mcp__madar__retrieve"
+        ]
+      }
+    ],
+    "madar_mcp_call_count": 3,
+    "madar_mcp_calls_by_name": {
+      "mcp__madar__retrieve": 3
+    },
+    "first_madar_turn": 6,
+    "first_madar_tool_name": "mcp__madar__retrieve",
+    "pre_madar_broad_exploration_tool_call_count": 0,
+    "pre_madar_broad_exploration_tool_calls_by_name": {},
+    "context_pack_call_count": 0,
+    "focused_follow_up_tool_call_count": 2,
+    "broad_exploration_tool_call_count": 0,
+    "broad_exploration_tool_calls_by_name": {},
+    "exploration_outcome": "madar_invoked",
+    "exploration_summary": "Madar MCP invoked 3 times (mcp__madar__retrieve); 2 focused follow-up calls; no broad exploration after the first Madar call."
+  },
+  "tool_call_counts": {
+    "baseline": {
+      "total": 30,
+      "Read": 1,
+      "Bash": 29,
+      "Glob": 0,
+      "Grep": 0,
+      "ToolSearch": 0,
+      "other": {}
+    },
+    "madar": {
+      "total": 5,
+      "Read": 0,
+      "Bash": 0,
+      "Glob": 0,
+      "Grep": 0,
+      "ToolSearch": 2,
+      "other": {
+        "retrieve": 3
+      }
+    }
+  },
+  "prompt_contract": {
+    "status": "followed",
+    "evidence": [
+      "started with retrieve and avoided disallowed exploration"
+    ]
+  },
+  "claim_assessment": {
+    "routing_efficiency": {
+      "status": "improved",
+      "evidence": [
+        "tool calls decreased: baseline 30 → madar 5 (6x fewer)",
+        "latency improved: baseline 205001ms → madar 33502ms (6.12x faster)"
+      ]
+    },
+    "token_reduction": {
+      "status": "proven",
+      "evidence": [
+        "provider input decreased: baseline 979616 → madar 151464 (6.47x less)"
+      ]
+    }
+  },
+  "benchmark_outcome": {
+    "outcome": "full_win",
+    "checks": {
+      "routing_tool_latency": "win",
+      "token": "win",
+      "fresh_token": "win",
+      "cost": "win",
+      "turns": "win"
+    },
+    "evidence": [
+      "routing/tool/latency win: tool calls 30 → 5, latency 205001ms → 33502ms",
+      "provider input win: baseline 979616 → madar 151464",
+      "turns win: baseline 31 → madar 6",
+      "fresh_token win: baseline 28038 → madar 19620",
+      "cost win: baseline 0.9105032499999999 → madar 0.222766"
+    ]
+  }
+}

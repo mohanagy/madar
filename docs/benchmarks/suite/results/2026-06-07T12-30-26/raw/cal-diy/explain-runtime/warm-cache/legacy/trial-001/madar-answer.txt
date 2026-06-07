@@ -1,0 +1,28 @@
+## How Cal.diy turns a booking request into availability validation → persistence → notification
+
+A caveat first: the `mcp__madar__retrieve` call was **blocked on an ungranted permission**, so the knowledge-graph path was unavailable. Per the pack contract I fell back to focused raw reads of the booking feature package. The flow below is grounded in `packages/features/bookings/lib/`.
+
+The pipeline is orchestrated by `service/RegularBookingService.ts` (the modern home of the old `handleNewBooking`), which calls into the staged helpers under `handleNewBooking/`.
+
+### 1. Parse & validate the request
+- **`handleNewBooking/getBookingData.ts`** — parses/validates the request body (Zod schemas in `getBookingDataSchema.ts`) and booking responses.
+- **`getEventType.ts` / `loadAndValidateUsers.ts`** — load the event type and resolve the host user(s).
+- **`validateBookingTimeIsNotOutOfBounds.ts`** (service line ~764) and **`checkBookingAndDurationLimits`** (~817) — enforce date-range bounds, min/max notice, and per-event/duration booking limits.
+
+### 2. Availability validation
+- **`handleNewBooking/ensureAvailableUsers.ts`** (called at service lines ~902–1066) is the core availability gate. It computes each candidate host's busy times/schedule and throws `no_available_users_found_error` if the requested slot isn't free. For round-robin it's re-run while selecting the lucky/assigned host (`getLuckyUser.ts`).
+- **`getRequiresConfirmationFlags.ts`** (~668) decides `isConfirmedByDefault` — i.e. whether the slot can be auto-accepted or must go to PENDING/requested.
+
+### 3. Scheduled-event persistence
+- **`handleNewBooking/createBooking.ts`** (~1707) writes the `Booking` row (status ACCEPTED or PENDING based on `isConfirmedByDefault`), attendees, references, and responses to Postgres via Prisma.
+- **`EventManager.ts`** (`new EventManager(...)` ~1835; `eventManager.create(evt, …)` ~2052) then syncs the event to external systems — calendars and video/conferencing apps (Google Meet handling at ~2080) — and returns `results` + `referencesToCreate`. The DB record is patched with the calendar's `iCalUID` (~2141). For reschedules it calls `eventManager.reschedule(...)` (~1909) instead. If the booking is **not** confirmed by default, EventManager is skipped (~2171) and the booking stays PENDING.
+
+### 4. Notification delivery
+Driven by the same `isConfirmedByDefault` branch via `BookingEmailSmsHandler` (`emailsAndSmsHandler.send`):
+- **Confirmed** → `BookingActionMap.confirmed` emails/SMS to attendees + organizer (~2153); reschedules send `rescheduled` (~2031).
+- **Requires confirmation** → `BookingActionMap.requested` request email to the organizer (~2197).
+- **Webhooks/automation**: `fireBookingEvents(...)` (~2217) plus webhook subscriber resolution (`getWebhooks`, `subscriberOptions` ~1461) fire `BOOKING_CREATED`/meeting-started/meeting-ended triggers; `webhookProducer.queueBookingRequestedWebhook` (~2468) queues `BOOKING_REQUESTED`. `scheduleNoShowTriggers.ts` schedules no-show checks. When confirmation is required, `handleConfirmation.ts` runs the same persistence + notification steps later, when the host accepts.
+
+**Key files to open:** `service/RegularBookingService.ts` (orchestrator), `handleNewBooking/ensureAvailableUsers.ts` (availability), `handleNewBooking/createBooking.ts` + `EventManager.ts` (persistence/calendar), `BookingEmailSmsHandler.ts` + `handleConfirmation.ts` (notifications).
+
+**Caveats:** Line numbers are from this checkout and will drift. Seated and recurring bookings take parallel paths (`handleSeats/`, `service/RecurringBookingService.ts`) not detailed here. Because Madar was unavailable, I didn't get its community/relationship context — if you re-grant the MCP permission I can confirm cross-module call edges (e.g. exactly where workflow reminders are scheduled, which appear to live in `handleConfirmation`/`fireBookingEvents` rather than the main service body).

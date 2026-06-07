@@ -27,6 +27,12 @@ describe('benchmark suite docs', () => {
     expect(content).toContain('review')
     expect(content).toContain('impact')
     expect(content).toContain('git-backed public repos')
+    expect(content).toContain('results/2026-06-07T12-03-13/summary.md')
+    expect(content).toContain('results/2026-06-07T12-07-40/summary.md')
+    expect(content).toContain('results/2026-06-07T12-12-25/summary.md')
+    expect(content).toContain('results/2026-06-07T12-30-26/summary.md')
+    expect(content).toContain('results/2026-06-07T12-45-30/summary.md')
+    expect(content).toContain('2026-06-07-twenty-server-modules-runtime')
     expect(content).toContain('results/2026-05-31T12-00-00/summary.md')
     expect(content).not.toContain('Python and Go stay visible as planned rows')
   })
@@ -69,6 +75,40 @@ describe('benchmark suite docs', () => {
     expect(madarAnswer.trim().split('\n').length).toBeGreaterThan(3)
   })
 
+  it('checks in the latest public-repo summary receipts', () => {
+    const rows = [
+      {
+        path: 'docs/benchmarks/suite/results/2026-06-07T12-03-13/summary.md',
+        repo: 'documenso',
+      },
+      {
+        path: 'docs/benchmarks/suite/results/2026-06-07T12-07-40/summary.md',
+        repo: 'formbricks',
+      },
+      {
+        path: 'docs/benchmarks/suite/results/2026-06-07T12-12-25/summary.md',
+        repo: 'dub',
+      },
+      {
+        path: 'docs/benchmarks/suite/results/2026-06-07T12-30-26/summary.md',
+        repo: 'cal-diy',
+      },
+      {
+        path: 'docs/benchmarks/suite/results/2026-06-07T12-45-30/summary.md',
+        repo: 'novu',
+      },
+    ]
+
+    for (const row of rows) {
+      const summary = readDoc(row.path)
+
+      expect(summary).toContain('# Benchmark suite summary')
+      expect(summary).toContain('## explain-runtime')
+      expect(summary).toContain('### Warm cache')
+      expect(summary).toContain(`| ${row.repo} | completed | true |`)
+    }
+  })
+
   it('defines workflow outcome metrics alongside token and latency reporting', () => {
     const content = readDoc('docs/benchmarks/suite/methodology.md')
 
@@ -90,11 +130,38 @@ describe('benchmark suite docs', () => {
     const claims = readDoc('docs/claims-and-evidence.md')
     const readme = readDoc('README.md')
 
-    expect(claims).toContain('small-library, service, and monorepo fixture-style rows')
-    expect(claims).toContain('initial implement/review workflow-outcome receipts')
+    expect(claims).toContain('original fixture-style bundle')
+    expect(claims).toContain('isolated public explain-runtime receipts')
+    expect(claims).toContain('2026-06-07-twenty-server-modules-runtime')
     expect(claims).toContain('results/2026-05-31T12-00-00/summary.md')
     expect(readme).toContain('initial fixture-proxy implement/review/impact rows')
     expect(readme).toContain('no single-number cross-repo headline')
+  })
+
+  it('publishes a scoped Twenty receipt when the root suite graph is too large', () => {
+    const readme = readDoc('docs/benchmarks/2026-06-07-twenty-server-modules-runtime/README.md')
+    const reportAlias = readDoc('docs/benchmarks/2026-06-07-twenty-server-modules-runtime/report.json')
+    const report = JSON.parse(readDoc('docs/benchmarks/2026-06-07-twenty-server-modules-runtime/report.share-safe.json')) as {
+      measurement_validity?: string
+      trace_status?: string
+      madar_mcp_call_count?: number
+      reductions?: {
+        input_tokens?: number
+        duration_ms?: number
+        cost_usd?: number
+      }
+    }
+
+    expect(readme).toContain('packages/twenty-server/src/modules')
+    expect(readme).toContain('generated root graph exceeded the 10 MB')
+    expect(readme).toContain('compare safety guard')
+    expect(reportAlias).toBe(readDoc('docs/benchmarks/2026-06-07-twenty-server-modules-runtime/report.share-safe.json'))
+    expect(report.measurement_validity).toBe('valid')
+    expect(report.trace_status).toBe('trace_available')
+    expect(report.madar_mcp_call_count).toBeGreaterThan(0)
+    expect(report.reductions?.input_tokens).toBeGreaterThan(1)
+    expect(report.reductions?.duration_ms).toBeGreaterThan(1)
+    expect(report.reductions?.cost_usd).toBeGreaterThan(1)
   })
 
   it('publishes the latest suite bundle under the canonical timestamp without nested trial directories', () => {

@@ -1,0 +1,41 @@
+I now have the full picture. Let me write the answer.
+
+## How Cal.diy turns a booking request into availability validation, scheduled-event persistence, and notification delivery
+
+The whole flow is a single orchestration handler that runs three logical phases in order: **validate availability → persist (DB + external calendars) → deliver notifications**. Here is the path with the key files.
+
+### Entry point
+- **`apps/web/pages/api/book/event.ts`** — the `POST /api/book/event` route. It does perimeter checks (Cloudflare Turnstile, `BotDetectionService`, `checkRateLimitAndThrowError`, session lookup), then resolves the DI-wired service via `getRegularBookingService()` and calls `regularBookingService.createBooking({ bookingData, bookingMeta })`.
+- **`packages/features/bookings/lib/service/RegularBookingService.ts`** — the ~2,700-line orchestrator. `RegularBookingService.createBooking` (line 2653) binds to the module-level `handler` function (line 486), which is where all three phases live. (`getNewBookingHandler` in the test harness routes through the same container.)
+
+### Phase 1 — Availability validation
+Inside `handler`, the request is first parsed and pre-validated, then checked for a real open slot:
+- Parsing/limits: `getBookingData`, `validateBookingTimeIsNotOutOfBounds`, `checkBookingAndDurationLimits`, `checkIfBookerEmailIsBlocked`, `checkActiveBookingsLimitForBooker`, `loadAndValidateUsers` (all imported at lines 88–109).
+- Core availability gate: **`ensureAvailableUsers`** (`packages/features/bookings/lib/handleNewBooking/ensureAvailableUsers.ts`), called at RegularBookingService.ts:902/917/936/962/1066 (per-slot for recurring/team events, then for the qualified user set).
+  - It pulls busy times (`getBusyTimesService.getBusyTimesForLimitChecks`) and per-user availability (`getUserAvailabilityService.getUsersAvailability`), builds date ranges (`buildDateRanges`), verifies the requested window falls inside an open range (`hasDateRangeForBooking`), and runs `checkForConflicts` against buffered busy times.
+  - Users with no conflict are collected; if **none** qualify it throws `ErrorCode.NoAvailableUsersFound` (ensureAvailableUsers.ts:256–258), aborting the booking. A restriction-schedule check is also enforced here.
+
+### Phase 2 — Scheduled-event persistence
+Persistence happens in two layers:
+1. **Database row** — **`createBooking`** (`packages/features/bookings/lib/handleNewBooking/createBooking.ts`), called at RegularBookingService.ts:1707. `buildNewBookingData` assembles the `Booking` record (title, `startTime`/`endTime`, attendees via nested `createMany`, organizer connect, `iCalUID`, location, metadata) and sets `status` to `ACCEPTED` or `PENDING` based on `isConfirmedByDefault` (createBooking.ts:192). The write runs in a `prisma.$transaction` (`tx.booking.create`, line 144), atomically handling any original-booking cancellation update on reschedule.
+2. **External calendar / video integrations** — when the booking is confirmed by default, **`EventManager.create(evt)`** (RegularBookingService.ts:2052; `EventManager` from `packages/features/bookings/lib/EventManager.ts`) creates the events in connected calendars and conferencing apps (Google Meet handling at 2080–2128). Its `results`/`referencesToCreate` are folded back: app statuses (`handleAppsStatus`), `videoCallUrl`, and a possibly-changed `iCalUID` are written back, and the booking row is updated with location, metadata, and the integration `references` (`createMany`) at lines 2446–2459. Pending (confirmation-required) bookings skip EventManager (line 2171).
+
+### Phase 3 — Notification delivery
+Driven by **`BookingEmailSmsHandler`** (`packages/features/bookings/lib/BookingEmailSmsHandler.ts`), instantiated at RegularBookingService.ts:578 and invoked as `emailsAndSmsHandler.send({ action, data })`:
+- **confirmed** → `_handleConfirmed` → `sendScheduledEmailsAndSMS` (RegularBookingService.ts:2153).
+- **requested** (needs confirmation) → `_handleRequested` → `sendOrganizerRequestEmail` + `sendAttendeeRequestEmailAndSMS` (RegularBookingService.ts:2197).
+- **rescheduled** → `sendRescheduledEmailsAndSMS` / round-robin variant (RegularBookingService.ts:2031).
+All concrete email/SMS senders live in `@calcom/emails/email-manager`, imported lazily inside the handler.
+
+Beyond email/SMS, the same final stage fans out the rest of the notification/automation surface:
+- **Webhooks** via `handleWebhookTrigger` (`handleWebhookTrigger.ts`) for `BOOKING_CREATED` / `BOOKING_RESCHEDULED` (line 2433) and `BOOKING_PAYMENT_INITIATED` (line 2319); `deps.webhookProducer.queueBookingRequestedWebhook` for PENDING bookings (line 2468).
+- **Scheduled webhook triggers** for `MEETING_STARTED` / `MEETING_ENDED` via `getWebhooks` + `scheduleTrigger` (lines 2366–2420), plus **no-show triggers** via `scheduleNoShowTriggers` (`scheduleNoShowTriggers.ts`, line 2496).
+- **Analytics** via `handleAnalyticsEvents` (line 2516), and an optional async path `deps.bookingEmailAndSmsTasker.send` gated behind `ENABLE_ASYNC_TASKER` (line 2530). Domain events (workflow reminders etc.) are dispatched through `fireBookingEvents` → `bookingEventHandler.onBookingCreated/onBookingRescheduled` (line 2588).
+
+### Summary of the chain
+`api/book/event.ts` → `RegularBookingService.createBooking` → `handler`:
+1. **Validate** — `getBookingData`/limit checks → `ensureAvailableUsers` (busy-times + `checkForConflicts`, throws `NoAvailableUsersFound` if no slot).
+2. **Persist** — `createBooking` (`prisma.$transaction` → `booking.create`, status ACCEPTED/PENDING) → `EventManager.create` (calendar/video) → booking row updated with references/location/metadata.
+3. **Notify** — `BookingEmailSmsHandler.send` (emails/SMS) + `handleWebhookTrigger`/`queueBookingRequestedWebhook` + `scheduleTrigger`/`scheduleNoShowTriggers` + `fireBookingEvents`/analytics.
+
+A note on naming: the repository is the Cal.com codebase ("Cal.diy" is the branding in this checkout — e.g. the `"Cal.diy lead"` analytics event name at RegularBookingService.ts:2522); the booking pipeline itself is standard Cal.com `handleNewBooking`, now refactored behind the DI `RegularBookingService`.
