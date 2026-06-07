@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, join, relative, resolve, sep } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 
 import type { ContextPackTaskKind } from '../../contracts/context-pack.js'
@@ -44,6 +44,7 @@ export interface BenchmarkSuiteRepo {
   name: string
   path?: string
   source?: BenchmarkSuiteRepoSource
+  graphRoot?: string
   description: string
   size: 'small' | 'mid' | 'large'
   language: string
@@ -229,11 +230,29 @@ function normalizeBenchmarkSuiteGitSource(
   return ref ? { kind: 'git', url, ref } : { kind: 'git', url }
 }
 
+function normalizeBenchmarkSuiteGraphRoot(graphRoot: string | undefined, repoId: string): string | undefined {
+  const trimmed = graphRoot?.trim()
+  if (!trimmed || trimmed === '.') {
+    return undefined
+  }
+  if (isAbsolute(trimmed) || /^[A-Za-z]:[\\/]/.test(trimmed)) {
+    throw new Error(`Benchmark suite repo ${repoId} graphRoot must be relative`)
+  }
+  const segments = trimmed.split(/[\\/]+/).filter((segment) => segment.length > 0)
+  if (segments.some((segment) => segment === '.' || segment === '..')) {
+    throw new Error(`Benchmark suite repo ${repoId} graphRoot contains unsafe path segments`)
+  }
+  return segments.join('/')
+}
+
 function normalizeBenchmarkSuiteRepo(repo: BenchmarkSuiteRepo): BenchmarkSuiteRepo {
+  const graphRoot = normalizeBenchmarkSuiteGraphRoot(repo.graphRoot, repo.id)
+  const { graphRoot: _ignoredGraphRoot, ...repoWithoutGraphRoot } = repo
   if (repo.source?.kind === 'path') {
     const sourcePath = resolve(repo.source.path)
     return {
-      ...repo,
+      ...repoWithoutGraphRoot,
+      ...(graphRoot ? { graphRoot } : {}),
       path: sourcePath,
       source: {
         kind: 'path',
@@ -243,9 +262,10 @@ function normalizeBenchmarkSuiteRepo(repo: BenchmarkSuiteRepo): BenchmarkSuiteRe
   }
 
   if (repo.source?.kind === 'git') {
-    const { path: _ignoredPath, ...rest } = repo
+    const { path: _ignoredPath, ...rest } = repoWithoutGraphRoot
     return {
       ...rest,
+      ...(graphRoot ? { graphRoot } : {}),
       source: normalizeBenchmarkSuiteGitSource(repo.source, repo.id),
     }
   }
@@ -253,7 +273,8 @@ function normalizeBenchmarkSuiteRepo(repo: BenchmarkSuiteRepo): BenchmarkSuiteRe
   if (typeof repo.path === 'string' && repo.path.trim().length > 0) {
     const sourcePath = resolve(repo.path)
     return {
-      ...repo,
+      ...repoWithoutGraphRoot,
+      ...(graphRoot ? { graphRoot } : {}),
       path: sourcePath,
       source: {
         kind: 'path',
@@ -330,6 +351,7 @@ export function loadBenchmarkSuiteRepos(path = DEFAULT_REPOS_PATH): BenchmarkSui
       name: repo.name,
       ...(typeof repo.path === 'string' && repo.path.trim().length > 0 ? { path: repo.path } : {}),
       ...(source ? { source } : {}),
+      ...(typeof repo.graphRoot === 'string' && repo.graphRoot.trim().length > 0 ? { graphRoot: repo.graphRoot } : {}),
       description: typeof repo.description === 'string' ? repo.description : '',
       size: repo.size === 'small' || repo.size === 'mid' || repo.size === 'large' ? repo.size : 'mid',
       language: typeof repo.language === 'string' ? repo.language : 'unknown',
@@ -547,11 +569,19 @@ function prepareBenchmarkWorkspace(
   runGenerateGraph: (rootPath?: string, options?: GenerateGraphOptions) => GenerateGraphResult,
   scratchRoot: string,
   kind: 'legacy' | 'spi',
+  graphRoot?: string,
 ): string {
   const workspaceRoot = join(scratchRoot, kind)
   copyWorkspace(sourceRoot, workspaceRoot)
-  ensureBenchmarkWorkspaceInstall(workspaceRoot)
-  return runGenerateGraph(workspaceRoot, kind === 'spi' ? { noHtml: true, useSpi: true } : { noHtml: true }).graphPath
+  const graphWorkspaceRoot = graphRoot ? resolve(workspaceRoot, graphRoot) : workspaceRoot
+  if (!existsSync(graphWorkspaceRoot)) {
+    throw new Error(`Benchmark suite graphRoot does not exist: ${portablePath(graphWorkspaceRoot)}`)
+  }
+  if (graphWorkspaceRoot !== workspaceRoot) {
+    resetBenchmarkWorkspaceConfig(workspaceRoot)
+  }
+  ensureBenchmarkWorkspaceInstall(graphWorkspaceRoot)
+  return runGenerateGraph(graphWorkspaceRoot, kind === 'spi' ? { noHtml: true, useSpi: true } : { noHtml: true }).graphPath
 }
 
 function median(values: number[]): number | null {
@@ -1026,11 +1056,11 @@ export async function runBenchmarkSuite(
       try {
         const sourceRoot = materializeBenchmarkRepoSource(repo, scratchRoot)
 
-        const legacyResultGraphPath = prepareBenchmarkWorkspace(sourceRoot, runGenerateGraph, scratchRoot, 'legacy')
+        const legacyResultGraphPath = prepareBenchmarkWorkspace(sourceRoot, runGenerateGraph, scratchRoot, 'legacy', repo.graphRoot)
 
         let spiGraphPath: string | null = null
         if (repo.supportsSpi) {
-          spiGraphPath = prepareBenchmarkWorkspace(sourceRoot, runGenerateGraph, scratchRoot, 'spi')
+          spiGraphPath = prepareBenchmarkWorkspace(sourceRoot, runGenerateGraph, scratchRoot, 'spi', repo.graphRoot)
         }
 
         preparedRepos.set(repo.id, {
@@ -1141,7 +1171,7 @@ export async function runBenchmarkSuite(
           scratchRoots.push(coldScratchRoot)
         }
         const legacyGraphPath = coldScratchRoot
-          ? prepareBenchmarkWorkspace(prepared.sourceRoot, runGenerateGraph, coldScratchRoot, 'legacy')
+          ? prepareBenchmarkWorkspace(prepared.sourceRoot, runGenerateGraph, coldScratchRoot, 'legacy', plan.repo.graphRoot)
           : prepared.legacyGraphPath
         const taskKind = suiteTaskKind(plan.task.id)
         const legacyInput = {
@@ -1166,7 +1196,7 @@ export async function runBenchmarkSuite(
 
         const spiGraphPath = prepared.spiGraphPath
           ? coldScratchRoot
-            ? prepareBenchmarkWorkspace(prepared.sourceRoot, runGenerateGraph, coldScratchRoot, 'spi')
+            ? prepareBenchmarkWorkspace(prepared.sourceRoot, runGenerateGraph, coldScratchRoot, 'spi', plan.repo.graphRoot)
             : prepared.spiGraphPath
           : null
         if (spiGraphPath) {

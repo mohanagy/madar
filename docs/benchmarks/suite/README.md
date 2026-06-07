@@ -32,7 +32,7 @@ Current wiring is still conservative, but it is no longer a single-cell scaffold
 - Python and Go now ship as concrete public fixture workspaces under `docs/benchmarks/suite/fixtures/`
 - six git-backed public repos are now prompt-wired as ready rows: `documenso`, `formbricks`, `dub`, `twenty`, `cal-diy`, and `novu`
 - isolated public `explain-runtime` receipts are now published for `documenso`, `formbricks`, `dub`, `cal-diy`, and `novu`
-- `twenty` currently ships as a scoped `packages/twenty-server/src/modules` compare receipt because the root suite graph breaches the current compare size guard
+- `documenso`, `novu`, and `twenty` are configured with scoped `graphRoot` values where prior receipts showed broad-root readiness blockers; suite runs generate and compare against those scoped graphs instead of the oversized monorepo roots
 - public explain-runtime reruns now load deterministic answer-quality gates from [`quality-gates.json`](./quality-gates.json); permission-blocked answers are not benchmark wins, and neither are inference-heavy answers
 - isolated Claude reruns for those public explain-runtime rows must allow `mcp__madar__retrieve` (for example with `--allowedTools mcp__madar__retrieve`)
 - runner execution now clones or copies each ready row into a temporary benchmark workspace, normalizes repo-local Claude/MCP config there, provisions the Madar Claude install, and verifies that install before prompt spend
@@ -44,7 +44,7 @@ Latest published public-repo rerun receipts (these supersede the earlier permiss
 - [`results/2026-06-07T15-37-50/summary.md`](./results/2026-06-07T15-37-50/summary.md) — isolated warm-cache `explain-runtime` rerun for `dub`; the direct-evidence gate failed (`forbidden did not surface`), so `benchmark_outcome = "not_measured"` and this stays supplemental evidence
 - [`results/2026-06-07T15-42-13/summary.md`](./results/2026-06-07T15-42-13/summary.md) — isolated warm-cache `explain-runtime` rerun for `cal-diy`; the direct-evidence gate failed (`forbidden not directly`), so `benchmark_outcome = "not_measured"` and this stays supplemental evidence
 - [`results/2026-06-07T14-09-14/summary.md`](./results/2026-06-07T14-09-14/summary.md) — isolated warm-cache `explain-runtime` rerun for `novu`; the answer is real, but `benchmark_readiness = "not_ready"`, so `benchmark_outcome = "not_measured"` and this stays supplemental evidence
-- [`../2026-06-07-twenty-server-modules-runtime/README.md`](../2026-06-07-twenty-server-modules-runtime/README.md) — refreshed scoped compare receipt for `twenty`, published against `packages/twenty-server/src/modules`; `benchmark_readiness = "not_ready"` and `benchmark_outcome = "not_measured"`, so treat it as supplemental evidence only
+- [`../2026-06-07-twenty-server-modules-runtime/README.md`](../2026-06-07-twenty-server-modules-runtime/README.md) — pre-runner-support scoped compare receipt for `twenty`, published against `packages/twenty-server/src/modules`; `benchmark_readiness = "not_ready"` and `benchmark_outcome = "not_measured"`, so treat it as supplemental evidence until a fresh isolated suite row is rerun with the manifest `graphRoot`
 
 Historical fixture bundle:
 

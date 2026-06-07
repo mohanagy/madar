@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { join, resolve, sep } from 'node:path'
+import { dirname, join, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 
 import { describe, expect, it } from 'vitest'
@@ -334,6 +334,7 @@ describe('benchmark suite manifests', () => {
       expect.objectContaining({
         id: 'documenso',
         status: 'ready',
+        graphRoot: 'packages',
         source: expect.objectContaining({
           kind: 'git',
           url: 'https://github.com/documenso/documenso',
@@ -361,6 +362,7 @@ describe('benchmark suite manifests', () => {
       expect.objectContaining({
         id: 'twenty',
         status: 'ready',
+        graphRoot: 'packages/twenty-server/src/modules',
         source: expect.objectContaining({
           kind: 'git',
           url: 'https://github.com/twentyhq/twenty',
@@ -379,6 +381,7 @@ describe('benchmark suite manifests', () => {
       expect.objectContaining({
         id: 'novu',
         status: 'ready',
+        graphRoot: 'apps',
         source: expect.objectContaining({
           kind: 'git',
           url: 'https://github.com/novuhq/novu',
@@ -1226,6 +1229,165 @@ describe('runBenchmarkSuite', () => {
       )
 
       expect(seenQuestionsPaths).toEqual([tasksPath])
+    })
+  })
+
+  it('generates and compares scoped benchmark repos from their configured graph root', async () => {
+    await withTempDir(async (tempDir) => {
+      const repoRoot = createFixtureRepo(join(tempDir, 'repos', 'twenty'), { install: false })
+      mkdirSync(join(repoRoot, 'packages', 'twenty-server', 'src', 'modules'), { recursive: true })
+      writeFileSync(
+        join(repoRoot, 'packages', 'twenty-server', 'src', 'modules', 'record-service.ts'),
+        'export const scopedRecordService = true\n',
+        'utf8',
+      )
+      const scopedGraphRoot = 'packages/twenty-server/src/modules'
+      writeFileSync(join(repoRoot, 'CLAUDE.md'), '# repo-specific claude\n', 'utf8')
+      writeFileSync(
+        join(repoRoot, '.mcp.json'),
+        JSON.stringify({
+          mcpServers: {
+            github: {
+              command: 'github-mcp',
+              args: [],
+            },
+          },
+        }, null, 2),
+        'utf8',
+      )
+      mkdirSync(join(repoRoot, '.claude'), { recursive: true })
+      writeFileSync(join(repoRoot, '.claude', 'settings.json'), '{"hooks":{"UserPromptSubmit":[]}}\n', 'utf8')
+      writeFileSync(join(repoRoot, scopedGraphRoot, 'CLAUDE.md'), '# scoped repo-specific claude\n', 'utf8')
+      const repos: BenchmarkSuiteRepo[] = [
+        {
+          id: 'twenty',
+          name: 'Twenty scoped fixture',
+          path: repoRoot,
+          graphRoot: scopedGraphRoot,
+          description: 'Ready fixture',
+          size: 'large',
+          language: 'typescript',
+          shape: 'crm-platform',
+          status: 'ready',
+          supportsSpi: false,
+        },
+      ]
+      const tasks: BenchmarkSuiteTask[] = [
+        {
+          id: 'explain-runtime',
+          name: 'Explain runtime flow',
+          description: 'Trace a runtime path end to end.',
+          status: 'ready',
+          prompts: {
+            twenty: 'How does Twenty process a CRM record mutation?',
+          },
+        },
+      ]
+      const generatedRoots: string[] = []
+      const comparedGraphPaths: string[] = []
+      const comparedExecTemplates: string[] = []
+
+      await runBenchmarkSuite(
+        {
+          repo: 'twenty',
+          task: 'explain-runtime',
+          mode: 'warm',
+          trials: 1,
+          outputDir: join(tempDir, 'results'),
+          execTemplate: 'mock-runner',
+          dryRun: false,
+          yes: true,
+        },
+        {
+          repos,
+          tasks,
+          now: () => new Date('2026-05-27T12:34:56Z'),
+          generateGraph: (rootPath = '.', options = {}) => {
+            generatedRoots.push(rootPath)
+            const workspaceRoot = resolve(rootPath, ...scopedGraphRoot.split('/').map(() => '..'))
+            expect(existsSync(join(workspaceRoot, 'CLAUDE.md'))).toBe(false)
+            expect(existsSync(join(workspaceRoot, '.mcp.json'))).toBe(false)
+            expect(existsSync(join(workspaceRoot, '.claude', 'settings.json'))).toBe(false)
+            const scopedMcpConfig = JSON.parse(readFileSync(join(rootPath, '.mcp.json'), 'utf8')) as {
+              mcpServers?: Record<string, unknown>
+            }
+            const scopedClaudeRules = readFileSync(join(rootPath, 'CLAUDE.md'), 'utf8')
+            expect(Object.keys(scopedMcpConfig.mcpServers ?? {})).toEqual(['madar'])
+            expect(scopedClaudeRules).not.toContain('# scoped repo-specific claude')
+            const outputDir = join(rootPath, 'out')
+            mkdirSync(outputDir, { recursive: true })
+            const graphPath = join(outputDir, 'graph.json')
+            writeFileSync(graphPath, '{}\n', 'utf8')
+            return {
+              mode: options.useSpi ? 'generate' : 'generate',
+              rootPath,
+              outputDir,
+              graphPath,
+              reportPath: join(outputDir, 'GRAPH_REPORT.md'),
+              htmlPath: null,
+              wikiPath: null,
+              obsidianPath: null,
+              svgPath: null,
+              graphmlPath: null,
+              cypherPath: null,
+              docsPath: null,
+              totalFiles: 1,
+              codeFiles: 1,
+              nonCodeFiles: 0,
+              extractableFiles: 1,
+              extractedFiles: 1,
+              totalWords: 10,
+              nodeCount: 1,
+              edgeCount: 0,
+              communityCount: 1,
+              changedFiles: 0,
+              deletedFiles: 0,
+              cache: null,
+              warning: null,
+              notes: [],
+            } satisfies GenerateGraphResult
+          },
+          executeNativeAgentCompare: async (input) => {
+            comparedGraphPaths.push(input.graphPath)
+            comparedExecTemplates.push(input.execTemplate)
+            return makeCompareResult({
+              question: input.question ?? 'unknown',
+              graphPath: input.graphPath,
+              outputDir: input.outputDir,
+              baselineInputTokens: 300,
+              madarInputTokens: 200,
+              baselineTurns: 6,
+              madarTurns: 4,
+              baselineDurationMs: 9000,
+              madarDurationMs: 6000,
+              baselineCostUsd: 1.2,
+              madarCostUsd: 0.8,
+              baselineToolTotal: 9,
+              madarToolTotal: 5,
+              baselineRead: 4,
+              madarRead: 3,
+              baselineGlob: 2,
+              madarGlob: 1,
+              baselineGrep: 1,
+              madarGrep: 1,
+            })
+          },
+        },
+      )
+
+      const normalizedScopedSuffix = scopedGraphRoot.split('/').join(sep)
+
+      expect(generatedRoots).toHaveLength(1)
+      expect(generatedRoots[0]).toMatch(new RegExp(`${normalizedScopedSuffix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`))
+      expect(comparedGraphPaths).toEqual([
+        join(generatedRoots[0]!, 'out', 'graph.json'),
+        join(generatedRoots[0]!, 'out', 'graph.json'),
+      ])
+      expect(comparedExecTemplates).toHaveLength(2)
+      for (const execTemplate of comparedExecTemplates) {
+        expect(execTemplate).toContain(generatedRoots[0]!)
+        expect(execTemplate).not.toContain(`${dirname(generatedRoots[0]!)}" && mock-runner`)
+      }
     })
   })
 

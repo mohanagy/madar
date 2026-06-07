@@ -11,7 +11,7 @@ The fixed repo set is tracked in [`repos.json`](./repos.json).
 - The current public git-backed rows are `documenso`, `formbricks`, `dub`, `twenty`, `cal-diy`, and `novu`.
 - `status: "ready"` means the repo/task cell is prompt-wired and intended to run once the local install gate passes.
 - `status: "planned"` means the row stays visible in the manifest for roadmap clarity but must not be counted as measured evidence yet.
-- Actual execution clones or copies each ready repo into a temporary benchmark workspace, normalizes repo-local Claude/MCP config there, provisions the Madar Claude install, and verifies that install before prompt spend. Git-backed rows should pin `source.ref` to an immutable commit SHA or release tag, and if repo preparation or the suite-managed install fails, the cell is reported as skipped instead of silently treated as measured evidence.
+- Actual execution clones or copies each ready repo into a temporary benchmark workspace, normalizes repo-local Claude/MCP config there, provisions the Madar Claude install, and verifies that install before prompt spend. Rows may set `graphRoot` to a safe relative subdirectory when a large monorepo needs a first-class scoped graph; generation, install verification, warmup, and measured compare execution all run from that scoped root. The current public scoped rows are encoded directly in `repos.json` so reruns are reproducible instead of depending on ad hoc manual `cd` commands. Git-backed rows should pin `source.ref` to an immutable commit SHA or release tag, and if repo preparation or the suite-managed install fails, the cell is reported as skipped instead of silently treated as measured evidence.
 
 ## Task selection
 
