@@ -11,6 +11,7 @@ import type { ContextPackDiagnosticWarning } from './context-pack-diagnostics.js
 import type { SourceDomain } from '../shared/source-discovery.js'
 import type { TaskContextPlan } from './task-context-plan.js'
 import type { MadarResponseEvidence } from '../runtime/mcp-response-evidence.js'
+import type { RuntimeProofAssessment } from './runtime-proof.js'
 
 export type ContextPackTaskKind = 'explain' | 'implement' | 'review' | 'impact'
 export type ContextPackFormat = 'json' | 'text' | 'markdown' | 'claude' | 'copilot'
@@ -176,6 +177,7 @@ export interface ContextPackRuntimeGenerationAnswerContract {
   missing_phases: ContextPackExecutionPhase[]
   uncertainty_notes?: string[]
   confidence?: 'high' | 'medium' | 'low'
+  runtime_proof?: RuntimeProofAssessment
 }
 
 export interface ContextPackExplainAnswerReadySummary {

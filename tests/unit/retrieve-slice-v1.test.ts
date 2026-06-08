@@ -171,6 +171,78 @@ function buildDirectPersistenceGraph() {
   )
 }
 
+function buildDubRuntimeProofGraph() {
+  return build(
+    [
+      {
+        schema_version: 1,
+        nodes: [
+          { id: 'click_route', label: 'GET /:domain/:key', file_type: 'code', source_file: '/apps/web/links/route.ts', source_location: 'L10', node_kind: 'route', framework_role: 'nextjs_route', community: 0 },
+          { id: 'redirect_controller', label: 'LinkRedirectController.handleClick', file_type: 'code', source_file: '/apps/web/links/controller.ts', source_location: 'L20', node_kind: 'method', framework_role: 'controller', community: 0 },
+          { id: 'redirect_service', label: 'LinkRedirectService.resolveDestination', file_type: 'code', source_file: '/apps/web/links/service.ts', source_location: 'L30', node_kind: 'method', framework_role: 'service', community: 0 },
+          { id: 'analytics_tracker', label: 'ClickAnalytics.record', file_type: 'code', source_file: '/lib/analytics/clicks.ts', source_location: 'L40', node_kind: 'method', framework_role: 'service', community: 1 },
+          { id: 'destination_redirect', label: 'DestinationRedirect.send', file_type: 'code', source_file: '/apps/web/links/redirect.ts', source_location: 'L50', node_kind: 'method', framework_role: 'handler', community: 1 },
+        ],
+        edges: [
+          { source: 'click_route', target: 'redirect_controller', relation: 'controller_route', confidence: 'EXTRACTED', source_file: '/apps/web/links/route.ts' },
+          { source: 'redirect_controller', target: 'redirect_service', relation: 'calls', confidence: 'EXTRACTED', source_file: '/apps/web/links/controller.ts' },
+          { source: 'redirect_service', target: 'analytics_tracker', relation: 'calls', confidence: 'EXTRACTED', source_file: '/apps/web/links/service.ts' },
+          { source: 'redirect_service', target: 'destination_redirect', relation: 'calls', confidence: 'EXTRACTED', source_file: '/apps/web/links/service.ts' },
+        ],
+      },
+    ],
+    { directed: true },
+  )
+}
+
+function buildFormbricksRuntimeProofGraph() {
+  return build(
+    [
+      {
+        schema_version: 1,
+        nodes: [
+          { id: 'survey_route', label: 'POST /api/surveys/:surveyId/responses', file_type: 'code', source_file: '/apps/web/surveys/route.ts', source_location: 'L10', node_kind: 'route', framework_role: 'nextjs_route', community: 0 },
+          { id: 'response_controller', label: 'SurveyResponseController.submit', file_type: 'code', source_file: '/apps/web/surveys/controller.ts', source_location: 'L20', node_kind: 'method', framework_role: 'controller', community: 0 },
+          { id: 'response_service', label: 'SurveyResponseService.process', file_type: 'code', source_file: '/packages/responses/service.ts', source_location: 'L30', node_kind: 'method', framework_role: 'service', community: 0 },
+          { id: 'response_store', label: 'SurveyResponseStore.persist', file_type: 'code', source_file: '/packages/responses/store.ts', source_location: 'L40', node_kind: 'method', framework_role: 'repository', community: 1 },
+          { id: 'analytics_tracker', label: 'ResponseAnalytics.trackEvent', file_type: 'code', source_file: '/packages/analytics/track.ts', source_location: 'L50', node_kind: 'method', framework_role: 'service', community: 1 },
+        ],
+        edges: [
+          { source: 'survey_route', target: 'response_controller', relation: 'controller_route', confidence: 'EXTRACTED', source_file: '/apps/web/surveys/route.ts' },
+          { source: 'response_controller', target: 'response_service', relation: 'calls', confidence: 'EXTRACTED', source_file: '/apps/web/surveys/controller.ts' },
+          { source: 'response_service', target: 'response_store', relation: 'calls', confidence: 'EXTRACTED', source_file: '/packages/responses/service.ts' },
+          { source: 'response_service', target: 'analytics_tracker', relation: 'calls', confidence: 'EXTRACTED', source_file: '/packages/responses/service.ts' },
+        ],
+      },
+    ],
+    { directed: true },
+  )
+}
+
+function buildTwentyRuntimeProofGraph() {
+  return build(
+    [
+      {
+        schema_version: 1,
+        nodes: [
+          { id: 'mutation_route', label: 'POST /crm/records/:id', file_type: 'code', source_file: '/packages/twenty-server/src/modules/records/route.ts', source_location: 'L10', node_kind: 'route', framework_role: 'express_route', community: 0 },
+          { id: 'mutation_resolver', label: 'RecordMutationResolver.updateRecord', file_type: 'code', source_file: '/packages/twenty-server/src/modules/records/resolver.ts', source_location: 'L20', node_kind: 'method', framework_role: 'resolver', community: 0 },
+          { id: 'workspace_scope', label: 'WorkspaceScope.apply', file_type: 'code', source_file: '/packages/twenty-server/src/modules/workspace/workspace-scope.ts', source_location: 'L30', node_kind: 'method', framework_role: 'service', community: 1 },
+          { id: 'activity_emitter', label: 'WorkspaceActivityEmitter.publish', file_type: 'code', source_file: '/packages/twenty-server/src/modules/workspace/activity.ts', source_location: 'L40', node_kind: 'method', framework_role: 'service', community: 1 },
+          { id: 'record_repository', label: 'RecordRepository.save', file_type: 'code', source_file: '/packages/twenty-server/src/modules/records/repository.ts', source_location: 'L50', node_kind: 'method', framework_role: 'repository', community: 1 },
+        ],
+        edges: [
+          { source: 'mutation_route', target: 'mutation_resolver', relation: 'controller_route', confidence: 'EXTRACTED', source_file: '/packages/twenty-server/src/modules/records/route.ts' },
+          { source: 'mutation_resolver', target: 'workspace_scope', relation: 'calls', confidence: 'EXTRACTED', source_file: '/packages/twenty-server/src/modules/records/resolver.ts' },
+          { source: 'workspace_scope', target: 'activity_emitter', relation: 'calls', confidence: 'EXTRACTED', source_file: '/packages/twenty-server/src/modules/workspace/workspace-scope.ts' },
+          { source: 'workspace_scope', target: 'record_repository', relation: 'calls', confidence: 'EXTRACTED', source_file: '/packages/twenty-server/src/modules/workspace/workspace-scope.ts' },
+        ],
+      },
+    ],
+    { directed: true },
+  )
+}
+
 function compactFor(prompt: string, graph = buildSliceGraph()) {
   const retrieval = retrieveContext(graph, {
     question: prompt,
@@ -181,6 +253,35 @@ function compactFor(prompt: string, graph = buildSliceGraph()) {
 
   return compactRetrieveResult(retrieval) as ReturnType<typeof compactRetrieveResult> & {
     execution_slice?: ExecutionSliceExpectation
+  }
+}
+
+function compactForWithRuntimeProof(prompt: string, graph: ReturnType<typeof build>, runtimeProofProfile: Record<string, unknown>) {
+  const retrieval = retrieveContext(graph, {
+    question: prompt,
+    budget: 3000,
+    retrievalLevel: 4,
+    retrievalStrategy: 'slice-v1',
+    runtimeProofProfile,
+  } as never)
+
+  return compactRetrieveResult(retrieval) as ReturnType<typeof compactRetrieveResult> & {
+    execution_slice?: ExecutionSliceExpectation
+    answer_contract?: {
+      runtime_proof?: {
+        obligations: Array<{
+          id: string
+          label: string
+          kind: string
+          evidence: Array<{
+            label: string
+            source_file: string
+            line_number: number
+          }>
+        }>
+        missing_obligations: string[]
+      }
+    }
   }
 }
 
@@ -309,6 +410,120 @@ describe('retrieveContext retrievalStrategy=slice-v1', () => {
       secondaryBranchTargets.has('AuthController.getStatusMessage')
       || secondaryBranchTargets.has('Logger.info'),
     ).toBe(true)
+  })
+
+  it('surfaces runtime-proof obligation coverage for Dub-style explain-runtime prompts', () => {
+    const prompt = 'How does Dub resolve a short-link click from request handling through analytics tracking and destination redirect?'
+    const compact = compactForWithRuntimeProof(
+      prompt,
+      buildDubRuntimeProofGraph(),
+      {
+        prompt,
+        strict_runtime_proof: true,
+        expected_spi: false,
+        obligations: [
+          { id: 'request_handling', label: 'request handling', kind: 'entrypoint', evidence_terms: ['request', 'route', 'handler', 'click'] },
+          { id: 'analytics_tracking', label: 'analytics tracking', kind: 'terminal', evidence_terms: ['analytics', 'track', 'click'] },
+          { id: 'destination_redirect', label: 'destination redirect', kind: 'terminal', evidence_terms: ['redirect', 'destination', 'location'] },
+        ],
+      },
+    )
+
+    expect(compact.execution_slice?.steps.map((step) => step.label)).toEqual(expect.arrayContaining([
+      'GET /:domain/:key',
+      'LinkRedirectController.handleClick',
+      'LinkRedirectService.resolveDestination',
+      'DestinationRedirect.send',
+    ]))
+    expect(compact.execution_slice?.side_effects).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        steps: expect.arrayContaining([
+          expect.objectContaining({ label: 'ClickAnalytics.record' }),
+        ]),
+      }),
+    ]))
+    expect(compact.answer_contract?.runtime_proof).toEqual(expect.objectContaining({
+      missing_obligations: [],
+      obligations: expect.arrayContaining([
+        expect.objectContaining({
+          id: 'request_handling',
+          evidence: expect.arrayContaining([expect.objectContaining({ label: 'GET /:domain/:key' })]),
+        }),
+        expect.objectContaining({
+          id: 'analytics_tracking',
+          evidence: expect.arrayContaining([expect.objectContaining({ label: 'ClickAnalytics.record' })]),
+        }),
+        expect.objectContaining({
+          id: 'destination_redirect',
+          evidence: expect.arrayContaining([expect.objectContaining({ label: 'DestinationRedirect.send' })]),
+        }),
+      ]),
+    }))
+  })
+
+  it('keeps Formbricks-style complete runtime proofs covered when request, persistence, and analytics are all present', () => {
+    const prompt = 'How does Formbricks process a survey response from request handling through persistence and analytics/event tracking?'
+    const compact = compactForWithRuntimeProof(
+      prompt,
+      buildFormbricksRuntimeProofGraph(),
+      {
+        prompt,
+        strict_runtime_proof: true,
+        expected_spi: false,
+        obligations: [
+          { id: 'request_handling', label: 'request handling', kind: 'entrypoint', evidence_terms: ['request', 'route', 'handler', 'response'] },
+          { id: 'persistence', label: 'persistence', kind: 'terminal', evidence_terms: ['persist', 'save', 'store', 'database'] },
+          { id: 'analytics_event_tracking', label: 'analytics/event tracking', kind: 'terminal', evidence_terms: ['analytics', 'event', 'track'] },
+        ],
+      },
+    )
+
+    expect(compact.execution_slice?.status).toBe('complete')
+    expect(compact.answer_contract?.runtime_proof?.missing_obligations).toEqual([])
+    expect(compact.answer_contract?.runtime_proof?.obligations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'persistence',
+        evidence: expect.arrayContaining([expect.objectContaining({ label: 'SurveyResponseStore.persist' })]),
+      }),
+      expect.objectContaining({
+        id: 'analytics_event_tracking',
+        evidence: expect.arrayContaining([expect.objectContaining({ label: 'ResponseAnalytics.trackEvent' })]),
+      }),
+    ]))
+  })
+
+  it('prioritizes complete Twenty-style runtime proofs so persistence stays in the selected slice', () => {
+    const prompt = 'How does Twenty process a CRM record mutation from API handling through workspace services to persistence?'
+    const compact = compactForWithRuntimeProof(
+      prompt,
+      buildTwentyRuntimeProofGraph(),
+      {
+        prompt,
+        strict_runtime_proof: true,
+        expected_spi: false,
+        obligations: [
+          { id: 'api_mutation_handling', label: 'API mutation handling', kind: 'entrypoint', evidence_terms: ['api', 'mutation', 'resolver', 'controller'] },
+          { id: 'workspace_service_handoff', label: 'workspace service handoff', kind: 'handoff', evidence_terms: ['workspace', 'service', 'mutation'] },
+          { id: 'persistence', label: 'persistence', kind: 'terminal', evidence_terms: ['persist', 'save', 'repository', 'database'] },
+        ],
+      },
+    )
+
+    expect(compact.execution_slice?.steps.map((step) => step.label)).toEqual(expect.arrayContaining([
+      'POST /crm/records/:id',
+      'RecordMutationResolver.updateRecord',
+      'WorkspaceScope.apply',
+      'RecordRepository.save',
+    ]))
+    expect(compact.answer_contract?.runtime_proof).toEqual(expect.objectContaining({
+      missing_obligations: [],
+      obligations: expect.arrayContaining([
+        expect.objectContaining({
+          id: 'persistence',
+          evidence: expect.arrayContaining([expect.objectContaining({ label: 'RecordRepository.save' })]),
+        }),
+      ]),
+    }))
   })
 
   it('anchors route-shaped backend runtime prompts on the route path', () => {

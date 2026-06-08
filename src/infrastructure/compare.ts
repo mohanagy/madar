@@ -32,6 +32,11 @@ import { sanitizeShareSafeText, toShareSafeArtifactPath, type ShareSafePathRoots
 import { resolveShellCommand, shellEscape } from '../shared/shell.js'
 import { MAX_TEXT_BYTES, validateGraphOutputPath, validateGraphPath } from '../shared/security.js'
 import { copyWorkspaceForBenchmark } from '../shared/workspace-copy.js'
+import type { RuntimeProofAssessment, RuntimeProofProfile } from '../contracts/runtime-proof.js'
+import {
+  loadBenchmarkRuntimeProofProfiles,
+  matchBenchmarkRuntimeProofProfile,
+} from './benchmark/runtime-proof.js'
 
 export type CompareBaselineMode = 'full' | 'bounded' | 'pack_only' | 'native_agent'
 export type CompareRunMode = 'baseline' | 'madar'
@@ -121,6 +126,25 @@ export interface CompareMadarTraceTurnSummary {
   madar_tool_discovery_count?: number
   madar_tool_discovery_tool_indexes?: number[]
   agent_directive_seen?: string[]
+}
+
+const RAW_TRACE_TOOL_INPUTS = Symbol('rawTraceToolInputs')
+
+type CompareMadarTraceTurnSummaryWithInputs = CompareMadarTraceTurnSummary & {
+  [RAW_TRACE_TOOL_INPUTS]?: string[]
+}
+
+function rawTraceToolInputs(turn: CompareMadarTraceTurnSummary): string[] {
+  return (turn as CompareMadarTraceTurnSummaryWithInputs)[RAW_TRACE_TOOL_INPUTS] ?? []
+}
+
+function appendRawTraceToolInputs(turn: CompareMadarTraceTurnSummary, inputs: readonly string[]): void {
+  const current = rawTraceToolInputs(turn)
+  Object.defineProperty(turn, RAW_TRACE_TOOL_INPUTS, {
+    value: [...current, ...inputs],
+    enumerable: false,
+    configurable: true,
+  })
 }
 
 type CompareMadarTraceOutcome =
@@ -1240,6 +1264,38 @@ function extractTraceAgentDirectives(contentPart: Record<string, unknown>): stri
   return directives
 }
 
+function summarizeTraceToolInput(input: unknown): string {
+  if (typeof input === 'string') {
+    return input.trim()
+  }
+  if (Array.isArray(input)) {
+    return input.map((entry) => summarizeTraceToolInput(entry)).filter((value) => value.length > 0).join(' ')
+  }
+  if (!isRecord(input)) {
+    return ''
+  }
+
+  const prioritizedKeys = ['question', 'query', 'prompt', 'path', 'paths', 'label', 'source', 'target', 'description']
+  const collected: string[] = []
+  for (const key of prioritizedKeys) {
+    const value = input[key]
+    if (typeof value === 'string' && value.trim().length > 0) {
+      collected.push(value.trim())
+      continue
+    }
+    if (Array.isArray(value)) {
+      const summarized = value.map((entry) => summarizeTraceToolInput(entry)).filter((entry) => entry.length > 0).join(' ')
+      if (summarized.length > 0) {
+        collected.push(summarized)
+      }
+    }
+  }
+  if (collected.length > 0) {
+    return collected.join(' ')
+  }
+  return ''
+}
+
 function emptyNativeAgentToolCallCountsEntry(): NativeAgentToolCallCountsEntry {
   return {
     total: 0,
@@ -1340,6 +1396,7 @@ function extractMadarTrace(stdout: string): CompareMadarTrace | undefined {
     fallbackTurn = Math.max(fallbackTurn, turn + 1)
     const existingTurn = perTurnIndex.get(turn)
     const tools: string[] = []
+    const toolInputs: string[] = []
     const directives: string[] = []
     let madarToolDiscoveryCount = 0
     const madarToolDiscoveryToolIndexes: number[] = []
@@ -1356,6 +1413,7 @@ function extractMadarTrace(stdout: string): CompareMadarTrace | undefined {
 
         const toolIndex = tools.length
         tools.push(toolName)
+        toolInputs.push(summarizeTraceToolInput(contentPart.input))
         toolCallsByName[toolName] = (toolCallsByName[toolName] ?? 0) + 1
         totalToolCalls += 1
         if (isMadarToolDiscoveryToolUse(toolName, contentPart.input)) {
@@ -1375,6 +1433,7 @@ function extractMadarTrace(stdout: string): CompareMadarTrace | undefined {
       const existingToolCount = existingTurn.tools.length
       existingTurn.tool_call_count += tools.length
       existingTurn.tools.push(...tools)
+      appendRawTraceToolInputs(existingTurn, toolInputs)
       if (madarToolDiscoveryCount > 0) {
         existingTurn.madar_tool_discovery_count = (existingTurn.madar_tool_discovery_count ?? 0) + madarToolDiscoveryCount
         existingTurn.madar_tool_discovery_tool_indexes = [
@@ -1391,7 +1450,7 @@ function extractMadarTrace(stdout: string): CompareMadarTrace | undefined {
       continue
     }
 
-    perTurnIndex.set(turn, {
+    const turnSummary: CompareMadarTraceTurnSummary = {
       turn,
       tool_call_count: tools.length,
       tools,
@@ -1400,7 +1459,9 @@ function extractMadarTrace(stdout: string): CompareMadarTrace | undefined {
         ? { madar_tool_discovery_tool_indexes: madarToolDiscoveryToolIndexes }
         : {}),
       ...(directives.length > 0 ? { agent_directive_seen: directives } : {}),
-    })
+    }
+    appendRawTraceToolInputs(turnSummary, toolInputs)
+    perTurnIndex.set(turn, turnSummary)
   }
 
   if (totalToolCalls === 0) {
@@ -1683,6 +1744,7 @@ function retrieveCompareContext(
   budget: number,
   projectRoot: string,
   taskKind: ContextPackTaskKind = 'explain',
+  runtimeProofProfile?: RuntimeProofProfile,
 ): RetrieveResult {
   const { graph: retrievalGraph, originalSourceFiles } = createCompareRetrievalGraph(graph, projectRoot)
   const originalCwd = process.cwd()
@@ -1693,7 +1755,12 @@ function retrieveCompareContext(
       question,
       budget: Math.max(budget, 200),
       taskKind,
-      ...(gate.signals.generation_intent === 'runtime_generation' ? { retrievalStrategy: 'slice-v1' as const } : {}),
+      ...(
+        gate.signals.generation_intent === 'runtime_generation' || runtimeProofProfile?.strict_runtime_proof === true
+          ? { retrievalStrategy: 'slice-v1' as const }
+          : {}
+      ),
+      ...(runtimeProofProfile ? { runtimeProofProfile } : {}),
     })
     for (const matchedNode of retrieval.matched_nodes) {
       matchedNode.source_file = originalSourceFiles.get(matchedNode.source_file) ?? matchedNode.source_file
@@ -1778,9 +1845,10 @@ function benchmarkReadinessSeverity(current: BenchmarkReadinessStatus, next: Ben
 export function assessBenchmarkReadinessFromRetrieveResult(input: {
   graphPath: string
   retrieval: RetrieveResult
+  runtimeProofProfile?: RuntimeProofProfile
 }): BenchmarkReadiness {
-  const { graphPath, retrieval } = input
-  if (!strictRuntimeProofModeApplies(retrieval)) {
+  const { graphPath, retrieval, runtimeProofProfile } = input
+  if (!strictRuntimeProofModeApplies(retrieval, runtimeProofProfile)) {
     return {
       status: 'ready',
       reasons: [],
@@ -1792,10 +1860,22 @@ export function assessBenchmarkReadinessFromRetrieveResult(input: {
   const reasons: string[] = []
   const sourceFiles = collectBenchmarkReadinessSourceFiles(retrieval)
   const suggestedGraphScope = suggestBenchmarkGraphScope(graphPath, sourceFiles)
+  const runtimeProof = runtimeProofAssessment(retrieval)
+  const missingObligations = runtimeProofMissingObligationLabels(runtimeProofProfile, runtimeProof)
   const missingPhases = [...new Set([
     ...(retrieval.answer_contract?.missing_phases ?? []),
     ...(retrieval.execution_slice?.phase_coverage?.missing ?? []),
   ])].filter((phase) => BENCHMARK_READINESS_CRITICAL_PHASES.has(phase))
+
+  if (runtimeProofProfile?.strict_runtime_proof && !runtimeProof) {
+    status = benchmarkReadinessSeverity(status, 'not_ready')
+    reasons.push('runtime proof obligations were not assessed')
+  }
+
+  if (missingObligations.length > 0) {
+    status = benchmarkReadinessSeverity(status, 'not_ready')
+    reasons.push(`missing runtime proof obligations: ${missingObligations.join(', ')}`)
+  }
 
   if (missingPhases.length >= 3) {
     status = benchmarkReadinessSeverity(status, 'not_ready')
@@ -1814,7 +1894,7 @@ export function assessBenchmarkReadinessFromRetrieveResult(input: {
     reasons.push('runtime slice confidence is medium')
   }
 
-  if (!graphPathHasSpiMode(graphPath)) {
+  if ((runtimeProofProfile?.expected_spi ?? true) && !graphPathHasSpiMode(graphPath)) {
     status = benchmarkReadinessSeverity(status, suggestedGraphScope ? 'not_ready' : 'degraded')
     reasons.push(
       suggestedGraphScope
@@ -1835,32 +1915,64 @@ export function assessBenchmarkReadinessFromRetrieveResult(input: {
   }
 }
 
-function strictRuntimeProofModeApplies(retrieval: RetrieveResult): boolean {
-  return retrieval.retrieval_gate?.signals.generation_intent === 'runtime_generation'
+function runtimeProofAssessment(retrieval: RetrieveResult): RuntimeProofAssessment | undefined {
+  return retrieval.answer_contract?.runtime_proof
+}
+
+function runtimeProofMissingObligationLabels(
+  runtimeProofProfile: RuntimeProofProfile | undefined,
+  runtimeProof: RuntimeProofAssessment | undefined,
+): string[] {
+  if (!runtimeProofProfile || !runtimeProof) {
+    return []
+  }
+  return runtimeProof.missing_obligations.map((id) =>
+    runtimeProofProfile.obligations.find((obligation) => obligation.id === id)?.label
+      ?? id.replaceAll('_', ' '),
+  )
+}
+
+function strictRuntimeProofModeApplies(
+  retrieval: RetrieveResult,
+  runtimeProofProfile?: RuntimeProofProfile,
+): boolean {
+  return runtimeProofProfile?.strict_runtime_proof === true
+    || (
+      retrieval.retrieval_gate?.signals.generation_intent === 'runtime_generation'
     && retrieval.retrieval_gate?.signals.target_domain_hint === 'backend_runtime'
     && retrieval.retrieval_gate?.signals.generation_debug?.flow_proof_shaped === true
+    )
 }
 
 function strictRuntimeProofPromptOptions(
   retrieval: RetrieveResult,
   benchmarkReadiness: BenchmarkReadiness,
+  runtimeProofProfile?: RuntimeProofProfile,
 ): {
   missingPhases?: string[]
+  missingObligations?: string[]
+  requiredObligations?: string[]
   rescopedTo?: string | null
 } | undefined {
   const missingPhases = [...new Set([
     ...(retrieval.answer_contract?.missing_phases ?? []),
     ...(retrieval.execution_slice?.phase_coverage?.missing ?? []),
   ])]
+  const missingObligations = runtimeProofMissingObligationLabels(runtimeProofProfile, runtimeProofAssessment(retrieval))
   const forceForDegradedReadiness = benchmarkReadiness.status !== 'ready'
-    && missingPhases.length > 0
+    && (missingPhases.length > 0 || missingObligations.length > 0)
+  const forceForRuntimeProofProfile = runtimeProofProfile?.strict_runtime_proof === true
 
-  if (!strictRuntimeProofModeApplies(retrieval) && !forceForDegradedReadiness) {
+  if (!strictRuntimeProofModeApplies(retrieval, runtimeProofProfile) && !forceForDegradedReadiness && !forceForRuntimeProofProfile) {
     return undefined
   }
 
   return {
     ...(missingPhases.length > 0 ? { missingPhases } : {}),
+    ...(missingObligations.length > 0 ? { missingObligations } : {}),
+    ...(runtimeProofProfile?.obligations.length
+      ? { requiredObligations: runtimeProofProfile.obligations.map((obligation) => obligation.label) }
+      : {}),
     ...(benchmarkReadiness.rescoped_to ? { rescopedTo: benchmarkReadiness.rescoped_to } : {}),
   }
 }
@@ -1874,6 +1986,7 @@ function prepareNativeAgentBenchmarkReadiness(input: {
   taskKind: ContextPackTaskKind
   graphCache: Map<string, KnowledgeGraph>
   assessBenchmarkReadiness?: (input: BenchmarkReadinessInput) => BenchmarkReadiness
+  runtimeProofProfile?: RuntimeProofProfile
 }): {
   retrieval: RetrieveResult
   benchmarkReadiness: BenchmarkReadiness
@@ -1885,13 +1998,24 @@ function prepareNativeAgentBenchmarkReadiness(input: {
           projectRoot: input.projectRoot,
           question: input.question,
         })
-      : assessBenchmarkReadinessFromRetrieveResult({ graphPath, retrieval })
+      : assessBenchmarkReadinessFromRetrieveResult({
+          graphPath,
+          retrieval,
+          ...(input.runtimeProofProfile ? { runtimeProofProfile: input.runtimeProofProfile } : {}),
+        })
 
-  const retrieval = retrieveCompareContext(input.graph, input.question, input.budget, input.projectRoot, input.taskKind)
+  const retrieval = retrieveCompareContext(
+    input.graph,
+    input.question,
+    input.budget,
+    input.projectRoot,
+    input.taskKind,
+    input.runtimeProofProfile,
+  )
   const benchmarkReadiness = assessReadiness(input.graphPath, retrieval)
   if (
     input.assessBenchmarkReadiness
-    || !strictRuntimeProofModeApplies(retrieval)
+    || !strictRuntimeProofModeApplies(retrieval, input.runtimeProofProfile)
     || !benchmarkReadiness.suggested_graph_scope
   ) {
     return { retrieval, benchmarkReadiness }
@@ -1919,10 +2043,12 @@ function prepareNativeAgentBenchmarkReadiness(input: {
     input.budget,
     rescopedProjectRoot,
     input.taskKind,
+    input.runtimeProofProfile,
   )
   const rescopedReadiness = assessBenchmarkReadinessFromRetrieveResult({
     graphPath: rescopedGraphPath,
     retrieval: rescopedRetrieval,
+    ...(input.runtimeProofProfile ? { runtimeProofProfile: input.runtimeProofProfile } : {}),
   })
 
   return {
@@ -2100,6 +2226,8 @@ export function buildNativeAgentPrompt(
       implementation?: ImplementationPackGuidance
       strictRuntimeProof?: {
         missingPhases?: string[]
+        missingObligations?: string[]
+        requiredObligations?: string[]
         rescopedTo?: string | null
       }
     } = 'core',
@@ -2151,8 +2279,21 @@ export function buildNativeAgentPrompt(
   const strictRuntimeProofInstructions = options.strictRuntimeProof
     ? [
         'This question requires strict runtime proof.',
+        ...(options.strictRuntimeProof.requiredObligations && options.strictRuntimeProof.requiredObligations.length > 0
+          ? [
+              'Required proof checklist:',
+              ...options.strictRuntimeProof.requiredObligations.map((obligation) => `- ${obligation}`),
+              'Answer only if every required obligation has direct evidence.',
+              'If one required obligation is still missing after one focused follow-up, answer exactly: not enough evidence; missing <obligation>',
+            ]
+          : []),
         ...(options.strictRuntimeProof.rescopedTo
           ? [`Start from the auto-rescoped graph scope: ${options.strictRuntimeProof.rescopedTo}.`]
+          : []),
+        ...(options.strictRuntimeProof.missingObligations && options.strictRuntimeProof.missingObligations.length > 0
+          ? [
+              `Use at most one focused follow-up to surface the missing ${options.strictRuntimeProof.missingObligations.join(', ')} obligation${options.strictRuntimeProof.missingObligations.length === 1 ? '' : 's'}.`,
+            ]
           : []),
         ...(options.strictRuntimeProof.missingPhases && options.strictRuntimeProof.missingPhases.length > 0
           ? [
@@ -3549,11 +3690,74 @@ function evaluateNativeAgentAnswerQualityRun(
   }
 }
 
+function obligationCitationTerms(
+  obligation: RuntimeProofAssessment['obligations'][number],
+  uniqueBasenames: ReadonlySet<string>,
+): string[] {
+  return [...new Set(
+    obligation.evidence.flatMap((evidence) => {
+      const terms = [normalizeAnswerQualityText(evidence.label)]
+      const normalizedBasename = normalizeAnswerQualityText(basename(evidence.source_file))
+      if (normalizedBasename.length > 0 && uniqueBasenames.has(normalizedBasename)) {
+        terms.push(normalizedBasename)
+      }
+      return terms
+    }).filter((value) => value.length > 0),
+  )]
+}
+
+function missingRuntimeProofCitations(
+  answerText: string,
+  pack: CompareReportPack | undefined,
+  runtimeProofProfile: RuntimeProofProfile | undefined,
+): string[] {
+  if (runtimeProofProfile?.strict_runtime_proof !== true) {
+    return []
+  }
+  const runtimeProof = pack?.answer_contract?.runtime_proof
+  if (!runtimeProof) {
+    return []
+  }
+  const normalizedAnswer = normalizeAnswerQualityText(answerText)
+  const basenameCounts = new Map<string, number>()
+  for (const obligation of runtimeProof.obligations) {
+    if (!obligation.required || obligation.evidence.length === 0) {
+      continue
+    }
+    const obligationBasenames = new Set(
+      obligation.evidence
+        .map((evidence) => normalizeAnswerQualityText(basename(evidence.source_file)))
+        .filter((value) => value.length > 0),
+    )
+    for (const normalizedBasename of obligationBasenames) {
+      basenameCounts.set(normalizedBasename, (basenameCounts.get(normalizedBasename) ?? 0) + 1)
+    }
+  }
+  const uniqueBasenames = new Set(
+    [...basenameCounts.entries()]
+      .filter(([, count]) => count === 1)
+      .map(([normalizedBasename]) => normalizedBasename),
+  )
+  return runtimeProof.obligations.flatMap((obligation) => {
+    if (!obligation.required || obligation.evidence.length === 0) {
+      return []
+    }
+    const citationTerms = obligationCitationTerms(obligation, uniqueBasenames)
+    return citationTerms.some((term) => normalizedAnswer.includes(term))
+      ? []
+      : [`direct evidence citation: ${obligation.label}`]
+  })
+}
+
 function evaluateNativeAgentAnswerQualityReport(
   gates: ReadonlyMap<string, NativeAgentAnswerQualityGate> | null,
   question: string,
   baselineAnswerPath: string,
   madarAnswerPath: string,
+  options: {
+    pack?: CompareReportPack | undefined
+    runtimeProofProfile?: RuntimeProofProfile | undefined
+  } = {},
 ): NativeAgentCompareReport['answer_quality'] | undefined {
   if (gates === null) {
     return undefined
@@ -3569,11 +3773,20 @@ function evaluateNativeAgentAnswerQualityReport(
   const [gateName, gate] = match
   const baselineAnswer = readFileSync(baselineAnswerPath, 'utf8')
   const madarAnswer = readFileSync(madarAnswerPath, 'utf8')
+  const baseline = evaluateNativeAgentAnswerQualityRun(gate, baselineAnswer)
+  const madar = evaluateNativeAgentAnswerQualityRun(gate, madarAnswer)
+  const missingCitations = gate.require_direct_evidence
+    ? missingRuntimeProofCitations(madarAnswer, options.pack, options.runtimeProofProfile)
+    : []
   return {
     gate: gateName,
     prompt: gate.prompt,
-    baseline: evaluateNativeAgentAnswerQualityRun(gate, baselineAnswer),
-    madar: evaluateNativeAgentAnswerQualityRun(gate, madarAnswer),
+    baseline,
+    madar: {
+      passed: madar.passed && missingCitations.length === 0,
+      missing_required_terms: [...madar.missing_required_terms, ...missingCitations],
+      forbidden_terms_present: madar.forbidden_terms_present,
+    },
     required_concepts: gate.required_concepts,
     answer_quality_notes: gate.answer_quality_notes,
     manual_review_notes: gate.manual_review_notes,
@@ -4226,8 +4439,9 @@ function nativeAgentAttributionGapEvidence(report: NativeAgentCompareReport): st
 }
 
 function assessNativeAgentPromptContract(
-  report: Pick<NativeAgentCompareReport, 'trace_status' | 'madar_trace'>,
+  report: Pick<NativeAgentCompareReport, 'trace_status' | 'madar_trace' | 'benchmark_readiness'>,
   toolProfile: McpToolProfile,
+  runtimeProofProfile?: RuntimeProofProfile,
 ): NativeAgentPromptContractAssessment {
   if (report.trace_status !== 'trace_available' || report.madar_trace === undefined) {
     return {
@@ -4268,6 +4482,50 @@ function assessNativeAgentPromptContract(
     && (directives.has('verify_one_targeted_file') || directives.has('explore_with_caution'))
   ) {
     evidence.push('more than one focused Madar follow-up was used')
+  }
+  const missingRuntimeTargets = (() => {
+    const labels = report.benchmark_readiness?.reasons.flatMap((reason) => {
+      if (reason.startsWith('missing runtime proof obligations:')) {
+        return reason.slice('missing runtime proof obligations:'.length).split(',').map((value) => value.trim()).filter((value) => value.length > 0)
+      }
+      if (reason.startsWith('missing downstream runtime phases:')) {
+        return reason.slice('missing downstream runtime phases:'.length).split(',').map((value) => value.trim()).filter((value) => value.length > 0)
+      }
+      return []
+    }) ?? []
+    if (labels.length > 0) {
+      return labels
+    }
+    return runtimeProofProfile?.strict_runtime_proof ? runtimeProofProfile.obligations.map((obligation) => obligation.label) : []
+  })()
+  if (runtimeProofProfile?.strict_runtime_proof && report.madar_trace.focused_follow_up_tool_call_count > 0) {
+    const targetedObligations = runtimeProofProfile.obligations.filter((obligation) =>
+      missingRuntimeTargets.some((label) => {
+        const normalizedLabel = normalizeAnswerQualityText(label)
+        return normalizeAnswerQualityText(obligation.label) === normalizedLabel
+          || normalizeAnswerQualityText(obligation.id) === normalizedLabel
+          || obligation.evidence_terms.some((term) => normalizeAnswerQualityText(term) === normalizedLabel)
+      })
+    )
+    const obligations = targetedObligations.length > 0 ? targetedObligations : runtimeProofProfile.obligations
+    const targetTerms = [...new Set(
+      obligations.flatMap((obligation) => [obligation.label, ...obligation.evidence_terms]).map((value) => normalizeAnswerQualityText(value)).filter((value) => value.length > 0),
+    )]
+    const firstMadarTurn = report.madar_trace.first_madar_turn ?? 0
+    const followUpInputs = report.madar_trace.per_turn
+      .filter((turn) => turn.turn > firstMadarTurn)
+      .flatMap((turn) =>
+        turn.tools.flatMap((toolName, index) => {
+          if (!isMadarTraceToolName(toolName) && !isFocusedFollowUpTraceToolName(toolName)) {
+            return []
+          }
+          const input = normalizeAnswerQualityText(rawTraceToolInputs(turn)[index] ?? '')
+          return input.length > 0 ? [input] : []
+        }),
+      )
+    if (followUpInputs.length > 0 && !followUpInputs.some((input) => targetTerms.some((term) => input.includes(term)))) {
+      evidence.push(`focused follow-up did not target missing runtime obligation: ${missingRuntimeTargets[0] ?? runtimeProofProfile.obligations[0]?.label ?? 'runtime proof'}`)
+    }
   }
 
   if (evidence.length > 0) {
@@ -4439,6 +4697,7 @@ export async function executeNativeAgentCompare(
   const graphCache = new Map<string, KnowledgeGraph>([[graphPath, graph]])
   const reports: NativeAgentCompareReport[] = []
   const answerQualityGates = loadNativeAgentAnswerQualityGates(input.questionsPath)
+  const runtimeProofProfiles = loadBenchmarkRuntimeProofProfiles(input.questionsPath)
   const reviewerVisibleGates = task === 'implement' ? loadImplementationReviewerVisibleGates(input.questionsPath) : new Map()
   const environment = await captureBenchmarkEnvironment({ projectRoot })
   const isolation = benchmarkIsolationEnabled()
@@ -4448,6 +4707,7 @@ export async function executeNativeAgentCompare(
   }
 
   const preparedQuestions = questions.map((question, index) => {
+    const runtimeProofProfile = matchBenchmarkRuntimeProofProfile(runtimeProofProfiles, question)
     const questionDir = questions.length === 1 ? outputRoot : join(outputRoot, `question-${String(index + 1).padStart(3, '0')}`)
     mkdirSync(questionDir, { recursive: true })
     const { retrieval, benchmarkReadiness } = prepareNativeAgentBenchmarkReadiness({
@@ -4458,8 +4718,10 @@ export async function executeNativeAgentCompare(
       projectRoot,
       taskKind: task,
       graphCache,
+      ...(runtimeProofProfile ? { runtimeProofProfile } : {}),
       ...(assessBenchmarkReadiness ? { assessBenchmarkReadiness } : {}),
     })
+    const comparePack = compareReportPackFromRetrieveResult(retrieval)
     const implementationGuidance =
       task === 'implement'
         ? buildImplementationPackGuidance(graph, retrieval, {
@@ -4473,7 +4735,7 @@ export async function executeNativeAgentCompare(
     const legacyPromptFile = join(questionDir, 'native_agent-prompt.txt')
     const baselinePrompt = buildNativeAgentBaselinePrompt(question, { task })
     const strictRuntimeProof = benchmarkReadiness
-      ? strictRuntimeProofPromptOptions(retrieval, benchmarkReadiness)
+      ? strictRuntimeProofPromptOptions(retrieval, benchmarkReadiness, runtimeProofProfile)
       : undefined
     const madarPrompt = buildNativeAgentPrompt(question, {
       profile: installCheck.tool_profile,
@@ -4559,6 +4821,8 @@ export async function executeNativeAgentCompare(
       reportShell,
       implementationGuidance,
       reviewerVisibleGate: reviewerVisibleGates.get(question),
+      comparePack,
+      runtimeProofProfile,
     }
   })
 
@@ -4584,6 +4848,8 @@ export async function executeNativeAgentCompare(
       reportShell,
       implementationGuidance,
       reviewerVisibleGate,
+      comparePack,
+      runtimeProofProfile,
     } = entry
     const baselineWorkspace = task === 'implement' ? prepareImplementationWorkspace(projectRoot, graphPath) : null
     const madarWorkspace = task === 'implement' ? prepareImplementationWorkspace(projectRoot, graphPath) : null
@@ -4908,16 +5174,20 @@ export async function executeNativeAgentCompare(
       madarTrace: reportShell.madar_trace,
       strictMadarFirst: input.strictMadarFirst,
     })
-    reportShell.prompt_contract = assessNativeAgentPromptContract(reportShell, installCheck.tool_profile)
     const answerQuality = evaluateNativeAgentAnswerQualityReport(
       answerQualityGates,
       question,
       baselineAnswerPath,
       madarAnswerPath,
+      {
+        pack: comparePack,
+        runtimeProofProfile,
+      },
     )
     if (answerQuality !== undefined) {
       reportShell.answer_quality = answerQuality
     }
+    reportShell.prompt_contract = assessNativeAgentPromptContract(reportShell, installCheck.tool_profile, runtimeProofProfile)
     const claimAssessment = assessNativeAgentClaims(reportShell)
     if (claimAssessment !== undefined) {
       reportShell.claim_assessment = claimAssessment

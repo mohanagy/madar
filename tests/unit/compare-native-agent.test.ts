@@ -244,6 +244,36 @@ function makeExplainQualityFixtureProject(): {
   return { projectDir, graphPath, outputDir, questionsPath }
 }
 
+function writeRuntimeProofFixture(
+  projectDir: string,
+  profileId: string,
+  question: string,
+  obligations: Array<{
+    id: string
+    label: string
+    kind: 'entrypoint' | 'handoff' | 'terminal'
+    evidence_terms: string[]
+  }>,
+): string {
+  const benchmarkDir = join(projectDir, 'benchmarks', 'explain')
+  mkdirSync(benchmarkDir, { recursive: true })
+  const questionsPath = join(benchmarkDir, 'questions.json')
+  writeFileSync(questionsPath, JSON.stringify([{ question }], null, 2), 'utf8')
+  writeFileSync(
+    join(benchmarkDir, 'runtime-proof.json'),
+    JSON.stringify({
+      [profileId]: {
+        prompt: question,
+        strict_runtime_proof: true,
+        expected_spi: false,
+        obligations,
+      },
+    }, null, 2),
+    'utf8',
+  )
+  return questionsPath
+}
+
 function makeRescopedReadinessFixtureProject(): {
   projectDir: string
   graphPath: string
@@ -1019,6 +1049,52 @@ const VERBOSE_MADAR_FIRST_LOW_CONFIDENCE_THEN_READY_PAYLOAD = [
               agent_directive: 'answer_from_pack',
             },
           }),
+        },
+      ],
+    },
+  },
+  MADAR_USAGE_PAYLOAD,
+] as const
+
+const VERBOSE_MADAR_RUNTIME_PROOF_UNTARGETED_FOLLOWUP_PAYLOAD = [
+  { type: 'system', subtype: 'init' },
+  {
+    type: 'assistant',
+    turn: 1,
+    message: {
+      content: [
+        {
+          type: 'tool_use',
+          name: 'mcp__madar__retrieve',
+          input: {
+            question: 'How does login create a session from request handling through persistence?',
+          },
+        },
+        {
+          type: 'tool_result',
+          tool_name: 'mcp__madar__retrieve',
+          content: JSON.stringify({
+            evidence: {
+              pack_confidence: 'medium',
+              agent_directive: 'verify_one_targeted_file',
+            },
+            missing_context: ['primary'],
+          }),
+        },
+      ],
+    },
+  },
+  {
+    type: 'assistant',
+    turn: 2,
+    message: {
+      content: [
+        {
+          type: 'tool_use',
+          name: 'mcp__madar__retrieve',
+          input: {
+            question: 'Explain auth config wiring',
+          },
         },
       ],
     },
@@ -1925,6 +2001,69 @@ describe('executeNativeAgentCompare', () => {
       expect(madarPrompt).toContain('This question requires strict runtime proof.')
       expect(madarPrompt).toContain('Use at most one focused follow-up to surface the missing persistence phase.')
       expect(madarPrompt).toContain('If the flow still cannot be proven, answer: not enough evidence; missing persistence')
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  it.each([
+    {
+      profileId: 'dub-explain-runtime',
+      question: 'How does Dub resolve a short-link click from request handling through analytics tracking and destination redirect?',
+      checklist: ['request handling', 'analytics tracking', 'destination redirect'],
+    },
+    {
+      profileId: 'formbricks-explain-runtime',
+      question: 'How does Formbricks process a survey response from request handling through persistence and analytics/event tracking?',
+      checklist: ['request handling', 'persistence', 'analytics/event tracking'],
+    },
+    {
+      profileId: 'cal-diy-explain-runtime',
+      question: 'How does Cal.diy turn a booking request into availability validation, scheduled event persistence, and notification delivery?',
+      checklist: ['booking request', 'availability validation', 'notification delivery'],
+    },
+  ])('injects the required proof checklist for $profileId benchmark rows', async ({ profileId, question, checklist }) => {
+    const { projectDir, graphPath, outputDir } = makeFixtureProject()
+    try {
+      const questionsPath = writeRuntimeProofFixture(
+        projectDir,
+        profileId,
+        question,
+        checklist.map((label, index) => ({
+          id: label.replace(/[^a-z]+/gi, '_').replace(/^_+|_+$/g, '').toLowerCase(),
+          label,
+          kind: index === 0 ? 'entrypoint' : 'terminal',
+          evidence_terms: label.split(/[\s/]+/).filter((term) => term.length > 0),
+        })),
+      )
+
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          question,
+          questionsPath,
+          outputDir,
+          execTemplate: 'mock-runner',
+          baselineMode: 'native_agent',
+        },
+        {
+          runner: scriptedRunner({
+            baseline: VERBOSE_BASELINE_FULL_WIN_PAYLOAD,
+            madar: VERBOSE_MADAR_FULL_WIN_PAYLOAD,
+          }),
+          now: () => new Date('2026-06-08T12:00:00Z'),
+        },
+      )
+
+      const report = result.reports[0] as NativeAgentCompareReport
+      const madarPrompt = readFileSync(report.paths.madar_prompt, 'utf8')
+
+      expect(madarPrompt).toContain('This question requires strict runtime proof.')
+      expect(madarPrompt).toContain('Required proof checklist:')
+      for (const obligation of checklist) {
+        expect(madarPrompt).toContain(`- ${obligation}`)
+      }
+      expect(madarPrompt).toContain('If one required obligation is still missing after one focused follow-up, answer exactly: not enough evidence; missing <obligation>')
     } finally {
       rmSync(projectDir, { recursive: true, force: true })
     }
@@ -2863,6 +3002,199 @@ describe('executeNativeAgentCompare', () => {
     }
   })
 
+  it('fails strict runtime-proof answer quality when the Madar answer does not cite direct obligation evidence', async () => {
+    const { projectDir, outputDir } = makeRescopedReadinessFixtureProjectWithOptions({
+      includeScopedGraph: true,
+      scopedGraphUsesScopedRoot: true,
+    })
+    writeClaudeInstallArtifacts(join(projectDir, 'backend'))
+    const graphPath = join(projectDir, 'backend', 'out', 'graph.json')
+    const question = 'How does login create a session from request handling through persistence?'
+    const questionsPath = writeRuntimeProofFixture(
+      projectDir,
+      'login-runtime',
+      question,
+      [
+        { id: 'request_handling', label: 'request handling', kind: 'entrypoint', evidence_terms: ['login', 'request', 'route', 'controller'] },
+        { id: 'persistence', label: 'persistence', kind: 'terminal', evidence_terms: ['session', 'persist', 'save', 'store'] },
+      ],
+    )
+    writeFileSync(
+      join(projectDir, 'benchmarks', 'explain', 'quality-gates.json'),
+      JSON.stringify({
+        'login-runtime': {
+          prompt: question,
+          required_answer_terms: ['session'],
+          forbidden_answer_terms: [],
+          required_concepts: ['directly cite the request and persistence flow'],
+          answer_quality_notes: ['Strict runtime-proof rows require answer citations grounded in the retrieved evidence.'],
+          manual_review_notes: ['Confirm every required runtime obligation cites direct evidence.'],
+          require_direct_evidence: true,
+        },
+      }, null, 2),
+      'utf8',
+    )
+
+    try {
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          questionsPath,
+          outputDir,
+          execTemplate: 'runner --prompt {prompt_file} --mode {mode} --out {output_file}',
+          baselineMode: 'native_agent',
+        },
+        {
+          now: () => new Date('2026-06-08T15:00:00Z'),
+          runner: async (execution) => ({
+            exitCode: 0,
+            stdout: `${JSON.stringify({
+              type: 'result',
+              subtype: 'success',
+              is_error: false,
+              duration_ms: execution.mode === 'baseline' ? 11 : 7,
+              num_turns: 1,
+              result: execution.mode === 'baseline'
+                ? 'AuthController.login in src/auth/controller.ts hands off to SessionStore.createSession in src/session/store.ts.'
+                : 'The login request reaches the session persistence path and creates a session.',
+              usage: {
+                input_tokens: execution.mode === 'baseline' ? 120 : 90,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
+                output_tokens: 30,
+              },
+            })}\n`,
+            stderr: '',
+            elapsedMs: execution.mode === 'baseline' ? 11 : 7,
+          }),
+        },
+      )
+
+      expect(result.reports[0]?.answer_quality).toEqual(
+        expect.objectContaining({
+          madar: expect.objectContaining({
+            passed: false,
+            missing_required_terms: expect.arrayContaining([
+              'direct evidence citation: request handling',
+              'direct evidence citation: persistence',
+            ]),
+          }),
+        }),
+      )
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  it('does not treat a shared basename as satisfying multiple runtime-proof citations', async () => {
+    const { projectDir, outputDir } = makeRescopedReadinessFixtureProjectWithOptions({
+      includeScopedGraph: true,
+      scopedGraphUsesScopedRoot: true,
+    })
+    writeClaudeInstallArtifacts(join(projectDir, 'backend'))
+    const graphPath = join(projectDir, 'backend', 'out', 'graph.json')
+    const scopedRoot = join(projectDir, 'backend')
+    writeLineAnchoredSourceFile(join(scopedRoot, 'src', 'request', 'index.ts'), 10, 'export const requestIndex = "request-index-proof"')
+    writeLineAnchoredSourceFile(join(scopedRoot, 'src', 'session', 'index.ts'), 60, 'export const sessionIndex = "session-index-proof"')
+    const scopedGraph = JSON.parse(readFileSync(graphPath, 'utf8')) as {
+      nodes?: Array<Record<string, unknown>>
+      links?: Array<Record<string, unknown>>
+    }
+    for (const node of scopedGraph.nodes ?? []) {
+      if (node.id === 'login_route') {
+        node.source_file = 'src/request/index.ts'
+      }
+      if (node.id === 'session_store') {
+        node.source_file = 'src/session/index.ts'
+      }
+    }
+    for (const link of scopedGraph.links ?? []) {
+      if (link.source === 'login_route') {
+        link.source_file = 'src/request/index.ts'
+      }
+      if (link.source === 'login_worker' && link.target === 'session_store') {
+        link.source_file = 'src/session/index.ts'
+      }
+    }
+    writeFileSync(graphPath, `${JSON.stringify(scopedGraph, null, 2)}\n`, 'utf8')
+
+    const question = 'How does login create a session from request handling through persistence?'
+    const questionsPath = writeRuntimeProofFixture(
+      projectDir,
+      'login-runtime',
+      question,
+      [
+        { id: 'request_handling', label: 'request handling', kind: 'entrypoint', evidence_terms: ['login', 'request', 'route', 'controller'] },
+        { id: 'persistence', label: 'persistence', kind: 'terminal', evidence_terms: ['session', 'persist', 'save', 'store'] },
+      ],
+    )
+    writeFileSync(
+      join(projectDir, 'benchmarks', 'explain', 'quality-gates.json'),
+      JSON.stringify({
+        'login-runtime': {
+          prompt: question,
+          required_answer_terms: ['session'],
+          forbidden_answer_terms: [],
+          required_concepts: ['directly cite the request and persistence flow'],
+          answer_quality_notes: ['Strict runtime-proof rows require answer citations grounded in the retrieved evidence.'],
+          manual_review_notes: ['Confirm every required runtime obligation cites direct evidence.'],
+          require_direct_evidence: true,
+        },
+      }, null, 2),
+      'utf8',
+    )
+
+    try {
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          questionsPath,
+          outputDir,
+          execTemplate: 'runner --prompt {prompt_file} --mode {mode} --out {output_file}',
+          baselineMode: 'native_agent',
+        },
+        {
+          now: () => new Date('2026-06-08T15:05:00Z'),
+          runner: async (execution) => ({
+            exitCode: 0,
+            stdout: `${JSON.stringify({
+              type: 'result',
+              subtype: 'success',
+              is_error: false,
+              duration_ms: execution.mode === 'baseline' ? 11 : 7,
+              num_turns: 1,
+              result: execution.mode === 'baseline'
+                ? 'POST /login in src/request/index.ts hands off to SessionStore.createSession in src/session/index.ts.'
+                : 'The session flow is evidenced in index.ts and creates a session.',
+              usage: {
+                input_tokens: execution.mode === 'baseline' ? 120 : 90,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
+                output_tokens: 30,
+              },
+            })}\n`,
+            stderr: '',
+            elapsedMs: execution.mode === 'baseline' ? 11 : 7,
+          }),
+        },
+      )
+
+      expect(result.reports[0]?.answer_quality).toEqual(
+        expect.objectContaining({
+          madar: expect.objectContaining({
+            passed: false,
+            missing_required_terms: expect.arrayContaining([
+              'direct evidence citation: request handling',
+              'direct evidence citation: persistence',
+            ]),
+          }),
+        }),
+      )
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
   it('suppresses runtime benchmark wins when the prompt contract is violated', async () => {
     const { projectDir, graphPath, outputDir } = makeFixtureProject({ profile: 'full' })
     try {
@@ -2904,6 +3236,54 @@ describe('executeNativeAgentCompare', () => {
       }))
       expect(summary).toContain('prompt_contract: violated')
       expect(summary).toContain('benchmark_outcome: not_measured')
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  it('flags strict runtime-proof follow-ups that do not target the missing obligation', async () => {
+    const { projectDir, outputDir } = makeRescopedReadinessFixtureProjectWithOptions({
+      includePersistenceStep: false,
+      includeScopedGraph: true,
+      scopedGraphUsesScopedRoot: true,
+    })
+    claudeInstall(join(projectDir, 'backend'), { profile: 'core' })
+    const graphPath = join(projectDir, 'backend', 'out', 'graph.json')
+    const question = 'How does login create a session from request handling through persistence?'
+    const questionsPath = writeRuntimeProofFixture(
+      projectDir,
+      'login-runtime',
+      question,
+      [
+        { id: 'request_handling', label: 'request handling', kind: 'entrypoint', evidence_terms: ['login', 'request', 'route', 'controller'] },
+        { id: 'persistence', label: 'persistence', kind: 'terminal', evidence_terms: ['session', 'persist', 'save', 'store'] },
+      ],
+    )
+
+    try {
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          questionsPath,
+          outputDir,
+          execTemplate: 'mock-runner',
+          baselineMode: 'native_agent',
+        },
+        {
+          runner: scriptedRunner({
+            baseline: VERBOSE_BASELINE_PAYLOAD,
+            madar: VERBOSE_MADAR_RUNTIME_PROOF_UNTARGETED_FOLLOWUP_PAYLOAD,
+          }),
+          now: () => new Date('2026-06-08T15:10:00Z'),
+        },
+      )
+
+      const report = result.reports[0] as NativeAgentCompareReport
+      expect(report.benchmark_readiness?.status).toBe('not_ready')
+      expect(report.prompt_contract).toEqual({
+        status: 'violated',
+        evidence: ['focused follow-up did not target missing runtime obligation: persistence'],
+      })
     } finally {
       rmSync(projectDir, { recursive: true, force: true })
     }
