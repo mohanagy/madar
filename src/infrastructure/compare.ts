@@ -346,10 +346,7 @@ function answerContractInstructions(retrieval: RetrieveResult): string[] {
     instructions.push('Do not collapse producer-to-worker handoffs into direct calls when the evidence is an enqueues_job boundary.')
   }
 
-  if (
-    answerContract.uncertainty_notes?.includes('mention missing or uncertain phases when the execution slice is partial')
-    || answerContract.do_not_claim.includes('full_runtime_certainty_when_slice_is_partial')
-  ) {
+  if (answerContract.do_not_claim.includes('full_runtime_certainty_when_slice_is_partial')) {
     instructions.push('Mention missing or uncertain phases when the execution slice is partial.')
   }
 
@@ -1851,14 +1848,16 @@ function strictRuntimeProofPromptOptions(
   missingPhases?: string[]
   rescopedTo?: string | null
 } | undefined {
-  if (!strictRuntimeProofModeApplies(retrieval)) {
-    return undefined
-  }
-
   const missingPhases = [...new Set([
     ...(retrieval.answer_contract?.missing_phases ?? []),
     ...(retrieval.execution_slice?.phase_coverage?.missing ?? []),
   ])]
+  const forceForDegradedReadiness = benchmarkReadiness.status !== 'ready'
+    && missingPhases.length > 0
+
+  if (!strictRuntimeProofModeApplies(retrieval) && !forceForDegradedReadiness) {
+    return undefined
+  }
 
   return {
     ...(missingPhases.length > 0 ? { missingPhases } : {}),

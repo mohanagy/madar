@@ -3245,7 +3245,9 @@ function buildRuntimeGenerationAnswerContract(
 
   if (executionSlice.status === 'partial' || missingPhases.length > 0) {
     answerContract.uncertainty_notes = [
-      'mention missing or uncertain phases when the execution slice is partial',
+      missingPhases.length > 0
+        ? `Do not infer unobserved runtime phases; if the full flow is requested, answer: not enough evidence; missing ${missingPhases.join(', ')}`
+        : 'Do not infer unobserved runtime phases; if the full flow is requested, answer: not enough evidence.',
     ]
   }
 

@@ -1892,6 +1892,81 @@ describe('executeNativeAgentCompare', () => {
     }
   })
 
+  it('passes strict missing-phase proof guidance for degraded backend runtime prompts even when the retrieval gate is not flow-proof-shaped', async () => {
+    const { projectDir, graphPath, outputDir } = makeRescopedReadinessFixtureProjectWithOptions({
+      includePersistenceStep: false,
+    })
+    try {
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          question: 'Explain runtime pipeline for `POST /login` persistence',
+          outputDir,
+          execTemplate: 'mock-runner',
+          baselineMode: 'native_agent',
+        },
+        {
+          runner: scriptedRunner({
+            baseline: VERBOSE_BASELINE_FULL_WIN_PAYLOAD,
+            madar: VERBOSE_MADAR_FULL_WIN_PAYLOAD,
+          }),
+          now: () => new Date('2026-05-27T00:46:00Z'),
+          assessBenchmarkReadiness: () => ({
+            status: 'degraded',
+            reasons: ['missing downstream runtime phases: persistence'],
+            suggested_graph_scope: null,
+          }),
+        },
+      )
+
+      const report = result.reports[0] as NativeAgentCompareReport
+      const madarPrompt = readFileSync(report.paths.madar_prompt, 'utf8')
+
+      expect(madarPrompt).toContain('This question requires strict runtime proof.')
+      expect(madarPrompt).toContain('Use at most one focused follow-up to surface the missing persistence phase.')
+      expect(madarPrompt).toContain('If the flow still cannot be proven, answer: not enough evidence; missing persistence')
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  it('does not pass strict missing-phase proof guidance for ready backend runtime prompts when the retrieval gate is not flow-proof-shaped', async () => {
+    const { projectDir, graphPath, outputDir } = makeRescopedReadinessFixtureProjectWithOptions({
+      includePersistenceStep: false,
+    })
+    try {
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          question: 'Explain runtime pipeline for `POST /login` persistence',
+          outputDir,
+          execTemplate: 'mock-runner',
+          baselineMode: 'native_agent',
+        },
+        {
+          runner: scriptedRunner({
+            baseline: VERBOSE_BASELINE_FULL_WIN_PAYLOAD,
+            madar: VERBOSE_MADAR_FULL_WIN_PAYLOAD,
+          }),
+          now: () => new Date('2026-05-27T00:47:00Z'),
+          assessBenchmarkReadiness: () => ({
+            status: 'ready',
+            reasons: [],
+            suggested_graph_scope: null,
+          }),
+        },
+      )
+
+      const report = result.reports[0] as NativeAgentCompareReport
+      const madarPrompt = readFileSync(report.paths.madar_prompt, 'utf8')
+
+      expect(madarPrompt).not.toContain('This question requires strict runtime proof.')
+      expect(madarPrompt).not.toContain('If the flow still cannot be proven, answer: not enough evidence; missing persistence')
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
   it('does not claim auto-rescope when the suggested scoped graph is unavailable', async () => {
     const { projectDir, graphPath, outputDir } = makeRescopedReadinessFixtureProjectWithOptions({
       includeScopedGraph: false,
