@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest'
 import type { GenerateGraphResult } from '../../src/infrastructure/generate.js'
 import type { NativeAgentCompareResult, NativeAgentCompareReport } from '../../src/infrastructure/compare.js'
 import type { BenchmarkEnvironment, BenchmarkExpectedEnvironment } from '../../src/infrastructure/benchmark/environment.js'
+import { loadBenchmarkRuntimeProofProfiles } from '../../src/infrastructure/benchmark/runtime-proof.js'
 import { claudeInstall } from '../../src/infrastructure/install.js'
 import {
   loadBenchmarkSuiteRepos,
@@ -540,6 +541,84 @@ describe('benchmark suite manifests', () => {
       'partly inferred',
       'did not surface the top-level handler that wires them together',
     ]))
+  })
+
+  it('ships deterministic runtime-proof profiles for the public explain-runtime rows', () => {
+    const profiles = JSON.parse(readFileSync(resolve('docs/benchmarks/suite/runtime-proof.json'), 'utf8')) as Record<string, {
+      prompt: string
+      strict_runtime_proof: boolean
+      expected_spi: boolean
+      obligations: Array<{
+        id: string
+        label: string
+        kind: string
+        evidence_terms: string[]
+      }>
+    }>
+
+    expect(Object.values(profiles).map((profile) => profile.prompt)).toEqual(expect.arrayContaining([
+      'How does Documenso move a document from send preparation through recipient creation, signing state, and notification delivery?',
+      'How does Formbricks process a survey response from request handling through persistence and analytics/event tracking?',
+      'How does Dub resolve a short-link click from request handling through analytics tracking and destination redirect?',
+      'How does Twenty process a CRM record mutation from API handling through workspace services to persistence?',
+      'How does Cal.diy turn a booking request into availability validation, scheduled event persistence, and notification delivery?',
+      'How does Novu process a notification trigger from API entry through workflow orchestration to channel delivery?',
+    ]))
+
+    for (const profile of Object.values(profiles)) {
+      expect(profile.strict_runtime_proof).toBe(true)
+      expect(profile.expected_spi).toBe(false)
+      expect(profile.obligations.length).toBeGreaterThanOrEqual(3)
+      for (const obligation of profile.obligations) {
+        expect(obligation.id).toEqual(expect.any(String))
+        expect(obligation.label).toEqual(expect.any(String))
+        expect(['entrypoint', 'handoff', 'terminal']).toContain(obligation.kind)
+        expect(obligation.evidence_terms.length).toBeGreaterThan(0)
+      }
+    }
+
+    expect(profiles['dub-explain-runtime']?.obligations.map((obligation) => obligation.id)).toEqual(expect.arrayContaining([
+      'request_handling',
+      'analytics_tracking',
+      'destination_redirect',
+    ]))
+    expect(profiles['twenty-explain-runtime']?.obligations.map((obligation) => obligation.id)).toEqual(expect.arrayContaining([
+      'api_mutation_handling',
+      'workspace_service_handoff',
+      'persistence',
+    ]))
+  })
+
+  it('rejects runtime-proof profiles with empty evidence term arrays', async () => {
+    await withTempDir(async (tempDir) => {
+      const benchmarkDir = join(tempDir, 'benchmarks', 'explain')
+      mkdirSync(benchmarkDir, { recursive: true })
+      const questionsPath = join(benchmarkDir, 'questions.json')
+      writeFileSync(questionsPath, JSON.stringify([{ question: 'How does login create a session?' }], null, 2), 'utf8')
+      writeFileSync(
+        join(benchmarkDir, 'runtime-proof.json'),
+        JSON.stringify({
+          'login-runtime': {
+            prompt: 'How does login create a session?',
+            strict_runtime_proof: true,
+            expected_spi: false,
+            obligations: [
+              {
+                id: 'request_handling',
+                label: 'request handling',
+                kind: 'entrypoint',
+                evidence_terms: [],
+              },
+            ],
+          },
+        }, null, 2),
+        'utf8',
+      )
+
+      expect(() => loadBenchmarkRuntimeProofProfiles(questionsPath)).toThrow(
+        'Malformed runtime proof profile "login-runtime": obligations.request_handling.evidence_terms must be a non-empty string array',
+      )
+    })
   })
 
   it('rejects repo ids with unsafe path characters', async () => {

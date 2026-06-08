@@ -27,6 +27,7 @@ import type {
 } from '../contracts/context-pack.js'
 import type { TaskIntentKind } from '../contracts/task-intent.js'
 import { KnowledgeGraph } from '../contracts/graph.js'
+import type { RuntimeProofProfile } from '../contracts/runtime-proof.js'
 import { godNodes, workspaceBridges } from '../pipeline/analyze.js'
 import { type Communities } from '../pipeline/cluster.js'
 import { buildCommunityLabels } from '../pipeline/community-naming.js'
@@ -56,6 +57,12 @@ import {
   relationIsPrimaryForPolicy,
 } from './retrieve/expansion.js'
 import { sliceCandidatesForRetrieve } from './retrieve/slicing.js'
+import {
+  buildRuntimeProofAssessment,
+  runtimeProofAnchorBonus,
+  runtimeProofObligationMatchScore,
+  type RuntimeProofCandidate,
+} from './runtime-proof.js'
 import { communitiesFromGraph, estimateQueryTokens } from './serve.js'
 
 const SNIPPET_HALF_WINDOW = 7
@@ -100,6 +107,7 @@ export interface RetrieveOptions {
   /** Internal additive override for benchmarks/tests. */
   selectionStrategy?: ContextPackSelectionStrategy
   retrievalStrategy?: ContextPackRetrievalStrategy
+  runtimeProofProfile?: RuntimeProofProfile
   snippetBudget?: number
   topNWithSnippet?: number
 }
@@ -2142,8 +2150,9 @@ function augmentSliceCandidateIdsForRuntimeExplain(
   metadata: ContextPackSliceMetadata,
   retrievalGate: RetrievalGateDecision,
   question: string,
+  runtimeProofProfile?: RuntimeProofProfile,
 ): string[] {
-  if (!runtimeGenerationSliceCandidatePromotionApplies(retrievalGate, metadata)) {
+  if (!runtimeGenerationSliceCandidatePromotionApplies(retrievalGate, metadata) && runtimeProofProfile?.strict_runtime_proof !== true) {
     return [...orderedIds]
   }
 
@@ -2167,7 +2176,7 @@ function augmentSliceCandidateIdsForRuntimeExplain(
   const anchorIds = metadata.anchors
     .map((anchor) => resolveNodeId(anchor.node_id, anchor.label))
     .filter((nodeId): nodeId is string => typeof nodeId === 'string')
-  const executionScope = collectExecutionSliceScope(graph, metadata, anchorIds, question, resolveNodeId)
+  const executionScope = collectExecutionSliceScope(graph, metadata, anchorIds, question, resolveNodeId, runtimeProofProfile)
 
   for (const nodeId of executionScope.orderedIds) {
     if (!seen.has(nodeId)) {
@@ -2183,7 +2192,11 @@ function runtimeGenerationExecutionSliceApplies(
   taskContract: ContextPackTaskContract,
   retrievalGate: RetrievalGateDecision,
   sliceMetadata: ContextPackSliceMetadata | undefined,
+  runtimeProofProfile?: RuntimeProofProfile,
 ): boolean {
+  if (runtimeProofProfile?.strict_runtime_proof === true) {
+    return taskContract.task_kind === 'explain' && sliceMetadata !== undefined
+  }
   return retrievalGate.signals.generation_intent === 'runtime_generation'
     && retrievalGate.signals.target_domain_hint === 'backend_runtime'
     && taskContract.task_kind === 'explain'
@@ -2294,12 +2307,161 @@ interface ExecutionPathCandidate {
   edges: ExecutionFlowEdge[]
 }
 
+function runtimeProofCandidateFromGraph(
+  graph: KnowledgeGraph,
+  nodeId: string,
+): RuntimeProofCandidate {
+  const attributes = graph.nodeAttributes(nodeId)
+  return {
+    label: String(attributes.label ?? nodeId),
+    source_file: String(attributes.source_file ?? ''),
+    line_number: lineNumberFromSourceLocation(String(attributes.source_location ?? '')) ?? 0,
+    ...(typeof attributes.node_kind === 'string' ? { node_kind: attributes.node_kind } : {}),
+    ...(typeof attributes.framework_role === 'string' ? { framework_role: attributes.framework_role } : {}),
+  }
+}
+
+function runtimeProofCandidateFromExecutionStep(
+  step: Pick<ContextPackExecutionSliceStep, 'label' | 'source_file' | 'line_number' | 'node_kind' | 'framework_role'>,
+): RuntimeProofCandidate {
+  return {
+    label: step.label,
+    source_file: step.source_file,
+    line_number: step.line_number,
+    ...(step.node_kind ? { node_kind: step.node_kind } : {}),
+    ...(step.framework_role ? { framework_role: step.framework_role } : {}),
+  }
+}
+
+function augmentExecutionScopeForRuntimeProof(
+  graph: KnowledgeGraph,
+  orderedIds: string[],
+  idSet: Set<string>,
+  anchorIds: readonly string[],
+  runtimeProofProfile: RuntimeProofProfile,
+): void {
+  const addPath = (path: readonly string[]): void => {
+    for (const nodeId of path) {
+      if (graph.hasNode(nodeId) && !idSet.has(nodeId)) {
+        idSet.add(nodeId)
+        orderedIds.push(nodeId)
+      }
+    }
+  }
+
+  const findTargetedPath = (obligationId: string): string[] | undefined => {
+    const obligation = runtimeProofProfile.obligations.find((entry) => entry.id === obligationId)
+    if (!obligation) {
+      return undefined
+    }
+    const sourceIds = orderedIds.length > 0 ? [...orderedIds] : [...anchorIds]
+    const queue = sourceIds.map((nodeId) => ({ nodeId, path: [nodeId], depth: 0 }))
+    const bestDepth = new Map(sourceIds.map((nodeId) => [nodeId, 0]))
+    let bestPath: string[] | undefined
+    let bestScore = 0
+
+    while (queue.length > 0) {
+      const current = queue.shift()!
+      const candidate = runtimeProofCandidateFromGraph(graph, current.nodeId)
+      const matchScore = runtimeProofObligationMatchScore(candidate, obligation)
+      if (
+        matchScore > bestScore
+        || (matchScore === bestScore && matchScore > 0 && bestPath !== undefined && current.path.length < bestPath.length)
+      ) {
+        bestScore = matchScore
+        bestPath = current.path
+      }
+      if (current.depth >= 6) {
+        continue
+      }
+
+      const neighbors = [
+        ...graph.predecessors(current.nodeId).map((nodeId) => ({ nodeId, relation: String(graph.edgeAttributes(nodeId, current.nodeId).relation ?? 'related_to') })),
+        ...graph.successors(current.nodeId).map((nodeId) => ({ nodeId, relation: String(graph.edgeAttributes(current.nodeId, nodeId).relation ?? 'related_to') })),
+      ]
+        .filter((neighbor) => executionSliceFlowRelation(neighbor.relation))
+        .sort((left, right) => {
+          const leftScore = runtimeProofObligationMatchScore(runtimeProofCandidateFromGraph(graph, left.nodeId), obligation)
+          const rightScore = runtimeProofObligationMatchScore(runtimeProofCandidateFromGraph(graph, right.nodeId), obligation)
+          return rightScore - leftScore || executionSliceEdgePriority(right.relation) - executionSliceEdgePriority(left.relation)
+        })
+
+      for (const neighbor of neighbors) {
+        const nextDepth = current.depth + 1
+        const previousBest = bestDepth.get(neighbor.nodeId)
+        if (previousBest !== undefined && previousBest <= nextDepth) {
+          continue
+        }
+        bestDepth.set(neighbor.nodeId, nextDepth)
+        queue.push({
+          nodeId: neighbor.nodeId,
+          path: [...current.path, neighbor.nodeId],
+          depth: nextDepth,
+        })
+      }
+    }
+
+    return bestScore > 0 ? bestPath : undefined
+  }
+
+  for (const obligationId of buildRuntimeProofAssessment(
+    runtimeProofProfile,
+    orderedIds.map((nodeId) => runtimeProofCandidateFromGraph(graph, nodeId)),
+  )?.missing_obligations ?? []) {
+    const targetedPath = findTargetedPath(obligationId)
+    if (targetedPath) {
+      addPath(targetedPath)
+    }
+  }
+
+  const entrypointObligations = runtimeProofProfile.obligations.filter((obligation) => obligation.kind === 'entrypoint')
+  if (entrypointObligations.length === 0) {
+    return
+  }
+
+  const queue = [...orderedIds]
+  const seen = new Set(queue)
+  while (queue.length > 0) {
+    const nodeId = queue.shift()!
+    for (const predecessorId of graph.predecessors(nodeId)) {
+      if (seen.has(predecessorId)) {
+        continue
+      }
+      const relation = String(graph.edgeAttributes(predecessorId, nodeId).relation ?? 'related_to')
+      if (!executionSliceFlowRelation(relation)) {
+        continue
+      }
+      seen.add(predecessorId)
+      const predecessorStep = runtimeProofCandidateFromGraph(graph, predecessorId)
+      const entrypointScore = Math.max(0, ...entrypointObligations.map((obligation) =>
+        runtimeProofObligationMatchScore(predecessorStep, obligation)
+      ))
+      if (
+        entrypointScore > 0
+        || controllerLikeExecutionStep({
+          label: predecessorStep.label,
+          source_file: predecessorStep.source_file,
+          ...(predecessorStep.node_kind ? { node_kind: predecessorStep.node_kind } : {}),
+          ...(predecessorStep.framework_role ? { framework_role: predecessorStep.framework_role } : {}),
+        })
+      ) {
+        if (!idSet.has(predecessorId)) {
+          idSet.add(predecessorId)
+          orderedIds.unshift(predecessorId)
+        }
+        queue.push(predecessorId)
+      }
+    }
+  }
+}
+
 function collectExecutionSliceScope(
   graph: KnowledgeGraph,
   sliceMetadata: ContextPackSliceMetadata,
   anchorIds: readonly string[],
   question: string,
   resolveNodeId: (nodeId: string | undefined, label: string) => string | undefined,
+  runtimeProofProfile?: RuntimeProofProfile,
 ): { orderedIds: string[]; idSet: ReadonlySet<string> } {
   const orderedIds: string[] = []
   const idSet = new Set<string>()
@@ -2358,6 +2520,10 @@ function collectExecutionSliceScope(
     }
   }
 
+  if (runtimeProofProfile?.strict_runtime_proof === true) {
+    augmentExecutionScopeForRuntimeProof(graph, orderedIds, idSet, anchorIds, runtimeProofProfile)
+  }
+
   if (addedSelectedFlowPath) {
     return { orderedIds, idSet }
   }
@@ -2389,6 +2555,10 @@ function collectExecutionSliceScope(
         enqueueNeighbor(successorId, depth + 1)
       }
     }
+  }
+
+  if (runtimeProofProfile?.strict_runtime_proof === true) {
+    augmentExecutionScopeForRuntimeProof(graph, orderedIds, idSet, anchorIds, runtimeProofProfile)
   }
 
   return { orderedIds, idSet }
@@ -2790,6 +2960,7 @@ function executionPathScore(
   path: ExecutionPathCandidate,
   nodeById: ReadonlyMap<string, ContextPackExecutionSliceStep>,
   question: string,
+  runtimeProofProfile?: RuntimeProofProfile,
 ): number {
   const steps = path.nodeIds
     .map((nodeId) => nodeById.get(nodeId))
@@ -2833,6 +3004,42 @@ function executionPathScore(
   }
   if (lastStep && lowValueExecutionStepForQuestion(lastStep, question)) {
     score -= 40
+  }
+
+  if (runtimeProofProfile) {
+    const runtimeProof = buildRuntimeProofAssessment(
+      runtimeProofProfile,
+      steps.map((step) => runtimeProofCandidateFromExecutionStep(step)),
+    )
+    if (runtimeProof) {
+      const coveredCount = runtimeProof.obligations.length - runtimeProof.missing_obligations.length
+      score += coveredCount * 140
+      score -= runtimeProof.missing_obligations.length * 220
+      if (runtimeProof.missing_obligations.some((obligationId) =>
+        runtimeProofProfile.obligations.find((obligation) => obligation.id === obligationId)?.kind === 'terminal'
+      )) {
+        score -= 120
+      }
+    }
+    const firstStep = steps[0]
+    if (firstStep) {
+      const entrypointBonus = Math.max(0, ...runtimeProofProfile.obligations
+        .filter((obligation) => obligation.kind === 'entrypoint')
+        .map((obligation) => runtimeProofObligationMatchScore(runtimeProofCandidateFromExecutionStep(firstStep), obligation)))
+      score += entrypointBonus * 20
+      if (controllerLikeExecutionStep(firstStep)) {
+        score += 35
+      }
+    }
+    if (lastStep) {
+      const terminalBonus = Math.max(0, ...runtimeProofProfile.obligations
+        .filter((obligation) => obligation.kind === 'terminal')
+        .map((obligation) => runtimeProofObligationMatchScore(runtimeProofCandidateFromExecutionStep(lastStep), obligation)))
+      score += terminalBonus * 18
+      if (!serviceLikeExecutionStep(lastStep)) {
+        score += 15
+      }
+    }
   }
 
   return score + path.edges.length
@@ -2994,7 +3201,35 @@ function pickExecutionSliceStart(
   idSet: ReadonlySet<string>,
   nodeById: ReadonlyMap<string, ContextPackExecutionSliceStep>,
   question: string,
+  runtimeProofProfile?: RuntimeProofProfile,
 ): string | undefined {
+  if (runtimeProofProfile?.strict_runtime_proof === true) {
+    const roots = orderedIds.filter((nodeId) =>
+      [...graph.predecessors(nodeId)].every((predecessorId) =>
+        !idSet.has(predecessorId)
+        || !executionSliceFlowRelation(String(graph.edgeAttributes(predecessorId, nodeId).relation ?? 'related_to')),
+      ),
+    )
+    const candidates = roots.length > 0 ? roots : orderedIds
+    return [...candidates].sort((left, right) => {
+      const leftStep = nodeById.get(left)
+      const rightStep = nodeById.get(right)
+      const leftEntry = leftStep
+        ? Math.max(0, ...runtimeProofProfile.obligations
+          .filter((obligation) => obligation.kind === 'entrypoint')
+          .map((obligation) => runtimeProofObligationMatchScore(runtimeProofCandidateFromExecutionStep(leftStep), obligation)))
+        : 0
+      const rightEntry = rightStep
+        ? Math.max(0, ...runtimeProofProfile.obligations
+          .filter((obligation) => obligation.kind === 'entrypoint')
+          .map((obligation) => runtimeProofObligationMatchScore(runtimeProofCandidateFromExecutionStep(rightStep), obligation)))
+        : 0
+      return rightEntry - leftEntry
+        || (rightStep && controllerLikeExecutionStep(rightStep) ? 1 : 0) - (leftStep && controllerLikeExecutionStep(leftStep) ? 1 : 0)
+        || (rightStep ? executionSliceStepPriority(rightStep, question) : 0) - (leftStep ? executionSliceStepPriority(leftStep, question) : 0)
+    })[0]
+  }
+
   const anchoredStart = anchorIds.find((nodeId) => idSet.has(nodeId))
   if (anchoredStart) {
     return anchoredStart
@@ -3219,8 +3454,9 @@ function buildRuntimeGenerationAnswerContract(
   matchedNodes: readonly Pick<RetrieveMatchedNode, 'label' | 'source_file' | 'node_kind' | 'framework_role'>[],
   executionSlice: ContextPackExecutionSlice | undefined,
   sliceMetadata: ContextPackSliceMetadata | undefined,
+  runtimeProofProfile?: RuntimeProofProfile,
 ): ContextPackRuntimeGenerationAnswerContract | undefined {
-  if (!runtimeGenerationExecutionSliceApplies(taskContract, retrievalGate, sliceMetadata) || !executionSlice) {
+  if (!runtimeGenerationExecutionSliceApplies(taskContract, retrievalGate, sliceMetadata, runtimeProofProfile) || !executionSlice) {
     return undefined
   }
 
@@ -3243,9 +3479,26 @@ function buildRuntimeGenerationAnswerContract(
     missing_phases: missingPhases,
   }
 
-  if (executionSlice.status === 'partial' || missingPhases.length > 0) {
+  const runtimeProof = buildRuntimeProofAssessment(
+    runtimeProofProfile,
+    [
+      ...executionSlice.steps.map((step) => runtimeProofCandidateFromExecutionStep(step)),
+      ...(executionSlice.side_effects ?? []).flatMap((branch) => branch.steps.map((step) => runtimeProofCandidateFromExecutionStep(step))),
+      ...(executionSlice.terminal_boundaries ?? []).flatMap((branch) => branch.steps.map((step) => runtimeProofCandidateFromExecutionStep(step))),
+    ],
+  )
+  if (runtimeProof) {
+    answerContract.runtime_proof = runtimeProof
+  }
+
+  const missingRuntimeObligations = runtimeProof?.missing_obligations
+    .map((obligationId) => runtimeProofProfile?.obligations.find((obligation) => obligation.id === obligationId)?.label ?? obligationId)
+    ?? []
+  if (executionSlice.status === 'partial' || missingPhases.length > 0 || missingRuntimeObligations.length > 0) {
     answerContract.uncertainty_notes = [
-      missingPhases.length > 0
+      missingRuntimeObligations.length > 0
+        ? `Do not infer unobserved runtime obligations; if the full flow is requested, answer: not enough evidence; missing ${missingRuntimeObligations.join(', ')}`
+        : missingPhases.length > 0
         ? `Do not infer unobserved runtime phases; if the full flow is requested, answer: not enough evidence; missing ${missingPhases.join(', ')}`
         : 'Do not infer unobserved runtime phases; if the full flow is requested, answer: not enough evidence.',
     ]
@@ -3265,9 +3518,10 @@ function buildExecutionSlice(
   retrievalGate: RetrievalGateDecision,
   question: string,
   sliceMetadata: ContextPackSliceMetadata | undefined,
+  runtimeProofProfile?: RuntimeProofProfile,
   rootPath?: string,
 ): ContextPackExecutionSlice | undefined {
-  if (!runtimeGenerationExecutionSliceApplies(taskContract, retrievalGate, sliceMetadata) || !sliceMetadata) {
+  if (!runtimeGenerationExecutionSliceApplies(taskContract, retrievalGate, sliceMetadata, runtimeProofProfile) || !sliceMetadata) {
     return undefined
   }
 
@@ -3289,7 +3543,7 @@ function buildExecutionSlice(
   const anchorIds = sliceMetadata.anchors
     .map((anchor) => resolveNodeId(anchor.node_id, anchor.label))
     .filter((nodeId): nodeId is string => typeof nodeId === 'string')
-  const { orderedIds, idSet } = collectExecutionSliceScope(graph, sliceMetadata, anchorIds, question, resolveNodeId)
+  const { orderedIds, idSet } = collectExecutionSliceScope(graph, sliceMetadata, anchorIds, question, resolveNodeId, runtimeProofProfile)
   if (orderedIds.length === 0) {
     return {
       status: 'partial',
@@ -3304,7 +3558,7 @@ function buildExecutionSlice(
     orderedIds
       .map((nodeId) => [nodeId, executionSliceStepFromGraph(graph, nodeId, rootPath)] as const),
   )
-  const startId = pickExecutionSliceStart(graph, anchorIds, orderedIds, idSet, nodeById, question)
+  const startId = pickExecutionSliceStart(graph, anchorIds, orderedIds, idSet, nodeById, question, runtimeProofProfile)
   if (!startId) {
     return {
       status: 'partial',
@@ -3322,7 +3576,7 @@ function buildExecutionSlice(
     edges: [] as ExecutionFlowEdge[],
   }]
   const primaryPath = primaryPathCandidates.sort((left, right) =>
-    executionPathScore(right, nodeById, question) - executionPathScore(left, nodeById, question)
+    executionPathScore(right, nodeById, question, runtimeProofProfile) - executionPathScore(left, nodeById, question, runtimeProofProfile)
   )[0]!
 
   const steps = primaryPath.nodeIds
@@ -3340,7 +3594,14 @@ function buildExecutionSlice(
     ...branches.omittedEvidenceSteps,
   ]
   const phaseCoverage = phaseCoverageForPath(steps, boundaries, question, scopeSteps, tracedSteps)
-  const missingPhase = phaseCoverage.missing[0]
+  const runtimeProof = buildRuntimeProofAssessment(
+    runtimeProofProfile,
+    tracedSteps.map((step) => runtimeProofCandidateFromExecutionStep(step)),
+  )
+  const runtimeProofComplete = runtimeProofProfile?.strict_runtime_proof === true
+    && runtimeProof !== undefined
+    && runtimeProof.missing_obligations.length === 0
+  const missingPhase = runtimeProofComplete ? undefined : phaseCoverage.missing[0]
   const boundaryReason = missingPhase ? missingExecutionPhaseBoundaryReason(missingPhase) : undefined
   const executionSlice: ContextPackExecutionSlice = {
     status: missingPhase ? 'partial' : 'complete',
@@ -3974,7 +4235,15 @@ function buildRetrieveResultFromOrderedCandidates(
     bridge_nodes: [...new Set(orderedCandidates.map((node) => node.label).filter((label) => retrieveGraphSignals.bridgeNodeLabels.has(label)))],
   }
   const structuralIds = structuralSliceNodeIds(sliceMetadata, orderedCandidates, options.question)
-  const executionSlice = buildExecutionSlice(graph, taskContract, retrievalGate, options.question, sliceMetadata, rootPath)
+  const executionSlice = buildExecutionSlice(
+    graph,
+    taskContract,
+    retrievalGate,
+    options.question,
+    sliceMetadata,
+    options.runtimeProofProfile,
+    rootPath,
+  )
   const nodeCandidates: Array<ContextPackNodeCandidate<ContextPackNode>> = orderedCandidates.map((node) => {
     let builtEntry: RetrieveMatchedNode | undefined
     let tokenCost: number | undefined
@@ -4084,6 +4353,7 @@ function buildRetrieveResultFromOrderedCandidates(
     matchedNodes,
     executionSlice,
     sliceMetadata,
+    options.runtimeProofProfile,
   )
 
   return {
@@ -4637,6 +4907,7 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
     : frameworkOrderedCandidates.filter((node) => node.relevanceBand !== 'peripheral')
 
   if (options.retrievalStrategy === 'slice-v1') {
+    const strictRuntimeProof = options.runtimeProofProfile?.strict_runtime_proof === true
     const sliced = sliceCandidatesForRetrieve(
       graph,
       scored.map((node) => ({
@@ -4653,8 +4924,9 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
       retrievalGate.intent,
       {
         prompt: question,
-        generationIntent: retrievalGate.signals.generation_intent,
-        targetDomainHint: retrievalGate.signals.target_domain_hint,
+        generationIntent: strictRuntimeProof ? 'runtime_generation' : retrievalGate.signals.generation_intent,
+        targetDomainHint: strictRuntimeProof ? 'backend_runtime' : retrievalGate.signals.target_domain_hint,
+        runtimeProofProfile: options.runtimeProofProfile,
         mentionedSymbols: retrievalGate.signals.mentioned_symbols,
         excludedDomains: retrievalGate.signals.excluded_domains,
         excludedTerms: retrievalGate.signals.excluded_terms,
@@ -4671,6 +4943,7 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
         sliced.metadata,
         retrievalGate,
         options.question,
+        options.runtimeProofProfile,
       )
       const orderedSliceIds = augmentSliceCandidateIdsForDebug(graph, runtimeExpandedSliceIds, sliced.metadata)
       const sliceCandidates = orderedSliceIds.map((nodeId, index) => (

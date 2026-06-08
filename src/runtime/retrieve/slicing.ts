@@ -9,8 +9,10 @@ import type {
   RetrievalIntent,
   RetrievalTargetDomainHint,
 } from '../../contracts/retrieval-gate.js'
+import type { RuntimeProofProfile } from '../../contracts/runtime-proof.js'
 import { classifySourceDomain, isPollutedSourcePath } from '../../shared/source-discovery.js'
 import { relativizeSourceFile } from '../../shared/source-path.js'
+import { runtimeProofAnchorBonus } from '../runtime-proof.js'
 
 export interface SliceScoredNode {
   id: string
@@ -28,6 +30,7 @@ interface SliceOptions {
   prompt?: string | undefined
   generationIntent?: RetrievalGenerationIntent | undefined
   targetDomainHint?: RetrievalTargetDomainHint | undefined
+  runtimeProofProfile?: RuntimeProofProfile | undefined
   mentionedSymbols?: readonly string[] | undefined
   excludedDomains?: readonly string[] | undefined
   excludedTerms?: readonly string[] | undefined
@@ -440,6 +443,22 @@ function buildAnchors(scored: readonly SliceScoredNode[], options: SliceOptions)
       .sort((left, right) => right.value - left.value || right.node.score - left.node.score)
       .map((entry) => entry.node)
     : []
+  const runtimeProofAnchors = options.runtimeProofProfile?.strict_runtime_proof
+    ? scored
+      .filter((node) => !isBarrelLike(node.label, node.sourceFile) && !frontendDisplayLikeNode(node))
+      .map((node) => ({
+        node,
+        value: runtimeProofAnchorBonus({
+          label: node.label,
+          source_file: node.sourceFile,
+          node_kind: node.nodeKind,
+          framework_role: node.frameworkRole,
+        }, options.runtimeProofProfile) + runtimeGenerationAnchorValue(node),
+      }))
+      .filter((entry) => entry.value > 0)
+      .sort((left, right) => right.value - left.value || right.node.score - left.node.score)
+      .map((entry) => entry.node)
+    : []
   const intentAnchors = (() => {
     if (options.generationIntent === 'runtime_generation' && options.targetDomainHint === 'backend_runtime') {
       return matchedAnchors
@@ -467,6 +486,8 @@ function buildAnchors(scored: readonly SliceScoredNode[], options: SliceOptions)
     anchorPool = exactMethodAnchors.slice(0, 1)
   } else if (explicitPathAnchor) {
     anchorPool = [explicitPathAnchor]
+  } else if (runtimeProofAnchors.length > 0) {
+    anchorPool = runtimeProofAnchors.slice(0, broadRuntimeGeneration ? 2 : 1)
   } else if (broadRuntimeGeneration && reportGenerationPrompt && semanticCoreAnchors.length > 0) {
     const primaryRuntimeAnchor = routePromptAnchors[0]
       ?? intentAnchors[0]

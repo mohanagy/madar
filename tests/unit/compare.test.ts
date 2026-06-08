@@ -4985,6 +4985,216 @@ describe('assessBenchmarkReadinessFromRetrieveResult', () => {
     })
   })
 
+  it('treats complete non-SPI runtime-proof benchmark rows as ready when every obligation has direct evidence', () => {
+    const readiness = (assessBenchmarkReadinessFromRetrieveResult as (input: any) => ReturnType<typeof assessBenchmarkReadinessFromRetrieveResult>)({
+      graphPath: '/repo/out/graph.json',
+      runtimeProofProfile: {
+        prompt: 'How does Dub resolve a short-link click from request handling through analytics tracking and destination redirect?',
+        strict_runtime_proof: true,
+        expected_spi: false,
+        obligations: [
+          { id: 'request_handling', label: 'request handling', kind: 'entrypoint', evidence_terms: ['route', 'handler'] },
+          { id: 'analytics_tracking', label: 'analytics tracking', kind: 'terminal', evidence_terms: ['analytics', 'track'] },
+          { id: 'destination_redirect', label: 'destination redirect', kind: 'terminal', evidence_terms: ['redirect', 'destination'] },
+        ],
+      },
+      retrieval: makeRuntimeGenerationRetrieval({
+        question: 'How does Dub resolve a short-link click from request handling through analytics tracking and destination redirect?',
+        matched_nodes: [
+          {
+            label: 'GET /:domain/:key',
+            source_file: 'apps/web/links/route.ts',
+            line_number: 10,
+            file_type: 'code',
+            snippet: null,
+            match_score: 18,
+            relevance_band: 'direct',
+            community: null,
+            community_label: null,
+          },
+          {
+            label: 'recordLinkAnalytics',
+            source_file: 'lib/analytics/clicks.ts',
+            line_number: 42,
+            file_type: 'code',
+            snippet: null,
+            match_score: 17,
+            relevance_band: 'direct',
+            community: null,
+            community_label: null,
+          },
+          {
+            label: 'destinationRedirect',
+            source_file: 'apps/web/links/redirect.ts',
+            line_number: 78,
+            file_type: 'code',
+            snippet: null,
+            match_score: 16,
+            relevance_band: 'direct',
+            community: null,
+            community_label: null,
+          },
+        ],
+        execution_slice: {
+          status: 'complete',
+          confidence: 'high',
+          confidence_reasons: ['expected_obligations_covered'],
+          steps: [
+            {
+              label: 'GET /:domain/:key',
+              source_file: 'apps/web/links/route.ts',
+              line_number: 10,
+              node_kind: 'route',
+            },
+            {
+              label: 'recordLinkAnalytics',
+              source_file: 'lib/analytics/clicks.ts',
+              line_number: 42,
+              node_kind: 'method',
+            },
+            {
+              label: 'destinationRedirect',
+              source_file: 'apps/web/links/redirect.ts',
+              line_number: 78,
+              node_kind: 'method',
+            },
+          ],
+          phase_coverage: {
+            expected: ['controller', 'service', 'notification_or_event'],
+            observed: ['controller', 'service', 'notification_or_event'],
+            missing: [],
+          },
+        },
+        answer_contract: {
+          version: 1,
+          answer_focus: 'runtime_generation',
+          entrypoint_scope: 'setup_context',
+          required_elements: ['main_pipeline_phases'],
+          do_not_claim: [],
+          observed_phases: ['controller', 'service', 'notification_or_event'],
+          missing_phases: [],
+          confidence: 'high',
+          runtime_proof: {
+            obligations: [
+              {
+                id: 'request_handling',
+                label: 'request handling',
+                kind: 'entrypoint',
+                required: true,
+                evidence: [{ label: 'GET /:domain/:key', source_file: 'apps/web/links/route.ts', line_number: 10 }],
+              },
+              {
+                id: 'analytics_tracking',
+                label: 'analytics tracking',
+                kind: 'terminal',
+                required: true,
+                evidence: [{ label: 'recordLinkAnalytics', source_file: 'lib/analytics/clicks.ts', line_number: 42 }],
+              },
+              {
+                id: 'destination_redirect',
+                label: 'destination redirect',
+                kind: 'terminal',
+                required: true,
+                evidence: [{ label: 'destinationRedirect', source_file: 'apps/web/links/redirect.ts', line_number: 78 }],
+              },
+            ],
+            missing_obligations: [],
+          },
+        } as any,
+      } as any),
+    })
+
+    expect(readiness).toEqual({
+      status: 'ready',
+      reasons: [],
+      suggested_graph_scope: null,
+    })
+  })
+
+  it('fails non-SPI runtime-proof benchmark rows closed when a required terminal obligation is still missing', () => {
+    const readiness = (assessBenchmarkReadinessFromRetrieveResult as (input: any) => ReturnType<typeof assessBenchmarkReadinessFromRetrieveResult>)({
+      graphPath: '/repo/out/graph.json',
+      runtimeProofProfile: {
+        prompt: 'How does Dub resolve a short-link click from request handling through analytics tracking and destination redirect?',
+        strict_runtime_proof: true,
+        expected_spi: false,
+        obligations: [
+          { id: 'request_handling', label: 'request handling', kind: 'entrypoint', evidence_terms: ['route', 'handler'] },
+          { id: 'analytics_tracking', label: 'analytics tracking', kind: 'terminal', evidence_terms: ['analytics', 'track'] },
+          { id: 'destination_redirect', label: 'destination redirect', kind: 'terminal', evidence_terms: ['redirect', 'destination'] },
+        ],
+      },
+      retrieval: makeRuntimeGenerationRetrieval({
+        question: 'How does Dub resolve a short-link click from request handling through analytics tracking and destination redirect?',
+        execution_slice: {
+          status: 'complete',
+          confidence: 'high',
+          confidence_reasons: ['entrypoint_and_analytics_found'],
+          steps: [
+            {
+              label: 'GET /:domain/:key',
+              source_file: 'apps/web/links/route.ts',
+              line_number: 10,
+              node_kind: 'route',
+            },
+            {
+              label: 'recordLinkAnalytics',
+              source_file: 'lib/analytics/clicks.ts',
+              line_number: 42,
+              node_kind: 'method',
+            },
+          ],
+          phase_coverage: {
+            expected: ['controller', 'service'],
+            observed: ['controller', 'service'],
+            missing: [],
+          },
+        },
+        answer_contract: {
+          version: 1,
+          answer_focus: 'runtime_generation',
+          entrypoint_scope: 'setup_context',
+          required_elements: ['main_pipeline_phases'],
+          do_not_claim: [],
+          observed_phases: ['controller', 'service'],
+          missing_phases: [],
+          confidence: 'high',
+          runtime_proof: {
+            obligations: [
+              {
+                id: 'request_handling',
+                label: 'request handling',
+                kind: 'entrypoint',
+                required: true,
+                evidence: [{ label: 'GET /:domain/:key', source_file: 'apps/web/links/route.ts', line_number: 10 }],
+              },
+              {
+                id: 'analytics_tracking',
+                label: 'analytics tracking',
+                kind: 'terminal',
+                required: true,
+                evidence: [{ label: 'recordLinkAnalytics', source_file: 'lib/analytics/clicks.ts', line_number: 42 }],
+              },
+              {
+                id: 'destination_redirect',
+                label: 'destination redirect',
+                kind: 'terminal',
+                required: true,
+                evidence: [],
+              },
+            ],
+            missing_obligations: ['destination_redirect'],
+          },
+        } as any,
+      } as any),
+    })
+
+    expect(readiness.status).toBe('not_ready')
+    expect(readiness.reasons).toEqual(expect.arrayContaining([
+      'missing runtime proof obligations: destination redirect',
+    ]))
+  })
+
   it('keeps non-SPI app-file runtime packs flagged as missing SPI evidence', () => {
     const graphPath = writeReadinessGraphFixture({
       graphFixtureRoot: join(PROJECT_FIXTURE_ROOT, 'backend', 'out'),
