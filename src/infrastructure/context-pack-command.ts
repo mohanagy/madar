@@ -424,6 +424,7 @@ function compactAnswerReadyPack(pack: JsonRecord, trimmedFields: string[]): void
     }
   }
 
+  preserveTrimmedRuntimeEntrypointContextPreview(pack, trimmedFields)
   trimArrayField(pack, 'matched_nodes', ANSWER_READY_MATCHED_NODE_CAP, trimmedFields)
   trimArrayField(pack, 'relationships', ANSWER_READY_RELATIONSHIP_CAP, trimmedFields)
   trimArrayField(pack, 'community_context', ANSWER_READY_COMMUNITY_CAP, trimmedFields)
@@ -640,6 +641,85 @@ function preserveTrimmedRuntimePrimaryPathPreview(pack: JsonRecord, trimmedField
   trimmedFields.push('pack.matched_nodes.primary_path_promoted_to_expandable')
 }
 
+function preserveTrimmedRuntimeEntrypointContextPreview(pack: JsonRecord, trimmedFields: string[]): void {
+  const executionSlice = asJsonRecord(pack.execution_slice)
+  const primaryPath = executionSlice ? asJsonRecord(executionSlice.primary_path) : null
+  const primarySteps = primaryPath ? asUnknownArray(primaryPath.steps) : []
+  const matchedNodes = asUnknownArray(pack.matched_nodes)
+  if (primarySteps.length === 0 || matchedNodes.length <= ANSWER_READY_MATCHED_NODE_CAP) {
+    return
+  }
+
+  const entryStep = asJsonRecord(primarySteps[0])
+  const entrySourceFile = typeof entryStep?.source_file === 'string' ? entryStep.source_file : null
+  const entryLabel = typeof entryStep?.label === 'string' ? entryStep.label : null
+  if (!entrySourceFile || !entryLabel) {
+    return
+  }
+
+  const keptKeys = new Set(
+    matchedNodes
+      .slice(0, ANSWER_READY_MATCHED_NODE_CAP)
+      .flatMap((node) => {
+        const key = runtimePrimaryPathRecordKey(asJsonRecord(node))
+        return key ? [key] : []
+      }),
+  )
+  const existingPreviewKeys = new Set(
+    asUnknownArray(pack.expandable).flatMap((entry) => {
+      const record = asJsonRecord(entry)
+      return asUnknownArray(record?.preview).flatMap((preview) => {
+        const key = runtimePrimaryPathRecordKey(asJsonRecord(preview))
+        return key ? [key] : []
+      })
+    }),
+  )
+
+  const preview = matchedNodes
+    .map((node) => asJsonRecord(node))
+    .filter((record): record is JsonRecord => record !== null)
+    .flatMap((record): JsonRecord[] => {
+      const key = runtimePrimaryPathRecordKey(record)
+      if (!key || keptKeys.has(key) || existingPreviewKeys.has(key)) {
+        return []
+      }
+      if (record.source_file !== entrySourceFile || record.label === entryLabel) {
+        return []
+      }
+      if (record.node_kind === 'class') {
+        return []
+      }
+      if (typeof record.label === 'string' && /^(?:get|post|put|patch|delete|head|options)\(\)$/i.test(record.label)) {
+        return []
+      }
+      const entry = runtimePrimaryPathPreviewEntry(record)
+      return entry ? [entry] : []
+    })
+    .slice(0, 2)
+
+  if (preview.length === 0) {
+    return
+  }
+
+  const expandable = asUnknownArray(pack.expandable)
+  expandable.unshift({
+    kind: 'nodes',
+    handle_id: 'runtime-entry-context',
+    evidence_class: 'supporting',
+    count: preview.length,
+    preview,
+    follow_up: {
+      kind: 'context_pack',
+      task_kind: 'explain',
+      evidence_class: 'supporting',
+      focus_files: [entrySourceFile],
+      focus_ranges: [],
+    },
+  })
+  pack.expandable = expandable
+  trimmedFields.push('pack.matched_nodes.entry_context_promoted_to_expandable')
+}
+
 function preserveFinalRuntimePrimaryPathPreview(
   payload: JsonRecord,
   pack: JsonRecord,
@@ -718,6 +798,81 @@ function preserveFinalRuntimePrimaryPathPreview(
   })
   payload.expandable = expandable
   trimmedFields.push(`pack.matched_nodes.primary_path_promoted_to_expandable_${matchedNodeCap}`)
+}
+
+function preserveFinalRuntimeEntrypointContextPreview(
+  payload: JsonRecord,
+  pack: JsonRecord,
+  trimmedFields: string[],
+): void {
+  const executionSlice = asJsonRecord(pack.execution_slice)
+  const primaryPath = executionSlice ? asJsonRecord(executionSlice.primary_path) : null
+  const primarySteps = primaryPath ? asUnknownArray(primaryPath.steps) : []
+  const entryStep = asJsonRecord(primarySteps[0])
+  const entrySourceFile = typeof entryStep?.source_file === 'string' ? entryStep.source_file : null
+  const entryLabel = typeof entryStep?.label === 'string' ? entryStep.label : null
+  if (!entrySourceFile || !entryLabel) {
+    return
+  }
+
+  const matchedNodes = asUnknownArray(pack.matched_nodes)
+  if (matchedNodes.length === 0) {
+    return
+  }
+
+  const existingPreviewKeys = new Set(
+    asUnknownArray(payload.expandable).flatMap((entry) => {
+      const record = asJsonRecord(entry)
+      return asUnknownArray(record?.preview).flatMap((preview) => {
+        const key = runtimePrimaryPathRecordKey(asJsonRecord(preview))
+        return key ? [key] : []
+      })
+    }),
+  )
+
+  const preview = matchedNodes
+    .map((node) => asJsonRecord(node))
+    .filter((record): record is JsonRecord => record !== null)
+    .flatMap((record): JsonRecord[] => {
+      const key = runtimePrimaryPathRecordKey(record)
+      if (!key || existingPreviewKeys.has(key)) {
+        return []
+      }
+      if (record.source_file !== entrySourceFile || record.label === entryLabel) {
+        return []
+      }
+      if (record.node_kind === 'class') {
+        return []
+      }
+      if (typeof record.label === 'string' && /^(?:get|post|put|patch|delete|head|options)\(\)$/i.test(record.label)) {
+        return []
+      }
+      const entry = runtimePrimaryPathPreviewEntry(record)
+      return entry ? [entry] : []
+    })
+    .slice(0, 2)
+
+  if (preview.length === 0) {
+    return
+  }
+
+  const expandable = asUnknownArray(payload.expandable)
+  expandable.unshift({
+    kind: 'nodes',
+    handle_id: 'runtime-entry-context',
+    evidence_class: 'supporting',
+    count: preview.length,
+    preview,
+    follow_up: {
+      kind: 'context_pack',
+      task_kind: 'explain',
+      evidence_class: 'supporting',
+      focus_files: [entrySourceFile],
+      focus_ranges: [],
+    },
+  })
+  payload.expandable = expandable
+  trimmedFields.push('pack.matched_nodes.entry_context_promoted_to_expandable')
 }
 
 function removeMatchedNode(pack: JsonRecord, key: string, trimmedFields: string[]): JsonRecord | null {
@@ -853,6 +1008,7 @@ function enforceAnswerReadyBudget(
       summary.droppedWorkflowSpine = true
     }
     preserveFinalRuntimePrimaryPathPreview(payload, pack, asUnknownArray(pack.matched_nodes).length, trimmedFields)
+    preserveFinalRuntimeEntrypointContextPreview(payload, pack, trimmedFields)
   }
 
   upsertPackCulledWarning(payload, summary.droppedNodeIds)
@@ -1088,6 +1244,7 @@ export function buildExplainPackPayload(
 export function buildExplainPackPayloadCore(
   pack: ReturnType<typeof compactRetrieveResult>,
   retrieval: Partial<{
+    matched_nodes: RetrieveResult['matched_nodes']
     question: string
     coverage: ContextPackCoverage
     task_contract: { budget: number; task_intent?: string; evidence_recipe_id?: string }
@@ -1098,6 +1255,15 @@ export function buildExplainPackPayloadCore(
   graphPath?: string,
 ): ExplainPackPayload {
   const payload = buildExplainPackPayload(pack, retrieval, implementation)
+  const entrypointExpandable = runtimeGenerationEntrypointExpandable('explain', pack, retrieval)
+  if (entrypointExpandable) {
+    const existingLabels = new Set(
+      payload.expandable.flatMap((entry) => entry.preview.map((preview) => preview.label)),
+    )
+    if (entrypointExpandable.preview.some((preview) => !existingLabels.has(preview.label))) {
+      payload.expandable = [entrypointExpandable, ...payload.expandable]
+    }
+  }
   const plan = buildTaskContextPlan({
     task_kind: 'explain',
     prompt: retrieval.question,
@@ -1273,6 +1439,57 @@ function runtimeGenerationExecutionSpine(
   }
 
   return []
+}
+
+function runtimeGenerationEntrypointExpandable(
+  task: TaskContextPlan['task_kind'],
+  pack: PackPayload,
+  retrieval?: Partial<Pick<RetrieveResult, 'matched_nodes' | 'execution_slice' | 'retrieval_gate'>>,
+): ContextPackExpandableRef | undefined {
+  const executionSpine = runtimeGenerationExecutionSpine(task, pack, retrieval as RetrieveResult | undefined)
+  const entryStep = executionSpine[0]
+  if (!entryStep?.source_file) {
+    return undefined
+  }
+
+  const matchedNodes = Array.isArray(retrieval?.matched_nodes) ? retrieval.matched_nodes : []
+  const preview = matchedNodes
+    .filter((node) =>
+      node.source_file === entryStep.source_file
+      && node.label !== entryStep.label
+      && node.node_kind !== 'class'
+      && !/^(?:get|post|put|patch|delete|head|options)\(\)$/i.test(node.label)
+    )
+    .sort((left, right) => right.match_score - left.match_score || left.label.localeCompare(right.label))
+    .slice(0, 2)
+    .map((node) => ({
+      ...(typeof node.node_id === 'string' ? { node_id: node.node_id } : {}),
+      label: node.label,
+      source_file: node.source_file,
+      line_range: {
+        start_line: node.line_number,
+        end_line: node.line_number,
+      },
+    }))
+
+  if (preview.length === 0) {
+    return undefined
+  }
+
+  return {
+    kind: 'nodes',
+    handle_id: 'runtime-entry-context',
+    evidence_class: 'supporting',
+    count: preview.length,
+    preview,
+    follow_up: {
+      kind: 'context_pack',
+      task_kind: 'explain',
+      evidence_class: 'supporting',
+      focus_files: [entryStep.source_file],
+      focus_ranges: [],
+    },
+  }
 }
 
 function workflowCenters(

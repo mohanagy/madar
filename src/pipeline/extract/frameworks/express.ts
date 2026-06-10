@@ -3,7 +3,7 @@ import { basename, dirname, extname, resolve } from 'node:path'
 
 import * as ts from 'typescript'
 
-import { addNode, addUniqueEdge, createEdge, createNode, _makeId } from '../core.js'
+import { addNode, addUniqueEdge, createEdge, createNode, fileStemForPath, _makeId } from '../core.js'
 import type { ExtractionFragment } from '../dispatch.js'
 import { unparenthesizeExpression } from '../typescript-utils.js'
 import type { JsFrameworkAdapter, JsFrameworkContext } from './types.js'
@@ -66,6 +66,7 @@ interface MountRecord {
 
 interface ExpressModuleAnalysis {
   sourceText: string
+  stem: string
   exportedBindings: Map<string, ImportedBindingTarget>
   routeRecords: RouteRecord[]
 }
@@ -90,7 +91,7 @@ function expressEntityId(filePath: string, bindingName: string): string {
 }
 
 function moduleStem(filePath: string): string {
-  return basename(filePath, extname(filePath))
+  return fileStemForPath(filePath)
 }
 
 function functionNodeId(filePath: string, bindingName: string): string {
@@ -547,13 +548,15 @@ function resolveLocalRouteAttachment(
 
 function analyzeExpressModule(filePath: string): ExpressModuleAnalysis {
   const sourceText = existsSync(filePath) && statSync(filePath).isFile() ? readFileSync(filePath, 'utf8') : ''
+  const stem = moduleStem(filePath)
   const cached = expressModuleAnalysisCache.get(filePath)
-  if (cached && cached.sourceText === sourceText) {
+  if (cached && cached.sourceText === sourceText && cached.stem === stem) {
     return cached
   }
 
   const analysis: ExpressModuleAnalysis = {
     sourceText,
+    stem,
     exportedBindings: new Map<string, ImportedBindingTarget>(),
     routeRecords: [],
   }

@@ -1,0 +1,497 @@
+{
+  "baseline_mode": "native_agent",
+  "task": "explain",
+  "question": "How does Documenso move a document from send preparation through recipient creation, signing state, and notification delivery?",
+  "graph_path": "<project-root>/out/graph.json",
+  "isolation": true,
+  "environment": {
+    "claude_code_version": "2.1.170",
+    "host_os": "darwin-arm64",
+    "node_version": "v22.22.3",
+    "mcp_servers_active": [
+      "madar"
+    ],
+    "mcp_server_count": 1,
+    "skills_loaded": [],
+    "skills_loaded_count": 0,
+    "plugins_active": [],
+    "user_claude_md_hash": "sha256:0cf98a0a8f9c27017a0bebc7b017fc17518d9103c62ca384da20b2776b0aade7",
+    "project_claude_md_hash": "sha256:f756cedc14b026ff7879bccec92865638324e29e05860c83d7858375465d0940",
+    "parent_claude_md_hashes": [],
+    "hooks_active": {
+      "user_prompt_submit": [
+        "project:command:*"
+      ],
+      "pre_tool_use": [],
+      "post_tool_use": []
+    }
+  },
+  "environment_contamination": {
+    "skills_activated_during_run": [],
+    "skills_conflicting_with_madar_rules": [],
+    "calls_to_other_mcps": {},
+    "subagent_dispatches_detected": 0,
+    "skill_alignment_score": 1
+  },
+  "exec_command": {
+    "command": null,
+    "placeholders": [
+      "{prompt_file}"
+    ],
+    "redacted": true
+  },
+  "baseline": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 5650,
+      "cache_creation_input_tokens": 82478,
+      "cache_read_input_tokens": 213502,
+      "output_tokens": 4251,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 82478,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 2397,
+          "cache_read_input_tokens": 55539,
+          "cache_creation_input_tokens": 2979,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 2979
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 301630,
+    "uncached_input_tokens_anthropic_exact": 88128,
+    "cached_input_tokens_anthropic_exact": 213502,
+    "total_cost_usd": 0.7573695,
+    "num_turns": 11,
+    "duration_ms": 80523,
+    "result_path": "<artifact-root>/baseline-answer.txt"
+  },
+  "madar": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 6130,
+      "cache_creation_input_tokens": 26877,
+      "cache_read_input_tokens": 92382,
+      "output_tokens": 2690,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 26877,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 1373,
+          "cache_read_input_tokens": 31850,
+          "cache_creation_input_tokens": 10945,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 10945
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 125389,
+    "uncached_input_tokens_anthropic_exact": 33007,
+    "cached_input_tokens_anthropic_exact": 92382,
+    "total_cost_usd": 0.31300025,
+    "num_turns": 4,
+    "duration_ms": 63359,
+    "result_path": "<artifact-root>/madar-answer.txt"
+  },
+  "install_verified": true,
+  "measurement_validity": "valid",
+  "trace_status": "trace_available",
+  "madar_mcp_call_count": 1,
+  "reductions": {
+    "input_tokens": 2.41,
+    "uncached_input_tokens": 2.67,
+    "cache_creation_input_tokens": 3.07,
+    "num_turns": 2.75,
+    "duration_ms": 1.27,
+    "cost_usd": 2.42
+  },
+  "token_regression": false,
+  "token_regression_reasons": [],
+  "prompt_token_source": {
+    "baseline": "anthropic_provider_reported",
+    "madar": "anthropic_provider_reported"
+  },
+  "provider_proof": {
+    "baseline": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "madar": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "reduction_basis": "provider_reported"
+  },
+  "started_at": "2026-06-10T07:07:54.963Z",
+  "completed_at": "2026-06-10T07:10:30.555Z",
+  "paths": {
+    "output_dir": "<artifact-root>",
+    "report": "<artifact-root>/report.json",
+    "share_safe_report": "<artifact-root>/report.share-safe.json",
+    "baseline_answer": "<artifact-root>/baseline-answer.txt",
+    "madar_answer": "<artifact-root>/madar-answer.txt",
+    "baseline_prompt": "<artifact-root>/baseline-prompt.txt",
+    "madar_prompt": "<artifact-root>/madar-prompt.txt",
+    "prompt_file": "<artifact-root>/madar-prompt.txt"
+  },
+  "benchmark_readiness": {
+    "status": "not_ready",
+    "reasons": [
+      "missing runtime proof obligations: send preparation",
+      "runtime slice confidence is medium"
+    ],
+    "suggested_graph_scope": null
+  },
+  "madar_trace": {
+    "source": "claude_messages_tool_use",
+    "summary": "3 tool calls across 3 turns",
+    "tool_call_count": 3,
+    "tool_calls_by_name": {
+      "mcp__madar__retrieve": 1,
+      "Read": 1,
+      "ToolSearch": 1
+    },
+    "per_turn": [
+      {
+        "turn": 3,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ],
+        "madar_tool_discovery_count": 1,
+        "madar_tool_discovery_tool_indexes": [
+          0
+        ]
+      },
+      {
+        "turn": 4,
+        "tool_call_count": 1,
+        "tools": [
+          "mcp__madar__retrieve"
+        ]
+      },
+      {
+        "turn": 7,
+        "tool_call_count": 1,
+        "tools": [
+          "Read"
+        ]
+      }
+    ],
+    "madar_mcp_call_count": 1,
+    "madar_mcp_calls_by_name": {
+      "mcp__madar__retrieve": 1
+    },
+    "first_madar_turn": 4,
+    "first_madar_tool_name": "mcp__madar__retrieve",
+    "pre_madar_broad_exploration_tool_call_count": 0,
+    "pre_madar_broad_exploration_tool_calls_by_name": {},
+    "context_pack_call_count": 0,
+    "focused_follow_up_tool_call_count": 1,
+    "broad_exploration_tool_call_count": 0,
+    "broad_exploration_tool_calls_by_name": {},
+    "exploration_outcome": "madar_invoked",
+    "exploration_summary": "Madar MCP invoked 1 time (mcp__madar__retrieve); 1 focused follow-up call; no broad exploration after the first Madar call."
+  },
+  "tool_call_counts": {
+    "baseline": {
+      "total": 10,
+      "Read": 7,
+      "Bash": 3,
+      "Glob": 0,
+      "Grep": 0,
+      "ToolSearch": 0,
+      "other": {}
+    },
+    "madar": {
+      "total": 3,
+      "Read": 1,
+      "Bash": 0,
+      "Glob": 0,
+      "Grep": 0,
+      "ToolSearch": 1,
+      "other": {
+        "retrieve": 1
+      }
+    }
+  },
+  "answer_contract": {
+    "version": 1,
+    "answer_focus": "runtime_generation",
+    "entrypoint_scope": "setup_context",
+    "required_elements": [
+      "main_pipeline_phases",
+      "missing_or_uncertain_phases"
+    ],
+    "do_not_claim": [
+      "direct_producer_to_worker_calls_without_enqueues_boundary",
+      "irrelevant_model_or_provider_details",
+      "full_runtime_certainty_when_slice_is_partial"
+    ],
+    "observed_phases": [
+      "notification_or_event"
+    ],
+    "missing_phases": [],
+    "runtime_proof": {
+      "obligations": [
+        {
+          "id": "send_preparation",
+          "label": "send preparation",
+          "kind": "handoff",
+          "required": true,
+          "evidence": []
+        },
+        {
+          "id": "recipient_creation",
+          "label": "recipient creation",
+          "kind": "handoff",
+          "required": true,
+          "evidence": [
+            {
+              "label": "createRecipientAuthOptions()",
+              "source_file": "server-only/recipient/set-document-recipients.ts",
+              "line_number": 147
+            }
+          ]
+        },
+        {
+          "id": "signing_state",
+          "label": "signing state",
+          "kind": "handoff",
+          "required": true,
+          "evidence": [
+            {
+              "label": "getIsRecipientsTurnToSign()",
+              "source_file": "server-only/recipient/get-is-recipient-turn.ts",
+              "line_number": 8
+            }
+          ]
+        },
+        {
+          "id": "notification_delivery",
+          "label": "notification delivery",
+          "kind": "terminal",
+          "required": true,
+          "evidence": [
+            {
+              "label": "createElement()",
+              "source_file": "server-only/document/send-pending-email.ts",
+              "line_number": 80
+            },
+            {
+              "label": "sendPendingEmail",
+              "source_file": "server-only/document/send-pending-email.ts",
+              "line_number": 21
+            }
+          ]
+        }
+      ],
+      "missing_obligations": [
+        "send_preparation"
+      ]
+    },
+    "uncertainty_notes": [
+      "Do not infer unobserved runtime obligations; if the full flow is requested, answer: not enough evidence; missing send preparation"
+    ],
+    "confidence": "medium"
+  },
+  "execution_slice": {
+    "status": "partial",
+    "confidence": "medium",
+    "confidence_reasons": [
+      "partial_runtime_path"
+    ],
+    "boundary_reason": "missing runtime proof obligation: send preparation",
+    "steps": [
+      {
+        "label": "createElement()",
+        "source_file": "send-pending-email.ts",
+        "line_number": 80
+      },
+      {
+        "label": "sendPendingEmail",
+        "source_file": "send-pending-email.ts",
+        "line_number": 21
+      },
+      {
+        "label": "completeDocumentWithToken",
+        "source_file": "complete-document-with-token.ts",
+        "line_number": 54
+      },
+      {
+        "label": "getIsRecipientsTurnToSign()",
+        "source_file": "get-is-recipient-turn.ts",
+        "line_number": 8
+      }
+    ],
+    "primary_path": {
+      "steps": [
+        {
+          "label": "createElement()",
+          "source_file": "send-pending-email.ts",
+          "line_number": 80
+        },
+        {
+          "label": "sendPendingEmail",
+          "source_file": "send-pending-email.ts",
+          "line_number": 21
+        },
+        {
+          "label": "completeDocumentWithToken",
+          "source_file": "complete-document-with-token.ts",
+          "line_number": 54
+        },
+        {
+          "label": "getIsRecipientsTurnToSign()",
+          "source_file": "get-is-recipient-turn.ts",
+          "line_number": 8
+        }
+      ],
+      "boundary_reason": "missing runtime proof obligation: send preparation"
+    },
+    "side_effects": [
+      {
+        "steps": [
+          {
+            "label": "unsafeBuildEnvelopeIdQuery",
+            "source_file": "envelope.ts",
+            "line_number": 50
+          }
+        ]
+      },
+      {
+        "steps": [
+          {
+            "label": "isRecipientEmailValidForSending",
+            "source_file": "recipients.ts",
+            "line_number": 111
+          }
+        ]
+      },
+      {
+        "steps": [
+          {
+            "label": "unsafeBuildEnvelopeIdQuery",
+            "source_file": "envelope.ts",
+            "line_number": 50
+          }
+        ]
+      },
+      {
+        "steps": [
+          {
+            "label": "createRecipientAuthOptions()",
+            "source_file": "set-document-recipients.ts",
+            "line_number": 147
+          }
+        ]
+      }
+    ],
+    "omitted_branches": [
+      {
+        "from": "sendPendingEmail",
+        "to": "getEmailContext",
+        "relation": "calls",
+        "reason": "low-value branch omitted from compact execution slice"
+      }
+    ],
+    "phase_coverage": {
+      "expected": [
+        "notification_or_event"
+      ],
+      "observed": [
+        "notification_or_event"
+      ],
+      "missing": []
+    }
+  },
+  "answer_quality": {
+    "gate": "documenso-explain-runtime",
+    "prompt": "How does Documenso move a document from send preparation through recipient creation, signing state, and notification delivery?",
+    "baseline": {
+      "passed": true,
+      "missing_required_terms": [],
+      "forbidden_terms_present": []
+    },
+    "madar": {
+      "passed": true,
+      "missing_required_terms": [],
+      "forbidden_terms_present": []
+    },
+    "required_concepts": [
+      "The answer should describe the runtime path instead of asking for tool approval."
+    ],
+    "answer_quality_notes": [
+      "Deterministic term checks are a publication gate, not a substitute for human review."
+    ],
+    "manual_review_notes": [
+      "Confirm the answer traces the send flow through signing state and notification delivery."
+    ]
+  },
+  "prompt_contract": {
+    "status": "followed",
+    "evidence": [
+      "started with retrieve and avoided disallowed exploration"
+    ]
+  },
+  "claim_assessment": {
+    "routing_efficiency": {
+      "status": "not_measured",
+      "evidence": [
+        "benchmark readiness is not_ready (missing runtime proof obligations: send preparation; runtime slice confidence is medium)"
+      ]
+    },
+    "token_reduction": {
+      "status": "not_measured",
+      "evidence": [
+        "benchmark readiness is not_ready (missing runtime proof obligations: send preparation; runtime slice confidence is medium)"
+      ]
+    }
+  },
+  "benchmark_outcome": {
+    "outcome": "not_measured",
+    "checks": {
+      "routing_tool_latency": "not_measured",
+      "token": "not_measured",
+      "fresh_token": "not_measured",
+      "cost": "not_measured",
+      "turns": "not_measured"
+    },
+    "evidence": [
+      "benchmark readiness is not_ready (missing runtime proof obligations: send preparation; runtime slice confidence is medium)"
+    ]
+  }
+}

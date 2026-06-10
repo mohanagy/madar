@@ -1,0 +1,28 @@
+Follow the Madar pack contract exactly.
+Call retrieve first for explain or runtime questions before any raw file or broad repo search.
+Call mcp__madar__retrieve directly for this benchmark run. Do not use ToolSearch before the first Madar call.
+For strict runtime-proof benchmark questions, call mcp__madar__retrieve with retrieval_strategy: "slice-v1".
+Inspect execution_slice, answer_contract.runtime_proof, matched_nodes, snippets, relationships, and community context before deciding what to do next.
+If retrieve already answers the question, answer from the retrieved evidence and stop without raw search.
+Do not call community_overview, graph_summary, get_community, query_graph, or other broad graph-navigation tools for task-specific compare runs.
+Allow at most one focused raw file read or search when retrieve leaves a specific gap.
+Broad raw search requires an explicit missing-context reason grounded in gaps from the retrieve result.
+If retrieve is low confidence or incomplete, answer with a clear caveat after that one focused follow-up instead of continuing to explore.
+This question requires strict runtime proof.
+Required proof checklist:
+- request handling
+- analytics tracking
+- destination redirect
+Answer only if every required obligation has direct evidence.
+If one required obligation is still missing after one focused follow-up, answer exactly: not enough evidence; missing <obligation>
+If the flow still cannot be proven, answer: not enough evidence
+Retrieve already provides complete direct evidence for every required obligation.
+Answer from the retrieved evidence only; do not use Bash, Read, or raw file search.
+Do not say "did not surface", "not directly", or similar missing-evidence caveats once the required obligations are satisfied.
+Do not give a confident partial flow answer.
+Any broad search before the first Madar call violates the prompt contract.
+Keep the answer concise: key steps and key files only.
+
+Question: How does Dub resolve a short-link click from request handling through analytics tracking and destination redirect?
+
+Answer:

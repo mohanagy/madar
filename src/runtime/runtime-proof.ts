@@ -13,14 +13,63 @@ export interface RuntimeProofCandidate {
   framework_role?: string | undefined
 }
 
+function runtimeProofCandidateIsFileLike(
+  candidate: Pick<RuntimeProofCandidate, 'label'>,
+): boolean {
+  return /(?:^|\/)[^/]+\.[cm]?[jt]sx?$/i.test(candidate.label)
+}
+
 function normalizeRuntimeProofText(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
 }
 
 function runtimeProofCandidateText(candidate: Pick<RuntimeProofCandidate, 'label' | 'source_file' | 'node_kind' | 'framework_role'>): string {
   return normalizeRuntimeProofText(
     `${candidate.label} ${candidate.source_file} ${candidate.node_kind ?? ''} ${candidate.framework_role ?? ''}`,
   )
+}
+
+function runtimeProofCandidateRawText(candidate: Pick<RuntimeProofCandidate, 'label' | 'source_file' | 'node_kind' | 'framework_role'>): string {
+  return `${candidate.label} ${candidate.source_file} ${candidate.node_kind ?? ''} ${candidate.framework_role ?? ''}`.toLowerCase()
+}
+
+function runtimeProofCandidateDirectText(
+  candidate: Pick<RuntimeProofCandidate, 'label' | 'node_kind' | 'framework_role'>,
+): string {
+  return normalizeRuntimeProofText(
+    `${candidate.label} ${candidate.node_kind ?? ''} ${candidate.framework_role ?? ''}`,
+  )
+}
+
+function runtimeProofCandidateDirectRawText(
+  candidate: Pick<RuntimeProofCandidate, 'label' | 'node_kind' | 'framework_role'>,
+): string {
+  return `${candidate.label} ${candidate.node_kind ?? ''} ${candidate.framework_role ?? ''}`.toLowerCase()
+}
+
+function runtimeProofPrefersLiteralTermMatch(term: string): boolean {
+  return /[()[\]{}\/._:-]/.test(term)
+}
+
+function runtimeProofTextMatchesTerm(
+  normalizedText: string,
+  rawText: string,
+  term: string,
+): boolean {
+  const trimmed = term.trim()
+  if (trimmed.length === 0) {
+    return false
+  }
+  if (runtimeProofPrefersLiteralTermMatch(trimmed)) {
+    return rawText.includes(trimmed.toLowerCase())
+  }
+  const normalized = normalizeRuntimeProofText(trimmed)
+  return normalized.length > 0 && normalizedText.includes(normalized)
 }
 
 function runtimeProofKindBonus(
@@ -30,7 +79,7 @@ function runtimeProofKindBonus(
   const text = runtimeProofCandidateText(candidate)
   switch (obligation.kind) {
     case 'entrypoint':
-      return /\b(?:route|controller|handler|resolver|endpoint|api)\b/.test(text) ? 4 : 0
+      return /\b(?:route|controller|handler|resolver|endpoint|api|middleware)\b/.test(text) ? 4 : 0
     case 'handoff':
       return /\b(?:service|workspace|orchestr|dispatch|process|apply|pipeline)\b/.test(text) ? 3 : 0
     case 'terminal':
@@ -38,14 +87,44 @@ function runtimeProofKindBonus(
   }
 }
 
+function runtimeProofHasEntrypointSignal(
+  candidate: Pick<RuntimeProofCandidate, 'label' | 'source_file' | 'node_kind' | 'framework_role'>,
+): boolean {
+  return /\b(?:route|controller|resolver|endpoint|api|middleware)\b/.test(runtimeProofCandidateDirectText(candidate))
+    || /(?:^|\/)(?:api|controllers?|routes?|middleware)(?:\/|$)|(?:^|\/)route\.[cm]?[jt]sx?$/i.test(candidate.source_file)
+    || /\b(?:route_handler|controller_route|express_handler|express_middleware|express_error_middleware)\b/.test(String(candidate.framework_role ?? ''))
+}
+
 function runtimeProofMatchedTermCount(
   candidate: Pick<RuntimeProofCandidate, 'label' | 'source_file' | 'node_kind' | 'framework_role'>,
   obligation: RuntimeProofProfileObligation,
 ): number {
-  const text = runtimeProofCandidateText(candidate)
+  return obligation.evidence_terms.filter((term) =>
+    runtimeProofTextMatchesTerm(
+      runtimeProofCandidateText(candidate),
+      runtimeProofCandidateRawText(candidate),
+      term,
+    )
+  ).length
+}
+
+export function runtimeProofObligationTermMatchCount(
+  candidate: Pick<RuntimeProofCandidate, 'label' | 'source_file' | 'node_kind' | 'framework_role'>,
+  obligation: RuntimeProofProfileObligation,
+): number {
+  return runtimeProofMatchedTermCount(candidate, obligation)
+}
+
+function runtimeProofMatchedDirectTermCount(
+  candidate: Pick<RuntimeProofCandidate, 'label' | 'node_kind' | 'framework_role'>,
+  obligation: RuntimeProofProfileObligation,
+): number {
   return obligation.evidence_terms.filter((term) => {
-    const normalized = normalizeRuntimeProofText(term)
-    return normalized.length > 0 && text.includes(normalized)
+    return runtimeProofTextMatchesTerm(
+      runtimeProofCandidateDirectText(candidate),
+      runtimeProofCandidateDirectRawText(candidate),
+      term,
+    )
   }).length
 }
 
@@ -59,25 +138,35 @@ export function runtimeProofObligationMatchScore(
 function runtimeProofHasDirectTerminalSignal(
   candidate: Pick<RuntimeProofCandidate, 'label' | 'source_file' | 'node_kind' | 'framework_role'>,
 ): boolean {
-  const text = runtimeProofCandidateText(candidate)
-  return /\b(?:persist|save|write|store|record|track|emit|event|publish|send|deliver|redirect|notification|webhook|repository|database|render|synthesis)\b/.test(text)
+  return /(?:^|[.#])(?:persist|save|write|store|record|track|emit|publish|send|deliver|redirect|notify|render|synth(?:esize|esis)|insert|upsert|create|execute)[A-Za-z_$\w]*\(?\)?$/i.test(candidate.label)
 }
 
 export function runtimeProofProvidesDirectEvidence(
   candidate: Pick<RuntimeProofCandidate, 'label' | 'source_file' | 'node_kind' | 'framework_role'>,
   obligation: RuntimeProofProfileObligation,
 ): boolean {
+  if (runtimeProofCandidateIsFileLike(candidate)) {
+    return false
+  }
   const matchedTerms = runtimeProofMatchedTermCount(candidate, obligation)
+  const matchedDirectTerms = runtimeProofMatchedDirectTermCount(candidate, obligation)
   if (matchedTerms === 0) {
     return false
   }
   switch (obligation.kind) {
     case 'entrypoint':
-      return matchedTerms >= 1
+      if (matchedDirectTerms === 0) {
+        return false
+      }
+      return runtimeProofHasEntrypointSignal(candidate)
     case 'handoff':
-      return matchedTerms >= 1 && runtimeProofObligationMatchScore(candidate, obligation) >= 4
+      if (matchedDirectTerms === 0) {
+        return false
+      }
+      return runtimeProofObligationMatchScore(candidate, obligation) >= 4
     case 'terminal':
-      return matchedTerms >= 2 && runtimeProofHasDirectTerminalSignal(candidate)
+      return runtimeProofHasDirectTerminalSignal(candidate)
+        && (matchedDirectTerms > 0 || runtimeProofObligationMatchScore(candidate, obligation) >= 4)
   }
 }
 

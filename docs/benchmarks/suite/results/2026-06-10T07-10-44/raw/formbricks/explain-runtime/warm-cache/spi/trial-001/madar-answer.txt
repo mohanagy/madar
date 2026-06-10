@@ -1,0 +1,19 @@
+All three runtime obligations now have direct evidence. Persistence is proven: `createResponseWithQuotaEvaluation` → `prisma.$transaction(tx => createResponse(...))`.
+
+## How Formbricks processes a survey response
+
+**1. Request handling** — `POST` in `app/api/v2/client/[workspaceId]/responses/route.ts:201` receives the client submission, runs `resolveClientApiIds()` (:204) to resolve workspace/survey context, validates, and calls `createResponseForRequest()` (:137).
+
+**2. Persistence** — `createResponseForRequest` invokes `createResponseWithQuotaEvaluation` in `app/api/client/[workspaceId]/responses/lib/response.ts:30`, which writes inside `prisma.$transaction` (:34): `createResponse(responseInput, tx)` saves the row, then `evaluateResponseQuotas()` (`modules/ee/quotas/lib/evaluation-service.ts:32`) applies quota logic within the same transaction. (Versioned variants exist under `v1`/`v2` client and management response libs.)
+
+**3. Analytics / event tracking** — after persistence, the flow hands off to `sendToPipeline` in `app/lib/pipelines.ts:5`, which reads `getJobsQueueingConfig` and enqueues onto the background job producer (`getBackgroundJobProducer()`) rather than calling workers directly. The pipeline path also drives `putResponseHandler` (`.../[responseId]/lib/put-response-handler.ts:217`) for follow-up updates.
+
+### Key files
+- `app/api/v2/client/[workspaceId]/responses/route.ts` — entrypoint (`POST`, `resolveClientApiIds`, `createResponseForRequest`)
+- `app/api/client/[workspaceId]/responses/lib/response.ts` — DB write (`createResponseWithQuotaEvaluation` → `prisma.$transaction` → `createResponse`)
+- `modules/ee/quotas/lib/evaluation-service.ts` — quota evaluation in-transaction
+- `app/lib/pipelines.ts` — `sendToPipeline`, background-job enqueue for events/analytics
+
+### Caveats
+- The pipeline boundary is an **enqueue**, not a direct producer→worker call; downstream webhook/integration/event consumers run asynchronously off the job queue and were not traced in this pass.
+- Slice confidence was low on the first pass; the persistence link was confirmed via one focused follow-up (medium confidence). Multiple versioned response routes (`v1`/`v2`, client/management) share this spine, so the exact path depends on the API version hit.

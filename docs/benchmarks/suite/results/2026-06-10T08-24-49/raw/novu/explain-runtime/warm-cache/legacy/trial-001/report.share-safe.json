@@ -1,0 +1,505 @@
+{
+  "baseline_mode": "native_agent",
+  "task": "explain",
+  "question": "How does Novu process a notification trigger from API entry through workflow orchestration to channel delivery?",
+  "graph_path": "<project-root>/out/graph.json",
+  "isolation": true,
+  "environment": {
+    "claude_code_version": "2.1.170",
+    "host_os": "darwin-arm64",
+    "node_version": "v22.22.3",
+    "mcp_servers_active": [
+      "madar"
+    ],
+    "mcp_server_count": 1,
+    "skills_loaded": [],
+    "skills_loaded_count": 0,
+    "plugins_active": [],
+    "user_claude_md_hash": "sha256:0cf98a0a8f9c27017a0bebc7b017fc17518d9103c62ca384da20b2776b0aade7",
+    "project_claude_md_hash": "sha256:f756cedc14b026ff7879bccec92865638324e29e05860c83d7858375465d0940",
+    "parent_claude_md_hashes": [],
+    "hooks_active": {
+      "user_prompt_submit": [
+        "project:command:*"
+      ],
+      "pre_tool_use": [],
+      "post_tool_use": []
+    }
+  },
+  "environment_contamination": {
+    "skills_activated_during_run": [],
+    "skills_conflicting_with_madar_rules": [],
+    "calls_to_other_mcps": {},
+    "subagent_dispatches_detected": 0,
+    "skill_alignment_score": 1
+  },
+  "exec_command": {
+    "command": null,
+    "placeholders": [
+      "{prompt_file}"
+    ],
+    "redacted": true
+  },
+  "baseline": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 5637,
+      "cache_creation_input_tokens": 57905,
+      "cache_read_input_tokens": 991847,
+      "output_tokens": 8732,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 57905,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 131,
+          "output_tokens": 2775,
+          "cache_read_input_tokens": 75716,
+          "cache_creation_input_tokens": 966,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 966
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 1055389,
+    "uncached_input_tokens_anthropic_exact": 63542,
+    "cached_input_tokens_anthropic_exact": 991847,
+    "total_cost_usd": 1.1315955,
+    "num_turns": 24,
+    "duration_ms": 220340,
+    "result_path": "<artifact-root>/baseline-answer.txt"
+  },
+  "madar": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 6133,
+      "cache_creation_input_tokens": 9358,
+      "cache_read_input_tokens": 60281,
+      "output_tokens": 1670,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 9358,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 3302,
+          "output_tokens": 976,
+          "cache_read_input_tokens": 24196,
+          "cache_creation_input_tokens": 1080,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 1080
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 75772,
+    "uncached_input_tokens_anthropic_exact": 15491,
+    "cached_input_tokens_anthropic_exact": 60281,
+    "total_cost_usd": 0.16203,
+    "num_turns": 3,
+    "duration_ms": 31075,
+    "result_path": "<artifact-root>/madar-answer.txt"
+  },
+  "install_verified": true,
+  "measurement_validity": "valid",
+  "trace_status": "trace_available",
+  "madar_mcp_call_count": 1,
+  "reductions": {
+    "input_tokens": 13.93,
+    "uncached_input_tokens": 4.1,
+    "cache_creation_input_tokens": 6.19,
+    "num_turns": 8,
+    "duration_ms": 7.09,
+    "cost_usd": 6.98
+  },
+  "token_regression": false,
+  "token_regression_reasons": [],
+  "prompt_token_source": {
+    "baseline": "anthropic_provider_reported",
+    "madar": "anthropic_provider_reported"
+  },
+  "provider_proof": {
+    "baseline": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "madar": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "reduction_basis": "provider_reported"
+  },
+  "started_at": "2026-06-10T08:33:01.805Z",
+  "completed_at": "2026-06-10T08:37:23.215Z",
+  "paths": {
+    "output_dir": "<artifact-root>",
+    "report": "<artifact-root>/report.json",
+    "share_safe_report": "<artifact-root>/report.share-safe.json",
+    "baseline_answer": "<artifact-root>/baseline-answer.txt",
+    "madar_answer": "<artifact-root>/madar-answer.txt",
+    "baseline_prompt": "<artifact-root>/baseline-prompt.txt",
+    "madar_prompt": "<artifact-root>/madar-prompt.txt",
+    "prompt_file": "<artifact-root>/madar-prompt.txt"
+  },
+  "benchmark_readiness": {
+    "status": "ready",
+    "reasons": [],
+    "suggested_graph_scope": null
+  },
+  "madar_trace": {
+    "source": "claude_messages_tool_use",
+    "summary": "2 tool calls across 2 turns",
+    "tool_call_count": 2,
+    "tool_calls_by_name": {
+      "mcp__madar__retrieve": 1,
+      "ToolSearch": 1
+    },
+    "per_turn": [
+      {
+        "turn": 2,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ],
+        "madar_tool_discovery_count": 1,
+        "madar_tool_discovery_tool_indexes": [
+          0
+        ]
+      },
+      {
+        "turn": 3,
+        "tool_call_count": 1,
+        "tools": [
+          "mcp__madar__retrieve"
+        ]
+      }
+    ],
+    "madar_mcp_call_count": 1,
+    "madar_mcp_calls_by_name": {
+      "mcp__madar__retrieve": 1
+    },
+    "first_madar_turn": 3,
+    "first_madar_tool_name": "mcp__madar__retrieve",
+    "pre_madar_broad_exploration_tool_call_count": 0,
+    "pre_madar_broad_exploration_tool_calls_by_name": {},
+    "context_pack_call_count": 0,
+    "focused_follow_up_tool_call_count": 0,
+    "broad_exploration_tool_call_count": 0,
+    "broad_exploration_tool_calls_by_name": {},
+    "exploration_outcome": "madar_invoked",
+    "exploration_summary": "Madar MCP invoked 1 time (mcp__madar__retrieve); no broad exploration after the first Madar call."
+  },
+  "tool_call_counts": {
+    "baseline": {
+      "total": 23,
+      "Read": 4,
+      "Bash": 19,
+      "Glob": 0,
+      "Grep": 0,
+      "ToolSearch": 0,
+      "other": {}
+    },
+    "madar": {
+      "total": 2,
+      "Read": 0,
+      "Bash": 0,
+      "Glob": 0,
+      "Grep": 0,
+      "ToolSearch": 1,
+      "other": {
+        "retrieve": 1
+      }
+    }
+  },
+  "answer_contract": {
+    "version": 1,
+    "answer_focus": "runtime_generation",
+    "entrypoint_scope": "setup_context",
+    "required_elements": [
+      "main_pipeline_phases"
+    ],
+    "do_not_claim": [
+      "direct_producer_to_worker_calls_without_enqueues_boundary",
+      "irrelevant_model_or_provider_details"
+    ],
+    "observed_phases": [
+      "notification_or_event"
+    ],
+    "missing_phases": [],
+    "runtime_proof": {
+      "obligations": [
+        {
+          "id": "api_entry",
+          "label": "API entry",
+          "kind": "entrypoint",
+          "required": true,
+          "evidence": [
+            {
+              "label": "triggerWorkflow()",
+              "source_file": "dashboard/src/api/workflows.ts",
+              "line_number": 97
+            },
+            {
+              "label": "getApiKeys()",
+              "source_file": "dashboard/src/api/environments.ts",
+              "line_number": 112
+            }
+          ]
+        },
+        {
+          "id": "workflow_orchestration",
+          "label": "workflow orchestration",
+          "kind": "handoff",
+          "required": true,
+          "evidence": [
+            {
+              "label": "triggerWorkflow()",
+              "source_file": "dashboard/src/api/workflows.ts",
+              "line_number": 97
+            }
+          ]
+        },
+        {
+          "id": "channel_delivery",
+          "label": "channel delivery",
+          "kind": "terminal",
+          "required": true,
+          "evidence": [
+            {
+              "label": "sendAgentTestEmail()",
+              "source_file": "dashboard/src/api/agents.ts",
+              "line_number": 448
+            },
+            {
+              "label": "sendAgentWelcomeMessage()",
+              "source_file": "dashboard/src/api/agents.ts",
+              "line_number": 635
+            },
+            {
+              "label": "sendWhatsAppTestTemplate()",
+              "source_file": "dashboard/src/api/agents.ts",
+              "line_number": 757
+            }
+          ]
+        }
+      ],
+      "missing_obligations": []
+    },
+    "confidence": "high"
+  },
+  "execution_slice": {
+    "status": "complete",
+    "confidence": "high",
+    "confidence_reasons": [
+      "explicit_anchor",
+      "orchestration_evidence",
+      "expected_phases_covered",
+      "terminal_effect_evidence"
+    ],
+    "steps": [
+      {
+        "label": "post()",
+        "source_file": "api.client.ts",
+        "line_number": 96
+      },
+      {
+        "label": "triggerWorkflow()",
+        "source_file": "workflows.ts",
+        "line_number": 97
+      }
+    ],
+    "primary_path": {
+      "steps": [
+        {
+          "label": "post()",
+          "source_file": "api.client.ts",
+          "line_number": 96
+        },
+        {
+          "label": "triggerWorkflow()",
+          "source_file": "workflows.ts",
+          "line_number": 97
+        }
+      ]
+    },
+    "side_effects": [
+      {
+        "steps": [
+          {
+            "label": "sendAgentTestEmail()",
+            "source_file": "agents.ts",
+            "line_number": 448
+          }
+        ]
+      },
+      {
+        "steps": [
+          {
+            "label": "sendAgentWelcomeMessage()",
+            "source_file": "agents.ts",
+            "line_number": 635
+          }
+        ]
+      },
+      {
+        "steps": [
+          {
+            "label": "sendWhatsAppTestTemplate()",
+            "source_file": "agents.ts",
+            "line_number": 757
+          }
+        ]
+      }
+    ],
+    "terminal_boundaries": [
+      {
+        "steps": [
+          {
+            "label": "request()",
+            "source_file": "api.client.ts",
+            "line_number": 28
+          },
+          {
+            "label": "get()",
+            "source_file": "api.client.ts",
+            "line_number": 94
+          },
+          {
+            "label": "getApiKeys()",
+            "source_file": "environments.ts",
+            "line_number": 112
+          }
+        ],
+        "boundary_reason": "branch terminates before rejoining the primary runtime path"
+      }
+    ],
+    "omitted_branches": [
+      {
+        "from": "post()",
+        "to": "createDomainRoute()",
+        "relation": "calls"
+      },
+      {
+        "from": "post()",
+        "to": "testDomainRoute()",
+        "relation": "calls"
+      },
+      {
+        "from": "post()",
+        "to": "regenerateApiKeys()",
+        "relation": "calls"
+      },
+      {
+        "from": "post()",
+        "to": "addAgentIntegration()",
+        "relation": "calls"
+      },
+      {
+        "from": "post()",
+        "to": "configureAgentWhatsAppWebhook()",
+        "relation": "calls"
+      },
+      {
+        "from": "post()",
+        "to": "configureTelegramAgentWebhook()",
+        "relation": "calls"
+      }
+    ],
+    "phase_coverage": {
+      "expected": [
+        "notification_or_event"
+      ],
+      "observed": [
+        "notification_or_event"
+      ],
+      "missing": []
+    }
+  },
+  "answer_quality": {
+    "gate": "novu-explain-runtime",
+    "prompt": "How does Novu process a notification trigger from API entry through workflow orchestration to channel delivery?",
+    "baseline": {
+      "passed": true,
+      "missing_required_terms": [],
+      "forbidden_terms_present": []
+    },
+    "madar": {
+      "passed": true,
+      "missing_required_terms": [],
+      "forbidden_terms_present": []
+    },
+    "required_concepts": [
+      "The answer should describe API entry, workflow orchestration, and channel delivery."
+    ],
+    "answer_quality_notes": [
+      "Publication requires a real answer, not a permission request."
+    ],
+    "manual_review_notes": [
+      "Confirm the answer traces orchestration through to delivery instead of stopping at the API surface."
+    ]
+  },
+  "prompt_contract": {
+    "status": "followed",
+    "evidence": [
+      "started with retrieve and avoided disallowed exploration"
+    ]
+  },
+  "claim_assessment": {
+    "routing_efficiency": {
+      "status": "improved",
+      "evidence": [
+        "tool calls decreased: baseline 23 → madar 2 (11.5x fewer)",
+        "latency improved: baseline 220340ms → madar 31075ms (7.09x faster)"
+      ]
+    },
+    "token_reduction": {
+      "status": "proven",
+      "evidence": [
+        "provider input decreased: baseline 1055389 → madar 75772 (13.93x less)"
+      ]
+    }
+  },
+  "benchmark_outcome": {
+    "outcome": "full_win",
+    "checks": {
+      "routing_tool_latency": "win",
+      "token": "win",
+      "fresh_token": "win",
+      "cost": "win",
+      "turns": "win"
+    },
+    "evidence": [
+      "routing/tool/latency win: tool calls 23 → 2, latency 220340ms → 31075ms",
+      "provider input win: baseline 1055389 → madar 75772",
+      "turns win: baseline 24 → madar 3",
+      "fresh_token win: baseline 63542 → madar 15491",
+      "cost win: baseline 1.1315955 → madar 0.16203"
+    ]
+  }
+}

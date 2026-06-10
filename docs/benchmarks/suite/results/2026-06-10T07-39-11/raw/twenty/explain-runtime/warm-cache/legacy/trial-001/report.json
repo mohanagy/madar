@@ -1,0 +1,506 @@
+{
+  "baseline_mode": "native_agent",
+  "task": "explain",
+  "question": "How does Twenty process a CRM record mutation from API handling through workspace services to persistence?",
+  "graph_path": "<project-root>/out/graph.json",
+  "isolation": true,
+  "environment": {
+    "claude_code_version": "2.1.170",
+    "host_os": "darwin-arm64",
+    "node_version": "v22.22.3",
+    "mcp_servers_active": [
+      "madar"
+    ],
+    "mcp_server_count": 1,
+    "skills_loaded": [],
+    "skills_loaded_count": 0,
+    "plugins_active": [],
+    "user_claude_md_hash": "sha256:0cf98a0a8f9c27017a0bebc7b017fc17518d9103c62ca384da20b2776b0aade7",
+    "project_claude_md_hash": "sha256:f756cedc14b026ff7879bccec92865638324e29e05860c83d7858375465d0940",
+    "parent_claude_md_hashes": [],
+    "hooks_active": {
+      "user_prompt_submit": [
+        "project:command:*"
+      ],
+      "pre_tool_use": [],
+      "post_tool_use": []
+    }
+  },
+  "environment_contamination": {
+    "skills_activated_during_run": [],
+    "skills_conflicting_with_madar_rules": [],
+    "calls_to_other_mcps": {},
+    "subagent_dispatches_detected": 0,
+    "skill_alignment_score": 1
+  },
+  "exec_command": {
+    "command": null,
+    "placeholders": [
+      "{prompt_file}"
+    ],
+    "redacted": true
+  },
+  "baseline": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 5846,
+      "cache_creation_input_tokens": 42154,
+      "cache_read_input_tokens": 646972,
+      "output_tokens": 7327,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 42154,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 131,
+          "output_tokens": 2506,
+          "cache_read_input_tokens": 58692,
+          "cache_creation_input_tokens": 2090,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 2090
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 694972,
+    "uncached_input_tokens_anthropic_exact": 48000,
+    "cached_input_tokens_anthropic_exact": 646972,
+    "total_cost_usd": 0.7999594999999997,
+    "num_turns": 22,
+    "duration_ms": 128535,
+    "result_path": "<artifact-root>/baseline-answer.txt"
+  },
+  "madar": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 3177,
+      "cache_creation_input_tokens": 19178,
+      "cache_read_input_tokens": 80770,
+      "output_tokens": 1191,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 15972,
+        "ephemeral_5m_input_tokens": 3206
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 240,
+          "output_tokens": 794,
+          "cache_read_input_tokens": 24440,
+          "cache_creation_input_tokens": 4004,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 4004
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 103125,
+    "uncached_input_tokens_anthropic_exact": 22355,
+    "cached_input_tokens_anthropic_exact": 80770,
+    "total_cost_usd": 0.2068585,
+    "num_turns": 4,
+    "duration_ms": 58704,
+    "result_path": "<artifact-root>/madar-answer.txt"
+  },
+  "install_verified": true,
+  "measurement_validity": "valid",
+  "trace_status": "trace_available",
+  "madar_mcp_call_count": 1,
+  "reductions": {
+    "input_tokens": 6.74,
+    "uncached_input_tokens": 2.15,
+    "cache_creation_input_tokens": 2.2,
+    "num_turns": 5.5,
+    "duration_ms": 2.19,
+    "cost_usd": 3.87
+  },
+  "token_regression": false,
+  "token_regression_reasons": [],
+  "prompt_token_source": {
+    "baseline": "anthropic_provider_reported",
+    "madar": "anthropic_provider_reported"
+  },
+  "provider_proof": {
+    "baseline": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "madar": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "reduction_basis": "provider_reported"
+  },
+  "started_at": "2026-06-10T07:51:30.637Z",
+  "completed_at": "2026-06-10T07:55:17.566Z",
+  "paths": {
+    "output_dir": "<artifact-root>",
+    "report": "<artifact-root>/report.json",
+    "share_safe_report": "<artifact-root>/report.share-safe.json",
+    "baseline_answer": "<artifact-root>/baseline-answer.txt",
+    "madar_answer": "<artifact-root>/madar-answer.txt",
+    "baseline_prompt": "<artifact-root>/baseline-prompt.txt",
+    "madar_prompt": "<artifact-root>/madar-prompt.txt",
+    "prompt_file": "<artifact-root>/madar-prompt.txt"
+  },
+  "benchmark_readiness": {
+    "status": "ready",
+    "reasons": [],
+    "suggested_graph_scope": null
+  },
+  "madar_trace": {
+    "source": "claude_messages_tool_use",
+    "summary": "3 tool calls across 3 turns",
+    "tool_call_count": 3,
+    "tool_calls_by_name": {
+      "mcp__madar__retrieve": 1,
+      "ToolSearch": 2
+    },
+    "per_turn": [
+      {
+        "turn": 2,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ],
+        "madar_tool_discovery_count": 1,
+        "madar_tool_discovery_tool_indexes": [
+          0
+        ]
+      },
+      {
+        "turn": 4,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ],
+        "madar_tool_discovery_count": 1,
+        "madar_tool_discovery_tool_indexes": [
+          0
+        ]
+      },
+      {
+        "turn": 5,
+        "tool_call_count": 1,
+        "tools": [
+          "mcp__madar__retrieve"
+        ]
+      }
+    ],
+    "madar_mcp_call_count": 1,
+    "madar_mcp_calls_by_name": {
+      "mcp__madar__retrieve": 1
+    },
+    "first_madar_turn": 5,
+    "first_madar_tool_name": "mcp__madar__retrieve",
+    "pre_madar_broad_exploration_tool_call_count": 0,
+    "pre_madar_broad_exploration_tool_calls_by_name": {},
+    "context_pack_call_count": 0,
+    "focused_follow_up_tool_call_count": 0,
+    "broad_exploration_tool_call_count": 0,
+    "broad_exploration_tool_calls_by_name": {},
+    "exploration_outcome": "madar_invoked",
+    "exploration_summary": "Madar MCP invoked 1 time (mcp__madar__retrieve); no broad exploration after the first Madar call."
+  },
+  "tool_call_counts": {
+    "baseline": {
+      "total": 21,
+      "Read": 7,
+      "Bash": 14,
+      "Glob": 0,
+      "Grep": 0,
+      "ToolSearch": 0,
+      "other": {}
+    },
+    "madar": {
+      "total": 3,
+      "Read": 0,
+      "Bash": 0,
+      "Glob": 0,
+      "Grep": 0,
+      "ToolSearch": 2,
+      "other": {
+        "retrieve": 1
+      }
+    }
+  },
+  "answer_contract": {
+    "version": 1,
+    "answer_focus": "runtime_generation",
+    "entrypoint_scope": "setup_context",
+    "required_elements": [
+      "main_pipeline_phases",
+      "persistence_or_artifact_storage"
+    ],
+    "do_not_claim": [
+      "direct_producer_to_worker_calls_without_enqueues_boundary",
+      "irrelevant_model_or_provider_details"
+    ],
+    "observed_phases": [
+      "service",
+      "persistence"
+    ],
+    "missing_phases": [],
+    "runtime_proof": {
+      "obligations": [
+        {
+          "id": "api_mutation_handling",
+          "label": "API mutation handling",
+          "kind": "entrypoint",
+          "required": true,
+          "evidence": [
+            {
+              "label": "UpdateOneResolverFactory",
+              "source_file": "api/graphql/workspace-resolver-builder/factories/update-one-resolver.factory.ts",
+              "line_number": 19
+            }
+          ]
+        },
+        {
+          "id": "workspace_service_handoff",
+          "label": "workspace service handoff",
+          "kind": "handoff",
+          "required": true,
+          "evidence": [
+            {
+              "label": "WorkspaceEntityManager",
+              "source_file": "twenty-orm/entity-manager/workspace-entity-manager.ts",
+              "line_number": 76
+            },
+            {
+              "label": "CommonBaseQueryRunnerService",
+              "source_file": "api/common/common-query-runners/common-create-one-query-runner.service.ts",
+              "line_number": 24
+            }
+          ]
+        },
+        {
+          "id": "persistence",
+          "label": "persistence",
+          "kind": "terminal",
+          "required": true,
+          "evidence": [
+            {
+              "label": ".save()",
+              "source_file": "twenty-orm/entity-manager/workspace-entity-manager.ts",
+              "line_number": 1082
+            }
+          ]
+        }
+      ],
+      "missing_obligations": []
+    },
+    "confidence": "high"
+  },
+  "execution_slice": {
+    "status": "complete",
+    "confidence": "high",
+    "confidence_reasons": [
+      "explicit_anchor",
+      "orchestration_evidence",
+      "expected_phases_covered",
+      "terminal_effect_evidence"
+    ],
+    "steps": [
+      {
+        "label": ".save()",
+        "source_file": "workspace-entity-manager.ts",
+        "line_number": 1082
+      },
+      {
+        "label": "WorkspaceEntityManager",
+        "source_file": "workspace-entity-manager.ts",
+        "line_number": 76
+      }
+    ],
+    "primary_path": {
+      "steps": [
+        {
+          "label": ".save()",
+          "source_file": "workspace-entity-manager.ts",
+          "line_number": 1082
+        },
+        {
+          "label": "WorkspaceEntityManager",
+          "source_file": "workspace-entity-manager.ts",
+          "line_number": 76
+        }
+      ]
+    },
+    "side_effects": [
+      {
+        "steps": [
+          {
+            "label": "formatTwentyOrmEventToDatabaseBatchEvent()",
+            "source_file": "format-twenty-orm-event-to-database-batch-event.util.ts",
+            "line_number": 30
+          }
+        ]
+      },
+      {
+        "steps": [
+          {
+            "label": ".createQueryBuilder()",
+            "source_file": "workspace-entity-manager.ts",
+            "line_number": 192
+          }
+        ]
+      },
+      {
+        "steps": [
+          {
+            "label": ".callAggregateFunCustom()",
+            "source_file": "workspace-entity-manager.ts",
+            "line_number": 874
+          }
+        ]
+      },
+      {
+        "steps": [
+          {
+            "label": "UpdateOneResolverFactory",
+            "source_file": "update-one-resolver.factory.ts",
+            "line_number": 19
+          }
+        ]
+      },
+      {
+        "steps": [
+          {
+            "label": "CommonBaseQueryRunnerService",
+            "source_file": "common-create-one-query-runner.service.ts",
+            "line_number": 24
+          }
+        ]
+      }
+    ],
+    "omitted_branches": [
+      {
+        "from": "WorkspaceEntityManager",
+        "to": ".count()",
+        "relation": "method"
+      },
+      {
+        "from": "WorkspaceEntityManager",
+        "to": ".countBy()",
+        "relation": "method"
+      },
+      {
+        "from": "WorkspaceEntityManager",
+        "to": ".delete()",
+        "relation": "method"
+      },
+      {
+        "from": "WorkspaceEntityManager",
+        "to": ".exists()",
+        "relation": "method"
+      },
+      {
+        "from": "WorkspaceEntityManager",
+        "to": ".existsBy()",
+        "relation": "method"
+      },
+      {
+        "from": "WorkspaceEntityManager",
+        "to": ".find()",
+        "relation": "method"
+      }
+    ],
+    "phase_coverage": {
+      "expected": [
+        "service",
+        "persistence"
+      ],
+      "observed": [
+        "service",
+        "persistence"
+      ],
+      "missing": []
+    }
+  },
+  "answer_quality": {
+    "gate": "twenty-explain-runtime",
+    "prompt": "How does Twenty process a CRM record mutation from API handling through workspace services to persistence?",
+    "baseline": {
+      "passed": true,
+      "missing_required_terms": [],
+      "forbidden_terms_present": []
+    },
+    "madar": {
+      "passed": true,
+      "missing_required_terms": [],
+      "forbidden_terms_present": []
+    },
+    "required_concepts": [
+      "The answer should describe the mutation path through workspace services to persistence."
+    ],
+    "answer_quality_notes": [
+      "A scoped Twenty receipt still needs readiness review before it becomes a claim."
+    ],
+    "manual_review_notes": [
+      "Confirm the answer reaches persistence and does not stop at API or resolver layers."
+    ]
+  },
+  "prompt_contract": {
+    "status": "followed",
+    "evidence": [
+      "started with retrieve and avoided disallowed exploration"
+    ]
+  },
+  "claim_assessment": {
+    "routing_efficiency": {
+      "status": "improved",
+      "evidence": [
+        "tool calls decreased: baseline 21 → madar 3 (7x fewer)",
+        "latency improved: baseline 128535ms → madar 58704ms (2.19x faster)"
+      ]
+    },
+    "token_reduction": {
+      "status": "proven",
+      "evidence": [
+        "provider input decreased: baseline 694972 → madar 103125 (6.74x less)"
+      ]
+    }
+  },
+  "benchmark_outcome": {
+    "outcome": "full_win",
+    "checks": {
+      "routing_tool_latency": "win",
+      "token": "win",
+      "fresh_token": "win",
+      "cost": "win",
+      "turns": "win"
+    },
+    "evidence": [
+      "routing/tool/latency win: tool calls 21 → 3, latency 128535ms → 58704ms",
+      "provider input win: baseline 694972 → madar 103125",
+      "turns win: baseline 22 → madar 4",
+      "fresh_token win: baseline 48000 → madar 22355",
+      "cost win: baseline 0.7999594999999997 → madar 0.2068585"
+    ]
+  }
+}

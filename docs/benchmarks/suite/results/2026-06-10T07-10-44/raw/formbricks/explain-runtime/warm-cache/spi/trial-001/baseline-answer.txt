@@ -1,0 +1,52 @@
+I have a confirmed picture from the route handler and pipeline queueing. Here's the trace.
+
+## How Formbricks processes a survey response
+
+The flow splits into two halves: a **synchronous request → validate → persist** path that the client waits on, and an **asynchronous BullMQ pipeline** that fans out to analytics, webhooks, integrations, and email.
+
+### 1. Request handling (HTTP entry)
+
+The client SDK posts to the v2 client API route handler:
+`apps/web/app/api/v2/client/[workspaceId]/responses/route.ts` → `POST` (v1 equivalent at `app/api/v1/client/[workspaceId]/responses/route.ts`; updates go to `.../[responseId]/route.ts` with `PUT`).
+
+The handler does, in order:
+1. **ID resolution** — `resolveClientApiIds()` accepts either an old-SDK `environmentId` or new-SDK `workspaceId`.
+2. **Body parse + schema validation** — `parseAndValidateJsonBody` against `ZResponseInputV2` (defined in `.../responses/types/response.ts`, extending the base `ZResponseInput` from `@formbricks/types` with `contactId` and `recaptchaToken`).
+3. **License/contact gate** — `getContactsDisabledResponse` blocks `contactId` use unless contacts are enabled (`getIsContactsEnabled`).
+4. **Survey load + validation** — `getSurvey()`, then `validateResponseSubmission()`, which runs `checkSurveyValidity`, `validateClientFileUploads`, `validateOtherOptionLengthForMultipleChoice`, and per-question `validateResponseData`.
+5. **Metadata enrichment** — `createResponseForRequest()` parses the User-Agent (`UAParser` → browser/device/os), captures country from `CF-IPCountry`/`CloudFront-Viewer-Country` headers, and conditionally the IP (`getClientIpFromHeaders`) when `survey.isCaptureIpEnabled`.
+
+### 2. Persistence
+
+`createResponseWithQuotaEvaluation()` (in `.../responses/lib/response.ts`) wraps persistence and quota evaluation **in a single Prisma transaction**:
+- `createResponse()` builds the Prisma create input (`buildPrismaResponseData`), computes time-to-complete (TTC), connects survey/display/contact, and calls `prisma.response.create({ select: responseSelection })` on the `Response` model (`@formbricks/database`). Single-use-ID collisions surface as `UniqueConstraintError` → HTTP 409.
+- In the same transaction it runs `evaluateResponseQuotas()` (`modules/ee/quotas`), returning a `quotaFull` object.
+
+The handler strips `quotaFull` off, and returns just `{ id, ...quotaObj }` (`createQuotaFullObject`) to the client. The general service layer at `apps/web/lib/response/service.ts` holds `updateResponse`/`getResponse`/etc. and the `mapResponsePrismaToResponse` mapping.
+
+### 3. Analytics / event tracking (async pipeline)
+
+After persistence, the route enqueues jobs via `sendToPipeline()` (`apps/web/app/lib/pipelines.ts`), which pushes onto a **BullMQ queue** (`getBackgroundJobProducer().enqueueResponsePipeline`). It always emits `responseCreated`, and additionally `responseFinished` when `responseData.finished` is true. (Updates emit `responseUpdated`.)
+
+The worker `processResponsePipelineJob` (`apps/web/modules/response-pipeline/lib/process-response-pipeline-job.ts`) handles the side effects:
+- **All events** — `createWebhookDeliveryTask`: fetches matching webhooks (`getWebhooksForPipeline`), resolves storage URLs, signs with HMAC (`webhook-signature`/`webhook-id`/`webhook-timestamp`), delivers with SSRF protection and a 5s timeout.
+- **`responseCreated`** (`runResponseCreatedSideEffects`) — Stripe usage metering (`recordResponseCreatedMeterEvent`), **PostHog** `survey_response_received` event at milestones (`captureSurveyResponsePostHogEvent` in `.../lib/posthog.ts`), and telemetry (`sendTelemetryEvents`).
+- **`responseFinished`** (`runResponseFinishedSideEffects`) — third-party `handleIntegrations`, feedback-source pipeline, follow-up surveys (`sendFollowUpsForResponse`), owner notification emails (`sendResponseFinishedEmail`), and survey auto-complete when the response threshold is hit.
+
+### Summary
+
+```
+POST /api/v2/client/[workspaceId]/responses  (route.ts)
+  → resolve IDs → ZResponseInputV2 validate → survey+data validation → enrich meta
+  → createResponseWithQuotaEvaluation  [TX: prisma.response.create + evaluateResponseQuotas]
+  → sendToPipeline(responseCreated [+responseFinished])  → BullMQ
+  → return { id, quota } to client
+        │ (async worker: process-response-pipeline-job.ts)
+        ├─ webhooks (all events)
+        ├─ responseCreated → Stripe metering, PostHog, telemetry
+        └─ responseFinished → integrations, follow-ups, emails, auto-complete
+```
+
+**Key files:** `route.ts` (handler) · `app/lib/pipelines.ts` (queue) · `.../responses/lib/response.ts` + `lib/response/service.ts` (persistence) · `modules/ee/quotas` (quota TX) · `modules/response-pipeline/lib/process-response-pipeline-job.ts` + `.../lib/posthog.ts` (analytics/events).
+
+The design point worth noting: the client only waits on persistence + quota; everything analytical (PostHog, webhooks, metering, integrations, emails) is decoupled onto the BullMQ pipeline so submission latency stays low.

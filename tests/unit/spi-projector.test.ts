@@ -203,6 +203,29 @@ describe('projectSpiToExtraction (slice 1c-i of #72)', () => {
       expect(edges).toHaveLength(1)
     })
 
+    it('projects unresolved external namespace member calls as direct synthetic call targets', () => {
+      writeFile(sandbox, 'src/lib/middleware/link.ts', [
+        'import { NextResponse } from "next/server"',
+        'export function LinkMiddleware(url: string) {',
+        '  return NextResponse.redirect(url)',
+        '}',
+      ].join('\n') + '\n')
+      const extraction = project(sandbox)
+
+      const redirect = findNode(extraction, 'link_nextresponse_redirect')
+      expect(redirect).toEqual(expect.objectContaining({
+        label: 'NextResponse.redirect',
+        node_kind: 'method',
+      }))
+
+      const edges = findEdges(extraction, {
+        source: 'link_linkmiddleware',
+        target: 'link_nextresponse_redirect',
+        relation: 'calls',
+      })
+      expect(edges).toHaveLength(1)
+    })
+
     it('projects SPI calls edges to `calls` between caller and callee symbols', () => {
       writeFile(sandbox, 'src/svc.ts', [
         'export function helper(): number { return 1 }',
@@ -274,6 +297,27 @@ describe('projectSpiToExtraction (slice 1c-i of #72)', () => {
       expect(extraction.hyperedges).toEqual([])
       expect(extraction.input_tokens).toBe(0)
       expect(extraction.output_tokens).toBe(0)
+    })
+
+    it('keeps distinct projected route nodes when multiple route.ts files export the same HTTP method', () => {
+      writeFile(sandbox, 'apps/web/app/api/track/click/route.ts', [
+        'export const POST = () => new Response()',
+      ].join('\n') + '\n')
+      writeFile(sandbox, 'apps/web/app/api/links/bulk/route.ts', [
+        'export const POST = () => new Response()',
+      ].join('\n') + '\n')
+
+      const extraction = project(sandbox)
+      const routeNodes = extraction.nodes
+        .filter((node) => node.framework_role === 'nextjs_app_route' && node.label === 'POST')
+        .map((node) => ({ id: node.id, source_file: node.source_file }))
+
+      expect(routeNodes).toHaveLength(2)
+      expect(new Set(routeNodes.map((node) => node.id)).size).toBe(2)
+      expect(routeNodes.map((node) => node.source_file).sort()).toEqual([
+        resolve(sandbox, 'apps/web/app/api/links/bulk/route.ts'),
+        resolve(sandbox, 'apps/web/app/api/track/click/route.ts'),
+      ])
     })
 
     it('every emitted node has id/label/file_type/source_file/source_location set', () => {

@@ -3127,6 +3127,135 @@ describe('retrieve', () => {
       expect(compactResult.coverage).toEqual(rawResult.coverage)
     })
 
+    it('trims oversized stdio retrieve payloads to avoid spill-file expansion', () => {
+      const graph = buildExpansionGraph()
+      const rawResult = retrieveContext(graph, { question: 'auth', budget: 1 })
+      const firstExpandable = rawResult.expandable?.[0]
+
+      expect(firstExpandable).toBeDefined()
+
+      const oversizedResult: ReturnType<typeof retrieveContext> = {
+        ...rawResult,
+        matched_nodes: Array.from({ length: 48 }, (_, index) => {
+          const source = rawResult.matched_nodes[index % rawResult.matched_nodes.length]!
+          return {
+            ...source,
+            ...(source.node_id ? { node_id: `${source.node_id}-${index}` } : {}),
+            label: `${source.label}-${index}`,
+          }
+        }),
+        relationships: Array.from({ length: 48 }, (_, index) => ({
+          from_id: `from-${index}`,
+          from: `From${index}`,
+          to_id: `to-${index}`,
+          to: `To${index}`,
+          relation: 'calls',
+        })),
+        community_context: Array.from({ length: 12 }, (_, index) => ({
+          id: index,
+          label: `Community ${index}`,
+          node_count: index + 1,
+        })),
+        slice: {
+          mode: 'explain',
+          anchors: [{
+            label: 'authenticateUser',
+            reason: 'direct match',
+          }],
+          directions: ['forward'],
+          selected_paths: Array.from({ length: 240 }, (_, index) => ({
+            from_id: `slice-from-${index}`,
+            from: `SliceFrom${index}`,
+            to_id: `slice-to-${index}`,
+            to: `SliceTo${index}`,
+            relation: 'calls',
+            direction: 'forward' as const,
+          })),
+          selected_path_count: 240,
+        },
+        expandable: firstExpandable ? [{
+          ...firstExpandable,
+          preview: Array.from({ length: 6 }, (_, index) => ({
+            node_id: `preview-${index}`,
+            label: `Preview${index}`,
+            source_file: `/src/preview-${index}.ts`,
+            line_range: {
+              start_line: index + 1,
+              end_line: index + 2,
+            },
+          })),
+          follow_up: {
+            ...firstExpandable.follow_up,
+            focus_files: Array.from({ length: 400 }, (_, index) => `/src/focus-${index}.ts`),
+            focus_ranges: Array.from({ length: 1200 }, (_, index) => ({
+              source_file: `/src/focus-${index % 400}.ts`,
+              start_line: index + 1,
+              end_line: index + 2,
+            })),
+          },
+        }] : [],
+      }
+
+      expect(estimateQueryTokens(JSON.stringify(oversizedResult))).toBeGreaterThan(4000)
+
+      const options = { maxOutputTokens: 4000 }
+      const compactResult = compactRetrieveResultForStdio(oversizedResult, options)
+
+      expect(estimateQueryTokens(JSON.stringify(compactResult))).toBeLessThanOrEqual(4000)
+      expect(compactResult.expandable?.[0]?.handle_id).toBe(firstExpandable?.handle_id)
+      expect(compactResult.expandable?.[0]?.count).toBe(firstExpandable?.count)
+      expect(compactResult.expandable?.[0]?.follow_up.focus_files.length).toBeLessThan(400)
+      expect(compactResult.expandable?.[0]?.follow_up.focus_ranges.length).toBeLessThan(1200)
+      expect(compactResult.matched_nodes.length).toBeLessThan(oversizedResult.matched_nodes.length)
+      expect(compactResult.relationships.length).toBeLessThan(oversizedResult.relationships.length)
+      expect(compactResult.slice?.selected_paths.length).toBeLessThan(240)
+      expect(compactResult.coverage).toEqual(rawResult.coverage)
+      expect(compactResult.claims).toEqual(rawResult.claims)
+    })
+
+    it('drops dangling relationships when stdio compaction trims their endpoint nodes', () => {
+      const graph = buildExpansionGraph()
+      const rawResult = retrieveContext(graph, { question: 'auth', budget: 1 })
+
+      const oversizedResult: ReturnType<typeof retrieveContext> = {
+        ...rawResult,
+        matched_nodes: Array.from({ length: 48 }, (_, index) => {
+          const source = rawResult.matched_nodes[index % rawResult.matched_nodes.length]!
+          return {
+            ...source,
+            node_id: `node-${index}`,
+            label: `${source.label}-${index}`,
+          }
+        }),
+        relationships: Array.from({ length: 47 }, (_, index) => ({
+          from_id: `node-${index}`,
+          from: `Node${index}`,
+          to_id: `node-${index + 1}`,
+          to: `Node${index + 1}`,
+          relation: 'calls',
+        })),
+      }
+
+      const compactResult = compactRetrieveResultForStdio(oversizedResult, { maxOutputTokens: 2000 })
+
+      const retainedNodeIds = new Set(
+        compactResult.matched_nodes
+          .map((node) => node.node_id)
+          .filter((nodeId): nodeId is string => typeof nodeId === 'string'),
+      )
+
+      expect(compactResult.matched_nodes.length).toBeLessThan(oversizedResult.matched_nodes.length)
+      expect(compactResult.relationships.length).toBeGreaterThan(0)
+      for (const relationship of compactResult.relationships) {
+        if (typeof relationship.from_id === 'string') {
+          expect(retainedNodeIds.has(relationship.from_id)).toBe(true)
+        }
+        if (typeof relationship.to_id === 'string') {
+          expect(retainedNodeIds.has(relationship.to_id)).toBe(true)
+        }
+      }
+    })
+
     it('assigns higher match_score to direct matches than neighbors', () => {
       const graph = buildTestGraph()
       const result = retrieveContext(graph, { question: 'auth', budget: 5000 })

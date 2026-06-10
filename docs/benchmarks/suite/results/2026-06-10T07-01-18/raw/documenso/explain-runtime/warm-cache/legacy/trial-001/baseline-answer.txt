@@ -1,0 +1,40 @@
+## How Documenso moves a document through its lifecycle
+
+Documenso models documents as **Envelopes** (type `DOCUMENT`). The lifecycle runs through four server functions in `packages/lib/server-only`, with notifications dispatched asynchronously via a job queue (`jobs.triggerJob`) and external integrations via `triggerWebhook`.
+
+### 1. Recipient creation (prep)
+**`recipient/create-envelope-recipients.ts`**
+- Validates the envelope exists and isn't already complete; enforces CFR-21 action-auth permission via the org claim.
+- For each recipient, creates a `Recipient` row with a unique signing `token` (`nanoid()`), `authOptions`, and role-derived initial state:
+  - **CC** recipients start `SendStatus.SENT` / `SigningStatus.SIGNED` (no action needed).
+  - All others start `SendStatus.NOT_SENT` / `SigningStatus.NOT_SIGNED`.
+- Writes a `RECIPIENT_CREATED` audit log (for `DOCUMENT` envelopes). All done in a transaction.
+
+### 2. Send preparation → PENDING
+**`document/send-document.ts`**
+- Guards: account not disabled, has recipients, within the org's `recipientCount` limit, not already completed.
+- Determines who to notify based on `documentMeta.signingOrder`: **PARALLEL** notifies all; **SEQUENTIAL** notifies only the first unsigned non-CC recipient (`recipientsToNotify` slice).
+- Validates auth-required recipients have valid emails (`isRecipientEmailValidForSending`) and that signers have required fields (`getRecipientsWithMissingFields`).
+- For V2 envelopes, auto-inserts prefillable fields (email/text/number/radio/dropdown/checkbox via `extractFieldAutoInsertValues`).
+- In a transaction: writes `DOCUMENT_SENT` audit log, sets recipient `expiresAt` (excluding CC/signed/rejected), and flips the envelope to **`DocumentStatus.PENDING`**.
+- Edge case: if every recipient is CC or already signed (`allRecipientsHaveNoActionToTake`), it skips straight to the `internal.seal-document` job.
+- **Notification:** if signing-request emails are enabled, triggers `send.signing.requested.email` per recipient-to-notify (skipping already-SENT and CC). Fires `DOCUMENT_SENT` webhook.
+
+### 3. Signing state transition
+**`document/complete-document-with-token.ts`** (called when a recipient submits via their token)
+- Loads the envelope by the recipient's `token`; requires status `PENDING`; rejects if recipient already SIGNED/REJECTED or expired (`assertRecipientNotExpired`).
+- For SEQUENTIAL order, enforces turn via `recipient/get-is-recipient-turn.ts` (`getIsRecipientsTurnToSign`).
+- Enforces access-auth 2FA (`is-recipient-authorized.ts`), auto-inserts un-inserted DATE fields (V2), and rejects if any required field is unsigned (`fieldsContainUnsignedRequiredField`).
+- In a transaction: sets the recipient to **`SigningStatus.SIGNED`** with `signedAt`, resolves derived name/email, and writes `DOCUMENT_RECIPIENT_COMPLETED` (plus `RECIPIENT_UPDATED`) audit logs.
+
+### 4. Notification delivery + advancing/sealing
+Still in `complete-document-with-token.ts`, after signing:
+- Fires `DOCUMENT_RECIPIENT_COMPLETED` webhook and the `send.recipient.signed.email` job (notifies the document owner — handler `jobs/definitions/emails/send-recipient-signed-email`).
+- If recipients remain pending: calls **`document/send-pending-email.ts`** ("Waiting for others to complete signing" — `DocumentPendingEmailTemplate`), gated by `documentPending` email setting and org email-disabled flag.
+- For SEQUENTIAL order, it advances the chain: marks the next recipient `SendStatus.SENT` (optionally applying a dictated next signer), and triggers `send.signing.requested.email` for them.
+- When all non-CC recipients have signed (`haveAllRecipientsSigned`), triggers the `internal.seal-document` job. That handler (`jobs/definitions/internal/seal-document.handler.ts:322`) finalizes the PDF and dispatches `send.document.completed.emails` to all parties. Finally fires the `DOCUMENT_SIGNED` webhook.
+
+### Notification mechanics
+Emails are decoupled jobs under `jobs/definitions/emails/` (e.g. `send-signing-email`, `send-recipient-signed-email`, `send-document-completed-emails`, `send-rejection-emails`). Each resolves branding/language/transport via `server-only/email/get-email-context.ts`, renders i18n templates from `@documenso/email`, and sends through `emailTransport.sendMail`. Webhooks (`server-only/webhooks/trigger/trigger-webhook.ts`) run in parallel for external listeners.
+
+**Summary of state flow:** `DRAFT` → (`createEnvelopeRecipients` adds tokened recipients) → (`sendDocument` validates + auto-inserts) → **`PENDING`** + signing-request emails → (`completeDocumentWithToken` per recipient) → recipient `SIGNED` + signed/pending emails, sequential advance → all signed → `seal-document` job → **`COMPLETED`** + completion emails.

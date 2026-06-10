@@ -93,6 +93,19 @@ describe('buildSpiCached (#77)', () => {
     expect(reBuild.cache.hit).toBe(false)
   })
 
+  it('invalidates when a nested tsconfig.json that affects indexed files changes', () => {
+    writeFile(sandbox, 'tsconfig.json', '{"compilerOptions":{"module":"NodeNext"}}\n')
+    writeFile(sandbox, 'apps/web/tsconfig.json', '{"compilerOptions":{"baseUrl":".","paths":{"@/*":["./*"]}}}\n')
+    writeFile(sandbox, 'apps/web/src/foo.ts', 'export function foo(): number { return 1 }\n')
+
+    buildSpiCached({ root: sandbox, madarVersion: 'test-0.0.0', now: FROZEN_NOW })
+
+    writeFile(sandbox, 'apps/web/tsconfig.json', '{"compilerOptions":{"baseUrl":".","paths":{"@/*":["./src/*"]}}}\n')
+
+    const reBuild = buildSpiCached({ root: sandbox, madarVersion: 'test-0.0.0', now: FROZEN_NOW })
+    expect(reBuild.cache.hit).toBe(false)
+  })
+
   it('respects noCache option — never reads or writes the cache', () => {
     writeFile(sandbox, 'src/foo.ts', 'export function foo(): number { return 1 }\n')
 

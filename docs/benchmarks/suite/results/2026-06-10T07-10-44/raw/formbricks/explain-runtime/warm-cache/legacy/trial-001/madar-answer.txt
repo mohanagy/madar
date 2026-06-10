@@ -1,0 +1,16 @@
+All three required obligations have direct runtime evidence (`runtime_proof.missing_obligations: []`, confidence high). Here is the flow:
+
+## How Formbricks processes a survey response
+
+**1. Request handling** — `POST()` at `app/api/v2/client/[workspaceId]/responses/route.ts:201` receives the incoming client request and dispatches to `createResponseForRequest()` (`route.ts:137`), which validates and assembles the response payload from the request.
+
+**2. Persistence** — `createResponseForRequest()` calls `createResponse()` at `app/api/v2/client/[workspaceId]/responses/lib/response.ts:68`, which writes the survey response to the database.
+
+**3. Analytics / event tracking** — the persisted response is handed to `sendToPipeline()` at `app/lib/pipelines.ts:5`, which fans the event out to the pipeline (analytics/event tracking, webhooks, and downstream integrations).
+
+### Key files
+- `app/api/v2/client/[workspaceId]/responses/route.ts` — entrypoint (`POST` → `createResponseForRequest`)
+- `app/api/v2/client/[workspaceId]/responses/lib/response.ts` — `createResponse()` persistence
+- `app/lib/pipelines.ts` — `sendToPipeline()` analytics/event tracking
+
+**Flow:** `POST` → `createResponseForRequest()` → `createResponse()` (persist) → `sendToPipeline()` (track).

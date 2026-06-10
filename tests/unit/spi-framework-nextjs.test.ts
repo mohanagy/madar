@@ -85,6 +85,32 @@ describe('SPI Next.js framework detector (slice 1c-iv.a)', () => {
       expect(findSymbol(spi, 'app/api/users/route.ts', 'helper')?.framework_role).toBeUndefined()
     })
 
+    it('tags HTTP-method const exports of app/<segment>/route.ts as nextjs_app_route', () => {
+      writeFile(sandbox, 'app/api/users/route.ts', [
+        'function withAuth<T>(handler: T): T { return handler }',
+        'export const POST = withAuth(async () => new Response())',
+        'export const OPTIONS = () => new Response()',
+        'export const helper = () => new Response()',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+
+      expect(findSymbol(spi, 'app/api/users/route.ts', 'POST')).toEqual(expect.objectContaining({
+        framework_role: 'nextjs_app_route',
+        framework_metadata: expect.objectContaining({
+          route_path: '/api/users',
+          http_method: 'POST',
+        }),
+      }))
+      expect(findSymbol(spi, 'app/api/users/route.ts', 'OPTIONS')).toEqual(expect.objectContaining({
+        framework_role: 'nextjs_app_route',
+        framework_metadata: expect.objectContaining({
+          route_path: '/api/users',
+          http_method: 'OPTIONS',
+        }),
+      }))
+      expect(findSymbol(spi, 'app/api/users/route.ts', 'helper')?.framework_role).toBeUndefined()
+    })
+
     it('recognizes all standard HTTP method names on a route.ts', () => {
       writeFile(sandbox, 'app/api/x/route.ts', [
         'export function GET(): Response { return new Response() }',
@@ -180,6 +206,45 @@ describe('SPI Next.js framework detector (slice 1c-iv.a)', () => {
       const spi = build(sandbox)
       const sym = findSymbol(spi, 'src/pages/api/users.ts', 'handler')
       expect(sym?.framework_role).toBe('nextjs_pages_api')
+    })
+
+    it('recognizes app-router route handlers nested under workspace paths', () => {
+      writeFile(sandbox, 'apps/web/app/api/users/route.ts', [
+        'export const POST = () => new Response()',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+      const sym = findSymbol(spi, 'apps/web/app/api/users/route.ts', 'POST')
+
+      expect(sym).toEqual(expect.objectContaining({
+        framework_role: 'nextjs_app_route',
+        framework_metadata: expect.objectContaining({
+          route_path: '/api/users',
+          http_method: 'POST',
+        }),
+      }))
+    })
+
+    it('recognizes nested workspace Next.js conventions under src/app, src/pages, and src/middleware', () => {
+      writeFile(sandbox, 'apps/web/src/app/api/users/route.ts', [
+        'export const POST = () => new Response()',
+      ].join('\n') + '\n')
+      writeFile(sandbox, 'apps/web/src/pages/api/users.ts', [
+        'export default function handler(): void {}',
+      ].join('\n') + '\n')
+      writeFile(sandbox, 'apps/web/src/middleware.ts', [
+        'export default function middleware(): void {}',
+      ].join('\n') + '\n')
+      const spi = build(sandbox)
+
+      expect(findSymbol(spi, 'apps/web/src/app/api/users/route.ts', 'POST')).toEqual(expect.objectContaining({
+        framework_role: 'nextjs_app_route',
+        framework_metadata: expect.objectContaining({
+          route_path: '/api/users',
+          http_method: 'POST',
+        }),
+      }))
+      expect(findSymbol(spi, 'apps/web/src/pages/api/users.ts', 'handler')?.framework_role).toBe('nextjs_pages_api')
+      expect(findSymbol(spi, 'apps/web/src/middleware.ts', 'middleware')?.framework_role).toBe('nextjs_middleware')
     })
   })
 
@@ -312,6 +377,21 @@ describe('SPI Next.js framework detector (slice 1c-iv.a)', () => {
       const spi = build(sandbox)
       const extraction = projectSpiToExtraction(spi, { root: sandbox })
       const node = extraction.nodes.find((n) => n.label === 'GET()')
+      expect(node?.framework).toBe('nextjs')
+      expect(node?.framework_role).toBe('nextjs_app_route')
+      expect(node?.node_kind).toBe('route')
+    })
+
+    it('projects const-backed nextjs_app_route symbols as route nodes', async () => {
+      writeFile(sandbox, 'app/api/users/route.ts', [
+        'function withAuth<T>(handler: T): T { return handler }',
+        'export const POST = withAuth(async () => new Response())',
+      ].join('\n') + '\n')
+      const { projectSpiToExtraction } = await import('../../src/pipeline/spi/projector.js')
+      const spi = build(sandbox)
+      const extraction = projectSpiToExtraction(spi, { root: sandbox })
+      const node = extraction.nodes.find((n) => n.label === 'POST')
+
       expect(node?.framework).toBe('nextjs')
       expect(node?.framework_role).toBe('nextjs_app_route')
       expect(node?.node_kind).toBe('route')

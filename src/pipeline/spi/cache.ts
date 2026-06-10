@@ -52,7 +52,7 @@ import {
 } from 'node:fs'
 import { dirname, extname, join, relative, resolve } from 'node:path'
 
-import { buildSpi, type BuildSpiOptions } from './build.js'
+import { buildSpi, type BuildSpiOptions, findNearestProjectConfigPath } from './build.js'
 import type { SemanticProgramIndex } from './types.js'
 
 const CACHE_DIR_NAME = '.spi-cache'
@@ -226,15 +226,18 @@ function computeWorkspaceFingerprint(root: string, opts: BuildSpiCachedOptions):
   hasher.update(`extractor:${opts.extractorVersion ?? 'spi-v1.0.0'}\n`)
   hasher.update(`madar:${opts.madarVersion}\n`)
 
-  const tsConfigPath = join(root, 'tsconfig.json')
-  if (existsSync(tsConfigPath)) {
-    try {
-      hasher.update(`tsconfig:${readFileSync(tsConfigPath, 'utf8')}\n`)
-    } catch {
-      hasher.update('tsconfig:<unreadable>\n')
-    }
-  } else {
+  const projectConfigPaths = collectProjectConfigPaths(root, entries)
+  if (projectConfigPaths.length === 0) {
     hasher.update('tsconfig:<absent>\n')
+  } else {
+    for (const configPath of projectConfigPaths) {
+      const relativeConfigPath = relative(root, configPath).split('\\').join('/')
+      try {
+        hasher.update(`tsconfig:${relativeConfigPath}:${readFileSync(configPath, 'utf8')}\n`)
+      } catch {
+        hasher.update(`tsconfig:${relativeConfigPath}:<unreadable>\n`)
+      }
+    }
   }
 
   for (const rel of entries) {
@@ -254,6 +257,23 @@ function computeWorkspaceFingerprint(root: string, opts: BuildSpiCachedOptions):
     cacheKey: hasher.digest('hex'),
     fileCount: entries.length,
   }
+}
+
+function collectProjectConfigPaths(root: string, entries: readonly string[]): string[] {
+  const projectConfigPaths = new Set<string>()
+  const rootConfigPath = findNearestProjectConfigPath(root)
+  if (rootConfigPath) {
+    projectConfigPaths.add(resolve(rootConfigPath))
+  }
+
+  for (const rel of entries) {
+    const configPath = findNearestProjectConfigPath(dirname(join(root, rel)))
+    if (configPath) {
+      projectConfigPaths.add(resolve(configPath))
+    }
+  }
+
+  return [...projectConfigPaths].sort()
 }
 
 function collectIndexableFiles(root: string, dir: string, out: string[]): void {

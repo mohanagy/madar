@@ -1,0 +1,182 @@
+{
+  "schema_version": 1,
+  "started_at": "2026-06-10T07:39:11.204Z",
+  "completed_at": "2026-06-10T08:08:31.545Z",
+  "output_root": "docs/benchmarks/suite/results/2026-06-10T07-39-11",
+  "filters": {
+    "repo": "twenty",
+    "task": "explain-runtime",
+    "mode": "warm",
+    "trials": 1
+  },
+  "cells_skipped_for_install": 0,
+  "cells_skipped_for_env_drift": 0,
+  "cells": [
+    {
+      "repoId": "twenty",
+      "repoName": "Twenty public repo",
+      "taskId": "explain-runtime",
+      "taskName": "Explain runtime flow",
+      "mode": "warm",
+      "prompt": "How does Twenty process a CRM record mutation from API handling through workspace services to persistence?",
+      "status": "completed",
+      "reason": null,
+      "isolation": true,
+      "baseline": {
+        "input_tokens": {
+          "median": 694972,
+          "min": 694972,
+          "max": 694972,
+          "n": 1
+        },
+        "total_tool_calls": {
+          "median": 21,
+          "min": 21,
+          "max": 21,
+          "n": 1
+        },
+        "read_calls": {
+          "median": 7,
+          "min": 7,
+          "max": 7,
+          "n": 1
+        },
+        "glob_grep_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "wall_clock_ms": {
+          "median": 128535,
+          "min": 128535,
+          "max": 128535,
+          "n": 1
+        },
+        "cost_usd": {
+          "median": 0.7999594999999997,
+          "min": 0.7999594999999997,
+          "max": 0.7999594999999997,
+          "n": 1
+        }
+      },
+      "madar": {
+        "input_tokens": {
+          "median": 103125,
+          "min": 103125,
+          "max": 103125,
+          "n": 1
+        },
+        "total_tool_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 1
+        },
+        "read_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "glob_grep_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "wall_clock_ms": {
+          "median": 58704,
+          "min": 58704,
+          "max": 58704,
+          "n": 1
+        },
+        "cost_usd": {
+          "median": 0.2068585,
+          "min": 0.2068585,
+          "max": 0.2068585,
+          "n": 1
+        }
+      },
+      "spi_madar": {
+        "input_tokens": {
+          "median": 111021,
+          "min": 111021,
+          "max": 111021,
+          "n": 1
+        },
+        "total_tool_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 1
+        },
+        "read_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "glob_grep_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "wall_clock_ms": {
+          "median": 142883,
+          "min": 142883,
+          "max": 142883,
+          "n": 1
+        },
+        "cost_usd": {
+          "median": 0.27005599999999996,
+          "min": 0.27005599999999996,
+          "max": 0.27005599999999996,
+          "n": 1
+        }
+      },
+      "benchmark_outcomes": {
+        "legacy": {
+          "counts": {
+            "full_win": 1,
+            "partial_win": 0,
+            "regression": 0,
+            "not_measured": 0
+          },
+          "evidence": [
+            "routing/tool/latency win: tool calls 21 → 3, latency 128535ms → 58704ms",
+            "provider input win: baseline 694972 → madar 103125",
+            "turns win: baseline 22 → madar 4",
+            "fresh_token win: baseline 48000 → madar 22355",
+            "cost win: baseline 0.7999594999999997 → madar 0.2068585"
+          ]
+        },
+        "spi_madar": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 1,
+            "regression": 0,
+            "not_measured": 0
+          },
+          "evidence": [
+            "routing/tool/latency loss: tool calls 18 → 3, latency 108643ms → 142883ms",
+            "provider input win: baseline 592076 → madar 111021",
+            "turns win: baseline 19 → madar 4",
+            "fresh_token win: baseline 44209 → madar 29866",
+            "cost win: baseline 0.6878869999999999 → madar 0.27005599999999996"
+          ]
+        }
+      },
+      "workflow_outcomes": null,
+      "artifacts": {
+        "legacy_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-06-10T07-39-11/raw/twenty/explain-runtime/warm-cache/legacy/trial-001/report.share-safe.json"
+        ],
+        "spi_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-06-10T07-39-11/raw/twenty/explain-runtime/warm-cache/spi/trial-001/report.share-safe.json"
+        ]
+      }
+    }
+  ]
+}

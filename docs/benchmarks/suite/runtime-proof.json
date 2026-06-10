@@ -7,26 +7,48 @@
       {
         "id": "send_preparation",
         "label": "send preparation",
-        "kind": "entrypoint",
-        "evidence_terms": ["send", "document", "prepare"]
+        "kind": "handoff",
+        "evidence_terms": [
+          "sendDocument()",
+          "server-only/document/send-document.ts",
+          "setDocumentRecipients()",
+          "extractFieldAutoInsertValues()"
+        ]
       },
       {
         "id": "recipient_creation",
         "label": "recipient creation",
         "kind": "handoff",
-        "evidence_terms": ["recipient", "create", "signer"]
+        "evidence_terms": [
+          "setDocumentRecipients()",
+          "server-only/recipient/set-document-recipients.ts",
+          "createRecipientAuthOptions()",
+          "utils/document-auth.ts"
+        ]
       },
       {
         "id": "signing_state",
         "label": "signing state",
         "kind": "handoff",
-        "evidence_terms": ["signing", "status", "signed"]
+        "evidence_terms": [
+          "getIsRecipientsTurnToSign()",
+          "get-is-recipient-turn.ts",
+          "decorateAndSignPdf()",
+          "signPdf()",
+          "seal-document.handler.ts"
+        ]
       },
       {
         "id": "notification_delivery",
         "label": "notification delivery",
         "kind": "terminal",
-        "evidence_terms": ["notification", "email", "deliver"]
+        "evidence_terms": [
+          "sendPendingEmail()",
+          "server-only/document/send-pending-email.ts",
+          "sendDeleteEmail()",
+          "send-recipient-signed-email.handler.ts",
+          "send-document-completed-emails.handler.ts"
+        ]
       }
     ]
   },
@@ -39,19 +61,38 @@
         "id": "request_handling",
         "label": "request handling",
         "kind": "entrypoint",
-        "evidence_terms": ["request", "route", "handler", "response"]
+        "evidence_terms": [
+          "app/api/v2/client/[workspaceId]/responses/route.ts",
+          "parseAndValidateResponseInput()",
+          "validateResponseSubmission()",
+          "resolveClientApiIds",
+          "getSurvey(",
+          "createResponseForRequest()"
+        ]
       },
       {
         "id": "persistence",
         "label": "persistence",
         "kind": "terminal",
-        "evidence_terms": ["persist", "save", "store", "database"]
+        "evidence_terms": [
+          "app/api/v2/client/[workspaceId]/responses/lib/response.ts",
+          "createResponse()",
+          "buildPrismaResponseData()",
+          "prismaClient.response.create",
+          "assertDisplayOwnership",
+          "calculateTtcTotal"
+        ]
       },
       {
         "id": "analytics_event_tracking",
         "label": "analytics/event tracking",
         "kind": "terminal",
-        "evidence_terms": ["analytics", "event", "track"]
+        "evidence_terms": [
+          "sendToPipeline",
+          "responseCreated",
+          "responseFinished",
+          "process-response-pipeline-job"
+        ]
       }
     ]
   },
@@ -64,7 +105,7 @@
         "id": "request_handling",
         "label": "request handling",
         "kind": "entrypoint",
-        "evidence_terms": ["request", "route", "handler", "click"]
+        "evidence_terms": ["request", "route", "handler", "click", "middleware"]
       },
       {
         "id": "analytics_tracking",
@@ -89,19 +130,34 @@
         "id": "api_mutation_handling",
         "label": "API mutation handling",
         "kind": "entrypoint",
-        "evidence_terms": ["api", "mutation", "resolver", "controller"]
+        "evidence_terms": [
+          "create-one-resolver.factory",
+          "update-one-resolver.factory",
+          "direct-execution.service",
+          "create one resolver factory",
+          "update one resolver factory"
+        ]
       },
       {
         "id": "workspace_service_handoff",
         "label": "workspace service handoff",
         "kind": "handoff",
-        "evidence_terms": ["workspace", "service", "mutation"]
+        "evidence_terms": [
+          "common base query runner",
+          "common create one query runner",
+          "common update one query runner",
+          "workspace entity manager"
+        ]
       },
       {
         "id": "persistence",
         "label": "persistence",
         "kind": "terminal",
-        "evidence_terms": ["persist", "save", "repository", "database"]
+        "evidence_terms": [
+          "workspace update query builder",
+          "workspace scoped repository",
+          "workspace entity manager"
+        ]
       }
     ]
   },
@@ -114,25 +170,44 @@
         "id": "booking_request",
         "label": "booking request",
         "kind": "entrypoint",
-        "evidence_terms": ["booking", "request", "route", "handler"]
+        "evidence_terms": [
+          "pages/api/book/event.ts",
+          "API /api/book/event",
+          "getRegularBookingService()"
+        ]
       },
       {
         "id": "availability_validation",
         "label": "availability validation",
         "kind": "handoff",
-        "evidence_terms": ["availability", "validate", "slot"]
+        "evidence_terms": [
+          "handleNewBooking/ensureAvailableUsers.ts",
+          "ensureAvailableUsers",
+          "checkForConflicts",
+          "NoAvailableUsersFound"
+        ]
       },
       {
         "id": "scheduled_event_persistence",
         "label": "scheduled event persistence",
         "kind": "terminal",
-        "evidence_terms": ["event", "persist", "save", "schedule"]
+        "evidence_terms": [
+          "handleNewBooking/createBooking.ts",
+          "saveBooking",
+          "prisma.$transaction",
+          "tx.booking.create"
+        ]
       },
       {
         "id": "notification_delivery",
         "label": "notification delivery",
         "kind": "terminal",
-        "evidence_terms": ["notification", "email", "deliver"]
+        "evidence_terms": [
+          "BookingEmailSmsHandler.ts",
+          "sendScheduledEmailsAndSMS",
+          "sendOrganizerRequestEmail",
+          "sendAttendeeRequestEmailAndSMS"
+        ]
       }
     ]
   },

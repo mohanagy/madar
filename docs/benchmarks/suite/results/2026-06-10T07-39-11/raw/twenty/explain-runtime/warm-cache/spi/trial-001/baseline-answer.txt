@@ -1,0 +1,42 @@
+## How Twenty processes a CRM record mutation
+
+Twenty's record API is **dynamic** — there are no hand-written resolvers per CRM object (Company, Person, Opportunity…). Instead, resolvers are generated per workspace from object metadata, and every mutation funnels through a shared query-runner pipeline down to a workspace-scoped TypeORM layer. Tracing a `createOne<Object>` mutation:
+
+### 1. API handling — generated resolver
+- `api/graphql/workspace-resolver-builder/workspace-resolver-builder.service.ts` maps a mutation method name (e.g. `CREATE_ONE`) to a factory.
+- `factories/create-one-resolver.factory.ts` produces the actual GraphQL resolver function. It:
+  - extracts requested output fields via `graphqlFields(info)`,
+  - builds a `resolverContext` with `createQueryRunnerContext` (`workspace-resolver-builder/utils/create-query-runner-context.util.ts`), which pulls the authenticated workspace/user from request-scoped storage (`getWorkspaceAuthContext`),
+  - delegates to `CommonCreateOneQueryRunnerService.execute(...)`,
+  - converts the persisted row(s) back to a GraphQL connection via `ObjectRecordsToGraphqlConnectionHelper`, and routes errors through `workspaceQueryRunnerGraphqlApiExceptionHandler`.
+- (REST and MCP entry points under `api/rest` and `api/mcp` reuse the same `common-query-runners`.)
+
+### 2. Workspace services — the common query-runner pipeline
+The orchestration lives in the abstract `api/common/common-query-runners/common-base-query-runner.service.ts`, whose `execute()` runs a fixed sequence:
+1. **Throttle** — API-key requests hit a token-bucket rate limiter (`ThrottlerService`).
+2. **Validate** — subclass `validate()` (`assertMutationNotOnRemoteObject`, UUID checks via `assertIsValidUuid`).
+3. **Settings permissions** — system objects checked against `OBJECTS_WITH_SETTINGS_PERMISSIONS_REQUIREMENTS` via `PermissionsService`.
+4. **Parse selected fields** — `GraphqlQueryParser.parseSelectedFields`.
+5. **Process args** (`processArgs`): subclass `computeArgs()` coerces/validates input through `DataArgProcessorService`, then **pre-query hooks** fire (`WorkspaceQueryHookService.executePreQueryHooks`).
+6. **Complexity guard** — `validateQueryComplexity`.
+7. **Run inside workspace context** — `GlobalWorkspaceOrmManager.executeInWorkspaceContext(...)`.
+
+Inside that context, `prepareExtendedQueryRunnerContextWithGlobalDatasource()`:
+- resolves the per-request role/permission config (`resolveRolePermissionConfig` + `getWorkspaceContext` from `twenty-orm/storage/orm-workspace-context.storage.ts`),
+- gets the workspace datasource (`GlobalWorkspaceOrmManager.getGlobalWorkspaceDataSource`, or the read replica when read-only),
+- obtains a permission-scoped `WorkspaceRepository` for the target object.
+
+The concrete runner's `run()` executes, then `enrichResultsWithGettersAndHooks` applies result getters (`CommonResultGettersService`) and **post-query hooks**.
+
+- `common-create-one-query-runner.service.ts` simply wraps the data in an array and calls the many-runner, returning `result[0]`.
+- `common-create-many-query-runner/common-create-many-query-runner.service.ts` does the real work: `insertOrUpsertRecords` (insert vs. upsert via `getConflictingFields`/`categorizeRecords`), `fetchUpsertedRecords` (re-selects by id with the requested columns), and `processNestedRelationsHelper.processNestedRelations` for nested relation writes.
+
+### 3. Persistence — twenty-orm (workspace-scoped TypeORM)
+- `twenty-orm/repository/workspace.repository.ts` — `insert()` / `updateMany()` attach `shouldBypassPermissionChecks` + `objectRecordsPermissions` and forward to the entity manager.
+- `twenty-orm/entity-manager/workspace-entity-manager.ts` — `insert()` builds a TypeORM query builder, sets the workspace auth context, applies `.values().returning(selectedColumns).execute()`. Across mutating ops it runs `validatePermissions(...)`, normalizes input with `formatData` (`twenty-orm/utils/format-data.util.ts`), and emits **database batch events** via `internalContext.eventEmitterService.emitDatabaseBatchEvent(...)` (`workspace-event-emitter/`) — the hook that drives downstream side effects (workflows, search index, webhooks).
+- The query runs against the workspace's Postgres schema through the `GlobalWorkspaceDataSource` (`twenty-orm/global-workspace-datasource/`), which isolates each workspace's tables.
+
+### Summary of the path
+`generated resolver (create-one-resolver.factory)` → `CommonCreateOneQueryRunnerService` → `CommonBaseQueryRunnerService.execute` (throttle → validate → permissions → arg processing + pre-hooks → workspace-context datasource/repo resolution) → `CommonCreateManyQueryRunnerService.run` (insert/upsert + nested relations) → `WorkspaceRepository.insert` → `WorkspaceEntityManager.insert` (permission check, `formatData`, SQL via query builder, **emit DB events**) → workspace Postgres schema → result getters + post-hooks → GraphQL connection back to the client.
+
+The two pivot files to read first are **`common-base-query-runner.service.ts`** (the orchestration template) and **`workspace-entity-manager.ts`** (the permission-enforcing persistence + event boundary).

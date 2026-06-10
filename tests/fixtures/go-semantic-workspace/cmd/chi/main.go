@@ -5,7 +5,7 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-func mountRoutes() {
+func main() {
 	r := chi.NewRouter()
 	api := chi.NewRouter()
 	handler := &handlers.UserHandler{}

@@ -1,0 +1,13 @@
+Dub resolves a short-link click through a single middleware spine, ending in parallel analytics tracking and the redirect:
+
+**1. Request handling** — The incoming request hits `middleware()` (`middleware.ts:35`), which routes link requests into `LinkMiddleware()` (`lib/middleware/link.ts:40`). This looks up the short link, and click context is prepared/cached via `cacheDeepLinkClickData()` (`lib/middleware/utils/cache-deeplink-click-data.ts:10`) along with identity hashing (`lib/middleware/utils/get-identity-hash.ts`).
+
+**2. Analytics tracking** — The click is recorded to Tinybird via `recordClick()` (`lib/tinybird/record-click.ts:28`), capturing the analytics event for the resolved link.
+
+**3. Destination redirect** — The middleware issues `NextResponse.redirect` to send the visitor to the link's destination URL (`lib/middleware/link.ts:77`, also surfaced at `middleware.ts:74`).
+
+**Key files**
+- `middleware.ts` — entrypoint routing
+- `lib/middleware/link.ts` — link resolution + redirect
+- `lib/middleware/utils/cache-deeplink-click-data.ts` — click data prep/caching
+- `lib/tinybird/record-click.ts` — analytics recording

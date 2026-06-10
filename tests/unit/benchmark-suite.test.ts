@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { dirname, join, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 
-import { describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import type { GenerateGraphResult } from '../../src/infrastructure/generate.js'
 import type { NativeAgentCompareResult, NativeAgentCompareReport } from '../../src/infrastructure/compare.js'
@@ -17,6 +17,19 @@ import {
   type BenchmarkSuiteRepo,
   type BenchmarkSuiteTask,
 } from '../../src/infrastructure/benchmark/suite.js'
+
+const cliStubDir = mkdtempSync(join(tmpdir(), 'madar-bench-cli-stub-'))
+const cliStubPath = join(cliStubDir, 'bin.js')
+
+beforeAll(() => {
+  writeFileSync(cliStubPath, '#!/usr/bin/env node\n', 'utf8')
+  process.env.MADAR_BENCH_CLI_PATH = cliStubPath
+})
+
+afterAll(() => {
+  delete process.env.MADAR_BENCH_CLI_PATH
+  rmSync(cliStubDir, { recursive: true, force: true })
+})
 
 function withTempDir(callback: (tempDir: string) => void | Promise<void>): void | Promise<void> {
   const tempDir = mkdtempSync(join(tmpdir(), 'madar-bench-suite-'))
@@ -335,7 +348,8 @@ describe('benchmark suite manifests', () => {
       expect.objectContaining({
         id: 'documenso',
         status: 'ready',
-        graphRoot: 'packages',
+        graphRoot: 'packages/lib',
+        supportsSpi: true,
         source: expect.objectContaining({
           kind: 'git',
           url: 'https://github.com/documenso/documenso',
@@ -345,6 +359,8 @@ describe('benchmark suite manifests', () => {
       expect.objectContaining({
         id: 'formbricks',
         status: 'ready',
+        graphRoot: 'apps/web',
+        supportsSpi: true,
         source: expect.objectContaining({
           kind: 'git',
           url: 'https://github.com/formbricks/formbricks',
@@ -354,6 +370,8 @@ describe('benchmark suite manifests', () => {
       expect.objectContaining({
         id: 'dub',
         status: 'ready',
+        graphRoot: 'apps/web',
+        supportsSpi: true,
         source: expect.objectContaining({
           kind: 'git',
           url: 'https://github.com/dubinc/dub',
@@ -363,7 +381,8 @@ describe('benchmark suite manifests', () => {
       expect.objectContaining({
         id: 'twenty',
         status: 'ready',
-        graphRoot: 'packages/twenty-server/src/modules',
+        graphRoot: 'packages/twenty-server/src/engine',
+        supportsSpi: true,
         source: expect.objectContaining({
           kind: 'git',
           url: 'https://github.com/twentyhq/twenty',
@@ -373,6 +392,7 @@ describe('benchmark suite manifests', () => {
       expect.objectContaining({
         id: 'cal-diy',
         status: 'ready',
+        supportsSpi: false,
         source: expect.objectContaining({
           kind: 'git',
           url: 'https://github.com/calcom/cal.diy',
@@ -383,6 +403,7 @@ describe('benchmark suite manifests', () => {
         id: 'novu',
         status: 'ready',
         graphRoot: 'apps',
+        supportsSpi: false,
         source: expect.objectContaining({
           kind: 'git',
           url: 'https://github.com/novuhq/novu',
@@ -1388,10 +1409,18 @@ describe('runBenchmarkSuite', () => {
             expect(existsSync(join(workspaceRoot, '.mcp.json'))).toBe(false)
             expect(existsSync(join(workspaceRoot, '.claude', 'settings.json'))).toBe(false)
             const scopedMcpConfig = JSON.parse(readFileSync(join(rootPath, '.mcp.json'), 'utf8')) as {
-              mcpServers?: Record<string, unknown>
+              mcpServers?: Record<string, {
+                command?: string
+                env?: Record<string, string>
+              }>
             }
             const scopedClaudeRules = readFileSync(join(rootPath, 'CLAUDE.md'), 'utf8')
             expect(Object.keys(scopedMcpConfig.mcpServers ?? {})).toEqual(['madar'])
+            expect(scopedMcpConfig.mcpServers?.madar?.command).toBe('madar')
+            expect(scopedMcpConfig.mcpServers?.madar?.env).toEqual(expect.objectContaining({
+              MADAR_TOOL_PROFILE: 'core',
+            }))
+            expect(scopedMcpConfig.mcpServers?.madar?.env?.PATH ?? scopedMcpConfig.mcpServers?.madar?.env?.Path).toContain(join(rootPath, '.claude', 'bin'))
             expect(scopedClaudeRules).not.toContain('# scoped repo-specific claude')
             const outputDir = join(rootPath, 'out')
             mkdirSync(outputDir, { recursive: true })
@@ -2105,6 +2134,17 @@ describe('runBenchmarkSuite', () => {
             expect(existsSync(join(rootPath, '.mcp.json'))).toBe(true)
             expect(existsSync(join(rootPath, 'CLAUDE.md'))).toBe(true)
             expect(existsSync(join(rootPath, '.claude', 'settings.json'))).toBe(true)
+            const mcpConfig = JSON.parse(readFileSync(join(rootPath, '.mcp.json'), 'utf8')) as {
+              mcpServers?: Record<string, {
+                command?: string
+                env?: Record<string, string>
+              }>
+            }
+            expect(mcpConfig.mcpServers?.madar?.command).toBe('madar')
+            expect(mcpConfig.mcpServers?.madar?.env).toEqual(expect.objectContaining({
+              MADAR_TOOL_PROFILE: 'core',
+            }))
+            expect(mcpConfig.mcpServers?.madar?.env?.PATH ?? mcpConfig.mcpServers?.madar?.env?.Path).toContain(join(rootPath, '.claude', 'bin'))
             return {
               mode: options.useSpi ? 'generate' : 'generate',
               rootPath,
@@ -2365,11 +2405,19 @@ describe('runBenchmarkSuite', () => {
           tasks,
           generateGraph: (rootPath = '.', options = {}) => {
             const mcpConfig = JSON.parse(readFileSync(join(rootPath, '.mcp.json'), 'utf8')) as {
-              mcpServers?: Record<string, unknown>
+              mcpServers?: Record<string, {
+                command?: string
+                env?: Record<string, string>
+              }>
             }
             const claudeRules = readFileSync(join(rootPath, 'CLAUDE.md'), 'utf8')
 
             expect(Object.keys(mcpConfig.mcpServers ?? {})).toEqual(['madar'])
+            expect(mcpConfig.mcpServers?.madar?.command).toBe('madar')
+            expect(mcpConfig.mcpServers?.madar?.env).toEqual(expect.objectContaining({
+              MADAR_TOOL_PROFILE: 'core',
+            }))
+            expect(mcpConfig.mcpServers?.madar?.env?.PATH ?? mcpConfig.mcpServers?.madar?.env?.Path).toContain(join(rootPath, '.claude', 'bin'))
             expect(claudeRules).not.toContain('# repo-specific claude')
 
             return {
