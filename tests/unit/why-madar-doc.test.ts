@@ -86,8 +86,8 @@ describe('public marketing copy honesty', () => {
     })
 
     it('surfaces the current stable release and benchmark evidence pointers in the main README flow', () => {
-      expect(content).toContain('Current version: `0.27.9`')
-      expect(content).toContain('0.27.9 changelog')
+      expect(content).toContain('Current version: `0.28.0`')
+      expect(content).toContain('0.28.0 changelog')
       expect(content).toContain('madar summary')
       expect(content).toContain('docs/claims-and-evidence.md')
       expect(content).toContain('docs/benchmarks/suite/')
@@ -142,10 +142,11 @@ describe('public marketing copy honesty', () => {
     })
 
     it('pins the benchmark evidence table values in the README', () => {
-      expect(content).toContain('| Tool calls | 28 | 7 |')
-      expect(content).toContain('| Input tokens | 2,366,946 | 498,688 |')
-      expect(content).toContain('| Wall-clock latency | 158,995 ms | 72,420 ms |')
-      expect(content).toContain('| Cost | $2.6595 | $0.9728 |')
+      expect(content).toContain('6/6 `explain-runtime` legacy rows')
+      expect(content).toContain('| `documenso` | 174,504 -> 76,721 (2.27x)')
+      expect(content).toContain('| `cal-diy` | 1,588,241 -> 101,820 (15.60x)')
+      expect(content).toContain('| `novu` | 1,055,389 -> 75,772 (13.93x)')
+      expect(content).toContain('SPI arms are tracked separately and are not folded into this 6/6 claim.')
     })
 
     it('keeps claim buckets in the evidence docs while the README stays a compact pointer', () => {
