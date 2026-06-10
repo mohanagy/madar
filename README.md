@@ -6,6 +6,8 @@ Madar builds a local graph of your TypeScript/Node repo, then gives agents like 
 
 It helps agents spend less time rediscovering the same files, routes, imports, and flows.
 
+In the latest public TypeScript benchmark receipts, Madar produced proof-backed `full_win` outcomes on 6/6 `explain-runtime` legacy rows with strict runtime-proof gates enabled.
+
 [![npm](https://img.shields.io/npm/v/%40lubab%2Fmadar)](https://www.npmjs.com/package/@lubab/madar)
 [![node >=20](https://img.shields.io/badge/node-%E2%89%A520-3c873a)](https://nodejs.org/)
 [![local first](https://img.shields.io/badge/local--first-no%20cloud%20required-0f766e)](#privacy)
@@ -22,6 +24,18 @@ On large repos, coding agents often burn context before they can answer:
 Madar gives the agent a smaller, repo-grounded starting point.
 
 It does not replace the agent. It helps the agent start from better evidence.
+
+## What Agents Get
+
+For each task, Madar can surface:
+
+- the likely entry files, symbols, routes, and handlers
+- direct snippets and file paths for the current question
+- relationships such as imports, calls, framework roles, and runtime handoffs
+- freshness metadata tied to git state
+- share-safe benchmark and handoff artifacts for review
+
+The goal is not to make the agent blind to the repo. The goal is to make the first pass smaller, more relevant, and easier to verify.
 
 ## Install
 
@@ -145,16 +159,18 @@ Use `--require-fresh-context` when the selected files must be fresh. Use `--requ
 
 ## Evidence
 
-On one verified GoValidate backend explain task, Madar reduced:
+Madar now has proof-backed public TypeScript `explain-runtime` legacy benchmark receipts across six open-source repos. Each row below has `benchmark_outcome = "full_win"`, `benchmark_readiness = "ready"`, `answer_quality.madar.passed = true`, and `answer_contract.runtime_proof.missing_obligations = []`.
 
-| Metric | Without Madar | With Madar |
-| --- | ---: | ---: |
-| Tool calls | 28 | 7 |
-| Input tokens | 2,366,946 | 498,688 |
-| Wall-clock latency | 158,995 ms | 72,420 ms |
-| Cost | $2.6595 | $0.9728 |
+| Repo | Input tokens | Fresh tokens | Tool calls | Turns | Latency | Cost |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `documenso` | 174,504 -> 76,721 (2.27x) | 31,754 -> 16,001 (1.98x) | 7 -> 2 | 8 -> 3 | 58.2s -> 35.3s (1.65x) | $0.3498 -> $0.1634 (2.14x) |
+| `formbricks` | 163,482 -> 74,395 (2.20x) | 19,471 -> 14,663 (1.33x) | 37 -> 2 | 6 -> 3 | 157.6s -> 22.6s (6.99x) | $0.4973 -> $0.1350 (3.68x) |
+| `dub` | 233,038 -> 76,538 (3.04x) | 33,088 -> 15,847 (2.09x) | 9 -> 2 | 10 -> 3 | 69.4s -> 30.2s (2.29x) | $0.3928 -> $0.1570 (2.50x) |
+| `twenty` | 694,972 -> 103,125 (6.74x) | 48,000 -> 22,355 (2.15x) | 21 -> 3 | 22 -> 4 | 128.5s -> 58.7s (2.19x) | $0.8000 -> $0.2069 (3.87x) |
+| `cal-diy` | 1,588,241 -> 101,820 (15.60x) | 61,669 -> 21,688 (2.84x) | 37 -> 3 | 38 -> 4 | 252.0s -> 38.7s (6.51x) | $1.4263 -> $0.1946 (7.33x) |
+| `novu` | 1,055,389 -> 75,772 (13.93x) | 63,542 -> 15,491 (4.10x) | 23 -> 2 | 24 -> 3 | 220.3s -> 31.1s (7.09x) | $1.1316 -> $0.1620 (6.98x) |
 
-This is not a universal benchmark claim. It is one repo, one prompt, one agent runtime, and one verified install path.
+This is not a universal benchmark claim. These are repo/task-specific, single-trial, legacy-row receipts for public TypeScript `explain-runtime` prompts. SPI arms are tracked separately and are not folded into this 6/6 claim.
 
 The public evidence map tracks what is proven, what is mixed, and what should not be claimed yet: [claims and evidence](https://github.com/mohanagy/madar/blob/main/docs/claims-and-evidence.md).
 
@@ -184,11 +200,11 @@ It does not record prompt text, answer text, source paths, source content, or re
 
 ## What's New
 
-Current version: `0.27.9`.
+Current version: `0.28.0`.
 
-This release includes the stable next-track adoption bundle: the one-command `madar try` flow, opt-in telemetry, verified agent quickstarts, public benchmark-suite work, freshness improvements, and Windows Claude workflow fixes.
+This release promotes the public benchmark work to a proof-backed stable release: six public TypeScript `explain-runtime` legacy rows now have checked-in `full_win` receipts, strict runtime-proof gates, direct-evidence answer checks, scoped benchmark roots, and share-safe reports. It also includes retrieval and extraction improvements for runtime handoffs, source-visible framework flows, and benchmark reproducibility.
 
-Read the full notes in the [0.27.9 changelog](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md#0279---2026-06-04).
+Read the full notes in the [0.28.0 changelog](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md#0280---2026-06-10).
 
 ## Docs
 

@@ -2,6 +2,23 @@
 
 All notable changes to the TypeScript package will be documented in this file.
 
+## [0.28.0] - 2026-06-10
+
+### Added
+
+- **Proof-backed public TypeScript benchmark receipts are now part of the stable release**: the public `documenso`, `formbricks`, `dub`, `twenty`, `cal-diy`, and `novu` `explain-runtime` legacy rows now have checked-in share-safe receipts with `benchmark_outcome = "full_win"`, `benchmark_readiness = "ready"`, passing Madar answer-quality gates, and empty runtime-proof missing obligations.
+- **Strict runtime-proof benchmarking is now first-class**: benchmark rows can require explicit entrypoint, handoff, and terminal-effect obligations, and reports now expose runtime-proof evidence so a row cannot be claimed as a win when required flow evidence is missing.
+
+### Changed
+
+- **README and claim surfaces now lead with the 0.28.0 proof boundary**: public copy now shows the six-row TypeScript `explain-runtime` legacy benchmark table while keeping the claim scoped to single-trial, repo/task-specific receipts and keeping SPI arms separate.
+- **Runtime retrieval is more completeness-driven**: slice selection, targeted recovery, source evidence, scoped benchmark roots, and framework/runtime handoff handling were tightened so Madar can surface direct evidence before the agent answers.
+
+### Fixed
+
+- **Benchmark receipts no longer hide missing proof behind soft wins**: strict rows now fail closed when required runtime obligations are absent, direct-evidence answer checks are enforced, nested trace tool inputs are summarized more reliably, and mixed workspace-relative evidence path issues are removed from the saved reports.
+- **Public benchmark reproducibility is stronger**: the suite honors explicit benchmark CLI overrides, keeps scoped-root fixtures platform-aware, avoids dropping source-visible runtime files behind broad ignore rules, and records share-safe reports for each public legacy row.
+
 ## [0.27.9] - 2026-06-04
 
 ### Added
