@@ -9,6 +9,7 @@ import {
   resolveOpencodeConfigPath,
 } from './install.js'
 import { analyzeGraphContextFreshness, graphFreshnessStatusLabel, type GraphContextFreshnessStatus } from '../runtime/freshness.js'
+import { isSemanticRuntimeAvailable } from '../runtime/semantic.js'
 import { findPackageRoot, readPackageVersion } from '../shared/package-metadata.js'
 
 const MADAR_SECTION_MARKER = '## madar'
@@ -47,8 +48,16 @@ export interface DoctorReport {
   graph: GraphCheck
   agents: AgentCheck[]
   mcpChecks: McpCheck[]
+  /** Availability of the optional semantic/rerank runtime. Informational
+   *  only — never part of the `healthy` computation. */
+  semantic: SemanticCheck
   nextCommands: string[]
   healthy: boolean
+}
+
+interface SemanticCheck {
+  available: boolean
+  detail: string
 }
 
 interface JsonObject {
@@ -526,11 +535,17 @@ export function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorRep
 
   const mcpChecks = [claudeMcp, cursorMcp, copilotMcp]
 
+  const semanticAvailable = isSemanticRuntimeAvailable(projectDir)
+  const semantic: SemanticCheck = semanticAvailable
+    ? { available: true, detail: 'optional @huggingface/transformers resolved' }
+    : { available: false, detail: 'optional — run `npm install @huggingface/transformers` in this project to enable semantic/rerank' }
+
   const partialReport = {
     packageVersion,
     graph,
     agents,
     mcpChecks,
+    semantic,
   }
   const nextCommands = computeNextCommands(partialReport)
   const healthy = graph.exists && graph.freshness === 'fresh' && agents.every((agent) => agent.status === 'configured') && mcpChecks.every((check) => check.status === 'ok')
@@ -578,6 +593,7 @@ export function runDoctorCommand(options: DoctorCommandOptions = {}): string {
   for (const check of report.mcpChecks) {
     lines.push(`  - ${check.label}: ${check.status} (${check.configPath}; ${check.reason})`)
   }
+  lines.push(`- semantic/rerank: ${report.semantic.available ? 'available' : 'unavailable'} (${report.semantic.detail})`)
 
   if (report.nextCommands.length === 0) {
     lines.push('- next commands: none')

@@ -408,12 +408,40 @@ export const CORE_TOOL_NAMES = ['retrieve', 'impact', 'call_chain', 'community_o
 
 export type McpCoreToolName = (typeof CORE_TOOL_NAMES)[number]
 
-export function activeMcpTools(profile: McpToolProfile = 'core'): McpToolDefinition[] {
-  if (profile === 'full') {
-    return MCP_TOOLS
+/** Retrieve params that only function when the optional
+ *  @huggingface/transformers package is resolvable. */
+const SEMANTIC_RETRIEVE_FIELDS = ['semantic', 'semantic_model', 'rerank', 'rerank_model'] as const
+
+export interface ActiveMcpToolsOptions {
+  /** When false, semantic/rerank fields are stripped from the retrieve
+   *  schema so agents never request a capability this machine lacks. */
+  semanticAvailable?: boolean
+}
+
+function withoutSemanticFields(tool: McpToolDefinition): McpToolDefinition {
+  if (tool.name !== 'retrieve') {
+    return tool
   }
+  const hidden = new Set<string>(SEMANTIC_RETRIEVE_FIELDS)
+  const properties = Object.fromEntries(
+    Object.entries(tool.inputSchema.properties).filter(([key]) => !hidden.has(key)),
+  )
+  return {
+    ...tool,
+    inputSchema: {
+      ...tool.inputSchema,
+      properties,
+    },
+  }
+}
+
+export function activeMcpTools(profile: McpToolProfile = 'core', options: ActiveMcpToolsOptions = {}): McpToolDefinition[] {
   const core = new Set<string>(CORE_TOOL_NAMES)
-  return MCP_TOOLS.filter((tool) => core.has(tool.name))
+  const tools = profile === 'full' ? MCP_TOOLS : MCP_TOOLS.filter((tool) => core.has(tool.name))
+  if (options.semanticAvailable === false) {
+    return tools.map((tool) => withoutSemanticFields(tool))
+  }
+  return tools
 }
 
 export function resolveToolProfileFromEnv(env: NodeJS.ProcessEnv = process.env): McpToolProfile {

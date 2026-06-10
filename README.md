@@ -200,11 +200,13 @@ It does not record prompt text, answer text, source paths, source content, or re
 
 ## What's New
 
-Current version: `0.28.0`.
+Current version: `0.28.1`.
 
-This release promotes the public benchmark work to a proof-backed stable release: six public TypeScript `explain-runtime` legacy rows now have checked-in `full_win` receipts, strict runtime-proof gates, direct-evidence answer checks, scoped benchmark roots, and share-safe reports. It also includes retrieval and extraction improvements for runtime handoffs, source-visible framework flows, and benchmark reproducibility.
+`0.28.1` is a stability hotfix: a `retrieve` call with `semantic`/`rerank` no longer crashes the MCP server when the optional `@huggingface/transformers` package is missing, a project-local install of that package now enables semantic/rerank under npx-launched or global installs, and the retrieve tool schema only advertises semantic fields when the capability is actually available.
 
-Read the full notes in the [0.28.0 changelog](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md#0280---2026-06-10).
+`0.28.0` promoted the public benchmark work to a proof-backed stable release: six public TypeScript `explain-runtime` legacy rows now have checked-in `full_win` receipts, strict runtime-proof gates, direct-evidence answer checks, scoped benchmark roots, and share-safe reports. It also includes retrieval and extraction improvements for runtime handoffs, source-visible framework flows, and benchmark reproducibility.
+
+Read the full notes in the [0.28.1 changelog](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md#0281---2026-06-10).
 
 ## Docs
 

@@ -18,6 +18,7 @@ import {
   type ResourceSessionState,
 } from './stdio/resources.js'
 import { handleToolCall as handleToolCallRequest } from './stdio/tools.js'
+import { isSemanticRuntimeAvailable } from './semantic.js'
 import {
   communitiesFromGraph,
   getCommunity,
@@ -447,6 +448,13 @@ function textToolResult(text: string): { content: Array<{ type: 'text'; text: st
   }
 }
 
+function errorToolResult(text: string): { content: Array<{ type: 'text'; text: string }>; isError: true } {
+  return {
+    content: [{ type: 'text', text }],
+    isError: true,
+  }
+}
+
 function loadGraphCached(graphPath: string): ReturnType<typeof loadGraph> {
   const safeGraphPath = validateGraphPath(graphPath)
   const currentGraphStat = statSync(safeGraphPath)
@@ -628,7 +636,11 @@ export function handleStdioRequest(
         })
       case 'tools/list': {
         const profile = resolveToolProfileFromEnv()
-        return ok(id, { tools: activeMcpTools(profile) })
+        // Only advertise semantic/rerank params when the optional transformers
+        // package is actually resolvable on this machine — agents cannot pass
+        // parameters that are absent from the schema.
+        const semanticAvailable = isSemanticRuntimeAvailable(dirname(graphPath))
+        return ok(id, { tools: activeMcpTools(profile, { semanticAvailable }) })
       }
       case 'tools/call': {
         const profile = resolveToolProfileFromEnv()
@@ -644,6 +656,7 @@ export function handleStdioRequest(
           ok,
           failure,
           textToolResult,
+          errorToolResult,
           stringParam,
           stringParamAlias,
           numberParamAlias,
@@ -838,8 +851,16 @@ export async function serveGraphStdio(options: ServeGraphStdioOptions): Promise<
       continue
     }
 
-    emitResourceNotifications(output, options.graphPath, sessionState)
-    const response = await Promise.resolve(handleStdioRequest(options.graphPath, payload, sessionState))
+    let response: StdioResponse | null
+    try {
+      emitResourceNotifications(output, options.graphPath, sessionState)
+      response = await Promise.resolve(handleStdioRequest(options.graphPath, payload, sessionState))
+    } catch (error) {
+      // A rejected handler must never tear down the whole stdio server: every
+      // request gets an answer and the loop keeps serving (#crash).
+      const message = error instanceof Error ? error.message : 'Request failed'
+      response = failure(requestId(payload as StdioRequest), JSONRPC_SERVER_ERROR, message)
+    }
     if (response) {
       if (response.error) {
         emitLogNotification(output, sessionState, 'error', { message: response.error.message, code: response.error.code })

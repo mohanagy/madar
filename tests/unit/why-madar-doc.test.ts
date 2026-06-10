@@ -86,8 +86,9 @@ describe('public marketing copy honesty', () => {
     })
 
     it('surfaces the current stable release and benchmark evidence pointers in the main README flow', () => {
-      expect(content).toContain('Current version: `0.28.0`')
-      expect(content).toContain('0.28.0 changelog')
+      const packageVersion = (JSON.parse(readDoc('package.json')) as { version: string }).version
+      expect(content).toContain(`Current version: \`${packageVersion}\``)
+      expect(content).toContain(`${packageVersion} changelog`)
       expect(content).toContain('madar summary')
       expect(content).toContain('docs/claims-and-evidence.md')
       expect(content).toContain('docs/benchmarks/suite/')

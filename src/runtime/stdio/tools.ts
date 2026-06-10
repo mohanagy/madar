@@ -96,6 +96,7 @@ interface ToolHelpers {
   ok(id: string | number | null, result: unknown): StdioResponse
   failure(id: string | number | null, code: number, message: string): StdioResponse
   textToolResult(text: string): { content: Array<{ type: 'text'; text: string }> }
+  errorToolResult(text: string): { content: Array<{ type: 'text'; text: string }>; isError: true }
   stringParam(params: unknown, key: string): string | null
   stringParamAlias(params: unknown, keys: readonly string[]): string | null
   numberParamAlias(params: unknown, keys: readonly string[], options?: { min?: number; max?: number }): number | null
@@ -1342,6 +1343,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         ...(retrieveRerankModel ? { rerankerModel: retrieveRerankModel } : {}),
         ...(retrieveLevelTyped !== null ? { retrievalLevel: retrieveLevelTyped } : {}),
         ...(effectiveRetrieveStrategy ? { retrievalStrategy: effectiveRetrieveStrategy } : {}),
+        projectRoot: dirname(resolve(graphPath)),
       }) : Promise.resolve(retrieveContext(graph, {
         question,
         budget: retrieveBudget,
@@ -1379,6 +1381,12 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
           ...payload,
           evidence: evidenceForRetrievePayload(result, graphPath),
         })))
+      }).catch((error: unknown) => {
+        // A rejected retrieve (e.g. missing optional semantic dependency) must
+        // surface as an MCP tool error the agent can read and react to —
+        // never as an unhandled rejection that kills the server (#crash).
+        const message = error instanceof Error ? error.message : 'retrieve failed'
+        return helpers.ok(id, helpers.errorToolResult(message))
       })
     }
     case 'context_pack': {

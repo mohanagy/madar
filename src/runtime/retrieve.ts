@@ -111,6 +111,9 @@ export interface RetrieveOptions {
   semanticModel?: string
   rerank?: boolean
   rerankerModel?: string
+  /** Project root used to resolve the optional transformers package when the
+   *  server itself runs from elsewhere (npx cache, global install). */
+  projectRoot?: string
   /** #75 manual override for the retrieval gate. When set (0-5), the gate
    *  bypasses heuristic classification and emits a decision with reason
    *  'manual override' at the supplied level. Caller-side surface for the
@@ -6369,7 +6372,10 @@ export async function retrieveContextAsync(graph: KnowledgeGraph, options: Retri
     semanticScores = await rankCandidatesBySemanticSimilarity(
       options.question,
       [...candidatesById.values()].map((node) => ({ id: node.id, text: semanticTextForNode(node) })),
-      options.semanticModel ? { model: options.semanticModel } : {},
+      {
+        ...(options.semanticModel ? { model: options.semanticModel } : {}),
+        ...(options.projectRoot ? { projectRoot: options.projectRoot } : {}),
+      },
     )
   }
 
@@ -6398,7 +6404,10 @@ export async function retrieveContextAsync(graph: KnowledgeGraph, options: Retri
     rerankScores = await rerankCandidatesWithCrossEncoder(
       options.question,
       candidatePool.map((node) => ({ id: node.id, text: semanticTextForNode(node) })),
-      options.rerankerModel ? { model: options.rerankerModel } : {},
+      {
+        ...(options.rerankerModel ? { model: options.rerankerModel } : {}),
+        ...(options.projectRoot ? { projectRoot: options.projectRoot } : {}),
+      },
     )
   }
 

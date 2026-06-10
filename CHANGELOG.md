@@ -2,6 +2,20 @@
 
 All notable changes to the TypeScript package will be documented in this file.
 
+## [0.28.1] - 2026-06-10
+
+### Fixed
+
+- **A retrieve call with `semantic`/`rerank` no longer kills the MCP server when the optional `@huggingface/transformers` package is missing**: the rejection previously escaped the stdio serve loop unhandled, terminating the process mid-call so agents saw an infinite spinner instead of an error. Retrieve failures now return an MCP `isError` tool result the agent can read and react to, and the serve loop is hardened so no handler rejection can tear down the server.
+- **A project-local `npm install @huggingface/transformers` now actually enables semantic/rerank**: npx-launched and globally installed servers resolve the optional package from the project root (derived from the graph path) in addition to madar's own installation, and the install hint in the error message now points at instructions that work for those installs.
+- **Failed semantic model loads no longer poison the pipeline cache**: a rejected load is evicted, so installing the package and retrying succeeds without restarting the server.
+
+### Added
+
+- **Semantic/rerank capability gating in the retrieve tool schema**: `tools/list` omits the `semantic`, `semantic_model`, `rerank`, and `rerank_model` fields when the optional package is not resolvable, so agents never request a capability the machine lacks.
+- **`madar doctor` now reports semantic/rerank availability** with the exact enable command, without affecting overall health status.
+- **Semantic model loads are bounded by a timeout** (`MADAR_MODEL_LOAD_TIMEOUT_MS`, default 120s) so a stalled first-use model download cannot block the serial stdio request loop indefinitely.
+
 ## [0.28.0] - 2026-06-10
 
 ### Added
