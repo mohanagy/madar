@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { dirname, join, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 
-import { describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import type { GenerateGraphResult } from '../../src/infrastructure/generate.js'
 import type { NativeAgentCompareResult, NativeAgentCompareReport } from '../../src/infrastructure/compare.js'
@@ -17,6 +17,19 @@ import {
   type BenchmarkSuiteRepo,
   type BenchmarkSuiteTask,
 } from '../../src/infrastructure/benchmark/suite.js'
+
+const cliStubDir = mkdtempSync(join(tmpdir(), 'madar-bench-cli-stub-'))
+const cliStubPath = join(cliStubDir, 'bin.js')
+
+beforeAll(() => {
+  writeFileSync(cliStubPath, '#!/usr/bin/env node\n', 'utf8')
+  process.env.MADAR_BENCH_CLI_PATH = cliStubPath
+})
+
+afterAll(() => {
+  delete process.env.MADAR_BENCH_CLI_PATH
+  rmSync(cliStubDir, { recursive: true, force: true })
+})
 
 function withTempDir(callback: (tempDir: string) => void | Promise<void>): void | Promise<void> {
   const tempDir = mkdtempSync(join(tmpdir(), 'madar-bench-suite-'))

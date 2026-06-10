@@ -542,7 +542,8 @@ function resetBenchmarkWorkspaceConfig(workspaceRoot: string): void {
 }
 
 function benchmarkWorkspaceCliPath(): string {
-  const cliPath = join(findPackageRoot(), 'dist', 'src', 'cli', 'bin.js')
+  const override = process.env.MADAR_BENCH_CLI_PATH?.trim()
+  const cliPath = override ? resolve(override) : join(findPackageRoot(), 'dist', 'src', 'cli', 'bin.js')
   if (!existsSync(cliPath)) {
     throw new Error(`Benchmark suite requires the built CLI at ${portablePath(cliPath)}. Run npm run build first.`)
   }
