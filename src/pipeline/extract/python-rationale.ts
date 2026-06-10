@@ -3,7 +3,7 @@ import { basename, extname } from 'node:path'
 
 import type { ExtractionEdge, ExtractionNode } from '../../contracts/types.js'
 import { sanitizeLabel } from '../../shared/security.js'
-import { _makeId, addNode, addUniqueEdge, createEdge, createNode, indentationLevel } from './core.js'
+import { _makeId, addNode, addUniqueEdge, createEdge, createNode, fileNodeIdForPath, fileStemForPath, indentationLevel } from './core.js'
 
 const MAX_PYTHON_DOCSTRING_LINES = 100
 const MAX_PYTHON_DOCSTRING_BYTES = 64 * 1024
@@ -122,8 +122,8 @@ function createRationaleNode(targetId: string, text: string, sourceFile: string,
 export function extractPythonRationale(filePath: string): ExtractionFragment {
   const sourceText = readFileSync(filePath, 'utf8')
   const lines = sourceText.split(/\r?\n/)
-  const stem = basename(filePath, extname(filePath))
-  const fileNodeId = _makeId(stem)
+  const stem = fileStemForPath(filePath)
+  const fileNodeId = fileNodeIdForPath(filePath)
   const nodes: ExtractionNode[] = []
   const edges: ExtractionEdge[] = []
   const seenIds = new Set<string>()

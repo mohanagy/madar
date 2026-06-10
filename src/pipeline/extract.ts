@@ -21,7 +21,21 @@ import { resolveGoSemantics } from './extract/go-cross-file.js'
 import { dispatchSingleFileExtraction, type ExtractionFragment, type ExtractorHandlerMap } from './extract/dispatch.js'
 import { applyJsFrameworkAdapters } from './extract/frameworks/core.js'
 import { extractGenericCode, normalizeTypeName } from './extract/generic.js'
-import { _makeId, addEdge, addNode, addUniqueEdge, createEdge, createFileNode, createNode, indentationLevel, normalizeLabel, stripHashComment } from './extract/core.js'
+import {
+  _makeId,
+  addEdge,
+  addNode,
+  addUniqueEdge,
+  createEdge,
+  createFileNode,
+  createNode,
+  fileNodeIdForPath,
+  fileStemForPath,
+  indentationLevel,
+  normalizeLabel,
+  stripHashComment,
+  withExtractionFileStemContext,
+} from './extract/core.js'
 import { unparenthesizeExpression } from './extract/typescript-utils.js'
 import {
   extractAudioFile as extractAudioFragment,
@@ -39,7 +53,7 @@ import { createTreeSitterWasmParser, treeSitterWasmError, type TreeSitterNode } 
 
 export { _makeId } from './extract/core.js'
 
-export const EXTRACTOR_CACHE_VERSION = 65
+export const EXTRACTOR_CACHE_VERSION = 67
 const PYTHON_KEYWORDS = new Set(['if', 'elif', 'else', 'for', 'while', 'return', 'class', 'def', 'lambda', 'with', 'print', 'sum'])
 const GENERIC_CODE_EXTENSIONS = new Set(['.go', '.rs', '.java', '.kt', '.kts', '.scala', '.cs', '.c', '.cc', '.cpp', '.cxx', '.h', '.hpp', '.swift', '.php', '.zig'])
 const RUBY_KEYWORDS = new Set(['if', 'elsif', 'else', 'unless', 'while', 'until', 'return', 'super', 'yield', 'class', 'def'])
@@ -97,6 +111,7 @@ interface CollectFilesOptions {
 
 interface CachedExtractionPayload extends ExtractionFragment {
   __madarTsExtractorVersion: number
+  __madarFileStem: string
 }
 
 interface PendingReferenceCitation {
@@ -237,7 +252,7 @@ function normalizeSectionLabel(label: string): string {
 }
 
 function sectionNodeId(filePath: string, label: string, line: number): string {
-  return _makeId(basename(filePath, extname(filePath)), label, String(line))
+  return _makeId(fileStemForPath(filePath), label, String(line))
 }
 
 function parseMarkdownHeading(lines: string[], index: number): { level: number; text: string; consumedLines: number } | null {
@@ -285,7 +300,7 @@ function parseMarkdownHeading(lines: string[], index: number): { level: number; 
 }
 
 function targetNodeId(targetPath: string): string {
-  return _makeId(basename(targetPath, extname(targetPath)))
+  return fileNodeIdForPath(targetPath)
 }
 
 function isExternalReference(target: string): boolean {
@@ -674,7 +689,7 @@ function addReferenceNodeFromText(
     return null
   }
 
-  const referenceId = _makeId(basename(filePath, extname(filePath)), 'reference', entry.rawIndex)
+  const referenceId = _makeId(fileStemForPath(filePath), 'reference', entry.rawIndex)
   addNode(
     nodes,
     seenIds,
@@ -688,7 +703,11 @@ function addReferenceNodeFromText(
 }
 
 function isCachedExtraction(value: unknown): value is CachedExtractionPayload {
-  return isRecord(value) && value.__madarTsExtractorVersion === EXTRACTOR_CACHE_VERSION && Array.isArray(value.nodes) && Array.isArray(value.edges)
+  return isRecord(value)
+    && value.__madarTsExtractorVersion === EXTRACTOR_CACHE_VERSION
+    && typeof value.__madarFileStem === 'string'
+    && Array.isArray(value.nodes)
+    && Array.isArray(value.edges)
 }
 
 function moduleSpecifierFromRequireCall(node: ts.CallExpression): string | null {
@@ -714,6 +733,9 @@ function readCachedExtraction(filePath: string): ExtractionFragment | null {
   if (!isCachedExtraction(cached)) {
     return null
   }
+  if (cached.__madarFileStem !== fileStemForPath(filePath)) {
+    return null
+  }
   return {
     nodes: cached.nodes,
     edges: cached.edges,
@@ -723,6 +745,7 @@ function readCachedExtraction(filePath: string): ExtractionFragment | null {
 function writeCachedExtraction(filePath: string, extraction: ExtractionFragment): void {
   saveCached(filePath, {
     __madarTsExtractorVersion: EXTRACTOR_CACHE_VERSION,
+    __madarFileStem: fileStemForPath(filePath),
     nodes: extraction.nodes,
     edges: extraction.edges,
   })
@@ -736,8 +759,8 @@ export function collectFiles(root: string, options: CollectFilesOptions = {}): s
 function extractPythonRegex(filePath: string): ExtractionFragment {
   const sourceText = readFileSync(filePath, 'utf8')
   const lines = sourceText.split(/\r?\n/)
-  const stem = basename(filePath, extname(filePath))
-  const fileNodeId = _makeId(stem)
+  const stem = fileStemForPath(filePath)
+  const fileNodeId = fileNodeIdForPath(filePath)
   const nodes: ExtractionNode[] = []
   const edges: ExtractionEdge[] = []
   const seenIds = new Set<string>()
@@ -928,8 +951,8 @@ function extractPythonTreeSitter(filePath: string): ExtractionFragment | null {
 
   const sourceText = readFileSync(filePath, 'utf8')
   const lines = sourceText.split(/\r?\n/)
-  const stem = basename(filePath, extname(filePath))
-  const fileNodeId = _makeId(stem)
+  const stem = fileStemForPath(filePath)
+  const fileNodeId = fileNodeIdForPath(filePath)
   const nodes: ExtractionNode[] = []
   const edges: ExtractionEdge[] = []
   const seenIds = new Set<string>()
@@ -1116,8 +1139,8 @@ function extractRubyScanner(filePath: string): ExtractionFragment {
 
   const sourceText = readFileSync(filePath, 'utf8')
   const lines = sourceText.split(/\r?\n/)
-  const stem = basename(filePath, extname(filePath))
-  const fileNodeId = _makeId(stem)
+  const stem = fileStemForPath(filePath)
+  const fileNodeId = fileNodeIdForPath(filePath)
   const nodes: ExtractionNode[] = []
   const edges: ExtractionEdge[] = []
   const seenIds = new Set<string>()
@@ -1273,8 +1296,8 @@ export function extractRuby(filePath: string): ExtractionFragment {
 export function extractLua(filePath: string): ExtractionFragment {
   const sourceText = readFileSync(filePath, 'utf8')
   const lines = sourceText.split(/\r?\n/)
-  const stem = basename(filePath, extname(filePath))
-  const fileNodeId = _makeId(stem)
+  const stem = fileStemForPath(filePath)
+  const fileNodeId = fileNodeIdForPath(filePath)
   const nodes: ExtractionNode[] = []
   const edges: ExtractionEdge[] = []
   const seenIds = new Set<string>()
@@ -1445,8 +1468,8 @@ function extractToc(filePath: string, allowedTargets: ReadonlySet<string>): Extr
 export function extractElixir(filePath: string): ExtractionFragment {
   const sourceText = readFileSync(filePath, 'utf8')
   const lines = sourceText.split(/\r?\n/)
-  const stem = basename(filePath, extname(filePath))
-  const fileNodeId = _makeId(stem)
+  const stem = fileStemForPath(filePath)
+  const fileNodeId = fileNodeIdForPath(filePath)
   const nodes: ExtractionNode[] = []
   const edges: ExtractionEdge[] = []
   const seenIds = new Set<string>()
@@ -1542,8 +1565,8 @@ export function extractElixir(filePath: string): ExtractionFragment {
 export function extractJulia(filePath: string): ExtractionFragment {
   const sourceText = readFileSync(filePath, 'utf8')
   const lines = sourceText.split(/\r?\n/)
-  const stem = basename(filePath, extname(filePath))
-  const fileNodeId = _makeId(stem)
+  const stem = fileStemForPath(filePath)
+  const fileNodeId = fileNodeIdForPath(filePath)
   const nodes: ExtractionNode[] = []
   const edges: ExtractionEdge[] = []
   const seenIds = new Set<string>()
@@ -1642,8 +1665,8 @@ export function extractJulia(filePath: string): ExtractionFragment {
 export function extractPowerShell(filePath: string): ExtractionFragment {
   const sourceText = readFileSync(filePath, 'utf8')
   const lines = sourceText.split(/\r?\n/)
-  const stem = basename(filePath, extname(filePath))
-  const fileNodeId = _makeId(stem)
+  const stem = fileStemForPath(filePath)
+  const fileNodeId = fileNodeIdForPath(filePath)
   const nodes: ExtractionNode[] = []
   const edges: ExtractionEdge[] = []
   const seenIds = new Set<string>()
@@ -1755,8 +1778,8 @@ export function extractPowerShell(filePath: string): ExtractionFragment {
 export function extractObjectiveC(filePath: string): ExtractionFragment {
   const sourceText = readFileSync(filePath, 'utf8')
   const lines = sourceText.split(/\r?\n/)
-  const stem = basename(filePath, extname(filePath))
-  const fileNodeId = _makeId(stem)
+  const stem = fileStemForPath(filePath)
+  const fileNodeId = fileNodeIdForPath(filePath)
   const nodes: ExtractionNode[] = []
   const edges: ExtractionEdge[] = []
   const seenIds = new Set<string>()
@@ -2055,8 +2078,8 @@ function extractRubyTreeSitter(filePath: string): ExtractionFragment | null {
   }
 
   const sourceText = readFileSync(filePath, 'utf8')
-  const stem = basename(filePath, extname(filePath))
-  const fileNodeId = _makeId(stem)
+  const stem = fileStemForPath(filePath)
+  const fileNodeId = fileNodeIdForPath(filePath)
   const nodes: ExtractionNode[] = []
   const edges: ExtractionEdge[] = []
   const seenIds = new Set<string>()
@@ -2262,8 +2285,8 @@ function extractGoTreeSitter(filePath: string): ExtractionFragment | null {
   }
 
   const sourceText = readFileSync(filePath, 'utf8')
-  const stem = basename(filePath, extname(filePath))
-  const fileNodeId = _makeId(stem)
+  const stem = fileStemForPath(filePath)
+  const fileNodeId = fileNodeIdForPath(filePath)
   const nodes: ExtractionNode[] = []
   const edges: ExtractionEdge[] = []
   const seenIds = new Set<string>()
@@ -2435,8 +2458,8 @@ function extractJavaTreeSitter(filePath: string): ExtractionFragment | null {
   }
 
   const sourceText = readFileSync(filePath, 'utf8')
-  const stem = basename(filePath, extname(filePath))
-  const fileNodeId = _makeId(stem)
+  const stem = fileStemForPath(filePath)
+  const fileNodeId = fileNodeIdForPath(filePath)
   const nodes: ExtractionNode[] = []
   const edges: ExtractionEdge[] = []
   const seenIds = new Set<string>()
@@ -2832,8 +2855,8 @@ function extractRustTreeSitter(filePath: string): ExtractionFragment | null {
   }
 
   const sourceText = readFileSync(filePath, 'utf8')
-  const stem = basename(filePath, extname(filePath))
-  const fileNodeId = _makeId(stem)
+  const stem = fileStemForPath(filePath)
+  const fileNodeId = fileNodeIdForPath(filePath)
   const nodes: ExtractionNode[] = []
   const edges: ExtractionEdge[] = []
   const seenIds = new Set<string>()
@@ -3161,8 +3184,8 @@ function collectJsxRenders(root: ts.Node, sourceFile: ts.SourceFile): string[] {
 export function extractJs(filePath: string): ExtractionFragment {
   const sourceText = readFileSync(filePath, 'utf8')
   const sourceFile = ts.createSourceFile(filePath, sourceText, ts.ScriptTarget.Latest, true, scriptKindForPath(filePath))
-  const stem = basename(filePath, extname(filePath))
-  const fileNodeId = _makeId(stem)
+  const stem = fileStemForPath(filePath)
+  const fileNodeId = fileNodeIdForPath(filePath)
   const nodes: ExtractionNode[] = []
   const edges: ExtractionEdge[] = []
   const seenIds = new Set<string>()
@@ -3621,30 +3644,37 @@ export interface ExtractOptions {
 export function extract(files: string[]): ExtractionData
 export function extract(files: string[], options: ExtractOptions): ExtractionData
 export function extract(files: string[], options: ExtractOptions = {}): ExtractionData {
-  const allowedTargets = new Set([...(options.allowedTargets ?? files)].map((filePath) => resolve(filePath)))
-  let combined = mergeExtractionFragments(files.map((filePath) => extractSingleFile(filePath, allowedTargets)))
+  const stemContextFiles = [
+    ...files,
+    ...(options.allowedTargets ?? []),
+    ...(options.contextNodes?.map((node) => node.source_file).filter((sourceFile) => sourceFile.length > 0) ?? []),
+  ]
+  return withExtractionFileStemContext(stemContextFiles, () => {
+    const allowedTargets = new Set([...(options.allowedTargets ?? files)].map((filePath) => resolve(filePath)))
+    let combined = mergeExtractionFragments(files.map((filePath) => extractSingleFile(filePath, allowedTargets)))
 
-  combined = options.contextNodes
-    ? resolveCrossFilePythonImports(files, combined, { contextNodes: options.contextNodes })
-    : resolveCrossFilePythonImports(files, combined)
+    combined = options.contextNodes
+      ? resolveCrossFilePythonImports(files, combined, { contextNodes: options.contextNodes })
+      : resolveCrossFilePythonImports(files, combined)
 
-  combined = options.contextNodes
-    ? resolvePythonFastApiSemantics(files, combined, { contextNodes: options.contextNodes })
-    : resolvePythonFastApiSemantics(files, combined)
+    combined = options.contextNodes
+      ? resolvePythonFastApiSemantics(files, combined, { contextNodes: options.contextNodes })
+      : resolvePythonFastApiSemantics(files, combined)
 
-  combined = options.contextNodes
-    ? resolvePythonDjangoSemantics(files, combined, { contextNodes: options.contextNodes })
-    : resolvePythonDjangoSemantics(files, combined)
+    combined = options.contextNodes
+      ? resolvePythonDjangoSemantics(files, combined, { contextNodes: options.contextNodes })
+      : resolvePythonDjangoSemantics(files, combined)
 
-  combined = options.contextNodes
-    ? resolveCrossFileRelativeJsImports(files, combined, { contextNodes: options.contextNodes })
-    : resolveCrossFileRelativeJsImports(files, combined)
+    combined = options.contextNodes
+      ? resolveCrossFileRelativeJsImports(files, combined, { contextNodes: options.contextNodes })
+      : resolveCrossFileRelativeJsImports(files, combined)
 
-  combined = options.contextNodes ? resolveGoSemantics(files, combined, { contextNodes: options.contextNodes }) : resolveGoSemantics(files, combined)
+    combined = options.contextNodes ? resolveGoSemantics(files, combined, { contextNodes: options.contextNodes }) : resolveGoSemantics(files, combined)
 
-  combined = resolveJsxRendersProxies(combined)
+    combined = resolveJsxRendersProxies(combined)
 
-  combined = options.contextNodes ? resolveSourceNodeReferences(combined, { contextNodes: options.contextNodes }) : resolveSourceNodeReferences(combined)
+    combined = options.contextNodes ? resolveSourceNodeReferences(combined, { contextNodes: options.contextNodes }) : resolveSourceNodeReferences(combined)
 
-  return combined
+    return combined
+  })
 }

@@ -85,6 +85,47 @@ function createTimeTravelResult(view: 'summary' | 'risk' | 'drift' | 'timeline' 
   }
 }
 
+function createRetrieveOverflowFixtureRoot(): string {
+  const parentDir = resolve('out', 'test-runtime')
+  mkdirSync(parentDir, { recursive: true })
+  const root = mkdtempSync(join(parentDir, 'madar-stdio-retrieve-overflow-'))
+  const nodes = [
+    { id: 'auth', label: 'AuthService', source_file: '/src/auth.ts', source_location: 'L1-L4', file_type: 'code', community: 0 },
+    ...Array.from({ length: 220 }, (_, index) => ({
+      id: `support-${index}`,
+      label: `SupportNode${index}`,
+      source_file: `/src/support-${index}.ts`,
+      source_location: `L${index + 1}-L${index + 2}`,
+      file_type: 'code',
+      community: 1,
+    })),
+  ]
+  const edges = Array.from({ length: 220 }, (_, index) => ({
+    source: 'auth',
+    target: `support-${index}`,
+    relation: 'calls',
+    confidence: 'EXTRACTED',
+    source_file: '/src/auth.ts',
+  }))
+
+  writeFileSync(
+    join(root, 'graph.json'),
+    JSON.stringify({
+      root_path: root,
+      community_labels: {
+        '0': 'Auth',
+        '1': 'Support',
+      },
+      nodes,
+      edges,
+      hyperedges: [],
+    }),
+    'utf8',
+  )
+
+  return root
+}
+
 function createPrImpactFixtureRoot(): string {
   const parentDir = resolve('out', 'test-runtime')
   mkdirSync(parentDir, { recursive: true })
@@ -924,6 +965,69 @@ describe('stdio runtime', () => {
           covered_workflow_owners: expect.any(Array),
         }))
       }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('trims default retrieve expandable follow-up payloads and reuses their handles for context expansion', async () => {
+    const root = createRetrieveOverflowFixtureRoot()
+    try {
+      const graphPath = join(root, 'graph.json')
+      const sessionState = {
+        logLevel: 'info' as const,
+        subscribedResourceUris: new Set<string>(),
+        resourceVersions: new Map<string, string>(),
+        resourceListSignature: null,
+        contextPackHandles: new Map<string, unknown>(),
+      }
+      const retrieve = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 300,
+        method: 'tools/call',
+        params: {
+          name: 'retrieve',
+          arguments: {
+            question: 'auth',
+            budget: 1,
+          },
+        },
+      }, sessionState))
+
+      const retrievePayload = JSON.parse((retrieve?.result as { content: Array<{ text: string }> }).content[0]!.text) as {
+        expandable: Array<{
+          handle_id: string
+          follow_up: {
+            focus_files: string[]
+            focus_ranges: Array<{ source_file: string; start_line: number; end_line: number }>
+          }
+        }>
+      }
+
+      expect(retrievePayload.expandable.length).toBeGreaterThan(0)
+      expect(retrievePayload.expandable[0]?.follow_up.focus_files.length).toBeLessThanOrEqual(12)
+      expect(retrievePayload.expandable[0]?.follow_up.focus_ranges.length).toBeLessThanOrEqual(12)
+
+      const expanded = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 301,
+        method: 'tools/call',
+        params: {
+          name: 'context_expand',
+          arguments: {
+            handle_id: retrievePayload.expandable[0]!.handle_id,
+            budget: 1200,
+          },
+        },
+      }, sessionState))
+
+      expect(expanded).not.toHaveProperty('error')
+      const expandedPayload = JSON.parse((expanded?.result as { content: Array<{ text: string }> }).content[0]!.text) as {
+        matched_focus: number
+        pack: {
+          matched_nodes: Array<{ label: string }>
+        }
+      }
+      expect(expandedPayload.matched_focus).toBeGreaterThan(0)
+      expect(expandedPayload.pack.matched_nodes.length).toBeGreaterThan(0)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

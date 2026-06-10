@@ -1,0 +1,25 @@
+All three required runtime obligations have direct evidence in the slice (`runtime_proof` confidence: high, `missing_obligations: []`). Here's the flow:
+
+## How Twenty processes a CRM record mutation
+
+**1. API mutation handling (GraphQL entrypoint)**
+A mutation hits a generated resolver built by the workspace resolver-builder factories:
+- `CreateOneResolverFactory.create()` — `api/graphql/workspace-resolver-builder/factories/create-one-resolver.factory.ts:18`
+- `UpdateOneResolverFactory` — `api/graphql/workspace-resolver-builder/factories/update-one-resolver.factory.ts:18`
+
+These factories produce the resolver that receives the mutation args.
+
+**2. Workspace service handoff**
+The resolver delegates to a common query-runner service injected via its constructor:
+- `CommonCreateOneQueryRunnerService` — `api/common/common-query-runners/common-create-one-query-runner.service.ts:23` (wired in the factory constructor)
+
+Incoming args are normalized on the way through by the data-arg processor (`api/common/common-args-processors/data-arg-processor/data-arg-processor.service.ts` and its field transformer utils).
+
+**3. Persistence (workspace ORM → database)**
+The query runner drives the workspace ORM layer:
+- `WorkspaceEntityManager.save()` — `twenty-orm/entity-manager/workspace-entity-manager.ts:1082` (entity class at `:76`)
+- Writes execute through the query builders: `.execute()` (`twenty-orm/repository/workspace-update-query-builder.ts:104`) and `.executeMany()` (`:303`), with the delete path at `workspace-delete-query-builder.ts:74`.
+
+As a side effect at persistence time, ORM events are formatted for the DB batch event stream (`format-twenty-orm-event-to-database-batch-event.util.ts:30`), and duplicate-key conflicts are routed through `findConflictingRecord` → `handleDuplicateKeyError` → `computeTwentyORMException`.
+
+**Spine:** `CreateOne/UpdateOneResolverFactory` → `CommonCreate*QueryRunnerService` → `WorkspaceEntityManager.save()` → `WorkspaceUpdateQueryBuilder.execute()/executeMany()` → database.

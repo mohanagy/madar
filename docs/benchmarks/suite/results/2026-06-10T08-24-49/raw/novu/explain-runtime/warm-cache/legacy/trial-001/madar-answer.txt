@@ -1,0 +1,17 @@
+All three required obligations have direct evidence in the retrieved slice (runtime_proof confidence: high, no missing obligations). Here's the flow:
+
+## How Novu processes a notification trigger
+
+**1. API entry** — A POST request enters through the API client (`post()` at `api.client.ts:96`) and is dispatched to `triggerWorkflow()` (`dashboard/src/api/workflows.ts:97`). Authentication is established via API keys (`getApiKeys()` at `dashboard/src/api/environments.ts:112`).
+
+**2. Workflow orchestration** — `triggerWorkflow()` (`workflows.ts:97`) hands the event off to the trigger-processing spine. Bulk/fan-out trigger events are orchestrated by the process-bulk-trigger use case (`api/src/app/events/usecases/process-bulk-trigger/process-bulk-trigger.usecase.ts`), which resolves the workflow definition and drives its steps.
+
+**3. Channel delivery** — Orchestration terminates in the channel send handlers, e.g. email (`sendAgentTestEmail()` at `agents.ts:448`), in-app/welcome messaging (`sendAgentWelcomeMessage()` at `agents.ts:635`), and WhatsApp (`sendWhatsAppTestTemplate()` at `agents.ts:757`) via the agent-integrations controller.
+
+**Key files**
+- `dashboard/src/api/workflows.ts:97` — `triggerWorkflow()` (API entry + handoff)
+- `api/.../process-bulk-trigger/process-bulk-trigger.usecase.ts` — workflow orchestration
+- `api/src/app/agents/channels/integrations/agent-integrations.controller.ts` — channel delivery
+- `dashboard/src/api/agents.ts` — per-channel send handlers (email / message / WhatsApp)
+
+Flow: **`post()` → `triggerWorkflow()` → process-bulk-trigger orchestration → per-channel send**.

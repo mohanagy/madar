@@ -1,0 +1,45 @@
+## How Cal.diy turns a booking request into validation → persistence → notification
+
+The whole pipeline is one orchestrator, `handler()`, inside `RegularBookingService.ts`. The HTTP entry point just constructs the service and calls it.
+
+### Entry point
+- `apps/web/pages/api/book/event.ts` — the `POST /api/book/event` route. After rate-limit/bot/Turnstile checks it calls `getRegularBookingService().createBooking({ bookingData: req.body, bookingMeta })` (`event.ts:49-58`).
+- `packages/features/bookings/lib/service/RegularBookingService.ts` — `createBooking()` (line 2653) binds and invokes the big `handler()` function (line 486), which contains the full flow. DI wiring is in `packages/features/bookings/di/RegularBookingService.container.ts`.
+
+### 1. Availability validation
+Inside `handler()`, after parsing/validating the request body, loading the event type and candidate users, it calls `ensureAvailableUsers(...)` — for the main slot (`RegularBookingService.ts:936`), each recurring slot (`:902/:917`), and a round-robin fallback path (`:962`).
+
+`packages/features/bookings/lib/handleNewBooking/ensureAvailableUsers.ts` does the actual check:
+- Pulls booking/duration limits and busy times via `getBusyTimesService().getBusyTimesForLimitChecks` (`:83`) and `getUserAvailabilityService().getUsersAvailability` (`:94`).
+- Optionally enforces a restriction schedule (`:132-217`).
+- For each user, confirms the slot falls in an available date range (`hasDateRangeForBooking`) and runs `checkForConflicts` (`conflictChecker/checkForConflicts`) against buffered busy times (`:243`).
+- Throws `ErrorCode.NoAvailableUsersFound` if nobody is free (`:256`); otherwise returns the available users (the chosen organizer is picked from these).
+
+Related guards in the same handler: `checkBookingAndDurationLimits`, `validateBookingTimeIsNotOutOfBounds`, `validateEventLength`, `checkIfBookerEmailIsBlocked`.
+
+### 2. Scheduled event persistence
+Once a host is confirmed available, the handler persists in two layers:
+
+**Database row** — `createBooking(...)` (`RegularBookingService.ts:1707`), implemented in `handleNewBooking/createBooking.ts`. `buildNewBookingData` (`createBooking.ts:168`) writes the `Booking` Prisma record with attendees, location, iCalUID, metadata, references to event type/organizer, and crucially `status: isConfirmedByDefault ? ACCEPTED : PENDING` (`createBooking.ts:192`). If it's a reschedule it also marks the original booking `CANCELLED`/`rescheduled` (`:253-264`).
+
+**External calendar / video meeting** — via `EventManager` (`packages/features/bookings/lib/EventManager.ts`), constructed with the organizer's refreshed credentials (`RegularBookingService.ts:1833`):
+- Confirmed new booking → `eventManager.create(evt, ...)` (`:2052`) creates the calendar event + conferencing link (Google Meet handling at `:2080-2128`); resulting `referencesToCreate` are saved back onto the booking (`:2446-2459`), and the DB iCalUID is reconciled (`:2139-2148`).
+- Reschedule → `eventManager.reschedule(...)` (`:1909`), deleting the old host's event if the organizer changed (`:1898`).
+- If confirmation is required, `EventManager` is skipped and the row stays `PENDING` (`:2171-2181`).
+
+### 3. Notification delivery
+Notifications are dispatched after persistence, keyed off the booking's state:
+
+**Emails / SMS** — `BookingEmailSmsHandler` (`packages/features/bookings/lib/BookingEmailSmsHandler.ts`), instantiated at `RegularBookingService.ts:578` and called via `emailsAndSmsHandler.send({ action, data })`:
+- `BOOKING_CONFIRMED` → `_handleConfirmed` → `sendScheduledEmailsAndSMS` (`:2153`, handler.ts `:259-286`).
+- `BOOKING_RESCHEDULED` → `_handleRescheduled` / `_handleRoundRobinRescheduled` (`:2031`).
+- `BOOKING_REQUESTED` (needs confirmation) → `_handleRequested` → `sendOrganizerRequestEmail` + `sendAttendeeRequestEmailAndSMS` (`:2197`). All ultimately call `@calcom/emails/email-manager`.
+
+**Webhooks** — `handleWebhookTrigger(...)` fires `BOOKING_CREATED`/`BOOKING_RESCHEDULED` to subscribers (`:2433`), with `webhookData` built at `:2234`. `MEETING_STARTED`/`MEETING_ENDED` are registered for later via `scheduleTrigger` (`:2392-2414`), and a `BOOKING_REQUESTED` webhook is queued for pending bookings through `deps.webhookProducer.queueBookingRequestedWebhook` (`:2468`). Payment-gated bookings emit `BOOKING_PAYMENT_INITIATED` instead (`:2319`).
+
+**Workflows & app/no-show triggers** — `this.fireBookingEvents(...)` (`:2217`, defined `:2588`) calls `bookingEventHandler.onBookingCreated` / `onBookingRescheduled`, which drives workflow reminders. `scheduleNoShowTriggers(...)` (`:2496`) and `handleAnalyticsEvents(...)` (`:2516`) round out delivery.
+
+### One-line flow
+`api/book/event.ts` → `RegularBookingService.handler()` → `ensureAvailableUsers` (validate) → `createBooking` + `EventManager.create/reschedule` (persist DB row + calendar/meeting) → `BookingEmailSmsHandler.send` + `handleWebhookTrigger`/`scheduleTrigger`/`fireBookingEvents` (notify).
+
+Note: there's a parallel `RecurringBookingService.ts` and an API-v2 wrapper (`apps/api/v2/.../regular-booking.service.ts`), but both funnel into this same `handler()`.

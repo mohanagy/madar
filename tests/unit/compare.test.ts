@@ -16,6 +16,7 @@ import {
   formatCompareSummary,
   formatNativeAgentCompareSummary,
   generateCompareArtifacts,
+  resolveSuggestedGraphScopePath,
   runCompareCommand,
   resolveCompareQuestions,
 } from '../../src/infrastructure/compare.js'
@@ -1086,6 +1087,15 @@ describe('compare runtime', () => {
           mentioned_symbols: [],
           generation_intent: 'runtime_generation',
           target_domain_hint: 'backend_runtime',
+          generation_debug: {
+            display_shaped: false,
+            generic_generation_shaped: true,
+            backend_runtime_shaped: true,
+            report_generation_shaped: true,
+            build_static_shaped: false,
+            explanation_shaped: true,
+            flow_proof_shaped: true,
+          },
         },
       },
     }
@@ -1122,6 +1132,15 @@ describe('compare runtime', () => {
           mentioned_symbols: [],
           generation_intent: 'runtime_generation',
           target_domain_hint: 'backend_runtime',
+          generation_debug: {
+            display_shaped: false,
+            generic_generation_shaped: true,
+            backend_runtime_shaped: true,
+            report_generation_shaped: true,
+            build_static_shaped: false,
+            explanation_shaped: true,
+            flow_proof_shaped: true,
+          },
         },
       },
       execution_slice: {
@@ -1210,8 +1229,10 @@ describe('compare runtime', () => {
   it('snapshots the native-agent prompt contract', () => {
     expect(buildNativeAgentPrompt('What is the cluster module?')).toMatchInlineSnapshot(`
       "Follow the Madar pack contract exactly.
-      Call retrieve first for explain or runtime questions before any raw file or broad repo search. If the tool is deferred, use ToolSearch only to select mcp__madar__retrieve.
-      Inspect matched_nodes, snippets, relationships, and community context before deciding what to do next.
+      Call retrieve first for explain or runtime questions before any raw file or broad repo search.
+      Call mcp__madar__retrieve directly for this benchmark run. Do not use ToolSearch before the first Madar call.
+      For strict runtime-proof benchmark questions, call mcp__madar__retrieve with retrieval_strategy: "slice-v1".
+      Inspect execution_slice, answer_contract.runtime_proof, matched_nodes, snippets, relationships, and community context before deciding what to do next.
       If retrieve already answers the question, answer from the retrieved evidence and stop without raw search.
       Do not call community_overview, graph_summary, get_community, query_graph, or other broad graph-navigation tools for task-specific compare runs.
       Allow at most one focused raw file read or search when retrieve leaves a specific gap.
@@ -1245,6 +1266,29 @@ describe('compare runtime', () => {
       Answer:
       "
     `)
+  })
+
+  it('adds strict runtime-proof guidance for flow questions with one missing phase', () => {
+    const prompt = buildNativeAgentPrompt(
+      'How idea report is being generated',
+      {
+        profile: 'core',
+        strictRuntimeProof: {
+          missingPhases: ['persistence'],
+          rescopedTo: 'backend/out/graph.json',
+        },
+      } as Parameters<typeof buildNativeAgentPrompt>[1] & {
+        strictRuntimeProof: {
+          missingPhases: string[]
+          rescopedTo: string
+        }
+      },
+    )
+
+    expect(prompt).toContain('This question requires strict runtime proof.')
+    expect(prompt).toContain('Use at most one focused follow-up to surface the missing persistence phase.')
+    expect(prompt).toContain('If the flow still cannot be proven, answer: not enough evidence; missing persistence')
+    expect(prompt).toContain('Start from the auto-rescoped graph scope: backend/out/graph.json.')
   })
 
   it('uses local tokenization rather than a fixed chars-per-token ratio for prompt counts', () => {
@@ -1983,6 +2027,77 @@ describe('compare runtime', () => {
     }))
     expect(formatCompareSummary(result)).toContain('outcomes: 1 madar invoked')
     expect(formatCompareSummary(result)).not.toContain('madar invoked after broad exploration')
+  })
+
+  it('classifies nested params and arguments tool inputs as focused Madar follow-up evidence', async () => {
+    const graph = makeGraph()
+    writeProjectFiles()
+    const graphPath = writeGraphFixture(graph)
+
+    const result = await executeCompareRuns(
+      {
+        graphPath,
+        question: 'how does login create a session',
+        outputDir: COMPARE_OUTPUT_ROOT,
+        execTemplate: 'runner --prompt {prompt_file} --mode {mode} --out {output_file}',
+        baselineMode: 'full',
+        now: new Date('2026-04-24T19:32:00.000Z'),
+      },
+      {
+        runner: async (execution) => ({
+          exitCode: 0,
+          stdout:
+            execution.mode === 'baseline'
+              ? makeClaudeStructuredCompareStdout({
+                  result: 'baseline answer\n',
+                  usage: {
+                    input_tokens: 1200,
+                    output_tokens: 90,
+                    cache_creation_input_tokens: 100,
+                    cache_read_input_tokens: 20,
+                  },
+                })
+              : makeClaudeStructuredCompareStdout({
+                  result: 'madar answer\n',
+                  usage: {
+                    input_tokens: 400,
+                    output_tokens: 70,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 10,
+                  },
+                  assistant_turns: [
+                    {
+                      turn: 1,
+                      content: [{ type: 'tool_use', name: 'ToolSearch', input: { params: { query: 'select:mcp__madar__retrieve' } } }],
+                    },
+                    {
+                      turn: 2,
+                      content: [{ type: 'tool_use', name: 'mcp__madar__retrieve', input: { params: { question: 'auth flow' } } }],
+                    },
+                    {
+                      turn: 3,
+                      content: [{ type: 'tool_use', name: 'Bash', input: { arguments: { command: 'sed -n "1,120p" src/auth/controller.ts' } } }],
+                    },
+                  ],
+                }),
+          stderr: '',
+          elapsedMs: execution.mode === 'baseline' ? 11 : 17,
+        }),
+      },
+    )
+
+    const report = result.reports[0]!
+    expect(report.madar_trace).toEqual(
+      expect.objectContaining({
+        exploration_outcome: 'madar_invoked',
+        first_madar_turn: 2,
+        pre_madar_broad_exploration_tool_call_count: 0,
+        pre_madar_broad_exploration_tool_calls_by_name: {},
+        focused_follow_up_tool_call_count: 1,
+        broad_exploration_tool_call_count: 0,
+        broad_exploration_tool_calls_by_name: {},
+      }),
+    )
   })
 
   it('still counts ToolSearch mentions of a Madar tool name as broad exploration when they are not deferred select queries', async () => {
@@ -4731,6 +4846,15 @@ describe('assessBenchmarkReadinessFromRetrieveResult', () => {
           mentioned_symbols: [],
           generation_intent: 'runtime_generation',
           target_domain_hint: 'backend_runtime',
+          generation_debug: {
+            display_shaped: false,
+            generic_generation_shaped: true,
+            backend_runtime_shaped: true,
+            report_generation_shaped: true,
+            build_static_shaped: false,
+            explanation_shaped: true,
+            flow_proof_shaped: true,
+          },
         },
       },
       coverage: {
@@ -4837,6 +4961,72 @@ describe('assessBenchmarkReadinessFromRetrieveResult', () => {
     expect(readiness.suggested_graph_scope).toBe('backend/out/graph.json')
   })
 
+  it('treats generic backend explain questions outside strict proof mode as ready', () => {
+    const readiness = assessBenchmarkReadinessFromRetrieveResult({
+      graphPath: '/repo/out/graph.json',
+      retrieval: makeRuntimeGenerationRetrieval({
+        question: 'Explain the auth service layer',
+        retrieval_gate: {
+          level: 3,
+          reason: 'runtime generation intent — behavior slice retrieval',
+          skipped_retrieval: false,
+          intent: 'explain',
+          signals: {
+            has_pr_diff: false,
+            has_stack_trace: false,
+            mentioned_paths: [],
+            mentioned_symbols: [],
+            generation_intent: 'runtime_generation',
+            target_domain_hint: 'backend_runtime',
+            generation_debug: {
+              display_shaped: false,
+              generic_generation_shaped: false,
+              backend_runtime_shaped: true,
+              report_generation_shaped: false,
+              build_static_shaped: false,
+              explanation_shaped: true,
+              flow_proof_shaped: false,
+            },
+          },
+        },
+        execution_slice: {
+          status: 'partial',
+          confidence: 'low',
+          confidence_reasons: ['missing_phase:persistence'],
+          steps: [
+            {
+              label: 'AuthService.login',
+              source_file: 'backend/src/auth/service.ts',
+              line_number: 42,
+              node_kind: 'method',
+            },
+          ],
+          phase_coverage: {
+            expected: ['controller', 'service', 'persistence'],
+            observed: ['service'],
+            missing: ['controller', 'persistence'],
+          },
+        },
+        answer_contract: {
+          version: 1,
+          answer_focus: 'runtime_generation',
+          entrypoint_scope: 'setup_context',
+          required_elements: ['main_pipeline_phases'],
+          do_not_claim: [],
+          observed_phases: ['service'],
+          missing_phases: ['controller', 'persistence'],
+          confidence: 'low',
+        },
+      }),
+    })
+
+    expect(readiness).toEqual({
+      status: 'ready',
+      reasons: [],
+      suggested_graph_scope: null,
+    })
+  })
+
   it('treats SPI-mode graph metadata as SPI evidence for app-file runtime packs', () => {
     const graphPath = writeReadinessGraphFixture({
       graphFixtureRoot: join(PROJECT_FIXTURE_ROOT, 'backend', 'out'),
@@ -4867,6 +5057,216 @@ describe('assessBenchmarkReadinessFromRetrieveResult', () => {
       reasons: [],
       suggested_graph_scope: null,
     })
+  })
+
+  it('treats complete non-SPI runtime-proof benchmark rows as ready when every obligation has direct evidence', () => {
+    const readiness = (assessBenchmarkReadinessFromRetrieveResult as (input: any) => ReturnType<typeof assessBenchmarkReadinessFromRetrieveResult>)({
+      graphPath: '/repo/out/graph.json',
+      runtimeProofProfile: {
+        prompt: 'How does Dub resolve a short-link click from request handling through analytics tracking and destination redirect?',
+        strict_runtime_proof: true,
+        expected_spi: false,
+        obligations: [
+          { id: 'request_handling', label: 'request handling', kind: 'entrypoint', evidence_terms: ['route', 'handler'] },
+          { id: 'analytics_tracking', label: 'analytics tracking', kind: 'terminal', evidence_terms: ['analytics', 'track'] },
+          { id: 'destination_redirect', label: 'destination redirect', kind: 'terminal', evidence_terms: ['redirect', 'destination'] },
+        ],
+      },
+      retrieval: makeRuntimeGenerationRetrieval({
+        question: 'How does Dub resolve a short-link click from request handling through analytics tracking and destination redirect?',
+        matched_nodes: [
+          {
+            label: 'GET /:domain/:key',
+            source_file: 'apps/web/links/route.ts',
+            line_number: 10,
+            file_type: 'code',
+            snippet: null,
+            match_score: 18,
+            relevance_band: 'direct',
+            community: null,
+            community_label: null,
+          },
+          {
+            label: 'recordLinkAnalytics',
+            source_file: 'lib/analytics/clicks.ts',
+            line_number: 42,
+            file_type: 'code',
+            snippet: null,
+            match_score: 17,
+            relevance_band: 'direct',
+            community: null,
+            community_label: null,
+          },
+          {
+            label: 'destinationRedirect',
+            source_file: 'apps/web/links/redirect.ts',
+            line_number: 78,
+            file_type: 'code',
+            snippet: null,
+            match_score: 16,
+            relevance_band: 'direct',
+            community: null,
+            community_label: null,
+          },
+        ],
+        execution_slice: {
+          status: 'complete',
+          confidence: 'high',
+          confidence_reasons: ['expected_obligations_covered'],
+          steps: [
+            {
+              label: 'GET /:domain/:key',
+              source_file: 'apps/web/links/route.ts',
+              line_number: 10,
+              node_kind: 'route',
+            },
+            {
+              label: 'recordLinkAnalytics',
+              source_file: 'lib/analytics/clicks.ts',
+              line_number: 42,
+              node_kind: 'method',
+            },
+            {
+              label: 'destinationRedirect',
+              source_file: 'apps/web/links/redirect.ts',
+              line_number: 78,
+              node_kind: 'method',
+            },
+          ],
+          phase_coverage: {
+            expected: ['controller', 'service', 'notification_or_event'],
+            observed: ['controller', 'service', 'notification_or_event'],
+            missing: [],
+          },
+        },
+        answer_contract: {
+          version: 1,
+          answer_focus: 'runtime_generation',
+          entrypoint_scope: 'setup_context',
+          required_elements: ['main_pipeline_phases'],
+          do_not_claim: [],
+          observed_phases: ['controller', 'service', 'notification_or_event'],
+          missing_phases: [],
+          confidence: 'high',
+          runtime_proof: {
+            obligations: [
+              {
+                id: 'request_handling',
+                label: 'request handling',
+                kind: 'entrypoint',
+                required: true,
+                evidence: [{ label: 'GET /:domain/:key', source_file: 'apps/web/links/route.ts', line_number: 10 }],
+              },
+              {
+                id: 'analytics_tracking',
+                label: 'analytics tracking',
+                kind: 'terminal',
+                required: true,
+                evidence: [{ label: 'recordLinkAnalytics', source_file: 'lib/analytics/clicks.ts', line_number: 42 }],
+              },
+              {
+                id: 'destination_redirect',
+                label: 'destination redirect',
+                kind: 'terminal',
+                required: true,
+                evidence: [{ label: 'destinationRedirect', source_file: 'apps/web/links/redirect.ts', line_number: 78 }],
+              },
+            ],
+            missing_obligations: [],
+          },
+        } as any,
+      } as any),
+    })
+
+    expect(readiness).toEqual({
+      status: 'ready',
+      reasons: [],
+      suggested_graph_scope: null,
+    })
+  })
+
+  it('fails non-SPI runtime-proof benchmark rows closed when a required terminal obligation is still missing', () => {
+    const readiness = (assessBenchmarkReadinessFromRetrieveResult as (input: any) => ReturnType<typeof assessBenchmarkReadinessFromRetrieveResult>)({
+      graphPath: '/repo/out/graph.json',
+      runtimeProofProfile: {
+        prompt: 'How does Dub resolve a short-link click from request handling through analytics tracking and destination redirect?',
+        strict_runtime_proof: true,
+        expected_spi: false,
+        obligations: [
+          { id: 'request_handling', label: 'request handling', kind: 'entrypoint', evidence_terms: ['route', 'handler'] },
+          { id: 'analytics_tracking', label: 'analytics tracking', kind: 'terminal', evidence_terms: ['analytics', 'track'] },
+          { id: 'destination_redirect', label: 'destination redirect', kind: 'terminal', evidence_terms: ['redirect', 'destination'] },
+        ],
+      },
+      retrieval: makeRuntimeGenerationRetrieval({
+        question: 'How does Dub resolve a short-link click from request handling through analytics tracking and destination redirect?',
+        execution_slice: {
+          status: 'complete',
+          confidence: 'high',
+          confidence_reasons: ['entrypoint_and_analytics_found'],
+          steps: [
+            {
+              label: 'GET /:domain/:key',
+              source_file: 'apps/web/links/route.ts',
+              line_number: 10,
+              node_kind: 'route',
+            },
+            {
+              label: 'recordLinkAnalytics',
+              source_file: 'lib/analytics/clicks.ts',
+              line_number: 42,
+              node_kind: 'method',
+            },
+          ],
+          phase_coverage: {
+            expected: ['controller', 'service'],
+            observed: ['controller', 'service'],
+            missing: [],
+          },
+        },
+        answer_contract: {
+          version: 1,
+          answer_focus: 'runtime_generation',
+          entrypoint_scope: 'setup_context',
+          required_elements: ['main_pipeline_phases'],
+          do_not_claim: [],
+          observed_phases: ['controller', 'service'],
+          missing_phases: [],
+          confidence: 'high',
+          runtime_proof: {
+            obligations: [
+              {
+                id: 'request_handling',
+                label: 'request handling',
+                kind: 'entrypoint',
+                required: true,
+                evidence: [{ label: 'GET /:domain/:key', source_file: 'apps/web/links/route.ts', line_number: 10 }],
+              },
+              {
+                id: 'analytics_tracking',
+                label: 'analytics tracking',
+                kind: 'terminal',
+                required: true,
+                evidence: [{ label: 'recordLinkAnalytics', source_file: 'lib/analytics/clicks.ts', line_number: 42 }],
+              },
+              {
+                id: 'destination_redirect',
+                label: 'destination redirect',
+                kind: 'terminal',
+                required: true,
+                evidence: [],
+              },
+            ],
+            missing_obligations: ['destination_redirect'],
+          },
+        } as any,
+      } as any),
+    })
+
+    expect(readiness.status).toBe('not_ready')
+    expect(readiness.reasons).toEqual(expect.arrayContaining([
+      'missing runtime proof obligations: destination redirect',
+    ]))
   })
 
   it('keeps non-SPI app-file runtime packs flagged as missing SPI evidence', () => {
@@ -5042,6 +5442,17 @@ describe('assessBenchmarkReadinessFromRetrieveResult', () => {
     })
 
     expect(readiness.suggested_graph_scope).toBe('backend/out/graph.json')
+  })
+
+  it('resolves suggested graph scopes from the current graph workspace root', () => {
+    expect(resolveSuggestedGraphScopePath(
+      '/tmp/bench/legacy/out/graph.json',
+      'apps/out/graph.json',
+    )).toBe(resolve('/tmp/bench/legacy', 'apps/out/graph.json'))
+    expect(resolveSuggestedGraphScopePath(
+      '/tmp/bench/out/graph.json',
+      'apps/out/graph.json',
+    )).toBe(resolve('/tmp/bench', 'apps/out/graph.json'))
   })
 
   it('marks backend SPI runtime-generation packs ready when runtime spine evidence is covered', () => {

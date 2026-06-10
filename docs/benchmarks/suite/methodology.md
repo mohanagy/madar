@@ -11,7 +11,7 @@ The fixed repo set is tracked in [`repos.json`](./repos.json).
 - The current public git-backed rows are `documenso`, `formbricks`, `dub`, `twenty`, `cal-diy`, and `novu`.
 - `status: "ready"` means the repo/task cell is prompt-wired and intended to run once the local install gate passes.
 - `status: "planned"` means the row stays visible in the manifest for roadmap clarity but must not be counted as measured evidence yet.
-- Actual execution clones or copies each ready repo into a temporary benchmark workspace, normalizes repo-local Claude/MCP config there, provisions the Madar Claude install, and verifies that install before prompt spend. Git-backed rows should pin `source.ref` to an immutable commit SHA or release tag, and if repo preparation or the suite-managed install fails, the cell is reported as skipped instead of silently treated as measured evidence.
+- Actual execution clones or copies each ready repo into a temporary benchmark workspace, normalizes repo-local Claude/MCP config there, provisions the Madar Claude install, and verifies that install before prompt spend. Rows may set `graphRoot` to a safe relative subdirectory when a large monorepo needs a first-class scoped graph; generation, install verification, warmup, and measured compare execution all run from that scoped root. The current public scoped rows are encoded directly in `repos.json` so reruns are reproducible instead of depending on ad hoc manual `cd` commands. Git-backed rows should pin `source.ref` to an immutable commit SHA or release tag, and if repo preparation or the suite-managed install fails, the cell is reported as skipped instead of silently treated as measured evidence.
 
 ## Task selection
 
@@ -62,7 +62,8 @@ For checked-in fixture bundles under `docs/benchmarks/suite/results/`, `report.j
 ## Isolation mode and canonical environment
 
 - Published benchmark cells are expected to run in isolation mode via [`docs/benchmarks/suite/isolation/`](./isolation/).
-- `./isolation/run-isolated.sh` sets `CLAUDE_CONFIG_DIR` to the shipped minimal config and exports `MADAR_BENCH_ISOLATION=1`.
+- `./isolation/run-isolated.sh` syncs the shipped minimal config into a persistent runtime isolation profile outside the repo, points `CLAUDE_CONFIG_DIR` at that runtime profile, and exports `MADAR_BENCH_ISOLATION=1`.
+- That isolation profile is separate from the user's default Claude profile; if the default profile is logged in but the isolated runtime profile is not, the launcher now fails fast and prints the exact `CLAUDE_CONFIG_DIR=... claude auth login` command to run once before a measured rerun.
 - The pinned environment contract lives in [`isolation/environment.json`](./isolation/environment.json). In isolation mode, `madar bench:suite` compares the live environment against that contract before each cell.
 - Environment drift marks the cell `status: "env_mismatch"` and excludes it from measured counts. `summary.md` records `Cells skipped for env drift: N`.
 - Development runs outside isolation mode remain useful receipts, but their cells are tagged `isolation: false` and should not be cited as published benchmark claims.

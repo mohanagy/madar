@@ -1,0 +1,59 @@
+I now have the complete end-to-end picture. Here is the trace.
+
+## How Twenty processes a CRM record mutation
+
+Twenty exposes every CRM object (Company, Person, Opportunity, etc.) through a **dynamically generated** GraphQL/REST API rather than hand-written resolvers. A mutation flows through four layers: **API resolution → common query runner orchestration → workspace ORM persistence → event side-effects**. I'll trace a `createOne<Object>` mutation.
+
+### 1. API handling — dynamic resolver
+
+The schema isn't static. `WorkspaceResolverBuilderService` (`api/graphql/workspace-resolver-builder/workspace-resolver-builder.service.ts`) maps each operation name to a resolver factory via a switch on `methodName`. For a create, `CreateOneResolverFactory` (`factories/create-one-resolver.factory.ts`) produces the resolver function. That resolver:
+- extracts requested fields with `graphqlFields(info)`,
+- builds a `resolverContext` via `createQueryRunnerContext` (carrying flat object/field metadata maps, auth context),
+- delegates to `commonCreateOneQueryRunnerService.execute(...)`,
+- and pipes the raw record back through `ObjectRecordsToGraphqlConnectionHelper` to shape the GraphQL connection response.
+
+REST requests (`api/rest/core/controllers/rest-api-core.controller.ts`) land in the same common query-runner layer, so both API surfaces converge.
+
+### 2. Workspace services — the common query-runner pipeline
+
+`CommonCreateOneQueryRunnerService` (`api/common/common-query-runners/common-create-one-query-runner.service.ts`) extends the **template-method base** `CommonBaseQueryRunnerService` (`common-base-query-runner.service.ts`). The base `execute()` runs a fixed sequence:
+
+1. **Throttle** — API-key requests pass token-bucket rate limits (`throttlerService`).
+2. **`validate()`** — create-one asserts the object isn't remote (`assertMutationNotOnRemoteObject`) and validates any supplied UUID.
+3. **Settings permission check** for system objects.
+4. **Parse selected fields** via `GraphqlQueryParser`.
+5. **`processArgs()`** → calls **`computeArgs()`** (coerces/validates input through `DataArgProcessorService`) and then runs **pre-query hooks** (`WorkspaceQueryHookService.executePreQueryHooks`).
+6. **Query-complexity guard.**
+7. **`executeInWorkspaceContext()`** — wraps the run in the workspace ORM context. Inside, `prepareExtendedQueryRunnerContextWithGlobalDatasource()` resolves the role permission config (`resolveRolePermissionConfig`), gets the `GlobalWorkspaceDataSource`, and obtains a **permission-scoped `WorkspaceRepository`**.
+8. **`run()`** executes the actual operation, then **`processQueryResult()`** enriches values (`CommonResultGettersService`) and **post-query hooks** fire.
+
+`CommonCreateOneQueryRunnerService.run()` simply wraps the input in an array and delegates to `CommonCreateManyQueryRunnerService.run()` (`common-create-many-query-runner/common-create-many-query-runner.service.ts`), which:
+- enforces `QUERY_MAX_RECORDS`,
+- calls `insertOrUpsertRecords()` → `repository.insert(...)` (or, for upsert, finds existing records, `categorizeRecords`, and splits into `updateMany` + `insert`),
+- re-fetches the persisted rows with `fetchUpsertedRecords()` (select builder restricted to requested columns),
+- and resolves nested relations via `ProcessNestedRelationsHelper`.
+
+### 3. Persistence — the Twenty ORM
+
+`WorkspaceRepository` (`twenty-orm/repository/workspace.repository.ts`) is a permission-aware wrapper over TypeORM. Its `insert`/`update`/`updateMany`/`upsert` attach `permissionOptions` (`shouldBypassPermissionChecks`, `objectRecordsPermissions`) and the auth context, then delegate to `WorkspaceEntityManager` (`twenty-orm/entity-manager/workspace-entity-manager.ts`), which builds a `WorkspaceInsertQueryBuilder` (`repository/workspace-insert-query-builder.ts`).
+
+The builder's `execute()` is where the real work and side-effects happen:
+- **`validateQueryIsPermittedOrThrow(...)`** — row/field-level permission enforcement.
+- **`formatData`** — converts the API-shaped record (composite fields, etc.) into DB columns; RLS predicates validated (`validateRLSPredicatesForInsert`).
+- **`super.execute()`** — runs the actual SQL INSERT.
+- Re-selects the written rows, **`formatResult`** back to record shape, then emits **`CREATED`** and **`UPSERTED`** database batch events via `eventEmitterService.emitDatabaseBatchEvent(...)`. The update builder symmetrically captures before/after snapshots and emits `UPDATED`.
+
+### 4. Event-driven side effects
+
+`EntityEventsToDbListener` (`api/graphql/workspace-query-runner/listeners/entity-events-to-db.listener.ts`) subscribes with `@OnDatabaseBatchEvent('*', DatabaseEventAction.CREATED|UPDATED|...)` and fans persistence events out to downstream work — notably enqueuing `CallWebhookJobsJob` for registered webhooks (and similar listeners drive search-vector updates, workflows, telemetry).
+
+### Key files / steps
+- `api/graphql/workspace-resolver-builder/workspace-resolver-builder.service.ts` + `factories/create-one-resolver.factory.ts` — dynamic API resolver entry.
+- `api/rest/core/controllers/rest-api-core.controller.ts` — REST entry into the same pipeline.
+- `api/common/common-query-runners/common-base-query-runner.service.ts` — orchestration template (throttle → validate → permissions → hooks → execute-in-context).
+- `common-create-one-query-runner.service.ts` → `common-create-many-query-runner/common-create-many-query-runner.service.ts` — mutation logic, insert vs. upsert, re-fetch, nested relations.
+- `twenty-orm/repository/workspace.repository.ts` → `entity-manager/workspace-entity-manager.ts` → `repository/workspace-insert-query-builder.ts` — permission-scoped persistence + `formatData`/`formatResult` + event emission.
+- `workspace-query-hook/workspace-query-hook.service.ts` — pre/post-query hooks.
+- `listeners/entity-events-to-db.listener.ts` — turns persistence events into webhooks/jobs.
+
+The defining characteristic: nothing is per-object hand-coded — metadata (`flatObjectMetadataMaps`/`flatFieldMetadataMaps`) drives the resolver generation, the common query runner, and the ORM's data/result formatting, while permissions and event emission are enforced uniformly at the ORM query-builder layer.

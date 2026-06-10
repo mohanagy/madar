@@ -294,6 +294,26 @@ describe('classifyRetrievalLevel — signal extraction', () => {
     expect(decision.signals.generation_intent).toBe('runtime_generation')
     expect(decision.signals.target_domain_hint).toBe('backend_runtime')
   })
+
+  it('marks runtime flow-proof questions distinctly from generic backend explain prompts', () => {
+    const flowDecision = classify({ prompt: 'How idea report is being generated' })
+    const genericExplainDecision = classify({ prompt: 'Explain the auth service layer' })
+
+    const flowSignals = flowDecision.signals as typeof flowDecision.signals & {
+      generation_debug?: { flow_proof_shaped?: boolean }
+    }
+    const genericExplainSignals = genericExplainDecision.signals as typeof genericExplainDecision.signals & {
+      generation_debug?: { flow_proof_shaped?: boolean }
+    }
+
+    expect(flowDecision.signals.generation_intent).toBe('runtime_generation')
+    expect(flowDecision.signals.target_domain_hint).toBe('backend_runtime')
+    expect(flowSignals.generation_debug?.flow_proof_shaped).toBe(true)
+
+    expect(genericExplainDecision.signals.generation_intent).toBe('runtime_generation')
+    expect(genericExplainDecision.signals.target_domain_hint).toBe('backend_runtime')
+    expect(genericExplainSignals.generation_debug?.flow_proof_shaped).toBe(false)
+  })
 })
 
 describe('classifyRetrievalLevel — exclusions and negation', () => {

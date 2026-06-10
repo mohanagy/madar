@@ -27,12 +27,12 @@ describe('benchmark suite docs', () => {
     expect(content).toContain('review')
     expect(content).toContain('impact')
     expect(content).toContain('git-backed public repos')
-    expect(content).toContain('results/2026-06-07T13-42-48/summary.md')
-    expect(content).toContain('results/2026-06-07T13-48-33/summary.md')
-    expect(content).toContain('results/2026-06-07T15-37-50/summary.md')
-    expect(content).toContain('results/2026-06-07T15-42-13/summary.md')
-    expect(content).toContain('results/2026-06-07T14-09-14/summary.md')
-    expect(content).toContain('2026-06-07-twenty-server-modules-runtime')
+    expect(content).toContain('results/2026-06-10T07-01-18/summary.md')
+    expect(content).toContain('results/2026-06-10T07-10-44/summary.md')
+    expect(content).toContain('results/2026-06-10T07-24-01/summary.md')
+    expect(content).toContain('results/2026-06-10T07-39-11/summary.md')
+    expect(content).toContain('results/2026-06-10T08-08-44/summary.md')
+    expect(content).toContain('results/2026-06-10T08-24-49/summary.md')
     expect(content).toContain('quality-gates.json')
     expect(content).toContain('permission-blocked answers are not benchmark wins')
     expect(content).toContain('--allowedTools mcp__madar__retrieve')
@@ -81,29 +81,34 @@ describe('benchmark suite docs', () => {
   it('checks in the latest public-repo summary receipts', () => {
     const rows = [
       {
-        path: 'docs/benchmarks/suite/results/2026-06-07T13-42-48/summary.md',
+        path: 'docs/benchmarks/suite/results/2026-06-10T07-01-18/summary.md',
         repo: 'documenso',
-        outcome: 'legacy: not_measured',
+        outcome: 'legacy: full_win',
       },
       {
-        path: 'docs/benchmarks/suite/results/2026-06-07T13-48-33/summary.md',
+        path: 'docs/benchmarks/suite/results/2026-06-10T07-10-44/summary.md',
         repo: 'formbricks',
         outcome: 'legacy: full_win',
       },
       {
-        path: 'docs/benchmarks/suite/results/2026-06-07T15-37-50/summary.md',
+        path: 'docs/benchmarks/suite/results/2026-06-10T07-24-01/summary.md',
         repo: 'dub',
-        outcome: 'legacy: not_measured',
+        outcome: 'legacy: full_win',
       },
       {
-        path: 'docs/benchmarks/suite/results/2026-06-07T15-42-13/summary.md',
+        path: 'docs/benchmarks/suite/results/2026-06-10T07-39-11/summary.md',
+        repo: 'twenty',
+        outcome: 'legacy: full_win',
+      },
+      {
+        path: 'docs/benchmarks/suite/results/2026-06-10T08-08-44/summary.md',
         repo: 'cal-diy',
-        outcome: 'legacy: not_measured',
+        outcome: 'legacy: full_win',
       },
       {
-        path: 'docs/benchmarks/suite/results/2026-06-07T14-09-14/summary.md',
+        path: 'docs/benchmarks/suite/results/2026-06-10T08-24-49/summary.md',
         repo: 'novu',
-        outcome: 'legacy: not_measured',
+        outcome: 'legacy: full_win',
       },
     ]
 
@@ -120,11 +125,12 @@ describe('benchmark suite docs', () => {
 
   it('keeps baseline prompt artifacts tool-agnostic in the latest public receipts', () => {
     const roots = [
-      'docs/benchmarks/suite/results/2026-06-07T13-42-48/raw/documenso/explain-runtime/warm-cache/legacy/trial-001',
-      'docs/benchmarks/suite/results/2026-06-07T13-48-33/raw/formbricks/explain-runtime/warm-cache/legacy/trial-001',
-      'docs/benchmarks/suite/results/2026-06-07T14-09-14/raw/novu/explain-runtime/warm-cache/legacy/trial-001',
-      'docs/benchmarks/suite/results/2026-06-07T15-37-50/raw/dub/explain-runtime/warm-cache/legacy/trial-001',
-      'docs/benchmarks/suite/results/2026-06-07T15-42-13/raw/cal-diy/explain-runtime/warm-cache/legacy/trial-001',
+      'docs/benchmarks/suite/results/2026-06-10T07-01-18/raw/documenso/explain-runtime/warm-cache/legacy/trial-001',
+      'docs/benchmarks/suite/results/2026-06-10T07-10-44/raw/formbricks/explain-runtime/warm-cache/legacy/trial-001',
+      'docs/benchmarks/suite/results/2026-06-10T07-24-01/raw/dub/explain-runtime/warm-cache/legacy/trial-001',
+      'docs/benchmarks/suite/results/2026-06-10T07-39-11/raw/twenty/explain-runtime/warm-cache/legacy/trial-001',
+      'docs/benchmarks/suite/results/2026-06-10T08-08-44/raw/cal-diy/explain-runtime/warm-cache/legacy/trial-001',
+      'docs/benchmarks/suite/results/2026-06-10T08-24-49/raw/novu/explain-runtime/warm-cache/legacy/trial-001',
     ]
 
     for (const root of roots) {
@@ -163,17 +169,74 @@ describe('benchmark suite docs', () => {
     expect(claims).toContain('original fixture-style bundle')
     expect(claims).toContain('deterministic answer-quality gates')
     expect(claims).toContain('permission-blocked answers are not benchmark wins')
-    expect(claims).toContain('results/2026-06-07T13-42-48/summary.md')
-    expect(claims).toContain('results/2026-06-07T13-48-33/summary.md')
-    expect(claims).toContain('results/2026-06-07T15-37-50/summary.md')
-    expect(claims).toContain('results/2026-06-07T15-42-13/summary.md')
-    expect(claims).toContain('results/2026-06-07T14-09-14/summary.md')
-    expect(claims).toContain('not_measured')
-    expect(claims).toContain('supplemental evidence')
-    expect(claims).toContain('2026-06-07-twenty-server-modules-runtime')
+    expect(claims).toContain('results/2026-06-10T07-01-18/summary.md')
+    expect(claims).toContain('results/2026-06-10T07-10-44/summary.md')
+    expect(claims).toContain('results/2026-06-10T07-24-01/summary.md')
+    expect(claims).toContain('results/2026-06-10T07-39-11/summary.md')
+    expect(claims).toContain('results/2026-06-10T08-08-44/summary.md')
+    expect(claims).toContain('results/2026-06-10T08-24-49/summary.md')
+    expect(claims).toContain('full_win')
+    expect(claims).toContain('missing_obligations = []')
+    expect(claims).toContain('repo/task-specific TypeScript legacy-row claim')
     expect(claims).toContain('results/2026-05-31T12-00-00/summary.md')
     expect(whyMadar).toContain('per-repo spread')
     expect(whyMadar).toContain('no single-number cross-repo headline')
+  })
+
+  it('uses doc-relative links in claims-and-evidence', () => {
+    const claims = readDoc('docs/claims-and-evidence.md')
+
+    expect(claims).not.toContain('](docs/')
+  })
+
+  it('publishes a scoped Twenty receipt when the root suite graph is too large', () => {
+    const readme = readDoc('docs/benchmarks/2026-06-07-twenty-server-modules-runtime/README.md')
+    const reportAlias = readDoc('docs/benchmarks/2026-06-07-twenty-server-modules-runtime/report.json')
+    const baselineAnswer = readDoc('docs/benchmarks/2026-06-07-twenty-server-modules-runtime/baseline-answer.txt')
+    const madarAnswer = readDoc('docs/benchmarks/2026-06-07-twenty-server-modules-runtime/madar-answer.txt')
+    const report = JSON.parse(readDoc('docs/benchmarks/2026-06-07-twenty-server-modules-runtime/report.share-safe.json')) as {
+      measurement_validity?: string
+      trace_status?: string
+      madar_mcp_call_count?: number
+      benchmark_readiness?: {
+        status?: string
+      }
+      claim_assessment?: {
+        routing_efficiency?: { status?: string }
+        token_reduction?: { status?: string }
+      }
+      benchmark_outcome?: {
+        outcome?: string
+      }
+      reductions?: {
+        input_tokens?: number
+        duration_ms?: number
+        cost_usd?: number
+      }
+    }
+
+    expect(readme).toContain('packages/twenty-server/src/modules')
+    expect(readme).toContain('generated root graph exceeded the 10 MB')
+    expect(readme).toContain('compare safety guard')
+    expect(readme).toContain('--allowedTools mcp__madar__retrieve')
+    expect(readme).toContain('benchmark_outcome = "not_measured"')
+    expect(readme).toContain('baseline-answer.txt')
+    expect(readme).toContain('madar-answer.txt')
+    expect(reportAlias).toBe(readDoc('docs/benchmarks/2026-06-07-twenty-server-modules-runtime/report.share-safe.json'))
+    expect(baselineAnswer).toContain('Twenty')
+    expect(baselineAnswer.trim().split('\n').length).toBeGreaterThan(5)
+    expect(madarAnswer).toContain('##')
+    expect(madarAnswer).not.toContain('permission for `mcp__madar__retrieve`')
+    expect(report.measurement_validity).toBe('valid')
+    expect(report.trace_status).toBe('trace_available')
+    expect(report.madar_mcp_call_count).toBeGreaterThan(0)
+    expect(report.benchmark_readiness?.status).toBe('not_ready')
+    expect(report.claim_assessment?.routing_efficiency?.status).toBe('not_measured')
+    expect(report.claim_assessment?.token_reduction?.status).toBe('not_measured')
+    expect(report.benchmark_outcome?.outcome).toBe('not_measured')
+    expect(report.reductions?.input_tokens).toBeGreaterThan(1)
+    expect(report.reductions?.duration_ms).toBeGreaterThan(1)
+    expect(report.reductions?.cost_usd).toBeGreaterThan(1)
   })
 
   it('publishes a scoped Twenty receipt when the root suite graph is too large', () => {

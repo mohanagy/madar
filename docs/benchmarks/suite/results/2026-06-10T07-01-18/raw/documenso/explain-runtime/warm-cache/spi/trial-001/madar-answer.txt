@@ -1,0 +1,25 @@
+All four obligations now have direct evidence. Here's the flow.
+
+## How Documenso moves a document: send → recipients → signing → notification
+
+**1. Send preparation — `sendDocument` (`server-only/document/send-document.ts:53`)**
+- Guards the request: `assertUserNotDisabledById`, resolves the envelope via `getEnvelopeWhereInput`, enforces recipient-count limits, and rejects already-completed documents.
+- Validates readiness: recipients with auth requirements must have valid emails (`isRecipientEmailValidForSending`), and signers must have required fields (`getRecipientsWithMissingFields`). For V2 envelopes it auto-inserts prefilled field values.
+- In a `prisma.$transaction`: writes a `DOCUMENT_SENT` audit log, sets per-recipient `expiresAt`, and flips envelope `status` from `DRAFT` → **`PENDING`** (`:294-305`).
+- Computes who to notify — for `SEQUENTIAL` signing order, only the first `NOT_SIGNED` non-CC recipient; for `PARALLEL`, all of them (`:127-136`).
+
+**2. Recipient creation — `setDocumentRecipients` (`server-only/recipient/set-document-recipients.ts:36`)**
+- Recipients are provisioned ahead of send, with `createRecipientAuthOptions()` (`:147`) building per-recipient access/action auth options that `sendDocument` later validates.
+
+**3. Signing state — `getIsRecipientsTurnToSign` + `completeDocumentWithToken`**
+- `getIsRecipientsTurnToSign()` (`server-only/recipient/get-is-recipient-turn.ts:8`) gates whether a given recipient (by token) may sign yet, enforcing sequential signing order.
+- `completeDocumentWithToken` (`server-only/document/complete-document-with-token.ts:54`) records a recipient's completion and advances the document's signing state.
+
+**4. Notification delivery — job-enqueued emails + `sendPendingEmail`**
+- If signing-request email is enabled, `sendDocument` enqueues a `send.signing.requested.email` job per recipient-to-notify (`:315-333`) — the initial "please sign" notification.
+- As signing progresses, `sendPendingEmail` (`server-only/document/send-pending-email.ts:21`) renders the `DocumentPendingEmailTemplate` via `createElement` (`:80`) + `renderEmailWithI18N`/`getI18nInstance` (`Promise.all`, `:85`), using `getEmailContext` for branding/language, and delivers the pending-state notification.
+- `sendDocument` also fires a `DOCUMENT_SENT` webhook (`:335`) as an external-notification side channel.
+
+**Caveats**
+- Email sending is conditional: only when `sendEmail` is explicitly true, or signing-request email is enabled and `sendEmail` is undefined (`:312-315`). If every recipient is CC/already-signed, it skips notification and enqueues `internal.seal-document` instead (`:181-204`).
+- Notifications are dispatched asynchronously through the `jobs` queue (`send.signing.requested.email`), not sent inline — the producer enqueues; a worker delivers.

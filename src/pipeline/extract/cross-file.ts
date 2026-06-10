@@ -4,7 +4,17 @@ import { basename, dirname, extname, resolve } from 'node:path'
 import ts from 'typescript'
 
 import type { ExtractionData, ExtractionNode } from '../../contracts/types.js'
-import { _makeId, addNode, addUniqueEdge, createEdge, createNode, normalizeLabel, stripHashComment } from './core.js'
+import {
+  _makeId,
+  addNode,
+  addUniqueEdge,
+  createEdge,
+  createNode,
+  fileNodeIdForPath,
+  fileStemForPath,
+  normalizeLabel,
+  stripHashComment,
+} from './core.js'
 import { unparenthesizeExpression } from './typescript-utils.js'
 
 export interface ResolveCrossFilePythonImportsOptions {
@@ -123,10 +133,85 @@ function resolveRelativeJsImportTarget(specifier: string, sourceFile: string, kn
   return null
 }
 
+function defaultJsTsCompilerOptions(): ts.CompilerOptions {
+  return {
+    target: ts.ScriptTarget.Latest,
+    module: ts.ModuleKind.NodeNext,
+    moduleResolution: ts.ModuleResolutionKind.NodeNext,
+    allowJs: true,
+    jsx: ts.JsxEmit.Preserve,
+    noEmit: true,
+    skipLibCheck: true,
+    strict: false,
+    esModuleInterop: true,
+    isolatedModules: true,
+  }
+}
+
+function loadJsTsCompilerOptions(
+  sourceFile: string,
+  cache: Map<string, ts.CompilerOptions | null>,
+): ts.CompilerOptions {
+  const configPath = ts.findConfigFile(dirname(sourceFile), ts.sys.fileExists, 'tsconfig.json')
+    ?? ts.findConfigFile(dirname(sourceFile), ts.sys.fileExists, 'jsconfig.json')
+  if (!configPath) {
+    return defaultJsTsCompilerOptions()
+  }
+
+  const cached = cache.get(configPath)
+  if (cached !== undefined) {
+    return cached ?? defaultJsTsCompilerOptions()
+  }
+
+  try {
+    const content = readFileSync(configPath, 'utf8')
+    const parsed = ts.parseConfigFileTextToJson(configPath, content)
+    if (parsed.config) {
+      const config = ts.parseJsonConfigFileContent(parsed.config, ts.sys, dirname(configPath))
+      const compilerOptions = {
+        ...defaultJsTsCompilerOptions(),
+        ...config.options,
+        allowJs: true,
+        noEmit: true,
+        skipLibCheck: true,
+      }
+      cache.set(configPath, compilerOptions)
+      return compilerOptions
+    }
+  } catch {
+    // Fall back to defaults when the project config is malformed or unreadable.
+  }
+
+  cache.set(configPath, null)
+  return defaultJsTsCompilerOptions()
+}
+
+function resolveJsImportTarget(
+  specifier: string,
+  sourceFile: string,
+  knownFiles: ReadonlySet<string>,
+  compilerOptionsCache: Map<string, ts.CompilerOptions | null>,
+): string | null {
+  const relativeTarget = resolveRelativeJsImportTarget(specifier, sourceFile, knownFiles)
+  if (relativeTarget) {
+    return relativeTarget
+  }
+
+  const compilerOptions = loadJsTsCompilerOptions(sourceFile, compilerOptionsCache)
+  const resolved = ts.resolveModuleName(specifier, sourceFile, compilerOptions, ts.sys).resolvedModule
+  if (!resolved?.resolvedFileName) {
+    return null
+  }
+
+  const resolvedFilePath = resolve(resolved.resolvedFileName)
+  return knownFiles.has(resolvedFilePath) ? resolvedFilePath : null
+}
+
 function collectTopLevelExportedJsBindings(
   filePath: string,
   knownFiles: ReadonlySet<string>,
   cache: Map<string, Map<string, string>>,
+  compilerOptionsCache: Map<string, ts.CompilerOptions | null>,
 ): Map<string, string> {
   const resolvedFilePath = resolve(filePath)
   const cached = cache.get(resolvedFilePath)
@@ -167,7 +252,7 @@ function collectTopLevelExportedJsBindings(
       true,
       scriptKindForPath(resolvedTargetPath),
     )
-    const fileStem = basename(resolvedTargetPath, extname(resolvedTargetPath))
+    const fileStem = fileStemForPath(resolvedTargetPath)
     const record = (exportName: string | undefined, targetName: string | undefined = exportName): void => {
       if (exportName && targetName) {
         definition.localBindings.set(exportName, _makeId(fileStem, targetName))
@@ -179,7 +264,12 @@ function collectTopLevelExportedJsBindings(
         continue
       }
 
-      const importTargetPath = resolveRelativeJsImportTarget(statement.moduleSpecifier.text, resolvedTargetPath, knownFiles)
+      const importTargetPath = resolveJsImportTarget(
+        statement.moduleSpecifier.text,
+        resolvedTargetPath,
+        knownFiles,
+        compilerOptionsCache,
+      )
       if (!importTargetPath) {
         continue
       }
@@ -281,7 +371,12 @@ function collectTopLevelExportedJsBindings(
         continue
       }
 
-      const reexportTargetPath = resolveRelativeJsImportTarget(statement.moduleSpecifier.text, resolvedTargetPath, knownFiles)
+      const reexportTargetPath = resolveJsImportTarget(
+        statement.moduleSpecifier.text,
+        resolvedTargetPath,
+        knownFiles,
+        compilerOptionsCache,
+      )
       if (!reexportTargetPath) {
         continue
       }
@@ -736,7 +831,8 @@ function buildFastApiOwnerIndex(pythonFiles: readonly string[]): Map<string, Fas
   const owners = new Map<string, FastApiOwnerRecord>()
 
   for (const filePath of pythonFiles) {
-    const stem = basename(filePath, extname(filePath))
+    const moduleStem = basename(filePath, extname(filePath))
+    const fileStem = fileStemForPath(filePath)
     let lines: string[]
     try {
       lines = readFileSync(filePath, 'utf8').split(/\r?\n/)
@@ -793,9 +889,9 @@ function buildFastApiOwnerIndex(pythonFiles: readonly string[]): Map<string, Fas
         continue
       }
 
-      const ownerId = _makeId(stem, ownerAssignment.ownerName, ownerAssignment.frameworkRole)
+      const ownerId = _makeId(fileStem, ownerAssignment.ownerName, ownerAssignment.frameworkRole)
       owners.set(ownerId, {
-        moduleStem: stem,
+        moduleStem,
         ownerName: ownerAssignment.ownerName,
         id: ownerId,
         prefix: ownerAssignment.prefix,
@@ -819,7 +915,7 @@ function buildFastApiIncludeRecords(
   }
 
   for (const filePath of pythonFiles) {
-    const stem = basename(filePath, extname(filePath))
+    const moduleStem = basename(filePath, extname(filePath))
     let lines: string[]
     try {
       lines = readFileSync(filePath, 'utf8').split(/\r?\n/)
@@ -835,7 +931,7 @@ function buildFastApiIncludeRecords(
     const importedOwners = new Map<string, FastApiOwnerRecord>()
 
     for (const owner of ownerIndex.values()) {
-      if (owner.moduleStem === stem) {
+      if (owner.moduleStem === moduleStem) {
         localOwners.set(owner.ownerName, owner)
       }
     }
@@ -1068,7 +1164,7 @@ export function resolveCrossFilePythonImports(files: readonly string[], extracti
   const existingEdges = new Set(edges.map((edge) => `${edge.source}|${edge.target}|${edge.relation}`))
 
   for (const filePath of pythonFiles) {
-    const stem = basename(filePath, extname(filePath))
+    const fileStem = fileStemForPath(filePath)
     let lines: string[]
     try {
       lines = readFileSync(filePath, 'utf8').split(/\r?\n/)
@@ -1131,7 +1227,7 @@ export function resolveCrossFilePythonImports(files: readonly string[], extracti
 
       const classMatch = trimmed.match(/^class\s+([A-Za-z_][A-Za-z0-9_]*)(?:\(([^)]+)\))?:/)
       if (classMatch?.[1]) {
-        const classId = _makeId(stem, classMatch[1])
+        const classId = _makeId(fileStem, classMatch[1])
         classStack.push({ indent, id: classId })
 
         const baseList =
@@ -1153,7 +1249,7 @@ export function resolveCrossFilePythonImports(files: readonly string[], extracti
       const functionMatch = trimmed.match(/^(?:async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/)
       if (functionMatch?.[1]) {
         const currentClass = classStack[classStack.length - 1]
-        const functionId = currentClass ? _makeId(currentClass.id, functionMatch[1]) : _makeId(stem, functionMatch[1])
+        const functionId = currentClass ? _makeId(currentClass.id, functionMatch[1]) : _makeId(fileStem, functionMatch[1])
         functionStack.push({ indent, id: functionId })
         continue
       }
@@ -1234,8 +1330,9 @@ export function resolvePythonFastApiSemantics(
   }
 
   for (const filePath of pythonFiles) {
-    const stem = basename(filePath, extname(filePath))
-    const fileNodeId = _makeId(stem)
+    const moduleStem = basename(filePath, extname(filePath))
+    const fileStem = fileStemForPath(filePath)
+    const fileNodeId = fileNodeIdForPath(filePath)
     let lines: string[]
     try {
       lines = readFileSync(filePath, 'utf8').split(/\r?\n/)
@@ -1344,16 +1441,16 @@ export function resolvePythonFastApiSemantics(
 
       const classMatch = statementText.match(/^class\s+([A-Za-z_][A-Za-z0-9_]*)(?:\(([^)]+)\))?:/)
       if (classMatch?.[1]) {
-        classStack.push({ indent, id: _makeId(stem, classMatch[1]) })
+        classStack.push({ indent, id: _makeId(fileStem, classMatch[1]) })
         pendingDecorators.length = 0
         continue
       }
 
       const ownerAssignment = fastApiOwnerAssignment(statementText, routerFactoryBindings, appFactoryBindings, fastApiModuleAliases, dependsBindings)
       if (ownerAssignment) {
-        const ownerId = _makeId(stem, ownerAssignment.ownerName, ownerAssignment.frameworkRole)
+        const ownerId = _makeId(fileStem, ownerAssignment.ownerName, ownerAssignment.frameworkRole)
         const ownerRecord = fastApiOwnerIndex.get(ownerId) ?? {
-          moduleStem: stem,
+          moduleStem,
           ownerName: ownerAssignment.ownerName,
           id: ownerId,
           prefix: ownerAssignment.prefix,
@@ -1383,7 +1480,7 @@ export function resolvePythonFastApiSemantics(
       const functionMatch = statementText.match(/^(?:async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/)
       if (functionMatch?.[1]) {
         const currentClass = classStack[classStack.length - 1]
-        const functionId = currentClass ? _makeId(currentClass.id, functionMatch[1]) : _makeId(stem, functionMatch[1])
+        const functionId = currentClass ? _makeId(currentClass.id, functionMatch[1]) : _makeId(fileStem, functionMatch[1])
         const routeDecorator = pendingDecorators
           .map((decorator) => ({ ...decorator, parsed: fastApiRouteDecorator(decorator.text, routerOwners) }))
           .find((decorator): decorator is { text: string; line: number; parsed: { ownerName: string; method: string; routePath: string } } => Boolean(decorator.parsed))
@@ -1409,7 +1506,7 @@ export function resolvePythonFastApiSemantics(
 
         for (const ownerContext of ownerContexts) {
           const fullRoutePath = joinPythonRoutePrefixes(ownerContext.ancestorPrefix, owner.prefix, routeDecorator.parsed.routePath)
-          const routeId = _makeId(stem, routeDecorator.parsed.ownerName, routeDecorator.parsed.method, fullRoutePath, 'fastapi_route')
+          const routeId = _makeId(fileStem, routeDecorator.parsed.ownerName, routeDecorator.parsed.method, fullRoutePath, 'fastapi_route')
           addDerivedNode({
             ...createNode(routeId, `${routeDecorator.parsed.method} ${fullRoutePath}`, filePath, routeDecorator.line),
             node_kind: 'route',
@@ -1432,7 +1529,7 @@ export function resolvePythonFastApiSemantics(
             ...fastApiDependencyNames(statementText, dependsBindings, fastApiModuleAliases),
           ])
           for (const dependencyName of dependencyNames) {
-            const dependencyId = resolvePythonLocalOrImportedTarget(stem, dependencyName, importedTargets, nodeIdsByModuleAndName)
+            const dependencyId = resolvePythonLocalOrImportedTarget(moduleStem, dependencyName, importedTargets, nodeIdsByModuleAndName)
             if (!dependencyId || !searchableNodeIds.has(dependencyId)) {
               continue
             }
@@ -1499,8 +1596,9 @@ export function resolvePythonDjangoSemantics(
   }
 
   for (const filePath of pythonFiles) {
-    const stem = basename(filePath, extname(filePath))
-    const fileNodeId = _makeId(stem)
+    const moduleStem = basename(filePath, extname(filePath))
+    const fileStem = fileStemForPath(filePath)
+    const fileNodeId = fileNodeIdForPath(filePath)
     let lines: string[]
     try {
       lines = readFileSync(filePath, 'utf8').split(/\r?\n/)
@@ -1563,12 +1661,12 @@ export function resolvePythonDjangoSemantics(
         continue
       }
 
-      const viewId = resolveDjangoViewTarget(stem, routeDefinition.viewExpression, importedTargets, nodeIdsByModuleAndName)
+      const viewId = resolveDjangoViewTarget(moduleStem, routeDefinition.viewExpression, importedTargets, nodeIdsByModuleAndName)
       if (!viewId || !searchableNodeIds.has(viewId)) {
         continue
       }
 
-      const routeId = _makeId(stem, routeDefinition.routePath, 'django_route')
+      const routeId = _makeId(fileStem, routeDefinition.routePath, 'django_route')
       addDerivedNode({
         ...createNode(routeId, `route ${routeDefinition.routePath}`, filePath, lineNumber),
         node_kind: 'route',
@@ -1607,14 +1705,20 @@ export function resolveCrossFileRelativeJsImports(
   if (knownFiles.size < 2 || jsTsFiles.length === 0) {
     return extraction
   }
+  const compilerOptionsCache = new Map<string, ts.CompilerOptions | null>()
   const searchableNodeIds = new Set(searchableNodes.map((node) => node.id))
+  const nodes = [...extraction.nodes]
+  const seenNodeIds = new Set(nodes.map((node) => node.id))
   const exportedBindingsByFile = new Map<string, Map<string, string>>()
 
   const edges = [...extraction.edges]
   const existingEdges = new Set(edges.map((edge) => `${edge.source}|${edge.target}|${edge.relation}`))
 
   for (const filePath of knownFiles) {
-    exportedBindingsByFile.set(filePath, collectTopLevelExportedJsBindings(filePath, knownFiles, exportedBindingsByFile))
+    exportedBindingsByFile.set(
+      filePath,
+      collectTopLevelExportedJsBindings(filePath, knownFiles, exportedBindingsByFile, compilerOptionsCache),
+    )
   }
 
   const resolveImportedTargetId = (targetFilePath: string, importedName: string): string | null => {
@@ -1627,8 +1731,8 @@ export function resolveCrossFileRelativeJsImports(
   }
 
   for (const filePath of jsTsFiles) {
-    const fileStem = basename(filePath, extname(filePath))
-    const fileNodeId = _makeId(fileStem)
+    const fileStem = fileStemForPath(filePath)
+    const fileNodeId = fileNodeIdForPath(filePath)
     const defaultOwnerId = _makeId(fileStem, 'default')
     if (!searchableNodeIds.has(fileNodeId)) {
       continue
@@ -1647,6 +1751,8 @@ export function resolveCrossFileRelativeJsImports(
     const sourceFile = ts.createSourceFile(filePath, sourceText, ts.ScriptTarget.Latest, true, scriptKindForPath(filePath))
     const importedTargets = new Map<string, string>()
     const namespaceTargets = new Map<string, { targetFilePath: string; line: number }>()
+    const externalImportedBindings = new Map<string, { localName: string; line: number }>()
+    const externalNamespaceBindings = new Map<string, { localName: string; line: number }>()
     type ScopeFrame = { bindings: Set<string>; functionScope: boolean }
     const declareBinding = (scopeChain: ScopeFrame[], name: string): void => {
       scopeChain[scopeChain.length - 1]?.bindings.add(name)
@@ -1782,22 +1888,28 @@ export function resolveCrossFileRelativeJsImports(
         return
       }
 
-      const targetFilePath = resolveRelativeJsImportTarget(declaration.moduleSpecifier.text, filePath, knownFiles)
-      if (!targetFilePath) {
-        return
-      }
-
       const line = sourceFile.getLineAndCharacterOfPosition(declaration.getStart(sourceFile)).line + 1
       const importClause = declaration.importClause
       if (!importClause) {
         return
       }
 
+      const targetFilePath = resolveJsImportTarget(
+        declaration.moduleSpecifier.text,
+        filePath,
+        knownFiles,
+        compilerOptionsCache,
+      )
+
       if (importClause.name) {
-        const targetId = resolveImportedTargetId(targetFilePath, 'default')
-        if (targetId) {
-          importedTargets.set(importClause.name.text, targetId)
-          addUniqueEdge(edges, existingEdges, createEdge(fileNodeId, targetId, 'imports_from', filePath, line))
+        if (targetFilePath) {
+          const targetId = resolveImportedTargetId(targetFilePath, 'default')
+          if (targetId) {
+            importedTargets.set(importClause.name.text, targetId)
+            addUniqueEdge(edges, existingEdges, createEdge(fileNodeId, targetId, 'imports_from', filePath, line))
+          }
+        } else {
+          externalImportedBindings.set(importClause.name.text, { localName: importClause.name.text, line })
         }
       }
 
@@ -1806,21 +1918,47 @@ export function resolveCrossFileRelativeJsImports(
       }
 
       if (ts.isNamespaceImport(importClause.namedBindings)) {
-        namespaceTargets.set(importClause.namedBindings.name.text, { targetFilePath, line })
+        if (targetFilePath) {
+          namespaceTargets.set(importClause.namedBindings.name.text, { targetFilePath, line })
+        } else {
+          externalNamespaceBindings.set(importClause.namedBindings.name.text, {
+            localName: importClause.namedBindings.name.text,
+            line,
+          })
+        }
         return
       }
 
       for (const element of importClause.namedBindings.elements) {
         const importedName = element.propertyName?.text ?? element.name.text
         const localName = element.name.text
-        const targetId = resolveImportedTargetId(targetFilePath, importedName)
-        if (!targetId) {
+        if (targetFilePath) {
+          const targetId = resolveImportedTargetId(targetFilePath, importedName)
+          if (!targetId) {
+            continue
+          }
+
+          importedTargets.set(localName, targetId)
+          addUniqueEdge(edges, existingEdges, createEdge(fileNodeId, targetId, 'imports_from', filePath, line))
           continue
         }
-
-        importedTargets.set(localName, targetId)
-        addUniqueEdge(edges, existingEdges, createEdge(fileNodeId, targetId, 'imports_from', filePath, line))
+        externalImportedBindings.set(localName, { localName, line })
       }
+    }
+
+    const ensureSyntheticExternalCallNode = (
+      ownerId: string,
+      label: string,
+      line: number,
+    ): string => {
+      const nodeId = _makeId(ownerId, label, 'external_call')
+      if (!seenNodeIds.has(nodeId)) {
+        addNode(nodes, seenNodeIds, {
+          ...createNode(nodeId, label, filePath, line),
+          node_kind: 'method',
+        })
+      }
+      return nodeId
     }
 
     const visitStatementList = (
@@ -2084,6 +2222,10 @@ export function resolveCrossFileRelativeJsImports(
         if (targetId && !isShadowed(scopeChain, node.expression.text)) {
           const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1
           addUniqueEdge(edges, existingEdges, createEdge(currentOwnerId, targetId, 'calls', filePath, line))
+        } else if (externalImportedBindings.has(node.expression.text) && !isShadowed(scopeChain, node.expression.text)) {
+          const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1
+          const syntheticTargetId = ensureSyntheticExternalCallNode(currentOwnerId, `${node.expression.text}()`, line)
+          addUniqueEdge(edges, existingEdges, createEdge(currentOwnerId, syntheticTargetId, 'calls', filePath, line, 'INFERRED'))
         }
       } else if (
         ts.isCallExpression(node) &&
@@ -2099,6 +2241,20 @@ export function resolveCrossFileRelativeJsImports(
           const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1
           addUniqueEdge(edges, existingEdges, createEdge(fileNodeId, targetId, 'imports_from', filePath, namespaceImport?.line ?? line))
           addUniqueEdge(edges, existingEdges, createEdge(currentOwnerId, targetId, 'calls', filePath, line))
+        } else if (
+          !isShadowed(scopeChain, node.expression.expression.text)
+          && (
+            externalImportedBindings.has(node.expression.expression.text)
+            || externalNamespaceBindings.has(node.expression.expression.text)
+          )
+        ) {
+          const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1
+          const syntheticTargetId = ensureSyntheticExternalCallNode(
+            currentOwnerId,
+            `${node.expression.expression.text}.${node.expression.name.text}`,
+            line,
+          )
+          addUniqueEdge(edges, existingEdges, createEdge(currentOwnerId, syntheticTargetId, 'calls', filePath, line, 'INFERRED'))
         }
       }
 
@@ -2110,7 +2266,7 @@ export function resolveCrossFileRelativeJsImports(
 
   return {
     ...extraction,
-    nodes: [...extraction.nodes],
+    nodes,
     edges,
   }
 }

@@ -1374,7 +1374,13 @@ export function generateAnswerReadyFromExecutionSlice(
   executionSlice: ContextPackExecutionSlice | undefined,
   taskKind: ContextPackTaskKind,
 ): ContextPackExplainAnswerReadySummary | undefined {
-  if (taskKind !== 'explain' || !executionSlice || executionSlice.confidence !== 'high') {
+  const partialExplainBarrier = executionSlice?.status === 'partial' && executionSlice.confidence === 'medium'
+
+  if (
+    taskKind !== 'explain'
+    || !executionSlice
+    || (executionSlice.confidence !== 'high' && !partialExplainBarrier)
+  ) {
     return undefined
   }
 
@@ -1406,12 +1412,27 @@ export function generateAnswerReadyFromExecutionSlice(
     }
   }
 
+  const missingPhases = executionSlice.phase_coverage?.missing ?? []
+  const stop_condition = partialExplainBarrier
+    ? (
+        missingPhases.length > 0
+          ? `answer from observed steps only; if the full flow is requested, answer: not enough evidence; missing ${missingPhases.join(', ')}; do not raw-search unless missing_context is non-empty`
+          : 'answer from observed steps only; if the full flow is requested, answer: not enough evidence; do not raw-search unless missing_context is non-empty'
+      )
+    : 'answer now; do not raw-search unless missing_context is non-empty'
+  const allowed_followups = [
+    ...(partialExplainBarrier && missingPhases.length > 0
+      ? [`Use at most one focused follow-up to surface missing phases: ${missingPhases.join(', ')}`]
+      : []),
+    ...(executionSlice.confidence_reasons
+      ? [`Review confidence reasons: ${executionSlice.confidence_reasons.join(', ')}`]
+      : []),
+  ]
+
   return {
     answer_outline: answer_outline.length > 0 ? answer_outline : ['Flow execution traced'],
     must_cite,
-    stop_condition: 'answer now; do not raw-search unless missing_context is non-empty',
-    allowed_followups: executionSlice.confidence_reasons
-      ? [`Review confidence reasons: ${executionSlice.confidence_reasons.join(', ')}`]
-      : [],
+    stop_condition,
+    allowed_followups,
   }
 }

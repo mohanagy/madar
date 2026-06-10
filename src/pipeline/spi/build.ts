@@ -110,7 +110,7 @@ export function buildSpi(opts: BuildSpiOptions): SemanticProgramIndex {
   if (!existsSync(root) || !statSync(root).isDirectory()) {
     throw new Error(`SPI build: workspace root not found or not a directory: ${root}`)
   }
-  const extractorVersion = opts.extractorVersion ?? 'spi-v1.0.0-slice-3b-ii'
+  const extractorVersion = opts.extractorVersion ?? 'spi-v1.0.0-slice-3b-iii'
   const now = opts.now ?? (() => new Date())
 
   const files: SpiFile[] = []
@@ -499,11 +499,13 @@ function resolveRelativeImportAbsolute(
 function createSpiCompilerHost(
   compilerOptions: ts.CompilerOptions,
   pathToFileId: Map<string, string>,
+  compilerOptionsForFile?: (containingFile: string) => ts.CompilerOptions,
 ): ts.CompilerHost {
   const host = ts.createCompilerHost(compilerOptions, true)
   const baseResolveModuleNames = host.resolveModuleNames?.bind(host)
 
   host.resolveModuleNames = (moduleNames, containingFile, reusedNames, redirectedReference, options) => {
+    const effectiveOptions = compilerOptionsForFile?.(toPosix(containingFile)) ?? options
     const resolutionHost: ts.ModuleResolutionHost = {
       fileExists: host.fileExists.bind(host),
       readFile: host.readFile.bind(host),
@@ -517,7 +519,7 @@ function createSpiCompilerHost(
       resolveModuleWithRelativeFallback(
         moduleName,
         containingFile,
-        options,
+        effectiveOptions,
         resolutionHost,
         pathToFileId,
       )
@@ -528,7 +530,7 @@ function createSpiCompilerHost(
         containingFile,
         reusedNames,
         redirectedReference,
-        options,
+        effectiveOptions,
       )
       return resolved.map((entry, index) => {
         const moduleName = moduleNames[index]
@@ -643,9 +645,9 @@ function scriptKindFor(language: SpiLanguage): ts.ScriptKind {
 }
 
 function workspaceFingerprint(root: string, extractorVersion: string): string {
-  const tsConfigPath = join(root, 'tsconfig.json')
+  const tsConfigPath = findNearestProjectConfigPath(root)
   let tsConfigContent = ''
-  if (existsSync(tsConfigPath)) {
+  if (tsConfigPath && existsSync(tsConfigPath)) {
     try {
       tsConfigContent = readFileSync(tsConfigPath, 'utf8')
     } catch {
@@ -657,6 +659,21 @@ function workspaceFingerprint(root: string, extractorVersion: string): string {
 
 function toPosix(p: string): string {
   return p.split('\\').join('/')
+}
+
+function normalizeAbsolutePath(path: string): string {
+  return toPosix(resolve(path))
+}
+
+function comparablePath(path: string): string {
+  const normalized = normalizeAbsolutePath(path)
+  return /^[A-Za-z]:\//.test(normalized) ? normalized.toLowerCase() : normalized
+}
+
+function isSameOrNestedPath(path: string, root: string): boolean {
+  const comparable = comparablePath(path)
+  const comparableRoot = comparablePath(root)
+  return comparable === comparableRoot || comparable.startsWith(`${comparableRoot}/`)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -677,8 +694,13 @@ function addTypeCheckerEdges(ctx: TypeCheckerEdgeContext): void {
   const rootNames = files.map((f) => toPosix(join(root, f.path)))
   if (rootNames.length === 0) return
 
-  const compilerOptions = loadCompilerOptions(root)
-  const compilerHost = createSpiCompilerHost(compilerOptions, pathToFileId)
+  const compilerOptionsResolver = createCompilerOptionsResolver(root)
+  const compilerOptions = compilerOptionsResolver.defaultOptions
+  const compilerHost = createSpiCompilerHost(
+    compilerOptions,
+    pathToFileId,
+    compilerOptionsResolver.forContainingFile,
+  )
   let program: ts.Program
   try {
     program = ts.createProgram({ rootNames, options: compilerOptions, host: compilerHost })
@@ -696,6 +718,7 @@ function addTypeCheckerEdges(ctx: TypeCheckerEdgeContext): void {
   const checker = program.getTypeChecker()
   const seenCalls = new Set<string>()
   const seenTypeEdges = new Set<string>()
+  const knownSymbolIds = new Set(symbols.map((symbol) => symbol.id))
 
   // Pre-index symbols by file so the framework pass can tag framework_role
   // in O(symbols-in-this-file) instead of scanning the whole symbol list per
@@ -724,7 +747,7 @@ function addTypeCheckerEdges(ctx: TypeCheckerEdgeContext): void {
     const abs = toPosix(join(root, file.path))
     const sourceFile = program.getSourceFile(abs)
     if (!sourceFile) continue
-    walkCallExpressions(sourceFile, file.id, checker, pathToFileId, edges, seenCalls)
+    walkCallExpressions(sourceFile, file.id, checker, pathToFileId, symbols, edges, seenCalls, knownSymbolIds)
     walkTypeReferences(sourceFile, file.id, checker, pathToFileId, edges, seenTypeEdges)
     detectNestFramework({
       program,
@@ -837,14 +860,31 @@ function walkCallExpressions(
   fileId: string,
   checker: ts.TypeChecker,
   pathToFileId: Map<string, string>,
+  symbols: SpiSymbol[],
   edges: SpiEdge[],
   seen: Set<string>,
+  knownSymbolIds: Set<string>,
 ): void {
+  const externalImportedBindings = collectExternalImportedBindings(sourceFile)
+
   const visit = (node: ts.Node): void => {
     if (ts.isCallExpression(node)) {
       const callerId = findEnclosingSpiSymbolId(node, fileId)
       if (callerId) {
-        const callee = resolveCallee(node, checker, pathToFileId)
+        const resolvedCallee = resolveCallee(node, checker, pathToFileId)
+        const syntheticCallee = resolvedCallee
+          ? null
+          : resolveSyntheticExternalCall(
+            node,
+            fileId,
+            sourceFile,
+            checker,
+            externalImportedBindings,
+            symbols,
+            edges,
+            knownSymbolIds,
+          )
+        const callee = resolvedCallee ?? syntheticCallee
         if (callee && callee.id !== callerId) {
           const dedupeKey = `${callerId}|${callee.id}`
           if (!seen.has(dedupeKey)) {
@@ -854,7 +894,7 @@ function walkCallExpressions(
               to: callee.id,
               kind: 'calls',
               confidence: callee.confidence,
-              source: 'typescript-semantic',
+              source: resolvedCallee ? 'typescript-semantic' : 'heuristic',
               evidence: { file_id: fileId, range: rangeOf(node, sourceFile) },
             })
           }
@@ -864,6 +904,127 @@ function walkCallExpressions(
     ts.forEachChild(node, visit)
   }
   visit(sourceFile)
+}
+
+function resolveSyntheticExternalCall(
+  callExpr: ts.CallExpression,
+  fileId: string,
+  sourceFile: ts.SourceFile,
+  checker: ts.TypeChecker,
+  externalImportedBindings: ReadonlySet<string>,
+  symbols: SpiSymbol[],
+  edges: SpiEdge[],
+  knownSymbolIds: Set<string>,
+): { id: string; confidence: 'medium' } | null {
+  const label = resolveSyntheticExternalCallLabel(callExpr, checker, externalImportedBindings)
+  if (!label) return null
+
+  const symbolId = makeSymbolId(fileId, 'function', label)
+  if (!knownSymbolIds.has(symbolId)) {
+    const range = rangeOf(callExpr, sourceFile)
+    knownSymbolIds.add(symbolId)
+    symbols.push({
+      id: symbolId,
+      file_id: fileId,
+      name: label,
+      kind: 'function',
+      range,
+      exported: false,
+      framework_metadata: {
+        external_call: true,
+      },
+    })
+    edges.push({
+      from: fileId,
+      to: symbolId,
+      kind: 'declares',
+      confidence: 'medium',
+      source: 'heuristic',
+      evidence: { file_id: fileId, range },
+    })
+  }
+
+  return {
+    id: symbolId,
+    confidence: 'medium',
+  }
+}
+
+function resolveSyntheticExternalCallLabel(
+  callExpr: ts.CallExpression,
+  checker: ts.TypeChecker,
+  externalImportedBindings: ReadonlySet<string>,
+): string | null {
+  if (ts.isIdentifier(callExpr.expression)) {
+    if (externalImportedBindings.has(callExpr.expression.text)) {
+      return `${callExpr.expression.text}()`
+    }
+    const symbol = followAlias(checker.getSymbolAtLocation(callExpr.expression), checker)
+    return resolvesToDeclarationFile(symbol) ? `${callExpr.expression.text}()` : null
+  }
+
+  if (ts.isPropertyAccessExpression(callExpr.expression) && ts.isIdentifier(callExpr.expression.expression)) {
+    const receiver = callExpr.expression.expression
+    if (externalImportedBindings.has(receiver.text)) {
+      return `${receiver.text}.${callExpr.expression.name.text}`
+    }
+    const symbol = followAlias(checker.getSymbolAtLocation(receiver), checker)
+    if (!resolvesToDeclarationFile(symbol)) return null
+    return `${receiver.text}.${callExpr.expression.name.text}`
+  }
+
+  return null
+}
+
+function resolvesToDeclarationFile(symbol: ts.Symbol | undefined): boolean {
+  const declarations = symbol?.declarations
+  if (!declarations || declarations.length === 0) {
+    return false
+  }
+
+  return declarations.some((decl) => decl.getSourceFile().isDeclarationFile)
+}
+
+function collectExternalImportedBindings(sourceFile: ts.SourceFile): ReadonlySet<string> {
+  const bindings = new Set<string>()
+
+  for (const statement of sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+      continue
+    }
+
+    const specifier = statement.moduleSpecifier.text
+    if (specifier.startsWith('.') || specifier.startsWith('/')) {
+      continue
+    }
+
+    const importClause = statement.importClause
+    if (!importClause || importClause.isTypeOnly) {
+      continue
+    }
+
+    if (importClause.name) {
+      bindings.add(importClause.name.text)
+    }
+
+    const namedBindings = importClause.namedBindings
+    if (!namedBindings) {
+      continue
+    }
+
+    if (ts.isNamespaceImport(namedBindings)) {
+      bindings.add(namedBindings.name.text)
+      continue
+    }
+
+    for (const element of namedBindings.elements) {
+      if (!element.isTypeOnly) {
+        bindings.add(element.name.text)
+      }
+    }
+  }
+
+  return bindings
 }
 
 function findEnclosingSpiSymbolId(callExpr: ts.CallExpression, fileId: string): string | null {
@@ -1183,13 +1344,56 @@ function lookupSpiSymbolForDeclaration(decl: ts.Declaration, fileId: string): st
 }
 
 function loadCompilerOptions(root: string): ts.CompilerOptions {
-  const tsConfigPath = join(root, 'tsconfig.json')
+  const tsConfigPath = findNearestProjectConfigPath(root)
+  return tsConfigPath ? loadCompilerOptionsFromConfig(tsConfigPath) ?? defaultCompilerOptions() : defaultCompilerOptions()
+}
+
+type CompilerOptionsResolver = {
+  defaultOptions: ts.CompilerOptions
+  forContainingFile: (containingFile: string) => ts.CompilerOptions
+}
+
+function createCompilerOptionsResolver(root: string): CompilerOptionsResolver {
+  const defaultOptions = loadCompilerOptions(root)
+  const discoveredConfigPathByDir = new Map<string, string | null>()
+  const compilerOptionsByConfigPath = new Map<string, ts.CompilerOptions>()
+
+  const forContainingFile = (containingFile: string): ts.CompilerOptions => {
+    const currentDir = dirname(resolve(containingFile))
+    const cacheKey = normalizeAbsolutePath(currentDir)
+    let configPath = discoveredConfigPathByDir.get(cacheKey)
+    if (configPath === undefined) {
+      configPath = findNearestProjectConfigPath(currentDir)
+      discoveredConfigPathByDir.set(cacheKey, configPath)
+    }
+
+    if (configPath) {
+      let compilerOptions = compilerOptionsByConfigPath.get(configPath)
+      if (!compilerOptions) {
+        compilerOptions = loadCompilerOptionsFromConfig(configPath) ?? defaultOptions
+        compilerOptionsByConfigPath.set(configPath, compilerOptions)
+      }
+      return compilerOptions
+    }
+
+    return defaultOptions
+  }
+
+  return {
+    defaultOptions,
+    forContainingFile,
+  }
+}
+
+function loadCompilerOptionsFromConfig(tsConfigPath: string | null): ts.CompilerOptions | null {
+  if (!tsConfigPath || !existsSync(tsConfigPath)) return null
   if (existsSync(tsConfigPath)) {
     try {
       const content = readFileSync(tsConfigPath, 'utf8')
       const parsed = ts.parseConfigFileTextToJson(tsConfigPath, content)
       if (parsed.config) {
-        const config = ts.parseJsonConfigFileContent(parsed.config, ts.sys, root)
+        const configDir = dirname(tsConfigPath)
+        const config = ts.parseJsonConfigFileContent(parsed.config, ts.sys, configDir)
         // Always keep type-check side effects suppressed; we only want the
         // checker for resolution, not diagnostics.
         return { ...config.options, noEmit: true, skipLibCheck: true }
@@ -1199,7 +1403,18 @@ function loadCompilerOptions(root: string): ts.CompilerOptions {
       // layer is best-effort, not a blocker.
     }
   }
-  return defaultCompilerOptions()
+  return null
+}
+
+export function findNearestProjectConfigPath(startPath: string): string | null {
+  const resolvedStartPath = resolve(startPath)
+  const searchDir =
+    existsSync(resolvedStartPath) && statSync(resolvedStartPath).isDirectory()
+      ? resolvedStartPath
+      : dirname(resolvedStartPath)
+  return ts.findConfigFile(searchDir, ts.sys.fileExists, 'tsconfig.json')
+    ?? ts.findConfigFile(searchDir, ts.sys.fileExists, 'jsconfig.json')
+    ?? null
 }
 
 function defaultCompilerOptions(): ts.CompilerOptions {

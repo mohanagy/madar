@@ -5,7 +5,7 @@ import * as ts from 'typescript'
 
 import type { ExtractionNode } from '../../../contracts/types.js'
 import { detect } from '../../detect.js'
-import { addNode, addUniqueEdge, createEdge, createNode, _makeId } from '../core.js'
+import { addNode, addUniqueEdge, createEdge, createNode, fileStemForPath, _makeId } from '../core.js'
 import type { ExtractionFragment } from '../dispatch.js'
 import { unparenthesizeExpression } from '../typescript-utils.js'
 import { resolveImportPath, scriptKindForPath } from './js-import-paths.js'
@@ -1006,5 +1006,5 @@ export const nestAdapter: JsFrameworkAdapter = {
   },
 }
 function moduleStem(filePath: string): string {
-  return basename(filePath, extname(filePath))
+  return fileStemForPath(filePath)
 }

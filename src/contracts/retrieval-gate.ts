@@ -48,6 +48,7 @@ export interface RetrievalGenerationDebugSignals {
   report_generation_shaped: boolean
   build_static_shaped: boolean
   explanation_shaped: boolean
+  flow_proof_shaped: boolean
 }
 
 export interface RetrievalGateSignals {

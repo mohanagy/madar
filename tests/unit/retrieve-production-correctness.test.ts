@@ -489,6 +489,9 @@ describe('retrieveContext production retrieval regressions', () => {
       do_not_claim: expect.arrayContaining([
         'full_runtime_certainty_when_slice_is_partial',
       ]),
+      uncertainty_notes: expect.arrayContaining([
+        expect.stringMatching(/not enough evidence; missing .*persistence/),
+      ]),
     }))
   })
 

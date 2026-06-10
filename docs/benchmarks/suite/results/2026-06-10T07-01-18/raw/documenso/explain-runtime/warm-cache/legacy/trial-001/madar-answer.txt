@@ -1,0 +1,15 @@
+All four required obligations have direct evidence in the slice — answering from the retrieved pack.
+
+## How Documenso moves a document send → recipients → signing → notification
+
+**1. Send preparation** — `sendDocument()` (`server-only/document/send-document.ts:53`) is the entry point. It loads the document, validates it's ready to send, and prepares per-field values via `extractFieldAutoInsertValues()` (`send-document.ts:384`). Email/derivation behavior is resolved through `extractDerivedDocumentEmailSettings()` (`document-email.ts:63`), and the same spine is reused when sending from templates (`create-document-from-direct-template.ts:82`).
+
+**2. Recipient creation** — recipients are provisioned with their auth/access configuration through `createRecipientAuthOptions()` (`utils/document-auth.ts:60`), backed by recipient helpers in `utils/recipients.ts`. This sets each signer's authentication requirements before they're invited.
+
+**3. Signing state** — once recipients act, the document advances toward completion; the sealing/signing transition is handled by `decorateAndSignPdf()` in the internal job (`jobs/definitions/internal/seal-document.handler.ts:345`), which applies fields and cryptographically seals the finished PDF.
+
+**4. Notification delivery** — the terminal step dispatches signer emails via `sendPendingEmail()` (`server-only/document/send-pending-email.ts:21`), notifying recipients that the document is pending their signature.
+
+**Flow:** `sendDocument()` (prepare) → `createRecipientAuthOptions()` (recipients) → `decorateAndSignPdf()` (signing/seal) → `sendPendingEmail()` (notify).
+
+**Key files:** `server-only/document/send-document.ts`, `utils/document-auth.ts`, `jobs/definitions/internal/seal-document.handler.ts`, `server-only/document/send-pending-email.ts`.

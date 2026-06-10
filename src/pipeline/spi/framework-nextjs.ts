@@ -56,6 +56,9 @@ const ROUTE_HTTP_NAMES: ReadonlySet<string> = new Set([
   'GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD',
 ])
 
+const NESTED_NEXTJS_CONVENTION_RE = /(?:^|\/)(?:apps|packages|services|sites|clients|workspaces)\/[^/]+\/((?:src\/)?(?:app|pages)\/.+)$/i
+const NESTED_NEXTJS_MIDDLEWARE_RE = /(?:^|\/)(?:apps|packages|services|sites|clients|workspaces)\/[^/]+\/((?:src\/)?middleware\.[^/]+)$/i
+
 type NextjsConventionMatch =
   | { kind: 'default'; role: SpiFrameworkRole; routePath: string }
   | { kind: 'http_methods'; role: SpiFrameworkRole; routePath: string }
@@ -90,10 +93,10 @@ export function detectNextjsFramework(ctx: DetectNextjsFrameworkContext): void {
 
 /** Returns the Next.js convention match for a workspace-relative path, or
  *  null when the path doesn't match any convention. The detector accepts
- *  the path with or without a leading `src/` directory (the common Next.js
- *  configuration). */
+ *  the path with or without a leading `src/` directory, and under common
+ *  monorepo workspace roots like `apps/<name>/app/...`. */
 function matchConvention(filePath: string): NextjsConventionMatch | null {
-  const normalized = stripLeadingSrc(filePath)
+  const normalized = normalizeNextjsConventionPath(filePath)
 
   // Root middleware: `middleware.ts` or `middleware.tsx`.
   if (normalized === 'middleware.ts' || normalized === 'middleware.tsx') {
@@ -198,7 +201,31 @@ function stripLeadingSrc(filePath: string): string {
 }
 
 function isAppDirectoryFile(filePath: string): boolean {
-  return stripLeadingSrc(filePath).startsWith('app/')
+  return normalizeNextjsConventionPath(filePath).startsWith('app/')
+}
+
+function normalizeNextjsConventionPath(filePath: string): string {
+  const stripped = stripLeadingSrc(filePath)
+  if (
+    stripped.startsWith('app/')
+    || stripped.startsWith('pages/')
+    || stripped === 'middleware.ts'
+    || stripped === 'middleware.tsx'
+  ) {
+    return stripped
+  }
+
+  const nestedConventionMatch = filePath.match(NESTED_NEXTJS_CONVENTION_RE)
+  if (nestedConventionMatch?.[1]) {
+    return stripLeadingSrc(nestedConventionMatch[1])
+  }
+
+  const nestedMiddlewareMatch = filePath.match(NESTED_NEXTJS_MIDDLEWARE_RE)
+  if (nestedMiddlewareMatch?.[1]) {
+    return stripLeadingSrc(nestedMiddlewareMatch[1])
+  }
+
+  return stripped
 }
 
 function getBasename(filePath: string): string {
@@ -312,16 +339,28 @@ function tagDefaultExport(ctx: DetectNextjsFrameworkContext, role: SpiFrameworkR
 function tagHttpMethodExports(ctx: DetectNextjsFrameworkContext, role: SpiFrameworkRole, routePath: string): void {
   // App-router route handlers (`app/.../route.ts`) export one function
   // per HTTP method: `export function GET() {}`, `export function
-  // POST() {}`, etc. Tag each; record the HTTP method on framework_metadata
-  // so consumers can filter by verb.
+  // POST() {}`, or `export const POST = withAuth(...)`. Tag each; record the
+  // HTTP method on framework_metadata so consumers can filter by verb.
   for (const stmt of ctx.sourceFile.statements) {
-    if (!ts.isFunctionDeclaration(stmt) || !stmt.name) continue
-    if (!hasExportModifier(stmt)) continue
-    if (!ROUTE_HTTP_NAMES.has(stmt.name.text)) continue
-    tagSymbolByName(ctx, stmt.name.text, role, {
-      route_path: routePath,
-      http_method: stmt.name.text,
-    })
+    if (ts.isFunctionDeclaration(stmt) && stmt.name) {
+      if (!hasExportModifier(stmt)) continue
+      if (!ROUTE_HTTP_NAMES.has(stmt.name.text)) continue
+      tagSymbolByName(ctx, stmt.name.text, role, {
+        route_path: routePath,
+        http_method: stmt.name.text,
+      })
+      continue
+    }
+
+    if (!ts.isVariableStatement(stmt) || !hasExportModifier(stmt)) continue
+    for (const declaration of stmt.declarationList.declarations) {
+      if (!ts.isIdentifier(declaration.name)) continue
+      if (!ROUTE_HTTP_NAMES.has(declaration.name.text)) continue
+      tagSymbolByName(ctx, declaration.name.text, role, {
+        route_path: routePath,
+        http_method: declaration.name.text,
+      })
+    }
   }
 }
 

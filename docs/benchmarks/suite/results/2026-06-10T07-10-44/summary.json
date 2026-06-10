@@ -1,0 +1,178 @@
+{
+  "schema_version": 1,
+  "started_at": "2026-06-10T07:10:44.779Z",
+  "completed_at": "2026-06-10T07:23:48.485Z",
+  "output_root": "docs/benchmarks/suite/results/2026-06-10T07-10-44",
+  "filters": {
+    "repo": "formbricks",
+    "task": "explain-runtime",
+    "mode": "warm",
+    "trials": 1
+  },
+  "cells_skipped_for_install": 0,
+  "cells_skipped_for_env_drift": 0,
+  "cells": [
+    {
+      "repoId": "formbricks",
+      "repoName": "Formbricks public repo",
+      "taskId": "explain-runtime",
+      "taskName": "Explain runtime flow",
+      "mode": "warm",
+      "prompt": "How does Formbricks process a survey response from request handling through persistence and analytics/event tracking?",
+      "status": "completed",
+      "reason": null,
+      "isolation": true,
+      "baseline": {
+        "input_tokens": {
+          "median": 163482,
+          "min": 163482,
+          "max": 163482,
+          "n": 1
+        },
+        "total_tool_calls": {
+          "median": 37,
+          "min": 37,
+          "max": 37,
+          "n": 1
+        },
+        "read_calls": {
+          "median": 22,
+          "min": 22,
+          "max": 22,
+          "n": 1
+        },
+        "glob_grep_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "wall_clock_ms": {
+          "median": 157645,
+          "min": 157645,
+          "max": 157645,
+          "n": 1
+        },
+        "cost_usd": {
+          "median": 0.4972762999999999,
+          "min": 0.4972762999999999,
+          "max": 0.4972762999999999,
+          "n": 1
+        }
+      },
+      "madar": {
+        "input_tokens": {
+          "median": 74395,
+          "min": 74395,
+          "max": 74395,
+          "n": 1
+        },
+        "total_tool_calls": {
+          "median": 2,
+          "min": 2,
+          "max": 2,
+          "n": 1
+        },
+        "read_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "glob_grep_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "wall_clock_ms": {
+          "median": 22559,
+          "min": 22559,
+          "max": 22559,
+          "n": 1
+        },
+        "cost_usd": {
+          "median": 0.1349815,
+          "min": 0.1349815,
+          "max": 0.1349815,
+          "n": 1
+        }
+      },
+      "spi_madar": {
+        "input_tokens": {
+          "median": 120683,
+          "min": 120683,
+          "max": 120683,
+          "n": 1
+        },
+        "total_tool_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 1
+        },
+        "read_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "glob_grep_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "wall_clock_ms": {
+          "median": 44711,
+          "min": 44711,
+          "max": 44711,
+          "n": 1
+        },
+        "cost_usd": {
+          "median": 0.27335149999999997,
+          "min": 0.27335149999999997,
+          "max": 0.27335149999999997,
+          "n": 1
+        }
+      },
+      "benchmark_outcomes": {
+        "legacy": {
+          "counts": {
+            "full_win": 1,
+            "partial_win": 0,
+            "regression": 0,
+            "not_measured": 0
+          },
+          "evidence": [
+            "routing/tool/latency win: tool calls 37 → 2, latency 157645ms → 22559ms",
+            "provider input win: baseline 163482 → madar 74395",
+            "turns win: baseline 6 → madar 3",
+            "fresh_token win: baseline 19471 → madar 14663",
+            "cost win: baseline 0.4972762999999999 → madar 0.1349815"
+          ]
+        },
+        "spi_madar": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 0,
+            "regression": 0,
+            "not_measured": 1
+          },
+          "evidence": [
+            "benchmark readiness is not_ready (missing runtime proof obligations: persistence; runtime slice confidence is low)"
+          ]
+        }
+      },
+      "workflow_outcomes": null,
+      "artifacts": {
+        "legacy_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-06-10T07-10-44/raw/formbricks/explain-runtime/warm-cache/legacy/trial-001/report.share-safe.json"
+        ],
+        "spi_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-06-10T07-10-44/raw/formbricks/explain-runtime/warm-cache/spi/trial-001/report.share-safe.json"
+        ]
+      }
+    }
+  ]
+}

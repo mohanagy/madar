@@ -41,7 +41,7 @@
     "language": "python",
     "shape": "fastapi-or-django",
     "status": "ready",
-    "supportsSpi": false
+    "supportsSpi": true
   },
   {
     "id": "go-service",
@@ -52,7 +52,7 @@
     "language": "go",
     "shape": "http-service",
     "status": "ready",
-    "supportsSpi": false
+    "supportsSpi": true
   },
   {
     "id": "documenso",
@@ -62,12 +62,13 @@
       "url": "https://github.com/documenso/documenso",
       "ref": "4ee789ea378d12c85daacf7dceda80b4dec80652"
     },
+    "graphRoot": "packages/lib",
     "description": "Public git-backed document-signing benchmark target for Documenso.",
     "size": "large",
     "language": "typescript",
     "shape": "document-platform",
     "status": "ready",
-    "supportsSpi": false
+    "supportsSpi": true
   },
   {
     "id": "formbricks",
@@ -77,12 +78,13 @@
       "url": "https://github.com/formbricks/formbricks",
       "ref": "415bd9828ba150f7944fe10422acdbaf3089c707"
     },
+    "graphRoot": "apps/web",
     "description": "Public git-backed survey platform benchmark target for Formbricks.",
     "size": "large",
     "language": "typescript",
     "shape": "survey-platform",
     "status": "ready",
-    "supportsSpi": false
+    "supportsSpi": true
   },
   {
     "id": "dub",
@@ -97,7 +99,8 @@
     "language": "typescript",
     "shape": "link-platform",
     "status": "ready",
-    "supportsSpi": false
+    "graphRoot": "apps/web",
+    "supportsSpi": true
   },
   {
     "id": "twenty",
@@ -107,12 +110,13 @@
       "url": "https://github.com/twentyhq/twenty",
       "ref": "186d5b8faa6a0d1dd566825f29c004cf4cf3902b"
     },
+    "graphRoot": "packages/twenty-server/src/engine",
     "description": "Public git-backed CRM benchmark target for Twenty.",
     "size": "large",
     "language": "typescript",
     "shape": "crm-platform",
     "status": "ready",
-    "supportsSpi": false
+    "supportsSpi": true
   },
   {
     "id": "cal-diy",
@@ -137,6 +141,7 @@
       "url": "https://github.com/novuhq/novu",
       "ref": "f105f3d41a4405a75f803634d49f15a967524d8a"
     },
+    "graphRoot": "apps",
     "description": "Public git-backed notification infrastructure benchmark target for Novu.",
     "size": "large",
     "language": "typescript",

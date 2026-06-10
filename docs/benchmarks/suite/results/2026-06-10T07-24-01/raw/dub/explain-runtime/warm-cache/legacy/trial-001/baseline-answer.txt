@@ -1,0 +1,29 @@
+Here's how Dub resolves a short-link click, traced through the actual code.
+
+## 1. Request entry & routing — `middleware.ts`
+
+Every non-asset request hits the Next.js middleware (matcher excludes `/api`, `/_next`, etc.). It calls `parse(req)` (`lib/middleware/utils/parse.ts`) to split the `host` header into a `domain` and the path into `key`/`fullKey` (e.g. `dub.sh/github` → domain `dub.sh`, key `github`). It logs to Axiom, then routes by hostname: app/API/admin/partners hosts go to their own middleware; otherwise it falls through to **`LinkMiddleware(req, ev)`** (`middleware.ts:89`), which is the short-link resolver.
+
+## 2. Link lookup — `lib/middleware/link.ts`
+
+1. **Normalize the key** (`link.ts:49-64`): puny-encode, lowercase unless `isCaseSensitiveDomain(domain)`, strip a trailing `+` (inspect mode), map empty key → `_root`.
+2. **Resolve the link record** (`link.ts:86-133`): first try `linkCache.get({domain, key})` (Upstash Redis, `lib/middleware/api/links/cache`). On a miss, fall back to `getLinkViaEdge` (PlanetScale, `lib/planetscale`); if still nothing, rewrite to `/[domain]/notfound` (or `crawlBitly` for `buff.ly`). The fetched row is normalized via `formatRedisLink` and written back to the cache in `ev.waitUntil` (for partner links it also fetches enrollment info via `getPartnerEnrollmentInfo`).
+3. **Guard branches** (`link.ts:176-253`): inspect modal, password protection (re-checks password against the edge DB and rewrites to `/password/[linkId]`), banned workspace (`LEGAL_WORKSPACE_ID`), disabled links, and expired links (`expiredUrl` redirect or `/expired` page). These rewrite/redirect early so no click is tracked.
+4. **A/B testing & click ID** (`link.ts:154-273`): `resolveABTestURL` picks a variant URL; a `dub_id_<domain>_<key>` cookie is read, else pulled from `recordClickCache` (keyed by an identity hash), else generated with `nanoid(16)`.
+
+## 3. Destination resolution — `lib/middleware/utils/get-final-url.ts`
+
+The middleware picks a branch by link config (`link.ts:322-614`): bot+proxy → `/proxy` page; custom URI scheme; `rewrite` (cloaking) → `/cloaked/...`; iOS/Android device targeting (with app-store deep-link interstitials via `cacheDeepLinkClickData`); geo-targeting by `country`; else the plain redirect. Each branch builds the destination with **`getFinalUrl(url, {req, clickId, via})`**, which merges incoming query params onto the target, honors a `redir_url` override, appends `dub_id=<clickId>` (or `client_reference_id` for Stripe), and adds tracking params for AppsFlyer/Singular/Google Play.
+
+## 4. Analytics tracking — `lib/tinybird/record-click.ts`
+
+In every redirect branch, `recordClick(...)` is fired inside `ev.waitUntil(...)` so tracking runs without blocking the redirect. `recordClick`:
+- Bails on `dub-no-track`, on detected bots (`detectBot`), and on dedup (one click per IP-identity per hour via `recordClickCache`).
+- Detects QR scans (`detectQr` → `trigger="qr"`), gathers geo (`@vercel/functions` `geolocation`/`ipAddress` + `x-vercel-ip-*` headers, IP omitted for EU), and user-agent/referer data into a `clickData` object.
+- In a second `waitUntil`, `Promise.allSettled`: POSTs `clickData` to **Tinybird** (`/v0/events?name=dub_click_events`), sets the dedup cache, increments `Link.clicks`/`lastClicked` and workspace usage (`publishWorkspaceClicksUsageEvent`) and partner activity in PlanetScale, and fires `link.clicked` webhooks via QStash (`sendLinkClickWebhooks`).
+
+## 5. Redirect response — `lib/middleware/utils/create-response-with-cookies.ts`
+
+The branch returns `NextResponse.redirect(finalUrl, …)` (status 301 for `_root`, else 302), wrapped by `createResponseWithCookies`, which sets the `dub_id_<domain>_<key>` cookie (1-hour TTL for dedup) and a `dub_test_url` cookie (1 week) for A/B consistency. The user's browser then navigates to the destination.
+
+**Key files:** `middleware.ts` → `lib/middleware/utils/parse.ts` → `lib/middleware/link.ts` (lookup/cache/branching) → `lib/middleware/utils/get-final-url.ts` (destination) → `lib/tinybird/record-click.ts` (analytics) → `lib/middleware/utils/create-response-with-cookies.ts` (redirect + cookies), with caches in `lib/middleware/api/links/cache` & `record-click-cache` and DB access via `lib/planetscale`.

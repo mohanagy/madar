@@ -1,4 +1,4 @@
-import { basename, extname } from 'node:path'
+import { basename, extname, resolve } from 'node:path'
 
 import type { ExtractionEdge, ExtractionNode } from '../../contracts/types.js'
 import { DEFAULT_EXTRACTION_LAYER } from '../../core/layers/types.js'
@@ -11,10 +11,89 @@ const EXTRACTION_STAGE = 'extract'
 const CAPABILITY_CACHE = new Map<string, string | null>()
 const MAX_STORED_SNIPPET_LINES = 25
 const MAX_STORED_SNIPPET_CHARS = 2_000
+let currentFileStemByPath: ReadonlyMap<string, string> | null = null
 
 export interface CreateNodeOptions {
   endLine?: number
   snippet?: string
+}
+
+function normalizeStemPath(filePath: string): string {
+  return resolve(filePath).replaceAll('\\', '/')
+}
+
+function buildFileStemMap(filePaths: Iterable<string>): Map<string, string> {
+  const normalizedPaths = [...new Set([...filePaths].map((filePath) => normalizeStemPath(filePath)))]
+  const stemCounts = new Map<string, number>()
+  for (const filePath of normalizedPaths) {
+    const stemId = _makeId(basename(filePath, extname(filePath)))
+    stemCounts.set(stemId, (stemCounts.get(stemId) ?? 0) + 1)
+  }
+
+  let commonRoot = ''
+  const [firstPath] = normalizedPaths
+  if (firstPath) {
+    const slashAt = firstPath.lastIndexOf('/')
+    commonRoot = slashAt > 0 ? firstPath.slice(0, slashAt) : ''
+  }
+
+  for (const filePath of normalizedPaths.slice(1)) {
+    while (commonRoot && !(filePath === commonRoot || filePath.startsWith(`${commonRoot}/`))) {
+      const slashAt = commonRoot.lastIndexOf('/')
+      commonRoot = slashAt > 0 ? commonRoot.slice(0, slashAt) : ''
+    }
+  }
+
+  const stems = new Map<string, string>()
+  for (const filePath of normalizedPaths) {
+    const basenameStem = basename(filePath, extname(filePath))
+    if ((stemCounts.get(_makeId(basenameStem)) ?? 0) <= 1) {
+      stems.set(filePath, basenameStem)
+      continue
+    }
+
+    const withoutExtension = filePath.slice(0, filePath.length - extname(filePath).length)
+    const relativeStem = commonRoot && withoutExtension.startsWith(`${commonRoot}/`)
+      ? withoutExtension.slice(commonRoot.length + 1)
+      : withoutExtension.replace(/^[A-Za-z]:\//, '').replace(/^\//, '')
+    const segments = relativeStem.split('/').filter(Boolean)
+    stems.set(filePath, segments.length > 0 ? segments.join('_') : basenameStem)
+  }
+
+  const assignedStemIds = new Set<string>()
+  for (const filePath of [...normalizedPaths].sort()) {
+    const stem = stems.get(filePath)!
+    let uniqueStem = stem
+    if (assignedStemIds.has(_makeId(uniqueStem))) {
+      let suffix = 2
+      while (assignedStemIds.has(_makeId(`${stem}_${suffix}`))) {
+        suffix += 1
+      }
+      uniqueStem = `${stem}_${suffix}`
+      stems.set(filePath, uniqueStem)
+    }
+    assignedStemIds.add(_makeId(uniqueStem))
+  }
+
+  return stems
+}
+
+export function withExtractionFileStemContext<T>(filePaths: Iterable<string>, callback: () => T): T {
+  const previous = currentFileStemByPath
+  currentFileStemByPath = buildFileStemMap(filePaths)
+  try {
+    return callback()
+  } finally {
+    currentFileStemByPath = previous
+  }
+}
+
+export function fileStemForPath(filePath: string): string {
+  return currentFileStemByPath?.get(normalizeStemPath(filePath)) ?? basename(filePath, extname(filePath))
+}
+
+export function fileNodeIdForPath(filePath: string): string {
+  return _makeId(fileStemForPath(filePath))
 }
 
 function sourceFileTypeForNode(fileType: ExtractionNode['file_type']): FileTypeValue | null {
@@ -194,7 +273,7 @@ export function createNode(
 }
 
 export function createFileNode(filePath: string, fileType: ExtractionNode['file_type']): ExtractionNode {
-  return createNode(_makeId(basename(filePath, extname(filePath))), basename(filePath), filePath, 1, fileType)
+  return createNode(fileNodeIdForPath(filePath), basename(filePath), filePath, 1, fileType)
 }
 
 export function createEdge(

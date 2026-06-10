@@ -1,0 +1,548 @@
+{
+  "baseline_mode": "native_agent",
+  "task": "explain",
+  "question": "How does Formbricks process a survey response from request handling through persistence and analytics/event tracking?",
+  "graph_path": "<project-root>/out/graph.json",
+  "isolation": true,
+  "environment": {
+    "claude_code_version": "2.1.170",
+    "host_os": "darwin-arm64",
+    "node_version": "v22.22.3",
+    "mcp_servers_active": [
+      "madar"
+    ],
+    "mcp_server_count": 1,
+    "skills_loaded": [],
+    "skills_loaded_count": 0,
+    "plugins_active": [],
+    "user_claude_md_hash": "sha256:0cf98a0a8f9c27017a0bebc7b017fc17518d9103c62ca384da20b2776b0aade7",
+    "project_claude_md_hash": "sha256:f756cedc14b026ff7879bccec92865638324e29e05860c83d7858375465d0940",
+    "parent_claude_md_hashes": [],
+    "hooks_active": {
+      "user_prompt_submit": [
+        "project:command:*"
+      ],
+      "pre_tool_use": [],
+      "post_tool_use": []
+    }
+  },
+  "environment_contamination": {
+    "skills_activated_during_run": [],
+    "skills_conflicting_with_madar_rules": [],
+    "calls_to_other_mcps": {},
+    "subagent_dispatches_detected": 0,
+    "skill_alignment_score": 1
+  },
+  "exec_command": {
+    "command": null,
+    "placeholders": [
+      "{prompt_file}"
+    ],
+    "redacted": true
+  },
+  "baseline": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 5426,
+      "cache_creation_input_tokens": 13001,
+      "cache_read_input_tokens": 64077,
+      "output_tokens": 3140,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 13001,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2801,
+          "output_tokens": 2162,
+          "cache_read_input_tokens": 26867,
+          "cache_creation_input_tokens": 4739,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 4739
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 82504,
+    "uncached_input_tokens_anthropic_exact": 18427,
+    "cached_input_tokens_anthropic_exact": 64077,
+    "total_cost_usd": 0.455248,
+    "num_turns": 4,
+    "duration_ms": 191791,
+    "result_path": "<artifact-root>/baseline-answer.txt"
+  },
+  "madar": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 6363,
+      "cache_creation_input_tokens": 23586,
+      "cache_read_input_tokens": 90734,
+      "output_tokens": 1913,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 23586,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 123,
+          "output_tokens": 1095,
+          "cache_read_input_tokens": 31009,
+          "cache_creation_input_tokens": 8495,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 8495
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 120683,
+    "uncached_input_tokens_anthropic_exact": 29949,
+    "cached_input_tokens_anthropic_exact": 90734,
+    "total_cost_usd": 0.27335149999999997,
+    "num_turns": 4,
+    "duration_ms": 44711,
+    "result_path": "<artifact-root>/madar-answer.txt"
+  },
+  "install_verified": true,
+  "measurement_validity": "valid",
+  "trace_status": "trace_available",
+  "madar_mcp_call_count": 2,
+  "reductions": {
+    "input_tokens": 0.68,
+    "uncached_input_tokens": 0.62,
+    "cache_creation_input_tokens": 0.55,
+    "num_turns": 1,
+    "duration_ms": 4.29,
+    "cost_usd": 1.67
+  },
+  "token_regression": true,
+  "token_regression_reasons": [
+    "uncached_input_tokens",
+    "cache_creation_input_tokens"
+  ],
+  "prompt_token_source": {
+    "baseline": "anthropic_provider_reported",
+    "madar": "anthropic_provider_reported"
+  },
+  "provider_proof": {
+    "baseline": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "madar": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "reduction_basis": "provider_reported"
+  },
+  "started_at": "2026-06-10T07:19:32.800Z",
+  "completed_at": "2026-06-10T07:23:47.104Z",
+  "paths": {
+    "output_dir": "<artifact-root>",
+    "report": "<artifact-root>/report.json",
+    "share_safe_report": "<artifact-root>/report.share-safe.json",
+    "baseline_answer": "<artifact-root>/baseline-answer.txt",
+    "madar_answer": "<artifact-root>/madar-answer.txt",
+    "baseline_prompt": "<artifact-root>/baseline-prompt.txt",
+    "madar_prompt": "<artifact-root>/madar-prompt.txt",
+    "prompt_file": "<artifact-root>/madar-prompt.txt"
+  },
+  "benchmark_readiness": {
+    "status": "not_ready",
+    "reasons": [
+      "missing runtime proof obligations: persistence",
+      "runtime slice confidence is low"
+    ],
+    "suggested_graph_scope": null
+  },
+  "madar_trace": {
+    "source": "claude_messages_tool_use",
+    "summary": "3 tool calls across 3 turns",
+    "tool_call_count": 3,
+    "tool_calls_by_name": {
+      "mcp__madar__retrieve": 2,
+      "ToolSearch": 1
+    },
+    "per_turn": [
+      {
+        "turn": 2,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ],
+        "madar_tool_discovery_count": 1,
+        "madar_tool_discovery_tool_indexes": [
+          0
+        ]
+      },
+      {
+        "turn": 3,
+        "tool_call_count": 1,
+        "tools": [
+          "mcp__madar__retrieve"
+        ]
+      },
+      {
+        "turn": 6,
+        "tool_call_count": 1,
+        "tools": [
+          "mcp__madar__retrieve"
+        ]
+      }
+    ],
+    "madar_mcp_call_count": 2,
+    "madar_mcp_calls_by_name": {
+      "mcp__madar__retrieve": 2
+    },
+    "first_madar_turn": 3,
+    "first_madar_tool_name": "mcp__madar__retrieve",
+    "pre_madar_broad_exploration_tool_call_count": 0,
+    "pre_madar_broad_exploration_tool_calls_by_name": {},
+    "context_pack_call_count": 0,
+    "focused_follow_up_tool_call_count": 1,
+    "broad_exploration_tool_call_count": 0,
+    "broad_exploration_tool_calls_by_name": {},
+    "exploration_outcome": "madar_invoked",
+    "exploration_summary": "Madar MCP invoked 2 times (mcp__madar__retrieve); 1 focused follow-up call; no broad exploration after the first Madar call."
+  },
+  "tool_call_counts": {
+    "baseline": {
+      "total": 42,
+      "Read": 22,
+      "Bash": 19,
+      "Glob": 0,
+      "Grep": 0,
+      "ToolSearch": 0,
+      "other": {
+        "Agent": 1
+      }
+    },
+    "madar": {
+      "total": 3,
+      "Read": 0,
+      "Bash": 0,
+      "Glob": 0,
+      "Grep": 0,
+      "ToolSearch": 1,
+      "other": {
+        "retrieve": 2
+      }
+    }
+  },
+  "answer_contract": {
+    "version": 1,
+    "answer_focus": "runtime_generation",
+    "entrypoint_scope": "setup_context",
+    "required_elements": [
+      "main_pipeline_phases",
+      "persistence_or_artifact_storage",
+      "missing_or_uncertain_phases"
+    ],
+    "do_not_claim": [
+      "direct_producer_to_worker_calls_without_enqueues_boundary",
+      "irrelevant_model_or_provider_details",
+      "full_runtime_certainty_when_slice_is_partial"
+    ],
+    "observed_phases": [
+      "controller",
+      "persistence",
+      "notification_or_event"
+    ],
+    "missing_phases": [],
+    "runtime_proof": {
+      "obligations": [
+        {
+          "id": "request_handling",
+          "label": "request handling",
+          "kind": "entrypoint",
+          "required": true,
+          "evidence": [
+            {
+              "label": "resolveClientApiIds()",
+              "source_file": "app/api/v2/client/[workspaceId]/responses/route.ts",
+              "line_number": 204
+            },
+            {
+              "label": "resolveClientApiIds()",
+              "source_file": "app/api/v1/client/[workspaceId]/responses/[responseId]/lib/put-response-handler.ts",
+              "line_number": 230
+            }
+          ]
+        },
+        {
+          "id": "persistence",
+          "label": "persistence",
+          "kind": "terminal",
+          "required": true,
+          "evidence": []
+        },
+        {
+          "id": "analytics_event_tracking",
+          "label": "analytics/event tracking",
+          "kind": "terminal",
+          "required": true,
+          "evidence": [
+            {
+              "label": "sendToPipeline",
+              "source_file": "app/lib/pipelines.ts",
+              "line_number": 5
+            }
+          ]
+        }
+      ],
+      "missing_obligations": [
+        "persistence"
+      ]
+    },
+    "uncertainty_notes": [
+      "Do not infer unobserved runtime obligations; if the full flow is requested, answer: not enough evidence; missing persistence"
+    ],
+    "confidence": "low"
+  },
+  "execution_slice": {
+    "status": "partial",
+    "confidence": "low",
+    "confidence_reasons": [
+      "missing_orchestration",
+      "multiple_omitted_branches"
+    ],
+    "boundary_reason": "missing runtime proof obligation: persistence",
+    "steps": [
+      {
+        "label": "createResponseForRequest",
+        "source_file": "route.ts",
+        "line_number": 137
+      },
+      {
+        "label": "POST",
+        "source_file": "route.ts",
+        "line_number": 201
+      },
+      {
+        "label": "resolveClientApiIds()",
+        "source_file": "route.ts",
+        "line_number": 204
+      }
+    ],
+    "primary_path": {
+      "steps": [
+        {
+          "label": "createResponseForRequest",
+          "source_file": "route.ts",
+          "line_number": 137
+        },
+        {
+          "label": "POST",
+          "source_file": "route.ts",
+          "line_number": 201
+        },
+        {
+          "label": "resolveClientApiIds()",
+          "source_file": "route.ts",
+          "line_number": 204
+        }
+      ],
+      "boundary_reason": "missing runtime proof obligation: persistence"
+    },
+    "side_effects": [
+      {
+        "steps": [
+          {
+            "label": "reportApiError",
+            "source_file": "api-error-reporter.ts",
+            "line_number": 238
+          }
+        ]
+      },
+      {
+        "steps": [
+          {
+            "label": "reportApiError",
+            "source_file": "api-error-reporter.ts",
+            "line_number": 238
+          }
+        ]
+      },
+      {
+        "steps": [
+          {
+            "label": "password-reset-token-repository.test.ts",
+            "source_file": "password-reset-token-repository.test.ts",
+            "line_number": 1
+          }
+        ]
+      }
+    ],
+    "terminal_boundaries": [
+      {
+        "steps": [
+          {
+            "label": "sendToPipeline",
+            "source_file": "pipelines.ts",
+            "line_number": 5
+          },
+          {
+            "label": "putResponseHandler",
+            "source_file": "put-response-handler.ts",
+            "line_number": 217
+          },
+          {
+            "label": "resolveClientApiIds()",
+            "source_file": "put-response-handler.ts",
+            "line_number": 230
+          }
+        ],
+        "boundary_reason": "branch terminates before rejoining the primary runtime path"
+      },
+      {
+        "steps": [
+          {
+            "label": "createResponseWithQuotaEvaluation",
+            "source_file": "response.ts",
+            "line_number": 30
+          }
+        ],
+        "boundary_reason": "branch terminates before rejoining the primary runtime path"
+      },
+      {
+        "steps": [
+          {
+            "label": "badRequestResponse",
+            "source_file": "response.ts",
+            "line_number": 60
+          }
+        ],
+        "boundary_reason": "branch terminates before rejoining the primary runtime path"
+      }
+    ],
+    "omitted_branches": [
+      {
+        "from": "POST",
+        "to": "getSurvey()",
+        "relation": "calls",
+        "reason": "low-value branch omitted from compact execution slice"
+      },
+      {
+        "from": "POST",
+        "to": "validateResponseSubmission",
+        "relation": "calls",
+        "reason": "low-value branch omitted from compact execution slice"
+      },
+      {
+        "from": "createResponseForRequest",
+        "to": "getUnexpectedPublicErrorResponse",
+        "relation": "calls",
+        "reason": "low-value branch omitted from compact execution slice"
+      },
+      {
+        "from": "POST",
+        "to": "getContactsDisabledResponse",
+        "relation": "calls",
+        "reason": "low-value branch omitted from compact execution slice"
+      },
+      {
+        "from": "POST",
+        "to": "getCountry",
+        "relation": "calls",
+        "reason": "low-value branch omitted from compact execution slice"
+      },
+      {
+        "from": "POST",
+        "to": "getUnexpectedPublicErrorResponse",
+        "relation": "calls",
+        "reason": "low-value branch omitted from compact execution slice"
+      }
+    ],
+    "phase_coverage": {
+      "expected": [
+        "persistence",
+        "notification_or_event"
+      ],
+      "observed": [
+        "controller",
+        "persistence",
+        "notification_or_event"
+      ],
+      "missing": []
+    }
+  },
+  "answer_quality": {
+    "gate": "formbricks-explain-runtime",
+    "prompt": "How does Formbricks process a survey response from request handling through persistence and analytics/event tracking?",
+    "baseline": {
+      "passed": true,
+      "missing_required_terms": [],
+      "forbidden_terms_present": []
+    },
+    "madar": {
+      "passed": true,
+      "missing_required_terms": [],
+      "forbidden_terms_present": []
+    },
+    "required_concepts": [
+      "The answer should describe request handling, persistence, and analytics/event tracking."
+    ],
+    "answer_quality_notes": [
+      "Permission-blocked non-answers are not benchmark wins."
+    ],
+    "manual_review_notes": [
+      "Confirm the answer follows the response path instead of only naming files."
+    ]
+  },
+  "prompt_contract": {
+    "status": "followed",
+    "evidence": [
+      "started with retrieve and avoided disallowed exploration"
+    ]
+  },
+  "claim_assessment": {
+    "routing_efficiency": {
+      "status": "not_measured",
+      "evidence": [
+        "benchmark readiness is not_ready (missing runtime proof obligations: persistence; runtime slice confidence is low)"
+      ]
+    },
+    "token_reduction": {
+      "status": "not_measured",
+      "evidence": [
+        "benchmark readiness is not_ready (missing runtime proof obligations: persistence; runtime slice confidence is low)"
+      ]
+    }
+  },
+  "benchmark_outcome": {
+    "outcome": "not_measured",
+    "checks": {
+      "routing_tool_latency": "not_measured",
+      "token": "not_measured",
+      "fresh_token": "not_measured",
+      "cost": "not_measured",
+      "turns": "not_measured"
+    },
+    "evidence": [
+      "benchmark readiness is not_ready (missing runtime proof obligations: persistence; runtime slice confidence is low)"
+    ]
+  }
+}

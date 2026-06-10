@@ -1,0 +1,28 @@
+The evidence confirms the flow. Here's the answer.
+
+## How Formbricks processes a survey response
+
+The lifecycle splits into two phases: a **synchronous request path** (validate → persist → enqueue) and an **asynchronous pipeline** (webhooks → integrations → analytics/notifications). The SDK typically creates a partial response, then sends `PUT` updates as the respondent advances, with a final update marking it `finished`.
+
+### 1. Request handling (HTTP entry)
+- **`apps/web/app/api/v1/client/[workspaceId]/responses/route.ts`** — `POST` handler. Resolves the workspace, checks the survey is `inProgress`, validates the single-use ID, parses the body with the `ZResponseInput` Zod schema, captures IP/user-agent/geo metadata, validates answer data against survey blocks (`validateResponseData`, `validateClientFileUploads`), and resolves `userId` → contact.
+- **`.../[responseId]/lib/put-response-handler.ts`** — `putResponseHandler` handles updates. There's also a v2 client route and management (API-key) routes under `app/api/v1/management/responses/`.
+
+### 2. Persistence
+- **`.../responses/lib/response.ts`** — `createResponse()` builds the Prisma payload (`buildPrismaResponseData`) and runs `prisma.response.create()`. The wrapper `createResponseWithQuotaEvaluation()` runs this inside a transaction alongside `evaluateResponseQuotas()` (enterprise quota check), returning the response plus an optional `quotaFull` flag.
+- **`apps/web/lib/response/service.ts`** — `updateResponse()` **merges** incoming `data` and `ttc` with the existing record (rather than replacing), and computes total time-to-completion via `calculateTtcTotal()` only when `finished` becomes true. `updateResponseWithQuotaEvaluation()` is the transactional wrapper.
+- **CREATE vs UPDATE / "finished":** Create inserts a new row and may already be `finished`. Update merges into an existing row and is **rejected if the response is already `finished`**. `finished = true` is the boolean that gates downstream side effects.
+
+### 3. Enqueue to the pipeline
+After persistence, the route calls **`sendToPipeline()`** (`apps/web/app/lib/pipelines.ts`), which enqueues a job onto a **BullMQ** background queue via `getBackgroundJobProducer().enqueueResponsePipeline()`. The route emits `responseCreated` always, plus `responseFinished` when `finished` is true (confirmed at `route.ts:222–236`). Updates emit `responseUpdated` / `responseFinished` analogously.
+
+### 4. Async pipeline — webhooks, integrations, analytics
+- **`apps/web/modules/response-pipeline/lib/process-response-pipeline-job.ts`** — `processResponsePipelineJob()` consumes the job. It loads org/survey/webhooks, then:
+  - **Webhooks** — `deliverWebhooks()` / `createWebhookDeliveryTask()` POST HMAC-SHA256-signed payloads to matching webhook endpoints (with retry + SSRF protection).
+  - **On `responseCreated`** — `runResponseCreatedSideEffects()`: Stripe usage metering (`recordResponseCreatedMeterEvent`), **PostHog analytics** (`captureSurveyResponsePostHogEvent` → `survey_response_received`, fired on milestones), and product telemetry.
+  - **On `responseFinished`** — `runResponseFinishedSideEffects()`: third-party **integrations** (`handle-integrations.ts` → Google Sheets, Slack, Airtable, Notion), feedback-source routing, **follow-up emails** (`modules/survey/follow-ups/lib/follow-ups.ts`), alert/notification emails, and survey auto-complete.
+
+### Summary of the path
+`POST/PUT route → validate (Zod + survey blocks) → createResponse/updateResponse (Prisma, in a quota-eval transaction) → sendToPipeline (BullMQ enqueue) → processResponsePipelineJob → webhooks + [created: metering/PostHog/telemetry] + [finished: integrations/follow-ups/notifications/auto-complete]`.
+
+Note: analytics tracking is **event-driven inside the pipeline**, not written synchronously with the response. PostHog/metering fire on `responseCreated`; the heavier integration and follow-up work fires only on `responseFinished`.

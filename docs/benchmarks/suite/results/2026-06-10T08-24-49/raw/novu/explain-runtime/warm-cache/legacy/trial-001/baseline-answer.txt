@@ -1,0 +1,49 @@
+I now have the full end-to-end picture. Here's how it works.
+
+## How Novu processes a notification trigger
+
+The flow spans two deployables — the **API** (synchronous validation + enqueue) and the **Worker** (asynchronous orchestration + delivery) — connected by a Redis/BullMQ (+SQS) queue.
+
+### 1. API entry — accept and validate the trigger
+**`apps/api/src/app/events/events.controller.ts`** exposes `POST /v1/events/trigger` (plus `/trigger/bulk`, `/trigger/broadcast`). The controller does no orchestration; it just builds a command and calls `this.parseEventRequest.execute(...)` (`events.controller.ts:87-111`).
+
+**`apps/api/src/app/events/usecases/parse-event-request/parse-event-request.usecase.ts`** is the real API-side work:
+- Generates a `transactionId` (the idempotency/correlation key for the whole run).
+- Resolves the workflow: either a stored `NotificationTemplate` looked up by trigger `identifier` (`getNotificationTemplateByTriggerIdentifier`, line 436), or — for stateless/Bridge workflows — a `DISCOVER` call to the caller's `bridgeUrl` (`queryDiscoverWorkflow`, line 294, with SSRF guards).
+- Validates the payload against the workflow's `payloadSchema` (AJV, `validateAndApplyPayloadDefaults`), resolves tenant/`WorkflowOverride`, checks the workflow is `active`, validates recipients, and uploads any attachments to storage.
+- Calls `dispatchEventToWorkflowQueue` (line 342), which packages an `IWorkflowDataDto` job and pushes it via `this.workflowQueueService.add({ name: transactionId, data: jobData, groupId: organizationId })` (line 410).
+
+The API returns immediately with `status: PROCESSED` and an activity-feed link — delivery happens asynchronously.
+
+### 2. Worker — trigger handling (fan-out to subscribers)
+**`apps/worker/src/app/workflow/services/workflow.worker.ts`** consumes the workflow queue. Its processor (`getWorkerProcessor`, line 83) runs each job through `this.triggerEventUsecase.execute(data)` (line 105). `TriggerEvent` lives in the shared `@novu/application-generic` package; it expands recipients (topics → subscribers, broadcast), processes each subscriber, creates the `Notification` record, and digests the workflow's steps into individual **`Job`** documents (one per step), then enqueues the first job.
+
+### 3. Worker — per-step orchestration
+**`apps/worker/src/app/workflow/services/standard.worker.ts`** consumes the standard/job queue and calls **`RunJob`** (`apps/worker/src/app/workflow/usecases/run-job/run-job.usecase.ts`) for each step job.
+
+`RunJob.execute` (line 84):
+- Loads the `Job`, `Notification`, and workflow; records a step-run row.
+- Honors deferred-step semantics: digest/delay/throttle cancellation checks (`delayedEventIsCanceled`) and subscriber-schedule windows (`getSubscriberSchedule`, `isWithinSchedule`, optionally extending the step to the next available time).
+- Executes the step via `this.sendMessage.execute(...)` (line 274).
+- On success/failure/skip, updates job status, the step run, and the workflow-run delivery lifecycle, then drives the **chain** forward in `tryQueueNextJobs` (line 468): finds the next job by `_parentId` and calls **`AddJob`**.
+
+**`AddJob`** (`apps/worker/src/app/workflow/usecases/add-job/add-job.usecase.ts`) is the scheduler for each step: it runs step `filters` (conditions), handles `DIGEST`/`DELAY`/`THROTTLE` timing (computing the delay or merging into an existing digest via `merge-or-create-digest`), then `queueJob(...)` puts the step on the `standardQueueService` with the appropriate delay. This `RunJob → AddJob → queue → StandardWorker → RunJob` loop is the workflow orchestration engine.
+
+### 4. Worker — channel dispatch
+**`apps/worker/src/app/workflow/usecases/send-message/send-message.usecase.ts`** is the dispatcher. `SendMessage.execute` (line 90):
+- Builds the compile context (subscriber, payload, tenant, actor, env vars, context).
+- For Bridge/code-first steps, calls `ExecuteBridgeJob` to fetch step outputs (`requiresBridgeExecution`, line 613).
+- Evaluates `stepCondition` (filters) **and** subscriber/workflow channel **preferences** (`evaluateFilters`, `evaluateChannelPreference`); if either fails the step is `SKIPPED`.
+- Switches on `step.template.type` (line 175) to the channel usecase:
+  - `EMAIL` → `SendMessageEmail`, `SMS` → `SendMessageSms`, `IN_APP` → `SendMessageInApp`, `CHAT` → `SendMessageChat`, `PUSH` → `SendMessagePush`
+  - action steps `DIGEST`/`DELAY`/`THROTTLE`/`HTTP_REQUEST`/`CUSTOM` route to their handlers (`Digest`, `SendMessageDelay`, `Throttle`, etc.).
+
+### 5. Channel delivery to the provider
+Each channel usecase (e.g. **`send-message-push.usecase.ts`**, extending **`send-message.base.ts`**) compiles the template content, resolves the subscriber's **integration/credentials**, persists a `Message` record + execution details, and hands off to the provider through a provider **Factory/Handler** abstraction (e.g. `PushFactory` → `IPushHandler`; email/SMS use their equivalent mail/SMS factories). The handler wraps the concrete provider SDK (FCM/APNs, SES/SendGrid, Twilio, Slack, etc.) and performs the actual send.
+
+---
+
+### End-to-end summary
+`POST /v1/events/trigger` → `EventsController` → `ParseEventRequest` (validate workflow + payload, enqueue `IWorkflowDataDto` on the **workflow queue** keyed by `transactionId`) → `WorkflowWorker` → `TriggerEvent` (expand recipients, create `Notification`, digest steps into `Job`s) → `StandardWorker` → `RunJob` (per-step execution + schedule/digest/delay handling) ↔ `AddJob` (filter + time + re-enqueue next step) → `SendMessage` (preferences/conditions + channel switch) → `SendMessageEmail/Sms/InApp/Chat/Push` → provider **Factory/Handler** → external provider. Throughout, state is tracked via `Job` status, `StepRun`, `ExecutionDetails`, and the workflow-run delivery lifecycle.
+
+A caveat on evidence: the cross-subscriber fan-out usecases (`TriggerEvent`, `ProcessSubscriber`, message-matcher) and the queue/worker base classes live in the `@novu/application-generic` package, which is outside the inspected `apps/` tree — I traced their role from the import sites and call signatures in `workflow.worker.ts`, `run-job.usecase.ts`, and `parse-event-request.usecase.ts` rather than from their source.

@@ -1,0 +1,239 @@
+{
+  "documenso-explain-runtime": {
+    "prompt": "How does Documenso move a document from send preparation through recipient creation, signing state, and notification delivery?",
+    "strict_runtime_proof": true,
+    "expected_spi": false,
+    "obligations": [
+      {
+        "id": "send_preparation",
+        "label": "send preparation",
+        "kind": "handoff",
+        "evidence_terms": [
+          "sendDocument()",
+          "server-only/document/send-document.ts",
+          "setDocumentRecipients()",
+          "extractFieldAutoInsertValues()"
+        ]
+      },
+      {
+        "id": "recipient_creation",
+        "label": "recipient creation",
+        "kind": "handoff",
+        "evidence_terms": [
+          "setDocumentRecipients()",
+          "server-only/recipient/set-document-recipients.ts",
+          "createRecipientAuthOptions()",
+          "utils/document-auth.ts"
+        ]
+      },
+      {
+        "id": "signing_state",
+        "label": "signing state",
+        "kind": "handoff",
+        "evidence_terms": [
+          "getIsRecipientsTurnToSign()",
+          "get-is-recipient-turn.ts",
+          "decorateAndSignPdf()",
+          "signPdf()",
+          "seal-document.handler.ts"
+        ]
+      },
+      {
+        "id": "notification_delivery",
+        "label": "notification delivery",
+        "kind": "terminal",
+        "evidence_terms": [
+          "sendPendingEmail()",
+          "server-only/document/send-pending-email.ts",
+          "sendDeleteEmail()",
+          "send-recipient-signed-email.handler.ts",
+          "send-document-completed-emails.handler.ts"
+        ]
+      }
+    ]
+  },
+  "formbricks-explain-runtime": {
+    "prompt": "How does Formbricks process a survey response from request handling through persistence and analytics/event tracking?",
+    "strict_runtime_proof": true,
+    "expected_spi": false,
+    "obligations": [
+      {
+        "id": "request_handling",
+        "label": "request handling",
+        "kind": "entrypoint",
+        "evidence_terms": [
+          "app/api/v2/client/[workspaceId]/responses/route.ts",
+          "parseAndValidateResponseInput()",
+          "validateResponseSubmission()",
+          "resolveClientApiIds",
+          "getSurvey(",
+          "createResponseForRequest()"
+        ]
+      },
+      {
+        "id": "persistence",
+        "label": "persistence",
+        "kind": "terminal",
+        "evidence_terms": [
+          "app/api/v2/client/[workspaceId]/responses/lib/response.ts",
+          "createResponse()",
+          "buildPrismaResponseData()",
+          "prismaClient.response.create",
+          "assertDisplayOwnership",
+          "calculateTtcTotal"
+        ]
+      },
+      {
+        "id": "analytics_event_tracking",
+        "label": "analytics/event tracking",
+        "kind": "terminal",
+        "evidence_terms": [
+          "sendToPipeline",
+          "responseCreated",
+          "responseFinished",
+          "process-response-pipeline-job"
+        ]
+      }
+    ]
+  },
+  "dub-explain-runtime": {
+    "prompt": "How does Dub resolve a short-link click from request handling through analytics tracking and destination redirect?",
+    "strict_runtime_proof": true,
+    "expected_spi": false,
+    "obligations": [
+      {
+        "id": "request_handling",
+        "label": "request handling",
+        "kind": "entrypoint",
+        "evidence_terms": ["request", "route", "handler", "click", "middleware"]
+      },
+      {
+        "id": "analytics_tracking",
+        "label": "analytics tracking",
+        "kind": "terminal",
+        "evidence_terms": ["analytics", "track", "click"]
+      },
+      {
+        "id": "destination_redirect",
+        "label": "destination redirect",
+        "kind": "terminal",
+        "evidence_terms": ["redirect", "destination", "location"]
+      }
+    ]
+  },
+  "twenty-explain-runtime": {
+    "prompt": "How does Twenty process a CRM record mutation from API handling through workspace services to persistence?",
+    "strict_runtime_proof": true,
+    "expected_spi": false,
+    "obligations": [
+      {
+        "id": "api_mutation_handling",
+        "label": "API mutation handling",
+        "kind": "entrypoint",
+        "evidence_terms": [
+          "create-one-resolver.factory",
+          "update-one-resolver.factory",
+          "direct-execution.service",
+          "create one resolver factory",
+          "update one resolver factory"
+        ]
+      },
+      {
+        "id": "workspace_service_handoff",
+        "label": "workspace service handoff",
+        "kind": "handoff",
+        "evidence_terms": [
+          "common base query runner",
+          "common create one query runner",
+          "common update one query runner",
+          "workspace entity manager"
+        ]
+      },
+      {
+        "id": "persistence",
+        "label": "persistence",
+        "kind": "terminal",
+        "evidence_terms": [
+          "workspace update query builder",
+          "workspace scoped repository",
+          "workspace entity manager"
+        ]
+      }
+    ]
+  },
+  "cal-diy-explain-runtime": {
+    "prompt": "How does Cal.diy turn a booking request into availability validation, scheduled event persistence, and notification delivery?",
+    "strict_runtime_proof": true,
+    "expected_spi": false,
+    "obligations": [
+      {
+        "id": "booking_request",
+        "label": "booking request",
+        "kind": "entrypoint",
+        "evidence_terms": [
+          "pages/api/book/event.ts",
+          "API /api/book/event",
+          "getRegularBookingService()"
+        ]
+      },
+      {
+        "id": "availability_validation",
+        "label": "availability validation",
+        "kind": "handoff",
+        "evidence_terms": [
+          "handleNewBooking/ensureAvailableUsers.ts",
+          "ensureAvailableUsers",
+          "checkForConflicts",
+          "NoAvailableUsersFound"
+        ]
+      },
+      {
+        "id": "scheduled_event_persistence",
+        "label": "scheduled event persistence",
+        "kind": "terminal",
+        "evidence_terms": [
+          "handleNewBooking/createBooking.ts",
+          "saveBooking",
+          "prisma.$transaction",
+          "tx.booking.create"
+        ]
+      },
+      {
+        "id": "notification_delivery",
+        "label": "notification delivery",
+        "kind": "terminal",
+        "evidence_terms": [
+          "BookingEmailSmsHandler.ts",
+          "sendScheduledEmailsAndSMS",
+          "sendOrganizerRequestEmail",
+          "sendAttendeeRequestEmailAndSMS"
+        ]
+      }
+    ]
+  },
+  "novu-explain-runtime": {
+    "prompt": "How does Novu process a notification trigger from API entry through workflow orchestration to channel delivery?",
+    "strict_runtime_proof": true,
+    "expected_spi": false,
+    "obligations": [
+      {
+        "id": "api_entry",
+        "label": "API entry",
+        "kind": "entrypoint",
+        "evidence_terms": ["api", "trigger", "route", "controller"]
+      },
+      {
+        "id": "workflow_orchestration",
+        "label": "workflow orchestration",
+        "kind": "handoff",
+        "evidence_terms": ["workflow", "orchestrat", "trigger"]
+      },
+      {
+        "id": "channel_delivery",
+        "label": "channel delivery",
+        "kind": "terminal",
+        "evidence_terms": ["channel", "deliver", "notification", "send"]
+      }
+    ]
+  }
+}

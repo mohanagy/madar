@@ -31,20 +31,23 @@ Current wiring is still conservative, but it is no longer a single-cell scaffold
 - ready task kinds: `explain-runtime`, `implement`, `review`, and `impact`
 - Python and Go now ship as concrete public fixture workspaces under `docs/benchmarks/suite/fixtures/`
 - six git-backed public repos are now prompt-wired as ready rows: `documenso`, `formbricks`, `dub`, `twenty`, `cal-diy`, and `novu`
-- isolated public `explain-runtime` receipts are now published for `documenso`, `formbricks`, `dub`, `cal-diy`, and `novu`
-- `twenty` currently ships as a scoped `packages/twenty-server/src/modules` compare receipt because the root suite graph breaches the current compare size guard
+- isolated public `explain-runtime` legacy receipts are now published for `documenso`, `formbricks`, `dub`, `twenty`, `cal-diy`, and `novu`
+- `documenso`, `novu`, and `twenty` are configured with scoped `graphRoot` values where prior receipts showed broad-root readiness blockers; suite runs generate and compare against those scoped graphs instead of the oversized monorepo roots
 - public explain-runtime reruns now load deterministic answer-quality gates from [`quality-gates.json`](./quality-gates.json); permission-blocked answers are not benchmark wins, and neither are inference-heavy answers
 - isolated Claude reruns for those public explain-runtime rows must allow `mcp__madar__retrieve` (for example with `--allowedTools mcp__madar__retrieve`)
 - runner execution now clones or copies each ready row into a temporary benchmark workspace, normalizes repo-local Claude/MCP config there, provisions the Madar Claude install, and verifies that install before prompt spend
+- `./isolation/run-isolated.sh` now treats `docs/benchmarks/suite/isolation/.claude` as a checked-in template and syncs it into a persistent runtime isolation profile outside the repo; if your normal Claude profile is logged in but that isolated runtime profile is not, the launcher fails fast and prints the exact `CLAUDE_CONFIG_DIR=... claude auth login` command to run once before rerunning the benchmark
 
-Latest published public-repo rerun receipts (these supersede the earlier permission-blocked 12:xx warm-cache runs):
+Latest published public TypeScript `explain-runtime` legacy receipts (repo/task-specific; where a bundle also includes an SPI arm, treat that SPI arm separately):
 
-- [`results/2026-06-07T13-48-33/summary.md`](./results/2026-06-07T13-48-33/summary.md) — isolated warm-cache `explain-runtime` rerun for `formbricks`; answer-quality passed, readiness stayed `ready`, and `benchmark_outcome = "full_win"`
-- [`results/2026-06-07T13-42-48/summary.md`](./results/2026-06-07T13-42-48/summary.md) — isolated warm-cache `explain-runtime` rerun for `documenso`; the answer is real, but `benchmark_readiness = "not_ready"`, so `benchmark_outcome = "not_measured"` and this stays supplemental evidence
-- [`results/2026-06-07T15-37-50/summary.md`](./results/2026-06-07T15-37-50/summary.md) — isolated warm-cache `explain-runtime` rerun for `dub`; the direct-evidence gate failed (`forbidden did not surface`), so `benchmark_outcome = "not_measured"` and this stays supplemental evidence
-- [`results/2026-06-07T15-42-13/summary.md`](./results/2026-06-07T15-42-13/summary.md) — isolated warm-cache `explain-runtime` rerun for `cal-diy`; the direct-evidence gate failed (`forbidden not directly`), so `benchmark_outcome = "not_measured"` and this stays supplemental evidence
-- [`results/2026-06-07T14-09-14/summary.md`](./results/2026-06-07T14-09-14/summary.md) — isolated warm-cache `explain-runtime` rerun for `novu`; the answer is real, but `benchmark_readiness = "not_ready"`, so `benchmark_outcome = "not_measured"` and this stays supplemental evidence
-- [`../2026-06-07-twenty-server-modules-runtime/README.md`](../2026-06-07-twenty-server-modules-runtime/README.md) — refreshed scoped compare receipt for `twenty`, published against `packages/twenty-server/src/modules`; `benchmark_readiness = "not_ready"` and `benchmark_outcome = "not_measured"`, so treat it as supplemental evidence only
+| Repo | Bundle | Legacy receipt |
+| --- | --- | --- |
+| `documenso` | [`results/2026-06-10T07-01-18/summary.md`](./results/2026-06-10T07-01-18/summary.md) | [`report.share-safe.json`](./results/2026-06-10T07-01-18/raw/documenso/explain-runtime/warm-cache/legacy/trial-001/report.share-safe.json) — `benchmark_outcome = "full_win"`, `benchmark_readiness = "ready"`, `answer_contract.runtime_proof.missing_obligations = []` |
+| `formbricks` | [`results/2026-06-10T07-10-44/summary.md`](./results/2026-06-10T07-10-44/summary.md) | [`report.share-safe.json`](./results/2026-06-10T07-10-44/raw/formbricks/explain-runtime/warm-cache/legacy/trial-001/report.share-safe.json) — `benchmark_outcome = "full_win"`, `benchmark_readiness = "ready"`, `answer_contract.runtime_proof.missing_obligations = []` |
+| `dub` | [`results/2026-06-10T07-24-01/summary.md`](./results/2026-06-10T07-24-01/summary.md) | [`report.share-safe.json`](./results/2026-06-10T07-24-01/raw/dub/explain-runtime/warm-cache/legacy/trial-001/report.share-safe.json) — `benchmark_outcome = "full_win"`, `benchmark_readiness = "ready"`, `answer_contract.runtime_proof.missing_obligations = []` |
+| `twenty` | [`results/2026-06-10T07-39-11/summary.md`](./results/2026-06-10T07-39-11/summary.md) | [`report.share-safe.json`](./results/2026-06-10T07-39-11/raw/twenty/explain-runtime/warm-cache/legacy/trial-001/report.share-safe.json) — `benchmark_outcome = "full_win"`, `benchmark_readiness = "ready"`, `answer_contract.runtime_proof.missing_obligations = []` |
+| `cal-diy` | [`results/2026-06-10T08-08-44/summary.md`](./results/2026-06-10T08-08-44/summary.md) | [`report.share-safe.json`](./results/2026-06-10T08-08-44/raw/cal-diy/explain-runtime/warm-cache/legacy/trial-001/report.share-safe.json) — `benchmark_outcome = "full_win"`, `benchmark_readiness = "ready"`, `answer_contract.runtime_proof.missing_obligations = []` |
+| `novu` | [`results/2026-06-10T08-24-49/summary.md`](./results/2026-06-10T08-24-49/summary.md) | [`report.share-safe.json`](./results/2026-06-10T08-24-49/raw/novu/explain-runtime/warm-cache/legacy/trial-001/report.share-safe.json) — `benchmark_outcome = "full_win"`, `benchmark_readiness = "ready"`, `answer_contract.runtime_proof.missing_obligations = []` |
 
 Historical fixture bundle:
 

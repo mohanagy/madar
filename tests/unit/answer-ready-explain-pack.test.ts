@@ -223,6 +223,34 @@ describe('answer-ready explain pack', () => {
     expect(result).toBeUndefined()
   })
 
+  test('generateAnswerReadyFromExecutionSlice adds a partial-slice barrier for medium-confidence explain slices', () => {
+    const executionSlice: ContextPackExecutionSlice = {
+      status: 'partial',
+      confidence: 'medium',
+      confidence_reasons: ['missing_phase:persistence'],
+      steps: [
+        { label: 'Controller.handle()', source_file: 'src/controller.ts', line_number: 10 },
+        { label: 'Service.process()', source_file: 'src/service.ts', line_number: 25 },
+        { label: 'Worker.perform()', source_file: 'src/worker.ts', line_number: 40 },
+      ],
+      phase_coverage: {
+        expected: ['controller', 'service', 'worker', 'persistence'],
+        observed: ['controller', 'service', 'worker'],
+        missing: ['persistence'],
+      },
+    }
+
+    const result = generateAnswerReadyFromExecutionSlice(executionSlice, 'explain')
+
+    expect(result).toBeDefined()
+    expect(result?.answer_outline.length).toBeGreaterThan(0)
+    expect(result?.must_cite.length).toBeGreaterThan(0)
+    expect(result?.stop_condition).toContain('not enough evidence; missing persistence')
+    expect(result?.allowed_followups).toEqual(expect.arrayContaining([
+      expect.stringContaining('missing_phase:persistence'),
+    ]))
+  })
+
   test('generateAnswerReadyFromExecutionSlice returns undefined when no execution_slice', () => {
     const result = generateAnswerReadyFromExecutionSlice(undefined, 'explain')
     expect(result).toBeUndefined()

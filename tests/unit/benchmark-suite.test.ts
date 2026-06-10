@@ -1,13 +1,14 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { join, resolve, sep } from 'node:path'
+import { dirname, join, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 
-import { describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import type { GenerateGraphResult } from '../../src/infrastructure/generate.js'
 import type { NativeAgentCompareResult, NativeAgentCompareReport } from '../../src/infrastructure/compare.js'
 import type { BenchmarkEnvironment, BenchmarkExpectedEnvironment } from '../../src/infrastructure/benchmark/environment.js'
+import { loadBenchmarkRuntimeProofProfiles } from '../../src/infrastructure/benchmark/runtime-proof.js'
 import { claudeInstall } from '../../src/infrastructure/install.js'
 import {
   loadBenchmarkSuiteRepos,
@@ -16,6 +17,19 @@ import {
   type BenchmarkSuiteRepo,
   type BenchmarkSuiteTask,
 } from '../../src/infrastructure/benchmark/suite.js'
+
+const cliStubDir = mkdtempSync(join(tmpdir(), 'madar-bench-cli-stub-'))
+const cliStubPath = join(cliStubDir, 'bin.js')
+
+beforeAll(() => {
+  writeFileSync(cliStubPath, '#!/usr/bin/env node\n', 'utf8')
+  process.env.MADAR_BENCH_CLI_PATH = cliStubPath
+})
+
+afterAll(() => {
+  delete process.env.MADAR_BENCH_CLI_PATH
+  rmSync(cliStubDir, { recursive: true, force: true })
+})
 
 function withTempDir(callback: (tempDir: string) => void | Promise<void>): void | Promise<void> {
   const tempDir = mkdtempSync(join(tmpdir(), 'madar-bench-suite-'))
@@ -334,6 +348,8 @@ describe('benchmark suite manifests', () => {
       expect.objectContaining({
         id: 'documenso',
         status: 'ready',
+        graphRoot: 'packages/lib',
+        supportsSpi: true,
         source: expect.objectContaining({
           kind: 'git',
           url: 'https://github.com/documenso/documenso',
@@ -343,6 +359,8 @@ describe('benchmark suite manifests', () => {
       expect.objectContaining({
         id: 'formbricks',
         status: 'ready',
+        graphRoot: 'apps/web',
+        supportsSpi: true,
         source: expect.objectContaining({
           kind: 'git',
           url: 'https://github.com/formbricks/formbricks',
@@ -352,6 +370,8 @@ describe('benchmark suite manifests', () => {
       expect.objectContaining({
         id: 'dub',
         status: 'ready',
+        graphRoot: 'apps/web',
+        supportsSpi: true,
         source: expect.objectContaining({
           kind: 'git',
           url: 'https://github.com/dubinc/dub',
@@ -361,6 +381,8 @@ describe('benchmark suite manifests', () => {
       expect.objectContaining({
         id: 'twenty',
         status: 'ready',
+        graphRoot: 'packages/twenty-server/src/engine',
+        supportsSpi: true,
         source: expect.objectContaining({
           kind: 'git',
           url: 'https://github.com/twentyhq/twenty',
@@ -370,6 +392,7 @@ describe('benchmark suite manifests', () => {
       expect.objectContaining({
         id: 'cal-diy',
         status: 'ready',
+        supportsSpi: false,
         source: expect.objectContaining({
           kind: 'git',
           url: 'https://github.com/calcom/cal.diy',
@@ -379,6 +402,8 @@ describe('benchmark suite manifests', () => {
       expect.objectContaining({
         id: 'novu',
         status: 'ready',
+        graphRoot: 'apps',
+        supportsSpi: false,
         source: expect.objectContaining({
           kind: 'git',
           url: 'https://github.com/novuhq/novu',
@@ -537,6 +562,84 @@ describe('benchmark suite manifests', () => {
       'partly inferred',
       'did not surface the top-level handler that wires them together',
     ]))
+  })
+
+  it('ships deterministic runtime-proof profiles for the public explain-runtime rows', () => {
+    const profiles = JSON.parse(readFileSync(resolve('docs/benchmarks/suite/runtime-proof.json'), 'utf8')) as Record<string, {
+      prompt: string
+      strict_runtime_proof: boolean
+      expected_spi: boolean
+      obligations: Array<{
+        id: string
+        label: string
+        kind: string
+        evidence_terms: string[]
+      }>
+    }>
+
+    expect(Object.values(profiles).map((profile) => profile.prompt)).toEqual(expect.arrayContaining([
+      'How does Documenso move a document from send preparation through recipient creation, signing state, and notification delivery?',
+      'How does Formbricks process a survey response from request handling through persistence and analytics/event tracking?',
+      'How does Dub resolve a short-link click from request handling through analytics tracking and destination redirect?',
+      'How does Twenty process a CRM record mutation from API handling through workspace services to persistence?',
+      'How does Cal.diy turn a booking request into availability validation, scheduled event persistence, and notification delivery?',
+      'How does Novu process a notification trigger from API entry through workflow orchestration to channel delivery?',
+    ]))
+
+    for (const profile of Object.values(profiles)) {
+      expect(profile.strict_runtime_proof).toBe(true)
+      expect(profile.expected_spi).toBe(false)
+      expect(profile.obligations.length).toBeGreaterThanOrEqual(3)
+      for (const obligation of profile.obligations) {
+        expect(obligation.id).toEqual(expect.any(String))
+        expect(obligation.label).toEqual(expect.any(String))
+        expect(['entrypoint', 'handoff', 'terminal']).toContain(obligation.kind)
+        expect(obligation.evidence_terms.length).toBeGreaterThan(0)
+      }
+    }
+
+    expect(profiles['dub-explain-runtime']?.obligations.map((obligation) => obligation.id)).toEqual(expect.arrayContaining([
+      'request_handling',
+      'analytics_tracking',
+      'destination_redirect',
+    ]))
+    expect(profiles['twenty-explain-runtime']?.obligations.map((obligation) => obligation.id)).toEqual(expect.arrayContaining([
+      'api_mutation_handling',
+      'workspace_service_handoff',
+      'persistence',
+    ]))
+  })
+
+  it('rejects runtime-proof profiles with empty evidence term arrays', async () => {
+    await withTempDir(async (tempDir) => {
+      const benchmarkDir = join(tempDir, 'benchmarks', 'explain')
+      mkdirSync(benchmarkDir, { recursive: true })
+      const questionsPath = join(benchmarkDir, 'questions.json')
+      writeFileSync(questionsPath, JSON.stringify([{ question: 'How does login create a session?' }], null, 2), 'utf8')
+      writeFileSync(
+        join(benchmarkDir, 'runtime-proof.json'),
+        JSON.stringify({
+          'login-runtime': {
+            prompt: 'How does login create a session?',
+            strict_runtime_proof: true,
+            expected_spi: false,
+            obligations: [
+              {
+                id: 'request_handling',
+                label: 'request handling',
+                kind: 'entrypoint',
+                evidence_terms: [],
+              },
+            ],
+          },
+        }, null, 2),
+        'utf8',
+      )
+
+      expect(() => loadBenchmarkRuntimeProofProfiles(questionsPath)).toThrow(
+        'Malformed runtime proof profile "login-runtime": obligations.request_handling.evidence_terms must be a non-empty string array',
+      )
+    })
   })
 
   it('rejects repo ids with unsafe path characters', async () => {
@@ -1229,6 +1332,173 @@ describe('runBenchmarkSuite', () => {
     })
   })
 
+  it('generates and compares scoped benchmark repos from their configured graph root', async () => {
+    await withTempDir(async (tempDir) => {
+      const repoRoot = createFixtureRepo(join(tempDir, 'repos', 'twenty'), { install: false })
+      mkdirSync(join(repoRoot, 'packages', 'twenty-server', 'src', 'modules'), { recursive: true })
+      writeFileSync(
+        join(repoRoot, 'packages', 'twenty-server', 'src', 'modules', 'record-service.ts'),
+        'export const scopedRecordService = true\n',
+        'utf8',
+      )
+      const scopedGraphRoot = 'packages/twenty-server/src/modules'
+      writeFileSync(join(repoRoot, 'CLAUDE.md'), '# repo-specific claude\n', 'utf8')
+      writeFileSync(
+        join(repoRoot, '.mcp.json'),
+        JSON.stringify({
+          mcpServers: {
+            github: {
+              command: 'github-mcp',
+              args: [],
+            },
+          },
+        }, null, 2),
+        'utf8',
+      )
+      mkdirSync(join(repoRoot, '.claude'), { recursive: true })
+      writeFileSync(join(repoRoot, '.claude', 'settings.json'), '{"hooks":{"UserPromptSubmit":[]}}\n', 'utf8')
+      writeFileSync(join(repoRoot, scopedGraphRoot, 'CLAUDE.md'), '# scoped repo-specific claude\n', 'utf8')
+      const repos: BenchmarkSuiteRepo[] = [
+        {
+          id: 'twenty',
+          name: 'Twenty scoped fixture',
+          path: repoRoot,
+          graphRoot: scopedGraphRoot,
+          description: 'Ready fixture',
+          size: 'large',
+          language: 'typescript',
+          shape: 'crm-platform',
+          status: 'ready',
+          supportsSpi: false,
+        },
+      ]
+      const tasks: BenchmarkSuiteTask[] = [
+        {
+          id: 'explain-runtime',
+          name: 'Explain runtime flow',
+          description: 'Trace a runtime path end to end.',
+          status: 'ready',
+          prompts: {
+            twenty: 'How does Twenty process a CRM record mutation?',
+          },
+        },
+      ]
+      const generatedRoots: string[] = []
+      const comparedGraphPaths: string[] = []
+      const comparedExecTemplates: string[] = []
+
+      await runBenchmarkSuite(
+        {
+          repo: 'twenty',
+          task: 'explain-runtime',
+          mode: 'warm',
+          trials: 1,
+          outputDir: join(tempDir, 'results'),
+          execTemplate: 'mock-runner',
+          dryRun: false,
+          yes: true,
+        },
+        {
+          repos,
+          tasks,
+          now: () => new Date('2026-05-27T12:34:56Z'),
+          generateGraph: (rootPath = '.', options = {}) => {
+            generatedRoots.push(rootPath)
+            const workspaceRoot = resolve(rootPath, ...scopedGraphRoot.split('/').map(() => '..'))
+            expect(existsSync(join(workspaceRoot, 'CLAUDE.md'))).toBe(false)
+            expect(existsSync(join(workspaceRoot, '.mcp.json'))).toBe(false)
+            expect(existsSync(join(workspaceRoot, '.claude', 'settings.json'))).toBe(false)
+            const scopedMcpConfig = JSON.parse(readFileSync(join(rootPath, '.mcp.json'), 'utf8')) as {
+              mcpServers?: Record<string, {
+                command?: string
+                env?: Record<string, string>
+              }>
+            }
+            const scopedClaudeRules = readFileSync(join(rootPath, 'CLAUDE.md'), 'utf8')
+            expect(Object.keys(scopedMcpConfig.mcpServers ?? {})).toEqual(['madar'])
+            expect(scopedMcpConfig.mcpServers?.madar?.command).toBe('madar')
+            expect(scopedMcpConfig.mcpServers?.madar?.env).toEqual(expect.objectContaining({
+              MADAR_TOOL_PROFILE: 'core',
+            }))
+            expect(scopedMcpConfig.mcpServers?.madar?.env?.PATH ?? scopedMcpConfig.mcpServers?.madar?.env?.Path).toContain(join(rootPath, '.claude', 'bin'))
+            expect(scopedClaudeRules).not.toContain('# scoped repo-specific claude')
+            const outputDir = join(rootPath, 'out')
+            mkdirSync(outputDir, { recursive: true })
+            const graphPath = join(outputDir, 'graph.json')
+            writeFileSync(graphPath, '{}\n', 'utf8')
+            return {
+              mode: options.useSpi ? 'generate' : 'generate',
+              rootPath,
+              outputDir,
+              graphPath,
+              reportPath: join(outputDir, 'GRAPH_REPORT.md'),
+              htmlPath: null,
+              wikiPath: null,
+              obsidianPath: null,
+              svgPath: null,
+              graphmlPath: null,
+              cypherPath: null,
+              docsPath: null,
+              totalFiles: 1,
+              codeFiles: 1,
+              nonCodeFiles: 0,
+              extractableFiles: 1,
+              extractedFiles: 1,
+              totalWords: 10,
+              nodeCount: 1,
+              edgeCount: 0,
+              communityCount: 1,
+              changedFiles: 0,
+              deletedFiles: 0,
+              cache: null,
+              warning: null,
+              notes: [],
+            } satisfies GenerateGraphResult
+          },
+          executeNativeAgentCompare: async (input) => {
+            comparedGraphPaths.push(input.graphPath)
+            comparedExecTemplates.push(input.execTemplate)
+            return makeCompareResult({
+              question: input.question ?? 'unknown',
+              graphPath: input.graphPath,
+              outputDir: input.outputDir,
+              baselineInputTokens: 300,
+              madarInputTokens: 200,
+              baselineTurns: 6,
+              madarTurns: 4,
+              baselineDurationMs: 9000,
+              madarDurationMs: 6000,
+              baselineCostUsd: 1.2,
+              madarCostUsd: 0.8,
+              baselineToolTotal: 9,
+              madarToolTotal: 5,
+              baselineRead: 4,
+              madarRead: 3,
+              baselineGlob: 2,
+              madarGlob: 1,
+              baselineGrep: 1,
+              madarGrep: 1,
+            })
+          },
+        },
+      )
+
+      const normalizedScopedSuffix = scopedGraphRoot.split('/').join(sep)
+
+      expect(generatedRoots).toHaveLength(1)
+      expect(generatedRoots[0]).toMatch(new RegExp(`${normalizedScopedSuffix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`))
+      expect(comparedGraphPaths).toEqual([
+        join(generatedRoots[0]!, 'out', 'graph.json'),
+        join(generatedRoots[0]!, 'out', 'graph.json'),
+      ])
+      expect(comparedExecTemplates).toHaveLength(2)
+      for (const execTemplate of comparedExecTemplates) {
+        expect(execTemplate).toContain(generatedRoots[0]!)
+        expect(execTemplate).not.toContain(`${dirname(generatedRoots[0]!)}" && mock-runner`)
+      }
+    })
+  })
+
   it('wraps benchmark workspace exec templates with cmd-compatible Windows syntax', async () => {
     await withTempDir(async (tempDir) => {
       const runnableRepoPath = createFixtureRepo(join(tempDir, 'repos', 'nestjs-mid'))
@@ -1864,6 +2134,17 @@ describe('runBenchmarkSuite', () => {
             expect(existsSync(join(rootPath, '.mcp.json'))).toBe(true)
             expect(existsSync(join(rootPath, 'CLAUDE.md'))).toBe(true)
             expect(existsSync(join(rootPath, '.claude', 'settings.json'))).toBe(true)
+            const mcpConfig = JSON.parse(readFileSync(join(rootPath, '.mcp.json'), 'utf8')) as {
+              mcpServers?: Record<string, {
+                command?: string
+                env?: Record<string, string>
+              }>
+            }
+            expect(mcpConfig.mcpServers?.madar?.command).toBe('madar')
+            expect(mcpConfig.mcpServers?.madar?.env).toEqual(expect.objectContaining({
+              MADAR_TOOL_PROFILE: 'core',
+            }))
+            expect(mcpConfig.mcpServers?.madar?.env?.PATH ?? mcpConfig.mcpServers?.madar?.env?.Path).toContain(join(rootPath, '.claude', 'bin'))
             return {
               mode: options.useSpi ? 'generate' : 'generate',
               rootPath,
@@ -2124,11 +2405,19 @@ describe('runBenchmarkSuite', () => {
           tasks,
           generateGraph: (rootPath = '.', options = {}) => {
             const mcpConfig = JSON.parse(readFileSync(join(rootPath, '.mcp.json'), 'utf8')) as {
-              mcpServers?: Record<string, unknown>
+              mcpServers?: Record<string, {
+                command?: string
+                env?: Record<string, string>
+              }>
             }
             const claudeRules = readFileSync(join(rootPath, 'CLAUDE.md'), 'utf8')
 
             expect(Object.keys(mcpConfig.mcpServers ?? {})).toEqual(['madar'])
+            expect(mcpConfig.mcpServers?.madar?.command).toBe('madar')
+            expect(mcpConfig.mcpServers?.madar?.env).toEqual(expect.objectContaining({
+              MADAR_TOOL_PROFILE: 'core',
+            }))
+            expect(mcpConfig.mcpServers?.madar?.env?.PATH ?? mcpConfig.mcpServers?.madar?.env?.Path).toContain(join(rootPath, '.claude', 'bin'))
             expect(claudeRules).not.toContain('# repo-specific claude')
 
             return {
