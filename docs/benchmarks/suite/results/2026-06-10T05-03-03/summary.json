@@ -1,0 +1,182 @@
+{
+  "schema_version": 1,
+  "started_at": "2026-06-10T05:03:03.019Z",
+  "completed_at": "2026-06-10T05:18:01.212Z",
+  "output_root": "docs/benchmarks/suite/results/2026-06-10T05-03-03",
+  "filters": {
+    "repo": "dub",
+    "task": "explain-runtime",
+    "mode": "warm",
+    "trials": 1
+  },
+  "cells_skipped_for_install": 0,
+  "cells_skipped_for_env_drift": 0,
+  "cells": [
+    {
+      "repoId": "dub",
+      "repoName": "Dub public repo",
+      "taskId": "explain-runtime",
+      "taskName": "Explain runtime flow",
+      "mode": "warm",
+      "prompt": "How does Dub resolve a short-link click from request handling through analytics tracking and destination redirect?",
+      "status": "completed",
+      "reason": null,
+      "isolation": true,
+      "baseline": {
+        "input_tokens": {
+          "median": 234403,
+          "min": 234403,
+          "max": 234403,
+          "n": 1
+        },
+        "total_tool_calls": {
+          "median": 10,
+          "min": 10,
+          "max": 10,
+          "n": 1
+        },
+        "read_calls": {
+          "median": 6,
+          "min": 6,
+          "max": 6,
+          "n": 1
+        },
+        "glob_grep_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "wall_clock_ms": {
+          "median": 68252,
+          "min": 68252,
+          "max": 68252,
+          "n": 1
+        },
+        "cost_usd": {
+          "median": 0.40174475,
+          "min": 0.40174475,
+          "max": 0.40174475,
+          "n": 1
+        }
+      },
+      "madar": {
+        "input_tokens": {
+          "median": 75012,
+          "min": 75012,
+          "max": 75012,
+          "n": 1
+        },
+        "total_tool_calls": {
+          "median": 2,
+          "min": 2,
+          "max": 2,
+          "n": 1
+        },
+        "read_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "glob_grep_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "wall_clock_ms": {
+          "median": 27765,
+          "min": 27765,
+          "max": 27765,
+          "n": 1
+        },
+        "cost_usd": {
+          "median": 0.14164025,
+          "min": 0.14164025,
+          "max": 0.14164025,
+          "n": 1
+        }
+      },
+      "spi_madar": {
+        "input_tokens": {
+          "median": 101799,
+          "min": 101799,
+          "max": 101799,
+          "n": 1
+        },
+        "total_tool_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 1
+        },
+        "read_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "glob_grep_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "wall_clock_ms": {
+          "median": 87088,
+          "min": 87088,
+          "max": 87088,
+          "n": 1
+        },
+        "cost_usd": {
+          "median": 0.19614675,
+          "min": 0.19614675,
+          "max": 0.19614675,
+          "n": 1
+        }
+      },
+      "benchmark_outcomes": {
+        "legacy": {
+          "counts": {
+            "full_win": 1,
+            "partial_win": 0,
+            "regression": 0,
+            "not_measured": 0
+          },
+          "evidence": [
+            "routing/tool/latency win: tool calls 10 → 2, latency 68252ms → 27765ms",
+            "provider input win: baseline 234403 → madar 75012",
+            "turns win: baseline 11 → madar 3",
+            "fresh_token win: baseline 32429 → madar 15123",
+            "cost win: baseline 0.40174475 → madar 0.14164025"
+          ]
+        },
+        "spi_madar": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 1,
+            "regression": 0,
+            "not_measured": 0
+          },
+          "evidence": [
+            "routing/tool/latency loss: tool calls 7 → 3, latency 68726ms → 87088ms",
+            "provider input win: baseline 265060 → madar 101799",
+            "turns win: baseline 8 → madar 4",
+            "fresh_token win: baseline 30313 → madar 21707",
+            "cost win: baseline 0.3955475 → madar 0.19614675"
+          ]
+        }
+      },
+      "workflow_outcomes": null,
+      "artifacts": {
+        "legacy_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-06-10T05-03-03/raw/dub/explain-runtime/warm-cache/legacy/trial-001/report.share-safe.json"
+        ],
+        "spi_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-06-10T05-03-03/raw/dub/explain-runtime/warm-cache/spi/trial-001/report.share-safe.json"
+        ]
+      }
+    }
+  ]
+}

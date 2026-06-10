@@ -1,0 +1,58 @@
+I have the complete picture. Here's the trace.
+
+## How Twenty processes a CRM record mutation
+
+Twenty routes **both GraphQL and REST mutations through one shared pipeline**, so persistence logic lives in exactly one place. Tracing an `updateOne` (e.g. updating a Person/Company):
+
+### 1. API entry point — two front doors, one runner
+- **GraphQL**: The schema and resolvers are generated dynamically per workspace. `UpdateOneResolverFactory.create()` (`api/graphql/workspace-resolver-builder/factories/update-one-resolver.factory.ts`) returns a resolver that reads selected fields via `graphqlFields(info)`, builds a context with `createQueryRunnerContext`, and calls `CommonUpdateOneQueryRunnerService.execute(...)`. The result is shaped back into a GraphQL connection by `ObjectRecordsToGraphqlConnectionHelper`.
+- **REST**: `RestApiUpdateOneHandler.handle()` (`api/rest/core/handlers/rest-api-update-one.handler.ts`) parses the path/body/depth, builds the same options, and calls the **same** `CommonUpdateOneQueryRunnerService.execute(...)`.
+
+So the API layer's only job is parsing input, resolving auth + metadata context, and computing selected fields.
+
+### 2. Common query-runner layer — the orchestration template
+`CommonBaseQueryRunnerService.execute()` (`api/common/common-query-runners/common-base-query-runner.service.ts`) is an abstract template that runs every mutation through a fixed sequence:
+1. `throttleQueryExecution` — token-bucket rate limiting for API-key calls.
+2. `validate` — subclass hook; `CommonUpdateOneQueryRunnerService.validate()` asserts the object isn't a remote object and the id is a valid UUID.
+3. Settings-permission check for system objects.
+4. Parse selected fields (`GraphqlQueryParser`).
+5. `processArgs` → `computeArgs` (runs `DataArgProcessorService`/`FilterArgProcessorService` to normalize the mutation payload) → `executePreQueryHooks` (workspace pre-hooks).
+6. Query-complexity guard.
+7. `globalWorkspaceOrmManager.executeInWorkspaceContext(...)` — establishes the workspace's tenant context, then resolves the role/permission config and gets a **workspace-scoped repository** via `prepareExtendedQueryRunnerContextWithGlobalDatasource`.
+8. Runs the subclass `run()`, then `enrichResultsWithGettersAndHooks` (result getters + `executePostQueryHooks`).
+
+`CommonUpdateOneQueryRunnerService.run()` delegates to `CommonUpdateManyQueryRunnerService.run()` with `filter: { id: { eq: args.id } }`, throwing `RECORD_NOT_FOUND` if nothing comes back. `CommonUpdateManyQueryRunnerService.run()` (`common-update-many-query-runner.service.ts`) builds the actual mutation via `buildMutationQueryBuilder`, computes `columnsToReturn`, then executes:
+
+```
+queryBuilder.update().set(args.data).returning(columnsToReturn).execute()
+```
+
+and afterward resolves any requested nested relations through `ProcessNestedRelationsHelper`.
+
+`buildMutationQueryBuilder` (`utils/build-mutation-query-builder.util.ts`) creates a repository query builder, applies the filter, and — when the filter traverses relations — rewrites it as an `id IN (SELECT …)` subquery (TypeORM drops joins when a SELECT builder morphs into UPDATE).
+
+### 3. Workspace ORM layer — persistence + permissions + events
+The repository is Twenty's custom `WorkspaceRepository` (`twenty-orm/repository/workspace.repository.ts`), obtained from the per-workspace datasource with a role permission config. Its `createQueryBuilder()` returns workspace-scoped builders; `.update()` morphs into **`WorkspaceUpdateQueryBuilder`** (`twenty-orm/repository/workspace-update-query-builder.ts`), which is where persistence actually happens. Its `execute()`:
+1. `validateQueryIsPermittedOrThrow` — column/object-level permission enforcement.
+2. Selects the **before** state (`computeEventSelectQueryBuilder` → `getMany`), enforcing the `QUERY_MAX_RECORDS` cap.
+3. Syncs file fields (`FilesFieldSync`) and processes nested relation connect/disconnect (`RelationNestedQueries`).
+4. Applies **row-level security predicates** and validates them against the projected updated records.
+5. `super.execute()` — the real TypeORM `UPDATE … RETURNING` SQL against Postgres.
+6. Selects the **after** state, then emits `UPDATED` and `UPSERTED` events via `internalContext.eventEmitterService.emitDatabaseBatchEvent(...)` (with before/after records) — this is what drives webhooks, search indexing, activity log, automations, etc.
+7. Formats raw rows back to object records (`formatResult`) and returns `{ raw, generatedMaps, affected }`.
+
+Errors are normalized through `computeTwentyORMException`.
+
+### 4. Back up the stack
+`generatedMaps` becomes the returned records → `CommonResultGettersService` post-processes them (result getters / field decryption / composite assembly) → post-query hooks fire → the API layer formats the response (GraphQL connection or REST `{ data: { updatePerson: … } }`).
+
+### Key files
+- `api/graphql/workspace-resolver-builder/factories/update-one-resolver.factory.ts` — GraphQL entry
+- `api/rest/core/handlers/rest-api-update-one.handler.ts` — REST entry
+- `api/common/common-query-runners/common-base-query-runner.service.ts` — shared orchestration template (throttle → validate → permissions → arg processing → pre-hooks → run → getters → post-hooks)
+- `api/common/common-query-runners/common-update-one-query-runner.service.ts` + `common-update-many-query-runner.service.ts` — mutation-specific logic
+- `api/common/common-query-runners/utils/build-mutation-query-builder.util.ts` — builds the filtered update builder
+- `twenty-orm/repository/workspace.repository.ts` — workspace-scoped repository
+- `twenty-orm/repository/workspace-update-query-builder.ts` — permission checks, RLS, file/relation sync, SQL execution, and database event emission
+
+The throughline: **thin API handlers → a shared `CommonBaseQueryRunnerService` template that handles cross-cutting concerns → a workspace-scoped TypeORM query builder that enforces permissions/RLS, writes to Postgres, and emits before/after database events.**

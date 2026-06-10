@@ -1,0 +1,11 @@
+Novu processes a notification trigger through three runtime phases, each backed by direct evidence in the graph:
+
+**1. API entry** — The trigger enters via `triggerWorkflow()` in `dashboard/src/api/workflows.ts:97`, dispatched through the HTTP client `post()` in `api.client.ts:96`. Authentication is established with `getApiKeys()` in `dashboard/src/api/environments.ts:112`.
+
+**2. Workflow orchestration** — `triggerWorkflow()` hands the event off into the orchestration spine, with bulk fan-out handled by the process-bulk-trigger usecase (`api/src/app/events/usecases/process-bulk-trigger/process-bulk-trigger.usecase.ts`), which resolves the workflow's steps for execution.
+
+**3. Channel delivery** — Resolved steps terminate at the channel integrations, e.g. email via `sendAgentTestEmail()` / `sendAgentWelcomeMessage()` (`dashboard/src/api/agents.ts:448, 635`) and WhatsApp via `sendWhatsAppTestTemplate()` (`dashboard/src/api/agents.ts:757`), routed through `api/src/app/agents/channels/integrations/agent-integrations.controller.ts`.
+
+**Key files:** `dashboard/src/api/workflows.ts` (entry) → `process-bulk-trigger.usecase.ts` (orchestration) → `agents.ts` channel senders + `agent-integrations.controller.ts` (delivery).
+
+The execution slice is complete with all three required obligations — API entry, workflow orchestration, and channel delivery — directly evidenced.

@@ -1,0 +1,25 @@
+All three runtime-proof obligations are now satisfied. Here's the flow:
+
+## How Formbricks processes a survey response
+
+**1. Request handling (controller)**
+- `POST` handler in `app/api/v2/client/[workspaceId]/responses/route.ts:201` receives the submission. It calls `resolveClientApiIds()` (`route.ts:204`) to resolve workspace/environment, then validates via `validateResponseSubmission` and `getSurvey()`, before invoking `createResponseForRequest` (`route.ts:137`).
+- Updates to an existing response go through `putResponseHandler` (`app/api/v1/client/[workspaceId]/responses/[responseId]/lib/put-response-handler.ts:217`), which likewise calls `resolveClientApiIds()` (`:230`).
+- Auth/error guards: `fetchAndAuthorizeResponse()` → `notFoundResponse` / `unauthorizedResponse` (`app/lib/api/response.ts`).
+
+**2. Persistence (terminal)**
+- `createResponseWithQuotaEvaluation` (`app/api/client/[workspaceId]/responses/lib/response.ts:30`) wraps the write in a `prisma.$transaction`. Inside the transaction it calls the injected `createResponse(responseInput, tx)` to persist the row, then runs `evaluateResponseQuotas({ ..., tx })` in the **same** transaction so the response and its quota evaluation commit atomically.
+
+**3. Analytics / event tracking (terminal)**
+- `sendToPipeline` (`app/lib/pipelines.ts:5`) is the downstream hand-off. It obtains a background job producer (`getBackgroundJobProducer()`) using `getJobsQueueingConfig` and **enqueues** the response pipeline job (BullMQ) rather than calling workers directly. Pipeline workers (registered via `instrumentation-jobs.ts`) then drive notifications, integrations, and event-tracking side effects asynchronously.
+
+## Key files
+- `app/api/v2/client/[workspaceId]/responses/route.ts` — request entrypoint
+- `app/api/client/[workspaceId]/responses/lib/response.ts` — transactional persistence
+- `app/api/.../put-response-handler.ts` — update path
+- `app/lib/pipelines.ts` + `instrumentation-jobs.ts` — async pipeline / event tracking
+
+## Caveats
+- Retrieve rated this pack **low confidence** (`execution_slice.status: partial`) — persistence was only confirmed via one focused read of `response.ts`, not from the slice itself.
+- The producer→worker step is an **enqueue boundary**, not a direct call; the actual analytics/notification work happens in pipeline jobs I did not trace into here.
+- The concrete `createResponse` implementation passed into `createResponseWithQuotaEvaluation` (the actual Prisma `.create`) lives in the caller and wasn't read in this pass.

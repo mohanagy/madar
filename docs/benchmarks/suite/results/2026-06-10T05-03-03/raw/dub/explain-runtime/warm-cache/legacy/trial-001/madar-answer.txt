@@ -1,0 +1,9 @@
+Dub resolves a short-link click through a single Next.js middleware spine:
+
+**1. Request handling** — An incoming request hits `middleware.ts:35` (`middleware()`), which dispatches to `LinkMiddleware()` in `lib/middleware/link.ts:40`. Click context is resolved/cached along the way via `cacheDeepLinkClickData()` (`lib/middleware/utils/cache-deeplink-click-data.ts:10`), with identity resolution in `lib/middleware/utils/get-identity-hash.ts`.
+
+**2. Analytics tracking** — Before redirecting, the click is recorded to Tinybird via `recordClick()` in `lib/tinybird/record-click.ts:28`.
+
+**3. Destination redirect** — The user is sent to the target URL with `NextResponse.redirect`, returned from `LinkMiddleware()` (`lib/middleware/link.ts:77`) and surfaced at the middleware entrypoint (`middleware.ts:74`).
+
+**Key files:** `middleware.ts`, `lib/middleware/link.ts`, `lib/middleware/utils/cache-deeplink-click-data.ts`, `lib/tinybird/record-click.ts`.

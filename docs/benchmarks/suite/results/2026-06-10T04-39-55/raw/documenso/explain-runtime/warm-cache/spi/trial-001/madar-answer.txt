@@ -1,0 +1,24 @@
+All four runtime obligations now have direct evidence (send preparation surfaced via `sendDocument`). Here's the flow:
+
+## How Documenso moves a document through the signing lifecycle
+
+**1. Send preparation** — `sendDocument` (`server-only/document/send-document.ts:53`)
+- Loads the envelope with recipients/fields/items, guards a disabled sender, enforces the org recipient limit, and rejects already-completed documents.
+- Validates that auth-required recipients have valid emails (`isRecipientEmailValidForSending`) and that signers have required fields (`getRecipientsWithMissingFields`); optionally injects form values into the PDF.
+- In a `prisma.$transaction`: writes a `DOCUMENT_SENT` audit log, auto-inserts V2 fields, sets per-recipient `expiresAt`, and flips envelope **status DRAFT → PENDING** (`:294-305`).
+
+**2. Recipient creation** — `setDocumentRecipients` (`server-only/recipient/set-document-recipients.ts:36`) with `createRecipientAuthOptions()` (`:147`)
+- Recipients (role, signing order, auth options) are created/configured on the envelope before send; `sendDocument` then operates over `envelope.recipients`.
+
+**3. Signing state**
+- For `SEQUENTIAL` signing, `sendDocument` notifies only the first unsigned non-CC recipient (`:131-136`); `getIsRecipientsTurnToSign()` (`server-only/recipient/get-is-recipient-turn.ts:8`) gates whether it's a given recipient's turn.
+- A recipient finalizes via `completeDocumentWithToken` (`server-only/document/complete-document-with-token.ts:54`), which updates signing status and advances the flow.
+
+**4. Notification delivery**
+- `sendDocument` enqueues a `send.signing.requested.email` job per active recipient (`:322-330`) and fires the `DOCUMENT_SENT` webhook (`:335-340`).
+- Pending/turn notifications are rendered and sent by `sendPendingEmail` (`server-only/document/send-pending-email.ts:21`), which builds `DocumentPendingEmailTemplate` via `createElement` (`:80`) and `renderEmailWithI18N`, using `getEmailContext` for branding/locale.
+
+**Caveats**
+- Email sending is gated: only when `sendEmail` is set, or `recipientSigningRequest` email settings are enabled and `sendEmail` is undefined (`:315`). CC and already-`SENT` recipients are skipped.
+- If every recipient is CC or already signed, `sendDocument` short-circuits to the `internal.seal-document` job instead of notifying (`:185-204`).
+- Confidence: medium — the slice spine is coherent and all four obligations are now backed by direct evidence; recipient *creation* detail comes from `setDocumentRecipients` rather than being inlined in the send path.

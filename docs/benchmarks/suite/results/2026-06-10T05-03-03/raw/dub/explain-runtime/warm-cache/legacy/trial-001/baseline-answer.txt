@@ -1,0 +1,43 @@
+Here's how Dub resolves a short-link click, traced through the actual code.
+
+## 1. Request entry & routing — `middleware.ts`
+
+Every non-asset request hits the Next.js edge middleware (`config.matcher` excludes `/api/`, `/_next/`, metadata files, etc.). It calls `parse(req)` (`lib/middleware/utils/parse.ts`) to extract `domain` (the `host` header, `www.`-stripped, lowercased) and the link `key`/`fullKey` from the path. It then dispatches by hostname: app/API/admin/partners hosts get their own middleware; otherwise, for a regular short domain, it falls through to **`LinkMiddleware(req, ev)`** (`lib/middleware/link.ts`). (Stats pages, `.well-known`, `dub.sh` default redirects, and "the key is itself a URL" → `CreateLinkMiddleware` are handled before this.)
+
+## 2. Link lookup — `lib/middleware/link.ts`
+
+1. **Key normalization**: `punyEncode` the key, lowercase it unless `isCaseSensitiveDomain(domain)`, strip a trailing `+` (inspect mode), and map empty key → `_root`. Reject `.php`-style keys via `isUnsupportedKey`.
+2. **Resolve the link record**: first try `linkCache.get({ domain, key })` (Redis). On a miss, fall back to `getLinkViaEdge` (PlanetScale edge read in `lib/planetscale`), then `formatRedisLink(...)` and repopulate the cache via `ev.waitUntil(linkCache.set(...))`. For partner links it also fetches `getPartnerEnrollmentInfo` to cache partner/discount data. A null result rewrites to `/${domain}/notfound` (with `buff.ly` → `crawlBitly` special case).
+3. **Pre-redirect gates** (each rewrites/redirects and short-circuits): A/B test variant resolution (`resolveABTestURL`), inspect mode, password protection (`dub_password_*` cookie / `pw` param), banned workspace (`LEGAL_WORKSPACE_ID`), disabled link, and expiry (`expiredUrl` or `/expired`).
+
+## 3. Click identity (cookie) — still in `link.ts`
+
+A `dub_id_${domain}_${key}` cookie holds the `clickId`. If absent and the link needs conversion tracking (`shouldCacheClickId` — true for `trackConversion`, partner links, or Singular/AppsFlyer URLs), it tries `recordClickCache.get` (`lib/api/links/record-click-cache.ts`, keyed by `domain:key:identityHash`). Otherwise it mints a new `nanoid(16)`. The clickId is later written back via `createResponseWithCookies`.
+
+## 4. Destination + analytics — branch in `link.ts`, then `recordClick`
+
+The middleware picks a destination by link type — bot+proxy (cloaked OG page), custom URI scheme, `rewrite`/cloaking, iOS/Android device targeting (with App/Play Store deep-link interstitials via `cacheDeepLinkClickData`), geo-targeting (`geoTargeting[country]`), or the default. In each branch it builds the final URL with **`getFinalUrl`** (`lib/middleware/utils/get-final-url.ts`), which honors a `redir_url` override, merges incoming query params, appends `dub_id=<clickId>` (or Stripe `client_reference_id`), `via=<key>` for partners, and provider-specific params (AppsFlyer/Singular/Play Store referrer).
+
+Critically, analytics tracking is **fire-and-forget**, not blocking the redirect: every branch wraps `ev.waitUntil(recordClick({ req, clickId, workspaceId, linkId, domain, key, url: finalUrl, programId, partnerId, webhookIds, shouldCacheClickId }))`.
+
+Inside **`recordClick`** (`lib/tinybird/record-click.ts`):
+- Bails if `dub-no-track` header/param is set, or (for non-deeplink triggers) if `detectBot` flags a bot.
+- Deduplicates: unless `skipRatelimit`, checks `recordClickCache` — one click per `domain+key+identityHash` per hour.
+- Detects QR (`detectQr` → `trigger="qr"`), gathers geo (`x-vercel-ip-*` headers + `geolocation`), IP (suppressed for EU countries), and full `userAgent` data into a `clickData` object.
+- If `shouldCacheClickId`, stashes `clickData` at `clickIdCache:${clickId}` in Redis for 5 min (so `/track/lead` etc. can read it before Tinybird ingestion catches up).
+- Via `waitUntil(Promise.allSettled([...]))`: POSTs `clickData` to **Tinybird** (`/v0/events?name=dub_click_events`), sets the `recordClickCache`, increments `Link.clicks`/`lastClicked` and workspace usage (`publishWorkspaceClicksUsageEvent`, with a direct SQL fallback), increments partner `totalClicks` (`publishPartnerActivityEvent`), and — if the link has webhooks and the workspace is under its usage limit — fires `link.clicked` webhooks via `sendLinkClickWebhooks`/`sendWebhooks` (QStash).
+
+## 5. Redirect to destination
+
+The branch returns `createResponseWithCookies(NextResponse.redirect(finalUrl, { status: key === "_root" ? 301 : 302, headers: DUB_HEADERS + optional noindex }), cookieData)` — issuing the redirect with the `dub_id` cookie attached. Cloaking/proxy/custom-scheme branches use `NextResponse.rewrite` to internal pages instead of a redirect.
+
+### Key files
+- `middleware.ts` — edge entry + host routing
+- `lib/middleware/utils/parse.ts` — domain/key extraction
+- `lib/middleware/link.ts` — link lookup, gates, cookie, branch selection, redirect
+- `lib/api/links/cache.ts` + `lib/planetscale` — Redis cache & DB fallback for link data
+- `lib/api/links/record-click-cache.ts` — clickId/dedup cache
+- `lib/middleware/utils/get-final-url.ts` — destination URL assembly
+- `lib/tinybird/record-click.ts` — analytics ingestion, dedup, usage counters, webhooks
+
+The defining design point: link resolution and the redirect happen synchronously, while all analytics (Tinybird, counters, webhooks) run asynchronously through `ev.waitUntil`/`waitUntil` so they never delay the user's redirect.

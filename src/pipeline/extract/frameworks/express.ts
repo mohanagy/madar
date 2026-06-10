@@ -3,7 +3,7 @@ import { basename, dirname, extname, resolve } from 'node:path'
 
 import * as ts from 'typescript'
 
-import { addNode, addUniqueEdge, createEdge, createNode, _makeId } from '../core.js'
+import { addNode, addUniqueEdge, createEdge, createNode, fileStemForPath, _makeId } from '../core.js'
 import type { ExtractionFragment } from '../dispatch.js'
 import { unparenthesizeExpression } from '../typescript-utils.js'
 import type { JsFrameworkAdapter, JsFrameworkContext } from './types.js'
@@ -90,7 +90,7 @@ function expressEntityId(filePath: string, bindingName: string): string {
 }
 
 function moduleStem(filePath: string): string {
-  return basename(filePath, extname(filePath))
+  return fileStemForPath(filePath)
 }
 
 function functionNodeId(filePath: string, bindingName: string): string {

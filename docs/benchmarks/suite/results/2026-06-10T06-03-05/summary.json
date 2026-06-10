@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "started_at": "2026-06-10T06:03:05.493Z",
+  "completed_at": "2026-06-10T06:13:02.035Z",
+  "output_root": "docs/benchmarks/suite/results/2026-06-10T06-03-05",
+  "filters": {
+    "repo": "novu",
+    "task": "explain-runtime",
+    "mode": "warm",
+    "trials": 1
+  },
+  "cells_skipped_for_install": 0,
+  "cells_skipped_for_env_drift": 0,
+  "cells": [
+    {
+      "repoId": "novu",
+      "repoName": "Novu public repo",
+      "taskId": "explain-runtime",
+      "taskName": "Explain runtime flow",
+      "mode": "warm",
+      "prompt": "How does Novu process a notification trigger from API entry through workflow orchestration to channel delivery?",
+      "status": "completed",
+      "reason": null,
+      "isolation": true,
+      "baseline": {
+        "input_tokens": {
+          "median": 430221,
+          "min": 430221,
+          "max": 430221,
+          "n": 1
+        },
+        "total_tool_calls": {
+          "median": 11,
+          "min": 11,
+          "max": 11,
+          "n": 1
+        },
+        "read_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 1
+        },
+        "glob_grep_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "wall_clock_ms": {
+          "median": 103788,
+          "min": 103788,
+          "max": 103788,
+          "n": 1
+        },
+        "cost_usd": {
+          "median": 0.558867,
+          "min": 0.558867,
+          "max": 0.558867,
+          "n": 1
+        }
+      },
+      "madar": {
+        "input_tokens": {
+          "median": 102456,
+          "min": 102456,
+          "max": 102456,
+          "n": 1
+        },
+        "total_tool_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 1
+        },
+        "read_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "glob_grep_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "wall_clock_ms": {
+          "median": 32470,
+          "min": 32470,
+          "max": 32470,
+          "n": 1
+        },
+        "cost_usd": {
+          "median": 0.20143375,
+          "min": 0.20143375,
+          "max": 0.20143375,
+          "n": 1
+        }
+      },
+      "spi_madar": null,
+      "benchmark_outcomes": {
+        "legacy": {
+          "counts": {
+            "full_win": 1,
+            "partial_win": 0,
+            "regression": 0,
+            "not_measured": 0
+          },
+          "evidence": [
+            "routing/tool/latency win: tool calls 11 → 3, latency 103788ms → 32470ms",
+            "provider input win: baseline 430221 → madar 102456",
+            "turns win: baseline 12 → madar 4",
+            "fresh_token win: baseline 34648 → madar 21970",
+            "cost win: baseline 0.558867 → madar 0.20143375"
+          ]
+        },
+        "spi_madar": null
+      },
+      "workflow_outcomes": null,
+      "artifacts": {
+        "legacy_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-06-10T06-03-05/raw/novu/explain-runtime/warm-cache/legacy/trial-001/report.share-safe.json"
+        ],
+        "spi_share_safe_reports": []
+      }
+    }
+  ]
+}

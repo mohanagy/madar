@@ -20,7 +20,7 @@ import {
   extractCompareBaselinePdfText as extractCompareBaselinePdfTextModule,
   extractPdfPaper as extractPdfPaperModule,
 } from './non-code/pdf.js'
-import { _makeId, addEdge, addNode, addUniqueEdge, createEdge, createFileNode, createNode, normalizeLabel } from './core.js'
+import { _makeId, addEdge, addNode, addUniqueEdge, createEdge, createFileNode, createNode, fileNodeIdForPath, fileStemForPath, normalizeLabel } from './core.js'
 
 const BASELINE_TEXT_CONTROL_CHAR_RE = /[\x00-\x1f\x7f]/g
 
@@ -2592,7 +2592,7 @@ function normalizeSectionLabel(label: string): string {
 }
 
 function sectionNodeId(filePath: string, label: string, line: number): string {
-  return _makeId(basename(filePath, extname(filePath)), label, String(line))
+  return _makeId(fileStemForPath(filePath), label, String(line))
 }
 
 function parseMarkdownHeading(lines: string[], index: number): { level: number; text: string; consumedLines: number } | null {
@@ -2640,7 +2640,7 @@ function parseMarkdownHeading(lines: string[], index: number): { level: number; 
 }
 
 function targetNodeId(targetPath: string): string {
-  return _makeId(basename(targetPath, extname(targetPath)))
+  return fileNodeIdForPath(targetPath)
 }
 
 function isExternalReference(target: string): boolean {
@@ -3077,7 +3077,7 @@ function addReferenceNodeFromText(
     return null
   }
 
-  const referenceId = _makeId(basename(filePath, extname(filePath)), 'reference', entry.rawIndex)
+  const referenceId = _makeId(fileStemForPath(filePath), 'reference', entry.rawIndex)
   addNode(
     nodes,
     seenIds,
@@ -3091,9 +3091,8 @@ function addReferenceNodeFromText(
 }
 
 export function createCodeFileOnlyExtraction(filePath: string): ExtractionFragment {
-  const stem = basename(filePath, extname(filePath))
   return {
-    nodes: [createNode(_makeId(stem), basename(filePath), filePath, 1)],
+    nodes: [createFileNode(filePath, 'code')],
     edges: [],
   }
 }

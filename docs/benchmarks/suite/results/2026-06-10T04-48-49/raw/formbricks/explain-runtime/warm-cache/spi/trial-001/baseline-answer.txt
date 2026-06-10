@@ -1,0 +1,68 @@
+I now have the complete end-to-end picture. Here's how Formbricks processes a survey response.
+
+## Overview
+
+A survey response flows through **three stages**: (1) synchronous HTTP request handling + validation, (2) transactional persistence with quota evaluation, and (3) asynchronous side-effects (webhooks, integrations, analytics/event tracking) dispatched via a BullMQ job queue.
+
+---
+
+## Stage 1 — Request handling & validation
+
+**`app/api/v2/client/[workspaceId]/responses/route.ts`** — the public `POST` endpoint the SDK calls.
+
+1. **ID resolution** — `resolveClientApiIds()` accepts either a legacy `environmentId` or new `workspaceId` (`route.ts:204`); 404 if unresolvable.
+2. **Parse & validate body** — `parseAndValidateResponseInput` → `parseAndValidateJsonBody` against the Zod schema `ZResponseInputV2` (`route.ts:43`, `types/response.ts`).
+3. **License/contact gate** — `getContactsDisabledResponse` blocks `contactId` identification unless Contacts is licensed (`route.ts:67`).
+4. **Load survey** — `getSurvey(surveyId)` from `@/lib/survey/service` (`route.ts:228`); 404 if missing.
+5. **Submission validation** — `validateResponseSubmission` (`route.ts:83`) runs: `checkSurveyValidity`, `validateClientFileUploads`, `validateOtherOptionLengthForMultipleChoice`, and `validateResponseData` (validates answer data against survey blocks/questions).
+6. **Build metadata** — `createResponseForRequest` (`route.ts:137`) parses `user-agent` via `UAParser` (browser/device/os), derives `country` from `CF-IPCountry`/`CloudFront-Viewer-Country` headers, and conditionally captures the client IP (`getClientIpFromHeaders`) only if `survey.isCaptureIpEnabled`.
+
+---
+
+## Stage 2 — Persistence (+ quota evaluation), transactional
+
+**`app/api/v2/client/[workspaceId]/responses/lib/response.ts`** → **`app/api/client/[workspaceId]/responses/lib/response.ts`**
+
+- `createResponseWithQuotaEvaluation` wraps everything in a single **`prisma.$transaction`** (`client/.../lib/response.ts:30`):
+  1. `createResponse` (`v2/.../lib/response.ts:68`): resolves organization, optionally loads the contact, computes time-to-complete (`calculateTtcTotal`), asserts display ownership (`assertDisplayOwnership`), builds `Prisma.ResponseCreateInput` (`buildPrismaResponseData`), and `prisma.response.create(...)` persists the row with `responseSelection`. Prisma errors are mapped to `InvalidInputError` / `UniqueConstraintError` (single-use links, duplicate display) / `DatabaseError`.
+  2. `evaluateResponseQuotas` (`@/modules/ee/quotas/lib/evaluation-service`) runs **inside the same transaction**, returning `quotaFull`.
+- Returns `TResponseWithQuotaFull`. The route then strips `quotaFull` and returns only `{ id, ...quotaObj }` to the client (`route.ts:247`, `265`).
+
+---
+
+## Stage 3 — Async dispatch & analytics/event tracking
+
+After persistence, the route enqueues pipeline jobs (`route.ts:249`):
+
+**`app/lib/pipelines.ts`** — `sendToPipeline` checks `getJobsQueueingConfig().enabled`, then `getBackgroundJobProducer().enqueueResponsePipeline(job)` (BullMQ). It always enqueues `responseCreated`, and additionally `responseFinished` when `responseData.finished` is true.
+
+**Worker wiring** — `instrumentation-jobs.ts:171` registers `processResponsePipelineJob` under the queue job name `response-pipeline.process` via `startJobsRuntime` (bootstrapped from `instrumentation.ts`).
+
+**`modules/response-pipeline/lib/process-response-pipeline-job.ts`** — the consumer (`processResponsePipelineJob`, line 756):
+
+1. Loads organization, survey, and matching webhooks in parallel; throws `UnrecoverableError` on missing/mismatched survey or org.
+2. **Webhooks** — `deliverWebhooks` POSTs a signed payload (`generateStandardWebhookSignature`, standard-webhooks headers) to each subscribed webhook, with SSRF protections (`validateAndResolveWebhookUrl`, pinned dispatcher, manual redirect), 5s timeout, and retry-aware failure handling.
+3. **On `responseFinished`** — `runResponseFinishedSideEffects` (line 618): `handleIntegrations` (Google Sheets, Airtable, Notion, Slack via `handle-integrations.ts`), `handleFeedbackSourcePipeline`, follow-up emails (`sendFollowUpsForResponse`), notification emails to owners/managers/team members with the survey alert setting (`sendResponseFinishedEmail`), and survey **auto-complete** (marks survey `completed` once `responseCount ≥ autoComplete`, with an audit-log event).
+4. **On `responseCreated`** — `runResponseCreatedSideEffects` (line 693), which is the **analytics/event-tracking** path:
+   - **Billing metering** — `recordResponseCreatedMeterEvent` (Stripe meter event keyed to the org's `stripeCustomerId`).
+   - **PostHog** — `captureSurveyResponsePostHogEvent` (`modules/response-pipeline/lib/posthog.ts`), gated on `POSTHOG_KEY`. It fetches `getResponseCountBySurveyId` and emits a `survey_response_received` event **only at milestones** (1st response, every 10th up to 100, then every 100th) with `survey_id/type`, `organization_id`, `workspace_id`, `response_count`, `is_first_response`, `milestone`.
+   - **Product telemetry** — `sendTelemetryEvents` (`telemetry.ts`).
+
+   Each side-effect is individually try/caught so one failure doesn't abort the rest; DB connection-pool exhaustion (`isPipelinePoolExhaustionError`, P2024) is rethrown to trigger a BullMQ retry.
+
+---
+
+## Key files (in flow order)
+
+| Step | File |
+|------|------|
+| HTTP entry / validation | `app/api/v2/client/[workspaceId]/responses/route.ts` |
+| Submission validation helpers | `.../responses/lib/utils.ts`, `modules/api/lib/validation.ts` |
+| Persistence + quota txn | `.../v2/.../lib/response.ts`, `app/api/client/[workspaceId]/responses/lib/response.ts` |
+| Quota evaluation | `modules/ee/quotas/lib/evaluation-service.ts` |
+| Enqueue | `app/lib/pipelines.ts` (`sendToPipeline`) |
+| Worker registration | `instrumentation-jobs.ts`, `instrumentation.ts` |
+| Pipeline consumer | `modules/response-pipeline/lib/process-response-pipeline-job.ts` |
+| Integrations / Analytics | `modules/response-pipeline/lib/handle-integrations.ts`, `posthog.ts`, `telemetry.ts`, `modules/ee/billing/lib/metering.ts` |
+
+The architectural takeaway: the request path stays fast and transactional (validate → persist+quota in one DB transaction → return `id`), while **all analytics/event tracking, webhooks, integrations, and emails run asynchronously** in a retryable BullMQ worker, split by `responseCreated` (metering, PostHog, telemetry) vs `responseFinished` (integrations, notifications, auto-complete) events.

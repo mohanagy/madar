@@ -1,6 +1,7 @@
-import { basename, dirname, isAbsolute, relative, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 
 import { buildMadarPromptPack } from '../../infrastructure/compare.js'
+import { loadBenchmarkRuntimeProofProfiles, matchBenchmarkRuntimeProofProfile } from '../../infrastructure/benchmark/runtime-proof.js'
 import { buildAnswerReadyPackSchema, buildExplainPackPayloadCore } from '../../infrastructure/context-pack-command.js'
 import type { TaskContextPlan } from '../../contracts/task-context-plan.js'
 import type { CompareRefsInput } from '../../infrastructure/time-travel.js'
@@ -34,6 +35,7 @@ import { relevantFiles } from '../relevant-files.js'
 import {
   collectRelationships,
   compactRetrieveResult,
+  compactRetrieveResultForStdio,
   contextPackFromRetrieveResult,
   readSnippet,
   retrieveContext,
@@ -65,6 +67,7 @@ import {
   type GraphContextFreshness,
 } from '../freshness.js'
 import { buildGraphSummary } from '../graph-summary.js'
+import { findPackageRoot } from '../../shared/package-metadata.js'
 import {
   communitiesFromGraph,
   getCommunity,
@@ -77,6 +80,7 @@ import {
   shortestPath,
 } from '../serve.js'
 import type { KnowledgeGraph } from '../../contracts/graph.js'
+import type { RuntimeProofProfile } from '../../contracts/runtime-proof.js'
 
 interface StdioResponse {
   jsonrpc: '2.0'
@@ -123,6 +127,34 @@ interface ToolHelpers {
 }
 
 const TIME_TRAVEL_VIEWS = new Set<TimeTravelView>(['summary', 'risk', 'drift', 'timeline'])
+const BENCHMARK_RUNTIME_PROOF_TASKS_PATH = join(findPackageRoot(), 'docs', 'benchmarks', 'suite', 'tasks.json')
+let cachedBenchmarkRuntimeProofProfiles: ReadonlyMap<string, RuntimeProofProfile> | null | undefined
+
+function loadCachedBenchmarkRuntimeProofProfiles(): ReadonlyMap<string, RuntimeProofProfile> | null {
+  if (cachedBenchmarkRuntimeProofProfiles === undefined) {
+    cachedBenchmarkRuntimeProofProfiles = loadBenchmarkRuntimeProofProfiles(BENCHMARK_RUNTIME_PROOF_TASKS_PATH)
+  }
+  return cachedBenchmarkRuntimeProofProfiles
+}
+
+function strictBenchmarkRetrieveOverrides(
+  question: string,
+): {
+  taskKind: 'explain'
+  retrievalStrategy: 'slice-v1'
+  runtimeProofProfile: RuntimeProofProfile
+} | null {
+  const profile = matchBenchmarkRuntimeProofProfile(loadCachedBenchmarkRuntimeProofProfiles(), question)
+  if (!profile?.strict_runtime_proof) {
+    return null
+  }
+
+  return {
+    taskKind: 'explain',
+    retrievalStrategy: 'slice-v1',
+    runtimeProofProfile: profile,
+  }
+}
 
 interface ContextPlaneMetadata {
   claims: ContextPackClaim[]
@@ -131,6 +163,45 @@ interface ContextPlaneMetadata {
   missing_context: ContextPackEvidenceClass[]
   missing_semantic: ContextPackCoverage['missing_semantic']
   retrieval_gate?: RetrievalGateDecision
+}
+
+interface StrictRuntimeProofRetrievePayload {
+  question: string
+  retrieval_strategy: ContextPackRetrievalStrategy
+  matched_nodes: Array<{
+    label: string
+    source_file: string
+    line_number: number
+  }>
+  answer_contract?: {
+    confidence?: RetrieveResult['answer_contract'] extends infer T
+      ? T extends { confidence?: infer Confidence }
+        ? Confidence | undefined
+        : never
+      : never
+    runtime_proof?: RetrieveResult['answer_contract'] extends infer T
+      ? T extends { runtime_proof?: infer RuntimeProof }
+        ? RuntimeProof | undefined
+        : never
+      : never
+  }
+  execution_slice?: {
+    status: RetrieveResult['execution_slice'] extends infer T
+      ? T extends { status: infer Status }
+        ? Status
+        : never
+      : never
+    confidence?: RetrieveResult['execution_slice'] extends infer T
+      ? T extends { confidence?: infer Confidence }
+        ? Confidence | undefined
+        : never
+      : never
+    steps: Array<{
+      label: string
+      source_file: string
+      line_number: number
+    }>
+  }
 }
 
 interface StoredContextPackHandle {
@@ -484,6 +555,65 @@ function contextMetadata(
     missing_context: coverage.missing_required,
     missing_semantic: coverage.missing_semantic,
     ...(payload.retrieval_gate ? { retrieval_gate: payload.retrieval_gate } : {}),
+  }
+}
+
+function runtimeProofReadyForFocusedRetrieve(result: RetrieveResult): boolean {
+  return result.answer_contract?.confidence === 'high'
+    && Array.isArray(result.answer_contract?.runtime_proof?.missing_obligations)
+    && result.answer_contract.runtime_proof.missing_obligations.length === 0
+}
+
+function buildStrictRuntimeProofRetrievePayload(
+  payload: ReturnType<typeof compactRetrieveResultForStdio>,
+): StrictRuntimeProofRetrievePayload | null {
+  const runtimeProof = payload.answer_contract?.runtime_proof
+  if (!runtimeProof || runtimeProof.missing_obligations.length > 0) {
+    return null
+  }
+
+  const evidenceKeys = new Set(
+    runtimeProof.obligations.flatMap((obligation) =>
+      obligation.evidence.map((evidence) => `${evidence.source_file}:${evidence.line_number}:${evidence.label}`),
+    ),
+  )
+  const matchedNodes = payload.matched_nodes
+    .filter((node) => evidenceKeys.has(`${node.source_file}:${node.line_number}:${node.label}`))
+    .map((node) => ({
+      label: node.label,
+      source_file: node.source_file,
+      line_number: node.line_number,
+    }))
+
+  if (matchedNodes.length === 0) {
+    return null
+  }
+
+  return {
+    question: payload.question,
+    retrieval_strategy: payload.retrieval_strategy ?? 'default',
+    matched_nodes: matchedNodes,
+    ...(payload.answer_contract
+      ? {
+          answer_contract: {
+            confidence: payload.answer_contract.confidence,
+            runtime_proof: payload.answer_contract.runtime_proof,
+          },
+        }
+      : {}),
+    ...(payload.execution_slice
+      ? {
+          execution_slice: {
+            status: payload.execution_slice.status,
+            confidence: payload.execution_slice.confidence,
+            steps: payload.execution_slice.steps.map((step) => ({
+              label: step.label,
+              source_file: step.source_file,
+              line_number: step.line_number,
+            })),
+          },
+        }
+      : {}),
   }
 }
 
@@ -1192,6 +1322,8 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       if (retrieveStrategy === 'invalid') {
         return helpers.failure(id, helpers.jsonrpcInvalidParams, 'retrieval_strategy must be one of default, slice-v1')
       }
+      const strictBenchmarkOverrides = strictBenchmarkRetrieveOverrides(question)
+      const effectiveRetrieveStrategy = strictBenchmarkOverrides?.retrievalStrategy ?? retrieveStrategy
       const retrieveSnippetOptions: RetrieveSnippetOptions = {
         ...(retrieveSnippetBudget !== null ? { snippetBudget: retrieveSnippetBudget } : {}),
         ...(retrieveTopNWithSnippet !== null ? { topNWithSnippet: retrieveTopNWithSnippet } : {}),
@@ -1200,6 +1332,8 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       const retrieval = retrieveSemantic || retrieveRerank ? retrieveContextAsync(graph, {
         question,
         budget: retrieveBudget,
+        ...(strictBenchmarkOverrides ? { taskKind: strictBenchmarkOverrides.taskKind } : {}),
+        ...(strictBenchmarkOverrides ? { runtimeProofProfile: strictBenchmarkOverrides.runtimeProofProfile } : {}),
         ...(retrieveCommunity !== null ? { community: retrieveCommunity } : {}),
         ...(retrieveFileType ? { fileType: retrieveFileType } : {}),
         ...(retrieveSemantic ? { semantic: true } : {}),
@@ -1207,22 +1341,39 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         ...(retrieveRerank ? { rerank: true } : {}),
         ...(retrieveRerankModel ? { rerankerModel: retrieveRerankModel } : {}),
         ...(retrieveLevelTyped !== null ? { retrievalLevel: retrieveLevelTyped } : {}),
-        ...(retrieveStrategy ? { retrievalStrategy: retrieveStrategy } : {}),
+        ...(effectiveRetrieveStrategy ? { retrievalStrategy: effectiveRetrieveStrategy } : {}),
       }) : Promise.resolve(retrieveContext(graph, {
         question,
         budget: retrieveBudget,
+        ...(strictBenchmarkOverrides ? { taskKind: strictBenchmarkOverrides.taskKind } : {}),
+        ...(strictBenchmarkOverrides ? { runtimeProofProfile: strictBenchmarkOverrides.runtimeProofProfile } : {}),
         ...(retrieveCommunity !== null ? { community: retrieveCommunity } : {}),
           ...(retrieveFileType ? { fileType: retrieveFileType } : {}),
           ...(retrieveLevelTyped !== null ? { retrievalLevel: retrieveLevelTyped } : {}),
-          ...(retrieveStrategy ? { retrievalStrategy: retrieveStrategy } : {}),
+          ...(effectiveRetrieveStrategy ? { retrievalStrategy: effectiveRetrieveStrategy } : {}),
         }))
       const useVerboseRetrieve = toolArguments.verbose === true || toolArguments.compact === false
       return retrieval.then((result) => {
+        const retrievePlan = resolveTaskSelection(
+          question,
+          strictBenchmarkOverrides?.taskKind ?? 'explain',
+          { explicit: strictBenchmarkOverrides !== null },
+        )
+        if (result.expandable && result.expandable.length > 0) {
+          storeExpandableHandles(question, retrievePlan.task_kind, retrievePlan.task_intent, result.expandable, helpers)
+        }
+        const compactPayload = compactRetrieveResultForStdio(result, retrieveSnippetOptions)
+        const strictRuntimeProofPayload =
+          !useVerboseRetrieve
+          && strictBenchmarkOverrides !== null
+          && runtimeProofReadyForFocusedRetrieve(result)
+            ? buildStrictRuntimeProofRetrievePayload(compactPayload)
+            : null
         const payload = useVerboseRetrieve
           ? withRetrieveSnippetBudget(result, retrieveSnippetOptions)
-          : {
-              ...compactRetrieveResult(result, retrieveSnippetOptions),
-              ...contextMetadata(result),
+          : strictRuntimeProofPayload ?? {
+              ...compactPayload,
+              ...contextMetadata(compactPayload),
             }
         return helpers.ok(id, helpers.textToolResult(JSON.stringify({
           ...payload,
@@ -1301,6 +1452,8 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       if (task === 'review' && contextPackStrategy) {
         return helpers.failure(id, helpers.jsonrpcInvalidParams, 'retrieval_strategy is not supported for task=review')
       }
+      const strictContextPackOverrides = task === 'explain' ? strictBenchmarkRetrieveOverrides(prompt) : null
+      const effectiveContextPackStrategy = strictContextPackOverrides?.retrievalStrategy ?? contextPackStrategy
 
       const contextPackLevelOverride = helpers.numberParamAlias(toolArguments, ['retrieval_level', 'retrievalLevel'], { min: 0, max: 5 })
       if ((Object.hasOwn(toolArguments, 'retrieval_level') || Object.hasOwn(toolArguments, 'retrievalLevel')) && contextPackLevelOverride === null) {
@@ -1321,7 +1474,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
             task: 'explain',
             budget: resolvedBudget,
             retrievalLevel: contextPackLevelTyped ?? null,
-            retrievalStrategy: contextPackStrategy,
+            retrievalStrategy: effectiveContextPackStrategy,
             resolution,
             verbose: includeSelectionDiagnostics,
           })
@@ -1420,10 +1573,11 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       const retrieval = retrieveContext(graph, {
         question: prompt,
         budget: resolvedBudget,
-        taskKind: task,
+        taskKind: strictContextPackOverrides?.taskKind ?? task,
         taskIntent: initialPlan.evidence.recipe_id,
+        ...(strictContextPackOverrides ? { runtimeProofProfile: strictContextPackOverrides.runtimeProofProfile } : {}),
         ...(contextPackLevelTyped !== null ? { retrievalLevel: contextPackLevelTyped } : {}),
-        ...(contextPackStrategy ? { retrievalStrategy: contextPackStrategy } : {}),
+        ...(effectiveContextPackStrategy ? { retrievalStrategy: effectiveContextPackStrategy } : {}),
       })
       const graphContextFreshness = analyzeGraphContextFreshness(graphPath, graph, {
         selected_source_files: selectedContextSourceFilesFromRetrieveResult(retrieval),

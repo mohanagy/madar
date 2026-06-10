@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 
 import type { ContextPackTaskKind } from '../../contracts/context-pack.js'
@@ -22,6 +22,7 @@ import {
 } from './environment.js'
 import { generateGraph, type GenerateGraphOptions, type GenerateGraphResult } from '../generate.js'
 import { shellEscape } from '../../shared/shell.js'
+import { findPackageRoot } from '../../shared/package-metadata.js'
 
 export type BenchmarkSuiteMode = 'cold' | 'warm' | 'all'
 export type BenchmarkSuiteEntryStatus = 'ready' | 'planned'
@@ -540,9 +541,61 @@ function resetBenchmarkWorkspaceConfig(workspaceRoot: string): void {
   rmSync(join(workspaceRoot, '.opencode', 'plugins'), { recursive: true, force: true })
 }
 
+function benchmarkWorkspaceCliPath(): string {
+  return join(findPackageRoot(), 'dist', 'src', 'cli', 'bin.js')
+}
+
+function writeBenchmarkWorkspaceCliShim(workspaceRoot: string): string {
+  const shimDirectory = join(workspaceRoot, '.claude', 'bin')
+  mkdirSync(shimDirectory, { recursive: true })
+  const cliPath = benchmarkWorkspaceCliPath()
+
+  if (process.platform === 'win32') {
+    const shimPath = join(shimDirectory, 'madar.cmd')
+    writeFileSync(shimPath, `@echo off\r\n"${process.execPath}" "${cliPath}" %*\r\n`, 'utf8')
+    return shimDirectory
+  }
+
+  const shimPath = join(shimDirectory, 'madar')
+  writeFileSync(shimPath, `#!/bin/sh\nexec "${process.execPath}" "${cliPath}" "$@"\n`, 'utf8')
+  chmodSync(shimPath, 0o755)
+  return shimDirectory
+}
+
+function pinBenchmarkWorkspaceClaudeCommandPath(workspaceRoot: string): void {
+  const mcpConfigPath = join(workspaceRoot, '.mcp.json')
+  const mcpConfig = readJsonFile(mcpConfigPath)
+  if (!isRecord(mcpConfig) || !isRecord(mcpConfig.mcpServers) || !isRecord(mcpConfig.mcpServers.madar)) {
+    throw new Error(`Benchmark suite could not pin the Claude MCP server inside ${portablePath(workspaceRoot)}: missing .mcp.json madar entry`)
+  }
+
+  const server = mcpConfig.mcpServers.madar as Record<string, unknown>
+  const env = isRecord(server.env) ? { ...server.env } : {}
+  const pathKey = typeof env.PATH === 'string'
+    ? 'PATH'
+    : typeof env.Path === 'string'
+      ? 'Path'
+      : process.platform === 'win32'
+        ? 'Path'
+        : 'PATH'
+  const inheritedPath =
+    (typeof env[pathKey] === 'string' ? env[pathKey] : null)
+    ?? (pathKey === 'Path' ? process.env.Path : process.env.PATH)
+    ?? process.env.PATH
+    ?? process.env.Path
+    ?? ''
+  const shimDirectory = writeBenchmarkWorkspaceCliShim(workspaceRoot)
+  server.env = {
+    ...env,
+    [pathKey]: [shimDirectory, inheritedPath].filter((entry) => typeof entry === 'string' && entry.length > 0).join(delimiter),
+  }
+  writeFileSync(mcpConfigPath, `${JSON.stringify(mcpConfig, null, 2)}\n`, 'utf8')
+}
+
 function ensureBenchmarkWorkspaceInstall(workspaceRoot: string): void {
   resetBenchmarkWorkspaceConfig(workspaceRoot)
   claudeInstall(workspaceRoot)
+  pinBenchmarkWorkspaceClaudeCommandPath(workspaceRoot)
   const installCheck = inspectClaudeNativeAgentInstall(workspaceRoot)
   if (installCheck.verified) {
     return

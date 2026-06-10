@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 
+import { buildFromJson } from '../../src/pipeline/build.js'
 import { extract } from '../../src/pipeline/extract.js'
 import { normalizeAssertionPath } from './helpers/platform.js'
 
@@ -119,5 +120,30 @@ describe('Go semantic extraction', () => {
         expect.objectContaining({ source: createService?.id, target: insertRepository?.id, relation: 'calls' }),
       ]),
     )
+  })
+
+  it('keeps duplicate main.go files and main() symbols distinct in the built graph', () => {
+    const graph = buildFromJson(extract(FIXTURE_FILES), { directed: true })
+    const nodes = [...graph.nodeEntries()].map(([id, attributes]) => ({
+      id,
+      label: String(attributes.label ?? ''),
+      source_file: normalizeAssertionPath(String(attributes.source_file ?? '')),
+    }))
+
+    const mainFiles = nodes.filter((node) => node.label === 'main.go')
+    expect(mainFiles).toHaveLength(2)
+    expect(new Set(mainFiles.map((node) => node.id)).size).toBe(2)
+    expect(mainFiles.map((node) => node.source_file).sort()).toEqual([
+      `${NORMALIZED_FIXTURE_ROOT}/cmd/api/main.go`,
+      `${NORMALIZED_FIXTURE_ROOT}/cmd/chi/main.go`,
+    ])
+
+    const mainFunctions = nodes.filter((node) => node.label === 'main()')
+    expect(mainFunctions).toHaveLength(2)
+    expect(new Set(mainFunctions.map((node) => node.id)).size).toBe(2)
+    expect(mainFunctions.map((node) => node.source_file).sort()).toEqual([
+      `${NORMALIZED_FIXTURE_ROOT}/cmd/api/main.go`,
+      `${NORMALIZED_FIXTURE_ROOT}/cmd/chi/main.go`,
+    ])
   })
 })

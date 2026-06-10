@@ -1,0 +1,46 @@
+I now have a complete picture of the flow. Let me write the answer.
+
+## How Formbricks processes a survey response
+
+The modern submission path is the **v2 client API**. Here's the end-to-end flow, request → persistence → analytics/event tracking.
+
+### 1. Request handling & validation
+**`app/api/v2/client/[workspaceId]/responses/route.ts`** — the `POST` handler:
+- `resolveClientApiIds(params.workspaceId)` resolves the path param (accepts either an old-SDK `environmentId` or new-SDK `workspaceId`).
+- `parseAndValidateResponseInput()` parses the JSON body and validates it against `ZResponseInputV2`.
+- `getContactsDisabledResponse()` blocks contact identification unless the org has the enterprise Contacts license.
+- `getSurvey(surveyId)` loads the survey, then **`validateResponseSubmission()`** runs the gauntlet:
+  - **`checkSurveyValidity()`** (`lib/utils.ts`) — verifies the survey belongs to the workspace, is `inProgress`, validates single-use link tokens (`validateSurveySingleUseLinkParams` + `symmetricDecrypt`), and runs **reCAPTCHA** spam protection (`verifyRecaptchaToken`).
+  - `validateClientFileUploads()`, `validateOtherOptionLengthForMultipleChoice()`, and `validateResponseData()` validate file uploads, "other" option lengths, and the answer data against the survey blocks/questions.
+- `createResponseForRequest()` enriches metadata: parses the `user-agent` (browser/device/OS via `UAParser`), captures country (`CF-IPCountry`/`CloudFront-Viewer-Country` headers), and — if `survey.isCaptureIpEnabled` — the client IP (`getClientIpFromHeaders`).
+
+### 2. Persistence (with quota evaluation, in a transaction)
+**`app/api/v2/client/[workspaceId]/responses/lib/response.ts`** → **`createResponseWithQuotaEvaluation()`** delegates to **`app/api/client/[workspaceId]/responses/lib/response.ts`**, which wraps everything in a single `prisma.$transaction`:
+- **`createResponse()`** validates the input again (`ZResponseInput`), resolves the organization and (optional) contact, computes time-to-complete (`calculateTtcTotal`), asserts display ownership (`assertDisplayOwnership`), builds the Prisma payload (`buildPrismaResponseData`), and calls **`prisma.response.create()`**. Prisma errors are mapped to domain errors (`UniqueConstraintError` for duplicate single-use/display links, `DatabaseError`, etc.).
+- **`evaluateResponseQuotas()`** (EE quotas service) runs inside the same transaction so quota counting is atomic with persistence; returns a `quotaFull` flag.
+
+### 3. Event dispatch — enqueue pipeline jobs
+Back in the route, after persistence the handler calls **`sendToPipeline()`** (`app/lib/pipelines.ts`) which enqueues BullMQ jobs via `getBackgroundJobProducer().enqueueResponsePipeline()` from `@formbricks/jobs`:
+- always a **`responseCreated`** event;
+- additionally a **`responseFinished`** event if `responseData.finished` is true.
+
+The HTTP response returns immediately with `{ id, ...quotaFull }` — the heavy side-effects run asynchronously in a worker.
+
+### 4. Background pipeline processing (analytics & event tracking)
+The worker is registered in **`instrumentation-jobs.ts`** (`registerJobsWorker` maps `response-pipeline.process` → `processResponsePipelineJob`), implemented in **`modules/response-pipeline/lib/process-response-pipeline-job.ts`**:
+
+**On `responseFinished` (`runResponseFinishedSideEffects`):**
+- **Webhooks** — `deliverWebhooks()` / `createWebhookDeliveryTask()` send signed (HMAC-SHA256), SSRF-checked payloads to subscribers matching the trigger.
+- **Integrations** — `handleIntegrations()` (`handle-integrations.ts`) fans out to Slack, Google Sheets, Notion, and Airtable writers.
+- **Follow-ups & notifications** — `sendFollowUpsForResponse()` and `sendResponseFinishedEmail()` (`modules/email`) email follow-ups and alert-subscribed users.
+- **Feedback sync & auto-complete** — `handleFeedbackSourcePipeline()` and `handleSurveyAutoCompleteSafely()` (which also queues an audit event).
+
+**On `responseCreated` (`runResponseCreatedSideEffects`) — this is the analytics/tracking layer:**
+- **Stripe metering** — `recordResponseCreatedMeterEvent()` (`modules/ee/billing/lib/metering.ts`) records a `response_created` meter event (Cloud only, deduped by responseId).
+- **Product analytics (PostHog)** — `captureSurveyResponsePostHogEvent()` (`modules/response-pipeline/lib/posthog.ts`) fires a `survey_response_received` event at response-count milestones (1st, every 10th, then every 100th) with survey/org/workspace properties.
+- **Instance telemetry** — `sendTelemetryEvents()` (`modules/response-pipeline/lib/telemetry.ts`) periodically (≤ every 24h, Redis-locked) posts aggregate usage stats to the EE usage-updates endpoint.
+
+### Summary chain
+`POST route.ts` → validate (`checkSurveyValidity`, reCAPTCHA, `validateResponseData`) → `createResponseWithQuotaEvaluation` (`prisma.$transaction`: `prisma.response.create` + `evaluateResponseQuotas`) → `sendToPipeline` enqueues `responseCreated`/`responseFinished` → BullMQ worker `processResponsePipelineJob` → webhooks/integrations/emails + **PostHog `survey_response_received`, Stripe metering, and instance telemetry**.
+
+One note: I traced the **v2 client** path (the current SDK target). The older `app/api/v1/client/.../responses` and `app/api/v2/management/responses` routes follow the same persist-then-`sendToPipeline` shape, sharing the `createResponse`/pipeline code, so the analytics/event-tracking stage is identical regardless of API version.

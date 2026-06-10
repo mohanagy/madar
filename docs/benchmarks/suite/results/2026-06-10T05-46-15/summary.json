@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "started_at": "2026-06-10T05:46:15.517Z",
+  "completed_at": "2026-06-10T06:02:53.091Z",
+  "output_root": "docs/benchmarks/suite/results/2026-06-10T05-46-15",
+  "filters": {
+    "repo": "cal-diy",
+    "task": "explain-runtime",
+    "mode": "warm",
+    "trials": 1
+  },
+  "cells_skipped_for_install": 0,
+  "cells_skipped_for_env_drift": 0,
+  "cells": [
+    {
+      "repoId": "cal-diy",
+      "repoName": "Cal.diy public repo",
+      "taskId": "explain-runtime",
+      "taskName": "Explain runtime flow",
+      "mode": "warm",
+      "prompt": "How does Cal.diy turn a booking request into availability validation, scheduled event persistence, and notification delivery?",
+      "status": "completed",
+      "reason": null,
+      "isolation": true,
+      "baseline": {
+        "input_tokens": {
+          "median": 657606,
+          "min": 657606,
+          "max": 657606,
+          "n": 1
+        },
+        "total_tool_calls": {
+          "median": 18,
+          "min": 18,
+          "max": 18,
+          "n": 1
+        },
+        "read_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 1
+        },
+        "glob_grep_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "wall_clock_ms": {
+          "median": 142588,
+          "min": 142588,
+          "max": 142588,
+          "n": 1
+        },
+        "cost_usd": {
+          "median": 0.6985805,
+          "min": 0.6985805,
+          "max": 0.6985805,
+          "n": 1
+        }
+      },
+      "madar": {
+        "input_tokens": {
+          "median": 75812,
+          "min": 75812,
+          "max": 75812,
+          "n": 1
+        },
+        "total_tool_calls": {
+          "median": 2,
+          "min": 2,
+          "max": 2,
+          "n": 1
+        },
+        "read_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "glob_grep_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "wall_clock_ms": {
+          "median": 36174,
+          "min": 36174,
+          "max": 36174,
+          "n": 1
+        },
+        "cost_usd": {
+          "median": 0.15337974999999998,
+          "min": 0.15337974999999998,
+          "max": 0.15337974999999998,
+          "n": 1
+        }
+      },
+      "spi_madar": null,
+      "benchmark_outcomes": {
+        "legacy": {
+          "counts": {
+            "full_win": 1,
+            "partial_win": 0,
+            "regression": 0,
+            "not_measured": 0
+          },
+          "evidence": [
+            "routing/tool/latency win: tool calls 18 → 2, latency 142588ms → 36174ms",
+            "provider input win: baseline 657606 → madar 75812",
+            "turns win: baseline 19 → madar 3",
+            "fresh_token win: baseline 35300 → madar 15516",
+            "cost win: baseline 0.6985805 → madar 0.15337974999999998"
+          ]
+        },
+        "spi_madar": null
+      },
+      "workflow_outcomes": null,
+      "artifacts": {
+        "legacy_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-06-10T05-46-15/raw/cal-diy/explain-runtime/warm-cache/legacy/trial-001/report.share-safe.json"
+        ],
+        "spi_share_safe_reports": []
+      }
+    }
+  ]
+}

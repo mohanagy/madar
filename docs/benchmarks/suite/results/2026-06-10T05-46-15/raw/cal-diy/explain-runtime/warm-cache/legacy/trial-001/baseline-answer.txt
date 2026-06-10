@@ -1,0 +1,50 @@
+I now have the complete end-to-end trace. Here's how Cal.diy turns a booking request into validation, persistence, and notifications.
+
+## Entry point
+
+A booking POST hits **`apps/web/pages/api/book/event.ts`**. After Turnstile/bot/rate‑limit checks, it resolves the orchestrator via `getRegularBookingService()` and calls `regularBookingService.createBooking({ bookingData: req.body, bookingMeta })`. The class wrapper at the bottom of **`packages/features/bookings/lib/service/RegularBookingService.ts`** (`createBooking`, ~line 2653) binds into the big `handler` function that runs the whole pipeline. (The same service powers the v2 API in `apps/api/v2/.../regular-booking.module.ts`.)
+
+## 1. Parse + availability validation
+
+Inside `RegularBookingService.ts`'s `handler`:
+
+- **`getBookingData(...)`** (line 545, from `handleNewBooking/getBookingData.ts`) — Zod‑parses the request body and booking responses, normalizing fields like start/end time, attendee, guests, location.
+- Pre‑checks: `checkIfBookerEmailIsBlocked` (581), optional email verification (`verifyCodeUnAuthenticated`, 622), spam check.
+- **`loadAndValidateUsers(...)`** (line 791, `handleNewBooking/loadAndValidateUsers.ts`) — loads the event type's hosts (fixed + round‑robin candidates).
+- **`ensureAvailableUsers(...)`** (called repeatedly, lines ~902–1066, file `handleNewBooking/ensureAvailableUsers.ts`) — the core availability gate. It runs `getUserAvailabilityService()` to compute each candidate's free/busy, checks restriction schedules, and **throws `ErrorCode.NoAvailableUsersFound`** if nobody is free for the requested slot. Booking/duration limits and out‑of‑bounds time are validated alongside (`checkBookingAndDurationLimits`, `validateBookingTimeIsNotOutOfBounds`).
+- The surviving available users feed lucky‑user/round‑robin selection to pick the `organizerUser`.
+
+## 2. Build the calendar event + decide confirmation
+
+- A `CalendarEvent` (`evt`) is assembled via `CalendarEventBuilder` (organizer, attendees, location, iCalUID, etc., ~line 1356+).
+- **`getRequiresConfirmationFlags(...)`** (line 668) yields `isConfirmedByDefault` — the branch switch for everything downstream.
+
+## 3. Persistence
+
+Two distinct layers:
+
+- **DB record** — **`createBooking(...)`** (line 1707, `handleNewBooking/createBooking.ts`) writes the `Booking` row inside a Prisma transaction. Status is set there: `ACCEPTED` if confirmed by default, else `PENDING` (createBooking.ts:192).
+- **External scheduled event** — **`EventManager`** (`lib/EventManager.ts`):
+  - Reschedule path: `eventManager.reschedule(...)` (line 1909).
+  - New confirmed booking: **`eventManager.create(evt, ...)`** (line 2052) — creates the actual events in connected calendars (Google/Office) and video conferencing (Meet/Zoom/Daily), returning `results` + `referencesToCreate`.
+  - The returned references (calendar/video IDs, meeting URLs) and updated `iCalUID`/metadata are persisted back to the booking via `prisma.booking.update` (lines 2139, 2446–2459).
+  - If the booking is **PENDING** (requires confirmation), EventManager is intentionally skipped (line 2171) — no calendar event is created until someone confirms (later handled by `handleConfirmation.ts`).
+
+## 4. Notification delivery
+
+Driven by the same confirmation branch:
+
+- **Emails/SMS** via **`emailsAndSmsHandler.send(...)`** (`BookingEmailSmsHandler`):
+  - `BookingActionMap.confirmed` — confirmation emails to attendee + organizer (line 2153).
+  - `BookingActionMap.rescheduled` — reschedule notifications (line 2031).
+  - `BookingActionMap.requested` — "booking requested, awaiting confirmation" emails when `!isConfirmedByDefault` (line 2197).
+  - All gated by `noEmail` / `isDryRun`.
+- **Webhooks** via **`handleWebhookTrigger(...)`** (line 2433) — fires `BOOKING_CREATED` / `BOOKING_RESCHEDULED` (event chosen at lines 1464–1472), plus `BOOKING_PAYMENT_INITIATED` for paid events (line 2319). For PENDING bookings, `webhookProducer.queueBookingRequestedWebhook(...)` queues `BOOKING_REQUESTED` after the references are saved (line 2468).
+- **Scheduled triggers** — `scheduleTrigger(...)` registers `MEETING_STARTED` / `MEETING_ENDED` webhooks (lines 2392–2414), and `scheduleNoShowTriggers(...)` (line 2496) sets up no‑show tasks. Reschedules first delete the old booking's scheduled triggers (line 2374).
+- Workflows/analytics: `handleAnalyticsEvents` (2516) and `fireBookingEvents` (2217) emit downstream events (which drive workflow reminders). An async path `bookingEmailAndSmsTasker.send(...)` (2532) exists behind the `ENABLE_ASYNC_TASKER` flag but is currently disabled.
+
+## Summary of the chain
+
+`api/book/event.ts` → `RegularBookingService.createBooking` → `getBookingData` (parse) → `loadAndValidateUsers` + **`ensureAvailableUsers`** (availability validation) → `CalendarEventBuilder` + `getRequiresConfirmationFlags` → **`createBooking`** (DB row) + **`EventManager.create/reschedule`** (calendar/video persistence + references) → **`emailsAndSmsHandler.send`** + **`handleWebhookTrigger`** / `scheduleTrigger` / `scheduleNoShowTriggers` (notification delivery).
+
+The key files: `apps/web/pages/api/book/event.ts`, `packages/features/bookings/lib/service/RegularBookingService.ts`, and under `packages/features/bookings/lib/handleNewBooking/`: `getBookingData.ts`, `loadAndValidateUsers.ts`, `ensureAvailableUsers.ts`, `createBooking.ts` — plus `EventManager.ts`, `BookingEmailSmsHandler.ts`, and `handleWebhookTrigger.ts`.

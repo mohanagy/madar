@@ -93,6 +93,7 @@ const PROJECTABLE_SYMBOL_KINDS: ReadonlySet<SpiSymbolKind> = new Set([
 const SPI_TO_EXTRACTION_RELATION: Partial<Record<SpiEdge['kind'], string>> = {
   imports: 'imports_from',
   calls: 'calls',
+  injects: 'injects',
   enqueues_job: 'enqueues_job',
   extends: 'extends',
   implements: 'implements',
@@ -113,6 +114,7 @@ export function projectSpiToExtraction(
 
   // Index SpiFiles for quick (file_id → SpiFile) lookups.
   const fileById = new Map<string, SpiFile>(spi.files.map((f) => [f.id, f]))
+  const projectedFileStemById = createProjectedFileStemById(spi.files)
 
   const nodes: ExtractionNode[] = []
   const edges: ExtractionEdge[] = []
@@ -128,7 +130,7 @@ export function projectSpiToExtraction(
   // 1) File nodes.
   for (const file of spi.files) {
     const absPath = resolve(root, file.path)
-    const fileBaseStem = basename(file.path, extname(file.path))
+    const fileBaseStem = projectedFileStemById.get(file.id) ?? basename(file.path, extname(file.path))
     const nodeId = _makeId(fileBaseStem)
     fileIdToNodeId.set(file.id, nodeId)
     addNode(nodes, seenNodeIds, createNode(nodeId, basename(file.path), absPath, 1, 'code'))
@@ -141,7 +143,7 @@ export function projectSpiToExtraction(
     if (!file) continue
 
     const absPath = resolve(root, file.path)
-    const fileBaseStem = basename(file.path, extname(file.path))
+    const fileBaseStem = projectedFileStemById.get(file.id) ?? basename(file.path, extname(file.path))
     const projection = projectSymbol(symbol, fileBaseStem)
     if (!projection) continue
 
@@ -186,6 +188,10 @@ export function projectSpiToExtraction(
       }
     }
 
+    if (symbol.framework_metadata?.external_call === true) {
+      node.node_kind = 'method'
+    }
+
     addNode(nodes, seenNodeIds, node)
   }
 
@@ -199,6 +205,7 @@ export function projectSpiToExtraction(
     spi,
     fileById,
     fileIdToNodeId,
+    projectedFileStemById,
     symbolIdToNodeId,
     edges,
     seenEdgeKeys,
@@ -335,10 +342,41 @@ function nodeKindForRole(role: NonNullable<SpiSymbol['framework_role']>): NonNul
 
 type SymbolProjection = { id: string; label: string }
 
+function createProjectedFileStemById(files: readonly SpiFile[]): Map<string, string> {
+  const duplicateCounts = new Map<string, number>()
+  for (const file of files) {
+    const stem = basename(file.path, extname(file.path))
+    duplicateCounts.set(stem, (duplicateCounts.get(stem) ?? 0) + 1)
+  }
+
+  const stems = new Map<string, string>()
+  for (const file of files) {
+    const basenameStem = basename(file.path, extname(file.path))
+    stems.set(
+      file.id,
+      (duplicateCounts.get(basenameStem) ?? 0) > 1
+        ? uniqueProjectedFileStem(file.path)
+        : basenameStem,
+    )
+  }
+  return stems
+}
+
+function uniqueProjectedFileStem(filePath: string): string {
+  const withoutExtension = filePath.slice(0, filePath.length - extname(filePath).length)
+  return withoutExtension.split('/').filter(Boolean).join('_')
+}
+
 function projectSymbol(symbol: SpiSymbol, fileBaseStem: string): SymbolProjection | null {
   const storageOperation = typeof symbol.framework_metadata?.storage_operation === 'string'
     ? symbol.framework_metadata.storage_operation
     : null
+  if (symbol.framework_metadata?.external_call === true) {
+    return {
+      id: _makeId(fileBaseStem, symbol.name),
+      label: symbol.name,
+    }
+  }
   if (
     (
       symbol.framework_role === 'prisma_model_reader'
@@ -383,6 +421,7 @@ function emitContainsAndMethodEdges(
   spi: SemanticProgramIndex,
   fileById: Map<string, SpiFile>,
   fileIdToNodeId: Map<string, string>,
+  projectedFileStemById: Map<string, string>,
   symbolIdToNodeId: Map<string, string>,
   edges: ExtractionEdge[],
   seenEdgeKeys: Set<string>,
@@ -402,7 +441,7 @@ function emitContainsAndMethodEdges(
       const dotAt = symbol.name.lastIndexOf('.')
       if (dotAt <= 0) continue
       const className = symbol.name.slice(0, dotAt)
-      const fileBaseStem = basename(file.path, extname(file.path))
+      const fileBaseStem = projectedFileStemById.get(file.id) ?? basename(file.path, extname(file.path))
       const classNodeId = _makeId(fileBaseStem, className)
       addUniqueEdge(
         edges,

@@ -1,0 +1,14 @@
+Twenty processes a CRM record mutation through three runtime phases, each with direct evidence:
+
+**1. API mutation handling** — A GraphQL mutation enters the auto-generated resolver. For an update, `UpdateOneResolverFactory` builds the resolver (`api/graphql/workspace-resolver-builder/factories/update-one-resolver.factory.ts:19`); creates go through the parallel `create-one-resolver.factory.ts`. The resolver name is resolved via the `WorkspaceResolverNameMapCacheService`.
+
+**2. Workspace service handoff** — The resolver delegates to the common query-runner layer (`CommonBaseQueryRunnerService` / `common-create-one-query-runner.service.ts:24`), which invokes the workspace ORM. `WorkspaceEntityManager` (`twenty-orm/entity-manager/workspace-entity-manager.ts:76`) is the workspace-scoped TypeORM entity manager that carries the operation, applying workspace metadata, ORM event formatting (`format-twenty-orm-event-to-database-batch-event.util.ts`) and exception mapping (`compute-twenty-orm-exception.ts`).
+
+**3. Persistence** — `WorkspaceEntityManager.save()` (`twenty-orm/entity-manager/workspace-entity-manager.ts:1082`) is the terminal step that writes the record to the workspace database.
+
+**Key files**
+- `api/graphql/workspace-resolver-builder/factories/update-one-resolver.factory.ts` (and `create-one-resolver.factory.ts`) — API entrypoint
+- `api/common/common-query-runners/common-create-one-query-runner.service.ts` — query-runner handoff
+- `twenty-orm/entity-manager/workspace-entity-manager.ts` — workspace entity manager and `.save()` persistence
+
+Flow: **GraphQL resolver (factory) → CommonBaseQueryRunnerService → WorkspaceEntityManager → `.save()` to the workspace DB.**

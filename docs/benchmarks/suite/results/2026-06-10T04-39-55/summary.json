@@ -1,0 +1,178 @@
+{
+  "schema_version": 1,
+  "started_at": "2026-06-10T04:39:55.992Z",
+  "completed_at": "2026-06-10T04:48:37.521Z",
+  "output_root": "docs/benchmarks/suite/results/2026-06-10T04-39-55",
+  "filters": {
+    "repo": "documenso",
+    "task": "explain-runtime",
+    "mode": "warm",
+    "trials": 1
+  },
+  "cells_skipped_for_install": 0,
+  "cells_skipped_for_env_drift": 0,
+  "cells": [
+    {
+      "repoId": "documenso",
+      "repoName": "Documenso public repo",
+      "taskId": "explain-runtime",
+      "taskName": "Explain runtime flow",
+      "mode": "warm",
+      "prompt": "How does Documenso move a document from send preparation through recipient creation, signing state, and notification delivery?",
+      "status": "completed",
+      "reason": null,
+      "isolation": true,
+      "baseline": {
+        "input_tokens": {
+          "median": 229298,
+          "min": 229298,
+          "max": 229298,
+          "n": 1
+        },
+        "total_tool_calls": {
+          "median": 10,
+          "min": 10,
+          "max": 10,
+          "n": 1
+        },
+        "read_calls": {
+          "median": 7,
+          "min": 7,
+          "max": 7,
+          "n": 1
+        },
+        "glob_grep_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "wall_clock_ms": {
+          "median": 66587,
+          "min": 66587,
+          "max": 66587,
+          "n": 1
+        },
+        "cost_usd": {
+          "median": 0.46768925,
+          "min": 0.46768925,
+          "max": 0.46768925,
+          "n": 1
+        }
+      },
+      "madar": {
+        "input_tokens": {
+          "median": 76631,
+          "min": 76631,
+          "max": 76631,
+          "n": 1
+        },
+        "total_tool_calls": {
+          "median": 2,
+          "min": 2,
+          "max": 2,
+          "n": 1
+        },
+        "read_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "glob_grep_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "wall_clock_ms": {
+          "median": 31291,
+          "min": 31291,
+          "max": 31291,
+          "n": 1
+        },
+        "cost_usd": {
+          "median": 0.1555605,
+          "min": 0.1555605,
+          "max": 0.1555605,
+          "n": 1
+        }
+      },
+      "spi_madar": {
+        "input_tokens": {
+          "median": 124125,
+          "min": 124125,
+          "max": 124125,
+          "n": 1
+        },
+        "total_tool_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 1
+        },
+        "read_calls": {
+          "median": 1,
+          "min": 1,
+          "max": 1,
+          "n": 1
+        },
+        "glob_grep_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "wall_clock_ms": {
+          "median": 41516,
+          "min": 41516,
+          "max": 41516,
+          "n": 1
+        },
+        "cost_usd": {
+          "median": 0.30378975,
+          "min": 0.30378975,
+          "max": 0.30378975,
+          "n": 1
+        }
+      },
+      "benchmark_outcomes": {
+        "legacy": {
+          "counts": {
+            "full_win": 1,
+            "partial_win": 0,
+            "regression": 0,
+            "not_measured": 0
+          },
+          "evidence": [
+            "routing/tool/latency win: tool calls 10 → 2, latency 66587ms → 31291ms",
+            "provider input win: baseline 229298 → madar 76631",
+            "turns win: baseline 11 → madar 3",
+            "fresh_token win: baseline 44489 → madar 15956",
+            "cost win: baseline 0.46768925 → madar 0.1555605"
+          ]
+        },
+        "spi_madar": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 0,
+            "regression": 0,
+            "not_measured": 1
+          },
+          "evidence": [
+            "benchmark readiness is not_ready (missing runtime proof obligations: send preparation; runtime slice confidence is medium)"
+          ]
+        }
+      },
+      "workflow_outcomes": null,
+      "artifacts": {
+        "legacy_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-06-10T04-39-55/raw/documenso/explain-runtime/warm-cache/legacy/trial-001/report.share-safe.json"
+        ],
+        "spi_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-06-10T04-39-55/raw/documenso/explain-runtime/warm-cache/spi/trial-001/report.share-safe.json"
+        ]
+      }
+    }
+  ]
+}

@@ -143,6 +143,54 @@ describe('buildSpi call layer (slice 2a of #72)', () => {
       const shared = findSymbol(spi, 'src/util.ts', 'shared', 'function')
       expect(callsEdge(spi, caller.id, shared.id)).toBeTruthy()
     })
+
+    it('resolves wrapped route-handler calls into src/lib modules behind tsconfig path aliases', () => {
+      writeFile(sandbox, 'tsconfig.json', JSON.stringify({
+        compilerOptions: {
+          module: 'NodeNext',
+          moduleResolution: 'NodeNext',
+          target: 'ES2022',
+          baseUrl: '.',
+          paths: { '@/*': ['src/*'] },
+        },
+      }) + '\n')
+      writeFile(sandbox, 'src/lib/helper.ts', 'export function helper() { return 1 }\n')
+      writeFile(sandbox, 'src/app/api/track/route.ts', [
+        'import { helper } from "@/lib/helper"',
+        'function wrap(fn: () => number) { return fn }',
+        'export const POST = wrap(() => helper())',
+      ].join('\n') + '\n')
+
+      const spi = build(sandbox)
+      const post = findSymbol(spi, 'src/app/api/track/route.ts', 'POST', 'constant')
+      const helper = findSymbol(spi, 'src/lib/helper.ts', 'helper', 'function')
+
+      expect(callsEdge(spi, post.id, helper.id)).toBeTruthy()
+    })
+
+    it('resolves wrapped route-handler calls using the nearest nested tsconfig path aliases', () => {
+      writeFile(sandbox, 'apps/web/tsconfig.json', JSON.stringify({
+        compilerOptions: {
+          target: 'ES2022',
+          module: 'ESNext',
+          moduleResolution: 'Bundler',
+          baseUrl: '.',
+          paths: { '@/lib/*': ['lib/*'] },
+        },
+      }) + '\n')
+      writeFile(sandbox, 'apps/web/lib/helper.ts', 'export function helper() { return 1 }\n')
+      writeFile(sandbox, 'apps/web/app/api/track/route.ts', [
+        'import { helper } from "@/lib/helper"',
+        'function wrap(fn: () => number) { return fn }',
+        'export const POST = wrap(() => helper())',
+      ].join('\n') + '\n')
+
+      const spi = build(sandbox)
+      const post = findSymbol(spi, 'apps/web/app/api/track/route.ts', 'POST', 'constant')
+      const helper = findSymbol(spi, 'apps/web/lib/helper.ts', 'helper', 'function')
+
+      expect(callsEdge(spi, post.id, helper.id)).toBeTruthy()
+    })
   })
 
   describe('what NOT to emit', () => {
@@ -222,10 +270,17 @@ describe('buildSpi call layer (slice 2a of #72)', () => {
 
       // Every emitted call points at a symbol that exists in this SPI.
       const ourSymbolIds = new Set(spi.symbols.map((s) => s.id))
+      const symbolById = new Map(spi.symbols.map((s) => [s.id, s] as const))
       for (const edge of allCalls) {
         expect(ourSymbolIds.has(edge.to)).toBe(true)
         expect(ourSymbolIds.has(edge.from)).toBe(true)
-        expect(edge.source).toBe('typescript-semantic')
+        const target = symbolById.get(edge.to)
+        if (target?.framework_metadata?.external_call === true) {
+          expect(edge.source).toBe('heuristic')
+          expect(edge.confidence).toBe('medium')
+        } else {
+          expect(edge.source).toBe('typescript-semantic')
+        }
       }
 
       // Cross-file call: at least one edge whose caller and callee live in

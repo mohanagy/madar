@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 
 import type { ExtractionData, ExtractionEdge, ExtractionNode } from '../../contracts/types.js'
 import { addPendingCall, addResolvedCalls, braceDelta, normalizeImportTarget, type PendingCall } from './call-resolution.js'
-import { _makeId, addEdge, addNode, createEdge, createNode, stripHashComment } from './core.js'
+import { _makeId, addEdge, addNode, createEdge, createNode, fileNodeIdForPath, fileStemForPath, stripHashComment } from './core.js'
 
 const GENERIC_CONTROL_KEYWORDS = new Set(['if', 'for', 'while', 'switch', 'catch', 'return', 'new', 'delete', 'throw', 'sizeof', 'case', 'do', 'else'])
 const MAX_GENERIC_BASE_TARGETS = 10
@@ -299,8 +299,8 @@ function ensureGenericOwnerNode(
 export function extractGenericCode(filePath: string): ExtractionData {
   const sourceText = readFileSync(filePath, 'utf8')
   const lines = sourceText.split(/\r?\n/)
-  const stem = basename(filePath, extname(filePath))
-  const fileNodeId = _makeId(stem)
+  const stem = fileStemForPath(filePath)
+  const fileNodeId = fileNodeIdForPath(filePath)
   const nodes: ExtractionNode[] = []
   const edges: ExtractionEdge[] = []
   const seenIds = new Set<string>()

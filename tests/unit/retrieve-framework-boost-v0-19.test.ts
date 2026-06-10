@@ -104,6 +104,50 @@ describe('Framework-aware retrieval boost for v0.17 substrates (#83 → v0.19)',
     }
   })
 
+  it('bare mutation questions do not boost tRPC nodes without tRPC signals', () => {
+    writeFile(sandbox, 'src/router.ts', [
+      'import { initTRPC } from "@trpc/server"',
+      'declare const t: ReturnType<typeof initTRPC.create>',
+      'export const appRouter = t.router({',
+      '  updateWorkspace: t.procedure.mutation(() => null),',
+      '})',
+    ].join('\n') + '\n')
+
+    const result = generateGraph(sandbox, { useSpi: true, noHtml: true })
+    const graph = loadGraph(result.graphPath)
+    const retrieved = retrieveContext(graph, {
+      question: 'How does the API mutation flow through workspace services to persistence?',
+      budget: 2000,
+    })
+
+    const updateWorkspace = retrieved.matched_nodes.find((n) => n.label.includes('updateWorkspace'))
+    expect(updateWorkspace).toBeDefined()
+    expect(updateWorkspace?.framework_boost ?? 0).toBe(0)
+  })
+
+  it('API mutation service questions boost Nest provider nodes', () => {
+    writeFile(sandbox, 'src/workspace-mutation.resolver.ts', [
+      'import { Injectable } from "@nestjs/common"',
+      '@Injectable()',
+      'export class WorkspaceMutationResolver {',
+      '  createRecord(): Promise<void> {',
+      '    return Promise.resolve()',
+      '  }',
+      '}',
+    ].join('\n') + '\n')
+
+    const result = generateGraph(sandbox, { useSpi: true, noHtml: true })
+    const graph = loadGraph(result.graphPath)
+    const retrieved = retrieveContext(graph, {
+      question: 'How does the API mutation flow through workspace services to persistence?',
+      budget: 2000,
+    })
+
+    const resolver = retrieved.matched_nodes.find((n) => n.label === 'WorkspaceMutationResolver')
+    expect(resolver).toBeDefined()
+    expect(resolver?.framework_boost ?? 0).toBeGreaterThan(0)
+  })
+
   it('Prisma "model" question boosts prisma_client nodes', () => {
     writeFile(sandbox, 'src/db.ts', [
       'import { PrismaClient } from "@prisma/client"',

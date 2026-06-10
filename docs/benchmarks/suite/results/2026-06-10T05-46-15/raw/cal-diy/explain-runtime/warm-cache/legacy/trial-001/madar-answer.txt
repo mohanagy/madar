@@ -1,0 +1,11 @@
+Cal.diy turns a booking request into a confirmed, notified event through one server-side pipeline:
+
+**1. Booking request (entrypoint)** — `apps/web/pages/api/book/event.ts` receives the inbound booking and hands it to the new-booking handler.
+
+**2. Availability validation** — `checkForConflicts()` in `packages/features/bookings/lib/handleNewBooking/ensureAvailableUsers.ts:243` validates that the requested slot is free, rejecting the booking if the selected user(s) have conflicting events.
+
+**3. Scheduled event persistence** — once availability passes, `saveBooking()` in `packages/features/bookings/lib/handleNewBooking/createBooking.ts:96` writes the scheduled event to the database.
+
+**4. Notification delivery** — `sendScheduledEmailsAndSMS()` (in `packages/app-store/_utils/payments/handlePaymentSuccess.ts:211`) dispatches the confirmation emails and SMS to attendees and organizer.
+
+Key files: `api/book/event.ts` → `ensureAvailableUsers.ts` → `createBooking.ts` → notification dispatch via `sendScheduledEmailsAndSMS()`.

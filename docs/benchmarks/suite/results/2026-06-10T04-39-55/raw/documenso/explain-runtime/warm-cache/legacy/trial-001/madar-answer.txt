@@ -1,0 +1,11 @@
+Documenso moves a document through the send→sign→notify lifecycle along one coherent workflow spine:
+
+**1. Send preparation** — `sendDocument()` (`server-only/document/send-document.ts:53`) orchestrates the send. It resolves email behavior via `extractDerivedDocumentEmailSettings()` (`document-email.ts:63`) and runs `extractFieldAutoInsertValues()` (`send-document.ts:384`) to pre-populate auto-insert field values before dispatch.
+
+**2. Recipient creation** — Recipients are provisioned with their auth requirements through `createRecipientAuthOptions()` (`utils/document-auth.ts:60`), which sets each recipient's access/action authentication options. (Direct-template sends route through `createDocumentFromDirectTemplate()` in `create-document-from-direct-template.ts:82` before joining the same recipient path.)
+
+**3. Signing state** — Once recipients act, the document is sealed and signed via `decorateAndSignPdf()` (`jobs/definitions/internal/seal-document.handler.ts:345`), the internal job handler that decorates the PDF and applies the cryptographic signature to advance signing state.
+
+**4. Notification delivery** — `sendPendingEmail()` (`server-only/document/send-pending-email.ts:21`) is the terminal step, delivering the pending/signing notification emails to recipients.
+
+**Key files:** `send-document.ts` (send orchestration), `document-auth.ts` (recipient auth), `seal-document.handler.ts` (signing/sealing), `send-pending-email.ts` (notification).

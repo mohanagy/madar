@@ -1,0 +1,22 @@
+Twenty processes a CRM record mutation along this runtime spine, proven by the retrieved execution slice and runtime-proof obligations:
+
+**1. API mutation handling (GraphQL resolver factory)**
+- A mutation enters through a generated workspace resolver built by the resolver-builder factories: `CreateOneResolverFactory.create()` and `UpdateOneResolverFactory` — `api/graphql/workspace-resolver-builder/factories/create-one-resolver.factory.ts:18` / `update-one-resolver.factory.ts:18`.
+- Incoming args are normalized field-by-field by `DataArgProcessorService` (actor, address, currency, full-name, numeric, raw-json transformers) before execution.
+
+**2. Workspace service handoff (query-runner)**
+- The resolver factory delegates to the injected workspace query-runner service: `CommonCreateOneQueryRunnerService` (`api/common/common-query-runners/common-create-one-query-runner.service.ts:23`), the create/update counterpart driving the workspace-scoped data path.
+
+**3. Persistence (workspace ORM → SQL)**
+- The runner writes through `WorkspaceEntityManager` (`twenty-orm/entity-manager/workspace-entity-manager.ts:76`) via `.save()` / `.update()` / `.updateMany()`.
+- Terminal DB effect is the workspace query builder: `WorkspaceUpdateQueryBuilder.execute()` (`twenty-orm/repository/workspace-update-query-builder.ts:104`) and `.executeMany()` (`:303`).
+- Side effects on the way out: results are run through `formatResult()`, the mutation is converted to a domain event via `formatTwentyOrmEventToDatabaseBatchEvent` and emitted through the entity manager's event emitter; duplicate-key failures route to `handleDuplicateKeyError` → `computeTwentyORMException`.
+
+**Key files**
+- `api/graphql/workspace-resolver-builder/factories/create-one-resolver.factory.ts` (+ `update-one-resolver.factory.ts`)
+- `api/common/common-query-runners/common-create-one-query-runner.service.ts`
+- `twenty-orm/entity-manager/workspace-entity-manager.ts`
+- `twenty-orm/repository/workspace-update-query-builder.ts`
+- `twenty-orm/utils/format-result.util.ts` + `format-twenty-orm-event-to-database-batch-event.util.ts`
+
+All three required obligations — API mutation handling, workspace service handoff, and persistence — have direct evidence (runtime proof: complete, confidence high).

@@ -1,0 +1,59 @@
+I have a complete picture of the flow. Let me write the answer.
+
+## How Documenso moves a document from send preparation → recipients → signing → notification
+
+Documenso models documents as **envelopes** (the newer schema; `EnvelopeType.DOCUMENT`). The lifecycle is orchestrated by a handful of server functions in `packages/lib/server-only`, with side-effects (emails, sealing) dispatched as **background jobs** via `jobs.triggerJob(...)`.
+
+### 1. Recipient creation (before send)
+`server-only/recipient/create-envelope-recipients.ts` — `createEnvelopeRecipients()`
+- Loads the envelope, rejects if `completedAt` is set, and enforces the org's `recipientCount` and `cfr21` action-auth claims.
+- In a transaction, creates each `Recipient` with a unique signing `token` (`nanoid()`) and seeds its starting state:
+  - **CC** recipients start `SendStatus.SENT` / `SigningStatus.SIGNED` (nothing to do).
+  - All others start `NOT_SENT` / `NOT_SIGNED` (`create-envelope-recipients.ts:104-105`).
+- Writes a `RECIPIENT_CREATED` audit log per recipient. Fields are attached separately (`field/create-envelope-fields.ts`, `set-fields-for-document.ts`).
+
+### 2. Send preparation (DRAFT → PENDING)
+`server-only/document/send-document.ts` — `sendDocument()` is the central state machine:
+- Guards: account not disabled (`assertUserNotDisabledById`), envelope exists, has recipients, under the recipient limit, not already completed, has envelope items.
+- Determines `recipientsToNotify`: for `SEQUENTIAL` signing order, only the first un-signed non-CC recipient; for `PARALLEL`, all of them (`send-document.ts:127-136`).
+- Validates auth-required recipients have valid emails, and that signers have their required fields (`getRecipientsWithMissingFields`).
+- If everyone is CC/already-signed, it short-circuits straight to sealing via the `internal.seal-document` job.
+- For V2 envelopes, auto-inserts prefilled fields (email/text/number/radio/dropdown/checkbox) via `extractFieldAutoInsertValues`.
+- **Transaction** (`send-document.ts:228-306`): writes `DOCUMENT_SENT` audit log, marks auto-inserted fields, sets recipient `expiresAt`, and flips the envelope `status` to **`DocumentStatus.PENDING`**.
+- Then dispatches notifications: for each recipient to notify (skipping already-SENT and CC), it triggers the **`send.signing.requested.email`** job, and fires the `DOCUMENT_SENT` webhook (`triggerWebhook`).
+
+### 3. Notification delivery (signing request)
+`jobs/definitions/emails/send-signing-email.handler.ts`
+- Re-checks the document is `PENDING`, recipient isn't CC, and signing-request emails are enabled (`extractDerivedDocumentEmailSettings`).
+- Builds email context/branding (`getEmailContext`), enforces org email rate limits, renders the `DocumentInviteEmailTemplate` with a `signDocumentLink` = `/sign/{recipient.token}`.
+- Sends via `emailTransport.sendMail`, then updates the recipient to `SendStatus.SENT` + `sentAt`, schedules the next reminder (`updateRecipientNextReminder`), and writes an `EMAIL_SENT` audit log.
+
+### 4. Signing state — per field, then per recipient
+**Per field:** `server-only/field/sign-field-with-token.ts` — `signFieldWithToken()`
+- Looks up recipient by `token` and the field, asserts envelope is `PENDING`, recipient not expired/already-signed, field not already inserted.
+- Type-validates the value (number/text/checkbox/radio/dropdown), runs `validateFieldAuth` (re-auth/2FA), and in a transaction marks the field `inserted: true`, upserts a `Signature` for signature fields, and writes a `DOCUMENT_FIELD_INSERTED` (or `_PREFILLED` for assistants) audit log.
+
+**Per recipient:** `server-only/document/complete-document-with-token.ts` — `completeDocumentWithToken()`
+- Asserts `PENDING`, not expired, not already signed/rejected; for SEQUENTIAL enforces turn order via `recipient/get-is-recipient-turn.ts`; runs access 2FA (`is-recipient-authorized.ts`).
+- Auto-inserts any uninserted DATE fields, then rejects if `fieldsContainUnsignedRequiredField`.
+- **Transaction:** sets the recipient to `SigningStatus.SIGNED` + `signedAt`, writes `DOCUMENT_RECIPIENT_COMPLETED` audit log.
+- Fires the `DOCUMENT_RECIPIENT_COMPLETED` webhook and the **`send.recipient.signed.email`** job (notifies the owner).
+- **Advances the chain:** queries remaining non-CC unsigned recipients. If any remain, calls `sendPendingEmail`; for SEQUENTIAL it marks the *next* recipient `SENT`/`sentAt` (optionally honoring a dictated next signer) and triggers another **`send.signing.requested.email`**.
+
+### 5. Completion → sealing + completion notifications
+- When `haveAllRecipientsSigned` (every recipient SIGNED or CC), `completeDocumentWithToken` triggers the **`internal.seal-document`** job (`jobs/definitions/internal/seal-document.ts`), which flattens signatures into the PDF, marks the document `COMPLETED`, and fans out **`send.recipient.signed.email` / completed-document emails** (`send-document-completed-emails.handler.ts`).
+- Finally it fires the `DOCUMENT_SIGNED` webhook.
+
+### State summary
+- **Envelope:** `DRAFT` → `PENDING` (`sendDocument`) → `COMPLETED` (seal job).
+- **Recipient:** `NOT_SENT/NOT_SIGNED` → `SENT` (signing email) → `SIGNED` (`completeDocumentWithToken`); CC short-circuits to `SENT/SIGNED` at creation.
+- **Field:** `inserted: false` → `true` (`signFieldWithToken`).
+
+### Key files
+- `server-only/recipient/create-envelope-recipients.ts` — recipient creation + initial state
+- `server-only/document/send-document.ts` — DRAFT→PENDING orchestration, notify dispatch
+- `jobs/definitions/emails/send-signing-email.handler.ts` — signing-request email delivery
+- `server-only/field/sign-field-with-token.ts` — field signing
+- `server-only/document/complete-document-with-token.ts` — recipient completion, sequential advance, seal trigger
+- `server-only/document/send-pending-email.ts`, `recipient/get-is-recipient-turn.ts`, `jobs/definitions/internal/seal-document.ts` — supporting steps
+- Webhooks throughout via `server-only/webhooks/trigger/trigger-webhook.ts` (`DOCUMENT_SENT`, `DOCUMENT_RECIPIENT_COMPLETED`, `DOCUMENT_SIGNED`).

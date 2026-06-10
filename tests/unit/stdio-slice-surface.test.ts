@@ -2,9 +2,10 @@ import { randomUUID } from 'node:crypto'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { handleStdioRequest } from '../../src/runtime/stdio-server.js'
+import * as retrieveRuntime from '../../src/runtime/retrieve.js'
 import { estimateQueryTokens } from '../../src/runtime/serve.js'
 
 const tempRoots: string[] = []
@@ -273,6 +274,288 @@ describe('stdio slice-v1 surface', () => {
 
     expect(retrieveText).toContain('"retrieval_strategy":"slice-v1"')
     expect(contextPackText).toContain('"retrieval_strategy":"slice-v1"')
+  })
+
+  it('auto-applies strict benchmark runtime-proof retrieval options for matching benchmark prompts', async () => {
+    const graphPath = createGraphPath()
+    const question = 'How does Dub resolve a short-link click from request handling through analytics tracking and destination redirect?'
+    const originalRetrieveContext = retrieveRuntime.retrieveContext
+    const retrieveSpy = vi.spyOn(retrieveRuntime, 'retrieveContext').mockImplementation((inputGraph, options) => ({
+      ...originalRetrieveContext(inputGraph, {
+        question: 'Explain `AuthService.login`',
+        budget: 1000,
+      }),
+      retrieval_strategy: options.retrievalStrategy ?? 'default',
+    }))
+
+    try {
+      const retrieveResponse = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 11,
+        method: 'tools/call',
+        params: {
+          name: 'retrieve',
+          arguments: {
+            question,
+            budget: 1000,
+            verbose: true,
+          },
+        },
+      }))
+
+      const contextPackResponse = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 12,
+        method: 'tools/call',
+        params: {
+          name: 'context_pack',
+          arguments: {
+            prompt: question,
+            budget: 1000,
+            task: 'explain',
+            verbose: true,
+          },
+        },
+      }))
+
+      expect(retrieveSpy).toHaveBeenCalledTimes(2)
+      for (const call of retrieveSpy.mock.calls) {
+        expect(call[1]).toEqual(expect.objectContaining({
+          taskKind: 'explain',
+          retrievalStrategy: 'slice-v1',
+          runtimeProofProfile: expect.objectContaining({
+            prompt: question,
+            strict_runtime_proof: true,
+            expected_spi: false,
+          }),
+        }))
+      }
+
+      const retrieveText = ((retrieveResponse as { result?: { content?: Array<{ text: string }> } }).result?.content ?? [])[0]?.text ?? ''
+      const contextPackText = ((contextPackResponse as { result?: { content?: Array<{ text: string }> } }).result?.content ?? [])[0]?.text ?? ''
+
+      expect(retrieveText).toContain('"retrieval_strategy":"slice-v1"')
+      expect(contextPackText).toContain('"retrieval_strategy":"slice-v1"')
+    } finally {
+      retrieveSpy.mockRestore()
+    }
+  })
+
+  it('returns a proof-focused retrieve payload once strict benchmark runtime proof is complete', async () => {
+    const graphPath = createGraphPath()
+    const question = 'How does Formbricks process a survey response from request handling through persistence and analytics/event tracking?'
+    const readyResult = {
+      question,
+      retrieval_strategy: 'slice-v1' as const,
+      matched_nodes: [
+        {
+          label: 'parseAndValidateResponseInput()',
+          source_file: 'app/api/v2/client/[workspaceId]/responses/route.ts',
+          line_number: 43,
+          snippet: 'parseAndValidateResponseInput = async (request: Request, workspaceId: string) => ({ workspaceId, responseInputData });',
+          match_score: 10,
+          relevance_band: 'direct' as const,
+          community: 10,
+        },
+        {
+          label: 'createResponse()',
+          source_file: 'app/api/v1/management/responses/lib/response.ts',
+          line_number: 89,
+          snippet: 'const prismaData = buildPrismaResponseData(responseInput, contact, ttc); return prismaClient.response.create({ data: prismaData });',
+          match_score: 9,
+          relevance_band: 'direct' as const,
+          community: 11,
+        },
+        {
+          label: 'sendToPipeline()',
+          source_file: 'app/lib/pipelines.ts',
+          line_number: 5,
+          snippet: 'return getBackgroundJobProducer().enqueueResponsePipeline(job);',
+          match_score: 8,
+          relevance_band: 'direct' as const,
+          community: 12,
+        },
+        {
+          label: 'irrelevantHelper()',
+          source_file: 'app/lib/irrelevant.ts',
+          line_number: 1,
+          snippet: 'export function irrelevantHelper() {}',
+          match_score: 2,
+          relevance_band: 'supporting' as const,
+          community: 99,
+        },
+      ],
+      relationships: [
+        { from: 'parseAndValidateResponseInput()', to: 'createResponse()', relation: 'calls' },
+        { from: 'createResponse()', to: 'sendToPipeline()', relation: 'calls' },
+      ],
+      community_context: [
+        { id: 10, label: 'request', node_count: 1 },
+        { id: 11, label: 'persistence', node_count: 1 },
+        { id: 12, label: 'analytics', node_count: 1 },
+      ],
+      graph_signals: {
+        god_nodes: ['parseAndValidateResponseInput()'],
+        bridge_nodes: ['createResponse()'],
+      },
+      coverage: {
+        required_evidence: [],
+        semantic_required: [],
+        semantic_optional: [],
+        entries: [],
+        semantic_entries: [],
+        missing_required: [],
+        missing_semantic: [],
+        available_relationships: 2,
+        selected_relationships: 2,
+      },
+      claims: [
+        { claim: 'response flow is covered', evidence_labels: ['parseAndValidateResponseInput()', 'createResponse()', 'sendToPipeline()'] },
+      ],
+      answer_contract: {
+        answer_now: true,
+        confidence: 'high' as const,
+        missing_phases: [],
+        uncertainty_guidance: [],
+        runtime_proof: {
+          obligations: [
+            {
+              id: 'request_handling',
+              label: 'request handling',
+              kind: 'entrypoint',
+              required: true,
+              evidence: [
+                {
+                  label: 'parseAndValidateResponseInput()',
+                  source_file: 'app/api/v2/client/[workspaceId]/responses/route.ts',
+                  line_number: 43,
+                },
+              ],
+            },
+            {
+              id: 'persistence',
+              label: 'persistence',
+              kind: 'terminal',
+              required: true,
+              evidence: [
+                {
+                  label: 'createResponse()',
+                  source_file: 'app/api/v1/management/responses/lib/response.ts',
+                  line_number: 89,
+                },
+              ],
+            },
+            {
+              id: 'analytics_event_tracking',
+              label: 'analytics/event tracking',
+              kind: 'terminal',
+              required: true,
+              evidence: [
+                {
+                  label: 'sendToPipeline()',
+                  source_file: 'app/lib/pipelines.ts',
+                  line_number: 5,
+                },
+              ],
+            },
+          ],
+          missing_obligations: [],
+        },
+      },
+      execution_slice: {
+        status: 'complete' as const,
+        confidence: 'high' as const,
+        steps: [
+          {
+            label: 'parseAndValidateResponseInput()',
+            source_file: 'app/api/v2/client/[workspaceId]/responses/route.ts',
+            line_number: 43,
+          },
+          {
+            label: 'createResponse()',
+            source_file: 'app/api/v1/management/responses/lib/response.ts',
+            line_number: 89,
+          },
+          {
+            label: 'sendToPipeline()',
+            source_file: 'app/lib/pipelines.ts',
+            line_number: 5,
+          },
+        ],
+        primary_path: {
+          steps: [
+            {
+              label: 'parseAndValidateResponseInput()',
+              source_file: 'app/api/v2/client/[workspaceId]/responses/route.ts',
+              line_number: 43,
+            },
+            {
+              label: 'createResponse()',
+              source_file: 'app/api/v1/management/responses/lib/response.ts',
+              line_number: 89,
+            },
+            {
+              label: 'sendToPipeline()',
+              source_file: 'app/lib/pipelines.ts',
+              line_number: 5,
+            },
+          ],
+        },
+      },
+      retrieval_gate: {
+        level: 4,
+        reason: 'benchmark strict runtime proof',
+        signals: {
+          generation_intent: 'runtime_generation',
+          target_domain_hint: 'backend_runtime',
+        },
+      },
+    }
+    const retrieveSpy = vi.spyOn(retrieveRuntime, 'retrieveContext').mockImplementation(() => readyResult as never)
+
+    try {
+      const retrieveResponse = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 13,
+        method: 'tools/call',
+        params: {
+          name: 'retrieve',
+          arguments: {
+            question,
+            budget: 1000,
+          },
+        },
+      }))
+
+      const retrieveText = ((retrieveResponse as { result?: { content?: Array<{ text: string }> } }).result?.content ?? [])[0]?.text ?? ''
+      const payload = JSON.parse(retrieveText) as {
+        matched_nodes: Array<{ label: string }>
+        relationships?: unknown
+        community_context?: unknown
+        graph_signals?: unknown
+        coverage?: unknown
+        claims?: unknown
+        retrieval_gate?: unknown
+        answer_contract: {
+          runtime_proof: {
+            missing_obligations: string[]
+          }
+        }
+      }
+
+      expect(payload.answer_contract.runtime_proof.missing_obligations).toEqual([])
+      expect(payload.matched_nodes.map((node) => node.label)).toEqual([
+        'parseAndValidateResponseInput()',
+        'createResponse()',
+        'sendToPipeline()',
+      ])
+      expect(payload).not.toHaveProperty('relationships')
+      expect(payload).not.toHaveProperty('community_context')
+      expect(payload).not.toHaveProperty('graph_signals')
+      expect(payload).not.toHaveProperty('coverage')
+      expect(payload).not.toHaveProperty('claims')
+      expect(payload).not.toHaveProperty('retrieval_gate')
+      expect(estimateQueryTokens(retrieveText)).toBeLessThan(1200)
+    } finally {
+      retrieveSpy.mockRestore()
+    }
   })
 
   it('rejects unsupported retrieval_strategy values', async () => {
