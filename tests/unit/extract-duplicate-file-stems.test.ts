@@ -56,12 +56,9 @@ describe('extract duplicate file stems', () => {
         'apps/web/ui/shared/icons/link.tsx',
       ])
 
-      expect(nodes).toEqual(expect.arrayContaining([
-        expect.objectContaining({
-          label: 'LinkMiddleware()',
-          source_file: expect.stringContaining('/apps/web/lib/middleware/link.ts'),
-        }),
-      ]))
+      const linkMiddlewareNode = nodes.find((node) => node.label === 'LinkMiddleware()')
+      expect(linkMiddlewareNode).toBeDefined()
+      expect(relativeSource(sandbox, linkMiddlewareNode?.source_file)).toBe('apps/web/lib/middleware/link.ts')
     } finally {
       rmSync(sandbox, { recursive: true, force: true })
     }

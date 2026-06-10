@@ -5448,11 +5448,11 @@ describe('assessBenchmarkReadinessFromRetrieveResult', () => {
     expect(resolveSuggestedGraphScopePath(
       '/tmp/bench/legacy/out/graph.json',
       'apps/out/graph.json',
-    )).toBe('/tmp/bench/legacy/apps/out/graph.json')
+    )).toBe(resolve('/tmp/bench/legacy', 'apps/out/graph.json'))
     expect(resolveSuggestedGraphScopePath(
       '/tmp/bench/out/graph.json',
       'apps/out/graph.json',
-    )).toBe('/tmp/bench/apps/out/graph.json')
+    )).toBe(resolve('/tmp/bench', 'apps/out/graph.json'))
   })
 
   it('marks backend SPI runtime-generation packs ready when runtime spine evidence is covered', () => {
