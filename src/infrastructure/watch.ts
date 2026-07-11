@@ -18,6 +18,7 @@ export interface WatchLogger {
 
 export interface RebuildCodeOptions {
   followSymlinks?: boolean
+  respectGitignore?: boolean
   noHtml?: boolean
   logger?: WatchLogger
 }
@@ -262,6 +263,7 @@ export function rebuildCode(watchPath: string, options: RebuildCodeOptions = {})
     const result = generateGraph(resolvedWatchPath, {
       ...(existsSync(manifestPath) && existsSync(graphPath) ? { update: true } : {}),
       ...(options.followSymlinks !== undefined ? { followSymlinks: options.followSymlinks } : {}),
+      ...(options.respectGitignore !== undefined ? { respectGitignore: options.respectGitignore } : {}),
       ...(options.noHtml !== undefined ? { noHtml: options.noHtml } : {}),
     })
 
@@ -339,6 +341,7 @@ export async function watch(watchPath: string, debounce = 3, options: WatchOptio
         const rebuildOptions: RebuildCodeOptions = {
           logger: output,
           ...(options.followSymlinks !== undefined ? { followSymlinks: options.followSymlinks } : {}),
+          ...(options.respectGitignore !== undefined ? { respectGitignore: options.respectGitignore } : {}),
           ...(options.noHtml !== undefined ? { noHtml: options.noHtml } : {}),
         }
         const rebuilt = runRebuild(resolvedWatchPath, rebuildOptions)

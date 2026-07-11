@@ -16,6 +16,38 @@ export function findGitRoot(path: string): string | null {
   }
 }
 
+/**
+ * Lists tracked files plus untracked files that are not excluded by Git's
+ * standard ignore rules. `null` means Git is unavailable or the path is not
+ * inside a repository; an empty array is a valid empty worktree result.
+ */
+export function collectGitVisibleFiles(rootDir: string): string[] | null {
+  const root = resolve(rootDir)
+
+  try {
+    const repoRoot = execFileSync('git', ['-C', root, 'rev-parse', '--show-toplevel'], {
+      encoding: 'utf8',
+      windowsHide: true,
+    }).trim()
+    const relativeRoot = relative(repoRoot, root)
+    if (relativeRoot === '..' || relativeRoot.startsWith(`..${sep}`) || isAbsolute(relativeRoot)) {
+      return null
+    }
+    const output = execFileSync(
+      'git',
+      ['-C', repoRoot, 'ls-files', '--cached', '--others', '--exclude-standard', '-z', '--', relativeRoot || '.'],
+      { encoding: 'utf8', maxBuffer: 100 * 1024 * 1024, windowsHide: true },
+    )
+
+    return output
+      .split('\0')
+      .filter(Boolean)
+      .map((relativePath) => resolve(repoRoot, relativePath))
+  } catch {
+    return null
+  }
+}
+
 function gitOutput(rootDir: string, args: string[], trim = true): string {
   const output = execFileSync('git', ['-c', 'core.quotePath=false', ...args], {
     cwd: rootDir,

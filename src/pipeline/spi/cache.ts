@@ -218,7 +218,7 @@ interface WorkspaceFingerprint {
 
 function computeWorkspaceFingerprint(root: string, opts: BuildSpiCachedOptions): WorkspaceFingerprint {
   const entries: string[] = []
-  collectIndexableFiles(root, root, entries)
+  collectIndexableFiles(root, root, entries, opts.includedFiles)
   entries.sort()
 
   const hasher = createHash('sha256')
@@ -276,7 +276,7 @@ function collectProjectConfigPaths(root: string, entries: readonly string[]): st
   return [...projectConfigPaths].sort()
 }
 
-function collectIndexableFiles(root: string, dir: string, out: string[]): void {
+function collectIndexableFiles(root: string, dir: string, out: string[], includedFiles?: ReadonlySet<string>): void {
   let entries: import('node:fs').Dirent<string>[]
   try {
     entries = readdirSync(dir, { withFileTypes: true, encoding: 'utf8' })
@@ -288,11 +288,13 @@ function collectIndexableFiles(root: string, dir: string, out: string[]): void {
     if (entry.isSymbolicLink()) continue
     const full = join(dir, entry.name)
     if (entry.isDirectory()) {
-      collectIndexableFiles(root, full, out)
+      collectIndexableFiles(root, full, out, includedFiles)
     } else if (entry.isFile()) {
       const ext = extname(entry.name).toLowerCase()
       if (CACHE_INDEXABLE_EXTS.has(ext)) {
-        out.push(relative(root, full).split('\\').join('/'))
+        if (!includedFiles || includedFiles.has(resolve(full))) {
+          out.push(relative(root, full).split('\\').join('/'))
+        }
       }
     }
   }
