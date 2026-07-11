@@ -900,6 +900,7 @@ describe('cli parser', () => {
       watch: false,
       directed: false,
       followSymlinks: false,
+      respectGitignore: false,
       debounceSeconds: 3,
       noHtml: false,
       wiki: false,
@@ -924,6 +925,7 @@ describe('cli parser', () => {
         '--watch',
         '--directed',
         '--follow-symlinks',
+        '--respect-gitignore',
         '--debounce',
         '1.5',
         '--no-html',
@@ -950,6 +952,7 @@ describe('cli parser', () => {
       watch: true,
       directed: true,
       followSymlinks: true,
+      respectGitignore: true,
       debounceSeconds: 1.5,
       noHtml: true,
       wiki: true,
@@ -1212,6 +1215,7 @@ describe('cli main', () => {
     expect(help).toContain('watch [path]')
     expect(help).toContain('serve [graph.json]')
     expect(help).toContain('--directed')
+    expect(help).toContain('--respect-gitignore')
     expect(help).toContain('--wiki')
     expect(help).toContain('--obsidian')
     expect(help).toContain('--svg')

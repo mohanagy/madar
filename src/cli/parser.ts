@@ -163,6 +163,7 @@ export interface GenerateCliOptions {
   watch: boolean
   directed: boolean
   followSymlinks: boolean
+  respectGitignore: boolean
   debounceSeconds: number
   noHtml: boolean
   wiki: boolean
@@ -1694,6 +1695,7 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
   let watch = false
   let directed = false
   let followSymlinks = false
+  let respectGitignore = false
   let debounceSeconds = 3
   let noHtml = false
   let wiki = false
@@ -1724,7 +1726,7 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
     if (!argument.startsWith('--')) {
       if (path !== '.') {
         throw new UsageError(
-          'Usage: madar generate [path] [--update] [--cluster-only] [--watch] [--directed] [--follow-symlinks] [--debounce S] [--no-html] [--wiki] [--obsidian] [--obsidian-dir DIR] [--svg] [--graphml] [--neo4j] [--neo4j-push URI] [--neo4j-user USER] [--neo4j-password PW] [--neo4j-database DB] [--spi]',
+          'Usage: madar generate [path] [--update] [--cluster-only] [--watch] [--directed] [--follow-symlinks] [--respect-gitignore] [--debounce S] [--no-html] [--wiki] [--obsidian] [--obsidian-dir DIR] [--svg] [--graphml] [--neo4j] [--neo4j-push URI] [--neo4j-user USER] [--neo4j-password PW] [--neo4j-database DB] [--spi]',
         )
       }
       path = argument
@@ -1753,6 +1755,11 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
 
     if (argument === '--follow-symlinks') {
       followSymlinks = true
+      continue
+    }
+
+    if (argument === '--respect-gitignore') {
+      respectGitignore = true
       continue
     }
 
@@ -1884,6 +1891,7 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
     watch,
     directed,
     followSymlinks,
+    respectGitignore,
     debounceSeconds,
     noHtml,
     wiki,

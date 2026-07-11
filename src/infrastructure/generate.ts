@@ -17,6 +17,7 @@ import { generate as generateReport } from '../pipeline/report.js'
 import { toWiki } from '../pipeline/wiki.js'
 import { loadGraph } from '../runtime/serve.js'
 import { buildGraphBuildFreshnessMetadata } from '../shared/graph-build-freshness.js'
+import { collectGitVisibleFiles } from '../shared/git.js'
 
 export type ProgressStep =
   | { step: 'detect'; message: string }
@@ -31,6 +32,8 @@ export interface GenerateGraphOptions {
   clusterOnly?: boolean
   directed?: boolean
   followSymlinks?: boolean
+  /** Restrict discovery to files that Git does not ignore. Falls back outside Git repositories. */
+  respectGitignore?: boolean
   noHtml?: boolean
   htmlMode?: 'auto' | 'inline' | 'overview'
   wiki?: boolean
@@ -102,8 +105,12 @@ export class GenerateUnsupportedCorpusError extends Error {
 
 type IncrementalDetectResult = ReturnType<typeof detectIncremental>
 
-function detectOptions(options: GenerateGraphOptions): { followSymlinks?: boolean } {
-  return options.followSymlinks ? { followSymlinks: true } : {}
+function detectOptions(options: GenerateGraphOptions, gitVisibleFiles: string[] | null): { followSymlinks?: boolean; includedFiles?: ReadonlySet<string> } {
+  const includedFiles = gitVisibleFiles ? new Set(gitVisibleFiles.map((filePath) => resolve(filePath))) : undefined
+  return {
+    ...(options.followSymlinks ? { followSymlinks: true } : {}),
+    ...(includedFiles ? { includedFiles } : {}),
+  }
 }
 
 function countNonCodeFiles(files: DetectResult['files']): number {
@@ -272,7 +279,9 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   const progress = options.onProgress
 
   progress?.({ step: 'detect', message: 'Scanning files...' })
-  const detected = options.update ? detectIncremental(resolvedRootPath, manifestPath, detectOptions(options)) : detect(resolvedRootPath, detectOptions(options))
+  const gitVisibleFiles = options.respectGitignore ? collectGitVisibleFiles(resolvedRootPath) : null
+  const detectionOptions = detectOptions(options, gitVisibleFiles)
+  const detected = options.update ? detectIncremental(resolvedRootPath, manifestPath, detectionOptions) : detect(resolvedRootPath, detectionOptions)
 
   if (options.includeDocs === false) {
     detected.files[FileType.DOCUMENT] = []
@@ -344,6 +353,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
             root: resolvedRootPath,
             madarVersion: `spi-extractor-${EXTRACTOR_CACHE_VERSION}`,
             extractorVersion: spiExtractorVersion,
+            ...(gitVisibleFiles ? { includedFiles: new Set(gitVisibleFiles.map((filePath) => resolve(filePath))) } : {}),
           })
         : null
     const spiExtraction = built ? projectSpiToExtraction(built.spi, { root: resolvedRootPath }) : emptyExtraction()

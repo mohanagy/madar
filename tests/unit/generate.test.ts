@@ -1,4 +1,5 @@
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -988,6 +989,28 @@ describe('generateGraph', () => {
       }
     })
   })
+
+  test('excludes Git-ignored files when respectGitignore is enabled', () => {
+    withTempDir((tempDir) => {
+      writeFileSync(join(tempDir, '.gitignore'), 'ignored.ts\n', 'utf8')
+      writeFileSync(join(tempDir, 'tracked.ts'), 'export const tracked = true\n', 'utf8')
+      writeFileSync(join(tempDir, 'untracked.ts'), 'export const untracked = true\n', 'utf8')
+      writeFileSync(join(tempDir, 'ignored.ts'), 'export const ignored = true\n', 'utf8')
+      execFileSync('git', ['init'], { cwd: tempDir, stdio: 'pipe' })
+      execFileSync('git', ['add', '.gitignore', 'tracked.ts'], { cwd: tempDir, stdio: 'pipe' })
+
+      generateGraph(tempDir, { noHtml: true, respectGitignore: true })
+
+      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+        nodes: Array<{ source_file?: string }>
+      }
+      const sourceFiles = new Set(graphData.nodes.map((node) => node.source_file))
+
+      expect(sourceFiles).toContain(join(tempDir, 'tracked.ts'))
+      expect(sourceFiles).toContain(join(tempDir, 'untracked.ts'))
+      expect(sourceFiles).not.toContain(join(tempDir, 'ignored.ts'))
+    })
+  }, generateGraphIntegrationTimeoutMs)
 
   test('builds graph artifacts for a code corpus', () => {
     withTempDir((tempDir) => {

@@ -81,6 +81,8 @@ export type BuildSpiOptions = {
   root: string
   madarVersion: string
   extractorVersion?: string
+  /** Restrict source discovery to these absolute paths. */
+  includedFiles?: ReadonlySet<string>
   // Override the wall-clock used in `generated_at`. Test-only escape hatch
   // so snapshot tests can assert deterministic output.
   now?: () => Date
@@ -120,7 +122,7 @@ export function buildSpi(opts: BuildSpiOptions): SemanticProgramIndex {
 
   const absPaths: string[] = []
   const ignorePatterns = loadMadarignorePatterns(root)
-  collectFiles(root, root, ignorePatterns, absPaths)
+  collectFiles(root, root, ignorePatterns, absPaths, opts.includedFiles)
 
   const pathToFileId = new Map<string, string>()
   for (const abs of absPaths) {
@@ -192,7 +194,7 @@ export function buildSpi(opts: BuildSpiOptions): SemanticProgramIndex {
 // buildSpi directly.
 export const buildSpiFileLayer = buildSpi
 
-function collectFiles(root: string, dir: string, ignorePatterns: readonly string[], out: string[]): void {
+function collectFiles(root: string, dir: string, ignorePatterns: readonly string[], out: string[], includedFiles?: ReadonlySet<string>): void {
   let entries: import('node:fs').Dirent<string>[]
   try {
     entries = readdirSync(dir, { withFileTypes: true, encoding: 'utf8' })
@@ -204,9 +206,9 @@ function collectFiles(root: string, dir: string, ignorePatterns: readonly string
     const full = join(dir, entry.name)
     if (isDiscoveryPathIgnored(full, root, ignorePatterns)) continue
     if (entry.isDirectory()) {
-      collectFiles(root, full, ignorePatterns, out)
+      collectFiles(root, full, ignorePatterns, out, includedFiles)
     } else if (entry.isFile()) {
-      out.push(full)
+      if (!includedFiles || includedFiles.has(resolve(full))) out.push(full)
     }
   }
 }

@@ -21,6 +21,8 @@ export type FileTypeValue = (typeof FileType)[keyof typeof FileType]
 
 export interface DetectOptions {
   followSymlinks?: boolean
+  /** Restrict discovery to these absolute paths after Madar's own filters. */
+  includedFiles?: ReadonlySet<string>
 }
 
 export interface DetectResult {
@@ -365,6 +367,9 @@ export function detect(root: string, options: DetectOptions = {}): DetectResult 
   const skippedSensitive: string[] = []
 
   for (const filePath of collectFiles(root, followSymlinks, ignorePatterns)) {
+    if (options.includedFiles && !options.includedFiles.has(resolve(filePath))) {
+      continue
+    }
     if (isSensitive(filePath, root)) {
       skippedSensitive.push(filePath)
       continue
