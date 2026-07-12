@@ -11,6 +11,7 @@ export const WATCHED_EXTENSIONS = new Set([...CODE_EXTENSIONS, ...DOC_EXTENSIONS
 const MAX_SYMLINK_DEPTH = 40
 const MAX_WATCHED_FILES = 10_000
 const GIT_VISIBILITY_SNAPSHOT_KEY = '\0madar:git-visible-files'
+const GIT_VISIBILITY_CACHE_DURATION_MS = 500
 
 const WATCH_IGNORED_DIRECTORIES = new Set(['.git', 'out', 'node_modules', 'dist', 'build', 'target', 'venv', '.venv', 'env', '.env', '__pycache__'])
 
@@ -36,6 +37,11 @@ export interface WatchOptions extends RebuildCodeOptions {
 interface WatchLoopSignal {
   wait(signal?: AbortSignal): Promise<void>
   wake(): void
+}
+
+interface GitVisibilityCache {
+  visibleFiles: string[] | null
+  expiresAt: number
 }
 
 function defaultLogger(logger?: WatchLogger): WatchLogger {
@@ -222,7 +228,25 @@ function collectWatchedFiles(
   }
 }
 
-function snapshotWatchedFiles(watchPath: string, followSymlinks: boolean, respectGitignore = false): Map<string, number | string> {
+function readGitVisibleFiles(watchPath: string, cache?: GitVisibilityCache): string[] | null {
+  if (cache && cache.expiresAt > Date.now()) {
+    return cache.visibleFiles
+  }
+
+  const visibleFiles = collectGitVisibleFiles(watchPath)
+  if (cache) {
+    cache.visibleFiles = visibleFiles
+    cache.expiresAt = Date.now() + GIT_VISIBILITY_CACHE_DURATION_MS
+  }
+  return visibleFiles
+}
+
+function snapshotWatchedFiles(
+  watchPath: string,
+  followSymlinks: boolean,
+  respectGitignore = false,
+  gitVisibilityCache?: GitVisibilityCache,
+): Map<string, number | string> {
   const resolvedWatchPath = resolveWatchPath(watchPath)
   const snapshots = new Map<string, number | string>()
 
@@ -233,7 +257,7 @@ function snapshotWatchedFiles(watchPath: string, followSymlinks: boolean, respec
     rootRealPath = resolvedWatchPath
   }
 
-  const visibleFiles = respectGitignore ? collectGitVisibleFiles(resolvedWatchPath) : null
+  const visibleFiles = respectGitignore ? readGitVisibleFiles(resolvedWatchPath, gitVisibilityCache) : null
   const includedFiles = visibleFiles === null ? undefined : new Set(visibleFiles)
   collectWatchedFiles(resolvedWatchPath, followSymlinks, rootRealPath, [rootRealPath], snapshots, includedFiles, visibleFiles !== null)
   if (visibleFiles !== null) {
@@ -320,32 +344,37 @@ export async function watch(watchPath: string, debounce = 3, options: WatchOptio
   const runRebuild = options.rebuildCode ?? rebuildCode
   const runNotify = options.notifyOnly ?? notifyOnly
   const loopSignal = createWatchLoopSignal(pollIntervalMs)
+  const respectGitignore = options.respectGitignore ?? false
+  const gitVisibilityCache = respectGitignore ? { visibleFiles: null, expiresAt: 0 } : undefined
   const eventWatcher = startEventWatcher(resolvedWatchPath, () => {
+    if (gitVisibilityCache) {
+      gitVisibilityCache.expiresAt = 0
+    }
     loopSignal.wake()
   })
 
-  let previousSnapshot = snapshotWatchedFiles(resolvedWatchPath, options.followSymlinks ?? false, options.respectGitignore ?? false)
-  let pending = false
-  let lastTriggerAt = 0
-  const changed = new Set<string>()
-
-  output.log(`[madar watch] Watching ${resolvedWatchPath} - abort the process to stop`)
-  output.log(
-    '[madar watch] Supported code, docs, papers, images, local audio/video, and office documents rebuild automatically; manual refresh is only needed for unsupported future formats.',
-  )
-  output.log(`[madar watch] Debounce: ${debounce}s`)
-  if (eventWatcher) {
-    output.log('[madar watch] Filesystem events enabled with polling fallback.')
-  }
-
   try {
+    let previousSnapshot = snapshotWatchedFiles(resolvedWatchPath, options.followSymlinks ?? false, respectGitignore, gitVisibilityCache)
+    let pending = false
+    let lastTriggerAt = 0
+    const changed = new Set<string>()
+
+    output.log(`[madar watch] Watching ${resolvedWatchPath} - abort the process to stop`)
+    output.log(
+      '[madar watch] Supported code, docs, papers, images, local audio/video, and office documents rebuild automatically; manual refresh is only needed for unsupported future formats.',
+    )
+    output.log(`[madar watch] Debounce: ${debounce}s`)
+    if (eventWatcher) {
+      output.log('[madar watch] Filesystem events enabled with polling fallback.')
+    }
+
     while (!options.signal?.aborted) {
       await loopSignal.wait(options.signal)
       if (options.signal?.aborted) {
         break
       }
 
-      const nextSnapshot = snapshotWatchedFiles(resolvedWatchPath, options.followSymlinks ?? false, options.respectGitignore ?? false)
+      const nextSnapshot = snapshotWatchedFiles(resolvedWatchPath, options.followSymlinks ?? false, respectGitignore, gitVisibilityCache)
       const changedBatch = diffSnapshots(previousSnapshot, nextSnapshot)
       previousSnapshot = nextSnapshot
 
@@ -375,6 +404,9 @@ export async function watch(watchPath: string, debounce = 3, options: WatchOptio
         }
       }
     }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    output.error(`[madar watch] Watch stopped: ${message}`)
   } finally {
     try {
       eventWatcher?.close()

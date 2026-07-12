@@ -200,6 +200,107 @@ describe('watch', () => {
     })
   }, 10_000)
 
+  test('caches Git visibility between watch polls', async () => {
+    await withTempDirAsync(async (tempDir) => {
+      writeFileSync(join(tempDir, 'main.ts'), 'export const visible = true\n', 'utf8')
+      const collectGitVisibleFiles = vi.fn(() => [join(tempDir, 'main.ts')])
+
+      vi.resetModules()
+      const actualGitModule = await vi.importActual<typeof import('../../src/shared/git.js')>('../../src/shared/git.js')
+      vi.doMock('../../src/shared/git.js', () => ({ ...actualGitModule, collectGitVisibleFiles }))
+
+      try {
+        const { watch: watchWithMockedGit } = await import('../../src/infrastructure/watch.js')
+        const controller = new AbortController()
+        const watcher = watchWithMockedGit(tempDir, 0.02, {
+          signal: controller.signal,
+          pollIntervalMs: 10,
+          respectGitignore: true,
+          logger: { log() {}, error() {} },
+        })
+
+        await delay(100)
+        controller.abort()
+        await watcher
+
+        expect(collectGitVisibleFiles).toHaveBeenCalledTimes(1)
+      } finally {
+        vi.doUnmock('../../src/shared/git.js')
+        vi.resetModules()
+      }
+    })
+  })
+
+  test('stops cleanly when the initial Git visibility snapshot fails', async () => {
+    await withTempDirAsync(async (tempDir) => {
+      const collectGitVisibleFiles = vi.fn(() => {
+        throw new Error('Git inspection failed')
+      })
+
+      vi.resetModules()
+      const actualGitModule = await vi.importActual<typeof import('../../src/shared/git.js')>('../../src/shared/git.js')
+      vi.doMock('../../src/shared/git.js', () => ({ ...actualGitModule, collectGitVisibleFiles }))
+
+      try {
+        const { watch: watchWithMockedGit } = await import('../../src/infrastructure/watch.js')
+        const logger = { log: vi.fn(), error: vi.fn() }
+
+        await expect(
+          watchWithMockedGit(tempDir, 0.02, {
+            respectGitignore: true,
+            logger,
+          }),
+        ).resolves.toBeUndefined()
+
+        expect(collectGitVisibleFiles).toHaveBeenCalledTimes(1)
+        expect(logger.error).toHaveBeenCalledWith('[madar watch] Watch stopped: Git inspection failed')
+      } finally {
+        vi.doUnmock('../../src/shared/git.js')
+        vi.resetModules()
+      }
+    })
+  })
+
+  test('stops cleanly when a later Git visibility snapshot fails', async () => {
+    await withTempDirAsync(async (tempDir) => {
+      writeFileSync(join(tempDir, 'main.ts'), 'export const visible = true\n', 'utf8')
+      let calls = 0
+      const collectGitVisibleFiles = vi.fn(() => {
+        calls += 1
+        if (calls > 1) {
+          throw new Error('Git inspection failed after startup')
+        }
+        return [join(tempDir, 'main.ts')]
+      })
+
+      vi.resetModules()
+      const actualGitModule = await vi.importActual<typeof import('../../src/shared/git.js')>('../../src/shared/git.js')
+      vi.doMock('../../src/shared/git.js', () => ({ ...actualGitModule, collectGitVisibleFiles }))
+
+      try {
+        const { watch: watchWithMockedGit } = await import('../../src/infrastructure/watch.js')
+        const controller = new AbortController()
+        const logger = { log: vi.fn(), error: vi.fn() }
+        const watcher = watchWithMockedGit(tempDir, 0.02, {
+          signal: controller.signal,
+          pollIntervalMs: 10,
+          respectGitignore: true,
+          logger,
+        })
+        const timeout = setTimeout(() => controller.abort(), 2_000)
+
+        await watcher
+        clearTimeout(timeout)
+
+        expect(collectGitVisibleFiles).toHaveBeenCalledTimes(2)
+        expect(logger.error).toHaveBeenCalledWith('[madar watch] Watch stopped: Git inspection failed after startup')
+      } finally {
+        vi.doUnmock('../../src/shared/git.js')
+        vi.resetModules()
+      }
+    })
+  }, 5_000)
+
   test('triggers rebuild for code-only changes', async () => {
     await withTempDirAsync(async (tempDir) => {
       const controller = new AbortController()

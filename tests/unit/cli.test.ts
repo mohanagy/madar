@@ -2879,8 +2879,14 @@ describe('cli main', () => {
     let watched = false
     let served = false
     let servedOverStdio = false
+    let lastGenerateOptions: Record<string, unknown> | undefined
     let lastWatchOptions: Record<string, unknown> | undefined
     const dependencies = createDependencies()
+    const generateGraph = dependencies.generateGraph
+    dependencies.generateGraph = (path, options) => {
+      lastGenerateOptions = options as Record<string, unknown>
+      return generateGraph(path, options)
+    }
     dependencies.watchGraph = async (_path, _debounce, options) => {
       watched = true
       lastWatchOptions = options as Record<string, unknown>
@@ -2902,6 +2908,8 @@ describe('cli main', () => {
     expect(watched).toBe(true)
     expect(served).toBe(true)
     expect(servedOverStdio).toBe(true)
+    expect(lastGenerateOptions?.noHtml).toBe(true)
+    expect(lastGenerateOptions?.respectGitignore).toBe(true)
     expect(lastWatchOptions?.noHtml).toBe(true)
     expect(lastWatchOptions?.respectGitignore).toBe(true)
     expect(logs[0]).toContain('[madar generate]')
