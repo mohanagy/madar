@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, rmSync, statSync, unlinkSync, watch as createFileSystemWatcher, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, unlinkSync, watch as createFileSystemWatcher, writeFileSync } from 'node:fs'
 import { extname, join, resolve, sep } from 'node:path'
 
 import { AUDIO_EXTENSIONS, CODE_EXTENSIONS, DOC_EXTENSIONS, IMAGE_EXTENSIONS, OFFICE_EXTENSIONS, PAPER_EXTENSIONS, VIDEO_EXTENSIONS } from '../pipeline/detect.js'
@@ -116,6 +116,14 @@ function isWithinRoot(rootRealPath: string, candidateRealPath: string): boolean 
   return candidateRealPath === rootRealPath || candidateRealPath.startsWith(rootPrefix)
 }
 
+function gitignoreFingerprint(filePath: string, modifiedAt: number): string {
+  try {
+    return createHash('sha256').update(readFileSync(filePath)).digest('hex')
+  } catch {
+    return String(Math.round(modifiedAt))
+  }
+}
+
 function collectWatchedFiles(
   directory: string,
   followSymlinks: boolean,
@@ -123,6 +131,7 @@ function collectWatchedFiles(
   ancestorRealPaths: string[],
   snapshots: Map<string, number | string>,
   includedFiles?: ReadonlySet<string>,
+  watchGitignore = false,
   depth = 0,
 ): void {
   if (depth > MAX_SYMLINK_DEPTH || snapshots.size >= MAX_WATCHED_FILES) {
@@ -137,7 +146,8 @@ function collectWatchedFiles(
   }
 
   for (const entry of entries) {
-    if (entry.startsWith('.')) {
+    const isGitignore = watchGitignore && entry === '.gitignore'
+    if (entry.startsWith('.') && !isGitignore) {
       continue
     }
     if (WATCH_IGNORED_DIRECTORIES.has(entry)) {
@@ -153,7 +163,12 @@ function collectWatchedFiles(
     }
 
     if (stats.isDirectory()) {
-      collectWatchedFiles(entryPath, followSymlinks, rootRealPath, ancestorRealPaths, snapshots, includedFiles, depth + 1)
+      collectWatchedFiles(entryPath, followSymlinks, rootRealPath, ancestorRealPaths, snapshots, includedFiles, watchGitignore, depth + 1)
+      continue
+    }
+
+    if (isGitignore && stats.isFile()) {
+      snapshots.set(entryPath, gitignoreFingerprint(entryPath, stats.mtimeMs))
       continue
     }
 
@@ -181,7 +196,7 @@ function collectWatchedFiles(
       }
 
       if (targetStats.isDirectory()) {
-        collectWatchedFiles(entryPath, followSymlinks, rootRealPath, [...ancestorRealPaths, realTarget], snapshots, includedFiles, depth + 1)
+        collectWatchedFiles(entryPath, followSymlinks, rootRealPath, [...ancestorRealPaths, realTarget], snapshots, includedFiles, watchGitignore, depth + 1)
         continue
       }
 
@@ -220,9 +235,9 @@ function snapshotWatchedFiles(watchPath: string, followSymlinks: boolean, respec
 
   const visibleFiles = respectGitignore ? collectGitVisibleFiles(resolvedWatchPath) : null
   const includedFiles = visibleFiles === null ? undefined : new Set(visibleFiles)
-  collectWatchedFiles(resolvedWatchPath, followSymlinks, rootRealPath, [rootRealPath], snapshots, includedFiles)
+  collectWatchedFiles(resolvedWatchPath, followSymlinks, rootRealPath, [rootRealPath], snapshots, includedFiles, visibleFiles !== null)
   if (visibleFiles !== null) {
-    const visibilityFingerprint = createHash('sha256').update(visibleFiles.sort().join('\0')).digest('hex')
+    const visibilityFingerprint = createHash('sha256').update([...visibleFiles].sort().join('\0')).digest('hex')
     snapshots.set(GIT_VISIBILITY_SNAPSHOT_KEY, visibilityFingerprint)
   }
   return snapshots

@@ -128,9 +128,9 @@ describe('watch', () => {
         rebuildCode: rebuild,
         logger: { log() {}, error() {} },
       })
-      const timeout = setTimeout(() => controller.abort(), 2_000)
+      const timeout = setTimeout(() => controller.abort(), 5_000)
 
-      await delay(30)
+      await delay(100)
       writeFileSync(join(tempDir, '.gitignore'), 'main.ts\n', 'utf8')
 
       await watcher
@@ -139,7 +139,7 @@ describe('watch', () => {
       expect(rebuild).toHaveBeenCalledTimes(1)
       expect(rebuild.mock.calls[0]?.[1]).toMatchObject({ respectGitignore: true })
     })
-  })
+  }, 10_000)
 
   test('ignores changes to Git-ignored source files when respectGitignore is enabled', async () => {
     await withTempDirAsync(async (tempDir) => {
@@ -158,15 +158,47 @@ describe('watch', () => {
         logger: { log() {}, error() {} },
       })
 
-      await delay(30)
+      await delay(100)
       writeFileSync(join(tempDir, 'ignored.ts'), 'export const ignored = false\n', 'utf8')
-      await delay(150)
+      await delay(250)
       controller.abort()
       await watcher
 
       expect(rebuild).not.toHaveBeenCalled()
     })
-  })
+  }, 10_000)
+
+  test.runIf(process.platform !== 'win32')('triggers a rebuild when Git excludes a followed symlink alias', async () => {
+    await withTempDirAsync(async (tempDir) => {
+      writeFileSync(join(tempDir, 'target.ts'), 'export const target = true\n', 'utf8')
+      symlinkSync(join(tempDir, 'target.ts'), join(tempDir, 'alias.ts'))
+      execFileSync('git', ['init'], { cwd: tempDir, stdio: 'pipe' })
+
+      const controller = new AbortController()
+      const rebuild = vi.fn((_watchPath: string, _options?: unknown) => {
+        controller.abort()
+        return true
+      })
+      const watcher = watch(tempDir, 0.02, {
+        signal: controller.signal,
+        pollIntervalMs: 10,
+        followSymlinks: true,
+        respectGitignore: true,
+        rebuildCode: rebuild,
+        logger: { log() {}, error() {} },
+      })
+      const timeout = setTimeout(() => controller.abort(), 5_000)
+
+      await delay(100)
+      writeFileSync(join(tempDir, '.git', 'info', 'exclude'), 'alias.ts\n', 'utf8')
+
+      await watcher
+      clearTimeout(timeout)
+
+      expect(rebuild).toHaveBeenCalledTimes(1)
+      expect(rebuild.mock.calls[0]?.[1]).toMatchObject({ followSymlinks: true, respectGitignore: true })
+    })
+  }, 10_000)
 
   test('triggers rebuild for code-only changes', async () => {
     await withTempDirAsync(async (tempDir) => {

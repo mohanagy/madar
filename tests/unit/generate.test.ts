@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -1004,11 +1004,13 @@ describe('generateGraph', () => {
       const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
         nodes: Array<{ source_file?: string }>
       }
-      const sourceFiles = new Set(graphData.nodes.map((node) => node.source_file))
+      const sourceFiles = new Set(
+        graphData.nodes.flatMap((node) => (typeof node.source_file === 'string' ? [normalizeAssertionPath(realpathSync(node.source_file))] : [])),
+      )
 
-      expect(sourceFiles).toContain(join(tempDir, 'tracked.ts'))
-      expect(sourceFiles).toContain(join(tempDir, 'untracked.ts'))
-      expect(sourceFiles).not.toContain(join(tempDir, 'ignored.ts'))
+      expect(sourceFiles).toContain(normalizeAssertionPath(realpathSync(join(tempDir, 'tracked.ts'))))
+      expect(sourceFiles).toContain(normalizeAssertionPath(realpathSync(join(tempDir, 'untracked.ts'))))
+      expect(sourceFiles).not.toContain(normalizeAssertionPath(realpathSync(join(tempDir, 'ignored.ts'))))
     })
   }, generateGraphIntegrationTimeoutMs)
 
