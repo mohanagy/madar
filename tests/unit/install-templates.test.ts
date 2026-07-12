@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 import { agentsInstall, claudeInstall } from '../../src/infrastructure/install.js'
 import { getBuiltInSkillContent } from '../../src/infrastructure/install-skill-templates.js'
 
-const STALE_PHRASES = ['384x', '397x', '897x', '384×', '397×', '897×']
+const STALE_PHRASES = ['384x', '397x', '897x', '384Ã', '397Ã', '897Ã']
 
 function withTempDir(callback: (dir: string) => void): void {
   const dir = mkdtempSync(join(tmpdir(), 'madar-template-'))
@@ -29,8 +29,12 @@ function decodeHookPayload(projectDir: string, settingsJson: string): string {
     ?? parsed.hooks?.PreToolUse?.[0]?.hooks?.[0]?.command
     ?? ''
 
-  if (command === 'node .claude/madar-user-prompt-submit.cjs') {
-    const hookScriptPath = join(projectDir, '.claude', 'madar-user-prompt-submit.cjs')
+  const hookScriptPath = command === 'node .claude/madar-user-prompt-submit.cjs'
+    ? join(projectDir, '.claude', 'madar-user-prompt-submit.cjs')
+    : command.includes('madar-user-prompt-submit.cjs') && command.includes('.codex')
+      ? join(projectDir, '.codex', 'madar-user-prompt-submit.cjs')
+      : undefined
+  if (hookScriptPath) {
     if (!existsSync(hookScriptPath)) {
       return ''
     }
@@ -211,6 +215,14 @@ describe('built-in install templates', () => {
     expect(content).toContain('madar codex uninstall')
     expect(content).toContain('Manual verification')
     expect(content).toContain('Codex limitations')
+    expect(content).toContain('.codex/madar-user-prompt-submit.cjs')
+    expect(content).toContain('.codex/config.toml')
+    expect(content).toContain('UserPromptSubmit')
+    expect(content).toContain('`/hooks`')
+    expect(content).toContain('`/mcp`')
+    expect(content).toContain('`codex mcp list`')
+    expect(content).toContain('guidance, not enforcement')
+    expect(content).toContain('on-disk')
     expect(content).toContain('spawn_agent')
     expect(content).toContain('npx --yes madar --help')
     expect(content).toContain('Only use madar when the task needs local repository source-code context.')
