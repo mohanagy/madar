@@ -3,4 +3,8 @@ reviews:
   auto_review:
     enabled: true
     base_branches:
+      - "^main$"
       - "^next$"
+  # Explicitly override CodeRabbit's default exclusion so dependency-only PRs are reviewed.
+  path_filters:
+    - "**/package-lock.json"
