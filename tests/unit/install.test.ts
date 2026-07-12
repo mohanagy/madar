@@ -726,7 +726,7 @@ describe('install helpers', () => {
       writeFileSync(join(projectDir, 'out', 'graph.json'), '{}', 'utf8')
 
       const legacyPromptMessage =
-        'STOP. This project has a madar knowledge graph. Use the graph tool that matches the question: retrieve for direct codebase questions, relevant_files for where to open first, feature_map for the main areas and entry points, risk_map before editing, implementation_checklist for edit order and validation, and impact for blast radius. Madar answers most codebase questions in 1 focused MCP call instead of 5â10 sequential file reads (3x fewer turns, ~2.8x faster on a real production codebase). Do not use Glob, Grep, Bash, Read, or Agent tools first. Only fall back to raw file tools if the graph tools cannot answer the question or the MCP server is unavailable.'
+        'STOP. This project has a madar knowledge graph. Use the graph tool that matches the question: retrieve for direct codebase questions, relevant_files for where to open first, feature_map for the main areas and entry points, risk_map before editing, implementation_checklist for edit order and validation, and impact for blast radius. Madar answers most codebase questions in 1 focused MCP call instead of 5–10 sequential file reads (3x fewer turns, ~2.8x faster on a real production codebase). Do not use Glob, Grep, Bash, Read, or Agent tools first. Only fall back to raw file tools if the graph tools cannot answer the question or the MCP server is unavailable.'
       const legacyHookCommand = encodeGraphCheckedHookCommand({
         hookSpecificOutput: {
           hookEventName: 'UserPromptSubmit',
