@@ -1223,6 +1223,7 @@ describe('cli main', () => {
     expect(help).toContain('--http')
     expect(help).toContain('--stdio')
     expect(help).toContain('--mcp')
+    expect(help).toContain('codex <install|uninstall>   manage local AGENTS.md + Codex hook/MCP rules')
     expect(help).toContain('query "<question>"')
     expect(help).toContain('diff <baseline-graph.json>')
     expect(help).toContain('--rank-by MODE')
@@ -2592,6 +2593,7 @@ describe('cli main', () => {
     expect(logs[0]).toContain('[madar generate] update completed')
     expect(logs[0]).toContain('graph.json')
     expect(logs[0]).toContain('Semantic anomalies: 2 high-signal item(s)')
+    expect(logs[0]).toContain('madar codex install     # Codex CLI')
   })
 
   it('passes optional export flags through generate commands', async () => {
