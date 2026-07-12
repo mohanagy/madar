@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 import { agentsInstall, claudeInstall } from '../../src/infrastructure/install.js'
 import { getBuiltInSkillContent } from '../../src/infrastructure/install-skill-templates.js'
 
-const STALE_PHRASES = ['384x', '397x', '897x', '384Ã', '397Ã', '897Ã']
+const STALE_PHRASES = ['384x', '397x', '897x', '384×', '397×', '897×']
 
 function withTempDir(callback: (dir: string) => void): void {
   const dir = mkdtempSync(join(tmpdir(), 'madar-template-'))
