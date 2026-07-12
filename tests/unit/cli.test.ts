@@ -900,6 +900,7 @@ describe('cli parser', () => {
       watch: false,
       directed: false,
       followSymlinks: false,
+      respectGitignore: false,
       debounceSeconds: 3,
       noHtml: false,
       wiki: false,
@@ -924,6 +925,7 @@ describe('cli parser', () => {
         '--watch',
         '--directed',
         '--follow-symlinks',
+        '--respect-gitignore',
         '--debounce',
         '1.5',
         '--no-html',
@@ -950,6 +952,7 @@ describe('cli parser', () => {
       watch: true,
       directed: true,
       followSymlinks: true,
+      respectGitignore: true,
       debounceSeconds: 1.5,
       noHtml: true,
       wiki: true,
@@ -972,9 +975,10 @@ describe('cli parser', () => {
   })
 
   it('parses watch args', () => {
-    expect(parseWatchArgs(['src', '--follow-symlinks', '--debounce=2', '--no-html'])).toEqual({
+    expect(parseWatchArgs(['src', '--follow-symlinks', '--respect-gitignore', '--debounce=2', '--no-html'])).toEqual({
       path: 'src',
       followSymlinks: true,
+      respectGitignore: true,
       debounceSeconds: 2,
       noHtml: true,
     })
@@ -1212,6 +1216,7 @@ describe('cli main', () => {
     expect(help).toContain('watch [path]')
     expect(help).toContain('serve [graph.json]')
     expect(help).toContain('--directed')
+    expect(help).toContain('--respect-gitignore')
     expect(help).toContain('--wiki')
     expect(help).toContain('--obsidian')
     expect(help).toContain('--svg')
@@ -2874,8 +2879,14 @@ describe('cli main', () => {
     let watched = false
     let served = false
     let servedOverStdio = false
+    let lastGenerateOptions: Record<string, unknown> | undefined
     let lastWatchOptions: Record<string, unknown> | undefined
     const dependencies = createDependencies()
+    const generateGraph = dependencies.generateGraph
+    dependencies.generateGraph = (path, options) => {
+      lastGenerateOptions = options as Record<string, unknown>
+      return generateGraph(path, options)
+    }
     dependencies.watchGraph = async (_path, _debounce, options) => {
       watched = true
       lastWatchOptions = options as Record<string, unknown>
@@ -2887,7 +2898,7 @@ describe('cli main', () => {
       servedOverStdio = true
     }
 
-    const watchExitCode = await executeCli(['watch', 'src', '--debounce', '1', '--no-html'], io, dependencies)
+    const watchExitCode = await executeCli(['watch', 'src', '--respect-gitignore', '--debounce', '1', '--no-html'], io, dependencies)
     const serveExitCode = await executeCli(['serve', 'out/graph.json', '--port', '0'], io, dependencies)
     const stdioExitCode = await executeCli(['serve', 'out/graph.json', '--mcp'], io, dependencies)
 
@@ -2897,7 +2908,10 @@ describe('cli main', () => {
     expect(watched).toBe(true)
     expect(served).toBe(true)
     expect(servedOverStdio).toBe(true)
+    expect(lastGenerateOptions?.noHtml).toBe(true)
+    expect(lastGenerateOptions?.respectGitignore).toBe(true)
     expect(lastWatchOptions?.noHtml).toBe(true)
+    expect(lastWatchOptions?.respectGitignore).toBe(true)
     expect(logs[0]).toContain('[madar generate]')
   })
 

@@ -82,7 +82,9 @@ Cached `context_pack` explain responses still refresh the current freshness rece
 ```bash
 madar generate .                          # build the graph
 madar generate . --spi                    # framework metadata + disk cache
+madar generate . --respect-gitignore      # exclude files ignored by Git
 madar watch .                             # rebuild on file change
+madar watch . --respect-gitignore         # watch only Git-visible source changes
 madar summary                             # bounded JSON overview
 madar pack "how does auth work?" --task explain --format text
 madar pack "add auth telemetry" --task implement --format json
@@ -112,3 +114,5 @@ On Windows, `compare`, `review-compare`, and benchmark `--exec` templates run un
 Tests, benchmarks, fixtures, mocks, and config files are not hard-ignored. They still get indexed so retrieval can use them when you ask for them, but production/runtime prompts soft-penalize them and honor prompt exclusions like "exclude tests, benchmarks, fixtures".
 
 `.madarignore` adds extra ignore rules, and negated entries such as `!vendor/**` or `!lib/**` can re-include a default hard-ignore when you intentionally want it indexed.
+
+Pass `--respect-gitignore` to additionally restrict generation to Git-tracked files and untracked files that are not ignored by Git. The option applies to `generate --watch` and the standalone `watch` command too. Outside a Git repository, Madar uses its normal discovery rules.

@@ -1,4 +1,5 @@
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -988,6 +989,82 @@ describe('generateGraph', () => {
       }
     })
   })
+
+  test('excludes Git-ignored files when respectGitignore is enabled', () => {
+    withTempDir((tempDir) => {
+      writeFileSync(join(tempDir, '.gitignore'), 'ignored.ts\n', 'utf8')
+      writeFileSync(join(tempDir, 'tracked.ts'), 'export const tracked = true\n', 'utf8')
+      writeFileSync(join(tempDir, 'untracked.ts'), 'export const untracked = true\n', 'utf8')
+      writeFileSync(join(tempDir, 'ignored.ts'), 'export const ignored = true\n', 'utf8')
+      execFileSync('git', ['init'], { cwd: tempDir, stdio: 'pipe' })
+      execFileSync('git', ['add', '.gitignore', 'tracked.ts'], { cwd: tempDir, stdio: 'pipe' })
+
+      generateGraph(tempDir, { noHtml: true, respectGitignore: true })
+
+      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+        nodes: Array<{ source_file?: string }>
+      }
+      const sourceFiles = new Set(
+        graphData.nodes.flatMap((node) => (typeof node.source_file === 'string' ? [normalizeAssertionPath(realpathSync(node.source_file))] : [])),
+      )
+
+      expect(sourceFiles).toContain(normalizeAssertionPath(realpathSync(join(tempDir, 'tracked.ts'))))
+      expect(sourceFiles).toContain(normalizeAssertionPath(realpathSync(join(tempDir, 'untracked.ts'))))
+      expect(sourceFiles).not.toContain(normalizeAssertionPath(realpathSync(join(tempDir, 'ignored.ts'))))
+    })
+  }, generateGraphIntegrationTimeoutMs)
+
+  test('excludes Git-ignored files from a nested generation root', () => {
+    withTempDir((repoRoot) => {
+      const nestedRoot = join(repoRoot, 'workspace')
+      mkdirSync(nestedRoot)
+      writeFileSync(join(repoRoot, '.gitignore'), 'workspace/ignored.ts\n', 'utf8')
+      writeFileSync(join(nestedRoot, 'tracked.ts'), 'export const tracked = true\n', 'utf8')
+      writeFileSync(join(nestedRoot, 'untracked.ts'), 'export const untracked = true\n', 'utf8')
+      writeFileSync(join(nestedRoot, 'ignored.ts'), 'export const ignored = true\n', 'utf8')
+      execFileSync('git', ['init'], { cwd: repoRoot, stdio: 'pipe' })
+      execFileSync('git', ['add', '.gitignore', 'workspace/tracked.ts'], { cwd: repoRoot, stdio: 'pipe' })
+
+      generateGraph(nestedRoot, { noHtml: true, respectGitignore: true })
+
+      const graphData = JSON.parse(readFileSync(join(nestedRoot, 'out', 'graph.json'), 'utf8')) as {
+        nodes: Array<{ source_file?: string }>
+      }
+      const sourceFiles = new Set(
+        graphData.nodes.flatMap((node) => (typeof node.source_file === 'string' ? [normalizeAssertionPath(realpathSync(node.source_file))] : [])),
+      )
+
+      expect(sourceFiles).toContain(normalizeAssertionPath(realpathSync(join(nestedRoot, 'tracked.ts'))))
+      expect(sourceFiles).toContain(normalizeAssertionPath(realpathSync(join(nestedRoot, 'untracked.ts'))))
+      expect(sourceFiles).not.toContain(normalizeAssertionPath(realpathSync(join(nestedRoot, 'ignored.ts'))))
+    })
+  }, generateGraphIntegrationTimeoutMs)
+
+  test.runIf(process.platform !== 'win32')('excludes Git-ignored files through a symlinked generation root', () => {
+    withTempDir((realRoot) => {
+      withTempDir((aliasParent) => {
+        writeFileSync(join(realRoot, '.gitignore'), 'ignored.ts\n', 'utf8')
+        writeFileSync(join(realRoot, 'tracked.ts'), 'export const tracked = true\n', 'utf8')
+        writeFileSync(join(realRoot, 'untracked.ts'), 'export const untracked = true\n', 'utf8')
+        writeFileSync(join(realRoot, 'ignored.ts'), 'export const ignored = true\n', 'utf8')
+        execFileSync('git', ['init'], { cwd: realRoot, stdio: 'pipe' })
+        execFileSync('git', ['add', '.gitignore', 'tracked.ts'], { cwd: realRoot, stdio: 'pipe' })
+
+        const aliasedRoot = join(aliasParent, 'workspace')
+        symlinkSync(realRoot, aliasedRoot, 'dir')
+        generateGraph(aliasedRoot, { noHtml: true, respectGitignore: true })
+
+        const graphData = JSON.parse(readFileSync(join(aliasedRoot, 'out', 'graph.json'), 'utf8')) as {
+          nodes: Array<{ source_file?: string }>
+        }
+        const sourceFiles = new Set(graphData.nodes.map((node) => node.source_file))
+
+        expect(sourceFiles).toContain(join(aliasedRoot, 'tracked.ts'))
+        expect(sourceFiles).toContain(join(aliasedRoot, 'untracked.ts'))
+        expect(sourceFiles).not.toContain(join(aliasedRoot, 'ignored.ts'))
+      })
+    })
+  }, generateGraphIntegrationTimeoutMs)
 
   test('builds graph artifacts for a code corpus', () => {
     withTempDir((tempDir) => {

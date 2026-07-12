@@ -1,13 +1,17 @@
-import { existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, rmSync, statSync, unlinkSync, watch as createFileSystemWatcher, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, unlinkSync, watch as createFileSystemWatcher, writeFileSync } from 'node:fs'
 import { extname, join, resolve, sep } from 'node:path'
 
 import { AUDIO_EXTENSIONS, CODE_EXTENSIONS, DOC_EXTENSIONS, IMAGE_EXTENSIONS, OFFICE_EXTENSIONS, PAPER_EXTENSIONS, VIDEO_EXTENSIONS } from '../pipeline/detect.js'
 import { sidecarAwareFileFingerprint } from '../shared/binary-ingest-sidecar.js'
+import { collectGitVisibleFiles } from '../shared/git.js'
 import { generateGraph } from './generate.js'
 
 export const WATCHED_EXTENSIONS = new Set([...CODE_EXTENSIONS, ...DOC_EXTENSIONS, ...PAPER_EXTENSIONS, ...IMAGE_EXTENSIONS, ...AUDIO_EXTENSIONS, ...VIDEO_EXTENSIONS, ...OFFICE_EXTENSIONS])
 const MAX_SYMLINK_DEPTH = 40
 const MAX_WATCHED_FILES = 10_000
+const GIT_VISIBILITY_SNAPSHOT_KEY = '\0madar:git-visible-files'
+const GIT_VISIBILITY_CACHE_DURATION_MS = 500
 
 const WATCH_IGNORED_DIRECTORIES = new Set(['.git', 'out', 'node_modules', 'dist', 'build', 'target', 'venv', '.venv', 'env', '.env', '__pycache__'])
 
@@ -18,6 +22,7 @@ export interface WatchLogger {
 
 export interface RebuildCodeOptions {
   followSymlinks?: boolean
+  respectGitignore?: boolean
   noHtml?: boolean
   logger?: WatchLogger
 }
@@ -32,6 +37,11 @@ export interface WatchOptions extends RebuildCodeOptions {
 interface WatchLoopSignal {
   wait(signal?: AbortSignal): Promise<void>
   wake(): void
+}
+
+interface GitVisibilityCache {
+  visibleFiles: string[] | null
+  expiresAt: number
 }
 
 function defaultLogger(logger?: WatchLogger): WatchLogger {
@@ -112,12 +122,22 @@ function isWithinRoot(rootRealPath: string, candidateRealPath: string): boolean 
   return candidateRealPath === rootRealPath || candidateRealPath.startsWith(rootPrefix)
 }
 
+function gitignoreFingerprint(filePath: string, modifiedAt: number): string {
+  try {
+    return createHash('sha256').update(readFileSync(filePath)).digest('hex')
+  } catch {
+    return String(Math.round(modifiedAt))
+  }
+}
+
 function collectWatchedFiles(
   directory: string,
   followSymlinks: boolean,
   rootRealPath: string,
   ancestorRealPaths: string[],
-  snapshots: Map<string, number>,
+  snapshots: Map<string, number | string>,
+  includedFiles?: ReadonlySet<string>,
+  watchGitignore = false,
   depth = 0,
 ): void {
   if (depth > MAX_SYMLINK_DEPTH || snapshots.size >= MAX_WATCHED_FILES) {
@@ -132,7 +152,8 @@ function collectWatchedFiles(
   }
 
   for (const entry of entries) {
-    if (entry.startsWith('.')) {
+    const isGitignore = watchGitignore && entry === '.gitignore'
+    if (entry.startsWith('.') && !isGitignore) {
       continue
     }
     if (WATCH_IGNORED_DIRECTORIES.has(entry)) {
@@ -148,7 +169,12 @@ function collectWatchedFiles(
     }
 
     if (stats.isDirectory()) {
-      collectWatchedFiles(entryPath, followSymlinks, rootRealPath, ancestorRealPaths, snapshots, depth + 1)
+      collectWatchedFiles(entryPath, followSymlinks, rootRealPath, ancestorRealPaths, snapshots, includedFiles, watchGitignore, depth + 1)
+      continue
+    }
+
+    if (isGitignore && stats.isFile()) {
+      snapshots.set(entryPath, gitignoreFingerprint(entryPath, stats.mtimeMs))
       continue
     }
 
@@ -176,7 +202,7 @@ function collectWatchedFiles(
       }
 
       if (targetStats.isDirectory()) {
-        collectWatchedFiles(entryPath, followSymlinks, rootRealPath, [...ancestorRealPaths, realTarget], snapshots, depth + 1)
+        collectWatchedFiles(entryPath, followSymlinks, rootRealPath, [...ancestorRealPaths, realTarget], snapshots, includedFiles, watchGitignore, depth + 1)
         continue
       }
 
@@ -185,7 +211,7 @@ function collectWatchedFiles(
       }
 
       const extension = extname(entryPath).toLowerCase()
-      if (WATCHED_EXTENSIONS.has(extension)) {
+      if (WATCHED_EXTENSIONS.has(extension) && (!includedFiles || includedFiles.has(entryPath))) {
         snapshots.set(entryPath, sidecarAwareFileFingerprint(entryPath, targetStats.mtimeMs))
       }
       continue
@@ -196,15 +222,33 @@ function collectWatchedFiles(
     }
 
     const extension = extname(entryPath).toLowerCase()
-    if (WATCHED_EXTENSIONS.has(extension)) {
+    if (WATCHED_EXTENSIONS.has(extension) && (!includedFiles || includedFiles.has(entryPath))) {
       snapshots.set(entryPath, sidecarAwareFileFingerprint(entryPath, stats.mtimeMs))
     }
   }
 }
 
-function snapshotWatchedFiles(watchPath: string, followSymlinks: boolean): Map<string, number> {
+function readGitVisibleFiles(watchPath: string, cache?: GitVisibilityCache): string[] | null {
+  if (cache && cache.expiresAt > Date.now()) {
+    return cache.visibleFiles
+  }
+
+  const visibleFiles = collectGitVisibleFiles(watchPath)
+  if (cache) {
+    cache.visibleFiles = visibleFiles
+    cache.expiresAt = Date.now() + GIT_VISIBILITY_CACHE_DURATION_MS
+  }
+  return visibleFiles
+}
+
+function snapshotWatchedFiles(
+  watchPath: string,
+  followSymlinks: boolean,
+  respectGitignore = false,
+  gitVisibilityCache?: GitVisibilityCache,
+): Map<string, number | string> {
   const resolvedWatchPath = resolveWatchPath(watchPath)
-  const snapshots = new Map<string, number>()
+  const snapshots = new Map<string, number | string>()
 
   let rootRealPath = resolvedWatchPath
   try {
@@ -213,11 +257,17 @@ function snapshotWatchedFiles(watchPath: string, followSymlinks: boolean): Map<s
     rootRealPath = resolvedWatchPath
   }
 
-  collectWatchedFiles(resolvedWatchPath, followSymlinks, rootRealPath, [rootRealPath], snapshots)
+  const visibleFiles = respectGitignore ? readGitVisibleFiles(resolvedWatchPath, gitVisibilityCache) : null
+  const includedFiles = visibleFiles === null ? undefined : new Set(visibleFiles)
+  collectWatchedFiles(resolvedWatchPath, followSymlinks, rootRealPath, [rootRealPath], snapshots, includedFiles, visibleFiles !== null)
+  if (visibleFiles !== null) {
+    const visibilityFingerprint = createHash('sha256').update([...visibleFiles].sort().join('\0')).digest('hex')
+    snapshots.set(GIT_VISIBILITY_SNAPSHOT_KEY, visibilityFingerprint)
+  }
   return snapshots
 }
 
-function diffSnapshots(previous: Map<string, number>, next: Map<string, number>): string[] {
+function diffSnapshots(previous: Map<string, number | string>, next: Map<string, number | string>): string[] {
   const changed = new Set<string>()
 
   for (const [filePath, modifiedAt] of next.entries()) {
@@ -262,6 +312,7 @@ export function rebuildCode(watchPath: string, options: RebuildCodeOptions = {})
     const result = generateGraph(resolvedWatchPath, {
       ...(existsSync(manifestPath) && existsSync(graphPath) ? { update: true } : {}),
       ...(options.followSymlinks !== undefined ? { followSymlinks: options.followSymlinks } : {}),
+      ...(options.respectGitignore !== undefined ? { respectGitignore: options.respectGitignore } : {}),
       ...(options.noHtml !== undefined ? { noHtml: options.noHtml } : {}),
     })
 
@@ -293,32 +344,37 @@ export async function watch(watchPath: string, debounce = 3, options: WatchOptio
   const runRebuild = options.rebuildCode ?? rebuildCode
   const runNotify = options.notifyOnly ?? notifyOnly
   const loopSignal = createWatchLoopSignal(pollIntervalMs)
+  const respectGitignore = options.respectGitignore ?? false
+  const gitVisibilityCache = respectGitignore ? { visibleFiles: null, expiresAt: 0 } : undefined
   const eventWatcher = startEventWatcher(resolvedWatchPath, () => {
+    if (gitVisibilityCache) {
+      gitVisibilityCache.expiresAt = 0
+    }
     loopSignal.wake()
   })
 
-  let previousSnapshot = snapshotWatchedFiles(resolvedWatchPath, options.followSymlinks ?? false)
-  let pending = false
-  let lastTriggerAt = 0
-  const changed = new Set<string>()
-
-  output.log(`[madar watch] Watching ${resolvedWatchPath} - abort the process to stop`)
-  output.log(
-    '[madar watch] Supported code, docs, papers, images, local audio/video, and office documents rebuild automatically; manual refresh is only needed for unsupported future formats.',
-  )
-  output.log(`[madar watch] Debounce: ${debounce}s`)
-  if (eventWatcher) {
-    output.log('[madar watch] Filesystem events enabled with polling fallback.')
-  }
-
   try {
+    let previousSnapshot = snapshotWatchedFiles(resolvedWatchPath, options.followSymlinks ?? false, respectGitignore, gitVisibilityCache)
+    let pending = false
+    let lastTriggerAt = 0
+    const changed = new Set<string>()
+
+    output.log(`[madar watch] Watching ${resolvedWatchPath} - abort the process to stop`)
+    output.log(
+      '[madar watch] Supported code, docs, papers, images, local audio/video, and office documents rebuild automatically; manual refresh is only needed for unsupported future formats.',
+    )
+    output.log(`[madar watch] Debounce: ${debounce}s`)
+    if (eventWatcher) {
+      output.log('[madar watch] Filesystem events enabled with polling fallback.')
+    }
+
     while (!options.signal?.aborted) {
       await loopSignal.wait(options.signal)
       if (options.signal?.aborted) {
         break
       }
 
-      const nextSnapshot = snapshotWatchedFiles(resolvedWatchPath, options.followSymlinks ?? false)
+      const nextSnapshot = snapshotWatchedFiles(resolvedWatchPath, options.followSymlinks ?? false, respectGitignore, gitVisibilityCache)
       const changedBatch = diffSnapshots(previousSnapshot, nextSnapshot)
       previousSnapshot = nextSnapshot
 
@@ -339,6 +395,7 @@ export async function watch(watchPath: string, debounce = 3, options: WatchOptio
         const rebuildOptions: RebuildCodeOptions = {
           logger: output,
           ...(options.followSymlinks !== undefined ? { followSymlinks: options.followSymlinks } : {}),
+          ...(options.respectGitignore !== undefined ? { respectGitignore: options.respectGitignore } : {}),
           ...(options.noHtml !== undefined ? { noHtml: options.noHtml } : {}),
         }
         const rebuilt = runRebuild(resolvedWatchPath, rebuildOptions)
@@ -347,6 +404,9 @@ export async function watch(watchPath: string, debounce = 3, options: WatchOptio
         }
       }
     }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    output.error(`[madar watch] Watch stopped: ${message}`)
   } finally {
     try {
       eventWatcher?.close()

@@ -464,6 +464,7 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --watch              keep watching after the initial build',
     '    --directed           preserve edge direction (source → target) in the built graph',
     '    --follow-symlinks    include in-root symlink targets',
+    '    --respect-gitignore  exclude files ignored by Git (falls back outside Git repositories)',
     '    --debounce S         watch debounce seconds (default 3)',
     '    --include-docs       include .md/.txt/.rst document files (excluded by default)',
     '    --docs               generate module documentation in out/docs/',
@@ -482,6 +483,7 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --output DIR         output directory (default out-federated)',
     '  watch [path]          build once, then watch for code/doc changes',
     '    --follow-symlinks    include in-root symlink targets',
+    '    --respect-gitignore  exclude files ignored by Git (falls back outside Git repositories)',
     '    --debounce S         watch debounce seconds (default 3)',
     '    --no-html            skip graph.html generation during the initial build',
     '  serve [graph.json]    serve graph artifacts over HTTP or stdio',
@@ -622,6 +624,7 @@ function isGenerateLikeArgument(argument: string): boolean {
     argument === '--watch' ||
     argument === '--directed' ||
     argument === '--follow-symlinks' ||
+    argument === '--respect-gitignore' ||
     argument === '--no-html' ||
     argument === '--wiki' ||
     argument === '--obsidian' ||
@@ -1008,6 +1011,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         clusterOnly: options.clusterOnly,
         directed: options.directed,
         followSymlinks: options.followSymlinks,
+        respectGitignore: options.respectGitignore,
         noHtml: options.noHtml,
         wiki: options.wiki,
         obsidian: options.obsidian,
@@ -1045,6 +1049,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
       if (options.watch) {
         await dependencies.watchGraph(options.path, options.debounceSeconds, {
           followSymlinks: options.followSymlinks,
+          respectGitignore: options.respectGitignore,
           noHtml: options.noHtml,
           logger: io,
         })
@@ -1056,12 +1061,14 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
       const options = parseWatchArgs(args)
       const result = dependencies.generateGraph(options.path, {
         followSymlinks: options.followSymlinks,
+        respectGitignore: options.respectGitignore,
         noHtml: options.noHtml,
         onProgress: (step) => io.log(formatProgress(step)),
       })
       io.log(formatGenerateSummary(result))
       await dependencies.watchGraph(options.path, options.debounceSeconds, {
         followSymlinks: options.followSymlinks,
+        respectGitignore: options.respectGitignore,
         noHtml: options.noHtml,
         logger: io,
       })
