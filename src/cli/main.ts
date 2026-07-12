@@ -462,7 +462,7 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --update             rebuild incrementally from the manifest, re-extracting changed files only',
     '    --cluster-only       re-cluster an existing graph.json without re-extraction',
     '    --watch              keep watching after the initial build',
-    '    --directed           preserve edge direction (source â target) in the built graph',
+    '    --directed           preserve edge direction (source → target) in the built graph',
     '    --follow-symlinks    include in-root symlink targets',
     '    --debounce S         watch debounce seconds (default 3)',
     '    --include-docs       include .md/.txt/.rst document files (excluded by default)',
@@ -660,9 +660,9 @@ function isImplicitGenerateCommand(argument: string): boolean {
 function formatGenerateSummary(result: GenerateGraphResult): string {
   const lines = [
     `[madar generate] ${result.mode} completed for ${result.rootPath}`,
-    `- Corpus: ${result.totalFiles} file(s) Â· ~${result.totalWords.toLocaleString()} words`,
+    `- Corpus: ${result.totalFiles} file(s) · ~${result.totalWords.toLocaleString()} words`,
     `- Extracted: ${result.codeFiles} code file(s)` + (result.nonCodeFiles > 0 ? ` (+${result.nonCodeFiles} non-code detected)` : ''),
-    `- Graph: ${result.nodeCount} nodes Â· ${result.edgeCount} edges Â· ${result.communityCount} communities`,
+    `- Graph: ${result.nodeCount} nodes · ${result.edgeCount} edges · ${result.communityCount} communities`,
     ...(typeof result.semanticAnomalyCount === 'number' ? [`- Semantic anomalies: ${result.semanticAnomalyCount} high-signal item(s)`] : []),
     `- Outputs: ${result.graphPath}, ${result.reportPath}`,
   ]
@@ -696,7 +696,7 @@ function formatGenerateSummary(result: GenerateGraphResult): string {
   }
 
   if (result.changedFiles > 0 || result.deletedFiles > 0) {
-    lines.push(`- Incremental: ${result.changedFiles} changed Â· ${result.deletedFiles} deleted`)
+    lines.push(`- Incremental: ${result.changedFiles} changed · ${result.deletedFiles} deleted`)
   }
 
   if (result.warning) {
@@ -1097,7 +1097,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
       const result = federate(graphPaths, { outputDir })
       io.log([
         `[madar federate] merged ${result.repos.length} repos: ${result.repos.join(', ')}`,
-        `- Graph: ${result.totalNodes} nodes Â· ${result.totalEdges} edges Â· ${result.communityCount} communities`,
+        `- Graph: ${result.totalNodes} nodes · ${result.totalEdges} edges · ${result.communityCount} communities`,
         `- Cross-repo edges: ${result.crossRepoEdges} inferred connections`,
         `- Outputs: ${result.graphPath}, ${result.reportPath}`,
       ].join('\n'))
