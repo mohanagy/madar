@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -110,6 +111,63 @@ describe('rebuildCode', () => {
 })
 
 describe('watch', () => {
+  test('triggers a Git-visible rebuild when .gitignore changes', async () => {
+    await withTempDirAsync(async (tempDir) => {
+      writeFileSync(join(tempDir, 'main.ts'), 'export const visible = true\n', 'utf8')
+      execFileSync('git', ['init'], { cwd: tempDir, stdio: 'pipe' })
+
+      const controller = new AbortController()
+      const rebuild = vi.fn((_watchPath: string, _options?: unknown) => {
+        controller.abort()
+        return true
+      })
+      const watcher = watch(tempDir, 0.02, {
+        signal: controller.signal,
+        pollIntervalMs: 10,
+        respectGitignore: true,
+        rebuildCode: rebuild,
+        logger: { log() {}, error() {} },
+      })
+      const timeout = setTimeout(() => controller.abort(), 2_000)
+
+      await delay(30)
+      writeFileSync(join(tempDir, '.gitignore'), 'main.ts\n', 'utf8')
+
+      await watcher
+      clearTimeout(timeout)
+
+      expect(rebuild).toHaveBeenCalledTimes(1)
+      expect(rebuild.mock.calls[0]?.[1]).toMatchObject({ respectGitignore: true })
+    })
+  })
+
+  test('ignores changes to Git-ignored source files when respectGitignore is enabled', async () => {
+    await withTempDirAsync(async (tempDir) => {
+      writeFileSync(join(tempDir, '.gitignore'), 'ignored.ts\n', 'utf8')
+      writeFileSync(join(tempDir, 'main.ts'), 'export const visible = true\n', 'utf8')
+      writeFileSync(join(tempDir, 'ignored.ts'), 'export const ignored = true\n', 'utf8')
+      execFileSync('git', ['init'], { cwd: tempDir, stdio: 'pipe' })
+
+      const controller = new AbortController()
+      const rebuild = vi.fn(() => true)
+      const watcher = watch(tempDir, 0.02, {
+        signal: controller.signal,
+        pollIntervalMs: 10,
+        respectGitignore: true,
+        rebuildCode: rebuild,
+        logger: { log() {}, error() {} },
+      })
+
+      await delay(30)
+      writeFileSync(join(tempDir, 'ignored.ts'), 'export const ignored = false\n', 'utf8')
+      await delay(150)
+      controller.abort()
+      await watcher
+
+      expect(rebuild).not.toHaveBeenCalled()
+    })
+  })
+
   test('triggers rebuild for code-only changes', async () => {
     await withTempDirAsync(async (tempDir) => {
       const controller = new AbortController()

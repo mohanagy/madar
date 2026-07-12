@@ -188,6 +188,7 @@ export interface GenerateCliOptions {
 export interface WatchCliOptions {
   path: string
   followSymlinks: boolean
+  respectGitignore: boolean
   debounceSeconds: number
   noHtml: boolean
 }
@@ -1913,6 +1914,7 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
 export function parseWatchArgs(args: string[]): WatchCliOptions {
   let path = '.'
   let followSymlinks = false
+  let respectGitignore = false
   let debounceSeconds = 3
   let noHtml = false
 
@@ -1924,7 +1926,7 @@ export function parseWatchArgs(args: string[]): WatchCliOptions {
 
     if (!argument.startsWith('--')) {
       if (path !== '.') {
-        throw new UsageError('Usage: madar watch [path] [--follow-symlinks] [--debounce S] [--no-html]')
+        throw new UsageError('Usage: madar watch [path] [--follow-symlinks] [--respect-gitignore] [--debounce S] [--no-html]')
       }
       path = argument
       continue
@@ -1932,6 +1934,11 @@ export function parseWatchArgs(args: string[]): WatchCliOptions {
 
     if (argument === '--follow-symlinks') {
       followSymlinks = true
+      continue
+    }
+
+    if (argument === '--respect-gitignore') {
+      respectGitignore = true
       continue
     }
 
@@ -1955,7 +1962,7 @@ export function parseWatchArgs(args: string[]): WatchCliOptions {
     throw new UsageError(`error: unknown option for watch: ${argument}`)
   }
 
-  return { path, followSymlinks, debounceSeconds, noHtml }
+  return { path, followSymlinks, respectGitignore, debounceSeconds, noHtml }
 }
 
 export function parseServeArgs(args: string[]): ServeCliOptions {

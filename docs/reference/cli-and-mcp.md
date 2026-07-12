@@ -84,6 +84,7 @@ madar generate .                          # build the graph
 madar generate . --spi                    # framework metadata + disk cache
 madar generate . --respect-gitignore      # exclude files ignored by Git
 madar watch .                             # rebuild on file change
+madar watch . --respect-gitignore         # watch only Git-visible source changes
 madar summary                             # bounded JSON overview
 madar pack "how does auth work?" --task explain --format text
 madar pack "add auth telemetry" --task implement --format json
@@ -114,4 +115,4 @@ Tests, benchmarks, fixtures, mocks, and config files are not hard-ignored. They 
 
 `.madarignore` adds extra ignore rules, and negated entries such as `!vendor/**` or `!lib/**` can re-include a default hard-ignore when you intentionally want it indexed.
 
-Pass `--respect-gitignore` to additionally restrict generation to Git-tracked files and untracked files that are not ignored by Git. Outside a Git repository, Madar uses its normal discovery rules.
+Pass `--respect-gitignore` to additionally restrict generation to Git-tracked files and untracked files that are not ignored by Git. The option applies to `generate --watch` and the standalone `watch` command too. Outside a Git repository, Madar uses its normal discovery rules.

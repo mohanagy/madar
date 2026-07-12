@@ -975,9 +975,10 @@ describe('cli parser', () => {
   })
 
   it('parses watch args', () => {
-    expect(parseWatchArgs(['src', '--follow-symlinks', '--debounce=2', '--no-html'])).toEqual({
+    expect(parseWatchArgs(['src', '--follow-symlinks', '--respect-gitignore', '--debounce=2', '--no-html'])).toEqual({
       path: 'src',
       followSymlinks: true,
+      respectGitignore: true,
       debounceSeconds: 2,
       noHtml: true,
     })
@@ -2891,7 +2892,7 @@ describe('cli main', () => {
       servedOverStdio = true
     }
 
-    const watchExitCode = await executeCli(['watch', 'src', '--debounce', '1', '--no-html'], io, dependencies)
+    const watchExitCode = await executeCli(['watch', 'src', '--respect-gitignore', '--debounce', '1', '--no-html'], io, dependencies)
     const serveExitCode = await executeCli(['serve', 'out/graph.json', '--port', '0'], io, dependencies)
     const stdioExitCode = await executeCli(['serve', 'out/graph.json', '--mcp'], io, dependencies)
 
@@ -2902,6 +2903,7 @@ describe('cli main', () => {
     expect(served).toBe(true)
     expect(servedOverStdio).toBe(true)
     expect(lastWatchOptions?.noHtml).toBe(true)
+    expect(lastWatchOptions?.respectGitignore).toBe(true)
     expect(logs[0]).toContain('[madar generate]')
   })
 

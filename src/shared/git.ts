@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
 export function findGitRoot(path: string): string | null {
@@ -24,27 +24,54 @@ export function findGitRoot(path: string): string | null {
 export function collectGitVisibleFiles(rootDir: string): string[] | null {
   const root = resolve(rootDir)
 
+  let repoRoot: string
   try {
-    const repoRoot = execFileSync('git', ['-C', root, 'rev-parse', '--show-toplevel'], {
+    repoRoot = execFileSync('git', ['-C', root, 'rev-parse', '--show-toplevel'], {
       encoding: 'utf8',
       windowsHide: true,
     }).trim()
-    const relativeRoot = relative(repoRoot, root)
+  } catch {
+    if (findGitRoot(root) !== null) {
+      throw new Error(`Unable to determine the Git root for --respect-gitignore: ${root}`)
+    }
+    return null
+  }
+
+  try {
+    const canonicalRoot = realpathSync(root)
+    const canonicalRepoRoot = realpathSync(repoRoot)
+    const relativeRoot = relative(canonicalRepoRoot, canonicalRoot)
     if (relativeRoot === '..' || relativeRoot.startsWith(`..${sep}`) || isAbsolute(relativeRoot)) {
       return null
     }
-    const output = execFileSync(
-      'git',
-      ['-C', repoRoot, 'ls-files', '--cached', '--others', '--exclude-standard', '-z', '--', relativeRoot || '.'],
-      { encoding: 'utf8', maxBuffer: 100 * 1024 * 1024, windowsHide: true },
-    )
+
+    let output: string
+    try {
+      output = execFileSync(
+        'git',
+        ['-C', canonicalRepoRoot, 'ls-files', '--cached', '--others', '--exclude-standard', '-z', '--', `:(literal)${relativeRoot || '.'}`],
+        { encoding: 'utf8', maxBuffer: 100 * 1024 * 1024, windowsHide: true },
+      )
+    } catch {
+      throw new Error(`Unable to list Git-visible files for --respect-gitignore: ${root}`)
+    }
 
     return output
       .split('\0')
       .filter(Boolean)
-      .map((relativePath) => resolve(repoRoot, relativePath))
-  } catch {
-    return null
+      .map((repoRelativePath) => {
+        const canonicalFilePath = resolve(canonicalRepoRoot, repoRelativePath)
+        const rootRelativePath = relative(canonicalRoot, canonicalFilePath)
+        if (rootRelativePath === '..' || rootRelativePath.startsWith(`..${sep}`) || isAbsolute(rootRelativePath)) {
+          throw new Error(`Git returned a path outside the requested root for --respect-gitignore: ${root}`)
+        }
+        return resolve(root, rootRelativePath)
+      })
+  } catch (error) {
+    if (error instanceof Error) {
+      throw error
+    }
+    throw new Error(`Unable to resolve Git-visible files for --respect-gitignore: ${root}`)
   }
 }
 

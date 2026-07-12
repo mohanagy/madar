@@ -1012,6 +1012,32 @@ describe('generateGraph', () => {
     })
   }, generateGraphIntegrationTimeoutMs)
 
+  test.runIf(process.platform !== 'win32')('excludes Git-ignored files through a symlinked generation root', () => {
+    withTempDir((realRoot) => {
+      withTempDir((aliasParent) => {
+        writeFileSync(join(realRoot, '.gitignore'), 'ignored.ts\n', 'utf8')
+        writeFileSync(join(realRoot, 'tracked.ts'), 'export const tracked = true\n', 'utf8')
+        writeFileSync(join(realRoot, 'untracked.ts'), 'export const untracked = true\n', 'utf8')
+        writeFileSync(join(realRoot, 'ignored.ts'), 'export const ignored = true\n', 'utf8')
+        execFileSync('git', ['init'], { cwd: realRoot, stdio: 'pipe' })
+        execFileSync('git', ['add', '.gitignore', 'tracked.ts'], { cwd: realRoot, stdio: 'pipe' })
+
+        const aliasedRoot = join(aliasParent, 'workspace')
+        symlinkSync(realRoot, aliasedRoot, 'dir')
+        generateGraph(aliasedRoot, { noHtml: true, respectGitignore: true })
+
+        const graphData = JSON.parse(readFileSync(join(aliasedRoot, 'out', 'graph.json'), 'utf8')) as {
+          nodes: Array<{ source_file?: string }>
+        }
+        const sourceFiles = new Set(graphData.nodes.map((node) => node.source_file))
+
+        expect(sourceFiles).toContain(join(aliasedRoot, 'tracked.ts'))
+        expect(sourceFiles).toContain(join(aliasedRoot, 'untracked.ts'))
+        expect(sourceFiles).not.toContain(join(aliasedRoot, 'ignored.ts'))
+      })
+    })
+  }, generateGraphIntegrationTimeoutMs)
+
   test('builds graph artifacts for a code corpus', () => {
     withTempDir((tempDir) => {
       writeFileSync(join(tempDir, 'main.py'), 'class Greeter:\n    def hello(self):\n        return 1\n', 'utf8')

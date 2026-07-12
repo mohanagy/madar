@@ -6,6 +6,7 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ### Added
 
+- **Git-aware generation is available with `--respect-gitignore`**: `madar generate`, `madar generate --watch`, and `madar watch` can restrict discovery to tracked files plus non-ignored untracked files. The behavior covers legacy, SPI, incremental, and watch rebuilds while preserving normal discovery outside Git repositories. Closes #535.
 - **Codex CLI now gets a complete project-local integration**: `madar codex install` writes the Madar-owned AGENTS.md profile, a task-applicable `UserPromptSubmit` hook in `.codex/hooks.json`, its generated `.codex/madar-user-prompt-submit.cjs` script, and a marker-owned `[mcp_servers.madar]` block in `.codex/config.toml`. The hook supplies model-visible guidance only for local code tasks; it remains guidance rather than enforcement.
 - **Codex install safety and verification are explicit**: install and uninstall preserve unrelated hooks, TOML, and AGENTS content; `madar doctor` / `madar status` now validate the on-disk Codex hook, script, and MCP entry while documenting that live Codex trust and activation must be confirmed through Codex itself.
 

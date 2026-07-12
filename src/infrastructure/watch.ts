@@ -1,13 +1,16 @@
+import { createHash } from 'node:crypto'
 import { existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, rmSync, statSync, unlinkSync, watch as createFileSystemWatcher, writeFileSync } from 'node:fs'
 import { extname, join, resolve, sep } from 'node:path'
 
 import { AUDIO_EXTENSIONS, CODE_EXTENSIONS, DOC_EXTENSIONS, IMAGE_EXTENSIONS, OFFICE_EXTENSIONS, PAPER_EXTENSIONS, VIDEO_EXTENSIONS } from '../pipeline/detect.js'
 import { sidecarAwareFileFingerprint } from '../shared/binary-ingest-sidecar.js'
+import { collectGitVisibleFiles } from '../shared/git.js'
 import { generateGraph } from './generate.js'
 
 export const WATCHED_EXTENSIONS = new Set([...CODE_EXTENSIONS, ...DOC_EXTENSIONS, ...PAPER_EXTENSIONS, ...IMAGE_EXTENSIONS, ...AUDIO_EXTENSIONS, ...VIDEO_EXTENSIONS, ...OFFICE_EXTENSIONS])
 const MAX_SYMLINK_DEPTH = 40
 const MAX_WATCHED_FILES = 10_000
+const GIT_VISIBILITY_SNAPSHOT_KEY = '\0madar:git-visible-files'
 
 const WATCH_IGNORED_DIRECTORIES = new Set(['.git', 'out', 'node_modules', 'dist', 'build', 'target', 'venv', '.venv', 'env', '.env', '__pycache__'])
 
@@ -118,7 +121,8 @@ function collectWatchedFiles(
   followSymlinks: boolean,
   rootRealPath: string,
   ancestorRealPaths: string[],
-  snapshots: Map<string, number>,
+  snapshots: Map<string, number | string>,
+  includedFiles?: ReadonlySet<string>,
   depth = 0,
 ): void {
   if (depth > MAX_SYMLINK_DEPTH || snapshots.size >= MAX_WATCHED_FILES) {
@@ -149,7 +153,7 @@ function collectWatchedFiles(
     }
 
     if (stats.isDirectory()) {
-      collectWatchedFiles(entryPath, followSymlinks, rootRealPath, ancestorRealPaths, snapshots, depth + 1)
+      collectWatchedFiles(entryPath, followSymlinks, rootRealPath, ancestorRealPaths, snapshots, includedFiles, depth + 1)
       continue
     }
 
@@ -177,7 +181,7 @@ function collectWatchedFiles(
       }
 
       if (targetStats.isDirectory()) {
-        collectWatchedFiles(entryPath, followSymlinks, rootRealPath, [...ancestorRealPaths, realTarget], snapshots, depth + 1)
+        collectWatchedFiles(entryPath, followSymlinks, rootRealPath, [...ancestorRealPaths, realTarget], snapshots, includedFiles, depth + 1)
         continue
       }
 
@@ -186,7 +190,7 @@ function collectWatchedFiles(
       }
 
       const extension = extname(entryPath).toLowerCase()
-      if (WATCHED_EXTENSIONS.has(extension)) {
+      if (WATCHED_EXTENSIONS.has(extension) && (!includedFiles || includedFiles.has(entryPath))) {
         snapshots.set(entryPath, sidecarAwareFileFingerprint(entryPath, targetStats.mtimeMs))
       }
       continue
@@ -197,15 +201,15 @@ function collectWatchedFiles(
     }
 
     const extension = extname(entryPath).toLowerCase()
-    if (WATCHED_EXTENSIONS.has(extension)) {
+    if (WATCHED_EXTENSIONS.has(extension) && (!includedFiles || includedFiles.has(entryPath))) {
       snapshots.set(entryPath, sidecarAwareFileFingerprint(entryPath, stats.mtimeMs))
     }
   }
 }
 
-function snapshotWatchedFiles(watchPath: string, followSymlinks: boolean): Map<string, number> {
+function snapshotWatchedFiles(watchPath: string, followSymlinks: boolean, respectGitignore = false): Map<string, number | string> {
   const resolvedWatchPath = resolveWatchPath(watchPath)
-  const snapshots = new Map<string, number>()
+  const snapshots = new Map<string, number | string>()
 
   let rootRealPath = resolvedWatchPath
   try {
@@ -214,11 +218,17 @@ function snapshotWatchedFiles(watchPath: string, followSymlinks: boolean): Map<s
     rootRealPath = resolvedWatchPath
   }
 
-  collectWatchedFiles(resolvedWatchPath, followSymlinks, rootRealPath, [rootRealPath], snapshots)
+  const visibleFiles = respectGitignore ? collectGitVisibleFiles(resolvedWatchPath) : null
+  const includedFiles = visibleFiles === null ? undefined : new Set(visibleFiles)
+  collectWatchedFiles(resolvedWatchPath, followSymlinks, rootRealPath, [rootRealPath], snapshots, includedFiles)
+  if (visibleFiles !== null) {
+    const visibilityFingerprint = createHash('sha256').update(visibleFiles.sort().join('\0')).digest('hex')
+    snapshots.set(GIT_VISIBILITY_SNAPSHOT_KEY, visibilityFingerprint)
+  }
   return snapshots
 }
 
-function diffSnapshots(previous: Map<string, number>, next: Map<string, number>): string[] {
+function diffSnapshots(previous: Map<string, number | string>, next: Map<string, number | string>): string[] {
   const changed = new Set<string>()
 
   for (const [filePath, modifiedAt] of next.entries()) {
@@ -299,7 +309,7 @@ export async function watch(watchPath: string, debounce = 3, options: WatchOptio
     loopSignal.wake()
   })
 
-  let previousSnapshot = snapshotWatchedFiles(resolvedWatchPath, options.followSymlinks ?? false)
+  let previousSnapshot = snapshotWatchedFiles(resolvedWatchPath, options.followSymlinks ?? false, options.respectGitignore ?? false)
   let pending = false
   let lastTriggerAt = 0
   const changed = new Set<string>()
@@ -320,7 +330,7 @@ export async function watch(watchPath: string, debounce = 3, options: WatchOptio
         break
       }
 
-      const nextSnapshot = snapshotWatchedFiles(resolvedWatchPath, options.followSymlinks ?? false)
+      const nextSnapshot = snapshotWatchedFiles(resolvedWatchPath, options.followSymlinks ?? false, options.respectGitignore ?? false)
       const changedBatch = diffSnapshots(previousSnapshot, nextSnapshot)
       previousSnapshot = nextSnapshot
 

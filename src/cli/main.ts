@@ -483,6 +483,7 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --output DIR         output directory (default out-federated)',
     '  watch [path]          build once, then watch for code/doc changes',
     '    --follow-symlinks    include in-root symlink targets',
+    '    --respect-gitignore  exclude files ignored by Git (falls back outside Git repositories)',
     '    --debounce S         watch debounce seconds (default 3)',
     '    --no-html            skip graph.html generation during the initial build',
     '  serve [graph.json]    serve graph artifacts over HTTP or stdio',
@@ -1060,12 +1061,14 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
       const options = parseWatchArgs(args)
       const result = dependencies.generateGraph(options.path, {
         followSymlinks: options.followSymlinks,
+        respectGitignore: options.respectGitignore,
         noHtml: options.noHtml,
         onProgress: (step) => io.log(formatProgress(step)),
       })
       io.log(formatGenerateSummary(result))
       await dependencies.watchGraph(options.path, options.debounceSeconds, {
         followSymlinks: options.followSymlinks,
+        respectGitignore: options.respectGitignore,
         noHtml: options.noHtml,
         logger: io,
       })
