@@ -95,11 +95,11 @@ const DEDICATED_COMMAND_ROWS: CompatibilityRow[] = [
     platform: 'codex',
     label: 'Codex CLI',
     command: '`madar codex install`',
-    docArtifacts: ['`AGENTS.md`', '`.codex/hooks.json`'],
+    docArtifacts: ['`AGENTS.md`', '`.codex/hooks.json`', '`.codex/madar-user-prompt-submit.cjs`', '`.codex/config.toml`'],
     verify: '`madar doctor` / `madar status`',
-    surface: 'Installed instructions plus a managed Codex hook; use `madar pack` or graph tools instead of live MCP wiring.',
+    surface: 'Installed instructions, a task-applicable `UserPromptSubmit` hook, and a local MCP entry for the Madar server.',
     profile: 'Context-pack-first profile only.',
-    limitation: 'No project-local MCP entry is installed for Codex.',
+    limitation: '`madar doctor` / `madar status` validate on-disk wiring, not Codex live hook trust or MCP activation.',
   },
   {
     platform: 'opencode',
@@ -211,8 +211,8 @@ const INSTALL_COMMAND_ROWS: CompatibilityRow[] = [
     docArtifacts: ['`~/.agents/skills/madar/SKILL.md`'],
     verify: 'Inspect `SKILL.md` and the sibling `.madar_version` marker.',
     surface: 'Bundled home skill only.',
-    profile: 'Home skill guidance only; no repo-local AGENTS.md or hook changes are made.',
-    limitation: 'Use `madar codex install` inside a repo when you want the project-local AGENTS profile and Codex hook.',
+    profile: 'Home skill guidance only; no repo-local AGENTS.md, hook, or MCP changes are made.',
+    limitation: 'Use `madar codex install` inside a repo when you want the project-local AGENTS profile, `UserPromptSubmit` hook, and MCP entry.',
   },
   {
     platform: 'opencode',
@@ -446,7 +446,7 @@ describe('install compatibility artifacts', () => {
 
               if (row.platform === 'codex') {
                 agentsInstall(projectDir, 'codex')
-                expectArtifacts(projectDir, ['AGENTS.md', '.codex/hooks.json'])
+                expectArtifacts(projectDir, ['AGENTS.md', '.codex/hooks.json', '.codex/madar-user-prompt-submit.cjs', '.codex/config.toml'])
                 return
               }
 
