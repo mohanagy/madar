@@ -19,6 +19,7 @@ describe('release documentation', () => {
     expect(releaseDoc).toContain('npm publish --access public --provenance')
     expect(releaseDoc).toContain('docs/security/mcp-threat-model.md')
     expect(releaseDoc).toContain('madar --version')
+    expect(releaseDoc).toContain('.codex/hooks.json')
     expect(releaseDoc).toContain('.codex/madar-user-prompt-submit.cjs')
     expect(releaseDoc).toContain('.codex/config.toml')
     expect(releaseDoc).toContain('`/hooks`')
