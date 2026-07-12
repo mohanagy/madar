@@ -2,6 +2,17 @@
 
 All notable changes to the TypeScript package will be documented in this file.
 
+## [0.29.0] - 2026-07-12
+
+### Added
+
+- **Codex CLI now gets a complete project-local integration**: `madar codex install` writes the Madar-owned AGENTS.md profile, a task-applicable `UserPromptSubmit` hook in `.codex/hooks.json`, its generated `.codex/madar-user-prompt-submit.cjs` script, and a marker-owned `[mcp_servers.madar]` block in `.codex/config.toml`. The hook supplies model-visible guidance only for local code tasks; it remains guidance rather than enforcement.
+- **Codex install safety and verification are explicit**: install and uninstall preserve unrelated hooks, TOML, and AGENTS content; `madar doctor` / `madar status` now validate the on-disk Codex hook, script, and MCP entry while documenting that live Codex trust and activation must be confirmed through Codex itself.
+
+### Changed
+
+- **Codex documentation and CLI handoff are aligned with the live integration**: quickstarts, compatibility docs, built-in skill guidance, release smoke checks, and the post-generate next-command list now point to the Codex hook/MCP setup and its trusted-repository activation steps.
+
 ## [0.28.1] - 2026-06-10
 
 ### Fixed
@@ -256,7 +267,7 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ### Changed
 
-- **Implementation packs are sharper, more explainable, and more testable**: implementation-mode packs now add scored workflow centers, likely edit files, likely test files, explicit Pack Schema v1 sections, budget-aware compression, helper-target preservation when the prompt explicitly names the helper, and the search → expand → promote → attach → refine → render retrieval pipeline metadata.
+- **Implementation packs are sharper, more explainable, and more testable**: implementation-mode packs now add scored workflow centers, likely edit files, likely test files, explicit Pack Schema v1 sections, budget-aware compression, helper-target preservation when the prompt explicitly names the helper, and the search â expand â promote â attach â refine â render retrieval pipeline metadata.
 - **Pack output quality is more stable across adapters and releases**: legacy `text` output stays backward-compatible, the new adapter renderers avoid malformed `: undefined` bullets, and real fixture regressions now lock down the pack surfaces that changed across the recent implementation-pack work.
 
 - **Semantic retrieval is now an explicit opt-in install**: `@huggingface/transformers` no longer ships in the default dependency set for `@lubab/madar`; install it separately to enable `--semantic` / `--rerank`, and madar now surfaces an explicit install hint when that optional package is missing.
@@ -303,7 +314,7 @@ All notable changes to the TypeScript package will be documented in this file.
 ### Changed
 
 - **`execution_slice` runtime answers are much more explicit**: backend runtime packs now add separated `primary_path`, `side_effects`, `terminal_boundaries`, `omitted_branches`, and `phase_coverage` output, so runtime answers no longer flatten every step and branch into one ambiguous list.
-- **Execution-phase expectations are prompt-scoped**: queue/worker/persistence questions no longer invent missing controller or service phases just because the prompt mentions requests, and observed phases now emit in canonical runtime order (`controller` → `service` → `queue` → `worker` → `persistence`).
+- **Execution-phase expectations are prompt-scoped**: queue/worker/persistence questions no longer invent missing controller or service phases just because the prompt mentions requests, and observed phases now emit in canonical runtime order (`controller` â `service` â `queue` â `worker` â `persistence`).
 
 ## [0.24.1] - 2026-05-23
 
@@ -457,62 +468,62 @@ All notable changes to the TypeScript package will be documented in this file.
 ### Changed
 
 - **Context-pack value scoring and diagnostics**: `selection_strategy: 'value-per-token'` now scores optional candidates with deterministic evidence-aware signals instead of candidate order, and compiled packs can carry `selection_diagnostics` with per-candidate score, density, reasons, and penalties.
-- **Operational retrieval levels**: `retrieval_level` now constrains expansion in runtime retrieval instead of acting as metadata only. Level 0 can short-circuit broad retrieval, level 1 stays seed-local, levels 2–4 progressively add direct dependencies, behavior-slice signals, and broader impact/caller context.
+- **Operational retrieval levels**: `retrieval_level` now constrains expansion in runtime retrieval instead of acting as metadata only. Level 0 can short-circuit broad retrieval, level 1 stays seed-local, levels 2â4 progressively add direct dependencies, behavior-slice signals, and broader impact/caller context.
 - **Deterministic compressed representations**: `applyContextPackResolution()` now supports `resolution: 'sketch'`, emitting graph-derived `behavior_sketch` / `dependency_record` representations with `representation_type` and `representation_reason`, falling back to `signature` when graph links are unavailable.
 - **Context-pack MCP surface**: `context_pack` now accepts `resolution: 'signature' | 'sketch'` in addition to the existing modes, and `verbose: true` can include extended `selection_diagnostics` without bloating the default compact response.
 
 ### Docs
 
-- **SPI benchmark harness/report**: `docs/benchmarks/2026-05-11-spi-vs-legacy/` now emits `spi-cold.analysis.json` with selection-strategy comparisons and retrieval-level 1–4 sweeps. The latest bundled fixture run still shows substrate-correct SPI answers plus operational retrieval-level expansion, but no measured `value-per-token` token win over evidence-order on that fixture.
+- **SPI benchmark harness/report**: `docs/benchmarks/2026-05-11-spi-vs-legacy/` now emits `spi-cold.analysis.json` with selection-strategy comparisons and retrieval-level 1â4 sweeps. The latest bundled fixture run still shows substrate-correct SPI answers plus operational retrieval-level expansion, but no measured `value-per-token` token win over evidence-order on that fixture.
 
 ## [0.20.0] - 2026-05-11
 
-> Consolidated release covering both the v0.19-spi-payoff and v0.20-context-compiler milestones. v0.19 was never tagged in isolation — its work (#129, #130, #133) is shipped together with v0.20's items (#131, #132, #134) here.
+> Consolidated release covering both the v0.19-spi-payoff and v0.20-context-compiler milestones. v0.19 was never tagged in isolation â its work (#129, #130, #133) is shipped together with v0.20's items (#131, #132, #134) here.
 
-### Added — v0.19 payoff (SPI substrate becomes measurable)
+### Added â v0.19 payoff (SPI substrate becomes measurable)
 
 - **Hono / Fastify / tRPC / Prisma retrieval boost (#129)**: new framework-shaped questions ("show me hono routes", "what tRPC mutations exist", "find the Prisma client") now route to the structurally-correct substrate nodes via `framework_role` boost. Previously only Express / NestJS / Next.js / React Router / Redux had boost rules.
-- **SPI vs legacy benchmark harness (#130, closed by PR #136)**: `docs/benchmarks/2026-05-11-spi-vs-legacy/` ships a reproducible runner + fixture covering Express / Hono / tRPC / Prisma. First measured numbers on the fixture: **−26% pack tokens with `--spi`**, **−32% graph.json size**, **+40% slower cold build**, **cache-hit rebuilds 27% faster than legacy**. Critically, the legacy pipeline mis-routes substrate-shaped questions (Prisma query → Express middleware nodes; tRPC mutation query → Express routers) which `--spi` corrects.
-- **Metadata-aware framework boost (#133, closed by PR #137)**: extends the boost rules to use `route_path` / `http_method` / `mount_path` / `slice_name` / `procedure_name` / `router_name` substrings — not just the role string. Express was tagging `route_path` but not `http_method` previously; now both flow. Differentiates POST `/users` vs GET `/users`, `authSlice` vs `counterSlice`, `cancelOrder` vs `getUser` procedures. Plus: word-boundary check on http_method (no longer matches "budget"), metadata-only seeding (nodes with no label overlap can still be seeded by metadata), no double-counting of framework_boost in async retrieval.
+- **SPI vs legacy benchmark harness (#130, closed by PR #136)**: `docs/benchmarks/2026-05-11-spi-vs-legacy/` ships a reproducible runner + fixture covering Express / Hono / tRPC / Prisma. First measured numbers on the fixture: **â26% pack tokens with `--spi`**, **â32% graph.json size**, **+40% slower cold build**, **cache-hit rebuilds 27% faster than legacy**. Critically, the legacy pipeline mis-routes substrate-shaped questions (Prisma query â Express middleware nodes; tRPC mutation query â Express routers) which `--spi` corrects.
+- **Metadata-aware framework boost (#133, closed by PR #137)**: extends the boost rules to use `route_path` / `http_method` / `mount_path` / `slice_name` / `procedure_name` / `router_name` substrings â not just the role string. Express was tagging `route_path` but not `http_method` previously; now both flow. Differentiates POST `/users` vs GET `/users`, `authSlice` vs `counterSlice`, `cancelOrder` vs `getUser` procedures. Plus: word-boundary check on http_method (no longer matches "budget"), metadata-only seeding (nodes with no label overlap can still be seeded by metadata), no double-counting of framework_boost in async retrieval.
 
-### Added — v0.20 context compiler
+### Added â v0.20 context compiler
 
 - **Value-per-token selection_strategy (#131)**: new optional input on `compileContextPack`: `selection_strategy: 'evidence-order' | 'value-per-token'`. When `value-per-token`, required-evidence-class candidates are placed first (must-include), then remaining optional candidates compete by density (`score / token_cost`) via `selectByValuePerToken`. Default unchanged.
-- **`signature` resolution level (#132)**: `applyContextPackResolution` now accepts a fourth mode alongside `detail` / `summary` / `mixed`. Signature mode keeps the first 1–2 lines of each snippet (function signature) and drops the body — middle ground when the agent needs param types and return shape but not implementation.
-- **SPI default-readiness decision framework (#134)**: new doc `docs/decisions/2026-05-11-spi-default-readiness.md` codifies the graduation criteria for flipping `--spi` to the default pipeline, plus the post-flip fallback path. Decision framework, not code — the next code change (the actual flip) must meet this checklist.
+- **`signature` resolution level (#132)**: `applyContextPackResolution` now accepts a fourth mode alongside `detail` / `summary` / `mixed`. Signature mode keeps the first 1â2 lines of each snippet (function signature) and drops the body â middle ground when the agent needs param types and return shape but not implementation.
+- **SPI default-readiness decision framework (#134)**: new doc `docs/decisions/2026-05-11-spi-default-readiness.md` codifies the graduation criteria for flipping `--spi` to the default pipeline, plus the post-flip fallback path. Decision framework, not code â the next code change (the actual flip) must meet this checklist.
 
 ### Notes
 
-- v0.20 deliberately defers **#135 task-conditioned slicing v1** — it's a multi-PR substrate (anchor detection, slice walker, task-mode traversal) that doesn't fit a one-shot bundle.
+- v0.20 deliberately defers **#135 task-conditioned slicing v1** â it's a multi-PR substrate (anchor detection, slice walker, task-mode traversal) that doesn't fit a one-shot bundle.
 - The `--spi` flag remains opt-in. The default-readiness doc (#134) defines the path to flipping it.
 
 ## [0.18.0] - 2026-05-11
 
 ### Added
 
-- **`madar generate . --spi`** opt-in flag wires the v0.14–v0.17 SPI substrate into the CLI for the first time. When set, `generateGraph` uses `buildSpiCached` + `projectSpiToExtraction` instead of the legacy `extract()` pipeline. Default behavior is unchanged — pass `--spi` to enable. User-visible wins:
+- **`madar generate . --spi`** opt-in flag wires the v0.14âv0.17 SPI substrate into the CLI for the first time. When set, `generateGraph` uses `buildSpiCached` + `projectSpiToExtraction` instead of the legacy `extract()` pipeline. Default behavior is unchanged â pass `--spi` to enable. User-visible wins:
   - `framework_role` + `framework_metadata` from all 9 framework substrates (NestJS, Express, Next.js, React Router, Redux Toolkit, Hono, Fastify, tRPC, Prisma) flow into the projected `ExtractionData`.
-  - Repeat builds on an unchanged workspace hit the on-disk SPI cache (`out/.spi-cache/`, see #77) — near-zero rebuild time.
+  - Repeat builds on an unchanged workspace hit the on-disk SPI cache (`out/.spi-cache/`, see #77) â near-zero rebuild time.
   - Build notes include `"SPI cache hit (N files, key XXXXXXXX)"` or `"SPI build via projector (reason=...)"` so users can see which path ran.
 
 ### Notes
 
-- v0.18 is the **CLI-integration** release: the substrate work from v0.14–v0.17 is now actually reachable from `madar generate` without writing library code.
-- The default pipeline stays on legacy `extract()` for safety — the SPI parity tests pin shape parity but not strict byte-equivalence. A future release can flip the default once `--spi` has been validated against real workspaces.
+- v0.18 is the **CLI-integration** release: the substrate work from v0.14âv0.17 is now actually reachable from `madar generate` without writing library code.
+- The default pipeline stays on legacy `extract()` for safety â the SPI parity tests pin shape parity but not strict byte-equivalence. A future release can flip the default once `--spi` has been validated against real workspaces.
 
 ## [0.17.0] - 2026-05-11
 
 ### Added
 
 - **Hono framework substrate (#83)**: detects `new Hono()` apps, http-method route registrations (`app.get` / `.post` / etc.) with `route_path` + `http_method` metadata, and `app.use([path], middleware)` registrations with optional `mount_path`. New SpiFrameworkRole values: `hono_app`, `hono_route`, `hono_middleware`.
-- **Fastify framework substrate (#83)**: detects `Fastify()` / `fastify()` factory calls (default and named imports) → `fastify_app`, `app.<method>(path, [opts,] handler)` → `fastify_route` with `route_path` + `http_method`, and `app.register(plugin, { prefix })` → `fastify_plugin` with optional `mount_path`.
-- **tRPC framework substrate (#83)**: detects `<builder>.router({...})` calls → `trpc_router`, and **synthesizes** procedure SpiSymbol entries (`<routerName>.<procedureName>`) for object-literal properties whose value chains end in `.query` / `.mutation` / `.subscription`, with `procedure_name` + `router_name` on framework_metadata. Synthesis mirrors the Express inline-handler pattern from slice 1c-ii.e since tRPC procedures don't have top-level SpiSymbols by default.
-- **Prisma framework substrate (#83)**: detects `new PrismaClient()` bindings → `prisma_client`. Schema.prisma parsing and model-access tagging (`prisma.user.findMany`) intentionally deferred — they're substantial slice trains in their own right.
+- **Fastify framework substrate (#83)**: detects `Fastify()` / `fastify()` factory calls (default and named imports) â `fastify_app`, `app.<method>(path, [opts,] handler)` â `fastify_route` with `route_path` + `http_method`, and `app.register(plugin, { prefix })` â `fastify_plugin` with optional `mount_path`.
+- **tRPC framework substrate (#83)**: detects `<builder>.router({...})` calls â `trpc_router`, and **synthesizes** procedure SpiSymbol entries (`<routerName>.<procedureName>`) for object-literal properties whose value chains end in `.query` / `.mutation` / `.subscription`, with `procedure_name` + `router_name` on framework_metadata. Synthesis mirrors the Express inline-handler pattern from slice 1c-ii.e since tRPC procedures don't have top-level SpiSymbols by default.
+- **Prisma framework substrate (#83)**: detects `new PrismaClient()` bindings â `prisma_client`. Schema.prisma parsing and model-access tagging (`prisma.user.findMany`) intentionally deferred â they're substantial slice trains in their own right.
 
 ### Notes
 
 - v0.17.0 is the **framework-breadth** release: four new TypeScript framework detectors slot cleanly into the existing SPI substrate, bringing total framework coverage to nine (NestJS, Express, Next.js, React Router, Redux Toolkit, Hono, Fastify, tRPC, Prisma).
-- #84 (deeper Python / Go semantic passes) deferred — each language needs its own runtime substrate beyond tree-sitter AST, multi-PR effort. Tree-sitter coverage for Python / Go / Ruby / Java / Rust remains shipped as today.
+- #84 (deeper Python / Go semantic passes) deferred â each language needs its own runtime substrate beyond tree-sitter AST, multi-PR effort. Tree-sitter coverage for Python / Go / Ruby / Java / Rust remains shipped as today.
 
 ## [0.16.0] - 2026-05-11
 
@@ -521,9 +532,9 @@ All notable changes to the TypeScript package will be documented in this file.
 - **Incremental SPI cache (#77)**: new `buildSpiCached(opts)` wraps `buildSpi` with disk-backed all-or-nothing caching. Cache key = sha256 of workspace root + extractor_version + madar_version + tsconfig content + per-file `(path, mtime, size, sha256)`. Repeat builds on an unchanged workspace skip the full ts.Program pass and return the cached SemanticProgramIndex. Public API: `buildSpiCached`, `clearSpiCache`, `BuildSpiCachedOptions`, `BuildSpiCachedResult`, `SpiCacheStats`, `SpiCacheIndex`. Cache lives in `<root>/out/.spi-cache/` and is format-versioned for clean invalidation on future schema changes.
 - **Multi-resolution context (#76)**: new `applyContextPackResolution(nodes, options)` helper adapts a node list to `detail` (no-op), `summary` (drop snippet bodies, keep label/source_file/line_number/match_score), or `mixed` (top-N by match_score get detail, rest summary). New stdio `context_pack` parameter `resolution: 'detail' | 'summary' | 'mixed'` (default `detail`). Response includes `resolution_map` (per-node summary/detail decisions) and `bytes_saved_by_resolution`. Currently supported on the explain branch only; review/impact return a clear `jsonrpcInvalidParams` error when `resolution` is requested with an unsupported task.
 - **Weighted PR-impact coverage scoring (#79)**: new `PrImpactResult` fields:
-  - `coverage_score_weighted` — bridge/god labels count 3x, regular high-impact 1x. Penalises uncoverage of high-centrality hotspots more aggressively than the unweighted score.
-  - `uncovered_hotspot_severities[]` — per-label `'critical'` (bridge/god) / `'high'` (regular high-impact) tier so reviewers can prioritise gaps.
-  - `critical_labels[]` — bridge+god subset of high-impact labels (consumer-readable).
+  - `coverage_score_weighted` â bridge/god labels count 3x, regular high-impact 1x. Penalises uncoverage of high-centrality hotspots more aggressively than the unweighted score.
+  - `uncovered_hotspot_severities[]` â per-label `'critical'` (bridge/god) / `'high'` (regular high-impact) tier so reviewers can prioritise gaps.
+  - `critical_labels[]` â bridge+god subset of high-impact labels (consumer-readable).
   - Compact result recomputes weighted score + severities against the post-compaction review bundle, same correctness contract as the unweighted `coverage_score`.
 - **Cache-aware prompt layout (#80)**: new `stable_prefix_hash` field on every `BuiltContextPrompt` (sha256-16 of `stable_prefix`). Byte-stable across re-runs when the underlying graph/anchor is unchanged; invariant under dynamic-suffix changes. Consumers can compare the hash across calls to verify Anthropic's automatic prompt cache will reuse the prefix.
 
@@ -536,9 +547,9 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ### Added
 
-- **Context-pack quality diagnostics (#78)**: new `computeContextPackDiagnostics(pack)` scorer emits a deterministic `quality_score` (0–1), severity-ordered warnings, and the raw signals used to compute them. Nine weighted rules detect bad runs: missing required evidence (error), missing required semantic categories, zero claims, undersized retrieval, budget underutilization, missing snippets, low average match_score (now firing on the worst case `avg=0`), orphan nodes (entities with no relationships), and absent architectural signals. Wired into the stdio `context_pack` response (explain branch) so callers see quality flags inline.
+- **Context-pack quality diagnostics (#78)**: new `computeContextPackDiagnostics(pack)` scorer emits a deterministic `quality_score` (0â1), severity-ordered warnings, and the raw signals used to compute them. Nine weighted rules detect bad runs: missing required evidence (error), missing required semantic categories, zero claims, undersized retrieval, budget underutilization, missing snippets, low average match_score (now firing on the worst case `avg=0`), orphan nodes (entities with no relationships), and absent architectural signals. Wired into the stdio `context_pack` response (explain branch) so callers see quality flags inline.
 - **Delta-only context packs via stdio (#81)**: new `delta_session_id` parameter on `context_pack` makes subsequent calls in the same session ship only nodes the agent hasn't seen yet, plus `referenced_ids[]` for dropped nodes and a `bytes_saved` estimate. New MCP tool `context_pack_session_reset` clears a delta session. Backed by a per-MCP-process LRU `Map<sessionId, Set<nodeId>>` (256 sessions, same bound as prompt sessions).
-- **Value-per-token budget selector (#74)**: new pure helper `selectByValuePerToken(candidates, options)` ranks candidates by `score / token_cost` density (greedy bounded-knapsack approximation) and returns the prefix that fits within budget. Deterministic tie-breaking (score desc → cost asc → id asc). Returns per-candidate ranking with rank/density/included flags for diagnostics. Available as a building block for future selection refinements in `retrieve.ts`.
+- **Value-per-token budget selector (#74)**: new pure helper `selectByValuePerToken(candidates, options)` ranks candidates by `score / token_cost` density (greedy bounded-knapsack approximation) and returns the prefix that fits within budget. Deterministic tie-breaking (score desc â cost asc â id asc). Returns per-candidate ranking with rank/density/included flags for diagnostics. Available as a building block for future selection refinements in `retrieve.ts`.
 
 ### Notes
 
@@ -549,24 +560,24 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ### Added
 
-- **Semantic Program Index (SPI) v1 substrate (#72)**: complete versioned, typed, deterministic internal representation of TypeScript/Node workspaces — files, symbols (functions/classes/interfaces/types/enums/methods/constants/variables/namespaces), and edges (declares, imports, exports, calls, extends, implements, param_type, return_type, covered_by). Built once via `ts.Program` + the TypeScript type checker, with workspace fingerprinting and deterministic serialization.
+- **Semantic Program Index (SPI) v1 substrate (#72)**: complete versioned, typed, deterministic internal representation of TypeScript/Node workspaces â files, symbols (functions/classes/interfaces/types/enums/methods/constants/variables/namespaces), and edges (declares, imports, exports, calls, extends, implements, param_type, return_type, covered_by). Built once via `ts.Program` + the TypeScript type checker, with workspace fingerprinting and deterministic serialization.
 - **Framework-aware semantic substrates**: five framework detectors layered over SPI:
-  - **NestJS** — modules, controllers, providers, guards/pipes/interceptors, route methods, constructor + `@Inject('TOKEN')` injects edges, dynamic module diagnostics.
-  - **Express** — apps, routers, named/inline route handlers with `route_path` + `http_method` metadata, middleware, **cross-file mount-prefix resolution** via the type checker (alias-following + same-file router lookup), router-root trailing-slash normalization.
-  - **Next.js** — file-convention tagging for `app/*/page.tsx`, `app/*/route.ts`, `app/*/layout.tsx` (+ loading/error/template), `pages/*`, `pages/api/*`, root `middleware.ts`; `route_path` derived from file path with dynamic segments (`[id]` → `:id`), catch-alls (`[...slug]` → `*`), optional catch-alls (`[[...slug]]` → `*?`), route groups (`(auth)` stripped), parallel routes (`@modal` stripped), and intercepting-route prefixes (`(.)/(..)/( ...)` stripped); HTTP-method exports get `http_method` metadata.
-  - **React Router** — `createBrowserRouter` / `createHashRouter` / `createMemoryRouter` / `createStaticRouter` detection, in-config loader/action tagging with `route_path`, nested children path composition, index/pathless layout handling, hoisted same-file route-config arrays (`const routes = [...]; createBrowserRouter(routes)`).
-  - **Redux Toolkit** — `createSlice` (slice_name, reducer_keys, action_creators), `configureStore` (reducer_keys), `createAsyncThunk` (type_prefix), `createApi` / RTK Query (endpoint_names from both concise and block arrow-function bodies), `createSelector` / `createDraftSafeSelector` role tagging.
-- **SPI → ExtractionData projector**: `projectSpiToExtraction(spi, { root })` bridges the SPI substrate to the existing `buildFromJson → cluster → analyze → graph.json` pipeline. Propagates `framework_role` + `framework_metadata` onto every projected `ExtractionNode` so downstream consumers (retrieval, context packs, MCP) can filter by framework without re-parsing.
+  - **NestJS** â modules, controllers, providers, guards/pipes/interceptors, route methods, constructor + `@Inject('TOKEN')` injects edges, dynamic module diagnostics.
+  - **Express** â apps, routers, named/inline route handlers with `route_path` + `http_method` metadata, middleware, **cross-file mount-prefix resolution** via the type checker (alias-following + same-file router lookup), router-root trailing-slash normalization.
+  - **Next.js** â file-convention tagging for `app/*/page.tsx`, `app/*/route.ts`, `app/*/layout.tsx` (+ loading/error/template), `pages/*`, `pages/api/*`, root `middleware.ts`; `route_path` derived from file path with dynamic segments (`[id]` â `:id`), catch-alls (`[...slug]` â `*`), optional catch-alls (`[[...slug]]` â `*?`), route groups (`(auth)` stripped), parallel routes (`@modal` stripped), and intercepting-route prefixes (`(.)/(..)/( ...)` stripped); HTTP-method exports get `http_method` metadata.
+  - **React Router** â `createBrowserRouter` / `createHashRouter` / `createMemoryRouter` / `createStaticRouter` detection, in-config loader/action tagging with `route_path`, nested children path composition, index/pathless layout handling, hoisted same-file route-config arrays (`const routes = [...]; createBrowserRouter(routes)`).
+  - **Redux Toolkit** â `createSlice` (slice_name, reducer_keys, action_creators), `configureStore` (reducer_keys), `createAsyncThunk` (type_prefix), `createApi` / RTK Query (endpoint_names from both concise and block arrow-function bodies), `createSelector` / `createDraftSafeSelector` role tagging.
+- **SPI â ExtractionData projector**: `projectSpiToExtraction(spi, { root })` bridges the SPI substrate to the existing `buildFromJson â cluster â analyze â graph.json` pipeline. Propagates `framework_role` + `framework_metadata` onto every projected `ExtractionNode` so downstream consumers (retrieval, context packs, MCP) can filter by framework without re-parsing.
 - **SPI diff overlay**: `computeSpiDiffOverlay` projects PR-impact deltas through the SPI substrate (slice 3a of #72).
 
 ### Changed
 
-- **Express route_path normalization**: `joinRoutePath` collapses the router-root `'/'` case (`app.use('/api/users', router)` + `router.get('/', ...)` → `/api/users`), matching the legacy extractor's emission. Non-root Express semantics preserved unchanged (`/api` + `/api` → `/api/api`).
+- **Express route_path normalization**: `joinRoutePath` collapses the router-root `'/'` case (`app.use('/api/users', router)` + `router.get('/', ...)` â `/api/users`), matching the legacy extractor's emission. Non-root Express semantics preserved unchanged (`/api` + `/api` â `/api/api`).
 - **Mount-prefix resolution**: workspace-level finalizer (`finalizeExpressMountPrefixes`) runs after per-file detection so cross-file router mounts resolve regardless of file order.
 
 ### Notes
 
-- The SPI substrate is **additive** — the existing `extract()` pipeline remains untouched. Consumers can adopt incrementally via `buildSpi` / `projectSpiToExtraction`.
+- The SPI substrate is **additive** â the existing `extract()` pipeline remains untouched. Consumers can adopt incrementally via `buildSpi` / `projectSpiToExtraction`.
 - Full byte-equivalence with the legacy `extract()` on `examples/demo-repo/out/graph.json` is **not** asserted in this release; the parity tests pin shape parity and the documented taxonomy divergence (legacy emits separate synthesized route nodes, SPI tags handlers directly). Strict byte-equivalence is deferred to a follow-up release.
 
 ## [0.13.3] - 2026-05-10
@@ -617,7 +628,7 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ### Changed
 
-- **Context-plane product surface**: refreshed the README, MCP examples, benchmark docs, and package metadata around the shipped “context plane” / “context compiler” positioning.
+- **Context-plane product surface**: refreshed the README, MCP examples, benchmark docs, and package metadata around the shipped âcontext planeâ / âcontext compilerâ positioning.
 - **Cache-aware compare and review flows**: unified `compare`, `review-compare`, and benchmark reporting around effective token metrics, coverage metadata, and session-aware prompt packaging.
 
 ### Fixed
@@ -629,7 +640,7 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ### Added
 
-- **OpenCode MCP installer support**: `madar opencode install` now wires madar into [OpenCode](https://opencode.ai), extending the agent-installer matrix beyond Claude Code, Cursor, Copilot, Gemini CLI, and Aider. Thanks to [@jamemackson](https://github.com/jamemackson) for contributing this feature in [#54](https://github.com/mohanagy/madar/pull/54) — the first community-contributed agent integration in madar.
+- **OpenCode MCP installer support**: `madar opencode install` now wires madar into [OpenCode](https://opencode.ai), extending the agent-installer matrix beyond Claude Code, Cursor, Copilot, Gemini CLI, and Aider. Thanks to [@jamemackson](https://github.com/jamemackson) for contributing this feature in [#54](https://github.com/mohanagy/madar/pull/54) â the first community-contributed agent integration in madar.
 - **Auto-updating contributors list in README**: a new GitHub Actions workflow (`.github/workflows/contributors.yml`) regenerates the contributors table on every push to `main`, so new contributors are credited automatically without manual README maintenance.
 
 ## [0.10.12] - 2026-05-03
@@ -650,7 +661,7 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ### Changed
 
-- **Hosted benchmark pages redesign**: replaced the auto-generated benchmark UI under `docs/benchmarks/` with a Stripe-inspired design system — Inter (with `ss01` + `tnum` features) on white surfaces, deep-navy headings (`#061b31`) with a `#533afd` purple accent, multi-layer blue-tinted shadows, and a 4–8px border-radius scale. Hero, headline-metric, supporting-metric grid, comparison bars, setup list, terminal reproducer block, evidence file list, and disclosure callout were all rebuilt; bar widths remain mathematically tied to the underlying data.
+- **Hosted benchmark pages redesign**: replaced the auto-generated benchmark UI under `docs/benchmarks/` with a Stripe-inspired design system â Inter (with `ss01` + `tnum` features) on white surfaces, deep-navy headings (`#061b31`) with a `#533afd` purple accent, multi-layer blue-tinted shadows, and a 4â8px border-radius scale. Hero, headline-metric, supporting-metric grid, comparison bars, setup list, terminal reproducer block, evidence file list, and disclosure callout were all rebuilt; bar widths remain mathematically tied to the underlying data.
 
 ### Fixed
 
@@ -738,18 +749,18 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ### Added
 
-- **`MADAR_TOOL_PROFILE` env var**: defaults to `core` (6 tools — `retrieve`, `impact`, `call_chain`, `community_overview`, `pr_impact`, `graph_stats`); set to `full` to opt into the legacy 21-tool surface. The Claude / Cursor / VS Code Copilot install templates now write `env: { MADAR_TOOL_PROFILE: "core" }` into the generated `.mcp.json`. Reduces `cache_creation_input_tokens` per session by roughly 16–22K on a Claude Code session start, flipping a +13% cold-start cost regression to cost parity at typical session lengths.
-- **`compare --baseline-mode native_agent`**: new comparison mode that runs the user's `--exec` command twice — once with `out/`, `.mcp.json`, `CLAUDE.md`, and `.claude/` snapshot-renamed out of the working directory (baseline), once with them restored (madar) — and reports the Anthropic-billed `usage` blocks from `claude --output-format json` verbatim. Atomic rename / try-finally restore guarantees no project state is left behind even if the runner crashes.
+- **`MADAR_TOOL_PROFILE` env var**: defaults to `core` (6 tools â `retrieve`, `impact`, `call_chain`, `community_overview`, `pr_impact`, `graph_stats`); set to `full` to opt into the legacy 21-tool surface. The Claude / Cursor / VS Code Copilot install templates now write `env: { MADAR_TOOL_PROFILE: "core" }` into the generated `.mcp.json`. Reduces `cache_creation_input_tokens` per session by roughly 16â22K on a Claude Code session start, flipping a +13% cold-start cost regression to cost parity at typical session lengths.
+- **`compare --baseline-mode native_agent`**: new comparison mode that runs the user's `--exec` command twice â once with `out/`, `.mcp.json`, `CLAUDE.md`, and `.claude/` snapshot-renamed out of the working directory (baseline), once with them restored (madar) â and reports the Anthropic-billed `usage` blocks from `claude --output-format json` verbatim. Atomic rename / try-finally restore guarantees no project state is left behind even if the runner crashes.
 - **Public benchmark artifact**: committed `docs/benchmarks/2026-04-30-govalidate/` with both raw `claude --output-format json` outputs (with the answer body redacted) and a `verify.sh` reproducer. The README, `examples/why-madar.md`, and the install hook payload all cite numbers that `verify.sh` reproduces from the committed evidence.
 
 ### Changed
 
-- **Honest benchmark numbers**: replaced the previously-published `384×` retrieve-compression headline (and the `397×` / `897×` variants used in internal-only baseline modes) in the README, in `examples/why-madar.md`, and in the `claude install` PreToolUse hook payload with measured numbers from the 2026-04-30 native_agent comparison: **3× fewer turns**, **~2.8× faster**, **2.6× fewer total input tokens**. Documentation now also discloses the cold-start cost premium (~+13% on a single-question session, amortizing on multi-question sessions).
+- **Honest benchmark numbers**: replaced the previously-published `384Ã` retrieve-compression headline (and the `397Ã` / `897Ã` variants used in internal-only baseline modes) in the README, in `examples/why-madar.md`, and in the `claude install` PreToolUse hook payload with measured numbers from the 2026-04-30 native_agent comparison: **3Ã fewer turns**, **~2.8Ã faster**, **2.6Ã fewer total input tokens**. Documentation now also discloses the cold-start cost premium (~+13% on a single-question session, amortizing on multi-question sessions).
 - **Compare summary framing**: when `--baseline-mode` is `full` or `bounded`, the human-readable summary now appends an explicit "synthetic prompt-token estimate (cl100k_base)" disclosure line so a reader cannot mistake the synthetic ratio for an Anthropic-billed measurement. Use `--baseline-mode native_agent` for Anthropic-reported numbers.
 
 ### Fixed
 
-- **Cold-start cost regression on Claude Code session start**: shipping the lean `core` MCP tool profile by default cuts the `cache_creation_input_tokens` overhead by ~16–22K tokens per fresh session. On the 2026-04-30 govalidate measurement this is the difference between madar costing ~13% more than the no-madar baseline and madar amortizing below baseline at multi-question session lengths.
+- **Cold-start cost regression on Claude Code session start**: shipping the lean `core` MCP tool profile by default cuts the `cache_creation_input_tokens` overhead by ~16â22K tokens per fresh session. On the 2026-04-30 govalidate measurement this is the difference between madar costing ~13% more than the no-madar baseline and madar amortizing below baseline at multi-question session lengths.
 
 ## [0.10.0] - 2026-04-30
 
@@ -898,7 +909,7 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ### Improved
 
-- **Retrieve quality — community-label scoring**: nodes in communities whose label matches query tokens get a mild boost, bridging conceptual queries ("pipeline") to implementation nodes in that community
+- **Retrieve quality â community-label scoring**: nodes in communities whose label matches query tokens get a mild boost, bridging conceptual queries ("pipeline") to implementation nodes in that community
 - **Retrieve deduplication**: removed redundant community/label computation calls for faster retrieval
 
 ### Fixed
@@ -910,15 +921,15 @@ All notable changes to the TypeScript package will be documented in this file.
 ### Added
 
 - **`madar eval` command**: measures retrieval quality with recall, MRR, and compression ratio against a gold-standard question set
-- **Progress output during generate**: step-by-step feedback (detect → extract → build → cluster → analyze → export) so users know the tool isn't hanging
+- **Progress output during generate**: step-by-step feedback (detect â extract â build â cluster â analyze â export) so users know the tool isn't hanging
 - **Next-steps guidance after generate**: prints platform install commands (`claude install`, `cursor install`, etc.) after graph generation completes
 - **Pre-install validation**: warns if `out/graph.json` doesn't exist when running `claude install`, `cursor install`, `gemini install`, or `copilot install`
 
 ### Improved
 
-- **Retrieve quality — multi-hop expansion**: expanded from 1-hop to 2-hop neighbor traversal with distance-decaying scores (hop1: 0.5x, hop2: 0.25x), improving recall from 90% to 95% on the built-in benchmark
-- **Retrieve quality — structural signal boosting**: bridge nodes get +0.3 score boost, god nodes get -0.2 penalty, same-community nodes get +0.1 boost
-- **Retrieve quality — TF-IDF token weighting**: rare query tokens now score higher than common ones, with a 0.1 floor to prevent exact matches from being erased
+- **Retrieve quality â multi-hop expansion**: expanded from 1-hop to 2-hop neighbor traversal with distance-decaying scores (hop1: 0.5x, hop2: 0.25x), improving recall from 90% to 95% on the built-in benchmark
+- **Retrieve quality â structural signal boosting**: bridge nodes get +0.3 score boost, god nodes get -0.2 penalty, same-community nodes get +0.1 boost
+- **Retrieve quality â TF-IDF token weighting**: rare query tokens now score higher than common ones, with a 0.1 floor to prevent exact matches from being erased
 
 ### Fixed
 
@@ -929,9 +940,9 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ### Fixed
 
-- **Retrieve-first enforcement**: AI agents were bypassing the `retrieve` MCP tool by dispatching Explore subagents or using Bash/find instead — strengthen CLAUDE.md, AGENTS.md, GEMINI.md, and Cursor rules with blocking "MUST call retrieve FIRST" language
+- **Retrieve-first enforcement**: AI agents were bypassing the `retrieve` MCP tool by dispatching Explore subagents or using Bash/find instead â strengthen CLAUDE.md, AGENTS.md, GEMINI.md, and Cursor rules with blocking "MUST call retrieve FIRST" language
 - **Hook matcher too narrow**: widened from `Glob|Grep` to `Glob|Grep|Bash|Agent|Read` so the PreToolUse hook fires on all codebase exploration tools
-- **Cross-platform hooks**: replaced POSIX `[ -f ... ]` with `node -e` + base64 payloads — hooks now work on macOS, Linux, and Windows (PowerShell/CMD)
+- **Cross-platform hooks**: replaced POSIX `[ -f ... ]` with `node -e` + base64 payloads â hooks now work on macOS, Linux, and Windows (PowerShell/CMD)
 - **Hook idempotency**: fixed hook detection to match on `out` marker instead of hardcoded old matcher string, preventing duplicate hooks on re-install
 
 ## [0.6.2] - 2026-04-24
@@ -948,7 +959,7 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ### Added
 
-- **MCP server config for Cursor and Copilot**: `cursor install` now writes to `.cursor/mcp.json`, `copilot install` writes to `.vscode/mcp.json` — MCP tools work across all three platforms
+- **MCP server config for Cursor and Copilot**: `cursor install` now writes to `.cursor/mcp.json`, `copilot install` writes to `.vscode/mcp.json` â MCP tools work across all three platforms
 
 ## [0.6.1] - 2026-04-24
 
@@ -961,9 +972,9 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ### Added
 
-- **Blast radius analysis**: new `impact` MCP tool — analyzes what breaks if you change a node, with direct/transitive dependents, affected files, and affected communities
-- **Call chain tracing**: new `call_chain` MCP tool — finds all execution paths between two nodes filtered by edge type (calls, imports_from)
-- **PR impact analysis**: new `pr_impact` MCP tool — parses git diff, maps changed files to graph nodes, computes aggregate blast radius across all changes
+- **Blast radius analysis**: new `impact` MCP tool â analyzes what breaks if you change a node, with direct/transitive dependents, affected files, and affected communities
+- **Call chain tracing**: new `call_chain` MCP tool â finds all execution paths between two nodes filtered by edge type (calls, imports_from)
+- **PR impact analysis**: new `pr_impact` MCP tool â parses git diff, maps changed files to graph nodes, computes aggregate blast radius across all changes
 - **Hierarchical community data**: new `community_details` MCP tool with micro/mid/macro zoom levels for token-efficient codebase exploration
 - **Community overview**: new `community_overview` MCP tool for quick overview of all communities
 - **Multi-repo federation**: new `madar federate` command merges graphs from multiple repos into a single queryable super-graph with cross-repo edge inference
@@ -975,8 +986,8 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ### Changed
 
-- **Community naming disambiguation**: duplicate community names now use operation or node-based suffixes (e.g. `Pipeline Extract — Rust`, `Pipeline Extract — Python`) instead of raw community IDs (`Pipeline Extract (27)`)
-- **MCP server auto-start**: `madar claude install` now registers an `mcpServers` entry in `.claude/settings.json` so the MCP server starts automatically when Claude Code opens the project — no manual `serve --stdio` needed
+- **Community naming disambiguation**: duplicate community names now use operation or node-based suffixes (e.g. `Pipeline Extract â Rust`, `Pipeline Extract â Python`) instead of raw community IDs (`Pipeline Extract (27)`)
+- **MCP server auto-start**: `madar claude install` now registers an `mcpServers` entry in `.claude/settings.json` so the MCP server starts automatically when Claude Code opens the project â no manual `serve --stdio` needed
 
 ## [0.5.2] - 2026-04-23
 
@@ -1025,9 +1036,9 @@ All notable changes to the TypeScript package will be documented in this file.
 ### Added
 
 - **Detection hygiene**: corpus traversal now skips common non-semantic directories (`test`, `tests`, `__tests__`, `spec`, `specs`, `e2e`, `cypress`, `playwright`, `coverage`, `storybook-static`, `fixtures`, `__fixtures__`, `__mocks__`, `mocks`) and noise file patterns (test/spec files, stories, mocks, framework config files, setup files) so those do not pollute the knowledge graph
-- **Interactive graph toggle for oversized communities**: summary-only community pages now include an opt-in "⚡ Load interactive graph" button that shows a performance warning dialog and lazy-loads vis-network from CDN on confirmation, with an error recovery handler for offline environments
+- **Interactive graph toggle for oversized communities**: summary-only community pages now include an opt-in "â¡ Load interactive graph" button that shows a performance warning dialog and lazy-loads vis-network from CDN on confirmation, with an error recovery handler for offline environments
 - **React component classification**: uppercase JSX-returning functions in `.tsx`/`.jsx` files are now tagged `node_kind: 'component'` so they are identifiable as React components in the graph
-- **JSX `renders` edges**: component functions now emit outgoing `renders` edges for every uppercase JSX tag they use (e.g. `<Button />` → edge to `Button`), enabling component-level usage graphs in React projects
+- **JSX `renders` edges**: component functions now emit outgoing `renders` edges for every uppercase JSX tag they use (e.g. `<Button />` â edge to `Button`), enabling component-level usage graphs in React projects
 - **Cross-file `renders` stitching**: `renders` proxy edges are resolved across file boundaries onto real imported component nodes so the final graph shows concrete component-to-component relationships rather than unresolved proxies
 
 ### Changed
