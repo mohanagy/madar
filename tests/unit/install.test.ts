@@ -1280,6 +1280,20 @@ describe('install helpers', () => {
     })
   })
 
+  it('does not rewrite an already-current Codex prompt hook', () => {
+    withTempDir((projectDir) => {
+      agentsInstall(projectDir, 'codex')
+      const hooksPath = join(projectDir, '.codex', 'hooks.json')
+      const before = readFileSync(hooksPath, 'utf8')
+
+      const reinstallMessage = agentsInstall(projectDir, 'codex')
+      const after = readFileSync(hooksPath, 'utf8')
+
+      expect(reinstallMessage).toContain('.codex/hooks.json -> UserPromptSubmit hook already registered (no change)')
+      expect(after).toBe(before)
+    })
+  })
+
   it('uses an absolute graph path when the Codex prompt hook runs from a nested directory', () => {
     withTempDir((temporaryDir) => {
       const projectDir = join(temporaryDir, 'repo-$()-`tick`-$HOME')
