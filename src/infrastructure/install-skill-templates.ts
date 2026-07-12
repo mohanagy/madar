@@ -37,47 +37,47 @@ const PLATFORM_KIND_BY_INSTALL_PLATFORM: Record<SkillInstallPlatform, PlatformKi
 const FRONTMATTER: Record<PlatformKind, string> = {
   default: `---
 name: ${SKILL_NAME}
-description: any input (code, docs, papers, images, media) â knowledge graph â clustered communities â HTML + JSON + audit report
+description: any input (code, docs, papers, images, media) → knowledge graph → clustered communities → HTML + JSON + audit report
 trigger: ${SKILL_COMMAND}
 ---`,
   codex: `---
 name: ${SKILL_NAME}
-description: any input (code, docs, papers, images, media) â knowledge graph â clustered communities â HTML + JSON + audit report
+description: any input (code, docs, papers, images, media) → knowledge graph → clustered communities → HTML + JSON + audit report
 trigger: ${SKILL_COMMAND}
 ---`,
   gemini: `---
 name: ${SKILL_NAME}
-description: any input (code, docs, papers, images, media) â knowledge graph â clustered communities â HTML + JSON + audit report
+description: any input (code, docs, papers, images, media) → knowledge graph → clustered communities → HTML + JSON + audit report
 trigger: ${SKILL_COMMAND}
 ---`,
   aider: `---
 name: ${SKILL_NAME}
-description: any input (code, docs, papers, images, media) â knowledge graph â clustered communities â HTML + JSON + audit report
+description: any input (code, docs, papers, images, media) → knowledge graph → clustered communities → HTML + JSON + audit report
 trigger: ${SKILL_COMMAND}
 ---`,
   opencode: `---
 name: ${SKILL_NAME}
-description: any input (code, docs, papers, images, media) â knowledge graph â clustered communities â HTML + JSON + audit report
+description: any input (code, docs, papers, images, media) → knowledge graph → clustered communities → HTML + JSON + audit report
 trigger: ${SKILL_COMMAND}
 ---`,
   claw: `---
 name: ${SKILL_NAME}
-description: any input (code, docs, papers, images, media) â knowledge graph â clustered communities â HTML + JSON + audit report
+description: any input (code, docs, papers, images, media) → knowledge graph → clustered communities → HTML + JSON + audit report
 trigger: ${SKILL_COMMAND}
 ---`,
   droid: `---
 name: ${SKILL_NAME}
-description: any input (code, docs, papers, images, media) â knowledge graph â clustered communities â HTML + JSON + audit report
+description: any input (code, docs, papers, images, media) → knowledge graph → clustered communities → HTML + JSON + audit report
 trigger: ${SKILL_COMMAND}
 ---`,
   trae: `---
 name: ${SKILL_NAME}
-description: any input (code, docs, papers, images, media) â knowledge graph â clustered communities â HTML + JSON + audit report
+description: any input (code, docs, papers, images, media) → knowledge graph → clustered communities → HTML + JSON + audit report
 trigger: ${SKILL_COMMAND}
 ---`,
   windows: `---
 name: ${SKILL_NAME}
-description: any input (code, docs, papers, images, media) â knowledge graph â clustered communities â HTML + JSON + audit report
+description: any input (code, docs, papers, images, media) → knowledge graph → clustered communities → HTML + JSON + audit report
 trigger: ${SKILL_COMMAND}
 ---`,
 }
@@ -115,9 +115,9 @@ ${CODE_BLOCK_END}
 ${SKILL_NAME} is built around local codebase understanding: point it at a repository or workspace and get a structured knowledge graph that helps AI coding agents understand, change, review, debug, and validate code with evidence.
 
 Three things it does that an assistant alone cannot:
-1. **Persistent graph** â relationships are stored in ${CODE_SPAN_START}out/graph.json${CODE_SPAN_END} and survive across sessions.
-2. **Honest audit trail** â every edge is tagged EXTRACTED, INFERRED, or AMBIGUOUS.
-3. **Cross-document surprise** â community detection exposes connections across files that users often would not ask for directly.
+1. **Persistent graph** — relationships are stored in ${CODE_SPAN_START}out/graph.json${CODE_SPAN_END} and survive across sessions.
+2. **Honest audit trail** — every edge is tagged EXTRACTED, INFERRED, or AMBIGUOUS.
+3. **Cross-document surprise** — community detection exposes connections across files that users often would not ask for directly.
 
 Use it for:
 - a codebase you are new to
@@ -195,7 +195,7 @@ If this installation does not yet expose a top-level TypeScript detect/build com
 Never fall back to Python.
 Do not print the JSON directly; present a concise summary instead:
 
-- Corpus: X files Â· ~Y words
+- Corpus: X files · ~Y words
 - code/docs/papers/images/audio/video counts
 
 If ${CODE_SPAN_START}total_files${CODE_SPAN_END} is 0, stop.
@@ -386,12 +386,12 @@ Generate HTML by default unless ${CODE_SPAN_START}--no-viz${CODE_SPAN_END} was g
 Generate Obsidian only when explicitly requested.
 
 Optional exports:
-- ${CODE_SPAN_START}--directed${CODE_SPAN_END} â preserve edge direction in ${CODE_SPAN_START}graph.json${CODE_SPAN_END}, GraphML, queries, and shortest-path traversal while keeping community detection on an undirected connectivity view
-- ${CODE_SPAN_START}--neo4j${CODE_SPAN_END} â Cypher file
-- ${CODE_SPAN_START}--neo4j-push${CODE_SPAN_END} â direct push
-- ${CODE_SPAN_START}--svg${CODE_SPAN_END} â SVG
-- ${CODE_SPAN_START}--graphml${CODE_SPAN_END} â GraphML
-- ${CODE_SPAN_START}--mcp${CODE_SPAN_END} â start the TypeScript stdio runtime with a minimal MCP-compatible prompt/resource/tool surface
+- ${CODE_SPAN_START}--directed${CODE_SPAN_END} → preserve edge direction in ${CODE_SPAN_START}graph.json${CODE_SPAN_END}, GraphML, queries, and shortest-path traversal while keeping community detection on an undirected connectivity view
+- ${CODE_SPAN_START}--neo4j${CODE_SPAN_END} → Cypher file
+- ${CODE_SPAN_START}--neo4j-push${CODE_SPAN_END} → direct push
+- ${CODE_SPAN_START}--svg${CODE_SPAN_END} → SVG
+- ${CODE_SPAN_START}--graphml${CODE_SPAN_END} → GraphML
+- ${CODE_SPAN_START}--mcp${CODE_SPAN_END} → start the TypeScript stdio runtime with a minimal MCP-compatible prompt/resource/tool surface
 
 ### Step 7 - Benchmark and cleanup
 
@@ -423,14 +423,14 @@ function subcommandSection(kind: PlatformKind): string {
                   : 'CLAUDE.md / AGENTS.md'
   return `## Subcommands
 
-- ${CODE_SPAN_START}${SKILL_COMMAND} query${CODE_SPAN_END} â choose BFS by default, DFS with ${CODE_SPAN_START}--dfs${CODE_SPAN_END}, answer only from the graph, and save the answer back with ${CODE_SPAN_START}save-result${CODE_SPAN_END}.
-- ${CODE_SPAN_START}${SKILL_COMMAND} path${CODE_SPAN_END} â find the shortest path between two concepts, explain each hop, then save the explanation back.
-- ${CODE_SPAN_START}${SKILL_COMMAND} explain${CODE_SPAN_END} â explain one node and its neighborhood using graph evidence only.
-- ${CODE_SPAN_START}${SKILL_COMMAND} --update${CODE_SPAN_END} â incremental re-extraction; skip semantic work when all changed files are code.
-- ${CODE_SPAN_START}${SKILL_COMMAND} --cluster-only${CODE_SPAN_END} â re-cluster an existing graph.
-- ${CODE_SPAN_START}${SKILL_COMMAND} --watch${CODE_SPAN_END} â supported code, docs, papers, images, local audio/video, and office documents trigger automatic rebuilds; manual refresh is only needed for unsupported future formats.
-- ${CODE_SPAN_START}madar hook install|uninstall|status${CODE_SPAN_END} â manage git hooks for rebuild reminders.
-- ${CODE_SPAN_START}madar claude install${CODE_SPAN_END} or the platform-specific installer â write always-on instructions to ${localConfigTarget}.
+- ${CODE_SPAN_START}${SKILL_COMMAND} query${CODE_SPAN_END} — choose BFS by default, DFS with ${CODE_SPAN_START}--dfs${CODE_SPAN_END}, answer only from the graph, and save the answer back with ${CODE_SPAN_START}save-result${CODE_SPAN_END}.
+- ${CODE_SPAN_START}${SKILL_COMMAND} path${CODE_SPAN_END} — find the shortest path between two concepts, explain each hop, then save the explanation back.
+- ${CODE_SPAN_START}${SKILL_COMMAND} explain${CODE_SPAN_END} — explain one node and its neighborhood using graph evidence only.
+- ${CODE_SPAN_START}${SKILL_COMMAND} --update${CODE_SPAN_END} — incremental re-extraction; skip semantic work when all changed files are code.
+- ${CODE_SPAN_START}${SKILL_COMMAND} --cluster-only${CODE_SPAN_END} — re-cluster an existing graph.
+- ${CODE_SPAN_START}${SKILL_COMMAND} --watch${CODE_SPAN_END} — supported code, docs, papers, images, local audio/video, and office documents trigger automatic rebuilds; manual refresh is only needed for unsupported future formats.
+- ${CODE_SPAN_START}madar hook install|uninstall|status${CODE_SPAN_END} — manage git hooks for rebuild reminders.
+- ${CODE_SPAN_START}madar claude install${CODE_SPAN_END} or the platform-specific installer — write always-on instructions to ${localConfigTarget}.
 `
 }
 
