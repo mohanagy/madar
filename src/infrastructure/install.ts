@@ -422,7 +422,7 @@ ${renderMarkdownMcpRoutingTable()}
 4. **${strictNonMadarMcpRule(true)}**
 5. **${strictSkillOverrideRule(true)}**
 6. **Only fall back to raw file tools** if the graph tools cannot answer the question or the MCP server is unavailable. ${strictGraphReportFallbackRule(true)}
-7. **Do NOT dispatch Explore or research agents** for codebase questions â the knowledge graph already has the structural context they would spend tokens discovering.
+7. **Do NOT dispatch Explore or research agents** for codebase questions — the knowledge graph already has the structural context they would spend tokens discovering.
 `
 
 const STRICT_CLAUDE_MD_SECTION = `${SECTION_MARKER}
@@ -625,7 +625,7 @@ export const MadarPlugin = async ({ directory }) => {
 `
 
 const CURSOR_RULE = `---
-description: madar knowledge graph â MUST use madar MCP tools before searching files
+description: madar knowledge graph — MUST use madar MCP tools before searching files
 alwaysApply: true
 ---
 
@@ -642,7 +642,7 @@ ${renderMarkdownMcpRoutingTable()}
 `
 
 const STRICT_CURSOR_RULE = `---
-description: madar strict compact MCP mode â use one context pack before broader exploration
+description: madar strict compact MCP mode — use one context pack before broader exploration
 alwaysApply: true
 ---
 
