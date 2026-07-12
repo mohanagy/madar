@@ -2212,10 +2212,16 @@ function installCodexHook(projectDir: string): string {
 
   const filteredUserPromptSubmit = userPromptSubmit.filter((hook) => !isMadarCodexPromptHook(hook))
   const filteredPreToolUse = preToolUse.filter((hook) => !isMadarCodexLegacyHook(hook))
-  const removedModernHooks = filteredUserPromptSubmit.length !== userPromptSubmit.length
   const removedLegacyHooks = filteredPreToolUse.length !== preToolUse.length
-  const existingModernHook = userPromptSubmit.find((hook) => isMadarCodexPromptHook(hook))
-  const modernHookIsCurrent = existingModernHook !== undefined && JSON.stringify(existingModernHook) === JSON.stringify(nextHook)
+  const managedModernHooks = userPromptSubmit.filter((hook) => isMadarCodexPromptHook(hook))
+  const existingModernHook = managedModernHooks[0]
+  const modernHookIsCurrent = managedModernHooks.length === 1
+    && existingModernHook !== undefined
+    && JSON.stringify(existingModernHook) === JSON.stringify(nextHook)
+
+  if (modernHookIsCurrent && !removedLegacyHooks) {
+    return '.codex/hooks.json -> UserPromptSubmit hook already registered (no change)'
+  }
 
   hooks.UserPromptSubmit = [...filteredUserPromptSubmit, nextHook]
   if (Object.hasOwn(hooks, 'PreToolUse')) {
@@ -2224,10 +2230,6 @@ function installCodexHook(projectDir: string): string {
     } else {
       hooks.PreToolUse = filteredPreToolUse
     }
-  }
-
-  if (modernHookIsCurrent && !removedLegacyHooks && !removedModernHooks) {
-    return '.codex/hooks.json -> UserPromptSubmit hook already registered (no change)'
   }
 
   writeJson(hooksPath, hooksConfig)
