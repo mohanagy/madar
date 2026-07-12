@@ -2,9 +2,16 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 import {
+  CODEX_MCP_CONFIG_RELATIVE_PATH,
+  CODEX_PROMPT_HOOK_SCRIPT_RELATIVE_PATH,
   OPENCODE_MCP_SERVER_NAME,
   OPENCODE_PLUGIN_RELATIVE_PATH,
-  isMadarCodexHook,
+  codexPromptHookCommand,
+  hasManagedCodexPromptHookScript,
+  isMadarCodexMcpConfig,
+  isMadarCodexLegacyHook,
+  isMadarCodexPromptHook,
+  isCurrentMadarCodexPromptHook,
   readOpencodeConfig,
   resolveOpencodeConfigPath,
 } from './install.js'
@@ -170,7 +177,7 @@ function findHookEntry(settingsPath: string, hookName: 'PreToolUse' | 'BeforeToo
   return hookEntries.some(containsOutPathReference)
 }
 
-function findCodexHookEntry(settingsPath: string): boolean {
+function findCodexHookEntry(settingsPath: string, expectedCommand: string): boolean {
   const settings = readJsonObject(settingsPath)
   if (!settings) {
     return false
@@ -181,12 +188,24 @@ function findCodexHookEntry(settingsPath: string): boolean {
     return false
   }
 
-  const hookEntries = hooks.PreToolUse
+  const hookEntries = hooks.UserPromptSubmit
   if (!Array.isArray(hookEntries)) {
     return false
   }
 
-  return hookEntries.some(isMadarCodexHook)
+  const managedPromptHooks = hookEntries.filter(isMadarCodexPromptHook)
+  const currentManagedPromptHooks = managedPromptHooks.filter((hook) => isCurrentMadarCodexPromptHook(hook, expectedCommand))
+  const legacyPreToolUse = Array.isArray(hooks.PreToolUse) && hooks.PreToolUse.some(isMadarCodexLegacyHook)
+
+  return managedPromptHooks.length === 1 && currentManagedPromptHooks.length === 1 && !legacyPreToolUse
+}
+
+function hasManagedCodexMcpConfig(configPath: string, expectedGraphPath: string): boolean {
+  if (!existsSync(configPath)) {
+    return false
+  }
+
+  return isMadarCodexMcpConfig(readFileSync(configPath, 'utf8'), expectedGraphPath)
 }
 
 function containsOutPathReference(value: unknown): boolean {
@@ -459,10 +478,17 @@ export function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorRep
 
   const codexSkillConfigured = existsSync(resolve(projectDir, CODEX_SKILL_PATH))
   const codexInstructionsConfigured = fileContainsSnippets(agentsPath, CODEX_INSTRUCTION_SNIPPETS)
-  const codexHookConfigured = findCodexHookEntry(resolve(projectDir, '.codex', 'hooks.json'))
+  const codexPromptHookScriptPath = resolve(projectDir, CODEX_PROMPT_HOOK_SCRIPT_RELATIVE_PATH)
+  const codexHookConfigured =
+    hasManagedCodexPromptHookScript(codexPromptHookScriptPath)
+    && findCodexHookEntry(resolve(projectDir, '.codex', 'hooks.json'), codexPromptHookCommand())
+  const codexMcpConfigured = hasManagedCodexMcpConfig(
+    resolve(projectDir, CODEX_MCP_CONFIG_RELATIVE_PATH),
+    resolvedGraphPath,
+  )
   const codexStatus = optionalAgentStatus(
-    [codexSkillConfigured, codexInstructionsConfigured, codexHookConfigured],
-    [codexInstructionsConfigured, codexHookConfigured],
+    [codexSkillConfigured, codexInstructionsConfigured, codexHookConfigured, codexMcpConfigured],
+    [codexInstructionsConfigured, codexHookConfigured, codexMcpConfigured],
   )
 
   const opencodeSkillConfigured = existsSync(resolve(projectDir, OPENCODE_SKILL_PATH))
@@ -521,7 +547,7 @@ export function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorRep
     agents.push({
       label: 'codex',
       status: codexStatus,
-      detail: `instructions=${codexInstructionsConfigured ? 'yes' : 'no'}, hook=${codexHookConfigured ? 'yes' : 'no'}`,
+      detail: `instructions=${codexInstructionsConfigured ? 'yes' : 'no'}, hook=${codexHookConfigured ? 'yes' : 'no'}, mcp=${codexMcpConfigured ? 'yes' : 'no'}`,
     })
   }
 

@@ -603,7 +603,7 @@ export function formatHelp(binaryName = 'madar'): string {
     '  cursor <install|uninstall> [--profile core|full|strict]  manage local Cursor madar rules',
     '  gemini <install|uninstall> [--profile core|full|strict]  manage local GEMINI.md rules and Gemini CLI hook config',
     '  copilot <install|uninstall> [--profile core|full|strict] install or remove the GitHub Copilot skill',
-    '  codex <install|uninstall>   manage local AGENTS.md + Codex hook rules',
+    '  codex <install|uninstall>   manage local AGENTS.md + Codex hook/MCP rules',
     '  opencode <install|uninstall> manage local AGENTS.md + OpenCode plugin/MCP rules',
     '  claw <install|uninstall>    manage local AGENTS.md rules',
     '  droid <install|uninstall>   manage local AGENTS.md rules',
@@ -710,6 +710,7 @@ function formatGenerateSummary(result: GenerateGraphResult): string {
   lines.push('')
   lines.push('Next: connect your AI assistant:')
   lines.push('  madar claude install    # Claude Code')
+  lines.push('  madar codex install     # Codex CLI')
   lines.push('  madar cursor install    # Cursor')
   lines.push('  madar copilot install   # GitHub Copilot')
   lines.push('  madar gemini install    # Gemini CLI')

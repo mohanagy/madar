@@ -331,7 +331,7 @@ If an auto-activated skill recommends broad \`Read\` / \`Grep\` / \`Glob\` explo
 Only widen exploration for deeper verification when \`evidence.agent_directive\` is \`explore_with_caution\`; if \`missing_context\` or \`missing_semantic\` is still non-empty, use at most ONE targeted \`Glob\` or \`Grep\` scoped to a single directory before answering.
 Do not open ${CODE_SPAN_START}out/GRAPH_REPORT.md${CODE_SPAN_END} unless the context pack or graph tools are unavailable, stale, or insufficient.
 
-Install or remove the always-on Codex project profile with:
+Install or remove the project-local Codex profile with:
 
 ${CODE_BLOCK_START}bash
 madar codex install
@@ -341,12 +341,14 @@ ${CODE_BLOCK_END}
 Manual verification:
 1. Run ${CODE_SPAN_START}madar generate .${CODE_SPAN_END}.
 2. Run ${CODE_SPAN_START}madar codex install${CODE_SPAN_END}.
-3. Confirm ${CODE_SPAN_START}AGENTS.md${CODE_SPAN_END} contains this context-pack-first rule and ${CODE_SPAN_START}.codex/hooks.json${CODE_SPAN_END} contains the madar hook.
-4. Run ${CODE_SPAN_START}madar codex uninstall${CODE_SPAN_END} and confirm unrelated AGENTS.md or hook content remains.
+3. Confirm ${CODE_SPAN_START}AGENTS.md${CODE_SPAN_END}, ${CODE_SPAN_START}.codex/hooks.json${CODE_SPAN_END}, ${CODE_SPAN_START}.codex/madar-user-prompt-submit.cjs${CODE_SPAN_END}, and ${CODE_SPAN_START}.codex/config.toml${CODE_SPAN_END} exist. Madar owns only its AGENTS section, hook, hook script, and marked ${CODE_SPAN_START}[mcp_servers.madar]${CODE_SPAN_END} block.
+4. Only in a repository you trust, restart Codex, use ${CODE_SPAN_START}/hooks${CODE_SPAN_END} to review and trust the project ${CODE_SPAN_START}UserPromptSubmit${CODE_SPAN_END} hook, then use ${CODE_SPAN_START}/mcp${CODE_SPAN_END} or ${CODE_SPAN_START}codex mcp list${CODE_SPAN_END} to verify the local Madar MCP server.
+5. Run ${CODE_SPAN_START}madar doctor${CODE_SPAN_END} / ${CODE_SPAN_START}madar status${CODE_SPAN_END} to validate the on-disk install, then run ${CODE_SPAN_START}madar codex uninstall${CODE_SPAN_END} and confirm unrelated AGENTS.md, hook, and TOML content remains.
 
 Codex limitations:
 - Automated tests do not require the Codex binary; they verify generated text and hook config.
-- The Codex hook can remind before Bash when ${CODE_SPAN_START}out/graph.json${CODE_SPAN_END} exists, but AGENTS.md remains the durable always-on instruction.
+- The ${CODE_SPAN_START}UserPromptSubmit${CODE_SPAN_END} hook provides model-visible guidance only for local code tasks. It is guidance, not enforcement, and Codex must trust the hook before it can run.
+- ${CODE_SPAN_START}madar doctor${CODE_SPAN_END} / ${CODE_SPAN_START}madar status${CODE_SPAN_END} validate on-disk files; they do not prove live Codex hook trust or MCP activation.
 - Context packs narrow first-pass discovery. They do not replace targeted reads, tests, or review for code changes.
 `
 }

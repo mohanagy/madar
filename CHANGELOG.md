@@ -2,6 +2,17 @@
 
 All notable changes to the TypeScript package will be documented in this file.
 
+## [0.29.0] - 2026-07-12
+
+### Added
+
+- **Codex CLI now gets a complete project-local integration**: `madar codex install` writes the Madar-owned AGENTS.md profile, a task-applicable `UserPromptSubmit` hook in `.codex/hooks.json`, its generated `.codex/madar-user-prompt-submit.cjs` script, and a marker-owned `[mcp_servers.madar]` block in `.codex/config.toml`. The hook supplies model-visible guidance only for local code tasks; it remains guidance rather than enforcement.
+- **Codex install safety and verification are explicit**: install and uninstall preserve unrelated hooks, TOML, and AGENTS content; `madar doctor` / `madar status` now validate the on-disk Codex hook, script, and MCP entry while documenting that live Codex trust and activation must be confirmed through Codex itself.
+
+### Changed
+
+- **Codex documentation and CLI handoff are aligned with the live integration**: quickstarts, compatibility docs, built-in skill guidance, release smoke checks, and the post-generate next-command list now point to the Codex hook/MCP setup and its trusted-repository activation steps.
+
 ## [0.28.1] - 2026-06-10
 
 ### Fixed

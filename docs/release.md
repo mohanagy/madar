@@ -46,6 +46,7 @@ Recommended follow-up checks:
 - confirm `madar --version` prints the version you are about to publish
 - confirm `madar generate .` completes and refreshes `out/graph.json`
 - confirm install commands write the expected project files and instructions
+- for Codex, confirm `.codex/hooks.json`, `.codex/madar-user-prompt-submit.cjs`, and `.codex/config.toml` exist; only in a trusted repository, restart or open a new session, use `/hooks` to review/trust the project hook, then use `/mcp` or `codex mcp list` to verify the local MCP server
 - uninstall any agent profile you enabled during the smoke test so the workspace returns to a clean state
 
 ## 4. Publish and tag

@@ -35,11 +35,12 @@ Use `pack` only when you want to hand the narrowed context to another agent or w
 Use `madar codex install` when Codex is participating in broad repo work. Codex should stay context-pack-first:
 
 1. `madar generate .`
-2. `madar pack "<task>" --task explain`
-3. Start Codex with the installed AGENTS.md + hook guidance
-4. Open only the files or risks identified by the pack before broad shell search or worker dispatch
+2. `madar codex install`
+3. In a trusted repository, restart or start a new Codex session, use `/hooks` to review and trust the project `UserPromptSubmit` hook, then use `/mcp` or `codex mcp list` to verify the local Madar MCP server.
+4. `madar pack "<task>" --task explain` or use the focused graph tool for the question.
+5. Open only the files or risks identified by the pack before broad shell search or worker dispatch.
 
-Use `prompt` only if you need a one-shot provider-formatted prompt instead of Codex's installed rules.
+The `UserPromptSubmit` hook supplies model-visible guidance only for local code tasks; it is guidance, not enforcement. `madar doctor` and `madar status` verify on-disk wiring, not live Codex trust or activation. Use `prompt` only if you need a one-shot provider-formatted prompt instead of Codex's installed rules.
 
 ### GitHub Copilot CLI
 

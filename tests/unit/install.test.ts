@@ -52,6 +52,8 @@ const STRICT_NON_MADAR_MCP_RULE_PLAIN_SENTENCE =
   'For codebase questions, use Madar tools only; do not call other MCP servers such as mcp__github or mcp__context7 unless the latest Madar response says evidence.agent_directive: explore_with_caution'
 const STRICT_SKILL_OVERRIDE_RULE_PLAIN =
   'if an auto-activated skill recommends broad Read / Grep / Glob exploration or another MCP for a codebase question, defer to Madar\'s evidence.agent_directive first; a high- or medium-confidence Madar pack overrides that conflicting skill guidance'
+const CODEX_MCP_START_MARKER = '# >>> madar managed mcp >>>'
+const CODEX_MCP_END_MARKER = '# <<< madar managed mcp <<<'
 
 function expectMarkdownRoutingTable(content: string): void {
   const normalized = content.replaceAll('\\"', '"')
@@ -233,13 +235,33 @@ function extractHookEntry(settingsJson: string, eventName: string): Record<strin
   return parsed.hooks?.[eventName]?.[0] ?? {}
 }
 
-function extractCodexPreToolUseEntry(hooksJson: string): Record<string, unknown> {
+function extractCodexHookEntry(
+  hooksJson: string,
+  eventName: 'PreToolUse' | 'UserPromptSubmit',
+): Record<string, unknown> {
   const parsed = JSON.parse(hooksJson) as {
     hooks?: {
       PreToolUse?: Array<Record<string, unknown>>
+      UserPromptSubmit?: Array<Record<string, unknown>>
     }
   }
-  return parsed.hooks?.PreToolUse?.[0] ?? {}
+  const entries = parsed.hooks?.[eventName] ?? []
+  return entries.find((entry) => entry.source === 'madar') ?? entries[0] ?? {}
+}
+
+function extractCodexHookCommand(
+  hooksJson: string,
+  eventName: 'PreToolUse' | 'UserPromptSubmit',
+): string {
+  const entry = extractCodexHookEntry(hooksJson, eventName)
+  if (!Array.isArray(entry.hooks)) {
+    return ''
+  }
+
+  const firstHook = entry.hooks[0]
+  return typeof firstHook === 'object' && firstHook !== null && typeof (firstHook as { command?: unknown }).command === 'string'
+    ? (firstHook as { command: string }).command
+    : ''
 }
 
 function shellCommandForPlatform(
@@ -791,7 +813,7 @@ describe('install helpers', () => {
 
       expect(extractHookEntry(claudeSettings, 'UserPromptSubmit').name).toBe('madar')
       expect(extractHookEntry(geminiSettings, 'BeforeTool').name).toBe('madar')
-      expect(extractCodexPreToolUseEntry(codexHooks).name).toBe('madar')
+      expect(extractCodexHookEntry(codexHooks, 'UserPromptSubmit').name).toBe('madar')
     })
   })
 
@@ -1195,12 +1217,17 @@ describe('install helpers', () => {
     })
   })
 
-  it('writes Codex-specific context-pack-first guidance and uninstall behavior', () => {
+  it('writes a task-applicable Codex UserPromptSubmit hook with model-visible context', () => {
     withTempDir((projectDir) => {
+      mkdirSync(join(projectDir, 'out'), { recursive: true })
+      writeFileSync(join(projectDir, 'out', 'graph.json'), '{}', 'utf8')
+      writeFileSync(join(projectDir, 'package.json'), JSON.stringify({ type: 'module' }), 'utf8')
+
       const installMessage = agentsInstall(projectDir, 'codex')
       const agentsMd = readFileSync(join(projectDir, 'AGENTS.md'), 'utf8')
       const codexHooks = readFileSync(join(projectDir, '.codex', 'hooks.json'), 'utf8')
-      const decodedHookPayload = decodeHookPayloads(codexHooks)
+      const command = extractCodexHookCommand(codexHooks, 'UserPromptSubmit')
+      const hookScriptPath = join(projectDir, '.codex', 'madar-user-prompt-submit.cjs')
 
       expect(installMessage).toContain('Codex')
       expect(installMessage).toContain('madar codex uninstall')
@@ -1215,13 +1242,88 @@ describe('install helpers', () => {
       expect(agentsMd).toContain(STRICT_GRAPH_REPORT_RULE_MD)
       expectCodexMarkdownRoutingTable(agentsMd)
       expect(agentsMd).not.toContain('Only fall back to raw file tools** when the context pack or graph tools are missing, stale, or insufficient. In that case, read `out/GRAPH_REPORT.md` first.')
-      expect(decodedHookPayload).toContain('context-pack-first')
-      expect(decodedHookPayload).toContain('madar pack')
-      expect(decodedHookPayload).toContain(STRICT_NO_BROAD_EXPLORATION_RULE_PLAIN)
-      expect(decodedHookPayload).toContain(STRICT_NON_MADAR_MCP_RULE_PLAIN)
-      expect(decodedHookPayload).toContain(STRICT_SKILL_OVERRIDE_RULE_PLAIN)
-      expect(decodedHookPayload).toContain(STRICT_GRAPH_REPORT_RULE_PLAIN)
-      expect(decodedHookPayload).not.toContain('read out/GRAPH_REPORT.md before expanding manually')
+      expect(command).toContain('process.cwd()')
+      expect(command).toContain('madar-user-prompt-submit.cjs')
+      expect(existsSync(hookScriptPath)).toBe(true)
+      expect(extractCodexHookEntry(codexHooks, 'UserPromptSubmit')).toMatchObject({
+        name: 'madar',
+        source: 'madar',
+      })
+      expect(JSON.parse(codexHooks) as { hooks?: { PreToolUse?: unknown } }).not.toMatchObject({
+        hooks: { PreToolUse: expect.anything() },
+      })
+
+      if (!command.includes('madar-user-prompt-submit.cjs')) {
+        return
+      }
+
+      const localOutput = JSON.parse(runHookCommand(command, projectDir, {
+        prompt: 'Implement issue #275 by collecting implementation context for changed files',
+      })) as {
+        hookSpecificOutput?: {
+          hookEventName?: string
+          additionalContext?: string
+          permissionDecision?: unknown
+        }
+        systemMessage?: unknown
+      }
+      const nonCodeOutput = runHookCommand(command, projectDir, {
+        prompt: 'Review the Product Hunt launch copy and marketing headline for tomorrow',
+      })
+
+      expect(localOutput.hookSpecificOutput?.hookEventName).toBe('UserPromptSubmit')
+      expect(localOutput.hookSpecificOutput?.additionalContext).toContain('context-pack-first')
+      expect(localOutput.hookSpecificOutput?.additionalContext).toContain('madar pack')
+      expect(localOutput).not.toHaveProperty('systemMessage')
+      expect(localOutput.hookSpecificOutput).not.toHaveProperty('permissionDecision')
+      expect(nonCodeOutput).toBe('')
+    })
+  })
+
+  it('does not rewrite an already-current Codex prompt hook', () => {
+    withTempDir((projectDir) => {
+      agentsInstall(projectDir, 'codex')
+      const hooksPath = join(projectDir, '.codex', 'hooks.json')
+      const before = readFileSync(hooksPath, 'utf8')
+
+      const reinstallMessage = agentsInstall(projectDir, 'codex')
+      const after = readFileSync(hooksPath, 'utf8')
+
+      expect(reinstallMessage).toContain('.codex/hooks.json -> UserPromptSubmit hook already registered (no change)')
+      expect(after).toBe(before)
+    })
+  })
+
+  it('uses an absolute graph path when the Codex prompt hook runs from a nested directory', () => {
+    withTempDir((temporaryDir) => {
+      const projectDir = join(temporaryDir, 'repo-$()-`tick`-$HOME')
+      mkdirSync(join(projectDir, 'out'), { recursive: true })
+      mkdirSync(join(projectDir, 'nested', 'working-directory'), { recursive: true })
+      writeFileSync(join(projectDir, 'out', 'graph.json'), '{}', 'utf8')
+      agentsInstall(projectDir, 'codex')
+
+      const hookScriptPath = join(projectDir, '.codex', 'madar-user-prompt-submit.cjs')
+      expect(existsSync(hookScriptPath)).toBe(true)
+      if (!existsSync(hookScriptPath)) {
+        return
+      }
+
+      const hookScript = readFileSync(hookScriptPath, 'utf8')
+      const command = extractCodexHookCommand(readFileSync(join(projectDir, '.codex', 'hooks.json'), 'utf8'), 'UserPromptSubmit')
+      const output = runHookCommand(
+        command,
+        join(projectDir, 'nested', 'working-directory'),
+        { prompt: 'Explain how this repository auth module works' },
+      )
+
+      expect(hookScript).toContain(JSON.stringify(join(projectDir, 'out', 'graph.json')))
+      expect(command).not.toContain(projectDir)
+      expect(JSON.parse(output)).toMatchObject({
+        hookSpecificOutput: {
+          hookEventName: 'UserPromptSubmit',
+          additionalContext: expect.stringContaining('context-pack-first'),
+        },
+      })
     })
   })
 
@@ -1272,10 +1374,10 @@ describe('install helpers', () => {
     })
   })
 
-  it('updates existing Codex madar hooks during reinstall', () => {
+  it('migrates recognized legacy Codex PreToolUse hooks while preserving user hooks', () => {
     withTempDir((projectDir) => {
       const stalePayload = JSON.stringify({
-        systemMessage: 'Legacy out retrieve-first guidance',
+        systemMessage: 'Legacy madar knowledge graph retrieve-first guidance',
       })
       const stalePayloadB64 = Buffer.from(stalePayload).toString('base64')
 
@@ -1309,6 +1411,13 @@ describe('install helpers', () => {
                   ],
                 },
               ],
+              UserPromptSubmit: [
+                {
+                  name: 'madar',
+                  source: 'user-custom-hook',
+                  hooks: [{ type: 'command', command: 'echo keep-user-prompt-hook' }],
+                },
+              ],
             },
           },
           null,
@@ -1319,17 +1428,303 @@ describe('install helpers', () => {
 
       const installMessage = agentsInstall(projectDir, 'codex')
       const codexHooks = readFileSync(join(projectDir, '.codex', 'hooks.json'), 'utf8')
-      const decodedHookPayload = decodeHookPayloads(codexHooks)
+      const parsed = JSON.parse(codexHooks) as {
+        hooks?: {
+          PreToolUse?: Array<{ matcher?: string, hooks?: Array<{ command?: string }> }>
+          UserPromptSubmit?: Array<{ source?: string, hooks?: Array<{ command?: string }> }>
+        }
+      }
 
       expect(installMessage).toContain('.codex/hooks.json -> hook updated')
+      expect(parsed.hooks?.PreToolUse).toEqual([
+        expect.objectContaining({ matcher: 'Read' }),
+        expect.objectContaining({ matcher: 'Bash' }),
+      ])
       expect(codexHooks).toContain('keep-me')
       expect(codexHooks).toContain('custom.log')
-      expect(decodedHookPayload).toContain('context-pack-first')
-      expect(decodedHookPayload).toContain('madar pack')
-      expect(decodedHookPayload).toContain(STRICT_GRAPH_REPORT_RULE_PLAIN)
-      expect(decodedHookPayload).not.toContain('read out/GRAPH_REPORT.md before expanding manually')
-      expect(decodedHookPayload).not.toContain('Legacy out retrieve-first guidance')
+      expect(codexHooks).toContain('keep-user-prompt-hook')
+      expect(parsed.hooks?.UserPromptSubmit).toEqual(expect.arrayContaining([
+        expect.objectContaining({ source: 'user-custom-hook' }),
+        expect.objectContaining({ source: 'madar' }),
+      ]))
+      expect(extractCodexHookCommand(codexHooks, 'UserPromptSubmit')).toContain('madar-user-prompt-submit.cjs')
+      expect(existsSync(join(projectDir, '.codex', 'madar-user-prompt-submit.cjs'))).toBe(true)
     })
+  })
+
+  it('replaces stale sentinel-owned Codex prompt hooks without duplicating them', () => {
+    withTempDir((projectDir) => {
+      mkdirSync(join(projectDir, '.codex'), { recursive: true })
+      writeFileSync(join(projectDir, '.codex', 'hooks.json'), JSON.stringify({
+        hooks: {
+          UserPromptSubmit: [{
+            name: 'madar',
+            source: 'madar',
+            hooks: [{ type: 'command', command: 'echo stale-madar-prompt-hook' }],
+          }],
+        },
+      }, null, 2), 'utf8')
+
+      agentsInstall(projectDir, 'codex')
+      const hooks = readFileSync(join(projectDir, '.codex', 'hooks.json'), 'utf8')
+      const parsed = JSON.parse(hooks) as {
+        hooks?: { UserPromptSubmit?: Array<{ source?: string, hooks?: Array<{ command?: string }> }> }
+      }
+      const madarEntries = (parsed.hooks?.UserPromptSubmit ?? []).filter((entry) => entry.source === 'madar')
+
+      expect(madarEntries).toHaveLength(1)
+      expect(madarEntries[0]?.hooks?.[0]?.command).toContain('madar-user-prompt-submit.cjs')
+      expect(hooks).not.toContain('stale-madar-prompt-hook')
+    })
+  })
+
+  it('does not overwrite or remove a user-managed Codex prompt script', () => {
+    withTempDir((projectDir) => {
+      const hookScriptPath = join(projectDir, '.codex', 'madar-user-prompt-submit.cjs')
+      const userScript = 'console.log("keep user-managed Codex hook")\n'
+      mkdirSync(join(projectDir, '.codex'), { recursive: true })
+      writeFileSync(hookScriptPath, userScript, 'utf8')
+
+      expect(() => agentsInstall(projectDir, 'codex')).toThrow(/Refusing to overwrite user-managed Codex hook script/)
+      expect(readFileSync(hookScriptPath, 'utf8')).toBe(userScript)
+      expect(existsSync(join(projectDir, 'AGENTS.md'))).toBe(false)
+      expect(existsSync(join(projectDir, '.codex', 'hooks.json'))).toBe(false)
+
+      agentsUninstall(projectDir, 'codex')
+      expect(readFileSync(hookScriptPath, 'utf8')).toBe(userScript)
+    })
+  })
+
+  it('uninstalls modern and recognized legacy Codex hooks without touching unrelated hooks', () => {
+    withTempDir((projectDir) => {
+      const legacyPayload = JSON.stringify({ systemMessage: 'Legacy madar knowledge graph retrieve-first guidance' })
+      const legacyPayloadB64 = Buffer.from(legacyPayload).toString('base64')
+      mkdirSync(join(projectDir, '.codex'), { recursive: true })
+      writeFileSync(join(projectDir, '.codex', 'hooks.json'), JSON.stringify({
+        hooks: {
+          PreToolUse: [
+            {
+              matcher: 'Bash',
+              hooks: [{
+                type: 'command',
+                command: `node -e "require('fs').accessSync('out/graph.json');process.stdout.write(Buffer.from('${legacyPayloadB64}','base64').toString())"`,
+              }],
+            },
+            { matcher: 'Read', hooks: [{ type: 'command', command: 'echo keep-read-hook' }] },
+            { matcher: 'Bash', hooks: [{ type: 'command', command: 'echo keep-bash-hook' }] },
+          ],
+          UserPromptSubmit: [
+            { hooks: [{ type: 'command', command: 'echo keep-user-prompt-hook' }] },
+          ],
+        },
+      }, null, 2), 'utf8')
+
+      agentsInstall(projectDir, 'codex')
+      const uninstallMessage = agentsUninstall(projectDir, 'codex')
+      const hooks = readFileSync(join(projectDir, '.codex', 'hooks.json'), 'utf8')
+
+      expect(uninstallMessage).toContain('.codex/hooks.json -> UserPromptSubmit hook removed')
+      expect(existsSync(join(projectDir, '.codex', 'madar-user-prompt-submit.cjs'))).toBe(false)
+      expect(hooks).toContain('keep-read-hook')
+      expect(hooks).toContain('keep-bash-hook')
+      expect(hooks).toContain('keep-user-prompt-hook')
+      expect(hooks).not.toContain('Legacy madar knowledge graph retrieve-first guidance')
+      expect(hooks).not.toContain('madar-user-prompt-submit.cjs')
+    })
+  })
+
+  it('writes an idempotent marker-owned Codex MCP block while preserving unrelated TOML and line endings', () => {
+    withTempDir((projectDir) => {
+      const configPath = join(projectDir, '.codex', 'config.toml')
+      const graphPath = join(projectDir, 'out', 'graph.json')
+      const unrelatedToml = '# Preserve this user comment\r\n[features]\r\nparallel = true\r\n'
+      const managedBlock = `${CODEX_MCP_START_MARKER}\r\n[mcp_servers.madar]\r\ncommand = "madar"\r\nargs = ["serve", "--stdio", ${JSON.stringify(graphPath)}]\r\nenv = { MADAR_TOOL_PROFILE = "core" }\r\nenabled = true\r\n${CODEX_MCP_END_MARKER}\r\n`
+
+      mkdirSync(join(projectDir, '.codex'), { recursive: true })
+      writeFileSync(configPath, unrelatedToml, 'utf8')
+
+      const firstInstallMessage = agentsInstall(projectDir, 'codex')
+      const firstContent = readFileSync(configPath, 'utf8')
+      const secondInstallMessage = agentsInstall(projectDir, 'codex')
+      const secondContent = readFileSync(configPath, 'utf8')
+
+      expect(firstInstallMessage).toContain('.codex/config.toml -> MCP server registered')
+      expect(firstContent).toBe(`${unrelatedToml}${managedBlock}`)
+      expect(firstContent).not.toMatch(/(?<!\r)\n/)
+      expect(secondInstallMessage).toContain('.codex/config.toml -> MCP server already registered (no change)')
+      expect(secondContent).toBe(firstContent)
+      expect(countOccurrences(secondContent, CODEX_MCP_START_MARKER)).toBe(1)
+
+      const uninstallMessage = agentsUninstall(projectDir, 'codex')
+      expect(uninstallMessage).toContain('.codex/config.toml -> MCP server removed')
+      expect(readFileSync(configPath, 'utf8')).toBe(unrelatedToml)
+    })
+  })
+
+  it('restores Codex TOML files that originally had no final line ending', () => {
+    const originalContents = [
+      'parallel = true',
+      '# Preserve CRLF\r\nparallel = true',
+    ]
+
+    for (const originalContent of originalContents) {
+      withTempDir((projectDir) => {
+        const configPath = join(projectDir, '.codex', 'config.toml')
+        mkdirSync(join(projectDir, '.codex'), { recursive: true })
+        writeFileSync(configPath, originalContent, 'utf8')
+
+        agentsInstall(projectDir, 'codex')
+        expect(readFileSync(configPath, 'utf8')).toContain(CODEX_MCP_START_MARKER)
+
+        agentsUninstall(projectDir, 'codex')
+        expect(readFileSync(configPath, 'utf8')).toBe(originalContent)
+      })
+    }
+  })
+
+  it('keeps later user TOML separated when uninstalling a block after a no-final-newline config', () => {
+    withTempDir((projectDir) => {
+      const configPath = join(projectDir, '.codex', 'config.toml')
+      const originalContent = 'parallel = true'
+      const laterUserContent = '[features]\nexperimental = true\n'
+      mkdirSync(join(projectDir, '.codex'), { recursive: true })
+      writeFileSync(configPath, originalContent, 'utf8')
+
+      agentsInstall(projectDir, 'codex')
+      writeFileSync(configPath, `${readFileSync(configPath, 'utf8')}${laterUserContent}`, 'utf8')
+
+      agentsUninstall(projectDir, 'codex')
+
+      expect(readFileSync(configPath, 'utf8')).toBe(`${originalContent}\n${laterUserContent}`)
+    })
+  })
+
+  it('does not mistake TOML multiline-string content for an owned or user-managed Codex MCP block', () => {
+    withTempDir((projectDir) => {
+      const configPath = join(projectDir, '.codex', 'config.toml')
+      const userToml = `note = """
+${CODEX_MCP_START_MARKER}
+[mcp_servers.madar]
+command = "user example only"
+${CODEX_MCP_END_MARKER}
+"""
+`
+      mkdirSync(join(projectDir, '.codex'), { recursive: true })
+      writeFileSync(configPath, userToml, 'utf8')
+
+      const installMessage = agentsInstall(projectDir, 'codex')
+      const installed = readFileSync(configPath, 'utf8')
+
+      expect(installMessage).toContain('.codex/config.toml -> MCP server registered')
+      expect(installed).toContain(userToml)
+      expect(installed).toContain('command = "madar"')
+
+      agentsUninstall(projectDir, 'codex')
+      expect(readFileSync(configPath, 'utf8')).toBe(userToml)
+    })
+  })
+
+  it('rewrites only a complete owned Codex MCP marker block', () => {
+    withTempDir((projectDir) => {
+      const configPath = join(projectDir, '.codex', 'config.toml')
+      const graphPath = join(projectDir, 'out', 'graph.json')
+      const before = `# before\n${CODEX_MCP_START_MARKER}\n[mcp_servers.madar]\ncommand = "old-madar"\nargs = ["old"]\n${CODEX_MCP_END_MARKER}\n# after\n`
+
+      mkdirSync(join(projectDir, '.codex'), { recursive: true })
+      writeFileSync(configPath, before, 'utf8')
+
+      const installMessage = agentsInstall(projectDir, 'codex')
+      const installed = readFileSync(configPath, 'utf8')
+
+      expect(installMessage).toContain('.codex/config.toml -> MCP server updated')
+      expect(installed).toContain('# before\n')
+      expect(installed).toContain('# after\n')
+      expect(installed).toContain('[mcp_servers.madar]\ncommand = "madar"')
+      expect(installed).toContain(`args = ["serve", "--stdio", ${JSON.stringify(graphPath)}]`)
+      expect(installed).toContain('env = { MADAR_TOOL_PROFILE = "core" }')
+      expect(installed).toContain('enabled = true')
+      expect(installed).not.toContain('old-madar')
+    })
+  })
+
+  it('leaves an owned Codex MCP block untouched if a later declaration is user-managed', () => {
+    withTempDir((projectDir) => {
+      const configPath = join(projectDir, '.codex', 'config.toml')
+      agentsInstall(projectDir, 'codex')
+      const withUserDeclaration = `${readFileSync(configPath, 'utf8')}\n[mcp_servers.madar]\ncommand = "custom-madar"\n`
+      writeFileSync(configPath, withUserDeclaration, 'utf8')
+
+      const reinstallMessage = agentsInstall(projectDir, 'codex')
+
+      expect(reinstallMessage).toContain('user-managed')
+      expect(readFileSync(configPath, 'utf8')).toBe(withUserDeclaration)
+    })
+  })
+
+  it('leaves user-managed Codex Madar MCP declarations untouched', () => {
+    const userManagedConfigs = [
+      '[mcp_servers.madar]\ncommand = "custom-madar"\n',
+      '[mcp_servers.madar.env]\nMADAR_TOOL_PROFILE = "full"\n',
+      '[[mcp_servers.madar]]\ncommand = "custom-madar"\n',
+      'mcp_servers = { madar = { command = "custom-madar" } }\n',
+      'mcp_servers = { other = { command = "custom-madar" } }\n',
+      '"mcp_servers"."madar" = { command = "custom-madar" }\n',
+      '[mcp_servers]\nmadar = { command = "custom-madar" }\n',
+      '[mcp_servers]\n"madar".command = "custom-madar"\n',
+      '["mcp_servers"."madar"]\ncommand = "custom-madar"\n',
+    ]
+
+    for (const userManagedConfig of userManagedConfigs) {
+      withTempDir((projectDir) => {
+        const configPath = join(projectDir, '.codex', 'config.toml')
+        mkdirSync(join(projectDir, '.codex'), { recursive: true })
+        writeFileSync(configPath, userManagedConfig, 'utf8')
+
+        const installMessage = agentsInstall(projectDir, 'codex')
+
+        expect(installMessage).toContain('user-managed')
+        expect(readFileSync(configPath, 'utf8')).toBe(userManagedConfig)
+        expect(readFileSync(configPath, 'utf8')).not.toContain(CODEX_MCP_START_MARKER)
+
+        agentsUninstall(projectDir, 'codex')
+        expect(readFileSync(configPath, 'utf8')).toBe(userManagedConfig)
+      })
+    }
+  })
+
+  it('does not mistake an unrelated table-local mcp_servers key for a root MCP declaration', () => {
+    withTempDir((projectDir) => {
+      const configPath = join(projectDir, '.codex', 'config.toml')
+      const userToml = '[features]\nmcp_servers = { experimental = true }\n'
+      mkdirSync(join(projectDir, '.codex'), { recursive: true })
+      writeFileSync(configPath, userToml, 'utf8')
+
+      const installMessage = agentsInstall(projectDir, 'codex')
+      const installed = readFileSync(configPath, 'utf8')
+
+      expect(installMessage).toContain('.codex/config.toml -> MCP server registered')
+      expect(installed).toContain(userToml)
+      expect(installed).toContain(CODEX_MCP_START_MARKER)
+      expect(installed).toContain('[mcp_servers.madar]')
+    })
+  })
+
+  it('fails without mutating Codex config when its MCP marker block is malformed', () => {
+    const malformedConfigs = [
+      `# keep\n${CODEX_MCP_START_MARKER}\n[mcp_servers.madar]\ncommand = "madar"\n`,
+      `# keep\n${CODEX_MCP_END_MARKER}\n`,
+    ]
+
+    for (const malformed of malformedConfigs) {
+      withTempDir((projectDir) => {
+        const configPath = join(projectDir, '.codex', 'config.toml')
+        mkdirSync(join(projectDir, '.codex'), { recursive: true })
+        writeFileSync(configPath, malformed, 'utf8')
+
+        expect(() => agentsInstall(projectDir, 'codex')).toThrow(/marker block/i)
+        expect(readFileSync(configPath, 'utf8')).toBe(malformed)
+      })
+    }
   })
 
   it('preserves unrelated OpenCode config while updating madar MCP', () => {
@@ -1477,6 +1872,8 @@ describe('install helpers', () => {
         agentsInstall(projectDir, 'opencode', { packageRoot })
         const firstAgentsMd = readFileSync(join(projectDir, 'AGENTS.md'), 'utf8')
         const firstCodexHooks = readFileSync(join(projectDir, '.codex', 'hooks.json'), 'utf8')
+        const firstCodexHookScript = readFileSync(join(projectDir, '.codex', 'madar-user-prompt-submit.cjs'), 'utf8')
+        const firstCodexConfig = readFileSync(join(projectDir, '.codex', 'config.toml'), 'utf8')
         const firstOpenCodeConfig = readFileSync(join(projectDir, 'opencode.json'), 'utf8')
 
         agentsInstall(projectDir, 'codex')
@@ -1484,9 +1881,12 @@ describe('install helpers', () => {
 
         expect(readFileSync(join(projectDir, 'AGENTS.md'), 'utf8')).toBe(firstAgentsMd)
         expect(readFileSync(join(projectDir, '.codex', 'hooks.json'), 'utf8')).toBe(firstCodexHooks)
+        expect(readFileSync(join(projectDir, '.codex', 'madar-user-prompt-submit.cjs'), 'utf8')).toBe(firstCodexHookScript)
+        expect(readFileSync(join(projectDir, '.codex', 'config.toml'), 'utf8')).toBe(firstCodexConfig)
         expect(readFileSync(join(projectDir, 'opencode.json'), 'utf8')).toBe(firstOpenCodeConfig)
         expect(countOccurrences(firstAgentsMd, '## madar')).toBe(1)
-        expect(countOccurrences(firstCodexHooks, 'out')).toBeGreaterThan(0)
+        expect(firstCodexHookScript).toContain('out')
+        expect(firstCodexConfig).toContain('[mcp_servers.madar]')
         expect(countOccurrences(firstOpenCodeConfig, '.opencode/plugins/madar.js')).toBe(1)
       })
     })

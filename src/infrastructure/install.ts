@@ -35,6 +35,15 @@ const MANAGED_HOOK_NAME = 'madar'
 const MANAGED_HOOK_SOURCE = 'madar'
 export const CLAUDE_PROMPT_HOOK_SCRIPT_RELATIVE_PATH = '.claude/madar-user-prompt-submit.cjs'
 const CLAUDE_PROMPT_HOOK_COMMAND = `node ${CLAUDE_PROMPT_HOOK_SCRIPT_RELATIVE_PATH}`
+export const CODEX_PROMPT_HOOK_SCRIPT_RELATIVE_PATH = '.codex/madar-user-prompt-submit.cjs'
+const CODEX_PROMPT_HOOK_SCRIPT_MARKER = '// madar managed Codex UserPromptSubmit hook'
+// SECURITY: Keep this command static. It resolves the project script at runtime so
+// a nested Codex session works without interpolating a shell-sensitive project path.
+const CODEX_PROMPT_HOOK_COMMAND = `node -e "const fs=require('fs');const path=require('path');let dir=process.cwd();for(;;){const script=path.join(dir,'.codex','madar-user-prompt-submit.cjs');if(fs.existsSync(script)){require(script);break}const parent=path.dirname(dir);if(parent===dir){process.exit(0)}dir=parent}"`
+export const CODEX_MCP_CONFIG_RELATIVE_PATH = '.codex/config.toml'
+const CODEX_MCP_START_MARKER = '# >>> madar managed mcp >>>'
+const CODEX_MCP_END_MARKER = '# <<< madar managed mcp <<<'
+const CODEX_MCP_OWNS_PRECEDING_LINE_ENDING_MARKER = '# madar managed mcp: preceding line ending owned'
 
 interface InstallPlatformConfig {
   skillFile: string
@@ -238,9 +247,13 @@ export function isMadarProjectHook(hook: unknown, matcher?: string): boolean {
   )
 }
 
-export function isMadarCodexHook(hook: unknown): boolean {
+export function isMadarCodexLegacyHook(hook: unknown): boolean {
   if (!isRecord(hook) || hook.matcher !== 'Bash' || !Array.isArray(hook.hooks)) {
     return false
+  }
+
+  if (hasMadarHookSentinel(hook)) {
+    return true
   }
 
   return hook.hooks.some(
@@ -250,6 +263,44 @@ export function isMadarCodexHook(hook: unknown): boolean {
       typeof entry.command === 'string' &&
       isMadarCodexHookCommand(entry.command),
   )
+}
+
+export function codexPromptHookCommand(): string {
+  return CODEX_PROMPT_HOOK_COMMAND
+}
+
+export function isMadarCodexPromptHook(hook: unknown): boolean {
+  if (!isRecord(hook) || !Array.isArray(hook.hooks) || !hasMadarHookSentinel(hook)) {
+    return false
+  }
+
+  return hook.hooks.some(
+    (entry) =>
+      isRecord(entry) &&
+      entry.type === 'command' &&
+      typeof entry.command === 'string',
+  )
+}
+
+export function isCurrentMadarCodexPromptHook(hook: unknown, expectedCommand: string): boolean {
+  if (!isRecord(hook) || !Array.isArray(hook.hooks) || !isMadarCodexPromptHook(hook)) {
+    return false
+  }
+
+  if (hook.name !== MANAGED_HOOK_NAME || hook.source !== MANAGED_HOOK_SOURCE || hook.hooks.length !== 1) {
+    return false
+  }
+
+  const entry = hook.hooks[0]
+  return isRecord(entry)
+    && entry.type === 'command'
+    && entry.command === expectedCommand
+    && Object.keys(entry).every((key) => key === 'type' || key === 'command')
+    && Object.keys(hook).every((key) => key === 'name' || key === 'source' || key === 'hooks')
+}
+
+export function isMadarCodexHook(hook: unknown): boolean {
+  return isMadarCodexLegacyHook(hook) || isMadarCodexPromptHook(hook)
 }
 
 function strictNonMadarMcpRule(markdown: boolean): string {
@@ -326,29 +377,15 @@ const SETTINGS_HOOK = {
   ],
 }
 
-const CODEX_HOOK = {
-  // SECURITY: Keep this command static. Do not interpolate user-controlled input here.
-  hooks: {
-    PreToolUse: [
-      withManagedHookIdentity({
-        matcher: 'Bash',
-        hooks: [
-          {
-            type: 'command',
-            command: hookCommand(
-              JSON.stringify({
-                hookSpecificOutput: {
-                  hookEventName: 'PreToolUse',
-                  permissionDecision: 'allow',
-                },
-                systemMessage: CODEX_CONTEXT_PACK_FIRST_MESSAGE,
-              }),
-            ),
-          },
-        ],
-      }),
+function codexPromptHook(): Record<string, unknown> {
+  return withManagedHookIdentity({
+    hooks: [
+      {
+        type: 'command',
+        command: codexPromptHookCommand(),
+      },
     ],
-  },
+  })
 }
 
 const GEMINI_HOOK = {
@@ -472,14 +509,19 @@ ${renderMarkdownCodexRoutingTable()}
    - \`graph_summary\` for repo overview
 8. **${strictGraphReportFallbackRule(true)}**
 9. **Do not dispatch \`spawn_agent\` workers first** for codebase discovery. Let the context pack define likely entry files, risks, and missing context before parallel work.
-10. **Uninstall behavior:** run \`madar codex uninstall\` to remove this AGENTS.md section and the madar Codex hook from \`.codex/hooks.json\` while preserving unrelated content.
+10. **Codex activation boundary:** \`madar codex install\` writes this Madar-owned AGENTS.md section, \`.codex/hooks.json\`, \`.codex/madar-user-prompt-submit.cjs\`, and a marker-owned \`[mcp_servers.madar]\` block in \`.codex/config.toml\`. The \`UserPromptSubmit\` hook supplies model-visible context-pack-first guidance only for local code tasks; it is guidance, not enforcement. Enable it only in a repository you trust, then restart Codex, use \`/hooks\` to review and trust the project hook, and use \`/mcp\` or \`codex mcp list\` to verify the MCP server. \`madar doctor\` and \`madar status\` validate on-disk files only; they do not prove Codex has trusted or activated them.
+11. **Uninstall behavior:** run \`madar codex uninstall\` to remove only this AGENTS.md section, the Madar hook, the Madar hook script, and the marker-owned MCP block while preserving unrelated content.
 
 Manual verification:
 
 \`\`\`bash
 madar generate .
 madar codex install
-test -f AGENTS.md && test -f .codex/hooks.json
+test -f AGENTS.md && test -f .codex/hooks.json && test -f .codex/madar-user-prompt-submit.cjs && test -f .codex/config.toml
+# In a trusted repository, restart Codex and use /hooks to review/trust the hook.
+# Then use /mcp or codex mcp list to verify the local Madar MCP server.
+madar doctor
+madar status
 madar codex uninstall
 \`\`\`
 `
@@ -655,6 +697,52 @@ function writeClaudePromptHookScript(projectDir: string, profile?: InstallProfil
     ),
     'utf8',
   )
+}
+
+function codexPromptHookScript(projectDir: string): string {
+  const graphPath = resolve(projectDir, 'out', 'graph.json')
+  return `${CODEX_PROMPT_HOOK_SCRIPT_MARKER}\n${buildPromptApplicabilityHookScript(
+    JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: 'UserPromptSubmit',
+        additionalContext: CODEX_CONTEXT_PACK_FIRST_MESSAGE,
+      },
+    }),
+    'UserPromptSubmit',
+    graphPath,
+  )}`
+}
+
+function isMadarCodexPromptHookScript(content: string): boolean {
+  return content.startsWith(`${CODEX_PROMPT_HOOK_SCRIPT_MARKER}\n`)
+}
+
+export function hasManagedCodexPromptHookScript(scriptPath: string): boolean {
+  if (!existsSync(scriptPath)) {
+    return false
+  }
+
+  const projectDir = dirname(dirname(resolve(scriptPath)))
+  return readFileSync(scriptPath, 'utf8') === codexPromptHookScript(projectDir)
+}
+
+function assertCodexPromptHookScriptIsSafe(projectDir: string): void {
+  const hookScriptPath = join(projectDir, CODEX_PROMPT_HOOK_SCRIPT_RELATIVE_PATH)
+  if (existsSync(hookScriptPath) && !isMadarCodexPromptHookScript(readFileSync(hookScriptPath, 'utf8'))) {
+    throw new Error(`Refusing to overwrite user-managed Codex hook script at ${hookScriptPath}`)
+  }
+}
+
+function writeCodexPromptHookScript(projectDir: string): void {
+  const hookScriptPath = join(projectDir, CODEX_PROMPT_HOOK_SCRIPT_RELATIVE_PATH)
+  const script = codexPromptHookScript(projectDir)
+  assertCodexPromptHookScriptIsSafe(projectDir)
+  if (existsSync(hookScriptPath) && readFileSync(hookScriptPath, 'utf8') === script) {
+    return
+  }
+
+  mkdirSync(dirname(hookScriptPath), { recursive: true })
+  writeFileSync(hookScriptPath, script, 'utf8')
 }
 
 function geminiHook(profile?: InstallProfile): Record<string, unknown> {
@@ -1750,56 +1838,451 @@ function uninstallGeminiHook(projectDir: string): string | undefined {
   return '.gemini/settings.json -> BeforeTool hook removed'
 }
 
+interface ManagedCodexMcpBlock {
+  start: number
+  end: number
+  content: string
+  ownsPrecedingLineEnding: boolean
+}
+
+function lineEndingForContent(content: string): string {
+  return content.includes('\r\n') ? '\r\n' : '\n'
+}
+
+interface TextRange {
+  start: number
+  end: number
+}
+
+function isEscapedTomlBasicStringCharacter(content: string, index: number): boolean {
+  let backslashCount = 0
+  for (let cursor = index - 1; cursor >= 0 && content[cursor] === '\\'; cursor -= 1) {
+    backslashCount += 1
+  }
+  return backslashCount % 2 === 1
+}
+
+function tomlMultilineStringRanges(content: string): TextRange[] {
+  const ranges: TextRange[] = []
+  let mode: 'normal' | 'basic' | 'literal' | 'multiline_basic' | 'multiline_literal' = 'normal'
+  let multilineStart = -1
+
+  for (let index = 0; index < content.length; index += 1) {
+    const character = content[index]!
+
+    if (mode === 'normal') {
+      if (character === '#') {
+        const nextLineBreak = content.indexOf('\n', index)
+        if (nextLineBreak === -1) {
+          break
+        }
+        index = nextLineBreak
+        continue
+      }
+      if (content.startsWith('"""', index)) {
+        mode = 'multiline_basic'
+        multilineStart = index
+        index += 2
+        continue
+      }
+      if (content.startsWith("'''", index)) {
+        mode = 'multiline_literal'
+        multilineStart = index
+        index += 2
+        continue
+      }
+      if (character === '"') {
+        mode = 'basic'
+      } else if (character === "'") {
+        mode = 'literal'
+      }
+      continue
+    }
+
+    if (mode === 'basic') {
+      if (character === '\\') {
+        index += 1
+      } else if (character === '"' || character === '\n') {
+        mode = 'normal'
+      }
+      continue
+    }
+
+    if (mode === 'literal') {
+      if (character === "'" || character === '\n') {
+        mode = 'normal'
+      }
+      continue
+    }
+
+    const closingDelimiter = mode === 'multiline_basic' ? '"""' : "'''"
+    if (content.startsWith(closingDelimiter, index)
+      && (mode === 'multiline_literal' || !isEscapedTomlBasicStringCharacter(content, index))) {
+      ranges.push({ start: multilineStart, end: index + closingDelimiter.length })
+      mode = 'normal'
+      multilineStart = -1
+      index += closingDelimiter.length - 1
+    }
+  }
+
+  if (multilineStart >= 0) {
+    ranges.push({ start: multilineStart, end: content.length })
+  }
+
+  return ranges
+}
+
+function isInsideTextRanges(index: number, ranges: readonly TextRange[]): boolean {
+  return ranges.some((range) => index >= range.start && index < range.end)
+}
+
+function standaloneMarkerPositions(content: string, marker: string, multilineStringRanges: readonly TextRange[]): number[] {
+  const positions: number[] = []
+  let start = 0
+
+  while (start < content.length) {
+    const index = content.indexOf(marker, start)
+    if (index === -1) {
+      break
+    }
+
+    if (isInsideTextRanges(index, multilineStringRanges)) {
+      start = index + marker.length
+      continue
+    }
+
+    const lineStart = content.lastIndexOf('\n', index - 1) + 1
+    const nextLineBreak = content.indexOf('\n', index)
+    const lineEnd = nextLineBreak === -1 ? content.length : nextLineBreak
+    const line = content.slice(lineStart, lineEnd).replace(/\r$/, '')
+    if (line.trim() === marker) {
+      positions.push(index)
+    }
+
+    start = index + marker.length
+  }
+
+  return positions
+}
+
+function readManagedCodexMcpBlock(content: string): ManagedCodexMcpBlock | null {
+  const multilineStringRanges = tomlMultilineStringRanges(content)
+  const starts = standaloneMarkerPositions(content, CODEX_MCP_START_MARKER, multilineStringRanges)
+  const ends = standaloneMarkerPositions(content, CODEX_MCP_END_MARKER, multilineStringRanges)
+
+  if (starts.length === 0 && ends.length === 0) {
+    return null
+  }
+
+  if (starts.length !== 1 || ends.length !== 1 || ends[0]! < starts[0]!) {
+    throw new Error(`Malformed Codex Madar MCP marker block in ${CODEX_MCP_CONFIG_RELATIVE_PATH}`)
+  }
+
+  const endMarkerStart = ends[0]!
+  const lineBreak = content.indexOf('\n', endMarkerStart)
+  const end = lineBreak === -1 ? content.length : lineBreak + 1
+  const start = starts[0]!
+  return {
+    start,
+    end,
+    content: content.slice(start, end),
+    ownsPrecedingLineEnding: content
+      .slice(start, end)
+      .replaceAll('\r\n', '\n')
+      .startsWith(`${CODEX_MCP_START_MARKER}\n${CODEX_MCP_OWNS_PRECEDING_LINE_ENDING_MARKER}\n`),
+  }
+}
+
+function stripTomlComments(content: string): string {
+  let result = ''
+  let quote: 'single' | 'double' | null = null
+  let escaped = false
+  const multilineStringRanges = tomlMultilineStringRanges(content)
+
+  for (let index = 0; index < content.length; index += 1) {
+    const character = content[index]!
+
+    if (isInsideTextRanges(index, multilineStringRanges)) {
+      result += character === '\n' ? '\n' : ' '
+      continue
+    }
+
+    if (quote !== null) {
+      result += character
+      if (quote === 'double' && escaped) {
+        escaped = false
+      } else if (quote === 'double' && character === '\\') {
+        escaped = true
+      } else if ((quote === 'double' && character === '"') || (quote === 'single' && character === "'")) {
+        quote = null
+      }
+      continue
+    }
+
+    if (character === '"') {
+      quote = 'double'
+      result += character
+      continue
+    }
+    if (character === "'") {
+      quote = 'single'
+      result += character
+      continue
+    }
+    if (character === '#') {
+      while (index < content.length && content[index] !== '\n') {
+        index += 1
+      }
+      if (index < content.length) {
+        result += '\n'
+      }
+      continue
+    }
+
+    result += character
+  }
+
+  return result
+}
+
+function hasUserManagedCodexMcpDeclaration(content: string): boolean {
+  const lines = stripTomlComments(content).split(/\r?\n/)
+  let currentTable: string | null = null
+
+  for (const line of lines) {
+    const arrayTableMatch = /^\s*\[\[\s*([^\]]+?)\s*\]\]\s*$/.exec(line)
+    if (arrayTableMatch?.[1]) {
+      const tableName = arrayTableMatch[1].replace(/[\s"']/g, '')
+      if (tableName === 'mcp_servers' || tableName === 'mcp_servers.madar' || tableName.startsWith('mcp_servers.madar.')) {
+        return true
+      }
+      currentTable = null
+      continue
+    }
+
+    const tableMatch = /^\s*\[\s*([^\]]+?)\s*\]\s*$/.exec(line)
+    if (tableMatch?.[1]) {
+      const tableName = tableMatch[1].replace(/[\s"']/g, '')
+      if (tableName === 'mcp_servers.madar' || tableName.startsWith('mcp_servers.madar.')) {
+        return true
+      }
+      currentTable = tableName
+      continue
+    }
+
+    const assignmentIndex = line.indexOf('=')
+    if (assignmentIndex === -1) {
+      continue
+    }
+
+    const keyPath = line.slice(0, assignmentIndex).replace(/[\s"']/g, '')
+    if (currentTable === null && (
+      keyPath === 'mcp_servers'
+      || keyPath === 'mcp_servers.madar'
+      || keyPath.startsWith('mcp_servers.madar.')
+    )) {
+      return true
+    }
+    if (currentTable === 'mcp_servers' && (keyPath === 'madar' || keyPath.startsWith('madar.'))) {
+      return true
+    }
+  }
+
+  return false
+}
+
+function renderCodexMcpBlock(graphPath: string, lineEnding: string, ownsPrecedingLineEnding = false): string {
+  return [
+    CODEX_MCP_START_MARKER,
+    ...(ownsPrecedingLineEnding ? [CODEX_MCP_OWNS_PRECEDING_LINE_ENDING_MARKER] : []),
+    '[mcp_servers.madar]',
+    'command = "madar"',
+    `args = ["serve", "--stdio", ${JSON.stringify(graphPath)}]`,
+    'env = { MADAR_TOOL_PROFILE = "core" }',
+    'enabled = true',
+    CODEX_MCP_END_MARKER,
+    '',
+  ].join(lineEnding)
+}
+
+export function isMadarCodexMcpConfig(content: string, expectedGraphPath: string): boolean {
+  try {
+    const managedBlock = readManagedCodexMcpBlock(content)
+    if (!managedBlock) {
+      return false
+    }
+
+    const unownedContent = `${content.slice(0, managedBlock.start)}${content.slice(managedBlock.end)}`
+    if (hasUserManagedCodexMcpDeclaration(unownedContent)) {
+      return false
+    }
+
+    const normalizedBlock = managedBlock.content.replaceAll('\r\n', '\n')
+    const expectedBlock = renderCodexMcpBlock(expectedGraphPath, '\n', managedBlock.ownsPrecedingLineEnding)
+    return normalizedBlock === expectedBlock
+  } catch {
+    return false
+  }
+}
+
+function assertCodexMcpConfigIsSafe(projectDir: string): void {
+  const configPath = join(projectDir, CODEX_MCP_CONFIG_RELATIVE_PATH)
+  if (existsSync(configPath)) {
+    readManagedCodexMcpBlock(readFileSync(configPath, 'utf8'))
+  }
+}
+
+function installCodexMcpServer(projectDir: string): string {
+  const configPath = join(projectDir, CODEX_MCP_CONFIG_RELATIVE_PATH)
+  const graphPath = resolve(projectDir, 'out', 'graph.json')
+  const content = existsSync(configPath) ? readFileSync(configPath, 'utf8') : ''
+  const managedBlock = readManagedCodexMcpBlock(content)
+  const lineEnding = lineEndingForContent(content)
+  const ownsPrecedingLineEnding = managedBlock?.ownsPrecedingLineEnding
+    ?? (content.length > 0 && !content.endsWith('\n'))
+  const nextBlock = renderCodexMcpBlock(graphPath, lineEnding, ownsPrecedingLineEnding)
+  const unownedContent = managedBlock
+    ? `${content.slice(0, managedBlock.start)}${content.slice(managedBlock.end)}`
+    : content
+
+  if (hasUserManagedCodexMcpDeclaration(unownedContent)) {
+    return '.codex/config.toml -> MCP server is user-managed (no change)'
+  }
+
+  if (managedBlock) {
+    if (managedBlock.content === nextBlock) {
+      return '.codex/config.toml -> MCP server already registered (no change)'
+    }
+
+    writeFileSync(
+      configPath,
+      `${content.slice(0, managedBlock.start)}${nextBlock}${content.slice(managedBlock.end)}`,
+      'utf8',
+    )
+    return '.codex/config.toml -> MCP server updated'
+  }
+
+  ensureParentDirectory(configPath)
+  const separator = ownsPrecedingLineEnding ? lineEnding : ''
+  writeFileSync(configPath, `${content}${separator}${nextBlock}`, 'utf8')
+  return '.codex/config.toml -> MCP server registered'
+}
+
+function uninstallCodexMcpServer(projectDir: string): string | undefined {
+  const configPath = join(projectDir, CODEX_MCP_CONFIG_RELATIVE_PATH)
+  if (!existsSync(configPath)) {
+    return undefined
+  }
+
+  const content = readFileSync(configPath, 'utf8')
+  const managedBlock = readManagedCodexMcpBlock(content)
+  if (!managedBlock) {
+    return undefined
+  }
+
+  const beforeBlock = content.slice(0, managedBlock.start)
+  const afterBlock = content.slice(managedBlock.end)
+  const precedingLineEnding = beforeBlock.endsWith('\r\n')
+    ? '\r\n'
+    : beforeBlock.endsWith('\n')
+      ? '\n'
+      : ''
+  const beforeWithoutOwnedLineEnding = managedBlock.ownsPrecedingLineEnding && precedingLineEnding.length > 0
+    ? beforeBlock.slice(0, -precedingLineEnding.length)
+    : beforeBlock
+  const needsLineEndingBeforeAfterBlock = managedBlock.ownsPrecedingLineEnding
+    && precedingLineEnding.length > 0
+    && afterBlock.length > 0
+    && !afterBlock.startsWith('\n')
+    && !afterBlock.startsWith('\r')
+  const restoredContent = `${beforeWithoutOwnedLineEnding}${needsLineEndingBeforeAfterBlock ? precedingLineEnding : ''}${afterBlock}`
+  writeFileSync(configPath, restoredContent, 'utf8')
+  return '.codex/config.toml -> MCP server removed'
+}
+
 function installCodexHook(projectDir: string): string {
   const hooksPath = join(projectDir, '.codex', 'hooks.json')
   const hooksConfig = readJsonObject(hooksPath)
   const hooks = ensureRecord(hooksConfig, 'hooks')
-  const preToolUse = ensureArray(hooks, 'PreToolUse')
+  const userPromptSubmit = Array.isArray(hooks.UserPromptSubmit) ? hooks.UserPromptSubmit : []
+  const preToolUse = Array.isArray(hooks.PreToolUse) ? hooks.PreToolUse : []
+  const nextHook = codexPromptHook()
 
-  const additions = CODEX_HOOK.hooks.PreToolUse as unknown[]
-  let replaced = false
-  const updatedPreToolUse = preToolUse.flatMap((hook) => {
-    if (!isMadarCodexHook(hook)) {
-      return [hook]
-    }
+  writeCodexPromptHookScript(projectDir)
 
-    if (replaced) {
-      return []
-    }
+  const filteredUserPromptSubmit = userPromptSubmit.filter((hook) => !isMadarCodexPromptHook(hook))
+  const filteredPreToolUse = preToolUse.filter((hook) => !isMadarCodexLegacyHook(hook))
+  const removedLegacyHooks = filteredPreToolUse.length !== preToolUse.length
+  const managedModernHooks = userPromptSubmit.filter((hook) => isMadarCodexPromptHook(hook))
+  const existingModernHook = managedModernHooks[0]
+  const modernHookIsCurrent = managedModernHooks.length === 1
+    && existingModernHook !== undefined
+    && JSON.stringify(existingModernHook) === JSON.stringify(nextHook)
 
-    replaced = true
-    return additions
-  })
-
-  if (replaced) {
-    hooks.PreToolUse = updatedPreToolUse
-    writeJson(hooksPath, hooksConfig)
-    return '.codex/hooks.json -> hook updated'
+  if (modernHookIsCurrent && !removedLegacyHooks) {
+    return '.codex/hooks.json -> UserPromptSubmit hook already registered (no change)'
   }
 
-  preToolUse.push(...additions)
+  hooks.UserPromptSubmit = [...filteredUserPromptSubmit, nextHook]
+  if (Object.hasOwn(hooks, 'PreToolUse')) {
+    if (filteredPreToolUse.length === 0) {
+      delete hooks.PreToolUse
+    } else {
+      hooks.PreToolUse = filteredPreToolUse
+    }
+  }
+
   writeJson(hooksPath, hooksConfig)
-  return '.codex/hooks.json -> PreToolUse hook registered'
+  return existingModernHook || removedLegacyHooks
+    ? '.codex/hooks.json -> hook updated'
+    : '.codex/hooks.json -> UserPromptSubmit hook registered'
 }
 
 function uninstallCodexHook(projectDir: string): string | undefined {
+  const hookScriptPath = join(projectDir, CODEX_PROMPT_HOOK_SCRIPT_RELATIVE_PATH)
+  const removedHookScript = existsSync(hookScriptPath)
+    && isMadarCodexPromptHookScript(readFileSync(hookScriptPath, 'utf8'))
+  if (removedHookScript) {
+    rmSync(hookScriptPath, { force: true })
+  }
+
   const hooksPath = join(projectDir, '.codex', 'hooks.json')
   if (!existsSync(hooksPath)) {
-    return undefined
+    return removedHookScript ? `${CODEX_PROMPT_HOOK_SCRIPT_RELATIVE_PATH} -> hook script removed` : undefined
   }
 
   const hooksConfig = readJsonObject(hooksPath)
   const hooks = ensureRecord(hooksConfig, 'hooks')
-  const preToolUse = ensureArray(hooks, 'PreToolUse')
-  const filtered = preToolUse.filter((hook) => !isMadarCodexHook(hook))
+  const userPromptSubmit = Array.isArray(hooks.UserPromptSubmit) ? hooks.UserPromptSubmit : []
+  const preToolUse = Array.isArray(hooks.PreToolUse) ? hooks.PreToolUse : []
+  const filteredUserPromptSubmit = userPromptSubmit.filter((hook) => !isMadarCodexPromptHook(hook))
+  const filteredPreToolUse = preToolUse.filter((hook) => !isMadarCodexLegacyHook(hook))
+  const removedModernHooks = filteredUserPromptSubmit.length !== userPromptSubmit.length
+  const removedLegacyHooks = filteredPreToolUse.length !== preToolUse.length
 
-  if (filtered.length === preToolUse.length) {
-    return undefined
+  if (!removedModernHooks && !removedLegacyHooks) {
+    return removedHookScript ? `${CODEX_PROMPT_HOOK_SCRIPT_RELATIVE_PATH} -> hook script removed` : undefined
   }
 
-  hooks.PreToolUse = filtered
+  if (Object.hasOwn(hooks, 'UserPromptSubmit')) {
+    if (filteredUserPromptSubmit.length === 0) {
+      delete hooks.UserPromptSubmit
+    } else {
+      hooks.UserPromptSubmit = filteredUserPromptSubmit
+    }
+  }
+  if (Object.hasOwn(hooks, 'PreToolUse')) {
+    if (filteredPreToolUse.length === 0) {
+      delete hooks.PreToolUse
+    } else {
+      hooks.PreToolUse = filteredPreToolUse
+    }
+  }
   writeJson(hooksPath, hooksConfig)
-  return '.codex/hooks.json -> PreToolUse hook removed'
+
+  return removedModernHooks
+    ? '.codex/hooks.json -> UserPromptSubmit hook removed'
+    : '.codex/hooks.json -> PreToolUse hook removed'
 }
 
 function installOpencodePlugin(projectDir: string): string[] {
@@ -2134,6 +2617,10 @@ export function agentsInstall(projectDir = '.', platform: AgentPlatform, options
   const resolvedProjectDir = resolve(projectDir)
   const packageRoot = options.packageRoot ? resolve(options.packageRoot) : undefined
   const displayName = formatPlatformDisplayName(platform)
+  if (platform === 'codex') {
+    assertCodexPromptHookScriptIsSafe(resolvedProjectDir)
+    assertCodexMcpConfigIsSafe(resolvedProjectDir)
+  }
   const agentsSection =
     platform === 'codex'
       ? CODEX_AGENTS_MD_SECTION
@@ -2146,6 +2633,7 @@ export function agentsInstall(projectDir = '.', platform: AgentPlatform, options
 
   if (platform === 'codex') {
     messages.push(installCodexHook(resolvedProjectDir))
+    messages.push(installCodexMcpServer(resolvedProjectDir))
   } else if (platform === 'opencode') {
     messages.push(...installOpencodePlugin(resolvedProjectDir))
     messages.push(installOpencodeMcpServer(resolvedProjectDir, packageRoot))
@@ -2168,12 +2656,19 @@ export function agentsInstall(projectDir = '.', platform: AgentPlatform, options
 
 export function agentsUninstall(projectDir = '.', platform: AgentPlatform): string {
   const resolvedProjectDir = resolve(projectDir)
+  if (platform === 'codex') {
+    assertCodexMcpConfigIsSafe(resolvedProjectDir)
+  }
   const messages = [removeSectionFromFile(join(resolvedProjectDir, 'AGENTS.md'))]
 
   if (platform === 'codex') {
     const hookMessage = uninstallCodexHook(resolvedProjectDir)
     if (hookMessage) {
       messages.push(hookMessage)
+    }
+    const mcpMessage = uninstallCodexMcpServer(resolvedProjectDir)
+    if (mcpMessage) {
+      messages.push(mcpMessage)
     }
   } else if (platform === 'opencode') {
     messages.push(...uninstallOpencodePlugin(resolvedProjectDir))
