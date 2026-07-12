@@ -56,7 +56,7 @@ export interface DoctorReport {
   agents: AgentCheck[]
   mcpChecks: McpCheck[]
   /** Availability of the optional semantic/rerank runtime. Informational
-   *  only â never part of the `healthy` computation. */
+   *  only — never part of the `healthy` computation. */
   semantic: SemanticCheck
   nextCommands: string[]
   healthy: boolean
@@ -564,7 +564,7 @@ export function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorRep
   const semanticAvailable = isSemanticRuntimeAvailable(projectDir)
   const semantic: SemanticCheck = semanticAvailable
     ? { available: true, detail: 'optional @huggingface/transformers resolved' }
-    : { available: false, detail: 'optional â run `npm install @huggingface/transformers` in this project to enable semantic/rerank' }
+    : { available: false, detail: 'optional — run `npm install @huggingface/transformers` in this project to enable semantic/rerank' }
 
   const partialReport = {
     packageVersion,
