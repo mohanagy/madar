@@ -39,6 +39,21 @@ describe('install documentation', () => {
     expect(reference).toContain('mark the agent as `partial` and suggest the matching reinstall command')
   })
 
+  it('documents the Codex project MCP, task-applicable hook, and trust activation boundary', () => {
+    const reference = readFileSync(resolve('docs/reference/cli-and-mcp.md'), 'utf8')
+    const quickstarts = readFileSync(resolve('docs/tutorials/agent-quickstarts.md'), 'utf8')
+
+    for (const document of [reference, quickstarts]) {
+      expect(document).toContain('`.codex/madar-user-prompt-submit.cjs`')
+      expect(document).toContain('`.codex/config.toml`')
+      expect(document).toContain('`/hooks`')
+      expect(document).toContain('`/mcp`')
+      expect(document).toContain('`codex mcp list`')
+      expect(document).toContain('guidance, not enforcement')
+      expect(document).toContain('on-disk')
+    }
+  })
+
   it('documents handoff as the share-safe CLI handoff distinct from local pack and prompt flows', () => {
     const readme = readFileSync(resolve('README.md'), 'utf8')
 
