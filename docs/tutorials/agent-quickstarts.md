@@ -94,8 +94,8 @@ Common failure modes:
 ## Codex CLI
 
 - Install: `madar codex install`
-- Expected files/config: `AGENTS.md`, `.codex/hooks.json`
-- Verify: `madar doctor` / `madar status`
+- Expected files/config: `AGENTS.md`, `.codex/hooks.json`, `.codex/madar-user-prompt-submit.cjs`, `.codex/config.toml`
+- Verify: `madar doctor` / `madar status` for on-disk wiring, then `/hooks` and `/mcp` or `codex mcp list` after a restart/new session
 
 ```bash
 madar codex install
@@ -104,12 +104,13 @@ madar status
 madar pack "how does password reset request enqueue the reset email" --task explain
 ```
 
-This is an instruction-only plus hook quickstart. Known limitation: No project-local MCP entry is installed for Codex.
+This installs the Madar-owned AGENTS.md section, a task-applicable `UserPromptSubmit` hook, and a marker-owned `[mcp_servers.madar]` block in `.codex/config.toml`. The hook gives model-visible context-pack-first guidance only for local code tasks; it is guidance, not enforcement. Enable it only in a trusted repository. Restart or open a new Codex session, use `/hooks` to review and trust the project hook, then use `/mcp` or `codex mcp list` to verify the local MCP server. Known limitation: `madar doctor` / `madar status` validate on-disk wiring, not Codex live hook trust or MCP activation.
 
 Common failure modes:
 
-- If `madar status` marks Codex as partial, inspect `.codex/hooks.json` and rerun the install.
-- If Codex ignores the guidance, confirm `AGENTS.md` still contains the Madar-owned rules.
+- If `madar status` marks Codex as partial, inspect `.codex/hooks.json`, `.codex/madar-user-prompt-submit.cjs`, and `.codex/config.toml`, then rerun the install.
+- If Codex ignores the guidance, confirm `AGENTS.md` still contains the Madar-owned rules and that the project hook is trusted in `/hooks`.
+- `madar codex uninstall` removes only the Madar-owned AGENTS section, hook, script, and marked TOML block; unrelated hooks and TOML configuration remain.
 
 ## Aider
 
