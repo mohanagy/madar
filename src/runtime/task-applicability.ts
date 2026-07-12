@@ -359,7 +359,12 @@ export function formatTaskApplicabilityDebugMessage(classification: TaskApplicab
 export function buildPromptApplicabilityHookScript(
   matchPayloadJson: string,
   hookEventName: string,
+  graphPath = 'out/graph.json',
 ): string {
+  const graphAccessStatement = graphPath === 'out/graph.json'
+    ? "fs.accessSync('out/graph.json')"
+    : `fs.accessSync(${JSON.stringify(graphPath)})`
+
   return `const fs = require('fs')
 
 const config = ${JSON.stringify(HOOK_CONFIG, null, 2)}
@@ -510,7 +515,7 @@ process.stdin.on('data', (chunk) => {
 
 process.stdin.on('end', () => {
   try {
-    fs.accessSync('out/graph.json')
+    ${graphAccessStatement}
   } catch {
     return
   }
