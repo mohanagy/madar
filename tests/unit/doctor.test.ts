@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -166,7 +166,7 @@ describe('doctor command', () => {
     })
   })
 
-  test('reports codex as configured when AGENTS.md and the managed hook are wired', () => {
+  test('reports codex as configured when AGENTS.md, the managed prompt hook, and MCP config are wired', () => {
     withSandbox((sandboxDir) => {
       writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
       agentsInstall(sandboxDir, 'codex')
@@ -183,7 +183,152 @@ describe('doctor command', () => {
       expect(doctor).toContain('codex: configured')
       expect(doctor).toContain('instructions=yes')
       expect(doctor).toContain('hook=yes')
+      expect(doctor).toContain('mcp=yes')
       expect(status).toContain('codex:configured')
+    })
+  })
+
+  test('reports an incomplete Codex profile as partial and recommends reinstall', () => {
+    withSandbox((sandboxDir) => {
+      writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
+      agentsInstall(sandboxDir, 'codex')
+      rmSync(resolve(sandboxDir, '.codex', 'madar-user-prompt-submit.cjs'), { force: true })
+
+      const doctor = runDoctorCommand({
+        projectDir: sandboxDir,
+        now: Date.now(),
+      })
+      const status = runStatusCommand({
+        projectDir: sandboxDir,
+        now: Date.now(),
+      })
+
+      expect(doctor).toContain('codex: partial')
+      expect(doctor).toContain('instructions=yes')
+      expect(doctor).toContain('hook=no')
+      expect(doctor).toContain('mcp=yes')
+      expect(doctor).toContain('madar codex install')
+      expect(status).toContain('codex:partial')
+    })
+  })
+
+  test('reports a marker-prefixed but stale Codex prompt script as partial', () => {
+    withSandbox((sandboxDir) => {
+      writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
+      agentsInstall(sandboxDir, 'codex')
+      writeText(
+        resolve(sandboxDir, '.codex', 'madar-user-prompt-submit.cjs'),
+        '// madar managed Codex UserPromptSubmit hook\nconsole.log("stale")\n',
+      )
+
+      const doctor = runDoctorCommand({
+        projectDir: sandboxDir,
+        now: Date.now(),
+      })
+
+      expect(doctor).toContain('codex: partial')
+      expect(doctor).toContain('instructions=yes')
+      expect(doctor).toContain('hook=no')
+      expect(doctor).toContain('mcp=yes')
+      expect(doctor).toContain('madar codex install')
+    })
+  })
+
+  test('reports a managed Codex MCP block with a later user conflict as partial', () => {
+    withSandbox((sandboxDir) => {
+      writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
+      agentsInstall(sandboxDir, 'codex')
+      const configPath = resolve(sandboxDir, '.codex', 'config.toml')
+      writeText(
+        configPath,
+        `${readFileSync(configPath, 'utf8')}\n[mcp_servers.madar]\ncommand = "custom-madar"\n`,
+      )
+
+      const doctor = runDoctorCommand({
+        projectDir: sandboxDir,
+        now: Date.now(),
+      })
+      const status = runStatusCommand({
+        projectDir: sandboxDir,
+        now: Date.now(),
+      })
+
+      expect(doctor).toContain('codex: partial')
+      expect(doctor).toContain('instructions=yes')
+      expect(doctor).toContain('hook=yes')
+      expect(doctor).toContain('mcp=no')
+      expect(doctor).toContain('madar codex install')
+      expect(status).toContain('codex:partial')
+    })
+  })
+
+  test('reports duplicate, stale, or legacy managed Codex hooks as partial', () => {
+    withSandbox((sandboxDir) => {
+      writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
+      agentsInstall(sandboxDir, 'codex')
+      const hooksPath = resolve(sandboxDir, '.codex', 'hooks.json')
+      const hooksConfig = JSON.parse(readFileSync(hooksPath, 'utf8')) as {
+        hooks?: {
+          UserPromptSubmit?: Array<Record<string, unknown>>
+          PreToolUse?: Array<Record<string, unknown>>
+        }
+      }
+      hooksConfig.hooks?.UserPromptSubmit?.push({
+        name: 'madar',
+        source: 'madar',
+        hooks: [{ type: 'command', command: 'echo stale-madar-prompt-hook' }],
+      })
+      hooksConfig.hooks ??= {}
+      hooksConfig.hooks.PreToolUse = [{
+        name: 'madar',
+        source: 'madar',
+        matcher: 'Bash',
+        hooks: [{ type: 'command', command: 'echo legacy-madar-pre-tool-hook' }],
+      }]
+      writeText(hooksPath, `${JSON.stringify(hooksConfig, null, 2)}\n`)
+
+      const doctor = runDoctorCommand({
+        projectDir: sandboxDir,
+        now: Date.now(),
+      })
+      const status = runStatusCommand({
+        projectDir: sandboxDir,
+        now: Date.now(),
+      })
+
+      expect(doctor).toContain('codex: partial')
+      expect(doctor).toContain('instructions=yes')
+      expect(doctor).toContain('hook=no')
+      expect(doctor).toContain('mcp=yes')
+      expect(doctor).toContain('madar codex install')
+      expect(status).toContain('codex:partial')
+    })
+  })
+
+  test('reports a managed Codex prompt hook with an extra command as partial', () => {
+    withSandbox((sandboxDir) => {
+      writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
+      agentsInstall(sandboxDir, 'codex')
+      const hooksPath = resolve(sandboxDir, '.codex', 'hooks.json')
+      const hooksConfig = JSON.parse(readFileSync(hooksPath, 'utf8')) as {
+        hooks?: {
+          UserPromptSubmit?: Array<{ source?: string, hooks?: Array<Record<string, unknown>> }>
+        }
+      }
+      const managedHook = hooksConfig.hooks?.UserPromptSubmit?.find((hook) => hook.source === 'madar')
+      managedHook?.hooks?.push({ type: 'command', command: 'echo extra-untrusted-command' })
+      writeText(hooksPath, `${JSON.stringify(hooksConfig, null, 2)}\n`)
+
+      const doctor = runDoctorCommand({
+        projectDir: sandboxDir,
+        now: Date.now(),
+      })
+
+      expect(doctor).toContain('codex: partial')
+      expect(doctor).toContain('instructions=yes')
+      expect(doctor).toContain('hook=no')
+      expect(doctor).toContain('mcp=yes')
+      expect(doctor).toContain('madar codex install')
     })
   })
 
