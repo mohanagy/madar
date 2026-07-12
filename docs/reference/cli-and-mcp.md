@@ -14,7 +14,7 @@ Madar produces local context packs that any modern coding agent can consume over
 | Gemini CLI | MCP server | `madar gemini <install\|uninstall> [--profile core\|full\|strict]` | `GEMINI.md` + `.gemini/settings.json` hook |
 | Aider | AGENTS.md context-pack-first profile | `madar aider install` | `AGENTS.md` Aider profile |
 | OpenCode | AGENTS.md + `.opencode/plugins/madar.js` + MCP via `opencode.json` / `opencode.jsonc` | `madar opencode install` | `AGENTS.md` OpenCode profile + plugin registration + MCP entry |
-| Codex CLI | AGENTS.md + `.codex/hooks.json` context-pack-first profile | `madar codex install` | `AGENTS.md` Codex profile + `.codex/hooks.json` |
+| Codex CLI | AGENTS.md + task-applicable `UserPromptSubmit` hook + MCP via `.codex/config.toml` | `madar codex install` | `AGENTS.md` Codex profile + `.codex/hooks.json` + `.codex/madar-user-prompt-submit.cjs` + `.codex/config.toml` |
 | Windsurf / others | Pipe `madar prompt` output | `madar prompt "..." --provider claude` | n/a |
 
 These are local installers that write project instructions and, when the platform supports it, local MCP config or plugin files that point at the Madar subprocess. No code is uploaded.
@@ -33,7 +33,7 @@ For Claude, Cursor, Copilot, and Gemini, `--profile strict` keeps the lean core 
 
 Aider and OpenCode are intentionally context-pack-first: run `madar generate .`, install the profile, and start broad codebase work with `madar pack "<task>" --task explain` before raw file search. `madar aider install` writes an AGENTS.md profile only; remove it with `madar aider uninstall`. `madar opencode install` writes the AGENTS.md profile, `.opencode/plugins/madar.js`, and the Madar MCP entry in `opencode.json` or `opencode.jsonc`; remove only Madar-owned content with `madar opencode uninstall`.
 
-Codex is intentionally context-pack-first too: run `madar generate .`, install with `madar codex install`, and start broad codebase work with `madar pack "<task>" --task explain` before raw file search. To remove the profile, run `madar codex uninstall`; it removes the Madar AGENTS.md section and Codex hook while preserving unrelated content.
+Codex is intentionally context-pack-first too: run `madar generate .`, install with `madar codex install`, and start broad codebase work with `madar pack "<task>" --task explain` before raw file search. The install writes the Madar-owned AGENTS.md section, `.codex/hooks.json`, `.codex/madar-user-prompt-submit.cjs`, and a marker-owned `[mcp_servers.madar]` block in `.codex/config.toml`. Its `UserPromptSubmit` hook provides model-visible guidance only for local code tasks; it is guidance, not enforcement. Enable it only in a trusted repository, restart or start a new Codex session, use `/hooks` to review and trust the project hook, then verify the server through `/mcp` or `codex mcp list`. `madar doctor` and `madar status` validate on-disk install state only, not live Codex trust or activation. To remove the profile, run `madar codex uninstall`; it removes only Madar-owned AGENTS, hook, script, and marked TOML content while preserving unrelated content.
 
 ## MCP Registry metadata
 
