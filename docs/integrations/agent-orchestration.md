@@ -90,7 +90,7 @@ madar generate .
 madar claude install
 ```
 
-Then ask: âHow does auth work?â
+Then ask: “How does auth work?”
 
 **Codex variant**
 
