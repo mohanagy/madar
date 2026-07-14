@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { realpathSync } from 'node:fs'
-import { isAbsolute, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 
 export interface MadarWorkspace {
   /** Source root Madar is indexing. This may be a directory within a worktree. */
@@ -40,10 +40,6 @@ function gitPath(rootPath: string, args: string[]): string | null {
   }
 }
 
-function resolveGitPath(worktreeRoot: string, value: string): string {
-  return isAbsolute(value) ? resolve(value) : resolve(worktreeRoot, value)
-}
-
 function worktreeArtifactId(commonDir: string, worktreeRoot: string, sourceRoot: string): string {
   return createHash('sha256')
     .update(`${canonicalPath(commonDir)}\u0000${canonicalPath(worktreeRoot)}\u0000${canonicalPath(sourceRoot)}`)
@@ -65,14 +61,20 @@ export function resolveMadarWorkspace(rootPath = '.'): MadarWorkspace {
   // aliases leak into normal non-worktree output paths.
   const sourceRoot = resolve(rootPath)
   const worktreeValue = gitPath(sourceRoot, ['rev-parse', '--show-toplevel'])
-  const commonDirValue = worktreeValue ? gitPath(sourceRoot, ['rev-parse', '--git-common-dir']) : null
-  const gitDirValue = worktreeValue ? gitPath(sourceRoot, ['rev-parse', '--git-dir']) : null
+  // Ask Git for absolute metadata paths. Relative `--git-common-dir` output
+  // varies across Git platforms when the source root is nested below a primary
+  // checkout, and can otherwise make that primary checkout look like a linked
+  // worktree on Windows.
+  const commonDirValue = worktreeValue
+    ? gitPath(sourceRoot, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
+    : null
+  const gitDirValue = worktreeValue
+    ? gitPath(sourceRoot, ['rev-parse', '--path-format=absolute', '--git-dir'])
+    : null
 
   const worktreeRoot = worktreeValue ? resolve(worktreeValue) : null
-  // Git prints relative --git-dir / --git-common-dir values relative to the
-  // directory passed to `git -C`, which can itself be a nested source scope.
-  const gitCommonDir = worktreeRoot && commonDirValue ? resolveGitPath(sourceRoot, commonDirValue) : null
-  const gitDir = worktreeRoot && gitDirValue ? resolveGitPath(sourceRoot, gitDirValue) : null
+  const gitCommonDir = worktreeRoot && commonDirValue ? resolve(commonDirValue) : null
+  const gitDir = worktreeRoot && gitDirValue ? resolve(gitDirValue) : null
   const isLinkedWorktree = gitCommonDir !== null
     && gitDir !== null
     && canonicalPath(gitCommonDir) !== canonicalPath(gitDir)

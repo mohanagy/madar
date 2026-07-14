@@ -111,7 +111,10 @@ function runPipeline(tempDir: string) {
 }
 
 describe('pipeline', () => {
-  const referenceFixturesTimeoutMs = 30_000
+  // The full CI matrix runs this CPU-heavy reference corpus beside other
+  // extraction suites. Windows runners can exceed the normal 30s deadline
+  // without indicating a correctness regression.
+  const referenceFixturesTimeoutMs = process.platform === 'win32' ? 90_000 : 30_000
 
   it('runs end to end on the reference fixtures', () => {
     withTempDir((tempDir) => {
@@ -127,14 +130,14 @@ describe('pipeline', () => {
       expect(first.graph.numberOfNodes()).toBe(second.graph.numberOfNodes())
       expect(first.graph.numberOfEdges()).toBe(second.graph.numberOfEdges())
     })
-  })
+  }, referenceFixturesTimeoutMs)
 
   it('mentions the top god node in the generated report', () => {
     withTempDir((tempDir) => {
       const result = runPipeline(tempDir)
       expect(result.report).toContain(`\`${escapeMarkdownInline(result.gods[0]?.label ?? '')}\``)
     })
-  })
+  }, referenceFixturesTimeoutMs)
 
   it('detects both code and docs in the fixture corpus', () => {
     withTempDir((tempDir) => {
@@ -143,7 +146,7 @@ describe('pipeline', () => {
       expect(result.detection.files.document.length).toBeGreaterThan(0)
       expect(result.extraction.nodes.some((node) => node.file_type === 'document')).toBe(true)
     })
-  })
+  }, referenceFixturesTimeoutMs)
 
   it('keeps extraction confidence labels within the expected set', () => {
     withTempDir((tempDir) => {
@@ -153,7 +156,7 @@ describe('pipeline', () => {
         expect(valid.has(edge.confidence)).toBe(true)
       }
     })
-  })
+  }, referenceFixturesTimeoutMs)
 
   it('does not introduce self loops into the built graph', () => {
     withTempDir((tempDir) => {
@@ -162,5 +165,5 @@ describe('pipeline', () => {
         expect(source).not.toBe(target)
       }
     })
-  })
+  }, referenceFixturesTimeoutMs)
 })

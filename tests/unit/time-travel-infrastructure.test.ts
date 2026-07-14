@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
-import { basename, join, resolve } from 'node:path'
+import { basename, join, relative, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
 
@@ -11,6 +11,11 @@ import type { TimeTravelResult } from '../../src/runtime/time-travel.js'
 import { resolveMadarWorkspace } from '../../src/shared/workspace.js'
 
 const createdRoots = new Set<string>()
+
+function isInside(candidate: string, root: string): boolean {
+  const relativePath = relative(root, candidate)
+  return relativePath === '' || (!relativePath.startsWith('..') && !relativePath.startsWith(`..${sep}`))
+}
 
 function createDeferred<T>(): {
   promise: Promise<T>
@@ -241,16 +246,33 @@ describe('time travel infrastructure', () => {
       execFileSync('git', ['worktree', 'add', '-b', 'feature/time-travel', linked], { cwd: primary, stdio: 'pipe' })
 
       const linkedWorkspace = resolveMadarWorkspace(linked)
-      const result = await loadOrBuildSnapshot({ ref: 'HEAD' }, { rootDir: linked })
+      const materializedWorktrees: string[] = []
+      const result = await loadOrBuildSnapshot({ ref: 'HEAD' }, {
+        rootDir: linked,
+        git: {
+          createDetachedWorktree(worktreePath, commitSha): void {
+            materializedWorktrees.push(worktreePath)
+            execFileSync('git', ['worktree', 'add', '--detach', worktreePath, commitSha], { cwd: linked, stdio: 'pipe' })
+          },
+          removeWorktree(worktreePath): void {
+            execFileSync('git', ['worktree', 'remove', '--force', worktreePath], { cwd: linked, stdio: 'pipe' })
+          },
+        },
+      })
       const artifactContainer = join(linkedWorkspace.gitCommonDir ?? '', 'madar', 'worktrees')
-      const cachedWorktrees = join(linkedWorkspace.outputDir, 'cache', 'time-travel', 'worktrees')
 
       expect(linkedWorkspace.isLinkedWorktree).toBe(true)
       expect(result.graphPath).toBe(join(linkedWorkspace.outputDir, 'time-travel', 'snapshots', result.commitSha, 'graph.json'))
       expect(existsSync(result.graphPath)).toBe(true)
       expect(existsSync(join(linked, 'out'))).toBe(false)
       expect(readdirSync(artifactContainer).sort()).toEqual([basename(linkedWorkspace.artifactRoot)])
-      expect(readdirSync(cachedWorktrees)).toHaveLength(0)
+      expect(materializedWorktrees).toHaveLength(1)
+      const [materializedWorktree] = materializedWorktrees
+      if (!materializedWorktree) {
+        throw new Error('Expected one transient time-travel worktree')
+      }
+      expect(isInside(materializedWorktree, linkedWorkspace.gitCommonDir ?? '')).toBe(false)
+      expect(existsSync(materializedWorktree)).toBe(false)
 
       const worktreeList = execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd: linked, encoding: 'utf8', stdio: 'pipe' })
       expect(worktreeList).toContain(`worktree ${realpathSync(primary)}`)

@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 import type { KnowledgeGraph } from '../contracts/graph.js'
@@ -8,7 +9,6 @@ import { loadGraph } from '../runtime/serve.js'
 import { compareTimeTravelGraphs, type CompareTimeTravelGraphsOptions, type TimeTravelResult } from '../runtime/time-travel.js'
 import { validateGraphOutputPath } from '../shared/security.js'
 import { resolveMadarOutputDirectory, resolveMadarWorkspace } from '../shared/workspace.js'
-import { cacheDir } from './cache.js'
 import { generateGraph, loadGraphExtractorVersion, type GenerateGraphOptions, type GenerateGraphResult } from './generate.js'
 
 type MaybePromise<T> = T | Promise<T>
@@ -105,12 +105,17 @@ function snapshotMetadataPath(rootDir: string, commitSha: string): string {
   return join(snapshotDir(rootDir, commitSha), 'metadata.json')
 }
 
-function worktreeRootDir(rootDir: string): string {
-  return cacheDir(rootDir, 'time-travel', 'worktrees')
+function worktreeRootDir(): string {
+  // Linked-worktree artifacts live below the shared Git directory. Git cannot
+  // create a worktree inside that directory (notably on Windows), so transient
+  // source checkouts must use an OS-temporary location instead.
+  const directory = join(tmpdir(), 'madar-time-travel-worktrees')
+  mkdirSync(directory, { recursive: true })
+  return directory
 }
 
-function worktreePath(rootDir: string, commitSha: string): string {
-  return join(worktreeRootDir(rootDir), `${commitSha}-${process.pid}-${Date.now()}`)
+function worktreePath(commitSha: string): string {
+  return join(worktreeRootDir(), `${commitSha}-${process.pid}-${Date.now()}`)
 }
 
 function snapshotBuildKey(rootDir: string, commitSha: string, refresh: boolean): string {
@@ -313,7 +318,7 @@ export async function loadOrBuildSnapshot(input: SnapshotRequest, dependencies: 
 
   const buildKey = snapshotBuildKey(deps.rootDir, commitSha, refresh)
   const { promise: buildPromise, created } = getOrCreateInflightSnapshotBuild(buildKey, async (): Promise<TimeTravelSnapshot> => {
-    const materializedWorktree = worktreePath(deps.rootDir, commitSha)
+    const materializedWorktree = worktreePath(commitSha)
     let worktreeCreated = false
     let buildError: unknown = null
     let transientArtifactRoot: string | null = null

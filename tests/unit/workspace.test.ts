@@ -18,7 +18,31 @@ function isInside(candidate: string, root: string): boolean {
   return relativePath === '' || (!relativePath.startsWith('..') && !relativePath.startsWith(`..${sep}`))
 }
 
+function canonicalPhysicalPath(path: string): string {
+  const canonical = realpathSync.native(path)
+  return process.platform === 'win32' ? canonical.toLowerCase() : canonical
+}
+
 describe('worktree artifact routing', () => {
+  test('keeps a nested source root in a primary checkout local', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'madar-primary-workspace-'))
+    const primary = join(tempDir, 'primary')
+    const nested = join(primary, 'packages', 'api')
+    try {
+      execFileSync('git', ['init', primary], { stdio: 'pipe' })
+      mkdirSync(nested, { recursive: true })
+
+      const workspace = resolveMadarWorkspace(nested)
+
+      expect(realpathSync(workspace.worktreeRoot ?? '')).toBe(realpathSync(primary))
+      expect(workspace.isLinkedWorktree).toBe(false)
+      expect(workspace.outputDir).toBe(join(resolve(nested), 'out'))
+      expect(workspace.graphPath).toBe(join(resolve(nested), 'out', 'graph.json'))
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
+
   test('keeps a linked worktree graph outside the source checkout and isolated from the primary checkout', () => {
     const tempDir = mkdtempSync(join(tmpdir(), 'madar-worktree-'))
     const primary = join(tempDir, 'primary')
@@ -40,7 +64,7 @@ describe('worktree artifact routing', () => {
       expect(primaryWorkspace.isLinkedWorktree).toBe(false)
       expect(primaryWorkspace.graphPath).toBe(join(resolve(primary), 'out', 'graph.json'))
       expect(linkedWorkspace.isLinkedWorktree).toBe(true)
-      expect(realpathSync(linkedWorkspace.gitCommonDir ?? '')).toBe(realpathSync(join(primary, '.git')))
+      expect(canonicalPhysicalPath(linkedWorkspace.gitCommonDir ?? '')).toBe(canonicalPhysicalPath(join(primary, '.git')))
       expect(linkedWorkspace.graphPath).not.toBe(primaryWorkspace.graphPath)
       expect(isInside(linkedWorkspace.graphPath, linked)).toBe(false)
       expect(scopedWorkspace.graphPath).not.toBe(linkedWorkspace.graphPath)
