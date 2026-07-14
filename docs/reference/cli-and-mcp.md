@@ -43,7 +43,7 @@ The checked-in public registry manifest lives at [`docs/mcp-registry/server.json
 npm run registry:validate
 ```
 
-The official MCP Registry hosts metadata, not Madar code or your local graph artifact. Madar's registry entry points back to the public npm package and the same local-first runtime flow: run `madar generate .` to create `out/graph.json`, then start the local stdio server with `npx @lubab/madar serve --stdio out/graph.json`, or let `madar <agent> install` write that wiring for you. Generated Claude and Cursor MCP configs now call the installed `madar` command as `madar serve --stdio <absolute project graph path>` instead of writing a version-pinned `npx` launcher into the repo-local config.
+The official MCP Registry hosts metadata, not Madar code or your local graph artifact. Its entry starts `npx @lubab/madar serve --stdio --auto-refresh` from the active workspace: Madar creates the graph when needed, then refreshes it after local changes. Do not add a fixed `out/graph.json` argument to that registry command, because it would become stale and would not follow a linked Git worktree's isolated artifact directory. Start or reconnect the MCP server from each worktree the agent enters. Generated agent MCP configs use the installed `madar` command with the same `serve --stdio --auto-refresh` flow rather than a version-pinned `npx` launcher or an absolute graph path.
 
 If you still discover older `graphify-ts` links or listings, Madar is the current project name. Use `https://github.com/mohanagy/madar` and `@lubab/madar` as the canonical repository and package surfaces.
 

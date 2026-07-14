@@ -22,6 +22,7 @@ import type { ContextSessionState } from '../../contracts/context-session.js'
 import { buildCommunityLabels } from '../../pipeline/community-naming.js'
 import { communityDetailsAtZoom, communityDetailsMicro, type CommunityZoomLevel } from '../../pipeline/community-details.js'
 import { lineNumberFromSourceLocation, lineRangeFromSourceLocation } from '../../shared/source-location.js'
+import { resolveGraphSourceRoot } from '../../shared/graph-source-root.js'
 import { validateGraphPath } from '../../shared/security.js'
 import { featureMap } from '../feature-map.js'
 import { implementationChecklist } from '../implementation-checklist.js'
@@ -772,14 +773,14 @@ function createImpactCandidate(
   }
 }
 
-function snippetSourcePathCandidates(graphPath: string, sourceFile: string): string[] {
+function snippetSourcePathCandidates(graphPath: string, sourceFile: string, projectRoot?: string): string[] {
   if (sourceFile.trim().length === 0) {
     return []
   }
 
   const graphDir = dirname(graphPath)
-  const projectDir = basename(graphDir) === 'out' ? dirname(graphDir) : graphDir
-  const roots = [...new Set([graphDir, projectDir].map((root) => resolve(root)))]
+  const legacyProjectDir = basename(graphDir) === 'out' ? dirname(graphDir) : graphDir
+  const roots = [...new Set([graphDir, projectRoot ?? legacyProjectDir].map((root) => resolve(root)))]
   const candidates = isAbsolute(sourceFile)
     ? [resolve(sourceFile)]
     : roots.map((root) => resolve(root, sourceFile))
@@ -810,9 +811,9 @@ function readFocusedSnippet(
   graphPath: string,
   sourceFile: string,
   lineNumber: number,
-  options: { derived?: boolean; fileCache?: Map<string, string[] | null> } = {},
+  options: { derived?: boolean; fileCache?: Map<string, string[] | null>; projectRoot?: string } = {},
 ): string | null {
-  for (const candidatePath of snippetSourcePathCandidates(graphPath, sourceFile)) {
+  for (const candidatePath of snippetSourcePathCandidates(graphPath, sourceFile, options.projectRoot)) {
     const snippet = readSnippet(candidatePath, lineNumber, options)
     if (snippet !== null) {
       return snippet
@@ -952,6 +953,7 @@ function buildFocusedExpansionPayload(
   const communityIds = new Set<number>()
   const includedIds = new Set<string>()
   const snippetFileCache = new Map<string, string[] | null>()
+  const projectRoot = resolveGraphSourceRoot(graphPath, graph)
 
   for (const [nodeId, attributes] of graph.nodeEntries()) {
     const sourceFile = String(attributes.source_file ?? '').trim()
@@ -1004,6 +1006,7 @@ function buildFocusedExpansionPayload(
         const snippet = readFocusedSnippet(graphPath, sourceFile, lineNumber, {
           derived: derived || sourceRange === null,
           fileCache: snippetFileCache,
+          projectRoot,
         })
         builtEntry = {
           node_id: nodeId,
@@ -1247,8 +1250,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       if (Object.hasOwn(toolArguments, 'budget') && prBudget === null) {
         return helpers.failure(id, helpers.jsonrpcInvalidParams, `budget must be a number between 1 and ${helpers.maxStdioTokenBudget}`)
       }
-      const graphDir = dirname(validateGraphPath(graphPath))
-      const projectRoot = dirname(graphDir)
+      const projectRoot = resolveGraphSourceRoot(validateGraphPath(graphPath), graph)
       const prResult = analyzePrImpact(graph, projectRoot, {
         ...(prBaseBranch ? { baseBranch: prBaseBranch } : {}),
         ...(prDepth !== null ? { depth: prDepth } : {}),
@@ -1343,7 +1345,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         ...(retrieveRerankModel ? { rerankerModel: retrieveRerankModel } : {}),
         ...(retrieveLevelTyped !== null ? { retrievalLevel: retrieveLevelTyped } : {}),
         ...(effectiveRetrieveStrategy ? { retrievalStrategy: effectiveRetrieveStrategy } : {}),
-        projectRoot: dirname(resolve(graphPath)),
+        projectRoot: resolveGraphSourceRoot(graphPath, graph),
       }) : Promise.resolve(retrieveContext(graph, {
         question,
         budget: retrieveBudget,
@@ -1534,8 +1536,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         if (requireFreshContextInput === true) {
           return helpers.failure(id, helpers.jsonrpcInvalidParams, 'require_fresh_context is not supported for task=review')
         }
-        const graphDir = dirname(validateGraphPath(graphPath))
-        const projectRoot = dirname(graphDir)
+        const projectRoot = resolveGraphSourceRoot(validateGraphPath(graphPath), graph)
         const prResult = analyzePrImpact(graph, projectRoot, {
           budget: resolvedBudget,
           taskIntent: initialPlan.evidence.recipe_id,

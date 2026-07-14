@@ -5,6 +5,7 @@ import { buildGraphSummary } from '../runtime/graph-summary.js'
 import { computeContextPackDiagnostics } from '../runtime/context-pack-diagnostics.js'
 import { loadGraph } from '../runtime/serve.js'
 import { validateGraphOutputPath } from '../shared/security.js'
+import { resolveWorkspaceGraphPath } from '../shared/workspace.js'
 
 import type { CompiledContextPack, ContextPackCoverage, ContextPackNode, ContextPackTaskKind } from '../contracts/context-pack.js'
 import type { ContextPackDiagnostics } from '../contracts/context-pack-diagnostics.js'
@@ -366,7 +367,8 @@ function uniqueOrdered(values: readonly string[]): string[] {
 }
 
 export function runProofReportCommand(options: ProofReportOptions): ProofReportResult {
-  const graphBase = relativeOutputBase(options.graphPath)
+  const graphPath = resolveWorkspaceGraphPath(options.graphPath)
+  const graphBase = relativeOutputBase(graphPath)
   const outputDir = validateGraphOutputPath(options.outputDir ?? join(graphBase, 'proof-report'), graphBase)
   const compareDir = options.compareDir ?? join(graphBase, 'compare')
   const compareSummaries = readCompareSummaries(compareDir, graphBase)
@@ -374,20 +376,20 @@ export function runProofReportCommand(options: ProofReportOptions): ProofReportR
   const limitations: string[] = []
   const nextCommands: string[] = []
   const defaultCommands = [
-    resolve(options.graphPath) === resolve('out/graph.json') ? 'madar summary out/graph.json' : `madar summary ${options.graphPath}`,
-    resolve(options.graphPath) === resolve('out/graph.json') ? 'madar doctor out/graph.json' : `madar doctor ${options.graphPath}`,
+    resolve(graphPath) === resolve('out/graph.json') ? 'madar summary out/graph.json' : `madar summary ${graphPath}`,
+    resolve(graphPath) === resolve('out/graph.json') ? 'madar doctor out/graph.json' : `madar doctor ${graphPath}`,
   ]
 
   const report = [
     '# Local Proof Report',
     '',
-    ...formatGraphQualitySection(options.graphPath),
+    ...formatGraphQualitySection(graphPath),
     '',
-    ...formatWorkflowSection(options.graphPath),
+    ...formatWorkflowSection(graphPath),
     '',
-    ...formatPackSection(diagnostics, options.graphPath, nextCommands, limitations),
+    ...formatPackSection(diagnostics, graphPath, nextCommands, limitations),
     '',
-    ...formatCompareSection(compareSummaries, options.graphPath, nextCommands, limitations),
+    ...formatCompareSection(compareSummaries, graphPath, nextCommands, limitations),
     '',
     '## Limitations',
     '',

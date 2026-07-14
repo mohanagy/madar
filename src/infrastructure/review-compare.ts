@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { mkdirSync, realpathSync, writeFileSync } from 'node:fs'
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
 import { analyzePrImpact, compactPrImpactResult } from '../runtime/pr-impact.js'
 import { estimateQueryTokens, loadGraph } from '../runtime/serve.js'
@@ -11,6 +11,7 @@ import {
   type ShareSafePathRoots,
 } from '../shared/share-safe-artifacts.js'
 import { resolveShellCommand, shellEscape } from '../shared/shell.js'
+import { readGraphSourceRoot } from '../shared/graph-source-root.js'
 import { findNearestExistingAncestor, validateGraphPath } from '../shared/security.js'
 import { buildContextPrompt } from './context-prompt.js'
 
@@ -166,25 +167,17 @@ function rewriteShareSafeStderr(
 }
 
 function inferProjectRootFromGraphPath(graphPath: string): string {
-  let currentPath = dirname(resolve(graphPath))
-
-  while (dirname(currentPath) !== currentPath) {
-    if (basename(currentPath) === 'out') {
-      return dirname(currentPath)
-    }
-    currentPath = dirname(currentPath)
-  }
-
-  return dirname(resolve(graphPath))
+  return readGraphSourceRoot(graphPath)
 }
 
 function validateOutputDirForGraph(graphPath: string, outputDir: string): string {
-  const projectRoot = realpathSync(inferProjectRootFromGraphPath(graphPath))
-  const baseDir = realpathSync(resolve(projectRoot, 'out'))
+  // Review artifacts live beside the graph. For a linked worktree that
+  // directory is intentionally outside the source checkout.
+  const baseDir = realpathSync(dirname(resolve(graphPath)))
   const resolvedOutputDir = isAbsolute(outputDir)
     ? resolve(outputDir)
     : outputDir === 'out' || outputDir.startsWith(`out${sep}`)
-      ? resolve(projectRoot, outputDir)
+      ? resolve(dirname(baseDir), outputDir)
       : resolve(outputDir)
   const existingAncestor = findNearestExistingAncestor(resolvedOutputDir)
   const normalizedOutputDir = existingAncestor === null

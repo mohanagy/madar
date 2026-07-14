@@ -1,12 +1,12 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { setTimeout as delay } from 'node:timers/promises'
 
 import { describe, expect, test, vi } from 'vitest'
 
-import { WATCHED_EXTENSIONS, hasNonCode, notifyOnly, rebuildCode, watch } from '../../src/infrastructure/watch.js'
+import { WATCHED_EXTENSIONS, hasNonCode, notifyOnly, rebuildCode, startGraphAutoRefresh, watch } from '../../src/infrastructure/watch.js'
 import { generateGraph } from '../../src/infrastructure/generate.js'
 import { binaryIngestSidecarPath } from '../../src/shared/binary-ingest-sidecar.js'
 
@@ -108,9 +108,64 @@ describe('rebuildCode', () => {
       expect(existsSync(join(tempDir, 'out', 'graph.json'))).toBe(true)
     })
   })
+
+  test('keeps the existing SPI build profile during an automatic refresh', () => {
+    withTempDir((tempDir) => {
+      const sourcePath = join(tempDir, 'main.ts')
+      writeFileSync(sourcePath, 'export const original = true\n', 'utf8')
+      generateGraph(tempDir, { useSpi: true, noHtml: true })
+
+      writeFileSync(sourcePath, 'export const refreshed = true\n', 'utf8')
+      expect(rebuildCode(tempDir, { noHtml: true })).toBe(true)
+
+      const graph = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as { spi_mode?: unknown }
+      expect(graph.spi_mode).toBe(true)
+    })
+  })
+
+  test('recovers a stale refresh lease left by a dead process', () => {
+    withTempDir((tempDir) => {
+      writeFileSync(join(tempDir, 'main.ts'), 'export const refreshed = true\n', 'utf8')
+      const outputDir = join(tempDir, 'out')
+      mkdirSync(outputDir, { recursive: true })
+      const lockPath = join(outputDir, '.madar-refresh.lock')
+      writeFileSync(lockPath, '999999999 stale-lease 1970-01-01T00:00:00.000Z\n', 'utf8')
+      const staleAt = new Date(Date.now() - (2 * 60 * 60 * 1000))
+      utimesSync(lockPath, staleAt, staleAt)
+
+      expect(rebuildCode(tempDir, { noHtml: true })).toBe(true)
+      expect(existsSync(lockPath)).toBe(false)
+    })
+  })
 })
 
 describe('watch', () => {
+  test('reconciles at MCP startup and refreshes a later agent edit', async () => {
+    await withTempDirAsync(async (tempDir) => {
+      writeFileSync(join(tempDir, 'main.ts'), 'export const initialValue = 1\n', 'utf8')
+      const refresh = startGraphAutoRefresh(tempDir, 0.02, {
+        pollIntervalMs: 10,
+        noHtml: true,
+        logger: { log() {}, error() {} },
+      })
+
+      try {
+        const graphPath = join(tempDir, 'out', 'graph.json')
+        expect(refresh.initialRebuilt).toBe(true)
+        expect(existsSync(graphPath)).toBe(true)
+
+        writeFileSync(join(tempDir, 'added.ts'), 'export function addedDuringSession() { return 2 }\n', 'utf8')
+        await waitFor(() => {
+          const graph = JSON.parse(readFileSync(graphPath, 'utf8')) as { nodes?: Array<{ source_file?: string }> }
+          return graph.nodes?.some((node) => node.source_file?.endsWith('added.ts')) === true
+        })
+      } finally {
+        refresh.stop()
+        await refresh.completed
+      }
+    })
+  }, 10_000)
+
   test('triggers a Git-visible rebuild when .gitignore changes', async () => {
     await withTempDirAsync(async (tempDir) => {
       writeFileSync(join(tempDir, 'main.ts'), 'export const visible = true\n', 'utf8')
@@ -585,4 +640,15 @@ async function withTempDirAsync(callback: (tempDir: string) => Promise<void>): P
   } finally {
     rmSync(tempDir, { recursive: true, force: true })
   }
+}
+
+async function waitFor(condition: () => boolean, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (condition()) {
+      return
+    }
+    await delay(25)
+  }
+  throw new Error('Timed out waiting for graph refresh')
 }

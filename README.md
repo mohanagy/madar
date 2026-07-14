@@ -95,6 +95,8 @@ madar opencode install
 
 After installing a profile, run `madar doctor` and `madar status`. Installer details are in the [CLI and MCP reference](https://github.com/mohanagy/madar/blob/main/docs/reference/cli-and-mcp.md).
 
+If you upgrade to `0.30.0` from an earlier version, run your profile's install command again (for example, `madar claude install` or `madar codex install`) to update its managed MCP entry with automatic refresh.
+
 ## Use Without MCP
 
 You can also generate context directly from the CLI:
@@ -138,9 +140,9 @@ It helps less when:
 - the task is obvious from one file
 - the question needs live runtime behavior
 - the code relies heavily on dynamic patterns static analysis cannot see
-- the generated graph is stale after large repo changes
+- you use a standalone graph without regenerating it after large repo changes
 
-If the repo changed a lot, regenerate:
+For standalone CLI workflows, regenerate after substantial repo changes:
 
 ```bash
 madar generate .
@@ -150,12 +152,20 @@ madar generate .
 
 Madar records graph freshness so agents can tell whether context still matches the repo. On git workspaces, freshness is tied to the graph build commit plus the working-tree diff, so unrelated changes do not have to block a focused task by default.
 
+Installed MCP profiles in `0.30.0` start `madar serve --stdio --auto-refresh`. Madar reconciles the graph when that server starts, then watches the active workspace and refreshes the graph after source or relevant configuration changes. You do not need to run `madar generate` after every agent edit or session; manual generation remains available for standalone CLI workflows.
+
 ```bash
 madar pack "how does auth work?" --require-fresh-context
 madar pack "how does auth work?" --require-fresh-graph
 ```
 
 Use `--require-fresh-context` when the selected files must be fresh. Use `--require-fresh-graph` when the whole graph must match the current repo.
+
+## Git Worktrees
+
+Run Madar and your coding agent from the same linked Git worktree. Madar keeps the default graph and related artifacts outside that checkout, under the repository's shared Git data directory, and gives each worktree its own isolated artifact directory. That keeps branches from sharing graph state and avoids generated `out/` artifacts inside linked worktrees.
+
+An MCP server selects its workspace when it starts. If an agent later creates or switches to another worktree, start or reconnect the agent/MCP server from that new worktree; a running server cannot follow a later directory change.
 
 ## Evidence
 
@@ -200,13 +210,15 @@ It does not record prompt text, answer text, source paths, source content, or re
 
 ## What's New
 
-Current version: `0.29.0`.
+Current version: `0.30.0`.
+
+`0.30.0` makes installed MCP integrations self-refreshing: they reconcile the graph at startup and watch the active workspace through an agent session. It also gives each linked Git worktree isolated external graph and artifact storage. Start or reconnect MCP from the worktree the agent is using; a running server stays scoped to the worktree where it started.
 
 `0.29.0` adds full project-local Codex CLI wiring: `madar codex install` now owns a task-applicable `UserPromptSubmit` hook, its local script, and a marker-owned Madar MCP entry alongside the AGENTS profile. The hook provides guidance for local code tasks, not enforcement; review and trust it in Codex before relying on it.
 
 `0.28.0` promoted the public benchmark work to a proof-backed stable release: six public TypeScript `explain-runtime` legacy rows now have checked-in `full_win` receipts, strict runtime-proof gates, direct-evidence answer checks, scoped benchmark roots, and share-safe reports. It also includes retrieval and extraction improvements for runtime handoffs, source-visible framework flows, and benchmark reproducibility.
 
-Read the full notes in the [0.29.0 changelog](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md#0290---2026-07-12).
+Read the full notes in the [0.30.0 changelog](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md#0300---2026-07-14).
 
 ## Docs
 

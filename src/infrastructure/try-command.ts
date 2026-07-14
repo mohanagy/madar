@@ -9,6 +9,7 @@ import { buildGraphSummary, type GraphSummary } from '../runtime/graph-summary.j
 import { analyzeGraphContextFreshness, graphFreshnessStatusLabel, type GraphContextFreshness } from '../runtime/freshness.js'
 import { loadGraph } from '../runtime/serve.js'
 import { findPackageRoot } from '../shared/package-metadata.js'
+import { resolveMadarWorkspace } from '../shared/workspace.js'
 
 interface TrialIo {
   log(message?: string): void
@@ -60,7 +61,7 @@ const MIN_TRIAL_NODES = 10
 const GETTING_STARTED_URL = 'https://github.com/mohanagy/madar/blob/main/docs/tutorials/getting-started.md'
 
 function trialGraphPath(workspace: string): string {
-  return join(workspace, 'out', 'graph.json')
+  return resolveMadarWorkspace(workspace).graphPath
 }
 
 function isReusableFreshnessStatus(status: GraphContextFreshness['status']): boolean {

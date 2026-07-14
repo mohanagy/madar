@@ -1,12 +1,13 @@
 import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
-import { basename, dirname, join, relative, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 
 import { KnowledgeGraph } from '../../contracts/graph.js'
 import type { ContextSessionDiagnostics, ContextSessionState } from '../../contracts/context-session.js'
 import { type RetrieveResult, retrieveContext } from '../../runtime/retrieve.js'
 import { QUERY_TOKEN_ESTIMATOR } from '../../runtime/serve.js'
 import { toShareSafeArtifactPath } from '../../shared/share-safe-artifacts.js'
+import { readGraphSourceRoot } from '../../shared/graph-source-root.js'
 import { resolveShellCommand } from '../../shared/shell.js'
 import { validateGraphOutputPath } from '../../shared/security.js'
 import { buildMadarPromptPack, expandCompareExecTemplate } from '../compare.js'
@@ -79,16 +80,7 @@ function portablePath(path: string): string {
 }
 
 function inferProjectRootFromGraphPath(graphPath: string): string {
-  let currentPath = dirname(resolve(graphPath))
-
-  while (dirname(currentPath) !== currentPath) {
-    if (basename(currentPath) === 'out') {
-      return dirname(currentPath)
-    }
-    currentPath = dirname(currentPath)
-  }
-
-  return dirname(resolve(graphPath))
+  return readGraphSourceRoot(graphPath)
 }
 
 function createBenchmarkOutputRoot(graphPath: string, outputDir: string | undefined, now: Date): string {

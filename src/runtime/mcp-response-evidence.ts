@@ -4,6 +4,7 @@ import type {
   ContextPackExecutionSlice,
   ContextPackRuntimeGenerationAnswerContract,
 } from '../contracts/context-pack.js'
+import { readGraphSourceRoot } from '../shared/graph-source-root.js'
 
 export type MadarResponsePackConfidence = 'high' | 'medium' | 'low'
 export type MadarResponseCoverage = 'complete' | 'partial' | 'unknown'
@@ -159,7 +160,10 @@ function scopeQualityAssessment(
   }
 
   const expectedGraphPath = `${candidateScopes[0]}/out/graph.json`
-  if (normalizedGraphPath === expectedGraphPath || normalizedGraphPath.endsWith(`/${expectedGraphPath}`)) {
+  const normalizedSourceRoot = normalizeSourcePath(readGraphSourceRoot(graphPath))
+  const sourceRootMatchesScope = normalizedSourceRoot === candidateScopes[0]
+    || normalizedSourceRoot.endsWith(`/${candidateScopes[0]}`)
+  if (normalizedGraphPath === expectedGraphPath || normalizedGraphPath.endsWith(`/${expectedGraphPath}`) || sourceRootMatchesScope) {
     return {
       confidenceCap: 'high',
       reason: `scope quality: graph scope is aligned with the ${candidateScopes[0]} runtime evidence`,

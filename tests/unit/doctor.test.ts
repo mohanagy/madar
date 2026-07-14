@@ -41,12 +41,14 @@ function writeText(path: string, content: string): void {
   writeFileSync(path, content, 'utf8')
 }
 
-function writeMcpServer(path: string, serversKey: 'mcpServers' | 'servers', graphPath: string): void {
+function writeMcpServer(path: string, serversKey: 'mcpServers' | 'servers', graphPath?: string): void {
   writeJson(path, {
     [serversKey]: {
       madar: {
         command: 'npx',
-        args: ['--yes', '@lubab/madar', 'serve', '--stdio', graphPath],
+        args: graphPath
+          ? ['--yes', '@lubab/madar', 'serve', '--stdio', graphPath]
+          : ['--yes', '@lubab/madar', 'serve', '--stdio', '--auto-refresh'],
       },
     },
   })
@@ -87,9 +89,9 @@ describe('doctor command', () => {
           BeforeTool: [{ matcher: 'read_file', hooks: [{ type: 'command', command: 'out' }] }],
         },
       })
-      writeMcpServer(resolve(sandboxDir, '.mcp.json'), 'mcpServers', graphPath)
-      writeMcpServer(resolve(sandboxDir, '.cursor', 'mcp.json'), 'mcpServers', graphPath)
-      writeMcpServer(resolve(sandboxDir, '.vscode', 'mcp.json'), 'servers', graphPath)
+      writeMcpServer(resolve(sandboxDir, '.mcp.json'), 'mcpServers')
+      writeMcpServer(resolve(sandboxDir, '.cursor', 'mcp.json'), 'mcpServers')
+      writeMcpServer(resolve(sandboxDir, '.vscode', 'mcp.json'), 'servers')
 
       const doctor = runDoctorCommand({
         projectDir: sandboxDir,

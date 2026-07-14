@@ -2,6 +2,17 @@
 
 All notable changes to the TypeScript package will be documented in this file.
 
+## [0.30.0] - 2026-07-14
+
+### Added
+
+- **Installed MCP integrations now keep their graph current automatically**: newly generated Claude Code, Codex, Cursor, Copilot, Gemini, Aider, and OpenCode configurations launch `madar serve --stdio --auto-refresh`. The server reconciles the active workspace at startup, watches it while the agent session is active, and publishes refreshed graph artifacts atomically after source or relevant configuration changes. Re-run your agent's `madar <agent> install` command after upgrading to update an existing managed MCP entry. Closes #545.
+- **Linked Git worktrees now receive isolated Madar artifacts**: default graphs, caches, reports, compare output, and time-travel artifacts live outside a linked checkout in its repository's shared Git data directory, with a distinct artifact directory for each worktree. This prevents branches from sharing or overwriting graph state while keeping generated artifacts out of the checkout. Closes #546.
+
+### Notes
+
+- **An MCP server is scoped to the worktree it started in**: start or reconnect the agent/MCP server from the intended worktree. A running server cannot follow an agent that later changes directory or creates and moves into another worktree.
+
 ## [0.29.0] - 2026-07-12
 
 ### Added

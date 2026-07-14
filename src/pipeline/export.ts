@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 
 import { KnowledgeGraph } from '../contracts/graph.js'
@@ -378,6 +378,20 @@ function enrichPayloadWithBridgeMetadata(payload: HtmlPayload, bridgeMetadata: R
   }
 }
 
+function writeFileAtomically(outputPath: string, content: string): void {
+  const temporaryPath = join(
+    dirname(outputPath),
+    `.madar-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.tmp`,
+  )
+
+  try {
+    writeFileSync(temporaryPath, content, 'utf8')
+    renameSync(temporaryPath, outputPath)
+  } finally {
+    rmSync(temporaryPath, { force: true })
+  }
+}
+
 export function toJson(
   graph: KnowledgeGraph,
   communities: Communities,
@@ -411,7 +425,10 @@ export function toJson(
     semantic_anomalies: semanticAnomalies,
   }
 
-  writeFileSync(outputPath, `${JSON.stringify(data, null, 2)}\n`, 'utf8')
+  // MCP readers can reload this file while a watcher rebuilds. Publishing the
+  // completed JSON with a same-directory rename prevents a reader from ever
+  // observing a truncated graph.
+  writeFileAtomically(outputPath, `${JSON.stringify(data, null, 2)}\n`)
 }
 
 function subgraphFromNodes(graph: KnowledgeGraph, nodeIds: string[]): KnowledgeGraph {

@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
-import { basename, dirname, join, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 
 import { KnowledgeGraph } from '../contracts/graph.js'
 import { buildFromJson } from './build.js'
@@ -8,6 +8,7 @@ import { buildCommunityLabels } from './community-naming.js'
 import { generate as generateReport } from './report.js'
 import { toJson } from './export.js'
 import { isRecord } from '../shared/guards.js'
+import { readGraphSourceRoot } from '../shared/graph-source-root.js'
 import { validateGraphPath } from '../shared/security.js'
 import { godNodes, semanticAnomalies, suggestQuestions, surprisingConnections } from './analyze.js'
 
@@ -35,7 +36,7 @@ interface GraphSource {
   graph: KnowledgeGraph
 }
 
-function loadSourceGraph(graphPath: string): KnowledgeGraph {
+function loadSourceGraph(graphPath: string): { graph: KnowledgeGraph; graphPath: string } {
   const safePath = validateGraphPath(graphPath)
   if (readFileSync(safePath).byteLength > MAX_GRAPH_BYTES) {
     throw new Error(`Graph file too large: ${safePath}`)
@@ -46,20 +47,20 @@ function loadSourceGraph(graphPath: string): KnowledgeGraph {
     throw new Error(`Invalid graph file: ${safePath}`)
   }
 
-  return buildFromJson({
+  return {
+    graphPath: safePath,
+    graph: buildFromJson({
     schema_version: parsed.schema_version,
     directed: parsed.directed === true,
     nodes: Array.isArray(parsed.nodes) ? parsed.nodes : [],
     edges: Array.isArray(parsed.links) ? parsed.links : Array.isArray(parsed.edges) ? parsed.edges : [],
     hyperedges: Array.isArray(parsed.hyperedges) ? parsed.hyperedges : [],
-  }, { directed: false, validateExtraction: false })
+    }, { directed: false, validateExtraction: false }),
+  }
 }
 
 function inferRepoName(graphPath: string): string {
-  // out/graph.json -> parent of out
-  const madarOutDir = dirname(resolve(graphPath))
-  const parentDir = dirname(madarOutDir)
-  return basename(parentDir)
+  return basename(readGraphSourceRoot(graphPath))
 }
 
 function prefixNodeId(repoName: string, nodeId: string): string {
@@ -139,12 +140,12 @@ export function federate(graphPaths: string[], options: FederateOptions = {}): F
 
   // Load all graphs and merge into federated graph
   for (const graphPath of graphPaths) {
-    const graph = loadSourceGraph(graphPath)
-    const repoName = inferRepoName(graphPath)
-    sources.push({ repoName, graphPath, graph })
+    const source = loadSourceGraph(graphPath)
+    const repoName = inferRepoName(source.graphPath)
+    sources.push({ repoName, graphPath: source.graphPath, graph: source.graph })
 
     // Add all nodes with repo prefix
-    for (const [nodeId, attributes] of graph.nodeEntries()) {
+    for (const [nodeId, attributes] of source.graph.nodeEntries()) {
       const prefixedId = prefixNodeId(repoName, nodeId)
       federatedGraph.addNode(prefixedId, {
         ...attributes,
@@ -154,8 +155,8 @@ export function federate(graphPaths: string[], options: FederateOptions = {}): F
     }
 
     // Add all edges with repo prefix
-    for (const [source, target, attributes] of graph.edgeEntries()) {
-      const prefixedSource = prefixNodeId(repoName, source)
+    for (const [sourceNode, target, attributes] of source.graph.edgeEntries()) {
+      const prefixedSource = prefixNodeId(repoName, sourceNode)
       const prefixedTarget = prefixNodeId(repoName, target)
       federatedGraph.addEdge(prefixedSource, prefixedTarget, {
         ...attributes,

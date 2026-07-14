@@ -1,3 +1,7 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 
 import { buildMadarResponseEvidence } from '../../src/runtime/mcp-response-evidence.js'
@@ -185,6 +189,38 @@ describe('mcp-response-evidence', () => {
     expect(evidence.confidence_reasons).toContain(
       'scope quality: graph scope is aligned with the backend runtime evidence',
     )
+  })
+
+  it('uses the recorded source root when a graph artifact lives outside its worktree', () => {
+    const root = mkdtempSync(join(tmpdir(), 'madar-external-graph-evidence-'))
+    const sourceRoot = join(root, 'linked-worktree', 'backend')
+    const graphPath = join(root, 'git-artifacts', 'worktree', 'out', 'graph.json')
+    try {
+      mkdirSync(dirname(graphPath), { recursive: true })
+      writeFileSync(graphPath, JSON.stringify({ root_path: sourceRoot }), 'utf8')
+
+      const evidence = buildMadarResponseEvidence({
+        graphPath,
+        coveredWorkflowOwners: ['backend/src/runtime.ts'],
+        executionSlice: {
+          status: 'complete',
+          confidence: 'high',
+          confidence_reasons: [],
+          steps: [],
+          phase_coverage: {
+            expected: [],
+            observed: [],
+            missing: [],
+          },
+        },
+      })
+
+      expect(evidence.confidence_reasons).toContain(
+        'scope quality: graph scope is aligned with the backend runtime evidence',
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('does not mark runtime-generation answers as contained when no execution slice exists', () => {

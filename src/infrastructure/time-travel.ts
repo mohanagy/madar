@@ -7,6 +7,7 @@ import { EXTRACTOR_CACHE_VERSION } from '../pipeline/extract.js'
 import { loadGraph } from '../runtime/serve.js'
 import { compareTimeTravelGraphs, type CompareTimeTravelGraphsOptions, type TimeTravelResult } from '../runtime/time-travel.js'
 import { validateGraphOutputPath } from '../shared/security.js'
+import { resolveMadarOutputDirectory, resolveMadarWorkspace } from '../shared/workspace.js'
 import { cacheDir } from './cache.js'
 import { generateGraph, loadGraphExtractorVersion, type GenerateGraphOptions, type GenerateGraphResult } from './generate.js'
 
@@ -84,12 +85,12 @@ function defaultGitDependencies(rootDir: string): Required<SnapshotGitDependenci
 }
 
 function snapshotBaseDir(rootDir: string): string {
-  const outDir = join(rootDir, 'out')
+  const outDir = resolveMadarOutputDirectory(rootDir)
   return validateGraphOutputPath(join(outDir, 'time-travel', 'snapshots'), outDir)
 }
 
 function snapshotDir(rootDir: string, commitSha: string): string {
-  return validateGraphOutputPath(join(snapshotBaseDir(rootDir), commitSha), join(rootDir, 'out'))
+  return validateGraphOutputPath(join(snapshotBaseDir(rootDir), commitSha), resolveMadarOutputDirectory(rootDir))
 }
 
 function snapshotGraphPath(rootDir: string, commitSha: string): string {
@@ -119,7 +120,7 @@ function snapshotBuildKey(rootDir: string, commitSha: string, refresh: boolean):
 function snapshotTempDir(rootDir: string, commitSha: string): string {
   return validateGraphOutputPath(
     join(snapshotBaseDir(rootDir), `${commitSha}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`),
-    join(rootDir, 'out'),
+    resolveMadarOutputDirectory(rootDir),
   )
 }
 
@@ -315,10 +316,13 @@ export async function loadOrBuildSnapshot(input: SnapshotRequest, dependencies: 
     const materializedWorktree = worktreePath(deps.rootDir, commitSha)
     let worktreeCreated = false
     let buildError: unknown = null
+    let transientArtifactRoot: string | null = null
 
     try {
       await deps.git.createDetachedWorktree(materializedWorktree, commitSha)
       worktreeCreated = true
+      const transientWorkspace = resolveMadarWorkspace(materializedWorktree)
+      transientArtifactRoot = transientWorkspace.isLinkedWorktree ? transientWorkspace.artifactRoot : null
 
       const generated = await deps.generateGraph(materializedWorktree, { noHtml: true })
       const extractorVersion = deps.loadGraphExtractorVersion(generated.graphPath)
@@ -333,6 +337,16 @@ export async function loadOrBuildSnapshot(input: SnapshotRequest, dependencies: 
         } catch (cleanupError) {
           if (buildError == null) {
             throw cleanupError
+          }
+        } finally {
+          if (transientArtifactRoot) {
+            try {
+              rmSync(transientArtifactRoot, { recursive: true, force: true })
+            } catch {
+              // Snapshot publication succeeded; an orphaned scratch artifact is
+              // safe to leave behind and must not turn a completed comparison
+              // into a failure.
+            }
           }
         }
       }

@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -362,6 +362,31 @@ describe('stdio pr impact', () => {
       }),
     )
     expect(payload.review_bundle.token_count).toBeLessThanOrEqual(240)
+  })
+
+  it('uses graph root_path for pr impact when the graph artifact lives outside the repository', async () => {
+    const root = createRepo()
+    const artifactRoot = mkdtempSync(join(tmpdir(), 'madar-stdio-external-artifact-'))
+    repoRoots.push(root, artifactRoot)
+    writeFileSync(
+      join(root, 'src', 'auth.ts'),
+      readFileSync(join(root, 'src', 'auth.ts'), 'utf8').replace('  const status = "ok"', '  const status = token.startsWith("Bearer ") ? "ok" : "fail"'),
+      'utf8',
+    )
+    mkdirSync(join(artifactRoot, 'out'))
+    const graphPath = join(artifactRoot, 'out', 'graph.json')
+    copyFileSync(join(root, 'out', 'graph.json'), graphPath)
+
+    const response = await Promise.resolve(handleStdioRequest(graphPath, {
+      id: 3,
+      method: 'tools/call',
+      params: { name: 'pr_impact', arguments: { budget: 240 } },
+    }))
+    const payload = JSON.parse((response?.result as { content: Array<{ text: string }> }).content[0]!.text)
+
+    expect(payload.seed_nodes).toEqual([
+      expect.objectContaining({ label: 'authenticateUser', match_kind: 'line' }),
+    ])
   })
 
   it('returns the compact pr_impact payload by default and the full payload for verbose or compact=false', async () => {

@@ -18,6 +18,7 @@ import { toWiki } from '../pipeline/wiki.js'
 import { loadGraph } from '../runtime/serve.js'
 import { buildGraphBuildFreshnessMetadata } from '../shared/graph-build-freshness.js'
 import { collectGitVisibleFiles } from '../shared/git.js'
+import { resolveMadarOutputDirectory } from '../shared/workspace.js'
 
 export type ProgressStep =
   | { step: 'detect'; message: string }
@@ -226,7 +227,7 @@ function isIncrementalDetectResult(detection: DetectResult | IncrementalDetectRe
 }
 
 function outputDirectory(rootPath: string): string {
-  return join(rootPath, 'out')
+  return resolveMadarOutputDirectory(rootPath)
 }
 
 function missingCodeExtractionMessage(totalFiles: number): string {

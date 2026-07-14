@@ -1779,8 +1779,12 @@ describe('executeNativeAgentCompare', () => {
     }
   })
 
-  it('records implement-task outcome scoring with isolated per-arm workspaces', async () => {
+  it('records implement-task outcome scoring with isolated per-arm workspaces and an external graph artifact', async () => {
     const { projectDir, graphPath, outputDir, questionsPath } = makeImplementationFixtureProject()
+    const externalGraphRoot = mkdtempSync(join(COMPARE_OUTPUT_PARENT, 'external-graph-'))
+    const externalGraphPath = join(externalGraphRoot, 'out', 'graph.json')
+    mkdirSync(dirname(externalGraphPath), { recursive: true })
+    writeFileSync(externalGraphPath, readFileSync(graphPath, 'utf8'), 'utf8')
     try {
       const runner: NativeAgentRunner = async (input) => {
         const workspaceRoot = input.cwd ?? projectDir
@@ -1826,7 +1830,7 @@ describe('executeNativeAgentCompare', () => {
 
       const result = await executeNativeAgentCompare(
         {
-          graphPath,
+          graphPath: externalGraphPath,
           questionsPath,
           outputDir,
           execTemplate: 'mock-runner',
@@ -1905,9 +1909,10 @@ describe('executeNativeAgentCompare', () => {
       expect(summary).toContain('wrong-file edits')
       expect(summary).toContain('reviewer-visible')
     } finally {
+      rmSync(externalGraphRoot, { recursive: true, force: true })
       rmSync(projectDir, { recursive: true, force: true })
     }
-  })
+  }, 30_000)
 
   it('times out implement validation commands instead of hanging after the agent run', async () => {
     const { projectDir, graphPath, outputDir, questionsPath } = makeImplementationFixtureProject()

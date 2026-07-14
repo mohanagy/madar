@@ -1,19 +1,44 @@
-import { createHash } from 'node:crypto'
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, unlinkSync, watch as createFileSystemWatcher, writeFileSync } from 'node:fs'
+import { createHash, randomUUID } from 'node:crypto'
+import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, unlinkSync, watch as createFileSystemWatcher, writeFileSync } from 'node:fs'
 import { extname, join, resolve, sep } from 'node:path'
 
 import { AUDIO_EXTENSIONS, CODE_EXTENSIONS, DOC_EXTENSIONS, IMAGE_EXTENSIONS, OFFICE_EXTENSIONS, PAPER_EXTENSIONS, VIDEO_EXTENSIONS } from '../pipeline/detect.js'
 import { sidecarAwareFileFingerprint } from '../shared/binary-ingest-sidecar.js'
 import { collectGitVisibleFiles } from '../shared/git.js'
-import { generateGraph } from './generate.js'
+import { resolveMadarOutputDirectory } from '../shared/workspace.js'
+import { generateGraph, type GenerateGraphResult } from './generate.js'
 
 export const WATCHED_EXTENSIONS = new Set([...CODE_EXTENSIONS, ...DOC_EXTENSIONS, ...PAPER_EXTENSIONS, ...IMAGE_EXTENSIONS, ...AUDIO_EXTENSIONS, ...VIDEO_EXTENSIONS, ...OFFICE_EXTENSIONS])
 const MAX_SYMLINK_DEPTH = 40
 const MAX_WATCHED_FILES = 10_000
 const GIT_VISIBILITY_SNAPSHOT_KEY = '\0madar:git-visible-files'
 const GIT_VISIBILITY_CACHE_DURATION_MS = 500
+const REFRESH_LOCK_RETRY_MS = 50
+const REFRESH_LOCK_TIMEOUT_MS = 30_000
+const REFRESH_LOCK_STALE_MS = 60 * 60 * 1000
 
 const WATCH_IGNORED_DIRECTORIES = new Set(['.git', 'out', 'node_modules', 'dist', 'build', 'target', 'venv', '.venv', 'env', '.env', '__pycache__'])
+// These files can change the discovered corpus or the extraction environment
+// even when no source file changes. Treat them as refresh triggers instead of
+// waiting for an agent to remember a manual `madar generate --update`.
+const WATCHED_CONTROL_FILENAMES = new Set([
+  '.gitignore',
+  '.madarignore',
+  'package.json',
+  'tsconfig.json',
+  'tsconfig.build.json',
+  'jsconfig.json',
+  'pyproject.toml',
+  'go.mod',
+  'go.sum',
+  'Cargo.toml',
+  'Cargo.lock',
+  'pom.xml',
+  'build.gradle',
+  'build.gradle.kts',
+  'settings.gradle',
+  'settings.gradle.kts',
+])
 
 export interface WatchLogger {
   log(message?: string): void
@@ -32,6 +57,15 @@ export interface WatchOptions extends RebuildCodeOptions {
   pollIntervalMs?: number
   rebuildCode?: (watchPath: string, options?: RebuildCodeOptions) => boolean
   notifyOnly?: (watchPath: string, logger?: WatchLogger) => void
+}
+
+export interface GraphAutoRefreshController {
+  /** Whether the initial incremental reconciliation produced a graph. */
+  initialRebuilt: boolean
+  /** Stops the watcher and releases its filesystem resources. */
+  stop(): void
+  /** Resolves once the watcher stops. */
+  completed: Promise<void>
 }
 
 interface WatchLoopSignal {
@@ -122,11 +156,111 @@ function isWithinRoot(rootRealPath: string, candidateRealPath: string): boolean 
   return candidateRealPath === rootRealPath || candidateRealPath.startsWith(rootPrefix)
 }
 
-function gitignoreFingerprint(filePath: string, modifiedAt: number): string {
+function controlFileFingerprint(filePath: string, modifiedAt: number): string {
   try {
     return createHash('sha256').update(readFileSync(filePath)).digest('hex')
   } catch {
     return String(Math.round(modifiedAt))
+  }
+}
+
+function sameFilesystemPath(left: string, right: string): boolean {
+  try {
+    return realpathSync(left) === realpathSync(right)
+  } catch {
+    return resolve(left) === resolve(right)
+  }
+}
+
+function graphBelongsToWorkspace(graphPath: string, workspaceRoot: string): boolean {
+  try {
+    const parsed = JSON.parse(readFileSync(graphPath, 'utf8')) as { root_path?: unknown }
+    return typeof parsed.root_path === 'string'
+      && parsed.root_path.trim().length > 0
+      && sameFilesystemPath(parsed.root_path, workspaceRoot)
+  } catch {
+    return false
+  }
+}
+
+function graphUsesSpi(graphPath: string): boolean {
+  try {
+    const parsed = JSON.parse(readFileSync(graphPath, 'utf8')) as { spi_mode?: unknown }
+    return parsed.spi_mode === true
+  } catch {
+    return false
+  }
+}
+
+function pauseForRefreshLock(milliseconds: number): void {
+  // Rebuilds themselves are synchronous CPU/IO work. A short synchronous wait
+  // keeps the public `rebuildCode()` API synchronous while serializing two MCP
+  // servers that happen to attach to the same worktree.
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds)
+}
+
+function isRefreshLeaseOwnerAlive(lockPath: string): boolean {
+  try {
+    const [pidValue] = readFileSync(lockPath, 'utf8').trim().split(/\s+/, 1)
+    const pid = Number(pidValue)
+    if (!Number.isSafeInteger(pid) || pid <= 0) {
+      return false
+    }
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    const code = error && typeof error === 'object' && 'code' in error ? (error as { code?: unknown }).code : null
+    // EPERM means the process exists but belongs to another user.
+    return code === 'EPERM'
+  }
+}
+
+function acquireRefreshLease(outputDir: string): () => void {
+  mkdirSync(outputDir, { recursive: true })
+  const lockPath = join(outputDir, '.madar-refresh.lock')
+  const startedAt = Date.now()
+
+  while (true) {
+    try {
+      const descriptor = openSync(lockPath, 'wx')
+      const leaseId = randomUUID()
+      try {
+        writeFileSync(descriptor, `${process.pid} ${leaseId} ${new Date().toISOString()}\n`, 'utf8')
+      } finally {
+        closeSync(descriptor)
+      }
+      return () => {
+        try {
+          const contents = readFileSync(lockPath, 'utf8')
+          if (contents.split(/\s+/, 3)[1] === leaseId) {
+            rmSync(lockPath, { force: true })
+          }
+        } catch {
+          // The lease may have been recovered after a process crash.
+        }
+      }
+    } catch (error) {
+      const code = error && typeof error === 'object' && 'code' in error ? (error as { code?: unknown }).code : null
+      if (code !== 'EEXIST') {
+        throw error
+      }
+    }
+
+    try {
+      if (Date.now() - statSync(lockPath).mtimeMs > REFRESH_LOCK_STALE_MS && !isRefreshLeaseOwnerAlive(lockPath)) {
+        rmSync(lockPath, { force: true })
+        continue
+      }
+    } catch {
+      // Another process released the lease between the failed open and stat.
+      continue
+    }
+
+    const remaining = REFRESH_LOCK_TIMEOUT_MS - (Date.now() - startedAt)
+    if (remaining <= 0) {
+      throw new Error(`Timed out waiting for another Madar refresh in ${outputDir}`)
+    }
+    pauseForRefreshLock(Math.min(REFRESH_LOCK_RETRY_MS, remaining))
   }
 }
 
@@ -137,7 +271,6 @@ function collectWatchedFiles(
   ancestorRealPaths: string[],
   snapshots: Map<string, number | string>,
   includedFiles?: ReadonlySet<string>,
-  watchGitignore = false,
   depth = 0,
 ): void {
   if (depth > MAX_SYMLINK_DEPTH || snapshots.size >= MAX_WATCHED_FILES) {
@@ -152,8 +285,8 @@ function collectWatchedFiles(
   }
 
   for (const entry of entries) {
-    const isGitignore = watchGitignore && entry === '.gitignore'
-    if (entry.startsWith('.') && !isGitignore) {
+    const isControlFile = WATCHED_CONTROL_FILENAMES.has(entry)
+    if (entry.startsWith('.') && !isControlFile) {
       continue
     }
     if (WATCH_IGNORED_DIRECTORIES.has(entry)) {
@@ -169,12 +302,12 @@ function collectWatchedFiles(
     }
 
     if (stats.isDirectory()) {
-      collectWatchedFiles(entryPath, followSymlinks, rootRealPath, ancestorRealPaths, snapshots, includedFiles, watchGitignore, depth + 1)
+      collectWatchedFiles(entryPath, followSymlinks, rootRealPath, ancestorRealPaths, snapshots, includedFiles, depth + 1)
       continue
     }
 
-    if (isGitignore && stats.isFile()) {
-      snapshots.set(entryPath, gitignoreFingerprint(entryPath, stats.mtimeMs))
+    if (isControlFile && stats.isFile()) {
+      snapshots.set(entryPath, controlFileFingerprint(entryPath, stats.mtimeMs))
       continue
     }
 
@@ -202,7 +335,7 @@ function collectWatchedFiles(
       }
 
       if (targetStats.isDirectory()) {
-        collectWatchedFiles(entryPath, followSymlinks, rootRealPath, [...ancestorRealPaths, realTarget], snapshots, includedFiles, watchGitignore, depth + 1)
+        collectWatchedFiles(entryPath, followSymlinks, rootRealPath, [...ancestorRealPaths, realTarget], snapshots, includedFiles, depth + 1)
         continue
       }
 
@@ -222,7 +355,7 @@ function collectWatchedFiles(
     }
 
     const extension = extname(entryPath).toLowerCase()
-    if (WATCHED_EXTENSIONS.has(extension) && (!includedFiles || includedFiles.has(entryPath))) {
+    if ((WATCHED_EXTENSIONS.has(extension) || isControlFile) && (!includedFiles || includedFiles.has(entryPath) || isControlFile)) {
       snapshots.set(entryPath, sidecarAwareFileFingerprint(entryPath, stats.mtimeMs))
     }
   }
@@ -259,7 +392,7 @@ function snapshotWatchedFiles(
 
   const visibleFiles = respectGitignore ? readGitVisibleFiles(resolvedWatchPath, gitVisibilityCache) : null
   const includedFiles = visibleFiles === null ? undefined : new Set(visibleFiles)
-  collectWatchedFiles(resolvedWatchPath, followSymlinks, rootRealPath, [rootRealPath], snapshots, includedFiles, visibleFiles !== null)
+  collectWatchedFiles(resolvedWatchPath, followSymlinks, rootRealPath, [rootRealPath], snapshots, includedFiles)
   if (visibleFiles !== null) {
     const visibilityFingerprint = createHash('sha256').update([...visibleFiles].sort().join('\0')).digest('hex')
     snapshots.set(GIT_VISIBILITY_SNAPSHOT_KEY, visibilityFingerprint)
@@ -287,9 +420,10 @@ function diffSnapshots(previous: Map<string, number | string>, next: Map<string,
 
 export function notifyOnly(watchPath: string, logger?: WatchLogger): void {
   const resolvedWatchPath = resolveWatchPath(watchPath)
-  const flagPath = join(resolvedWatchPath, 'out', 'needs_update')
+  const outputDir = resolveMadarOutputDirectory(resolvedWatchPath)
+  const flagPath = join(outputDir, 'needs_update')
   const output = defaultLogger(logger)
-  mkdirSync(join(resolvedWatchPath, 'out'), { recursive: true })
+  mkdirSync(outputDir, { recursive: true })
   writeFileSync(flagPath, '1', 'utf8')
   output.log(`\n[madar watch] New or changed files detected in ${resolvedWatchPath}`)
   output.log('[madar watch] A manual refresh is still required for changes the watcher cannot rebuild automatically.')
@@ -304,17 +438,24 @@ export function hasNonCode(changedPaths: string[]): boolean {
 export function rebuildCode(watchPath: string, options: RebuildCodeOptions = {}): boolean {
   const resolvedWatchPath = resolveWatchPath(watchPath)
   const output = defaultLogger(options.logger)
-  const graphOutputDir = join(resolvedWatchPath, 'out')
+  const graphOutputDir = resolveMadarOutputDirectory(resolvedWatchPath)
   const manifestPath = join(graphOutputDir, 'manifest.json')
   const graphPath = join(graphOutputDir, 'graph.json')
 
   try {
-    const result = generateGraph(resolvedWatchPath, {
-      ...(existsSync(manifestPath) && existsSync(graphPath) ? { update: true } : {}),
-      ...(options.followSymlinks !== undefined ? { followSymlinks: options.followSymlinks } : {}),
-      ...(options.respectGitignore !== undefined ? { respectGitignore: options.respectGitignore } : {}),
-      ...(options.noHtml !== undefined ? { noHtml: options.noHtml } : {}),
-    })
+    const releaseLease = acquireRefreshLease(graphOutputDir)
+    let result: GenerateGraphResult
+    try {
+      result = generateGraph(resolvedWatchPath, {
+        ...(existsSync(manifestPath) && existsSync(graphPath) && graphBelongsToWorkspace(graphPath, resolvedWatchPath) ? { update: true } : {}),
+        ...(graphUsesSpi(graphPath) ? { useSpi: true } : {}),
+        ...(options.followSymlinks !== undefined ? { followSymlinks: options.followSymlinks } : {}),
+        ...(options.respectGitignore !== undefined ? { respectGitignore: options.respectGitignore } : {}),
+        ...(options.noHtml !== undefined ? { noHtml: options.noHtml } : {}),
+      })
+    } finally {
+      releaseLease()
+    }
 
     const staleFlag = join(result.outputDir, 'needs_update')
     if (existsSync(staleFlag)) {
@@ -333,6 +474,35 @@ export function rebuildCode(watchPath: string, options: RebuildCodeOptions = {})
 
     output.error(`[madar watch] Rebuild failed: ${message}`)
     return false
+  }
+}
+
+/**
+ * Starts a watcher before reconciling the graph. The ordering is intentional:
+ * a source edit made while the first generation is running is queued for a
+ * follow-up incremental rebuild instead of being published as silently fresh.
+ */
+export function startGraphAutoRefresh(
+  watchPath: string,
+  debounceSeconds = 1,
+  options: Omit<WatchOptions, 'signal'> = {},
+): GraphAutoRefreshController {
+  const controller = new AbortController()
+  const completed = watch(watchPath, debounceSeconds, {
+    ...options,
+    signal: controller.signal,
+  })
+  const initialRebuilt = rebuildCode(watchPath, {
+    ...(options.followSymlinks !== undefined ? { followSymlinks: options.followSymlinks } : {}),
+    ...(options.respectGitignore !== undefined ? { respectGitignore: options.respectGitignore } : {}),
+    ...(options.noHtml !== undefined ? { noHtml: options.noHtml } : {}),
+    ...(options.logger !== undefined ? { logger: options.logger } : {}),
+  })
+
+  return {
+    initialRebuilt,
+    stop: () => controller.abort(),
+    completed,
   }
 }
 

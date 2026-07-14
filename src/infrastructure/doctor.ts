@@ -18,6 +18,7 @@ import {
 import { analyzeGraphContextFreshness, graphFreshnessStatusLabel, type GraphContextFreshnessStatus } from '../runtime/freshness.js'
 import { isSemanticRuntimeAvailable } from '../runtime/semantic.js'
 import { findPackageRoot, readPackageVersion } from '../shared/package-metadata.js'
+import { resolveWorkspaceGraphPath } from '../shared/workspace.js'
 
 const MADAR_SECTION_MARKER = '## madar'
 
@@ -200,12 +201,12 @@ function findCodexHookEntry(settingsPath: string, expectedCommand: string): bool
   return managedPromptHooks.length === 1 && currentManagedPromptHooks.length === 1 && !legacyPreToolUse
 }
 
-function hasManagedCodexMcpConfig(configPath: string, expectedGraphPath: string): boolean {
+function hasManagedCodexMcpConfig(configPath: string): boolean {
   if (!existsSync(configPath)) {
     return false
   }
 
-  return isMadarCodexMcpConfig(readFileSync(configPath, 'utf8'), expectedGraphPath)
+  return isMadarCodexMcpConfig(readFileSync(configPath, 'utf8'))
 }
 
 function containsOutPathReference(value: unknown): boolean {
@@ -221,29 +222,21 @@ function containsOutPathReference(value: unknown): boolean {
   return false
 }
 
-function extractGraphPathFromArgs(args: unknown): string | null {
+function hasWorkspaceAutoRefreshArgs(args: unknown): boolean {
   if (!Array.isArray(args)) {
-    return null
+    return false
   }
 
   const normalizedArgs = args.filter((value): value is string => typeof value === 'string')
-  const stdioIndex = normalizedArgs.indexOf('--stdio')
-  if (stdioIndex >= 0) {
-    const candidate = normalizedArgs[stdioIndex + 1]
-    if (candidate && candidate.trim().length > 0) {
-      return candidate
-    }
-  }
-
-  const graphPathCandidate = normalizedArgs.find((value) => /out[\\/]+graph\.json$/i.test(value))
-  return graphPathCandidate ?? null
+  return normalizedArgs.includes('serve')
+    && normalizedArgs.includes('--stdio')
+    && normalizedArgs.includes('--auto-refresh')
 }
 
 function readMcpCheck(
   label: McpCheck['label'],
   configPath: string,
   serversKey: 'mcpServers' | 'servers',
-  expectedGraphPath: string,
 ): McpCheck {
   if (!existsSync(configPath)) {
     return {
@@ -284,23 +277,12 @@ function readMcpCheck(
     }
   }
 
-  const declaredGraphPath = extractGraphPathFromArgs(server.args)
-  if (!declaredGraphPath) {
+  if (!hasWorkspaceAutoRefreshArgs(server.args)) {
     return {
       label,
       configPath,
       status: 'stale',
-      reason: "graph path is missing from server args (expected '--stdio <graph-path>')",
-    }
-  }
-
-  const resolvedDeclaredGraphPath = resolve(declaredGraphPath)
-  if (resolvedDeclaredGraphPath !== expectedGraphPath) {
-    return {
-      label,
-      configPath,
-      status: 'stale',
-      reason: `points to ${resolvedDeclaredGraphPath}, expected ${expectedGraphPath}`,
+      reason: "server args must include 'serve --stdio --auto-refresh' to select the active workspace graph",
     }
   }
 
@@ -368,7 +350,7 @@ function hasOpencodeMcpEntry(config: JsonObject | null): boolean {
   return config !== null && isRecord(config.mcp) && isRecord(config.mcp[OPENCODE_MCP_SERVER_NAME])
 }
 
-function isOpencodeMcpConfigured(config: JsonObject | null, expectedGraphPath: string): boolean {
+function isOpencodeMcpConfigured(config: JsonObject | null): boolean {
   if (!config || !isRecord(config.mcp)) {
     return false
   }
@@ -383,8 +365,7 @@ function isOpencodeMcpConfigured(config: JsonObject | null, expectedGraphPath: s
     return false
   }
 
-  const declaredGraphPath = extractGraphPathFromArgs(command)
-  return declaredGraphPath !== null && resolve(declaredGraphPath) === expectedGraphPath
+  return hasWorkspaceAutoRefreshArgs(command)
 }
 
 function computeNextCommands(report: Omit<DoctorReport, 'nextCommands' | 'healthy'>): string[] {
@@ -445,16 +426,16 @@ function computeNextCommands(report: Omit<DoctorReport, 'nextCommands' | 'health
 }
 
 export function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorReport {
-  const graphPath = options.graphPath ?? 'out/graph.json'
   const projectDir = resolve(options.projectDir ?? '.')
+  const graphPath = resolveWorkspaceGraphPath(options.graphPath ?? 'out/graph.json', projectDir)
   const now = options.now ?? Date.now()
   const resolvedGraphPath = resolve(projectDir, graphPath)
   const packageVersion = readPackageVersion(findPackageRoot())
   const graph = readGraphCheck(resolvedGraphPath, now)
 
-  const claudeMcp = readMcpCheck('claude', resolve(projectDir, '.mcp.json'), 'mcpServers', resolvedGraphPath)
-  const cursorMcp = readMcpCheck('cursor', resolve(projectDir, '.cursor', 'mcp.json'), 'mcpServers', resolvedGraphPath)
-  const copilotMcp = readMcpCheck('copilot', resolve(projectDir, '.vscode', 'mcp.json'), 'servers', resolvedGraphPath)
+  const claudeMcp = readMcpCheck('claude', resolve(projectDir, '.mcp.json'), 'mcpServers')
+  const cursorMcp = readMcpCheck('cursor', resolve(projectDir, '.cursor', 'mcp.json'), 'mcpServers')
+  const copilotMcp = readMcpCheck('copilot', resolve(projectDir, '.vscode', 'mcp.json'), 'servers')
 
   const claudeRuleConfigured = hasSectionMarker(resolve(projectDir, 'CLAUDE.md'))
   const claudeHookConfigured = findHookEntry(resolve(projectDir, '.claude', 'settings.json'), 'PreToolUse')
@@ -482,10 +463,7 @@ export function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorRep
   const codexHookConfigured =
     hasManagedCodexPromptHookScript(codexPromptHookScriptPath)
     && findCodexHookEntry(resolve(projectDir, '.codex', 'hooks.json'), codexPromptHookCommand())
-  const codexMcpConfigured = hasManagedCodexMcpConfig(
-    resolve(projectDir, CODEX_MCP_CONFIG_RELATIVE_PATH),
-    resolvedGraphPath,
-  )
+  const codexMcpConfigured = hasManagedCodexMcpConfig(resolve(projectDir, CODEX_MCP_CONFIG_RELATIVE_PATH))
   const codexStatus = optionalAgentStatus(
     [codexSkillConfigured, codexInstructionsConfigured, codexHookConfigured, codexMcpConfigured],
     [codexInstructionsConfigured, codexHookConfigured, codexMcpConfigured],
@@ -506,7 +484,7 @@ export function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorRep
     : null
   const opencodeMcpEntryPresent = hasOpencodeMcpEntry(opencodeConfig)
   const opencodePluginConfigured = opencodePluginFileConfigured && isOpencodePluginRegistered(opencodeConfig)
-  const opencodeMcpConfigured = isOpencodeMcpConfigured(opencodeConfig, resolvedGraphPath)
+  const opencodeMcpConfigured = isOpencodeMcpConfigured(opencodeConfig)
   const opencodeStatus = optionalAgentStatus(
     [opencodeSkillConfigured, opencodeInstructionsConfigured, opencodePluginFileConfigured, opencodeMcpEntryPresent],
     [opencodeInstructionsConfigured, opencodePluginConfigured, opencodeMcpConfigured],
