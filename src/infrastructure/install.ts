@@ -26,10 +26,10 @@ export const AGENT_PLATFORMS = ['codex', 'opencode', 'aider', 'claw', 'droid', '
 
 export type AgentPlatform = (typeof AGENT_PLATFORMS)[number]
 
-export const MCP_TOOL_PROFILES = ['core', 'full'] as const
+export const MCP_TOOL_PROFILES = ['core', 'strict', 'full'] as const
 
 export type McpToolProfile = (typeof MCP_TOOL_PROFILES)[number]
-export const INSTALL_PROFILES = [...MCP_TOOL_PROFILES, 'strict'] as const
+export const INSTALL_PROFILES = MCP_TOOL_PROFILES
 export type InstallProfile = (typeof INSTALL_PROFILES)[number]
 const MANAGED_HOOK_NAME = 'madar'
 const MANAGED_HOOK_SOURCE = 'madar'
@@ -342,10 +342,10 @@ function strictContextPackStopRule(markdown: boolean): string {
 
 function strictContextPackExpandRule(markdown: boolean): string {
   if (markdown) {
-    return 'If `evidence.pack_confidence` is low or `missing_context` / `missing_semantic` is non-empty, make ONE focused follow-up Madar call (`context_expand`, `retrieve`, or `relevant_files`) before raw search; only when the follow-up still says `explore_with_caution`, use at most ONE targeted `Glob` or `Grep` scoped to a single directory before answering.'
+    return 'If `evidence.pack_confidence` is low or `missing_context` / `missing_semantic` is non-empty, make ONE focused follow-up Madar call (`context_expand` or `retrieve`) before raw search; only when the follow-up still says `explore_with_caution`, use at most ONE targeted `Glob` or `Grep` scoped to a single directory before answering.'
   }
 
-  return 'if evidence.pack_confidence is low or missing_context / missing_semantic is non-empty, make ONE focused follow-up Madar call (context_expand, retrieve, or relevant_files) before raw search; only when the follow-up still says explore_with_caution, use at most ONE targeted Glob or Grep scoped to a single directory before answering'
+  return 'if evidence.pack_confidence is low or missing_context / missing_semantic is non-empty, make ONE focused follow-up Madar call (context_expand or retrieve) before raw search; only when the follow-up still says explore_with_caution, use at most ONE targeted Glob or Grep scoped to a single directory before answering'
 }
 
 function strictGraphReportFallbackRule(markdown: boolean): string {
@@ -371,7 +371,7 @@ const STRICT_CONTEXT_PACK_MESSAGE =
   `STOP. This project has a madar knowledge graph. Use strict compact MCP mode: call context_pack once for the task before broader exploration, ${strictContextPackStopRule(false)}, ${strictContextPackNoBroadExplorationRule(false)}, ${strictNonMadarMcpRule(false)}, ${strictSkillOverrideRule(false)}, ${strictContextPackExpandRule(false)}, and ${strictGraphReportFallbackRule(false)}.`
 
 const CODEX_CONTEXT_PACK_FIRST_MESSAGE =
-  `STOP. This project has a madar knowledge graph. Follow the Codex context-pack-first workflow: run madar pack "<task or question>" --task explain before broad Bash search, raw file reads, or spawning workers. Use --task review, --task debug, or --task impact when that better matches the work. ${renderPlainCodexRoutingGuide()} ${strictContextPackNoBroadExplorationRule(false)}. ${strictNonMadarMcpRule(false)}. ${strictSkillOverrideRule(false)}. If MCP graph tools are available, use retrieve, relevant_files, feature_map, risk_map, implementation_checklist, impact, or graph_summary to refine the pack. ${strictGraphReportFallbackRule(false)}.`
+  `STOP. This project has a madar knowledge graph. Follow the Codex context-pack-first workflow: run madar pack "<task or question>" --task explain before broad Bash search, raw file reads, or spawning workers. Use --task review, --task debug, or --task impact when that better matches the work. ${renderPlainCodexRoutingGuide()} ${strictContextPackNoBroadExplorationRule(false)}. ${strictNonMadarMcpRule(false)}. ${strictSkillOverrideRule(false)}. If MCP graph tools are available, use context_pack, context_expand, retrieve, impact, or graph_summary to refine the pack. ${strictGraphReportFallbackRule(false)}.`
 
 const SETTINGS_HOOK = {
   // SECURITY: Keep this command static. Do not interpolate user-controlled input here.
@@ -449,7 +449,7 @@ IMPORTANT: This project has a madar knowledge graph. You MUST follow these stric
 4. **${strictContextPackNoBroadExplorationRule(true)}**
 5. **${strictNonMadarMcpRule(true)}**
 6. **${strictSkillOverrideRule(true)}**
-7. **${strictContextPackExpandRule(true)}** Use \`context_expand\` first, then focused graph tools such as \`retrieve\`, \`relevant_files\`, \`feature_map\`, \`risk_map\`, \`implementation_checklist\`, or \`impact\`.
+7. **${strictContextPackExpandRule(true)}** Use \`context_expand\` first when the pack returns a handle; otherwise use \`retrieve\`. Use \`impact\` for blast radius and \`graph_summary\` for a bounded repo overview.
 8. **${strictGraphReportFallbackRule(true)}**
 `
 
@@ -514,11 +514,9 @@ ${renderMarkdownCodexRoutingTable()}
 5. **${strictNonMadarMcpRule(true)}**
 6. **${strictSkillOverrideRule(true)}**
 7. If MCP graph tools are available after the pack, use the focused tool that matches the next question:
+   - \`context_pack\` for a fresh task-specific pack
+   - \`context_expand\` for a handle returned by a pack
    - \`retrieve\` for direct codebase questions
-   - \`relevant_files\` for where to open first
-   - \`feature_map\` for involved areas and entry points
-   - \`risk_map\` before editing
-   - \`implementation_checklist\` for edit order and validation checkpoints
    - \`impact\` for blast radius
    - \`graph_summary\` for repo overview
 8. **${strictGraphReportFallbackRule(true)}**
@@ -554,12 +552,11 @@ IMPORTANT: This project has a madar knowledge graph. Use a strict context-pack-f
 4. **${strictNonMadarMcpRule(true)}**
 5. **${strictSkillOverrideRule(true)}**
 6. After the pack, use MCP graph tools when available inside OpenCode:
+   - \`context_pack\` for a fresh task-specific pack
+   - \`context_expand\` for a handle returned by a pack
    - \`retrieve\` for direct codebase questions
-   - \`relevant_files\` for where to open first
-   - \`feature_map\` for involved areas and entry points
-   - \`risk_map\` before editing
-   - \`implementation_checklist\` for edit order and validation checkpoints
    - \`impact\` for blast radius
+   - \`graph_summary\` for repo overview
 7. **Install artifacts:** this profile writes this AGENTS.md section, \`.opencode/plugins/madar.js\`, and the madar MCP server entry in \`opencode.json\` or \`opencode.jsonc\`.
 8. **${strictGraphReportFallbackRule(true)}**
 9. **Uninstall behavior:** run \`madar opencode uninstall\` to remove the madar AGENTS.md section, plugin entry, plugin file, and madar MCP config while preserving unrelated content.
@@ -599,7 +596,7 @@ IMPORTANT: This project has a madar knowledge graph. Use strict compact MCP guid
 4. **${strictContextPackNoBroadExplorationRule(true)}**
 5. **${strictNonMadarMcpRule(true)}**
 6. **${strictSkillOverrideRule(true)}**
-7. **${strictContextPackExpandRule(true)}** Use \`context_expand\` first, then focused graph tools such as \`retrieve\`, \`relevant_files\`, \`feature_map\`, \`risk_map\`, \`implementation_checklist\`, or \`impact\`.
+7. **${strictContextPackExpandRule(true)}** Use \`context_expand\` first when the pack returns a handle; otherwise use \`retrieve\`. Use \`impact\` for blast radius and \`graph_summary\` for a bounded repo overview.
 8. **${strictGraphReportFallbackRule(true)}**
 `
 
@@ -692,7 +689,7 @@ IMPORTANT: This project has a madar knowledge graph. Use strict compact MCP guid
 4. **${strictContextPackNoBroadExplorationRule(true)}**
 5. **${strictNonMadarMcpRule(true)}**
 6. **${strictSkillOverrideRule(true)}**
-7. **${strictContextPackExpandRule(true)}** Use \`context_expand\` first, then focused graph tools such as \`retrieve\`, \`relevant_files\`, \`feature_map\`, \`risk_map\`, \`implementation_checklist\`, or \`impact\`.
+7. **${strictContextPackExpandRule(true)}** Use \`context_expand\` first when the pack returns a handle; otherwise use \`retrieve\`. Use \`impact\` for blast radius and \`graph_summary\` for a bounded repo overview.
 8. **${strictGraphReportFallbackRule(true)}**
 `
 
@@ -1698,11 +1695,12 @@ function registerHomeClaudeSkill(homeDir: string): string {
   return hasCurrentSection ? `CLAUDE.md -> skill registration updated in ${claudeMdPath}` : `CLAUDE.md -> skill registered in ${claudeMdPath}`
 }
 
-type McpConfigTarget = 'claude' | 'cursor' | 'copilot'
+type McpConfigTarget = 'claude' | 'cursor' | 'copilot' | 'gemini'
 const MCP_CONFIG_PATHS: Record<McpConfigTarget, string> = {
   claude: '.mcp.json',
   cursor: join('.cursor', 'mcp.json'),
   copilot: join('.vscode', 'mcp.json'),
+  gemini: join('.gemini', 'settings.json'),
 }
 
 function installMcpServer(
@@ -1728,16 +1726,15 @@ function installMcpServer(
   const directCliPath = isVscode ? findPackageCliPath(packageRoot) : undefined
   const command = directCliPath ? process.execPath : PRIMARY_CLI_BIN_NAME
   const args = directCliPath ? [directCliPath, ...cliArgs] : cliArgs
-  // Default to the lean MCP tool surface ("core" = 6 tools). Reduces cache_creation
-  // overhead per session vs. advertising all tools. Users can opt into the full
-  // 25-tool surface by setting MADAR_TOOL_PROFILE=full in this env block.
+  // Default to the lean seven-tool core surface. Strict adds only the bounded
+  // context-pack recovery pair; full advertises every MCP tool.
   //
   // Re-running install must NOT silently downgrade an existing user-customized env
   // or drop unrelated user-set env keys. Without an explicit profile flag we merge
   // defaults first, then the existing entry on top so user values win.
   const existingServer = existed ? (mcpServers[SKILL_SLUG] as Record<string, unknown>) : null
   const existingEnv = existingServer && isRecord(existingServer.env) ? (existingServer.env as Record<string, string>) : {}
-  const envProfile: McpToolProfile = options.profile === 'full' ? 'full' : 'core'
+  const envProfile: McpToolProfile = options.profile ?? 'core'
   const env: Record<string, string> = options.profile
     ? { ...existingEnv, MADAR_TOOL_PROFILE: envProfile }
     : { MADAR_TOOL_PROFILE: 'core', ...existingEnv }
@@ -2135,7 +2132,7 @@ function renderCodexMcpBlock(lineEnding: string, ownsPrecedingLineEnding = false
     '[mcp_servers.madar]',
     'command = "madar"',
     'args = ["serve", "--stdio", "--auto-refresh"]',
-    'env = { MADAR_TOOL_PROFILE = "core" }',
+    'env = { MADAR_TOOL_PROFILE = "strict" }',
     'enabled = true',
     CODEX_MCP_END_MARKER,
     '',
@@ -2354,11 +2351,11 @@ function installOpencodeMcpServer(projectDir: string, packageRoot?: string): str
   const serverConfig: Record<string, unknown> = {
     type: 'local',
     command: [process.execPath, resolvePackageCliPath(packageRoot), 'serve', '--stdio', '--auto-refresh'],
+    environment: {
+      MADAR_TOOL_PROFILE: 'strict',
+      ...(existingServer && isRecord(existingServer.environment) ? existingServer.environment : {}),
+    },
     enabled: true,
-  }
-
-  if (existingServer && isRecord(existingServer.environment)) {
-    serverConfig.environment = existingServer.environment
   }
 
   mcp[OPENCODE_MCP_SERVER_NAME] = serverConfig
@@ -2523,7 +2520,12 @@ export function uninstallSkill(platform: SkillInstallPlatform, options: Pick<Ins
 
 export function geminiInstall(projectDir = '.', options: GeminiInstallOptions = {}): string {
   const resolvedProjectDir = resolve(projectDir)
-  const messages = [installSkill('gemini', options), writeSection(join(resolvedProjectDir, 'GEMINI.md'), geminiMdSection(options.profile)), installGeminiHook(resolvedProjectDir, options.profile)]
+  const messages = [
+    installSkill('gemini', options),
+    writeSection(join(resolvedProjectDir, 'GEMINI.md'), geminiMdSection(options.profile)),
+    installGeminiHook(resolvedProjectDir, options.profile),
+    installMcpServer(resolvedProjectDir, 'gemini', options),
+  ]
   if (options.profile === 'strict') {
     messages.push('', 'Gemini CLI will now use the madar strict compact MCP profile:', `call context_pack once, ${strictContextPackStopRule(false)}, ${strictContextPackNoBroadExplorationRule(false)}, ${strictContextPackExpandRule(false)}, and ${strictGraphReportFallbackRule(false)}.`)
   } else {
@@ -2543,6 +2545,10 @@ export function geminiUninstall(projectDir = '.', options: Pick<InstallSkillOpti
   const hookMessage = uninstallGeminiHook(resolvedProjectDir)
   if (hookMessage) {
     messages.push(hookMessage)
+  }
+  const mcpMessage = uninstallMcpServer(resolvedProjectDir, 'gemini')
+  if (mcpMessage) {
+    messages.push(mcpMessage)
   }
   return messages.join('\n')
 }

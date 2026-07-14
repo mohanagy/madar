@@ -120,6 +120,13 @@ describe('doctor command', () => {
         hooks: {
           BeforeTool: [{ matcher: 'read_file', hooks: [{ type: 'command', command: 'out' }] }],
         },
+        mcpServers: {
+          madar: {
+            command: 'madar',
+            args: ['serve', '--stdio', '--auto-refresh'],
+            env: { MADAR_TOOL_PROFILE: 'core' },
+          },
+        },
       })
       writeMcpServer(resolve(sandboxDir, '.mcp.json'), 'mcpServers')
       writeMcpServer(resolve(sandboxDir, '.cursor', 'mcp.json'), 'mcpServers')
@@ -219,6 +226,24 @@ describe('doctor command', () => {
       expect(doctor).toContain('hook=yes')
       expect(doctor).toContain('mcp=yes')
       expect(status).toContain('codex:configured')
+    })
+  })
+
+  test('flags the pre-#550 Codex core marker until reinstall migrates it to strict', () => {
+    withSandbox((sandboxDir) => {
+      writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
+      agentsInstall(sandboxDir, 'codex')
+      const configPath = resolve(sandboxDir, '.codex', 'config.toml')
+      writeText(
+        configPath,
+        readFileSync(configPath, 'utf8').replace('MADAR_TOOL_PROFILE = "strict"', 'MADAR_TOOL_PROFILE = "core"'),
+      )
+
+      const doctor = runDoctorCommand({ projectDir: sandboxDir, now: Date.now() })
+
+      expect(doctor).toContain('codex: partial')
+      expect(doctor).toContain('mcp=no')
+      expect(doctor).toContain('madar codex install')
     })
   })
 

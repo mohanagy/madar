@@ -31,7 +31,7 @@ type AgentStatus = 'configured' | 'partial' | 'missing'
 type McpStatus = 'ok' | 'missing' | 'stale'
 
 interface McpCheck {
-  label: 'claude' | 'cursor' | 'copilot'
+  label: 'claude' | 'cursor' | 'gemini' | 'copilot'
   configPath: string
   status: McpStatus
   reason: string
@@ -445,6 +445,7 @@ export function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorRep
 
   const claudeMcp = readMcpCheck('claude', resolve(projectDir, '.mcp.json'), 'mcpServers')
   const cursorMcp = readMcpCheck('cursor', resolve(projectDir, '.cursor', 'mcp.json'), 'mcpServers')
+  const geminiMcp = readMcpCheck('gemini', resolve(projectDir, '.gemini', 'settings.json'), 'mcpServers')
   const copilotMcp = readMcpCheck('copilot', resolve(projectDir, '.vscode', 'mcp.json'), 'servers')
 
   const claudeRuleConfigured = hasSectionMarker(resolve(projectDir, 'CLAUDE.md'))
@@ -456,6 +457,7 @@ export function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorRep
 
   const geminiRuleConfigured = hasSectionMarker(resolve(projectDir, 'GEMINI.md'))
   const geminiHookConfigured = findHookEntry(resolve(projectDir, '.gemini', 'settings.json'), 'BeforeTool')
+  const geminiMcpConfigured = geminiMcp.status === 'ok'
 
   const copilotMcpConfigured = copilotMcp.status === 'ok'
 
@@ -513,8 +515,8 @@ export function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorRep
     },
     {
       label: 'gemini',
-      status: agentStatusFromFlags([geminiRuleConfigured, geminiHookConfigured]),
-      detail: `rules=${geminiRuleConfigured ? 'yes' : 'no'}, hook=${geminiHookConfigured ? 'yes' : 'no'}`,
+      status: agentStatusFromFlags([geminiRuleConfigured, geminiHookConfigured, geminiMcpConfigured]),
+      detail: `rules=${geminiRuleConfigured ? 'yes' : 'no'}, hook=${geminiHookConfigured ? 'yes' : 'no'}, mcp=${geminiMcp.status}`,
     },
     {
       label: 'copilot',
@@ -547,7 +549,7 @@ export function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorRep
     })
   }
 
-  const mcpChecks = [claudeMcp, cursorMcp, copilotMcp]
+  const mcpChecks = [claudeMcp, cursorMcp, geminiMcp, copilotMcp]
 
   const semanticAvailable = isSemanticRuntimeAvailable(projectDir)
   const semantic: SemanticCheck = semanticAvailable

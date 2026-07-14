@@ -74,7 +74,7 @@ Common failure modes:
 ## Gemini CLI
 
 - Install: `madar gemini install [--profile core\|full\|strict]`
-- Expected files/config: `~/.gemini/skills/madar/SKILL.md`, `GEMINI.md`, `.gemini/settings.json`
+- Expected files/config: `~/.gemini/skills/madar/SKILL.md`, `GEMINI.md`, `.gemini/settings.json` hook and MCP entry
 - Verify: `madar doctor` / `madar status` for `.gemini/settings.json`, then inspect the installed home skill for slash-command availability.
 
 ```bash

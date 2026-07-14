@@ -22,13 +22,14 @@ import {
   uninstallCopilotMcp,
   uninstallSkill,
 } from '../../src/infrastructure/install.js'
+import { MCP_TOOLS, activeMcpTools, type McpToolProfile } from '../../src/runtime/stdio/definitions.js'
 import { normalizeAssertionPath, normalizeAssertionPaths } from './helpers/platform.js'
 
 const PACKAGE_CLI_RELATIVE_PATH = join('dist', 'src', 'cli', 'bin.js')
 const STRICT_STOP_RULE_MD =
   'After calling a Madar tool, inspect the response\'s `evidence.pack_confidence`, `recommended_first_read`, and `evidence.agent_directive`: `answer_from_pack` means answer using the pack snippets and do not read files unless `recommended_first_read` names a specific file; `verify_one_targeted_file` means answer using the pack and `Read` at most one file from `recommended_first_read`; `explore_with_caution` means the pack is low-confidence or coverage is unknown.'
 const STRICT_EXPAND_RULE_MD =
-  'If `evidence.pack_confidence` is low or `missing_context` / `missing_semantic` is non-empty, make ONE focused follow-up Madar call (`context_expand`, `retrieve`, or `relevant_files`) before raw search; only when the follow-up still says `explore_with_caution`, use at most ONE targeted `Glob` or `Grep` scoped to a single directory before answering.'
+  'If `evidence.pack_confidence` is low or `missing_context` / `missing_semantic` is non-empty, make ONE focused follow-up Madar call (`context_expand` or `retrieve`) before raw search; only when the follow-up still says `explore_with_caution`, use at most ONE targeted `Glob` or `Grep` scoped to a single directory before answering.'
 const STRICT_GRAPH_REPORT_RULE_MD =
   'Do not open `out/GRAPH_REPORT.md` unless the context pack or graph tools are unavailable, stale, or insufficient. Treat it as a fallback before broader raw file exploration, not a default first read.'
 const STRICT_NO_BROAD_EXPLORATION_RULE_MD =
@@ -40,7 +41,7 @@ const STRICT_SKILL_OVERRIDE_RULE_MD =
 const STRICT_STOP_RULE_PLAIN =
   'after calling a Madar tool, inspect the response\'s evidence.pack_confidence, recommended_first_read, and evidence.agent_directive: answer_from_pack means answer using the pack snippets and do not read files unless recommended_first_read names a specific file; verify_one_targeted_file means answer using the pack and Read at most one file from recommended_first_read; explore_with_caution means the pack is low-confidence or coverage is unknown'
 const STRICT_EXPAND_RULE_PLAIN =
-  'if evidence.pack_confidence is low or missing_context / missing_semantic is non-empty, make ONE focused follow-up Madar call (context_expand, retrieve, or relevant_files) before raw search; only when the follow-up still says explore_with_caution, use at most ONE targeted Glob or Grep scoped to a single directory before answering'
+  'if evidence.pack_confidence is low or missing_context / missing_semantic is non-empty, make ONE focused follow-up Madar call (context_expand or retrieve) before raw search; only when the follow-up still says explore_with_caution, use at most ONE targeted Glob or Grep scoped to a single directory before answering'
 const STRICT_GRAPH_REPORT_RULE_PLAIN =
   'do not open out/GRAPH_REPORT.md unless the context pack or graph tools are unavailable, stale, or insufficient; treat it as a fallback before broader raw file exploration, not a default first read'
 const STRICT_GRAPH_REPORT_RULE_PLAIN_SENTENCE =
@@ -64,19 +65,19 @@ function expectMarkdownRoutingTable(content: string): void {
   expect(normalized).toContain('| "what breaks if I change X" / impact analysis')
   expect(normalized).toContain('| "which files should I open first"')
   expect(normalized).toContain('| "give me a repo overview"')
-  expect(normalized).toContain('`context_pack`')
+  expect(normalized).toContain('`retrieve`')
   expect(normalized).toContain('`impact`')
-  expect(normalized).toContain('`relevant_files`')
   expect(normalized).toContain('`graph_summary`')
+  expect(normalized).not.toMatch(/`(?:context_pack|context_expand|relevant_files|feature_map|risk_map|implementation_checklist)`/)
   expect(normalized).toContain('Do not run ToolSearch before calling a Madar tool')
 }
 
 function expectPlainRoutingGuide(content: string): void {
   const normalized = content.replaceAll('\\"', '"')
   expect(normalized).toContain('For each codebase question, call the matching Madar MCP tool directly first')
-  expect(normalized).toContain('context_pack for "how does X work?" / explain runtime / flow')
+  expect(normalized).toContain('retrieve for "how does X work?" / explain runtime / flow')
   expect(normalized).toContain('impact for "what breaks if I change X?" / impact analysis')
-  expect(normalized).toContain('relevant_files for "which files should I open first?"')
+  expect(normalized).toContain('retrieve for "which files should I open first?"')
   expect(normalized).toContain('graph_summary for "give me a repo overview?"')
   expect(normalized).toContain('Do not run ToolSearch before calling a Madar tool')
 }
@@ -91,13 +92,24 @@ function expectCodexMarkdownRoutingTable(content: string): void {
   expect(normalized).toContain('| "give me a repo overview"')
   expect(normalized).toContain('`madar pack "<task or question>" --task explain`')
   expect(normalized).toContain('`madar pack "<task or question>" --task impact`')
-  expect(normalized).toContain('`relevant_files` when MCP graph tools are available')
+  expect(normalized).toContain('`retrieve` when MCP graph tools are available')
   expect(normalized).toContain('`graph_summary` when MCP graph tools are available')
+  expect(normalized).toContain('`context_pack` for a fresh task-specific pack')
+  expect(normalized).toContain('`context_expand` for a handle returned by a pack')
   expect(normalized).toContain('`retrieve` for direct codebase questions')
-  expect(normalized).toContain('`feature_map` for involved areas and entry points')
-  expect(normalized).toContain('`risk_map` before editing')
-  expect(normalized).toContain('`implementation_checklist` for edit order and validation checkpoints')
+  expect(normalized).not.toMatch(/`(?:relevant_files|feature_map|risk_map|implementation_checklist)`/)
   expect(normalized).toContain('Do not run ToolSearch before calling a Madar command or graph tool')
+}
+
+function mcpToolNamesInGuidance(content: string): string[] {
+  return MCP_TOOLS
+    .map((tool) => tool.name)
+    .filter((name) => new RegExp(`(^|[^A-Za-z0-9_])${name}([^A-Za-z0-9_]|$)`).test(content))
+}
+
+function expectGuidanceToolsEnabled(content: string, profile: McpToolProfile): void {
+  const enabled = new Set(activeMcpTools(profile).map((tool) => tool.name))
+  expect(mcpToolNamesInGuidance(content).filter((name) => !enabled.has(name))).toEqual([])
 }
 
 const BUNDLED_ASSET_CONTENT = {
@@ -519,21 +531,27 @@ describe('install helpers', () => {
           expect(existsSync(join(projectDir, 'GEMINI.md'))).toBe(true)
           expect(existsSync(join(projectDir, '.gemini', 'settings.json'))).toBe(true)
           expect(readFileSync(join(projectDir, 'GEMINI.md'), 'utf8')).toContain('retrieve')
-          expect(readFileSync(join(projectDir, 'GEMINI.md'), 'utf8')).toContain('relevant_files')
-          expect(readFileSync(join(projectDir, 'GEMINI.md'), 'utf8')).toContain('feature_map')
-          expect(readFileSync(join(projectDir, 'GEMINI.md'), 'utf8')).toContain('risk_map')
-          expect(readFileSync(join(projectDir, 'GEMINI.md'), 'utf8')).toContain('implementation_checklist')
           expect(readFileSync(join(projectDir, 'GEMINI.md'), 'utf8')).toContain('impact')
           expect(readFileSync(join(projectDir, 'GEMINI.md'), 'utf8')).toContain('Only use madar when the task needs local repository source-code context.')
           expect(readFileSync(join(projectDir, 'GEMINI.md'), 'utf8')).toContain(STRICT_GRAPH_REPORT_RULE_MD)
           expectMarkdownRoutingTable(readFileSync(join(projectDir, 'GEMINI.md'), 'utf8'))
-          expect(readFileSync(join(projectDir, '.gemini', 'settings.json'), 'utf8')).toContain('out')
+          const geminiSettings = JSON.parse(readFileSync(join(projectDir, '.gemini', 'settings.json'), 'utf8')) as {
+            mcpServers?: { madar?: { command?: string; args?: string[]; env?: Record<string, string> } }
+          }
+          expect(geminiSettings.mcpServers?.madar).toEqual(expect.objectContaining({
+            command: 'madar',
+            args: ['serve', '--stdio', '--auto-refresh'],
+            env: { MADAR_TOOL_PROFILE: 'core' },
+          }))
 
           const uninstallMessage = geminiUninstall(projectDir, { homeDir })
           expect(uninstallMessage).toMatch(/madar section removed|GEMINI\.md was empty after removal/)
           expect(existsSync(join(homeDir, '.gemini', 'skills', 'madar', 'SKILL.md'))).toBe(false)
           expect(existsSync(join(projectDir, 'GEMINI.md'))).toBe(false)
-          expect(readFileSync(join(projectDir, '.gemini', 'settings.json'), 'utf8')).not.toContain('out')
+          const uninstalledSettings = JSON.parse(readFileSync(join(projectDir, '.gemini', 'settings.json'), 'utf8')) as {
+            mcpServers?: Record<string, unknown>
+          }
+          expect(uninstalledSettings.mcpServers?.madar).toBeUndefined()
         })
       })
     })
@@ -545,7 +563,11 @@ describe('install helpers', () => {
       const installMessage = installGeminiWithProfile(projectDir, { profile: 'strict' })
 
       const geminiMd = readFileSync(join(projectDir, 'GEMINI.md'), 'utf8')
+      const geminiSettings = JSON.parse(readFileSync(join(projectDir, '.gemini', 'settings.json'), 'utf8')) as {
+        mcpServers?: { madar?: { env?: Record<string, string> } }
+      }
 
+      expect(geminiSettings.mcpServers?.madar?.env?.MADAR_TOOL_PROFILE).toBe('strict')
       expect(geminiMd).toContain('Call `context_pack` once for the task before broader exploration.')
       expect(geminiMd).toContain(STRICT_STOP_RULE_MD)
       expect(geminiMd).toContain(STRICT_NO_BROAD_EXPLORATION_RULE_MD)
@@ -648,10 +670,6 @@ describe('install helpers', () => {
       expect(existsSync(join(projectDir, '.claude', 'settings.json'))).toBe(true)
       expect(readFileSync(join(projectDir, 'CLAUDE.md'), 'utf8')).not.toContain('python3 -c')
       expect(readFileSync(join(projectDir, 'CLAUDE.md'), 'utf8')).toContain('retrieve')
-      expect(readFileSync(join(projectDir, 'CLAUDE.md'), 'utf8')).toContain('relevant_files')
-      expect(readFileSync(join(projectDir, 'CLAUDE.md'), 'utf8')).toContain('feature_map')
-      expect(readFileSync(join(projectDir, 'CLAUDE.md'), 'utf8')).toContain('risk_map')
-      expect(readFileSync(join(projectDir, 'CLAUDE.md'), 'utf8')).toContain('implementation_checklist')
       expect(readFileSync(join(projectDir, 'CLAUDE.md'), 'utf8')).toContain('impact')
       expect(readFileSync(join(projectDir, 'CLAUDE.md'), 'utf8')).toContain('Only use madar when the task needs local repository source-code context.')
       expect(readFileSync(join(projectDir, 'CLAUDE.md'), 'utf8')).toContain(STRICT_NON_MADAR_MCP_RULE_MD)
@@ -913,7 +931,7 @@ describe('install helpers', () => {
     })
   })
 
-  it('writes strict Claude guidance while keeping the MCP env on the lean core tool profile', () => {
+  it('writes strict Claude guidance with the callable strict MCP tool profile', () => {
     withTempDir((projectDir) => {
       const installClaudeWithProfile = claudeInstall as (projectDir?: string, options?: { profile?: 'core' | 'full' | 'strict' }) => string
       const installMessage = installClaudeWithProfile(projectDir, { profile: 'strict' })
@@ -927,7 +945,7 @@ describe('install helpers', () => {
         }
       }
 
-      expect(mcpConfig.mcpServers?.['madar']?.env?.MADAR_TOOL_PROFILE).toBe('core')
+      expect(mcpConfig.mcpServers?.['madar']?.env?.MADAR_TOOL_PROFILE).toBe('strict')
       expect(claudeMd).toContain('Call `context_pack` once for the task before broader exploration.')
       expect(claudeMd).toContain(STRICT_STOP_RULE_MD)
       expect(claudeMd).toContain(STRICT_NO_BROAD_EXPLORATION_RULE_MD)
@@ -978,7 +996,7 @@ describe('install helpers', () => {
     })
   })
 
-  it('writes strict Cursor guidance while keeping the MCP env on the lean core tool profile', () => {
+  it('writes strict Cursor guidance with the callable strict MCP tool profile', () => {
     withTempDir((projectDir) => {
       const installCursorWithProfile = cursorInstall as (projectDir?: string, options?: { profile?: 'core' | 'full' | 'strict' }) => string
       const installMessage = installCursorWithProfile(projectDir, { profile: 'strict' })
@@ -992,7 +1010,7 @@ describe('install helpers', () => {
         }
       }
 
-      expect(mcpConfig.mcpServers?.['madar']?.env?.MADAR_TOOL_PROFILE).toBe('core')
+      expect(mcpConfig.mcpServers?.['madar']?.env?.MADAR_TOOL_PROFILE).toBe('strict')
       expect(rule).toContain('Call `context_pack` once for the task before broader exploration.')
       expect(rule).toContain(STRICT_STOP_RULE_MD)
       expect(rule).toContain(STRICT_NO_BROAD_EXPLORATION_RULE_MD)
@@ -1128,7 +1146,7 @@ describe('install helpers', () => {
     })
   })
 
-  it('writes strict Copilot guidance while keeping the MCP env on the lean core tool profile', () => {
+  it('writes strict Copilot guidance with the callable strict MCP tool profile', () => {
     withTempDir((projectDir) => {
       const installCopilotWithProfile = installCopilotMcp as (projectDir?: string, options?: { profile?: 'core' | 'full' | 'strict' }) => string
       const installMessage = installCopilotWithProfile(projectDir, { profile: 'strict' })
@@ -1141,13 +1159,72 @@ describe('install helpers', () => {
         }
       }
 
-      expect(mcpConfig.servers?.['madar']?.env?.MADAR_TOOL_PROFILE).toBe('core')
+      expect(mcpConfig.servers?.['madar']?.env?.MADAR_TOOL_PROFILE).toBe('strict')
       expect(installMessage).toContain('strict compact MCP profile')
       expect(installMessage).toContain('call context_pack once')
       expect(installMessage).toContain(STRICT_STOP_RULE_PLAIN)
       expect(installMessage).toContain(STRICT_NO_BROAD_EXPLORATION_RULE_PLAIN)
       expect(installMessage).toContain(STRICT_EXPAND_RULE_PLAIN)
       expect(installMessage).toContain(STRICT_GRAPH_REPORT_RULE_PLAIN)
+    })
+  })
+
+  it('keeps every tool named by compact agent guidance callable in the installed profile (#405, #550)', () => {
+    withBundledPackageRoot((packageRoot) => {
+      withTempDir((homeDir) => {
+        withTempDir((root) => {
+          const claudeDir = join(root, 'claude')
+          const cursorDir = join(root, 'cursor')
+          const copilotDir = join(root, 'copilot')
+          const geminiDir = join(root, 'gemini')
+          const codexDir = join(root, 'codex')
+          const aiderDir = join(root, 'aider')
+
+          const claudeMessage = claudeInstall(claudeDir, { profile: 'strict' })
+          const cursorMessage = cursorInstall(cursorDir, { profile: 'strict' })
+          const copilotMessage = installCopilotMcp(copilotDir, { profile: 'strict' })
+          const geminiMessage = geminiInstall(geminiDir, {
+            profile: 'strict',
+            homeDir,
+            packageRoot,
+            version: 'test-version',
+          })
+          const codexMessage = agentsInstall(codexDir, 'codex')
+          const aiderMessage = agentsInstall(aiderDir, 'aider')
+
+          const guidanceByPlatform = [
+            `${readFileSync(join(claudeDir, 'CLAUDE.md'), 'utf8')}\n${claudeMessage}`,
+            `${readFileSync(join(cursorDir, '.cursor', 'rules', 'madar.mdc'), 'utf8')}\n${cursorMessage}`,
+            copilotMessage,
+            `${readFileSync(join(geminiDir, 'GEMINI.md'), 'utf8')}\n${geminiMessage}`,
+            `${readFileSync(join(codexDir, 'AGENTS.md'), 'utf8')}\n${readFileSync(join(codexDir, '.codex', 'madar-user-prompt-submit.cjs'), 'utf8')}\n${codexMessage}`,
+          ]
+          for (const guidance of guidanceByPlatform) {
+            expectGuidanceToolsEnabled(guidance, 'strict')
+          }
+
+          expect(readFileSync(join(claudeDir, '.mcp.json'), 'utf8')).toContain('"MADAR_TOOL_PROFILE": "strict"')
+          expect(readFileSync(join(cursorDir, '.cursor', 'mcp.json'), 'utf8')).toContain('"MADAR_TOOL_PROFILE": "strict"')
+          expect(readFileSync(join(copilotDir, '.vscode', 'mcp.json'), 'utf8')).toContain('"MADAR_TOOL_PROFILE": "strict"')
+          expect(readFileSync(join(geminiDir, '.gemini', 'settings.json'), 'utf8')).toContain('"MADAR_TOOL_PROFILE": "strict"')
+          expect(readFileSync(join(codexDir, '.codex', 'config.toml'), 'utf8')).toContain('MADAR_TOOL_PROFILE = "strict"')
+
+          const aiderGuidance = `${readFileSync(join(aiderDir, 'AGENTS.md'), 'utf8')}\n${aiderMessage}`
+          expectGuidanceToolsEnabled(aiderGuidance, 'strict')
+          expect(aiderGuidance).toContain('This profile writes AGENTS.md only.')
+        })
+      })
+    })
+
+    withOpenCodePackageRoot((packageRoot) => {
+      withTempDir((projectDir) => {
+        const message = agentsInstall(projectDir, 'opencode', { packageRoot })
+        const guidance = `${readFileSync(join(projectDir, 'AGENTS.md'), 'utf8')}\n${readFileSync(join(projectDir, '.opencode', 'plugins', 'madar.js'), 'utf8')}\n${message}`
+        const config = JSON.parse(readFileSync(join(projectDir, 'opencode.json'), 'utf8')) as OpenCodeConfig
+
+        expectGuidanceToolsEnabled(guidance, 'strict')
+        expect(config.mcp?.madar?.environment?.MADAR_TOOL_PROFILE).toBe('strict')
+      })
     })
   })
 
@@ -1229,6 +1306,7 @@ describe('install helpers', () => {
         expect(opencodeConfig.mcp?.madar).toEqual({
           type: 'local',
           command: [process.execPath, cliPath, 'serve', '--stdio', '--auto-refresh'],
+          environment: { MADAR_TOOL_PROFILE: 'strict' },
           enabled: true,
         })
       })
@@ -1587,7 +1665,7 @@ describe('install helpers', () => {
     withTempDir((projectDir) => {
       const configPath = join(projectDir, '.codex', 'config.toml')
       const unrelatedToml = '# Preserve this user comment\r\n[features]\r\nparallel = true\r\n'
-      const managedBlock = `${CODEX_MCP_START_MARKER}\r\n[mcp_servers.madar]\r\ncommand = "madar"\r\nargs = ["serve", "--stdio", "--auto-refresh"]\r\nenv = { MADAR_TOOL_PROFILE = "core" }\r\nenabled = true\r\n${CODEX_MCP_END_MARKER}\r\n`
+      const managedBlock = `${CODEX_MCP_START_MARKER}\r\n[mcp_servers.madar]\r\ncommand = "madar"\r\nargs = ["serve", "--stdio", "--auto-refresh"]\r\nenv = { MADAR_TOOL_PROFILE = "strict" }\r\nenabled = true\r\n${CODEX_MCP_END_MARKER}\r\n`
 
       mkdirSync(join(projectDir, '.codex'), { recursive: true })
       writeFileSync(configPath, unrelatedToml, 'utf8')
@@ -1607,6 +1685,24 @@ describe('install helpers', () => {
       const uninstallMessage = agentsUninstall(projectDir, 'codex')
       expect(uninstallMessage).toContain('.codex/config.toml -> MCP server removed')
       expect(readFileSync(configPath, 'utf8')).toBe(unrelatedToml)
+    })
+  })
+
+  it('migrates the exact pre-#550 owned Codex core profile to strict on reinstall', () => {
+    withTempDir((projectDir) => {
+      const configPath = join(projectDir, '.codex', 'config.toml')
+      const preFixBlock = `${CODEX_MCP_START_MARKER}\n[mcp_servers.madar]\ncommand = "madar"\nargs = ["serve", "--stdio", "--auto-refresh"]\nenv = { MADAR_TOOL_PROFILE = "core" }\nenabled = true\n${CODEX_MCP_END_MARKER}\n`
+      mkdirSync(join(projectDir, '.codex'), { recursive: true })
+      writeFileSync(configPath, preFixBlock, 'utf8')
+
+      const installMessage = agentsInstall(projectDir, 'codex')
+      const migrated = readFileSync(configPath, 'utf8')
+
+      expect(installMessage).toContain('.codex/config.toml -> MCP server updated')
+      expect(migrated).toContain('MADAR_TOOL_PROFILE = "strict"')
+      expect(migrated).not.toContain('MADAR_TOOL_PROFILE = "core"')
+      expect(countOccurrences(migrated, CODEX_MCP_START_MARKER)).toBe(1)
+      expect(agentsInstall(projectDir, 'codex')).toContain('.codex/config.toml -> MCP server already registered (no change)')
     })
   })
 
@@ -1689,7 +1785,7 @@ ${CODEX_MCP_END_MARKER}
       expect(installed).toContain('# after\n')
       expect(installed).toContain('[mcp_servers.madar]\ncommand = "madar"')
       expect(installed).toContain('args = ["serve", "--stdio", "--auto-refresh"]')
-      expect(installed).toContain('env = { MADAR_TOOL_PROFILE = "core" }')
+      expect(installed).toContain('env = { MADAR_TOOL_PROFILE = "strict" }')
       expect(installed).toContain('enabled = true')
       expect(installed).not.toContain('old-madar')
     })
@@ -1808,7 +1904,7 @@ ${CODEX_MCP_END_MARKER}
           type: 'local',
           command: [process.execPath, cliPath, 'serve', '--stdio', '--auto-refresh'],
           enabled: true,
-          environment: { HTTP_PROXY: 'http://proxy.example' },
+          environment: { MADAR_TOOL_PROFILE: 'strict', HTTP_PROXY: 'http://proxy.example' },
         })
       })
     })
@@ -1857,6 +1953,7 @@ ${CODEX_MCP_END_MARKER}
         expect(installedConfig.mcp?.madar).toEqual({
           type: 'local',
           command: [process.execPath, cliPath, 'serve', '--stdio', '--auto-refresh'],
+          environment: { MADAR_TOOL_PROFILE: 'strict' },
           enabled: true,
         })
 

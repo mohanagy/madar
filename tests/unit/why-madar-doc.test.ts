@@ -137,7 +137,7 @@ describe('public marketing copy honesty', () => {
     })
 
     it('keeps the README full MCP additions list aligned with the shipped get_neighbors tool', () => {
-      expect(publicDocs).toContain('The full surface is 26 tools')
+      expect(publicDocs).toContain('The full surface is 27 tools')
       expect(publicDocs).toContain('`context_expand`')
       expect(publicDocs).toContain('`get_neighbors`')
     })

@@ -37,10 +37,11 @@
             "environmentVariables": [
                 {
                     "name": "MADAR_TOOL_PROFILE",
-                    "description": "Optional MCP tool surface. Madar installs default to the lean core profile.",
+                    "description": "Optional MCP tool surface: core, strict (core plus context pack/expand), or full.",
                     "default": "core",
                     "choices": [
                         "core",
+                        "strict",
                         "full"
                     ]
                 }

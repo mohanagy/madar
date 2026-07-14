@@ -8,9 +8,9 @@ interface RoutingRow {
 const MCP_ROUTING_ROWS: RoutingRow[] = [
   {
     promptType: '"how does X work" / explain runtime / flow',
-    markdownTarget: '`context_pack`',
+    markdownTarget: '`retrieve`',
     plainPromptType: '"how does X work?" / explain runtime / flow',
-    plainTarget: 'context_pack',
+    plainTarget: 'retrieve',
   },
   {
     promptType: '"what breaks if I change X" / impact analysis',
@@ -20,9 +20,9 @@ const MCP_ROUTING_ROWS: RoutingRow[] = [
   },
   {
     promptType: '"which files should I open first"',
-    markdownTarget: '`relevant_files`',
+    markdownTarget: '`retrieve`',
     plainPromptType: '"which files should I open first?"',
-    plainTarget: 'relevant_files',
+    plainTarget: 'retrieve',
   },
   {
     promptType: '"give me a repo overview"',
@@ -32,18 +32,18 @@ const MCP_ROUTING_ROWS: RoutingRow[] = [
   },
   {
     promptType: '"what parts are involved in feature X"',
-    markdownTarget: '`feature_map`',
-    plainTarget: 'feature_map',
+    markdownTarget: '`retrieve`',
+    plainTarget: 'retrieve',
   },
   {
     promptType: '"what\'s risky to edit in X"',
-    markdownTarget: '`risk_map`',
-    plainTarget: 'risk_map',
+    markdownTarget: '`impact`',
+    plainTarget: 'impact',
   },
   {
     promptType: '"give me a build/edit checklist"',
-    markdownTarget: '`implementation_checklist`',
-    plainTarget: 'implementation_checklist',
+    markdownTarget: '`retrieve`',
+    plainTarget: 'retrieve',
   },
   {
     promptType: 'general retrieval / list of nodes',
@@ -67,9 +67,9 @@ const CODEX_ROUTING_ROWS: RoutingRow[] = [
   },
   {
     promptType: '"which files should I open first"',
-    markdownTarget: '`relevant_files` when MCP graph tools are available; otherwise `madar pack "<task or question>" --task explain`',
+    markdownTarget: '`retrieve` when MCP graph tools are available; otherwise `madar pack "<task or question>" --task explain`',
     plainPromptType: '"which files should I open first?"',
-    plainTarget: 'relevant_files when MCP graph tools are available; otherwise madar pack "<task or question>" --task explain',
+    plainTarget: 'retrieve when MCP graph tools are available; otherwise madar pack "<task or question>" --task explain',
   },
   {
     promptType: '"give me a repo overview"',

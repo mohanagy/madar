@@ -10,13 +10,15 @@ import { activeMcpTools, MCP_TOOLS } from '../../src/runtime/stdio/definitions.j
 //
 // Post-#338 measurements (taken from `node -e "JSON.stringify({tools: ...})"`):
 //   * Core profile (7 tools, the default):  ≈ 3,389 bytes
-//   * Full profile (26 tools, opt-in):      ≈ 12,620 bytes
+//   * Strict profile (9 tools):             ≈ 4,825 bytes
+//   * Full profile (27 tools, opt-in):      ≈ 12,380 bytes
 //
 // Pre-#82 core was 4,271 bytes / ~1,068 tokens — i.e. #82 cut the core profile
 // by 30%. The ceilings below sit just above today's measurements to leave a
 // small growth buffer without permitting a silent regression.
 
 const CORE_PROFILE_BYTE_CEILING = 3_400
+const STRICT_PROFILE_BYTE_CEILING = 4_850
 const FULL_PROFILE_BYTE_CEILING = 12_650  // v0.27: raised for additive retrieve snippet-budget arguments
 
 function payloadBytes(tools: ReadonlyArray<unknown>): number {
@@ -32,6 +34,13 @@ describe('MCP tool-schema byte budget (#82)', () => {
   it('the full profile JSON payload stays under its byte ceiling', () => {
     const bytes = payloadBytes(activeMcpTools('full'))
     expect(bytes, `full profile is ${bytes} bytes; ceiling is ${FULL_PROFILE_BYTE_CEILING}`).toBeLessThanOrEqual(FULL_PROFILE_BYTE_CEILING)
+  })
+
+  it('the strict profile stays compact while exposing pack and expansion', () => {
+    const tools = activeMcpTools('strict')
+    const bytes = payloadBytes(tools)
+    expect(bytes, `strict profile is ${bytes} bytes; ceiling is ${STRICT_PROFILE_BYTE_CEILING}`).toBeLessThanOrEqual(STRICT_PROFILE_BYTE_CEILING)
+    expect(tools.map((tool) => tool.name)).toEqual(expect.arrayContaining(['context_pack', 'context_expand']))
   })
 
   it('the core profile contains exactly the documented 7 tools', () => {

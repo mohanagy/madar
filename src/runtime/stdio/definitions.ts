@@ -397,7 +397,7 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   },
 ]
 
-export type McpToolProfile = 'core' | 'full'
+export type McpToolProfile = 'core' | 'strict' | 'full'
 
 /**
  * The minimal set of tools shipped by default. Keeps cache_creation overhead
@@ -407,6 +407,14 @@ export type McpToolProfile = 'core' | 'full'
 export const CORE_TOOL_NAMES = ['retrieve', 'impact', 'call_chain', 'community_overview', 'pr_impact', 'graph_stats', 'graph_summary'] as const
 
 export type McpCoreToolName = (typeof CORE_TOOL_NAMES)[number]
+
+/**
+ * The compact context-pack-first surface installed by `--profile strict`.
+ * Keep this list aligned with every tool named by strict agent guidance.
+ */
+export const STRICT_TOOL_NAMES = [...CORE_TOOL_NAMES, 'context_pack', 'context_expand'] as const
+
+export type McpStrictToolName = (typeof STRICT_TOOL_NAMES)[number]
 
 /** Retrieve params that only function when the optional
  *  @huggingface/transformers package is resolvable. */
@@ -436,8 +444,8 @@ function withoutSemanticFields(tool: McpToolDefinition): McpToolDefinition {
 }
 
 export function activeMcpTools(profile: McpToolProfile = 'core', options: ActiveMcpToolsOptions = {}): McpToolDefinition[] {
-  const core = new Set<string>(CORE_TOOL_NAMES)
-  const tools = profile === 'full' ? MCP_TOOLS : MCP_TOOLS.filter((tool) => core.has(tool.name))
+  const enabledNames = new Set<string>(profile === 'strict' ? STRICT_TOOL_NAMES : CORE_TOOL_NAMES)
+  const tools = profile === 'full' ? MCP_TOOLS : MCP_TOOLS.filter((tool) => enabledNames.has(tool.name))
   if (options.semanticAvailable === false) {
     return tools.map((tool) => withoutSemanticFields(tool))
   }
@@ -446,14 +454,15 @@ export function activeMcpTools(profile: McpToolProfile = 'core', options: Active
 
 export function resolveToolProfileFromEnv(env: NodeJS.ProcessEnv = process.env): McpToolProfile {
   const raw = (env.MADAR_TOOL_PROFILE ?? '').trim().toLowerCase()
-  return raw === 'full' ? 'full' : 'core'
+  return raw === 'full' || raw === 'strict' ? raw : 'core'
 }
 
-export function isCoreToolName(name: string, profile: McpToolProfile = 'core'): boolean {
+export function isToolEnabledInProfile(name: string, profile: McpToolProfile = 'core'): boolean {
   if (profile === 'full') {
     return true
   }
-  return (CORE_TOOL_NAMES as readonly string[]).includes(name)
+  const enabledNames: readonly string[] = profile === 'strict' ? STRICT_TOOL_NAMES : CORE_TOOL_NAMES
+  return enabledNames.includes(name)
 }
 
 export const MCP_PROMPTS: McpPromptDefinition[] = [

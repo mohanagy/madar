@@ -9,7 +9,7 @@ import { startGraphAutoRefresh } from '../infrastructure/watch.js'
 import { DirectedGraphRequiredError } from './direction.js'
 import { diffGraphs } from './diff.js'
 import { buildGraphSummary } from './graph-summary.js'
-import { MCP_PROMPTS, MCP_TOOLS, activeMcpTools, isCoreToolName, resolveToolProfileFromEnv, type McpPromptDefinition } from './stdio/definitions.js'
+import { MCP_PROMPTS, MCP_TOOLS, activeMcpTools, isToolEnabledInProfile, resolveToolProfileFromEnv, type McpPromptDefinition } from './stdio/definitions.js'
 import { handleCompletion, handlePromptGet, promptDefinitionsForGraph, readStoredCommunityLabels } from './stdio/prompts.js'
 import {
   emitResourceNotifications,
@@ -673,11 +673,11 @@ export function handleStdioRequest(
       case 'tools/call': {
         const profile = resolveToolProfileFromEnv()
         const toolName = stringParam(params, 'name')
-        if (toolName !== null && !isCoreToolName(toolName, profile)) {
+        if (toolName !== null && !isToolEnabledInProfile(toolName, profile)) {
           return failure(
             id,
             JSONRPC_METHOD_NOT_FOUND,
-            `Tool '${toolName}' is not enabled in the active madar MCP tool profile. Default profile: core. Set MADAR_TOOL_PROFILE=full in your MCP server config (e.g. .mcp.json for Claude, .cursor/mcp.json for Cursor, .vscode/mcp.json for VS Code Copilot) to enable advanced tools.`,
+            `Tool '${toolName}' is not enabled in the active madar MCP tool profile '${profile}'. Use MADAR_TOOL_PROFILE=strict for core plus context_pack/context_expand, or MADAR_TOOL_PROFILE=full for every tool, in your agent's MCP server config.`,
           )
         }
         const response = handleToolCallRequest(id, graphPath, params, {
