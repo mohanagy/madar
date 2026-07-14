@@ -945,6 +945,9 @@ describe('cli parser', () => {
       includeDocs: false,
       docs: false,
       useSpi: false,
+      strictIndexing: false,
+      maxIndexingFailed: 0,
+      maxIndexingUnsupported: 0,
     })
 
     expect(
@@ -973,6 +976,9 @@ describe('cli parser', () => {
         'secret',
         '--neo4j-database',
         'madar',
+        '--max-indexing-failed',
+        '2',
+        '--max-indexing-unsupported=3',
       ]),
     ).toEqual({
       path: 'src',
@@ -997,6 +1003,9 @@ describe('cli parser', () => {
       includeDocs: false,
       docs: false,
       useSpi: false,
+      strictIndexing: true,
+      maxIndexingFailed: 2,
+      maxIndexingUnsupported: 3,
     })
 
     expect(() => parseGenerateArgs(['src', 'other'])).toThrow('Usage: madar generate')
@@ -1007,6 +1016,17 @@ describe('cli parser', () => {
     )
     expect(() => parseGenerateArgs(['--undirected', '--directed'])).toThrow(
       '--directed and --undirected cannot be used together',
+    )
+    expect(parseGenerateArgs(['--strict-indexing'])).toMatchObject({
+      strictIndexing: true,
+      maxIndexingFailed: 0,
+      maxIndexingUnsupported: 0,
+    })
+    expect(() => parseGenerateArgs(['--max-indexing-failed', '-1'])).toThrow(
+      '--max-indexing-failed must be a non-negative integer',
+    )
+    expect(() => parseGenerateArgs(['--max-indexing-unsupported=abc'])).toThrow(
+      '--max-indexing-unsupported must be a non-negative integer',
     )
   })
 
@@ -1266,6 +1286,9 @@ describe('cli main', () => {
     expect(help).toContain('serve [graph.json]')
     expect(help).toContain('--directed')
     expect(help).toContain('--respect-gitignore')
+    expect(help).toContain('--strict-indexing')
+    expect(help).toContain('--max-indexing-failed')
+    expect(help).toContain('--max-indexing-unsupported')
     expect(help).toContain('--wiki')
     expect(help).toContain('--obsidian')
     expect(help).toContain('--svg')
@@ -2691,7 +2714,21 @@ describe('cli main', () => {
     }
 
     const exitCode = await executeCli(
-      ['generate', 'src', '--directed', '--wiki', '--obsidian', '--obsidian-dir', 'vault', '--svg', '--graphml', '--neo4j'],
+      [
+        'generate',
+        'src',
+        '--directed',
+        '--wiki',
+        '--obsidian',
+        '--obsidian-dir',
+        'vault',
+        '--svg',
+        '--graphml',
+        '--neo4j',
+        '--max-indexing-failed=1',
+        '--max-indexing-unsupported',
+        '2',
+      ],
       io,
       dependencies,
     )
@@ -2713,6 +2750,10 @@ describe('cli main', () => {
       includeDocs: false,
       docs: false,
       useSpi: false,
+      indexingStrict: {
+        maxFailed: 1,
+        maxUnsupported: 2,
+      },
     })
     expect(typeof capturedOptions?.onProgress).toBe('function')
   })

@@ -181,6 +181,9 @@ export interface GenerateCliOptions {
   neo4jDatabase: string | null
   includeDocs: boolean
   docs: boolean
+  strictIndexing: boolean
+  maxIndexingFailed: number
+  maxIndexingUnsupported: number
   /** v0.18 (#85 candidate): opt-in to the SPI v1 build pipeline.
    *  When true, `buildSpiCached` + `projectSpiToExtraction` replace the
    *  legacy `extract()` call site so framework_role / framework_metadata
@@ -1756,6 +1759,9 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
   let includeDocs = false
   let docs = false
   let useSpi = false
+  let strictIndexing = false
+  let maxIndexingFailed = 0
+  let maxIndexingUnsupported = 0
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index]
@@ -1768,10 +1774,43 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
       continue
     }
 
+    if (argument === '--strict-indexing') {
+      strictIndexing = true
+      continue
+    }
+
+    if (argument === '--max-indexing-failed') {
+      maxIndexingFailed = parseNonNegativeInteger('--max-indexing-failed', requireNonEmptyValue('--max-indexing-failed', args[index + 1]))
+      strictIndexing = true
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--max-indexing-failed=')) {
+      const [, value] = argument.split('=', 2)
+      maxIndexingFailed = parseNonNegativeInteger('--max-indexing-failed', requireNonEmptyValue('--max-indexing-failed', value))
+      strictIndexing = true
+      continue
+    }
+
+    if (argument === '--max-indexing-unsupported') {
+      maxIndexingUnsupported = parseNonNegativeInteger('--max-indexing-unsupported', requireNonEmptyValue('--max-indexing-unsupported', args[index + 1]))
+      strictIndexing = true
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--max-indexing-unsupported=')) {
+      const [, value] = argument.split('=', 2)
+      maxIndexingUnsupported = parseNonNegativeInteger('--max-indexing-unsupported', requireNonEmptyValue('--max-indexing-unsupported', value))
+      strictIndexing = true
+      continue
+    }
+
     if (!argument.startsWith('--')) {
       if (path !== '.') {
         throw new UsageError(
-          'Usage: madar generate [path] [--update] [--cluster-only] [--watch] [--directed|--undirected] [--follow-symlinks] [--respect-gitignore] [--debounce S] [--no-html] [--wiki] [--obsidian] [--obsidian-dir DIR] [--svg] [--graphml] [--neo4j] [--neo4j-push URI] [--neo4j-user USER] [--neo4j-password PW] [--neo4j-database DB] [--spi]',
+          'Usage: madar generate [path] [--update] [--cluster-only] [--watch] [--directed|--undirected] [--follow-symlinks] [--respect-gitignore] [--debounce S] [--no-html] [--wiki] [--obsidian] [--obsidian-dir DIR] [--svg] [--graphml] [--neo4j] [--neo4j-push URI] [--neo4j-user USER] [--neo4j-password PW] [--neo4j-database DB] [--spi] [--strict-indexing] [--max-indexing-failed N] [--max-indexing-unsupported N]',
         )
       }
       path = argument
@@ -1965,6 +2004,9 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
     includeDocs,
     docs,
     useSpi,
+    strictIndexing,
+    maxIndexingFailed,
+    maxIndexingUnsupported,
   }
 }
 

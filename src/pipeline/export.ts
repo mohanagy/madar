@@ -412,6 +412,9 @@ export function toJson(
     ...(graph.graph.discovery_safety && typeof graph.graph.discovery_safety === 'object' && !Array.isArray(graph.graph.discovery_safety)
       ? { discovery_safety: graph.graph.discovery_safety }
       : {}),
+    ...(graph.graph.indexing_completeness && typeof graph.graph.indexing_completeness === 'object' && !Array.isArray(graph.graph.indexing_completeness)
+      ? { indexing_completeness: graph.graph.indexing_completeness }
+      : {}),
     ...(typeof extractorVersion === 'number' ? { extractor_version: extractorVersion } : {}),
     nodes: graph.nodeEntries().map(([id, attributes]) => ({
       id,

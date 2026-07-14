@@ -4,10 +4,82 @@ import { dirname, join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
+import type { ContextPackCoverage } from '../../src/contracts/context-pack.js'
 import { buildMadarResponseEvidence } from '../../src/runtime/mcp-response-evidence.js'
+import { createIndexingManifest } from '../../src/pipeline/indexing-outcomes.js'
 import { buildDiscoverySafetyMetadata, relevantDiscoveryExclusions } from '../../src/shared/discovery-safety.js'
 
 describe('mcp-response-evidence', () => {
+  it('downgrades only relevant indexing uncertainty and exposes share-safe reason aggregates', () => {
+    const indexingManifest = createIndexingManifest({
+      outcomes: [
+        {
+          path: 'src/index.ts',
+          kind: 'file',
+          status: 'indexed',
+          reason: 'indexed',
+          capability: 'builtin:extract:typescript',
+        },
+        {
+          path: 'src/auth/token-loader.ts',
+          kind: 'file',
+          status: 'failed',
+          reason: 'extractor_error',
+          capability: 'builtin:extract:typescript',
+          diagnostics: [{ code: 'parser_failed', level: 'error', message: 'private parser detail' }],
+        },
+        {
+          path: 'src/billing/legacy.vue',
+          kind: 'file',
+          status: 'unsupported',
+          reason: 'unsupported_file_type',
+          capability: null,
+        },
+      ],
+    })
+    const coverage: ContextPackCoverage = {
+      required_evidence: ['primary'],
+      semantic_required: [],
+      semantic_optional: [],
+      entries: [
+        { evidence_class: 'primary', required: true, available_nodes: 1, selected_nodes: 1, status: 'covered' },
+      ],
+      semantic_entries: [],
+      missing_required: [],
+      missing_semantic: [],
+      available_relationships: 1,
+      selected_relationships: 1,
+    }
+
+    const relevant = buildMadarResponseEvidence({
+      indexingManifest,
+      question: 'How does the auth token loader work?',
+      coveredWorkflowOwners: ['src/auth/auth-service.ts'],
+      coverage,
+    })
+    const unrelated = buildMadarResponseEvidence({
+      indexingManifest,
+      question: 'How are invoices rendered?',
+      coveredWorkflowOwners: ['src/invoices/render.ts'],
+      coverage,
+    })
+
+    expect(relevant.pack_confidence).toBe('low')
+    expect(relevant.coverage).toBe('partial')
+    expect(relevant.indexing_completeness).toEqual({
+      state: 'partial',
+      total_uncertain: 2,
+      relevant_uncertain: 1,
+      reasons: { extractor_error: 1, unsupported_file_type: 1 },
+      relevant_reasons: { extractor_error: 1 },
+    })
+    expect(JSON.stringify(relevant)).not.toContain('token-loader.ts')
+    expect(JSON.stringify(relevant)).not.toContain('private parser detail')
+    expect(unrelated.pack_confidence).toBe('high')
+    expect(unrelated.coverage).toBe('complete')
+    expect(unrelated.indexing_completeness?.relevant_uncertain).toBe(0)
+  })
+
   it('matches hidden credential-store reasons and indirect workflow-owner paths', () => {
     const metadata = buildDiscoverySafetyMetadata([
       { path: '.aws', kind: 'sensitive', reason: 'credential_store' },

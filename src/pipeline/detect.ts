@@ -1,6 +1,7 @@
 import { accessSync, constants, Dirent, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, extname, relative, resolve, sep } from 'node:path'
 
+import type { IndexingOutcome } from '../contracts/indexing.js'
 import { sidecarAwareFileFingerprint } from '../shared/binary-ingest-sidecar.js'
 import {
   isDiscoveryPathIgnored,
@@ -41,6 +42,7 @@ export interface DetectResult {
   /** @deprecated Prefer the structured `exclusions` collection. */
   skipped_sensitive: string[]
   exclusions: DiscoveryExclusion[]
+  indexing_outcomes?: IndexingOutcome[]
   madarignore_patterns: number
 }
 
@@ -82,6 +84,9 @@ export const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp
 export const AUDIO_EXTENSIONS = new Set(['.aac', '.flac', '.m4a', '.mp3', '.ogg', '.opus', '.wav'])
 export const VIDEO_EXTENSIONS = new Set(['.avi', '.m4v', '.mkv', '.mov', '.mp4', '.webm'])
 export const OFFICE_EXTENSIONS = new Set(['.docx', '.xlsx'])
+export const UNSUPPORTED_SOURCE_EXTENSIONS = new Set([
+  '.bash', '.clj', '.cljs', '.dart', '.elm', '.fs', '.fsx', '.groovy', '.hs', '.r', '.sh', '.sol', '.sql', '.svelte', '.vue',
+])
 
 const CORPUS_WARN_THRESHOLD = 50_000
 const CORPUS_UPPER_THRESHOLD = 500_000
@@ -91,6 +96,11 @@ export const MANIFEST_METADATA_KEY = '__madar_meta__'
 
 export interface ManifestMetadata {
   total_words?: number
+}
+
+export interface ManifestSnapshot {
+  document: Record<string, number | ManifestMetadata>
+  failedPaths: string[]
 }
 
 const PAPER_SIGNALS = [
@@ -134,6 +144,18 @@ const NOISE_FILE_PATTERNS: RegExp[] = [
 
 function isNoiseFile(name: string): boolean {
   return NOISE_FILE_PATTERNS.some((pattern) => pattern.test(name))
+}
+
+function isPotentialIndexingCandidate(path: string): boolean {
+  const extension = extname(path).toLowerCase()
+  return CODE_EXTENSIONS.has(extension)
+    || DOC_EXTENSIONS.has(extension)
+    || PAPER_EXTENSIONS.has(extension)
+    || IMAGE_EXTENSIONS.has(extension)
+    || AUDIO_EXTENSIONS.has(extension)
+    || VIDEO_EXTENSIONS.has(extension)
+    || OFFICE_EXTENSIONS.has(extension)
+    || UNSUPPORTED_SOURCE_EXTENSIONS.has(extension)
 }
 
 function toPosixPath(path: string): string {
@@ -228,6 +250,7 @@ function visitDirectory(
   rootRealPath: string,
   files: string[],
   exclusions: DiscoveryExclusion[],
+  indexingOutcomes: IndexingOutcome[],
 ): void {
   let entries: Dirent[]
   try {
@@ -246,10 +269,27 @@ function visitDirectory(
     const normalizedEntryPath = toPosixPath(entryPath)
 
     if (isDiscoveryPathIgnored(entryPath, root, ignorePatterns)) {
+      const ignoredByMadarignore = isIgnoredByPatterns(entryPath, root, ignorePatterns)
+      if (ignoredByMadarignore || (!entry.isDirectory() && isPotentialIndexingCandidate(entryPath))) {
+        indexingOutcomes.push({
+          path: localDiscoveryPath(root, entryPath),
+          kind: entry.isDirectory() ? 'directory' : 'file',
+          status: 'skipped_by_policy',
+          reason: ignoredByMadarignore ? 'madarignore' : 'hard_ignored',
+          capability: null,
+        })
+      }
       continue
     }
 
     if (isNoiseFile(entry.name)) {
+      indexingOutcomes.push({
+        path: localDiscoveryPath(root, entryPath),
+        kind: 'file',
+        status: 'skipped_by_policy',
+        reason: 'noise_path',
+        capability: null,
+      })
       continue
     }
 
@@ -274,13 +314,28 @@ function visitDirectory(
             kind: 'sensitive',
             reason: directoryReason,
           })
+        } else {
+          indexingOutcomes.push({
+            path: localDiscoveryPath(root, entryPath),
+            kind: 'directory',
+            status: 'skipped_by_policy',
+            reason: 'hidden_path',
+            capability: null,
+          })
         }
         continue
       }
       if (isNoiseDir(entry.name)) {
+        indexingOutcomes.push({
+          path: localDiscoveryPath(root, entryPath),
+          kind: 'directory',
+          status: 'skipped_by_policy',
+          reason: 'noise_path',
+          capability: null,
+        })
         continue
       }
-      visitDirectory(entryPath, root, followSymlinks, ignorePatterns, ancestorRealPaths, rootRealPath, files, exclusions)
+      visitDirectory(entryPath, root, followSymlinks, ignorePatterns, ancestorRealPaths, rootRealPath, files, exclusions, indexingOutcomes)
       continue
     }
 
@@ -295,9 +350,23 @@ function visitDirectory(
         continue
       }
       if (entry.name.startsWith('.')) {
+        indexingOutcomes.push({
+          path: localDiscoveryPath(root, entryPath),
+          kind: 'file',
+          status: 'skipped_by_policy',
+          reason: 'hidden_path',
+          capability: null,
+        })
         continue
       }
       if (!followSymlinks) {
+        indexingOutcomes.push({
+          path: localDiscoveryPath(root, entryPath),
+          kind: 'file',
+          status: 'skipped_by_policy',
+          reason: 'symlink_disabled',
+          capability: null,
+        })
         continue
       }
 
@@ -314,9 +383,23 @@ function visitDirectory(
       }
 
       if (ancestorRealPaths.includes(realTarget)) {
+        indexingOutcomes.push({
+          path: localDiscoveryPath(root, entryPath),
+          kind: 'directory',
+          status: 'skipped_by_policy',
+          reason: 'symlink_cycle',
+          capability: null,
+        })
         continue
       }
       if (!isWithinRoot(rootRealPath, realTarget)) {
+        indexingOutcomes.push({
+          path: localDiscoveryPath(root, entryPath),
+          kind: 'file',
+          status: 'skipped_by_policy',
+          reason: 'symlink_outside_root',
+          capability: null,
+        })
         continue
       }
 
@@ -357,7 +440,7 @@ function visitDirectory(
 
       if (targetStats.isDirectory()) {
         const nextAncestors = [...ancestorRealPaths, realTarget]
-        visitDirectory(entryPath, root, followSymlinks, ignorePatterns, nextAncestors, rootRealPath, files, exclusions)
+        visitDirectory(entryPath, root, followSymlinks, ignorePatterns, nextAncestors, rootRealPath, files, exclusions, indexingOutcomes)
       } else if (targetStats.isFile()) {
         files.push(normalizedEntryPath)
       }
@@ -373,6 +456,14 @@ function visitDirectory(
             kind: 'sensitive',
             reason: sensitiveReason,
           })
+        } else if (isPotentialIndexingCandidate(entryPath)) {
+          indexingOutcomes.push({
+            path: localDiscoveryPath(root, entryPath),
+            kind: 'file',
+            status: 'skipped_by_policy',
+            reason: 'hidden_path',
+            capability: null,
+          })
         }
         continue
       }
@@ -381,12 +472,17 @@ function visitDirectory(
   }
 }
 
-function collectFiles(root: string, followSymlinks: boolean, ignorePatterns: string[]): { files: string[]; exclusions: DiscoveryExclusion[] } {
+function collectFiles(root: string, followSymlinks: boolean, ignorePatterns: string[]): {
+  files: string[]
+  exclusions: DiscoveryExclusion[]
+  indexingOutcomes: IndexingOutcome[]
+} {
   const resolvedRoot = resolve(root)
   mkdirSync(resolvedRoot, { recursive: true })
 
   const files: string[] = []
   const exclusions: DiscoveryExclusion[] = []
+  const indexingOutcomes: IndexingOutcome[] = []
   let rootRealPath = resolvedRoot
   try {
     rootRealPath = realpathSync(resolvedRoot)
@@ -394,11 +490,22 @@ function collectFiles(root: string, followSymlinks: boolean, ignorePatterns: str
     rootRealPath = resolvedRoot
   }
 
-  visitDirectory(resolvedRoot, resolvedRoot, followSymlinks, ignorePatterns, [rootRealPath], rootRealPath, files, exclusions)
+  visitDirectory(
+    resolvedRoot,
+    resolvedRoot,
+    followSymlinks,
+    ignorePatterns,
+    [rootRealPath],
+    rootRealPath,
+    files,
+    exclusions,
+    indexingOutcomes,
+  )
 
   return {
     files: [...new Set(files)].sort(),
     exclusions,
+    indexingOutcomes,
   }
 }
 
@@ -428,6 +535,24 @@ function validateManifestPath(manifestPath: string): string {
   return resolvedPath
 }
 
+function indexingOutcomeFromDiscoveryExclusion(root: string, exclusion: DiscoveryExclusion): IndexingOutcome {
+  let directory = exclusion.reason === 'unreadable_directory'
+  if (!directory) {
+    try {
+      directory = statSync(resolve(root, exclusion.path)).isDirectory()
+    } catch {
+      directory = false
+    }
+  }
+  return {
+    path: exclusion.path,
+    kind: directory ? 'directory' : 'file',
+    status: exclusion.kind === 'unreadable' ? 'failed' : 'skipped_by_policy',
+    reason: exclusion.reason,
+    capability: null,
+  }
+}
+
 export function detect(root: string, options: DetectOptions = {}): DetectResult {
   const followSymlinks = options.followSymlinks ?? false
   const ignorePatterns = _loadMadarignore(root)
@@ -443,9 +568,19 @@ export function detect(root: string, options: DetectOptions = {}): DetectResult 
   let totalWords = 0
   const collected = collectFiles(root, followSymlinks, ignorePatterns)
   const exclusions: DiscoveryExclusion[] = [...collected.exclusions]
+  const indexingOutcomes: IndexingOutcome[] = [...collected.indexingOutcomes]
 
   for (const filePath of collected.files) {
     if (options.includedFiles && !options.includedFiles.has(resolve(filePath))) {
+      if (isPotentialIndexingCandidate(filePath)) {
+        indexingOutcomes.push({
+          path: localDiscoveryPath(root, filePath),
+          kind: 'file',
+          status: 'skipped_by_policy',
+          reason: 'gitignored',
+          capability: null,
+        })
+      }
       continue
     }
     const sensitiveReason = sensitiveReasonForFile(filePath, root)
@@ -460,6 +595,15 @@ export function detect(root: string, options: DetectOptions = {}): DetectResult 
 
     const fileType = classifyFile(filePath)
     if (!fileType) {
+      if (isPotentialIndexingCandidate(filePath)) {
+        indexingOutcomes.push({
+          path: localDiscoveryPath(root, filePath),
+          kind: 'file',
+          status: 'unsupported',
+          reason: 'unsupported_file_type',
+          capability: null,
+        })
+      }
       continue
     }
 
@@ -488,6 +632,8 @@ export function detect(root: string, options: DetectOptions = {}): DetectResult 
     totalWords += wordCount
   }
 
+  indexingOutcomes.push(...exclusions.map((exclusion) => indexingOutcomeFromDiscoveryExclusion(root, exclusion)))
+
   const totalFiles = Object.values(files).reduce((count, group) => count + group.length, 0)
   const needsGraph = totalWords >= CORPUS_WARN_THRESHOLD
 
@@ -506,6 +652,7 @@ export function detect(root: string, options: DetectOptions = {}): DetectResult 
     warning,
     skipped_sensitive: exclusions.filter((entry) => entry.kind === 'sensitive').map((entry) => entry.path),
     exclusions,
+    indexing_outcomes: indexingOutcomes,
     madarignore_patterns: ignorePatterns.length,
   }
 }
@@ -541,12 +688,12 @@ export function loadManifestMetadata(manifestPath: string = DEFAULT_MANIFEST_PAT
   return typeof totalWords === 'number' && Number.isFinite(totalWords) && totalWords >= 0 ? { total_words: totalWords } : {}
 }
 
-export function saveManifest(
+export function createManifestSnapshot(
   files: Record<string, string[]>,
-  manifestPath: string = DEFAULT_MANIFEST_PATH,
   metadata: ManifestMetadata = {},
-): void {
+): ManifestSnapshot {
   const manifest: Record<string, number | ManifestMetadata> = {}
+  const failedPaths: string[] = []
 
   for (const fileList of Object.values(files)) {
     for (const filePath of fileList) {
@@ -556,7 +703,7 @@ export function saveManifest(
           manifest[filePath] = sidecarAwareFileFingerprint(filePath, modifiedAt)
         }
       } catch {
-        // Ignore files deleted between detect() and manifest write.
+        failedPaths.push(filePath)
       }
     }
   }
@@ -565,9 +712,26 @@ export function saveManifest(
     manifest[MANIFEST_METADATA_KEY] = { total_words: metadata.total_words }
   }
 
+  return { document: manifest, failedPaths }
+}
+
+export function writeManifestSnapshot(
+  snapshot: ManifestSnapshot,
+  manifestPath: string = DEFAULT_MANIFEST_PATH,
+): void {
   const safeManifestPath = validateManifestPath(manifestPath)
   mkdirSync(dirname(safeManifestPath), { recursive: true })
-  writeFileSync(safeManifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
+  writeFileSync(safeManifestPath, `${JSON.stringify(snapshot.document, null, 2)}\n`, 'utf8')
+}
+
+export function saveManifest(
+  files: Record<string, string[]>,
+  manifestPath: string = DEFAULT_MANIFEST_PATH,
+  metadata: ManifestMetadata = {},
+): string[] {
+  const snapshot = createManifestSnapshot(files, metadata)
+  writeManifestSnapshot(snapshot, manifestPath)
+  return snapshot.failedPaths
 }
 
 export function detectIncremental(

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync, mkdirSync } from 'node:fs'
+import { chmodSync, mkdtempSync, rmSync, symlinkSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 
@@ -107,6 +107,20 @@ describe('detect', () => {
       expect(result.files.code.some((filePath) => filePath.includes('vendor'))).toBe(false)
       expect(result.files.code.some((filePath) => filePath.includes('generated'))).toBe(false)
       expect(result.madarignore_patterns).toBe(2)
+      expect(result.indexing_outcomes).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          path: 'vendor',
+          kind: 'directory',
+          status: 'skipped_by_policy',
+          reason: 'madarignore',
+        }),
+        expect.objectContaining({
+          path: 'schema.generated.py',
+          kind: 'file',
+          status: 'skipped_by_policy',
+          reason: 'madarignore',
+        }),
+      ]))
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -174,6 +188,26 @@ describe('detect', () => {
         'config/credentials.json',
         'config/credentials/production.yml',
       ]))
+      expect(result.indexing_outcomes).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          path: '.aws',
+          kind: 'directory',
+          status: 'skipped_by_policy',
+          reason: 'credential_store',
+        }),
+        expect.objectContaining({
+          path: 'config/credentials.json',
+          kind: 'file',
+          status: 'skipped_by_policy',
+          reason: 'secret_config',
+        }),
+        expect.objectContaining({
+          path: 'src/secrets/README.md',
+          kind: 'file',
+          status: 'skipped_by_policy',
+          reason: 'sensitive_directory',
+        }),
+      ]))
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -191,7 +225,83 @@ describe('detect', () => {
         kind: 'unreadable',
         reason: 'unreadable_path',
       })
+      expect(result.indexing_outcomes).toContainEqual(expect.objectContaining({
+        path: 'broken.ts',
+        kind: 'file',
+        status: 'failed',
+        reason: 'unreadable_path',
+      }))
     } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('records unsupported languages, hidden candidates, and git policy exclusions', () => {
+    const root = createTempRoot()
+    try {
+      mkdirSync(join(root, '.internal'), { recursive: true })
+      writeFileSync(join(root, '.internal', 'hidden.ts'), 'export const hidden = true\n', 'utf8')
+      writeFileSync(join(root, 'legacy.vue'), '<template />\n', 'utf8')
+      writeFileSync(join(root, 'visible.ts'), 'export const visible = true\n', 'utf8')
+
+      const result = detect(root, { includedFiles: new Set([join(root, 'legacy.vue')]) })
+
+      expect(result.indexing_outcomes).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          path: '.internal',
+          kind: 'directory',
+          status: 'skipped_by_policy',
+          reason: 'hidden_path',
+        }),
+        expect.objectContaining({
+          path: 'visible.ts',
+          status: 'skipped_by_policy',
+          reason: 'gitignored',
+        }),
+        expect.objectContaining({
+          path: 'legacy.vue',
+          status: 'unsupported',
+          reason: 'unsupported_file_type',
+        }),
+      ]))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('records an unreadable directory and file as failed indexing outcomes', () => {
+    if (process.platform === 'win32') {
+      return
+    }
+    const root = createTempRoot()
+    const blockedDirectory = join(root, 'blocked')
+    const blockedFile = join(root, 'blocked.ts')
+    try {
+      mkdirSync(blockedDirectory, { recursive: true })
+      writeFileSync(join(blockedDirectory, 'nested.ts'), 'export const nested = true\n', 'utf8')
+      writeFileSync(blockedFile, 'export const blocked = true\n', 'utf8')
+      chmodSync(blockedDirectory, 0o000)
+      chmodSync(blockedFile, 0o000)
+
+      const result = detect(root)
+
+      expect(result.indexing_outcomes).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          path: 'blocked',
+          kind: 'directory',
+          status: 'failed',
+          reason: 'unreadable_directory',
+        }),
+        expect.objectContaining({
+          path: 'blocked.ts',
+          kind: 'file',
+          status: 'failed',
+          reason: 'unreadable_path',
+        }),
+      ]))
+    } finally {
+      chmodSync(blockedDirectory, 0o700)
+      chmodSync(blockedFile, 0o600)
       rmSync(root, { recursive: true, force: true })
     }
   })

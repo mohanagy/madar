@@ -2,13 +2,32 @@ import { createHash, randomUUID } from 'node:crypto'
 import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, unlinkSync, watch as createFileSystemWatcher, writeFileSync } from 'node:fs'
 import { extname, join, resolve, sep } from 'node:path'
 
-import { AUDIO_EXTENSIONS, CODE_EXTENSIONS, DOC_EXTENSIONS, IMAGE_EXTENSIONS, OFFICE_EXTENSIONS, PAPER_EXTENSIONS, VIDEO_EXTENSIONS } from '../pipeline/detect.js'
+import type { IndexingStrictThresholds } from '../contracts/indexing.js'
+import {
+  AUDIO_EXTENSIONS,
+  CODE_EXTENSIONS,
+  DOC_EXTENSIONS,
+  IMAGE_EXTENSIONS,
+  OFFICE_EXTENSIONS,
+  PAPER_EXTENSIONS,
+  UNSUPPORTED_SOURCE_EXTENSIONS,
+  VIDEO_EXTENSIONS,
+} from '../pipeline/detect.js'
 import { sidecarAwareFileFingerprint } from '../shared/binary-ingest-sidecar.js'
 import { collectGitVisibleFiles } from '../shared/git.js'
 import { resolveMadarOutputDirectory } from '../shared/workspace.js'
 import { generateGraph, type GenerateGraphResult } from './generate.js'
 
-export const WATCHED_EXTENSIONS = new Set([...CODE_EXTENSIONS, ...DOC_EXTENSIONS, ...PAPER_EXTENSIONS, ...IMAGE_EXTENSIONS, ...AUDIO_EXTENSIONS, ...VIDEO_EXTENSIONS, ...OFFICE_EXTENSIONS])
+export const WATCHED_EXTENSIONS = new Set([
+  ...CODE_EXTENSIONS,
+  ...DOC_EXTENSIONS,
+  ...PAPER_EXTENSIONS,
+  ...IMAGE_EXTENSIONS,
+  ...AUDIO_EXTENSIONS,
+  ...VIDEO_EXTENSIONS,
+  ...OFFICE_EXTENSIONS,
+  ...UNSUPPORTED_SOURCE_EXTENSIONS,
+])
 const MAX_SYMLINK_DEPTH = 40
 const MAX_WATCHED_FILES = 10_000
 const GIT_VISIBILITY_SNAPSHOT_KEY = '\0madar:git-visible-files'
@@ -49,6 +68,7 @@ export interface RebuildCodeOptions {
   followSymlinks?: boolean
   respectGitignore?: boolean
   noHtml?: boolean
+  indexingStrict?: IndexingStrictThresholds
   logger?: WatchLogger
 }
 
@@ -452,6 +472,7 @@ export function rebuildCode(watchPath: string, options: RebuildCodeOptions = {})
         ...(options.followSymlinks !== undefined ? { followSymlinks: options.followSymlinks } : {}),
         ...(options.respectGitignore !== undefined ? { respectGitignore: options.respectGitignore } : {}),
         ...(options.noHtml !== undefined ? { noHtml: options.noHtml } : {}),
+        ...(options.indexingStrict ? { indexingStrict: options.indexingStrict } : {}),
       })
     } finally {
       releaseLease()
@@ -496,6 +517,7 @@ export function startGraphAutoRefresh(
     ...(options.followSymlinks !== undefined ? { followSymlinks: options.followSymlinks } : {}),
     ...(options.respectGitignore !== undefined ? { respectGitignore: options.respectGitignore } : {}),
     ...(options.noHtml !== undefined ? { noHtml: options.noHtml } : {}),
+    ...(options.indexingStrict ? { indexingStrict: options.indexingStrict } : {}),
     ...(options.logger !== undefined ? { logger: options.logger } : {}),
   })
 
@@ -531,7 +553,7 @@ export async function watch(watchPath: string, debounce = 3, options: WatchOptio
 
     output.log(`[madar watch] Watching ${resolvedWatchPath} - abort the process to stop`)
     output.log(
-      '[madar watch] Supported code, docs, papers, images, local audio/video, and office documents rebuild automatically; manual refresh is only needed for unsupported future formats.',
+      '[madar watch] Supported candidates rebuild automatically, and known unsupported source formats refresh indexing completeness; manual refresh is only needed for unknown future formats.',
     )
     output.log(`[madar watch] Debounce: ${debounce}s`)
     if (eventWatcher) {
@@ -567,6 +589,7 @@ export async function watch(watchPath: string, debounce = 3, options: WatchOptio
           ...(options.followSymlinks !== undefined ? { followSymlinks: options.followSymlinks } : {}),
           ...(options.respectGitignore !== undefined ? { respectGitignore: options.respectGitignore } : {}),
           ...(options.noHtml !== undefined ? { noHtml: options.noHtml } : {}),
+          ...(options.indexingStrict ? { indexingStrict: options.indexingStrict } : {}),
         }
         const rebuilt = runRebuild(resolvedWatchPath, rebuildOptions)
         if (!rebuilt) {

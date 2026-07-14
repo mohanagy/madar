@@ -4,6 +4,11 @@ import type {
   ContextPackExecutionSlice,
   ContextPackRuntimeGenerationAnswerContract,
 } from '../contracts/context-pack.js'
+import type { IndexingManifestV1, IndexingReasonCode } from '../contracts/indexing.js'
+import {
+  readIndexingManifestForGraph,
+  relevantIndexingUncertainty,
+} from '../infrastructure/indexing-manifest.js'
 import { readGraphSourceRoot } from '../shared/graph-source-root.js'
 import {
   readDiscoverySafetyMetadata,
@@ -30,6 +35,14 @@ export interface MadarResponseEvidence {
     relevant: number
     reasons: Partial<Record<DiscoveryExclusionReason, number>>
     relevant_reasons: Partial<Record<DiscoveryExclusionReason, number>>
+  }
+  /** Share-safe aggregate. Local paths remain only in indexing-manifest.json. */
+  indexing_completeness?: {
+    state: 'complete' | 'partial' | 'failed'
+    total_uncertain: number
+    relevant_uncertain: number
+    reasons: Partial<Record<IndexingReasonCode, number>>
+    relevant_reasons: Partial<Record<IndexingReasonCode, number>>
   }
 }
 
@@ -284,6 +297,7 @@ export function assessMadarResponseEvidence(input: {
   discoverySafety?: DiscoverySafetyMetadata | null | undefined
   executionSlice?: ContextPackExecutionSlice | undefined
   graphPath?: string | undefined
+  indexingManifest?: IndexingManifestV1 | null | undefined
   missingPhases?: readonly ContextPackExecutionPhase[] | undefined
   question?: string | undefined
   score?: number | undefined
@@ -367,6 +381,34 @@ export function assessMadarResponseEvidence(input: {
     )
   }
 
+  const indexingManifest = input.indexingManifest !== undefined
+    ? input.indexingManifest
+    : input.graphPath
+      ? readIndexingManifestForGraph(input.graphPath)
+      : null
+  const indexingUncertainty = indexingManifest
+    ? relevantIndexingUncertainty(indexingManifest, {
+        ...(input.question ? { question: input.question } : {}),
+        coveredWorkflowOwners,
+      })
+    : null
+  if (indexingUncertainty && indexingUncertainty.relevant > 0) {
+    confidenceCap = moreRestrictiveConfidence(
+      confidenceCap,
+      indexingUncertainty.has_relevant_failures ? 'low' : 'medium',
+    )
+    if (coverage === 'complete') {
+      coverage = 'partial'
+    }
+    const reasonBuckets = Object.entries(indexingUncertainty.relevant_reasons)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([reason, count]) => `${reason}=${count}`)
+      .join(', ')
+    confidenceReasons.push(
+      `indexing completeness: ${indexingUncertainty.relevant} relevant uncertain outcome(s) (${reasonBuckets})`,
+    )
+  }
+
   const effectiveScore = roundScore(Math.min(baseScore, confidenceCapForScore(confidenceCap)))
   const packConfidence = packConfidenceFromScore(effectiveScore)
 
@@ -389,6 +431,17 @@ export function assessMadarResponseEvidence(input: {
           },
         }
       : {}),
+    ...(indexingUncertainty && indexingUncertainty.total > 0
+      ? {
+          indexing_completeness: {
+            state: indexingUncertainty.state,
+            total_uncertain: indexingUncertainty.total,
+            relevant_uncertain: indexingUncertainty.relevant,
+            reasons: indexingUncertainty.reasons,
+            relevant_reasons: indexingUncertainty.relevant_reasons,
+          },
+        }
+      : {}),
   }
 }
 
@@ -400,6 +453,7 @@ export function buildMadarResponseEvidence(input: {
   discoverySafety?: DiscoverySafetyMetadata | null | undefined
   executionSlice?: ContextPackExecutionSlice | undefined
   graphPath?: string | undefined
+  indexingManifest?: IndexingManifestV1 | null | undefined
   question?: string | undefined
   score?: number | undefined
 }): MadarResponseEvidence {

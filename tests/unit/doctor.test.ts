@@ -55,6 +55,61 @@ function writeMcpServer(path: string, serversKey: 'mcpServers' | 'servers', grap
 }
 
 describe('doctor command', () => {
+  test('shows indexing completeness, affected local paths, and SPI diagnostics in doctor and status', () => {
+    withSandbox((sandboxDir) => {
+      writeJson(resolve(sandboxDir, 'out', 'graph.json'), {
+        generated_at: new Date().toISOString(),
+        nodes: [],
+        edges: [],
+      })
+      writeJson(resolve(sandboxDir, 'out', 'indexing-manifest.json'), {
+        version: 1,
+        generated_at: new Date().toISOString(),
+        summary: {},
+        outcomes: [
+          {
+            path: 'src/index.ts',
+            kind: 'file',
+            status: 'indexed',
+            reason: 'indexed',
+            capability: 'builtin:extract:typescript',
+          },
+          {
+            path: 'src/auth/broken.ts',
+            kind: 'file',
+            status: 'failed',
+            reason: 'extractor_error',
+            capability: 'builtin:extract:typescript',
+          },
+          {
+            path: 'src/legacy.vue',
+            kind: 'file',
+            status: 'unsupported',
+            reason: 'unsupported_file_type',
+            capability: null,
+          },
+        ],
+        spi_diagnostics: [{
+          id: 'spi.call.program-create-failed',
+          level: 'warn',
+          reason: 'spi_diagnostic',
+          message: 'local diagnostic detail',
+        }],
+      })
+
+      const doctor = runDoctorCommand({ projectDir: sandboxDir, now: Date.now() })
+      const status = runStatusCommand({ projectDir: sandboxDir, now: Date.now() })
+
+      expect(doctor).toContain('indexing completeness: partial (1 indexed, 0 warnings, 0 policy skips, 1 unsupported, 1 failed)')
+      expect(doctor).toContain('"src/auth/broken.ts" (failed; extractor_error; builtin:extract:typescript)')
+      expect(doctor).toContain('"src/legacy.vue" (unsupported; unsupported_file_type; no capability)')
+      expect(doctor).toContain('SPI diagnostics: 1')
+      expect(status).toContain('indexing partial (indexed=1, warnings=0, skipped=0, unsupported=1, failed=1)')
+      expect(status).toContain('"src/auth/broken.ts"[extractor_error]')
+      expect(status).toContain('"src/legacy.vue"[unsupported_file_type]')
+    })
+  })
+
   test('shows local safety exclusion counts, reasons, and escaped paths in doctor and status', () => {
     withSandbox((sandboxDir) => {
       writeJson(resolve(sandboxDir, 'out', 'graph.json'), {

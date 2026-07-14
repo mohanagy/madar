@@ -31,7 +31,7 @@ describe('notifyOnly', () => {
 })
 
 describe('WATCHED_EXTENSIONS', () => {
-  test('includes code, docs, papers, images, local media, and office documents', () => {
+  test('includes supported candidates and known unsupported source languages', () => {
     expect(WATCHED_EXTENSIONS.has('.py')).toBe(true)
     expect(WATCHED_EXTENSIONS.has('.ts')).toBe(true)
     expect(WATCHED_EXTENSIONS.has('.md')).toBe(true)
@@ -42,6 +42,9 @@ describe('WATCHED_EXTENSIONS', () => {
     expect(WATCHED_EXTENSIONS.has('.mp4')).toBe(true)
     expect(WATCHED_EXTENSIONS.has('.docx')).toBe(true)
     expect(WATCHED_EXTENSIONS.has('.xlsx')).toBe(true)
+    expect(WATCHED_EXTENSIONS.has('.vue')).toBe(true)
+    expect(WATCHED_EXTENSIONS.has('.svelte')).toBe(true)
+    expect(WATCHED_EXTENSIONS.has('.sql')).toBe(true)
   })
 
   test('excludes noise extensions', () => {
@@ -158,6 +161,36 @@ describe('watch', () => {
         await waitFor(() => {
           const graph = JSON.parse(readFileSync(graphPath, 'utf8')) as { nodes?: Array<{ source_file?: string }> }
           return graph.nodes?.some((node) => node.source_file?.endsWith('added.ts')) === true
+        })
+      } finally {
+        refresh.stop()
+        await refresh.completed
+      }
+    })
+  }, 10_000)
+
+  test('refreshes completeness when an unsupported source candidate is added', async () => {
+    await withTempDirAsync(async (tempDir) => {
+      writeFileSync(join(tempDir, 'main.ts'), 'export const initialValue = 1\n', 'utf8')
+      const refresh = startGraphAutoRefresh(tempDir, 0.02, {
+        pollIntervalMs: 10,
+        noHtml: true,
+        logger: { log() {}, error() {} },
+      })
+
+      try {
+        const manifestPath = join(tempDir, 'out', 'indexing-manifest.json')
+        expect(refresh.initialRebuilt).toBe(true)
+        writeFileSync(join(tempDir, 'legacy.vue'), '<template />\n', 'utf8')
+
+        await waitFor(() => {
+          const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+            outcomes?: Array<{ path?: string; status?: string; reason?: string }>
+          }
+          return manifest.outcomes?.some((outcome) =>
+            outcome.path === 'legacy.vue'
+            && outcome.status === 'unsupported'
+            && outcome.reason === 'unsupported_file_type') === true
         })
       } finally {
         refresh.stop()

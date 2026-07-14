@@ -123,7 +123,20 @@ madar handoff "add auth telemetry" --task implement --consumer copilot
 
 Madar analyzes your local repo and creates a graph of files, imports, exports, symbols, routes, handlers, call relationships, dependency relationships, framework metadata, and task-relevant snippets.
 
-The graph is stored locally in your project output folder.
+The graph is stored locally in your project output folder. Generation also writes a versioned indexing manifest that accounts for indexed, warning, policy-skipped, unsupported, and failed candidates.
+
+## Indexing Completeness
+
+A readable `graph.json` is not the same as complete source coverage. `madar generate`, `madar doctor`, and `madar status` prominently report indexing completeness, while the local `indexing-manifest.json` records affected paths and stable reason codes. The adjacent `indexing-manifest.share-safe.json` keeps counts and reason categories but removes paths and diagnostic messages.
+
+Relevant incomplete paths reduce context-pack confidence instead of letting an agent treat missing evidence as complete. CI can enforce unsupported and failed thresholds:
+
+```bash
+madar generate . --strict-indexing
+madar generate . --max-indexing-failed 1 --max-indexing-unsupported 3
+```
+
+See [Indexing completeness](https://github.com/mohanagy/madar/blob/main/docs/indexing-completeness.md) for the outcome contract, strict-mode semantics, and the precise definition of an indexed file.
 
 ## Fit
 
@@ -236,6 +249,7 @@ Read the full notes in the [0.30.0 changelog](https://github.com/mohanagy/madar/
 | Agent setup | [Agent quickstarts](https://github.com/mohanagy/madar/blob/main/docs/tutorials/agent-quickstarts.md) |
 | CLI and MCP tools | [CLI and MCP reference](https://github.com/mohanagy/madar/blob/main/docs/reference/cli-and-mcp.md) |
 | Context-pack model | [Context packs](https://github.com/mohanagy/madar/blob/main/docs/concepts/context-packs.md) |
+| Indexing coverage | [Indexing completeness](https://github.com/mohanagy/madar/blob/main/docs/indexing-completeness.md) |
 | Claims and limits | [Claims and evidence](https://github.com/mohanagy/madar/blob/main/docs/claims-and-evidence.md) |
 | Benchmarks | [Benchmark suite](https://github.com/mohanagy/madar/blob/main/docs/benchmarks/suite/README.md) |
 | Roadmap | [Roadmap](https://github.com/mohanagy/madar/blob/main/docs/roadmap.md) |

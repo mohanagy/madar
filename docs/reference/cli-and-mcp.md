@@ -83,6 +83,8 @@ Cached `context_pack` explain responses still refresh the current freshness rece
 madar generate .                          # build the graph
 madar generate . --spi                    # framework metadata + disk cache
 madar generate . --respect-gitignore      # exclude files ignored by Git
+madar generate . --strict-indexing        # fail on any failed/unsupported candidate
+madar generate . --max-indexing-failed 1 --max-indexing-unsupported 3
 madar watch .                             # rebuild on file change
 madar watch . --respect-gitignore         # watch only Git-visible source changes
 madar summary                             # bounded JSON overview
@@ -106,6 +108,8 @@ madar --help
 ```
 
 Generated code graphs are directed by default, including `try`, `watch`, automatic MCP refresh, and unchanged `--update` runs. An unchanged `--update` fully re-extracts a legacy undirected artifact because old storage may have collapsed opposite edges; `--cluster-only` refuses that unsafe migration. `--directed` remains accepted for compatibility. `--undirected` is an explicit visualization-only legacy mode that collapses reciprocal edges into one connection; `impact`, `call_chain`, and `slice-v1` retrieval reject that output rather than infer reverse edges. The two direction flags are mutually exclusive.
+
+Every generation also writes local and share-safe indexing-completeness manifests beside `graph.json`. A valid graph is not a claim of complete source coverage. `--strict-indexing` uses zero failed and zero unsupported candidates as its thresholds; either `--max-indexing-failed N` or `--max-indexing-unsupported N` enables strict mode with the supplied allowance. See [Indexing completeness](../indexing-completeness.md) for outcome meanings, path-redaction behavior, and confidence effects.
 
 On Windows, `compare`, `review-compare`, and benchmark `--exec` templates run under `cmd.exe`, so prefer `type {prompt_file} | claude ...` over PowerShell-specific piping or quoting.
 

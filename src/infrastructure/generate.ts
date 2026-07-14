@@ -2,15 +2,35 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 import { KnowledgeGraph } from '../contracts/graph.js'
+import type {
+  IndexingManifestV1,
+  IndexingOutcome,
+  IndexingSpiDiagnostic,
+  IndexingStrictThresholds,
+  IndexingSummary,
+} from '../contracts/indexing.js'
 import type { ExtractionData, ExtractionEdge, ExtractionNode, ExtractionSchemaVersion, Hyperedge } from '../contracts/types.js'
 import { godNodes, semanticAnomalies, suggestQuestions, surprisingConnections } from '../pipeline/analyze.js'
 import { buildFromJson } from '../pipeline/build.js'
 import { cluster, scoreAll } from '../pipeline/cluster.js'
 import { buildCommunityLabels } from '../pipeline/community-naming.js'
-import { type DetectResult, detect, detectIncremental, FileType, saveManifest } from '../pipeline/detect.js'
+import {
+  createManifestSnapshot,
+  type DetectResult,
+  detect,
+  detectIncremental,
+  FileType,
+  writeManifestSnapshot,
+} from '../pipeline/detect.js'
 import { generateDocs as generateDocsArtifacts } from '../pipeline/docs.js'
 import { toCypher, toGraphml, toHtml, toJson, toObsidian, toSvg } from '../pipeline/export.js'
 import { extract, EXTRACTOR_CACHE_VERSION } from '../pipeline/extract.js'
+import {
+  localExtractionIndexingOutcome,
+  projectSpiIndexingOutcomes,
+  retainedIndexingOutcomes,
+} from '../pipeline/indexing-generation.js'
+import { createIndexingManifest, indexingStrictViolations, localIndexingPath } from '../pipeline/indexing-outcomes.js'
 import { buildSpiCached, type SpiCacheStats } from '../pipeline/spi/cache.js'
 import { projectSpiToExtraction } from '../pipeline/spi/projector.js'
 import { generate as generateReport } from '../pipeline/report.js'
@@ -19,6 +39,12 @@ import { loadGraph } from '../runtime/serve.js'
 import { buildGraphBuildFreshnessMetadata } from '../shared/graph-build-freshness.js'
 import { collectGitVisibleFiles } from '../shared/git.js'
 import { resolveMadarOutputDirectory } from '../shared/workspace.js'
+import {
+  INDEXING_MANIFEST_FILENAME,
+  readIndexingManifestForGraph,
+  writeFailedIndexingManifests,
+  writeIndexingManifests,
+} from './indexing-manifest.js'
 import {
   buildDiscoverySafetyMetadata,
   type DiscoveryExclusion,
@@ -58,6 +84,7 @@ export interface GenerateGraphOptions {
    *  Router, Redux, Hono, Fastify, tRPC, Prisma) and repeat builds on an
    *  unchanged workspace hit the on-disk SPI cache. Default false. */
   useSpi?: boolean
+  indexingStrict?: IndexingStrictThresholds
   onProgress?: (progress: ProgressStep) => void
 }
 
@@ -91,6 +118,9 @@ export interface GenerateGraphResult {
   notes: string[]
   discoverySafety?: DiscoverySafetyMetadata
   discoveryExclusions?: DiscoveryExclusion[]
+  indexingManifestPath?: string
+  indexingShareSafeManifestPath?: string
+  indexing?: IndexingSummary
 }
 
 export interface GenerateGraphCacheSummary {
@@ -114,6 +144,20 @@ export class GenerateUnsupportedCorpusError extends Error {
   }
 }
 
+export class IndexingCompletenessError extends Error {
+  readonly manifestPath: string
+  readonly summary: IndexingSummary
+  readonly violations: string[]
+
+  constructor(manifestPath: string, summary: IndexingSummary, violations: string[]) {
+    super(`Indexing completeness thresholds failed: ${violations.join('; ')}. See ${manifestPath}.`)
+    this.name = 'IndexingCompletenessError'
+    this.manifestPath = manifestPath
+    this.summary = summary
+    this.violations = violations
+  }
+}
+
 type IncrementalDetectResult = ReturnType<typeof detectIncremental>
 
 function detectOptions(options: GenerateGraphOptions, gitVisibleFiles: string[] | null): { followSymlinks?: boolean; includedFiles?: ReadonlySet<string> } {
@@ -128,7 +172,7 @@ function countNonCodeFiles(files: DetectResult['files']): number {
   return files[FileType.DOCUMENT].length + files[FileType.PAPER].length + files[FileType.IMAGE].length + files[FileType.AUDIO].length + files[FileType.VIDEO].length
 }
 
-function detectionSummary(detection: DetectResult): Record<string, unknown> {
+function detectionSummary(detection: DetectResult, indexing?: IndexingSummary): Record<string, unknown> {
   const discoverySafety = buildDiscoverySafetyMetadata(detection.exclusions)
   return {
     files: detection.files,
@@ -136,6 +180,15 @@ function detectionSummary(detection: DetectResult): Record<string, unknown> {
     total_words: detection.total_words,
     warning: detection.warning,
     discovery_safety: discoverySafety.summary,
+    ...(indexing ? { indexing_completeness: indexing } : {}),
+  }
+}
+
+function graphIndexingMetadata(manifest: IndexingManifestV1): Record<string, unknown> {
+  return {
+    version: manifest.version,
+    generated_at: manifest.generated_at,
+    summary: manifest.summary,
   }
 }
 
@@ -178,6 +231,18 @@ function mergeExtractions(extractions: ExtractionData[]): ExtractionData {
 
 function sourceFileKey(sourceFile: unknown): string | null {
   return typeof sourceFile === 'string' && sourceFile.length > 0 ? resolve(sourceFile) : null
+}
+
+function indexedSourceFilesFromGraph(graph: KnowledgeGraph | null, rootPath: string): ReadonlySet<string> | undefined {
+  if (!graph) {
+    return undefined
+  }
+  return new Set(
+    graph.nodeEntries().flatMap(([, attributes]) => {
+      const sourceFile = typeof attributes.source_file === 'string' ? attributes.source_file.trim() : ''
+      return sourceFile.length > 0 ? [resolve(rootPath, sourceFile)] : []
+    }),
+  )
 }
 
 function retainedExtractionFromGraph(graph: KnowledgeGraph, removedSourceFiles: ReadonlySet<string>): ExtractionData {
@@ -324,8 +389,21 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   const detectionOptions = detectOptions(options, gitVisibleFiles)
   const detected = options.update ? detectIncremental(resolvedRootPath, manifestPath, detectionOptions) : detect(resolvedRootPath, detectionOptions)
   const discoverySafety = buildDiscoverySafetyMetadata(detected.exclusions)
+  const previousIndexingManifest = readIndexingManifestForGraph(graphPath)
+  const indexingOutcomes: IndexingOutcome[] = [...(detected.indexing_outcomes ?? [])]
+  const spiDiagnostics: IndexingSpiDiagnostic[] = []
+  const recordExtractionOutcome = (outcome: Parameters<typeof localExtractionIndexingOutcome>[1]): void => {
+    indexingOutcomes.push(localExtractionIndexingOutcome(resolvedRootPath, outcome))
+  }
 
   if (options.includeDocs === false) {
+    indexingOutcomes.push(...detected.files[FileType.DOCUMENT].map((filePath): IndexingOutcome => ({
+      path: localIndexingPath(resolvedRootPath, filePath),
+      kind: 'file',
+      status: 'skipped_by_policy',
+      reason: 'docs_disabled',
+      capability: null,
+    })))
     detected.files[FileType.DOCUMENT] = []
     if (isIncrementalDetectResult(detected)) {
       detected.new_files[FileType.DOCUMENT] = []
@@ -395,6 +473,16 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     ? copyGraphWithDirection(loadedExistingGraph, directed)
     : loadedExistingGraph
 
+  if (options.clusterOnly) {
+    const retainedSourceFiles = indexedSourceFilesFromGraph(existingGraph, resolvedRootPath)
+    indexingOutcomes.push(...retainedIndexingOutcomes({
+      rootPath: resolvedRootPath,
+      files: extractableFiles,
+      previousManifest: previousIndexingManifest,
+      ...(retainedSourceFiles ? { retainedSourceFiles } : {}),
+    }))
+  }
+
   if (upgradingLegacyDirection) {
     notes.push('Existing graph was undirected, so --update rebuilt the full graph with directed edges.')
   } else if (loadedExistingGraph && loadedExistingGraph.isDirected() !== directed) {
@@ -429,8 +517,22 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
         ? extract(nonCodeExtractableFiles, {
             allowedTargets: extractableFiles,
             contextNodes: spiExtraction.nodes,
+            onFileOutcome: recordExtractionOutcome,
           })
         : emptyExtraction()
+
+    if (built) {
+      const spiIndexing = projectSpiIndexingOutcomes({
+        rootPath: resolvedRootPath,
+        codeFiles,
+        result: built,
+      })
+      indexingOutcomes.push(...spiIndexing.outcomes)
+      spiDiagnostics.push(...spiIndexing.diagnostics)
+      if (spiIndexing.diagnostics.length > 0) {
+        notes.push(`SPI reported ${spiIndexing.diagnostics.length} diagnostic(s); inspect ${join(resolvedOutputDir, 'indexing-manifest.json')}.`)
+      }
+    }
 
     extractedFiles = (built ? (built.cache.hit ? 0 : built.cache.file_count) : 0) + nonCodeExtractableFiles.length
     cacheSummary = built
@@ -459,7 +561,9 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     : options.update && existingGraph && upgradingLegacyDirection
       ? (() => {
           extractedFiles = extractableFiles.length
-          return extractableFiles.length > 0 ? buildFromJson(extract(extractableFiles), { directed }) : null
+          return extractableFiles.length > 0
+            ? buildFromJson(extract(extractableFiles, { onFileOutcome: recordExtractionOutcome }), { directed })
+            : null
         })()
     : options.update && existingGraph && isIncrementalDetectResult(detected)
         ? (() => {
@@ -470,7 +574,9 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
                   : `Existing graph uses extractor version ${existingGraphExtractorVersion}, so --update rebuilt the full graph.`,
               )
               extractedFiles = extractableFiles.length
-              return extractableFiles.length > 0 ? buildFromJson(extract(extractableFiles), { directed }) : null
+              return extractableFiles.length > 0
+                ? buildFromJson(extract(extractableFiles, { onFileOutcome: recordExtractionOutcome }), { directed })
+                : null
             }
 
             const changedExtractableFiles = collectExtractableFiles(detected.new_files)
@@ -479,6 +585,13 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
             if (changedExtractableFiles.length === 0 && detected.deleted_files.length === 0) {
               notes.push('No changed files detected - reused the existing graph.')
               extractedFiles = 0
+              const retainedSourceFiles = indexedSourceFilesFromGraph(existingGraph, resolvedRootPath)
+              indexingOutcomes.push(...retainedIndexingOutcomes({
+                rootPath: resolvedRootPath,
+                files: extractableFiles,
+                previousManifest: previousIndexingManifest,
+                ...(retainedSourceFiles ? { retainedSourceFiles } : {}),
+              }))
               return existingGraph
             }
 
@@ -488,8 +601,16 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
                 ? extract(changedExtractableFiles, {
                     allowedTargets: extractableFiles,
                     contextNodes: retainedExtraction.nodes,
+                    onFileOutcome: recordExtractionOutcome,
                   })
                 : emptyExtraction()
+            const retainedSourceFiles = indexedSourceFilesFromGraph(existingGraph, resolvedRootPath)
+            indexingOutcomes.push(...retainedIndexingOutcomes({
+              rootPath: resolvedRootPath,
+              files: collectExtractableFiles(detected.unchanged_files),
+              previousManifest: previousIndexingManifest,
+              ...(retainedSourceFiles ? { retainedSourceFiles } : {}),
+            }))
             extractedFiles = changedExtractableFiles.length
 
             notes.push(
@@ -499,17 +620,49 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
           return buildFromJson(mergeExtractions([retainedExtraction, changedExtraction]), { directed })
         })()
       : extractableFiles.length > 0
-        ? buildFromJson(extract(extractableFiles), { directed })
-        : options.update && existingGraph
+        ? buildFromJson(extract(extractableFiles, { onFileOutcome: recordExtractionOutcome }), { directed })
+      : options.update && existingGraph
           ? existingGraph
           : null
 
+  const sourceManifestSnapshot = createManifestSnapshot(detected.files, { total_words: detected.total_words })
+  indexingOutcomes.push(...sourceManifestSnapshot.failedPaths.map((filePath): IndexingOutcome => ({
+    path: localIndexingPath(resolvedRootPath, filePath),
+    kind: 'file',
+    status: 'failed',
+    reason: 'manifest_stat_failed',
+    capability: null,
+  })))
+  const indexingManifest = createIndexingManifest({
+    outcomes: indexingOutcomes,
+    spiDiagnostics,
+  })
+  const indexingManifestPath = join(resolvedOutputDir, INDEXING_MANIFEST_FILENAME)
+
+  if (indexingManifest.summary.state !== 'complete') {
+    const counts = indexingManifest.summary.counts
+    notes.push(
+      `Indexing ${indexingManifest.summary.state}: ${counts.indexed} indexed, ${counts.indexed_with_warnings} with warnings, ${counts.skipped_by_policy} skipped by policy, ${counts.unsupported} unsupported, ${counts.failed} failed. See ${indexingManifestPath}.`,
+    )
+  }
+
   if (!graph) {
+    writeFailedIndexingManifests(resolvedOutputDir, indexingManifest)
     throw missingCodeExtractionError(detected.total_files, discoverySafety)
   }
 
   if (!options.clusterOnly && graph.numberOfNodes() === 0) {
+    writeFailedIndexingManifests(resolvedOutputDir, indexingManifest)
     throw missingCodeExtractionError(detected.total_files, discoverySafety)
+  }
+
+  graph.graph.indexing_completeness = graphIndexingMetadata(indexingManifest)
+  if (options.indexingStrict) {
+    const violations = indexingStrictViolations(indexingManifest.summary, options.indexingStrict)
+    if (violations.length > 0) {
+      const failedArtifacts = writeFailedIndexingManifests(resolvedOutputDir, indexingManifest)
+      throw new IndexingCompletenessError(failedArtifacts.manifestPath, indexingManifest.summary, violations)
+    }
   }
 
   progress?.({ step: 'build', message: `Built graph: ${graph.numberOfNodes()} nodes, ${graph.numberOfEdges()} edges` })
@@ -533,7 +686,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     godNodeList,
     surpriseList,
     semanticAnomalyList,
-    detectionSummary(detected),
+    detectionSummary(detected, indexingManifest.summary),
     { input: 0, output: 0 },
     resolvedRootPath,
     suggestedQuestions,
@@ -593,7 +746,10 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     notes.push(`${docsResult.fileCount} module doc(s) generated in ${docsPath}.`)
   }
 
-  saveManifest(detected.files, manifestPath, { total_words: detected.total_words })
+  // Advance incremental fingerprints only after every graph artifact succeeds.
+  // The indexing audit manifests intentionally remain available on failed runs.
+  const indexingArtifacts = writeIndexingManifests(resolvedOutputDir, indexingManifest)
+  writeManifestSnapshot(sourceManifestSnapshot, manifestPath)
 
   return {
     mode,
@@ -625,5 +781,8 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     notes,
     discoverySafety,
     discoveryExclusions: discoverySafety.exclusions,
+    indexingManifestPath: indexingArtifacts.manifestPath,
+    indexingShareSafeManifestPath: indexingArtifacts.shareSafeManifestPath,
+    indexing: indexingManifest.summary,
   }
 }

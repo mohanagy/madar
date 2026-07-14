@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
+import type { IndexingManifestV1 } from '../contracts/indexing.js'
 import {
   CODEX_MCP_CONFIG_RELATIVE_PATH,
   CODEX_PROMPT_HOOK_SCRIPT_RELATIVE_PATH,
@@ -19,6 +20,7 @@ import { analyzeGraphContextFreshness, graphFreshnessStatusLabel, type GraphCont
 import { isSemanticRuntimeAvailable } from '../runtime/semantic.js'
 import { findPackageRoot, readPackageVersion } from '../shared/package-metadata.js'
 import { resolveWorkspaceGraphPath } from '../shared/workspace.js'
+import { readIndexingManifestForGraph } from './indexing-manifest.js'
 import {
   readDiscoverySafetyMetadata,
   type DiscoveryExclusion,
@@ -56,6 +58,7 @@ interface GraphCheck {
   recommendation: string
   discoverySafety: DiscoverySafetySummary | null
   discoveryExclusions: DiscoveryExclusion[]
+  indexingManifest: IndexingManifestV1 | null
 }
 
 export interface DoctorReport {
@@ -308,6 +311,7 @@ function readGraphCheck(graphPath: string, now: number): GraphCheck {
     ? null
     : Math.max(0, Math.trunc(now - freshness.generated_ms))
   const discoverySafety = readDiscoverySafetyMetadata(resolvedGraphPath)
+  const indexingManifest = readIndexingManifestForGraph(resolvedGraphPath)
 
   return {
     graphPath: resolvedGraphPath,
@@ -322,6 +326,7 @@ function readGraphCheck(graphPath: string, now: number): GraphCheck {
     recommendation: freshness.recommendation,
     discoverySafety: discoverySafety?.summary ?? null,
     discoveryExclusions: discoverySafety?.exclusions ?? [],
+    indexingManifest,
   }
 }
 
@@ -564,7 +569,16 @@ export function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorRep
     semantic,
   }
   const nextCommands = computeNextCommands(partialReport)
-  const healthy = graph.exists && graph.freshness === 'fresh' && agents.every((agent) => agent.status === 'configured') && mcpChecks.every((check) => check.status === 'ok')
+  const indexingRequiresAttention = graph.indexingManifest !== null && (
+    graph.indexingManifest.summary.counts.failed > 0
+    || graph.indexingManifest.summary.counts.unsupported > 0
+    || graph.indexingManifest.summary.counts.indexed_with_warnings > 0
+  )
+  const healthy = graph.exists
+    && graph.freshness === 'fresh'
+    && !indexingRequiresAttention
+    && agents.every((agent) => agent.status === 'configured')
+    && mcpChecks.every((check) => check.status === 'ok')
 
   return {
     ...partialReport,
@@ -606,6 +620,28 @@ function formatGraphLine(graph: GraphCheck): string[] {
     }
   } else {
     lines.push('- safety exclusions: none')
+  }
+  if (graph.indexingManifest) {
+    const { summary } = graph.indexingManifest
+    lines.push(
+      `- indexing completeness: ${summary.state} (${summary.counts.indexed} indexed, ${summary.counts.indexed_with_warnings} warnings, ${summary.counts.skipped_by_policy} policy skips, ${summary.counts.unsupported} unsupported, ${summary.counts.failed} failed)`,
+    )
+    const affected = graph.indexingManifest.outcomes.filter((outcome) =>
+      outcome.status === 'failed' || outcome.status === 'unsupported' || outcome.status === 'indexed_with_warnings')
+    if (affected.length > 0) {
+      lines.push('- incomplete indexing paths:')
+      for (const outcome of affected.slice(0, 20)) {
+        lines.push(`  - ${JSON.stringify(outcome.path)} (${outcome.status}; ${outcome.reason}; ${outcome.capability ?? 'no capability'})`)
+      }
+      if (affected.length > 20) {
+        lines.push(`  - ... ${affected.length - 20} more; inspect indexing-manifest.json`)
+      }
+    }
+    if (graph.indexingManifest.spi_diagnostics.length > 0) {
+      lines.push(`- SPI diagnostics: ${graph.indexingManifest.spi_diagnostics.length} (inspect indexing-manifest.json)`)
+    }
+  } else {
+    lines.push("- indexing completeness: unavailable (regenerate with 'madar generate . --update')")
   }
   return lines
 }
@@ -655,6 +691,17 @@ export function runStatusCommand(options: DoctorCommandOptions = {}): string {
         .map((entry) => `${JSON.stringify(entry.path)}[${entry.reason}]`)
         .join(', ')
     : 'none'
+  const indexing = report.graph.indexingManifest
+  const indexingSummary = indexing
+    ? `${indexing.summary.state} (indexed=${indexing.summary.counts.indexed}, warnings=${indexing.summary.counts.indexed_with_warnings}, skipped=${indexing.summary.counts.skipped_by_policy}, unsupported=${indexing.summary.counts.unsupported}, failed=${indexing.summary.counts.failed})`
+    : 'unavailable'
+  const incompletePaths = indexing
+    ? indexing.outcomes
+        .filter((outcome) => outcome.status === 'failed' || outcome.status === 'unsupported' || outcome.status === 'indexed_with_warnings')
+        .slice(0, 20)
+        .map((outcome) => `${JSON.stringify(outcome.path)}[${outcome.reason}]`)
+        .join(', ') || 'none'
+    : 'none'
 
   return [
     `[madar status] ${report.healthy ? 'healthy' : 'attention needed'}`,
@@ -664,6 +711,8 @@ export function runStatusCommand(options: DoctorCommandOptions = {}): string {
     `mcp ${mcpSummary}`,
     `safety ${safetySummary}`,
     `skipped ${skippedPaths}${report.graph.discoveryExclusions.length > 20 ? `, ... ${report.graph.discoveryExclusions.length - 20} more` : ''}`,
+    `indexing ${indexingSummary}`,
+    `incomplete ${incompletePaths}`,
     `next ${nextSummary}`,
   ].join('\n')
 }

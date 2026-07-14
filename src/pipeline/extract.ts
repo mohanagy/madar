@@ -18,7 +18,12 @@ import {
   resolvePythonFastApiSemantics,
 } from './extract/cross-file.js'
 import { resolveGoSemantics } from './extract/go-cross-file.js'
-import { dispatchSingleFileExtraction, type ExtractionFragment, type ExtractorHandlerMap } from './extract/dispatch.js'
+import {
+  dispatchSingleFileExtraction,
+  type ExtractionFileOutcome,
+  type ExtractionFragment,
+  type ExtractorHandlerMap,
+} from './extract/dispatch.js'
 import { applyJsFrameworkAdapters } from './extract/frameworks/core.js'
 import { extractGenericCode, normalizeTypeName } from './extract/generic.js'
 import {
@@ -53,7 +58,7 @@ import { createTreeSitterWasmParser, treeSitterWasmError, type TreeSitterNode } 
 
 export { _makeId } from './extract/core.js'
 
-export const EXTRACTOR_CACHE_VERSION = 67
+export const EXTRACTOR_CACHE_VERSION = 68
 const PYTHON_KEYWORDS = new Set(['if', 'elif', 'else', 'for', 'while', 'return', 'class', 'def', 'lambda', 'with', 'print', 'sum'])
 const GENERIC_CODE_EXTENSIONS = new Set(['.go', '.rs', '.java', '.kt', '.kts', '.scala', '.cs', '.c', '.cc', '.cpp', '.cxx', '.h', '.hpp', '.swift', '.php', '.zig'])
 const RUBY_KEYWORDS = new Set(['if', 'elsif', 'else', 'unless', 'while', 'until', 'return', 'super', 'yield', 'class', 'def'])
@@ -708,6 +713,17 @@ function isCachedExtraction(value: unknown): value is CachedExtractionPayload {
     && typeof value.__madarFileStem === 'string'
     && Array.isArray(value.nodes)
     && Array.isArray(value.edges)
+    && (
+      value.diagnostics === undefined
+      || (
+        Array.isArray(value.diagnostics)
+        && value.diagnostics.every((diagnostic) =>
+          isRecord(diagnostic)
+          && typeof diagnostic.code === 'string'
+          && (diagnostic.level === 'info' || diagnostic.level === 'warning' || diagnostic.level === 'error')
+          && (diagnostic.message === undefined || typeof diagnostic.message === 'string'))
+      )
+    )
 }
 
 function moduleSpecifierFromRequireCall(node: ts.CallExpression): string | null {
@@ -728,7 +744,7 @@ function addTsImportEdge(edges: ExtractionEdge[], seenImportEdges: Set<string>, 
   addUniqueEdge(edges, seenImportEdges, createEdge(sourceId, _makeId(resolveModuleName(trimmedSpecifier)), 'imports_from', filePath, line))
 }
 
-function readCachedExtraction(filePath: string): ExtractionFragment | null {
+export function readCachedExtraction(filePath: string): ExtractionFragment | null {
   const cached = loadCached(filePath)
   if (!isCachedExtraction(cached)) {
     return null
@@ -739,15 +755,17 @@ function readCachedExtraction(filePath: string): ExtractionFragment | null {
   return {
     nodes: cached.nodes,
     edges: cached.edges,
+    ...(cached.diagnostics?.length ? { diagnostics: cached.diagnostics } : {}),
   }
 }
 
-function writeCachedExtraction(filePath: string, extraction: ExtractionFragment): void {
+export function writeCachedExtraction(filePath: string, extraction: ExtractionFragment): void {
   saveCached(filePath, {
     __madarTsExtractorVersion: EXTRACTOR_CACHE_VERSION,
     __madarFileStem: fileStemForPath(filePath),
     nodes: extraction.nodes,
     edges: extraction.edges,
+    ...(extraction.diagnostics?.length ? { diagnostics: extraction.diagnostics } : {}),
   })
 }
 
@@ -1129,7 +1147,7 @@ export function extractPython(filePath: string): ExtractionFragment {
   }
 
   warnTreeSitterFallback('python')
-  return extractPythonRegex(filePath)
+  return withTreeSitterFallbackDiagnostic('python', extractPythonRegex(filePath))
 }
 
 function extractRubyScanner(filePath: string): ExtractionFragment {
@@ -1290,7 +1308,7 @@ export function extractRuby(filePath: string): ExtractionFragment {
   }
 
   warnTreeSitterFallback('ruby')
-  return extractRubyScanner(filePath)
+  return withTreeSitterFallbackDiagnostic('ruby', extractRubyScanner(filePath))
 }
 
 export function extractLua(filePath: string): ExtractionFragment {
@@ -1913,6 +1931,21 @@ function warnTreeSitterFallback(language: 'go' | 'java' | 'python' | 'ruby' | 'r
   TREE_SITTER_FALLBACK_WARNINGS.add(warningKey)
   const suffix = runtimeError ? ` (${runtimeError})` : ''
   console.warn(`[madar] tree-sitter ${language} parser unavailable; falling back to the legacy extractor${suffix}`)
+}
+
+function withTreeSitterFallbackDiagnostic(
+  language: 'go' | 'java' | 'python' | 'ruby' | 'rust',
+  extraction: ExtractionFragment,
+): ExtractionFragment {
+  const runtimeError = treeSitterWasmError()
+  return {
+    ...extraction,
+    diagnostics: [{
+      code: `tree_sitter_${language}_fallback`,
+      level: 'warning',
+      ...(runtimeError ? { message: runtimeError } : {}),
+    }],
+  }
 }
 
 function collectGoImports(node: TreeSitterNode, sourceText: string): string[] {
@@ -3588,7 +3621,7 @@ const SINGLE_FILE_EXTRACTOR_HANDLERS: ExtractorHandlerMap = {
     }
 
     warnTreeSitterFallback('go')
-    return extractGenericCode(filePath)
+    return withTreeSitterFallbackDiagnostic('go', extractGenericCode(filePath))
   },
   'builtin:extract:java': (filePath) => {
     const extraction = extractJavaTreeSitter(filePath)
@@ -3597,7 +3630,7 @@ const SINGLE_FILE_EXTRACTOR_HANDLERS: ExtractorHandlerMap = {
     }
 
     warnTreeSitterFallback('java')
-    return extractGenericCode(filePath)
+    return withTreeSitterFallbackDiagnostic('java', extractGenericCode(filePath))
   },
   'builtin:extract:c-family': (filePath) => extractGenericCode(filePath),
   'builtin:extract:rust': (filePath) => {
@@ -3607,7 +3640,7 @@ const SINGLE_FILE_EXTRACTOR_HANDLERS: ExtractorHandlerMap = {
     }
 
     warnTreeSitterFallback('rust')
-    return extractGenericCode(filePath)
+    return withTreeSitterFallbackDiagnostic('rust', extractGenericCode(filePath))
   },
   'builtin:extract:swift': (filePath) => extractGenericCode(filePath),
   'builtin:extract:kotlin': (filePath) => extractGenericCode(filePath),
@@ -3627,18 +3660,24 @@ const SINGLE_FILE_EXTRACTOR_HANDLERS: ExtractorHandlerMap = {
   'builtin:extract:video': (filePath) => extractVideoFragment(filePath),
 }
 
-function extractSingleFile(filePath: string, allowedTargets: ReadonlySet<string>): ExtractionFragment {
+function extractSingleFile(
+  filePath: string,
+  allowedTargets: ReadonlySet<string>,
+  onFileOutcome?: (outcome: ExtractionFileOutcome) => void,
+): ExtractionFragment {
   return dispatchSingleFileExtraction(filePath, allowedTargets, SINGLE_FILE_EXTRACTOR_HANDLERS, {
     registry: builtinCapabilityRegistry,
     readCached: readCachedExtraction,
     writeCached: writeCachedExtraction,
     classifySourceFile: classifyFile,
+    ...(onFileOutcome ? { onOutcome: onFileOutcome, recoverFailures: true } : {}),
   })
 }
 
 export interface ExtractOptions {
   allowedTargets?: Iterable<string>
   contextNodes?: ExtractionNode[]
+  onFileOutcome?: (outcome: ExtractionFileOutcome) => void
 }
 
 export function extract(files: string[]): ExtractionData
@@ -3651,7 +3690,9 @@ export function extract(files: string[], options: ExtractOptions = {}): Extracti
   ]
   return withExtractionFileStemContext(stemContextFiles, () => {
     const allowedTargets = new Set([...(options.allowedTargets ?? files)].map((filePath) => resolve(filePath)))
-    let combined = mergeExtractionFragments(files.map((filePath) => extractSingleFile(filePath, allowedTargets)))
+    let combined = mergeExtractionFragments(
+      files.map((filePath) => extractSingleFile(filePath, allowedTargets, options.onFileOutcome)),
+    )
 
     combined = options.contextNodes
       ? resolveCrossFilePythonImports(files, combined, { contextNodes: options.contextNodes })

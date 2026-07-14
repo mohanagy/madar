@@ -240,6 +240,9 @@ export function loadGraph(graphPath: string): KnowledgeGraph {
   if (discoverySafety) {
     graph.graph.discovery_safety = discoverySafety
   }
+  if (isRecord(parsed.indexing_completeness)) {
+    graph.graph.indexing_completeness = parsed.indexing_completeness
+  }
   return graph
 }
 
