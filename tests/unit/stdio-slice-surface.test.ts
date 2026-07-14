@@ -278,9 +278,10 @@ describe('stdio slice-v1 surface', () => {
     expect(contextPackText).toContain('"retrieval_strategy":"slice-v1"')
   })
 
-  it('auto-applies strict benchmark runtime-proof retrieval options for matching benchmark prompts', async () => {
+  it('does not recognize published benchmark prompts in production retrieval', async () => {
     const graphPath = createGraphPath()
     const question = 'How does Dub resolve a short-link click from request handling through analytics tracking and destination redirect?'
+    const holdoutQuestion = 'How does Acme resolve a short-link request through metrics recording and its final redirect?'
     const originalRetrieveContext = retrieveRuntime.retrieveContext
     const retrieveSpy = vi.spyOn(retrieveRuntime, 'retrieveContext').mockImplementation((inputGraph, options) => ({
       ...originalRetrieveContext(inputGraph, {
@@ -318,30 +319,50 @@ describe('stdio slice-v1 surface', () => {
         },
       }))
 
-      expect(retrieveSpy).toHaveBeenCalledTimes(2)
+      await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 13,
+        method: 'tools/call',
+        params: {
+          name: 'retrieve',
+          arguments: {
+            question: holdoutQuestion,
+            budget: 1000,
+            verbose: true,
+          },
+        },
+      }))
+
+      await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 14,
+        method: 'tools/call',
+        params: {
+          name: 'context_pack',
+          arguments: {
+            prompt: holdoutQuestion,
+            budget: 1000,
+            task: 'explain',
+            verbose: true,
+          },
+        },
+      }))
+
+      expect(retrieveSpy).toHaveBeenCalledTimes(4)
       for (const call of retrieveSpy.mock.calls) {
-        expect(call[1]).toEqual(expect.objectContaining({
-          taskKind: 'explain',
-          retrievalStrategy: 'slice-v1',
-          runtimeProofProfile: expect.objectContaining({
-            prompt: question,
-            strict_runtime_proof: true,
-            expected_spi: false,
-          }),
-        }))
+        expect(call[1]).not.toHaveProperty('runtimeProofProfile')
+        expect(call[1]).not.toHaveProperty('retrievalStrategy')
       }
 
       const retrieveText = ((retrieveResponse as { result?: { content?: Array<{ text: string }> } }).result?.content ?? [])[0]?.text ?? ''
       const contextPackText = ((contextPackResponse as { result?: { content?: Array<{ text: string }> } }).result?.content ?? [])[0]?.text ?? ''
 
-      expect(retrieveText).toContain('"retrieval_strategy":"slice-v1"')
-      expect(contextPackText).toContain('"retrieval_strategy":"slice-v1"')
+      expect(retrieveText).toContain('"retrieval_strategy":"default"')
+      expect(contextPackText).toContain('"retrieval_strategy":"default"')
     } finally {
       retrieveSpy.mockRestore()
     }
   })
 
-  it('returns a proof-focused retrieve payload once strict benchmark runtime proof is complete', async () => {
+  it('never switches published benchmark prompts to a benchmark-only focused payload', async () => {
     const graphPath = createGraphPath()
     const question = 'How does Formbricks process a survey response from request handling through persistence and analytics/event tracking?'
     const readyResult = {
@@ -547,14 +568,13 @@ describe('stdio slice-v1 surface', () => {
         'parseAndValidateResponseInput()',
         'createResponse()',
         'sendToPipeline()',
+        'irrelevantHelper()',
       ])
-      expect(payload).not.toHaveProperty('relationships')
-      expect(payload).not.toHaveProperty('community_context')
-      expect(payload).not.toHaveProperty('graph_signals')
-      expect(payload).not.toHaveProperty('coverage')
-      expect(payload).not.toHaveProperty('claims')
-      expect(payload).not.toHaveProperty('retrieval_gate')
-      expect(estimateQueryTokens(retrieveText)).toBeLessThan(1200)
+      expect(payload).toHaveProperty('relationships')
+      expect(payload).toHaveProperty('community_context')
+      expect(payload).toHaveProperty('coverage')
+      expect(payload).toHaveProperty('claims')
+      expect(payload).toHaveProperty('retrieval_gate')
     } finally {
       retrieveSpy.mockRestore()
     }

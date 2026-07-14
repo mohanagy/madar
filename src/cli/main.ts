@@ -549,6 +549,8 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --exec TEMPLATE       required unless --dry-run; supports {prompt_file}, {question}, {mode}, and {output_file}',
     '    --repo ID             limit the suite to one repo id from docs/benchmarks/suite/repos.json',
     '    --task ID             limit the suite to one task id from docs/benchmarks/suite/tasks.json',
+    '    --repos-manifest PATH use an alternate repository manifest',
+    '    --tasks-manifest PATH use an alternate task manifest and its sibling grader files',
     '    --mode MODE           cold | warm | all (default all)',
     '    --trials N            measured trials per runnable cell (default 3)',
     '    --output-dir DIR      suite results directory (default docs/benchmarks/suite/results)',

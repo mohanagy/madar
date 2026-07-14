@@ -64,6 +64,7 @@
         "publish:next": "npm publish --tag next --access public",
         "publish:dry-run": "npm publish --dry-run",
         "release:verify": "node .github/scripts/verify-release-hygiene.mjs",
+        "verify:pack-parity": "node .github/scripts/verify-packed-retrieval-parity.mjs",
         "registry:validate": "node .github/scripts/validate-mcp-registry.mjs"
     },
     "devDependencies": {

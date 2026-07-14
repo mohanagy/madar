@@ -6,7 +6,7 @@ Madar builds a local graph of your TypeScript/Node repo, then gives agents like 
 
 It helps agents spend less time rediscovering the same files, routes, imports, and flows.
 
-In the latest public TypeScript benchmark receipts, Madar produced proof-backed `full_win` outcomes on 6/6 `explain-runtime` legacy rows with strict runtime-proof gates enabled.
+The June 2026 public TypeScript receipts are retained as historical artifacts, but their former 6/6 headline is withdrawn: those runs used checkout-only benchmark profiles in the answer path. Current benchmark claims require a fresh run from an unpacked npm artifact with untuned retrieval.
 
 [![npm](https://img.shields.io/npm/v/%40lubab%2Fmadar)](https://www.npmjs.com/package/@lubab/madar)
 [![node >=20](https://img.shields.io/badge/node-%E2%89%A520-3c873a)](https://nodejs.org/)
@@ -171,7 +171,7 @@ An MCP server selects its workspace when it starts. If an agent later creates or
 
 ## Evidence
 
-Madar now has proof-backed public TypeScript `explain-runtime` legacy benchmark receipts across six open-source repos. Each row below has `benchmark_outcome = "full_win"`, `benchmark_readiness = "ready"`, `answer_quality.madar.passed = true`, and `answer_contract.runtime_proof.missing_obligations = []`.
+The table below records the historical June 2026 public TypeScript `explain-runtime` runs. It is useful for regression archaeology, but it is not current product proof: the checkout runtime recognized those exact prompts and used benchmark-only evidence profiles that were absent from the npm package. That behavior has been removed, and these rows must be rerun through the packed-artifact isolation launcher before any replacement win claim is published.
 
 | Repo | Input tokens | Fresh tokens | Tool calls | Turns | Latency | Cost |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -182,7 +182,7 @@ Madar now has proof-backed public TypeScript `explain-runtime` legacy benchmark 
 | `cal-diy` | 1,588,241 -> 101,820 (15.60x) | 61,669 -> 21,688 (2.84x) | 37 -> 3 | 38 -> 4 | 252.0s -> 38.7s (6.51x) | $1.4263 -> $0.1946 (7.33x) |
 | `novu` | 1,055,389 -> 75,772 (13.93x) | 63,542 -> 15,491 (4.10x) | 23 -> 2 | 24 -> 3 | 220.3s -> 31.1s (7.09x) | $1.1316 -> $0.1620 (6.98x) |
 
-This is not a universal benchmark claim. These are repo/task-specific, single-trial, legacy-row receipts for public TypeScript `explain-runtime` prompts. SPI arms are tracked separately and are not folded into this 6/6 claim.
+These are superseded, repo/task-specific, single-trial receipts—not a current 6/6 claim. SPI arms remain separate. The benchmark harness now keeps deterministic expected-evidence gates outside retrieval, runs the installed artifact, and tracks independent `pending`/`passed`/`failed` human-review status.
 
 The public evidence map tracks what is proven, what is mixed, and what should not be claimed yet: [claims and evidence](https://github.com/mohanagy/madar/blob/main/docs/claims-and-evidence.md).
 
@@ -224,7 +224,7 @@ Current version: `0.30.0`.
 
 `0.29.0` adds full project-local Codex CLI wiring: `madar codex install` now owns a task-applicable `UserPromptSubmit` hook, its local script, and a marker-owned Madar MCP entry alongside the AGENTS profile. The hook provides guidance for local code tasks, not enforcement; review and trust it in Codex before relying on it.
 
-`0.28.0` promoted the public benchmark work to a proof-backed stable release: six public TypeScript `explain-runtime` legacy rows now have checked-in `full_win` receipts, strict runtime-proof gates, direct-evidence answer checks, scoped benchmark roots, and share-safe reports. It also includes retrieval and extraction improvements for runtime handoffs, source-visible framework flows, and benchmark reproducibility.
+`0.28.0` published six TypeScript `explain-runtime` legacy receipts. Those artifacts remain available, but the former proof-backed 6/6 interpretation is superseded because the old checkout runtime used benchmark-only profiles while answering those prompts.
 
 Read the full notes in the [0.30.0 changelog](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md#0300---2026-07-14).
 

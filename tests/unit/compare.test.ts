@@ -30,14 +30,16 @@ import { retrieveContext } from '../../src/runtime/retrieve.js'
 import { estimateQueryTokens } from '../../src/runtime/serve.js'
 import { MAX_TEXT_BYTES } from '../../src/shared/security.js'
 import { sanitizeShareSafeText } from '../../src/shared/share-safe-artifacts.js'
+import { resolveMadarOutputDirectory } from '../../src/shared/workspace.js'
 
-const PROJECT_FIXTURE_ROOT = resolve('out', 'test-runtime', 'compare-runtime-project')
+const TEST_OUTPUT_ROOT = resolveMadarOutputDirectory()
+const PROJECT_FIXTURE_ROOT = join(TEST_OUTPUT_ROOT, 'test-runtime', 'compare-runtime-project')
 const GRAPH_FIXTURE_ROOT = join(PROJECT_FIXTURE_ROOT, 'out')
-const COMPARE_OUTPUT_ROOT = resolve('out', 'compare', 'test-runtime')
+const COMPARE_OUTPUT_ROOT = join(TEST_OUTPUT_ROOT, 'compare', 'test-runtime')
 type MadarPromptPackRetrieval = Parameters<typeof buildMadarPromptPack>[0]['retrieval']
 
 function makeGraph(): KnowledgeGraph {
-  const graph = new KnowledgeGraph()
+  const graph = new KnowledgeGraph({ directed: true })
   graph.addNode('auth_user', {
     label: 'authenticateUser',
     source_file: 'src/auth.ts',
@@ -220,7 +222,7 @@ function makeLongGraphBackedExcerpt(kind: 'pdf' | 'docx' | 'xlsx'): string {
 }
 
 function makeSingleSourceGraph(relativePath: string, nodeLabel: string, fileType: 'paper' | 'document'): KnowledgeGraph {
-  const graph = new KnowledgeGraph()
+  const graph = new KnowledgeGraph({ directed: true })
   graph.addNode('graph_backed_source', {
     label: nodeLabel,
     source_file: relativePath,
@@ -1231,8 +1233,8 @@ describe('compare runtime', () => {
       "Follow the Madar pack contract exactly.
       Call retrieve first for explain or runtime questions before any raw file or broad repo search.
       Call mcp__madar__retrieve directly for this benchmark run. Do not use ToolSearch before the first Madar call.
-      For strict runtime-proof benchmark questions, call mcp__madar__retrieve with retrieval_strategy: "slice-v1".
-      Inspect execution_slice, answer_contract.runtime_proof, matched_nodes, snippets, relationships, and community context before deciding what to do next.
+      For runtime-flow questions, call mcp__madar__retrieve with retrieval_strategy: "slice-v1".
+      Inspect execution_slice, answer_contract, matched_nodes, snippets, relationships, and community context before deciding what to do next.
       If retrieve already answers the question, answer from the retrieved evidence and stop without raw search.
       Do not call community_overview, graph_summary, get_community, query_graph, or other broad graph-navigation tools for task-specific compare runs.
       Allow at most one focused raw file read or search when retrieve leaves a specific gap.
@@ -1268,24 +1270,24 @@ describe('compare runtime', () => {
     `)
   })
 
-  it('adds strict runtime-proof guidance for flow questions with one missing phase', () => {
+  it('adds generic runtime-flow guidance for questions with one missing phase', () => {
     const prompt = buildNativeAgentPrompt(
       'How idea report is being generated',
       {
         profile: 'core',
-        strictRuntimeProof: {
+        runtimeFlowGuidance: {
           missingPhases: ['persistence'],
           rescopedTo: 'backend/out/graph.json',
         },
       } as Parameters<typeof buildNativeAgentPrompt>[1] & {
-        strictRuntimeProof: {
+        runtimeFlowGuidance: {
           missingPhases: string[]
           rescopedTo: string
         }
       },
     )
 
-    expect(prompt).toContain('This question requires strict runtime proof.')
+    expect(prompt).toContain('This question asks for a runtime flow grounded in retrieved evidence.')
     expect(prompt).toContain('Use at most one focused follow-up to surface the missing persistence phase.')
     expect(prompt).toContain('If the flow still cannot be proven, answer: not enough evidence; missing persistence')
     expect(prompt).toContain('Start from the auto-rescoped graph scope: backend/out/graph.json.')
@@ -1323,7 +1325,7 @@ describe('compare runtime', () => {
     expect(report?.reduction_ratio).toBe(
       Number(((report!.baseline_prompt_tokens || 0) / (report!.madar_prompt_tokens || 1)).toFixed(1)),
     )
-    expect(report?.paths.output_dir).toBe(resolve('out', 'compare', 'test-runtime', '2026-04-24T19-30-00'))
+    expect(report?.paths.output_dir).toBe(join(COMPARE_OUTPUT_ROOT, '2026-04-24T19-30-00'))
     expect(report?.status.baseline).toBe('not_run')
     expect(report?.status.madar).toBe('not_run')
     expect(existsSync(report!.paths.baseline_prompt)).toBe(true)
@@ -1352,7 +1354,7 @@ describe('compare runtime', () => {
           placeholders: ['{prompt_file}'],
           redacted: true,
         },
-        graph_path: join('out', 'test-runtime', 'compare-runtime-project', 'out', 'graph.json'),
+        graph_path: relative(process.cwd(), graphPath),
         baseline_prompt_tokens: estimateQueryTokens(baselinePrompt),
         madar_prompt_tokens: estimateQueryTokens(madarPrompt),
         reduction_ratio: report!.reduction_ratio,
@@ -1365,11 +1367,11 @@ describe('compare runtime', () => {
           exact: false,
         },
         paths: {
-          output_dir: join('out', 'compare', 'test-runtime', '2026-04-24T19-30-00'),
-          baseline_prompt: join('out', 'compare', 'test-runtime', '2026-04-24T19-30-00', 'baseline-prompt.txt'),
-          madar_prompt: join('out', 'compare', 'test-runtime', '2026-04-24T19-30-00', 'madar-prompt.txt'),
-          report: join('out', 'compare', 'test-runtime', '2026-04-24T19-30-00', 'report.json'),
-          share_safe_report: join('out', 'compare', 'test-runtime', '2026-04-24T19-30-00', 'report.share-safe.json'),
+          output_dir: relative(process.cwd(), report!.paths.output_dir),
+          baseline_prompt: relative(process.cwd(), report!.paths.baseline_prompt),
+          madar_prompt: relative(process.cwd(), report!.paths.madar_prompt),
+          report: relative(process.cwd(), report!.paths.report),
+          share_safe_report: relative(process.cwd(), report!.paths.share_safe_report),
         },
       }),
     )
@@ -3339,14 +3341,32 @@ describe('compare runtime', () => {
             prompt: 'how does login create a session',
             required_answer_terms: ['SessionManager'],
             forbidden_answer_terms: ['Billing'],
+          },
+          logout: {
+            prompt: 'how does logout clear the session',
+            required_answer_terms: ['clearSession'],
+            forbidden_answer_terms: ['Billing'],
+          },
+        },
+        null,
+        2,
+      ),
+      'utf8',
+    )
+    writeFileSync(
+      join(suiteDir, 'human-review.json'),
+      JSON.stringify(
+        {
+          login: {
+            prompt: 'how does login create a session',
+            status: 'pending',
             required_concepts: ['login reaches session creation'],
             answer_quality_notes: ['Deterministic term gates are not a full semantic grader.'],
             manual_review_notes: ['Confirm the answer explains session creation.'],
           },
           logout: {
             prompt: 'how does logout clear the session',
-            required_answer_terms: ['clearSession'],
-            forbidden_answer_terms: ['Billing'],
+            status: 'passed',
             required_concepts: ['logout reaches session clearing'],
             answer_quality_notes: ['Deterministic term gates are not a full semantic grader.'],
             manual_review_notes: ['Confirm the answer explains session invalidation.'],
@@ -3399,7 +3419,12 @@ describe('compare runtime', () => {
       madar_passed: 1,
       madar_required_terms_missing: 1,
       madar_forbidden_terms_present: 1,
-      manual_review_required: 2,
+      human_review: {
+        pending: 1,
+        passed: 1,
+        failed: 0,
+        not_configured: 0,
+      },
     })
     expect(result.reports[0]?.answer_quality).toEqual(
       expect.objectContaining({
@@ -3414,6 +3439,7 @@ describe('compare runtime', () => {
           missing_required_terms: [],
           forbidden_terms_present: [],
         }),
+        human_review: expect.objectContaining({ status: 'pending' }),
       }),
     )
     expect(result.reports[1]?.answer_quality).toEqual(
@@ -3427,6 +3453,7 @@ describe('compare runtime', () => {
           missing_required_terms: ['clearSession'],
           forbidden_terms_present: ['Billing'],
         }),
+        human_review: expect.objectContaining({ status: 'passed' }),
       }),
     )
 
@@ -3455,7 +3482,7 @@ describe('compare runtime', () => {
       }),
     )
     expect(formatNativeAgentCompareSummary(result)).toContain('Answer quality: madar 1/2 passed deterministic gates')
-    expect(formatNativeAgentCompareSummary(result)).toContain('2 manual-review notes')
+    expect(formatNativeAgentCompareSummary(result)).toContain('human review 1 passed, 0 failed, 1 pending, 0 not configured')
   })
 
   it('fails direct-evidence gates when the answer admits the flow is inferred instead of directly surfaced', async () => {
@@ -3478,10 +3505,24 @@ describe('compare runtime', () => {
             prompt: 'how does login create a session',
             required_answer_terms: ['SessionManager'],
             forbidden_answer_terms: [],
+            require_direct_evidence: true,
+          },
+        },
+        null,
+        2,
+      ),
+      'utf8',
+    )
+    writeFileSync(
+      join(suiteDir, 'human-review.json'),
+      JSON.stringify(
+        {
+          login: {
+            prompt: 'how does login create a session',
+            status: 'failed',
             required_concepts: ['login reaches session creation'],
             answer_quality_notes: ['Direct-evidence publication gates should reject inferred answers.'],
             manual_review_notes: ['Confirm the answer is grounded in directly surfaced evidence.'],
-            require_direct_evidence: true,
           },
         },
         null,
@@ -3524,7 +3565,12 @@ describe('compare runtime', () => {
       madar_passed: 0,
       madar_required_terms_missing: 0,
       madar_forbidden_terms_present: 2,
-      manual_review_required: 1,
+      human_review: {
+        pending: 0,
+        passed: 0,
+        failed: 1,
+        not_configured: 0,
+      },
     })
     expect(result.reports[0]?.answer_quality).toEqual(
       expect.objectContaining({
@@ -3534,6 +3580,7 @@ describe('compare runtime', () => {
           missing_required_terms: [],
           forbidden_terms_present: expect.arrayContaining(['inferred', 'not directly']),
         }),
+        human_review: expect.objectContaining({ status: 'failed' }),
       }),
     )
   })
@@ -4266,7 +4313,7 @@ describe('compare runtime', () => {
     writeProjectFiles()
     const graphPath = writeGraphFixture(graph)
     const originalCwd = process.cwd()
-    const alternateCwd = resolve('out', 'test-runtime', 'outside-compare-runner')
+    const alternateCwd = join(TEST_OUTPUT_ROOT, 'test-runtime', 'outside-compare-runner')
     mkdirSync(alternateCwd, { recursive: true })
 
     try {
@@ -5027,6 +5074,77 @@ describe('assessBenchmarkReadinessFromRetrieveResult', () => {
     })
   })
 
+  it('uses expected runtime evidence only after untuned retrieval as a deterministic grader', async () => {
+    const graph = makeGraph()
+    writeProjectFiles()
+    const graphPath = writeGraphFixture(graph)
+    const suiteDir = join(PROJECT_FIXTURE_ROOT, 'benchmarks', 'grader-only-runtime-proof')
+    mkdirSync(suiteDir, { recursive: true })
+    const question = 'How does login create a session?'
+    const questionsPath = join(suiteDir, 'questions.json')
+    writeFileSync(questionsPath, JSON.stringify([{ question }], null, 2), 'utf8')
+    writeFileSync(join(suiteDir, 'quality-gates.json'), JSON.stringify({
+      login: {
+        prompt: question,
+        require_direct_evidence: true,
+        required_answer_terms: ['SessionManager'],
+        forbidden_answer_terms: [],
+      },
+    }, null, 2), 'utf8')
+    writeFileSync(join(suiteDir, 'runtime-proof.json'), JSON.stringify({
+      login: {
+        prompt: question,
+        strict_runtime_proof: true,
+        expected_spi: false,
+        obligations: [
+          { id: 'entry', label: 'authentication entry', kind: 'entrypoint', evidence_terms: ['authenticateUser'] },
+          { id: 'persistence', label: 'session persistence', kind: 'terminal', evidence_terms: ['SessionStore'] },
+        ],
+      },
+    }, null, 2), 'utf8')
+
+    const originalRetrieveContext = retrieveRuntime.retrieveContext
+    const retrieveSpy = vi.spyOn(retrieveRuntime, 'retrieveContext').mockImplementation((inputGraph, options) =>
+      originalRetrieveContext(inputGraph, options))
+    try {
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          questionsPath,
+          outputDir: COMPARE_OUTPUT_ROOT,
+          execTemplate: 'runner --prompt {prompt_file} --mode {mode} --out {output_file}',
+          baselineMode: 'native_agent',
+          now: new Date('2026-07-14T20:00:00.000Z'),
+        },
+        {
+          now: () => new Date('2026-07-14T20:00:00.000Z'),
+          runner: async (execution) => ({
+            exitCode: 0,
+            stdout: execution.mode === 'madar'
+              ? 'SessionManager creates the session through authenticateUser.'
+              : 'SessionManager creates a session.',
+            stderr: '',
+            elapsedMs: 10,
+          }),
+        },
+      )
+
+      expect(retrieveSpy).toHaveBeenCalled()
+      for (const call of retrieveSpy.mock.calls) {
+        expect(call[1]).not.toHaveProperty('runtimeProofProfile')
+      }
+      const report = result.reports[0]!
+      expect(readFileSync(report.paths.madar_prompt, 'utf8')).not.toContain('Required proof checklist')
+      expect(readFileSync(report.paths.madar_prompt, 'utf8')).not.toContain('session persistence')
+      expect(report.answer_quality?.madar).toEqual(expect.objectContaining({
+        passed: false,
+        missing_required_terms: expect.arrayContaining(['direct evidence citation: session persistence']),
+      }))
+    } finally {
+      retrieveSpy.mockRestore()
+    }
+  })
+
   it('treats SPI-mode graph metadata as SPI evidence for app-file runtime packs', () => {
     const graphPath = writeReadinessGraphFixture({
       graphFixtureRoot: join(PROJECT_FIXTURE_ROOT, 'backend', 'out'),
@@ -5057,216 +5175,6 @@ describe('assessBenchmarkReadinessFromRetrieveResult', () => {
       reasons: [],
       suggested_graph_scope: null,
     })
-  })
-
-  it('treats complete non-SPI runtime-proof benchmark rows as ready when every obligation has direct evidence', () => {
-    const readiness = (assessBenchmarkReadinessFromRetrieveResult as (input: any) => ReturnType<typeof assessBenchmarkReadinessFromRetrieveResult>)({
-      graphPath: '/repo/out/graph.json',
-      runtimeProofProfile: {
-        prompt: 'How does Dub resolve a short-link click from request handling through analytics tracking and destination redirect?',
-        strict_runtime_proof: true,
-        expected_spi: false,
-        obligations: [
-          { id: 'request_handling', label: 'request handling', kind: 'entrypoint', evidence_terms: ['route', 'handler'] },
-          { id: 'analytics_tracking', label: 'analytics tracking', kind: 'terminal', evidence_terms: ['analytics', 'track'] },
-          { id: 'destination_redirect', label: 'destination redirect', kind: 'terminal', evidence_terms: ['redirect', 'destination'] },
-        ],
-      },
-      retrieval: makeRuntimeGenerationRetrieval({
-        question: 'How does Dub resolve a short-link click from request handling through analytics tracking and destination redirect?',
-        matched_nodes: [
-          {
-            label: 'GET /:domain/:key',
-            source_file: 'apps/web/links/route.ts',
-            line_number: 10,
-            file_type: 'code',
-            snippet: null,
-            match_score: 18,
-            relevance_band: 'direct',
-            community: null,
-            community_label: null,
-          },
-          {
-            label: 'recordLinkAnalytics',
-            source_file: 'lib/analytics/clicks.ts',
-            line_number: 42,
-            file_type: 'code',
-            snippet: null,
-            match_score: 17,
-            relevance_band: 'direct',
-            community: null,
-            community_label: null,
-          },
-          {
-            label: 'destinationRedirect',
-            source_file: 'apps/web/links/redirect.ts',
-            line_number: 78,
-            file_type: 'code',
-            snippet: null,
-            match_score: 16,
-            relevance_band: 'direct',
-            community: null,
-            community_label: null,
-          },
-        ],
-        execution_slice: {
-          status: 'complete',
-          confidence: 'high',
-          confidence_reasons: ['expected_obligations_covered'],
-          steps: [
-            {
-              label: 'GET /:domain/:key',
-              source_file: 'apps/web/links/route.ts',
-              line_number: 10,
-              node_kind: 'route',
-            },
-            {
-              label: 'recordLinkAnalytics',
-              source_file: 'lib/analytics/clicks.ts',
-              line_number: 42,
-              node_kind: 'method',
-            },
-            {
-              label: 'destinationRedirect',
-              source_file: 'apps/web/links/redirect.ts',
-              line_number: 78,
-              node_kind: 'method',
-            },
-          ],
-          phase_coverage: {
-            expected: ['controller', 'service', 'notification_or_event'],
-            observed: ['controller', 'service', 'notification_or_event'],
-            missing: [],
-          },
-        },
-        answer_contract: {
-          version: 1,
-          answer_focus: 'runtime_generation',
-          entrypoint_scope: 'setup_context',
-          required_elements: ['main_pipeline_phases'],
-          do_not_claim: [],
-          observed_phases: ['controller', 'service', 'notification_or_event'],
-          missing_phases: [],
-          confidence: 'high',
-          runtime_proof: {
-            obligations: [
-              {
-                id: 'request_handling',
-                label: 'request handling',
-                kind: 'entrypoint',
-                required: true,
-                evidence: [{ label: 'GET /:domain/:key', source_file: 'apps/web/links/route.ts', line_number: 10 }],
-              },
-              {
-                id: 'analytics_tracking',
-                label: 'analytics tracking',
-                kind: 'terminal',
-                required: true,
-                evidence: [{ label: 'recordLinkAnalytics', source_file: 'lib/analytics/clicks.ts', line_number: 42 }],
-              },
-              {
-                id: 'destination_redirect',
-                label: 'destination redirect',
-                kind: 'terminal',
-                required: true,
-                evidence: [{ label: 'destinationRedirect', source_file: 'apps/web/links/redirect.ts', line_number: 78 }],
-              },
-            ],
-            missing_obligations: [],
-          },
-        } as any,
-      } as any),
-    })
-
-    expect(readiness).toEqual({
-      status: 'ready',
-      reasons: [],
-      suggested_graph_scope: null,
-    })
-  })
-
-  it('fails non-SPI runtime-proof benchmark rows closed when a required terminal obligation is still missing', () => {
-    const readiness = (assessBenchmarkReadinessFromRetrieveResult as (input: any) => ReturnType<typeof assessBenchmarkReadinessFromRetrieveResult>)({
-      graphPath: '/repo/out/graph.json',
-      runtimeProofProfile: {
-        prompt: 'How does Dub resolve a short-link click from request handling through analytics tracking and destination redirect?',
-        strict_runtime_proof: true,
-        expected_spi: false,
-        obligations: [
-          { id: 'request_handling', label: 'request handling', kind: 'entrypoint', evidence_terms: ['route', 'handler'] },
-          { id: 'analytics_tracking', label: 'analytics tracking', kind: 'terminal', evidence_terms: ['analytics', 'track'] },
-          { id: 'destination_redirect', label: 'destination redirect', kind: 'terminal', evidence_terms: ['redirect', 'destination'] },
-        ],
-      },
-      retrieval: makeRuntimeGenerationRetrieval({
-        question: 'How does Dub resolve a short-link click from request handling through analytics tracking and destination redirect?',
-        execution_slice: {
-          status: 'complete',
-          confidence: 'high',
-          confidence_reasons: ['entrypoint_and_analytics_found'],
-          steps: [
-            {
-              label: 'GET /:domain/:key',
-              source_file: 'apps/web/links/route.ts',
-              line_number: 10,
-              node_kind: 'route',
-            },
-            {
-              label: 'recordLinkAnalytics',
-              source_file: 'lib/analytics/clicks.ts',
-              line_number: 42,
-              node_kind: 'method',
-            },
-          ],
-          phase_coverage: {
-            expected: ['controller', 'service'],
-            observed: ['controller', 'service'],
-            missing: [],
-          },
-        },
-        answer_contract: {
-          version: 1,
-          answer_focus: 'runtime_generation',
-          entrypoint_scope: 'setup_context',
-          required_elements: ['main_pipeline_phases'],
-          do_not_claim: [],
-          observed_phases: ['controller', 'service'],
-          missing_phases: [],
-          confidence: 'high',
-          runtime_proof: {
-            obligations: [
-              {
-                id: 'request_handling',
-                label: 'request handling',
-                kind: 'entrypoint',
-                required: true,
-                evidence: [{ label: 'GET /:domain/:key', source_file: 'apps/web/links/route.ts', line_number: 10 }],
-              },
-              {
-                id: 'analytics_tracking',
-                label: 'analytics tracking',
-                kind: 'terminal',
-                required: true,
-                evidence: [{ label: 'recordLinkAnalytics', source_file: 'lib/analytics/clicks.ts', line_number: 42 }],
-              },
-              {
-                id: 'destination_redirect',
-                label: 'destination redirect',
-                kind: 'terminal',
-                required: true,
-                evidence: [],
-              },
-            ],
-            missing_obligations: ['destination_redirect'],
-          },
-        } as any,
-      } as any),
-    })
-
-    expect(readiness.status).toBe('not_ready')
-    expect(readiness.reasons).toEqual(expect.arrayContaining([
-      'missing runtime proof obligations: destination redirect',
-    ]))
   })
 
   it('keeps non-SPI app-file runtime packs flagged as missing SPI evidence', () => {

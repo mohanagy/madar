@@ -22,6 +22,9 @@ The runner-backed suite now ships in this directory:
 
 - [`repos.json`](./repos.json) — fixed repo ids and current readiness
 - [`tasks.json`](./tasks.json) — fixed task ids and current prompt wiring
+- [`quality-gates.json`](./quality-gates.json) — deterministic receipt checks only
+- [`human-review.json`](./human-review.json) — separate semantic review prompts, notes, and explicit `pending`/`passed`/`failed` status
+- [`holdouts/`](./holdouts/) — alternate repos/prompts with no runtime-proof profile
 - [`methodology.md`](./methodology.md) — trial protocol, caveats, and reporting rules
 - `madar bench:suite` — the CLI entrypoint that expands runnable cells and writes results under `docs/benchmarks/suite/results/<timestamp>/`
 
@@ -31,14 +34,15 @@ Current wiring is still conservative, but it is no longer a single-cell scaffold
 - ready task kinds: `explain-runtime`, `implement`, `review`, and `impact`
 - Python and Go now ship as concrete public fixture workspaces under `docs/benchmarks/suite/fixtures/`
 - six git-backed public repos are now prompt-wired as ready rows: `documenso`, `formbricks`, `dub`, `twenty`, `cal-diy`, and `novu`
-- isolated public `explain-runtime` legacy receipts are now published for `documenso`, `formbricks`, `dub`, `twenty`, `cal-diy`, and `novu`
+- historical isolated `explain-runtime` receipts remain published for `documenso`, `formbricks`, `dub`, `twenty`, `cal-diy`, and `novu`, but they are withdrawn as current proof after the benchmark-profile flaw was found
 - `documenso`, `novu`, and `twenty` are configured with scoped `graphRoot` values where prior receipts showed broad-root readiness blockers; suite runs generate and compare against those scoped graphs instead of the oversized monorepo roots
-- public explain-runtime reruns now load deterministic answer-quality gates from [`quality-gates.json`](./quality-gates.json); permission-blocked answers are not benchmark wins, and neither are inference-heavy answers
+- public explain-runtime reruns load deterministic answer-quality gates from [`quality-gates.json`](./quality-gates.json); human semantic review status is tracked independently in [`human-review.json`](./human-review.json), and all withdrawn rows remain `pending`
 - isolated Claude reruns for those public explain-runtime rows must allow `mcp__madar__retrieve` (for example with `--allowedTools mcp__madar__retrieve`)
 - runner execution now clones or copies each ready row into a temporary benchmark workspace, normalizes repo-local Claude/MCP config there, provisions the Madar Claude install, and verifies that install before prompt spend
-- `./isolation/run-isolated.sh` now treats `docs/benchmarks/suite/isolation/.claude` as a checked-in template and syncs it into a persistent runtime isolation profile outside the repo; if your normal Claude profile is logged in but that isolated runtime profile is not, the launcher fails fast and prints the exact `CLAUDE_CONFIG_DIR=... claude auth login` command to run once before rerunning the benchmark
+- `./isolation/run-isolated.sh` builds `npm pack`, unpacks it outside the checkout, and uses that artifact for both the suite CLI and MCP server; `MADAR_BENCH_CLI_PATH` is an explicit development override and cannot produce a publishable receipt
+- the launcher treats `docs/benchmarks/suite/isolation/.claude` as a checked-in template and syncs it into a persistent runtime isolation profile outside the repo; if your normal Claude profile is logged in but that isolated runtime profile is not, it fails fast and prints the exact login command
 
-Latest published public TypeScript `explain-runtime` legacy receipts (repo/task-specific; where a bundle also includes an SPI arm, treat that SPI arm separately):
+Historical public TypeScript `explain-runtime` receipts (superseded after removal of checkout-only runtime profiles; do not cite as current wins):
 
 | Repo | Bundle | Legacy receipt |
 | --- | --- | --- |

@@ -305,13 +305,17 @@ function runHookCommand(
   input: Record<string, unknown>,
   env: Record<string, string> = {},
 ): string {
-  const shell = shellCommandForPlatform(process.platform, command)
+  const testNodeDir = dirname(process.execPath)
+  const controlledCommand = process.platform === 'win32'
+    ? command
+    : `export PATH="$MADAR_TEST_NODE_DIR:$PATH"; ${command}`
+  const shell = shellCommandForPlatform(process.platform, controlledCommand)
   try {
     const result = spawnSync(shell.command, shell.args, {
       cwd,
       input: JSON.stringify(input),
       encoding: 'utf8',
-      env: { ...process.env, ...env },
+      env: { ...process.env, ...env, MADAR_TEST_NODE_DIR: testNodeDir },
     })
 
     if (result.status !== 0) {

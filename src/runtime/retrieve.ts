@@ -27,7 +27,6 @@ import type {
 } from '../contracts/context-pack.js'
 import type { TaskIntentKind } from '../contracts/task-intent.js'
 import { KnowledgeGraph } from '../contracts/graph.js'
-import type { RuntimeProofAssessment, RuntimeProofProfile, RuntimeProofProfileObligation } from '../contracts/runtime-proof.js'
 import { godNodes, workspaceBridges } from '../pipeline/analyze.js'
 import { type Communities } from '../pipeline/cluster.js'
 import { buildCommunityLabels } from '../pipeline/community-naming.js'
@@ -58,14 +57,6 @@ import {
   relationIsPrimaryForPolicy,
 } from './retrieve/expansion.js'
 import { sliceCandidatesForRetrieve } from './retrieve/slicing.js'
-import {
-  buildRuntimeProofAssessment,
-  runtimeProofAnchorBonus,
-  runtimeProofObligationMatchScore,
-  runtimeProofObligationTermMatchCount,
-  runtimeProofProvidesDirectEvidence,
-  type RuntimeProofCandidate,
-} from './runtime-proof.js'
 import { communitiesFromGraph, estimateQueryTokens } from './serve.js'
 
 const SNIPPET_HALF_WINDOW = 7
@@ -123,7 +114,6 @@ export interface RetrieveOptions {
   /** Internal additive override for benchmarks/tests. */
   selectionStrategy?: ContextPackSelectionStrategy
   retrievalStrategy?: ContextPackRetrievalStrategy
-  runtimeProofProfile?: RuntimeProofProfile
   snippetBudget?: number
   topNWithSnippet?: number
 }
@@ -2203,9 +2193,8 @@ function augmentSliceCandidateIdsForRuntimeExplain(
   metadata: ContextPackSliceMetadata,
   retrievalGate: RetrievalGateDecision,
   question: string,
-  runtimeProofProfile?: RuntimeProofProfile,
 ): string[] {
-  if (!runtimeGenerationSliceCandidatePromotionApplies(retrievalGate, metadata) && runtimeProofProfile?.strict_runtime_proof !== true) {
+  if (!runtimeGenerationSliceCandidatePromotionApplies(retrievalGate, metadata)) {
     return [...orderedIds]
   }
 
@@ -2229,7 +2218,7 @@ function augmentSliceCandidateIdsForRuntimeExplain(
   const anchorIds = metadata.anchors
     .map((anchor) => resolveNodeId(anchor.node_id, anchor.label))
     .filter((nodeId): nodeId is string => typeof nodeId === 'string')
-  const executionScope = collectExecutionSliceScope(graph, metadata, anchorIds, question, resolveNodeId, runtimeProofProfile)
+  const executionScope = collectExecutionSliceScope(graph, metadata, anchorIds, question, resolveNodeId)
 
   for (const nodeId of executionScope.orderedIds) {
     if (!seen.has(nodeId)) {
@@ -2245,11 +2234,7 @@ function runtimeGenerationExecutionSliceApplies(
   taskContract: ContextPackTaskContract,
   retrievalGate: RetrievalGateDecision,
   sliceMetadata: ContextPackSliceMetadata | undefined,
-  runtimeProofProfile?: RuntimeProofProfile,
 ): boolean {
-  if (runtimeProofProfile?.strict_runtime_proof === true) {
-    return taskContract.task_kind === 'explain' && sliceMetadata !== undefined
-  }
   return retrievalGate.signals.generation_intent === 'runtime_generation'
     && retrievalGate.signals.target_domain_hint === 'backend_runtime'
     && taskContract.task_kind === 'explain'
@@ -2363,276 +2348,12 @@ interface ExecutionPathCandidate {
   edges: ExecutionFlowEdge[]
 }
 
-function runtimeProofCandidateFromGraph(
-  graph: KnowledgeGraph,
-  nodeId: string,
-): RuntimeProofCandidate {
-  const attributes = graph.nodeAttributes(nodeId)
-  return {
-    label: String(attributes.label ?? nodeId),
-    source_file: String(attributes.source_file ?? ''),
-    line_number: lineNumberFromSourceLocation(String(attributes.source_location ?? '')) ?? 0,
-    ...(typeof attributes.node_kind === 'string' ? { node_kind: attributes.node_kind } : {}),
-    ...(typeof attributes.framework_role === 'string' ? { framework_role: attributes.framework_role } : {}),
-  }
-}
-
-function runtimeProofCandidateFromExecutionStep(
-  step: Pick<ContextPackExecutionSliceStep, 'label' | 'source_file' | 'line_number' | 'node_kind' | 'framework_role'>,
-): RuntimeProofCandidate {
-  return {
-    label: step.label,
-    source_file: step.source_file,
-    line_number: step.line_number,
-    ...(step.node_kind ? { node_kind: step.node_kind } : {}),
-    ...(step.framework_role ? { framework_role: step.framework_role } : {}),
-  }
-}
-
-function augmentExecutionScopeForRuntimeProof(
-  graph: KnowledgeGraph,
-  orderedIds: string[],
-  idSet: Set<string>,
-  anchorIds: readonly string[],
-  runtimeProofProfile: RuntimeProofProfile,
-): void {
-  const addPath = (path: readonly string[]): void => {
-    for (const nodeId of path) {
-      if (graph.hasNode(nodeId) && !idSet.has(nodeId)) {
-        idSet.add(nodeId)
-        orderedIds.push(nodeId)
-      }
-    }
-  }
-
-  const findTargetedPath = (
-    obligationId: string,
-    sourceIdsOverride?: readonly string[],
-    maxDepth: number = 6,
-  ): string[] | undefined => {
-    const obligation = runtimeProofProfile.obligations.find((entry) => entry.id === obligationId)
-    if (!obligation) {
-      return undefined
-    }
-    const sourceIds = sourceIdsOverride !== undefined
-      ? [...sourceIdsOverride]
-      : orderedIds.length > 0
-        ? [...orderedIds]
-        : [...anchorIds]
-    const queue = sourceIds.map((nodeId) => ({ nodeId, path: [nodeId], depth: 0 }))
-    const bestDepth = new Map(sourceIds.map((nodeId) => [nodeId, 0]))
-    let bestPath: string[] | undefined
-    let bestDirectEvidence = 0
-    let bestScore = 0
-
-    while (queue.length > 0) {
-      const current = queue.shift()!
-      const candidate = runtimeProofCandidateFromGraph(graph, current.nodeId)
-      const directEvidence = runtimeProofProvidesDirectEvidence(candidate, obligation) ? 1 : 0
-      const matchedTerms = runtimeProofObligationTermMatchCount(candidate, obligation)
-      const matchScore = matchedTerms > 0 || directEvidence > 0
-        ? runtimeProofObligationMatchScore(candidate, obligation)
-        : 0
-      if (
-        directEvidence > bestDirectEvidence
-        || (
-          directEvidence === bestDirectEvidence
-          && (
-            matchScore > bestScore
-            || (matchScore === bestScore && matchScore > 0 && bestPath !== undefined && current.path.length < bestPath.length)
-          )
-        )
-      ) {
-        bestDirectEvidence = directEvidence
-        bestScore = matchScore
-        bestPath = current.path
-      }
-      if (current.depth >= maxDepth) {
-        continue
-      }
-
-      const neighbors = [
-        ...graph.predecessors(current.nodeId).map((nodeId) => ({ nodeId, relation: String(graph.edgeAttributes(nodeId, current.nodeId).relation ?? 'related_to') })),
-        ...graph.successors(current.nodeId).map((nodeId) => ({ nodeId, relation: String(graph.edgeAttributes(current.nodeId, nodeId).relation ?? 'related_to') })),
-      ]
-        .filter((neighbor) => executionSliceFlowRelation(neighbor.relation))
-        .sort((left, right) => {
-        const leftCandidate = runtimeProofCandidateFromGraph(graph, left.nodeId)
-        const rightCandidate = runtimeProofCandidateFromGraph(graph, right.nodeId)
-        const leftDirect = runtimeProofProvidesDirectEvidence(leftCandidate, obligation) ? 1 : 0
-        const rightDirect = runtimeProofProvidesDirectEvidence(rightCandidate, obligation) ? 1 : 0
-        const leftScore = runtimeProofObligationTermMatchCount(leftCandidate, obligation) > 0 || leftDirect > 0
-          ? runtimeProofObligationMatchScore(leftCandidate, obligation)
-          : 0
-        const rightScore = runtimeProofObligationTermMatchCount(rightCandidate, obligation) > 0 || rightDirect > 0
-          ? runtimeProofObligationMatchScore(rightCandidate, obligation)
-          : 0
-        return rightDirect - leftDirect
-          || rightScore - leftScore
-          || executionSliceEdgePriority(right.relation) - executionSliceEdgePriority(left.relation)
-      })
-
-      for (const neighbor of neighbors) {
-        const nextDepth = current.depth + 1
-        const previousBest = bestDepth.get(neighbor.nodeId)
-        if (previousBest !== undefined && previousBest <= nextDepth) {
-          continue
-        }
-        bestDepth.set(neighbor.nodeId, nextDepth)
-        queue.push({
-          nodeId: neighbor.nodeId,
-          path: [...current.path, neighbor.nodeId],
-          depth: nextDepth,
-        })
-      }
-    }
-
-    return bestDirectEvidence > 0 || bestScore > 0 ? bestPath : undefined
-  }
-
-  const findFallbackNeighborhood = (obligationId: string): string[] | undefined => {
-    const obligation = runtimeProofProfile.obligations.find((entry) => entry.id === obligationId)
-    if (!obligation) {
-      return undefined
-    }
-
-    let bestNodeId: string | undefined
-    let bestDirectEvidence = 0
-    let bestScore = 0
-    for (const [nodeId] of graph.nodeEntries()) {
-      const candidate = runtimeProofCandidateFromGraph(graph, nodeId)
-      if (fileLikeNodeLabel(candidate.label)) {
-        continue
-      }
-      const directEvidence = runtimeProofProvidesDirectEvidence(candidate, obligation) ? 1 : 0
-      const matchedTerms = runtimeProofObligationTermMatchCount(candidate, obligation)
-      const matchScore = matchedTerms > 0 || directEvidence > 0
-        ? runtimeProofObligationMatchScore(candidate, obligation)
-        : 0
-      if (matchScore <= 0) {
-        continue
-      }
-      if (directEvidence > bestDirectEvidence || (directEvidence === bestDirectEvidence && matchScore > bestScore)) {
-        bestDirectEvidence = directEvidence
-        bestScore = matchScore
-        bestNodeId = nodeId
-      }
-    }
-
-    if (!bestNodeId) {
-      return undefined
-    }
-
-    const neighborhood: string[] = []
-    const seen = new Set<string>()
-    const queue = [{ nodeId: bestNodeId, depth: 0 }]
-    while (queue.length > 0) {
-      const current = queue.shift()!
-      if (seen.has(current.nodeId)) {
-        continue
-      }
-      seen.add(current.nodeId)
-      neighborhood.push(current.nodeId)
-      if (current.depth >= 2) {
-        continue
-      }
-
-      const neighbors = [
-        ...graph.predecessors(current.nodeId).map((nodeId) => ({ nodeId, relation: String(graph.edgeAttributes(nodeId, current.nodeId).relation ?? 'related_to') })),
-        ...graph.successors(current.nodeId).map((nodeId) => ({ nodeId, relation: String(graph.edgeAttributes(current.nodeId, nodeId).relation ?? 'related_to') })),
-      ]
-        .filter((neighbor) => executionSliceFlowRelation(neighbor.relation))
-        .sort((left, right) => {
-          const leftCandidate = runtimeProofCandidateFromGraph(graph, left.nodeId)
-          const rightCandidate = runtimeProofCandidateFromGraph(graph, right.nodeId)
-          const leftDirect = runtimeProofProvidesDirectEvidence(leftCandidate, obligation) ? 1 : 0
-          const rightDirect = runtimeProofProvidesDirectEvidence(rightCandidate, obligation) ? 1 : 0
-          const leftScore = runtimeProofObligationTermMatchCount(leftCandidate, obligation) > 0 || leftDirect > 0
-            ? runtimeProofObligationMatchScore(leftCandidate, obligation)
-            : 0
-          const rightScore = runtimeProofObligationTermMatchCount(rightCandidate, obligation) > 0 || rightDirect > 0
-            ? runtimeProofObligationMatchScore(rightCandidate, obligation)
-            : 0
-          return rightDirect - leftDirect
-            || rightScore - leftScore
-            || executionSliceEdgePriority(right.relation) - executionSliceEdgePriority(left.relation)
-        })
-
-      for (const neighbor of neighbors) {
-        if (!seen.has(neighbor.nodeId)) {
-          queue.push({ nodeId: neighbor.nodeId, depth: current.depth + 1 })
-        }
-      }
-    }
-
-    return neighborhood.length > 0 ? neighborhood : undefined
-  }
-
-  for (const obligationId of buildRuntimeProofAssessment(
-    runtimeProofProfile,
-    orderedIds.map((nodeId) => runtimeProofCandidateFromGraph(graph, nodeId)),
-  )?.missing_obligations ?? []) {
-    const targetedPath = findTargetedPath(obligationId) ?? findFallbackNeighborhood(obligationId)
-    if (targetedPath) {
-      addPath(targetedPath)
-    }
-  }
-
-  for (const obligation of runtimeProofProfile.obligations.filter((entry) => entry.kind === 'terminal')) {
-    const anchorEvidencePath = findTargetedPath(obligation.id, anchorIds, 4)
-    if (anchorEvidencePath) {
-      addPath(anchorEvidencePath)
-    }
-  }
-
-  const entrypointObligations = runtimeProofProfile.obligations.filter((obligation) => obligation.kind === 'entrypoint')
-  if (entrypointObligations.length === 0) {
-    return
-  }
-
-  const queue = [...orderedIds]
-  const seen = new Set(queue)
-  while (queue.length > 0) {
-    const nodeId = queue.shift()!
-    for (const predecessorId of graph.predecessors(nodeId)) {
-      if (seen.has(predecessorId)) {
-        continue
-      }
-      const relation = String(graph.edgeAttributes(predecessorId, nodeId).relation ?? 'related_to')
-      if (!executionSliceFlowRelation(relation)) {
-        continue
-      }
-      seen.add(predecessorId)
-      const predecessorStep = runtimeProofCandidateFromGraph(graph, predecessorId)
-      const entrypointScore = Math.max(0, ...entrypointObligations.map((obligation) =>
-        runtimeProofObligationMatchScore(predecessorStep, obligation)
-      ))
-      if (
-        entrypointScore > 0
-        || controllerLikeExecutionStep({
-          label: predecessorStep.label,
-          source_file: predecessorStep.source_file,
-          ...(predecessorStep.node_kind ? { node_kind: predecessorStep.node_kind } : {}),
-          ...(predecessorStep.framework_role ? { framework_role: predecessorStep.framework_role } : {}),
-        })
-      ) {
-        if (!idSet.has(predecessorId)) {
-          idSet.add(predecessorId)
-          orderedIds.unshift(predecessorId)
-        }
-        queue.push(predecessorId)
-      }
-    }
-  }
-}
-
 function collectExecutionSliceScope(
   graph: KnowledgeGraph,
   sliceMetadata: ContextPackSliceMetadata,
   anchorIds: readonly string[],
   question: string,
   resolveNodeId: (nodeId: string | undefined, label: string) => string | undefined,
-  runtimeProofProfile?: RuntimeProofProfile,
 ): { orderedIds: string[]; idSet: ReadonlySet<string> } {
   const orderedIds: string[] = []
   const idSet = new Set<string>()
@@ -2691,10 +2412,6 @@ function collectExecutionSliceScope(
     }
   }
 
-  if (runtimeProofProfile?.strict_runtime_proof === true) {
-    augmentExecutionScopeForRuntimeProof(graph, orderedIds, idSet, anchorIds, runtimeProofProfile)
-  }
-
   if (addedSelectedFlowPath) {
     return { orderedIds, idSet }
   }
@@ -2726,10 +2443,6 @@ function collectExecutionSliceScope(
         enqueueNeighbor(successorId, depth + 1)
       }
     }
-  }
-
-  if (runtimeProofProfile?.strict_runtime_proof === true) {
-    augmentExecutionScopeForRuntimeProof(graph, orderedIds, idSet, anchorIds, runtimeProofProfile)
   }
 
   return { orderedIds, idSet }
@@ -3240,7 +2953,6 @@ function executionPathScore(
   path: ExecutionPathCandidate,
   nodeById: ReadonlyMap<string, ContextPackExecutionSliceStep>,
   question: string,
-  runtimeProofProfile?: RuntimeProofProfile,
 ): number {
   const steps = path.nodeIds
     .map((nodeId) => nodeById.get(nodeId))
@@ -3286,80 +2998,8 @@ function executionPathScore(
     score -= 40
   }
 
-  if (runtimeProofProfile) {
-    const runtimeProof = buildRuntimeProofAssessment(
-      runtimeProofProfile,
-      steps.map((step) => runtimeProofCandidateFromExecutionStep(step)),
-    )
-    if (runtimeProof) {
-      const coveredCount = runtimeProof.obligations.length - runtimeProof.missing_obligations.length
-      score += coveredCount * 140
-      score -= runtimeProof.missing_obligations.length * 220
-      if (runtimeProof.missing_obligations.some((obligationId) =>
-        runtimeProofProfile.obligations.find((obligation) => obligation.id === obligationId)?.kind === 'terminal'
-      )) {
-        score -= 120
-      }
-    }
-    const firstStep = steps[0]
-    if (firstStep) {
-      const entrypointBonus = Math.max(0, ...runtimeProofProfile.obligations
-        .filter((obligation) => obligation.kind === 'entrypoint')
-        .map((obligation) => runtimeProofObligationMatchScore(runtimeProofCandidateFromExecutionStep(firstStep), obligation)))
-      score += entrypointBonus * 20
-      if (controllerLikeExecutionStep(firstStep)) {
-        score += 35
-      }
-    }
-    if (lastStep) {
-      const terminalBonus = Math.max(0, ...runtimeProofProfile.obligations
-        .filter((obligation) => obligation.kind === 'terminal')
-        .map((obligation) => runtimeProofObligationMatchScore(runtimeProofCandidateFromExecutionStep(lastStep), obligation)))
-      score += terminalBonus * 18
-      if (!serviceLikeExecutionStep(lastStep)) {
-        score += 15
-      }
-    }
-  }
-
   return score + path.edges.length
 }
-
-function executionPathRuntimeProofSummary(
-  path: ExecutionPathCandidate,
-  nodeById: ReadonlyMap<string, ContextPackExecutionSliceStep>,
-  runtimeProofProfile: RuntimeProofProfile | undefined,
-): {
-  missingCount: number
-  missingTerminalCount: number
-  coveredCount: number
-} | undefined {
-  if (!runtimeProofProfile) {
-    return undefined
-  }
-
-  const steps = path.nodeIds
-    .map((nodeId) => nodeById.get(nodeId))
-    .filter((step): step is ContextPackExecutionSliceStep => step !== undefined)
-  const runtimeProof = buildRuntimeProofAssessment(
-    runtimeProofProfile,
-    steps.map((step) => runtimeProofCandidateFromExecutionStep(step)),
-  )
-  if (!runtimeProof) {
-    return undefined
-  }
-
-  const obligationsById = new Map(runtimeProofProfile.obligations.map((obligation) => [obligation.id, obligation] as const))
-  return {
-    missingCount: runtimeProof.missing_obligations.length,
-    missingTerminalCount: runtimeProof.missing_obligations
-      .filter((obligationId) => obligationsById.get(obligationId)?.kind === 'terminal')
-      .length,
-    coveredCount: runtimeProof.obligations.length - runtimeProof.missing_obligations.length,
-  }
-}
-
-const STRICT_RUNTIME_PROOF_START_CANDIDATE_LIMIT = 64
 
 function primaryPathBoundaries(
   path: ExecutionPathCandidate,
@@ -3384,13 +3024,11 @@ function phaseCoverageForPath(
   question: string,
   scopeSteps: readonly ContextPackExecutionSliceStep[] = steps,
   tracedSteps: readonly ContextPackExecutionSliceStep[] = steps,
-  runtimeProofProfile?: RuntimeProofProfile,
 ): { expected: ExecutionPhase[]; observed: ExecutionPhase[]; missing: ExecutionPhase[] } {
   const phaseOrder = executionPhaseOrder(question)
   const expandedTaxonomy = promptUsesExpandedExecutionTaxonomy(question)
-  const proofAwareObservedTracing = expandedTaxonomy || runtimeProofProfile?.strict_runtime_proof === true
   const expectedSourceSteps = expandedTaxonomy ? scopeSteps : steps
-  const observedSourceSteps = proofAwareObservedTracing ? tracedSteps : steps
+  const observedSourceSteps = expandedTaxonomy ? tracedSteps : steps
   const expected = expectedExecutionPhases(question, expectedSourceSteps)
   const observed = new Set<ExecutionPhase>()
   for (const step of observedSourceSteps) {
@@ -3446,7 +3084,6 @@ function collectExecutionBranches(
   primaryPath: ExecutionPathCandidate,
   nodeById: ReadonlyMap<string, ContextPackExecutionSliceStep>,
   question: string,
-  runtimeProofProfile?: RuntimeProofProfile,
 ): {
   sideEffects: ContextPackExecutionSliceBranch[]
   terminalBoundaries: ContextPackExecutionSliceBranch[]
@@ -3461,49 +3098,20 @@ function collectExecutionBranches(
   const omittedBranches: ContextPackExecutionSliceOmittedBranch[] = []
   const omittedEvidenceSteps: ContextPackExecutionSliceStep[] = []
   const branchScoreCache = new Map<ExecutionPathCandidate, number>()
-  const branchProofCache = new Map<ExecutionPathCandidate, ReturnType<typeof executionPathRuntimeProofSummary>>()
   const branchScoreFor = (path: ExecutionPathCandidate): number => {
     const cached = branchScoreCache.get(path)
     if (cached !== undefined) {
       return cached
     }
-    const score = executionPathScore(path, nodeById, question, runtimeProofProfile)
+    const score = executionPathScore(path, nodeById, question)
     branchScoreCache.set(path, score)
     return score
   }
-  const branchProofFor = (path: ExecutionPathCandidate): ReturnType<typeof executionPathRuntimeProofSummary> => {
-    const cached = branchProofCache.get(path)
-    if (cached !== undefined) {
-      return cached
-    }
-    const proof = executionPathRuntimeProofSummary(path, nodeById, runtimeProofProfile)
-    branchProofCache.set(path, proof)
-    return proof
-  }
   interface RankedExecutionBranch {
     edge: ExecutionFlowEdge
-    path: ExecutionPathCandidate
     steps: ContextPackExecutionSliceStep[]
     kind: 'side_effect' | 'terminal' | 'omitted'
     reason?: string
-    score: number
-    proof?: ReturnType<typeof executionPathRuntimeProofSummary>
-    stableKey: string
-  }
-  const compareRankedBranch = (
-    left: RankedExecutionBranch,
-    right: RankedExecutionBranch,
-  ): number => {
-    if (runtimeProofProfile?.strict_runtime_proof === true && left.proof && right.proof) {
-      const proofOrder = left.proof.missingCount - right.proof.missingCount
-        || left.proof.missingTerminalCount - right.proof.missingTerminalCount
-        || right.proof.coveredCount - left.proof.coveredCount
-      if (proofOrder !== 0) {
-        return proofOrder
-      }
-    }
-    return right.score - left.score
-      || compareStableText(left.stableKey, right.stableKey)
   }
   const rankedBranches: RankedExecutionBranch[] = []
 
@@ -3517,18 +3125,6 @@ function collectExecutionBranches(
 
       const branchCandidates = enumerateExecutionPaths(adjacency, edge.toId, primaryNodeIds, 4)
       const branchPath = branchCandidates.sort((left, right) => {
-        if (runtimeProofProfile?.strict_runtime_proof === true) {
-          const leftProof = branchProofFor(left)
-          const rightProof = branchProofFor(right)
-          if (leftProof && rightProof) {
-            return leftProof.missingCount - rightProof.missingCount
-              || leftProof.missingTerminalCount - rightProof.missingTerminalCount
-              || rightProof.coveredCount - leftProof.coveredCount
-              || left.nodeIds.length - right.nodeIds.length
-              || branchScoreFor(right) - branchScoreFor(left)
-              || compareStableText(left.nodeIds.join('>'), right.nodeIds.join('>'))
-          }
-        }
         return branchScoreFor(right) - branchScoreFor(left)
           || compareStableText(left.nodeIds.join('>'), right.nodeIds.join('>'))
       })[0] ?? { nodeIds: [edge.toId], edges: [] }
@@ -3540,26 +3136,17 @@ function collectExecutionBranches(
       const branchReason = branchBoundaryReason(branchSteps, branchKind, question)
       rankedBranches.push({
         edge,
-        path: branchPath,
         steps: branchSteps,
         kind: branchKind,
         ...(branchReason ? { reason: branchReason } : {}),
-        score: branchScoreFor(branchPath),
-        ...(runtimeProofProfile?.strict_runtime_proof === true ? { proof: branchProofFor(branchPath) } : {}),
-        stableKey: `${edge.fromId}:${edge.relation}:${edge.toId}`,
       })
     }
   }
 
-  const proofAwareBranchOrdering = runtimeProofProfile?.strict_runtime_proof === true
   const sideEffectBranches = rankedBranches
     .filter((branch) => branch.kind === 'side_effect')
   const terminalBranches = rankedBranches
     .filter((branch) => branch.kind === 'terminal')
-  if (proofAwareBranchOrdering) {
-    sideEffectBranches.sort(compareRankedBranch)
-    terminalBranches.sort(compareRankedBranch)
-  }
 
   for (const branch of sideEffectBranches.slice(0, 3)) {
     sideEffects.push({
@@ -3579,10 +3166,6 @@ function collectExecutionBranches(
     ...terminalBranches.slice(3),
     ...rankedBranches.filter((branch) => branch.kind === 'omitted'),
   ]
-  if (proofAwareBranchOrdering) {
-    omittedCandidates.sort(compareRankedBranch)
-  }
-
   for (const branch of omittedCandidates.slice(0, 6)) {
     omittedEvidenceSteps.push(...branch.steps)
     const from = nodeById.get(branch.edge.fromId)?.label
@@ -3598,452 +3181,6 @@ function collectExecutionBranches(
   return { sideEffects, terminalBoundaries, omittedBranches, omittedEvidenceSteps }
 }
 
-function recoverMissingRuntimeProofBranches(
-  graph: KnowledgeGraph,
-  adjacency: ReadonlyMap<string, ExecutionFlowEdge[]>,
-  primaryPath: ExecutionPathCandidate,
-  orderedIds: readonly string[],
-  idSet: ReadonlySet<string>,
-  nodeById: ReadonlyMap<string, ContextPackExecutionSliceStep>,
-  question: string,
-  runtimeProofProfile: RuntimeProofProfile | undefined,
-  existingSideEffects: readonly ContextPackExecutionSliceBranch[],
-  existingTerminalBoundaries: readonly ContextPackExecutionSliceBranch[],
-  rootPath?: string,
-): {
-  sideEffects: ContextPackExecutionSliceBranch[]
-  terminalBoundaries: ContextPackExecutionSliceBranch[]
-} {
-  if (runtimeProofProfile?.strict_runtime_proof !== true) {
-    return { sideEffects: [], terminalBoundaries: [] }
-  }
-
-  const runtimeProofCandidates = (
-    steps: readonly ContextPackExecutionSliceStep[],
-    sideEffects: readonly ContextPackExecutionSliceBranch[],
-    terminalBoundaries: readonly ContextPackExecutionSliceBranch[],
-  ): RuntimeProofCandidate[] => [
-    ...steps.map((step) => runtimeProofCandidateFromExecutionStep(step)),
-    ...sideEffects.flatMap((branch) => branch.steps.map((step) => runtimeProofCandidateFromExecutionStep(step))),
-    ...terminalBoundaries.flatMap((branch) => branch.steps.map((step) => runtimeProofCandidateFromExecutionStep(step))),
-  ]
-
-  const branchSignature = (branch: readonly ContextPackExecutionSliceStep[]): string =>
-    branch.map((step) => step.node_id ?? `${step.source_file}:${step.line_number}:${step.label}`).join('>')
-
-  const selectedSideEffects: ContextPackExecutionSliceBranch[] = []
-  const selectedTerminalBoundaries: ContextPackExecutionSliceBranch[] = []
-  const visibleBranchSignatures = new Set<string>([
-    ...existingSideEffects.map((branch) => branchSignature(branch.steps)),
-    ...existingTerminalBoundaries.map((branch) => branchSignature(branch.steps)),
-  ])
-  const visibleNodeIds = new Set<string>([
-    ...primaryPath.nodeIds,
-    ...existingSideEffects.flatMap((branch) => branch.steps.map((step) => step.node_id).filter((nodeId): nodeId is string => typeof nodeId === 'string')),
-    ...existingTerminalBoundaries.flatMap((branch) => branch.steps.map((step) => step.node_id).filter((nodeId): nodeId is string => typeof nodeId === 'string')),
-  ])
-
-  const currentSteps = primaryPath.nodeIds
-    .map((nodeId) => nodeById.get(nodeId))
-    .filter((step): step is ContextPackExecutionSliceStep => step !== undefined)
-  const primaryBoundaries = primaryPathBoundaries(primaryPath, nodeById)
-
-  const recoveryBranchesFor = (
-    sideEffects: readonly ContextPackExecutionSliceBranch[],
-    terminalBoundaries: readonly ContextPackExecutionSliceBranch[],
-  ) => ({
-    sideEffects: [...sideEffects, ...selectedSideEffects],
-    terminalBoundaries: [...terminalBoundaries, ...selectedTerminalBoundaries],
-  })
-
-  const totalTerminalObligations = runtimeProofProfile.obligations.filter((obligation) => obligation.kind === 'terminal').length
-  const obligationsById = new Map(runtimeProofProfile.obligations.map((obligation) => [obligation.id, obligation] as const))
-  const orderedIndex = new Map(orderedIds.map((nodeId, index) => [nodeId, index] as const))
-  const phaseRelevantObligations = (phase: ExecutionPhase): RuntimeProofProfileObligation[] => {
-    if (phase === 'persistence') {
-      return runtimeProofProfile.obligations.filter((obligation) => obligation.kind === 'terminal')
-    }
-    if (phase === 'controller') {
-      return runtimeProofProfile.obligations.filter((obligation) => obligation.kind === 'entrypoint')
-    }
-    return runtimeProofProfile.obligations.filter((obligation) => obligation.kind !== 'terminal')
-  }
-
-  for (const missingObligationId of buildRuntimeProofAssessment(
-    runtimeProofProfile,
-    runtimeProofCandidates(currentSteps, existingSideEffects, existingTerminalBoundaries),
-  )?.missing_obligations ?? []) {
-    const obligation = obligationsById.get(missingObligationId)
-    if (!obligation) {
-      continue
-    }
-
-    const currentBranches = recoveryBranchesFor(existingSideEffects, existingTerminalBoundaries)
-    const currentAssessment = buildRuntimeProofAssessment(
-      runtimeProofProfile,
-      runtimeProofCandidates(currentSteps, currentBranches.sideEffects, currentBranches.terminalBoundaries),
-    )
-    const currentMissingSet = new Set(currentAssessment?.missing_obligations ?? [])
-    const currentTracedSteps = [
-      ...currentSteps,
-      ...currentBranches.sideEffects.flatMap((branch) => branch.steps),
-      ...currentBranches.terminalBoundaries.flatMap((branch) => branch.steps),
-    ]
-    const currentPhaseCoverage = phaseCoverageForPath(
-      currentSteps,
-      primaryBoundaries,
-      question,
-      currentSteps,
-      currentTracedSteps,
-      runtimeProofProfile,
-    )
-    const currentMissingPhaseSet = new Set(currentPhaseCoverage.missing)
-
-    const candidateSeedIds = [
-      ...orderedIds,
-      ...[...graph.nodeEntries()]
-        .map(([nodeId]) => nodeId)
-        .filter((nodeId) => !idSet.has(nodeId))
-        .filter((nodeId) => {
-          const candidate = runtimeProofCandidateFromGraph(graph, nodeId)
-          return runtimeProofObligationTermMatchCount(candidate, obligation) > 0
-            || runtimeProofProvidesDirectEvidence(candidate, obligation)
-        }),
-    ]
-    const rankedCandidates = candidateSeedIds
-      .filter((nodeId, index, values) => !visibleNodeIds.has(nodeId) && values.indexOf(nodeId) === index)
-      .map((nodeId) => {
-        const step = nodeById.get(nodeId) ?? (graph.hasNode(nodeId) ? executionSliceStepFromGraph(graph, nodeId, rootPath) : undefined)
-        if (!step) {
-          return undefined
-        }
-        const directCandidate = runtimeProofCandidateFromExecutionStep(step)
-        const directTermMatches = runtimeProofObligationTermMatchCount(directCandidate, obligation)
-        const directEvidence = runtimeProofProvidesDirectEvidence(directCandidate, obligation)
-        const directScore = directTermMatches > 0 || directEvidence
-          ? runtimeProofObligationMatchScore(directCandidate, obligation)
-          : 0
-        if (directScore <= 0 && !directEvidence) {
-          return undefined
-        }
-
-        const candidatePaths = idSet.has(nodeId)
-          ? enumerateExecutionPaths(adjacency, nodeId, visibleNodeIds, 4)
-          : []
-        const fallbackPath: ExecutionPathCandidate = {
-          nodeIds: idSet.has(nodeId) ? walkExecutionSlice(graph, nodeId, idSet, nodeById, question) : [nodeId],
-          edges: [],
-        }
-        const recoveryPathCandidates = candidatePaths.length > 0 ? candidatePaths : [fallbackPath]
-        const bestPath = recoveryPathCandidates
-          .map((path) => {
-            const branchSteps = path.nodeIds
-              .map((branchNodeId) => nodeById.get(branchNodeId) ?? executionSliceStepFromGraph(graph, branchNodeId, rootPath))
-              .filter((branchStep): branchStep is ContextPackExecutionSliceStep => branchStep !== undefined)
-              .slice(0, 3)
-            if (branchSteps.length === 0) {
-              return undefined
-            }
-            const branchCandidates = branchSteps.map((branchStep) => runtimeProofCandidateFromExecutionStep(branchStep))
-            const branchAssessment = buildRuntimeProofAssessment(
-              runtimeProofProfile,
-              [
-                ...runtimeProofCandidates(currentSteps, currentBranches.sideEffects, currentBranches.terminalBoundaries),
-                ...branchCandidates,
-              ],
-            )
-            const missingObligations = branchAssessment?.missing_obligations ?? runtimeProofProfile.obligations.map((entry) => entry.id)
-            const missingTerminalCount = missingObligations
-              .filter((obligationId) => obligationsById.get(obligationId)?.kind === 'terminal')
-              .length
-            const coveredCount = (branchAssessment?.obligations.length ?? 0) - missingObligations.length
-            const nonTerminalCoveredCount = (branchAssessment?.obligations ?? [])
-              .filter((entry) => entry.evidence.length > 0 && obligationsById.get(entry.id)?.kind !== 'terminal')
-              .length
-            const improvesMissingObligation = currentMissingSet.has(missingObligationId) && !missingObligations.includes(missingObligationId)
-            const branchDirectEvidence = branchCandidates.some((candidate) => runtimeProofProvidesDirectEvidence(candidate, obligation))
-            const terminalPriority = obligation.kind === 'terminal'
-              ? Math.max(...branchCandidates.map((candidate) => runtimeProofObligationMatchScore(candidate, obligation)))
-              : 0
-            const combinedPhaseCoverage = phaseCoverageForPath(
-              currentSteps,
-              primaryBoundaries,
-              question,
-              currentSteps,
-              [...currentTracedSteps, ...branchSteps],
-              runtimeProofProfile,
-            )
-            const missingPhaseCount = combinedPhaseCoverage.missing.length
-            const addedMissingPhaseCount = [...currentMissingPhaseSet]
-              .filter((phase) => combinedPhaseCoverage.observed.includes(phase))
-              .length
-            return {
-              path,
-              branchSteps,
-              missingCount: missingObligations.length,
-              missingTerminalCount,
-              coveredCount,
-              nonTerminalCoveredCount,
-              improvesMissingObligation,
-              branchDirectEvidence,
-              directScore,
-              terminalPriority,
-              missingPhaseCount,
-              addedMissingPhaseCount,
-            }
-          })
-          .filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== undefined)
-          .sort((left, right) =>
-            Number(right.improvesMissingObligation) - Number(left.improvesMissingObligation)
-            || left.missingCount - right.missingCount
-            || left.missingTerminalCount - right.missingTerminalCount
-            || left.missingPhaseCount - right.missingPhaseCount
-            || right.addedMissingPhaseCount - left.addedMissingPhaseCount
-            || right.nonTerminalCoveredCount - left.nonTerminalCoveredCount
-            || right.coveredCount - left.coveredCount
-            || Number(right.branchDirectEvidence) - Number(left.branchDirectEvidence)
-            || right.directScore - left.directScore
-            || right.terminalPriority - left.terminalPriority
-            || left.branchSteps.length - right.branchSteps.length
-            || executionPathScore(right.path, nodeById, question, runtimeProofProfile) - executionPathScore(left.path, nodeById, question, runtimeProofProfile)
-            || compareStableText(left.branchSteps.map((branchStep) => branchStep.label).join('>'), right.branchSteps.map((branchStep) => branchStep.label).join('>'))
-          )[0]
-        if (!bestPath) {
-          return undefined
-        }
-        const { branchSteps } = bestPath
-        const signature = branchSignature(branchSteps)
-        if (visibleBranchSignatures.has(signature)) {
-          return undefined
-        }
-        return {
-          branchSteps,
-          signature,
-          candidateIndex: orderedIndex.get(nodeId) ?? Number.MAX_SAFE_INTEGER,
-          missingCount: bestPath.missingCount,
-          missingTerminalCount: bestPath.missingTerminalCount,
-          coveredCount: bestPath.coveredCount,
-          nonTerminalCoveredCount: bestPath.nonTerminalCoveredCount,
-          improvesMissingObligation: bestPath.improvesMissingObligation,
-          branchDirectEvidence: bestPath.branchDirectEvidence,
-          directScore,
-          terminalPriority: bestPath.terminalPriority,
-          missingPhaseCount: bestPath.missingPhaseCount,
-          addedMissingPhaseCount: bestPath.addedMissingPhaseCount,
-        }
-      })
-      .filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== undefined)
-      .sort((left, right) =>
-        Number(right.improvesMissingObligation) - Number(left.improvesMissingObligation)
-        || left.missingCount - right.missingCount
-        || left.missingTerminalCount - right.missingTerminalCount
-        || left.missingPhaseCount - right.missingPhaseCount
-        || right.addedMissingPhaseCount - left.addedMissingPhaseCount
-        || right.nonTerminalCoveredCount - left.nonTerminalCoveredCount
-        || right.coveredCount - left.coveredCount
-        || Number(right.branchDirectEvidence) - Number(left.branchDirectEvidence)
-        || right.directScore - left.directScore
-        || right.terminalPriority - left.terminalPriority
-        || left.branchSteps.length - right.branchSteps.length
-        || left.candidateIndex - right.candidateIndex
-        || compareStableText(left.signature, right.signature)
-      )
-
-    const bestCandidate = rankedCandidates[0]
-    if (!bestCandidate || !bestCandidate.improvesMissingObligation) {
-      continue
-    }
-
-    visibleBranchSignatures.add(bestCandidate.signature)
-    for (const step of bestCandidate.branchSteps) {
-      if (step.node_id) {
-        visibleNodeIds.add(step.node_id)
-      }
-    }
-    const branch = { steps: bestCandidate.branchSteps }
-    if (obligation.kind === 'terminal' && terminalBoundaryExecutionStep(bestCandidate.branchSteps.at(-1) ?? bestCandidate.branchSteps[0]!)) {
-      selectedTerminalBoundaries.push(branch)
-      continue
-    }
-    if (obligation.kind === 'terminal' && bestCandidate.missingTerminalCount < totalTerminalObligations) {
-      selectedSideEffects.push(branch)
-      continue
-    }
-    selectedSideEffects.push(branch)
-  }
-
-  while (true) {
-    const currentBranches = recoveryBranchesFor(existingSideEffects, existingTerminalBoundaries)
-    const currentTracedSteps = [
-      ...currentSteps,
-      ...currentBranches.sideEffects.flatMap((branch) => branch.steps),
-      ...currentBranches.terminalBoundaries.flatMap((branch) => branch.steps),
-    ]
-    const currentAssessment = buildRuntimeProofAssessment(
-      runtimeProofProfile,
-      runtimeProofCandidates(currentSteps, currentBranches.sideEffects, currentBranches.terminalBoundaries),
-    )
-    const currentPhaseCoverage = phaseCoverageForPath(
-      currentSteps,
-      primaryBoundaries,
-      question,
-      currentSteps,
-      currentTracedSteps,
-      runtimeProofProfile,
-    )
-    const missingPhase = currentPhaseCoverage.missing[0]
-    if (!missingPhase) {
-      break
-    }
-
-    const relevantObligations = phaseRelevantObligations(missingPhase)
-    const candidateSeedIds = [
-      ...orderedIds,
-      ...[...graph.nodeEntries()]
-        .map(([nodeId]) => nodeId)
-        .filter((nodeId) => !idSet.has(nodeId)),
-    ]
-    const rankedCandidates = candidateSeedIds
-      .filter((nodeId, index, values) => !visibleNodeIds.has(nodeId) && values.indexOf(nodeId) === index)
-      .map((nodeId) => {
-        const step = nodeById.get(nodeId) ?? (graph.hasNode(nodeId) ? executionSliceStepFromGraph(graph, nodeId, rootPath) : undefined)
-        if (!step) {
-          return undefined
-        }
-
-        const candidatePaths = idSet.has(nodeId)
-          ? enumerateExecutionPaths(adjacency, nodeId, visibleNodeIds, 4)
-          : []
-        const fallbackPath: ExecutionPathCandidate = {
-          nodeIds: idSet.has(nodeId) ? walkExecutionSlice(graph, nodeId, idSet, nodeById, question) : [nodeId],
-          edges: [],
-        }
-        const bestPath = (candidatePaths.length > 0 ? candidatePaths : [fallbackPath])
-          .map((path) => {
-            const branchSteps = path.nodeIds
-              .map((branchNodeId) => nodeById.get(branchNodeId) ?? executionSliceStepFromGraph(graph, branchNodeId, rootPath))
-              .filter((branchStep): branchStep is ContextPackExecutionSliceStep => branchStep !== undefined)
-              .slice(0, 3)
-            if (branchSteps.length === 0) {
-              return undefined
-            }
-            const branchPhaseSet = new Set(branchSteps.flatMap((branchStep) => [...executionPhasesForStep(branchStep)]))
-            if (!branchPhaseSet.has(missingPhase)) {
-              return undefined
-            }
-
-            const branchCandidates = branchSteps.map((branchStep) => runtimeProofCandidateFromExecutionStep(branchStep))
-            const branchAssessment = buildRuntimeProofAssessment(
-              runtimeProofProfile,
-              [
-                ...runtimeProofCandidates(currentSteps, currentBranches.sideEffects, currentBranches.terminalBoundaries),
-                ...branchCandidates,
-              ],
-            )
-            const missingObligations = branchAssessment?.missing_obligations ?? runtimeProofProfile.obligations.map((entry) => entry.id)
-            const missingTerminalCount = missingObligations
-              .filter((obligationId) => obligationsById.get(obligationId)?.kind === 'terminal')
-              .length
-            const combinedPhaseCoverage = phaseCoverageForPath(
-              currentSteps,
-              primaryBoundaries,
-              question,
-              currentSteps,
-              [...currentTracedSteps, ...branchSteps],
-              runtimeProofProfile,
-            )
-            const addedMissingPhase = combinedPhaseCoverage.observed.includes(missingPhase)
-            const relevanceScore = relevantObligations.length > 0
-              ? Math.max(0, ...branchCandidates.flatMap((candidate) => relevantObligations.map((obligation) =>
-                  runtimeProofObligationMatchScore(candidate, obligation)
-                )))
-              : 0
-            return {
-              path,
-              branchSteps,
-              missingCount: missingObligations.length,
-              missingTerminalCount,
-              missingPhaseCount: combinedPhaseCoverage.missing.length,
-              addedMissingPhase,
-              relevanceScore,
-            }
-          })
-          .filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== undefined)
-          .sort((left, right) =>
-            Number(right.addedMissingPhase) - Number(left.addedMissingPhase)
-            || left.missingPhaseCount - right.missingPhaseCount
-            || left.missingCount - right.missingCount
-            || left.missingTerminalCount - right.missingTerminalCount
-            || right.relevanceScore - left.relevanceScore
-            || left.branchSteps.length - right.branchSteps.length
-            || executionPathScore(right.path, nodeById, question, runtimeProofProfile) - executionPathScore(left.path, nodeById, question, runtimeProofProfile)
-            || compareStableText(left.branchSteps.map((branchStep) => branchStep.label).join('>'), right.branchSteps.map((branchStep) => branchStep.label).join('>'))
-          )[0]
-        if (!bestPath || !bestPath.addedMissingPhase) {
-          return undefined
-        }
-
-        const signature = branchSignature(bestPath.branchSteps)
-        if (visibleBranchSignatures.has(signature)) {
-          return undefined
-        }
-        return {
-          signature,
-          candidateIndex: orderedIndex.get(nodeId) ?? candidateSeedIds.indexOf(nodeId),
-          branchSteps: bestPath.branchSteps,
-          missingCount: bestPath.missingCount,
-          missingTerminalCount: bestPath.missingTerminalCount,
-          missingPhaseCount: bestPath.missingPhaseCount,
-          relevanceScore: bestPath.relevanceScore,
-        }
-      })
-      .filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== undefined)
-      .sort((left, right) =>
-        left.missingPhaseCount - right.missingPhaseCount
-        || left.missingCount - right.missingCount
-        || left.missingTerminalCount - right.missingTerminalCount
-        || right.relevanceScore - left.relevanceScore
-        || left.branchSteps.length - right.branchSteps.length
-        || left.candidateIndex - right.candidateIndex
-        || compareStableText(left.signature, right.signature)
-      )
-
-    const bestCandidate = rankedCandidates[0]
-    if (!bestCandidate) {
-      break
-    }
-
-    visibleBranchSignatures.add(bestCandidate.signature)
-    for (const step of bestCandidate.branchSteps) {
-      if (step.node_id) {
-        visibleNodeIds.add(step.node_id)
-      }
-    }
-    const branch = { steps: bestCandidate.branchSteps }
-    selectedSideEffects.push(branch)
-
-    const nextBranches = recoveryBranchesFor(existingSideEffects, existingTerminalBoundaries)
-    const nextPhaseCoverage = phaseCoverageForPath(
-      currentSteps,
-      primaryBoundaries,
-      question,
-      currentSteps,
-      [
-        ...currentSteps,
-        ...nextBranches.sideEffects.flatMap((entry) => entry.steps),
-        ...nextBranches.terminalBoundaries.flatMap((entry) => entry.steps),
-      ],
-      runtimeProofProfile,
-    )
-    if (!nextPhaseCoverage.missing.includes(missingPhase)) {
-      continue
-    }
-    break
-  }
-
-  return { sideEffects: selectedSideEffects, terminalBoundaries: selectedTerminalBoundaries }
-}
-
 function pickExecutionSliceStart(
   adjacency: ReadonlyMap<string, readonly ExecutionFlowEdge[]>,
   anchorIds: readonly string[],
@@ -4051,7 +3188,6 @@ function pickExecutionSliceStart(
   idSet: ReadonlySet<string>,
   nodeById: ReadonlyMap<string, ContextPackExecutionSliceStep>,
   question: string,
-  runtimeProofProfile?: RuntimeProofProfile,
 ): string | undefined {
   const incomingEdgeCounts = new Map<string, number>()
   for (const edges of adjacency.values()) {
@@ -4061,141 +3197,6 @@ function pickExecutionSliceStart(
       }
       incomingEdgeCounts.set(edge.toId, (incomingEdgeCounts.get(edge.toId) ?? 0) + 1)
     }
-  }
-  if (runtimeProofProfile?.strict_runtime_proof === true) {
-    const anchoredIds = new Set(anchorIds)
-    const obligationsById = new Map(runtimeProofProfile.obligations.map((obligation) => [obligation.id, obligation] as const))
-    const entrypointObligations = runtimeProofProfile.obligations.filter((obligation) => obligation.kind === 'entrypoint')
-    const scopeAssessment = buildRuntimeProofAssessment(
-      runtimeProofProfile,
-      orderedIds
-        .map((candidateId) => nodeById.get(candidateId))
-        .filter((step): step is ContextPackExecutionSliceStep => step !== undefined)
-        .map((step) => runtimeProofCandidateFromExecutionStep(step)),
-    )
-    const scopeMissingCount = scopeAssessment?.missing_obligations.length ?? runtimeProofProfile.obligations.length
-    const scopeMissingTerminalCount = scopeAssessment?.missing_obligations
-      .filter((obligationId) => obligationsById.get(obligationId)?.kind === 'terminal')
-      .length ?? runtimeProofProfile.obligations.filter((obligation) => obligation.kind === 'terminal').length
-    const quickStartScore = (candidateId: string): number => {
-    const step = nodeById.get(candidateId)
-    if (!step) {
-      return anchoredIds.has(candidateId) ? 100 : 0
-    }
-    const candidate = runtimeProofCandidateFromExecutionStep(step)
-    const entrypointScore = entrypointObligations.length > 0
-      ? Math.max(0, ...entrypointObligations.map((obligation) => runtimeProofObligationMatchScore(candidate, obligation)))
-      : 0
-    return (anchoredIds.has(candidateId) ? 200 : 0)
-      + (entrypointScore * 40)
-      + (controllerLikeExecutionStep(step) ? 30 : 0)
-      + executionSliceStepPriority(step, question)
-      - (lowValueExecutionStepForQuestion(step, question) ? 20 : 0)
-      - (terminalBoundaryExecutionStep(step) ? 10 : 0)
-    }
-    const runtimeProofStartSummaryCache = new Map<string, {
-    missingCount: number
-    missingTerminalCount: number
-    coveredCount: number
-    nonTerminalCoveredCount: number
-    supplementedMissingCount: number
-    supplementedMissingTerminalCount: number
-    entrypointEvidence: boolean
-    entrypointScore: number
-    }>()
-    const runtimeProofStartSummary = (candidateId: string): {
-    missingCount: number
-    missingTerminalCount: number
-    coveredCount: number
-    nonTerminalCoveredCount: number
-    supplementedMissingCount: number
-    supplementedMissingTerminalCount: number
-    entrypointEvidence: boolean
-    entrypointScore: number
-    } => {
-    const cached = runtimeProofStartSummaryCache.get(candidateId)
-    if (cached) {
-      return cached
-    }
-    const queue = [candidateId]
-    const seen = new Set<string>()
-    const candidates: RuntimeProofCandidate[] = []
-    while (queue.length > 0) {
-      const nodeId = queue.shift()!
-      if (seen.has(nodeId) || !idSet.has(nodeId)) {
-        continue
-      }
-      seen.add(nodeId)
-      const step = nodeById.get(nodeId)
-      if (step) {
-        candidates.push(runtimeProofCandidateFromExecutionStep(step))
-      }
-      for (const edge of adjacency.get(nodeId) ?? []) {
-        if (idSet.has(edge.toId)) {
-          queue.push(edge.toId)
-        }
-      }
-    }
-    const assessment = buildRuntimeProofAssessment(runtimeProofProfile, candidates)
-    const entrypointObligations = runtimeProofProfile.obligations.filter((obligation) => obligation.kind === 'entrypoint')
-    const startStep = nodeById.get(candidateId)
-    const startCandidate = startStep ? runtimeProofCandidateFromExecutionStep(startStep) : undefined
-    const summary = {
-      missingCount: assessment?.missing_obligations.length ?? runtimeProofProfile.obligations.length,
-      missingTerminalCount: assessment?.missing_obligations
-        .filter((obligationId) => obligationsById.get(obligationId)?.kind === 'terminal')
-        .length ?? runtimeProofProfile.obligations.filter((obligation) => obligation.kind === 'terminal').length,
-      coveredCount: assessment ? assessment.obligations.length - assessment.missing_obligations.length : 0,
-      nonTerminalCoveredCount: (assessment?.obligations ?? [])
-        .filter((entry) => entry.evidence.length > 0 && obligationsById.get(entry.id)?.kind !== 'terminal')
-        .length,
-      supplementedMissingCount: scopeMissingCount,
-      supplementedMissingTerminalCount: scopeMissingTerminalCount,
-      entrypointEvidence: startCandidate !== undefined && entrypointObligations.some((obligation) =>
-        runtimeProofProvidesDirectEvidence(startCandidate, obligation)
-      ),
-      entrypointScore: startCandidate
-        ? Math.max(0, ...entrypointObligations.map((obligation) =>
-          runtimeProofObligationMatchScore(startCandidate, obligation)
-        ))
-        : 0,
-    }
-    runtimeProofStartSummaryCache.set(candidateId, summary)
-    return summary
-    }
-
-    const candidates = orderedIds
-    const prioritizedCandidates = [...new Set([
-    ...[...candidates]
-      .sort((left, right) =>
-        quickStartScore(right) - quickStartScore(left)
-        || compareStableText(left, right),
-      )
-      .slice(0, STRICT_RUNTIME_PROOF_START_CANDIDATE_LIMIT),
-    ...anchorIds.filter((candidateId) => candidates.includes(candidateId)).slice(0, STRICT_RUNTIME_PROOF_START_CANDIDATE_LIMIT),
-    ])]
-    return [...candidates].sort((left, right) => {
-    const leftQuickScore = quickStartScore(left)
-    const rightQuickScore = quickStartScore(right)
-    if (!prioritizedCandidates.includes(left) || !prioritizedCandidates.includes(right)) {
-      return rightQuickScore - leftQuickScore || compareStableText(left, right)
-    }
-    const leftStep = nodeById.get(left)
-    const rightStep = nodeById.get(right)
-    const leftSummary = runtimeProofStartSummary(left)
-    const rightSummary = runtimeProofStartSummary(right)
-    return leftSummary.supplementedMissingCount - rightSummary.supplementedMissingCount
-      || leftSummary.supplementedMissingTerminalCount - rightSummary.supplementedMissingTerminalCount
-      || rightSummary.nonTerminalCoveredCount - leftSummary.nonTerminalCoveredCount
-      || leftSummary.missingCount - rightSummary.missingCount
-      || rightSummary.coveredCount - leftSummary.coveredCount
-      || Number(rightSummary.entrypointEvidence) - Number(leftSummary.entrypointEvidence)
-      || rightSummary.entrypointScore - leftSummary.entrypointScore
-      || leftSummary.missingTerminalCount - rightSummary.missingTerminalCount
-      || rightQuickScore - leftQuickScore
-      || (rightStep && controllerLikeExecutionStep(rightStep) ? 1 : 0) - (leftStep && controllerLikeExecutionStep(leftStep) ? 1 : 0)
-      || (rightStep ? executionSliceStepPriority(rightStep, question) : 0) - (leftStep ? executionSliceStepPriority(leftStep, question) : 0)
-    })[0]
   }
 
   const anchoredStart = anchorIds.find((nodeId) => idSet.has(nodeId))
@@ -4317,8 +3318,6 @@ function buildExecutionSliceConfidence(
   sliceMetadata: ContextPackSliceMetadata,
   question: string,
   executionSlice: Pick<ContextPackExecutionSlice, 'status' | 'phase_coverage' | 'primary_path' | 'steps' | 'omitted_branches'>,
-  runtimeProofProfile?: RuntimeProofProfile,
-  runtimeProof?: RuntimeProofAssessment,
 ): Pick<ContextPackExecutionSlice, 'confidence' | 'confidence_reasons'> | undefined {
   const explicitAnchor = sliceMetadata.anchors.some((anchor) =>
     anchor.reason === 'symbol mention'
@@ -4332,36 +3331,18 @@ function buildExecutionSliceConfidence(
   const expectedPhasesCovered = missingPhases.length === 0
   const primaryPathSteps = executionSlice.primary_path?.steps ?? executionSlice.steps
   const observedPhases = new Set(executionSlice.phase_coverage?.observed ?? [])
-  const strictRuntimeProofComplete = runtimeProofProfile?.strict_runtime_proof === true
-    && runtimeProof !== undefined
-    && runtimeProof.missing_obligations.length === 0
-  const strictRuntimeProofNeedsHandoff = runtimeProofProfile?.strict_runtime_proof === true
-    && runtimeProofProfile.obligations.some((obligation: RuntimeProofProfileObligation) => obligation.kind === 'handoff')
-  const strictRuntimeProofHasEntrypoint = runtimeProof?.obligations.some((obligation) =>
-    obligation.kind === 'entrypoint' && obligation.evidence.length > 0,
-  ) ?? false
-  const strictRuntimeProofHasHandoff = runtimeProof?.obligations.some((obligation) =>
-    obligation.kind === 'handoff' && obligation.evidence.length > 0,
-  ) ?? false
-  const strictRuntimeProofHasTerminal = runtimeProof?.obligations.some((obligation) =>
-    obligation.kind === 'terminal' && obligation.evidence.length > 0,
-  ) ?? false
   const hasEntrypoint =
     observedPhases.has('controller')
-    || strictRuntimeProofHasEntrypoint
     || primaryPathSteps.some((step) => /\b(?:route|controller|handler|endpoint)\b/i.test(`${step.label} ${step.framework_role ?? ''} ${step.node_kind ?? ''}`))
   const hasOrchestration =
     runtimeHandoff
-    || strictRuntimeProofHasHandoff
-    || (strictRuntimeProofComplete && !strictRuntimeProofNeedsHandoff)
     || observedPhases.has('service')
     || observedPhases.has('orchestrator')
     || observedPhases.has('planner')
     || observedPhases.has('queue')
     || observedPhases.has('worker')
   const hasTerminalEffect =
-    strictRuntimeProofHasTerminal
-    || observedPhases.has('persistence')
+    observedPhases.has('persistence')
     || observedPhases.has('notification_or_event')
     || observedPhases.has('renderer_or_synthesis')
     || observedPhases.has('report_builder')
@@ -4371,12 +3352,11 @@ function buildExecutionSliceConfidence(
     !runtimeHandoff
     && promptWantsRuntimePipeline(question)
     && !hasTerminalEffect
-    && !(strictRuntimeProofComplete && !strictRuntimeProofNeedsHandoff)
   const lowValuePrimaryPath = primaryPathSteps.length > 0
     && primaryPathSteps.filter((step) => lowValueExecutionStepForQuestion(step, question)).length >= Math.ceil(primaryPathSteps.length / 2)
 
   if (
-    (explicitAnchor || strictRuntimeProofComplete)
+    explicitAnchor
     && hasEntrypoint
     && hasOrchestration
     && hasTerminalEffect
@@ -4386,7 +3366,7 @@ function buildExecutionSliceConfidence(
     return {
       confidence: 'high',
       confidence_reasons: [
-        ...(explicitAnchor ? ['explicit_anchor'] : ['runtime_proof_complete']),
+        'explicit_anchor',
         ...(runtimeHandoff ? ['runtime_handoff_evidence'] : ['orchestration_evidence']),
         'expected_phases_covered',
         'terminal_effect_evidence',
@@ -4438,9 +3418,8 @@ function buildRuntimeGenerationAnswerContract(
   matchedNodes: readonly Pick<RetrieveMatchedNode, 'label' | 'source_file' | 'node_kind' | 'framework_role'>[],
   executionSlice: ContextPackExecutionSlice | undefined,
   sliceMetadata: ContextPackSliceMetadata | undefined,
-  runtimeProofProfile?: RuntimeProofProfile,
 ): ContextPackRuntimeGenerationAnswerContract | undefined {
-  if (!runtimeGenerationExecutionSliceApplies(taskContract, retrievalGate, sliceMetadata, runtimeProofProfile) || !executionSlice) {
+  if (!runtimeGenerationExecutionSliceApplies(taskContract, retrievalGate, sliceMetadata) || !executionSlice) {
     return undefined
   }
 
@@ -4463,26 +3442,9 @@ function buildRuntimeGenerationAnswerContract(
     missing_phases: missingPhases,
   }
 
-  const runtimeProof = buildRuntimeProofAssessment(
-    runtimeProofProfile,
-    [
-      ...executionSlice.steps.map((step) => runtimeProofCandidateFromExecutionStep(step)),
-      ...(executionSlice.side_effects ?? []).flatMap((branch) => branch.steps.map((step) => runtimeProofCandidateFromExecutionStep(step))),
-      ...(executionSlice.terminal_boundaries ?? []).flatMap((branch) => branch.steps.map((step) => runtimeProofCandidateFromExecutionStep(step))),
-    ],
-  )
-  if (runtimeProof) {
-    answerContract.runtime_proof = runtimeProof
-  }
-
-  const missingRuntimeObligations = runtimeProof?.missing_obligations
-    .map((obligationId) => runtimeProofProfile?.obligations.find((obligation) => obligation.id === obligationId)?.label ?? obligationId)
-    ?? []
-  if (executionSlice.status === 'partial' || missingPhases.length > 0 || missingRuntimeObligations.length > 0) {
+  if (executionSlice.status === 'partial' || missingPhases.length > 0) {
     answerContract.uncertainty_notes = [
-      missingRuntimeObligations.length > 0
-        ? `Do not infer unobserved runtime obligations; if the full flow is requested, answer: not enough evidence; missing ${missingRuntimeObligations.join(', ')}`
-        : missingPhases.length > 0
+      missingPhases.length > 0
         ? `Do not infer unobserved runtime phases; if the full flow is requested, answer: not enough evidence; missing ${missingPhases.join(', ')}`
         : 'Do not infer unobserved runtime phases; if the full flow is requested, answer: not enough evidence.',
     ]
@@ -4502,10 +3464,9 @@ function buildExecutionSlice(
   retrievalGate: RetrievalGateDecision,
   question: string,
   sliceMetadata: ContextPackSliceMetadata | undefined,
-  runtimeProofProfile?: RuntimeProofProfile,
   rootPath?: string,
 ): ContextPackExecutionSlice | undefined {
-  if (!runtimeGenerationExecutionSliceApplies(taskContract, retrievalGate, sliceMetadata, runtimeProofProfile) || !sliceMetadata) {
+  if (!runtimeGenerationExecutionSliceApplies(taskContract, retrievalGate, sliceMetadata) || !sliceMetadata) {
     return undefined
   }
 
@@ -4536,7 +3497,7 @@ function buildExecutionSlice(
     .map((anchor) => resolveNodeId(anchor.node_id, anchor.label))
     .filter((nodeId): nodeId is string => typeof nodeId === 'string')
   const scopeStart = Date.now()
-  const { orderedIds, idSet } = collectExecutionSliceScope(graph, sliceMetadata, anchorIds, question, resolveNodeId, runtimeProofProfile)
+  const { orderedIds, idSet } = collectExecutionSliceScope(graph, sliceMetadata, anchorIds, question, resolveNodeId)
   logExecutionSliceDebug('scope', {
     ms: Date.now() - scopeStart,
     anchors: anchorIds.length,
@@ -4565,7 +3526,7 @@ function buildExecutionSlice(
     edges: [...adjacency.values()].reduce((total, edges) => total + edges.length, 0),
   })
   const startPickStart = Date.now()
-  const startId = pickExecutionSliceStart(adjacency, anchorIds, orderedIds, idSet, nodeById, question, runtimeProofProfile)
+  const startId = pickExecutionSliceStart(adjacency, anchorIds, orderedIds, idSet, nodeById, question)
   logExecutionSliceDebug('start', {
     ms: Date.now() - startPickStart,
     start_id: startId ?? null,
@@ -4586,270 +3547,23 @@ function buildExecutionSlice(
     ms: Date.now() - pathStart,
     count: pathCandidates.length,
   })
-  const supportsFastRuntimeProofPathMetrics = runtimeProofProfile !== undefined && runtimeProofProfile.obligations.length <= 30
-  const phaseBitByName = new Map<ExecutionPhase, number>([
-    ['controller', 1 << 0],
-    ['auth_guard', 1 << 1],
-    ['validation', 1 << 2],
-    ['service', 1 << 3],
-    ['orchestrator', 1 << 4],
-    ['planner', 1 << 5],
-    ['queue', 1 << 6],
-    ['worker', 1 << 7],
-    ['external_research_or_api', 1 << 8],
-    ['report_builder', 1 << 9],
-    ['scoring', 1 << 10],
-    ['quality_gate', 1 << 11],
-    ['renderer_or_synthesis', 1 << 12],
-    ['persistence', 1 << 13],
-    ['notification_or_event', 1 << 14],
-  ])
-  const countBits = (value: number): number => {
-    let count = 0
-    let bits = value >>> 0
-    while (bits > 0) {
-      bits &= bits - 1
-      count += 1
-    }
-    return count
-  }
-  const totalObligationCount = runtimeProofProfile?.obligations.length ?? 0
-  const terminalObligationMask = runtimeProofProfile?.obligations.reduce((mask, obligation, index) =>
-    obligation.kind === 'terminal' ? (mask | (1 << index)) : mask,
-  0) ?? 0
-  const totalTerminalObligationCount = runtimeProofProfile?.obligations.filter((obligation) => obligation.kind === 'terminal').length ?? 0
-  const stepPathMetricsById = new Map<string, {
-    step: ContextPackExecutionSliceStep
-    phaseMask: number
-    obligationMask: number
-    stepPriority: number
-    entrypointScore: number
-    terminalScore: number
-  }>([...nodeById.entries()].map(([nodeId, step]) => {
-    let phaseMask = 0
-    for (const phase of executionPhasesForStep(step)) {
-      phaseMask |= phaseBitByName.get(phase) ?? 0
-    }
-    let obligationMask = 0
-    let entrypointScore = 0
-    let terminalScore = 0
-    if (runtimeProofProfile && supportsFastRuntimeProofPathMetrics) {
-      const candidate = runtimeProofCandidateFromExecutionStep(step)
-      runtimeProofProfile.obligations.forEach((obligation, index) => {
-        if (runtimeProofProvidesDirectEvidence(candidate, obligation)) {
-          obligationMask |= (1 << index)
-        }
-        const score = runtimeProofObligationMatchScore(candidate, obligation)
-        if (obligation.kind === 'entrypoint') {
-          entrypointScore = Math.max(entrypointScore, score)
-        }
-        if (obligation.kind === 'terminal') {
-          terminalScore = Math.max(terminalScore, score)
-        }
-      })
-    }
-    return [
-      nodeId,
-      {
-        step,
-        phaseMask,
-        obligationMask,
-        stepPriority: executionSliceStepPriority(step, question),
-        entrypointScore,
-        terminalScore,
-      },
-    ] as const
-  }))
-  const primaryPathMetricsCache = new Map<ExecutionPathCandidate, {
-    phaseMask: number
-    obligationMask: number
-    branchTerminalObligationMask: number
-    stepPrioritySum: number
-    hasEnqueueBoundary: boolean
-    firstStep: ContextPackExecutionSliceStep | undefined
-    lastStep: ContextPackExecutionSliceStep | undefined
-    firstStepEntrypointScore: number
-    lastStepTerminalScore: number
-  }>()
-  const primaryPathMetricsFor = (path: ExecutionPathCandidate): {
-    phaseMask: number
-    obligationMask: number
-    branchTerminalObligationMask: number
-    stepPrioritySum: number
-    hasEnqueueBoundary: boolean
-    firstStep: ContextPackExecutionSliceStep | undefined
-    lastStep: ContextPackExecutionSliceStep | undefined
-    firstStepEntrypointScore: number
-    lastStepTerminalScore: number
-  } => {
-    const cached = primaryPathMetricsCache.get(path)
-    if (cached) {
-      return cached
-    }
-    let phaseMask = 0
-    let obligationMask = 0
-    let branchTerminalObligationMask = 0
-    let stepPrioritySum = 0
-    let firstStep: ContextPackExecutionSliceStep | undefined
-    let lastStep: ContextPackExecutionSliceStep | undefined
-    let firstStepEntrypointScore = 0
-    let lastStepTerminalScore = 0
-    const primaryNextById = new Map(path.edges.map((edge) => [edge.fromId, edge.toId] as const))
-    const primaryNodeIds = new Set(path.nodeIds)
-    for (const nodeId of path.nodeIds) {
-      const metrics = stepPathMetricsById.get(nodeId)
-      if (!metrics) {
-        continue
-      }
-      phaseMask |= metrics.phaseMask
-      obligationMask |= metrics.obligationMask
-      stepPrioritySum += metrics.stepPriority
-      if (!firstStep) {
-        firstStep = metrics.step
-        firstStepEntrypointScore = metrics.entrypointScore
-      }
-      lastStep = metrics.step
-      lastStepTerminalScore = metrics.terminalScore
-      if (supportsFastRuntimeProofPathMetrics) {
-        const nextPrimaryNodeId = primaryNextById.get(nodeId)
-        for (const edge of adjacency.get(nodeId) ?? []) {
-          if (edge.toId === nextPrimaryNodeId || primaryNodeIds.has(edge.toId)) {
-            continue
-          }
-          const branchMetrics = stepPathMetricsById.get(edge.toId)
-          if (!branchMetrics) {
-            continue
-          }
-          branchTerminalObligationMask |= branchMetrics.obligationMask & terminalObligationMask
-        }
-      }
-    }
-    const built = {
-      phaseMask,
-      obligationMask,
-      branchTerminalObligationMask,
-      stepPrioritySum,
-      hasEnqueueBoundary: path.edges.some((edge) => edge.relation === 'enqueues_job'),
-      firstStep,
-      lastStep,
-      firstStepEntrypointScore,
-      lastStepTerminalScore,
-    }
-    primaryPathMetricsCache.set(path, built)
-    return built
-  }
   const primaryPathScoreCache = new Map<ExecutionPathCandidate, number>()
   const primaryPathScoreFor = (path: ExecutionPathCandidate): number => {
     const cached = primaryPathScoreCache.get(path)
     if (cached !== undefined) {
       return cached
     }
-    if (!supportsFastRuntimeProofPathMetrics) {
-      const score = executionPathScore(path, nodeById, question, runtimeProofProfile)
-      primaryPathScoreCache.set(path, score)
-      return score
-    }
-    const metrics = primaryPathMetricsFor(path)
-    let score = metrics.stepPrioritySum
-    const observedPhases = {
-      controller: (metrics.phaseMask & (phaseBitByName.get('controller') ?? 0)) !== 0,
-      service: (metrics.phaseMask & (phaseBitByName.get('service') ?? 0)) !== 0,
-      queue: (metrics.phaseMask & (phaseBitByName.get('queue') ?? 0)) !== 0,
-      worker: (metrics.phaseMask & (phaseBitByName.get('worker') ?? 0)) !== 0,
-      persistence: (metrics.phaseMask & (phaseBitByName.get('persistence') ?? 0)) !== 0,
-    }
-    if (observedPhases.controller) score += 10
-    if (observedPhases.service) score += 20
-    if (observedPhases.queue) score += 35
-    if (observedPhases.worker) score += 45
-    if (observedPhases.persistence) score += 90
-    if (metrics.hasEnqueueBoundary) score += 30
-    if (promptExpectsPersistenceStep(question) && !observedPhases.persistence) {
-      score -= 120
-    }
-    if (promptWantsRuntimePipeline(question) && observedPhases.queue && !observedPhases.worker) {
-      score -= 60
-    }
-    const lastStep = metrics.lastStep
-    const lastStepPhases = lastStep ? executionPhasesForStep(lastStep) : new Set<ExecutionPhase>()
-    if (
-      promptExpectsPersistenceStep(question)
-      && observedPhases.worker
-      && !observedPhases.persistence
-      && lastStep
-      && !lastStepPhases.has('worker')
-      && !lastStepPhases.has('persistence')
-    ) {
-      score -= 35
-    }
-    if (lastStep && terminalBoundaryExecutionStep(lastStep)) {
-      score -= 15
-    }
-    if (lastStep && lowValueExecutionStepForQuestion(lastStep, question)) {
-      score -= 40
-    }
-    const effectiveObligationMask = metrics.obligationMask | metrics.branchTerminalObligationMask
-    const coveredCount = countBits(effectiveObligationMask)
-    const missingCount = totalObligationCount - coveredCount
-    const missingTerminalCount = totalTerminalObligationCount - countBits(effectiveObligationMask & terminalObligationMask)
-    score += coveredCount * 140
-    score -= missingCount * 220
-    if (missingTerminalCount > 0) {
-      score -= 120
-    }
-    if (metrics.firstStep) {
-      score += metrics.firstStepEntrypointScore * 20
-      if (controllerLikeExecutionStep(metrics.firstStep)) {
-        score += 35
-      }
-    }
-    if (lastStep) {
-      score += metrics.lastStepTerminalScore * 18
-      if (!serviceLikeExecutionStep(lastStep)) {
-        score += 15
-      }
-    }
-    const finalScore = score + path.edges.length
-    primaryPathScoreCache.set(path, finalScore)
-    return finalScore
-  }
-  const primaryPathProofCache = new Map<ExecutionPathCandidate, ReturnType<typeof executionPathRuntimeProofSummary>>()
-  const primaryPathProofFor = (path: ExecutionPathCandidate): ReturnType<typeof executionPathRuntimeProofSummary> => {
-    if (primaryPathProofCache.has(path)) {
-      return primaryPathProofCache.get(path)
-    }
-    const summary = !supportsFastRuntimeProofPathMetrics
-      ? executionPathRuntimeProofSummary(path, nodeById, runtimeProofProfile)
-      : (() => {
-        const metrics = primaryPathMetricsFor(path)
-        const effectiveObligationMask = metrics.obligationMask | metrics.branchTerminalObligationMask
-        const coveredCount = countBits(effectiveObligationMask)
-        return {
-          missingCount: totalObligationCount - coveredCount,
-          missingTerminalCount: totalTerminalObligationCount - countBits(effectiveObligationMask & terminalObligationMask),
-          coveredCount,
-        }
-      })()
-    primaryPathProofCache.set(path, summary)
-    return summary
+    const score = executionPathScore(path, nodeById, question)
+    primaryPathScoreCache.set(path, score)
+    return score
   }
   const primaryPathCandidates = pathCandidates.length > 0 ? pathCandidates : [{
     nodeIds: walkExecutionSlice(graph, startId, idSet, nodeById, question),
     edges: [] as ExecutionFlowEdge[],
   }]
   const primaryPath = primaryPathCandidates.sort((left, right) =>
-    (() => {
-      const leftProof = primaryPathProofFor(left)
-      const rightProof = primaryPathProofFor(right)
-      if (leftProof && rightProof) {
-        return leftProof.missingCount - rightProof.missingCount
-          || leftProof.missingTerminalCount - rightProof.missingTerminalCount
-          || rightProof.coveredCount - leftProof.coveredCount
-          || left.nodeIds.length - right.nodeIds.length
-          || primaryPathScoreFor(right) - primaryPathScoreFor(left)
-      }
-      return primaryPathScoreFor(right) - primaryPathScoreFor(left)
-    })()
+    primaryPathScoreFor(right) - primaryPathScoreFor(left)
+    || compareStableText(left.nodeIds.join('>'), right.nodeIds.join('>'))
   )[0]!
 
   const steps = primaryPath.nodeIds
@@ -4860,54 +3574,28 @@ function buildExecutionSlice(
     .map((nodeId) => nodeById.get(nodeId))
     .filter((step): step is ContextPackExecutionSliceStep => step !== undefined)
   const branchStart = Date.now()
-  const branches = collectExecutionBranches(adjacency, primaryPath, nodeById, question, runtimeProofProfile)
-  const recoveryBranches = recoverMissingRuntimeProofBranches(
-    graph,
-    adjacency,
-    primaryPath,
-    orderedIds,
-    idSet,
-    nodeById,
-    question,
-    runtimeProofProfile,
-    branches.sideEffects,
-    branches.terminalBoundaries,
-    rootPath,
-  )
+  const branches = collectExecutionBranches(adjacency, primaryPath, nodeById, question)
   logExecutionSliceDebug('branches', {
     ms: Date.now() - branchStart,
-    side_effects: branches.sideEffects.length + recoveryBranches.sideEffects.length,
-    terminal_boundaries: branches.terminalBoundaries.length + recoveryBranches.terminalBoundaries.length,
+    side_effects: branches.sideEffects.length,
+    terminal_boundaries: branches.terminalBoundaries.length,
     omitted_branches: branches.omittedBranches.length,
   })
-  const sideEffects = [...branches.sideEffects, ...recoveryBranches.sideEffects]
-  const terminalBoundaries = [...branches.terminalBoundaries, ...recoveryBranches.terminalBoundaries]
+  const sideEffects = branches.sideEffects
+  const terminalBoundaries = branches.terminalBoundaries
   const tracedSteps = [
     ...steps,
     ...sideEffects.flatMap((branch) => branch.steps),
     ...terminalBoundaries.flatMap((branch) => branch.steps),
     ...branches.omittedEvidenceSteps,
   ]
-  const phaseCoverage = phaseCoverageForPath(steps, boundaries, question, scopeSteps, tracedSteps, runtimeProofProfile)
-  const runtimeProof = buildRuntimeProofAssessment(
-    runtimeProofProfile,
-    tracedSteps.map((step) => runtimeProofCandidateFromExecutionStep(step)),
-  )
-  const missingRuntimeObligation = runtimeProofProfile?.strict_runtime_proof === true
-    ? runtimeProof?.missing_obligations
-      .map((obligationId) =>
-        runtimeProofProfile.obligations.find((obligation) => obligation.id === obligationId)?.label
-          ?? obligationId.replaceAll('_', ' ')
-      )[0]
-    : undefined
+  const phaseCoverage = phaseCoverageForPath(steps, boundaries, question, scopeSteps, tracedSteps)
   const missingPhase = phaseCoverage.missing[0]
-  const boundaryReason = missingRuntimeObligation
-    ? `missing runtime proof obligation: ${missingRuntimeObligation}`
-    : missingPhase
+  const boundaryReason = missingPhase
     ? missingExecutionPhaseBoundaryReason(missingPhase)
     : undefined
   const executionSlice: ContextPackExecutionSlice = {
-    status: missingRuntimeObligation || missingPhase ? 'partial' : 'complete',
+    status: missingPhase ? 'partial' : 'complete',
     ...(boundaryReason ? { boundary_reason: boundaryReason } : {}),
     steps,
     primary_path: {
@@ -4923,7 +3611,7 @@ function buildExecutionSlice(
 
   return {
     ...executionSlice,
-    ...(buildExecutionSliceConfidence(sliceMetadata, question, executionSlice, runtimeProofProfile, runtimeProof) ?? {}),
+    ...(buildExecutionSliceConfidence(sliceMetadata, question, executionSlice) ?? {}),
   }
 }
 
@@ -5557,7 +4245,6 @@ function buildRetrieveResultFromOrderedCandidates(
     retrievalGate,
     options.question,
     sliceMetadata,
-    options.runtimeProofProfile,
     rootPath,
   )
   const nodeCandidates: Array<ContextPackNodeCandidate<ContextPackNode>> = orderedCandidates.map((node) => {
@@ -5669,7 +4356,6 @@ function buildRetrieveResultFromOrderedCandidates(
     matchedNodes,
     executionSlice,
     sliceMetadata,
-    options.runtimeProofProfile,
   )
 
   return {
@@ -5868,18 +4554,9 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
       },
     )
 
-    const runtimeProofBonus = runtimeProofAnchorBonus(
-      {
-        label,
-        source_file: sourceFile,
-        ...(nodeKind.length > 0 ? { node_kind: nodeKind } : {}),
-        ...(frameworkRole ? { framework_role: frameworkRole } : {}),
-      },
-      options.runtimeProofProfile,
-    )
     const domainIntentPenalty = runtimeGenerationSourceDomainPenalty(retrievalGate, sourceDomain, explicitlyAnchored)
     const scriptMigrationPenalty = scriptMigrationPathPenalty(retrievalGate, sourceFile, label, question, explicitlyAnchored)
-    const totalSeedScore = effectiveScore.total + anchorScore + metadataBoost + domainAdjustment + runtimeProofBonus
+    const totalSeedScore = effectiveScore.total + anchorScore + metadataBoost + domainAdjustment
       - sourceDomainPenalty - domainIntentPenalty - scriptMigrationPenalty
     const hasPositiveSeedEvidence = totalSeedScore > 0 || exactAnchorMatch || mentionedPathMatch
     if (hasPositiveSeedEvidence) {
@@ -5912,10 +4589,10 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
         sourcePathMatch: effectiveScore.sourcePathScore > 0 || mentionedPathMatch,
         // When the seed only made it in via metadata boost, give it at
         // least evidence tier 1 so it's not at the bottom of the heap.
-        evidenceTier: metadataBoost > 0 || domainAdjustment > 0 || runtimeProofBonus > 0
+        evidenceTier: metadataBoost > 0 || domainAdjustment > 0
           ? (Math.max(evidenceTierForSeedScore(effectiveScore), 1) as 0 | 1 | 2)
           : (exactAnchorMatch || mentionedPathMatch ? 2 : evidenceTierForSeedScore(effectiveScore)),
-        relevanceBand: effectiveScore.labelExactScore > 0 || exactAnchorMatch || effectiveScore.labelTokenScore > 0 || runtimeProofBonus > 0
+        relevanceBand: effectiveScore.labelExactScore > 0 || exactAnchorMatch || effectiveScore.labelTokenScore > 0
           ? 'direct'
           : 'related',
       })
@@ -5965,15 +4642,6 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
       0.05,
       ((fusedSeedScores.get(candidate.id) ?? 0) * SEED_FUSION_SCORE_SCALE)
         + candidate.frameworkBoost
-        + runtimeProofAnchorBonus(
-          {
-            label: candidate.label,
-            source_file: candidate.sourceFile,
-            ...(candidate.nodeKind.length > 0 ? { node_kind: candidate.nodeKind } : {}),
-            ...(candidate.frameworkRole ? { framework_role: candidate.frameworkRole } : {}),
-          },
-          options.runtimeProofProfile,
-        )
         + retrievalDomainAdjustment(retrievalGate, candidate)
         - defaultSourceDomainPenalty(candidate.sourceDomain, retrievalGate.intent, question, questionTokens)
         - runtimeGenerationSourceDomainPenalty(retrievalGate, candidate.sourceDomain, candidate.exactLabelMatch || candidate.literalPathMatch)
@@ -6250,7 +4918,6 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
     : frameworkOrderedCandidates.filter((node) => node.relevanceBand !== 'peripheral')
 
   if (options.retrievalStrategy === 'slice-v1') {
-    const strictRuntimeProof = options.runtimeProofProfile?.strict_runtime_proof === true
     const sliced = sliceCandidatesForRetrieve(
       graph,
       scored.map((node) => ({
@@ -6267,9 +4934,8 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
       retrievalGate.intent,
       {
         prompt: question,
-        generationIntent: strictRuntimeProof ? 'runtime_generation' : retrievalGate.signals.generation_intent,
-        targetDomainHint: strictRuntimeProof ? 'backend_runtime' : retrievalGate.signals.target_domain_hint,
-        runtimeProofProfile: options.runtimeProofProfile,
+        generationIntent: retrievalGate.signals.generation_intent,
+        targetDomainHint: retrievalGate.signals.target_domain_hint,
         mentionedSymbols: retrievalGate.signals.mentioned_symbols,
         excludedDomains: retrievalGate.signals.excluded_domains,
         excludedTerms: retrievalGate.signals.excluded_terms,
@@ -6286,7 +4952,6 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
         sliced.metadata,
         retrievalGate,
         options.question,
-        options.runtimeProofProfile,
       )
       const orderedSliceIds = augmentSliceCandidateIdsForDebug(graph, runtimeExpandedSliceIds, sliced.metadata)
       const sliceCandidates = orderedSliceIds.map((nodeId, index) => (

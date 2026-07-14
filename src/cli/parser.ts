@@ -112,6 +112,8 @@ export interface BenchmarkCliOptions {
 export interface BenchSuiteCliOptions {
   repo: string | null
   task: string | null
+  reposManifestPath: string | null
+  tasksManifestPath: string | null
   mode: 'cold' | 'warm' | 'all'
   trials: number
   outputDir: string
@@ -1197,6 +1199,8 @@ export function parseBenchmarkArgs(args: string[], commandName = 'benchmark'): B
 export function parseBenchSuiteArgs(args: string[]): BenchSuiteCliOptions {
   let repo: string | null = null
   let task: string | null = null
+  let reposManifestPath: string | null = null
+  let tasksManifestPath: string | null = null
   let mode: BenchSuiteCliOptions['mode'] = 'all'
   let trials = 3
   let outputDir = resolve('docs/benchmarks/suite/results')
@@ -1231,6 +1235,30 @@ export function parseBenchSuiteArgs(args: string[]): BenchSuiteCliOptions {
     if (argument.startsWith('--task=')) {
       const [, value] = argument.split('=', 2)
       task = requireOptionValue('--task', value)
+      continue
+    }
+
+    if (argument === '--repos-manifest') {
+      reposManifestPath = resolve(requireOptionValue('--repos-manifest', args[index + 1]))
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--repos-manifest=')) {
+      const [, value] = argument.split('=', 2)
+      reposManifestPath = resolve(requireOptionValue('--repos-manifest', value))
+      continue
+    }
+
+    if (argument === '--tasks-manifest') {
+      tasksManifestPath = resolve(requireOptionValue('--tasks-manifest', args[index + 1]))
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--tasks-manifest=')) {
+      const [, value] = argument.split('=', 2)
+      tasksManifestPath = resolve(requireOptionValue('--tasks-manifest', value))
       continue
     }
 
@@ -1306,7 +1334,7 @@ export function parseBenchSuiteArgs(args: string[]): BenchSuiteCliOptions {
     throw new UsageError('error: --exec is required unless --dry-run is set')
   }
 
-  return { repo, task, mode, trials, outputDir, execTemplate, dryRun, yes }
+  return { repo, task, reposManifestPath, tasksManifestPath, mode, trials, outputDir, execTemplate, dryRun, yes }
 }
 
 export function parseCompareArgs(args: string[]): CompareCliOptions {
@@ -2208,8 +2236,8 @@ export function parseProofReportArgs(args: string[]): ProofReportCliOptions {
   const graphBase = dirname(resolve(resolvedGraphPath))
   return {
     graphPath: resolvedGraphPath,
-    outputDir: validateGraphOutputPath(outputDir ?? resolve(graphBase, 'proof-report'), graphBase),
-    compareDir: validateGraphOutputPath(compareDir ?? resolve(graphBase, 'compare'), graphBase),
+    outputDir: outputDir ?? validateGraphOutputPath(resolve(graphBase, 'proof-report'), graphBase),
+    compareDir: compareDir ?? validateGraphOutputPath(resolve(graphBase, 'compare'), graphBase),
     packPath,
   }
 }

@@ -1,0 +1,16 @@
+{
+  "holdout-order-service-explain-runtime": {
+    "prompt": "How does a checkout order move from HTTP submission through inventory reservation and order persistence to confirmation publication?",
+    "status": "pending",
+    "required_concepts": ["The answer should explain ordering and handoffs rather than merely list four symbols."],
+    "answer_quality_notes": ["A deterministic symbol gate cannot establish causal correctness."],
+    "manual_review_notes": ["Confirm that inventory reservation precedes durable order persistence and publication."]
+  },
+  "holdout-invoice-service-explain-runtime": {
+    "prompt": "How does an invoice request move from the API through billing calculation and ledger persistence to audit emission?",
+    "status": "pending",
+    "required_concepts": ["The answer should trace returned values through calculation, ledger persistence, and audit emission."],
+    "answer_quality_notes": ["A deterministic symbol gate cannot establish causal correctness."],
+    "manual_review_notes": ["Confirm that audit emission occurs after the ledger write."]
+  }
+}
