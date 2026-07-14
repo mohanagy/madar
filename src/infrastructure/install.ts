@@ -128,15 +128,28 @@ const PLATFORM_CONFIG: Record<SkillInstallPlatform, InstallPlatformConfig> = {
 
 // Cross-platform hook: pass the base64 payload as an argv argument so the
 // node -e command stays shell-neutral on macOS, Linux, and Windows.
+const WORKSPACE_GRAPH_CHECK_MARKER = 'madar-workspace-graph-check'
+const WORKSPACE_GRAPH_CHECK = [
+  `/* ${WORKSPACE_GRAPH_CHECK_MARKER} */`,
+  `const fs=require('fs'),path=require('path');`,
+  `let directory=process.cwd(),hasGraph=false;`,
+  `for(;;){`,
+  `if(fs.existsSync(path.join(directory,'out','graph.json'))){hasGraph=true;break}`,
+  `try{if(fs.lstatSync(path.join(directory,'.git')).isFile()){hasGraph=true;break}}catch(e){}`,
+  `const parent=path.dirname(directory);`,
+  `if(parent===directory)break;`,
+  `directory=parent}`,
+].join('')
+
 function hookCommand(payloadJson: string): string {
   const b64 = Buffer.from(payloadJson).toString('base64')
-  return `node -e "try{require('fs').accessSync('out/graph.json');process.stdout.write(Buffer.from(process.argv[1],'base64').toString())}catch(e){}" "${b64}"`
+  return `node -e "${WORKSPACE_GRAPH_CHECK};if(hasGraph)process.stdout.write(Buffer.from(process.argv[1],'base64').toString())" "${b64}"`
 }
 
 function hookCommandWithFallback(matchJson: string, missJson: string): string {
   const b64Match = Buffer.from(matchJson).toString('base64')
   const b64Miss = Buffer.from(missJson).toString('base64')
-  return `node -e "var f;try{require('fs').accessSync('out/graph.json');f=process.argv[1]}catch(e){f=process.argv[2]}process.stdout.write(Buffer.from(f,'base64').toString())" "${b64Match}" "${b64Miss}"`
+  return `node -e "${WORKSPACE_GRAPH_CHECK};var f=hasGraph?process.argv[1]:process.argv[2];process.stdout.write(Buffer.from(f,'base64').toString())" "${b64Match}" "${b64Miss}"`
 }
 
 function decodeGeneratedHookPayloads(command: string): string[] {
@@ -167,8 +180,9 @@ function decodeGeneratedHookPayloads(command: string): string[] {
 }
 
 function hookCommandHasGraphCheck(command: string): boolean {
-  return command.includes("accessSync('out/graph.json')")
-    || decodeGeneratedHookPayloads(command).some((payload) => payload.includes("accessSync('out/graph.json')"))
+  const hasGraphCheck = (value: string): boolean =>
+    value.includes("accessSync('out/graph.json')") || value.includes(WORKSPACE_GRAPH_CHECK_MARKER)
+  return hasGraphCheck(command) || decodeGeneratedHookPayloads(command).some(hasGraphCheck)
 }
 
 function isMadarCodexHookPayload(payload: string): boolean {
@@ -602,8 +616,32 @@ const OPENCODE_PLUGIN_REMINDER_COMMAND =
   `echo "[madar] Knowledge graph available. ${renderPlainMcpRoutingGuide()} ${strictNonMadarMcpRule(false).replace(/^for/, 'For')}. ${strictSkillOverrideRule(false)}. ${strictGraphReportFallbackRule(false).replace(/^do/, 'Do')}" && `
 const OPENCODE_PLUGIN_JS = `// madar OpenCode plugin
 // Injects a knowledge graph reminder before bash tool calls when the graph exists.
-import { existsSync } from "fs";
-import { join } from "path";
+import { existsSync, lstatSync } from "fs";
+import { dirname, join } from "path";
+
+function hasMadarGraph(directory) {
+  let current = directory;
+  while (true) {
+    if (existsSync(join(current, "out", "graph.json"))) {
+      return true;
+    }
+
+    // Linked Git worktrees store Madar artifacts outside the checkout. The
+    // installed MCP server builds that graph at session startup, so retain the
+    // reminder when this workspace is a linked worktree.
+    try {
+      if (lstatSync(join(current, ".git")).isFile()) {
+        return true;
+      }
+    } catch {}
+
+    const parent = dirname(current);
+    if (parent === current) {
+      return false;
+    }
+    current = parent;
+  }
+}
 
 export const MadarPlugin = async ({ directory }) => {
   let reminded = false;
@@ -611,7 +649,7 @@ export const MadarPlugin = async ({ directory }) => {
   return {
     "tool.execute.before": async (input, output) => {
       if (reminded) return;
-      if (!existsSync(join(directory, "out", "graph.json"))) return;
+      if (!hasMadarGraph(directory)) return;
 
       if (input.tool === "bash") {
           output.args.command =
@@ -699,8 +737,7 @@ function writeClaudePromptHookScript(projectDir: string, profile?: InstallProfil
   )
 }
 
-function codexPromptHookScript(projectDir: string): string {
-  const graphPath = resolve(projectDir, 'out', 'graph.json')
+function codexPromptHookScript(): string {
   return `${CODEX_PROMPT_HOOK_SCRIPT_MARKER}\n${buildPromptApplicabilityHookScript(
     JSON.stringify({
       hookSpecificOutput: {
@@ -709,7 +746,6 @@ function codexPromptHookScript(projectDir: string): string {
       },
     }),
     'UserPromptSubmit',
-    graphPath,
   )}`
 }
 
@@ -722,8 +758,7 @@ export function hasManagedCodexPromptHookScript(scriptPath: string): boolean {
     return false
   }
 
-  const projectDir = dirname(dirname(resolve(scriptPath)))
-  return readFileSync(scriptPath, 'utf8') === codexPromptHookScript(projectDir)
+  return readFileSync(scriptPath, 'utf8') === codexPromptHookScript()
 }
 
 function assertCodexPromptHookScriptIsSafe(projectDir: string): void {
@@ -735,7 +770,7 @@ function assertCodexPromptHookScriptIsSafe(projectDir: string): void {
 
 function writeCodexPromptHookScript(projectDir: string): void {
   const hookScriptPath = join(projectDir, CODEX_PROMPT_HOOK_SCRIPT_RELATIVE_PATH)
-  const script = codexPromptHookScript(projectDir)
+  const script = codexPromptHookScript()
   assertCodexPromptHookScriptIsSafe(projectDir)
   if (existsSync(hookScriptPath) && readFileSync(hookScriptPath, 'utf8') === script) {
     return
@@ -1680,9 +1715,11 @@ function installMcpServer(
   ensureParentDirectory(mcpJsonPath)
   const mcpConfig = readJsonObject(mcpJsonPath)
 
-  const graphPath = join(projectDir, 'out', 'graph.json')
   const isVscode = target === 'copilot'
-  const cliArgs = ['serve', '--stdio', graphPath]
+  // Resolve the graph from the MCP process's workspace at startup. A static
+  // install-time graph path would point every linked worktree back to the
+  // primary checkout.
+  const cliArgs = ['serve', '--stdio', '--auto-refresh']
   // VS Code uses "servers" key, Claude/Cursor use "mcpServers"
   const serversKey = isVscode ? 'servers' : 'mcpServers'
   const mcpServers = ensureRecord(mcpConfig, serversKey)
@@ -2091,13 +2128,13 @@ function hasUserManagedCodexMcpDeclaration(content: string): boolean {
   return false
 }
 
-function renderCodexMcpBlock(graphPath: string, lineEnding: string, ownsPrecedingLineEnding = false): string {
+function renderCodexMcpBlock(lineEnding: string, ownsPrecedingLineEnding = false): string {
   return [
     CODEX_MCP_START_MARKER,
     ...(ownsPrecedingLineEnding ? [CODEX_MCP_OWNS_PRECEDING_LINE_ENDING_MARKER] : []),
     '[mcp_servers.madar]',
     'command = "madar"',
-    `args = ["serve", "--stdio", ${JSON.stringify(graphPath)}]`,
+    'args = ["serve", "--stdio", "--auto-refresh"]',
     'env = { MADAR_TOOL_PROFILE = "core" }',
     'enabled = true',
     CODEX_MCP_END_MARKER,
@@ -2105,7 +2142,7 @@ function renderCodexMcpBlock(graphPath: string, lineEnding: string, ownsPrecedin
   ].join(lineEnding)
 }
 
-export function isMadarCodexMcpConfig(content: string, expectedGraphPath: string): boolean {
+export function isMadarCodexMcpConfig(content: string): boolean {
   try {
     const managedBlock = readManagedCodexMcpBlock(content)
     if (!managedBlock) {
@@ -2118,7 +2155,7 @@ export function isMadarCodexMcpConfig(content: string, expectedGraphPath: string
     }
 
     const normalizedBlock = managedBlock.content.replaceAll('\r\n', '\n')
-    const expectedBlock = renderCodexMcpBlock(expectedGraphPath, '\n', managedBlock.ownsPrecedingLineEnding)
+    const expectedBlock = renderCodexMcpBlock('\n', managedBlock.ownsPrecedingLineEnding)
     return normalizedBlock === expectedBlock
   } catch {
     return false
@@ -2134,13 +2171,12 @@ function assertCodexMcpConfigIsSafe(projectDir: string): void {
 
 function installCodexMcpServer(projectDir: string): string {
   const configPath = join(projectDir, CODEX_MCP_CONFIG_RELATIVE_PATH)
-  const graphPath = resolve(projectDir, 'out', 'graph.json')
   const content = existsSync(configPath) ? readFileSync(configPath, 'utf8') : ''
   const managedBlock = readManagedCodexMcpBlock(content)
   const lineEnding = lineEndingForContent(content)
   const ownsPrecedingLineEnding = managedBlock?.ownsPrecedingLineEnding
     ?? (content.length > 0 && !content.endsWith('\n'))
-  const nextBlock = renderCodexMcpBlock(graphPath, lineEnding, ownsPrecedingLineEnding)
+  const nextBlock = renderCodexMcpBlock(lineEnding, ownsPrecedingLineEnding)
   const unownedContent = managedBlock
     ? `${content.slice(0, managedBlock.start)}${content.slice(managedBlock.end)}`
     : content
@@ -2315,10 +2351,9 @@ function installOpencodeMcpServer(projectDir: string, packageRoot?: string): str
   const mcpWasRecord = isRecord(config.mcp)
   const mcp = ensureRecord(config, 'mcp')
   const existingServer = isRecord(mcp[OPENCODE_MCP_SERVER_NAME]) ? (mcp[OPENCODE_MCP_SERVER_NAME] as Record<string, unknown>) : null
-  const graphPath = join(projectDir, 'out', 'graph.json')
   const serverConfig: Record<string, unknown> = {
     type: 'local',
-    command: [process.execPath, resolvePackageCliPath(packageRoot), 'serve', '--stdio', graphPath],
+    command: [process.execPath, resolvePackageCliPath(packageRoot), 'serve', '--stdio', '--auto-refresh'],
     enabled: true,
   }
 

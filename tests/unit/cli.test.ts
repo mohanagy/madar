@@ -1,5 +1,7 @@
-import { mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
 
 import { type CliDependencies, executeCli, formatHelp } from '../../src/cli/main.js'
 import {
@@ -30,6 +32,7 @@ import {
   UsageError,
 } from '../../src/cli/parser.js'
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { resolveWorkspaceGraphPath } from '../../src/shared/workspace.js'
 
 type GraphSummaryPayload = {
   graph_version?: string
@@ -992,6 +995,7 @@ describe('cli parser', () => {
       host: '127.0.0.1',
       port: 4173,
       transport: 'http',
+      autoRefresh: false,
     })
 
     expect(parseServeArgs(['custom.json', '--host', '0.0.0.0', '--port', '8080'])).toEqual({
@@ -999,6 +1003,7 @@ describe('cli parser', () => {
       host: '0.0.0.0',
       port: 8080,
       transport: 'http',
+      autoRefresh: false,
     })
 
     expect(parseServeArgs(['graph.json', '--mcp'])).toEqual({
@@ -1006,6 +1011,7 @@ describe('cli parser', () => {
       host: '127.0.0.1',
       port: 4173,
       transport: 'stdio',
+      autoRefresh: false,
     })
 
     expect(parseServeArgs(['graph.json', '--transport', 'stdio'])).toEqual({
@@ -1013,6 +1019,7 @@ describe('cli parser', () => {
       host: '127.0.0.1',
       port: 4173,
       transport: 'stdio',
+      autoRefresh: false,
     })
 
     expect(parseServeArgs(['graph.json', '--http'])).toEqual({
@@ -1020,6 +1027,15 @@ describe('cli parser', () => {
       host: '127.0.0.1',
       port: 4173,
       transport: 'http',
+      autoRefresh: false,
+    })
+
+    expect(parseServeArgs(['--stdio', '--auto-refresh'])).toEqual({
+      graphPath: 'out/graph.json',
+      host: '127.0.0.1',
+      port: 4173,
+      transport: 'stdio',
+      autoRefresh: true,
     })
 
     expect(() => parseServeArgs(['--port', '70000'])).toThrow('must be between 0 and 65535')
@@ -2838,6 +2854,45 @@ describe('cli main', () => {
     expect(logs).toContain('opencode local rules installed')
   })
 
+  it('recognizes an external linked-worktree graph before warning during install', async () => {
+    const sandbox = mkdtempSync(join(tmpdir(), 'madar-cli-worktree-'))
+    const primary = join(sandbox, 'primary')
+    const linked = join(sandbox, 'linked')
+    const originalCwd = process.cwd()
+
+    try {
+      execFileSync('git', ['init', primary], { stdio: 'pipe' })
+      execFileSync('git', ['-C', primary, 'config', 'user.email', 'madar-tests@example.com'], { stdio: 'pipe' })
+      execFileSync('git', ['-C', primary, 'config', 'user.name', 'Madar Tests'], { stdio: 'pipe' })
+      writeFileSync(join(primary, 'main.ts'), 'export const primary = true\n', 'utf8')
+      execFileSync('git', ['-C', primary, 'add', '.'], { stdio: 'pipe' })
+      execFileSync('git', ['-C', primary, 'commit', '-m', 'initial'], { stdio: 'pipe' })
+      execFileSync('git', ['-C', primary, 'worktree', 'add', '-b', 'feature/install-warning', linked], { stdio: 'pipe' })
+
+      const graphPath = resolveWorkspaceGraphPath('out/graph.json', linked)
+      mkdirSync(dirname(graphPath), { recursive: true })
+      writeFileSync(graphPath, '{}\n', 'utf8')
+
+      process.chdir(linked)
+      const { io, logs } = createIo()
+
+      await expect(executeCli(['claude', 'install'], io, createDependencies())).resolves.toBe(0)
+
+      expect(logs).toContain('claude local rules installed')
+      expect(logs.join('\n')).not.toContain('Warning: out/graph.json not found')
+    } finally {
+      process.chdir(originalCwd)
+      if (existsSync(primary)) {
+        try {
+          execFileSync('git', ['-C', primary, 'worktree', 'remove', '--force', linked], { stdio: 'pipe' })
+        } catch {
+          // The temporary directory cleanup below handles partial setup.
+        }
+      }
+      rmSync(sandbox, { recursive: true, force: true })
+    }
+  }, 20_000)
+
   it('passes the requested install profile into claude, cursor, gemini, and copilot installs', async () => {
     const { io } = createIo()
     const dependencies = createDependencies()
@@ -2879,6 +2934,7 @@ describe('cli main', () => {
     let watched = false
     let served = false
     let servedOverStdio = false
+    let stdioOptions: unknown
     let lastGenerateOptions: Record<string, unknown> | undefined
     let lastWatchOptions: Record<string, unknown> | undefined
     const dependencies = createDependencies()
@@ -2894,13 +2950,14 @@ describe('cli main', () => {
     dependencies.serveGraph = async () => {
       served = true
     }
-    dependencies.serveGraphStdio = async () => {
+    dependencies.serveGraphStdio = async (options) => {
       servedOverStdio = true
+      stdioOptions = options
     }
 
     const watchExitCode = await executeCli(['watch', 'src', '--respect-gitignore', '--debounce', '1', '--no-html'], io, dependencies)
     const serveExitCode = await executeCli(['serve', 'out/graph.json', '--port', '0'], io, dependencies)
-    const stdioExitCode = await executeCli(['serve', 'out/graph.json', '--mcp'], io, dependencies)
+    const stdioExitCode = await executeCli(['serve', 'out/graph.json', '--mcp', '--auto-refresh'], io, dependencies)
 
     expect(watchExitCode).toBe(0)
     expect(serveExitCode).toBe(0)
@@ -2912,6 +2969,7 @@ describe('cli main', () => {
     expect(lastGenerateOptions?.respectGitignore).toBe(true)
     expect(lastWatchOptions?.noHtml).toBe(true)
     expect(lastWatchOptions?.respectGitignore).toBe(true)
+    expect(stdioOptions).toMatchObject({ graphPath: 'out/graph.json', autoRefresh: true, workspaceRoot: process.cwd() })
     expect(logs[0]).toContain('[madar generate]')
   })
 

@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import * as ts from 'typescript'
 
 import {
@@ -597,6 +598,23 @@ describe('install helpers', () => {
     })
   })
 
+  it('keeps Gemini hook guidance active in a linked worktree without a local out graph', () => {
+    withTempDir((projectDir) => {
+      const nestedDirectory = join(projectDir, 'nested', 'agent-session')
+      mkdirSync(nestedDirectory, { recursive: true })
+      writeFileSync(join(projectDir, '.git'), 'gitdir: ../.git/worktrees/linked\n', 'utf8')
+      geminiInstall(projectDir)
+
+      const settings = readFileSync(join(projectDir, '.gemini', 'settings.json'), 'utf8')
+      const command = extractHookCommand(settings, 'BeforeTool')
+      const output = runHookCommand(command, nestedDirectory, { tool_name: 'read_file' })
+
+      expect(command).toContain('madar-workspace-graph-check')
+      expect(output).toContain('additionalContext')
+      expect(output).toContain('madar knowledge graph')
+    })
+  })
+
   it('fails loudly for malformed existing Gemini JSON config files', () => {
     withTempDir((projectDir) => {
       const settingsPath = join(projectDir, '.gemini', 'settings.json')
@@ -856,7 +874,7 @@ describe('install helpers', () => {
       expect(mcpConfig.mcpServers?.['madar']?.args).toEqual([
         'serve',
         '--stdio',
-        join(projectDir, 'out', 'graph.json'),
+        '--auto-refresh',
       ])
     })
   })
@@ -955,7 +973,7 @@ describe('install helpers', () => {
       expect(mcpConfig.mcpServers?.['madar']?.args).toEqual([
         'serve',
         '--stdio',
-        join(projectDir, 'out', 'graph.json'),
+        '--auto-refresh',
       ])
     })
   })
@@ -1064,7 +1082,7 @@ describe('install helpers', () => {
           normalizeAssertionPath(cliPath),
           'serve',
           '--stdio',
-          normalizeAssertionPath(join(projectDir, 'out', 'graph.json')),
+          '--auto-refresh',
         ])
       })
     })
@@ -1210,7 +1228,7 @@ describe('install helpers', () => {
         expect(opencodeConfig.plugin).toContain('.opencode/plugins/madar.js')
         expect(opencodeConfig.mcp?.madar).toEqual({
           type: 'local',
-          command: [process.execPath, cliPath, 'serve', '--stdio', join(projectDir, 'out', 'graph.json')],
+          command: [process.execPath, cliPath, 'serve', '--stdio', '--auto-refresh'],
           enabled: true,
         })
       })
@@ -1294,7 +1312,7 @@ describe('install helpers', () => {
     })
   })
 
-  it('uses an absolute graph path when the Codex prompt hook runs from a nested directory', () => {
+  it('finds the workspace graph when the Codex prompt hook runs from a nested directory', () => {
     withTempDir((temporaryDir) => {
       const projectDir = join(temporaryDir, 'repo-$()-`tick`-$HOME')
       mkdirSync(join(projectDir, 'out'), { recursive: true })
@@ -1316,7 +1334,7 @@ describe('install helpers', () => {
         { prompt: 'Explain how this repository auth module works' },
       )
 
-      expect(hookScript).toContain(JSON.stringify(join(projectDir, 'out', 'graph.json')))
+      expect(hookScript).toContain('function hasMadarGraph()')
       expect(command).not.toContain(projectDir)
       expect(JSON.parse(output)).toMatchObject({
         hookSpecificOutput: {
@@ -1372,6 +1390,38 @@ describe('install helpers', () => {
         expect(plugin).not.toContain('Read out/GRAPH_REPORT.md before raw file search if needed.')
       })
     })
+  })
+
+  it('activates the OpenCode reminder in a linked worktree without a local out graph', async () => {
+    const projectDir = mkdtempSync(join(tmpdir(), 'madar-opencode-worktree-'))
+    const packageRoot = mkdtempSync(join(tmpdir(), 'madar-opencode-package-'))
+
+    try {
+      const cliPath = join(packageRoot, PACKAGE_CLI_RELATIVE_PATH)
+      mkdirSync(dirname(cliPath), { recursive: true })
+      writeFileSync(join(packageRoot, 'package.json'), JSON.stringify({ name: 'madar-test', bin: { madar: PACKAGE_CLI_RELATIVE_PATH } }), 'utf8')
+      writeFileSync(cliPath, '#!/usr/bin/env node\n', 'utf8')
+      writeFileSync(join(projectDir, 'package.json'), JSON.stringify({ type: 'module' }), 'utf8')
+      writeFileSync(join(projectDir, '.git'), 'gitdir: ../.git/worktrees/linked\n', 'utf8')
+
+      agentsInstall(projectDir, 'opencode', { packageRoot })
+
+      const pluginPath = join(projectDir, '.opencode', 'plugins', 'madar.js')
+      const pluginModule = await import(pathToFileURL(pluginPath).href) as {
+        MadarPlugin: (context: { directory: string }) => Promise<{
+          'tool.execute.before': (input: { tool: string }, output: { args: { command: string } }) => Promise<void>
+        }>
+      }
+      const plugin = await pluginModule.MadarPlugin({ directory: join(projectDir, 'nested', 'agent-session') })
+      const output = { args: { command: 'pwd' } }
+
+      await plugin['tool.execute.before']({ tool: 'bash' }, output)
+
+      expect(output.args.command).toContain('[madar] Knowledge graph available.')
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+      rmSync(packageRoot, { recursive: true, force: true })
+    }
   })
 
   it('migrates recognized legacy Codex PreToolUse hooks while preserving user hooks', () => {
@@ -1536,9 +1586,8 @@ describe('install helpers', () => {
   it('writes an idempotent marker-owned Codex MCP block while preserving unrelated TOML and line endings', () => {
     withTempDir((projectDir) => {
       const configPath = join(projectDir, '.codex', 'config.toml')
-      const graphPath = join(projectDir, 'out', 'graph.json')
       const unrelatedToml = '# Preserve this user comment\r\n[features]\r\nparallel = true\r\n'
-      const managedBlock = `${CODEX_MCP_START_MARKER}\r\n[mcp_servers.madar]\r\ncommand = "madar"\r\nargs = ["serve", "--stdio", ${JSON.stringify(graphPath)}]\r\nenv = { MADAR_TOOL_PROFILE = "core" }\r\nenabled = true\r\n${CODEX_MCP_END_MARKER}\r\n`
+      const managedBlock = `${CODEX_MCP_START_MARKER}\r\n[mcp_servers.madar]\r\ncommand = "madar"\r\nargs = ["serve", "--stdio", "--auto-refresh"]\r\nenv = { MADAR_TOOL_PROFILE = "core" }\r\nenabled = true\r\n${CODEX_MCP_END_MARKER}\r\n`
 
       mkdirSync(join(projectDir, '.codex'), { recursive: true })
       writeFileSync(configPath, unrelatedToml, 'utf8')
@@ -1627,7 +1676,6 @@ ${CODEX_MCP_END_MARKER}
   it('rewrites only a complete owned Codex MCP marker block', () => {
     withTempDir((projectDir) => {
       const configPath = join(projectDir, '.codex', 'config.toml')
-      const graphPath = join(projectDir, 'out', 'graph.json')
       const before = `# before\n${CODEX_MCP_START_MARKER}\n[mcp_servers.madar]\ncommand = "old-madar"\nargs = ["old"]\n${CODEX_MCP_END_MARKER}\n# after\n`
 
       mkdirSync(join(projectDir, '.codex'), { recursive: true })
@@ -1640,7 +1688,7 @@ ${CODEX_MCP_END_MARKER}
       expect(installed).toContain('# before\n')
       expect(installed).toContain('# after\n')
       expect(installed).toContain('[mcp_servers.madar]\ncommand = "madar"')
-      expect(installed).toContain(`args = ["serve", "--stdio", ${JSON.stringify(graphPath)}]`)
+      expect(installed).toContain('args = ["serve", "--stdio", "--auto-refresh"]')
       expect(installed).toContain('env = { MADAR_TOOL_PROFILE = "core" }')
       expect(installed).toContain('enabled = true')
       expect(installed).not.toContain('old-madar')
@@ -1758,7 +1806,7 @@ ${CODEX_MCP_END_MARKER}
         expect(opencodeConfig.mcp?.other).toEqual({ type: 'remote', url: 'https://example.com/mcp' })
         expect(opencodeConfig.mcp?.madar).toEqual({
           type: 'local',
-          command: [process.execPath, cliPath, 'serve', '--stdio', join(projectDir, 'out', 'graph.json')],
+          command: [process.execPath, cliPath, 'serve', '--stdio', '--auto-refresh'],
           enabled: true,
           environment: { HTTP_PROXY: 'http://proxy.example' },
         })
@@ -1808,7 +1856,7 @@ ${CODEX_MCP_END_MARKER}
         expect(installedConfig.mcp?.other).toEqual({ type: 'remote', url: 'https://example.com/mcp' })
         expect(installedConfig.mcp?.madar).toEqual({
           type: 'local',
-          command: [process.execPath, cliPath, 'serve', '--stdio', join(projectDir, 'out', 'graph.json')],
+          command: [process.execPath, cliPath, 'serve', '--stdio', '--auto-refresh'],
           enabled: true,
         })
 

@@ -1,13 +1,26 @@
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { basename, join, relative, resolve, sep } from 'node:path'
+import { tmpdir } from 'node:os'
+import { execFileSync } from 'node:child_process'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { EXTRACTOR_CACHE_VERSION } from '../../src/pipeline/extract.js'
 import { compareRefs, loadOrBuildSnapshot, type CompareRefsDependencies, type SnapshotDependencies } from '../../src/infrastructure/time-travel.js'
 import type { TimeTravelResult } from '../../src/runtime/time-travel.js'
+import { resolveMadarWorkspace } from '../../src/shared/workspace.js'
 
 const createdRoots = new Set<string>()
+
+function isInside(candidate: string, root: string): boolean {
+  const relativePath = relative(root, candidate)
+  return relativePath === '' || (!relativePath.startsWith('..') && !relativePath.startsWith(`..${sep}`))
+}
+
+function normalizedGitPath(path: string): string {
+  const canonical = realpathSync.native(path).replaceAll('\\', '/')
+  return process.platform === 'win32' ? canonical.toLowerCase() : canonical
+}
 
 function createDeferred<T>(): {
   promise: Promise<T>
@@ -223,6 +236,65 @@ describe('time travel infrastructure', () => {
 
     await expect(loadOrBuildSnapshot({ ref: 'HEAD', refresh: false }, deps)).rejects.toThrow('build failed')
   })
+
+  it('keeps linked-worktree snapshots isolated and removes the transient external artifact', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'madar-time-travel-worktree-'))
+    const primary = join(tempDir, 'primary')
+    const linked = join(tempDir, 'linked')
+    try {
+      execFileSync('git', ['init', primary], { stdio: 'pipe' })
+      execFileSync('git', ['config', 'user.email', 'madar-tests@example.com'], { cwd: primary, stdio: 'pipe' })
+      execFileSync('git', ['config', 'user.name', 'Madar Tests'], { cwd: primary, stdio: 'pipe' })
+      writeFileSync(join(primary, 'main.ts'), 'export const snapshotValue = 1\n')
+      execFileSync('git', ['add', '.'], { cwd: primary, stdio: 'pipe' })
+      execFileSync('git', ['commit', '-m', 'initial'], { cwd: primary, stdio: 'pipe' })
+      execFileSync('git', ['worktree', 'add', '-b', 'feature/time-travel', linked], { cwd: primary, stdio: 'pipe' })
+
+      const linkedWorkspace = resolveMadarWorkspace(linked)
+      const materializedWorktrees: string[] = []
+      const result = await loadOrBuildSnapshot({ ref: 'HEAD' }, {
+        rootDir: linked,
+        git: {
+          createDetachedWorktree(worktreePath, commitSha): void {
+            materializedWorktrees.push(worktreePath)
+            execFileSync('git', ['worktree', 'add', '--detach', worktreePath, commitSha], { cwd: linked, stdio: 'pipe' })
+          },
+          removeWorktree(worktreePath): void {
+            execFileSync('git', ['worktree', 'remove', '--force', worktreePath], { cwd: linked, stdio: 'pipe' })
+          },
+        },
+      })
+      const artifactContainer = join(linkedWorkspace.gitCommonDir ?? '', 'madar', 'worktrees')
+
+      expect(linkedWorkspace.isLinkedWorktree).toBe(true)
+      expect(result.graphPath).toBe(join(linkedWorkspace.outputDir, 'time-travel', 'snapshots', result.commitSha, 'graph.json'))
+      expect(existsSync(result.graphPath)).toBe(true)
+      expect(existsSync(join(linked, 'out'))).toBe(false)
+      expect(readdirSync(artifactContainer).sort()).toEqual([basename(linkedWorkspace.artifactRoot)])
+      expect(materializedWorktrees).toHaveLength(1)
+      const [materializedWorktree] = materializedWorktrees
+      if (!materializedWorktree) {
+        throw new Error('Expected one transient time-travel worktree')
+      }
+      expect(isInside(materializedWorktree, linkedWorkspace.gitCommonDir ?? '')).toBe(false)
+      expect(existsSync(materializedWorktree)).toBe(false)
+
+      const worktreeList = execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd: linked, encoding: 'utf8', stdio: 'pipe' })
+      const normalizedWorktreeList = process.platform === 'win32' ? worktreeList.toLowerCase() : worktreeList
+      expect(normalizedWorktreeList).toContain(`worktree ${normalizedGitPath(primary)}`)
+      expect(normalizedWorktreeList).toContain(`worktree ${normalizedGitPath(linked)}`)
+      expect(worktreeList).not.toContain('time-travel/worktrees')
+    } finally {
+      if (existsSync(primary)) {
+        try {
+          execFileSync('git', ['worktree', 'remove', '--force', linked], { cwd: primary, stdio: 'pipe' })
+        } catch {
+          // Temp directory cleanup below still handles partial setup failures.
+        }
+      }
+      rmSync(tempDir, { recursive: true, force: true })
+    }
+  }, 20_000)
 
   it('loads both snapshots and compares them through the runtime helper', async () => {
     const rootDir = createTestRoot('compare')

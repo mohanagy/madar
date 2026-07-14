@@ -29,6 +29,7 @@ import { QUERY_TOKEN_ESTIMATOR, estimateQueryTokens, loadGraph } from '../runtim
 import { resolveToolProfileFromEnv, type McpToolProfile } from '../runtime/stdio/definitions.js'
 import { sidecarAwareFileFingerprint } from '../shared/binary-ingest-sidecar.js'
 import { sanitizeShareSafeText, toShareSafeArtifactPath, type ShareSafePathRoots } from '../shared/share-safe-artifacts.js'
+import { readGraphSourceRoot } from '../shared/graph-source-root.js'
 import { resolveShellCommand, shellEscape } from '../shared/shell.js'
 import { MAX_TEXT_BYTES, validateGraphOutputPath, validateGraphPath } from '../shared/security.js'
 import { copyWorkspaceForBenchmark } from '../shared/workspace-copy.js'
@@ -1991,16 +1992,7 @@ function portablePath(path: string): string {
 }
 
 function inferProjectRootFromGraphPath(graphPath: string): string {
-  let currentPath = dirname(resolve(graphPath))
-
-  while (dirname(currentPath) !== currentPath) {
-    if (basename(currentPath) === 'out') {
-      return dirname(currentPath)
-    }
-    currentPath = dirname(currentPath)
-  }
-
-  return dirname(resolve(graphPath))
+  return readGraphSourceRoot(graphPath)
 }
 
 export function resolveSuggestedGraphScopePath(graphPath: string, suggestedGraphScope: string): string {
@@ -2909,7 +2901,7 @@ export function generateCompareArtifacts(input: GenerateCompareArtifactsInput): 
 
     const retrieval = retrieveCompareContext(graph, question, retrievalBudget, projectRoot)
     const madarPrompt = buildMadarPromptPack({
-      graphPath: input.graphPath,
+      graphPath,
       question,
       retrieval,
       ...(madarSession ? { session: madarSession } : {}),
@@ -3692,7 +3684,6 @@ interface ImplementationReviewerVisibleGate {
 interface ImplementationWorkspace {
   tempRoot: string
   workspaceRoot: string
-  graphPath: string
 }
 
 function loadImplementationReviewerVisibleGates(questionsPath?: string | null): Map<string, ImplementationReviewerVisibleGate> {
@@ -3776,18 +3767,13 @@ function diffWorkspaceSnapshots(before: Map<string, number>, after: Map<string, 
   return [...changed].sort()
 }
 
-function prepareImplementationWorkspace(projectRoot: string, graphPath: string): ImplementationWorkspace {
+function prepareImplementationWorkspace(projectRoot: string): ImplementationWorkspace {
   const tempRoot = mkdtempSync(join(tmpdir(), 'madar-compare-arm-'))
   const workspaceRoot = join(tempRoot, 'workspace')
   copyWorkspaceForBenchmark(projectRoot, workspaceRoot, { sharedTopLevelEntries: ['node_modules'] })
-  const relativeGraphPath = relative(projectRoot, graphPath)
-  const workspaceGraphPath = join(workspaceRoot, relativeGraphPath)
-  mkdirSync(dirname(workspaceGraphPath), { recursive: true })
-  writeFileSync(workspaceGraphPath, readFileSync(graphPath, 'utf8'), 'utf8')
   return {
     tempRoot,
     workspaceRoot,
-    graphPath: workspaceGraphPath,
   }
 }
 
@@ -5360,8 +5346,8 @@ export async function executeNativeAgentCompare(
       comparePack,
       runtimeProofProfile,
     } = entry
-    const baselineWorkspace = task === 'implement' ? prepareImplementationWorkspace(projectRoot, graphPath) : null
-    const madarWorkspace = task === 'implement' ? prepareImplementationWorkspace(projectRoot, graphPath) : null
+    const baselineWorkspace = task === 'implement' ? prepareImplementationWorkspace(projectRoot) : null
+    const madarWorkspace = task === 'implement' ? prepareImplementationWorkspace(projectRoot) : null
     let baselineTouchedFiles: string[] = []
     let madarTouchedFiles: string[] = []
     let baselineWorkspaceSnapshot = baselineWorkspace ? snapshotWorkspaceFiles(baselineWorkspace.workspaceRoot) : null

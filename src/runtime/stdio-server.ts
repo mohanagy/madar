@@ -1,10 +1,11 @@
 import { createInterface } from 'node:readline'
-import { statSync } from 'node:fs'
-import { basename, dirname } from 'node:path'
+import { existsSync, realpathSync, statSync } from 'node:fs'
+import { basename, dirname, resolve } from 'node:path'
 import type { Readable, Writable } from 'node:stream'
 
 import type { ContextSessionState } from '../contracts/context-session.js'
 import { compareRefs } from '../infrastructure/time-travel.js'
+import { startGraphAutoRefresh } from '../infrastructure/watch.js'
 import { diffGraphs } from './diff.js'
 import { buildGraphSummary } from './graph-summary.js'
 import { MCP_PROMPTS, MCP_TOOLS, activeMcpTools, isCoreToolName, resolveToolProfileFromEnv, type McpPromptDefinition } from './stdio/definitions.js'
@@ -39,6 +40,8 @@ import {
   type TelemetryFailureBucket,
 } from '../shared/telemetry.js'
 import { findPackageRoot, readPackageVersion } from '../shared/package-metadata.js'
+import { resolveGraphSourceRoot } from '../shared/graph-source-root.js'
+import { resolveMadarWorkspace } from '../shared/workspace.js'
 
 const JSONRPC_PARSE_ERROR = -32700
 const JSONRPC_INVALID_REQUEST = -32600
@@ -133,12 +136,36 @@ interface StdioResponse {
 
 export interface ServeGraphStdioOptions {
   graphPath: string
+  /** Reconcile once and watch the selected workspace for this MCP process. */
+  autoRefresh?: boolean
+  /** Source root selected when the MCP process was launched. */
+  workspaceRoot?: string
+  /** Internal/testing override for the filesystem change debounce. */
+  autoRefreshDebounceSeconds?: number
   input?: Readable
   output?: Writable
   errorOutput?: Writable
   logger?: {
     log(message?: string): void
     error(message?: string): void
+  }
+}
+
+function sameFilesystemPath(left: string, right: string): boolean {
+  try {
+    return realpathSync(left) === realpathSync(right)
+  } catch {
+    return resolve(left) === resolve(right)
+  }
+}
+
+function graphRootPath(graphPath: string): string | null {
+  try {
+    const graph = loadGraph(validateGraphPath(graphPath))
+    const rootPath = graph.graph.root_path
+    return typeof rootPath === 'string' && rootPath.trim().length > 0 ? rootPath.trim() : null
+  } catch {
+    return null
   }
 }
 
@@ -639,7 +666,7 @@ export function handleStdioRequest(
         // Only advertise semantic/rerank params when the optional transformers
         // package is actually resolvable on this machine — agents cannot pass
         // parameters that are absent from the schema.
-        const semanticAvailable = isSemanticRuntimeAvailable(dirname(graphPath))
+        const semanticAvailable = isSemanticRuntimeAvailable(graphRootPath(graphPath) ?? resolveGraphSourceRoot(graphPath))
         return ok(id, { tools: activeMcpTools(profile, { semanticAvailable }) })
       }
       case 'tools/call': {
@@ -666,7 +693,7 @@ export function handleStdioRequest(
           handleGraphDiff,
           compareRefs: async (input) => {
             const safeGraphPath = validateGraphPath(graphPath)
-            const projectRoot = dirname(dirname(safeGraphPath))
+            const projectRoot = resolveGraphSourceRoot(safeGraphPath, loadGraphCached(safeGraphPath))
             return await (toolOverrides.compareRefs ?? compareRefs)(input, { rootDir: projectRoot })
           },
            getContextPromptSession: (sessionId) => ensureContextPromptSessions(sessionState).get(sessionId),
@@ -824,48 +851,83 @@ export async function serveGraphStdio(options: ServeGraphStdioOptions): Promise<
   const output = options.output ?? process.stdout
   const errorOutput = options.errorOutput ?? process.stderr
   const sessionState = createSessionState()
+  let autoRefresh: ReturnType<typeof startGraphAutoRefresh> | null = null
+
+  if (options.autoRefresh) {
+    const workspaceRoot = options.workspaceRoot ?? graphRootPath(options.graphPath)
+    if (!workspaceRoot) {
+      throw new Error('Cannot auto-refresh a graph without a workspace root. Run madar generate from the workspace first.')
+    }
+
+    const workspace = resolveMadarWorkspace(workspaceRoot)
+    if (!sameFilesystemPath(options.graphPath, workspace.graphPath)) {
+      throw new Error(
+        `Refusing to auto-refresh ${options.graphPath}: it is not the graph artifact for ${workspace.rootPath}. ` +
+        'Start the MCP server from the intended worktree instead.',
+      )
+    }
+
+    autoRefresh = startGraphAutoRefresh(workspace.rootPath, options.autoRefreshDebounceSeconds ?? 1, {
+      // The MCP server needs graph.json; avoid regenerating the browser view on
+      // every coalesced agent edit.
+      noHtml: true,
+      logger: { log() {}, error() {} },
+    })
+    if (!autoRefresh.initialRebuilt && !existsSync(options.graphPath)) {
+      autoRefresh.stop()
+      await autoRefresh.completed
+      throw new Error(`Unable to build a graph for ${workspace.rootPath}`)
+    }
+  }
 
   errorOutput.write(`[madar serve] stdio ready for ${options.graphPath}\n`)
 
   const readline = createInterface({ input, crlfDelay: Infinity })
 
-  for await (const line of readline) {
-    const trimmed = line.trim()
-    if (!trimmed) {
-      continue
-    }
-
-    if (trimmed.length > MAX_STDIO_LINE_BYTES) {
-      const response = failure(null, JSONRPC_INVALID_REQUEST, `Payload too large (max ${MAX_STDIO_LINE_BYTES} bytes)`)
-      output.write(`${JSON.stringify(response)}\n`)
-      continue
-    }
-
-    let payload: unknown
-    try {
-      payload = JSON.parse(trimmed)
-    } catch {
-      const response = failure(null, JSONRPC_PARSE_ERROR, 'Parse error')
-      emitLogNotification(output, sessionState, 'error', { message: response.error?.message ?? 'Parse error', code: JSONRPC_PARSE_ERROR })
-      output.write(`${JSON.stringify(response)}\n`)
-      continue
-    }
-
-    let response: StdioResponse | null
-    try {
-      emitResourceNotifications(output, options.graphPath, sessionState)
-      response = await Promise.resolve(handleStdioRequest(options.graphPath, payload, sessionState))
-    } catch (error) {
-      // A rejected handler must never tear down the whole stdio server: every
-      // request gets an answer and the loop keeps serving (#crash).
-      const message = error instanceof Error ? error.message : 'Request failed'
-      response = failure(requestId(payload as StdioRequest), JSONRPC_SERVER_ERROR, message)
-    }
-    if (response) {
-      if (response.error) {
-        emitLogNotification(output, sessionState, 'error', { message: response.error.message, code: response.error.code })
+  try {
+    for await (const line of readline) {
+      const trimmed = line.trim()
+      if (!trimmed) {
+        continue
       }
-      output.write(`${JSON.stringify(response)}\n`)
+
+      if (trimmed.length > MAX_STDIO_LINE_BYTES) {
+        const response = failure(null, JSONRPC_INVALID_REQUEST, `Payload too large (max ${MAX_STDIO_LINE_BYTES} bytes)`)
+        output.write(`${JSON.stringify(response)}\n`)
+        continue
+      }
+
+      let payload: unknown
+      try {
+        payload = JSON.parse(trimmed)
+      } catch {
+        const response = failure(null, JSONRPC_PARSE_ERROR, 'Parse error')
+        emitLogNotification(output, sessionState, 'error', { message: response.error?.message ?? 'Parse error', code: JSONRPC_PARSE_ERROR })
+        output.write(`${JSON.stringify(response)}\n`)
+        continue
+      }
+
+      let response: StdioResponse | null
+      try {
+        emitResourceNotifications(output, options.graphPath, sessionState)
+        response = await Promise.resolve(handleStdioRequest(options.graphPath, payload, sessionState))
+      } catch (error) {
+        // A rejected handler must never tear down the whole stdio server: every
+        // request gets an answer and the loop keeps serving (#crash).
+        const message = error instanceof Error ? error.message : 'Request failed'
+        response = failure(requestId(payload as StdioRequest), JSONRPC_SERVER_ERROR, message)
+      }
+      if (response) {
+        if (response.error) {
+          emitLogNotification(output, sessionState, 'error', { message: response.error.message, code: response.error.code })
+        }
+        output.write(`${JSON.stringify(response)}\n`)
+      }
+    }
+  } finally {
+    if (autoRefresh) {
+      autoRefresh.stop()
+      await autoRefresh.completed
     }
   }
 }

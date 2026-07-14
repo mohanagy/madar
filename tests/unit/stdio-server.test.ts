@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { PassThrough } from 'node:stream'
 import { join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -8,6 +8,17 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import { handleStdioRequest, serveGraphStdio } from '../../src/runtime/stdio-server.js'
 import { graphFreshnessMetadata } from '../../src/runtime/freshness.js'
+
+async function waitFor(condition: () => boolean, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (condition()) {
+      return
+    }
+    await delay(10)
+  }
+  throw new Error('Timed out waiting for expected condition')
+}
 
 function createGraphFixtureRoot(): string {
   const parentDir = resolve('out', 'test-runtime')
@@ -2575,6 +2586,70 @@ describe('stdio runtime', () => {
       rmSync(root, { recursive: true, force: true })
     }
   })
+
+  it('refreshes an active stdio session after an agent changes its workspace', async () => {
+    const parentDir = resolve('out', 'test-runtime')
+    mkdirSync(parentDir, { recursive: true })
+    const root = mkdtempSync(join(parentDir, 'madar-stdio-auto-refresh-'))
+    const graphPath = join(root, 'out', 'graph.json')
+    const input = new PassThrough()
+    const output = new PassThrough()
+    const errorOutput = new PassThrough()
+    let outputText = ''
+    output.on('data', (chunk) => {
+      outputText += chunk.toString('utf8')
+    })
+
+    writeFileSync(join(root, 'initial.ts'), 'export const initialValue = 1\n', 'utf8')
+    const serverPromise = serveGraphStdio({
+      graphPath,
+      autoRefresh: true,
+      workspaceRoot: root,
+      autoRefreshDebounceSeconds: 0.02,
+      input,
+      output,
+      errorOutput,
+    })
+
+    try {
+      await waitFor(() => {
+        if (!existsSync(graphPath)) {
+          return false
+        }
+        const graph = JSON.parse(readFileSync(graphPath, 'utf8')) as { nodes?: Array<{ source_file?: string }> }
+        return graph.nodes?.some((node) => node.source_file?.endsWith('initial.ts')) === true
+      })
+
+      input.write(`${JSON.stringify({ id: 1, method: 'stats' })}\n`)
+      await waitFor(() => outputText.includes('"id":1'))
+
+      writeFileSync(join(root, 'added.ts'), 'export function addedDuringSession() { return 2 }\n', 'utf8')
+      await waitFor(() => {
+        const graph = JSON.parse(readFileSync(graphPath, 'utf8')) as { nodes?: Array<{ source_file?: string }> }
+        return graph.nodes?.some((node) => node.source_file?.endsWith('added.ts')) === true
+      })
+
+      input.end(`${JSON.stringify({ id: 2, method: 'stats' })}\n`)
+      await serverPromise
+
+      const responses = outputText
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line)) as Array<{ id?: number; result?: string }>
+      const before = responses.find((response) => response.id === 1)
+      const after = responses.find((response) => response.id === 2)
+      const refreshedGraph = JSON.parse(readFileSync(graphPath, 'utf8')) as { nodes?: unknown[] }
+
+      expect(before?.result).toContain('Nodes: 1')
+      expect(after?.result).toContain(`Nodes: ${refreshedGraph.nodes?.length ?? 0}`)
+      expect(after?.result).not.toBe(before?.result)
+    } finally {
+      input.destroy()
+      await serverPromise.catch(() => {})
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, 10_000)
 
   it('returns JSON-RPC-style errors for invalid requests', () => {
     const root = createGraphFixtureRoot()

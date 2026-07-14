@@ -2,6 +2,7 @@ import { dirname, isAbsolute, resolve } from 'node:path'
 
 import type { ContextPackFormat, ContextPackRetrievalStrategy, ContextPackTaskKind } from '../contracts/context-pack.js'
 import { validateGraphOutputPath, validateGraphPath } from '../shared/security.js'
+import { resolveWorkspaceGraphPath } from '../shared/workspace.js'
 import { type InstallPlatform, isInstallPlatform, type InstallProfile, isInstallProfile } from '../infrastructure/install.js'
 
 export class UsageError extends Error {
@@ -198,6 +199,7 @@ export interface ServeCliOptions {
   host: string
   port: number
   transport: 'http' | 'stdio'
+  autoRefresh: boolean
 }
 
 export interface DoctorCliOptions {
@@ -1503,11 +1505,18 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
     throw new UsageError('error: --exec is required')
   }
 
-  outputDir = validateGraphOutputPath(outputDir)
+  const resolvedGraphPath = resolveWorkspaceGraphPath(graphPath)
+  const graphArtifactDir = dirname(resolve(resolvedGraphPath))
+  // Keep compare receipts beside the graph. This is especially important for
+  // linked worktrees, whose graph artifact directory intentionally lives
+  // outside the source checkout.
+  outputDir = outputDir === 'out/compare'
+    ? validateGraphOutputPath(resolve(graphArtifactDir, 'compare'), graphArtifactDir)
+    : validateGraphOutputPath(outputDir)
 
   return {
     question,
-    graphPath,
+    graphPath: resolvedGraphPath,
     execTemplate,
     questionsPath,
     outputDir,
@@ -1608,10 +1617,16 @@ export function parseReviewCompareArgs(args: string[]): ReviewCompareCliOptions 
     throw new UsageError('error: --exec is required')
   }
 
+  const resolvedGraphPath = resolveWorkspaceGraphPath(graphPath)
+  const graphArtifactDir = dirname(resolve(resolvedGraphPath))
+  const resolvedOutputDir = outputDir === 'out/review-compare'
+    ? validateGraphOutputPath(resolve(graphArtifactDir, 'review-compare'), graphArtifactDir)
+    : validateReviewCompareOutputDir(outputDir)
+
   return {
-    graphPath,
+    graphPath: resolvedGraphPath,
     execTemplate,
-    outputDir: validateReviewCompareOutputDir(outputDir),
+    outputDir: resolvedOutputDir,
     baseBranch,
     budget,
     yes,
@@ -1970,6 +1985,7 @@ export function parseServeArgs(args: string[]): ServeCliOptions {
   let host = '127.0.0.1'
   let port = 4173
   let transport: 'http' | 'stdio' = 'http'
+  let autoRefresh = false
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index]
@@ -1979,7 +1995,7 @@ export function parseServeArgs(args: string[]): ServeCliOptions {
 
     if (!argument.startsWith('--')) {
       if (graphPath !== 'out/graph.json') {
-        throw new UsageError('Usage: madar serve [graph.json] [--host H] [--port N] [--transport http|stdio] [--http|--stdio|--mcp]')
+        throw new UsageError('Usage: madar serve [graph.json] [--host H] [--port N] [--transport http|stdio] [--http|--stdio|--mcp] [--auto-refresh]')
       }
       graphPath = argument
       continue
@@ -1992,6 +2008,11 @@ export function parseServeArgs(args: string[]): ServeCliOptions {
 
     if (argument === '--stdio' || argument === '--mcp') {
       transport = 'stdio'
+      continue
+    }
+
+    if (argument === '--auto-refresh') {
+      autoRefresh = true
       continue
     }
 
@@ -2034,7 +2055,7 @@ export function parseServeArgs(args: string[]): ServeCliOptions {
     throw new UsageError(`error: unknown option for serve: ${argument}`)
   }
 
-  return { graphPath, host, port, transport }
+  return { graphPath, host, port, transport, autoRefresh }
 }
 
 export function parseDoctorArgs(args: string[], commandName: 'doctor' | 'status' = 'doctor'): DoctorCliOptions {
@@ -2169,11 +2190,12 @@ export function parseProofReportArgs(args: string[]): ProofReportCliOptions {
     graphPath = argument
   }
 
-  const graphBase = dirname(resolve(graphPath))
+  const resolvedGraphPath = resolveWorkspaceGraphPath(graphPath)
+  const graphBase = dirname(resolve(resolvedGraphPath))
   return {
-    graphPath,
-    outputDir: outputDir ?? resolve(graphBase, 'proof-report'),
-    compareDir: compareDir ?? resolve(graphBase, 'compare'),
+    graphPath: resolvedGraphPath,
+    outputDir: validateGraphOutputPath(outputDir ?? resolve(graphBase, 'proof-report'), graphBase),
+    compareDir: validateGraphOutputPath(compareDir ?? resolve(graphBase, 'compare'), graphBase),
     packPath,
   }
 }

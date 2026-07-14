@@ -205,15 +205,12 @@ function main() {
   const packageArguments = npmPackage.packageArguments ?? []
   assert.deepEqual(
     packageArguments.map((entry) => entry.value ?? entry.valueHint ?? null),
-    ['serve', '--stdio', 'graph_path'],
-    'server.json package arguments must model `madar serve --stdio <graph_path>`',
+    ['serve', '--stdio', '--auto-refresh'],
+    'server.json package arguments must model `madar serve --stdio --auto-refresh`',
   )
 
   const graphPathArgument = packageArguments.find((entry) => entry.valueHint === 'graph_path')
-  assert.ok(graphPathArgument, 'server.json must require a graph_path positional argument')
-  assert.equal(graphPathArgument.default, 'out/graph.json', 'graph_path should default to out/graph.json')
-  assert.equal(graphPathArgument.format, 'filepath', 'graph_path should be marked as a filepath input')
-  assert.equal(graphPathArgument.isRequired, true, 'graph_path should be required')
+  assert.equal(graphPathArgument, undefined, 'server.json must not pin the MCP server to a static graph_path argument')
 
   const toolProfile = (npmPackage.environmentVariables ?? []).find((entry) => entry.name === 'MADAR_TOOL_PROFILE')
   assert.ok(toolProfile, 'server.json must describe the MADAR_TOOL_PROFILE environment variable')

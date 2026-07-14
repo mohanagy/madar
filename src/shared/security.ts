@@ -2,6 +2,8 @@ import { existsSync, lstatSync, realpathSync } from 'node:fs'
 import { isIP } from 'node:net'
 import { dirname, relative, resolve, sep } from 'node:path'
 
+import { resolveWorkspaceGraphPath, resolveWorkspaceOutputPath } from './workspace.js'
+
 const CONTROL_CHAR_RE = /[\x00-\x1f\x7f]/g
 const MAX_LABEL_LENGTH = 256
 const ALLOWED_PROTOCOLS = new Set(['http:', 'https:'])
@@ -41,12 +43,13 @@ export function findNearestExistingAncestor(targetPath: string): string | null {
 }
 
 export function validateGraphPath(graphPath: string, base?: string): string {
-  const resolvedBase = resolve(base ?? inferGraphBase(graphPath))
+  const effectiveGraphPath = base === undefined ? resolveWorkspaceGraphPath(graphPath) : graphPath
+  const resolvedBase = resolve(base ?? inferGraphBase(effectiveGraphPath))
   if (!existsSync(resolvedBase)) {
     throw new Error(`Graph base directory does not exist: ${resolvedBase}. Run madar first to build the graph.`)
   }
 
-  const resolvedPath = resolve(graphPath)
+  const resolvedPath = resolve(effectiveGraphPath)
   const basePrefix = resolvedBase.endsWith(sep) ? resolvedBase : `${resolvedBase}${sep}`
   if (resolvedPath !== resolvedBase && !resolvedPath.startsWith(basePrefix)) {
     throw new Error(`Path ${JSON.stringify(graphPath)} escapes the allowed directory ${resolvedBase}. Only paths inside out/ are permitted.`)
@@ -66,9 +69,12 @@ export function validateGraphPath(graphPath: string, base?: string): string {
   return realPath
 }
 
-export function validateGraphOutputPath(targetPath: string, base = 'out'): string {
-  const resolvedBase = resolve(base)
-  const resolvedTarget = resolve(targetPath)
+export function validateGraphOutputPath(targetPath: string, base = 'out', workspaceRoot = process.cwd()): string {
+  const usesDefaultOutputBase = base === 'out'
+  const effectiveBase = usesDefaultOutputBase ? resolveWorkspaceOutputPath(base, workspaceRoot) : base
+  const effectiveTarget = usesDefaultOutputBase ? resolveWorkspaceOutputPath(targetPath, workspaceRoot) : targetPath
+  const resolvedBase = resolve(effectiveBase)
+  const resolvedTarget = resolve(effectiveTarget)
   const basePrefix = resolvedBase.endsWith(sep) ? resolvedBase : `${resolvedBase}${sep}`
   if (resolvedTarget !== resolvedBase && !resolvedTarget.startsWith(basePrefix)) {
     throw new Error(`Path ${JSON.stringify(targetPath)} escapes the allowed directory ${resolvedBase}. Only paths inside out/ are permitted.`)

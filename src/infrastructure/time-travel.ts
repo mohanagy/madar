@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 import type { KnowledgeGraph } from '../contracts/graph.js'
@@ -7,7 +8,7 @@ import { EXTRACTOR_CACHE_VERSION } from '../pipeline/extract.js'
 import { loadGraph } from '../runtime/serve.js'
 import { compareTimeTravelGraphs, type CompareTimeTravelGraphsOptions, type TimeTravelResult } from '../runtime/time-travel.js'
 import { validateGraphOutputPath } from '../shared/security.js'
-import { cacheDir } from './cache.js'
+import { resolveMadarOutputDirectory, resolveMadarWorkspace } from '../shared/workspace.js'
 import { generateGraph, loadGraphExtractorVersion, type GenerateGraphOptions, type GenerateGraphResult } from './generate.js'
 
 type MaybePromise<T> = T | Promise<T>
@@ -84,12 +85,12 @@ function defaultGitDependencies(rootDir: string): Required<SnapshotGitDependenci
 }
 
 function snapshotBaseDir(rootDir: string): string {
-  const outDir = join(rootDir, 'out')
+  const outDir = resolveMadarOutputDirectory(rootDir)
   return validateGraphOutputPath(join(outDir, 'time-travel', 'snapshots'), outDir)
 }
 
 function snapshotDir(rootDir: string, commitSha: string): string {
-  return validateGraphOutputPath(join(snapshotBaseDir(rootDir), commitSha), join(rootDir, 'out'))
+  return validateGraphOutputPath(join(snapshotBaseDir(rootDir), commitSha), resolveMadarOutputDirectory(rootDir))
 }
 
 function snapshotGraphPath(rootDir: string, commitSha: string): string {
@@ -104,12 +105,17 @@ function snapshotMetadataPath(rootDir: string, commitSha: string): string {
   return join(snapshotDir(rootDir, commitSha), 'metadata.json')
 }
 
-function worktreeRootDir(rootDir: string): string {
-  return cacheDir(rootDir, 'time-travel', 'worktrees')
+function worktreeRootDir(): string {
+  // Linked-worktree artifacts live below the shared Git directory. Git cannot
+  // create a worktree inside that directory (notably on Windows), so transient
+  // source checkouts must use an OS-temporary location instead.
+  const directory = join(tmpdir(), 'madar-time-travel-worktrees')
+  mkdirSync(directory, { recursive: true })
+  return directory
 }
 
-function worktreePath(rootDir: string, commitSha: string): string {
-  return join(worktreeRootDir(rootDir), `${commitSha}-${process.pid}-${Date.now()}`)
+function worktreePath(commitSha: string): string {
+  return join(worktreeRootDir(), `${commitSha}-${process.pid}-${Date.now()}`)
 }
 
 function snapshotBuildKey(rootDir: string, commitSha: string, refresh: boolean): string {
@@ -119,7 +125,7 @@ function snapshotBuildKey(rootDir: string, commitSha: string, refresh: boolean):
 function snapshotTempDir(rootDir: string, commitSha: string): string {
   return validateGraphOutputPath(
     join(snapshotBaseDir(rootDir), `${commitSha}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`),
-    join(rootDir, 'out'),
+    resolveMadarOutputDirectory(rootDir),
   )
 }
 
@@ -312,13 +318,16 @@ export async function loadOrBuildSnapshot(input: SnapshotRequest, dependencies: 
 
   const buildKey = snapshotBuildKey(deps.rootDir, commitSha, refresh)
   const { promise: buildPromise, created } = getOrCreateInflightSnapshotBuild(buildKey, async (): Promise<TimeTravelSnapshot> => {
-    const materializedWorktree = worktreePath(deps.rootDir, commitSha)
+    const materializedWorktree = worktreePath(commitSha)
     let worktreeCreated = false
     let buildError: unknown = null
+    let transientArtifactRoot: string | null = null
 
     try {
       await deps.git.createDetachedWorktree(materializedWorktree, commitSha)
       worktreeCreated = true
+      const transientWorkspace = resolveMadarWorkspace(materializedWorktree)
+      transientArtifactRoot = transientWorkspace.isLinkedWorktree ? transientWorkspace.artifactRoot : null
 
       const generated = await deps.generateGraph(materializedWorktree, { noHtml: true })
       const extractorVersion = deps.loadGraphExtractorVersion(generated.graphPath)
@@ -333,6 +342,16 @@ export async function loadOrBuildSnapshot(input: SnapshotRequest, dependencies: 
         } catch (cleanupError) {
           if (buildError == null) {
             throw cleanupError
+          }
+        } finally {
+          if (transientArtifactRoot) {
+            try {
+              rmSync(transientArtifactRoot, { recursive: true, force: true })
+            } catch {
+              // Snapshot publication succeeded; an orphaned scratch artifact is
+              // safe to leave behind and must not turn a completed comparison
+              // into a failure.
+            }
           }
         }
       }

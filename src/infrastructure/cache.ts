@@ -4,6 +4,7 @@ import { join, resolve, basename } from 'node:path'
 
 import { binaryIngestSidecarPath } from '../shared/binary-ingest-sidecar.js'
 import { MAX_FETCH_BYTES } from '../shared/security.js'
+import { resolveMadarOutputDirectory } from '../shared/workspace.js'
 
 function appendBinaryIngestSidecarHash(hash: ReturnType<typeof createHash>, filePath: string): void {
   const sidecarPath = binaryIngestSidecarPath(filePath)
@@ -38,7 +39,7 @@ export function fileHash(filePath: string): string {
 }
 
 export function cacheDir(root: string = '.', ...segments: string[]): string {
-  const directory = join(root, 'out', 'cache', ...segments)
+  const directory = join(resolveMadarOutputDirectory(root), 'cache', ...segments)
   mkdirSync(directory, { recursive: true })
   return directory
 }

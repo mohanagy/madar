@@ -18,6 +18,7 @@ import {
   usageCaptureSummary,
   usageProviderLabel,
 } from './usage.js'
+import { resolveWorkspaceGraphPath } from '../../shared/workspace.js'
 
 export interface GoldQuestion {
   question: string
@@ -272,7 +273,7 @@ async function evaluateRunnerBackedQuestion(
   budget: number,
   options: QualityOptions & { execTemplate: string },
 ): Promise<QualityResult> {
-  const graphPath = options.graphPath ?? 'out/graph.json'
+  const graphPath = resolveWorkspaceGraphPath(options.graphPath ?? 'out/graph.json')
   const retrieval = qualityRetrieveContext(graph, gold.question, budget, graphPath)
   const run = await runBenchmarkPrompt({
     graphPath,
@@ -358,20 +359,23 @@ export function evaluateRetrievalQuality(
   budget = 3000,
   options: QualityOptions = {},
 ): QualityReport | Promise<QualityReport> {
+  const effectiveOptions = options.graphPath
+    ? { ...options, graphPath: resolveWorkspaceGraphPath(options.graphPath) }
+    : options
   const normalizedQuestions = questions.map((question) => normalizeGoldQuestion(question))
   const skippedQuestions = normalizedQuestions.filter((question) => question === null).length
   const labeledQuestions = normalizedQuestions.filter((question): question is GoldQuestion => question !== null)
   if (!options.execTemplate) {
-    const results = labeledQuestions.map((question) => evaluateQuestion(graph, question, budget, options.graphPath))
-    return buildQualityReport(graph, results, skippedQuestions, options)
+    const results = labeledQuestions.map((question) => evaluateQuestion(graph, question, budget, effectiveOptions.graphPath))
+    return buildQualityReport(graph, results, skippedQuestions, effectiveOptions)
   }
 
   return (async () => {
     const results: QualityResult[] = []
     for (const question of labeledQuestions) {
-      results.push(await evaluateRunnerBackedQuestion(graph, question, budget, options as QualityOptions & { execTemplate: string }))
+      results.push(await evaluateRunnerBackedQuestion(graph, question, budget, effectiveOptions as QualityOptions & { execTemplate: string }))
     }
-    return buildQualityReport(graph, results, skippedQuestions, options)
+    return buildQualityReport(graph, results, skippedQuestions, effectiveOptions)
   })()
 }
 
