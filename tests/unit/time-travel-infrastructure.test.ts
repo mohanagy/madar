@@ -17,6 +17,11 @@ function isInside(candidate: string, root: string): boolean {
   return relativePath === '' || (!relativePath.startsWith('..') && !relativePath.startsWith(`..${sep}`))
 }
 
+function normalizedGitPath(path: string): string {
+  const canonical = realpathSync.native(path).replaceAll('\\', '/')
+  return process.platform === 'win32' ? canonical.toLowerCase() : canonical
+}
+
 function createDeferred<T>(): {
   promise: Promise<T>
   resolve: (value: T | PromiseLike<T>) => void
@@ -275,8 +280,9 @@ describe('time travel infrastructure', () => {
       expect(existsSync(materializedWorktree)).toBe(false)
 
       const worktreeList = execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd: linked, encoding: 'utf8', stdio: 'pipe' })
-      expect(worktreeList).toContain(`worktree ${realpathSync(primary)}`)
-      expect(worktreeList).toContain(`worktree ${realpathSync(linked)}`)
+      const normalizedWorktreeList = process.platform === 'win32' ? worktreeList.toLowerCase() : worktreeList
+      expect(normalizedWorktreeList).toContain(`worktree ${normalizedGitPath(primary)}`)
+      expect(normalizedWorktreeList).toContain(`worktree ${normalizedGitPath(linked)}`)
       expect(worktreeList).not.toContain('time-travel/worktrees')
     } finally {
       if (existsSync(primary)) {

@@ -34,7 +34,7 @@ describe('worktree artifact routing', () => {
 
       const workspace = resolveMadarWorkspace(nested)
 
-      expect(realpathSync(workspace.worktreeRoot ?? '')).toBe(realpathSync(primary))
+      expect(canonicalPhysicalPath(workspace.worktreeRoot ?? '')).toBe(canonicalPhysicalPath(primary))
       expect(workspace.isLinkedWorktree).toBe(false)
       expect(workspace.outputDir).toBe(join(resolve(nested), 'out'))
       expect(workspace.graphPath).toBe(join(resolve(nested), 'out', 'graph.json'))
