@@ -190,6 +190,12 @@ The public evidence map tracks what is proven, what is mixed, and what should no
 
 Madar runs locally. Generating a graph does not require an API key or a cloud service. Your code does not leave your machine through Madar graph generation.
 
+Discovery uses a source-aware secret policy. Security-related source names such as `token.ts`, `password-reset-service.ts`, `password-policy.ts`, and `secret-manager.ts` are normal code and are indexed, including code below a directory named `secrets/` or `credentials/`. Madar does not read private-key material, `.env*` files, known credential stores such as `.netrc` / `.npmrc` / `.pgpass`, or non-source secret configs such as `credentials.json` and files below explicit secret directories.
+
+Every safety exclusion has a reason. `madar generate`, `madar doctor`, and `madar status` show local counts and escaped paths; the full local list is stored in `graph.json` under `discovery_safety.exclusions`. Answer confidence is reduced when an excluded or unreadable path is relevant to a question. Share-safe handoffs expose only counts and reason buckets, never those local paths.
+
+This path policy is not a content-level secret scanner. Madar reads indexed source, so remove hard-coded credentials or exclude their files with `.madarignore` before generation.
+
 Your coding agent may still send prompts or selected file context to its own model provider, depending on how that agent is configured.
 
 Treat every local MCP install, hook, or agent profile as part of your local trust boundary. The threat model is documented here: [MCP threat model](https://github.com/mohanagy/madar/blob/main/docs/security/mcp-threat-model.md).

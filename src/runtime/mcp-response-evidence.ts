@@ -5,6 +5,12 @@ import type {
   ContextPackRuntimeGenerationAnswerContract,
 } from '../contracts/context-pack.js'
 import { readGraphSourceRoot } from '../shared/graph-source-root.js'
+import {
+  readDiscoverySafetyMetadata,
+  relevantDiscoveryExclusions,
+  type DiscoveryExclusionReason,
+  type DiscoverySafetyMetadata,
+} from '../shared/discovery-safety.js'
 
 export type MadarResponsePackConfidence = 'high' | 'medium' | 'low'
 export type MadarResponseCoverage = 'complete' | 'partial' | 'unknown'
@@ -17,6 +23,14 @@ export interface MadarResponseEvidence {
   covered_workflow_owners: string[]
   confidence_reasons: string[]
   agent_directive: MadarResponseAgentDirective
+  /** Share-safe aggregate. Local exclusion paths remain only in graph.json and local CLI diagnostics. */
+  discovery_exclusions?: {
+    policy: 'artifact_path_only'
+    total: number
+    relevant: number
+    reasons: Partial<Record<DiscoveryExclusionReason, number>>
+    relevant_reasons: Partial<Record<DiscoveryExclusionReason, number>>
+  }
 }
 
 const HIGH_CONFIDENCE_THRESHOLD = 0.85
@@ -267,12 +281,14 @@ export function assessMadarResponseEvidence(input: {
   answerContract?: ContextPackRuntimeGenerationAnswerContract | undefined
   coverage?: ContextPackCoverage | undefined
   coveredWorkflowOwners?: readonly string[] | undefined
+  discoverySafety?: DiscoverySafetyMetadata | null | undefined
   executionSlice?: ContextPackExecutionSlice | undefined
   graphPath?: string | undefined
   missingPhases?: readonly ContextPackExecutionPhase[] | undefined
+  question?: string | undefined
   score?: number | undefined
 }): MadarResponseEvidenceAssessment {
-  const coverage = coverageStatusFromCoverage(input.coverage)
+  let coverage = coverageStatusFromCoverage(input.coverage)
   const baseScore = typeof input.score === 'number' && Number.isFinite(input.score)
     ? input.score
     : input.coverage
@@ -325,6 +341,32 @@ export function assessMadarResponseEvidence(input: {
     }
   }
 
+  const discoverySafety = input.discoverySafety !== undefined
+    ? input.discoverySafety
+    : input.graphPath
+      ? readDiscoverySafetyMetadata(input.graphPath)
+      : null
+  const discoveryExclusions = discoverySafety
+    ? relevantDiscoveryExclusions(discoverySafety, {
+        ...(input.question ? { question: input.question } : {}),
+        coveredWorkflowOwners,
+      })
+    : null
+  if (discoveryExclusions && discoveryExclusions.relevant > 0) {
+    const exclusionCap: MadarResponsePackConfidence = discoveryExclusions.hasUnreadable ? 'low' : 'medium'
+    confidenceCap = moreRestrictiveConfidence(confidenceCap, exclusionCap)
+    if (coverage === 'complete') {
+      coverage = 'partial'
+    }
+    const reasonBuckets = Object.entries(discoveryExclusions.relevantReasons)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([reason, count]) => `${reason}=${count}`)
+      .join(', ')
+    confidenceReasons.push(
+      `discovery coverage: ${discoveryExclusions.relevant} relevant safety exclusion(s) (${reasonBuckets})`,
+    )
+  }
+
   const effectiveScore = roundScore(Math.min(baseScore, confidenceCapForScore(confidenceCap)))
   const packConfidence = packConfidenceFromScore(effectiveScore)
 
@@ -336,6 +378,17 @@ export function assessMadarResponseEvidence(input: {
     covered_workflow_owners: coveredWorkflowOwners,
     confidence_reasons: confidenceReasons,
     agent_directive: agentDirectiveForEvidence(packConfidence, coverage, answerContained),
+    ...(discoveryExclusions && discoveryExclusions.total > 0
+      ? {
+          discovery_exclusions: {
+            policy: 'artifact_path_only' as const,
+            total: discoveryExclusions.total,
+            relevant: discoveryExclusions.relevant,
+            reasons: discoveryExclusions.reasons,
+            relevant_reasons: discoveryExclusions.relevantReasons,
+          },
+        }
+      : {}),
   }
 }
 
@@ -344,8 +397,10 @@ export function buildMadarResponseEvidence(input: {
   coverage?: ContextPackCoverage | undefined
   missingPhases?: readonly ContextPackExecutionPhase[] | undefined
   coveredWorkflowOwners?: readonly string[] | undefined
+  discoverySafety?: DiscoverySafetyMetadata | null | undefined
   executionSlice?: ContextPackExecutionSlice | undefined
   graphPath?: string | undefined
+  question?: string | undefined
   score?: number | undefined
 }): MadarResponseEvidence {
   const { score: _score, ...evidence } = assessMadarResponseEvidence(input)

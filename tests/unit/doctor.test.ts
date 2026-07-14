@@ -55,6 +55,38 @@ function writeMcpServer(path: string, serversKey: 'mcpServers' | 'servers', grap
 }
 
 describe('doctor command', () => {
+  test('shows local safety exclusion counts, reasons, and escaped paths in doctor and status', () => {
+    withSandbox((sandboxDir) => {
+      writeJson(resolve(sandboxDir, 'out', 'graph.json'), {
+        nodes: [],
+        edges: [],
+        discovery_safety: {
+          version: 1,
+          summary: {
+            total: 2,
+            sensitive: 1,
+            unreadable: 1,
+            reasons: { secret_config: 1, unreadable_path: 1 },
+          },
+          exclusions: [
+            { path: 'config/credentials.json', kind: 'sensitive', reason: 'secret_config' },
+            { path: 'src/auth/broken.ts', kind: 'unreadable', reason: 'unreadable_path' },
+          ],
+        },
+      })
+
+      const doctor = runDoctorCommand({ projectDir: sandboxDir, now: Date.now() })
+      const status = runStatusCommand({ projectDir: sandboxDir, now: Date.now() })
+
+      expect(doctor).toContain('safety exclusions: 2 (1 sensitive, 1 unreadable)')
+      expect(doctor).toContain('"config/credentials.json" (secret_config)')
+      expect(doctor).toContain('"src/auth/broken.ts" (unreadable_path)')
+      expect(status).toContain('safety 2 (sensitive=1, unreadable=1)')
+      expect(status).toContain('"config/credentials.json"[secret_config]')
+      expect(status).toContain('"src/auth/broken.ts"[unreadable_path]')
+    })
+  })
+
   test('reports missing graph and suggests setup commands', () => {
     withSandbox((sandboxDir) => {
       const output = runDoctorCommand({

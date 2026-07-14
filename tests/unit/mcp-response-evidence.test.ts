@@ -5,8 +5,158 @@ import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { buildMadarResponseEvidence } from '../../src/runtime/mcp-response-evidence.js'
+import { buildDiscoverySafetyMetadata, relevantDiscoveryExclusions } from '../../src/shared/discovery-safety.js'
 
 describe('mcp-response-evidence', () => {
+  it('matches hidden credential-store reasons and indirect workflow-owner paths', () => {
+    const metadata = buildDiscoverySafetyMetadata([
+      { path: '.aws', kind: 'sensitive', reason: 'credential_store' },
+      { path: 'src/auth/secrets/production.yml', kind: 'sensitive', reason: 'sensitive_directory' },
+    ])
+
+    const credentialQuestion = relevantDiscoveryExclusions(metadata, {
+      question: 'Where are cloud credentials loaded?',
+    })
+    const authOwner = relevantDiscoveryExclusions(metadata, {
+      coveredWorkflowOwners: ['src/auth/services/login.ts'],
+    })
+
+    expect(credentialQuestion).toMatchObject({
+      relevant: 1,
+      relevantReasons: { credential_store: 1 },
+    })
+    expect(authOwner).toMatchObject({
+      relevant: 1,
+      relevantReasons: { sensitive_directory: 1 },
+    })
+  })
+
+  it('downgrades answerability for relevant exclusions without exposing their paths', () => {
+    const root = mkdtempSync(join(tmpdir(), 'madar-discovery-evidence-'))
+    const graphPath = join(root, 'out', 'graph.json')
+    try {
+      mkdirSync(dirname(graphPath), { recursive: true })
+      writeFileSync(graphPath, JSON.stringify({
+        discovery_safety: {
+          version: 1,
+          summary: {
+            total: 2,
+            sensitive: 1,
+            unreadable: 1,
+            reasons: {
+              secret_config: 1,
+              unreadable_path: 1,
+            },
+          },
+          exclusions: [
+            { path: 'src/auth/credentials.json', kind: 'sensitive', reason: 'secret_config' },
+            { path: 'src/auth/token-loader.ts', kind: 'unreadable', reason: 'unreadable_path' },
+          ],
+        },
+      }), 'utf8')
+
+      const evidence = buildMadarResponseEvidence({
+        graphPath,
+        question: 'How does the auth token loader read credentials?',
+        coveredWorkflowOwners: ['src/auth/auth-service.ts'],
+        coverage: {
+          required_evidence: ['primary'],
+          semantic_required: [],
+          semantic_optional: [],
+          entries: [
+            { evidence_class: 'primary', required: true, available_nodes: 1, selected_nodes: 1, status: 'covered' },
+          ],
+          semantic_entries: [],
+          missing_required: [],
+          missing_semantic: [],
+          available_relationships: 1,
+          selected_relationships: 1,
+        },
+      })
+
+      expect(evidence.pack_confidence).toBe('low')
+      expect(evidence.coverage).toBe('partial')
+      expect(evidence.agent_directive).toBe('explore_with_caution')
+      expect(evidence.discovery_exclusions).toEqual({
+        policy: 'artifact_path_only',
+        total: 2,
+        relevant: 2,
+        reasons: {
+          secret_config: 1,
+          unreadable_path: 1,
+        },
+        relevant_reasons: {
+          secret_config: 1,
+          unreadable_path: 1,
+        },
+      })
+      expect(JSON.stringify(evidence)).not.toContain('credentials.json')
+      expect(JSON.stringify(evidence)).not.toContain('token-loader.ts')
+
+      const unrelatedEvidence = buildMadarResponseEvidence({
+        graphPath,
+        question: 'How does invoice rendering work?',
+        coveredWorkflowOwners: ['src/billing/invoice-renderer.ts'],
+        coverage: {
+          required_evidence: ['primary'],
+          semantic_required: [],
+          semantic_optional: [],
+          entries: [
+            { evidence_class: 'primary', required: true, available_nodes: 1, selected_nodes: 1, status: 'covered' },
+          ],
+          semantic_entries: [],
+          missing_required: [],
+          missing_semantic: [],
+          available_relationships: 1,
+          selected_relationships: 1,
+        },
+      })
+
+      expect(unrelatedEvidence.pack_confidence).toBe('high')
+      expect(unrelatedEvidence.coverage).toBe('complete')
+      expect(unrelatedEvidence.discovery_exclusions).toEqual({
+        policy: 'artifact_path_only',
+        total: 2,
+        relevant: 0,
+        reasons: {
+          secret_config: 1,
+          unreadable_path: 1,
+        },
+        relevant_reasons: {},
+      })
+
+      const variantEvidence = buildMadarResponseEvidence({
+        graphPath,
+        question: 'Where is the credential loaded?',
+        coveredWorkflowOwners: ['src/bootstrap.ts'],
+        coverage: {
+          required_evidence: ['primary'],
+          semantic_required: [],
+          semantic_optional: [],
+          entries: [
+            { evidence_class: 'primary', required: true, available_nodes: 1, selected_nodes: 1, status: 'covered' },
+          ],
+          semantic_entries: [],
+          missing_required: [],
+          missing_semantic: [],
+          available_relationships: 1,
+          selected_relationships: 1,
+        },
+      })
+
+      expect(variantEvidence.pack_confidence).toBe('medium')
+      expect(variantEvidence.coverage).toBe('partial')
+      expect(variantEvidence.agent_directive).toBe('verify_one_targeted_file')
+      expect(variantEvidence.discovery_exclusions).toMatchObject({
+        total: 2,
+        relevant: 1,
+        relevant_reasons: { secret_config: 1 },
+      })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('uses the first non-generic path segment when checking scope quality', () => {
     const evidence = buildMadarResponseEvidence({
       graphPath: 'out/graph.json',

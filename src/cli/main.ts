@@ -674,6 +674,19 @@ function formatGenerateSummary(result: GenerateGraphResult): string {
     `- Outputs: ${result.graphPath}, ${result.reportPath}`,
   ]
 
+  if (result.discoverySafety && result.discoverySafety.summary.total > 0) {
+    lines.push(
+      `- Safety exclusions: ${result.discoverySafety.summary.total} (${result.discoverySafety.summary.sensitive} sensitive, ${result.discoverySafety.summary.unreadable} unreadable)`,
+    )
+    for (const exclusion of (result.discoveryExclusions ?? result.discoverySafety.exclusions).slice(0, 20)) {
+      lines.push(`  - ${JSON.stringify(exclusion.path)} (${exclusion.reason})`)
+    }
+    const exclusionCount = (result.discoveryExclusions ?? result.discoverySafety.exclusions).length
+    if (exclusionCount > 20) {
+      lines.push(`  - ... ${exclusionCount - 20} more; inspect graph.json discovery_safety.exclusions`)
+    }
+  }
+
   if (result.htmlPath) {
     lines.push(`- HTML: ${result.htmlPath}`)
   }

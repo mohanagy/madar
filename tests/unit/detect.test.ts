@@ -126,6 +126,115 @@ describe('detect', () => {
     }
   })
 
+  it('uses a source-aware secret policy and records structured safety exclusions', () => {
+    const root = createTempRoot()
+    try {
+      mkdirSync(join(root, 'src', 'secrets'), { recursive: true })
+      mkdirSync(join(root, 'config', 'credentials'), { recursive: true })
+      mkdirSync(join(root, '.aws'), { recursive: true })
+      writeFileSync(join(root, 'src', 'token.ts'), 'export const issueToken = () => "token"\n', 'utf8')
+      writeFileSync(join(root, 'src', 'password-reset-service.ts'), 'export class PasswordResetService {}\n', 'utf8')
+      writeFileSync(join(root, 'src', 'password-policy.ts'), 'export const passwordPolicy = {}\n', 'utf8')
+      writeFileSync(join(root, 'src', 'secret-manager.ts'), 'export class SecretManager {}\n', 'utf8')
+      writeFileSync(join(root, 'src', 'secrets', 'credential-rotation.ts'), 'export const rotate = () => true\n', 'utf8')
+      writeFileSync(join(root, 'src', 'secrets', 'README.md'), '# Credential rotation module\n', 'utf8')
+      writeFileSync(join(root, '.env.production'), 'API_TOKEN=real-secret\n', 'utf8')
+      writeFileSync(join(root, 'id_ed25519'), 'PRIVATE KEY MATERIAL\n', 'utf8')
+      writeFileSync(join(root, 'server.pem'), 'PRIVATE KEY MATERIAL\n', 'utf8')
+      writeFileSync(join(root, 'server.pem.backup'), 'PRIVATE KEY MATERIAL\n', 'utf8')
+      writeFileSync(join(root, 'config', 'credentials.json'), '{"token":"real-secret"}\n', 'utf8')
+      writeFileSync(join(root, 'config', 'credentials', 'production.yml'), 'token: real-secret\n', 'utf8')
+      writeFileSync(join(root, '.aws', 'credentials'), '[default]\naws_secret_access_key=real-secret\n', 'utf8')
+
+      const result = detect(root)
+      const indexedCode = result.files.code.map((filePath) => relative(root, filePath).replaceAll('\\', '/'))
+
+      expect(indexedCode).toEqual(expect.arrayContaining([
+        'src/token.ts',
+        'src/password-reset-service.ts',
+        'src/password-policy.ts',
+        'src/secret-manager.ts',
+        'src/secrets/credential-rotation.ts',
+      ]))
+      expect(result.files.document.map((filePath) => relative(root, filePath).replaceAll('\\', '/'))).not.toContain('src/secrets/README.md')
+      expect(result.exclusions).toEqual(expect.arrayContaining([
+        { path: '.env.production', kind: 'sensitive', reason: 'environment_file' },
+        { path: 'id_ed25519', kind: 'sensitive', reason: 'private_key' },
+        { path: 'server.pem', kind: 'sensitive', reason: 'private_key' },
+        { path: 'server.pem.backup', kind: 'sensitive', reason: 'private_key' },
+        { path: 'config/credentials.json', kind: 'sensitive', reason: 'secret_config' },
+        { path: 'config/credentials/production.yml', kind: 'sensitive', reason: 'sensitive_directory' },
+        { path: '.aws', kind: 'sensitive', reason: 'credential_store' },
+        { path: 'src/secrets/README.md', kind: 'sensitive', reason: 'sensitive_directory' },
+      ]))
+      expect(result.skipped_sensitive).toEqual(expect.arrayContaining([
+        '.env.production',
+        'id_ed25519',
+        'server.pem',
+        'config/credentials.json',
+        'config/credentials/production.yml',
+      ]))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('records a broken followed symlink as an unreadable safety exclusion', () => {
+    const root = createTempRoot()
+    try {
+      symlinkSync(join(root, 'missing.ts'), join(root, 'broken.ts'))
+
+      const result = detect(root, { followSymlinks: true })
+
+      expect(result.exclusions).toContainEqual({
+        path: 'broken.ts',
+        kind: 'unreadable',
+        reason: 'unreadable_path',
+      })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('cannot disguise private key material behind a source-code symlink', () => {
+    const root = createTempRoot()
+    try {
+      writeFileSync(join(root, 'server.pem'), 'PRIVATE KEY MATERIAL\n', 'utf8')
+      symlinkSync(join(root, 'server.pem'), join(root, 'safe.ts'))
+
+      const result = detect(root, { followSymlinks: true })
+
+      expect(result.files.code.some((filePath) => filePath.endsWith('safe.ts'))).toBe(false)
+      expect(result.exclusions).toEqual(expect.arrayContaining([
+        { path: 'server.pem', kind: 'sensitive', reason: 'private_key' },
+        { path: 'safe.ts', kind: 'sensitive', reason: 'private_key' },
+      ]))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('does not bypass a sensitive ancestor through a directory symlink alias', () => {
+    const root = createTempRoot()
+    try {
+      mkdirSync(join(root, 'secrets', 'nested'), { recursive: true })
+      writeFileSync(join(root, 'secrets', 'nested', 'notes.md'), '# Production credentials\n', 'utf8')
+      writeFileSync(join(root, 'secrets', 'rotation.ts'), 'export const rotate = () => true\n', 'utf8')
+      symlinkSync(join(root, 'secrets', 'nested'), join(root, 'safe-config'))
+
+      const result = detect(root, { followSymlinks: true })
+
+      expect(result.files.code.some((filePath) => filePath.endsWith('secrets/rotation.ts'))).toBe(true)
+      expect(result.files.code.some((filePath) => filePath.includes('safe-config'))).toBe(false)
+      expect(result.exclusions).toEqual(expect.arrayContaining([
+        { path: 'secrets/nested/notes.md', kind: 'sensitive', reason: 'sensitive_directory' },
+        { path: 'safe-config', kind: 'sensitive', reason: 'sensitive_directory' },
+      ]))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('ignores comments in madarignore files', () => {
     const root = createTempRoot()
     try {

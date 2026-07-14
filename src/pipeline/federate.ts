@@ -199,6 +199,7 @@ export function federate(graphPaths: string[], options: FederateOptions = {}): F
       needs_graph: true,
       warning: null,
       skipped_sensitive: [],
+      exclusions: [],
       madarignore_patterns: 0,
     },
     { input_tokens: 0, output_tokens: 0 },

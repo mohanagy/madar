@@ -54,6 +54,17 @@ function sampleEvidence(root: string): MadarResponseEvidence {
     covered_workflow_owners: ['src/auth/service.ts'],
     confidence_reasons: [`scope quality: runtime evidence is concentrated under src/auth/ while the graph is rooted at ${join(root, 'out', 'graph.json')}`],
     agent_directive: 'answer_from_pack',
+    discovery_exclusions: {
+      policy: 'artifact_path_only',
+      total: 2,
+      relevant: 1,
+      reasons: {
+        secret_config: 1,
+      },
+      relevant_reasons: {
+        secret_config: 1,
+      },
+    },
   }
 }
 
@@ -351,6 +362,13 @@ describe('handoff-command', () => {
     })
 
     expect(artifact).not.toHaveProperty('plan')
+    expect(artifact.evidence.discovery_exclusions).toEqual({
+      policy: 'artifact_path_only',
+      total: 2,
+      relevant: 1,
+      reasons: { secret_config: 1 },
+      relevant_reasons: { secret_config: 1 },
+    })
     expect(artifact.pack.matched_nodes[0]).not.toHaveProperty('snippet')
     expect(JSON.stringify(artifact)).not.toContain(root)
     expect(JSON.stringify(artifact)).not.toContain('/opt/private/secret-reader.ts')

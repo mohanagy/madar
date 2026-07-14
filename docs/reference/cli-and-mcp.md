@@ -113,6 +113,20 @@ On Windows, `compare`, `review-compare`, and benchmark `--exec` templates run un
 
 `madar generate` hard-ignores nested VCS/worktree copies and generated/build output by default: `.worktrees/`, `worktrees/`, `.git/`, `out/`, `node_modules/`, `dist/`, `build/`, `coverage/`, cache folders, source maps, lock/build artifacts, and temp/log files.
 
+Secret handling is source-aware. Madar indexes ordinary code whose file or ancestor names describe password, token, credential, or secret behavior. That includes `token.ts`, password reset/policy services, `secret-manager.ts`, and source below `secrets/` or `credentials/`. Names alone do not make source code secret.
+
+Madar excludes these artifacts before extraction:
+
+- `.env*` and `.envrc` environment files;
+- private-key files such as `*.pem`, `*.key`, `*.p12`, `*.pfx`, `*.p8`, and private `id_rsa` / `id_ed25519` files;
+- known credential stores including `.netrc`, `.npmrc`, `.pgpass`, `.pypirc`, `.htpasswd`, and cloud credential files;
+- non-source configs explicitly named for credentials, secrets, tokens, passwords, or private keys;
+- non-source files below explicit secret-storage directories such as `secrets/`, `credentials/`, or private-key directories. Source-code extensions remain indexable in those directories, but arbitrary docs/data do not receive that exception.
+
+Unreadable files/directories and every secret-policy exclusion are recorded with structured reasons in the local graph artifact. Generate, doctor, and status output show local counts and escaped paths (up to 20 inline, with the complete list at `discovery_safety.exclusions`). When an excluded or unreadable path matches the question or retrieved workflow scope, MCP/pack evidence lowers answerability and confidence. Share-safe handoffs include the `artifact_path_only` policy marker plus `total`, `relevant`, `reasons`, and `relevant_reasons` counts under `evidence.discovery_exclusions`; they never include the local path list.
+
+This is a conservative artifact/path policy, not a content-level secret scanner. Madar reads indexed source code, so a credential hard-coded inside an otherwise normal source file can enter the local graph/snippet artifacts. Remove such credentials from source or add the path to `.madarignore`; review any artifact before sharing it.
+
 Tests, benchmarks, fixtures, mocks, and config files are not hard-ignored. They still get indexed so retrieval can use them when you ask for them, but production/runtime prompts soft-penalize them and honor prompt exclusions like "exclude tests, benchmarks, fixtures".
 
 `.madarignore` adds extra ignore rules, and negated entries such as `!vendor/**` or `!lib/**` can re-include a default hard-ignore when you intentionally want it indexed.

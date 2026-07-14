@@ -45,6 +45,10 @@ type GraphContextFreshness,
 } from '../runtime/freshness.js'
 import { buildRoutingDebug } from '../runtime/routing-debug.js'
 import { communitiesFromGraph, estimateQueryTokens, loadGraph } from '../runtime/serve.js'
+import {
+  parseDiscoverySafetyMetadata,
+  type DiscoverySafetyMetadata,
+} from '../shared/discovery-safety.js'
 
 const DEFAULT_IMPACT_DEPTH = 3
 const IMPLEMENTATION_DISTRACTOR_PATTERN = /(?:helper|util|formatter|serializer|mapper|constant|generated|dist\/|build\/|lockfile|migration)/i
@@ -1253,6 +1257,7 @@ export function buildExplainPackPayloadCore(
   },
   implementation?: ImplementationPackGuidance,
   graphPath?: string,
+  discoverySafety?: DiscoverySafetyMetadata | null,
 ): ExplainPackPayload {
   const payload = buildExplainPackPayload(pack, retrieval, implementation)
   const entrypointExpandable = runtimeGenerationEntrypointExpandable('explain', pack, retrieval)
@@ -1282,7 +1287,9 @@ export function buildExplainPackPayloadCore(
       implementation?.likely_test_files.map((entry) => entry.path) ?? [],
     ),
     executionSlice: (retrieval as RetrieveResult).execution_slice,
+    discoverySafety,
     graphPath,
+    question: retrieval.question,
     missingPhases: missingPhasesFromPayload(pack as {
       answer_contract?: { missing_phases?: readonly unknown[] }
       execution_slice?: { phase_coverage?: { missing?: readonly unknown[] } }
@@ -1866,13 +1873,19 @@ function buildPackSchemaV1<TPack extends PackPayload>(
   response: PackResponseBase & ContextPlaneMetadata & {
     pack: TPack
     graphFreshness: GraphContextFreshness
+    discoverySafety?: DiscoverySafetyMetadata | null
     implementation?: ImplementationPackGuidance
     routing?: ContextPackRoutingDebug
     target?: string
     retrieval?: RetrieveResult
   },
 ): PackSchemaEnvelope<TPack | PackPayloadWithCompatibility<TPack>> {
-  const { retrieval, graphFreshness: _graphFreshness, ...serializableResponse } = response
+  const {
+    retrieval,
+    graphFreshness: _graphFreshness,
+    discoverySafety,
+    ...serializableResponse
+  } = response
   const centers = workflowCenters(response.task, response.pack, response.plan, response.implementation, retrieval)
   const firstRead = recommendedFirstRead(response.task, response.pack, response.implementation, retrieval)
   const contracts = publicContracts(response.implementation)
@@ -1880,8 +1893,10 @@ function buildPackSchemaV1<TPack extends PackPayload>(
   const evidenceAssessment = assessMadarResponseEvidence({
     answerContract: retrieval?.answer_contract ?? ('answer_contract' in response.pack ? response.pack.answer_contract : undefined),
     coverage: response.coverage,
+    discoverySafety,
     executionSlice: retrieval?.execution_slice ?? ('execution_slice' in response.pack ? response.pack.execution_slice : undefined),
     graphPath: response.graph_path,
+    question: response.prompt,
     missingPhases: missingPhasesFromPayload(response.pack as {
       answer_contract?: { missing_phases?: readonly unknown[] }
       execution_slice?: { phase_coverage?: { missing?: readonly unknown[] } }
@@ -2260,6 +2275,7 @@ export async function runContextPackCommand(
   dependencies: ContextPackCommandDependencies = DEFAULT_DEPENDENCIES,
 ): Promise<string> {
   const graph = dependencies.loadGraph(options.graphPath)
+  const discoverySafety = parseDiscoverySafetyMetadata(graph.graph.discovery_safety)
   const initialGraphFreshness = analyzeGraphContextFreshness(options.graphPath, graph)
   if (options.requireFreshGraph === true) {
     requireFreshGraph(initialGraphFreshness)
@@ -2306,6 +2322,7 @@ export async function runContextPackCommand(
       ...baseResponse(options, plan, plannerBudget, resolvedTask.task_kind),
       pack: reviewPack,
       graphFreshness: initialGraphFreshness,
+      discoverySafety,
       ...contextMetadata(reviewResult.review_bundle ?? {}),
     }), renderOptions)
   }
@@ -2332,6 +2349,7 @@ export async function runContextPackCommand(
       target: impactTarget,
       pack: impactPack,
       graphFreshness: initialGraphFreshness,
+      discoverySafety,
       ...impactMetadata(impactResult, plannerBudget, options.prompt, initialPlan.evidence.recipe_id, options.retrievalLevel),
       ...(options.why ? { routing: buildRoutingDebug(retrieval) } : {}),
     }), renderOptions)
@@ -2365,9 +2383,10 @@ export async function runContextPackCommand(
   return renderContextPackOutput(options.format, buildPackSchemaV1({
     ...baseResponse(options, initialPlan, plannerBudget, resolvedTask.task_kind),
     graphFreshness,
+    discoverySafety,
     ...(
       resolvedTask.task_kind === 'explain'
-        ? buildExplainPackPayloadCore(dependencies.compactRetrieveResult(retrieval), retrieval, implementation, options.graphPath)
+        ? buildExplainPackPayloadCore(dependencies.compactRetrieveResult(retrieval), retrieval, implementation, options.graphPath, discoverySafety)
         : buildExplainPackPayload(dependencies.compactRetrieveResult(retrieval), retrieval, implementation)
     ),
     retrieval,

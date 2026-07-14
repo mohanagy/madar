@@ -1,5 +1,5 @@
-import { Dirent, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs'
-import { basename, dirname, extname, relative, resolve, sep } from 'node:path'
+import { accessSync, constants, Dirent, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs'
+import { dirname, extname, relative, resolve, sep } from 'node:path'
 
 import { sidecarAwareFileFingerprint } from '../shared/binary-ingest-sidecar.js'
 import {
@@ -7,6 +7,13 @@ import {
   isIgnoredByPatterns,
   loadMadarignorePatterns,
 } from '../shared/source-discovery.js'
+import {
+  type DiscoveryExclusion,
+  isSensitiveDirectoryName,
+  localDiscoveryPath,
+  sensitiveArtifactReason,
+  sensitiveDirectoryReasonForPath,
+} from '../shared/discovery-safety.js'
 
 export const FileType = {
   CODE: 'code',
@@ -31,7 +38,9 @@ export interface DetectResult {
   total_words: number
   needs_graph: boolean
   warning: string | null
+  /** @deprecated Prefer the structured `exclusions` collection. */
   skipped_sensitive: string[]
+  exclusions: DiscoveryExclusion[]
   madarignore_patterns: number
 }
 
@@ -84,15 +93,6 @@ export interface ManifestMetadata {
   total_words?: number
 }
 
-const SENSITIVE_PATTERNS = [
-  /(^|[\\/])\.(env|envrc)(\.|$)/i,
-  /\.(pem|key|p12|pfx|cert|crt|der|p8)$/i,
-  /(credential|secret|passwd|password|token|private_key)/i,
-  /(id_rsa|id_dsa|id_ecdsa|id_ed25519)(\.pub)?$/,
-  /(\.netrc|\.pgpass|\.htpasswd)$/i,
-  /(aws_credentials|gcloud_credentials|service.account)/i,
-]
-
 const PAPER_SIGNALS = [
   /\barxiv\b/i,
   /\bdoi\s*:/i,
@@ -144,15 +144,10 @@ function isNoiseDir(part: string): boolean {
   return SKIP_DIRS.has(part) || part.endsWith('_venv') || part.endsWith('_env') || part.endsWith('.egg-info')
 }
 
-function isSensitive(path: string, root?: string): boolean {
-  const candidates = [basename(path)]
-  if (root) {
-    const relativePath = toPosixPath(relative(root, path))
-    if (relativePath && !relativePath.startsWith('..')) {
-      candidates.push(relativePath)
-    }
-  }
-  return candidates.some((candidate) => SENSITIVE_PATTERNS.some((pattern) => pattern.test(candidate)))
+function sensitiveReasonForFile(path: string, root: string) {
+  return sensitiveArtifactReason(path, root, {
+    isSourceFile: CODE_EXTENSIONS.has(extname(path).toLowerCase()),
+  })
 }
 
 export function _looksLikePaper(path: string): boolean {
@@ -195,7 +190,7 @@ export function classifyFile(path: string): FileTypeValue | null {
   return null
 }
 
-export function countWords(path: string): number {
+function countWordsOrNull(path: string): number | null {
   try {
     const extension = extname(path).toLowerCase()
     if (IMAGE_EXTENSIONS.has(extension) || PAPER_EXTENSIONS.has(extension) || AUDIO_EXTENSIONS.has(extension) || VIDEO_EXTENSIONS.has(extension)) {
@@ -203,8 +198,12 @@ export function countWords(path: string): number {
     }
     return readFileSync(path, 'utf8').split(/\s+/).filter(Boolean).length
   } catch {
-    return 0
+    return null
   }
+}
+
+export function countWords(path: string): number {
+  return countWordsOrNull(path) ?? 0
 }
 
 export function _loadMadarignore(root: string): string[] {
@@ -228,21 +227,23 @@ function visitDirectory(
   ancestorRealPaths: string[],
   rootRealPath: string,
   files: string[],
+  exclusions: DiscoveryExclusion[],
 ): void {
   let entries: Dirent[]
   try {
     entries = readdirSync(directory, { withFileTypes: true })
   } catch {
+    exclusions.push({
+      path: localDiscoveryPath(root, directory),
+      kind: 'unreadable',
+      reason: 'unreadable_directory',
+    })
     return
   }
 
   for (const entry of entries) {
     const entryPath = resolve(directory, entry.name)
     const normalizedEntryPath = toPosixPath(entryPath)
-
-    if (entry.name.startsWith('.')) {
-      continue
-    }
 
     if (isDiscoveryPathIgnored(entryPath, root, ignorePatterns)) {
       continue
@@ -256,18 +257,46 @@ function visitDirectory(
     try {
       stats = lstatSync(entryPath)
     } catch {
+      exclusions.push({
+        path: localDiscoveryPath(root, entryPath),
+        kind: 'unreadable',
+        reason: 'unreadable_path',
+      })
       continue
     }
 
     if (stats.isDirectory()) {
+      if (entry.name.startsWith('.')) {
+        if (isSensitiveDirectoryName(entry.name)) {
+          const directoryReason = sensitiveDirectoryReasonForPath(entryPath, root) ?? 'sensitive_directory'
+          exclusions.push({
+            path: localDiscoveryPath(root, entryPath),
+            kind: 'sensitive',
+            reason: directoryReason,
+          })
+        }
+        continue
+      }
       if (isNoiseDir(entry.name)) {
         continue
       }
-      visitDirectory(entryPath, root, followSymlinks, ignorePatterns, ancestorRealPaths, rootRealPath, files)
+      visitDirectory(entryPath, root, followSymlinks, ignorePatterns, ancestorRealPaths, rootRealPath, files, exclusions)
       continue
     }
 
     if (stats.isSymbolicLink()) {
+      const sensitiveReason = sensitiveReasonForFile(entryPath, root)
+      if (sensitiveReason) {
+        exclusions.push({
+          path: localDiscoveryPath(root, entryPath),
+          kind: 'sensitive',
+          reason: sensitiveReason,
+        })
+        continue
+      }
+      if (entry.name.startsWith('.')) {
+        continue
+      }
       if (!followSymlinks) {
         continue
       }
@@ -276,6 +305,11 @@ function visitDirectory(
       try {
         realTarget = realpathSync(entryPath)
       } catch {
+        exclusions.push({
+          path: localDiscoveryPath(root, entryPath),
+          kind: 'unreadable',
+          reason: 'unreadable_path',
+        })
         continue
       }
 
@@ -290,12 +324,40 @@ function visitDirectory(
       try {
         targetStats = lstatSync(realTarget)
       } catch {
+        exclusions.push({
+          path: localDiscoveryPath(root, entryPath),
+          kind: 'unreadable',
+          reason: 'unreadable_path',
+        })
         continue
+      }
+
+      const targetDirectoryReason = targetStats.isDirectory()
+        ? sensitiveDirectoryReasonForPath(realTarget, rootRealPath)
+        : null
+      if (targetDirectoryReason) {
+        exclusions.push({
+          path: localDiscoveryPath(root, entryPath),
+          kind: 'sensitive',
+          reason: targetDirectoryReason,
+        })
+        continue
+      }
+      if (targetStats.isFile()) {
+        const targetSensitiveReason = sensitiveReasonForFile(realTarget, rootRealPath)
+        if (targetSensitiveReason) {
+          exclusions.push({
+            path: localDiscoveryPath(root, entryPath),
+            kind: 'sensitive',
+            reason: targetSensitiveReason,
+          })
+          continue
+        }
       }
 
       if (targetStats.isDirectory()) {
         const nextAncestors = [...ancestorRealPaths, realTarget]
-        visitDirectory(entryPath, root, followSymlinks, ignorePatterns, nextAncestors, rootRealPath, files)
+        visitDirectory(entryPath, root, followSymlinks, ignorePatterns, nextAncestors, rootRealPath, files, exclusions)
       } else if (targetStats.isFile()) {
         files.push(normalizedEntryPath)
       }
@@ -303,16 +365,28 @@ function visitDirectory(
     }
 
     if (stats.isFile()) {
+      if (entry.name.startsWith('.')) {
+        const sensitiveReason = sensitiveReasonForFile(entryPath, root)
+        if (sensitiveReason) {
+          exclusions.push({
+            path: localDiscoveryPath(root, entryPath),
+            kind: 'sensitive',
+            reason: sensitiveReason,
+          })
+        }
+        continue
+      }
       files.push(normalizedEntryPath)
     }
   }
 }
 
-function collectFiles(root: string, followSymlinks: boolean, ignorePatterns: string[]): string[] {
+function collectFiles(root: string, followSymlinks: boolean, ignorePatterns: string[]): { files: string[]; exclusions: DiscoveryExclusion[] } {
   const resolvedRoot = resolve(root)
   mkdirSync(resolvedRoot, { recursive: true })
 
   const files: string[] = []
+  const exclusions: DiscoveryExclusion[] = []
   let rootRealPath = resolvedRoot
   try {
     rootRealPath = realpathSync(resolvedRoot)
@@ -320,9 +394,12 @@ function collectFiles(root: string, followSymlinks: boolean, ignorePatterns: str
     rootRealPath = resolvedRoot
   }
 
-  visitDirectory(resolvedRoot, resolvedRoot, followSymlinks, ignorePatterns, [rootRealPath], rootRealPath, files)
+  visitDirectory(resolvedRoot, resolvedRoot, followSymlinks, ignorePatterns, [rootRealPath], rootRealPath, files, exclusions)
 
-  return [...new Set(files)].sort()
+  return {
+    files: [...new Set(files)].sort(),
+    exclusions,
+  }
 }
 
 function inferOutputBase(outputPath: string): string {
@@ -364,14 +441,20 @@ export function detect(root: string, options: DetectOptions = {}): DetectResult 
   }
 
   let totalWords = 0
-  const skippedSensitive: string[] = []
+  const collected = collectFiles(root, followSymlinks, ignorePatterns)
+  const exclusions: DiscoveryExclusion[] = [...collected.exclusions]
 
-  for (const filePath of collectFiles(root, followSymlinks, ignorePatterns)) {
+  for (const filePath of collected.files) {
     if (options.includedFiles && !options.includedFiles.has(resolve(filePath))) {
       continue
     }
-    if (isSensitive(filePath, root)) {
-      skippedSensitive.push(filePath)
+    const sensitiveReason = sensitiveReasonForFile(filePath, root)
+    if (sensitiveReason) {
+      exclusions.push({
+        path: localDiscoveryPath(root, filePath),
+        kind: 'sensitive',
+        reason: sensitiveReason,
+      })
       continue
     }
 
@@ -380,8 +463,29 @@ export function detect(root: string, options: DetectOptions = {}): DetectResult 
       continue
     }
 
+    try {
+      accessSync(filePath, constants.R_OK)
+    } catch {
+      exclusions.push({
+        path: localDiscoveryPath(root, filePath),
+        kind: 'unreadable',
+        reason: 'unreadable_path',
+      })
+      continue
+    }
+
+    const wordCount = countWordsOrNull(filePath)
+    if (wordCount === null) {
+      exclusions.push({
+        path: localDiscoveryPath(root, filePath),
+        kind: 'unreadable',
+        reason: 'unreadable_path',
+      })
+      continue
+    }
+
     files[fileType].push(filePath)
-    totalWords += countWords(filePath)
+    totalWords += wordCount
   }
 
   const totalFiles = Object.values(files).reduce((count, group) => count + group.length, 0)
@@ -400,7 +504,8 @@ export function detect(root: string, options: DetectOptions = {}): DetectResult 
     total_words: totalWords,
     needs_graph: needsGraph,
     warning,
-    skipped_sensitive: skippedSensitive,
+    skipped_sensitive: exclusions.filter((entry) => entry.kind === 'sensitive').map((entry) => entry.path),
+    exclusions,
     madarignore_patterns: ignorePatterns.length,
   }
 }

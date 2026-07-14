@@ -961,6 +961,33 @@ function createTestOggOpusBuffer(
 describe('generateGraph', () => {
   const generateGraphIntegrationTimeoutMs = 15_000
 
+  test('persists local discovery safety paths and returns their structured summary', () => {
+    withTempDir((tempDir) => {
+      writeFileSync(join(tempDir, 'token.ts'), 'export function issueToken() { return "opaque" }\n', 'utf8')
+      writeFileSync(join(tempDir, 'credentials.json'), '{"token":"do-not-read"}\n', 'utf8')
+
+      const result = generateGraph(tempDir, { noHtml: true })
+      const graphData = JSON.parse(readFileSync(result.graphPath, 'utf8')) as {
+        discovery_safety?: {
+          summary: { total: number; sensitive: number; unreadable: number }
+          exclusions: Array<{ path: string; kind: string; reason: string }>
+        }
+        nodes: Array<{ source_file?: string }>
+      }
+
+      expect(result.codeFiles).toBe(1)
+      expect(result.discoverySafety?.summary).toMatchObject({ total: 1, sensitive: 1, unreadable: 0 })
+      expect(result.discoveryExclusions).toContainEqual({
+        path: 'credentials.json',
+        kind: 'sensitive',
+        reason: 'secret_config',
+      })
+      expect(graphData.discovery_safety).toEqual(result.discoverySafety)
+      expect(graphData.nodes.some((node) => node.source_file?.endsWith('token.ts'))).toBe(true)
+      expect(JSON.stringify(graphData.nodes)).not.toContain('credentials.json')
+    })
+  }, generateGraphIntegrationTimeoutMs)
+
   test('throws a stable unsupported-corpus error code when no supported files are detected', () => {
     withTempDir((tempDir) => {
       writeFileSync(join(tempDir, 'fixture.bin'), Buffer.from([0xde, 0xad, 0xbe, 0xef]))
@@ -973,6 +1000,22 @@ describe('generateGraph', () => {
         expect((error as GenerateUnsupportedCorpusError).code).toBe('NO_SUPPORTED_FILES')
         expect((error as Error).message).toContain('No supported files were found in the target path.')
       }
+    })
+  })
+
+  test('reports local safety paths when exclusions leave no supported corpus', () => {
+    withTempDir((tempDir) => {
+      writeFileSync(join(tempDir, 'credentials.json'), '{"token":"do-not-read"}\n', 'utf8')
+
+      expect(() => generateGraph(tempDir, { noHtml: true })).toThrowError(
+        expect.objectContaining({
+          code: 'NO_SUPPORTED_FILES',
+          message: expect.stringContaining('"credentials.json" (secret_config)'),
+          discoverySafety: expect.objectContaining({
+            summary: expect.objectContaining({ total: 1, sensitive: 1, unreadable: 0 }),
+          }),
+        }),
+      )
     })
   })
 

@@ -198,6 +198,21 @@ function createDependencies(): CliTestDependencies {
       cache: options.useSpi ? { strategy: 'spi', hit: false, reason: 'no-cache', fileCount: 2 } : null,
       warning: null,
       notes: ['test note'],
+      discoverySafety: {
+        version: 1,
+        summary: {
+          total: 1,
+          sensitive: 1,
+          unreadable: 0,
+          reasons: { secret_config: 1 },
+        },
+        exclusions: [
+          { path: 'config/credentials.json', kind: 'sensitive', reason: 'secret_config' },
+        ],
+      },
+      discoveryExclusions: [
+        { path: 'config/credentials.json', kind: 'sensitive', reason: 'secret_config' },
+      ],
     }),
     watchGraph: async () => {},
     serveGraph: async () => {},
@@ -2621,6 +2636,8 @@ describe('cli main', () => {
     expect(logs[0]).toContain('[madar generate] update completed')
     expect(logs[0]).toContain('graph.json')
     expect(logs[0]).toContain('Semantic anomalies: 2 high-signal item(s)')
+    expect(logs[0]).toContain('Safety exclusions: 1 (1 sensitive, 0 unreadable)')
+    expect(logs[0]).toContain('"config/credentials.json" (secret_config)')
     expect(logs[0]).toContain('madar codex install     # Codex CLI')
   })
 

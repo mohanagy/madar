@@ -409,6 +409,9 @@ export function toJson(
     ...(graph.graph.graph_build_freshness && typeof graph.graph.graph_build_freshness === 'object' && !Array.isArray(graph.graph.graph_build_freshness)
       ? { graph_build_freshness: graph.graph.graph_build_freshness }
       : {}),
+    ...(graph.graph.discovery_safety && typeof graph.graph.discovery_safety === 'object' && !Array.isArray(graph.graph.discovery_safety)
+      ? { discovery_safety: graph.graph.discovery_safety }
+      : {}),
     ...(typeof extractorVersion === 'number' ? { extractor_version: extractorVersion } : {}),
     nodes: graph.nodeEntries().map(([id, attributes]) => ({
       id,

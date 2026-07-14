@@ -4,6 +4,7 @@ import { countTokens } from 'gpt-tokenizer/encoding/cl100k_base'
 
 import { godNodes, semanticAnomalies, workspaceBridges, type SemanticAnomaly, type WorkspaceBridge } from '../pipeline/analyze.js'
 import { buildFromJson } from '../pipeline/build.js'
+import { parseDiscoverySafetyMetadata } from '../shared/discovery-safety.js'
 import { buildCommunityLabels } from '../pipeline/community-naming.js'
 import type { Communities } from '../pipeline/cluster.js'
 import { isRecord } from '../shared/guards.js'
@@ -234,6 +235,10 @@ export function loadGraph(graphPath: string): KnowledgeGraph {
   const communityLabels = storedCommunityLabels(parsed.community_labels)
   if (Object.keys(communityLabels).length > 0) {
     graph.graph.community_labels = communityLabels
+  }
+  const discoverySafety = parseDiscoverySafetyMetadata(parsed.discovery_safety)
+  if (discoverySafety) {
+    graph.graph.discovery_safety = discoverySafety
   }
   return graph
 }

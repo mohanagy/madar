@@ -19,6 +19,11 @@ import { loadGraph } from '../runtime/serve.js'
 import { buildGraphBuildFreshnessMetadata } from '../shared/graph-build-freshness.js'
 import { collectGitVisibleFiles } from '../shared/git.js'
 import { resolveMadarOutputDirectory } from '../shared/workspace.js'
+import {
+  buildDiscoverySafetyMetadata,
+  type DiscoveryExclusion,
+  type DiscoverySafetyMetadata,
+} from '../shared/discovery-safety.js'
 
 export type ProgressStep =
   | { step: 'detect'; message: string }
@@ -84,6 +89,8 @@ export interface GenerateGraphResult {
   cache: GenerateGraphCacheSummary | null
   warning: string | null
   notes: string[]
+  discoverySafety?: DiscoverySafetyMetadata
+  discoveryExclusions?: DiscoveryExclusion[]
 }
 
 export interface GenerateGraphCacheSummary {
@@ -97,11 +104,13 @@ export type GenerateUnsupportedCorpusCode = 'NO_SUPPORTED_FILES' | 'NO_GRAPH_NOD
 
 export class GenerateUnsupportedCorpusError extends Error {
   readonly code: GenerateUnsupportedCorpusCode
+  readonly discoverySafety: DiscoverySafetyMetadata | undefined
 
-  constructor(code: GenerateUnsupportedCorpusCode, message: string) {
+  constructor(code: GenerateUnsupportedCorpusCode, message: string, discoverySafety?: DiscoverySafetyMetadata) {
     super(message)
     this.name = 'GenerateUnsupportedCorpusError'
     this.code = code
+    this.discoverySafety = discoverySafety
   }
 }
 
@@ -120,11 +129,13 @@ function countNonCodeFiles(files: DetectResult['files']): number {
 }
 
 function detectionSummary(detection: DetectResult): Record<string, unknown> {
+  const discoverySafety = buildDiscoverySafetyMetadata(detection.exclusions)
   return {
     files: detection.files,
     total_files: detection.total_files,
     total_words: detection.total_words,
     warning: detection.warning,
+    discovery_safety: discoverySafety.summary,
   }
 }
 
@@ -245,18 +256,32 @@ function outputDirectory(rootPath: string): string {
   return resolveMadarOutputDirectory(rootPath)
 }
 
-function missingCodeExtractionMessage(totalFiles: number): string {
-  if (totalFiles === 0) {
-    return 'No supported files were found in the target path.'
+function missingCodeExtractionMessage(totalFiles: number, discoverySafety?: DiscoverySafetyMetadata): string {
+  const baseMessage = totalFiles === 0
+    ? 'No supported files were found in the target path.'
+    : 'No graph nodes could be generated from the detected corpus. The current TypeScript extractor supports Python, JavaScript/TypeScript, documents, text-like papers, and image assets, but some detected formats still have shallow coverage.'
+  if (!discoverySafety || discoverySafety.summary.total === 0) {
+    return baseMessage
   }
 
-  return 'No graph nodes could be generated from the detected corpus. The current TypeScript extractor supports Python, JavaScript/TypeScript, documents, text-like papers, and image assets, but some detected formats still have shallow coverage.'
+  const exclusions = discoverySafety.exclusions
+    .slice(0, 20)
+    .map((entry) => `- ${JSON.stringify(entry.path)} (${entry.reason})`)
+  if (discoverySafety.exclusions.length > 20) {
+    exclusions.push(`- ... ${discoverySafety.exclusions.length - 20} more safety exclusions`)
+  }
+  return [
+    baseMessage,
+    `Safety exclusions: ${discoverySafety.summary.total} (${discoverySafety.summary.sensitive} sensitive, ${discoverySafety.summary.unreadable} unreadable).`,
+    ...exclusions,
+  ].join('\n')
 }
 
-function missingCodeExtractionError(totalFiles: number): GenerateUnsupportedCorpusError {
+function missingCodeExtractionError(totalFiles: number, discoverySafety?: DiscoverySafetyMetadata): GenerateUnsupportedCorpusError {
   return new GenerateUnsupportedCorpusError(
     totalFiles === 0 ? 'NO_SUPPORTED_FILES' : 'NO_GRAPH_NODES',
-    missingCodeExtractionMessage(totalFiles),
+    missingCodeExtractionMessage(totalFiles, discoverySafety),
+    discoverySafety,
   )
 }
 
@@ -298,6 +323,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   const gitVisibleFiles = options.respectGitignore ? collectGitVisibleFiles(resolvedRootPath) : null
   const detectionOptions = detectOptions(options, gitVisibleFiles)
   const detected = options.update ? detectIncremental(resolvedRootPath, manifestPath, detectionOptions) : detect(resolvedRootPath, detectionOptions)
+  const discoverySafety = buildDiscoverySafetyMetadata(detected.exclusions)
 
   if (options.includeDocs === false) {
     detected.files[FileType.DOCUMENT] = []
@@ -316,6 +342,11 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   const nonCodeFiles = countNonCodeFiles(detected.files)
   if (nonCodeFiles > 0) {
     notes.push(`${nonCodeFiles} non-code file(s) were included in extraction alongside source code.`)
+  }
+  if (discoverySafety.summary.total > 0) {
+    notes.push(
+      `${discoverySafety.summary.total} safety exclusion(s) were not indexed (${discoverySafety.summary.sensitive} sensitive, ${discoverySafety.summary.unreadable} unreadable).`,
+    )
   }
 
   let changedFiles = 0
@@ -474,11 +505,11 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
           : null
 
   if (!graph) {
-    throw missingCodeExtractionError(detected.total_files)
+    throw missingCodeExtractionError(detected.total_files, discoverySafety)
   }
 
   if (!options.clusterOnly && graph.numberOfNodes() === 0) {
-    throw missingCodeExtractionError(detected.total_files)
+    throw missingCodeExtractionError(detected.total_files, discoverySafety)
   }
 
   progress?.({ step: 'build', message: `Built graph: ${graph.numberOfNodes()} nodes, ${graph.numberOfEdges()} edges` })
@@ -509,6 +540,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   )
 
   graph.graph.root_path = resolvedRootPath
+  graph.graph.discovery_safety = discoverySafety
   if (options.useSpi) {
     graph.graph.spi_mode = true
   }
@@ -591,5 +623,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     cache: cacheSummary,
     warning: detected.warning,
     notes,
+    discoverySafety,
+    discoveryExclusions: discoverySafety.exclusions,
   }
 }

@@ -19,6 +19,11 @@ import { analyzeGraphContextFreshness, graphFreshnessStatusLabel, type GraphCont
 import { isSemanticRuntimeAvailable } from '../runtime/semantic.js'
 import { findPackageRoot, readPackageVersion } from '../shared/package-metadata.js'
 import { resolveWorkspaceGraphPath } from '../shared/workspace.js'
+import {
+  readDiscoverySafetyMetadata,
+  type DiscoveryExclusion,
+  type DiscoverySafetySummary,
+} from '../shared/discovery-safety.js'
 
 const MADAR_SECTION_MARKER = '## madar'
 
@@ -49,6 +54,8 @@ interface GraphCheck {
   changedSourceCount: number
   missingSourceCount: number
   recommendation: string
+  discoverySafety: DiscoverySafetySummary | null
+  discoveryExclusions: DiscoveryExclusion[]
 }
 
 export interface DoctorReport {
@@ -300,6 +307,7 @@ function readGraphCheck(graphPath: string, now: number): GraphCheck {
   const ageMs = freshness.generated_ms === null
     ? null
     : Math.max(0, Math.trunc(now - freshness.generated_ms))
+  const discoverySafety = readDiscoverySafetyMetadata(resolvedGraphPath)
 
   return {
     graphPath: resolvedGraphPath,
@@ -312,6 +320,8 @@ function readGraphCheck(graphPath: string, now: number): GraphCheck {
     changedSourceCount: freshness.changed_source_count,
     missingSourceCount: freshness.missing_source_count,
     recommendation: freshness.recommendation,
+    discoverySafety: discoverySafety?.summary ?? null,
+    discoveryExclusions: discoverySafety?.exclusions ?? [],
   }
 }
 
@@ -573,7 +583,7 @@ function formatGraphLine(graph: GraphCheck): string[] {
   const generatedText = graph.generatedAt ?? 'unknown'
   const versionText = graph.graphVersion ?? 'unknown'
 
-  return [
+  const lines = [
     `- graph: found (${graph.graphPath})`,
     `- graph freshness: ${graphFreshnessStatusLabel(graph.freshness)} (${ageText} old, generated ${generatedText}, graph_version ${versionText})`,
     `- indexed files: ${graph.indexedFileCount}`,
@@ -581,6 +591,21 @@ function formatGraphLine(graph: GraphCheck): string[] {
     `- missing since graph: ${graph.missingSourceCount} source file${graph.missingSourceCount === 1 ? '' : 's'}`,
     `- recommendation: ${graph.recommendation}`,
   ]
+  if (graph.discoverySafety && graph.discoverySafety.total > 0) {
+    lines.push(
+      `- safety exclusions: ${graph.discoverySafety.total} (${graph.discoverySafety.sensitive} sensitive, ${graph.discoverySafety.unreadable} unreadable)`,
+      '- skipped paths:',
+    )
+    for (const exclusion of graph.discoveryExclusions.slice(0, 20)) {
+      lines.push(`  - ${JSON.stringify(exclusion.path)} (${exclusion.reason})`)
+    }
+    if (graph.discoveryExclusions.length > 20) {
+      lines.push(`  - ... ${graph.discoveryExclusions.length - 20} more; inspect graph.json discovery_safety.exclusions`)
+    }
+  } else {
+    lines.push('- safety exclusions: none')
+  }
+  return lines
 }
 
 export function runDoctorCommand(options: DoctorCommandOptions = {}): string {
@@ -619,6 +644,15 @@ export function runStatusCommand(options: DoctorCommandOptions = {}): string {
   const agentSummary = report.agents.map((agent) => `${agent.label}:${agent.status}`).join(' ')
   const mcpSummary = report.mcpChecks.map((check) => `${check.label}:${check.status}`).join(' ')
   const nextSummary = report.nextCommands.length === 0 ? 'none' : report.nextCommands.join('; ')
+  const safetySummary = report.graph.discoverySafety && report.graph.discoverySafety.total > 0
+    ? `${report.graph.discoverySafety.total} (sensitive=${report.graph.discoverySafety.sensitive}, unreadable=${report.graph.discoverySafety.unreadable})`
+    : 'none'
+  const skippedPaths = report.graph.discoveryExclusions.length > 0
+    ? report.graph.discoveryExclusions
+        .slice(0, 20)
+        .map((entry) => `${JSON.stringify(entry.path)}[${entry.reason}]`)
+        .join(', ')
+    : 'none'
 
   return [
     `[madar status] ${report.healthy ? 'healthy' : 'attention needed'}`,
@@ -626,6 +660,8 @@ export function runStatusCommand(options: DoctorCommandOptions = {}): string {
     `graph ${graphStatus}`,
     `agents ${agentSummary}`,
     `mcp ${mcpSummary}`,
+    `safety ${safetySummary}`,
+    `skipped ${skippedPaths}${report.graph.discoveryExclusions.length > 20 ? `, ... ${report.graph.discoveryExclusions.length - 20} more` : ''}`,
     `next ${nextSummary}`,
   ].join('\n')
 }

@@ -373,6 +373,72 @@ function buildAnswerReadySelectionDiagnostics(): ContextPackSelectionDiagnostics
   }
 }
 describe('context-pack-command', () => {
+  it('uses discovery safety metadata from the loaded graph without serializing local exclusion paths', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'madar-discovery-pack-'))
+    tempFixtureRoots.push(root)
+    const graphPath = join(root, 'out', 'graph.json')
+    mkdirSync(dirname(graphPath), { recursive: true })
+    writeFileSync(graphPath, JSON.stringify({
+      discovery_safety: {
+        version: 1,
+        summary: { total: 1, sensitive: 1, unreadable: 0, reasons: { secret_config: 1 } },
+        exclusions: [
+          { path: 'src/billing/credentials.json', kind: 'sensitive', reason: 'secret_config' },
+        ],
+      },
+    }))
+
+    const graph = buildRuntimeGenerationGraph()
+    graph.graph.discovery_safety = {
+      version: 1,
+      summary: { total: 1, sensitive: 0, unreadable: 1, reasons: { unreadable_path: 1 } },
+      exclusions: [
+        { path: 'src/auth/token-loader.ts', kind: 'unreadable', reason: 'unreadable_path' },
+      ],
+    }
+    const dependencies: ContextPackCommandDependencies = {
+      loadGraph: vi.fn().mockReturnValue(graph),
+      retrieveContext: (loadedGraph, options) => retrieveContext(loadedGraph, options),
+      compactRetrieveResult,
+      analyzePrImpact: vi.fn(),
+      compactPrImpactResult: vi.fn(),
+      analyzeImpact: vi.fn(),
+      compactImpactResult: vi.fn(),
+    }
+
+    const output = await runContextPackCommand({
+      prompt: 'How does the auth token loader work?',
+      budget: 3000,
+      task: 'explain',
+      graphPath,
+      format: 'json',
+      verbose: true,
+    }, dependencies)
+    const payload = JSON.parse(output) as {
+      evidence?: {
+        pack_confidence?: string
+        discovery_exclusions?: {
+          policy?: string
+          total?: number
+          relevant?: number
+          reasons?: Record<string, number>
+          relevant_reasons?: Record<string, number>
+        }
+      }
+    }
+
+    expect(payload.evidence?.pack_confidence).toBe('low')
+    expect(payload.evidence?.discovery_exclusions).toEqual({
+      policy: 'artifact_path_only',
+      total: 1,
+      relevant: 1,
+      reasons: { unreadable_path: 1 },
+      relevant_reasons: { unreadable_path: 1 },
+    })
+    expect(output).not.toContain('token-loader.ts')
+    expect(output).not.toContain('billing/credentials.json')
+  })
+
   it('preserves execution_slice for runtime-generation explain packs', async () => {
     const graph = buildRuntimeGenerationGraph()
     const dependencies: ContextPackCommandDependencies = {

@@ -622,6 +622,7 @@ function buildStrictRuntimeProofRetrievePayload(
 function evidenceForRetrievePayload(
   payload: Partial<Pick<RetrieveResult, 'coverage' | 'answer_contract' | 'execution_slice'>> & {
     matched_nodes?: Array<{ source_file: string }>
+    question?: string
   },
   graphPath: string,
 ) {
@@ -630,6 +631,7 @@ function evidenceForRetrievePayload(
     coverage: payload.coverage,
     executionSlice: payload.execution_slice,
     graphPath,
+    question: payload.question,
     missingPhases: missingPhasesFromPayload(payload),
     coveredWorkflowOwners: collectWorkflowOwners((payload.matched_nodes ?? []).map((node) => node.source_file)),
   })
@@ -642,12 +644,14 @@ function evidenceForPathPayload(
     edit_steps?: Array<{ path: string }>
   },
   graphPath: string,
+  question?: string,
 ) {
   return buildMadarResponseEvidence({
     answerContract: payload.answer_contract,
     coverage: payload.coverage,
     executionSlice: payload.execution_slice,
     graphPath,
+    question,
     missingPhases: missingPhasesFromPayload(payload),
     coveredWorkflowOwners: collectWorkflowOwners(
       (payload.relevant_files ?? []).map((entry) => entry.path),
@@ -662,8 +666,10 @@ function evidenceForImpactPayload(payload: {
   affected_files?: string[]
   direct_dependents?: Array<{ source_file: string }>
   transitive_dependents?: Array<{ source_file: string }>
-}) {
+}, graphPath: string, question?: string) {
   return buildMadarResponseEvidence({
+    graphPath,
+    question,
     coveredWorkflowOwners: collectWorkflowOwners(
       payload.target_file ? [payload.target_file] : [],
       payload.affected_files ?? [],
@@ -675,8 +681,9 @@ function evidenceForImpactPayload(payload: {
 
 function evidenceForGraphSummaryPayload(payload: {
   entrypoints?: Array<{ source_file: string }>
-}) {
+}, graphPath: string) {
   return buildMadarResponseEvidence({
+    graphPath,
     coveredWorkflowOwners: collectWorkflowOwners((payload.entrypoints ?? []).map((entry) => entry.source_file)),
   })
 }
@@ -1158,7 +1165,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       const summary = buildGraphSummary(graph)
       return helpers.ok(id, helpers.textToolResult(JSON.stringify({
         ...summary,
-        evidence: evidenceForGraphSummaryPayload(summary),
+        evidence: evidenceForGraphSummaryPayload(summary, graphPath),
       })))
     }
     case 'god_nodes':
@@ -1221,7 +1228,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       return helpers.ok(id, helpers.textToolResult(JSON.stringify(
         {
           ...impactPayload,
-          evidence: evidenceForImpactPayload(impactResult),
+          evidence: evidenceForImpactPayload(impactResult, graphPath, label),
         },
       )))
     }
@@ -1555,6 +1562,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         const evidence = buildMadarResponseEvidence({
           coverage: reviewMetadata.coverage,
           graphPath,
+          question: prompt,
           coveredWorkflowOwners: collectWorkflowOwners(
             prResult.changed_files,
             prResult.review_context.supporting_paths,
@@ -1619,6 +1627,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         const evidence = buildMadarResponseEvidence({
           coverage: metadata.coverage,
           graphPath,
+          question: prompt,
           coveredWorkflowOwners: collectWorkflowOwners(
             impactResult.target_file ? [impactResult.target_file] : [],
             impactResult.affected_files ?? [],
@@ -1724,6 +1733,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
           coverage: deltaResult.delta_pack.coverage,
           executionSlice: deltaResult.delta_pack.execution_slice,
           graphPath,
+          question: prompt,
           missingPhases: missingPhasesFromPayload(deltaResult.delta_pack),
           coveredWorkflowOwners: collectWorkflowOwners(resolvedDeltaNodes.nodes.map((node) => node.source_file)),
         })
@@ -1770,6 +1780,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         coverage: fullPack.coverage,
         executionSlice: fullPack.execution_slice,
         graphPath,
+        question: prompt,
         missingPhases: missingPhasesFromPayload(fullPack),
         coveredWorkflowOwners: collectWorkflowOwners(resolvedNodes.nodes.map((node) => node.source_file)),
       })
@@ -2001,7 +2012,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       })
       return helpers.ok(id, helpers.textToolResult(JSON.stringify({
         ...result,
-        evidence: evidenceForPathPayload(result, graphPath),
+        evidence: evidenceForPathPayload(result, graphPath, question),
       })))
     }
     case 'feature_map': {
@@ -2031,7 +2042,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       })
       return helpers.ok(id, helpers.textToolResult(JSON.stringify({
         ...result,
-        evidence: evidenceForPathPayload(result, graphPath),
+        evidence: evidenceForPathPayload(result, graphPath, question),
       })))
     }
     case 'risk_map': {
@@ -2061,7 +2072,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       })
       return helpers.ok(id, helpers.textToolResult(JSON.stringify({
         ...result,
-        evidence: evidenceForPathPayload(result, graphPath),
+        evidence: evidenceForPathPayload(result, graphPath, question),
       })))
     }
     case 'implementation_checklist': {
@@ -2091,7 +2102,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       })
       return helpers.ok(id, helpers.textToolResult(JSON.stringify({
         ...result,
-        evidence: evidenceForPathPayload(result, graphPath),
+        evidence: evidenceForPathPayload(result, graphPath, question),
       })))
     }
     case 'time_travel_compare': {
