@@ -1,8 +1,10 @@
-import { accessSync, constants, Dirent, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs'
+import { accessSync, constants, Dirent, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { dirname, extname, relative, resolve, sep } from 'node:path'
 
 import type { IndexingOutcome } from '../contracts/indexing.js'
+import { parseGenerationPolicy, type GenerationPolicyV1 } from '../contracts/generation-policy.js'
 import { sidecarAwareFileFingerprint } from '../shared/binary-ingest-sidecar.js'
+import { writeTextFileAtomically } from '../shared/atomic-file.js'
 import {
   isDiscoveryPathIgnored,
   isIgnoredByPatterns,
@@ -96,6 +98,7 @@ export const MANIFEST_METADATA_KEY = '__madar_meta__'
 
 export interface ManifestMetadata {
   total_words?: number
+  generation_policy?: GenerationPolicyV1
 }
 
 export interface ManifestSnapshot {
@@ -685,7 +688,11 @@ export function loadManifestMetadata(manifestPath: string = DEFAULT_MANIFEST_PAT
   }
 
   const totalWords = (metadata as { total_words?: unknown }).total_words
-  return typeof totalWords === 'number' && Number.isFinite(totalWords) && totalWords >= 0 ? { total_words: totalWords } : {}
+  const generationPolicy = parseGenerationPolicy((metadata as { generation_policy?: unknown }).generation_policy)
+  return {
+    ...(typeof totalWords === 'number' && Number.isFinite(totalWords) && totalWords >= 0 ? { total_words: totalWords } : {}),
+    ...(generationPolicy ? { generation_policy: generationPolicy } : {}),
+  }
 }
 
 export function createManifestSnapshot(
@@ -708,8 +715,14 @@ export function createManifestSnapshot(
     }
   }
 
-  if (typeof metadata.total_words === 'number' && Number.isFinite(metadata.total_words) && metadata.total_words >= 0) {
-    manifest[MANIFEST_METADATA_KEY] = { total_words: metadata.total_words }
+  const manifestMetadata: ManifestMetadata = {
+    ...(typeof metadata.total_words === 'number' && Number.isFinite(metadata.total_words) && metadata.total_words >= 0
+      ? { total_words: metadata.total_words }
+      : {}),
+    ...(metadata.generation_policy ? { generation_policy: metadata.generation_policy } : {}),
+  }
+  if (Object.keys(manifestMetadata).length > 0) {
+    manifest[MANIFEST_METADATA_KEY] = manifestMetadata
   }
 
   return { document: manifest, failedPaths }
@@ -721,7 +734,7 @@ export function writeManifestSnapshot(
 ): void {
   const safeManifestPath = validateManifestPath(manifestPath)
   mkdirSync(dirname(safeManifestPath), { recursive: true })
-  writeFileSync(safeManifestPath, `${JSON.stringify(snapshot.document, null, 2)}\n`, 'utf8')
+  writeTextFileAtomically(safeManifestPath, `${JSON.stringify(snapshot.document, null, 2)}\n`)
 }
 
 export function saveManifest(

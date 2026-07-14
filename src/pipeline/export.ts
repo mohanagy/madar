@@ -406,6 +406,9 @@ export function toJson(
     directed: graph.isDirected(),
     ...(typeof graph.graph.root_path === 'string' && graph.graph.root_path.length > 0 ? { root_path: graph.graph.root_path } : {}),
     ...(graph.graph.spi_mode === true ? { spi_mode: true } : {}),
+    ...(graph.graph.generation_policy && typeof graph.graph.generation_policy === 'object' && !Array.isArray(graph.graph.generation_policy)
+      ? { generation_policy: graph.graph.generation_policy }
+      : {}),
     ...(graph.graph.graph_build_freshness && typeof graph.graph.graph_build_freshness === 'object' && !Array.isArray(graph.graph.graph_build_freshness)
       ? { graph_build_freshness: graph.graph.graph_build_freshness }
       : {}),

@@ -6,6 +6,8 @@ import { describe, expect, test } from 'vitest'
 
 import { agentsInstall } from '../../src/infrastructure/install.js'
 import { runDoctorCommand, runStatusCommand } from '../../src/infrastructure/doctor.js'
+import { generateGraph } from '../../src/infrastructure/generate.js'
+import { createWatcherState, writeWatcherState } from '../../src/infrastructure/watcher-state.js'
 
 const PACKAGE_CLI_RELATIVE_PATH = join('dist', 'src', 'cli', 'bin.js')
 
@@ -55,6 +57,37 @@ function writeMcpServer(path: string, serversKey: 'mcpServers' | 'servers', grap
 }
 
 describe('doctor command', () => {
+  test('shows watcher coverage, reconciliation, failure, and generation-policy mismatch', () => {
+    withSandbox((sandboxDir) => {
+      writeText(resolve(sandboxDir, 'main.ts'), 'export const value = 1\n')
+      const generated = generateGraph(sandboxDir, { noHtml: true })
+      writeText(resolve(sandboxDir, '.madarignore'), 'new-exclusion/**\n')
+      const watcher = createWatcherState('recursive-events', 30_000)
+      watcher.status = 'failed'
+      watcher.coverage = 'failed'
+      watcher.reconciliation_count = 2
+      watcher.last_reconciliation_at = '2026-07-15T00:00:00.000Z'
+      watcher.last_reconciliation_duration_ms = 42
+      watcher.last_reconciliation_file_count = 1
+      watcher.last_reconciliation_directory_count = 1
+      watcher.failure_reason = 'authoritative scan failed'
+      watcher.policy_match = false
+      writeWatcherState(generated.outputDir, watcher)
+
+      const doctor = runDoctorCommand({ projectDir: sandboxDir, now: Date.now() })
+      const status = runStatusCommand({ projectDir: sandboxDir, now: Date.now() })
+
+      expect(doctor).toContain('generation policy: mismatch')
+      expect(doctor).toContain('watcher: failed (live; coverage=failed; mode=recursive-events; interval=30000ms)')
+      expect(doctor).toContain('watcher last reconciliation: 2026-07-15T00:00:00.000Z (42ms; files=1; directories=1)')
+      expect(doctor).toContain('watcher failure: authoritative scan failed')
+      expect(status).toContain('generation-policy mismatch')
+      expect(status).toContain('watcher failed (live=true, coverage=failed, mode=recursive-events, interval=30000ms, published_policy=mismatch')
+      expect(status).toContain('reconciliation 2026-07-15T00:00:00.000Z (duration=42ms, files=1, directories=1')
+      expect(status).toContain('madar generate . --update')
+    })
+  })
+
   test('shows indexing completeness, affected local paths, and SPI diagnostics in doctor and status', () => {
     withSandbox((sandboxDir) => {
       writeJson(resolve(sandboxDir, 'out', 'graph.json'), {

@@ -77,6 +77,8 @@ Use `--require-fresh-context` on `madar pack`, `madar prompt`, or `madar handoff
 
 Cached `context_pack` explain responses still refresh the current freshness receipt before reuse, so a cache hit does not hide newly changed or missing indexed source files.
 
+With `--auto-refresh`, filesystem events invalidate the graph immediately and adaptive authoritative reconciliations verify the full watched corpus. Graph-backed MCP requests fail closed while reconciliation is pending/failed or watcher coverage/policy is not trustworthy. Generation policy is versioned and fingerprinted in both `graph.json` and `manifest.json`, so automatic refresh reuses direction, SPI, Git-ignore, symlink, document/non-code, exclusion, extractor, and indexing-threshold settings. Policy drift forces a full rebuild. `madar doctor` and `madar status` expose the local `watcher-state.json` health record. Full behavior and legacy migration are documented in [Auto-refresh and generation policy](../auto-refresh.md).
+
 ## Common commands
 
 ```bash

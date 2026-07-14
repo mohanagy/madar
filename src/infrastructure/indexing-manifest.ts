@@ -1,5 +1,6 @@
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { writeTextFileAtomically } from '../shared/atomic-file.js'
 
 import {
   INDEXING_MANIFEST_VERSION,
@@ -110,8 +111,8 @@ export function writeIndexingManifests(outputDir: string, manifest: IndexingMani
 } {
   const manifestPath = join(outputDir, INDEXING_MANIFEST_FILENAME)
   const shareSafeManifestPath = join(outputDir, SHARE_SAFE_INDEXING_MANIFEST_FILENAME)
-  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
-  writeFileSync(shareSafeManifestPath, `${JSON.stringify(shareSafeIndexingManifest(manifest), null, 2)}\n`, 'utf8')
+  writeTextFileAtomically(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+  writeTextFileAtomically(shareSafeManifestPath, `${JSON.stringify(shareSafeIndexingManifest(manifest), null, 2)}\n`)
   rmSync(join(outputDir, FAILED_INDEXING_MANIFEST_FILENAME), { force: true })
   rmSync(join(outputDir, FAILED_SHARE_SAFE_INDEXING_MANIFEST_FILENAME), { force: true })
   return { manifestPath, shareSafeManifestPath }
@@ -123,8 +124,8 @@ export function writeFailedIndexingManifests(outputDir: string, manifest: Indexi
 } {
   const manifestPath = join(outputDir, FAILED_INDEXING_MANIFEST_FILENAME)
   const shareSafeManifestPath = join(outputDir, FAILED_SHARE_SAFE_INDEXING_MANIFEST_FILENAME)
-  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
-  writeFileSync(shareSafeManifestPath, `${JSON.stringify(shareSafeIndexingManifest(manifest), null, 2)}\n`, 'utf8')
+  writeTextFileAtomically(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+  writeTextFileAtomically(shareSafeManifestPath, `${JSON.stringify(shareSafeIndexingManifest(manifest), null, 2)}\n`)
   return { manifestPath, shareSafeManifestPath }
 }
 

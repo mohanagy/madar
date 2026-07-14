@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import { handleStdioRequest, serveGraphStdio } from '../../src/runtime/stdio-server.js'
 import { graphFreshnessMetadata } from '../../src/runtime/freshness.js'
+import { readWatcherStateForGraph, writeWatcherState } from '../../src/infrastructure/watcher-state.js'
 
 async function waitFor(condition: () => boolean, timeoutMs = 5_000): Promise<void> {
   const deadline = Date.now() + timeoutMs
@@ -2699,6 +2700,184 @@ describe('stdio runtime', () => {
       expect(after?.result).toContain(`Nodes: ${refreshedGraph.nodes?.length ?? 0}`)
       expect(after?.result).not.toBe(before?.result)
     } finally {
+      input.destroy()
+      await serverPromise.catch(() => {})
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, 10_000)
+
+  it('refuses graph answers while an auto-refresh event is pending, then recovers', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'madar-stdio-pending-refresh-'))
+    const graphPath = join(root, 'out', 'graph.json')
+    const input = new PassThrough()
+    const output = new PassThrough()
+    const errorOutput = new PassThrough()
+    let outputText = ''
+    output.on('data', (chunk) => {
+      outputText += chunk.toString('utf8')
+    })
+
+    writeFileSync(join(root, 'initial.ts'), 'export const initialValue = 1\n', 'utf8')
+    const serverPromise = serveGraphStdio({
+      graphPath,
+      autoRefresh: true,
+      workspaceRoot: root,
+      autoRefreshDebounceSeconds: 0.5,
+      input,
+      output,
+      errorOutput,
+    })
+
+    try {
+      await waitFor(() => existsSync(graphPath) && readWatcherStateForGraph(graphPath)?.status === 'idle')
+      writeFileSync(join(root, 'added.ts'), 'export const addedDuringSession = 2\n', 'utf8')
+      await waitFor(() => readWatcherStateForGraph(graphPath)?.status === 'pending')
+
+      input.write(`${JSON.stringify({ id: 31, method: 'stats' })}\n`)
+      await waitFor(() => outputText.includes('"id":31'))
+
+      await waitFor(() => {
+        if (readWatcherStateForGraph(graphPath)?.status !== 'idle') {
+          return false
+        }
+        const graph = JSON.parse(readFileSync(graphPath, 'utf8')) as { nodes?: Array<{ source_file?: string }> }
+        return graph.nodes?.some((node) => node.source_file?.endsWith('added.ts')) === true
+      })
+      input.end(`${JSON.stringify({ id: 32, method: 'stats' })}\n`)
+      await serverPromise
+
+      const responses = outputText
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line)) as Array<{ id?: number; result?: string; error?: { message?: string } }>
+      expect(responses.find((response) => response.id === 31)?.error?.message).toContain(
+        'auto-refresh cannot guarantee a fresh graph',
+      )
+      expect(responses.find((response) => response.id === 32)?.result).toContain('Nodes:')
+    } finally {
+      input.destroy()
+      await serverPromise.catch(() => {})
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, 10_000)
+
+  it('refuses failed, incomplete, reconciling, and policy-mismatched auto-refresh states', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'madar-stdio-watcher-gates-'))
+    const graphPath = join(root, 'out', 'graph.json')
+    const input = new PassThrough()
+    const output = new PassThrough()
+    const errorOutput = new PassThrough()
+    let outputText = ''
+    output.on('data', (chunk) => {
+      outputText += chunk.toString('utf8')
+    })
+    writeFileSync(join(root, 'main.ts'), 'export const value = 1\n', 'utf8')
+    const serverPromise = serveGraphStdio({
+      graphPath,
+      autoRefresh: true,
+      workspaceRoot: root,
+      input,
+      output,
+      errorOutput,
+    })
+
+    try {
+      await waitFor(() => readWatcherStateForGraph(graphPath)?.status === 'idle')
+      const idle = readWatcherStateForGraph(graphPath)
+      if (!idle) {
+        throw new Error('Expected auto-refresh watcher state')
+      }
+      const cases = [
+        { id: 41, state: { ...idle, status: 'failed' as const, coverage: 'failed' as const, failure_reason: 'scan failed' } },
+        { id: 42, state: { ...idle, coverage: 'unknown' as const } },
+        { id: 43, state: { ...idle, status: 'reconciling' as const } },
+        { id: 44, state: { ...idle, policy_match: false } },
+      ]
+
+      for (const testCase of cases) {
+        writeWatcherState(join(root, 'out'), testCase.state)
+        input.write(`${JSON.stringify({ id: testCase.id, method: 'stats' })}\n`)
+        await waitFor(() => outputText.includes(`"id":${testCase.id}`))
+      }
+
+      const manifestPath = join(root, 'out', 'manifest.json')
+      const originalManifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { __madar_meta__?: { generation_policy?: unknown } }
+      const mismatchedManifest = JSON.parse(JSON.stringify(originalManifest)) as { __madar_meta__?: { generation_policy?: unknown } }
+      if (mismatchedManifest.__madar_meta__) {
+        delete mismatchedManifest.__madar_meta__.generation_policy
+      }
+      writeWatcherState(join(root, 'out'), idle)
+      writeFileSync(manifestPath, `${JSON.stringify(mismatchedManifest, null, 2)}\n`, 'utf8')
+      input.write(`${JSON.stringify({ id: 46, method: 'stats' })}\n`)
+      await waitFor(() => outputText.includes('"id":46'))
+
+      writeFileSync(manifestPath, `${JSON.stringify(originalManifest, null, 2)}\n`, 'utf8')
+      input.end(`${JSON.stringify({ id: 45, method: 'stats' })}\n`)
+      await serverPromise
+
+      const responses = outputText
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line)) as Array<{ id?: number; result?: string; error?: { message?: string } }>
+      for (const id of [41, 42, 43, 44, 46]) {
+        expect(responses.find((response) => response.id === id)?.error?.message).toContain(
+          'auto-refresh cannot guarantee a fresh graph',
+        )
+      }
+      expect(responses.find((response) => response.id === 45)?.result).toContain('Nodes:')
+    } finally {
+      input.destroy()
+      await serverPromise.catch(() => {})
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, 10_000)
+
+  it('keeps MCP control requests responsive while another process holds the refresh lease', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'madar-stdio-refresh-lease-'))
+    const graphPath = join(root, 'out', 'graph.json')
+    const lockPath = join(root, 'out', '.madar-refresh.lock')
+    const input = new PassThrough()
+    const output = new PassThrough()
+    const errorOutput = new PassThrough()
+    let outputText = ''
+    output.on('data', (chunk) => {
+      outputText += chunk.toString('utf8')
+    })
+    writeFileSync(join(root, 'main.ts'), 'export const value = 1\n', 'utf8')
+    const serverPromise = serveGraphStdio({
+      graphPath,
+      autoRefresh: true,
+      workspaceRoot: root,
+      autoRefreshDebounceSeconds: 0.02,
+      input,
+      output,
+      errorOutput,
+    })
+
+    try {
+      await waitFor(() => readWatcherStateForGraph(graphPath)?.status === 'idle')
+      writeFileSync(lockPath, `${process.pid} external-test-lease ${new Date().toISOString()}\n`, 'utf8')
+      writeFileSync(join(root, 'main.ts'), 'export const value = 2\n', 'utf8')
+      await waitFor(() => readWatcherStateForGraph(graphPath)?.status === 'reconciling')
+
+      input.write(`${JSON.stringify({ id: 51, method: 'ping' })}\n`)
+      await waitFor(() => outputText.includes('"id":51'), 1_000)
+      rmSync(lockPath, { force: true })
+      await waitFor(() => readWatcherStateForGraph(graphPath)?.status === 'idle')
+      input.end()
+      await serverPromise
+
+      const ping = outputText
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as { id?: number; result?: unknown })
+        .find((response) => response.id === 51)
+      expect(ping?.result).toEqual({ ok: true })
+    } finally {
+      rmSync(lockPath, { force: true })
       input.destroy()
       await serverPromise.catch(() => {})
       rmSync(root, { recursive: true, force: true })

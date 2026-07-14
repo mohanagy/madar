@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 import { KnowledgeGraph } from '../contracts/graph.js'
@@ -20,6 +20,7 @@ import {
   detect,
   detectIncremental,
   FileType,
+  loadManifestMetadata,
   writeManifestSnapshot,
 } from '../pipeline/detect.js'
 import { generateDocs as generateDocsArtifacts } from '../pipeline/docs.js'
@@ -38,6 +39,7 @@ import { toWiki } from '../pipeline/wiki.js'
 import { loadGraph } from '../runtime/serve.js'
 import { buildGraphBuildFreshnessMetadata } from '../shared/graph-build-freshness.js'
 import { collectGitVisibleFiles } from '../shared/git.js'
+import { writeTextFileAtomically } from '../shared/atomic-file.js'
 import { resolveMadarOutputDirectory } from '../shared/workspace.js'
 import {
   INDEXING_MANIFEST_FILENAME,
@@ -45,6 +47,7 @@ import {
   writeFailedIndexingManifests,
   writeIndexingManifests,
 } from './indexing-manifest.js'
+import { buildGenerationPolicy, generationOptionsFromPolicy, readGraphGenerationPolicy } from './generation-policy.js'
 import {
   buildDiscoverySafetyMetadata,
   type DiscoveryExclusion,
@@ -385,9 +388,45 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   const progress = options.onProgress
 
   progress?.({ step: 'detect', message: 'Scanning files...' })
-  const gitVisibleFiles = options.respectGitignore ? collectGitVisibleFiles(resolvedRootPath) : null
-  const detectionOptions = detectOptions(options, gitVisibleFiles)
-  const detected = options.update ? detectIncremental(resolvedRootPath, manifestPath, detectionOptions) : detect(resolvedRootPath, detectionOptions)
+  const graphGenerationPolicy = existsSync(graphPath) ? readGraphGenerationPolicy(graphPath) : null
+  if (options.clusterOnly && !graphGenerationPolicy) {
+    throw new Error(
+      '--cluster-only requires valid generation-policy metadata. Run `madar generate . --update` to migrate and re-extract the graph first.',
+    )
+  }
+  const storedClusterOptions = options.clusterOnly && graphGenerationPolicy
+    ? generationOptionsFromPolicy(graphGenerationPolicy)
+    : null
+  const corpusOptions = storedClusterOptions ?? options
+  const gitVisibleFiles = corpusOptions.respectGitignore ? collectGitVisibleFiles(resolvedRootPath) : null
+  if (storedClusterOptions && graphGenerationPolicy) {
+    const currentStoredPolicy = buildGenerationPolicy(resolvedRootPath, storedClusterOptions, EXTRACTOR_CACHE_VERSION, gitVisibleFiles)
+    if (currentStoredPolicy.fingerprint !== graphGenerationPolicy.fingerprint) {
+      throw new Error(
+        '--cluster-only cannot reuse a graph whose generation policy no longer matches current exclusion controls. Run `madar generate . --update`.',
+      )
+    }
+  }
+  const generationPolicy = buildGenerationPolicy(
+    resolvedRootPath,
+    storedClusterOptions
+      ? {
+          ...storedClusterOptions,
+          directed: options.directed !== false,
+          ...(options.indexingStrict ? { indexingStrict: options.indexingStrict } : {}),
+        }
+      : options,
+    EXTRACTOR_CACHE_VERSION,
+    gitVisibleFiles,
+  )
+  const manifestGenerationPolicy = existsSync(manifestPath) ? loadManifestMetadata(manifestPath).generation_policy ?? null : null
+  const storedPolicyMatches = graphGenerationPolicy?.fingerprint === generationPolicy.fingerprint
+    && manifestGenerationPolicy?.fingerprint === generationPolicy.fingerprint
+  const generationPolicyMismatch = options.update === true && existsSync(graphPath) && !storedPolicyMatches
+  const detectionOptions = detectOptions(corpusOptions, gitVisibleFiles)
+  const detected = options.update && !generationPolicyMismatch
+    ? detectIncremental(resolvedRootPath, manifestPath, detectionOptions)
+    : detect(resolvedRootPath, detectionOptions)
   const discoverySafety = buildDiscoverySafetyMetadata(detected.exclusions)
   const previousIndexingManifest = readIndexingManifestForGraph(graphPath)
   const indexingOutcomes: IndexingOutcome[] = [...(detected.indexing_outcomes ?? [])]
@@ -396,7 +435,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     indexingOutcomes.push(localExtractionIndexingOutcome(resolvedRootPath, outcome))
   }
 
-  if (options.includeDocs === false) {
+  if (corpusOptions.includeDocs === false) {
     indexingOutcomes.push(...detected.files[FileType.DOCUMENT].map((filePath): IndexingOutcome => ({
       path: localIndexingPath(resolvedRootPath, filePath),
       kind: 'file',
@@ -412,6 +451,14 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   }
   const notes: string[] = []
   const mode: GenerateGraphResult['mode'] = options.clusterOnly ? 'cluster-only' : options.update ? 'update' : 'generate'
+
+  if (generationPolicyMismatch) {
+    notes.push(
+      graphGenerationPolicy && manifestGenerationPolicy
+        ? 'Generation policy changed, so --update rebuilt the full graph instead of reusing incompatible extraction state.'
+        : 'Existing graph predates complete generation-policy metadata, so --update rebuilt the full graph.',
+    )
+  }
 
   if (options.clusterOnly) {
     notes.push('Re-clustered the existing graph without re-extracting source files.')
@@ -460,6 +507,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   const loadedExistingGraph = options.clusterOnly || (options.update && existsSync(graphPath)) ? loadGraph(graphPath) : null
   const existingGraphExtractorVersion = options.update && existsSync(graphPath) ? loadGraphExtractorVersion(graphPath) : null
   const directed = options.directed !== false
+  const generationPolicyToPublish = generationPolicy
   const upgradingLegacyDirection = loadedExistingGraph?.isDirected() === false && directed
 
   if (options.clusterOnly && upgradingLegacyDirection) {
@@ -469,9 +517,10 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     )
   }
 
-  const existingGraph = loadedExistingGraph && loadedExistingGraph.isDirected() !== directed && !upgradingLegacyDirection
-    ? copyGraphWithDirection(loadedExistingGraph, directed)
-    : loadedExistingGraph
+  const policyCompatibleGraph = generationPolicyMismatch ? null : loadedExistingGraph
+  const existingGraph = policyCompatibleGraph && policyCompatibleGraph.isDirected() !== directed && !upgradingLegacyDirection
+    ? copyGraphWithDirection(policyCompatibleGraph, directed)
+    : policyCompatibleGraph
 
   if (options.clusterOnly) {
     const retainedSourceFiles = indexedSourceFilesFromGraph(existingGraph, resolvedRootPath)
@@ -625,7 +674,10 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
           ? existingGraph
           : null
 
-  const sourceManifestSnapshot = createManifestSnapshot(detected.files, { total_words: detected.total_words })
+  const sourceManifestSnapshot = createManifestSnapshot(detected.files, {
+    total_words: detected.total_words,
+    generation_policy: generationPolicyToPublish,
+  })
   indexingOutcomes.push(...sourceManifestSnapshot.failedPaths.map((filePath): IndexingOutcome => ({
     path: localIndexingPath(resolvedRootPath, filePath),
     kind: 'file',
@@ -657,8 +709,9 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   }
 
   graph.graph.indexing_completeness = graphIndexingMetadata(indexingManifest)
-  if (options.indexingStrict) {
-    const violations = indexingStrictViolations(indexingManifest.summary, options.indexingStrict)
+  const effectiveIndexingStrict = options.indexingStrict ?? storedClusterOptions?.indexingStrict
+  if (effectiveIndexingStrict) {
+    const violations = indexingStrictViolations(indexingManifest.summary, effectiveIndexingStrict)
     if (violations.length > 0) {
       const failedArtifacts = writeFailedIndexingManifests(resolvedOutputDir, indexingManifest)
       throw new IndexingCompletenessError(failedArtifacts.manifestPath, indexingManifest.summary, violations)
@@ -694,6 +747,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
 
   graph.graph.root_path = resolvedRootPath
   graph.graph.discovery_safety = discoverySafety
+  graph.graph.generation_policy = generationPolicyToPublish
   if (options.useSpi) {
     graph.graph.spi_mode = true
   }
@@ -706,7 +760,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   )
 
   progress?.({ step: 'export', message: 'Writing outputs...' })
-  writeFileSync(reportPath, `${report}\n`, 'utf8')
+  writeTextFileAtomically(reportPath, `${report}\n`)
   toJson(graph, communities, graphPath, communityLabels, semanticAnomalyList, EXTRACTOR_CACHE_VERSION)
   if (!options.noHtml) {
     const htmlResult = toHtml(graph, communities, htmlPath, communityLabels, {

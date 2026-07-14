@@ -1,11 +1,14 @@
 import { createInterface } from 'node:readline'
 import { existsSync, realpathSync, statSync } from 'node:fs'
-import { basename, dirname, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import type { Readable, Writable } from 'node:stream'
 
 import type { ContextSessionState } from '../contracts/context-session.js'
 import { compareRefs } from '../infrastructure/time-travel.js'
 import { startGraphAutoRefresh } from '../infrastructure/watch.js'
+import { readWatcherStateForGraph } from '../infrastructure/watcher-state.js'
+import { readStoredGenerationPolicy } from '../infrastructure/generation-policy.js'
+import { watcherStateBlocksGraphReads } from '../contracts/watcher-state.js'
 import { DirectedGraphRequiredError } from './direction.js'
 import { diffGraphs } from './diff.js'
 import { buildGraphSummary } from './graph-summary.js'
@@ -66,6 +69,14 @@ const MAX_CONTEXT_PACK_CACHE_ENTRIES = 256
 const graphCache = new Map<string, { mtimeMs: number; size: number; graph: ReturnType<typeof loadGraph> }>()
 const MAX_COMPLETION_VALUES = 25
 const MAX_LOG_NOTIFICATION_CHARS = 10_000
+
+const AUTO_REFRESH_CONTROL_METHODS = new Set([
+  'initialize',
+  'notifications/initialized',
+  'logging/setLevel',
+  'ping',
+  'tools/list',
+])
 
 type McpLogLevel = 'debug' | 'info' | 'notice' | 'warning' | 'error' | 'critical' | 'alert' | 'emergency'
 
@@ -913,8 +924,34 @@ export async function serveGraphStdio(options: ServeGraphStdioOptions): Promise<
 
       let response: StdioResponse | null
       try {
-        emitResourceNotifications(output, options.graphPath, sessionState)
-        response = await Promise.resolve(handleStdioRequest(options.graphPath, payload, sessionState))
+        const request = payload as StdioRequest
+        const requestMethod = typeof request.method === 'string' ? request.method : null
+        if (autoRefresh && requestMethod && !AUTO_REFRESH_CONTROL_METHODS.has(requestMethod)) {
+          const watcherState = readWatcherStateForGraph(options.graphPath)
+          const publishedPolicy = readStoredGenerationPolicy(
+            options.graphPath,
+            join(dirname(options.graphPath), 'manifest.json'),
+          )
+          const watcherMatchesPublishedPolicy = watcherState !== null
+            && publishedPolicy !== null
+            && watcherState.stored_policy_fingerprint === publishedPolicy.fingerprint
+          if (!watcherState || watcherState.status !== 'idle' || watcherStateBlocksGraphReads(watcherState) || !watcherMatchesPublishedPolicy) {
+            const detail = watcherState
+              ? `status=${watcherState.status}, coverage=${watcherState.coverage}, policy=${watcherState.policy_match === null ? 'unknown' : watcherState.policy_match ? 'match' : 'mismatch'}, published_policy=${watcherMatchesPublishedPolicy ? 'match' : 'mismatch'}${watcherState.failure_reason ? `, failure=${watcherState.failure_reason}` : ''}`
+              : 'watcher state is unavailable'
+            response = failure(
+              requestId(request),
+              JSONRPC_SERVER_ERROR,
+              `Madar auto-refresh cannot guarantee a fresh graph (${detail}). Wait for reconciliation or run \`madar generate . --update\` before retrying.`,
+            )
+          } else {
+            emitResourceNotifications(output, options.graphPath, sessionState)
+            response = await Promise.resolve(handleStdioRequest(options.graphPath, payload, sessionState))
+          }
+        } else {
+          emitResourceNotifications(output, options.graphPath, sessionState)
+          response = await Promise.resolve(handleStdioRequest(options.graphPath, payload, sessionState))
+        }
       } catch (error) {
         // A rejected handler must never tear down the whole stdio server: every
         // request gets an answer and the loop keeps serving (#crash).

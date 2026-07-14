@@ -169,6 +169,8 @@ Madar records graph freshness so agents can tell whether context still matches t
 
 Installed MCP profiles in `0.30.0` start `madar serve --stdio --auto-refresh`. Madar reconciles the graph when that server starts, then watches the active workspace and refreshes the graph after source or relevant configuration changes. You do not need to run `madar generate` after every agent edit or session; manual generation remains available for standalone CLI workflows.
 
+Filesystem events mark the graph pending immediately, while adaptive full reconciliations provide the correctness check without recursively scanning every 250 ms. There is no silent file-count cap: incomplete or timed-out coverage is reported as failed, and auto-refresh MCP calls refuse graph-backed answers until freshness is restored. Direction, SPI, Git-ignore, symlink, document/non-code, exclusion, extractor, and strict-indexing settings are fingerprinted in `graph.json` and `manifest.json`; a policy change forces a full rebuild. `madar status` shows watcher coverage, reconciliation timing, pending/failure state, and policy match. See [auto-refresh and generation policy](https://github.com/mohanagy/madar/blob/main/docs/auto-refresh.md).
+
 ```bash
 madar pack "how does auth work?" --require-fresh-context
 madar pack "how does auth work?" --require-fresh-graph
@@ -250,6 +252,7 @@ Read the full notes in the [0.30.0 changelog](https://github.com/mohanagy/madar/
 | CLI and MCP tools | [CLI and MCP reference](https://github.com/mohanagy/madar/blob/main/docs/reference/cli-and-mcp.md) |
 | Context-pack model | [Context packs](https://github.com/mohanagy/madar/blob/main/docs/concepts/context-packs.md) |
 | Indexing coverage | [Indexing completeness](https://github.com/mohanagy/madar/blob/main/docs/indexing-completeness.md) |
+| Auto-refresh behavior | [Auto-refresh and generation policy](https://github.com/mohanagy/madar/blob/main/docs/auto-refresh.md) |
 | Claims and limits | [Claims and evidence](https://github.com/mohanagy/madar/blob/main/docs/claims-and-evidence.md) |
 | Benchmarks | [Benchmark suite](https://github.com/mohanagy/madar/blob/main/docs/benchmarks/suite/README.md) |
 | Roadmap | [Roadmap](https://github.com/mohanagy/madar/blob/main/docs/roadmap.md) |

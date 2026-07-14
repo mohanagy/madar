@@ -5115,8 +5115,9 @@ describe('generateGraph', () => {
       const updateNoop = generateGraph(tempDir, { update: true, noHtml: true })
       expect(updateNoop.extractableFiles).toBe(3)
       expect(updateNoop.changedFiles).toBe(0)
-      expect(updateNoop.extractedFiles).toBe(0)
+      expect(updateNoop.extractedFiles).toBe(3)
       expect(updateNoop.cache).toBeNull()
+      expect(updateNoop.notes.join('\n')).toContain('Generation policy changed')
 
       await delay(10)
       writeFileSync(join(tempDir, 'src', 'beta.ts'), 'export function beta(): number { return 2 }\n', 'utf8')

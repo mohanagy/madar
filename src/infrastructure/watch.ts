@@ -3,6 +3,7 @@ import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, re
 import { extname, join, resolve, sep } from 'node:path'
 
 import type { IndexingStrictThresholds } from '../contracts/indexing.js'
+import type { WatcherEventMode, WatcherStateV1 } from '../contracts/watcher-state.js'
 import {
   AUDIO_EXTENSIONS,
   CODE_EXTENSIONS,
@@ -13,10 +14,18 @@ import {
   UNSUPPORTED_SOURCE_EXTENSIONS,
   VIDEO_EXTENSIONS,
 } from '../pipeline/detect.js'
+import { EXTRACTOR_CACHE_VERSION } from '../pipeline/extract.js'
 import { sidecarAwareFileFingerprint } from '../shared/binary-ingest-sidecar.js'
 import { collectGitVisibleFiles } from '../shared/git.js'
 import { resolveMadarOutputDirectory } from '../shared/workspace.js'
-import { generateGraph, type GenerateGraphResult } from './generate.js'
+import { generateGraph, type GenerateGraphOptions, type GenerateGraphResult } from './generate.js'
+import {
+  buildGenerationPolicy,
+  generationOptionsFromPolicy,
+  readGraphGenerationPolicy,
+  readStoredGenerationPolicy,
+} from './generation-policy.js'
+import { createWatcherState, writeWatcherState } from './watcher-state.js'
 
 export const WATCHED_EXTENSIONS = new Set([
   ...CODE_EXTENSIONS,
@@ -29,9 +38,13 @@ export const WATCHED_EXTENSIONS = new Set([
   ...UNSUPPORTED_SOURCE_EXTENSIONS,
 ])
 const MAX_SYMLINK_DEPTH = 40
-const MAX_WATCHED_FILES = 10_000
 const GIT_VISIBILITY_SNAPSHOT_KEY = '\0madar:git-visible-files'
 const GIT_VISIBILITY_CACHE_DURATION_MS = 500
+const DEFAULT_EVENT_RECONCILIATION_INTERVAL_MS = 30_000
+const DEFAULT_EVENT_MAX_RECONCILIATION_INTERVAL_MS = 5 * 60_000
+const DEFAULT_POLL_RECONCILIATION_INTERVAL_MS = 1_000
+const DEFAULT_POLL_MAX_RECONCILIATION_INTERVAL_MS = 30_000
+const DEFAULT_RECONCILIATION_TIMEOUT_MS = 2 * 60_000
 const REFRESH_LOCK_RETRY_MS = 50
 const REFRESH_LOCK_TIMEOUT_MS = 30_000
 const REFRESH_LOCK_STALE_MS = 60 * 60 * 1000
@@ -72,11 +85,28 @@ export interface RebuildCodeOptions {
   logger?: WatchLogger
 }
 
+export interface WatchReconciliationMetrics {
+  trigger: 'initial' | 'event' | 'periodic' | 'post-rebuild'
+  durationMs: number
+  fileCount: number
+  directoryCount: number
+  changedCount: number
+  eventMode: WatcherEventMode
+  nextIntervalMs: number
+}
+
 export interface WatchOptions extends RebuildCodeOptions {
   signal?: AbortSignal
+  /** Initial authoritative reconciliation interval; retained for CLI/test compatibility. */
   pollIntervalMs?: number
+  maxPollIntervalMs?: number
+  reconciliationTimeoutMs?: number
   rebuildCode?: (watchPath: string, options?: RebuildCodeOptions) => boolean
   notifyOnly?: (watchPath: string, logger?: WatchLogger) => void
+  onReconciliation?: (metrics: WatchReconciliationMetrics) => void
+  /** Internal auto-refresh handshake: listener + snapshot are active before this rebuild starts. */
+  rebuildOnStart?: boolean
+  onInitialRebuild?: (rebuilt: boolean) => void
 }
 
 export interface GraphAutoRefreshController {
@@ -89,7 +119,7 @@ export interface GraphAutoRefreshController {
 }
 
 interface WatchLoopSignal {
-  wait(signal?: AbortSignal): Promise<void>
+  wait(delayMs: number, signal?: AbortSignal): Promise<void>
   wake(): void
 }
 
@@ -106,12 +136,12 @@ function resolveWatchPath(watchPath: string): string {
   return resolve(watchPath)
 }
 
-function createWatchLoopSignal(intervalMs: number): WatchLoopSignal {
+function createWatchLoopSignal(): WatchLoopSignal {
   let wakePending = false
   let wakeResolver: (() => void) | null = null
 
   return {
-    wait(signal?: AbortSignal): Promise<void> {
+    wait(delayMs: number, signal?: AbortSignal): Promise<void> {
       return new Promise((resolvePromise) => {
         if (signal?.aborted) {
           resolvePromise()
@@ -145,7 +175,7 @@ function createWatchLoopSignal(intervalMs: number): WatchLoopSignal {
 
         wakeResolver = onWake
         signal?.addEventListener('abort', onAbort, { once: true })
-        timer = setTimeout(finish, intervalMs)
+        timer = setTimeout(finish, Math.max(0, delayMs))
       })
     },
     wake(): void {
@@ -157,13 +187,20 @@ function createWatchLoopSignal(intervalMs: number): WatchLoopSignal {
   }
 }
 
-function startEventWatcher(watchPath: string, wake: () => void): { close(): void } | null {
+function startEventWatcher(
+  watchPath: string,
+  onEvent: () => void,
+  onError: () => void,
+  ignoreEvent: (filename: string | Buffer | null) => boolean,
+): { close(): void } | null {
   try {
-    const watcher = createFileSystemWatcher(watchPath, { recursive: true, persistent: false }, () => {
-      wake()
+    const watcher = createFileSystemWatcher(watchPath, { recursive: true, persistent: false }, (_eventType, filename) => {
+      if (!ignoreEvent(filename)) {
+        onEvent()
+      }
     })
     watcher.on('error', () => {
-      wake()
+      onError()
     })
     return watcher
   } catch {
@@ -203,15 +240,6 @@ function graphBelongsToWorkspace(graphPath: string, workspaceRoot: string): bool
   }
 }
 
-function graphUsesSpi(graphPath: string): boolean {
-  try {
-    const parsed = JSON.parse(readFileSync(graphPath, 'utf8')) as { spi_mode?: unknown }
-    return parsed.spi_mode === true
-  } catch {
-    return false
-  }
-}
-
 function pauseForRefreshLock(milliseconds: number): void {
   // Rebuilds themselves are synchronous CPU/IO work. A short synchronous wait
   // keeps the public `rebuildCode()` API synchronous while serializing two MCP
@@ -235,45 +263,51 @@ function isRefreshLeaseOwnerAlive(lockPath: string): boolean {
   }
 }
 
-function acquireRefreshLease(outputDir: string): () => void {
+function tryAcquireRefreshLease(outputDir: string): (() => void) | null {
   mkdirSync(outputDir, { recursive: true })
   const lockPath = join(outputDir, '.madar-refresh.lock')
+  try {
+    const descriptor = openSync(lockPath, 'wx')
+    const leaseId = randomUUID()
+    try {
+      writeFileSync(descriptor, `${process.pid} ${leaseId} ${new Date().toISOString()}\n`, 'utf8')
+    } finally {
+      closeSync(descriptor)
+    }
+    return () => {
+      try {
+        const contents = readFileSync(lockPath, 'utf8')
+        if (contents.split(/\s+/, 3)[1] === leaseId) {
+          rmSync(lockPath, { force: true })
+        }
+      } catch {
+        // The lease may have been recovered after a process crash.
+      }
+    }
+  } catch (error) {
+    const code = error && typeof error === 'object' && 'code' in error ? (error as { code?: unknown }).code : null
+    if (code !== 'EEXIST') {
+      throw error
+    }
+  }
+
+  try {
+    if (Date.now() - statSync(lockPath).mtimeMs > REFRESH_LOCK_STALE_MS && !isRefreshLeaseOwnerAlive(lockPath)) {
+      rmSync(lockPath, { force: true })
+    }
+  } catch {
+    // Another process released the lease between the failed open and stat.
+  }
+  return null
+}
+
+function acquireRefreshLease(outputDir: string): () => void {
   const startedAt = Date.now()
 
   while (true) {
-    try {
-      const descriptor = openSync(lockPath, 'wx')
-      const leaseId = randomUUID()
-      try {
-        writeFileSync(descriptor, `${process.pid} ${leaseId} ${new Date().toISOString()}\n`, 'utf8')
-      } finally {
-        closeSync(descriptor)
-      }
-      return () => {
-        try {
-          const contents = readFileSync(lockPath, 'utf8')
-          if (contents.split(/\s+/, 3)[1] === leaseId) {
-            rmSync(lockPath, { force: true })
-          }
-        } catch {
-          // The lease may have been recovered after a process crash.
-        }
-      }
-    } catch (error) {
-      const code = error && typeof error === 'object' && 'code' in error ? (error as { code?: unknown }).code : null
-      if (code !== 'EEXIST') {
-        throw error
-      }
-    }
-
-    try {
-      if (Date.now() - statSync(lockPath).mtimeMs > REFRESH_LOCK_STALE_MS && !isRefreshLeaseOwnerAlive(lockPath)) {
-        rmSync(lockPath, { force: true })
-        continue
-      }
-    } catch {
-      // Another process released the lease between the failed open and stat.
-      continue
+    const releaseLease = tryAcquireRefreshLease(outputDir)
+    if (releaseLease) {
+      return releaseLease
     }
 
     const remaining = REFRESH_LOCK_TIMEOUT_MS - (Date.now() - startedAt)
@@ -284,54 +318,97 @@ function acquireRefreshLease(outputDir: string): () => void {
   }
 }
 
+async function acquireRefreshLeaseWithoutBlocking(outputDir: string): Promise<() => void> {
+  const startedAt = Date.now()
+
+  while (true) {
+    const releaseLease = tryAcquireRefreshLease(outputDir)
+    if (releaseLease) {
+      return releaseLease
+    }
+
+    const remaining = REFRESH_LOCK_TIMEOUT_MS - (Date.now() - startedAt)
+    if (remaining <= 0) {
+      throw new Error(`Timed out waiting for another Madar refresh in ${outputDir}`)
+    }
+    await new Promise<void>((resolvePromise) => {
+      setTimeout(resolvePromise, Math.min(REFRESH_LOCK_RETRY_MS, remaining))
+    })
+  }
+}
+
+class WatchCoverageError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'WatchCoverageError'
+  }
+}
+
+interface SnapshotCollection {
+  fingerprints: Map<string, number | string>
+  directoryCount: number
+  startedAt: number
+  timeoutMs: number
+}
+
+export interface WatchSnapshot {
+  fingerprints: Map<string, number | string>
+  fileCount: number
+  directoryCount: number
+  durationMs: number
+}
+
+function assertReconciliationWithinDeadline(collection: SnapshotCollection): void {
+  if (Date.now() - collection.startedAt > collection.timeoutMs) {
+    throw new WatchCoverageError(
+      `Authoritative watcher reconciliation exceeded ${collection.timeoutMs}ms; graph freshness cannot be guaranteed.`,
+    )
+  }
+}
+
 function collectWatchedFiles(
   directory: string,
   followSymlinks: boolean,
   rootRealPath: string,
   ancestorRealPaths: string[],
-  snapshots: Map<string, number | string>,
+  collection: SnapshotCollection,
   includedFiles?: ReadonlySet<string>,
-  depth = 0,
+  symlinkDepth = 0,
 ): void {
-  if (depth > MAX_SYMLINK_DEPTH || snapshots.size >= MAX_WATCHED_FILES) {
-    return
+  assertReconciliationWithinDeadline(collection)
+  if (symlinkDepth > MAX_SYMLINK_DEPTH) {
+    throw new WatchCoverageError(
+      `Watcher symlink traversal exceeded ${MAX_SYMLINK_DEPTH} levels at ${directory}; graph freshness cannot be guaranteed.`,
+    )
   }
 
-  let entries: string[]
+  let entries
   try {
-    entries = readdirSync(directory)
-  } catch {
-    return
+    entries = readdirSync(directory, { withFileTypes: true })
+    collection.directoryCount += 1
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new WatchCoverageError(`Unable to reconcile watched directory ${directory}: ${message}`)
   }
 
   for (const entry of entries) {
-    const isControlFile = WATCHED_CONTROL_FILENAMES.has(entry)
-    if (entry.startsWith('.') && !isControlFile) {
+    assertReconciliationWithinDeadline(collection)
+    const isControlFile = WATCHED_CONTROL_FILENAMES.has(entry.name)
+    if (entry.name.startsWith('.') && !isControlFile) {
       continue
     }
-    if (WATCH_IGNORED_DIRECTORIES.has(entry)) {
-      continue
-    }
-
-    const entryPath = resolve(directory, entry)
-    let stats
-    try {
-      stats = lstatSync(entryPath)
-    } catch {
+    if (WATCH_IGNORED_DIRECTORIES.has(entry.name)) {
       continue
     }
 
-    if (stats.isDirectory()) {
-      collectWatchedFiles(entryPath, followSymlinks, rootRealPath, ancestorRealPaths, snapshots, includedFiles, depth + 1)
+    const entryPath = resolve(directory, entry.name)
+
+    if (entry.isDirectory()) {
+      collectWatchedFiles(entryPath, followSymlinks, rootRealPath, ancestorRealPaths, collection, includedFiles, symlinkDepth)
       continue
     }
 
-    if (isControlFile && stats.isFile()) {
-      snapshots.set(entryPath, controlFileFingerprint(entryPath, stats.mtimeMs))
-      continue
-    }
-
-    if (stats.isSymbolicLink()) {
+    if (entry.isSymbolicLink()) {
       if (!followSymlinks) {
         continue
       }
@@ -339,8 +416,9 @@ function collectWatchedFiles(
       let realTarget: string
       try {
         realTarget = realpathSync(entryPath)
-      } catch {
-        continue
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        throw new WatchCoverageError(`Unable to resolve watched symlink ${entryPath}: ${message}`)
       }
 
       if (ancestorRealPaths.includes(realTarget) || !isWithinRoot(rootRealPath, realTarget)) {
@@ -350,12 +428,13 @@ function collectWatchedFiles(
       let targetStats
       try {
         targetStats = statSync(realTarget)
-      } catch {
-        continue
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        throw new WatchCoverageError(`Unable to stat watched symlink target ${entryPath}: ${message}`)
       }
 
       if (targetStats.isDirectory()) {
-        collectWatchedFiles(entryPath, followSymlinks, rootRealPath, [...ancestorRealPaths, realTarget], snapshots, includedFiles, depth + 1)
+        collectWatchedFiles(entryPath, followSymlinks, rootRealPath, [...ancestorRealPaths, realTarget], collection, includedFiles, symlinkDepth + 1)
         continue
       }
 
@@ -365,18 +444,28 @@ function collectWatchedFiles(
 
       const extension = extname(entryPath).toLowerCase()
       if (WATCHED_EXTENSIONS.has(extension) && (!includedFiles || includedFiles.has(entryPath))) {
-        snapshots.set(entryPath, sidecarAwareFileFingerprint(entryPath, targetStats.mtimeMs))
+        collection.fingerprints.set(entryPath, sidecarAwareFileFingerprint(entryPath, targetStats.mtimeMs))
       }
       continue
     }
 
-    if (!stats.isFile()) {
+    if (!entry.isFile()) {
       continue
     }
 
     const extension = extname(entryPath).toLowerCase()
     if ((WATCHED_EXTENSIONS.has(extension) || isControlFile) && (!includedFiles || includedFiles.has(entryPath) || isControlFile)) {
-      snapshots.set(entryPath, sidecarAwareFileFingerprint(entryPath, stats.mtimeMs))
+      let modifiedAt: number
+      try {
+        modifiedAt = lstatSync(entryPath).mtimeMs
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        throw new WatchCoverageError(`Unable to stat watched file ${entryPath}: ${message}`)
+      }
+      collection.fingerprints.set(
+        entryPath,
+        isControlFile ? controlFileFingerprint(entryPath, modifiedAt) : sidecarAwareFileFingerprint(entryPath, modifiedAt),
+      )
     }
   }
 }
@@ -394,14 +483,21 @@ function readGitVisibleFiles(watchPath: string, cache?: GitVisibilityCache): str
   return visibleFiles
 }
 
-function snapshotWatchedFiles(
+export function snapshotWatchedFiles(
   watchPath: string,
   followSymlinks: boolean,
   respectGitignore = false,
   gitVisibilityCache?: GitVisibilityCache,
-): Map<string, number | string> {
+  timeoutMs = DEFAULT_RECONCILIATION_TIMEOUT_MS,
+): WatchSnapshot {
   const resolvedWatchPath = resolveWatchPath(watchPath)
-  const snapshots = new Map<string, number | string>()
+  const startedAt = Date.now()
+  const collection: SnapshotCollection = {
+    fingerprints: new Map<string, number | string>(),
+    directoryCount: 0,
+    startedAt,
+    timeoutMs: Math.max(1, timeoutMs),
+  }
 
   let rootRealPath = resolvedWatchPath
   try {
@@ -412,12 +508,17 @@ function snapshotWatchedFiles(
 
   const visibleFiles = respectGitignore ? readGitVisibleFiles(resolvedWatchPath, gitVisibilityCache) : null
   const includedFiles = visibleFiles === null ? undefined : new Set(visibleFiles)
-  collectWatchedFiles(resolvedWatchPath, followSymlinks, rootRealPath, [rootRealPath], snapshots, includedFiles)
+  collectWatchedFiles(resolvedWatchPath, followSymlinks, rootRealPath, [rootRealPath], collection, includedFiles)
   if (visibleFiles !== null) {
     const visibilityFingerprint = createHash('sha256').update([...visibleFiles].sort().join('\0')).digest('hex')
-    snapshots.set(GIT_VISIBILITY_SNAPSHOT_KEY, visibilityFingerprint)
+    collection.fingerprints.set(GIT_VISIBILITY_SNAPSHOT_KEY, visibilityFingerprint)
   }
-  return snapshots
+  return {
+    fingerprints: collection.fingerprints,
+    fileCount: [...collection.fingerprints.keys()].filter((path) => path !== GIT_VISIBILITY_SNAPSHOT_KEY).length,
+    directoryCount: collection.directoryCount,
+    durationMs: Date.now() - startedAt,
+  }
 }
 
 function diffSnapshots(previous: Map<string, number | string>, next: Map<string, number | string>): string[] {
@@ -455,28 +556,35 @@ export function hasNonCode(changedPaths: string[]): boolean {
   return changedPaths.some((filePath) => !CODE_EXTENSIONS.has(extname(filePath).toLowerCase()))
 }
 
-export function rebuildCode(watchPath: string, options: RebuildCodeOptions = {}): boolean {
-  const resolvedWatchPath = resolveWatchPath(watchPath)
+function rebuildCodeUnderLease(
+  resolvedWatchPath: string,
+  options: RebuildCodeOptions,
+  releaseLease: () => void,
+): boolean {
   const output = defaultLogger(options.logger)
   const graphOutputDir = resolveMadarOutputDirectory(resolvedWatchPath)
   const manifestPath = join(graphOutputDir, 'manifest.json')
   const graphPath = join(graphOutputDir, 'graph.json')
 
   try {
-    const releaseLease = acquireRefreshLease(graphOutputDir)
-    let result: GenerateGraphResult
-    try {
-      result = generateGraph(resolvedWatchPath, {
-        ...(existsSync(manifestPath) && existsSync(graphPath) && graphBelongsToWorkspace(graphPath, resolvedWatchPath) ? { update: true } : {}),
-        ...(graphUsesSpi(graphPath) ? { useSpi: true } : {}),
-        ...(options.followSymlinks !== undefined ? { followSymlinks: options.followSymlinks } : {}),
-        ...(options.respectGitignore !== undefined ? { respectGitignore: options.respectGitignore } : {}),
-        ...(options.noHtml !== undefined ? { noHtml: options.noHtml } : {}),
-        ...(options.indexingStrict ? { indexingStrict: options.indexingStrict } : {}),
-      })
-    } finally {
-      releaseLease()
+    const canUpdate = existsSync(manifestPath)
+      && existsSync(graphPath)
+      && graphBelongsToWorkspace(graphPath, resolvedWatchPath)
+    const graphPolicy = canUpdate ? readGraphGenerationPolicy(graphPath) : null
+    if (canUpdate && !graphPolicy) {
+      throw new Error(
+        'Existing graph has no valid generation-policy metadata. Run `madar generate . --update` once to migrate it before enabling auto-refresh.',
+      )
     }
+    const policyOptions: GenerateGraphOptions = graphPolicy ? generationOptionsFromPolicy(graphPolicy) : {}
+    const result: GenerateGraphResult = generateGraph(resolvedWatchPath, {
+      ...policyOptions,
+      ...(canUpdate ? { update: true } : {}),
+      ...(options.followSymlinks !== undefined ? { followSymlinks: options.followSymlinks } : {}),
+      ...(options.respectGitignore !== undefined ? { respectGitignore: options.respectGitignore } : {}),
+      ...(options.noHtml !== undefined ? { noHtml: options.noHtml } : {}),
+      ...(options.indexingStrict ? { indexingStrict: options.indexingStrict } : {}),
+    })
 
     const staleFlag = join(result.outputDir, 'needs_update')
     if (existsSync(staleFlag)) {
@@ -495,6 +603,33 @@ export function rebuildCode(watchPath: string, options: RebuildCodeOptions = {})
 
     output.error(`[madar watch] Rebuild failed: ${message}`)
     return false
+  } finally {
+    releaseLease()
+  }
+}
+
+export function rebuildCode(watchPath: string, options: RebuildCodeOptions = {}): boolean {
+  const resolvedWatchPath = resolveWatchPath(watchPath)
+  const output = defaultLogger(options.logger)
+  const graphOutputDir = resolveMadarOutputDirectory(resolvedWatchPath)
+  try {
+    return rebuildCodeUnderLease(resolvedWatchPath, options, acquireRefreshLease(graphOutputDir))
+  } catch (error) {
+    output.error(`[madar watch] Rebuild failed: ${error instanceof Error ? error.message : String(error)}`)
+    return false
+  }
+}
+
+async function rebuildCodeWithoutBlockingLease(watchPath: string, options: RebuildCodeOptions = {}): Promise<boolean> {
+  const resolvedWatchPath = resolveWatchPath(watchPath)
+  const output = defaultLogger(options.logger)
+  const graphOutputDir = resolveMadarOutputDirectory(resolvedWatchPath)
+  try {
+    const releaseLease = await acquireRefreshLeaseWithoutBlocking(graphOutputDir)
+    return rebuildCodeUnderLease(resolvedWatchPath, options, releaseLease)
+  } catch (error) {
+    output.error(`[madar watch] Rebuild failed: ${error instanceof Error ? error.message : String(error)}`)
+    return false
   }
 }
 
@@ -509,16 +644,15 @@ export function startGraphAutoRefresh(
   options: Omit<WatchOptions, 'signal'> = {},
 ): GraphAutoRefreshController {
   const controller = new AbortController()
+  let initialRebuilt = false
   const completed = watch(watchPath, debounceSeconds, {
     ...options,
     signal: controller.signal,
-  })
-  const initialRebuilt = rebuildCode(watchPath, {
-    ...(options.followSymlinks !== undefined ? { followSymlinks: options.followSymlinks } : {}),
-    ...(options.respectGitignore !== undefined ? { respectGitignore: options.respectGitignore } : {}),
-    ...(options.noHtml !== undefined ? { noHtml: options.noHtml } : {}),
-    ...(options.indexingStrict ? { indexingStrict: options.indexingStrict } : {}),
-    ...(options.logger !== undefined ? { logger: options.logger } : {}),
+    rebuildOnStart: true,
+    onInitialRebuild: (rebuilt) => {
+      initialRebuilt = rebuilt
+      options.onInitialRebuild?.(rebuilt)
+    },
   })
 
   return {
@@ -528,83 +662,419 @@ export function startGraphAutoRefresh(
   }
 }
 
+function rebuildOptionsFromWatch(options: WatchOptions, logger: WatchLogger): RebuildCodeOptions {
+  return {
+    logger,
+    ...(options.followSymlinks !== undefined ? { followSymlinks: options.followSymlinks } : {}),
+    ...(options.respectGitignore !== undefined ? { respectGitignore: options.respectGitignore } : {}),
+    ...(options.noHtml !== undefined ? { noHtml: options.noHtml } : {}),
+    ...(options.indexingStrict ? { indexingStrict: options.indexingStrict } : {}),
+  }
+}
+
+function updateWatcherPolicyState(
+  state: WatcherStateV1,
+  watchPath: string,
+  options: WatchOptions,
+  gitVisibilityCache?: GitVisibilityCache,
+): void {
+  const outputDir = resolveMadarOutputDirectory(watchPath)
+  const graphPath = join(outputDir, 'graph.json')
+  const manifestPath = join(outputDir, 'manifest.json')
+  const storedPolicy = readStoredGenerationPolicy(graphPath, manifestPath)
+  const graphPolicy = readGraphGenerationPolicy(graphPath)
+  state.stored_policy_fingerprint = graphPolicy?.fingerprint ?? null
+
+  if (!storedPolicy) {
+    state.current_policy_fingerprint = null
+    state.policy_match = existsSync(graphPath) ? false : null
+    return
+  }
+
+  const storedOptions = generationOptionsFromPolicy(storedPolicy)
+  const effectiveOptions = {
+    ...storedOptions,
+    ...(options.followSymlinks !== undefined ? { followSymlinks: options.followSymlinks } : {}),
+    ...(options.respectGitignore !== undefined ? { respectGitignore: options.respectGitignore } : {}),
+    ...(options.indexingStrict ? { indexingStrict: options.indexingStrict } : {}),
+  }
+  const gitVisibleFiles = effectiveOptions.respectGitignore
+    ? readGitVisibleFiles(watchPath, gitVisibilityCache)
+    : null
+  const currentPolicy = buildGenerationPolicy(watchPath, effectiveOptions, EXTRACTOR_CACHE_VERSION, gitVisibleFiles)
+  state.current_policy_fingerprint = currentPolicy.fingerprint
+  state.policy_match = storedPolicy.fingerprint === currentPolicy.fingerprint
+}
+
+function recordSuccessfulReconciliation(
+  state: WatcherStateV1,
+  snapshot: WatchSnapshot,
+  intervalMs: number,
+  nextReconciliationAt: number,
+): void {
+  state.coverage = 'complete'
+  state.reconciliation_count += 1
+  state.last_reconciliation_at = new Date().toISOString()
+  state.last_reconciliation_duration_ms = snapshot.durationMs
+  state.last_reconciliation_file_count = snapshot.fileCount
+  state.last_reconciliation_directory_count = snapshot.directoryCount
+  state.current_interval_ms = intervalMs
+  state.next_reconciliation_at = new Date(nextReconciliationAt).toISOString()
+  state.failure_reason = null
+}
+
 export async function watch(watchPath: string, debounce = 3, options: WatchOptions = {}): Promise<void> {
   const resolvedWatchPath = resolveWatchPath(watchPath)
+  const outputDir = resolveMadarOutputDirectory(resolvedWatchPath)
   const output = defaultLogger(options.logger)
   const debounceMs = Math.max(0, Math.round(debounce * 1000))
-  const pollIntervalMs = Math.max(10, options.pollIntervalMs ?? 250)
-  const runRebuild = options.rebuildCode ?? rebuildCode
+  const runInitialRebuild = options.rebuildCode ?? rebuildCode
+  const runWatchedRebuild = options.rebuildCode ?? rebuildCodeWithoutBlockingLease
   const runNotify = options.notifyOnly ?? notifyOnly
-  const loopSignal = createWatchLoopSignal(pollIntervalMs)
-  const respectGitignore = options.respectGitignore ?? false
-  const gitVisibilityCache = respectGitignore ? { visibleFiles: null, expiresAt: 0 } : undefined
-  const eventWatcher = startEventWatcher(resolvedWatchPath, () => {
+  const loopSignal = createWatchLoopSignal()
+  const initialStoredPolicy = readStoredGenerationPolicy(
+    join(outputDir, 'graph.json'),
+    join(outputDir, 'manifest.json'),
+  )
+  let activeStoredPolicyFingerprint = initialStoredPolicy?.fingerprint ?? null
+  let storedWatchOptions = initialStoredPolicy ? generationOptionsFromPolicy(initialStoredPolicy) : null
+  let respectGitignore = options.respectGitignore ?? storedWatchOptions?.respectGitignore ?? false
+  let followSymlinks = options.followSymlinks ?? storedWatchOptions?.followSymlinks ?? false
+  let gitVisibilityCache: GitVisibilityCache | undefined = respectGitignore ? { visibleFiles: null, expiresAt: 0 } : undefined
+  const reconciliationTimeoutMs = Math.max(1, options.reconciliationTimeoutMs ?? DEFAULT_RECONCILIATION_TIMEOUT_MS)
+  let state: WatcherStateV1 | null = null
+  let eventDirty = false
+  let eventWatcher: { close(): void } | null = null
+  let eventMode: WatcherEventMode = 'polling'
+  let minimumIntervalMs = Math.max(10, options.pollIntervalMs ?? DEFAULT_POLL_RECONCILIATION_INTERVAL_MS)
+  let maximumIntervalMs = Math.max(
+    minimumIntervalMs,
+    options.maxPollIntervalMs ?? (options.pollIntervalMs === undefined ? DEFAULT_POLL_MAX_RECONCILIATION_INTERVAL_MS : minimumIntervalMs * 16),
+  )
+
+  function persistState(): void {
+    if (state) {
+      writeWatcherState(outputDir, state)
+    }
+  }
+
+  function refreshWatchDiscoveryPolicy(): void {
+    const storedPolicy = readStoredGenerationPolicy(
+      join(outputDir, 'graph.json'),
+      join(outputDir, 'manifest.json'),
+    )
+    if (!storedPolicy || storedPolicy.fingerprint === activeStoredPolicyFingerprint) {
+      return
+    }
+    storedWatchOptions = generationOptionsFromPolicy(storedPolicy)
+    activeStoredPolicyFingerprint = storedPolicy.fingerprint
+    const nextRespectGitignore = options.respectGitignore ?? storedWatchOptions.respectGitignore
+    followSymlinks = options.followSymlinks ?? storedWatchOptions.followSymlinks
+    if (nextRespectGitignore !== respectGitignore) {
+      respectGitignore = nextRespectGitignore
+      gitVisibilityCache = respectGitignore ? { visibleFiles: null, expiresAt: 0 } : undefined
+    } else if (gitVisibilityCache) {
+      gitVisibilityCache.expiresAt = 0
+    }
+  }
+
+  function markPending(): void {
     if (gitVisibilityCache) {
       gitVisibilityCache.expiresAt = 0
     }
+    eventDirty = true
+    if (state && state.status !== 'failed') {
+      state.status = 'pending'
+      state.pending_since ??= new Date().toISOString()
+      state.next_reconciliation_at = new Date().toISOString()
+      persistState()
+    }
     loopSignal.wake()
+  }
+
+  function fallBackToPolling(): void {
+    try {
+      eventWatcher?.close()
+    } catch {
+      // The watcher is already unusable.
+    }
+    eventWatcher = null
+    eventMode = 'polling'
+    minimumIntervalMs = Math.max(10, options.pollIntervalMs ?? DEFAULT_POLL_RECONCILIATION_INTERVAL_MS)
+    maximumIntervalMs = Math.max(
+      minimumIntervalMs,
+      options.maxPollIntervalMs ?? (options.pollIntervalMs === undefined ? DEFAULT_POLL_MAX_RECONCILIATION_INTERVAL_MS : minimumIntervalMs * 16),
+    )
+    if (state) {
+      state.event_mode = eventMode
+      state.current_interval_ms = minimumIntervalMs
+    }
+    markPending()
+  }
+
+  const eventIgnoredDirectories = new Set([...WATCH_IGNORED_DIRECTORIES].filter((name) => name !== '.git'))
+  eventWatcher = startEventWatcher(resolvedWatchPath, markPending, fallBackToPolling, (filename) => {
+    if (filename === null) {
+      return false
+    }
+    const normalized = filename.toString().replaceAll('\\', '/').replace(/^\.\//, '')
+    const [topLevel] = normalized.split('/')
+    return topLevel !== undefined && eventIgnoredDirectories.has(topLevel)
   })
+  if (eventWatcher) {
+    eventMode = 'recursive-events'
+    minimumIntervalMs = Math.max(10, options.pollIntervalMs ?? DEFAULT_EVENT_RECONCILIATION_INTERVAL_MS)
+    maximumIntervalMs = Math.max(
+      minimumIntervalMs,
+      options.maxPollIntervalMs ?? (options.pollIntervalMs === undefined ? DEFAULT_EVENT_MAX_RECONCILIATION_INTERVAL_MS : minimumIntervalMs * 16),
+    )
+  }
+  state = createWatcherState(eventMode, minimumIntervalMs)
+  persistState()
 
   try {
-    let previousSnapshot = snapshotWatchedFiles(resolvedWatchPath, options.followSymlinks ?? false, respectGitignore, gitVisibilityCache)
+    let currentIntervalMs = minimumIntervalMs
+    let previousSnapshot = snapshotWatchedFiles(
+      resolvedWatchPath,
+      followSymlinks,
+      respectGitignore,
+      gitVisibilityCache,
+      reconciliationTimeoutMs,
+    )
+    let nextReconciliationAt = Date.now() + currentIntervalMs
+    recordSuccessfulReconciliation(state, previousSnapshot, currentIntervalMs, nextReconciliationAt)
+    updateWatcherPolicyState(state, resolvedWatchPath, options, gitVisibilityCache)
+    state.status = eventDirty || state.policy_match === false ? 'pending' : 'idle'
+    state.pending_since = eventDirty || state.policy_match === false ? new Date().toISOString() : null
+    persistState()
+    options.onReconciliation?.({
+      trigger: 'initial',
+      durationMs: previousSnapshot.durationMs,
+      fileCount: previousSnapshot.fileCount,
+      directoryCount: previousSnapshot.directoryCount,
+      changedCount: 0,
+      eventMode,
+      nextIntervalMs: currentIntervalMs,
+    })
+
     let pending = false
     let lastTriggerAt = 0
     const changed = new Set<string>()
+
+    if (state.policy_match === false) {
+      pending = true
+      lastTriggerAt = Date.now()
+      changed.add('\0madar:generation-policy')
+    }
 
     output.log(`[madar watch] Watching ${resolvedWatchPath} - abort the process to stop`)
     output.log(
       '[madar watch] Supported candidates rebuild automatically, and known unsupported source formats refresh indexing completeness; manual refresh is only needed for unknown future formats.',
     )
-    output.log(`[madar watch] Debounce: ${debounce}s`)
+    output.log(`[madar watch] Debounce: ${debounce}s; reconciliation: ${currentIntervalMs}ms adaptive`)
     if (eventWatcher) {
-      output.log('[madar watch] Filesystem events enabled with polling fallback.')
+      output.log('[madar watch] Filesystem events enabled with authoritative adaptive reconciliation fallback.')
+    } else {
+      output.log('[madar watch] Recursive filesystem events unavailable; adaptive polling is authoritative.')
+    }
+
+    if (options.rebuildOnStart) {
+      state.status = 'reconciling'
+      persistState()
+      const rebuilt = runInitialRebuild(resolvedWatchPath, rebuildOptionsFromWatch(options, output))
+      options.onInitialRebuild?.(rebuilt)
+      if (!rebuilt) {
+        state.status = 'failed'
+        state.failure_reason = 'Initial graph reconciliation failed; inspect watcher logs and run `madar generate . --update`.'
+        state.policy_match = state.stored_policy_fingerprint === null ? false : state.policy_match
+        persistState()
+        runNotify(resolvedWatchPath, output)
+        return
+      }
+      refreshWatchDiscoveryPolicy()
+      updateWatcherPolicyState(state, resolvedWatchPath, options, gitVisibilityCache)
+      if (state.policy_match === false) {
+        state.status = 'failed'
+        state.failure_reason = 'Generation policy still mismatches after initial rebuild.'
+        persistState()
+        return
+      }
+      pending = false
+      changed.clear()
+      const postBuildSnapshot = snapshotWatchedFiles(
+        resolvedWatchPath,
+        followSymlinks,
+        respectGitignore,
+        gitVisibilityCache,
+        reconciliationTimeoutMs,
+      )
+      const postBuildChanges = diffSnapshots(previousSnapshot.fingerprints, postBuildSnapshot.fingerprints)
+      previousSnapshot = postBuildSnapshot
+      currentIntervalMs = postBuildChanges.length > 0 ? minimumIntervalMs : currentIntervalMs
+      nextReconciliationAt = Date.now() + currentIntervalMs
+      recordSuccessfulReconciliation(state, postBuildSnapshot, currentIntervalMs, nextReconciliationAt)
+      options.onReconciliation?.({
+        trigger: 'post-rebuild',
+        durationMs: postBuildSnapshot.durationMs,
+        fileCount: postBuildSnapshot.fileCount,
+        directoryCount: postBuildSnapshot.directoryCount,
+        changedCount: postBuildChanges.length,
+        eventMode,
+        nextIntervalMs: currentIntervalMs,
+      })
+      if (postBuildChanges.length > 0) {
+        pending = true
+        lastTriggerAt = Date.now()
+        for (const filePath of postBuildChanges) {
+          changed.add(filePath)
+        }
+      }
+      state.status = eventDirty || pending ? 'pending' : 'idle'
+      state.pending_since = eventDirty || pending ? (state.pending_since ?? new Date().toISOString()) : null
+      persistState()
     }
 
     while (!options.signal?.aborted) {
-      await loopSignal.wait(options.signal)
+      const now = Date.now()
+      const rebuildAt = pending ? lastTriggerAt + debounceMs : Number.POSITIVE_INFINITY
+      const reconcileAt = eventDirty ? now : nextReconciliationAt
+      const nextActionAt = Math.min(rebuildAt, reconcileAt)
+      await loopSignal.wait(Number.isFinite(nextActionAt) ? Math.max(0, nextActionAt - now) : currentIntervalMs, options.signal)
       if (options.signal?.aborted) {
         break
       }
 
-      const nextSnapshot = snapshotWatchedFiles(resolvedWatchPath, options.followSymlinks ?? false, respectGitignore, gitVisibilityCache)
-      const changedBatch = diffSnapshots(previousSnapshot, nextSnapshot)
-      previousSnapshot = nextSnapshot
+      const actionAt = Date.now()
+      if (eventDirty || actionAt >= nextReconciliationAt) {
+        const trigger: WatchReconciliationMetrics['trigger'] = eventDirty ? 'event' : 'periodic'
+        eventDirty = false
+        state.status = 'reconciling'
+        persistState()
+        refreshWatchDiscoveryPolicy()
 
-      if (changedBatch.length > 0) {
-        pending = true
-        lastTriggerAt = Date.now()
-        for (const filePath of changedBatch) {
-          changed.add(filePath)
+        const nextSnapshot = snapshotWatchedFiles(
+          resolvedWatchPath,
+          followSymlinks,
+          respectGitignore,
+          gitVisibilityCache,
+          reconciliationTimeoutMs,
+        )
+        const changedBatch = diffSnapshots(previousSnapshot.fingerprints, nextSnapshot.fingerprints)
+        previousSnapshot = nextSnapshot
+        currentIntervalMs = changedBatch.length > 0
+          ? minimumIntervalMs
+          : Math.min(maximumIntervalMs, Math.max(minimumIntervalMs, currentIntervalMs * 2))
+        nextReconciliationAt = Date.now() + currentIntervalMs
+        recordSuccessfulReconciliation(state, nextSnapshot, currentIntervalMs, nextReconciliationAt)
+        updateWatcherPolicyState(state, resolvedWatchPath, options, gitVisibilityCache)
+
+        if (changedBatch.length > 0 || state.policy_match === false) {
+          pending = true
+          lastTriggerAt = Date.now()
+          for (const filePath of changedBatch) {
+            changed.add(filePath)
+          }
+          if (state.policy_match === false) {
+            changed.add('\0madar:generation-policy')
+          }
+          state.status = 'pending'
+          state.pending_since ??= new Date().toISOString()
+        } else if (pending) {
+          state.status = 'pending'
+        } else {
+          state.status = 'idle'
+          state.pending_since = null
         }
+        persistState()
+        options.onReconciliation?.({
+          trigger,
+          durationMs: nextSnapshot.durationMs,
+          fileCount: nextSnapshot.fileCount,
+          directoryCount: nextSnapshot.directoryCount,
+          changedCount: changedBatch.length,
+          eventMode,
+          nextIntervalMs: currentIntervalMs,
+        })
       }
 
       if (pending && Date.now() - lastTriggerAt >= debounceMs) {
-        pending = false
         const batch = [...changed].sort()
-        changed.clear()
 
         output.log(`\n[madar watch] ${batch.length} file(s) changed`)
-        const rebuildOptions: RebuildCodeOptions = {
-          logger: output,
-          ...(options.followSymlinks !== undefined ? { followSymlinks: options.followSymlinks } : {}),
-          ...(options.respectGitignore !== undefined ? { respectGitignore: options.respectGitignore } : {}),
-          ...(options.noHtml !== undefined ? { noHtml: options.noHtml } : {}),
-          ...(options.indexingStrict ? { indexingStrict: options.indexingStrict } : {}),
-        }
-        const rebuilt = runRebuild(resolvedWatchPath, rebuildOptions)
+        state.status = 'reconciling'
+        persistState()
+        const rebuilt = await runWatchedRebuild(resolvedWatchPath, rebuildOptionsFromWatch(options, output))
         if (!rebuilt) {
+          state.status = 'failed'
+          state.failure_reason = 'Automatic graph rebuild failed; the graph must not be treated as fresh.'
+          persistState()
           runNotify(resolvedWatchPath, output)
+          return
         }
+
+        pending = false
+        changed.clear()
+        refreshWatchDiscoveryPolicy()
+        updateWatcherPolicyState(state, resolvedWatchPath, options, gitVisibilityCache)
+        if (state.policy_match === false) {
+          state.status = 'failed'
+          state.failure_reason = 'Generation policy still mismatches after automatic rebuild.'
+          persistState()
+          return
+        }
+        const postBuildSnapshot = snapshotWatchedFiles(
+          resolvedWatchPath,
+          followSymlinks,
+          respectGitignore,
+          gitVisibilityCache,
+          reconciliationTimeoutMs,
+        )
+        const postBuildChanges = diffSnapshots(previousSnapshot.fingerprints, postBuildSnapshot.fingerprints)
+        previousSnapshot = postBuildSnapshot
+        currentIntervalMs = postBuildChanges.length > 0 ? minimumIntervalMs : currentIntervalMs
+        nextReconciliationAt = Date.now() + currentIntervalMs
+        recordSuccessfulReconciliation(state, postBuildSnapshot, currentIntervalMs, nextReconciliationAt)
+        options.onReconciliation?.({
+          trigger: 'post-rebuild',
+          durationMs: postBuildSnapshot.durationMs,
+          fileCount: postBuildSnapshot.fileCount,
+          directoryCount: postBuildSnapshot.directoryCount,
+          changedCount: postBuildChanges.length,
+          eventMode,
+          nextIntervalMs: currentIntervalMs,
+        })
+        if (postBuildChanges.length > 0) {
+          pending = true
+          lastTriggerAt = Date.now()
+          for (const filePath of postBuildChanges) {
+            changed.add(filePath)
+          }
+        }
+        state.status = eventDirty || pending ? 'pending' : 'idle'
+        state.pending_since = eventDirty || pending ? (state.pending_since ?? new Date().toISOString()) : null
+        persistState()
       }
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
+    if (state) {
+      state.status = 'failed'
+      state.coverage = 'failed'
+      state.failure_reason = message
+      state.next_reconciliation_at = null
+      persistState()
+    }
     output.error(`[madar watch] Watch stopped: ${message}`)
   } finally {
     try {
       eventWatcher?.close()
     } catch {
       // Ignore watcher cleanup errors during shutdown.
+    }
+    if (state && state.status !== 'failed') {
+      state.status = 'stopped'
+      state.next_reconciliation_at = null
+      persistState()
     }
     if (options.signal?.aborted) {
       output.log('\n[madar watch] Stopped.')

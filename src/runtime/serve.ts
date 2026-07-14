@@ -10,6 +10,7 @@ import type { Communities } from '../pipeline/cluster.js'
 import { isRecord } from '../shared/guards.js'
 import { sanitizeLabel, validateGraphPath } from '../shared/security.js'
 import { KnowledgeGraph } from '../contracts/graph.js'
+import { parseGenerationPolicy } from '../contracts/generation-policy.js'
 
 const MAX_GRAPH_BYTES = 100 * 1024 * 1024
 const MAX_TRAVERSAL_DEPTH = 6
@@ -232,6 +233,16 @@ export function loadGraph(graphPath: string): KnowledgeGraph {
   }
 
   const graph = buildFromJson(extraction, { directed: extraction.directed, validateExtraction: false })
+  if (typeof parsed.root_path === 'string' && parsed.root_path.trim().length > 0) {
+    graph.graph.root_path = parsed.root_path
+  }
+  if (parsed.spi_mode === true) {
+    graph.graph.spi_mode = true
+  }
+  const generationPolicy = parseGenerationPolicy(parsed.generation_policy)
+  if (generationPolicy) {
+    graph.graph.generation_policy = generationPolicy
+  }
   const communityLabels = storedCommunityLabels(parsed.community_labels)
   if (Object.keys(communityLabels).length > 0) {
     graph.graph.community_labels = communityLabels

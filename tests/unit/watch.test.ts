@@ -6,8 +6,11 @@ import { setTimeout as delay } from 'node:timers/promises'
 
 import { describe, expect, test, vi } from 'vitest'
 
-import { WATCHED_EXTENSIONS, hasNonCode, notifyOnly, rebuildCode, startGraphAutoRefresh, watch } from '../../src/infrastructure/watch.js'
+import { WATCHED_EXTENSIONS, hasNonCode, notifyOnly, rebuildCode, startGraphAutoRefresh, watch, type WatchReconciliationMetrics } from '../../src/infrastructure/watch.js'
 import { generateGraph } from '../../src/infrastructure/generate.js'
+import { parseGenerationPolicy } from '../../src/contracts/generation-policy.js'
+import { readWatcherStateForGraph } from '../../src/infrastructure/watcher-state.js'
+import { resolveMadarWorkspace } from '../../src/shared/workspace.js'
 import { binaryIngestSidecarPath } from '../../src/shared/binary-ingest-sidecar.js'
 
 function withTempDir(callback: (tempDir: string) => void): void {
@@ -126,6 +129,41 @@ describe('rebuildCode', () => {
     })
   })
 
+  test('reuses every stored corpus-affecting generation option during refresh', () => {
+    withTempDir((tempDir) => {
+      execFileSync('git', ['init'], { cwd: tempDir, stdio: 'pipe' })
+      const sourcePath = join(tempDir, 'main.ts')
+      writeFileSync(sourcePath, 'export const original = true\n', 'utf8')
+      writeFileSync(join(tempDir, 'README.md'), '# excluded documents\n', 'utf8')
+      const initial = generateGraph(tempDir, {
+        directed: false,
+        followSymlinks: true,
+        respectGitignore: true,
+        includeDocs: false,
+        noHtml: true,
+        indexingStrict: { maxFailed: 0, maxUnsupported: 0 },
+      })
+      const before = parseGenerationPolicy(
+        (JSON.parse(readFileSync(initial.graphPath, 'utf8')) as { generation_policy?: unknown }).generation_policy,
+      )
+
+      writeFileSync(sourcePath, 'export const refreshed = true\n', 'utf8')
+      expect(rebuildCode(tempDir, { noHtml: true })).toBe(true)
+
+      const after = parseGenerationPolicy(
+        (JSON.parse(readFileSync(initial.graphPath, 'utf8')) as { generation_policy?: unknown }).generation_policy,
+      )
+      expect(after).toEqual(before)
+      expect(after?.settings).toMatchObject({
+        directed: false,
+        follow_symlinks: true,
+        respect_gitignore: true,
+        include_documents: false,
+        indexing_strict: { max_failed: 0, max_unsupported: 0 },
+      })
+    })
+  })
+
   test('recovers a stale refresh lease left by a dead process', () => {
     withTempDir((tempDir) => {
       writeFileSync(join(tempDir, 'main.ts'), 'export const refreshed = true\n', 'utf8')
@@ -143,6 +181,202 @@ describe('rebuildCode', () => {
 })
 
 describe('watch', () => {
+  test('keeps auto-refresh graph and watcher state outside a linked worktree', async () => {
+    await withTempDirAsync(async (tempDir) => {
+      const primary = join(tempDir, 'primary')
+      const linked = join(tempDir, 'linked')
+      execFileSync('git', ['init', primary], { stdio: 'pipe' })
+      execFileSync('git', ['config', 'user.email', 'madar-tests@example.com'], { cwd: primary, stdio: 'pipe' })
+      execFileSync('git', ['config', 'user.name', 'Madar Tests'], { cwd: primary, stdio: 'pipe' })
+      writeFileSync(join(primary, 'main.ts'), 'export const primaryValue = 1\n', 'utf8')
+      execFileSync('git', ['add', '.'], { cwd: primary, stdio: 'pipe' })
+      execFileSync('git', ['commit', '-m', 'initial'], { cwd: primary, stdio: 'pipe' })
+      execFileSync('git', ['worktree', 'add', '-b', 'feature/auto-refresh-test', linked], { cwd: primary, stdio: 'pipe' })
+
+      const workspace = resolveMadarWorkspace(linked)
+      const refresh = startGraphAutoRefresh(linked, 0.02, {
+        pollIntervalMs: 20,
+        noHtml: true,
+        logger: { log() {}, error() {} },
+      })
+      try {
+        expect(refresh.initialRebuilt).toBe(true)
+        expect(workspace.isLinkedWorktree).toBe(true)
+        expect(existsSync(workspace.graphPath)).toBe(true)
+        expect(existsSync(join(workspace.outputDir, 'watcher-state.json'))).toBe(true)
+        expect(existsSync(join(linked, 'out'))).toBe(false)
+        expect(readWatcherStateForGraph(workspace.graphPath)?.status).toBe('idle')
+
+        writeFileSync(join(linked, 'added.ts'), 'export const linkedValue = 2\n', 'utf8')
+        await waitFor(() => {
+          const graph = JSON.parse(readFileSync(workspace.graphPath, 'utf8')) as { nodes?: Array<{ source_file?: string }> }
+          return graph.nodes?.some((node) => node.source_file?.endsWith('added.ts')) === true
+        })
+      } finally {
+        refresh.stop()
+        await refresh.completed
+      }
+    })
+  }, 15_000)
+
+  test('covers more than 10,000 files and detects a change beyond the former cap', async () => {
+    await withTempDirAsync(async (tempDir) => {
+      const totalFiles = 10_050
+      for (let index = 0; index < totalFiles; index += 1) {
+        writeFileSync(join(tempDir, `source-${String(index).padStart(5, '0')}.ts`), '', 'utf8')
+      }
+
+      await watch(tempDir, 0, {
+        reconciliationTimeoutMs: 1,
+        logger: { log() {}, error() {} },
+      })
+      expect(readWatcherStateForGraph(join(tempDir, 'out', 'graph.json'))).toMatchObject({
+        status: 'failed',
+        coverage: 'failed',
+      })
+
+      const controller = new AbortController()
+      const reconciliations: WatchReconciliationMetrics[] = []
+      const rebuild = vi.fn(() => {
+        controller.abort()
+        return true
+      })
+      const watcher = watch(tempDir, 0, {
+        signal: controller.signal,
+        pollIntervalMs: 20,
+        maxPollIntervalMs: 100,
+        rebuildCode: rebuild,
+        onReconciliation: (metrics) => reconciliations.push(metrics),
+        logger: { log() {}, error() {} },
+      })
+      const timeout = setTimeout(() => controller.abort(), 15_000)
+
+      writeFileSync(join(tempDir, 'source-10049.ts'), 'export const beyondFormerCap = true\n', 'utf8')
+      await watcher
+      clearTimeout(timeout)
+
+      expect(reconciliations[0]?.fileCount).toBe(totalFiles)
+      expect(reconciliations.some((metrics) => metrics.changedCount > 0 && metrics.fileCount === totalFiles)).toBe(true)
+      expect(rebuild).toHaveBeenCalledTimes(1)
+    })
+  }, 30_000)
+
+  test('backs off authoritative reconciliation while idle and reports resource measurements', async () => {
+    await withTempDirAsync(async (tempDir) => {
+      writeFileSync(join(tempDir, 'main.ts'), 'export const idle = true\n', 'utf8')
+      const controller = new AbortController()
+      const reconciliations: WatchReconciliationMetrics[] = []
+      const watcher = watch(tempDir, 0.02, {
+        signal: controller.signal,
+        pollIntervalMs: 20,
+        maxPollIntervalMs: 80,
+        onReconciliation: (metrics) => reconciliations.push(metrics),
+        logger: { log() {}, error() {} },
+      })
+
+      await delay(190)
+      controller.abort()
+      await watcher
+
+      expect(reconciliations[0]).toMatchObject({ trigger: 'initial', fileCount: 1, nextIntervalMs: 20 })
+      expect(reconciliations.some((metrics) => metrics.nextIntervalMs === 40)).toBe(true)
+      expect(reconciliations.some((metrics) => metrics.nextIntervalMs === 80)).toBe(true)
+      expect(reconciliations.length).toBeLessThanOrEqual(5)
+      expect(reconciliations.every((metrics) => metrics.durationMs >= 0 && metrics.directoryCount >= 1)).toBe(true)
+    })
+  })
+
+  test('persists pending and stopped watcher health without answering silently stale', async () => {
+    await withTempDirAsync(async (tempDir) => {
+      writeFileSync(join(tempDir, 'main.ts'), 'export const initial = true\n', 'utf8')
+      generateGraph(tempDir, { noHtml: true })
+      const graphPath = join(tempDir, 'out', 'graph.json')
+      const controller = new AbortController()
+      const watcher = watch(tempDir, 1, {
+        signal: controller.signal,
+        pollIntervalMs: 20,
+        logger: { log() {}, error() {} },
+      })
+
+      writeFileSync(join(tempDir, 'main.ts'), 'export const changed = true\n', 'utf8')
+      await waitFor(() => readWatcherStateForGraph(graphPath)?.status === 'pending')
+      const pending = readWatcherStateForGraph(graphPath)
+      expect(pending).toMatchObject({ coverage: 'complete', policy_match: true })
+      expect(pending?.pending_since).toMatch(/^\d{4}-/)
+
+      controller.abort()
+      await watcher
+      expect(readWatcherStateForGraph(graphPath)?.status).toBe('stopped')
+    })
+  })
+
+  test('detects and repairs graph/source-manifest policy disagreement', async () => {
+    await withTempDirAsync(async (tempDir) => {
+      writeFileSync(join(tempDir, 'main.ts'), 'export const value = 1\n', 'utf8')
+      const generated = generateGraph(tempDir, { noHtml: true })
+      const manifestPath = join(generated.outputDir, 'manifest.json')
+      const graphPolicy = parseGenerationPolicy(
+        (JSON.parse(readFileSync(generated.graphPath, 'utf8')) as { generation_policy?: unknown }).generation_policy,
+      )
+      const controller = new AbortController()
+      const watcher = watch(tempDir, 0, {
+        signal: controller.signal,
+        pollIntervalMs: 20,
+        maxPollIntervalMs: 40,
+        noHtml: true,
+        logger: { log() {}, error() {} },
+      })
+
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { __madar_meta__?: { generation_policy?: unknown } }
+      if (manifest.__madar_meta__) {
+        delete manifest.__madar_meta__.generation_policy
+      }
+      writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
+
+      await waitFor(() => {
+        const repaired = JSON.parse(readFileSync(manifestPath, 'utf8')) as { __madar_meta__?: { generation_policy?: unknown } }
+        const repairedPolicy = parseGenerationPolicy(repaired.__madar_meta__?.generation_policy)
+        return repairedPolicy?.fingerprint === graphPolicy?.fingerprint
+          && readWatcherStateForGraph(generated.graphPath)?.status === 'idle'
+      })
+      controller.abort()
+      await watcher
+
+      expect(graphPolicy).not.toBeNull()
+    })
+  })
+
+  test('reconciles an edit made during rebuild before returning to idle', async () => {
+    await withTempDirAsync(async (tempDir) => {
+      const sourcePath = join(tempDir, 'main.ts')
+      writeFileSync(sourcePath, 'export const value = 1\n', 'utf8')
+      const controller = new AbortController()
+      let rebuildCount = 0
+      const rebuild = vi.fn(() => {
+        rebuildCount += 1
+        if (rebuildCount === 1) {
+          writeFileSync(sourcePath, 'export const value = 3\n', 'utf8')
+        } else {
+          controller.abort()
+        }
+        return true
+      })
+      const watcher = watch(tempDir, 0, {
+        signal: controller.signal,
+        pollIntervalMs: 20,
+        rebuildCode: rebuild,
+        logger: { log() {}, error() {} },
+      })
+      const timeout = setTimeout(() => controller.abort(), 5_000)
+
+      writeFileSync(sourcePath, 'export const value = 2\n', 'utf8')
+      await watcher
+      clearTimeout(timeout)
+
+      expect(rebuild).toHaveBeenCalledTimes(2)
+    })
+  })
+
   test('reconciles at MCP startup and refreshes a later agent edit', async () => {
     await withTempDirAsync(async (tempDir) => {
       writeFileSync(join(tempDir, 'main.ts'), 'export const initialValue = 1\n', 'utf8')

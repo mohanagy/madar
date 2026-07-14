@@ -2,6 +2,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 import type { IndexingManifestV1 } from '../contracts/indexing.js'
+import { watcherStateBlocksGraphReads, type WatcherStateV1 } from '../contracts/watcher-state.js'
 import {
   CODEX_MCP_CONFIG_RELATIVE_PATH,
   CODEX_PROMPT_HOOK_SCRIPT_RELATIVE_PATH,
@@ -21,6 +22,15 @@ import { isSemanticRuntimeAvailable } from '../runtime/semantic.js'
 import { findPackageRoot, readPackageVersion } from '../shared/package-metadata.js'
 import { resolveWorkspaceGraphPath } from '../shared/workspace.js'
 import { readIndexingManifestForGraph } from './indexing-manifest.js'
+import {
+  buildGenerationPolicy,
+  generationOptionsFromPolicy,
+  readGraphGenerationPolicy,
+} from './generation-policy.js'
+import { EXTRACTOR_CACHE_VERSION } from '../pipeline/extract.js'
+import { loadManifestMetadata } from '../pipeline/detect.js'
+import { collectGitVisibleFiles } from '../shared/git.js'
+import { readWatcherStateForGraph } from './watcher-state.js'
 import {
   readDiscoverySafetyMetadata,
   type DiscoveryExclusion,
@@ -59,6 +69,15 @@ interface GraphCheck {
   discoverySafety: DiscoverySafetySummary | null
   discoveryExclusions: DiscoveryExclusion[]
   indexingManifest: IndexingManifestV1 | null
+  generationPolicy: {
+    storedFingerprint: string | null
+    currentFingerprint: string | null
+    match: boolean | null
+    reason: string
+  }
+  watcherState: WatcherStateV1 | null
+  watcherLive: boolean
+  watcherPolicyMatchesPublished: boolean | null
 }
 
 export interface DoctorReport {
@@ -304,7 +323,75 @@ function readMcpCheck(
   }
 }
 
-function readGraphCheck(graphPath: string, now: number): GraphCheck {
+function graphRootPath(graphPath: string, fallback: string): string {
+  try {
+    const parsed = JSON.parse(readFileSync(graphPath, 'utf8')) as { root_path?: unknown }
+    return typeof parsed.root_path === 'string' && parsed.root_path.trim().length > 0
+      ? resolve(parsed.root_path)
+      : resolve(fallback)
+  } catch {
+    return resolve(fallback)
+  }
+}
+
+function watcherProcessIsLive(state: WatcherStateV1 | null): boolean {
+  if (!state || state.status === 'stopped') {
+    return false
+  }
+  try {
+    process.kill(state.pid, 0)
+    return true
+  } catch (error) {
+    return error !== null && typeof error === 'object' && 'code' in error && (error as { code?: unknown }).code === 'EPERM'
+  }
+}
+
+function readGenerationPolicyCheck(graphPath: string, projectDir: string): GraphCheck['generationPolicy'] {
+  const manifestPath = join(resolve(graphPath, '..'), 'manifest.json')
+  const graphPolicy = readGraphGenerationPolicy(graphPath)
+  const manifestPolicy = loadManifestMetadata(manifestPath).generation_policy ?? null
+  const storedPolicy = graphPolicy ?? manifestPolicy
+  if (!storedPolicy) {
+    return {
+      storedFingerprint: null,
+      currentFingerprint: null,
+      match: null,
+      reason: 'unavailable; regenerate once to enable policy-preserving auto-refresh',
+    }
+  }
+
+  if (!graphPolicy || !manifestPolicy || graphPolicy.fingerprint !== manifestPolicy.fingerprint) {
+    return {
+      storedFingerprint: graphPolicy?.fingerprint ?? manifestPolicy?.fingerprint ?? null,
+      currentFingerprint: null,
+      match: false,
+      reason: 'graph and source manifest do not contain the same valid generation policy; a full rebuild is required',
+    }
+  }
+
+  try {
+    const rootPath = graphRootPath(graphPath, projectDir)
+    const options = generationOptionsFromPolicy(storedPolicy)
+    const gitVisibleFiles = options.respectGitignore ? collectGitVisibleFiles(rootPath) : null
+    const currentPolicy = buildGenerationPolicy(rootPath, options, EXTRACTOR_CACHE_VERSION, gitVisibleFiles)
+    const match = storedPolicy.fingerprint === currentPolicy.fingerprint
+    return {
+      storedFingerprint: storedPolicy.fingerprint,
+      currentFingerprint: currentPolicy.fingerprint,
+      match,
+      reason: match ? 'stored policy matches current corpus controls' : 'corpus controls changed; a full rebuild is required',
+    }
+  } catch (error) {
+    return {
+      storedFingerprint: storedPolicy.fingerprint,
+      currentFingerprint: null,
+      match: false,
+      reason: `unable to evaluate current policy: ${error instanceof Error ? error.message : String(error)}`,
+    }
+  }
+}
+
+function readGraphCheck(graphPath: string, now: number, projectDir: string): GraphCheck {
   const resolvedGraphPath = resolve(graphPath)
   const freshness = analyzeGraphContextFreshness(resolvedGraphPath)
   const ageMs = freshness.generated_ms === null
@@ -312,6 +399,11 @@ function readGraphCheck(graphPath: string, now: number): GraphCheck {
     : Math.max(0, Math.trunc(now - freshness.generated_ms))
   const discoverySafety = readDiscoverySafetyMetadata(resolvedGraphPath)
   const indexingManifest = readIndexingManifestForGraph(resolvedGraphPath)
+  const watcherState = readWatcherStateForGraph(resolvedGraphPath)
+  const generationPolicy = readGenerationPolicyCheck(resolvedGraphPath, projectDir)
+  const watcherPolicyMatchesPublished = watcherState && generationPolicy.storedFingerprint
+    ? watcherState.stored_policy_fingerprint === generationPolicy.storedFingerprint
+    : null
 
   return {
     graphPath: resolvedGraphPath,
@@ -327,6 +419,10 @@ function readGraphCheck(graphPath: string, now: number): GraphCheck {
     discoverySafety: discoverySafety?.summary ?? null,
     discoveryExclusions: discoverySafety?.exclusions ?? [],
     indexingManifest,
+    generationPolicy,
+    watcherState,
+    watcherLive: watcherProcessIsLive(watcherState),
+    watcherPolicyMatchesPublished,
   }
 }
 
@@ -388,7 +484,18 @@ function computeNextCommands(report: Omit<DoctorReport, 'nextCommands' | 'health
 
   if (!report.graph.exists) {
     nextCommands.add('madar generate .')
-  } else if (report.graph.freshness === 'possibly_stale' || report.graph.freshness === 'stale') {
+  } else if (
+    report.graph.freshness === 'possibly_stale'
+    || report.graph.freshness === 'stale'
+    || report.graph.generationPolicy.match === false
+    || (report.graph.watcherState !== null
+      && report.graph.watcherState.status !== 'stopped'
+      && (
+        !report.graph.watcherLive
+        || watcherStateBlocksGraphReads(report.graph.watcherState)
+        || report.graph.watcherPolicyMatchesPublished === false
+      ))
+  ) {
     nextCommands.add('madar generate . --update')
   }
 
@@ -446,7 +553,7 @@ export function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorRep
   const now = options.now ?? Date.now()
   const resolvedGraphPath = resolve(projectDir, graphPath)
   const packageVersion = readPackageVersion(findPackageRoot())
-  const graph = readGraphCheck(resolvedGraphPath, now)
+  const graph = readGraphCheck(resolvedGraphPath, now, projectDir)
 
   const claudeMcp = readMcpCheck('claude', resolve(projectDir, '.mcp.json'), 'mcpServers')
   const cursorMcp = readMcpCheck('cursor', resolve(projectDir, '.cursor', 'mcp.json'), 'mcpServers')
@@ -574,9 +681,18 @@ export function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorRep
     || graph.indexingManifest.summary.counts.unsupported > 0
     || graph.indexingManifest.summary.counts.indexed_with_warnings > 0
   )
+  const watcherRequiresAttention = graph.watcherState !== null
+    && graph.watcherState.status !== 'stopped'
+    && (
+      !graph.watcherLive
+      || watcherStateBlocksGraphReads(graph.watcherState)
+      || graph.watcherPolicyMatchesPublished === false
+    )
   const healthy = graph.exists
     && graph.freshness === 'fresh'
     && !indexingRequiresAttention
+    && graph.generationPolicy.match !== false
+    && !watcherRequiresAttention
     && agents.every((agent) => agent.status === 'configured')
     && mcpChecks.every((check) => check.status === 'ok')
 
@@ -607,6 +723,27 @@ function formatGraphLine(graph: GraphCheck): string[] {
     `- missing since graph: ${graph.missingSourceCount} source file${graph.missingSourceCount === 1 ? '' : 's'}`,
     `- recommendation: ${graph.recommendation}`,
   ]
+  const policy = graph.generationPolicy
+  lines.push(
+    `- generation policy: ${policy.match === null ? 'unavailable' : policy.match ? 'match' : 'mismatch'} (${policy.reason})`,
+  )
+  if (!graph.watcherState) {
+    lines.push('- watcher: inactive (no watcher state)')
+  } else {
+    const watcher = graph.watcherState
+    const liveLabel = watcher.status === 'stopped' ? 'inactive' : graph.watcherLive ? 'live' : 'not live'
+    lines.push(
+      `- watcher: ${watcher.status} (${liveLabel}; coverage=${watcher.coverage}; mode=${watcher.event_mode}; interval=${watcher.current_interval_ms}ms)`,
+      `- watcher last reconciliation: ${watcher.last_reconciliation_at ?? 'never'} (${watcher.last_reconciliation_duration_ms ?? 'unknown'}ms; files=${watcher.last_reconciliation_file_count ?? 'unknown'}; directories=${watcher.last_reconciliation_directory_count ?? 'unknown'})`,
+      `- watcher policy: ${watcher.policy_match === null || graph.watcherPolicyMatchesPublished === null ? 'unknown' : watcher.policy_match && graph.watcherPolicyMatchesPublished ? 'match' : 'mismatch'} (stored=${watcher.stored_policy_fingerprint?.slice(0, 12) ?? 'none'}; current=${watcher.current_policy_fingerprint?.slice(0, 12) ?? 'none'}; published=${graph.generationPolicy.storedFingerprint?.slice(0, 12) ?? 'none'})`,
+    )
+    if (watcher.pending_since) {
+      lines.push(`- watcher pending since: ${watcher.pending_since}`)
+    }
+    if (watcher.failure_reason) {
+      lines.push(`- watcher failure: ${watcher.failure_reason}`)
+    }
+  }
   if (graph.discoverySafety && graph.discoverySafety.total > 0) {
     lines.push(
       `- safety exclusions: ${graph.discoverySafety.total} (${graph.discoverySafety.sensitive} sensitive, ${graph.discoverySafety.unreadable} unreadable)`,
@@ -702,11 +839,23 @@ export function runStatusCommand(options: DoctorCommandOptions = {}): string {
         .map((outcome) => `${JSON.stringify(outcome.path)}[${outcome.reason}]`)
         .join(', ') || 'none'
     : 'none'
+  const watcher = report.graph.watcherState
+  const watcherSummary = watcher
+    ? `${watcher.status} (live=${report.graph.watcherLive}, coverage=${watcher.coverage}, mode=${watcher.event_mode}, interval=${watcher.current_interval_ms}ms, published_policy=${report.graph.watcherPolicyMatchesPublished === null ? 'unknown' : report.graph.watcherPolicyMatchesPublished ? 'match' : 'mismatch'}, pending=${watcher.pending_since ?? 'no'}, failure=${watcher.failure_reason ?? 'none'})`
+    : 'inactive'
+  const reconciliationSummary = watcher
+    ? `${watcher.last_reconciliation_at ?? 'never'} (duration=${watcher.last_reconciliation_duration_ms ?? 'unknown'}ms, files=${watcher.last_reconciliation_file_count ?? 'unknown'}, directories=${watcher.last_reconciliation_directory_count ?? 'unknown'}, next=${watcher.next_reconciliation_at ?? 'none'})`
+    : 'unavailable'
+  const policy = report.graph.generationPolicy
+  const policySummary = `${policy.match === null ? 'unavailable' : policy.match ? 'match' : 'mismatch'} (stored=${policy.storedFingerprint?.slice(0, 12) ?? 'none'}, current=${policy.currentFingerprint?.slice(0, 12) ?? 'none'}; ${policy.reason})`
 
   return [
     `[madar status] ${report.healthy ? 'healthy' : 'attention needed'}`,
     `version ${report.packageVersion}`,
     `graph ${graphStatus}`,
+    `generation-policy ${policySummary}`,
+    `watcher ${watcherSummary}`,
+    `reconciliation ${reconciliationSummary}`,
     `agents ${agentSummary}`,
     `mcp ${mcpSummary}`,
     `safety ${safetySummary}`,
