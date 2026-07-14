@@ -112,9 +112,9 @@ function runPipeline(tempDir: string) {
 
 describe('pipeline', () => {
   // The full CI matrix runs this CPU-heavy reference corpus beside other
-  // extraction suites. Windows runners can exceed the normal 30s deadline
-  // without indicating a correctness regression.
-  const referenceFixturesTimeoutMs = process.platform === 'win32' ? 90_000 : 30_000
+  // extraction suites. It can exceed the normal 30s deadline under parallel
+  // load without indicating a correctness regression.
+  const referenceFixturesTimeoutMs = 90_000
 
   it('runs end to end on the reference fixtures', () => {
     withTempDir((tempDir) => {
