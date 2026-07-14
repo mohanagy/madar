@@ -27,6 +27,7 @@ function createGraphPath(): string {
   writeFileSync(join(root, 'auth.spec.ts'), 'test("login", () => {})\n', 'utf8')
   writeFileSync(join(madarOut, 'GRAPH_REPORT.md'), '# Graph report\n', 'utf8')
   writeFileSync(graphPath, JSON.stringify({
+    directed: true,
     root_path: root,
     nodes: [
       { id: 'auth_route', label: 'POST /login', source_file: join(root, 'routes.ts'), source_location: 'L1', file_type: 'code', node_kind: 'route', framework: 'express', framework_role: 'express_route', community: 0 },
@@ -60,6 +61,7 @@ function createBackendRuntimeGraphPath(): string {
   writeFileSync(join(root, 'backend', 'src', 'runtime', 'auth-service.ts'), 'export class AuthService { login() {} }\n', 'utf8')
   writeFileSync(join(root, 'out', 'GRAPH_REPORT.md'), '# Graph report\n', 'utf8')
   writeFileSync(graphPath, JSON.stringify({
+    directed: true,
     root_path: root,
     nodes: [
       { id: 'auth_route', label: 'POST /login', source_file: join(root, 'backend', 'src', 'auth-route.ts'), source_location: 'L1', file_type: 'code', node_kind: 'route', framework: 'express', framework_role: 'express_route', community: 0 },

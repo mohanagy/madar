@@ -31,6 +31,7 @@ export type ProgressStep =
 export interface GenerateGraphOptions {
   update?: boolean
   clusterOnly?: boolean
+  /** Generated code graphs are directed by default. Set false only for visualization-only legacy output. */
   directed?: boolean
   followSymlinks?: boolean
   /** Restrict discovery to files that Git does not ignore. Falls back outside Git repositories. */
@@ -226,6 +227,20 @@ function isIncrementalDetectResult(detection: DetectResult | IncrementalDetectRe
   return 'new_total' in detection && 'new_files' in detection && 'deleted_files' in detection
 }
 
+function copyGraphWithDirection(graph: KnowledgeGraph, directed: boolean): KnowledgeGraph {
+  const copied = new KnowledgeGraph({ directed })
+  Object.assign(copied.graph, graph.graph, { directed })
+
+  for (const [nodeId, attributes] of graph.nodeEntries()) {
+    copied.addNode(nodeId, attributes)
+  }
+  for (const [source, target, attributes] of graph.edgeEntries()) {
+    copied.addEdge(source, target, attributes)
+  }
+
+  return copied
+}
+
 function outputDirectory(rootPath: string): string {
   return resolveMadarOutputDirectory(rootPath)
 }
@@ -333,9 +348,29 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
 
   progress?.({ step: 'detect', message: `Found ${detected.total_files} files (~${detected.total_words.toLocaleString()} words)` })
 
-  const existingGraph = options.clusterOnly || (options.update && existsSync(graphPath)) ? loadGraph(graphPath) : null
+  const loadedExistingGraph = options.clusterOnly || (options.update && existsSync(graphPath)) ? loadGraph(graphPath) : null
   const existingGraphExtractorVersion = options.update && existsSync(graphPath) ? loadGraphExtractorVersion(graphPath) : null
-  const directed = options.directed === true || existingGraph?.isDirected() === true
+  const directed = options.directed !== false
+  const upgradingLegacyDirection = loadedExistingGraph?.isDirected() === false && directed
+
+  if (options.clusterOnly && upgradingLegacyDirection) {
+    throw new Error(
+      '--cluster-only cannot safely recover edge directions from an undirected graph. '
+      + 'Run `madar generate . --update` to re-extract the source graph with directed edges.',
+    )
+  }
+
+  const existingGraph = loadedExistingGraph && loadedExistingGraph.isDirected() !== directed && !upgradingLegacyDirection
+    ? copyGraphWithDirection(loadedExistingGraph, directed)
+    : loadedExistingGraph
+
+  if (upgradingLegacyDirection) {
+    notes.push('Existing graph was undirected, so --update rebuilt the full graph with directed edges.')
+  } else if (loadedExistingGraph && loadedExistingGraph.isDirected() !== directed) {
+    notes.push(
+      'Migrated the existing graph from directed to undirected edge traversal.',
+    )
+  }
 
   if (!options.clusterOnly) {
     progress?.({ step: 'extract', message: `Extracting ${extractableFiles.length} files...`, current: 0, total: extractableFiles.length })
@@ -390,6 +425,11 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     ? existingGraph
     : options.useSpi
       ? buildViaSpi()
+    : options.update && existingGraph && upgradingLegacyDirection
+      ? (() => {
+          extractedFiles = extractableFiles.length
+          return extractableFiles.length > 0 ? buildFromJson(extract(extractableFiles), { directed }) : null
+        })()
     : options.update && existingGraph && isIncrementalDetectResult(detected)
         ? (() => {
             if (existingGraphExtractorVersion == null || existingGraphExtractorVersion !== EXTRACTOR_CACHE_VERSION) {

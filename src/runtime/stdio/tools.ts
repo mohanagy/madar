@@ -1346,16 +1346,16 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         ...(retrieveLevelTyped !== null ? { retrievalLevel: retrieveLevelTyped } : {}),
         ...(effectiveRetrieveStrategy ? { retrievalStrategy: effectiveRetrieveStrategy } : {}),
         projectRoot: resolveGraphSourceRoot(graphPath, graph),
-      }) : Promise.resolve(retrieveContext(graph, {
+      }) : Promise.resolve().then(() => retrieveContext(graph, {
         question,
         budget: retrieveBudget,
         ...(strictBenchmarkOverrides ? { taskKind: strictBenchmarkOverrides.taskKind } : {}),
         ...(strictBenchmarkOverrides ? { runtimeProofProfile: strictBenchmarkOverrides.runtimeProofProfile } : {}),
         ...(retrieveCommunity !== null ? { community: retrieveCommunity } : {}),
-          ...(retrieveFileType ? { fileType: retrieveFileType } : {}),
-          ...(retrieveLevelTyped !== null ? { retrievalLevel: retrieveLevelTyped } : {}),
-          ...(effectiveRetrieveStrategy ? { retrievalStrategy: effectiveRetrieveStrategy } : {}),
-        }))
+        ...(retrieveFileType ? { fileType: retrieveFileType } : {}),
+        ...(retrieveLevelTyped !== null ? { retrievalLevel: retrieveLevelTyped } : {}),
+        ...(effectiveRetrieveStrategy ? { retrievalStrategy: effectiveRetrieveStrategy } : {}),
+      }))
       const useVerboseRetrieve = toolArguments.verbose === true || toolArguments.compact === false
       return retrieval.then((result) => {
         const retrievePlan = resolveTaskSelection(

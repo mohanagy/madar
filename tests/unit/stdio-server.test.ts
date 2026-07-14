@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { PassThrough } from 'node:stream'
 import { join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -42,6 +43,7 @@ function createGraphFixtureRoot(): string {
   writeFileSync(
     join(root, 'graph.json'),
     JSON.stringify({
+      directed: true,
       community_labels: {
         '0': 'Auth Services',
         '1': 'Transport Layer',
@@ -699,6 +701,55 @@ describe('stdio runtime', () => {
     }
   })
 
+  it('returns actionable MCP errors for directional tools on an undirected legacy graph', async () => {
+    const root = createGraphFixtureRoot()
+    try {
+      const graphPath = join(root, 'legacy-undirected.json')
+      writeFileSync(
+        graphPath,
+        JSON.stringify({
+          directed: false,
+          nodes: [
+            { id: 'caller', label: 'caller', source_file: '/src/caller.ts', file_type: 'code', community: 0 },
+            { id: 'dependency', label: 'dependency', source_file: '/src/dependency.ts', file_type: 'code', community: 0 },
+          ],
+          edges: [
+            { source: 'caller', target: 'dependency', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/caller.ts' },
+          ],
+        }),
+        'utf8',
+      )
+
+      const impact = await Promise.resolve(handleStdioRequest(graphPath, {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: { name: 'impact', arguments: { label: 'caller' } },
+      }))
+      const callChain = await Promise.resolve(handleStdioRequest(graphPath, {
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/call',
+        params: { name: 'call_chain', arguments: { source: 'dependency', target: 'caller' } },
+      }))
+      const retrieve = await Promise.resolve(handleStdioRequest(graphPath, {
+        jsonrpc: '2.0',
+        id: 3,
+        method: 'tools/call',
+        params: { name: 'retrieve', arguments: { question: 'Explain caller', budget: 1000, retrieval_strategy: 'slice-v1' } },
+      }))
+
+      expect(impact?.error?.message).toContain('Impact analysis requires a directed graph')
+      expect(callChain?.error?.message).toContain('Call-chain analysis requires a directed graph')
+      expect((retrieve?.result as { isError?: boolean }).isError).toBe(true)
+      expect((retrieve?.result as { content: Array<{ text: string }> }).content[0]?.text).toContain(
+        'Directional retrieval requires a directed graph',
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('returns compact retrieve and impact payloads by default and keeps verbose mode as an escape hatch', async () => {
     const root = createGraphFixtureRoot()
     try {
@@ -706,6 +757,7 @@ describe('stdio runtime', () => {
       writeFileSync(
         graphPath,
         JSON.stringify({
+          directed: true,
           community_labels: {
             '0': 'Routes',
             '1': 'State',
@@ -2198,6 +2250,7 @@ describe('stdio runtime', () => {
       writeFileSync(
         graphPath,
         JSON.stringify({
+          directed: true,
           root_path: '/workspace',
           nodes: [
             { id: 'route_users_show', label: 'GET /users/:id', source_file: '/workspace/src/routes/users.ts', line_number: 12, node_kind: 'route', file_type: 'code', framework: 'express', framework_role: 'express_route', community: 0 },
@@ -2259,6 +2312,7 @@ describe('stdio runtime', () => {
       writeFileSync(
         graphPath,
         JSON.stringify({
+          directed: true,
           root_path: '/workspace',
           community_labels: {
             '0': 'Routes',
@@ -2325,6 +2379,7 @@ describe('stdio runtime', () => {
       writeFileSync(
         graphPath,
         JSON.stringify({
+          directed: true,
           root_path: '/workspace',
           community_labels: {
             '0': 'Routes',
@@ -2399,6 +2454,7 @@ describe('stdio runtime', () => {
       writeFileSync(
         graphPath,
         JSON.stringify({
+          directed: true,
           root_path: '/workspace',
           community_labels: {
             '0': 'Routes',
@@ -2588,9 +2644,7 @@ describe('stdio runtime', () => {
   })
 
   it('refreshes an active stdio session after an agent changes its workspace', async () => {
-    const parentDir = resolve('out', 'test-runtime')
-    mkdirSync(parentDir, { recursive: true })
-    const root = mkdtempSync(join(parentDir, 'madar-stdio-auto-refresh-'))
+    const root = mkdtempSync(join(tmpdir(), 'madar-stdio-auto-refresh-'))
     const graphPath = join(root, 'out', 'graph.json')
     const input = new PassThrough()
     const output = new PassThrough()

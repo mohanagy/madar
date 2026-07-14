@@ -7,6 +7,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { describe, expect, test, vi } from 'vitest'
 
 import { generateGraph, GenerateUnsupportedCorpusError } from '../../src/infrastructure/generate.js'
+import { analyzeImpact, callChains } from '../../src/runtime/impact.js'
 import { loadGraph } from '../../src/runtime/serve.js'
 import { binaryIngestSidecarPath } from '../../src/shared/binary-ingest-sidecar.js'
 import { normalizeAssertionPath, normalizeAssertionPaths } from './helpers/platform.js'
@@ -4872,14 +4873,111 @@ describe('generateGraph', () => {
     })
   })
 
-  test('writes and reloads directed graphs when requested', () => {
+  test('generates directed code graphs by default and preserves one-way traversal semantics', () => {
+    withTempDir((tempDir) => {
+      mkdirSync(join(tempDir, 'backend'), { recursive: true })
+      mkdirSync(join(tempDir, 'shared'), { recursive: true })
+      writeFileSync(
+        join(tempDir, 'backend', 'api.ts'),
+        [
+          "import { createSession } from '../shared/auth.js'",
+          '',
+          'export function loginUser() {',
+          '  return createSession()',
+          '}',
+        ].join('\n'),
+        'utf8',
+      )
+      writeFileSync(
+        join(tempDir, 'shared', 'auth.ts'),
+        [
+          'export function createSession() {',
+          "  return 'session'",
+          '}',
+        ].join('\n'),
+        'utf8',
+      )
+
+      const result = generateGraph(tempDir, { noHtml: true })
+      const graph = loadGraph(result.graphPath)
+      const graphData = JSON.parse(readFileSync(result.graphPath, 'utf8')) as { directed?: boolean }
+
+      expect(graph.isDirected()).toBe(true)
+      expect(graphData.directed).toBe(true)
+      expect(callChains(graph, 'loginUser()', 'createSession()')).toEqual(
+        expect.arrayContaining([['loginUser()', 'createSession()']]),
+      )
+      expect(callChains(graph, 'createSession()', 'loginUser()')).toEqual([])
+      expect(analyzeImpact(graph, {}, { label: 'createSession()' }).direct_dependents).toEqual(
+        expect.arrayContaining([expect.objectContaining({ label: 'loginUser()' })]),
+      )
+      expect(analyzeImpact(graph, {}, { label: 'loginUser()' }).direct_dependents).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ label: 'createSession()' })]),
+      )
+    })
+  })
+
+  test('allows callers to explicitly generate an undirected visualization graph', () => {
     withTempDir((tempDir) => {
       writeFileSync(join(tempDir, 'main.py'), 'class Greeter:\n    def hello(self):\n        return helper()\n\ndef helper():\n    return 1\n', 'utf8')
 
-      const result = generateGraph(tempDir, { directed: true, noHtml: true })
+      const result = generateGraph(tempDir, { directed: false })
       const graph = loadGraph(result.graphPath)
 
-      expect(graph.isDirected()).toBe(true)
+      expect(graph.isDirected()).toBe(false)
+      expect(readFileSync(result.reportPath, 'utf8')).toContain('# Graph Report')
+      expect(result.htmlPath).not.toBeNull()
+      expect(result.htmlPath && existsSync(result.htmlPath)).toBe(true)
+    })
+  })
+
+  test('makes a directed-to-undirected cluster-only downgrade explicit and disables directional analysis', () => {
+    withTempDir((tempDir) => {
+      writeFileSync(
+        join(tempDir, 'main.py'),
+        'def alpha():\n    return beta()\n\ndef beta():\n    return alpha()\n',
+        'utf8',
+      )
+      const directedResult = generateGraph(tempDir, { noHtml: true })
+      const directedGraph = loadGraph(directedResult.graphPath)
+      expect(directedGraph.isDirected()).toBe(true)
+      expect(callChains(directedGraph, 'alpha()', 'beta()')).not.toEqual([])
+      expect(callChains(directedGraph, 'beta()', 'alpha()')).not.toEqual([])
+
+      const downgraded = generateGraph(tempDir, { clusterOnly: true, directed: false, noHtml: true })
+      const undirectedGraph = loadGraph(downgraded.graphPath)
+
+      expect(undirectedGraph.isDirected()).toBe(false)
+      expect(undirectedGraph.numberOfEdges()).toBeLessThan(directedGraph.numberOfEdges())
+      expect(downgraded.notes).toContain('Migrated the existing graph from directed to undirected edge traversal.')
+      expect(() => callChains(undirectedGraph, 'alpha()', 'beta()')).toThrow(
+        'Call-chain analysis requires a directed graph',
+      )
+    })
+  })
+
+  test('migrates a legacy undirected graph during an unchanged update', () => {
+    withTempDir((tempDir) => {
+      writeFileSync(join(tempDir, 'main.py'), 'def hello():\n    return 1\n', 'utf8')
+      const legacy = generateGraph(tempDir, { directed: false, noHtml: true })
+      expect(loadGraph(legacy.graphPath).isDirected()).toBe(false)
+
+      const updated = generateGraph(tempDir, { update: true, noHtml: true })
+
+      expect(loadGraph(updated.graphPath).isDirected()).toBe(true)
+      expect(updated.extractedFiles).toBeGreaterThan(0)
+      expect(updated.notes).toContain('Existing graph was undirected, so --update rebuilt the full graph with directed edges.')
+    })
+  })
+
+  test('refuses to guess lost edge directions during cluster-only regeneration', () => {
+    withTempDir((tempDir) => {
+      writeFileSync(join(tempDir, 'main.py'), 'def hello():\n    return 1\n', 'utf8')
+      generateGraph(tempDir, { directed: false, noHtml: true })
+
+      expect(() => generateGraph(tempDir, { clusterOnly: true, noHtml: true })).toThrow(
+        '--cluster-only cannot safely recover edge directions from an undirected graph.',
+      )
     })
   })
 

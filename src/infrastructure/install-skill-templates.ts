@@ -94,7 +94,6 @@ ${SKILL_COMMAND}
 ${SKILL_COMMAND} <path>
 ${SKILL_COMMAND} <path> --mode deep
 ${SKILL_COMMAND} <path> --update
-${SKILL_COMMAND} <path> --directed
 ${SKILL_COMMAND} <path> --cluster-only
 ${SKILL_COMMAND} <path> --no-viz
 ${SKILL_COMMAND} <path> --svg
@@ -385,8 +384,9 @@ Write concise 2-5 word labels for each community and regenerate the report with 
 Generate HTML by default unless ${CODE_SPAN_START}--no-viz${CODE_SPAN_END} was given.
 Generate Obsidian only when explicitly requested.
 
+Generated code graphs preserve source → target edge direction by default. Community detection still uses an undirected connectivity view. Use ${CODE_SPAN_START}--undirected${CODE_SPAN_END} only for legacy visualization output; impact, call-chain, and directional slicing require a directed graph.
+
 Optional exports:
-- ${CODE_SPAN_START}--directed${CODE_SPAN_END} → preserve edge direction in ${CODE_SPAN_START}graph.json${CODE_SPAN_END}, GraphML, queries, and shortest-path traversal while keeping community detection on an undirected connectivity view
 - ${CODE_SPAN_START}--neo4j${CODE_SPAN_END} → Cypher file
 - ${CODE_SPAN_START}--neo4j-push${CODE_SPAN_END} → direct push
 - ${CODE_SPAN_START}--svg${CODE_SPAN_END} → SVG

@@ -205,8 +205,8 @@ describe('pack-quality fixtures (#298)', () => {
       ]),
     )
     expect(payload.negative_guidance).toEqual(expect.arrayContaining([
-      expect.stringContaining('idea-report-status-message.helper.ts'),
-      expect.stringContaining('idea-report-suggested-next-steps.helper.ts'),
+      expect.stringContaining('direct_producer_to_worker_calls_without_enqueues_boundary'),
+      expect.stringContaining('irrelevant_model_or_provider_details'),
     ]))
     expect(payload.pack?.execution_slice?.steps?.map((entry) => entry.label)).toEqual(
       expect.arrayContaining([
@@ -251,9 +251,9 @@ describe('pack-quality fixtures (#298)', () => {
     expect([...surfacedLabels]).toEqual(
       expect.arrayContaining([
         '.generateFromProblem()',
-        '.buildQueuedIdeaReportResponse()',
       ]),
     )
+    expect([...surfacedLabels]).not.toContain('.buildQueuedIdeaReportResponse()')
   })
 
   it('promotes the quality-gate failure branch when the explain prompt asks what happens if it fails', async () => {

@@ -49,6 +49,7 @@ import {
 } from './context-pack.js'
 import type { RetrievalGateDecision, RetrievalLevel } from '../contracts/retrieval-gate.js'
 import { classifyRetrievalLevel } from './retrieval-gate.js'
+import { requireDirectedGraph } from './direction.js'
 import { defaultContextKindForTaskIntent } from './task-intent.js'
 import {
   expansionPolicyForLevel,
@@ -5692,6 +5693,12 @@ function buildRetrieveResultFromOrderedCandidates(
 }
 
 export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions): RetrieveResult {
+  // Guard before candidate expansion, which also reads directional adjacency.
+  // sliceCandidatesForRetrieve repeats the guard to protect its direct callers.
+  if (options.retrievalStrategy === 'slice-v1') {
+    requireDirectedGraph(graph, 'Directional retrieval')
+  }
+
   const { question, budget } = options
   const questionTokens = tokenizeQuestion(question)
   const graphRootPath = typeof graph.graph.root_path === 'string' && graph.graph.root_path.length > 0

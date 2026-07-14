@@ -901,7 +901,7 @@ describe('cli parser', () => {
       update: false,
       clusterOnly: false,
       watch: false,
-      directed: false,
+      directed: true,
       followSymlinks: false,
       respectGitignore: false,
       debounceSeconds: 3,
@@ -975,6 +975,13 @@ describe('cli parser', () => {
 
     expect(() => parseGenerateArgs(['src', 'other'])).toThrow('Usage: madar generate')
     expect(() => parseGenerateArgs(['--update', '--cluster-only'])).toThrow('cannot be used together')
+    expect(parseGenerateArgs(['src', '--undirected']).directed).toBe(false)
+    expect(() => parseGenerateArgs(['--directed', '--undirected'])).toThrow(
+      '--directed and --undirected cannot be used together',
+    )
+    expect(() => parseGenerateArgs(['--undirected', '--directed'])).toThrow(
+      '--directed and --undirected cannot be used together',
+    )
   })
 
   it('parses watch args', () => {

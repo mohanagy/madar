@@ -6,6 +6,7 @@ import type { Readable, Writable } from 'node:stream'
 import type { ContextSessionState } from '../contracts/context-session.js'
 import { compareRefs } from '../infrastructure/time-travel.js'
 import { startGraphAutoRefresh } from '../infrastructure/watch.js'
+import { DirectedGraphRequiredError } from './direction.js'
 import { diffGraphs } from './diff.js'
 import { buildGraphSummary } from './graph-summary.js'
 import { MCP_PROMPTS, MCP_TOOLS, activeMcpTools, isCoreToolName, resolveToolProfileFromEnv, type McpPromptDefinition } from './stdio/definitions.js'
@@ -841,7 +842,10 @@ export function handleStdioRequest(
       default:
         return failure(id, JSONRPC_METHOD_NOT_FOUND, `Method not found: ${method}`)
     }
-  } catch {
+  } catch (error) {
+    if (error instanceof DirectedGraphRequiredError) {
+      return failure(id, JSONRPC_SERVER_ERROR, error.message)
+    }
     return failure(id, JSONRPC_SERVER_ERROR, 'Graph query failed')
   }
 }

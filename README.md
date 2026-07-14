@@ -64,6 +64,8 @@ madar doctor
 madar status
 ```
 
+Generated code graphs preserve source → target edge direction by default. If you have an undirected graph from an older Madar release, `madar generate . --update` migrates it before impact, call-chain, or directional retrieval is used.
+
 Then connect an agent:
 
 ```bash

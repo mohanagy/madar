@@ -11,7 +11,7 @@
   "expected_likely_test_files": [],
   "expected_validation_commands": [],
   "expected_negative_guidance": [
-    "idea-report-status-message.helper.ts",
-    "idea-report-suggested-next-steps.helper.ts"
+    "direct_producer_to_worker_calls_without_enqueues_boundary",
+    "irrelevant_model_or_provider_details"
   ]
 }

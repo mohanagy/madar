@@ -1709,7 +1709,8 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
   let update = false
   let clusterOnly = false
   let watch = false
-  let directed = false
+  let directed = true
+  let directionOption: 'directed' | 'undirected' | null = null
   let followSymlinks = false
   let respectGitignore = false
   let debounceSeconds = 3
@@ -1742,7 +1743,7 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
     if (!argument.startsWith('--')) {
       if (path !== '.') {
         throw new UsageError(
-          'Usage: madar generate [path] [--update] [--cluster-only] [--watch] [--directed] [--follow-symlinks] [--respect-gitignore] [--debounce S] [--no-html] [--wiki] [--obsidian] [--obsidian-dir DIR] [--svg] [--graphml] [--neo4j] [--neo4j-push URI] [--neo4j-user USER] [--neo4j-password PW] [--neo4j-database DB] [--spi]',
+          'Usage: madar generate [path] [--update] [--cluster-only] [--watch] [--directed|--undirected] [--follow-symlinks] [--respect-gitignore] [--debounce S] [--no-html] [--wiki] [--obsidian] [--obsidian-dir DIR] [--svg] [--graphml] [--neo4j] [--neo4j-push URI] [--neo4j-user USER] [--neo4j-password PW] [--neo4j-database DB] [--spi]',
         )
       }
       path = argument
@@ -1765,7 +1766,20 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
     }
 
     if (argument === '--directed') {
+      if (directionOption === 'undirected') {
+        throw new UsageError('error: --directed and --undirected cannot be used together')
+      }
+      directionOption = 'directed'
       directed = true
+      continue
+    }
+
+    if (argument === '--undirected') {
+      if (directionOption === 'directed') {
+        throw new UsageError('error: --directed and --undirected cannot be used together')
+      }
+      directionOption = 'undirected'
+      directed = false
       continue
     }
 

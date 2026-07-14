@@ -39,6 +39,7 @@ export interface TryCommandDependencies {
   runContextPack: (context: { options: PackCliOptions; io: TrialIo }) => Promise<string | void> | string | void
   analyzeFreshness: (graphPath: string) => GraphContextFreshness
   summarizeGraph: (graphPath: string) => GraphSummary
+  isGraphDirected: (graphPath: string) => boolean
   resolvePackageRoot: () => string
   pathExists: (path: string) => boolean
   readNodeMajorVersion: () => number
@@ -50,6 +51,7 @@ const DEFAULT_DEPENDENCIES: TryCommandDependencies = {
   runContextPack: async ({ options }) => await runContextPackCommand(options),
   analyzeFreshness: (graphPath) => analyzeGraphContextFreshness(graphPath),
   summarizeGraph: (graphPath) => buildGraphSummary(loadGraph(graphPath)),
+  isGraphDirected: (graphPath) => loadGraph(graphPath).isDirected(),
   resolvePackageRoot: () => findPackageRoot(),
   pathExists: (path) => existsSync(path),
   readNodeMajorVersion: () => Number.parseInt(process.versions.node.split('.')[0] ?? '0', 10),
@@ -162,24 +164,28 @@ async function prepareWorkspace(
 
   if (dependencies.pathExists(graphPath)) {
     try {
-      const freshness = dependencies.analyzeFreshness(graphPath)
-      if (isReusableFreshnessStatus(freshness.status)) {
-        const summary = dependencies.summarizeGraph(graphPath)
-        const graphTooSmall = tooSmallReason(summary.node_count)
-        if (graphTooSmall) {
-          return {
-            status: 'failure',
-            workspace,
-            reason: graphTooSmall,
-            notes,
-            fallbackEligible: true,
-          }
-        }
-
-        notes.push(`[madar try] Reusing ${graphPath} (${graphFreshnessStatusLabel(freshness.status)}).`)
-        reuseExistingGraph = true
+      if (!dependencies.isGraphDirected(graphPath)) {
+        notes.push(`[madar try] Existing graph is undirected; rebuilding ${workspace} with directed edges.`)
       } else {
-        notes.push(`[madar try] Existing graph is ${graphFreshnessStatusLabel(freshness.status)}; rebuilding ${workspace}.`)
+        const freshness = dependencies.analyzeFreshness(graphPath)
+        if (isReusableFreshnessStatus(freshness.status)) {
+          const summary = dependencies.summarizeGraph(graphPath)
+          const graphTooSmall = tooSmallReason(summary.node_count)
+          if (graphTooSmall) {
+            return {
+              status: 'failure',
+              workspace,
+              reason: graphTooSmall,
+              notes,
+              fallbackEligible: true,
+            }
+          }
+
+          notes.push(`[madar try] Reusing ${graphPath} (${graphFreshnessStatusLabel(freshness.status)}).`)
+          reuseExistingGraph = true
+        } else {
+          notes.push(`[madar try] Existing graph is ${graphFreshnessStatusLabel(freshness.status)}; rebuilding ${workspace}.`)
+        }
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

@@ -627,6 +627,29 @@ function labelsFor(prompt: string, overrides: Record<string, unknown> = {}): str
 }
 
 describe('retrieveContext retrievalStrategy=slice-v1', () => {
+  it('rejects undirected graphs before directional slicing can traverse them', () => {
+    const graph = build([
+      {
+        schema_version: 1,
+        nodes: [
+          { id: 'caller', label: 'caller', file_type: 'code', source_file: '/src/caller.ts' },
+          { id: 'dependency', label: 'dependency', file_type: 'code', source_file: '/src/dependency.ts' },
+        ],
+        edges: [
+          { source: 'caller', target: 'dependency', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/caller.ts' },
+        ],
+      },
+    ])
+
+    expect(() => retrieveContext(graph, {
+      question: 'Explain caller',
+      budget: 3000,
+      retrievalStrategy: 'slice-v1',
+    } as never)).toThrow(
+      'Directional retrieval requires a directed graph because edge orientation is part of the result.',
+    )
+  })
+
   it('keeps explain slices bounded around the anchored symbol instead of broad impact expansion', () => {
     const defaultLabels = labelsFor('Explain `AuthService.login`')
     const sliced = retrieveContext(buildSliceGraph(), {

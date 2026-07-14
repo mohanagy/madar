@@ -105,6 +105,8 @@ madar federate frontend/graph.json backend/graph.json
 madar --help
 ```
 
+Generated code graphs are directed by default, including `try`, `watch`, automatic MCP refresh, and unchanged `--update` runs. An unchanged `--update` fully re-extracts a legacy undirected artifact because old storage may have collapsed opposite edges; `--cluster-only` refuses that unsafe migration. `--directed` remains accepted for compatibility. `--undirected` is an explicit visualization-only legacy mode that collapses reciprocal edges into one connection; `impact`, `call_chain`, and `slice-v1` retrieval reject that output rather than infer reverse edges. The two direction flags are mutually exclusive.
+
 On Windows, `compare`, `review-compare`, and benchmark `--exec` templates run under `cmd.exe`, so prefer `type {prompt_file} | claude ...` over PowerShell-specific piping or quoting.
 
 ## Default discovery rules

@@ -463,7 +463,8 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --update             rebuild incrementally from the manifest, re-extracting changed files only',
     '    --cluster-only       re-cluster an existing graph.json without re-extraction',
     '    --watch              keep watching after the initial build',
-    '    --directed           preserve edge direction (source → target) in the built graph',
+    '    --directed           preserve source → target edges (default; retained for compatibility)',
+    '    --undirected         visualization-only legacy mode; directional analysis is unavailable',
     '    --follow-symlinks    include in-root symlink targets',
     '    --respect-gitignore  exclude files ignored by Git (falls back outside Git repositories)',
     '    --debounce S         watch debounce seconds (default 3)',
@@ -625,6 +626,7 @@ function isGenerateLikeArgument(argument: string): boolean {
     argument === '--cluster-only' ||
     argument === '--watch' ||
     argument === '--directed' ||
+    argument === '--undirected' ||
     argument === '--follow-symlinks' ||
     argument === '--respect-gitignore' ||
     argument === '--no-html' ||

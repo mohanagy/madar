@@ -12,6 +12,7 @@ import type {
 import type { RuntimeProofProfile } from '../../contracts/runtime-proof.js'
 import { classifySourceDomain, isPollutedSourcePath } from '../../shared/source-discovery.js'
 import { relativizeSourceFile } from '../../shared/source-path.js'
+import { requireDirectedGraph } from '../direction.js'
 import {
   buildRuntimeProofAssessment,
   runtimeProofAnchorBonus,
@@ -1137,6 +1138,8 @@ export function sliceCandidatesForRetrieve(
   intent: RetrievalIntent,
   options: SliceOptions = {},
 ): { ordered_ids: string[]; metadata: ContextPackSliceMetadata } | null {
+  requireDirectedGraph(graph, 'Directional retrieval')
+
   if (scoredCandidates.length === 0) {
     return null
   }
