@@ -681,7 +681,7 @@ describe('watch', () => {
     })
   })
 
-  test('triggers rebuild when a local media sidecar changes', async () => {
+  test('triggers rebuild when a local media sidecar changes without an mtime change', async () => {
     await withTempDirAsync(async (tempDir) => {
       const controller = new AbortController()
       const rebuild = vi.fn(() => {
@@ -694,6 +694,7 @@ describe('watch', () => {
       const reconciliations: WatchReconciliationMetrics[] = []
       const audioPath = join(tempDir, 'episode.mp3')
       const sidecarPath = binaryIngestSidecarPath(audioPath)
+      const sidecarTimestamp = new Date('2026-04-14T03:00:00Z')
       writeFileSync(audioPath, Buffer.from('ID3'))
       writeFileSync(
         sidecarPath,
@@ -708,6 +709,7 @@ describe('watch', () => {
         ),
         'utf8',
       )
+      utimesSync(sidecarPath, sidecarTimestamp, sidecarTimestamp)
 
       const watcher = watch(tempDir, 0.02, {
         signal: controller.signal,
@@ -733,6 +735,7 @@ describe('watch', () => {
         ),
         'utf8',
       )
+      utimesSync(sidecarPath, sidecarTimestamp, sidecarTimestamp)
 
       await watcher
       clearTimeout(timeout)
