@@ -143,11 +143,12 @@ describe('public marketing copy honesty', () => {
     })
 
     it('pins the benchmark evidence table values in the README', () => {
-      expect(content).toContain('6/6 `explain-runtime` legacy rows')
+      expect(content).toContain('historical June 2026 public TypeScript `explain-runtime` runs')
       expect(content).toContain('| `documenso` | 174,504 -> 76,721 (2.27x)')
       expect(content).toContain('| `cal-diy` | 1,588,241 -> 101,820 (15.60x)')
       expect(content).toContain('| `novu` | 1,055,389 -> 75,772 (13.93x)')
-      expect(content).toContain('SPI arms are tracked separately and are not folded into this 6/6 claim.')
+      expect(content).toContain('not current product proof')
+      expect(content).toContain('not a current 6/6 claim. SPI arms remain separate.')
     })
 
     it('keeps claim buckets in the evidence docs while the README stays a compact pointer', () => {
@@ -155,7 +156,7 @@ describe('public marketing copy honesty', () => {
       expect(claims).toContain('## In progress')
       expect(claims).toContain('## Not yet measured')
       expect(claims).toContain('How this maps to README.md')
-      expect(content).toContain('This is not a universal benchmark claim.')
+      expect(content).toContain('superseded, repo/task-specific, single-trial receipts')
       expect(content).toContain('docs/claims-and-evidence.md')
     })
 
