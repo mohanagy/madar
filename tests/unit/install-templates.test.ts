@@ -85,8 +85,8 @@ function expectMarkdownRoutingTable(content: string): void {
   expect(normalized).toContain('`impact`')
   expect(normalized).toContain('`graph_summary`')
   expect(normalized).toContain('Do not run ToolSearch before calling a Madar tool')
-  expect(normalized).toContain('Inspect `evidence.pack_confidence`, `recommended_first_read`, and `evidence.agent_directive` before deciding whether to read files.')
-  expect(normalized).toContain('If `evidence.pack_confidence` is low, make one focused follow-up Madar call before broad raw search.')
+  expect(normalized).toContain('Treat `evidence.answerability.state` as authoritative; `evidence.pack_confidence` is compatibility-only.')
+  expect(normalized).toContain('For `verify_targets`, inspect only the listed verification targets. Restart broad search only for `insufficient` with `broad_search_fallback: allowed`.')
 }
 
 function expectPlainRoutingGuide(content: string): void {
@@ -97,8 +97,8 @@ function expectPlainRoutingGuide(content: string): void {
   expect(normalized).toContain('retrieve for "which files should I open first?"')
   expect(normalized).toContain('graph_summary for "give me a repo overview?"')
   expect(normalized).toContain('Do not run ToolSearch before calling a Madar tool')
-  expect(normalized).toContain('Inspect evidence.pack_confidence, recommended_first_read, and evidence.agent_directive before deciding whether to read files.')
-  expect(normalized).toContain('If evidence.pack_confidence is low, make one focused follow-up Madar call before broad raw search.')
+  expect(normalized).toContain('Treat evidence.answerability.state as authoritative; evidence.pack_confidence is compatibility-only.')
+  expect(normalized).toContain('For verify_targets, inspect only the listed verification targets. Restart broad search only for insufficient with broad_search_fallback allowed.')
 }
 
 function expectMarkdownPackRoutingTable(content: string): void {
@@ -116,8 +116,8 @@ function expectMarkdownPackRoutingTable(content: string): void {
   expect(normalized).toContain('`retrieve` for direct codebase questions')
   expect(normalized).toContain('`impact` for blast radius')
   expect(normalized).toContain('Do not run ToolSearch before calling a Madar command or graph tool')
-  expect(normalized).toContain('Inspect `evidence.pack_confidence`, `recommended_first_read`, and `evidence.agent_directive` before deciding whether to read files.')
-  expect(normalized).toContain('If `evidence.pack_confidence` is low, make one focused follow-up Madar call before broad raw search.')
+  expect(normalized).toContain('Treat `evidence.answerability.state` as authoritative; `evidence.pack_confidence` is compatibility-only.')
+  expect(normalized).toContain('For `verify_targets`, inspect only the listed verification targets. Restart broad search only for `insufficient` with `broad_search_fallback: allowed`.')
 }
 
 function expectPlainPackRoutingGuide(content: string): void {
@@ -128,8 +128,8 @@ function expectPlainPackRoutingGuide(content: string): void {
   expect(normalized).toContain('retrieve when MCP graph tools are available; otherwise madar pack "<task or question>" --task explain for "which files should I open first?"')
   expect(normalized).toContain('graph_summary when MCP graph tools are available; otherwise madar pack "<task or question>" --task explain for "give me a repo overview?"')
   expect(normalized).toContain('Do not run ToolSearch before calling a Madar command or graph tool')
-  expect(normalized).toContain('Inspect evidence.pack_confidence, recommended_first_read, and evidence.agent_directive before deciding whether to read files.')
-  expect(normalized).toContain('If evidence.pack_confidence is low, make one focused follow-up Madar call before broad raw search.')
+  expect(normalized).toContain('Treat evidence.answerability.state as authoritative; evidence.pack_confidence is compatibility-only.')
+  expect(normalized).toContain('For verify_targets, inspect only the listed verification targets. Restart broad search only for insufficient with broad_search_fallback allowed.')
 }
 
 describe('install hook payload', () => {
@@ -196,16 +196,15 @@ describe('built-in install templates', () => {
     expect(content).toContain('Codex CLI profile')
     expect(content).toContain('context-pack-first')
     expect(content).toContain('madar pack')
-    expect(content).toContain('high- or medium-confidence pack')
-    expect(content).toContain('Do not run broad `Glob` patterns, repo-wide `grep` / `find` searches, or raw file sweeps after a high- or medium-confidence pack.')
-    expect(content).toContain('Do not call other MCP servers such as `mcp__github` or `mcp__context7`')
-    expect(content).toContain('defer to Madar\'s `evidence.agent_directive` first')
-    expect(content).toContain('inspect the response\'s evidence.agent_directive')
-    expect(content).toContain('`answer_from_pack`')
-    expect(content).toContain('`verify_one_targeted_file`')
-    expect(content).toContain('`explore_with_caution`')
-    expect(content).toContain('missing_context')
-    expect(content).toContain('deeper verification')
+    expect(content).toContain('`evidence.answerability.state` as authoritative')
+    expect(content).toContain('Do not run broad `Glob` patterns, repo-wide `grep` / `find` searches, or raw file sweeps for `ready`, `ready_with_caveat`, or `verify_targets`.')
+    expect(content).toContain('Do not call another MCP or restart broad exploration unless `evidence.answerability.broad_search_fallback` is `allowed`')
+    expect(content).toContain('defer to Madar\'s answerability and exact verification targets')
+    expect(content).toContain('`ready`')
+    expect(content).toContain('`ready_with_caveat`')
+    expect(content).toContain('`verify_targets`')
+    expect(content).toContain('`insufficient`')
+    expect(content).toContain('bounded cumulative recovery')
     expect(content).toContain('Do not open `out/GRAPH_REPORT.md` unless the context pack or graph tools are unavailable, stale, or insufficient.')
     expect(content).not.toContain('If manual expansion is still required, read `out/GRAPH_REPORT.md` first.')
     expect(content).toContain('madar codex install')

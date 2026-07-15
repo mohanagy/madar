@@ -1057,6 +1057,143 @@ describe('context-pack-command', () => {
     ])
   })
 
+  it('preserves existing obligations, caveats, and blocked fallback when tight budgets cull the workflow spine', () => {
+    const matchedNodes = Array.from({ length: 6 }, (_, index) => ({
+      node_id: `runtime-${index}`,
+      label: `RuntimeStep${index}.run`,
+      source_file: `src/runtime/step-${index}.ts`,
+      line_number: index + 1,
+      snippet: 'return workflowResult'.repeat(30),
+    }))
+    const payload = buildAnswerReadyPackSchema({
+      pack: {
+        matched_nodes: matchedNodes,
+        relationships: [],
+        community_context: [],
+        execution_slice: {
+          status: 'complete',
+          confidence: 'high',
+          steps: matchedNodes,
+          primary_path: { steps: matchedNodes },
+        },
+      },
+      evidence: {
+        pack_confidence: 'low',
+        evidence_strength: {
+          level: 'weak',
+          reasons: ['relevant_unreadable_source'],
+        },
+        coverage: 'partial',
+        coverage_detail: {
+          status: 'partial',
+          required_obligations: ['discovery:unreadable_path'],
+          covered_obligations: [],
+          missing_obligations: ['discovery:unreadable_path'],
+        },
+        answerability: {
+          state: 'insufficient',
+          answer_scope: 'none',
+          caveats: ['source reliability is incomplete'],
+          missing_obligations: ['discovery:unreadable_path'],
+          verification_targets: [],
+          broad_search_fallback: 'blocked',
+        },
+        confidence_reasons: ['relevant unreadable source'],
+        agent_directive: 'explore_with_caution',
+      },
+      routing: { warnings: [] },
+    }, 160)
+    const pack = payload.pack as { matched_nodes?: unknown[] }
+    const evidence = payload.evidence as {
+      coverage_detail: { missing_obligations: string[] }
+      answerability: {
+        state: string
+        caveats: string[]
+        missing_obligations: string[]
+        broad_search_fallback: string
+      }
+    }
+
+    expect(pack.matched_nodes?.length ?? 0).toBeLessThan(matchedNodes.length)
+    expect(evidence.coverage_detail.missing_obligations).toEqual(expect.arrayContaining([
+      'discovery:unreadable_path',
+      'serialization:workflow_spine',
+    ]))
+    expect(evidence.answerability).toMatchObject({
+      state: 'insufficient',
+      broad_search_fallback: 'blocked',
+      caveats: expect.arrayContaining([
+        'source reliability is incomplete',
+        'serialized workflow spine was culled to the output budget',
+      ]),
+      missing_obligations: expect.arrayContaining([
+        'discovery:unreadable_path',
+        'serialization:workflow_spine',
+      ]),
+    })
+
+    const legacyPayload = buildAnswerReadyPackSchema({
+      pack: {
+        matched_nodes: matchedNodes,
+        relationships: [],
+        community_context: [],
+        execution_slice: {
+          status: 'complete',
+          confidence: 'high',
+          steps: matchedNodes,
+          primary_path: { steps: matchedNodes },
+        },
+      },
+      evidence: {
+        pack_confidence: 'low',
+        evidence_strength: { level: 'weak', reasons: ['relevant_unreadable_source'] },
+        coverage: 'complete',
+        answerability: {
+          state: 'insufficient',
+          answer_scope: 'none',
+          caveats: ['source reliability is incomplete'],
+          missing_obligations: ['discovery:unreadable_path'],
+          verification_targets: [{
+            handle_id: 'safe-graph-expansion',
+            focus_files: [],
+            focus_ranges: [],
+            reason: 'verify missing graph evidence',
+          }],
+          broad_search_fallback: 'blocked',
+        },
+        confidence_reasons: ['relevant unreadable source'],
+        agent_directive: 'explore_with_caution',
+      },
+      routing: { warnings: [] },
+    }, 160)
+    const legacyEvidence = legacyPayload.evidence as {
+      coverage: string
+      coverage_detail: { status: string; missing_obligations: string[] }
+      answerability: {
+        state: string
+        missing_obligations: string[]
+        broad_search_fallback: string
+      }
+    }
+
+    expect(legacyEvidence.coverage).toBe('partial')
+    expect(legacyEvidence.coverage_detail).toMatchObject({
+      status: 'partial',
+      missing_obligations: expect.arrayContaining([
+        'discovery:unreadable_path',
+        'serialization:workflow_spine',
+      ]),
+    })
+    expect(legacyEvidence.answerability).toMatchObject({
+      state: 'verify_targets',
+      broad_search_fallback: 'blocked',
+      missing_obligations: expect.arrayContaining([
+        'discovery:unreadable_path',
+        'serialization:workflow_spine',
+      ]),
+    })
+  })
+
   it('keeps debug-heavy path details when pack verbose mode is explicitly requested', async () => {
     const graph = buildRuntimeGenerationGraph()
     const retrieval = retrieveContext(graph, {

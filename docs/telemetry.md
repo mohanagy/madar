@@ -43,6 +43,10 @@ Optional coarse fields are added only when they help explain adoption drop-off w
 - `spi_enabled` — whether `madar generate` ran with `--use-spi`
 - `failure_bucket` — coarse actionable category such as `usage_error`, `invalid_params`, `missing_graph`, `stale_graph`, `stale_context`, `tool_profile`, `unsupported_corpus`, `install_error`, or `unknown`
 - `status_bucket` — coarse doctor/status outcome (`healthy` or `attention_needed`)
+- `initial_answerability_bucket` / `final_answerability_bucket` — `ready`, `ready_with_caveat`, `verify_targets`, or `insufficient`
+- `recovery_attempts_bucket` — bounded attempt count (`0`, `1`, or `2`)
+- `recovery_improvement_bucket` — `not_attempted`, `improved`, or `unchanged`
+- `broad_search_fallback_bucket` — `not_needed`, `targeted_only`, `allowed`, or `blocked`
 
 `repo_size_bucket` is intentionally coarse:
 
@@ -68,7 +72,7 @@ When telemetry is enabled, Madar records source-safe funnel stages for:
 - `madar generate` (`started`, `succeeded`, `failed`)
 - `madar pack` (`succeeded`, `failed`)
 - `madar prompt` (`succeeded`, `failed`)
-- MCP `context_pack` (`succeeded`, `failed`)
+- MCP `context_pack` (`succeeded`, `failed`, plus source-safe answerability and recovery buckets on successful parseable responses)
 - `madar doctor` and `madar status` (`succeeded`, `failed`, plus `status_bucket`)
 - `madar compare` (`succeeded`, `failed`)
 

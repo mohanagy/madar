@@ -13,6 +13,7 @@ import type { TaskContextPlan } from './task-context-plan.js'
 import type { MadarResponseEvidence } from '../runtime/mcp-response-evidence.js'
 import type { RuntimeProofAssessment } from './runtime-proof.js'
 import type { ContextPackRetrievalPlan } from './retrieval-plan.js'
+import type { ContextPackRecoveryPlan } from './context-recovery.js'
 
 export type ContextPackTaskKind = 'explain' | 'implement' | 'review' | 'impact'
 export type ContextPackFormat = 'json' | 'text' | 'markdown' | 'claude' | 'copilot'
@@ -433,6 +434,7 @@ export interface CompiledContextPack<
   selection_diagnostics?: ContextPackSelectionDiagnostics
   retrieval_strategy?: ContextPackRetrievalStrategy
   retrieval_plan?: ContextPackRetrievalPlan
+  recovery?: ContextPackRecoveryPlan
   slice?: ContextPackSliceMetadata
   execution_slice?: ContextPackExecutionSlice
   answer_contract?: ContextPackRuntimeGenerationAnswerContract
@@ -481,9 +483,15 @@ export interface ContextPackGovernanceRequest {
 
 export interface ContextPackGovernanceDirectiveSummary {
   pack_confidence: 'high' | 'medium' | 'low'
+  evidence_strength: 'strong' | 'moderate' | 'weak'
   coverage: 'complete' | 'partial' | 'unknown'
+  answerability: 'ready' | 'ready_with_caveat' | 'verify_targets' | 'insufficient'
   agent_directive: 'answer_from_pack' | 'verify_one_targeted_file' | 'explore_with_caution'
   missing_phases: ContextPackExecutionPhase[]
+  missing_obligation_count: number
+  verification_target_count: number
+  recovery_attempts: number
+  recovery_improved: boolean
 }
 
 export interface ContextPackGovernanceFollowUpSummary {

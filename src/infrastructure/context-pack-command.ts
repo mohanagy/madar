@@ -29,7 +29,6 @@ import { resolveTaskSelection } from '../runtime/task-intent.js'
 import { compactRetrieveResult, retrieveContext, type RetrieveResult } from '../runtime/retrieve.js'
 import { buildImplementationPackGuidance } from '../runtime/implementation-pack.js'
 import {
-  agentDirectiveForEvidence,
   assessMadarResponseEvidence,
   collectWorkflowOwners,
   missingPhasesFromPayload,
@@ -566,6 +565,38 @@ function trimGovernanceBeforeNodeCulling(payload: JsonRecord, maxTokens: number,
       trimmedFields.push('governance.directive.pack_confidence', 'governance.directive.coverage')
     })
   }
+  if (directive) {
+    attempts.push(() => {
+      delete governance.directive
+      trimmedFields.push('governance.directive')
+    })
+  }
+  const graphFreshness = asJsonRecord(governance.graph_freshness)
+  if (graphFreshness) {
+    attempts.push(() => {
+      governance.graph_freshness = {
+        status: graphFreshness.status,
+        ...(graphFreshness.graph_version ? { graph_version: graphFreshness.graph_version } : {}),
+        ...(graphFreshness.selected_context_status
+          ? { selected_context_status: graphFreshness.selected_context_status }
+          : {}),
+        ...(typeof graphFreshness.changed_source_count === 'number' && graphFreshness.changed_source_count > 0
+          ? { changed_source_count: graphFreshness.changed_source_count }
+          : {}),
+        ...(typeof graphFreshness.missing_source_count === 'number' && graphFreshness.missing_source_count > 0
+          ? { missing_source_count: graphFreshness.missing_source_count }
+          : {}),
+        ...(typeof graphFreshness.changed_selected_context_count === 'number' && graphFreshness.changed_selected_context_count > 0
+          ? { changed_selected_context_count: graphFreshness.changed_selected_context_count }
+          : {}),
+        ...(typeof graphFreshness.missing_selected_context_count === 'number' && graphFreshness.missing_selected_context_count > 0
+          ? { missing_selected_context_count: graphFreshness.missing_selected_context_count }
+          : {}),
+        ...(graphFreshness.recommendation ? { recommendation: graphFreshness.recommendation } : {}),
+      }
+      trimmedFields.push('governance.graph_freshness metrics compacted')
+    })
+  }
 
   let trimmed = false
   for (const attempt of attempts) {
@@ -928,14 +959,64 @@ function downgradeWorkflowSpineConfidence(payload: JsonRecord, trimmedFields: st
     confidenceReasons.push(WORKFLOW_SPINE_BUDGET_REASON)
   }
   const coverage = typeof evidence.coverage === 'string' ? evidence.coverage : 'unknown'
-  evidence.pack_confidence = 'low'
+  const strength = asJsonRecord(evidence.evidence_strength)
+  if (strength) {
+    strength.level = 'weak'
+    const strengthReasons = asUnknownArray(strength.reasons).flatMap((value) => typeof value === 'string' ? [value] : [])
+    if (!strengthReasons.includes('serialized_workflow_spine_culled')) {
+      strengthReasons.push('serialized_workflow_spine_culled')
+    }
+    strength.reasons = strengthReasons
+  }
+  const serializationObligation = 'serialization:workflow_spine'
+  let coverageDetail = asJsonRecord(evidence.coverage_detail)
+  if (coverageDetail) {
+    coverageDetail.status = 'partial'
+    const missing = asUnknownArray(coverageDetail.missing_obligations).flatMap((value) => typeof value === 'string' ? [value] : [])
+    if (!missing.includes(serializationObligation)) {
+      missing.push(serializationObligation)
+    }
+    coverageDetail.missing_obligations = missing
+  }
+  const answerability = asJsonRecord(evidence.answerability)
+  const verificationTargets = asUnknownArray(answerability?.verification_targets)
+  const canVerifyTarget = verificationTargets.length > 0
+  if (answerability) {
+    const caveats = asUnknownArray(answerability.caveats)
+      .flatMap((value) => typeof value === 'string' ? [value] : [])
+    const serializationCaveat = 'serialized workflow spine was culled to the output budget'
+    if (!caveats.includes(serializationCaveat)) {
+      caveats.push(serializationCaveat)
+    }
+    const missingObligations = (coverageDetail
+      ? asUnknownArray(coverageDetail.missing_obligations)
+      : asUnknownArray(answerability.missing_obligations))
+      .flatMap((value) => typeof value === 'string' ? [value] : [])
+    if (!missingObligations.includes(serializationObligation)) {
+      missingObligations.push(serializationObligation)
+    }
+    if (!coverageDetail) {
+      coverageDetail = {
+        status: 'partial',
+        missing_obligations: missingObligations,
+      }
+      evidence.coverage_detail = coverageDetail
+    }
+    const priorFallback = answerability.broad_search_fallback
+    answerability.state = canVerifyTarget ? 'verify_targets' : 'insufficient'
+    answerability.answer_scope = canVerifyTarget ? 'partial' : 'none'
+    answerability.caveats = caveats
+    answerability.missing_obligations = missingObligations
+    answerability.broad_search_fallback = priorFallback === 'blocked'
+      ? 'blocked'
+      : canVerifyTarget ? 'targeted_only' : 'allowed'
+  }
+  evidence.pack_confidence = canVerifyTarget ? 'medium' : 'low'
   evidence.confidence_reasons = confidenceReasons
-  evidence.agent_directive = agentDirectiveForEvidence(
-    'low',
-    coverage === 'complete' || coverage === 'partial' || coverage === 'unknown'
-      ? coverage
-      : 'unknown',
-  )
+  evidence.coverage = coverageDetail
+    ? coverage === 'unknown' ? 'unknown' : 'partial'
+    : coverage
+  evidence.agent_directive = canVerifyTarget ? 'verify_one_targeted_file' : 'explore_with_caution'
   trimmedFields.push('evidence.pack_confidence downgraded')
 }
 
@@ -1140,13 +1221,51 @@ export function buildAnswerReadyPackSchema(
 
   const evidence = asJsonRecord(payload.evidence)
   if (evidence) {
-    if (Array.isArray(evidence.covered_workflow_owners)) {
-      delete evidence.covered_workflow_owners
-      trimmedFields.push('evidence.covered_workflow_owners')
-    }
     if (Array.isArray(evidence.confidence_reasons)) {
       delete evidence.confidence_reasons
       trimmedFields.push('evidence.confidence_reasons')
+    }
+    const strength = asJsonRecord(evidence.evidence_strength)
+    if (strength) {
+      evidence.evidence_strength = { level: strength.level }
+      trimmedFields.push('evidence.evidence_strength metrics compacted')
+    }
+    const coverageDetail = asJsonRecord(evidence.coverage_detail)
+    if (coverageDetail) {
+      delete coverageDetail.required_obligations
+      delete coverageDetail.covered_obligations
+      coverageDetail.missing_obligations = asUnknownArray(coverageDetail.missing_obligations).slice(0, 4)
+      trimmedFields.push('evidence.coverage_detail obligations compacted')
+    }
+    const answerability = asJsonRecord(evidence.answerability)
+    if (answerability) {
+      answerability.caveats = asUnknownArray(answerability.caveats).slice(0, 2)
+      answerability.missing_obligations = asUnknownArray(answerability.missing_obligations).slice(0, 4)
+      answerability.verification_targets = asUnknownArray(answerability.verification_targets)
+        .map((target) => asJsonRecord(target))
+        .filter((target): target is JsonRecord => target !== null)
+        .slice(0, 2)
+        .map((target) => ({
+          ...(target.handle_id ? { handle_id: target.handle_id } : {}),
+          ...(target.evidence_class ? { evidence_class: target.evidence_class } : {}),
+          focus_files: asUnknownArray(target.focus_files).slice(0, 2),
+          focus_ranges: asUnknownArray(target.focus_ranges).slice(0, 1),
+          reason: target.reason,
+        }))
+      trimmedFields.push('evidence.answerability compacted')
+    }
+    const recovery = asJsonRecord(evidence.recovery)
+    if (recovery) {
+      recovery.attempts = asUnknownArray(recovery.attempts)
+        .map((attempt) => asJsonRecord(attempt))
+        .filter((attempt): attempt is JsonRecord => attempt !== null)
+        .slice(0, 2)
+        .map((attempt) => ({
+          attempt: attempt.attempt,
+          status: attempt.status,
+          changed_result: attempt.changed_result,
+        }))
+      trimmedFields.push('evidence.recovery metrics compacted')
     }
   }
   attachSerializedBudget(payload, maxTokens, trimmedFields)
@@ -1203,6 +1322,20 @@ export function buildAnswerReadyPackSchema(
       trimmedFields.push('pack.retrieval_plan metrics compacted')
     }
 
+    const recovery = asJsonRecord(pack.recovery)
+    if (recovery) {
+      recovery.attempts = asUnknownArray(recovery.attempts)
+        .map((attempt) => asJsonRecord(attempt))
+        .filter((attempt): attempt is JsonRecord => attempt !== null)
+        .slice(0, 2)
+        .map((attempt) => ({
+          attempt: attempt.attempt,
+          status: attempt.status,
+          changed_result: attempt.changed_result,
+        }))
+      trimmedFields.push('pack.recovery metrics compacted')
+    }
+
     if (Object.hasOwn(pack, 'retrieval_gate')) {
       delete pack.retrieval_gate
       trimmedFields.push('pack.retrieval_gate')
@@ -1212,6 +1345,22 @@ export function buildAnswerReadyPackSchema(
   delete payload.why_explanation
   trimmedFields.push('retrieval_gate', 'why_explanation')
   if (trimGovernanceBeforeNodeCulling(payload, maxTokens, trimmedFields)) {
+    attachSerializedBudget(payload, maxTokens, trimmedFields)
+    if (estimatedJsonTokens(payload) <= maxTokens) {
+      return payload
+    }
+  }
+  if (Array.isArray(payload.workflow_centers)) {
+    delete payload.workflow_centers
+    trimmedFields.push('workflow_centers')
+    attachSerializedBudget(payload, maxTokens, trimmedFields)
+    if (estimatedJsonTokens(payload) <= maxTokens) {
+      return payload
+    }
+  }
+  if (maxTokens <= 800 && evidence && Array.isArray(evidence.covered_workflow_owners)) {
+    delete evidence.covered_workflow_owners
+    trimmedFields.push('evidence.covered_workflow_owners')
     attachSerializedBudget(payload, maxTokens, trimmedFields)
     if (estimatedJsonTokens(payload) <= maxTokens) {
       return payload
@@ -1313,9 +1462,11 @@ export function buildExplainPackPayloadCore(
       implementation?.likely_test_files.map((entry) => entry.path) ?? [],
     ),
     executionSlice: (retrieval as RetrieveResult).execution_slice,
+    expandable: payload.expandable,
     discoverySafety,
     graphPath,
     question: retrieval.question,
+    recovery: (retrieval as RetrieveResult).recovery,
     missingPhases: missingPhasesFromPayload(pack as {
       answer_contract?: { missing_phases?: readonly unknown[] }
       execution_slice?: { phase_coverage?: { missing?: readonly unknown[] } }
@@ -1921,8 +2072,10 @@ function buildPackSchemaV1<TPack extends PackPayload>(
     coverage: response.coverage,
     discoverySafety,
     executionSlice: retrieval?.execution_slice ?? ('execution_slice' in response.pack ? response.pack.execution_slice : undefined),
+    expandable: response.expandable,
     graphPath: response.graph_path,
     question: response.prompt,
+    recovery: retrieval?.recovery ?? ('recovery' in response.pack ? response.pack.recovery : undefined),
     missingPhases: missingPhasesFromPayload(response.pack as {
       answer_contract?: { missing_phases?: readonly unknown[] }
       execution_slice?: { phase_coverage?: { missing?: readonly unknown[] } }

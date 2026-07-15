@@ -1023,7 +1023,20 @@ describe('stdio runtime', () => {
         }
         expect(payload.evidence).toEqual(expect.objectContaining({
           pack_confidence: expect.stringMatching(/^(high|medium|low)$/),
+          evidence_strength: expect.objectContaining({
+            level: expect.stringMatching(/^(strong|moderate|weak)$/),
+          }),
           coverage: expect.stringMatching(/^(complete|partial|unknown)$/),
+          coverage_detail: expect.objectContaining({
+            status: expect.stringMatching(/^(complete|partial|unknown)$/),
+            missing_obligations: expect.any(Array),
+          }),
+          answerability: expect.objectContaining({
+            state: expect.stringMatching(/^(ready|ready_with_caveat|verify_targets|insufficient)$/),
+            caveats: expect.any(Array),
+            verification_targets: expect.any(Array),
+            broad_search_fallback: expect.stringMatching(/^(not_needed|targeted_only|allowed|blocked)$/),
+          }),
           agent_directive: expect.stringMatching(/^(answer_from_pack|verify_one_targeted_file|explore_with_caution)$/),
           missing_phases: expect.any(Array),
           covered_workflow_owners: expect.any(Array),
@@ -1222,6 +1235,11 @@ describe('stdio runtime', () => {
             stage: 'succeeded',
             repo_size_bucket: '1-24',
             graph_size_bucket: '1-99',
+            initial_answerability_bucket: expect.stringMatching(/^(ready|ready_with_caveat|verify_targets|insufficient)$/),
+            recovery_attempts_bucket: expect.stringMatching(/^[0-2]$/),
+            recovery_improvement_bucket: expect.stringMatching(/^(not_attempted|improved|unchanged)$/),
+            final_answerability_bucket: expect.stringMatching(/^(ready|ready_with_caveat|verify_targets|insufficient)$/),
+            broad_search_fallback_bucket: expect.stringMatching(/^(not_needed|targeted_only|allowed|blocked)$/),
           }),
           expect.objectContaining({
             command: 'context_pack',

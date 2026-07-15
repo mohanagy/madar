@@ -26,6 +26,7 @@ import type {
   ContextPackTaskKind,
 } from '../contracts/context-pack.js'
 import type { ContextPackRetrievalPlanDetail, RetrievalQualitySnapshot } from '../contracts/retrieval-plan.js'
+import type { ContextPackRecoveryPlan } from '../contracts/context-recovery.js'
 import type { TaskIntentKind } from '../contracts/task-intent.js'
 import { KnowledgeGraph } from '../contracts/graph.js'
 import { godNodes, workspaceBridges } from '../pipeline/analyze.js'
@@ -62,6 +63,7 @@ import {
   finalizeConceptualFallbackPlan,
   planConceptualFallback,
 } from './retrieve/conceptual-fallback.js'
+import { recoverContextPackResult } from './context-pack-recovery.js'
 import { communitiesFromGraph, estimateQueryTokens } from './serve.js'
 
 const SNIPPET_HALF_WINDOW = 7
@@ -206,6 +208,7 @@ export interface RetrieveResult {
   retrieval_gate?: RetrievalGateDecision
   retrieval_strategy?: ContextPackRetrievalStrategy
   retrieval_plan?: ContextPackRetrievalPlanDetail
+  recovery?: ContextPackRecoveryPlan
   snippet_budget_tokens_used?: number
   snippet_budget_tokens_remaining?: number
   slice?: ContextPackSliceMetadata
@@ -4223,6 +4226,7 @@ export function contextPackFromRetrieveResult(
     ...(result.selection_diagnostics ? { selection_diagnostics: result.selection_diagnostics } : {}),
     ...(result.retrieval_strategy ? { retrieval_strategy: result.retrieval_strategy } : {}),
     ...(result.retrieval_plan ? { retrieval_plan: result.retrieval_plan } : {}),
+    ...(result.recovery ? { recovery: result.recovery } : {}),
     ...(result.slice ? { slice: result.slice } : {}),
     ...(result.execution_slice ? { execution_slice: result.execution_slice } : {}),
     ...(result.answer_contract ? { answer_contract: result.answer_contract } : {}),
@@ -5103,7 +5107,7 @@ function notNeededRetrievalPlan(quality: RetrievalQualitySnapshot): ContextPackR
   }
 }
 
-export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions): RetrieveResult {
+function retrieveContextWithConceptualFallback(graph: KnowledgeGraph, options: RetrieveOptions): RetrieveResult {
   const initial = retrieveContextPass(graph, options)
   const initialQuality = retrievalQualitySnapshot(graph, initial)
   if (
@@ -5151,15 +5155,35 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
   }
 }
 
+export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions): RetrieveResult {
+  const initial = retrieveContextWithConceptualFallback(graph, options)
+  return recoverContextPackResult(
+    graph,
+    initial,
+    options,
+    (nodeBoosts) => retrieveContextPass(graph, options, nodeBoosts),
+  )
+}
+
 export async function retrieveContextAsync(graph: KnowledgeGraph, options: RetrieveOptions): Promise<RetrieveResult> {
-  const lexicalResult = retrieveContext(graph, options)
+  const lexicalResult = retrieveContextWithConceptualFallback(graph, options)
   if (options.semantic !== true && options.rerank !== true) {
-    return lexicalResult
+    return recoverContextPackResult(
+      graph,
+      lexicalResult,
+      options,
+      (nodeBoosts) => retrieveContextPass(graph, options, nodeBoosts),
+    )
   }
 
   const questionTokens = tokenizeQuestion(options.question)
   if (questionTokens.length === 0) {
-    return lexicalResult
+    return recoverContextPackResult(
+      graph,
+      lexicalResult,
+      options,
+      (nodeBoosts) => retrieveContextPass(graph, options, nodeBoosts),
+    )
   }
 
   const frameworkProfile = buildFrameworkQuestionProfile(options.question, questionTokens)
@@ -5201,7 +5225,12 @@ export async function retrieveContextAsync(graph: KnowledgeGraph, options: Retri
       .map(([id, attributes]) => [id, scoredNodeFromGraphEntry(id, attributes, frameworkProfile, questionLower, classificationRootPath)] as const),
   )
   if (candidatesById.size === 0) {
-    return lexicalResult
+    return recoverContextPackResult(
+      graph,
+      lexicalResult,
+      options,
+      (nodeBoosts) => retrieveContextPass(graph, options, nodeBoosts),
+    )
   }
 
   let semanticScores = new Map<string, number>()
@@ -5231,7 +5260,12 @@ export async function retrieveContextAsync(graph: KnowledgeGraph, options: Retri
   }
 
   if (candidateIds.size === 0) {
-    return lexicalResult
+    return recoverContextPackResult(
+      graph,
+      lexicalResult,
+      options,
+      (nodeBoosts) => retrieveContextPass(graph, options, nodeBoosts),
+    )
   }
 
   const candidatePool = [...candidateIds]
@@ -5289,10 +5323,16 @@ export async function retrieveContextAsync(graph: KnowledgeGraph, options: Retri
     graphRootPath,
     lexicalResult.slice,
   )
-  return {
+  const semanticWithPlan = {
     ...semanticResult,
     ...(lexicalResult.retrieval_plan ? { retrieval_plan: lexicalResult.retrieval_plan } : {}),
   }
+  return recoverContextPackResult(
+    graph,
+    semanticWithPlan,
+    options,
+    (nodeBoosts) => retrieveContextPass(graph, options, nodeBoosts),
+  )
 }
 
 export function compactRetrieveResult(result: RetrieveResult, options: RetrieveSnippetOptions = {}): CompactRetrieveResult {
@@ -5334,6 +5374,7 @@ export function compactRetrieveResult(result: RetrieveResult, options: RetrieveS
     ...(compactPack.shared_file_type ? { shared_file_type: compactPack.shared_file_type } : {}),
     retrieval_strategy: result.retrieval_strategy ?? 'default',
     ...(result.retrieval_plan ? { retrieval_plan: result.retrieval_plan } : {}),
+    ...(result.recovery ? { recovery: result.recovery } : {}),
     snippet_budget_tokens_used: shapedNodes.usedTokens,
     snippet_budget_tokens_remaining: shapedNodes.remainingTokens,
     ...(result.slice ? { slice: result.slice } : {}),
@@ -5496,6 +5537,7 @@ export function compactRetrieveResultForStdio(result: RetrieveResult, options: R
     ...(result.coverage ? { coverage: result.coverage } : {}),
     retrieval_strategy: result.retrieval_strategy ?? 'default',
     ...(result.retrieval_plan ? { retrieval_plan: result.retrieval_plan } : {}),
+    ...(result.recovery ? { recovery: result.recovery } : {}),
     snippet_budget_tokens_used: compactResult.snippet_budget_tokens_used,
     snippet_budget_tokens_remaining: compactResult.snippet_budget_tokens_remaining,
     ...(result.slice ? { slice: result.slice } : {}),

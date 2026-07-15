@@ -1,9 +1,18 @@
 import type {
   ContextPackCoverage,
+  ContextPackExpandableRef,
   ContextPackExecutionPhase,
   ContextPackExecutionSlice,
   ContextPackRuntimeGenerationAnswerContract,
 } from '../contracts/context-pack.js'
+import type {
+  ContextPackRecoveryPlan,
+  MadarAnswerabilityAssessment,
+  MadarCoverageAssessment,
+  MadarEvidenceStrengthAssessment,
+  MadarEvidenceStrengthLevel,
+  MadarVerificationTarget,
+} from '../contracts/context-recovery.js'
 import type { IndexingManifestV1, IndexingReasonCode } from '../contracts/indexing.js'
 import {
   readIndexingManifestForGraph,
@@ -22,8 +31,13 @@ export type MadarResponseCoverage = 'complete' | 'partial' | 'unknown'
 export type MadarResponseAgentDirective = 'answer_from_pack' | 'verify_one_targeted_file' | 'explore_with_caution'
 
 export interface MadarResponseEvidence {
+  /** Compatibility projection for consumers that have not migrated to the independent dimensions below. */
   pack_confidence: MadarResponsePackConfidence
+  evidence_strength: MadarEvidenceStrengthAssessment
   coverage: MadarResponseCoverage
+  coverage_detail: MadarCoverageAssessment
+  answerability: MadarAnswerabilityAssessment
+  recovery?: ContextPackRecoveryPlan
   missing_phases: ContextPackExecutionPhase[]
   covered_workflow_owners: string[]
   confidence_reasons: string[]
@@ -94,11 +108,250 @@ export function packConfidenceFromScore(score: number): MadarResponsePackConfide
   return 'low'
 }
 
+function evidenceStrengthFromCoverage(
+  coverage: ContextPackCoverage | undefined,
+  executionSlice: ContextPackExecutionSlice | undefined,
+): MadarEvidenceStrengthAssessment {
+  const coveredDirectNodes = coverage?.entries
+    .filter((entry) => entry.evidence_class === 'primary' || entry.evidence_class === 'change')
+    .reduce((total, entry) => total + entry.selected_nodes, 0) ?? 0
+  const executionNodeCount = new Set(
+    (executionSlice?.steps ?? []).map((step) => step.node_id ?? `${step.source_file}\u0000${step.label}`),
+  ).size
+  // Execution slices are built from selected graph nodes. Count them as direct
+  // evidence when an older or externally constructed coverage payload omits
+  // per-class entry counts.
+  const directSelectedNodes = Math.max(coveredDirectNodes, executionNodeCount)
+  const supportingSelectedNodes = coverage?.entries
+    .filter((entry) => entry.evidence_class !== 'primary' && entry.evidence_class !== 'change')
+    .reduce((total, entry) => total + entry.selected_nodes, 0) ?? 0
+  const selectedRelationships = coverage?.selected_relationships ?? 0
+  const availableRelationships = coverage?.available_relationships ?? 0
+  const hasRuntimeSpine = (executionSlice?.steps.length ?? 0) >= 2
+  const reasons: string[] = []
+
+  let level: MadarEvidenceStrengthLevel
+  if (directSelectedNodes > 0 && (selectedRelationships > 0 || hasRuntimeSpine)) {
+    level = 'strong'
+    reasons.push('direct_evidence_with_relationship_support')
+  } else if (directSelectedNodes + supportingSelectedNodes > 0) {
+    level = 'moderate'
+    reasons.push('selected_evidence_without_complete_relationship_support')
+  } else {
+    level = 'weak'
+    reasons.push('no_selected_evidence')
+  }
+
+  const runtimeConfidence = executionSlice?.confidence
+  if (runtimeConfidence === 'low' && level !== 'weak') {
+    level = 'weak'
+    reasons.push('runtime_evidence_reported_low_strength')
+  } else if (runtimeConfidence === 'medium' && level === 'strong') {
+    level = 'moderate'
+    reasons.push('runtime_evidence_reported_moderate_strength')
+  }
+
+  return {
+    level,
+    direct_selected_nodes: directSelectedNodes,
+    supporting_selected_nodes: supportingSelectedNodes,
+    selected_relationships: selectedRelationships,
+    available_relationships: availableRelationships,
+    reasons,
+  }
+}
+
+function capEvidenceStrength(
+  assessment: MadarEvidenceStrengthAssessment,
+  cap: MadarEvidenceStrengthLevel,
+  reason: string,
+): MadarEvidenceStrengthAssessment {
+  const rank: Record<MadarEvidenceStrengthLevel, number> = { weak: 0, moderate: 1, strong: 2 }
+  if (rank[assessment.level] <= rank[cap]) {
+    return assessment.reasons.includes(reason)
+      ? assessment
+      : { ...assessment, reasons: [...assessment.reasons, reason] }
+  }
+  return {
+    ...assessment,
+    level: cap,
+    reasons: [...assessment.reasons, reason],
+  }
+}
+
+function baseCoverageAssessment(
+  coverage: ContextPackCoverage | undefined,
+  status: MadarResponseCoverage,
+  missingPhases: readonly ContextPackExecutionPhase[],
+): MadarCoverageAssessment {
+  const requiredEvidence = coverage?.entries.filter((entry) => entry.required) ?? []
+  const requiredSemantic = coverage?.semantic_entries.filter((entry) => entry.required) ?? []
+  const requiredObligations = [
+    ...requiredEvidence.map((entry) => `evidence:${entry.evidence_class}`),
+    ...requiredSemantic.map((entry) => `semantic:${entry.category}`),
+    ...missingPhases.map((phase) => `phase:${phase}`),
+  ]
+  const coveredObligations = [
+    ...requiredEvidence.filter((entry) => entry.status === 'covered').map((entry) => `evidence:${entry.evidence_class}`),
+    ...requiredSemantic.filter((entry) => entry.status === 'covered').map((entry) => `semantic:${entry.category}`),
+  ]
+  const missingObligations = [
+    ...requiredEvidence.filter((entry) => entry.status !== 'covered').map((entry) => `evidence:${entry.evidence_class}`),
+    ...requiredSemantic.filter((entry) => entry.status !== 'covered').map((entry) => `semantic:${entry.category}`),
+    ...missingPhases.map((phase) => `phase:${phase}`),
+  ]
+  return {
+    status,
+    required_obligations: [...new Set(requiredObligations)],
+    covered_obligations: [...new Set(coveredObligations)],
+    missing_obligations: [...new Set(missingObligations)],
+  }
+}
+
+function addMissingObligations(
+  assessment: MadarCoverageAssessment,
+  obligations: readonly string[],
+): MadarCoverageAssessment {
+  if (obligations.length === 0) {
+    return assessment
+  }
+  return {
+    ...assessment,
+    status: 'partial',
+    required_obligations: [...new Set([...assessment.required_obligations, ...obligations])],
+    missing_obligations: [...new Set([...assessment.missing_obligations, ...obligations])],
+  }
+}
+
+function verificationTargets(
+  expandable: readonly ContextPackExpandableRef[],
+  coveredWorkflowOwners: readonly string[],
+  missingObligations: readonly string[],
+): MadarVerificationTarget[] {
+  const missingEvidence = new Set(
+    missingObligations
+      .filter((obligation) => obligation.startsWith('evidence:'))
+      .map((obligation) => obligation.slice('evidence:'.length)),
+  )
+  const relevantExpandable = missingEvidence.size > 0
+    ? expandable.filter((entry) => missingEvidence.has(entry.evidence_class))
+    : expandable
+  const ordered = [...relevantExpandable].sort((left, right) => (
+    Number(missingEvidence.has(right.evidence_class)) - Number(missingEvidence.has(left.evidence_class))
+    || left.handle_id.localeCompare(right.handle_id)
+  ))
+  const targets = ordered.slice(0, 4).map((entry): MadarVerificationTarget => ({
+    handle_id: entry.handle_id,
+    evidence_class: entry.evidence_class,
+    focus_files: [...new Set(entry.follow_up.focus_files)].slice(0, 5),
+    focus_ranges: entry.follow_up.focus_ranges.slice(0, 5),
+    reason: missingEvidence.has(entry.evidence_class)
+      ? `verify missing evidence:${entry.evidence_class}`
+      : `verify evidence:${entry.evidence_class} for ${missingObligations[0] ?? 'unresolved coverage'}`,
+  }))
+  if (targets.length > 0 || coveredWorkflowOwners.length === 0 || missingObligations.length === 0) {
+    return targets
+  }
+  return [{
+    focus_files: coveredWorkflowOwners.slice(0, 3),
+    focus_ranges: [],
+    reason: `verify ${missingObligations[0]}`,
+  }]
+}
+
+function answerabilityAssessment(input: {
+  strength: MadarEvidenceStrengthAssessment
+  coverage: MadarCoverageAssessment
+  answerContained: boolean | undefined
+  verificationTargets: MadarVerificationTarget[]
+  sourceReliabilityFailed: boolean
+  sourceVerificationBlocked: boolean
+}): MadarAnswerabilityAssessment {
+  const selectedEvidence = input.strength.direct_selected_nodes + input.strength.supporting_selected_nodes
+  const complete = input.coverage.status === 'complete'
+    && input.coverage.missing_obligations.length === 0
+    && input.answerContained !== false
+
+  if (input.sourceReliabilityFailed) {
+    return {
+      state: 'insufficient',
+      answer_scope: 'none',
+      caveats: ['source reliability is incomplete'],
+      missing_obligations: input.coverage.missing_obligations,
+      verification_targets: [],
+      broad_search_fallback: input.sourceVerificationBlocked ? 'blocked' : 'allowed',
+    }
+  }
+
+  if (complete && input.strength.level === 'strong') {
+    return {
+      state: 'ready',
+      answer_scope: 'complete',
+      caveats: [],
+      missing_obligations: [],
+      verification_targets: [],
+      broad_search_fallback: 'not_needed',
+    }
+  }
+  if (complete && input.strength.level === 'moderate') {
+    return {
+      state: 'ready_with_caveat',
+      answer_scope: 'complete',
+      caveats: [...input.strength.reasons],
+      missing_obligations: [],
+      verification_targets: [],
+      broad_search_fallback: 'not_needed',
+    }
+  }
+  if (input.verificationTargets.length > 0) {
+    return {
+      state: 'verify_targets',
+      answer_scope: selectedEvidence > 0 ? 'partial' : 'none',
+      caveats: selectedEvidence > 0 ? [] : ['no selected evidence; verify the exact target'],
+      missing_obligations: input.coverage.missing_obligations,
+      verification_targets: input.verificationTargets,
+      broad_search_fallback: 'targeted_only',
+    }
+  }
+  return {
+    state: 'insufficient',
+    answer_scope: 'none',
+    caveats: ['no usable evidence or verification target'],
+    missing_obligations: input.coverage.missing_obligations,
+    verification_targets: [],
+    broad_search_fallback: input.sourceVerificationBlocked ? 'blocked' : 'allowed',
+  }
+}
+
+function compatibilityConfidence(
+  answerability: MadarAnswerabilityAssessment,
+  strength: MadarEvidenceStrengthAssessment,
+  sourceReliabilityFailed: boolean,
+): MadarResponsePackConfidence {
+  if (answerability.state === 'insufficient' || sourceReliabilityFailed) {
+    return 'low'
+  }
+  if (answerability.state === 'ready' && strength.level === 'strong') {
+    return 'high'
+  }
+  return 'medium'
+}
+
 export function agentDirectiveForEvidence(
   packConfidence: MadarResponsePackConfidence,
   coverage: MadarResponseCoverage,
   answerContained: boolean | undefined = undefined,
+  answerability?: MadarAnswerabilityAssessment,
 ): MadarResponseAgentDirective {
+  if (answerability) {
+    if (answerability.state === 'ready' || answerability.state === 'ready_with_caveat') {
+      return 'answer_from_pack'
+    }
+    if (answerability.state === 'verify_targets') {
+      return 'verify_one_targeted_file'
+    }
+    return 'explore_with_caution'
+  }
   if ((answerContained ?? true) && coverage === 'complete' && packConfidence === 'high') {
     return 'answer_from_pack'
   }
@@ -295,11 +548,13 @@ export function assessMadarResponseEvidence(input: {
   coverage?: ContextPackCoverage | undefined
   coveredWorkflowOwners?: readonly string[] | undefined
   discoverySafety?: DiscoverySafetyMetadata | null | undefined
+  expandable?: readonly ContextPackExpandableRef[] | undefined
   executionSlice?: ContextPackExecutionSlice | undefined
   graphPath?: string | undefined
   indexingManifest?: IndexingManifestV1 | null | undefined
   missingPhases?: readonly ContextPackExecutionPhase[] | undefined
   question?: string | undefined
+  recovery?: ContextPackRecoveryPlan | undefined
   score?: number | undefined
 }): MadarResponseEvidenceAssessment {
   let coverage = coverageStatusFromCoverage(input.coverage)
@@ -322,15 +577,33 @@ export function assessMadarResponseEvidence(input: {
   let confidenceCap: MadarResponsePackConfidence = 'high'
   const confidenceReasons: string[] = []
   let answerContained: boolean | undefined
+  let evidenceStrength = evidenceStrengthFromCoverage(input.coverage, input.executionSlice)
+  let coverageDetail = baseCoverageAssessment(input.coverage, coverage, missingPhases)
+  let sourceReliabilityFailed = false
+  let sourceVerificationBlocked = false
 
   if (runtimeGeneration) {
     const scopeQuality = scopeQualityAssessment(input.graphPath, coveredWorkflowOwners)
     confidenceCap = moreRestrictiveConfidence(confidenceCap, scopeQuality.confidenceCap)
     confidenceReasons.push(scopeQuality.reason)
+    if (scopeQuality.confidenceCap !== 'high') {
+      evidenceStrength = capEvidenceStrength(
+        evidenceStrength,
+        'moderate',
+        'graph_scope_alignment_unverified',
+      )
+    }
 
     const workflowLocality = workflowLocalityAssessment(input.executionSlice)
     confidenceCap = moreRestrictiveConfidence(confidenceCap, workflowLocality.confidenceCap)
     confidenceReasons.push(workflowLocality.reason)
+    if (workflowLocality.confidenceCap !== 'high') {
+      evidenceStrength = capEvidenceStrength(
+        evidenceStrength,
+        'moderate',
+        'runtime_workflow_locality_shallow',
+      )
+    }
 
     const phaseCompleteness = phaseCompletenessAssessment(missingPhases)
     confidenceCap = moreRestrictiveConfidence(confidenceCap, phaseCompleteness.confidenceCap)
@@ -352,7 +625,21 @@ export function assessMadarResponseEvidence(input: {
         )
       }
       confidenceCap = nextConfidenceCap
+      if (runtimeConfidence !== 'high') {
+        evidenceStrength = capEvidenceStrength(
+          evidenceStrength,
+          runtimeConfidence === 'low' ? 'weak' : 'moderate',
+          `runtime_answer_contract_reported_${runtimeConfidence}_strength`,
+        )
+      }
     }
+  }
+
+  if (answerContained === false) {
+    if (coverage === 'complete') {
+      coverage = 'partial'
+    }
+    coverageDetail = addMissingObligations(coverageDetail, ['runtime:answer_containedness'])
   }
 
   const discoverySafety = input.discoverySafety !== undefined
@@ -372,6 +659,17 @@ export function assessMadarResponseEvidence(input: {
     if (coverage === 'complete') {
       coverage = 'partial'
     }
+    evidenceStrength = capEvidenceStrength(
+      evidenceStrength,
+      discoveryExclusions.hasUnreadable ? 'weak' : 'moderate',
+      discoveryExclusions.hasUnreadable ? 'relevant_unreadable_source' : 'relevant_policy_exclusion',
+    )
+    sourceReliabilityFailed ||= discoveryExclusions.hasUnreadable
+    sourceVerificationBlocked = true
+    coverageDetail = addMissingObligations(
+      coverageDetail,
+      Object.keys(discoveryExclusions.relevantReasons).sort().map((reason) => `discovery:${reason}`),
+    )
     const reasonBuckets = Object.entries(discoveryExclusions.relevantReasons)
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([reason, count]) => `${reason}=${count}`)
@@ -400,6 +698,16 @@ export function assessMadarResponseEvidence(input: {
     if (coverage === 'complete') {
       coverage = 'partial'
     }
+    evidenceStrength = capEvidenceStrength(
+      evidenceStrength,
+      indexingUncertainty.has_relevant_failures ? 'weak' : 'moderate',
+      indexingUncertainty.has_relevant_failures ? 'relevant_indexing_failure' : 'relevant_indexing_uncertainty',
+    )
+    sourceReliabilityFailed ||= indexingUncertainty.has_relevant_failures
+    coverageDetail = addMissingObligations(
+      coverageDetail,
+      Object.keys(indexingUncertainty.relevant_reasons).sort().map((reason) => `indexing:${reason}`),
+    )
     const reasonBuckets = Object.entries(indexingUncertainty.relevant_reasons)
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([reason, count]) => `${reason}=${count}`)
@@ -410,16 +718,34 @@ export function assessMadarResponseEvidence(input: {
   }
 
   const effectiveScore = roundScore(Math.min(baseScore, confidenceCapForScore(confidenceCap)))
-  const packConfidence = packConfidenceFromScore(effectiveScore)
+  coverageDetail = { ...coverageDetail, status: coverage }
+  const targets = verificationTargets(
+    input.expandable ?? [],
+    coveredWorkflowOwners,
+    coverageDetail.missing_obligations,
+  )
+  const answerability = answerabilityAssessment({
+    strength: evidenceStrength,
+    coverage: coverageDetail,
+    answerContained,
+    verificationTargets: targets,
+    sourceReliabilityFailed,
+    sourceVerificationBlocked,
+  })
+  const packConfidence = compatibilityConfidence(answerability, evidenceStrength, sourceReliabilityFailed)
 
   return {
     score: effectiveScore,
     pack_confidence: packConfidence,
+    evidence_strength: evidenceStrength,
     coverage,
+    coverage_detail: coverageDetail,
+    answerability,
+    ...(input.recovery ? { recovery: input.recovery } : {}),
     missing_phases: missingPhases,
     covered_workflow_owners: coveredWorkflowOwners,
     confidence_reasons: confidenceReasons,
-    agent_directive: agentDirectiveForEvidence(packConfidence, coverage, answerContained),
+    agent_directive: agentDirectiveForEvidence(packConfidence, coverage, answerContained, answerability),
     ...(discoveryExclusions && discoveryExclusions.total > 0
       ? {
           discovery_exclusions: {
@@ -451,10 +777,12 @@ export function buildMadarResponseEvidence(input: {
   missingPhases?: readonly ContextPackExecutionPhase[] | undefined
   coveredWorkflowOwners?: readonly string[] | undefined
   discoverySafety?: DiscoverySafetyMetadata | null | undefined
+  expandable?: readonly ContextPackExpandableRef[] | undefined
   executionSlice?: ContextPackExecutionSlice | undefined
   graphPath?: string | undefined
   indexingManifest?: IndexingManifestV1 | null | undefined
   question?: string | undefined
+  recovery?: ContextPackRecoveryPlan | undefined
   score?: number | undefined
 }): MadarResponseEvidence {
   const { score: _score, ...evidence } = assessMadarResponseEvidence(input)

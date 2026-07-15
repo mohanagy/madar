@@ -319,33 +319,33 @@ export function isMadarCodexHook(hook: unknown): boolean {
 
 function strictNonMadarMcpRule(markdown: boolean): string {
   if (markdown) {
-    return 'For codebase questions, use Madar tools only. Do not call other MCP servers such as `mcp__github` or `mcp__context7` unless the latest Madar response says `evidence.agent_directive: explore_with_caution`.'
+    return 'For codebase questions, use Madar tools only. Do not call another MCP or restart broad exploration unless `evidence.answerability.broad_search_fallback` is `allowed`.'
   }
 
-  return 'for codebase questions, use Madar tools only; do not call other MCP servers such as mcp__github or mcp__context7 unless the latest Madar response says evidence.agent_directive: explore_with_caution'
+  return 'for codebase questions, use Madar tools only; do not call another MCP or restart broad exploration unless evidence.answerability.broad_search_fallback is allowed'
 }
 
 function strictSkillOverrideRule(markdown: boolean): string {
   if (markdown) {
-    return 'If an auto-activated skill recommends broad `Read` / `Grep` / `Glob` exploration or another MCP for a codebase question, defer to Madar\'s `evidence.agent_directive` first. A high- or medium-confidence Madar pack overrides that conflicting skill guidance.'
+    return 'If an auto-activated skill recommends broad `Read` / `Grep` / `Glob` exploration, defer to Madar\'s `evidence.answerability` first. `ready`, `ready_with_caveat`, and `verify_targets` all override a broad-search recommendation.'
   }
 
-  return 'if an auto-activated skill recommends broad Read / Grep / Glob exploration or another MCP for a codebase question, defer to Madar\'s evidence.agent_directive first; a high- or medium-confidence Madar pack overrides that conflicting skill guidance'
+  return 'if an auto-activated skill recommends broad Read / Grep / Glob exploration, defer to Madar\'s evidence.answerability first; ready, ready_with_caveat, and verify_targets all override a broad-search recommendation'
 }
 function strictContextPackStopRule(markdown: boolean): string {
   if (markdown) {
-    return 'After calling a Madar tool, inspect the response\'s `evidence.pack_confidence`, `recommended_first_read`, and `evidence.agent_directive`: `answer_from_pack` means answer using the pack snippets and do not read files unless `recommended_first_read` names a specific file; `verify_one_targeted_file` means answer using the pack and `Read` at most one file from `recommended_first_read`; `explore_with_caution` means the pack is low-confidence or coverage is unknown.'
+    return 'After calling Madar, treat `evidence.answerability.state` as authoritative and `evidence.pack_confidence` as compatibility-only: `ready` means answer from the pack; `ready_with_caveat` means answer with `evidence.answerability.caveats`; `verify_targets` means inspect only `evidence.answerability.verification_targets`; `insufficient` means follow `broad_search_fallback` exactly.'
   }
 
-  return 'after calling a Madar tool, inspect the response\'s evidence.pack_confidence, recommended_first_read, and evidence.agent_directive: answer_from_pack means answer using the pack snippets and do not read files unless recommended_first_read names a specific file; verify_one_targeted_file means answer using the pack and Read at most one file from recommended_first_read; explore_with_caution means the pack is low-confidence or coverage is unknown'
+  return 'after calling Madar, treat evidence.answerability.state as authoritative and evidence.pack_confidence as compatibility-only: ready means answer from the pack; ready_with_caveat means answer with evidence.answerability.caveats; verify_targets means inspect only evidence.answerability.verification_targets; insufficient means follow broad_search_fallback exactly'
 }
 
 function strictContextPackExpandRule(markdown: boolean): string {
   if (markdown) {
-    return 'If `evidence.pack_confidence` is low or `missing_context` / `missing_semantic` is non-empty, make ONE focused follow-up Madar call (`context_expand` or `retrieve`) before raw search; only when the follow-up still says `explore_with_caution`, use at most ONE targeted `Glob` or `Grep` scoped to a single directory before answering.'
+    return 'Madar already ran bounded cumulative recovery. Do not restart repository exploration: for `verify_targets`, call `context_expand` with a listed handle or read only a listed file; only `insufficient` plus `broad_search_fallback: allowed` permits one directory-scoped search.'
   }
 
-  return 'if evidence.pack_confidence is low or missing_context / missing_semantic is non-empty, make ONE focused follow-up Madar call (context_expand or retrieve) before raw search; only when the follow-up still says explore_with_caution, use at most ONE targeted Glob or Grep scoped to a single directory before answering'
+  return 'Madar already ran bounded cumulative recovery; do not restart repository exploration: for verify_targets, call context_expand with a listed handle or read only a listed file; only insufficient plus broad_search_fallback allowed permits one directory-scoped search'
 }
 
 function strictGraphReportFallbackRule(markdown: boolean): string {
@@ -358,10 +358,10 @@ function strictGraphReportFallbackRule(markdown: boolean): string {
 
 function strictContextPackNoBroadExplorationRule(markdown: boolean): string {
   if (markdown) {
-    return 'Do not run broad `Glob` patterns, repo-wide `grep` / `find` searches, or raw file sweeps after a high- or medium-confidence pack.'
+    return 'Do not run broad `Glob` patterns, repo-wide `grep` / `find` searches, or raw file sweeps for `ready`, `ready_with_caveat`, or `verify_targets`.'
   }
 
-  return 'do not run broad glob patterns, repo-wide grep / find searches, or raw file sweeps after a high- or medium-confidence pack'
+  return 'do not run broad glob patterns, repo-wide grep / find searches, or raw file sweeps for ready, ready_with_caveat, or verify_targets'
 }
 
 const RETRIEVE_FIRST_MESSAGE =

@@ -131,6 +131,18 @@ When a question uses different vocabulary from the code, Madar can run one bound
 
 Responses include a `retrieval_plan` showing why recovery was considered, which fallback ran, and whether it changed the delivered result. Unrelated keywords do not cause a fallback to arbitrary graph hubs. See [Conceptual-query retrieval](https://github.com/mohanagy/madar/blob/main/docs/conceptual-retrieval.md) for the trigger, bounding, output, and evaluation contracts.
 
+## Answerability and Recovery
+
+Madar does not ask agents to trust or discard a pack based on one confidence label. Responses report three independent signals:
+
+- `evidence_strength`: how directly the selected nodes and relationships support the answer
+- `coverage_detail`: which required evidence, semantic, runtime, discovery, or indexing obligations are covered or missing
+- `answerability`: whether the agent should answer now, answer with a caveat, verify exact targets, or declare the pack insufficient
+
+For incomplete explain packs, Madar makes up to two bounded recovery attempts. Each pass keeps the original evidence, adds candidates from exact expansion handles or focus files, deduplicates them, and rescores the cumulative set under explicit node, time, attempt, and output-token budgets. A result is accepted only when answerability, missing obligations, evidence strength, or relationship support actually improves.
+
+Agents should treat `answerability.state` as authoritative: `ready` answers from the pack, `ready_with_caveat` answers from the pack and states `answerability.caveats`, `verify_targets` inspects only the listed handle or file, and only `insufficient` with `broad_search_fallback: allowed` permits a directory-scoped raw search. `pack_confidence` remains as a compatibility projection for older consumers. See [MCP response shape](https://github.com/mohanagy/madar/blob/main/docs/mcp-response-shape.md) for the full contract.
+
 ## Indexing Completeness
 
 A readable `graph.json` is not the same as complete source coverage. `madar generate`, `madar doctor`, and `madar status` prominently report indexing completeness, while the local `indexing-manifest.json` records affected paths and stable reason codes. The adjacent `indexing-manifest.share-safe.json` keeps counts and reason categories but removes paths and diagnostic messages.

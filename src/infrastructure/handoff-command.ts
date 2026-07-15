@@ -220,7 +220,13 @@ export async function runHandoffCommand(
       : await runContextPackCommand(packOptions)
 
   const schema = JSON.parse(contextPackPayload) as ContextPackSchemaV1<unknown>
-  const artifact = buildHandoffArtifactV1(schema, {
+  // The pack payload may preserve the caller's relative graph argument. Bind
+  // it to the physical graph selected for this command so linked worktrees
+  // receive the correct share-safe artifact-root placeholder.
+  const artifact = buildHandoffArtifactV1({
+    ...schema,
+    graph_path: resolve(graphPath),
+  }, {
     consumer: options.consumer,
     artifactRoot: dirname(resolve(graphPath)),
     projectRoot: typeof graph.graph.root_path === 'string' && graph.graph.root_path.trim().length > 0

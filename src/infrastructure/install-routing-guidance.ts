@@ -87,8 +87,8 @@ function renderMarkdownTable(lead: string, rows: RoutingRow[], toolSearchSentenc
     '| --- | --- |',
     ...rows.map((row) => `| ${row.promptType} | ${row.markdownTarget} |`),
     '',
-    'Inspect `evidence.pack_confidence`, `recommended_first_read`, and `evidence.agent_directive` before deciding whether to read files.',
-    'If `evidence.pack_confidence` is low, make one focused follow-up Madar call before broad raw search.',
+    'Treat `evidence.answerability.state` as authoritative; `evidence.pack_confidence` is compatibility-only.',
+    'For `verify_targets`, inspect only the listed verification targets. Restart broad search only for `insufficient` with `broad_search_fallback: allowed`.',
     toolSearchSentence,
   ]
   return lines.join('\n')
@@ -100,7 +100,7 @@ function renderPlainGuide(
   toolSearchSentence: string,
 ): string {
   const rules = rows.map((row) => `${row.plainTarget} for ${row.plainPromptType ?? row.promptType}`).join('; ')
-  return `${lead}: ${rules}. Inspect evidence.pack_confidence, recommended_first_read, and evidence.agent_directive before deciding whether to read files. If evidence.pack_confidence is low, make one focused follow-up Madar call before broad raw search. ${toolSearchSentence}`
+  return `${lead}: ${rules}. Treat evidence.answerability.state as authoritative; evidence.pack_confidence is compatibility-only. For verify_targets, inspect only the listed verification targets. Restart broad search only for insufficient with broad_search_fallback allowed. ${toolSearchSentence}`
 }
 
 export function renderMarkdownMcpRoutingTable(): string {

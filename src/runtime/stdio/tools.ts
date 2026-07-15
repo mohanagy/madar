@@ -367,7 +367,7 @@ function withContextPackGovernance<T extends Record<string, unknown>>(
     task: ContextPackTaskKind
     taskIntent: TaskContextPlan['evidence']['recipe_id']
     budget: number
-    evidence: Pick<ReturnType<typeof buildMadarResponseEvidence>, 'agent_directive' | 'coverage' | 'missing_phases' | 'pack_confidence'>
+    evidence: Pick<ReturnType<typeof buildMadarResponseEvidence>, 'agent_directive' | 'answerability' | 'coverage' | 'evidence_strength' | 'missing_phases' | 'pack_confidence' | 'recovery'>
     expandable: readonly ContextPackExpandableRef[]
     retrievalStrategy?: ContextPackRetrievalStrategy | null
     resolution?: ContextPackResolution
@@ -491,7 +491,7 @@ function contextMetadata(
 }
 
 function evidenceForRetrievePayload(
-  payload: Partial<Pick<RetrieveResult, 'coverage' | 'answer_contract' | 'execution_slice'>> & {
+  payload: Partial<Pick<RetrieveResult, 'coverage' | 'answer_contract' | 'execution_slice' | 'expandable' | 'recovery'>> & {
     matched_nodes?: Array<{ source_file: string }>
     question?: string
   },
@@ -501,8 +501,10 @@ function evidenceForRetrievePayload(
     answerContract: payload.answer_contract,
     coverage: payload.coverage,
     executionSlice: payload.execution_slice,
+    expandable: payload.expandable,
     graphPath,
     question: payload.question,
+    recovery: payload.recovery,
     missingPhases: missingPhasesFromPayload(payload),
     coveredWorkflowOwners: collectWorkflowOwners((payload.matched_nodes ?? []).map((node) => node.source_file)),
   })
@@ -1584,8 +1586,10 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
           answerContract: deltaResult.delta_pack.answer_contract,
           coverage: deltaResult.delta_pack.coverage,
           executionSlice: deltaResult.delta_pack.execution_slice,
+          expandable: deltaResult.delta_pack.expandable,
           graphPath,
           question: prompt,
+          recovery: deltaResult.delta_pack.recovery,
           missingPhases: missingPhasesFromPayload(deltaResult.delta_pack),
           coveredWorkflowOwners: collectWorkflowOwners(resolvedDeltaNodes.nodes.map((node) => node.source_file)),
         })
@@ -1634,8 +1638,10 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         answerContract: fullPack.answer_contract,
         coverage: fullPack.coverage,
         executionSlice: fullPack.execution_slice,
+        expandable: fullPack.expandable,
         graphPath,
         question: prompt,
+        recovery: fullPack.recovery,
         missingPhases: missingPhasesFromPayload(fullPack),
         coveredWorkflowOwners: collectWorkflowOwners(resolvedNodes.nodes.map((node) => node.source_file)),
       })

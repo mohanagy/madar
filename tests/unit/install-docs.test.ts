@@ -73,7 +73,8 @@ describe('install documentation', () => {
     expect(reference).toContain('[--profile core\\|full\\|strict]')
     expect(reference).toContain('`--profile strict` writes `MADAR_TOOL_PROFILE=strict`')
     expect(reference).toContain('call `context_pack` once for the task before broader exploration')
-    expect(reference).toContain('use `context_expand` or `retrieve` once when the pack is incomplete')
+    expect(reference).toContain('`verify_targets` inspects only a listed expansion handle or file')
+    expect(reference).toContain('only `insufficient` with `broad_search_fallback: allowed` permits one directory-scoped raw search')
   })
 
   it('documents that strict installs still use one bounded context_pack call in the CLI reference', () => {

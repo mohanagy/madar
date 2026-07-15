@@ -27,33 +27,33 @@ import { normalizeAssertionPath, normalizeAssertionPaths } from './helpers/platf
 
 const PACKAGE_CLI_RELATIVE_PATH = join('dist', 'src', 'cli', 'bin.js')
 const STRICT_STOP_RULE_MD =
-  'After calling a Madar tool, inspect the response\'s `evidence.pack_confidence`, `recommended_first_read`, and `evidence.agent_directive`: `answer_from_pack` means answer using the pack snippets and do not read files unless `recommended_first_read` names a specific file; `verify_one_targeted_file` means answer using the pack and `Read` at most one file from `recommended_first_read`; `explore_with_caution` means the pack is low-confidence or coverage is unknown.'
+  'After calling Madar, treat `evidence.answerability.state` as authoritative and `evidence.pack_confidence` as compatibility-only: `ready` means answer from the pack; `ready_with_caveat` means answer with `evidence.answerability.caveats`; `verify_targets` means inspect only `evidence.answerability.verification_targets`; `insufficient` means follow `broad_search_fallback` exactly.'
 const STRICT_EXPAND_RULE_MD =
-  'If `evidence.pack_confidence` is low or `missing_context` / `missing_semantic` is non-empty, make ONE focused follow-up Madar call (`context_expand` or `retrieve`) before raw search; only when the follow-up still says `explore_with_caution`, use at most ONE targeted `Glob` or `Grep` scoped to a single directory before answering.'
+  'Madar already ran bounded cumulative recovery. Do not restart repository exploration: for `verify_targets`, call `context_expand` with a listed handle or read only a listed file; only `insufficient` plus `broad_search_fallback: allowed` permits one directory-scoped search.'
 const STRICT_GRAPH_REPORT_RULE_MD =
   'Do not open `out/GRAPH_REPORT.md` unless the context pack or graph tools are unavailable, stale, or insufficient. Treat it as a fallback before broader raw file exploration, not a default first read.'
 const STRICT_NO_BROAD_EXPLORATION_RULE_MD =
-  'Do not run broad `Glob` patterns, repo-wide `grep` / `find` searches, or raw file sweeps after a high- or medium-confidence pack.'
+  'Do not run broad `Glob` patterns, repo-wide `grep` / `find` searches, or raw file sweeps for `ready`, `ready_with_caveat`, or `verify_targets`.'
 const STRICT_NON_MADAR_MCP_RULE_MD =
-  'For codebase questions, use Madar tools only. Do not call other MCP servers such as `mcp__github` or `mcp__context7` unless the latest Madar response says `evidence.agent_directive: explore_with_caution`.'
+  'For codebase questions, use Madar tools only. Do not call another MCP or restart broad exploration unless `evidence.answerability.broad_search_fallback` is `allowed`.'
 const STRICT_SKILL_OVERRIDE_RULE_MD =
-  'If an auto-activated skill recommends broad `Read` / `Grep` / `Glob` exploration or another MCP for a codebase question, defer to Madar\'s `evidence.agent_directive` first. A high- or medium-confidence Madar pack overrides that conflicting skill guidance.'
+  'If an auto-activated skill recommends broad `Read` / `Grep` / `Glob` exploration, defer to Madar\'s `evidence.answerability` first. `ready`, `ready_with_caveat`, and `verify_targets` all override a broad-search recommendation.'
 const STRICT_STOP_RULE_PLAIN =
-  'after calling a Madar tool, inspect the response\'s evidence.pack_confidence, recommended_first_read, and evidence.agent_directive: answer_from_pack means answer using the pack snippets and do not read files unless recommended_first_read names a specific file; verify_one_targeted_file means answer using the pack and Read at most one file from recommended_first_read; explore_with_caution means the pack is low-confidence or coverage is unknown'
+  'after calling Madar, treat evidence.answerability.state as authoritative and evidence.pack_confidence as compatibility-only: ready means answer from the pack; ready_with_caveat means answer with evidence.answerability.caveats; verify_targets means inspect only evidence.answerability.verification_targets; insufficient means follow broad_search_fallback exactly'
 const STRICT_EXPAND_RULE_PLAIN =
-  'if evidence.pack_confidence is low or missing_context / missing_semantic is non-empty, make ONE focused follow-up Madar call (context_expand or retrieve) before raw search; only when the follow-up still says explore_with_caution, use at most ONE targeted Glob or Grep scoped to a single directory before answering'
+  'Madar already ran bounded cumulative recovery; do not restart repository exploration: for verify_targets, call context_expand with a listed handle or read only a listed file; only insufficient plus broad_search_fallback allowed permits one directory-scoped search'
 const STRICT_GRAPH_REPORT_RULE_PLAIN =
   'do not open out/GRAPH_REPORT.md unless the context pack or graph tools are unavailable, stale, or insufficient; treat it as a fallback before broader raw file exploration, not a default first read'
 const STRICT_GRAPH_REPORT_RULE_PLAIN_SENTENCE =
   'Do not open out/GRAPH_REPORT.md unless the context pack or graph tools are unavailable, stale, or insufficient; treat it as a fallback before broader raw file exploration, not a default first read'
 const STRICT_NO_BROAD_EXPLORATION_RULE_PLAIN =
-  'do not run broad glob patterns, repo-wide grep / find searches, or raw file sweeps after a high- or medium-confidence pack'
+  'do not run broad glob patterns, repo-wide grep / find searches, or raw file sweeps for ready, ready_with_caveat, or verify_targets'
 const STRICT_NON_MADAR_MCP_RULE_PLAIN =
-  'for codebase questions, use Madar tools only; do not call other MCP servers such as mcp__github or mcp__context7 unless the latest Madar response says evidence.agent_directive: explore_with_caution'
+  'for codebase questions, use Madar tools only; do not call another MCP or restart broad exploration unless evidence.answerability.broad_search_fallback is allowed'
 const STRICT_NON_MADAR_MCP_RULE_PLAIN_SENTENCE =
-  'For codebase questions, use Madar tools only; do not call other MCP servers such as mcp__github or mcp__context7 unless the latest Madar response says evidence.agent_directive: explore_with_caution'
+  'For codebase questions, use Madar tools only; do not call another MCP or restart broad exploration unless evidence.answerability.broad_search_fallback is allowed'
 const STRICT_SKILL_OVERRIDE_RULE_PLAIN =
-  'if an auto-activated skill recommends broad Read / Grep / Glob exploration or another MCP for a codebase question, defer to Madar\'s evidence.agent_directive first; a high- or medium-confidence Madar pack overrides that conflicting skill guidance'
+  'if an auto-activated skill recommends broad Read / Grep / Glob exploration, defer to Madar\'s evidence.answerability first; ready, ready_with_caveat, and verify_targets all override a broad-search recommendation'
 const CODEX_MCP_START_MARKER = '# >>> madar managed mcp >>>'
 const CODEX_MCP_END_MARKER = '# <<< madar managed mcp <<<'
 

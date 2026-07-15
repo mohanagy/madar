@@ -2696,23 +2696,24 @@ export function buildNativeAgentPrompt(
   const profileInstructions = profile === 'full'
     ? [
         'Call context_pack first for explain, review, impact, or runtime questions before any raw file or broad repo search.',
-        'Inspect evidence.pack_confidence, evidence.coverage, evidence.agent_directive, missing_context, and recommended_first_read before deciding what to do next.',
-        'If evidence.agent_directive is answer_from_pack, answer from the pack and stop without raw search.',
+        'Treat evidence.answerability.state as authoritative; evidence.pack_confidence is compatibility-only.',
+        'For ready, answer from the pack. For ready_with_caveat, answer from the pack and state evidence.answerability.caveats.',
+        'For verify_targets, inspect only a listed evidence.answerability.verification_targets handle or file.',
+        'Only insufficient with evidence.answerability.broad_search_fallback set to allowed permits one directory-scoped raw search.',
         'Do not call community_overview, graph_summary, get_community, query_graph, or other broad graph-navigation tools for task-specific compare runs.',
-        'Allow at most one focused raw file read or search when evidence.agent_directive is verify_one_targeted_file or explore_with_caution.',
-        'Broad raw search requires an explicit missing-context reason grounded in missing_context or coverage gaps.',
-        'If the pack is low confidence or incomplete, answer with a clear caveat after that one focused follow-up instead of continuing to explore.',
+        'Madar already ran bounded cumulative recovery; do not restart repository discovery for ready, ready_with_caveat, or verify_targets.',
       ]
     : [
         'Call retrieve first for explain or runtime questions before any raw file or broad repo search.',
         'Call mcp__madar__retrieve directly for this benchmark run. Do not use ToolSearch before the first Madar call.',
         'For runtime-flow questions, call mcp__madar__retrieve with retrieval_strategy: "slice-v1".',
         'Inspect execution_slice, answer_contract, matched_nodes, snippets, relationships, and community context before deciding what to do next.',
-        'If retrieve already answers the question, answer from the retrieved evidence and stop without raw search.',
+        'Treat evidence.answerability.state as authoritative; evidence.pack_confidence is compatibility-only.',
+        'For ready, answer from the result. For ready_with_caveat, answer from it and state evidence.answerability.caveats.',
+        'For verify_targets, inspect only a listed evidence.answerability.verification_targets handle or file.',
+        'Only insufficient with evidence.answerability.broad_search_fallback set to allowed permits one directory-scoped raw search.',
         'Do not call community_overview, graph_summary, get_community, query_graph, or other broad graph-navigation tools for task-specific compare runs.',
-        'Allow at most one focused raw file read or search when retrieve leaves a specific gap.',
-        'Broad raw search requires an explicit missing-context reason grounded in gaps from the retrieve result.',
-        'If retrieve is low confidence or incomplete, answer with a clear caveat after that one focused follow-up instead of continuing to explore.',
+        'Madar already ran bounded cumulative recovery; do not restart repository discovery for ready, ready_with_caveat, or verify_targets.',
       ]
   const runtimeFlowInstructions = options.runtimeFlowGuidance
     ? [
@@ -2722,7 +2723,7 @@ export function buildNativeAgentPrompt(
           : []),
         ...(options.runtimeFlowGuidance.missingPhases && options.runtimeFlowGuidance.missingPhases.length > 0
           ? [
-              `Use at most one focused follow-up to surface the missing ${options.runtimeFlowGuidance.missingPhases.join(', ')} phase.`,
+              `Use only an exact evidence.answerability.verification_targets entry to verify the missing ${options.runtimeFlowGuidance.missingPhases.join(', ')} phase.`,
               `If the flow still cannot be proven, answer: not enough evidence; missing ${options.runtimeFlowGuidance.missingPhases.join(', ')}`,
             ]
           : ['If the flow still cannot be proven, answer: not enough evidence']),

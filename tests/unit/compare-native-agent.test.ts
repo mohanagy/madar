@@ -1790,8 +1790,8 @@ describe('executeNativeAgentCompare', () => {
       const prompt = readFileSync(report.paths.madar_prompt, 'utf8')
 
       expect(prompt).toContain('Call context_pack first')
-      expect(prompt).toContain('Inspect evidence.pack_confidence, evidence.coverage, evidence.agent_directive, missing_context, and recommended_first_read')
-      expect(prompt).toContain('If evidence.agent_directive is answer_from_pack, answer from the pack and stop without raw search')
+      expect(prompt).toContain('Treat evidence.answerability.state as authoritative; evidence.pack_confidence is compatibility-only')
+      expect(prompt).toContain('For verify_targets, inspect only a listed evidence.answerability.verification_targets handle or file')
     } finally {
       rmSync(projectDir, { recursive: true, force: true })
     }
@@ -2376,7 +2376,7 @@ describe('executeNativeAgentCompare', () => {
 
       expect(madarPrompt).toContain('This question asks for a runtime flow grounded in retrieved evidence.')
       expect(madarPrompt).toContain('Start from the auto-rescoped graph scope: backend/out/graph.json.')
-      expect(madarPrompt).toContain('Use at most one focused follow-up to surface the missing persistence phase.')
+      expect(madarPrompt).toContain('Use only an exact evidence.answerability.verification_targets entry to verify the missing persistence phase.')
       expect(madarPrompt).toContain('If the flow still cannot be proven, answer: not enough evidence; missing persistence')
     } finally {
       rmSync(projectDir, { recursive: true, force: true })
@@ -2414,7 +2414,7 @@ describe('executeNativeAgentCompare', () => {
       const madarPrompt = readFileSync(report.paths.madar_prompt, 'utf8')
 
       expect(madarPrompt).toContain('This question asks for a runtime flow grounded in retrieved evidence.')
-      expect(madarPrompt).toContain('Use at most one focused follow-up to surface the missing persistence phase.')
+      expect(madarPrompt).toContain('Use only an exact evidence.answerability.verification_targets entry to verify the missing persistence phase.')
       expect(madarPrompt).toContain('If the flow still cannot be proven, answer: not enough evidence; missing persistence')
     } finally {
       rmSync(projectDir, { recursive: true, force: true })

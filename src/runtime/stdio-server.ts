@@ -41,7 +41,10 @@ import {
   graphSizeBucketFromNodeCount,
   recordTelemetryEvent,
   repoSizeBucketFromFileCount,
+  type TelemetryAnswerabilityBucket,
+  type TelemetryBroadSearchFallbackBucket,
   type TelemetryFailureBucket,
+  type TelemetryEventInput,
 } from '../shared/telemetry.js'
 import { findPackageRoot, readPackageVersion } from '../shared/package-metadata.js'
 import { resolveGraphSourceRoot } from '../shared/graph-source-root.js'
@@ -276,6 +279,61 @@ function classifyToolTelemetryFailure(message: string, code: number): TelemetryF
     return 'tool_profile'
   }
   return 'unknown'
+}
+
+function telemetryRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+}
+
+function telemetryAnswerability(value: unknown): TelemetryAnswerabilityBucket | null {
+  return value === 'ready' || value === 'ready_with_caveat' || value === 'verify_targets' || value === 'insufficient'
+    ? value
+    : null
+}
+
+function telemetryBroadSearchFallback(value: unknown): TelemetryBroadSearchFallbackBucket | null {
+  return value === 'not_needed' || value === 'targeted_only' || value === 'allowed' || value === 'blocked'
+    ? value
+    : null
+}
+
+function contextPackTelemetryBuckets(
+  response: StdioResponse,
+): Pick<
+  TelemetryEventInput,
+  'initialAnswerabilityBucket' | 'recoveryAttemptsBucket' | 'recoveryImprovementBucket' | 'finalAnswerabilityBucket' | 'broadSearchFallbackBucket'
+> {
+  try {
+    const result = telemetryRecord(response.result)
+    const content = Array.isArray(result?.content) ? result.content : []
+    const text = content
+      .map((entry) => telemetryRecord(entry))
+      .map((entry) => entry?.text)
+      .find((value): value is string => typeof value === 'string')
+    if (!text) return {}
+    const payload = telemetryRecord(JSON.parse(text))
+    const evidence = telemetryRecord(payload?.evidence)
+    const answerability = telemetryRecord(evidence?.answerability)
+    const pack = telemetryRecord(payload?.pack)
+    const recovery = telemetryRecord(evidence?.recovery) ?? telemetryRecord(pack?.recovery)
+    const finalState = telemetryAnswerability(recovery?.final_state) ?? telemetryAnswerability(answerability?.state)
+    const initialState = telemetryAnswerability(recovery?.initial_state) ?? finalState
+    const attemptCount = Math.min(2, Array.isArray(recovery?.attempts) ? recovery.attempts.length : 0) as 0 | 1 | 2
+    const broadSearch = telemetryBroadSearchFallback(answerability?.broad_search_fallback)
+    return {
+      ...(initialState ? { initialAnswerabilityBucket: initialState } : {}),
+      recoveryAttemptsBucket: String(attemptCount) as '0' | '1' | '2',
+      recoveryImprovementBucket: attemptCount === 0
+        ? 'not_attempted'
+        : recovery?.improved === true ? 'improved' : 'unchanged',
+      ...(finalState ? { finalAnswerabilityBucket: finalState } : {}),
+      ...(broadSearch ? { broadSearchFallbackBucket: broadSearch } : {}),
+    }
+  } catch {
+    return {}
+  }
 }
 
 function stringParam(params: unknown, key: string): string | null {
@@ -782,6 +840,7 @@ export function handleStdioRequest(
                 nodeMajor: readNodeMajorForTelemetry(),
                 repoSizeBucket: repoSizeBucketFromFileCount(summary.file_count),
                 graphSizeBucket: graphSizeBucketFromNodeCount(summary.node_count),
+                ...contextPackTelemetryBuckets(toolResponse),
                 ...(toolResponse.error ? { failureBucket: classifyToolTelemetryFailure(toolResponse.error.message, toolResponse.error.code) } : {}),
               })
             } catch {
