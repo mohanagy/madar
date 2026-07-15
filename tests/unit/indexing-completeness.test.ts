@@ -1,6 +1,6 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
@@ -231,11 +231,14 @@ describe('indexing completeness manifests', () => {
   })
 
   it('does not claim legacy retained evidence for a file absent from the graph', () => {
+    const rootPath = resolve('/repo')
+    const presentFile = resolve(rootPath, 'src', 'present.ts')
+    const missingFile = resolve(rootPath, 'src', 'missing.ts')
     const retained = retainedIndexingOutcomes({
-      rootPath: '/repo',
-      files: ['/repo/src/present.ts', '/repo/src/missing.ts'],
+      rootPath,
+      files: [presentFile, missingFile],
       previousManifest: null,
-      retainedSourceFiles: new Set(['/repo/src/present.ts']),
+      retainedSourceFiles: new Set([presentFile]),
     })
 
     expect(retained).toEqual(expect.arrayContaining([

@@ -1,6 +1,6 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
@@ -20,31 +20,35 @@ import {
 
 describe('extraction pipeline stages', () => {
   it('normalizes discovered files and allowed targets independently', () => {
+    const sourceFile = resolve('/tmp/source.ts')
+    const relatedFile = resolve('/tmp/related.ts')
+    const contextFile = resolve('/tmp/context.ts')
     const plan = buildExtractionDiscoveryPlan({
-      files: ['/tmp/source.ts'],
-      allowedTargets: ['/tmp/related.ts'],
+      files: [sourceFile],
+      allowedTargets: [relatedFile],
       contextNodes: [{
         id: 'context',
         label: 'Context',
-        source_file: '/tmp/context.ts',
+        source_file: contextFile,
         file_type: 'code',
       }],
     })
 
-    expect(plan.files).toEqual(['/tmp/source.ts'])
-    expect([...plan.allowedTargets]).toEqual(['/tmp/related.ts'])
+    expect(plan.files).toEqual([sourceFile])
+    expect([...plan.allowedTargets]).toEqual([relatedFile])
     expect(plan.stemContextFiles).toEqual([
-      '/tmp/source.ts',
-      '/tmp/related.ts',
-      '/tmp/context.ts',
+      sourceFile,
+      relatedFile,
+      contextFile,
     ])
   })
 
   it('does not duplicate discovery files when allowed targets default to the file set', () => {
-    const plan = buildExtractionDiscoveryPlan({ files: ['/tmp/source.ts'] })
+    const sourceFile = resolve('/tmp/source.ts')
+    const plan = buildExtractionDiscoveryPlan({ files: [sourceFile] })
 
-    expect(plan.stemContextFiles).toEqual(['/tmp/source.ts'])
-    expect([...plan.allowedTargets]).toEqual(['/tmp/source.ts'])
+    expect(plan.stemContextFiles).toEqual([sourceFile])
+    expect([...plan.allowedTargets]).toEqual([sourceFile])
   })
 
   it('selects a capability independently from handler execution', () => {

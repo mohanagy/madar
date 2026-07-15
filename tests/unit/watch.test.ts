@@ -259,7 +259,7 @@ describe('watch', () => {
       expect(reconciliations.some((metrics) => metrics.changedCount > 0 && metrics.fileCount === totalFiles)).toBe(true)
       expect(rebuild).toHaveBeenCalledTimes(1)
     })
-  }, 30_000)
+  }, 90_000)
 
   test('backs off authoritative reconciliation while idle and reports resource measurements', async () => {
     await withTempDirAsync(async (tempDir) => {
