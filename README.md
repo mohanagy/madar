@@ -269,6 +269,7 @@ Read the full notes in the [0.30.0 changelog](https://github.com/mohanagy/madar/
 | Agent setup | [Agent quickstarts](https://github.com/mohanagy/madar/blob/main/docs/tutorials/agent-quickstarts.md) |
 | CLI and MCP tools | [CLI and MCP reference](https://github.com/mohanagy/madar/blob/main/docs/reference/cli-and-mcp.md) |
 | Context-pack model | [Context packs](https://github.com/mohanagy/madar/blob/main/docs/concepts/context-packs.md) |
+| Pipeline architecture | [Retrieval and extraction pipelines](https://github.com/mohanagy/madar/blob/main/docs/concepts/pipelines.md) |
 | Indexing coverage | [Indexing completeness](https://github.com/mohanagy/madar/blob/main/docs/indexing-completeness.md) |
 | Auto-refresh behavior | [Auto-refresh and generation policy](https://github.com/mohanagy/madar/blob/main/docs/auto-refresh.md) |
 | Claims and limits | [Claims and evidence](https://github.com/mohanagy/madar/blob/main/docs/claims-and-evidence.md) |

@@ -25,6 +25,10 @@ import {
   type DiscoveryExclusionReason,
   type DiscoverySafetyMetadata,
 } from '../shared/discovery-safety.js'
+import {
+  buildRetrievalEvidencePlan,
+  type RetrievalEvidencePlan,
+} from './retrieve/pipeline.js'
 
 export type MadarResponsePackConfidence = 'high' | 'medium' | 'low'
 export type MadarResponseCoverage = 'complete' | 'partial' | 'unknown'
@@ -544,6 +548,7 @@ function answerContainednessAssessment(
 }
 
 export function assessMadarResponseEvidence(input: {
+  evidencePlan?: RetrievalEvidencePlan | undefined
   answerContract?: ContextPackRuntimeGenerationAnswerContract | undefined
   coverage?: ContextPackCoverage | undefined
   coveredWorkflowOwners?: readonly string[] | undefined
@@ -557,28 +562,41 @@ export function assessMadarResponseEvidence(input: {
   recovery?: ContextPackRecoveryPlan | undefined
   score?: number | undefined
 }): MadarResponseEvidenceAssessment {
-  let coverage = coverageStatusFromCoverage(input.coverage)
+  const evidencePlan = input.evidencePlan ?? buildRetrievalEvidencePlan({
+    ...(input.coverage ? { coverage: input.coverage } : {}),
+    ...(input.expandable ? { expandable: input.expandable } : {}),
+    ...(input.executionSlice ? { executionSlice: input.executionSlice } : {}),
+    ...(input.answerContract ? { answerContract: input.answerContract } : {}),
+    ...(input.missingPhases ? { missingPhases: input.missingPhases } : {}),
+    ...(input.coveredWorkflowOwners ? { coveredWorkflowOwners: input.coveredWorkflowOwners } : {}),
+    selectedNodeCount: input.coverage?.entries.reduce((total, entry) => total + entry.selected_nodes, 0) ?? 0,
+    selectedRelationshipCount: input.coverage?.selected_relationships ?? 0,
+  })
+  const plannedCoverage = evidencePlan.coverage
+  const plannedExecutionSlice = evidencePlan.execution_slice
+  const plannedAnswerContract = evidencePlan.answer_contract
+  let coverage = coverageStatusFromCoverage(plannedCoverage)
   const baseScore = typeof input.score === 'number' && Number.isFinite(input.score)
     ? input.score
-    : input.coverage
-      ? confidenceScoreFromCoverage(input.coverage)
+    : plannedCoverage
+      ? confidenceScoreFromCoverage(plannedCoverage)
       : 0.3
   const coveredWorkflowOwners = [...new Set(
-    (input.coveredWorkflowOwners ?? [])
+    evidencePlan.covered_workflow_owners
       .map((value) => value.trim())
       .filter((value) => value.length > 0),
   )].slice(0, 5)
-  const missingPhases = [...new Set((input.missingPhases ?? []).filter((value): value is ContextPackExecutionPhase => typeof value === 'string'))]
+  const missingPhases = [...new Set(evidencePlan.missing_phases.filter((value): value is ContextPackExecutionPhase => typeof value === 'string'))]
   const runtimeGeneration =
-    input.answerContract?.answer_focus === 'runtime_generation'
-    || input.executionSlice !== undefined
+    plannedAnswerContract?.answer_focus === 'runtime_generation'
+    || plannedExecutionSlice !== undefined
     || missingPhases.length > 0
 
   let confidenceCap: MadarResponsePackConfidence = 'high'
   const confidenceReasons: string[] = []
   let answerContained: boolean | undefined
-  let evidenceStrength = evidenceStrengthFromCoverage(input.coverage, input.executionSlice)
-  let coverageDetail = baseCoverageAssessment(input.coverage, coverage, missingPhases)
+  let evidenceStrength = evidenceStrengthFromCoverage(plannedCoverage, plannedExecutionSlice)
+  let coverageDetail = baseCoverageAssessment(plannedCoverage, coverage, missingPhases)
   let sourceReliabilityFailed = false
   let sourceVerificationBlocked = false
 
@@ -594,7 +612,7 @@ export function assessMadarResponseEvidence(input: {
       )
     }
 
-    const workflowLocality = workflowLocalityAssessment(input.executionSlice)
+    const workflowLocality = workflowLocalityAssessment(plannedExecutionSlice)
     confidenceCap = moreRestrictiveConfidence(confidenceCap, workflowLocality.confidenceCap)
     confidenceReasons.push(workflowLocality.reason)
     if (workflowLocality.confidenceCap !== 'high') {
@@ -609,17 +627,17 @@ export function assessMadarResponseEvidence(input: {
     confidenceCap = moreRestrictiveConfidence(confidenceCap, phaseCompleteness.confidenceCap)
     confidenceReasons.push(phaseCompleteness.reason)
 
-    const answerContainedness = answerContainednessAssessment(input.executionSlice, input.answerContract, missingPhases)
+    const answerContainedness = answerContainednessAssessment(plannedExecutionSlice, plannedAnswerContract, missingPhases)
     answerContained = answerContainedness.answerContained
     confidenceCap = moreRestrictiveConfidence(confidenceCap, answerContainedness.confidenceCap)
     confidenceReasons.push(answerContainedness.reason)
 
-    const runtimeConfidence = input.answerContract?.confidence ?? input.executionSlice?.confidence
+    const runtimeConfidence = plannedAnswerContract?.confidence ?? plannedExecutionSlice?.confidence
     if (runtimeConfidence) {
       const previousConfidenceCap = confidenceCap
       const nextConfidenceCap = moreRestrictiveConfidence(confidenceCap, runtimeConfidence)
       if (nextConfidenceCap !== previousConfidenceCap) {
-        const source = input.answerContract?.confidence ? 'answer contract' : 'execution slice'
+        const source = plannedAnswerContract?.confidence ? 'answer contract' : 'execution slice'
         confidenceReasons.push(
           `runtime confidence: ${source} reported ${runtimeConfidence} confidence and lowered the cap from ${previousConfidenceCap} to ${nextConfidenceCap}`,
         )
@@ -720,7 +738,7 @@ export function assessMadarResponseEvidence(input: {
   const effectiveScore = roundScore(Math.min(baseScore, confidenceCapForScore(confidenceCap)))
   coverageDetail = { ...coverageDetail, status: coverage }
   const targets = verificationTargets(
-    input.expandable ?? [],
+    evidencePlan.expandable,
     coveredWorkflowOwners,
     coverageDetail.missing_obligations,
   )
@@ -772,6 +790,7 @@ export function assessMadarResponseEvidence(input: {
 }
 
 export function buildMadarResponseEvidence(input: {
+  evidencePlan?: RetrievalEvidencePlan | undefined
   answerContract?: ContextPackRuntimeGenerationAnswerContract | undefined
   coverage?: ContextPackCoverage | undefined
   missingPhases?: readonly ContextPackExecutionPhase[] | undefined

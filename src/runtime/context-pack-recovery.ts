@@ -1,6 +1,7 @@
 import type { ContextPackRecoveryPlan, MadarAnswerabilityState, MadarVerificationTarget } from '../contracts/context-recovery.js'
 import type { KnowledgeGraph } from '../contracts/graph.js'
-import { assessMadarResponseEvidence, collectWorkflowOwners, missingPhasesFromPayload } from './mcp-response-evidence.js'
+import { assessMadarResponseEvidence } from './mcp-response-evidence.js'
+import { buildRetrievalEvidencePlanFromResult } from './retrieve/pipeline.js'
 import type { RetrieveOptions, RetrieveResult } from './retrieve.js'
 
 const DEFAULT_MAX_ATTEMPTS = 2 as const
@@ -34,12 +35,7 @@ function boundedPositiveInteger(value: number | undefined, fallback: number, max
 
 function assess(result: RetrieveResult, question: string): RecoveryAssessment {
   const assessment = assessMadarResponseEvidence({
-    answerContract: result.answer_contract,
-    coverage: result.coverage,
-    coveredWorkflowOwners: collectWorkflowOwners(result.matched_nodes.map((node) => node.source_file)),
-    executionSlice: result.execution_slice,
-    expandable: result.expandable,
-    missingPhases: missingPhasesFromPayload(result),
+    evidencePlan: buildRetrievalEvidencePlanFromResult(result),
     question,
   })
   return {

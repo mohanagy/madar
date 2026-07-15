@@ -43,6 +43,7 @@ selectedContextSourceFilesFromRetrieveResult,
 type GraphContextFreshness,
 } from '../runtime/freshness.js'
 import { buildRoutingDebug } from '../runtime/routing-debug.js'
+import { buildRetrievalEvidencePlan } from '../runtime/retrieve/pipeline.js'
 import { communitiesFromGraph, estimateQueryTokens, loadGraph } from '../runtime/serve.js'
 import {
   parseDiscoverySafetyMetadata,
@@ -1420,16 +1421,24 @@ export function buildExplainPackPayload(
   }
 }
 
+type ExplainRetrievalInput = Partial<Pick<
+  RetrieveResult,
+  | 'matched_nodes'
+  | 'claims'
+  | 'expandable'
+  | 'coverage'
+  | 'retrieval_gate'
+  | 'execution_slice'
+  | 'answer_contract'
+  | 'recovery'
+>> & {
+  question: string
+  task_contract?: { budget: number; task_intent?: string; evidence_recipe_id?: string }
+}
+
 export function buildExplainPackPayloadCore(
   pack: ReturnType<typeof compactRetrieveResult>,
-  retrieval: Partial<{
-    matched_nodes: RetrieveResult['matched_nodes']
-    question: string
-    coverage: ContextPackCoverage
-    task_contract: { budget: number; task_intent?: string; evidence_recipe_id?: string }
-  }> & {
-    question: string
-  },
+  retrieval: ExplainRetrievalInput,
   implementation?: ImplementationPackGuidance,
   graphPath?: string,
   discoverySafety?: DiscoverySafetyMetadata | null,
@@ -1452,25 +1461,28 @@ export function buildExplainPackPayloadCore(
   })
   const centers = workflowCenters('explain', pack, plan, implementation, retrieval as RetrieveResult)
   const firstRead = recommendedFirstRead('explain', pack, implementation, retrieval as RetrieveResult)
-  const evidenceAssessment = assessMadarResponseEvidence({
-    answerContract: (retrieval as RetrieveResult).answer_contract,
+  const coveredWorkflowOwners = collectWorkflowOwners(
+    centers.map((entry) => entry.path),
+    firstRead.map((entry) => entry.path),
+    implementation?.likely_edit_files.map((entry) => entry.path) ?? [],
+    implementation?.likely_test_files.map((entry) => entry.path) ?? [],
+  )
+  const retrievalEvidencePlan = buildRetrievalEvidencePlan({
     coverage: payload.coverage,
-    coveredWorkflowOwners: collectWorkflowOwners(
-      centers.map((entry) => entry.path),
-      firstRead.map((entry) => entry.path),
-      implementation?.likely_edit_files.map((entry) => entry.path) ?? [],
-      implementation?.likely_test_files.map((entry) => entry.path) ?? [],
-    ),
-    executionSlice: (retrieval as RetrieveResult).execution_slice,
     expandable: payload.expandable,
+    ...(retrieval.execution_slice ? { executionSlice: retrieval.execution_slice } : {}),
+    ...(retrieval.answer_contract ? { answerContract: retrieval.answer_contract } : {}),
+    missingPhases: missingPhasesFromPayload(retrieval),
+    coveredWorkflowOwners,
+    selectedNodeCount: pack.matched_nodes.length,
+    selectedRelationshipCount: pack.relationships.length,
+  })
+  const evidenceAssessment = assessMadarResponseEvidence({
+    evidencePlan: retrievalEvidencePlan,
     discoverySafety,
     graphPath,
     question: retrieval.question,
-    recovery: (retrieval as RetrieveResult).recovery,
-    missingPhases: missingPhasesFromPayload(pack as {
-      answer_contract?: { missing_phases?: readonly unknown[] }
-      execution_slice?: { phase_coverage?: { missing?: readonly unknown[] } }
-    }),
+    recovery: retrieval.recovery,
     score: confidenceScore(payload.coverage, pack, implementation),
   })
 

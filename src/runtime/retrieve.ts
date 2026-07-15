@@ -29,6 +29,7 @@ import type { ContextPackRetrievalPlanDetail, RetrievalQualitySnapshot } from '.
 import type { ContextPackRecoveryPlan } from '../contracts/context-recovery.js'
 import type { TaskIntentKind } from '../contracts/task-intent.js'
 import { KnowledgeGraph } from '../contracts/graph.js'
+import { reportSkippedPipelineStage } from '../core/pipeline/stage.js'
 import { godNodes, workspaceBridges } from '../pipeline/analyze.js'
 import { type Communities } from '../pipeline/cluster.js'
 import { buildCommunityLabels } from '../pipeline/community-naming.js'
@@ -45,13 +46,11 @@ import {
   compileContextPack,
   estimateContextPackEntryTokens,
   renderCompiledContextPackNodes,
-  type ContextPackSelectionStrategy,
   type ContextPackNodeCandidate,
 } from './context-pack.js'
 import type { RetrievalGateDecision, RetrievalLevel } from '../contracts/retrieval-gate.js'
 import { classifyRetrievalLevel } from './retrieval-gate.js'
 import { requireDirectedGraph } from './direction.js'
-import { defaultContextKindForTaskIntent } from './task-intent.js'
 import {
   expansionPolicyForLevel,
   predecessorAllowedForPolicy,
@@ -64,7 +63,22 @@ import {
   planConceptualFallback,
 } from './retrieve/conceptual-fallback.js'
 import { recoverContextPackResult } from './context-pack-recovery.js'
+import {
+  interpretRetrievalQuery,
+  runRetrievalCandidateStage,
+  runRetrievalEvidencePlanningStage,
+  runRetrievalPackingStage,
+  runRetrievalQueryStage,
+  startRetrievalRecoveryStage,
+  tokenMatchCount,
+  tokenizeLabel,
+  tokenizeQuestion,
+  type RetrievalPipelineStage,
+  type RetrievalStageObserver,
+} from './retrieve/pipeline.js'
 import { communitiesFromGraph, estimateQueryTokens } from './serve.js'
+
+export { tokenizeLabel, tokenizeQuestion } from './retrieve/pipeline.js'
 
 const SNIPPET_HALF_WINDOW = 7
 const DERIVED_SNIPPET_HALF_WINDOW = 1
@@ -86,16 +100,6 @@ const STDIO_RETRIEVE_EXPANDABLE_FOCUS_RANGE_CAP = 12
 const STDIO_RETRIEVE_SLICE_PATH_CAP = 12
 const CONCEPTUAL_FALLBACK_SEED_LIMIT = 12
 const CONCEPTUAL_FALLBACK_SEED_MIN_BOOST = 0.75
-
-const STOP_WORDS = new Set([
-  'how', 'does', 'the', 'is', 'a', 'an', 'in', 'to',
-  'of', 'and', 'or', 'what', 'where', 'when', 'why',
-  'which', 'this', 'that', 'with', 'for', 'from', 'are',
-  'do', 'it', 'be', 'has', 'have', 'was', 'were', 'been',
-  'can', 'could', 'would', 'should', 'will', 'may', 'might',
-  'not', 'but', 'if', 'then', 'so', 'about', 'up', 'out',
-  'on', 'at', 'by', 'into', 'all', 'my', 'its', 'no', 'i',
-])
 
 const tokenWeightCache = new WeakMap<KnowledgeGraph, Map<string, Map<string, number>>>()
 const graphSignalCache = new WeakMap<KnowledgeGraph, RetrieveGraphSignals>()
@@ -120,11 +124,11 @@ export interface RetrieveOptions {
    *  'manual override' at the supplied level. Caller-side surface for the
    *  acceptance criterion that the gate be overridable via CLI/MCP. */
   retrievalLevel?: RetrievalLevel
-  /** Internal additive override for benchmarks/tests. */
-  selectionStrategy?: ContextPackSelectionStrategy
   retrievalStrategy?: ContextPackRetrievalStrategy
   snippetBudget?: number
   topNWithSnippet?: number
+  /** Source-safe stage timing/count observer; never receives prompts, paths, labels, or snippets. */
+  onStageDiagnostic?: RetrievalStageObserver
 }
 
 export interface RetrieveSnippetOptions {
@@ -136,22 +140,14 @@ export interface RetrieveStdioOptions extends RetrieveSnippetOptions {
   maxOutputTokens?: number
 }
 
-function effectiveRetrieveTaskKind(options: RetrieveOptions): ContextPackTaskKind {
-  if (options.taskKind) {
-    return options.taskKind
-  }
-  if (options.taskIntent) {
-    return defaultContextKindForTaskIntent(options.taskIntent)
-  }
-  return 'explain'
-}
-
 function classifyRetrieveTaskContract(options: RetrieveOptions): ContextPackTaskContract {
-  return classifyTaskContract(effectiveRetrieveTaskKind(options), {
+  return interpretRetrievalQuery({
+    question: options.question,
     budget: options.budget,
-    prompt: options.question,
-    ...(options.taskIntent ? { task_intent: options.taskIntent } : {}),
-  })
+    ...(options.taskKind ? { taskKind: options.taskKind } : {}),
+    ...(options.taskIntent ? { taskIntent: options.taskIntent } : {}),
+    ...(options.retrievalLevel !== undefined ? { retrievalLevel: options.retrievalLevel } : {}),
+  }).task_contract
 }
 
 export interface RetrieveMatchedNode {
@@ -253,32 +249,6 @@ function stripRetrieveMatchedNodeIdentity<T extends RetrieveMatchedNode | Compac
 function stripRetrieveRelationshipIdentity<T extends RetrieveRelationship>(relationship: T): Omit<T, 'from_id' | 'to_id'> {
   const { from_id: _fromId, to_id: _toId, ...rest } = relationship
   return rest
-}
-
-export function tokenizeQuestion(question: string): string[] {
-  return question
-    .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .toLowerCase()
-    .split(/[\s_\\\-./,:;!?'"()[\]{}]+/)
-    .filter((token) => token.length > 1 && !STOP_WORDS.has(token))
-}
-
-export function tokenizeLabel(label: string): string[] {
-  return label
-    .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .toLowerCase()
-    .split(/[\s_\\\-./,:;!?'"()[\]{}]+/)
-    .filter((token) => token.length > 1)
-}
-
-function tokenMatchCount(questionToken: string, labelTokens: readonly string[]): number {
-  let matches = 0
-  for (const labelToken of labelTokens) {
-    if (labelToken.startsWith(questionToken) || questionToken.startsWith(labelToken)) {
-      matches += 1
-    }
-  }
-  return matches
 }
 
 export function scoreNode(
@@ -4348,7 +4318,9 @@ function buildRetrieveResultFromOrderedCandidates(
     }
   })
 
-  const pack = compileContextPack<ContextPackNode, RetrieveRelationship, RetrieveCommunityContext>({
+  const pack = runRetrievalPackingStage({
+    candidate_count: nodeCandidates.length,
+  }, () => compileContextPack<ContextPackNode, RetrieveRelationship, RetrieveCommunityContext>({
     task_contract: taskContract,
     nodes: nodeCandidates,
     relationships: collectRelationships(graph, orderedCandidateIds),
@@ -4360,9 +4332,9 @@ function buildRetrieveResultFromOrderedCandidates(
       }))
       .sort((left, right) => right.node_count - left.node_count),
     graph_signals: graphSignalLabels,
-    selection_strategy: options.selectionStrategy ?? 'value-per-token',
+    selection_strategy: 'value-per-token',
     retrieval_gate: retrievalGate,
-  })
+  }), options.onStageDiagnostic)
   const matchedNodes = pack.nodes as RetrieveMatchedNode[]
   const answerContract = buildRuntimeGenerationAnswerContract(
     taskContract,
@@ -4372,6 +4344,17 @@ function buildRetrieveResultFromOrderedCandidates(
     executionSlice,
     sliceMetadata,
   )
+  runRetrievalEvidencePlanningStage({
+    taskContract: pack.task_contract,
+    coverage: pack.coverage,
+    expandable: pack.expandable,
+    ...(executionSlice ? { executionSlice } : {}),
+    ...(answerContract ? { answerContract } : {}),
+    missingPhases: answerContract?.missing_phases ?? executionSlice?.phase_coverage?.missing ?? [],
+    coveredWorkflowOwners: matchedNodes.map((node) => node.source_file),
+    selectedNodeCount: matchedNodes.length,
+    selectedRelationshipCount: pack.relationships.length,
+  }, options.onStageDiagnostic)
 
   return {
     question: options.question,
@@ -4393,6 +4376,25 @@ function buildRetrieveResultFromOrderedCandidates(
   }
 }
 
+const RETRIEVAL_PASS_STAGES_AFTER_INTERPRETATION: readonly RetrievalPipelineStage[] = [
+  'seed_generation',
+  'structural_expansion',
+  'candidate_ranking',
+  'budgeted_packing',
+  'evidence_planning',
+]
+
+const reportSkippedRetrievalPassStages = (options: RetrieveOptions, inputCount: number): void => {
+  for (const stage of RETRIEVAL_PASS_STAGES_AFTER_INTERPRETATION) {
+    reportSkippedPipelineStage({
+      pipeline: 'retrieval',
+      stage,
+      inputCount,
+      ...(options.onStageDiagnostic ? { observer: options.onStageDiagnostic } : {}),
+    })
+  }
+}
+
 function retrieveContextPass(
   graph: KnowledgeGraph,
   options: RetrieveOptions,
@@ -4405,24 +4407,25 @@ function retrieveContextPass(
   }
 
   const { question, budget } = options
-  const questionTokens = tokenizeQuestion(question)
+  const queryStage = runRetrievalQueryStage({
+    question,
+    budget,
+    ...(options.taskKind ? { taskKind: options.taskKind } : {}),
+    ...(options.taskIntent ? { taskIntent: options.taskIntent } : {}),
+    ...(options.retrievalLevel !== undefined ? { retrievalLevel: options.retrievalLevel } : {}),
+  }, options.onStageDiagnostic)
+  const questionTokens = queryStage.question_tokens
   const graphRootPath = typeof graph.graph.root_path === 'string' && graph.graph.root_path.length > 0
     ? graph.graph.root_path
     : undefined
   const classificationRootPath = inferredGraphRoot(graph)
-  const retrievalGate = classifyRetrievalLevel({
-    prompt: question,
-    ...(options.retrievalLevel !== undefined ? { manualOverride: options.retrievalLevel } : {}),
-  })
-  const effectiveRetrievalLevel: RetrievalLevel = options.retrievalLevel !== undefined
-    ? retrievalGate.level
-    : retrievalGate.level === 0
-      ? 0
-      : (Math.max(retrievalGate.level, 3) as RetrievalLevel)
+  const retrievalGate = queryStage.retrieval_gate
+  const effectiveRetrievalLevel = queryStage.effective_retrieval_level
 
   if (questionTokens.length === 0) {
+    reportSkippedRetrievalPassStages(options, graph.numberOfNodes())
     const emptyPack = compileContextPack({
-      task_contract: classifyRetrieveTaskContract(options),
+      task_contract: queryStage.task_contract,
       nodes: [],
       relationships: [],
       community_context: [],
@@ -4447,8 +4450,9 @@ function retrieveContextPass(
   }
 
   if (effectiveRetrievalLevel === 0) {
+    reportSkippedRetrievalPassStages(options, graph.numberOfNodes())
     const emptyPack = compileContextPack({
-      task_contract: classifyRetrieveTaskContract(options),
+      task_contract: queryStage.task_contract,
       nodes: [],
       relationships: [],
       community_context: [],
@@ -4472,6 +4476,10 @@ function retrieveContextPass(
     }
   }
 
+  const seedOutput = runRetrievalCandidateStage(
+    'seed_generation',
+    { candidate_count: graph.numberOfNodes() },
+    () => {
   // Pre-compute community labels so seed scoring can treat them as secondary evidence.
   const communities = communitiesFromGraph(graph)
   const frameworkProfile = buildFrameworkQuestionProfile(question, questionTokens)
@@ -4687,8 +4695,44 @@ function retrieveContextPass(
   const seedPool = conceptualSeedPool.length > 0
     ? conceptualSeedPool
     : effectiveRetrievalLevel <= 2 && anchoredSeedPool.length > 0 ? anchoredSeedPool : scored
+      return {
+        candidate_count: seedPool.length,
+        communities,
+        frameworkProfile,
+        activeFrameworks,
+        communityLabels,
+        mentionedSymbolRefs,
+        mentionedPaths,
+        excludedDomains,
+        excludedTerms,
+        excludedPathHints,
+        scored,
+        expansionPolicy,
+        seedPool,
+      }
+    },
+    options.onStageDiagnostic,
+  )
+  const {
+    communities,
+    frameworkProfile,
+    activeFrameworks,
+    communityLabels,
+    mentionedSymbolRefs,
+    mentionedPaths,
+    excludedDomains,
+    excludedTerms,
+    excludedPathHints,
+    scored,
+    expansionPolicy,
+    seedPool,
+  } = seedOutput
 
   // Step 3: Multi-hop expansion — take top seeds, expand 2 hops with decaying scores
+  const expansionOutput = runRetrievalCandidateStage(
+    'structural_expansion',
+    { candidate_count: seedPool.length },
+    () => {
   const hasExactSeedMatch = seedPool.some((node) => node.exactLabelMatch)
   const seedCount = effectiveRetrievalLevel === 1 && hasExactSeedMatch
     ? Math.min(seedPool.length, 1)
@@ -4895,6 +4939,19 @@ function retrieveContextPass(
     })
   }
 
+      return {
+        candidate_count: scored.length,
+        seedIds,
+        hopScores,
+      }
+    },
+    options.onStageDiagnostic,
+  )
+  const { seedIds, hopScores } = expansionOutput
+  const rankingOutput = runRetrievalCandidateStage(
+    'candidate_ranking',
+    { candidate_count: scored.length },
+    () => {
   // Apply structural signal boosts before final sort
   const retrieveGraphSignals = graphSignalsForRetrieve(graph, communities, communityLabels)
   const topSeed = seedPool.length > 0 ? seedPool[0] : scored[0]
@@ -4951,71 +5008,82 @@ function retrieveContextPass(
   const inclusionOrder = expansionPolicy.include_peripheral
     ? frameworkOrderedCandidates
     : frameworkOrderedCandidates.filter((node) => node.relevanceBand !== 'peripheral')
+      let orderedCandidates = inclusionOrder
+      let sliceMetadata: ContextPackSliceMetadata | undefined
+      if (options.retrievalStrategy === 'slice-v1') {
+        const sliced = sliceCandidatesForRetrieve(
+          graph,
+          scored.map((node) => ({
+            id: node.id,
+            label: node.label,
+            sourceFile: node.sourceFile,
+            exactLabelMatch: node.exactLabelMatch,
+            sourcePathMatch: node.sourcePathMatch,
+            literalPathMatch: node.literalPathMatch,
+            score: node.score,
+            nodeKind: node.nodeKind,
+            frameworkRole: node.frameworkRole,
+          })),
+          retrievalGate.intent,
+          {
+            prompt: question,
+            generationIntent: retrievalGate.signals.generation_intent,
+            targetDomainHint: retrievalGate.signals.target_domain_hint,
+            mentionedSymbols: retrievalGate.signals.mentioned_symbols,
+            excludedDomains: retrievalGate.signals.excluded_domains,
+            excludedTerms: retrievalGate.signals.excluded_terms,
+            excludedPathHints: retrievalGate.signals.excluded_path_hints,
+            rootPath: classificationRootPath,
+          },
+        )
 
-  if (options.retrievalStrategy === 'slice-v1') {
-    const sliced = sliceCandidatesForRetrieve(
-      graph,
-      scored.map((node) => ({
-        id: node.id,
-        label: node.label,
-        sourceFile: node.sourceFile,
-        exactLabelMatch: node.exactLabelMatch,
-      sourcePathMatch: node.sourcePathMatch,
-      literalPathMatch: node.literalPathMatch,
-      score: node.score,
-      nodeKind: node.nodeKind,
-      frameworkRole: node.frameworkRole,
-      })),
-      retrievalGate.intent,
-      {
-        prompt: question,
-        generationIntent: retrievalGate.signals.generation_intent,
-        targetDomainHint: retrievalGate.signals.target_domain_hint,
-        mentionedSymbols: retrievalGate.signals.mentioned_symbols,
-        excludedDomains: retrievalGate.signals.excluded_domains,
-        excludedTerms: retrievalGate.signals.excluded_terms,
-        excludedPathHints: retrievalGate.signals.excluded_path_hints,
-        rootPath: classificationRootPath,
-      },
-    )
-
-    if (sliced) {
-      const scoredById = new Map(scored.map((node) => [node.id, node]))
-      const runtimeExpandedSliceIds = augmentSliceCandidateIdsForRuntimeExplain(
-        graph,
-        sliced.ordered_ids,
-        sliced.metadata,
-        retrievalGate,
-        options.question,
-      )
-      const orderedSliceIds = augmentSliceCandidateIdsForDebug(graph, runtimeExpandedSliceIds, sliced.metadata)
-      const sliceCandidates = orderedSliceIds.map((nodeId, index) => (
-        scoredById.get(nodeId) ?? scoredNodeFromGraph(graph, nodeId, Math.max(0.25, 2 - (index * 0.1)), classificationRootPath)
-      ))
-
-      return buildRetrieveResultFromOrderedCandidates(
-        graph,
-        options,
-        sliceCandidates,
-        communities,
-        communityLabels,
+        if (sliced) {
+          const scoredById = new Map(scored.map((node) => [node.id, node]))
+          const runtimeExpandedSliceIds = augmentSliceCandidateIdsForRuntimeExplain(
+            graph,
+            sliced.ordered_ids,
+            sliced.metadata,
+            retrievalGate,
+            options.question,
+          )
+          const orderedSliceIds = augmentSliceCandidateIdsForDebug(
+            graph,
+            runtimeExpandedSliceIds,
+            sliced.metadata,
+          )
+          orderedCandidates = orderedSliceIds.map((nodeId, index) => (
+            scoredById.get(nodeId)
+              ?? scoredNodeFromGraph(
+                graph,
+                nodeId,
+                Math.max(0.25, 2 - (index * 0.1)),
+                classificationRootPath,
+              )
+          ))
+          sliceMetadata = sliced.metadata
+        }
+      }
+      return {
+        candidate_count: orderedCandidates.length,
+        orderedCandidates,
         retrieveGraphSignals,
-        retrievalGate,
-        graphRootPath,
-        sliced.metadata,
-      )
-    }
-  }
+        sliceMetadata,
+      }
+    },
+    options.onStageDiagnostic,
+  )
+  const { orderedCandidates, retrieveGraphSignals, sliceMetadata } = rankingOutput
 
   return buildRetrieveResultFromOrderedCandidates(
     graph,
     options,
-    inclusionOrder,
+    orderedCandidates,
     communities,
     communityLabels,
     retrieveGraphSignals,
     retrievalGate,
     graphRootPath,
+    sliceMetadata,
   )
 }
 
@@ -5155,9 +5223,31 @@ function retrieveContextWithConceptualFallback(graph: KnowledgeGraph, options: R
   }
 }
 
+const recoverContextPackWithStage = (
+  graph: KnowledgeGraph,
+  initial: RetrieveResult,
+  options: RetrieveOptions,
+  runPass: (nodeBoosts: ReadonlyMap<string, number>) => RetrieveResult,
+): RetrieveResult => {
+  const recoveryStage = startRetrievalRecoveryStage({
+    selected_node_count: initial.matched_nodes.length,
+  }, options.onStageDiagnostic)
+  try {
+    const result = recoverContextPackResult(graph, initial, options, runPass)
+    recoveryStage.complete({
+      selected_node_count: result.matched_nodes.length,
+      insufficient: result.recovery?.final_state === 'insufficient',
+    })
+    return result
+  } catch (error) {
+    recoveryStage.fail()
+    throw error
+  }
+}
+
 export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions): RetrieveResult {
   const initial = retrieveContextWithConceptualFallback(graph, options)
-  return recoverContextPackResult(
+  return recoverContextPackWithStage(
     graph,
     initial,
     options,
@@ -5168,7 +5258,7 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
 export async function retrieveContextAsync(graph: KnowledgeGraph, options: RetrieveOptions): Promise<RetrieveResult> {
   const lexicalResult = retrieveContextWithConceptualFallback(graph, options)
   if (options.semantic !== true && options.rerank !== true) {
-    return recoverContextPackResult(
+    return recoverContextPackWithStage(
       graph,
       lexicalResult,
       options,
@@ -5178,7 +5268,7 @@ export async function retrieveContextAsync(graph: KnowledgeGraph, options: Retri
 
   const questionTokens = tokenizeQuestion(options.question)
   if (questionTokens.length === 0) {
-    return recoverContextPackResult(
+    return recoverContextPackWithStage(
       graph,
       lexicalResult,
       options,
@@ -5225,7 +5315,7 @@ export async function retrieveContextAsync(graph: KnowledgeGraph, options: Retri
       .map(([id, attributes]) => [id, scoredNodeFromGraphEntry(id, attributes, frameworkProfile, questionLower, classificationRootPath)] as const),
   )
   if (candidatesById.size === 0) {
-    return recoverContextPackResult(
+    return recoverContextPackWithStage(
       graph,
       lexicalResult,
       options,
@@ -5260,7 +5350,7 @@ export async function retrieveContextAsync(graph: KnowledgeGraph, options: Retri
   }
 
   if (candidateIds.size === 0) {
-    return recoverContextPackResult(
+    return recoverContextPackWithStage(
       graph,
       lexicalResult,
       options,
@@ -5327,7 +5417,7 @@ export async function retrieveContextAsync(graph: KnowledgeGraph, options: Retri
     ...semanticResult,
     ...(lexicalResult.retrieval_plan ? { retrieval_plan: lexicalResult.retrieval_plan } : {}),
   }
-  return recoverContextPackResult(
+  return recoverContextPackWithStage(
     graph,
     semanticWithPlan,
     options,

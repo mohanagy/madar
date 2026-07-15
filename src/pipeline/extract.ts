@@ -5,25 +5,27 @@ import { strFromU8, unzipSync, type UnzipFileInfo } from 'fflate'
 import * as ts from 'typescript'
 
 import type { ExtractionData, ExtractionEdge, ExtractionNode } from '../contracts/types.js'
+import { runPipelineStage } from '../core/pipeline/stage.js'
 import { loadCached, saveCached } from '../infrastructure/cache.js'
 import { builtinCapabilityRegistry } from '../infrastructure/capabilities.js'
 import { CODE_EXTENSIONS, FileType, classifyFile, detect } from './detect.js'
-import { mergeExtractionFragments, resolveSourceNodeReferences } from './extract/combine.js'
+import { mergeExtractionFragments } from './extract/combine.js'
 import { addPendingCall, addResolvedCalls, braceDelta, normalizeImportTarget, type PendingCall, type PendingCallInput } from './extract/call-resolution.js'
 import {
-  resolveCrossFilePythonImports,
-  resolveCrossFileRelativeJsImports,
-  resolveJsxRendersProxies,
-  resolvePythonDjangoSemantics,
-  resolvePythonFastApiSemantics,
-} from './extract/cross-file.js'
-import { resolveGoSemantics } from './extract/go-cross-file.js'
-import {
-  dispatchSingleFileExtraction,
+  dispatchSingleFileExtractionWithOutcome,
+  type ExtractionDispatchResult,
   type ExtractionFileOutcome,
   type ExtractionFragment,
-  type ExtractorHandlerMap,
+  type PipelineExtractorHandlerMap,
+  type StagedExtractionFragment,
 } from './extract/dispatch.js'
+import {
+  buildExtractionDiscoveryPlan,
+  projectExtractionDiagnostics,
+  resolveCrossFileExtraction,
+  type ExtractionPipelineResult,
+  type ExtractionStageObserver,
+} from './extract/pipeline.js'
 import { applyJsFrameworkAdapters } from './extract/frameworks/core.js'
 import { extractGenericCode, normalizeTypeName } from './extract/generic.js'
 import {
@@ -57,6 +59,12 @@ import { MAX_TEXT_BYTES, sanitizeLabel } from '../shared/security.js'
 import { createTreeSitterWasmParser, treeSitterWasmError, type TreeSitterNode } from './tree-sitter-wasm.js'
 
 export { _makeId } from './extract/core.js'
+export type {
+  ExtractionFileDiagnostic,
+  ExtractionPipelineResult,
+  ExtractionStageDiagnostic,
+  ExtractionStageObserver,
+} from './extract/pipeline.js'
 
 export const EXTRACTOR_CACHE_VERSION = 68
 const PYTHON_KEYWORDS = new Set(['if', 'elif', 'else', 'for', 'while', 'return', 'class', 'def', 'lambda', 'with', 'print', 'sum'])
@@ -3214,7 +3222,7 @@ function collectJsxRenders(root: ts.Node, sourceFile: ts.SourceFile): string[] {
   return [...new Set(names)]
 }
 
-export function extractJs(filePath: string): ExtractionFragment {
+function extractJsStages(filePath: string): StagedExtractionFragment {
   const sourceText = readFileSync(filePath, 'utf8')
   const sourceFile = ts.createSourceFile(filePath, sourceText, ts.ScriptTarget.Latest, true, scriptKindForPath(filePath))
   const stem = fileStemForPath(filePath)
@@ -3592,18 +3600,25 @@ export function extractJs(filePath: string): ExtractionFragment {
     ),
   }
 
-  return applyJsFrameworkAdapters(baseExtraction, {
-    filePath,
-    sourceText,
-    sourceFile,
-    stem,
-    fileNodeId,
-    isJsxFile,
-    baseExtraction,
-  })
+  return {
+    fragment: baseExtraction,
+    augmentFramework: () => applyJsFrameworkAdapters(baseExtraction, {
+      filePath,
+      sourceText,
+      sourceFile,
+      stem,
+      fileNodeId,
+      isJsxFile,
+      baseExtraction,
+    }),
+  }
 }
 
-const SINGLE_FILE_EXTRACTOR_HANDLERS: ExtractorHandlerMap = {
+export function extractJs(filePath: string): ExtractionFragment {
+  return extractJsStages(filePath).augmentFramework()
+}
+
+const SINGLE_FILE_EXTRACTOR_HANDLERS: PipelineExtractorHandlerMap = {
   'builtin:extract:python': (filePath) => extractPython(filePath),
   'builtin:extract:ruby': (filePath) => extractRuby(filePath),
   'builtin:extract:lua': (filePath) => extractLua(filePath),
@@ -3612,8 +3627,8 @@ const SINGLE_FILE_EXTRACTOR_HANDLERS: ExtractorHandlerMap = {
   'builtin:extract:julia': (filePath) => extractJulia(filePath),
   'builtin:extract:powershell': (filePath) => extractPowerShell(filePath),
   'builtin:extract:objective-c': (filePath) => extractObjectiveC(filePath),
-  'builtin:extract:typescript': (filePath) => extractJs(filePath),
-  'builtin:extract:javascript': (filePath) => extractJs(filePath),
+  'builtin:extract:typescript': (filePath) => extractJsStages(filePath),
+  'builtin:extract:javascript': (filePath) => extractJsStages(filePath),
   'builtin:extract:go': (filePath) => {
     const extraction = extractGoTreeSitter(filePath)
     if (extraction !== null) {
@@ -3663,14 +3678,18 @@ const SINGLE_FILE_EXTRACTOR_HANDLERS: ExtractorHandlerMap = {
 function extractSingleFile(
   filePath: string,
   allowedTargets: ReadonlySet<string>,
+  recoverFailures: boolean,
   onFileOutcome?: (outcome: ExtractionFileOutcome) => void,
-): ExtractionFragment {
-  return dispatchSingleFileExtraction(filePath, allowedTargets, SINGLE_FILE_EXTRACTOR_HANDLERS, {
+  onStageDiagnostic?: ExtractionStageObserver,
+): ExtractionDispatchResult {
+  return dispatchSingleFileExtractionWithOutcome(filePath, allowedTargets, SINGLE_FILE_EXTRACTOR_HANDLERS, {
     registry: builtinCapabilityRegistry,
     readCached: readCachedExtraction,
     writeCached: writeCachedExtraction,
     classifySourceFile: classifyFile,
-    ...(onFileOutcome ? { onOutcome: onFileOutcome, recoverFailures: true } : {}),
+    ...(onFileOutcome ? { onOutcome: onFileOutcome } : {}),
+    ...(onStageDiagnostic ? { onStageDiagnostic } : {}),
+    ...(recoverFailures ? { recoverFailures: true } : {}),
   })
 }
 
@@ -3678,44 +3697,75 @@ export interface ExtractOptions {
   allowedTargets?: Iterable<string>
   contextNodes?: ExtractionNode[]
   onFileOutcome?: (outcome: ExtractionFileOutcome) => void
+  /** Source-safe stage timing/count observer; never receives paths, labels, source, or snippets. */
+  onStageDiagnostic?: ExtractionStageObserver
 }
 
 export function extract(files: string[]): ExtractionData
 export function extract(files: string[], options: ExtractOptions): ExtractionData
 export function extract(files: string[], options: ExtractOptions = {}): ExtractionData {
-  const stemContextFiles = [
-    ...files,
-    ...(options.allowedTargets ?? []),
-    ...(options.contextNodes?.map((node) => node.source_file).filter((sourceFile) => sourceFile.length > 0) ?? []),
-  ]
-  return withExtractionFileStemContext(stemContextFiles, () => {
-    const allowedTargets = new Set([...(options.allowedTargets ?? files)].map((filePath) => resolve(filePath)))
-    let combined = mergeExtractionFragments(
-      files.map((filePath) => extractSingleFile(filePath, allowedTargets, options.onFileOutcome)),
-    )
+  return runExtractionPipeline(files, options, options.onFileOutcome !== undefined).data
+}
 
-    combined = options.contextNodes
-      ? resolveCrossFilePythonImports(files, combined, { contextNodes: options.contextNodes })
-      : resolveCrossFilePythonImports(files, combined)
+function runExtractionPipeline(
+  files: string[],
+  options: ExtractOptions,
+  recoverFailures: boolean,
+): ExtractionPipelineResult {
+  const discovery = runPipelineStage({
+    pipeline: 'extraction',
+    stage: 'discovery_outcome',
+    inputCount: files.length,
+    outputCount: (output) => output.files.length,
+    ...(options.onStageDiagnostic ? { observer: options.onStageDiagnostic } : {}),
+  }, () => buildExtractionDiscoveryPlan({
+    files,
+    ...(options.allowedTargets ? { allowedTargets: options.allowedTargets } : {}),
+    ...(options.contextNodes ? { contextNodes: options.contextNodes } : {}),
+  }))
+  return withExtractionFileStemContext(discovery.stemContextFiles, () => {
+    const dispatchResults = discovery.files.map((filePath) => extractSingleFile(
+      filePath,
+      discovery.allowedTargets,
+      recoverFailures,
+      options.onFileOutcome,
+      options.onStageDiagnostic,
+    ))
+    const fileOutcomes = dispatchResults.map((result) => result.outcome)
+    const merged = runPipelineStage({
+      pipeline: 'extraction',
+      stage: 'fragment_merge',
+      inputCount: dispatchResults.length,
+      outputCount: (output) => output.nodes.length + output.edges.length,
+      ...(options.onStageDiagnostic ? { observer: options.onStageDiagnostic } : {}),
+    }, () => mergeExtractionFragments(dispatchResults.map((result) => result.fragment)))
+    const data = runPipelineStage({
+      pipeline: 'extraction',
+      stage: 'cross_file_relationships',
+      inputCount: merged.nodes.length + merged.edges.length,
+      outputCount: (output) => output.nodes.length + output.edges.length,
+      ...(options.onStageDiagnostic ? { observer: options.onStageDiagnostic } : {}),
+    }, () => resolveCrossFileExtraction({
+      files: discovery.files,
+      data: merged,
+      ...(options.contextNodes ? { contextNodes: options.contextNodes } : {}),
+    }))
+    const diagnostics = runPipelineStage({
+      pipeline: 'extraction',
+      stage: 'diagnostics_projection',
+      inputCount: fileOutcomes.length,
+      outputCount: (output) => output.length,
+      warningCount: (output) => output.filter((entry) => entry.diagnostic.level !== 'info').length,
+      ...(options.onStageDiagnostic ? { observer: options.onStageDiagnostic } : {}),
+    }, () => projectExtractionDiagnostics(fileOutcomes))
 
-    combined = options.contextNodes
-      ? resolvePythonFastApiSemantics(files, combined, { contextNodes: options.contextNodes })
-      : resolvePythonFastApiSemantics(files, combined)
-
-    combined = options.contextNodes
-      ? resolvePythonDjangoSemantics(files, combined, { contextNodes: options.contextNodes })
-      : resolvePythonDjangoSemantics(files, combined)
-
-    combined = options.contextNodes
-      ? resolveCrossFileRelativeJsImports(files, combined, { contextNodes: options.contextNodes })
-      : resolveCrossFileRelativeJsImports(files, combined)
-
-    combined = options.contextNodes ? resolveGoSemantics(files, combined, { contextNodes: options.contextNodes }) : resolveGoSemantics(files, combined)
-
-    combined = resolveJsxRendersProxies(combined)
-
-    combined = options.contextNodes ? resolveSourceNodeReferences(combined, { contextNodes: options.contextNodes }) : resolveSourceNodeReferences(combined)
-
-    return combined
+    return { data, fileOutcomes, diagnostics }
   })
+}
+
+export function extractWithPipelineResult(
+  files: string[],
+  options: ExtractOptions = {},
+): ExtractionPipelineResult {
+  return runExtractionPipeline(files, options, true)
 }
