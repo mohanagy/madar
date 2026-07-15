@@ -838,6 +838,7 @@ function storedCommunityLabelsFromGraph(graph: KnowledgeGraph): Record<number, s
 
 interface SeedScoreBreakdown {
   labelExactScore: number
+  labelPhraseScore: number
   labelTokenScore: number
   sourcePathScore: number
   promptIdentifierScore: number
@@ -1329,8 +1330,26 @@ function questionLooksFileOriented(question: string, questionTokens: readonly st
   return includesAnyToken(questionTokens, ['file', 'files', 'filepath', 'path', 'paths', 'directory', 'directories', 'folder', 'folders'])
 }
 
+function questionLooksLikeDefinitionLookup(question: string): boolean {
+  return /\b(?:defined|declared|located|location|definition|declaration)\b/i.test(question)
+    || /\bwhere\s+(?:is|are)\b/i.test(question)
+}
+
+function containsTokenSequence(tokens: readonly string[], sequence: readonly string[]): boolean {
+  if (sequence.length === 0 || sequence.length > tokens.length) {
+    return false
+  }
+
+  for (let startIndex = 0; startIndex <= tokens.length - sequence.length; startIndex += 1) {
+    if (sequence.every((token, offset) => tokens[startIndex + offset] === token)) {
+      return true
+    }
+  }
+  return false
+}
+
 function evidenceTierForSeedScore(score: SeedScoreBreakdown): 0 | 1 | 2 {
-  if (score.labelExactScore > 0 || score.labelTokenScore > 0 || score.conceptualFallbackScore >= 0.75) {
+  if (score.labelExactScore > 0 || score.labelPhraseScore > 0 || score.labelTokenScore > 0 || score.conceptualFallbackScore >= 0.75) {
     return 2
   }
   if (score.sourcePathScore > 0 || score.promptIdentifierScore > 0 || score.communityScore > 0 || score.conceptualFallbackScore > 0) {
@@ -1528,9 +1547,18 @@ function scoreSeedCandidate(
   averageLabelLength: number,
   options: { fileNodeLike: boolean; fileOrientedQuestion: boolean },
 ): SeedScoreBreakdown {
+  const labelTokens = tokenizeLabel(label)
   const labelExactScore = normalizeSeedText(question) !== '' && normalizeSeedText(question) === normalizeSeedText(label) ? 2 : 0
+  // Definition lookups should keep an explicitly named multi-token concept ahead of
+  // source-path-only structural neighbors. Runtime-flow questions intentionally skip
+  // this signal so executable steps retain their established ordering.
+  const labelPhraseScore = questionLooksLikeDefinitionLookup(question)
+    && labelTokens.length >= 2
+    && containsTokenSequence(questionTokens, labelTokens)
+    ? 1
+    : 0
   const fileNodePenaltyApplies = options.fileNodeLike && !options.fileOrientedQuestion && labelExactScore === 0
-  const labelTokenScore = fileNodePenaltyApplies ? 0 : scoreNode(questionTokens, tokenizeLabel(label), tokenWeights, averageLabelLength)
+  const labelTokenScore = fileNodePenaltyApplies ? 0 : scoreNode(questionTokens, labelTokens, tokenWeights, averageLabelLength)
   const sourcePathScore = fileNodePenaltyApplies ? 0 : scoreNode(questionTokens, tokenizeLabel(sourceFile), tokenWeights) * 0.25
   const promptIdentifierScore = fileNodePenaltyApplies ? 0 : promptIdentifierMatchScore(label, sourceFile, promptIdentifiers)
   const communityScore = fileNodePenaltyApplies
@@ -1541,12 +1569,13 @@ function scoreSeedCandidate(
 
   return {
     labelExactScore,
+    labelPhraseScore,
     labelTokenScore,
     sourcePathScore,
     promptIdentifierScore,
     communityScore,
     conceptualFallbackScore: 0,
-    total: labelExactScore + labelTokenScore + sourcePathScore + promptIdentifierScore + communityScore,
+    total: labelExactScore + labelPhraseScore + labelTokenScore + sourcePathScore + promptIdentifierScore + communityScore,
   }
 }
 
@@ -4623,7 +4652,7 @@ function retrieveContextPass(
           exactAnchorMatch || mentionedPathMatch ? 2 : evidenceTierForSeedScore(effectiveScore),
           conceptualFallbackScore >= 0.75 ? 2 : conceptualFallbackScore > 0 ? 1 : 0,
         ) as 0 | 1 | 2,
-        relevanceBand: effectiveScore.labelExactScore > 0 || exactAnchorMatch || effectiveScore.labelTokenScore > 0
+        relevanceBand: effectiveScore.labelExactScore > 0 || effectiveScore.labelPhraseScore > 0 || exactAnchorMatch || effectiveScore.labelTokenScore > 0
           ? 'direct'
           : 'related',
       })
@@ -4643,13 +4672,14 @@ function retrieveContextPass(
 
   const fusedSeedScores = reciprocalRankFuse([
     rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.labelExactScore),
+    rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.labelPhraseScore),
     rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.labelTokenScore),
     rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.promptIdentifierScore),
     rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.sourcePathScore),
     rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.communityScore),
     rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.conceptualFallbackScore),
   ], {
-    weights: [2, 1.5, 0.5, 0.25, 0.25, 1.75],
+    weights: [2, 1.5, 1.5, 0.5, 0.25, 0.25, 1.75],
   })
   const scored: ScoredNode[] = filteredSeedCandidates.map((candidate) => ({
     id: candidate.id,
