@@ -1181,6 +1181,32 @@ export function buildAnswerReadyPackSchema(
       'pack.snippet_budget_tokens_used',
       'pack.snippet_budget_tokens_remaining',
     )
+
+    const retrievalPlan = asJsonRecord(pack.retrieval_plan)
+    if (retrievalPlan) {
+      const attempts = asUnknownArray(retrievalPlan.attempts)
+        .map((attempt) => asJsonRecord(attempt))
+        .filter((attempt): attempt is JsonRecord => attempt !== null)
+        .slice(0, 1)
+        .map((attempt) => ({
+          fallback: attempt.fallback,
+          status: attempt.status,
+          changed_result: attempt.changed_result,
+        }))
+      pack.retrieval_plan = {
+        version: retrievalPlan.version,
+        status: retrievalPlan.status,
+        reasons: retrievalPlan.reasons,
+        ...(retrievalPlan.selected_fallback ? { selected_fallback: retrievalPlan.selected_fallback } : {}),
+        attempts,
+      }
+      trimmedFields.push('pack.retrieval_plan metrics compacted')
+    }
+
+    if (Object.hasOwn(pack, 'retrieval_gate')) {
+      delete pack.retrieval_gate
+      trimmedFields.push('pack.retrieval_gate')
+    }
   }
   delete payload.retrieval_gate
   delete payload.why_explanation

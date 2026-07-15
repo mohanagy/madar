@@ -25,6 +25,7 @@ import type {
   ContextPackTaskContract,
   ContextPackTaskKind,
 } from '../contracts/context-pack.js'
+import type { ContextPackRetrievalPlanDetail, RetrievalQualitySnapshot } from '../contracts/retrieval-plan.js'
 import type { TaskIntentKind } from '../contracts/task-intent.js'
 import { KnowledgeGraph } from '../contracts/graph.js'
 import { godNodes, workspaceBridges } from '../pipeline/analyze.js'
@@ -57,6 +58,10 @@ import {
   relationIsPrimaryForPolicy,
 } from './retrieve/expansion.js'
 import { sliceCandidatesForRetrieve } from './retrieve/slicing.js'
+import {
+  finalizeConceptualFallbackPlan,
+  planConceptualFallback,
+} from './retrieve/conceptual-fallback.js'
 import { communitiesFromGraph, estimateQueryTokens } from './serve.js'
 
 const SNIPPET_HALF_WINDOW = 7
@@ -77,6 +82,8 @@ const STDIO_RETRIEVE_EXPANDABLE_PREVIEW_CAP = 3
 const STDIO_RETRIEVE_EXPANDABLE_FOCUS_FILE_CAP = 12
 const STDIO_RETRIEVE_EXPANDABLE_FOCUS_RANGE_CAP = 12
 const STDIO_RETRIEVE_SLICE_PATH_CAP = 12
+const CONCEPTUAL_FALLBACK_SEED_LIMIT = 12
+const CONCEPTUAL_FALLBACK_SEED_MIN_BOOST = 0.75
 
 const STOP_WORDS = new Set([
   'how', 'does', 'the', 'is', 'a', 'an', 'in', 'to',
@@ -198,6 +205,7 @@ export interface RetrieveResult {
   selection_diagnostics?: ContextPackSelectionDiagnostics
   retrieval_gate?: RetrievalGateDecision
   retrieval_strategy?: ContextPackRetrievalStrategy
+  retrieval_plan?: ContextPackRetrievalPlanDetail
   snippet_budget_tokens_used?: number
   snippet_budget_tokens_remaining?: number
   slice?: ContextPackSliceMetadata
@@ -861,6 +869,7 @@ interface SeedScoreBreakdown {
   sourcePathScore: number
   promptIdentifierScore: number
   communityScore: number
+  conceptualFallbackScore: number
   total: number
 }
 
@@ -1348,10 +1357,10 @@ function questionLooksFileOriented(question: string, questionTokens: readonly st
 }
 
 function evidenceTierForSeedScore(score: SeedScoreBreakdown): 0 | 1 | 2 {
-  if (score.labelExactScore > 0 || score.labelTokenScore > 0) {
+  if (score.labelExactScore > 0 || score.labelTokenScore > 0 || score.conceptualFallbackScore >= 0.75) {
     return 2
   }
-  if (score.sourcePathScore > 0 || score.promptIdentifierScore > 0 || score.communityScore > 0) {
+  if (score.sourcePathScore > 0 || score.promptIdentifierScore > 0 || score.communityScore > 0 || score.conceptualFallbackScore > 0) {
     return 1
   }
   return 0
@@ -1563,6 +1572,7 @@ function scoreSeedCandidate(
     sourcePathScore,
     promptIdentifierScore,
     communityScore,
+    conceptualFallbackScore: 0,
     total: labelExactScore + labelTokenScore + sourcePathScore + promptIdentifierScore + communityScore,
   }
 }
@@ -4212,6 +4222,7 @@ export function contextPackFromRetrieveResult(
     coverage: result.coverage ?? fallbackRetrieveCoverage(result),
     ...(result.selection_diagnostics ? { selection_diagnostics: result.selection_diagnostics } : {}),
     ...(result.retrieval_strategy ? { retrieval_strategy: result.retrieval_strategy } : {}),
+    ...(result.retrieval_plan ? { retrieval_plan: result.retrieval_plan } : {}),
     ...(result.slice ? { slice: result.slice } : {}),
     ...(result.execution_slice ? { execution_slice: result.execution_slice } : {}),
     ...(result.answer_contract ? { answer_contract: result.answer_contract } : {}),
@@ -4378,7 +4389,11 @@ function buildRetrieveResultFromOrderedCandidates(
   }
 }
 
-export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions): RetrieveResult {
+function retrieveContextPass(
+  graph: KnowledgeGraph,
+  options: RetrieveOptions,
+  conceptualNodeBoosts: ReadonlyMap<string, number> = new Map(),
+): RetrieveResult {
   // Guard before candidate expansion, which also reads directional adjacency.
   // sliceCandidatesForRetrieve repeats the guard to protect its direct callers.
   if (options.retrievalStrategy === 'slice-v1') {
@@ -4556,7 +4571,8 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
 
     const domainIntentPenalty = runtimeGenerationSourceDomainPenalty(retrievalGate, sourceDomain, explicitlyAnchored)
     const scriptMigrationPenalty = scriptMigrationPathPenalty(retrievalGate, sourceFile, label, question, explicitlyAnchored)
-    const totalSeedScore = effectiveScore.total + anchorScore + metadataBoost + domainAdjustment
+    const conceptualFallbackScore = conceptualNodeBoosts.get(id) ?? 0
+    const totalSeedScore = effectiveScore.total + anchorScore + metadataBoost + domainAdjustment + conceptualFallbackScore
       - sourceDomainPenalty - domainIntentPenalty - scriptMigrationPenalty
     const hasPositiveSeedEvidence = totalSeedScore > 0 || exactAnchorMatch || mentionedPathMatch
     if (hasPositiveSeedEvidence) {
@@ -4582,6 +4598,7 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
         seedScore: {
           ...effectiveScore,
           labelExactScore: effectiveScore.labelExactScore + anchorScore,
+          conceptualFallbackScore,
           total: totalSeedScore,
         },
         exactLabelMatch: effectiveScore.labelExactScore > 0 || exactAnchorMatch,
@@ -4589,9 +4606,11 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
         sourcePathMatch: effectiveScore.sourcePathScore > 0 || mentionedPathMatch,
         // When the seed only made it in via metadata boost, give it at
         // least evidence tier 1 so it's not at the bottom of the heap.
-        evidenceTier: metadataBoost > 0 || domainAdjustment > 0
-          ? (Math.max(evidenceTierForSeedScore(effectiveScore), 1) as 0 | 1 | 2)
-          : (exactAnchorMatch || mentionedPathMatch ? 2 : evidenceTierForSeedScore(effectiveScore)),
+        evidenceTier: Math.max(
+          metadataBoost > 0 || domainAdjustment > 0 ? 1 : 0,
+          exactAnchorMatch || mentionedPathMatch ? 2 : evidenceTierForSeedScore(effectiveScore),
+          conceptualFallbackScore >= 0.75 ? 2 : conceptualFallbackScore > 0 ? 1 : 0,
+        ) as 0 | 1 | 2,
         relevanceBand: effectiveScore.labelExactScore > 0 || exactAnchorMatch || effectiveScore.labelTokenScore > 0
           ? 'direct'
           : 'related',
@@ -4616,8 +4635,9 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
     rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.promptIdentifierScore),
     rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.sourcePathScore),
     rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.communityScore),
+    rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.conceptualFallbackScore),
   ], {
-    weights: [2, 1.5, 0.5, 0.25, 0.25],
+    weights: [2, 1.5, 0.5, 0.25, 0.25, 1.75],
   })
   const scored: ScoredNode[] = filteredSeedCandidates.map((candidate) => ({
     id: candidate.id,
@@ -4641,6 +4661,7 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
     score: Math.max(
       0.05,
       ((fusedSeedScores.get(candidate.id) ?? 0) * SEED_FUSION_SCORE_SCALE)
+        + candidate.seedScore.conceptualFallbackScore
         + candidate.frameworkBoost
         + retrievalDomainAdjustment(retrievalGate, candidate)
         - defaultSourceDomainPenalty(candidate.sourceDomain, retrievalGate.intent, question, questionTokens)
@@ -4656,13 +4677,23 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
   const anchoredSeedPool = (mentionedSymbolRefs.length > 0 || mentionedPaths.length > 0)
     ? scored.filter((node) => symbolReferenceMatchScore(node.label, node.sourceFile, mentionedSymbolRefs) > 0 || sourceFileMatchesMentionedPath(node.sourceFile, mentionedPaths))
     : []
-  const seedPool = effectiveRetrievalLevel <= 2 && anchoredSeedPool.length > 0 ? anchoredSeedPool : scored
+  const conceptualSeedPool = conceptualNodeBoosts.size > 0
+    ? scored.filter((node) => (conceptualNodeBoosts.get(node.id) ?? 0) >= CONCEPTUAL_FALLBACK_SEED_MIN_BOOST)
+    : []
+  const seedPool = conceptualSeedPool.length > 0
+    ? conceptualSeedPool
+    : effectiveRetrievalLevel <= 2 && anchoredSeedPool.length > 0 ? anchoredSeedPool : scored
 
   // Step 3: Multi-hop expansion — take top seeds, expand 2 hops with decaying scores
   const hasExactSeedMatch = seedPool.some((node) => node.exactLabelMatch)
   const seedCount = effectiveRetrievalLevel === 1 && hasExactSeedMatch
     ? Math.min(seedPool.length, 1)
-    : Math.min(seedPool.length, expansionPolicy.seed_limit)
+    : Math.min(
+        seedPool.length,
+        conceptualNodeBoosts.size > 0
+          ? Math.max(expansionPolicy.seed_limit, CONCEPTUAL_FALLBACK_SEED_LIMIT)
+          : expansionPolicy.seed_limit,
+      )
   const seedIds = new Set(seedPool.slice(0, seedCount).map((node) => node.id))
   const directSeeds = seedPool
     .filter((node) => node.relevanceBand === 'direct')
@@ -4984,6 +5015,142 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
   )
 }
 
+function selectedNodeIds(result: RetrieveResult): string[] {
+  return [...new Set(
+    result.matched_nodes
+      .map((node) => matchedNodeId(node))
+      .filter((nodeId): nodeId is string => nodeId !== null),
+  )]
+}
+
+function selectedSourceFiles(result: RetrieveResult): Set<string> {
+  return new Set(
+    result.matched_nodes
+      .map((node) => node.source_file.trim())
+      .filter((sourceFile) => sourceFile.length > 0),
+  )
+}
+
+function selectedWorkflowCoherence(graph: KnowledgeGraph, nodeIds: readonly string[]): number {
+  if (nodeIds.length === 0) {
+    return 0
+  }
+  if (nodeIds.length === 1) {
+    return 1
+  }
+
+  const visited = new Set<string>()
+  let largestComponent = 0
+  for (const start of nodeIds) {
+    if (visited.has(start) || !graph.hasNode(start)) {
+      continue
+    }
+    const queue = [start]
+    visited.add(start)
+    let componentSize = 0
+    while (queue.length > 0) {
+      const current = queue.shift()
+      if (!current) {
+        break
+      }
+      componentSize += 1
+      // The delivered set is small and budget-bounded. Checking only pairs in
+      // that set is exact and avoids materializing every neighbor of a selected
+      // god node merely to discard nodes that were not delivered.
+      for (const candidate of nodeIds) {
+        if (
+          candidate !== current
+          && !visited.has(candidate)
+          && (graph.hasEdge(current, candidate) || graph.hasEdge(candidate, current))
+        ) {
+          visited.add(candidate)
+          queue.push(candidate)
+        }
+      }
+    }
+    largestComponent = Math.max(largestComponent, componentSize)
+  }
+  return Number((largestComponent / nodeIds.length).toFixed(3))
+}
+
+function retrievalQualitySnapshot(graph: KnowledgeGraph, result: RetrieveResult): RetrievalQualitySnapshot {
+  const nodeIds = selectedNodeIds(result)
+  const explicitSliceAnchors = result.slice?.anchors.filter((anchor) => (
+    anchor.reason === 'symbol mention' || anchor.reason === 'path mention'
+  )).length ?? 0
+  const explicitGateAnchors = (result.retrieval_gate?.signals.mentioned_symbols.length ?? 0)
+    + (result.retrieval_gate?.signals.mentioned_paths.length ?? 0)
+  return {
+    selected_nodes: nodeIds.length,
+    selected_files: selectedSourceFiles(result).size,
+    direct_matches: result.matched_nodes.filter((node) => node.relevance_band === 'direct').length,
+    explicit_anchors: Math.max(explicitSliceAnchors, explicitGateAnchors),
+    workflow_coherence: selectedWorkflowCoherence(graph, nodeIds),
+    missing_required_evidence: result.coverage?.missing_required.length ?? 0,
+    missing_semantic_evidence: result.coverage?.missing_semantic.length ?? 0,
+    token_count: result.token_count,
+  }
+}
+
+function notNeededRetrievalPlan(quality: RetrievalQualitySnapshot): ContextPackRetrievalPlanDetail {
+  return {
+    version: 1,
+    status: 'not_needed',
+    reasons: [],
+    initial: quality,
+    final: quality,
+    attempts: [],
+  }
+}
+
+export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions): RetrieveResult {
+  const initial = retrieveContextPass(graph, options)
+  const initialQuality = retrievalQualitySnapshot(graph, initial)
+  if (
+    tokenizeQuestion(options.question).length === 0
+    || initial.retrieval_gate?.level === 0
+    // Implementation packs already run the dedicated task-context planner over
+    // this result. Re-ranking their seed set here makes that planner less
+    // stable without improving conceptual answerability.
+    || options.taskKind === 'implement'
+  ) {
+    return { ...initial, retrieval_plan: notNeededRetrievalPlan(initialQuality) }
+  }
+
+  const proposal = planConceptualFallback(graph, {
+    question: options.question,
+    initialQuality,
+    selectedNodes: initial.matched_nodes.flatMap((node) => {
+      const nodeId = matchedNodeId(node)
+      return nodeId
+        ? [{
+            nodeId,
+            sourceFile: node.source_file,
+            relevanceBand: node.relevance_band,
+            matchScore: node.match_score,
+          }]
+        : []
+    }),
+    ...(options.community !== undefined ? { community: options.community } : {}),
+    ...(options.fileType !== undefined ? { fileType: options.fileType } : {}),
+  })
+  if (proposal.nodeBoosts.size === 0) {
+    return { ...initial, retrieval_plan: proposal.plan }
+  }
+
+  const recovered = retrieveContextPass(graph, options, proposal.nodeBoosts)
+  const finalized = finalizeConceptualFallbackPlan(
+    proposal,
+    retrievalQualitySnapshot(graph, recovered),
+    selectedSourceFiles(initial),
+    selectedSourceFiles(recovered),
+  )
+  return {
+    ...(finalized.useRecovered ? recovered : initial),
+    retrieval_plan: finalized.plan,
+  }
+}
+
 export async function retrieveContextAsync(graph: KnowledgeGraph, options: RetrieveOptions): Promise<RetrieveResult> {
   const lexicalResult = retrieveContext(graph, options)
   if (options.semantic !== true && options.rerank !== true) {
@@ -5108,7 +5275,7 @@ export async function retrieveContextAsync(graph: KnowledgeGraph, options: Retri
       ]
     : candidatePool
 
-  return buildRetrieveResultFromOrderedCandidates(
+  const semanticResult = buildRetrieveResultFromOrderedCandidates(
     graph,
     options,
     orderedCandidates,
@@ -5122,6 +5289,10 @@ export async function retrieveContextAsync(graph: KnowledgeGraph, options: Retri
     graphRootPath,
     lexicalResult.slice,
   )
+  return {
+    ...semanticResult,
+    ...(lexicalResult.retrieval_plan ? { retrieval_plan: lexicalResult.retrieval_plan } : {}),
+  }
 }
 
 export function compactRetrieveResult(result: RetrieveResult, options: RetrieveSnippetOptions = {}): CompactRetrieveResult {
@@ -5162,6 +5333,7 @@ export function compactRetrieveResult(result: RetrieveResult, options: RetrieveS
     graph_signals: compactPack.graph_signals ?? { god_nodes: [], bridge_nodes: [] },
     ...(compactPack.shared_file_type ? { shared_file_type: compactPack.shared_file_type } : {}),
     retrieval_strategy: result.retrieval_strategy ?? 'default',
+    ...(result.retrieval_plan ? { retrieval_plan: result.retrieval_plan } : {}),
     snippet_budget_tokens_used: shapedNodes.usedTokens,
     snippet_budget_tokens_remaining: shapedNodes.remainingTokens,
     ...(result.slice ? { slice: result.slice } : {}),
@@ -5323,6 +5495,7 @@ export function compactRetrieveResultForStdio(result: RetrieveResult, options: R
     ...(result.expandable ? { expandable: result.expandable } : {}),
     ...(result.coverage ? { coverage: result.coverage } : {}),
     retrieval_strategy: result.retrieval_strategy ?? 'default',
+    ...(result.retrieval_plan ? { retrieval_plan: result.retrieval_plan } : {}),
     snippet_budget_tokens_used: compactResult.snippet_budget_tokens_used,
     snippet_budget_tokens_remaining: compactResult.snippet_budget_tokens_remaining,
     ...(result.slice ? { slice: result.slice } : {}),

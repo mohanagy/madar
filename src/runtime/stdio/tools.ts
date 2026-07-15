@@ -1604,6 +1604,9 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
             relationships: deltaResult.delta_pack.relationships,
             community_context: deltaResult.delta_pack.community_context,
             graph_signals: deltaResult.delta_pack.graph_signals ?? { god_nodes: [], bridge_nodes: [] },
+            ...(deltaResult.delta_pack.retrieval_plan
+              ? { retrieval_plan: deltaResult.delta_pack.retrieval_plan }
+              : {}),
           },
           diagnostics: computeContextPackDiagnostics(deltaResult.delta_pack, { skipBudgetUnderutilization: true }),
           ...(includeSelectionDiagnostics && deltaResult.delta_pack.selection_diagnostics

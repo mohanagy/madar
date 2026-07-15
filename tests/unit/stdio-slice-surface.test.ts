@@ -790,6 +790,7 @@ describe('stdio slice-v1 surface', () => {
     }
     const deltaPayload = JSON.parse((((deltaResponse as { result?: { content?: Array<{ text: string }> } }).result?.content) ?? [])[0]?.text ?? '') as {
       governance?: { mcp_call?: { cache_status?: string; delta_session_hash?: string } }
+      pack?: { retrieval_plan?: { version?: number; status?: string } }
     }
 
     expect(firstPayload.cache?.status).toBe('miss')
@@ -813,6 +814,14 @@ describe('stdio slice-v1 surface', () => {
     expect(secondPayload.governance?.mcp_call?.cache_status).toBe('hit')
     expect(deltaPayload.governance?.mcp_call?.cache_status).toBe('bypass')
     expect(deltaPayload.governance?.mcp_call?.delta_session_hash).toMatch(/^[a-f0-9]{12}$/)
+    expect(deltaPayload.pack?.retrieval_plan).toEqual({
+      version: 1,
+      status: 'not_needed',
+      reasons: [],
+      initial: expect.any(Object),
+      final: expect.any(Object),
+      attempts: [],
+    })
     expect(JSON.stringify(firstPayload.governance)).not.toContain('AuthController.login')
     expect(JSON.stringify(firstPayload.governance)).not.toContain(graphPath)
     expect(JSON.stringify(deltaPayload.governance)).not.toContain(deltaSessionId)

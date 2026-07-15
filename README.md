@@ -125,6 +125,12 @@ Madar analyzes your local repo and creates a graph of files, imports, exports, s
 
 The graph is stored locally in your project output folder. Generation also writes a versioned indexing manifest that accounts for indexed, warning, policy-skipped, unsupported, and failed candidates.
 
+## Conceptual Questions
+
+When a question uses different vocabulary from the code, Madar can run one bounded deterministic recovery pass. It derives local concepts from paths, exported symbols, module names, graph communities, document headings, and framework metadata, then prefers short structural workflow paths over isolated literal matches. No embedding dependency is required; semantic retrieval remains optional.
+
+Responses include a `retrieval_plan` showing why recovery was considered, which fallback ran, and whether it changed the delivered result. Unrelated keywords do not cause a fallback to arbitrary graph hubs. See [Conceptual-query retrieval](https://github.com/mohanagy/madar/blob/main/docs/conceptual-retrieval.md) for the trigger, bounding, output, and evaluation contracts.
+
 ## Indexing Completeness
 
 A readable `graph.json` is not the same as complete source coverage. `madar generate`, `madar doctor`, and `madar status` prominently report indexing completeness, while the local `indexing-manifest.json` records affected paths and stable reason codes. The adjacent `indexing-manifest.share-safe.json` keeps counts and reason categories but removes paths and diagnostic messages.

@@ -12,6 +12,7 @@ import type { SourceDomain } from '../shared/source-discovery.js'
 import type { TaskContextPlan } from './task-context-plan.js'
 import type { MadarResponseEvidence } from '../runtime/mcp-response-evidence.js'
 import type { RuntimeProofAssessment } from './runtime-proof.js'
+import type { ContextPackRetrievalPlan } from './retrieval-plan.js'
 
 export type ContextPackTaskKind = 'explain' | 'implement' | 'review' | 'impact'
 export type ContextPackFormat = 'json' | 'text' | 'markdown' | 'claude' | 'copilot'
@@ -431,6 +432,7 @@ export interface CompiledContextPack<
   shared_file_type?: string
   selection_diagnostics?: ContextPackSelectionDiagnostics
   retrieval_strategy?: ContextPackRetrievalStrategy
+  retrieval_plan?: ContextPackRetrievalPlan
   slice?: ContextPackSliceMetadata
   execution_slice?: ContextPackExecutionSlice
   answer_contract?: ContextPackRuntimeGenerationAnswerContract

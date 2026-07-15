@@ -948,6 +948,43 @@ describe('context-pack-command', () => {
         missing_phases: [],
         confidence: 'high' as const,
       },
+      retrieval_plan: {
+        version: 1,
+        status: 'recovered',
+        reasons: ['low_workflow_coherence'],
+        initial: {
+          selected_nodes: 30,
+          selected_files: 20,
+          direct_matches: 20,
+          explicit_anchors: 0,
+          workflow_coherence: 0.1,
+          missing_required_evidence: 1,
+          missing_semantic_evidence: 0,
+          token_count: 1_600,
+        },
+        final: {
+          selected_nodes: 2,
+          selected_files: 2,
+          direct_matches: 2,
+          explicit_anchors: 0,
+          workflow_coherence: 1,
+          missing_required_evidence: 0,
+          missing_semantic_evidence: 0,
+          token_count: 700,
+        },
+        attempts: [{
+          fallback: 'repository_vocabulary_v1',
+          status: 'applied',
+          reasons: ['low_workflow_coherence'],
+          vocabulary_sources: ['exported_symbol', 'module_name'],
+          expansion_terms: ['controller', 'service'],
+          promoted_candidates: 12,
+          changed_result: true,
+          added_selected_files: 2,
+          removed_selected_files: 20,
+        }],
+        selected_fallback: 'repository_vocabulary_v1',
+      },
     } satisfies import('../../src/runtime/retrieve.js').RetrieveResult
     const dependencies: ContextPackCommandDependencies = {
       loadGraph: vi.fn().mockReturnValue(graph),
@@ -972,6 +1009,15 @@ describe('context-pack-command', () => {
       pack?: {
         slice?: { selected_paths?: unknown[]; selected_path_count?: number }
         execution_slice?: { side_effects?: unknown[] }
+        retrieval_plan?: {
+          version?: number
+          status?: string
+          reasons?: string[]
+          selected_fallback?: string
+          attempts?: Array<{ fallback?: string; status?: string; changed_result?: boolean; expansion_terms?: unknown }>
+          initial?: unknown
+          final?: unknown
+        }
       }
       evidence?: { agent_directive?: string }
       governance?: {
@@ -989,6 +1035,17 @@ describe('context-pack-command', () => {
     expect(payload.pack?.slice?.selected_paths).toBeUndefined()
     expect(payload.pack?.slice?.selected_path_count).toBe(noisySelectedPaths.length)
     expect(payload.pack?.execution_slice?.side_effects).toBeUndefined()
+    expect(payload.pack?.retrieval_plan).toEqual({
+      version: 1,
+      status: 'recovered',
+      reasons: ['low_workflow_coherence'],
+      selected_fallback: 'repository_vocabulary_v1',
+      attempts: [{
+        fallback: 'repository_vocabulary_v1',
+        status: 'applied',
+        changed_result: true,
+      }],
+    })
     expect(payload.evidence?.agent_directive).toBe('answer_from_pack')
     expect(payload.governance?.request).toEqual(expect.objectContaining({
       task_intent: 'explain',
