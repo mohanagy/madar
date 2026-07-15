@@ -3235,6 +3235,7 @@ describe('js framework extraction contract', () => {
         needs_graph: false,
         warning: null,
         skipped_sensitive: [],
+        exclusions: [],
         madarignore_patterns: 0,
       })
 

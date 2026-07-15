@@ -1,7 +1,6 @@
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 
 import { buildMadarPromptPack } from '../../infrastructure/compare.js'
-import { loadBenchmarkRuntimeProofProfiles, matchBenchmarkRuntimeProofProfile } from '../../infrastructure/benchmark/runtime-proof.js'
 import { buildAnswerReadyPackSchema, buildExplainPackPayloadCore } from '../../infrastructure/context-pack-command.js'
 import type { TaskContextPlan } from '../../contracts/task-context-plan.js'
 import type { CompareRefsInput } from '../../infrastructure/time-travel.js'
@@ -68,7 +67,6 @@ import {
   type GraphContextFreshness,
 } from '../freshness.js'
 import { buildGraphSummary } from '../graph-summary.js'
-import { findPackageRoot } from '../../shared/package-metadata.js'
 import {
   communitiesFromGraph,
   getCommunity,
@@ -81,7 +79,6 @@ import {
   shortestPath,
 } from '../serve.js'
 import type { KnowledgeGraph } from '../../contracts/graph.js'
-import type { RuntimeProofProfile } from '../../contracts/runtime-proof.js'
 
 interface StdioResponse {
   jsonrpc: '2.0'
@@ -129,34 +126,6 @@ interface ToolHelpers {
 }
 
 const TIME_TRAVEL_VIEWS = new Set<TimeTravelView>(['summary', 'risk', 'drift', 'timeline'])
-const BENCHMARK_RUNTIME_PROOF_TASKS_PATH = join(findPackageRoot(), 'docs', 'benchmarks', 'suite', 'tasks.json')
-let cachedBenchmarkRuntimeProofProfiles: ReadonlyMap<string, RuntimeProofProfile> | null | undefined
-
-function loadCachedBenchmarkRuntimeProofProfiles(): ReadonlyMap<string, RuntimeProofProfile> | null {
-  if (cachedBenchmarkRuntimeProofProfiles === undefined) {
-    cachedBenchmarkRuntimeProofProfiles = loadBenchmarkRuntimeProofProfiles(BENCHMARK_RUNTIME_PROOF_TASKS_PATH)
-  }
-  return cachedBenchmarkRuntimeProofProfiles
-}
-
-function strictBenchmarkRetrieveOverrides(
-  question: string,
-): {
-  taskKind: 'explain'
-  retrievalStrategy: 'slice-v1'
-  runtimeProofProfile: RuntimeProofProfile
-} | null {
-  const profile = matchBenchmarkRuntimeProofProfile(loadCachedBenchmarkRuntimeProofProfiles(), question)
-  if (!profile?.strict_runtime_proof) {
-    return null
-  }
-
-  return {
-    taskKind: 'explain',
-    retrievalStrategy: 'slice-v1',
-    runtimeProofProfile: profile,
-  }
-}
 
 interface ContextPlaneMetadata {
   claims: ContextPackClaim[]
@@ -165,45 +134,6 @@ interface ContextPlaneMetadata {
   missing_context: ContextPackEvidenceClass[]
   missing_semantic: ContextPackCoverage['missing_semantic']
   retrieval_gate?: RetrievalGateDecision
-}
-
-interface StrictRuntimeProofRetrievePayload {
-  question: string
-  retrieval_strategy: ContextPackRetrievalStrategy
-  matched_nodes: Array<{
-    label: string
-    source_file: string
-    line_number: number
-  }>
-  answer_contract?: {
-    confidence?: RetrieveResult['answer_contract'] extends infer T
-      ? T extends { confidence?: infer Confidence }
-        ? Confidence | undefined
-        : never
-      : never
-    runtime_proof?: RetrieveResult['answer_contract'] extends infer T
-      ? T extends { runtime_proof?: infer RuntimeProof }
-        ? RuntimeProof | undefined
-        : never
-      : never
-  }
-  execution_slice?: {
-    status: RetrieveResult['execution_slice'] extends infer T
-      ? T extends { status: infer Status }
-        ? Status
-        : never
-      : never
-    confidence?: RetrieveResult['execution_slice'] extends infer T
-      ? T extends { confidence?: infer Confidence }
-        ? Confidence | undefined
-        : never
-      : never
-    steps: Array<{
-      label: string
-      source_file: string
-      line_number: number
-    }>
-  }
 }
 
 interface StoredContextPackHandle {
@@ -437,7 +367,7 @@ function withContextPackGovernance<T extends Record<string, unknown>>(
     task: ContextPackTaskKind
     taskIntent: TaskContextPlan['evidence']['recipe_id']
     budget: number
-    evidence: Pick<ReturnType<typeof buildMadarResponseEvidence>, 'agent_directive' | 'coverage' | 'missing_phases' | 'pack_confidence'>
+    evidence: Pick<ReturnType<typeof buildMadarResponseEvidence>, 'agent_directive' | 'answerability' | 'coverage' | 'evidence_strength' | 'missing_phases' | 'pack_confidence' | 'recovery'>
     expandable: readonly ContextPackExpandableRef[]
     retrievalStrategy?: ContextPackRetrievalStrategy | null
     resolution?: ContextPackResolution
@@ -560,68 +490,10 @@ function contextMetadata(
   }
 }
 
-function runtimeProofReadyForFocusedRetrieve(result: RetrieveResult): boolean {
-  return result.answer_contract?.confidence === 'high'
-    && Array.isArray(result.answer_contract?.runtime_proof?.missing_obligations)
-    && result.answer_contract.runtime_proof.missing_obligations.length === 0
-}
-
-function buildStrictRuntimeProofRetrievePayload(
-  payload: ReturnType<typeof compactRetrieveResultForStdio>,
-): StrictRuntimeProofRetrievePayload | null {
-  const runtimeProof = payload.answer_contract?.runtime_proof
-  if (!runtimeProof || runtimeProof.missing_obligations.length > 0) {
-    return null
-  }
-
-  const evidenceKeys = new Set(
-    runtimeProof.obligations.flatMap((obligation) =>
-      obligation.evidence.map((evidence) => `${evidence.source_file}:${evidence.line_number}:${evidence.label}`),
-    ),
-  )
-  const matchedNodes = payload.matched_nodes
-    .filter((node) => evidenceKeys.has(`${node.source_file}:${node.line_number}:${node.label}`))
-    .map((node) => ({
-      label: node.label,
-      source_file: node.source_file,
-      line_number: node.line_number,
-    }))
-
-  if (matchedNodes.length === 0) {
-    return null
-  }
-
-  return {
-    question: payload.question,
-    retrieval_strategy: payload.retrieval_strategy ?? 'default',
-    matched_nodes: matchedNodes,
-    ...(payload.answer_contract
-      ? {
-          answer_contract: {
-            confidence: payload.answer_contract.confidence,
-            runtime_proof: payload.answer_contract.runtime_proof,
-          },
-        }
-      : {}),
-    ...(payload.execution_slice
-      ? {
-          execution_slice: {
-            status: payload.execution_slice.status,
-            confidence: payload.execution_slice.confidence,
-            steps: payload.execution_slice.steps.map((step) => ({
-              label: step.label,
-              source_file: step.source_file,
-              line_number: step.line_number,
-            })),
-          },
-        }
-      : {}),
-  }
-}
-
 function evidenceForRetrievePayload(
-  payload: Partial<Pick<RetrieveResult, 'coverage' | 'answer_contract' | 'execution_slice'>> & {
+  payload: Partial<Pick<RetrieveResult, 'coverage' | 'answer_contract' | 'execution_slice' | 'expandable' | 'recovery'>> & {
     matched_nodes?: Array<{ source_file: string }>
+    question?: string
   },
   graphPath: string,
 ) {
@@ -629,7 +501,10 @@ function evidenceForRetrievePayload(
     answerContract: payload.answer_contract,
     coverage: payload.coverage,
     executionSlice: payload.execution_slice,
+    expandable: payload.expandable,
     graphPath,
+    question: payload.question,
+    recovery: payload.recovery,
     missingPhases: missingPhasesFromPayload(payload),
     coveredWorkflowOwners: collectWorkflowOwners((payload.matched_nodes ?? []).map((node) => node.source_file)),
   })
@@ -642,12 +517,14 @@ function evidenceForPathPayload(
     edit_steps?: Array<{ path: string }>
   },
   graphPath: string,
+  question?: string,
 ) {
   return buildMadarResponseEvidence({
     answerContract: payload.answer_contract,
     coverage: payload.coverage,
     executionSlice: payload.execution_slice,
     graphPath,
+    question,
     missingPhases: missingPhasesFromPayload(payload),
     coveredWorkflowOwners: collectWorkflowOwners(
       (payload.relevant_files ?? []).map((entry) => entry.path),
@@ -662,8 +539,10 @@ function evidenceForImpactPayload(payload: {
   affected_files?: string[]
   direct_dependents?: Array<{ source_file: string }>
   transitive_dependents?: Array<{ source_file: string }>
-}) {
+}, graphPath: string, question?: string) {
   return buildMadarResponseEvidence({
+    graphPath,
+    question,
     coveredWorkflowOwners: collectWorkflowOwners(
       payload.target_file ? [payload.target_file] : [],
       payload.affected_files ?? [],
@@ -675,8 +554,9 @@ function evidenceForImpactPayload(payload: {
 
 function evidenceForGraphSummaryPayload(payload: {
   entrypoints?: Array<{ source_file: string }>
-}) {
+}, graphPath: string) {
   return buildMadarResponseEvidence({
+    graphPath,
     coveredWorkflowOwners: collectWorkflowOwners((payload.entrypoints ?? []).map((entry) => entry.source_file)),
   })
 }
@@ -1158,7 +1038,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       const summary = buildGraphSummary(graph)
       return helpers.ok(id, helpers.textToolResult(JSON.stringify({
         ...summary,
-        evidence: evidenceForGraphSummaryPayload(summary),
+        evidence: evidenceForGraphSummaryPayload(summary, graphPath),
       })))
     }
     case 'god_nodes':
@@ -1221,7 +1101,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       return helpers.ok(id, helpers.textToolResult(JSON.stringify(
         {
           ...impactPayload,
-          evidence: evidenceForImpactPayload(impactResult),
+          evidence: evidenceForImpactPayload(impactResult, graphPath, label),
         },
       )))
     }
@@ -1325,8 +1205,6 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       if (retrieveStrategy === 'invalid') {
         return helpers.failure(id, helpers.jsonrpcInvalidParams, 'retrieval_strategy must be one of default, slice-v1')
       }
-      const strictBenchmarkOverrides = strictBenchmarkRetrieveOverrides(question)
-      const effectiveRetrieveStrategy = strictBenchmarkOverrides?.retrievalStrategy ?? retrieveStrategy
       const retrieveSnippetOptions: RetrieveSnippetOptions = {
         ...(retrieveSnippetBudget !== null ? { snippetBudget: retrieveSnippetBudget } : {}),
         ...(retrieveTopNWithSnippet !== null ? { topNWithSnippet: retrieveTopNWithSnippet } : {}),
@@ -1335,8 +1213,6 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       const retrieval = retrieveSemantic || retrieveRerank ? retrieveContextAsync(graph, {
         question,
         budget: retrieveBudget,
-        ...(strictBenchmarkOverrides ? { taskKind: strictBenchmarkOverrides.taskKind } : {}),
-        ...(strictBenchmarkOverrides ? { runtimeProofProfile: strictBenchmarkOverrides.runtimeProofProfile } : {}),
         ...(retrieveCommunity !== null ? { community: retrieveCommunity } : {}),
         ...(retrieveFileType ? { fileType: retrieveFileType } : {}),
         ...(retrieveSemantic ? { semantic: true } : {}),
@@ -1344,38 +1220,26 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         ...(retrieveRerank ? { rerank: true } : {}),
         ...(retrieveRerankModel ? { rerankerModel: retrieveRerankModel } : {}),
         ...(retrieveLevelTyped !== null ? { retrievalLevel: retrieveLevelTyped } : {}),
-        ...(effectiveRetrieveStrategy ? { retrievalStrategy: effectiveRetrieveStrategy } : {}),
+        ...(retrieveStrategy ? { retrievalStrategy: retrieveStrategy } : {}),
         projectRoot: resolveGraphSourceRoot(graphPath, graph),
-      }) : Promise.resolve(retrieveContext(graph, {
+      }) : Promise.resolve().then(() => retrieveContext(graph, {
         question,
         budget: retrieveBudget,
-        ...(strictBenchmarkOverrides ? { taskKind: strictBenchmarkOverrides.taskKind } : {}),
-        ...(strictBenchmarkOverrides ? { runtimeProofProfile: strictBenchmarkOverrides.runtimeProofProfile } : {}),
         ...(retrieveCommunity !== null ? { community: retrieveCommunity } : {}),
-          ...(retrieveFileType ? { fileType: retrieveFileType } : {}),
-          ...(retrieveLevelTyped !== null ? { retrievalLevel: retrieveLevelTyped } : {}),
-          ...(effectiveRetrieveStrategy ? { retrievalStrategy: effectiveRetrieveStrategy } : {}),
-        }))
+        ...(retrieveFileType ? { fileType: retrieveFileType } : {}),
+        ...(retrieveLevelTyped !== null ? { retrievalLevel: retrieveLevelTyped } : {}),
+        ...(retrieveStrategy ? { retrievalStrategy: retrieveStrategy } : {}),
+      }))
       const useVerboseRetrieve = toolArguments.verbose === true || toolArguments.compact === false
       return retrieval.then((result) => {
-        const retrievePlan = resolveTaskSelection(
-          question,
-          strictBenchmarkOverrides?.taskKind ?? 'explain',
-          { explicit: strictBenchmarkOverrides !== null },
-        )
+        const retrievePlan = resolveTaskSelection(question, 'explain', { explicit: false })
         if (result.expandable && result.expandable.length > 0) {
           storeExpandableHandles(question, retrievePlan.task_kind, retrievePlan.task_intent, result.expandable, helpers)
         }
         const compactPayload = compactRetrieveResultForStdio(result, retrieveSnippetOptions)
-        const strictRuntimeProofPayload =
-          !useVerboseRetrieve
-          && strictBenchmarkOverrides !== null
-          && runtimeProofReadyForFocusedRetrieve(result)
-            ? buildStrictRuntimeProofRetrievePayload(compactPayload)
-            : null
         const payload = useVerboseRetrieve
           ? withRetrieveSnippetBudget(result, retrieveSnippetOptions)
-          : strictRuntimeProofPayload ?? {
+          : {
               ...compactPayload,
               ...contextMetadata(compactPayload),
             }
@@ -1462,8 +1326,6 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       if (task === 'review' && contextPackStrategy) {
         return helpers.failure(id, helpers.jsonrpcInvalidParams, 'retrieval_strategy is not supported for task=review')
       }
-      const strictContextPackOverrides = task === 'explain' ? strictBenchmarkRetrieveOverrides(prompt) : null
-      const effectiveContextPackStrategy = strictContextPackOverrides?.retrievalStrategy ?? contextPackStrategy
 
       const contextPackLevelOverride = helpers.numberParamAlias(toolArguments, ['retrieval_level', 'retrievalLevel'], { min: 0, max: 5 })
       if ((Object.hasOwn(toolArguments, 'retrieval_level') || Object.hasOwn(toolArguments, 'retrievalLevel')) && contextPackLevelOverride === null) {
@@ -1484,7 +1346,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
             task: 'explain',
             budget: resolvedBudget,
             retrievalLevel: contextPackLevelTyped ?? null,
-            retrievalStrategy: effectiveContextPackStrategy,
+            retrievalStrategy: contextPackStrategy,
             resolution,
             verbose: includeSelectionDiagnostics,
           })
@@ -1555,6 +1417,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         const evidence = buildMadarResponseEvidence({
           coverage: reviewMetadata.coverage,
           graphPath,
+          question: prompt,
           coveredWorkflowOwners: collectWorkflowOwners(
             prResult.changed_files,
             prResult.review_context.supporting_paths,
@@ -1582,11 +1445,10 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       const retrieval = retrieveContext(graph, {
         question: prompt,
         budget: resolvedBudget,
-        taskKind: strictContextPackOverrides?.taskKind ?? task,
+        taskKind: task,
         taskIntent: initialPlan.evidence.recipe_id,
-        ...(strictContextPackOverrides ? { runtimeProofProfile: strictContextPackOverrides.runtimeProofProfile } : {}),
         ...(contextPackLevelTyped !== null ? { retrievalLevel: contextPackLevelTyped } : {}),
-        ...(effectiveContextPackStrategy ? { retrievalStrategy: effectiveContextPackStrategy } : {}),
+        ...(contextPackStrategy ? { retrievalStrategy: contextPackStrategy } : {}),
       })
       const graphContextFreshness = analyzeGraphContextFreshness(graphPath, graph, {
         selected_source_files: selectedContextSourceFilesFromRetrieveResult(retrieval),
@@ -1619,6 +1481,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         const evidence = buildMadarResponseEvidence({
           coverage: metadata.coverage,
           graphPath,
+          question: prompt,
           coveredWorkflowOwners: collectWorkflowOwners(
             impactResult.target_file ? [impactResult.target_file] : [],
             impactResult.affected_files ?? [],
@@ -1723,7 +1586,10 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
           answerContract: deltaResult.delta_pack.answer_contract,
           coverage: deltaResult.delta_pack.coverage,
           executionSlice: deltaResult.delta_pack.execution_slice,
+          expandable: deltaResult.delta_pack.expandable,
           graphPath,
+          question: prompt,
+          recovery: deltaResult.delta_pack.recovery,
           missingPhases: missingPhasesFromPayload(deltaResult.delta_pack),
           coveredWorkflowOwners: collectWorkflowOwners(resolvedDeltaNodes.nodes.map((node) => node.source_file)),
         })
@@ -1742,6 +1608,9 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
             relationships: deltaResult.delta_pack.relationships,
             community_context: deltaResult.delta_pack.community_context,
             graph_signals: deltaResult.delta_pack.graph_signals ?? { god_nodes: [], bridge_nodes: [] },
+            ...(deltaResult.delta_pack.retrieval_plan
+              ? { retrieval_plan: deltaResult.delta_pack.retrieval_plan }
+              : {}),
           },
           diagnostics: computeContextPackDiagnostics(deltaResult.delta_pack, { skipBudgetUnderutilization: true }),
           ...(includeSelectionDiagnostics && deltaResult.delta_pack.selection_diagnostics
@@ -1769,7 +1638,10 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         answerContract: fullPack.answer_contract,
         coverage: fullPack.coverage,
         executionSlice: fullPack.execution_slice,
+        expandable: fullPack.expandable,
         graphPath,
+        question: prompt,
+        recovery: fullPack.recovery,
         missingPhases: missingPhasesFromPayload(fullPack),
         coveredWorkflowOwners: collectWorkflowOwners(resolvedNodes.nodes.map((node) => node.source_file)),
       })
@@ -2001,7 +1873,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       })
       return helpers.ok(id, helpers.textToolResult(JSON.stringify({
         ...result,
-        evidence: evidenceForPathPayload(result, graphPath),
+        evidence: evidenceForPathPayload(result, graphPath, question),
       })))
     }
     case 'feature_map': {
@@ -2031,7 +1903,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       })
       return helpers.ok(id, helpers.textToolResult(JSON.stringify({
         ...result,
-        evidence: evidenceForPathPayload(result, graphPath),
+        evidence: evidenceForPathPayload(result, graphPath, question),
       })))
     }
     case 'risk_map': {
@@ -2061,7 +1933,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       })
       return helpers.ok(id, helpers.textToolResult(JSON.stringify({
         ...result,
-        evidence: evidenceForPathPayload(result, graphPath),
+        evidence: evidenceForPathPayload(result, graphPath, question),
       })))
     }
     case 'implementation_checklist': {
@@ -2091,7 +1963,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       })
       return helpers.ok(id, helpers.textToolResult(JSON.stringify({
         ...result,
-        evidence: evidenceForPathPayload(result, graphPath),
+        evidence: evidenceForPathPayload(result, graphPath, question),
       })))
     }
     case 'time_travel_compare': {

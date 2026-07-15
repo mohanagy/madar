@@ -1,0 +1,8 @@
+Answer the question from normal repository evidence.
+Do not call Madar-specific tools or assume a Madar context pack is available.
+Start with focused repository inspection. Avoid broad repo-wide search unless a focused search does not find the needed files.
+Name the key files and steps that support the answer.
+
+Question: How does Documenso move a document from send preparation through recipient creation, signing state, and notification delivery?
+
+Answer:

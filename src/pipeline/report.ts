@@ -85,6 +85,24 @@ export function generate(
     lines.push('- Verdict: corpus is large enough that graph structure adds value.')
   }
 
+  const indexing = detectionResult.indexing_completeness
+  if (indexing && typeof indexing === 'object' && !Array.isArray(indexing)) {
+    const summary = indexing as {
+      state?: unknown
+      counts?: Partial<Record<'indexed' | 'indexed_with_warnings' | 'skipped_by_policy' | 'unsupported' | 'failed', unknown>>
+    }
+    const state = summary.state === 'complete' || summary.state === 'partial' || summary.state === 'failed'
+      ? summary.state
+      : 'partial'
+    const count = (name: keyof NonNullable<typeof summary.counts>): number => {
+      const value = summary.counts?.[name]
+      return typeof value === 'number' && Number.isFinite(value) ? value : 0
+    }
+    lines.push(
+      `- **Indexing completeness: ${state.toUpperCase()}** — ${count('indexed')} indexed, ${count('indexed_with_warnings')} with warnings, ${count('skipped_by_policy')} skipped by policy, ${count('unsupported')} unsupported, ${count('failed')} failed.`,
+    )
+  }
+
   lines.push('')
   lines.push('## Summary')
   lines.push(`- ${graph.numberOfNodes()} nodes · ${graph.numberOfEdges()} edges · ${Object.keys(communities).length} communities detected`)

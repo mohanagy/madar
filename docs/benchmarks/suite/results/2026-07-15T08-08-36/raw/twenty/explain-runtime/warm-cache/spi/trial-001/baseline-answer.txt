@@ -1,0 +1,37 @@
+I have traced the full path across both API surfaces. Here's how it works.
+
+## How Twenty processes a CRM record mutation
+
+Twenty routes both GraphQL and REST mutations through a single shared "common query runner" pipeline that ends at a permission-scoped TypeORM repository backed by the workspace's Postgres schema.
+
+### 1. API entry — resolver / handler
+Two front doors, same destination:
+
+- **GraphQL**: The schema is generated dynamically. For each object, `UpdateOneResolverFactory.create()` (`api/graphql/workspace-resolver-builder/factories/update-one-resolver.factory.ts`) builds the resolver. It reads the requested fields with `graphqlFields(info)`, builds a `resolverContext` via `createQueryRunnerContext`, then calls `commonUpdateOneQueryRunnerService.execute(...)`. On return it reshapes rows into a GraphQL connection with `ObjectRecordsToGraphqlConnectionHelper`.
+- **REST**: `RestApiUpdateOneHandler` (`api/rest/core/handlers/rest-api-update-one.handler.ts`) parses the HTTP request into common args (`buildCommonOptions`) and calls the *same* `commonUpdateOneQueryRunnerService.execute(...)`.
+
+### 2. Workspace service layer — the common query runner
+`CommonUpdateOneQueryRunnerService` (`api/common/common-query-runners/common-update-one-query-runner.service.ts`) is thin: it validates the UUID, rejects remote objects (`assertMutationNotOnRemoteObject`), processes the input `data` through `DataArgProcessorService`, and delegates to `CommonUpdateManyQueryRunnerService` with `filter: { id: { eq: args.id } }`, unwrapping the single result (throwing `RECORD_NOT_FOUND` if empty).
+
+The real orchestration lives in the abstract base, `CommonBaseQueryRunnerService.execute()` (`common-base-query-runner.service.ts`), which runs a fixed template for every mutation:
+1. **Throttle** — token-bucket rate limiting for API-key auth (`throttleQueryExecution`).
+2. **Validate** — subclass `validate()` + settings-permission check for system objects.
+3. **Parse selected fields** — `GraphqlQueryParser.parseSelectedFields`.
+4. **Process args** — subclass `computeArgs()` (filter/data processors) then **pre-query hooks** via `WorkspaceQueryHookService.executePreQueryHooks` (business logic like validation, defaults).
+5. **Complexity guard** — `validateQueryComplexity`.
+6. **Run inside workspace context** — `globalWorkspaceOrmManager.executeInWorkspaceContext(...)`, which establishes the tenant (workspace) context and resolves the role permission config (`resolveRolePermissionConfig`), then obtains the workspace datasource and a permission-scoped repository (`prepareExtendedQueryRunnerContextWithGlobalDatasource`).
+7. **Post-processing** — `processQueryResult()` runs "result getters" (`CommonResultGettersService`) to hydrate composite/computed fields, then **post-query hooks** (`executePostQueryHooks`).
+
+### 3. Persistence — TypeORM query builder + workspace repository
+`CommonUpdateManyQueryRunnerService.run()` (`common-update-many-query-runner.service.ts`) does the actual write:
+- Builds a mutation query builder from the injected `repository` via `buildMutationQueryBuilder` (applies the parsed filter).
+- Computes `columnsToReturn` (`buildColumnsToReturn`).
+- Executes `queryBuilder.update().set(args.data).returning(columnsToReturn).execute()` and reads back `generatedMaps`.
+- If relations were requested, hydrates them via `ProcessNestedRelationsHelper`.
+
+The `repository` here is Twenty's workspace-scoped ORM (`twenty-orm/repository/workspace.repository.ts` / `workspace-entity-manager`, obtained from `globalWorkspaceDataSource.getRepository(nameSingular, rolePermissionConfig)`). This layer applies row/field-level **role permissions** and targets the correct per-workspace Postgres schema, so the generated SQL runs against the tenant's tables. Result-getter/event side effects are applied on the way back out before the resolver serializes the response.
+
+### Path at a glance
+`GraphQL resolver factory` / `REST handler` → `CommonUpdate(One→Many)QueryRunnerService` → `CommonBaseQueryRunnerService.execute` (throttle → validate → arg processors → pre-hooks → workspace context + permission-scoped repository) → `twenty-orm` workspace repository query builder `UPDATE … RETURNING` → Postgres → result getters + post-hooks → shaped response.
+
+The same factory/handler + `Common*QueryRunnerService` pattern exists for create, delete, destroy, restore, and merge (see the sibling files in `workspace-resolver-builder/factories/` and `common-query-runners/`), so every CRM mutation follows this identical API→workspace-service→ORM→Postgres flow.

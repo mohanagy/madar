@@ -24,6 +24,32 @@ function buildTestGraph(): KnowledgeGraph {
   return graph
 }
 
+function buildNamedConceptRankingGraph(directed: boolean): KnowledgeGraph {
+  const graph = new KnowledgeGraph(directed)
+  graph.addNode('auth_file', { label: 'auth-service.ts', file_type: 'code', source_file: 'src/auth/auth-service.ts', source_location: 'L1' })
+  graph.addNode('auth_service', { label: 'AuthService', node_kind: 'class', file_type: 'code', source_file: 'src/auth/auth-service.ts', source_location: 'L3' })
+  graph.addNode('login', { label: '.loginWithPassword()', node_kind: 'method', file_type: 'code', source_file: 'src/auth/auth-service.ts', source_location: 'L8' })
+  graph.addNode('constructor', { label: '.constructor()', node_kind: 'method', file_type: 'code', source_file: 'src/auth/auth-service.ts', source_location: 'L4' })
+  graph.addNode('policy_file', { label: 'password-policy.ts', file_type: 'code', source_file: 'src/auth/password-policy.ts', source_location: 'L1' })
+  graph.addNode('password_policy', { label: 'PasswordPolicy', node_kind: 'class', file_type: 'code', source_file: 'src/auth/password-policy.ts', source_location: 'L2' })
+  graph.addNode('allows', { label: '.allows()', node_kind: 'method', file_type: 'code', source_file: 'src/auth/password-policy.ts', source_location: 'L5' })
+  graph.addNode('session_store', { label: 'SessionStore', node_kind: 'class', file_type: 'code', source_file: 'src/auth/session-store.ts', source_location: 'L2' })
+  graph.addNode('tenant_file', { label: 'tenant-context.ts', file_type: 'code', source_file: 'src/shared/tenant-context.ts', source_location: 'L1' })
+  graph.addNode('tenant_context', { label: 'TenantContext', node_kind: 'type', file_type: 'code', source_file: 'src/shared/tenant-context.ts', source_location: 'L1' })
+  graph.addNode('billing_file', { label: 'invoice-service.ts', file_type: 'code', source_file: 'src/billing/invoice-service.ts', source_location: 'L1' })
+  graph.addEdge('auth_file', 'auth_service', { relation: 'contains', confidence: 'EXTRACTED' })
+  graph.addEdge('auth_service', 'login', { relation: 'method', confidence: 'EXTRACTED' })
+  graph.addEdge('auth_service', 'constructor', { relation: 'method', confidence: 'EXTRACTED' })
+  graph.addEdge('policy_file', 'password_policy', { relation: 'contains', confidence: 'EXTRACTED' })
+  graph.addEdge('password_policy', 'allows', { relation: 'method', confidence: 'EXTRACTED' })
+  graph.addEdge('auth_file', 'password_policy', { relation: 'imports_from', confidence: 'EXTRACTED' })
+  graph.addEdge('auth_file', 'session_store', { relation: 'imports_from', confidence: 'EXTRACTED' })
+  graph.addEdge('auth_file', 'tenant_context', { relation: 'imports_from', confidence: 'EXTRACTED' })
+  graph.addEdge('tenant_file', 'tenant_context', { relation: 'contains', confidence: 'EXTRACTED' })
+  graph.addEdge('billing_file', 'tenant_context', { relation: 'imports_from', confidence: 'EXTRACTED' })
+  return graph
+}
+
 function stripFileNodes(extraction: ReturnType<typeof extractJs>): ReturnType<typeof extractJs> {
   const semanticNodeIds = new Set(extraction.nodes.filter((node) => String(node.node_kind ?? '') !== '').map((node) => node.id))
   return {
@@ -146,6 +172,29 @@ describe('retrieval quality benchmark', () => {
 
     const report = evaluateRetrievalQuality(graph, questions, 3000)
 
+    expect(report.mrr).toBe(1)
+  })
+
+  it.each([true, false])('ranks an explicitly named concept first for definition lookups (directed=%s)', (directed) => {
+    const graph = buildNamedConceptRankingGraph(directed)
+    const report = evaluateRetrievalQuality(
+      graph,
+      [{ question: 'where is tenant context defined for billing and auth', expected_labels: ['TenantContext'] }],
+      3000,
+    )
+
+    expect(report.questions[0]?.returned_labels[0]).toBe('TenantContext')
+    expect(report.mrr).toBe(1)
+  })
+
+  it('does not let incidental concept phrases displace executable steps in runtime-flow questions', () => {
+    const report = evaluateRetrievalQuality(
+      buildNamedConceptRankingGraph(true),
+      [{ question: 'how does password policy login create a tenant session', expected_labels: ['.loginWithPassword()'] }],
+      3000,
+    )
+
+    expect(report.questions[0]?.returned_labels[0]).toBe('.loginWithPassword()')
     expect(report.mrr).toBe(1)
   })
 

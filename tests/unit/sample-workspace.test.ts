@@ -6,6 +6,8 @@ import { describe, expect, it } from 'vitest'
 
 import { generateGraph } from '../../src/infrastructure/generate.js'
 import { runContextPackCommand } from '../../src/infrastructure/context-pack-command.js'
+import { retrieveContext } from '../../src/runtime/retrieve.js'
+import { loadGraph } from '../../src/runtime/serve.js'
 import { UserRepository } from '../../examples/sample-workspace/src/persistence/user-repository.js'
 import { createPasswordResetService } from '../../examples/sample-workspace/src/services/password-reset-service.js'
 
@@ -69,10 +71,15 @@ describe('examples/sample-workspace', () => {
           matched_nodes: Array<{ label: string }>
         }
       }
+      const serviceLookup = retrieveContext(loadGraph(graphPath), {
+        question: 'PasswordResetService',
+        budget: 1000,
+      })
 
       expect(result.nodeCount).toBeGreaterThan(0)
       expect(existsSync(graphPath)).toBe(true)
       expect(pack.pack.matched_nodes.length).toBeGreaterThan(0)
+      expect(serviceLookup.matched_nodes.map((node) => node.label)).toContain('PasswordResetService')
       expect(
         (firstPrompt?.expected_labels ?? []).some((label) =>
           pack.pack.matched_nodes.some((node) => node.label === label)),

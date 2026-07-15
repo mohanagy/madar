@@ -1,0 +1,54 @@
+I now have the complete trace. Here's how Novu processes a notification trigger end-to-end.
+
+## Overview
+
+Novu splits the flow across two apps: the **API** (`legacy/apps/api`) accepts and validates the trigger, then hands off to the **Worker** (`legacy/apps/worker`) via Redis/BullMQ queues. Orchestration is a chain of small queue-backed usecases, each advancing one workflow step, ending in channel-specific delivery through provider handlers.
+
+## 1. API entry — accept & enqueue
+
+**`api/src/app/events/events.controller.ts`** — `POST /v1/events/trigger` (`EventsController.trigger`, line 104). It's guarded by authentication, `EVENT_WRITE` permission, rate limiting (`@ThrottlerCategory(TRIGGER)`), and an org kill-switch check. The request body (`name` = trigger identifier, `payload`, `to`, `overrides`, `actor`, `tenant`, `transactionId`) is mapped into a `ParseEventRequestMulticastCommand`. (`/trigger/bulk` and `/trigger/broadcast` are sibling routes.)
+
+**`.../usecases/parse-event-request/parse-event-request.usecase.ts`** — resolves the workflow by identifier, checks it's active, validates tenant/recipients, generates a `transactionId` (dedup guard), then `dispatchEventToWorkflowQueue` (line 343) builds the `jobData` and calls:
+```ts
+this.workflowQueueService.add({ name: transactionId, data: jobData, groupId: organizationId })  // line 410
+```
+The API returns `202`-style `{ acknowledged, status: PROCESSED, transactionId }` immediately — all real work is async.
+
+## 2. Worker — trigger handling & fan-out
+
+**`worker/src/app/workflow/services/workflow.worker.ts`** — `WorkflowWorker` consumes the **Workflow queue**. Its processor (line 83) runs each job through the `TriggerEvent` usecase (from `@novu/application-generic`, line 27/105).
+
+`TriggerEvent` expands recipients (multicast/topic/broadcast) and, per subscriber, processes the subscriber and builds the workflow's step jobs. Those jobs are persisted and kicked off via **`.../usecases/store-subscriber-jobs/store-subscriber-jobs.usecase.ts`**, which stores jobs (`jobRepository.storejobs`), marks them `QUEUED`, and calls `AddJob` on the first job (line 42).
+
+## 3. Step orchestration — per-step queueing
+
+**`.../usecases/add-job/add-job.usecase.ts`** — the orchestration hub. For each step it handles deferred step types before delivery: `DIGEST` (merge/create, line 254), `THROTTLE` (283), `DELAY` (310), computes an execution delay, then enqueues onto the **Standard queue** via `StandardQueueService` (`queueJob`, line 365).
+
+**`.../services/standard.worker.ts`** — `StandardWorker` consumes the Standard queue and runs **`.../usecases/run-job/run-job.usecase.ts`**. `RunJob` (line 84) sets the job `RUNNING`, evaluates step filters/conditions, and calls `SendMessage` (line 274). On success it marks the job `COMPLETED`; **`.../usecases/queue-next-job/queue-next-job.usecase.ts`** then finds the next step and re-enters `AddJob` (line 33) — that loop walks the workflow step-by-step.
+
+## 4. Channel delivery
+
+**`.../usecases/send-message/send-message.usecase.ts`** — routes by `StepTypeEnum` (switch at line 176) to the channel usecase: `SendMessageEmail`, `SendMessageSms`, `SendMessageInApp`, `SendMessageChat`, `SendMessagePush` (plus `DIGEST`/`DELAY`/`THROTTLE`/custom-code/HTTP steps). It also runs `ExecuteBridgeJob` for code-first (Framework/bridge) workflows.
+
+**`.../usecases/send-message/send-message-email.usecase.ts`** (representative) — selects the active integration via `SelectIntegration` (line 67/94), compiles the template content, then dispatches through a provider handler:
+```ts
+const mailFactory = new MailFactory();
+const mailHandler = mailFactory.getHandler(integration, from);  // line 502-503
+await mailHandler.send(mailData);                                // line 506
+```
+It persists the `Message`, records the provider response id, and writes `ExecutionDetails` (the activity feed). SMS/Chat/Push/In-App follow the same pattern with their own factories; In-App writes to the Inbox/WS feed rather than an external provider.
+
+## Flow summary
+
+```
+POST /v1/events/trigger  (EventsController.trigger)
+  → ParseEventRequest → WorkflowQueueService.add        [Workflow queue]
+    → WorkflowWorker → TriggerEvent (fan-out per subscriber)
+      → StoreSubscriberJobs → AddJob (digest/delay/throttle) → StandardQueueService [Standard queue]
+        → StandardWorker → RunJob → SendMessage → SendMessage{Email|Sms|Chat|Push|InApp} → provider handler
+          → QueueNextJob → AddJob (loop to next step)
+```
+
+**Key files:** `events.controller.ts`, `parse-event-request.usecase.ts`, `workflow.worker.ts`, `store-subscriber-jobs.usecase.ts`, `add-job.usecase.ts`, `standard.worker.ts`, `run-job.usecase.ts`, `send-message.usecase.ts`, `send-message-email.usecase.ts`, `queue-next-job.usecase.ts`. The `TriggerEvent` usecase itself lives in the `@novu/application-generic` library (outside `apps`), which is why the fan-out logic isn't in the worker tree.
+
+Note: two queue hops define the architecture — the **Workflow queue** (one job per trigger, does subscriber fan-out) and the **Standard queue** (one job per workflow step per subscriber, does execution + delivery).

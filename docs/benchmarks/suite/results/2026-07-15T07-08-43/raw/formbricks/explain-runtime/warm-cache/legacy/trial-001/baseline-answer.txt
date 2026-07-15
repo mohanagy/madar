@@ -1,0 +1,67 @@
+I now have the complete, verified picture. Here's the answer.
+
+## How Formbricks processes a survey response — end to end
+
+A submitted response travels through three phases: **synchronous request handling + persistence** (in the API route), and then **asynchronous side-effects** (webhooks, integrations, emails, analytics) handled by a background BullMQ job. Below is the flow for the public SDK path (a `POST` to create a response); the update (`PUT`) path is nearly identical.
+
+### Phase 1 — Request handling & validation
+**File:** `apps/web/app/api/v1/client/[workspaceId]/responses/route.ts` (`POST`, wrapped in `withV1ApiWrapper`)
+
+1. **Parse body** with a size limit — `parseJsonBodyWithLimit` (rejects malformed JSON / oversized payloads).
+2. **Resolve the client identifier** — `resolveClientApiIds(params.workspaceId)` (accepts either a legacy `environmentId` or a `workspaceId`).
+3. **Schema validation** — `ZResponseInput.safeParse({...responseInput, workspaceId})` (`ZResponseInput` from `@formbricks/types/responses`).
+4. **Authorization / gating** — contacts-license check if a `userId` is present; `getSurvey(...)` then checks the survey exists, belongs to this workspace, and is `inProgress`; `validateSingleUseResponseInput` enforces single-use links.
+5. **Answer-level validation** — `validateClientFileUploads` + `validateResponse` → `validateResponseData(survey.blocks, data, language, survey.questions)` in `modules/api/lib/validation.ts` (validates answers against each survey block/question).
+6. **Build `meta`** — user-agent parsed via `UAParser`, country from `CF-IPCountry`/`CloudFront-Viewer-Country` headers, and optional server-derived IP capture (`getClientIpFromHeaders`) if `survey.isCaptureIpEnabled`.
+
+### Phase 2 — Persistence (in a DB transaction)
+Called as `createResponseWithQuotaEvaluation({...responseInputData, meta})`:
+
+- **`apps/web/app/api/v1/client/[workspaceId]/responses/lib/response.ts`** — `createResponse` re-validates (`validateInputs([responseInput, ZResponseInput])`), resolves the organization and contact (`getContactByUserId`), computes time-to-complete (`ttc`), and asserts display ownership (`assertDisplayOwnership`). It builds the Prisma payload via `buildPrismaResponseData` (`apps/web/app/api/v1/lib/utils.ts`, which connects `survey`, optional `display`/`contact`, and sets `data`/`meta`/`singleUseId`/`variables`/`ttc`), then does the actual insert: **`prismaClient.response.create({ data, select: responseSelection })`**.
+- **`apps/web/app/api/client/[workspaceId]/responses/lib/response.ts`** — the shared wrapper runs the whole thing inside **`prisma.$transaction`**: it calls `createResponse(...)` and then `evaluateResponseQuotas(...)` in the same transaction, returning the response plus an optional `quotaFull`.
+
+### Phase 3 — Event enqueue (still in the route)
+Back in the route, after persistence, the handler fires pipeline events via **`sendToPipeline`** (`apps/web/app/lib/pipelines.ts`):
+
+```ts
+await sendToPipeline({ event: "responseCreated", workspaceId, surveyId, response });
+if (responseInputData.finished) {
+  await sendToPipeline({ event: "responseFinished", workspaceId, surveyId, response });
+}
+```
+
+`sendToPipeline` **enqueues a BullMQ background job** (`getBackgroundJobProducer().enqueueResponsePipeline(job)`, gated by `getJobsQueueingConfig()` in `apps/web/lib/jobs/config.ts`) — the queue itself lives in the `@formbricks/jobs` package. The route then returns just `{ id, ...quotaObj }`; all heavy work is now off the request path. (The `PUT` update path in `.../[responseId]/lib/put-response-handler.ts` emits `responseUpdated` and, if finished, `responseFinished`.)
+
+### Phase 4 — Async side-effects: webhooks, integrations & analytics
+**File:** `apps/web/modules/response-pipeline/lib/process-response-pipeline-job.ts` — the job handler `processResponsePipelineJob` consumes the queued event. In parallel it loads the org, survey, and matching webhooks (`getWebhooksForPipeline` filters `prisma.webhook` by workspace, `triggers has event`, and survey scope), then:
+
+- **Webhook delivery** — `deliverWebhooks` → `createWebhookDeliveryTask` builds `{ webhookId, event, data: {...response, survey} }`, signs it with `generateStandardWebhookSignature` (Standard Webhooks spec), and POSTs it with SSRF hardening (`validateAndResolveWebhookUrl` + pinned dispatcher + `redirect: "manual"`, 5s timeout, retry-aware via job attempts).
+- **On `responseFinished`** (`runResponseFinishedSideEffects`):
+  - **Integrations** — `handleIntegrations` (`handle-integrations.ts`): Google Sheets, Airtable, Notion, Slack.
+  - **Feedback sources** — `handleFeedbackSourcePipeline` (`apps/web/lib/feedback-source/pipeline-handler.ts`).
+  - **Survey follow-ups** — `sendFollowUpsForResponse`.
+  - **Notification emails** — `sendResponseFinishedEmail` to users whose `notificationSettings.alert[surveyId] === true`.
+  - **Auto-complete counter** — `handleSurveyAutoCompleteSafely` compares `getResponseCountBySurveyId(surveyId)` against `survey.autoComplete`; if reached, sets survey `status: "completed"` and writes an audit event.
+- **On `responseCreated`** (`runResponseCreatedSideEffects`) — the analytics/event-tracking phase:
+  - **Billing metering** — `recordResponseCreatedMeterEvent` (Stripe usage).
+  - **PostHog analytics** — `captureSurveyResponsePostHogEvent` (`response-pipeline/lib/posthog.ts`) fires `survey_response_received` at response-count milestones, using `getResponseCountBySurveyId`.
+  - **Instance telemetry** — `sendTelemetryEvents` (`response-pipeline/lib/telemetry.ts`) POSTs aggregate counts to `ee.formbricks.com`, Redis-locked to once/24h.
+
+Every side-effect is wrapped in its own try/catch (or `Promise.allSettled`) so one failing integration/email/webhook doesn't abort the rest; only DB pool-exhaustion errors re-throw to trigger a job retry.
+
+### Condensed map
+```
+POST /api/v1/client/[workspaceId]/responses/route.ts
+  → ZResponseInput.safeParse → validateResponseData
+  → createResponseWithQuotaEvaluation
+        prisma.$transaction:
+          createResponse → buildPrismaResponseData → prisma.response.create   (persist)
+          evaluateResponseQuotas
+  → sendToPipeline("responseCreated" [+ "responseFinished"])  → BullMQ (@formbricks/jobs)
+        ⇒ processResponsePipelineJob (modules/response-pipeline/lib/process-response-pipeline-job.ts)
+             deliverWebhooks (signed, SSRF-safe)
+             responseFinished → integrations, feedback sources, follow-ups, emails, auto-complete
+             responseCreated  → billing meter, PostHog, telemetry
+```
+
+**Key files:** `route.ts` (request handling) · `lib/response.ts` (both the v1 and the shared transactional one) · `app/api/v1/lib/utils.ts` (`buildPrismaResponseData`) · `app/lib/pipelines.ts` (enqueue) · `modules/response-pipeline/lib/process-response-pipeline-job.ts` (webhooks + all side-effects) · `posthog.ts` / `telemetry.ts` (analytics). The Zod schemas (`ZResponseInput`) live in `packages/types/responses.ts`, and the pipeline queue in `packages/jobs`.

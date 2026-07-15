@@ -29,7 +29,6 @@ import { resolveTaskSelection } from '../runtime/task-intent.js'
 import { compactRetrieveResult, retrieveContext, type RetrieveResult } from '../runtime/retrieve.js'
 import { buildImplementationPackGuidance } from '../runtime/implementation-pack.js'
 import {
-  agentDirectiveForEvidence,
   assessMadarResponseEvidence,
   collectWorkflowOwners,
   missingPhasesFromPayload,
@@ -44,7 +43,12 @@ selectedContextSourceFilesFromRetrieveResult,
 type GraphContextFreshness,
 } from '../runtime/freshness.js'
 import { buildRoutingDebug } from '../runtime/routing-debug.js'
+import { buildRetrievalEvidencePlan } from '../runtime/retrieve/pipeline.js'
 import { communitiesFromGraph, estimateQueryTokens, loadGraph } from '../runtime/serve.js'
+import {
+  parseDiscoverySafetyMetadata,
+  type DiscoverySafetyMetadata,
+} from '../shared/discovery-safety.js'
 
 const DEFAULT_IMPACT_DEPTH = 3
 const IMPLEMENTATION_DISTRACTOR_PATTERN = /(?:helper|util|formatter|serializer|mapper|constant|generated|dist\/|build\/|lockfile|migration)/i
@@ -562,6 +566,38 @@ function trimGovernanceBeforeNodeCulling(payload: JsonRecord, maxTokens: number,
       trimmedFields.push('governance.directive.pack_confidence', 'governance.directive.coverage')
     })
   }
+  if (directive) {
+    attempts.push(() => {
+      delete governance.directive
+      trimmedFields.push('governance.directive')
+    })
+  }
+  const graphFreshness = asJsonRecord(governance.graph_freshness)
+  if (graphFreshness) {
+    attempts.push(() => {
+      governance.graph_freshness = {
+        status: graphFreshness.status,
+        ...(graphFreshness.graph_version ? { graph_version: graphFreshness.graph_version } : {}),
+        ...(graphFreshness.selected_context_status
+          ? { selected_context_status: graphFreshness.selected_context_status }
+          : {}),
+        ...(typeof graphFreshness.changed_source_count === 'number' && graphFreshness.changed_source_count > 0
+          ? { changed_source_count: graphFreshness.changed_source_count }
+          : {}),
+        ...(typeof graphFreshness.missing_source_count === 'number' && graphFreshness.missing_source_count > 0
+          ? { missing_source_count: graphFreshness.missing_source_count }
+          : {}),
+        ...(typeof graphFreshness.changed_selected_context_count === 'number' && graphFreshness.changed_selected_context_count > 0
+          ? { changed_selected_context_count: graphFreshness.changed_selected_context_count }
+          : {}),
+        ...(typeof graphFreshness.missing_selected_context_count === 'number' && graphFreshness.missing_selected_context_count > 0
+          ? { missing_selected_context_count: graphFreshness.missing_selected_context_count }
+          : {}),
+        ...(graphFreshness.recommendation ? { recommendation: graphFreshness.recommendation } : {}),
+      }
+      trimmedFields.push('governance.graph_freshness metrics compacted')
+    })
+  }
 
   let trimmed = false
   for (const attempt of attempts) {
@@ -924,14 +960,64 @@ function downgradeWorkflowSpineConfidence(payload: JsonRecord, trimmedFields: st
     confidenceReasons.push(WORKFLOW_SPINE_BUDGET_REASON)
   }
   const coverage = typeof evidence.coverage === 'string' ? evidence.coverage : 'unknown'
-  evidence.pack_confidence = 'low'
+  const strength = asJsonRecord(evidence.evidence_strength)
+  if (strength) {
+    strength.level = 'weak'
+    const strengthReasons = asUnknownArray(strength.reasons).flatMap((value) => typeof value === 'string' ? [value] : [])
+    if (!strengthReasons.includes('serialized_workflow_spine_culled')) {
+      strengthReasons.push('serialized_workflow_spine_culled')
+    }
+    strength.reasons = strengthReasons
+  }
+  const serializationObligation = 'serialization:workflow_spine'
+  let coverageDetail = asJsonRecord(evidence.coverage_detail)
+  if (coverageDetail) {
+    coverageDetail.status = 'partial'
+    const missing = asUnknownArray(coverageDetail.missing_obligations).flatMap((value) => typeof value === 'string' ? [value] : [])
+    if (!missing.includes(serializationObligation)) {
+      missing.push(serializationObligation)
+    }
+    coverageDetail.missing_obligations = missing
+  }
+  const answerability = asJsonRecord(evidence.answerability)
+  const verificationTargets = asUnknownArray(answerability?.verification_targets)
+  const canVerifyTarget = verificationTargets.length > 0
+  if (answerability) {
+    const caveats = asUnknownArray(answerability.caveats)
+      .flatMap((value) => typeof value === 'string' ? [value] : [])
+    const serializationCaveat = 'serialized workflow spine was culled to the output budget'
+    if (!caveats.includes(serializationCaveat)) {
+      caveats.push(serializationCaveat)
+    }
+    const missingObligations = (coverageDetail
+      ? asUnknownArray(coverageDetail.missing_obligations)
+      : asUnknownArray(answerability.missing_obligations))
+      .flatMap((value) => typeof value === 'string' ? [value] : [])
+    if (!missingObligations.includes(serializationObligation)) {
+      missingObligations.push(serializationObligation)
+    }
+    if (!coverageDetail) {
+      coverageDetail = {
+        status: 'partial',
+        missing_obligations: missingObligations,
+      }
+      evidence.coverage_detail = coverageDetail
+    }
+    const priorFallback = answerability.broad_search_fallback
+    answerability.state = canVerifyTarget ? 'verify_targets' : 'insufficient'
+    answerability.answer_scope = canVerifyTarget ? 'partial' : 'none'
+    answerability.caveats = caveats
+    answerability.missing_obligations = missingObligations
+    answerability.broad_search_fallback = priorFallback === 'blocked'
+      ? 'blocked'
+      : canVerifyTarget ? 'targeted_only' : 'allowed'
+  }
+  evidence.pack_confidence = canVerifyTarget ? 'medium' : 'low'
   evidence.confidence_reasons = confidenceReasons
-  evidence.agent_directive = agentDirectiveForEvidence(
-    'low',
-    coverage === 'complete' || coverage === 'partial' || coverage === 'unknown'
-      ? coverage
-      : 'unknown',
-  )
+  evidence.coverage = coverageDetail
+    ? coverage === 'unknown' ? 'unknown' : 'partial'
+    : coverage
+  evidence.agent_directive = canVerifyTarget ? 'verify_one_targeted_file' : 'explore_with_caution'
   trimmedFields.push('evidence.pack_confidence downgraded')
 }
 
@@ -1136,13 +1222,51 @@ export function buildAnswerReadyPackSchema(
 
   const evidence = asJsonRecord(payload.evidence)
   if (evidence) {
-    if (Array.isArray(evidence.covered_workflow_owners)) {
-      delete evidence.covered_workflow_owners
-      trimmedFields.push('evidence.covered_workflow_owners')
-    }
     if (Array.isArray(evidence.confidence_reasons)) {
       delete evidence.confidence_reasons
       trimmedFields.push('evidence.confidence_reasons')
+    }
+    const strength = asJsonRecord(evidence.evidence_strength)
+    if (strength) {
+      evidence.evidence_strength = { level: strength.level }
+      trimmedFields.push('evidence.evidence_strength metrics compacted')
+    }
+    const coverageDetail = asJsonRecord(evidence.coverage_detail)
+    if (coverageDetail) {
+      delete coverageDetail.required_obligations
+      delete coverageDetail.covered_obligations
+      coverageDetail.missing_obligations = asUnknownArray(coverageDetail.missing_obligations).slice(0, 4)
+      trimmedFields.push('evidence.coverage_detail obligations compacted')
+    }
+    const answerability = asJsonRecord(evidence.answerability)
+    if (answerability) {
+      answerability.caveats = asUnknownArray(answerability.caveats).slice(0, 2)
+      answerability.missing_obligations = asUnknownArray(answerability.missing_obligations).slice(0, 4)
+      answerability.verification_targets = asUnknownArray(answerability.verification_targets)
+        .map((target) => asJsonRecord(target))
+        .filter((target): target is JsonRecord => target !== null)
+        .slice(0, 2)
+        .map((target) => ({
+          ...(target.handle_id ? { handle_id: target.handle_id } : {}),
+          ...(target.evidence_class ? { evidence_class: target.evidence_class } : {}),
+          focus_files: asUnknownArray(target.focus_files).slice(0, 2),
+          focus_ranges: asUnknownArray(target.focus_ranges).slice(0, 1),
+          reason: target.reason,
+        }))
+      trimmedFields.push('evidence.answerability compacted')
+    }
+    const recovery = asJsonRecord(evidence.recovery)
+    if (recovery) {
+      recovery.attempts = asUnknownArray(recovery.attempts)
+        .map((attempt) => asJsonRecord(attempt))
+        .filter((attempt): attempt is JsonRecord => attempt !== null)
+        .slice(0, 2)
+        .map((attempt) => ({
+          attempt: attempt.attempt,
+          status: attempt.status,
+          changed_result: attempt.changed_result,
+        }))
+      trimmedFields.push('evidence.recovery metrics compacted')
     }
   }
   attachSerializedBudget(payload, maxTokens, trimmedFields)
@@ -1177,11 +1301,67 @@ export function buildAnswerReadyPackSchema(
       'pack.snippet_budget_tokens_used',
       'pack.snippet_budget_tokens_remaining',
     )
+
+    const retrievalPlan = asJsonRecord(pack.retrieval_plan)
+    if (retrievalPlan) {
+      const attempts = asUnknownArray(retrievalPlan.attempts)
+        .map((attempt) => asJsonRecord(attempt))
+        .filter((attempt): attempt is JsonRecord => attempt !== null)
+        .slice(0, 1)
+        .map((attempt) => ({
+          fallback: attempt.fallback,
+          status: attempt.status,
+          changed_result: attempt.changed_result,
+        }))
+      pack.retrieval_plan = {
+        version: retrievalPlan.version,
+        status: retrievalPlan.status,
+        reasons: retrievalPlan.reasons,
+        ...(retrievalPlan.selected_fallback ? { selected_fallback: retrievalPlan.selected_fallback } : {}),
+        attempts,
+      }
+      trimmedFields.push('pack.retrieval_plan metrics compacted')
+    }
+
+    const recovery = asJsonRecord(pack.recovery)
+    if (recovery) {
+      recovery.attempts = asUnknownArray(recovery.attempts)
+        .map((attempt) => asJsonRecord(attempt))
+        .filter((attempt): attempt is JsonRecord => attempt !== null)
+        .slice(0, 2)
+        .map((attempt) => ({
+          attempt: attempt.attempt,
+          status: attempt.status,
+          changed_result: attempt.changed_result,
+        }))
+      trimmedFields.push('pack.recovery metrics compacted')
+    }
+
+    if (Object.hasOwn(pack, 'retrieval_gate')) {
+      delete pack.retrieval_gate
+      trimmedFields.push('pack.retrieval_gate')
+    }
   }
   delete payload.retrieval_gate
   delete payload.why_explanation
   trimmedFields.push('retrieval_gate', 'why_explanation')
   if (trimGovernanceBeforeNodeCulling(payload, maxTokens, trimmedFields)) {
+    attachSerializedBudget(payload, maxTokens, trimmedFields)
+    if (estimatedJsonTokens(payload) <= maxTokens) {
+      return payload
+    }
+  }
+  if (Array.isArray(payload.workflow_centers)) {
+    delete payload.workflow_centers
+    trimmedFields.push('workflow_centers')
+    attachSerializedBudget(payload, maxTokens, trimmedFields)
+    if (estimatedJsonTokens(payload) <= maxTokens) {
+      return payload
+    }
+  }
+  if (maxTokens <= 800 && evidence && Array.isArray(evidence.covered_workflow_owners)) {
+    delete evidence.covered_workflow_owners
+    trimmedFields.push('evidence.covered_workflow_owners')
     attachSerializedBudget(payload, maxTokens, trimmedFields)
     if (estimatedJsonTokens(payload) <= maxTokens) {
       return payload
@@ -1241,18 +1421,27 @@ export function buildExplainPackPayload(
   }
 }
 
+type ExplainRetrievalInput = Partial<Pick<
+  RetrieveResult,
+  | 'matched_nodes'
+  | 'claims'
+  | 'expandable'
+  | 'coverage'
+  | 'retrieval_gate'
+  | 'execution_slice'
+  | 'answer_contract'
+  | 'recovery'
+>> & {
+  question: string
+  task_contract?: { budget: number; task_intent?: string; evidence_recipe_id?: string }
+}
+
 export function buildExplainPackPayloadCore(
   pack: ReturnType<typeof compactRetrieveResult>,
-  retrieval: Partial<{
-    matched_nodes: RetrieveResult['matched_nodes']
-    question: string
-    coverage: ContextPackCoverage
-    task_contract: { budget: number; task_intent?: string; evidence_recipe_id?: string }
-  }> & {
-    question: string
-  },
+  retrieval: ExplainRetrievalInput,
   implementation?: ImplementationPackGuidance,
   graphPath?: string,
+  discoverySafety?: DiscoverySafetyMetadata | null,
 ): ExplainPackPayload {
   const payload = buildExplainPackPayload(pack, retrieval, implementation)
   const entrypointExpandable = runtimeGenerationEntrypointExpandable('explain', pack, retrieval)
@@ -1272,21 +1461,28 @@ export function buildExplainPackPayloadCore(
   })
   const centers = workflowCenters('explain', pack, plan, implementation, retrieval as RetrieveResult)
   const firstRead = recommendedFirstRead('explain', pack, implementation, retrieval as RetrieveResult)
-  const evidenceAssessment = assessMadarResponseEvidence({
-    answerContract: (retrieval as RetrieveResult).answer_contract,
+  const coveredWorkflowOwners = collectWorkflowOwners(
+    centers.map((entry) => entry.path),
+    firstRead.map((entry) => entry.path),
+    implementation?.likely_edit_files.map((entry) => entry.path) ?? [],
+    implementation?.likely_test_files.map((entry) => entry.path) ?? [],
+  )
+  const retrievalEvidencePlan = buildRetrievalEvidencePlan({
     coverage: payload.coverage,
-    coveredWorkflowOwners: collectWorkflowOwners(
-      centers.map((entry) => entry.path),
-      firstRead.map((entry) => entry.path),
-      implementation?.likely_edit_files.map((entry) => entry.path) ?? [],
-      implementation?.likely_test_files.map((entry) => entry.path) ?? [],
-    ),
-    executionSlice: (retrieval as RetrieveResult).execution_slice,
+    expandable: payload.expandable,
+    ...(retrieval.execution_slice ? { executionSlice: retrieval.execution_slice } : {}),
+    ...(retrieval.answer_contract ? { answerContract: retrieval.answer_contract } : {}),
+    missingPhases: missingPhasesFromPayload(retrieval),
+    coveredWorkflowOwners,
+    selectedNodeCount: pack.matched_nodes.length,
+    selectedRelationshipCount: pack.relationships.length,
+  })
+  const evidenceAssessment = assessMadarResponseEvidence({
+    evidencePlan: retrievalEvidencePlan,
+    discoverySafety,
     graphPath,
-    missingPhases: missingPhasesFromPayload(pack as {
-      answer_contract?: { missing_phases?: readonly unknown[] }
-      execution_slice?: { phase_coverage?: { missing?: readonly unknown[] } }
-    }),
+    question: retrieval.question,
+    recovery: retrieval.recovery,
     score: confidenceScore(payload.coverage, pack, implementation),
   })
 
@@ -1866,13 +2062,19 @@ function buildPackSchemaV1<TPack extends PackPayload>(
   response: PackResponseBase & ContextPlaneMetadata & {
     pack: TPack
     graphFreshness: GraphContextFreshness
+    discoverySafety?: DiscoverySafetyMetadata | null
     implementation?: ImplementationPackGuidance
     routing?: ContextPackRoutingDebug
     target?: string
     retrieval?: RetrieveResult
   },
 ): PackSchemaEnvelope<TPack | PackPayloadWithCompatibility<TPack>> {
-  const { retrieval, graphFreshness: _graphFreshness, ...serializableResponse } = response
+  const {
+    retrieval,
+    graphFreshness: _graphFreshness,
+    discoverySafety,
+    ...serializableResponse
+  } = response
   const centers = workflowCenters(response.task, response.pack, response.plan, response.implementation, retrieval)
   const firstRead = recommendedFirstRead(response.task, response.pack, response.implementation, retrieval)
   const contracts = publicContracts(response.implementation)
@@ -1880,8 +2082,12 @@ function buildPackSchemaV1<TPack extends PackPayload>(
   const evidenceAssessment = assessMadarResponseEvidence({
     answerContract: retrieval?.answer_contract ?? ('answer_contract' in response.pack ? response.pack.answer_contract : undefined),
     coverage: response.coverage,
+    discoverySafety,
     executionSlice: retrieval?.execution_slice ?? ('execution_slice' in response.pack ? response.pack.execution_slice : undefined),
+    expandable: response.expandable,
     graphPath: response.graph_path,
+    question: response.prompt,
+    recovery: retrieval?.recovery ?? ('recovery' in response.pack ? response.pack.recovery : undefined),
     missingPhases: missingPhasesFromPayload(response.pack as {
       answer_contract?: { missing_phases?: readonly unknown[] }
       execution_slice?: { phase_coverage?: { missing?: readonly unknown[] } }
@@ -2260,6 +2466,7 @@ export async function runContextPackCommand(
   dependencies: ContextPackCommandDependencies = DEFAULT_DEPENDENCIES,
 ): Promise<string> {
   const graph = dependencies.loadGraph(options.graphPath)
+  const discoverySafety = parseDiscoverySafetyMetadata(graph.graph.discovery_safety)
   const initialGraphFreshness = analyzeGraphContextFreshness(options.graphPath, graph)
   if (options.requireFreshGraph === true) {
     requireFreshGraph(initialGraphFreshness)
@@ -2306,6 +2513,7 @@ export async function runContextPackCommand(
       ...baseResponse(options, plan, plannerBudget, resolvedTask.task_kind),
       pack: reviewPack,
       graphFreshness: initialGraphFreshness,
+      discoverySafety,
       ...contextMetadata(reviewResult.review_bundle ?? {}),
     }), renderOptions)
   }
@@ -2332,6 +2540,7 @@ export async function runContextPackCommand(
       target: impactTarget,
       pack: impactPack,
       graphFreshness: initialGraphFreshness,
+      discoverySafety,
       ...impactMetadata(impactResult, plannerBudget, options.prompt, initialPlan.evidence.recipe_id, options.retrievalLevel),
       ...(options.why ? { routing: buildRoutingDebug(retrieval) } : {}),
     }), renderOptions)
@@ -2365,9 +2574,10 @@ export async function runContextPackCommand(
   return renderContextPackOutput(options.format, buildPackSchemaV1({
     ...baseResponse(options, initialPlan, plannerBudget, resolvedTask.task_kind),
     graphFreshness,
+    discoverySafety,
     ...(
       resolvedTask.task_kind === 'explain'
-        ? buildExplainPackPayloadCore(dependencies.compactRetrieveResult(retrieval), retrieval, implementation, options.graphPath)
+        ? buildExplainPackPayloadCore(dependencies.compactRetrieveResult(retrieval), retrieval, implementation, options.graphPath, discoverySafety)
         : buildExplainPackPayload(dependencies.compactRetrieveResult(retrieval), retrieval, implementation)
     ),
     retrieval,

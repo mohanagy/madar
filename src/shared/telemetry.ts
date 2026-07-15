@@ -26,6 +26,10 @@ export type TelemetryFailureBucket =
   | 'install_error'
   | 'unknown'
 export type TelemetryStatusBucket = 'healthy' | 'attention_needed'
+export type TelemetryAnswerabilityBucket = 'ready' | 'ready_with_caveat' | 'verify_targets' | 'insufficient'
+export type TelemetryRecoveryAttemptsBucket = '0' | '1' | '2'
+export type TelemetryRecoveryImprovementBucket = 'not_attempted' | 'improved' | 'unchanged'
+export type TelemetryBroadSearchFallbackBucket = 'not_needed' | 'targeted_only' | 'allowed' | 'blocked'
 export type TelemetryAgentTarget =
   | 'claude'
   | 'cursor'
@@ -52,6 +56,11 @@ export interface TelemetryEventInput {
   spiEnabled?: boolean
   failureBucket?: TelemetryFailureBucket
   statusBucket?: TelemetryStatusBucket
+  initialAnswerabilityBucket?: TelemetryAnswerabilityBucket
+  recoveryAttemptsBucket?: TelemetryRecoveryAttemptsBucket
+  recoveryImprovementBucket?: TelemetryRecoveryImprovementBucket
+  finalAnswerabilityBucket?: TelemetryAnswerabilityBucket
+  broadSearchFallbackBucket?: TelemetryBroadSearchFallbackBucket
 }
 
 export interface TelemetryOptions {
@@ -98,6 +107,11 @@ interface PersistedTelemetryEvent {
   spi_enabled?: boolean
   failure_bucket?: TelemetryFailureBucket
   status_bucket?: TelemetryStatusBucket
+  initial_answerability_bucket?: TelemetryAnswerabilityBucket
+  recovery_attempts_bucket?: TelemetryRecoveryAttemptsBucket
+  recovery_improvement_bucket?: TelemetryRecoveryImprovementBucket
+  final_answerability_bucket?: TelemetryAnswerabilityBucket
+  broad_search_fallback_bucket?: TelemetryBroadSearchFallbackBucket
 }
 
 interface LegacyTelemetrySpool {
@@ -139,6 +153,10 @@ const TELEMETRY_FAILURE_BUCKETS: readonly TelemetryFailureBucket[] = [
   'unknown',
 ]
 const TELEMETRY_STATUS_BUCKETS: readonly TelemetryStatusBucket[] = ['healthy', 'attention_needed']
+const TELEMETRY_ANSWERABILITY_BUCKETS: readonly TelemetryAnswerabilityBucket[] = ['ready', 'ready_with_caveat', 'verify_targets', 'insufficient']
+const TELEMETRY_RECOVERY_ATTEMPTS_BUCKETS: readonly TelemetryRecoveryAttemptsBucket[] = ['0', '1', '2']
+const TELEMETRY_RECOVERY_IMPROVEMENT_BUCKETS: readonly TelemetryRecoveryImprovementBucket[] = ['not_attempted', 'improved', 'unchanged']
+const TELEMETRY_BROAD_SEARCH_FALLBACK_BUCKETS: readonly TelemetryBroadSearchFallbackBucket[] = ['not_needed', 'targeted_only', 'allowed', 'blocked']
 const TELEMETRY_AGENT_TARGETS: readonly TelemetryAgentTarget[] = [
   'claude',
   'cursor',
@@ -247,6 +265,22 @@ function isTelemetryStatusBucket(value: unknown): value is TelemetryStatusBucket
   return typeof value === 'string' && TELEMETRY_STATUS_BUCKETS.includes(value as TelemetryStatusBucket)
 }
 
+function isTelemetryAnswerabilityBucket(value: unknown): value is TelemetryAnswerabilityBucket {
+  return typeof value === 'string' && TELEMETRY_ANSWERABILITY_BUCKETS.includes(value as TelemetryAnswerabilityBucket)
+}
+
+function isTelemetryRecoveryAttemptsBucket(value: unknown): value is TelemetryRecoveryAttemptsBucket {
+  return typeof value === 'string' && TELEMETRY_RECOVERY_ATTEMPTS_BUCKETS.includes(value as TelemetryRecoveryAttemptsBucket)
+}
+
+function isTelemetryRecoveryImprovementBucket(value: unknown): value is TelemetryRecoveryImprovementBucket {
+  return typeof value === 'string' && TELEMETRY_RECOVERY_IMPROVEMENT_BUCKETS.includes(value as TelemetryRecoveryImprovementBucket)
+}
+
+function isTelemetryBroadSearchFallbackBucket(value: unknown): value is TelemetryBroadSearchFallbackBucket {
+  return typeof value === 'string' && TELEMETRY_BROAD_SEARCH_FALLBACK_BUCKETS.includes(value as TelemetryBroadSearchFallbackBucket)
+}
+
 function isTelemetryAgentTarget(value: unknown): value is TelemetryAgentTarget {
   return typeof value === 'string' && TELEMETRY_AGENT_TARGETS.includes(value as TelemetryAgentTarget)
 }
@@ -293,6 +327,21 @@ function normalizeTelemetryEvent(record: Partial<PersistedTelemetryEvent>): Pers
   }
   if (isTelemetryStatusBucket(record.status_bucket)) {
     normalized.status_bucket = record.status_bucket
+  }
+  if (isTelemetryAnswerabilityBucket(record.initial_answerability_bucket)) {
+    normalized.initial_answerability_bucket = record.initial_answerability_bucket
+  }
+  if (isTelemetryRecoveryAttemptsBucket(record.recovery_attempts_bucket)) {
+    normalized.recovery_attempts_bucket = record.recovery_attempts_bucket
+  }
+  if (isTelemetryRecoveryImprovementBucket(record.recovery_improvement_bucket)) {
+    normalized.recovery_improvement_bucket = record.recovery_improvement_bucket
+  }
+  if (isTelemetryAnswerabilityBucket(record.final_answerability_bucket)) {
+    normalized.final_answerability_bucket = record.final_answerability_bucket
+  }
+  if (isTelemetryBroadSearchFallbackBucket(record.broad_search_fallback_bucket)) {
+    normalized.broad_search_fallback_bucket = record.broad_search_fallback_bucket
   }
 
   return normalized
@@ -542,7 +591,7 @@ export function formatTelemetryStatus(status: TelemetryStatus): string {
     `Telemetry: ${status.enabled ? 'enabled' : 'disabled'}`,
     `Reason: ${status.reason}`,
     `Event cache: ${status.eventCount} event(s) at ${status.spoolFile}`,
-    'Tracked fields: command, stage, recorded_at, version, os, node_major, optional agent_target, optional repo_size_bucket, optional graph_size_bucket, optional spi_enabled, optional failure_bucket, optional status_bucket',
+    'Tracked fields: command, stage, recorded_at, version, os, node_major, optional agent_target, size/status/failure buckets, and source-safe answerability/recovery buckets',
     'Tracked surfaces: install, generate, pack, prompt, context_pack, doctor, status, compare',
     'Local controls: madar telemetry clear, madar telemetry report [spool.json ...]',
     'Excluded fields: prompts, answers, source paths, source content, repository names',
@@ -555,7 +604,7 @@ function formatTelemetryPreferenceUpdate(preferenceEnabled: boolean, runtimeStat
     `Telemetry preference: ${preferenceEnabled ? 'enabled' : 'disabled'}`,
     `Config file: ${runtimeStatus.configFile}`,
     `Event cache: ${runtimeStatus.eventCount} event(s) at ${runtimeStatus.spoolFile}`,
-    'Tracked fields: command, stage, recorded_at, version, os, node_major, optional agent_target, optional repo_size_bucket, optional graph_size_bucket, optional spi_enabled, optional failure_bucket, optional status_bucket',
+    'Tracked fields: command, stage, recorded_at, version, os, node_major, optional agent_target, size/status/failure buckets, and source-safe answerability/recovery buckets',
     'Excluded fields: prompts, answers, source paths, source content, repository names',
   ]
 
@@ -639,6 +688,11 @@ export function recordTelemetryEvent(input: TelemetryEventInput, options: Teleme
       ...(typeof input.spiEnabled === 'boolean' ? { spi_enabled: input.spiEnabled } : {}),
       ...(input.failureBucket ? { failure_bucket: input.failureBucket } : {}),
       ...(input.statusBucket ? { status_bucket: input.statusBucket } : {}),
+      ...(input.initialAnswerabilityBucket ? { initial_answerability_bucket: input.initialAnswerabilityBucket } : {}),
+      ...(input.recoveryAttemptsBucket ? { recovery_attempts_bucket: input.recoveryAttemptsBucket } : {}),
+      ...(input.recoveryImprovementBucket ? { recovery_improvement_bucket: input.recoveryImprovementBucket } : {}),
+      ...(input.finalAnswerabilityBucket ? { final_answerability_bucket: input.finalAnswerabilityBucket } : {}),
+      ...(input.broadSearchFallbackBucket ? { broad_search_fallback_bucket: input.broadSearchFallbackBucket } : {}),
     })
     if (spool.events.length > maxEvents) {
       spool.events = spool.events.slice(-maxEvents)
@@ -698,6 +752,36 @@ export function readTelemetryReport(options: TelemetryOptions = {}, spoolPaths: 
   if (statusBuckets.length > 0) {
     lines.push('Status buckets:')
     lines.push(...summarizeCounts(statusBuckets))
+  }
+
+  const initialAnswerability = events.flatMap((event) => event.initial_answerability_bucket ? [event.initial_answerability_bucket] : [])
+  if (initialAnswerability.length > 0) {
+    lines.push('Initial answerability:')
+    lines.push(...summarizeCounts(initialAnswerability))
+  }
+
+  const recoveryAttempts = events.flatMap((event) => event.recovery_attempts_bucket ? [event.recovery_attempts_bucket] : [])
+  if (recoveryAttempts.length > 0) {
+    lines.push('Recovery attempts:')
+    lines.push(...summarizeCounts(recoveryAttempts))
+  }
+
+  const recoveryImprovement = events.flatMap((event) => event.recovery_improvement_bucket ? [event.recovery_improvement_bucket] : [])
+  if (recoveryImprovement.length > 0) {
+    lines.push('Recovery improvement:')
+    lines.push(...summarizeCounts(recoveryImprovement))
+  }
+
+  const finalAnswerability = events.flatMap((event) => event.final_answerability_bucket ? [event.final_answerability_bucket] : [])
+  if (finalAnswerability.length > 0) {
+    lines.push('Final answerability:')
+    lines.push(...summarizeCounts(finalAnswerability))
+  }
+
+  const broadSearchFallback = events.flatMap((event) => event.broad_search_fallback_bucket ? [event.broad_search_fallback_bucket] : [])
+  if (broadSearchFallback.length > 0) {
+    lines.push('Broad-search fallback:')
+    lines.push(...summarizeCounts(broadSearchFallback))
   }
 
   return lines.join('\n')

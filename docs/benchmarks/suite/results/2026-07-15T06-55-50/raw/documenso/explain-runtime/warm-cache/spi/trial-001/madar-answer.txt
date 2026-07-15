@@ -1,0 +1,15 @@
+Based on the Madar retrieval (state: `verify_targets`, partial scope) plus the two verified target files, here's what the evidence supports — and where it stops.
+
+## Verified flow
+
+**Send preparation → envelope items**
+`UNSAFE_createEnvelopeItems` (`server-only/envelope-item/create-envelope-items.ts`) prepares each uploaded file for sending: it inserts saved form values (`insertFormValuesInPdf`), normalizes and flattens the PDF (`normalizePdf`, flattened unless it's a `TEMPLATE`), strips/extracts placeholders (`extractPdfPlaceholders`), and uploads the cleaned PDF (`putPdfFileServerSide`). Inside one `prisma.$transaction` it creates the `EnvelopeItem` rows, writes `ENVELOPE_ITEM_CREATED` audit logs, and — if recipients already exist — converts placeholders into `Field` rows, matching each placeholder to a recipient by signing order (`convertPlaceholdersToFieldInputs` + `findRecipientByPlaceholder`).
+
+**Recipient creation + initial signing state**
+`createEnvelopeRecipients` (`server-only/recipient/create-envelope-recipients.ts`) loads the envelope, blocks if it's already `completedAt`, and enforces the `cfr21` org flag before allowing action-auth. In a transaction it creates each `Recipient` with a `nanoid()` signing token and auth options from `createRecipientAuthOptions`. The key signing-state rule: `CC` recipients start `SendStatus.SENT` / `SigningStatus.SIGNED` (nothing to sign), while all other roles start `NOT_SENT` / `NOT_SIGNED`. For `DOCUMENT`-type envelopes it writes a `RECIPIENT_CREATED` audit log, then returns recipients mapped to the legacy shape.
+
+## Caveat — notification delivery not covered
+
+Per the Madar `answer_contract`, the retrieved slice is `partial` (confidence: low) and is explicitly **missing the `notification_or_event` phase**, with `broad_search_fallback: targeted_only` (no broad search permitted). So I can't responsibly trace how the actual "send" transition flips `NOT_SENT → SENT`, dispatches signing-request emails, or fires completion notifications — that orchestration layer (the send/seal job and email jobs) isn't in the evidence pack.
+
+If you want that piece, I'd need to run a follow-up `retrieve` targeting the send/seal action or the email-job layer (e.g. a query like "how does Documenso send signing request emails and mark recipients SENT").

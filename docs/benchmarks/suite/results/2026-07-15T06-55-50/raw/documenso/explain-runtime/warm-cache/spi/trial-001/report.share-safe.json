@@ -1,0 +1,385 @@
+{
+  "baseline_mode": "native_agent",
+  "task": "explain",
+  "question": "How does Documenso move a document from send preparation through recipient creation, signing state, and notification delivery?",
+  "graph_path": "<project-root>/out/graph.json",
+  "isolation": true,
+  "environment": {
+    "claude_code_version": "2.1.209",
+    "host_os": "darwin-arm64",
+    "node_version": "v22.22.3",
+    "mcp_servers_active": [
+      "madar"
+    ],
+    "mcp_server_count": 1,
+    "skills_loaded": [],
+    "skills_loaded_count": 0,
+    "plugins_active": [],
+    "user_claude_md_hash": "sha256:0cf98a0a8f9c27017a0bebc7b017fc17518d9103c62ca384da20b2776b0aade7",
+    "project_claude_md_hash": "sha256:4f80545c205b6fbd91ffaae058c5f95f47566acbd8446c3a8ef7c2a29aac0b98",
+    "parent_claude_md_hashes": [],
+    "hooks_active": {
+      "user_prompt_submit": [
+        "project:command:*"
+      ],
+      "pre_tool_use": [],
+      "post_tool_use": []
+    }
+  },
+  "environment_contamination": {
+    "skills_activated_during_run": [],
+    "skills_conflicting_with_madar_rules": [],
+    "calls_to_other_mcps": {},
+    "subagent_dispatches_detected": 0,
+    "skill_alignment_score": 1
+  },
+  "exec_command": {
+    "command": null,
+    "placeholders": [
+      "{prompt_file}"
+    ],
+    "redacted": true
+  },
+  "baseline": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 130,
+      "cache_creation_input_tokens": 29268,
+      "cache_read_input_tokens": 154349,
+      "output_tokens": 3119,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 29268,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 1,
+          "output_tokens": 1811,
+          "cache_read_input_tokens": 49522,
+          "cache_creation_input_tokens": 693,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 693
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 183747,
+    "uncached_input_tokens_anthropic_exact": 29398,
+    "cached_input_tokens_anthropic_exact": 154349,
+    "total_cost_usd": 0.4491905,
+    "num_turns": 8,
+    "duration_ms": 58949,
+    "result_path": "<artifact-root>/baseline-answer.txt"
+  },
+  "madar": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 8,
+      "cache_creation_input_tokens": 19695,
+      "cache_read_input_tokens": 101014,
+      "output_tokens": 2049,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 19695,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 1128,
+          "cache_read_input_tokens": 31828,
+          "cache_creation_input_tokens": 10739,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 10739
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 120717,
+    "uncached_input_tokens_anthropic_exact": 19703,
+    "cached_input_tokens_anthropic_exact": 101014,
+    "total_cost_usd": 0.29966800000000005,
+    "num_turns": 5,
+    "duration_ms": 40264,
+    "result_path": "<artifact-root>/madar-answer.txt"
+  },
+  "install_verified": true,
+  "measurement_validity": "valid",
+  "trace_status": "trace_available",
+  "madar_mcp_call_count": 1,
+  "reductions": {
+    "input_tokens": 1.52,
+    "uncached_input_tokens": 1.49,
+    "cache_creation_input_tokens": 1.49,
+    "num_turns": 1.6,
+    "duration_ms": 1.46,
+    "cost_usd": 1.5
+  },
+  "token_regression": false,
+  "token_regression_reasons": [],
+  "prompt_token_source": {
+    "baseline": "anthropic_provider_reported",
+    "madar": "anthropic_provider_reported"
+  },
+  "provider_proof": {
+    "baseline": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "madar": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "reduction_basis": "provider_reported"
+  },
+  "started_at": "2026-07-15T07:06:21.383Z",
+  "completed_at": "2026-07-15T07:08:03.671Z",
+  "paths": {
+    "output_dir": "<artifact-root>",
+    "report": "<artifact-root>/report.json",
+    "share_safe_report": "<artifact-root>/report.share-safe.json",
+    "baseline_answer": "<artifact-root>/baseline-answer.txt",
+    "madar_answer": "<artifact-root>/madar-answer.txt",
+    "baseline_prompt": "<artifact-root>/baseline-prompt.txt",
+    "madar_prompt": "<artifact-root>/madar-prompt.txt",
+    "prompt_file": "<artifact-root>/madar-prompt.txt"
+  },
+  "benchmark_readiness": {
+    "status": "ready",
+    "reasons": [],
+    "suggested_graph_scope": null
+  },
+  "madar_trace": {
+    "source": "claude_messages_tool_use",
+    "summary": "4 tool calls across 4 turns",
+    "tool_call_count": 4,
+    "tool_calls_by_name": {
+      "mcp__madar__retrieve": 1,
+      "Read": 2,
+      "ToolSearch": 1
+    },
+    "per_turn": [
+      {
+        "turn": 2,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ],
+        "madar_tool_discovery_count": 1,
+        "madar_tool_discovery_tool_indexes": [
+          0
+        ]
+      },
+      {
+        "turn": 3,
+        "tool_call_count": 1,
+        "tools": [
+          "mcp__madar__retrieve"
+        ]
+      },
+      {
+        "turn": 6,
+        "tool_call_count": 1,
+        "tools": [
+          "Read"
+        ]
+      },
+      {
+        "turn": 7,
+        "tool_call_count": 1,
+        "tools": [
+          "Read"
+        ]
+      }
+    ],
+    "madar_mcp_call_count": 1,
+    "madar_mcp_calls_by_name": {
+      "mcp__madar__retrieve": 1
+    },
+    "first_madar_turn": 3,
+    "first_madar_tool_name": "mcp__madar__retrieve",
+    "pre_madar_broad_exploration_tool_call_count": 0,
+    "pre_madar_broad_exploration_tool_calls_by_name": {},
+    "context_pack_call_count": 0,
+    "focused_follow_up_tool_call_count": 2,
+    "broad_exploration_tool_call_count": 0,
+    "broad_exploration_tool_calls_by_name": {},
+    "exploration_outcome": "madar_invoked",
+    "exploration_summary": "Madar MCP invoked 1 time (mcp__madar__retrieve); 2 focused follow-up calls; no broad exploration after the first Madar call."
+  },
+  "tool_call_counts": {
+    "baseline": {
+      "total": 7,
+      "Read": 3,
+      "Bash": 4,
+      "Glob": 0,
+      "Grep": 0,
+      "ToolSearch": 0,
+      "other": {}
+    },
+    "madar": {
+      "total": 4,
+      "Read": 2,
+      "Bash": 0,
+      "Glob": 0,
+      "Grep": 0,
+      "ToolSearch": 1,
+      "other": {
+        "retrieve": 1
+      }
+    }
+  },
+  "answer_contract": {
+    "version": 1,
+    "answer_focus": "runtime_generation",
+    "entrypoint_scope": "setup_context",
+    "required_elements": [
+      "main_pipeline_phases",
+      "missing_or_uncertain_phases"
+    ],
+    "do_not_claim": [
+      "direct_producer_to_worker_calls_without_enqueues_boundary",
+      "irrelevant_model_or_provider_details",
+      "full_runtime_certainty_when_slice_is_partial"
+    ],
+    "observed_phases": [],
+    "missing_phases": [
+      "notification_or_event"
+    ],
+    "uncertainty_notes": [
+      "Do not infer unobserved runtime phases; if the full flow is requested, answer: not enough evidence; missing notification_or_event"
+    ],
+    "confidence": "low"
+  },
+  "execution_slice": {
+    "status": "partial",
+    "confidence": "low",
+    "confidence_reasons": [
+      "missing_orchestration",
+      "missing_phase:notification_or_event"
+    ],
+    "boundary_reason": "missing expected notification or event phase",
+    "steps": [
+      {
+        "label": "createRecipientAuthOptions()",
+        "source_file": "create-envelope-recipients.ts",
+        "line_number": 91
+      }
+    ],
+    "primary_path": {
+      "steps": [
+        {
+          "label": "createRecipientAuthOptions()",
+          "source_file": "create-envelope-recipients.ts",
+          "line_number": 91
+        }
+      ],
+      "boundary_reason": "missing expected notification or event phase"
+    },
+    "phase_coverage": {
+      "expected": [
+        "notification_or_event"
+      ],
+      "observed": [],
+      "missing": [
+        "notification_or_event"
+      ]
+    }
+  },
+  "answer_quality": {
+    "gate": "documenso-explain-runtime",
+    "prompt": "How does Documenso move a document from send preparation through recipient creation, signing state, and notification delivery?",
+    "baseline": {
+      "passed": false,
+      "missing_required_terms": [
+        "direct evidence citation: recipient creation",
+        "direct evidence citation: notification delivery"
+      ],
+      "forbidden_terms_present": []
+    },
+    "madar": {
+      "passed": false,
+      "missing_required_terms": [
+        "direct evidence citation: send preparation",
+        "direct evidence citation: recipient creation",
+        "direct evidence citation: signing state",
+        "direct evidence citation: notification delivery"
+      ],
+      "forbidden_terms_present": []
+    },
+    "human_review": {
+      "status": "pending",
+      "required_concepts": [
+        "The answer should describe the runtime path instead of asking for tool approval."
+      ],
+      "answer_quality_notes": [
+        "Deterministic term checks are a publication gate, not a substitute for human review."
+      ],
+      "manual_review_notes": [
+        "Confirm the answer traces the send flow through signing state and notification delivery."
+      ]
+    }
+  },
+  "prompt_contract": {
+    "status": "violated",
+    "evidence": [
+      "focused follow-up did not target missing runtime obligation: send preparation"
+    ]
+  },
+  "claim_assessment": {
+    "routing_efficiency": {
+      "status": "not_measured",
+      "evidence": [
+        "prompt contract is violated (focused follow-up did not target missing runtime obligation: send preparation)",
+        "answer quality failed for baseline: missing direct evidence citation: recipient creation, missing direct evidence citation: notification delivery",
+        "answer quality failed for madar: missing direct evidence citation: send preparation, missing direct evidence citation: recipient creation, missing direct evidence citation: signing state, missing direct evidence citation: notification delivery"
+      ]
+    },
+    "token_reduction": {
+      "status": "not_measured",
+      "evidence": [
+        "prompt contract is violated (focused follow-up did not target missing runtime obligation: send preparation)",
+        "answer quality failed for baseline: missing direct evidence citation: recipient creation, missing direct evidence citation: notification delivery",
+        "answer quality failed for madar: missing direct evidence citation: send preparation, missing direct evidence citation: recipient creation, missing direct evidence citation: signing state, missing direct evidence citation: notification delivery"
+      ]
+    }
+  },
+  "benchmark_outcome": {
+    "outcome": "not_measured",
+    "checks": {
+      "routing_tool_latency": "not_measured",
+      "token": "not_measured",
+      "fresh_token": "not_measured",
+      "cost": "not_measured",
+      "turns": "not_measured"
+    },
+    "evidence": [
+      "prompt contract is violated (focused follow-up did not target missing runtime obligation: send preparation)",
+      "answer quality failed for baseline: missing direct evidence citation: recipient creation, missing direct evidence citation: notification delivery",
+      "answer quality failed for madar: missing direct evidence citation: send preparation, missing direct evidence citation: recipient creation, missing direct evidence citation: signing state, missing direct evidence citation: notification delivery"
+    ]
+  }
+}

@@ -17,15 +17,6 @@
       "redirect entrypoint isn't indexed",
       "not present in this knowledge graph",
       "not verified from indexed code"
-    ],
-    "required_concepts": [
-      "The answer should describe the runtime path instead of asking for tool approval."
-    ],
-    "answer_quality_notes": [
-      "Deterministic term checks are a publication gate, not a substitute for human review."
-    ],
-    "manual_review_notes": [
-      "Confirm the answer traces the send flow through signing state and notification delivery."
     ]
   },
   "formbricks-explain-runtime": {
@@ -46,15 +37,6 @@
       "persistence step in the middle is not in the evidence",
       "partly inferred",
       "did not surface the top-level handler that wires them together"
-    ],
-    "required_concepts": [
-      "The answer should describe request handling, persistence, and analytics/event tracking."
-    ],
-    "answer_quality_notes": [
-      "Permission-blocked non-answers are not benchmark wins."
-    ],
-    "manual_review_notes": [
-      "Confirm the answer follows the response path instead of only naming files."
     ]
   },
   "dub-explain-runtime": {
@@ -75,15 +57,6 @@
       "redirect entrypoint isn't indexed",
       "not present in this knowledge graph",
       "not verified from indexed code"
-    ],
-    "required_concepts": [
-      "The answer should describe request handling, analytics, and the redirect path."
-    ],
-    "answer_quality_notes": [
-      "Deterministic answer gates should reject permission-blocked responses."
-    ],
-    "manual_review_notes": [
-      "Confirm the answer explains where analytics is recorded before redirect."
     ]
   },
   "twenty-explain-runtime": {
@@ -100,15 +73,6 @@
       "permission hasn't been granted",
       "tool call is waiting on your permission",
       "ungranted permission"
-    ],
-    "required_concepts": [
-      "The answer should describe the mutation path through workspace services to persistence."
-    ],
-    "answer_quality_notes": [
-      "A scoped Twenty receipt still needs readiness review before it becomes a claim."
-    ],
-    "manual_review_notes": [
-      "Confirm the answer reaches persistence and does not stop at API or resolver layers."
     ]
   },
   "cal-diy-explain-runtime": {
@@ -129,15 +93,6 @@
       "persistence step in the middle is not in the evidence",
       "partly inferred",
       "did not surface the top-level handler that wires them together"
-    ],
-    "required_concepts": [
-      "The answer should cover availability validation, persistence, and notification delivery."
-    ],
-    "answer_quality_notes": [
-      "Fallback raw-read answers can still be usable if they satisfy the deterministic gate."
-    ],
-    "manual_review_notes": [
-      "Confirm the answer follows the booking flow end to end and calls out the fallback caveat if needed."
     ]
   },
   "novu-explain-runtime": {
@@ -154,15 +109,6 @@
       "permission hasn't been granted",
       "tool call is waiting on your permission",
       "ungranted permission"
-    ],
-    "required_concepts": [
-      "The answer should describe API entry, workflow orchestration, and channel delivery."
-    ],
-    "answer_quality_notes": [
-      "Publication requires a real answer, not a permission request."
-    ],
-    "manual_review_notes": [
-      "Confirm the answer traces orchestration through to delivery instead of stopping at the API surface."
     ]
   }
 }

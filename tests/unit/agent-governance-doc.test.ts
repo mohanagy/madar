@@ -17,5 +17,8 @@ describe('agent governance docs', () => {
     expect(doc).toContain('confidence_reasons')
     expect(doc).toContain('covered_workflow_owners')
     expect(doc).toContain('source_file')
+    expect(doc).toContain('answerability')
+    expect(doc).toContain('recovery summary')
+    expect(doc).toContain('never recovery prompts')
   })
 })

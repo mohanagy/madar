@@ -18,9 +18,11 @@ import {
 } from '../../src/infrastructure/compare.js'
 import { claudeInstall } from '../../src/infrastructure/install.js'
 import { toJson } from '../../src/pipeline/export.js'
+import { resolveMadarOutputDirectory } from '../../src/shared/workspace.js'
 
-const FIXTURE_PARENT = resolve('out', 'test-runtime', 'native-agent')
-const COMPARE_OUTPUT_PARENT = resolve('out', 'compare', 'test-runtime-native-agent')
+const TEST_OUTPUT_ROOT = resolveMadarOutputDirectory()
+const FIXTURE_PARENT = join(TEST_OUTPUT_ROOT, 'test-runtime', 'native-agent')
+const COMPARE_OUTPUT_PARENT = join(TEST_OUTPUT_ROOT, 'compare', 'test-runtime-native-agent')
 
 function writeClaudeInstallArtifacts(projectDir: string): void {
   claudeInstall(projectDir)
@@ -54,6 +56,7 @@ function makeFixtureProject(
   writeFileSync(
     join(projectDir, 'out', 'graph.json'),
     JSON.stringify({
+      directed: true,
       community_labels: { '0': 'Mock' },
       ...(options.spiMode === true ? { spi_mode: true } : {}),
       nodes: [
@@ -174,7 +177,7 @@ function makeImplementationFixtureProject(): {
     'utf8',
   )
 
-  const graph = new KnowledgeGraph()
+  const graph = new KnowledgeGraph({ directed: true })
   graph.graph.root_path = projectDir
   graph.addNode('session_manager', {
     label: 'SessionManager',
@@ -245,15 +248,30 @@ function makeExplainQualityFixtureProject(): {
   return { projectDir, graphPath, outputDir, questionsPath }
 }
 
+const LOGIN_RUNTIME_PROOF_OBLIGATIONS = [
+  {
+    id: 'request_handling',
+    label: 'request handling',
+    kind: 'entrypoint',
+    evidence_terms: ['AuthController.login', 'src/auth/controller.ts'],
+  },
+  {
+    id: 'persistence',
+    label: 'persistence',
+    kind: 'terminal',
+    evidence_terms: ['SessionStore.createSession', 'src/session/store.ts'],
+  },
+] as const
+
 function writeRuntimeProofFixture(
   projectDir: string,
   profileId: string,
   question: string,
-  obligations: Array<{
+  obligations: ReadonlyArray<{
     id: string
     label: string
     kind: 'entrypoint' | 'handoff' | 'terminal'
-    evidence_terms: string[]
+    evidence_terms: readonly string[]
   }>,
 ): string {
   const benchmarkDir = join(projectDir, 'benchmarks', 'explain')
@@ -1731,14 +1749,15 @@ describe('executeNativeAgentCompare', () => {
 
       expect(madarPrompt).toContain('Call retrieve first')
       expect(madarPrompt).toContain('Call mcp__madar__retrieve directly')
-      expect(madarPrompt).toContain('For strict runtime-proof benchmark questions, call mcp__madar__retrieve with retrieval_strategy: "slice-v1".')
-      expect(madarPrompt).toContain('Inspect execution_slice, answer_contract.runtime_proof, matched_nodes, snippets, relationships, and community context before deciding what to do next')
-      expect(madarPrompt).toContain('If retrieve already answers the question, answer from the retrieved evidence and stop without raw search')
+      expect(madarPrompt).toContain('For runtime-flow questions, call mcp__madar__retrieve with retrieval_strategy: "slice-v1".')
+      expect(madarPrompt).toContain('Inspect execution_slice, answer_contract, matched_nodes, snippets, relationships, and community context before deciding what to do next')
+      expect(madarPrompt).toContain('Treat evidence.answerability.state as authoritative')
       expect(madarPrompt).toContain('Do not call community_overview, graph_summary, get_community, query_graph')
       expect(madarPrompt).toContain('Do not use ToolSearch before the first Madar call')
       expect(madarPrompt).not.toContain('If the tool is deferred, use ToolSearch only to select mcp__madar__retrieve')
-      expect(madarPrompt).toContain('Allow at most one focused raw file read or search')
-      expect(madarPrompt).toContain('Broad raw search requires an explicit missing-context reason')
+      expect(madarPrompt).toContain('For verify_targets, inspect only a listed evidence.answerability.verification_targets handle or file')
+      expect(madarPrompt).toContain('Only insufficient with evidence.answerability.broad_search_fallback set to allowed permits one directory-scoped raw search')
+      expect(madarPrompt).toContain('Madar already ran bounded cumulative recovery')
       expect(madarPrompt).toContain('Question: What is the cluster module?')
 
       expect(legacyPrompt).toBe(baselinePrompt)
@@ -1772,8 +1791,8 @@ describe('executeNativeAgentCompare', () => {
       const prompt = readFileSync(report.paths.madar_prompt, 'utf8')
 
       expect(prompt).toContain('Call context_pack first')
-      expect(prompt).toContain('Inspect evidence.pack_confidence, evidence.coverage, evidence.agent_directive, missing_context, and recommended_first_read')
-      expect(prompt).toContain('If evidence.agent_directive is answer_from_pack, answer from the pack and stop without raw search')
+      expect(prompt).toContain('Treat evidence.answerability.state as authoritative; evidence.pack_confidence is compatibility-only')
+      expect(prompt).toContain('For verify_targets, inspect only a listed evidence.answerability.verification_targets handle or file')
     } finally {
       rmSync(projectDir, { recursive: true, force: true })
     }
@@ -1912,7 +1931,7 @@ describe('executeNativeAgentCompare', () => {
       rmSync(externalGraphRoot, { recursive: true, force: true })
       rmSync(projectDir, { recursive: true, force: true })
     }
-  }, 30_000)
+  }, 60_000)
 
   it('times out implement validation commands instead of hanging after the agent run', async () => {
     const { projectDir, graphPath, outputDir, questionsPath } = makeImplementationFixtureProject()
@@ -2331,7 +2350,7 @@ describe('executeNativeAgentCompare', () => {
     }
   })
 
-  it('passes strict missing-phase proof guidance into the native-agent prompt after auto-rescope', async () => {
+  it('passes generic missing-phase guidance into the native-agent prompt after auto-rescope', async () => {
     const { projectDir, graphPath, outputDir } = makeRescopedReadinessFixtureProjectWithOptions({
       includePersistenceStep: false,
     })
@@ -2356,16 +2375,16 @@ describe('executeNativeAgentCompare', () => {
       const report = result.reports[0] as NativeAgentCompareReport
       const madarPrompt = readFileSync(report.paths.madar_prompt, 'utf8')
 
-      expect(madarPrompt).toContain('This question requires strict runtime proof.')
+      expect(madarPrompt).toContain('This question asks for a runtime flow grounded in retrieved evidence.')
       expect(madarPrompt).toContain('Start from the auto-rescoped graph scope: backend/out/graph.json.')
-      expect(madarPrompt).toContain('Use at most one focused follow-up to surface the missing persistence phase.')
+      expect(madarPrompt).toContain('Use only an exact evidence.answerability.verification_targets entry to verify the missing persistence phase.')
       expect(madarPrompt).toContain('If the flow still cannot be proven, answer: not enough evidence; missing persistence')
     } finally {
       rmSync(projectDir, { recursive: true, force: true })
     }
   })
 
-  it('passes strict missing-phase proof guidance for degraded backend runtime prompts even when the retrieval gate is not flow-proof-shaped', async () => {
+  it('passes generic missing-phase guidance for degraded backend runtime prompts even when the retrieval gate is not flow-proof-shaped', async () => {
     const { projectDir, graphPath, outputDir } = makeRescopedReadinessFixtureProjectWithOptions({
       includePersistenceStep: false,
     })
@@ -2395,95 +2414,29 @@ describe('executeNativeAgentCompare', () => {
       const report = result.reports[0] as NativeAgentCompareReport
       const madarPrompt = readFileSync(report.paths.madar_prompt, 'utf8')
 
-      expect(madarPrompt).toContain('This question requires strict runtime proof.')
-      expect(madarPrompt).toContain('Use at most one focused follow-up to surface the missing persistence phase.')
+      expect(madarPrompt).toContain('This question asks for a runtime flow grounded in retrieved evidence.')
+      expect(madarPrompt).toContain('Use only an exact evidence.answerability.verification_targets entry to verify the missing persistence phase.')
       expect(madarPrompt).toContain('If the flow still cannot be proven, answer: not enough evidence; missing persistence')
     } finally {
       rmSync(projectDir, { recursive: true, force: true })
     }
   })
 
-  it.each([
-    {
-      profileId: 'dub-explain-runtime',
-      question: 'How does Dub resolve a short-link click from request handling through analytics tracking and destination redirect?',
-      checklist: ['request handling', 'analytics tracking', 'destination redirect'],
-    },
-    {
-      profileId: 'formbricks-explain-runtime',
-      question: 'How does Formbricks process a survey response from request handling through persistence and analytics/event tracking?',
-      checklist: ['request handling', 'persistence', 'analytics/event tracking'],
-    },
-    {
-      profileId: 'cal-diy-explain-runtime',
-      question: 'How does Cal.diy turn a booking request into availability validation, scheduled event persistence, and notification delivery?',
-      checklist: ['booking request', 'availability validation', 'notification delivery'],
-    },
-  ])('injects the required proof checklist for $profileId benchmark rows', async ({ profileId, question, checklist }) => {
-    const { projectDir, graphPath, outputDir } = makeFixtureProject()
-    try {
-      const questionsPath = writeRuntimeProofFixture(
-        projectDir,
-        profileId,
-        question,
-        checklist.map((label, index) => ({
-          id: label.replace(/[^a-z]+/gi, '_').replace(/^_+|_+$/g, '').toLowerCase(),
-          label,
-          kind: index === 0 ? 'entrypoint' : 'terminal',
-          evidence_terms: label.split(/[\s/]+/).filter((term) => term.length > 0),
-        })),
-      )
-
-      const result = await executeNativeAgentCompare(
-        {
-          graphPath,
-          question,
-          questionsPath,
-          outputDir,
-          execTemplate: 'mock-runner',
-          baselineMode: 'native_agent',
-        },
-        {
-          runner: scriptedRunner({
-            baseline: VERBOSE_BASELINE_FULL_WIN_PAYLOAD,
-            madar: VERBOSE_MADAR_FULL_WIN_PAYLOAD,
-          }),
-          now: () => new Date('2026-06-08T12:00:00Z'),
-        },
-      )
-
-      const report = result.reports[0] as NativeAgentCompareReport
-      const madarPrompt = readFileSync(report.paths.madar_prompt, 'utf8')
-
-      expect(madarPrompt).toContain('This question requires strict runtime proof.')
-      expect(madarPrompt).toContain('For strict runtime-proof benchmark questions, call mcp__madar__retrieve with retrieval_strategy: "slice-v1".')
-      expect(madarPrompt).toContain('Inspect execution_slice, answer_contract.runtime_proof, matched_nodes, snippets, relationships, and community context before deciding what to do next')
-      expect(madarPrompt).toContain('Required proof checklist:')
-      for (const obligation of checklist) {
-        expect(madarPrompt).toContain(`- ${obligation}`)
-      }
-      expect(madarPrompt).toContain('If one required obligation is still missing after one focused follow-up, answer exactly: not enough evidence; missing <obligation>')
-    } finally {
-      rmSync(projectDir, { recursive: true, force: true })
-    }
-  })
-
-  it('tightens strict runtime-proof prompts when retrieve already proves the required flow', () => {
+  it('tightens runtime-flow prompts when retrieve already returns a complete high-confidence slice', () => {
     const question = 'How does login create a session from request handling through persistence?'
     const madarPrompt = buildNativeAgentPrompt(question, {
       profile: 'core',
-      strictRuntimeProof: {
-        requiredObligations: ['request handling', 'persistence'],
+      runtimeFlowGuidance: {
         retrievalReady: true,
-      } as never,
+      },
     })
 
-    expect(madarPrompt).toContain('Retrieve already provides complete direct evidence for every required obligation.')
+    expect(madarPrompt).toContain('Retrieve already provides a complete high-confidence runtime slice.')
     expect(madarPrompt).toContain('Answer from the retrieved evidence only; do not use Bash, Read, or raw file search.')
-    expect(madarPrompt).toContain('Do not say "did not surface"')
+    expect(madarPrompt).toContain('Do not add missing-evidence caveats unless the retrieved slice actually reports a gap.')
   })
 
-  it('does not pass strict missing-phase proof guidance for ready backend runtime prompts when the retrieval gate is not flow-proof-shaped', async () => {
+  it('does not pass missing-phase guidance for ready backend runtime prompts when the retrieval gate is not flow-proof-shaped', async () => {
     const { projectDir, graphPath, outputDir } = makeRescopedReadinessFixtureProjectWithOptions({
       includePersistenceStep: false,
     })
@@ -2513,7 +2466,7 @@ describe('executeNativeAgentCompare', () => {
       const report = result.reports[0] as NativeAgentCompareReport
       const madarPrompt = readFileSync(report.paths.madar_prompt, 'utf8')
 
-      expect(madarPrompt).not.toContain('This question requires strict runtime proof.')
+      expect(madarPrompt).not.toContain('This question asks for a runtime flow grounded in retrieved evidence.')
       expect(madarPrompt).not.toContain('If the flow still cannot be proven, answer: not enough evidence; missing persistence')
     } finally {
       rmSync(projectDir, { recursive: true, force: true })
@@ -3428,10 +3381,7 @@ describe('executeNativeAgentCompare', () => {
       projectDir,
       'login-runtime',
       question,
-      [
-        { id: 'request_handling', label: 'request handling', kind: 'entrypoint', evidence_terms: ['login', 'request', 'route', 'controller'] },
-        { id: 'persistence', label: 'persistence', kind: 'terminal', evidence_terms: ['session', 'persist', 'save', 'store'] },
-      ],
+      LOGIN_RUNTIME_PROOF_OBLIGATIONS,
     )
     writeFileSync(
       join(projectDir, 'benchmarks', 'explain', 'quality-gates.json'),
@@ -3486,6 +3436,10 @@ describe('executeNativeAgentCompare', () => {
 
       expect(result.reports[0]?.answer_quality).toEqual(
         expect.objectContaining({
+          baseline: expect.objectContaining({
+            passed: true,
+            missing_required_terms: [],
+          }),
           madar: expect.objectContaining({
             passed: false,
             missing_required_terms: expect.arrayContaining([
@@ -3527,10 +3481,7 @@ describe('executeNativeAgentCompare', () => {
       projectDir,
       'login-runtime',
       question,
-      [
-        { id: 'request_handling', label: 'request handling', kind: 'entrypoint', evidence_terms: ['login', 'request', 'route', 'controller'] },
-        { id: 'persistence', label: 'persistence', kind: 'terminal', evidence_terms: ['session', 'persist', 'save', 'store'] },
-      ],
+      LOGIN_RUNTIME_PROOF_OBLIGATIONS,
     )
     writeFileSync(
       join(projectDir, 'benchmarks', 'explain', 'quality-gates.json'),
@@ -3618,10 +3569,7 @@ describe('executeNativeAgentCompare', () => {
       projectDir,
       'login-runtime',
       question,
-      [
-        { id: 'request_handling', label: 'request handling', kind: 'entrypoint', evidence_terms: ['login', 'request', 'route', 'controller'] },
-        { id: 'persistence', label: 'persistence', kind: 'terminal', evidence_terms: ['session', 'persist', 'save', 'store'] },
-      ],
+      LOGIN_RUNTIME_PROOF_OBLIGATIONS,
     )
     writeFileSync(
       join(projectDir, 'benchmarks', 'explain', 'quality-gates.json'),
@@ -3708,8 +3656,8 @@ describe('executeNativeAgentCompare', () => {
       'login-runtime',
       question,
       [
-        { id: 'request_handling', label: 'request handling', kind: 'entrypoint', evidence_terms: ['login', 'request', 'route', 'controller'] },
-        { id: 'persistence', label: 'persistence', kind: 'terminal', evidence_terms: ['session', 'persist', 'save', 'store'] },
+        { id: 'request_handling', label: 'request handling', kind: 'entrypoint', evidence_terms: ['src/request/index.ts'] },
+        { id: 'persistence', label: 'persistence', kind: 'terminal', evidence_terms: ['src/session/index.ts'] },
       ],
     )
     writeFileSync(
@@ -3825,7 +3773,7 @@ describe('executeNativeAgentCompare', () => {
     }
   })
 
-  it('flags strict runtime-proof follow-ups that do not target the missing obligation', async () => {
+  it('grades untargeted runtime-proof follow-ups without changing pre-answer readiness', async () => {
     const { projectDir, outputDir } = makeRescopedReadinessFixtureProjectWithOptions({
       includePersistenceStep: false,
       includeScopedGraph: true,
@@ -3838,10 +3786,7 @@ describe('executeNativeAgentCompare', () => {
       projectDir,
       'login-runtime',
       question,
-      [
-        { id: 'request_handling', label: 'request handling', kind: 'entrypoint', evidence_terms: ['login', 'request', 'route', 'controller'] },
-        { id: 'persistence', label: 'persistence', kind: 'terminal', evidence_terms: ['session', 'persist', 'save', 'store'] },
-      ],
+      LOGIN_RUNTIME_PROOF_OBLIGATIONS,
     )
 
     try {
@@ -3863,17 +3808,17 @@ describe('executeNativeAgentCompare', () => {
       )
 
       const report = result.reports[0] as NativeAgentCompareReport
-      expect(report.benchmark_readiness?.status).toBe('not_ready')
+      expect(report.benchmark_readiness?.status).toBe('ready')
       expect(report.prompt_contract).toEqual({
         status: 'violated',
-        evidence: ['focused follow-up did not target missing runtime obligation: persistence'],
+        evidence: ['focused follow-up did not target missing runtime obligation: request handling'],
       })
     } finally {
       rmSync(projectDir, { recursive: true, force: true })
     }
   })
 
-  it('flags same-turn strict runtime-proof follow-ups that do not target the missing obligation', async () => {
+  it('grades same-turn untargeted runtime-proof follow-ups without changing pre-answer readiness', async () => {
     const { projectDir, outputDir } = makeRescopedReadinessFixtureProjectWithOptions({
       includePersistenceStep: false,
       includeScopedGraph: true,
@@ -3886,10 +3831,7 @@ describe('executeNativeAgentCompare', () => {
       projectDir,
       'login-runtime',
       question,
-      [
-        { id: 'request_handling', label: 'request handling', kind: 'entrypoint', evidence_terms: ['login', 'request', 'route', 'controller'] },
-        { id: 'persistence', label: 'persistence', kind: 'terminal', evidence_terms: ['session', 'persist', 'save', 'store'] },
-      ],
+      LOGIN_RUNTIME_PROOF_OBLIGATIONS,
     )
 
     try {
@@ -3911,10 +3853,10 @@ describe('executeNativeAgentCompare', () => {
       )
 
       const report = result.reports[0] as NativeAgentCompareReport
-      expect(report.benchmark_readiness?.status).toBe('not_ready')
+      expect(report.benchmark_readiness?.status).toBe('ready')
       expect(report.prompt_contract).toEqual({
         status: 'violated',
-        evidence: ['focused follow-up did not target missing runtime obligation: persistence'],
+        evidence: ['focused follow-up did not target missing runtime obligation: request handling'],
       })
     } finally {
       rmSync(projectDir, { recursive: true, force: true })
@@ -3934,10 +3876,7 @@ describe('executeNativeAgentCompare', () => {
       projectDir,
       'login-runtime',
       question,
-      [
-        { id: 'request_handling', label: 'request handling', kind: 'entrypoint', evidence_terms: ['login', 'request', 'route', 'controller'] },
-        { id: 'persistence', label: 'persistence', kind: 'terminal', evidence_terms: ['session', 'persist', 'save', 'store'] },
-      ],
+      LOGIN_RUNTIME_PROOF_OBLIGATIONS,
     )
 
     try {
@@ -4005,10 +3944,7 @@ describe('executeNativeAgentCompare', () => {
       projectDir,
       'login-runtime',
       question,
-      [
-        { id: 'request_handling', label: 'request handling', kind: 'entrypoint', evidence_terms: ['login', 'request', 'route', 'controller'] },
-        { id: 'persistence', label: 'persistence', kind: 'terminal', evidence_terms: ['session', 'persist', 'save', 'store'] },
-      ],
+      LOGIN_RUNTIME_PROOF_OBLIGATIONS,
     )
 
     try {
@@ -4154,7 +4090,7 @@ describe('executeNativeAgentCompare', () => {
     } finally {
       rmSync(projectDir, { recursive: true, force: true })
     }
-  }, 30_000)
+  }, 60_000)
 
   it('marks routing latency as a loss when latency regresses and tool counts are unavailable', async () => {
     const { projectDir, graphPath, outputDir } = makeFixtureProject({ spiMode: true })

@@ -1,0 +1,182 @@
+{
+  "schema_version": 1,
+  "started_at": "2026-07-15T07:41:50.371Z",
+  "completed_at": "2026-07-15T08:07:52.118Z",
+  "output_root": "docs/benchmarks/suite/results/2026-07-15T07-41-50",
+  "runtime_artifact": {
+    "source": "npm_pack",
+    "package_version": "0.31.0",
+    "tarball_name": "lubab-madar-0.31.0.tgz",
+    "tarball_sha256": "sha256:9c0192e2abf390cf95aeaf89efbcbe6b8b45c19a139760df554e168542e95b4e"
+  },
+  "filters": {
+    "repo": "dub",
+    "task": "explain-runtime",
+    "repos_manifest": "<external-manifest>",
+    "tasks_manifest": "<external-manifest>",
+    "mode": "warm",
+    "trials": 1
+  },
+  "cells_skipped_for_install": 0,
+  "cells_skipped_for_env_drift": 0,
+  "cells": [
+    {
+      "repoId": "dub",
+      "repoName": "Dub public repo",
+      "taskId": "explain-runtime",
+      "taskName": "Explain runtime flow",
+      "mode": "warm",
+      "prompt": "How does Dub resolve a short-link click from request handling through analytics tracking and destination redirect?",
+      "status": "completed",
+      "reason": null,
+      "isolation": true,
+      "baseline": {
+        "input_tokens": {
+          "median": 138987,
+          "min": 138987,
+          "max": 138987,
+          "n": 1
+        },
+        "total_tool_calls": {
+          "median": 8,
+          "min": 8,
+          "max": 8,
+          "n": 1
+        },
+        "read_calls": {
+          "median": 6,
+          "min": 6,
+          "max": 6,
+          "n": 1
+        },
+        "glob_grep_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "wall_clock_ms": {
+          "median": 58339,
+          "min": 58339,
+          "max": 58339,
+          "n": 1
+        },
+        "cost_usd": {
+          "median": 0.446872,
+          "min": 0.446872,
+          "max": 0.446872,
+          "n": 1
+        }
+      },
+      "madar": {
+        "input_tokens": {
+          "median": 967557,
+          "min": 967557,
+          "max": 967557,
+          "n": 1
+        },
+        "total_tool_calls": {
+          "median": 20,
+          "min": 20,
+          "max": 20,
+          "n": 1
+        },
+        "read_calls": {
+          "median": 2,
+          "min": 2,
+          "max": 2,
+          "n": 1
+        },
+        "glob_grep_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "wall_clock_ms": {
+          "median": 142082,
+          "min": 142082,
+          "max": 142082,
+          "n": 1
+        },
+        "cost_usd": {
+          "median": 1.0737815,
+          "min": 1.0737815,
+          "max": 1.0737815,
+          "n": 1
+        }
+      },
+      "spi_madar": {
+        "input_tokens": {
+          "median": 791392,
+          "min": 791392,
+          "max": 791392,
+          "n": 1
+        },
+        "total_tool_calls": {
+          "median": 16,
+          "min": 16,
+          "max": 16,
+          "n": 1
+        },
+        "read_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 1
+        },
+        "glob_grep_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "wall_clock_ms": {
+          "median": 147234,
+          "min": 147234,
+          "max": 147234,
+          "n": 1
+        },
+        "cost_usd": {
+          "median": 0.996195,
+          "min": 0.996195,
+          "max": 0.996195,
+          "n": 1
+        }
+      },
+      "benchmark_outcomes": {
+        "legacy": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 0,
+            "regression": 0,
+            "not_measured": 1
+          },
+          "evidence": [
+            "Madar MCP attribution is missing."
+          ]
+        },
+        "spi_madar": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 0,
+            "regression": 0,
+            "not_measured": 1
+          },
+          "evidence": [
+            "Madar MCP attribution is missing."
+          ]
+        }
+      },
+      "workflow_outcomes": null,
+      "artifacts": {
+        "legacy_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-07-15T07-41-50/raw/dub/explain-runtime/warm-cache/legacy/trial-001/report.share-safe.json"
+        ],
+        "spi_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-07-15T07-41-50/raw/dub/explain-runtime/warm-cache/spi/trial-001/report.share-safe.json"
+        ]
+      }
+    }
+  ]
+}

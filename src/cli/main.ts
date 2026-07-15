@@ -463,9 +463,13 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --update             rebuild incrementally from the manifest, re-extracting changed files only',
     '    --cluster-only       re-cluster an existing graph.json without re-extraction',
     '    --watch              keep watching after the initial build',
-    '    --directed           preserve edge direction (source → target) in the built graph',
+    '    --directed           preserve source → target edges (default; retained for compatibility)',
+    '    --undirected         visualization-only legacy mode; directional analysis is unavailable',
     '    --follow-symlinks    include in-root symlink targets',
     '    --respect-gitignore  exclude files ignored by Git (falls back outside Git repositories)',
+    '    --strict-indexing    fail when any candidate is failed or unsupported',
+    '    --max-indexing-failed N       permit N failed candidates (enables strict mode)',
+    '    --max-indexing-unsupported N  permit N unsupported candidates (enables strict mode)',
     '    --debounce S         watch debounce seconds (default 3)',
     '    --include-docs       include .md/.txt/.rst document files (excluded by default)',
     '    --docs               generate module documentation in out/docs/',
@@ -548,6 +552,8 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --exec TEMPLATE       required unless --dry-run; supports {prompt_file}, {question}, {mode}, and {output_file}',
     '    --repo ID             limit the suite to one repo id from docs/benchmarks/suite/repos.json',
     '    --task ID             limit the suite to one task id from docs/benchmarks/suite/tasks.json',
+    '    --repos-manifest PATH use an alternate repository manifest',
+    '    --tasks-manifest PATH use an alternate task manifest and its sibling grader files',
     '    --mode MODE           cold | warm | all (default all)',
     '    --trials N            measured trials per runnable cell (default 3)',
     '    --output-dir DIR      suite results directory (default docs/benchmarks/suite/results)',
@@ -625,6 +631,7 @@ function isGenerateLikeArgument(argument: string): boolean {
     argument === '--cluster-only' ||
     argument === '--watch' ||
     argument === '--directed' ||
+    argument === '--undirected' ||
     argument === '--follow-symlinks' ||
     argument === '--respect-gitignore' ||
     argument === '--no-html' ||
@@ -641,12 +648,17 @@ function isGenerateLikeArgument(argument: string): boolean {
     argument === '--debounce' ||
     argument === '--include-docs' ||
     argument === '--docs' ||
+    argument === '--strict-indexing' ||
+    argument === '--max-indexing-failed' ||
+    argument === '--max-indexing-unsupported' ||
     argument.startsWith('--neo4j-push=') ||
     argument.startsWith('--neo4j-user=') ||
     argument.startsWith('--neo4j-password=') ||
     argument.startsWith('--neo4j-database=') ||
     argument.startsWith('--obsidian-dir=') ||
-    argument.startsWith('--debounce=')
+    argument.startsWith('--debounce=') ||
+    argument.startsWith('--max-indexing-failed=') ||
+    argument.startsWith('--max-indexing-unsupported=')
   )
 }
 
@@ -663,14 +675,34 @@ function isImplicitGenerateCommand(argument: string): boolean {
 }
 
 function formatGenerateSummary(result: GenerateGraphResult): string {
+  const indexingLines = result.indexing
+    ? [
+        `- Indexing: ${result.indexing.state.toUpperCase()} (${result.indexing.counts.indexed} indexed, ${result.indexing.counts.indexed_with_warnings} warnings, ${result.indexing.counts.skipped_by_policy} policy skips, ${result.indexing.counts.unsupported} unsupported, ${result.indexing.counts.failed} failed)`,
+        ...(result.indexingManifestPath ? [`- Indexing manifest: ${result.indexingManifestPath}`] : []),
+      ]
+    : []
   const lines = [
     `[madar generate] ${result.mode} completed for ${result.rootPath}`,
     `- Corpus: ${result.totalFiles} file(s) · ~${result.totalWords.toLocaleString()} words`,
     `- Extracted: ${result.codeFiles} code file(s)` + (result.nonCodeFiles > 0 ? ` (+${result.nonCodeFiles} non-code detected)` : ''),
     `- Graph: ${result.nodeCount} nodes · ${result.edgeCount} edges · ${result.communityCount} communities`,
+    ...indexingLines,
     ...(typeof result.semanticAnomalyCount === 'number' ? [`- Semantic anomalies: ${result.semanticAnomalyCount} high-signal item(s)`] : []),
     `- Outputs: ${result.graphPath}, ${result.reportPath}`,
   ]
+
+  if (result.discoverySafety && result.discoverySafety.summary.total > 0) {
+    lines.push(
+      `- Safety exclusions: ${result.discoverySafety.summary.total} (${result.discoverySafety.summary.sensitive} sensitive, ${result.discoverySafety.summary.unreadable} unreadable)`,
+    )
+    for (const exclusion of (result.discoveryExclusions ?? result.discoverySafety.exclusions).slice(0, 20)) {
+      lines.push(`  - ${JSON.stringify(exclusion.path)} (${exclusion.reason})`)
+    }
+    const exclusionCount = (result.discoveryExclusions ?? result.discoverySafety.exclusions).length
+    if (exclusionCount > 20) {
+      lines.push(`  - ... ${exclusionCount - 20} more; inspect graph.json discovery_safety.exclusions`)
+    }
+  }
 
   if (result.htmlPath) {
     lines.push(`- HTML: ${result.htmlPath}`)
@@ -1030,6 +1062,14 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         includeDocs: options.includeDocs,
         docs: options.docs,
         useSpi: options.useSpi,
+        ...(options.strictIndexing
+          ? {
+              indexingStrict: {
+                maxFailed: options.maxIndexingFailed,
+                maxUnsupported: options.maxIndexingUnsupported,
+              },
+            }
+          : {}),
         onProgress: (step) => io.log(formatProgress(step)),
       })
       io.log(formatGenerateSummary(result))
@@ -1059,6 +1099,14 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
           followSymlinks: options.followSymlinks,
           respectGitignore: options.respectGitignore,
           noHtml: options.noHtml,
+          ...(options.strictIndexing
+            ? {
+                indexingStrict: {
+                  maxFailed: options.maxIndexingFailed,
+                  maxUnsupported: options.maxIndexingUnsupported,
+                },
+              }
+            : {}),
           logger: io,
         })
       }

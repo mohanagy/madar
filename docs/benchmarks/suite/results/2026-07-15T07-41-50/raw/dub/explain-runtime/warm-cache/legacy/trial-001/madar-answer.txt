@@ -1,0 +1,41 @@
+I now have the full flow. Here's the answer.
+
+---
+
+## How Dub resolves a short-link click
+
+**Caveat:** The Madar knowledge-graph MCP server connected but never exposed its `retrieve`/`impact`/`graph_summary` tools (repeated exact-name and keyword `ToolSearch` calls returned no match), so per the pack contract's "MCP server unavailable" fallback I answered from a focused read of the routing/middleware/tracking files rather than the graph.
+
+### 1. Request handling & routing — `middleware.ts`
+Next.js middleware (Node runtime) matches every path except `/api`, `/_next`, static metadata files. It calls `parse(req)` to extract `domain`, `path`, `key`, `fullKey`, then dispatches by hostname: app/API/admin/partners hosts, `/stats/`, `/.well-known/`, and `dub.sh` default redirects are handled first. Anything else falls through to `LinkMiddleware(req, ev)` — that's the short-link path (`middleware.ts:89`).
+
+### 2. Link lookup & guards — `lib/middleware/link.ts`
+- Normalizes the key: `punyEncode`, lowercases unless the domain is case-sensitive, strips a trailing `+` (inspect mode), maps empty → `_root`.
+- Rejects unsupported keys (e.g. `.php`) with a no-track redirect.
+- **Resolves the link:** `linkCache.get({domain, key})` (Redis/Upstash) first; on a miss, `getLinkViaEdge()` reads PlanetScale directly, then `formatRedisLink` shapes it and `ev.waitUntil(linkCache.set(...))` backfills the cache (fetching partner/discount enrollment info for partner links). No match → rewrite to `/{domain}/notfound` (`buff.ly` → `crawlBitly`).
+- Applies guards in order: A/B test URL resolution (`resolveABTestURL`), inspect modal, **password** protection (rewrite to `/password/[linkId]` until correct `pw`), banned workspace (`LEGAL_WORKSPACE_ID`), disabled links, and expiration (→ `expiredUrl` or `/expired`).
+- Manages the click identity cookie `dub_id_{domain}_{key}`: reuses an existing `clickId`, else pulls a cached one from `recordClickCache` (when conversion/partner tracking applies), else generates `nanoid(16)`.
+
+### 3. Analytics tracking — `recordClick` (`lib/tinybird/record-click.ts`)
+Fired via `ev.waitUntil(recordClick({...}))` on **every** redirect branch (non-blocking). It:
+- Bails on `dub-no-track` header/param, on bots (`detectBot`, unless a deeplink), and de-duplicates by `identityHash` (IP+UA) via `recordClickCache` — 1 click/hour unless `skipRatelimit`.
+- Marks QR scans (`detectQr` → `trigger: "qr"`), assembles geo/device/UA/referer `clickData` (dropping IP for EU countries), optionally caches `clickData` in Redis 5 min for later `/track/lead` conversion stitching.
+- In a `waitUntil` `Promise.allSettled`: **ingests to Tinybird** (`dub_click_events`), sets the dedup cache, `UPDATE Link SET clicks = clicks + 1, lastClicked = NOW()`, increments workspace usage (`publishWorkspaceClicksUsageEvent`, DB fallback) and partner activity, and dispatches `link.clicked` **webhooks** (`sendLinkClickWebhooks` via QStash) when usage is under limit.
+
+### 4. Destination redirect — back in `LinkMiddleware`
+The final URL is built by `getFinalUrl(url, {req, clickId, via})` (forwards UTM/query params, appends `dub_id`/`via`). The branch chosen:
+- **No URL** (root) → rewrite to `/{domain}` placeholder.
+- **Bot + proxy/cloaking** → rewrite to `/{domain}/{key}/proxy` or `/cloaked/...`.
+- **Custom URI scheme** → `/custom-uri-scheme/...`.
+- **iOS/Android** targets → device redirect, with an App Store / Play Store interstitial (`/deeplink/...` on `APP_DOMAIN` + `cacheDeepLinkClickData`) unless `skip_deeplink_preview`.
+- **Geo targeting** → `geoTargeting[country]`.
+- **Default** → `NextResponse.redirect(finalUrl)`, status **301 for `_root`, else 302**.
+
+Every response is wrapped by `createResponseWithCookies(...)` to attach the `dub_id` click cookie (and A/B test URL cookie), so the same visitor keeps a stable `clickId` for later conversion attribution.
+
+### Key files
+- `middleware.ts` — hostname routing / entry
+- `lib/middleware/link.ts` — resolution, guards, redirect branching
+- `lib/middleware/utils/parse.ts`, `get-final-url.ts`, `detect-bot.ts`, `create-response-with-cookies.ts`
+- `lib/api/links/cache.ts` + `lib/planetscale` — link data (Redis → PlanetScale)
+- `lib/tinybird/record-click.ts` — analytics ingestion, dedup, usage, webhooks

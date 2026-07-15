@@ -1,0 +1,8 @@
+The subagent found the worker-registration point inside `apps/web` after all. To complete the picture:
+
+**Worker bootstrap (the piece I'd earlier placed in `packages/jobs`):**
+- `apps/web/instrumentation.ts` — Next.js `register()` (nodejs runtime) dynamically imports `./instrumentation-jobs` and calls `registerJobsWorker()`.
+- `apps/web/instrumentation-jobs.ts` — imports `processResponsePipelineJob`, registers it under the job name `"response-pipeline.process"` (`RESPONSE_PIPELINE_JOB_NAME`), and passes it into `startJobsRuntime()` (from `@formbricks/jobs`), which spins up the BullMQ worker.
+- `lib/jobs/config.ts` — `getJobsQueueingConfig()` / `getJobsWorkerBootstrapConfig()` gate whether queueing and the worker are enabled.
+
+So the queue names match end to end: the routes' `sendToPipeline` → `enqueueResponsePipeline` puts jobs on `"response-pipeline.process"`, and the worker registered in `instrumentation-jobs.ts` pulls them and runs `processResponsePipelineJob`. The only definitions still not directly readable in this sandbox are `enqueueResponsePipeline`, `getBackgroundJobProducer`, and `startJobsRuntime` themselves, which live in `packages/jobs/src` (outside `apps/web`) — but both the producer and consumer ends that reference them are confirmed.

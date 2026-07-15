@@ -1,0 +1,12 @@
+[
+  {
+    "id": "explain-runtime",
+    "name": "Explain unseen runtime flow",
+    "description": "Trace a workflow whose repository and prompt have no runtime profile.",
+    "status": "ready",
+    "prompts": {
+      "holdout-order-service": "How does a checkout order move from HTTP submission through inventory reservation and order persistence to confirmation publication?",
+      "holdout-invoice-service": "How does an invoice request move from the API through billing calculation and ledger persistence to audit emission?"
+    }
+  }
+]

@@ -177,14 +177,6 @@ describe('pack-quality fixtures (#298)', () => {
       }
     }
 
-    expect(payload.workflow_centers?.map((entry) => entry.path)).toEqual(
-      expect.arrayContaining([
-        'src/modules/ideas/interface/http/idea-generation.controller.ts',
-        'src/modules/pipeline/api/pipeline-trigger.service.ts',
-        'src/modules/pipeline/api/queue-registry.service.ts',
-        'src/modules/pipeline/workers/orchestrator.worker.ts',
-      ]),
-    )
     expect(payload.recommended_first_read?.map((entry) => entry.path)).toEqual(
       expect.arrayContaining([
         'src/modules/ideas/interface/http/idea-generation.controller.ts',
@@ -205,8 +197,8 @@ describe('pack-quality fixtures (#298)', () => {
       ]),
     )
     expect(payload.negative_guidance).toEqual(expect.arrayContaining([
-      expect.stringContaining('idea-report-status-message.helper.ts'),
-      expect.stringContaining('idea-report-suggested-next-steps.helper.ts'),
+      expect.stringContaining('direct_producer_to_worker_calls_without_enqueues_boundary'),
+      expect.stringContaining('irrelevant_model_or_provider_details'),
     ]))
     expect(payload.pack?.execution_slice?.steps?.map((entry) => entry.label)).toEqual(
       expect.arrayContaining([
@@ -251,9 +243,9 @@ describe('pack-quality fixtures (#298)', () => {
     expect([...surfacedLabels]).toEqual(
       expect.arrayContaining([
         '.generateFromProblem()',
-        '.buildQueuedIdeaReportResponse()',
       ]),
     )
+    expect([...surfacedLabels]).not.toContain('.buildQueuedIdeaReportResponse()')
   })
 
   it('promotes the quality-gate failure branch when the explain prompt asks what happens if it fails', async () => {
@@ -307,7 +299,7 @@ describe('pack-quality fixtures (#298)', () => {
     expect([...surfacedLabels]).toEqual(expect.arrayContaining(primaryLabels))
   })
 
-  it('does not report workflow centers as omitted slice-path warnings on the explain fixture', async () => {
+  it('does not report recommended first reads as omitted slice-path warnings on the explain fixture', async () => {
     const result = await runPackQualityFixture('runtime-generation-explain-report-flow')
     const payload = result.payload as typeof result.payload & {
       pack?: {
@@ -321,10 +313,10 @@ describe('pack-quality fixtures (#298)', () => {
         }
       }
     }
-    const workflowCenterEntries = (payload.workflow_centers ?? []) as Array<{ path?: string; label?: string }>
+    const recommendedFirstReadEntries = (payload.recommended_first_read ?? []) as Array<{ path?: string; label?: string }>
 
-    const workflowCenters = new Set(
-      workflowCenterEntries.flatMap((entry) =>
+    const recommendedFirstReads = new Set(
+      recommendedFirstReadEntries.flatMap((entry) =>
         typeof entry.label === 'string' && entry.label.length > 0 ? [entry.label] : []),
     )
     const omittedLabels = new Set(
@@ -333,7 +325,7 @@ describe('pack-quality fixtures (#298)', () => {
         .flatMap((warning) => warning.detail?.labels ?? []),
     )
 
-    expect(workflowCenters.size).toBeGreaterThan(0)
-    expect([...workflowCenters].filter((label) => omittedLabels.has(label))).toEqual([])
+    expect(recommendedFirstReads.size).toBeGreaterThan(0)
+    expect([...recommendedFirstReads].filter((label) => omittedLabels.has(label))).toEqual([])
   })
 })

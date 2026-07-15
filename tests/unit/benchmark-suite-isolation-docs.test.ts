@@ -29,6 +29,10 @@ describe('benchmark suite isolation docs', () => {
     }
   }
   const runIsolated = readFileSync(resolve('docs/benchmarks/suite/isolation/run-isolated.sh'), 'utf8')
+  const retrieveRuntime = readFileSync(resolve('src/runtime/retrieve.ts'), 'utf8')
+  const slicingRuntime = readFileSync(resolve('src/runtime/retrieve/slicing.ts'), 'utf8')
+  const stdioTools = readFileSync(resolve('src/runtime/stdio/tools.ts'), 'utf8')
+  const benchmarkCompare = readFileSync(resolve('src/infrastructure/compare.ts'), 'utf8')
 
   it('documents isolation mode, pinned environment, and env_mismatch handling', () => {
     expect(methodology).toContain('## Isolation mode and canonical environment')
@@ -79,10 +83,41 @@ describe('benchmark suite isolation docs', () => {
     expect(runIsolated).toContain('export CLAUDE_CONFIG_DIR')
     expect(runIsolated).toContain('export CURSOR_CONFIG_DIR')
     expect(runIsolated).toContain('export MADAR_BENCH_ISOLATION=1')
+    expect(runIsolated).toContain('npm pack --silent --pack-destination')
+    expect(runIsolated).toContain('npm install --ignore-scripts --omit=optional')
+    expect(runIsolated).toContain('PACKED_ARTIFACT_ROOT=')
+    expect(runIsolated).toContain('MADAR_BENCH_RUNTIME_SOURCE="npm_pack"')
+    expect(runIsolated).toContain('package/dist/src/cli/bin.js')
     expect(runIsolated).toContain('"serve"')
     expect(runIsolated).toContain('"--stdio"')
     expect(runIsolated).toContain('"out/graph.json"')
     expect(runIsolated).toContain('bench:suite "$@"')
+  })
+
+  it('ships an executable checkout-vs-packed retrieval parity gate', () => {
+    const packageManifest = JSON.parse(readFileSync(resolve('package.json'), 'utf8')) as {
+      scripts?: Record<string, string>
+    }
+    const parityScript = readFileSync(resolve('.github/scripts/verify-packed-retrieval-parity.mjs'), 'utf8')
+    const workflow = readFileSync(resolve('.github/workflows/ci.yml'), 'utf8')
+
+    expect(packageManifest.scripts?.['verify:pack-parity']).toBe(
+      'node .github/scripts/verify-packed-retrieval-parity.mjs',
+    )
+    expect(parityScript).toContain('Packed retrieval parity passed')
+    expect(parityScript).toContain('checkoutServer.handleStdioRequest')
+    expect(parityScript).toContain('packedServer.handleStdioRequest')
+    expect(parityScript).toContain('Packed artifact unexpectedly contains checkout-only docs')
+    expect(workflow).toContain('npm run verify:pack-parity')
+  })
+
+  it('keeps expected benchmark evidence out of all production retrieval paths', () => {
+    expect(retrieveRuntime).not.toContain('runtimeProofProfile')
+    expect(slicingRuntime).not.toContain('runtimeProofProfile')
+    expect(stdioTools).not.toContain('runtime-proof.json')
+    expect(stdioTools).not.toContain('loadBenchmarkRuntimeProofProfiles')
+    expect(benchmarkCompare).toContain('loadBenchmarkRuntimeProofProfiles')
+    expect(benchmarkCompare).toContain('missingRuntimeProofCitations')
   })
 
   it.skipIf(process.platform === 'win32')('fails fast when the default Claude profile is logged in but the isolated profile is not', () => {

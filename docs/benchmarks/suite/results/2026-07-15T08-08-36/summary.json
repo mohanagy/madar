@@ -1,0 +1,182 @@
+{
+  "schema_version": 1,
+  "started_at": "2026-07-15T08:08:36.764Z",
+  "completed_at": "2026-07-15T08:50:47.581Z",
+  "output_root": "docs/benchmarks/suite/results/2026-07-15T08-08-36",
+  "runtime_artifact": {
+    "source": "npm_pack",
+    "package_version": "0.31.0",
+    "tarball_name": "lubab-madar-0.31.0.tgz",
+    "tarball_sha256": "sha256:9c0192e2abf390cf95aeaf89efbcbe6b8b45c19a139760df554e168542e95b4e"
+  },
+  "filters": {
+    "repo": "twenty",
+    "task": "explain-runtime",
+    "repos_manifest": "<external-manifest>",
+    "tasks_manifest": "<external-manifest>",
+    "mode": "warm",
+    "trials": 1
+  },
+  "cells_skipped_for_install": 0,
+  "cells_skipped_for_env_drift": 0,
+  "cells": [
+    {
+      "repoId": "twenty",
+      "repoName": "Twenty public repo",
+      "taskId": "explain-runtime",
+      "taskName": "Explain runtime flow",
+      "mode": "warm",
+      "prompt": "How does Twenty process a CRM record mutation from API handling through workspace services to persistence?",
+      "status": "completed",
+      "reason": null,
+      "isolation": true,
+      "baseline": {
+        "input_tokens": {
+          "median": 468763,
+          "min": 468763,
+          "max": 468763,
+          "n": 1
+        },
+        "total_tool_calls": {
+          "median": 18,
+          "min": 18,
+          "max": 18,
+          "n": 1
+        },
+        "read_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 1
+        },
+        "glob_grep_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "wall_clock_ms": {
+          "median": 121674,
+          "min": 121674,
+          "max": 121674,
+          "n": 1
+        },
+        "cost_usd": {
+          "median": 0.6852785,
+          "min": 0.6852785,
+          "max": 0.6852785,
+          "n": 1
+        }
+      },
+      "madar": {
+        "input_tokens": {
+          "median": 1495698,
+          "min": 1495698,
+          "max": 1495698,
+          "n": 1
+        },
+        "total_tool_calls": {
+          "median": 29,
+          "min": 29,
+          "max": 29,
+          "n": 1
+        },
+        "read_calls": {
+          "median": 3,
+          "min": 3,
+          "max": 3,
+          "n": 1
+        },
+        "glob_grep_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "wall_clock_ms": {
+          "median": 210031,
+          "min": 210031,
+          "max": 210031,
+          "n": 1
+        },
+        "cost_usd": {
+          "median": 1.4739345,
+          "min": 1.4739345,
+          "max": 1.4739345,
+          "n": 1
+        }
+      },
+      "spi_madar": {
+        "input_tokens": {
+          "median": 1501052,
+          "min": 1501052,
+          "max": 1501052,
+          "n": 1
+        },
+        "total_tool_calls": {
+          "median": 27,
+          "min": 27,
+          "max": 27,
+          "n": 1
+        },
+        "read_calls": {
+          "median": 2,
+          "min": 2,
+          "max": 2,
+          "n": 1
+        },
+        "glob_grep_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "wall_clock_ms": {
+          "median": 222237,
+          "min": 222237,
+          "max": 222237,
+          "n": 1
+        },
+        "cost_usd": {
+          "median": 1.4476645,
+          "min": 1.4476645,
+          "max": 1.4476645,
+          "n": 1
+        }
+      },
+      "benchmark_outcomes": {
+        "legacy": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 0,
+            "regression": 0,
+            "not_measured": 1
+          },
+          "evidence": [
+            "Madar MCP attribution is missing."
+          ]
+        },
+        "spi_madar": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 0,
+            "regression": 0,
+            "not_measured": 1
+          },
+          "evidence": [
+            "Madar MCP attribution is missing."
+          ]
+        }
+      },
+      "workflow_outcomes": null,
+      "artifacts": {
+        "legacy_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-07-15T08-08-36/raw/twenty/explain-runtime/warm-cache/legacy/trial-001/report.share-safe.json"
+        ],
+        "spi_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-07-15T08-08-36/raw/twenty/explain-runtime/warm-cache/spi/trial-001/report.share-safe.json"
+        ]
+      }
+    }
+  ]
+}

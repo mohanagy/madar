@@ -107,7 +107,7 @@ describe('MCP Registry metadata', () => {
       name: 'MADAR_TOOL_PROFILE',
       default: 'core',
     })
-    expect(toolProfile?.choices).toEqual(expect.arrayContaining(['core', 'full']))
+    expect(toolProfile?.choices).toEqual(expect.arrayContaining(['core', 'strict', 'full']))
     expect(publisherNotes?.source).toBe('docs/mcp-registry/server.json')
     expect(publisherNotes?.notes).toContain('Madar is the renamed continuation of `graphify-ts`')
     expect(publisherNotes?.notes).toContain('`madar serve --stdio --auto-refresh`')

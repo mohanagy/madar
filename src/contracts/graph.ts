@@ -81,6 +81,10 @@ export class KnowledgeGraph {
     return this.edgeMap.size
   }
 
+  hasEdge(source: string, target: string): boolean {
+    return this.edgeMap.has(this.edgeKey(source, target))
+  }
+
   nodeIds(): string[] {
     return [...this.nodeMap.keys()]
   }
@@ -105,12 +109,47 @@ export class KnowledgeGraph {
     return [...(this.predecessorMap.get(id) ?? [])]
   }
 
-  incidentNeighbors(id: string): string[] {
-    const neighbors = new Set<string>(this.successors(id))
-    for (const predecessor of this.predecessors(id)) {
-      neighbors.add(predecessor)
+  incidentNeighbors(id: string, limit = Number.POSITIVE_INFINITY): string[] {
+    const boundedLimit = Number.isFinite(limit)
+      ? Math.max(0, Math.floor(limit))
+      : Number.POSITIVE_INFINITY
+    if (boundedLimit === 0) {
+      return []
     }
-    return [...neighbors]
+
+    const neighbors: string[] = []
+    const seen = new Set<string>()
+    const successors = (this.successorMap.get(id) ?? new Set()).values()
+    const predecessors = (this.predecessorMap.get(id) ?? new Set()).values()
+    let successorsDone = false
+    let predecessorsDone = false
+
+    const appendNext = (iterator: SetIterator<string>): boolean => {
+      const next = iterator.next()
+      if (next.done) {
+        return true
+      }
+      if (!seen.has(next.value)) {
+        seen.add(next.value)
+        neighbors.push(next.value)
+      }
+      return false
+    }
+
+    // Alternate directions so a bounded incident scan cannot starve all
+    // callers or all callees on a directed high-degree node.
+    while (neighbors.length < boundedLimit && (!successorsDone || !predecessorsDone)) {
+      if (!successorsDone) {
+        successorsDone = appendNext(successors)
+      }
+      if (neighbors.length >= boundedLimit) {
+        break
+      }
+      if (!predecessorsDone) {
+        predecessorsDone = appendNext(predecessors)
+      }
+    }
+    return neighbors
   }
 
   degree(id: string): number {

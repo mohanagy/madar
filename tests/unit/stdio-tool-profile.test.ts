@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 import {
   CORE_TOOL_NAMES,
   MCP_TOOLS,
+  STRICT_TOOL_NAMES,
   activeMcpTools,
   resolveToolProfileFromEnv,
 } from '../../src/runtime/stdio/definitions.js'
@@ -31,7 +32,7 @@ function createMinimalGraphRoot(): string {
   return root
 }
 
-function withProfile(profile: 'core' | 'full' | undefined, fn: () => void | Promise<void>): void | Promise<void> {
+async function withProfile(profile: 'core' | 'strict' | 'full' | undefined, fn: () => void | Promise<void>): Promise<void> {
   const previous = process.env.MADAR_TOOL_PROFILE
   if (profile === undefined) {
     delete process.env.MADAR_TOOL_PROFILE
@@ -39,7 +40,7 @@ function withProfile(profile: 'core' | 'full' | undefined, fn: () => void | Prom
     process.env.MADAR_TOOL_PROFILE = profile
   }
   try {
-    return fn()
+    await fn()
   } finally {
     if (previous === undefined) {
       delete process.env.MADAR_TOOL_PROFILE
@@ -63,6 +64,12 @@ describe('MCP tool profile', () => {
       expect(tools.length).toBeGreaterThan(CORE_TOOL_NAMES.length)
     })
 
+    it('returns core plus context_pack and context_expand for the strict profile', () => {
+      const tools = activeMcpTools('strict')
+      expect(tools.map((tool) => tool.name).sort()).toEqual([...STRICT_TOOL_NAMES].sort())
+      expect(tools).toHaveLength(9)
+    })
+
     it('defaults to the core profile when called with no argument', () => {
       const defaulted = activeMcpTools()
       const explicit = activeMcpTools('core')
@@ -84,13 +91,17 @@ describe('MCP tool profile', () => {
       expect(actualOrder).toEqual(expectedOrder)
     })
 
-    it('adds the context-plane tools only to the full profile', () => {
+    it('adds only the bounded pack and expansion pair to strict while keeping the rest full-only', () => {
       const fullToolNames = activeMcpTools('full').map((tool) => tool.name)
       const coreToolNames = activeMcpTools('core').map((tool) => tool.name)
+      const strictToolNames = activeMcpTools('strict').map((tool) => tool.name)
 
       expect(fullToolNames).toEqual(expect.arrayContaining(['context_pack', 'context_expand', 'context_prompt', 'context_session_reset']))
       expect(coreToolNames).not.toContain('context_pack')
       expect(coreToolNames).not.toContain('context_expand')
+      expect(strictToolNames).toEqual(expect.arrayContaining(['context_pack', 'context_expand']))
+      expect(strictToolNames).not.toContain('context_prompt')
+      expect(strictToolNames).not.toContain('context_session_reset')
       expect(coreToolNames).not.toContain('context_prompt')
       expect(coreToolNames).not.toContain('context_session_reset')
     })
@@ -132,13 +143,19 @@ describe('MCP tool profile', () => {
       expect(resolveToolProfileFromEnv({ MADAR_TOOL_PROFILE: 'full' })).toBe('full')
     })
 
+    it('returns "strict" for the literal "strict" value', () => {
+      expect(resolveToolProfileFromEnv({ MADAR_TOOL_PROFILE: 'strict' })).toBe('strict')
+    })
+
     it('is case-insensitive', () => {
       expect(resolveToolProfileFromEnv({ MADAR_TOOL_PROFILE: 'FULL' })).toBe('full')
+      expect(resolveToolProfileFromEnv({ MADAR_TOOL_PROFILE: 'STRICT' })).toBe('strict')
       expect(resolveToolProfileFromEnv({ MADAR_TOOL_PROFILE: 'CORE' })).toBe('core')
     })
 
     it('trims whitespace before matching', () => {
       expect(resolveToolProfileFromEnv({ MADAR_TOOL_PROFILE: ' full ' })).toBe('full')
+      expect(resolveToolProfileFromEnv({ MADAR_TOOL_PROFILE: ' strict ' })).toBe('strict')
       expect(resolveToolProfileFromEnv({ MADAR_TOOL_PROFILE: '\tfull\n' })).toBe('full')
     })
 
@@ -201,6 +218,21 @@ describe('MCP tool profile', () => {
       }
     })
 
+    it('tools/list returns the strict surface when MADAR_TOOL_PROFILE=strict (#405, #550)', async () => {
+      const root = createMinimalGraphRoot()
+      try {
+        await withProfile('strict', async () => {
+          const response = await Promise.resolve(
+            handleStdioRequest(join(root, 'graph.json'), { id: 1, method: 'tools/list' }),
+          )
+          const result = (response as { result?: { tools: Array<{ name: string }> } }).result
+          expect(result?.tools.map((tool) => tool.name).sort()).toEqual([...STRICT_TOOL_NAMES].sort())
+        })
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+
     it('tools/call for a non-core tool returns JSONRPC_METHOD_NOT_FOUND with a profile hint', async () => {
       const root = createMinimalGraphRoot()
       try {
@@ -217,11 +249,9 @@ describe('MCP tool profile', () => {
           expect(error).toBeDefined()
           expect(error?.code).toBe(-32601)
           expect(error?.message).toContain('not enabled in the active madar MCP tool profile')
-          expect(error?.message).toContain('Default profile: core')
+          expect(error?.message).toContain("tool profile 'core'")
+          expect(error?.message).toContain('MADAR_TOOL_PROFILE=strict')
           expect(error?.message).toContain('MADAR_TOOL_PROFILE=full')
-          expect(error?.message).toContain('.mcp.json')
-          expect(error?.message).toContain('.cursor/mcp.json')
-          expect(error?.message).toContain('.vscode/mcp.json')
           expect(error?.message).toContain('feature_map')
         })
       } finally {
@@ -229,7 +259,7 @@ describe('MCP tool profile', () => {
       }
     })
 
-    it('tools/call blocks context-plane tools behind the full profile gate', async () => {
+    it('tools/call blocks context-plane tools when the core profile is active', async () => {
       const root = createMinimalGraphRoot()
       try {
         await withProfile('core', async () => {
@@ -250,7 +280,8 @@ describe('MCP tool profile', () => {
             const error = (response as { error?: { code: number; message: string } }).error
             expect(error?.code).toBe(-32601)
             expect(error?.message).toContain(name)
-            expect(error?.message).toContain('Default profile: core')
+            expect(error?.message).toContain("tool profile 'core'")
+            expect(error?.message).toContain('MADAR_TOOL_PROFILE=strict')
             expect(error?.message).toContain('MADAR_TOOL_PROFILE=full')
           }
         })
@@ -273,6 +304,55 @@ describe('MCP tool profile', () => {
           expect(response).not.toBeNull()
           const error = (response as { error?: { code: number } }).error
           expect(error).toBeUndefined()
+        })
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+
+    it('accepts context_pack and context_expand calls under the installed strict profile (#405, #550)', async () => {
+      const root = createMinimalGraphRoot()
+      try {
+        await withProfile('strict', async () => {
+          const sessionState = {
+            logLevel: 'info' as const,
+            subscribedResourceUris: new Set<string>(),
+            resourceVersions: new Map<string, string>(),
+            resourceListSignature: null,
+            contextPackHandles: new Map<string, unknown>([
+              ['strict-profile-handle', {
+                prompt: 'Implement the flow from A to B',
+                task: 'implement',
+                task_intent: 'implement',
+                follow_up: {
+                  kind: 'context_pack',
+                  task_kind: 'implement',
+                  evidence_class: 'supporting',
+                  focus_files: ['a.ts'],
+                  focus_ranges: [],
+                },
+              }],
+            ]),
+          }
+          const pack = await Promise.resolve(handleStdioRequest(join(root, 'graph.json'), {
+            id: 103,
+            method: 'tools/call',
+            params: {
+              name: 'context_pack',
+              arguments: { prompt: 'Implement the flow from A to B', task: 'implement', budget: 1 },
+            },
+          }, sessionState))
+          expect(pack).not.toHaveProperty('error')
+
+          const expanded = await Promise.resolve(handleStdioRequest(join(root, 'graph.json'), {
+            id: 104,
+            method: 'tools/call',
+            params: {
+              name: 'context_expand',
+              arguments: { handle_id: 'strict-profile-handle' },
+            },
+          }, sessionState))
+          expect(expanded).not.toHaveProperty('error')
         })
       } finally {
         rmSync(root, { recursive: true, force: true })

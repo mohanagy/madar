@@ -406,8 +406,17 @@ export function toJson(
     directed: graph.isDirected(),
     ...(typeof graph.graph.root_path === 'string' && graph.graph.root_path.length > 0 ? { root_path: graph.graph.root_path } : {}),
     ...(graph.graph.spi_mode === true ? { spi_mode: true } : {}),
+    ...(graph.graph.generation_policy && typeof graph.graph.generation_policy === 'object' && !Array.isArray(graph.graph.generation_policy)
+      ? { generation_policy: graph.graph.generation_policy }
+      : {}),
     ...(graph.graph.graph_build_freshness && typeof graph.graph.graph_build_freshness === 'object' && !Array.isArray(graph.graph.graph_build_freshness)
       ? { graph_build_freshness: graph.graph.graph_build_freshness }
+      : {}),
+    ...(graph.graph.discovery_safety && typeof graph.graph.discovery_safety === 'object' && !Array.isArray(graph.graph.discovery_safety)
+      ? { discovery_safety: graph.graph.discovery_safety }
+      : {}),
+    ...(graph.graph.indexing_completeness && typeof graph.graph.indexing_completeness === 'object' && !Array.isArray(graph.graph.indexing_completeness)
+      ? { indexing_completeness: graph.graph.indexing_completeness }
       : {}),
     ...(typeof extractorVersion === 'number' ? { extractor_version: extractorVersion } : {}),
     nodes: graph.nodeEntries().map(([id, attributes]) => ({

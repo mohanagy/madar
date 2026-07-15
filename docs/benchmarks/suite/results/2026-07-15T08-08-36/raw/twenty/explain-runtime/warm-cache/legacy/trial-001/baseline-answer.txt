@@ -1,0 +1,64 @@
+I now have the full trace. Here's how a CRM record mutation flows through Twenty's server.
+
+## Overview
+
+Twenty's CRM objects (Company, Person, Opportunity, etc.) are **not** hardcoded entities — they're defined by per-workspace *metadata*. So there are no handwritten `updateCompany` resolvers. Instead the GraphQL schema and REST routes are generated dynamically from metadata, and both API surfaces converge on a **single shared "common query runner" layer**, which persists through a permission-aware **workspace ORM** (`twenty-orm`) wrapping TypeORM. I'll trace an `updateOne` mutation.
+
+## 1. API handling — two entry points, one core
+
+**GraphQL** — the resolver is built at schema-generation time, not written by hand:
+- `api/graphql/workspace-resolver-builder/factories/update-one-resolver.factory.ts` — `UpdateOneResolverFactory.create()` returns the resolver function. It extracts requested fields via `graphqlFields(info)`, builds a `resolverContext` (`createQueryRunnerContext`), and delegates to `CommonUpdateOneQueryRunnerService.execute(...)`. The returned record is shaped into a GraphQL connection by `ObjectRecordsToGraphqlConnectionHelper`.
+
+**REST** — `api/rest/core/handlers/rest-api-update-one.handler.ts` — `RestApiUpdateOneHandler.handle()` parses the id/body/depth from the HTTP request, computes selected fields from `depth`, and calls the **same** `CommonUpdateOneQueryRunnerService.execute(...)`, then formats a REST envelope.
+
+So the API-specific code only parses input and formats output; all real logic is shared.
+
+## 2. Common query-runner layer (workspace services)
+
+`api/common/common-query-runners/common-update-one-query-runner.service.ts` and its base `common-base-query-runner.service.ts` orchestrate the mutation. `CommonBaseQueryRunnerService.execute()` runs a fixed template:
+
+1. **Throttle** — token-bucket rate limiting for API-key auth (`ThrottlerService`).
+2. **Validate** — `validate()`: `assertMutationNotOnRemoteObject`, `assertIsValidUuid(args.id)`; system objects also go through `validateSettingsPermissionsOnObjectOrThrow`.
+3. **Parse selected fields** — `GraphqlQueryParser.parseSelectedFields`.
+4. **Process args** (`processArgs`):
+   - `computeArgs()` runs the input `data` through `DataArgProcessorService` (type transforms, composite fields, defaults) — `update-one` turns `{id}` into a `filter: { id: { eq } }` and reuses `CommonUpdateManyQueryRunnerService`.
+   - **Pre-query hooks** — `WorkspaceQueryHookService.executePreQueryHooks(...)` (e.g. validation/side-effects registered per object+operation).
+5. **Validate complexity** — `validateQueryComplexity`.
+6. **Execute inside workspace context** — `GlobalWorkspaceOrmManager.executeInWorkspaceContext(...)` establishes the workspace/auth ALS context, then `executeQueryAndEnrichResults` runs.
+
+Inside that, `prepareExtendedQueryRunnerContextWithGlobalDatasource()` is the bridge to persistence: it resolves the caller's role permissions (`resolveRolePermissionConfig`), gets the workspace datasource (`getGlobalWorkspaceDataSource()` / read replica if read-only), and obtains a **permission-scoped repository** via `dataSource.getRepository(nameSingular, rolePermissionConfig)`.
+
+## 3. Persistence — twenty-orm workspace repository
+
+The abstract `run()` is implemented in `common-update-many-query-runner.service.ts`:
+- `buildMutationQueryBuilder(...)` creates a TypeORM query builder from the scoped **`WorkspaceRepository`** (`twenty-orm/repository/workspace.repository.ts`), applying the parsed `filter`.
+- `buildColumnsToReturn(...)` computes the `RETURNING` columns from selected fields.
+- Executes `queryBuilder.update().set(args.data).returning(columnsToReturn).execute()` → the actual SQL `UPDATE ... RETURNING`. Results come back as `generatedMaps`.
+- If relations were requested, `ProcessNestedRelationsHelper.processNestedRelations(...)` hydrates them.
+
+`WorkspaceRepository` is the workspace-aware TypeORM wrapper backed by `GlobalWorkspaceDatasource` (`twenty-orm/global-workspace-datasource/`). Its overridden `createQueryBuilder` **enforces object-record permissions** (`throw 'Object records permissions are required'` when absent) using the `rolePermissionConfig`, so every mutation is row/field-permission-checked at the ORM layer against the correct per-workspace schema.
+
+## 4. Post-persistence enrichment & events
+
+Back in the base runner, `enrichResultsWithGettersAndHooks`:
+- `processQueryResult()` → `CommonResultGettersService.processRecord(...)` transforms stored values back into API shape (composite fields, etc.).
+- `WorkspaceQueryHookService.executePostQueryHooks(...)` fires post-mutation hooks — this is where DB change events feed the `workspace-event-emitter` (record.updated events driving webhooks, search index, timeline, automations).
+
+The enriched record returns up through `execute()` to the GraphQL factory (→ connection shape) or REST handler (→ `{data: {updateCompany: ...}}`).
+
+## Key files, in flow order
+
+| Step | File |
+|------|------|
+| GraphQL resolver (generated) | `api/graphql/workspace-resolver-builder/factories/update-one-resolver.factory.ts` |
+| REST handler | `api/rest/core/handlers/rest-api-update-one.handler.ts` |
+| Shared operation service | `api/common/common-query-runners/common-update-one-query-runner.service.ts` |
+| Orchestration template (validate → hooks → context → persist → enrich) | `api/common/common-query-runners/common-base-query-runner.service.ts` |
+| Actual persistence (query builder + UPDATE…RETURNING + nested relations) | `api/common/common-query-runners/common-update-many-query-runner.service.ts` |
+| Input processing | `api/common/common-args-processors/data-arg-processor/…` |
+| Pre/post hooks | `api/graphql/workspace-query-runner/workspace-query-hook/workspace-query-hook.service.ts` |
+| Permission-aware ORM repo | `twenty-orm/repository/workspace.repository.ts` |
+| Workspace datasource / context | `twenty-orm/global-workspace-datasource/…`, `global-workspace-orm.manager.ts` |
+| Result reshaping | `api/common/common-result-getters/common-result-getters.service.ts` |
+
+**The essential insight:** GraphQL and REST are thin adapters; the real pipeline is the metadata-driven `Common*QueryRunner` services (validation → arg processing → pre-hooks → permission-scoped workspace repository → `UPDATE…RETURNING` → result getters → post-hooks/events), with `twenty-orm`'s `WorkspaceRepository` enforcing per-workspace schema and role permissions at persistence time.

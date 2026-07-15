@@ -112,6 +112,8 @@ export interface BenchmarkCliOptions {
 export interface BenchSuiteCliOptions {
   repo: string | null
   task: string | null
+  reposManifestPath: string | null
+  tasksManifestPath: string | null
   mode: 'cold' | 'warm' | 'all'
   trials: number
   outputDir: string
@@ -179,6 +181,9 @@ export interface GenerateCliOptions {
   neo4jDatabase: string | null
   includeDocs: boolean
   docs: boolean
+  strictIndexing: boolean
+  maxIndexingFailed: number
+  maxIndexingUnsupported: number
   /** v0.18 (#85 candidate): opt-in to the SPI v1 build pipeline.
    *  When true, `buildSpiCached` + `projectSpiToExtraction` replace the
    *  legacy `extract()` call site so framework_role / framework_metadata
@@ -1197,6 +1202,8 @@ export function parseBenchmarkArgs(args: string[], commandName = 'benchmark'): B
 export function parseBenchSuiteArgs(args: string[]): BenchSuiteCliOptions {
   let repo: string | null = null
   let task: string | null = null
+  let reposManifestPath: string | null = null
+  let tasksManifestPath: string | null = null
   let mode: BenchSuiteCliOptions['mode'] = 'all'
   let trials = 3
   let outputDir = resolve('docs/benchmarks/suite/results')
@@ -1231,6 +1238,30 @@ export function parseBenchSuiteArgs(args: string[]): BenchSuiteCliOptions {
     if (argument.startsWith('--task=')) {
       const [, value] = argument.split('=', 2)
       task = requireOptionValue('--task', value)
+      continue
+    }
+
+    if (argument === '--repos-manifest') {
+      reposManifestPath = resolve(requireOptionValue('--repos-manifest', args[index + 1]))
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--repos-manifest=')) {
+      const [, value] = argument.split('=', 2)
+      reposManifestPath = resolve(requireOptionValue('--repos-manifest', value))
+      continue
+    }
+
+    if (argument === '--tasks-manifest') {
+      tasksManifestPath = resolve(requireOptionValue('--tasks-manifest', args[index + 1]))
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--tasks-manifest=')) {
+      const [, value] = argument.split('=', 2)
+      tasksManifestPath = resolve(requireOptionValue('--tasks-manifest', value))
       continue
     }
 
@@ -1306,7 +1337,7 @@ export function parseBenchSuiteArgs(args: string[]): BenchSuiteCliOptions {
     throw new UsageError('error: --exec is required unless --dry-run is set')
   }
 
-  return { repo, task, mode, trials, outputDir, execTemplate, dryRun, yes }
+  return { repo, task, reposManifestPath, tasksManifestPath, mode, trials, outputDir, execTemplate, dryRun, yes }
 }
 
 export function parseCompareArgs(args: string[]): CompareCliOptions {
@@ -1709,7 +1740,8 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
   let update = false
   let clusterOnly = false
   let watch = false
-  let directed = false
+  let directed = true
+  let directionOption: 'directed' | 'undirected' | null = null
   let followSymlinks = false
   let respectGitignore = false
   let debounceSeconds = 3
@@ -1727,6 +1759,9 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
   let includeDocs = false
   let docs = false
   let useSpi = false
+  let strictIndexing = false
+  let maxIndexingFailed = 0
+  let maxIndexingUnsupported = 0
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index]
@@ -1739,10 +1774,43 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
       continue
     }
 
+    if (argument === '--strict-indexing') {
+      strictIndexing = true
+      continue
+    }
+
+    if (argument === '--max-indexing-failed') {
+      maxIndexingFailed = parseNonNegativeInteger('--max-indexing-failed', requireNonEmptyValue('--max-indexing-failed', args[index + 1]))
+      strictIndexing = true
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--max-indexing-failed=')) {
+      const [, value] = argument.split('=', 2)
+      maxIndexingFailed = parseNonNegativeInteger('--max-indexing-failed', requireNonEmptyValue('--max-indexing-failed', value))
+      strictIndexing = true
+      continue
+    }
+
+    if (argument === '--max-indexing-unsupported') {
+      maxIndexingUnsupported = parseNonNegativeInteger('--max-indexing-unsupported', requireNonEmptyValue('--max-indexing-unsupported', args[index + 1]))
+      strictIndexing = true
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--max-indexing-unsupported=')) {
+      const [, value] = argument.split('=', 2)
+      maxIndexingUnsupported = parseNonNegativeInteger('--max-indexing-unsupported', requireNonEmptyValue('--max-indexing-unsupported', value))
+      strictIndexing = true
+      continue
+    }
+
     if (!argument.startsWith('--')) {
       if (path !== '.') {
         throw new UsageError(
-          'Usage: madar generate [path] [--update] [--cluster-only] [--watch] [--directed] [--follow-symlinks] [--respect-gitignore] [--debounce S] [--no-html] [--wiki] [--obsidian] [--obsidian-dir DIR] [--svg] [--graphml] [--neo4j] [--neo4j-push URI] [--neo4j-user USER] [--neo4j-password PW] [--neo4j-database DB] [--spi]',
+          'Usage: madar generate [path] [--update] [--cluster-only] [--watch] [--directed|--undirected] [--follow-symlinks] [--respect-gitignore] [--debounce S] [--no-html] [--wiki] [--obsidian] [--obsidian-dir DIR] [--svg] [--graphml] [--neo4j] [--neo4j-push URI] [--neo4j-user USER] [--neo4j-password PW] [--neo4j-database DB] [--spi] [--strict-indexing] [--max-indexing-failed N] [--max-indexing-unsupported N]',
         )
       }
       path = argument
@@ -1765,7 +1833,20 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
     }
 
     if (argument === '--directed') {
+      if (directionOption === 'undirected') {
+        throw new UsageError('error: --directed and --undirected cannot be used together')
+      }
+      directionOption = 'directed'
       directed = true
+      continue
+    }
+
+    if (argument === '--undirected') {
+      if (directionOption === 'directed') {
+        throw new UsageError('error: --directed and --undirected cannot be used together')
+      }
+      directionOption = 'undirected'
+      directed = false
       continue
     }
 
@@ -1923,6 +2004,9 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
     includeDocs,
     docs,
     useSpi,
+    strictIndexing,
+    maxIndexingFailed,
+    maxIndexingUnsupported,
   }
 }
 
@@ -2194,8 +2278,8 @@ export function parseProofReportArgs(args: string[]): ProofReportCliOptions {
   const graphBase = dirname(resolve(resolvedGraphPath))
   return {
     graphPath: resolvedGraphPath,
-    outputDir: validateGraphOutputPath(outputDir ?? resolve(graphBase, 'proof-report'), graphBase),
-    compareDir: validateGraphOutputPath(compareDir ?? resolve(graphBase, 'compare'), graphBase),
+    outputDir: outputDir ?? validateGraphOutputPath(resolve(graphBase, 'proof-report'), graphBase),
+    compareDir: compareDir ?? validateGraphOutputPath(resolve(graphBase, 'compare'), graphBase),
     packPath,
   }
 }

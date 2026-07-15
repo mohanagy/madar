@@ -49,11 +49,44 @@ function emptyCoverage(): ContextPackCoverage {
 function sampleEvidence(root: string): MadarResponseEvidence {
   return {
     pack_confidence: 'high',
+    evidence_strength: {
+      level: 'strong',
+      direct_selected_nodes: 1,
+      supporting_selected_nodes: 1,
+      selected_relationships: 1,
+      available_relationships: 1,
+      reasons: ['direct_evidence_with_relationship_support'],
+    },
     coverage: 'complete',
+    coverage_detail: {
+      status: 'complete',
+      required_obligations: [],
+      covered_obligations: [],
+      missing_obligations: [],
+    },
+    answerability: {
+      state: 'ready',
+      answer_scope: 'complete',
+      caveats: [],
+      missing_obligations: [],
+      verification_targets: [],
+      broad_search_fallback: 'not_needed',
+    },
     missing_phases: [],
     covered_workflow_owners: ['src/auth/service.ts'],
     confidence_reasons: [`scope quality: runtime evidence is concentrated under src/auth/ while the graph is rooted at ${join(root, 'out', 'graph.json')}`],
     agent_directive: 'answer_from_pack',
+    discovery_exclusions: {
+      policy: 'artifact_path_only',
+      total: 2,
+      relevant: 1,
+      reasons: {
+        secret_config: 1,
+      },
+      relevant_reasons: {
+        secret_config: 1,
+      },
+    },
   }
 }
 
@@ -232,9 +265,15 @@ function createPackSchema(root: string): ContextPackSchemaV1<TestPack> {
       },
       directive: {
         pack_confidence: 'high',
+        evidence_strength: 'strong',
         coverage: 'complete',
+        answerability: 'ready',
         agent_directive: 'answer_from_pack',
         missing_phases: [],
+        missing_obligation_count: 0,
+        verification_target_count: 0,
+        recovery_attempts: 0,
+        recovery_improved: false,
       },
       follow_up: {
         expandable_handle_count: 1,
@@ -351,6 +390,13 @@ describe('handoff-command', () => {
     })
 
     expect(artifact).not.toHaveProperty('plan')
+    expect(artifact.evidence.discovery_exclusions).toEqual({
+      policy: 'artifact_path_only',
+      total: 2,
+      relevant: 1,
+      reasons: { secret_config: 1 },
+      relevant_reasons: { secret_config: 1 },
+    })
     expect(artifact.pack.matched_nodes[0]).not.toHaveProperty('snippet')
     expect(JSON.stringify(artifact)).not.toContain(root)
     expect(JSON.stringify(artifact)).not.toContain('/opt/private/secret-reader.ts')
@@ -374,6 +420,47 @@ describe('handoff-command', () => {
     expect(artifact.pack.matched_nodes[0]?.snippet).toBe('const sessionToken = await issueSessionToken(user)')
     expect(artifact.pack.matched_nodes[0]?.source_file).toBe('<project-root>/src/auth/service.ts')
     expect(artifact.pack.matched_nodes[1]?.source_file).toBe('secret-reader.ts')
+  })
+
+  it('sanitizes exact answerability verification targets in share-safe handoffs', () => {
+    const root = mkdtempSync(join(tmpdir(), 'madar-handoff-'))
+    tempRoots.push(root)
+    const schema = createPackSchema(root)
+    schema.evidence.answerability = {
+      state: 'verify_targets',
+      answer_scope: 'partial',
+      caveats: [],
+      missing_obligations: ['evidence:supporting'],
+      verification_targets: [{
+        handle_id: 'auth-support',
+        evidence_class: 'supporting',
+        focus_files: [join(root, 'src', 'auth', 'store.ts')],
+        focus_ranges: [{
+          source_file: join(root, 'src', 'auth', 'store.ts'),
+          start_line: 10,
+          end_line: 20,
+        }],
+        reason: `verify ${join(root, 'src', 'auth', 'store.ts')}`,
+      }],
+      broad_search_fallback: 'targeted_only',
+    }
+
+    const artifact = buildHandoffArtifactV1(schema, {
+      consumer: 'copilot',
+      artifactRoot: join(root, 'out'),
+      projectRoot: root,
+    })
+
+    expect(artifact.evidence.answerability.verification_targets).toEqual([
+      expect.objectContaining({
+        focus_files: ['<project-root>/src/auth/store.ts'],
+        focus_ranges: [expect.objectContaining({
+          source_file: '<project-root>/src/auth/store.ts',
+        })],
+        reason: 'verify <project-root>/src/auth/store.ts',
+      }),
+    ])
+    expect(JSON.stringify(artifact)).not.toContain(root)
   })
 
   it('normalizes relative graph paths when building a handoff from the command entrypoint', async () => {

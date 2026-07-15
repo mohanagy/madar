@@ -1,0 +1,186 @@
+{
+  "schema_version": 1,
+  "started_at": "2026-07-15T06:55:50.229Z",
+  "completed_at": "2026-07-15T07:08:04.606Z",
+  "output_root": "docs/benchmarks/suite/results/2026-07-15T06-55-50",
+  "runtime_artifact": {
+    "source": "npm_pack",
+    "package_version": "0.31.0",
+    "tarball_name": "lubab-madar-0.31.0.tgz",
+    "tarball_sha256": "sha256:9c0192e2abf390cf95aeaf89efbcbe6b8b45c19a139760df554e168542e95b4e"
+  },
+  "filters": {
+    "repo": "documenso",
+    "task": "explain-runtime",
+    "repos_manifest": "<external-manifest>",
+    "tasks_manifest": "<external-manifest>",
+    "mode": "warm",
+    "trials": 1
+  },
+  "cells_skipped_for_install": 0,
+  "cells_skipped_for_env_drift": 0,
+  "cells": [
+    {
+      "repoId": "documenso",
+      "repoName": "Documenso public repo",
+      "taskId": "explain-runtime",
+      "taskName": "Explain runtime flow",
+      "mode": "warm",
+      "prompt": "How does Documenso move a document from send preparation through recipient creation, signing state, and notification delivery?",
+      "status": "completed",
+      "reason": null,
+      "isolation": true,
+      "baseline": {
+        "input_tokens": {
+          "median": 348895,
+          "min": 348895,
+          "max": 348895,
+          "n": 1
+        },
+        "total_tool_calls": {
+          "median": 11,
+          "min": 11,
+          "max": 11,
+          "n": 1
+        },
+        "read_calls": {
+          "median": 7,
+          "min": 7,
+          "max": 7,
+          "n": 1
+        },
+        "glob_grep_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "wall_clock_ms": {
+          "median": 87129,
+          "min": 87129,
+          "max": 87129,
+          "n": 1
+        },
+        "cost_usd": {
+          "median": 0.6300009999999999,
+          "min": 0.6300009999999999,
+          "max": 0.6300009999999999,
+          "n": 1
+        }
+      },
+      "madar": {
+        "input_tokens": {
+          "median": 194638,
+          "min": 194638,
+          "max": 194638,
+          "n": 1
+        },
+        "total_tool_calls": {
+          "median": 5,
+          "min": 5,
+          "max": 5,
+          "n": 1
+        },
+        "read_calls": {
+          "median": 1,
+          "min": 1,
+          "max": 1,
+          "n": 1
+        },
+        "glob_grep_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "wall_clock_ms": {
+          "median": 59033,
+          "min": 59033,
+          "max": 59033,
+          "n": 1
+        },
+        "cost_usd": {
+          "median": 0.401613,
+          "min": 0.401613,
+          "max": 0.401613,
+          "n": 1
+        }
+      },
+      "spi_madar": {
+        "input_tokens": {
+          "median": 120717,
+          "min": 120717,
+          "max": 120717,
+          "n": 1
+        },
+        "total_tool_calls": {
+          "median": 4,
+          "min": 4,
+          "max": 4,
+          "n": 1
+        },
+        "read_calls": {
+          "median": 2,
+          "min": 2,
+          "max": 2,
+          "n": 1
+        },
+        "glob_grep_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "wall_clock_ms": {
+          "median": 40264,
+          "min": 40264,
+          "max": 40264,
+          "n": 1
+        },
+        "cost_usd": {
+          "median": 0.29966800000000005,
+          "min": 0.29966800000000005,
+          "max": 0.29966800000000005,
+          "n": 1
+        }
+      },
+      "benchmark_outcomes": {
+        "legacy": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 0,
+            "regression": 0,
+            "not_measured": 1
+          },
+          "evidence": [
+            "prompt contract is violated (focused follow-up did not target missing runtime obligation: send preparation)",
+            "answer quality failed for baseline: missing direct evidence citation: recipient creation",
+            "answer quality failed for madar: missing direct evidence citation: send preparation, missing direct evidence citation: signing state, missing direct evidence citation: notification delivery"
+          ]
+        },
+        "spi_madar": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 0,
+            "regression": 0,
+            "not_measured": 1
+          },
+          "evidence": [
+            "prompt contract is violated (focused follow-up did not target missing runtime obligation: send preparation)",
+            "answer quality failed for baseline: missing direct evidence citation: recipient creation, missing direct evidence citation: notification delivery",
+            "answer quality failed for madar: missing direct evidence citation: send preparation, missing direct evidence citation: recipient creation, missing direct evidence citation: signing state, missing direct evidence citation: notification delivery"
+          ]
+        }
+      },
+      "workflow_outcomes": null,
+      "artifacts": {
+        "legacy_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-07-15T06-55-50/raw/documenso/explain-runtime/warm-cache/legacy/trial-001/report.share-safe.json"
+        ],
+        "spi_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-07-15T06-55-50/raw/documenso/explain-runtime/warm-cache/spi/trial-001/report.share-safe.json"
+        ]
+      }
+    }
+  ]
+}

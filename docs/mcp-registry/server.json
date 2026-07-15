@@ -9,13 +9,13 @@
         "source": "github",
         "url": "https://github.com/mohanagy/madar"
     },
-    "version": "0.30.0",
+    "version": "0.31.0",
     "packages": [
         {
             "registryType": "npm",
             "registryBaseUrl": "https://registry.npmjs.org",
             "identifier": "@lubab/madar",
-            "version": "0.30.0",
+            "version": "0.31.0",
             "runtimeHint": "npx",
             "transport": {
                 "type": "stdio"
@@ -37,10 +37,11 @@
             "environmentVariables": [
                 {
                     "name": "MADAR_TOOL_PROFILE",
-                    "description": "Optional MCP tool surface. Madar installs default to the lean core profile.",
+                    "description": "Optional MCP tool surface: core, strict (core plus context pack/expand), or full.",
                     "default": "core",
                     "choices": [
                         "core",
+                        "strict",
                         "full"
                     ]
                 }

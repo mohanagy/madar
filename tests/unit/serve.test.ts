@@ -179,6 +179,25 @@ describe('bfs', () => {
     expect(visited.has('b')).toBe(true)
     expect(visited.has('c')).toBe(false)
   })
+
+  test('can traverse incident edges when a non-directional context surface requests them', () => {
+    const graph = new KnowledgeGraph(true)
+    graph.addNode('owner', { label: 'Owner' })
+    graph.addNode('method', { label: 'method()' })
+    graph.addNode('effect', { label: 'Effect' })
+    graph.addEdge('owner', 'method', { relation: 'contains', confidence: 'EXTRACTED' })
+    graph.addEdge('method', 'owner', { relation: 'reports_to', confidence: 'EXTRACTED' })
+    graph.addEdge('method', 'effect', { relation: 'calls', confidence: 'EXTRACTED' })
+
+    const { visited, edges } = bfs(graph, ['method'], 1, undefined, 'incident')
+
+    expect([...visited]).toEqual(expect.arrayContaining(['owner', 'method', 'effect']))
+    expect(edges).toEqual(expect.arrayContaining([
+      ['owner', 'method'],
+      ['method', 'owner'],
+      ['method', 'effect'],
+    ]))
+  })
 })
 
 describe('dfs', () => {
@@ -192,6 +211,18 @@ describe('dfs', () => {
   test('can walk the full chain', () => {
     const { visited } = dfs(makeGraph(), ['n1'], 5)
     expect(visited.has('n4')).toBe(true)
+  })
+
+  test('can traverse incoming edges without reversing their stored orientation', () => {
+    const graph = new KnowledgeGraph(true)
+    graph.addNode('owner', { label: 'Owner' })
+    graph.addNode('method', { label: 'method()' })
+    graph.addEdge('owner', 'method', { relation: 'contains', confidence: 'EXTRACTED' })
+
+    const { visited, edges } = dfs(graph, ['method'], 1, undefined, 'incident')
+
+    expect(visited.has('owner')).toBe(true)
+    expect(edges).toContainEqual(['owner', 'method'])
   })
 })
 

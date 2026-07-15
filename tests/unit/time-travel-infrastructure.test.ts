@@ -37,8 +37,7 @@ function createDeferred<T>(): {
 }
 
 function createTestRoot(name: string): string {
-  const root = resolve('.test-artifacts', `time-travel-infrastructure-${name}-${process.pid}-${Math.random().toString(36).slice(2, 10)}`)
-  mkdirSync(root, { recursive: true })
+  const root = mkdtempSync(join(tmpdir(), `madar-time-travel-infrastructure-${name}-`))
   createdRoots.add(root)
   return root
 }
@@ -50,6 +49,7 @@ function writeGraphArtifacts(root: string, relativeDir: string, schemaVersion = 
   const reportPath = join(outputDir, 'GRAPH_REPORT.md')
   writeFileSync(graphPath, JSON.stringify({
     schema_version: schemaVersion,
+    directed: true,
     extractor_version: EXTRACTOR_CACHE_VERSION,
     nodes: [],
     edges: [],
@@ -58,11 +58,12 @@ function writeGraphArtifacts(root: string, relativeDir: string, schemaVersion = 
   return { graphPath, reportPath }
 }
 
-function writeCachedSnapshot(root: string, commitSha: string, schemaVersion = 2): void {
+function writeCachedSnapshot(root: string, commitSha: string, schemaVersion = 2, directed = true): void {
   const snapshotDir = join(root, 'out', 'time-travel', 'snapshots', commitSha)
   mkdirSync(snapshotDir, { recursive: true })
   writeFileSync(join(snapshotDir, 'graph.json'), JSON.stringify({
     schema_version: schemaVersion,
+    directed,
     extractor_version: EXTRACTOR_CACHE_VERSION,
     nodes: [],
     edges: [],
@@ -143,6 +144,18 @@ describe('time travel infrastructure', () => {
     expect(result.fromCache).toBe(false)
     expect(existsSync(join(rootDir, 'out', 'time-travel', 'snapshots', 'commit-head-1', 'graph.json'))).toBe(true)
     expect(deps.git.removeWorktree).toHaveBeenCalledTimes(1)
+  })
+
+  it('rebuilds a cached legacy undirected snapshot before time-travel analysis', async () => {
+    const rootDir = createTestRoot('legacy-undirected')
+    writeCachedSnapshot(rootDir, 'cached-sha', 2, false)
+    const deps = createSnapshotDependencies(rootDir)
+
+    const result = await loadOrBuildSnapshot({ ref: 'main', refresh: false }, deps)
+
+    expect(result.fromCache).toBe(false)
+    expect(deps.generateGraph).toHaveBeenCalledTimes(1)
+    expect(deps.git.createDetachedWorktree).toHaveBeenCalledTimes(1)
   })
 
   it('forces a rebuild when refresh is true', async () => {

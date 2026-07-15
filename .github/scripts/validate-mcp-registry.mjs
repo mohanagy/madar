@@ -215,7 +215,7 @@ function main() {
   const toolProfile = (npmPackage.environmentVariables ?? []).find((entry) => entry.name === 'MADAR_TOOL_PROFILE')
   assert.ok(toolProfile, 'server.json must describe the MADAR_TOOL_PROFILE environment variable')
   assert.equal(toolProfile.default, 'core', 'MADAR_TOOL_PROFILE should default to core')
-  assert.deepEqual(toolProfile.choices, ['core', 'full'], 'MADAR_TOOL_PROFILE choices must match the supported MCP tool profiles')
+  assert.deepEqual(toolProfile.choices, ['core', 'strict', 'full'], 'MADAR_TOOL_PROFILE choices must match the supported MCP tool profiles')
 
   console.log(`Validated ${REGISTRY_MANIFEST_PATH} against the pinned MCP Registry manifest rules.`)
 }

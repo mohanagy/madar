@@ -11,7 +11,7 @@ Madar produces local context packs that any modern coding agent can consume over
 | Claude Code | MCP via `.mcp.json` | `madar claude <install\|uninstall> [--profile core\|full\|strict]` | `CLAUDE.md` + `.claude/settings.json` hook + `.mcp.json` |
 | Cursor | MCP via `.cursor/mcp.json` | `madar cursor <install\|uninstall> [--profile core\|full\|strict]` | `.cursor/rules/madar.mdc` + `.cursor/mcp.json` |
 | GitHub Copilot CLI | MCP via `.vscode/mcp.json` | `madar copilot <install\|uninstall> [--profile core\|full\|strict]` | `.vscode/mcp.json` |
-| Gemini CLI | MCP server | `madar gemini <install\|uninstall> [--profile core\|full\|strict]` | `GEMINI.md` + `.gemini/settings.json` hook |
+| Gemini CLI | MCP via `.gemini/settings.json` | `madar gemini <install\|uninstall> [--profile core\|full\|strict]` | `GEMINI.md` + `.gemini/settings.json` hook + MCP entry |
 | Aider | AGENTS.md context-pack-first profile | `madar aider install` | `AGENTS.md` Aider profile |
 | OpenCode | AGENTS.md + `.opencode/plugins/madar.js` + MCP via `opencode.json` / `opencode.jsonc` | `madar opencode install` | `AGENTS.md` OpenCode profile + plugin registration + MCP entry |
 | Codex CLI | AGENTS.md + task-applicable `UserPromptSubmit` hook + MCP via `.codex/config.toml` | `madar codex install` | `AGENTS.md` Codex profile + `.codex/hooks.json` + `.codex/madar-user-prompt-submit.cjs` + `.codex/config.toml` |
@@ -27,13 +27,13 @@ For practical multi-agent workflows across Claude Code, Codex, Copilot, Cursor, 
 
 ## Strict and context-pack-first profiles
 
-Treat every Madar MCP install, plugin, hook, or AGENTS profile as a local trust boundary. Only enable it for repositories and local agent runtimes you trust. Prefer `--profile strict` when you only need the lean core MCP tools.
+Treat every Madar MCP install, plugin, hook, or AGENTS profile as a local trust boundary. Only enable it for repositories and local agent runtimes you trust. Prefer `--profile strict` when you want the compact context-pack-first MCP workflow.
 
-For Claude, Cursor, Copilot, and Gemini, `--profile strict` keeps the lean core MCP tool surface. `--profile strict` keeps the seven core MCP tools but adds one bounded `context_pack` call per task through the generated guidance. In practice that compact flow is: call `context_pack` once for the task before broader exploration, answer after one high- or medium-confidence pack when `diagnostics.quality_score >= 0.5` and `missing_context` is empty, do not run broad `Glob` patterns, repo-wide `grep` / `find` searches, or raw file sweeps after that strong pack, prefer Madar over non-Madar MCPs for codebase questions unless Madar returns `agent_directive: explore_with_caution`, let that Madar guidance override conflicting auto-activated exploration skills, expand only when `missing_context` / `missing_semantic` or diagnostics justify it, and keep `out/GRAPH_REPORT.md` as a fallback-only read when the pack or graph tools are unavailable, stale, or insufficient.
+For Claude, Cursor, Copilot, and Gemini, `--profile strict` writes `MADAR_TOOL_PROFILE=strict`. That runtime surface exposes the seven core tools plus `context_pack` and `context_expand`, exactly matching the generated guidance. In practice the compact flow is: call `context_pack` once for the task before broader exploration, then follow `evidence.answerability.state`. `ready` answers from the pack, `ready_with_caveat` answers from the pack with `evidence.answerability.caveats`, and `verify_targets` inspects only a listed expansion handle or file. Madar already performs up to two bounded cumulative recovery passes; only `insufficient` with `broad_search_fallback: allowed` permits one directory-scoped raw search. Keep `out/GRAPH_REPORT.md` as a fallback-only read when the pack or graph tools are unavailable, stale, or insufficient. `pack_confidence` remains compatibility-only.
 
-Aider and OpenCode are intentionally context-pack-first: run `madar generate .`, install the profile, and start broad codebase work with `madar pack "<task>" --task explain` before raw file search. `madar aider install` writes an AGENTS.md profile only; remove it with `madar aider uninstall`. `madar opencode install` writes the AGENTS.md profile, `.opencode/plugins/madar.js`, and the Madar MCP entry in `opencode.json` or `opencode.jsonc`; remove only Madar-owned content with `madar opencode uninstall`.
+Aider and OpenCode are intentionally context-pack-first: run `madar generate .`, install the profile, and start broad codebase work with `madar pack "<task>" --task explain` before raw file search. `madar aider install` writes an AGENTS.md profile only; remove it with `madar aider uninstall`. `madar opencode install` writes the AGENTS.md profile, `.opencode/plugins/madar.js`, and a strict-profile Madar MCP entry in `opencode.json` or `opencode.jsonc`; remove only Madar-owned content with `madar opencode uninstall`.
 
-Codex is intentionally context-pack-first too: run `madar generate .`, install with `madar codex install`, and start broad codebase work with `madar pack "<task>" --task explain` before raw file search. The install writes the Madar-owned AGENTS.md section, `.codex/hooks.json`, `.codex/madar-user-prompt-submit.cjs`, and a marker-owned `[mcp_servers.madar]` block in `.codex/config.toml`. Its `UserPromptSubmit` hook provides model-visible guidance only for local code tasks; it is guidance, not enforcement. Enable it only in a trusted repository, restart or start a new Codex session, use `/hooks` to review and trust the project hook, then verify the server through `/mcp` or `codex mcp list`. `madar doctor` and `madar status` validate on-disk install state only, not live Codex trust or activation. To remove the profile, run `madar codex uninstall`; it removes only Madar-owned AGENTS, hook, script, and marked TOML content while preserving unrelated content.
+Codex is intentionally context-pack-first too: run `madar generate .`, install with `madar codex install`, and start broad codebase work with `madar pack "<task>" --task explain` before raw file search. The install writes the Madar-owned AGENTS.md section, `.codex/hooks.json`, `.codex/madar-user-prompt-submit.cjs`, and a marker-owned strict-profile `[mcp_servers.madar]` block in `.codex/config.toml`. Its `UserPromptSubmit` hook provides model-visible guidance only for local code tasks; it is guidance, not enforcement. Enable it only in a trusted repository, restart or start a new Codex session, use `/hooks` to review and trust the project hook, then verify the server through `/mcp` or `codex mcp list`. `madar doctor` and `madar status` validate on-disk install state only, not live Codex trust or activation. To remove the profile, run `madar codex uninstall`; it removes only Madar-owned AGENTS, hook, script, and marked TOML content while preserving unrelated content.
 
 ## MCP Registry metadata
 
@@ -51,7 +51,7 @@ Private registry usage stays out of scope for the public Madar listing because t
 
 ## MCP tools
 
-These seven MCP tools handle the most common agent workflows in the default core profile. Start with `graph_summary` for a bounded deterministic first-turn overview, then use `retrieve` or `context_pack` when you need task-specific evidence.
+These seven MCP tools handle the most common agent workflows in the default core profile. Start with `graph_summary` for a bounded deterministic first-turn overview, then use `retrieve` when you need task-specific evidence.
 
 | Tool | When the agent uses it |
 |---|---|
@@ -63,7 +63,7 @@ These seven MCP tools handle the most common agent workflows in the default core
 | `graph_stats` | "How big is this graph?" - node/edge counts, density, file-type mix |
 | `graph_summary` | "Give me the repo at a glance" - bounded deterministic overview of counts, domains, top modules, entrypoints, frameworks, and runtime paths |
 
-`--profile strict` keeps those seven core tools but adds one bounded `context_pack` call per task before broader exploration. The full surface is 26 tools, opt-in via `MADAR_TOOL_PROFILE=full` or `--profile full` on install. Full-profile additions beyond that strict one-pack flow: `context_pack`, `context_expand`, `context_prompt`, `context_session_reset`, `risk_map`, `implementation_checklist`, `relevant_files`, `feature_map`, `time_travel_compare`, `community_details`, `query_graph`, `get_node`, `get_neighbors`, `explain_node`, `shortest_path`, `graph_diff`, `god_nodes`, `semantic_anomalies`, `get_community`.
+`--profile strict` exposes those seven core tools plus `context_pack` and `context_expand`. The full surface is 27 tools, opt-in via `MADAR_TOOL_PROFILE=full` or `--profile full` on install. Full-only additions beyond strict are `context_pack_session_reset`, `context_prompt`, `context_session_reset`, `risk_map`, `implementation_checklist`, `relevant_files`, `feature_map`, `time_travel_compare`, `community_details`, `query_graph`, `get_node`, `get_neighbors`, `explain_node`, `shortest_path`, `graph_diff`, `god_nodes`, `semantic_anomalies`, and `get_community`.
 
 Full request/response examples live in [`examples/mcp-tool-examples.md`](../../examples/mcp-tool-examples.md).
 
@@ -77,12 +77,16 @@ Use `--require-fresh-context` on `madar pack`, `madar prompt`, or `madar handoff
 
 Cached `context_pack` explain responses still refresh the current freshness receipt before reuse, so a cache hit does not hide newly changed or missing indexed source files.
 
+With `--auto-refresh`, filesystem events invalidate the graph immediately and adaptive authoritative reconciliations verify the full watched corpus. Graph-backed MCP requests fail closed while reconciliation is pending/failed or watcher coverage/policy is not trustworthy. Generation policy is versioned and fingerprinted in both `graph.json` and `manifest.json`, so automatic refresh reuses direction, SPI, Git-ignore, symlink, document/non-code, exclusion, extractor, and indexing-threshold settings. Policy drift forces a full rebuild. `madar doctor` and `madar status` expose the local `watcher-state.json` health record. Full behavior and legacy migration are documented in [Auto-refresh and generation policy](../auto-refresh.md).
+
 ## Common commands
 
 ```bash
 madar generate .                          # build the graph
 madar generate . --spi                    # framework metadata + disk cache
 madar generate . --respect-gitignore      # exclude files ignored by Git
+madar generate . --strict-indexing        # fail on any failed/unsupported candidate
+madar generate . --max-indexing-failed 1 --max-indexing-unsupported 3
 madar watch .                             # rebuild on file change
 madar watch . --respect-gitignore         # watch only Git-visible source changes
 madar summary                             # bounded JSON overview
@@ -105,11 +109,29 @@ madar federate frontend/graph.json backend/graph.json
 madar --help
 ```
 
+Generated code graphs are directed by default, including `try`, `watch`, automatic MCP refresh, and unchanged `--update` runs. An unchanged `--update` fully re-extracts a legacy undirected artifact because old storage may have collapsed opposite edges; `--cluster-only` refuses that unsafe migration. `--directed` remains accepted for compatibility. `--undirected` is an explicit visualization-only legacy mode that collapses reciprocal edges into one connection; `impact`, `call_chain`, and `slice-v1` retrieval reject that output rather than infer reverse edges. The two direction flags are mutually exclusive.
+
+Every generation also writes local and share-safe indexing-completeness manifests beside `graph.json`. A valid graph is not a claim of complete source coverage. `--strict-indexing` uses zero failed and zero unsupported candidates as its thresholds; either `--max-indexing-failed N` or `--max-indexing-unsupported N` enables strict mode with the supplied allowance. See [Indexing completeness](../indexing-completeness.md) for outcome meanings, path-redaction behavior, and confidence effects.
+
 On Windows, `compare`, `review-compare`, and benchmark `--exec` templates run under `cmd.exe`, so prefer `type {prompt_file} | claude ...` over PowerShell-specific piping or quoting.
 
 ## Default discovery rules
 
 `madar generate` hard-ignores nested VCS/worktree copies and generated/build output by default: `.worktrees/`, `worktrees/`, `.git/`, `out/`, `node_modules/`, `dist/`, `build/`, `coverage/`, cache folders, source maps, lock/build artifacts, and temp/log files.
+
+Secret handling is source-aware. Madar indexes ordinary code whose file or ancestor names describe password, token, credential, or secret behavior. That includes `token.ts`, password reset/policy services, `secret-manager.ts`, and source below `secrets/` or `credentials/`. Names alone do not make source code secret.
+
+Madar excludes these artifacts before extraction:
+
+- `.env*` and `.envrc` environment files;
+- private-key files such as `*.pem`, `*.key`, `*.p12`, `*.pfx`, `*.p8`, and private `id_rsa` / `id_ed25519` files;
+- known credential stores including `.netrc`, `.npmrc`, `.pgpass`, `.pypirc`, `.htpasswd`, and cloud credential files;
+- non-source configs explicitly named for credentials, secrets, tokens, passwords, or private keys;
+- non-source files below explicit secret-storage directories such as `secrets/`, `credentials/`, or private-key directories. Source-code extensions remain indexable in those directories, but arbitrary docs/data do not receive that exception.
+
+Unreadable files/directories and every secret-policy exclusion are recorded with structured reasons in the local graph artifact. Generate, doctor, and status output show local counts and escaped paths (up to 20 inline, with the complete list at `discovery_safety.exclusions`). When an excluded or unreadable path matches the question or retrieved workflow scope, MCP/pack evidence lowers answerability and confidence. Share-safe handoffs include the `artifact_path_only` policy marker plus `total`, `relevant`, `reasons`, and `relevant_reasons` counts under `evidence.discovery_exclusions`; they never include the local path list.
+
+This is a conservative artifact/path policy, not a content-level secret scanner. Madar reads indexed source code, so a credential hard-coded inside an otherwise normal source file can enter the local graph/snippet artifacts. Remove such credentials from source or add the path to `.madarignore`; review any artifact before sharing it.
 
 Tests, benchmarks, fixtures, mocks, and config files are not hard-ignored. They still get indexed so retrieval can use them when you ask for them, but production/runtime prompts soft-penalize them and honor prompt exclusions like "exclude tests, benchmarks, fixtures".
 

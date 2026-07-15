@@ -1,0 +1,21 @@
+Based on the Madar slice (state `verify_targets`, verified against `create-envelope-recipients.ts`), here's what the evidence supports — with one phase that the pack could not substantiate.
+
+## Documented flow
+
+**1. Send preparation — document data**
+`putPdfFileServerSide()` (`universal/upload/put-file.server.ts:22`) parses/validates the uploaded PDF (rejects encrypted files, enforces `.pdf`), stores the bytes via `putFileServerSide`, then calls `createDocumentData()` (`server-only/document-data/create-document-data.ts:16`) to persist a `documentData` row (`data` + `initialData`). `putNormalizedPdfFileServerSide()` is the variant that flattens/normalizes the form first before creating the same document-data record.
+
+**2. Recipient creation**
+`createEnvelopeRecipients()` (`server-only/recipient/create-envelope-recipients.ts:30`):
+- Resolves and authorizes the envelope via `getEnvelopeWhereInput` (rejects if not found or already `completedAt`).
+- Guards action-auth: recipients with `actionAuth` require the team's `cfr21` org flag.
+- Lowercases emails, then inside a **`prisma.$transaction`** creates each recipient with `createRecipientAuthOptions()` (access/action auth), a unique `token: nanoid()` (the signing-link token), and, for `EnvelopeType.DOCUMENT`, writes a `RECIPIENT_CREATED` audit log via `createDocumentAuditLogData()`.
+- Returns recipients mapped through `mapRecipientToLegacyRecipient()`.
+
+**3. Initial signing state (set at creation)** — `create-envelope-recipients.ts:104-105`:
+- CC recipients start `sendStatus = SENT`, `signingStatus = SIGNED` (they never need to act).
+- All other roles start `sendStatus = NOT_SENT`, `signingStatus = NOT_SIGNED`, awaiting dispatch/signing.
+
+## Caveat — notification delivery not in evidence
+
+The retrieved slice is **partial** (`confidence: low`; `execution_slice.phase_coverage.missing: ["notification_or_event"]`). The pack covers preparation → recipient creation → initial signing state, but contains **no evidence for the notification/email-delivery phase** (the send/email-dispatch orchestration that flips `NOT_SENT → SENT` and emails signing links). Per the answer contract I won't infer that phase — it lives in a send-document/email path outside the retrieved workflow owners, and confirming it would require retrieving that separate slice.

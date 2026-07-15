@@ -38,7 +38,7 @@ export function buildContextPackGovernanceReceipt(input: {
   task: ContextPackTaskKind
   taskIntent: TaskIntentKind
   budget: number
-  evidence: Pick<MadarResponseEvidence, 'agent_directive' | 'coverage' | 'missing_phases' | 'pack_confidence'>
+  evidence: Pick<MadarResponseEvidence, 'agent_directive' | 'answerability' | 'coverage' | 'evidence_strength' | 'missing_phases' | 'pack_confidence' | 'recovery'>
   expandable: readonly ContextPackExpandableRef[]
   retrievalStrategy?: ContextPackRetrievalStrategy
   resolution?: ContextPackGovernanceResolution
@@ -85,9 +85,15 @@ export function buildContextPackGovernanceReceipt(input: {
     },
     directive: {
       pack_confidence: input.evidence.pack_confidence,
+      evidence_strength: input.evidence.evidence_strength.level,
       coverage: input.evidence.coverage,
+      answerability: input.evidence.answerability.state,
       agent_directive: input.evidence.agent_directive,
       missing_phases: [...input.evidence.missing_phases],
+      missing_obligation_count: input.evidence.answerability.missing_obligations.length,
+      verification_target_count: input.evidence.answerability.verification_targets.length,
+      recovery_attempts: input.evidence.recovery?.attempts.length ?? 0,
+      recovery_improved: input.evidence.recovery?.improved ?? false,
     },
     follow_up: summarizeFollowUp(input.expandable),
     ...(input.mcpCall

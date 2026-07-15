@@ -138,6 +138,15 @@ function readGraphSchemaVersion(graphPath: string): number | null {
   }
 }
 
+function graphIsDirected(graphPath: string): boolean {
+  try {
+    const parsed = JSON.parse(readFileSync(graphPath, 'utf8')) as { directed?: unknown }
+    return parsed.directed === true
+  } catch {
+    return false
+  }
+}
+
 function readSnapshotMetadata(rootDir: string, commitSha: string): SnapshotMetadata | null {
   try {
     const parsed = JSON.parse(readFileSync(snapshotMetadataPath(rootDir, commitSha), 'utf8')) as Partial<SnapshotMetadata>
@@ -163,6 +172,7 @@ function canReuseSnapshot(rootDir: string, commitSha: string): boolean {
     && metadata.extractorVersion === EXTRACTOR_CACHE_VERSION
     && metadata.schemaVersion !== null
     && metadata.schemaVersion === readGraphSchemaVersion(graphPath)
+    && graphIsDirected(graphPath)
   )
 }
 

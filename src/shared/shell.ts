@@ -4,6 +4,10 @@ export interface ResolvedShellCommand {
   useProcessGroup: boolean
 }
 
+export interface ResolveShellCommandOptions {
+  login?: boolean
+}
+
 export function shellEscape(value: string, platform: NodeJS.Platform = process.platform): string {
   if (platform === 'win32') {
     return `"${value.replaceAll('%', '%%').replaceAll('"', '""')}"`
@@ -18,7 +22,11 @@ export function shellEscapeIfNeeded(value: string, platform: NodeJS.Platform = p
   return shellEscape(value, platform)
 }
 
-export function resolveShellCommand(command: string, platform: NodeJS.Platform = process.platform): ResolvedShellCommand {
+export function resolveShellCommand(
+  command: string,
+  platform: NodeJS.Platform = process.platform,
+  options: ResolveShellCommandOptions = {},
+): ResolvedShellCommand {
   if (platform === 'win32') {
     return {
       file: process.env.ComSpec ?? 'cmd.exe',
@@ -28,7 +36,7 @@ export function resolveShellCommand(command: string, platform: NodeJS.Platform =
   }
   return {
     file: '/bin/sh',
-    args: ['-lc', command],
+    args: [options.login === false ? '-c' : '-lc', command],
     useProcessGroup: true,
   }
 }

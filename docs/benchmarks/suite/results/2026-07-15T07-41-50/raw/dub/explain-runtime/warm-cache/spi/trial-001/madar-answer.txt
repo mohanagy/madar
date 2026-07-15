@@ -1,0 +1,34 @@
+I have the full flow. Note on method: the madar knowledge-graph MCP server never brought its tools online (repeated `ToolSearch` for `mcp__madar__retrieve` found nothing, and it dropped from the connecting list), so per the project contract's "MCP server unavailable" fallback I traced the code directly.
+
+## How Dub resolves a short-link click
+
+**1. Request handling / routing** — `middleware.ts:35`
+The Next.js middleware runs on every non-asset path. It calls `parse(req)` to extract `domain`, `key`, `fullKey`, logs to Axiom, then dispatches by hostname. App/API/Admin/Partners hostnames peel off first; anything else that isn't a bare URL falls through to `LinkMiddleware(req, ev)` (`middleware.ts:89`).
+
+**2. Link lookup & guard conditions** — `lib/middleware/link.ts:40`
+- Normalizes the key: puny-encode, lowercase (unless case-sensitive domain), strip trailing `+` for inspect mode, empty → `_root` (`link.ts:49-64`).
+- Resolves the link: `linkCache.get({domain,key})` (Redis) first; on miss, `getLinkViaEdge` (PlanetScale edge read), then repopulates the cache via `ev.waitUntil` (partner links also fetch enrollment info). No link → rewrite to `/[domain]/notfound` (`link.ts:86-133`).
+- Applies guards in order, each returning early: unsupported (`.php`) keys, inspect mode, password protection, banned workspace, disabled, expired (`link.ts:76-253`).
+- Picks the destination: `resolveABTestURL` may override `cachedLink.url` with a test variant (`link.ts:154-159`).
+- Resolves a **click ID**: reads the `dub_id_<domain>_<key>` cookie; if absent and `shouldCacheClickId` (conversion tracking / partner / AppsFlyer / Singular), tries `recordClickCache`; otherwise generates `nanoid(16)` (`link.ts:255-273`).
+
+**3. Analytics tracking** — `recordClick` fired via `ev.waitUntil` (`link.ts:284`, and once per branch)
+`recordClick` (`lib/tinybird/record-click.ts:28`) runs async, off the redirect's critical path:
+- Skips on `dub-no-track`, on detected bots (non-deeplink), and de-dupes one click/hour per domain+key+IP via `recordClickCache` / identity hash (`record-click.ts:68-108`).
+- Assembles `clickData` from Vercel geo headers + `userAgent` (country, device, browser, OS, referer, QR trigger, etc.) (`record-click.ts:118-169`).
+- Then in a `waitUntil(Promise.allSettled([...]))`: POSTs the event to **Tinybird** (`dub_click_events`), sets `recordClickCache`, increments `Link.clicks`/`lastClicked` and workspace usage (via Redis stream, DB fallback), records partner activity, and fires `link.clicked` webhooks if usage is under limit (`record-click.ts:177-289`).
+
+**4. Destination redirect** — back in `link.ts:313-614`
+The middleware selects the response branch and computes `finalUrl` via `getFinalUrl(url, {req, clickId, via})` (forwards UTM/query params, injects click ID for deep links). Branches:
+- **Bot + proxy** → rewrite to `/[domain]/[key]/proxy` (OG page)
+- **Custom URI scheme** → rewrite to `/custom-uri-scheme/...`
+- **Cloaking (`rewrite`)** → rewrite to `/cloaked/...`
+- **iOS / Android** targets → redirect (App/Play Store URLs show a `/deeplink/...` interstitial + `cacheDeepLinkClickData`)
+- **Geo targeting** → redirect to the country-specific URL
+- **Default** → `NextResponse.redirect(finalUrl)` — status `301` for `_root`, else `302`
+
+Every branch wraps its response in `createResponseWithCookies(...)`, which sets the `dub_id` cookie (and test-variant cookie) so the same click ID persists for later conversion (`/track/lead`) attribution.
+
+**Key files:** `middleware.ts`, `lib/middleware/link.ts`, `lib/tinybird/record-click.ts`, plus helpers `linkCache`/`getLinkViaEdge`, `getFinalUrl`, `resolveABTestURL`, `createResponseWithCookies`, `recordClickCache`.
+
+**Caveats:** click recording is fire-and-forget (`ev.waitUntil`) and best-effort (`allSettled` + DB fallbacks), so tracking never blocks or fails the redirect; bot/EU-IP/no-track/hourly-dedup filtering means not every request produces a stored click.

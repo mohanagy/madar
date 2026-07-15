@@ -13,7 +13,9 @@ Each receipt is versioned (`version: 1`) and records:
 
 - graph freshness (`graph_version`, freshness status, selected-context counters, and generation/build timestamps)
 - request metadata (`task`, `task_intent`, `budget`, retrieval strategy, resolution when present)
-- agent directive summary (`pack_confidence`, `coverage`, `agent_directive`, `missing_phases`)
+- answerability summary (`evidence_strength`, `coverage`, `answerability`, missing-obligation and verification-target counts)
+- recovery summary (attempt count and whether cumulative recovery improved the pack)
+- compatibility fields (`pack_confidence`, `agent_directive`, and `missing_phases`) for older consumers
 - follow-up expansion summary (handle count, evidence classes, expansion task kinds, preview/focus counts)
 - MCP call metadata for `context_pack` (`cache_eligible`, `cache_status`, and a hashed `delta_session_hash` when delta mode is used)
 
@@ -28,6 +30,8 @@ The governance receipt is explicitly **source-safe**. It does **not** include:
 - `confidence_reasons`
 - `covered_workflow_owners`
 - expandable preview `source_file` values
+
+Recovery telemetry in the receipt is aggregate-only. It contains counts and enum states, never recovery prompts, candidate labels, source paths, snippets, or verification-target paths.
 
 This keeps the receipt compatible with review workflows that need operational evidence without leaking repository structure or code content.
 

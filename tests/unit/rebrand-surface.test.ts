@@ -17,6 +17,7 @@ import {
   parseSummaryArgs,
 } from '../../src/cli/parser.js'
 import { saveQueryResult } from '../../src/infrastructure/save-query-result.js'
+import { resolveMadarOutputDirectory } from '../../src/shared/workspace.js'
 
 function readText(path: string): string {
   return readFileSync(resolve(path), 'utf8')
@@ -79,9 +80,15 @@ describe('rebrand surface', () => {
     expect(parseQueryArgs(['how does auth work']).graphPath).toBe('out/graph.json')
     expect(parsePackArgs(['how does auth work']).graphPath).toBe('out/graph.json')
     expect(parsePromptArgs(['how does auth work', '--provider', 'claude']).graphPath).toBe('out/graph.json')
-    expect(parseCompareArgs(['how does login work', '--exec', 'claude -p "$(cat {prompt_file})"']).outputDir).toBe(resolve('out/compare'))
-    expect(parseReviewCompareArgs(['--exec', 'claude -p "$(cat {prompt_file})"']).outputDir).toBe(resolve('out/review-compare'))
-    expect(parseSaveResultArgs(['--question', 'Q', '--answer', 'A']).memoryDir).toBe(resolve('out/memory'))
+    expect(parseCompareArgs(['how does login work', '--exec', 'claude -p "$(cat {prompt_file})"']).outputDir).toBe(
+      join(resolveMadarOutputDirectory(), 'compare'),
+    )
+    expect(parseReviewCompareArgs(['--exec', 'claude -p "$(cat {prompt_file})"']).outputDir).toBe(
+      join(resolveMadarOutputDirectory(), 'review-compare'),
+    )
+    expect(parseSaveResultArgs(['--question', 'Q', '--answer', 'A']).memoryDir).toBe(
+      join(resolveMadarOutputDirectory(), 'memory'),
+    )
     expect(parseDoctorArgs([]).graphPath).toBe('out/graph.json')
     expect(parseSummaryArgs([]).graphPath).toBe('out/graph.json')
     expect(parseServeArgs([]).graphPath).toBe('out/graph.json')

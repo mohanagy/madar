@@ -71,17 +71,17 @@ describe('install documentation', () => {
     }
 
     expect(reference).toContain('[--profile core\\|full\\|strict]')
-    expect(reference).toContain('`--profile strict` keeps the lean core MCP tool surface')
+    expect(reference).toContain('`--profile strict` writes `MADAR_TOOL_PROFILE=strict`')
     expect(reference).toContain('call `context_pack` once for the task before broader exploration')
-    expect(reference).toContain('prefer Madar over non-Madar MCPs for codebase questions')
-    expect(reference).toContain('override conflicting auto-activated exploration skills')
+    expect(reference).toContain('`verify_targets` inspects only a listed expansion handle or file')
+    expect(reference).toContain('only `insufficient` with `broad_search_fallback: allowed` permits one directory-scoped raw search')
   })
 
   it('documents that strict installs still use one bounded context_pack call in the CLI reference', () => {
     const reference = readFileSync(resolve('docs/reference/cli-and-mcp.md'), 'utf8')
 
-    expect(reference).toContain('`--profile strict` keeps the seven core MCP tools but adds one bounded `context_pack` call per task')
-    expect(reference).toContain('Full-profile additions beyond that strict one-pack flow')
+    expect(reference).toContain('`--profile strict` exposes those seven core tools plus `context_pack` and `context_expand`')
+    expect(reference).toContain('Full-only additions beyond strict')
   })
 
   it('documents the local trust boundary and links the threat model from the README privacy section', () => {
