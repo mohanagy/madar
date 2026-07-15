@@ -7,11 +7,6 @@ describe('telemetry documentation', () => {
   it('documents the opt-in controls in the README', () => {
     const readme = readFileSync(resolve('README.md'), 'utf8')
 
-    expect(readme).toContain('madar telemetry enable')
-    expect(readme).toContain('madar telemetry disable')
-    expect(readme).toContain('madar telemetry clear')
-    expect(readme).toContain('madar telemetry report')
-    expect(readme).toContain('MADAR_ENABLE_TELEMETRY=1')
     expect(readme).toContain('docs/telemetry.md')
     expect(readme).toContain('Telemetry is disabled unless you explicitly enable it')
   })

@@ -1,113 +1,126 @@
 # Madar
 
-**Give coding agents the repo context they need before they start searching.**
+**Give your coding agent the repo context it needs before it starts searching.**
 
-Madar builds a local graph of your TypeScript/Node repo, then gives agents like Claude Code, Cursor, Codex, Copilot, Gemini, Aider, and OpenCode a task-aware context pack for the question you are asking.
+Madar builds a local graph of your TypeScript or Node.js repository and turns the current question into a small, task-aware context pack. Claude Code, Codex, Cursor, Copilot, Gemini, Aider, and OpenCode can start from relevant files, symbols, snippets, and relationships instead of rediscovering the repository from scratch.
 
-It helps agents spend less time rediscovering the same files, routes, imports, and flows.
-
-The June 2026 public TypeScript receipts are retained as historical artifacts, but their former 6/6 headline is withdrawn: those runs used checkout-only benchmark profiles in the answer path. Fresh July 15 reruns from an unpacked `@lubab/madar@0.31.0` tarball produced **zero current public wins**: every row was `not_measured` because the agent missed a prompt/answer-quality gate or never made an attributable Madar MCP call.
+- **Start smaller:** give the agent likely entrypoints and runtime paths before broad search.
+- **Stay local:** graph generation does not upload your source code or require a cloud service.
+- **Stay current:** installed MCP profiles refresh the graph as the active workspace changes.
 
 [![npm](https://img.shields.io/npm/v/%40lubab%2Fmadar)](https://www.npmjs.com/package/@lubab/madar)
 [![node >=20](https://img.shields.io/badge/node-%E2%89%A520-3c873a)](https://nodejs.org/)
-[![local first](https://img.shields.io/badge/local--first-no%20cloud%20required-0f766e)](#privacy)
+[![local first](https://img.shields.io/badge/local--first-no%20cloud%20required-0f766e)](#local-by-design)
 [![license MIT](https://img.shields.io/badge/license-MIT-16a34a)](https://github.com/mohanagy/madar/blob/main/LICENSE)
 
-## Why
+## Try It in 60 Seconds
 
-On large repos, coding agents often burn context before they can answer:
-
-- broad searches across unrelated folders
-- repeated file discovery every session
-- wrong-file edits because the first context was too shallow
-
-Madar gives the agent a smaller, repo-grounded starting point.
-
-It does not replace the agent. It helps the agent start from better evidence.
-
-## What Agents Get
-
-For each task, Madar can surface:
-
-- the likely entry files, symbols, routes, and handlers
-- direct snippets and file paths for the current question
-- relationships such as imports, calls, framework roles, and runtime handoffs
-- freshness metadata tied to git state
-- share-safe benchmark and handoff artifacts for review
-
-The goal is not to make the agent blind to the repo. The goal is to make the first pass smaller, more relevant, and easier to verify.
-
-## Install
+Install Madar with Node.js 20 or newer, then run it inside your repository:
 
 ```bash
 npm install -g @lubab/madar
+cd your-repository
+madar try "how does authentication work?"
 ```
 
-Madar requires Node.js 20 or newer.
+`madar try` builds or reuses the local graph, prints a human-readable first result, and recommends the next agent-install command. It does not modify your source code.
 
-## Quick Start
+For a concrete example, Madar's included password-reset workspace contains this path:
 
-Run this inside your repo:
-
-```bash
-madar try "how does auth work?"
+```text
+account-routes.ts
+  -> PasswordResetService.requestPasswordReset()
+  -> userRepository.saveResetToken()
+  -> enqueueResetEmailJob()
+  -> sendPasswordResetEmail()
 ```
 
-That command builds or reuses the local graph, prints a first context-pack result, and suggests the next install command.
+That is the kind of focused starting path Madar gives an agent before it decides whether any additional file inspection is necessary.
 
-For the manual flow:
+## Connect Your Agent
+
+Choose the agent you use. For Claude Code:
 
 ```bash
-madar generate .
-madar summary
+madar claude install
 madar doctor
 madar status
 ```
 
-Generated code graphs preserve source → target edge direction by default. If you have an undirected graph from an older Madar release, `madar generate . --update` migrates it before impact, call-chain, or directional retrieval is used.
-
-Then connect an agent:
-
-```bash
-madar claude install
-```
-
-Now ask your agent normal repo questions:
+After installing a profile, run `madar doctor` and `madar status`. The agent can then ask Madar for context when you use normal prompts such as:
 
 ```text
-How does auth work?
-Where is the report generated?
-Add telemetry to this flow.
+How does authentication work?
 Why does this endpoint return 403?
+Where is the report generated?
+What breaks if I change this service?
+Add telemetry to this flow.
 ```
 
-The agent can ask Madar for relevant files, symbols, snippets, and relationships before doing raw repo search.
+Madar supports these project-local installers:
 
-## Supported Agents
+| Agent | Install command |
+| --- | --- |
+| Claude Code | `madar claude install` |
+| Codex CLI | `madar codex install` |
+| Cursor | `madar cursor install` |
+| GitHub Copilot | `madar copilot install` |
+| Gemini CLI | `madar gemini install` |
+| Aider | `madar aider install` |
+| OpenCode | `madar opencode install` |
 
-```bash
-madar claude install
-madar codex install
-madar cursor install
-madar copilot install
-madar gemini install
-madar aider install
-madar opencode install
+Installer details are in the [CLI and MCP reference](https://github.com/mohanagy/madar/blob/main/docs/reference/cli-and-mcp.md). Step-by-step setup and smoke tests are in the [agent quickstarts](https://github.com/mohanagy/madar/blob/main/docs/tutorials/agent-quickstarts.md).
+
+If you upgrade from a version earlier than `0.30.0`, rerun your agent's install command to add automatic refresh to its managed MCP entry.
+
+## What Changes for the Agent
+
+Without Madar, a coding agent often begins with broad filename searches, repeated reads, and guesses about which route, service, or handler owns the task.
+
+With Madar, the first pass can include:
+
+- likely files, exported symbols, routes, and handlers
+- direct snippets relevant to the question
+- imports, calls, framework roles, and runtime handoffs
+- a static runtime-path hypothesis when the graph supports one, not a live execution trace
+- graph freshness and indexing-completeness signals
+- explicit guidance to answer, answer with a caveat, or verify a focused target
+
+Madar does not replace your agent or prevent it from reading code. It gives the agent a smaller, repo-grounded place to start.
+
+## How It Works
+
+```text
+Your repository
+      |
+      v
+Local Madar graph
+      |
+      v
+Context for the current question
+      |
+      v
+Claude, Codex, Cursor, or another coding agent
 ```
 
-After installing a profile, run `madar doctor` and `madar status`. Installer details are in the [CLI and MCP reference](https://github.com/mohanagy/madar/blob/main/docs/reference/cli-and-mcp.md).
+1. Madar indexes source files, symbols, imports, calls, routes, handlers, framework metadata, and selected documentation.
+2. A question selects a bounded context pack rather than dumping the whole repository into the prompt.
+3. The response reports evidence strength, coverage, freshness, and whether focused verification is still needed.
+4. Installed MCP profiles watch the active workspace and refresh graph-backed context after relevant changes.
 
-If you upgrade to `0.30.0` or newer from an earlier version, run your profile's install command again (for example, `madar claude install` or `madar codex install`) to update its managed MCP entry with automatic refresh.
+The full response contract, including bounded recovery and answerability states, is documented in [MCP response shape](https://github.com/mohanagy/madar/blob/main/docs/mcp-response-shape.md).
 
-## Use Without MCP
+## Use Madar Without MCP
 
-You can also generate context directly from the CLI:
+The CLI can generate and inspect context without installing an agent integration:
 
 ```bash
+madar generate .
+madar summary
 madar pack "how does auth work?" --task explain --format text
 ```
 
-Create an agent-ready prompt:
+Create a provider-ready prompt:
 
 ```bash
 madar prompt "how does auth work?" --provider claude
@@ -119,179 +132,87 @@ Create a share-safe handoff for another coding tool:
 madar handoff "add auth telemetry" --task implement --consumer copilot
 ```
 
-## What It Builds
+Generated graphs and indexing manifests stay in the project output location. See the [getting-started tutorial](https://github.com/mohanagy/madar/blob/main/docs/tutorials/getting-started.md) for a reproducible sample workspace and expected output.
 
-Madar analyzes your local repo and creates a graph of files, imports, exports, symbols, routes, handlers, call relationships, dependency relationships, framework metadata, and task-relevant snippets.
-
-The graph is stored locally in your project output folder. Generation also writes a versioned indexing manifest that accounts for indexed, warning, policy-skipped, unsupported, and failed candidates.
-
-## Conceptual Questions
-
-When a question uses different vocabulary from the code, Madar can run one bounded deterministic recovery pass. It derives local concepts from paths, exported symbols, module names, graph communities, document headings, and framework metadata, then prefers short structural workflow paths over isolated literal matches. No embedding dependency is required; semantic retrieval remains optional.
-
-Responses include a `retrieval_plan` showing why recovery was considered, which fallback ran, and whether it changed the delivered result. Unrelated keywords do not cause a fallback to arbitrary graph hubs. See [Conceptual-query retrieval](https://github.com/mohanagy/madar/blob/main/docs/conceptual-retrieval.md) for the trigger, bounding, output, and evaluation contracts.
-
-## Answerability and Recovery
-
-Madar does not ask agents to trust or discard a pack based on one confidence label. Responses report three independent signals:
-
-- `evidence_strength`: how directly the selected nodes and relationships support the answer
-- `coverage_detail`: which required evidence, semantic, runtime, discovery, or indexing obligations are covered or missing
-- `answerability`: whether the agent should answer now, answer with a caveat, verify exact targets, or declare the pack insufficient
-
-For incomplete explain packs, Madar makes up to two bounded recovery attempts. Each pass keeps the original evidence, adds candidates from exact expansion handles or focus files, deduplicates them, and rescores the cumulative set under explicit node, time, attempt, and output-token budgets. A result is accepted only when answerability, missing obligations, evidence strength, or relationship support actually improves.
-
-Agents should treat `answerability.state` as authoritative: `ready` answers from the pack, `ready_with_caveat` answers from the pack and states `answerability.caveats`, `verify_targets` inspects only the listed handle or file, and only `insufficient` with `broad_search_fallback: allowed` permits a directory-scoped raw search. `pack_confidence` remains as a compatibility projection for older consumers. See [MCP response shape](https://github.com/mohanagy/madar/blob/main/docs/mcp-response-shape.md) for the full contract.
-
-## Indexing Completeness
-
-A readable `graph.json` is not the same as complete source coverage. `madar generate`, `madar doctor`, and `madar status` prominently report indexing completeness, while the local `indexing-manifest.json` records affected paths and stable reason codes. The adjacent `indexing-manifest.share-safe.json` keeps counts and reason categories but removes paths and diagnostic messages.
-
-Relevant incomplete paths reduce context-pack confidence instead of letting an agent treat missing evidence as complete. CI can enforce unsupported and failed thresholds:
-
-```bash
-madar generate . --strict-indexing
-madar generate . --max-indexing-failed 1 --max-indexing-unsupported 3
-```
-
-See [Indexing completeness](https://github.com/mohanagy/madar/blob/main/docs/indexing-completeness.md) for the outcome contract, strict-mode semantics, and the precise definition of an indexed file.
-
-## Fit
+## Where Madar Fits
 
 Madar is most useful when:
 
-- your repo is medium or large
-- the project is TypeScript or Node.js
-- agents keep opening too many files
-- you ask architecture, flow, review, or impact questions
-- you want more task-aware context before edits
+- your repository is medium or large
+- the project is primarily TypeScript or Node.js
+- agents keep reopening the same files or searching unrelated folders
+- you ask architecture, runtime-flow, review, or impact questions
 - token usage, latency, or local repo privacy matter
 
 It helps less when:
 
-- the repo is small
-- the task is obvious from one file
-- the question needs live runtime behavior
-- the code relies heavily on dynamic patterns static analysis cannot see
-- you use a standalone graph without regenerating it after large repo changes
+- the repository is small or the task is obvious from one file
+- the question depends on live runtime behavior that static analysis cannot observe
+- the code relies heavily on dynamic patterns that are absent from the graph
+- the graph is stale or relevant source files could not be indexed
 
-For standalone CLI workflows, regenerate after substantial repo changes:
+Madar complements agents and IDE indexing. It is not a hosted knowledge base, runtime tracer, PR reviewer, or vulnerability scanner.
 
-```bash
-madar generate .
-```
+## Local by Design
 
-## Freshness
+- **Privacy:** Madar graph generation runs locally and does not require an API key. Your coding agent may still send prompts or selected file context to its own model provider, depending on that agent's configuration.
+- **Sensitive files:** ordinary security source code remains indexable, while private keys, `.env*`, credential stores, and known non-source secret material are excluded. This is a path policy, not a content-level secret scanner.
+- **Freshness:** installed MCP profiles use automatic refresh. Manual CLI users can regenerate with `madar generate .`; strict workflows can require `--require-fresh-context` or `--require-fresh-graph`.
+- **Worktrees:** run Madar and the agent from the same linked Git worktree. Each worktree receives isolated graph artifacts outside the checkout; reconnect the MCP server after switching worktrees.
+- **Telemetry:** Telemetry is disabled unless you explicitly enable it. Controls and the exact source-safe event schema are documented in [telemetry](https://github.com/mohanagy/madar/blob/main/docs/telemetry.md).
 
-Madar records graph freshness so agents can tell whether context still matches the repo. On git workspaces, freshness is tied to the graph build commit plus the working-tree diff, so unrelated changes do not have to block a focused task by default.
+Treat every local MCP install, hook, or agent profile as part of your local trust boundary. The [MCP threat model](https://github.com/mohanagy/madar/blob/main/docs/security/mcp-threat-model.md) documents the boundary in detail.
 
-Installed MCP profiles in `0.30.0` start `madar serve --stdio --auto-refresh`. Madar reconciles the graph when that server starts, then watches the active workspace and refreshes the graph after source or relevant configuration changes. You do not need to run `madar generate` after every agent edit or session; manual generation remains available for standalone CLI workflows.
+## Evidence and Limits
 
-Filesystem events mark the graph pending immediately, while adaptive full reconciliations provide the correctness check without recursively scanning every 250 ms. There is no silent file-count cap: incomplete or timed-out coverage is reported as failed, and auto-refresh MCP calls refuse graph-backed answers until freshness is restored. Direction, SPI, Git-ignore, symlink, document/non-code, exclusion, extractor, and strict-indexing settings are fingerprinted in `graph.json` and `manifest.json`; a policy change forces a full rebuild. `madar status` shows watcher coverage, reconciliation timing, pending/failure state, and policy match. See [auto-refresh and generation policy](https://github.com/mohanagy/madar/blob/main/docs/auto-refresh.md).
+Madar publishes the prompts, answers, traces, and share-safe reports behind its benchmark statements. Two public experiment types answer different questions and should not be compared as if they were the same test.
 
-```bash
-madar pack "how does auth work?" --require-fresh-context
-madar pack "how does auth work?" --require-fresh-graph
-```
+### Controlled v0.30 evidence
 
-Use `--require-fresh-context` when the selected files must be fresh. Use `--require-fresh-graph` when the whole graph must match the current repo.
+Six June TypeScript runtime-flow trials used a source checkout with task-specific proof profiles. In those controlled runs, Madar was invoked once per row and the recorded results showed:
 
-## Git Worktrees
+- `3.5x` to `18.5x` fewer tool calls
+- `2.2x` to `15.6x` less provider-reported input
+- `1.65x` to `7.09x` lower latency
 
-Run Madar and your coding agent from the same linked Git worktree. Madar keeps the default graph and related artifacts outside that checkout, under the repository's shared Git data directory, and gives each worktree its own isolated artifact directory. That keeps branches from sharing graph state and avoids generated `out/` artifacts inside linked worktrees.
+Those receipts are real measurements of profile-assisted Madar. They demonstrate what the workflow can achieve when the correct task evidence is available. They are not evidence that an untuned npm installation will reproduce the same result for arbitrary questions, because the old prompts and checkout retrieval contained benchmark-specific obligations unavailable to normal package users.
 
-An MCP server selects its workspace when it starts. If an agent later creates or switches to another worktree, start or reconnect the agent/MCP server from that new worktree; a running server cannot follow a later directory change.
+### v0.31 production-artifact validation
 
-## Evidence
+The July reruns removed that assistance and used the same isolated, unpacked `@lubab/madar@0.31.0` package artifact. Four of six repositories recorded an agent-adoption failure: no attributable Madar MCP call occurred. The other two invoked Madar but failed strict prompt or answer gates. The correct result is **zero valid performance comparisons**, not six product losses. These reruns expose adoption and answer-completeness work; they neither confirm nor refute the earlier controlled efficiency measurements.
 
-The July 15 public TypeScript `explain-runtime` reruns used the unpacked `@lubab/madar@0.31.0` tarball, untuned production retrieval, isolated temporary workspaces, deterministic gates, and one warm-cache measured trial per row. The result is **0/6 eligible performance wins**:
+Read the [benchmark suite and all dated receipts](https://github.com/mohanagy/madar/blob/main/docs/benchmarks/suite/README.md) or the shorter [claims and evidence map](https://github.com/mohanagy/madar/blob/main/docs/claims-and-evidence.md).
 
-| Repo | Pipelines | Current outcome | Why | Receipt |
-| --- | --- | --- | --- | --- |
-| `documenso` | Legacy + SPI | `not_measured` | The focused follow-up missed the required send-preparation obligation; answer evidence was incomplete. | [July 15 summary](https://github.com/mohanagy/madar/blob/main/docs/benchmarks/suite/results/2026-07-15T06-55-50/summary.md) |
-| `formbricks` | Legacy + SPI | `not_measured` | Broad exploration followed the first Madar call without trace evidence that `missing_context` justified it; the SPI answer gate also failed. | [July 15 summary](https://github.com/mohanagy/madar/blob/main/docs/benchmarks/suite/results/2026-07-15T07-08-43/summary.md) |
-| `dub` | Legacy + SPI | `not_measured` | No attributable Madar MCP call was recorded. | [July 15 summary](https://github.com/mohanagy/madar/blob/main/docs/benchmarks/suite/results/2026-07-15T07-41-50/summary.md) |
-| `twenty` | Legacy + SPI | `not_measured` | No attributable Madar MCP call was recorded. | [July 15 summary](https://github.com/mohanagy/madar/blob/main/docs/benchmarks/suite/results/2026-07-15T08-08-36/summary.md) |
-| `cal-diy` | Legacy | `not_measured` | No attributable Madar MCP call was recorded. | [July 15 summary](https://github.com/mohanagy/madar/blob/main/docs/benchmarks/suite/results/2026-07-15T08-51-54/summary.md) |
-| `novu` | Legacy | `not_measured` | No attributable Madar MCP call was recorded. | [July 15 summary](https://github.com/mohanagy/madar/blob/main/docs/benchmarks/suite/results/2026-07-15T09-27-25/summary.md) |
+## Current Release
 
-No token, latency, cost, or tool-call reduction from these rows is promoted as a product claim. Human semantic review remains a separate explicit status and cannot turn a machine-ineligible row into a win. The superseded June receipts remain linked from the [benchmark suite](https://github.com/mohanagy/madar/blob/main/docs/benchmarks/suite/README.md) for regression archaeology only.
+Current version: `0.31.1`.
 
-The public evidence map tracks what is proven, what is mixed, and what should not be claimed yet: [claims and evidence](https://github.com/mohanagy/madar/blob/main/docs/claims-and-evidence.md).
+`0.31.1` rebuilds the public onboarding path and clarifies what each benchmark experiment proves. Runtime behavior is unchanged from `0.31.0`.
 
-## Privacy
+`0.31.0` made code graphs directed by default, separated evidence strength from answer readiness, added bounded context recovery, made indexing completeness explicit, preserved generation policy during automatic refresh, isolated linked-worktree artifacts, and removed benchmark expectations from production retrieval.
 
-Madar runs locally. Generating a graph does not require an API key or a cloud service. Your code does not leave your machine through Madar graph generation.
+Read the full notes in the [0.31.1 changelog](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md#0311---2026-07-15).
 
-Discovery uses a source-aware secret policy. Security-related source names such as `token.ts`, `password-reset-service.ts`, `password-policy.ts`, and `secret-manager.ts` are normal code and are indexed, including code below a directory named `secrets/` or `credentials/`. Madar does not read private-key material, `.env*` files, known credential stores such as `.netrc` / `.npmrc` / `.pgpass`, or non-source secret configs such as `credentials.json` and files below explicit secret directories.
+## Documentation
 
-Every safety exclusion has a reason. `madar generate`, `madar doctor`, and `madar status` show local counts and escaped paths; the full local list is stored in `graph.json` under `discovery_safety.exclusions`. Answer confidence is reduced when an excluded or unreadable path is relevant to a question. Share-safe handoffs expose only counts and reason buckets, never those local paths.
-
-This path policy is not a content-level secret scanner. Madar reads indexed source, so remove hard-coded credentials or exclude their files with `.madarignore` before generation.
-
-Your coding agent may still send prompts or selected file context to its own model provider, depending on how that agent is configured.
-
-Treat every local MCP install, hook, or agent profile as part of your local trust boundary. The threat model is documented here: [MCP threat model](https://github.com/mohanagy/madar/blob/main/docs/security/mcp-threat-model.md).
-
-## Telemetry
-
-Telemetry is disabled unless you explicitly enable it.
-
-```bash
-madar telemetry status
-madar telemetry enable
-madar telemetry disable
-madar telemetry clear
-madar telemetry report
-
-MADAR_ENABLE_TELEMETRY=1 madar generate .
-```
-
-It does not record prompt text, answer text, source paths, source content, or repository names. Full controls: [docs/telemetry.md](https://github.com/mohanagy/madar/blob/main/docs/telemetry.md).
-
-## What's New
-
-Current version: `0.31.0`.
-
-`0.31.0` hardens graph correctness and agent trust. Code graphs are directed by default; discovery distinguishes security source code from credential material; auto-refresh preserves generation policy and fails closed on incomplete coverage; and production retrieval is isolated from benchmark expectations. Context packs now expose independent evidence, coverage, and answerability signals with bounded cumulative recovery and exact verification targets, conceptual misses get a deterministic repository-local fallback, and retrieval/extraction run through explicit typed stages with source-safe diagnostics. Fresh packed-artifact receipts are published for all six affected public rows; none passed the strict eligibility gates, so this release makes no replacement performance-win claim.
-
-`0.30.0` makes installed MCP integrations self-refreshing: they reconcile the graph at startup and watch the active workspace through an agent session. It also gives each linked Git worktree isolated external graph and artifact storage. Start or reconnect MCP from the worktree the agent is using; a running server stays scoped to the worktree where it started.
-
-`0.29.0` adds full project-local Codex CLI wiring: `madar codex install` now owns a task-applicable `UserPromptSubmit` hook, its local script, and a marker-owned Madar MCP entry alongside the AGENTS profile. The hook provides guidance for local code tasks, not enforcement; review and trust it in Codex before relying on it.
-
-`0.28.0` published six TypeScript `explain-runtime` legacy receipts. Those artifacts remain available, but the former proof-backed 6/6 interpretation is superseded because the old checkout runtime used benchmark-only profiles while answering those prompts.
-
-Read the full notes in the [0.31.0 changelog](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md#0310---2026-07-15).
-
-## Docs
-
-| Need | Link |
+| Need | Start here |
 | --- | --- |
 | First run | [Getting started](https://github.com/mohanagy/madar/blob/main/docs/tutorials/getting-started.md) |
 | Agent setup | [Agent quickstarts](https://github.com/mohanagy/madar/blob/main/docs/tutorials/agent-quickstarts.md) |
 | CLI and MCP tools | [CLI and MCP reference](https://github.com/mohanagy/madar/blob/main/docs/reference/cli-and-mcp.md) |
-| Context-pack model | [Context packs](https://github.com/mohanagy/madar/blob/main/docs/concepts/context-packs.md) |
-| Pipeline architecture | [Retrieval and extraction pipelines](https://github.com/mohanagy/madar/blob/main/docs/concepts/pipelines.md) |
+| Context packs | [Context-pack concepts](https://github.com/mohanagy/madar/blob/main/docs/concepts/context-packs.md) |
+| Freshness and automatic refresh | [Auto-refresh policy](https://github.com/mohanagy/madar/blob/main/docs/auto-refresh.md) |
 | Indexing coverage | [Indexing completeness](https://github.com/mohanagy/madar/blob/main/docs/indexing-completeness.md) |
-| Auto-refresh behavior | [Auto-refresh and generation policy](https://github.com/mohanagy/madar/blob/main/docs/auto-refresh.md) |
-| Claims and limits | [Claims and evidence](https://github.com/mohanagy/madar/blob/main/docs/claims-and-evidence.md) |
-| Benchmarks | [Benchmark suite](https://github.com/mohanagy/madar/blob/main/docs/benchmarks/suite/README.md) |
-| Roadmap | [Roadmap](https://github.com/mohanagy/madar/blob/main/docs/roadmap.md) |
-| Changelog | [Changelog](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md) |
+| Privacy and MCP trust | [Threat model](https://github.com/mohanagy/madar/blob/main/docs/security/mcp-threat-model.md) |
+| Evidence and benchmarks | [Claims and evidence](https://github.com/mohanagy/madar/blob/main/docs/claims-and-evidence.md) |
+| Roadmap | [Public roadmap](https://github.com/mohanagy/madar/blob/main/docs/roadmap.md) |
+| Release history | [Changelog](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md) |
 
 ## Contributing
 
-The most useful contributions right now are:
+The most useful contributions right now are tests on real TypeScript and Node.js repositories, missed-context reports, Windows/WSL/MCP reliability improvements, framework detection, and clearer setup examples.
 
-- testing Madar on real TypeScript and Node.js repos
-- reporting cases where the context pack misses important files
-- improving Windows, WSL, and MCP setup reliability
-- adding framework detection for common repo patterns
-- improving docs with real setup examples
-
-For active development, open issues or PRs against the `next` branch.
-
-Before opening a PR, run:
+Open issues or pull requests against the `next` branch. Before opening a PR, run:
 
 ```bash
 npm test

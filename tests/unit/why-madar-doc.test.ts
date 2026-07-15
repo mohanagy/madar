@@ -58,7 +58,7 @@ describe('public marketing copy honesty', () => {
       expect(lower).toContain('cursor')
       expect(lower).toContain('codex')
       expect(lower).toContain('copilot')
-      expect(lower).toContain('repo context they need before they start searching')
+      expect(lower).toContain('repo context it needs before it starts searching')
       expect(lower).toContain('local graph')
       expect(lower).toContain('task-aware context pack')
       expect(lower).not.toContain('context plane')
@@ -142,18 +142,17 @@ describe('public marketing copy honesty', () => {
       expect(publicDocs).toContain('`get_neighbors`')
     })
 
-    it('pins the current packed-artifact benchmark outcomes in the README', () => {
-      expect(content).toContain('The July 15 public TypeScript `explain-runtime` reruns')
-      expect(content).toContain('0/6 eligible performance wins')
-      expect(content).toContain('results/2026-07-15T06-55-50/summary.md')
-      expect(content).toContain('results/2026-07-15T07-08-43/summary.md')
-      expect(content).toContain('results/2026-07-15T07-41-50/summary.md')
-      expect(content).toContain('results/2026-07-15T08-08-36/summary.md')
-      expect(content).toContain('results/2026-07-15T08-51-54/summary.md')
-      expect(content).toContain('results/2026-07-15T09-27-25/summary.md')
-      expect(content).toContain('`not_measured`')
-      expect(content).toContain('No token, latency, cost, or tool-call reduction from these rows is promoted')
-      expect(content).not.toContain('| `documenso` | 174,504 -> 76,721 (2.27x)')
+    it('separates controlled evidence from packed-artifact validation in the README', () => {
+      expect(content).toContain('### Controlled v0.30 evidence')
+      expect(content).toContain('`3.5x` to `18.5x` fewer tool calls')
+      expect(content).toContain('`2.2x` to `15.6x` less provider-reported input')
+      expect(content).toContain('`1.65x` to `7.09x` lower latency')
+      expect(content).toContain('### v0.31 production-artifact validation')
+      expect(content).toContain('zero valid performance comparisons')
+      expect(content).toContain('not six product losses')
+      expect(content).toContain('neither confirm nor refute the earlier controlled efficiency measurements')
+      expect(content).not.toContain('0/6 eligible performance wins')
+      expect(content).not.toContain('results/2026-07-15T06-55-50/summary.md')
     })
 
     it('keeps claim buckets in the evidence docs while the README stays a compact pointer', () => {
@@ -161,8 +160,21 @@ describe('public marketing copy honesty', () => {
       expect(claims).toContain('## In progress')
       expect(claims).toContain('## Not yet measured')
       expect(claims).toContain('How this maps to README.md')
-      expect(content).toContain('0/6 eligible performance wins')
+      expect(content).toContain('profile-assisted Madar')
+      expect(content).toContain('zero valid performance comparisons')
       expect(content).toContain('docs/claims-and-evidence.md')
+    })
+
+    it('keeps the first-use path ahead of benchmark detail and avoids internal-design overload', () => {
+      const wordCount = content.trim().split(/\s+/).length
+
+      expect(wordCount).toBeLessThanOrEqual(1_800)
+      expect(content).toContain('## Try It in 60 Seconds')
+      expect(content.indexOf('## Try It in 60 Seconds')).toBeLessThan(content.indexOf('## Evidence and Limits'))
+      expect(content.indexOf('madar try')).toBeLessThan(content.indexOf('### Controlled v0.30 evidence'))
+      expect(content).not.toContain('## Answerability and Recovery')
+      expect(content).not.toContain('## Indexing Completeness')
+      expect(content).not.toContain('## Telemetry')
     })
 
     it('links the claims-and-evidence map, benchmark suite scaffold, and mixed-evidence benchmark notes across the public docs', () => {
@@ -182,12 +194,12 @@ describe('public marketing copy honesty', () => {
     })
 
     it('frames fit and limitations directly in the shorter README', () => {
-      expect(lower).toContain('## fit')
+      expect(lower).toContain('## where madar fits')
       expect(lower).toContain('most useful when')
-      expect(lower).toContain('your repo is medium or large')
+      expect(lower).toContain('your repository is medium or large')
       expect(lower).toContain('token usage, latency, or local repo privacy matter')
       expect(lower).toContain('it helps less when')
-      expect(lower).toContain('the repo is small')
+      expect(lower).toContain('the repository is small')
     })
 
     it('keeps competitor positioning in the claims-and-evidence doc instead of the shorter README', () => {

@@ -2,6 +2,17 @@
 
 All notable changes to the TypeScript package will be documented in this file.
 
+## [0.31.1] - 2026-07-15
+
+### Changed
+
+- **The README now starts with a first-use path instead of internal product detail**: new users get a 60-second trial, a concrete password-reset example, agent setup commands, a plain-language explanation of what changes for the agent, and clear fit and limitation guidance before deeper architecture or benchmark material.
+- **Public benchmark evidence now keeps unlike experiments separate**: the genuine June source-checkout measurements remain documented as controlled profile-assisted evidence, while the July packed-artifact reruns are correctly reported as zero valid performance comparisons rather than six product losses. The README links to the complete dated receipts instead of reproducing an internal benchmark report on the landing page.
+
+### Notes
+
+- This is a documentation-only patch. Runtime behavior is unchanged from `0.31.0`.
+
 ## [0.31.0] - 2026-07-15
 
 ### Added

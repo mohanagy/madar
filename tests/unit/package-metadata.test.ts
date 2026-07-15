@@ -178,7 +178,7 @@ describe('package metadata', () => {
     expect(readme).toContain('cursor')
     expect(readme).toContain('codex')
     expect(readme).toContain('copilot')
-    expect(readme).toContain('repo context they need before they start searching')
+    expect(readme).toContain('repo context it needs before it starts searching')
     expect(readme).toContain('local graph')
     expect(readme).toContain('task-aware context pack')
     expect(contextPacks).toContain('deterministic local context compilation')
