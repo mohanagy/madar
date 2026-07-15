@@ -142,13 +142,18 @@ describe('public marketing copy honesty', () => {
       expect(publicDocs).toContain('`get_neighbors`')
     })
 
-    it('pins the benchmark evidence table values in the README', () => {
-      expect(content).toContain('historical June 2026 public TypeScript `explain-runtime` runs')
-      expect(content).toContain('| `documenso` | 174,504 -> 76,721 (2.27x)')
-      expect(content).toContain('| `cal-diy` | 1,588,241 -> 101,820 (15.60x)')
-      expect(content).toContain('| `novu` | 1,055,389 -> 75,772 (13.93x)')
-      expect(content).toContain('not current product proof')
-      expect(content).toContain('not a current 6/6 claim. SPI arms remain separate.')
+    it('pins the current packed-artifact benchmark outcomes in the README', () => {
+      expect(content).toContain('The July 15 public TypeScript `explain-runtime` reruns')
+      expect(content).toContain('0/6 eligible performance wins')
+      expect(content).toContain('results/2026-07-15T06-55-50/summary.md')
+      expect(content).toContain('results/2026-07-15T07-08-43/summary.md')
+      expect(content).toContain('results/2026-07-15T07-41-50/summary.md')
+      expect(content).toContain('results/2026-07-15T08-08-36/summary.md')
+      expect(content).toContain('results/2026-07-15T08-51-54/summary.md')
+      expect(content).toContain('results/2026-07-15T09-27-25/summary.md')
+      expect(content).toContain('`not_measured`')
+      expect(content).toContain('No token, latency, cost, or tool-call reduction from these rows is promoted')
+      expect(content).not.toContain('| `documenso` | 174,504 -> 76,721 (2.27x)')
     })
 
     it('keeps claim buckets in the evidence docs while the README stays a compact pointer', () => {
@@ -156,7 +161,7 @@ describe('public marketing copy honesty', () => {
       expect(claims).toContain('## In progress')
       expect(claims).toContain('## Not yet measured')
       expect(claims).toContain('How this maps to README.md')
-      expect(content).toContain('superseded, repo/task-specific, single-trial receipts')
+      expect(content).toContain('0/6 eligible performance wins')
       expect(content).toContain('docs/claims-and-evidence.md')
     })
 
