@@ -1,0 +1,483 @@
+{
+  "baseline_mode": "native_agent",
+  "task": "explain",
+  "question": "How does Cal.diy turn a booking request into availability validation, scheduled event persistence, and notification delivery?",
+  "graph_path": "<project-root>/out/graph.json",
+  "isolation": true,
+  "environment": {
+    "claude_code_version": "2.1.209",
+    "host_os": "darwin-arm64",
+    "node_version": "v22.22.3",
+    "mcp_servers_active": [
+      "madar"
+    ],
+    "mcp_server_count": 1,
+    "skills_loaded": [],
+    "skills_loaded_count": 0,
+    "plugins_active": [],
+    "user_claude_md_hash": "sha256:0cf98a0a8f9c27017a0bebc7b017fc17518d9103c62ca384da20b2776b0aade7",
+    "project_claude_md_hash": "sha256:4f80545c205b6fbd91ffaae058c5f95f47566acbd8446c3a8ef7c2a29aac0b98",
+    "parent_claude_md_hashes": [],
+    "hooks_active": {
+      "user_prompt_submit": [
+        "project:command:*"
+      ],
+      "pre_tool_use": [],
+      "post_tool_use": []
+    }
+  },
+  "environment_contamination": {
+    "skills_activated_during_run": [],
+    "skills_conflicting_with_madar_rules": [],
+    "calls_to_other_mcps": {},
+    "subagent_dispatches_detected": 0,
+    "skill_alignment_score": 1
+  },
+  "exec_command": {
+    "command": null,
+    "placeholders": [
+      "{prompt_file}"
+    ],
+    "redacted": true
+  },
+  "baseline": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 55,
+      "cache_creation_input_tokens": 35544,
+      "cache_read_input_tokens": 1205779,
+      "output_tokens": 11337,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 35544,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 2754,
+          "cache_read_input_tokens": 56247,
+          "cache_creation_input_tokens": 244,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 244
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 1241378,
+    "uncached_input_tokens_anthropic_exact": 35599,
+    "cached_input_tokens_anthropic_exact": 1205779,
+    "total_cost_usd": 1.2427245,
+    "num_turns": 29,
+    "duration_ms": 270137,
+    "result_path": "<artifact-root>/baseline-answer.txt"
+  },
+  "madar": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 52,
+      "cache_creation_input_tokens": 57084,
+      "cache_read_input_tokens": 1431191,
+      "output_tokens": 8987,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 57084,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 2712,
+          "cache_read_input_tokens": 78603,
+          "cache_creation_input_tokens": 1351,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 1351
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 1488327,
+    "uncached_input_tokens_anthropic_exact": 57136,
+    "cached_input_tokens_anthropic_exact": 1431191,
+    "total_cost_usd": 1.5123205,
+    "num_turns": 27,
+    "duration_ms": 216587,
+    "result_path": "<artifact-root>/madar-answer.txt"
+  },
+  "install_verified": true,
+  "measurement_validity": "degraded",
+  "trace_status": "trace_available",
+  "madar_mcp_call_count": 0,
+  "reductions": null,
+  "token_regression": true,
+  "token_regression_reasons": [
+    "uncached_input_tokens",
+    "cache_creation_input_tokens"
+  ],
+  "prompt_token_source": {
+    "baseline": "anthropic_provider_reported",
+    "madar": "anthropic_provider_reported"
+  },
+  "provider_proof": {
+    "baseline": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "madar": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "reduction_basis": "provider_reported"
+  },
+  "started_at": "2026-07-15T09:18:43.272Z",
+  "completed_at": "2026-07-15T09:26:57.113Z",
+  "paths": {
+    "output_dir": "<artifact-root>",
+    "report": "<artifact-root>/report.json",
+    "share_safe_report": "<artifact-root>/report.share-safe.json",
+    "baseline_answer": "<artifact-root>/baseline-answer.txt",
+    "madar_answer": "<artifact-root>/madar-answer.txt",
+    "baseline_prompt": "<artifact-root>/baseline-prompt.txt",
+    "madar_prompt": "<artifact-root>/madar-prompt.txt",
+    "prompt_file": "<artifact-root>/madar-prompt.txt"
+  },
+  "benchmark_readiness": {
+    "status": "ready",
+    "reasons": [],
+    "suggested_graph_scope": null
+  },
+  "madar_trace": {
+    "source": "claude_messages_tool_use",
+    "summary": "26 tool calls across 26 turns",
+    "tool_call_count": 26,
+    "tool_calls_by_name": {
+      "Bash": 10,
+      "ListMcpResourcesTool": 1,
+      "Read": 4,
+      "ToolSearch": 11
+    },
+    "per_turn": [
+      {
+        "turn": 2,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ],
+        "madar_tool_discovery_count": 1,
+        "madar_tool_discovery_tool_indexes": [
+          0
+        ]
+      },
+      {
+        "turn": 4,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ]
+      },
+      {
+        "turn": 6,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ],
+        "madar_tool_discovery_count": 1,
+        "madar_tool_discovery_tool_indexes": [
+          0
+        ]
+      },
+      {
+        "turn": 8,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ]
+      },
+      {
+        "turn": 10,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ],
+        "madar_tool_discovery_count": 1,
+        "madar_tool_discovery_tool_indexes": [
+          0
+        ]
+      },
+      {
+        "turn": 12,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ]
+      },
+      {
+        "turn": 14,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ],
+        "madar_tool_discovery_count": 1,
+        "madar_tool_discovery_tool_indexes": [
+          0
+        ]
+      },
+      {
+        "turn": 15,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ]
+      },
+      {
+        "turn": 17,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ],
+        "madar_tool_discovery_count": 1,
+        "madar_tool_discovery_tool_indexes": [
+          0
+        ]
+      },
+      {
+        "turn": 19,
+        "tool_call_count": 1,
+        "tools": [
+          "ListMcpResourcesTool"
+        ]
+      },
+      {
+        "turn": 21,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ]
+      },
+      {
+        "turn": 23,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ]
+      },
+      {
+        "turn": 26,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 29,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 30,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 32,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 33,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 34,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 36,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 37,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 39,
+        "tool_call_count": 1,
+        "tools": [
+          "Read"
+        ]
+      },
+      {
+        "turn": 40,
+        "tool_call_count": 1,
+        "tools": [
+          "Read"
+        ]
+      },
+      {
+        "turn": 42,
+        "tool_call_count": 1,
+        "tools": [
+          "Read"
+        ]
+      },
+      {
+        "turn": 44,
+        "tool_call_count": 1,
+        "tools": [
+          "Read"
+        ]
+      },
+      {
+        "turn": 46,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 48,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      }
+    ],
+    "madar_mcp_call_count": 0,
+    "madar_mcp_calls_by_name": {},
+    "pre_madar_broad_exploration_tool_call_count": 16,
+    "pre_madar_broad_exploration_tool_calls_by_name": {
+      "Bash": 10,
+      "ToolSearch": 6
+    },
+    "context_pack_call_count": 0,
+    "focused_follow_up_tool_call_count": 0,
+    "broad_exploration_tool_call_count": 0,
+    "broad_exploration_tool_calls_by_name": {},
+    "exploration_outcome": "madar_available_but_unused",
+    "exploration_summary": "Madar install was verified, but no Madar MCP call was recorded."
+  },
+  "tool_call_counts": {
+    "baseline": {
+      "total": 28,
+      "Read": 6,
+      "Bash": 22,
+      "Glob": 0,
+      "Grep": 0,
+      "ToolSearch": 0,
+      "other": {}
+    },
+    "madar": {
+      "total": 26,
+      "Read": 4,
+      "Bash": 10,
+      "Glob": 0,
+      "Grep": 0,
+      "ToolSearch": 11,
+      "other": {
+        "ListMcpResourcesTool": 1
+      }
+    }
+  },
+  "answer_quality": {
+    "gate": "cal-diy-explain-runtime",
+    "prompt": "How does Cal.diy turn a booking request into availability validation, scheduled event persistence, and notification delivery?",
+    "baseline": {
+      "passed": true,
+      "missing_required_terms": [],
+      "forbidden_terms_present": []
+    },
+    "madar": {
+      "passed": false,
+      "missing_required_terms": [],
+      "forbidden_terms_present": [
+        "mcp__madar__retrieve"
+      ]
+    },
+    "human_review": {
+      "status": "pending",
+      "required_concepts": [
+        "The answer should cover availability validation, persistence, and notification delivery."
+      ],
+      "answer_quality_notes": [
+        "Fallback raw-read answers can still be usable if they satisfy the deterministic gate."
+      ],
+      "manual_review_notes": [
+        "Confirm the answer follows the booking flow end to end and calls out the fallback caveat if needed."
+      ]
+    }
+  },
+  "prompt_contract": {
+    "status": "violated",
+    "evidence": [
+      "no Madar MCP call was recorded",
+      "broad exploration occurred before the first Madar call"
+    ]
+  },
+  "claim_assessment": {
+    "routing_efficiency": {
+      "status": "not_measured",
+      "evidence": [
+        "Madar MCP attribution is missing."
+      ]
+    },
+    "token_reduction": {
+      "status": "not_measured",
+      "evidence": [
+        "Madar MCP attribution is missing."
+      ]
+    }
+  },
+  "benchmark_outcome": {
+    "outcome": "not_measured",
+    "checks": {
+      "routing_tool_latency": "not_measured",
+      "token": "not_measured",
+      "fresh_token": "not_measured",
+      "cost": "not_measured",
+      "turns": "not_measured"
+    },
+    "evidence": [
+      "Madar MCP attribution is missing."
+    ]
+  }
+}

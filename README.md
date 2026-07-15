@@ -6,7 +6,7 @@ Madar builds a local graph of your TypeScript/Node repo, then gives agents like 
 
 It helps agents spend less time rediscovering the same files, routes, imports, and flows.
 
-The June 2026 public TypeScript receipts are retained as historical artifacts, but their former 6/6 headline is withdrawn: those runs used checkout-only benchmark profiles in the answer path. Current benchmark claims require a fresh run from an unpacked npm artifact with untuned retrieval.
+The June 2026 public TypeScript receipts are retained as historical artifacts, but their former 6/6 headline is withdrawn: those runs used checkout-only benchmark profiles in the answer path. Fresh July 15 reruns from an unpacked `@lubab/madar@0.31.0` tarball produced **zero current public wins**: every row was `not_measured` because the agent missed a prompt/answer-quality gate or never made an attributable Madar MCP call.
 
 [![npm](https://img.shields.io/npm/v/%40lubab%2Fmadar)](https://www.npmjs.com/package/@lubab/madar)
 [![node >=20](https://img.shields.io/badge/node-%E2%89%A520-3c873a)](https://nodejs.org/)
@@ -97,7 +97,7 @@ madar opencode install
 
 After installing a profile, run `madar doctor` and `madar status`. Installer details are in the [CLI and MCP reference](https://github.com/mohanagy/madar/blob/main/docs/reference/cli-and-mcp.md).
 
-If you upgrade to `0.30.0` from an earlier version, run your profile's install command again (for example, `madar claude install` or `madar codex install`) to update its managed MCP entry with automatic refresh.
+If you upgrade to `0.30.0` or newer from an earlier version, run your profile's install command again (for example, `madar claude install` or `madar codex install`) to update its managed MCP entry with automatic refresh.
 
 ## Use Without MCP
 
@@ -204,18 +204,18 @@ An MCP server selects its workspace when it starts. If an agent later creates or
 
 ## Evidence
 
-The table below records the historical June 2026 public TypeScript `explain-runtime` runs. It is useful for regression archaeology, but it is not current product proof: the checkout runtime recognized those exact prompts and used benchmark-only evidence profiles that were absent from the npm package. That behavior has been removed, and these rows must be rerun through the packed-artifact isolation launcher before any replacement win claim is published.
+The July 15 public TypeScript `explain-runtime` reruns used the unpacked `@lubab/madar@0.31.0` tarball, untuned production retrieval, isolated temporary workspaces, deterministic gates, and one warm-cache measured trial per row. The result is **0/6 eligible performance wins**:
 
-| Repo | Input tokens | Fresh tokens | Tool calls | Turns | Latency | Cost |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `documenso` | 174,504 -> 76,721 (2.27x) | 31,754 -> 16,001 (1.98x) | 7 -> 2 | 8 -> 3 | 58.2s -> 35.3s (1.65x) | $0.3498 -> $0.1634 (2.14x) |
-| `formbricks` | 163,482 -> 74,395 (2.20x) | 19,471 -> 14,663 (1.33x) | 37 -> 2 | 6 -> 3 | 157.6s -> 22.6s (6.99x) | $0.4973 -> $0.1350 (3.68x) |
-| `dub` | 233,038 -> 76,538 (3.04x) | 33,088 -> 15,847 (2.09x) | 9 -> 2 | 10 -> 3 | 69.4s -> 30.2s (2.29x) | $0.3928 -> $0.1570 (2.50x) |
-| `twenty` | 694,972 -> 103,125 (6.74x) | 48,000 -> 22,355 (2.15x) | 21 -> 3 | 22 -> 4 | 128.5s -> 58.7s (2.19x) | $0.8000 -> $0.2069 (3.87x) |
-| `cal-diy` | 1,588,241 -> 101,820 (15.60x) | 61,669 -> 21,688 (2.84x) | 37 -> 3 | 38 -> 4 | 252.0s -> 38.7s (6.51x) | $1.4263 -> $0.1946 (7.33x) |
-| `novu` | 1,055,389 -> 75,772 (13.93x) | 63,542 -> 15,491 (4.10x) | 23 -> 2 | 24 -> 3 | 220.3s -> 31.1s (7.09x) | $1.1316 -> $0.1620 (6.98x) |
+| Repo | Pipelines | Current outcome | Why | Receipt |
+| --- | --- | --- | --- | --- |
+| `documenso` | Legacy + SPI | `not_measured` | The focused follow-up missed the required send-preparation obligation; answer evidence was incomplete. | [July 15 summary](https://github.com/mohanagy/madar/blob/main/docs/benchmarks/suite/results/2026-07-15T06-55-50/summary.md) |
+| `formbricks` | Legacy + SPI | `not_measured` | Broad exploration followed the first Madar call without trace evidence that `missing_context` justified it; the SPI answer gate also failed. | [July 15 summary](https://github.com/mohanagy/madar/blob/main/docs/benchmarks/suite/results/2026-07-15T07-08-43/summary.md) |
+| `dub` | Legacy + SPI | `not_measured` | No attributable Madar MCP call was recorded. | [July 15 summary](https://github.com/mohanagy/madar/blob/main/docs/benchmarks/suite/results/2026-07-15T07-41-50/summary.md) |
+| `twenty` | Legacy + SPI | `not_measured` | No attributable Madar MCP call was recorded. | [July 15 summary](https://github.com/mohanagy/madar/blob/main/docs/benchmarks/suite/results/2026-07-15T08-08-36/summary.md) |
+| `cal-diy` | Legacy | `not_measured` | No attributable Madar MCP call was recorded. | [July 15 summary](https://github.com/mohanagy/madar/blob/main/docs/benchmarks/suite/results/2026-07-15T08-51-54/summary.md) |
+| `novu` | Legacy | `not_measured` | No attributable Madar MCP call was recorded. | [July 15 summary](https://github.com/mohanagy/madar/blob/main/docs/benchmarks/suite/results/2026-07-15T09-27-25/summary.md) |
 
-These are superseded, repo/task-specific, single-trial receipts—not a current 6/6 claim. SPI arms remain separate. The benchmark harness now keeps deterministic expected-evidence gates outside retrieval, runs the installed artifact, and tracks independent `pending`/`passed`/`failed` human-review status.
+No token, latency, cost, or tool-call reduction from these rows is promoted as a product claim. Human semantic review remains a separate explicit status and cannot turn a machine-ineligible row into a win. The superseded June receipts remain linked from the [benchmark suite](https://github.com/mohanagy/madar/blob/main/docs/benchmarks/suite/README.md) for regression archaeology only.
 
 The public evidence map tracks what is proven, what is mixed, and what should not be claimed yet: [claims and evidence](https://github.com/mohanagy/madar/blob/main/docs/claims-and-evidence.md).
 
@@ -253,7 +253,7 @@ It does not record prompt text, answer text, source paths, source content, or re
 
 Current version: `0.31.0`.
 
-`0.31.0` hardens graph correctness and agent trust. Code graphs are directed by default; discovery distinguishes security source code from credential material; auto-refresh preserves generation policy and fails closed on incomplete coverage; and production retrieval is isolated from benchmark expectations. Context packs now expose independent evidence, coverage, and answerability signals with bounded cumulative recovery and exact verification targets, conceptual misses get a deterministic repository-local fallback, and retrieval/extraction run through explicit typed stages with source-safe diagnostics.
+`0.31.0` hardens graph correctness and agent trust. Code graphs are directed by default; discovery distinguishes security source code from credential material; auto-refresh preserves generation policy and fails closed on incomplete coverage; and production retrieval is isolated from benchmark expectations. Context packs now expose independent evidence, coverage, and answerability signals with bounded cumulative recovery and exact verification targets, conceptual misses get a deterministic repository-local fallback, and retrieval/extraction run through explicit typed stages with source-safe diagnostics. Fresh packed-artifact receipts are published for all six affected public rows; none passed the strict eligibility gates, so this release makes no replacement performance-win claim.
 
 `0.30.0` makes installed MCP integrations self-refreshing: they reconcile the graph at startup and watch the active workspace through an agent session. It also gives each linked Git worktree isolated external graph and artifact storage. Start or reconnect MCP from the worktree the agent is using; a running server stays scoped to the worktree where it started.
 

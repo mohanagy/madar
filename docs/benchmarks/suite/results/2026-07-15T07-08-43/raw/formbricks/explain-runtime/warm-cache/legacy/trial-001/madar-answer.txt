@@ -1,0 +1,49 @@
+I have the complete flow. Here's the answer.
+
+## How Formbricks processes a survey response
+
+**Caveat:** The Madar knowledge-graph MCP server never came online this run (the `retrieve` tool stayed unavailable across repeated retries), so this is traced directly from source under the CLAUDE.md "MCP server unavailable → raw file tools" fallback.
+
+The flow splits into two phases: a **synchronous request/persistence path** (returns to the SDK immediately) and an **asynchronous pipeline** (webhooks, integrations, emails, analytics) run off a background queue.
+
+### 1. Request handling & validation
+`POST app/api/v2/client/[workspaceId]/responses/route.ts`
+- `resolveClientApiIds` accepts either an environmentId (old SDK) or workspaceId (new SDK).
+- Body parsed/validated against `ZResponseInputV2` (`parseAndValidateJsonBody`).
+- Contact/identity gate: `getContactsDisabledResponse` rejects `contactId` unless the enterprise Contacts license is on.
+- `getSurvey(surveyId)` loaded, then `validateResponseSubmission`: `checkSurveyValidity`, `validateClientFileUploads`, "other"-option length check, and `validateResponseData` against the survey blocks/questions.
+- `createResponseForRequest` builds `meta` — UA parsed via `UAParser` (browser/device/os), `source`/`url`/`action`, `country` (from `CF-IPCountry`/`CloudFront-Viewer-Country` headers), and `ipAddress` only if `survey.isCaptureIpEnabled`.
+
+### 2. Persistence (transactional + quota)
+`.../responses/lib/response.ts` → `createResponseWithQuotaEvaluation` → shared `app/api/client/.../lib/response.ts`
+- Runs inside a **single `prisma.$transaction`**:
+  1. `createResponse` (v2 lib): resolves organization + contact, computes TTC (`calculateTtcTotal` if finished), asserts display ownership, builds `Prisma.ResponseCreateInput`, and `prisma.response.create`. Prisma errors are mapped (P2002 on `displayId` → `InvalidInputError`; single-use collision → `UniqueConstraintError`).
+  2. `evaluateResponseQuotas` (EE) runs in the same `tx`, returning a possible `quotaFull`.
+- Route returns `{ id, ...quotaObj }` to the SDK.
+
+### 3. Enqueue to background pipeline
+Back in the route, after persistence:
+- `sendToPipeline({ event: "responseCreated", ... })` always; plus `{ event: "responseFinished" }` if `response.finished`.
+- `sendToPipeline` (`app/lib/pipelines.ts`) enqueues onto **BullMQ** via `getBackgroundJobProducer().enqueueResponsePipeline` (throws if queueing disabled).
+
+### 4. Async worker — side effects & analytics
+`modules/response-pipeline/lib/process-response-pipeline-job.ts` (`processResponsePipelineJob`)
+- Loads organization, survey, and matching webhooks in parallel; validates survey belongs to the workspace (`UnrecoverableError` otherwise).
+- **Webhooks** (`deliverWebhooks`): fires for both events to webhooks subscribed to the trigger + survey. Standard-Webhooks signed payload (`webhook-id`/`-timestamp`/`-signature`), SSRF-hardened (URL validation, pinned dispatcher, manual redirect, 5s timeout), retried per BullMQ attempts.
+- **On `responseFinished`** (`runResponseFinishedSideEffects`): integrations (`handleIntegrations` — Sheets/Airtable/Notion/etc.), feedback-source pipeline, follow-up emails (`sendFollowUpsForResponse`), notification emails to owners/managers/team users who opted in (`sendResponseFinishedEmail`), and survey auto-complete (marks survey `completed` when response count ≥ threshold, with an audit-log event). Each side effect is wrapped so one failure doesn't abort the rest.
+- **On `responseCreated`** (`runResponseCreatedSideEffects`) — the **analytics/event-tracking** hub:
+  - `recordResponseCreatedMeterEvent` → Stripe billing meter.
+  - If `POSTHOG_KEY` set → `captureSurveyResponsePostHogEvent` (survey id/type, workspace, org, response count).
+  - `sendTelemetryEvents` → product telemetry.
+
+### Key files
+- `app/api/v2/client/[workspaceId]/responses/route.ts` — request entry, validation, meta, enqueue
+- `.../responses/lib/response.ts` + `app/api/client/[workspaceId]/responses/lib/response.ts` — transactional persistence + quota
+- `modules/ee/quotas/lib/evaluation-service.ts` — quota evaluation
+- `app/lib/pipelines.ts` + `@formbricks/jobs` — BullMQ enqueue
+- `modules/response-pipeline/lib/process-response-pipeline-job.ts` — worker (webhooks, integrations, emails, PostHog/billing/telemetry)
+
+### Notes / caveats
+- Analytics is **decoupled and best-effort**: PostHog/telemetry/billing run in the async worker, so a failure there never blocks the SDK response; the API returns as soon as the DB transaction commits.
+- There's also a `PUT .../responses/[responseId]` update path (partial → finished responses) that re-triggers `responseFinished` — not shown above since the question centered on the create flow.
+- The BullMQ producer/worker themselves live in the `@formbricks/jobs` package (outside this run's searchable `apps/web` root), so their queue config internals weren't inspected directly.

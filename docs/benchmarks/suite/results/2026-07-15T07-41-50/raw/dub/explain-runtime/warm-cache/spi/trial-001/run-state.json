@@ -1,0 +1,13 @@
+{
+  "phase": "madar_done",
+  "arm": "madar",
+  "updated_at": "2026-07-15T08:07:50.533Z",
+  "baseline": {
+    "kind": "succeeded",
+    "duration_ms": 76493
+  },
+  "madar": {
+    "kind": "succeeded",
+    "duration_ms": 147234
+  }
+}

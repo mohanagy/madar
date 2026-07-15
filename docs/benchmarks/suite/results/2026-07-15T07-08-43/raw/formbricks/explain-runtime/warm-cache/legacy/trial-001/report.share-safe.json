@@ -1,0 +1,434 @@
+{
+  "baseline_mode": "native_agent",
+  "task": "explain",
+  "question": "How does Formbricks process a survey response from request handling through persistence and analytics/event tracking?",
+  "graph_path": "<project-root>/out/graph.json",
+  "isolation": true,
+  "environment": {
+    "claude_code_version": "2.1.209",
+    "host_os": "darwin-arm64",
+    "node_version": "v22.22.3",
+    "mcp_servers_active": [
+      "madar"
+    ],
+    "mcp_server_count": 1,
+    "skills_loaded": [],
+    "skills_loaded_count": 0,
+    "plugins_active": [],
+    "user_claude_md_hash": "sha256:0cf98a0a8f9c27017a0bebc7b017fc17518d9103c62ca384da20b2776b0aade7",
+    "project_claude_md_hash": "sha256:4f80545c205b6fbd91ffaae058c5f95f47566acbd8446c3a8ef7c2a29aac0b98",
+    "parent_claude_md_hashes": [],
+    "hooks_active": {
+      "user_prompt_submit": [
+        "project:command:*"
+      ],
+      "pre_tool_use": [],
+      "post_tool_use": []
+    }
+  },
+  "environment_contamination": {
+    "skills_activated_during_run": [],
+    "skills_conflicting_with_madar_rules": [],
+    "calls_to_other_mcps": {},
+    "subagent_dispatches_detected": 0,
+    "skill_alignment_score": 1
+  },
+  "exec_command": {
+    "command": null,
+    "placeholders": [
+      "{prompt_file}"
+    ],
+    "redacted": true
+  },
+  "baseline": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 32,
+      "cache_creation_input_tokens": 50944,
+      "cache_read_input_tokens": 642111,
+      "output_tokens": 8687,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 50944,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 2980,
+          "cache_read_input_tokens": 61578,
+          "cache_creation_input_tokens": 10315,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 10315
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 693087,
+    "uncached_input_tokens_anthropic_exact": 50976,
+    "cached_input_tokens_anthropic_exact": 642111,
+    "total_cost_usd": 2.56186925,
+    "num_turns": 21,
+    "duration_ms": 353003,
+    "result_path": "<artifact-root>/baseline-answer.txt"
+  },
+  "madar": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 38,
+      "cache_creation_input_tokens": 46772,
+      "cache_read_input_tokens": 816746,
+      "output_tokens": 5985,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 46772,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 2144,
+          "cache_read_input_tokens": 53824,
+          "cache_creation_input_tokens": 10240,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 10240
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 863556,
+    "uncached_input_tokens_anthropic_exact": 46810,
+    "cached_input_tokens_anthropic_exact": 816746,
+    "total_cost_usd": 1.0268520000000003,
+    "num_turns": 20,
+    "duration_ms": 135292,
+    "result_path": "<artifact-root>/madar-answer.txt"
+  },
+  "install_verified": true,
+  "measurement_validity": "valid",
+  "trace_status": "trace_available",
+  "madar_mcp_call_count": 2,
+  "reductions": {
+    "input_tokens": 0.8,
+    "uncached_input_tokens": 1.09,
+    "cache_creation_input_tokens": 1.09,
+    "num_turns": 1.05,
+    "duration_ms": 2.61,
+    "cost_usd": 2.49
+  },
+  "token_regression": false,
+  "token_regression_reasons": [],
+  "prompt_token_source": {
+    "baseline": "anthropic_provider_reported",
+    "madar": "anthropic_provider_reported"
+  },
+  "provider_proof": {
+    "baseline": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "madar": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "reduction_basis": "provider_reported"
+  },
+  "started_at": "2026-07-15T07:19:58.288Z",
+  "completed_at": "2026-07-15T07:28:11.937Z",
+  "paths": {
+    "output_dir": "<artifact-root>",
+    "report": "<artifact-root>/report.json",
+    "share_safe_report": "<artifact-root>/report.share-safe.json",
+    "baseline_answer": "<artifact-root>/baseline-answer.txt",
+    "madar_answer": "<artifact-root>/madar-answer.txt",
+    "baseline_prompt": "<artifact-root>/baseline-prompt.txt",
+    "madar_prompt": "<artifact-root>/madar-prompt.txt",
+    "prompt_file": "<artifact-root>/madar-prompt.txt"
+  },
+  "benchmark_readiness": {
+    "status": "ready",
+    "reasons": [],
+    "suggested_graph_scope": null
+  },
+  "madar_trace": {
+    "source": "claude_messages_tool_use",
+    "summary": "19 tool calls across 19 turns",
+    "tool_call_count": 19,
+    "tool_calls_by_name": {
+      "Bash": 6,
+      "mcp__madar__retrieve": 2,
+      "Read": 5,
+      "ToolSearch": 6
+    },
+    "per_turn": [
+      {
+        "turn": 2,
+        "tool_call_count": 1,
+        "tools": [
+          "mcp__madar__retrieve"
+        ]
+      },
+      {
+        "turn": 4,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ],
+        "madar_tool_discovery_count": 1,
+        "madar_tool_discovery_tool_indexes": [
+          0
+        ]
+      },
+      {
+        "turn": 6,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ],
+        "madar_tool_discovery_count": 1,
+        "madar_tool_discovery_tool_indexes": [
+          0
+        ]
+      },
+      {
+        "turn": 8,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ]
+      },
+      {
+        "turn": 10,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ],
+        "madar_tool_discovery_count": 1,
+        "madar_tool_discovery_tool_indexes": [
+          0
+        ]
+      },
+      {
+        "turn": 12,
+        "tool_call_count": 1,
+        "tools": [
+          "mcp__madar__retrieve"
+        ]
+      },
+      {
+        "turn": 13,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ]
+      },
+      {
+        "turn": 15,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ]
+      },
+      {
+        "turn": 18,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 20,
+        "tool_call_count": 1,
+        "tools": [
+          "Read"
+        ]
+      },
+      {
+        "turn": 22,
+        "tool_call_count": 1,
+        "tools": [
+          "Read"
+        ]
+      },
+      {
+        "turn": 24,
+        "tool_call_count": 1,
+        "tools": [
+          "Read"
+        ]
+      },
+      {
+        "turn": 25,
+        "tool_call_count": 1,
+        "tools": [
+          "Read"
+        ]
+      },
+      {
+        "turn": 28,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 29,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 30,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 32,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 34,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 36,
+        "tool_call_count": 1,
+        "tools": [
+          "Read"
+        ]
+      }
+    ],
+    "madar_mcp_call_count": 2,
+    "madar_mcp_calls_by_name": {
+      "mcp__madar__retrieve": 2
+    },
+    "first_madar_turn": 2,
+    "first_madar_tool_name": "mcp__madar__retrieve",
+    "pre_madar_broad_exploration_tool_call_count": 0,
+    "pre_madar_broad_exploration_tool_calls_by_name": {},
+    "context_pack_call_count": 0,
+    "focused_follow_up_tool_call_count": 6,
+    "broad_exploration_tool_call_count": 9,
+    "broad_exploration_tool_calls_by_name": {
+      "Bash": 6,
+      "ToolSearch": 3
+    },
+    "exploration_outcome": "madar_invoked_with_followup_exploration",
+    "exploration_summary": "Madar MCP invoked 2 times (mcp__madar__retrieve); 6 focused follow-up calls; 9 broad exploration calls after the first Madar call (Bash×6, ToolSearch×3)"
+  },
+  "tool_call_counts": {
+    "baseline": {
+      "total": 20,
+      "Read": 5,
+      "Bash": 12,
+      "Glob": 0,
+      "Grep": 0,
+      "ToolSearch": 1,
+      "other": {
+        "Agent": 1,
+        "TaskOutput": 1
+      }
+    },
+    "madar": {
+      "total": 19,
+      "Read": 5,
+      "Bash": 6,
+      "Glob": 0,
+      "Grep": 0,
+      "ToolSearch": 6,
+      "other": {
+        "retrieve": 2
+      }
+    }
+  },
+  "answer_quality": {
+    "gate": "formbricks-explain-runtime",
+    "prompt": "How does Formbricks process a survey response from request handling through persistence and analytics/event tracking?",
+    "baseline": {
+      "passed": true,
+      "missing_required_terms": [],
+      "forbidden_terms_present": []
+    },
+    "madar": {
+      "passed": true,
+      "missing_required_terms": [],
+      "forbidden_terms_present": []
+    },
+    "human_review": {
+      "status": "pending",
+      "required_concepts": [
+        "The answer should describe request handling, persistence, and analytics/event tracking."
+      ],
+      "answer_quality_notes": [
+        "Permission-blocked non-answers are not benchmark wins."
+      ],
+      "manual_review_notes": [
+        "Confirm the answer follows the response path instead of only naming files."
+      ]
+    }
+  },
+  "prompt_contract": {
+    "status": "not_measured",
+    "evidence": [
+      "broad exploration occurred after the first Madar call, but the trace does not show whether missing_context justified it"
+    ]
+  },
+  "claim_assessment": {
+    "routing_efficiency": {
+      "status": "not_measured",
+      "evidence": [
+        "prompt contract is not_measured (broad exploration occurred after the first Madar call, but the trace does not show whether missing_context justified it)"
+      ]
+    },
+    "token_reduction": {
+      "status": "not_measured",
+      "evidence": [
+        "prompt contract is not_measured (broad exploration occurred after the first Madar call, but the trace does not show whether missing_context justified it)"
+      ]
+    }
+  },
+  "benchmark_outcome": {
+    "outcome": "not_measured",
+    "checks": {
+      "routing_tool_latency": "not_measured",
+      "token": "not_measured",
+      "fresh_token": "not_measured",
+      "cost": "not_measured",
+      "turns": "not_measured"
+    },
+    "evidence": [
+      "prompt contract is not_measured (broad exploration occurred after the first Madar call, but the trace does not show whether missing_context justified it)"
+    ]
+  }
+}

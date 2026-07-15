@@ -14,13 +14,13 @@ All notable changes to the TypeScript package will be documented in this file.
 
 - **Generated code graphs are directed by default**: generate, update, watch, try, and automatic refresh preserve source-to-target edges; legacy undirected graphs rebuild safely; generic context queries still inspect both sides of incident relationships; and impact, call-chain, and directional slicing reject visualization-only undirected artifacts instead of returning misleading results. Closes #548.
 - **Strict agent installs match the MCP tools they actually expose**: generated guidance uses `context_pack` and `context_expand`, follows the new answerability states, and no longer instructs agents to call unavailable tools. Closes #550.
-- **Auto-refresh is policy-preserving and fail-closed**: adaptive full reconciliations replace silent scan caps, filesystem events invalidate graph-backed answers immediately, generation settings are fingerprinted and reused, policy drift forces a full rebuild, and watcher/reconciliation health is visible through status and doctor output. Closes #553.
+- **Auto-refresh is policy-preserving and fail-closed**: adaptive full reconciliations replace silent scan caps, filesystem events invalidate graph-backed answers immediately, generation settings are fingerprinted and reused, policy drift forces a full rebuild, media sidecar content changes are detected even when file mtimes do not advance, and watcher/reconciliation health is visible through status and doctor output. Closes #553.
 - **Indexing completeness is explicit and auditable**: generation records every indexed, warned, policy-skipped, unsupported, and failed source file in a local manifest, emits a path-free share-safe companion, and supports strict thresholds for incomplete coverage. Closes #554.
 
 ### Fixed
 
 - **Sensitive-path discovery no longer excludes ordinary security source code**: source files such as token, password-reset, credential-provider, and secret-manager implementations remain indexable, while private keys, environment files, credential stores, and non-source secret material stay excluded with structured reason codes. Closes #549.
-- **Production retrieval no longer consumes benchmark answers**: expected files, symbols, and runtime-proof obligations remain in the evaluation harness and cannot influence the shipped retrieval path; historical benchmark rows are explicitly marked superseded until rerun through packed-artifact isolation. Closes #551.
+- **Production retrieval no longer consumes benchmark answers**: expected files, symbols, and runtime-proof obligations remain in the evaluation harness and cannot influence the shipped retrieval path. Six July 15 public rows were rerun from an unpacked `@lubab/madar@0.31.0` tarball and published as dated receipts; every row is `not_measured` because strict prompt/answer gates failed or no attributable Madar MCP call occurred, so this release makes no replacement public performance-win claim. Closes #551.
 
 ## [0.30.0] - 2026-07-14
 

@@ -1,0 +1,440 @@
+{
+  "baseline_mode": "native_agent",
+  "task": "explain",
+  "question": "How does Dub resolve a short-link click from request handling through analytics tracking and destination redirect?",
+  "graph_path": "<project-root>/out/graph.json",
+  "isolation": true,
+  "environment": {
+    "claude_code_version": "2.1.209",
+    "host_os": "darwin-arm64",
+    "node_version": "v22.22.3",
+    "mcp_servers_active": [
+      "madar"
+    ],
+    "mcp_server_count": 1,
+    "skills_loaded": [],
+    "skills_loaded_count": 0,
+    "plugins_active": [],
+    "user_claude_md_hash": "sha256:0cf98a0a8f9c27017a0bebc7b017fc17518d9103c62ca384da20b2776b0aade7",
+    "project_claude_md_hash": "sha256:4f80545c205b6fbd91ffaae058c5f95f47566acbd8446c3a8ef7c2a29aac0b98",
+    "parent_claude_md_hashes": [],
+    "hooks_active": {
+      "user_prompt_submit": [
+        "project:command:*"
+      ],
+      "pre_tool_use": [],
+      "post_tool_use": []
+    }
+  },
+  "environment_contamination": {
+    "skills_activated_during_run": [],
+    "skills_conflicting_with_madar_rules": [],
+    "calls_to_other_mcps": {},
+    "subagent_dispatches_detected": 0,
+    "skill_alignment_score": 1
+  },
+  "exec_command": {
+    "command": null,
+    "placeholders": [
+      "{prompt_file}"
+    ],
+    "redacted": true
+  },
+  "baseline": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 7,
+      "cache_creation_input_tokens": 29164,
+      "cache_read_input_tokens": 109816,
+      "output_tokens": 3983,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 29164,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 1,
+          "output_tokens": 2464,
+          "cache_read_input_tokens": 45968,
+          "cache_creation_input_tokens": 4142,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 4142
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 138987,
+    "uncached_input_tokens_anthropic_exact": 29171,
+    "cached_input_tokens_anthropic_exact": 109816,
+    "total_cost_usd": 0.446872,
+    "num_turns": 9,
+    "duration_ms": 58339,
+    "result_path": "<artifact-root>/baseline-answer.txt"
+  },
+  "madar": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 39,
+      "cache_creation_input_tokens": 47293,
+      "cache_read_input_tokens": 920225,
+      "output_tokens": 5583,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 47293,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 1959,
+          "cache_read_input_tokens": 69060,
+          "cache_creation_input_tokens": 1104,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 1104
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 967557,
+    "uncached_input_tokens_anthropic_exact": 47332,
+    "cached_input_tokens_anthropic_exact": 920225,
+    "total_cost_usd": 1.0737815,
+    "num_turns": 21,
+    "duration_ms": 142082,
+    "result_path": "<artifact-root>/madar-answer.txt"
+  },
+  "install_verified": true,
+  "measurement_validity": "degraded",
+  "trace_status": "trace_available",
+  "madar_mcp_call_count": 0,
+  "reductions": null,
+  "token_regression": true,
+  "token_regression_reasons": [
+    "uncached_input_tokens",
+    "cache_creation_input_tokens"
+  ],
+  "prompt_token_source": {
+    "baseline": "anthropic_provider_reported",
+    "madar": "anthropic_provider_reported"
+  },
+  "provider_proof": {
+    "baseline": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "madar": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "reduction_basis": "provider_reported"
+  },
+  "started_at": "2026-07-15T07:56:56.357Z",
+  "completed_at": "2026-07-15T08:00:23.135Z",
+  "paths": {
+    "output_dir": "<artifact-root>",
+    "report": "<artifact-root>/report.json",
+    "share_safe_report": "<artifact-root>/report.share-safe.json",
+    "baseline_answer": "<artifact-root>/baseline-answer.txt",
+    "madar_answer": "<artifact-root>/madar-answer.txt",
+    "baseline_prompt": "<artifact-root>/baseline-prompt.txt",
+    "madar_prompt": "<artifact-root>/madar-prompt.txt",
+    "prompt_file": "<artifact-root>/madar-prompt.txt"
+  },
+  "benchmark_readiness": {
+    "status": "ready",
+    "reasons": [],
+    "suggested_graph_scope": null
+  },
+  "madar_trace": {
+    "source": "claude_messages_tool_use",
+    "summary": "20 tool calls across 20 turns",
+    "tool_call_count": 20,
+    "tool_calls_by_name": {
+      "Bash": 7,
+      "Read": 2,
+      "ToolSearch": 11
+    },
+    "per_turn": [
+      {
+        "turn": 3,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ],
+        "madar_tool_discovery_count": 1,
+        "madar_tool_discovery_tool_indexes": [
+          0
+        ]
+      },
+      {
+        "turn": 6,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ],
+        "madar_tool_discovery_count": 1,
+        "madar_tool_discovery_tool_indexes": [
+          0
+        ]
+      },
+      {
+        "turn": 8,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ],
+        "madar_tool_discovery_count": 1,
+        "madar_tool_discovery_tool_indexes": [
+          0
+        ]
+      },
+      {
+        "turn": 10,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 11,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ],
+        "madar_tool_discovery_count": 1,
+        "madar_tool_discovery_tool_indexes": [
+          0
+        ]
+      },
+      {
+        "turn": 14,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ]
+      },
+      {
+        "turn": 17,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ]
+      },
+      {
+        "turn": 18,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ]
+      },
+      {
+        "turn": 21,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ],
+        "madar_tool_discovery_count": 1,
+        "madar_tool_discovery_tool_indexes": [
+          0
+        ]
+      },
+      {
+        "turn": 22,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ]
+      },
+      {
+        "turn": 25,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ],
+        "madar_tool_discovery_count": 1,
+        "madar_tool_discovery_tool_indexes": [
+          0
+        ]
+      },
+      {
+        "turn": 28,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 29,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 32,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ]
+      },
+      {
+        "turn": 35,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 36,
+        "tool_call_count": 1,
+        "tools": [
+          "Read"
+        ]
+      },
+      {
+        "turn": 38,
+        "tool_call_count": 1,
+        "tools": [
+          "Read"
+        ]
+      },
+      {
+        "turn": 40,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 41,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 42,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      }
+    ],
+    "madar_mcp_call_count": 0,
+    "madar_mcp_calls_by_name": {},
+    "pre_madar_broad_exploration_tool_call_count": 12,
+    "pre_madar_broad_exploration_tool_calls_by_name": {
+      "Bash": 7,
+      "ToolSearch": 5
+    },
+    "context_pack_call_count": 0,
+    "focused_follow_up_tool_call_count": 0,
+    "broad_exploration_tool_call_count": 0,
+    "broad_exploration_tool_calls_by_name": {},
+    "exploration_outcome": "madar_available_but_unused",
+    "exploration_summary": "Madar install was verified, but no Madar MCP call was recorded."
+  },
+  "tool_call_counts": {
+    "baseline": {
+      "total": 8,
+      "Read": 6,
+      "Bash": 2,
+      "Glob": 0,
+      "Grep": 0,
+      "ToolSearch": 0,
+      "other": {}
+    },
+    "madar": {
+      "total": 20,
+      "Read": 2,
+      "Bash": 7,
+      "Glob": 0,
+      "Grep": 0,
+      "ToolSearch": 11,
+      "other": {}
+    }
+  },
+  "answer_quality": {
+    "gate": "dub-explain-runtime",
+    "prompt": "How does Dub resolve a short-link click from request handling through analytics tracking and destination redirect?",
+    "baseline": {
+      "passed": true,
+      "missing_required_terms": [],
+      "forbidden_terms_present": []
+    },
+    "madar": {
+      "passed": true,
+      "missing_required_terms": [],
+      "forbidden_terms_present": []
+    },
+    "human_review": {
+      "status": "pending",
+      "required_concepts": [
+        "The answer should describe request handling, analytics, and the redirect path."
+      ],
+      "answer_quality_notes": [
+        "Deterministic answer gates should reject permission-blocked responses."
+      ],
+      "manual_review_notes": [
+        "Confirm the answer explains where analytics is recorded before redirect."
+      ]
+    }
+  },
+  "prompt_contract": {
+    "status": "violated",
+    "evidence": [
+      "no Madar MCP call was recorded",
+      "broad exploration occurred before the first Madar call"
+    ]
+  },
+  "claim_assessment": {
+    "routing_efficiency": {
+      "status": "not_measured",
+      "evidence": [
+        "Madar MCP attribution is missing."
+      ]
+    },
+    "token_reduction": {
+      "status": "not_measured",
+      "evidence": [
+        "Madar MCP attribution is missing."
+      ]
+    }
+  },
+  "benchmark_outcome": {
+    "outcome": "not_measured",
+    "checks": {
+      "routing_tool_latency": "not_measured",
+      "token": "not_measured",
+      "fresh_token": "not_measured",
+      "cost": "not_measured",
+      "turns": "not_measured"
+    },
+    "evidence": [
+      "Madar MCP attribution is missing."
+    ]
+  }
+}

@@ -1,0 +1,592 @@
+{
+  "baseline_mode": "native_agent",
+  "task": "explain",
+  "question": "How does Twenty process a CRM record mutation from API handling through workspace services to persistence?",
+  "graph_path": "<project-root>/out/graph.json",
+  "isolation": true,
+  "environment": {
+    "claude_code_version": "2.1.209",
+    "host_os": "darwin-arm64",
+    "node_version": "v22.22.3",
+    "mcp_servers_active": [
+      "madar"
+    ],
+    "mcp_server_count": 1,
+    "skills_loaded": [],
+    "skills_loaded_count": 0,
+    "plugins_active": [],
+    "user_claude_md_hash": "sha256:0cf98a0a8f9c27017a0bebc7b017fc17518d9103c62ca384da20b2776b0aade7",
+    "project_claude_md_hash": "sha256:4f80545c205b6fbd91ffaae058c5f95f47566acbd8446c3a8ef7c2a29aac0b98",
+    "parent_claude_md_hashes": [],
+    "hooks_active": {
+      "user_prompt_submit": [
+        "project:command:*"
+      ],
+      "pre_tool_use": [],
+      "post_tool_use": []
+    }
+  },
+  "environment_contamination": {
+    "skills_activated_during_run": [],
+    "skills_conflicting_with_madar_rules": [],
+    "calls_to_other_mcps": {},
+    "subagent_dispatches_detected": 0,
+    "skill_alignment_score": 1
+  },
+  "exec_command": {
+    "command": null,
+    "placeholders": [
+      "{prompt_file}"
+    ],
+    "redacted": true
+  },
+  "baseline": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 25,
+      "cache_creation_input_tokens": 29258,
+      "cache_read_input_tokens": 458032,
+      "output_tokens": 5645,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 29258,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 1950,
+          "cache_read_input_tokens": 49704,
+          "cache_creation_input_tokens": 518,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 518
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 487315,
+    "uncached_input_tokens_anthropic_exact": 29283,
+    "cached_input_tokens_anthropic_exact": 458032,
+    "total_cost_usd": 0.663547,
+    "num_turns": 13,
+    "duration_ms": 138050,
+    "result_path": "<artifact-root>/baseline-answer.txt"
+  },
+  "madar": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 54,
+      "cache_creation_input_tokens": 50471,
+      "cache_read_input_tokens": 1450527,
+      "output_tokens": 8659,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 50471,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 2387,
+          "cache_read_input_tokens": 72689,
+          "cache_creation_input_tokens": 681,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 681
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 1501052,
+    "uncached_input_tokens_anthropic_exact": 50525,
+    "cached_input_tokens_anthropic_exact": 1450527,
+    "total_cost_usd": 1.4476645,
+    "num_turns": 28,
+    "duration_ms": 222237,
+    "result_path": "<artifact-root>/madar-answer.txt"
+  },
+  "install_verified": true,
+  "measurement_validity": "degraded",
+  "trace_status": "trace_available",
+  "madar_mcp_call_count": 0,
+  "reductions": null,
+  "token_regression": true,
+  "token_regression_reasons": [
+    "uncached_input_tokens",
+    "cache_creation_input_tokens"
+  ],
+  "prompt_token_source": {
+    "baseline": "anthropic_provider_reported",
+    "madar": "anthropic_provider_reported"
+  },
+  "provider_proof": {
+    "baseline": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "madar": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "reduction_basis": "provider_reported"
+  },
+  "started_at": "2026-07-15T08:44:31.229Z",
+  "completed_at": "2026-07-15T08:50:39.863Z",
+  "paths": {
+    "output_dir": "<artifact-root>",
+    "report": "<artifact-root>/report.json",
+    "share_safe_report": "<artifact-root>/report.share-safe.json",
+    "baseline_answer": "<artifact-root>/baseline-answer.txt",
+    "madar_answer": "<artifact-root>/madar-answer.txt",
+    "baseline_prompt": "<artifact-root>/baseline-prompt.txt",
+    "madar_prompt": "<artifact-root>/madar-prompt.txt",
+    "prompt_file": "<artifact-root>/madar-prompt.txt"
+  },
+  "benchmark_readiness": {
+    "status": "ready",
+    "reasons": [],
+    "suggested_graph_scope": null
+  },
+  "madar_trace": {
+    "source": "claude_messages_tool_use",
+    "summary": "27 tool calls across 27 turns",
+    "tool_call_count": 27,
+    "tool_calls_by_name": {
+      "Bash": 18,
+      "Read": 2,
+      "ToolSearch": 7
+    },
+    "per_turn": [
+      {
+        "turn": 2,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ],
+        "madar_tool_discovery_count": 1,
+        "madar_tool_discovery_tool_indexes": [
+          0
+        ]
+      },
+      {
+        "turn": 4,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ],
+        "madar_tool_discovery_count": 1,
+        "madar_tool_discovery_tool_indexes": [
+          0
+        ]
+      },
+      {
+        "turn": 6,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ],
+        "madar_tool_discovery_count": 1,
+        "madar_tool_discovery_tool_indexes": [
+          0
+        ]
+      },
+      {
+        "turn": 8,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ]
+      },
+      {
+        "turn": 10,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ],
+        "madar_tool_discovery_count": 1,
+        "madar_tool_discovery_tool_indexes": [
+          0
+        ]
+      },
+      {
+        "turn": 11,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ]
+      },
+      {
+        "turn": 13,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ]
+      },
+      {
+        "turn": 16,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 18,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 20,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 21,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 22,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 24,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 25,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 26,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 28,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 29,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 30,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 32,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 34,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 35,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 36,
+        "tool_call_count": 1,
+        "tools": [
+          "Read"
+        ]
+      },
+      {
+        "turn": 38,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 39,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 41,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 42,
+        "tool_call_count": 1,
+        "tools": [
+          "Read"
+        ]
+      },
+      {
+        "turn": 44,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      }
+    ],
+    "madar_mcp_call_count": 0,
+    "madar_mcp_calls_by_name": {},
+    "pre_madar_broad_exploration_tool_call_count": 21,
+    "pre_madar_broad_exploration_tool_calls_by_name": {
+      "Bash": 18,
+      "ToolSearch": 3
+    },
+    "context_pack_call_count": 0,
+    "focused_follow_up_tool_call_count": 0,
+    "broad_exploration_tool_call_count": 0,
+    "broad_exploration_tool_calls_by_name": {},
+    "exploration_outcome": "madar_available_but_unused",
+    "exploration_summary": "Madar install was verified, but no Madar MCP call was recorded."
+  },
+  "tool_call_counts": {
+    "baseline": {
+      "total": 12,
+      "Read": 4,
+      "Bash": 8,
+      "Glob": 0,
+      "Grep": 0,
+      "ToolSearch": 0,
+      "other": {}
+    },
+    "madar": {
+      "total": 27,
+      "Read": 2,
+      "Bash": 18,
+      "Glob": 0,
+      "Grep": 0,
+      "ToolSearch": 7,
+      "other": {}
+    }
+  },
+  "answer_contract": {
+    "version": 1,
+    "answer_focus": "runtime_generation",
+    "entrypoint_scope": "setup_context",
+    "required_elements": [
+      "main_pipeline_phases",
+      "persistence_or_artifact_storage",
+      "missing_or_uncertain_phases"
+    ],
+    "do_not_claim": [
+      "direct_producer_to_worker_calls_without_enqueues_boundary",
+      "irrelevant_model_or_provider_details",
+      "full_runtime_certainty_when_slice_is_partial"
+    ],
+    "observed_phases": [
+      "controller",
+      "service"
+    ],
+    "missing_phases": [
+      "persistence"
+    ],
+    "uncertainty_notes": [
+      "Do not infer unobserved runtime phases; if the full flow is requested, answer: not enough evidence; missing persistence"
+    ],
+    "confidence": "medium"
+  },
+  "execution_slice": {
+    "status": "partial",
+    "confidence": "medium",
+    "confidence_reasons": [
+      "orchestration_evidence",
+      "missing_phase:persistence"
+    ],
+    "boundary_reason": "missing expected persistence phase",
+    "steps": [
+      {
+        "label": ".create()",
+        "source_file": "webhook.controller.ts",
+        "line_number": 59
+      },
+      {
+        "label": ".create()",
+        "source_file": "webhook.service.ts",
+        "line_number": 99
+      },
+      {
+        "label": ".normalizeTargetUrl()",
+        "source_file": "webhook.service.ts",
+        "line_number": 38
+      }
+    ],
+    "primary_path": {
+      "steps": [
+        {
+          "label": ".create()",
+          "source_file": "webhook.controller.ts",
+          "line_number": 59
+        },
+        {
+          "label": ".create()",
+          "source_file": "webhook.service.ts",
+          "line_number": 99
+        },
+        {
+          "label": ".normalizeTargetUrl()",
+          "source_file": "webhook.service.ts",
+          "line_number": 38
+        }
+      ],
+      "boundary_reason": "missing expected persistence phase"
+    },
+    "side_effects": [
+      {
+        "steps": [
+          {
+            "label": "fromCreateWebhookInputToFlatWebhookToCreate",
+            "source_file": "from-create-webhook-input-to-flat-webhook-to-create.util.ts",
+            "line_number": 9
+          }
+        ]
+      },
+      {
+        "steps": [
+          {
+            "label": "fromFlatWebhookToWebhookDto",
+            "source_file": "from-flat-webhook-to-webhook-dto.util.ts",
+            "line_number": 4
+          }
+        ]
+      }
+    ],
+    "phase_coverage": {
+      "expected": [
+        "service",
+        "persistence"
+      ],
+      "observed": [
+        "controller",
+        "service"
+      ],
+      "missing": [
+        "persistence"
+      ]
+    }
+  },
+  "answer_quality": {
+    "gate": "twenty-explain-runtime",
+    "prompt": "How does Twenty process a CRM record mutation from API handling through workspace services to persistence?",
+    "baseline": {
+      "passed": false,
+      "missing_required_terms": [
+        "direct evidence citation: workspace service handoff",
+        "direct evidence citation: persistence"
+      ],
+      "forbidden_terms_present": []
+    },
+    "madar": {
+      "passed": false,
+      "missing_required_terms": [
+        "direct evidence citation: workspace service handoff",
+        "direct evidence citation: persistence"
+      ],
+      "forbidden_terms_present": []
+    },
+    "human_review": {
+      "status": "pending",
+      "required_concepts": [
+        "The answer should describe the mutation path through workspace services to persistence."
+      ],
+      "answer_quality_notes": [
+        "A scoped Twenty receipt still needs readiness review before it becomes a claim."
+      ],
+      "manual_review_notes": [
+        "Confirm the answer reaches persistence and does not stop at API or resolver layers."
+      ]
+    }
+  },
+  "prompt_contract": {
+    "status": "violated",
+    "evidence": [
+      "no Madar MCP call was recorded",
+      "broad exploration occurred before the first Madar call"
+    ]
+  },
+  "claim_assessment": {
+    "routing_efficiency": {
+      "status": "not_measured",
+      "evidence": [
+        "Madar MCP attribution is missing."
+      ]
+    },
+    "token_reduction": {
+      "status": "not_measured",
+      "evidence": [
+        "Madar MCP attribution is missing."
+      ]
+    }
+  },
+  "benchmark_outcome": {
+    "outcome": "not_measured",
+    "checks": {
+      "routing_tool_latency": "not_measured",
+      "token": "not_measured",
+      "fresh_token": "not_measured",
+      "cost": "not_measured",
+      "turns": "not_measured"
+    },
+    "evidence": [
+      "Madar MCP attribution is missing."
+    ]
+  }
+}
