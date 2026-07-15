@@ -50,11 +50,20 @@ describe('queryGraph', () => {
     expect(queryGraph(makeGraph(), 'xyzzy plugh', { depth: 2 })).toContain('No matching nodes found')
   })
 
-  test('does not traverse against edge direction in directed mode', () => {
-    const result = queryGraph(makeDirectedGraph(), 'sink', { depth: 2 })
+  test('can restrict a generic query to outgoing traversal in directed mode', () => {
+    const result = queryGraph(makeDirectedGraph(), 'sink', { depth: 2, direction: 'outgoing' })
     expect(result).toContain('sink')
     expect(result).not.toContain('middle')
     expect(result).not.toContain('source')
+  })
+
+  test('defaults generic directed-graph queries to incident context', () => {
+    const result = queryGraph(makeDirectedGraph(), 'sink', { depth: 2 })
+    expect(result).toContain('sink')
+    expect(result).toContain('middle')
+    expect(result).toContain('source')
+    expect(result).toContain('EDGE middle --uses [EXTRACTED]--> sink')
+    expect(result).toContain('EDGE source --calls [EXTRACTED]--> middle')
   })
 })
 

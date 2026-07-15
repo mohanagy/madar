@@ -19,6 +19,7 @@ const MAX_STORED_ANOMALY_ID_LENGTH = 256
 const MAX_STORED_ANOMALY_TEXT_LENGTH = 2_048
 
 export type QueryRankBy = 'relevance' | 'degree'
+export type QueryTraversalDirection = 'outgoing' | 'incident'
 
 export interface QueryFilters {
   community?: number
@@ -30,6 +31,7 @@ export interface QueryGraphOptions {
   depth?: number
   tokenBudget?: number
   rankBy?: QueryRankBy
+  direction?: QueryTraversalDirection
   filters?: QueryFilters
 }
 
@@ -314,11 +316,39 @@ export function scoreNodes(graph: KnowledgeGraph, terms: string[], options: Pick
     .map((entry) => [entry.score, entry.nodeId] as [number, string])
 }
 
+interface TraversalStep {
+  neighbor: string
+  edge: [string, string]
+}
+
+function traversalSteps(
+  graph: KnowledgeGraph,
+  nodeId: string,
+  direction: QueryTraversalDirection,
+): TraversalStep[] {
+  const outgoing = graph.successors(nodeId).map((neighbor) => ({
+    neighbor,
+    edge: [nodeId, neighbor] as [string, string],
+  }))
+  if (direction === 'outgoing' || !graph.isDirected()) {
+    return outgoing
+  }
+
+  return [
+    ...outgoing,
+    ...graph.predecessors(nodeId).map((neighbor) => ({
+      neighbor,
+      edge: [neighbor, nodeId] as [string, string],
+    })),
+  ]
+}
+
 export function bfs(
   graph: KnowledgeGraph,
   startNodes: string[],
   depth: number,
   allowedNodes?: ReadonlySet<string>,
+  direction: QueryTraversalDirection = 'outgoing',
 ): { visited: Set<string>; edges: Array<[string, string]> } {
   if (depth < 0) {
     throw new Error('depth must be non-negative')
@@ -332,7 +362,7 @@ export function bfs(
   for (let level = 0; level < depth; level += 1) {
     const nextFrontier = new Set<string>()
     for (const nodeId of frontier) {
-      for (const neighbor of graph.neighbors(nodeId)) {
+      for (const { neighbor, edge } of traversalSteps(graph, nodeId, direction)) {
         if (allowedNodes && !allowedNodes.has(neighbor)) {
           continue
         }
@@ -340,7 +370,7 @@ export function bfs(
           continue
         }
         nextFrontier.add(neighbor)
-        edges.push([nodeId, neighbor])
+        edges.push(edge)
       }
     }
     for (const nodeId of nextFrontier) {
@@ -357,6 +387,7 @@ export function dfs(
   startNodes: string[],
   depth: number,
   allowedNodes?: ReadonlySet<string>,
+  direction: QueryTraversalDirection = 'outgoing',
 ): { visited: Set<string>; edges: Array<[string, string]> } {
   if (depth < 0) {
     throw new Error('depth must be non-negative')
@@ -381,7 +412,7 @@ export function dfs(
     }
 
     visited.add(nodeId)
-    for (const neighbor of graph.neighbors(nodeId)) {
+    for (const { neighbor, edge } of traversalSteps(graph, nodeId, direction)) {
       if (allowedNodes && !allowedNodes.has(neighbor)) {
         continue
       }
@@ -389,7 +420,7 @@ export function dfs(
         continue
       }
       stack.push([neighbor, currentDepth + 1])
-      edges.push([nodeId, neighbor])
+      edges.push(edge)
     }
   }
 
@@ -449,6 +480,9 @@ export function queryGraph(graph: KnowledgeGraph, question: string, options: Que
   const depth = Math.min(Math.max(options.depth ?? 2, 0), MAX_TRAVERSAL_DEPTH)
   const tokenBudget = options.tokenBudget ?? 2000
   const rankBy = options.rankBy === 'degree' ? 'degree' : 'relevance'
+  // A generic context query describes a neighborhood, not a directional flow.
+  // Incident traversal preserves that historical behavior now that stored code graphs are directed.
+  const direction = options.direction ?? 'incident'
   const filters = normalizeQueryFilters(options.filters)
   const terms = question
     .split(/\s+/)
@@ -464,7 +498,9 @@ export function queryGraph(graph: KnowledgeGraph, question: string, options: Que
   }
 
   const allowedNodes = allowedNodeIds(graph, filters)
-  const traversal = mode === 'dfs' ? dfs(graph, startNodes, depth, allowedNodes) : bfs(graph, startNodes, depth, allowedNodes)
+  const traversal = mode === 'dfs'
+    ? dfs(graph, startNodes, depth, allowedNodes, direction)
+    : bfs(graph, startNodes, depth, allowedNodes, direction)
   const startLabels = startNodes.map((nodeId) => String(graph.nodeAttributes(nodeId).label ?? nodeId))
   const summary = [
     `Traversal: ${mode.toUpperCase()} depth=${depth}`,
