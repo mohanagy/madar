@@ -691,6 +691,7 @@ describe('watch', () => {
       const notify = vi.fn(() => {
         controller.abort()
       })
+      const reconciliations: WatchReconciliationMetrics[] = []
       const audioPath = join(tempDir, 'episode.mp3')
       const sidecarPath = binaryIngestSidecarPath(audioPath)
       writeFileSync(audioPath, Buffer.from('ID3'))
@@ -713,11 +714,12 @@ describe('watch', () => {
         pollIntervalMs: 10,
         rebuildCode: rebuild,
         notifyOnly: notify,
+        onReconciliation: (metrics) => reconciliations.push(metrics),
         logger: { log() {}, error() {} },
       })
-      const timeout = setTimeout(() => controller.abort(), 200)
 
-      await delay(30)
+      await waitFor(() => reconciliations.some((metrics) => metrics.trigger === 'initial'))
+      const timeout = setTimeout(() => controller.abort(), 5_000)
       writeFileSync(
         sidecarPath,
         JSON.stringify(
@@ -738,7 +740,7 @@ describe('watch', () => {
       expect(rebuild).toHaveBeenCalledTimes(1)
       expect(notify).not.toHaveBeenCalled()
     })
-  })
+  }, 15_000)
 
   test.runIf(process.platform !== 'win32')('triggers rebuild when a followed symlink media sidecar changes', async () => {
     await withTempDirAsync(async (tempDir) => {
