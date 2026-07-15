@@ -2,10 +2,10 @@
   "$schema": "http://cyclonedx.org/schema/bom-1.5.schema.json",
   "bomFormat": "CycloneDX",
   "specVersion": "1.5",
-  "serialNumber": "urn:uuid:8e4e235e-1a84-4a31-baa4-32bf09a7b99e",
+  "serialNumber": "urn:uuid:b8948d19-0223-4808-b1b3-47346a86defa",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-07-14T06:44:20.707Z",
+    "timestamp": "2026-07-15T05:00:12.453Z",
     "lifecycles": [
       {
         "phase": "build"
@@ -15,18 +15,18 @@
       {
         "vendor": "npm",
         "name": "cli",
-        "version": "11.12.1"
+        "version": "12.0.1"
       }
     ],
     "component": {
-      "bom-ref": "@lubab/madar@0.30.0",
+      "bom-ref": "@lubab/madar@0.31.0",
       "type": "library",
-      "name": "madar",
-      "version": "0.30.0",
+      "name": "@lubab/madar",
+      "version": "0.31.0",
       "scope": "required",
       "author": "mohanagy",
       "description": "Stop AI coding agents from rediscovering large TypeScript/Node repos. Madar compiles task-aware local context packs from what runs for this task.",
-      "purl": "pkg:npm/%40lubab/madar@0.30.0",
+      "purl": "pkg:npm/%40lubab/madar@0.31.0",
       "properties": [],
       "externalReferences": [
         {
@@ -3296,7 +3296,7 @@
   ],
   "dependencies": [
     {
-      "ref": "@lubab/madar@0.30.0",
+      "ref": "@lubab/madar@0.31.0",
       "dependsOn": [
         "@vscode/tree-sitter-wasm@0.3.1",
         "fflate@0.8.3",

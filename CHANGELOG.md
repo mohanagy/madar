@@ -2,6 +2,26 @@
 
 All notable changes to the TypeScript package will be documented in this file.
 
+## [0.31.0] - 2026-07-15
+
+### Added
+
+- **Context packs now separate evidence quality from answer readiness**: responses expose independent evidence-strength, retrieval-coverage, and answerability signals; incomplete explain packs keep their original evidence through up to two bounded cumulative recovery passes; and agents receive exact verification targets instead of treating a medium compatibility score as a reason to restart broad search. Closes #552.
+- **Conceptual questions get a deterministic repository-local fallback**: lexical misses can run one bounded, graph-grounded recovery pass without requiring embeddings, while unrelated prompts remain empty instead of drifting to high-degree hubs. Self-hosted regression fixtures cover expected-file recall, selected-file precision, answerability, token budgets, latency, and negative controls. Closes #555.
+- **Retrieval and extraction expose explicit typed stages**: seed generation, expansion, ranking, packing, evidence planning, recovery, discovery, capability selection, per-language extraction, framework augmentation, merge, relationship resolution, and diagnostics projection now have stable internal boundaries with source-safe stage diagnostics. Closes #556.
+
+### Changed
+
+- **Generated code graphs are directed by default**: generate, update, watch, try, and automatic refresh preserve source-to-target edges; legacy undirected graphs rebuild safely; generic context queries still inspect both sides of incident relationships; and impact, call-chain, and directional slicing reject visualization-only undirected artifacts instead of returning misleading results. Closes #548.
+- **Strict agent installs match the MCP tools they actually expose**: generated guidance uses `context_pack` and `context_expand`, follows the new answerability states, and no longer instructs agents to call unavailable tools. Closes #550.
+- **Auto-refresh is policy-preserving and fail-closed**: adaptive full reconciliations replace silent scan caps, filesystem events invalidate graph-backed answers immediately, generation settings are fingerprinted and reused, policy drift forces a full rebuild, and watcher/reconciliation health is visible through status and doctor output. Closes #553.
+- **Indexing completeness is explicit and auditable**: generation records every indexed, warned, policy-skipped, unsupported, and failed source file in a local manifest, emits a path-free share-safe companion, and supports strict thresholds for incomplete coverage. Closes #554.
+
+### Fixed
+
+- **Sensitive-path discovery no longer excludes ordinary security source code**: source files such as token, password-reset, credential-provider, and secret-manager implementations remain indexable, while private keys, environment files, credential stores, and non-source secret material stay excluded with structured reason codes. Closes #549.
+- **Production retrieval no longer consumes benchmark answers**: expected files, symbols, and runtime-proof obligations remain in the evaluation harness and cannot influence the shipped retrieval path; historical benchmark rows are explicitly marked superseded until rerun through packed-artifact isolation. Closes #551.
+
 ## [0.30.0] - 2026-07-14
 
 ### Added

@@ -251,7 +251,9 @@ It does not record prompt text, answer text, source paths, source content, or re
 
 ## What's New
 
-Current version: `0.30.0`.
+Current version: `0.31.0`.
+
+`0.31.0` hardens graph correctness and agent trust. Code graphs are directed by default; discovery distinguishes security source code from credential material; auto-refresh preserves generation policy and fails closed on incomplete coverage; and production retrieval is isolated from benchmark expectations. Context packs now expose independent evidence, coverage, and answerability signals with bounded cumulative recovery and exact verification targets, conceptual misses get a deterministic repository-local fallback, and retrieval/extraction run through explicit typed stages with source-safe diagnostics.
 
 `0.30.0` makes installed MCP integrations self-refreshing: they reconcile the graph at startup and watch the active workspace through an agent session. It also gives each linked Git worktree isolated external graph and artifact storage. Start or reconnect MCP from the worktree the agent is using; a running server stays scoped to the worktree where it started.
 
@@ -259,7 +261,7 @@ Current version: `0.30.0`.
 
 `0.28.0` published six TypeScript `explain-runtime` legacy receipts. Those artifacts remain available, but the former proof-backed 6/6 interpretation is superseded because the old checkout runtime used benchmark-only profiles while answering those prompts.
 
-Read the full notes in the [0.30.0 changelog](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md#0300---2026-07-14).
+Read the full notes in the [0.31.0 changelog](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md#0310---2026-07-15).
 
 ## Docs
 
