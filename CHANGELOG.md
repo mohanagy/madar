@@ -2,6 +2,17 @@
 
 All notable changes to the TypeScript package will be documented in this file.
 
+## [0.31.3] - 2026-07-17
+
+### Fixed
+
+- **Automatic refresh no longer becomes permanently unavailable after refresh-lease contention**: leases whose recorded owner is definitely dead are reclaimed immediately, while a live owner is awaited with bounded, abortable backoff instead of turning a 30-second contention window into a terminal watcher failure. Shutdown requested during contended startup is honored promptly. Closes #561.
+- **Agents can distinguish temporary graph reconciliation from graph repair**: graph-backed MCP calls now return structured `madar_graph_not_ready` error data with `retryable`, `retry_after_ms`, and `suggested_action`. `starting`, `pending`, and `reconciling` ask the agent to retry the same Madar request; failed, incomplete, or policy-mismatched graphs remain fail-closed and ask for repair.
+
+### Notes
+
+- Restart or reconnect the agent's MCP session after upgrading so it launches the `0.31.3` runtime. No installer-profile migration or manual graph generation is required when the graph is only reconciling.
+
 ## [0.31.2] - 2026-07-16
 
 ### Fixed

@@ -9,13 +9,13 @@
         "source": "github",
         "url": "https://github.com/mohanagy/madar"
     },
-    "version": "0.31.2",
+    "version": "0.31.3",
     "packages": [
         {
             "registryType": "npm",
             "registryBaseUrl": "https://registry.npmjs.org",
             "identifier": "@lubab/madar",
-            "version": "0.31.2",
+            "version": "0.31.3",
             "runtimeHint": "npx",
             "transport": {
                 "type": "stdio"
