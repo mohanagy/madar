@@ -1,6 +1,6 @@
 # Auto-refresh and generation policy
 
-Installed MCP profiles run `madar serve --stdio --auto-refresh`. The server starts a recursive filesystem listener before its initial graph reconciliation, marks the graph pending as soon as a relevant event arrives, and performs an authoritative source snapshot before publishing the graph as usable again.
+Installed MCP profiles run `madar serve --stdio --auto-refresh`. The stdio transport becomes available immediately while automatic refresh runs in a background worker. Before that worker starts, Madar publishes a `starting` watcher state so graph-backed requests fail closed instead of reading an older graph. The worker then starts a recursive filesystem listener before its initial graph reconciliation, marks the graph pending as soon as a relevant event arrives, and performs an authoritative source snapshot before publishing the graph as usable again.
 
 Filesystem events provide low-latency invalidation; they are not the correctness boundary. Madar also performs full reconciliations on an adaptive schedule. Idle intervals back off from 30 seconds to at most 5 minutes when recursive events are available. Platforms without recursive events use adaptive polling from 1 second to at most 30 seconds. The lower-level `pollIntervalMs` option is an internal/test override rather than a CLI setting.
 
@@ -37,6 +37,8 @@ The local `watcher-state.json` beside `graph.json` is written atomically and inc
 - stored/current policy fingerprints and match state.
 
 `madar doctor` and `madar status` render those fields. During an auto-refresh MCP session, graph-backed prompts, resources, completions, and tool calls are refused while state is pending, reconciling, failed, incomplete, or policy-mismatched. Retry after the state returns to `idle`; if it remains failed, run `madar generate . --update` and inspect `madar status`.
+
+MCP initialization, ping, and list/discovery requests remain responsive during `starting` and `reconciling`. This lets an agent connect without waiting for a cold large-repository build while preserving the same freshness boundary for every graph answer.
 
 The refresh lease serializes multiple MCP processes that target the same workspace. Graph, source-manifest, indexing-manifest, report, and watcher-state publications use same-filesystem atomic renames. A post-build reconciliation detects edits made while generation was running and queues another rebuild before the state can return to `idle`.
 

@@ -71,7 +71,9 @@ Madar supports these project-local installers:
 
 Installer details are in the [CLI and MCP reference](https://github.com/mohanagy/madar/blob/main/docs/reference/cli-and-mcp.md). Step-by-step setup and smoke tests are in the [agent quickstarts](https://github.com/mohanagy/madar/blob/main/docs/tutorials/agent-quickstarts.md).
 
-If you upgrade from a version earlier than `0.30.0`, rerun your agent's install command to add automatic refresh to its managed MCP entry.
+After upgrading Madar, rerun your agent's install command so its managed profile receives current runtime settings. Older profiles may lack automatic refresh; older Codex profiles may also lack the extended MCP startup window needed by large or synchronized workspaces.
+
+Codex installs set `startup_timeout_sec = 180`. Madar makes the MCP transport available while the initial graph reconciliation runs in a background worker, but graph-backed calls remain safely unavailable until `madar status` reports the watcher as `idle`.
 
 ## What Changes for the Agent
 

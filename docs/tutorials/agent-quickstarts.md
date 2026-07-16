@@ -109,6 +109,7 @@ This installs the Madar-owned AGENTS.md section, a task-applicable `UserPromptSu
 Common failure modes:
 
 - If `madar status` marks Codex as partial, inspect `.codex/hooks.json`, `.codex/madar-user-prompt-submit.cjs`, and `.codex/config.toml`, then rerun the install.
+- If Codex reports that the Madar MCP client timed out after 30 seconds, rerun `madar codex install` and confirm its managed block contains `startup_timeout_sec = 180`. Then run `madar doctor` and `madar status`; if reconciliation remains failed, run `madar generate . --update`.
 - If Codex ignores the guidance, confirm `AGENTS.md` still contains the Madar-owned rules and that the project hook is trusted in `/hooks`.
 - `madar codex uninstall` removes only the Madar-owned AGENTS section, hook, script, and marked TOML block; unrelated hooks and TOML configuration remain.
 

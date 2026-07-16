@@ -4,6 +4,7 @@ import type { Writable } from 'node:stream'
 
 import { freshnessAnnotations, resourceFreshnessMetadata } from '../freshness.js'
 import { validateGraphPath } from '../../shared/security.js'
+import { resolveWorkspaceGraphPath } from '../../shared/workspace.js'
 
 interface StdioResponse {
   jsonrpc: '2.0'
@@ -63,7 +64,14 @@ function resourceUri(name: string): string {
 }
 
 export function resourcesForGraph(graphPath: string): McpResourceDefinition[] {
-  const safeGraphPath = validateGraphPath(graphPath)
+  // During a first auto-refresh startup the MCP transport is available before
+  // graph.json. Resource discovery must return an empty list instead of making
+  // initialize fail through notification bookkeeping.
+  const effectiveGraphPath = resolveWorkspaceGraphPath(graphPath)
+  if (!existsSync(effectiveGraphPath)) {
+    return []
+  }
+  const safeGraphPath = validateGraphPath(effectiveGraphPath)
   const outputDir = dirname(safeGraphPath)
   const candidates: McpResourceDefinition[] = [
     {

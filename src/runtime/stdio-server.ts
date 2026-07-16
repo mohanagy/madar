@@ -1,11 +1,12 @@
 import { createInterface } from 'node:readline'
-import { existsSync, realpathSync, statSync } from 'node:fs'
+import { realpathSync, statSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import type { Readable, Writable } from 'node:stream'
 
 import type { ContextSessionState } from '../contracts/context-session.js'
 import { compareRefs } from '../infrastructure/time-travel.js'
-import { startGraphAutoRefresh } from '../infrastructure/watch.js'
+import { startGraphAutoRefreshInBackground } from '../infrastructure/background-auto-refresh.js'
+import type { GraphAutoRefreshController } from '../infrastructure/watch.js'
 import { readWatcherStateForGraph } from '../infrastructure/watcher-state.js'
 import { readStoredGenerationPolicy } from '../infrastructure/generation-policy.js'
 import { watcherStateBlocksGraphReads } from '../contracts/watcher-state.js'
@@ -78,6 +79,8 @@ const AUTO_REFRESH_CONTROL_METHODS = new Set([
   'notifications/initialized',
   'logging/setLevel',
   'ping',
+  'prompts/list',
+  'resources/list',
   'tools/list',
 ])
 
@@ -160,6 +163,8 @@ export interface ServeGraphStdioOptions {
   input?: Readable
   output?: Writable
   errorOutput?: Writable
+  /** Internal/testing seam for the production background auto-refresh launcher. */
+  autoRefreshStarter?: typeof startGraphAutoRefreshInBackground
   logger?: {
     log(message?: string): void
     error(message?: string): void
@@ -181,6 +186,43 @@ function graphRootPath(graphPath: string): string | null {
     return typeof rootPath === 'string' && rootPath.trim().length > 0 ? rootPath.trim() : null
   } catch {
     return null
+  }
+}
+
+function autoRefreshGraphReadiness(
+  controller: GraphAutoRefreshController,
+  graphPath: string,
+): { ready: boolean; detail: string } {
+  const startupComplete = controller.startupComplete?.() ?? true
+  const backgroundFailure = controller.failureReason?.() ?? null
+  const watcherState = readWatcherStateForGraph(graphPath)
+  const publishedPolicy = readStoredGenerationPolicy(
+    graphPath,
+    join(dirname(graphPath), 'manifest.json'),
+  )
+  const watcherMatchesPublishedPolicy = watcherState !== null
+    && publishedPolicy !== null
+    && watcherState.stored_policy_fingerprint === publishedPolicy.fingerprint
+  const ready = startupComplete
+    && watcherState !== null
+    && watcherState.status === 'idle'
+    && !watcherStateBlocksGraphReads(watcherState)
+    && watcherMatchesPublishedPolicy
+
+  if (watcherState) {
+    return {
+      ready,
+      detail: `status=${watcherState.status}, coverage=${watcherState.coverage}, policy=${watcherState.policy_match === null ? 'unknown' : watcherState.policy_match ? 'match' : 'mismatch'}, published_policy=${watcherMatchesPublishedPolicy ? 'match' : 'mismatch'}${watcherState.failure_reason ? `, failure=${watcherState.failure_reason}` : ''}`,
+    }
+  }
+
+  return {
+    ready,
+    detail: backgroundFailure
+      ? `background startup failed: ${backgroundFailure}`
+      : startupComplete
+        ? 'watcher state is unavailable'
+        : 'background reconciliation is starting',
   }
 }
 
@@ -925,7 +967,7 @@ export async function serveGraphStdio(options: ServeGraphStdioOptions): Promise<
   const output = options.output ?? process.stdout
   const errorOutput = options.errorOutput ?? process.stderr
   const sessionState = createSessionState()
-  let autoRefresh: ReturnType<typeof startGraphAutoRefresh> | null = null
+  let autoRefresh: GraphAutoRefreshController | null = null
 
   if (options.autoRefresh) {
     const workspaceRoot = options.workspaceRoot ?? graphRootPath(options.graphPath)
@@ -941,17 +983,18 @@ export async function serveGraphStdio(options: ServeGraphStdioOptions): Promise<
       )
     }
 
-    autoRefresh = startGraphAutoRefresh(workspace.rootPath, options.autoRefreshDebounceSeconds ?? 1, {
+    const startAutoRefresh = options.autoRefreshStarter ?? startGraphAutoRefreshInBackground
+    autoRefresh = startAutoRefresh(workspace.rootPath, options.autoRefreshDebounceSeconds ?? 1, {
       // The MCP server needs graph.json; avoid regenerating the browser view on
       // every coalesced agent edit.
       noHtml: true,
-      logger: { log() {}, error() {} },
+      logger: {
+        log() {},
+        error(message) {
+          errorOutput.write(`[madar serve] ${message ?? 'Auto-refresh failed'}\n`)
+        },
+      },
     })
-    if (!autoRefresh.initialRebuilt && !existsSync(options.graphPath)) {
-      autoRefresh.stop()
-      await autoRefresh.completed
-      throw new Error(`Unable to build a graph for ${workspace.rootPath}`)
-    }
   }
 
   errorOutput.write(`[madar serve] stdio ready for ${options.graphPath}\n`)
@@ -985,28 +1028,19 @@ export async function serveGraphStdio(options: ServeGraphStdioOptions): Promise<
       try {
         const request = payload as StdioRequest
         const requestMethod = typeof request.method === 'string' ? request.method : null
-        if (autoRefresh && requestMethod && !AUTO_REFRESH_CONTROL_METHODS.has(requestMethod)) {
-          const watcherState = readWatcherStateForGraph(options.graphPath)
-          const publishedPolicy = readStoredGenerationPolicy(
-            options.graphPath,
-            join(dirname(options.graphPath), 'manifest.json'),
+        const refreshReadiness = autoRefresh && requestMethod
+          ? autoRefreshGraphReadiness(autoRefresh, options.graphPath)
+          : null
+        if (refreshReadiness && !refreshReadiness.ready && requestMethod === 'prompts/list') {
+          response = ok(requestId(request), { prompts: MCP_PROMPTS })
+        } else if (refreshReadiness && !refreshReadiness.ready && requestMethod === 'resources/list') {
+          response = ok(requestId(request), { resources: [] })
+        } else if (refreshReadiness && !refreshReadiness.ready && requestMethod !== null && !AUTO_REFRESH_CONTROL_METHODS.has(requestMethod)) {
+          response = failure(
+            requestId(request),
+            JSONRPC_SERVER_ERROR,
+            `Madar auto-refresh cannot guarantee a fresh graph (${refreshReadiness.detail}). Wait for reconciliation or run \`madar generate . --update\` before retrying.`,
           )
-          const watcherMatchesPublishedPolicy = watcherState !== null
-            && publishedPolicy !== null
-            && watcherState.stored_policy_fingerprint === publishedPolicy.fingerprint
-          if (!watcherState || watcherState.status !== 'idle' || watcherStateBlocksGraphReads(watcherState) || !watcherMatchesPublishedPolicy) {
-            const detail = watcherState
-              ? `status=${watcherState.status}, coverage=${watcherState.coverage}, policy=${watcherState.policy_match === null ? 'unknown' : watcherState.policy_match ? 'match' : 'mismatch'}, published_policy=${watcherMatchesPublishedPolicy ? 'match' : 'mismatch'}${watcherState.failure_reason ? `, failure=${watcherState.failure_reason}` : ''}`
-              : 'watcher state is unavailable'
-            response = failure(
-              requestId(request),
-              JSONRPC_SERVER_ERROR,
-              `Madar auto-refresh cannot guarantee a fresh graph (${detail}). Wait for reconciliation or run \`madar generate . --update\` before retrying.`,
-            )
-          } else {
-            emitResourceNotifications(output, options.graphPath, sessionState)
-            response = await Promise.resolve(handleStdioRequest(options.graphPath, payload, sessionState))
-          }
         } else {
           emitResourceNotifications(output, options.graphPath, sessionState)
           response = await Promise.resolve(handleStdioRequest(options.graphPath, payload, sessionState))

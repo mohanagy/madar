@@ -21,6 +21,7 @@ import {
   isInstallPlatform,
   uninstallCopilotMcp,
   uninstallSkill,
+  CODEX_MCP_STARTUP_TIMEOUT_SECONDS,
 } from '../../src/infrastructure/install.js'
 import { MCP_TOOLS, activeMcpTools, type McpToolProfile } from '../../src/runtime/stdio/definitions.js'
 import { normalizeAssertionPath, normalizeAssertionPaths } from './helpers/platform.js'
@@ -1669,7 +1670,7 @@ describe('install helpers', () => {
     withTempDir((projectDir) => {
       const configPath = join(projectDir, '.codex', 'config.toml')
       const unrelatedToml = '# Preserve this user comment\r\n[features]\r\nparallel = true\r\n'
-      const managedBlock = `${CODEX_MCP_START_MARKER}\r\n[mcp_servers.madar]\r\ncommand = "madar"\r\nargs = ["serve", "--stdio", "--auto-refresh"]\r\nenv = { MADAR_TOOL_PROFILE = "strict" }\r\nenabled = true\r\n${CODEX_MCP_END_MARKER}\r\n`
+      const managedBlock = `${CODEX_MCP_START_MARKER}\r\n[mcp_servers.madar]\r\ncommand = "madar"\r\nargs = ["serve", "--stdio", "--auto-refresh"]\r\nenv = { MADAR_TOOL_PROFILE = "strict" }\r\nenabled = true\r\nstartup_timeout_sec = ${CODEX_MCP_STARTUP_TIMEOUT_SECONDS}\r\n${CODEX_MCP_END_MARKER}\r\n`
 
       mkdirSync(join(projectDir, '.codex'), { recursive: true })
       writeFileSync(configPath, unrelatedToml, 'utf8')
@@ -1705,7 +1706,23 @@ describe('install helpers', () => {
       expect(installMessage).toContain('.codex/config.toml -> MCP server updated')
       expect(migrated).toContain('MADAR_TOOL_PROFILE = "strict"')
       expect(migrated).not.toContain('MADAR_TOOL_PROFILE = "core"')
+      expect(migrated).toContain(`startup_timeout_sec = ${CODEX_MCP_STARTUP_TIMEOUT_SECONDS}`)
       expect(countOccurrences(migrated, CODEX_MCP_START_MARKER)).toBe(1)
+      expect(agentsInstall(projectDir, 'codex')).toContain('.codex/config.toml -> MCP server already registered (no change)')
+    })
+  })
+
+  it('migrates the v0.31.1 owned Codex MCP block to the explicit startup timeout', () => {
+    withTempDir((projectDir) => {
+      const configPath = join(projectDir, '.codex', 'config.toml')
+      const previousBlock = `${CODEX_MCP_START_MARKER}\n[mcp_servers.madar]\ncommand = "madar"\nargs = ["serve", "--stdio", "--auto-refresh"]\nenv = { MADAR_TOOL_PROFILE = "strict" }\nenabled = true\n${CODEX_MCP_END_MARKER}\n`
+      mkdirSync(join(projectDir, '.codex'), { recursive: true })
+      writeFileSync(configPath, previousBlock, 'utf8')
+
+      expect(agentsInstall(projectDir, 'codex')).toContain('.codex/config.toml -> MCP server updated')
+      expect(readFileSync(configPath, 'utf8')).toContain(
+        `startup_timeout_sec = ${CODEX_MCP_STARTUP_TIMEOUT_SECONDS}`,
+      )
       expect(agentsInstall(projectDir, 'codex')).toContain('.codex/config.toml -> MCP server already registered (no change)')
     })
   })
@@ -1791,6 +1808,7 @@ ${CODEX_MCP_END_MARKER}
       expect(installed).toContain('args = ["serve", "--stdio", "--auto-refresh"]')
       expect(installed).toContain('env = { MADAR_TOOL_PROFILE = "strict" }')
       expect(installed).toContain('enabled = true')
+      expect(installed).toContain(`startup_timeout_sec = ${CODEX_MCP_STARTUP_TIMEOUT_SECONDS}`)
       expect(installed).not.toContain('old-madar')
     })
   })
