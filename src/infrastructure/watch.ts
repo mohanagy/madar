@@ -1,5 +1,5 @@
-import { createHash, randomUUID } from 'node:crypto'
-import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, unlinkSync, watch as createFileSystemWatcher, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, unlinkSync, watch as createFileSystemWatcher, writeFileSync } from 'node:fs'
 import { extname, join, resolve, sep } from 'node:path'
 
 import type { IndexingStrictThresholds } from '../contracts/indexing.js'
@@ -26,6 +26,11 @@ import {
   readStoredGenerationPolicy,
 } from './generation-policy.js'
 import { createWatcherState, writeWatcherState } from './watcher-state.js'
+import {
+  acquireRefreshLease,
+  acquireRefreshLeaseWithoutBlocking,
+  tryAcquireRefreshLease,
+} from './refresh-lease.js'
 
 export const WATCHED_EXTENSIONS = new Set([
   ...CODE_EXTENSIONS,
@@ -45,10 +50,6 @@ const DEFAULT_EVENT_MAX_RECONCILIATION_INTERVAL_MS = 5 * 60_000
 const DEFAULT_POLL_RECONCILIATION_INTERVAL_MS = 1_000
 const DEFAULT_POLL_MAX_RECONCILIATION_INTERVAL_MS = 30_000
 const DEFAULT_RECONCILIATION_TIMEOUT_MS = 2 * 60_000
-const REFRESH_LOCK_RETRY_MS = 50
-const REFRESH_LOCK_TIMEOUT_MS = 30_000
-const REFRESH_LOCK_STALE_MS = 60 * 60 * 1000
-
 const WATCH_IGNORED_DIRECTORIES = new Set(['.git', 'out', 'node_modules', 'dist', 'build', 'target', 'venv', '.venv', 'env', '.env', '__pycache__'])
 // These files can change the discovered corpus or the extraction environment
 // even when no source file changes. Treat them as refresh triggers instead of
@@ -101,7 +102,7 @@ export interface WatchOptions extends RebuildCodeOptions {
   pollIntervalMs?: number
   maxPollIntervalMs?: number
   reconciliationTimeoutMs?: number
-  rebuildCode?: (watchPath: string, options?: RebuildCodeOptions) => boolean
+  rebuildCode?: (watchPath: string, options?: RebuildCodeOptions) => boolean | null | Promise<boolean | null>
   notifyOnly?: (watchPath: string, logger?: WatchLogger) => void
   onReconciliation?: (metrics: WatchReconciliationMetrics) => void
   /** Internal auto-refresh handshake: listener + snapshot are active before this rebuild starts. */
@@ -116,6 +117,8 @@ export interface GraphAutoRefreshController {
   startupComplete?(): boolean
   /** Returns a background startup/runtime failure that could not be read from watcher-state.json. */
   failureReason?(): string | null
+  /** Resolves after the initial reconciliation succeeds, fails, or is aborted. */
+  startupSettled?: Promise<void>
   /** Stops the watcher and releases its filesystem resources. */
   stop(): void
   /** Resolves once the watcher stops. */
@@ -241,103 +244,6 @@ function graphBelongsToWorkspace(graphPath: string, workspaceRoot: string): bool
       && sameFilesystemPath(parsed.root_path, workspaceRoot)
   } catch {
     return false
-  }
-}
-
-function pauseForRefreshLock(milliseconds: number): void {
-  // Rebuilds themselves are synchronous CPU/IO work. A short synchronous wait
-  // keeps the public `rebuildCode()` API synchronous while serializing two MCP
-  // servers that happen to attach to the same worktree.
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds)
-}
-
-function isRefreshLeaseOwnerAlive(lockPath: string): boolean {
-  try {
-    const [pidValue] = readFileSync(lockPath, 'utf8').trim().split(/\s+/, 1)
-    const pid = Number(pidValue)
-    if (!Number.isSafeInteger(pid) || pid <= 0) {
-      return false
-    }
-    process.kill(pid, 0)
-    return true
-  } catch (error) {
-    const code = error && typeof error === 'object' && 'code' in error ? (error as { code?: unknown }).code : null
-    // EPERM means the process exists but belongs to another user.
-    return code === 'EPERM'
-  }
-}
-
-function tryAcquireRefreshLease(outputDir: string): (() => void) | null {
-  mkdirSync(outputDir, { recursive: true })
-  const lockPath = join(outputDir, '.madar-refresh.lock')
-  try {
-    const descriptor = openSync(lockPath, 'wx')
-    const leaseId = randomUUID()
-    try {
-      writeFileSync(descriptor, `${process.pid} ${leaseId} ${new Date().toISOString()}\n`, 'utf8')
-    } finally {
-      closeSync(descriptor)
-    }
-    return () => {
-      try {
-        const contents = readFileSync(lockPath, 'utf8')
-        if (contents.split(/\s+/, 3)[1] === leaseId) {
-          rmSync(lockPath, { force: true })
-        }
-      } catch {
-        // The lease may have been recovered after a process crash.
-      }
-    }
-  } catch (error) {
-    const code = error && typeof error === 'object' && 'code' in error ? (error as { code?: unknown }).code : null
-    if (code !== 'EEXIST') {
-      throw error
-    }
-  }
-
-  try {
-    if (Date.now() - statSync(lockPath).mtimeMs > REFRESH_LOCK_STALE_MS && !isRefreshLeaseOwnerAlive(lockPath)) {
-      rmSync(lockPath, { force: true })
-    }
-  } catch {
-    // Another process released the lease between the failed open and stat.
-  }
-  return null
-}
-
-function acquireRefreshLease(outputDir: string): () => void {
-  const startedAt = Date.now()
-
-  while (true) {
-    const releaseLease = tryAcquireRefreshLease(outputDir)
-    if (releaseLease) {
-      return releaseLease
-    }
-
-    const remaining = REFRESH_LOCK_TIMEOUT_MS - (Date.now() - startedAt)
-    if (remaining <= 0) {
-      throw new Error(`Timed out waiting for another Madar refresh in ${outputDir}`)
-    }
-    pauseForRefreshLock(Math.min(REFRESH_LOCK_RETRY_MS, remaining))
-  }
-}
-
-async function acquireRefreshLeaseWithoutBlocking(outputDir: string): Promise<() => void> {
-  const startedAt = Date.now()
-
-  while (true) {
-    const releaseLease = tryAcquireRefreshLease(outputDir)
-    if (releaseLease) {
-      return releaseLease
-    }
-
-    const remaining = REFRESH_LOCK_TIMEOUT_MS - (Date.now() - startedAt)
-    if (remaining <= 0) {
-      throw new Error(`Timed out waiting for another Madar refresh in ${outputDir}`)
-    }
-    await new Promise<void>((resolvePromise) => {
-      setTimeout(resolvePromise, Math.min(REFRESH_LOCK_RETRY_MS, remaining))
-    })
   }
 }
 
@@ -624,17 +530,29 @@ export function rebuildCode(watchPath: string, options: RebuildCodeOptions = {})
   }
 }
 
-async function rebuildCodeWithoutBlockingLease(watchPath: string, options: RebuildCodeOptions = {}): Promise<boolean> {
+function rebuildCodeWithRecoverableLease(
+  watchPath: string,
+  options: RebuildCodeOptions = {},
+  signal?: AbortSignal,
+): boolean | Promise<boolean | null> {
   const resolvedWatchPath = resolveWatchPath(watchPath)
   const output = defaultLogger(options.logger)
   const graphOutputDir = resolveMadarOutputDirectory(resolvedWatchPath)
-  try {
-    const releaseLease = await acquireRefreshLeaseWithoutBlocking(graphOutputDir)
-    return rebuildCodeUnderLease(resolvedWatchPath, options, releaseLease)
-  } catch (error) {
-    output.error(`[madar watch] Rebuild failed: ${error instanceof Error ? error.message : String(error)}`)
-    return false
+  const immediateLease = tryAcquireRefreshLease(graphOutputDir)
+  if (immediateLease) {
+    return rebuildCodeUnderLease(resolvedWatchPath, options, immediateLease)
   }
+
+  return acquireRefreshLeaseWithoutBlocking(graphOutputDir, {
+    ...(signal ? { signal } : {}),
+  })
+    .then((releaseLease) => releaseLease
+      ? rebuildCodeUnderLease(resolvedWatchPath, options, releaseLease)
+      : null)
+    .catch((error: unknown) => {
+      output.error(`[madar watch] Rebuild failed: ${error instanceof Error ? error.message : String(error)}`)
+      return false
+    })
 }
 
 /**
@@ -649,18 +567,36 @@ export function startGraphAutoRefresh(
 ): GraphAutoRefreshController {
   const controller = new AbortController()
   let initialRebuilt = false
+  let startupComplete = false
+  let resolveStartupSettled!: () => void
+  const startupSettled = new Promise<void>((resolvePromise) => {
+    resolveStartupSettled = resolvePromise
+  })
+  function settleStartup(): void {
+    if (startupComplete) {
+      return
+    }
+    startupComplete = true
+    resolveStartupSettled()
+  }
   const completed = watch(watchPath, debounceSeconds, {
     ...options,
     signal: controller.signal,
     rebuildOnStart: true,
     onInitialRebuild: (rebuilt) => {
       initialRebuilt = rebuilt
+      settleStartup()
       options.onInitialRebuild?.(rebuilt)
     },
   })
+  void completed.then(settleStartup, settleStartup)
 
   return {
-    initialRebuilt,
+    get initialRebuilt() {
+      return initialRebuilt
+    },
+    startupComplete: () => startupComplete,
+    startupSettled,
     stop: () => controller.abort(),
     completed,
   }
@@ -732,8 +668,9 @@ export async function watch(watchPath: string, debounce = 3, options: WatchOptio
   const outputDir = resolveMadarOutputDirectory(resolvedWatchPath)
   const output = defaultLogger(options.logger)
   const debounceMs = Math.max(0, Math.round(debounce * 1000))
-  const runInitialRebuild = options.rebuildCode ?? rebuildCode
-  const runWatchedRebuild = options.rebuildCode ?? rebuildCodeWithoutBlockingLease
+  const runInitialRebuild = options.rebuildCode
+    ?? ((target: string, rebuildOptions?: RebuildCodeOptions) => rebuildCodeWithRecoverableLease(target, rebuildOptions, options.signal))
+  const runWatchedRebuild = runInitialRebuild
   const runNotify = options.notifyOnly ?? notifyOnly
   const loopSignal = createWatchLoopSignal()
   const initialStoredPolicy = readStoredGenerationPolicy(
@@ -885,7 +822,16 @@ export async function watch(watchPath: string, debounce = 3, options: WatchOptio
     if (options.rebuildOnStart) {
       state.status = 'reconciling'
       persistState()
-      const rebuilt = runInitialRebuild(resolvedWatchPath, rebuildOptionsFromWatch(options, output))
+      const initialRebuild = runInitialRebuild(resolvedWatchPath, rebuildOptionsFromWatch(options, output))
+      const rebuilt = typeof initialRebuild === 'boolean' || initialRebuild === null
+        ? initialRebuild
+        : await initialRebuild
+      if (rebuilt === null) {
+        if (!options.signal?.aborted) {
+          throw new Error('Initial refresh lease wait ended without an abort signal.')
+        }
+        return
+      }
       options.onInitialRebuild?.(rebuilt)
       if (!rebuilt) {
         state.status = 'failed'
@@ -1007,7 +953,13 @@ export async function watch(watchPath: string, debounce = 3, options: WatchOptio
         output.log(`\n[madar watch] ${batch.length} file(s) changed`)
         state.status = 'reconciling'
         persistState()
-        const rebuilt = await runWatchedRebuild(resolvedWatchPath, rebuildOptionsFromWatch(options, output))
+        const watchedRebuild = runWatchedRebuild(resolvedWatchPath, rebuildOptionsFromWatch(options, output))
+        const rebuilt = typeof watchedRebuild === 'boolean' || watchedRebuild === null
+          ? watchedRebuild
+          : await watchedRebuild
+        if (rebuilt === null && options.signal?.aborted) {
+          break
+        }
         if (!rebuilt) {
           state.status = 'failed'
           state.failure_reason = 'Automatic graph rebuild failed; the graph must not be treated as fresh.'

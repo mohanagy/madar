@@ -36,11 +36,11 @@ The local `watcher-state.json` beside `graph.json` is written atomically and inc
 - pending/failure details; and
 - stored/current policy fingerprints and match state.
 
-`madar doctor` and `madar status` render those fields. During an auto-refresh MCP session, graph-backed prompts, resources, completions, and tool calls are refused while state is starting, pending, reconciling, failed, incomplete, or policy-mismatched. Retry after the state returns to `idle`; if it remains failed, run `madar generate . --update` and inspect `madar status`.
+`madar doctor` and `madar status` render those fields. During an auto-refresh MCP session, graph-backed prompts, resources, completions, and tool calls fail closed until the watcher is `idle` with matching published policy. Transient `starting`, `pending`, and `reconciling` responses use the structured MCP error type `madar_graph_not_ready` with `retryable: true`, `retry_after_ms: 1000`, and `suggested_action: "retry_same_request"`. Agents should retry the same Madar request; they do not need to bypass Madar or run generation while reconciliation is active. Terminal `failed`, incomplete, and policy-mismatched states return `retryable: false` with `suggested_action: "repair_graph"`; inspect `madar status`, then run `madar generate . --update` when repair is required.
 
 MCP initialization, ping, and list/discovery requests remain responsive during `starting` and `reconciling`. This lets an agent connect without waiting for a cold large-repository build while preserving the same freshness boundary for every graph answer.
 
-The refresh lease serializes multiple MCP processes that target the same workspace. Graph, source-manifest, indexing-manifest, report, and watcher-state publications use same-filesystem atomic renames. A post-build reconciliation detects edits made while generation was running and queues another rebuild before the state can return to `idle`.
+The refresh lease serializes multiple MCP processes that target the same workspace. If the recorded owner process is dead, Madar reclaims the lease immediately. If another live process owns it, auto-refresh remains in a retryable reconciliation state and waits with bounded backoff until the lease is released or the server shuts down; contention does not permanently fail the watcher. Graph, source-manifest, indexing-manifest, report, and watcher-state publications use same-filesystem atomic renames. A post-build reconciliation detects edits made while generation was running and queues another rebuild before the state can return to `idle`.
 
 ## Linked worktrees
 
