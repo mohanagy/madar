@@ -52,6 +52,12 @@ void (async () => {
       logger,
     },
   )
+  if (stopRequested) {
+    controller.stop()
+  }
+  if (controller.startupSettled) {
+    await controller.startupSettled
+  }
   parentPort.postMessage({ type: 'started', initialRebuilt: controller.initialRebuilt })
   if (stopRequested) {
     controller.stop()

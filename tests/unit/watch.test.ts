@@ -10,6 +10,7 @@ import { WATCHED_EXTENSIONS, hasNonCode, notifyOnly, rebuildCode, startGraphAuto
 import { generateGraph } from '../../src/infrastructure/generate.js'
 import { parseGenerationPolicy } from '../../src/contracts/generation-policy.js'
 import { readWatcherStateForGraph } from '../../src/infrastructure/watcher-state.js'
+import { tryAcquireRefreshLease } from '../../src/infrastructure/refresh-lease.js'
 import { resolveMadarWorkspace } from '../../src/shared/workspace.js'
 import { binaryIngestSidecarPath } from '../../src/shared/binary-ingest-sidecar.js'
 
@@ -164,15 +165,13 @@ describe('rebuildCode', () => {
     })
   })
 
-  test('recovers a stale refresh lease left by a dead process', () => {
+  test('recovers a young refresh lease left by a dead process', () => {
     withTempDir((tempDir) => {
       writeFileSync(join(tempDir, 'main.ts'), 'export const refreshed = true\n', 'utf8')
       const outputDir = join(tempDir, 'out')
       mkdirSync(outputDir, { recursive: true })
       const lockPath = join(outputDir, '.madar-refresh.lock')
-      writeFileSync(lockPath, '999999999 stale-lease 1970-01-01T00:00:00.000Z\n', 'utf8')
-      const staleAt = new Date(Date.now() - (2 * 60 * 60 * 1000))
-      utimesSync(lockPath, staleAt, staleAt)
+      writeFileSync(lockPath, `999999999 abandoned-lease ${new Date().toISOString()}\n`, 'utf8')
 
       expect(rebuildCode(tempDir, { noHtml: true })).toBe(true)
       expect(existsSync(lockPath)).toBe(false)
@@ -181,6 +180,36 @@ describe('rebuildCode', () => {
 })
 
 describe('watch', () => {
+  test('keeps startup unsettled during live lease contention and recovers after release', async () => {
+    await withTempDirAsync(async (tempDir) => {
+      writeFileSync(join(tempDir, 'main.ts'), 'export const value = 1\n', 'utf8')
+      const generated = generateGraph(tempDir, { noHtml: true })
+      const releaseOwner = tryAcquireRefreshLease(generated.outputDir)
+      expect(releaseOwner).toBeTypeOf('function')
+
+      const refresh = startGraphAutoRefresh(tempDir, 0.02, {
+        pollIntervalMs: 20,
+        noHtml: true,
+        logger: { log() {}, error() {} },
+      })
+      try {
+        expect(refresh.initialRebuilt).toBe(false)
+        expect(refresh.startupComplete?.()).toBe(false)
+        await waitFor(() => readWatcherStateForGraph(generated.graphPath)?.status === 'reconciling')
+
+        releaseOwner?.()
+        await refresh.startupSettled
+        expect(refresh.startupComplete?.()).toBe(true)
+        expect(refresh.initialRebuilt).toBe(true)
+        expect(readWatcherStateForGraph(generated.graphPath)?.status).toBe('idle')
+      } finally {
+        releaseOwner?.()
+        refresh.stop()
+        await refresh.completed
+      }
+    })
+  })
+
   test('keeps auto-refresh graph and watcher state outside a linked worktree', async () => {
     await withTempDirAsync(async (tempDir) => {
       const primary = join(tempDir, 'primary')

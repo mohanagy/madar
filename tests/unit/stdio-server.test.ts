@@ -2768,10 +2768,21 @@ describe('stdio runtime', () => {
         .trim()
         .split('\n')
         .filter(Boolean)
-        .map((line) => JSON.parse(line)) as Array<{ id?: number; result?: string; error?: { message?: string } }>
-      expect(responses.find((response) => response.id === 31)?.error?.message).toContain(
-        'auto-refresh cannot guarantee a fresh graph',
-      )
+        .map((line) => JSON.parse(line)) as Array<{
+          id?: number
+          result?: string
+          error?: { message?: string; data?: Record<string, unknown> }
+        }>
+      expect(responses.find((response) => response.id === 31)?.error).toMatchObject({
+        message: expect.stringContaining('temporarily pending'),
+        data: {
+          type: 'madar_graph_not_ready',
+          state: 'pending',
+          retryable: true,
+          retry_after_ms: 1_000,
+          suggested_action: 'retry_same_request',
+        },
+      })
       expect(responses.find((response) => response.id === 32)?.result).toContain('Nodes:')
     } finally {
       input.destroy()
@@ -2838,12 +2849,29 @@ describe('stdio runtime', () => {
         .trim()
         .split('\n')
         .filter(Boolean)
-        .map((line) => JSON.parse(line)) as Array<{ id?: number; result?: string; error?: { message?: string } }>
-      for (const id of [41, 42, 43, 44, 46]) {
+        .map((line) => JSON.parse(line)) as Array<{
+          id?: number
+          result?: string
+          error?: { message?: string; data?: Record<string, unknown> }
+        }>
+      for (const id of [41, 42, 44, 46]) {
         expect(responses.find((response) => response.id === id)?.error?.message).toContain(
           'auto-refresh cannot guarantee a fresh graph',
         )
+        expect(responses.find((response) => response.id === id)?.error?.data).toMatchObject({
+          retryable: false,
+          suggested_action: 'repair_graph',
+        })
       }
+      expect(responses.find((response) => response.id === 43)?.error).toMatchObject({
+        message: expect.stringContaining('temporarily reconciling'),
+        data: {
+          state: 'reconciling',
+          retryable: true,
+          retry_after_ms: 1_000,
+          suggested_action: 'retry_same_request',
+        },
+      })
       expect(responses.find((response) => response.id === 45)?.result).toContain('Nodes:')
     } finally {
       input.destroy()
@@ -2880,20 +2908,43 @@ describe('stdio runtime', () => {
       writeFileSync(join(root, 'main.ts'), 'export const value = 2\n', 'utf8')
       await waitFor(() => readWatcherStateForGraph(graphPath)?.status === 'reconciling')
 
+      input.write(`${JSON.stringify({ id: 52, method: 'stats' })}\n`)
       input.write(`${JSON.stringify({ id: 51, method: 'ping' })}\n`)
+      await waitFor(() => outputText.includes('"id":52'), 1_000)
       await waitFor(() => outputText.includes('"id":51'), 1_000)
       rmSync(lockPath, { force: true })
       await waitFor(() => readWatcherStateForGraph(graphPath)?.status === 'idle')
-      input.end()
+      input.end(`${JSON.stringify({ id: 53, method: 'stats' })}\n`)
       await serverPromise
 
-      const ping = outputText
+      const responses = outputText
         .trim()
         .split('\n')
         .filter(Boolean)
-        .map((line) => JSON.parse(line) as { id?: number; result?: unknown })
-        .find((response) => response.id === 51)
-      expect(ping?.result).toEqual({ ok: true })
+        .map((line) => JSON.parse(line) as {
+          id?: number
+          result?: unknown
+          error?: {
+            message?: string
+            data?: {
+              state?: string
+              retryable?: boolean
+              retry_after_ms?: number
+              suggested_action?: string
+            }
+          }
+        })
+      expect(responses.find((response) => response.id === 51)?.result).toEqual({ ok: true })
+      expect(responses.find((response) => response.id === 52)?.error).toMatchObject({
+        message: expect.stringContaining('temporarily reconciling'),
+        data: {
+          state: 'reconciling',
+          retryable: true,
+          retry_after_ms: 1_000,
+          suggested_action: 'retry_same_request',
+        },
+      })
+      expect(responses.find((response) => response.id === 53)?.result).toEqual(expect.any(String))
     } finally {
       rmSync(lockPath, { force: true })
       input.destroy()

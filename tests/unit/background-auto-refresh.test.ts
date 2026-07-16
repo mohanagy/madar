@@ -54,6 +54,30 @@ export function startGraphAutoRefresh() {
 }
 `
 
+const DELAYED_IMPORT_WAITING_WATCH_MODULE = `
+await new Promise((resolve) => setTimeout(resolve, 250))
+
+export function startGraphAutoRefresh() {
+  let resolveStartup
+  const startupSettled = new Promise((resolve) => {
+    resolveStartup = resolve
+  })
+  let resolveCompleted
+  const completed = new Promise((resolve) => {
+    resolveCompleted = resolve
+  })
+  return {
+    initialRebuilt: false,
+    startupSettled,
+    stop() {
+      resolveStartup()
+      resolveCompleted()
+    },
+    completed,
+  }
+}
+`
+
 async function waitFor(condition: () => boolean, timeoutMs = 2_000): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
@@ -82,6 +106,31 @@ function publishReadyWatcherState(root: string, graphPath: string): void {
 }
 
 describe('background auto-refresh', () => {
+  it('honors shutdown requested before the worker finishes importing its watcher', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'madar-background-early-stop-'))
+    const watchModulePath = join(root, 'delayed-import-watch.mjs')
+    writeFileSync(watchModulePath, DELAYED_IMPORT_WAITING_WATCH_MODULE, 'utf8')
+
+    try {
+      const refresh = startGraphAutoRefreshInBackground(
+        root,
+        0.02,
+        { noHtml: true, logger: { log() {}, error() {} } },
+        { watchModuleUrl: pathToFileURL(watchModulePath) },
+      )
+      refresh.stop()
+
+      await Promise.race([
+        refresh.completed,
+        delay(2_000).then(() => {
+          throw new Error('Background auto-refresh did not stop during startup')
+        }),
+      ])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('returns immediately while a slow initial reconciliation runs in a worker', async () => {
     const root = mkdtempSync(join(tmpdir(), 'madar-background-refresh-'))
     const graphPath = join(root, 'out', 'graph.json')
@@ -172,7 +221,7 @@ describe('background auto-refresh', () => {
         .map((line) => JSON.parse(line) as {
           id?: number
           result?: Record<string, unknown>
-          error?: { message?: string }
+          error?: { message?: string; data?: Record<string, unknown> }
         })
 
       expect(responses.find((response) => response.id === 1)?.result).toMatchObject({
@@ -181,9 +230,15 @@ describe('background auto-refresh', () => {
       expect(responses.find((response) => response.id === 2)?.result).toMatchObject({ prompts: expect.any(Array) })
       expect(responses.find((response) => response.id === 3)?.result).toEqual({ resources: [] })
       expect(responses.find((response) => response.id === 4)?.result).toMatchObject({ tools: expect.any(Array) })
-      expect(responses.find((response) => response.id === 5)?.error?.message).toContain(
-        'auto-refresh cannot guarantee a fresh graph',
-      )
+      expect(responses.find((response) => response.id === 5)?.error).toMatchObject({
+        message: expect.stringContaining('temporarily starting'),
+        data: {
+          state: 'starting',
+          retryable: true,
+          retry_after_ms: 1_000,
+          suggested_action: 'retry_same_request',
+        },
+      })
 
       await waitFor(() => refreshController?.startupComplete?.() === true)
       expect(existsSync(completionMarker)).toBe(true)

@@ -149,6 +149,7 @@ interface StdioResponse {
   error?: {
     code: number
     message: string
+    data?: Record<string, unknown>
   }
 }
 
@@ -192,7 +193,7 @@ function graphRootPath(graphPath: string): string | null {
 function autoRefreshGraphReadiness(
   controller: GraphAutoRefreshController,
   graphPath: string,
-): { ready: boolean; detail: string } {
+): { ready: boolean; detail: string; state: string; retryable: boolean; retryAfterMs?: number } {
   const startupComplete = controller.startupComplete?.() ?? true
   const backgroundFailure = controller.failureReason?.() ?? null
   const watcherState = readWatcherStateForGraph(graphPath)
@@ -209,16 +210,31 @@ function autoRefreshGraphReadiness(
     && watcherState.status === 'idle'
     && !watcherStateBlocksGraphReads(watcherState)
     && watcherMatchesPublishedPolicy
+  const state = watcherState?.status ?? (startupComplete ? 'unavailable' : 'starting')
+  const retryable = !ready
+    && backgroundFailure === null
+    && (
+      !startupComplete
+      || watcherState?.status === 'starting'
+      || watcherState?.status === 'pending'
+      || watcherState?.status === 'reconciling'
+    )
 
   if (watcherState) {
     return {
       ready,
+      state,
+      retryable,
+      ...(retryable ? { retryAfterMs: 1_000 } : {}),
       detail: `status=${watcherState.status}, coverage=${watcherState.coverage}, policy=${watcherState.policy_match === null ? 'unknown' : watcherState.policy_match ? 'match' : 'mismatch'}, published_policy=${watcherMatchesPublishedPolicy ? 'match' : 'mismatch'}${watcherState.failure_reason ? `, failure=${watcherState.failure_reason}` : ''}${backgroundFailure ? `, background_failure=${backgroundFailure}` : ''}`,
     }
   }
 
   return {
     ready,
+    state,
+    retryable,
+    ...(retryable ? { retryAfterMs: 1_000 } : {}),
     detail: backgroundFailure
       ? `background startup failed: ${backgroundFailure}`
       : startupComplete
@@ -231,11 +247,16 @@ function ok(id: string | number | null, result: unknown): StdioResponse {
   return { jsonrpc: '2.0', id, result }
 }
 
-function failure(id: string | number | null, code: number, message: string): StdioResponse {
+function failure(
+  id: string | number | null,
+  code: number,
+  message: string,
+  data?: Record<string, unknown>,
+): StdioResponse {
   return {
     jsonrpc: '2.0',
     id,
-    error: { code, message },
+    error: { code, message, ...(data ? { data } : {}) },
   }
 }
 
@@ -1037,10 +1058,22 @@ export async function serveGraphStdio(options: ServeGraphStdioOptions): Promise<
         } else if (refreshReadiness && !refreshReadiness.ready && requestMethod === 'resources/list') {
           response = ok(requestId(request), { resources: [] })
         } else if (refreshReadiness && !refreshReadiness.ready && requestMethod !== null && !AUTO_REFRESH_CONTROL_METHODS.has(requestMethod)) {
+          const readinessData = {
+            type: 'madar_graph_not_ready',
+            state: refreshReadiness.state,
+            retryable: refreshReadiness.retryable,
+            ...(refreshReadiness.retryAfterMs !== undefined
+              ? { retry_after_ms: refreshReadiness.retryAfterMs }
+              : {}),
+            suggested_action: refreshReadiness.retryable ? 'retry_same_request' : 'repair_graph',
+          }
           response = failure(
             requestId(request),
             JSONRPC_SERVER_ERROR,
-            `Madar auto-refresh cannot guarantee a fresh graph (${refreshReadiness.detail}). Wait for reconciliation or run \`madar generate . --update\` before retrying.`,
+            refreshReadiness.retryable
+              ? `Madar graph is temporarily ${refreshReadiness.state} (${refreshReadiness.detail}). Retry the same request after ${refreshReadiness.retryAfterMs ?? 1_000}ms; no manual graph generation is needed while reconciliation is active.`
+              : `Madar auto-refresh cannot guarantee a fresh graph (${refreshReadiness.detail}). Run \`madar status\`, then \`madar generate . --update\` if repair is required before retrying.`,
+            readinessData,
           )
         } else {
           emitResourceNotifications(output, options.graphPath, sessionState)
