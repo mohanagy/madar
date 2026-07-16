@@ -75,6 +75,8 @@ After upgrading Madar, rerun your agent's install command so its managed profile
 
 Starting with `0.31.2`, Codex installs set `startup_timeout_sec = 180`. Madar makes the MCP transport available while the initial graph reconciliation runs in a background worker. Graph-backed calls resume only after startup completes, watcher health is non-blocking with complete coverage, and the idle watcher's policy matches the published graph and manifest; `idle` alone is not a readiness guarantee.
 
+Starting with `0.31.3`, a graph-backed call made while Madar is `starting`, `pending`, or `reconciling` returns a structured retryable response. The agent should retry the same Madar request after the suggested delay instead of bypassing Madar or running generation manually. A dead refresh owner is recovered automatically; only failed, incomplete, or policy-mismatched graph states ask for repair.
+
 ## What Changes for the Agent
 
 Without Madar, a coding agent often begins with broad filename searches, repeated reads, and guesses about which route, service, or handler owns the task.
@@ -187,7 +189,9 @@ Read the [benchmark suite and all dated receipts](https://github.com/mohanagy/ma
 
 ## Current Release
 
-Current version: `0.31.2`.
+Current version: `0.31.3`.
+
+`0.31.3` recovers refresh leases whose owner has exited, waits safely through live refresh contention, and gives agents a structured retry signal during temporary graph reconciliation instead of pushing them to bypass Madar.
 
 `0.31.2` keeps the Codex MCP connection responsive while its initial automatic graph refresh runs, adds an explicit 180-second Codex startup window, and keeps graph-backed answers unavailable until the refreshed graph is ready.
 
@@ -195,7 +199,7 @@ Current version: `0.31.2`.
 
 `0.31.0` made code graphs directed by default, separated evidence strength from answer readiness, added bounded context recovery, made indexing completeness explicit, preserved generation policy during automatic refresh, isolated linked-worktree artifacts, and removed benchmark expectations from production retrieval.
 
-Read the full notes in the [0.31.2 changelog](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md#0312---2026-07-16).
+Read the full notes in the [0.31.3 changelog](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md#0313---2026-07-17).
 
 ## Documentation
 
