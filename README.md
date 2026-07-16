@@ -73,7 +73,7 @@ Installer details are in the [CLI and MCP reference](https://github.com/mohanagy
 
 After upgrading Madar, rerun your agent's install command so its managed profile receives current runtime settings. Older profiles may lack automatic refresh; older Codex profiles may also lack the extended MCP startup window needed by large or synchronized workspaces.
 
-Codex installs set `startup_timeout_sec = 180`. Madar makes the MCP transport available while the initial graph reconciliation runs in a background worker, but graph-backed calls remain safely unavailable until `madar status` reports the watcher as `idle`.
+Starting with `0.31.2`, Codex installs set `startup_timeout_sec = 180`. Madar makes the MCP transport available while the initial graph reconciliation runs in a background worker, but graph-backed calls remain safely unavailable until `madar status` reports the watcher as `idle`.
 
 ## What Changes for the Agent
 
@@ -187,13 +187,15 @@ Read the [benchmark suite and all dated receipts](https://github.com/mohanagy/ma
 
 ## Current Release
 
-Current version: `0.31.1`.
+Current version: `0.31.2`.
 
-`0.31.1` rebuilds the public onboarding path and clarifies what each benchmark experiment proves. Runtime behavior is unchanged from `0.31.0`.
+`0.31.2` keeps the Codex MCP connection responsive while its initial automatic graph refresh runs, adds an explicit 180-second Codex startup window, and keeps graph-backed answers unavailable until the refreshed graph is ready.
+
+`0.31.1` rebuilt the public onboarding path and clarified what each benchmark experiment proves. Runtime behavior was unchanged from `0.31.0`.
 
 `0.31.0` made code graphs directed by default, separated evidence strength from answer readiness, added bounded context recovery, made indexing completeness explicit, preserved generation policy during automatic refresh, isolated linked-worktree artifacts, and removed benchmark expectations from production retrieval.
 
-Read the full notes in the [0.31.1 changelog](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md#0311---2026-07-15).
+Read the full notes in the [0.31.2 changelog](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md#0312---2026-07-16).
 
 ## Documentation
 
