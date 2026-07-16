@@ -2,6 +2,17 @@
 
 All notable changes to the TypeScript package will be documented in this file.
 
+## [0.31.2] - 2026-07-16
+
+### Fixed
+
+- **Codex no longer times out while Madar performs the initial automatic refresh**: the MCP transport becomes responsive immediately while graph reconciliation runs in a background worker, and graph-backed calls remain fail-closed until the watcher reports a ready graph. Worker startup and reconciliation failures remain visible through watcher state, stderr, and MCP freshness errors. Closes #559.
+- **Managed Codex profiles now allow large workspaces enough time to start**: new and updated `.codex/config.toml` entries set `startup_timeout_sec = 180` without overwriting unrelated user configuration.
+
+### Notes
+
+- After upgrading, rerun `madar codex install` in each Codex workspace to migrate the managed MCP block to the extended startup timeout.
+
 ## [0.31.1] - 2026-07-15
 
 ### Changed

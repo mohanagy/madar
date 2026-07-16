@@ -41,6 +41,7 @@ const CODEX_PROMPT_HOOK_SCRIPT_MARKER = '// madar managed Codex UserPromptSubmit
 // a nested Codex session works without interpolating a shell-sensitive project path.
 const CODEX_PROMPT_HOOK_COMMAND = `node -e "const fs=require('fs');const path=require('path');let dir=process.cwd();for(;;){const script=path.join(dir,'.codex','madar-user-prompt-submit.cjs');if(fs.existsSync(script)){require(script);break}const parent=path.dirname(dir);if(parent===dir){process.exit(0)}dir=parent}"`
 export const CODEX_MCP_CONFIG_RELATIVE_PATH = '.codex/config.toml'
+export const CODEX_MCP_STARTUP_TIMEOUT_SECONDS = 180
 const CODEX_MCP_START_MARKER = '# >>> madar managed mcp >>>'
 const CODEX_MCP_END_MARKER = '# <<< madar managed mcp <<<'
 const CODEX_MCP_OWNS_PRECEDING_LINE_ENDING_MARKER = '# madar managed mcp: preceding line ending owned'
@@ -2134,6 +2135,7 @@ function renderCodexMcpBlock(lineEnding: string, ownsPrecedingLineEnding = false
     'args = ["serve", "--stdio", "--auto-refresh"]',
     'env = { MADAR_TOOL_PROFILE = "strict" }',
     'enabled = true',
+    `startup_timeout_sec = ${CODEX_MCP_STARTUP_TIMEOUT_SECONDS}`,
     CODEX_MCP_END_MARKER,
     '',
   ].join(lineEnding)

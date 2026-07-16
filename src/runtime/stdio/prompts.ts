@@ -1,10 +1,11 @@
-import { readFileSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 
 import { godNodes, suggestQuestions } from '../../pipeline/analyze.js'
 import { buildCommunityLabels } from '../../pipeline/community-naming.js'
 import { MCP_PROMPTS, type McpPromptDefinition } from './definitions.js'
 import { communitiesFromGraph, loadGraph } from '../serve.js'
 import { validateGraphPath } from '../../shared/security.js'
+import { resolveWorkspaceGraphPath } from '../../shared/workspace.js'
 
 interface StdioResponse {
   jsonrpc: '2.0'
@@ -174,6 +175,12 @@ function formatContextPackPromptTaskLine(task: string, prompt: string): string {
 }
 
 export function promptDefinitionsForGraph(graphPath: string): McpPromptDefinition[] {
+  if (!existsSync(resolveWorkspaceGraphPath(graphPath))) {
+    // MCP clients may discover prompts while auto-refresh is still creating the
+    // first graph. Static definitions keep startup responsive; prompts/get
+    // remains freshness-gated until reconciliation succeeds.
+    return MCP_PROMPTS
+  }
   const context = loadPromptContext(graphPath)
   const exampleLabels = context.topGodNodes.slice(0, 3).map((node) => node.label)
   const exampleCommunities = context.topCommunities.slice(0, 2).map((community) => `${community.label} (#${community.communityId})`)

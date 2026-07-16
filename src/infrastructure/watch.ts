@@ -112,6 +112,10 @@ export interface WatchOptions extends RebuildCodeOptions {
 export interface GraphAutoRefreshController {
   /** Whether the initial incremental reconciliation produced a graph. */
   initialRebuilt: boolean
+  /** Background controllers remain false until their initial reconciliation has settled. */
+  startupComplete?(): boolean
+  /** Returns a background startup/runtime failure that could not be read from watcher-state.json. */
+  failureReason?(): string | null
   /** Stops the watcher and releases its filesystem resources. */
   stop(): void
   /** Resolves once the watcher stops. */
