@@ -36,7 +36,7 @@ The local `watcher-state.json` beside `graph.json` is written atomically and inc
 - pending/failure details; and
 - stored/current policy fingerprints and match state.
 
-`madar doctor` and `madar status` render those fields. During an auto-refresh MCP session, graph-backed prompts, resources, completions, and tool calls are refused while state is pending, reconciling, failed, incomplete, or policy-mismatched. Retry after the state returns to `idle`; if it remains failed, run `madar generate . --update` and inspect `madar status`.
+`madar doctor` and `madar status` render those fields. During an auto-refresh MCP session, graph-backed prompts, resources, completions, and tool calls are refused while state is starting, pending, reconciling, failed, incomplete, or policy-mismatched. Retry after the state returns to `idle`; if it remains failed, run `madar generate . --update` and inspect `madar status`.
 
 MCP initialization, ping, and list/discovery requests remain responsive during `starting` and `reconciling`. This lets an agent connect without waiting for a cold large-repository build while preserving the same freshness boundary for every graph answer.
 

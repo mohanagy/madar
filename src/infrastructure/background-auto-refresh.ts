@@ -93,18 +93,22 @@ function markStarting(outputDir: string): void {
 }
 
 function markFailed(outputDir: string, message: string): void {
-  const current = readWatcherState(watcherStatePath(outputDir))
-  if (current && current.pid !== process.pid) {
-    return
+  try {
+    const current = readWatcherState(watcherStatePath(outputDir))
+    if (current && current.pid !== process.pid) {
+      return
+    }
+    const state = current ?? createWatcherState('polling', 0)
+    writeWatcherState(outputDir, {
+      ...state,
+      status: 'failed',
+      coverage: 'failed',
+      failure_reason: message,
+      next_reconciliation_at: null,
+    })
+  } catch {
+    // Controller state and stderr remain available when persistence is not.
   }
-  const state = current ?? createWatcherState('polling', 0)
-  writeWatcherState(outputDir, {
-    ...state,
-    status: 'failed',
-    coverage: 'failed',
-    failure_reason: message,
-    next_reconciliation_at: null,
-  })
 }
 
 function completedFailureController(message: string): GraphAutoRefreshController {

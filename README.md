@@ -73,7 +73,7 @@ Installer details are in the [CLI and MCP reference](https://github.com/mohanagy
 
 After upgrading Madar, rerun your agent's install command so its managed profile receives current runtime settings. Older profiles may lack automatic refresh; older Codex profiles may also lack the extended MCP startup window needed by large or synchronized workspaces.
 
-Starting with `0.31.2`, Codex installs set `startup_timeout_sec = 180`. Madar makes the MCP transport available while the initial graph reconciliation runs in a background worker, but graph-backed calls remain safely unavailable until `madar status` reports the watcher as `idle`.
+Starting with `0.31.2`, Codex installs set `startup_timeout_sec = 180`. Madar makes the MCP transport available while the initial graph reconciliation runs in a background worker. Graph-backed calls resume only after startup completes, watcher health is non-blocking with complete coverage, and the idle watcher's policy matches the published graph and manifest; `idle` alone is not a readiness guarantee.
 
 ## What Changes for the Agent
 

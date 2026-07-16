@@ -8,8 +8,11 @@ import { pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 import { startGraphAutoRefreshInBackground } from '../../src/infrastructure/background-auto-refresh.js'
-import { readWatcherStateForGraph } from '../../src/infrastructure/watcher-state.js'
+import { generateGraph } from '../../src/infrastructure/generate.js'
+import { readStoredGenerationPolicy } from '../../src/infrastructure/generation-policy.js'
+import { createWatcherState, readWatcherStateForGraph, writeWatcherState } from '../../src/infrastructure/watcher-state.js'
 import { serveGraphStdio } from '../../src/runtime/stdio-server.js'
+import type { GraphAutoRefreshController } from '../../src/infrastructure/watch.js'
 
 const SLOW_WATCH_MODULE = `
 import { writeFileSync } from 'node:fs'
@@ -41,6 +44,16 @@ export function startGraphAutoRefresh() {
 }
 `
 
+const DELAYED_FAILING_WATCH_MODULE = `
+export function startGraphAutoRefresh() {
+  const deadline = Date.now() + 250
+  while (Date.now() < deadline) {
+    // Give the parent time to make watcher-state persistence unavailable.
+  }
+  throw new Error('synthetic failure with unavailable watcher state')
+}
+`
+
 async function waitFor(condition: () => boolean, timeoutMs = 2_000): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
@@ -50,6 +63,22 @@ async function waitFor(condition: () => boolean, timeoutMs = 2_000): Promise<voi
     await delay(10)
   }
   throw new Error('Timed out waiting for expected condition')
+}
+
+function publishReadyWatcherState(root: string, graphPath: string): void {
+  const outputDir = join(root, 'out')
+  const policy = readStoredGenerationPolicy(graphPath, join(outputDir, 'manifest.json'))
+  if (!policy) {
+    throw new Error('Expected generated graph and manifest policy')
+  }
+  writeWatcherState(outputDir, {
+    ...createWatcherState('polling', 0),
+    status: 'idle',
+    coverage: 'complete',
+    stored_policy_fingerprint: policy.fingerprint,
+    current_policy_fingerprint: policy.fingerprint,
+    policy_match: true,
+  })
 }
 
 describe('background auto-refresh', () => {
@@ -98,18 +127,21 @@ describe('background auto-refresh', () => {
     const output = new PassThrough()
     const errorOutput = new PassThrough()
     let outputText = ''
+    let refreshController: GraphAutoRefreshController | null = null
     output.on('data', (chunk) => {
       outputText += chunk.toString('utf8')
     })
+    writeFileSync(join(root, 'main.ts'), 'export const value = 1\n', 'utf8')
+    generateGraph(root, { noHtml: true })
     writeFileSync(watchModulePath, SLOW_WATCH_MODULE, 'utf8')
 
-    input.end([
+    input.write(`${[
       JSON.stringify({ id: 1, method: 'initialize' }),
       JSON.stringify({ id: 2, method: 'prompts/list' }),
       JSON.stringify({ id: 3, method: 'resources/list' }),
       JSON.stringify({ id: 4, method: 'tools/list' }),
       JSON.stringify({ id: 5, method: 'stats' }),
-    ].join('\n'))
+    ].join('\n')}\n`)
 
     const serverPromise = serveGraphStdio({
       graphPath,
@@ -118,12 +150,15 @@ describe('background auto-refresh', () => {
       input,
       output,
       errorOutput,
-      autoRefreshStarter: (watchPath, debounceSeconds, options) => startGraphAutoRefreshInBackground(
-        watchPath,
-        debounceSeconds,
-        options,
-        { watchModuleUrl: pathToFileURL(watchModulePath) },
-      ),
+      autoRefreshStarter: (watchPath, debounceSeconds, options) => {
+        refreshController = startGraphAutoRefreshInBackground(
+          watchPath,
+          debounceSeconds,
+          options,
+          { watchModuleUrl: pathToFileURL(watchModulePath) },
+        )
+        return refreshController
+      },
     })
 
     try {
@@ -150,7 +185,18 @@ describe('background auto-refresh', () => {
         'auto-refresh cannot guarantee a fresh graph',
       )
 
+      await waitFor(() => refreshController?.startupComplete?.() === true)
+      expect(existsSync(completionMarker)).toBe(true)
+      publishReadyWatcherState(root, graphPath)
+      input.end(`${JSON.stringify({ id: 6, method: 'stats' })}\n`)
       await serverPromise
+      const readyResponses = outputText
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as { id?: number; result?: string; error?: unknown })
+      expect(readyResponses.find((response) => response.id === 6)?.result).toContain('Nodes:')
+      expect(readyResponses.find((response) => response.id === 6)?.error).toBeUndefined()
       expect(readFileSync(watchModulePath, 'utf8')).toContain('Deliberately block only the worker thread')
     } finally {
       input.destroy()
@@ -211,6 +257,81 @@ describe('background auto-refresh', () => {
     } finally {
       input.destroy()
       await serverPromise.catch(() => {})
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('does not let a controller failure reuse stale ready watcher state', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'madar-background-stale-state-'))
+    const graphPath = join(root, 'out', 'graph.json')
+    const input = new PassThrough()
+    const output = new PassThrough()
+    const errorOutput = new PassThrough()
+    let outputText = ''
+    output.on('data', (chunk) => {
+      outputText += chunk.toString('utf8')
+    })
+    writeFileSync(join(root, 'main.ts'), 'export const value = 1\n', 'utf8')
+    generateGraph(root, { noHtml: true })
+    publishReadyWatcherState(root, graphPath)
+    input.end([
+      JSON.stringify({ id: 21, method: 'initialize' }),
+      JSON.stringify({ id: 22, method: 'stats' }),
+    ].join('\n'))
+
+    try {
+      await serveGraphStdio({
+        graphPath,
+        autoRefresh: true,
+        workspaceRoot: root,
+        input,
+        output,
+        errorOutput,
+        autoRefreshStarter: () => ({
+          initialRebuilt: false,
+          startupComplete: () => true,
+          failureReason: () => 'synthetic startup persistence failure',
+          stop() {},
+          completed: Promise.resolve(),
+        }),
+      })
+      const responses = outputText
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as { id?: number; result?: unknown; error?: { message?: string } })
+      expect(responses.find((response) => response.id === 21)?.result).toBeDefined()
+      expect(responses.find((response) => response.id === 22)?.error?.message).toContain(
+        'synthetic startup persistence failure',
+      )
+    } finally {
+      input.destroy()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps controller and stderr failure reporting when watcher-state persistence disappears', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'madar-background-persistence-'))
+    const outputDir = join(root, 'out')
+    const watchModulePath = join(root, 'delayed-failure.mjs')
+    const errors: string[] = []
+    writeFileSync(watchModulePath, DELAYED_FAILING_WATCH_MODULE, 'utf8')
+
+    try {
+      const refresh = startGraphAutoRefreshInBackground(
+        root,
+        0.02,
+        { noHtml: true, logger: { log() {}, error(message) { errors.push(String(message)) } } },
+        { watchModuleUrl: pathToFileURL(watchModulePath) },
+      )
+      rmSync(outputDir, { recursive: true, force: true })
+      writeFileSync(outputDir, 'watcher state cannot be persisted here', 'utf8')
+
+      await waitFor(() => typeof refresh.failureReason?.() === 'string', 5_000)
+      await refresh.completed
+      expect(refresh.failureReason?.()).toContain('synthetic failure with unavailable watcher state')
+      expect(errors.join('\n')).toContain('synthetic failure with unavailable watcher state')
+    } finally {
       rmSync(root, { recursive: true, force: true })
     }
   })

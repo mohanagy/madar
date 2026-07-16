@@ -204,6 +204,7 @@ function autoRefreshGraphReadiness(
     && publishedPolicy !== null
     && watcherState.stored_policy_fingerprint === publishedPolicy.fingerprint
   const ready = startupComplete
+    && backgroundFailure === null
     && watcherState !== null
     && watcherState.status === 'idle'
     && !watcherStateBlocksGraphReads(watcherState)
@@ -212,7 +213,7 @@ function autoRefreshGraphReadiness(
   if (watcherState) {
     return {
       ready,
-      detail: `status=${watcherState.status}, coverage=${watcherState.coverage}, policy=${watcherState.policy_match === null ? 'unknown' : watcherState.policy_match ? 'match' : 'mismatch'}, published_policy=${watcherMatchesPublishedPolicy ? 'match' : 'mismatch'}${watcherState.failure_reason ? `, failure=${watcherState.failure_reason}` : ''}`,
+      detail: `status=${watcherState.status}, coverage=${watcherState.coverage}, policy=${watcherState.policy_match === null ? 'unknown' : watcherState.policy_match ? 'match' : 'mismatch'}, published_policy=${watcherMatchesPublishedPolicy ? 'match' : 'mismatch'}${watcherState.failure_reason ? `, failure=${watcherState.failure_reason}` : ''}${backgroundFailure ? `, background_failure=${backgroundFailure}` : ''}`,
     }
   }
 
