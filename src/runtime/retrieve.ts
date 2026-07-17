@@ -1682,6 +1682,7 @@ interface FrameworkQuestionProfile {
   fastify: boolean
   trpc: boolean
   prisma: boolean
+  gin: boolean
   routeIntent: boolean
   middlewareIntent: boolean
   handlerIntent: boolean
@@ -1743,6 +1744,7 @@ function activeFrameworksForProfile(profile: FrameworkQuestionProfile): Readonly
   if (profile.fastify) frameworks.add('fastify')
   if (profile.trpc) frameworks.add('trpc')
   if (profile.prisma) frameworks.add('prisma')
+  if (profile.gin) frameworks.add('gin')
   return frameworks
 }
 
@@ -4442,6 +4444,7 @@ function buildFrameworkQuestionProfile(question: string, questionTokens: readonl
   const explicitFastify = includesAnyToken(questionTokens, ['fastify'])
   const explicitTrpc = includesAnyToken(questionTokens, ['trpc', 'procedure', 'procedures'])
   const explicitPrisma = includesAnyToken(questionTokens, ['prisma'])
+  const explicitGin = includesAnyToken(questionTokens, ['gin'])
   const routerIntent = includesAnyToken(questionTokens, ['router', 'routers'])
   const resolverIntent = includesAnyToken(questionTokens, ['resolver', 'resolvers', 'graphql'])
   const pluginIntent = includesAnyToken(questionTokens, ['plugin', 'plugins'])
@@ -4513,8 +4516,7 @@ function buildFrameworkQuestionProfile(question: string, questionTokens: readonl
     explicitNextPagesArtifact ||
     layoutIntent ||
     clientIntent ||
-    serverIntent ||
-    apiIntent
+    serverIntent
   const hono = explicitHono
   const fastify = explicitFastify || pluginIntent
   const trpc =
@@ -4522,6 +4524,10 @@ function buildFrameworkQuestionProfile(question: string, questionTokens: readonl
     || procedureIntent
     || (routerIntent && (queryIntent || mutationIntent || subscriptionIntent))
   const repository = storageEndpointIntent
+  const gin = explicitGin || (
+    includesAnyToken(questionTokens, ['go'])
+    && (routeIntent || apiIntent)
+  )
   const prisma = explicitPrisma || modelIntent || persistenceIntent || (
     (storageReadIntent || storageWriteIntent)
     && (modelIntent || explicitPrisma || persistenceIntent)
@@ -4560,7 +4566,7 @@ function buildFrameworkQuestionProfile(question: string, questionTokens: readonl
       includesAnyToken(questionTokens, ['route', 'routes', 'middleware', 'action', 'actions', 'page', 'pages']))
 
   return {
-    frameworkShaped: express || routingControllers || redux || reactRouter || nest || next || repository || hono || fastify || trpc || prisma,
+    frameworkShaped: express || routingControllers || redux || reactRouter || nest || next || repository || hono || fastify || trpc || prisma || gin,
     express,
     routingControllers,
     redux,
@@ -4572,6 +4578,7 @@ function buildFrameworkQuestionProfile(question: string, questionTokens: readonl
     fastify,
     trpc,
     prisma,
+    gin,
     routeIntent,
     middlewareIntent,
     handlerIntent,
@@ -4911,6 +4918,10 @@ function frameworkBoostForNode(
             ? 2
             : 0.75
     }
+  }
+
+  if (profile.gin && frameworkRole === 'gin_route') {
+    boost += profile.routeIntent ? 4 : 1.5
   }
 
   if (profile.frameworkShaped && boost === 0 && ['function', 'class', 'variable'].includes(nodeKind)) {
