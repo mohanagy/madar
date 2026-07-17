@@ -312,6 +312,10 @@ export interface ContextPackNode {
   source_file: string
   line_number: number
   snippet: string | null
+  /** First source line rendered in `snippet` when it differs from the graph node declaration. */
+  snippet_line_number?: number | undefined
+  /** Whether the snippet is bounded to the symbol or is query evidence selected from its source file. */
+  snippet_scope?: 'symbol' | 'source_file' | undefined
   file_type?: string | undefined
   match_score?: number | undefined
   relevance_band?: 'direct' | 'related' | 'peripheral' | undefined

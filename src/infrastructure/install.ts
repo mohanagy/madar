@@ -1,11 +1,10 @@
-import { existsSync, mkdirSync, readFileSync, rmdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { createHash, randomUUID } from 'node:crypto'
+import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { getBuiltInSkillContent } from './install-skill-templates.js'
 import {
-  renderMarkdownCodexRoutingTable,
   renderMarkdownMcpRoutingTable,
-  renderPlainCodexRoutingGuide,
   renderPlainMcpRoutingGuide,
 } from './install-routing-guidance.js'
 import { buildPromptApplicabilityHookScript } from '../runtime/task-applicability.js'
@@ -42,9 +41,16 @@ const CODEX_PROMPT_HOOK_SCRIPT_MARKER = '// madar managed Codex UserPromptSubmit
 const CODEX_PROMPT_HOOK_COMMAND = `node -e "const fs=require('fs');const path=require('path');let dir=process.cwd();for(;;){const script=path.join(dir,'.codex','madar-user-prompt-submit.cjs');if(fs.existsSync(script)){require(script);break}const parent=path.dirname(dir);if(parent===dir){process.exit(0)}dir=parent}"`
 export const CODEX_MCP_CONFIG_RELATIVE_PATH = '.codex/config.toml'
 export const CODEX_MCP_STARTUP_TIMEOUT_SECONDS = 180
+export const CODEX_MCP_TOOL_TIMEOUT_SECONDS = 60
 const CODEX_MCP_START_MARKER = '# >>> madar managed mcp >>>'
 const CODEX_MCP_END_MARKER = '# <<< madar managed mcp <<<'
+const CODEX_MCP_SCOPED_START_MARKER_PREFIX = '# >>> madar managed mcp:'
+const CODEX_MCP_SCOPED_END_MARKER_PREFIX = '# <<< madar managed mcp:'
 const CODEX_MCP_OWNS_PRECEDING_LINE_ENDING_MARKER = '# madar managed mcp: preceding line ending owned'
+const CODEX_MCP_CONFIG_LOCK_SUFFIX = '.madar.lock'
+const CODEX_MCP_CONFIG_LOCK_TIMEOUT_MS = 10_000
+const CODEX_MCP_CONFIG_LOCK_RETRY_MS = 25
+const CODEX_MCP_CONFIG_DEFAULT_MODE = 0o600
 
 interface InstallPlatformConfig {
   skillFile: string
@@ -341,12 +347,28 @@ function strictContextPackStopRule(markdown: boolean): string {
   return 'after calling Madar, treat evidence.answerability.state as authoritative and evidence.pack_confidence as compatibility-only: ready means answer from the pack; ready_with_caveat means answer with evidence.answerability.caveats; verify_targets means inspect only evidence.answerability.verification_targets; insufficient means follow broad_search_fallback exactly'
 }
 
-function strictContextPackExpandRule(markdown: boolean): string {
+function strictContextPackInvocationRule(markdown: boolean): string {
   if (markdown) {
-    return 'Madar already ran bounded cumulative recovery. Do not restart repository exploration: for `verify_targets`, call `context_expand` with a listed handle or read only a listed file; only `insufficient` plus `broad_search_fallback: allowed` permits one directory-scoped search.'
+    return 'Call `context_pack` exactly once per user task. Copy the entire user codebase request byte-for-byte into `prompt`, including read-only, no-change, scope, and formatting constraints; do not rewrite, omit, expand, enumerate, split, or issue follow-up `context_pack` calls.'
   }
 
-  return 'Madar already ran bounded cumulative recovery; do not restart repository exploration: for verify_targets, call context_expand with a listed handle or read only a listed file; only insufficient plus broad_search_fallback allowed permits one directory-scoped search'
+  return 'call context_pack exactly once per user task; copy the entire user codebase request byte-for-byte into prompt, including read-only, no-change, scope, and formatting constraints; do not rewrite, omit, expand, enumerate, split, or issue follow-up context_pack calls'
+}
+
+function strictReadOnlyReadyTerminalRule(markdown: boolean): string {
+  if (markdown) {
+    return 'For read-only `explain` tasks, `ready` and `ready_with_caveat` are terminal: cite `source_file`, `label`, `line_number` / `snippet_line_number`, and the included snippets directly. Do not run repository `Read`, `Grep`, `Glob`, or `Bash` merely to verify the pack, obtain exact lines, or reopen selected files.'
+  }
+
+  return 'for read-only explain tasks, ready and ready_with_caveat are terminal: cite source_file, label, line_number or snippet_line_number, and the included snippets directly; do not run repository Read, Grep, Glob, or Bash merely to verify the pack, obtain exact lines, or reopen selected files'
+}
+
+function strictContextPackExpandRule(markdown: boolean): string {
+  if (markdown) {
+    return 'Madar already ran bounded cumulative recovery. Do not restart repository exploration: for `verify_targets`, call `context_expand` once with a listed handle, then treat that expansion result as terminal; only `insufficient` plus `broad_search_fallback: allowed` permits one directory-scoped search.'
+  }
+
+  return 'Madar already ran bounded cumulative recovery; do not restart repository exploration: for verify_targets, call context_expand once with a listed handle, then treat that expansion result as terminal; only insufficient plus broad_search_fallback allowed permits one directory-scoped search'
 }
 
 function strictGraphReportFallbackRule(markdown: boolean): string {
@@ -369,10 +391,21 @@ const RETRIEVE_FIRST_MESSAGE =
   `STOP. This project has a madar knowledge graph. ${renderPlainMcpRoutingGuide()} Use the graph result as the first bounded pass for codebase questions, then validate with focused reads or tests when the graph is insufficient. ${strictNonMadarMcpRule(false)}. ${strictSkillOverrideRule(false)}. Do not use Glob, Grep, Bash, Read, or Agent tools first. Only fall back to raw file tools if the graph tools cannot answer the question or the MCP server is unavailable.`
 
 const STRICT_CONTEXT_PACK_MESSAGE =
-  `STOP. This project has a madar knowledge graph. Use strict compact MCP mode: call context_pack once for the task before broader exploration, ${strictContextPackStopRule(false)}, ${strictContextPackNoBroadExplorationRule(false)}, ${strictNonMadarMcpRule(false)}, ${strictSkillOverrideRule(false)}, ${strictContextPackExpandRule(false)}, and ${strictGraphReportFallbackRule(false)}.`
+  `STOP. This project has a madar knowledge graph. Use strict compact MCP mode: ${strictContextPackInvocationRule(false)}, ${strictContextPackStopRule(false)}, ${strictReadOnlyReadyTerminalRule(false)}, ${strictContextPackNoBroadExplorationRule(false)}, ${strictNonMadarMcpRule(false)}, ${strictSkillOverrideRule(false)}, ${strictContextPackExpandRule(false)}, and ${strictGraphReportFallbackRule(false)}.`
 
 const CODEX_CONTEXT_PACK_FIRST_MESSAGE =
-  `STOP. This project has a madar knowledge graph. Follow the Codex context-pack-first workflow: run madar pack "<task or question>" --task explain before broad Bash search, raw file reads, or spawning workers. Use --task review, --task debug, or --task impact when that better matches the work. ${renderPlainCodexRoutingGuide()} ${strictContextPackNoBroadExplorationRule(false)}. ${strictNonMadarMcpRule(false)}. ${strictSkillOverrideRule(false)}. If MCP graph tools are available, use context_pack, context_expand, retrieve, impact, or graph_summary to refine the pack. ${strictGraphReportFallbackRule(false)}.`
+  `STOP. This project has a madar knowledge graph. Follow the Codex context-pack-first workflow: ${strictContextPackInvocationRule(false)}. If MCP graph tools are unavailable, run madar pack with the user's codebase request copied verbatim before broad Bash search, raw file reads, or spawning workers. Use --task review, --task debug, or --task impact when that better matches the work. Strict MCP exposes only context_pack and context_expand: use task=impact or task=review on the first pack instead of graph-navigation tools. ${strictReadOnlyReadyTerminalRule(false)}. ${strictContextPackNoBroadExplorationRule(false)}. ${strictNonMadarMcpRule(false)}. ${strictSkillOverrideRule(false)}. For verify_targets, use context_expand once only with a listed verification handle and treat the result as terminal; do not expand ready or ready_with_caveat packs. ${strictGraphReportFallbackRule(false)}.`
+
+function renderMarkdownStrictContextPackRoutingTable(): string {
+  return `| Prompt type | First strict MCP tool |
+| --- | --- |
+| "how does X work" / explain runtime / flow | \`context_pack\` with \`task: "explain"\` |
+| "what breaks if I change X" / impact analysis | \`context_pack\` with \`task: "impact"\` |
+| review changed code | \`context_pack\` with \`task: "review"\` |
+| implementation planning | \`context_pack\` with \`task: "implement"\` |
+
+Strict exposes no general graph-navigation tool after this pack. Use \`context_expand\` only for a listed \`verify_targets\` handle.`
+}
 
 const SETTINGS_HOOK = {
   // SECURITY: Keep this command static. Do not interpolate user-controlled input here.
@@ -445,13 +478,14 @@ const STRICT_CLAUDE_MD_SECTION = `${SECTION_MARKER}
 IMPORTANT: This project has a madar knowledge graph. You MUST follow these strict compact MCP rules:
 
 1. **First decide whether the task needs local repository source-code context.** Only use madar when the task needs local repository source-code context. Skip madar for GitHub Projects board reviews, external URL/WebFetch-only tasks, \`gh auth\` / \`gh project\` setup, package-registry/security pages, and Product Hunt or marketing copy work.
-2. **Call \`context_pack\` once for the task before broader exploration.**
+2. **${strictContextPackInvocationRule(true)}**
 3. **${strictContextPackStopRule(true)}**
-4. **${strictContextPackNoBroadExplorationRule(true)}**
-5. **${strictNonMadarMcpRule(true)}**
-6. **${strictSkillOverrideRule(true)}**
-7. **${strictContextPackExpandRule(true)}** Use \`context_expand\` first when the pack returns a handle; otherwise use \`retrieve\`. Use \`impact\` for blast radius and \`graph_summary\` for a bounded repo overview.
-8. **${strictGraphReportFallbackRule(true)}**
+4. **${strictReadOnlyReadyTerminalRule(true)}**
+5. **${strictContextPackNoBroadExplorationRule(true)}**
+6. **${strictNonMadarMcpRule(true)}**
+7. **${strictSkillOverrideRule(true)}**
+8. **${strictContextPackExpandRule(true)}** For \`verify_targets\`, use \`context_expand\` only with a listed verification handle. Do not expand \`ready\` or \`ready_with_caveat\` packs. Strict exposes no other post-pack graph-navigation tool; select \`task: "impact"\` on the first pack for blast radius.
+9. **${strictGraphReportFallbackRule(true)}**
 `
 
 const AGENTS_MD_SECTION = `${SECTION_MARKER}
@@ -479,13 +513,14 @@ IMPORTANT: This project has a madar knowledge graph. Use a strict context-pack-f
    - \`madar pack "<task or question>" --task explain\`
    - use \`--task review\`, \`--task debug\`, or \`--task impact\` when that better matches the work
 3. **${strictContextPackNoBroadExplorationRule(true)}**
-4. **${strictNonMadarMcpRule(true)}**
-5. **${strictSkillOverrideRule(true)}**
-6. **Regenerate before expanding manually** when the pack is stale or missing:
+4. **${strictReadOnlyReadyTerminalRule(true)}**
+5. **${strictNonMadarMcpRule(true)}**
+6. **${strictSkillOverrideRule(true)}**
+7. **Regenerate before expanding manually** when the pack is stale or missing:
    - run \`madar generate .\`
    - ${strictGraphReportFallbackRule(true)}
-7. **This profile writes AGENTS.md only.** Aider does not get an auto-installed MCP server or hook from this installer, so the AGENTS.md rule plus explicit \`madar pack\` calls are the enforcement mechanism.
-8. **Uninstall behavior:** run \`madar aider uninstall\` to remove this AGENTS.md section while preserving unrelated content.
+8. **This profile writes AGENTS.md only.** Aider does not get an auto-installed MCP server or hook from this installer, so the AGENTS.md rule plus explicit \`madar pack\` calls are the enforcement mechanism.
+9. **Uninstall behavior:** run \`madar aider uninstall\` to remove this AGENTS.md section while preserving unrelated content.
 
 Manual verification:
 
@@ -505,32 +540,31 @@ const CODEX_AGENTS_MD_SECTION = `${SECTION_MARKER}
 IMPORTANT: This project has a madar knowledge graph. Use a strict context-pack-first workflow:
 
 1. **First decide whether the task needs local repository source-code context.** Only use madar when the task needs local repository source-code context. Skip madar for GitHub Projects board reviews, external URL/WebFetch-only tasks, \`gh auth\` / \`gh project\` setup, package-registry/security pages, and Product Hunt or marketing copy work.
-2. **Before broad code search, file reads, or worker dispatch**, compile a task-specific context pack:
+2. **${strictContextPackInvocationRule(true)}** If MCP is unavailable, compile the pack with the user's request copied verbatim:
    - \`madar pack "<task or question>" --task explain\`
    - use \`--task review\`, \`--task debug\`, or \`--task impact\` when that better matches the work
 3. **For each codebase question, start with the specific Madar command below first.**
 
-${renderMarkdownCodexRoutingTable()}
+${renderMarkdownStrictContextPackRoutingTable()}
 4. **${strictContextPackNoBroadExplorationRule(true)}**
-5. **${strictNonMadarMcpRule(true)}**
-6. **${strictSkillOverrideRule(true)}**
-7. If MCP graph tools are available after the pack, use the focused tool that matches the next question:
-   - \`context_pack\` for a fresh task-specific pack
-   - \`context_expand\` for a handle returned by a pack
-   - \`retrieve\` for direct codebase questions
-   - \`impact\` for blast radius
-   - \`graph_summary\` for repo overview
-8. **${strictGraphReportFallbackRule(true)}**
-9. **Do not dispatch \`spawn_agent\` workers first** for codebase discovery. Let the context pack define likely entry files, risks, and missing context before parallel work.
-10. **Codex activation boundary:** \`madar codex install\` writes this Madar-owned AGENTS.md section, \`.codex/hooks.json\`, \`.codex/madar-user-prompt-submit.cjs\`, and a marker-owned \`[mcp_servers.madar]\` block in \`.codex/config.toml\`. The \`UserPromptSubmit\` hook supplies model-visible context-pack-first guidance only for local code tasks; it is guidance, not enforcement. Enable it only in a repository you trust, then restart Codex, use \`/hooks\` to review and trust the project hook, and use \`/mcp\` or \`codex mcp list\` to verify the MCP server. \`madar doctor\` and \`madar status\` validate on-disk files only; they do not prove Codex has trusted or activated them.
-11. **Uninstall behavior:** run \`madar codex uninstall\` to remove only this AGENTS.md section, the Madar hook, the Madar hook script, and the marker-owned MCP block while preserving unrelated content.
+5. **${strictReadOnlyReadyTerminalRule(true)}**
+6. **${strictNonMadarMcpRule(true)}**
+7. **${strictSkillOverrideRule(true)}**
+8. If MCP graph tools are available after the pack, use the focused tool that matches the next question:
+   - \`context_pack\` exactly once for the current user task
+   - \`context_expand\` only for a listed \`verify_targets\` handle, never for \`ready\` or \`ready_with_caveat\`
+   - no other graph-navigation tool is available in this strict profile; choose the matching \`task\` on the first pack instead
+9. **${strictGraphReportFallbackRule(true)}**
+10. **Do not dispatch \`spawn_agent\` workers first** for codebase discovery. Let the context pack define likely entry files, risks, and missing context before parallel work.
+11. **Codex activation boundary:** \`madar codex install\` writes this Madar-owned AGENTS.md section, \`.codex/hooks.json\`, \`.codex/madar-user-prompt-submit.cjs\`, and a workspace-scoped marker-owned MCP block in Codex's loaded user config (\`$CODEX_HOME/config.toml\`, normally \`~/.codex/config.toml\`). The MCP block has a unique server name, pins \`cwd\` to this workspace, and sets both startup and tool-call timeouts; this lets worktrees coexist without retargeting one another. The \`UserPromptSubmit\` hook supplies model-visible context-pack-first guidance only for local code tasks; it is guidance, not enforcement. Enable it only in a repository you trust, then restart Codex, use \`/hooks\` to review and trust the project hook, and use \`/mcp\` or \`codex mcp list\` to verify the MCP server. \`madar doctor\` and \`madar status\` validate installed wiring only; they do not prove Codex has trusted or activated it.
+12. **Uninstall behavior:** run \`madar codex uninstall\` to remove only this AGENTS.md section, the Madar hook, the Madar hook script, and this workspace's marker-owned user-config MCP block while preserving unrelated content and other workspaces.
 
 Manual verification:
 
 \`\`\`bash
 madar generate .
 madar codex install
-test -f AGENTS.md && test -f .codex/hooks.json && test -f .codex/madar-user-prompt-submit.cjs && test -f .codex/config.toml
+test -f AGENTS.md && test -f .codex/hooks.json && test -f .codex/madar-user-prompt-submit.cjs && test -f "\${CODEX_HOME:-$HOME/.codex}/config.toml"
 # In a trusted repository, restart Codex and use /hooks to review/trust the hook.
 # Then use /mcp or codex mcp list to verify the local Madar MCP server.
 madar doctor
@@ -550,17 +584,16 @@ IMPORTANT: This project has a madar knowledge graph. Use a strict context-pack-f
    - \`madar pack "<task or question>" --task explain\`
    - use \`--task review\`, \`--task debug\`, or \`--task impact\` when that better matches the work
 3. **${strictContextPackNoBroadExplorationRule(true)}**
-4. **${strictNonMadarMcpRule(true)}**
-5. **${strictSkillOverrideRule(true)}**
-6. After the pack, use MCP graph tools when available inside OpenCode:
-   - \`context_pack\` for a fresh task-specific pack
-   - \`context_expand\` for a handle returned by a pack
-   - \`retrieve\` for direct codebase questions
-   - \`impact\` for blast radius
-   - \`graph_summary\` for repo overview
-7. **Install artifacts:** this profile writes this AGENTS.md section, \`.opencode/plugins/madar.js\`, and the madar MCP server entry in \`opencode.json\` or \`opencode.jsonc\`.
-8. **${strictGraphReportFallbackRule(true)}**
-9. **Uninstall behavior:** run \`madar opencode uninstall\` to remove the madar AGENTS.md section, plugin entry, plugin file, and madar MCP config while preserving unrelated content.
+4. **${strictReadOnlyReadyTerminalRule(true)}**
+5. **${strictNonMadarMcpRule(true)}**
+6. **${strictSkillOverrideRule(true)}**
+7. After the pack, use MCP graph tools when available inside OpenCode:
+   - \`context_pack\` exactly once for the current user task
+   - \`context_expand\` only for a listed \`verify_targets\` handle, never for \`ready\` or \`ready_with_caveat\`
+   - no other graph-navigation tool is available in this strict profile; choose the matching \`task\` on the first pack instead
+8. **Install artifacts:** this profile writes this AGENTS.md section, \`.opencode/plugins/madar.js\`, and the madar MCP server entry in \`opencode.json\` or \`opencode.jsonc\`.
+9. **${strictGraphReportFallbackRule(true)}**
+10. **Uninstall behavior:** run \`madar opencode uninstall\` to remove the madar AGENTS.md section, plugin entry, plugin file, and madar MCP config while preserving unrelated content.
 
 Manual verification:
 
@@ -592,13 +625,14 @@ const STRICT_GEMINI_MD_SECTION = `${SECTION_MARKER}
 IMPORTANT: This project has a madar knowledge graph. Use strict compact MCP guidance:
 
 1. **First decide whether the task needs local repository source-code context.** Only use madar when the task needs local repository source-code context. Skip madar for GitHub Projects board reviews, external URL/WebFetch-only tasks, \`gh auth\` / \`gh project\` setup, package-registry/security pages, and Product Hunt or marketing copy work.
-2. **Call \`context_pack\` once for the task before broader exploration.**
+2. **${strictContextPackInvocationRule(true)}**
 3. **${strictContextPackStopRule(true)}**
-4. **${strictContextPackNoBroadExplorationRule(true)}**
-5. **${strictNonMadarMcpRule(true)}**
-6. **${strictSkillOverrideRule(true)}**
-7. **${strictContextPackExpandRule(true)}** Use \`context_expand\` first when the pack returns a handle; otherwise use \`retrieve\`. Use \`impact\` for blast radius and \`graph_summary\` for a bounded repo overview.
-8. **${strictGraphReportFallbackRule(true)}**
+4. **${strictReadOnlyReadyTerminalRule(true)}**
+5. **${strictContextPackNoBroadExplorationRule(true)}**
+6. **${strictNonMadarMcpRule(true)}**
+7. **${strictSkillOverrideRule(true)}**
+8. **${strictContextPackExpandRule(true)}** For \`verify_targets\`, use \`context_expand\` only with a listed verification handle. Do not expand \`ready\` or \`ready_with_caveat\` packs. Strict exposes no other post-pack graph-navigation tool; select \`task: "impact"\` on the first pack for blast radius.
+9. **${strictGraphReportFallbackRule(true)}**
 `
 
 const SKILL_REGISTRATION_MARKER = '- **madar**'
@@ -685,13 +719,14 @@ alwaysApply: true
 IMPORTANT: This project has a madar knowledge graph. Use strict compact MCP guidance:
 
 1. **First decide whether the task needs local repository source-code context.** Only use madar when the task needs local repository source-code context. Skip madar for GitHub Projects board reviews, external URL/WebFetch-only tasks, \`gh auth\` / \`gh project\` setup, package-registry/security pages, and Product Hunt or marketing copy work.
-2. **Call \`context_pack\` once for the task before broader exploration.**
+2. **${strictContextPackInvocationRule(true)}**
 3. **${strictContextPackStopRule(true)}**
-4. **${strictContextPackNoBroadExplorationRule(true)}**
-5. **${strictNonMadarMcpRule(true)}**
-6. **${strictSkillOverrideRule(true)}**
-7. **${strictContextPackExpandRule(true)}** Use \`context_expand\` first when the pack returns a handle; otherwise use \`retrieve\`. Use \`impact\` for blast radius and \`graph_summary\` for a bounded repo overview.
-8. **${strictGraphReportFallbackRule(true)}**
+4. **${strictReadOnlyReadyTerminalRule(true)}**
+5. **${strictContextPackNoBroadExplorationRule(true)}**
+6. **${strictNonMadarMcpRule(true)}**
+7. **${strictSkillOverrideRule(true)}**
+8. **${strictContextPackExpandRule(true)}** For \`verify_targets\`, use \`context_expand\` only with a listed verification handle. Do not expand \`ready\` or \`ready_with_caveat\` packs. Strict exposes no other post-pack graph-navigation tool; select \`task: "impact"\` on the first pack for blast radius.
+9. **${strictGraphReportFallbackRule(true)}**
 `
 
 function claudeMdSection(profile?: InstallProfile): string {
@@ -2000,10 +2035,14 @@ function standaloneMarkerPositions(content: string, marker: string, multilineStr
   return positions
 }
 
-function readManagedCodexMcpBlock(content: string): ManagedCodexMcpBlock | null {
+function readManagedCodexMcpBlock(
+  content: string,
+  startMarker = CODEX_MCP_START_MARKER,
+  endMarker = CODEX_MCP_END_MARKER,
+): ManagedCodexMcpBlock | null {
   const multilineStringRanges = tomlMultilineStringRanges(content)
-  const starts = standaloneMarkerPositions(content, CODEX_MCP_START_MARKER, multilineStringRanges)
-  const ends = standaloneMarkerPositions(content, CODEX_MCP_END_MARKER, multilineStringRanges)
+  const starts = standaloneMarkerPositions(content, startMarker, multilineStringRanges)
+  const ends = standaloneMarkerPositions(content, endMarker, multilineStringRanges)
 
   if (starts.length === 0 && ends.length === 0) {
     return null
@@ -2024,7 +2063,115 @@ function readManagedCodexMcpBlock(content: string): ManagedCodexMcpBlock | null 
     ownsPrecedingLineEnding: content
       .slice(start, end)
       .replaceAll('\r\n', '\n')
-      .startsWith(`${CODEX_MCP_START_MARKER}\n${CODEX_MCP_OWNS_PRECEDING_LINE_ENDING_MARKER}\n`),
+      .startsWith(`${startMarker}\n${CODEX_MCP_OWNS_PRECEDING_LINE_ENDING_MARKER}\n`),
+  }
+}
+
+function codexMcpServerName(projectDir: string): string {
+  const workspaceId = createHash('sha256').update(resolve(projectDir)).digest('hex').slice(0, 12)
+  return `madar_${workspaceId}`
+}
+
+function scopedCodexMcpStartMarker(serverName: string): string {
+  return `${CODEX_MCP_SCOPED_START_MARKER_PREFIX} ${serverName} >>>`
+}
+
+function scopedCodexMcpEndMarker(serverName: string): string {
+  return `${CODEX_MCP_SCOPED_END_MARKER_PREFIX} ${serverName} <<<`
+}
+
+export function resolveCodexMcpConfigPath(): string {
+  const configuredHome = process.env.CODEX_HOME?.trim()
+  const codexHome = configuredHome && configuredHome.length > 0
+    ? resolve(configuredHome)
+    : join(homedir(), '.codex')
+  return join(codexHome, 'config.toml')
+}
+
+function pauseSynchronously(milliseconds: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds)
+}
+
+function tryAcquireCodexConfigLock(lockPath: string): number | null {
+  try {
+    // Keep the lock private because the adjacent Codex config can contain
+    // credentials or other user-level settings.
+    return openSync(lockPath, 'wx', CODEX_MCP_CONFIG_DEFAULT_MODE)
+  } catch (error) {
+    const code = error && typeof error === 'object' && 'code' in error
+      ? (error as { code?: unknown }).code
+      : undefined
+    if (code === 'EEXIST') {
+      return null
+    }
+    throw error
+  }
+}
+
+/**
+ * Serialize Madar's read-modify-write operations on Codex's shared user
+ * configuration. The lock is intentionally adjacent to the config so all
+ * worktrees that resolve the same CODEX_HOME contend on the same path.
+ */
+function withCodexConfigLock<T>(configPath: string, action: () => T): T {
+  const lockPath = `${configPath}${CODEX_MCP_CONFIG_LOCK_SUFFIX}`
+  const startedAt = Date.now()
+  ensureParentDirectory(lockPath)
+
+  while (true) {
+    const lockDescriptor = tryAcquireCodexConfigLock(lockPath)
+    if (lockDescriptor !== null) {
+      try {
+        return action()
+      } finally {
+        try {
+          closeSync(lockDescriptor)
+        } finally {
+          rmSync(lockPath, { force: true })
+        }
+      }
+    }
+
+    if (Date.now() - startedAt >= CODEX_MCP_CONFIG_LOCK_TIMEOUT_MS) {
+      throw new Error(
+        `Timed out waiting for another Madar Codex configuration update at ${configPath}. `
+        + `If no Madar process is still updating it, remove ${lockPath} and retry.`,
+      )
+    }
+    pauseSynchronously(CODEX_MCP_CONFIG_LOCK_RETRY_MS)
+  }
+}
+
+/** Publish an updated config through a same-directory atomic rename. */
+function writeCodexConfigAtomically(configPath: string, content: string): void {
+  ensureParentDirectory(configPath)
+  const mode = existsSync(configPath)
+    ? statSync(configPath).mode & 0o777
+    : CODEX_MCP_CONFIG_DEFAULT_MODE
+  const temporaryPath = join(
+    dirname(configPath),
+    `.${basename(configPath)}.madar-${process.pid}-${randomUUID()}.tmp`,
+  )
+  let temporaryDescriptor: number | null = null
+
+  try {
+    temporaryDescriptor = openSync(temporaryPath, 'wx', mode)
+    writeFileSync(temporaryDescriptor, content, 'utf8')
+    // openSync's mode is subject to umask, so restore the exact existing mode
+    // before publishing the replacement.
+    chmodSync(temporaryPath, mode)
+    fsyncSync(temporaryDescriptor)
+    closeSync(temporaryDescriptor)
+    temporaryDescriptor = null
+    renameSync(temporaryPath, configPath)
+  } finally {
+    try {
+      if (temporaryDescriptor !== null) {
+        closeSync(temporaryDescriptor)
+      }
+    } finally {
+      rmSync(temporaryPath, { force: true })
+    }
   }
 }
 
@@ -2080,7 +2227,8 @@ function stripTomlComments(content: string): string {
   return result
 }
 
-function hasUserManagedCodexMcpDeclaration(content: string): boolean {
+function hasUserManagedCodexMcpDeclaration(content: string, serverName: string): boolean {
+  const serverPath = `mcp_servers.${serverName}`
   const lines = stripTomlComments(content).split(/\r?\n/)
   let currentTable: string | null = null
 
@@ -2088,7 +2236,7 @@ function hasUserManagedCodexMcpDeclaration(content: string): boolean {
     const arrayTableMatch = /^\s*\[\[\s*([^\]]+?)\s*\]\]\s*$/.exec(line)
     if (arrayTableMatch?.[1]) {
       const tableName = arrayTableMatch[1].replace(/[\s"']/g, '')
-      if (tableName === 'mcp_servers' || tableName === 'mcp_servers.madar' || tableName.startsWith('mcp_servers.madar.')) {
+      if (tableName === 'mcp_servers' || tableName === serverPath || tableName.startsWith(`${serverPath}.`)) {
         return true
       }
       currentTable = null
@@ -2098,7 +2246,7 @@ function hasUserManagedCodexMcpDeclaration(content: string): boolean {
     const tableMatch = /^\s*\[\s*([^\]]+?)\s*\]\s*$/.exec(line)
     if (tableMatch?.[1]) {
       const tableName = tableMatch[1].replace(/[\s"']/g, '')
-      if (tableName === 'mcp_servers.madar' || tableName.startsWith('mcp_servers.madar.')) {
+      if (tableName === serverPath || tableName.startsWith(`${serverPath}.`)) {
         return true
       }
       currentTable = tableName
@@ -2113,12 +2261,12 @@ function hasUserManagedCodexMcpDeclaration(content: string): boolean {
     const keyPath = line.slice(0, assignmentIndex).replace(/[\s"']/g, '')
     if (currentTable === null && (
       keyPath === 'mcp_servers'
-      || keyPath === 'mcp_servers.madar'
-      || keyPath.startsWith('mcp_servers.madar.')
+      || keyPath === serverPath
+      || keyPath.startsWith(`${serverPath}.`)
     )) {
       return true
     }
-    if (currentTable === 'mcp_servers' && (keyPath === 'madar' || keyPath.startsWith('madar.'))) {
+    if (currentTable === 'mcp_servers' && (keyPath === serverName || keyPath.startsWith(`${serverName}.`))) {
       return true
     }
   }
@@ -2126,35 +2274,47 @@ function hasUserManagedCodexMcpDeclaration(content: string): boolean {
   return false
 }
 
-function renderCodexMcpBlock(lineEnding: string, ownsPrecedingLineEnding = false): string {
+function renderCodexMcpBlock(
+  projectDir: string,
+  serverName: string,
+  lineEnding: string,
+  ownsPrecedingLineEnding = false,
+): string {
   return [
-    CODEX_MCP_START_MARKER,
+    scopedCodexMcpStartMarker(serverName),
     ...(ownsPrecedingLineEnding ? [CODEX_MCP_OWNS_PRECEDING_LINE_ENDING_MARKER] : []),
-    '[mcp_servers.madar]',
+    `[mcp_servers.${serverName}]`,
     'command = "madar"',
     'args = ["serve", "--stdio", "--auto-refresh"]',
+    `cwd = ${JSON.stringify(resolve(projectDir))}`,
     'env = { MADAR_TOOL_PROFILE = "strict" }',
     'enabled = true',
     `startup_timeout_sec = ${CODEX_MCP_STARTUP_TIMEOUT_SECONDS}`,
-    CODEX_MCP_END_MARKER,
+    `tool_timeout_sec = ${CODEX_MCP_TOOL_TIMEOUT_SECONDS}`,
+    scopedCodexMcpEndMarker(serverName),
     '',
   ].join(lineEnding)
 }
 
-export function isMadarCodexMcpConfig(content: string): boolean {
+export function isMadarCodexMcpConfig(content: string, projectDir: string): boolean {
   try {
-    const managedBlock = readManagedCodexMcpBlock(content)
+    const serverName = codexMcpServerName(projectDir)
+    const managedBlock = readManagedCodexMcpBlock(
+      content,
+      scopedCodexMcpStartMarker(serverName),
+      scopedCodexMcpEndMarker(serverName),
+    )
     if (!managedBlock) {
       return false
     }
 
     const unownedContent = `${content.slice(0, managedBlock.start)}${content.slice(managedBlock.end)}`
-    if (hasUserManagedCodexMcpDeclaration(unownedContent)) {
+    if (hasUserManagedCodexMcpDeclaration(unownedContent, serverName)) {
       return false
     }
 
     const normalizedBlock = managedBlock.content.replaceAll('\r\n', '\n')
-    const expectedBlock = renderCodexMcpBlock('\n', managedBlock.ownsPrecedingLineEnding)
+    const expectedBlock = renderCodexMcpBlock(projectDir, serverName, '\n', managedBlock.ownsPrecedingLineEnding)
     return normalizedBlock === expectedBlock
   } catch {
     return false
@@ -2162,59 +2322,30 @@ export function isMadarCodexMcpConfig(content: string): boolean {
 }
 
 function assertCodexMcpConfigIsSafe(projectDir: string): void {
-  const configPath = join(projectDir, CODEX_MCP_CONFIG_RELATIVE_PATH)
-  if (existsSync(configPath)) {
-    readManagedCodexMcpBlock(readFileSync(configPath, 'utf8'))
+  const globalConfigPath = resolveCodexMcpConfigPath()
+  const serverName = codexMcpServerName(projectDir)
+  if (existsSync(globalConfigPath)) {
+    // Preserve the preflight failure behavior without observing the shared
+    // config outside its lock. The mutation path re-reads it under a fresh
+    // lock immediately before it updates the scoped block.
+    withCodexConfigLock(globalConfigPath, () => {
+      if (existsSync(globalConfigPath)) {
+        readManagedCodexMcpBlock(
+          readFileSync(globalConfigPath, 'utf8'),
+          scopedCodexMcpStartMarker(serverName),
+          scopedCodexMcpEndMarker(serverName),
+        )
+      }
+    })
+  }
+
+  const legacyConfigPath = join(projectDir, CODEX_MCP_CONFIG_RELATIVE_PATH)
+  if (existsSync(legacyConfigPath)) {
+    readManagedCodexMcpBlock(readFileSync(legacyConfigPath, 'utf8'))
   }
 }
 
-function installCodexMcpServer(projectDir: string): string {
-  const configPath = join(projectDir, CODEX_MCP_CONFIG_RELATIVE_PATH)
-  const content = existsSync(configPath) ? readFileSync(configPath, 'utf8') : ''
-  const managedBlock = readManagedCodexMcpBlock(content)
-  const lineEnding = lineEndingForContent(content)
-  const ownsPrecedingLineEnding = managedBlock?.ownsPrecedingLineEnding
-    ?? (content.length > 0 && !content.endsWith('\n'))
-  const nextBlock = renderCodexMcpBlock(lineEnding, ownsPrecedingLineEnding)
-  const unownedContent = managedBlock
-    ? `${content.slice(0, managedBlock.start)}${content.slice(managedBlock.end)}`
-    : content
-
-  if (hasUserManagedCodexMcpDeclaration(unownedContent)) {
-    return '.codex/config.toml -> MCP server is user-managed (no change)'
-  }
-
-  if (managedBlock) {
-    if (managedBlock.content === nextBlock) {
-      return '.codex/config.toml -> MCP server already registered (no change)'
-    }
-
-    writeFileSync(
-      configPath,
-      `${content.slice(0, managedBlock.start)}${nextBlock}${content.slice(managedBlock.end)}`,
-      'utf8',
-    )
-    return '.codex/config.toml -> MCP server updated'
-  }
-
-  ensureParentDirectory(configPath)
-  const separator = ownsPrecedingLineEnding ? lineEnding : ''
-  writeFileSync(configPath, `${content}${separator}${nextBlock}`, 'utf8')
-  return '.codex/config.toml -> MCP server registered'
-}
-
-function uninstallCodexMcpServer(projectDir: string): string | undefined {
-  const configPath = join(projectDir, CODEX_MCP_CONFIG_RELATIVE_PATH)
-  if (!existsSync(configPath)) {
-    return undefined
-  }
-
-  const content = readFileSync(configPath, 'utf8')
-  const managedBlock = readManagedCodexMcpBlock(content)
-  if (!managedBlock) {
-    return undefined
-  }
-
+function removeManagedCodexMcpBlock(configPath: string, content: string, managedBlock: ManagedCodexMcpBlock): void {
   const beforeBlock = content.slice(0, managedBlock.start)
   const afterBlock = content.slice(managedBlock.end)
   const precedingLineEnding = beforeBlock.endsWith('\r\n')
@@ -2230,9 +2361,99 @@ function uninstallCodexMcpServer(projectDir: string): string | undefined {
     && afterBlock.length > 0
     && !afterBlock.startsWith('\n')
     && !afterBlock.startsWith('\r')
-  const restoredContent = `${beforeWithoutOwnedLineEnding}${needsLineEndingBeforeAfterBlock ? precedingLineEnding : ''}${afterBlock}`
-  writeFileSync(configPath, restoredContent, 'utf8')
-  return '.codex/config.toml -> MCP server removed'
+  writeCodexConfigAtomically(
+    configPath,
+    `${beforeWithoutOwnedLineEnding}${needsLineEndingBeforeAfterBlock ? precedingLineEnding : ''}${afterBlock}`,
+  )
+}
+
+function removeLegacyCodexMcpServer(projectDir: string): string | undefined {
+  const configPath = join(projectDir, CODEX_MCP_CONFIG_RELATIVE_PATH)
+  if (!existsSync(configPath)) {
+    return undefined
+  }
+
+  const content = readFileSync(configPath, 'utf8')
+  const managedBlock = readManagedCodexMcpBlock(content)
+  if (!managedBlock) {
+    return undefined
+  }
+
+  removeManagedCodexMcpBlock(configPath, content, managedBlock)
+  return '.codex/config.toml -> obsolete project-local MCP registration removed'
+}
+
+function installCodexMcpServer(projectDir: string): string {
+  const configPath = resolveCodexMcpConfigPath()
+  const serverName = codexMcpServerName(projectDir)
+  return withCodexConfigLock(configPath, () => {
+    // Re-read after acquiring the shared lock. A different worktree may have
+    // added or removed its scoped block while this install was waiting.
+    const content = existsSync(configPath) ? readFileSync(configPath, 'utf8') : ''
+    const managedBlock = readManagedCodexMcpBlock(
+      content,
+      scopedCodexMcpStartMarker(serverName),
+      scopedCodexMcpEndMarker(serverName),
+    )
+    const lineEnding = lineEndingForContent(content)
+    const ownsPrecedingLineEnding = managedBlock?.ownsPrecedingLineEnding
+      ?? (content.length > 0 && !content.endsWith('\n'))
+    const nextBlock = renderCodexMcpBlock(projectDir, serverName, lineEnding, ownsPrecedingLineEnding)
+    const unownedContent = managedBlock
+      ? `${content.slice(0, managedBlock.start)}${content.slice(managedBlock.end)}`
+      : content
+
+    if (hasUserManagedCodexMcpDeclaration(unownedContent, serverName)) {
+      return `${configPath} -> MCP server ${serverName} is user-managed (no change)`
+    }
+
+    let registrationMessage: string
+    if (managedBlock) {
+      if (managedBlock.content === nextBlock) {
+        registrationMessage = `${configPath} -> MCP server ${serverName} already registered (no change)`
+      } else {
+        writeCodexConfigAtomically(
+          configPath,
+          `${content.slice(0, managedBlock.start)}${nextBlock}${content.slice(managedBlock.end)}`,
+        )
+        registrationMessage = `${configPath} -> MCP server ${serverName} updated`
+      }
+    } else {
+      const separator = ownsPrecedingLineEnding ? lineEnding : ''
+      writeCodexConfigAtomically(configPath, `${content}${separator}${nextBlock}`)
+      registrationMessage = `${configPath} -> MCP server ${serverName} registered`
+    }
+
+    const legacyMessage = removeLegacyCodexMcpServer(projectDir)
+    return legacyMessage ? `${registrationMessage}\n${legacyMessage}` : registrationMessage
+  })
+}
+
+function uninstallCodexMcpServer(projectDir: string): string | undefined {
+  const configPath = resolveCodexMcpConfigPath()
+  const serverName = codexMcpServerName(projectDir)
+  return withCodexConfigLock(configPath, () => {
+    // Match installation's critical section so an uninstall cannot write a
+    // stale snapshot over another worktree's newly registered block.
+    if (!existsSync(configPath)) {
+      return removeLegacyCodexMcpServer(projectDir)
+    }
+
+    const content = readFileSync(configPath, 'utf8')
+    const managedBlock = readManagedCodexMcpBlock(
+      content,
+      scopedCodexMcpStartMarker(serverName),
+      scopedCodexMcpEndMarker(serverName),
+    )
+    if (!managedBlock) {
+      return removeLegacyCodexMcpServer(projectDir)
+    }
+
+    removeManagedCodexMcpBlock(configPath, content, managedBlock)
+    const legacyMessage = removeLegacyCodexMcpServer(projectDir)
+    const registrationMessage = `${configPath} -> MCP server ${serverName} removed`
+    return legacyMessage ? `${registrationMessage}\n${legacyMessage}` : registrationMessage
+  })
 }
 
 function installCodexHook(projectDir: string): string {
@@ -2529,7 +2750,7 @@ export function geminiInstall(projectDir = '.', options: GeminiInstallOptions = 
     installMcpServer(resolvedProjectDir, 'gemini', options),
   ]
   if (options.profile === 'strict') {
-    messages.push('', 'Gemini CLI will now use the madar strict compact MCP profile:', `call context_pack once, ${strictContextPackStopRule(false)}, ${strictContextPackNoBroadExplorationRule(false)}, ${strictContextPackExpandRule(false)}, and ${strictGraphReportFallbackRule(false)}.`)
+    messages.push('', 'Gemini CLI will now use the madar strict compact MCP profile:', `${strictContextPackInvocationRule(false)}, ${strictContextPackStopRule(false)}, ${strictReadOnlyReadyTerminalRule(false)}, ${strictContextPackNoBroadExplorationRule(false)}, ${strictContextPackExpandRule(false)}, and ${strictGraphReportFallbackRule(false)}.`)
   } else {
     messages.push('', 'Gemini CLI will now check the knowledge graph before answering', 'codebase questions and rebuild it after code changes.')
   }
@@ -2558,7 +2779,7 @@ export function geminiUninstall(projectDir = '.', options: Pick<InstallSkillOpti
 export function installCopilotMcp(projectDir = '.', options: McpInstallOptions = {}, packageRoot = findPackageRoot()): string {
   const message = installMcpServer(resolve(projectDir), 'copilot', options, resolve(packageRoot))
   if (options.profile === 'strict') {
-    return `${message}\n\nGitHub Copilot will now use the madar strict compact MCP profile: call context_pack once, ${strictContextPackStopRule(false)}, ${strictContextPackNoBroadExplorationRule(false)}, ${strictContextPackExpandRule(false)}, and ${strictGraphReportFallbackRule(false)}.`
+    return `${message}\n\nGitHub Copilot will now use the madar strict compact MCP profile: ${strictContextPackInvocationRule(false)}, ${strictContextPackStopRule(false)}, ${strictReadOnlyReadyTerminalRule(false)}, ${strictContextPackNoBroadExplorationRule(false)}, ${strictContextPackExpandRule(false)}, and ${strictGraphReportFallbackRule(false)}.`
   }
 
   return message
@@ -2590,7 +2811,7 @@ export function cursorInstall(projectDir = '.', options: McpInstallOptions = {})
 
   messages.push(installMcpServer(resolvedProjectDir, 'cursor', options))
   if (options.profile === 'strict') {
-    messages.push('', 'Cursor will now use the madar strict compact MCP profile:', `call context_pack once, ${strictContextPackStopRule(false)}, ${strictContextPackNoBroadExplorationRule(false)}, ${strictContextPackExpandRule(false)}, and ${strictGraphReportFallbackRule(false)}.`)
+    messages.push('', 'Cursor will now use the madar strict compact MCP profile:', `${strictContextPackInvocationRule(false)}, ${strictContextPackStopRule(false)}, ${strictReadOnlyReadyTerminalRule(false)}, ${strictContextPackNoBroadExplorationRule(false)}, ${strictContextPackExpandRule(false)}, and ${strictGraphReportFallbackRule(false)}.`)
   }
   return messages.join('\n')
 }
@@ -2623,7 +2844,7 @@ export function claudeInstall(projectDir = '.', options: McpInstallOptions = {})
     installMcpServer(resolvedProjectDir, 'claude', options),
   ]
   if (options.profile === 'strict') {
-    messages.push('', 'Claude Code will now use the madar strict compact MCP profile:', `call context_pack once, ${strictContextPackStopRule(false)}, ${strictContextPackNoBroadExplorationRule(false)}, ${strictContextPackExpandRule(false)}, and ${strictGraphReportFallbackRule(false)}.`)
+    messages.push('', 'Claude Code will now use the madar strict compact MCP profile:', `${strictContextPackInvocationRule(false)}, ${strictContextPackStopRule(false)}, ${strictReadOnlyReadyTerminalRule(false)}, ${strictContextPackNoBroadExplorationRule(false)}, ${strictContextPackExpandRule(false)}, and ${strictGraphReportFallbackRule(false)}.`)
   } else {
     messages.push('', 'Claude Code will now start with the matching madar MCP tool', 'BEFORE searching raw files for any codebase question.')
   }

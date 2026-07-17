@@ -10,7 +10,12 @@ import {
   contextPackFromRetrieveResult,
   retrieveContext,
 } from '../../src/runtime/retrieve.js'
-import { planConceptualFallback } from '../../src/runtime/retrieve/conceptual-fallback.js'
+import {
+  evaluateQueryEvidenceCoverage,
+  planConceptualFallback,
+  queryEvidenceObligations,
+  underScopedDivergenceNodeIds,
+} from '../../src/runtime/retrieve/conceptual-fallback.js'
 
 function addNode(
   graph: KnowledgeGraph,
@@ -55,6 +60,113 @@ function conceptualWorkflowGraph(): KnowledgeGraph {
 }
 
 describe('conceptual-query fallback planner', () => {
+  it('does not turn answer-format directives into repository evidence obligations', () => {
+    const obligations = queryEvidenceObligations(
+      'Explain the failed monitor flow and note what the available evidence cannot prove.',
+    )
+
+    expect(obligations).toEqual([
+      { index: 0, terms: ['@failure', 'monitor', 'flow'] },
+    ])
+  })
+
+  it('keeps an enumerated computation scope together and preserves trailing divergence', () => {
+    const obligations = queryEvidenceObligations(
+      'Identify all files involved in status computation for monitors, incidents, and status pages, and any inconsistent status-computation logic across these paths.',
+    )
+
+    expect(obligations).toHaveLength(2)
+    expect(obligations[0]?.terms).toEqual(expect.arrayContaining([
+      'status',
+      '@computation',
+      'monitors',
+      'incidents',
+      'pages',
+    ]))
+    expect(obligations[1]?.terms).toContain('@divergence')
+  })
+
+  it('does not let a repeated citation checklist consume trailing flow obligations', () => {
+    const obligations = queryEvidenceObligations(
+      'Trace how a failed monitor check becomes an incident, triggers notifications, and affects the public status-page status. Cite exact files and symbols for: monitor check failure detection, incident creation logic, notification dispatch, and status-page status computation. Identify any inconsistent status-computation paths.',
+    )
+
+    expect(obligations).toHaveLength(5)
+    expect(obligations[4]?.terms).toContain('@divergence')
+    expect(obligations.filter((obligation) => obligation.terms.includes('@failure'))).toHaveLength(1)
+  })
+
+  it('does not let an agent-expanded end-to-end checklist repeat the flow phases', () => {
+    const obligations = queryEvidenceObligations(
+      'Trace how a failed monitor check becomes an incident, triggers notifications, and affects the public status-page status. Identify all files/symbols involved end-to-end: from the checker detecting failure, through incident creation, notification dispatch, and public status-page computation. Also identify any inconsistent or duplicate status-computation paths.',
+    )
+
+    expect(obligations).toHaveLength(5)
+    expect(obligations[4]?.terms).toContain('@divergence')
+    expect(obligations.filter((obligation) => obligation.terms.includes('@failure'))).toHaveLength(1)
+  })
+
+  it('does not let an include checklist displace a trailing divergence request', () => {
+    const obligations = queryEvidenceObligations(
+      'Trace how a failed monitor check becomes an incident, triggers notifications, and affects the public status-page status. Include the checker/probe result ingestion, incident creation logic, notification dispatch, and status-page status computation. Identify all files and symbols involved and any inconsistent status-computation paths between different parts of the codebase.',
+    )
+
+    expect(obligations).toHaveLength(5)
+    expect(obligations[4]?.terms).toContain('@divergence')
+    expect(obligations.filter((obligation) => obligation.terms.includes('@failure'))).toHaveLength(1)
+    expect(obligations.flatMap((obligation) => obligation.terms)).not.toContain('probe')
+  })
+
+  it('does not let a from-through checklist create a second workflow', () => {
+    const obligations = queryEvidenceObligations(
+      'Trace how a failed monitor check becomes an incident, triggers notifications, and affects the public status-page status. Identify all files/symbols involved from failed check ingestion through incident creation, notification dispatch, and status-page status computation. Also identify any inconsistent status-computation paths across the codebase.',
+    )
+
+    expect(obligations).toHaveLength(5)
+    expect(obligations[4]?.terms).toContain('@divergence')
+    expect(obligations.filter((obligation) => obligation.terms.includes('@transition'))).toHaveLength(1)
+  })
+
+  it('preserves divergence text embedded in a repeated checklist sentence', () => {
+    const obligations = queryEvidenceObligations(
+      'Trace how a failed monitor check becomes an incident, triggers notifications, and affects the public status-page status. Identify every owner from failure detection through notification dispatch and compare inconsistent status computations.',
+    )
+
+    expect(obligations.at(-1)?.terms).toContain('@divergence')
+    expect(obligations.filter((obligation) => obligation.terms.includes('@failure'))).toHaveLength(1)
+  })
+
+  it('treats a status assignment as grounded computation evidence', () => {
+    const coverage = evaluateQueryEvidenceCoverage(
+      'Identify status computation for monitors',
+      [{
+        label: 'statusPage.ts',
+        source_file: '/packages/api/statusPage.ts',
+        snippet: 'const status = monitors.some((monitor) => monitor.status === "error") ? "error" : "success"',
+      }],
+    )
+
+    expect(coverage).toMatchObject({
+      total: 1,
+      covered: 1,
+      missing_obligations: [],
+    })
+  })
+
+  it('excludes generic computations from a repository-scoped divergence comparison', () => {
+    const graph = new KnowledgeGraph({ directed: true })
+    addNode(graph, 'page-status', 'computeOverallStatus()', '/apps/server/status-page/index.ts')
+    addNode(graph, 'generic-status', 'computePhaseStatus()', '/packages/services/import/utils.ts')
+
+    const excluded = underScopedDivergenceNodeIds(
+      graph,
+      'Identify status computation for monitors, incidents, and status pages, and any inconsistent status-computation logic across these paths.',
+    )
+
+    expect(excluded.has('generic-status')).toBe(true)
+    expect(excluded.has('page-status')).toBe(false)
+  })
+
   it('recovers a structurally coherent workflow center when lexical anchors are disconnected', () => {
     const result = retrieveContext(conceptualWorkflowGraph(), {
       question: 'How is topology kept current when modifications happen?',
@@ -206,6 +318,93 @@ describe('conceptual-query fallback planner', () => {
     const distractorRank = labels.indexOf('SearchStatusBadge')
     expect(distractorRank === -1 || labels.indexOf('SearchProjectionSynchronizer') < distractorRank).toBe(true)
     expect(labels.filter((label) => label !== 'SearchStatusBadge').length / labels.length).toBeGreaterThanOrEqual(0.75)
+  })
+
+  it('reserves the cross-runtime caller that owns the first failure transition', () => {
+    const graph = new KnowledgeGraph({ directed: true })
+    addNode(graph, 'failure-log', 'FailedMonitorLog', '/packages/services/monitor/failure-log.ts')
+    addNode(graph, 'status-update', 'UpdateStatus()', '/apps/checker/checker/update.go')
+    addNode(graph, 'http-checker', '.HTTPCheckerHandler()', '/apps/checker/handlers/checker.go', {
+      framework: 'gin',
+      framework_role: 'gin_handler',
+    })
+    addNode(graph, 'incident', 'createIncident()', '/apps/workflows/checker/incident.ts')
+    addNode(graph, 'notifications', 'triggerNotifications()', '/apps/workflows/checker/alerting.ts')
+    addNode(graph, 'public-status', 'statusPage.ts', '/packages/api/router/statusPage.ts')
+    addNode(graph, 'alternate-status', 'computeOverallStatus()', '/apps/server/status-page/index.ts')
+    graph.addEdge('http-checker', 'status-update', { relation: 'calls' })
+    graph.addEdge('status-update', 'incident', { relation: 'calls' })
+    graph.addEdge('incident', 'notifications', { relation: 'calls' })
+    graph.addEdge('public-status', 'incident', { relation: 'reads' })
+    graph.addEdge('alternate-status', 'public-status', { relation: 'competes_with' })
+
+    const proposal = planConceptualFallback(graph, {
+      question: 'Trace how a failed monitor check becomes an incident, triggers notifications, and affects the public status-page status. Identify inconsistent status-computation paths.',
+      initialQuality: lowQuality(),
+      selectedNodes: [],
+    })
+
+    expect(proposal.preferredObligationAnchors?.get(0)).toBe('http-checker')
+    expect(proposal.nodeBoosts.get('http-checker')).toBeGreaterThanOrEqual(9)
+    expect(proposal.nodeBoosts.get('status-update')).toBeGreaterThanOrEqual(9)
+  })
+
+  it('reserves workflow-local creation and delivery owners for natural wording', () => {
+    const graph = new KnowledgeGraph({ directed: true })
+    addNode(graph, 'http-checker', '.HTTPCheckerHandler()', '/apps/checker/handlers/checker.go')
+    addNode(graph, 'status-update', 'UpdateStatus()', '/apps/checker/checker/update.go')
+    addNode(graph, 'incident-owner', 'findOpenIncident()', '/apps/workflows/src/checker/index.ts')
+    addNode(graph, 'delivery-owner', 'triggerNotifications()', '/apps/workflows/src/checker/alerting.ts')
+    addNode(graph, 'public-status', 'statusPage.ts', '/packages/api/src/router/statusPage.ts')
+    addNode(graph, 'overall-status', 'computeOverallStatus()', '/apps/server/src/routes/status-page/index.ts')
+    addNode(graph, 'import-writer', 'createImportedIncident()', '/packages/services/src/import/phase-writers.ts')
+    addNode(graph, 'test-delivery', 'sendTestNotification()', '/apps/server/src/routes/notification/test-providers.ts')
+    graph.addEdge('http-checker', 'status-update', { relation: 'calls' })
+    graph.addEdge('status-update', 'incident-owner', { relation: 'calls' })
+    graph.addEdge('incident-owner', 'delivery-owner', { relation: 'calls' })
+    graph.addEdge('public-status', 'incident-owner', { relation: 'reads' })
+    graph.addEdge('overall-status', 'public-status', { relation: 'competes_with' })
+
+    const proposal = planConceptualFallback(graph, {
+      question: 'Explain the path from a failed HTTP monitor check to incident creation, notification delivery, and the public status-page result. Compare every overall-status computation. Read-only: do not modify files.',
+      initialQuality: lowQuality(),
+      selectedNodes: [],
+    })
+
+    expect(proposal.preferredObligationAnchors?.get(1)).toBe('incident-owner')
+    expect(proposal.preferredObligationAnchors?.get(2)).toBe('delivery-owner')
+    expect(proposal.nodeBoosts.get('incident-owner')).toBeGreaterThanOrEqual(14)
+    expect(proposal.nodeBoosts.get('delivery-owner')).toBeGreaterThanOrEqual(14)
+    expect(proposal.nodeBoosts.has('test-delivery')).toBe(false)
+  })
+
+  it('reserves the public HTTP boundary separately from status computation owners', () => {
+    const graph = new KnowledgeGraph({ directed: true })
+    addNode(graph, 'public-json-route', 'GET()', '/apps/status-page/src/app/api/status/[[...path]]/route.ts', {
+      framework_role: 'next_route_handler',
+    })
+    addNode(graph, 'status-json', 'status-json.ts', '/apps/status-page/src/content/status-json.ts')
+    addNode(graph, 'public-status', 'statusPage.ts', '/packages/api/src/router/statusPage.ts')
+    addNode(graph, 'overall-status', 'computeOverallStatus()', '/apps/server/src/routes/status-page/index.ts')
+    addNode(graph, 'failed-check', '.HTTPCheckerHandler()', '/apps/checker/handlers/checker.go')
+    addNode(graph, 'incident-owner', 'createIncident()', '/apps/workflows/src/checker/incident.ts')
+    addNode(graph, 'notification-owner', 'triggerNotifications()', '/apps/workflows/src/checker/alerting.ts')
+    graph.addEdge('public-json-route', 'status-json', { relation: 'calls' })
+    graph.addEdge('status-json', 'public-status', { relation: 'serializes' })
+    graph.addEdge('overall-status', 'public-status', { relation: 'competes_with' })
+    graph.addEdge('failed-check', 'incident-owner', { relation: 'calls' })
+    graph.addEdge('incident-owner', 'notification-owner', { relation: 'calls' })
+    graph.addEdge('incident-owner', 'public-status', { relation: 'affects' })
+
+    const proposal = planConceptualFallback(graph, {
+      question: 'Trace how a failed monitor check becomes an incident, triggers notifications, and affects the public status-page status. Identify inconsistent status-computation paths.',
+      initialQuality: lowQuality(),
+      selectedNodes: [],
+    })
+
+    expect(proposal.nodeBoosts.get('public-json-route')).toBeGreaterThanOrEqual(9)
+    expect(proposal.nodeBoosts.has('public-status')).toBe(true)
+    expect(proposal.nodeBoosts.has('overall-status')).toBe(true)
   })
 
   it('caps every BFS neighbor read on a hub-heavy graph', () => {

@@ -43,7 +43,7 @@ function writeLineAnchoredSourceFile(filePath: string, lineNumber: number, conte
 function makeFixtureProject(
   options: {
     installState?: 'managed' | 'valid' | 'missing'
-    profile?: 'core' | 'full'
+    profile?: 'core' | 'full' | 'strict'
     spiMode?: boolean
   } = {},
 ): { projectDir: string; graphPath: string; outputDir: string } {
@@ -68,7 +68,7 @@ function makeFixtureProject(
     'utf8',
   )
   const graphPath = join(projectDir, 'out', 'graph.json')
-  const installClaudeWithProfile = claudeInstall as (projectDir?: string, options?: { profile?: 'core' | 'full' }) => string
+  const installClaudeWithProfile = claudeInstall as (projectDir?: string, options?: { profile?: 'core' | 'full' | 'strict' }) => string
   if (options.installState === 'managed') {
     installClaudeWithProfile(projectDir, options.profile ? { profile: options.profile } : undefined)
   } else if (options.installState !== 'missing') {
@@ -1139,6 +1139,55 @@ const VERBOSE_MADAR_FIRST_BOUNDED_PAYLOAD = [
   MADAR_USAGE_PAYLOAD,
 ] as const
 
+function strictContextPackTrace(
+  prompt: string,
+  options: {
+    beforePackTool?: 'Read' | 'Bash' | 'Grep' | 'Glob'
+    secondPrompt?: string
+    afterReadyTool?: string
+  } = {},
+) {
+  const toolCalls: Array<Record<string, unknown>> = [
+    ...(options.beforePackTool === undefined
+      ? []
+      : [{ type: 'tool_use', name: options.beforePackTool, input: { path: 'a.ts' } }]),
+    {
+      type: 'tool_use',
+      name: 'mcp__madar__context_pack',
+      input: { prompt, task: 'explain' },
+    },
+    {
+      type: 'tool_result',
+      tool_name: 'mcp__madar__context_pack',
+      content: JSON.stringify({
+        evidence: {
+          agent_directive: 'answer_from_pack',
+          answerability: { state: 'ready' },
+        },
+      }),
+    },
+  ]
+  if (options.secondPrompt !== undefined) {
+    toolCalls.push({
+      type: 'tool_use',
+      name: 'mcp__madar__context_pack',
+      input: { prompt: options.secondPrompt, task: 'explain' },
+    })
+  }
+  if (options.afterReadyTool !== undefined) {
+    toolCalls.push({ type: 'tool_use', name: options.afterReadyTool, input: { path: 'a.ts' } })
+  }
+  return [
+    { type: 'system', subtype: 'init' },
+    {
+      type: 'assistant',
+      turn: 1,
+      message: { content: toolCalls },
+    },
+    MADAR_USAGE_PAYLOAD,
+  ]
+}
+
 const VERBOSE_MADAR_FIRST_LOW_CONFIDENCE_THEN_READY_PAYLOAD = [
   { type: 'system', subtype: 'init' },
   {
@@ -1793,6 +1842,35 @@ describe('executeNativeAgentCompare', () => {
       expect(prompt).toContain('Call context_pack first')
       expect(prompt).toContain('Treat evidence.answerability.state as authoritative; evidence.pack_confidence is compatibility-only')
       expect(prompt).toContain('For verify_targets, inspect only a listed evidence.answerability.verification_targets handle or file')
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  it('writes a strict native-agent prompt that requires one verbatim terminal context pack', async () => {
+    const { projectDir, graphPath, outputDir } = makeFixtureProject({ profile: 'strict' })
+    try {
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          question: 'What is the cluster module?',
+          outputDir,
+          execTemplate: 'mock-runner',
+          baselineMode: 'native_agent',
+        },
+        {
+          runner: scriptedRunner({ baseline: VERBOSE_BASELINE_PAYLOAD, madar: VERBOSE_MADAR_MCP_RETRIEVE_PAYLOAD }),
+          now: () => new Date('2026-05-01T00:00:00Z'),
+        },
+      )
+
+      const report = result.reports[0] as NativeAgentCompareReport
+      const prompt = readFileSync(report.paths.madar_prompt, 'utf8')
+
+      expect(prompt).toContain('Call mcp__madar__context_pack exactly once')
+      expect(prompt).toContain('Copy the exact Question text below byte-for-byte into context_pack.prompt')
+      expect(prompt).toContain('Strict exposes only context_pack and context_expand')
+      expect(prompt).toContain('Both are terminal: make no later MCP, Read, Bash, Glob, or Grep call.')
     } finally {
       rmSync(projectDir, { recursive: true, force: true })
     }
@@ -2759,6 +2837,167 @@ describe('executeNativeAgentCompare', () => {
 
       const summary = formatNativeAgentCompareSummary(result)
       expect(summary).toContain('prompt_contract: violated (first Madar call was not context_pack)')
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  it('reports a followed prompt contract for one verbatim strict context pack with a terminal answer', async () => {
+    const { projectDir, graphPath, outputDir } = makeFixtureProject({ profile: 'strict' })
+    const question = 'What is the cluster module?'
+    try {
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          question,
+          outputDir,
+          execTemplate: 'mock-runner',
+          baselineMode: 'native_agent',
+        },
+        {
+          runner: scriptedRunner({ baseline: VERBOSE_BASELINE_PAYLOAD, madar: strictContextPackTrace(question) }),
+          now: () => new Date('2026-05-01T00:00:00Z'),
+        },
+      )
+
+      expect((result.reports[0] as NativeAgentCompareReport).prompt_contract).toEqual({
+        status: 'followed',
+        evidence: ['started with context_pack and avoided disallowed exploration'],
+      })
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a rewritten strict context-pack prompt', async () => {
+    const { projectDir, graphPath, outputDir } = makeFixtureProject({ profile: 'strict' })
+    const question = 'What is the cluster module?'
+    try {
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          question,
+          outputDir,
+          execTemplate: 'mock-runner',
+          baselineMode: 'native_agent',
+        },
+        {
+          runner: scriptedRunner({
+            baseline: VERBOSE_BASELINE_PAYLOAD,
+            madar: strictContextPackTrace('Explain the cluster module and all related implementation files.'),
+          }),
+          now: () => new Date('2026-05-01T00:00:00Z'),
+        },
+      )
+
+      expect((result.reports[0] as NativeAgentCompareReport).prompt_contract).toEqual({
+        status: 'violated',
+        evidence: ['strict context_pack prompt did not byte-match the user question'],
+      })
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a raw file read before the strict context pack', async () => {
+    const { projectDir, graphPath, outputDir } = makeFixtureProject({ profile: 'strict' })
+    const question = 'What is the cluster module?'
+    try {
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          question,
+          outputDir,
+          execTemplate: 'mock-runner',
+          baselineMode: 'native_agent',
+        },
+        {
+          runner: scriptedRunner({
+            baseline: VERBOSE_BASELINE_PAYLOAD,
+            madar: strictContextPackTrace(question, { beforePackTool: 'Read' }),
+          }),
+          now: () => new Date('2026-05-01T00:00:00Z'),
+        },
+      )
+
+      const report = result.reports[0] as NativeAgentCompareReport
+      expect(report.madar_trace).toMatchObject({
+        pre_madar_broad_exploration_tool_call_count: 1,
+        pre_madar_broad_exploration_tool_calls_by_name: { Read: 1 },
+      })
+      expect(report.prompt_contract).toEqual({
+        status: 'violated',
+        evidence: ['broad exploration occurred before the first Madar call'],
+      })
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects repeated strict packs and repository calls after a terminal pack', async () => {
+    const { projectDir, graphPath, outputDir } = makeFixtureProject({ profile: 'strict' })
+    const question = 'What is the cluster module?'
+    try {
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          question,
+          outputDir,
+          execTemplate: 'mock-runner',
+          baselineMode: 'native_agent',
+        },
+        {
+          runner: scriptedRunner({
+            baseline: VERBOSE_BASELINE_PAYLOAD,
+            madar: strictContextPackTrace(question, {
+              secondPrompt: question,
+              afterReadyTool: 'Read',
+            }),
+          }),
+          now: () => new Date('2026-05-01T00:00:00Z'),
+        },
+      )
+
+      expect((result.reports[0] as NativeAgentCompareReport).prompt_contract).toEqual({
+        status: 'violated',
+        evidence: [
+          'strict profile requires exactly one context_pack call (recorded 2)',
+          'terminal strict context_pack was followed by another Madar MCP call',
+          'terminal strict context_pack was followed by repository exploration',
+        ],
+      })
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  it('does not mark terminal strict compliance as followed after an unknown native tool in the same turn', async () => {
+    const { projectDir, graphPath, outputDir } = makeFixtureProject({ profile: 'strict' })
+    const question = 'What is the cluster module?'
+    try {
+      const result = await executeNativeAgentCompare(
+        {
+          graphPath,
+          question,
+          outputDir,
+          execTemplate: 'mock-runner',
+          baselineMode: 'native_agent',
+        },
+        {
+          runner: scriptedRunner({
+            baseline: VERBOSE_BASELINE_PAYLOAD,
+            madar: strictContextPackTrace(question, { afterReadyTool: 'FilesystemRead' }),
+          }),
+          now: () => new Date('2026-05-01T00:00:00Z'),
+        },
+      )
+
+      expect((result.reports[0] as NativeAgentCompareReport).prompt_contract).toEqual({
+        status: 'not_measured',
+        evidence: [
+          'terminal strict context_pack was followed by unclassified native tool call: FilesystemRead; trace cannot prove terminal compliance',
+        ],
+      })
     } finally {
       rmSync(projectDir, { recursive: true, force: true })
     }

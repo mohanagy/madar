@@ -8,8 +8,11 @@ import type { ContextPackSelectionDiagnostics } from '../../src/contracts/contex
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
 import { buildAnswerReadyPackSchema, runContextPackCommand, type ContextPackCommandDependencies } from '../../src/infrastructure/context-pack-command.js'
 import { build } from '../../src/pipeline/build.js'
+import { assessMadarResponseEvidence } from '../../src/runtime/mcp-response-evidence.js'
 import { compactRetrieveResult, retrieveContext, type RetrieveResult } from '../../src/runtime/retrieve.js'
+import { buildRetrievalEvidencePlanFromResult } from '../../src/runtime/retrieve/pipeline.js'
 import { estimateQueryTokens } from '../../src/runtime/serve.js'
+import { buildCrossLayerMonitorFlowFixture } from '../fixtures/cross-layer-monitor-flow.js'
 
 const tempFixtureRoots: string[] = []
 const repoGraphFixturePath = join(process.cwd(), 'out', 'graph.json')
@@ -757,6 +760,7 @@ describe('context-pack-command', () => {
           preview_item_count?: number
         }
       }
+      expandable?: unknown[]
       workflow_centers?: Array<{ path?: string; label?: string }>
       recommended_first_read?: Array<{ path?: string; label?: string }>
       negative_guidance?: string[]
@@ -776,11 +780,9 @@ describe('context-pack-command', () => {
       directive: expect.objectContaining({
         agent_directive: 'answer_from_pack',
       }),
-      follow_up: {
-        expandable_handle_count: 1,
-        preview_item_count: 1,
-      },
     }))
+    expect(payload.governance?.follow_up).toBeUndefined()
+    expect(payload.expandable).toEqual([])
     expect(JSON.stringify(payload.governance)).not.toContain('How idea report is being generated')
     expect(JSON.stringify(payload.governance)).not.toContain('src/ideas/')
     expect(payload.workflow_centers?.slice(0, 4)).toEqual([
@@ -1055,6 +1057,283 @@ describe('context-pack-command', () => {
       'src/ideas/controller.ts',
       'src/ideas/report-service.ts',
     ])
+  })
+
+  it('does not preserve a ready verdict when the serialized pack omits prompt obligations', async () => {
+    const prompt = 'Explain the exact end-to-end path from a failed HTTP monitor check to incident creation, notification delivery, and the public status-page result. Compare every distinct overall-status computation. Read-only: do not modify files.'
+    const graph = buildCrossLayerMonitorFlowFixture()
+    const retrieval = retrieveContext(graph, {
+      question: prompt,
+      budget: 1_800,
+      taskKind: 'explain',
+      retrievalStrategy: 'slice-v1',
+    })
+    const compact = compactRetrieveResult(retrieval)
+    const omittedNodeIds = new Set(
+      compact.matched_nodes
+        .filter((node) => /apps\/workflows\/src\/checker\/(?:index|alerting|utils)\.ts$/.test(node.source_file))
+        .flatMap((node) => node.node_id ? [node.node_id] : []),
+    )
+    const serialized = {
+      ...compact,
+      matched_nodes: compact.matched_nodes.filter((node) => !node.node_id || !omittedNodeIds.has(node.node_id)),
+      relationships: compact.relationships.filter((relationship) => (
+        (!relationship.from_id || !omittedNodeIds.has(relationship.from_id))
+        && (!relationship.to_id || !omittedNodeIds.has(relationship.to_id))
+      )),
+    }
+    const optimisticRetrieval: RetrieveResult = {
+      ...retrieval,
+      recovery: {
+        ...retrieval.recovery!,
+        status: 'not_needed',
+        initial_state: 'ready',
+        final_state: 'ready',
+        attempts: [],
+        improved: false,
+      },
+    }
+    const dependencies: ContextPackCommandDependencies = {
+      loadGraph: vi.fn().mockReturnValue(graph),
+      retrieveContext: vi.fn().mockReturnValue(optimisticRetrieval),
+      compactRetrieveResult: vi.fn().mockReturnValue(serialized),
+      analyzePrImpact: vi.fn(),
+      compactPrImpactResult: vi.fn(),
+      analyzeImpact: vi.fn(),
+      compactImpactResult: vi.fn(),
+    }
+
+    const payload = JSON.parse(await runContextPackCommand({
+      prompt,
+      budget: 1_800,
+      task: 'explain',
+      graphPath: 'out/graph.json',
+      retrievalStrategy: 'slice-v1',
+      format: 'json',
+    }, dependencies)) as {
+      evidence?: {
+        coverage?: string
+        coverage_detail?: { missing_obligations?: string[] }
+        answerability?: { state?: string; broad_search_fallback?: string }
+        agent_directive?: string
+      }
+    }
+
+    expect(optimisticRetrieval.recovery?.final_state).toBe('ready')
+    expect(payload.evidence).toMatchObject({
+      coverage: 'partial',
+      answerability: {
+        state: 'verify_targets',
+        broad_search_fallback: 'targeted_only',
+      },
+      agent_directive: 'verify_one_targeted_file',
+    })
+    expect(payload.evidence?.coverage_detail?.missing_obligations).toEqual(expect.arrayContaining([
+      'query:obligation:2',
+      'query:obligation:3',
+    ]))
+  })
+
+  it('keeps a late unique evidence owner when the eight-node response cap would otherwise drop it', () => {
+    const prompt = 'Explain the exact end-to-end path from a failed HTTP monitor check to incident creation, notification delivery, and the public status-page result. Compare every distinct overall-status computation.'
+    const retrieval = retrieveContext(buildCrossLayerMonitorFlowFixture(), {
+      question: prompt,
+      budget: 1_800,
+      taskKind: 'explain',
+      retrievalStrategy: 'slice-v1',
+    })
+    const compact = compactRetrieveResult(retrieval)
+    const incidentOwner = compact.matched_nodes.find((node) => node.snippet?.includes('insert(incidentTable)'))
+    expect(incidentOwner).toBeDefined()
+    const nonIncidentNodes = compact.matched_nodes
+      .filter((node) => node.node_id !== incidentOwner?.node_id)
+      .map((node) => node.snippet?.includes('insert(incidentTable)')
+        ? { ...node, snippet: 'const incident = await findOpenIncident(monitorId)' }
+        : node)
+    const duplicateSource = nonIncidentNodes.find((node) => node.source_file.includes('status-json'))
+      ?? nonIncidentNodes[0]!
+    const pressuredNodes = [
+      ...nonIncidentNodes,
+      { ...duplicateSource, node_id: 'duplicate-status-owner-1', label: 'toUnresolvedIncidents' },
+      { ...duplicateSource, node_id: 'duplicate-status-owner-2', label: 'unresolvedIncidents' },
+      incidentOwner!,
+    ]
+    const { score: _score, ...evidence } = assessMadarResponseEvidence({
+      evidencePlan: buildRetrievalEvidencePlanFromResult(retrieval),
+      question: prompt,
+      recovery: retrieval.recovery,
+    })
+
+    const payload = buildAnswerReadyPackSchema({
+      schema_version: 1,
+      task: 'explain',
+      prompt,
+      budget: 5_000,
+      evidence,
+      expandable: retrieval.expandable ?? [],
+      pack: {
+        ...compact,
+        matched_nodes: pressuredNodes,
+      },
+    }, 5_000, retrieval.selection_diagnostics)
+    const selectedNodes = (payload.pack as {
+      matched_nodes: Array<{ node_id?: string; snippet?: string }>
+    }).matched_nodes
+    const serializedEvidence = payload.evidence as {
+      answerability?: { state?: string }
+      agent_directive?: string
+    }
+
+    expect(selectedNodes).toHaveLength(8)
+    expect(selectedNodes.some((node) => node.node_id === incidentOwner?.node_id)).toBe(true)
+    expect(selectedNodes.map((node) => node.snippet ?? '').join('\n')).toMatch(/insert\(incidentTable\)/)
+    expect(serializedEvidence).toMatchObject({
+      answerability: { state: expect.stringMatching(/^ready(?:_with_caveat)?$/) },
+      agent_directive: 'answer_from_pack',
+    })
+  })
+
+  it('keeps every cited supporting node when one falls beyond the answer-ready node cap', () => {
+    const matchedNodes = Array.from({ length: 9 }, (_, index) => ({
+      node_id: `node-${index}`,
+      label: `Node${index}`,
+      source_file: `src/node-${index}.ts`,
+      line_number: index + 1,
+      snippet: `export const node${index} = ${index}`,
+    }))
+    const claimAnchor = matchedNodes[8]!
+    const payload = buildAnswerReadyPackSchema({
+      prompt: 'Describe this pack.',
+      evidence: {
+        agent_directive: 'answer_from_pack',
+      },
+      claims: [{
+        evidence_class: 'primary',
+        text: `input provenance: ${claimAnchor.label} consumes router output`,
+        node_labels: [matchedNodes[0]!.label, claimAnchor.label],
+      }],
+      pack: {
+        matched_nodes: matchedNodes,
+        relationships: [],
+        community_context: [],
+      },
+    }, 5_000)
+    const selectedNodes = (payload.pack as {
+      matched_nodes: Array<{ label: string }>
+    }).matched_nodes
+
+    expect(selectedNodes).toHaveLength(8)
+    expect(selectedNodes.some((node) => node.label === 'Node0')).toBe(true)
+    expect(selectedNodes.some((node) => node.label === claimAnchor.label)).toBe(true)
+    expect(selectedNodes.some((node) => node.label === 'Node7')).toBe(false)
+  })
+
+  it('compacts envelope metadata and snippets before culling a cross-layer workflow spine', () => {
+    const base = buildOversizedAnswerReadySchema()
+    const extraNodes = Array.from({ length: 4 }, (_, index) => ({
+      node_id: `cross-layer-${index}`,
+      label: `CrossLayerStep${index}.run`,
+      source_file: `apps/layer-${index}/src/step.ts`,
+      line_number: 90 + index,
+      snippet: `export async function run${index}() { ${'await downstream.execute(); '.repeat(40)} }`,
+    }))
+    const allNodes = [...base.pack.matched_nodes, ...extraNodes]
+    const relationships = allNodes.slice(1).map((node, index) => ({
+      from_id: allNodes[index]?.node_id,
+      from: allNodes[index]?.label,
+      to_id: node.node_id,
+      to: node.label,
+      relation: 'calls',
+    }))
+    const schema = {
+      ...base,
+      evidence: {
+        ...base.evidence,
+        evidence_strength: {
+          level: 'strong',
+          direct_selected_nodes: 8,
+          supporting_selected_nodes: 0,
+          selected_relationships: relationships.length,
+          available_relationships: relationships.length,
+          reasons: ['direct graph evidence spans the workflow'],
+        },
+        coverage_detail: {
+          status: 'complete',
+          required_obligations: ['failure source', 'incident persistence', 'notification dispatch', 'public status', 'divergence'],
+          covered_obligations: ['failure source', 'incident persistence', 'notification dispatch', 'public status', 'divergence'],
+          missing_obligations: [],
+        },
+        answerability: {
+          state: 'ready',
+          answer_scope: 'complete',
+          caveats: [],
+          missing_obligations: [],
+          verification_targets: [],
+          broad_search_fallback: 'not_needed',
+        },
+        recovery: {
+          version: 1,
+          status: 'not_needed',
+          budget: { max_attempts: 2, max_candidate_nodes: 24, max_elapsed_ms: 2_000, output_token_budget: 1_800 },
+          initial_state: 'ready',
+          final_state: 'ready',
+          attempts: [],
+          improved: false,
+        },
+        discovery_exclusions: {
+          policy: 'artifact_path_only',
+          total: 15,
+          relevant: 0,
+          reasons: { env_file: 15 },
+          relevant_reasons: {},
+        },
+        indexing_completeness: {
+          state: 'partial',
+          total_uncertain: 158,
+          relevant_uncertain: 0,
+          reasons: { unsupported_file_type: 85 },
+          relevant_reasons: {},
+        },
+      },
+      pack: {
+        ...base.pack,
+        question: base.prompt,
+        token_count: 1_793,
+        recovery: {
+          version: 1,
+          status: 'not_needed',
+          budget: { max_attempts: 2, max_candidate_nodes: 24, max_elapsed_ms: 2_000, output_token_budget: 1_800 },
+          initial_state: 'ready',
+          final_state: 'ready',
+          attempts: [],
+          improved: false,
+        },
+        matched_nodes: allNodes,
+        relationships,
+      },
+    }
+
+    const payload = buildAnswerReadyPackSchema(schema, 1_800, buildAnswerReadySelectionDiagnostics())
+    const pack = payload.pack as {
+      matched_nodes?: Array<{ source_file?: string; snippet?: string }>
+      relationships?: unknown[]
+    }
+    const evidence = payload.evidence as {
+      pack_confidence?: string
+      confidence_reasons?: string[]
+    }
+
+    expect(estimateQueryTokens(JSON.stringify(payload))).toBeLessThanOrEqual(1_800)
+    expect(payload.serialized_budget).toEqual(expect.objectContaining({
+      max_tokens: 1_800,
+      enforced: true,
+    }))
+    expect(pack.matched_nodes).toHaveLength(8)
+    expect(new Set(pack.matched_nodes?.map((node) => node.source_file))).toHaveLength(8)
+    expect(pack.matched_nodes?.every((node) => (node.snippet?.length ?? 0) <= 300)).toBe(true)
+    expect(pack.relationships).toHaveLength(relationships.length)
+    expect(evidence.pack_confidence).toBe('high')
+    expect(evidence.confidence_reasons ?? []).not.toContain('budget too tight for workflow spine')
   })
 
   it('preserves existing obligations, caveats, and blocked fallback when tight budgets cull the workflow spine', () => {

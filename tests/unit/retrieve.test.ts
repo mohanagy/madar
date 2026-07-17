@@ -2121,6 +2121,41 @@ describe('retrieve', () => {
       expect(result.matched_nodes.find((node) => node.label === 'CallerService')?.relevance_band).toBe('related')
     })
 
+    it('keeps a matched method with its declaring class across community boundaries', () => {
+      const graph = new KnowledgeGraph({ directed: true })
+      graph.addNode('owner', {
+        label: 'PersistenceGateway',
+        source_file: '/src/session-store.ts',
+        line_number: 1,
+        node_kind: 'class',
+        file_type: 'code',
+        community: 9,
+      })
+      graph.addNode('method', {
+        label: '.createSession()',
+        source_file: '/src/session-store.ts',
+        line_number: 2,
+        node_kind: 'method',
+        file_type: 'code',
+        community: 1,
+      })
+      graph.addEdge('owner', 'method', {
+        relation: 'method',
+        confidence: 'EXTRACTED',
+        source_file: '/src/session-store.ts',
+      })
+
+      const result = retrieveContext(graph, {
+        question: 'how does create session work',
+        budget: 3000,
+        retrievalLevel: 3,
+      })
+      const labels = result.matched_nodes.map((node) => node.label)
+
+      expect(labels).toContain('.createSession()')
+      expect(labels).toContain('PersistenceGateway')
+    })
+
     it('includes relationships between matched nodes', () => {
       const graph = buildTestGraph()
       const result = retrieveContext(graph, { question: 'auth', budget: 5000, retrievalLevel: 4 })
@@ -3144,6 +3179,11 @@ describe('retrieve', () => {
             label: `${source.label}-${index}`,
           }
         }),
+        claims: [{
+          evidence_class: 'primary',
+          text: 'primary evidence: first compact node',
+          node_labels: [`${rawResult.matched_nodes[0]?.label}-0`],
+        }],
         relationships: Array.from({ length: 48 }, (_, index) => ({
           from_id: `from-${index}`,
           from: `From${index}`,
@@ -3210,7 +3250,13 @@ describe('retrieve', () => {
       expect(compactResult.relationships.length).toBeLessThan(oversizedResult.relationships.length)
       expect(compactResult.slice?.selected_paths.length).toBeLessThan(240)
       expect(compactResult.coverage).toEqual(rawResult.coverage)
-      expect(compactResult.claims).toEqual(rawResult.claims)
+      expect(compactResult.claims).toHaveLength(1)
+      expect(compactResult.claims?.[0]).toEqual(expect.objectContaining({
+        text: 'primary evidence: first compact node',
+      }))
+      for (const claim of compactResult.claims ?? []) {
+        expect(claim.node_labels.every((label) => compactResult.matched_nodes.some((node) => node.label === label))).toBe(true)
+      }
     })
 
     it('drops dangling relationships when stdio compaction trims their endpoint nodes', () => {
@@ -3254,6 +3300,36 @@ describe('retrieve', () => {
           expect(retainedNodeIds.has(relationship.to_id)).toBe(true)
         }
       }
+    })
+
+    it('retains the first supporting node for every emitted claim during stdio compaction', () => {
+      const graph = buildExpansionGraph()
+      const rawResult = retrieveContext(graph, { question: 'auth', budget: 1 })
+      const anchorIndex = 20
+      const matchedNodes = Array.from({ length: 48 }, (_, index) => {
+        const source = rawResult.matched_nodes[index % rawResult.matched_nodes.length]!
+        return {
+          ...source,
+          ...(source.node_id ? { node_id: `${source.node_id}-${index}` } : {}),
+          label: `${source.label}-${index}`,
+        }
+      })
+      const anchorLabel = matchedNodes[anchorIndex]!.label
+      const oversizedResult: ReturnType<typeof retrieveContext> = {
+        ...rawResult,
+        matched_nodes: matchedNodes,
+        claims: [{
+          evidence_class: 'primary',
+          text: `input provenance: ${anchorLabel} consumes router output`,
+          node_labels: [anchorLabel],
+        }],
+      }
+
+      const compactResult = compactRetrieveResultForStdio(oversizedResult, { maxOutputTokens: 2000 })
+
+      expect(compactResult.matched_nodes.length).toBeLessThan(oversizedResult.matched_nodes.length)
+      expect(compactResult.matched_nodes.some((node) => node.label === anchorLabel)).toBe(true)
+      expect(compactResult.claims?.[0]?.node_labels).toEqual([anchorLabel])
     })
 
     it('assigns higher match_score to direct matches than neighbors', () => {

@@ -20,6 +20,8 @@ export interface SliceScoredNode {
   nodeKind?: string | undefined
   frameworkRole?: string | undefined
   exactLabelMatch: boolean
+  /** Strength of the prompt's explicit symbol match; preserves Class.method precision. */
+  symbolMatchScore?: number
   literalPathMatch?: boolean
   sourcePathMatch: boolean
   score: number
@@ -412,7 +414,16 @@ function buildAnchors(graph: KnowledgeGraph, scored: readonly SliceScoredNode[],
   const anchors: ContextPackSliceAnchor[] = []
   const seen = new Set<string>()
   const matchedAnchors = scored.filter((node) => node.exactLabelMatch || node.sourcePathMatch)
-  const exactMethodAnchors = matchedAnchors.filter((node) => node.exactLabelMatch && methodLikeNode(node))
+  const exactMethodAnchors = matchedAnchors
+    .filter((node) => node.exactLabelMatch && methodLikeNode(node))
+    // A qualified symbol can also weakly match a same-named method on a
+    // different class. Preserve the score from retrieval so the explicitly
+    // named Class.method remains the entry-point anchor.
+    .sort((left, right) => (
+      (right.symbolMatchScore ?? 0) - (left.symbolMatchScore ?? 0)
+      || right.score - left.score
+      || left.id.localeCompare(right.id)
+    ))
   const nonBarrelMatchedAnchors = matchedAnchors.filter((node) => !isBarrelLike(node.label, node.sourceFile))
   const broadRuntimeGeneration = broadRuntimeGenerationPrompt(options)
   const reportGenerationPrompt = promptWantsReportGenerationCore(options.prompt)

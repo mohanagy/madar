@@ -137,6 +137,15 @@ export function predecessorAllowedForPolicy(
     && seedCommunity === neighborCommunity
 }
 
+/**
+ * Extractors model a declaration owner as an incoming edge to its member.
+ * That ownership is structural evidence, so community clustering must not
+ * separate a matched member from the class or file that declares it.
+ */
+export function predecessorIsStructuralOwner(relation: string): boolean {
+  return relation === 'contains' || relation === 'method'
+}
+
 export function relationIsPrimaryForPolicy(level: RetrievalLevel, relation: string): boolean {
   return PRIMARY_RELATIONS.has(relation)
     || (level >= 3 && BEHAVIOR_RELATIONS.has(relation))

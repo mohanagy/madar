@@ -180,10 +180,147 @@ describe('rebuildCode', () => {
 })
 
 describe('watch', () => {
+  test('settles startup without rebuilding an unchanged valid graph', async () => {
+    await withTempDirAsync(async (tempDir) => {
+      writeFileSync(join(tempDir, 'main.ts'), 'export const value = 1\n', 'utf8')
+      const generated = generateGraph(tempDir, { noHtml: true })
+      const rebuild = vi.fn(() => true)
+      const refresh = startGraphAutoRefresh(tempDir, 0.02, {
+        pollIntervalMs: 20,
+        noHtml: true,
+        rebuildCode: rebuild,
+        logger: { log() {}, error() {} },
+      })
+
+      try {
+        await refresh.startupSettled
+        expect(refresh.startupComplete?.()).toBe(true)
+        expect(refresh.initialRebuilt).toBe(false)
+        expect(rebuild).not.toHaveBeenCalled()
+        expect(readWatcherStateForGraph(generated.graphPath)).toMatchObject({
+          status: 'idle',
+          coverage: 'complete',
+          policy_match: true,
+        })
+      } finally {
+        refresh.stop()
+        await refresh.completed
+      }
+    })
+  })
+
+  test('does not rebuild when managed root agent instructions were added after generation', async () => {
+    await withTempDirAsync(async (tempDir) => {
+      writeFileSync(join(tempDir, 'main.ts'), 'export const value = 1\n', 'utf8')
+      const generated = generateGraph(tempDir, { noHtml: true })
+      writeFileSync(join(tempDir, 'AGENTS.md'), '# Madar instructions\n', 'utf8')
+      writeFileSync(join(tempDir, 'CLAUDE.md'), '# Madar instructions\n', 'utf8')
+      const rebuild = vi.fn(() => true)
+      const refresh = startGraphAutoRefresh(tempDir, 0.02, {
+        pollIntervalMs: 20,
+        noHtml: true,
+        rebuildCode: rebuild,
+        logger: { log() {}, error() {} },
+      })
+
+      try {
+        await refresh.startupSettled
+        expect(refresh.startupComplete?.()).toBe(true)
+        expect(refresh.initialRebuilt).toBe(false)
+        expect(rebuild).not.toHaveBeenCalled()
+        expect(readWatcherStateForGraph(generated.graphPath)).toMatchObject({
+          status: 'idle',
+          coverage: 'complete',
+          policy_match: true,
+        })
+      } finally {
+        refresh.stop()
+        await refresh.completed
+      }
+    })
+  })
+
+  test('does not treat hard-ignored source directories as new graph candidates', async () => {
+    await withTempDirAsync(async (tempDir) => {
+      writeFileSync(join(tempDir, 'main.ts'), 'export const value = 1\n', 'utf8')
+      mkdirSync(join(tempDir, 'logs'), { recursive: true })
+      writeFileSync(join(tempDir, 'logs', 'client.tsx'), 'export const ignored = true\n', 'utf8')
+      generateGraph(tempDir, { noHtml: true })
+      const rebuild = vi.fn(() => true)
+      const refresh = startGraphAutoRefresh(tempDir, 0.02, {
+        pollIntervalMs: 20,
+        noHtml: true,
+        rebuildCode: rebuild,
+        logger: { log() {}, error() {} },
+      })
+
+      try {
+        await refresh.startupSettled
+        expect(refresh.initialRebuilt).toBe(false)
+        expect(rebuild).not.toHaveBeenCalled()
+      } finally {
+        refresh.stop()
+        await refresh.completed
+      }
+    })
+  })
+
+  test('still rebuilds before startup settles when an indexed source changed', async () => {
+    await withTempDirAsync(async (tempDir) => {
+      const sourcePath = join(tempDir, 'main.ts')
+      writeFileSync(sourcePath, 'export const value = 1\n', 'utf8')
+      generateGraph(tempDir, { noHtml: true })
+      writeFileSync(sourcePath, 'export const value = 2\n', 'utf8')
+      const rebuild = vi.fn(() => true)
+      const refresh = startGraphAutoRefresh(tempDir, 0.02, {
+        pollIntervalMs: 20,
+        noHtml: true,
+        rebuildCode: rebuild,
+        logger: { log() {}, error() {} },
+      })
+
+      try {
+        await refresh.startupSettled
+        expect(refresh.startupComplete?.()).toBe(true)
+        expect(refresh.initialRebuilt).toBe(true)
+        expect(rebuild).toHaveBeenCalledTimes(1)
+      } finally {
+        refresh.stop()
+        await refresh.completed
+      }
+    })
+  })
+
+  test('still rebuilds before startup settles when a new source was added', async () => {
+    await withTempDirAsync(async (tempDir) => {
+      writeFileSync(join(tempDir, 'main.ts'), 'export const value = 1\n', 'utf8')
+      generateGraph(tempDir, { noHtml: true })
+      writeFileSync(join(tempDir, 'added.ts'), 'export const added = 2\n', 'utf8')
+      const rebuild = vi.fn(() => true)
+      const refresh = startGraphAutoRefresh(tempDir, 0.02, {
+        pollIntervalMs: 20,
+        noHtml: true,
+        rebuildCode: rebuild,
+        logger: { log() {}, error() {} },
+      })
+
+      try {
+        await refresh.startupSettled
+        expect(refresh.startupComplete?.()).toBe(true)
+        expect(refresh.initialRebuilt).toBe(true)
+        expect(rebuild).toHaveBeenCalledTimes(1)
+      } finally {
+        refresh.stop()
+        await refresh.completed
+      }
+    })
+  })
+
   test('keeps startup unsettled during live lease contention and recovers after release', async () => {
     await withTempDirAsync(async (tempDir) => {
       writeFileSync(join(tempDir, 'main.ts'), 'export const value = 1\n', 'utf8')
       const generated = generateGraph(tempDir, { noHtml: true })
+      writeFileSync(join(tempDir, 'main.ts'), 'export const value = 2\n', 'utf8')
       const releaseOwner = tryAcquireRefreshLease(generated.outputDir)
       expect(releaseOwner).toBeTypeOf('function')
 

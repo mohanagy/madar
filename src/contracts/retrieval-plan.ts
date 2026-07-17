@@ -3,6 +3,7 @@ export type RetrievalFallbackReason =
   | 'low_workflow_coherence'
   | 'missing_required_evidence'
   | 'missing_semantic_evidence'
+  | 'missing_query_obligations'
 
 export type RepositoryVocabularySource =
   | 'path'
@@ -30,9 +31,17 @@ export interface RetrievalFallbackAttempt {
   vocabulary_sources: RepositoryVocabularySource[]
   expansion_terms: string[]
   promoted_candidates: number
+  /** Community ids represented by positively promoted candidates. */
+  promoted_communities?: number[]
   changed_result: boolean
   added_selected_files: number
   removed_selected_files: number
+}
+
+export interface RetrievalQueryObligationCoverage {
+  total: number
+  initially_covered: number
+  finally_covered: number
 }
 
 /**
@@ -49,6 +58,7 @@ export interface ContextPackRetrievalPlanDetail {
   initial: RetrievalQualitySnapshot
   final: RetrievalQualitySnapshot
   attempts: RetrievalFallbackAttempt[]
+  query_obligations?: RetrievalQueryObligationCoverage
   selected_fallback?: RetrievalFallbackAttempt['fallback']
 }
 

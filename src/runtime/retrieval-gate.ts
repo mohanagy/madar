@@ -74,7 +74,7 @@ const PATTERNS: ReadonlyArray<{ intent: RetrievalIntent; re: RegExp }> = [
   { intent: 'test',     re: /\b(?:test(?:s|ing)?|spec(?:s)?|coverage|missing tests?)\b/i },
   { intent: 'refactor', re: /\b(?:refactor|simplif(?:y|ied)|clean ?up|tidy|extract)\b/i },
   { intent: 'rename',   re: /\b(?:rename|format|fix typo|spell(?:ing)?|reword|capitaliz)\b/i },
-  { intent: 'explain',  re: /\b(?:explain|what (?:does|is)|how does|describe|walk me through|tell me about|summari[sz]e)\b/i },
+  { intent: 'explain',  re: /\b(?:explain|what (?:does|is|runs?)|how does|describe|walk me through|tell me about|summari[sz]e)\b/i },
 ]
 
 const PATH_RE = /(?:^|\s|`)((?:[\w@./-]+\/)*[\w./@-]+\.[A-Za-z]{1,8})(?=\b|`|$)/g
@@ -132,6 +132,7 @@ export function classifyRetrievalLevel(input: RetrievalGateInput): RetrievalGate
   const decision = decideLevel({
     intent,
     generationIntent,
+    executionOwnerShaped: /\bwhat runs?\b/i.test(positivePrompt),
     hasPrDiff,
     hasStackTrace,
     mentions: detectedPaths.length + detectedSymbols.length,
@@ -147,11 +148,12 @@ export function classifyRetrievalLevel(input: RetrievalGateInput): RetrievalGate
 function decideLevel(opts: {
   intent: RetrievalIntent
   generationIntent: RetrievalGenerationIntent
+  executionOwnerShaped: boolean
   hasPrDiff: boolean
   hasStackTrace: boolean
   mentions: number
 }): { level: RetrievalLevel; reason: string } {
-  const { intent, generationIntent, hasPrDiff, hasStackTrace, mentions } = opts
+  const { intent, generationIntent, executionOwnerShaped, hasPrDiff, hasStackTrace, mentions } = opts
 
   // Stack trace is strong evidence of a behavior-tracing question regardless
   // of intent classification.
@@ -167,6 +169,10 @@ function decideLevel(opts: {
 
   if (generationIntent === 'runtime_generation' && (intent === 'unknown' || intent === 'explain')) {
     return { level: 3, reason: 'runtime generation intent — behavior slice retrieval' }
+  }
+
+  if (executionOwnerShaped && (intent === 'unknown' || intent === 'explain')) {
+    return { level: 3, reason: 'runtime flow question — behavior slice retrieval' }
   }
 
   switch (intent) {
@@ -239,7 +245,7 @@ function detectGenerationIntent(prompt: string): {
   const buildStaticShaped = /\b(?:next\.js|nextjs|app\s+router|route\s+segment|landing\s+page|static|ssg|isr|server\s+component)\b/i.test(lower)
   const explanationShaped = /\b(?:explain|how|why|trace|walk|flow|path|lifecycle|fail(?:s|ing|ed)?)\b/i.test(lower)
   const flowProofShaped =
-    /\b(?:trace|walk(?:\s+me)?\s+through|flow|path|lifecycle|end-to-end|what happens when|through(?:\s+the)?\s+(?:runtime|pipeline)|reaches?)\b/i.test(lower)
+    /\b(?:trace|walk(?:\s+me)?\s+through|flow|path|lifecycle|end-to-end|what (?:happens when|runs?)|through(?:\s+the)?\s+(?:runtime|pipeline)|reaches?)\b/i.test(lower)
     || (
       /\b(?:how|explain)\b/i.test(lower)
       && /\b(?:generated|built|assembled|produced|created|persist(?:ed|ing)?|saved?|handoff|handoffs)\b/i.test(lower)

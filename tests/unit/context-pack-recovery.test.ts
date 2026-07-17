@@ -70,7 +70,10 @@ function result(input: {
       source_file: 'src/supporting.ts',
       line_number: 1,
       file_type: 'code',
-      snippet: 'save()',
+      // The recovery result must prove the prompt's workflow-persistence
+      // obligation in a selected source snippet, not merely add a node whose
+      // label sounds related.
+      snippet: 'await workflow.persist(record)',
       match_score: 1,
       relevance_band: 'related',
       community: 0,
@@ -136,7 +139,7 @@ describe('bounded cumulative context-pack recovery', () => {
       attempts: [expect.objectContaining({
         status: 'improved',
         changed_result: true,
-        missing_obligations_before: 1,
+        missing_obligations_before: 2,
         missing_obligations_after: 0,
       })],
     })

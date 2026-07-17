@@ -314,6 +314,15 @@ describe('classifyRetrievalLevel — signal extraction', () => {
     expect(genericExplainDecision.signals.target_domain_hint).toBe('backend_runtime')
     expect(genericExplainSignals.generation_debug?.flow_proof_shaped).toBe(false)
   })
+
+  it('treats execution-owner questions as behavior traces', () => {
+    const decision = classify({ prompt: 'What runs the monthly billing close?' })
+
+    expect(decision.intent).toBe('explain')
+    expect(decision.level).toBe(3)
+    expect(decision.reason).toMatch(/runtime flow|behavior slice/i)
+    expect(decision.signals.generation_debug?.flow_proof_shaped).toBe(true)
+  })
 })
 
 describe('classifyRetrievalLevel — exclusions and negation', () => {

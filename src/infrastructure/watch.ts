@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, unlinkSync, watch as createFileSystemWatcher, writeFileSync } from 'node:fs'
-import { extname, join, resolve, sep } from 'node:path'
+import { basename, extname, join, relative, resolve, sep } from 'node:path'
 
 import type { IndexingStrictThresholds } from '../contracts/indexing.js'
 import type { WatcherEventMode, WatcherStateV1 } from '../contracts/watcher-state.js'
@@ -15,8 +15,11 @@ import {
   VIDEO_EXTENSIONS,
 } from '../pipeline/detect.js'
 import { EXTRACTOR_CACHE_VERSION } from '../pipeline/extract.js'
+import { analyzeGraphContextFreshness } from '../runtime/freshness.js'
+import { readIndexingManifestForGraph } from './indexing-manifest.js'
 import { sidecarAwareFileFingerprint } from '../shared/binary-ingest-sidecar.js'
 import { collectGitVisibleFiles } from '../shared/git.js'
+import { isDiscoveryPathIgnored, loadMadarignorePatterns } from '../shared/source-discovery.js'
 import { resolveMadarOutputDirectory } from '../shared/workspace.js'
 import { generateGraph, type GenerateGraphOptions, type GenerateGraphResult } from './generate.js'
 import {
@@ -72,6 +75,15 @@ const WATCHED_CONTROL_FILENAMES = new Set([
   'settings.gradle',
   'settings.gradle.kts',
 ])
+// Madar writes these root-level instruction files when an agent integration is
+// installed. They guide the agent, rather than describe the indexed codebase,
+// so their creation or edits must not force the first MCP request to wait for
+// a graph reconciliation.
+const MANAGED_AGENT_INSTRUCTION_FILENAMES = new Set(['AGENTS.md', 'CLAUDE.md'])
+
+function isRootManagedAgentInstructionFile(discoveryRoot: string, filePath: string): boolean {
+  return MANAGED_AGENT_INSTRUCTION_FILENAMES.has(relative(discoveryRoot, filePath).replaceAll('\\', '/'))
+}
 
 export interface WatchLogger {
   log(message?: string): void
@@ -247,6 +259,83 @@ function graphBelongsToWorkspace(graphPath: string, workspaceRoot: string): bool
   }
 }
 
+function canReuseFreshGraphOnStart(
+  workspaceRoot: string,
+  outputDir: string,
+  state: WatcherStateV1,
+  currentSnapshot: WatchSnapshot,
+): boolean {
+  const graphPath = join(outputDir, 'graph.json')
+  const manifestPath = join(outputDir, 'manifest.json')
+  if (
+    state.policy_match !== true
+    || !existsSync(graphPath)
+    || !existsSync(manifestPath)
+    || existsSync(join(outputDir, 'needs_update'))
+    || !graphBelongsToWorkspace(graphPath, workspaceRoot)
+  ) {
+    return false
+  }
+
+  try {
+    const freshness = analyzeGraphContextFreshness(graphPath)
+    if (freshness.status !== 'fresh' || freshness.generated_ms === null) {
+      return false
+    }
+
+    const indexingManifest = readIndexingManifestForGraph(graphPath)
+    if (!indexingManifest) {
+      return false
+    }
+    const persistedCandidates = new Set(
+      indexingManifest.outcomes
+        .filter((outcome) => outcome.kind === 'file')
+        .map((outcome) => outcome.path.replaceAll('\\', '/').replace(/^\.\//, '')),
+    )
+    const currentCandidates = new Set<string>()
+    for (const filePath of currentSnapshot.fingerprints.keys()) {
+      if (filePath === GIT_VISIBILITY_SNAPSHOT_KEY) {
+        continue
+      }
+      if (isRootManagedAgentInstructionFile(workspaceRoot, filePath)) {
+        continue
+      }
+      if (WATCHED_CONTROL_FILENAMES.has(basename(filePath))) {
+        if (lstatSync(filePath).mtimeMs > freshness.generated_ms) {
+          return false
+        }
+        continue
+      }
+      if (!WATCHED_EXTENSIONS.has(extname(filePath).toLowerCase())) {
+        continue
+      }
+      const localPath = relative(workspaceRoot, filePath).replaceAll('\\', '/')
+      if (localPath === '' || localPath === '..' || localPath.startsWith('../')) {
+        return false
+      }
+      currentCandidates.add(localPath)
+      if (!persistedCandidates.has(localPath)) {
+        return false
+      }
+    }
+    for (const outcome of indexingManifest.outcomes) {
+      const localPath = outcome.path.replaceAll('\\', '/').replace(/^\.\//, '')
+      if (
+        outcome.kind === 'file'
+        && outcome.status !== 'skipped_by_policy'
+        && WATCHED_EXTENSIONS.has(extname(localPath).toLowerCase())
+        && !MANAGED_AGENT_INSTRUCTION_FILENAMES.has(localPath)
+        && !currentCandidates.has(localPath)
+      ) {
+        return false
+      }
+    }
+    return true
+  } catch {
+    return false
+  }
+}
+
 class WatchCoverageError extends Error {
   constructor(message: string) {
     super(message)
@@ -279,6 +368,8 @@ function assertReconciliationWithinDeadline(collection: SnapshotCollection): voi
 function collectWatchedFiles(
   directory: string,
   followSymlinks: boolean,
+  discoveryRoot: string,
+  discoveryIgnorePatterns: readonly string[],
   rootRealPath: string,
   ancestorRealPaths: string[],
   collection: SnapshotCollection,
@@ -304,17 +395,32 @@ function collectWatchedFiles(
   for (const entry of entries) {
     assertReconciliationWithinDeadline(collection)
     const isControlFile = WATCHED_CONTROL_FILENAMES.has(entry.name)
+    const entryPath = resolve(directory, entry.name)
+    if (isRootManagedAgentInstructionFile(discoveryRoot, entryPath)) {
+      continue
+    }
     if (entry.name.startsWith('.') && !isControlFile) {
       continue
     }
     if (WATCH_IGNORED_DIRECTORIES.has(entry.name)) {
       continue
     }
-
-    const entryPath = resolve(directory, entry.name)
+    if (!isControlFile && isDiscoveryPathIgnored(entryPath, discoveryRoot, discoveryIgnorePatterns)) {
+      continue
+    }
 
     if (entry.isDirectory()) {
-      collectWatchedFiles(entryPath, followSymlinks, rootRealPath, ancestorRealPaths, collection, includedFiles, symlinkDepth)
+      collectWatchedFiles(
+        entryPath,
+        followSymlinks,
+        discoveryRoot,
+        discoveryIgnorePatterns,
+        rootRealPath,
+        ancestorRealPaths,
+        collection,
+        includedFiles,
+        symlinkDepth,
+      )
       continue
     }
 
@@ -344,7 +450,17 @@ function collectWatchedFiles(
       }
 
       if (targetStats.isDirectory()) {
-        collectWatchedFiles(entryPath, followSymlinks, rootRealPath, [...ancestorRealPaths, realTarget], collection, includedFiles, symlinkDepth + 1)
+        collectWatchedFiles(
+          entryPath,
+          followSymlinks,
+          discoveryRoot,
+          discoveryIgnorePatterns,
+          rootRealPath,
+          [...ancestorRealPaths, realTarget],
+          collection,
+          includedFiles,
+          symlinkDepth + 1,
+        )
         continue
       }
 
@@ -418,7 +534,17 @@ export function snapshotWatchedFiles(
 
   const visibleFiles = respectGitignore ? readGitVisibleFiles(resolvedWatchPath, gitVisibilityCache) : null
   const includedFiles = visibleFiles === null ? undefined : new Set(visibleFiles)
-  collectWatchedFiles(resolvedWatchPath, followSymlinks, rootRealPath, [rootRealPath], collection, includedFiles)
+  const discoveryIgnorePatterns = loadMadarignorePatterns(resolvedWatchPath)
+  collectWatchedFiles(
+    resolvedWatchPath,
+    followSymlinks,
+    resolvedWatchPath,
+    discoveryIgnorePatterns,
+    rootRealPath,
+    [rootRealPath],
+    collection,
+    includedFiles,
+  )
   if (visibleFiles !== null) {
     const visibilityFingerprint = createHash('sha256').update([...visibleFiles].sort().join('\0')).digest('hex')
     collection.fingerprints.set(GIT_VISIBILITY_SNAPSHOT_KEY, visibilityFingerprint)
@@ -759,6 +885,9 @@ export async function watch(watchPath: string, debounce = 3, options: WatchOptio
       return false
     }
     const normalized = filename.toString().replaceAll('\\', '/').replace(/^\.\//, '')
+    if (MANAGED_AGENT_INSTRUCTION_FILENAMES.has(normalized)) {
+      return true
+    }
     const [topLevel] = normalized.split('/')
     return topLevel !== undefined && eventIgnoredDirectories.has(topLevel)
   })
@@ -819,7 +948,9 @@ export async function watch(watchPath: string, debounce = 3, options: WatchOptio
       output.log('[madar watch] Recursive filesystem events unavailable; adaptive polling is authoritative.')
     }
 
-    if (options.rebuildOnStart) {
+    if (options.rebuildOnStart && canReuseFreshGraphOnStart(resolvedWatchPath, outputDir, state, previousSnapshot)) {
+      options.onInitialRebuild?.(false)
+    } else if (options.rebuildOnStart) {
       state.status = 'reconciling'
       persistState()
       const initialRebuild = runInitialRebuild(resolvedWatchPath, rebuildOptionsFromWatch(options, output))

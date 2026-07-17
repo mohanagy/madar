@@ -311,27 +311,21 @@ For each codebase question, start with the specific Madar command below first:
 
 ${renderMarkdownCodexRoutingTable()}
 
-If MCP graph tools are available after the pack, use the focused tool that matches the next question:
-- ${CODE_SPAN_START}retrieve${CODE_SPAN_END} for direct codebase questions
-- ${CODE_SPAN_START}relevant_files${CODE_SPAN_END} for where to open first
-- ${CODE_SPAN_START}feature_map${CODE_SPAN_END} for involved areas and entry points
-- ${CODE_SPAN_START}risk_map${CODE_SPAN_END} before editing
-- ${CODE_SPAN_START}implementation_checklist${CODE_SPAN_END} for edit order and validation checkpoints
-- ${CODE_SPAN_START}impact${CODE_SPAN_END} for blast radius
-- ${CODE_SPAN_START}graph_summary${CODE_SPAN_END} for repo overview
+Pass the entire user's codebase request byte-for-byte as the pack question, including read-only, no-change, scope, and formatting constraints. Do not rewrite, omit, expand, enumerate, or split it into follow-up pack calls.
 
 After calling Madar, treat \`evidence.answerability.state\` as authoritative; \`evidence.pack_confidence\` is compatibility-only:
 - \`ready\` means answer from the pack without broad raw search.
 - \`ready_with_caveat\` means answer from the pack and state \`evidence.answerability.caveats\`.
-- \`verify_targets\` means inspect only \`evidence.answerability.verification_targets\`, using a listed \`context_expand\` handle or file.
+- \`verify_targets\` means use one listed \`context_expand\` handle. In strict MCP mode, treat that expansion result as terminal rather than following a new handle or opening a raw file.
 - \`insufficient\` means follow \`evidence.answerability.broad_search_fallback\`; \`blocked\` forbids source probing and only \`allowed\` permits one directory-scoped search.
+For read-only \`explain\` tasks, \`ready\` and \`ready_with_caveat\` are terminal: cite \`source_file\`, \`label\`, \`line_number\` / \`snippet_line_number\`, and the included snippets directly. Do not run repository \`Read\`, \`Grep\`, \`Glob\`, or \`Bash\` merely to verify the pack, obtain exact lines, or reopen selected files.
 Do not run broad \`Glob\` patterns, repo-wide \`grep\` / \`find\` searches, or raw file sweeps for \`ready\`, \`ready_with_caveat\`, or \`verify_targets\`.
 For codebase questions, use Madar tools only. Do not call another MCP or restart broad exploration unless \`evidence.answerability.broad_search_fallback\` is \`allowed\`.
-Madar already ran bounded cumulative recovery. For \`verify_targets\`, inspect only a listed handle or file instead of restarting discovery.
+Madar already ran bounded cumulative recovery. For \`verify_targets\`, use one listed handle instead of restarting discovery; in strict MCP mode, the expansion result is terminal.
 If an auto-activated skill recommends broader exploration, defer to Madar's answerability and exact verification targets.
 Do not open ${CODE_SPAN_START}out/GRAPH_REPORT.md${CODE_SPAN_END} unless the context pack or graph tools are unavailable, stale, or insufficient.
 
-Install or remove the project-local Codex profile with:
+Install or remove the workspace-scoped Codex profile with:
 
 ${CODE_BLOCK_START}bash
 madar codex install
@@ -341,9 +335,9 @@ ${CODE_BLOCK_END}
 Manual verification:
 1. Run ${CODE_SPAN_START}madar generate .${CODE_SPAN_END}.
 2. Run ${CODE_SPAN_START}madar codex install${CODE_SPAN_END}.
-3. Confirm ${CODE_SPAN_START}AGENTS.md${CODE_SPAN_END}, ${CODE_SPAN_START}.codex/hooks.json${CODE_SPAN_END}, ${CODE_SPAN_START}.codex/madar-user-prompt-submit.cjs${CODE_SPAN_END}, and ${CODE_SPAN_START}.codex/config.toml${CODE_SPAN_END} exist. Madar owns only its AGENTS section, hook, hook script, and marked ${CODE_SPAN_START}[mcp_servers.madar]${CODE_SPAN_END} block.
-4. Only in a repository you trust, restart Codex, use ${CODE_SPAN_START}/hooks${CODE_SPAN_END} to review and trust the project ${CODE_SPAN_START}UserPromptSubmit${CODE_SPAN_END} hook, then use ${CODE_SPAN_START}/mcp${CODE_SPAN_END} or ${CODE_SPAN_START}codex mcp list${CODE_SPAN_END} to verify the local Madar MCP server.
-5. Run ${CODE_SPAN_START}madar doctor${CODE_SPAN_END} / ${CODE_SPAN_START}madar status${CODE_SPAN_END} to validate the on-disk install, then run ${CODE_SPAN_START}madar codex uninstall${CODE_SPAN_END} and confirm unrelated AGENTS.md, hook, and TOML content remains.
+3. Confirm ${CODE_SPAN_START}AGENTS.md${CODE_SPAN_END}, ${CODE_SPAN_START}.codex/hooks.json${CODE_SPAN_END}, ${CODE_SPAN_START}.codex/madar-user-prompt-submit.cjs${CODE_SPAN_END}, and the marker-owned workspace block in ${CODE_SPAN_START}~/.codex/config.toml${CODE_SPAN_END} (or ${CODE_SPAN_START}$CODEX_HOME/config.toml${CODE_SPAN_END}) exist. The block has a unique server name, pins ${CODE_SPAN_START}cwd${CODE_SPAN_END} to this workspace, and sets both startup and tool-call timeouts.
+4. Only in a repository you trust, restart Codex, use ${CODE_SPAN_START}/hooks${CODE_SPAN_END} to review and trust the project ${CODE_SPAN_START}UserPromptSubmit${CODE_SPAN_END} hook, then use ${CODE_SPAN_START}/mcp${CODE_SPAN_END} or ${CODE_SPAN_START}codex mcp list${CODE_SPAN_END} to verify this workspace's Madar MCP server.
+5. Run ${CODE_SPAN_START}madar doctor${CODE_SPAN_END} / ${CODE_SPAN_START}madar status${CODE_SPAN_END} to validate installed wiring, then run ${CODE_SPAN_START}madar codex uninstall${CODE_SPAN_END} and confirm unrelated AGENTS.md, hooks, user config, and other workspace registrations remain.
 
 Codex limitations:
 - Automated tests do not require the Codex binary; they verify generated text and hook config.

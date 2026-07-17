@@ -2724,7 +2724,7 @@ describe('stdio runtime', () => {
     }
   }, 10_000)
 
-  it('refuses graph answers while an auto-refresh event is pending, then recovers', async () => {
+  it('holds one graph request while an auto-refresh event is pending, then answers it', async () => {
     const root = mkdtempSync(join(tmpdir(), 'madar-stdio-pending-refresh-'))
     const graphPath = join(root, 'out', 'graph.json')
     const input = new PassThrough()
@@ -2741,6 +2741,7 @@ describe('stdio runtime', () => {
       autoRefresh: true,
       workspaceRoot: root,
       autoRefreshDebounceSeconds: 0.5,
+      autoRefreshRequestWaitMs: 2_500,
       input,
       output,
       errorOutput,
@@ -2752,7 +2753,8 @@ describe('stdio runtime', () => {
       await waitFor(() => readWatcherStateForGraph(graphPath)?.status === 'pending')
 
       input.write(`${JSON.stringify({ id: 31, method: 'stats' })}\n`)
-      await waitFor(() => outputText.includes('"id":31'))
+      await delay(50)
+      expect(outputText).not.toContain('"id":31')
 
       await waitFor(() => {
         if (readWatcherStateForGraph(graphPath)?.status !== 'idle') {
@@ -2761,6 +2763,7 @@ describe('stdio runtime', () => {
         const graph = JSON.parse(readFileSync(graphPath, 'utf8')) as { nodes?: Array<{ source_file?: string }> }
         return graph.nodes?.some((node) => node.source_file?.endsWith('added.ts')) === true
       })
+      await waitFor(() => outputText.includes('"id":31'))
       input.end(`${JSON.stringify({ id: 32, method: 'stats' })}\n`)
       await serverPromise
 
@@ -2773,16 +2776,8 @@ describe('stdio runtime', () => {
           result?: string
           error?: { message?: string; data?: Record<string, unknown> }
         }>
-      expect(responses.find((response) => response.id === 31)?.error).toMatchObject({
-        message: expect.stringContaining('temporarily pending'),
-        data: {
-          type: 'madar_graph_not_ready',
-          state: 'pending',
-          retryable: true,
-          retry_after_ms: 1_000,
-          suggested_action: 'retry_same_request',
-        },
-      })
+      expect(responses.find((response) => response.id === 31)?.result).toContain('Nodes:')
+      expect(responses.find((response) => response.id === 31)?.error).toBeUndefined()
       expect(responses.find((response) => response.id === 32)?.result).toContain('Nodes:')
     } finally {
       input.destroy()
@@ -2806,6 +2801,7 @@ describe('stdio runtime', () => {
       graphPath,
       autoRefresh: true,
       workspaceRoot: root,
+      autoRefreshRequestWaitMs: 0,
       input,
       output,
       errorOutput,
@@ -2897,6 +2893,7 @@ describe('stdio runtime', () => {
       autoRefresh: true,
       workspaceRoot: root,
       autoRefreshDebounceSeconds: 0.02,
+      autoRefreshRequestWaitMs: 2_500,
       input,
       output,
       errorOutput,
@@ -2910,10 +2907,11 @@ describe('stdio runtime', () => {
 
       input.write(`${JSON.stringify({ id: 52, method: 'stats' })}\n`)
       input.write(`${JSON.stringify({ id: 51, method: 'ping' })}\n`)
-      await waitFor(() => outputText.includes('"id":52'), 1_000)
       await waitFor(() => outputText.includes('"id":51'), 1_000)
+      expect(outputText).not.toContain('"id":52')
       rmSync(lockPath, { force: true })
       await waitFor(() => readWatcherStateForGraph(graphPath)?.status === 'idle')
+      await waitFor(() => outputText.includes('"id":52'), 1_000)
       input.end(`${JSON.stringify({ id: 53, method: 'stats' })}\n`)
       await serverPromise
 
@@ -2935,15 +2933,8 @@ describe('stdio runtime', () => {
           }
         })
       expect(responses.find((response) => response.id === 51)?.result).toEqual({ ok: true })
-      expect(responses.find((response) => response.id === 52)?.error).toMatchObject({
-        message: expect.stringContaining('temporarily reconciling'),
-        data: {
-          state: 'reconciling',
-          retryable: true,
-          retry_after_ms: 1_000,
-          suggested_action: 'retry_same_request',
-        },
-      })
+      expect(responses.find((response) => response.id === 52)?.result).toEqual(expect.any(String))
+      expect(responses.find((response) => response.id === 52)?.error).toBeUndefined()
       expect(responses.find((response) => response.id === 53)?.result).toEqual(expect.any(String))
     } finally {
       rmSync(lockPath, { force: true })

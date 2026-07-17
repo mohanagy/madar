@@ -187,6 +187,7 @@ function baseCoverageAssessment(
   coverage: ContextPackCoverage | undefined,
   status: MadarResponseCoverage,
   missingPhases: readonly ContextPackExecutionPhase[],
+  queryEvidence: RetrievalEvidencePlan['query_evidence'],
 ): MadarCoverageAssessment {
   const requiredEvidence = coverage?.entries.filter((entry) => entry.required) ?? []
   const requiredSemantic = coverage?.semantic_entries.filter((entry) => entry.required) ?? []
@@ -194,18 +195,22 @@ function baseCoverageAssessment(
     ...requiredEvidence.map((entry) => `evidence:${entry.evidence_class}`),
     ...requiredSemantic.map((entry) => `semantic:${entry.category}`),
     ...missingPhases.map((phase) => `phase:${phase}`),
+    ...(queryEvidence?.covered_obligations ?? []),
+    ...(queryEvidence?.missing_obligations ?? []),
   ]
   const coveredObligations = [
     ...requiredEvidence.filter((entry) => entry.status === 'covered').map((entry) => `evidence:${entry.evidence_class}`),
     ...requiredSemantic.filter((entry) => entry.status === 'covered').map((entry) => `semantic:${entry.category}`),
+    ...(queryEvidence?.covered_obligations ?? []),
   ]
   const missingObligations = [
     ...requiredEvidence.filter((entry) => entry.status !== 'covered').map((entry) => `evidence:${entry.evidence_class}`),
     ...requiredSemantic.filter((entry) => entry.status !== 'covered').map((entry) => `semantic:${entry.category}`),
     ...missingPhases.map((phase) => `phase:${phase}`),
+    ...(queryEvidence?.missing_obligations ?? []),
   ]
   return {
-    status,
+    status: queryEvidence && queryEvidence.missing_obligations.length > 0 ? 'partial' : status,
     required_obligations: [...new Set(requiredObligations)],
     covered_obligations: [...new Set(coveredObligations)],
     missing_obligations: [...new Set(missingObligations)],
@@ -576,6 +581,9 @@ export function assessMadarResponseEvidence(input: {
   const plannedExecutionSlice = evidencePlan.execution_slice
   const plannedAnswerContract = evidencePlan.answer_contract
   let coverage = coverageStatusFromCoverage(plannedCoverage)
+  if ((evidencePlan.query_evidence?.missing_obligations.length ?? 0) > 0) {
+    coverage = 'partial'
+  }
   const baseScore = typeof input.score === 'number' && Number.isFinite(input.score)
     ? input.score
     : plannedCoverage
@@ -596,7 +604,12 @@ export function assessMadarResponseEvidence(input: {
   const confidenceReasons: string[] = []
   let answerContained: boolean | undefined
   let evidenceStrength = evidenceStrengthFromCoverage(plannedCoverage, plannedExecutionSlice)
-  let coverageDetail = baseCoverageAssessment(plannedCoverage, coverage, missingPhases)
+  let coverageDetail = baseCoverageAssessment(
+    plannedCoverage,
+    coverage,
+    missingPhases,
+    evidencePlan.query_evidence,
+  )
   let sourceReliabilityFailed = false
   let sourceVerificationBlocked = false
 
@@ -651,6 +664,18 @@ export function assessMadarResponseEvidence(input: {
         )
       }
     }
+  }
+
+  if ((evidencePlan.query_evidence?.missing_obligations.length ?? 0) > 0) {
+    evidenceStrength = capEvidenceStrength(
+      evidenceStrength,
+      'moderate',
+      'selected_snippets_do_not_cover_all_query_obligations',
+    )
+    confidenceCap = moreRestrictiveConfidence(confidenceCap, 'medium')
+    confidenceReasons.push(
+      `query evidence: ${evidencePlan.query_evidence?.covered ?? 0}/${evidencePlan.query_evidence?.total ?? 0} prompt obligations have snippet-bearing evidence`,
+    )
   }
 
   if (answerContained === false) {
