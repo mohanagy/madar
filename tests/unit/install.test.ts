@@ -1,7 +1,8 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, relative } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import * as ts from 'typescript'
 
@@ -1731,6 +1732,42 @@ describe('install helpers', () => {
     })
   })
 
+  it('atomically updates Codex user config while preserving its permissions for install and uninstall', () => {
+    withTempDir((projectDir) => {
+      const configPath = resolveCodexMcpConfigPath()
+      const original = '# preserve this user config\n[features]\nparallel = true\n'
+      mkdirSync(dirname(configPath), { recursive: true })
+      writeFileSync(configPath, original, 'utf8')
+      if (process.platform !== 'win32') {
+        chmodSync(configPath, 0o640)
+      }
+      const originalInode = process.platform === 'win32' ? null : statSync(configPath).ino
+
+      agentsInstall(projectDir, 'codex')
+
+      const managedContent = readFileSync(configPath, 'utf8')
+      expect(managedContent).toContain(original)
+      expect(managedContent).toContain('[mcp_servers.madar_')
+      expect(existsSync(`${configPath}.madar.lock`)).toBe(false)
+      expect(readdirSync(dirname(configPath)).filter((entry) => entry.startsWith('.config.toml.madar-'))).toEqual([])
+      if (process.platform !== 'win32') {
+        expect(statSync(configPath).mode & 0o777).toBe(0o640)
+        expect(statSync(configPath).ino).not.toBe(originalInode)
+      }
+      const managedInode = process.platform === 'win32' ? null : statSync(configPath).ino
+
+      agentsUninstall(projectDir, 'codex')
+
+      expect(readFileSync(configPath, 'utf8')).toBe(original)
+      expect(existsSync(`${configPath}.madar.lock`)).toBe(false)
+      expect(readdirSync(dirname(configPath)).filter((entry) => entry.startsWith('.config.toml.madar-'))).toEqual([])
+      if (process.platform !== 'win32') {
+        expect(statSync(configPath).mode & 0o777).toBe(0o640)
+        expect(statSync(configPath).ino).not.toBe(managedInode)
+      }
+    })
+  })
+
   it('keeps Codex MCP registrations for separate workspaces independent', () => {
     withTempDir((root) => {
       const firstProject = join(root, 'first')
@@ -1788,6 +1825,31 @@ describe('install helpers', () => {
       expect(() => agentsInstall(projectDir, 'codex')).toThrow(/marker block/i)
       expect(readFileSync(legacyConfigPath, 'utf8')).toBe(malformed)
       expect(existsSync(globalConfigPath) ? readFileSync(globalConfigPath, 'utf8') : null).toBe(globalBefore)
+    })
+  })
+
+  it('releases the Codex user-config lock when a managed block is malformed', () => {
+    withTempDir((projectDir) => {
+      const configPath = resolveCodexMcpConfigPath()
+      const serverName = `madar_${createHash('sha256').update(resolve(projectDir)).digest('hex').slice(0, 12)}`
+      const malformed = `# preserve this user config\n# >>> madar managed mcp: ${serverName} >>>\n[mcp_servers.${serverName}]\n`
+      const priorContent = existsSync(configPath) ? readFileSync(configPath, 'utf8') : null
+      mkdirSync(dirname(configPath), { recursive: true })
+      try {
+        writeFileSync(configPath, malformed, 'utf8')
+
+        expect(() => agentsInstall(projectDir, 'codex')).toThrow(/marker block/i)
+        expect(readFileSync(configPath, 'utf8')).toBe(malformed)
+        expect(existsSync(`${configPath}.madar.lock`)).toBe(false)
+        expect(readdirSync(dirname(configPath)).filter((entry) => entry.startsWith('.config.toml.madar-'))).toEqual([])
+        expect(existsSync(join(projectDir, 'AGENTS.md'))).toBe(false)
+      } finally {
+        if (priorContent === null) {
+          rmSync(configPath, { force: true })
+        } else {
+          writeFileSync(configPath, priorContent, 'utf8')
+        }
+      }
     })
   })
 

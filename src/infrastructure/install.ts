@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, rmdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { createHash, randomUUID } from 'node:crypto'
+import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { getBuiltInSkillContent } from './install-skill-templates.js'
@@ -47,6 +47,10 @@ const CODEX_MCP_END_MARKER = '# <<< madar managed mcp <<<'
 const CODEX_MCP_SCOPED_START_MARKER_PREFIX = '# >>> madar managed mcp:'
 const CODEX_MCP_SCOPED_END_MARKER_PREFIX = '# <<< madar managed mcp:'
 const CODEX_MCP_OWNS_PRECEDING_LINE_ENDING_MARKER = '# madar managed mcp: preceding line ending owned'
+const CODEX_MCP_CONFIG_LOCK_SUFFIX = '.madar.lock'
+const CODEX_MCP_CONFIG_LOCK_TIMEOUT_MS = 10_000
+const CODEX_MCP_CONFIG_LOCK_RETRY_MS = 25
+const CODEX_MCP_CONFIG_DEFAULT_MODE = 0o600
 
 interface InstallPlatformConfig {
   skillFile: string
@@ -2084,6 +2088,93 @@ export function resolveCodexMcpConfigPath(): string {
   return join(codexHome, 'config.toml')
 }
 
+function pauseSynchronously(milliseconds: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds)
+}
+
+function tryAcquireCodexConfigLock(lockPath: string): number | null {
+  try {
+    // Keep the lock private because the adjacent Codex config can contain
+    // credentials or other user-level settings.
+    return openSync(lockPath, 'wx', CODEX_MCP_CONFIG_DEFAULT_MODE)
+  } catch (error) {
+    const code = error && typeof error === 'object' && 'code' in error
+      ? (error as { code?: unknown }).code
+      : undefined
+    if (code === 'EEXIST') {
+      return null
+    }
+    throw error
+  }
+}
+
+/**
+ * Serialize Madar's read-modify-write operations on Codex's shared user
+ * configuration. The lock is intentionally adjacent to the config so all
+ * worktrees that resolve the same CODEX_HOME contend on the same path.
+ */
+function withCodexConfigLock<T>(configPath: string, action: () => T): T {
+  const lockPath = `${configPath}${CODEX_MCP_CONFIG_LOCK_SUFFIX}`
+  const startedAt = Date.now()
+  ensureParentDirectory(lockPath)
+
+  while (true) {
+    const lockDescriptor = tryAcquireCodexConfigLock(lockPath)
+    if (lockDescriptor !== null) {
+      try {
+        return action()
+      } finally {
+        try {
+          closeSync(lockDescriptor)
+        } finally {
+          rmSync(lockPath, { force: true })
+        }
+      }
+    }
+
+    if (Date.now() - startedAt >= CODEX_MCP_CONFIG_LOCK_TIMEOUT_MS) {
+      throw new Error(
+        `Timed out waiting for another Madar Codex configuration update at ${configPath}. `
+        + `If no Madar process is still updating it, remove ${lockPath} and retry.`,
+      )
+    }
+    pauseSynchronously(CODEX_MCP_CONFIG_LOCK_RETRY_MS)
+  }
+}
+
+/** Publish an updated config through a same-directory atomic rename. */
+function writeCodexConfigAtomically(configPath: string, content: string): void {
+  ensureParentDirectory(configPath)
+  const mode = existsSync(configPath)
+    ? statSync(configPath).mode & 0o777
+    : CODEX_MCP_CONFIG_DEFAULT_MODE
+  const temporaryPath = join(
+    dirname(configPath),
+    `.${basename(configPath)}.madar-${process.pid}-${randomUUID()}.tmp`,
+  )
+  let temporaryDescriptor: number | null = null
+
+  try {
+    temporaryDescriptor = openSync(temporaryPath, 'wx', mode)
+    writeFileSync(temporaryDescriptor, content, 'utf8')
+    // openSync's mode is subject to umask, so restore the exact existing mode
+    // before publishing the replacement.
+    chmodSync(temporaryPath, mode)
+    fsyncSync(temporaryDescriptor)
+    closeSync(temporaryDescriptor)
+    temporaryDescriptor = null
+    renameSync(temporaryPath, configPath)
+  } finally {
+    try {
+      if (temporaryDescriptor !== null) {
+        closeSync(temporaryDescriptor)
+      }
+    } finally {
+      rmSync(temporaryPath, { force: true })
+    }
+  }
+}
+
 function stripTomlComments(content: string): string {
   let result = ''
   let quote: 'single' | 'double' | null = null
@@ -2234,11 +2325,18 @@ function assertCodexMcpConfigIsSafe(projectDir: string): void {
   const globalConfigPath = resolveCodexMcpConfigPath()
   const serverName = codexMcpServerName(projectDir)
   if (existsSync(globalConfigPath)) {
-    readManagedCodexMcpBlock(
-      readFileSync(globalConfigPath, 'utf8'),
-      scopedCodexMcpStartMarker(serverName),
-      scopedCodexMcpEndMarker(serverName),
-    )
+    // Preserve the preflight failure behavior without observing the shared
+    // config outside its lock. The mutation path re-reads it under a fresh
+    // lock immediately before it updates the scoped block.
+    withCodexConfigLock(globalConfigPath, () => {
+      if (existsSync(globalConfigPath)) {
+        readManagedCodexMcpBlock(
+          readFileSync(globalConfigPath, 'utf8'),
+          scopedCodexMcpStartMarker(serverName),
+          scopedCodexMcpEndMarker(serverName),
+        )
+      }
+    })
   }
 
   const legacyConfigPath = join(projectDir, CODEX_MCP_CONFIG_RELATIVE_PATH)
@@ -2263,10 +2361,9 @@ function removeManagedCodexMcpBlock(configPath: string, content: string, managed
     && afterBlock.length > 0
     && !afterBlock.startsWith('\n')
     && !afterBlock.startsWith('\r')
-  writeFileSync(
+  writeCodexConfigAtomically(
     configPath,
     `${beforeWithoutOwnedLineEnding}${needsLineEndingBeforeAfterBlock ? precedingLineEnding : ''}${afterBlock}`,
-    'utf8',
   )
 }
 
@@ -2289,68 +2386,74 @@ function removeLegacyCodexMcpServer(projectDir: string): string | undefined {
 function installCodexMcpServer(projectDir: string): string {
   const configPath = resolveCodexMcpConfigPath()
   const serverName = codexMcpServerName(projectDir)
-  const content = existsSync(configPath) ? readFileSync(configPath, 'utf8') : ''
-  const managedBlock = readManagedCodexMcpBlock(
-    content,
-    scopedCodexMcpStartMarker(serverName),
-    scopedCodexMcpEndMarker(serverName),
-  )
-  const lineEnding = lineEndingForContent(content)
-  const ownsPrecedingLineEnding = managedBlock?.ownsPrecedingLineEnding
-    ?? (content.length > 0 && !content.endsWith('\n'))
-  const nextBlock = renderCodexMcpBlock(projectDir, serverName, lineEnding, ownsPrecedingLineEnding)
-  const unownedContent = managedBlock
-    ? `${content.slice(0, managedBlock.start)}${content.slice(managedBlock.end)}`
-    : content
+  return withCodexConfigLock(configPath, () => {
+    // Re-read after acquiring the shared lock. A different worktree may have
+    // added or removed its scoped block while this install was waiting.
+    const content = existsSync(configPath) ? readFileSync(configPath, 'utf8') : ''
+    const managedBlock = readManagedCodexMcpBlock(
+      content,
+      scopedCodexMcpStartMarker(serverName),
+      scopedCodexMcpEndMarker(serverName),
+    )
+    const lineEnding = lineEndingForContent(content)
+    const ownsPrecedingLineEnding = managedBlock?.ownsPrecedingLineEnding
+      ?? (content.length > 0 && !content.endsWith('\n'))
+    const nextBlock = renderCodexMcpBlock(projectDir, serverName, lineEnding, ownsPrecedingLineEnding)
+    const unownedContent = managedBlock
+      ? `${content.slice(0, managedBlock.start)}${content.slice(managedBlock.end)}`
+      : content
 
-  if (hasUserManagedCodexMcpDeclaration(unownedContent, serverName)) {
-    return `${configPath} -> MCP server ${serverName} is user-managed (no change)`
-  }
-
-  let registrationMessage: string
-  if (managedBlock) {
-    if (managedBlock.content === nextBlock) {
-      registrationMessage = `${configPath} -> MCP server ${serverName} already registered (no change)`
-    } else {
-      writeFileSync(
-        configPath,
-        `${content.slice(0, managedBlock.start)}${nextBlock}${content.slice(managedBlock.end)}`,
-        'utf8',
-      )
-      registrationMessage = `${configPath} -> MCP server ${serverName} updated`
+    if (hasUserManagedCodexMcpDeclaration(unownedContent, serverName)) {
+      return `${configPath} -> MCP server ${serverName} is user-managed (no change)`
     }
-  } else {
-    ensureParentDirectory(configPath)
-    const separator = ownsPrecedingLineEnding ? lineEnding : ''
-    writeFileSync(configPath, `${content}${separator}${nextBlock}`, 'utf8')
-    registrationMessage = `${configPath} -> MCP server ${serverName} registered`
-  }
 
-  const legacyMessage = removeLegacyCodexMcpServer(projectDir)
-  return legacyMessage ? `${registrationMessage}\n${legacyMessage}` : registrationMessage
+    let registrationMessage: string
+    if (managedBlock) {
+      if (managedBlock.content === nextBlock) {
+        registrationMessage = `${configPath} -> MCP server ${serverName} already registered (no change)`
+      } else {
+        writeCodexConfigAtomically(
+          configPath,
+          `${content.slice(0, managedBlock.start)}${nextBlock}${content.slice(managedBlock.end)}`,
+        )
+        registrationMessage = `${configPath} -> MCP server ${serverName} updated`
+      }
+    } else {
+      const separator = ownsPrecedingLineEnding ? lineEnding : ''
+      writeCodexConfigAtomically(configPath, `${content}${separator}${nextBlock}`)
+      registrationMessage = `${configPath} -> MCP server ${serverName} registered`
+    }
+
+    const legacyMessage = removeLegacyCodexMcpServer(projectDir)
+    return legacyMessage ? `${registrationMessage}\n${legacyMessage}` : registrationMessage
+  })
 }
 
 function uninstallCodexMcpServer(projectDir: string): string | undefined {
   const configPath = resolveCodexMcpConfigPath()
-  if (!existsSync(configPath)) {
-    return removeLegacyCodexMcpServer(projectDir)
-  }
-
-  const content = readFileSync(configPath, 'utf8')
   const serverName = codexMcpServerName(projectDir)
-  const managedBlock = readManagedCodexMcpBlock(
-    content,
-    scopedCodexMcpStartMarker(serverName),
-    scopedCodexMcpEndMarker(serverName),
-  )
-  if (!managedBlock) {
-    return removeLegacyCodexMcpServer(projectDir)
-  }
+  return withCodexConfigLock(configPath, () => {
+    // Match installation's critical section so an uninstall cannot write a
+    // stale snapshot over another worktree's newly registered block.
+    if (!existsSync(configPath)) {
+      return removeLegacyCodexMcpServer(projectDir)
+    }
 
-  removeManagedCodexMcpBlock(configPath, content, managedBlock)
-  const legacyMessage = removeLegacyCodexMcpServer(projectDir)
-  const registrationMessage = `${configPath} -> MCP server ${serverName} removed`
-  return legacyMessage ? `${registrationMessage}\n${legacyMessage}` : registrationMessage
+    const content = readFileSync(configPath, 'utf8')
+    const managedBlock = readManagedCodexMcpBlock(
+      content,
+      scopedCodexMcpStartMarker(serverName),
+      scopedCodexMcpEndMarker(serverName),
+    )
+    if (!managedBlock) {
+      return removeLegacyCodexMcpServer(projectDir)
+    }
+
+    removeManagedCodexMcpBlock(configPath, content, managedBlock)
+    const legacyMessage = removeLegacyCodexMcpServer(projectDir)
+    const registrationMessage = `${configPath} -> MCP server ${serverName} removed`
+    return legacyMessage ? `${registrationMessage}\n${legacyMessage}` : registrationMessage
+  })
 }
 
 function installCodexHook(projectDir: string): string {
