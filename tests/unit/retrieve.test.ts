@@ -3245,7 +3245,9 @@ describe('retrieve', () => {
       expect(compactResult.relationships.length).toBeLessThan(oversizedResult.relationships.length)
       expect(compactResult.slice?.selected_paths.length).toBeLessThan(240)
       expect(compactResult.coverage).toEqual(rawResult.coverage)
-      expect(compactResult.claims).toEqual(rawResult.claims)
+      for (const claim of compactResult.claims ?? []) {
+        expect(claim.node_labels.every((label) => compactResult.matched_nodes.some((node) => node.label === label))).toBe(true)
+      }
     })
 
     it('drops dangling relationships when stdio compaction trims their endpoint nodes', () => {

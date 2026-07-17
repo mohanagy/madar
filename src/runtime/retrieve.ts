@@ -6479,23 +6479,26 @@ function compactRetrievePayloadForStdioProfile(
   payload: StdioRetrieveResult,
   profile: RetrieveStdioCompactionProfile,
 ): StdioRetrieveResult {
-  const claims = payload.claims?.slice(0, profile.claimCap) ?? []
+  const claims: NonNullable<StdioRetrieveResult['claims']> = []
   const pinnedNodes: StdioRetrieveResult['matched_nodes'] = []
   const pinnedNodeSet = new Set<StdioRetrieveResult['matched_nodes'][number]>()
 
-  for (const claim of claims) {
-    const anchorLabel = claim.node_labels[0]
-    if (!anchorLabel) {
+  for (const claim of payload.claims?.slice(0, profile.claimCap) ?? []) {
+    const supportingNodes = claim.node_labels.map((label) => (
+      payload.matched_nodes.find((node) => node.label === label)
+    )).filter((node): node is StdioRetrieveResult['matched_nodes'][number] => node !== undefined)
+    if (supportingNodes.length !== claim.node_labels.length) {
       continue
     }
-
-    const anchor = payload.matched_nodes.find((node) => node.label === anchorLabel)
-    if (!anchor || pinnedNodeSet.has(anchor)) {
+    const newSupportingNodes = supportingNodes.filter((node) => !pinnedNodeSet.has(node))
+    if (pinnedNodes.length + newSupportingNodes.length > profile.matchedNodeCap) {
       continue
     }
-
-    pinnedNodes.push(anchor)
-    pinnedNodeSet.add(anchor)
+    claims.push(claim)
+    for (const node of newSupportingNodes) {
+      pinnedNodes.push(node)
+      pinnedNodeSet.add(node)
+    }
   }
 
   const remainingCapacity = Math.max(0, profile.matchedNodeCap - pinnedNodes.length)

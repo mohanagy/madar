@@ -1153,7 +1153,11 @@ export async function serveGraphStdio(options: ServeGraphStdioOptions): Promise<
   const readline = createInterface({ input, crlfDelay: Infinity })
   let graphRequestQueue = Promise.resolve()
 
-  const handleAndWritePayload = async (payload: unknown, awaitReconciliation: boolean): Promise<void> => {
+  const handleAndWritePayload = async (
+    payload: unknown,
+    awaitReconciliation: boolean,
+    arrivalMs = Date.now(),
+  ): Promise<void> => {
     let response: StdioResponse | null
     try {
       const request = payload as StdioRequest
@@ -1170,13 +1174,14 @@ export async function serveGraphStdio(options: ServeGraphStdioOptions): Promise<
         && !refreshReadiness.ready
         && refreshReadiness.retryable
       ) {
-        const waitStartedAt = Date.now()
+        const maxWaitMs = Math.max(0, options.autoRefreshRequestWaitMs ?? DEFAULT_AUTO_REFRESH_REQUEST_WAIT_MS)
+        const remainingWaitMs = Math.max(0, maxWaitMs - (Date.now() - arrivalMs))
         refreshReadiness = await waitForAutoRefreshGraphReadiness(
           autoRefresh,
           options.graphPath,
-          Math.max(0, options.autoRefreshRequestWaitMs ?? DEFAULT_AUTO_REFRESH_REQUEST_WAIT_MS),
+          remainingWaitMs,
         )
-        waitedMs = Date.now() - waitStartedAt
+        waitedMs = Date.now() - arrivalMs
       }
 
       if (refreshReadiness && !refreshReadiness.ready && requestMethod === 'prompts/list') {
@@ -1234,7 +1239,8 @@ export async function serveGraphStdio(options: ServeGraphStdioOptions): Promise<
         // Keep control/discovery requests responsive while graph-backed work
         // waits for one bounded reconciliation window. Graph requests remain
         // serialized because context-pack calls mutate per-session state.
-        graphRequestQueue = graphRequestQueue.then(() => handleAndWritePayload(payload, true))
+        const arrivalMs = Date.now()
+        graphRequestQueue = graphRequestQueue.then(() => handleAndWritePayload(payload, true, arrivalMs))
         continue
       }
 
