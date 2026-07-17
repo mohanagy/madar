@@ -125,6 +125,7 @@ const ANSWER_READY_COMMUNITY_CAP = 6
 const ANSWER_READY_EXPLANATION_CAP = 3
 const ANSWER_READY_FIRST_READ_CAP = 3
 const ANSWER_READY_WORKFLOW_CENTER_CAP = 4
+const ANSWER_READY_SNIPPET_CHAR_CAP = 200
 const WORKFLOW_SPINE_BUDGET_REASON = 'budget too tight for workflow spine'
 
 interface AnswerReadyCullCandidate {
@@ -431,7 +432,230 @@ function compactAnswerReadyPack(pack: JsonRecord, trimmedFields: string[]): void
   preserveTrimmedRuntimeEntrypointContextPreview(pack, trimmedFields)
   trimArrayField(pack, 'matched_nodes', ANSWER_READY_MATCHED_NODE_CAP, trimmedFields)
   trimArrayField(pack, 'relationships', ANSWER_READY_RELATIONSHIP_CAP, trimmedFields)
+  filterRelationshipsToRemainingNodes(pack, trimmedFields)
   trimArrayField(pack, 'community_context', ANSWER_READY_COMMUNITY_CAP, trimmedFields)
+}
+
+function compactAnswerReadyMatchedNodeMetadata(pack: JsonRecord, trimmedFields: string[]): void {
+  let compacted = false
+  const nodes = asUnknownArray(pack.matched_nodes)
+  for (const entry of nodes) {
+    const node = asJsonRecord(entry)
+    if (!node) {
+      continue
+    }
+    for (const field of ['match_score', 'relevance_band', 'representation_type', 'representation_reason']) {
+      if (Object.hasOwn(node, field)) {
+        delete node[field]
+        compacted = true
+      }
+    }
+    if (node.source_domain === 'production') {
+      delete node.source_domain
+      compacted = true
+    }
+    if (node.snippet_truncated === false) {
+      delete node.snippet_truncated
+      compacted = true
+    }
+  }
+  if (compacted) {
+    trimmedFields.push('pack.matched_nodes ranking metadata compacted')
+  }
+}
+
+function compactAnswerReadyExpandableHandles(payload: JsonRecord, trimmedFields: string[]): void {
+  const expandable = asUnknownArray(payload.expandable)
+  if (expandable.length === 0) {
+    return
+  }
+
+  payload.expandable = expandable
+    .map((entry) => asJsonRecord(entry))
+    .filter((entry): entry is JsonRecord => entry !== null)
+    .map((entry) => {
+      const followUp = asJsonRecord(entry.follow_up)
+      const evidenceClass = typeof entry.evidence_class === 'string' ? entry.evidence_class : 'supporting'
+      return {
+        kind: 'nodes',
+        ...(typeof entry.handle_id === 'string' ? { handle_id: entry.handle_id } : {}),
+        evidence_class: evidenceClass,
+        ...(typeof entry.count === 'number'
+          ? { count: entry.count }
+          : { count: asUnknownArray(entry.preview).length }),
+        preview: [],
+        follow_up: {
+          kind: 'context_pack',
+          task_kind: typeof followUp?.task_kind === 'string' ? followUp.task_kind : 'explain',
+          evidence_class: typeof followUp?.evidence_class === 'string' ? followUp.evidence_class : evidenceClass,
+          focus_files: asUnknownArray(followUp?.focus_files).slice(0, 2),
+          focus_ranges: asUnknownArray(followUp?.focus_ranges).slice(0, 1),
+        },
+      }
+    })
+    .filter((entry) => Object.hasOwn(entry, 'handle_id'))
+  trimmedFields.push('expandable handles compacted')
+}
+
+function compactAnswerReadyEvidenceForPressure(evidence: JsonRecord, trimmedFields: string[]): void {
+  let compacted = false
+
+  if (asUnknownArray(evidence.missing_phases).length === 0) {
+    delete evidence.missing_phases
+    compacted = true
+  }
+
+  const coverageDetail = asJsonRecord(evidence.coverage_detail)
+  if (coverageDetail && asUnknownArray(coverageDetail.missing_obligations).length === 0) {
+    evidence.coverage_detail = { status: coverageDetail.status }
+    compacted = true
+  }
+
+  const answerability = asJsonRecord(evidence.answerability)
+  if (answerability) {
+    for (const field of ['caveats', 'missing_obligations', 'verification_targets']) {
+      if (asUnknownArray(answerability[field]).length === 0) {
+        delete answerability[field]
+        compacted = true
+      }
+    }
+  }
+
+  const recovery = asJsonRecord(evidence.recovery)
+  if (recovery) {
+    evidence.recovery = { status: recovery.status }
+    compacted = true
+  }
+
+  const discovery = asJsonRecord(evidence.discovery_exclusions)
+  if (discovery && discovery.relevant === 0) {
+    evidence.discovery_exclusions = {
+      total: discovery.total,
+      relevant: 0,
+    }
+    compacted = true
+  }
+
+  const indexing = asJsonRecord(evidence.indexing_completeness)
+  if (indexing && indexing.relevant_uncertain === 0) {
+    evidence.indexing_completeness = {
+      state: indexing.state,
+      total_uncertain: indexing.total_uncertain,
+      relevant_uncertain: 0,
+    }
+    compacted = true
+  }
+
+  if (compacted) {
+    trimmedFields.push('evidence non-actionable detail compacted')
+  }
+}
+
+function compactAnswerReadyRelationships(pack: JsonRecord, trimmedFields: string[]): void {
+  const relationships = asUnknownArray(pack.relationships)
+  if (relationships.length === 0) {
+    return
+  }
+
+  pack.relationships = relationships
+    .map((entry) => asJsonRecord(entry))
+    .filter((entry): entry is JsonRecord => entry !== null)
+    .map((entry) => ({
+      ...(typeof entry.from_id === 'string'
+        ? { from_id: entry.from_id }
+        : typeof entry.from === 'string' ? { from: entry.from } : {}),
+      ...(typeof entry.to_id === 'string'
+        ? { to_id: entry.to_id }
+        : typeof entry.to === 'string' ? { to: entry.to } : {}),
+      ...(typeof entry.relation === 'string' ? { relation: entry.relation } : {}),
+    }))
+  trimmedFields.push('pack.relationships endpoint metadata compacted')
+}
+
+function compactAnswerReadyNodesForPressure(pack: JsonRecord, trimmedFields: string[]): void {
+  let compacted = false
+  for (const entry of asUnknownArray(pack.matched_nodes)) {
+    const node = asJsonRecord(entry)
+    if (!node) {
+      continue
+    }
+
+    if (node.file_type === 'code') {
+      delete node.file_type
+      compacted = true
+    }
+    for (const field of ['community', 'community_label']) {
+      if (Object.hasOwn(node, field)) {
+        delete node[field]
+        compacted = true
+      }
+    }
+
+    if (typeof node.snippet !== 'string') {
+      continue
+    }
+    const normalized = node.snippet.replace(/\s+/g, ' ').trim()
+    const truncated = normalized.length > ANSWER_READY_SNIPPET_CHAR_CAP
+      ? normalized.slice(0, ANSWER_READY_SNIPPET_CHAR_CAP).trimEnd()
+      : normalized
+    if (truncated !== node.snippet) {
+      node.snippet = truncated
+      compacted = true
+    }
+    if (normalized.length > truncated.length) {
+      node.snippet_truncated = true
+    }
+  }
+
+  if (compacted) {
+    trimmedFields.push('pack.matched_nodes snippets and defaults compacted')
+  }
+}
+
+function compactAnswerReadyPackForPressure(
+  payload: JsonRecord,
+  pack: JsonRecord,
+  trimmedFields: string[],
+): void {
+  if (pack.question === payload.prompt) {
+    delete pack.question
+    trimmedFields.push('pack.question duplicate')
+  }
+  for (const field of ['token_count', 'snippet_budget_tokens_used', 'snippet_budget_tokens_remaining']) {
+    if (Object.hasOwn(pack, field)) {
+      delete pack[field]
+      trimmedFields.push(`pack.${field}`)
+    }
+  }
+
+  const evidence = asJsonRecord(payload.evidence)
+  if (evidence?.recovery && Object.hasOwn(pack, 'recovery')) {
+    delete pack.recovery
+    trimmedFields.push('pack.recovery duplicate')
+  }
+
+  compactAnswerReadyNodesForPressure(pack, trimmedFields)
+  compactAnswerReadyRelationships(pack, trimmedFields)
+  const communities = asUnknownArray(pack.community_context)
+  if (communities.length > 1) {
+    pack.community_context = communities.slice(0, 1)
+    trimmedFields.push('pack.community_context compacted')
+  }
+}
+
+function compactAnswerReadyEnvelopeForPressure(payload: JsonRecord, trimmedFields: string[]): void {
+  for (const field of ['claims', 'cache']) {
+    if (Object.hasOwn(payload, field)) {
+      delete payload[field]
+      trimmedFields.push(field)
+    }
+  }
+
+  const routing = asJsonRecord(payload.routing)
+  if (routing && asUnknownArray(routing.warnings).length === 0) {
+    delete payload.routing
+    trimmedFields.push('routing')
+  }
 }
 
 function compactAnswerReadyGovernance(payload: JsonRecord, trimmedFields: string[]): void {
@@ -1275,8 +1499,7 @@ export function buildAnswerReadyPackSchema(
   }
 
   if (pack) {
-    trimArrayField(pack, 'matched_nodes', 4, trimmedFields)
-    trimArrayField(pack, 'relationships', 4, trimmedFields)
+    compactAnswerReadyMatchedNodeMetadata(pack, trimmedFields)
     trimArrayField(pack, 'community_context', 3, trimmedFields)
   }
 
@@ -1291,12 +1514,10 @@ export function buildAnswerReadyPackSchema(
   }
 
   if (pack) {
-    delete pack.relationships
     delete pack.graph_signals
     delete pack.snippet_budget_tokens_used
     delete pack.snippet_budget_tokens_remaining
     trimmedFields.push(
-      'pack.relationships',
       'pack.graph_signals',
       'pack.snippet_budget_tokens_used',
       'pack.snippet_budget_tokens_remaining',
@@ -1345,6 +1566,21 @@ export function buildAnswerReadyPackSchema(
   delete payload.retrieval_gate
   delete payload.why_explanation
   trimmedFields.push('retrieval_gate', 'why_explanation')
+  attachSerializedBudget(payload, maxTokens, trimmedFields)
+  if (estimatedJsonTokens(payload) <= maxTokens) {
+    return payload
+  }
+  compactAnswerReadyExpandableHandles(payload, trimmedFields)
+  if (evidence) {
+    compactAnswerReadyEvidenceForPressure(evidence, trimmedFields)
+  }
+  if (pack) {
+    compactAnswerReadyPackForPressure(payload, pack, trimmedFields)
+  }
+  attachSerializedBudget(payload, maxTokens, trimmedFields)
+  if (estimatedJsonTokens(payload) <= maxTokens) {
+    return payload
+  }
   if (trimGovernanceBeforeNodeCulling(payload, maxTokens, trimmedFields)) {
     attachSerializedBudget(payload, maxTokens, trimmedFields)
     if (estimatedJsonTokens(payload) <= maxTokens) {
@@ -1359,9 +1595,22 @@ export function buildAnswerReadyPackSchema(
       return payload
     }
   }
-  if (maxTokens <= 800 && evidence && Array.isArray(evidence.covered_workflow_owners)) {
+  if (evidence && Array.isArray(evidence.covered_workflow_owners)) {
     delete evidence.covered_workflow_owners
     trimmedFields.push('evidence.covered_workflow_owners')
+    attachSerializedBudget(payload, maxTokens, trimmedFields)
+    if (estimatedJsonTokens(payload) <= maxTokens) {
+      return payload
+    }
+  }
+  compactAnswerReadyEnvelopeForPressure(payload, trimmedFields)
+  attachSerializedBudget(payload, maxTokens, trimmedFields)
+  if (estimatedJsonTokens(payload) <= maxTokens) {
+    return payload
+  }
+  if (pack && Array.isArray(pack.relationships)) {
+    delete pack.relationships
+    trimmedFields.push('pack.relationships')
     attachSerializedBudget(payload, maxTokens, trimmedFields)
     if (estimatedJsonTokens(payload) <= maxTokens) {
       return payload

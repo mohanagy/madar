@@ -31,6 +31,10 @@ const GENERIC_QUERY_TOKENS = new Set([
 ])
 const OUTCOME_STATUSES = new Set<string>(INDEXING_OUTCOME_STATUSES)
 const REASON_CODES = new Set<string>(INDEXING_REASON_CODES)
+const ENVIRONMENT_CONFIG_INTENT_PATTERN = /(?:^|[^a-z0-9])\.env(?:[^a-z0-9]|$)|\b(?:config(?:uration)?|credential|deploy(?:ment)?|environment|key|password|runtime\s+variable|secret|settings|token)\b/i
+const DOCUMENTATION_INTENT_PATTERN = /\b(?:architecture|changelog|docs?|documentation|guide|readme|specification)\b|\.(?:md|mdx|rst|txt)\b/i
+const HIDDEN_PATH_INTENT_PATTERN = /\b(?:dotfile|hidden\s+(?:file|path)|well-known)\b|(?:^|[\s`'"/])\.(?:claude|codex|github|vscode|well-known|zed)(?:[\s`'"/]|$)/i
+const NON_CODE_ARTIFACT_INTENT_PATTERN = /\b(?:asset|image|migration|shell|sql|stylesheet)\b|\.(?:css|csv|html|ico|jpeg|jpg|png|sh|sql|svg|vue|wasm)\b/i
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -137,17 +141,49 @@ function tokenize(value: string): string[] {
     .filter((token) => token.length >= 3 && !GENERIC_QUERY_TOKENS.has(token))
 }
 
-function outcomeMatches(outcome: IndexingOutcome, queryTokens: ReadonlySet<string>, owners: readonly string[]): boolean {
+function outcomeMatchesOwner(outcome: IndexingOutcome, owners: readonly string[]): boolean {
   const normalizedPath = outcome.path.toLowerCase().replaceAll('\\', '/')
-  if (owners.some((owner) => {
+  return owners.some((owner) => {
     const normalizedOwner = owner.toLowerCase().replaceAll('\\', '/').replace(/^\.\//, '')
     return normalizedOwner.length > 0 && (normalizedPath.includes(normalizedOwner) || normalizedOwner.includes(normalizedPath))
-  })) {
+  })
+}
+
+function reasonAppliesToQuestion(reason: IndexingReasonCode, question: string): boolean {
+  switch (reason) {
+    case 'environment_file':
+    case 'private_key':
+    case 'credential_store':
+    case 'secret_config':
+    case 'sensitive_directory':
+      return ENVIRONMENT_CONFIG_INTENT_PATTERN.test(question)
+    case 'docs_disabled':
+      return DOCUMENTATION_INTENT_PATTERN.test(question)
+    case 'hidden_path':
+      return HIDDEN_PATH_INTENT_PATTERN.test(question)
+    case 'unsupported_file_type':
+      return NON_CODE_ARTIFACT_INTENT_PATTERN.test(question)
+    default:
+      return true
+  }
+}
+
+function outcomeMatches(
+  outcome: IndexingOutcome,
+  queryTokens: ReadonlySet<string>,
+  owners: readonly string[],
+  question: string,
+): boolean {
+  if (outcomeMatchesOwner(outcome, owners)) {
     return true
+  }
+  if (!reasonAppliesToQuestion(outcome.reason, question)) {
+    return false
   }
   if (queryTokens.size === 0) {
     return false
   }
+  const normalizedPath = outcome.path.toLowerCase().replaceAll('\\', '/')
   const pathTokens = new Set(tokenize(normalizedPath))
   return [...queryTokens].some((token) => pathTokens.has(token))
 }
@@ -164,9 +200,10 @@ export function relevantIndexingUncertainty(
   input: { question?: string; coveredWorkflowOwners?: readonly string[] } = {},
 ): RelevantIndexingUncertainty {
   const uncertain = manifest.outcomes.filter((outcome) => UNCERTAIN_STATUSES.has(outcome.status))
-  const queryTokens = new Set(tokenize(input.question ?? ''))
+  const question = input.question ?? ''
+  const queryTokens = new Set(tokenize(question))
   const owners = input.coveredWorkflowOwners ?? []
-  const relevant = uncertain.filter((outcome) => outcomeMatches(outcome, queryTokens, owners))
+  const relevant = uncertain.filter((outcome) => outcomeMatches(outcome, queryTokens, owners, question))
   const reasons: Partial<Record<IndexingReasonCode, number>> = {}
   const relevantReasons: Partial<Record<IndexingReasonCode, number>> = {}
   for (const outcome of uncertain) {

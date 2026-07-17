@@ -124,6 +124,7 @@ const RELEVANCE_TOKEN_ALIASES: Readonly<Record<string, string>> = {
   sensitive: 'secret',
   tokens: 'token',
 }
+const ENVIRONMENT_CONFIG_INTENT_PATTERN = /(?:^|[^a-z0-9])\.env(?:[^a-z0-9]|$)|\b(?:config(?:uration)?|deploy(?:ment)?|environment|runtime\s+variable|secret|settings)\b/i
 const MAX_GRAPH_ARTIFACT_BYTES = 100 * 1024 * 1024
 const MAX_STORED_EXCLUSIONS = 10_000
 const MAX_METADATA_CACHE_ENTRIES = 16
@@ -364,6 +365,9 @@ export function relevantDiscoveryExclusions(
   const ownerPaths = (input.coveredWorkflowOwners ?? []).map(toPosixPath)
   const ownerTokens = relevanceTokens(ownerPaths.join(' '))
   const relevantEntries = metadata.exclusions.filter((exclusion) => {
+    if (exclusion.reason === 'environment_file' && !ENVIRONMENT_CONFIG_INTENT_PATTERN.test(input.question ?? '')) {
+      return false
+    }
     const exclusionTokens = relevanceTokens(`${exclusion.path} ${exclusion.reason}`)
     return tokenSetsIntersect(exclusionTokens, questionTokens)
       || tokenSetsIntersect(exclusionTokens, ownerTokens)

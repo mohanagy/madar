@@ -198,6 +198,33 @@ describe('indexing completeness manifests', () => {
     ])
   })
 
+  it('does not treat same-domain env, docs, hidden paths, or unrelated artifacts as code-flow uncertainty', () => {
+    const manifest = createIndexingManifest({
+      outcomes: [
+        outcome({ path: 'apps/status-page/.env.example', status: 'skipped_by_policy', reason: 'environment_file', capability: null }),
+        outcome({ path: 'apps/status-page/README.md', status: 'skipped_by_policy', reason: 'docs_disabled', capability: null }),
+        outcome({ path: '.github', kind: 'directory', status: 'skipped_by_policy', reason: 'hidden_path', capability: null }),
+        outcome({ path: 'apps/status-page/public/logo.svg', status: 'unsupported', reason: 'unsupported_file_type', capability: null }),
+      ],
+    })
+
+    const codeFlow = relevantIndexingUncertainty(manifest, {
+      question: 'How does an incident affect the public status page?',
+      coveredWorkflowOwners: ['apps/status-page/src/content/status-json.ts'],
+    })
+    expect(codeFlow.relevant).toBe(0)
+
+    expect(relevantIndexingUncertainty(manifest, {
+      question: 'Which environment config controls the status page?',
+    }).relevant_reasons).toEqual({ environment_file: 1 })
+    expect(relevantIndexingUncertainty(manifest, {
+      question: 'What does the status-page README document?',
+    }).relevant_reasons).toEqual({ docs_disabled: 1 })
+    expect(relevantIndexingUncertainty(manifest, {
+      question: 'How is the status-page logo.svg asset used?',
+    }).relevant_reasons).toEqual({ unsupported_file_type: 1 })
+  })
+
   it('marks an unsupported-only candidate set as failed rather than false-partial', () => {
     const manifest = createIndexingManifest({
       outcomes: [outcome({

@@ -167,7 +167,7 @@ describe('background auto-refresh', () => {
     }
   })
 
-  it('completes MCP discovery and fails graph reads closed during slow startup', async () => {
+  it('keeps MCP discovery responsive while one graph request waits for slow startup', async () => {
     const root = mkdtempSync(join(tmpdir(), 'madar-background-mcp-'))
     const graphPath = join(root, 'out', 'graph.json')
     const watchModulePath = join(root, 'slow-watch.mjs')
@@ -190,6 +190,7 @@ describe('background auto-refresh', () => {
       JSON.stringify({ id: 3, method: 'resources/list' }),
       JSON.stringify({ id: 4, method: 'tools/list' }),
       JSON.stringify({ id: 5, method: 'stats' }),
+      JSON.stringify({ id: 6, method: 'ping' }),
     ].join('\n')}\n`)
 
     const serverPromise = serveGraphStdio({
@@ -199,6 +200,7 @@ describe('background auto-refresh', () => {
       input,
       output,
       errorOutput,
+      autoRefreshRequestWaitMs: 2_500,
       autoRefreshStarter: (watchPath, debounceSeconds, options) => {
         refreshController = startGraphAutoRefreshInBackground(
           watchPath,
@@ -211,8 +213,9 @@ describe('background auto-refresh', () => {
     })
 
     try {
-      await waitFor(() => outputText.includes('"id":5'))
+      await waitFor(() => outputText.includes('"id":6'))
       expect(existsSync(completionMarker)).toBe(false)
+      expect(outputText).not.toContain('"id":5')
 
       const responses = outputText
         .trim()
@@ -230,32 +233,101 @@ describe('background auto-refresh', () => {
       expect(responses.find((response) => response.id === 2)?.result).toMatchObject({ prompts: expect.any(Array) })
       expect(responses.find((response) => response.id === 3)?.result).toEqual({ resources: [] })
       expect(responses.find((response) => response.id === 4)?.result).toMatchObject({ tools: expect.any(Array) })
-      expect(responses.find((response) => response.id === 5)?.error).toMatchObject({
-        message: expect.stringContaining('temporarily starting'),
-        data: {
-          state: 'starting',
-          retryable: true,
-          retry_after_ms: 1_000,
-          suggested_action: 'retry_same_request',
-        },
-      })
+      expect(responses.find((response) => response.id === 6)?.result).toEqual({ ok: true })
 
       await waitFor(() => refreshController?.startupComplete?.() === true)
       expect(existsSync(completionMarker)).toBe(true)
       publishReadyWatcherState(root, graphPath)
-      input.end(`${JSON.stringify({ id: 6, method: 'stats' })}\n`)
+      await waitFor(() => outputText.includes('"id":5'))
+      input.end()
       await serverPromise
       const readyResponses = outputText
         .trim()
         .split('\n')
         .filter(Boolean)
         .map((line) => JSON.parse(line) as { id?: number; result?: string; error?: unknown })
-      expect(readyResponses.find((response) => response.id === 6)?.result).toContain('Nodes:')
-      expect(readyResponses.find((response) => response.id === 6)?.error).toBeUndefined()
+      expect(readyResponses.find((response) => response.id === 5)?.result).toContain('Nodes:')
+      expect(readyResponses.find((response) => response.id === 5)?.error).toBeUndefined()
       expect(readFileSync(watchModulePath, 'utf8')).toContain('Deliberately block only the worker thread')
     } finally {
       input.destroy()
       await serverPromise.catch(() => {})
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('bounds a queued graph request timeout and still shuts down cleanly', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'madar-background-timeout-'))
+    const graphPath = join(root, 'out', 'graph.json')
+    const input = new PassThrough()
+    const output = new PassThrough()
+    const errorOutput = new PassThrough()
+    let outputText = ''
+    let stopped = false
+    output.on('data', (chunk) => {
+      outputText += chunk.toString('utf8')
+    })
+    writeFileSync(join(root, 'main.ts'), 'export const value = 1\n', 'utf8')
+    generateGraph(root, { noHtml: true })
+    const policy = readStoredGenerationPolicy(graphPath, join(root, 'out', 'manifest.json'))
+    if (!policy) {
+      throw new Error('Expected generated policy metadata')
+    }
+    writeWatcherState(join(root, 'out'), {
+      ...createWatcherState('polling', 0),
+      status: 'reconciling',
+      coverage: 'complete',
+      stored_policy_fingerprint: policy.fingerprint,
+      current_policy_fingerprint: policy.fingerprint,
+      policy_match: true,
+    })
+    input.end([
+      JSON.stringify({ id: 31, method: 'stats' }),
+      JSON.stringify({ id: 32, method: 'ping' }),
+    ].join('\n'))
+    const startedAt = Date.now()
+
+    try {
+      await serveGraphStdio({
+        graphPath,
+        autoRefresh: true,
+        workspaceRoot: root,
+        autoRefreshRequestWaitMs: 75,
+        input,
+        output,
+        errorOutput,
+        autoRefreshStarter: () => ({
+          initialRebuilt: false,
+          startupComplete: () => true,
+          failureReason: () => null,
+          stop() { stopped = true },
+          completed: Promise.resolve(),
+        }),
+      })
+
+      const responses = outputText
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as {
+          id?: number
+          result?: unknown
+          error?: { data?: { state?: string; retryable?: boolean; waited_ms?: number } }
+        })
+      expect(responses.findIndex((response) => response.id === 32)).toBeLessThan(
+        responses.findIndex((response) => response.id === 31),
+      )
+      expect(responses.find((response) => response.id === 32)?.result).toEqual({ ok: true })
+      expect(responses.find((response) => response.id === 31)?.error?.data).toMatchObject({
+        state: 'reconciling',
+        retryable: true,
+        waited_ms: expect.any(Number),
+      })
+      expect(responses.find((response) => response.id === 31)?.error?.data?.waited_ms).toBeGreaterThanOrEqual(50)
+      expect(Date.now() - startedAt).toBeLessThan(1_000)
+      expect(stopped).toBe(true)
+    } finally {
+      input.destroy()
       rmSync(root, { recursive: true, force: true })
     }
   })

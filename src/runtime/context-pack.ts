@@ -209,18 +209,46 @@ function coverageEntriesForCandidates(
   }
 
   const evidenceClasses = orderedEvidence(taskContract, availableCounts.keys())
+  const selectedSourceFileCount = new Set(
+    selectedNodes.map((node) => node.entry.source_file).filter((sourceFile) => sourceFile.length > 0),
+  ).size
+  const selectedDirectNodeCount = (selectedCounts.get('primary') ?? 0) + (selectedCounts.get('change') ?? 0)
 
   const entries: ContextPackCoverageEntry[] = evidenceClasses.map((evidence_class) => {
     const available_nodes = availableCounts.get(evidence_class) ?? 0
     const selected_nodes = selectedCounts.get(evidence_class) ?? 0
     const required = taskContract.required_evidence.includes(evidence_class)
+    const relationshipBacked = taskContract.task_kind === 'explain'
+      && available_nodes === 0
+      && selectedNodes.length >= 2
+      && relationshipCounts.selected > 0
+      && (evidence_class === 'supporting' || evidence_class === 'structural')
+    const crossFileDirectSupport = taskContract.task_kind === 'explain'
+      && evidence_class === 'supporting'
+      && selected_nodes === 0
+      // Reserve this exception for genuinely broad, cross-layer traces. A
+      // small local cluster can span three files (entrypoint, owner, helper)
+      // while still needing the omitted supporting node that recovery would
+      // add. Five distinct owners is the smallest boundary that separates the
+      // multi-service flow case from those ordinary local explanations.
+      && selectedDirectNodeCount >= 5
+      && selectedSourceFileCount >= 5
+      && relationshipCounts.selected > 0
 
     return {
       evidence_class,
       required,
       available_nodes,
       selected_nodes,
-      status: classifyCoverageStatus(required, available_nodes, selected_nodes),
+      // A coherent relationship between selected primary nodes is real
+      // supporting/structural evidence. A diverse cross-file set of direct
+      // workflow owners can also satisfy supporting evidence even when weaker
+      // related candidates exist; forcing one of those candidates into the
+      // pack would replace stronger obligation evidence merely to satisfy a
+      // ranking label.
+      status: relationshipBacked || crossFileDirectSupport
+        ? 'covered'
+        : classifyCoverageStatus(required, available_nodes, selected_nodes),
     }
   })
 
@@ -233,6 +261,11 @@ function coverageEntriesForCandidates(
     const available_nodes = semanticAvailableCounts.get(category) ?? 0
     const selected_nodes = semanticSelectedCounts.get(category) ?? 0
     const required = taskContract.semantic_required.includes(category)
+    const relationshipBacked = taskContract.task_kind === 'explain'
+      && category === 'structure'
+      && available_nodes === 0
+      && selectedNodes.length >= 2
+      && relationshipCounts.selected > 0
 
     return {
       category,
@@ -240,7 +273,7 @@ function coverageEntriesForCandidates(
       required,
       available_nodes,
       selected_nodes,
-      status: classifyCoverageStatus(required, available_nodes, selected_nodes),
+      status: relationshipBacked ? 'covered' : classifyCoverageStatus(required, available_nodes, selected_nodes),
     } satisfies ContextPackSemanticCoverageEntry
   })
 
@@ -250,8 +283,8 @@ function coverageEntriesForCandidates(
     semantic_optional: [...taskContract.semantic_optional],
     entries,
     semantic_entries: semanticEntries,
-    missing_required: entries.filter((entry) => entry.required && entry.selected_nodes === 0).map((entry) => entry.evidence_class),
-    missing_semantic: semanticEntries.filter((entry) => entry.required && entry.selected_nodes === 0).map((entry) => entry.category),
+    missing_required: entries.filter((entry) => entry.required && entry.status !== 'covered').map((entry) => entry.evidence_class),
+    missing_semantic: semanticEntries.filter((entry) => entry.required && entry.status !== 'covered').map((entry) => entry.category),
     available_relationships: relationshipCounts.available,
     selected_relationships: relationshipCounts.selected,
   }

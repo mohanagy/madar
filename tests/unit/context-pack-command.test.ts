@@ -1057,6 +1057,114 @@ describe('context-pack-command', () => {
     ])
   })
 
+  it('compacts envelope metadata and snippets before culling a cross-layer workflow spine', () => {
+    const base = buildOversizedAnswerReadySchema()
+    const extraNodes = Array.from({ length: 4 }, (_, index) => ({
+      node_id: `cross-layer-${index}`,
+      label: `CrossLayerStep${index}.run`,
+      source_file: `apps/layer-${index}/src/step.ts`,
+      line_number: 90 + index,
+      snippet: `export async function run${index}() { ${'await downstream.execute(); '.repeat(40)} }`,
+    }))
+    const allNodes = [...base.pack.matched_nodes, ...extraNodes]
+    const relationships = allNodes.slice(1).map((node, index) => ({
+      from_id: allNodes[index]?.node_id,
+      from: allNodes[index]?.label,
+      to_id: node.node_id,
+      to: node.label,
+      relation: 'calls',
+    }))
+    const schema = {
+      ...base,
+      evidence: {
+        ...base.evidence,
+        evidence_strength: {
+          level: 'strong',
+          direct_selected_nodes: 8,
+          supporting_selected_nodes: 0,
+          selected_relationships: relationships.length,
+          available_relationships: relationships.length,
+          reasons: ['direct graph evidence spans the workflow'],
+        },
+        coverage_detail: {
+          status: 'complete',
+          required_obligations: ['failure source', 'incident persistence', 'notification dispatch', 'public status', 'divergence'],
+          covered_obligations: ['failure source', 'incident persistence', 'notification dispatch', 'public status', 'divergence'],
+          missing_obligations: [],
+        },
+        answerability: {
+          state: 'ready',
+          answer_scope: 'complete',
+          caveats: [],
+          missing_obligations: [],
+          verification_targets: [],
+          broad_search_fallback: 'not_needed',
+        },
+        recovery: {
+          version: 1,
+          status: 'not_needed',
+          budget: { max_attempts: 2, max_candidate_nodes: 24, max_elapsed_ms: 2_000, output_token_budget: 1_800 },
+          initial_state: 'ready',
+          final_state: 'ready',
+          attempts: [],
+          improved: false,
+        },
+        discovery_exclusions: {
+          policy: 'artifact_path_only',
+          total: 15,
+          relevant: 0,
+          reasons: { env_file: 15 },
+          relevant_reasons: {},
+        },
+        indexing_completeness: {
+          state: 'partial',
+          total_uncertain: 158,
+          relevant_uncertain: 0,
+          reasons: { unsupported_file_type: 85 },
+          relevant_reasons: {},
+        },
+      },
+      pack: {
+        ...base.pack,
+        question: base.prompt,
+        token_count: 1_793,
+        recovery: {
+          version: 1,
+          status: 'not_needed',
+          budget: { max_attempts: 2, max_candidate_nodes: 24, max_elapsed_ms: 2_000, output_token_budget: 1_800 },
+          initial_state: 'ready',
+          final_state: 'ready',
+          attempts: [],
+          improved: false,
+        },
+        matched_nodes: allNodes,
+        relationships,
+      },
+    }
+
+    const payload = buildAnswerReadyPackSchema(schema, 1_800, buildAnswerReadySelectionDiagnostics())
+    const pack = payload.pack as {
+      matched_nodes?: Array<{ source_file?: string; snippet?: string }>
+      relationships?: unknown[]
+    }
+    const evidence = payload.evidence as {
+      pack_confidence?: string
+      confidence_reasons?: string[]
+    }
+
+    expect(estimateQueryTokens(JSON.stringify(payload))).toBeLessThanOrEqual(1_800)
+    expect(payload.serialized_budget).toEqual(expect.objectContaining({
+      max_tokens: 1_800,
+      enforced: true,
+    }))
+    expect(pack.matched_nodes).toHaveLength(8)
+    expect(new Set(pack.matched_nodes?.map((node) => node.source_file))).toHaveLength(8)
+    expect(pack.matched_nodes?.every((node) => (node.snippet?.length ?? 0) <= 220)).toBe(true)
+    expect(pack.relationships).toHaveLength(relationships.length)
+    expect(evidence.pack_confidence).toBe('high')
+    expect(evidence.confidence_reasons ?? []).not.toContain('budget too tight for workflow spine')
+  })
+
   it('preserves existing obligations, caveats, and blocked fallback when tight budgets cull the workflow spine', () => {
     const matchedNodes = Array.from({ length: 6 }, (_, index) => ({
       node_id: `runtime-${index}`,

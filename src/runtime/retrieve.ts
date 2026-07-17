@@ -4428,6 +4428,7 @@ function retrieveContextPass(
   graph: KnowledgeGraph,
   options: RetrieveOptions,
   conceptualNodeBoosts: ReadonlyMap<string, number> = new Map(),
+  preserveConceptualObligationOrder = false,
 ): RetrieveResult {
   // Guard before candidate expansion, which also reads directional adjacency.
   // sliceCandidatesForRetrieve repeats the guard to protect its direct callers.
@@ -4720,7 +4721,12 @@ function retrieveContextPass(
     ? scored.filter((node) => symbolReferenceMatchScore(node.label, node.sourceFile, mentionedSymbolRefs) > 0 || sourceFileMatchesMentionedPath(node.sourceFile, mentionedPaths))
     : []
   const conceptualSeedPool = conceptualNodeBoosts.size > 0
-    ? scored.filter((node) => (conceptualNodeBoosts.get(node.id) ?? 0) >= CONCEPTUAL_FALLBACK_SEED_MIN_BOOST)
+    ? scored
+        .filter((node) => (conceptualNodeBoosts.get(node.id) ?? 0) >= CONCEPTUAL_FALLBACK_SEED_MIN_BOOST)
+        .sort((left, right) => (
+          (conceptualNodeBoosts.get(right.id) ?? 0) - (conceptualNodeBoosts.get(left.id) ?? 0)
+          || compareScoredNodes(graph, left, right)
+        ))
     : []
   const seedPool = conceptualSeedPool.length > 0
     ? conceptualSeedPool
@@ -4817,11 +4823,18 @@ function retrieveContextPass(
           if (expansionSeedIds.has(predecessorId)) {
             continue
           }
+          const relation = String(graph.edgeAttributes(predecessorId, seed.id).relation ?? 'related_to')
           const predecessorCommunity = parseCommunityId(graph.nodeAttributes(predecessorId).community)
-          if (!predecessorAllowedForPolicy(expansionPolicy.predecessor_mode, seedCommunity, predecessorCommunity)) {
+          // File/container ownership is exact extractor evidence, so it must
+          // not disappear merely because community detection placed the file
+          // node and its symbol in adjacent clusters. Keeping this owner hop
+          // also lets hop two reach the symbol's imported collaborators.
+          if (
+            relation !== 'contains'
+            && !predecessorAllowedForPolicy(expansionPolicy.predecessor_mode, seedCommunity, predecessorCommunity)
+          ) {
             continue
           }
-          const relation = String(graph.edgeAttributes(predecessorId, seed.id).relation ?? 'related_to')
           if (!relationAllowedForPolicy(expansionPolicy.hop1_relations, relation)) {
             continue
           }
@@ -4879,11 +4892,14 @@ function retrieveContextPass(
           if (seedIds.has(predecessorId) || hop1Ids.has(predecessorId)) {
             continue
           }
+          const relation = String(graph.edgeAttributes(predecessorId, hop1Id).relation ?? 'related_to')
           const predecessorCommunity = parseCommunityId(graph.nodeAttributes(predecessorId).community)
-          if (!predecessorAllowedForPolicy(expansionPolicy.predecessor_mode, seedCommunity, predecessorCommunity)) {
+          if (
+            relation !== 'contains'
+            && !predecessorAllowedForPolicy(expansionPolicy.predecessor_mode, seedCommunity, predecessorCommunity)
+          ) {
             continue
           }
-          const relation = String(graph.edgeAttributes(predecessorId, hop1Id).relation ?? 'related_to')
           if (!relationAllowedForPolicy(expansionPolicy.hop2_relations, relation)) {
             continue
           }
@@ -4994,8 +5010,19 @@ function retrieveContextPass(
     if (boostedSeedCommunity !== undefined && node.community === boostedSeedCommunity && node.community !== -1) node.score += 0.1
   }
 
-  // Re-sort: seeds first by score, then neighbors by degree
-  scored.sort((a, b) => compareScoredNodes(graph, a, b))
+  // Conceptual recovery already paid the cost of finding a bounded set of
+  // obligation-grounded workflow owners. Keep those seeds ahead of expanded
+  // helper calls; otherwise dense call trees can replace the cross-layer
+  // spine with cheap leaves such as parser and retry helpers.
+  scored.sort((a, b) => (
+    conceptualNodeBoosts.size > 0
+      ? Number(seedIds.has(b.id)) - Number(seedIds.has(a.id))
+      : 0
+  ) || (
+    conceptualNodeBoosts.size > 0 && seedIds.has(a.id) && seedIds.has(b.id)
+      ? (conceptualNodeBoosts.get(b.id) ?? 0) - (conceptualNodeBoosts.get(a.id) ?? 0)
+      : 0
+  ) || compareScoredNodes(graph, a, b))
 
   const frameworkCompatibleCandidates = frameworkProfile.frameworkShaped
     ? scored.filter((node) => isFrameworkCompatible(activeFrameworks, node.framework))
@@ -5040,7 +5067,12 @@ function retrieveContextPass(
     : frameworkOrderedCandidates.filter((node) => node.relevanceBand !== 'peripheral')
       let orderedCandidates = inclusionOrder
       let sliceMetadata: ContextPackSliceMetadata | undefined
-      if (options.retrievalStrategy === 'slice-v1') {
+      // A multi-obligation conceptual fallback can deliberately assemble
+      // cross-service and cross-language owners that do not form one local
+      // slice. Only that explicitly selected recovery mode bypasses slice-v1;
+      // ordinary conceptual reranking and symbol/path-anchored questions keep
+      // the established slice contract.
+      if (options.retrievalStrategy === 'slice-v1' && !preserveConceptualObligationOrder) {
         const sliced = sliceCandidatesForRetrieve(
           graph,
           scored.map((node) => ({
@@ -5240,12 +5272,20 @@ function retrieveContextWithConceptualFallback(graph: KnowledgeGraph, options: R
     return { ...initial, retrieval_plan: proposal.plan }
   }
 
-  const recovered = retrieveContextPass(graph, options, proposal.nodeBoosts)
+  const preserveConceptualObligationOrder = initialQuality.explicit_anchors === 0
+    && (proposal.plan.query_obligations?.total ?? 0) >= 4
+  const recovered = retrieveContextPass(
+    graph,
+    options,
+    proposal.nodeBoosts,
+    preserveConceptualObligationOrder,
+  )
   const finalized = finalizeConceptualFallbackPlan(
     proposal,
     retrievalQualitySnapshot(graph, recovered),
     selectedSourceFiles(initial),
     selectedSourceFiles(recovered),
+    new Set(selectedNodeIds(recovered)),
   )
   return {
     ...(finalized.useRecovered ? recovered : initial),

@@ -247,6 +247,20 @@ describe('mcp-response-evidence', () => {
     })
   })
 
+  it('does not let an adjacent environment example lower code-flow confidence', () => {
+    const metadata = buildDiscoverySafetyMetadata([
+      { path: 'apps/status-page/.env.example', kind: 'sensitive', reason: 'environment_file' },
+    ])
+
+    expect(relevantDiscoveryExclusions(metadata, {
+      question: 'How does an incident affect the public status page?',
+      coveredWorkflowOwners: ['apps/status-page/src/content/status-json.ts'],
+    }).relevant).toBe(0)
+    expect(relevantDiscoveryExclusions(metadata, {
+      question: 'Which environment config controls the status page?',
+    }).relevant).toBe(1)
+  })
+
   it('downgrades answerability for relevant exclusions without exposing their paths', () => {
     const root = mkdtempSync(join(tmpdir(), 'madar-discovery-evidence-'))
     const graphPath = join(root, 'out', 'graph.json')

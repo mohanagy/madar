@@ -2,6 +2,7 @@ import { createInterface } from 'node:readline'
 import { realpathSync, statSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import type { Readable, Writable } from 'node:stream'
+import { setTimeout as delay } from 'node:timers/promises'
 
 import type { ContextSessionState } from '../contracts/context-session.js'
 import { compareRefs } from '../infrastructure/time-travel.js'
@@ -73,6 +74,8 @@ const MAX_CONTEXT_PACK_CACHE_ENTRIES = 256
 const graphCache = new Map<string, { mtimeMs: number; size: number; graph: ReturnType<typeof loadGraph> }>()
 const MAX_COMPLETION_VALUES = 25
 const MAX_LOG_NOTIFICATION_CHARS = 10_000
+const DEFAULT_AUTO_REFRESH_REQUEST_WAIT_MS = 25_000
+const AUTO_REFRESH_READINESS_POLL_MS = 50
 
 const AUTO_REFRESH_CONTROL_METHODS = new Set([
   'initialize',
@@ -166,6 +169,8 @@ export interface ServeGraphStdioOptions {
   errorOutput?: Writable
   /** Internal/testing seam for the production background auto-refresh launcher. */
   autoRefreshStarter?: typeof startGraphAutoRefreshInBackground
+  /** Internal/testing override for how long graph-backed requests await reconciliation. */
+  autoRefreshRequestWaitMs?: number
   logger?: {
     log(message?: string): void
     error(message?: string): void
@@ -241,6 +246,55 @@ function autoRefreshGraphReadiness(
         ? 'watcher state is unavailable'
         : 'background reconciliation is starting',
   }
+}
+
+type AutoRefreshGraphReadiness = ReturnType<typeof autoRefreshGraphReadiness>
+
+async function waitForAutoRefreshGraphReadiness(
+  controller: GraphAutoRefreshController,
+  graphPath: string,
+  waitMs: number,
+): Promise<AutoRefreshGraphReadiness> {
+  let readiness = autoRefreshGraphReadiness(controller, graphPath)
+  if (readiness.ready || !readiness.retryable || waitMs <= 0) {
+    return readiness
+  }
+
+  const deadline = Date.now() + waitMs
+  while (Date.now() < deadline) {
+    await delay(Math.min(AUTO_REFRESH_READINESS_POLL_MS, Math.max(1, deadline - Date.now())))
+    readiness = autoRefreshGraphReadiness(controller, graphPath)
+    if (readiness.ready || !readiness.retryable) {
+      return readiness
+    }
+  }
+
+  return autoRefreshGraphReadiness(controller, graphPath)
+}
+
+function graphNotReadyResponse(
+  request: StdioRequest,
+  readiness: AutoRefreshGraphReadiness,
+  waitedMs: number,
+): StdioResponse {
+  const readinessData = {
+    type: 'madar_graph_not_ready',
+    state: readiness.state,
+    retryable: readiness.retryable,
+    ...(readiness.retryAfterMs !== undefined
+      ? { retry_after_ms: readiness.retryAfterMs }
+      : {}),
+    ...(waitedMs > 0 ? { waited_ms: waitedMs } : {}),
+    suggested_action: readiness.retryable ? 'retry_same_request' : 'repair_graph',
+  }
+  return failure(
+    requestId(request),
+    JSONRPC_SERVER_ERROR,
+    readiness.retryable
+      ? `Madar graph is temporarily ${readiness.state} (${readiness.detail}). Retry the same request after ${readiness.retryAfterMs ?? 1_000}ms; no manual graph generation is needed while reconciliation is active.`
+      : `Madar auto-refresh cannot guarantee a fresh graph (${readiness.detail}). Run \`madar status\`, then \`madar generate . --update\` if repair is required before retrying.`,
+    readinessData,
+  )
 }
 
 function ok(id: string | number | null, result: unknown): StdioResponse {
@@ -1022,6 +1076,57 @@ export async function serveGraphStdio(options: ServeGraphStdioOptions): Promise<
   errorOutput.write(`[madar serve] stdio ready for ${options.graphPath}\n`)
 
   const readline = createInterface({ input, crlfDelay: Infinity })
+  let graphRequestQueue = Promise.resolve()
+
+  const handleAndWritePayload = async (payload: unknown, awaitReconciliation: boolean): Promise<void> => {
+    let response: StdioResponse | null
+    try {
+      const request = payload as StdioRequest
+      const requestMethod = typeof request.method === 'string' ? request.method : null
+      let refreshReadiness = autoRefresh && requestMethod
+        ? autoRefreshGraphReadiness(autoRefresh, options.graphPath)
+        : null
+      let waitedMs = 0
+
+      if (
+        awaitReconciliation
+        && autoRefresh
+        && refreshReadiness
+        && !refreshReadiness.ready
+        && refreshReadiness.retryable
+      ) {
+        const waitStartedAt = Date.now()
+        refreshReadiness = await waitForAutoRefreshGraphReadiness(
+          autoRefresh,
+          options.graphPath,
+          Math.max(0, options.autoRefreshRequestWaitMs ?? DEFAULT_AUTO_REFRESH_REQUEST_WAIT_MS),
+        )
+        waitedMs = Date.now() - waitStartedAt
+      }
+
+      if (refreshReadiness && !refreshReadiness.ready && requestMethod === 'prompts/list') {
+        response = ok(requestId(request), { prompts: MCP_PROMPTS })
+      } else if (refreshReadiness && !refreshReadiness.ready && requestMethod === 'resources/list') {
+        response = ok(requestId(request), { resources: [] })
+      } else if (refreshReadiness && !refreshReadiness.ready && requestMethod !== null && !AUTO_REFRESH_CONTROL_METHODS.has(requestMethod)) {
+        response = graphNotReadyResponse(request, refreshReadiness, waitedMs)
+      } else {
+        emitResourceNotifications(output, options.graphPath, sessionState)
+        response = await Promise.resolve(handleStdioRequest(options.graphPath, payload, sessionState))
+      }
+    } catch (error) {
+      // A rejected handler must never tear down the whole stdio server: every
+      // request gets an answer and the loop keeps serving (#crash).
+      const message = error instanceof Error ? error.message : 'Request failed'
+      response = failure(requestId(payload as StdioRequest), JSONRPC_SERVER_ERROR, message)
+    }
+    if (response) {
+      if (response.error) {
+        emitLogNotification(output, sessionState, 'error', { message: response.error.message, code: response.error.code })
+      }
+      output.write(`${JSON.stringify(response)}\n`)
+    }
+  }
 
   try {
     for await (const line of readline) {
@@ -1046,53 +1151,20 @@ export async function serveGraphStdio(options: ServeGraphStdioOptions): Promise<
         continue
       }
 
-      let response: StdioResponse | null
-      try {
-        const request = payload as StdioRequest
-        const requestMethod = typeof request.method === 'string' ? request.method : null
-        const refreshReadiness = autoRefresh && requestMethod
-          ? autoRefreshGraphReadiness(autoRefresh, options.graphPath)
-          : null
-        if (refreshReadiness && !refreshReadiness.ready && requestMethod === 'prompts/list') {
-          response = ok(requestId(request), { prompts: MCP_PROMPTS })
-        } else if (refreshReadiness && !refreshReadiness.ready && requestMethod === 'resources/list') {
-          response = ok(requestId(request), { resources: [] })
-        } else if (refreshReadiness && !refreshReadiness.ready && requestMethod !== null && !AUTO_REFRESH_CONTROL_METHODS.has(requestMethod)) {
-          const readinessData = {
-            type: 'madar_graph_not_ready',
-            state: refreshReadiness.state,
-            retryable: refreshReadiness.retryable,
-            ...(refreshReadiness.retryAfterMs !== undefined
-              ? { retry_after_ms: refreshReadiness.retryAfterMs }
-              : {}),
-            suggested_action: refreshReadiness.retryable ? 'retry_same_request' : 'repair_graph',
-          }
-          response = failure(
-            requestId(request),
-            JSONRPC_SERVER_ERROR,
-            refreshReadiness.retryable
-              ? `Madar graph is temporarily ${refreshReadiness.state} (${refreshReadiness.detail}). Retry the same request after ${refreshReadiness.retryAfterMs ?? 1_000}ms; no manual graph generation is needed while reconciliation is active.`
-              : `Madar auto-refresh cannot guarantee a fresh graph (${refreshReadiness.detail}). Run \`madar status\`, then \`madar generate . --update\` if repair is required before retrying.`,
-            readinessData,
-          )
-        } else {
-          emitResourceNotifications(output, options.graphPath, sessionState)
-          response = await Promise.resolve(handleStdioRequest(options.graphPath, payload, sessionState))
-        }
-      } catch (error) {
-        // A rejected handler must never tear down the whole stdio server: every
-        // request gets an answer and the loop keeps serving (#crash).
-        const message = error instanceof Error ? error.message : 'Request failed'
-        response = failure(requestId(payload as StdioRequest), JSONRPC_SERVER_ERROR, message)
+      const request = payload as StdioRequest
+      const requestMethod = typeof request.method === 'string' ? request.method : null
+      if (autoRefresh && requestMethod !== null && !AUTO_REFRESH_CONTROL_METHODS.has(requestMethod)) {
+        // Keep control/discovery requests responsive while graph-backed work
+        // waits for one bounded reconciliation window. Graph requests remain
+        // serialized because context-pack calls mutate per-session state.
+        graphRequestQueue = graphRequestQueue.then(() => handleAndWritePayload(payload, true))
+        continue
       }
-      if (response) {
-        if (response.error) {
-          emitLogNotification(output, sessionState, 'error', { message: response.error.message, code: response.error.code })
-        }
-        output.write(`${JSON.stringify(response)}\n`)
-      }
+
+      await handleAndWritePayload(payload, false)
     }
   } finally {
+    await graphRequestQueue
     if (autoRefresh) {
       autoRefresh.stop()
       await autoRefresh.completed

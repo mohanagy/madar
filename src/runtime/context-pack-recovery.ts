@@ -192,9 +192,15 @@ export function recoverContextPackResult(
     output_token_budget: outputTokenBudget,
   } as const
   const initialAssessment = assess(initial, options.question)
+  const queryObligations = initial.retrieval_plan?.query_obligations
+  const conceptualObligationsCovered = initial.retrieval_plan?.status === 'recovered'
+    && queryObligations !== undefined
+    && queryObligations.total > 0
+    && queryObligations.finally_covered === queryObligations.total
   const recoveryAllowed = recoveryOptions.enabled !== false
     && options.taskKind !== 'implement'
     && initial.retrieval_gate?.level !== 0
+    && !conceptualObligationsCovered
   if (!recoveryAllowed || initialAssessment.state === 'ready' || initialAssessment.state === 'ready_with_caveat') {
     return {
       ...initial,
