@@ -1682,7 +1682,7 @@ interface FrameworkQuestionProfile {
   fastify: boolean
   trpc: boolean
   prisma: boolean
-  gin: boolean
+  goRouteIntent: boolean
   routeIntent: boolean
   middlewareIntent: boolean
   handlerIntent: boolean
@@ -1744,7 +1744,6 @@ function activeFrameworksForProfile(profile: FrameworkQuestionProfile): Readonly
   if (profile.fastify) frameworks.add('fastify')
   if (profile.trpc) frameworks.add('trpc')
   if (profile.prisma) frameworks.add('prisma')
-  if (profile.gin) frameworks.add('gin')
   return frameworks
 }
 
@@ -4524,7 +4523,7 @@ function buildFrameworkQuestionProfile(question: string, questionTokens: readonl
     || procedureIntent
     || (routerIntent && (queryIntent || mutationIntent || subscriptionIntent))
   const repository = storageEndpointIntent
-  const gin = explicitGin || (
+  const goRouteIntent = explicitGin || (
     includesAnyToken(questionTokens, ['go'])
     && (routeIntent || apiIntent)
   )
@@ -4566,7 +4565,7 @@ function buildFrameworkQuestionProfile(question: string, questionTokens: readonl
       includesAnyToken(questionTokens, ['route', 'routes', 'middleware', 'action', 'actions', 'page', 'pages']))
 
   return {
-    frameworkShaped: express || routingControllers || redux || reactRouter || nest || next || repository || hono || fastify || trpc || prisma || gin,
+    frameworkShaped: express || routingControllers || redux || reactRouter || nest || next || repository || hono || fastify || trpc || prisma || goRouteIntent,
     express,
     routingControllers,
     redux,
@@ -4578,7 +4577,7 @@ function buildFrameworkQuestionProfile(question: string, questionTokens: readonl
     fastify,
     trpc,
     prisma,
-    gin,
+    goRouteIntent,
     routeIntent,
     middlewareIntent,
     handlerIntent,
@@ -4920,7 +4919,11 @@ function frameworkBoostForNode(
     }
   }
 
-  if (profile.gin && frameworkRole === 'gin_route') {
+  // A Go API question is language-shaped, not a declaration that the entire
+  // repository uses Gin. Give extracted Gin routes a local ranking signal
+  // while leaving the rest of the candidate pool available for mixed-runtime
+  // repos and the downstream handler/service flow.
+  if (profile.goRouteIntent && frameworkRole === 'gin_route') {
     boost += profile.routeIntent ? 4 : 1.5
   }
 
