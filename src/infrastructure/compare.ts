@@ -2811,7 +2811,7 @@ export function buildNativeAgentPrompt(
         ? [
             'Call mcp__madar__context_pack exactly once before editing files or raw repository search.',
             'Copy the exact Question text below byte-for-byte into context_pack.prompt; do not restate, expand, enumerate, split, or issue a second context_pack call.',
-            'Strict exposes only context_pack and a listed verify_targets context_expand handle. A ready or ready_with_caveat pack is terminal.',
+            'Use the single context pack as implementation guidance. Do not make another Madar MCP call or restart repository discovery; native edits and validation commands remain required.',
           ]
         : ['Call context_pack first for implementation tasks before editing files or broad raw repo search.']),
       'Inspect likely_edit_files, likely_test_files, validation_commands, cautions, and risk boundaries before making any changes.',
@@ -5080,7 +5080,7 @@ function nativeAgentAttributionGapEvidence(report: NativeAgentCompareReport): st
 }
 
 function assessNativeAgentPromptContract(
-  report: Pick<NativeAgentCompareReport, 'question' | 'trace_status' | 'madar_trace' | 'benchmark_readiness'>,
+  report: Pick<NativeAgentCompareReport, 'question' | 'task' | 'trace_status' | 'madar_trace' | 'benchmark_readiness'>,
   toolProfile: McpToolProfile,
   runtimeProofProfile?: RuntimeProofProfile,
 ): NativeAgentPromptContractAssessment {
@@ -5110,8 +5110,12 @@ function assessNativeAgentPromptContract(
       evidence.push(`strict profile requires exactly one context_pack call (recorded ${report.madar_trace.context_pack_call_count})`)
     }
     const packPrompts = traceContextPackPrompts(report.madar_trace)
-    if (packPrompts.length === 1 && packPrompts[0] !== report.question) {
-      evidence.push('strict context_pack prompt did not byte-match the user question')
+    if (packPrompts.length === 1) {
+      if (packPrompts[0] === null) {
+        measurementGaps.push('strict context_pack prompt was unavailable in the trace')
+      } else if (packPrompts[0] !== report.question) {
+        evidence.push('strict context_pack prompt did not byte-match the user question')
+      }
     }
     if (traceHasTerminalContextPackResult(report.madar_trace)) {
       const postTerminalToolUses = traceToolUsesAfterTerminalContextPack(report.madar_trace)
@@ -5124,7 +5128,7 @@ function assessNativeAgentPromptContract(
       if (otherMcpTool) {
         evidence.push(`terminal strict context_pack was followed by another MCP call: ${otherMcpTool}`)
       }
-      if (postTerminalToolUses.some((toolName) => (
+      if (report.task !== 'implement' && postTerminalToolUses.some((toolName) => (
         isFocusedFollowUpTraceToolName(toolName) || isBroadExplorationTraceToolName(toolName)
       ))) {
         evidence.push('terminal strict context_pack was followed by repository exploration')

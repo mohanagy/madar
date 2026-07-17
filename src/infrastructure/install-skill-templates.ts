@@ -313,15 +313,6 @@ ${renderMarkdownCodexRoutingTable()}
 
 Pass the entire user's codebase request byte-for-byte as the pack question, including read-only, no-change, scope, and formatting constraints. Do not rewrite, omit, expand, enumerate, or split it into follow-up pack calls.
 
-If MCP graph tools are available after the pack, use the focused tool that matches the next question:
-- ${CODE_SPAN_START}retrieve${CODE_SPAN_END} for direct codebase questions
-- ${CODE_SPAN_START}relevant_files${CODE_SPAN_END} for where to open first
-- ${CODE_SPAN_START}feature_map${CODE_SPAN_END} for involved areas and entry points
-- ${CODE_SPAN_START}risk_map${CODE_SPAN_END} before editing
-- ${CODE_SPAN_START}implementation_checklist${CODE_SPAN_END} for edit order and validation checkpoints
-- ${CODE_SPAN_START}impact${CODE_SPAN_END} for blast radius
-- ${CODE_SPAN_START}graph_summary${CODE_SPAN_END} for repo overview
-
 After calling Madar, treat \`evidence.answerability.state\` as authoritative; \`evidence.pack_confidence\` is compatibility-only:
 - \`ready\` means answer from the pack without broad raw search.
 - \`ready_with_caveat\` means answer from the pack and state \`evidence.answerability.caveats\`.

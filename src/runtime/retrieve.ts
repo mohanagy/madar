@@ -4523,10 +4523,8 @@ function buildFrameworkQuestionProfile(question: string, questionTokens: readonl
     || procedureIntent
     || (routerIntent && (queryIntent || mutationIntent || subscriptionIntent))
   const repository = storageEndpointIntent
-  const goRouteIntent = explicitGin || (
-    includesAnyToken(questionTokens, ['go'])
-    && (routeIntent || apiIntent)
-  )
+  const goRouteIntent = explicitGin
+    || /\b(?:go|golang)\s+(?:api|application|app|service|server)\b/i.test(question)
   const prisma = explicitPrisma || modelIntent || persistenceIntent || (
     (storageReadIntent || storageWriteIntent)
     && (modelIntent || explicitPrisma || persistenceIntent)

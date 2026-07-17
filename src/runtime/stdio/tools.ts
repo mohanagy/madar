@@ -933,16 +933,29 @@ function strictVerificationAuthorization(payload: Record<string, unknown>): Stri
     return null
   }
 
+  const focusFiles = entry.follow_up.focus_files.slice(0, 5)
+  const focusRanges = entry.follow_up.focus_ranges
+    .filter((range) => sourceFileMatchesFocus(range.source_file, focusFiles))
+    .slice(0, 5)
+  const authorizedEntry: ContextPackExpandableRef = {
+    ...entry,
+    follow_up: {
+      ...entry.follow_up,
+      focus_files: focusFiles,
+      focus_ranges: focusRanges,
+    },
+  }
+
   return {
-    entry,
+    entry: authorizedEntry,
     target: {
-      handle_id: entry.handle_id,
-      evidence_class: entry.evidence_class,
-      focus_files: entry.follow_up.focus_files.slice(0, 5),
-      focus_ranges: entry.follow_up.focus_ranges.slice(0, 5),
+      handle_id: authorizedEntry.handle_id,
+      evidence_class: authorizedEntry.evidence_class,
+      focus_files: focusFiles,
+      focus_ranges: focusRanges,
       reason: typeof candidate?.reason === 'string' && candidate.reason.length > 0
         ? candidate.reason
-        : `verify evidence:${entry.evidence_class}`,
+        : `verify evidence:${authorizedEntry.evidence_class}`,
     },
   }
 }

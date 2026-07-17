@@ -240,7 +240,7 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   {
     name: 'context_pack',
     description:
-      'Build an answer-ready compact context pack. Call exactly once per user task and copy the entire user codebase request verbatim, byte-for-byte into prompt, including read-only, no-change, scope, and formatting constraints; do not rewrite, omit, expand, enumerate, split, or issue follow-up context_pack calls. For read-only explain tasks, ready or ready_with_caveat is terminal and must be answered from the pack. Pass prompt and task only; verbose diagnostics are full-profile only.',
+      'Build an answer-ready compact context pack. Copy the entire user codebase request verbatim, byte-for-byte into prompt, including read-only, no-change, scope, and formatting constraints. Supports freshness, delta, resolution, retrieval, and verbose diagnostic options.',
     inputSchema: {
       type: 'object',
       required: ['prompt'],
@@ -462,7 +462,11 @@ function strictToolSchema(tool: McpToolDefinition): McpToolDefinition {
   )
   return {
     ...tool,
-    ...(tool.name === 'context_expand'
+    ...(tool.name === 'context_pack'
+      ? {
+          description: `${tool.description} Strict mode: call exactly once per user task; pass prompt and task only, do not rewrite or split the prompt, and treat ready or ready_with_caveat as terminal for read-only tasks.`,
+        }
+      : tool.name === 'context_expand'
       ? {
           description: `${tool.description} This is the one strict verification attempt: treat its result as terminal and never follow a new handle from it.`,
         }

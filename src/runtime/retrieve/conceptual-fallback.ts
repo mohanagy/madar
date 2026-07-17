@@ -118,7 +118,7 @@ const EXPLICIT_TEST_EVIDENCE_PATTERN = /\b(?:test|tests|testing|spec|specs|fixtu
 const EXPLICIT_TYPE_EVIDENCE_PATTERN = /\b(?:contract|contracts|interface|interfaces|schema|schemas|type|types)\b/i
 const EXPLICIT_ERROR_DECLARATION_PATTERN = /\b(?:error\s+(?:class|constructor|handling)|exception|exceptions|throw|throws)\b/i
 const QUERY_EVIDENCE_STATE_MUTATION_PATTERN = /(?:\b(?:create|insert|transition|upsert)\w*\s*\(|\.(?:create|insert|upsert)\s*\(|\bnew\s+\w+)/i
-const QUERY_EVIDENCE_DELIVERY_OPERATION_PATTERN = /(?:\b(?:deliver|dispatch|emit|enqueue|publish|send)\w*\s*\(|\.(?:deliver|dispatch|emit|enqueue|publish|send)\w*\s*\()/i
+const QUERY_EVIDENCE_DELIVERY_OPERATION_PATTERN = /(?:\b(?:deliver|dispatch|emit|enqueue|notify|publish|send|trigger)\w*\s*\(|\.(?:deliver|dispatch|emit|enqueue|notify|publish|send|trigger)\w*\s*\()/i
 const QUERY_EVIDENCE_COMPUTATION_OPERATION_PATTERN = /(?:\b(?:compute|derive|resolve)\w*\s*\(|\b\w*(?:indicator|result|state|status)\w*\s*=|\b\w*(?:indicator|status)\w*\s*\()/i
 const EXPLICIT_ERROR_QUERY_PATTERN = /\b(?:error|exception|throw|throws|thrown)\b/i
 const FLOW_OUTCOME_TERMS = new Set(['error', 'fail', 'failed', 'failure', 'result', 'response', 'status'])
@@ -776,7 +776,7 @@ function presentationShapedNode(node: VocabularyNode): boolean {
 
 function runtimeScopeForSource(sourceFile: string): string {
   const normalized = sourceFile.replaceAll('\\', '/')
-  const match = normalized.match(/\/(apps|packages)\/([^/]+)/i)
+  const match = normalized.match(/(?:^|\/)(apps|packages)\/([^/]+)/i)
   if (match?.[1] && match[2]) {
     return `${match[1].toLowerCase()}/${match[2].toLowerCase()}`
   }
@@ -1594,8 +1594,8 @@ export function planConceptualFallback(
   const initialObligationCoverage = new Set(
     [...selectedIds].flatMap((nodeId) => [...(obligationMatches.get(nodeId) ?? [])]),
   ).size
-  const obligationRecoveryNeeded = diversified.preferredByObligation.size >= 2
-    && initialObligationCoverage < diversified.preferredByObligation.size
+  const obligationRecoveryNeeded = obligations.length >= 2
+    && initialObligationCoverage < obligations.length
   const reasons: RetrievalFallbackReason[] = [
     ...initialReasons,
     ...(obligationRecoveryNeeded ? ['missing_query_obligations' as const] : []),
@@ -1607,10 +1607,10 @@ export function planConceptualFallback(
     initial: input.initialQuality,
     final: input.initialQuality,
     attempts: [],
-    ...(diversified.preferredByObligation.size >= 2
+    ...(obligations.length >= 2
       ? {
           query_obligations: {
-            total: diversified.preferredByObligation.size,
+            total: obligations.length,
             initially_covered: initialObligationCoverage,
             finally_covered: initialObligationCoverage,
           },

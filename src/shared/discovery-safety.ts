@@ -124,7 +124,7 @@ const RELEVANCE_TOKEN_ALIASES: Readonly<Record<string, string>> = {
   sensitive: 'secret',
   tokens: 'token',
 }
-const ENVIRONMENT_CONFIG_INTENT_PATTERN = /(?:^|[^a-z0-9])\.env(?:[^a-z0-9]|$)|\b(?:config(?:uration)?|deploy(?:ment)?|environment|runtime\s+variable|secret|settings)\b/i
+const ENVIRONMENT_CONFIG_INTENT_PATTERN = /(?:^|[^a-z0-9])\.env(?:[^a-z0-9]|$)|\b(?:config(?:uration)?|credentials?|deploy(?:ment)?|environment|key|password|runtime\s+variable|secret|settings|token)\b/i
 const MAX_GRAPH_ARTIFACT_BYTES = 100 * 1024 * 1024
 const MAX_STORED_EXCLUSIONS = 10_000
 const MAX_METADATA_CACHE_ENTRIES = 16
