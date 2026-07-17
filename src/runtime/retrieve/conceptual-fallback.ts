@@ -22,17 +22,26 @@ const MAX_PROMOTED_CANDIDATES = 24
 const MAX_EXPANSION_TERMS = 8
 const MAX_OBLIGATION_CONNECTIVITY_CANDIDATES = 8
 const ORIGINAL_SELECTION_RETENTION_BOOST = 1
-const PREFERRED_OBLIGATION_ANCHOR_BOOST = 9
+export const CONCEPTUAL_WORKFLOW_RESERVATION_BOOST = 14
 const CHANGE_LIFECYCLE_CONCEPT = '@change_lifecycle'
 const DIVERGENCE_CONCEPT = '@divergence'
 const COMPUTATION_CONCEPT = '@computation'
+const DELIVERY_CONCEPT = '@delivery'
+const FAILURE_CONCEPT = '@failure'
 const TRANSITION_CONCEPT = '@transition'
 
-const FLOW_BOUNDARY_PATTERN = /\b(becomes?|became|triggers?|triggered|affects?|affected|causes?|caused|leads?\s+to|result(?:s|ed)?\s+in|flows?\s+to|then)\b|[.;,]/gi
+const FLOW_BOUNDARY_PATTERN = /\b(becomes?|became|triggers?|triggered|affects?|affected|causes?|caused|leads?\s+to|result(?:s|ed)?\s+in|flows?\s+to|then)\b|\s+to\s+|[.;,]/gi
+const READ_ONLY_CONSTRAINT_PATTERN = /\b(?:this\s+is\s+read[-\s]?only|read[-\s]?only(?=\s*:))[^.;]*(?:[.;]|$)/gi
+const NO_WRITE_CONSTRAINT_PATTERN = /\b(?:do\s+not|don't|without)\s+(?:change|edit|modify|touch|write)(?:ing)?\b[^.;]*(?:[.;]|$)/gi
+const CITATION_LIST_DIRECTIVE_PATTERN = /\bcite\b[^.;]*:\s*[^.;]*(?:[.;]|$)/gi
+const REPEATED_FLOW_CHECKLIST_PATTERN = /\b(?:(?:cite|cover|follow|identify|list|show|trace)\b[^.;]{0,200}?(?::\s*|\bfrom\b)|include\b)[^.;]*(?:[.;]|$)/gi
 const QUERY_DIRECTIVE_TERMS = new Set([
-  'any', 'cite', 'clearly', 'exact', 'identify', 'involved', 'remaining',
-  'path', 'paths', 'state', 'symbols', 'trace', 'uncertainty',
+  'all', 'any', 'available', 'cannot', 'cite', 'clearly', 'compare', 'distinct', 'end',
+  'evidence', 'every', 'exact', 'explain', 'identify', 'include', 'involved', 'prove',
+  'note', 'relevant', 'remaining', 'path', 'paths', 'state', 'symbols', 'trace',
+  'uncertainty',
 ])
+const DIVERGENCE_SCOPE_NOISE = new Set(['across', 'logic', 'these'])
 
 const CHANGE_LIFECYCLE_TERMS = new Set([
   'change', 'changed', 'changes', 'changing',
@@ -53,8 +62,9 @@ const CHANGE_LIFECYCLE_PREFIXES = [
   'refresh', 'stale', 'sync', 'synchron', 'updat', 'watch',
 ] as const
 const DIVERGENCE_TERMS = new Set([
+  'compare', 'compared', 'compares', 'comparing',
   'competing', 'conflict', 'conflicting',
-  'discrepancy', 'diverge', 'divergent', 'divergence', 'inconsistent',
+  'discrepancy', 'distinct', 'diverge', 'divergent', 'divergence', 'inconsistent',
   'inconsistency', 'mismatch', 'mismatched',
 ])
 const DIVERGENCE_PREFIXES = [
@@ -66,6 +76,23 @@ const COMPUTATION_TERMS = new Set([
   'derive', 'derived', 'derives', 'deriving', 'derivation',
 ])
 const COMPUTATION_PREFIXES = ['calculat', 'comput', 'deriv'] as const
+const DELIVERY_TERMS = new Set([
+  'deliver', 'delivered', 'delivering', 'delivers', 'delivery',
+  'dispatch', 'dispatched', 'dispatches', 'dispatching',
+  'emit', 'emits', 'emitted', 'emitting',
+  'enqueue', 'enqueued', 'enqueues', 'enqueuing',
+  'notify', 'notified', 'notifies', 'notifying',
+  'publish', 'published', 'publishes', 'publishing',
+  'send', 'sending', 'sends', 'sent',
+  'trigger', 'triggered', 'triggering', 'triggers',
+])
+const DELIVERY_PREFIXES = [
+  'deliver', 'dispatch', 'emit', 'enqueu', 'publish', 'send', 'trigger',
+] as const
+const FAILURE_TERMS = new Set([
+  'down', 'error', 'errors', 'fail', 'failed', 'failing', 'fails', 'failure', 'failures',
+])
+const FAILURE_PREFIXES = ['fail'] as const
 const TRANSITION_TERMS = new Set([
   'became', 'become', 'becomes',
   'create', 'created', 'creates', 'creating', 'creation',
@@ -80,9 +107,19 @@ const PRESENTATION_QUERY_PATTERN = /\b(?:component|dashboard|frontend|render|scr
 const PRESENTATION_PATH_PATTERN = /(?:\.(?:jsx|tsx)$|\/(?:components?|dashboard|views?|widgets?)\/)/i
 const PRESENTATION_LABEL_PATTERN = /^(?:page\s+\/|.*(?:badge|card|component|screen|widget).*)$/i
 const RUNTIME_PATH_PATTERN = /\/(?:api|checker|content|db|handlers?|persistence|routes?|schema|server|services?|workflows?)\//i
+const CORE_BEHAVIOR_OWNER_PATH_PATTERN = /\/(?:api|checker|content|handlers?|services?|workflows?)\//i
 const PERSISTENCE_PATH_PATTERN = /\/(?:db|persistence|repositories?|schema)(?:\/|\.)/i
-const LOW_VALUE_OWNER_PATH_PATTERN = /(?:\.pb\.go$|\/(?:errors?|limits)\.[^/]+$|statusPage\.utils\.[^/]+$|\/content\/markdown\/)/i
-const LOW_VALUE_OWNER_LABEL_PATTERN = /(?:Error\(\)?$|Limits?\(\)?$|(?:statusLabel|statusGlyph|generate\w*)\(\)?$)/i
+const LOW_VALUE_OWNER_PATH_PATTERN = /(?:\.pb\.go$|(?:_pb|\.pb)\.ts$|\/(?:errors?|limits)\.[^/]+$|\/lib\/http\/etag\.[^/]+$|statusPage\.utils\.[^/]+$|\/content\/markdown\/)/i
+const LOW_VALUE_OWNER_LABEL_PATTERN = /(?:Error\(\)?$|(?:create)?ErrorResponse\(\)?$|ErrorResponse$|Limits?\(\)?$|(?:assert|check)?\w*Quota\(\)?$|computeETag\(\)?$|validate\w*Access\(\)?$|(?:statusLabel|statusGlyph|generate\w*)\(\)?$)/i
+const EXTERNAL_SCOPE_PATTERN = /(?:^|[\/_-])external(?:[\/_-]|$)/i
+const FLOW_TEST_SOURCE_PATTERN = /(?:^|\/)(?:tests?|__tests__)(?:\/|$)|(?:^|\/)(?:test|tests?[-_.][^/]*)\.[^/]+$|(?:\.test\.[^/]+$|\.spec\.[^/]+$|_test\.go$)/i
+const FLOW_TYPE_SOURCE_PATTERN = /(?:^|\/)(?:types?|interfaces?)(?:\/|\.[^/]+$)|(?:^|\/)(?:types?|interfaces?)\.[^/]+$/i
+const EXPLICIT_TEST_EVIDENCE_PATTERN = /\b(?:test|tests|testing|spec|specs|fixture|fixtures)\b/i
+const EXPLICIT_TYPE_EVIDENCE_PATTERN = /\b(?:contract|contracts|interface|interfaces|schema|schemas|type|types)\b/i
+const EXPLICIT_ERROR_DECLARATION_PATTERN = /\b(?:error\s+(?:class|constructor|handling)|exception|exceptions|throw|throws)\b/i
+const QUERY_EVIDENCE_STATE_MUTATION_PATTERN = /(?:\b(?:create|insert|transition|upsert)\w*\s*\(|\.(?:create|insert|upsert)\s*\(|\bnew\s+\w+)/i
+const QUERY_EVIDENCE_DELIVERY_OPERATION_PATTERN = /(?:\b(?:deliver|dispatch|emit|enqueue|publish|send)\w*\s*\(|\.(?:deliver|dispatch|emit|enqueue|publish|send)\w*\s*\()/i
+const QUERY_EVIDENCE_COMPUTATION_OPERATION_PATTERN = /(?:\b(?:compute|derive|resolve)\w*\s*\(|\b\w*(?:indicator|result|state|status)\w*\s*=|\b\w*(?:indicator|status)\w*\s*\()/i
 const EXPLICIT_ERROR_QUERY_PATTERN = /\b(?:error|exception|throw|throws|thrown)\b/i
 const FLOW_OUTCOME_TERMS = new Set(['error', 'fail', 'failed', 'failure', 'result', 'response', 'status'])
 
@@ -149,10 +186,13 @@ interface AnchorCandidate {
   transitionOwner: boolean
   persistenceShaped: boolean
   lowValueOwner: boolean
+  behaviorOwner: boolean
+  fileOwner: boolean
+  publicBoundaryOwner: boolean
   runtimeScope: string
 }
 
-interface QueryObligation {
+export interface QueryEvidenceObligation {
   index: number
   terms: string[]
 }
@@ -202,7 +242,33 @@ function normalizedQueryTerms(value: string): string[] {
   return withoutDirectives.slice(0, MAX_TERMS_PER_OBLIGATION)
 }
 
-function queryObligations(question: string): QueryObligation[] {
+function collapseOxfordEvidenceLists(value: string): string {
+  return value.replace(
+    /\b(for|across|between)\s+([^.;,]+),\s+([^.;,]+),\s+and\s+([^.;,]+?)(?=,\s+and\b|[.;]|$)/gi,
+    (_match, preposition: string, first: string, second: string, third: string) => (
+      `${preposition} ${first} ${second} and ${third}`
+    ),
+  )
+}
+
+function stripRepeatedFlowChecklists(value: string): string {
+  return value.replace(REPEATED_FLOW_CHECKLIST_PATTERN, (match, offset: number) => {
+    const prefix = value.slice(0, offset)
+    const phaseSignals = prefix.match(/\b(?:becomes?|triggers?|affects?|causes?|leads?\s+to|flows?\s+to)\b/gi)?.length ?? 0
+    if (phaseSignals < 2) {
+      return match
+    }
+
+    const divergenceStart = match.search(/\b(?:compare|conflict|discrepancy|diverg(?:e|ent|ence)|inconsisten(?:t|cy)|mismatch)\b/i)
+    return divergenceStart >= 0 ? ` ${match.slice(divergenceStart)}` : ' '
+  })
+}
+
+export function queryEvidenceObligations(question: string): QueryEvidenceObligation[] {
+  const evidenceQuestion = collapseOxfordEvidenceLists(stripRepeatedFlowChecklists(question
+    .replace(READ_ONLY_CONSTRAINT_PATTERN, ' ')
+    .replace(NO_WRITE_CONSTRAINT_PATTERN, ' ')
+    .replace(CITATION_LIST_DIRECTIVE_PATTERN, ' ')))
   const groups: string[][] = []
   const seen = new Set<string>()
   let start = 0
@@ -216,8 +282,8 @@ function queryObligations(question: string): QueryObligation[] {
     }
     boundaryTerms = []
   }
-  for (const match of question.matchAll(FLOW_BOUNDARY_PATTERN)) {
-    append(question.slice(start, match.index))
+  for (const match of evidenceQuestion.matchAll(FLOW_BOUNDARY_PATTERN)) {
+    append(evidenceQuestion.slice(start, match.index))
     if (groups.length >= MAX_QUERY_OBLIGATIONS) {
       break
     }
@@ -225,11 +291,11 @@ function queryObligations(question: string): QueryObligation[] {
     start = (match.index ?? start) + match[0].length
   }
   if (groups.length < MAX_QUERY_OBLIGATIONS) {
-    append(question.slice(start))
+    append(evidenceQuestion.slice(start))
   }
 
   if (groups.length === 0) {
-    const terms = normalizedQueryTerms(question)
+    const terms = normalizedQueryTerms(evidenceQuestion)
     if (terms.length > 0) {
       groups.push(terms)
     }
@@ -237,8 +303,17 @@ function queryObligations(question: string): QueryObligation[] {
   return groups.map((terms, index) => ({ index, terms }))
 }
 
-function queryTerms(obligations: readonly QueryObligation[]): string[] {
+function queryTerms(obligations: readonly QueryEvidenceObligation[]): string[] {
   return [...new Set(obligations.flatMap((obligation) => obligation.terms))].slice(0, MAX_QUERY_TERMS)
+}
+
+function divergenceScopeTerms(obligation: QueryEvidenceObligation | undefined): string[] {
+  if (!obligation) {
+    return []
+  }
+  const literalTerms = obligation.terms.filter((term) => !term.startsWith('@'))
+  const scopedTerms = literalTerms.filter((term) => !DIVERGENCE_SCOPE_NOISE.has(term))
+  return scopedTerms.length > 0 ? scopedTerms : literalTerms
 }
 
 function lexicalTermsMatch(left: string, right: string): boolean {
@@ -265,6 +340,16 @@ function computationTerm(term: string): boolean {
     || COMPUTATION_PREFIXES.some((prefix) => term.startsWith(prefix))
 }
 
+function deliveryTerm(term: string): boolean {
+  return DELIVERY_TERMS.has(term)
+    || DELIVERY_PREFIXES.some((prefix) => term.startsWith(prefix))
+}
+
+function failureTerm(term: string): boolean {
+  return FAILURE_TERMS.has(term)
+    || FAILURE_PREFIXES.some((prefix) => term.startsWith(prefix))
+}
+
 function transitionTerm(term: string): boolean {
   return TRANSITION_TERMS.has(term)
     || TRANSITION_PREFIXES.some((prefix) => term.startsWith(prefix))
@@ -280,13 +365,19 @@ function conceptualTerm(term: string): string {
   if (computationTerm(term)) {
     return COMPUTATION_CONCEPT
   }
+  if (deliveryTerm(term)) {
+    return DELIVERY_CONCEPT
+  }
+  if (failureTerm(term)) {
+    return FAILURE_CONCEPT
+  }
   if (transitionTerm(term)) {
     return TRANSITION_CONCEPT
   }
   return term
 }
 
-function termsMatch(left: string, right: string): boolean {
+export function queryEvidenceTermsMatch(left: string, right: string): boolean {
   if (left === CHANGE_LIFECYCLE_CONCEPT) {
     return changeLifecycleTerm(right)
   }
@@ -305,6 +396,18 @@ function termsMatch(left: string, right: string): boolean {
   if (right === COMPUTATION_CONCEPT) {
     return computationTerm(left)
   }
+  if (left === DELIVERY_CONCEPT) {
+    return deliveryTerm(right)
+  }
+  if (right === DELIVERY_CONCEPT) {
+    return deliveryTerm(left)
+  }
+  if (left === FAILURE_CONCEPT) {
+    return failureTerm(right)
+  }
+  if (right === FAILURE_CONCEPT) {
+    return failureTerm(left)
+  }
   if (left === TRANSITION_CONCEPT) {
     return transitionTerm(right)
   }
@@ -312,6 +415,191 @@ function termsMatch(left: string, right: string): boolean {
     return transitionTerm(left)
   }
   return lexicalTermsMatch(left, right)
+}
+
+export interface QueryEvidenceNode {
+  label: string
+  source_file: string
+  snippet?: string | null
+}
+
+export interface QueryEvidenceCoverage {
+  total: number
+  covered: number
+  covered_obligations: string[]
+  missing_obligations: string[]
+}
+
+export function flowQueryEvidenceCandidateAllowed(
+  question: string,
+  node: { label: string; sourceFile: string; nodeKind?: string },
+): boolean {
+  if (queryEvidenceObligations(question).length < 3) {
+    return true
+  }
+  const normalizedKind = node.nodeKind?.trim().toLowerCase() ?? ''
+  if (!EXPLICIT_TEST_EVIDENCE_PATTERN.test(question) && FLOW_TEST_SOURCE_PATTERN.test(node.sourceFile)) {
+    return false
+  }
+  if (
+    !EXPLICIT_TYPE_EVIDENCE_PATTERN.test(question)
+    && (FLOW_TYPE_SOURCE_PATTERN.test(node.sourceFile) || /^(?:enum|interface|property|type)$/.test(normalizedKind))
+  ) {
+    return false
+  }
+  const normalizedLabel = node.label.replace(/\(\)$/, '').trim().toLowerCase()
+  const explicitlyNamed = normalizedLabel.length >= 4 && question.toLowerCase().includes(normalizedLabel)
+  if (
+    !/\bexternal\b/i.test(question)
+    && (EXTERNAL_SCOPE_PATTERN.test(node.sourceFile) || EXTERNAL_SCOPE_PATTERN.test(node.label))
+  ) {
+    return false
+  }
+  if (
+    !explicitlyNamed
+    && !EXPLICIT_ERROR_DECLARATION_PATTERN.test(question)
+    && (LOW_VALUE_OWNER_PATH_PATTERN.test(node.sourceFile) || LOW_VALUE_OWNER_LABEL_PATTERN.test(node.label))
+  ) {
+    return false
+  }
+  return true
+}
+
+function queryEvidenceNodeTokens(node: QueryEvidenceNode): { identity: string[]; snippet: string[] } {
+  return {
+    identity: tokenize(`${node.label} ${node.source_file}`),
+    snippet: tokenize(node.snippet ?? ''),
+  }
+}
+
+function queryEvidenceDivergenceCovered(
+  obligation: QueryEvidenceObligation,
+  previous: QueryEvidenceObligation | undefined,
+  nodes: readonly QueryEvidenceNode[],
+): boolean {
+  if (!previous) {
+    return false
+  }
+  const subjectTerms = divergenceScopeTerms(previous)
+  const requiredScopeMatches = Math.min(2, subjectTerms.length)
+  if (requiredScopeMatches === 0) {
+    return false
+  }
+  const owners = new Set<string>()
+  const computationOwners = new Set<string>()
+  for (const node of nodes) {
+    const tokens = queryEvidenceNodeTokens(node)
+    if (tokens.snippet.length === 0) {
+      continue
+    }
+    const allTokens = [...tokens.identity, ...tokens.snippet]
+    const scopeMatches = subjectTerms.filter((term) => (
+      allTokens.some((token) => queryEvidenceTermsMatch(term, token))
+    )).length
+    const computationMatch = allTokens.some((token) => queryEvidenceTermsMatch(COMPUTATION_CONCEPT, token))
+      || QUERY_EVIDENCE_COMPUTATION_OPERATION_PATTERN.test(node.snippet ?? '')
+    const statusLikeMatch = obligation.terms
+      .filter((term) => !term.startsWith('@'))
+      .some((term) => allTokens.some((token) => queryEvidenceTermsMatch(term, token)))
+    if (scopeMatches >= requiredScopeMatches && (computationMatch || statusLikeMatch)) {
+      owners.add(node.source_file)
+      if (computationMatch) computationOwners.add(node.source_file)
+    }
+  }
+  return owners.size >= 2 && computationOwners.size >= 1
+}
+
+/** Measures whether selected snippets, rather than filenames alone, carry each prompt obligation. */
+export function evaluateQueryEvidenceCoverage(
+  question: string,
+  nodes: readonly QueryEvidenceNode[],
+): QueryEvidenceCoverage {
+  const obligations = queryEvidenceObligations(question)
+  const coveredObligations: string[] = []
+  const missingObligations: string[] = []
+
+  for (const obligation of obligations) {
+    const key = `query:obligation:${obligation.index + 1}`
+    if (obligation.terms.includes(DIVERGENCE_CONCEPT)) {
+      const previous = obligations.find((candidate) => candidate.index === obligation.index - 1)
+      if (queryEvidenceDivergenceCovered(obligation, previous, nodes)) {
+        coveredObligations.push(key)
+      } else {
+        missingObligations.push(key)
+      }
+      continue
+    }
+
+    let coveredByOneEvidenceOwner = false
+    for (const node of nodes) {
+      const tokens = queryEvidenceNodeTokens(node)
+      const snippet = node.snippet ?? ''
+      const matchedTerms = new Set<string>()
+      const snippetMatchedTerms = new Set<string>()
+      for (const term of obligation.terms) {
+        if ([...tokens.identity, ...tokens.snippet].some((token) => queryEvidenceTermsMatch(term, token))) {
+          matchedTerms.add(term)
+        }
+        if (tokens.snippet.some((token) => queryEvidenceTermsMatch(term, token))) {
+          snippetMatchedTerms.add(term)
+        }
+        if (term === COMPUTATION_CONCEPT && QUERY_EVIDENCE_COMPUTATION_OPERATION_PATTERN.test(snippet)) {
+          matchedTerms.add(term)
+          snippetMatchedTerms.add(term)
+        }
+      }
+      const requiredMatches = Math.min(2, obligation.terms.length)
+      const conceptualTerms = obligation.terms.filter((term) => term.startsWith('@'))
+      const literalTerms = obligation.terms.filter((term) => !term.startsWith('@'))
+      const conceptualSnippetGrounded = conceptualTerms.length === 0
+        || conceptualTerms.some((term) => snippetMatchedTerms.has(term))
+      const literalSnippetGrounded = literalTerms.length === 0
+        || literalTerms.some((term) => snippetMatchedTerms.has(term))
+      const transitionCooccursWithEntity = !conceptualTerms.includes(TRANSITION_CONCEPT)
+        || (node.snippet ?? '').split(/\r?\n/).some((line) => {
+          const lineTokens = tokenize(line)
+          return lineTokens.some((token) => queryEvidenceTermsMatch(TRANSITION_CONCEPT, token))
+            && literalTerms.some((term) => lineTokens.some((token) => queryEvidenceTermsMatch(term, token)))
+            && QUERY_EVIDENCE_STATE_MUTATION_PATTERN.test(line)
+        })
+      const deliveryCooccursWithEntity = !conceptualTerms.includes(DELIVERY_CONCEPT)
+        || snippet.split(/\r?\n/).some((line) => {
+          const lineTokens = tokenize(line)
+          return lineTokens.some((token) => queryEvidenceTermsMatch(DELIVERY_CONCEPT, token))
+            && literalTerms.some((term) => lineTokens.some((token) => queryEvidenceTermsMatch(term, token)))
+            && QUERY_EVIDENCE_DELIVERY_OPERATION_PATTERN.test(line)
+        })
+      const computationCooccursWithEntity = !conceptualTerms.includes(COMPUTATION_CONCEPT)
+        || snippet.split(/\r?\n/).some((line) => {
+          const lineTokens = tokenize(line)
+          return QUERY_EVIDENCE_COMPUTATION_OPERATION_PATTERN.test(line)
+            && literalTerms.some((term) => lineTokens.some((token) => queryEvidenceTermsMatch(term, token)))
+        })
+      if (
+        matchedTerms.size >= requiredMatches
+        && conceptualSnippetGrounded
+        && literalSnippetGrounded
+        && transitionCooccursWithEntity
+        && deliveryCooccursWithEntity
+        && computationCooccursWithEntity
+      ) {
+        coveredByOneEvidenceOwner = true
+        break
+      }
+    }
+    if (coveredByOneEvidenceOwner) {
+      coveredObligations.push(key)
+    } else {
+      missingObligations.push(key)
+    }
+  }
+
+  return {
+    total: obligations.length,
+    covered: coveredObligations.length,
+    covered_obligations: coveredObligations,
+    missing_obligations: missingObligations,
+  }
 }
 
 function stringValues(value: unknown, depth = 0): string[] {
@@ -496,10 +784,29 @@ function runtimeScopeForSource(sourceFile: string): string {
   return parts.slice(-3, -1).join('/') || normalized
 }
 
+function fileOwnerNode(node: Pick<VocabularyNode, 'label' | 'sourceFile' | 'nodeKind'>): boolean {
+  const basename = node.sourceFile.replaceAll('\\', '/').split('/').at(-1)?.toLowerCase() ?? ''
+  const normalizedLabel = node.label.replaceAll('\\', '/').split('/').at(-1)?.toLowerCase() ?? ''
+  return normalizedLabel === basename
+    || (node.nodeKind.trim().length === 0 && normalizedLabel.replace(/\.[^.]+$/, '') === basename.replace(/\.[^.]+$/, ''))
+}
+
+function publicBoundaryOwnerNode(node: Pick<VocabularyNode, 'label' | 'sourceFile' | 'frameworkRole'>): boolean {
+  const normalizedSource = node.sourceFile.replaceAll('\\', '/')
+  const routePath = /\/(?:app\/)?api\//i.test(normalizedSource)
+    && /\/route\.[^/]+$/i.test(normalizedSource)
+  const routeLabel = /^(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)(?:\(\)|\s|$)|^route\.[^.]+$/i.test(node.label)
+  return (routePath && routeLabel) || /(?:route|request)_handler/i.test(node.frameworkRole)
+}
+
+function runtimeLanguageForSource(sourceFile: string): string {
+  return sourceFile.replaceAll('\\', '/').split('.').at(-1)?.toLowerCase() ?? ''
+}
+
 function vocabularyDocumentFrequency(index: RepositoryVocabularyIndex, queryTerm: string): number {
   let count = 0
   for (const [term, frequency] of index.documentFrequency) {
-    if (termsMatch(queryTerm, term)) {
+    if (queryEvidenceTermsMatch(queryTerm, term)) {
       count += frequency
     }
   }
@@ -515,7 +822,7 @@ function anchorForNode(
   node: VocabularyNode,
   terms: readonly string[],
   inverseFrequencyByTerm: ReadonlyMap<string, number>,
-  obligations: readonly QueryObligation[],
+  obligations: readonly QueryEvidenceObligation[],
   question: string,
 ): AnchorCandidate | null {
   const matchedQueryTerms = new Set<string>()
@@ -528,7 +835,7 @@ function anchorForNode(
   for (const queryTerm of terms) {
     let bestWeight = 0
     for (const [source, vocabulary] of node.fields) {
-      if ([...vocabulary].some((term) => termsMatch(queryTerm, term))) {
+      if ([...vocabulary].some((term) => queryEvidenceTermsMatch(queryTerm, term))) {
         sources.add(source)
         if (source !== 'graph_community' && source !== 'path') {
           specificQueryTerms.add(queryTerm)
@@ -554,7 +861,23 @@ function anchorForNode(
   const obligationMatches = new Map<number, number>()
   for (const obligation of obligations) {
     const matchedTerms = obligation.terms.filter((term) => matchedQueryTerms.has(term)).length
-    if (matchedTerms >= Math.min(2, obligation.terms.length)) {
+    const previous = obligations.find((candidate) => candidate.index === obligation.index - 1)
+    const previousTerms = divergenceScopeTerms(previous)
+    const scopedSubjectMatches = previousTerms.filter((term) => matchedQueryTerms.has(term)).length
+    const requiredMatches = obligation.terms.includes(DIVERGENCE_CONCEPT) && scopedSubjectMatches >= 2
+      ? 1
+      : Math.min(2, obligation.terms.length)
+    const lifecycleConcepts = obligation.terms.filter((term) => (
+      term === COMPUTATION_CONCEPT
+        || term === DELIVERY_CONCEPT
+        || term === FAILURE_CONCEPT
+        || term === TRANSITION_CONCEPT
+    ))
+    const lifecycleGrounded = lifecycleConcepts.every((term) => matchedQueryTerms.has(term))
+    const divergenceGrounded = !obligation.terms.includes(DIVERGENCE_CONCEPT)
+      || matchedQueryTerms.has(DIVERGENCE_CONCEPT)
+      || scopedSubjectMatches >= 2
+    if (matchedTerms >= requiredMatches && lifecycleGrounded && divergenceGrounded) {
       obligationMatches.set(obligation.index, matchedTerms)
     }
   }
@@ -581,14 +904,70 @@ function anchorForNode(
     persistenceShaped: PERSISTENCE_PATH_PATTERN.test(node.sourceFile),
     lowValueOwner: LOW_VALUE_OWNER_PATH_PATTERN.test(node.sourceFile)
       || LOW_VALUE_OWNER_LABEL_PATTERN.test(node.label),
+    behaviorOwner: CORE_BEHAVIOR_OWNER_PATH_PATTERN.test(node.sourceFile),
+    fileOwner: fileOwnerNode(node),
+    publicBoundaryOwner: publicBoundaryOwnerNode(node),
     runtimeScope: runtimeScopeForSource(node.sourceFile),
   }
+}
+
+/**
+ * Removes same-vocabulary computations whose repository scope is weaker than
+ * the best candidates for an explicit divergence request. Explicit symbol or
+ * path anchors can still override this at the retrieval boundary.
+ */
+export function underScopedDivergenceNodeIds(
+  graph: KnowledgeGraph,
+  question: string,
+): ReadonlySet<string> {
+  const obligations = queryEvidenceObligations(question)
+  const divergenceObligations = obligations.filter((obligation) => obligation.terms.includes(DIVERGENCE_CONCEPT))
+  if (divergenceObligations.length === 0) {
+    return new Set()
+  }
+  const terms = queryTerms(obligations)
+  const index = buildVocabularyIndex(graph)
+  const inverseFrequencyByTerm = new Map(
+    terms.map((term) => [term, inverseFrequency(index, term)] as const),
+  )
+  const anchors = index.nodes.filter((node) => flowQueryEvidenceCandidateAllowed(question, node)).flatMap((node) => {
+    const anchor = anchorForNode(node, terms, inverseFrequencyByTerm, obligations, question)
+    return anchor ? [anchor] : []
+  })
+  const excluded = new Set<string>()
+  for (const obligation of divergenceObligations) {
+    const previous = obligations.find((candidate) => candidate.index === obligation.index - 1)
+    const previousTerms = divergenceScopeTerms(previous)
+    const scopeMatches = (anchor: AnchorCandidate): number => (
+      previousTerms.filter((term) => anchor.matchedQueryTerms.has(term)).length
+    )
+    const candidates = anchors.filter((anchor) => (
+      anchor.matchedQueryTerms.has(COMPUTATION_CONCEPT)
+      && (
+        anchor.obligationMatches.has(obligation.index)
+        || (previous !== undefined && anchor.obligationMatches.has(previous.index))
+      )
+    ))
+    const strongestScope = candidates.reduce(
+      (maximum, anchor) => Math.max(maximum, scopeMatches(anchor)),
+      0,
+    )
+    if (strongestScope < 2) {
+      continue
+    }
+    for (const anchor of candidates) {
+      if (scopeMatches(anchor) < 2) {
+        excluded.add(anchor.id)
+      }
+    }
+  }
+  return excluded
 }
 
 function diversifyAnchors(
   graph: KnowledgeGraph,
   ranked: readonly AnchorCandidate[],
-  obligations: readonly QueryObligation[],
+  obligations: readonly QueryEvidenceObligation[],
   preferRuntime: boolean,
 ): {
   anchors: AnchorCandidate[]
@@ -602,35 +981,80 @@ function diversifyAnchors(
   const reservedByObligation = new Set<string>()
   const hasSymbolGroundedAnchors = ranked.some((anchor) => anchor.symbolQueryTerms.size > 0)
 
-  const obligationSymbolMatchCount = (anchor: AnchorCandidate, obligation: QueryObligation): number => (
+  const obligationSymbolMatchCount = (anchor: AnchorCandidate, obligation: QueryEvidenceObligation): number => (
     obligation.terms.filter((term) => anchor.symbolQueryTerms.has(term)).length
   )
-  const obligationSpecificMatchCount = (anchor: AnchorCandidate, obligation: QueryObligation): number => (
+  const obligationSpecificMatchCount = (anchor: AnchorCandidate, obligation: QueryEvidenceObligation): number => (
     obligation.terms.filter((term) => anchor.specificQueryTerms.has(term)).length
   )
-  const divergenceScopeMatchCount = (anchor: AnchorCandidate, obligation: QueryObligation): number => {
+  const divergenceScopeMatchCount = (anchor: AnchorCandidate, obligation: QueryEvidenceObligation): number => {
     if (!obligation.terms.includes(DIVERGENCE_CONCEPT)) {
       return 0
     }
-    const previousTerms = obligations.find((candidate) => candidate.index === obligation.index - 1)?.terms ?? []
+    const previousTerms = divergenceScopeTerms(
+      obligations.find((candidate) => candidate.index === obligation.index - 1),
+    )
     return previousTerms.filter((term) => anchor.matchedQueryTerms.has(term)).length
   }
+  const crossObligationContextMatchCount = (
+    anchor: AnchorCandidate,
+    obligation: QueryEvidenceObligation,
+  ): number => new Set(
+    obligations
+      .filter((candidate) => candidate.index !== obligation.index)
+      .flatMap((candidate) => candidate.terms)
+      .filter((term) => !term.startsWith('@') && anchor.matchedQueryTerms.has(term)),
+  ).size
 
-  const baseObligationOrder = (obligation: QueryObligation) => (
+  const baseObligationOrder = (obligation: QueryEvidenceObligation) => (
     (left: AnchorCandidate, right: AnchorCandidate): number => (
-      obligationSymbolMatchCount(right, obligation) - obligationSymbolMatchCount(left, obligation)
+      (obligation.terms.includes(DIVERGENCE_CONCEPT)
+        ? divergenceScopeMatchCount(right, obligation) - divergenceScopeMatchCount(left, obligation)
+        : 0)
+      || (obligation.terms.includes(TRANSITION_CONCEPT)
+        ? Number(right.transitionOwner) - Number(left.transitionOwner)
+        : 0)
+      || (obligation.terms.includes('public') && obligation.terms.includes('page')
+        ? Number(right.fileOwner) - Number(left.fileOwner)
+        : 0)
+      || obligationSymbolMatchCount(right, obligation) - obligationSymbolMatchCount(left, obligation)
       || (right.obligationMatches.get(obligation.index) ?? 0) - (left.obligationMatches.get(obligation.index) ?? 0)
       || obligationSpecificMatchCount(right, obligation) - obligationSpecificMatchCount(left, obligation)
-      || divergenceScopeMatchCount(right, obligation) - divergenceScopeMatchCount(left, obligation)
+      || crossObligationContextMatchCount(right, obligation) - crossObligationContextMatchCount(left, obligation)
       || right.structuralDegree - left.structuralDegree
       || right.score - left.score
       || left.id.localeCompare(right.id)
     )
   )
   const candidatesByObligation = new Map<number, AnchorCandidate[]>()
+  const underScopedDivergenceAnchors = new Set<string>()
+  for (const divergenceObligation of obligations.filter((obligation) => obligation.terms.includes(DIVERGENCE_CONCEPT))) {
+    const previous = obligations.find((candidate) => candidate.index === divergenceObligation.index - 1)
+    const scopedCandidates = ranked.filter((anchor) => (
+      anchor.matchedQueryTerms.has(COMPUTATION_CONCEPT)
+      && (
+        anchor.obligationMatches.has(divergenceObligation.index)
+        || (previous !== undefined && anchor.obligationMatches.has(previous.index))
+      )
+    ))
+    const strongestScope = scopedCandidates.reduce(
+      (maximum, anchor) => Math.max(maximum, divergenceScopeMatchCount(anchor, divergenceObligation)),
+      0,
+    )
+    if (strongestScope >= 2) {
+      for (const anchor of scopedCandidates) {
+        if (divergenceScopeMatchCount(anchor, divergenceObligation) < 2) {
+          underScopedDivergenceAnchors.add(anchor.id)
+        }
+      }
+    }
+  }
   for (const obligation of obligations) {
     const candidates = ranked
-      .filter((anchor) => anchor.obligationMatches.has(obligation.index))
+      .filter((anchor) => (
+        anchor.obligationMatches.has(obligation.index)
+        && !underScopedDivergenceAnchors.has(anchor.id)
+      ))
       .sort(baseObligationOrder(obligation))
     const runtimeCandidates = preferRuntime && candidates.some((anchor) => !anchor.presentationShaped)
       ? candidates.filter((anchor) => !anchor.presentationShaped)
@@ -641,9 +1065,28 @@ function diversifyAnchors(
     const ownerCandidates = structurallyGrounded.some((anchor) => !anchor.lowValueOwner)
       ? structurallyGrounded.filter((anchor) => !anchor.lowValueOwner)
       : structurallyGrounded
+    const behaviorOwners = ownerCandidates.some((anchor) => anchor.behaviorOwner)
+      ? ownerCandidates.filter((anchor) => anchor.behaviorOwner)
+      : ownerCandidates
+    const strongestScopedOwners = obligation.terms.includes(DIVERGENCE_CONCEPT)
+      ? (() => {
+          const strongestScope = behaviorOwners.reduce(
+            (maximum, anchor) => Math.max(maximum, divergenceScopeMatchCount(anchor, obligation)),
+            0,
+          )
+          const minimumScopedMatch = strongestScope >= 2 ? 2 : strongestScope
+          return strongestScope > 0
+            ? behaviorOwners.filter((anchor) => {
+                const scoped = divergenceScopeMatchCount(anchor, obligation) >= minimumScopedMatch
+                if (!scoped) underScopedDivergenceAnchors.add(anchor.id)
+                return scoped
+              })
+            : behaviorOwners
+        })()
+      : behaviorOwners
     candidatesByObligation.set(
       obligation.index,
-      ownerCandidates.slice(0, MAX_OBLIGATION_CONNECTIVITY_CANDIDATES),
+      strongestScopedOwners.slice(0, MAX_OBLIGATION_CONNECTIVITY_CANDIDATES),
     )
   }
   const pathCache = new Map<string, boolean>()
@@ -685,6 +1128,40 @@ function diversifyAnchors(
   for (const obligation of obligations) {
     const candidates = [...(candidatesByObligation.get(obligation.index) ?? [])]
       .sort((left, right) => {
+        const scopedDivergenceOrder = obligation.terms.includes(DIVERGENCE_CONCEPT)
+          ? divergenceScopeMatchCount(right, obligation) - divergenceScopeMatchCount(left, obligation)
+          : 0
+        if (scopedDivergenceOrder !== 0) {
+          return scopedDivergenceOrder
+        }
+        const transitionOwnerOrder = obligation.terms.includes(TRANSITION_CONCEPT)
+          ? Number(right.transitionOwner) - Number(left.transitionOwner)
+          : 0
+        if (transitionOwnerOrder !== 0) {
+          return transitionOwnerOrder
+        }
+        const behaviorOrder = Number(right.behaviorOwner) - Number(left.behaviorOwner)
+        if (behaviorOrder !== 0) {
+          return behaviorOrder
+        }
+        const publicFileOwnerOrder = obligation.terms.includes('public') && obligation.terms.includes('page')
+          ? Number(right.fileOwner) - Number(left.fileOwner)
+          : 0
+        if (publicFileOwnerOrder !== 0) {
+          return publicFileOwnerOrder
+        }
+        const publicOwnerGrounding = obligation.terms.includes('public') && obligation.terms.includes('page')
+          ? obligationSymbolMatchCount(right, obligation) - obligationSymbolMatchCount(left, obligation)
+            || obligationSpecificMatchCount(right, obligation) - obligationSpecificMatchCount(left, obligation)
+          : 0
+        if (publicOwnerGrounding !== 0) {
+          return publicOwnerGrounding
+        }
+        const workflowContextOrder = crossObligationContextMatchCount(right, obligation)
+          - crossObligationContextMatchCount(left, obligation)
+        if (workflowContextOrder !== 0) {
+          return workflowContextOrder
+        }
         const leftConnections = connectedObligations(left)
         const rightConnections = connectedObligations(right)
         const leftAdjacent = Number(leftConnections.has(obligation.index - 1))
@@ -705,6 +1182,34 @@ function diversifyAnchors(
       }
       preferredByObligation.set(obligation.index, candidate.id)
       reservedByObligation.add(candidate.id)
+    }
+  }
+
+  // A public status computation is incomplete without the HTTP boundary that
+  // fetches and serializes it. Reserve that owner separately from the status
+  // implementation so runtime provenance is explicit rather than inferred
+  // from a shared output type.
+  for (const obligation of obligations.filter((candidate) => (
+    candidate.terms.includes('public') && candidate.terms.includes('page')
+  ))) {
+    const publicTerms = obligation.terms.filter((term) => !term.startsWith('@'))
+    const boundary = ranked
+      .filter((anchor) => (
+        anchor.publicBoundaryOwner
+        && publicTerms.filter((term) => anchor.matchedQueryTerms.has(term)).length >= 2
+        && !anchor.lowValueOwner
+      ))
+      .sort((left, right) => (
+        Number(/\(\)$/.test(right.label)) - Number(/\(\)$/.test(left.label))
+        || obligationSymbolMatchCount(right, obligation) - obligationSymbolMatchCount(left, obligation)
+        || obligationSpecificMatchCount(right, obligation) - obligationSpecificMatchCount(left, obligation)
+        || right.structuralDegree - left.structuralDegree
+        || right.score - left.score
+        || left.id.localeCompare(right.id)
+      ))[0]
+    if (boundary) {
+      if (!selectedIds.has(boundary.id)) add(boundary)
+      reservedByObligation.add(boundary.id)
     }
   }
 
@@ -737,7 +1242,7 @@ function diversifyAnchors(
     const unmatchedEntityQualifiers = (anchor: AnchorCandidate): number => {
       const basenameTerms = tokenize(anchor.sourceFile.split('/').at(-1) ?? '')
         .filter((term) => !VOCABULARY_NOISE.has(term))
-      return basenameTerms.filter((term) => !entityTerms.some((entity) => termsMatch(entity, term))).length
+      return basenameTerms.filter((term) => !entityTerms.some((entity) => queryEvidenceTermsMatch(entity, term))).length
     }
     const stateOwner = ranked
       .filter((anchor) => (
@@ -764,6 +1269,9 @@ function diversifyAnchors(
   const firstObligation = obligations[0]
   const firstPrimaryId = firstObligation ? preferredByObligation.get(firstObligation.index) : undefined
   const firstPrimaryScope = firstPrimaryId ? ranked.find((anchor) => anchor.id === firstPrimaryId)?.runtimeScope : undefined
+  const firstPrimaryLanguage = firstPrimaryId
+    ? runtimeLanguageForSource(ranked.find((anchor) => anchor.id === firstPrimaryId)?.sourceFile ?? '')
+    : undefined
   if (firstObligation) {
     const headTerm = firstObligation.terms.at(-1)
     const outcomeLabel = (anchor: AnchorCandidate): boolean => (
@@ -775,11 +1283,18 @@ function diversifyAnchors(
         && anchor.runtimeScope !== firstPrimaryScope
         && anchor.transitionOwner
         && !anchor.lowValueOwner
-        && anchor.symbolQueryTerms.size > 0
+        && (anchor.symbolQueryTerms.size > 0 || anchor.pathQueryTerms.size > 0)
         && firstObligation.terms.some((term) => anchor.matchedQueryTerms.has(term))
       ))
       .sort((left, right) => (
-        Number(outcomeLabel(right)) - Number(outcomeLabel(left))
+        Number(
+          firstPrimaryLanguage !== undefined
+          && runtimeLanguageForSource(right.sourceFile) !== firstPrimaryLanguage,
+        ) - Number(
+          firstPrimaryLanguage !== undefined
+          && runtimeLanguageForSource(left.sourceFile) !== firstPrimaryLanguage,
+        )
+        || Number(outcomeLabel(right)) - Number(outcomeLabel(left))
         || Number(headTerm !== undefined && right.pathQueryTerms.has(headTerm))
           - Number(headTerm !== undefined && left.pathQueryTerms.has(headTerm))
         || firstObligation.terms.filter((term) => right.matchedQueryTerms.has(term)).length
@@ -791,11 +1306,50 @@ function diversifyAnchors(
     if (boundaryOwner) {
       if (!selectedIds.has(boundaryOwner.id)) add(boundaryOwner)
       reservedByObligation.add(boundaryOwner.id)
+
+      const rankedById = new Map(ranked.map((anchor) => [anchor.id, anchor]))
+      const boundaryCaller = graph.predecessors(boundaryOwner.id)
+        .flatMap((nodeId) => {
+          const anchor = rankedById.get(nodeId)
+          if (!anchor) return []
+          const relation = String(graph.edgeAttributes(nodeId, boundaryOwner.id).relation ?? '')
+          return /^(?:calls|dispatches|emits|enqueues|invokes|publishes|triggers)$/.test(relation)
+            ? [anchor]
+            : []
+        })
+        .filter((anchor) => (
+          anchor.sourceFile !== boundaryOwner.sourceFile
+          && anchor.behaviorOwner
+          && !anchor.lowValueOwner
+          && firstObligation.terms.some((term) => anchor.matchedQueryTerms.has(term))
+        ))
+        .sort((left, right) => (
+          Number(right.obligationMatches.has(firstObligation.index))
+            - Number(left.obligationMatches.has(firstObligation.index))
+          || firstObligation.terms.filter((term) => right.symbolQueryTerms.has(term)).length
+            - firstObligation.terms.filter((term) => left.symbolQueryTerms.has(term)).length
+          || firstObligation.terms.filter((term) => right.matchedQueryTerms.has(term)).length
+            - firstObligation.terms.filter((term) => left.matchedQueryTerms.has(term)).length
+          || right.structuralDegree - left.structuralDegree
+          || right.score - left.score
+          || left.id.localeCompare(right.id)
+        ))[0]
+      if (boundaryCaller) {
+        if (!selectedIds.has(boundaryCaller.id)) add(boundaryCaller)
+        if (firstPrimaryId && preferredByObligation.get(firstObligation.index) === firstPrimaryId) {
+          reservedByObligation.delete(firstPrimaryId)
+        }
+        preferredByObligation.set(firstObligation.index, boundaryCaller.id)
+        reservedByObligation.add(boundaryCaller.id)
+      }
     }
   }
 
   for (const anchor of ranked) {
     if (selectedIds.has(anchor.id)) {
+      continue
+    }
+    if (underScopedDivergenceAnchors.has(anchor.id)) {
       continue
     }
     const sourceKey = anchor.sourceFile || anchor.id
@@ -816,6 +1370,9 @@ function diversifyAnchors(
 
   for (const anchor of ranked) {
     if (selectedIds.has(anchor.id)) {
+      continue
+    }
+    if (underScopedDivergenceAnchors.has(anchor.id)) {
       continue
     }
     const sourceKey = anchor.sourceFile || anchor.id
@@ -855,6 +1412,7 @@ function eligibleVocabularyNodes(index: RepositoryVocabularyIndex, input: Concep
   return index.nodes.filter((node) => (
     (input.community === undefined || node.community === input.community)
     && (normalizedFileType === undefined || node.fileType === normalizedFileType)
+    && flowQueryEvidenceCandidateAllowed(input.question, node)
     && (
       allowsNonProduction
       || !['test', 'benchmark', 'fixture', 'generated', 'build_artifact'].includes(node.sourceDomain)
@@ -921,7 +1479,7 @@ function shortestIncidentPath(
 
 function proposalIsGrounded(
   anchors: readonly AnchorCandidate[],
-  obligations: readonly QueryObligation[],
+  obligations: readonly QueryEvidenceObligation[],
 ): boolean {
   const coveredTerms = new Set(anchors.flatMap((anchor) => [...anchor.matchedQueryTerms]))
   const coveredObligations = new Set(anchors.flatMap((anchor) => [...anchor.obligationMatches.keys()]))
@@ -983,7 +1541,7 @@ export function planConceptualFallback(
   graph: KnowledgeGraph,
   input: ConceptualFallbackInput,
 ): ConceptualFallbackProposal {
-  const obligations = queryObligations(input.question)
+  const obligations = queryEvidenceObligations(input.question)
   const terms = queryTerms(obligations)
   const initialReasons = fallbackReasons(input.initialQuality)
   if (terms.length === 0) {
@@ -1171,7 +1729,7 @@ export function planConceptualFallback(
   // a dense single-layer cluster can still consume every selected slot after
   // the proposal correctly found disconnected cross-service stages.
   for (const nodeId of preferredObligationAnchorIds) {
-    boosts.set(nodeId, Math.max(boosts.get(nodeId) ?? 0, PREFERRED_OBLIGATION_ANCHOR_BOOST))
+    boosts.set(nodeId, Math.max(boosts.get(nodeId) ?? 0, CONCEPTUAL_WORKFLOW_RESERVATION_BOOST))
   }
 
   for (const anchor of anchors

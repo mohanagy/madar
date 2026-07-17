@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 
 import { describe, expect, test } from 'vitest'
 
-import { agentsInstall } from '../../src/infrastructure/install.js'
+import { agentsInstall, isMadarCodexMcpConfig, resolveCodexMcpConfigPath } from '../../src/infrastructure/install.js'
 import { runDoctorCommand, runStatusCommand } from '../../src/infrastructure/doctor.js'
 import { generateGraph } from '../../src/infrastructure/generate.js'
 import { createWatcherState, writeWatcherState } from '../../src/infrastructure/watcher-state.js'
@@ -41,6 +41,31 @@ function writeJson(path: string, value: unknown): void {
 function writeText(path: string, content: string): void {
   mkdirSync(dirname(path), { recursive: true })
   writeFileSync(path, content, 'utf8')
+}
+
+function managedCodexMcpBlockForWorkspace(content: string, projectDir: string): { serverName: string; start: number; end: number } {
+  const expectedCwd = `cwd = ${JSON.stringify(resolve(projectDir))}`
+  const matcher = /^# >>> madar managed mcp: (madar_[a-f0-9]{12}) >>>$/gm
+
+  for (const match of content.matchAll(matcher)) {
+    const serverName = match[1]
+    const start = match.index
+    if (!serverName || start === undefined) {
+      continue
+    }
+
+    const endMarker = `# <<< madar managed mcp: ${serverName} <<<`
+    const endMarkerIndex = content.indexOf(endMarker, start)
+    if (endMarkerIndex === -1) {
+      continue
+    }
+    const end = endMarkerIndex + endMarker.length
+    if (content.slice(start, end).includes(expectedCwd)) {
+      return { serverName, start, end }
+    }
+  }
+
+  throw new Error(`Missing managed Codex MCP block for ${projectDir}`)
 }
 
 function writeMcpServer(path: string, serversKey: 'mcpServers' | 'servers', graphPath?: string): void {
@@ -321,11 +346,14 @@ describe('doctor command', () => {
     withSandbox((sandboxDir) => {
       writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
       agentsInstall(sandboxDir, 'codex')
-      const configPath = resolve(sandboxDir, '.codex', 'config.toml')
+      const configPath = resolveCodexMcpConfigPath()
+      const config = readFileSync(configPath, 'utf8')
+      const managedBlock = managedCodexMcpBlockForWorkspace(config, sandboxDir)
       writeText(
         configPath,
-        readFileSync(configPath, 'utf8').replace('MADAR_TOOL_PROFILE = "strict"', 'MADAR_TOOL_PROFILE = "core"'),
+        `${config.slice(0, managedBlock.start)}${config.slice(managedBlock.start, managedBlock.end).replace('MADAR_TOOL_PROFILE = "strict"', 'MADAR_TOOL_PROFILE = "core"')}${config.slice(managedBlock.end)}`,
       )
+      expect(isMadarCodexMcpConfig(readFileSync(configPath, 'utf8'), sandboxDir)).toBe(false)
 
       const doctor = runDoctorCommand({ projectDir: sandboxDir, now: Date.now() })
 
@@ -385,11 +413,14 @@ describe('doctor command', () => {
     withSandbox((sandboxDir) => {
       writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
       agentsInstall(sandboxDir, 'codex')
-      const configPath = resolve(sandboxDir, '.codex', 'config.toml')
+      const configPath = resolveCodexMcpConfigPath()
+      const config = readFileSync(configPath, 'utf8')
+      const { serverName } = managedCodexMcpBlockForWorkspace(config, sandboxDir)
       writeText(
         configPath,
-        `${readFileSync(configPath, 'utf8')}\n[mcp_servers.madar]\ncommand = "custom-madar"\n`,
+        `${config}\n[mcp_servers.${serverName}]\ncommand = "custom-madar"\n`,
       )
+      expect(isMadarCodexMcpConfig(readFileSync(configPath, 'utf8'), sandboxDir)).toBe(false)
 
       const doctor = runDoctorCommand({
         projectDir: sandboxDir,

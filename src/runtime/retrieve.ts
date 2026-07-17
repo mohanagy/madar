@@ -54,13 +54,20 @@ import { requireDirectedGraph } from './direction.js'
 import {
   expansionPolicyForLevel,
   predecessorAllowedForPolicy,
+  predecessorIsStructuralOwner,
   relationAllowedForPolicy,
   relationIsPrimaryForPolicy,
 } from './retrieve/expansion.js'
 import { sliceCandidatesForRetrieve } from './retrieve/slicing.js'
 import {
+  CONCEPTUAL_WORKFLOW_RESERVATION_BOOST,
   finalizeConceptualFallbackPlan,
+  evaluateQueryEvidenceCoverage,
+  flowQueryEvidenceCandidateAllowed,
   planConceptualFallback,
+  queryEvidenceObligations,
+  queryEvidenceTermsMatch,
+  underScopedDivergenceNodeIds,
 } from './retrieve/conceptual-fallback.js'
 import { recoverContextPackResult } from './context-pack-recovery.js'
 import {
@@ -83,6 +90,9 @@ export { tokenizeLabel, tokenizeQuestion } from './retrieve/pipeline.js'
 const SNIPPET_HALF_WINDOW = 7
 const DERIVED_SNIPPET_HALF_WINDOW = 1
 const MAX_SNIPPET_LINE_LENGTH = 200
+const QUERY_EVIDENCE_SNIPPET_LINE_CAP = 220
+const QUERY_EVIDENCE_SNIPPET_CHAR_CAP = 300
+const QUERY_EVIDENCE_SNIPPET_MAX_LINES = 4
 export const DEFAULT_RETRIEVE_SNIPPET_BUDGET = 3000
 export const DEFAULT_RETRIEVE_TOP_N_WITH_SNIPPET = 8
 export const DEFAULT_RETRIEVE_STDIO_OUTPUT_TOKENS = 4000
@@ -162,6 +172,8 @@ export interface RetrieveMatchedNode {
   source_domain?: SourceDomain
   file_type: string
   snippet: string | null
+  snippet_line_number?: number
+  snippet_scope?: 'symbol' | 'source_file'
   snippet_truncated?: boolean
   match_score: number
   relevance_band: 'direct' | 'related' | 'peripheral'
@@ -632,6 +644,731 @@ export function readSnippet(
       .slice(start, end)
       .map((line) => (line.length > MAX_SNIPPET_LINE_LENGTH ? `${line.slice(0, MAX_SNIPPET_LINE_LENGTH)}...` : line))
       .join('\n')
+  } catch {
+    return null
+  }
+}
+
+export interface QueryEvidenceSnippet {
+  snippet: string
+  lineNumber: number
+  scope: 'symbol' | 'source_file'
+}
+
+interface QueryEvidenceSnippetOptions {
+  question: string
+  label: string
+  sourceLocation?: string | null
+  fileNodeLike?: boolean
+  derived?: boolean
+  fileCache?: Map<string, string[] | null>
+}
+
+interface QueryEvidenceLine {
+  index: number
+  endIndex: number
+  text: string
+  score: number
+  matchedTerms: Set<string>
+  matchedObligations: Set<number>
+  identifierTerms: Set<string>
+}
+
+interface QueryEvidenceRange {
+  lines: QueryEvidenceLine[]
+  coveredObligations: Set<number>
+  bestScore: number
+}
+
+const QUERY_EVIDENCE_OPERATION_PATTERN = /(?:\b(?:await|case|catch|delete|dispatch|emit|enqueue|if|insert|post|publish|return|select|send|switch|throw|update|upsert|write)\b|\b(?:const|let)\s+\w+\s*=|=>|\.\w+\s*\()/i
+const QUERY_EVIDENCE_STATE_MUTATION_PATTERN = /(?:\b(?:create|insert|transition|upsert)\w*\s*\(|\.(?:create|insert|upsert)\s*\(|\bnew\s+\w+)/i
+const QUERY_EVIDENCE_LOW_VALUE_LINE_PATTERN = /^\s*(?:(?:import|package)\b|(?:export\s+)?type\b|interface\b|\/\/|\/\*|\*|[{}()[\],;]+\s*$)/i
+const QUERY_EVIDENCE_LOG_LINE_PATTERN = /\b(?:logger|log)\.\w+\s*\(/i
+const QUERY_EVIDENCE_HANDOFF_PATTERN = /(?:\b(?:createTask|dispatch|emit|enqueue|insert|publish|send|update|upsert)\w*\s*\(|\.(?:createTask|dispatch|emit|enqueue|insert|publish|send\w*|update|upsert)\s*\()/i
+const QUERY_EVIDENCE_DELIVERY_HANDOFF_PATTERN = /(?:\b(?:createTask|dispatch|emit|enqueue|publish|send|trigger)\w*\s*\(|\.(?:createTask|dispatch|emit|enqueue|publish|send\w*)\s*\()/i
+const QUERY_EVIDENCE_DELIVERY_OPERATION_PATTERN = /(?:\b(?:deliver|dispatch|emit|enqueue|publish|send)\w*\s*\(|\.(?:deliver|dispatch|emit|enqueue|publish|send)\w*\s*\()/i
+const QUERY_EVIDENCE_RETRY_PATTERN = /\b(?:backoff|exponential|retr(?:y|ied|ies))\b/i
+const QUERY_EVIDENCE_OVERALL_RESULT_PATTERN = /\boverall\w*(?:result|state|status)\w*\s*=/i
+const QUERY_EVIDENCE_DECISION_PATTERN = /(?:\b\w*(?:result|state|status)\w*\s*=.*(?:\?|\.some\s*\()|\?\s*[\w.]+\s*:)/i
+const QUERY_EVIDENCE_DECISION_ASSIGNMENT_PATTERN = /\b\w*(?:result|state|status)\w*\s*=/i
+const QUERY_EVIDENCE_PAGE_RESULT_PATTERN = /(?:\bpage\w*(?:indicator|status)\w*\s*\(|\bstatus\s*:\s*page\w*\s*\()/i
+const QUERY_EVIDENCE_PAGE_COLLECTION_PATTERN = /\breturn\s+page\.\w+/i
+const QUERY_EVIDENCE_COMPUTATION_PATTERN = /(?:\b(?:compute|derive|resolve)\w*\s*\(|\b\w*(?:indicator|result|state|status)\w*\s*=|\b\w*(?:indicator|status)\w*\s*\()/i
+const QUERY_EVIDENCE_INCIDENT_STATUS_PATTERN = /(?:\b\w+\.type\s*===?\s*["']incident["'][^\n]*!\w+\.to|!\w+\.to[^\n]*\b\w+\.type\s*===?\s*["']incident["'])/i
+const QUERY_EVIDENCE_MONITOR_ROLLUP_PATTERN = /\bstatus\s*=\s*monitors\.some\s*\(/i
+const QUERY_EVIDENCE_INPUT_PROVENANCE_PATTERN = /\bRouterOutputs\b.*\[\s*["']statusPage["']\s*\].*\[\s*["']get["']\s*\]/i
+const QUERY_EVIDENCE_PUBLIC_ROUTER_FETCH_PATTERN = /\btrpc\s*\.\s*statusPage\s*\.\s*get\s*\.\s*queryOptions\b/i
+const QUERY_EVIDENCE_DECLARATION_PATTERN = /^\s*(?:(?:export\s+)?(?:async\s+)?(?:function\b|const\s+\w+\s*=\s*async\b)|func\b)/i
+
+function boundedSourceRange(
+  lineCount: number,
+  range: { start: number; end: number },
+): { start: number; end: number } {
+  const start = Math.min(lineCount, Math.max(1, range.start))
+  const end = Math.min(lineCount, Math.max(start, range.end))
+  return { start, end }
+}
+
+interface QueryEvidenceFragment {
+  index: number
+  endIndex: number
+  text: string
+}
+
+const QUERY_EVIDENCE_CONTINUATION_START_PATTERN = /^\s*(?:[.?:]|&&|\|\|)/
+const QUERY_EVIDENCE_CONTINUATION_END_PATTERN = /(?:=>|&&|\|\||[=?:])\s*$/
+const QUERY_EVIDENCE_STRUCTURED_CALL_PATTERN = /(?:\b\w+\s*\(|:=\s*&?[\w.]+)[^;]*\{\s*$/
+const QUERY_EVIDENCE_DISCRIMINANT_PROPERTY_PATTERN = /^\s*([\w]*(?:action|event|incident|method|mode|monitor|notification|queue|route|status|type|url)[\w]*)\s*:/i
+const QUERY_EVIDENCE_PROVIDER_HANDOFF_PATTERN = /\b([A-Za-z_]\w*)\.(?:createTask|deliver\w*|dispatch\w*|emit\w*|enqueue\w*|publish\w*|send\w*|trigger\w*)\s*\(/i
+const QUERY_EVIDENCE_PROVIDER_SETUP_PATTERN = /(?:\bnew\s+\w*(?:client|provider|queue|transport)\w*\s*\(|\b\w*newClient\s*\(|\b\w*(?:client|provider|queue|transport)\w*\.)/i
+const QUERY_EVIDENCE_CONTAINER_DECLARATION_PATTERN = /^\s*(?:export\s+const\s+\w*(?:route|router)\w*\s*=|\w+\s*:\s*\w*Procedure\.query\s*\()/i
+
+function braceDelta(value: string): number {
+  return (value.match(/\{/g)?.length ?? 0) - (value.match(/\}/g)?.length ?? 0)
+}
+
+function structuredCallFragment(
+  lines: readonly string[],
+  lineNumber: number,
+  rangeEnd: number,
+): { end: number; text: string } | null {
+  const first = lines[lineNumber - 1] ?? ''
+  if (
+    QUERY_EVIDENCE_DECLARATION_PATTERN.test(first)
+    || !QUERY_EVIDENCE_STRUCTURED_CALL_PATTERN.test(first)
+  ) {
+    return null
+  }
+  let depth = braceDelta(first)
+  if (depth <= 0) {
+    return null
+  }
+  const properties: Array<{ index: number; key: string; text: string }> = []
+  const nestedHandoffs: Array<{ index: number; text: string }> = []
+  let end = lineNumber
+  const scanEnd = Math.min(rangeEnd, lineNumber + 16)
+  for (let candidateNumber = lineNumber + 1; candidateNumber <= scanEnd; candidateNumber += 1) {
+    const candidate = lines[candidateNumber - 1] ?? ''
+    const property = candidate.match(QUERY_EVIDENCE_DISCRIMINANT_PROPERTY_PATTERN)
+    if (property?.[1]) {
+      properties.push({
+        index: candidateNumber,
+        key: property[1].toLowerCase(),
+        text: candidate.trim(),
+      })
+    }
+    if (QUERY_EVIDENCE_DELIVERY_HANDOFF_PATTERN.test(candidate)) {
+      nestedHandoffs.push({ index: candidateNumber, text: candidate.trim() })
+    }
+    depth += braceDelta(candidate)
+    end = candidateNumber
+    if (depth <= 0) {
+      break
+    }
+  }
+  if (properties.length === 0 && nestedHandoffs.length === 0) {
+    return null
+  }
+  const priority = (key: string): number => {
+    if (/(?:action|event|mode|status|type)/.test(key)) return 0
+    if (/(?:incident|method|monitor|notification|queue|route|url)/.test(key)) return 1
+    return 2
+  }
+  const discriminants = properties
+    .sort((left, right) => priority(left.key) - priority(right.key) || left.index - right.index)
+    .slice(0, 3)
+    .map((property) => property.text)
+  return {
+    end,
+    text: [first, ...nestedHandoffs.slice(0, 1).map((handoff) => handoff.text), ...discriminants].join(' '),
+  }
+}
+
+function providerHandoffFragment(
+  lines: readonly string[],
+  lineNumber: number,
+  rangeStart: number,
+): { start: number; end: number; text: string } | null {
+  const handoff = lines[lineNumber - 1] ?? ''
+  const match = handoff.match(QUERY_EVIDENCE_PROVIDER_HANDOFF_PATTERN)
+  const receiver = match?.[1]
+  if (!receiver) {
+    return null
+  }
+  const receiverAssignment = new RegExp(
+    `(?:\\b(?:const|let|var)\\s+)?\\b${receiver}(?:\\s*,\\s*\\w+)?\\s*(?::=|=)`,
+  )
+  const scanStart = Math.max(rangeStart, lineNumber - 48)
+  for (let candidateNumber = lineNumber - 1; candidateNumber >= scanStart; candidateNumber -= 1) {
+    const candidate = lines[candidateNumber - 1] ?? ''
+    if (!receiverAssignment.test(candidate) || !QUERY_EVIDENCE_PROVIDER_SETUP_PATTERN.test(candidate)) {
+      continue
+    }
+    return {
+      start: candidateNumber,
+      end: lineNumber,
+      text: `${candidate.trim()} L${lineNumber}: ${handoff.trim()}`,
+    }
+  }
+  return null
+}
+
+function publicRouterFetchFragment(
+  lines: readonly string[],
+  lineNumber: number,
+  rangeStart: number,
+): { start: number; end: number; text: string } | null {
+  const queryOptions = lines[lineNumber - 1] ?? ''
+  if (!QUERY_EVIDENCE_PUBLIC_ROUTER_FETCH_PATTERN.test(queryOptions)) {
+    return null
+  }
+
+  for (let candidate = lineNumber - 1; candidate >= Math.max(rangeStart, lineNumber - 3); candidate -= 1) {
+    const fetch = lines[candidate - 1] ?? ''
+    if (!/\b(?:const|let)\s+\w+\s*=\s*await\s+\w+\.fetchQuery\s*\(/.test(fetch)) {
+      continue
+    }
+    return {
+      start: candidate,
+      end: lineNumber,
+      text: `${fetch.trim()} ${queryOptions.trim()}`,
+    }
+  }
+
+  return null
+}
+
+function incidentStatusOwnerFragment(
+  lines: readonly string[],
+  lineNumber: number,
+  rangeStart: number,
+  rangeEnd: number,
+): { start: number; end: number; text: string } | null {
+  const first = lines[lineNumber - 1] ?? ''
+  if (!/^\s*const\s+status\s*=/.test(first)) {
+    return null
+  }
+  let decisionEnd = lineNumber
+  while (decisionEnd < rangeEnd && decisionEnd - lineNumber < 5) {
+    const current = lines[decisionEnd - 1] ?? ''
+    if (/;\s*$/.test(current)) {
+      break
+    }
+    decisionEnd += 1
+  }
+  const decision = lines.slice(lineNumber - 1, decisionEnd).join(' ')
+  if (!QUERY_EVIDENCE_INCIDENT_STATUS_PATTERN.test(decision)) {
+    return null
+  }
+
+  let ownerNumber: number | null = null
+  for (let candidate = lineNumber - 1; candidate >= Math.max(rangeStart, lineNumber - 16); candidate -= 1) {
+    if (/^\s*const\s+\w+\s*=.*\.map\s*\(/.test(lines[candidate - 1] ?? '')) {
+      ownerNumber = candidate
+      break
+    }
+  }
+  if (ownerNumber === null) {
+    return null
+  }
+
+  const returnEvidence: string[] = []
+  let returnEnd = decisionEnd
+  for (let candidate = decisionEnd + 1; candidate <= Math.min(rangeEnd, decisionEnd + 20); candidate += 1) {
+    const value = lines[candidate - 1] ?? ''
+    if (returnEvidence.length === 0 && /^\s*return\s*\{/.test(value)) {
+      returnEvidence.push(value.trim())
+      returnEnd = candidate
+      continue
+    }
+    if (returnEvidence.length > 0 && /^\s*(?:\.\.\.\w+(?:\.\w+)?,|status,|events,)/.test(value)) {
+      returnEvidence.push(value.trim())
+      returnEnd = candidate
+      if (returnEvidence.some((entry) => /^status,$/.test(entry))) {
+        break
+      }
+    }
+  }
+
+  return {
+    start: ownerNumber,
+    end: Math.max(decisionEnd, returnEnd),
+    text: [
+      (lines[ownerNumber - 1] ?? '').trim(),
+      ...returnEvidence,
+      `L${lineNumber}: ${decision.trim()}`,
+    ].join(' '),
+  }
+}
+
+function queryEvidenceScoringText(value: string): string {
+  return value
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/(^|\s)\/\/.*$/g, '$1')
+}
+
+function queryEvidenceFragments(
+  lines: readonly string[],
+  range: { start: number; end: number },
+): QueryEvidenceFragment[] {
+  const fragments: QueryEvidenceFragment[] = []
+  const seen = new Set<string>()
+  for (let lineNumber = range.start; lineNumber <= range.end; lineNumber += 1) {
+    if ((lines[lineNumber - 1] ?? '').trim().length === 0) {
+      continue
+    }
+    let start = lineNumber
+    let end = lineNumber
+    if (
+      start > range.start
+      && (
+        QUERY_EVIDENCE_CONTINUATION_START_PATTERN.test(lines[start - 1] ?? '')
+        || QUERY_EVIDENCE_CONTINUATION_END_PATTERN.test(lines[start - 2] ?? '')
+      )
+    ) {
+      start -= 1
+    }
+    const incidentStatusOwner = incidentStatusOwnerFragment(lines, lineNumber, range.start, range.end)
+    const publicRouterFetch = incidentStatusOwner ? null : publicRouterFetchFragment(lines, lineNumber, range.start)
+    const providerHandoff = incidentStatusOwner || publicRouterFetch ? null : providerHandoffFragment(lines, lineNumber, range.start)
+    const structured = incidentStatusOwner || publicRouterFetch || providerHandoff ? null : structuredCallFragment(lines, lineNumber, range.end)
+    let text: string | null = null
+    if (incidentStatusOwner) {
+      start = incidentStatusOwner.start
+      end = incidentStatusOwner.end
+      text = incidentStatusOwner.text
+    } else if (publicRouterFetch) {
+      start = publicRouterFetch.start
+      end = publicRouterFetch.end
+      text = publicRouterFetch.text
+    } else if (providerHandoff) {
+      start = providerHandoff.start
+      end = providerHandoff.end
+      text = providerHandoff.text
+    } else if (structured) {
+      end = structured.end
+      text = structured.text
+    } else {
+      while (end < range.end && end - start < 3) {
+        const current = lines[end - 1] ?? ''
+        const next = lines[end] ?? ''
+        if (
+          next.trim().length === 0
+          || (!QUERY_EVIDENCE_CONTINUATION_END_PATTERN.test(current)
+            && !QUERY_EVIDENCE_CONTINUATION_START_PATTERN.test(next))
+        ) {
+          break
+        }
+        end += 1
+      }
+    }
+    const key = `${start}:${end}`
+    if (seen.has(key)) {
+      continue
+    }
+    seen.add(key)
+    fragments.push({
+      index: start,
+      endIndex: end,
+      text: text ?? lines.slice(start - 1, end).join(' '),
+    })
+  }
+  return fragments
+}
+
+function queryEvidenceRange(
+  lines: readonly string[],
+  range: { start: number; end: number },
+  question: string,
+  preferredObligations?: ReadonlySet<number>,
+): QueryEvidenceRange {
+  const obligations = queryEvidenceObligations(question)
+  const candidates = queryEvidenceFragments(lines, range)
+  const scoringTextByLine = candidates.map((candidate) => queryEvidenceScoringText(candidate.text))
+  const tokensByLine = scoringTextByLine.map((text) => tokenizeLabel(text))
+  const identifierTokensByLine = candidates.map((candidate) => tokenizeLabel(
+    queryEvidenceScoringText(candidate.text).replace(/(['"`])(?:\\.|(?!\1).)*\1/g, ' '),
+  ))
+  const tokenFrequencies = new Map<string, number>()
+  for (const tokens of identifierTokensByLine) {
+    for (const token of new Set(tokens.filter((candidate) => candidate.length >= 4))) {
+      tokenFrequencies.set(token, (tokenFrequencies.get(token) ?? 0) + 1)
+    }
+  }
+  const frequencies = new Map<string, number>()
+  for (const obligation of obligations) {
+    for (const term of obligation.terms) {
+      const count = tokensByLine.filter((tokens) => tokens.some((token) => queryEvidenceTermsMatch(term, token))).length
+      frequencies.set(`${obligation.index}:${term}`, count)
+    }
+  }
+
+  const coveredObligations = new Set<number>()
+  const scoredLines = candidates.flatMap((candidate, offset): QueryEvidenceLine[] => {
+    const { text } = candidate
+    const scoringText = scoringTextByLine[offset] ?? text
+    if (scoringText.trim().length === 0) {
+      return []
+    }
+    const tokens = tokensByLine[offset] ?? []
+    const matchedTerms = new Set<string>()
+    const matchedObligations = new Set<number>()
+    const identifierTerms = new Set(
+      (identifierTokensByLine[offset] ?? []).filter((token) => (
+        token.length >= 4 && (tokenFrequencies.get(token) ?? candidates.length) <= 2
+      )),
+    )
+    let score = 0
+    for (const obligation of obligations) {
+      if (preferredObligations && preferredObligations.size > 0 && !preferredObligations.has(obligation.index)) {
+        continue
+      }
+      let obligationMatchedTerms = 0
+      for (const term of obligation.terms) {
+        if (!tokens.some((token) => queryEvidenceTermsMatch(term, token))) {
+          continue
+        }
+        const key = `${obligation.index}:${term}`
+        matchedTerms.add(key)
+        obligationMatchedTerms += 1
+        const frequency = frequencies.get(key) ?? candidates.length
+        const preference = !preferredObligations || preferredObligations.size === 0 || preferredObligations.has(obligation.index)
+          ? 1.6
+          : 0.55
+        score += preference * (1 + Math.log((candidates.length + 1) / (frequency + 1)))
+      }
+      const lifecycleConcepts = obligation.terms.filter((term) => (
+        term === '@delivery' || term === '@failure' || term === '@transition'
+      ))
+      const lifecycleGrounded = lifecycleConcepts.every((term) => (
+        tokens.some((token) => queryEvidenceTermsMatch(term, token))
+      ))
+      const deliveryGrounded = !obligation.terms.includes('@delivery')
+        || QUERY_EVIDENCE_DELIVERY_OPERATION_PATTERN.test(scoringText)
+      const transitionGrounded = !obligation.terms.includes('@transition')
+        || QUERY_EVIDENCE_STATE_MUTATION_PATTERN.test(scoringText)
+      if (
+        obligationMatchedTerms >= Math.min(2, obligation.terms.length)
+        && lifecycleGrounded
+        && deliveryGrounded
+        && transitionGrounded
+      ) {
+        matchedObligations.add(obligation.index)
+      }
+    }
+    if (matchedTerms.size === 0) {
+      if (!preferredObligations || preferredObligations.size === 0 || !QUERY_EVIDENCE_OPERATION_PATTERN.test(scoringText)) {
+        return []
+      }
+      score = 0.5 + Math.min(2, identifierTerms.size * 0.2)
+    }
+    for (const obligation of matchedObligations) {
+      coveredObligations.add(obligation)
+    }
+    score += Math.max(0, matchedObligations.size - 1) * 1.5
+    if (QUERY_EVIDENCE_OPERATION_PATTERN.test(scoringText)) {
+      score += 1.1
+    }
+    if (QUERY_EVIDENCE_HANDOFF_PATTERN.test(scoringText)) {
+      score += 1.6
+    }
+    if (QUERY_EVIDENCE_DELIVERY_HANDOFF_PATTERN.test(scoringText)) {
+      score += 1.5
+    }
+    if (QUERY_EVIDENCE_RETRY_PATTERN.test(scoringText)) {
+      score += 1.8
+    }
+    if (QUERY_EVIDENCE_DECISION_PATTERN.test(scoringText)) {
+      score += 1.4
+    }
+    if (QUERY_EVIDENCE_COMPUTATION_PATTERN.test(scoringText)) {
+      score += 1.2
+    }
+    if (QUERY_EVIDENCE_INCIDENT_STATUS_PATTERN.test(scoringText)) {
+      score += 2.4
+    }
+    if (QUERY_EVIDENCE_MONITOR_ROLLUP_PATTERN.test(scoringText)) {
+      score += 2
+    }
+    if (QUERY_EVIDENCE_INPUT_PROVENANCE_PATTERN.test(scoringText)) {
+      score += 2.5
+    }
+    if (QUERY_EVIDENCE_PUBLIC_ROUTER_FETCH_PATTERN.test(scoringText)) {
+      score += 4
+    }
+    if (QUERY_EVIDENCE_DECLARATION_PATTERN.test(scoringText)) {
+      score -= 1.25
+    }
+    if (QUERY_EVIDENCE_LOG_LINE_PATTERN.test(scoringText)) {
+      score -= 1.75
+    }
+    score += Math.min(1.2, identifierTerms.size * 0.12)
+    if (QUERY_EVIDENCE_LOW_VALUE_LINE_PATTERN.test(scoringText)) {
+      score -= 1.5
+    }
+    return [{
+      index: candidate.index,
+      endIndex: candidate.endIndex,
+      text,
+      score,
+      matchedTerms,
+      matchedObligations,
+      identifierTerms,
+    }]
+  })
+
+  return {
+    lines: scoredLines,
+    coveredObligations,
+    bestScore: scoredLines.reduce((maximum, line) => Math.max(maximum, line.score), 0),
+  }
+}
+
+function selectQueryEvidenceLines(range: QueryEvidenceRange): QueryEvidenceLine[] {
+  const valuableLines = range.lines.filter((line) => (
+    !QUERY_EVIDENCE_LOW_VALUE_LINE_PATTERN.test(line.text)
+    || QUERY_EVIDENCE_INPUT_PROVENANCE_PATTERN.test(line.text)
+  ))
+  const remaining = [...(valuableLines.length > 0 ? valuableLines : range.lines)]
+  const selected: QueryEvidenceLine[] = []
+  const coveredTerms = new Set<string>()
+  const coveredObligations = new Set<number>()
+  const coveredIdentifiers = new Set<string>()
+  const transitionAnchor = remaining
+    .filter((line) => [...line.matchedTerms].some((term) => {
+      if (!term.endsWith(':@transition')) {
+        return false
+      }
+      const obligation = Number(term.slice(0, term.indexOf(':')))
+      return line.matchedObligations.has(obligation)
+        && QUERY_EVIDENCE_STATE_MUTATION_PATTERN.test(queryEvidenceScoringText(line.text))
+    }))
+    .sort((left, right) => right.score - left.score || left.index - right.index)[0]
+  const coherenceBoost = (line: QueryEvidenceLine): number => {
+    if (!transitionAnchor) {
+      return 0
+    }
+    return Math.max(0, 2.5 - (Math.abs(line.index - transitionAnchor.index) * 0.04))
+  }
+
+  const addSelected = (line: QueryEvidenceLine): void => {
+    selected.push(line)
+    for (const term of line.matchedTerms) coveredTerms.add(term)
+    for (const obligation of line.matchedObligations) coveredObligations.add(obligation)
+    for (const identifier of line.identifierTerms) coveredIdentifiers.add(identifier)
+    for (let index = remaining.length - 1; index >= 0; index -= 1) {
+      const candidate = remaining[index]!
+      const overlaps = candidate.index <= line.endIndex && line.index <= candidate.endIndex
+      if (overlaps) remaining.splice(index, 1)
+    }
+  }
+
+  const obligationFrequency = new Map<number, number>()
+  for (const line of remaining) {
+    for (const obligation of line.matchedObligations) {
+      obligationFrequency.set(obligation, (obligationFrequency.get(obligation) ?? 0) + 1)
+    }
+  }
+  for (const obligation of [...obligationFrequency.keys()].sort((left, right) => (
+    (obligationFrequency.get(left) ?? 0) - (obligationFrequency.get(right) ?? 0)
+    || left - right
+  ))) {
+    if (selected.length >= QUERY_EVIDENCE_SNIPPET_MAX_LINES || coveredObligations.has(obligation)) {
+      continue
+    }
+    const best = remaining
+      .filter((line) => line.matchedObligations.has(obligation))
+      .sort((left, right) => {
+        const termCount = (line: QueryEvidenceLine): number => (
+          [...line.matchedTerms].filter((term) => term.startsWith(`${obligation}:`)).length
+        )
+        const transitionMutation = (line: QueryEvidenceLine): number => (
+          line.matchedTerms.has(`${obligation}:@transition`)
+            && QUERY_EVIDENCE_STATE_MUTATION_PATTERN.test(line.text)
+            ? 1
+            : 0
+        )
+        return transitionMutation(right) - transitionMutation(left)
+          || termCount(right) - termCount(left)
+          || (right.score + coherenceBoost(right)) - (left.score + coherenceBoost(left))
+          || left.index - right.index
+      })[0]
+    if (best) addSelected(best)
+  }
+
+  for (const semanticPattern of [
+    QUERY_EVIDENCE_DELIVERY_HANDOFF_PATTERN,
+    QUERY_EVIDENCE_RETRY_PATTERN,
+    QUERY_EVIDENCE_PUBLIC_ROUTER_FETCH_PATTERN,
+    QUERY_EVIDENCE_OVERALL_RESULT_PATTERN,
+    QUERY_EVIDENCE_DECISION_PATTERN,
+    QUERY_EVIDENCE_PAGE_RESULT_PATTERN,
+    QUERY_EVIDENCE_PAGE_COLLECTION_PATTERN,
+    QUERY_EVIDENCE_INCIDENT_STATUS_PATTERN,
+    QUERY_EVIDENCE_MONITOR_ROLLUP_PATTERN,
+    QUERY_EVIDENCE_INPUT_PROVENANCE_PATTERN,
+    QUERY_EVIDENCE_COMPUTATION_PATTERN,
+  ]) {
+    if (selected.length >= QUERY_EVIDENCE_SNIPPET_MAX_LINES) {
+      break
+    }
+    if (selected.some((line) => semanticPattern.test(queryEvidenceScoringText(line.text)))) {
+      continue
+    }
+    const best = remaining
+      .filter((line) => semanticPattern.test(queryEvidenceScoringText(line.text)))
+      .sort((left, right) => (
+        (semanticPattern === QUERY_EVIDENCE_DECISION_PATTERN
+          ? Number(QUERY_EVIDENCE_DECISION_ASSIGNMENT_PATTERN.test(right.text))
+            - Number(QUERY_EVIDENCE_DECISION_ASSIGNMENT_PATTERN.test(left.text))
+          : 0)
+        || ((right.score + coherenceBoost(right)) / Math.max(1, right.text.length / 80))
+          - ((left.score + coherenceBoost(left)) / Math.max(1, left.text.length / 80))
+        || left.index - right.index
+      ))[0]
+    if (best) addSelected(best)
+  }
+
+  while (remaining.length > 0 && selected.length < QUERY_EVIDENCE_SNIPPET_MAX_LINES) {
+    const distinctCandidates = selected.length < 2
+      ? remaining
+      : remaining.filter((line) => {
+          const addsQueryEvidence = [...line.matchedTerms].some((term) => !coveredTerms.has(term))
+            || [...line.matchedObligations].some((obligation) => !coveredObligations.has(obligation))
+          const addsSemanticEvidence = [
+            QUERY_EVIDENCE_DELIVERY_HANDOFF_PATTERN,
+            QUERY_EVIDENCE_RETRY_PATTERN,
+            QUERY_EVIDENCE_PUBLIC_ROUTER_FETCH_PATTERN,
+            QUERY_EVIDENCE_OVERALL_RESULT_PATTERN,
+            QUERY_EVIDENCE_DECISION_PATTERN,
+            QUERY_EVIDENCE_PAGE_RESULT_PATTERN,
+            QUERY_EVIDENCE_PAGE_COLLECTION_PATTERN,
+            QUERY_EVIDENCE_INCIDENT_STATUS_PATTERN,
+            QUERY_EVIDENCE_MONITOR_ROLLUP_PATTERN,
+            QUERY_EVIDENCE_INPUT_PROVENANCE_PATTERN,
+            QUERY_EVIDENCE_COMPUTATION_PATTERN,
+          ].some((pattern) => (
+            pattern.test(queryEvidenceScoringText(line.text))
+            && !selected.some((selectedLine) => pattern.test(queryEvidenceScoringText(selectedLine.text)))
+          ))
+          return addsQueryEvidence || addsSemanticEvidence
+        })
+    if (distinctCandidates.length === 0) {
+      break
+    }
+    distinctCandidates.sort((left, right) => {
+      const novelty = (line: QueryEvidenceLine): number => (
+        [...line.matchedTerms].filter((term) => !coveredTerms.has(term)).length
+        + ([...line.matchedObligations].filter((obligation) => !coveredObligations.has(obligation)).length * 1.75)
+        + ([...line.identifierTerms].filter((identifier) => !coveredIdentifiers.has(identifier)).length * 0.2)
+      )
+      const redundancy = (line: QueryEvidenceLine): number => (
+        [...line.matchedTerms].filter((term) => coveredTerms.has(term)).length * 1.25
+      )
+      return (right.score + novelty(right) - redundancy(right) + coherenceBoost(right))
+        - (left.score + novelty(left) - redundancy(left) + coherenceBoost(left))
+        || left.index - right.index
+    })
+    const next = distinctCandidates[0]
+    if (!next) {
+      break
+    }
+    addSelected(next)
+  }
+
+  return selected.sort((left, right) => left.index - right.index)
+}
+
+function renderQueryEvidenceLines(lines: readonly QueryEvidenceLine[]): string | null {
+  const rendered: string[] = []
+  let usedChars = 0
+  for (const line of lines) {
+    const normalized = line.text.replace(/\s+/g, ' ').trim()
+    const content = normalized.length > QUERY_EVIDENCE_SNIPPET_LINE_CAP
+      ? `${normalized.slice(0, QUERY_EVIDENCE_SNIPPET_LINE_CAP - 3).trimEnd()}...`
+      : normalized
+    const prefix = `L${line.index}: `
+    const separatorChars = rendered.length > 0 ? 1 : 0
+    const remaining = QUERY_EVIDENCE_SNIPPET_CHAR_CAP - usedChars - separatorChars
+    if (remaining <= prefix.length + 8) {
+      break
+    }
+    const bounded = `${prefix}${content}`.slice(0, remaining).trimEnd()
+    rendered.push(bounded)
+    usedChars += bounded.length + separatorChars
+  }
+  return rendered.length > 0 ? rendered.join('\n') : null
+}
+
+/**
+ * Selects compact, query-bearing evidence from a symbol range. When a small
+ * helper is the only graph anchor for an anonymous workflow, it may select a
+ * better excerpt from the same source file and marks that scope explicitly.
+ */
+export function readQueryEvidenceSnippet(
+  sourceFile: string,
+  lineNumber: number,
+  options: QueryEvidenceSnippetOptions,
+): QueryEvidenceSnippet | null {
+  try {
+    const lines = fileLinesForSnippet(sourceFile, options.fileCache)
+    if (!lines || lines.length === 0) {
+      return null
+    }
+    const fullRange = { start: 1, end: lines.length }
+    const identityTokens = tokenizeLabel(options.label)
+    const preferredObligations = new Set(
+      queryEvidenceObligations(options.question)
+        .filter((obligation) => obligation.terms.some((term) => (
+          identityTokens.some((token) => queryEvidenceTermsMatch(term, token))
+        )))
+        .map((obligation) => obligation.index),
+    )
+    const parsedRange = lineRangeFromSourceLocation(options.sourceLocation)
+    const fallbackHalfWindow = options.derived ? DERIVED_SNIPPET_HALF_WINDOW : SNIPPET_HALF_WINDOW
+    const symbolRange = boundedSourceRange(lines.length, parsedRange ?? {
+      start: lineNumber - fallbackHalfWindow,
+      end: lineNumber + fallbackHalfWindow,
+    })
+    const symbolEvidence = queryEvidenceRange(lines, symbolRange, options.question, preferredObligations)
+    let scope: QueryEvidenceSnippet['scope'] = options.fileNodeLike ? 'source_file' : 'symbol'
+    let selectedRange = options.fileNodeLike
+      ? queryEvidenceRange(lines, fullRange, options.question)
+      : symbolEvidence
+
+    const symbolLineCount = symbolRange.end - symbolRange.start + 1
+    if (!options.fileNodeLike && symbolLineCount <= 40) {
+      const fileEvidence = queryEvidenceRange(lines, fullRange, options.question)
+      const singleLineGraphRange = parsedRange !== null && parsedRange.start === parsedRange.end
+      if (
+        (
+          singleLineGraphRange
+            ? fileEvidence.bestScore > symbolEvidence.bestScore
+            : fileEvidence.coveredObligations.size >= symbolEvidence.coveredObligations.size + 1
+        )
+        && fileEvidence.bestScore >= symbolEvidence.bestScore
+      ) {
+        scope = 'source_file'
+        selectedRange = fileEvidence
+      }
+    }
+
+    let selectedLines = selectQueryEvidenceLines(selectedRange)
+    if (
+      options.fileNodeLike
+      && selectedLines.some((line) => QUERY_EVIDENCE_INCIDENT_STATUS_PATTERN.test(queryEvidenceScoringText(line.text)))
+    ) {
+      selectedLines = selectedLines.filter((line) => !QUERY_EVIDENCE_CONTAINER_DECLARATION_PATTERN.test(line.text))
+    }
+    const snippet = renderQueryEvidenceLines(selectedLines)
+    if (!snippet || selectedLines.length === 0) {
+      return null
+    }
+    return {
+      snippet,
+      lineNumber: selectedLines[0]!.index,
+      scope,
+    }
   } catch {
     return null
   }
@@ -4279,7 +5016,15 @@ function buildRetrieveResultFromOrderedCandidates(
         return builtEntry
       }
 
-      const snippet = node.storedSnippet ?? readSnippet(node.sourceFile, node.lineNumber, {
+      const queryEvidenceSnippet = readQueryEvidenceSnippet(node.sourceFile, node.lineNumber, {
+        question: options.question,
+        label: node.label,
+        sourceLocation: node.sourceLocation,
+        fileNodeLike: node.fileNodeLike,
+        derived: node.lineNumberDerived,
+        fileCache: snippetFileCache,
+      })
+      const snippet = queryEvidenceSnippet?.snippet ?? node.storedSnippet ?? readSnippet(node.sourceFile, node.lineNumber, {
         derived: node.lineNumberDerived,
         fileCache: snippetFileCache,
       })
@@ -4293,6 +5038,12 @@ function buildRetrieveResultFromOrderedCandidates(
         source_domain: node.sourceDomain,
         file_type: node.fileType,
         snippet,
+        ...(queryEvidenceSnippet
+          ? {
+              snippet_line_number: queryEvidenceSnippet.lineNumber,
+              snippet_scope: queryEvidenceSnippet.scope,
+            }
+          : {}),
         match_score: node.score,
         relevance_band: node.relevanceBand,
         community: node.community,
@@ -4451,6 +5202,7 @@ function retrieveContextPass(
   const classificationRootPath = inferredGraphRoot(graph)
   const retrievalGate = queryStage.retrieval_gate
   const effectiveRetrievalLevel = queryStage.effective_retrieval_level
+  const underScopedDivergenceIds = underScopedDivergenceNodeIds(graph, question)
 
   if (questionTokens.length === 0) {
     reportSkippedRetrievalPassStages(options, graph.numberOfNodes())
@@ -4552,6 +5304,16 @@ function retrieveContextPass(
     const symbolMatch = symbolReferenceMatchScore(label, sourceFile, mentionedSymbolRefs)
     const exactAnchorMatch = symbolMatch >= 3
     const mentionedPathMatch = sourceFileMatchesMentionedPath(sourceFile, mentionedPaths)
+    if (underScopedDivergenceIds.has(id) && !exactAnchorMatch && !mentionedPathMatch) {
+      continue
+    }
+    if (!exactAnchorMatch && !mentionedPathMatch && !flowQueryEvidenceCandidateAllowed(question, {
+      label,
+      sourceFile,
+      nodeKind,
+    })) {
+      continue
+    }
     const framework = typeof attributes.framework === 'string' ? attributes.framework : undefined
     const frameworkRole = String(attributes.framework_role ?? '')
     const score = scoreSeedCandidate(
@@ -4653,7 +5415,11 @@ function retrieveContextPass(
           exactAnchorMatch || mentionedPathMatch ? 2 : evidenceTierForSeedScore(effectiveScore),
           conceptualFallbackScore >= 0.75 ? 2 : conceptualFallbackScore > 0 ? 1 : 0,
         ) as 0 | 1 | 2,
-        relevanceBand: effectiveScore.labelExactScore > 0 || effectiveScore.labelPhraseScore > 0 || exactAnchorMatch || effectiveScore.labelTokenScore > 0
+        relevanceBand: conceptualFallbackScore >= CONCEPTUAL_WORKFLOW_RESERVATION_BOOST
+          || effectiveScore.labelExactScore > 0
+          || effectiveScore.labelPhraseScore > 0
+          || exactAnchorMatch
+          || effectiveScore.labelTokenScore > 0
           ? 'direct'
           : 'related',
       })
@@ -4830,7 +5596,7 @@ function retrieveContextPass(
           // node and its symbol in adjacent clusters. Keeping this owner hop
           // also lets hop two reach the symbol's imported collaborators.
           if (
-            relation !== 'contains'
+            !predecessorIsStructuralOwner(relation)
             && !predecessorAllowedForPolicy(expansionPolicy.predecessor_mode, seedCommunity, predecessorCommunity)
           ) {
             continue
@@ -4895,7 +5661,7 @@ function retrieveContextPass(
           const relation = String(graph.edgeAttributes(predecessorId, hop1Id).relation ?? 'related_to')
           const predecessorCommunity = parseCommunityId(graph.nodeAttributes(predecessorId).community)
           if (
-            relation !== 'contains'
+            !predecessorIsStructuralOwner(relation)
             && !predecessorAllowedForPolicy(expansionPolicy.predecessor_mode, seedCommunity, predecessorCommunity)
           ) {
             continue
@@ -5024,11 +5790,14 @@ function retrieveContextPass(
       : 0
   ) || compareScoredNodes(graph, a, b))
 
+  const conceptuallyReserved = (node: ScoredNode): boolean => (
+    (conceptualNodeBoosts.get(node.id) ?? 0) >= CONCEPTUAL_WORKFLOW_RESERVATION_BOOST
+  )
   const frameworkCompatibleCandidates = frameworkProfile.frameworkShaped
-    ? scored.filter((node) => isFrameworkCompatible(activeFrameworks, node.framework))
+    ? scored.filter((node) => isFrameworkCompatible(activeFrameworks, node.framework) || conceptuallyReserved(node))
     : scored
   const frameworkIncompatibleCandidates = frameworkProfile.frameworkShaped
-    ? scored.filter((node) => !isFrameworkCompatible(activeFrameworks, node.framework))
+    ? scored.filter((node) => !isFrameworkCompatible(activeFrameworks, node.framework) && !conceptuallyReserved(node))
     : []
   const primaryCandidates = frameworkCompatibleCandidates.filter((node) => (seedIds.has(node.id) || hopScores.has(node.id)) && node.relevanceBand !== 'peripheral')
   const peripheralCandidates = frameworkCompatibleCandidates.filter((node) => (seedIds.has(node.id) || hopScores.has(node.id)) && node.relevanceBand === 'peripheral')
@@ -5251,9 +6020,17 @@ function retrieveContextWithConceptualFallback(graph: KnowledgeGraph, options: R
     return { ...initial, retrieval_plan: notNeededRetrievalPlan(initialQuality) }
   }
 
+  const initialQueryEvidence = evaluateQueryEvidenceCoverage(options.question, initial.matched_nodes)
+  const hasMultipleQueryObligations = queryEvidenceObligations(options.question).length >= 2
+  const conceptualQuality = hasMultipleQueryObligations && initialQueryEvidence.missing_obligations.length > 0
+    ? {
+        ...initialQuality,
+        missing_required_evidence: Math.max(1, initialQuality.missing_required_evidence),
+      }
+    : initialQuality
   const proposal = planConceptualFallback(graph, {
     question: options.question,
-    initialQuality,
+    initialQuality: conceptualQuality,
     selectedNodes: initial.matched_nodes.flatMap((node) => {
       const nodeId = matchedNodeId(node)
       return nodeId
@@ -5660,7 +6437,33 @@ function compactRetrievePayloadForStdioProfile(
   payload: StdioRetrieveResult,
   profile: RetrieveStdioCompactionProfile,
 ): StdioRetrieveResult {
-  const matchedNodes = payload.matched_nodes.slice(0, profile.matchedNodeCap)
+  const claims = payload.claims?.slice(0, profile.claimCap) ?? []
+  const pinnedNodes: StdioRetrieveResult['matched_nodes'] = []
+  const pinnedNodeSet = new Set<StdioRetrieveResult['matched_nodes'][number]>()
+
+  for (const claim of claims) {
+    const anchorLabel = claim.node_labels[0]
+    if (!anchorLabel) {
+      continue
+    }
+
+    const anchor = payload.matched_nodes.find((node) => node.label === anchorLabel)
+    if (!anchor || pinnedNodeSet.has(anchor)) {
+      continue
+    }
+
+    pinnedNodes.push(anchor)
+    pinnedNodeSet.add(anchor)
+  }
+
+  const remainingCapacity = Math.max(0, profile.matchedNodeCap - pinnedNodes.length)
+  const selectedNodeSet = new Set([
+    ...pinnedNodes,
+    ...payload.matched_nodes.filter((node) => !pinnedNodeSet.has(node)).slice(0, remainingCapacity),
+  ])
+  const matchedNodes = payload.matched_nodes
+    .filter((node) => selectedNodeSet.has(node))
+    .slice(0, profile.matchedNodeCap)
   const retainedNodeIds = new Set(
     matchedNodes
       .map((node) => node.node_id)
@@ -5676,7 +6479,7 @@ function compactRetrievePayloadForStdioProfile(
       .filter((relationship) => retainsRelationshipEndpoints(relationship))
       .slice(0, profile.relationshipCap),
     community_context: payload.community_context.slice(0, profile.communityCap),
-    ...(payload.claims ? { claims: payload.claims.slice(0, profile.claimCap) } : {}),
+    ...(payload.claims ? { claims } : {}),
     ...(payload.expandable ? { expandable: compactExpandableRefsForStdio(payload.expandable, profile) } : {}),
     ...(payload.slice ? { slice: compactSliceForStdio(payload.slice, profile) } : {}),
   }

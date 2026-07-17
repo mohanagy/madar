@@ -22,6 +22,8 @@ import {
   uninstallCopilotMcp,
   uninstallSkill,
   CODEX_MCP_STARTUP_TIMEOUT_SECONDS,
+  CODEX_MCP_TOOL_TIMEOUT_SECONDS,
+  resolveCodexMcpConfigPath,
 } from '../../src/infrastructure/install.js'
 import { MCP_TOOLS, activeMcpTools, type McpToolProfile } from '../../src/runtime/stdio/definitions.js'
 import { normalizeAssertionPath, normalizeAssertionPaths } from './helpers/platform.js'
@@ -29,8 +31,12 @@ import { normalizeAssertionPath, normalizeAssertionPaths } from './helpers/platf
 const PACKAGE_CLI_RELATIVE_PATH = join('dist', 'src', 'cli', 'bin.js')
 const STRICT_STOP_RULE_MD =
   'After calling Madar, treat `evidence.answerability.state` as authoritative and `evidence.pack_confidence` as compatibility-only: `ready` means answer from the pack; `ready_with_caveat` means answer with `evidence.answerability.caveats`; `verify_targets` means inspect only `evidence.answerability.verification_targets`; `insufficient` means follow `broad_search_fallback` exactly.'
+const STRICT_INVOCATION_RULE_MD =
+  'Call `context_pack` exactly once per user task. Copy the entire user codebase request byte-for-byte into `prompt`, including read-only, no-change, scope, and formatting constraints; do not rewrite, omit, expand, enumerate, split, or issue follow-up `context_pack` calls.'
 const STRICT_EXPAND_RULE_MD =
-  'Madar already ran bounded cumulative recovery. Do not restart repository exploration: for `verify_targets`, call `context_expand` with a listed handle or read only a listed file; only `insufficient` plus `broad_search_fallback: allowed` permits one directory-scoped search.'
+  'Madar already ran bounded cumulative recovery. Do not restart repository exploration: for `verify_targets`, call `context_expand` once with a listed handle, then treat that expansion result as terminal; only `insufficient` plus `broad_search_fallback: allowed` permits one directory-scoped search.'
+const STRICT_READ_ONLY_READY_RULE_MD =
+  'For read-only `explain` tasks, `ready` and `ready_with_caveat` are terminal: cite `source_file`, `label`, `line_number` / `snippet_line_number`, and the included snippets directly. Do not run repository `Read`, `Grep`, `Glob`, or `Bash` merely to verify the pack, obtain exact lines, or reopen selected files.'
 const STRICT_GRAPH_REPORT_RULE_MD =
   'Do not open `out/GRAPH_REPORT.md` unless the context pack or graph tools are unavailable, stale, or insufficient. Treat it as a fallback before broader raw file exploration, not a default first read.'
 const STRICT_NO_BROAD_EXPLORATION_RULE_MD =
@@ -41,8 +47,12 @@ const STRICT_SKILL_OVERRIDE_RULE_MD =
   'If an auto-activated skill recommends broad `Read` / `Grep` / `Glob` exploration, defer to Madar\'s `evidence.answerability` first. `ready`, `ready_with_caveat`, and `verify_targets` all override a broad-search recommendation.'
 const STRICT_STOP_RULE_PLAIN =
   'after calling Madar, treat evidence.answerability.state as authoritative and evidence.pack_confidence as compatibility-only: ready means answer from the pack; ready_with_caveat means answer with evidence.answerability.caveats; verify_targets means inspect only evidence.answerability.verification_targets; insufficient means follow broad_search_fallback exactly'
+const STRICT_INVOCATION_RULE_PLAIN =
+  'call context_pack exactly once per user task; copy the entire user codebase request byte-for-byte into prompt, including read-only, no-change, scope, and formatting constraints; do not rewrite, omit, expand, enumerate, split, or issue follow-up context_pack calls'
 const STRICT_EXPAND_RULE_PLAIN =
-  'Madar already ran bounded cumulative recovery; do not restart repository exploration: for verify_targets, call context_expand with a listed handle or read only a listed file; only insufficient plus broad_search_fallback allowed permits one directory-scoped search'
+  'Madar already ran bounded cumulative recovery; do not restart repository exploration: for verify_targets, call context_expand once with a listed handle, then treat that expansion result as terminal; only insufficient plus broad_search_fallback allowed permits one directory-scoped search'
+const STRICT_READ_ONLY_READY_RULE_PLAIN =
+  'for read-only explain tasks, ready and ready_with_caveat are terminal: cite source_file, label, line_number or snippet_line_number, and the included snippets directly; do not run repository Read, Grep, Glob, or Bash merely to verify the pack, obtain exact lines, or reopen selected files'
 const STRICT_GRAPH_REPORT_RULE_PLAIN =
   'do not open out/GRAPH_REPORT.md unless the context pack or graph tools are unavailable, stale, or insufficient; treat it as a fallback before broader raw file exploration, not a default first read'
 const STRICT_GRAPH_REPORT_RULE_PLAIN_SENTENCE =
@@ -85,7 +95,7 @@ function expectPlainRoutingGuide(content: string): void {
 
 function expectCodexMarkdownRoutingTable(content: string): void {
   const normalized = content.replaceAll('\\"', '"')
-  expect(normalized).toContain('For each codebase question, start with the specific Madar command below first:')
+  expect(normalized).toContain('For each codebase question, start with the specific Madar command below first.')
   expect(normalized).toContain('| Prompt type')
   expect(normalized).toContain('| "how does X work" / explain runtime / flow')
   expect(normalized).toContain('| "what breaks if I change X" / impact analysis')
@@ -102,10 +112,24 @@ function expectCodexMarkdownRoutingTable(content: string): void {
   expect(normalized).toContain('Do not run ToolSearch before calling a Madar command or graph tool')
 }
 
+function expectStrictCodexMarkdownRoutingTable(content: string): void {
+  const normalized = content.replaceAll('\\"', '"')
+  expect(normalized).toContain('For each codebase question, start with the specific Madar command below first.')
+  expect(normalized).toContain('| Prompt type | First strict MCP tool |')
+  expect(normalized).toContain('`context_pack` with `task: "explain"`')
+  expect(normalized).toContain('`context_pack` with `task: "impact"`')
+  expect(normalized).toContain('`context_pack` with `task: "review"`')
+  expect(normalized).toContain('`context_pack` with `task: "implement"`')
+  expect(normalized).toContain('Strict exposes no general graph-navigation tool after this pack.')
+  expect(normalized).toContain('`context_expand` only for a listed `verify_targets` handle')
+  expect(normalized).not.toContain('`retrieve` for direct codebase questions')
+  expect(normalized).not.toContain('`graph_summary` for repo overview')
+}
+
 function mcpToolNamesInGuidance(content: string): string[] {
   return MCP_TOOLS
     .map((tool) => tool.name)
-    .filter((name) => new RegExp(`(^|[^A-Za-z0-9_])${name}([^A-Za-z0-9_]|$)`).test(content))
+    .filter((name) => content.includes(`\`${name}\``))
 }
 
 function expectGuidanceToolsEnabled(content: string, profile: McpToolProfile): void {
@@ -573,8 +597,9 @@ describe('install helpers', () => {
       }
 
       expect(geminiSettings.mcpServers?.madar?.env?.MADAR_TOOL_PROFILE).toBe('strict')
-      expect(geminiMd).toContain('Call `context_pack` once for the task before broader exploration.')
+      expect(geminiMd).toContain(STRICT_INVOCATION_RULE_MD)
       expect(geminiMd).toContain(STRICT_STOP_RULE_MD)
+      expect(geminiMd).toContain(STRICT_READ_ONLY_READY_RULE_MD)
       expect(geminiMd).toContain(STRICT_NO_BROAD_EXPLORATION_RULE_MD)
       expect(geminiMd).toContain(STRICT_NON_MADAR_MCP_RULE_MD)
       expect(geminiMd).toContain(STRICT_SKILL_OVERRIDE_RULE_MD)
@@ -615,8 +640,9 @@ describe('install helpers', () => {
       const decodedHookPayload = decodeHookPayloads(settings)
 
       expect(decodedHookPayload).toContain('strict compact MCP mode')
-      expect(decodedHookPayload).toContain('call context_pack once for the task before broader exploration')
+      expect(decodedHookPayload).toContain(STRICT_INVOCATION_RULE_PLAIN)
       expect(decodedHookPayload).toContain(STRICT_STOP_RULE_PLAIN)
+      expect(decodedHookPayload).toContain(STRICT_READ_ONLY_READY_RULE_PLAIN)
       expect(decodedHookPayload).toContain(STRICT_NO_BROAD_EXPLORATION_RULE_PLAIN)
       expect(decodedHookPayload).toContain(STRICT_NON_MADAR_MCP_RULE_PLAIN)
       expect(decodedHookPayload).toContain(STRICT_SKILL_OVERRIDE_RULE_PLAIN)
@@ -939,9 +965,15 @@ describe('install helpers', () => {
   it('writes strict Claude guidance with the callable strict MCP tool profile', () => {
     withTempDir((projectDir) => {
       const installClaudeWithProfile = claudeInstall as (projectDir?: string, options?: { profile?: 'core' | 'full' | 'strict' }) => string
+      mkdirSync(join(projectDir, 'out'), { recursive: true })
+      writeFileSync(join(projectDir, 'out', 'graph.json'), '{}', 'utf8')
       const installMessage = installClaudeWithProfile(projectDir, { profile: 'strict' })
 
       const claudeMd = readFileSync(join(projectDir, 'CLAUDE.md'), 'utf8')
+      const settings = readFileSync(join(projectDir, '.claude', 'settings.json'), 'utf8')
+      const hookOutput = runHookCommand(extractHookCommand(settings, 'UserPromptSubmit'), projectDir, {
+        prompt: 'Explain how a failed monitor check becomes an incident. This is read-only; do not change files.',
+      })
       const mcpConfig = JSON.parse(readFileSync(join(projectDir, '.mcp.json'), 'utf8')) as {
         mcpServers?: {
           'madar'?: {
@@ -951,14 +983,17 @@ describe('install helpers', () => {
       }
 
       expect(mcpConfig.mcpServers?.['madar']?.env?.MADAR_TOOL_PROFILE).toBe('strict')
-      expect(claudeMd).toContain('Call `context_pack` once for the task before broader exploration.')
+      expect(claudeMd).toContain(STRICT_INVOCATION_RULE_MD)
       expect(claudeMd).toContain(STRICT_STOP_RULE_MD)
+      expect(claudeMd).toContain(STRICT_READ_ONLY_READY_RULE_MD)
       expect(claudeMd).toContain(STRICT_NO_BROAD_EXPLORATION_RULE_MD)
       expect(claudeMd).toContain(STRICT_NON_MADAR_MCP_RULE_MD)
       expect(claudeMd).toContain(STRICT_SKILL_OVERRIDE_RULE_MD)
       expect(claudeMd).toContain(STRICT_EXPAND_RULE_MD)
       expect(claudeMd).toContain(STRICT_GRAPH_REPORT_RULE_MD)
       expect(claudeMd).not.toContain('If manual expansion is still required, read `out/GRAPH_REPORT.md` first.')
+      expect(hookOutput).toContain(STRICT_READ_ONLY_READY_RULE_PLAIN)
+      expect(hookOutput).toContain(STRICT_INVOCATION_RULE_PLAIN)
       expect(installMessage).toContain('strict compact MCP profile')
     })
   })
@@ -1016,7 +1051,7 @@ describe('install helpers', () => {
       }
 
       expect(mcpConfig.mcpServers?.['madar']?.env?.MADAR_TOOL_PROFILE).toBe('strict')
-      expect(rule).toContain('Call `context_pack` once for the task before broader exploration.')
+      expect(rule).toContain(STRICT_INVOCATION_RULE_MD)
       expect(rule).toContain(STRICT_STOP_RULE_MD)
       expect(rule).toContain(STRICT_NO_BROAD_EXPLORATION_RULE_MD)
       expect(rule).toContain(STRICT_NON_MADAR_MCP_RULE_MD)
@@ -1036,7 +1071,7 @@ describe('install helpers', () => {
       installCursorWithProfile(projectDir, { profile: 'strict' })
 
       const rule = readFileSync(join(projectDir, '.cursor', 'rules', 'madar.mdc'), 'utf8')
-      expect(rule).toContain('Call `context_pack` once for the task before broader exploration.')
+      expect(rule).toContain(STRICT_INVOCATION_RULE_MD)
       expect(rule).not.toContain('start with the graph tool that matches the question')
     })
   })
@@ -1166,7 +1201,7 @@ describe('install helpers', () => {
 
       expect(mcpConfig.servers?.['madar']?.env?.MADAR_TOOL_PROFILE).toBe('strict')
       expect(installMessage).toContain('strict compact MCP profile')
-      expect(installMessage).toContain('call context_pack once')
+      expect(installMessage).toContain(STRICT_INVOCATION_RULE_PLAIN)
       expect(installMessage).toContain(STRICT_STOP_RULE_PLAIN)
       expect(installMessage).toContain(STRICT_NO_BROAD_EXPLORATION_RULE_PLAIN)
       expect(installMessage).toContain(STRICT_EXPAND_RULE_PLAIN)
@@ -1212,7 +1247,7 @@ describe('install helpers', () => {
           expect(readFileSync(join(cursorDir, '.cursor', 'mcp.json'), 'utf8')).toContain('"MADAR_TOOL_PROFILE": "strict"')
           expect(readFileSync(join(copilotDir, '.vscode', 'mcp.json'), 'utf8')).toContain('"MADAR_TOOL_PROFILE": "strict"')
           expect(readFileSync(join(geminiDir, '.gemini', 'settings.json'), 'utf8')).toContain('"MADAR_TOOL_PROFILE": "strict"')
-          expect(readFileSync(join(codexDir, '.codex', 'config.toml'), 'utf8')).toContain('MADAR_TOOL_PROFILE = "strict"')
+          expect(readFileSync(resolveCodexMcpConfigPath(), 'utf8')).toContain('MADAR_TOOL_PROFILE = "strict"')
 
           const aiderGuidance = `${readFileSync(join(aiderDir, 'AGENTS.md'), 'utf8')}\n${aiderMessage}`
           expectGuidanceToolsEnabled(aiderGuidance, 'strict')
@@ -1335,13 +1370,14 @@ describe('install helpers', () => {
       expect(agentsMd).toContain('Codex CLI profile')
       expect(agentsMd).toContain('context-pack-first')
       expect(agentsMd).toContain('madar pack')
+      expect(agentsMd).toContain(STRICT_INVOCATION_RULE_MD)
       expect(agentsMd).toContain(STRICT_NO_BROAD_EXPLORATION_RULE_MD)
       expect(agentsMd).toContain(STRICT_NON_MADAR_MCP_RULE_MD)
       expect(agentsMd).toContain(STRICT_SKILL_OVERRIDE_RULE_MD)
       expect(agentsMd).toContain('madar codex uninstall')
       expect(agentsMd).toContain('Manual verification')
       expect(agentsMd).toContain(STRICT_GRAPH_REPORT_RULE_MD)
-      expectCodexMarkdownRoutingTable(agentsMd)
+      expectStrictCodexMarkdownRoutingTable(agentsMd)
       expect(agentsMd).not.toContain('Only fall back to raw file tools** when the context pack or graph tools are missing, stale, or insufficient. In that case, read `out/GRAPH_REPORT.md` first.')
       expect(command).toContain('process.cwd()')
       expect(command).toContain('madar-user-prompt-submit.cjs')
@@ -1375,6 +1411,7 @@ describe('install helpers', () => {
       expect(localOutput.hookSpecificOutput?.hookEventName).toBe('UserPromptSubmit')
       expect(localOutput.hookSpecificOutput?.additionalContext).toContain('context-pack-first')
       expect(localOutput.hookSpecificOutput?.additionalContext).toContain('madar pack')
+      expect(localOutput.hookSpecificOutput?.additionalContext).toContain(STRICT_INVOCATION_RULE_PLAIN)
       expect(localOutput).not.toHaveProperty('systemMessage')
       expect(localOutput.hookSpecificOutput).not.toHaveProperty('permissionDecision')
       expect(nonCodeOutput).toBe('')
@@ -1666,231 +1703,92 @@ describe('install helpers', () => {
     })
   })
 
-  it('writes an idempotent marker-owned Codex MCP block while preserving unrelated TOML and line endings', () => {
+  it('writes an idempotent workspace-scoped Codex MCP block in the configuration Codex CLI loads', () => {
     withTempDir((projectDir) => {
-      const configPath = join(projectDir, '.codex', 'config.toml')
+      const configPath = resolveCodexMcpConfigPath()
       const unrelatedToml = '# Preserve this user comment\r\n[features]\r\nparallel = true\r\n'
-      const managedBlock = `${CODEX_MCP_START_MARKER}\r\n[mcp_servers.madar]\r\ncommand = "madar"\r\nargs = ["serve", "--stdio", "--auto-refresh"]\r\nenv = { MADAR_TOOL_PROFILE = "strict" }\r\nenabled = true\r\nstartup_timeout_sec = ${CODEX_MCP_STARTUP_TIMEOUT_SECONDS}\r\n${CODEX_MCP_END_MARKER}\r\n`
-
-      mkdirSync(join(projectDir, '.codex'), { recursive: true })
+      mkdirSync(dirname(configPath), { recursive: true })
       writeFileSync(configPath, unrelatedToml, 'utf8')
 
       const firstInstallMessage = agentsInstall(projectDir, 'codex')
       const firstContent = readFileSync(configPath, 'utf8')
       const secondInstallMessage = agentsInstall(projectDir, 'codex')
-      const secondContent = readFileSync(configPath, 'utf8')
 
-      expect(firstInstallMessage).toContain('.codex/config.toml -> MCP server registered')
-      expect(firstContent).toBe(`${unrelatedToml}${managedBlock}`)
-      expect(firstContent).not.toMatch(/(?<!\r)\n/)
-      expect(secondInstallMessage).toContain('.codex/config.toml -> MCP server already registered (no change)')
-      expect(secondContent).toBe(firstContent)
-      expect(countOccurrences(secondContent, CODEX_MCP_START_MARKER)).toBe(1)
+      expect(firstInstallMessage).toContain(`${configPath} -> MCP server madar_`)
+      expect(firstContent).toContain(unrelatedToml)
+      expect(firstContent).toMatch(/# >>> madar managed mcp: madar_[a-f0-9]{12} >>>/)
+      expect(firstContent).toMatch(/\[mcp_servers\.madar_[a-f0-9]{12}\]/)
+      expect(firstContent).toContain(`cwd = ${JSON.stringify(projectDir)}`)
+      expect(firstContent).toContain(`startup_timeout_sec = ${CODEX_MCP_STARTUP_TIMEOUT_SECONDS}`)
+      expect(firstContent).toContain(`tool_timeout_sec = ${CODEX_MCP_TOOL_TIMEOUT_SECONDS}`)
+      expect(firstContent).toContain('MADAR_TOOL_PROFILE = "strict"')
+      expect(secondInstallMessage).toContain('already registered (no change)')
+      expect(readFileSync(configPath, 'utf8')).toBe(firstContent)
 
       const uninstallMessage = agentsUninstall(projectDir, 'codex')
-      expect(uninstallMessage).toContain('.codex/config.toml -> MCP server removed')
+      expect(uninstallMessage).toContain('MCP server madar_')
       expect(readFileSync(configPath, 'utf8')).toBe(unrelatedToml)
     })
   })
 
-  it('migrates the exact pre-#550 owned Codex core profile to strict on reinstall', () => {
-    withTempDir((projectDir) => {
-      const configPath = join(projectDir, '.codex', 'config.toml')
-      const preFixBlock = `${CODEX_MCP_START_MARKER}\n[mcp_servers.madar]\ncommand = "madar"\nargs = ["serve", "--stdio", "--auto-refresh"]\nenv = { MADAR_TOOL_PROFILE = "core" }\nenabled = true\n${CODEX_MCP_END_MARKER}\n`
-      mkdirSync(join(projectDir, '.codex'), { recursive: true })
-      writeFileSync(configPath, preFixBlock, 'utf8')
+  it('keeps Codex MCP registrations for separate workspaces independent', () => {
+    withTempDir((root) => {
+      const firstProject = join(root, 'first')
+      const secondProject = join(root, 'second')
+      mkdirSync(firstProject, { recursive: true })
+      mkdirSync(secondProject, { recursive: true })
+      const configPath = resolveCodexMcpConfigPath()
+      const preserved = '# keep this user configuration\n'
+      mkdirSync(dirname(configPath), { recursive: true })
+      writeFileSync(configPath, preserved, 'utf8')
 
-      const installMessage = agentsInstall(projectDir, 'codex')
-      const migrated = readFileSync(configPath, 'utf8')
+      agentsInstall(firstProject, 'codex')
+      agentsInstall(secondProject, 'codex')
+      const both = readFileSync(configPath, 'utf8')
+      expect([...both.matchAll(/\[mcp_servers\.(madar_[a-f0-9]{12})\]/g)]).toHaveLength(2)
+      expect(both).toContain(`cwd = ${JSON.stringify(firstProject)}`)
+      expect(both).toContain(`cwd = ${JSON.stringify(secondProject)}`)
 
-      expect(installMessage).toContain('.codex/config.toml -> MCP server updated')
-      expect(migrated).toContain('MADAR_TOOL_PROFILE = "strict"')
-      expect(migrated).not.toContain('MADAR_TOOL_PROFILE = "core"')
-      expect(migrated).toContain(`startup_timeout_sec = ${CODEX_MCP_STARTUP_TIMEOUT_SECONDS}`)
-      expect(countOccurrences(migrated, CODEX_MCP_START_MARKER)).toBe(1)
-      expect(agentsInstall(projectDir, 'codex')).toContain('.codex/config.toml -> MCP server already registered (no change)')
+      agentsUninstall(firstProject, 'codex')
+      const afterFirstUninstall = readFileSync(configPath, 'utf8')
+      expect(afterFirstUninstall).not.toContain(`cwd = ${JSON.stringify(firstProject)}`)
+      expect(afterFirstUninstall).toContain(`cwd = ${JSON.stringify(secondProject)}`)
+
+      agentsUninstall(secondProject, 'codex')
+      expect(readFileSync(configPath, 'utf8')).toBe(preserved)
     })
   })
 
-  it('migrates the v0.31.1 owned Codex MCP block to the explicit startup timeout', () => {
+  it('migrates only its obsolete project-local Codex MCP marker block', () => {
     withTempDir((projectDir) => {
-      const configPath = join(projectDir, '.codex', 'config.toml')
-      const previousBlock = `${CODEX_MCP_START_MARKER}\n[mcp_servers.madar]\ncommand = "madar"\nargs = ["serve", "--stdio", "--auto-refresh"]\nenv = { MADAR_TOOL_PROFILE = "strict" }\nenabled = true\n${CODEX_MCP_END_MARKER}\n`
-      mkdirSync(join(projectDir, '.codex'), { recursive: true })
-      writeFileSync(configPath, previousBlock, 'utf8')
+      const legacyConfigPath = join(projectDir, '.codex', 'config.toml')
+      const legacyBlock = `${CODEX_MCP_START_MARKER}\n[mcp_servers.madar]\ncommand = "madar"\nargs = ["serve", "--stdio", "--auto-refresh"]\nenv = { MADAR_TOOL_PROFILE = "core" }\n${CODEX_MCP_END_MARKER}\n`
+      mkdirSync(dirname(legacyConfigPath), { recursive: true })
+      writeFileSync(legacyConfigPath, `# preserved local config\n${legacyBlock}`, 'utf8')
 
-      expect(agentsInstall(projectDir, 'codex')).toContain('.codex/config.toml -> MCP server updated')
-      expect(readFileSync(configPath, 'utf8')).toContain(
-        `startup_timeout_sec = ${CODEX_MCP_STARTUP_TIMEOUT_SECONDS}`,
-      )
-      expect(agentsInstall(projectDir, 'codex')).toContain('.codex/config.toml -> MCP server already registered (no change)')
+      const message = agentsInstall(projectDir, 'codex')
+      const globalConfig = readFileSync(resolveCodexMcpConfigPath(), 'utf8')
+
+      expect(message).toContain('obsolete project-local MCP registration removed')
+      expect(readFileSync(legacyConfigPath, 'utf8')).toBe('# preserved local config\n')
+      expect(globalConfig).toContain(`cwd = ${JSON.stringify(projectDir)}`)
+      expect(globalConfig).toContain(`tool_timeout_sec = ${CODEX_MCP_TOOL_TIMEOUT_SECONDS}`)
     })
   })
 
-  it('restores Codex TOML files that originally had no final line ending', () => {
-    const originalContents = [
-      'parallel = true',
-      '# Preserve CRLF\r\nparallel = true',
-    ]
-
-    for (const originalContent of originalContents) {
-      withTempDir((projectDir) => {
-        const configPath = join(projectDir, '.codex', 'config.toml')
-        mkdirSync(join(projectDir, '.codex'), { recursive: true })
-        writeFileSync(configPath, originalContent, 'utf8')
-
-        agentsInstall(projectDir, 'codex')
-        expect(readFileSync(configPath, 'utf8')).toContain(CODEX_MCP_START_MARKER)
-
-        agentsUninstall(projectDir, 'codex')
-        expect(readFileSync(configPath, 'utf8')).toBe(originalContent)
-      })
-    }
-  })
-
-  it('keeps later user TOML separated when uninstalling a block after a no-final-newline config', () => {
+  it('fails without mutating either Codex config when the legacy marker block is malformed', () => {
     withTempDir((projectDir) => {
-      const configPath = join(projectDir, '.codex', 'config.toml')
-      const originalContent = 'parallel = true'
-      const laterUserContent = '[features]\nexperimental = true\n'
-      mkdirSync(join(projectDir, '.codex'), { recursive: true })
-      writeFileSync(configPath, originalContent, 'utf8')
+      const legacyConfigPath = join(projectDir, '.codex', 'config.toml')
+      const malformed = `# keep\n${CODEX_MCP_START_MARKER}\n[mcp_servers.madar]\ncommand = "madar"\n`
+      mkdirSync(dirname(legacyConfigPath), { recursive: true })
+      writeFileSync(legacyConfigPath, malformed, 'utf8')
+      const globalConfigPath = resolveCodexMcpConfigPath()
+      const globalBefore = existsSync(globalConfigPath) ? readFileSync(globalConfigPath, 'utf8') : null
 
-      agentsInstall(projectDir, 'codex')
-      writeFileSync(configPath, `${readFileSync(configPath, 'utf8')}${laterUserContent}`, 'utf8')
-
-      agentsUninstall(projectDir, 'codex')
-
-      expect(readFileSync(configPath, 'utf8')).toBe(`${originalContent}\n${laterUserContent}`)
+      expect(() => agentsInstall(projectDir, 'codex')).toThrow(/marker block/i)
+      expect(readFileSync(legacyConfigPath, 'utf8')).toBe(malformed)
+      expect(existsSync(globalConfigPath) ? readFileSync(globalConfigPath, 'utf8') : null).toBe(globalBefore)
     })
-  })
-
-  it('does not mistake TOML multiline-string content for an owned or user-managed Codex MCP block', () => {
-    withTempDir((projectDir) => {
-      const configPath = join(projectDir, '.codex', 'config.toml')
-      const userToml = `note = """
-${CODEX_MCP_START_MARKER}
-[mcp_servers.madar]
-command = "user example only"
-${CODEX_MCP_END_MARKER}
-"""
-`
-      mkdirSync(join(projectDir, '.codex'), { recursive: true })
-      writeFileSync(configPath, userToml, 'utf8')
-
-      const installMessage = agentsInstall(projectDir, 'codex')
-      const installed = readFileSync(configPath, 'utf8')
-
-      expect(installMessage).toContain('.codex/config.toml -> MCP server registered')
-      expect(installed).toContain(userToml)
-      expect(installed).toContain('command = "madar"')
-
-      agentsUninstall(projectDir, 'codex')
-      expect(readFileSync(configPath, 'utf8')).toBe(userToml)
-    })
-  })
-
-  it('rewrites only a complete owned Codex MCP marker block', () => {
-    withTempDir((projectDir) => {
-      const configPath = join(projectDir, '.codex', 'config.toml')
-      const before = `# before\n${CODEX_MCP_START_MARKER}\n[mcp_servers.madar]\ncommand = "old-madar"\nargs = ["old"]\n${CODEX_MCP_END_MARKER}\n# after\n`
-
-      mkdirSync(join(projectDir, '.codex'), { recursive: true })
-      writeFileSync(configPath, before, 'utf8')
-
-      const installMessage = agentsInstall(projectDir, 'codex')
-      const installed = readFileSync(configPath, 'utf8')
-
-      expect(installMessage).toContain('.codex/config.toml -> MCP server updated')
-      expect(installed).toContain('# before\n')
-      expect(installed).toContain('# after\n')
-      expect(installed).toContain('[mcp_servers.madar]\ncommand = "madar"')
-      expect(installed).toContain('args = ["serve", "--stdio", "--auto-refresh"]')
-      expect(installed).toContain('env = { MADAR_TOOL_PROFILE = "strict" }')
-      expect(installed).toContain('enabled = true')
-      expect(installed).toContain(`startup_timeout_sec = ${CODEX_MCP_STARTUP_TIMEOUT_SECONDS}`)
-      expect(installed).not.toContain('old-madar')
-    })
-  })
-
-  it('leaves an owned Codex MCP block untouched if a later declaration is user-managed', () => {
-    withTempDir((projectDir) => {
-      const configPath = join(projectDir, '.codex', 'config.toml')
-      agentsInstall(projectDir, 'codex')
-      const withUserDeclaration = `${readFileSync(configPath, 'utf8')}\n[mcp_servers.madar]\ncommand = "custom-madar"\n`
-      writeFileSync(configPath, withUserDeclaration, 'utf8')
-
-      const reinstallMessage = agentsInstall(projectDir, 'codex')
-
-      expect(reinstallMessage).toContain('user-managed')
-      expect(readFileSync(configPath, 'utf8')).toBe(withUserDeclaration)
-    })
-  })
-
-  it('leaves user-managed Codex Madar MCP declarations untouched', () => {
-    const userManagedConfigs = [
-      '[mcp_servers.madar]\ncommand = "custom-madar"\n',
-      '[mcp_servers.madar.env]\nMADAR_TOOL_PROFILE = "full"\n',
-      '[[mcp_servers.madar]]\ncommand = "custom-madar"\n',
-      'mcp_servers = { madar = { command = "custom-madar" } }\n',
-      'mcp_servers = { other = { command = "custom-madar" } }\n',
-      '"mcp_servers"."madar" = { command = "custom-madar" }\n',
-      '[mcp_servers]\nmadar = { command = "custom-madar" }\n',
-      '[mcp_servers]\n"madar".command = "custom-madar"\n',
-      '["mcp_servers"."madar"]\ncommand = "custom-madar"\n',
-    ]
-
-    for (const userManagedConfig of userManagedConfigs) {
-      withTempDir((projectDir) => {
-        const configPath = join(projectDir, '.codex', 'config.toml')
-        mkdirSync(join(projectDir, '.codex'), { recursive: true })
-        writeFileSync(configPath, userManagedConfig, 'utf8')
-
-        const installMessage = agentsInstall(projectDir, 'codex')
-
-        expect(installMessage).toContain('user-managed')
-        expect(readFileSync(configPath, 'utf8')).toBe(userManagedConfig)
-        expect(readFileSync(configPath, 'utf8')).not.toContain(CODEX_MCP_START_MARKER)
-
-        agentsUninstall(projectDir, 'codex')
-        expect(readFileSync(configPath, 'utf8')).toBe(userManagedConfig)
-      })
-    }
-  })
-
-  it('does not mistake an unrelated table-local mcp_servers key for a root MCP declaration', () => {
-    withTempDir((projectDir) => {
-      const configPath = join(projectDir, '.codex', 'config.toml')
-      const userToml = '[features]\nmcp_servers = { experimental = true }\n'
-      mkdirSync(join(projectDir, '.codex'), { recursive: true })
-      writeFileSync(configPath, userToml, 'utf8')
-
-      const installMessage = agentsInstall(projectDir, 'codex')
-      const installed = readFileSync(configPath, 'utf8')
-
-      expect(installMessage).toContain('.codex/config.toml -> MCP server registered')
-      expect(installed).toContain(userToml)
-      expect(installed).toContain(CODEX_MCP_START_MARKER)
-      expect(installed).toContain('[mcp_servers.madar]')
-    })
-  })
-
-  it('fails without mutating Codex config when its MCP marker block is malformed', () => {
-    const malformedConfigs = [
-      `# keep\n${CODEX_MCP_START_MARKER}\n[mcp_servers.madar]\ncommand = "madar"\n`,
-      `# keep\n${CODEX_MCP_END_MARKER}\n`,
-    ]
-
-    for (const malformed of malformedConfigs) {
-      withTempDir((projectDir) => {
-        const configPath = join(projectDir, '.codex', 'config.toml')
-        mkdirSync(join(projectDir, '.codex'), { recursive: true })
-        writeFileSync(configPath, malformed, 'utf8')
-
-        expect(() => agentsInstall(projectDir, 'codex')).toThrow(/marker block/i)
-        expect(readFileSync(configPath, 'utf8')).toBe(malformed)
-      })
-    }
   })
 
   it('preserves unrelated OpenCode config while updating madar MCP', () => {
@@ -2040,7 +1938,7 @@ ${CODEX_MCP_END_MARKER}
         const firstAgentsMd = readFileSync(join(projectDir, 'AGENTS.md'), 'utf8')
         const firstCodexHooks = readFileSync(join(projectDir, '.codex', 'hooks.json'), 'utf8')
         const firstCodexHookScript = readFileSync(join(projectDir, '.codex', 'madar-user-prompt-submit.cjs'), 'utf8')
-        const firstCodexConfig = readFileSync(join(projectDir, '.codex', 'config.toml'), 'utf8')
+        const firstCodexConfig = readFileSync(resolveCodexMcpConfigPath(), 'utf8')
         const firstOpenCodeConfig = readFileSync(join(projectDir, 'opencode.json'), 'utf8')
 
         agentsInstall(projectDir, 'codex')
@@ -2049,11 +1947,11 @@ ${CODEX_MCP_END_MARKER}
         expect(readFileSync(join(projectDir, 'AGENTS.md'), 'utf8')).toBe(firstAgentsMd)
         expect(readFileSync(join(projectDir, '.codex', 'hooks.json'), 'utf8')).toBe(firstCodexHooks)
         expect(readFileSync(join(projectDir, '.codex', 'madar-user-prompt-submit.cjs'), 'utf8')).toBe(firstCodexHookScript)
-        expect(readFileSync(join(projectDir, '.codex', 'config.toml'), 'utf8')).toBe(firstCodexConfig)
+        expect(readFileSync(resolveCodexMcpConfigPath(), 'utf8')).toBe(firstCodexConfig)
         expect(readFileSync(join(projectDir, 'opencode.json'), 'utf8')).toBe(firstOpenCodeConfig)
         expect(countOccurrences(firstAgentsMd, '## madar')).toBe(1)
         expect(firstCodexHookScript).toContain('out')
-        expect(firstCodexConfig).toContain('[mcp_servers.madar]')
+        expect(firstCodexConfig).toMatch(/\[mcp_servers\.madar_[a-f0-9]{12}\]/)
         expect(countOccurrences(firstOpenCodeConfig, '.opencode/plugins/madar.js')).toBe(1)
       })
     })

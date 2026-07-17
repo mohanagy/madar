@@ -64,6 +64,15 @@ interface IndexedSourceFiles {
 
 const VERSION_HASH_LENGTH = 12
 const graphVersionCache = new Map<string, { graphVersion: string; mtimeMs: number; size: number }>()
+// Agent instruction files are execution guidance, not repository source
+// evidence. Madar's installers deliberately add or update these files after a
+// graph exists; letting that invalidate the graph forces a large auto-refresh
+// before the first MCP request can answer.
+const AGENT_INSTRUCTION_FILES = new Set(['AGENTS.md', 'CLAUDE.md'])
+
+function isAgentInstructionFile(sourceFile: string): boolean {
+  return AGENT_INSTRUCTION_FILES.has(sourceFile.replaceAll('\\', '/'))
+}
 
 function truncateMtime(mtimeMs: number): number {
   return Math.trunc(mtimeMs)
@@ -260,6 +269,9 @@ function resolveIndexedSourcePath(rootPath: string, sourceFile: string): string 
 function collectMissingSourceFiles(indexed: IndexedSourceFiles): Set<string> {
   const missingSourceFiles = new Set<string>()
   for (const sourceFile of indexed.sourceFiles) {
+    if (isAgentInstructionFile(sourceFile)) {
+      continue
+    }
     if (!existsSync(resolveIndexedSourcePath(indexed.rootPath, sourceFile))) {
       missingSourceFiles.add(sourceFile)
     }
@@ -273,6 +285,9 @@ function legacyChangedSourceFiles(
 ): Set<string> {
   const changedSourceFiles = new Set<string>()
   for (const sourceFile of indexed.sourceFiles) {
+    if (isAgentInstructionFile(sourceFile)) {
+      continue
+    }
     const resolvedSourcePath = resolveIndexedSourcePath(indexed.rootPath, sourceFile)
     try {
       const sourceModifiedMs = truncateMtime(statSync(resolvedSourcePath).mtimeMs)
@@ -297,6 +312,9 @@ function filesystemChangedSourceFiles(
   const changedSourceFiles = new Set<string>()
 
   for (const sourceFile of indexed.sourceFiles) {
+    if (isAgentInstructionFile(sourceFile)) {
+      continue
+    }
     const resolvedSourcePath = resolveIndexedSourcePath(indexed.rootPath, sourceFile)
     if (!existsSync(resolvedSourcePath)) {
       continue
@@ -321,6 +339,9 @@ function graphRelevantGitChangedFiles(
   for (const rawPath of changedFiles) {
     const sourceFile = normalizeFreshnessSourceFile(indexed.rootPath, rawPath)
     if (sourceFile.length === 0) {
+      continue
+    }
+    if (isAgentInstructionFile(sourceFile)) {
       continue
     }
     if (indexedSourceFiles.has(sourceFile)) {

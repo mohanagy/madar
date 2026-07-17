@@ -87,6 +87,22 @@ const AUTO_REFRESH_CONTROL_METHODS = new Set([
   'tools/list',
 ])
 
+// These pre-MCP convenience methods are retained for existing clients, but
+// they must not provide an unadvertised graph-navigation escape hatch when a
+// client deliberately selected the bounded strict context-pack profile.
+const STRICT_DISABLED_LEGACY_GRAPH_METHODS = new Set([
+  'query',
+  'diff',
+  'anomalies',
+  'node',
+  'neighbors',
+  'path',
+  'explain',
+  'stats',
+  'god_nodes',
+  'community',
+])
+
 type McpLogLevel = 'debug' | 'info' | 'notice' | 'warning' | 'error' | 'critical' | 'alert' | 'emergency'
 
 /** Per-session record of node ids already shipped to a given `delta_session_id`.
@@ -744,16 +760,30 @@ export function handleStdioRequest(
 
   try {
     const params = request.params
+    const toolProfile = resolveToolProfileFromEnv()
+    const strictContextPackProfile = toolProfile === 'strict'
+
+    if (strictContextPackProfile && STRICT_DISABLED_LEGACY_GRAPH_METHODS.has(method)) {
+      return failure(
+        id,
+        JSONRPC_METHOD_NOT_FOUND,
+        `Legacy graph method '${method}' is disabled in the strict context_pack profile. Use context_pack, or select MADAR_TOOL_PROFILE=core or full for graph navigation.`,
+      )
+    }
 
     switch (method) {
       case 'initialize':
         return ok(id, {
           protocolVersion: MCP_PROTOCOL_VERSION,
           capabilities: {
-            completions: {},
             logging: {},
-            prompts: { listChanged: false },
-            resources: { subscribe: true, listChanged: true },
+            ...(strictContextPackProfile
+              ? {}
+              : {
+                  completions: {},
+                  prompts: { listChanged: false },
+                  resources: { subscribe: true, listChanged: true },
+                }),
             tools: { listChanged: false },
           },
           serverInfo: {
@@ -761,11 +791,16 @@ export function handleStdioRequest(
             title: MCP_SERVER_TITLE,
             version: MCP_SERVER_VERSION,
           },
-          instructions: 'Use tools/list to discover graph tools, then tools/call to query the generated graph.',
+          instructions: strictContextPackProfile
+            ? 'Strict profile: use context_pack once with the user request verbatim. Use context_expand only for a listed verify_targets handle; graph prompts, resources, and completions are disabled.'
+            : 'Use tools/list to discover graph tools, then tools/call to query the generated graph.',
         })
       case 'notifications/initialized':
         return null
       case 'completion/complete':
+        if (strictContextPackProfile) {
+          return failure(id, JSONRPC_METHOD_NOT_FOUND, 'MCP prompt completions are disabled in the strict context_pack profile.')
+        }
         return handleCompletion(id, graphPath, params, {
           ok,
           failure,
@@ -786,8 +821,11 @@ export function handleStdioRequest(
         return ok(id, {})
       }
       case 'prompts/list':
-        return ok(id, { prompts: promptDefinitionsForGraph(graphPath) })
+        return ok(id, { prompts: strictContextPackProfile ? [] : promptDefinitionsForGraph(graphPath) })
       case 'prompts/get':
+        if (strictContextPackProfile) {
+          return failure(id, JSONRPC_METHOD_NOT_FOUND, 'MCP prompts are disabled in the strict context_pack profile.')
+        }
         return handlePromptGet(id, graphPath, params, {
           ok,
           failure,
@@ -801,7 +839,7 @@ export function handleStdioRequest(
         })
       case 'resources/list':
         return ok(id, {
-          resources: resourcesForGraph(graphPath).map(({ uri, name, title, description, mimeType, annotations }) => ({
+          resources: strictContextPackProfile ? [] : resourcesForGraph(graphPath).map(({ uri, name, title, description, mimeType, annotations }) => ({
             uri,
             name,
             title,
@@ -811,6 +849,9 @@ export function handleStdioRequest(
           })),
         })
       case 'resources/subscribe':
+        if (strictContextPackProfile) {
+          return failure(id, JSONRPC_METHOD_NOT_FOUND, 'MCP resources are disabled in the strict context_pack profile.')
+        }
         return handleResourceSubscribe(id, graphPath, params, sessionState, {
           ok,
           failure,
@@ -824,6 +865,9 @@ export function handleStdioRequest(
           maxResourceSubscriptions: MAX_RESOURCE_SUBSCRIPTIONS,
         })
       case 'resources/unsubscribe':
+        if (strictContextPackProfile) {
+          return failure(id, JSONRPC_METHOD_NOT_FOUND, 'MCP resources are disabled in the strict context_pack profile.')
+        }
         return handleResourceUnsubscribe(id, params, sessionState, {
           ok,
           failure,
@@ -837,6 +881,9 @@ export function handleStdioRequest(
           maxResourceSubscriptions: MAX_RESOURCE_SUBSCRIPTIONS,
         })
       case 'resources/read':
+        if (strictContextPackProfile) {
+          return failure(id, JSONRPC_METHOD_NOT_FOUND, 'MCP resources are disabled in the strict context_pack profile.')
+        }
         return handleResourceRead(id, graphPath, params, {
           ok,
           failure,
@@ -850,22 +897,41 @@ export function handleStdioRequest(
           maxResourceSubscriptions: MAX_RESOURCE_SUBSCRIPTIONS,
         })
       case 'tools/list': {
-        const profile = resolveToolProfileFromEnv()
         // Only advertise semantic/rerank params when the optional transformers
         // package is actually resolvable on this machine — agents cannot pass
         // parameters that are absent from the schema.
         const semanticAvailable = isSemanticRuntimeAvailable(graphRootPath(graphPath) ?? resolveGraphSourceRoot(graphPath))
-        return ok(id, { tools: activeMcpTools(profile, { semanticAvailable }) })
+        return ok(id, { tools: activeMcpTools(toolProfile, { semanticAvailable }) })
       }
       case 'tools/call': {
-        const profile = resolveToolProfileFromEnv()
         const toolName = stringParam(params, 'name')
-        if (toolName !== null && !isToolEnabledInProfile(toolName, profile)) {
+        if (toolName !== null && !isToolEnabledInProfile(toolName, toolProfile)) {
           return failure(
             id,
             JSONRPC_METHOD_NOT_FOUND,
-            `Tool '${toolName}' is not enabled in the active madar MCP tool profile '${profile}'. Use MADAR_TOOL_PROFILE=strict for core plus context_pack/context_expand, or MADAR_TOOL_PROFILE=full for every tool, in your agent's MCP server config.`,
+            `Tool '${toolName}' is not enabled in the active madar MCP tool profile '${toolProfile}'. Use MADAR_TOOL_PROFILE=strict for the bounded context_pack/context_expand flow, MADAR_TOOL_PROFILE=core for graph navigation, or MADAR_TOOL_PROFILE=full for every tool.`,
           )
+        }
+        const toolArguments = recordParam(params, 'arguments')
+        if (strictContextPackProfile && toolName === 'context_pack') {
+          const unsupported = Object.keys(toolArguments ?? {}).filter((key) => key !== 'prompt' && key !== 'task')
+          if (unsupported.length > 0) {
+            return failure(
+              id,
+              JSONRPC_INVALID_PARAMS,
+              `strict context_pack accepts only prompt and optional task; unsupported argument${unsupported.length === 1 ? '' : 's'}: ${unsupported.join(', ')}. Use MADAR_TOOL_PROFILE=full for diagnostics or retrieval tuning.`,
+            )
+          }
+        }
+        if (strictContextPackProfile && toolName === 'context_expand') {
+          const unsupported = Object.keys(toolArguments ?? {}).filter((key) => key !== 'handle_id')
+          if (unsupported.length > 0) {
+            return failure(
+              id,
+              JSONRPC_INVALID_PARAMS,
+              `strict context_expand accepts only handle_id; unsupported argument${unsupported.length === 1 ? '' : 's'}: ${unsupported.join(', ')}. Use MADAR_TOOL_PROFILE=full for expansion tuning.`,
+            )
+          }
         }
         const response = handleToolCallRequest(id, graphPath, params, {
           ok,
@@ -896,6 +962,7 @@ export function handleStdioRequest(
              sessions.set(sessionId, nextState)
            },
            clearContextPromptSession: (sessionId) => ensureContextPromptSessions(sessionState).delete(sessionId),
+           strictContextPackMode: strictContextPackProfile,
            getContextPackNodeIds: (sessionId) => {
              const store = ensureContextPackNodeIds(sessionState).get(sessionId)
              return store ? Array.from(store) : []
@@ -917,6 +984,12 @@ export function handleStdioRequest(
            },
            clearContextPackNodeIds: (sessionId) => ensureContextPackNodeIds(sessionState).delete(sessionId),
            getContextPackHandle: (handleId) => ensureContextPackHandles(sessionState).get(handleId),
+           takeContextPackHandle: (handleId) => {
+             const handles = ensureContextPackHandles(sessionState)
+             const stored = handles.get(handleId)
+             handles.delete(handleId)
+             return stored
+           },
             setContextPackHandle: (handleId, expansion) => {
               const handles = ensureContextPackHandles(sessionState)
               if (!handles.has(handleId) && handles.size >= MAX_CONTEXT_PROMPT_SESSIONS) {
@@ -927,6 +1000,7 @@ export function handleStdioRequest(
               }
               handles.set(handleId, expansion)
             },
+            clearContextPackHandles: () => ensureContextPackHandles(sessionState).clear(),
             getContextPackCache: (cacheKey) => ensureContextPackCache(sessionState).get(cacheKey),
             setContextPackCache: (cacheKey, payloadText) => {
               const cache = ensureContextPackCache(sessionState)
@@ -1043,6 +1117,7 @@ export async function serveGraphStdio(options: ServeGraphStdioOptions): Promise<
   const output = options.output ?? process.stdout
   const errorOutput = options.errorOutput ?? process.stderr
   const sessionState = createSessionState()
+  const strictContextPackProfile = resolveToolProfileFromEnv() === 'strict'
   let autoRefresh: GraphAutoRefreshController | null = null
 
   if (options.autoRefresh) {
@@ -1105,13 +1180,15 @@ export async function serveGraphStdio(options: ServeGraphStdioOptions): Promise<
       }
 
       if (refreshReadiness && !refreshReadiness.ready && requestMethod === 'prompts/list') {
-        response = ok(requestId(request), { prompts: MCP_PROMPTS })
+        response = ok(requestId(request), { prompts: strictContextPackProfile ? [] : MCP_PROMPTS })
       } else if (refreshReadiness && !refreshReadiness.ready && requestMethod === 'resources/list') {
         response = ok(requestId(request), { resources: [] })
       } else if (refreshReadiness && !refreshReadiness.ready && requestMethod !== null && !AUTO_REFRESH_CONTROL_METHODS.has(requestMethod)) {
         response = graphNotReadyResponse(request, refreshReadiness, waitedMs)
       } else {
-        emitResourceNotifications(output, options.graphPath, sessionState)
+        if (!strictContextPackProfile) {
+          emitResourceNotifications(output, options.graphPath, sessionState)
+        }
         response = await Promise.resolve(handleStdioRequest(options.graphPath, payload, sessionState))
       }
     } catch (error) {

@@ -4,7 +4,6 @@ import { join, resolve } from 'node:path'
 import type { IndexingManifestV1 } from '../contracts/indexing.js'
 import { watcherStateBlocksGraphReads, type WatcherStateV1 } from '../contracts/watcher-state.js'
 import {
-  CODEX_MCP_CONFIG_RELATIVE_PATH,
   CODEX_PROMPT_HOOK_SCRIPT_RELATIVE_PATH,
   OPENCODE_MCP_SERVER_NAME,
   OPENCODE_PLUGIN_RELATIVE_PATH,
@@ -15,6 +14,7 @@ import {
   isMadarCodexPromptHook,
   isCurrentMadarCodexPromptHook,
   readOpencodeConfig,
+  resolveCodexMcpConfigPath,
   resolveOpencodeConfigPath,
 } from './install.js'
 import { analyzeGraphContextFreshness, graphFreshnessStatusLabel, type GraphContextFreshnessStatus } from '../runtime/freshness.js'
@@ -114,7 +114,7 @@ const AIDER_INSTRUCTION_SNIPPETS = [
 const CODEX_INSTRUCTION_SNIPPETS = [
   '### Codex CLI profile',
   'Use a strict context-pack-first workflow',
-  'Before broad code search, file reads, or worker dispatch',
+  'First decide whether the task needs local repository source-code context',
   'madar pack "<task or question>" --task explain',
   'Do not dispatch `spawn_agent` workers first',
 ]
@@ -230,12 +230,12 @@ function findCodexHookEntry(settingsPath: string, expectedCommand: string): bool
   return managedPromptHooks.length === 1 && currentManagedPromptHooks.length === 1 && !legacyPreToolUse
 }
 
-function hasManagedCodexMcpConfig(configPath: string): boolean {
+function hasManagedCodexMcpConfig(configPath: string, projectDir: string): boolean {
   if (!existsSync(configPath)) {
     return false
   }
 
-  return isMadarCodexMcpConfig(readFileSync(configPath, 'utf8'))
+  return isMadarCodexMcpConfig(readFileSync(configPath, 'utf8'), projectDir)
 }
 
 function containsOutPathReference(value: unknown): boolean {
@@ -587,7 +587,7 @@ export function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorRep
   const codexHookConfigured =
     hasManagedCodexPromptHookScript(codexPromptHookScriptPath)
     && findCodexHookEntry(resolve(projectDir, '.codex', 'hooks.json'), codexPromptHookCommand())
-  const codexMcpConfigured = hasManagedCodexMcpConfig(resolve(projectDir, CODEX_MCP_CONFIG_RELATIVE_PATH))
+  const codexMcpConfigured = hasManagedCodexMcpConfig(resolveCodexMcpConfigPath(), projectDir)
   const codexStatus = optionalAgentStatus(
     [codexSkillConfigured, codexInstructionsConfigured, codexHookConfigured, codexMcpConfigured],
     [codexInstructionsConfigured, codexHookConfigured, codexMcpConfigured],

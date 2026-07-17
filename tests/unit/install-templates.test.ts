@@ -132,6 +132,16 @@ function expectPlainPackRoutingGuide(content: string): void {
   expect(normalized).toContain('For verify_targets, inspect only the listed verification targets. Restart broad search only for insufficient with broad_search_fallback allowed.')
 }
 
+function expectPlainStrictPackGuidance(content: string): void {
+  const normalized = content.replaceAll('\\"', '"')
+  expect(normalized).toContain('call context_pack exactly once per user task')
+  expect(normalized).toContain('copy the entire user codebase request byte-for-byte into prompt, including read-only, no-change, scope, and formatting constraints')
+  expect(normalized).toContain('Strict MCP exposes only context_pack and context_expand')
+  expect(normalized).toContain('use task=impact or task=review on the first pack instead of graph-navigation tools')
+  expect(normalized).toContain('For verify_targets, use context_expand once only with a listed verification handle and treat the result as terminal')
+  expect(normalized).toContain('do not expand ready or ready_with_caveat packs')
+}
+
 describe('install hook payload', () => {
   it('decoded hook payload keeps the graph-first guidance without benchmark marketing copy', () => {
     withTempDir((projectDir) => {
@@ -184,7 +194,7 @@ describe('install hook payload', () => {
       expect(decoded).toContain('context-pack-first')
       expect(decoded).toContain('madar pack')
       expect(decoded).toContain('use Madar tools only')
-      expectPlainPackRoutingGuide(decoded)
+      expectPlainStrictPackGuidance(decoded)
     })
   })
 })
@@ -196,8 +206,10 @@ describe('built-in install templates', () => {
     expect(content).toContain('Codex CLI profile')
     expect(content).toContain('context-pack-first')
     expect(content).toContain('madar pack')
+    expect(content).toContain('Pass the entire user\'s codebase request byte-for-byte as the pack question, including read-only, no-change, scope, and formatting constraints.')
     expect(content).toContain('`evidence.answerability.state` as authoritative')
     expect(content).toContain('Do not run broad `Glob` patterns, repo-wide `grep` / `find` searches, or raw file sweeps for `ready`, `ready_with_caveat`, or `verify_targets`.')
+    expect(content).toContain('For read-only `explain` tasks, `ready` and `ready_with_caveat` are terminal')
     expect(content).toContain('Do not call another MCP or restart broad exploration unless `evidence.answerability.broad_search_fallback` is `allowed`')
     expect(content).toContain('defer to Madar\'s answerability and exact verification targets')
     expect(content).toContain('`ready`')
@@ -212,7 +224,7 @@ describe('built-in install templates', () => {
     expect(content).toContain('Manual verification')
     expect(content).toContain('Codex limitations')
     expect(content).toContain('.codex/madar-user-prompt-submit.cjs')
-    expect(content).toContain('.codex/config.toml')
+    expect(content).toContain('~/.codex/config.toml')
     expect(content).toContain('UserPromptSubmit')
     expect(content).toContain('`/hooks`')
     expect(content).toContain('`/mcp`')

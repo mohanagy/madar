@@ -6,6 +6,7 @@ interface FlowNode {
   source: string
   community: number
   role?: string
+  snippet?: string
   metadata?: Record<string, unknown>
 }
 
@@ -16,6 +17,7 @@ const FLOW_NODES: FlowNode[] = [
     source: '/apps/checker/update.go',
     community: 1,
     role: 'monitor_checker',
+    snippet: "if (monitorCheck.status === 'error') await publishUpdate()",
   },
   {
     id: 'status_route',
@@ -23,6 +25,7 @@ const FLOW_NODES: FlowNode[] = [
     source: '/apps/workflows/src/checker/index.ts',
     community: 2,
     role: 'http_route',
+    snippet: 'await db.insert(incidentTable); await triggerNotifications()',
     metadata: { route_path: '/updateStatus', http_method: 'POST' },
   },
   {
@@ -31,6 +34,7 @@ const FLOW_NODES: FlowNode[] = [
     source: '/apps/workflows/src/checker/alerting.ts',
     community: 2,
     role: 'incident_writer',
+    snippet: 'await db.insert(incidentTable).values({ monitorId })',
   },
   {
     id: 'notification_dispatch',
@@ -38,6 +42,7 @@ const FLOW_NODES: FlowNode[] = [
     source: '/apps/workflows/src/checker/utils.ts',
     community: 3,
     role: 'notification_dispatcher',
+    snippet: 'await providerToFunction[provider].sendAlert(notification)',
   },
   {
     id: 'incident_table',
@@ -45,6 +50,7 @@ const FLOW_NODES: FlowNode[] = [
     source: '/packages/db/src/schema/incidents.ts',
     community: 4,
     role: 'persistence_schema',
+    snippet: 'const incidentTable = table({ status, resolvedAt, monitorId })',
   },
   {
     id: 'public_status',
@@ -52,13 +58,15 @@ const FLOW_NODES: FlowNode[] = [
     source: '/packages/api/src/router/statusPage.ts',
     community: 5,
     role: 'public_status_reader',
+    snippet: "const status = events.some((e) => e.type === 'incident' && !e.to) && barType !== 'manual' ? 'error' : 'active'",
   },
   {
     id: 'alternate_status',
     label: 'computeOverallStatus',
-    source: '/apps/server/src/routes/status-page/index.ts',
+    source: '/apps/server/src/routes/rpc/handlers/status-page/index.ts',
     community: 6,
     role: 'alternate_status_computation',
+    snippet: 'const overallStatus = hasActiveStatusReport ? DEGRADED : hasActiveMaintenance ? MAINTENANCE : OPERATIONAL',
   },
   {
     id: 'status_json',
@@ -66,6 +74,15 @@ const FLOW_NODES: FlowNode[] = [
     source: '/apps/status-page/src/content/status-json.ts',
     community: 5,
     role: 'public_status_feed',
+    snippet: 'const data = trpc.statusPage.get.queryOptions(); return { status: toStatus(data), summary: toSummary(data), incidents: toUnresolvedIncidents(data) }',
+  },
+  {
+    id: 'external_effective_status',
+    label: 'computeEffectiveStatus',
+    source: '/packages/api/src/router/external-service/effective-status.ts',
+    community: 7,
+    role: 'external_service_status_computation',
+    snippet: 'return externalProviderReports.length > 0 ? DEGRADED : OPERATIONAL',
   },
 ]
 
@@ -94,6 +111,8 @@ const FLOW_EDGES: Array<[string, string, string]> = [
   ['public_status', 'incident_table', 'reads'],
   ['status_json', 'public_status', 'serializes'],
   ['alternate_status', 'status_json', 'competes_with'],
+  ['external_effective_status', 'status_route', 'shares_status_vocabulary_with'],
+  ['external_effective_status', 'alternate_status', 'shares_computation_vocabulary_with'],
 ]
 
 export const CROSS_LAYER_MONITOR_FLOW_FILES = [
@@ -103,7 +122,7 @@ export const CROSS_LAYER_MONITOR_FLOW_FILES = [
   'apps/workflows/src/checker/utils.ts',
   'packages/db/src/schema/incidents.ts',
   'packages/api/src/router/statusPage.ts',
-  'apps/server/src/routes/status-page/index.ts',
+  'apps/server/src/routes/rpc/handlers/status-page/index.ts',
   'apps/status-page/src/content/status-json.ts',
 ] as const
 
@@ -117,6 +136,7 @@ export function buildCrossLayerMonitorFlowFixture(): KnowledgeGraph {
     4: 'Incident persistence schema',
     5: 'Public status page reads',
     6: 'Alternative status computation',
+    7: 'External service provider status',
     9: 'Status presentation components',
   }
 
@@ -128,7 +148,7 @@ export function buildCrossLayerMonitorFlowFixture(): KnowledgeGraph {
       file_type: 'code',
       node_kind: node.role === 'http_route' ? 'route' : 'function',
       community: node.community,
-      snippet: `export function ${node.id}() { return '${node.label}' }`,
+      snippet: node.snippet ?? `export function ${node.id}() { return '${node.label}' }`,
       ...(node.role ? { framework_role: node.role } : {}),
       ...(node.metadata ? { framework_metadata: node.metadata } : {}),
     })

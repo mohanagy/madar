@@ -73,7 +73,7 @@ Installer details are in the [CLI and MCP reference](https://github.com/mohanagy
 
 After upgrading Madar, rerun your agent's install command so its managed profile receives current runtime settings. Older profiles may lack automatic refresh; older Codex profiles may also lack the extended MCP startup window needed by large or synchronized workspaces.
 
-Starting with `0.31.2`, Codex installs set `startup_timeout_sec = 180`. Madar makes the MCP transport available while the initial graph reconciliation runs in a background worker. Graph-backed calls resume only after startup completes, watcher health is non-blocking with complete coverage, and the idle watcher's policy matches the published graph and manifest; `idle` alone is not a readiness guarantee.
+Starting with this release, Codex installs create a workspace-scoped MCP block in `$CODEX_HOME/config.toml` (normally `~/.codex/config.toml`) with `startup_timeout_sec = 180` and `tool_timeout_sec = 60`. Madar makes the MCP transport available while the initial graph reconciliation runs in a background worker. Graph-backed calls resume only after startup completes, watcher health is non-blocking with complete coverage, and the idle watcher's policy matches the published graph and manifest; `idle` alone is not a readiness guarantee.
 
 Starting with `0.31.3`, a graph-backed call made while Madar is `starting`, `pending`, or `reconciling` returns a structured retryable response. The agent should retry the same Madar request after the suggested delay instead of bypassing Madar or running generation manually. A dead refresh owner is recovered automatically; only failed, incomplete, or policy-mismatched graph states ask for repair.
 

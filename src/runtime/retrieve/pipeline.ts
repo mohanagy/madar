@@ -18,6 +18,11 @@ import {
 import { classifyTaskContract } from '../context-pack.js'
 import { classifyRetrievalLevel } from '../retrieval-gate.js'
 import { defaultContextKindForTaskIntent } from '../task-intent.js'
+import {
+  evaluateQueryEvidenceCoverage,
+  type QueryEvidenceCoverage,
+  type QueryEvidenceNode,
+} from './conceptual-fallback.js'
 
 export type RetrievalPipelineStage =
   | 'query_interpretation'
@@ -132,6 +137,8 @@ export interface RetrievalEvidencePlanInput {
   coveredWorkflowOwners?: readonly string[]
   selectedNodeCount?: number
   selectedRelationshipCount?: number
+  question?: string
+  matchedNodes?: readonly QueryEvidenceNode[]
 }
 
 /** Explicit boundary consumed by answerability; it contains evidence facts, never ranking scores. */
@@ -146,6 +153,7 @@ export interface RetrievalEvidencePlan {
   covered_workflow_owners: string[]
   selected_node_count: number
   selected_relationship_count: number
+  query_evidence?: QueryEvidenceCoverage
 }
 
 const finiteCount = (value: number | undefined): number => (
@@ -269,15 +277,19 @@ export const buildRetrievalEvidencePlan = (input: RetrievalEvidencePlanInput): R
   covered_workflow_owners: [...new Set(input.coveredWorkflowOwners ?? [])],
   selected_node_count: finiteCount(input.selectedNodeCount),
   selected_relationship_count: finiteCount(input.selectedRelationshipCount),
+  ...(input.question && input.matchedNodes
+    ? { query_evidence: evaluateQueryEvidenceCoverage(input.question, input.matchedNodes) }
+    : {}),
 })
 
 export interface RetrievalEvidenceResultLike {
+  question?: string
   task_contract?: ContextPackTaskContract
   coverage?: ContextPackCoverage
   expandable?: readonly ContextPackExpandableRef[]
   execution_slice?: ContextPackExecutionSlice
   answer_contract?: ContextPackRuntimeGenerationAnswerContract
-  matched_nodes: ReadonlyArray<{ source_file: string }>
+  matched_nodes: ReadonlyArray<QueryEvidenceNode>
   relationships: readonly unknown[]
 }
 
@@ -296,6 +308,12 @@ export const buildRetrievalEvidencePlanFromResult = (
   coveredWorkflowOwners: result.matched_nodes.map((node) => node.source_file),
   selectedNodeCount: result.matched_nodes.length,
   selectedRelationshipCount: result.relationships.length,
+  ...(result.question
+    ? {
+        question: result.question,
+        matchedNodes: result.matched_nodes,
+      }
+    : {}),
 })
 
 export const runRetrievalEvidencePlanningStage = (

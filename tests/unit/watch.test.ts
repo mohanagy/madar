@@ -209,6 +209,37 @@ describe('watch', () => {
     })
   })
 
+  test('does not rebuild when managed root agent instructions were added after generation', async () => {
+    await withTempDirAsync(async (tempDir) => {
+      writeFileSync(join(tempDir, 'main.ts'), 'export const value = 1\n', 'utf8')
+      const generated = generateGraph(tempDir, { noHtml: true })
+      writeFileSync(join(tempDir, 'AGENTS.md'), '# Madar instructions\n', 'utf8')
+      writeFileSync(join(tempDir, 'CLAUDE.md'), '# Madar instructions\n', 'utf8')
+      const rebuild = vi.fn(() => true)
+      const refresh = startGraphAutoRefresh(tempDir, 0.02, {
+        pollIntervalMs: 20,
+        noHtml: true,
+        rebuildCode: rebuild,
+        logger: { log() {}, error() {} },
+      })
+
+      try {
+        await refresh.startupSettled
+        expect(refresh.startupComplete?.()).toBe(true)
+        expect(refresh.initialRebuilt).toBe(false)
+        expect(rebuild).not.toHaveBeenCalled()
+        expect(readWatcherStateForGraph(generated.graphPath)).toMatchObject({
+          status: 'idle',
+          coverage: 'complete',
+          policy_match: true,
+        })
+      } finally {
+        refresh.stop()
+        await refresh.completed
+      }
+    })
+  })
+
   test('does not treat hard-ignored source directories as new graph candidates', async () => {
     await withTempDirAsync(async (tempDir) => {
       writeFileSync(join(tempDir, 'main.ts'), 'export const value = 1\n', 'utf8')

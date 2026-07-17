@@ -131,15 +131,23 @@ export interface CompareMadarTraceTurnSummary {
 
 const RAW_TRACE_TOOL_INPUTS = Symbol('rawTraceToolInputs')
 const RAW_TRACE_TOOL_RESULTS = Symbol('rawTraceToolResults')
+const RAW_TRACE_TOOL_ARGUMENTS = Symbol('rawTraceToolArguments')
+const RAW_TRACE_EVENTS = Symbol('rawTraceEvents')
 
 interface CompareMadarTraceToolResult {
   tool_name: string
   payload: Record<string, unknown>
 }
 
+type CompareMadarTraceEvent =
+  | { kind: 'tool_use'; tool_name: string }
+  | { kind: 'tool_result'; tool_name: string; payload: Record<string, unknown> }
+
 type CompareMadarTraceTurnSummaryWithInputs = CompareMadarTraceTurnSummary & {
   [RAW_TRACE_TOOL_INPUTS]?: string[]
   [RAW_TRACE_TOOL_RESULTS]?: CompareMadarTraceToolResult[]
+  [RAW_TRACE_TOOL_ARGUMENTS]?: unknown[]
+  [RAW_TRACE_EVENTS]?: CompareMadarTraceEvent[]
 }
 
 function rawTraceToolInputs(turn: CompareMadarTraceTurnSummary): string[] {
@@ -155,6 +163,19 @@ function appendRawTraceToolInputs(turn: CompareMadarTraceTurnSummary, inputs: re
   })
 }
 
+function rawTraceToolArguments(turn: CompareMadarTraceTurnSummary): unknown[] {
+  return (turn as CompareMadarTraceTurnSummaryWithInputs)[RAW_TRACE_TOOL_ARGUMENTS] ?? []
+}
+
+function appendRawTraceToolArguments(turn: CompareMadarTraceTurnSummary, argumentsList: readonly unknown[]): void {
+  const current = rawTraceToolArguments(turn)
+  Object.defineProperty(turn, RAW_TRACE_TOOL_ARGUMENTS, {
+    value: [...current, ...argumentsList],
+    enumerable: false,
+    configurable: true,
+  })
+}
+
 function rawTraceToolResults(turn: CompareMadarTraceTurnSummary): CompareMadarTraceToolResult[] {
   return (turn as CompareMadarTraceTurnSummaryWithInputs)[RAW_TRACE_TOOL_RESULTS] ?? []
 }
@@ -163,6 +184,19 @@ function appendRawTraceToolResults(turn: CompareMadarTraceTurnSummary, results: 
   const current = rawTraceToolResults(turn)
   Object.defineProperty(turn, RAW_TRACE_TOOL_RESULTS, {
     value: [...current, ...results],
+    enumerable: false,
+    configurable: true,
+  })
+}
+
+function rawTraceEvents(turn: CompareMadarTraceTurnSummary): CompareMadarTraceEvent[] {
+  return (turn as CompareMadarTraceTurnSummaryWithInputs)[RAW_TRACE_EVENTS] ?? []
+}
+
+function appendRawTraceEvents(turn: CompareMadarTraceTurnSummary, events: readonly CompareMadarTraceEvent[]): void {
+  const current = rawTraceEvents(turn)
+  Object.defineProperty(turn, RAW_TRACE_EVENTS, {
+    value: [...current, ...events],
     enumerable: false,
     configurable: true,
   })
@@ -919,11 +953,11 @@ function canonicalTraceToolName(toolName: string): string {
 }
 
 function nativeAgentPromptContractEntryTool(profile: McpToolProfile): 'context_pack' | 'retrieve' {
-  return profile === 'full' ? 'context_pack' : 'retrieve'
+  return profile === 'full' || profile === 'strict' ? 'context_pack' : 'retrieve'
 }
 
 function nativeAgentPromptContractEntryToolNames(profile: McpToolProfile): ReadonlySet<string> {
-  return profile === 'full' ? MADAR_CONTEXT_PACK_TOOL_NAMES : MADAR_CORE_ENTRY_TOOL_NAMES
+  return profile === 'full' || profile === 'strict' ? MADAR_CONTEXT_PACK_TOOL_NAMES : MADAR_CORE_ENTRY_TOOL_NAMES
 }
 
 function nativeAgentPromptContractSuccessEvidence(profile: McpToolProfile): string {
@@ -947,6 +981,12 @@ function isFocusedFollowUpTraceToolName(toolName: string): boolean {
 
 function isBroadExplorationTraceToolName(toolName: string): boolean {
   return TRACE_BROAD_EXPLORATION_TOOL_NAMES.has(toolName.toLowerCase())
+}
+
+function isPreMadarRepositoryExplorationToolName(toolName: string): boolean {
+  // A raw file read is narrower than an after-pack search, but it still
+  // violates the first-pack contract if it happens before context_pack.
+  return isBroadExplorationTraceToolName(toolName) || isFocusedFollowUpTraceToolName(toolName)
 }
 
 function isToolSearchTraceToolName(toolName: string): boolean {
@@ -1110,7 +1150,7 @@ function analyzeMadarTraceExploration(perTurn: CompareMadarTraceTurnSummary[]): 
       }
 
       if (!hadSeenMadarCall) {
-        if (isBroadExplorationTraceToolName(toolName)) {
+        if (isPreMadarRepositoryExplorationToolName(toolName)) {
           preMadarBroadExplorationToolCallCount += 1
           preMadarBroadExplorationToolCallsByName[toolName] = (preMadarBroadExplorationToolCallsByName[toolName] ?? 0) + 1
         }
@@ -1467,8 +1507,10 @@ function extractMadarTrace(stdout: string): CompareMadarTrace | undefined {
     const existingTurn = perTurnIndex.get(turn)
     const tools: string[] = []
     const toolInputs: string[] = []
+    const toolArguments: unknown[] = []
     const directives: string[] = []
     const toolResults: CompareMadarTraceToolResult[] = []
+    const traceEvents: CompareMadarTraceEvent[] = []
     let madarToolDiscoveryCount = 0
     const madarToolDiscoveryToolIndexes: number[] = []
     for (const contentPart of content) {
@@ -1485,6 +1527,8 @@ function extractMadarTrace(stdout: string): CompareMadarTrace | undefined {
         const toolIndex = tools.length
         tools.push(toolName)
         toolInputs.push(summarizeTraceToolInput(contentPart.input))
+        toolArguments.push(contentPart.input)
+        traceEvents.push({ kind: 'tool_use', tool_name: toolName })
         toolCallsByName[toolName] = (toolCallsByName[toolName] ?? 0) + 1
         totalToolCalls += 1
         if (isMadarToolDiscoveryToolUse(toolName, contentPart.input)) {
@@ -1493,7 +1537,13 @@ function extractMadarTrace(stdout: string): CompareMadarTrace | undefined {
         }
       }
 
-      toolResults.push(...extractTraceToolResults(contentPart))
+      const contentToolResults = extractTraceToolResults(contentPart)
+      toolResults.push(...contentToolResults)
+      traceEvents.push(...contentToolResults.map((result) => ({
+        kind: 'tool_result' as const,
+        tool_name: result.tool_name,
+        payload: result.payload,
+      })))
       directives.push(...extractTraceAgentDirectives(contentPart))
     }
 
@@ -1506,7 +1556,9 @@ function extractMadarTrace(stdout: string): CompareMadarTrace | undefined {
       existingTurn.tool_call_count += tools.length
       existingTurn.tools.push(...tools)
       appendRawTraceToolInputs(existingTurn, toolInputs)
+      appendRawTraceToolArguments(existingTurn, toolArguments)
       appendRawTraceToolResults(existingTurn, toolResults)
+      appendRawTraceEvents(existingTurn, traceEvents)
       if (madarToolDiscoveryCount > 0) {
         existingTurn.madar_tool_discovery_count = (existingTurn.madar_tool_discovery_count ?? 0) + madarToolDiscoveryCount
         existingTurn.madar_tool_discovery_tool_indexes = [
@@ -1534,7 +1586,9 @@ function extractMadarTrace(stdout: string): CompareMadarTrace | undefined {
       ...(directives.length > 0 ? { agent_directive_seen: directives } : {}),
     }
     appendRawTraceToolInputs(turnSummary, toolInputs)
+    appendRawTraceToolArguments(turnSummary, toolArguments)
     appendRawTraceToolResults(turnSummary, toolResults)
+    appendRawTraceEvents(turnSummary, traceEvents)
     perTurnIndex.set(turn, turnSummary)
   }
 
@@ -1662,6 +1716,82 @@ function traceFocusedFollowUpInputs(trace: CompareMadarTrace): string[] {
   }
 
   return followUpInputs
+}
+
+function contextPackPromptFromTraceArguments(input: unknown, depth = 0): string | null {
+  if (depth > 4) {
+    return null
+  }
+  if (typeof input === 'string') {
+    try {
+      return contextPackPromptFromTraceArguments(JSON.parse(input) as unknown, depth + 1)
+    } catch {
+      return null
+    }
+  }
+  if (!isRecord(input)) {
+    return null
+  }
+  if (typeof input.prompt === 'string') {
+    return input.prompt
+  }
+  for (const key of ['arguments', 'params', 'input']) {
+    const nested = contextPackPromptFromTraceArguments(input[key], depth + 1)
+    if (nested !== null) {
+      return nested
+    }
+  }
+  return null
+}
+
+function traceContextPackPrompts(trace: CompareMadarTrace): Array<string | null> {
+  const prompts: Array<string | null> = []
+  for (const turn of trace.per_turn) {
+    const argumentsList = rawTraceToolArguments(turn)
+    for (const [index, toolName] of turn.tools.entries()) {
+      if (canonicalTraceToolName(toolName) === 'context_pack') {
+        prompts.push(contextPackPromptFromTraceArguments(argumentsList[index]))
+      }
+    }
+  }
+  return prompts
+}
+
+function isTerminalContextPackPayload(payload: Record<string, unknown>): boolean {
+  const evidence = isRecord(payload.evidence) ? payload.evidence : null
+  const answerability = evidence && isRecord(evidence.answerability) ? evidence.answerability : null
+  const state = answerability?.state
+  return state === 'ready' || state === 'ready_with_caveat'
+}
+
+function traceToolUsesAfterTerminalContextPack(trace: CompareMadarTrace): string[] {
+  const laterToolUses: string[] = []
+  let terminalPackSeen = false
+  for (const turn of trace.per_turn) {
+    for (const event of rawTraceEvents(turn)) {
+      if (event.kind === 'tool_result') {
+        if (canonicalTraceToolName(event.tool_name) === 'context_pack' && isTerminalContextPackPayload(event.payload)) {
+          terminalPackSeen = true
+        }
+        continue
+      }
+      if (terminalPackSeen) {
+        laterToolUses.push(event.tool_name)
+      }
+    }
+  }
+  return laterToolUses
+}
+
+function traceHasTerminalContextPackResult(trace: CompareMadarTrace): boolean {
+  for (const turn of trace.per_turn) {
+    for (const result of rawTraceToolResults(turn)) {
+      if (canonicalTraceToolName(result.tool_name) === 'context_pack' && isTerminalContextPackPayload(result.payload)) {
+        return true
+      }
+    }
+  }
+  return false
 }
 
 function mergeMatchedNodes(
@@ -2677,7 +2807,13 @@ export function buildNativeAgentPrompt(
     return [
       'Follow the Madar implementation-pack contract exactly.',
       'Implement the requested change using the Madar implementation pack.',
-      'Call context_pack first for implementation tasks before editing files or broad raw repo search.',
+      ...(profile === 'strict'
+        ? [
+            'Call mcp__madar__context_pack exactly once before editing files or raw repository search.',
+            'Copy the exact Question text below byte-for-byte into context_pack.prompt; do not restate, expand, enumerate, split, or issue a second context_pack call.',
+            'Strict exposes only context_pack and a listed verify_targets context_expand handle. A ready or ready_with_caveat pack is terminal.',
+          ]
+        : ['Call context_pack first for implementation tasks before editing files or broad raw repo search.']),
       'Inspect likely_edit_files, likely_test_files, validation_commands, cautions, and risk boundaries before making any changes.',
       'Prefer the likely_edit_files set first; editing outside the likely_edit_files or likely_test_files set requires an explicit reason.',
       'Run the listed validation_commands before concluding.',
@@ -2693,7 +2829,18 @@ export function buildNativeAgentPrompt(
     ].join('\n')
   }
 
-  const profileInstructions = profile === 'full'
+  const profileInstructions = profile === 'strict'
+    ? [
+        'Call mcp__madar__context_pack exactly once before any raw file or broad repository search.',
+        'Copy the exact Question text below byte-for-byte into context_pack.prompt; do not restate, expand, enumerate, split, or issue a second context_pack call.',
+        'Strict exposes only context_pack and context_expand. Use task=impact or task=review on the first pack instead of graph-navigation tools.',
+        'Treat evidence.answerability.state as authoritative; evidence.pack_confidence is compatibility-only.',
+        'For ready, answer from the pack. For ready_with_caveat, answer from the pack and state evidence.answerability.caveats. Both are terminal: make no later MCP, Read, Bash, Glob, or Grep call.',
+        'For verify_targets, use context_expand only once with one listed evidence.answerability.verification_targets handle.',
+        'Only insufficient with evidence.answerability.broad_search_fallback set to allowed permits one directory-scoped raw search.',
+        'Madar already ran bounded cumulative recovery; do not restart repository discovery for ready, ready_with_caveat, or verify_targets.',
+      ]
+    : profile === 'full'
     ? [
         'Call context_pack first for explain, review, impact, or runtime questions before any raw file or broad repo search.',
         'Treat evidence.answerability.state as authoritative; evidence.pack_confidence is compatibility-only.',
@@ -2717,7 +2864,7 @@ export function buildNativeAgentPrompt(
       ]
   const runtimeFlowInstructions = options.runtimeFlowGuidance
     ? [
-        'This question asks for a runtime flow grounded in retrieved evidence.',
+        `This question asks for a runtime flow grounded in ${profile === 'strict' ? 'context-pack' : 'retrieved'} evidence.`,
         ...(options.runtimeFlowGuidance.rescopedTo
           ? [`Start from the auto-rescoped graph scope: ${options.runtimeFlowGuidance.rescopedTo}.`]
           : []),
@@ -2729,8 +2876,8 @@ export function buildNativeAgentPrompt(
           : ['If the flow still cannot be proven, answer: not enough evidence']),
         ...(options.runtimeFlowGuidance.retrievalReady
           ? [
-              'Retrieve already provides a complete high-confidence runtime slice.',
-              'Answer from the retrieved evidence only; do not use Bash, Read, or raw file search.',
+              `${profile === 'strict' ? 'The initial context pack' : 'Retrieve'} already provides a complete high-confidence runtime slice.`,
+              `Answer from the ${profile === 'strict' ? 'context pack' : 'retrieved evidence'} only; do not use Bash, Read, or raw file search.`,
               'Do not add missing-evidence caveats unless the retrieved slice actually reports a gap.',
             ]
           : []),
@@ -4933,7 +5080,7 @@ function nativeAgentAttributionGapEvidence(report: NativeAgentCompareReport): st
 }
 
 function assessNativeAgentPromptContract(
-  report: Pick<NativeAgentCompareReport, 'trace_status' | 'madar_trace' | 'benchmark_readiness'>,
+  report: Pick<NativeAgentCompareReport, 'question' | 'trace_status' | 'madar_trace' | 'benchmark_readiness'>,
   toolProfile: McpToolProfile,
   runtimeProofProfile?: RuntimeProofProfile,
 ): NativeAgentPromptContractAssessment {
@@ -4945,6 +5092,7 @@ function assessNativeAgentPromptContract(
   }
 
   const evidence: string[] = []
+  const measurementGaps: string[] = []
   if (report.madar_trace.madar_mcp_call_count === 0) {
     evidence.push('no Madar MCP call was recorded')
   }
@@ -4956,6 +5104,43 @@ function assessNativeAgentPromptContract(
   }
   if ((report.madar_trace.pre_madar_broad_exploration_tool_call_count ?? 0) > 0) {
     evidence.push('broad exploration occurred before the first Madar call')
+  }
+  if (toolProfile === 'strict') {
+    if (report.madar_trace.context_pack_call_count !== 1) {
+      evidence.push(`strict profile requires exactly one context_pack call (recorded ${report.madar_trace.context_pack_call_count})`)
+    }
+    const packPrompts = traceContextPackPrompts(report.madar_trace)
+    if (packPrompts.length === 1 && packPrompts[0] !== report.question) {
+      evidence.push('strict context_pack prompt did not byte-match the user question')
+    }
+    if (traceHasTerminalContextPackResult(report.madar_trace)) {
+      const postTerminalToolUses = traceToolUsesAfterTerminalContextPack(report.madar_trace)
+      if (postTerminalToolUses.some((toolName) => isMadarTraceToolName(toolName))) {
+        evidence.push('terminal strict context_pack was followed by another Madar MCP call')
+      }
+      const otherMcpTool = postTerminalToolUses.find((toolName) => (
+        toolName.startsWith('mcp__') && !isMadarTraceToolName(toolName)
+      ))
+      if (otherMcpTool) {
+        evidence.push(`terminal strict context_pack was followed by another MCP call: ${otherMcpTool}`)
+      }
+      if (postTerminalToolUses.some((toolName) => (
+        isFocusedFollowUpTraceToolName(toolName) || isBroadExplorationTraceToolName(toolName)
+      ))) {
+        evidence.push('terminal strict context_pack was followed by repository exploration')
+      }
+      const unclassifiedNativeTool = postTerminalToolUses.find((toolName) => (
+        !isMadarTraceToolName(toolName)
+        && !toolName.startsWith('mcp__')
+        && !isFocusedFollowUpTraceToolName(toolName)
+        && !isBroadExplorationTraceToolName(toolName)
+      ))
+      if (unclassifiedNativeTool) {
+        measurementGaps.push(
+          `terminal strict context_pack was followed by unclassified native tool call: ${unclassifiedNativeTool}; trace cannot prove terminal compliance`,
+        )
+      }
+    }
   }
   if (report.madar_trace.broad_exploration_tool_call_count > 0) {
     if (evidence.length > 0) {
@@ -5015,6 +5200,12 @@ function assessNativeAgentPromptContract(
     return {
       status: 'violated',
       evidence,
+    }
+  }
+  if (measurementGaps.length > 0) {
+    return {
+      status: 'not_measured',
+      evidence: measurementGaps,
     }
   }
 

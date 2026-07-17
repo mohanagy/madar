@@ -75,6 +75,15 @@ const WATCHED_CONTROL_FILENAMES = new Set([
   'settings.gradle',
   'settings.gradle.kts',
 ])
+// Madar writes these root-level instruction files when an agent integration is
+// installed. They guide the agent, rather than describe the indexed codebase,
+// so their creation or edits must not force the first MCP request to wait for
+// a graph reconciliation.
+const MANAGED_AGENT_INSTRUCTION_FILENAMES = new Set(['AGENTS.md', 'CLAUDE.md'])
+
+function isRootManagedAgentInstructionFile(discoveryRoot: string, filePath: string): boolean {
+  return MANAGED_AGENT_INSTRUCTION_FILENAMES.has(relative(discoveryRoot, filePath).replaceAll('\\', '/'))
+}
 
 export interface WatchLogger {
   log(message?: string): void
@@ -288,6 +297,9 @@ function canReuseFreshGraphOnStart(
       if (filePath === GIT_VISIBILITY_SNAPSHOT_KEY) {
         continue
       }
+      if (isRootManagedAgentInstructionFile(workspaceRoot, filePath)) {
+        continue
+      }
       if (WATCHED_CONTROL_FILENAMES.has(basename(filePath))) {
         if (lstatSync(filePath).mtimeMs > freshness.generated_ms) {
           return false
@@ -312,6 +324,7 @@ function canReuseFreshGraphOnStart(
         outcome.kind === 'file'
         && outcome.status !== 'skipped_by_policy'
         && WATCHED_EXTENSIONS.has(extname(localPath).toLowerCase())
+        && !MANAGED_AGENT_INSTRUCTION_FILENAMES.has(localPath)
         && !currentCandidates.has(localPath)
       ) {
         return false
@@ -383,6 +396,9 @@ function collectWatchedFiles(
     assertReconciliationWithinDeadline(collection)
     const isControlFile = WATCHED_CONTROL_FILENAMES.has(entry.name)
     const entryPath = resolve(directory, entry.name)
+    if (isRootManagedAgentInstructionFile(discoveryRoot, entryPath)) {
+      continue
+    }
     if (entry.name.startsWith('.') && !isControlFile) {
       continue
     }
@@ -869,6 +885,9 @@ export async function watch(watchPath: string, debounce = 3, options: WatchOptio
       return false
     }
     const normalized = filename.toString().replaceAll('\\', '/').replace(/^\.\//, '')
+    if (MANAGED_AGENT_INSTRUCTION_FILENAMES.has(normalized)) {
+      return true
+    }
     const [topLevel] = normalized.split('/')
     return topLevel !== undefined && eventIgnoredDirectories.has(topLevel)
   })

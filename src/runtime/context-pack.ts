@@ -385,13 +385,141 @@ function claimLabel(className: ContextPackEvidenceClass): string {
   return className.replace(/_/g, ' ')
 }
 
+const ROUTER_OUTPUT_PROVENANCE_PATTERN = /\bRouterOutputs\s*\[\s*['"]([^'"]+)['"]\s*\]\s*\[\s*['"]([^'"]+)['"]\s*\]/gi
+
+function buildInputProvenanceClaims(nodes: readonly ContextPackNode[]): ContextPackClaim[] {
+  const seen = new Set<string>()
+  const claims: ContextPackClaim[] = []
+
+  for (const node of nodes) {
+    if (!node.snippet) {
+      continue
+    }
+
+    for (const match of node.snippet.matchAll(ROUTER_OUTPUT_PROVENANCE_PATTERN)) {
+      const router = match[1]
+      const procedure = match[2]
+      if (!router || !procedure) {
+        continue
+      }
+
+      const reference = `RouterOutputs["${router}"]["${procedure}"]`
+      const dedupeKey = `${node.source_file}\u0000${reference}`
+      if (seen.has(dedupeKey)) {
+        continue
+      }
+
+      seen.add(dedupeKey)
+      claims.push({
+        evidence_class: node.evidence_class ?? 'supporting',
+        text: `input provenance: ${node.label} consumes data typed as the ${reference} router output`,
+        node_labels: [node.label],
+      })
+    }
+  }
+
+  return claims
+}
+
+function buildStatusProjectionSplitClaims(nodes: readonly ContextPackNode[]): ContextPackClaim[] {
+  const projection = nodes.find((node) => (
+    node.snippet?.includes('pageIndicator(page.status)') === true
+    && node.snippet.includes('page.statusReports')
+  ))
+  const incidentRollup = nodes.find((node) => (
+    /e\.type\s*===\s*["']incident["']/.test(node.snippet ?? '')
+    && /barType\s*!==\s*["']manual["']/.test(node.snippet ?? '')
+  ))
+  if (!projection || !incidentRollup) {
+    return []
+  }
+
+  return [{
+    evidence_class: projection.evidence_class ?? 'supporting',
+    text: `public payload divergence: when barType is not manual, an open incident event can make page.status "error" in ${incidentRollup.source_file}; ${projection.source_file} builds unresolved incident entries only from page.statusReports, so an auto-created incident without a status report can yield an error indicator with an empty incidents list`,
+    node_labels: [projection.label, incidentRollup.label],
+  }]
+}
+
+function buildPublicStatusRuntimeProvenanceClaims(nodes: readonly ContextPackNode[]): ContextPackClaim[] {
+  const boundary = nodes.find((node) => (
+    /\btrpc\s*\.\s*statusPage\s*\.\s*get\s*\.\s*queryOptions\b/i.test(node.snippet ?? '')
+    && /\bto(?:Status|Summary|UnresolvedIncidents)\s*\(\s*data\b/.test(node.snippet ?? '')
+  ))
+  const publicRouter = nodes.find((node) => (
+    /(?:^|\/)packages\/api\/src\/router\/statusPage\.ts$/i.test(node.source_file.replaceAll('\\', '/'))
+    && /e\.type\s*===\s*["']incident["']/.test(node.snippet ?? '')
+  ))
+  const incidentAwarePublicRouter = publicRouter && (
+    /e\.type\s*===\s*["']incident["']/.test(publicRouter.snippet ?? '')
+    && /barType\s*!==\s*["']manual["']/.test(publicRouter.snippet ?? '')
+  )
+  // Prefer a source-range excerpt that proves a distinct status decision over
+  // a symbol-name-only fallback. This intentionally relies on the selected
+  // evidence, not a repository-specific path or an absence-of-query claim.
+  const semanticAlternate = nodes.find((node) => (
+    node !== publicRouter
+    && /overall\s*status/i.test(node.snippet ?? '')
+    && /status\s*report/i.test(node.snippet ?? '')
+    && /maintenance/i.test(node.snippet ?? '')
+  ))
+  const alternate = semanticAlternate ?? nodes.find((node) => (
+    node !== publicRouter && /(?:compute|derive|resolve).*status/i.test(node.label)
+  ))
+  if (!boundary || !publicRouter) {
+    return []
+  }
+
+  const alternateClaim = semanticAlternate && incidentAwarePublicRouter
+    ? `; ${publicRouter.source_file} treats an open incident event as "error" outside manual mode, while ${semanticAlternate.source_file} ${semanticAlternate.label} derives overall status from active status reports and maintenance`
+    : alternate
+      ? `; ${alternate.source_file} ${alternate.label} is a separate computation path`
+      : ''
+
+  return [{
+    evidence_class: boundary.evidence_class ?? 'supporting',
+    text: `public runtime provenance: ${boundary.source_file} ${boundary.label} fetches trpc.statusPage.get and passes that data to the public status-json serializers backed by ${publicRouter.source_file}${alternateClaim}`,
+    node_labels: [boundary.label, publicRouter.label, ...(alternate ? [alternate.label] : [])],
+  }]
+}
+
+function buildFailureHandoffClaims(nodes: readonly ContextPackNode[]): ContextPackClaim[] {
+  const detector = nodes.find((node) => (
+    /HTTPCheckerHandler/.test(node.label)
+    && /\bUpdateStatus\s*\(/.test(node.snippet ?? '')
+    && /\bStatus\s*:\s*["']error["']/.test(node.snippet ?? '')
+  ))
+  const handoff = nodes.find((node) => (
+    node.label === 'UpdateStatus()'
+    && /\bcloudtasks\.NewClient\s*\(/.test(node.snippet ?? '')
+    && /\.CreateTask\s*\(/.test(node.snippet ?? '')
+  ))
+  if (!detector || !handoff) {
+    return []
+  }
+
+  return [
+    {
+      evidence_class: detector.evidence_class ?? 'supporting',
+      text: `failure detection: ${detector.source_file} ${detector.label} sends Status "error" to UpdateStatus`,
+      node_labels: [detector.label],
+    },
+    {
+      evidence_class: handoff.evidence_class ?? 'supporting',
+      text: `cross-runtime handoff: ${handoff.source_file} ${handoff.label} enqueues the checker status update with Cloud Tasks`,
+      node_labels: [handoff.label],
+    },
+  ]
+}
+
 function buildClaims(
   taskContract: ContextPackTaskContract,
   labelsByEvidence: ReadonlyMap<ContextPackEvidenceClass, string[]>,
+  nodes: readonly ContextPackNode[],
 ): ContextPackClaim[] {
   const evidenceOrder = orderedEvidence(taskContract, labelsByEvidence.keys())
 
-  return evidenceOrder.flatMap((evidence_class) => {
+  const evidenceClaims = evidenceOrder.flatMap((evidence_class) => {
     const nodeLabels = labelsByEvidence.get(evidence_class) ?? []
     if (nodeLabels.length === 0) {
       return []
@@ -403,6 +531,14 @@ function buildClaims(
       node_labels: nodeLabels.slice(0, 3),
     }]
   })
+
+  return [
+    ...buildPublicStatusRuntimeProvenanceClaims(nodes),
+    ...buildStatusProjectionSplitClaims(nodes),
+    ...buildFailureHandoffClaims(nodes),
+    ...buildInputProvenanceClaims(nodes),
+    ...evidenceClaims,
+  ]
 }
 
 function buildExpandableRefs(
@@ -1264,7 +1400,7 @@ export function compileContextPack<
     nodes: renderedNodes.nodes,
     relationships,
     community_context: (input.community_context ?? []).filter((community) => selectedCommunities.has(community.id)),
-    claims: buildClaims(input.task_contract, selectedLabelsByEvidence),
+    claims: buildClaims(input.task_contract, selectedLabelsByEvidence, renderedNodes.nodes),
     expandable: buildExpandableRefs(input.task_contract, omittedNodes),
     coverage: coverageEntriesForCandidates(
       input.task_contract,

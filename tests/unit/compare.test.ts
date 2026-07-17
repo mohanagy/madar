@@ -4357,7 +4357,8 @@ describe('compare runtime', () => {
 
     const madarPrompt = readFileSync(result.reports[0]!.paths.madar_prompt, 'utf8')
     expect(madarPrompt).toContain('SessionManager')
-    expect(madarPrompt).toContain('export class SessionManager')
+    expect(madarPrompt).toContain('createSession(userId)')
+    expect(madarPrompt).toContain('return new SessionStore().write(userId)')
   })
 
   it('does not load madar snippets from paths outside the inferred project root', () => {

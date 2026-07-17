@@ -12,6 +12,7 @@ import {
   geminiInstall,
   installCopilotMcp,
   installSkill,
+  resolveCodexMcpConfigPath,
 } from '../../src/infrastructure/install.js'
 
 const PACKAGE_CLI_RELATIVE_PATH = join('dist', 'src', 'cli', 'bin.js')
@@ -48,7 +49,7 @@ const DEDICATED_COMMAND_ROWS: CompatibilityRow[] = [
     docArtifacts: ['`CLAUDE.md`', '`.claude/settings.json`', '`.mcp.json`'],
     verify: '`madar doctor` / `madar status`',
     surface: 'MCP tools, prompts, and resources via the selected tool profile.',
-    profile: '`core`, `full`, and `strict`; strict exposes core plus `context_pack` and `context_expand` for one bounded context-pack-first pass.',
+    profile: '`core`, `full`, and `strict`; strict exposes only `context_pack` and `context_expand` for one bounded context-pack-first pass.',
     limitation: 'The `UserPromptSubmit` hook only injects guidance for local code tasks.',
   },
   {
@@ -58,7 +59,7 @@ const DEDICATED_COMMAND_ROWS: CompatibilityRow[] = [
     docArtifacts: ['`.cursor/rules/madar.mdc`', '`.cursor/mcp.json`'],
     verify: '`madar doctor` / `madar status`',
     surface: 'MCP tools, prompts, and resources via the selected tool profile.',
-    profile: '`core`, `full`, and `strict`; strict exposes core plus `context_pack` and `context_expand` for one bounded context-pack-first pass.',
+    profile: '`core`, `full`, and `strict`; strict exposes only `context_pack` and `context_expand` for one bounded context-pack-first pass.',
     limitation: 'Cursor has no separate prompt hook; the rule file plus MCP config are the managed surface.',
   },
   {
@@ -68,7 +69,7 @@ const DEDICATED_COMMAND_ROWS: CompatibilityRow[] = [
     docArtifacts: ['`~/.gemini/skills/madar/SKILL.md`', '`GEMINI.md`', '`.gemini/settings.json` hook and MCP entry'],
     verify: '`madar doctor` / `madar status` for `.gemini/settings.json`, then inspect the installed home skill for slash-command availability.',
     surface: 'Home skill, local instructions, and an installed MCP server using the selected tool profile.',
-    profile: '`core`, `full`, and `strict`; strict exposes core plus `context_pack` and `context_expand` for one bounded context-pack-first pass.',
+    profile: '`core`, `full`, and `strict`; strict exposes only `context_pack` and `context_expand` for one bounded context-pack-first pass.',
     limitation: 'Use `madar prompt --provider gemini` when you need a one-shot export instead of live MCP.',
   },
   {
@@ -78,7 +79,7 @@ const DEDICATED_COMMAND_ROWS: CompatibilityRow[] = [
     docArtifacts: ['`~/.copilot/skills/madar/SKILL.md`', '`.vscode/mcp.json`'],
     verify: '`madar doctor` / `madar status` for `.vscode/mcp.json`, then inspect the installed home skill for slash-command availability.',
     surface: 'Home skill plus MCP tools, prompts, and resources via the selected tool profile.',
-    profile: '`core`, `full`, and `strict`; strict exposes core plus `context_pack` and `context_expand` for one bounded context-pack-first pass.',
+    profile: '`core`, `full`, and `strict`; strict exposes only `context_pack` and `context_expand` for one bounded context-pack-first pass.',
     limitation: 'The repo-local verifier checks the MCP wiring; the home skill is a separate install surface.',
   },
   {
@@ -95,11 +96,11 @@ const DEDICATED_COMMAND_ROWS: CompatibilityRow[] = [
     platform: 'codex',
     label: 'Codex CLI',
     command: '`madar codex install`',
-    docArtifacts: ['`AGENTS.md`', '`.codex/hooks.json`', '`.codex/madar-user-prompt-submit.cjs`', '`.codex/config.toml`'],
+    docArtifacts: ['`AGENTS.md`', '`.codex/hooks.json`', '`.codex/madar-user-prompt-submit.cjs`', '`~/.codex/config.toml`'],
     verify: '`madar doctor` / `madar status`',
-    surface: 'Installed instructions, a task-applicable `UserPromptSubmit` hook, and a local MCP entry for the Madar server.',
+    surface: 'Installed instructions, a task-applicable `UserPromptSubmit` hook, and a workspace-scoped MCP entry Codex CLI loads.',
     profile: 'Context-pack-first guidance with the strict MCP surface.',
-    limitation: '`madar doctor` / `madar status` validate on-disk wiring, not Codex live hook trust or MCP activation.',
+    limitation: '`madar doctor` / `madar status` validate on-disk wiring only, not Codex live hook trust or MCP activation.',
   },
   {
     platform: 'opencode',
@@ -446,7 +447,8 @@ describe('install compatibility artifacts', () => {
 
               if (row.platform === 'codex') {
                 agentsInstall(projectDir, 'codex')
-                expectArtifacts(projectDir, ['AGENTS.md', '.codex/hooks.json', '.codex/madar-user-prompt-submit.cjs', '.codex/config.toml'])
+                expectArtifacts(projectDir, ['AGENTS.md', '.codex/hooks.json', '.codex/madar-user-prompt-submit.cjs'])
+                expect(existsSync(resolveCodexMcpConfigPath())).toBe(true)
                 return
               }
 
