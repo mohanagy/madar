@@ -1521,6 +1521,7 @@ function scoredNodeFromGraphEntry(
     community: parseCommunityId(attributes.community),
     frameworkBoost: frameworkBoostForNode(frameworkProfile, nodeKind, frameworkRole, frameworkMetadataFromAttributes(attributes), questionLower),
     exactLabelMatch: false,
+    symbolMatchScore: 0,
     literalPathMatch: false,
     sourcePathMatch: false,
     evidenceTier: 0,
@@ -1602,6 +1603,7 @@ interface SeedCandidate {
   frameworkBoost: number
   seedScore: SeedScoreBreakdown
   exactLabelMatch: boolean
+  symbolMatchScore: number
   literalPathMatch: boolean
   sourcePathMatch: boolean
   evidenceTier: 0 | 1 | 2
@@ -1625,6 +1627,7 @@ interface ScoredNode {
   community: number | null
   frameworkBoost: number
   exactLabelMatch: boolean
+  symbolMatchScore: number
   literalPathMatch: boolean
   sourcePathMatch: boolean
   evidenceTier: 0 | 1 | 2
@@ -1654,6 +1657,7 @@ function scoredNodeFromGraph(graph: KnowledgeGraph, nodeId: string, score: numbe
     community: parseCommunityId(attributes.community),
     frameworkBoost: 0,
     exactLabelMatch: false,
+    symbolMatchScore: 0,
     literalPathMatch: false,
     sourcePathMatch: false,
     evidenceTier: 0,
@@ -2524,6 +2528,22 @@ function lowValueReportGenerationCompactNode(
   })
     || /\b(?:title|status|suggest|guard|auth|interceptor|refund|claim|cancel|signedurl|buildperspective|letsbuild|publish|delete)\b/.test(lower)
     || /(?:^|[.#])(?:generatefallbacktitle|generatetitle|getstatusmessage|claimqueuedpipelinerun|releasequeuedpipelineclaim|releaseunusedcreditreservation|generatebuildperspective|generatesignedurl|generateletsbuild|publishidea|getidea|listideas|deleteidea|suggestimprovements)[A-Za-z_$\w]*\(?\)?$/i.test(node.label)
+}
+
+function recoveredReportGenerationNoise(
+  question: string,
+  node: Pick<ScoredNode, 'label' | 'sourceFile' | 'nodeKind' | 'frameworkRole'>,
+): boolean {
+  if (!promptWantsRuntimePipeline(question) || !promptWantsReportGenerationCore(question)) {
+    return false
+  }
+
+  return lowValueReportGenerationCompactNode({
+    label: node.label,
+    source_file: node.sourceFile,
+    node_kind: node.nodeKind,
+    framework_role: node.frameworkRole,
+  })
 }
 
 function reportGenerationCompactApplies(result: RetrieveResult): boolean {
@@ -5406,6 +5426,7 @@ function retrieveContextPass(
           total: totalSeedScore,
         },
         exactLabelMatch: effectiveScore.labelExactScore > 0 || exactAnchorMatch,
+        symbolMatchScore: symbolMatch,
         literalPathMatch: mentionedPathMatch,
         sourcePathMatch: effectiveScore.sourcePathScore > 0 || mentionedPathMatch,
         // When the seed only made it in via metadata boost, give it at
@@ -5464,6 +5485,7 @@ function retrieveContextPass(
     community: candidate.community,
     frameworkBoost: candidate.frameworkBoost,
     exactLabelMatch: candidate.exactLabelMatch,
+    symbolMatchScore: candidate.symbolMatchScore,
     literalPathMatch: candidate.literalPathMatch,
     sourcePathMatch: candidate.sourcePathMatch,
     evidenceTier: candidate.evidenceTier,
@@ -5743,6 +5765,7 @@ function retrieveContextPass(
       community,
       frameworkBoost: 0,
       exactLabelMatch: symbolMatch >= 3,
+      symbolMatchScore: symbolMatch,
       literalPathMatch: pathMatch,
       sourcePathMatch: pathMatch,
       evidenceTier: hopDistances.get(nodeId) === 1 ? (hopEvidenceTiers.get(nodeId) ?? 0) : 0,
@@ -5834,7 +5857,13 @@ function retrieveContextPass(
   const inclusionOrder = expansionPolicy.include_peripheral
     ? frameworkOrderedCandidates
     : frameworkOrderedCandidates.filter((node) => node.relevanceBand !== 'peripheral')
-      let orderedCandidates = inclusionOrder
+      // Cross-domain conceptual recovery can intentionally keep disconnected
+      // evidence outside one slice. For a report-generation workflow, exclude
+      // known side actions from that preserved set so controller siblings such
+      // as list/status/health do not displace the execution path.
+      let orderedCandidates = preserveConceptualObligationOrder
+        ? inclusionOrder.filter((node) => !recoveredReportGenerationNoise(question, node))
+        : inclusionOrder
       let sliceMetadata: ContextPackSliceMetadata | undefined
       // A multi-obligation conceptual fallback can deliberately assemble
       // cross-service and cross-language owners that do not form one local
@@ -5849,6 +5878,7 @@ function retrieveContextPass(
             label: node.label,
             sourceFile: node.sourceFile,
             exactLabelMatch: node.exactLabelMatch,
+            symbolMatchScore: node.symbolMatchScore,
             sourcePathMatch: node.sourcePathMatch,
             literalPathMatch: node.literalPathMatch,
             score: node.score,
