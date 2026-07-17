@@ -412,7 +412,9 @@ function buildInputProvenanceClaims(nodes: readonly ContextPackNode[]): ContextP
       seen.add(dedupeKey)
       claims.push({
         evidence_class: node.evidence_class ?? 'supporting',
-        text: `input provenance: ${node.label} consumes data typed as the ${reference} router output`,
+        text: node.snippet_scope === 'source_file'
+          ? `input provenance: ${node.source_file} contains ${reference} router-output evidence`
+          : `input provenance: ${node.label} consumes data typed as the ${reference} router output`,
         node_labels: [node.label],
       })
     }

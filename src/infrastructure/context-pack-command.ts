@@ -742,10 +742,7 @@ function compactAnswerReadyNodesForPressure(pack: JsonRecord, trimmedFields: str
       delete node.file_type
       compacted = true
     }
-    // `line_number` remains the citation anchor in the answer-ready surface.
-    // The query-evidence excerpt metadata is useful while selecting evidence,
-    // but duplicates that anchor once the compact response has been formed.
-    for (const field of ['community', 'community_label', 'snippet_line_number', 'snippet_scope']) {
+    for (const field of ['community', 'community_label']) {
       if (Object.hasOwn(node, field)) {
         delete node[field]
         compacted = true
@@ -1809,8 +1806,12 @@ function serializedVerificationTargets(
   const existingTargets = asUnknownArray(answerability?.verification_targets)
     .map((target) => asJsonRecord(target))
     .filter((target): target is JsonRecord => target !== null)
-  if (existingTargets.length > 0) {
-    return existingTargets.slice(0, 2)
+  const relevantExistingTargets = existingTargets.filter((target) => {
+    const reason = typeof target.reason === 'string' ? target.reason.toLowerCase() : ''
+    return missingObligations.some((obligation) => reason.includes(obligation.toLowerCase()))
+  })
+  if (relevantExistingTargets.length > 0) {
+    return relevantExistingTargets.slice(0, 2)
   }
 
   const pack = asJsonRecord(payload.pack)
@@ -1891,9 +1892,13 @@ function reconcileSerializedQueryEvidence(
   ])]
   evidence.evidence_strength = evidenceStrength
 
-  const targets = serializedVerificationTargets(payload, missingObligations)
-  const canVerify = targets.length > 0
   const answerability = asJsonRecord(evidence.answerability) ?? {}
+  const priorRestricted = answerability.state === 'insufficient'
+    || answerability.broad_search_fallback === 'blocked'
+    || evidence.pack_confidence === 'low'
+    || evidence.agent_directive === 'explore_with_caution'
+  const targets = priorRestricted ? [] : serializedVerificationTargets(payload, missingObligations)
+  const canVerify = targets.length > 0
   answerability.state = canVerify ? 'verify_targets' : 'insufficient'
   answerability.answer_scope = canVerify ? 'partial' : 'none'
   answerability.caveats = [...new Set([
