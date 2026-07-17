@@ -3179,6 +3179,11 @@ describe('retrieve', () => {
             label: `${source.label}-${index}`,
           }
         }),
+        claims: [{
+          evidence_class: 'primary',
+          text: 'primary evidence: first compact node',
+          node_labels: [`${rawResult.matched_nodes[0]?.label}-0`],
+        }],
         relationships: Array.from({ length: 48 }, (_, index) => ({
           from_id: `from-${index}`,
           from: `From${index}`,
@@ -3245,6 +3250,10 @@ describe('retrieve', () => {
       expect(compactResult.relationships.length).toBeLessThan(oversizedResult.relationships.length)
       expect(compactResult.slice?.selected_paths.length).toBeLessThan(240)
       expect(compactResult.coverage).toEqual(rawResult.coverage)
+      expect(compactResult.claims).toHaveLength(1)
+      expect(compactResult.claims?.[0]).toEqual(expect.objectContaining({
+        text: 'primary evidence: first compact node',
+      }))
       for (const claim of compactResult.claims ?? []) {
         expect(claim.node_labels.every((label) => compactResult.matched_nodes.some((node) => node.label === label))).toBe(true)
       }
