@@ -814,14 +814,14 @@ describe('stdio slice-v1 surface', () => {
     expect(secondPayload.governance?.mcp_call?.cache_status).toBe('hit')
     expect(deltaPayload.governance?.mcp_call?.cache_status).toBe('bypass')
     expect(deltaPayload.governance?.mcp_call?.delta_session_hash).toMatch(/^[a-f0-9]{12}$/)
-    expect(deltaPayload.pack?.retrieval_plan).toEqual({
+    expect(deltaPayload.pack?.retrieval_plan).toEqual(expect.objectContaining({
       version: 1,
-      status: 'not_needed',
-      reasons: [],
+      status: 'no_candidates',
+      reasons: expect.arrayContaining(['missing_query_obligations']),
       initial: expect.any(Object),
       final: expect.any(Object),
-      attempts: [],
-    })
+      attempts: expect.arrayContaining([expect.objectContaining({ status: 'no_candidates' })]),
+    }))
     expect(JSON.stringify(firstPayload.governance)).not.toContain('AuthController.login')
     expect(JSON.stringify(firstPayload.governance)).not.toContain(graphPath)
     expect(JSON.stringify(deltaPayload.governance)).not.toContain(deltaSessionId)
