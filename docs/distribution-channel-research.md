@@ -31,7 +31,7 @@ Why this stays near-term:
 
 ### Later: broader directory/listing expansion and agent-ecosystem adapters
 
-- Broader directory/listing expansion beyond the official MCP Registry entry.
+- Broader directory/listing expansion beyond the prepared official MCP Registry publication flow.
 - Additional MCP directories or registry listings that point back to the existing local installers.
 - Marketplace-style listing pages for ecosystems that can consume local MCP or home-skill installs without changing the product boundary.
 - Lower-leverage agent ecosystems where Madar currently has only partial or skill-only support.

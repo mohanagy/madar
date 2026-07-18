@@ -14,6 +14,7 @@ interface PackageManifest {
 
 interface RegistryEnvironmentVariable {
   name?: string
+  description?: string
   default?: string
   choices?: string[]
 }
@@ -114,7 +115,9 @@ describe('MCP Registry metadata', () => {
       default: 'core',
     })
     expect(toolProfile?.choices).toEqual(expect.arrayContaining(['core', 'strict', 'full']))
+    expect(toolProfile?.description).toContain('strict bounded context_pack/context_expand')
     expect(publisherNotes?.source).toBe('docs/mcp-registry/server.json')
+    expect(publisherNotes?.notes).toContain('When an MCP host launches')
     expect(publisherNotes?.notes).toContain('Madar is the renamed continuation of `graphify-ts`')
     expect(publisherNotes?.notes).toContain('`madar serve --stdio --auto-refresh`')
     expect(publisherNotes?.notes).toContain('`@lubab/madar`')
@@ -190,6 +193,9 @@ describe('MCP Registry metadata', () => {
     expect(workflow).toContain('npm run registry:validate')
     expect(workflow).toContain('mcp-publisher login github-oidc')
     expect(workflow).toContain('mcp-publisher publish')
+    expect(workflow).toContain("publisher_version='1.8.0'")
+    expect(workflow).toContain('sha256sum --check -')
+    expect(workflow).toContain('Array.isArray(publishedResult)')
     expect(workflow).toContain('registry.modelcontextprotocol.io/v0.1/servers?search=')
     expect(workflow).toContain('entry.server?.name')
   })

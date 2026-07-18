@@ -37,7 +37,7 @@
             "environmentVariables": [
                 {
                     "name": "MADAR_TOOL_PROFILE",
-                    "description": "Optional MCP tool surface: core, strict (core plus context pack/expand), or full.",
+                    "description": "Optional MCP tool surface: core graph-navigation tools, strict bounded context_pack/context_expand tools, or full.",
                     "default": "core",
                     "choices": [
                         "core",
@@ -50,7 +50,7 @@
     ],
     "_meta": {
         "io.modelcontextprotocol.registry/publisher-provided": {
-            "notes": "Public npm package plus local auto-refresh MCP flow. The registry starts `madar serve --stdio --auto-refresh` in the active workspace, so Madar builds and refreshes its local graph without a static graph-path argument. Madar is the renamed continuation of `graphify-ts`; use `@lubab/madar` and `https://github.com/mohanagy/madar` as the canonical package and repository.",
+            "notes": "Public npm package plus local auto-refresh MCP flow. When an MCP host launches `madar serve --stdio --auto-refresh` with a workspace as its cwd, Madar builds and refreshes that workspace's local graph without a static graph-path argument. Madar is the renamed continuation of `graphify-ts`; use `@lubab/madar` and `https://github.com/mohanagy/madar` as the canonical package and repository.",
             "source": "docs/mcp-registry/server.json"
         }
     }

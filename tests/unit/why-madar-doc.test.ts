@@ -491,8 +491,9 @@ describe('public marketing copy honesty', () => {
       expect(lower).toContain('source custody')
     })
 
-    it('distinguishes the existing MCP Registry metadata from broader future directory expansion', () => {
-      expect(lower).toContain('mcp registry metadata already exists today')
+    it('distinguishes the release-gated MCP Registry publication flow from broader future directory expansion', () => {
+      expect(lower).toContain('oidc publishing workflow now exist')
+      expect(lower).toContain('matching npm release is live')
       expect(lower).toContain('broader directory/listing expansion')
     })
   })

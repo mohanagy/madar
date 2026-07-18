@@ -53,13 +53,16 @@ jobs:
 
           const packageManifest = JSON.parse(readFileSync('package.json', 'utf8'))
           const registryManifest = JSON.parse(readFileSync('docs/mcp-registry/server.json', 'utf8'))
-          const published = JSON.parse(execFileSync(
+          const publishedResult = JSON.parse(execFileSync(
             'npm',
             ['view', `${packageManifest.name}@${packageManifest.version}`, '--json'],
             { encoding: 'utf8' },
           ))
+          const published = Array.isArray(publishedResult)
+            ? publishedResult.find((entry) => entry.version === packageManifest.version)
+            : publishedResult
 
-          if (published.version !== packageManifest.version) {
+          if (!published || published.version !== packageManifest.version) {
             throw new Error(`npm did not return ${packageManifest.name}@${packageManifest.version}`)
           }
           if (published.mcpName !== registryManifest.name) {
@@ -70,9 +73,12 @@ jobs:
       - name: Install MCP Registry publisher
         run: |
           set -euo pipefail
+          publisher_version='1.8.0'
+          publisher_sha256='1370446bbe74d562608e8005a6ccce02d146a661fbd78674e11cc70b9618d6cf'
           curl --fail --location --retry 3 --retry-delay 2 \
-            "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" \
+            "https://github.com/modelcontextprotocol/registry/releases/download/v$publisher_version/mcp-publisher_linux_amd64.tar.gz" \
             -o mcp-publisher.tar.gz
+          printf '%s  %s\n' "$publisher_sha256" mcp-publisher.tar.gz | sha256sum --check -
           tar -xzf mcp-publisher.tar.gz mcp-publisher
           chmod +x mcp-publisher
 
