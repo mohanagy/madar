@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { handleStdioRequest } from '../../src/runtime/stdio-server.js'
 import * as retrieveRuntime from '../../src/runtime/retrieve.js'
+import { evaluateQueryEvidenceCoverage } from '../../src/runtime/retrieve/conceptual-fallback.js'
 import { estimateQueryTokens } from '../../src/runtime/serve.js'
 
 const tempRoots: string[] = []
@@ -183,6 +184,172 @@ describe('stdio slice-v1 surface', () => {
     )
 
     expect([...retrieveSnippetLines].some((line) => contextPackSnippetLines.has(line))).toBe(true)
+  })
+
+  it('reconciles fallback coverage receipts for verbose retrieve, verbose context_pack, and delta packs', async () => {
+    const graphPath = createGraphPath()
+    const question = 'Trace how a failed monitor check becomes an incident and triggers notifications.'
+    const retrieval = {
+      question,
+      token_count: 300,
+      matched_nodes: [
+        {
+          node_id: 'monitor-check',
+          label: 'checkMonitor()',
+          source_file: 'apps/checker/check-monitor.ts',
+          line_number: 10,
+          file_type: 'code',
+          snippet: 'if (monitorCheck.failed) await createIncident(monitor)',
+          match_score: 1,
+          relevance_band: 'direct' as const,
+          community: 0,
+          community_label: 'monitoring',
+        },
+        {
+          node_id: 'incident',
+          label: 'createIncident()',
+          source_file: 'apps/workflows/create-incident.ts',
+          line_number: 20,
+          file_type: 'code',
+          snippet: 'await notificationWorkflow.triggerNotifications(incident)',
+          match_score: 0.9,
+          relevance_band: 'direct' as const,
+          community: 1,
+          community_label: 'incident workflow',
+        },
+        {
+          node_id: 'notification',
+          label: 'triggerNotifications()',
+          source_file: 'apps/workflows/notifications.ts',
+          line_number: 30,
+          file_type: 'code',
+          snippet: 'await sendNotification({ type: "alert" })',
+          match_score: 0.8,
+          relevance_band: 'direct' as const,
+          community: 2,
+          community_label: 'notifications',
+        },
+      ],
+      relationships: [
+        { from_id: 'monitor-check', from: 'checkMonitor()', to_id: 'incident', to: 'createIncident()', relation: 'calls' },
+        { from_id: 'incident', from: 'createIncident()', to_id: 'notification', to: 'triggerNotifications()', relation: 'calls' },
+      ],
+      community_context: [
+        { id: 0, label: 'monitoring', node_count: 1 },
+        { id: 1, label: 'incident workflow', node_count: 1 },
+        { id: 2, label: 'notifications', node_count: 1 },
+      ],
+      graph_signals: { god_nodes: [], bridge_nodes: [] },
+      retrieval_strategy: 'default' as const,
+      retrieval_plan: {
+        version: 1 as const,
+        status: 'kept_initial' as const,
+        reasons: ['missing_query_obligations' as const],
+        initial: {
+          selected_nodes: 3,
+          selected_files: 3,
+          direct_matches: 3,
+          explicit_anchors: 3,
+          workflow_coherence: 1,
+          missing_required_evidence: 0,
+          missing_semantic_evidence: 0,
+          token_count: 300,
+        },
+        final: {
+          selected_nodes: 3,
+          selected_files: 3,
+          direct_matches: 3,
+          explicit_anchors: 3,
+          workflow_coherence: 1,
+          missing_required_evidence: 0,
+          missing_semantic_evidence: 0,
+          token_count: 300,
+        },
+        attempts: [],
+        query_obligations: {
+          total: 99,
+          initially_covered: 99,
+          finally_covered: 99,
+        },
+      },
+    }
+    const retrieveSpy = vi.spyOn(retrieveRuntime, 'retrieveContext').mockImplementation(() => retrieval as never)
+    const sessionState = {
+      logLevel: 'info' as const,
+      subscribedResourceUris: new Set<string>(),
+      resourceVersions: new Map<string, string>(),
+      resourceListSignature: null,
+      contextPromptSessions: new Map(),
+      contextPackHandles: new Map(),
+      contextPackCache: new Map(),
+      contextPackNodeIds: new Map(),
+    }
+    const parsePayload = (response: unknown): {
+      matched_nodes?: Array<{ label: string; source_file: string; snippet?: string | null }>
+      pack?: {
+        matched_nodes?: Array<{ label: string; source_file: string; snippet?: string | null }>
+        retrieval_plan?: { query_obligations?: { total?: number; finally_covered?: number } }
+      }
+      retrieval_plan?: { query_obligations?: { total?: number; finally_covered?: number } }
+    } => JSON.parse((((response as { result?: { content?: Array<{ text: string }> } }).result?.content) ?? [])[0]?.text ?? '')
+    const expectPlanMatchesNodes = (
+      payload: ReturnType<typeof parsePayload>,
+      nodes: Array<{ label: string; source_file: string; snippet?: string | null }> | undefined,
+      plan: { query_obligations?: { total?: number; finally_covered?: number } } | undefined,
+    ): void => {
+      const coverage = evaluateQueryEvidenceCoverage(question, nodes ?? [])
+      expect(plan?.query_obligations).toEqual(expect.objectContaining({
+        total: coverage.total,
+        finally_covered: coverage.covered,
+      }))
+    }
+
+    try {
+      const verboseRetrieveResponse = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 101,
+        method: 'tools/call',
+        params: {
+          name: 'retrieve',
+          arguments: { question, budget: 1000, verbose: true, top_n_with_snippet: 1, snippet_budget: 8 },
+        },
+      }))
+      const verboseContextPackResponse = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 102,
+        method: 'tools/call',
+        params: {
+          name: 'context_pack',
+          arguments: { prompt: question, budget: 1000, task: 'explain', verbose: true },
+        },
+      }, sessionState))
+      const firstDeltaResponse = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 103,
+        method: 'tools/call',
+        params: {
+          name: 'context_pack',
+          arguments: { prompt: question, budget: 1000, task: 'explain', delta_session_id: 'receipt-delta' },
+        },
+      }, sessionState))
+      const secondDeltaResponse = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 104,
+        method: 'tools/call',
+        params: {
+          name: 'context_pack',
+          arguments: { prompt: question, budget: 1000, task: 'explain', delta_session_id: 'receipt-delta' },
+        },
+      }, sessionState))
+
+      const verboseRetrievePayload = parsePayload(verboseRetrieveResponse)
+      const verboseContextPackPayload = parsePayload(verboseContextPackResponse)
+      const firstDeltaPayload = parsePayload(firstDeltaResponse)
+      const secondDeltaPayload = parsePayload(secondDeltaResponse)
+
+      expectPlanMatchesNodes(verboseRetrievePayload, verboseRetrievePayload.matched_nodes, verboseRetrievePayload.retrieval_plan)
+      expectPlanMatchesNodes(verboseContextPackPayload, verboseContextPackPayload.pack?.matched_nodes, verboseContextPackPayload.pack?.retrieval_plan)
+      expectPlanMatchesNodes(firstDeltaPayload, firstDeltaPayload.pack?.matched_nodes, firstDeltaPayload.pack?.retrieval_plan)
+      expectPlanMatchesNodes(secondDeltaPayload, secondDeltaPayload.pack?.matched_nodes, secondDeltaPayload.pack?.retrieval_plan)
+    } finally {
+      retrieveSpy.mockRestore()
+    }
   })
 
   it('honors explain context_pack budgets below 3000', async () => {

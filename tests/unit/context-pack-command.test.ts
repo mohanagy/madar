@@ -10,6 +10,7 @@ import { buildAnswerReadyPackSchema, runContextPackCommand, type ContextPackComm
 import { build } from '../../src/pipeline/build.js'
 import { assessMadarResponseEvidence } from '../../src/runtime/mcp-response-evidence.js'
 import { compactRetrieveResult, retrieveContext, type RetrieveResult } from '../../src/runtime/retrieve.js'
+import { evaluateQueryEvidenceCoverage } from '../../src/runtime/retrieve/conceptual-fallback.js'
 import { buildRetrievalEvidencePlanFromResult } from '../../src/runtime/retrieve/pipeline.js'
 import { estimateQueryTokens } from '../../src/runtime/serve.js'
 import { buildCrossLayerMonitorFlowFixture } from '../fixtures/cross-layer-monitor-flow.js'
@@ -1117,6 +1118,10 @@ describe('context-pack-command', () => {
         answerability?: { state?: string; broad_search_fallback?: string }
         agent_directive?: string
       }
+      pack?: {
+        matched_nodes?: Array<{ label: string; source_file: string; snippet?: string | null }>
+        retrieval_plan?: { query_obligations?: { total?: number; finally_covered?: number } }
+      }
     }
 
     expect(optimisticRetrieval.recovery?.final_state).toBe('ready')
@@ -1132,6 +1137,48 @@ describe('context-pack-command', () => {
       'query:obligation:2',
       'query:obligation:3',
     ]))
+  })
+
+  it('reconciles a retained retrieval-plan receipt to the serialized snippets', () => {
+    const prompt = 'Explain the exact end-to-end path from a failed HTTP monitor check to incident creation, notification delivery, and the public status-page result. Compare every distinct overall-status computation. Read-only: do not modify files.'
+    const retrieval = retrieveContext(buildCrossLayerMonitorFlowFixture(), {
+      question: prompt,
+      budget: 1_800,
+      taskKind: 'explain',
+      retrievalStrategy: 'slice-v1',
+    })
+    const compact = compactRetrieveResult(retrieval)
+    const omittedNodeIds = new Set(
+      compact.matched_nodes
+        .filter((node) => /apps\/workflows\/src\/checker\/(?:index|alerting|utils)\.ts$/.test(node.source_file))
+        .flatMap((node) => node.node_id ? [node.node_id] : []),
+    )
+    const { score: _score, ...evidence } = assessMadarResponseEvidence({
+      evidencePlan: buildRetrievalEvidencePlanFromResult(retrieval),
+      question: prompt,
+      recovery: retrieval.recovery,
+    })
+    const payload = buildAnswerReadyPackSchema({
+      schema_version: 1,
+      task: 'explain',
+      prompt,
+      budget: 5_000,
+      evidence,
+      pack: {
+        ...compact,
+        matched_nodes: compact.matched_nodes.filter((node) => !node.node_id || !omittedNodeIds.has(node.node_id)),
+      },
+    }, 5_000, retrieval.selection_diagnostics)
+    const pack = payload.pack as {
+      matched_nodes: Array<{ label: string; source_file: string; snippet?: string | null }>
+      retrieval_plan?: { query_obligations?: { total?: number; finally_covered?: number } }
+    }
+
+    const serializedCoverage = evaluateQueryEvidenceCoverage(prompt, pack.matched_nodes)
+    expect(pack.retrieval_plan?.query_obligations).toMatchObject({
+      total: serializedCoverage.total,
+      finally_covered: serializedCoverage.covered,
+    })
   })
 
   it('keeps a late unique evidence owner when the eight-node response cap would otherwise drop it', () => {
@@ -1177,8 +1224,12 @@ describe('context-pack-command', () => {
       },
     }, 5_000, retrieval.selection_diagnostics)
     const selectedNodes = (payload.pack as {
-      matched_nodes: Array<{ node_id?: string; snippet?: string }>
+      matched_nodes: Array<{ node_id?: string; label: string; source_file: string; snippet?: string }>
+      retrieval_plan?: { query_obligations?: { total?: number; finally_covered?: number } }
     }).matched_nodes
+    const retrievalPlan = (payload.pack as {
+      retrieval_plan?: { query_obligations?: { total?: number; finally_covered?: number } }
+    }).retrieval_plan
     const serializedEvidence = payload.evidence as {
       answerability?: { state?: string }
       agent_directive?: string
@@ -1190,6 +1241,11 @@ describe('context-pack-command', () => {
     expect(serializedEvidence).toMatchObject({
       answerability: { state: expect.stringMatching(/^ready(?:_with_caveat)?$/) },
       agent_directive: 'answer_from_pack',
+    })
+    const serializedCoverage = evaluateQueryEvidenceCoverage(prompt, selectedNodes)
+    expect(retrievalPlan?.query_obligations).toMatchObject({
+      total: serializedCoverage.total,
+      finally_covered: serializedCoverage.covered,
     })
   })
 
@@ -1482,9 +1538,39 @@ describe('context-pack-command', () => {
       taskIntent: 'explain',
       retrievalStrategy: 'slice-v1',
     })
+    const retrievalWithStalePlan = {
+      ...retrieval,
+      retrieval_plan: {
+        version: 1 as const,
+        status: 'kept_initial' as const,
+        reasons: ['missing_query_obligations' as const],
+        initial: {
+          selected_nodes: retrieval.matched_nodes.length,
+          selected_files: retrieval.matched_nodes.length,
+          direct_matches: retrieval.matched_nodes.length,
+          explicit_anchors: 0,
+          workflow_coherence: 1,
+          missing_required_evidence: 0,
+          missing_semantic_evidence: 0,
+          token_count: retrieval.token_count,
+        },
+        final: {
+          selected_nodes: retrieval.matched_nodes.length,
+          selected_files: retrieval.matched_nodes.length,
+          direct_matches: retrieval.matched_nodes.length,
+          explicit_anchors: 0,
+          workflow_coherence: 1,
+          missing_required_evidence: 0,
+          missing_semantic_evidence: 0,
+          token_count: retrieval.token_count,
+        },
+        attempts: [],
+        query_obligations: { total: 99, initially_covered: 99, finally_covered: 99 },
+      },
+    }
     const dependencies: ContextPackCommandDependencies = {
       loadGraph: vi.fn().mockReturnValue(graph),
-      retrieveContext: vi.fn().mockReturnValue(retrieval),
+      retrieveContext: vi.fn().mockReturnValue(retrievalWithStalePlan),
       compactRetrieveResult,
       analyzePrImpact: vi.fn(),
       compactPrImpactResult: vi.fn(),
@@ -1502,11 +1588,21 @@ describe('context-pack-command', () => {
       verbose: true,
     } as never, dependencies)
     const payload = JSON.parse(output) as {
-      pack?: { slice?: { selected_paths?: unknown[]; selected_path_count?: number } }
+      pack?: {
+        slice?: { selected_paths?: unknown[]; selected_path_count?: number }
+        matched_nodes?: Array<{ label: string; source_file: string; snippet?: string | null }>
+        retrieval_plan?: { query_obligations?: { total?: number; initially_covered?: number; finally_covered?: number } }
+      }
     }
 
     expect(payload.pack?.slice?.selected_paths?.length).toBeGreaterThan(0)
     expect(payload.pack?.slice?.selected_path_count).toBeUndefined()
+    const coverage = evaluateQueryEvidenceCoverage(retrieval.question, payload.pack?.matched_nodes ?? [])
+    expect(payload.pack?.retrieval_plan?.query_obligations).toEqual(expect.objectContaining({
+      total: coverage.total,
+      initially_covered: Math.min(99, coverage.total),
+      finally_covered: coverage.covered,
+    }))
   })
 
   it('deprioritizes helper-like matched nodes when runtime-generation explain falls back without an execution spine', async () => {

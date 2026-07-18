@@ -208,6 +208,8 @@ export interface ConceptualFallbackInput {
   question: string
   initialQuality: RetrievalQualitySnapshot
   selectedNodes: readonly ConceptualFallbackSelectedNode[]
+  /** Snippet-grounded coverage for the initial selected result, when available. */
+  initialQueryEvidence?: QueryEvidenceCoverage
   community?: number
   fileType?: string
 }
@@ -215,6 +217,8 @@ export interface ConceptualFallbackInput {
 export interface ConceptualFallbackProposal {
   plan: ContextPackRetrievalPlanDetail
   nodeBoosts: ReadonlyMap<string, number>
+  /** Snippet-grounded coverage used for the public retrieval-plan contract. */
+  initialQueryEvidence?: QueryEvidenceCoverage
   /** Internal prompt-obligation coverage used to decide whether recovery improved the result. */
   obligationMatches?: ReadonlyMap<string, ReadonlySet<number>>
   obligationCount?: number
@@ -599,6 +603,44 @@ export function evaluateQueryEvidenceCoverage(
     covered: coveredObligations.length,
     covered_obligations: coveredObligations,
     missing_obligations: missingObligations,
+  }
+}
+
+/**
+ * The retrieval plan is surfaced alongside the final selected snippets. Keep
+ * its public obligation summary tied to those snippets even when a later
+ * recovery or reranking stage replaces the conceptual-fallback result.
+ */
+export function reconcileRetrievalPlanQueryEvidence(
+  plan: ContextPackRetrievalPlanDetail | undefined,
+  question: string,
+  nodes: readonly QueryEvidenceNode[],
+): ContextPackRetrievalPlanDetail | undefined {
+  if (!plan?.query_obligations) {
+    return plan
+  }
+
+  const coverage = evaluateQueryEvidenceCoverage(question, nodes)
+  const initiallyCovered = Math.min(
+    plan.query_obligations.initially_covered,
+    coverage.total,
+  )
+  if (
+    plan.query_obligations.total === coverage.total
+    && plan.query_obligations.initially_covered === initiallyCovered
+    && plan.query_obligations.finally_covered === coverage.covered
+  ) {
+    return plan
+  }
+
+  return {
+    ...plan,
+    query_obligations: {
+      ...plan.query_obligations,
+      total: coverage.total,
+      initially_covered: initiallyCovered,
+      finally_covered: coverage.covered,
+    },
   }
 }
 
@@ -1591,9 +1633,10 @@ export function planConceptualFallback(
     anchor.id,
     new Set(anchor.obligationMatches.keys()),
   ]))
-  const initialObligationCoverage = new Set(
+  const initialAnchorObligationCoverage = new Set(
     [...selectedIds].flatMap((nodeId) => [...(obligationMatches.get(nodeId) ?? [])]),
   ).size
+  const initialObligationCoverage = input.initialQueryEvidence?.covered ?? initialAnchorObligationCoverage
   const obligationRecoveryNeeded = obligations.length >= 2
     && initialObligationCoverage < obligations.length
   const reasons: RetrievalFallbackReason[] = [
@@ -1812,9 +1855,10 @@ export function planConceptualFallback(
     plan: { ...basePlan, status: 'kept_initial', attempts: [attempt] },
     nodeBoosts: boundedBoosts,
     obligationMatches,
+    ...(input.initialQueryEvidence ? { initialQueryEvidence: input.initialQueryEvidence } : {}),
     obligationCount: obligations.length,
     preferredObligationAnchors: diversified.preferredByObligation,
-    initialObligationCoverage,
+    initialObligationCoverage: initialAnchorObligationCoverage,
   }
 }
 
@@ -1834,6 +1878,7 @@ export function finalizeConceptualFallbackPlan(
   initialFiles: ReadonlySet<string>,
   recoveredFiles: ReadonlySet<string>,
   recoveredNodeIds: ReadonlySet<string> = new Set(),
+  recoveredQueryEvidence?: QueryEvidenceCoverage,
 ): { plan: ContextPackRetrievalPlanDetail; useRecovered: boolean } {
   const attempt = proposal.plan.attempts[0]
   if (!attempt || proposal.nodeBoosts.size === 0) {
@@ -1854,22 +1899,38 @@ export function finalizeConceptualFallbackPlan(
   const recoveredObligationCoverage = new Set(
     [...recoveredNodeIds].flatMap((nodeId) => [...(proposal.obligationMatches?.get(nodeId) ?? [])]),
   ).size
+  const initialSnippetObligationCoverage = proposal.plan.query_obligations?.initially_covered
+    ?? proposal.initialObligationCoverage
+    ?? 0
+  const recoveredSnippetObligationCoverage = recoveredQueryEvidence?.covered ?? recoveredObligationCoverage
+  const initialSnippetObligations = proposal.initialQueryEvidence?.covered_obligations ?? []
+  const recoveredSnippetObligations = new Set(recoveredQueryEvidence?.covered_obligations ?? [])
+  const snippetEvidenceNonRegressing = recoveredQueryEvidence === undefined
+    || proposal.plan.query_obligations === undefined
+    || initialSnippetObligations.every((obligation) => recoveredSnippetObligations.has(obligation))
   const obligationCoverageImproved = recoveredObligationCoverage > (proposal.initialObligationCoverage ?? 0)
+  const snippetObligationCoverageImproved = recoveredSnippetObligationCoverage > initialSnippetObligationCoverage
   const recoveryGoalMet = recoveredEmptyResult
     || (proposal.plan.reasons.includes('missing_required_evidence') && requiredEvidenceImproved)
     || (proposal.plan.reasons.includes('missing_semantic_evidence') && semanticEvidenceImproved)
     || (proposal.plan.reasons.includes('low_workflow_coherence') && coherenceImproved)
     || (proposal.plan.reasons.includes('weak_anchors') && weakAnchorImproved)
     || obligationCoverageImproved
+    || snippetObligationCoverageImproved
   const obligationAdjustedQuality = qualityValue(recoveredQuality)
     // Cross-service and cross-language stages are often disconnected in a
     // static graph. Covering a previously missing prompt obligation must be
     // allowed to outweigh the resulting drop in local cluster coherence.
-    + Math.max(0, recoveredObligationCoverage - (proposal.initialObligationCoverage ?? 0)) * 1.5
+    + Math.max(
+      0,
+      recoveredObligationCoverage - (proposal.initialObligationCoverage ?? 0),
+      recoveredSnippetObligationCoverage - initialSnippetObligationCoverage,
+    ) * 1.5
   const obligationAwareNonRegression = obligationAdjustedQuality >= qualityValue(proposal.plan.initial) - 0.05
   const useRecovered = resultChanged
     && recoveryGoalMet
     && (nonRegressingQuality || obligationAwareNonRegression)
+    && snippetEvidenceNonRegressing
 
   const finalAttempt: RetrievalFallbackAttempt = {
     ...attempt,
@@ -1890,7 +1951,7 @@ export function finalizeConceptualFallbackPlan(
             query_obligations: {
               ...proposal.plan.query_obligations,
               finally_covered: useRecovered
-                ? recoveredObligationCoverage
+                ? recoveredSnippetObligationCoverage
                 : proposal.plan.query_obligations.initially_covered,
             },
           }

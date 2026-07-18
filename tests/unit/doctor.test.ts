@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 
 import { describe, expect, test } from 'vitest'
 
-import { agentsInstall, isMadarCodexMcpConfig, resolveCodexMcpConfigPath } from '../../src/infrastructure/install.js'
+import { agentsInstall, claudeInstall, isMadarCodexMcpConfig, resolveCodexMcpConfigPath } from '../../src/infrastructure/install.js'
 import { runDoctorCommand, runStatusCommand } from '../../src/infrastructure/doctor.js'
 import { generateGraph } from '../../src/infrastructure/generate.js'
 import { createWatcherState, writeWatcherState } from '../../src/infrastructure/watcher-state.js'
@@ -221,14 +221,8 @@ describe('doctor command', () => {
     withSandbox((sandboxDir) => {
       const graphPath = resolve(sandboxDir, 'out', 'graph.json')
       writeText(graphPath, '{"nodes":[],"edges":[]}\n')
-      writeText(resolve(sandboxDir, 'CLAUDE.md'), '## madar\n')
       writeText(resolve(sandboxDir, 'GEMINI.md'), '## madar\n')
       writeText(resolve(sandboxDir, '.cursor', 'rules', 'madar.mdc'), 'rule')
-      writeJson(resolve(sandboxDir, '.claude', 'settings.json'), {
-        hooks: {
-          PreToolUse: [{ matcher: 'Read', hooks: [{ type: 'command', command: 'out' }] }],
-        },
-      })
       writeJson(resolve(sandboxDir, '.gemini', 'settings.json'), {
         hooks: {
           BeforeTool: [{ matcher: 'read_file', hooks: [{ type: 'command', command: 'out' }] }],
@@ -241,9 +235,9 @@ describe('doctor command', () => {
           },
         },
       })
-      writeMcpServer(resolve(sandboxDir, '.mcp.json'), 'mcpServers')
       writeMcpServer(resolve(sandboxDir, '.cursor', 'mcp.json'), 'mcpServers')
       writeMcpServer(resolve(sandboxDir, '.vscode', 'mcp.json'), 'servers')
+      claudeInstall(sandboxDir)
 
       const doctor = runDoctorCommand({
         projectDir: sandboxDir,
@@ -263,6 +257,118 @@ describe('doctor command', () => {
 
       expect(status).toContain('[madar status] healthy')
       expect(status).toContain('next none')
+    })
+  })
+
+  test('recognizes the current Claude UserPromptSubmit hook as configured', () => {
+    withSandbox((sandboxDir) => {
+      writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
+      claudeInstall(sandboxDir)
+
+      const doctor = runDoctorCommand({
+        projectDir: sandboxDir,
+        now: Date.now(),
+      })
+
+      expect(doctor).toContain('claude: configured')
+      expect(doctor).toContain('rules=yes, hook=yes, mcp=ok')
+    })
+  })
+
+  test('recognizes an exact legacy Claude prompt hook script during upgrade', () => {
+    withSandbox((sandboxDir) => {
+      writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
+      claudeInstall(sandboxDir)
+      const scriptPath = resolve(sandboxDir, '.claude', 'madar-user-prompt-submit.cjs')
+      writeText(
+        scriptPath,
+        readFileSync(scriptPath, 'utf8').replace('// madar managed Claude UserPromptSubmit hook\n', ''),
+      )
+
+      const doctor = runDoctorCommand({
+        projectDir: sandboxDir,
+        now: Date.now(),
+      })
+
+      expect(doctor).toContain('claude: configured')
+      expect(doctor).toContain('rules=yes, hook=yes, mcp=ok')
+    })
+  })
+
+  test('reports Claude as partial when its managed prompt hook script is missing', () => {
+    withSandbox((sandboxDir) => {
+      writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
+      claudeInstall(sandboxDir)
+      rmSync(resolve(sandboxDir, '.claude', 'madar-user-prompt-submit.cjs'), { force: true })
+
+      const doctor = runDoctorCommand({
+        projectDir: sandboxDir,
+        now: Date.now(),
+      })
+
+      expect(doctor).toContain('claude: partial')
+      expect(doctor).toContain('rules=yes, hook=no, mcp=ok')
+    })
+  })
+
+  test('reports Claude as partial when its managed prompt hook script is corrupted', () => {
+    withSandbox((sandboxDir) => {
+      writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
+      claudeInstall(sandboxDir)
+      writeText(resolve(sandboxDir, '.claude', 'madar-user-prompt-submit.cjs'), 'console.log("corrupted")\n')
+
+      const doctor = runDoctorCommand({
+        projectDir: sandboxDir,
+        now: Date.now(),
+      })
+
+      expect(doctor).toContain('claude: partial')
+      expect(doctor).toContain('rules=yes, hook=no, mcp=ok')
+    })
+  })
+
+  test('reports Claude as partial when its managed hook identity has the wrong command', () => {
+    withSandbox((sandboxDir) => {
+      writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
+      claudeInstall(sandboxDir)
+      writeJson(resolve(sandboxDir, '.claude', 'settings.json'), {
+        hooks: {
+          UserPromptSubmit: [{
+            name: 'madar',
+            source: 'madar',
+            hooks: [{ type: 'command', command: 'node .claude/not-madar.cjs' }],
+          }],
+        },
+      })
+
+      const doctor = runDoctorCommand({
+        projectDir: sandboxDir,
+        now: Date.now(),
+      })
+
+      expect(doctor).toContain('claude: partial')
+      expect(doctor).toContain('rules=yes, hook=no, mcp=ok')
+    })
+  })
+
+  test('does not treat an arbitrary PreToolUse out reference as a Madar Claude hook', () => {
+    withSandbox((sandboxDir) => {
+      writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
+      writeText(resolve(sandboxDir, 'CLAUDE.md'), '## madar\n')
+      writeJson(resolve(sandboxDir, '.claude', 'settings.json'), {
+        hooks: {
+          PreToolUse: [{ matcher: 'Read', hooks: [{ type: 'command', command: 'echo out' }] }],
+        },
+      })
+      writeMcpServer(resolve(sandboxDir, '.mcp.json'), 'mcpServers')
+
+      const doctor = runDoctorCommand({
+        projectDir: sandboxDir,
+        now: Date.now(),
+      })
+
+      expect(doctor).toContain('claude: partial')
+      expect(doctor).toContain('rules=yes, hook=no, mcp=ok')
     })
   })
 

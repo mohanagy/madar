@@ -1849,6 +1849,39 @@ function queryEvidenceCoverageFromPayload(payload: JsonRecord) {
   return evaluateQueryEvidenceCoverage(question, nodes)
 }
 
+/** Keep the public fallback receipt aligned with the snippets serialized to the agent. */
+function reconcileSerializedRetrievalPlanQueryObligations(
+  payload: JsonRecord,
+  queryCoverage: ReturnType<typeof queryEvidenceCoverageFromPayload>,
+): boolean {
+  if (!queryCoverage) {
+    return false
+  }
+
+  const plan = asJsonRecord(asJsonRecord(payload.pack)?.retrieval_plan)
+  const obligations = asJsonRecord(plan?.query_obligations)
+  if (!obligations) {
+    return false
+  }
+
+  const initiallyCovered = typeof obligations.initially_covered === 'number'
+    ? Math.min(obligations.initially_covered, queryCoverage.total)
+    : 0
+
+  if (
+    obligations.total === queryCoverage.total
+    && obligations.initially_covered === initiallyCovered
+    && obligations.finally_covered === queryCoverage.covered
+  ) {
+    return false
+  }
+
+  obligations.total = queryCoverage.total
+  obligations.initially_covered = initiallyCovered
+  obligations.finally_covered = queryCoverage.covered
+  return true
+}
+
 function reconcileSerializedQueryEvidence(
   payload: JsonRecord,
   trimmedFields: string[],
@@ -1856,13 +1889,14 @@ function reconcileSerializedQueryEvidence(
 ): boolean {
   const evidence = asJsonRecord(payload.evidence)
   const queryCoverage = queryEvidenceCoverageFromPayload(payload)
+  const retrievalPlanReconciled = reconcileSerializedRetrievalPlanQueryObligations(payload, queryCoverage)
   if (!evidence || !queryCoverage || queryCoverage.missing_obligations.length === 0) {
-    return false
+    return retrievalPlanReconciled
   }
   const baselineMissing = new Set(baselineQueryCoverage?.missing_obligations ?? [])
   const lostDuringSerialization = queryCoverage.missing_obligations.some((obligation) => !baselineMissing.has(obligation))
   if (!lostDuringSerialization) {
-    return false
+    return retrievalPlanReconciled
   }
 
   const missingObligations = [...new Set(queryCoverage.missing_obligations)]

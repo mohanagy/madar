@@ -4,6 +4,7 @@ import { buildMadarPromptPack } from '../../infrastructure/compare.js'
 import { buildAnswerReadyPackSchema, buildExplainPackPayloadCore } from '../../infrastructure/context-pack-command.js'
 import type { TaskContextPlan } from '../../contracts/task-context-plan.js'
 import type { CompareRefsInput } from '../../infrastructure/time-travel.js'
+import type { ContextPackRetrievalPlan, ContextPackRetrievalPlanDetail } from '../../contracts/retrieval-plan.js'
 import type {
   ContextPackClaim,
   ContextPackCoverage,
@@ -44,6 +45,7 @@ import {
   type RetrieveResult,
   type RetrieveSnippetOptions,
 } from '../retrieve.js'
+import { reconcileRetrievalPlanQueryEvidence } from '../retrieve/conceptual-fallback.js'
 import { buildRetrievalEvidencePlan } from '../retrieve/pipeline.js'
 import { computeContextPackDiagnostics } from '../context-pack-diagnostics.js'
 import { collectPackNodeIds, computeDeltaContextPack } from '../context-pack-delta.js'
@@ -157,6 +159,22 @@ interface CachedExplainContextPackPayload extends Record<string, unknown> {
   prompt: string
   task_intent: TaskContextPlan['evidence']['recipe_id']
   expandable?: ContextPackExpandableRef[]
+}
+
+function reconcileSurfaceRetrievalPlan<T extends { label: string; source_file: string; snippet?: string | null }>(
+  plan: ContextPackRetrievalPlan | undefined,
+  question: string,
+  nodes: readonly T[],
+): ContextPackRetrievalPlan | undefined {
+  if (!plan || !('initial' in plan) || !('final' in plan)) {
+    return plan
+  }
+
+  return reconcileRetrievalPlanQueryEvidence(
+    plan as ContextPackRetrievalPlanDetail,
+    question,
+    nodes,
+  )
 }
 
 function isStoredContextPackHandle(value: unknown): value is StoredContextPackHandle {
@@ -1916,6 +1934,11 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
           return rest
         })
         const resolvedDeltaNodes = applyResolutionToNodes(deltaNodesStripped, deltaResult.delta_pack.relationships)
+        const deltaRetrievalPlan = reconcileSurfaceRetrievalPlan(
+          deltaResult.delta_pack.retrieval_plan,
+          prompt,
+          resolvedDeltaNodes.nodes,
+        )
         const deltaEvidence = buildMadarResponseEvidence({
           answerContract: deltaResult.delta_pack.answer_contract,
           coverage: deltaResult.delta_pack.coverage,
@@ -1942,8 +1965,8 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
             relationships: deltaResult.delta_pack.relationships,
             community_context: deltaResult.delta_pack.community_context,
             graph_signals: deltaResult.delta_pack.graph_signals ?? { god_nodes: [], bridge_nodes: [] },
-            ...(deltaResult.delta_pack.retrieval_plan
-              ? { retrieval_plan: deltaResult.delta_pack.retrieval_plan }
+            ...(deltaRetrievalPlan
+              ? { retrieval_plan: deltaRetrievalPlan }
               : {}),
           },
           diagnostics: computeContextPackDiagnostics(deltaResult.delta_pack, { skipBudgetUnderutilization: true }),
@@ -1977,9 +2000,15 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         return helpers.ok(id, helpers.textToolResult(JSON.stringify(deltaPayload)))
       }
       const resolvedNodes = applyResolutionToNodes(compactPack.matched_nodes, compactPack.relationships)
+      const retrievalPlan = reconcileSurfaceRetrievalPlan(
+        (explainPayload?.pack ?? compactPack).retrieval_plan,
+        prompt,
+        resolvedNodes.nodes,
+      )
       const serializedPack = {
         ...(explainPayload?.pack ?? compactPack),
         matched_nodes: resolvedNodes.nodes,
+        ...(retrievalPlan ? { retrieval_plan: retrievalPlan } : {}),
       }
       const evidence = evidenceForRetrievePayload({
         question: prompt,

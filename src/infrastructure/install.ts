@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, rmdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { getBuiltInSkillContent } from './install-skill-templates.js'
@@ -34,6 +34,7 @@ const MANAGED_HOOK_NAME = 'madar'
 const MANAGED_HOOK_SOURCE = 'madar'
 export const CLAUDE_PROMPT_HOOK_SCRIPT_RELATIVE_PATH = '.claude/madar-user-prompt-submit.cjs'
 const CLAUDE_PROMPT_HOOK_COMMAND = `node ${CLAUDE_PROMPT_HOOK_SCRIPT_RELATIVE_PATH}`
+const CLAUDE_PROMPT_HOOK_SCRIPT_MARKER = '// madar managed Claude UserPromptSubmit hook'
 export const CODEX_PROMPT_HOOK_SCRIPT_RELATIVE_PATH = '.codex/madar-user-prompt-submit.cjs'
 const CODEX_PROMPT_HOOK_SCRIPT_MARKER = '// madar managed Codex UserPromptSubmit hook'
 // SECURITY: Keep this command static. It resolves the project script at runtime so
@@ -288,6 +289,27 @@ export function isMadarCodexLegacyHook(hook: unknown): boolean {
 
 export function codexPromptHookCommand(): string {
   return CODEX_PROMPT_HOOK_COMMAND
+}
+
+export function claudePromptHookCommand(): string {
+  return CLAUDE_PROMPT_HOOK_COMMAND
+}
+
+export function isCurrentMadarClaudePromptHook(hook: unknown, expectedCommand: string): boolean {
+  if (!isRecord(hook) || !Array.isArray(hook.hooks)) {
+    return false
+  }
+
+  if (hook.name !== MANAGED_HOOK_NAME || hook.source !== MANAGED_HOOK_SOURCE || hook.hooks.length !== 1) {
+    return false
+  }
+
+  const entry = hook.hooks[0]
+  return isRecord(entry)
+    && entry.type === 'command'
+    && entry.command === expectedCommand
+    && Object.keys(entry).every((key) => key === 'type' || key === 'command')
+    && Object.keys(hook).every((key) => key === 'name' || key === 'source' || key === 'hooks')
 }
 
 export function isMadarCodexPromptHook(hook: unknown): boolean {
@@ -746,28 +768,65 @@ function settingsHook(profile?: InstallProfile): Record<string, unknown> {
     hooks: [
       {
         type: 'command',
-        command: CLAUDE_PROMPT_HOOK_COMMAND,
+        command: claudePromptHookCommand(),
       },
     ],
   })
 }
 
+function legacyClaudePromptHookScript(profile?: InstallProfile): string {
+  return buildPromptApplicabilityHookScript(
+    JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: 'UserPromptSubmit',
+        additionalContext: profile === 'strict' ? STRICT_CONTEXT_PACK_MESSAGE : RETRIEVE_FIRST_MESSAGE,
+      },
+    }),
+    'UserPromptSubmit',
+  )
+}
+
+function claudePromptHookScript(profile?: InstallProfile): string {
+  return `${CLAUDE_PROMPT_HOOK_SCRIPT_MARKER}\n${legacyClaudePromptHookScript(profile)}`
+}
+
+export function hasManagedClaudePromptHookScript(scriptPath: string): boolean {
+  try {
+    if (!lstatSync(scriptPath).isFile()) {
+      return false
+    }
+
+    const content = readFileSync(scriptPath, 'utf8')
+    return content === claudePromptHookScript()
+      || content === claudePromptHookScript('strict')
+      || content === legacyClaudePromptHookScript()
+      || content === legacyClaudePromptHookScript('strict')
+  } catch {
+    return false
+  }
+}
+
+function hasClaudePromptHookScriptPath(scriptPath: string): boolean {
+  try {
+    lstatSync(scriptPath)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function assertClaudePromptHookScriptIsSafe(projectDir: string): void {
+  const hookScriptPath = join(projectDir, CLAUDE_PROMPT_HOOK_SCRIPT_RELATIVE_PATH)
+  if (hasClaudePromptHookScriptPath(hookScriptPath) && !hasManagedClaudePromptHookScript(hookScriptPath)) {
+    throw new Error(`Refusing to overwrite user-managed Claude hook script at ${hookScriptPath}`)
+  }
+}
+
 function writeClaudePromptHookScript(projectDir: string, profile?: InstallProfile): void {
   const hookScriptPath = join(projectDir, CLAUDE_PROMPT_HOOK_SCRIPT_RELATIVE_PATH)
+  assertClaudePromptHookScriptIsSafe(projectDir)
   mkdirSync(dirname(hookScriptPath), { recursive: true })
-  writeFileSync(
-    hookScriptPath,
-    buildPromptApplicabilityHookScript(
-      JSON.stringify({
-        hookSpecificOutput: {
-          hookEventName: 'UserPromptSubmit',
-          additionalContext: profile === 'strict' ? STRICT_CONTEXT_PACK_MESSAGE : RETRIEVE_FIRST_MESSAGE,
-        },
-      }),
-      'UserPromptSubmit',
-    ),
-    'utf8',
-  )
+  writeFileSync(hookScriptPath, claudePromptHookScript(profile), 'utf8')
 }
 
 function codexPromptHookScript(): string {
@@ -974,6 +1033,22 @@ function readJsoncObject(filePath: string): Record<string, unknown> {
 function writeJson(filePath: string, value: Record<string, unknown>): void {
   ensureParentDirectory(filePath)
   writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
+}
+
+function removeEmptyHookConfigEntries(config: Record<string, unknown>): void {
+  if (!isRecord(config.hooks)) {
+    return
+  }
+
+  const hooks = config.hooks
+  for (const key of ['UserPromptSubmit', 'PreToolUse', 'BeforeTool']) {
+    if (Array.isArray(hooks[key]) && hooks[key].length === 0) {
+      delete hooks[key]
+    }
+  }
+  if (Object.keys(hooks).length === 0) {
+    delete config.hooks
+  }
 }
 
 export function resolveOpencodeConfigPath(projectDir: string): string {
@@ -1810,7 +1885,11 @@ function uninstallMcpServer(projectDir: string, target: McpConfigTarget): string
     return undefined
   }
 
-  delete (mcpConfig[serversKey] as Record<string, unknown>)[SKILL_SLUG]
+  const servers = mcpConfig[serversKey] as Record<string, unknown>
+  delete servers[SKILL_SLUG]
+  if (Object.keys(servers).length === 0) {
+    delete mcpConfig[serversKey]
+  }
   writeJson(mcpJsonPath, mcpConfig)
   return `${MCP_CONFIG_PATHS[target]} -> MCP server removed`
 }
@@ -1825,23 +1904,34 @@ function installClaudeHook(projectDir: string, profile?: InstallProfile): string
   writeClaudePromptHookScript(projectDir, profile)
 
   const existingIndex = userPromptSubmit.findIndex((hook) => isMadarProjectHook(hook))
+  const filteredPreToolUse = preToolUse.filter((hook) => !isMadarProjectHook(hook, 'Glob|Grep|Bash|Agent|Read'))
   if (existingIndex >= 0) {
     userPromptSubmit[existingIndex] = settingsHook(profile)
-    hooks.PreToolUse = preToolUse.filter((hook) => !isMadarProjectHook(hook, 'Glob|Grep|Bash|Agent|Read'))
+    if (filteredPreToolUse.length === 0) {
+      delete hooks.PreToolUse
+    } else {
+      hooks.PreToolUse = filteredPreToolUse
+    }
     writeJson(settingsPath, settings)
     return '.claude/settings.json -> hook updated'
   }
 
   userPromptSubmit.push(settingsHook(profile))
-  hooks.PreToolUse = preToolUse.filter((hook) => !isMadarProjectHook(hook, 'Glob|Grep|Bash|Agent|Read'))
+  if (filteredPreToolUse.length === 0) {
+    delete hooks.PreToolUse
+  } else {
+    hooks.PreToolUse = filteredPreToolUse
+  }
   writeJson(settingsPath, settings)
   return '.claude/settings.json -> UserPromptSubmit hook registered'
 }
 
 function uninstallClaudeHook(projectDir: string): string | undefined {
   const hookScriptPath = join(projectDir, CLAUDE_PROMPT_HOOK_SCRIPT_RELATIVE_PATH)
-  const removedHookScript = existsSync(hookScriptPath)
-  rmSync(hookScriptPath, { force: true })
+  const removedHookScript = hasManagedClaudePromptHookScript(hookScriptPath)
+  if (removedHookScript) {
+    rmSync(hookScriptPath, { force: true })
+  }
 
   const settingsPath = join(projectDir, '.claude', 'settings.json')
   if (!existsSync(settingsPath)) {
@@ -1859,8 +1949,17 @@ function uninstallClaudeHook(projectDir: string): string | undefined {
     return removedHookScript ? `${CLAUDE_PROMPT_HOOK_SCRIPT_RELATIVE_PATH} -> hook script removed` : undefined
   }
 
-  hooks.UserPromptSubmit = filteredUserPromptSubmit
-  hooks.PreToolUse = filteredPreToolUse
+  if (filteredUserPromptSubmit.length === 0) {
+    delete hooks.UserPromptSubmit
+  } else {
+    hooks.UserPromptSubmit = filteredUserPromptSubmit
+  }
+  if (filteredPreToolUse.length === 0) {
+    delete hooks.PreToolUse
+  } else {
+    hooks.PreToolUse = filteredPreToolUse
+  }
+  removeEmptyHookConfigEntries(settings)
   writeJson(settingsPath, settings)
   return '.claude/settings.json -> UserPromptSubmit hook removed'
 }
@@ -1903,7 +2002,12 @@ function uninstallGeminiHook(projectDir: string): string | undefined {
     return undefined
   }
 
-  hooks.BeforeTool = filtered
+  if (filtered.length === 0) {
+    delete hooks.BeforeTool
+  } else {
+    hooks.BeforeTool = filtered
+  }
+  removeEmptyHookConfigEntries(settings)
   writeJson(settingsPath, settings)
   return '.gemini/settings.json -> BeforeTool hook removed'
 }
@@ -2534,6 +2638,7 @@ function uninstallCodexHook(projectDir: string): string | undefined {
       hooks.PreToolUse = filteredPreToolUse
     }
   }
+  removeEmptyHookConfigEntries(hooksConfig)
   writeJson(hooksPath, hooksConfig)
 
   return removedModernHooks
@@ -2838,6 +2943,7 @@ export function cursorUninstall(projectDir = '.'): string {
 
 export function claudeInstall(projectDir = '.', options: McpInstallOptions = {}): string {
   const resolvedProjectDir = resolve(projectDir)
+  assertClaudePromptHookScriptIsSafe(resolvedProjectDir)
   const messages = [
     writeSection(join(resolvedProjectDir, 'CLAUDE.md'), claudeMdSection(options.profile)),
     installClaudeHook(resolvedProjectDir, options.profile),

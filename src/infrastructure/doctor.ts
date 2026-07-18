@@ -4,11 +4,16 @@ import { join, resolve } from 'node:path'
 import type { IndexingManifestV1 } from '../contracts/indexing.js'
 import { watcherStateBlocksGraphReads, type WatcherStateV1 } from '../contracts/watcher-state.js'
 import {
+  CLAUDE_PROMPT_HOOK_SCRIPT_RELATIVE_PATH,
   CODEX_PROMPT_HOOK_SCRIPT_RELATIVE_PATH,
   OPENCODE_MCP_SERVER_NAME,
   OPENCODE_PLUGIN_RELATIVE_PATH,
+  claudePromptHookCommand,
   codexPromptHookCommand,
+  hasManagedClaudePromptHookScript,
   hasManagedCodexPromptHookScript,
+  isCurrentMadarClaudePromptHook,
+  isMadarProjectHook,
   isMadarCodexMcpConfig,
   isMadarCodexLegacyHook,
   isMadarCodexPromptHook,
@@ -205,6 +210,28 @@ function findHookEntry(settingsPath: string, hookName: 'PreToolUse' | 'BeforeToo
   }
 
   return hookEntries.some(containsOutPathReference)
+}
+
+function findClaudeHookEntry(settingsPath: string, hookScriptPath: string): boolean {
+  const settings = readJsonObject(settingsPath)
+  if (!settings) {
+    return false
+  }
+
+  const hooks = settings.hooks
+  if (!isRecord(hooks)) {
+    return false
+  }
+
+  const userPromptSubmit = hooks.UserPromptSubmit
+  const currentPromptHook = Array.isArray(userPromptSubmit)
+    && userPromptSubmit.some((hook) => isCurrentMadarClaudePromptHook(hook, claudePromptHookCommand()))
+    && hasManagedClaudePromptHookScript(hookScriptPath)
+  const legacyPreToolUse = hooks.PreToolUse
+  const legacyHook = Array.isArray(legacyPreToolUse)
+    && legacyPreToolUse.some((hook) => isMadarProjectHook(hook, 'Glob|Grep|Bash|Agent|Read'))
+
+  return currentPromptHook || legacyHook
 }
 
 function findCodexHookEntry(settingsPath: string, expectedCommand: string): boolean {
@@ -561,7 +588,10 @@ export function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorRep
   const copilotMcp = readMcpCheck('copilot', resolve(projectDir, '.vscode', 'mcp.json'), 'servers')
 
   const claudeRuleConfigured = hasSectionMarker(resolve(projectDir, 'CLAUDE.md'))
-  const claudeHookConfigured = findHookEntry(resolve(projectDir, '.claude', 'settings.json'), 'PreToolUse')
+  const claudeHookConfigured = findClaudeHookEntry(
+    resolve(projectDir, '.claude', 'settings.json'),
+    resolve(projectDir, CLAUDE_PROMPT_HOOK_SCRIPT_RELATIVE_PATH),
+  )
   const claudeMcpConfigured = claudeMcp.status === 'ok'
 
   const cursorRuleConfigured = existsSync(resolve(projectDir, '.cursor', 'rules', 'madar.mdc'))
