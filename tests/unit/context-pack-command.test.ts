@@ -1591,7 +1591,7 @@ describe('context-pack-command', () => {
       pack?: {
         slice?: { selected_paths?: unknown[]; selected_path_count?: number }
         matched_nodes?: Array<{ label: string; source_file: string; snippet?: string | null }>
-        retrieval_plan?: { query_obligations?: { total?: number; finally_covered?: number } }
+        retrieval_plan?: { query_obligations?: { total?: number; initially_covered?: number; finally_covered?: number } }
       }
     }
 
@@ -1600,6 +1600,7 @@ describe('context-pack-command', () => {
     const coverage = evaluateQueryEvidenceCoverage(retrieval.question, payload.pack?.matched_nodes ?? [])
     expect(payload.pack?.retrieval_plan?.query_obligations).toEqual(expect.objectContaining({
       total: coverage.total,
+      initially_covered: Math.min(99, coverage.total),
       finally_covered: coverage.covered,
     }))
   })

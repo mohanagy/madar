@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, rmdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { getBuiltInSkillContent } from './install-skill-templates.js'
@@ -791,20 +791,33 @@ function claudePromptHookScript(profile?: InstallProfile): string {
 }
 
 export function hasManagedClaudePromptHookScript(scriptPath: string): boolean {
-  if (!existsSync(scriptPath)) {
+  try {
+    if (!lstatSync(scriptPath).isFile()) {
+      return false
+    }
+
+    const content = readFileSync(scriptPath, 'utf8')
+    return content === claudePromptHookScript()
+      || content === claudePromptHookScript('strict')
+      || content === legacyClaudePromptHookScript()
+      || content === legacyClaudePromptHookScript('strict')
+  } catch {
     return false
   }
+}
 
-  const content = readFileSync(scriptPath, 'utf8')
-  return content === claudePromptHookScript()
-    || content === claudePromptHookScript('strict')
-    || content === legacyClaudePromptHookScript()
-    || content === legacyClaudePromptHookScript('strict')
+function hasClaudePromptHookScriptPath(scriptPath: string): boolean {
+  try {
+    lstatSync(scriptPath)
+    return true
+  } catch {
+    return false
+  }
 }
 
 function assertClaudePromptHookScriptIsSafe(projectDir: string): void {
   const hookScriptPath = join(projectDir, CLAUDE_PROMPT_HOOK_SCRIPT_RELATIVE_PATH)
-  if (existsSync(hookScriptPath) && !hasManagedClaudePromptHookScript(hookScriptPath)) {
+  if (hasClaudePromptHookScriptPath(hookScriptPath) && !hasManagedClaudePromptHookScript(hookScriptPath)) {
     throw new Error(`Refusing to overwrite user-managed Claude hook script at ${hookScriptPath}`)
   }
 }

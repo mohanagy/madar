@@ -580,6 +580,7 @@ describe('conceptual-query fallback planner', () => {
       const coverage = evaluateQueryEvidenceCoverage(result.question, representation.matched_nodes)
       expect(representation.retrieval_plan?.query_obligations).toEqual(expect.objectContaining({
         total: coverage.total,
+        initially_covered: Math.min(99, coverage.total),
         finally_covered: coverage.covered,
       }))
     }

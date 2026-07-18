@@ -1864,14 +1864,20 @@ function reconcileSerializedRetrievalPlanQueryObligations(
     return false
   }
 
+  const initiallyCovered = typeof obligations.initially_covered === 'number'
+    ? Math.min(obligations.initially_covered, queryCoverage.total)
+    : 0
+
   if (
     obligations.total === queryCoverage.total
+    && obligations.initially_covered === initiallyCovered
     && obligations.finally_covered === queryCoverage.covered
   ) {
     return false
   }
 
   obligations.total = queryCoverage.total
+  obligations.initially_covered = initiallyCovered
   obligations.finally_covered = queryCoverage.covered
   return true
 }
@@ -1890,7 +1896,7 @@ function reconcileSerializedQueryEvidence(
   const baselineMissing = new Set(baselineQueryCoverage?.missing_obligations ?? [])
   const lostDuringSerialization = queryCoverage.missing_obligations.some((obligation) => !baselineMissing.has(obligation))
   if (!lostDuringSerialization) {
-    return false
+    return retrievalPlanReconciled
   }
 
   const missingObligations = [...new Set(queryCoverage.missing_obligations)]

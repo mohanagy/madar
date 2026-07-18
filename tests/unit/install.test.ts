@@ -16,6 +16,7 @@ import {
   defaultInstallPlatform,
   geminiInstall,
   geminiUninstall,
+  hasManagedClaudePromptHookScript,
   installCopilotMcp,
   installSkill,
   isAgentPlatform,
@@ -838,6 +839,18 @@ describe('install helpers', () => {
       expect(readFileSync(hookScriptPath, 'utf8')).toBe(userScript)
       expect(existsSync(join(projectDir, 'CLAUDE.md'))).toBe(false)
       expect(existsSync(join(projectDir, '.claude', 'settings.json'))).toBe(false)
+    })
+  })
+
+  it('treats a non-file Claude prompt hook path as user-managed without crashing', () => {
+    withTempDir((projectDir) => {
+      const hookScriptPath = join(projectDir, '.claude', 'madar-user-prompt-submit.cjs')
+      mkdirSync(hookScriptPath, { recursive: true })
+
+      expect(hasManagedClaudePromptHookScript(hookScriptPath)).toBe(false)
+      expect(() => claudeInstall(projectDir)).toThrow(/Refusing to overwrite user-managed Claude hook script/)
+      expect(() => claudeUninstall(projectDir)).not.toThrow()
+      expect(existsSync(hookScriptPath)).toBe(true)
     })
   })
 

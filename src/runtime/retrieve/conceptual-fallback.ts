@@ -621,8 +621,13 @@ export function reconcileRetrievalPlanQueryEvidence(
   }
 
   const coverage = evaluateQueryEvidenceCoverage(question, nodes)
+  const initiallyCovered = Math.min(
+    plan.query_obligations.initially_covered,
+    coverage.total,
+  )
   if (
     plan.query_obligations.total === coverage.total
+    && plan.query_obligations.initially_covered === initiallyCovered
     && plan.query_obligations.finally_covered === coverage.covered
   ) {
     return plan
@@ -633,6 +638,7 @@ export function reconcileRetrievalPlanQueryEvidence(
     query_obligations: {
       ...plan.query_obligations,
       total: coverage.total,
+      initially_covered: initiallyCovered,
       finally_covered: coverage.covered,
     },
   }
