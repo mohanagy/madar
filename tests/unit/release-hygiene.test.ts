@@ -47,6 +47,7 @@ function withReleaseReadmeFixture(
         {
           name: '@lubab/madar',
           version,
+          mcpName: 'io.github.mohanagy/madar',
           repository: {
             type: 'git',
             url: 'git+https://github.com/mohanagy/madar.git',

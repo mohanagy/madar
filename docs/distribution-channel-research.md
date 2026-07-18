@@ -7,7 +7,7 @@
 - Claude Code, Cursor, GitHub Copilot CLI, and Gemini CLI already have first-party install flows for local MCP or paired home-skill guidance.
 - Codex CLI, Aider, and OpenCode already have context-pack-first install flows tied to repo-local instructions, hooks, or plugin wiring.
 - The compatibility guide already distinguishes dedicated project installs from home-skill installs and tells users how to verify each path.
-- Public MCP Registry metadata already exists today for the local server package, but it is metadata that points back to the same local-first install and runtime flow.
+- A versioned MCP Registry manifest and OIDC publishing workflow now exist for the local server package; each public entry is published only after its matching npm release is live and points back to the same local-first runtime flow.
 
 That means Madar already covers the main “agent is running locally against a repo I trust” path without needing a new marketplace, hosted relay, or raw-source ingestion service.
 
@@ -31,7 +31,7 @@ Why this stays near-term:
 
 ### Later: broader directory/listing expansion and agent-ecosystem adapters
 
-- Broader directory/listing expansion beyond the existing MCP Registry metadata.
+- Broader directory/listing expansion beyond the official MCP Registry entry.
 - Additional MCP directories or registry listings that point back to the existing local installers.
 - Marketplace-style listing pages for ecosystems that can consume local MCP or home-skill installs without changing the product boundary.
 - Lower-leverage agent ecosystems where Madar currently has only partial or skill-only support.

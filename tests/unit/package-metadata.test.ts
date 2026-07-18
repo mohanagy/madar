@@ -10,6 +10,7 @@ interface PackageManifest {
   devDependencies?: Record<string, string>
   keywords?: string[]
   license?: string
+  mcpName?: string
   name?: string
   overrides?: Record<string, string>
   peerDependencies?: Record<string, string>
@@ -132,6 +133,7 @@ describe('package metadata', () => {
     const manifest = loadPackageManifest()
 
     expect(manifest.name).toBe('@lubab/madar')
+    expect(manifest.mcpName).toBe('io.github.mohanagy/madar')
     expect(manifest.bin).toEqual({
       madar: 'dist/src/cli/bin.js',
     })

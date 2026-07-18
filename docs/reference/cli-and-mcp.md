@@ -35,15 +35,17 @@ Aider and OpenCode are intentionally context-pack-first: run `madar generate .`,
 
 Codex is intentionally context-pack-first too: run `madar generate .`, install with `madar codex install`, and start broad codebase work with `madar pack "<task>" --task explain` before raw file search. Codex CLI loads MCP entries from `$CODEX_HOME/config.toml` (normally `~/.codex/config.toml`), so the install writes the Madar-owned AGENTS.md section, `.codex/hooks.json`, `.codex/madar-user-prompt-submit.cjs`, and a workspace-scoped marker-owned strict-profile MCP block there. The block has a unique server name, pins `cwd` to the installed workspace (including linked worktrees), and includes `startup_timeout_sec = 180` plus `tool_timeout_sec = 60`. Re-run the install after upgrading to migrate an obsolete project-local Madar block; user-managed declarations and other workspace registrations remain untouched. Its `UserPromptSubmit` hook provides model-visible guidance only for local code tasks; it is guidance, not enforcement. Enable it only in a trusted repository, restart or start a new Codex session, use `/hooks` to review and trust the project hook, then verify the server through `/mcp` or `codex mcp list`. `madar doctor` and `madar status` validate on-disk wiring only, not live Codex trust or activation. To remove the profile, run `madar codex uninstall`; it removes only Madar-owned AGENTS, hook, script, and this workspace's marked user-config block while preserving unrelated content.
 
-## MCP Registry metadata
+## MCP Registry metadata and publication
 
-The checked-in public registry manifest lives at [`docs/mcp-registry/server.json`](../mcp-registry/server.json). Validate it locally with:
+The checked-in registry manifest lives at [`docs/mcp-registry/server.json`](../mcp-registry/server.json). Validate it locally with:
 
 ```bash
 npm run registry:validate
 ```
 
 The official MCP Registry hosts metadata, not Madar code or your local graph artifact. Its entry starts `npx @lubab/madar serve --stdio --auto-refresh` from the active workspace: Madar creates the graph when needed, then refreshes it after local changes. Do not add a fixed `out/graph.json` argument to that registry command, because it would become stale and would not follow a linked Git worktree's isolated artifact directory. Start or reconnect the MCP server from each worktree the agent enters. Generated agent MCP configs use the installed `madar` command with the same `serve --stdio --auto-refresh` flow rather than a version-pinned `npx` launcher or an absolute graph path.
+
+Publishing is intentionally a post-npm, release-tag action: after the matching `@lubab/madar` version is public, run **Publish MCP Registry metadata** from GitHub Actions with its `vX.Y.Z` tag. The workflow verifies the checked-out tag, the published npm package's `mcpName`, and this manifest; it then authenticates with GitHub OIDC, publishes `io.github.mohanagy/madar`, and checks the Registry API. This prevents a registry entry from pointing at an npm version that has not been published yet.
 
 If you still discover older `graphify-ts` links or listings, Madar is the current project name. Use `https://github.com/mohanagy/madar` and `@lubab/madar` as the canonical repository and package surfaces.
 

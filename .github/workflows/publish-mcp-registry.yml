@@ -1,0 +1,105 @@
+name: Publish MCP Registry metadata
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Exact released tag whose npm package is already public (for example, v0.31.5)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out released tag
+        uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ inputs.release_tag }}
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify release tag and registry manifest
+        env:
+          REQUESTED_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          expected_tag="v$version"
+          checked_out_tag="$(git describe --exact-match --tags HEAD)"
+          test "$REQUESTED_TAG" = "$expected_tag"
+          test "$checked_out_tag" = "$expected_tag"
+          npm run registry:validate
+
+      - name: Verify the npm package is public and registry-ready
+        run: |
+          node --input-type=module <<'NODE'
+          import { execFileSync } from 'node:child_process'
+          import { readFileSync } from 'node:fs'
+
+          const packageManifest = JSON.parse(readFileSync('package.json', 'utf8'))
+          const registryManifest = JSON.parse(readFileSync('docs/mcp-registry/server.json', 'utf8'))
+          const published = JSON.parse(execFileSync(
+            'npm',
+            ['view', `${packageManifest.name}@${packageManifest.version}`, '--json'],
+            { encoding: 'utf8' },
+          ))
+
+          if (published.version !== packageManifest.version) {
+            throw new Error(`npm did not return ${packageManifest.name}@${packageManifest.version}`)
+          }
+          if (published.mcpName !== registryManifest.name) {
+            throw new Error(`published mcpName must equal ${registryManifest.name}`)
+          }
+          NODE
+
+      - name: Install MCP Registry publisher
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --retry-delay 2 \
+            "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" \
+            -o mcp-publisher.tar.gz
+          tar -xzf mcp-publisher.tar.gz mcp-publisher
+          chmod +x mcp-publisher
+
+      - name: Authenticate to MCP Registry
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish MCP Registry metadata
+        working-directory: docs/mcp-registry
+        run: $GITHUB_WORKSPACE/mcp-publisher publish
+
+      - name: Verify published Registry entry
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs'
+
+          const server = JSON.parse(readFileSync('docs/mcp-registry/server.json', 'utf8'))
+          const response = await fetch(
+            `https://registry.modelcontextprotocol.io/v0.1/servers?search=${encodeURIComponent(server.name)}`,
+          )
+          if (!response.ok) {
+            throw new Error(`Registry lookup failed: ${response.status}`)
+          }
+          const payload = await response.json()
+          const found = payload.servers?.some(
+            (entry) => entry.server?.name === server.name && entry.server?.version === server.version,
+          )
+          if (!found) {
+            throw new Error(`Registry did not return ${server.name}@${server.version}`)
+          }
+          NODE

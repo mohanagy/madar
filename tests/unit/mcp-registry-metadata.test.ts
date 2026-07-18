@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 interface PackageManifest {
+  mcpName?: string
   name?: string
   scripts?: Record<string, string>
   version?: string
@@ -67,6 +68,10 @@ function loadRegistryManifest(): RegistryManifest {
   return JSON.parse(readFileSync(resolve('docs/mcp-registry/server.json'), 'utf8')) as RegistryManifest
 }
 
+function loadPublishWorkflow(): string {
+  return readFileSync(resolve('.github/workflows/publish-mcp-registry.yml'), 'utf8')
+}
+
 describe('MCP Registry metadata', () => {
   it('keeps the checked-in server.json aligned with the published Madar npm package and install flow', () => {
     expect(existsSync(resolve('docs/mcp-registry/server.json'))).toBe(true)
@@ -80,6 +85,7 @@ describe('MCP Registry metadata', () => {
 
     expect(registryManifest.$schema).toContain('static.modelcontextprotocol.io/schemas/')
     expect(registryManifest.name).toBe('io.github.mohanagy/madar')
+    expect(packageManifest.mcpName).toBe(registryManifest.name)
     expect(registryManifest.description?.toLowerCase()).toContain('task-aware')
     expect(registryManifest.description?.toLowerCase()).toContain('typescript/node')
     expect(registryManifest.description?.toLowerCase()).toContain('local')
@@ -173,5 +179,18 @@ describe('MCP Registry metadata', () => {
     expect(reference).toContain('If you still discover older `graphify-ts` links or listings, Madar is the current project name.')
     expect(reference).toContain('`https://github.com/mohanagy/madar`')
     expect(releaseDoc).toContain('npm run registry:validate')
+  })
+
+  it('keeps an OIDC registry-publish workflow behind an explicit release-tag dispatch', () => {
+    const workflow = loadPublishWorkflow()
+
+    expect(workflow).toContain('workflow_dispatch:')
+    expect(workflow).toContain('release_tag:')
+    expect(workflow).toContain('id-token: write')
+    expect(workflow).toContain('npm run registry:validate')
+    expect(workflow).toContain('mcp-publisher login github-oidc')
+    expect(workflow).toContain('mcp-publisher publish')
+    expect(workflow).toContain('registry.modelcontextprotocol.io/v0.1/servers?search=')
+    expect(workflow).toContain('entry.server?.name')
   })
 })
