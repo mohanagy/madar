@@ -189,7 +189,9 @@ Read the [benchmark suite and all dated receipts](https://github.com/mohanagy/ma
 
 ## Current Release
 
-Current version: `0.31.3`.
+Current version: `0.31.4`.
+
+`0.31.4` makes cross-layer context receipts match the snippets an agent can actually inspect after recovery and output compaction. It also makes Claude and Codex install, doctor, and uninstall flows safer around custom or invalid hook paths while preserving workspace-scoped Codex registrations.
 
 `0.31.3` recovers refresh leases whose owner has exited, waits safely through live refresh contention, and gives agents a structured retry signal during temporary graph reconciliation instead of pushing them to bypass Madar.
 
@@ -199,7 +201,7 @@ Current version: `0.31.3`.
 
 `0.31.0` made code graphs directed by default, separated evidence strength from answer readiness, added bounded context recovery, made indexing completeness explicit, preserved generation policy during automatic refresh, isolated linked-worktree artifacts, and removed benchmark expectations from production retrieval.
 
-Read the full notes in the [0.31.3 changelog](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md#0313---2026-07-17).
+Read the full notes in the [0.31.4 changelog](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md#0314---2026-07-18).
 
 ## Documentation
 

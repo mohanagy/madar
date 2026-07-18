@@ -4,6 +4,8 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+## [0.31.4] - 2026-07-18
+
 ### Changed
 
 - **Cross-layer questions recover by query obligation instead of repeating the loudest vocabulary**: retrieval splits multi-stage flow questions into bounded obligations, reserves structurally connected anchors across distinct communities, and reports initial/final obligation coverage plus promoted communities in the retrieval plan. Explain packs can now treat a diverse cross-file set of direct workflow owners as supporting evidence instead of replacing stronger obligation anchors with weaker related candidates merely to satisfy a ranking label. Execution-owner questions such as “what runs the monthly close?” now receive behavior-slice retrieval, and exact file ownership remains available even when clustering separates a file node from its symbols. Addresses #565.
@@ -11,6 +13,8 @@ All notable changes to the TypeScript package will be documented in this file.
 ### Fixed
 
 - **A valid unchanged graph becomes usable without rebuilding at every MCP startup**: automatic refresh validates generation policy, graph freshness, indexing outcomes, the authoritative source snapshot, deletions, additions, ignored discovery paths, and control-file changes before reusing a graph. A graph-backed request waits through a bounded transient reconciliation window and completes as the same request once ready, while MCP initialization, discovery, and ping remain responsive. Changed, missing, incomplete, or policy-mismatched graphs still rebuild or fail closed. Addresses #564.
+- **Retrieval receipts now describe the snippets agents can actually inspect**: query-obligation totals and coverage are reconciled after recovery, compaction, serialization, context resolution, and delta filtering; historical coverage cannot exceed the visible total. This keeps answer-ready receipts truthful when the output surface trims evidence. Addresses #565.
+- **Claude and Codex installer lifecycle checks now fail closed around user-owned hook paths**: doctor, install, and uninstall distinguish managed hook scripts from directories, broken links, unreadable files, or custom replacements; workspace-scoped Codex MCP registrations continue to coexist and uninstall independently. Addresses #567.
 
 ## [0.31.3] - 2026-07-17
 
