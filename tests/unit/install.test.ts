@@ -582,6 +582,7 @@ describe('install helpers', () => {
             mcpServers?: Record<string, unknown>
           }
           expect(uninstalledSettings.mcpServers?.madar).toBeUndefined()
+          expect(uninstalledSettings).toEqual({})
         })
       })
     })
@@ -711,6 +712,48 @@ describe('install helpers', () => {
       const uninstallMessage = claudeUninstall(projectDir)
       expect(uninstallMessage).toMatch(/madar section removed|CLAUDE\.md was empty after removal/)
       expect(existsSync(join(projectDir, 'CLAUDE.md'))).toBe(false)
+      expect(JSON.parse(readFileSync(join(projectDir, '.claude', 'settings.json'), 'utf8'))).toEqual({})
+      expect(existsSync(join(projectDir, '.claude', 'madar-user-prompt-submit.cjs'))).toBe(false)
+      expect(JSON.parse(readFileSync(join(projectDir, '.mcp.json'), 'utf8'))).toEqual({})
+    })
+  })
+
+  it('preserves pre-existing empty Claude config files on uninstall', () => {
+    withTempDir((projectDir) => {
+      const settingsPath = join(projectDir, '.claude', 'settings.json')
+      const mcpPath = join(projectDir, '.mcp.json')
+      mkdirSync(dirname(settingsPath), { recursive: true })
+      writeFileSync(settingsPath, '{}\n', 'utf8')
+      writeFileSync(mcpPath, '{}\n', 'utf8')
+
+      claudeInstall(projectDir)
+      claudeUninstall(projectDir)
+
+      expect(JSON.parse(readFileSync(settingsPath, 'utf8'))).toEqual({})
+      expect(JSON.parse(readFileSync(mcpPath, 'utf8'))).toEqual({})
+    })
+  })
+
+  it('preserves unrelated Claude settings while removing Madar hook entries', () => {
+    withTempDir((projectDir) => {
+      const settingsPath = join(projectDir, '.claude', 'settings.json')
+      mkdirSync(dirname(settingsPath), { recursive: true })
+      writeFileSync(settingsPath, JSON.stringify({
+        permissions: { allow: ['Read'] },
+        hooks: {
+          UserPromptSubmit: [{ hooks: [{ type: 'command', command: 'echo keep-prompt-hook' }] }],
+          PreToolUse: [{ matcher: 'Read', hooks: [{ type: 'command', command: 'echo keep-read-hook' }] }],
+        },
+      }, null, 2), 'utf8')
+
+      claudeInstall(projectDir)
+      claudeUninstall(projectDir)
+
+      const settings = readFileSync(settingsPath, 'utf8')
+      expect(settings).toContain('keep-prompt-hook')
+      expect(settings).toContain('keep-read-hook')
+      expect(settings).toContain('"permissions"')
+      expect(settings).not.toContain('madar-user-prompt-submit.cjs')
     })
   })
 
@@ -766,6 +809,35 @@ describe('install helpers', () => {
       claudeUninstall(projectDir)
 
       expect(existsSync(hookScriptPath)).toBe(false)
+    })
+  })
+
+  it('does not remove a Claude prompt script replaced by the user after installation', () => {
+    withTempDir((projectDir) => {
+      claudeInstall(projectDir)
+
+      const hookScriptPath = join(projectDir, '.claude', 'madar-user-prompt-submit.cjs')
+      const userScript = 'console.log("keep user-managed Claude hook")\n'
+      writeFileSync(hookScriptPath, userScript, 'utf8')
+
+      claudeUninstall(projectDir)
+
+      expect(readFileSync(hookScriptPath, 'utf8')).toBe(userScript)
+      expect(JSON.parse(readFileSync(join(projectDir, '.claude', 'settings.json'), 'utf8'))).toEqual({})
+    })
+  })
+
+  it('does not overwrite a user-managed Claude prompt script during installation', () => {
+    withTempDir((projectDir) => {
+      const hookScriptPath = join(projectDir, '.claude', 'madar-user-prompt-submit.cjs')
+      const userScript = 'console.log("keep user-managed Claude hook")\n'
+      mkdirSync(dirname(hookScriptPath), { recursive: true })
+      writeFileSync(hookScriptPath, userScript, 'utf8')
+
+      expect(() => claudeInstall(projectDir)).toThrow(/Refusing to overwrite user-managed Claude hook script/)
+      expect(readFileSync(hookScriptPath, 'utf8')).toBe(userScript)
+      expect(existsSync(join(projectDir, 'CLAUDE.md'))).toBe(false)
+      expect(existsSync(join(projectDir, '.claude', 'settings.json'))).toBe(false)
     })
   })
 
@@ -1419,6 +1491,30 @@ describe('install helpers', () => {
     })
   })
 
+  it('removes fresh Codex hook entries and script without deleting the config file', () => {
+    withTempDir((projectDir) => {
+      agentsInstall(projectDir, 'codex')
+      agentsUninstall(projectDir, 'codex')
+
+      expect(existsSync(join(projectDir, 'AGENTS.md'))).toBe(false)
+      expect(JSON.parse(readFileSync(join(projectDir, '.codex', 'hooks.json'), 'utf8'))).toEqual({})
+      expect(existsSync(join(projectDir, '.codex', 'madar-user-prompt-submit.cjs'))).toBe(false)
+    })
+  })
+
+  it('preserves a pre-existing empty Codex hooks config on uninstall', () => {
+    withTempDir((projectDir) => {
+      const hooksPath = join(projectDir, '.codex', 'hooks.json')
+      mkdirSync(dirname(hooksPath), { recursive: true })
+      writeFileSync(hooksPath, '{}\n', 'utf8')
+
+      agentsInstall(projectDir, 'codex')
+      agentsUninstall(projectDir, 'codex')
+
+      expect(JSON.parse(readFileSync(hooksPath, 'utf8'))).toEqual({})
+    })
+  })
+
   it('does not rewrite an already-current Codex prompt hook', () => {
     withTempDir((projectDir) => {
       agentsInstall(projectDir, 'codex')
@@ -2028,7 +2124,7 @@ describe('install helpers', () => {
       expect(uninstallMessage).toContain('madar section removed')
       expect(readFileSync(join(projectDir, 'AGENTS.md'), 'utf8')).toContain('Keep calm.')
       expect(readFileSync(join(projectDir, 'AGENTS.md'), 'utf8')).not.toContain('## madar')
-      expect(readFileSync(join(projectDir, '.codex', 'hooks.json'), 'utf8')).not.toContain('madar')
+      expect(JSON.parse(readFileSync(join(projectDir, '.codex', 'hooks.json'), 'utf8'))).toEqual({})
     })
   })
 })

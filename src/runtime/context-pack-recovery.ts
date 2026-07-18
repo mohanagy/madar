@@ -1,6 +1,7 @@
 import type { ContextPackRecoveryPlan, MadarAnswerabilityState, MadarVerificationTarget } from '../contracts/context-recovery.js'
 import type { KnowledgeGraph } from '../contracts/graph.js'
 import { assessMadarResponseEvidence } from './mcp-response-evidence.js'
+import { reconcileRetrievalPlanQueryEvidence } from './retrieve/conceptual-fallback.js'
 import { buildRetrievalEvidencePlanFromResult } from './retrieve/pipeline.js'
 import type { RetrieveOptions, RetrieveResult } from './retrieve.js'
 
@@ -104,6 +105,17 @@ function resultNodeSignature(result: RetrieveResult): string {
   return selectedNodeIds(result).sort().join('\u0000')
 }
 
+function reconcileRetrievalPlan(result: RetrieveResult, question: string): RetrieveResult {
+  const retrievalPlan = reconcileRetrievalPlanQueryEvidence(
+    result.retrieval_plan,
+    question,
+    result.matched_nodes,
+  )
+  return retrievalPlan === result.retrieval_plan || !retrievalPlan
+    ? result
+    : { ...result, retrieval_plan: retrievalPlan }
+}
+
 function addTargetCandidates(
   graph: KnowledgeGraph,
   result: RetrieveResult,
@@ -196,7 +208,7 @@ export function recoverContextPackResult(
     && options.taskKind !== 'implement'
     && initial.retrieval_gate?.level !== 0
   if (!recoveryAllowed || initialAssessment.state === 'ready' || initialAssessment.state === 'ready_with_caveat') {
-    return {
+    return reconcileRetrievalPlan({
       ...initial,
       recovery: {
         version: 1,
@@ -207,7 +219,7 @@ export function recoverContextPackResult(
         attempts: [],
         improved: false,
       },
-    }
+    }, options.question)
   }
 
   let current = initial
@@ -294,7 +306,7 @@ export function recoverContextPackResult(
     }
   }
 
-  return {
+  return reconcileRetrievalPlan({
     ...current,
     ...(initial.retrieval_plan ? { retrieval_plan: initial.retrieval_plan } : {}),
     recovery: {
@@ -312,5 +324,5 @@ export function recoverContextPackResult(
       attempts,
       improved,
     },
-  }
+  }, options.question)
 }

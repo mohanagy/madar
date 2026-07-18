@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 import { readQueryEvidenceSnippet, retrieveContext } from '../../src/runtime/retrieve.js'
 import { assessMadarResponseEvidence } from '../../src/runtime/mcp-response-evidence.js'
 import { buildRetrievalEvidencePlanFromResult } from '../../src/runtime/retrieve/pipeline.js'
+import { evaluateQueryEvidenceCoverage } from '../../src/runtime/retrieve/conceptual-fallback.js'
 import { handleStdioRequest } from '../../src/runtime/stdio-server.js'
 import {
   buildCrossLayerMonitorFlowFixture,
@@ -49,6 +50,7 @@ describe('cross-layer flow retrieval', () => {
       question: QUESTION,
       recovery: result.recovery,
     })
+    const snippetCoverage = evaluateQueryEvidenceCoverage(QUESTION, result.matched_nodes)
 
     expect(
       CROSS_LAYER_MONITOR_FLOW_FILES.every((file) => selectedFiles.has(file)),
@@ -78,6 +80,10 @@ describe('cross-layer flow retrieval', () => {
     expect(result.retrieval_plan?.query_obligations?.initially_covered).toBeLessThan(
       result.retrieval_plan?.query_obligations?.finally_covered ?? 0,
     )
+    expect(result.retrieval_plan?.query_obligations).toMatchObject({
+      total: snippetCoverage.total,
+      finally_covered: snippetCoverage.covered,
+    })
     expect(evidence.answerability.state).toMatch(/^ready(?:_with_caveat)?$/)
     expect(evidence.answerability.broad_search_fallback).toBe('not_needed')
     expect(evidence.agent_directive).toBe('answer_from_pack')

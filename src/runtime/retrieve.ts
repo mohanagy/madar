@@ -67,6 +67,7 @@ import {
   planConceptualFallback,
   queryEvidenceObligations,
   queryEvidenceTermsMatch,
+  reconcileRetrievalPlanQueryEvidence,
   underScopedDivergenceNodeIds,
 } from './retrieve/conceptual-fallback.js'
 import { recoverContextPackResult } from './context-pack-recovery.js'
@@ -595,8 +596,14 @@ export function withRetrieveSnippetBudget(
   const shapedNodes = applyRetrieveSnippetBudgetToNodes(result.matched_nodes, options)
   const baseNodeTokenCount = tokenCountForMatchedNodes(result.matched_nodes)
   const shapedNodeTokenCount = tokenCountForMatchedNodes(shapedNodes.nodes)
+  const retrievalPlan = reconcileRetrievalPlanQueryEvidence(
+    result.retrieval_plan,
+    result.question,
+    shapedNodes.nodes,
+  )
   return {
     ...result,
+    ...(retrievalPlan ? { retrieval_plan: retrievalPlan } : {}),
     token_count: Math.max(0, result.token_count - baseNodeTokenCount + shapedNodeTokenCount),
     matched_nodes: shapedNodes.nodes as RetrieveMatchedNode[],
     snippet_budget_tokens_used: shapedNodes.usedTokens,
@@ -6084,6 +6091,7 @@ function retrieveContextWithConceptualFallback(graph: KnowledgeGraph, options: R
           }]
         : []
     }),
+    initialQueryEvidence,
     ...(options.community !== undefined ? { community: options.community } : {}),
     ...(options.fileType !== undefined ? { fileType: options.fileType } : {}),
   })
@@ -6105,6 +6113,7 @@ function retrieveContextWithConceptualFallback(graph: KnowledgeGraph, options: R
     selectedSourceFiles(initial),
     selectedSourceFiles(recovered),
     new Set(selectedNodeIds(recovered)),
+    evaluateQueryEvidenceCoverage(options.question, recovered.matched_nodes),
   )
   return {
     ...(finalized.useRecovered ? recovered : initial),
@@ -6342,17 +6351,23 @@ export function compactRetrieveResult(result: RetrieveResult, options: RetrieveS
     (total, node) => total + estimateRetrieveEntryTokens(node.label, node.source_file, node.line_number, node.snippet ?? null),
     0,
   )
+  const matchedNodes = shapedNodes.nodes.map(({ evidence_class: _evidenceClass, ...node }) => node as CompactRetrieveMatchedNode)
+  const retrievalPlan = reconcileRetrievalPlanQueryEvidence(
+    result.retrieval_plan,
+    result.question,
+    matchedNodes,
+  )
 
   return {
     question: result.question,
     token_count: Math.max(0, compactPack.token_count - compactPackNodeTokenCount + shapedNodeTokenCount),
-    matched_nodes: shapedNodes.nodes.map(({ evidence_class: _evidenceClass, ...node }) => node as CompactRetrieveMatchedNode),
+    matched_nodes: matchedNodes,
     relationships: compactPack.relationships,
     community_context: compactPack.community_context,
     graph_signals: compactPack.graph_signals ?? { god_nodes: [], bridge_nodes: [] },
     ...(compactPack.shared_file_type ? { shared_file_type: compactPack.shared_file_type } : {}),
     retrieval_strategy: result.retrieval_strategy ?? 'default',
-    ...(result.retrieval_plan ? { retrieval_plan: result.retrieval_plan } : {}),
+    ...(retrievalPlan ? { retrieval_plan: retrievalPlan } : {}),
     ...(result.recovery ? { recovery: result.recovery } : {}),
     snippet_budget_tokens_used: shapedNodes.usedTokens,
     snippet_budget_tokens_remaining: shapedNodes.remainingTokens,
@@ -6517,7 +6532,7 @@ function compactRetrievePayloadForStdioProfile(
   const retainsRelationshipEndpoints = (relationship: RetrieveRelationship): boolean =>
     (typeof relationship.from_id !== 'string' || retainedNodeIds.has(relationship.from_id))
     && (typeof relationship.to_id !== 'string' || retainedNodeIds.has(relationship.to_id))
-  return {
+  const compacted = {
     ...payload,
     matched_nodes: matchedNodes,
     relationships: payload.relationships
@@ -6527,6 +6542,23 @@ function compactRetrievePayloadForStdioProfile(
     ...(payload.claims ? { claims } : {}),
     ...(payload.expandable ? { expandable: compactExpandableRefsForStdio(payload.expandable, profile) } : {}),
     ...(payload.slice ? { slice: compactSliceForStdio(payload.slice, profile) } : {}),
+  }
+  return reconcileStdioRetrievalPlan(compacted)
+}
+
+function reconcileStdioRetrievalPlan(payload: StdioRetrieveResult): StdioRetrieveResult {
+  const retrievalPlan = reconcileRetrievalPlanQueryEvidence(
+    payload.retrieval_plan,
+    payload.question,
+    payload.matched_nodes,
+  )
+  if (!retrievalPlan || retrievalPlan === payload.retrieval_plan) {
+    return payload
+  }
+
+  return {
+    ...payload,
+    retrieval_plan: retrievalPlan,
   }
 }
 
@@ -6544,7 +6576,7 @@ export function compactRetrieveResultForStdio(result: RetrieveResult, options: R
     ...(result.expandable ? { expandable: result.expandable } : {}),
     ...(result.coverage ? { coverage: result.coverage } : {}),
     retrieval_strategy: result.retrieval_strategy ?? 'default',
-    ...(result.retrieval_plan ? { retrieval_plan: result.retrieval_plan } : {}),
+    ...(compactResult.retrieval_plan ? { retrieval_plan: compactResult.retrieval_plan } : {}),
     ...(result.recovery ? { recovery: result.recovery } : {}),
     snippet_budget_tokens_used: compactResult.snippet_budget_tokens_used,
     snippet_budget_tokens_remaining: compactResult.snippet_budget_tokens_remaining,
@@ -6555,6 +6587,7 @@ export function compactRetrieveResultForStdio(result: RetrieveResult, options: R
   }
 
   const maxOutputTokens = options.maxOutputTokens ?? DEFAULT_RETRIEVE_STDIO_OUTPUT_TOKENS
+  payload = reconcileStdioRetrievalPlan(payload)
   if (estimateRetrievePayloadTokens(payload) <= maxOutputTokens) {
     return payload
   }

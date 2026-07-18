@@ -5,6 +5,32 @@ import { KnowledgeGraph } from '../../src/contracts/graph.js'
 import { recoverContextPackResult } from '../../src/runtime/context-pack-recovery.js'
 import type { RetrieveResult } from '../../src/runtime/retrieve.js'
 
+function conceptualPlan(finallyCovered: number): NonNullable<RetrieveResult['retrieval_plan']> {
+  const quality = {
+    selected_nodes: 1,
+    selected_files: 1,
+    direct_matches: 1,
+    explicit_anchors: 0,
+    workflow_coherence: 0.5,
+    missing_required_evidence: 0,
+    missing_semantic_evidence: 0,
+    token_count: 100,
+  }
+  return {
+    version: 1,
+    status: 'recovered',
+    reasons: ['missing_query_obligations'],
+    initial: quality,
+    final: quality,
+    attempts: [],
+    query_obligations: {
+      total: 1,
+      initially_covered: 0,
+      finally_covered: finallyCovered,
+    },
+  }
+}
+
 function coverage(supportingCovered: boolean): ContextPackCoverage {
   return {
     required_evidence: ['primary', 'supporting'],
@@ -142,6 +168,27 @@ describe('bounded cumulative context-pack recovery', () => {
         missing_obligations_before: 2,
         missing_obligations_after: 0,
       })],
+    })
+  })
+
+  it('reconciles conceptual query coverage after a later accepted recovery pass', () => {
+    const initial = {
+      ...result({ supportingCovered: false, expandable: [target('expand-supporting', 'supporting')] }),
+      retrieval_plan: conceptualPlan(0),
+    }
+    const recovered = result({ supportingCovered: true, includeSupportingNode: true })
+
+    const output = recoverContextPackResult(
+      recoveryGraph(),
+      initial,
+      { question: initial.question, budget: 500 },
+      () => recovered,
+    )
+
+    expect(output.retrieval_plan?.query_obligations).toEqual({
+      total: 1,
+      initially_covered: 0,
+      finally_covered: 1,
     })
   })
 

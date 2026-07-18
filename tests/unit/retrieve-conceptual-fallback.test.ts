@@ -9,12 +9,15 @@ import {
   compactRetrieveResultForStdio,
   contextPackFromRetrieveResult,
   retrieveContext,
+  withRetrieveSnippetBudget,
 } from '../../src/runtime/retrieve.js'
 import {
   evaluateQueryEvidenceCoverage,
+  finalizeConceptualFallbackPlan,
   planConceptualFallback,
   queryEvidenceObligations,
   underScopedDivergenceNodeIds,
+  type ConceptualFallbackProposal,
 } from '../../src/runtime/retrieve/conceptual-fallback.js'
 
 function addNode(
@@ -151,6 +154,90 @@ describe('conceptual-query fallback planner', () => {
       covered: 1,
       missing_obligations: [],
     })
+  })
+
+  it('reports snippet-grounded obligation coverage rather than vocabulary-anchor coverage', () => {
+    const question = 'Trace how a failed monitor check becomes an incident, triggers notifications, and affects the public status-page status. Identify inconsistent status-computation paths.'
+    const proposal = planConceptualFallback(new KnowledgeGraph({ directed: true }), {
+      question,
+      initialQuality: lowQuality(),
+      selectedNodes: [],
+      initialQueryEvidence: {
+        total: 5,
+        covered: 5,
+        covered_obligations: [
+          'query:obligation:1',
+          'query:obligation:2',
+          'query:obligation:3',
+          'query:obligation:4',
+          'query:obligation:5',
+        ],
+        missing_obligations: [],
+      },
+    })
+
+    expect(proposal.plan.reasons).not.toContain('missing_query_obligations')
+    expect(proposal.plan.query_obligations).toEqual({
+      total: 5,
+      initially_covered: 5,
+      finally_covered: 5,
+    })
+  })
+
+  it('does not replace one covered obligation with another at the same count', () => {
+    const quality = lowQuality()
+    const proposal: ConceptualFallbackProposal = {
+      plan: {
+        version: 1,
+        status: 'kept_initial',
+        reasons: ['missing_query_obligations'],
+        initial: quality,
+        final: quality,
+        attempts: [{
+          fallback: 'repository_vocabulary_v1',
+          status: 'kept_initial',
+          reasons: ['missing_query_obligations'],
+          vocabulary_sources: [],
+          expansion_terms: [],
+          promoted_candidates: 1,
+          promoted_communities: [],
+          changed_result: false,
+          added_selected_files: 0,
+          removed_selected_files: 0,
+        }],
+        query_obligations: {
+          total: 2,
+          initially_covered: 2,
+          finally_covered: 2,
+        },
+      },
+      nodeBoosts: new Map([['recovered', 1]]),
+      initialQueryEvidence: {
+        total: 2,
+        covered: 2,
+        covered_obligations: ['query:obligation:1', 'query:obligation:2'],
+        missing_obligations: [],
+      },
+      obligationMatches: new Map([['recovered', new Set([0, 1])]]),
+      initialObligationCoverage: 1,
+    }
+
+    const finalized = finalizeConceptualFallbackPlan(
+      proposal,
+      quality,
+      new Set(['/initial.ts']),
+      new Set(['/recovered.ts']),
+      new Set(['recovered']),
+      {
+        total: 2,
+        covered: 2,
+        covered_obligations: ['query:obligation:1', 'query:obligation:3'],
+        missing_obligations: ['query:obligation:2'],
+      },
+    )
+
+    expect(finalized.useRecovered).toBe(false)
+    expect(finalized.plan.query_obligations?.finally_covered).toBe(2)
   })
 
   it('excludes generic computations from a repository-scoped divergence comparison', () => {
@@ -443,14 +530,58 @@ describe('conceptual-query fallback planner', () => {
     expect(retrieval.retrieval_plan?.initial.workflow_coherence).toBe(1)
   })
 
-  it('surfaces the retrieval plan through full, compact, and stdio context representations', () => {
+  it('keeps retrieval-plan query coverage aligned with every snippet-shaped representation', () => {
     const result = retrieveContext(conceptualWorkflowGraph(), {
       question: 'How is topology kept current when modifications happen?',
       budget: 3000,
     })
+    const stalePlanResult = {
+      ...result,
+      retrieval_plan: {
+        version: 1 as const,
+        status: 'kept_initial' as const,
+        reasons: ['missing_query_obligations' as const],
+        initial: {
+          selected_nodes: result.matched_nodes.length,
+          selected_files: result.matched_nodes.length,
+          direct_matches: result.matched_nodes.length,
+          explicit_anchors: 0,
+          workflow_coherence: 1,
+          missing_required_evidence: 0,
+          missing_semantic_evidence: 0,
+          token_count: result.token_count,
+        },
+        final: {
+          selected_nodes: result.matched_nodes.length,
+          selected_files: result.matched_nodes.length,
+          direct_matches: result.matched_nodes.length,
+          explicit_anchors: 0,
+          workflow_coherence: 1,
+          missing_required_evidence: 0,
+          missing_semantic_evidence: 0,
+          token_count: result.token_count,
+        },
+        attempts: [],
+        query_obligations: {
+          total: 99,
+          initially_covered: 99,
+          finally_covered: 99,
+        },
+      },
+    }
+    const shapedRepresentations = [
+      withRetrieveSnippetBudget(stalePlanResult, { topNWithSnippet: 1, snippetBudget: 12 }),
+      compactRetrieveResult(stalePlanResult, { topNWithSnippet: 1, snippetBudget: 12 }),
+      compactRetrieveResultForStdio(stalePlanResult, { topNWithSnippet: 1, snippetBudget: 12, maxOutputTokens: 1 }),
+    ]
 
-    expect(contextPackFromRetrieveResult(result).retrieval_plan).toEqual(result.retrieval_plan)
-    expect(compactRetrieveResult(result).retrieval_plan).toEqual(result.retrieval_plan)
-    expect(compactRetrieveResultForStdio(result).retrieval_plan).toEqual(result.retrieval_plan)
+    expect(contextPackFromRetrieveResult(stalePlanResult).retrieval_plan).toEqual(stalePlanResult.retrieval_plan)
+    for (const representation of shapedRepresentations) {
+      const coverage = evaluateQueryEvidenceCoverage(result.question, representation.matched_nodes)
+      expect(representation.retrieval_plan?.query_obligations).toEqual(expect.objectContaining({
+        total: coverage.total,
+        finally_covered: coverage.covered,
+      }))
+    }
   })
 })
