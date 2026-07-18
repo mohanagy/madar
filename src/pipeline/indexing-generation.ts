@@ -1,6 +1,8 @@
 import { extname, resolve } from 'node:path'
 
 import type {
+  ExtractionFallbackReason,
+  ExtractionStrategy,
   IndexingDiagnostic,
   IndexingManifestV1,
   IndexingOutcome,
@@ -10,9 +12,8 @@ import { builtinCapabilityRegistry } from '../infrastructure/capabilities.js'
 import type { ExtractionFileOutcome } from './extract/dispatch.js'
 import { classifyFile } from './detect.js'
 import type { BuildSpiCachedResult } from './spi/cache.js'
+import { isSpiSupportedSourceFile } from './spi/build.js'
 import { localIndexingPath } from './indexing-outcomes.js'
-
-const SPI_EXTENSIONS = new Set(['.js', '.jsx', '.ts', '.tsx'])
 
 function missingSpiCapability(filePath: string): string {
   switch (extname(filePath).toLowerCase()) {
@@ -30,6 +31,10 @@ function normalizeLocalPath(path: string): string {
 export function localExtractionIndexingOutcome(
   rootPath: string,
   outcome: ExtractionFileOutcome,
+  receipt: {
+    extractionStrategy?: ExtractionStrategy
+    fallbackReason?: ExtractionFallbackReason
+  } = {},
 ): IndexingOutcome {
   return {
     path: localIndexingPath(rootPath, outcome.filePath),
@@ -37,6 +42,8 @@ export function localExtractionIndexingOutcome(
     status: outcome.status,
     reason: outcome.reason,
     capability: outcome.capability,
+    ...(receipt.extractionStrategy ? { extraction_strategy: receipt.extractionStrategy } : {}),
+    ...(receipt.fallbackReason ? { fallback_reason: receipt.fallbackReason } : {}),
     ...(outcome.diagnostics?.length ? { diagnostics: outcome.diagnostics } : {}),
   }
 }
@@ -97,13 +104,14 @@ export function projectSpiIndexingOutcomes(input: {
     const localPath = localIndexingPath(input.rootPath, absolutePath)
     const spiFile = spiFileByAbsolutePath.get(absolutePath)
     if (!spiFile) {
-      return SPI_EXTENSIONS.has(extname(filePath).toLowerCase())
+      return isSpiSupportedSourceFile(filePath)
         ? {
             path: localPath,
             kind: 'file',
             status: 'failed',
             reason: 'spi_file_missing',
             capability: missingSpiCapability(filePath),
+            extraction_strategy: 'spi',
           }
         : {
             path: localPath,
@@ -111,6 +119,7 @@ export function projectSpiIndexingOutcomes(input: {
             status: 'unsupported',
             reason: 'unsupported_spi_language',
             capability: null,
+            extraction_strategy: 'spi',
           }
     }
 
@@ -126,6 +135,7 @@ export function projectSpiIndexingOutcomes(input: {
           ? 'indexed_from_cache'
           : 'indexed',
       capability: `spi:${spiFile.language}`,
+      extraction_strategy: 'spi',
       ...(diagnostics.length > 0 ? { diagnostics } : {}),
     }
   })

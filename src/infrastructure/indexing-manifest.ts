@@ -3,6 +3,8 @@ import { dirname, join } from 'node:path'
 import { writeTextFileAtomically } from '../shared/atomic-file.js'
 
 import {
+  EXTRACTION_FALLBACK_REASONS,
+  EXTRACTION_STRATEGIES,
   INDEXING_MANIFEST_VERSION,
   INDEXING_OUTCOME_STATUSES,
   INDEXING_REASON_CODES,
@@ -12,6 +14,7 @@ import {
   type IndexingReasonCode,
   type RelevantIndexingUncertainty,
 } from '../contracts/indexing.js'
+import { EXTRACTION_MODES, type ExtractionMode } from '../contracts/generation-policy.js'
 import { shareSafeIndexingManifest, summarizeIndexingOutcomes } from '../pipeline/indexing-outcomes.js'
 
 export const INDEXING_MANIFEST_FILENAME = 'indexing-manifest.json'
@@ -31,6 +34,9 @@ const GENERIC_QUERY_TOKENS = new Set([
 ])
 const OUTCOME_STATUSES = new Set<string>(INDEXING_OUTCOME_STATUSES)
 const REASON_CODES = new Set<string>(INDEXING_REASON_CODES)
+const EXTRACTION_STRATEGY_VALUES = new Set<string>(EXTRACTION_STRATEGIES)
+const EXTRACTION_FALLBACK_REASON_VALUES = new Set<string>(EXTRACTION_FALLBACK_REASONS)
+const EXTRACTION_MODE_VALUES = new Set<string>(EXTRACTION_MODES)
 const ENVIRONMENT_CONFIG_INTENT_PATTERN = /(?:^|[^a-z0-9])\.env(?:[^a-z0-9]|$)|\b(?:config(?:uration)?|credential|deploy(?:ment)?|environment|key|password|runtime\s+variable|secret|settings|token)\b/i
 const DOCUMENTATION_INTENT_PATTERN = /\b(?:architecture|changelog|docs?|documentation|guide|readme|specification)\b|\.(?:md|mdx|rst|txt)\b/i
 const HIDDEN_PATH_INTENT_PATTERN = /\b(?:dotfile|hidden\s+(?:file|path)|well-known)\b|(?:^|[\s`'"/])\.(?:claude|codex|github|vscode|well-known|zed)(?:[\s`'"/]|$)/i
@@ -51,6 +57,8 @@ function isIndexingOutcome(value: unknown): value is IndexingOutcome {
     && typeof value.reason === 'string'
     && REASON_CODES.has(value.reason)
     && (value.capability === null || typeof value.capability === 'string')
+    && (value.extraction_strategy === undefined || (typeof value.extraction_strategy === 'string' && EXTRACTION_STRATEGY_VALUES.has(value.extraction_strategy)))
+    && (value.fallback_reason === undefined || (typeof value.fallback_reason === 'string' && EXTRACTION_FALLBACK_REASON_VALUES.has(value.fallback_reason)))
     && (
       value.diagnostics === undefined
       || (
@@ -80,6 +88,10 @@ export function parseIndexingManifest(value: unknown): IndexingManifestV1 | null
   if (!isRecord(value.summary) || !Array.isArray(value.spi_diagnostics) || typeof value.generated_at !== 'string') {
     return null
   }
+  if (value.requested_extraction_mode !== undefined
+    && (typeof value.requested_extraction_mode !== 'string' || !EXTRACTION_MODE_VALUES.has(value.requested_extraction_mode))) {
+    return null
+  }
   if (!value.outcomes.every(isIndexingOutcome) || !value.spi_diagnostics.every(isSpiDiagnostic)) {
     return null
   }
@@ -87,6 +99,9 @@ export function parseIndexingManifest(value: unknown): IndexingManifestV1 | null
   return {
     version: INDEXING_MANIFEST_VERSION,
     generated_at: value.generated_at,
+    ...(value.requested_extraction_mode !== undefined
+      ? { requested_extraction_mode: value.requested_extraction_mode as ExtractionMode }
+      : {}),
     summary: summarizeIndexingOutcomes(outcomes),
     outcomes,
     spi_diagnostics: value.spi_diagnostics as IndexingManifestV1['spi_diagnostics'],

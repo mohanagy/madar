@@ -2,6 +2,8 @@ import { relative, sep } from 'node:path'
 
 import {
   INDEXING_MANIFEST_VERSION,
+  type ExtractionFallbackReason,
+  type ExtractionStrategy,
   type IndexingCompletenessState,
   type IndexingManifestV1,
   type IndexingOutcome,
@@ -13,6 +15,7 @@ import {
   type IndexingSummary,
   type ShareSafeIndexingManifestV1,
 } from '../contracts/indexing.js'
+import type { ExtractionMode } from '../contracts/generation-policy.js'
 
 const STATUS_SEVERITY: Record<IndexingOutcomeStatus, number> = {
   indexed: 0,
@@ -59,6 +62,12 @@ export function deduplicateIndexingOutcomes(outcomes: readonly IndexingOutcome[]
     const diagnostics = mergeDiagnostics(existing.diagnostics, normalized.diagnostics)
     deduplicated.set(key, {
       ...preferred,
+      ...(preferred.extraction_strategy || !existing.extraction_strategy
+        ? {}
+        : { extraction_strategy: existing.extraction_strategy }),
+      ...(preferred.fallback_reason || !existing.fallback_reason
+        ? {}
+        : { fallback_reason: existing.fallback_reason }),
       ...(diagnostics ? { diagnostics } : {}),
     })
   }
@@ -96,12 +105,20 @@ export function summarizeIndexingOutcomes(outcomes: readonly IndexingOutcome[]):
   const counts = emptyStatusCounts()
   const reasonBuckets: Partial<Record<IndexingReasonCode, number>> = {}
   const capabilityBuckets: Record<string, number> = {}
+  const strategyBuckets: Partial<Record<ExtractionStrategy, number>> = {}
+  const fallbackReasonBuckets: Partial<Record<ExtractionFallbackReason, number>> = {}
 
   for (const outcome of outcomes) {
     counts[outcome.status] += 1
     reasonBuckets[outcome.reason] = (reasonBuckets[outcome.reason] ?? 0) + 1
     const capability = outcome.capability ?? 'none'
     capabilityBuckets[capability] = (capabilityBuckets[capability] ?? 0) + 1
+    if (outcome.extraction_strategy) {
+      strategyBuckets[outcome.extraction_strategy] = (strategyBuckets[outcome.extraction_strategy] ?? 0) + 1
+    }
+    if (outcome.fallback_reason) {
+      fallbackReasonBuckets[outcome.fallback_reason] = (fallbackReasonBuckets[outcome.fallback_reason] ?? 0) + 1
+    }
   }
 
   return {
@@ -110,18 +127,26 @@ export function summarizeIndexingOutcomes(outcomes: readonly IndexingOutcome[]):
     counts,
     reason_buckets: Object.fromEntries(Object.entries(reasonBuckets).sort(([left], [right]) => left.localeCompare(right))),
     capability_buckets: Object.fromEntries(Object.entries(capabilityBuckets).sort(([left], [right]) => left.localeCompare(right))),
+    ...(Object.keys(strategyBuckets).length > 0
+      ? { extraction_strategy_buckets: Object.fromEntries(Object.entries(strategyBuckets).sort(([left], [right]) => left.localeCompare(right))) }
+      : {}),
+    ...(Object.keys(fallbackReasonBuckets).length > 0
+      ? { fallback_reason_buckets: Object.fromEntries(Object.entries(fallbackReasonBuckets).sort(([left], [right]) => left.localeCompare(right))) }
+      : {}),
   }
 }
 
 export function createIndexingManifest(input: {
   outcomes: readonly IndexingOutcome[]
   spiDiagnostics?: readonly IndexingSpiDiagnostic[]
+  requestedExtractionMode?: ExtractionMode
   now?: Date
 }): IndexingManifestV1 {
   const outcomes = deduplicateIndexingOutcomes(input.outcomes)
   return {
     version: INDEXING_MANIFEST_VERSION,
     generated_at: (input.now ?? new Date()).toISOString(),
+    ...(input.requestedExtractionMode ? { requested_extraction_mode: input.requestedExtractionMode } : {}),
     summary: summarizeIndexingOutcomes(outcomes),
     outcomes,
     spi_diagnostics: [...(input.spiDiagnostics ?? [])].sort((left, right) => left.id.localeCompare(right.id)),
@@ -136,6 +161,7 @@ export function shareSafeIndexingManifest(manifest: IndexingManifestV1): ShareSa
   return {
     version: manifest.version,
     generated_at: manifest.generated_at,
+    ...(manifest.requested_extraction_mode ? { requested_extraction_mode: manifest.requested_extraction_mode } : {}),
     summary: manifest.summary,
     spi_diagnostics: {
       total: manifest.spi_diagnostics.length,

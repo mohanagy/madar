@@ -45,7 +45,7 @@ Current wiring is still conservative, but it is no longer a single-cell scaffold
 
 Current public TypeScript `explain-runtime` receipts (July 15, 2026; packed `0.31.0` artifact; one warm-cache trial per row):
 
-`Legacy` uses Madar's default extraction pipeline. `SPI` uses the opt-in Semantic Program Index (`--spi`) with additional framework-shaped metadata and disk-cache behavior.
+`Legacy` runs the explicit `--legacy` extractor. `SPI` runs strict `--spi` with additional framework-shaped metadata and disk-cache behavior. Normal `madar generate .` now uses capability-aware auto extraction instead of either benchmark-only mode.
 
 | Repo | Bundle | Legacy outcome | SPI outcome |
 | --- | --- | --- | --- |

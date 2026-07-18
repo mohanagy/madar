@@ -1,3 +1,6 @@
+import type { ExtractionMode } from './generation-policy.js'
+import type { ExtractionStrategy } from './indexing.js'
+
 export const WATCHER_STATE_VERSION = 1 as const
 
 export type WatcherStatus = 'starting' | 'idle' | 'pending' | 'reconciling' | 'failed' | 'stopped'
@@ -24,6 +27,9 @@ export interface WatcherStateV1 {
   stored_policy_fingerprint: string | null
   current_policy_fingerprint: string | null
   policy_match: boolean | null
+  /** Persisted for observability; old watcher-state files omit these fields. */
+  requested_extraction_mode?: ExtractionMode | null
+  extraction_strategy_buckets?: Partial<Record<ExtractionStrategy, number>> | null
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -36,6 +42,25 @@ function isNullableString(value: unknown): value is string | null {
 
 function isNullableNonNegativeNumber(value: unknown): value is number | null {
   return value === null || (typeof value === 'number' && Number.isFinite(value) && value >= 0)
+}
+
+function isNullableExtractionMode(value: unknown): value is ExtractionMode | null {
+  return value === null || value === 'auto' || value === 'legacy' || value === 'spi'
+}
+
+function isExtractionStrategyBuckets(value: unknown): value is Partial<Record<ExtractionStrategy, number>> | null {
+  if (value === null) {
+    return true
+  }
+  if (!isRecord(value)) {
+    return false
+  }
+  const allowed = new Set<ExtractionStrategy>(['spi', 'legacy', 'legacy_fallback', 'non_code', 'not_extracted'])
+  return Object.entries(value).every(([strategy, count]) =>
+    allowed.has(strategy as ExtractionStrategy)
+    && typeof count === 'number'
+    && Number.isSafeInteger(count)
+    && count >= 0)
 }
 
 export function parseWatcherState(value: unknown): WatcherStateV1 | null {
@@ -64,6 +89,8 @@ export function parseWatcherState(value: unknown): WatcherStateV1 | null {
     || !isNullableString(value.stored_policy_fingerprint)
     || !isNullableString(value.current_policy_fingerprint)
     || (value.policy_match !== null && typeof value.policy_match !== 'boolean')
+    || (value.requested_extraction_mode !== undefined && !isNullableExtractionMode(value.requested_extraction_mode))
+    || (value.extraction_strategy_buckets !== undefined && !isExtractionStrategyBuckets(value.extraction_strategy_buckets))
   ) {
     return null
   }
@@ -79,4 +106,3 @@ export function watcherStateBlocksGraphReads(state: WatcherStateV1): boolean {
     || state.coverage !== 'complete'
     || state.policy_match === false
 }
-

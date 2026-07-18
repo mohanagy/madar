@@ -7,7 +7,12 @@ import { describe, expect, test } from 'vitest'
 
 import { createGenerationPolicy, parseGenerationPolicy } from '../../src/contracts/generation-policy.js'
 import { generateGraph } from '../../src/infrastructure/generate.js'
-import { exclusionRulesFingerprint, readStoredGenerationPolicy } from '../../src/infrastructure/generation-policy.js'
+import {
+  buildGenerationPolicy,
+  exclusionRulesFingerprint,
+  generationOptionsFromPolicy,
+  readStoredGenerationPolicy,
+} from '../../src/infrastructure/generation-policy.js'
 import { loadManifestMetadata } from '../../src/pipeline/detect.js'
 import { loadGraph } from '../../src/runtime/serve.js'
 
@@ -40,6 +45,38 @@ describe('generation policy contract', () => {
       ...policy,
       settings: { ...policy.settings, include_documents: true },
     })).toBeNull()
+    expect(parseGenerationPolicy({
+      ...policy,
+      settings: { ...policy.settings, extraction_mode: 'auto' },
+    })).toBeNull()
+  })
+
+  test('records the explicit v2 extraction mode and reads v1 policies as strict modes', () => {
+    const legacyV1 = createGenerationPolicy({
+      directed: true,
+      use_spi: true,
+      respect_gitignore: false,
+      follow_symlinks: false,
+      include_documents: true,
+      include_non_code: true,
+      extractor_cache_version: 68,
+      exclusion_rules_fingerprint: 'b'.repeat(64),
+      indexing_strict: null,
+    })
+    const autoV2 = buildGenerationPolicy('/workspace', {
+      extractionMode: 'auto',
+    }, 68, null)
+
+    expect(legacyV1.version).toBe(1)
+    expect(generationOptionsFromPolicy(legacyV1)).toMatchObject({ extractionMode: 'spi' })
+    expect(autoV2).toMatchObject({
+      version: 2,
+      settings: {
+        extraction_mode: 'auto',
+        use_spi: true,
+      },
+    })
+    expect(parseGenerationPolicy(autoV2)).toEqual(autoV2)
   })
 
   test('fingerprints Madar and Git exclusion controls without persisting their contents', () => {
@@ -65,6 +102,7 @@ describe('generation policy contract', () => {
       writeFileSync(join(tempDir, 'main.ts'), 'export const value = 1\n', 'utf8')
       const result = generateGraph(tempDir, {
         directed: false,
+        extractionMode: 'auto',
         includeDocs: false,
         noHtml: true,
         indexingStrict: { maxFailed: 1, maxUnsupported: 2 },
@@ -77,6 +115,7 @@ describe('generation policy contract', () => {
       expect(manifestPolicy).toEqual(graphPolicy)
       expect(graphPolicy?.settings).toMatchObject({
         directed: false,
+        extraction_mode: 'auto',
         include_documents: false,
         indexing_strict: { max_failed: 1, max_unsupported: 2 },
       })

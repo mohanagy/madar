@@ -347,11 +347,13 @@ describe('SPI indexing projection', () => {
         path: 'src/index.ts',
         status: 'indexed_with_warnings',
         reason: 'spi_diagnostic',
+        extraction_strategy: 'spi',
       }),
       expect.objectContaining({
         path: 'src/main.py',
         status: 'unsupported',
         reason: 'unsupported_spi_language',
+        extraction_strategy: 'spi',
       }),
     ]))
     expect(projected.diagnostics).toEqual([

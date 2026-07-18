@@ -339,7 +339,7 @@ export async function loadOrBuildSnapshot(input: SnapshotRequest, dependencies: 
       const transientWorkspace = resolveMadarWorkspace(materializedWorktree)
       transientArtifactRoot = transientWorkspace.isLinkedWorktree ? transientWorkspace.artifactRoot : null
 
-      const generated = await deps.generateGraph(materializedWorktree, { noHtml: true })
+      const generated = await deps.generateGraph(materializedWorktree, { extractionMode: 'auto', noHtml: true })
       const extractorVersion = deps.loadGraphExtractorVersion(generated.graphPath)
       return persistSnapshot(deps.rootDir, input.ref, commitSha, generated, extractorVersion)
     } catch (error) {

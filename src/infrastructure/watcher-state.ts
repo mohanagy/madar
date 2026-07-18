@@ -40,6 +40,8 @@ export function createWatcherState(eventMode: WatcherEventMode, intervalMs: numb
     stored_policy_fingerprint: null,
     current_policy_fingerprint: null,
     policy_match: null,
+    requested_extraction_mode: null,
+    extraction_strategy_buckets: null,
   }
 }
 
@@ -66,4 +68,3 @@ export function readWatcherState(path: string): WatcherStateV1 | null {
 export function readWatcherStateForGraph(graphPath: string): WatcherStateV1 | null {
   return readWatcherState(watcherStatePathForGraph(graphPath))
 }
-

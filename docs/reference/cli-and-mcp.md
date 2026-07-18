@@ -77,15 +77,16 @@ Use `--require-fresh-context` on `madar pack`, `madar prompt`, or `madar handoff
 
 Cached `context_pack` explain responses still refresh the current freshness receipt before reuse, so a cache hit does not hide newly changed or missing indexed source files.
 
-With `--auto-refresh`, filesystem events invalidate the graph immediately and adaptive authoritative reconciliations verify the full watched corpus. Graph-backed MCP requests fail closed while reconciliation is pending/failed or watcher coverage/policy is not trustworthy. Generation policy is versioned and fingerprinted in both `graph.json` and `manifest.json`, so automatic refresh reuses direction, SPI, Git-ignore, symlink, document/non-code, exclusion, extractor, and indexing-threshold settings. Policy drift forces a full rebuild. `madar doctor` and `madar status` expose the local `watcher-state.json` health record. Full behavior and legacy migration are documented in [Auto-refresh and generation policy](../auto-refresh.md).
+With `--auto-refresh`, filesystem events invalidate the graph immediately and adaptive authoritative reconciliations verify the full watched corpus. Graph-backed MCP requests fail closed while reconciliation is pending/failed or watcher coverage/policy is not trustworthy. Generation policy is versioned and fingerprinted in both `graph.json` and `manifest.json`, so automatic refresh reuses direction, extraction mode (auto, legacy, or strict SPI), Git-ignore, symlink, document/non-code, exclusion, extractor, and indexing-threshold settings. Policy drift forces a full rebuild. `madar doctor` and `madar status` expose the local `watcher-state.json` health record. Full behavior and legacy migration are documented in [Auto-refresh and generation policy](../auto-refresh.md).
 
 The stdio transport and MCP discovery stay responsive while initial reconciliation runs in a background worker. Until the watcher reaches `idle` with matching published policy, graph-backed calls return the structured error type `madar_graph_not_ready`. For transient `starting`, `pending`, or `reconciling` states, `retryable` is `true`, `retry_after_ms` is `1000`, and the suggested action is to retry the same request without bypassing Madar. Terminal failures, incomplete graphs, and policy mismatches set `retryable` to `false` and suggest graph repair; inspect `madar status`, then run `madar generate . --update` when required.
 
 ## Common commands
 
 ```bash
-madar generate .                          # build the graph
-madar generate . --spi                    # framework metadata + disk cache
+madar generate .                          # auto: SPI for JS/TS + legacy fallback for other supported languages
+madar generate . --legacy                 # force legacy extraction only
+madar generate . --spi                    # force strict SPI-only JS/TS extraction
 madar generate . --respect-gitignore      # exclude files ignored by Git
 madar generate . --strict-indexing        # fail on any failed/unsupported candidate
 madar generate . --max-indexing-failed 1 --max-indexing-unsupported 3
@@ -114,6 +115,8 @@ madar --help
 Generated code graphs are directed by default, including `try`, `watch`, automatic MCP refresh, and unchanged `--update` runs. An unchanged `--update` fully re-extracts a legacy undirected artifact because old storage may have collapsed opposite edges; `--cluster-only` refuses that unsafe migration. `--directed` remains accepted for compatibility. `--undirected` is an explicit visualization-only legacy mode that collapses reciprocal edges into one connection; `impact`, `call_chain`, and `slice-v1` retrieval reject that output rather than infer reverse edges. The two direction flags are mutually exclusive.
 
 Every generation also writes local and share-safe indexing-completeness manifests beside `graph.json`. A valid graph is not a claim of complete source coverage. `--strict-indexing` uses zero failed and zero unsupported candidates as its thresholds; either `--max-indexing-failed N` or `--max-indexing-unsupported N` enables strict mode with the supplied allowance. See [Indexing completeness](../indexing-completeness.md) for outcome meanings, path-redaction behavior, and confidence effects.
+
+The local `indexing-manifest.json` is also the extraction receipt: `requested_extraction_mode` records `auto`, `legacy`, or `spi`; each outcome records its `extraction_strategy`; and auto fallback outcomes carry `fallback_reason: "spi_unsupported_language"`. The graph stores the same requested mode in `generation_policy`, an aggregate `extraction_receipt`, and `extraction_strategy` on its source evidence. `--cluster-only` never re-extracts source, so it cannot be combined with `--legacy` or `--spi`; use `madar generate . --update` to change modes.
 
 On Windows, `compare`, `review-compare`, and benchmark `--exec` templates run under `cmd.exe`, so prefer `type {prompt_file} | claude ...` over PowerShell-specific piping or quoting.
 

@@ -107,7 +107,7 @@ describe('doctor command', () => {
       expect(doctor).toContain('watcher last reconciliation: 2026-07-15T00:00:00.000Z (42ms; files=1; directories=1)')
       expect(doctor).toContain('watcher failure: authoritative scan failed')
       expect(status).toContain('generation-policy mismatch')
-      expect(status).toContain('watcher failed (live=true, coverage=failed, mode=recursive-events, interval=30000ms, published_policy=mismatch')
+      expect(status).toContain('watcher failed (live=true, coverage=failed, mode=recursive-events, interval=30000ms, requested_extraction=unknown, strategies=unavailable, published_policy=mismatch')
       expect(status).toContain('reconciliation 2026-07-15T00:00:00.000Z (duration=42ms, files=1, directories=1')
       expect(status).toContain('madar generate . --update')
     })

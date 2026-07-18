@@ -8,7 +8,7 @@ This benchmark is a **measurement harness**, not a performance gate. Its job is 
 
 The synthetic harness runs six variants on isolated fixture copies:
 
-1. `generate-legacy` — normal `generate`
+1. `generate-legacy` — explicit `generate --legacy`
 2. `generate-spi-cold` — first `generate --spi` run
 3. `generate-spi-warm` — second `generate --spi` run on the same workspace to measure the cache-hit path
 4. `update-noop` — `generate --update` with no source changes

@@ -2,7 +2,10 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 import { KnowledgeGraph } from '../contracts/graph.js'
+import type { ExtractionMode } from '../contracts/generation-policy.js'
 import type {
+  ExtractionFallbackReason,
+  ExtractionStrategy,
   IndexingManifestV1,
   IndexingOutcome,
   IndexingSpiDiagnostic,
@@ -26,6 +29,7 @@ import {
 import { generateDocs as generateDocsArtifacts } from '../pipeline/docs.js'
 import { toCypher, toGraphml, toHtml, toJson, toObsidian, toSvg } from '../pipeline/export.js'
 import { extract, EXTRACTOR_CACHE_VERSION } from '../pipeline/extract.js'
+import { createFileStemMap } from '../pipeline/extract/core.js'
 import {
   localExtractionIndexingOutcome,
   projectSpiIndexingOutcomes,
@@ -33,6 +37,7 @@ import {
 } from '../pipeline/indexing-generation.js'
 import { createIndexingManifest, indexingStrictViolations, localIndexingPath } from '../pipeline/indexing-outcomes.js'
 import { buildSpiCached, type SpiCacheStats } from '../pipeline/spi/cache.js'
+import { isSpiSupportedSourceFile } from '../pipeline/spi/build.js'
 import { projectSpiToExtraction } from '../pipeline/spi/projector.js'
 import { generate as generateReport } from '../pipeline/report.js'
 import { toWiki } from '../pipeline/wiki.js'
@@ -47,7 +52,12 @@ import {
   writeFailedIndexingManifests,
   writeIndexingManifests,
 } from './indexing-manifest.js'
-import { buildGenerationPolicy, generationOptionsFromPolicy, readGraphGenerationPolicy } from './generation-policy.js'
+import {
+  buildGenerationPolicy,
+  generationOptionsFromPolicy,
+  readGraphGenerationPolicy,
+  resolveExtractionMode,
+} from './generation-policy.js'
 import {
   buildDiscoverySafetyMetadata,
   type DiscoveryExclusion,
@@ -80,12 +90,11 @@ export interface GenerateGraphOptions {
   neo4j?: boolean
   includeDocs?: boolean
   docs?: boolean
-  /** v0.18 — opt-in: use the SPI v1 pipeline (buildSpiCached +
-   *  projectSpiToExtraction) instead of the legacy extract() call site.
-   *  When true, framework_role + framework_metadata flow into graph.json
-   *  for all 9 framework substrates (NestJS, Express, Next.js, React
-   *  Router, Redux, Hono, Fastify, tRPC, Prisma) and repeat builds on an
-   *  unchanged workspace hit the on-disk SPI cache. Default false. */
+  /** Select capability-aware auto extraction, legacy-only extraction, or
+   * strict SPI-only extraction. CLI generation defaults to `auto`; omitted
+   * programmatic options retain the pre-v0.32 legacy behavior. */
+  extractionMode?: ExtractionMode
+  /** @deprecated Use `extractionMode`. Retained for programmatic callers. */
   useSpi?: boolean
   indexingStrict?: IndexingStrictThresholds
   onProgress?: (progress: ProgressStep) => void
@@ -93,6 +102,8 @@ export interface GenerateGraphOptions {
 
 export interface GenerateGraphResult {
   mode: 'generate' | 'update' | 'cluster-only'
+  /** User-facing requested extraction mode used for this graph. */
+  extractionMode?: ExtractionMode
   rootPath: string
   outputDir: string
   graphPath: string
@@ -191,6 +202,9 @@ function graphIndexingMetadata(manifest: IndexingManifestV1): Record<string, unk
   return {
     version: manifest.version,
     generated_at: manifest.generated_at,
+    ...(manifest.requested_extraction_mode
+      ? { requested_extraction_mode: manifest.requested_extraction_mode }
+      : {}),
     summary: manifest.summary,
   }
 }
@@ -207,6 +221,26 @@ function emptyExtraction(): ExtractionData {
     hyperedges: [],
     input_tokens: 0,
     output_tokens: 0,
+  }
+}
+
+/**
+ * Extraction fragments intentionally retain their language-level provenance
+ * (for example builtin:extract:go). This receipt is separate: it records the
+ * pipeline route that emitted the evidence, including auto's legacy fallback.
+ * Apply it after extraction so per-file cache entries stay mode-neutral.
+ */
+function withExtractionStrategy(
+  extraction: ExtractionData,
+  extractionStrategy: ExtractionStrategy,
+): ExtractionData {
+  return {
+    ...extraction,
+    nodes: extraction.nodes.map((node) => ({ ...node, extraction_strategy: extractionStrategy })),
+    edges: extraction.edges.map((edge) => ({ ...edge, extraction_strategy: extractionStrategy })),
+    ...(extraction.hyperedges
+      ? { hyperedges: extraction.hyperedges.map((hyperedge) => ({ ...hyperedge, extraction_strategy: extractionStrategy })) }
+      : {}),
   }
 }
 
@@ -397,7 +431,18 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   const storedClusterOptions = options.clusterOnly && graphGenerationPolicy
     ? generationOptionsFromPolicy(graphGenerationPolicy)
     : null
+  if (
+    options.clusterOnly
+    && options.extractionMode !== undefined
+    && storedClusterOptions
+    && options.extractionMode !== storedClusterOptions.extractionMode
+  ) {
+    throw new Error(
+      `--cluster-only cannot change extraction mode from ${storedClusterOptions.extractionMode} to ${options.extractionMode}. Run \`madar generate . --update\` instead.`,
+    )
+  }
   const corpusOptions = storedClusterOptions ?? options
+  const extractionMode = resolveExtractionMode(corpusOptions)
   const gitVisibleFiles = corpusOptions.respectGitignore ? collectGitVisibleFiles(resolvedRootPath) : null
   if (storedClusterOptions && graphGenerationPolicy) {
     const currentStoredPolicy = buildGenerationPolicy(resolvedRootPath, storedClusterOptions, EXTRACTOR_CACHE_VERSION, gitVisibleFiles)
@@ -429,10 +474,19 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     : detect(resolvedRootPath, detectionOptions)
   const discoverySafety = buildDiscoverySafetyMetadata(detected.exclusions)
   const previousIndexingManifest = readIndexingManifestForGraph(graphPath)
-  const indexingOutcomes: IndexingOutcome[] = [...(detected.indexing_outcomes ?? [])]
+  const indexingOutcomes: IndexingOutcome[] = (detected.indexing_outcomes ?? []).map((outcome) => ({
+    ...outcome,
+    extraction_strategy: outcome.extraction_strategy ?? 'not_extracted',
+  }))
   const spiDiagnostics: IndexingSpiDiagnostic[] = []
-  const recordExtractionOutcome = (outcome: Parameters<typeof localExtractionIndexingOutcome>[1]): void => {
-    indexingOutcomes.push(localExtractionIndexingOutcome(resolvedRootPath, outcome))
+  const recordExtractionOutcome = (
+    extractionStrategy: ExtractionStrategy,
+    fallbackReason?: ExtractionFallbackReason,
+  ) => (outcome: Parameters<typeof localExtractionIndexingOutcome>[1]): void => {
+    indexingOutcomes.push(localExtractionIndexingOutcome(resolvedRootPath, outcome, {
+      extractionStrategy,
+      ...(fallbackReason ? { fallbackReason } : {}),
+    }))
   }
 
   if (corpusOptions.includeDocs === false) {
@@ -442,6 +496,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
       status: 'skipped_by_policy',
       reason: 'docs_disabled',
       capability: null,
+      extraction_strategy: 'not_extracted',
     })))
     detected.files[FileType.DOCUMENT] = []
     if (isIncrementalDetectResult(detected)) {
@@ -451,6 +506,8 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   }
   const notes: string[] = []
   const mode: GenerateGraphResult['mode'] = options.clusterOnly ? 'cluster-only' : options.update ? 'update' : 'generate'
+
+  notes.push(`Extraction mode: ${extractionMode}.`)
 
   if (generationPolicyMismatch) {
     notes.push(
@@ -499,6 +556,26 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     ...detected.files[FileType.AUDIO],
     ...detected.files[FileType.VIDEO],
   ]
+  const spiCodeFiles = extractionMode === 'legacy'
+    ? []
+    : extractionMode === 'spi'
+      ? codeFiles
+      : codeFiles.filter((filePath) => isSpiSupportedSourceFile(filePath))
+  const legacyFallbackCodeFiles = extractionMode === 'auto'
+    ? codeFiles.filter((filePath) => !isSpiSupportedSourceFile(filePath))
+    : []
+  // SPI code and non-code/legacy passes are merged afterward, so each output
+  // graph needs one shared ID namespace across the files it actually emits.
+  // Strict SPI intentionally excludes unsupported source languages from that
+  // namespace: adding a Go/Python file must not alter JS/TS graph IDs.
+  const sharedFileStems = extractionMode === 'auto'
+    ? createFileStemMap(extractableFiles)
+    : extractionMode === 'spi'
+      ? createFileStemMap([
+          ...codeFiles.filter((filePath) => isSpiSupportedSourceFile(filePath)),
+          ...nonCodeExtractableFiles,
+        ])
+      : undefined
   let extractedFiles = options.clusterOnly ? 0 : extractableFiles.length
   let cacheSummary: GenerateGraphCacheSummary | null = null
 
@@ -544,36 +621,52 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     progress?.({ step: 'extract', message: `Extracting ${extractableFiles.length} files...`, current: 0, total: extractableFiles.length })
   }
 
-  // v0.18 — opt-in SPI pipeline. When useSpi is true, ignore the
-  // incremental branch entirely: buildSpiCached handles the
-  // "unchanged workspace" case at the SPI layer via its all-or-nothing
-  // disk cache (#77), so we always do a full SPI build + projection.
+  // SPI builds are all-or-nothing at the TypeScript-program layer. In auto
+  // mode we run that cacheable build only for SPI-capable files, then merge
+  // one legacy extraction for supported languages SPI does not implement.
+  // Explicit --spi never falls back; explicit --legacy never invokes SPI.
   const buildViaSpi = (): ReturnType<typeof buildFromJson> | null => {
     if (extractableFiles.length === 0) return null
     const spiExtractorVersion = `spi-v1.0.0-enqueues-job-${EXTRACTOR_CACHE_VERSION}`
     const built =
-      codeFiles.length > 0
+      spiCodeFiles.length > 0
         ? buildSpiCached({
             root: resolvedRootPath,
             madarVersion: `spi-extractor-${EXTRACTOR_CACHE_VERSION}`,
             extractorVersion: spiExtractorVersion,
-            ...(gitVisibleFiles ? { includedFiles: new Set(gitVisibleFiles.map((filePath) => resolve(filePath))) } : {}),
+            includedFiles: new Set(spiCodeFiles.map((filePath) => resolve(filePath))),
           })
         : null
-    const spiExtraction = built ? projectSpiToExtraction(built.spi, { root: resolvedRootPath }) : emptyExtraction()
-    const nonCodeExtraction =
-      nonCodeExtractableFiles.length > 0
-        ? extract(nonCodeExtractableFiles, {
+    const spiExtraction = built
+      ? withExtractionStrategy(projectSpiToExtraction(built.spi, {
+          root: resolvedRootPath,
+          ...(sharedFileStems ? { fileStemByAbsolutePath: sharedFileStems } : {}),
+        }), 'spi')
+      : emptyExtraction()
+    const legacyFallbackExtraction =
+      legacyFallbackCodeFiles.length > 0
+        ? withExtractionStrategy(extract(legacyFallbackCodeFiles, {
             allowedTargets: extractableFiles,
             contextNodes: spiExtraction.nodes,
-            onFileOutcome: recordExtractionOutcome,
-          })
+            ...(sharedFileStems ? { fileStemByAbsolutePath: sharedFileStems } : {}),
+            onFileOutcome: recordExtractionOutcome('legacy_fallback', 'spi_unsupported_language'),
+          }), 'legacy_fallback')
+        : emptyExtraction()
+    const codeExtraction = mergeExtractions([spiExtraction, legacyFallbackExtraction])
+    const nonCodeExtraction =
+      nonCodeExtractableFiles.length > 0
+        ? withExtractionStrategy(extract(nonCodeExtractableFiles, {
+            allowedTargets: extractableFiles,
+            contextNodes: codeExtraction.nodes,
+            ...(sharedFileStems ? { fileStemByAbsolutePath: sharedFileStems } : {}),
+            onFileOutcome: recordExtractionOutcome('non_code'),
+          }), 'non_code')
         : emptyExtraction()
 
     if (built) {
       const spiIndexing = projectSpiIndexingOutcomes({
         rootPath: resolvedRootPath,
-        codeFiles,
+        codeFiles: spiCodeFiles,
         result: built,
       })
       indexingOutcomes.push(...spiIndexing.outcomes)
@@ -583,7 +676,9 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
       }
     }
 
-    extractedFiles = (built ? (built.cache.hit ? 0 : built.cache.file_count) : 0) + nonCodeExtractableFiles.length
+    extractedFiles = (built ? (built.cache.hit ? 0 : built.cache.file_count) : 0)
+      + legacyFallbackCodeFiles.length
+      + nonCodeExtractableFiles.length
     cacheSummary = built
       ? {
           strategy: 'spi',
@@ -600,18 +695,25 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
         notes.push(`SPI build via projector (${built.cache.file_count} files, reason=${built.cache.reason}).`)
       }
     }
-    return buildFromJson(mergeExtractions([spiExtraction, nonCodeExtraction]), { directed })
+    if (extractionMode === 'auto') {
+      notes.push(
+        `Auto extraction: SPI indexed ${spiCodeFiles.length} supported source file(s); legacy fallback indexed ${legacyFallbackCodeFiles.length} SPI-unsupported source file(s).`,
+      )
+    }
+    return buildFromJson(mergeExtractions([codeExtraction, nonCodeExtraction]), { directed })
   }
 
   const graph = options.clusterOnly
     ? existingGraph
-    : options.useSpi
+    : extractionMode !== 'legacy'
       ? buildViaSpi()
     : options.update && existingGraph && upgradingLegacyDirection
       ? (() => {
           extractedFiles = extractableFiles.length
           return extractableFiles.length > 0
-            ? buildFromJson(extract(extractableFiles, { onFileOutcome: recordExtractionOutcome }), { directed })
+            ? buildFromJson(withExtractionStrategy(extract(extractableFiles, {
+                onFileOutcome: recordExtractionOutcome('legacy'),
+              }), 'legacy'), { directed })
             : null
         })()
     : options.update && existingGraph && isIncrementalDetectResult(detected)
@@ -624,7 +726,9 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
               )
               extractedFiles = extractableFiles.length
               return extractableFiles.length > 0
-                ? buildFromJson(extract(extractableFiles, { onFileOutcome: recordExtractionOutcome }), { directed })
+                ? buildFromJson(withExtractionStrategy(extract(extractableFiles, {
+                    onFileOutcome: recordExtractionOutcome('legacy'),
+                  }), 'legacy'), { directed })
                 : null
             }
 
@@ -647,11 +751,11 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
             const retainedExtraction = retainedExtractionFromGraph(existingGraph, removedSourceFiles)
             const changedExtraction =
               changedExtractableFiles.length > 0
-                ? extract(changedExtractableFiles, {
+                ? withExtractionStrategy(extract(changedExtractableFiles, {
                     allowedTargets: extractableFiles,
                     contextNodes: retainedExtraction.nodes,
-                    onFileOutcome: recordExtractionOutcome,
-                  })
+                    onFileOutcome: recordExtractionOutcome('legacy'),
+                  }), 'legacy')
                 : emptyExtraction()
             const retainedSourceFiles = indexedSourceFilesFromGraph(existingGraph, resolvedRootPath)
             indexingOutcomes.push(...retainedIndexingOutcomes({
@@ -669,7 +773,9 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
           return buildFromJson(mergeExtractions([retainedExtraction, changedExtraction]), { directed })
         })()
       : extractableFiles.length > 0
-        ? buildFromJson(extract(extractableFiles, { onFileOutcome: recordExtractionOutcome }), { directed })
+        ? buildFromJson(withExtractionStrategy(extract(extractableFiles, {
+            onFileOutcome: recordExtractionOutcome('legacy'),
+          }), 'legacy'), { directed })
       : options.update && existingGraph
           ? existingGraph
           : null
@@ -684,10 +790,19 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     status: 'failed',
     reason: 'manifest_stat_failed',
     capability: null,
+    extraction_strategy: 'not_extracted',
   })))
+  // Discovery, retained-evidence, and manifest-stat outcomes never emit graph
+  // evidence themselves. Normalize every remaining path here so the receipt
+  // is total even during cluster-only and incremental reconciliation paths.
+  const receiptOutcomes = indexingOutcomes.map((outcome) => ({
+    ...outcome,
+    extraction_strategy: outcome.extraction_strategy ?? 'not_extracted' as const,
+  }))
   const indexingManifest = createIndexingManifest({
-    outcomes: indexingOutcomes,
+    outcomes: receiptOutcomes,
     spiDiagnostics,
+    requestedExtractionMode: extractionMode,
   })
   const indexingManifestPath = join(resolvedOutputDir, INDEXING_MANIFEST_FILENAME)
 
@@ -709,6 +824,11 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   }
 
   graph.graph.indexing_completeness = graphIndexingMetadata(indexingManifest)
+  graph.graph.extraction_receipt = {
+    requested_mode: extractionMode,
+    strategies: indexingManifest.summary.extraction_strategy_buckets ?? {},
+    fallbacks: indexingManifest.summary.fallback_reason_buckets ?? {},
+  }
   const effectiveIndexingStrict = options.indexingStrict ?? storedClusterOptions?.indexingStrict
   if (effectiveIndexingStrict) {
     const violations = indexingStrictViolations(indexingManifest.summary, effectiveIndexingStrict)
@@ -748,8 +868,15 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   graph.graph.root_path = resolvedRootPath
   graph.graph.discovery_safety = discoverySafety
   graph.graph.generation_policy = generationPolicyToPublish
-  if (options.useSpi) {
+  // Cluster-only mode reuses the existing graph; it must not relabel that
+  // graph based on the currently discovered corpus without re-extracting it.
+  const graphUsesSpi = options.clusterOnly
+    ? existingGraph?.graph.spi_mode === true
+    : extractionMode === 'spi' || (extractionMode === 'auto' && spiCodeFiles.length > 0)
+  if (graphUsesSpi) {
     graph.graph.spi_mode = true
+  } else {
+    delete graph.graph.spi_mode
   }
   graph.graph.graph_build_freshness = buildGraphBuildFreshnessMetadata(
     resolvedRootPath,
@@ -807,6 +934,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
 
   return {
     mode,
+    extractionMode,
     rootPath: resolvedRootPath,
     outputDir: resolvedOutputDir,
     graphPath,

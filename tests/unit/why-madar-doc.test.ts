@@ -109,11 +109,12 @@ describe('public marketing copy honesty', () => {
       )
     })
 
-    it('keeps SPI guidance in the deeper docs instead of the top-level README', () => {
+    it('keeps extraction guidance concise in the README and documents strict modes in deeper docs', () => {
+      expect(lower).toContain('by default, `madar generate .` uses spi')
+      expect(publicDocs).toContain('--legacy')
       expect(publicDocs).toContain('--spi')
-      expect(publicLower).toContain('storage-oriented prompts')
-      expect(publicLower).toContain('next.js')
-      expect(publicLower).toContain('disk cache')
+      expect(languageMatrix).toContain('Storage-oriented prompts in auto mode')
+      expect(languageMatrix).toContain('Next.js App Router in auto mode')
       expect(content).not.toContain('## When To Use `--spi`')
     })
 
@@ -243,7 +244,7 @@ describe('public marketing copy honesty', () => {
       expect(content).toContain('madar prompt')
     })
 
-    it('mentions the opt-in SPI path and the compare artifacts users should notice', () => {
+    it('mentions the strict SPI comparison path and the compare artifacts users should notice', () => {
       expect(content).toContain('madar generate examples/sample-workspace --spi --no-html')
       expect(content).toContain('--baseline-mode pack_only')
       expect(content).toContain('report.share-safe.json')
@@ -519,8 +520,8 @@ describe('public marketing copy honesty', () => {
       expect(content).toContain('generic AST structure')
       expect(content).toContain('source-visible')
       expect(content).toContain('visible client/server boundaries')
-      expect(content).toContain('source-visible Hono, Fastify, tRPC, and Prisma workflows get conservative deeper retrieval hints on the opt-in `--spi` pipeline')
-      expect(content).toContain('Hono, Fastify, tRPC, and Prisma currently contribute conservative request-flow and storage hints only on the opt-in `--spi` path')
+      expect(content).toContain('source-visible Hono/Fastify route ownership')
+      expect(content).toContain('In default auto mode, Hono, Fastify, tRPC, and Prisma contribute conservative request-flow and storage hints')
     })
 
     it('frames non-TS/Node language support as first-pass coverage, not broad parity', () => {

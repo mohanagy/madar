@@ -142,7 +142,7 @@ describe('runTryCommand', () => {
 
       await runTryCommand({ prompt: 'how does auth work?', path: workspace }, io, dependencies)
 
-      expect(dependencies.generateGraph).toHaveBeenCalledWith(workspace, { noHtml: true })
+      expect(dependencies.generateGraph).toHaveBeenCalledWith(workspace, { extractionMode: 'auto', noHtml: true })
       expect(dependencies.runContextPack).toHaveBeenCalledWith({
         options: {
           prompt: 'how does auth work?',
@@ -167,7 +167,7 @@ describe('runTryCommand', () => {
 
     const output = await runTryCommand({ prompt: 'how does auth work?', path: workspace }, io, dependencies)
 
-    expect(dependencies.generateGraph).toHaveBeenCalledWith(workspace, { noHtml: true })
+    expect(dependencies.generateGraph).toHaveBeenCalledWith(workspace, { extractionMode: 'auto', noHtml: true })
     expect(dependencies.analyzeFreshness).not.toHaveBeenCalled()
     expect(output).toContain('Existing graph is undirected')
   })
@@ -217,8 +217,8 @@ describe('runTryCommand', () => {
 
     const output = await runTryCommand({ prompt: 'how does auth work?', path: workspace }, io, dependencies)
 
-    expect(dependencies.generateGraph).toHaveBeenNthCalledWith(1, workspace, { noHtml: true })
-    expect(dependencies.generateGraph).toHaveBeenNthCalledWith(2, sampleWorkspace, { noHtml: true })
+    expect(dependencies.generateGraph).toHaveBeenNthCalledWith(1, workspace, { extractionMode: 'auto', noHtml: true })
+    expect(dependencies.generateGraph).toHaveBeenNthCalledWith(2, sampleWorkspace, { extractionMode: 'auto', noHtml: true })
     expect(dependencies.runContextPack).toHaveBeenCalledWith({
       options: {
         prompt: 'how does auth work?',
@@ -248,7 +248,7 @@ describe('runTryCommand', () => {
 
     const output = await runTryCommand({ prompt: 'how does auth work?', path: workspace }, io, dependencies)
 
-    expect(dependencies.generateGraph).toHaveBeenCalledWith(sampleWorkspace, { noHtml: true })
+    expect(dependencies.generateGraph).toHaveBeenCalledWith(sampleWorkspace, { extractionMode: 'auto', noHtml: true })
     expect(dependencies.runContextPack).toHaveBeenCalledWith({
       options: {
         prompt: 'how does auth work?',

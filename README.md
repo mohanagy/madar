@@ -71,9 +71,9 @@ Madar supports these project-local installers:
 
 Installer details are in the [CLI and MCP reference](https://github.com/mohanagy/madar/blob/main/docs/reference/cli-and-mcp.md). Step-by-step setup and smoke tests are in the [agent quickstarts](https://github.com/mohanagy/madar/blob/main/docs/tutorials/agent-quickstarts.md).
 
-After upgrading Madar, rerun your agent's install command so its managed profile receives current runtime settings. Older profiles may lack automatic refresh; older Codex profiles may also lack the extended MCP startup window needed by large or synchronized workspaces.
+After upgrading Madar, rerun your agent's install command to refresh its managed profile. Older profiles may lack automatic refresh or Codex's longer startup window.
 
-Starting with this release, Codex installs create a workspace-scoped MCP block in `$CODEX_HOME/config.toml` (normally `~/.codex/config.toml`) with `startup_timeout_sec = 180` and `tool_timeout_sec = 60`. Madar makes the MCP transport available while the initial graph reconciliation runs in a background worker. Graph-backed calls resume only after startup completes, watcher health is non-blocking with complete coverage, and the idle watcher's policy matches the published graph and manifest; `idle` alone is not a readiness guarantee.
+Codex installs create a workspace-scoped MCP block with longer startup and tool timeouts. Madar stays available during initial reconciliation; graph-backed calls become available once the graph is ready.
 
 Starting with `0.31.3`, a graph-backed call made while Madar is `starting`, `pending`, or `reconciling` returns a structured retryable response. The agent should retry the same Madar request after the suggested delay instead of bypassing Madar or running generation manually. A dead refresh owner is recovered automatically; only failed, incomplete, or policy-mismatched graph states ask for repair.
 
@@ -123,6 +123,8 @@ madar generate .
 madar summary
 madar pack "how does auth work?" --task explain --format text
 ```
+
+By default, `madar generate .` uses SPI for JavaScript/TypeScript and legacy extraction for other supported languages. Strict modes are in the [CLI reference](https://github.com/mohanagy/madar/blob/main/docs/reference/cli-and-mcp.md).
 
 Create a provider-ready prompt:
 

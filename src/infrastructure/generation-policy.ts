@@ -6,7 +6,9 @@ import { basename, isAbsolute, relative, resolve, sep } from 'node:path'
 import {
   createGenerationPolicy,
   parseGenerationPolicy,
-  type GenerationPolicyV1,
+  type ExtractionMode,
+  type GenerationPolicy,
+  type GenerationPolicyV2,
 } from '../contracts/generation-policy.js'
 import type { IndexingStrictThresholds } from '../contracts/indexing.js'
 import { loadManifestMetadata } from '../pipeline/detect.js'
@@ -14,6 +16,12 @@ import { DEFAULT_HARD_IGNORE_GLOBS } from '../shared/source-discovery.js'
 
 export interface BuildGenerationPolicyOptions {
   directed?: boolean
+  /**
+   * `auto` uses SPI where it has a source-language capability and otherwise
+   * falls back to the legacy extractor. Explicit modes stay strict.
+   */
+  extractionMode?: ExtractionMode
+  /** @deprecated Use `extractionMode`. Retained for programmatic callers. */
   useSpi?: boolean
   respectGitignore?: boolean
   followSymlinks?: boolean
@@ -23,11 +31,23 @@ export interface BuildGenerationPolicyOptions {
 
 export interface StoredPolicyGenerationOptions {
   directed: boolean
-  useSpi: boolean
+  extractionMode: ExtractionMode
   respectGitignore: boolean
   followSymlinks: boolean
   includeDocs: boolean
   indexingStrict?: IndexingStrictThresholds
+}
+
+/**
+ * Resolve programmatic compatibility separately from the CLI default. Older
+ * library callers that omitted `useSpi` retain legacy extraction; CLI and
+ * user-facing command paths pass `extractionMode: 'auto'` explicitly.
+ */
+export function resolveExtractionMode(options: Pick<BuildGenerationPolicyOptions, 'extractionMode' | 'useSpi'>): ExtractionMode {
+  if (options.extractionMode) {
+    return options.extractionMode
+  }
+  return options.useSpi === true ? 'spi' : 'legacy'
 }
 
 function optionalGitPath(rootPath: string, args: string[]): string | null {
@@ -124,11 +144,13 @@ export function buildGenerationPolicy(
   options: BuildGenerationPolicyOptions,
   extractorCacheVersion: number,
   gitVisibleFiles: readonly string[] | null,
-): GenerationPolicyV1 {
+): GenerationPolicyV2 {
   const strict = options.indexingStrict
+  const extractionMode = resolveExtractionMode(options)
   return createGenerationPolicy({
     directed: options.directed !== false,
-    use_spi: options.useSpi === true,
+    use_spi: extractionMode !== 'legacy',
+    extraction_mode: extractionMode,
     respect_gitignore: options.respectGitignore === true,
     follow_symlinks: options.followSymlinks === true,
     include_documents: options.includeDocs !== false,
@@ -141,11 +163,13 @@ export function buildGenerationPolicy(
   })
 }
 
-export function generationOptionsFromPolicy(policy: GenerationPolicyV1): StoredPolicyGenerationOptions {
+export function generationOptionsFromPolicy(policy: GenerationPolicy): StoredPolicyGenerationOptions {
   const strict = policy.settings.indexing_strict
   return {
     directed: policy.settings.directed,
-    useSpi: policy.settings.use_spi,
+    extractionMode: policy.version === 1
+      ? policy.settings.use_spi ? 'spi' : 'legacy'
+      : policy.settings.extraction_mode,
     respectGitignore: policy.settings.respect_gitignore,
     followSymlinks: policy.settings.follow_symlinks,
     includeDocs: policy.settings.include_documents,
@@ -155,7 +179,7 @@ export function generationOptionsFromPolicy(policy: GenerationPolicyV1): StoredP
   }
 }
 
-export function readGraphGenerationPolicy(graphPath: string): GenerationPolicyV1 | null {
+export function readGraphGenerationPolicy(graphPath: string): GenerationPolicy | null {
   try {
     const parsed = JSON.parse(readFileSync(graphPath, 'utf8')) as { generation_policy?: unknown }
     return parseGenerationPolicy(parsed.generation_policy)
@@ -164,7 +188,7 @@ export function readGraphGenerationPolicy(graphPath: string): GenerationPolicyV1
   }
 }
 
-export function readStoredGenerationPolicy(graphPath: string, manifestPath?: string): GenerationPolicyV1 | null {
+export function readStoredGenerationPolicy(graphPath: string, manifestPath?: string): GenerationPolicy | null {
   const graphPolicy = readGraphGenerationPolicy(graphPath)
   if (!manifestPath) {
     return graphPolicy

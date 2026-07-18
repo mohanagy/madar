@@ -1,4 +1,27 @@
+import type { ExtractionMode } from './generation-policy.js'
+
 export const INDEXING_MANIFEST_VERSION = 1 as const
+
+/**
+ * The actual pipeline route used for a candidate. `legacy_fallback` is
+ * intentionally distinct from `legacy`: it proves that auto mode chose SPI
+ * first, then retained a source language SPI does not implement.
+ */
+export const EXTRACTION_STRATEGIES = [
+  'spi',
+  'legacy',
+  'legacy_fallback',
+  'non_code',
+  'not_extracted',
+] as const
+
+export type ExtractionStrategy = (typeof EXTRACTION_STRATEGIES)[number]
+
+export const EXTRACTION_FALLBACK_REASONS = [
+  'spi_unsupported_language',
+] as const
+
+export type ExtractionFallbackReason = (typeof EXTRACTION_FALLBACK_REASONS)[number]
 
 export const INDEXING_OUTCOME_STATUSES = [
   'indexed',
@@ -59,6 +82,10 @@ export interface IndexingOutcome {
   status: IndexingOutcomeStatus
   reason: IndexingReasonCode
   capability: string | null
+  /** Actual route selected for this candidate in the published graph. */
+  extraction_strategy?: ExtractionStrategy
+  /** Present only when auto mode deliberately routed a file away from SPI. */
+  fallback_reason?: ExtractionFallbackReason
   diagnostics?: IndexingDiagnostic[]
 }
 
@@ -78,6 +105,9 @@ export interface IndexingSummary {
   counts: IndexingStatusCounts
   reason_buckets: Partial<Record<IndexingReasonCode, number>>
   capability_buckets: Record<string, number>
+  /** Omitted for pre-receipt manifests so they remain readable. */
+  extraction_strategy_buckets?: Partial<Record<ExtractionStrategy, number>>
+  fallback_reason_buckets?: Partial<Record<ExtractionFallbackReason, number>>
 }
 
 export interface IndexingSpiDiagnostic {
@@ -92,6 +122,8 @@ export interface IndexingSpiDiagnostic {
 export interface IndexingManifestV1 {
   version: typeof INDEXING_MANIFEST_VERSION
   generated_at: string
+  /** Requested user-facing mode, independent from the per-file route below. */
+  requested_extraction_mode?: ExtractionMode
   summary: IndexingSummary
   outcomes: IndexingOutcome[]
   spi_diagnostics: IndexingSpiDiagnostic[]
@@ -100,6 +132,7 @@ export interface IndexingManifestV1 {
 export interface ShareSafeIndexingManifestV1 {
   version: typeof INDEXING_MANIFEST_VERSION
   generated_at: string
+  requested_extraction_mode?: ExtractionMode
   summary: IndexingSummary
   spi_diagnostics: {
     total: number

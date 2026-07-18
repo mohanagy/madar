@@ -59,11 +59,11 @@ When the selected question is a runtime-generation flow, compact responses can c
 
 Runtime-generation prompts stay compact by following the strongest backend path first and suppressing sibling-route noise plus shared-hub fan-out on broad runtime-generation questions.
 
-## When to use `--spi`
+## Extraction modes
 
-`--spi` is still opt-in in `0.27.9-next.0`. Use it when your repo is framework-heavy TypeScript/JavaScript and you want extra framework-shaped metadata plus disk cache behavior.
+`madar generate .` is capability-aware by default: it uses SPI for supported TypeScript/JavaScript files and keeps legacy extraction for other supported languages in the same graph.
 
-`--spi` is usually worth it for NestJS, Next.js App Router, Prisma, tRPC, Hono, Fastify, and similar repos where users ask storage-oriented prompts, client/server boundary questions, or request-flow questions. The default pipeline is still fine for simpler repos, non-JS/TS workspaces, or quick first runs when you do not need the extra framework detail yet.
+Use `--legacy` when you intentionally need the old extraction path everywhere. Use `--spi` when you intentionally need a strict JS/TS-only graph with no legacy-language fallback. Auto mode is the normal choice for NestJS, Next.js App Router, Prisma, tRPC, Hono, Fastify, mixed-language monorepos, and first runs.
 
 Deepest extraction is still TypeScript/JavaScript with framework-aware passes for Express, NestJS, Next.js, React Router, Redux Toolkit, Hono, Fastify, tRPC, Prisma, and routing-controllers. Python now has conservative cross-file import/call resolution, FastAPI router composition plus route/dependency semantics, and first-pass Django URL-conf route-to-view mapping. Go has conservative local-package import resolution, receiver/method call edges, and statically visible `net/http` / Gin / Chi route relationships. Ruby, Java, and Rust still use the tree-sitter AST baseline. C / Kotlin / C# / Scala / PHP / Swift / Zig use a generic structural extractor.
 

@@ -256,6 +256,9 @@ export function loadGraph(graphPath: string): KnowledgeGraph {
   if (isRecord(parsed.indexing_completeness)) {
     graph.graph.indexing_completeness = parsed.indexing_completeness
   }
+  if (isRecord(parsed.extraction_receipt)) {
+    graph.graph.extraction_receipt = parsed.extraction_receipt
+  }
   return graph
 }
 
