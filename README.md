@@ -189,9 +189,11 @@ Read the [benchmark suite and all dated receipts](https://github.com/mohanagy/ma
 
 ## Current Release
 
-Current version: `0.31.3`.
+Current version: `0.31.4`.
 
-`0.31.3` recovers refresh leases whose owner has exited, waits safely through live refresh contention, and gives agents a structured retry signal during temporary graph reconciliation instead of pushing them to bypass Madar.
+`0.31.4` keeps receipts tied to visible context and hardens Claude/Codex hook handling.
+
+`0.31.3` recovers dead refresh owners, waits through live refresh contention, and returns a retry signal during temporary reconciliation instead of pushing agents to bypass Madar.
 
 `0.31.2` keeps the Codex MCP connection responsive while its initial automatic graph refresh runs, adds an explicit 180-second Codex startup window, and keeps graph-backed answers unavailable until the refreshed graph is ready.
 
@@ -199,7 +201,7 @@ Current version: `0.31.3`.
 
 `0.31.0` made code graphs directed by default, separated evidence strength from answer readiness, added bounded context recovery, made indexing completeness explicit, preserved generation policy during automatic refresh, isolated linked-worktree artifacts, and removed benchmark expectations from production retrieval.
 
-Read the full notes in the [0.31.3 changelog](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md#0313---2026-07-17).
+Read the full notes in the [0.31.4 changelog](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md#0314---2026-07-18).
 
 ## Documentation
 
