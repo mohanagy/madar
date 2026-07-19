@@ -1,0 +1,40 @@
+I now have the complete flow.
+
+## How Formbricks processes a survey response
+
+A response is created via the client SDK endpoint, persisted transactionally with quota evaluation, then all side effects (webhooks, integrations, notifications, analytics/event tracking) run asynchronously through a BullMQ pipeline.
+
+### 1. Request handling — `POST /api/v2/client/[workspaceId]/responses`
+`app/api/v2/client/[workspaceId]/responses/route.ts`
+- `resolveClientApiIds` accepts either an `environmentId` (old SDK) or `workspaceId` (new SDK).
+- Body parsed/validated against `ZResponseInputV2`; contacts gated behind the enterprise license check (`getIsContactsEnabled`).
+- `getSurvey` loads the survey, then `validateResponseSubmission` runs `checkSurveyValidity`, file-upload validation, "other" option length checks, and full `validateResponseData`.
+- `createResponseForRequest` enriches `meta`: parses the User-Agent (`UAParser` → browser/device/os), captures `country` (Cloudflare/CloudFront headers), and — only if `survey.isCaptureIpEnabled` — the client IP.
+
+### 2. Persistence — transactional create + quota evaluation
+`.../responses/lib/response.ts` → `app/api/client/[workspaceId]/responses/lib/response.ts`
+- `createResponseWithQuotaEvaluation` opens a `prisma.$transaction`: inside it `createResponse` resolves the org/contact, computes TTC (`calculateTtcTotal` on finish), asserts display ownership, and does `prisma.response.create`.
+- In the **same transaction**, `evaluateResponseQuotas` runs and may return `quotaFull`. Prisma unique-constraint errors are mapped to `InvalidInputError` (display already linked) / `UniqueConstraintError` (single-use link reused).
+- The route returns just `{ id, ...quotaObj }` to the SDK immediately.
+
+### 3. Pipeline enqueue (fan-out point)
+`app/lib/pipelines.ts` — after the response is persisted, the route calls `sendToPipeline({ event: "responseCreated", ... })`, and additionally `"responseFinished"` when `responseData.finished`. `sendToPipeline` enqueues a `TResponsePipelineJobData` job onto **BullMQ** via `getBackgroundJobProducer().enqueueResponsePipeline` (requires queueing enabled).
+- **Updates** (`PUT .../responses/[responseId]`, handled by `put-response-handler.ts`) similarly emit `"responseUpdated"` and, when the response becomes finished, `"responseFinished"`.
+
+### 4. Async processing + analytics/event tracking — the worker
+`modules/response-pipeline/lib/process-response-pipeline-job.ts` (`processResponsePipelineJob`)
+- Loads organization, survey, and matching webhooks in parallel; validates the survey belongs to the workspace (`UnrecoverableError` otherwise → no retry).
+- **Webhooks** (`deliverWebhooks`): signed (Standard Webhooks HMAC), SSRF-hardened (URL validation + pinned dispatcher, `redirect: "manual"`), 5s timeout, retried up to `maxAttempts`.
+- **On `responseFinished`** (`runResponseFinishedSideEffects`): `handleIntegrations` (`handle-integrations.ts` — Google Sheets/Airtable/Notion/Slack), `handleFeedbackSourcePipeline`, follow-up emails (`sendFollowUpsForResponse`), owner/manager notification emails, and survey auto-complete (marks survey `completed` at the `autoComplete` threshold + audit log).
+- **On `responseCreated`** (`runResponseCreatedSideEffects`) — the analytics/event-tracking path:
+  - `recordResponseCreatedMeterEvent` → Stripe billing meter.
+  - `captureSurveyResponsePostHogEvent` (`posthog.ts`) → emits the **`survey_response_received`** PostHog event, but only at milestones (1st response, every 10th up to 100, then every 100th).
+  - `sendTelemetryEvents` (`telemetry.ts`) → self-host telemetry.
+- Every side effect is individually try/caught so one failure doesn't abort the rest; DB pool-exhaustion errors (`P2024`) are rethrown to trigger retry.
+
+**Key files:** `route.ts` (request) → `lib/response.ts` + `app/api/client/.../lib/response.ts` (transactional persistence + quota) → `app/lib/pipelines.ts` (BullMQ enqueue) → `modules/response-pipeline/lib/process-response-pipeline-job.ts` + `posthog.ts`/`telemetry.ts` (webhooks, integrations, analytics/events).
+
+**Caveats:**
+- **The Madar knowledge-graph MCP was unavailable this run** — the `mcp__madar__*` tools never registered despite repeated waits/searches. Per the project contract's MCP-unavailable fallback (rule 6), I consulted `out/GRAPH_REPORT.md` first, then verified against focused reads of the actual code. This answer is grounded in source, not the graph tools.
+- Analytics is intentionally sampled (milestone-gated) and both PostHog and telemetry are best-effort/non-blocking; PostHog capture is skipped entirely if `POSTHOG_KEY` is unset.
+- All post-persistence work depends on BullMQ queueing being enabled; if disabled, `sendToPipeline` throws.

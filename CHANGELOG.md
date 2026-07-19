@@ -2,6 +2,134 @@
 
 All notable changes to the TypeScript package will be documented in this file.
 
+## [Unreleased]
+
+## [0.32.0] - 2026-07-19
+
+### Added
+
+- **Capability-aware auto extraction is now the default**: `madar generate .` and programmatic generation combine SPI node and framework metadata with proven legacy relationship semantics for JavaScript/TypeScript, while using legacy fallback for SPI-unsupported languages. `--legacy` remains legacy-only and `--spi` remains strict SPI code extraction without legacy semantic augmentation or unsupported-language fallback. Addresses #570.
+- **Official MCP Registry publication is part of the release path**: the package now declares its canonical `mcpName`, ships an official Registry manifest for the local stdio server, and provides an OIDC-protected workflow that verifies the public npm package before publishing and checking the Registry entry.
+
+## [0.31.4] - 2026-07-18
+
+### Changed
+
+- **Cross-layer questions recover by query obligation instead of repeating the loudest vocabulary**: retrieval splits multi-stage flow questions into bounded obligations, reserves structurally connected anchors across distinct communities, and reports initial/final obligation coverage plus promoted communities in the retrieval plan. Explain packs can now treat a diverse cross-file set of direct workflow owners as supporting evidence instead of replacing stronger obligation anchors with weaker related candidates merely to satisfy a ranking label. Execution-owner questions such as “what runs the monthly close?” now receive behavior-slice retrieval, and exact file ownership remains available even when clustering separates a file node from its symbols. Addresses #565.
+
+### Fixed
+
+- **A valid unchanged graph becomes usable without rebuilding at every MCP startup**: automatic refresh validates generation policy, graph freshness, indexing outcomes, the authoritative source snapshot, deletions, additions, ignored discovery paths, and control-file changes before reusing a graph. A graph-backed request waits through a bounded transient reconciliation window and completes as the same request once ready, while MCP initialization, discovery, and ping remain responsive. Changed, missing, incomplete, or policy-mismatched graphs still rebuild or fail closed. Addresses #564.
+- **Retrieval receipts now describe the snippets agents can actually inspect**: query-obligation totals and coverage are reconciled after recovery, compaction, serialization, context resolution, and delta filtering; historical coverage cannot exceed the visible total. This keeps answer-ready receipts truthful when the output surface trims evidence. Addresses #565.
+- **Claude and Codex installer lifecycle checks now fail closed around user-owned hook paths**: doctor, install, and uninstall distinguish managed hook scripts from directories, broken links, unreadable files, or custom replacements; workspace-scoped Codex MCP registrations continue to coexist and uninstall independently. Addresses #567.
+
+## [0.31.3] - 2026-07-17
+
+### Fixed
+
+- **Automatic refresh no longer becomes permanently unavailable after refresh-lease contention**: leases whose recorded owner is definitely dead are reclaimed immediately, while a live owner is awaited with bounded, abortable backoff instead of turning a 30-second contention window into a terminal watcher failure. Shutdown requested during contended startup is honored promptly. Closes #561.
+- **Agents can distinguish temporary graph reconciliation from graph repair**: graph-backed MCP calls now return structured `madar_graph_not_ready` error data with `retryable`, `retry_after_ms`, and `suggested_action`. `starting`, `pending`, and `reconciling` ask the agent to retry the same Madar request; failed, incomplete, or policy-mismatched graphs remain fail-closed and ask for repair.
+
+### Notes
+
+- Restart or reconnect the agent's MCP session after upgrading so it launches the `0.31.3` runtime. No installer-profile migration or manual graph generation is required when the graph is only reconciling.
+
+## [0.31.2] - 2026-07-16
+
+### Fixed
+
+- **Codex no longer times out while Madar performs the initial automatic refresh**: the MCP transport becomes responsive immediately while graph reconciliation runs in a background worker, and graph-backed calls remain fail-closed until the watcher reports a ready graph. Worker startup and reconciliation failures remain visible through watcher state, stderr, and MCP freshness errors. Closes #559.
+- **Managed Codex profiles now allow large workspaces enough time to start**: new and updated `.codex/config.toml` entries set `startup_timeout_sec = 180` without overwriting unrelated user configuration.
+
+### Notes
+
+- After upgrading, rerun `madar codex install` in each Codex workspace to migrate the managed MCP block to the extended startup timeout.
+
+## [0.31.1] - 2026-07-15
+
+### Changed
+
+- **The README now starts with a first-use path instead of internal product detail**: new users get a 60-second trial, a concrete password-reset example, agent setup commands, a plain-language explanation of what changes for the agent, and clear fit and limitation guidance before deeper architecture or benchmark material.
+- **Public benchmark evidence now keeps unlike experiments separate**: the genuine June source-checkout measurements remain documented as controlled profile-assisted evidence, while the July packed-artifact reruns are correctly reported as zero valid performance comparisons rather than six product losses. The README links to the complete dated receipts instead of reproducing an internal benchmark report on the landing page.
+
+### Notes
+
+- This is a documentation-only patch. Runtime behavior is unchanged from `0.31.0`.
+
+## [0.31.0] - 2026-07-15
+
+### Added
+
+- **Context packs now separate evidence quality from answer readiness**: responses expose independent evidence-strength, retrieval-coverage, and answerability signals; incomplete explain packs keep their original evidence through up to two bounded cumulative recovery passes; and agents receive exact verification targets instead of treating a medium compatibility score as a reason to restart broad search. Closes #552.
+- **Conceptual questions get a deterministic repository-local fallback**: lexical misses can run one bounded, graph-grounded recovery pass without requiring embeddings, while unrelated prompts remain empty instead of drifting to high-degree hubs. Self-hosted regression fixtures cover expected-file recall, selected-file precision, answerability, token budgets, latency, and negative controls. Closes #555.
+- **Retrieval and extraction expose explicit typed stages**: seed generation, expansion, ranking, packing, evidence planning, recovery, discovery, capability selection, per-language extraction, framework augmentation, merge, relationship resolution, and diagnostics projection now have stable internal boundaries with source-safe stage diagnostics. Closes #556.
+
+### Changed
+
+- **Generated code graphs are directed by default**: generate, update, watch, try, and automatic refresh preserve source-to-target edges; legacy undirected graphs rebuild safely; generic context queries still inspect both sides of incident relationships; and impact, call-chain, and directional slicing reject visualization-only undirected artifacts instead of returning misleading results. Closes #548.
+- **Strict agent installs match the MCP tools they actually expose**: generated guidance uses `context_pack` and `context_expand`, follows the new answerability states, and no longer instructs agents to call unavailable tools. Closes #550.
+- **Auto-refresh is policy-preserving and fail-closed**: adaptive full reconciliations replace silent scan caps, filesystem events invalidate graph-backed answers immediately, generation settings are fingerprinted and reused, policy drift forces a full rebuild, media sidecar content changes are detected even when file mtimes do not advance, and watcher/reconciliation health is visible through status and doctor output. Closes #553.
+- **Indexing completeness is explicit and auditable**: generation records every indexed, warned, policy-skipped, unsupported, and failed source file in a local manifest, emits a path-free share-safe companion, and supports strict thresholds for incomplete coverage. Closes #554.
+
+### Fixed
+
+- **Sensitive-path discovery no longer excludes ordinary security source code**: source files such as token, password-reset, credential-provider, and secret-manager implementations remain indexable, while private keys, environment files, credential stores, and non-source secret material stay excluded with structured reason codes. Closes #549.
+- **Production retrieval no longer consumes benchmark answers**: expected files, symbols, and runtime-proof obligations remain in the evaluation harness and cannot influence the shipped retrieval path. Six July 15 public rows were rerun from an unpacked `@lubab/madar@0.31.0` tarball and published as dated receipts; every row is `not_measured` because strict prompt/answer gates failed or no attributable Madar MCP call occurred, so this release makes no replacement public performance-win claim. Closes #551.
+
+## [0.30.0] - 2026-07-14
+
+### Added
+
+- **Installed MCP integrations now keep their graph current automatically**: newly generated Claude Code, Codex, Cursor, Copilot, Gemini, Aider, and OpenCode configurations launch `madar serve --stdio --auto-refresh`. The server reconciles the active workspace at startup, watches it while the agent session is active, and publishes refreshed graph artifacts atomically after source or relevant configuration changes. Re-run your agent's `madar <agent> install` command after upgrading to update an existing managed MCP entry. Closes #545.
+- **Linked Git worktrees now receive isolated Madar artifacts**: default graphs, caches, reports, compare output, and time-travel artifacts live outside a linked checkout in its repository's shared Git data directory, with a distinct artifact directory for each worktree. This prevents branches from sharing or overwriting graph state while keeping generated artifacts out of the checkout. Closes #546.
+
+### Notes
+
+- **An MCP server is scoped to the worktree it started in**: start or reconnect the agent/MCP server from the intended worktree. A running server cannot follow an agent that later changes directory or creates and moves into another worktree.
+
+## [0.29.0] - 2026-07-12
+
+### Added
+
+- **Git-aware generation is available with `--respect-gitignore`**: `madar generate`, `madar generate --watch`, and `madar watch` can restrict discovery to tracked files plus non-ignored untracked files. The behavior covers legacy, SPI, incremental, and watch rebuilds while preserving normal discovery outside Git repositories. Closes #535.
+- **Codex CLI now gets a complete project-local integration**: `madar codex install` writes the Madar-owned AGENTS.md profile, a task-applicable `UserPromptSubmit` hook in `.codex/hooks.json`, its generated `.codex/madar-user-prompt-submit.cjs` script, and a marker-owned `[mcp_servers.madar]` block in `.codex/config.toml`. The hook supplies model-visible guidance only for local code tasks; it remains guidance rather than enforcement.
+- **Codex install safety and verification are explicit**: install and uninstall preserve unrelated hooks, TOML, and AGENTS content; `madar doctor` / `madar status` now validate the on-disk Codex hook, script, and MCP entry while documenting that live Codex trust and activation must be confirmed through Codex itself.
+
+### Changed
+
+- **Codex documentation and CLI handoff are aligned with the live integration**: quickstarts, compatibility docs, built-in skill guidance, release smoke checks, and the post-generate next-command list now point to the Codex hook/MCP setup and its trusted-repository activation steps.
+
+## [0.28.1] - 2026-06-10
+
+### Fixed
+
+- **A retrieve call with `semantic`/`rerank` no longer kills the MCP server when the optional `@huggingface/transformers` package is missing**: the rejection previously escaped the stdio serve loop unhandled, terminating the process mid-call so agents saw an infinite spinner instead of an error. Retrieve failures now return an MCP `isError` tool result the agent can read and react to, and the serve loop is hardened so no handler rejection can tear down the server.
+- **A project-local `npm install @huggingface/transformers` now actually enables semantic/rerank**: npx-launched and globally installed servers resolve the optional package from the project root (derived from the graph path) in addition to madar's own installation, and the install hint in the error message now points at instructions that work for those installs.
+- **Failed semantic model loads no longer poison the pipeline cache**: a rejected load is evicted, so installing the package and retrying succeeds without restarting the server.
+
+### Added
+
+- **Semantic/rerank capability gating in the retrieve tool schema**: `tools/list` omits the `semantic`, `semantic_model`, `rerank`, and `rerank_model` fields when the optional package is not resolvable, so agents never request a capability the machine lacks.
+- **`madar doctor` now reports semantic/rerank availability** with the exact enable command, without affecting overall health status.
+- **Semantic model loads are bounded by a timeout** (`MADAR_MODEL_LOAD_TIMEOUT_MS`, default 120s) so a stalled first-use model download cannot block the serial stdio request loop indefinitely.
+
+## [0.28.0] - 2026-06-10
+
+### Added
+
+- **Proof-backed public TypeScript benchmark receipts are now part of the stable release**: the public `documenso`, `formbricks`, `dub`, `twenty`, `cal-diy`, and `novu` `explain-runtime` legacy rows now have checked-in share-safe receipts with `benchmark_outcome = "full_win"`, `benchmark_readiness = "ready"`, passing Madar answer-quality gates, and empty runtime-proof missing obligations.
+- **Strict runtime-proof benchmarking is now first-class**: benchmark rows can require explicit entrypoint, handoff, and terminal-effect obligations, and reports now expose runtime-proof evidence so a row cannot be claimed as a win when required flow evidence is missing.
+
+### Changed
+
+- **README and claim surfaces now lead with the 0.28.0 proof boundary**: public copy now shows the six-row TypeScript `explain-runtime` legacy benchmark table while keeping the claim scoped to single-trial, repo/task-specific receipts and keeping SPI arms separate.
+- **Runtime retrieval is more completeness-driven**: slice selection, targeted recovery, source evidence, scoped benchmark roots, and framework/runtime handoff handling were tightened so Madar can surface direct evidence before the agent answers.
+
+### Fixed
+
+- **Benchmark receipts no longer hide missing proof behind soft wins**: strict rows now fail closed when required runtime obligations are absent, direct-evidence answer checks are enforced, nested trace tool inputs are summarized more reliably, and mixed workspace-relative evidence path issues are removed from the saved reports.
+- **Public benchmark reproducibility is stronger**: the suite honors explicit benchmark CLI overrides, keeps scoped-root fixtures platform-aware, avoids dropping source-visible runtime files behind broad ignore rules, and records share-safe reports for each public legacy row.
+
 ## [0.27.9] - 2026-06-04
 
 ### Added

@@ -72,8 +72,17 @@ function fingerprintText(value: string): number {
   return hash >>> 0
 }
 
+function normalizedSidecarFingerprint(path: string): number {
+  try {
+    const contents = readFileSync(path, 'utf8')
+    return fingerprintText(`${normalizedMtimeMs(path)}|${contents}`)
+  } catch {
+    return 0
+  }
+}
+
 export function sidecarAwareFileFingerprint(filePath: string, fileModifiedAt?: number): number {
   const normalizedFileModifiedAt = Number.isFinite(fileModifiedAt) ? Math.round(fileModifiedAt ?? 0) : normalizedMtimeMs(filePath)
-  const normalizedSidecarModifiedAt = normalizedMtimeMs(binaryIngestSidecarPath(filePath))
-  return fingerprintText(`${normalizedFileModifiedAt}|${normalizedSidecarModifiedAt}`)
+  const normalizedSidecar = normalizedSidecarFingerprint(binaryIngestSidecarPath(filePath))
+  return fingerprintText(`${normalizedFileModifiedAt}|${normalizedSidecar}`)
 }

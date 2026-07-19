@@ -1,13 +1,20 @@
 import { createInterface } from 'node:readline'
-import { statSync } from 'node:fs'
-import { basename, dirname } from 'node:path'
+import { realpathSync, statSync } from 'node:fs'
+import { basename, dirname, join, resolve } from 'node:path'
 import type { Readable, Writable } from 'node:stream'
+import { setTimeout as delay } from 'node:timers/promises'
 
 import type { ContextSessionState } from '../contracts/context-session.js'
 import { compareRefs } from '../infrastructure/time-travel.js'
+import { startGraphAutoRefreshInBackground } from '../infrastructure/background-auto-refresh.js'
+import type { GraphAutoRefreshController } from '../infrastructure/watch.js'
+import { readWatcherStateForGraph } from '../infrastructure/watcher-state.js'
+import { readStoredGenerationPolicy } from '../infrastructure/generation-policy.js'
+import { watcherStateBlocksGraphReads } from '../contracts/watcher-state.js'
+import { DirectedGraphRequiredError } from './direction.js'
 import { diffGraphs } from './diff.js'
 import { buildGraphSummary } from './graph-summary.js'
-import { MCP_PROMPTS, MCP_TOOLS, activeMcpTools, isCoreToolName, resolveToolProfileFromEnv, type McpPromptDefinition } from './stdio/definitions.js'
+import { MCP_PROMPTS, MCP_TOOLS, activeMcpTools, isToolEnabledInProfile, resolveToolProfileFromEnv, type McpPromptDefinition } from './stdio/definitions.js'
 import { handleCompletion, handlePromptGet, promptDefinitionsForGraph, readStoredCommunityLabels } from './stdio/prompts.js'
 import {
   emitResourceNotifications,
@@ -18,6 +25,7 @@ import {
   type ResourceSessionState,
 } from './stdio/resources.js'
 import { handleToolCall as handleToolCallRequest } from './stdio/tools.js'
+import { isSemanticRuntimeAvailable } from './semantic.js'
 import {
   communitiesFromGraph,
   getCommunity,
@@ -35,9 +43,14 @@ import {
   graphSizeBucketFromNodeCount,
   recordTelemetryEvent,
   repoSizeBucketFromFileCount,
+  type TelemetryAnswerabilityBucket,
+  type TelemetryBroadSearchFallbackBucket,
   type TelemetryFailureBucket,
+  type TelemetryEventInput,
 } from '../shared/telemetry.js'
 import { findPackageRoot, readPackageVersion } from '../shared/package-metadata.js'
+import { resolveGraphSourceRoot } from '../shared/graph-source-root.js'
+import { resolveMadarWorkspace } from '../shared/workspace.js'
 
 const JSONRPC_PARSE_ERROR = -32700
 const JSONRPC_INVALID_REQUEST = -32600
@@ -61,6 +74,34 @@ const MAX_CONTEXT_PACK_CACHE_ENTRIES = 256
 const graphCache = new Map<string, { mtimeMs: number; size: number; graph: ReturnType<typeof loadGraph> }>()
 const MAX_COMPLETION_VALUES = 25
 const MAX_LOG_NOTIFICATION_CHARS = 10_000
+const DEFAULT_AUTO_REFRESH_REQUEST_WAIT_MS = 25_000
+const AUTO_REFRESH_READINESS_POLL_MS = 50
+
+const AUTO_REFRESH_CONTROL_METHODS = new Set([
+  'initialize',
+  'notifications/initialized',
+  'logging/setLevel',
+  'ping',
+  'prompts/list',
+  'resources/list',
+  'tools/list',
+])
+
+// These pre-MCP convenience methods are retained for existing clients, but
+// they must not provide an unadvertised graph-navigation escape hatch when a
+// client deliberately selected the bounded strict context-pack profile.
+const STRICT_DISABLED_LEGACY_GRAPH_METHODS = new Set([
+  'query',
+  'diff',
+  'anomalies',
+  'node',
+  'neighbors',
+  'path',
+  'explain',
+  'stats',
+  'god_nodes',
+  'community',
+])
 
 type McpLogLevel = 'debug' | 'info' | 'notice' | 'warning' | 'error' | 'critical' | 'alert' | 'emergency'
 
@@ -127,29 +168,165 @@ interface StdioResponse {
   error?: {
     code: number
     message: string
+    data?: Record<string, unknown>
   }
 }
 
 export interface ServeGraphStdioOptions {
   graphPath: string
+  /** Reconcile once and watch the selected workspace for this MCP process. */
+  autoRefresh?: boolean
+  /** Source root selected when the MCP process was launched. */
+  workspaceRoot?: string
+  /** Internal/testing override for the filesystem change debounce. */
+  autoRefreshDebounceSeconds?: number
   input?: Readable
   output?: Writable
   errorOutput?: Writable
+  /** Internal/testing seam for the production background auto-refresh launcher. */
+  autoRefreshStarter?: typeof startGraphAutoRefreshInBackground
+  /** Internal/testing override for how long graph-backed requests await reconciliation. */
+  autoRefreshRequestWaitMs?: number
   logger?: {
     log(message?: string): void
     error(message?: string): void
   }
 }
 
+function sameFilesystemPath(left: string, right: string): boolean {
+  try {
+    return realpathSync(left) === realpathSync(right)
+  } catch {
+    return resolve(left) === resolve(right)
+  }
+}
+
+function graphRootPath(graphPath: string): string | null {
+  try {
+    const graph = loadGraph(validateGraphPath(graphPath))
+    const rootPath = graph.graph.root_path
+    return typeof rootPath === 'string' && rootPath.trim().length > 0 ? rootPath.trim() : null
+  } catch {
+    return null
+  }
+}
+
+function autoRefreshGraphReadiness(
+  controller: GraphAutoRefreshController,
+  graphPath: string,
+): { ready: boolean; detail: string; state: string; retryable: boolean; retryAfterMs?: number } {
+  const startupComplete = controller.startupComplete?.() ?? true
+  const backgroundFailure = controller.failureReason?.() ?? null
+  const watcherState = readWatcherStateForGraph(graphPath)
+  const publishedPolicy = readStoredGenerationPolicy(
+    graphPath,
+    join(dirname(graphPath), 'manifest.json'),
+  )
+  const watcherMatchesPublishedPolicy = watcherState !== null
+    && publishedPolicy !== null
+    && watcherState.stored_policy_fingerprint === publishedPolicy.fingerprint
+  const ready = startupComplete
+    && backgroundFailure === null
+    && watcherState !== null
+    && watcherState.status === 'idle'
+    && !watcherStateBlocksGraphReads(watcherState)
+    && watcherMatchesPublishedPolicy
+  const state = watcherState?.status ?? (startupComplete ? 'unavailable' : 'starting')
+  const retryable = !ready
+    && backgroundFailure === null
+    && (
+      !startupComplete
+      || watcherState?.status === 'starting'
+      || watcherState?.status === 'pending'
+      || watcherState?.status === 'reconciling'
+    )
+
+  if (watcherState) {
+    return {
+      ready,
+      state,
+      retryable,
+      ...(retryable ? { retryAfterMs: 1_000 } : {}),
+      detail: `status=${watcherState.status}, coverage=${watcherState.coverage}, policy=${watcherState.policy_match === null ? 'unknown' : watcherState.policy_match ? 'match' : 'mismatch'}, published_policy=${watcherMatchesPublishedPolicy ? 'match' : 'mismatch'}${watcherState.failure_reason ? `, failure=${watcherState.failure_reason}` : ''}${backgroundFailure ? `, background_failure=${backgroundFailure}` : ''}`,
+    }
+  }
+
+  return {
+    ready,
+    state,
+    retryable,
+    ...(retryable ? { retryAfterMs: 1_000 } : {}),
+    detail: backgroundFailure
+      ? `background startup failed: ${backgroundFailure}`
+      : startupComplete
+        ? 'watcher state is unavailable'
+        : 'background reconciliation is starting',
+  }
+}
+
+type AutoRefreshGraphReadiness = ReturnType<typeof autoRefreshGraphReadiness>
+
+async function waitForAutoRefreshGraphReadiness(
+  controller: GraphAutoRefreshController,
+  graphPath: string,
+  waitMs: number,
+): Promise<AutoRefreshGraphReadiness> {
+  let readiness = autoRefreshGraphReadiness(controller, graphPath)
+  if (readiness.ready || !readiness.retryable || waitMs <= 0) {
+    return readiness
+  }
+
+  const deadline = Date.now() + waitMs
+  while (Date.now() < deadline) {
+    await delay(Math.min(AUTO_REFRESH_READINESS_POLL_MS, Math.max(1, deadline - Date.now())))
+    readiness = autoRefreshGraphReadiness(controller, graphPath)
+    if (readiness.ready || !readiness.retryable) {
+      return readiness
+    }
+  }
+
+  return autoRefreshGraphReadiness(controller, graphPath)
+}
+
+function graphNotReadyResponse(
+  request: StdioRequest,
+  readiness: AutoRefreshGraphReadiness,
+  waitedMs: number,
+): StdioResponse {
+  const readinessData = {
+    type: 'madar_graph_not_ready',
+    state: readiness.state,
+    retryable: readiness.retryable,
+    ...(readiness.retryAfterMs !== undefined
+      ? { retry_after_ms: readiness.retryAfterMs }
+      : {}),
+    ...(waitedMs > 0 ? { waited_ms: waitedMs } : {}),
+    suggested_action: readiness.retryable ? 'retry_same_request' : 'repair_graph',
+  }
+  return failure(
+    requestId(request),
+    JSONRPC_SERVER_ERROR,
+    readiness.retryable
+      ? `Madar graph is temporarily ${readiness.state} (${readiness.detail}). Retry the same request after ${readiness.retryAfterMs ?? 1_000}ms; no manual graph generation is needed while reconciliation is active.`
+      : `Madar auto-refresh cannot guarantee a fresh graph (${readiness.detail}). Run \`madar status\`, then \`madar generate . --update\` if repair is required before retrying.`,
+    readinessData,
+  )
+}
+
 function ok(id: string | number | null, result: unknown): StdioResponse {
   return { jsonrpc: '2.0', id, result }
 }
 
-function failure(id: string | number | null, code: number, message: string): StdioResponse {
+function failure(
+  id: string | number | null,
+  code: number,
+  message: string,
+  data?: Record<string, unknown>,
+): StdioResponse {
   return {
     jsonrpc: '2.0',
     id,
-    error: { code, message },
+    error: { code, message, ...(data ? { data } : {}) },
   }
 }
 
@@ -236,6 +413,61 @@ function classifyToolTelemetryFailure(message: string, code: number): TelemetryF
     return 'tool_profile'
   }
   return 'unknown'
+}
+
+function telemetryRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+}
+
+function telemetryAnswerability(value: unknown): TelemetryAnswerabilityBucket | null {
+  return value === 'ready' || value === 'ready_with_caveat' || value === 'verify_targets' || value === 'insufficient'
+    ? value
+    : null
+}
+
+function telemetryBroadSearchFallback(value: unknown): TelemetryBroadSearchFallbackBucket | null {
+  return value === 'not_needed' || value === 'targeted_only' || value === 'allowed' || value === 'blocked'
+    ? value
+    : null
+}
+
+function contextPackTelemetryBuckets(
+  response: StdioResponse,
+): Pick<
+  TelemetryEventInput,
+  'initialAnswerabilityBucket' | 'recoveryAttemptsBucket' | 'recoveryImprovementBucket' | 'finalAnswerabilityBucket' | 'broadSearchFallbackBucket'
+> {
+  try {
+    const result = telemetryRecord(response.result)
+    const content = Array.isArray(result?.content) ? result.content : []
+    const text = content
+      .map((entry) => telemetryRecord(entry))
+      .map((entry) => entry?.text)
+      .find((value): value is string => typeof value === 'string')
+    if (!text) return {}
+    const payload = telemetryRecord(JSON.parse(text))
+    const evidence = telemetryRecord(payload?.evidence)
+    const answerability = telemetryRecord(evidence?.answerability)
+    const pack = telemetryRecord(payload?.pack)
+    const recovery = telemetryRecord(evidence?.recovery) ?? telemetryRecord(pack?.recovery)
+    const finalState = telemetryAnswerability(recovery?.final_state) ?? telemetryAnswerability(answerability?.state)
+    const initialState = telemetryAnswerability(recovery?.initial_state) ?? finalState
+    const attemptCount = Math.min(2, Array.isArray(recovery?.attempts) ? recovery.attempts.length : 0) as 0 | 1 | 2
+    const broadSearch = telemetryBroadSearchFallback(answerability?.broad_search_fallback)
+    return {
+      ...(initialState ? { initialAnswerabilityBucket: initialState } : {}),
+      recoveryAttemptsBucket: String(attemptCount) as '0' | '1' | '2',
+      recoveryImprovementBucket: attemptCount === 0
+        ? 'not_attempted'
+        : recovery?.improved === true ? 'improved' : 'unchanged',
+      ...(finalState ? { finalAnswerabilityBucket: finalState } : {}),
+      ...(broadSearch ? { broadSearchFallbackBucket: broadSearch } : {}),
+    }
+  } catch {
+    return {}
+  }
 }
 
 function stringParam(params: unknown, key: string): string | null {
@@ -447,6 +679,13 @@ function textToolResult(text: string): { content: Array<{ type: 'text'; text: st
   }
 }
 
+function errorToolResult(text: string): { content: Array<{ type: 'text'; text: string }>; isError: true } {
+  return {
+    content: [{ type: 'text', text }],
+    isError: true,
+  }
+}
+
 function loadGraphCached(graphPath: string): ReturnType<typeof loadGraph> {
   const safeGraphPath = validateGraphPath(graphPath)
   const currentGraphStat = statSync(safeGraphPath)
@@ -521,16 +760,30 @@ export function handleStdioRequest(
 
   try {
     const params = request.params
+    const toolProfile = resolveToolProfileFromEnv()
+    const strictContextPackProfile = toolProfile === 'strict'
+
+    if (strictContextPackProfile && STRICT_DISABLED_LEGACY_GRAPH_METHODS.has(method)) {
+      return failure(
+        id,
+        JSONRPC_METHOD_NOT_FOUND,
+        `Legacy graph method '${method}' is disabled in the strict context_pack profile. Use context_pack, or select MADAR_TOOL_PROFILE=core or full for graph navigation.`,
+      )
+    }
 
     switch (method) {
       case 'initialize':
         return ok(id, {
           protocolVersion: MCP_PROTOCOL_VERSION,
           capabilities: {
-            completions: {},
             logging: {},
-            prompts: { listChanged: false },
-            resources: { subscribe: true, listChanged: true },
+            ...(strictContextPackProfile
+              ? {}
+              : {
+                  completions: {},
+                  prompts: { listChanged: false },
+                  resources: { subscribe: true, listChanged: true },
+                }),
             tools: { listChanged: false },
           },
           serverInfo: {
@@ -538,11 +791,16 @@ export function handleStdioRequest(
             title: MCP_SERVER_TITLE,
             version: MCP_SERVER_VERSION,
           },
-          instructions: 'Use tools/list to discover graph tools, then tools/call to query the generated graph.',
+          instructions: strictContextPackProfile
+            ? 'Strict profile: use context_pack once with the user request verbatim. Use context_expand only for a listed verify_targets handle; graph prompts, resources, and completions are disabled.'
+            : 'Use tools/list to discover graph tools, then tools/call to query the generated graph.',
         })
       case 'notifications/initialized':
         return null
       case 'completion/complete':
+        if (strictContextPackProfile) {
+          return failure(id, JSONRPC_METHOD_NOT_FOUND, 'MCP prompt completions are disabled in the strict context_pack profile.')
+        }
         return handleCompletion(id, graphPath, params, {
           ok,
           failure,
@@ -563,8 +821,11 @@ export function handleStdioRequest(
         return ok(id, {})
       }
       case 'prompts/list':
-        return ok(id, { prompts: promptDefinitionsForGraph(graphPath) })
+        return ok(id, { prompts: strictContextPackProfile ? [] : promptDefinitionsForGraph(graphPath) })
       case 'prompts/get':
+        if (strictContextPackProfile) {
+          return failure(id, JSONRPC_METHOD_NOT_FOUND, 'MCP prompts are disabled in the strict context_pack profile.')
+        }
         return handlePromptGet(id, graphPath, params, {
           ok,
           failure,
@@ -578,7 +839,7 @@ export function handleStdioRequest(
         })
       case 'resources/list':
         return ok(id, {
-          resources: resourcesForGraph(graphPath).map(({ uri, name, title, description, mimeType, annotations }) => ({
+          resources: strictContextPackProfile ? [] : resourcesForGraph(graphPath).map(({ uri, name, title, description, mimeType, annotations }) => ({
             uri,
             name,
             title,
@@ -588,6 +849,9 @@ export function handleStdioRequest(
           })),
         })
       case 'resources/subscribe':
+        if (strictContextPackProfile) {
+          return failure(id, JSONRPC_METHOD_NOT_FOUND, 'MCP resources are disabled in the strict context_pack profile.')
+        }
         return handleResourceSubscribe(id, graphPath, params, sessionState, {
           ok,
           failure,
@@ -601,6 +865,9 @@ export function handleStdioRequest(
           maxResourceSubscriptions: MAX_RESOURCE_SUBSCRIPTIONS,
         })
       case 'resources/unsubscribe':
+        if (strictContextPackProfile) {
+          return failure(id, JSONRPC_METHOD_NOT_FOUND, 'MCP resources are disabled in the strict context_pack profile.')
+        }
         return handleResourceUnsubscribe(id, params, sessionState, {
           ok,
           failure,
@@ -614,6 +881,9 @@ export function handleStdioRequest(
           maxResourceSubscriptions: MAX_RESOURCE_SUBSCRIPTIONS,
         })
       case 'resources/read':
+        if (strictContextPackProfile) {
+          return failure(id, JSONRPC_METHOD_NOT_FOUND, 'MCP resources are disabled in the strict context_pack profile.')
+        }
         return handleResourceRead(id, graphPath, params, {
           ok,
           failure,
@@ -627,23 +897,47 @@ export function handleStdioRequest(
           maxResourceSubscriptions: MAX_RESOURCE_SUBSCRIPTIONS,
         })
       case 'tools/list': {
-        const profile = resolveToolProfileFromEnv()
-        return ok(id, { tools: activeMcpTools(profile) })
+        // Only advertise semantic/rerank params when the optional transformers
+        // package is actually resolvable on this machine — agents cannot pass
+        // parameters that are absent from the schema.
+        const semanticAvailable = isSemanticRuntimeAvailable(graphRootPath(graphPath) ?? resolveGraphSourceRoot(graphPath))
+        return ok(id, { tools: activeMcpTools(toolProfile, { semanticAvailable }) })
       }
       case 'tools/call': {
-        const profile = resolveToolProfileFromEnv()
         const toolName = stringParam(params, 'name')
-        if (toolName !== null && !isCoreToolName(toolName, profile)) {
+        if (toolName !== null && !isToolEnabledInProfile(toolName, toolProfile)) {
           return failure(
             id,
             JSONRPC_METHOD_NOT_FOUND,
-            `Tool '${toolName}' is not enabled in the active madar MCP tool profile. Default profile: core. Set MADAR_TOOL_PROFILE=full in your MCP server config (e.g. .mcp.json for Claude, .cursor/mcp.json for Cursor, .vscode/mcp.json for VS Code Copilot) to enable advanced tools.`,
+            `Tool '${toolName}' is not enabled in the active madar MCP tool profile '${toolProfile}'. Use MADAR_TOOL_PROFILE=strict for the bounded context_pack/context_expand flow, MADAR_TOOL_PROFILE=core for graph navigation, or MADAR_TOOL_PROFILE=full for every tool.`,
           )
+        }
+        const toolArguments = recordParam(params, 'arguments')
+        if (strictContextPackProfile && toolName === 'context_pack') {
+          const unsupported = Object.keys(toolArguments ?? {}).filter((key) => key !== 'prompt' && key !== 'task')
+          if (unsupported.length > 0) {
+            return failure(
+              id,
+              JSONRPC_INVALID_PARAMS,
+              `strict context_pack accepts only prompt and optional task; unsupported argument${unsupported.length === 1 ? '' : 's'}: ${unsupported.join(', ')}. Use MADAR_TOOL_PROFILE=full for diagnostics or retrieval tuning.`,
+            )
+          }
+        }
+        if (strictContextPackProfile && toolName === 'context_expand') {
+          const unsupported = Object.keys(toolArguments ?? {}).filter((key) => key !== 'handle_id')
+          if (unsupported.length > 0) {
+            return failure(
+              id,
+              JSONRPC_INVALID_PARAMS,
+              `strict context_expand accepts only handle_id; unsupported argument${unsupported.length === 1 ? '' : 's'}: ${unsupported.join(', ')}. Use MADAR_TOOL_PROFILE=full for expansion tuning.`,
+            )
+          }
         }
         const response = handleToolCallRequest(id, graphPath, params, {
           ok,
           failure,
           textToolResult,
+          errorToolResult,
           stringParam,
           stringParamAlias,
           numberParamAlias,
@@ -653,7 +947,7 @@ export function handleStdioRequest(
           handleGraphDiff,
           compareRefs: async (input) => {
             const safeGraphPath = validateGraphPath(graphPath)
-            const projectRoot = dirname(dirname(safeGraphPath))
+            const projectRoot = resolveGraphSourceRoot(safeGraphPath, loadGraphCached(safeGraphPath))
             return await (toolOverrides.compareRefs ?? compareRefs)(input, { rootDir: projectRoot })
           },
            getContextPromptSession: (sessionId) => ensureContextPromptSessions(sessionState).get(sessionId),
@@ -668,6 +962,7 @@ export function handleStdioRequest(
              sessions.set(sessionId, nextState)
            },
            clearContextPromptSession: (sessionId) => ensureContextPromptSessions(sessionState).delete(sessionId),
+           strictContextPackMode: strictContextPackProfile,
            getContextPackNodeIds: (sessionId) => {
              const store = ensureContextPackNodeIds(sessionState).get(sessionId)
              return store ? Array.from(store) : []
@@ -689,6 +984,12 @@ export function handleStdioRequest(
            },
            clearContextPackNodeIds: (sessionId) => ensureContextPackNodeIds(sessionState).delete(sessionId),
            getContextPackHandle: (handleId) => ensureContextPackHandles(sessionState).get(handleId),
+           takeContextPackHandle: (handleId) => {
+             const handles = ensureContextPackHandles(sessionState)
+             const stored = handles.get(handleId)
+             handles.delete(handleId)
+             return stored
+           },
             setContextPackHandle: (handleId, expansion) => {
               const handles = ensureContextPackHandles(sessionState)
               if (!handles.has(handleId) && handles.size >= MAX_CONTEXT_PROMPT_SESSIONS) {
@@ -699,6 +1000,7 @@ export function handleStdioRequest(
               }
               handles.set(handleId, expansion)
             },
+            clearContextPackHandles: () => ensureContextPackHandles(sessionState).clear(),
             getContextPackCache: (cacheKey) => ensureContextPackCache(sessionState).get(cacheKey),
             setContextPackCache: (cacheKey, payloadText) => {
               const cache = ensureContextPackCache(sessionState)
@@ -730,6 +1032,7 @@ export function handleStdioRequest(
                 nodeMajor: readNodeMajorForTelemetry(),
                 repoSizeBucket: repoSizeBucketFromFileCount(summary.file_count),
                 graphSizeBucket: graphSizeBucketFromNodeCount(summary.node_count),
+                ...contextPackTelemetryBuckets(toolResponse),
                 ...(toolResponse.error ? { failureBucket: classifyToolTelemetryFailure(toolResponse.error.message, toolResponse.error.code) } : {}),
               })
             } catch {
@@ -801,7 +1104,10 @@ export function handleStdioRequest(
       default:
         return failure(id, JSONRPC_METHOD_NOT_FOUND, `Method not found: ${method}`)
     }
-  } catch {
+  } catch (error) {
+    if (error instanceof DirectedGraphRequiredError) {
+      return failure(id, JSONRPC_SERVER_ERROR, error.message)
+    }
     return failure(id, JSONRPC_SERVER_ERROR, 'Graph query failed')
   }
 }
@@ -811,40 +1117,140 @@ export async function serveGraphStdio(options: ServeGraphStdioOptions): Promise<
   const output = options.output ?? process.stdout
   const errorOutput = options.errorOutput ?? process.stderr
   const sessionState = createSessionState()
+  const strictContextPackProfile = resolveToolProfileFromEnv() === 'strict'
+  let autoRefresh: GraphAutoRefreshController | null = null
+
+  if (options.autoRefresh) {
+    const workspaceRoot = options.workspaceRoot ?? graphRootPath(options.graphPath)
+    if (!workspaceRoot) {
+      throw new Error('Cannot auto-refresh a graph without a workspace root. Run madar generate from the workspace first.')
+    }
+
+    const workspace = resolveMadarWorkspace(workspaceRoot)
+    if (!sameFilesystemPath(options.graphPath, workspace.graphPath)) {
+      throw new Error(
+        `Refusing to auto-refresh ${options.graphPath}: it is not the graph artifact for ${workspace.rootPath}. ` +
+        'Start the MCP server from the intended worktree instead.',
+      )
+    }
+
+    const startAutoRefresh = options.autoRefreshStarter ?? startGraphAutoRefreshInBackground
+    autoRefresh = startAutoRefresh(workspace.rootPath, options.autoRefreshDebounceSeconds ?? 1, {
+      // The MCP server needs graph.json; avoid regenerating the browser view on
+      // every coalesced agent edit.
+      noHtml: true,
+      logger: {
+        log() {},
+        error(message) {
+          errorOutput.write(`[madar serve] ${message ?? 'Auto-refresh failed'}\n`)
+        },
+      },
+    })
+  }
 
   errorOutput.write(`[madar serve] stdio ready for ${options.graphPath}\n`)
 
   const readline = createInterface({ input, crlfDelay: Infinity })
+  let graphRequestQueue = Promise.resolve()
 
-  for await (const line of readline) {
-    const trimmed = line.trim()
-    if (!trimmed) {
-      continue
-    }
-
-    if (trimmed.length > MAX_STDIO_LINE_BYTES) {
-      const response = failure(null, JSONRPC_INVALID_REQUEST, `Payload too large (max ${MAX_STDIO_LINE_BYTES} bytes)`)
-      output.write(`${JSON.stringify(response)}\n`)
-      continue
-    }
-
-    let payload: unknown
+  const handleAndWritePayload = async (
+    payload: unknown,
+    awaitReconciliation: boolean,
+    arrivalMs = Date.now(),
+  ): Promise<void> => {
+    let response: StdioResponse | null
     try {
-      payload = JSON.parse(trimmed)
-    } catch {
-      const response = failure(null, JSONRPC_PARSE_ERROR, 'Parse error')
-      emitLogNotification(output, sessionState, 'error', { message: response.error?.message ?? 'Parse error', code: JSONRPC_PARSE_ERROR })
-      output.write(`${JSON.stringify(response)}\n`)
-      continue
-    }
+      const request = payload as StdioRequest
+      const requestMethod = typeof request.method === 'string' ? request.method : null
+      let refreshReadiness = autoRefresh && requestMethod
+        ? autoRefreshGraphReadiness(autoRefresh, options.graphPath)
+        : null
+      let waitedMs = 0
 
-    emitResourceNotifications(output, options.graphPath, sessionState)
-    const response = await Promise.resolve(handleStdioRequest(options.graphPath, payload, sessionState))
+      if (
+        awaitReconciliation
+        && autoRefresh
+        && refreshReadiness
+        && !refreshReadiness.ready
+        && refreshReadiness.retryable
+      ) {
+        const maxWaitMs = Math.max(0, options.autoRefreshRequestWaitMs ?? DEFAULT_AUTO_REFRESH_REQUEST_WAIT_MS)
+        const remainingWaitMs = Math.max(0, maxWaitMs - (Date.now() - arrivalMs))
+        refreshReadiness = await waitForAutoRefreshGraphReadiness(
+          autoRefresh,
+          options.graphPath,
+          remainingWaitMs,
+        )
+        waitedMs = Date.now() - arrivalMs
+      }
+
+      if (refreshReadiness && !refreshReadiness.ready && requestMethod === 'prompts/list') {
+        response = ok(requestId(request), { prompts: strictContextPackProfile ? [] : MCP_PROMPTS })
+      } else if (refreshReadiness && !refreshReadiness.ready && requestMethod === 'resources/list') {
+        response = ok(requestId(request), { resources: [] })
+      } else if (refreshReadiness && !refreshReadiness.ready && requestMethod !== null && !AUTO_REFRESH_CONTROL_METHODS.has(requestMethod)) {
+        response = graphNotReadyResponse(request, refreshReadiness, waitedMs)
+      } else {
+        if (!strictContextPackProfile) {
+          emitResourceNotifications(output, options.graphPath, sessionState)
+        }
+        response = await Promise.resolve(handleStdioRequest(options.graphPath, payload, sessionState))
+      }
+    } catch (error) {
+      // A rejected handler must never tear down the whole stdio server: every
+      // request gets an answer and the loop keeps serving (#crash).
+      const message = error instanceof Error ? error.message : 'Request failed'
+      response = failure(requestId(payload as StdioRequest), JSONRPC_SERVER_ERROR, message)
+    }
     if (response) {
       if (response.error) {
         emitLogNotification(output, sessionState, 'error', { message: response.error.message, code: response.error.code })
       }
       output.write(`${JSON.stringify(response)}\n`)
+    }
+  }
+
+  try {
+    for await (const line of readline) {
+      const trimmed = line.trim()
+      if (!trimmed) {
+        continue
+      }
+
+      if (trimmed.length > MAX_STDIO_LINE_BYTES) {
+        const response = failure(null, JSONRPC_INVALID_REQUEST, `Payload too large (max ${MAX_STDIO_LINE_BYTES} bytes)`)
+        output.write(`${JSON.stringify(response)}\n`)
+        continue
+      }
+
+      let payload: unknown
+      try {
+        payload = JSON.parse(trimmed)
+      } catch {
+        const response = failure(null, JSONRPC_PARSE_ERROR, 'Parse error')
+        emitLogNotification(output, sessionState, 'error', { message: response.error?.message ?? 'Parse error', code: JSONRPC_PARSE_ERROR })
+        output.write(`${JSON.stringify(response)}\n`)
+        continue
+      }
+
+      const request = payload as StdioRequest
+      const requestMethod = typeof request.method === 'string' ? request.method : null
+      if (autoRefresh && requestMethod !== null && !AUTO_REFRESH_CONTROL_METHODS.has(requestMethod)) {
+        // Keep control/discovery requests responsive while graph-backed work
+        // waits for one bounded reconciliation window. Graph requests remain
+        // serialized because context-pack calls mutate per-session state.
+        const arrivalMs = Date.now()
+        graphRequestQueue = graphRequestQueue.then(() => handleAndWritePayload(payload, true, arrivalMs))
+        continue
+      }
+
+      await handleAndWritePayload(payload, false)
+    }
+  } finally {
+    await graphRequestQueue
+    if (autoRefresh) {
+      autoRefresh.stop()
+      await autoRefresh.completed
     }
   }
 }

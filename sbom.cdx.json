@@ -2,10 +2,10 @@
   "$schema": "http://cyclonedx.org/schema/bom-1.5.schema.json",
   "bomFormat": "CycloneDX",
   "specVersion": "1.5",
-  "serialNumber": "urn:uuid:db58dce4-5b51-476c-88c0-25c8cf30ee26",
+  "serialNumber": "urn:uuid:184d19a4-cdcf-4d54-bdb2-7948c1d2c353",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-06-03T04:28:23.799Z",
+    "timestamp": "2026-07-16T05:07:00.859Z",
     "lifecycles": [
       {
         "phase": "build"
@@ -15,18 +15,18 @@
       {
         "vendor": "npm",
         "name": "cli",
-        "version": "11.16.0"
+        "version": "12.0.1"
       }
     ],
     "component": {
-      "bom-ref": "@lubab/madar@0.27.9-next.0",
+      "bom-ref": "@lubab/madar@0.31.2",
       "type": "library",
-      "name": "madar",
-      "version": "0.27.9-next.0",
+      "name": "@lubab/madar",
+      "version": "0.31.2",
       "scope": "required",
       "author": "mohanagy",
       "description": "Stop AI coding agents from rediscovering large TypeScript/Node repos. Madar compiles task-aware local context packs from what runs for this task.",
-      "purl": "pkg:npm/%40lubab/madar@0.27.9-next.0",
+      "purl": "pkg:npm/%40lubab/madar@0.31.2",
       "properties": [],
       "externalReferences": [
         {
@@ -300,14 +300,14 @@
       ]
     },
     {
-      "bom-ref": "@oxc-project/types@0.132.0",
+      "bom-ref": "@oxc-project/types@0.139.0",
       "type": "library",
       "name": "@oxc-project/types",
-      "version": "0.132.0",
+      "version": "0.139.0",
       "scope": "required",
       "author": "Boshen and oxc contributors",
       "description": "Types for Oxc AST nodes",
-      "purl": "pkg:npm/%40oxc-project/types@0.132.0",
+      "purl": "pkg:npm/%40oxc-project/types@0.139.0",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -317,7 +317,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/@oxc-project/types/-/types-0.132.0.tgz"
+          "url": "https://registry.npmjs.org/@oxc-project/types/-/types-0.139.0.tgz"
         },
         {
           "type": "vcs",
@@ -331,7 +331,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "14448c3b18a5e527b4d78ba2fc4abc7d3e6e1c9a3a9c84701f43df26b6495ece867a4dd95453aba54bf7608653db49be7b1b54f7c1e0d589bbd94e7cae5b3151"
+          "content": "afd807a61b42b3ed4cec9d29c3a4a7fe187f5a96bf890ace3a4acd02554b17f807abefc22661c858a2945217568dc0fa0886bc89d6abb290ac012897097bc553"
         }
       ],
       "licenses": [
@@ -343,13 +343,13 @@
       ]
     },
     {
-      "bom-ref": "@rolldown/binding-darwin-arm64@1.0.2",
+      "bom-ref": "@rolldown/binding-darwin-arm64@1.1.5",
       "type": "library",
       "name": "@rolldown/binding-darwin-arm64",
-      "version": "1.0.2",
+      "version": "1.1.5",
       "scope": "optional",
       "description": "Fast JavaScript/TypeScript bundler in Rust with Rollup-compatible API.",
-      "purl": "pkg:npm/%40rolldown/binding-darwin-arm64@1.0.2",
+      "purl": "pkg:npm/%40rolldown/binding-darwin-arm64@1.1.5",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -359,7 +359,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/@rolldown/binding-darwin-arm64/-/binding-darwin-arm64-1.0.2.tgz"
+          "url": "https://registry.npmjs.org/@rolldown/binding-darwin-arm64/-/binding-darwin-arm64-1.1.5.tgz"
         },
         {
           "type": "vcs",
@@ -373,7 +373,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "bdd140f7e0bfade93219c7bb5aa1ecff1a13d22a1911668e17264b215d6611e3456850d442b3c8a3c56cd86bc9e9e7ad6f7af30d4b54060ceda37131a57241df"
+          "content": "e75067c7da4d88c44a49436d05fc9290d27dbcc53d1e1dc8d68cc377a8323cf63369709f9e9b547046715c66059feba5d9db5c3148aa191d586a2d8ad74ba84f"
         }
       ],
       "licenses": [
@@ -590,13 +590,13 @@
       ]
     },
     {
-      "bom-ref": "@types/node@25.9.1",
+      "bom-ref": "@types/node@26.1.1",
       "type": "library",
       "name": "@types/node",
-      "version": "25.9.1",
+      "version": "26.1.1",
       "scope": "required",
       "description": "TypeScript definitions for node",
-      "purl": "pkg:npm/%40types/node@25.9.1",
+      "purl": "pkg:npm/%40types/node@26.1.1",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -606,7 +606,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/@types/node/-/node-25.9.1.tgz"
+          "url": "https://registry.npmjs.org/@types/node/-/node-26.1.1.tgz"
         },
         {
           "type": "vcs",
@@ -620,7 +620,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "c5fae563b503e6b30993765524ff013734b6f09dfa60983ec69f8b3d75754dd5b1afcb8c1f903ceb440dc580c641eff29434a08f1139d90f559ceee9ef9b49c6"
+          "content": "9f1024452564375634242d56f24cbf7d37e41ac32672b46c6f1fb75e8644fab30e5fbd642d84d5edf2d7a6ab9dd46a5ba4fe53b9f7d716a7d7edf1f61a065113"
         }
       ],
       "licenses": [
@@ -632,14 +632,14 @@
       ]
     },
     {
-      "bom-ref": "@vitest/coverage-v8@4.1.7",
+      "bom-ref": "@vitest/coverage-v8@4.1.10",
       "type": "library",
       "name": "@vitest/coverage-v8",
-      "version": "4.1.7",
+      "version": "4.1.10",
       "scope": "required",
       "author": "Anthony Fu <anthonyfu117@hotmail.com>",
       "description": "V8 coverage provider for Vitest",
-      "purl": "pkg:npm/%40vitest/coverage-v8@4.1.7",
+      "purl": "pkg:npm/%40vitest/coverage-v8@4.1.10",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -649,7 +649,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/@vitest/coverage-v8/-/coverage-v8-4.1.7.tgz"
+          "url": "https://registry.npmjs.org/@vitest/coverage-v8/-/coverage-v8-4.1.10.tgz"
         },
         {
           "type": "vcs",
@@ -667,7 +667,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "aac60f79773943d7452ddd62f00a7e071f2c420729fab155428e11d1d0ec58d073976ea5755175a8e3be44bdb82bb143ad1ea903ee745de7512d2a121b6e1b55"
+          "content": "20ce3d1e6b617af6e000ee1a9e9d61c2da13f7061ee7dc342d1d3482bf9e6a01c4f9927994ae2c2cf78ed2e6e0a097302e4e9d7a1537476e0df856c410a0dcf2"
         }
       ],
       "licenses": [
@@ -679,13 +679,13 @@
       ]
     },
     {
-      "bom-ref": "@vitest/expect@4.1.7",
+      "bom-ref": "@vitest/expect@4.1.10",
       "type": "library",
       "name": "@vitest/expect",
-      "version": "4.1.7",
+      "version": "4.1.10",
       "scope": "required",
       "description": "Jest's expect matchers as a Chai plugin",
-      "purl": "pkg:npm/%40vitest/expect@4.1.7",
+      "purl": "pkg:npm/%40vitest/expect@4.1.10",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -695,7 +695,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/@vitest/expect/-/expect-4.1.7.tgz"
+          "url": "https://registry.npmjs.org/@vitest/expect/-/expect-4.1.10.tgz"
         },
         {
           "type": "vcs",
@@ -713,7 +713,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "d51fadc34a2bb4711b64318cca69bea4deff00543f46414576d77b10df95069ca72a62db3fc037ae911776c84127bfbc850f7304987f8b5b34c8a36dc409d4ef"
+          "content": "62c0a7faa024d465a340e58512c11c2f680d434ce656642edd3d37a8fe94ca386d99db70b5bb88f830129ffee2401dc71935e4741c0675dcf13e59a2aa5e6f94"
         }
       ],
       "licenses": [
@@ -725,13 +725,13 @@
       ]
     },
     {
-      "bom-ref": "@vitest/mocker@4.1.7",
+      "bom-ref": "@vitest/mocker@4.1.10",
       "type": "library",
       "name": "@vitest/mocker",
-      "version": "4.1.7",
+      "version": "4.1.10",
       "scope": "required",
       "description": "Vitest module mocker implementation",
-      "purl": "pkg:npm/%40vitest/mocker@4.1.7",
+      "purl": "pkg:npm/%40vitest/mocker@4.1.10",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -741,7 +741,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/@vitest/mocker/-/mocker-4.1.7.tgz"
+          "url": "https://registry.npmjs.org/@vitest/mocker/-/mocker-4.1.10.tgz"
         },
         {
           "type": "vcs",
@@ -759,7 +759,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "bd8ee7b9a98a81fbe90352a86b7a18230fe4ec3ea4667a46c8d3195bc968a30d9bb016256b54c576a4da5e77167519f8a60c0db3ef744619d784949c0f041e24"
+          "content": "bf4c5a7b3b7e0ca12629f6b1835df795dcc00ebc0b19ded97b531f4104d87efb3c3aa648c1bc72c5a614462bf057bb16cb97ea9f7ac7e6e3ab4a9d3b6e9e383b"
         }
       ],
       "licenses": [
@@ -771,13 +771,13 @@
       ]
     },
     {
-      "bom-ref": "@vitest/pretty-format@4.1.7",
+      "bom-ref": "@vitest/pretty-format@4.1.10",
       "type": "library",
       "name": "@vitest/pretty-format",
-      "version": "4.1.7",
+      "version": "4.1.10",
       "scope": "required",
       "description": "Fork of pretty-format with support for ESM",
-      "purl": "pkg:npm/%40vitest/pretty-format@4.1.7",
+      "purl": "pkg:npm/%40vitest/pretty-format@4.1.10",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -787,7 +787,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/@vitest/pretty-format/-/pretty-format-4.1.7.tgz"
+          "url": "https://registry.npmjs.org/@vitest/pretty-format/-/pretty-format-4.1.10.tgz"
         },
         {
           "type": "vcs",
@@ -805,7 +805,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "ba68026ab4ce61058868332f1834598a3fba6fda1578b2322737cdf804bcf1ed19394dd04e034d493b6340ea5cbd6af79e9d4dd23e168198feb1bde86010ec73"
+          "content": "5b51ec8d21f831743d61f9a684b0282187f51d17de9100869e078881c7a2e8c3f941019651ed20928a5d6506950853be24324cac0246c1ae69469369bf2e0ff1"
         }
       ],
       "licenses": [
@@ -817,13 +817,13 @@
       ]
     },
     {
-      "bom-ref": "@vitest/runner@4.1.7",
+      "bom-ref": "@vitest/runner@4.1.10",
       "type": "library",
       "name": "@vitest/runner",
-      "version": "4.1.7",
+      "version": "4.1.10",
       "scope": "required",
       "description": "Vitest test runner",
-      "purl": "pkg:npm/%40vitest/runner@4.1.7",
+      "purl": "pkg:npm/%40vitest/runner@4.1.10",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -833,7 +833,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/@vitest/runner/-/runner-4.1.7.tgz"
+          "url": "https://registry.npmjs.org/@vitest/runner/-/runner-4.1.10.tgz"
         },
         {
           "type": "vcs",
@@ -851,7 +851,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "05aa63980436688efc59d3047de5168af9df57307e54f1b059141c244d0e52aeea11e11c06c0927fed13e6244404d1399c16f8c00e586b45ba200fac82174417"
+          "content": "20a23a929207f8b9a944ea65c8bc0105a09f32039938cb328156ba040443e9a840d38551b8949ae8e6951bb911bd210c0fcef455df75ad24b0d1e7a0b56c8b1a"
         }
       ],
       "licenses": [
@@ -863,13 +863,13 @@
       ]
     },
     {
-      "bom-ref": "@vitest/snapshot@4.1.7",
+      "bom-ref": "@vitest/snapshot@4.1.10",
       "type": "library",
       "name": "@vitest/snapshot",
-      "version": "4.1.7",
+      "version": "4.1.10",
       "scope": "required",
       "description": "Vitest snapshot manager",
-      "purl": "pkg:npm/%40vitest/snapshot@4.1.7",
+      "purl": "pkg:npm/%40vitest/snapshot@4.1.10",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -879,7 +879,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/@vitest/snapshot/-/snapshot-4.1.7.tgz"
+          "url": "https://registry.npmjs.org/@vitest/snapshot/-/snapshot-4.1.10.tgz"
         },
         {
           "type": "vcs",
@@ -897,7 +897,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "65a70bce36be4e625e675875e315b6141fd6a5e8a6503de16815d03f226ac6fa3c8d04e67de03ccefe7c9ad8cdd82ec41d764361571561d6260318e4595bca0b"
+          "content": "c5191f393d6aa53022fd38b86352ed7d1737904baac46c39f5e3768cdf6945632d4bf5c37af7a485c152aaf42a8d434692c7e3309bb763ea09fb86299f639a27"
         }
       ],
       "licenses": [
@@ -909,13 +909,13 @@
       ]
     },
     {
-      "bom-ref": "@vitest/spy@4.1.7",
+      "bom-ref": "@vitest/spy@4.1.10",
       "type": "library",
       "name": "@vitest/spy",
-      "version": "4.1.7",
+      "version": "4.1.10",
       "scope": "required",
       "description": "Lightweight Jest compatible spy implementation",
-      "purl": "pkg:npm/%40vitest/spy@4.1.7",
+      "purl": "pkg:npm/%40vitest/spy@4.1.10",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -925,7 +925,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/@vitest/spy/-/spy-4.1.7.tgz"
+          "url": "https://registry.npmjs.org/@vitest/spy/-/spy-4.1.10.tgz"
         },
         {
           "type": "vcs",
@@ -943,7 +943,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "91b908e4b3166a4cae4c8bece9f509e6a74855bd5754ab182404f8389f77f1c1cc44e60c49f9a841d672d1a6809e36db73c17ad6f9284eacff033fbf1e222ee5"
+          "content": "3cb7ff520be8ab9c0efdbe2bc18091d61d8f488757cfbc2791014c894a4b76d33b97aa6a545710201107c93d7e97e723ee637001f647cea5ea0f28ef3aec1b0f"
         }
       ],
       "licenses": [
@@ -955,13 +955,13 @@
       ]
     },
     {
-      "bom-ref": "@vitest/utils@4.1.7",
+      "bom-ref": "@vitest/utils@4.1.10",
       "type": "library",
       "name": "@vitest/utils",
-      "version": "4.1.7",
+      "version": "4.1.10",
       "scope": "required",
       "description": "Shared Vitest utility functions",
-      "purl": "pkg:npm/%40vitest/utils@4.1.7",
+      "purl": "pkg:npm/%40vitest/utils@4.1.10",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -971,7 +971,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/@vitest/utils/-/utils-4.1.7.tgz"
+          "url": "https://registry.npmjs.org/@vitest/utils/-/utils-4.1.10.tgz"
         },
         {
           "type": "vcs",
@@ -989,7 +989,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "4f9df6581bbbf75701c4994297a48ef89d7897cd43431eae4079b56d06e608363b9ea9442209336bf5059d204d694b527f8d6e9e574316374e0581100b86f91f"
+          "content": "7f2f5a9bf1d6c5b686b7f49ac2ba7dd2fb7a63a8d0c1fd515fbedccf7bb0a09c0954c962fded4813044f9cc349eef29f3d3c28d1d89789f9293efc07f6fee718"
         }
       ],
       "licenses": [
@@ -1198,6 +1198,10 @@
       "properties": [],
       "externalReferences": [
         {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/base64-js/-/base64-js-1.5.1.tgz"
+        },
+        {
           "type": "vcs",
           "url": "git://github.com/beatgammit/base64-js.git"
         },
@@ -1208,6 +1212,12 @@
         {
           "type": "issue-tracker",
           "url": "https://github.com/beatgammit/base64-js/issues"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "00aa5a6251e7f2de1255b3870b2f9be7e28a82f478bebb03f2f6efadb890269b3b7ca0d3923903af2ea38b4ad42630b49336cd78f2f0cf1abc8b2a68e35a9e58"
         }
       ],
       "licenses": [
@@ -1230,6 +1240,10 @@
       "properties": [],
       "externalReferences": [
         {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/buffer/-/buffer-6.0.3.tgz"
+        },
+        {
           "type": "vcs",
           "url": "git://github.com/feross/buffer.git"
         },
@@ -1240,6 +1254,12 @@
         {
           "type": "issue-tracker",
           "url": "https://github.com/feross/buffer/issues"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "153882a4dc6dc226591c465b71b4c87198c44552029fdcaafe90c591397de7f031cc3d6768172d37b60eebcae233f80b48363bb1dacc6f2f21a1f00362ebaa38"
         }
       ],
       "licenses": [
@@ -1786,8 +1806,18 @@
       "properties": [],
       "externalReferences": [
         {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/ieee754/-/ieee754-1.2.1.tgz"
+        },
+        {
           "type": "vcs",
           "url": "git://github.com/feross/ieee754.git"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "75ccaa843bd7d42e3a95765c56a0a92be16d31141574830debf0dfe63b36ce8b94b2a1bb23ab05c62b480beeca60adbd29d5ce2c776ef732f8b059e85509ea68"
         }
       ],
       "licenses": [
@@ -2143,14 +2173,14 @@
       ]
     },
     {
-      "bom-ref": "nanoid@3.3.12",
+      "bom-ref": "nanoid@3.3.16",
       "type": "library",
       "name": "nanoid",
-      "version": "3.3.12",
+      "version": "3.3.16",
       "scope": "required",
       "author": "Andrey Sitnik <andrey@sitnik.ru>",
       "description": "A tiny (116 bytes), secure URL-friendly unique string ID generator",
-      "purl": "pkg:npm/nanoid@3.3.12",
+      "purl": "pkg:npm/nanoid@3.3.16",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -2160,13 +2190,13 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/nanoid/-/nanoid-3.3.12.tgz"
+          "url": "https://registry.npmjs.org/nanoid/-/nanoid-3.3.16.tgz"
         }
       ],
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "641f511ffdfdaa9ab956ee98f8d99468585047aa69f8cd97b7be970671300da19c540aa196fc6b9770766ca4b90f7347dd047beafdda4ab29a17f2a2cbb944b5"
+          "content": "6f394a4f2349efe2dd188230cbc8a316922a11022f69f6a157b798ca427c0af878d8474978e0e827a814257a5026f7a3d4175d1fc3aa4d764d13f29f6d602ef1"
         }
       ],
       "licenses": [
@@ -2178,19 +2208,29 @@
       ]
     },
     {
-      "bom-ref": "neo4j-driver@6.0.1",
+      "bom-ref": "neo4j-driver@6.2.0",
       "type": "library",
       "name": "neo4j-driver",
-      "version": "6.0.1",
+      "version": "6.2.0",
       "scope": "required",
       "author": "Neo4j",
       "description": "The official Neo4j driver for Javascript",
-      "purl": "pkg:npm/neo4j-driver@6.0.1",
+      "purl": "pkg:npm/neo4j-driver@6.2.0",
       "properties": [],
       "externalReferences": [
         {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/neo4j-driver/-/neo4j-driver-6.2.0.tgz"
+        },
+        {
           "type": "vcs",
           "url": "git://github.com/neo4j/neo4j-javascript-driver.git"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "f56fd393b1328d91edbfcecd169aa821b9749a5431f1b5fca61505cc033dc66789ad1a460efaa4a5d433735d438f0cf2c1009d8627da64f4afa244a7029ed84e"
         }
       ],
       "licenses": [
@@ -2202,16 +2242,20 @@
       ]
     },
     {
-      "bom-ref": "neo4j-driver-bolt-connection@6.0.1",
+      "bom-ref": "neo4j-driver-bolt-connection@6.2.0",
       "type": "library",
       "name": "neo4j-driver-bolt-connection",
-      "version": "6.0.1",
+      "version": "6.2.0",
       "scope": "required",
       "author": "Neo4j",
       "description": "Implements the connection with the Neo4j Database using the Bolt Protocol",
-      "purl": "pkg:npm/neo4j-driver-bolt-connection@6.0.1",
+      "purl": "pkg:npm/neo4j-driver-bolt-connection@6.2.0",
       "properties": [],
       "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/neo4j-driver-bolt-connection/-/neo4j-driver-bolt-connection-6.2.0.tgz"
+        },
         {
           "type": "vcs",
           "url": "git://github.com/neo4j/neo4j-javascript-driver.git"
@@ -2225,6 +2269,12 @@
           "url": "https://github.com/neo4j/neo4j-javascript-driver/issues"
         }
       ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "4849c54817ee9a5783c660c064a9235f16792e02f6899493c74f2c3bea975f8e5929ac5924e720f68c70a170025d9d516c8ab75db0df1d4f08e6d1316a760438"
+        }
+      ],
       "licenses": [
         {
           "license": {
@@ -2234,16 +2284,20 @@
       ]
     },
     {
-      "bom-ref": "neo4j-driver-core@6.0.1",
+      "bom-ref": "neo4j-driver-core@6.2.0",
       "type": "library",
       "name": "neo4j-driver-core",
-      "version": "6.0.1",
+      "version": "6.2.0",
       "scope": "required",
       "author": "Neo4j",
       "description": "Internals of neo4j-driver",
-      "purl": "pkg:npm/neo4j-driver-core@6.0.1",
+      "purl": "pkg:npm/neo4j-driver-core@6.2.0",
       "properties": [],
       "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/neo4j-driver-core/-/neo4j-driver-core-6.2.0.tgz"
+        },
         {
           "type": "vcs",
           "url": "git://github.com/neo4j/neo4j-javascript-driver.git"
@@ -2255,6 +2309,12 @@
         {
           "type": "issue-tracker",
           "url": "https://github.com/neo4j/neo4j-javascript-driver/issues"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "53c3d276f0c40969828125b286a34d57330e35714758f71377982a8b5dbe103c71b746844c0d26f970977fd1fbabaa905dd8ac738d2b50910e71540ebbaa5e10"
         }
       ],
       "licenses": [
@@ -2372,14 +2432,14 @@
       ]
     },
     {
-      "bom-ref": "picomatch@4.0.4",
+      "bom-ref": "picomatch@4.0.5",
       "type": "library",
       "name": "picomatch",
-      "version": "4.0.4",
+      "version": "4.0.5",
       "scope": "required",
       "author": "Jon Schlinkert (https://github.com/jonschlinkert)",
       "description": "Blazing fast and accurate glob matcher written in JavaScript, with no dependencies and full support for standard and extended Bash glob features, including braces, extglobs, POSIX brackets, and regular expressions.",
-      "purl": "pkg:npm/picomatch@4.0.4",
+      "purl": "pkg:npm/picomatch@4.0.5",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -2388,12 +2448,22 @@
       ],
       "externalReferences": [
         {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/picomatch/-/picomatch-4.0.5.tgz"
+        },
+        {
           "type": "website",
           "url": "https://github.com/micromatch/picomatch"
         },
         {
           "type": "issue-tracker",
           "url": "https://github.com/micromatch/picomatch/issues"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "46fc3072bb8d8c8d67713e7145a91ec92f4b7fc95c22dbf7e0a0fe6a27fe547f6476e0327d8062a46875db6ef8c6d7a720f675d7dfd1f4175305af200304a1d0"
         }
       ],
       "licenses": [
@@ -2405,14 +2475,14 @@
       ]
     },
     {
-      "bom-ref": "postcss@8.5.15",
+      "bom-ref": "postcss@8.5.17",
       "type": "library",
       "name": "postcss",
-      "version": "8.5.15",
+      "version": "8.5.17",
       "scope": "required",
       "author": "Andrey Sitnik <andrey@sitnik.es>",
       "description": "Tool for transforming styles with JS plugins",
-      "purl": "pkg:npm/postcss@8.5.15",
+      "purl": "pkg:npm/postcss@8.5.17",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -2422,7 +2492,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/postcss/-/postcss-8.5.15.tgz"
+          "url": "https://registry.npmjs.org/postcss/-/postcss-8.5.17.tgz"
         },
         {
           "type": "website",
@@ -2436,7 +2506,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "15f47cb237787a6d93e9f6f723633000953b1d654cafdcdb6be7a799079e5857c26e6f94382ff45f80d2f17b6951333058c19b8ca60fef18df35e933c86981dc"
+          "content": "27b105fbc5fe0b344f6893cebfd0a4db035626f1a79e5dcf70d3c074683a1932e3c95a72434c804cc497445455d3506f893ffd1b0b9cdeb8c4c896c3246f5ae3"
         }
       ],
       "licenses": [
@@ -2483,13 +2553,13 @@
       ]
     },
     {
-      "bom-ref": "rolldown@1.0.2",
+      "bom-ref": "rolldown@1.1.5",
       "type": "library",
       "name": "rolldown",
-      "version": "1.0.2",
+      "version": "1.1.5",
       "scope": "required",
       "description": "Fast JavaScript/TypeScript bundler in Rust with Rollup-compatible API.",
-      "purl": "pkg:npm/rolldown@1.0.2",
+      "purl": "pkg:npm/rolldown@1.1.5",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -2499,7 +2569,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/rolldown/-/rolldown-1.0.2.tgz"
+          "url": "https://registry.npmjs.org/rolldown/-/rolldown-1.1.5.tgz"
         },
         {
           "type": "vcs",
@@ -2513,7 +2583,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "a19c79cd50ed541e38016dde6a27e00e6975816443646be371f771a27138b3034f1bdf0faeb5e368efcaae7523ce5327ced082455954b9e0359025e10111a4ea"
+          "content": "b7dcf6f5c2635dffefc50f1dca1092a6de87e9a4b01d393c713e48de2cba48c5ee169939981e8f2fa5df0bc3c2c2b3d3c7ddee7702949bd1d1b5e0254c604b88"
         }
       ],
       "licenses": [
@@ -2568,6 +2638,10 @@
       "properties": [],
       "externalReferences": [
         {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/safe-buffer/-/safe-buffer-5.2.1.tgz"
+        },
+        {
           "type": "vcs",
           "url": "git://github.com/feross/safe-buffer.git"
         },
@@ -2578,6 +2652,12 @@
         {
           "type": "issue-tracker",
           "url": "https://github.com/feross/safe-buffer/issues"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "ae9dd2a34eca71d9a629b1af81a37141226bedb1954959394bd12ad45fa9a5b468ef4f9879a0f1930e4377c34f37e183e9b8e7626d95b8fb825e6a6e62f9825d"
         }
       ],
       "licenses": [
@@ -2746,12 +2826,22 @@
       "properties": [],
       "externalReferences": [
         {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/string_decoder/-/string_decoder-1.3.0.tgz"
+        },
+        {
           "type": "vcs",
           "url": "git://github.com/nodejs/string_decoder.git"
         },
         {
           "type": "website",
           "url": "https://github.com/nodejs/string_decoder"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "864457f14d568c915df0bb03276c90ff0596c5aa2912c0015355df90cf00fa3d3ef392401a9a6dd7a72bd56860e8a21b6f8a2453a32a97a04e8febaea7fc0a78"
         }
       ],
       "licenses": [
@@ -2846,14 +2936,14 @@
       ]
     },
     {
-      "bom-ref": "tinyglobby@0.2.16",
+      "bom-ref": "tinyglobby@0.2.17",
       "type": "library",
       "name": "tinyglobby",
-      "version": "0.2.16",
+      "version": "0.2.17",
       "scope": "required",
       "author": "Superchupu",
       "description": "A fast and minimal alternative to globby and fast-glob",
-      "purl": "pkg:npm/tinyglobby@0.2.16",
+      "purl": "pkg:npm/tinyglobby@0.2.17",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -2861,6 +2951,10 @@
         }
       ],
       "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/tinyglobby/-/tinyglobby-0.2.17.tgz"
+        },
         {
           "type": "vcs",
           "url": "git+https://github.com/SuperchupuDev/tinyglobby.git"
@@ -2872,6 +2966,12 @@
         {
           "type": "issue-tracker",
           "url": "https://github.com/SuperchupuDev/tinyglobby/issues"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "c1747f758a5ca8a99f5a911d66388a24ec023459dd0f40cc9eb5bf7188d51adb449017d581c2c51e836b963e3b9a339589cf72c8dbbae5a96c805e0d4324dada"
         }
       ],
       "licenses": [
@@ -2983,13 +3083,13 @@
       ]
     },
     {
-      "bom-ref": "undici-types@7.24.6",
+      "bom-ref": "undici-types@8.3.0",
       "type": "library",
       "name": "undici-types",
-      "version": "7.24.6",
+      "version": "8.3.0",
       "scope": "required",
       "description": "A stand-alone types package for Undici",
-      "purl": "pkg:npm/undici-types@7.24.6",
+      "purl": "pkg:npm/undici-types@8.3.0",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -2999,7 +3099,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/undici-types/-/undici-types-7.24.6.tgz"
+          "url": "https://registry.npmjs.org/undici-types/-/undici-types-8.3.0.tgz"
         },
         {
           "type": "vcs",
@@ -3017,7 +3117,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "591356fac2608f9381378ff42691c5aadab38696e75741ae07e3a8cc0f6008bedaf7ddd2994fb5241642ccb37162c6cc7c87832fe953b29843e6337937e9f4ce"
+          "content": "8f7ef949c57ad1da26f9890f1487d32dc3a23f190dfdbb87cf91a86e32e18b116e00d68db370bd9781a6ad6a9e8e05d627b05b25c158a53114912d467bc6e965"
         }
       ],
       "licenses": [
@@ -3029,14 +3129,14 @@
       ]
     },
     {
-      "bom-ref": "vite@8.0.14",
+      "bom-ref": "vite@8.1.4",
       "type": "library",
       "name": "vite",
-      "version": "8.0.14",
+      "version": "8.1.4",
       "scope": "required",
       "author": "Evan You",
       "description": "Native-ESM powered web dev build tool",
-      "purl": "pkg:npm/vite@8.0.14",
+      "purl": "pkg:npm/vite@8.1.4",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -3046,7 +3146,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/vite/-/vite-8.0.14.tgz"
+          "url": "https://registry.npmjs.org/vite/-/vite-8.1.4.tgz"
         },
         {
           "type": "vcs",
@@ -3064,7 +3164,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "b3804927ee72d6960be8eb70e7514785525084f9ee4629ca8a0eb883fd7e11435a26c77780229d0f7d483c5becc14816f7feb4413f681476d91db40ae6299cc7"
+          "content": "6d34fd3ec7563be31030d1bd65720ffea33dc06877ec31714d5fec3eaf5c1691ebdf0e2392079fd37d8f9002fd8c0aa1937373f0d430dcef27ebfc4592a3b841"
         }
       ],
       "licenses": [
@@ -3076,14 +3176,14 @@
       ]
     },
     {
-      "bom-ref": "vitest@4.1.7",
+      "bom-ref": "vitest@4.1.10",
       "type": "library",
       "name": "vitest",
-      "version": "4.1.7",
+      "version": "4.1.10",
       "scope": "required",
       "author": "Anthony Fu <anthonyfu117@hotmail.com>",
       "description": "Next generation testing framework powered by Vite",
-      "purl": "pkg:npm/vitest@4.1.7",
+      "purl": "pkg:npm/vitest@4.1.10",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -3093,7 +3193,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/vitest/-/vitest-4.1.7.tgz"
+          "url": "https://registry.npmjs.org/vitest/-/vitest-4.1.10.tgz"
         },
         {
           "type": "vcs",
@@ -3111,7 +3211,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "7e56326857760a0a02a14fb450ab77a7192c802f92d368930cdd27dcbb6a68c797b08f5205c74dba37369340de14bcd49ffd24e77f32363392770802a9caf024"
+          "content": "47d8d44dee52e106f41c27784cdaa90bba0672b32cb0c4465cb5bcd2e6e35ac5bd547e4617ccb56344852d8f406ea4a4ea7b743e73b1e07e16349619d771943f"
         }
       ],
       "licenses": [
@@ -3123,19 +3223,19 @@
       ]
     },
     {
-      "bom-ref": "web-tree-sitter@0.26.9",
+      "bom-ref": "web-tree-sitter@0.26.11",
       "type": "library",
       "name": "web-tree-sitter",
-      "version": "0.26.9",
+      "version": "0.26.11",
       "scope": "required",
       "author": "Max Brunsfeld",
       "description": "Tree-sitter bindings for the web",
-      "purl": "pkg:npm/web-tree-sitter@0.26.9",
+      "purl": "pkg:npm/web-tree-sitter@0.26.11",
       "properties": [],
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/web-tree-sitter/-/web-tree-sitter-0.26.9.tgz"
+          "url": "https://registry.npmjs.org/web-tree-sitter/-/web-tree-sitter-0.26.11.tgz"
         },
         {
           "type": "vcs",
@@ -3145,7 +3245,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "609c121c0365e971607848c1f278ad823d2a658b7982421eb09e30dacad2db070b0781946b8c5c3a433461a32c53a58d479dd8548903498ec48f8a5fdc85ed08"
+          "content": "4390e6dd84c85d25ee1fa1715fa46ecd7d90c297380cf1a260c53ced683967c3884ad89016251ec78ccc0dcd2f053c3bf04a6169825a727709821087cdb669b6"
         }
       ],
       "licenses": [
@@ -3196,20 +3296,20 @@
   ],
   "dependencies": [
     {
-      "ref": "@lubab/madar@0.27.9-next.0",
+      "ref": "@lubab/madar@0.31.2",
       "dependsOn": [
         "@vscode/tree-sitter-wasm@0.3.1",
         "fflate@0.8.3",
         "gpt-tokenizer@3.4.0",
-        "neo4j-driver@6.0.1",
+        "neo4j-driver@6.2.0",
         "typescript@6.0.3",
-        "web-tree-sitter@0.26.9",
-        "@types/node@25.9.1",
-        "@vitest/coverage-v8@4.1.7",
+        "web-tree-sitter@0.26.11",
+        "@types/node@26.1.1",
+        "@vitest/coverage-v8@4.1.10",
         "ajv@8.20.0",
         "ajv-formats@3.0.1",
-        "vite@8.0.14",
-        "vitest@4.1.7"
+        "vite@8.1.4",
+        "vitest@4.1.10"
       ]
     },
     {
@@ -3253,11 +3353,11 @@
       ]
     },
     {
-      "ref": "@oxc-project/types@0.132.0",
+      "ref": "@oxc-project/types@0.139.0",
       "dependsOn": []
     },
     {
-      "ref": "@rolldown/binding-darwin-arm64@1.0.2",
+      "ref": "@rolldown/binding-darwin-arm64@1.1.5",
       "dependsOn": []
     },
     {
@@ -3284,13 +3384,13 @@
       "dependsOn": []
     },
     {
-      "ref": "@types/node@25.9.1",
+      "ref": "@types/node@26.1.1",
       "dependsOn": [
-        "undici-types@7.24.6"
+        "undici-types@8.3.0"
       ]
     },
     {
-      "ref": "@vitest/coverage-v8@4.1.7",
+      "ref": "@vitest/coverage-v8@4.1.10",
       "dependsOn": [
         "@bcoe/v8-coverage@1.0.2",
         "ast-v8-to-istanbul@1.0.0",
@@ -3301,60 +3401,60 @@
         "obug@2.1.1",
         "std-env@4.1.0",
         "tinyrainbow@3.1.0",
-        "@vitest/utils@4.1.7"
+        "@vitest/utils@4.1.10"
       ]
     },
     {
-      "ref": "@vitest/expect@4.1.7",
+      "ref": "@vitest/expect@4.1.10",
       "dependsOn": [
         "@standard-schema/spec@1.1.0",
         "@types/chai@5.2.3",
         "chai@6.2.2",
         "tinyrainbow@3.1.0",
-        "@vitest/spy@4.1.7",
-        "@vitest/utils@4.1.7"
+        "@vitest/spy@4.1.10",
+        "@vitest/utils@4.1.10"
       ]
     },
     {
-      "ref": "@vitest/mocker@4.1.7",
+      "ref": "@vitest/mocker@4.1.10",
       "dependsOn": [
         "estree-walker@3.0.3",
         "magic-string@0.30.21",
-        "@vitest/spy@4.1.7"
+        "@vitest/spy@4.1.10"
       ]
     },
     {
-      "ref": "@vitest/pretty-format@4.1.7",
+      "ref": "@vitest/pretty-format@4.1.10",
       "dependsOn": [
         "tinyrainbow@3.1.0"
       ]
     },
     {
-      "ref": "@vitest/runner@4.1.7",
+      "ref": "@vitest/runner@4.1.10",
       "dependsOn": [
         "pathe@2.0.3",
-        "@vitest/utils@4.1.7"
+        "@vitest/utils@4.1.10"
       ]
     },
     {
-      "ref": "@vitest/snapshot@4.1.7",
+      "ref": "@vitest/snapshot@4.1.10",
       "dependsOn": [
         "magic-string@0.30.21",
         "pathe@2.0.3",
-        "@vitest/pretty-format@4.1.7",
-        "@vitest/utils@4.1.7"
+        "@vitest/pretty-format@4.1.10",
+        "@vitest/utils@4.1.10"
       ]
     },
     {
-      "ref": "@vitest/spy@4.1.7",
+      "ref": "@vitest/spy@4.1.10",
       "dependsOn": []
     },
     {
-      "ref": "@vitest/utils@4.1.7",
+      "ref": "@vitest/utils@4.1.10",
       "dependsOn": [
         "convert-source-map@2.0.0",
         "tinyrainbow@3.1.0",
-        "@vitest/pretty-format@4.1.7"
+        "@vitest/pretty-format@4.1.10"
       ]
     },
     {
@@ -3520,27 +3620,27 @@
       ]
     },
     {
-      "ref": "nanoid@3.3.12",
+      "ref": "nanoid@3.3.16",
       "dependsOn": []
     },
     {
-      "ref": "neo4j-driver@6.0.1",
+      "ref": "neo4j-driver@6.2.0",
       "dependsOn": [
-        "neo4j-driver-bolt-connection@6.0.1",
-        "neo4j-driver-core@6.0.1",
+        "neo4j-driver-bolt-connection@6.2.0",
+        "neo4j-driver-core@6.2.0",
         "rxjs@7.8.2"
       ]
     },
     {
-      "ref": "neo4j-driver-bolt-connection@6.0.1",
+      "ref": "neo4j-driver-bolt-connection@6.2.0",
       "dependsOn": [
         "buffer@6.0.3",
-        "neo4j-driver-core@6.0.1",
+        "neo4j-driver-core@6.2.0",
         "string_decoder@1.3.0"
       ]
     },
     {
-      "ref": "neo4j-driver-core@6.0.1",
+      "ref": "neo4j-driver-core@6.2.0",
       "dependsOn": []
     },
     {
@@ -3556,13 +3656,13 @@
       "dependsOn": []
     },
     {
-      "ref": "picomatch@4.0.4",
+      "ref": "picomatch@4.0.5",
       "dependsOn": []
     },
     {
-      "ref": "postcss@8.5.15",
+      "ref": "postcss@8.5.17",
       "dependsOn": [
-        "nanoid@3.3.12",
+        "nanoid@3.3.16",
         "picocolors@1.1.1",
         "source-map-js@1.2.1"
       ]
@@ -3572,11 +3672,11 @@
       "dependsOn": []
     },
     {
-      "ref": "rolldown@1.0.2",
+      "ref": "rolldown@1.1.5",
       "dependsOn": [
-        "@oxc-project/types@0.132.0",
+        "@oxc-project/types@0.139.0",
         "@rolldown/pluginutils@1.0.1",
-        "@rolldown/binding-darwin-arm64@1.0.2"
+        "@rolldown/binding-darwin-arm64@1.1.5"
       ]
     },
     {
@@ -3630,10 +3730,10 @@
       "dependsOn": []
     },
     {
-      "ref": "tinyglobby@0.2.16",
+      "ref": "tinyglobby@0.2.17",
       "dependsOn": [
         "fdir@6.5.0",
-        "picomatch@4.0.4"
+        "picomatch@4.0.5"
       ]
     },
     {
@@ -3649,47 +3749,47 @@
       "dependsOn": []
     },
     {
-      "ref": "undici-types@7.24.6",
+      "ref": "undici-types@8.3.0",
       "dependsOn": []
     },
     {
-      "ref": "vite@8.0.14",
+      "ref": "vite@8.1.4",
       "dependsOn": [
         "lightningcss@1.32.0",
-        "picomatch@4.0.4",
-        "postcss@8.5.15",
-        "rolldown@1.0.2",
-        "tinyglobby@0.2.16",
+        "picomatch@4.0.5",
+        "postcss@8.5.17",
+        "rolldown@1.1.5",
+        "tinyglobby@0.2.17",
         "fsevents@2.3.3"
       ]
     },
     {
-      "ref": "vitest@4.1.7",
+      "ref": "vitest@4.1.10",
       "dependsOn": [
         "es-module-lexer@2.1.0",
         "expect-type@1.3.0",
         "magic-string@0.30.21",
         "obug@2.1.1",
         "pathe@2.0.3",
-        "picomatch@4.0.4",
+        "picomatch@4.0.5",
         "std-env@4.1.0",
         "tinybench@2.9.0",
         "tinyexec@1.1.1",
-        "tinyglobby@0.2.16",
+        "tinyglobby@0.2.17",
         "tinyrainbow@3.1.0",
-        "vite@8.0.14",
+        "vite@8.1.4",
         "why-is-node-running@2.3.0",
-        "@vitest/pretty-format@4.1.7",
-        "@vitest/expect@4.1.7",
-        "@vitest/runner@4.1.7",
-        "@vitest/spy@4.1.7",
-        "@vitest/mocker@4.1.7",
-        "@vitest/snapshot@4.1.7",
-        "@vitest/utils@4.1.7"
+        "@vitest/expect@4.1.10",
+        "@vitest/mocker@4.1.10",
+        "@vitest/pretty-format@4.1.10",
+        "@vitest/runner@4.1.10",
+        "@vitest/spy@4.1.10",
+        "@vitest/snapshot@4.1.10",
+        "@vitest/utils@4.1.10"
       ]
     },
     {
-      "ref": "web-tree-sitter@0.26.9",
+      "ref": "web-tree-sitter@0.26.11",
       "dependsOn": []
     },
     {

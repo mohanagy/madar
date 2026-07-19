@@ -8,9 +8,9 @@ interface RoutingRow {
 const MCP_ROUTING_ROWS: RoutingRow[] = [
   {
     promptType: '"how does X work" / explain runtime / flow',
-    markdownTarget: '`context_pack`',
+    markdownTarget: '`retrieve`',
     plainPromptType: '"how does X work?" / explain runtime / flow',
-    plainTarget: 'context_pack',
+    plainTarget: 'retrieve',
   },
   {
     promptType: '"what breaks if I change X" / impact analysis',
@@ -20,9 +20,9 @@ const MCP_ROUTING_ROWS: RoutingRow[] = [
   },
   {
     promptType: '"which files should I open first"',
-    markdownTarget: '`relevant_files`',
+    markdownTarget: '`retrieve`',
     plainPromptType: '"which files should I open first?"',
-    plainTarget: 'relevant_files',
+    plainTarget: 'retrieve',
   },
   {
     promptType: '"give me a repo overview"',
@@ -32,18 +32,18 @@ const MCP_ROUTING_ROWS: RoutingRow[] = [
   },
   {
     promptType: '"what parts are involved in feature X"',
-    markdownTarget: '`feature_map`',
-    plainTarget: 'feature_map',
+    markdownTarget: '`retrieve`',
+    plainTarget: 'retrieve',
   },
   {
     promptType: '"what\'s risky to edit in X"',
-    markdownTarget: '`risk_map`',
-    plainTarget: 'risk_map',
+    markdownTarget: '`impact`',
+    plainTarget: 'impact',
   },
   {
     promptType: '"give me a build/edit checklist"',
-    markdownTarget: '`implementation_checklist`',
-    plainTarget: 'implementation_checklist',
+    markdownTarget: '`retrieve`',
+    plainTarget: 'retrieve',
   },
   {
     promptType: 'general retrieval / list of nodes',
@@ -67,9 +67,9 @@ const CODEX_ROUTING_ROWS: RoutingRow[] = [
   },
   {
     promptType: '"which files should I open first"',
-    markdownTarget: '`relevant_files` when MCP graph tools are available; otherwise `madar pack "<task or question>" --task explain`',
+    markdownTarget: '`retrieve` when MCP graph tools are available; otherwise `madar pack "<task or question>" --task explain`',
     plainPromptType: '"which files should I open first?"',
-    plainTarget: 'relevant_files when MCP graph tools are available; otherwise madar pack "<task or question>" --task explain',
+    plainTarget: 'retrieve when MCP graph tools are available; otherwise madar pack "<task or question>" --task explain',
   },
   {
     promptType: '"give me a repo overview"',
@@ -87,8 +87,8 @@ function renderMarkdownTable(lead: string, rows: RoutingRow[], toolSearchSentenc
     '| --- | --- |',
     ...rows.map((row) => `| ${row.promptType} | ${row.markdownTarget} |`),
     '',
-    'Inspect `evidence.pack_confidence`, `recommended_first_read`, and `evidence.agent_directive` before deciding whether to read files.',
-    'If `evidence.pack_confidence` is low, make one focused follow-up Madar call before broad raw search.',
+    'Treat `evidence.answerability.state` as authoritative; `evidence.pack_confidence` is compatibility-only.',
+    'For `verify_targets`, inspect only the listed verification targets. Restart broad search only for `insufficient` with `broad_search_fallback: allowed`.',
     toolSearchSentence,
   ]
   return lines.join('\n')
@@ -100,7 +100,7 @@ function renderPlainGuide(
   toolSearchSentence: string,
 ): string {
   const rules = rows.map((row) => `${row.plainTarget} for ${row.plainPromptType ?? row.promptType}`).join('; ')
-  return `${lead}: ${rules}. Inspect evidence.pack_confidence, recommended_first_read, and evidence.agent_directive before deciding whether to read files. If evidence.pack_confidence is low, make one focused follow-up Madar call before broad raw search. ${toolSearchSentence}`
+  return `${lead}: ${rules}. Treat evidence.answerability.state as authoritative; evidence.pack_confidence is compatibility-only. For verify_targets, inspect only the listed verification targets. Restart broad search only for insufficient with broad_search_fallback allowed. ${toolSearchSentence}`
 }
 
 export function renderMarkdownMcpRoutingTable(): string {

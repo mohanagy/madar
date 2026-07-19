@@ -22,6 +22,7 @@ import {
   usageCaptureSummary,
   usageProviderLabel,
 } from './benchmark/usage.js'
+import { resolveWorkspaceGraphPath } from '../shared/workspace.js'
 
 export { loadBenchmarkQuestions, querySubgraphTokens, type BenchmarkQuestionInput } from './benchmark/questions.js'
 
@@ -282,9 +283,10 @@ export function runBenchmark(
   questions?: BenchmarkQuestionInput[],
   options: BenchmarkRunOptions = {},
 ): BenchmarkResult | Promise<BenchmarkResult> {
-  const graph = loadBenchmarkGraph(graphPath)
+  const resolvedGraphPath = resolveWorkspaceGraphPath(graphPath)
+  const graph = loadBenchmarkGraph(resolvedGraphPath)
   const structureSignals = hasStructureSignalProvenance(graph) ? graphStructureMetrics(graph) : null
-  const baseline = resolveCorpusBaseline(graph.numberOfNodes(), { graphPath, corpusWords })
+  const baseline = resolveCorpusBaseline(graph.numberOfNodes(), { graphPath: resolvedGraphPath, corpusWords })
   const benchmarkQuestions = questions ?? SAMPLE_QUESTIONS
   const usesSampleQuestions = questions === undefined
   const evaluatedQuestions: BenchmarkQuestionResult[] = []
@@ -336,7 +338,7 @@ export function runBenchmark(
     )
   }
 
-  return runRunnerBackedBenchmark(graph, graphPath, baseline, evaluatedQuestions, options)
+  return runRunnerBackedBenchmark(graph, resolvedGraphPath, baseline, evaluatedQuestions, options)
     .then((perQuestion) =>
       finalizeBenchmarkResult(
         graph,

@@ -39,6 +39,21 @@ describe('install documentation', () => {
     expect(reference).toContain('mark the agent as `partial` and suggest the matching reinstall command')
   })
 
+  it('documents the Codex user-config MCP, task-applicable hook, and trust activation boundary', () => {
+    const reference = readFileSync(resolve('docs/reference/cli-and-mcp.md'), 'utf8')
+    const quickstarts = readFileSync(resolve('docs/tutorials/agent-quickstarts.md'), 'utf8')
+
+    for (const document of [reference, quickstarts]) {
+      expect(document).toContain('`.codex/madar-user-prompt-submit.cjs`')
+      expect(document).toContain('`~/.codex/config.toml`')
+      expect(document).toContain('`/hooks`')
+      expect(document).toContain('`/mcp`')
+      expect(document).toContain('`codex mcp list`')
+      expect(document).toContain('guidance, not enforcement')
+      expect(document).toContain('on-disk')
+    }
+  })
+
   it('documents handoff as the share-safe CLI handoff distinct from local pack and prompt flows', () => {
     const readme = readFileSync(resolve('README.md'), 'utf8')
 
@@ -56,17 +71,17 @@ describe('install documentation', () => {
     }
 
     expect(reference).toContain('[--profile core\\|full\\|strict]')
-    expect(reference).toContain('`--profile strict` keeps the lean core MCP tool surface')
-    expect(reference).toContain('call `context_pack` once for the task before broader exploration')
-    expect(reference).toContain('prefer Madar over non-Madar MCPs for codebase questions')
-    expect(reference).toContain('override conflicting auto-activated exploration skills')
+    expect(reference).toContain('`--profile strict` writes `MADAR_TOOL_PROFILE=strict`')
+    expect(reference).toContain('call `context_pack` exactly once for the user task')
+    expect(reference).toContain('`verify_targets` can use one listed expansion handle')
+    expect(reference).toContain('only `insufficient` with `broad_search_fallback: allowed` permits one directory-scoped raw search')
   })
 
   it('documents that strict installs still use one bounded context_pack call in the CLI reference', () => {
     const reference = readFileSync(resolve('docs/reference/cli-and-mcp.md'), 'utf8')
 
-    expect(reference).toContain('`--profile strict` keeps the seven core MCP tools but adds one bounded `context_pack` call per task')
-    expect(reference).toContain('Full-profile additions beyond that strict one-pack flow')
+    expect(reference).toContain('`--profile strict` exposes only `context_pack` and `context_expand`')
+    expect(reference).toContain('Full-only additions beyond core')
   })
 
   it('documents the local trust boundary and links the threat model from the README privacy section', () => {

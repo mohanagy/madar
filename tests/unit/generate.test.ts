@@ -1,4 +1,5 @@
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -6,6 +7,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { describe, expect, test, vi } from 'vitest'
 
 import { generateGraph, GenerateUnsupportedCorpusError } from '../../src/infrastructure/generate.js'
+import { analyzeImpact, callChains } from '../../src/runtime/impact.js'
 import { loadGraph } from '../../src/runtime/serve.js'
 import { binaryIngestSidecarPath } from '../../src/shared/binary-ingest-sidecar.js'
 import { normalizeAssertionPath, normalizeAssertionPaths } from './helpers/platform.js'
@@ -959,6 +961,33 @@ function createTestOggOpusBuffer(
 describe('generateGraph', () => {
   const generateGraphIntegrationTimeoutMs = 15_000
 
+  test('persists local discovery safety paths and returns their structured summary', () => {
+    withTempDir((tempDir) => {
+      writeFileSync(join(tempDir, 'token.ts'), 'export function issueToken() { return "opaque" }\n', 'utf8')
+      writeFileSync(join(tempDir, 'credentials.json'), '{"token":"do-not-read"}\n', 'utf8')
+
+      const result = generateGraph(tempDir, { noHtml: true })
+      const graphData = JSON.parse(readFileSync(result.graphPath, 'utf8')) as {
+        discovery_safety?: {
+          summary: { total: number; sensitive: number; unreadable: number }
+          exclusions: Array<{ path: string; kind: string; reason: string }>
+        }
+        nodes: Array<{ source_file?: string }>
+      }
+
+      expect(result.codeFiles).toBe(1)
+      expect(result.discoverySafety?.summary).toMatchObject({ total: 1, sensitive: 1, unreadable: 0 })
+      expect(result.discoveryExclusions).toContainEqual({
+        path: 'credentials.json',
+        kind: 'sensitive',
+        reason: 'secret_config',
+      })
+      expect(graphData.discovery_safety).toEqual(result.discoverySafety)
+      expect(graphData.nodes.some((node) => node.source_file?.endsWith('token.ts'))).toBe(true)
+      expect(JSON.stringify(graphData.nodes)).not.toContain('credentials.json')
+    })
+  }, generateGraphIntegrationTimeoutMs)
+
   test('throws a stable unsupported-corpus error code when no supported files are detected', () => {
     withTempDir((tempDir) => {
       writeFileSync(join(tempDir, 'fixture.bin'), Buffer.from([0xde, 0xad, 0xbe, 0xef]))
@@ -971,6 +1000,22 @@ describe('generateGraph', () => {
         expect((error as GenerateUnsupportedCorpusError).code).toBe('NO_SUPPORTED_FILES')
         expect((error as Error).message).toContain('No supported files were found in the target path.')
       }
+    })
+  })
+
+  test('reports local safety paths when exclusions leave no supported corpus', () => {
+    withTempDir((tempDir) => {
+      writeFileSync(join(tempDir, 'credentials.json'), '{"token":"do-not-read"}\n', 'utf8')
+
+      expect(() => generateGraph(tempDir, { noHtml: true })).toThrowError(
+        expect.objectContaining({
+          code: 'NO_SUPPORTED_FILES',
+          message: expect.stringContaining('"credentials.json" (secret_config)'),
+          discoverySafety: expect.objectContaining({
+            summary: expect.objectContaining({ total: 1, sensitive: 1, unreadable: 0 }),
+          }),
+        }),
+      )
     })
   })
 
@@ -988,6 +1033,82 @@ describe('generateGraph', () => {
       }
     })
   })
+
+  test('excludes Git-ignored files when respectGitignore is enabled', () => {
+    withTempDir((tempDir) => {
+      writeFileSync(join(tempDir, '.gitignore'), 'ignored.ts\n', 'utf8')
+      writeFileSync(join(tempDir, 'tracked.ts'), 'export const tracked = true\n', 'utf8')
+      writeFileSync(join(tempDir, 'untracked.ts'), 'export const untracked = true\n', 'utf8')
+      writeFileSync(join(tempDir, 'ignored.ts'), 'export const ignored = true\n', 'utf8')
+      execFileSync('git', ['init'], { cwd: tempDir, stdio: 'pipe' })
+      execFileSync('git', ['add', '.gitignore', 'tracked.ts'], { cwd: tempDir, stdio: 'pipe' })
+
+      generateGraph(tempDir, { noHtml: true, respectGitignore: true })
+
+      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+        nodes: Array<{ source_file?: string }>
+      }
+      const sourceFiles = new Set(
+        graphData.nodes.flatMap((node) => (typeof node.source_file === 'string' ? [normalizeAssertionPath(realpathSync(node.source_file))] : [])),
+      )
+
+      expect(sourceFiles).toContain(normalizeAssertionPath(realpathSync(join(tempDir, 'tracked.ts'))))
+      expect(sourceFiles).toContain(normalizeAssertionPath(realpathSync(join(tempDir, 'untracked.ts'))))
+      expect(sourceFiles).not.toContain(normalizeAssertionPath(realpathSync(join(tempDir, 'ignored.ts'))))
+    })
+  }, generateGraphIntegrationTimeoutMs)
+
+  test('excludes Git-ignored files from a nested generation root', () => {
+    withTempDir((repoRoot) => {
+      const nestedRoot = join(repoRoot, 'workspace')
+      mkdirSync(nestedRoot)
+      writeFileSync(join(repoRoot, '.gitignore'), 'workspace/ignored.ts\n', 'utf8')
+      writeFileSync(join(nestedRoot, 'tracked.ts'), 'export const tracked = true\n', 'utf8')
+      writeFileSync(join(nestedRoot, 'untracked.ts'), 'export const untracked = true\n', 'utf8')
+      writeFileSync(join(nestedRoot, 'ignored.ts'), 'export const ignored = true\n', 'utf8')
+      execFileSync('git', ['init'], { cwd: repoRoot, stdio: 'pipe' })
+      execFileSync('git', ['add', '.gitignore', 'workspace/tracked.ts'], { cwd: repoRoot, stdio: 'pipe' })
+
+      generateGraph(nestedRoot, { noHtml: true, respectGitignore: true })
+
+      const graphData = JSON.parse(readFileSync(join(nestedRoot, 'out', 'graph.json'), 'utf8')) as {
+        nodes: Array<{ source_file?: string }>
+      }
+      const sourceFiles = new Set(
+        graphData.nodes.flatMap((node) => (typeof node.source_file === 'string' ? [normalizeAssertionPath(realpathSync(node.source_file))] : [])),
+      )
+
+      expect(sourceFiles).toContain(normalizeAssertionPath(realpathSync(join(nestedRoot, 'tracked.ts'))))
+      expect(sourceFiles).toContain(normalizeAssertionPath(realpathSync(join(nestedRoot, 'untracked.ts'))))
+      expect(sourceFiles).not.toContain(normalizeAssertionPath(realpathSync(join(nestedRoot, 'ignored.ts'))))
+    })
+  }, generateGraphIntegrationTimeoutMs)
+
+  test.runIf(process.platform !== 'win32')('excludes Git-ignored files through a symlinked generation root', () => {
+    withTempDir((realRoot) => {
+      withTempDir((aliasParent) => {
+        writeFileSync(join(realRoot, '.gitignore'), 'ignored.ts\n', 'utf8')
+        writeFileSync(join(realRoot, 'tracked.ts'), 'export const tracked = true\n', 'utf8')
+        writeFileSync(join(realRoot, 'untracked.ts'), 'export const untracked = true\n', 'utf8')
+        writeFileSync(join(realRoot, 'ignored.ts'), 'export const ignored = true\n', 'utf8')
+        execFileSync('git', ['init'], { cwd: realRoot, stdio: 'pipe' })
+        execFileSync('git', ['add', '.gitignore', 'tracked.ts'], { cwd: realRoot, stdio: 'pipe' })
+
+        const aliasedRoot = join(aliasParent, 'workspace')
+        symlinkSync(realRoot, aliasedRoot, 'dir')
+        generateGraph(aliasedRoot, { noHtml: true, respectGitignore: true })
+
+        const graphData = JSON.parse(readFileSync(join(aliasedRoot, 'out', 'graph.json'), 'utf8')) as {
+          nodes: Array<{ source_file?: string }>
+        }
+        const sourceFiles = new Set(graphData.nodes.map((node) => node.source_file))
+
+        expect(sourceFiles).toContain(join(aliasedRoot, 'tracked.ts'))
+        expect(sourceFiles).toContain(join(aliasedRoot, 'untracked.ts'))
+        expect(sourceFiles).not.toContain(join(aliasedRoot, 'ignored.ts'))
+      })
+    })
+  }, generateGraphIntegrationTimeoutMs)
 
   test('builds graph artifacts for a code corpus', () => {
     withTempDir((tempDir) => {
@@ -1035,7 +1156,7 @@ describe('generateGraph', () => {
         'utf8',
       )
 
-      generateGraph(tempDir, { noHtml: true })
+      generateGraph(tempDir, { noHtml: true, extractionMode: 'legacy' })
 
       const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
         nodes: Array<Record<string, unknown>>
@@ -1053,7 +1174,7 @@ describe('generateGraph', () => {
   test('builds graph artifacts with stitched relative workspace anonymous default-export barrel imports while keeping the worker isolated', () => {
     withTempDir((tempDir) => {
       const workspaceRoot = copyFixtureCorpus('workspace-parity', tempDir)
-      const result = generateGraph(workspaceRoot, { noHtml: true })
+      const result = generateGraph(workspaceRoot, { noHtml: true, extractionMode: 'legacy' })
       const graphData = JSON.parse(readFileSync(join(workspaceRoot, 'out', 'graph.json'), 'utf8')) as {
         nodes: Array<Record<string, unknown>>
         links: Array<{ source: string; target: string; relation: string }>
@@ -4428,7 +4549,7 @@ describe('generateGraph', () => {
         'utf8',
       )
 
-      const initial = generateGraph(tempDir, { noHtml: true })
+      const initial = generateGraph(tempDir, { noHtml: true, extractionMode: 'legacy' })
       const staleGraphData = JSON.parse(readFileSync(initial.graphPath, 'utf8')) as {
         extractor_version?: number
         nodes: Array<Record<string, unknown>>
@@ -4440,7 +4561,7 @@ describe('generateGraph', () => {
       staleGraphData.links = staleGraphData.links.filter((edge) => edge.target !== 'auth_default')
       writeFileSync(initial.graphPath, `${JSON.stringify(staleGraphData, null, 2)}\n`, 'utf8')
 
-      const updated = generateGraph(tempDir, { update: true, noHtml: true })
+      const updated = generateGraph(tempDir, { update: true, noHtml: true, extractionMode: 'legacy' })
       const updatedGraphData = JSON.parse(readFileSync(updated.graphPath, 'utf8')) as {
         extractor_version?: number
         nodes: Array<Record<string, unknown>>
@@ -4489,7 +4610,7 @@ describe('generateGraph', () => {
         'utf8',
       )
 
-      const initial = generateGraph(tempDir, { noHtml: true })
+      const initial = generateGraph(tempDir, { noHtml: true, extractionMode: 'legacy' })
       const staleGraphData = JSON.parse(readFileSync(initial.graphPath, 'utf8')) as {
         extractor_version?: number
         nodes: Array<Record<string, unknown>>
@@ -4501,7 +4622,7 @@ describe('generateGraph', () => {
       staleGraphData.links = staleGraphData.links.filter((edge) => edge.target !== 'auth_default')
       writeFileSync(initial.graphPath, `${JSON.stringify(staleGraphData, null, 2)}\n`, 'utf8')
 
-      const updated = generateGraph(tempDir, { update: true, noHtml: true })
+      const updated = generateGraph(tempDir, { update: true, noHtml: true, extractionMode: 'legacy' })
       const updatedGraphData = JSON.parse(readFileSync(updated.graphPath, 'utf8')) as {
         extractor_version?: number
         nodes: Array<Record<string, unknown>>
@@ -4541,7 +4662,7 @@ describe('generateGraph', () => {
         'utf8',
       )
 
-      const initial = generateGraph(tempDir, { noHtml: true })
+      const initial = generateGraph(tempDir, { noHtml: true, extractionMode: 'legacy' })
       const initialGraphData = JSON.parse(readFileSync(initial.graphPath, 'utf8')) as {
         nodes: Array<Record<string, unknown>>
       }
@@ -4570,7 +4691,7 @@ describe('generateGraph', () => {
         'utf8',
       )
 
-      const updated = generateGraph(tempDir, { update: true, noHtml: true })
+      const updated = generateGraph(tempDir, { update: true, noHtml: true, extractionMode: 'legacy' })
       const updatedGraphData = JSON.parse(readFileSync(updated.graphPath, 'utf8')) as {
         nodes: Array<Record<string, unknown>>
       }
@@ -4637,7 +4758,7 @@ describe('generateGraph', () => {
       writeFileSync(sourcePath, 'def greet():\n    return helper()\n', 'utf8')
       writeFileSync(helperPath, 'def helper():\n    return 1\n', 'utf8')
 
-      const initial = generateGraph(tempDir, { noHtml: true })
+      const initial = generateGraph(tempDir, { noHtml: true, extractionMode: 'legacy' })
       const graphData = JSON.parse(readFileSync(initial.graphPath, 'utf8')) as {
         schema_version?: number
         nodes: Array<Record<string, unknown>>
@@ -4660,7 +4781,7 @@ describe('generateGraph', () => {
       await delay(10)
       writeFileSync(sourcePath, 'def greet():\n    return helper()\n\ndef other():\n    return greet()\n', 'utf8')
 
-      const updated = generateGraph(tempDir, { update: true, noHtml: true })
+      const updated = generateGraph(tempDir, { update: true, noHtml: true, extractionMode: 'legacy' })
       const updatedGraphData = JSON.parse(readFileSync(updated.graphPath, 'utf8')) as {
         schema_version?: number
         nodes: Array<Record<string, unknown>>
@@ -4685,7 +4806,7 @@ describe('generateGraph', () => {
       const helperPath = join(tempDir, 'helper.py')
       writeFileSync(sourcePath, 'def greet():\n    return helper()\n', 'utf8')
       writeFileSync(helperPath, 'def helper():\n    return 1\n', 'utf8')
-      generateGraph(tempDir)
+      generateGraph(tempDir, { extractionMode: 'legacy' })
 
       await delay(10)
       writeFileSync(sourcePath, 'def greet():\n    return helper()\n\ndef other():\n    return greet()\n', 'utf8')
@@ -4700,7 +4821,7 @@ describe('generateGraph', () => {
 
       try {
         const generateModule = await import('../../src/infrastructure/generate.js')
-        const result = generateModule.generateGraph(tempDir, { update: true, noHtml: true })
+        const result = generateModule.generateGraph(tempDir, { update: true, noHtml: true, extractionMode: 'legacy' })
         const graph = loadGraph(result.graphPath)
 
         expect(extractSpy).toHaveBeenCalledTimes(1)
@@ -4795,14 +4916,111 @@ describe('generateGraph', () => {
     })
   })
 
-  test('writes and reloads directed graphs when requested', () => {
+  test('generates directed code graphs by default and preserves one-way traversal semantics', () => {
+    withTempDir((tempDir) => {
+      mkdirSync(join(tempDir, 'backend'), { recursive: true })
+      mkdirSync(join(tempDir, 'shared'), { recursive: true })
+      writeFileSync(
+        join(tempDir, 'backend', 'api.ts'),
+        [
+          "import { createSession } from '../shared/auth.js'",
+          '',
+          'export function loginUser() {',
+          '  return createSession()',
+          '}',
+        ].join('\n'),
+        'utf8',
+      )
+      writeFileSync(
+        join(tempDir, 'shared', 'auth.ts'),
+        [
+          'export function createSession() {',
+          "  return 'session'",
+          '}',
+        ].join('\n'),
+        'utf8',
+      )
+
+      const result = generateGraph(tempDir, { noHtml: true })
+      const graph = loadGraph(result.graphPath)
+      const graphData = JSON.parse(readFileSync(result.graphPath, 'utf8')) as { directed?: boolean }
+
+      expect(graph.isDirected()).toBe(true)
+      expect(graphData.directed).toBe(true)
+      expect(callChains(graph, 'loginUser()', 'createSession()')).toEqual(
+        expect.arrayContaining([['loginUser()', 'createSession()']]),
+      )
+      expect(callChains(graph, 'createSession()', 'loginUser()')).toEqual([])
+      expect(analyzeImpact(graph, {}, { label: 'createSession()' }).direct_dependents).toEqual(
+        expect.arrayContaining([expect.objectContaining({ label: 'loginUser()' })]),
+      )
+      expect(analyzeImpact(graph, {}, { label: 'loginUser()' }).direct_dependents).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ label: 'createSession()' })]),
+      )
+    })
+  })
+
+  test('allows callers to explicitly generate an undirected visualization graph', () => {
     withTempDir((tempDir) => {
       writeFileSync(join(tempDir, 'main.py'), 'class Greeter:\n    def hello(self):\n        return helper()\n\ndef helper():\n    return 1\n', 'utf8')
 
-      const result = generateGraph(tempDir, { directed: true, noHtml: true })
+      const result = generateGraph(tempDir, { directed: false })
       const graph = loadGraph(result.graphPath)
 
-      expect(graph.isDirected()).toBe(true)
+      expect(graph.isDirected()).toBe(false)
+      expect(readFileSync(result.reportPath, 'utf8')).toContain('# Graph Report')
+      expect(result.htmlPath).not.toBeNull()
+      expect(result.htmlPath && existsSync(result.htmlPath)).toBe(true)
+    })
+  })
+
+  test('makes a directed-to-undirected cluster-only downgrade explicit and disables directional analysis', () => {
+    withTempDir((tempDir) => {
+      writeFileSync(
+        join(tempDir, 'main.py'),
+        'def alpha():\n    return beta()\n\ndef beta():\n    return alpha()\n',
+        'utf8',
+      )
+      const directedResult = generateGraph(tempDir, { noHtml: true })
+      const directedGraph = loadGraph(directedResult.graphPath)
+      expect(directedGraph.isDirected()).toBe(true)
+      expect(callChains(directedGraph, 'alpha()', 'beta()')).not.toEqual([])
+      expect(callChains(directedGraph, 'beta()', 'alpha()')).not.toEqual([])
+
+      const downgraded = generateGraph(tempDir, { clusterOnly: true, directed: false, noHtml: true })
+      const undirectedGraph = loadGraph(downgraded.graphPath)
+
+      expect(undirectedGraph.isDirected()).toBe(false)
+      expect(undirectedGraph.numberOfEdges()).toBeLessThan(directedGraph.numberOfEdges())
+      expect(downgraded.notes).toContain('Migrated the existing graph from directed to undirected edge traversal.')
+      expect(() => callChains(undirectedGraph, 'alpha()', 'beta()')).toThrow(
+        'Call-chain analysis requires a directed graph',
+      )
+    })
+  })
+
+  test('migrates a legacy undirected graph during an unchanged update', () => {
+    withTempDir((tempDir) => {
+      writeFileSync(join(tempDir, 'main.py'), 'def hello():\n    return 1\n', 'utf8')
+      const legacy = generateGraph(tempDir, { directed: false, noHtml: true })
+      expect(loadGraph(legacy.graphPath).isDirected()).toBe(false)
+
+      const updated = generateGraph(tempDir, { update: true, noHtml: true })
+
+      expect(loadGraph(updated.graphPath).isDirected()).toBe(true)
+      expect(updated.extractedFiles).toBeGreaterThan(0)
+      expect(updated.notes).toContain('Existing graph was undirected, so --update rebuilt the full graph with directed edges.')
+    })
+  })
+
+  test('refuses to guess lost edge directions during cluster-only regeneration', () => {
+    withTempDir((tempDir) => {
+      writeFileSync(join(tempDir, 'main.py'), 'def hello():\n    return 1\n', 'utf8')
+      generateGraph(tempDir, { directed: false, noHtml: true })
+
+      expect(() => generateGraph(tempDir, { clusterOnly: true, noHtml: true })).toThrow(
+        '--cluster-only cannot safely recover edge directions from an undirected graph.',
+      )
     })
   })
 
@@ -4833,7 +5051,7 @@ describe('generateGraph', () => {
         'utf8',
       )
 
-      const result = generateGraph(tempDir, { noHtml: true })
+      const result = generateGraph(tempDir, { noHtml: true, extractionMode: 'legacy' })
       const graphData = JSON.parse(readFileSync(result.graphPath, 'utf8')) as {
         nodes: Array<{ id: string; label: string; node_kind?: string }>
         links: Array<{ source: string; target: string; relation: string }>
@@ -4869,7 +5087,7 @@ describe('generateGraph', () => {
       )
       writeFileSync(join(tempDir, 'docs', 'notes.md'), '# Notes\n', 'utf8')
 
-      const legacy = generateGraph(tempDir, { noHtml: true })
+      const legacy = generateGraph(tempDir, { noHtml: true, extractionMode: 'legacy' })
       expect(legacy.extractableFiles).toBe(3)
       expect(legacy.extractedFiles).toBe(3)
       expect(legacy.cache).toBeNull()
@@ -4894,15 +5112,16 @@ describe('generateGraph', () => {
         fileCount: 2,
       }))
 
-      const updateNoop = generateGraph(tempDir, { update: true, noHtml: true })
+      const updateNoop = generateGraph(tempDir, { update: true, noHtml: true, extractionMode: 'legacy' })
       expect(updateNoop.extractableFiles).toBe(3)
       expect(updateNoop.changedFiles).toBe(0)
-      expect(updateNoop.extractedFiles).toBe(0)
+      expect(updateNoop.extractedFiles).toBe(3)
       expect(updateNoop.cache).toBeNull()
+      expect(updateNoop.notes.join('\n')).toContain('Generation policy changed')
 
       await delay(10)
       writeFileSync(join(tempDir, 'src', 'beta.ts'), 'export function beta(): number { return 2 }\n', 'utf8')
-      const updateChanged = generateGraph(tempDir, { update: true, noHtml: true })
+      const updateChanged = generateGraph(tempDir, { update: true, noHtml: true, extractionMode: 'legacy' })
       expect(updateChanged.extractableFiles).toBe(3)
       expect(updateChanged.changedFiles).toBe(1)
       expect(updateChanged.extractedFiles).toBe(1)

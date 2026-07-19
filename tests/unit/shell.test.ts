@@ -35,4 +35,19 @@ describe('shared shell helpers', () => {
       useProcessGroup: true,
     })
   })
+
+  it('can preserve the current process environment with a non-login shell', () => {
+    const resolveShellCommand = (shell as Record<string, unknown>).resolveShellCommand
+
+    expect(typeof resolveShellCommand).toBe('function')
+    expect((resolveShellCommand as (
+      command: string,
+      platform?: NodeJS.Platform,
+      options?: { login?: boolean },
+    ) => unknown)('npm run typecheck', 'linux', { login: false })).toEqual({
+      file: '/bin/sh',
+      args: ['-c', 'npm run typecheck'],
+      useProcessGroup: true,
+    })
+  })
 })

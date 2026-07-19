@@ -10,6 +10,7 @@ interface PackageManifest {
   devDependencies?: Record<string, string>
   keywords?: string[]
   license?: string
+  mcpName?: string
   name?: string
   overrides?: Record<string, string>
   peerDependencies?: Record<string, string>
@@ -132,6 +133,7 @@ describe('package metadata', () => {
     const manifest = loadPackageManifest()
 
     expect(manifest.name).toBe('@lubab/madar')
+    expect(manifest.mcpName).toBe('io.github.mohanagy/madar')
     expect(manifest.bin).toEqual({
       madar: 'dist/src/cli/bin.js',
     })
@@ -178,7 +180,7 @@ describe('package metadata', () => {
     expect(readme).toContain('cursor')
     expect(readme).toContain('codex')
     expect(readme).toContain('copilot')
-    expect(readme).toContain('repo context they need before they start searching')
+    expect(readme).toContain('repo context it needs before it starts searching')
     expect(readme).toContain('local graph')
     expect(readme).toContain('task-aware context pack')
     expect(contextPacks).toContain('deterministic local context compilation')
@@ -242,8 +244,8 @@ describe('package metadata', () => {
     expect(matrix).toContain('runtime-boundary')
     expect(matrix).toContain('generic AST structure')
     expect(matrix).toContain('visible client/server boundaries')
-    expect(matrix).toContain('source-visible Hono, Fastify, tRPC, and Prisma workflows get conservative deeper retrieval hints on the opt-in `--spi` pipeline')
-    expect(matrix).toContain('Hono, Fastify, tRPC, and Prisma currently contribute conservative request-flow and storage hints only on the opt-in `--spi` path')
+    expect(matrix).toContain('source-visible Hono/Fastify route ownership')
+    expect(matrix).toContain('In default auto mode, Hono, Fastify, tRPC, and Prisma contribute conservative request-flow and storage hints')
   })
 
   it('pins non-vulnerable dependency floors for the CI security audit', () => {

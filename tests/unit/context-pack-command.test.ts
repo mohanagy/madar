@@ -8,8 +8,12 @@ import type { ContextPackSelectionDiagnostics } from '../../src/contracts/contex
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
 import { buildAnswerReadyPackSchema, runContextPackCommand, type ContextPackCommandDependencies } from '../../src/infrastructure/context-pack-command.js'
 import { build } from '../../src/pipeline/build.js'
+import { assessMadarResponseEvidence } from '../../src/runtime/mcp-response-evidence.js'
 import { compactRetrieveResult, retrieveContext, type RetrieveResult } from '../../src/runtime/retrieve.js'
+import { evaluateQueryEvidenceCoverage } from '../../src/runtime/retrieve/conceptual-fallback.js'
+import { buildRetrievalEvidencePlanFromResult } from '../../src/runtime/retrieve/pipeline.js'
 import { estimateQueryTokens } from '../../src/runtime/serve.js'
+import { buildCrossLayerMonitorFlowFixture } from '../fixtures/cross-layer-monitor-flow.js'
 
 const tempFixtureRoots: string[] = []
 const repoGraphFixturePath = join(process.cwd(), 'out', 'graph.json')
@@ -373,6 +377,72 @@ function buildAnswerReadySelectionDiagnostics(): ContextPackSelectionDiagnostics
   }
 }
 describe('context-pack-command', () => {
+  it('uses discovery safety metadata from the loaded graph without serializing local exclusion paths', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'madar-discovery-pack-'))
+    tempFixtureRoots.push(root)
+    const graphPath = join(root, 'out', 'graph.json')
+    mkdirSync(dirname(graphPath), { recursive: true })
+    writeFileSync(graphPath, JSON.stringify({
+      discovery_safety: {
+        version: 1,
+        summary: { total: 1, sensitive: 1, unreadable: 0, reasons: { secret_config: 1 } },
+        exclusions: [
+          { path: 'src/billing/credentials.json', kind: 'sensitive', reason: 'secret_config' },
+        ],
+      },
+    }))
+
+    const graph = buildRuntimeGenerationGraph()
+    graph.graph.discovery_safety = {
+      version: 1,
+      summary: { total: 1, sensitive: 0, unreadable: 1, reasons: { unreadable_path: 1 } },
+      exclusions: [
+        { path: 'src/auth/token-loader.ts', kind: 'unreadable', reason: 'unreadable_path' },
+      ],
+    }
+    const dependencies: ContextPackCommandDependencies = {
+      loadGraph: vi.fn().mockReturnValue(graph),
+      retrieveContext: (loadedGraph, options) => retrieveContext(loadedGraph, options),
+      compactRetrieveResult,
+      analyzePrImpact: vi.fn(),
+      compactPrImpactResult: vi.fn(),
+      analyzeImpact: vi.fn(),
+      compactImpactResult: vi.fn(),
+    }
+
+    const output = await runContextPackCommand({
+      prompt: 'How does the auth token loader work?',
+      budget: 3000,
+      task: 'explain',
+      graphPath,
+      format: 'json',
+      verbose: true,
+    }, dependencies)
+    const payload = JSON.parse(output) as {
+      evidence?: {
+        pack_confidence?: string
+        discovery_exclusions?: {
+          policy?: string
+          total?: number
+          relevant?: number
+          reasons?: Record<string, number>
+          relevant_reasons?: Record<string, number>
+        }
+      }
+    }
+
+    expect(payload.evidence?.pack_confidence).toBe('low')
+    expect(payload.evidence?.discovery_exclusions).toEqual({
+      policy: 'artifact_path_only',
+      total: 1,
+      relevant: 1,
+      reasons: { unreadable_path: 1 },
+      relevant_reasons: { unreadable_path: 1 },
+    })
+    expect(output).not.toContain('token-loader.ts')
+    expect(output).not.toContain('billing/credentials.json')
+  })
+
   it('preserves execution_slice for runtime-generation explain packs', async () => {
     const graph = buildRuntimeGenerationGraph()
     const dependencies: ContextPackCommandDependencies = {
@@ -691,6 +761,7 @@ describe('context-pack-command', () => {
           preview_item_count?: number
         }
       }
+      expandable?: unknown[]
       workflow_centers?: Array<{ path?: string; label?: string }>
       recommended_first_read?: Array<{ path?: string; label?: string }>
       negative_guidance?: string[]
@@ -710,11 +781,9 @@ describe('context-pack-command', () => {
       directive: expect.objectContaining({
         agent_directive: 'answer_from_pack',
       }),
-      follow_up: {
-        expandable_handle_count: 1,
-        preview_item_count: 1,
-      },
     }))
+    expect(payload.governance?.follow_up).toBeUndefined()
+    expect(payload.expandable).toEqual([])
     expect(JSON.stringify(payload.governance)).not.toContain('How idea report is being generated')
     expect(JSON.stringify(payload.governance)).not.toContain('src/ideas/')
     expect(payload.workflow_centers?.slice(0, 4)).toEqual([
@@ -882,6 +951,43 @@ describe('context-pack-command', () => {
         missing_phases: [],
         confidence: 'high' as const,
       },
+      retrieval_plan: {
+        version: 1,
+        status: 'recovered',
+        reasons: ['low_workflow_coherence'],
+        initial: {
+          selected_nodes: 30,
+          selected_files: 20,
+          direct_matches: 20,
+          explicit_anchors: 0,
+          workflow_coherence: 0.1,
+          missing_required_evidence: 1,
+          missing_semantic_evidence: 0,
+          token_count: 1_600,
+        },
+        final: {
+          selected_nodes: 2,
+          selected_files: 2,
+          direct_matches: 2,
+          explicit_anchors: 0,
+          workflow_coherence: 1,
+          missing_required_evidence: 0,
+          missing_semantic_evidence: 0,
+          token_count: 700,
+        },
+        attempts: [{
+          fallback: 'repository_vocabulary_v1',
+          status: 'applied',
+          reasons: ['low_workflow_coherence'],
+          vocabulary_sources: ['exported_symbol', 'module_name'],
+          expansion_terms: ['controller', 'service'],
+          promoted_candidates: 12,
+          changed_result: true,
+          added_selected_files: 2,
+          removed_selected_files: 20,
+        }],
+        selected_fallback: 'repository_vocabulary_v1',
+      },
     } satisfies import('../../src/runtime/retrieve.js').RetrieveResult
     const dependencies: ContextPackCommandDependencies = {
       loadGraph: vi.fn().mockReturnValue(graph),
@@ -906,6 +1012,15 @@ describe('context-pack-command', () => {
       pack?: {
         slice?: { selected_paths?: unknown[]; selected_path_count?: number }
         execution_slice?: { side_effects?: unknown[] }
+        retrieval_plan?: {
+          version?: number
+          status?: string
+          reasons?: string[]
+          selected_fallback?: string
+          attempts?: Array<{ fallback?: string; status?: string; changed_result?: boolean; expansion_terms?: unknown }>
+          initial?: unknown
+          final?: unknown
+        }
       }
       evidence?: { agent_directive?: string }
       governance?: {
@@ -923,6 +1038,17 @@ describe('context-pack-command', () => {
     expect(payload.pack?.slice?.selected_paths).toBeUndefined()
     expect(payload.pack?.slice?.selected_path_count).toBe(noisySelectedPaths.length)
     expect(payload.pack?.execution_slice?.side_effects).toBeUndefined()
+    expect(payload.pack?.retrieval_plan).toEqual({
+      version: 1,
+      status: 'recovered',
+      reasons: ['low_workflow_coherence'],
+      selected_fallback: 'repository_vocabulary_v1',
+      attempts: [{
+        fallback: 'repository_vocabulary_v1',
+        status: 'applied',
+        changed_result: true,
+      }],
+    })
     expect(payload.evidence?.agent_directive).toBe('answer_from_pack')
     expect(payload.governance?.request).toEqual(expect.objectContaining({
       task_intent: 'explain',
@@ -934,6 +1060,475 @@ describe('context-pack-command', () => {
     ])
   })
 
+  it('does not preserve a ready verdict when the serialized pack omits prompt obligations', async () => {
+    const prompt = 'Explain the exact end-to-end path from a failed HTTP monitor check to incident creation, notification delivery, and the public status-page result. Compare every distinct overall-status computation. Read-only: do not modify files.'
+    const graph = buildCrossLayerMonitorFlowFixture()
+    const retrieval = retrieveContext(graph, {
+      question: prompt,
+      budget: 1_800,
+      taskKind: 'explain',
+      retrievalStrategy: 'slice-v1',
+    })
+    const compact = compactRetrieveResult(retrieval)
+    const omittedNodeIds = new Set(
+      compact.matched_nodes
+        .filter((node) => /apps\/workflows\/src\/checker\/(?:index|alerting|utils)\.ts$/.test(node.source_file))
+        .flatMap((node) => node.node_id ? [node.node_id] : []),
+    )
+    const serialized = {
+      ...compact,
+      matched_nodes: compact.matched_nodes.filter((node) => !node.node_id || !omittedNodeIds.has(node.node_id)),
+      relationships: compact.relationships.filter((relationship) => (
+        (!relationship.from_id || !omittedNodeIds.has(relationship.from_id))
+        && (!relationship.to_id || !omittedNodeIds.has(relationship.to_id))
+      )),
+    }
+    const optimisticRetrieval: RetrieveResult = {
+      ...retrieval,
+      recovery: {
+        ...retrieval.recovery!,
+        status: 'not_needed',
+        initial_state: 'ready',
+        final_state: 'ready',
+        attempts: [],
+        improved: false,
+      },
+    }
+    const dependencies: ContextPackCommandDependencies = {
+      loadGraph: vi.fn().mockReturnValue(graph),
+      retrieveContext: vi.fn().mockReturnValue(optimisticRetrieval),
+      compactRetrieveResult: vi.fn().mockReturnValue(serialized),
+      analyzePrImpact: vi.fn(),
+      compactPrImpactResult: vi.fn(),
+      analyzeImpact: vi.fn(),
+      compactImpactResult: vi.fn(),
+    }
+
+    const payload = JSON.parse(await runContextPackCommand({
+      prompt,
+      budget: 1_800,
+      task: 'explain',
+      graphPath: 'out/graph.json',
+      retrievalStrategy: 'slice-v1',
+      format: 'json',
+    }, dependencies)) as {
+      evidence?: {
+        coverage?: string
+        coverage_detail?: { missing_obligations?: string[] }
+        answerability?: { state?: string; broad_search_fallback?: string }
+        agent_directive?: string
+      }
+      pack?: {
+        matched_nodes?: Array<{ label: string; source_file: string; snippet?: string | null }>
+        retrieval_plan?: { query_obligations?: { total?: number; finally_covered?: number } }
+      }
+    }
+
+    expect(optimisticRetrieval.recovery?.final_state).toBe('ready')
+    expect(payload.evidence).toMatchObject({
+      coverage: 'partial',
+      answerability: {
+        state: 'verify_targets',
+        broad_search_fallback: 'targeted_only',
+      },
+      agent_directive: 'verify_one_targeted_file',
+    })
+    expect(payload.evidence?.coverage_detail?.missing_obligations).toEqual(expect.arrayContaining([
+      'query:obligation:2',
+      'query:obligation:3',
+    ]))
+  })
+
+  it('reconciles a retained retrieval-plan receipt to the serialized snippets', () => {
+    const prompt = 'Explain the exact end-to-end path from a failed HTTP monitor check to incident creation, notification delivery, and the public status-page result. Compare every distinct overall-status computation. Read-only: do not modify files.'
+    const retrieval = retrieveContext(buildCrossLayerMonitorFlowFixture(), {
+      question: prompt,
+      budget: 1_800,
+      taskKind: 'explain',
+      retrievalStrategy: 'slice-v1',
+    })
+    const compact = compactRetrieveResult(retrieval)
+    const omittedNodeIds = new Set(
+      compact.matched_nodes
+        .filter((node) => /apps\/workflows\/src\/checker\/(?:index|alerting|utils)\.ts$/.test(node.source_file))
+        .flatMap((node) => node.node_id ? [node.node_id] : []),
+    )
+    const { score: _score, ...evidence } = assessMadarResponseEvidence({
+      evidencePlan: buildRetrievalEvidencePlanFromResult(retrieval),
+      question: prompt,
+      recovery: retrieval.recovery,
+    })
+    const payload = buildAnswerReadyPackSchema({
+      schema_version: 1,
+      task: 'explain',
+      prompt,
+      budget: 5_000,
+      evidence,
+      pack: {
+        ...compact,
+        matched_nodes: compact.matched_nodes.filter((node) => !node.node_id || !omittedNodeIds.has(node.node_id)),
+      },
+    }, 5_000, retrieval.selection_diagnostics)
+    const pack = payload.pack as {
+      matched_nodes: Array<{ label: string; source_file: string; snippet?: string | null }>
+      retrieval_plan?: { query_obligations?: { total?: number; finally_covered?: number } }
+    }
+
+    const serializedCoverage = evaluateQueryEvidenceCoverage(prompt, pack.matched_nodes)
+    expect(pack.retrieval_plan?.query_obligations).toMatchObject({
+      total: serializedCoverage.total,
+      finally_covered: serializedCoverage.covered,
+    })
+  })
+
+  it('keeps a late unique evidence owner when the eight-node response cap would otherwise drop it', () => {
+    const prompt = 'Explain the exact end-to-end path from a failed HTTP monitor check to incident creation, notification delivery, and the public status-page result. Compare every distinct overall-status computation.'
+    const retrieval = retrieveContext(buildCrossLayerMonitorFlowFixture(), {
+      question: prompt,
+      budget: 1_800,
+      taskKind: 'explain',
+      retrievalStrategy: 'slice-v1',
+    })
+    const compact = compactRetrieveResult(retrieval)
+    const incidentOwner = compact.matched_nodes.find((node) => node.snippet?.includes('insert(incidentTable)'))
+    expect(incidentOwner).toBeDefined()
+    const nonIncidentNodes = compact.matched_nodes
+      .filter((node) => node.node_id !== incidentOwner?.node_id)
+      .map((node) => node.snippet?.includes('insert(incidentTable)')
+        ? { ...node, snippet: 'const incident = await findOpenIncident(monitorId)' }
+        : node)
+    const duplicateSource = nonIncidentNodes.find((node) => node.source_file.includes('status-json'))
+      ?? nonIncidentNodes[0]!
+    const pressuredNodes = [
+      ...nonIncidentNodes,
+      { ...duplicateSource, node_id: 'duplicate-status-owner-1', label: 'toUnresolvedIncidents' },
+      { ...duplicateSource, node_id: 'duplicate-status-owner-2', label: 'unresolvedIncidents' },
+      incidentOwner!,
+    ]
+    const { score: _score, ...evidence } = assessMadarResponseEvidence({
+      evidencePlan: buildRetrievalEvidencePlanFromResult(retrieval),
+      question: prompt,
+      recovery: retrieval.recovery,
+    })
+
+    const payload = buildAnswerReadyPackSchema({
+      schema_version: 1,
+      task: 'explain',
+      prompt,
+      budget: 5_000,
+      evidence,
+      expandable: retrieval.expandable ?? [],
+      pack: {
+        ...compact,
+        matched_nodes: pressuredNodes,
+      },
+    }, 5_000, retrieval.selection_diagnostics)
+    const selectedNodes = (payload.pack as {
+      matched_nodes: Array<{ node_id?: string; label: string; source_file: string; snippet?: string }>
+      retrieval_plan?: { query_obligations?: { total?: number; finally_covered?: number } }
+    }).matched_nodes
+    const retrievalPlan = (payload.pack as {
+      retrieval_plan?: { query_obligations?: { total?: number; finally_covered?: number } }
+    }).retrieval_plan
+    const serializedEvidence = payload.evidence as {
+      answerability?: { state?: string }
+      agent_directive?: string
+    }
+
+    expect(selectedNodes).toHaveLength(8)
+    expect(selectedNodes.some((node) => node.node_id === incidentOwner?.node_id)).toBe(true)
+    expect(selectedNodes.map((node) => node.snippet ?? '').join('\n')).toMatch(/insert\(incidentTable\)/)
+    expect(serializedEvidence).toMatchObject({
+      answerability: { state: expect.stringMatching(/^ready(?:_with_caveat)?$/) },
+      agent_directive: 'answer_from_pack',
+    })
+    const serializedCoverage = evaluateQueryEvidenceCoverage(prompt, selectedNodes)
+    expect(retrievalPlan?.query_obligations).toMatchObject({
+      total: serializedCoverage.total,
+      finally_covered: serializedCoverage.covered,
+    })
+  })
+
+  it('keeps every cited supporting node when one falls beyond the answer-ready node cap', () => {
+    const matchedNodes = Array.from({ length: 9 }, (_, index) => ({
+      node_id: `node-${index}`,
+      label: `Node${index}`,
+      source_file: `src/node-${index}.ts`,
+      line_number: index + 1,
+      snippet: `export const node${index} = ${index}`,
+    }))
+    const claimAnchor = matchedNodes[8]!
+    const payload = buildAnswerReadyPackSchema({
+      prompt: 'Describe this pack.',
+      evidence: {
+        agent_directive: 'answer_from_pack',
+      },
+      claims: [{
+        evidence_class: 'primary',
+        text: `input provenance: ${claimAnchor.label} consumes router output`,
+        node_labels: [matchedNodes[0]!.label, claimAnchor.label],
+      }],
+      pack: {
+        matched_nodes: matchedNodes,
+        relationships: [],
+        community_context: [],
+      },
+    }, 5_000)
+    const selectedNodes = (payload.pack as {
+      matched_nodes: Array<{ label: string }>
+    }).matched_nodes
+
+    expect(selectedNodes).toHaveLength(8)
+    expect(selectedNodes.some((node) => node.label === 'Node0')).toBe(true)
+    expect(selectedNodes.some((node) => node.label === claimAnchor.label)).toBe(true)
+    expect(selectedNodes.some((node) => node.label === 'Node7')).toBe(false)
+  })
+
+  it('compacts envelope metadata and snippets before culling a cross-layer workflow spine', () => {
+    const base = buildOversizedAnswerReadySchema()
+    const extraNodes = Array.from({ length: 4 }, (_, index) => ({
+      node_id: `cross-layer-${index}`,
+      label: `CrossLayerStep${index}.run`,
+      source_file: `apps/layer-${index}/src/step.ts`,
+      line_number: 90 + index,
+      snippet: `export async function run${index}() { ${'await downstream.execute(); '.repeat(40)} }`,
+    }))
+    const allNodes = [...base.pack.matched_nodes, ...extraNodes]
+    const relationships = allNodes.slice(1).map((node, index) => ({
+      from_id: allNodes[index]?.node_id,
+      from: allNodes[index]?.label,
+      to_id: node.node_id,
+      to: node.label,
+      relation: 'calls',
+    }))
+    const schema = {
+      ...base,
+      evidence: {
+        ...base.evidence,
+        evidence_strength: {
+          level: 'strong',
+          direct_selected_nodes: 8,
+          supporting_selected_nodes: 0,
+          selected_relationships: relationships.length,
+          available_relationships: relationships.length,
+          reasons: ['direct graph evidence spans the workflow'],
+        },
+        coverage_detail: {
+          status: 'complete',
+          required_obligations: ['failure source', 'incident persistence', 'notification dispatch', 'public status', 'divergence'],
+          covered_obligations: ['failure source', 'incident persistence', 'notification dispatch', 'public status', 'divergence'],
+          missing_obligations: [],
+        },
+        answerability: {
+          state: 'ready',
+          answer_scope: 'complete',
+          caveats: [],
+          missing_obligations: [],
+          verification_targets: [],
+          broad_search_fallback: 'not_needed',
+        },
+        recovery: {
+          version: 1,
+          status: 'not_needed',
+          budget: { max_attempts: 2, max_candidate_nodes: 24, max_elapsed_ms: 2_000, output_token_budget: 1_800 },
+          initial_state: 'ready',
+          final_state: 'ready',
+          attempts: [],
+          improved: false,
+        },
+        discovery_exclusions: {
+          policy: 'artifact_path_only',
+          total: 15,
+          relevant: 0,
+          reasons: { env_file: 15 },
+          relevant_reasons: {},
+        },
+        indexing_completeness: {
+          state: 'partial',
+          total_uncertain: 158,
+          relevant_uncertain: 0,
+          reasons: { unsupported_file_type: 85 },
+          relevant_reasons: {},
+        },
+      },
+      pack: {
+        ...base.pack,
+        question: base.prompt,
+        token_count: 1_793,
+        recovery: {
+          version: 1,
+          status: 'not_needed',
+          budget: { max_attempts: 2, max_candidate_nodes: 24, max_elapsed_ms: 2_000, output_token_budget: 1_800 },
+          initial_state: 'ready',
+          final_state: 'ready',
+          attempts: [],
+          improved: false,
+        },
+        matched_nodes: allNodes,
+        relationships,
+      },
+    }
+
+    const payload = buildAnswerReadyPackSchema(schema, 1_800, buildAnswerReadySelectionDiagnostics())
+    const pack = payload.pack as {
+      matched_nodes?: Array<{ source_file?: string; snippet?: string }>
+      relationships?: unknown[]
+    }
+    const evidence = payload.evidence as {
+      pack_confidence?: string
+      confidence_reasons?: string[]
+    }
+
+    expect(estimateQueryTokens(JSON.stringify(payload))).toBeLessThanOrEqual(1_800)
+    expect(payload.serialized_budget).toEqual(expect.objectContaining({
+      max_tokens: 1_800,
+      enforced: true,
+    }))
+    expect(pack.matched_nodes).toHaveLength(8)
+    expect(new Set(pack.matched_nodes?.map((node) => node.source_file))).toHaveLength(8)
+    expect(pack.matched_nodes?.every((node) => (node.snippet?.length ?? 0) <= 300)).toBe(true)
+    expect(pack.relationships).toHaveLength(relationships.length)
+    expect(evidence.pack_confidence).toBe('high')
+    expect(evidence.confidence_reasons ?? []).not.toContain('budget too tight for workflow spine')
+  })
+
+  it('preserves existing obligations, caveats, and blocked fallback when tight budgets cull the workflow spine', () => {
+    const matchedNodes = Array.from({ length: 6 }, (_, index) => ({
+      node_id: `runtime-${index}`,
+      label: `RuntimeStep${index}.run`,
+      source_file: `src/runtime/step-${index}.ts`,
+      line_number: index + 1,
+      snippet: 'return workflowResult'.repeat(30),
+    }))
+    const payload = buildAnswerReadyPackSchema({
+      pack: {
+        matched_nodes: matchedNodes,
+        relationships: [],
+        community_context: [],
+        execution_slice: {
+          status: 'complete',
+          confidence: 'high',
+          steps: matchedNodes,
+          primary_path: { steps: matchedNodes },
+        },
+      },
+      evidence: {
+        pack_confidence: 'low',
+        evidence_strength: {
+          level: 'weak',
+          reasons: ['relevant_unreadable_source'],
+        },
+        coverage: 'partial',
+        coverage_detail: {
+          status: 'partial',
+          required_obligations: ['discovery:unreadable_path'],
+          covered_obligations: [],
+          missing_obligations: ['discovery:unreadable_path'],
+        },
+        answerability: {
+          state: 'insufficient',
+          answer_scope: 'none',
+          caveats: ['source reliability is incomplete'],
+          missing_obligations: ['discovery:unreadable_path'],
+          verification_targets: [],
+          broad_search_fallback: 'blocked',
+        },
+        confidence_reasons: ['relevant unreadable source'],
+        agent_directive: 'explore_with_caution',
+      },
+      routing: { warnings: [] },
+    }, 160)
+    const pack = payload.pack as { matched_nodes?: unknown[] }
+    const evidence = payload.evidence as {
+      coverage_detail: { missing_obligations: string[] }
+      answerability: {
+        state: string
+        caveats: string[]
+        missing_obligations: string[]
+        broad_search_fallback: string
+      }
+    }
+
+    expect(pack.matched_nodes?.length ?? 0).toBeLessThan(matchedNodes.length)
+    expect(evidence.coverage_detail.missing_obligations).toEqual(expect.arrayContaining([
+      'discovery:unreadable_path',
+      'serialization:workflow_spine',
+    ]))
+    expect(evidence.answerability).toMatchObject({
+      state: 'insufficient',
+      broad_search_fallback: 'blocked',
+      caveats: expect.arrayContaining([
+        'source reliability is incomplete',
+        'serialized workflow spine was culled to the output budget',
+      ]),
+      missing_obligations: expect.arrayContaining([
+        'discovery:unreadable_path',
+        'serialization:workflow_spine',
+      ]),
+    })
+
+    const legacyPayload = buildAnswerReadyPackSchema({
+      pack: {
+        matched_nodes: matchedNodes,
+        relationships: [],
+        community_context: [],
+        execution_slice: {
+          status: 'complete',
+          confidence: 'high',
+          steps: matchedNodes,
+          primary_path: { steps: matchedNodes },
+        },
+      },
+      evidence: {
+        pack_confidence: 'low',
+        evidence_strength: { level: 'weak', reasons: ['relevant_unreadable_source'] },
+        coverage: 'complete',
+        answerability: {
+          state: 'insufficient',
+          answer_scope: 'none',
+          caveats: ['source reliability is incomplete'],
+          missing_obligations: ['discovery:unreadable_path'],
+          verification_targets: [{
+            handle_id: 'safe-graph-expansion',
+            focus_files: [],
+            focus_ranges: [],
+            reason: 'verify missing graph evidence',
+          }],
+          broad_search_fallback: 'blocked',
+        },
+        confidence_reasons: ['relevant unreadable source'],
+        agent_directive: 'explore_with_caution',
+      },
+      routing: { warnings: [] },
+    }, 160)
+    const legacyEvidence = legacyPayload.evidence as {
+      coverage: string
+      coverage_detail: { status: string; missing_obligations: string[] }
+      answerability: {
+        state: string
+        missing_obligations: string[]
+        broad_search_fallback: string
+      }
+    }
+
+    expect(legacyEvidence.coverage).toBe('partial')
+    expect(legacyEvidence.coverage_detail).toMatchObject({
+      status: 'partial',
+      missing_obligations: expect.arrayContaining([
+        'discovery:unreadable_path',
+        'serialization:workflow_spine',
+      ]),
+    })
+    expect(legacyEvidence.answerability).toMatchObject({
+      state: 'verify_targets',
+      broad_search_fallback: 'blocked',
+      missing_obligations: expect.arrayContaining([
+        'discovery:unreadable_path',
+        'serialization:workflow_spine',
+      ]),
+    })
+  })
+
   it('keeps debug-heavy path details when pack verbose mode is explicitly requested', async () => {
     const graph = buildRuntimeGenerationGraph()
     const retrieval = retrieveContext(graph, {
@@ -943,9 +1538,39 @@ describe('context-pack-command', () => {
       taskIntent: 'explain',
       retrievalStrategy: 'slice-v1',
     })
+    const retrievalWithStalePlan = {
+      ...retrieval,
+      retrieval_plan: {
+        version: 1 as const,
+        status: 'kept_initial' as const,
+        reasons: ['missing_query_obligations' as const],
+        initial: {
+          selected_nodes: retrieval.matched_nodes.length,
+          selected_files: retrieval.matched_nodes.length,
+          direct_matches: retrieval.matched_nodes.length,
+          explicit_anchors: 0,
+          workflow_coherence: 1,
+          missing_required_evidence: 0,
+          missing_semantic_evidence: 0,
+          token_count: retrieval.token_count,
+        },
+        final: {
+          selected_nodes: retrieval.matched_nodes.length,
+          selected_files: retrieval.matched_nodes.length,
+          direct_matches: retrieval.matched_nodes.length,
+          explicit_anchors: 0,
+          workflow_coherence: 1,
+          missing_required_evidence: 0,
+          missing_semantic_evidence: 0,
+          token_count: retrieval.token_count,
+        },
+        attempts: [],
+        query_obligations: { total: 99, initially_covered: 99, finally_covered: 99 },
+      },
+    }
     const dependencies: ContextPackCommandDependencies = {
       loadGraph: vi.fn().mockReturnValue(graph),
-      retrieveContext: vi.fn().mockReturnValue(retrieval),
+      retrieveContext: vi.fn().mockReturnValue(retrievalWithStalePlan),
       compactRetrieveResult,
       analyzePrImpact: vi.fn(),
       compactPrImpactResult: vi.fn(),
@@ -963,11 +1588,21 @@ describe('context-pack-command', () => {
       verbose: true,
     } as never, dependencies)
     const payload = JSON.parse(output) as {
-      pack?: { slice?: { selected_paths?: unknown[]; selected_path_count?: number } }
+      pack?: {
+        slice?: { selected_paths?: unknown[]; selected_path_count?: number }
+        matched_nodes?: Array<{ label: string; source_file: string; snippet?: string | null }>
+        retrieval_plan?: { query_obligations?: { total?: number; initially_covered?: number; finally_covered?: number } }
+      }
     }
 
     expect(payload.pack?.slice?.selected_paths?.length).toBeGreaterThan(0)
     expect(payload.pack?.slice?.selected_path_count).toBeUndefined()
+    const coverage = evaluateQueryEvidenceCoverage(retrieval.question, payload.pack?.matched_nodes ?? [])
+    expect(payload.pack?.retrieval_plan?.query_obligations).toEqual(expect.objectContaining({
+      total: coverage.total,
+      initially_covered: Math.min(99, coverage.total),
+      finally_covered: coverage.covered,
+    }))
   })
 
   it('deprioritizes helper-like matched nodes when runtime-generation explain falls back without an execution spine', async () => {

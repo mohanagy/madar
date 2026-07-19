@@ -40,7 +40,7 @@ describe('getting started tutorial', () => {
     expect(tutorial).toContain('madar generate . --spi --no-html')
     expect(tutorial.toLowerCase()).toContain('paid model')
     expect(tutorial.toLowerCase()).toContain('10-minute')
-    expect(readme).toContain('## Supported Agents')
+    expect(readme).toContain('## Connect Your Agent')
     expect(readme).toContain('madar try')
     expect(readme.indexOf('madar try')).toBeLessThan(readme.indexOf('madar generate .'))
     for (const command of [

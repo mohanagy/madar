@@ -76,6 +76,12 @@ export type ProjectSpiToExtractionOptions = {
    *  paths so the produced ExtractionNode.source_file matches the legacy
    *  extractor's path output. */
   root: string
+  /**
+   * Optional full-corpus, collision-safe stems from the legacy extraction
+   * pipeline. Hybrid generation supplies this so SPI-projected source IDs do
+   * not collide with legacy-only files that share a basename.
+   */
+  fileStemByAbsolutePath?: ReadonlyMap<string, string>
 }
 
 const PROJECTABLE_SYMBOL_KINDS: ReadonlySet<SpiSymbolKind> = new Set([
@@ -114,7 +120,11 @@ export function projectSpiToExtraction(
 
   // Index SpiFiles for quick (file_id → SpiFile) lookups.
   const fileById = new Map<string, SpiFile>(spi.files.map((f) => [f.id, f]))
-  const projectedFileStemById = createProjectedFileStemById(spi.files)
+  const projectedFileStemById = createProjectedFileStemById(
+    spi.files,
+    root,
+    opts.fileStemByAbsolutePath,
+  )
 
   const nodes: ExtractionNode[] = []
   const edges: ExtractionEdge[] = []
@@ -342,7 +352,23 @@ function nodeKindForRole(role: NonNullable<SpiSymbol['framework_role']>): NonNul
 
 type SymbolProjection = { id: string; label: string }
 
-function createProjectedFileStemById(files: readonly SpiFile[]): Map<string, string> {
+function normalizeStemPath(filePath: string): string {
+  return resolve(filePath).replaceAll('\\', '/')
+}
+
+function createProjectedFileStemById(
+  files: readonly SpiFile[],
+  root: string,
+  fileStemByAbsolutePath?: ReadonlyMap<string, string>,
+): Map<string, string> {
+  if (fileStemByAbsolutePath) {
+    return new Map(files.map((file) => [
+      file.id,
+      fileStemByAbsolutePath.get(normalizeStemPath(resolve(root, file.path)))
+        ?? basename(file.path, extname(file.path)),
+    ]))
+  }
+
   const duplicateCounts = new Map<string, number>()
   for (const file of files) {
     const stem = basename(file.path, extname(file.path))

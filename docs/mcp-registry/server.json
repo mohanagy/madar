@@ -9,13 +9,13 @@
         "source": "github",
         "url": "https://github.com/mohanagy/madar"
     },
-    "version": "0.27.9",
+    "version": "0.32.0",
     "packages": [
         {
             "registryType": "npm",
             "registryBaseUrl": "https://registry.npmjs.org",
             "identifier": "@lubab/madar",
-            "version": "0.27.9",
+            "version": "0.32.0",
             "runtimeHint": "npx",
             "transport": {
                 "type": "stdio"
@@ -31,20 +31,17 @@
                 },
                 {
                     "type": "positional",
-                    "valueHint": "graph_path",
-                    "description": "Path to out/graph.json. Run `madar generate .` first so the local MCP server has a graph artifact to serve.",
-                    "default": "out/graph.json",
-                    "format": "filepath",
-                    "isRequired": true
+                    "value": "--auto-refresh"
                 }
             ],
             "environmentVariables": [
                 {
                     "name": "MADAR_TOOL_PROFILE",
-                    "description": "Optional MCP tool surface. Madar installs default to the lean core profile.",
+                    "description": "Optional MCP tool surface: core graph-navigation tools, strict bounded context_pack/context_expand tools, or full.",
                     "default": "core",
                     "choices": [
                         "core",
+                        "strict",
                         "full"
                     ]
                 }
@@ -53,7 +50,7 @@
     ],
     "_meta": {
         "io.modelcontextprotocol.registry/publisher-provided": {
-            "notes": "Public npm package plus local graph artifact install flow. Madar is the renamed continuation of `graphify-ts`; use `@lubab/madar` and `https://github.com/mohanagy/madar` as the canonical package and repository.",
+            "notes": "Public npm package plus local auto-refresh MCP flow. When an MCP host launches `madar serve --stdio --auto-refresh` with a workspace as its cwd, Madar builds and refreshes that workspace's local graph without a static graph-path argument. Madar is the renamed continuation of `graphify-ts`; use `@lubab/madar` and `https://github.com/mohanagy/madar` as the canonical package and repository.",
             "source": "docs/mcp-registry/server.json"
         }
     }

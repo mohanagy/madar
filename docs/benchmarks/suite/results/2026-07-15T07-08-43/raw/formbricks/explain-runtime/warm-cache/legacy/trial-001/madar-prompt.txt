@@ -1,0 +1,17 @@
+Follow the Madar pack contract exactly.
+Call retrieve first for explain or runtime questions before any raw file or broad repo search.
+Call mcp__madar__retrieve directly for this benchmark run. Do not use ToolSearch before the first Madar call.
+For runtime-flow questions, call mcp__madar__retrieve with retrieval_strategy: "slice-v1".
+Inspect execution_slice, answer_contract, matched_nodes, snippets, relationships, and community context before deciding what to do next.
+Treat evidence.answerability.state as authoritative; evidence.pack_confidence is compatibility-only.
+For ready, answer from the result. For ready_with_caveat, answer from it and state evidence.answerability.caveats.
+For verify_targets, inspect only a listed evidence.answerability.verification_targets handle or file.
+Only insufficient with evidence.answerability.broad_search_fallback set to allowed permits one directory-scoped raw search.
+Do not call community_overview, graph_summary, get_community, query_graph, or other broad graph-navigation tools for task-specific compare runs.
+Madar already ran bounded cumulative recovery; do not restart repository discovery for ready, ready_with_caveat, or verify_targets.
+Any broad search before the first Madar call violates the prompt contract.
+Keep the answer concise: key steps, key files, and caveats only.
+
+Question: How does Formbricks process a survey response from request handling through persistence and analytics/event tracking?
+
+Answer:

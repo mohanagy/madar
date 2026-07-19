@@ -111,56 +111,48 @@ function runPipeline(tempDir: string) {
 }
 
 describe('pipeline', () => {
-  const referenceFixturesTimeoutMs = 30_000
+  // The full CI matrix runs this CPU-heavy reference corpus beside other
+  // extraction suites. It can exceed the normal 30s deadline under parallel
+  // load without indicating a correctness regression.
+  const referenceFixturesTimeoutMs = 180_000
+  let referenceResult: ReturnType<typeof runPipeline>
+
+  beforeAll(() => {
+    referenceResult = withTempDir((tempDir) => runPipeline(tempDir))
+  }, referenceFixturesTimeoutMs)
 
   it('runs end to end on the reference fixtures', () => {
-    withTempDir((tempDir) => {
-      const result = runPipeline(tempDir)
-      expect(result.graph.numberOfNodes()).toBeGreaterThan(0)
-    })
-  }, referenceFixturesTimeoutMs)
+    expect(referenceResult.graph.numberOfNodes()).toBeGreaterThan(0)
+  })
 
   it('keeps node and edge counts stable across repeated runs', () => {
     withTempDir((tempDir) => {
-      const first = runPipeline(tempDir)
       const second = runPipeline(tempDir)
-      expect(first.graph.numberOfNodes()).toBe(second.graph.numberOfNodes())
-      expect(first.graph.numberOfEdges()).toBe(second.graph.numberOfEdges())
+      expect(referenceResult.graph.numberOfNodes()).toBe(second.graph.numberOfNodes())
+      expect(referenceResult.graph.numberOfEdges()).toBe(second.graph.numberOfEdges())
     })
-  })
+  }, referenceFixturesTimeoutMs)
 
   it('mentions the top god node in the generated report', () => {
-    withTempDir((tempDir) => {
-      const result = runPipeline(tempDir)
-      expect(result.report).toContain(`\`${escapeMarkdownInline(result.gods[0]?.label ?? '')}\``)
-    })
+    expect(referenceResult.report).toContain(`\`${escapeMarkdownInline(referenceResult.gods[0]?.label ?? '')}\``)
   })
 
   it('detects both code and docs in the fixture corpus', () => {
-    withTempDir((tempDir) => {
-      const result = runPipeline(tempDir)
-      expect(result.detection.files.code.length).toBeGreaterThan(0)
-      expect(result.detection.files.document.length).toBeGreaterThan(0)
-      expect(result.extraction.nodes.some((node) => node.file_type === 'document')).toBe(true)
-    })
+    expect(referenceResult.detection.files.code.length).toBeGreaterThan(0)
+    expect(referenceResult.detection.files.document.length).toBeGreaterThan(0)
+    expect(referenceResult.extraction.nodes.some((node) => node.file_type === 'document')).toBe(true)
   })
 
   it('keeps extraction confidence labels within the expected set', () => {
-    withTempDir((tempDir) => {
-      const result = runPipeline(tempDir)
-      const valid = new Set(['EXTRACTED', 'INFERRED', 'AMBIGUOUS'])
-      for (const edge of result.extraction.edges) {
-        expect(valid.has(edge.confidence)).toBe(true)
-      }
-    })
+    const valid = new Set(['EXTRACTED', 'INFERRED', 'AMBIGUOUS'])
+    for (const edge of referenceResult.extraction.edges) {
+      expect(valid.has(edge.confidence)).toBe(true)
+    }
   })
 
   it('does not introduce self loops into the built graph', () => {
-    withTempDir((tempDir) => {
-      const result = runPipeline(tempDir)
-      for (const [source, target] of result.graph.edgeEntries()) {
-        expect(source).not.toBe(target)
-      }
-    })
+    for (const [source, target] of referenceResult.graph.edgeEntries()) {
+      expect(source).not.toBe(target)
+    }
   })
 })

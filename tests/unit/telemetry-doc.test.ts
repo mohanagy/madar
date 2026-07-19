@@ -7,11 +7,6 @@ describe('telemetry documentation', () => {
   it('documents the opt-in controls in the README', () => {
     const readme = readFileSync(resolve('README.md'), 'utf8')
 
-    expect(readme).toContain('madar telemetry enable')
-    expect(readme).toContain('madar telemetry disable')
-    expect(readme).toContain('madar telemetry clear')
-    expect(readme).toContain('madar telemetry report')
-    expect(readme).toContain('MADAR_ENABLE_TELEMETRY=1')
     expect(readme).toContain('docs/telemetry.md')
     expect(readme).toContain('Telemetry is disabled unless you explicitly enable it')
   })
@@ -28,6 +23,11 @@ describe('telemetry documentation', () => {
     expect(doc).toContain('repo_size_bucket')
     expect(doc).toContain('failure_bucket')
     expect(doc).toContain('status_bucket')
+    expect(doc).toContain('initial_answerability_bucket')
+    expect(doc).toContain('final_answerability_bucket')
+    expect(doc).toContain('recovery_attempts_bucket')
+    expect(doc).toContain('recovery_improvement_bucket')
+    expect(doc).toContain('broad_search_fallback_bucket')
     expect(doc).toContain('madar telemetry clear')
     expect(doc).toContain('madar telemetry report')
     expect(doc).toContain('`madar compare` (`succeeded`, `failed`)')

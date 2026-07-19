@@ -10,6 +10,7 @@ import { generateGraph } from '../../src/infrastructure/generate.js'
 import { loadBenchmarkQuestions, runBenchmark, printBenchmark, querySubgraphTokens, type BenchmarkQuestionInput } from '../../src/infrastructure/benchmark.js'
 import { corpusTokensFromWords } from '../../src/infrastructure/benchmark/corpus.js'
 import { evaluateRetrievalQuality, formatQualityReport } from '../../src/infrastructure/benchmark/quality.js'
+import { evaluateBenchmarkQuestion } from '../../src/infrastructure/benchmark/questions.js'
 import { toJson } from '../../src/pipeline/export.js'
 import { estimateQueryTokens, loadGraph, queryGraph } from '../../src/runtime/serve.js'
 
@@ -382,7 +383,7 @@ describe('runBenchmark', () => {
   test('uses the checked-in mixed-workspace fixture as a reproducible parity baseline', () => {
     withTempDir((tempDir) => {
       const workspaceRoot = copyFixtureCorpus('workspace-parity', tempDir)
-      const generation = generateGraph(workspaceRoot, { noHtml: true })
+      const generation = generateGraph(workspaceRoot, { noHtml: true, extractionMode: 'legacy' })
       const benchmark = runBenchmark(generation.graphPath, null, ['create session login'])
 
       expect('reduction_ratio' in benchmark).toBe(true)
@@ -418,7 +419,7 @@ describe('runBenchmark', () => {
   test('tracks fixture-backed question coverage for the mixed-workspace baseline', () => {
     withTempDir((tempDir) => {
       const workspaceRoot = copyFixtureCorpus('workspace-parity', tempDir)
-      const generation = generateGraph(workspaceRoot, { noHtml: true })
+      const generation = generateGraph(workspaceRoot, { noHtml: true, extractionMode: 'legacy' })
       const questions = readWorkspaceParityQuestions()
       const benchmark = runBenchmark(generation.graphPath, null, questions)
 
@@ -543,7 +544,7 @@ describe('runBenchmark', () => {
   test('normalizes expected labels for benchmark matching', () => {
     withTempDir((tempDir) => {
       const workspaceRoot = copyFixtureCorpus('workspace-parity', tempDir)
-      const generation = generateGraph(workspaceRoot, { noHtml: true })
+      const generation = generateGraph(workspaceRoot, { noHtml: true, extractionMode: 'legacy' })
       const benchmark = runBenchmark(generation.graphPath, null, [
         { question: 'shared auth helper', expected_labels: ['DEFAULT', 'auth ts', 'index-ts'] },
       ])
@@ -563,6 +564,21 @@ describe('runBenchmark', () => {
         missing_expected_labels: [],
       })
     })
+  })
+
+  test('scores owning context through incoming containment edges on directed graphs', () => {
+    const graph = new KnowledgeGraph(true)
+    graph.addNode('owner', { label: 'AuthService', source_file: 'service.ts', source_location: 'L1' })
+    graph.addNode('method', { label: 'loginWithPassword()', source_file: 'login.ts', source_location: 'L5' })
+    graph.addEdge('owner', 'method', { relation: 'contains', confidence: 'EXTRACTED' })
+
+    const evaluation = evaluateBenchmarkQuestion(graph, {
+      question: 'where is login handled',
+      expected_labels: ['AuthService', 'loginWithPassword()'],
+    }, 1000, 1)
+
+    expect(evaluation.result?.matched_expected_labels).toEqual(['AuthService', 'loginWithPassword()'])
+    expect(evaluation.missing_expected_labels).toBeNull()
   })
 
   test('executes each matched question through the shared runner and captures reported usage', async () => {

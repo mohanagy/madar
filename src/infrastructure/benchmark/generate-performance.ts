@@ -198,41 +198,41 @@ export function runGeneratePerformanceBenchmark(options: RunGeneratePerformanceB
   mkdirSync(join(workDir, 'workspaces'), { recursive: true })
 
   const variants = {} as Record<GeneratePerformanceVariantName, GeneratePerformanceVariantSummary>
-  variants['generate-legacy'] = runVariant(fixtureRoot, workDir, 'generate-legacy', { noHtml: true }, 'legacy')
-  variants['generate-spi-cold'] = runVariant(fixtureRoot, workDir, 'generate-spi-cold', { useSpi: true, noHtml: true }, 'spi')
+  variants['generate-legacy'] = runVariant(fixtureRoot, workDir, 'generate-legacy', { extractionMode: 'legacy', noHtml: true }, 'legacy')
+  variants['generate-spi-cold'] = runVariant(fixtureRoot, workDir, 'generate-spi-cold', { extractionMode: 'spi', noHtml: true }, 'spi')
 
   const spiWarmWorkspace = prepareWorkspace(fixtureRoot, workDir, 'generate-spi-warm')
-  generateGraph(spiWarmWorkspace, { useSpi: true, noHtml: true })
+  generateGraph(spiWarmWorkspace, { extractionMode: 'spi', noHtml: true })
   variants['generate-spi-warm'] = runPreparedVariant(
     spiWarmWorkspace,
     workDir,
     'generate-spi-warm',
-    { useSpi: true, noHtml: true },
+    { extractionMode: 'spi', noHtml: true },
     'spi',
   )
 
   const updateNoopWorkspace = prepareWorkspace(fixtureRoot, workDir, 'update-noop')
-  generateGraph(updateNoopWorkspace, { noHtml: true })
-  variants['update-noop'] = runPreparedVariant(updateNoopWorkspace, workDir, 'update-noop', { update: true, noHtml: true }, 'legacy')
+  generateGraph(updateNoopWorkspace, { extractionMode: 'legacy', noHtml: true })
+  variants['update-noop'] = runPreparedVariant(updateNoopWorkspace, workDir, 'update-noop', { extractionMode: 'legacy', update: true, noHtml: true }, 'legacy')
 
   const updateChangedWorkspace = prepareWorkspace(fixtureRoot, workDir, 'update-changed')
-  generateGraph(updateChangedWorkspace, { noHtml: true })
+  generateGraph(updateChangedWorkspace, { extractionMode: 'legacy', noHtml: true })
   appendMutation(updateChangedWorkspace)
   variants['update-changed'] = runPreparedVariant(
     updateChangedWorkspace,
     workDir,
     'update-changed',
-    { update: true, noHtml: true },
+    { extractionMode: 'legacy', update: true, noHtml: true },
     'legacy',
   )
 
   const clusterOnlyWorkspace = prepareWorkspace(fixtureRoot, workDir, 'cluster-only')
-  generateGraph(clusterOnlyWorkspace, { noHtml: true })
+  generateGraph(clusterOnlyWorkspace, { extractionMode: 'legacy', noHtml: true })
   variants['cluster-only'] = runPreparedVariant(
     clusterOnlyWorkspace,
     workDir,
     'cluster-only',
-    { clusterOnly: true, noHtml: true },
+    { extractionMode: 'legacy', clusterOnly: true, noHtml: true },
     'legacy',
   )
 

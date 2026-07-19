@@ -16,6 +16,57 @@ export function findGitRoot(path: string): string | null {
   }
 }
 
+/**
+ * Lists tracked files plus untracked files that are not excluded by Git's
+ * standard ignore rules. `null` means Git is unavailable or the path is not
+ * inside a repository; an empty array is a valid empty worktree result.
+ */
+export function collectGitVisibleFiles(rootDir: string): string[] | null {
+  const root = resolve(rootDir)
+
+  try {
+    execFileSync('git', ['-C', root, 'rev-parse', '--show-toplevel'], {
+      encoding: 'utf8',
+      windowsHide: true,
+    })
+  } catch {
+    if (findGitRoot(root) !== null) {
+      throw new Error(`Unable to determine the Git root for --respect-gitignore: ${root}`)
+    }
+    return null
+  }
+
+  try {
+    let output: string
+    try {
+      output = execFileSync(
+        'git',
+        ['-C', root, 'ls-files', '--cached', '--others', '--exclude-standard', '-z', '--', '.'],
+        { encoding: 'utf8', maxBuffer: 100 * 1024 * 1024, windowsHide: true },
+      )
+    } catch {
+      throw new Error(`Unable to list Git-visible files for --respect-gitignore: ${root}`)
+    }
+
+    return output
+      .split('\0')
+      .filter(Boolean)
+      .map((rootRelativePath) => {
+        const filePath = resolve(root, rootRelativePath)
+        const relativePath = relative(root, filePath)
+        if (relativePath === '..' || relativePath.startsWith(`..${sep}`) || isAbsolute(relativePath)) {
+          throw new Error(`Git returned a path outside the requested root for --respect-gitignore: ${root}`)
+        }
+        return filePath
+      })
+  } catch (error) {
+    if (error instanceof Error) {
+      throw error
+    }
+    throw new Error(`Unable to resolve Git-visible files for --respect-gitignore: ${root}`)
+  }
+}
+
 function gitOutput(rootDir: string, args: string[], trim = true): string {
   const output = execFileSync('git', ['-c', 'core.quotePath=false', ...args], {
     cwd: rootDir,

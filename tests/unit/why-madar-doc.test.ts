@@ -58,7 +58,7 @@ describe('public marketing copy honesty', () => {
       expect(lower).toContain('cursor')
       expect(lower).toContain('codex')
       expect(lower).toContain('copilot')
-      expect(lower).toContain('repo context they need before they start searching')
+      expect(lower).toContain('repo context it needs before it starts searching')
       expect(lower).toContain('local graph')
       expect(lower).toContain('task-aware context pack')
       expect(lower).not.toContain('context plane')
@@ -86,8 +86,9 @@ describe('public marketing copy honesty', () => {
     })
 
     it('surfaces the current stable release and benchmark evidence pointers in the main README flow', () => {
-      expect(content).toContain('Current version: `0.27.9`')
-      expect(content).toContain('0.27.9 changelog')
+      const packageVersion = (JSON.parse(readDoc('package.json')) as { version: string }).version
+      expect(content).toContain(`Current version: \`${packageVersion}\``)
+      expect(content).toContain(`${packageVersion} changelog`)
       expect(content).toContain('madar summary')
       expect(content).toContain('docs/claims-and-evidence.md')
       expect(content).toContain('docs/benchmarks/suite/')
@@ -108,11 +109,12 @@ describe('public marketing copy honesty', () => {
       )
     })
 
-    it('keeps SPI guidance in the deeper docs instead of the top-level README', () => {
+    it('keeps extraction guidance concise in the README and documents strict modes in deeper docs', () => {
+      expect(lower).toContain('by default, `madar generate .` combines spi metadata with proven legacy semantics')
+      expect(publicDocs).toContain('--legacy')
       expect(publicDocs).toContain('--spi')
-      expect(publicLower).toContain('storage-oriented prompts')
-      expect(publicLower).toContain('next.js')
-      expect(publicLower).toContain('disk cache')
+      expect(languageMatrix).toContain('Storage-oriented prompts in auto mode')
+      expect(languageMatrix).toContain('Next.js App Router in auto mode')
       expect(content).not.toContain('## When To Use `--spi`')
     })
 
@@ -136,16 +138,22 @@ describe('public marketing copy honesty', () => {
     })
 
     it('keeps the README full MCP additions list aligned with the shipped get_neighbors tool', () => {
-      expect(publicDocs).toContain('The full surface is 26 tools')
+      expect(publicDocs).toContain('The full surface is 27 tools')
       expect(publicDocs).toContain('`context_expand`')
       expect(publicDocs).toContain('`get_neighbors`')
     })
 
-    it('pins the benchmark evidence table values in the README', () => {
-      expect(content).toContain('| Tool calls | 28 | 7 |')
-      expect(content).toContain('| Input tokens | 2,366,946 | 498,688 |')
-      expect(content).toContain('| Wall-clock latency | 158,995 ms | 72,420 ms |')
-      expect(content).toContain('| Cost | $2.6595 | $0.9728 |')
+    it('separates controlled evidence from packed-artifact validation in the README', () => {
+      expect(content).toContain('### Controlled v0.30 evidence')
+      expect(content).toContain('`3.5x` to `18.5x` fewer tool calls')
+      expect(content).toContain('`2.2x` to `15.6x` less provider-reported input')
+      expect(content).toContain('`1.65x` to `7.09x` lower latency')
+      expect(content).toContain('### v0.31 production-artifact validation')
+      expect(content).toContain('zero valid performance comparisons')
+      expect(content).toContain('not six product losses')
+      expect(content).toContain('neither confirm nor refute the earlier controlled efficiency measurements')
+      expect(content).not.toContain('0/6 eligible performance wins')
+      expect(content).not.toContain('results/2026-07-15T06-55-50/summary.md')
     })
 
     it('keeps claim buckets in the evidence docs while the README stays a compact pointer', () => {
@@ -153,8 +161,21 @@ describe('public marketing copy honesty', () => {
       expect(claims).toContain('## In progress')
       expect(claims).toContain('## Not yet measured')
       expect(claims).toContain('How this maps to README.md')
-      expect(content).toContain('This is not a universal benchmark claim.')
+      expect(content).toContain('profile-assisted Madar')
+      expect(content).toContain('zero valid performance comparisons')
       expect(content).toContain('docs/claims-and-evidence.md')
+    })
+
+    it('keeps the first-use path ahead of benchmark detail and avoids internal-design overload', () => {
+      const wordCount = content.trim().split(/\s+/).length
+
+      expect(wordCount).toBeLessThanOrEqual(1_800)
+      expect(content).toContain('## Try It in 60 Seconds')
+      expect(content.indexOf('## Try It in 60 Seconds')).toBeLessThan(content.indexOf('## Evidence and Limits'))
+      expect(content.indexOf('madar try')).toBeLessThan(content.indexOf('### Controlled v0.30 evidence'))
+      expect(content).not.toContain('## Answerability and Recovery')
+      expect(content).not.toContain('## Indexing Completeness')
+      expect(content).not.toContain('## Telemetry')
     })
 
     it('links the claims-and-evidence map, benchmark suite scaffold, and mixed-evidence benchmark notes across the public docs', () => {
@@ -174,12 +195,12 @@ describe('public marketing copy honesty', () => {
     })
 
     it('frames fit and limitations directly in the shorter README', () => {
-      expect(lower).toContain('## fit')
+      expect(lower).toContain('## where madar fits')
       expect(lower).toContain('most useful when')
-      expect(lower).toContain('your repo is medium or large')
+      expect(lower).toContain('your repository is medium or large')
       expect(lower).toContain('token usage, latency, or local repo privacy matter')
       expect(lower).toContain('it helps less when')
-      expect(lower).toContain('the repo is small')
+      expect(lower).toContain('the repository is small')
     })
 
     it('keeps competitor positioning in the claims-and-evidence doc instead of the shorter README', () => {
@@ -223,7 +244,7 @@ describe('public marketing copy honesty', () => {
       expect(content).toContain('madar prompt')
     })
 
-    it('mentions the opt-in SPI path and the compare artifacts users should notice', () => {
+    it('mentions the strict SPI comparison path and the compare artifacts users should notice', () => {
       expect(content).toContain('madar generate examples/sample-workspace --spi --no-html')
       expect(content).toContain('--baseline-mode pack_only')
       expect(content).toContain('report.share-safe.json')
@@ -470,8 +491,9 @@ describe('public marketing copy honesty', () => {
       expect(lower).toContain('source custody')
     })
 
-    it('distinguishes the existing MCP Registry metadata from broader future directory expansion', () => {
-      expect(lower).toContain('mcp registry metadata already exists today')
+    it('distinguishes the release-gated MCP Registry publication flow from broader future directory expansion', () => {
+      expect(lower).toContain('oidc publishing workflow now exist')
+      expect(lower).toContain('matching npm release is live')
       expect(lower).toContain('broader directory/listing expansion')
     })
   })
@@ -499,8 +521,8 @@ describe('public marketing copy honesty', () => {
       expect(content).toContain('generic AST structure')
       expect(content).toContain('source-visible')
       expect(content).toContain('visible client/server boundaries')
-      expect(content).toContain('source-visible Hono, Fastify, tRPC, and Prisma workflows get conservative deeper retrieval hints on the opt-in `--spi` pipeline')
-      expect(content).toContain('Hono, Fastify, tRPC, and Prisma currently contribute conservative request-flow and storage hints only on the opt-in `--spi` path')
+      expect(content).toContain('source-visible Hono/Fastify route ownership')
+      expect(content).toContain('In default auto mode, Hono, Fastify, tRPC, and Prisma contribute conservative request-flow and storage hints')
     })
 
     it('frames non-TS/Node language support as first-pass coverage, not broad parity', () => {

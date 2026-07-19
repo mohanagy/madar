@@ -93,6 +93,7 @@ function createDependencies(overrides: Partial<TryCommandDependencies> = {}): Tr
     runContextPack: vi.fn().mockResolvedValue('text pack'),
     analyzeFreshness: vi.fn().mockImplementation((graphPath: string) => createFreshness('fresh', graphPath)),
     summarizeGraph: vi.fn().mockImplementation(() => createGraphSummary(12)),
+    isGraphDirected: vi.fn().mockReturnValue(true),
     resolvePackageRoot: vi.fn().mockReturnValue('/pkg'),
     pathExists: vi.fn().mockReturnValue(false),
     readNodeMajorVersion: vi.fn().mockReturnValue(20),
@@ -141,7 +142,7 @@ describe('runTryCommand', () => {
 
       await runTryCommand({ prompt: 'how does auth work?', path: workspace }, io, dependencies)
 
-      expect(dependencies.generateGraph).toHaveBeenCalledWith(workspace, { noHtml: true })
+      expect(dependencies.generateGraph).toHaveBeenCalledWith(workspace, { extractionMode: 'auto', noHtml: true })
       expect(dependencies.runContextPack).toHaveBeenCalledWith({
         options: {
           prompt: 'how does auth work?',
@@ -154,6 +155,22 @@ describe('runTryCommand', () => {
       })
     },
   )
+
+  it('rebuilds a fresh legacy undirected graph before running the pack', async () => {
+    const workspace = resolve('/tmp/undirected-workspace')
+    const graphPath = resolve(workspace, 'out', 'graph.json')
+    const { io } = createIo()
+    const dependencies = createDependencies({
+      pathExists: vi.fn().mockImplementation((path: string) => path === graphPath),
+      isGraphDirected: vi.fn().mockReturnValue(false),
+    })
+
+    const output = await runTryCommand({ prompt: 'how does auth work?', path: workspace }, io, dependencies)
+
+    expect(dependencies.generateGraph).toHaveBeenCalledWith(workspace, { extractionMode: 'auto', noHtml: true })
+    expect(dependencies.analyzeFreshness).not.toHaveBeenCalled()
+    expect(output).toContain('Existing graph is undirected')
+  })
 
   it('falls back to the packaged sample workspace when the current repo has no supported files', async () => {
     const workspace = resolve('/tmp/empty-workspace')
@@ -200,8 +217,8 @@ describe('runTryCommand', () => {
 
     const output = await runTryCommand({ prompt: 'how does auth work?', path: workspace }, io, dependencies)
 
-    expect(dependencies.generateGraph).toHaveBeenNthCalledWith(1, workspace, { noHtml: true })
-    expect(dependencies.generateGraph).toHaveBeenNthCalledWith(2, sampleWorkspace, { noHtml: true })
+    expect(dependencies.generateGraph).toHaveBeenNthCalledWith(1, workspace, { extractionMode: 'auto', noHtml: true })
+    expect(dependencies.generateGraph).toHaveBeenNthCalledWith(2, sampleWorkspace, { extractionMode: 'auto', noHtml: true })
     expect(dependencies.runContextPack).toHaveBeenCalledWith({
       options: {
         prompt: 'how does auth work?',
@@ -231,7 +248,7 @@ describe('runTryCommand', () => {
 
     const output = await runTryCommand({ prompt: 'how does auth work?', path: workspace }, io, dependencies)
 
-    expect(dependencies.generateGraph).toHaveBeenCalledWith(sampleWorkspace, { noHtml: true })
+    expect(dependencies.generateGraph).toHaveBeenCalledWith(sampleWorkspace, { extractionMode: 'auto', noHtml: true })
     expect(dependencies.runContextPack).toHaveBeenCalledWith({
       options: {
         prompt: 'how does auth work?',

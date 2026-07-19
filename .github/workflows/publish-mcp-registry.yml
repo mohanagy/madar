@@ -1,0 +1,134 @@
+name: Publish MCP Registry metadata
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Exact released tag whose npm package is already public (for example, v0.31.5)
+        required: true
+        type: string
+
+jobs:
+  publish:
+    permissions:
+      contents: read
+      id-token: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out released tag
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: refs/tags/${{ inputs.release_tag }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Verify exact release tag
+        env:
+          REQUESTED_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          expected_tag="v$version"
+          checked_out_tag="$(git describe --exact-match --tags HEAD)"
+          test "$REQUESTED_TAG" = "$expected_tag"
+          test "$checked_out_tag" = "$expected_tag"
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Validate registry manifest
+        run: |
+          set -euo pipefail
+          npm run registry:validate
+
+      - name: Verify the npm package is public and registry-ready
+        run: |
+          node --input-type=module <<'NODE'
+          import { execFileSync } from 'node:child_process'
+          import { readFileSync } from 'node:fs'
+
+          const packageManifest = JSON.parse(readFileSync('package.json', 'utf8'))
+          const registryManifest = JSON.parse(readFileSync('docs/mcp-registry/server.json', 'utf8'))
+          const publishedResult = JSON.parse(execFileSync(
+            'npm',
+            ['view', `${packageManifest.name}@${packageManifest.version}`, '--json'],
+            { encoding: 'utf8' },
+          ))
+          const published = Array.isArray(publishedResult)
+            ? publishedResult.find((entry) => entry.version === packageManifest.version)
+            : publishedResult
+
+          if (!published || published.version !== packageManifest.version) {
+            throw new Error(`npm did not return ${packageManifest.name}@${packageManifest.version}`)
+          }
+          if (published.mcpName !== registryManifest.name) {
+            throw new Error(`published mcpName must equal ${registryManifest.name}`)
+          }
+          NODE
+
+      - name: Install MCP Registry publisher
+        run: |
+          set -euo pipefail
+          publisher_version='1.8.0'
+          publisher_sha256='1370446bbe74d562608e8005a6ccce02d146a661fbd78674e11cc70b9618d6cf'
+          curl --fail --location --retry 3 --retry-delay 2 \
+            "https://github.com/modelcontextprotocol/registry/releases/download/v$publisher_version/mcp-publisher_linux_amd64.tar.gz" \
+            -o mcp-publisher.tar.gz
+          printf '%s  %s\n' "$publisher_sha256" mcp-publisher.tar.gz | sha256sum --check -
+          tar -xzf mcp-publisher.tar.gz mcp-publisher
+          chmod +x mcp-publisher
+
+      - name: Authenticate to MCP Registry
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish MCP Registry metadata
+        working-directory: docs/mcp-registry
+        run: $GITHUB_WORKSPACE/mcp-publisher publish
+
+      - name: Verify published Registry entry
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs'
+
+          const server = JSON.parse(readFileSync('docs/mcp-registry/server.json', 'utf8'))
+          const attempts = 5
+          const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds))
+          let found = false
+          let lastFailure = null
+
+          for (let attempt = 1; attempt <= attempts; attempt += 1) {
+            try {
+              const response = await fetch(
+                `https://registry.modelcontextprotocol.io/v0.1/servers?search=${encodeURIComponent(server.name)}`,
+                { signal: AbortSignal.timeout(10_000) },
+              )
+              if (!response.ok) {
+                throw new Error(`Registry lookup failed: ${response.status}`)
+              }
+              const payload = await response.json()
+              found = payload.servers?.some(
+                (entry) => entry.server?.name === server.name && entry.server?.version === server.version,
+              ) === true
+              if (found) break
+              lastFailure = new Error(`Registry did not return ${server.name}@${server.version}`)
+            } catch (error) {
+              lastFailure = error instanceof Error ? error : new Error(String(error))
+            }
+
+            if (attempt < attempts) {
+              await delay(attempt * 3_000)
+            }
+          }
+
+          if (!found) {
+            throw lastFailure ?? new Error(`Registry did not return ${server.name}@${server.version}`)
+          }
+          NODE

@@ -13,6 +13,7 @@ import {
   toShareSafeArtifactPath,
   type ShareSafePathRoots,
 } from '../shared/share-safe-artifacts.js'
+import { resolveWorkspaceGraphPath } from '../shared/workspace.js'
 import { loadGraph } from '../runtime/serve.js'
 
 export interface HandoffArtifactBuildOptions {
@@ -200,12 +201,13 @@ export async function runHandoffCommand(
   dependencies: HandoffCommandDependencies = {},
 ): Promise<string> {
   const loadGraphDependency = dependencies.loadGraph ?? loadGraph
-  const graph = loadGraphDependency(options.graphPath)
+  const graphPath = resolveWorkspaceGraphPath(options.graphPath)
+  const graph = loadGraphDependency(graphPath)
   const packOptions = {
     prompt: options.prompt,
     budget: options.budget,
     task: options.task,
-    graphPath: options.graphPath,
+    graphPath,
     format: 'json',
     verbose: true,
     ...(options.requireFreshGraph === true ? { requireFreshGraph: true } : {}),
@@ -218,9 +220,15 @@ export async function runHandoffCommand(
       : await runContextPackCommand(packOptions)
 
   const schema = JSON.parse(contextPackPayload) as ContextPackSchemaV1<unknown>
-  const artifact = buildHandoffArtifactV1(schema, {
+  // The pack payload may preserve the caller's relative graph argument. Bind
+  // it to the physical graph selected for this command so linked worktrees
+  // receive the correct share-safe artifact-root placeholder.
+  const artifact = buildHandoffArtifactV1({
+    ...schema,
+    graph_path: resolve(graphPath),
+  }, {
     consumer: options.consumer,
-    artifactRoot: dirname(resolve(options.graphPath)),
+    artifactRoot: dirname(resolve(graphPath)),
     projectRoot: typeof graph.graph.root_path === 'string' && graph.graph.root_path.trim().length > 0
       ? graph.graph.root_path
       : process.cwd(),

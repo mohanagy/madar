@@ -1,0 +1,183 @@
+{
+  "schema_version": 1,
+  "started_at": "2026-07-15T07:08:43.263Z",
+  "completed_at": "2026-07-15T07:41:25.132Z",
+  "output_root": "docs/benchmarks/suite/results/2026-07-15T07-08-43",
+  "runtime_artifact": {
+    "source": "npm_pack",
+    "package_version": "0.31.0",
+    "tarball_name": "lubab-madar-0.31.0.tgz",
+    "tarball_sha256": "sha256:9c0192e2abf390cf95aeaf89efbcbe6b8b45c19a139760df554e168542e95b4e"
+  },
+  "filters": {
+    "repo": "formbricks",
+    "task": "explain-runtime",
+    "repos_manifest": "<external-manifest>",
+    "tasks_manifest": "<external-manifest>",
+    "mode": "warm",
+    "trials": 1
+  },
+  "cells_skipped_for_install": 0,
+  "cells_skipped_for_env_drift": 0,
+  "cells": [
+    {
+      "repoId": "formbricks",
+      "repoName": "Formbricks public repo",
+      "taskId": "explain-runtime",
+      "taskName": "Explain runtime flow",
+      "mode": "warm",
+      "prompt": "How does Formbricks process a survey response from request handling through persistence and analytics/event tracking?",
+      "status": "completed",
+      "reason": null,
+      "isolation": true,
+      "baseline": {
+        "input_tokens": {
+          "median": 693087,
+          "min": 693087,
+          "max": 693087,
+          "n": 1
+        },
+        "total_tool_calls": {
+          "median": 20,
+          "min": 20,
+          "max": 20,
+          "n": 1
+        },
+        "read_calls": {
+          "median": 5,
+          "min": 5,
+          "max": 5,
+          "n": 1
+        },
+        "glob_grep_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "wall_clock_ms": {
+          "median": 353003,
+          "min": 353003,
+          "max": 353003,
+          "n": 1
+        },
+        "cost_usd": {
+          "median": 2.56186925,
+          "min": 2.56186925,
+          "max": 2.56186925,
+          "n": 1
+        }
+      },
+      "madar": {
+        "input_tokens": {
+          "median": 863556,
+          "min": 863556,
+          "max": 863556,
+          "n": 1
+        },
+        "total_tool_calls": {
+          "median": 19,
+          "min": 19,
+          "max": 19,
+          "n": 1
+        },
+        "read_calls": {
+          "median": 5,
+          "min": 5,
+          "max": 5,
+          "n": 1
+        },
+        "glob_grep_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "wall_clock_ms": {
+          "median": 135292,
+          "min": 135292,
+          "max": 135292,
+          "n": 1
+        },
+        "cost_usd": {
+          "median": 1.0268520000000003,
+          "min": 1.0268520000000003,
+          "max": 1.0268520000000003,
+          "n": 1
+        }
+      },
+      "spi_madar": {
+        "input_tokens": {
+          "median": 1937449,
+          "min": 1937449,
+          "max": 1937449,
+          "n": 1
+        },
+        "total_tool_calls": {
+          "median": 34,
+          "min": 34,
+          "max": 34,
+          "n": 1
+        },
+        "read_calls": {
+          "median": 6,
+          "min": 6,
+          "max": 6,
+          "n": 1
+        },
+        "glob_grep_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "wall_clock_ms": {
+          "median": 250307,
+          "min": 250307,
+          "max": 250307,
+          "n": 1
+        },
+        "cost_usd": {
+          "median": 1.819322,
+          "min": 1.819322,
+          "max": 1.819322,
+          "n": 1
+        }
+      },
+      "benchmark_outcomes": {
+        "legacy": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 0,
+            "regression": 0,
+            "not_measured": 1
+          },
+          "evidence": [
+            "prompt contract is not_measured (broad exploration occurred after the first Madar call, but the trace does not show whether missing_context justified it)"
+          ]
+        },
+        "spi_madar": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 0,
+            "regression": 0,
+            "not_measured": 1
+          },
+          "evidence": [
+            "prompt contract is not_measured (broad exploration occurred after the first Madar call, but the trace does not show whether missing_context justified it)",
+            "answer quality failed for baseline: missing survey, missing analytics, missing direct evidence citation: request handling, missing direct evidence citation: persistence, forbidden not directly"
+          ]
+        }
+      },
+      "workflow_outcomes": null,
+      "artifacts": {
+        "legacy_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-07-15T07-08-43/raw/formbricks/explain-runtime/warm-cache/legacy/trial-001/report.share-safe.json"
+        ],
+        "spi_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-07-15T07-08-43/raw/formbricks/explain-runtime/warm-cache/spi/trial-001/report.share-safe.json"
+        ]
+      }
+    }
+  ]
+}

@@ -438,6 +438,20 @@ describe('freshness surfaces', () => {
     }))
   })
 
+  it('keeps a code graph fresh when agent-install instruction files are added after generation', async () => {
+    const analyzeGraphContextFreshness = await loadAnalyzeGraphContextFreshness()
+    const fixture = createGitFreshnessFixture()
+
+    writeFileSync(join(fixture.root, 'AGENTS.md'), '## madar\n\nGenerated agent guidance.\n', 'utf8')
+    writeFileSync(join(fixture.root, 'CLAUDE.md'), '## madar\n\nGenerated agent guidance.\n', 'utf8')
+
+    expect(analyzeGraphContextFreshness!(fixture.graphPath)).toEqual(expect.objectContaining({
+      status: 'fresh',
+      changed_source_count: 0,
+      missing_source_count: 0,
+    }))
+  })
+
   it('tracks unrelated git dirty files outside the selected context even when source mtimes stay older than the graph', async () => {
     const analyzeGraphContextFreshness = await loadAnalyzeGraphContextFreshness()
 

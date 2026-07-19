@@ -240,18 +240,18 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   {
     name: 'context_pack',
     description:
-      'Build a compact context pack.',
+      'Build an answer-ready compact context pack. Copy the entire user codebase request verbatim, byte-for-byte into prompt, including read-only, no-change, scope, and formatting constraints. Supports freshness, delta, resolution, retrieval, and verbose diagnostic options.',
     inputSchema: {
       type: 'object',
       required: ['prompt'],
       properties: {
-        prompt: { type: 'string', description: 'Task prompt or question' },
+        prompt: { type: 'string', description: 'The entire user codebase request copied verbatim, byte-for-byte, including read-only, no-change, scope, and formatting constraints; do not paraphrase, omit, or expand it.' },
         task: { type: 'string', enum: ['explain', 'implement', 'review', 'impact'], description: 'Mode override.' },
         budget: { type: 'number', description: 'Pack token budget.' },
         require_fresh_graph: { type: 'boolean', description: 'Refuse repo drift.' },
         require_fresh_context: { type: 'boolean', description: 'Refuse selected-context drift.' },
         delta_session_id: { type: 'string', description: 'Delta-pack session key.' },
-        verbose: { type: 'boolean', description: 'Include selection diagnostics.' },
+        verbose: { type: 'boolean', description: 'Full-profile developer diagnostics; may be much larger than the answer-ready pack.' },
         retrieval_strategy: { type: 'string', enum: ['default', 'slice-v1'], description: 'Retrieval strategy.' },
         resolution: {
           type: 'string',
@@ -275,7 +275,7 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   {
     name: 'context_expand',
     description:
-      'Expand a previously returned context_pack handle_id into a focused follow-up pack. Use when a context_pack response omitted supporting nodes that now need exact expansion.',
+      'Expand one listed verification handle only when the preceding context_pack returned answerability.state verify_targets. Never call for ready or ready_with_caveat, and never replace a second context_pack call with a rewritten prompt.',
     inputSchema: {
       type: 'object',
       required: ['handle_id'],
@@ -397,7 +397,7 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   },
 ]
 
-export type McpToolProfile = 'core' | 'full'
+export type McpToolProfile = 'core' | 'strict' | 'full'
 
 /**
  * The minimal set of tools shipped by default. Keeps cache_creation overhead
@@ -408,24 +408,99 @@ export const CORE_TOOL_NAMES = ['retrieve', 'impact', 'call_chain', 'community_o
 
 export type McpCoreToolName = (typeof CORE_TOOL_NAMES)[number]
 
-export function activeMcpTools(profile: McpToolProfile = 'core'): McpToolDefinition[] {
-  if (profile === 'full') {
-    return MCP_TOOLS
+/**
+ * The compact context-pack-first surface installed by `--profile strict`.
+ * A strict task starts with one answer-ready pack and can make one
+ * authorization-bound verification expansion. General graph navigation stays
+ * in core/full so a ready pack cannot invite an agent to keep exploring.
+ */
+export const STRICT_TOOL_NAMES = ['context_pack', 'context_expand'] as const
+
+export type McpStrictToolName = (typeof STRICT_TOOL_NAMES)[number]
+
+/** Retrieve params that only function when the optional
+ *  @huggingface/transformers package is resolvable. */
+const SEMANTIC_RETRIEVE_FIELDS = ['semantic', 'semantic_model', 'rerank', 'rerank_model'] as const
+
+export interface ActiveMcpToolsOptions {
+  /** When false, semantic/rerank fields are stripped from the retrieve
+   *  schema so agents never request a capability this machine lacks. */
+  semanticAvailable?: boolean
+}
+
+function withoutSemanticFields(tool: McpToolDefinition): McpToolDefinition {
+  if (tool.name !== 'retrieve') {
+    return tool
   }
-  const core = new Set<string>(CORE_TOOL_NAMES)
-  return MCP_TOOLS.filter((tool) => core.has(tool.name))
+  const hidden = new Set<string>(SEMANTIC_RETRIEVE_FIELDS)
+  const properties = Object.fromEntries(
+    Object.entries(tool.inputSchema.properties).filter(([key]) => !hidden.has(key)),
+  )
+  return {
+    ...tool,
+    inputSchema: {
+      ...tool.inputSchema,
+      properties,
+    },
+  }
+}
+
+function strictToolSchema(tool: McpToolDefinition): McpToolDefinition {
+  const allowedProperties = tool.name === 'context_pack'
+    ? ['prompt', 'task']
+    : tool.name === 'context_expand'
+      ? ['handle_id']
+      : null
+  if (allowedProperties === null) {
+    return tool
+  }
+
+  const properties = Object.fromEntries(
+    allowedProperties
+      .map((name) => [name, tool.inputSchema.properties[name]] as const)
+      .filter(([, definition]) => definition !== undefined),
+  )
+  return {
+    ...tool,
+    ...(tool.name === 'context_pack'
+      ? {
+          description: `${tool.description} Strict mode: call exactly once per user task; pass prompt and task only, do not rewrite or split the prompt, and treat ready or ready_with_caveat as terminal for read-only tasks.`,
+        }
+      : tool.name === 'context_expand'
+      ? {
+          description: `${tool.description} This is the one strict verification attempt: treat its result as terminal and never follow a new handle from it.`,
+        }
+      : {}),
+    inputSchema: {
+      ...tool.inputSchema,
+      properties,
+    },
+  }
+}
+
+export function activeMcpTools(profile: McpToolProfile = 'core', options: ActiveMcpToolsOptions = {}): McpToolDefinition[] {
+  const enabledNames = new Set<string>(profile === 'strict' ? STRICT_TOOL_NAMES : CORE_TOOL_NAMES)
+  let tools = profile === 'full' ? MCP_TOOLS : MCP_TOOLS.filter((tool) => enabledNames.has(tool.name))
+  if (profile === 'strict') {
+    tools = tools.map((tool) => strictToolSchema(tool))
+  }
+  if (options.semanticAvailable === false) {
+    return tools.map((tool) => withoutSemanticFields(tool))
+  }
+  return tools
 }
 
 export function resolveToolProfileFromEnv(env: NodeJS.ProcessEnv = process.env): McpToolProfile {
   const raw = (env.MADAR_TOOL_PROFILE ?? '').trim().toLowerCase()
-  return raw === 'full' ? 'full' : 'core'
+  return raw === 'full' || raw === 'strict' ? raw : 'core'
 }
 
-export function isCoreToolName(name: string, profile: McpToolProfile = 'core'): boolean {
+export function isToolEnabledInProfile(name: string, profile: McpToolProfile = 'core'): boolean {
   if (profile === 'full') {
     return true
   }
-  return (CORE_TOOL_NAMES as readonly string[]).includes(name)
+  const enabledNames: readonly string[] = profile === 'strict' ? STRICT_TOOL_NAMES : CORE_TOOL_NAMES
+  return enabledNames.includes(name)
 }
 
 export const MCP_PROMPTS: McpPromptDefinition[] = [

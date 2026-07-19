@@ -130,6 +130,51 @@ describe('telemetry', () => {
     }
   })
 
+  it('records only source-safe answerability and recovery buckets', () => {
+    const configRoot = mkdtempSync(join(tmpdir(), 'madar-telemetry-config-'))
+    const cacheRoot = mkdtempSync(join(tmpdir(), 'madar-telemetry-cache-'))
+
+    try {
+      enableTelemetry({ configRoot, cacheRoot, env: {} })
+      expect(recordTelemetryEvent({
+        command: 'context_pack',
+        stage: 'succeeded',
+        version: '0.31.0',
+        os: 'darwin',
+        nodeMajor: 22,
+        initialAnswerabilityBucket: 'verify_targets',
+        recoveryAttemptsBucket: '1',
+        recoveryImprovementBucket: 'improved',
+        finalAnswerabilityBucket: 'ready_with_caveat',
+        broadSearchFallbackBucket: 'targeted_only',
+      }, { configRoot, cacheRoot, env: {} })).toBe(true)
+
+      const spoolText = readFileSync(join(cacheRoot, 'madar', 'telemetry-events.json'), 'utf8')
+      expect(JSON.parse(spoolText)).toEqual({
+        schema_version: 2,
+        events: [expect.objectContaining({
+          initial_answerability_bucket: 'verify_targets',
+          recovery_attempts_bucket: '1',
+          recovery_improvement_bucket: 'improved',
+          final_answerability_bucket: 'ready_with_caveat',
+          broad_search_fallback_bucket: 'targeted_only',
+        })],
+      })
+      expect(spoolText).not.toContain('prompt')
+      expect(spoolText).not.toContain('source_file')
+
+      const report = readTelemetryReport({ configRoot, cacheRoot, env: {} })
+      expect(report).toContain('Initial answerability:')
+      expect(report).toContain('verify_targets 1')
+      expect(report).toContain('Recovery attempts:')
+      expect(report).toContain('Broad-search fallback:')
+      expect(report).toContain('targeted_only 1')
+    } finally {
+      rmSync(configRoot, { recursive: true, force: true })
+      rmSync(cacheRoot, { recursive: true, force: true })
+    }
+  })
+
   it('honors disable controls even when config is enabled', () => {
     const configRoot = mkdtempSync(join(tmpdir(), 'madar-telemetry-config-'))
     const cacheRoot = mkdtempSync(join(tmpdir(), 'madar-telemetry-cache-'))

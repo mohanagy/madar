@@ -1,15 +1,46 @@
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
+import type { IndexingManifestV1 } from '../contracts/indexing.js'
+import { watcherStateBlocksGraphReads, type WatcherStateV1 } from '../contracts/watcher-state.js'
 import {
+  CLAUDE_PROMPT_HOOK_SCRIPT_RELATIVE_PATH,
+  CODEX_PROMPT_HOOK_SCRIPT_RELATIVE_PATH,
   OPENCODE_MCP_SERVER_NAME,
   OPENCODE_PLUGIN_RELATIVE_PATH,
-  isMadarCodexHook,
+  claudePromptHookCommand,
+  codexPromptHookCommand,
+  hasManagedClaudePromptHookScript,
+  hasManagedCodexPromptHookScript,
+  isCurrentMadarClaudePromptHook,
+  isMadarProjectHook,
+  isMadarCodexMcpConfig,
+  isMadarCodexLegacyHook,
+  isMadarCodexPromptHook,
+  isCurrentMadarCodexPromptHook,
   readOpencodeConfig,
+  resolveCodexMcpConfigPath,
   resolveOpencodeConfigPath,
 } from './install.js'
 import { analyzeGraphContextFreshness, graphFreshnessStatusLabel, type GraphContextFreshnessStatus } from '../runtime/freshness.js'
+import { isSemanticRuntimeAvailable } from '../runtime/semantic.js'
 import { findPackageRoot, readPackageVersion } from '../shared/package-metadata.js'
+import { resolveWorkspaceGraphPath } from '../shared/workspace.js'
+import { readIndexingManifestForGraph } from './indexing-manifest.js'
+import {
+  buildGenerationPolicy,
+  generationOptionsFromPolicy,
+  readGraphGenerationPolicy,
+} from './generation-policy.js'
+import { EXTRACTOR_CACHE_VERSION } from '../pipeline/extract.js'
+import { loadManifestMetadata } from '../pipeline/detect.js'
+import { collectGitVisibleFiles } from '../shared/git.js'
+import { readWatcherStateForGraph } from './watcher-state.js'
+import {
+  readDiscoverySafetyMetadata,
+  type DiscoveryExclusion,
+  type DiscoverySafetySummary,
+} from '../shared/discovery-safety.js'
 
 const MADAR_SECTION_MARKER = '## madar'
 
@@ -17,7 +48,7 @@ type AgentStatus = 'configured' | 'partial' | 'missing'
 type McpStatus = 'ok' | 'missing' | 'stale'
 
 interface McpCheck {
-  label: 'claude' | 'cursor' | 'copilot'
+  label: 'claude' | 'cursor' | 'gemini' | 'copilot'
   configPath: string
   status: McpStatus
   reason: string
@@ -40,6 +71,18 @@ interface GraphCheck {
   changedSourceCount: number
   missingSourceCount: number
   recommendation: string
+  discoverySafety: DiscoverySafetySummary | null
+  discoveryExclusions: DiscoveryExclusion[]
+  indexingManifest: IndexingManifestV1 | null
+  generationPolicy: {
+    storedFingerprint: string | null
+    currentFingerprint: string | null
+    match: boolean | null
+    reason: string
+  }
+  watcherState: WatcherStateV1 | null
+  watcherLive: boolean
+  watcherPolicyMatchesPublished: boolean | null
 }
 
 export interface DoctorReport {
@@ -47,8 +90,16 @@ export interface DoctorReport {
   graph: GraphCheck
   agents: AgentCheck[]
   mcpChecks: McpCheck[]
+  /** Availability of the optional semantic/rerank runtime. Informational
+   *  only — never part of the `healthy` computation. */
+  semantic: SemanticCheck
   nextCommands: string[]
   healthy: boolean
+}
+
+interface SemanticCheck {
+  available: boolean
+  detail: string
 }
 
 interface JsonObject {
@@ -68,7 +119,7 @@ const AIDER_INSTRUCTION_SNIPPETS = [
 const CODEX_INSTRUCTION_SNIPPETS = [
   '### Codex CLI profile',
   'Use a strict context-pack-first workflow',
-  'Before broad code search, file reads, or worker dispatch',
+  'First decide whether the task needs local repository source-code context',
   'madar pack "<task or question>" --task explain',
   'Do not dispatch `spawn_agent` workers first',
 ]
@@ -161,7 +212,7 @@ function findHookEntry(settingsPath: string, hookName: 'PreToolUse' | 'BeforeToo
   return hookEntries.some(containsOutPathReference)
 }
 
-function findCodexHookEntry(settingsPath: string): boolean {
+function findClaudeHookEntry(settingsPath: string, hookScriptPath: string): boolean {
   const settings = readJsonObject(settingsPath)
   if (!settings) {
     return false
@@ -172,12 +223,46 @@ function findCodexHookEntry(settingsPath: string): boolean {
     return false
   }
 
-  const hookEntries = hooks.PreToolUse
+  const userPromptSubmit = hooks.UserPromptSubmit
+  const currentPromptHook = Array.isArray(userPromptSubmit)
+    && userPromptSubmit.some((hook) => isCurrentMadarClaudePromptHook(hook, claudePromptHookCommand()))
+    && hasManagedClaudePromptHookScript(hookScriptPath)
+  const legacyPreToolUse = hooks.PreToolUse
+  const legacyHook = Array.isArray(legacyPreToolUse)
+    && legacyPreToolUse.some((hook) => isMadarProjectHook(hook, 'Glob|Grep|Bash|Agent|Read'))
+
+  return currentPromptHook || legacyHook
+}
+
+function findCodexHookEntry(settingsPath: string, expectedCommand: string): boolean {
+  const settings = readJsonObject(settingsPath)
+  if (!settings) {
+    return false
+  }
+
+  const hooks = settings.hooks
+  if (!isRecord(hooks)) {
+    return false
+  }
+
+  const hookEntries = hooks.UserPromptSubmit
   if (!Array.isArray(hookEntries)) {
     return false
   }
 
-  return hookEntries.some(isMadarCodexHook)
+  const managedPromptHooks = hookEntries.filter(isMadarCodexPromptHook)
+  const currentManagedPromptHooks = managedPromptHooks.filter((hook) => isCurrentMadarCodexPromptHook(hook, expectedCommand))
+  const legacyPreToolUse = Array.isArray(hooks.PreToolUse) && hooks.PreToolUse.some(isMadarCodexLegacyHook)
+
+  return managedPromptHooks.length === 1 && currentManagedPromptHooks.length === 1 && !legacyPreToolUse
+}
+
+function hasManagedCodexMcpConfig(configPath: string, projectDir: string): boolean {
+  if (!existsSync(configPath)) {
+    return false
+  }
+
+  return isMadarCodexMcpConfig(readFileSync(configPath, 'utf8'), projectDir)
 }
 
 function containsOutPathReference(value: unknown): boolean {
@@ -193,29 +278,21 @@ function containsOutPathReference(value: unknown): boolean {
   return false
 }
 
-function extractGraphPathFromArgs(args: unknown): string | null {
+function hasWorkspaceAutoRefreshArgs(args: unknown): boolean {
   if (!Array.isArray(args)) {
-    return null
+    return false
   }
 
   const normalizedArgs = args.filter((value): value is string => typeof value === 'string')
-  const stdioIndex = normalizedArgs.indexOf('--stdio')
-  if (stdioIndex >= 0) {
-    const candidate = normalizedArgs[stdioIndex + 1]
-    if (candidate && candidate.trim().length > 0) {
-      return candidate
-    }
-  }
-
-  const graphPathCandidate = normalizedArgs.find((value) => /out[\\/]+graph\.json$/i.test(value))
-  return graphPathCandidate ?? null
+  return normalizedArgs.includes('serve')
+    && normalizedArgs.includes('--stdio')
+    && normalizedArgs.includes('--auto-refresh')
 }
 
 function readMcpCheck(
   label: McpCheck['label'],
   configPath: string,
   serversKey: 'mcpServers' | 'servers',
-  expectedGraphPath: string,
 ): McpCheck {
   if (!existsSync(configPath)) {
     return {
@@ -256,23 +333,12 @@ function readMcpCheck(
     }
   }
 
-  const declaredGraphPath = extractGraphPathFromArgs(server.args)
-  if (!declaredGraphPath) {
+  if (!hasWorkspaceAutoRefreshArgs(server.args)) {
     return {
       label,
       configPath,
       status: 'stale',
-      reason: "graph path is missing from server args (expected '--stdio <graph-path>')",
-    }
-  }
-
-  const resolvedDeclaredGraphPath = resolve(declaredGraphPath)
-  if (resolvedDeclaredGraphPath !== expectedGraphPath) {
-    return {
-      label,
-      configPath,
-      status: 'stale',
-      reason: `points to ${resolvedDeclaredGraphPath}, expected ${expectedGraphPath}`,
+      reason: "server args must include 'serve --stdio --auto-refresh' to select the active workspace graph",
     }
   }
 
@@ -284,12 +350,87 @@ function readMcpCheck(
   }
 }
 
-function readGraphCheck(graphPath: string, now: number): GraphCheck {
+function graphRootPath(graphPath: string, fallback: string): string {
+  try {
+    const parsed = JSON.parse(readFileSync(graphPath, 'utf8')) as { root_path?: unknown }
+    return typeof parsed.root_path === 'string' && parsed.root_path.trim().length > 0
+      ? resolve(parsed.root_path)
+      : resolve(fallback)
+  } catch {
+    return resolve(fallback)
+  }
+}
+
+function watcherProcessIsLive(state: WatcherStateV1 | null): boolean {
+  if (!state || state.status === 'stopped') {
+    return false
+  }
+  try {
+    process.kill(state.pid, 0)
+    return true
+  } catch (error) {
+    return error !== null && typeof error === 'object' && 'code' in error && (error as { code?: unknown }).code === 'EPERM'
+  }
+}
+
+function readGenerationPolicyCheck(graphPath: string, projectDir: string): GraphCheck['generationPolicy'] {
+  const manifestPath = join(resolve(graphPath, '..'), 'manifest.json')
+  const graphPolicy = readGraphGenerationPolicy(graphPath)
+  const manifestPolicy = loadManifestMetadata(manifestPath).generation_policy ?? null
+  const storedPolicy = graphPolicy ?? manifestPolicy
+  if (!storedPolicy) {
+    return {
+      storedFingerprint: null,
+      currentFingerprint: null,
+      match: null,
+      reason: 'unavailable; regenerate once to enable policy-preserving auto-refresh',
+    }
+  }
+
+  if (!graphPolicy || !manifestPolicy || graphPolicy.fingerprint !== manifestPolicy.fingerprint) {
+    return {
+      storedFingerprint: graphPolicy?.fingerprint ?? manifestPolicy?.fingerprint ?? null,
+      currentFingerprint: null,
+      match: false,
+      reason: 'graph and source manifest do not contain the same valid generation policy; a full rebuild is required',
+    }
+  }
+
+  try {
+    const rootPath = graphRootPath(graphPath, projectDir)
+    const options = generationOptionsFromPolicy(storedPolicy)
+    const gitVisibleFiles = options.respectGitignore ? collectGitVisibleFiles(rootPath) : null
+    const currentPolicy = buildGenerationPolicy(rootPath, options, EXTRACTOR_CACHE_VERSION, gitVisibleFiles)
+    const match = storedPolicy.fingerprint === currentPolicy.fingerprint
+    return {
+      storedFingerprint: storedPolicy.fingerprint,
+      currentFingerprint: currentPolicy.fingerprint,
+      match,
+      reason: match ? 'stored policy matches current corpus controls' : 'corpus controls changed; a full rebuild is required',
+    }
+  } catch (error) {
+    return {
+      storedFingerprint: storedPolicy.fingerprint,
+      currentFingerprint: null,
+      match: false,
+      reason: `unable to evaluate current policy: ${error instanceof Error ? error.message : String(error)}`,
+    }
+  }
+}
+
+function readGraphCheck(graphPath: string, now: number, projectDir: string): GraphCheck {
   const resolvedGraphPath = resolve(graphPath)
   const freshness = analyzeGraphContextFreshness(resolvedGraphPath)
   const ageMs = freshness.generated_ms === null
     ? null
     : Math.max(0, Math.trunc(now - freshness.generated_ms))
+  const discoverySafety = readDiscoverySafetyMetadata(resolvedGraphPath)
+  const indexingManifest = readIndexingManifestForGraph(resolvedGraphPath)
+  const watcherState = readWatcherStateForGraph(resolvedGraphPath)
+  const generationPolicy = readGenerationPolicyCheck(resolvedGraphPath, projectDir)
+  const watcherPolicyMatchesPublished = watcherState && generationPolicy.storedFingerprint
+    ? watcherState.stored_policy_fingerprint === generationPolicy.storedFingerprint
+    : null
 
   return {
     graphPath: resolvedGraphPath,
@@ -302,6 +443,13 @@ function readGraphCheck(graphPath: string, now: number): GraphCheck {
     changedSourceCount: freshness.changed_source_count,
     missingSourceCount: freshness.missing_source_count,
     recommendation: freshness.recommendation,
+    discoverySafety: discoverySafety?.summary ?? null,
+    discoveryExclusions: discoverySafety?.exclusions ?? [],
+    indexingManifest,
+    generationPolicy,
+    watcherState,
+    watcherLive: watcherProcessIsLive(watcherState),
+    watcherPolicyMatchesPublished,
   }
 }
 
@@ -340,7 +488,7 @@ function hasOpencodeMcpEntry(config: JsonObject | null): boolean {
   return config !== null && isRecord(config.mcp) && isRecord(config.mcp[OPENCODE_MCP_SERVER_NAME])
 }
 
-function isOpencodeMcpConfigured(config: JsonObject | null, expectedGraphPath: string): boolean {
+function isOpencodeMcpConfigured(config: JsonObject | null): boolean {
   if (!config || !isRecord(config.mcp)) {
     return false
   }
@@ -355,8 +503,7 @@ function isOpencodeMcpConfigured(config: JsonObject | null, expectedGraphPath: s
     return false
   }
 
-  const declaredGraphPath = extractGraphPathFromArgs(command)
-  return declaredGraphPath !== null && resolve(declaredGraphPath) === expectedGraphPath
+  return hasWorkspaceAutoRefreshArgs(command)
 }
 
 function computeNextCommands(report: Omit<DoctorReport, 'nextCommands' | 'healthy'>): string[] {
@@ -364,7 +511,18 @@ function computeNextCommands(report: Omit<DoctorReport, 'nextCommands' | 'health
 
   if (!report.graph.exists) {
     nextCommands.add('madar generate .')
-  } else if (report.graph.freshness === 'possibly_stale' || report.graph.freshness === 'stale') {
+  } else if (
+    report.graph.freshness === 'possibly_stale'
+    || report.graph.freshness === 'stale'
+    || report.graph.generationPolicy.match === false
+    || (report.graph.watcherState !== null
+      && report.graph.watcherState.status !== 'stopped'
+      && (
+        !report.graph.watcherLive
+        || watcherStateBlocksGraphReads(report.graph.watcherState)
+        || report.graph.watcherPolicyMatchesPublished === false
+      ))
+  ) {
     nextCommands.add('madar generate . --update')
   }
 
@@ -417,19 +575,23 @@ function computeNextCommands(report: Omit<DoctorReport, 'nextCommands' | 'health
 }
 
 export function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorReport {
-  const graphPath = options.graphPath ?? 'out/graph.json'
   const projectDir = resolve(options.projectDir ?? '.')
+  const graphPath = resolveWorkspaceGraphPath(options.graphPath ?? 'out/graph.json', projectDir)
   const now = options.now ?? Date.now()
   const resolvedGraphPath = resolve(projectDir, graphPath)
   const packageVersion = readPackageVersion(findPackageRoot())
-  const graph = readGraphCheck(resolvedGraphPath, now)
+  const graph = readGraphCheck(resolvedGraphPath, now, projectDir)
 
-  const claudeMcp = readMcpCheck('claude', resolve(projectDir, '.mcp.json'), 'mcpServers', resolvedGraphPath)
-  const cursorMcp = readMcpCheck('cursor', resolve(projectDir, '.cursor', 'mcp.json'), 'mcpServers', resolvedGraphPath)
-  const copilotMcp = readMcpCheck('copilot', resolve(projectDir, '.vscode', 'mcp.json'), 'servers', resolvedGraphPath)
+  const claudeMcp = readMcpCheck('claude', resolve(projectDir, '.mcp.json'), 'mcpServers')
+  const cursorMcp = readMcpCheck('cursor', resolve(projectDir, '.cursor', 'mcp.json'), 'mcpServers')
+  const geminiMcp = readMcpCheck('gemini', resolve(projectDir, '.gemini', 'settings.json'), 'mcpServers')
+  const copilotMcp = readMcpCheck('copilot', resolve(projectDir, '.vscode', 'mcp.json'), 'servers')
 
   const claudeRuleConfigured = hasSectionMarker(resolve(projectDir, 'CLAUDE.md'))
-  const claudeHookConfigured = findHookEntry(resolve(projectDir, '.claude', 'settings.json'), 'PreToolUse')
+  const claudeHookConfigured = findClaudeHookEntry(
+    resolve(projectDir, '.claude', 'settings.json'),
+    resolve(projectDir, CLAUDE_PROMPT_HOOK_SCRIPT_RELATIVE_PATH),
+  )
   const claudeMcpConfigured = claudeMcp.status === 'ok'
 
   const cursorRuleConfigured = existsSync(resolve(projectDir, '.cursor', 'rules', 'madar.mdc'))
@@ -437,6 +599,7 @@ export function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorRep
 
   const geminiRuleConfigured = hasSectionMarker(resolve(projectDir, 'GEMINI.md'))
   const geminiHookConfigured = findHookEntry(resolve(projectDir, '.gemini', 'settings.json'), 'BeforeTool')
+  const geminiMcpConfigured = geminiMcp.status === 'ok'
 
   const copilotMcpConfigured = copilotMcp.status === 'ok'
 
@@ -450,10 +613,14 @@ export function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorRep
 
   const codexSkillConfigured = existsSync(resolve(projectDir, CODEX_SKILL_PATH))
   const codexInstructionsConfigured = fileContainsSnippets(agentsPath, CODEX_INSTRUCTION_SNIPPETS)
-  const codexHookConfigured = findCodexHookEntry(resolve(projectDir, '.codex', 'hooks.json'))
+  const codexPromptHookScriptPath = resolve(projectDir, CODEX_PROMPT_HOOK_SCRIPT_RELATIVE_PATH)
+  const codexHookConfigured =
+    hasManagedCodexPromptHookScript(codexPromptHookScriptPath)
+    && findCodexHookEntry(resolve(projectDir, '.codex', 'hooks.json'), codexPromptHookCommand())
+  const codexMcpConfigured = hasManagedCodexMcpConfig(resolveCodexMcpConfigPath(), projectDir)
   const codexStatus = optionalAgentStatus(
-    [codexSkillConfigured, codexInstructionsConfigured, codexHookConfigured],
-    [codexInstructionsConfigured, codexHookConfigured],
+    [codexSkillConfigured, codexInstructionsConfigured, codexHookConfigured, codexMcpConfigured],
+    [codexInstructionsConfigured, codexHookConfigured, codexMcpConfigured],
   )
 
   const opencodeSkillConfigured = existsSync(resolve(projectDir, OPENCODE_SKILL_PATH))
@@ -471,7 +638,7 @@ export function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorRep
     : null
   const opencodeMcpEntryPresent = hasOpencodeMcpEntry(opencodeConfig)
   const opencodePluginConfigured = opencodePluginFileConfigured && isOpencodePluginRegistered(opencodeConfig)
-  const opencodeMcpConfigured = isOpencodeMcpConfigured(opencodeConfig, resolvedGraphPath)
+  const opencodeMcpConfigured = isOpencodeMcpConfigured(opencodeConfig)
   const opencodeStatus = optionalAgentStatus(
     [opencodeSkillConfigured, opencodeInstructionsConfigured, opencodePluginFileConfigured, opencodeMcpEntryPresent],
     [opencodeInstructionsConfigured, opencodePluginConfigured, opencodeMcpConfigured],
@@ -490,8 +657,8 @@ export function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorRep
     },
     {
       label: 'gemini',
-      status: agentStatusFromFlags([geminiRuleConfigured, geminiHookConfigured]),
-      detail: `rules=${geminiRuleConfigured ? 'yes' : 'no'}, hook=${geminiHookConfigured ? 'yes' : 'no'}`,
+      status: agentStatusFromFlags([geminiRuleConfigured, geminiHookConfigured, geminiMcpConfigured]),
+      detail: `rules=${geminiRuleConfigured ? 'yes' : 'no'}, hook=${geminiHookConfigured ? 'yes' : 'no'}, mcp=${geminiMcp.status}`,
     },
     {
       label: 'copilot',
@@ -512,7 +679,7 @@ export function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorRep
     agents.push({
       label: 'codex',
       status: codexStatus,
-      detail: `instructions=${codexInstructionsConfigured ? 'yes' : 'no'}, hook=${codexHookConfigured ? 'yes' : 'no'}`,
+      detail: `instructions=${codexInstructionsConfigured ? 'yes' : 'no'}, hook=${codexHookConfigured ? 'yes' : 'no'}, mcp=${codexMcpConfigured ? 'yes' : 'no'}`,
     })
   }
 
@@ -524,16 +691,40 @@ export function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorRep
     })
   }
 
-  const mcpChecks = [claudeMcp, cursorMcp, copilotMcp]
+  const mcpChecks = [claudeMcp, cursorMcp, geminiMcp, copilotMcp]
+
+  const semanticAvailable = isSemanticRuntimeAvailable(projectDir)
+  const semantic: SemanticCheck = semanticAvailable
+    ? { available: true, detail: 'optional @huggingface/transformers resolved' }
+    : { available: false, detail: 'optional — run `npm install @huggingface/transformers` in this project to enable semantic/rerank' }
 
   const partialReport = {
     packageVersion,
     graph,
     agents,
     mcpChecks,
+    semantic,
   }
   const nextCommands = computeNextCommands(partialReport)
-  const healthy = graph.exists && graph.freshness === 'fresh' && agents.every((agent) => agent.status === 'configured') && mcpChecks.every((check) => check.status === 'ok')
+  const indexingRequiresAttention = graph.indexingManifest !== null && (
+    graph.indexingManifest.summary.counts.failed > 0
+    || graph.indexingManifest.summary.counts.unsupported > 0
+    || graph.indexingManifest.summary.counts.indexed_with_warnings > 0
+  )
+  const watcherRequiresAttention = graph.watcherState !== null
+    && graph.watcherState.status !== 'stopped'
+    && (
+      !graph.watcherLive
+      || watcherStateBlocksGraphReads(graph.watcherState)
+      || graph.watcherPolicyMatchesPublished === false
+    )
+  const healthy = graph.exists
+    && graph.freshness === 'fresh'
+    && !indexingRequiresAttention
+    && graph.generationPolicy.match !== false
+    && !watcherRequiresAttention
+    && agents.every((agent) => agent.status === 'configured')
+    && mcpChecks.every((check) => check.status === 'ok')
 
   return {
     ...partialReport,
@@ -554,7 +745,7 @@ function formatGraphLine(graph: GraphCheck): string[] {
   const generatedText = graph.generatedAt ?? 'unknown'
   const versionText = graph.graphVersion ?? 'unknown'
 
-  return [
+  const lines = [
     `- graph: found (${graph.graphPath})`,
     `- graph freshness: ${graphFreshnessStatusLabel(graph.freshness)} (${ageText} old, generated ${generatedText}, graph_version ${versionText})`,
     `- indexed files: ${graph.indexedFileCount}`,
@@ -562,6 +753,71 @@ function formatGraphLine(graph: GraphCheck): string[] {
     `- missing since graph: ${graph.missingSourceCount} source file${graph.missingSourceCount === 1 ? '' : 's'}`,
     `- recommendation: ${graph.recommendation}`,
   ]
+  const policy = graph.generationPolicy
+  lines.push(
+    `- generation policy: ${policy.match === null ? 'unavailable' : policy.match ? 'match' : 'mismatch'} (${policy.reason})`,
+  )
+  if (!graph.watcherState) {
+    lines.push('- watcher: inactive (no watcher state)')
+  } else {
+    const watcher = graph.watcherState
+    const liveLabel = watcher.status === 'stopped' ? 'inactive' : graph.watcherLive ? 'live' : 'not live'
+    const strategyReceipt = watcher.extraction_strategy_buckets
+      ? Object.entries(watcher.extraction_strategy_buckets)
+          .sort(([left], [right]) => left.localeCompare(right))
+          .map(([strategy, count]) => `${strategy}=${count}`)
+          .join(', ')
+      : 'unavailable'
+    lines.push(
+      `- watcher: ${watcher.status} (${liveLabel}; coverage=${watcher.coverage}; mode=${watcher.event_mode}; interval=${watcher.current_interval_ms}ms)`,
+      `- watcher last reconciliation: ${watcher.last_reconciliation_at ?? 'never'} (${watcher.last_reconciliation_duration_ms ?? 'unknown'}ms; files=${watcher.last_reconciliation_file_count ?? 'unknown'}; directories=${watcher.last_reconciliation_directory_count ?? 'unknown'})`,
+      `- watcher policy: ${watcher.policy_match === null || graph.watcherPolicyMatchesPublished === null ? 'unknown' : watcher.policy_match && graph.watcherPolicyMatchesPublished ? 'match' : 'mismatch'} (stored=${watcher.stored_policy_fingerprint?.slice(0, 12) ?? 'none'}; current=${watcher.current_policy_fingerprint?.slice(0, 12) ?? 'none'}; published=${graph.generationPolicy.storedFingerprint?.slice(0, 12) ?? 'none'})`,
+      `- watcher extraction receipt: requested=${watcher.requested_extraction_mode ?? 'unknown'}; strategies=${strategyReceipt}`,
+    )
+    if (watcher.pending_since) {
+      lines.push(`- watcher pending since: ${watcher.pending_since}`)
+    }
+    if (watcher.failure_reason) {
+      lines.push(`- watcher failure: ${watcher.failure_reason}`)
+    }
+  }
+  if (graph.discoverySafety && graph.discoverySafety.total > 0) {
+    lines.push(
+      `- safety exclusions: ${graph.discoverySafety.total} (${graph.discoverySafety.sensitive} sensitive, ${graph.discoverySafety.unreadable} unreadable)`,
+      '- skipped paths:',
+    )
+    for (const exclusion of graph.discoveryExclusions.slice(0, 20)) {
+      lines.push(`  - ${JSON.stringify(exclusion.path)} (${exclusion.reason})`)
+    }
+    if (graph.discoveryExclusions.length > 20) {
+      lines.push(`  - ... ${graph.discoveryExclusions.length - 20} more; inspect graph.json discovery_safety.exclusions`)
+    }
+  } else {
+    lines.push('- safety exclusions: none')
+  }
+  if (graph.indexingManifest) {
+    const { summary } = graph.indexingManifest
+    lines.push(
+      `- indexing completeness: ${summary.state} (${summary.counts.indexed} indexed, ${summary.counts.indexed_with_warnings} warnings, ${summary.counts.skipped_by_policy} policy skips, ${summary.counts.unsupported} unsupported, ${summary.counts.failed} failed)`,
+    )
+    const affected = graph.indexingManifest.outcomes.filter((outcome) =>
+      outcome.status === 'failed' || outcome.status === 'unsupported' || outcome.status === 'indexed_with_warnings')
+    if (affected.length > 0) {
+      lines.push('- incomplete indexing paths:')
+      for (const outcome of affected.slice(0, 20)) {
+        lines.push(`  - ${JSON.stringify(outcome.path)} (${outcome.status}; ${outcome.reason}; ${outcome.capability ?? 'no capability'})`)
+      }
+      if (affected.length > 20) {
+        lines.push(`  - ... ${affected.length - 20} more; inspect indexing-manifest.json`)
+      }
+    }
+    if (graph.indexingManifest.spi_diagnostics.length > 0) {
+      lines.push(`- SPI diagnostics: ${graph.indexingManifest.spi_diagnostics.length} (inspect indexing-manifest.json)`)
+    }
+  } else {
+    lines.push("- indexing completeness: unavailable (regenerate with 'madar generate . --update')")
+  }
+  return lines
 }
 
 export function runDoctorCommand(options: DoctorCommandOptions = {}): string {
@@ -578,6 +834,7 @@ export function runDoctorCommand(options: DoctorCommandOptions = {}): string {
   for (const check of report.mcpChecks) {
     lines.push(`  - ${check.label}: ${check.status} (${check.configPath}; ${check.reason})`)
   }
+  lines.push(`- semantic/rerank: ${report.semantic.available ? 'available' : 'unavailable'} (${report.semantic.detail})`)
 
   if (report.nextCommands.length === 0) {
     lines.push('- next commands: none')
@@ -599,13 +856,55 @@ export function runStatusCommand(options: DoctorCommandOptions = {}): string {
   const agentSummary = report.agents.map((agent) => `${agent.label}:${agent.status}`).join(' ')
   const mcpSummary = report.mcpChecks.map((check) => `${check.label}:${check.status}`).join(' ')
   const nextSummary = report.nextCommands.length === 0 ? 'none' : report.nextCommands.join('; ')
+  const safetySummary = report.graph.discoverySafety && report.graph.discoverySafety.total > 0
+    ? `${report.graph.discoverySafety.total} (sensitive=${report.graph.discoverySafety.sensitive}, unreadable=${report.graph.discoverySafety.unreadable})`
+    : 'none'
+  const skippedPaths = report.graph.discoveryExclusions.length > 0
+    ? report.graph.discoveryExclusions
+        .slice(0, 20)
+        .map((entry) => `${JSON.stringify(entry.path)}[${entry.reason}]`)
+        .join(', ')
+    : 'none'
+  const indexing = report.graph.indexingManifest
+  const indexingSummary = indexing
+    ? `${indexing.summary.state} (indexed=${indexing.summary.counts.indexed}, warnings=${indexing.summary.counts.indexed_with_warnings}, skipped=${indexing.summary.counts.skipped_by_policy}, unsupported=${indexing.summary.counts.unsupported}, failed=${indexing.summary.counts.failed})`
+    : 'unavailable'
+  const incompletePaths = indexing
+    ? indexing.outcomes
+        .filter((outcome) => outcome.status === 'failed' || outcome.status === 'unsupported' || outcome.status === 'indexed_with_warnings')
+        .slice(0, 20)
+        .map((outcome) => `${JSON.stringify(outcome.path)}[${outcome.reason}]`)
+        .join(', ') || 'none'
+    : 'none'
+  const watcher = report.graph.watcherState
+  const watcherStrategies = watcher?.extraction_strategy_buckets
+    ? Object.entries(watcher.extraction_strategy_buckets)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([strategy, count]) => `${strategy}=${count}`)
+        .join(',')
+    : 'unavailable'
+  const watcherSummary = watcher
+    ? `${watcher.status} (live=${report.graph.watcherLive}, coverage=${watcher.coverage}, mode=${watcher.event_mode}, interval=${watcher.current_interval_ms}ms, requested_extraction=${watcher.requested_extraction_mode ?? 'unknown'}, strategies=${watcherStrategies}, published_policy=${report.graph.watcherPolicyMatchesPublished === null ? 'unknown' : report.graph.watcherPolicyMatchesPublished ? 'match' : 'mismatch'}, pending=${watcher.pending_since ?? 'no'}, failure=${watcher.failure_reason ?? 'none'})`
+    : 'inactive'
+  const reconciliationSummary = watcher
+    ? `${watcher.last_reconciliation_at ?? 'never'} (duration=${watcher.last_reconciliation_duration_ms ?? 'unknown'}ms, files=${watcher.last_reconciliation_file_count ?? 'unknown'}, directories=${watcher.last_reconciliation_directory_count ?? 'unknown'}, next=${watcher.next_reconciliation_at ?? 'none'})`
+    : 'unavailable'
+  const policy = report.graph.generationPolicy
+  const policySummary = `${policy.match === null ? 'unavailable' : policy.match ? 'match' : 'mismatch'} (stored=${policy.storedFingerprint?.slice(0, 12) ?? 'none'}, current=${policy.currentFingerprint?.slice(0, 12) ?? 'none'}; ${policy.reason})`
 
   return [
     `[madar status] ${report.healthy ? 'healthy' : 'attention needed'}`,
     `version ${report.packageVersion}`,
     `graph ${graphStatus}`,
+    `generation-policy ${policySummary}`,
+    `watcher ${watcherSummary}`,
+    `reconciliation ${reconciliationSummary}`,
     `agents ${agentSummary}`,
     `mcp ${mcpSummary}`,
+    `safety ${safetySummary}`,
+    `skipped ${skippedPaths}${report.graph.discoveryExclusions.length > 20 ? `, ... ${report.graph.discoveryExclusions.length - 20} more` : ''}`,
+    `indexing ${indexingSummary}`,
+    `incomplete ${incompletePaths}`,
     `next ${nextSummary}`,
   ].join('\n')
 }

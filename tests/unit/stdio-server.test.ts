@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { PassThrough } from 'node:stream'
 import { join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -8,6 +9,18 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import { handleStdioRequest, serveGraphStdio } from '../../src/runtime/stdio-server.js'
 import { graphFreshnessMetadata } from '../../src/runtime/freshness.js'
+import { readWatcherStateForGraph, writeWatcherState } from '../../src/infrastructure/watcher-state.js'
+
+async function waitFor(condition: () => boolean, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (condition()) {
+      return
+    }
+    await delay(10)
+  }
+  throw new Error('Timed out waiting for expected condition')
+}
 
 function createGraphFixtureRoot(): string {
   const parentDir = resolve('out', 'test-runtime')
@@ -31,6 +44,7 @@ function createGraphFixtureRoot(): string {
   writeFileSync(
     join(root, 'graph.json'),
     JSON.stringify({
+      directed: true,
       community_labels: {
         '0': 'Auth Services',
         '1': 'Transport Layer',
@@ -688,6 +702,55 @@ describe('stdio runtime', () => {
     }
   })
 
+  it('returns actionable MCP errors for directional tools on an undirected legacy graph', async () => {
+    const root = createGraphFixtureRoot()
+    try {
+      const graphPath = join(root, 'legacy-undirected.json')
+      writeFileSync(
+        graphPath,
+        JSON.stringify({
+          directed: false,
+          nodes: [
+            { id: 'caller', label: 'caller', source_file: '/src/caller.ts', file_type: 'code', community: 0 },
+            { id: 'dependency', label: 'dependency', source_file: '/src/dependency.ts', file_type: 'code', community: 0 },
+          ],
+          edges: [
+            { source: 'caller', target: 'dependency', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/caller.ts' },
+          ],
+        }),
+        'utf8',
+      )
+
+      const impact = await Promise.resolve(handleStdioRequest(graphPath, {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: { name: 'impact', arguments: { label: 'caller' } },
+      }))
+      const callChain = await Promise.resolve(handleStdioRequest(graphPath, {
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/call',
+        params: { name: 'call_chain', arguments: { source: 'dependency', target: 'caller' } },
+      }))
+      const retrieve = await Promise.resolve(handleStdioRequest(graphPath, {
+        jsonrpc: '2.0',
+        id: 3,
+        method: 'tools/call',
+        params: { name: 'retrieve', arguments: { question: 'Explain caller', budget: 1000, retrieval_strategy: 'slice-v1' } },
+      }))
+
+      expect(impact?.error?.message).toContain('Impact analysis requires a directed graph')
+      expect(callChain?.error?.message).toContain('Call-chain analysis requires a directed graph')
+      expect((retrieve?.result as { isError?: boolean }).isError).toBe(true)
+      expect((retrieve?.result as { content: Array<{ text: string }> }).content[0]?.text).toContain(
+        'Directional retrieval requires a directed graph',
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('returns compact retrieve and impact payloads by default and keeps verbose mode as an escape hatch', async () => {
     const root = createGraphFixtureRoot()
     try {
@@ -695,6 +758,7 @@ describe('stdio runtime', () => {
       writeFileSync(
         graphPath,
         JSON.stringify({
+          directed: true,
           community_labels: {
             '0': 'Routes',
             '1': 'State',
@@ -959,7 +1023,20 @@ describe('stdio runtime', () => {
         }
         expect(payload.evidence).toEqual(expect.objectContaining({
           pack_confidence: expect.stringMatching(/^(high|medium|low)$/),
+          evidence_strength: expect.objectContaining({
+            level: expect.stringMatching(/^(strong|moderate|weak)$/),
+          }),
           coverage: expect.stringMatching(/^(complete|partial|unknown)$/),
+          coverage_detail: expect.objectContaining({
+            status: expect.stringMatching(/^(complete|partial|unknown)$/),
+            missing_obligations: expect.any(Array),
+          }),
+          answerability: expect.objectContaining({
+            state: expect.stringMatching(/^(ready|ready_with_caveat|verify_targets|insufficient)$/),
+            caveats: expect.any(Array),
+            verification_targets: expect.any(Array),
+            broad_search_fallback: expect.stringMatching(/^(not_needed|targeted_only|allowed|blocked)$/),
+          }),
           agent_directive: expect.stringMatching(/^(answer_from_pack|verify_one_targeted_file|explore_with_caution)$/),
           missing_phases: expect.any(Array),
           covered_workflow_owners: expect.any(Array),
@@ -1158,6 +1235,11 @@ describe('stdio runtime', () => {
             stage: 'succeeded',
             repo_size_bucket: '1-24',
             graph_size_bucket: '1-99',
+            initial_answerability_bucket: expect.stringMatching(/^(ready|ready_with_caveat|verify_targets|insufficient)$/),
+            recovery_attempts_bucket: expect.stringMatching(/^[0-2]$/),
+            recovery_improvement_bucket: expect.stringMatching(/^(not_attempted|improved|unchanged)$/),
+            final_answerability_bucket: expect.stringMatching(/^(ready|ready_with_caveat|verify_targets|insufficient)$/),
+            broad_search_fallback_bucket: expect.stringMatching(/^(not_needed|targeted_only|allowed|blocked)$/),
           }),
           expect.objectContaining({
             command: 'context_pack',
@@ -2187,6 +2269,7 @@ describe('stdio runtime', () => {
       writeFileSync(
         graphPath,
         JSON.stringify({
+          directed: true,
           root_path: '/workspace',
           nodes: [
             { id: 'route_users_show', label: 'GET /users/:id', source_file: '/workspace/src/routes/users.ts', line_number: 12, node_kind: 'route', file_type: 'code', framework: 'express', framework_role: 'express_route', community: 0 },
@@ -2248,6 +2331,7 @@ describe('stdio runtime', () => {
       writeFileSync(
         graphPath,
         JSON.stringify({
+          directed: true,
           root_path: '/workspace',
           community_labels: {
             '0': 'Routes',
@@ -2314,6 +2398,7 @@ describe('stdio runtime', () => {
       writeFileSync(
         graphPath,
         JSON.stringify({
+          directed: true,
           root_path: '/workspace',
           community_labels: {
             '0': 'Routes',
@@ -2388,6 +2473,7 @@ describe('stdio runtime', () => {
       writeFileSync(
         graphPath,
         JSON.stringify({
+          directed: true,
           root_path: '/workspace',
           community_labels: {
             '0': 'Routes',
@@ -2575,6 +2661,289 @@ describe('stdio runtime', () => {
       rmSync(root, { recursive: true, force: true })
     }
   })
+
+  it('refreshes an active stdio session after an agent changes its workspace', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'madar-stdio-auto-refresh-'))
+    const graphPath = join(root, 'out', 'graph.json')
+    const input = new PassThrough()
+    const output = new PassThrough()
+    const errorOutput = new PassThrough()
+    let outputText = ''
+    output.on('data', (chunk) => {
+      outputText += chunk.toString('utf8')
+    })
+
+    writeFileSync(join(root, 'initial.ts'), 'export const initialValue = 1\n', 'utf8')
+    const serverPromise = serveGraphStdio({
+      graphPath,
+      autoRefresh: true,
+      workspaceRoot: root,
+      autoRefreshDebounceSeconds: 0.02,
+      input,
+      output,
+      errorOutput,
+    })
+
+    try {
+      await waitFor(() => {
+        if (!existsSync(graphPath)) {
+          return false
+        }
+        const graph = JSON.parse(readFileSync(graphPath, 'utf8')) as { nodes?: Array<{ source_file?: string }> }
+        return graph.nodes?.some((node) => node.source_file?.endsWith('initial.ts')) === true
+      })
+      const initialGraph = JSON.parse(readFileSync(graphPath, 'utf8')) as { nodes?: unknown[] }
+
+      input.write(`${JSON.stringify({ id: 1, method: 'stats' })}\n`)
+      await waitFor(() => outputText.includes('"id":1'))
+
+      writeFileSync(join(root, 'added.ts'), 'export function addedDuringSession() { return 2 }\n', 'utf8')
+      await waitFor(() => {
+        const graph = JSON.parse(readFileSync(graphPath, 'utf8')) as { nodes?: Array<{ source_file?: string }> }
+        return graph.nodes?.some((node) => node.source_file?.endsWith('added.ts')) === true
+      })
+
+      input.end(`${JSON.stringify({ id: 2, method: 'stats' })}\n`)
+      await serverPromise
+
+      const responses = outputText
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line)) as Array<{ id?: number; result?: string }>
+      const before = responses.find((response) => response.id === 1)
+      const after = responses.find((response) => response.id === 2)
+      const refreshedGraph = JSON.parse(readFileSync(graphPath, 'utf8')) as { nodes?: unknown[] }
+
+      expect(before?.result).toContain(`Nodes: ${initialGraph.nodes?.length ?? 0}`)
+      expect(after?.result).toContain(`Nodes: ${refreshedGraph.nodes?.length ?? 0}`)
+      expect(after?.result).not.toBe(before?.result)
+    } finally {
+      input.destroy()
+      await serverPromise.catch(() => {})
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, 10_000)
+
+  it('holds one graph request while an auto-refresh event is pending, then answers it', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'madar-stdio-pending-refresh-'))
+    const graphPath = join(root, 'out', 'graph.json')
+    const input = new PassThrough()
+    const output = new PassThrough()
+    const errorOutput = new PassThrough()
+    let outputText = ''
+    output.on('data', (chunk) => {
+      outputText += chunk.toString('utf8')
+    })
+
+    writeFileSync(join(root, 'initial.ts'), 'export const initialValue = 1\n', 'utf8')
+    const serverPromise = serveGraphStdio({
+      graphPath,
+      autoRefresh: true,
+      workspaceRoot: root,
+      autoRefreshDebounceSeconds: 0.5,
+      autoRefreshRequestWaitMs: 2_500,
+      input,
+      output,
+      errorOutput,
+    })
+
+    try {
+      await waitFor(() => existsSync(graphPath) && readWatcherStateForGraph(graphPath)?.status === 'idle')
+      writeFileSync(join(root, 'added.ts'), 'export const addedDuringSession = 2\n', 'utf8')
+      await waitFor(() => readWatcherStateForGraph(graphPath)?.status === 'pending')
+
+      input.write(`${JSON.stringify({ id: 31, method: 'stats' })}\n`)
+      await delay(50)
+      expect(outputText).not.toContain('"id":31')
+
+      await waitFor(() => {
+        if (readWatcherStateForGraph(graphPath)?.status !== 'idle') {
+          return false
+        }
+        const graph = JSON.parse(readFileSync(graphPath, 'utf8')) as { nodes?: Array<{ source_file?: string }> }
+        return graph.nodes?.some((node) => node.source_file?.endsWith('added.ts')) === true
+      })
+      await waitFor(() => outputText.includes('"id":31'))
+      input.end(`${JSON.stringify({ id: 32, method: 'stats' })}\n`)
+      await serverPromise
+
+      const responses = outputText
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line)) as Array<{
+          id?: number
+          result?: string
+          error?: { message?: string; data?: Record<string, unknown> }
+        }>
+      expect(responses.find((response) => response.id === 31)?.result).toContain('Nodes:')
+      expect(responses.find((response) => response.id === 31)?.error).toBeUndefined()
+      expect(responses.find((response) => response.id === 32)?.result).toContain('Nodes:')
+    } finally {
+      input.destroy()
+      await serverPromise.catch(() => {})
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, 10_000)
+
+  it('refuses failed, incomplete, reconciling, and policy-mismatched auto-refresh states', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'madar-stdio-watcher-gates-'))
+    const graphPath = join(root, 'out', 'graph.json')
+    const input = new PassThrough()
+    const output = new PassThrough()
+    const errorOutput = new PassThrough()
+    let outputText = ''
+    output.on('data', (chunk) => {
+      outputText += chunk.toString('utf8')
+    })
+    writeFileSync(join(root, 'main.ts'), 'export const value = 1\n', 'utf8')
+    const serverPromise = serveGraphStdio({
+      graphPath,
+      autoRefresh: true,
+      workspaceRoot: root,
+      autoRefreshRequestWaitMs: 0,
+      input,
+      output,
+      errorOutput,
+    })
+
+    try {
+      await waitFor(() => readWatcherStateForGraph(graphPath)?.status === 'idle')
+      const idle = readWatcherStateForGraph(graphPath)
+      if (!idle) {
+        throw new Error('Expected auto-refresh watcher state')
+      }
+      const cases = [
+        { id: 41, state: { ...idle, status: 'failed' as const, coverage: 'failed' as const, failure_reason: 'scan failed' } },
+        { id: 42, state: { ...idle, coverage: 'unknown' as const } },
+        { id: 43, state: { ...idle, status: 'reconciling' as const } },
+        { id: 44, state: { ...idle, policy_match: false } },
+      ]
+
+      for (const testCase of cases) {
+        writeWatcherState(join(root, 'out'), testCase.state)
+        input.write(`${JSON.stringify({ id: testCase.id, method: 'stats' })}\n`)
+        await waitFor(() => outputText.includes(`"id":${testCase.id}`))
+      }
+
+      const manifestPath = join(root, 'out', 'manifest.json')
+      const originalManifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { __madar_meta__?: { generation_policy?: unknown } }
+      const mismatchedManifest = JSON.parse(JSON.stringify(originalManifest)) as { __madar_meta__?: { generation_policy?: unknown } }
+      if (mismatchedManifest.__madar_meta__) {
+        delete mismatchedManifest.__madar_meta__.generation_policy
+      }
+      writeWatcherState(join(root, 'out'), idle)
+      writeFileSync(manifestPath, `${JSON.stringify(mismatchedManifest, null, 2)}\n`, 'utf8')
+      input.write(`${JSON.stringify({ id: 46, method: 'stats' })}\n`)
+      await waitFor(() => outputText.includes('"id":46'))
+
+      writeFileSync(manifestPath, `${JSON.stringify(originalManifest, null, 2)}\n`, 'utf8')
+      input.end(`${JSON.stringify({ id: 45, method: 'stats' })}\n`)
+      await serverPromise
+
+      const responses = outputText
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line)) as Array<{
+          id?: number
+          result?: string
+          error?: { message?: string; data?: Record<string, unknown> }
+        }>
+      for (const id of [41, 42, 44, 46]) {
+        expect(responses.find((response) => response.id === id)?.error?.message).toContain(
+          'auto-refresh cannot guarantee a fresh graph',
+        )
+        expect(responses.find((response) => response.id === id)?.error?.data).toMatchObject({
+          retryable: false,
+          suggested_action: 'repair_graph',
+        })
+      }
+      expect(responses.find((response) => response.id === 43)?.error).toMatchObject({
+        message: expect.stringContaining('temporarily reconciling'),
+        data: {
+          state: 'reconciling',
+          retryable: true,
+          retry_after_ms: 1_000,
+          suggested_action: 'retry_same_request',
+        },
+      })
+      expect(responses.find((response) => response.id === 45)?.result).toContain('Nodes:')
+    } finally {
+      input.destroy()
+      await serverPromise.catch(() => {})
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, 10_000)
+
+  it('keeps MCP control requests responsive while another process holds the refresh lease', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'madar-stdio-refresh-lease-'))
+    const graphPath = join(root, 'out', 'graph.json')
+    const lockPath = join(root, 'out', '.madar-refresh.lock')
+    const input = new PassThrough()
+    const output = new PassThrough()
+    const errorOutput = new PassThrough()
+    let outputText = ''
+    output.on('data', (chunk) => {
+      outputText += chunk.toString('utf8')
+    })
+    writeFileSync(join(root, 'main.ts'), 'export const value = 1\n', 'utf8')
+    const serverPromise = serveGraphStdio({
+      graphPath,
+      autoRefresh: true,
+      workspaceRoot: root,
+      autoRefreshDebounceSeconds: 0.02,
+      autoRefreshRequestWaitMs: 2_500,
+      input,
+      output,
+      errorOutput,
+    })
+
+    try {
+      await waitFor(() => readWatcherStateForGraph(graphPath)?.status === 'idle')
+      writeFileSync(lockPath, `${process.pid} external-test-lease ${new Date().toISOString()}\n`, 'utf8')
+      writeFileSync(join(root, 'main.ts'), 'export const value = 2\n', 'utf8')
+      await waitFor(() => readWatcherStateForGraph(graphPath)?.status === 'reconciling')
+
+      input.write(`${JSON.stringify({ id: 52, method: 'stats' })}\n`)
+      input.write(`${JSON.stringify({ id: 51, method: 'ping' })}\n`)
+      await waitFor(() => outputText.includes('"id":51'), 1_000)
+      expect(outputText).not.toContain('"id":52')
+      rmSync(lockPath, { force: true })
+      await waitFor(() => readWatcherStateForGraph(graphPath)?.status === 'idle')
+      await waitFor(() => outputText.includes('"id":52'), 1_000)
+      input.end(`${JSON.stringify({ id: 53, method: 'stats' })}\n`)
+      await serverPromise
+
+      const responses = outputText
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as {
+          id?: number
+          result?: unknown
+          error?: {
+            message?: string
+            data?: {
+              state?: string
+              retryable?: boolean
+              retry_after_ms?: number
+              suggested_action?: string
+            }
+          }
+        })
+      expect(responses.find((response) => response.id === 51)?.result).toEqual({ ok: true })
+      expect(responses.find((response) => response.id === 52)?.result).toEqual(expect.any(String))
+      expect(responses.find((response) => response.id === 52)?.error).toBeUndefined()
+      expect(responses.find((response) => response.id === 53)?.result).toEqual(expect.any(String))
+    } finally {
+      rmSync(lockPath, { force: true })
+      input.destroy()
+      await serverPromise.catch(() => {})
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, 10_000)
 
   it('returns JSON-RPC-style errors for invalid requests', () => {
     const root = createGraphFixtureRoot()

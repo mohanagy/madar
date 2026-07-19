@@ -6,10 +6,9 @@ import { describe, expect, it } from 'vitest'
 
 import { buildFromJson } from '../../src/pipeline/build.js'
 import { extract } from '../../src/pipeline/extract.js'
-import { retrieveContext } from '../../src/runtime/retrieve.js'
 
 function createSandbox(): string {
-  return mkdtempSync(join(tmpdir(), 'madar-extract-alias-runtime-proof-'))
+  return mkdtempSync(join(tmpdir(), 'madar-extract-alias-cross-file-'))
 }
 
 function writeFile(root: string, relPath: string, content: string): string {
@@ -23,7 +22,7 @@ function relativeSource(root: string, sourceFile: unknown): string {
   return relative(root, String(sourceFile ?? '')).replaceAll('\\', '/')
 }
 
-describe('extract JS/TS path aliases for runtime proof', () => {
+describe('extract JS/TS path aliases across files', () => {
   it('resolves aliased barrel imports and surfaces external imported member calls', () => {
     const sandbox = createSandbox()
     try {
@@ -126,43 +125,6 @@ describe('extract JS/TS path aliases for runtime proof', () => {
         expect.objectContaining({ source: linkMiddleware?.id, target: recordClick?.id, relation: 'calls' }),
         expect.objectContaining({ source: linkMiddleware?.id, target: redirectEffect?.id, relation: 'calls' }),
       ]))
-
-      const prompt = 'How does Dub resolve a short-link click from request handling through analytics tracking and destination redirect?'
-      const retrieval = retrieveContext(graph, {
-        question: prompt,
-        budget: 3000,
-        taskKind: 'explain',
-        retrievalStrategy: 'slice-v1',
-        runtimeProofProfile: {
-          prompt,
-          strict_runtime_proof: true,
-          expected_spi: false,
-          obligations: [
-            { id: 'request_handling', label: 'request handling', kind: 'entrypoint', evidence_terms: ['request', 'route', 'handler', 'click', 'middleware'] },
-            { id: 'analytics_tracking', label: 'analytics tracking', kind: 'terminal', evidence_terms: ['analytics', 'track', 'click'] },
-            { id: 'destination_redirect', label: 'destination redirect', kind: 'terminal', evidence_terms: ['redirect', 'destination', 'location'] },
-          ],
-        },
-      })
-
-      expect(retrieval.execution_slice?.status).toBe('complete')
-      expect(retrieval.answer_contract?.runtime_proof).toEqual(expect.objectContaining({
-        missing_obligations: [],
-        obligations: expect.arrayContaining([
-          expect.objectContaining({
-            id: 'request_handling',
-            evidence: expect.arrayContaining([expect.objectContaining({ label: 'LinkMiddleware()' })]),
-          }),
-          expect.objectContaining({
-            id: 'analytics_tracking',
-            evidence: expect.arrayContaining([expect.objectContaining({ label: 'recordClick()' })]),
-          }),
-          expect.objectContaining({
-            id: 'destination_redirect',
-            evidence: expect.arrayContaining([expect.objectContaining({ label: 'NextResponse.redirect' })]),
-          }),
-        ]),
-      }))
     } finally {
       rmSync(sandbox, { recursive: true, force: true })
     }

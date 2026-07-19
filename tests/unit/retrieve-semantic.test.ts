@@ -93,7 +93,7 @@ describe('retrieve semantic path', () => {
     }))
 
     const { retrieveContextAsync } = await import('../../src/runtime/retrieve.js')
-    const graph = new KnowledgeGraph()
+    const graph = new KnowledgeGraph({ directed: true })
     graph.addNode('auth_service', {
       label: 'AuthService.login',
       file_type: 'code',

@@ -1,0 +1,26 @@
+**Note on method:** The Madar MCP server connected but exposes no callable graph tools — `mcp__madar__retrieve`/`impact`/`graph_summary` don't resolve through `ToolSearch` (tried direct `select:` and keyword lookups; its resource listing responds but returns nothing). That's the pack contract's "MCP server unavailable" condition, so this answer comes from a bounded, focused read of the booking subsystem rather than a graph pack.
+
+## How Cal.diy turns a booking request into validation → persistence → notification
+
+The whole flow is orchestrated by **`RegularBookingService.createBooking`** in `packages/features/bookings/lib/service/RegularBookingService.ts` (the `handleNewBooking` handler is wired to it via DI). A request enters from the client (`create-booking.ts` POSTs `/api/book/event`) and passes through these stages:
+
+### 1. Availability validation
+- Pre-checks: `getEventType` / `getBookingData`, `checkIfBookerEmailIsBlocked`, `checkActiveBookingsLimitForBooker`, then `checkBookingAndDurationLimitsService.checkBookingAndDurationLimits` (RegularBookingService.ts:817).
+- Core gate: **`ensureAvailableUsers`** (`handleNewBooking/ensureAvailableUsers.ts`, called at :902/:936/:962/:1066). It pulls busy times (`getBusyTimesForLimitChecks`), computes each host's availability (`userAvailabilityService.getUsersAvailability` + `buildDateRanges`), applies any `restrictionSchedule`, and runs `checkForConflicts`. Users with no matching date-range/conflict are filtered out; if none remain it throws (`ErrorCode.NoAvailableUsersFound`).
+- Time-bounds checks: `validateBookingTimeIsNotOutOfBounds`, `validateEventLength`.
+
+### 2. Scheduled-event persistence
+- **`createBooking`** (`handleNewBooking/createBooking.ts`) → `saveBooking` runs `prisma.$transaction(tx.booking.create(...))`, writing the booking with nested `attendees` and `references`, and status **`ACCEPTED`** when `isConfirmedByDefault`, else **`PENDING`** (createBooking.ts:139–192).
+- If confirmed, **`EventManager.create(evt, { skipCalendarEvent })`** (`EventManager.ts`, RegularBookingService.ts:2052) creates the actual calendar events and video/conferencing meetings across installed integrations, returning `results` + `referencesToCreate`. The `iCalUID` and location are reconciled back onto the booking, and integration `references` are persisted via a follow-up `booking.update` (:2141, :2461). Seated events go through `handleSeats`; reschedules use `eventManager.reschedule` instead.
+
+### 3. Notification delivery
+- **Emails/SMS** via `BookingEmailSmsHandler` (`emailsAndSmsHandler.send`) with the action-specific payload: `confirmed` (:2153), `rescheduled` (:2031), or `requested` (:2197) for confirmation-required bookings.
+- **`fireBookingEvents`** (`bookingEventHandler`, :2217) emits internal booking events.
+- **Webhooks:** `handleWebhookTrigger` dispatches `BOOKING_CREATED`/`BOOKING_RESCHEDULED` (:2432), plus `BOOKING_PAYMENT_INITIATED` when payment is required; `scheduleTrigger` schedules `MEETING_STARTED`/`MEETING_ENDED`; PENDING bookings enqueue via `webhookProducer.queueBookingRequestedWebhook` (:2466). `scheduleNoShowTriggers` and `handleAnalyticsEvents` run at the end.
+
+### Branch caveats
+- **Requires confirmation** → booking saved as PENDING, `EventManager` is skipped, only "requested" emails + `BOOKING_REQUESTED` fire; the calendar event/confirmed notifications happen later through `handleConfirmation`.
+- **Requires payment** → the service returns early with `paymentRequired` before completing the normal notification tail.
+- **Dry-run** short-circuits DB writes, real EventManager calls, emails, and webhooks (uses `buildDryRunEventManager`).
+
+Key files: `service/RegularBookingService.ts` (orchestrator), `handleNewBooking/ensureAvailableUsers.ts` (availability), `handleNewBooking/createBooking.ts` (persistence), `EventManager.ts` (calendar/video), `BookingEmailSmsHandler.ts` + `handleWebhookTrigger.ts` + `webhooks/lib/scheduleTrigger` (delivery).

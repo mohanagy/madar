@@ -29,6 +29,7 @@ import { QUERY_TOKEN_ESTIMATOR, estimateQueryTokens, loadGraph } from '../runtim
 import { resolveToolProfileFromEnv, type McpToolProfile } from '../runtime/stdio/definitions.js'
 import { sidecarAwareFileFingerprint } from '../shared/binary-ingest-sidecar.js'
 import { sanitizeShareSafeText, toShareSafeArtifactPath, type ShareSafePathRoots } from '../shared/share-safe-artifacts.js'
+import { readGraphSourceRoot } from '../shared/graph-source-root.js'
 import { resolveShellCommand, shellEscape } from '../shared/shell.js'
 import { MAX_TEXT_BYTES, validateGraphOutputPath, validateGraphPath } from '../shared/security.js'
 import { copyWorkspaceForBenchmark } from '../shared/workspace-copy.js'
@@ -130,15 +131,23 @@ export interface CompareMadarTraceTurnSummary {
 
 const RAW_TRACE_TOOL_INPUTS = Symbol('rawTraceToolInputs')
 const RAW_TRACE_TOOL_RESULTS = Symbol('rawTraceToolResults')
+const RAW_TRACE_TOOL_ARGUMENTS = Symbol('rawTraceToolArguments')
+const RAW_TRACE_EVENTS = Symbol('rawTraceEvents')
 
 interface CompareMadarTraceToolResult {
   tool_name: string
   payload: Record<string, unknown>
 }
 
+type CompareMadarTraceEvent =
+  | { kind: 'tool_use'; tool_name: string }
+  | { kind: 'tool_result'; tool_name: string; payload: Record<string, unknown> }
+
 type CompareMadarTraceTurnSummaryWithInputs = CompareMadarTraceTurnSummary & {
   [RAW_TRACE_TOOL_INPUTS]?: string[]
   [RAW_TRACE_TOOL_RESULTS]?: CompareMadarTraceToolResult[]
+  [RAW_TRACE_TOOL_ARGUMENTS]?: unknown[]
+  [RAW_TRACE_EVENTS]?: CompareMadarTraceEvent[]
 }
 
 function rawTraceToolInputs(turn: CompareMadarTraceTurnSummary): string[] {
@@ -154,6 +163,19 @@ function appendRawTraceToolInputs(turn: CompareMadarTraceTurnSummary, inputs: re
   })
 }
 
+function rawTraceToolArguments(turn: CompareMadarTraceTurnSummary): unknown[] {
+  return (turn as CompareMadarTraceTurnSummaryWithInputs)[RAW_TRACE_TOOL_ARGUMENTS] ?? []
+}
+
+function appendRawTraceToolArguments(turn: CompareMadarTraceTurnSummary, argumentsList: readonly unknown[]): void {
+  const current = rawTraceToolArguments(turn)
+  Object.defineProperty(turn, RAW_TRACE_TOOL_ARGUMENTS, {
+    value: [...current, ...argumentsList],
+    enumerable: false,
+    configurable: true,
+  })
+}
+
 function rawTraceToolResults(turn: CompareMadarTraceTurnSummary): CompareMadarTraceToolResult[] {
   return (turn as CompareMadarTraceTurnSummaryWithInputs)[RAW_TRACE_TOOL_RESULTS] ?? []
 }
@@ -162,6 +184,19 @@ function appendRawTraceToolResults(turn: CompareMadarTraceTurnSummary, results: 
   const current = rawTraceToolResults(turn)
   Object.defineProperty(turn, RAW_TRACE_TOOL_RESULTS, {
     value: [...current, ...results],
+    enumerable: false,
+    configurable: true,
+  })
+}
+
+function rawTraceEvents(turn: CompareMadarTraceTurnSummary): CompareMadarTraceEvent[] {
+  return (turn as CompareMadarTraceTurnSummaryWithInputs)[RAW_TRACE_EVENTS] ?? []
+}
+
+function appendRawTraceEvents(turn: CompareMadarTraceTurnSummary, events: readonly CompareMadarTraceEvent[]): void {
+  const current = rawTraceEvents(turn)
+  Object.defineProperty(turn, RAW_TRACE_EVENTS, {
+    value: [...current, ...events],
     enumerable: false,
     configurable: true,
   })
@@ -918,11 +953,11 @@ function canonicalTraceToolName(toolName: string): string {
 }
 
 function nativeAgentPromptContractEntryTool(profile: McpToolProfile): 'context_pack' | 'retrieve' {
-  return profile === 'full' ? 'context_pack' : 'retrieve'
+  return profile === 'full' || profile === 'strict' ? 'context_pack' : 'retrieve'
 }
 
 function nativeAgentPromptContractEntryToolNames(profile: McpToolProfile): ReadonlySet<string> {
-  return profile === 'full' ? MADAR_CONTEXT_PACK_TOOL_NAMES : MADAR_CORE_ENTRY_TOOL_NAMES
+  return profile === 'full' || profile === 'strict' ? MADAR_CONTEXT_PACK_TOOL_NAMES : MADAR_CORE_ENTRY_TOOL_NAMES
 }
 
 function nativeAgentPromptContractSuccessEvidence(profile: McpToolProfile): string {
@@ -946,6 +981,12 @@ function isFocusedFollowUpTraceToolName(toolName: string): boolean {
 
 function isBroadExplorationTraceToolName(toolName: string): boolean {
   return TRACE_BROAD_EXPLORATION_TOOL_NAMES.has(toolName.toLowerCase())
+}
+
+function isPreMadarRepositoryExplorationToolName(toolName: string): boolean {
+  // A raw file read is narrower than an after-pack search, but it still
+  // violates the first-pack contract if it happens before context_pack.
+  return isBroadExplorationTraceToolName(toolName) || isFocusedFollowUpTraceToolName(toolName)
 }
 
 function isToolSearchTraceToolName(toolName: string): boolean {
@@ -1109,7 +1150,7 @@ function analyzeMadarTraceExploration(perTurn: CompareMadarTraceTurnSummary[]): 
       }
 
       if (!hadSeenMadarCall) {
-        if (isBroadExplorationTraceToolName(toolName)) {
+        if (isPreMadarRepositoryExplorationToolName(toolName)) {
           preMadarBroadExplorationToolCallCount += 1
           preMadarBroadExplorationToolCallsByName[toolName] = (preMadarBroadExplorationToolCallsByName[toolName] ?? 0) + 1
         }
@@ -1466,8 +1507,10 @@ function extractMadarTrace(stdout: string): CompareMadarTrace | undefined {
     const existingTurn = perTurnIndex.get(turn)
     const tools: string[] = []
     const toolInputs: string[] = []
+    const toolArguments: unknown[] = []
     const directives: string[] = []
     const toolResults: CompareMadarTraceToolResult[] = []
+    const traceEvents: CompareMadarTraceEvent[] = []
     let madarToolDiscoveryCount = 0
     const madarToolDiscoveryToolIndexes: number[] = []
     for (const contentPart of content) {
@@ -1484,6 +1527,8 @@ function extractMadarTrace(stdout: string): CompareMadarTrace | undefined {
         const toolIndex = tools.length
         tools.push(toolName)
         toolInputs.push(summarizeTraceToolInput(contentPart.input))
+        toolArguments.push(contentPart.input)
+        traceEvents.push({ kind: 'tool_use', tool_name: toolName })
         toolCallsByName[toolName] = (toolCallsByName[toolName] ?? 0) + 1
         totalToolCalls += 1
         if (isMadarToolDiscoveryToolUse(toolName, contentPart.input)) {
@@ -1492,7 +1537,13 @@ function extractMadarTrace(stdout: string): CompareMadarTrace | undefined {
         }
       }
 
-      toolResults.push(...extractTraceToolResults(contentPart))
+      const contentToolResults = extractTraceToolResults(contentPart)
+      toolResults.push(...contentToolResults)
+      traceEvents.push(...contentToolResults.map((result) => ({
+        kind: 'tool_result' as const,
+        tool_name: result.tool_name,
+        payload: result.payload,
+      })))
       directives.push(...extractTraceAgentDirectives(contentPart))
     }
 
@@ -1505,7 +1556,9 @@ function extractMadarTrace(stdout: string): CompareMadarTrace | undefined {
       existingTurn.tool_call_count += tools.length
       existingTurn.tools.push(...tools)
       appendRawTraceToolInputs(existingTurn, toolInputs)
+      appendRawTraceToolArguments(existingTurn, toolArguments)
       appendRawTraceToolResults(existingTurn, toolResults)
+      appendRawTraceEvents(existingTurn, traceEvents)
       if (madarToolDiscoveryCount > 0) {
         existingTurn.madar_tool_discovery_count = (existingTurn.madar_tool_discovery_count ?? 0) + madarToolDiscoveryCount
         existingTurn.madar_tool_discovery_tool_indexes = [
@@ -1533,7 +1586,9 @@ function extractMadarTrace(stdout: string): CompareMadarTrace | undefined {
       ...(directives.length > 0 ? { agent_directive_seen: directives } : {}),
     }
     appendRawTraceToolInputs(turnSummary, toolInputs)
+    appendRawTraceToolArguments(turnSummary, toolArguments)
     appendRawTraceToolResults(turnSummary, toolResults)
+    appendRawTraceEvents(turnSummary, traceEvents)
     perTurnIndex.set(turn, turnSummary)
   }
 
@@ -1661,6 +1716,82 @@ function traceFocusedFollowUpInputs(trace: CompareMadarTrace): string[] {
   }
 
   return followUpInputs
+}
+
+function contextPackPromptFromTraceArguments(input: unknown, depth = 0): string | null {
+  if (depth > 4) {
+    return null
+  }
+  if (typeof input === 'string') {
+    try {
+      return contextPackPromptFromTraceArguments(JSON.parse(input) as unknown, depth + 1)
+    } catch {
+      return null
+    }
+  }
+  if (!isRecord(input)) {
+    return null
+  }
+  if (typeof input.prompt === 'string') {
+    return input.prompt
+  }
+  for (const key of ['arguments', 'params', 'input']) {
+    const nested = contextPackPromptFromTraceArguments(input[key], depth + 1)
+    if (nested !== null) {
+      return nested
+    }
+  }
+  return null
+}
+
+function traceContextPackPrompts(trace: CompareMadarTrace): Array<string | null> {
+  const prompts: Array<string | null> = []
+  for (const turn of trace.per_turn) {
+    const argumentsList = rawTraceToolArguments(turn)
+    for (const [index, toolName] of turn.tools.entries()) {
+      if (canonicalTraceToolName(toolName) === 'context_pack') {
+        prompts.push(contextPackPromptFromTraceArguments(argumentsList[index]))
+      }
+    }
+  }
+  return prompts
+}
+
+function isTerminalContextPackPayload(payload: Record<string, unknown>): boolean {
+  const evidence = isRecord(payload.evidence) ? payload.evidence : null
+  const answerability = evidence && isRecord(evidence.answerability) ? evidence.answerability : null
+  const state = answerability?.state
+  return state === 'ready' || state === 'ready_with_caveat'
+}
+
+function traceToolUsesAfterTerminalContextPack(trace: CompareMadarTrace): string[] {
+  const laterToolUses: string[] = []
+  let terminalPackSeen = false
+  for (const turn of trace.per_turn) {
+    for (const event of rawTraceEvents(turn)) {
+      if (event.kind === 'tool_result') {
+        if (canonicalTraceToolName(event.tool_name) === 'context_pack' && isTerminalContextPackPayload(event.payload)) {
+          terminalPackSeen = true
+        }
+        continue
+      }
+      if (terminalPackSeen) {
+        laterToolUses.push(event.tool_name)
+      }
+    }
+  }
+  return laterToolUses
+}
+
+function traceHasTerminalContextPackResult(trace: CompareMadarTrace): boolean {
+  for (const turn of trace.per_turn) {
+    for (const result of rawTraceToolResults(turn)) {
+      if (canonicalTraceToolName(result.tool_name) === 'context_pack' && isTerminalContextPackPayload(result.payload)) {
+        return true
+      }
+    }
+  }
+  return false
 }
 
 function mergeMatchedNodes(
@@ -1991,16 +2122,7 @@ function portablePath(path: string): string {
 }
 
 function inferProjectRootFromGraphPath(graphPath: string): string {
-  let currentPath = dirname(resolve(graphPath))
-
-  while (dirname(currentPath) !== currentPath) {
-    if (basename(currentPath) === 'out') {
-      return dirname(currentPath)
-    }
-    currentPath = dirname(currentPath)
-  }
-
-  return dirname(resolve(graphPath))
+  return readGraphSourceRoot(graphPath)
 }
 
 export function resolveSuggestedGraphScopePath(graphPath: string, suggestedGraphScope: string): string {
@@ -2216,7 +2338,6 @@ function retrieveCompareContext(
   budget: number,
   projectRoot: string,
   taskKind: ContextPackTaskKind = 'explain',
-  runtimeProofProfile?: RuntimeProofProfile,
 ): RetrieveResult {
   const { graph: retrievalGraph, originalSourceFiles } = createCompareRetrievalGraph(graph, projectRoot)
   const originalCwd = process.cwd()
@@ -2227,12 +2348,9 @@ function retrieveCompareContext(
       question,
       budget: Math.max(budget, 200),
       taskKind,
-      ...(
-        gate.signals.generation_intent === 'runtime_generation' || runtimeProofProfile?.strict_runtime_proof === true
-          ? { retrievalStrategy: 'slice-v1' as const }
-          : {}
-      ),
-      ...(runtimeProofProfile ? { runtimeProofProfile } : {}),
+      ...(gate.signals.generation_intent === 'runtime_generation'
+        ? { retrievalStrategy: 'slice-v1' as const }
+        : {}),
     })
     for (const matchedNode of retrieval.matched_nodes) {
       matchedNode.source_file = originalSourceFiles.get(matchedNode.source_file) ?? matchedNode.source_file
@@ -2317,10 +2435,9 @@ function benchmarkReadinessSeverity(current: BenchmarkReadinessStatus, next: Ben
 export function assessBenchmarkReadinessFromRetrieveResult(input: {
   graphPath: string
   retrieval: BenchmarkReadinessRetrieval
-  runtimeProofProfile?: RuntimeProofProfile
 }): BenchmarkReadiness {
-  const { graphPath, retrieval, runtimeProofProfile } = input
-  if (!strictRuntimeProofModeApplies(retrieval, runtimeProofProfile)) {
+  const { graphPath, retrieval } = input
+  if (!runtimeFlowProofModeApplies(retrieval)) {
     return {
       status: 'ready',
       reasons: [],
@@ -2332,22 +2449,10 @@ export function assessBenchmarkReadinessFromRetrieveResult(input: {
   const reasons: string[] = []
   const sourceFiles = collectBenchmarkReadinessSourceFiles(retrieval)
   const suggestedGraphScope = suggestBenchmarkGraphScope(graphPath, sourceFiles)
-  const runtimeProof = runtimeProofAssessment(retrieval)
-  const missingObligations = runtimeProofMissingObligationLabels(runtimeProofProfile, runtimeProof)
   const missingPhases = [...new Set([
     ...(retrieval.answer_contract?.missing_phases ?? []),
     ...(retrieval.execution_slice?.phase_coverage?.missing ?? []),
   ])].filter((phase) => BENCHMARK_READINESS_CRITICAL_PHASES.has(phase))
-
-  if (runtimeProofProfile?.strict_runtime_proof && !runtimeProof) {
-    status = benchmarkReadinessSeverity(status, 'not_ready')
-    reasons.push('runtime proof obligations were not assessed')
-  }
-
-  if (missingObligations.length > 0) {
-    status = benchmarkReadinessSeverity(status, 'not_ready')
-    reasons.push(`missing runtime proof obligations: ${missingObligations.join(', ')}`)
-  }
 
   if (missingPhases.length >= 3) {
     status = benchmarkReadinessSeverity(status, 'not_ready')
@@ -2366,7 +2471,7 @@ export function assessBenchmarkReadinessFromRetrieveResult(input: {
     reasons.push('runtime slice confidence is medium')
   }
 
-  if ((runtimeProofProfile?.expected_spi ?? true) && !graphPathHasSpiMode(graphPath)) {
+  if (!graphPathHasSpiMode(graphPath)) {
     status = benchmarkReadinessSeverity(status, suggestedGraphScope ? 'not_ready' : 'degraded')
     reasons.push(
       suggestedGraphScope
@@ -2387,43 +2492,17 @@ export function assessBenchmarkReadinessFromRetrieveResult(input: {
   }
 }
 
-function runtimeProofAssessment(retrieval: BenchmarkReadinessRetrieval): RuntimeProofAssessment | undefined {
-  return retrieval.answer_contract?.runtime_proof
-}
-
-function runtimeProofMissingObligationLabels(
-  runtimeProofProfile: RuntimeProofProfile | undefined,
-  runtimeProof: RuntimeProofAssessment | undefined,
-): string[] {
-  if (!runtimeProofProfile || !runtimeProof) {
-    return []
-  }
-  return runtimeProof.missing_obligations.map((id) =>
-    runtimeProofProfile.obligations.find((obligation) => obligation.id === id)?.label
-      ?? id.replaceAll('_', ' '),
-  )
-}
-
-function strictRuntimeProofModeApplies(
-  retrieval: BenchmarkReadinessRetrieval,
-  runtimeProofProfile?: RuntimeProofProfile,
-): boolean {
-  return runtimeProofProfile?.strict_runtime_proof === true
-    || (
-      retrieval.retrieval_gate?.signals.generation_intent === 'runtime_generation'
+function runtimeFlowProofModeApplies(retrieval: BenchmarkReadinessRetrieval): boolean {
+  return retrieval.retrieval_gate?.signals.generation_intent === 'runtime_generation'
     && retrieval.retrieval_gate?.signals.target_domain_hint === 'backend_runtime'
     && retrieval.retrieval_gate?.signals.generation_debug?.flow_proof_shaped === true
-    )
 }
 
-function strictRuntimeProofPromptOptions(
+function runtimeFlowPromptOptions(
   retrieval: RetrieveResult,
   benchmarkReadiness: BenchmarkReadiness,
-  runtimeProofProfile?: RuntimeProofProfile,
 ): {
   missingPhases?: string[]
-  missingObligations?: string[]
-  requiredObligations?: string[]
   rescopedTo?: string | null
   retrievalReady?: boolean
 } | undefined {
@@ -2431,27 +2510,19 @@ function strictRuntimeProofPromptOptions(
     ...(retrieval.answer_contract?.missing_phases ?? []),
     ...(retrieval.execution_slice?.phase_coverage?.missing ?? []),
   ])]
-  const missingObligations = runtimeProofMissingObligationLabels(runtimeProofProfile, runtimeProofAssessment(retrieval))
   const retrievalConfidence = retrieval.answer_contract?.confidence ?? retrieval.execution_slice?.confidence
-  const retrievalReady = runtimeProofProfile?.strict_runtime_proof === true
-    && benchmarkReadiness.status === 'ready'
+  const retrievalReady = benchmarkReadiness.status === 'ready'
     && missingPhases.length === 0
-    && missingObligations.length === 0
     && retrievalConfidence === 'high'
   const forceForDegradedReadiness = benchmarkReadiness.status !== 'ready'
-    && (missingPhases.length > 0 || missingObligations.length > 0)
-  const forceForRuntimeProofProfile = runtimeProofProfile?.strict_runtime_proof === true
+    && missingPhases.length > 0
 
-  if (!strictRuntimeProofModeApplies(retrieval, runtimeProofProfile) && !forceForDegradedReadiness && !forceForRuntimeProofProfile) {
+  if (!runtimeFlowProofModeApplies(retrieval) && !forceForDegradedReadiness) {
     return undefined
   }
 
   return {
     ...(missingPhases.length > 0 ? { missingPhases } : {}),
-    ...(missingObligations.length > 0 ? { missingObligations } : {}),
-    ...(runtimeProofProfile?.obligations.length
-      ? { requiredObligations: runtimeProofProfile.obligations.map((obligation) => obligation.label) }
-      : {}),
     ...(benchmarkReadiness.rescoped_to ? { rescopedTo: benchmarkReadiness.rescoped_to } : {}),
     ...(retrievalReady ? { retrievalReady: true } : {}),
   }
@@ -2466,7 +2537,6 @@ function prepareNativeAgentBenchmarkReadiness(input: {
   taskKind: ContextPackTaskKind
   graphCache: Map<string, KnowledgeGraph>
   assessBenchmarkReadiness?: (input: BenchmarkReadinessInput) => BenchmarkReadiness
-  runtimeProofProfile?: RuntimeProofProfile
 }): {
   retrieval: RetrieveResult
   benchmarkReadiness: BenchmarkReadiness
@@ -2481,7 +2551,6 @@ function prepareNativeAgentBenchmarkReadiness(input: {
       : assessBenchmarkReadinessFromRetrieveResult({
           graphPath,
           retrieval,
-          ...(input.runtimeProofProfile ? { runtimeProofProfile: input.runtimeProofProfile } : {}),
         })
 
   const retrieval = retrieveCompareContext(
@@ -2490,12 +2559,11 @@ function prepareNativeAgentBenchmarkReadiness(input: {
     input.budget,
     input.projectRoot,
     input.taskKind,
-    input.runtimeProofProfile,
   )
   const benchmarkReadiness = assessReadiness(input.graphPath, retrieval)
   if (
     input.assessBenchmarkReadiness
-    || !strictRuntimeProofModeApplies(retrieval, input.runtimeProofProfile)
+    || !runtimeFlowProofModeApplies(retrieval)
     || !benchmarkReadiness.suggested_graph_scope
   ) {
     return { retrieval, benchmarkReadiness }
@@ -2538,12 +2606,10 @@ function prepareNativeAgentBenchmarkReadiness(input: {
       input.budget,
       currentProjectRoot,
       input.taskKind,
-      input.runtimeProofProfile,
     )
     currentBenchmarkReadiness = assessBenchmarkReadinessFromRetrieveResult({
       graphPath: currentGraphPath,
       retrieval: currentRetrieval,
-      ...(input.runtimeProofProfile ? { runtimeProofProfile: input.runtimeProofProfile } : {}),
     })
   }
 
@@ -2725,10 +2791,8 @@ export function buildNativeAgentPrompt(
       profile?: McpToolProfile
       task?: ContextPackTaskKind
       implementation?: ImplementationPackGuidance
-      strictRuntimeProof?: {
+      runtimeFlowGuidance?: {
         missingPhases?: string[]
-        missingObligations?: string[]
-        requiredObligations?: string[]
         rescopedTo?: string | null
         retrievalReady?: boolean
       }
@@ -2743,7 +2807,13 @@ export function buildNativeAgentPrompt(
     return [
       'Follow the Madar implementation-pack contract exactly.',
       'Implement the requested change using the Madar implementation pack.',
-      'Call context_pack first for implementation tasks before editing files or broad raw repo search.',
+      ...(profile === 'strict'
+        ? [
+            'Call mcp__madar__context_pack exactly once before editing files or raw repository search.',
+            'Copy the exact Question text below byte-for-byte into context_pack.prompt; do not restate, expand, enumerate, split, or issue a second context_pack call.',
+            'Use the single context pack as implementation guidance. Do not make another Madar MCP call or restart repository discovery; native edits and validation commands remain required.',
+          ]
+        : ['Call context_pack first for implementation tasks before editing files or broad raw repo search.']),
       'Inspect likely_edit_files, likely_test_files, validation_commands, cautions, and risk boundaries before making any changes.',
       'Prefer the likely_edit_files set first; editing outside the likely_edit_files or likely_test_files set requires an explicit reason.',
       'Run the listed validation_commands before concluding.',
@@ -2759,57 +2829,56 @@ export function buildNativeAgentPrompt(
     ].join('\n')
   }
 
-  const profileInstructions = profile === 'full'
+  const profileInstructions = profile === 'strict'
+    ? [
+        'Call mcp__madar__context_pack exactly once before any raw file or broad repository search.',
+        'Copy the exact Question text below byte-for-byte into context_pack.prompt; do not restate, expand, enumerate, split, or issue a second context_pack call.',
+        'Strict exposes only context_pack and context_expand. Use task=impact or task=review on the first pack instead of graph-navigation tools.',
+        'Treat evidence.answerability.state as authoritative; evidence.pack_confidence is compatibility-only.',
+        'For ready, answer from the pack. For ready_with_caveat, answer from the pack and state evidence.answerability.caveats. Both are terminal: make no later MCP, Read, Bash, Glob, or Grep call.',
+        'For verify_targets, use context_expand only once with one listed evidence.answerability.verification_targets handle.',
+        'Only insufficient with evidence.answerability.broad_search_fallback set to allowed permits one directory-scoped raw search.',
+        'Madar already ran bounded cumulative recovery; do not restart repository discovery for ready, ready_with_caveat, or verify_targets.',
+      ]
+    : profile === 'full'
     ? [
         'Call context_pack first for explain, review, impact, or runtime questions before any raw file or broad repo search.',
-        'Inspect evidence.pack_confidence, evidence.coverage, evidence.agent_directive, missing_context, and recommended_first_read before deciding what to do next.',
-        'If evidence.agent_directive is answer_from_pack, answer from the pack and stop without raw search.',
+        'Treat evidence.answerability.state as authoritative; evidence.pack_confidence is compatibility-only.',
+        'For ready, answer from the pack. For ready_with_caveat, answer from the pack and state evidence.answerability.caveats.',
+        'For verify_targets, inspect only a listed evidence.answerability.verification_targets handle or file.',
+        'Only insufficient with evidence.answerability.broad_search_fallback set to allowed permits one directory-scoped raw search.',
         'Do not call community_overview, graph_summary, get_community, query_graph, or other broad graph-navigation tools for task-specific compare runs.',
-        'Allow at most one focused raw file read or search when evidence.agent_directive is verify_one_targeted_file or explore_with_caution.',
-        'Broad raw search requires an explicit missing-context reason grounded in missing_context or coverage gaps.',
-        'If the pack is low confidence or incomplete, answer with a clear caveat after that one focused follow-up instead of continuing to explore.',
+        'Madar already ran bounded cumulative recovery; do not restart repository discovery for ready, ready_with_caveat, or verify_targets.',
       ]
     : [
         'Call retrieve first for explain or runtime questions before any raw file or broad repo search.',
         'Call mcp__madar__retrieve directly for this benchmark run. Do not use ToolSearch before the first Madar call.',
-        'For strict runtime-proof benchmark questions, call mcp__madar__retrieve with retrieval_strategy: "slice-v1".',
-        'Inspect execution_slice, answer_contract.runtime_proof, matched_nodes, snippets, relationships, and community context before deciding what to do next.',
-        'If retrieve already answers the question, answer from the retrieved evidence and stop without raw search.',
+        'For runtime-flow questions, call mcp__madar__retrieve with retrieval_strategy: "slice-v1".',
+        'Inspect execution_slice, answer_contract, matched_nodes, snippets, relationships, and community context before deciding what to do next.',
+        'Treat evidence.answerability.state as authoritative; evidence.pack_confidence is compatibility-only.',
+        'For ready, answer from the result. For ready_with_caveat, answer from it and state evidence.answerability.caveats.',
+        'For verify_targets, inspect only a listed evidence.answerability.verification_targets handle or file.',
+        'Only insufficient with evidence.answerability.broad_search_fallback set to allowed permits one directory-scoped raw search.',
         'Do not call community_overview, graph_summary, get_community, query_graph, or other broad graph-navigation tools for task-specific compare runs.',
-        'Allow at most one focused raw file read or search when retrieve leaves a specific gap.',
-        'Broad raw search requires an explicit missing-context reason grounded in gaps from the retrieve result.',
-        'If retrieve is low confidence or incomplete, answer with a clear caveat after that one focused follow-up instead of continuing to explore.',
+        'Madar already ran bounded cumulative recovery; do not restart repository discovery for ready, ready_with_caveat, or verify_targets.',
       ]
-  const strictRuntimeProofInstructions = options.strictRuntimeProof
+  const runtimeFlowInstructions = options.runtimeFlowGuidance
     ? [
-        'This question requires strict runtime proof.',
-        ...(options.strictRuntimeProof.requiredObligations && options.strictRuntimeProof.requiredObligations.length > 0
-          ? [
-              'Required proof checklist:',
-              ...options.strictRuntimeProof.requiredObligations.map((obligation) => `- ${obligation}`),
-              'Answer only if every required obligation has direct evidence.',
-              'If one required obligation is still missing after one focused follow-up, answer exactly: not enough evidence; missing <obligation>',
-            ]
+        `This question asks for a runtime flow grounded in ${profile === 'strict' ? 'context-pack' : 'retrieved'} evidence.`,
+        ...(options.runtimeFlowGuidance.rescopedTo
+          ? [`Start from the auto-rescoped graph scope: ${options.runtimeFlowGuidance.rescopedTo}.`]
           : []),
-        ...(options.strictRuntimeProof.rescopedTo
-          ? [`Start from the auto-rescoped graph scope: ${options.strictRuntimeProof.rescopedTo}.`]
-          : []),
-        ...(options.strictRuntimeProof.missingObligations && options.strictRuntimeProof.missingObligations.length > 0
+        ...(options.runtimeFlowGuidance.missingPhases && options.runtimeFlowGuidance.missingPhases.length > 0
           ? [
-              `Use at most one focused follow-up to surface the missing ${options.strictRuntimeProof.missingObligations.join(', ')} obligation${options.strictRuntimeProof.missingObligations.length === 1 ? '' : 's'}.`,
-            ]
-          : []),
-        ...(options.strictRuntimeProof.missingPhases && options.strictRuntimeProof.missingPhases.length > 0
-          ? [
-              `Use at most one focused follow-up to surface the missing ${options.strictRuntimeProof.missingPhases.join(', ')} phase.`,
-              `If the flow still cannot be proven, answer: not enough evidence; missing ${options.strictRuntimeProof.missingPhases.join(', ')}`,
+              `Use only an exact evidence.answerability.verification_targets entry to verify the missing ${options.runtimeFlowGuidance.missingPhases.join(', ')} phase.`,
+              `If the flow still cannot be proven, answer: not enough evidence; missing ${options.runtimeFlowGuidance.missingPhases.join(', ')}`,
             ]
           : ['If the flow still cannot be proven, answer: not enough evidence']),
-        ...(options.strictRuntimeProof.retrievalReady
+        ...(options.runtimeFlowGuidance.retrievalReady
           ? [
-              'Retrieve already provides complete direct evidence for every required obligation.',
-              'Answer from the retrieved evidence only; do not use Bash, Read, or raw file search.',
-              'Do not say "did not surface", "not directly", or similar missing-evidence caveats once the required obligations are satisfied.',
+              `${profile === 'strict' ? 'The initial context pack' : 'Retrieve'} already provides a complete high-confidence runtime slice.`,
+              `Answer from the ${profile === 'strict' ? 'context pack' : 'retrieved evidence'} only; do not use Bash, Read, or raw file search.`,
+              'Do not add missing-evidence caveats unless the retrieved slice actually reports a gap.',
             ]
           : []),
         'Do not give a confident partial flow answer.',
@@ -2819,9 +2888,9 @@ export function buildNativeAgentPrompt(
   return [
     'Follow the Madar pack contract exactly.',
     ...profileInstructions,
-    ...strictRuntimeProofInstructions,
+    ...runtimeFlowInstructions,
     'Any broad search before the first Madar call violates the prompt contract.',
-    options.strictRuntimeProof?.retrievalReady
+    options.runtimeFlowGuidance?.retrievalReady
       ? 'Keep the answer concise: key steps and key files only.'
       : 'Keep the answer concise: key steps, key files, and caveats only.',
     '',
@@ -2909,7 +2978,7 @@ export function generateCompareArtifacts(input: GenerateCompareArtifactsInput): 
 
     const retrieval = retrieveCompareContext(graph, question, retrievalBudget, projectRoot)
     const madarPrompt = buildMadarPromptPack({
-      graphPath: input.graphPath,
+      graphPath,
       question,
       retrieval,
       ...(madarSession ? { session: madarSession } : {}),
@@ -3458,6 +3527,7 @@ export interface NativeAgentToolCallCounts {
 
 export type ImplementValidationStatus = 'passed' | 'failed' | 'setup_error' | 'not_run'
 export type ReviewerVisibleStatus = 'passed' | 'failed' | 'not_scored'
+export type NativeAgentHumanReviewStatus = 'pending' | 'passed' | 'failed'
 
 export interface ImplementValidationCommandResult {
   command: string
@@ -3566,9 +3636,12 @@ export interface NativeAgentCompareReport {
       missing_required_terms: string[]
       forbidden_terms_present: string[]
     }
-    required_concepts: string[]
-    answer_quality_notes: string[]
-    manual_review_notes: string[]
+    human_review: {
+      status: NativeAgentHumanReviewStatus
+      required_concepts: string[]
+      answer_quality_notes: string[]
+      manual_review_notes: string[]
+    } | null
   }
   paths: {
     output_dir: string
@@ -3592,7 +3665,12 @@ export interface NativeAgentCompareResult {
     madar_passed: number
     madar_required_terms_missing: number
     madar_forbidden_terms_present: number
-    manual_review_required: number
+    human_review: {
+      pending: number
+      passed: number
+      failed: number
+      not_configured: number
+    }
   }
 }
 
@@ -3692,7 +3770,6 @@ interface ImplementationReviewerVisibleGate {
 interface ImplementationWorkspace {
   tempRoot: string
   workspaceRoot: string
-  graphPath: string
 }
 
 function loadImplementationReviewerVisibleGates(questionsPath?: string | null): Map<string, ImplementationReviewerVisibleGate> {
@@ -3776,18 +3853,13 @@ function diffWorkspaceSnapshots(before: Map<string, number>, after: Map<string, 
   return [...changed].sort()
 }
 
-function prepareImplementationWorkspace(projectRoot: string, graphPath: string): ImplementationWorkspace {
+function prepareImplementationWorkspace(projectRoot: string): ImplementationWorkspace {
   const tempRoot = mkdtempSync(join(tmpdir(), 'madar-compare-arm-'))
   const workspaceRoot = join(tempRoot, 'workspace')
   copyWorkspaceForBenchmark(projectRoot, workspaceRoot, { sharedTopLevelEntries: ['node_modules'] })
-  const relativeGraphPath = relative(projectRoot, graphPath)
-  const workspaceGraphPath = join(workspaceRoot, relativeGraphPath)
-  mkdirSync(dirname(workspaceGraphPath), { recursive: true })
-  writeFileSync(workspaceGraphPath, readFileSync(graphPath, 'utf8'), 'utf8')
   return {
     tempRoot,
     workspaceRoot,
-    graphPath: workspaceGraphPath,
   }
 }
 
@@ -3802,13 +3874,19 @@ function classifyValidationFailure(stdout: string, stderr: string): 'failed' | '
   return /cannot find module|command not found|enoent|missing script/i.test(`${stdout}\n${stderr}`) ? 'setup_error' : 'failed'
 }
 
-async function runShellCommand(command: string, options: { cwd?: string; signal?: AbortSignal } = {}): Promise<{
+async function runShellCommand(command: string, options: {
+  cwd?: string
+  signal?: AbortSignal
+  loginShell?: boolean
+} = {}): Promise<{
   exitCode: number
   stdout: string
   stderr: string
 }> {
   return await new Promise((resolveExecution, rejectExecution) => {
-    const shellCommand = resolveShellCommand(command)
+    const shellCommand = resolveShellCommand(command, process.platform, {
+      login: options.loginShell ?? true,
+    })
     const useProcessGroup = shellCommand.useProcessGroup
     const child = spawn(shellCommand.file, shellCommand.args, {
       shell: false,
@@ -3901,7 +3979,11 @@ async function runImplementationValidationCommands(
     }, timeoutMs)
     let execution: { exitCode: number; stdout: string; stderr: string }
     try {
-      execution = await runShellCommand(command, { cwd: workspaceRoot, signal: controller.signal })
+      execution = await runShellCommand(command, {
+        cwd: workspaceRoot,
+        signal: controller.signal,
+        loginShell: false,
+      })
     } finally {
       clearTimeout(timeoutHandle)
     }
@@ -4090,6 +4172,11 @@ interface NativeAgentAnswerQualityGate {
   require_direct_evidence: boolean
   required_answer_terms: string[]
   forbidden_answer_terms: string[]
+}
+
+interface NativeAgentHumanReviewGate {
+  prompt: string
+  status: NativeAgentHumanReviewStatus
   required_concepts: string[]
   answer_quality_notes: string[]
   manual_review_notes: string[]
@@ -4146,6 +4233,23 @@ function parseNativeAgentAnswerQualityGate(gateName: string, value: unknown): Na
     require_direct_evidence: gate.require_direct_evidence === true,
     required_answer_terms: parseAnswerQualityStringArray(gateName, 'required_answer_terms', gate.required_answer_terms),
     forbidden_answer_terms: parseAnswerQualityStringArray(gateName, 'forbidden_answer_terms', gate.forbidden_answer_terms, { allowEmpty: true }),
+  }
+}
+
+function parseNativeAgentHumanReviewGate(gateName: string, value: unknown): NativeAgentHumanReviewGate {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`Malformed human review gate "${gateName}": expected an object`)
+  }
+  const gate = value as Record<string, unknown>
+  if (typeof gate.prompt !== 'string' || gate.prompt.trim().length === 0) {
+    throw new Error(`Malformed human review gate "${gateName}": prompt must be a non-empty string`)
+  }
+  if (gate.status !== 'pending' && gate.status !== 'passed' && gate.status !== 'failed') {
+    throw new Error(`Malformed human review gate "${gateName}": status must be pending, passed, or failed`)
+  }
+  return {
+    prompt: gate.prompt.trim(),
+    status: gate.status,
     required_concepts: parseAnswerQualityStringArray(gateName, 'required_concepts', gate.required_concepts),
     answer_quality_notes: parseAnswerQualityStringArray(gateName, 'answer_quality_notes', gate.answer_quality_notes),
     manual_review_notes: parseAnswerQualityStringArray(gateName, 'manual_review_notes', gate.manual_review_notes),
@@ -4170,6 +4274,25 @@ function loadNativeAgentAnswerQualityGates(
 
   return new Map(
     Object.entries(parsed).map(([gateName, gate]) => [gateName, parseNativeAgentAnswerQualityGate(gateName, gate)]),
+  )
+}
+
+function loadNativeAgentHumanReviewGates(
+  questionsPath: string | null | undefined,
+): Map<string, NativeAgentHumanReviewGate> {
+  if (!questionsPath) {
+    return new Map()
+  }
+  const configPath = join(dirname(resolve(questionsPath)), 'human-review.json')
+  if (!existsSync(configPath)) {
+    return new Map()
+  }
+  const parsed = JSON.parse(readFileSync(configPath, 'utf8')) as unknown
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`Malformed human review config: expected a JSON object at ${configPath}`)
+  }
+  return new Map(
+    Object.entries(parsed).map(([gateName, gate]) => [gateName, parseNativeAgentHumanReviewGate(gateName, gate)]),
   )
 }
 
@@ -4205,48 +4328,21 @@ function evaluateNativeAgentAnswerQualityRun(
   }
 }
 
-function obligationCitationTerms(
-  obligation: RuntimeProofAssessment['obligations'][number],
-  uniqueBasenames: ReadonlySet<string>,
-): string[] {
-  return [...new Set(
-    obligation.evidence.flatMap((evidence) => {
-      const normalizedLabel = normalizeAnswerQualityText(evidence.label)
-      const terms = [normalizedLabel]
-      const normalizedCallPrefix = normalizeAnswerQualityText(evidence.label.replace(/\(\)\s*$/, '('))
-      if (normalizedCallPrefix.length > 0 && normalizedCallPrefix !== normalizedLabel) {
-        terms.push(normalizedCallPrefix)
-      }
-      const normalizedBasename = normalizeAnswerQualityText(basename(evidence.source_file))
-      if (normalizedBasename.length > 0 && uniqueBasenames.has(normalizedBasename)) {
-        terms.push(normalizedBasename)
-      }
-      return terms
-    }).filter((value) => value.length > 0),
-  )]
-}
-
 function missingRuntimeProofCitations(
   answerText: string,
-  pack: CompareReportPack | undefined,
   runtimeProofProfile: RuntimeProofProfile | undefined,
 ): string[] {
   if (runtimeProofProfile?.strict_runtime_proof !== true) {
     return []
   }
-  const runtimeProof = pack?.answer_contract?.runtime_proof
-  if (!runtimeProof) {
-    return []
-  }
+
   const normalizedAnswer = normalizeAnswerQualityText(answerText)
   const basenameCounts = new Map<string, number>()
-  for (const obligation of runtimeProof.obligations) {
-    if (!obligation.required || obligation.evidence.length === 0) {
-      continue
-    }
+  for (const obligation of runtimeProofProfile.obligations) {
     const obligationBasenames = new Set(
-      obligation.evidence
-        .map((evidence) => normalizeAnswerQualityText(basename(evidence.source_file)))
+      obligation.evidence_terms
+        .filter((term) => term.includes('/') || term.includes('\\'))
+        .map((term) => normalizeAnswerQualityText(basename(term)))
         .filter((value) => value.length > 0),
     )
     for (const normalizedBasename of obligationBasenames) {
@@ -4258,11 +4354,20 @@ function missingRuntimeProofCitations(
       .filter(([, count]) => count === 1)
       .map(([normalizedBasename]) => normalizedBasename),
   )
-  return runtimeProof.obligations.flatMap((obligation) => {
-    if (!obligation.required || obligation.evidence.length === 0) {
-      return []
-    }
-    const citationTerms = obligationCitationTerms(obligation, uniqueBasenames)
+
+  return runtimeProofProfile.obligations.flatMap((obligation) => {
+    const citationTerms = [...new Set(obligation.evidence_terms.flatMap((term) => {
+      const normalizedTerm = normalizeAnswerQualityText(term)
+      const normalizedCallPrefix = normalizeAnswerQualityText(term.replace(/\(\)\s*$/, '('))
+      const normalizedBasename = term.includes('/') || term.includes('\\')
+        ? normalizeAnswerQualityText(basename(term))
+        : ''
+      return [
+        normalizedTerm,
+        ...(normalizedCallPrefix !== normalizedTerm ? [normalizedCallPrefix] : []),
+        ...(uniqueBasenames.has(normalizedBasename) ? [normalizedBasename] : []),
+      ].filter((value) => value.length > 0)
+    }))]
     return citationTerms.some((term) => normalizedAnswer.includes(term))
       ? []
       : [`direct evidence citation: ${obligation.label}`]
@@ -4271,11 +4376,11 @@ function missingRuntimeProofCitations(
 
 function evaluateNativeAgentAnswerQualityReport(
   gates: ReadonlyMap<string, NativeAgentAnswerQualityGate> | null,
+  humanReviewGates: ReadonlyMap<string, NativeAgentHumanReviewGate>,
   question: string,
   baselineAnswerPath: string,
   madarAnswerPath: string,
   options: {
-    pack?: CompareReportPack | undefined
     runtimeProofProfile?: RuntimeProofProfile | undefined
   } = {},
 ): NativeAgentCompareReport['answer_quality'] | undefined {
@@ -4291,25 +4396,39 @@ function evaluateNativeAgentAnswerQualityReport(
   }
 
   const [gateName, gate] = match
+  const humanReview = humanReviewGates.get(gateName)
+    ?? [...humanReviewGates.values()].find((entry) => entry.prompt === question)
   const baselineAnswer = readFileSync(baselineAnswerPath, 'utf8')
   const madarAnswer = readFileSync(madarAnswerPath, 'utf8')
   const baseline = evaluateNativeAgentAnswerQualityRun(gate, baselineAnswer)
   const madar = evaluateNativeAgentAnswerQualityRun(gate, madarAnswer)
-  const missingCitations = gate.require_direct_evidence
-    ? missingRuntimeProofCitations(madarAnswer, options.pack, options.runtimeProofProfile)
+  const baselineMissingCitations = gate.require_direct_evidence
+    ? missingRuntimeProofCitations(baselineAnswer, options.runtimeProofProfile)
+    : []
+  const madarMissingCitations = gate.require_direct_evidence
+    ? missingRuntimeProofCitations(madarAnswer, options.runtimeProofProfile)
     : []
   return {
     gate: gateName,
     prompt: gate.prompt,
-    baseline,
+    baseline: {
+      passed: baseline.passed && baselineMissingCitations.length === 0,
+      missing_required_terms: [...baseline.missing_required_terms, ...baselineMissingCitations],
+      forbidden_terms_present: baseline.forbidden_terms_present,
+    },
     madar: {
-      passed: madar.passed && missingCitations.length === 0,
-      missing_required_terms: [...madar.missing_required_terms, ...missingCitations],
+      passed: madar.passed && madarMissingCitations.length === 0,
+      missing_required_terms: [...madar.missing_required_terms, ...madarMissingCitations],
       forbidden_terms_present: madar.forbidden_terms_present,
     },
-    required_concepts: gate.required_concepts,
-    answer_quality_notes: gate.answer_quality_notes,
-    manual_review_notes: gate.manual_review_notes,
+    human_review: humanReview
+      ? {
+          status: humanReview.status,
+          required_concepts: humanReview.required_concepts,
+          answer_quality_notes: humanReview.answer_quality_notes,
+          manual_review_notes: humanReview.manual_review_notes,
+        }
+      : null,
   }
 }
 
@@ -4333,10 +4452,12 @@ function summarizeNativeAgentAnswerQuality(
       (total, report) => total + (report.answer_quality?.madar.forbidden_terms_present.length ?? 0),
       0,
     ),
-    manual_review_required: checkedReports.reduce(
-      (total, report) => total + (report.answer_quality?.manual_review_notes.length ?? 0),
-      0,
-    ),
+    human_review: {
+      pending: checkedReports.filter((report) => report.answer_quality?.human_review?.status === 'pending').length,
+      passed: checkedReports.filter((report) => report.answer_quality?.human_review?.status === 'passed').length,
+      failed: checkedReports.filter((report) => report.answer_quality?.human_review?.status === 'failed').length,
+      not_configured: checkedReports.filter((report) => report.answer_quality?.human_review === null).length,
+    },
   }
 }
 
@@ -4959,7 +5080,7 @@ function nativeAgentAttributionGapEvidence(report: NativeAgentCompareReport): st
 }
 
 function assessNativeAgentPromptContract(
-  report: Pick<NativeAgentCompareReport, 'trace_status' | 'madar_trace' | 'benchmark_readiness'>,
+  report: Pick<NativeAgentCompareReport, 'question' | 'task' | 'trace_status' | 'madar_trace' | 'benchmark_readiness'>,
   toolProfile: McpToolProfile,
   runtimeProofProfile?: RuntimeProofProfile,
 ): NativeAgentPromptContractAssessment {
@@ -4971,6 +5092,7 @@ function assessNativeAgentPromptContract(
   }
 
   const evidence: string[] = []
+  const measurementGaps: string[] = []
   if (report.madar_trace.madar_mcp_call_count === 0) {
     evidence.push('no Madar MCP call was recorded')
   }
@@ -4982,6 +5104,47 @@ function assessNativeAgentPromptContract(
   }
   if ((report.madar_trace.pre_madar_broad_exploration_tool_call_count ?? 0) > 0) {
     evidence.push('broad exploration occurred before the first Madar call')
+  }
+  if (toolProfile === 'strict') {
+    if (report.madar_trace.context_pack_call_count !== 1) {
+      evidence.push(`strict profile requires exactly one context_pack call (recorded ${report.madar_trace.context_pack_call_count})`)
+    }
+    const packPrompts = traceContextPackPrompts(report.madar_trace)
+    if (packPrompts.length === 1) {
+      if (packPrompts[0] === null) {
+        measurementGaps.push('strict context_pack prompt was unavailable in the trace')
+      } else if (packPrompts[0] !== report.question) {
+        evidence.push('strict context_pack prompt did not byte-match the user question')
+      }
+    }
+    if (traceHasTerminalContextPackResult(report.madar_trace)) {
+      const postTerminalToolUses = traceToolUsesAfterTerminalContextPack(report.madar_trace)
+      if (postTerminalToolUses.some((toolName) => isMadarTraceToolName(toolName))) {
+        evidence.push('terminal strict context_pack was followed by another Madar MCP call')
+      }
+      const otherMcpTool = postTerminalToolUses.find((toolName) => (
+        toolName.startsWith('mcp__') && !isMadarTraceToolName(toolName)
+      ))
+      if (otherMcpTool) {
+        evidence.push(`terminal strict context_pack was followed by another MCP call: ${otherMcpTool}`)
+      }
+      if (report.task !== 'implement' && postTerminalToolUses.some((toolName) => (
+        isFocusedFollowUpTraceToolName(toolName) || isBroadExplorationTraceToolName(toolName)
+      ))) {
+        evidence.push('terminal strict context_pack was followed by repository exploration')
+      }
+      const unclassifiedNativeTool = postTerminalToolUses.find((toolName) => (
+        !isMadarTraceToolName(toolName)
+        && !toolName.startsWith('mcp__')
+        && !isFocusedFollowUpTraceToolName(toolName)
+        && !isBroadExplorationTraceToolName(toolName)
+      ))
+      if (unclassifiedNativeTool) {
+        measurementGaps.push(
+          `terminal strict context_pack was followed by unclassified native tool call: ${unclassifiedNativeTool}; trace cannot prove terminal compliance`,
+        )
+      }
+    }
   }
   if (report.madar_trace.broad_exploration_tool_call_count > 0) {
     if (evidence.length > 0) {
@@ -5041,6 +5204,12 @@ function assessNativeAgentPromptContract(
     return {
       status: 'violated',
       evidence,
+    }
+  }
+  if (measurementGaps.length > 0) {
+    return {
+      status: 'not_measured',
+      evidence: measurementGaps,
     }
   }
 
@@ -5206,7 +5375,7 @@ export async function executeNativeAgentCompare(
   const graphCache = new Map<string, KnowledgeGraph>([[graphPath, graph]])
   const reports: NativeAgentCompareReport[] = []
   const answerQualityGates = loadNativeAgentAnswerQualityGates(input.questionsPath)
-  const runtimeProofProfiles = loadBenchmarkRuntimeProofProfiles(input.questionsPath)
+  const humanReviewGates = loadNativeAgentHumanReviewGates(input.questionsPath)
   const reviewerVisibleGates = task === 'implement' ? loadImplementationReviewerVisibleGates(input.questionsPath) : new Map()
   const environment = await captureBenchmarkEnvironment({ projectRoot })
   const isolation = benchmarkIsolationEnabled()
@@ -5216,7 +5385,6 @@ export async function executeNativeAgentCompare(
   }
 
   const preparedQuestions = questions.map((question, index) => {
-    const runtimeProofProfile = matchBenchmarkRuntimeProofProfile(runtimeProofProfiles, question)
     const questionDir = questions.length === 1 ? outputRoot : join(outputRoot, `question-${String(index + 1).padStart(3, '0')}`)
     mkdirSync(questionDir, { recursive: true })
     const { retrieval, benchmarkReadiness } = prepareNativeAgentBenchmarkReadiness({
@@ -5227,7 +5395,6 @@ export async function executeNativeAgentCompare(
       projectRoot,
       taskKind: task,
       graphCache,
-      ...(runtimeProofProfile ? { runtimeProofProfile } : {}),
       ...(assessBenchmarkReadiness ? { assessBenchmarkReadiness } : {}),
     })
     const comparePack = compareReportPackFromRetrieveResult(retrieval)
@@ -5243,13 +5410,13 @@ export async function executeNativeAgentCompare(
     const madarPromptFile = join(questionDir, 'madar-prompt.txt')
     const legacyPromptFile = join(questionDir, 'native_agent-prompt.txt')
     const baselinePrompt = buildNativeAgentBaselinePrompt(question, { task })
-    const strictRuntimeProof = benchmarkReadiness
-      ? strictRuntimeProofPromptOptions(retrieval, benchmarkReadiness, runtimeProofProfile)
+    const runtimeFlowGuidance = benchmarkReadiness
+      ? runtimeFlowPromptOptions(retrieval, benchmarkReadiness)
       : undefined
     const madarPrompt = buildNativeAgentPrompt(question, {
       profile: installCheck.tool_profile,
       task,
-      ...(strictRuntimeProof ? { strictRuntimeProof } : {}),
+      ...(runtimeFlowGuidance ? { runtimeFlowGuidance } : {}),
       ...(implementationGuidance ? { implementation: implementationGuidance } : {}),
     })
     writeFileSync(baselinePromptFile, baselinePrompt, 'utf8')
@@ -5331,7 +5498,6 @@ export async function executeNativeAgentCompare(
       implementationGuidance,
       reviewerVisibleGate: reviewerVisibleGates.get(question),
       comparePack,
-      runtimeProofProfile,
     }
   })
 
@@ -5358,10 +5524,9 @@ export async function executeNativeAgentCompare(
       implementationGuidance,
       reviewerVisibleGate,
       comparePack,
-      runtimeProofProfile,
     } = entry
-    const baselineWorkspace = task === 'implement' ? prepareImplementationWorkspace(projectRoot, graphPath) : null
-    const madarWorkspace = task === 'implement' ? prepareImplementationWorkspace(projectRoot, graphPath) : null
+    const baselineWorkspace = task === 'implement' ? prepareImplementationWorkspace(projectRoot) : null
+    const madarWorkspace = task === 'implement' ? prepareImplementationWorkspace(projectRoot) : null
     let baselineTouchedFiles: string[] = []
     let madarTouchedFiles: string[] = []
     let baselineWorkspaceSnapshot = baselineWorkspace ? snapshotWorkspaceFiles(baselineWorkspace.workspaceRoot) : null
@@ -5693,7 +5858,6 @@ export async function executeNativeAgentCompare(
         const mergedBenchmarkReadiness = assessBenchmarkReadinessFromRetrieveResult({
           graphPath,
           retrieval: effectiveComparePack,
-          ...(runtimeProofProfile ? { runtimeProofProfile } : {}),
         })
         const existingSuggestedGraphScope = reportShell.benchmark_readiness.suggested_graph_scope
         const sanitizedMergedReasons =
@@ -5728,13 +5892,19 @@ export async function executeNativeAgentCompare(
       madarTrace: reportShell.madar_trace,
       strictMadarFirst: input.strictMadarFirst,
     })
+    // Load expected evidence only after both arms have answered. These profiles
+    // are grader inputs and must never influence retrieval or prompt creation.
+    const runtimeProofProfile = matchBenchmarkRuntimeProofProfile(
+      loadBenchmarkRuntimeProofProfiles(input.questionsPath),
+      question,
+    )
     const answerQuality = evaluateNativeAgentAnswerQualityReport(
       answerQualityGates,
+      humanReviewGates,
       question,
       baselineAnswerPath,
       madarAnswerPath,
       {
-        pack: effectiveComparePack ?? comparePack,
         runtimeProofProfile,
       },
     )
@@ -6004,8 +6174,9 @@ export function formatNativeAgentCompareSummary(result: NativeAgentCompareResult
     )
   }
   if (result.answer_quality) {
+    const humanReview = result.answer_quality.human_review
     lines.push(
-      `- Answer quality: madar ${result.answer_quality.madar_passed}/${result.answer_quality.questions_checked} passed deterministic gates · baseline ${result.answer_quality.baseline_passed}/${result.answer_quality.questions_checked} passed deterministic gates · ${formatCount(result.answer_quality.manual_review_required, 'manual-review note', 'manual-review notes')}`,
+      `- Answer quality: madar ${result.answer_quality.madar_passed}/${result.answer_quality.questions_checked} passed deterministic gates · baseline ${result.answer_quality.baseline_passed}/${result.answer_quality.questions_checked} passed deterministic gates · human review ${humanReview.passed} passed, ${humanReview.failed} failed, ${humanReview.pending} pending, ${humanReview.not_configured} not configured`,
     )
   }
   const traceOutcomeSummary = formatNativeAgentMadarTraceOutcomeSummary(result.reports)
@@ -6108,8 +6279,9 @@ export function formatNativeAgentCompareSummary(result: NativeAgentCompareResult
         ...report.answer_quality.madar.missing_required_terms.map((term) => `missing ${term}`),
         ...report.answer_quality.madar.forbidden_terms_present.map((term) => `forbidden ${term}`),
       ]
+      const humanReviewStatus = report.answer_quality.human_review?.status ?? 'not configured'
       lines.push(
-        `    answer quality: baseline ${report.answer_quality.baseline.passed ? 'PASS' : `FAIL (${baselineFindings.join(', ')})`} · madar ${report.answer_quality.madar.passed ? 'PASS' : `FAIL (${madarFindings.join(', ')})`}${report.answer_quality.manual_review_notes.length > 0 ? ` · manual review: ${formatCount(report.answer_quality.manual_review_notes.length, 'note', 'notes')}` : ''}`,
+        `    answer quality: baseline ${report.answer_quality.baseline.passed ? 'PASS' : `FAIL (${baselineFindings.join(', ')})`} · madar ${report.answer_quality.madar.passed ? 'PASS' : `FAIL (${madarFindings.join(', ')})`} · human review: ${humanReviewStatus.toUpperCase()}`,
       )
     }
     if (report.implement_outcome) {

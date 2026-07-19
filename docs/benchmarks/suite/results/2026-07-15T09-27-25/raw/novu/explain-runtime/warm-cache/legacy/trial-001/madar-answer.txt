@@ -1,0 +1,42 @@
+I now have the complete, source-verified flow.
+
+---
+
+## How Novu processes a notification trigger (API entry → orchestration → delivery)
+
+**Note on method:** The Madar knowledge-graph MCP server never came online in this run (it stayed "still connecting" and exposed no `retrieve`/`impact`/other tool across repeated attempts). Per the fallback rule, I traced this directly from source in `legacy/apps`.
+
+### 1. API entry — accept and enqueue
+- **`POST /v1/events/trigger`** → `EventsController.trigger()` (`api/src/app/events/events.controller.ts:104`). A kill-switch guard runs, then it delegates to the `ParseEventRequest` usecase with a `ParseEventRequestMulticastCommand` (identifier = `body.name`, plus `payload`, `to`, `overrides`, `actor`, `tenant`, `transactionId`, etc.). Bulk (`/trigger/bulk`) and broadcast (`/trigger/broadcast`) are sibling endpoints.
+- **`ParseEventRequest`** (`usecases/parse-event-request/parse-event-request.usecase.ts`) validates the workflow/recipients, resolves the transaction, then `dispatchEventToWorkflowQueue()` builds an `IWorkflowDataDto` and calls `workflowQueueService.add(...)` (line 410). **The API returns immediately (`acknowledged`)** — everything past this point is async on the worker.
+
+### 2. Worker — fan-out to subscribers
+- **`WorkflowWorker`** (`worker/src/app/workflow/services/workflow.worker.ts`) consumes the *Workflow* queue and runs the **`TriggerEvent`** usecase (from `@novu/application-generic`). It resolves the workflow definition and fans each recipient out onto the **Subscriber-Process** queue.
+- **`SubscriberProcessWorker`** consumes that queue → **`SubscriberJobBound`** (`usecases/subscriber-job-bound`): upserts the subscriber (`CreateOrUpdateSubscriber`), then `CreateNotificationJobs` expands the workflow's steps into per-step `JobEntity` rows and `StoreSubscriberJobs` persists them and hands the first job to **`AddJob`**.
+
+### 3. Orchestration — per-step scheduling
+- **`AddJob`** (`usecases/add-job`) decides how each step enters execution:
+  - **Deferred steps** (`DIGEST`, `DELAY`, `THROTTLE`) → scheduled/aggregated with a computed delay.
+  - **Non-deferred steps** → `executeNoneDeferredJob()` → `standardQueueService.add(...)` (line 1082) onto the **Standard** queue.
+- **`StandardWorker`** (`services/standard.worker.ts`) consumes the Standard queue and runs **`RunJob`** (`usecases/run-job`).
+
+### 4. Channel delivery
+- **`RunJob`** marks the job `RUNNING`, applies scheduling/cancellation/unsnooze logic, then calls **`SendMessage`** (`usecases/send-message/send-message.usecase.ts`).
+- **`SendMessage.execute()`** switches on `StepTypeEnum` (line 175) and dispatches to the channel usecase: `SendMessageEmail`, `SendMessageSms`, `SendMessageInApp`, `SendMessageChat`, `SendMessagePush` (plus `DIGEST`, `DELAY`, custom/HTTP bridge steps). Each channel usecase selects the provider, renders content, and delivers.
+- On success `RunJob` sets the job `COMPLETED` and calls **`tryQueueNextJobs()`** (line 406) → **`QueueNextJob`** → `AddJob` again for the next step — chaining the workflow step-by-step until no steps remain.
+
+### Flow at a glance
+```
+POST /trigger → EventsController.trigger → ParseEventRequest → [Workflow queue]
+  → WorkflowWorker → TriggerEvent (fan-out) → [Subscriber-Process queue]
+  → SubscriberProcessWorker → SubscriberJobBound → CreateNotificationJobs / StoreSubscriberJobs → AddJob
+  → [Standard queue] → StandardWorker → RunJob → SendMessage → SendMessage{Email|Sms|InApp|Chat|Push}
+  → RunJob.tryQueueNextJobs → QueueNextJob → AddJob (next step) …
+```
+
+**Key files:** `events.controller.ts`, `parse-event-request.usecase.ts`, `workflow.worker.ts`, `subscriber-process.worker.ts`, `subscriber-job-bound.usecase.ts`, `add-job.usecase.ts`, `standard.worker.ts`, `run-job.usecase.ts`, `send-message.usecase.ts`.
+
+**Caveats:**
+- The design is fully queue-decoupled (BullMQ): Workflow → Subscriber-Process → Standard queues, so the trigger is acknowledged well before delivery.
+- `TriggerEvent` and the queue-service classes live in the `@novu/application-generic` library (outside `apps`), so their internals weren't inspected here — the fan-out description is inferred from the worker call sites.
+- Deferred steps (digest/delay/throttle) re-enter via delayed jobs rather than flowing straight through, and Bridge/code-first (Framework) workflows route step execution through `ExecuteBridgeJob` instead of static step definitions.

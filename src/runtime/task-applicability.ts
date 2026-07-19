@@ -359,8 +359,44 @@ export function formatTaskApplicabilityDebugMessage(classification: TaskApplicab
 export function buildPromptApplicabilityHookScript(
   matchPayloadJson: string,
   hookEventName: string,
+  graphPath = 'out/graph.json',
 ): string {
+  const graphAvailabilityFunction = graphPath === 'out/graph.json'
+    ? `function hasMadarGraph() {
+  let directory = process.cwd()
+  while (true) {
+    if (fs.existsSync(path.join(directory, 'out', 'graph.json'))) {
+      return true
+    }
+
+    // A linked Git worktree stores Madar artifacts below the common Git
+    // directory. Its MCP server builds that graph at session startup, so the
+    // prompt hook should still provide guidance instead of looking for the
+    // primary checkout's out/ directory.
+    try {
+      if (fs.lstatSync(path.join(directory, '.git')).isFile()) {
+        return true
+      }
+    } catch {}
+
+    const parent = path.dirname(directory)
+    if (parent === directory) {
+      return false
+    }
+    directory = parent
+  }
+}`
+    : `function hasMadarGraph() {
+  try {
+    fs.accessSync(${JSON.stringify(graphPath)})
+    return true
+  } catch {
+    return false
+  }
+}`
+
   return `const fs = require('fs')
+const path = require('path')
 
 const config = ${JSON.stringify(HOOK_CONFIG, null, 2)}
 const matchPayload = ${JSON.stringify(matchPayloadJson)}
@@ -370,6 +406,8 @@ const urlRe = ${URL_RE}
 const githubProjectUrlRe = ${GITHUB_PROJECT_URL_RE}
 const packageRegistryUrlRe = ${PACKAGE_REGISTRY_URL_RE}
 let input = ''
+
+${graphAvailabilityFunction}
 
 function normalizePrompt(prompt) {
   return String(prompt || '')
@@ -509,9 +547,7 @@ process.stdin.on('data', (chunk) => {
 })
 
 process.stdin.on('end', () => {
-  try {
-    fs.accessSync('out/graph.json')
-  } catch {
+  if (!hasMadarGraph()) {
     return
   }
 

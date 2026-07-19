@@ -75,6 +75,17 @@ function buildExpressRouteGraph(): KnowledgeGraph {
 
 describe('impact', () => {
   describe('analyzeImpact', () => {
+    it('rejects undirected graphs instead of reporting reverse-edge false positives', () => {
+      const graph = new KnowledgeGraph()
+      graph.addNode('caller', { label: 'caller', source_file: '/src/caller.ts' })
+      graph.addNode('dependency', { label: 'dependency', source_file: '/src/dependency.ts' })
+      graph.addEdge('caller', 'dependency', { relation: 'calls' })
+
+      expect(() => analyzeImpact(graph, {}, { label: 'caller' })).toThrow(
+        'Impact analysis requires a directed graph because edge orientation is part of the result.',
+      )
+    })
+
     it('finds direct dependents of a node', () => {
       const graph = buildTestGraph()
       const result = analyzeImpact(graph, {}, { label: 'authenticateUser' })
@@ -224,7 +235,7 @@ describe('impact', () => {
       const graph = build([
         extractJs(join(fixturesDir, 'express-mounted-router-parent.ts')),
         extractJs(join(fixturesDir, 'express-mounted-router-child.ts')),
-      ])
+      ], { directed: true })
 
       const result = analyzeImpact(graph, {}, { label: 'requireAuth' })
 
@@ -248,7 +259,7 @@ describe('impact', () => {
         extractJs(join(fixturesDir, 'express-nested-router-parent.ts')),
         extractJs(join(fixturesDir, 'express-nested-router-child.ts')),
         extractJs(join(fixturesDir, 'express-nested-router-grandchild.ts')),
-      ])
+      ], { directed: true })
 
       const authImpact = analyzeImpact(graph, {}, { label: 'requireAuth' })
       const auditImpact = analyzeImpact(graph, {}, { label: 'auditTrail' })
@@ -363,11 +374,11 @@ describe('impact', () => {
       const namespaceGraph = build([
         extractJs(join(fixturesDir, 'express-namespace-module-parent.ts')),
         extractJs(join(fixturesDir, 'express-namespace-module-child.ts')),
-      ])
+      ], { directed: true })
       const commonjsGraph = build([
         extractJs(join(fixturesDir, 'express-commonjs-module-parent.ts')),
         extractJs(join(fixturesDir, 'express-commonjs-module-child.ts')),
-      ])
+      ], { directed: true })
 
       const namespaceResult = analyzeImpact(namespaceGraph, {}, { label: 'requireAuth' })
       const commonjsResult = analyzeImpact(commonjsGraph, {}, { label: 'requireAuth' })
@@ -751,6 +762,17 @@ describe('impact', () => {
   })
 
   describe('callChains', () => {
+    it('rejects undirected graphs instead of inventing reverse call chains', () => {
+      const graph = new KnowledgeGraph()
+      graph.addNode('caller', { label: 'caller' })
+      graph.addNode('dependency', { label: 'dependency' })
+      graph.addEdge('caller', 'dependency', { relation: 'calls' })
+
+      expect(() => callChains(graph, 'dependency', 'caller')).toThrow(
+        'Call-chain analysis requires a directed graph because edge orientation is part of the result.',
+      )
+    })
+
     it('finds execution paths between two nodes', () => {
       const graph = buildTestGraph()
       const chains = callChains(graph, 'ApiHandler', 'DatabaseConnection')

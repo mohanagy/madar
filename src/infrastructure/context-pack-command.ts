@@ -29,7 +29,6 @@ import { resolveTaskSelection } from '../runtime/task-intent.js'
 import { compactRetrieveResult, retrieveContext, type RetrieveResult } from '../runtime/retrieve.js'
 import { buildImplementationPackGuidance } from '../runtime/implementation-pack.js'
 import {
-  agentDirectiveForEvidence,
   assessMadarResponseEvidence,
   collectWorkflowOwners,
   missingPhasesFromPayload,
@@ -44,7 +43,19 @@ selectedContextSourceFilesFromRetrieveResult,
 type GraphContextFreshness,
 } from '../runtime/freshness.js'
 import { buildRoutingDebug } from '../runtime/routing-debug.js'
+import {
+  buildRetrievalEvidencePlan,
+} from '../runtime/retrieve/pipeline.js'
+import {
+  evaluateQueryEvidenceCoverage,
+  queryEvidenceObligations,
+  type QueryEvidenceNode,
+} from '../runtime/retrieve/conceptual-fallback.js'
 import { communitiesFromGraph, estimateQueryTokens, loadGraph } from '../runtime/serve.js'
+import {
+  parseDiscoverySafetyMetadata,
+  type DiscoverySafetyMetadata,
+} from '../shared/discovery-safety.js'
 
 const DEFAULT_IMPACT_DEPTH = 3
 const IMPLEMENTATION_DISTRACTOR_PATTERN = /(?:helper|util|formatter|serializer|mapper|constant|generated|dist\/|build\/|lockfile|migration)/i
@@ -121,6 +132,8 @@ const ANSWER_READY_COMMUNITY_CAP = 6
 const ANSWER_READY_EXPLANATION_CAP = 3
 const ANSWER_READY_FIRST_READ_CAP = 3
 const ANSWER_READY_WORKFLOW_CENTER_CAP = 4
+const ANSWER_READY_SNIPPET_CHAR_CAP = 300
+const ANSWER_READY_SERIALIZATION_GUARD_TOKENS = 64
 const WORKFLOW_SPINE_BUDGET_REASON = 'budget too tight for workflow spine'
 
 interface AnswerReadyCullCandidate {
@@ -273,16 +286,17 @@ function collectWorkflowAnchorKeys(payload: JsonRecord): Set<string> {
     }
     keys.add(`label:${record.label}`)
   }
-  if (keys.size === 0) {
-    for (const entry of asUnknownArray(payload.claims)) {
-      const record = asJsonRecord(entry)
-      if (!record) {
-        continue
-      }
-      for (const label of asUnknownArray(record.node_labels)) {
-        if (typeof label === 'string' && label.length > 0) {
-          keys.add(`label:${label}`)
-        }
+  // Claims are part of the answer contract. Preserve every cited node even
+  // when a workflow spine already supplied anchors; otherwise a later budget
+  // cull can leave a precise claim pointing at an omitted source.
+  for (const entry of asUnknownArray(payload.claims)) {
+    const record = asJsonRecord(entry)
+    if (!record) {
+      continue
+    }
+    for (const label of asUnknownArray(record.node_labels)) {
+      if (typeof label === 'string' && label.length > 0) {
+        keys.add(`label:${label}`)
       }
     }
   }
@@ -386,7 +400,152 @@ function stripExpandableFocusRanges(payload: JsonRecord, trimmedFields: string[]
   return stripped
 }
 
-function compactAnswerReadyPack(pack: JsonRecord, trimmedFields: string[]): void {
+function queryEvidenceNodeFromRecord(record: JsonRecord | null): QueryEvidenceNode | null {
+  if (!record || typeof record.label !== 'string' || typeof record.source_file !== 'string') {
+    return null
+  }
+  return {
+    label: record.label,
+    source_file: record.source_file,
+    ...(typeof record.snippet === 'string' ? { snippet: record.snippet } : {}),
+  }
+}
+
+function selectAnswerReadyMatchedNodes(
+  question: string,
+  values: readonly unknown[],
+  claims: readonly unknown[],
+): unknown[] {
+  if (values.length <= ANSWER_READY_MATCHED_NODE_CAP) {
+    return values.slice(0, ANSWER_READY_MATCHED_NODE_CAP)
+  }
+
+  const claimAnchorIndexes = new Set<number>()
+  for (const claimValue of claims) {
+    const claim = asJsonRecord(claimValue)
+    for (const anchorLabel of asUnknownArray(claim?.node_labels)) {
+      if (typeof anchorLabel !== 'string') {
+        continue
+      }
+      const anchorIndex = values.findIndex((value) => asJsonRecord(value)?.label === anchorLabel)
+      if (anchorIndex >= 0) {
+        claimAnchorIndexes.add(anchorIndex)
+      }
+    }
+  }
+  const claimAnchorsFitPrefix = [...claimAnchorIndexes]
+    .every((index) => index < ANSWER_READY_MATCHED_NODE_CAP)
+  const obligations = queryEvidenceObligations(question)
+  if (obligations.length === 0 && claimAnchorsFitPrefix) {
+    return values.slice(0, ANSWER_READY_MATCHED_NODE_CAP)
+  }
+
+  const candidates = values
+    .map((value, index) => ({
+      index,
+      value,
+      record: asJsonRecord(value),
+      evidence: queryEvidenceNodeFromRecord(asJsonRecord(value)),
+    }))
+    .filter((candidate): candidate is typeof candidate & { record: JsonRecord; evidence: QueryEvidenceNode } => (
+      candidate.record !== null && candidate.evidence !== null
+    ))
+  const prefixEvidence = candidates
+    .filter((candidate) => candidate.index < ANSWER_READY_MATCHED_NODE_CAP)
+    .map((candidate) => candidate.evidence)
+  const fullEvidence = candidates.map((candidate) => candidate.evidence)
+  if (
+    claimAnchorsFitPrefix
+    && obligations.length > 0
+    && evaluateQueryEvidenceCoverage(question, prefixEvidence).covered
+    >= evaluateQueryEvidenceCoverage(question, fullEvidence).covered
+  ) {
+    return values.slice(0, ANSWER_READY_MATCHED_NODE_CAP)
+  }
+
+  const selected: typeof candidates = []
+  const selectedIndexes = new Set<number>()
+  const selectedSources = new Set<string>()
+  for (const anchorIndex of claimAnchorIndexes) {
+    if (selected.length >= ANSWER_READY_MATCHED_NODE_CAP) {
+      break
+    }
+    const candidate = candidates.find((entry) => entry.index === anchorIndex)
+    if (!candidate || selectedIndexes.has(candidate.index)) {
+      continue
+    }
+    selected.push(candidate)
+    selectedIndexes.add(candidate.index)
+    selectedSources.add(candidate.evidence.source_file)
+  }
+  let covered = evaluateQueryEvidenceCoverage(
+    question,
+    selected.map((entry) => entry.evidence),
+  ).covered
+  while (selected.length < ANSWER_READY_MATCHED_NODE_CAP) {
+    let best: (typeof candidates)[number] | null = null
+    let bestGain = 0
+    let bestSourceDiversity = -1
+    for (const candidate of candidates) {
+      if (selectedIndexes.has(candidate.index)) {
+        continue
+      }
+      const nextCoverage = evaluateQueryEvidenceCoverage(
+        question,
+        [...selected.map((entry) => entry.evidence), candidate.evidence],
+      ).covered
+      const gain = nextCoverage - covered
+      const sourceDiversity = selectedSources.has(candidate.evidence.source_file) ? 0 : 1
+      if (
+        gain > bestGain
+        || (gain === bestGain && gain > 0 && sourceDiversity > bestSourceDiversity)
+        || (gain === bestGain && gain > 0 && sourceDiversity === bestSourceDiversity && candidate.index < (best?.index ?? Number.POSITIVE_INFINITY))
+      ) {
+        best = candidate
+        bestGain = gain
+        bestSourceDiversity = sourceDiversity
+      }
+    }
+    if (!best || bestGain <= 0) {
+      break
+    }
+    selected.push(best)
+    selectedIndexes.add(best.index)
+    selectedSources.add(best.evidence.source_file)
+    covered += bestGain
+  }
+
+  for (const candidate of candidates) {
+    if (selected.length >= ANSWER_READY_MATCHED_NODE_CAP) {
+      break
+    }
+    if (!selectedIndexes.has(candidate.index) && !selectedSources.has(candidate.evidence.source_file)) {
+      selected.push(candidate)
+      selectedIndexes.add(candidate.index)
+      selectedSources.add(candidate.evidence.source_file)
+    }
+  }
+  for (let index = 0; index < values.length && selected.length < ANSWER_READY_MATCHED_NODE_CAP; index += 1) {
+    if (!selectedIndexes.has(index)) {
+      const candidate = candidates.find((entry) => entry.index === index)
+      if (candidate) {
+        selected.push(candidate)
+        selectedIndexes.add(index)
+      }
+    }
+  }
+
+  return selected
+    .sort((left, right) => left.index - right.index)
+    .map((candidate) => candidate.value)
+}
+
+function compactAnswerReadyPack(
+  question: string,
+  pack: JsonRecord,
+  claims: readonly unknown[],
+  trimmedFields: string[],
+): void {
   delete pack.workflow_centers
   delete pack.recommended_first_read
   delete pack.confidence_score
@@ -425,9 +584,236 @@ function compactAnswerReadyPack(pack: JsonRecord, trimmedFields: string[]): void
   }
 
   preserveTrimmedRuntimeEntrypointContextPreview(pack, trimmedFields)
-  trimArrayField(pack, 'matched_nodes', ANSWER_READY_MATCHED_NODE_CAP, trimmedFields)
+  const matchedNodes = asUnknownArray(pack.matched_nodes)
+  if (matchedNodes.length > ANSWER_READY_MATCHED_NODE_CAP) {
+    pack.matched_nodes = selectAnswerReadyMatchedNodes(question, matchedNodes, claims)
+    trimmedFields.push('pack.matched_nodes')
+  }
   trimArrayField(pack, 'relationships', ANSWER_READY_RELATIONSHIP_CAP, trimmedFields)
+  filterRelationshipsToRemainingNodes(pack, trimmedFields)
   trimArrayField(pack, 'community_context', ANSWER_READY_COMMUNITY_CAP, trimmedFields)
+}
+
+function compactAnswerReadyMatchedNodeMetadata(pack: JsonRecord, trimmedFields: string[]): void {
+  let compacted = false
+  const nodes = asUnknownArray(pack.matched_nodes)
+  for (const entry of nodes) {
+    const node = asJsonRecord(entry)
+    if (!node) {
+      continue
+    }
+    for (const field of ['match_score', 'relevance_band', 'representation_type', 'representation_reason']) {
+      if (Object.hasOwn(node, field)) {
+        delete node[field]
+        compacted = true
+      }
+    }
+    if (node.source_domain === 'production') {
+      delete node.source_domain
+      compacted = true
+    }
+    if (node.snippet_truncated === false) {
+      delete node.snippet_truncated
+      compacted = true
+    }
+  }
+  if (compacted) {
+    trimmedFields.push('pack.matched_nodes ranking metadata compacted')
+  }
+}
+
+function compactAnswerReadyExpandableHandles(payload: JsonRecord, trimmedFields: string[]): void {
+  const expandable = asUnknownArray(payload.expandable)
+  if (expandable.length === 0) {
+    return
+  }
+
+  payload.expandable = expandable
+    .map((entry) => asJsonRecord(entry))
+    .filter((entry): entry is JsonRecord => entry !== null)
+    .map((entry) => {
+      const followUp = asJsonRecord(entry.follow_up)
+      const evidenceClass = typeof entry.evidence_class === 'string' ? entry.evidence_class : 'supporting'
+      return {
+        kind: 'nodes',
+        ...(typeof entry.handle_id === 'string' ? { handle_id: entry.handle_id } : {}),
+        evidence_class: evidenceClass,
+        ...(typeof entry.count === 'number'
+          ? { count: entry.count }
+          : { count: asUnknownArray(entry.preview).length }),
+        preview: [],
+        follow_up: {
+          kind: 'context_pack',
+          task_kind: typeof followUp?.task_kind === 'string' ? followUp.task_kind : 'explain',
+          evidence_class: typeof followUp?.evidence_class === 'string' ? followUp.evidence_class : evidenceClass,
+          focus_files: asUnknownArray(followUp?.focus_files).slice(0, 2),
+          focus_ranges: asUnknownArray(followUp?.focus_ranges).slice(0, 1),
+        },
+      }
+    })
+    .filter((entry) => Object.hasOwn(entry, 'handle_id'))
+  trimmedFields.push('expandable handles compacted')
+}
+
+function compactAnswerReadyEvidenceForPressure(evidence: JsonRecord, trimmedFields: string[]): void {
+  let compacted = false
+
+  if (asUnknownArray(evidence.missing_phases).length === 0) {
+    delete evidence.missing_phases
+    compacted = true
+  }
+
+  const coverageDetail = asJsonRecord(evidence.coverage_detail)
+  if (coverageDetail && asUnknownArray(coverageDetail.missing_obligations).length === 0) {
+    evidence.coverage_detail = { status: coverageDetail.status }
+    compacted = true
+  }
+
+  const answerability = asJsonRecord(evidence.answerability)
+  if (answerability) {
+    for (const field of ['caveats', 'missing_obligations', 'verification_targets']) {
+      if (asUnknownArray(answerability[field]).length === 0) {
+        delete answerability[field]
+        compacted = true
+      }
+    }
+  }
+
+  const recovery = asJsonRecord(evidence.recovery)
+  if (recovery) {
+    evidence.recovery = { status: recovery.status }
+    compacted = true
+  }
+
+  const discovery = asJsonRecord(evidence.discovery_exclusions)
+  if (discovery && discovery.relevant === 0) {
+    evidence.discovery_exclusions = {
+      total: discovery.total,
+      relevant: 0,
+    }
+    compacted = true
+  }
+
+  const indexing = asJsonRecord(evidence.indexing_completeness)
+  if (indexing && indexing.relevant_uncertain === 0) {
+    evidence.indexing_completeness = {
+      state: indexing.state,
+      total_uncertain: indexing.total_uncertain,
+      relevant_uncertain: 0,
+    }
+    compacted = true
+  }
+
+  if (compacted) {
+    trimmedFields.push('evidence non-actionable detail compacted')
+  }
+}
+
+function compactAnswerReadyRelationships(pack: JsonRecord, trimmedFields: string[]): void {
+  const relationships = asUnknownArray(pack.relationships)
+  if (relationships.length === 0) {
+    return
+  }
+
+  pack.relationships = relationships
+    .map((entry) => asJsonRecord(entry))
+    .filter((entry): entry is JsonRecord => entry !== null)
+    .map((entry) => ({
+      ...(typeof entry.from_id === 'string'
+        ? { from_id: entry.from_id }
+        : typeof entry.from === 'string' ? { from: entry.from } : {}),
+      ...(typeof entry.to_id === 'string'
+        ? { to_id: entry.to_id }
+        : typeof entry.to === 'string' ? { to: entry.to } : {}),
+      ...(typeof entry.relation === 'string' ? { relation: entry.relation } : {}),
+    }))
+  trimmedFields.push('pack.relationships endpoint metadata compacted')
+}
+
+function compactAnswerReadyNodesForPressure(pack: JsonRecord, trimmedFields: string[]): void {
+  let compacted = false
+  for (const entry of asUnknownArray(pack.matched_nodes)) {
+    const node = asJsonRecord(entry)
+    if (!node) {
+      continue
+    }
+
+    if (node.file_type === 'code') {
+      delete node.file_type
+      compacted = true
+    }
+    for (const field of ['community', 'community_label']) {
+      if (Object.hasOwn(node, field)) {
+        delete node[field]
+        compacted = true
+      }
+    }
+
+    if (typeof node.snippet !== 'string') {
+      continue
+    }
+    const normalized = node.snippet.replace(/\s+/g, ' ').trim()
+    const truncated = normalized.length > ANSWER_READY_SNIPPET_CHAR_CAP
+      ? normalized.slice(0, ANSWER_READY_SNIPPET_CHAR_CAP).trimEnd()
+      : normalized
+    if (truncated !== node.snippet) {
+      node.snippet = truncated
+      compacted = true
+    }
+    if (normalized.length > truncated.length) {
+      node.snippet_truncated = true
+    }
+  }
+
+  if (compacted) {
+    trimmedFields.push('pack.matched_nodes snippets and defaults compacted')
+  }
+}
+
+function compactAnswerReadyPackForPressure(
+  payload: JsonRecord,
+  pack: JsonRecord,
+  trimmedFields: string[],
+): void {
+  if (pack.question === payload.prompt) {
+    delete pack.question
+    trimmedFields.push('pack.question duplicate')
+  }
+  for (const field of ['token_count', 'snippet_budget_tokens_used', 'snippet_budget_tokens_remaining']) {
+    if (Object.hasOwn(pack, field)) {
+      delete pack[field]
+      trimmedFields.push(`pack.${field}`)
+    }
+  }
+
+  const evidence = asJsonRecord(payload.evidence)
+  if (evidence?.recovery && Object.hasOwn(pack, 'recovery')) {
+    delete pack.recovery
+    trimmedFields.push('pack.recovery duplicate')
+  }
+
+  compactAnswerReadyNodesForPressure(pack, trimmedFields)
+  compactAnswerReadyRelationships(pack, trimmedFields)
+  const communities = asUnknownArray(pack.community_context)
+  if (communities.length > 1) {
+    pack.community_context = communities.slice(0, 1)
+    trimmedFields.push('pack.community_context compacted')
+  }
+}
+
+function compactAnswerReadyEnvelopeForPressure(payload: JsonRecord, trimmedFields: string[]): void {
+  for (const field of ['claims', 'cache']) {
+    if (Object.hasOwn(payload, field)) {
+      delete payload[field]
+      trimmedFields.push(field)
+    }
+  }
+
+  const routing = asJsonRecord(payload.routing)
+  if (routing && asUnknownArray(routing.warnings).length === 0) {
+    delete payload.routing
+    trimmedFields.push('routing')
+  }
 }
 
 function compactAnswerReadyGovernance(payload: JsonRecord, trimmedFields: string[]): void {
@@ -560,6 +946,38 @@ function trimGovernanceBeforeNodeCulling(payload: JsonRecord, maxTokens: number,
       delete directive.pack_confidence
       delete directive.coverage
       trimmedFields.push('governance.directive.pack_confidence', 'governance.directive.coverage')
+    })
+  }
+  if (directive) {
+    attempts.push(() => {
+      delete governance.directive
+      trimmedFields.push('governance.directive')
+    })
+  }
+  const graphFreshness = asJsonRecord(governance.graph_freshness)
+  if (graphFreshness) {
+    attempts.push(() => {
+      governance.graph_freshness = {
+        status: graphFreshness.status,
+        ...(graphFreshness.graph_version ? { graph_version: graphFreshness.graph_version } : {}),
+        ...(graphFreshness.selected_context_status
+          ? { selected_context_status: graphFreshness.selected_context_status }
+          : {}),
+        ...(typeof graphFreshness.changed_source_count === 'number' && graphFreshness.changed_source_count > 0
+          ? { changed_source_count: graphFreshness.changed_source_count }
+          : {}),
+        ...(typeof graphFreshness.missing_source_count === 'number' && graphFreshness.missing_source_count > 0
+          ? { missing_source_count: graphFreshness.missing_source_count }
+          : {}),
+        ...(typeof graphFreshness.changed_selected_context_count === 'number' && graphFreshness.changed_selected_context_count > 0
+          ? { changed_selected_context_count: graphFreshness.changed_selected_context_count }
+          : {}),
+        ...(typeof graphFreshness.missing_selected_context_count === 'number' && graphFreshness.missing_selected_context_count > 0
+          ? { missing_selected_context_count: graphFreshness.missing_selected_context_count }
+          : {}),
+        ...(graphFreshness.recommendation ? { recommendation: graphFreshness.recommendation } : {}),
+      }
+      trimmedFields.push('governance.graph_freshness metrics compacted')
     })
   }
 
@@ -924,14 +1342,64 @@ function downgradeWorkflowSpineConfidence(payload: JsonRecord, trimmedFields: st
     confidenceReasons.push(WORKFLOW_SPINE_BUDGET_REASON)
   }
   const coverage = typeof evidence.coverage === 'string' ? evidence.coverage : 'unknown'
-  evidence.pack_confidence = 'low'
+  const strength = asJsonRecord(evidence.evidence_strength)
+  if (strength) {
+    strength.level = 'weak'
+    const strengthReasons = asUnknownArray(strength.reasons).flatMap((value) => typeof value === 'string' ? [value] : [])
+    if (!strengthReasons.includes('serialized_workflow_spine_culled')) {
+      strengthReasons.push('serialized_workflow_spine_culled')
+    }
+    strength.reasons = strengthReasons
+  }
+  const serializationObligation = 'serialization:workflow_spine'
+  let coverageDetail = asJsonRecord(evidence.coverage_detail)
+  if (coverageDetail) {
+    coverageDetail.status = 'partial'
+    const missing = asUnknownArray(coverageDetail.missing_obligations).flatMap((value) => typeof value === 'string' ? [value] : [])
+    if (!missing.includes(serializationObligation)) {
+      missing.push(serializationObligation)
+    }
+    coverageDetail.missing_obligations = missing
+  }
+  const answerability = asJsonRecord(evidence.answerability)
+  const verificationTargets = asUnknownArray(answerability?.verification_targets)
+  const canVerifyTarget = verificationTargets.length > 0
+  if (answerability) {
+    const caveats = asUnknownArray(answerability.caveats)
+      .flatMap((value) => typeof value === 'string' ? [value] : [])
+    const serializationCaveat = 'serialized workflow spine was culled to the output budget'
+    if (!caveats.includes(serializationCaveat)) {
+      caveats.push(serializationCaveat)
+    }
+    const missingObligations = (coverageDetail
+      ? asUnknownArray(coverageDetail.missing_obligations)
+      : asUnknownArray(answerability.missing_obligations))
+      .flatMap((value) => typeof value === 'string' ? [value] : [])
+    if (!missingObligations.includes(serializationObligation)) {
+      missingObligations.push(serializationObligation)
+    }
+    if (!coverageDetail) {
+      coverageDetail = {
+        status: 'partial',
+        missing_obligations: missingObligations,
+      }
+      evidence.coverage_detail = coverageDetail
+    }
+    const priorFallback = answerability.broad_search_fallback
+    answerability.state = canVerifyTarget ? 'verify_targets' : 'insufficient'
+    answerability.answer_scope = canVerifyTarget ? 'partial' : 'none'
+    answerability.caveats = caveats
+    answerability.missing_obligations = missingObligations
+    answerability.broad_search_fallback = priorFallback === 'blocked'
+      ? 'blocked'
+      : canVerifyTarget ? 'targeted_only' : 'allowed'
+  }
+  evidence.pack_confidence = canVerifyTarget ? 'medium' : 'low'
   evidence.confidence_reasons = confidenceReasons
-  evidence.agent_directive = agentDirectiveForEvidence(
-    'low',
-    coverage === 'complete' || coverage === 'partial' || coverage === 'unknown'
-      ? coverage
-      : 'unknown',
-  )
+  evidence.coverage = coverageDetail
+    ? coverage === 'unknown' ? 'unknown' : 'partial'
+    : coverage
+  evidence.agent_directive = canVerifyTarget ? 'verify_one_targeted_file' : 'explore_with_caution'
   trimmedFields.push('evidence.pack_confidence downgraded')
 }
 
@@ -1053,22 +1521,24 @@ function attachSerializedBudget(
   }
 }
 
-export function buildAnswerReadyPackSchema(
+function buildAnswerReadyPackSchemaUnreconciled(
   schema: object,
   maxTokens: number,
   selectionDiagnostics?: ContextPackSelectionDiagnostics,
 ): JsonRecord {
   const payload = cloneJsonRecord(schema)
   const trimmedFields: string[] = []
+  const answerFromPack = asJsonRecord(payload.evidence)?.agent_directive === 'answer_from_pack'
   if (Object.hasOwn(payload, 'diagnostics')) {
     delete payload.diagnostics
     trimmedFields.push('diagnostics')
   }
   const pack = asJsonRecord(payload.pack)
+  const hasExecutionSpine = asUnknownArray(asJsonRecord(pack?.execution_slice)?.steps).length > 0
   if (pack) {
     const packFirstRead = asUnknownArray(pack.recommended_first_read)
     const payloadFirstRead = asUnknownArray(payload.recommended_first_read)
-    if (payloadFirstRead.length === 0 && packFirstRead.length > 0) {
+    if ((!answerFromPack || hasExecutionSpine) && payloadFirstRead.length === 0 && packFirstRead.length > 0) {
       payload.recommended_first_read = packFirstRead.slice(0, ANSWER_READY_FIRST_READ_CAP)
       trimmedFields.push('pack.recommended_first_read promoted')
     }
@@ -1082,7 +1552,25 @@ export function buildAnswerReadyPackSchema(
       payload.confidence_score = pack.confidence_score
       trimmedFields.push('pack.confidence_score promoted')
     }
-    compactAnswerReadyPack(pack, trimmedFields)
+    const question = typeof payload.prompt === 'string'
+      ? payload.prompt
+      : typeof pack.question === 'string' ? pack.question : ''
+    compactAnswerReadyPack(question, pack, asUnknownArray(payload.claims), trimmedFields)
+  }
+  if (answerFromPack && !hasExecutionSpine && asUnknownArray(payload.recommended_first_read).length > 0) {
+    payload.recommended_first_read = []
+    trimmedFields.push('recommended_first_read omitted for answer_from_pack')
+  }
+  if (answerFromPack) {
+    if (asUnknownArray(payload.expandable).length > 0) {
+      payload.expandable = []
+      trimmedFields.push('expandable omitted for answer_from_pack')
+    }
+    const governance = asJsonRecord(payload.governance)
+    if (governance && Object.hasOwn(governance, 'follow_up')) {
+      delete governance.follow_up
+      trimmedFields.push('governance.follow_up omitted for answer_from_pack')
+    }
   }
   compactAnswerReadyGovernance(payload, trimmedFields)
 
@@ -1136,13 +1624,51 @@ export function buildAnswerReadyPackSchema(
 
   const evidence = asJsonRecord(payload.evidence)
   if (evidence) {
-    if (Array.isArray(evidence.covered_workflow_owners)) {
-      delete evidence.covered_workflow_owners
-      trimmedFields.push('evidence.covered_workflow_owners')
-    }
     if (Array.isArray(evidence.confidence_reasons)) {
       delete evidence.confidence_reasons
       trimmedFields.push('evidence.confidence_reasons')
+    }
+    const strength = asJsonRecord(evidence.evidence_strength)
+    if (strength) {
+      evidence.evidence_strength = { level: strength.level }
+      trimmedFields.push('evidence.evidence_strength metrics compacted')
+    }
+    const coverageDetail = asJsonRecord(evidence.coverage_detail)
+    if (coverageDetail) {
+      delete coverageDetail.required_obligations
+      delete coverageDetail.covered_obligations
+      coverageDetail.missing_obligations = asUnknownArray(coverageDetail.missing_obligations).slice(0, 4)
+      trimmedFields.push('evidence.coverage_detail obligations compacted')
+    }
+    const answerability = asJsonRecord(evidence.answerability)
+    if (answerability) {
+      answerability.caveats = asUnknownArray(answerability.caveats).slice(0, 2)
+      answerability.missing_obligations = asUnknownArray(answerability.missing_obligations).slice(0, 4)
+      answerability.verification_targets = asUnknownArray(answerability.verification_targets)
+        .map((target) => asJsonRecord(target))
+        .filter((target): target is JsonRecord => target !== null)
+        .slice(0, 2)
+        .map((target) => ({
+          ...(target.handle_id ? { handle_id: target.handle_id } : {}),
+          ...(target.evidence_class ? { evidence_class: target.evidence_class } : {}),
+          focus_files: asUnknownArray(target.focus_files).slice(0, 2),
+          focus_ranges: asUnknownArray(target.focus_ranges).slice(0, 1),
+          reason: target.reason,
+        }))
+      trimmedFields.push('evidence.answerability compacted')
+    }
+    const recovery = asJsonRecord(evidence.recovery)
+    if (recovery) {
+      recovery.attempts = asUnknownArray(recovery.attempts)
+        .map((attempt) => asJsonRecord(attempt))
+        .filter((attempt): attempt is JsonRecord => attempt !== null)
+        .slice(0, 2)
+        .map((attempt) => ({
+          attempt: attempt.attempt,
+          status: attempt.status,
+          changed_result: attempt.changed_result,
+        }))
+      trimmedFields.push('evidence.recovery metrics compacted')
     }
   }
   attachSerializedBudget(payload, maxTokens, trimmedFields)
@@ -1151,8 +1677,7 @@ export function buildAnswerReadyPackSchema(
   }
 
   if (pack) {
-    trimArrayField(pack, 'matched_nodes', 4, trimmedFields)
-    trimArrayField(pack, 'relationships', 4, trimmedFields)
+    compactAnswerReadyMatchedNodeMetadata(pack, trimmedFields)
     trimArrayField(pack, 'community_context', 3, trimmedFields)
   }
 
@@ -1167,27 +1692,320 @@ export function buildAnswerReadyPackSchema(
   }
 
   if (pack) {
-    delete pack.relationships
     delete pack.graph_signals
     delete pack.snippet_budget_tokens_used
     delete pack.snippet_budget_tokens_remaining
     trimmedFields.push(
-      'pack.relationships',
       'pack.graph_signals',
       'pack.snippet_budget_tokens_used',
       'pack.snippet_budget_tokens_remaining',
     )
+
+    const retrievalPlan = asJsonRecord(pack.retrieval_plan)
+    if (retrievalPlan) {
+      const attempts = asUnknownArray(retrievalPlan.attempts)
+        .map((attempt) => asJsonRecord(attempt))
+        .filter((attempt): attempt is JsonRecord => attempt !== null)
+        .slice(0, 1)
+        .map((attempt) => ({
+          fallback: attempt.fallback,
+          status: attempt.status,
+          changed_result: attempt.changed_result,
+        }))
+      pack.retrieval_plan = {
+        version: retrievalPlan.version,
+        status: retrievalPlan.status,
+        reasons: retrievalPlan.reasons,
+        ...(retrievalPlan.selected_fallback ? { selected_fallback: retrievalPlan.selected_fallback } : {}),
+        attempts,
+      }
+      trimmedFields.push('pack.retrieval_plan metrics compacted')
+    }
+
+    const recovery = asJsonRecord(pack.recovery)
+    if (recovery) {
+      recovery.attempts = asUnknownArray(recovery.attempts)
+        .map((attempt) => asJsonRecord(attempt))
+        .filter((attempt): attempt is JsonRecord => attempt !== null)
+        .slice(0, 2)
+        .map((attempt) => ({
+          attempt: attempt.attempt,
+          status: attempt.status,
+          changed_result: attempt.changed_result,
+        }))
+      trimmedFields.push('pack.recovery metrics compacted')
+    }
+
+    if (Object.hasOwn(pack, 'retrieval_gate')) {
+      delete pack.retrieval_gate
+      trimmedFields.push('pack.retrieval_gate')
+    }
   }
   delete payload.retrieval_gate
   delete payload.why_explanation
   trimmedFields.push('retrieval_gate', 'why_explanation')
+  attachSerializedBudget(payload, maxTokens, trimmedFields)
+  if (estimatedJsonTokens(payload) <= maxTokens) {
+    return payload
+  }
+  compactAnswerReadyExpandableHandles(payload, trimmedFields)
+  if (evidence) {
+    compactAnswerReadyEvidenceForPressure(evidence, trimmedFields)
+  }
+  if (pack) {
+    compactAnswerReadyPackForPressure(payload, pack, trimmedFields)
+  }
+  attachSerializedBudget(payload, maxTokens, trimmedFields)
+  if (estimatedJsonTokens(payload) <= maxTokens) {
+    return payload
+  }
   if (trimGovernanceBeforeNodeCulling(payload, maxTokens, trimmedFields)) {
     attachSerializedBudget(payload, maxTokens, trimmedFields)
     if (estimatedJsonTokens(payload) <= maxTokens) {
       return payload
     }
   }
+  if (Array.isArray(payload.workflow_centers)) {
+    delete payload.workflow_centers
+    trimmedFields.push('workflow_centers')
+    attachSerializedBudget(payload, maxTokens, trimmedFields)
+    if (estimatedJsonTokens(payload) <= maxTokens) {
+      return payload
+    }
+  }
+  if (evidence && Array.isArray(evidence.covered_workflow_owners)) {
+    delete evidence.covered_workflow_owners
+    trimmedFields.push('evidence.covered_workflow_owners')
+    attachSerializedBudget(payload, maxTokens, trimmedFields)
+    if (estimatedJsonTokens(payload) <= maxTokens) {
+      return payload
+    }
+  }
+  compactAnswerReadyEnvelopeForPressure(payload, trimmedFields)
+  attachSerializedBudget(payload, maxTokens, trimmedFields)
+  if (estimatedJsonTokens(payload) <= maxTokens) {
+    return payload
+  }
+  if (pack && Array.isArray(pack.relationships)) {
+    delete pack.relationships
+    trimmedFields.push('pack.relationships')
+    attachSerializedBudget(payload, maxTokens, trimmedFields)
+    if (estimatedJsonTokens(payload) <= maxTokens) {
+      return payload
+    }
+  }
   enforceAnswerReadyBudget(payload, maxTokens, trimmedFields, selectionDiagnostics)
+  return payload
+}
+
+function serializedVerificationTargets(
+  payload: JsonRecord,
+  missingObligations: readonly string[],
+): JsonRecord[] {
+  const answerability = asJsonRecord(asJsonRecord(payload.evidence)?.answerability)
+  const existingTargets = asUnknownArray(answerability?.verification_targets)
+    .map((target) => asJsonRecord(target))
+    .filter((target): target is JsonRecord => target !== null)
+  const relevantExistingTargets = existingTargets.filter((target) => {
+    const reason = typeof target.reason === 'string' ? target.reason.toLowerCase() : ''
+    return missingObligations.some((obligation) => reason.includes(obligation.toLowerCase()))
+  })
+  if (relevantExistingTargets.length > 0) {
+    return relevantExistingTargets.slice(0, 2)
+  }
+
+  const pack = asJsonRecord(payload.pack)
+  for (const entry of [...asUnknownArray(payload.expandable), ...asUnknownArray(pack?.expandable)]) {
+    const expandable = asJsonRecord(entry)
+    const followUp = asJsonRecord(expandable?.follow_up)
+    const focusFiles = asUnknownArray(followUp?.focus_files)
+      .filter((value): value is string => typeof value === 'string' && value.length > 0)
+      .slice(0, 2)
+    if (focusFiles.length === 0) {
+      continue
+    }
+    return [{
+      ...(typeof expandable?.handle_id === 'string' ? { handle_id: expandable.handle_id } : {}),
+      ...(typeof expandable?.evidence_class === 'string' ? { evidence_class: expandable.evidence_class } : {}),
+      focus_files: focusFiles,
+      focus_ranges: asUnknownArray(followUp?.focus_ranges).slice(0, 1),
+      reason: `verify ${missingObligations[0] ?? 'missing serialized query evidence'}`,
+    }]
+  }
+  return []
+}
+
+function queryEvidenceCoverageFromPayload(payload: JsonRecord) {
+  const pack = asJsonRecord(payload.pack)
+  const question = typeof payload.prompt === 'string'
+    ? payload.prompt
+    : typeof pack?.question === 'string' ? pack.question : ''
+  if (!pack || question.length === 0) {
+    return null
+  }
+  const nodes = asUnknownArray(pack.matched_nodes)
+    .map((entry) => queryEvidenceNodeFromRecord(asJsonRecord(entry)))
+    .filter((entry): entry is QueryEvidenceNode => entry !== null)
+  return evaluateQueryEvidenceCoverage(question, nodes)
+}
+
+/** Keep the public fallback receipt aligned with the snippets serialized to the agent. */
+function reconcileSerializedRetrievalPlanQueryObligations(
+  payload: JsonRecord,
+  queryCoverage: ReturnType<typeof queryEvidenceCoverageFromPayload>,
+): boolean {
+  if (!queryCoverage) {
+    return false
+  }
+
+  const plan = asJsonRecord(asJsonRecord(payload.pack)?.retrieval_plan)
+  const obligations = asJsonRecord(plan?.query_obligations)
+  if (!obligations) {
+    return false
+  }
+
+  const initiallyCovered = typeof obligations.initially_covered === 'number'
+    ? Math.min(obligations.initially_covered, queryCoverage.total)
+    : 0
+
+  if (
+    obligations.total === queryCoverage.total
+    && obligations.initially_covered === initiallyCovered
+    && obligations.finally_covered === queryCoverage.covered
+  ) {
+    return false
+  }
+
+  obligations.total = queryCoverage.total
+  obligations.initially_covered = initiallyCovered
+  obligations.finally_covered = queryCoverage.covered
+  return true
+}
+
+function reconcileSerializedQueryEvidence(
+  payload: JsonRecord,
+  trimmedFields: string[],
+  baselineQueryCoverage: ReturnType<typeof queryEvidenceCoverageFromPayload>,
+): boolean {
+  const evidence = asJsonRecord(payload.evidence)
+  const queryCoverage = queryEvidenceCoverageFromPayload(payload)
+  const retrievalPlanReconciled = reconcileSerializedRetrievalPlanQueryObligations(payload, queryCoverage)
+  if (!evidence || !queryCoverage || queryCoverage.missing_obligations.length === 0) {
+    return retrievalPlanReconciled
+  }
+  const baselineMissing = new Set(baselineQueryCoverage?.missing_obligations ?? [])
+  const lostDuringSerialization = queryCoverage.missing_obligations.some((obligation) => !baselineMissing.has(obligation))
+  if (!lostDuringSerialization) {
+    return retrievalPlanReconciled
+  }
+
+  const missingObligations = [...new Set(queryCoverage.missing_obligations)]
+  evidence.coverage = 'partial'
+  const coverageDetail = asJsonRecord(evidence.coverage_detail) ?? {}
+  coverageDetail.status = 'partial'
+  coverageDetail.required_obligations = [...new Set([
+    ...asUnknownArray(coverageDetail.required_obligations).filter((value): value is string => typeof value === 'string'),
+    ...missingObligations,
+  ])]
+  coverageDetail.covered_obligations = asUnknownArray(coverageDetail.covered_obligations)
+    .filter((value): value is string => typeof value === 'string' && !missingObligations.includes(value))
+  coverageDetail.missing_obligations = [...new Set([
+    ...asUnknownArray(coverageDetail.missing_obligations).filter((value): value is string => typeof value === 'string'),
+    ...missingObligations,
+  ])]
+  evidence.coverage_detail = coverageDetail
+
+  const evidenceStrength = asJsonRecord(evidence.evidence_strength) ?? {}
+  if (evidenceStrength.level === 'strong' || typeof evidenceStrength.level !== 'string') {
+    evidenceStrength.level = 'moderate'
+  }
+  const strengthReason = 'selected_snippets_do_not_cover_all_serialized_query_obligations'
+  evidenceStrength.reasons = [...new Set([
+    ...asUnknownArray(evidenceStrength.reasons).filter((value): value is string => typeof value === 'string'),
+    strengthReason,
+  ])]
+  evidence.evidence_strength = evidenceStrength
+
+  const answerability = asJsonRecord(evidence.answerability) ?? {}
+  const priorRestricted = answerability.state === 'insufficient'
+    || answerability.broad_search_fallback === 'blocked'
+    || evidence.pack_confidence === 'low'
+    || evidence.agent_directive === 'explore_with_caution'
+  const targets = priorRestricted ? [] : serializedVerificationTargets(payload, missingObligations)
+  const canVerify = targets.length > 0
+  answerability.state = canVerify ? 'verify_targets' : 'insufficient'
+  answerability.answer_scope = canVerify ? 'partial' : 'none'
+  answerability.caveats = [...new Set([
+    ...asUnknownArray(answerability.caveats).filter((value): value is string => typeof value === 'string'),
+    'serialized snippets do not cover every prompt obligation',
+  ])]
+  answerability.missing_obligations = missingObligations
+  answerability.verification_targets = targets
+  answerability.broad_search_fallback = answerability.broad_search_fallback === 'blocked'
+    ? 'blocked'
+    : canVerify ? 'targeted_only' : 'allowed'
+  evidence.answerability = answerability
+  evidence.pack_confidence = canVerify ? 'medium' : 'low'
+  evidence.agent_directive = canVerify ? 'verify_one_targeted_file' : 'explore_with_caution'
+  const confidenceReason = `serialized query evidence: ${queryCoverage.covered}/${queryCoverage.total} prompt obligations covered`
+  const existingConfidenceReasons = asUnknownArray(evidence.confidence_reasons)
+    .filter((value): value is string => typeof value === 'string')
+  evidence.confidence_reasons = [...new Set([
+    ...existingConfidenceReasons,
+    confidenceReason,
+  ])]
+  const serializedBudget = asJsonRecord(payload.serialized_budget)
+  const maxTokens = typeof serializedBudget?.max_tokens === 'number'
+    ? serializedBudget.max_tokens
+    : null
+  if (maxTokens !== null && estimatedJsonTokens(payload) > maxTokens) {
+    // This line is explanatory rather than an evidence contract. Do not let a
+    // reconciliation-only reason break a budget that the compact payload had
+    // already satisfied; preserve any reason that existed before reconciliation.
+    if (existingConfidenceReasons.length > 0) {
+      evidence.confidence_reasons = existingConfidenceReasons
+    } else {
+      delete evidence.confidence_reasons
+    }
+  }
+  const recovery = asJsonRecord(evidence.recovery)
+  if (recovery) {
+    recovery.final_state = answerability.state
+    if (recovery.status === 'not_needed') {
+      recovery.status = 'partial'
+    }
+  }
+  trimmedFields.push('evidence reconciled to serialized query coverage')
+  return true
+}
+
+export function buildAnswerReadyPackSchema(
+  schema: object,
+  maxTokens: number,
+  selectionDiagnostics?: ContextPackSelectionDiagnostics,
+): JsonRecord {
+  // JSON bookkeeping and post-cull evidence reconciliation can add a few
+  // tokens after a compact pack first appears to fit. Cull against a small
+  // internal guard band, then report the caller's actual requested budget.
+  // This keeps the serialized response deterministically within that budget.
+  const serializationLimit = Math.max(1, maxTokens - ANSWER_READY_SERIALIZATION_GUARD_TOKENS)
+  const baselineQueryCoverage = queryEvidenceCoverageFromPayload(schema as JsonRecord)
+  const payload = buildAnswerReadyPackSchemaUnreconciled(schema, serializationLimit, selectionDiagnostics)
+  const trimmedFields: string[] = []
+  const reconciled = reconcileSerializedQueryEvidence(payload, trimmedFields, baselineQueryCoverage)
+  if (!reconciled) {
+    attachSerializedBudget(payload, maxTokens, trimmedFields)
+    return payload
+  }
+
+  attachSerializedBudget(payload, serializationLimit, trimmedFields)
+  if (estimatedJsonTokens(payload) > serializationLimit) {
+    compactAnswerReadyEnvelopeForPressure(payload, trimmedFields)
+    enforceAnswerReadyBudget(payload, serializationLimit, trimmedFields, selectionDiagnostics)
+    reconcileSerializedQueryEvidence(payload, trimmedFields, baselineQueryCoverage)
+    attachSerializedBudget(payload, serializationLimit, trimmedFields)
+  }
+  attachSerializedBudget(payload, maxTokens, trimmedFields)
   return payload
 }
 
@@ -1241,18 +2059,27 @@ export function buildExplainPackPayload(
   }
 }
 
+type ExplainRetrievalInput = Partial<Pick<
+  RetrieveResult,
+  | 'matched_nodes'
+  | 'claims'
+  | 'expandable'
+  | 'coverage'
+  | 'retrieval_gate'
+  | 'execution_slice'
+  | 'answer_contract'
+  | 'recovery'
+>> & {
+  question: string
+  task_contract?: { budget: number; task_intent?: string; evidence_recipe_id?: string }
+}
+
 export function buildExplainPackPayloadCore(
   pack: ReturnType<typeof compactRetrieveResult>,
-  retrieval: Partial<{
-    matched_nodes: RetrieveResult['matched_nodes']
-    question: string
-    coverage: ContextPackCoverage
-    task_contract: { budget: number; task_intent?: string; evidence_recipe_id?: string }
-  }> & {
-    question: string
-  },
+  retrieval: ExplainRetrievalInput,
   implementation?: ImplementationPackGuidance,
   graphPath?: string,
+  discoverySafety?: DiscoverySafetyMetadata | null,
 ): ExplainPackPayload {
   const payload = buildExplainPackPayload(pack, retrieval, implementation)
   const entrypointExpandable = runtimeGenerationEntrypointExpandable('explain', pack, retrieval)
@@ -1272,21 +2099,30 @@ export function buildExplainPackPayloadCore(
   })
   const centers = workflowCenters('explain', pack, plan, implementation, retrieval as RetrieveResult)
   const firstRead = recommendedFirstRead('explain', pack, implementation, retrieval as RetrieveResult)
-  const evidenceAssessment = assessMadarResponseEvidence({
-    answerContract: (retrieval as RetrieveResult).answer_contract,
+  const coveredWorkflowOwners = collectWorkflowOwners(
+    centers.map((entry) => entry.path),
+    firstRead.map((entry) => entry.path),
+    implementation?.likely_edit_files.map((entry) => entry.path) ?? [],
+    implementation?.likely_test_files.map((entry) => entry.path) ?? [],
+  )
+  const retrievalEvidencePlan = buildRetrievalEvidencePlan({
     coverage: payload.coverage,
-    coveredWorkflowOwners: collectWorkflowOwners(
-      centers.map((entry) => entry.path),
-      firstRead.map((entry) => entry.path),
-      implementation?.likely_edit_files.map((entry) => entry.path) ?? [],
-      implementation?.likely_test_files.map((entry) => entry.path) ?? [],
-    ),
-    executionSlice: (retrieval as RetrieveResult).execution_slice,
+    expandable: payload.expandable,
+    ...(retrieval.execution_slice ? { executionSlice: retrieval.execution_slice } : {}),
+    ...(retrieval.answer_contract ? { answerContract: retrieval.answer_contract } : {}),
+    missingPhases: missingPhasesFromPayload(retrieval),
+    coveredWorkflowOwners,
+    selectedNodeCount: pack.matched_nodes.length,
+    selectedRelationshipCount: pack.relationships.length,
+    question: retrieval.question,
+    matchedNodes: pack.matched_nodes,
+  })
+  const evidenceAssessment = assessMadarResponseEvidence({
+    evidencePlan: retrievalEvidencePlan,
+    discoverySafety,
     graphPath,
-    missingPhases: missingPhasesFromPayload(pack as {
-      answer_contract?: { missing_phases?: readonly unknown[] }
-      execution_slice?: { phase_coverage?: { missing?: readonly unknown[] } }
-    }),
+    question: retrieval.question,
+    recovery: retrieval.recovery,
     score: confidenceScore(payload.coverage, pack, implementation),
   })
 
@@ -1692,7 +2528,7 @@ function recommendedFirstRead(
         path: node.source_file,
         label: node.label,
         reason: runtimeGenerationFallback
-          ? `Fallback pack evidence via ${node.label}; verify against workflow centers and runtime handoffs.`
+          ? `Fallback query-relevant pack evidence anchored by ${node.label}; the snippet is already included.`
           : `Direct pack evidence via ${node.label}.`,
       })
       if (reads.length >= 3) {
@@ -1866,22 +2702,54 @@ function buildPackSchemaV1<TPack extends PackPayload>(
   response: PackResponseBase & ContextPlaneMetadata & {
     pack: TPack
     graphFreshness: GraphContextFreshness
+    discoverySafety?: DiscoverySafetyMetadata | null
     implementation?: ImplementationPackGuidance
     routing?: ContextPackRoutingDebug
     target?: string
     retrieval?: RetrieveResult
   },
 ): PackSchemaEnvelope<TPack | PackPayloadWithCompatibility<TPack>> {
-  const { retrieval, graphFreshness: _graphFreshness, ...serializableResponse } = response
+  const {
+    retrieval,
+    graphFreshness: _graphFreshness,
+    discoverySafety,
+    ...serializableResponse
+  } = response
   const centers = workflowCenters(response.task, response.pack, response.plan, response.implementation, retrieval)
   const firstRead = recommendedFirstRead(response.task, response.pack, response.implementation, retrieval)
   const contracts = publicContracts(response.implementation)
   const guidance = negativeGuidance(response.task, response.coverage, response.pack, response.implementation, retrieval)
+  const serializedMatchedNodes = retrieval && 'matched_nodes' in response.pack
+    ? response.pack.matched_nodes
+    : undefined
+  const serializedRelationships = retrieval && 'relationships' in response.pack
+    ? response.pack.relationships
+    : undefined
+  const serializedEvidencePlan = retrieval && serializedMatchedNodes && serializedRelationships
+    ? buildRetrievalEvidencePlan({
+        ...(retrieval.task_contract ? { taskContract: retrieval.task_contract } : {}),
+        coverage: response.coverage,
+        expandable: response.expandable,
+        ...(retrieval.execution_slice ? { executionSlice: retrieval.execution_slice } : {}),
+        ...(retrieval.answer_contract ? { answerContract: retrieval.answer_contract } : {}),
+        missingPhases: missingPhasesFromPayload(retrieval),
+        coveredWorkflowOwners: serializedMatchedNodes.map((node) => node.source_file),
+        selectedNodeCount: serializedMatchedNodes.length,
+        selectedRelationshipCount: serializedRelationships.length,
+        question: response.prompt,
+        matchedNodes: serializedMatchedNodes,
+      })
+    : undefined
   const evidenceAssessment = assessMadarResponseEvidence({
+    ...(serializedEvidencePlan ? { evidencePlan: serializedEvidencePlan } : {}),
     answerContract: retrieval?.answer_contract ?? ('answer_contract' in response.pack ? response.pack.answer_contract : undefined),
     coverage: response.coverage,
+    discoverySafety,
     executionSlice: retrieval?.execution_slice ?? ('execution_slice' in response.pack ? response.pack.execution_slice : undefined),
+    expandable: response.expandable,
     graphPath: response.graph_path,
+    question: response.prompt,
+    recovery: retrieval?.recovery ?? ('recovery' in response.pack ? response.pack.recovery : undefined),
     missingPhases: missingPhasesFromPayload(response.pack as {
       answer_contract?: { missing_phases?: readonly unknown[] }
       execution_slice?: { phase_coverage?: { missing?: readonly unknown[] } }
@@ -2260,6 +3128,7 @@ export async function runContextPackCommand(
   dependencies: ContextPackCommandDependencies = DEFAULT_DEPENDENCIES,
 ): Promise<string> {
   const graph = dependencies.loadGraph(options.graphPath)
+  const discoverySafety = parseDiscoverySafetyMetadata(graph.graph.discovery_safety)
   const initialGraphFreshness = analyzeGraphContextFreshness(options.graphPath, graph)
   if (options.requireFreshGraph === true) {
     requireFreshGraph(initialGraphFreshness)
@@ -2306,6 +3175,7 @@ export async function runContextPackCommand(
       ...baseResponse(options, plan, plannerBudget, resolvedTask.task_kind),
       pack: reviewPack,
       graphFreshness: initialGraphFreshness,
+      discoverySafety,
       ...contextMetadata(reviewResult.review_bundle ?? {}),
     }), renderOptions)
   }
@@ -2332,6 +3202,7 @@ export async function runContextPackCommand(
       target: impactTarget,
       pack: impactPack,
       graphFreshness: initialGraphFreshness,
+      discoverySafety,
       ...impactMetadata(impactResult, plannerBudget, options.prompt, initialPlan.evidence.recipe_id, options.retrievalLevel),
       ...(options.why ? { routing: buildRoutingDebug(retrieval) } : {}),
     }), renderOptions)
@@ -2365,9 +3236,10 @@ export async function runContextPackCommand(
   return renderContextPackOutput(options.format, buildPackSchemaV1({
     ...baseResponse(options, initialPlan, plannerBudget, resolvedTask.task_kind),
     graphFreshness,
+    discoverySafety,
     ...(
       resolvedTask.task_kind === 'explain'
-        ? buildExplainPackPayloadCore(dependencies.compactRetrieveResult(retrieval), retrieval, implementation, options.graphPath)
+        ? buildExplainPackPayloadCore(dependencies.compactRetrieveResult(retrieval), retrieval, implementation, options.graphPath, discoverySafety)
         : buildExplainPackPayload(dependencies.compactRetrieveResult(retrieval), retrieval, implementation)
     ),
     retrieval,

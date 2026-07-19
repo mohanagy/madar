@@ -19,7 +19,7 @@
 // Cache layout
 // ────────────
 //
-//   <workspace>/out/.spi-cache/
+//   <Madar artifact out>/.spi-cache/
 //     index.json     — cache metadata: { version, key, generated_at, file_count }
 //     spi.json       — serialized SemanticProgramIndex
 //
@@ -50,13 +50,19 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs'
-import { dirname, extname, join, relative, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 
-import { buildSpi, type BuildSpiOptions, findNearestProjectConfigPath } from './build.js'
+import { resolveMadarOutputDirectory } from '../../shared/workspace.js'
+import {
+  buildSpi,
+  collectExplicitSpiFiles,
+  isSpiSupportedSourceFile,
+  type BuildSpiOptions,
+  findNearestProjectConfigPath,
+} from './build.js'
 import type { SemanticProgramIndex } from './types.js'
 
 const CACHE_DIR_NAME = '.spi-cache'
-const CACHE_DIR_PARENT = 'out'
 const CACHE_INDEX_FILE = 'index.json'
 const CACHE_SPI_FILE = 'spi.json'
 const CACHE_FORMAT_VERSION = 1
@@ -72,13 +78,6 @@ const CACHE_SKIP_DIRS: ReadonlySet<string> = new Set([
   '.test-artifacts',
   '.turbo',
   '.vercel',
-])
-
-const CACHE_INDEXABLE_EXTS: ReadonlySet<string> = new Set([
-  '.ts',
-  '.tsx',
-  '.js',
-  '.jsx',
 ])
 
 export interface SpiCacheIndex {
@@ -101,7 +100,8 @@ export interface BuildSpiCachedOptions extends BuildSpiOptions {
   /** Disable the cache for this build (default: false). When true, the
    *  call behaves exactly like buildSpi() — no read, no write. */
   noCache?: boolean
-  /** Override the cache directory (default: `<root>/out/.spi-cache`).
+  /** Override the cache directory (default: Madar's workspace-specific
+   *  artifact output directory plus `.spi-cache`).
    *  Useful for tests and for projects that want to relocate the cache
    *  outside the default out tree. */
   cacheDir?: string
@@ -127,7 +127,7 @@ export interface BuildSpiCachedResult {
 export function buildSpiCached(opts: BuildSpiCachedOptions): BuildSpiCachedResult {
   const start = Date.now()
   const root = resolve(opts.root)
-  const cacheDir = opts.cacheDir ?? join(root, CACHE_DIR_PARENT, CACHE_DIR_NAME)
+  const cacheDir = opts.cacheDir ?? join(resolveMadarOutputDirectory(root), CACHE_DIR_NAME)
   const indexPath = join(cacheDir, CACHE_INDEX_FILE)
   const spiPath = join(cacheDir, CACHE_SPI_FILE)
 
@@ -205,7 +205,7 @@ export function buildSpiCached(opts: BuildSpiCachedOptions): BuildSpiCachedResul
 /** Explicit cache invalidation — removes the on-disk artifacts.
  *  Returns true iff anything was deleted. */
 export function clearSpiCache(root: string, cacheDir?: string): boolean {
-  const dir = cacheDir ?? join(resolve(root), CACHE_DIR_PARENT, CACHE_DIR_NAME)
+  const dir = cacheDir ?? join(resolveMadarOutputDirectory(root), CACHE_DIR_NAME)
   if (!existsSync(dir)) return false
   rmSync(dir, { recursive: true, force: true })
   return true
@@ -217,8 +217,14 @@ interface WorkspaceFingerprint {
 }
 
 function computeWorkspaceFingerprint(root: string, opts: BuildSpiCachedOptions): WorkspaceFingerprint {
-  const entries: string[] = []
-  collectIndexableFiles(root, root, entries)
+  const entries = opts.includedFiles
+    ? collectExplicitSpiFiles(root, opts.includedFiles)
+      .map((filePath) => relative(root, filePath).split('\\').join('/'))
+    : (() => {
+        const discovered: string[] = []
+        collectIndexableFiles(root, root, discovered)
+        return discovered
+      })()
   entries.sort()
 
   const hasher = createHash('sha256')
@@ -276,7 +282,7 @@ function collectProjectConfigPaths(root: string, entries: readonly string[]): st
   return [...projectConfigPaths].sort()
 }
 
-function collectIndexableFiles(root: string, dir: string, out: string[]): void {
+function collectIndexableFiles(root: string, dir: string, out: string[], includedFiles?: ReadonlySet<string>): void {
   let entries: import('node:fs').Dirent<string>[]
   try {
     entries = readdirSync(dir, { withFileTypes: true, encoding: 'utf8' })
@@ -288,11 +294,12 @@ function collectIndexableFiles(root: string, dir: string, out: string[]): void {
     if (entry.isSymbolicLink()) continue
     const full = join(dir, entry.name)
     if (entry.isDirectory()) {
-      collectIndexableFiles(root, full, out)
+      collectIndexableFiles(root, full, out, includedFiles)
     } else if (entry.isFile()) {
-      const ext = extname(entry.name).toLowerCase()
-      if (CACHE_INDEXABLE_EXTS.has(ext)) {
-        out.push(relative(root, full).split('\\').join('/'))
+      if (isSpiSupportedSourceFile(entry.name)) {
+        if (!includedFiles || includedFiles.has(resolve(full))) {
+          out.push(relative(root, full).split('\\').join('/'))
+        }
       }
     }
   }

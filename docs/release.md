@@ -46,6 +46,7 @@ Recommended follow-up checks:
 - confirm `madar --version` prints the version you are about to publish
 - confirm `madar generate .` completes and refreshes `out/graph.json`
 - confirm install commands write the expected project files and instructions
+- for Codex, confirm `.codex/hooks.json`, `.codex/madar-user-prompt-submit.cjs`, and this workspace's block in `~/.codex/config.toml` exist, and that it contains `startup_timeout_sec = 180` plus `tool_timeout_sec = 60`; only in a trusted repository, restart or open a new session, use `/hooks` to review/trust the project hook, then use `/mcp` or `codex mcp list` to verify the local MCP server
 - uninstall any agent profile you enabled during the smoke test so the workspace returns to a clean state
 
 ## 4. Publish and tag
@@ -58,8 +59,9 @@ After the verification steps are green:
    - prereleases / `next`: `npm publish --tag next --access public --provenance`
    If the release environment does not support npm provenance attestations, rerun the same command without `--provenance`.
 3. Create the matching Git tag if `npm version` did not already do so in your workflow.
-4. Draft or publish the GitHub release notes from the changelog entry.
-5. Before posting on npm/GitHub directories, social/news sites, or videos/blogs, complete the copied proof-first launch checklist from [`docs/launch-checklist.md`](./launch-checklist.md) so every public surface starts from a dated receipt plus caveats.
+4. After npm confirms the matching public version, run the **Publish MCP Registry metadata** GitHub Actions workflow with that `vX.Y.Z` tag. It uses GitHub OIDC (no registry secret), verifies the published package has `mcpName: "io.github.mohanagy/madar"`, publishes the checked-in manifest, and verifies the Registry API result.
+5. Draft or publish the GitHub release notes from the changelog entry.
+6. Before posting on npm/GitHub directories, social/news sites, or videos/blogs, complete the copied proof-first launch checklist from [`docs/launch-checklist.md`](./launch-checklist.md) so every public surface starts from a dated receipt plus caveats.
 
 ## 5. Post-release verification
 

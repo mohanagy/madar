@@ -6,6 +6,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    setupFiles: ['tests/setup.ts'],
     include: ['tests/**/*.test.ts'],
     maxWorkers: 4,
     // Heavy benchmark/install/runtime suites can exceed 15s on the slower

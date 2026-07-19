@@ -1,5 +1,7 @@
-import { mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
 
 import { type CliDependencies, executeCli, formatHelp } from '../../src/cli/main.js'
 import {
@@ -30,6 +32,11 @@ import {
   UsageError,
 } from '../../src/cli/parser.js'
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { resolveMadarOutputDirectory, resolveWorkspaceGraphPath } from '../../src/shared/workspace.js'
+
+const ACTIVE_OUTPUT_DIR = resolveMadarOutputDirectory()
+const ACTIVE_GRAPH_PATH = resolveWorkspaceGraphPath('out/graph.json')
+const activeOutputPath = (...segments: string[]) => join(ACTIVE_OUTPUT_DIR, ...segments)
 
 type GraphSummaryPayload = {
   graph_version?: string
@@ -184,7 +191,7 @@ function createDependencies(): CliTestDependencies {
       codeFiles: 2,
       nonCodeFiles: 1,
       extractableFiles: 3,
-      extractedFiles: options.useSpi ? 2 : 3,
+      extractedFiles: options.extractionMode !== 'legacy' ? 2 : 3,
       totalWords: 120,
       nodeCount: 5,
       edgeCount: 4,
@@ -192,9 +199,24 @@ function createDependencies(): CliTestDependencies {
       semanticAnomalyCount: 2,
       changedFiles: options.update ? 1 : 0,
       deletedFiles: 0,
-      cache: options.useSpi ? { strategy: 'spi', hit: false, reason: 'no-cache', fileCount: 2 } : null,
+      cache: options.extractionMode !== 'legacy' ? { strategy: 'spi', hit: false, reason: 'no-cache', fileCount: 2 } : null,
       warning: null,
       notes: ['test note'],
+      discoverySafety: {
+        version: 1,
+        summary: {
+          total: 1,
+          sensitive: 1,
+          unreadable: 0,
+          reasons: { secret_config: 1 },
+        },
+        exclusions: [
+          { path: 'config/credentials.json', kind: 'sensitive', reason: 'secret_config' },
+        ],
+      },
+      discoveryExclusions: [
+        { path: 'config/credentials.json', kind: 'sensitive', reason: 'secret_config' },
+      ],
     }),
     watchGraph: async () => {},
     serveGraph: async () => {},
@@ -480,7 +502,7 @@ describe('cli parser', () => {
       answer: 'A',
       queryType: 'explain',
       sourceNodes: ['n1', 'n2'],
-      memoryDir: resolve('out/mem'),
+      memoryDir: activeOutputPath('mem'),
     })
   })
 
@@ -527,6 +549,8 @@ describe('cli parser', () => {
     expect(parseBenchSuiteArgs(['--dry-run'])).toEqual({
       repo: null,
       task: null,
+      reposManifestPath: null,
+      tasksManifestPath: null,
       mode: 'all',
       trials: 3,
       outputDir: resolve('docs/benchmarks/suite/results'),
@@ -541,6 +565,9 @@ describe('cli parser', () => {
       'nestjs-mid',
       '--task',
       'explain-runtime',
+      '--repos-manifest',
+      'docs/benchmarks/suite/holdouts/repos.json',
+      '--tasks-manifest=docs/benchmarks/suite/holdouts/tasks.json',
       '--mode',
       'warm',
       '--trials',
@@ -551,6 +578,8 @@ describe('cli parser', () => {
     ])).toEqual({
       repo: 'nestjs-mid',
       task: 'explain-runtime',
+      reposManifestPath: resolve('docs/benchmarks/suite/holdouts/repos.json'),
+      tasksManifestPath: resolve('docs/benchmarks/suite/holdouts/tasks.json'),
       mode: 'warm',
       trials: 5,
       outputDir: resolve('docs/benchmarks/suite/results/custom'),
@@ -567,10 +596,10 @@ describe('cli parser', () => {
   it('parses compare args with a question or question file', () => {
     expect(parseCompareArgs(['how does login work', '--exec', 'claude -p "$(cat {prompt_file})"'])).toEqual({
       question: 'how does login work',
-      graphPath: 'out/graph.json',
+      graphPath: ACTIVE_GRAPH_PATH,
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       questionsPath: null,
-      outputDir: resolve('out/compare'),
+      outputDir: activeOutputPath('compare'),
       task: 'explain',
       baselineMode: 'full',
       perArmTimeoutSeconds: 600,
@@ -585,10 +614,10 @@ describe('cli parser', () => {
 
     expect(parseCompareArgs(['--questions', 'benchmark-questions.json', '--exec', 'gemini -p "$(cat {prompt_file})"'])).toEqual({
       question: null,
-      graphPath: 'out/graph.json',
+      graphPath: ACTIVE_GRAPH_PATH,
       execTemplate: 'gemini -p "$(cat {prompt_file})"',
       questionsPath: 'benchmark-questions.json',
-      outputDir: resolve('out/compare'),
+      outputDir: activeOutputPath('compare'),
       task: 'explain',
       baselineMode: 'full',
       perArmTimeoutSeconds: 600,
@@ -632,7 +661,7 @@ describe('cli parser', () => {
       graphPath: 'custom.json',
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       questionsPath: null,
-      outputDir: resolve('out/compare/custom'),
+      outputDir: activeOutputPath('compare', 'custom'),
       task: 'explain',
       baselineMode: 'bounded',
       perArmTimeoutSeconds: 900,
@@ -657,10 +686,10 @@ describe('cli parser', () => {
       ]),
     ).toEqual({
       question: 'how does login work',
-      graphPath: 'out/graph.json',
+      graphPath: ACTIVE_GRAPH_PATH,
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       questionsPath: null,
-      outputDir: resolve('out/compare'),
+      outputDir: activeOutputPath('compare'),
       task: 'explain',
       baselineMode: 'pack_only',
       perArmTimeoutSeconds: 600,
@@ -687,10 +716,10 @@ describe('cli parser', () => {
       ]),
     ).toEqual({
       question: 'implement session sliding expiration',
-      graphPath: 'out/graph.json',
+      graphPath: ACTIVE_GRAPH_PATH,
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       questionsPath: null,
-      outputDir: resolve('out/compare'),
+      outputDir: activeOutputPath('compare'),
       baselineMode: 'native_agent',
       perArmTimeoutSeconds: 600,
       validationTimeoutSeconds: 120,
@@ -714,10 +743,10 @@ describe('cli parser', () => {
       ]),
     ).toEqual({
       question: 'how does login work',
-      graphPath: 'out/graph.json',
+      graphPath: ACTIVE_GRAPH_PATH,
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       questionsPath: null,
-      outputDir: resolve('out/compare'),
+      outputDir: activeOutputPath('compare'),
       task: 'explain',
       baselineMode: 'full',
       perArmTimeoutSeconds: 600,
@@ -741,10 +770,10 @@ describe('cli parser', () => {
     ]),
     ).toEqual({
     question: 'how does login work',
-    graphPath: 'out/graph.json',
+    graphPath: ACTIVE_GRAPH_PATH,
     execTemplate: 'claude -p "$(cat {prompt_file})"',
     questionsPath: null,
-    outputDir: resolve('out/compare'),
+    outputDir: activeOutputPath('compare'),
     task: 'explain',
     baselineMode: 'full',
     perArmTimeoutSeconds: 600,
@@ -796,9 +825,9 @@ describe('cli parser', () => {
     const externalOutputDir = resolve('/tmp', 'madar-review-compare-external')
 
     expect(parseReviewCompareArgs(['--exec', 'claude -p "$(cat {prompt_file})"'])).toEqual({
-      graphPath: 'out/graph.json',
+      graphPath: ACTIVE_GRAPH_PATH,
       execTemplate: 'claude -p "$(cat {prompt_file})"',
-      outputDir: resolve('out/review-compare'),
+      outputDir: activeOutputPath('review-compare'),
       baseBranch: null,
       budget: null,
       yes: false,
@@ -818,7 +847,7 @@ describe('cli parser', () => {
     ])).toEqual({
       graphPath: 'custom.json',
       execTemplate: 'gemini -p "$(cat {prompt_file})"',
-      outputDir: resolve('out/review-compare/custom'),
+      outputDir: activeOutputPath('review-compare', 'custom'),
       baseBranch: 'origin/main',
       budget: 1800,
       yes: true,
@@ -898,8 +927,9 @@ describe('cli parser', () => {
       update: false,
       clusterOnly: false,
       watch: false,
-      directed: false,
+      directed: true,
       followSymlinks: false,
+      respectGitignore: false,
       debounceSeconds: 3,
       noHtml: false,
       wiki: false,
@@ -914,7 +944,10 @@ describe('cli parser', () => {
       neo4jDatabase: null,
       includeDocs: false,
       docs: false,
-      useSpi: false,
+      extractionMode: 'auto',
+      strictIndexing: false,
+      maxIndexingFailed: 0,
+      maxIndexingUnsupported: 0,
     })
 
     expect(
@@ -924,6 +957,7 @@ describe('cli parser', () => {
         '--watch',
         '--directed',
         '--follow-symlinks',
+        '--respect-gitignore',
         '--debounce',
         '1.5',
         '--no-html',
@@ -942,6 +976,9 @@ describe('cli parser', () => {
         'secret',
         '--neo4j-database',
         'madar',
+        '--max-indexing-failed',
+        '2',
+        '--max-indexing-unsupported=3',
       ]),
     ).toEqual({
       path: 'src',
@@ -950,6 +987,7 @@ describe('cli parser', () => {
       watch: true,
       directed: true,
       followSymlinks: true,
+      respectGitignore: true,
       debounceSeconds: 1.5,
       noHtml: true,
       wiki: true,
@@ -964,17 +1002,39 @@ describe('cli parser', () => {
       neo4jDatabase: 'madar',
       includeDocs: false,
       docs: false,
-      useSpi: false,
+      extractionMode: 'auto',
+      strictIndexing: true,
+      maxIndexingFailed: 2,
+      maxIndexingUnsupported: 3,
     })
 
     expect(() => parseGenerateArgs(['src', 'other'])).toThrow('Usage: madar generate')
     expect(() => parseGenerateArgs(['--update', '--cluster-only'])).toThrow('cannot be used together')
+    expect(parseGenerateArgs(['src', '--undirected']).directed).toBe(false)
+    expect(() => parseGenerateArgs(['--directed', '--undirected'])).toThrow(
+      '--directed and --undirected cannot be used together',
+    )
+    expect(() => parseGenerateArgs(['--undirected', '--directed'])).toThrow(
+      '--directed and --undirected cannot be used together',
+    )
+    expect(parseGenerateArgs(['--strict-indexing'])).toMatchObject({
+      strictIndexing: true,
+      maxIndexingFailed: 0,
+      maxIndexingUnsupported: 0,
+    })
+    expect(() => parseGenerateArgs(['--max-indexing-failed', '-1'])).toThrow(
+      '--max-indexing-failed must be a non-negative integer',
+    )
+    expect(() => parseGenerateArgs(['--max-indexing-unsupported=abc'])).toThrow(
+      '--max-indexing-unsupported must be a non-negative integer',
+    )
   })
 
   it('parses watch args', () => {
-    expect(parseWatchArgs(['src', '--follow-symlinks', '--debounce=2', '--no-html'])).toEqual({
+    expect(parseWatchArgs(['src', '--follow-symlinks', '--respect-gitignore', '--debounce=2', '--no-html'])).toEqual({
       path: 'src',
       followSymlinks: true,
+      respectGitignore: true,
       debounceSeconds: 2,
       noHtml: true,
     })
@@ -988,6 +1048,7 @@ describe('cli parser', () => {
       host: '127.0.0.1',
       port: 4173,
       transport: 'http',
+      autoRefresh: false,
     })
 
     expect(parseServeArgs(['custom.json', '--host', '0.0.0.0', '--port', '8080'])).toEqual({
@@ -995,6 +1056,7 @@ describe('cli parser', () => {
       host: '0.0.0.0',
       port: 8080,
       transport: 'http',
+      autoRefresh: false,
     })
 
     expect(parseServeArgs(['graph.json', '--mcp'])).toEqual({
@@ -1002,6 +1064,7 @@ describe('cli parser', () => {
       host: '127.0.0.1',
       port: 4173,
       transport: 'stdio',
+      autoRefresh: false,
     })
 
     expect(parseServeArgs(['graph.json', '--transport', 'stdio'])).toEqual({
@@ -1009,6 +1072,7 @@ describe('cli parser', () => {
       host: '127.0.0.1',
       port: 4173,
       transport: 'stdio',
+      autoRefresh: false,
     })
 
     expect(parseServeArgs(['graph.json', '--http'])).toEqual({
@@ -1016,6 +1080,15 @@ describe('cli parser', () => {
       host: '127.0.0.1',
       port: 4173,
       transport: 'http',
+      autoRefresh: false,
+    })
+
+    expect(parseServeArgs(['--stdio', '--auto-refresh'])).toEqual({
+      graphPath: 'out/graph.json',
+      host: '127.0.0.1',
+      port: 4173,
+      transport: 'stdio',
+      autoRefresh: true,
     })
 
     expect(() => parseServeArgs(['--port', '70000'])).toThrow('must be between 0 and 65535')
@@ -1049,9 +1122,9 @@ describe('cli parser', () => {
 
   it('parses proof-report args with defaults and overrides', () => {
     expect(parseProofReportArgs([])).toEqual({
-      graphPath: 'out/graph.json',
-      outputDir: resolve('out/proof-report'),
-      compareDir: resolve('out/compare'),
+      graphPath: ACTIVE_GRAPH_PATH,
+      outputDir: activeOutputPath('proof-report'),
+      compareDir: activeOutputPath('compare'),
       packPath: null,
     })
     expect(parseProofReportArgs(['out/custom/graph.json'])).toEqual({
@@ -1070,9 +1143,9 @@ describe('cli parser', () => {
       'out/proof-inputs/context-pack.json',
     ])).toEqual({
       graphPath: 'custom.json',
-      outputDir: resolve('out/proof/custom'),
-      compareDir: resolve('out/compare/custom'),
-      packPath: resolve('out/proof-inputs/context-pack.json'),
+      outputDir: activeOutputPath('proof', 'custom'),
+      compareDir: activeOutputPath('compare', 'custom'),
+      packPath: activeOutputPath('proof-inputs', 'context-pack.json'),
     })
     expect(() => parseProofReportArgs(['custom.json', 'second.json'])).toThrow('Usage: madar proof-report [graph.json] [--output-dir DIR] [--compare-dir DIR] [--pack PATH]')
     expect(() => parseProofReportArgs(['--wat'])).toThrow('error: unknown option for proof-report: --wat')
@@ -1212,6 +1285,13 @@ describe('cli main', () => {
     expect(help).toContain('watch [path]')
     expect(help).toContain('serve [graph.json]')
     expect(help).toContain('--directed')
+    expect(help).toContain('--legacy')
+    expect(help).toContain('--spi')
+    expect(help).toContain('default: auto')
+    expect(help).toContain('--respect-gitignore')
+    expect(help).toContain('--strict-indexing')
+    expect(help).toContain('--max-indexing-failed')
+    expect(help).toContain('--max-indexing-unsupported')
     expect(help).toContain('--wiki')
     expect(help).toContain('--obsidian')
     expect(help).toContain('--svg')
@@ -1223,6 +1303,7 @@ describe('cli main', () => {
     expect(help).toContain('--http')
     expect(help).toContain('--stdio')
     expect(help).toContain('--mcp')
+    expect(help).toContain('codex <install|uninstall>   manage local AGENTS.md + Codex hook/MCP rules')
     expect(help).toContain('query "<question>"')
     expect(help).toContain('diff <baseline-graph.json>')
     expect(help).toContain('--rank-by MODE')
@@ -1356,7 +1437,7 @@ describe('cli main', () => {
       graphPath: 'custom.json',
       execTemplate: 'gemini -p "$(cat {prompt_file})"',
       questionsPath: 'benchmark-questions.json',
-      outputDir: resolve('out/compare/custom'),
+      outputDir: activeOutputPath('compare', 'custom'),
       task: 'explain',
       baselineMode: 'bounded',
       perArmTimeoutSeconds: 900,
@@ -1572,7 +1653,7 @@ describe('cli main', () => {
         version: '0.27.4',
         os: process.platform,
         nodeMajor: expect.any(Number),
-        spiEnabled: false,
+        spiEnabled: true,
       },
       {
         command: 'generate',
@@ -1582,9 +1663,64 @@ describe('cli main', () => {
         nodeMajor: expect.any(Number),
         repoSizeBucket: '1-24',
         graphSizeBucket: '1-99',
-        spiEnabled: false,
+        spiEnabled: true,
       },
     ])
+  })
+
+  it('omits SPI telemetry for cluster-only generation because the stored graph owns its extraction mode', async () => {
+    const { io, errors } = createIo()
+    const dependencies = createDependencies() as CliDependencies & {
+      recordTelemetryEvent: (event: unknown) => void
+      readInstalledVersion: () => string
+    }
+    const telemetryEvents: unknown[] = []
+
+    dependencies.recordTelemetryEvent = (event) => {
+      telemetryEvents.push(event)
+    }
+    dependencies.readInstalledVersion = () => '0.27.4'
+
+    const exitCode = await executeCli(['generate', '.', '--cluster-only'], io, dependencies)
+
+    expect(exitCode).toBe(0)
+    expect(errors).toEqual([])
+    expect(telemetryEvents).toEqual([
+      expect.objectContaining({ command: 'generate', stage: 'started' }),
+      expect.objectContaining({ command: 'generate', stage: 'succeeded' }),
+    ])
+    for (const event of telemetryEvents) {
+      expect(event).not.toHaveProperty('spiEnabled')
+    }
+  })
+
+  it('omits SPI telemetry for failed cluster-only generation too', async () => {
+    const { io, errors } = createIo()
+    const dependencies = createDependencies() as CliDependencies & {
+      recordTelemetryEvent: (event: unknown) => void
+      readInstalledVersion: () => string
+    }
+    const telemetryEvents: unknown[] = []
+
+    dependencies.generateGraph = () => {
+      throw new Error('cluster-only failed')
+    }
+    dependencies.recordTelemetryEvent = (event) => {
+      telemetryEvents.push(event)
+    }
+    dependencies.readInstalledVersion = () => '0.27.4'
+
+    const exitCode = await executeCli(['generate', '.', '--cluster-only'], io, dependencies)
+
+    expect(exitCode).toBe(1)
+    expect(errors).toContain('error: cluster-only failed')
+    expect(telemetryEvents).toEqual([
+      expect.objectContaining({ command: 'generate', stage: 'started' }),
+      expect.objectContaining({ command: 'generate', stage: 'failed' }),
+    ])
+    for (const event of telemetryEvents) {
+      expect(event).not.toHaveProperty('spiEnabled')
+    }
   })
 
   it('records telemetry after install success across install entrypoints', async () => {
@@ -1802,7 +1938,7 @@ describe('cli main', () => {
     dependencies.runProofReport = (options) => {
       capturedOptions = options
       return {
-        outputPath: resolve('out/proof-report/custom', 'proof-report.md'),
+        outputPath: activeOutputPath('proof-report', 'custom', 'proof-report.md'),
         report: '# Local Proof Report\n',
       }
     }
@@ -1822,12 +1958,12 @@ describe('cli main', () => {
 
     expect(exitCode).toBe(0)
     expect(errors).toEqual([])
-    expect(logs).toEqual([`Saved to ${resolve('out/proof-report/custom', 'proof-report.md')}`])
+    expect(logs).toEqual([`Saved to ${activeOutputPath('proof-report', 'custom', 'proof-report.md')}`])
     expect(capturedOptions).toEqual({
       graphPath: 'custom.json',
-      outputDir: resolve('out/proof-report/custom'),
+      outputDir: activeOutputPath('proof-report', 'custom'),
       compareDir: resolve('compare'),
-      packPath: resolve('out/proof-inputs/context-pack.json'),
+      packPath: activeOutputPath('proof-inputs', 'context-pack.json'),
     })
   })
 
@@ -1904,6 +2040,8 @@ describe('cli main', () => {
     expect(benchSuiteRequest.options).toEqual({
       repo: 'nestjs-mid',
       task: 'explain-runtime',
+      reposManifestPath: null,
+      tasksManifestPath: null,
       mode: 'warm',
       trials: 5,
       outputDir: resolve('docs/benchmarks/suite/results/custom'),
@@ -1982,7 +2120,7 @@ describe('cli main', () => {
     expect(reviewCompareRequest.options).toEqual({
       graphPath: 'custom.json',
       execTemplate: 'claude -p "$(cat {prompt_file})"',
-      outputDir: resolve('out/review-compare/custom'),
+      outputDir: activeOutputPath('review-compare', 'custom'),
       baseBranch: 'origin/main',
       budget: 1800,
       yes: true,
@@ -2592,6 +2730,9 @@ describe('cli main', () => {
     expect(logs[0]).toContain('[madar generate] update completed')
     expect(logs[0]).toContain('graph.json')
     expect(logs[0]).toContain('Semantic anomalies: 2 high-signal item(s)')
+    expect(logs[0]).toContain('Safety exclusions: 1 (1 sensitive, 0 unreadable)')
+    expect(logs[0]).toContain('"config/credentials.json" (secret_config)')
+    expect(logs[0]).toContain('madar codex install     # Codex CLI')
   })
 
   it('passes optional export flags through generate commands', async () => {
@@ -2617,21 +2758,35 @@ describe('cli main', () => {
         codeFiles: 2,
         nonCodeFiles: 1,
         extractableFiles: 3,
-        extractedFiles: options.useSpi ? 2 : 3,
+        extractedFiles: options.extractionMode !== 'legacy' ? 2 : 3,
         totalWords: 120,
         nodeCount: 5,
         edgeCount: 4,
         communityCount: 2,
         changedFiles: 0,
         deletedFiles: 0,
-        cache: options.useSpi ? { strategy: 'spi', hit: false, reason: 'no-cache', fileCount: 2 } : null,
+        cache: options.extractionMode !== 'legacy' ? { strategy: 'spi', hit: false, reason: 'no-cache', fileCount: 2 } : null,
         warning: null,
         notes: [],
       }
     }
 
     const exitCode = await executeCli(
-      ['generate', 'src', '--directed', '--wiki', '--obsidian', '--obsidian-dir', 'vault', '--svg', '--graphml', '--neo4j'],
+      [
+        'generate',
+        'src',
+        '--directed',
+        '--wiki',
+        '--obsidian',
+        '--obsidian-dir',
+        'vault',
+        '--svg',
+        '--graphml',
+        '--neo4j',
+        '--max-indexing-failed=1',
+        '--max-indexing-unsupported',
+        '2',
+      ],
       io,
       dependencies,
     )
@@ -2652,7 +2807,11 @@ describe('cli main', () => {
       neo4j: true,
       includeDocs: false,
       docs: false,
-      useSpi: false,
+      extractionMode: 'auto',
+      indexingStrict: {
+        maxFailed: 1,
+        maxUnsupported: 2,
+      },
     })
     expect(typeof capturedOptions?.onProgress).toBe('function')
   })
@@ -2698,13 +2857,30 @@ describe('cli main', () => {
     expect(logs[0]).toContain('[madar generate] cluster-only completed')
   })
 
+  it('lets cluster-only reuse its stored extraction mode instead of passing the default auto mode', async () => {
+    const { io } = createIo()
+    const dependencies = createDependencies()
+    const originalGenerateGraph = dependencies.generateGraph
+    let capturedOptions: Parameters<CliDependencies['generateGraph']>[1] | undefined
+    dependencies.generateGraph = (rootPath = '.', options = {}) => {
+      capturedOptions = options
+      return originalGenerateGraph(rootPath, options)
+    }
+
+    const exitCode = await executeCli(['generate', 'src', '--cluster-only'], io, dependencies)
+
+    expect(exitCode).toBe(0)
+    expect(capturedOptions).toMatchObject({ clusterOnly: true })
+    expect(capturedOptions).not.toHaveProperty('extractionMode')
+  })
+
   it('executes save-result commands via injected dependencies', async () => {
     const { io, logs } = createIo()
 
     const exitCode = await executeCli(['save-result', '--question', 'Q', '--answer', 'A', '--memory-dir', 'out/mem'], io, createDependencies())
 
     expect(exitCode).toBe(0)
-    expect(logs[0]).toBe(`Saved to ${resolve('out/mem')}/Q.md`)
+    expect(logs[0]).toBe(`Saved to ${activeOutputPath('mem')}/Q.md`)
   })
 
   it('executes benchmark commands with question files via injected dependencies', async () => {
@@ -2831,6 +3007,45 @@ describe('cli main', () => {
     expect(logs).toContain('opencode local rules installed')
   })
 
+  it('recognizes an external linked-worktree graph before warning during install', async () => {
+    const sandbox = mkdtempSync(join(tmpdir(), 'madar-cli-worktree-'))
+    const primary = join(sandbox, 'primary')
+    const linked = join(sandbox, 'linked')
+    const originalCwd = process.cwd()
+
+    try {
+      execFileSync('git', ['init', primary], { stdio: 'pipe' })
+      execFileSync('git', ['-C', primary, 'config', 'user.email', 'madar-tests@example.com'], { stdio: 'pipe' })
+      execFileSync('git', ['-C', primary, 'config', 'user.name', 'Madar Tests'], { stdio: 'pipe' })
+      writeFileSync(join(primary, 'main.ts'), 'export const primary = true\n', 'utf8')
+      execFileSync('git', ['-C', primary, 'add', '.'], { stdio: 'pipe' })
+      execFileSync('git', ['-C', primary, 'commit', '-m', 'initial'], { stdio: 'pipe' })
+      execFileSync('git', ['-C', primary, 'worktree', 'add', '-b', 'feature/install-warning', linked], { stdio: 'pipe' })
+
+      const graphPath = resolveWorkspaceGraphPath('out/graph.json', linked)
+      mkdirSync(dirname(graphPath), { recursive: true })
+      writeFileSync(graphPath, '{}\n', 'utf8')
+
+      process.chdir(linked)
+      const { io, logs } = createIo()
+
+      await expect(executeCli(['claude', 'install'], io, createDependencies())).resolves.toBe(0)
+
+      expect(logs).toContain('claude local rules installed')
+      expect(logs.join('\n')).not.toContain('Warning: out/graph.json not found')
+    } finally {
+      process.chdir(originalCwd)
+      if (existsSync(primary)) {
+        try {
+          execFileSync('git', ['-C', primary, 'worktree', 'remove', '--force', linked], { stdio: 'pipe' })
+        } catch {
+          // The temporary directory cleanup below handles partial setup.
+        }
+      }
+      rmSync(sandbox, { recursive: true, force: true })
+    }
+  }, 20_000)
+
   it('passes the requested install profile into claude, cursor, gemini, and copilot installs', async () => {
     const { io } = createIo()
     const dependencies = createDependencies()
@@ -2872,8 +3087,15 @@ describe('cli main', () => {
     let watched = false
     let served = false
     let servedOverStdio = false
+    let stdioOptions: unknown
+    let lastGenerateOptions: Record<string, unknown> | undefined
     let lastWatchOptions: Record<string, unknown> | undefined
     const dependencies = createDependencies()
+    const generateGraph = dependencies.generateGraph
+    dependencies.generateGraph = (path, options) => {
+      lastGenerateOptions = options as Record<string, unknown>
+      return generateGraph(path, options)
+    }
     dependencies.watchGraph = async (_path, _debounce, options) => {
       watched = true
       lastWatchOptions = options as Record<string, unknown>
@@ -2881,13 +3103,14 @@ describe('cli main', () => {
     dependencies.serveGraph = async () => {
       served = true
     }
-    dependencies.serveGraphStdio = async () => {
+    dependencies.serveGraphStdio = async (options) => {
       servedOverStdio = true
+      stdioOptions = options
     }
 
-    const watchExitCode = await executeCli(['watch', 'src', '--debounce', '1', '--no-html'], io, dependencies)
+    const watchExitCode = await executeCli(['watch', 'src', '--respect-gitignore', '--debounce', '1', '--no-html'], io, dependencies)
     const serveExitCode = await executeCli(['serve', 'out/graph.json', '--port', '0'], io, dependencies)
-    const stdioExitCode = await executeCli(['serve', 'out/graph.json', '--mcp'], io, dependencies)
+    const stdioExitCode = await executeCli(['serve', 'out/graph.json', '--mcp', '--auto-refresh'], io, dependencies)
 
     expect(watchExitCode).toBe(0)
     expect(serveExitCode).toBe(0)
@@ -2895,7 +3118,11 @@ describe('cli main', () => {
     expect(watched).toBe(true)
     expect(served).toBe(true)
     expect(servedOverStdio).toBe(true)
+    expect(lastGenerateOptions?.noHtml).toBe(true)
+    expect(lastGenerateOptions?.respectGitignore).toBe(true)
     expect(lastWatchOptions?.noHtml).toBe(true)
+    expect(lastWatchOptions?.respectGitignore).toBe(true)
+    expect(stdioOptions).toMatchObject({ graphPath: ACTIVE_GRAPH_PATH, autoRefresh: true, workspaceRoot: process.cwd() })
     expect(logs[0]).toContain('[madar generate]')
   })
 

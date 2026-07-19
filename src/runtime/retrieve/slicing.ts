@@ -9,15 +9,9 @@ import type {
   RetrievalIntent,
   RetrievalTargetDomainHint,
 } from '../../contracts/retrieval-gate.js'
-import type { RuntimeProofProfile } from '../../contracts/runtime-proof.js'
 import { classifySourceDomain, isPollutedSourcePath } from '../../shared/source-discovery.js'
 import { relativizeSourceFile } from '../../shared/source-path.js'
-import {
-  buildRuntimeProofAssessment,
-  runtimeProofAnchorBonus,
-  runtimeProofObligationMatchScore,
-  runtimeProofProvidesDirectEvidence,
-} from '../runtime-proof.js'
+import { requireDirectedGraph } from '../direction.js'
 
 export interface SliceScoredNode {
   id: string
@@ -26,6 +20,8 @@ export interface SliceScoredNode {
   nodeKind?: string | undefined
   frameworkRole?: string | undefined
   exactLabelMatch: boolean
+  /** Strength of the prompt's explicit symbol match; preserves Class.method precision. */
+  symbolMatchScore?: number
   literalPathMatch?: boolean
   sourcePathMatch: boolean
   score: number
@@ -35,7 +31,6 @@ interface SliceOptions {
   prompt?: string | undefined
   generationIntent?: RetrievalGenerationIntent | undefined
   targetDomainHint?: RetrievalTargetDomainHint | undefined
-  runtimeProofProfile?: RuntimeProofProfile | undefined
   mentionedSymbols?: readonly string[] | undefined
   excludedDomains?: readonly string[] | undefined
   excludedTerms?: readonly string[] | undefined
@@ -81,39 +76,6 @@ const DEBUG_HELPERS = new Set(['uses_guard', 'guarded_by', 'reads_env', 'uses_co
 const EXPLAIN_HELPERS = new Set(['covered_by', 'reads_env', 'uses_config'])
 const IMPACT_HELPERS = new Set(['covered_by', 'reads_env', 'uses_config', 'depends_on', 'exports'])
 const RUNTIME_FLOW_RELATIONS = ['calls', 'enqueues_job'] as const
-const STRICT_RUNTIME_PROOF_FLOW_RELATIONS = new Set([
-  ...RUNTIME_FLOW_RELATIONS,
-  'controller_route',
-  'route_handler',
-  'method',
-]) as ReadonlySet<string>
-const STRICT_RUNTIME_PROOF_EXCLUDED_DOMAINS = new Set([
-  'test',
-  'benchmark',
-  'fixture',
-  'docs',
-  'config',
-  'build_artifact',
-]) as ReadonlySet<string>
-
-function promptMentionsCronFlow(prompt: string | undefined): boolean {
-  if (!prompt) {
-    return false
-  }
-
-  return /\bcron\b/i.test(prompt)
-}
-
-function strictRuntimeProofOffPathCronNode(node: SliceScoredNode, options: SliceOptions): boolean {
-  if (promptMentionsCronFlow(options.prompt)) {
-    return false
-  }
-
-  const normalizedSourceFile = relativizeSourceFile(node.sourceFile, options.rootPath).replace(/\\/g, '/').toLowerCase()
-  const normalizedLabel = node.label.toLowerCase()
-  return /(?:^|\/)cron(?:\/|$)/.test(normalizedSourceFile)
-    || /\bcron\b/.test(normalizedLabel)
-}
 
 function policyForIntent(intent: RetrievalIntent): SlicePolicy {
   switch (intent) {
@@ -366,153 +328,6 @@ function runtimeGenerationAnchorValue(node: SliceScoredNode): number {
   return value
 }
 
-function strictRuntimeProofAnchorExcluded(node: SliceScoredNode, options: SliceOptions): boolean {
-  const sourceDomain = classifySourceDomain(node.sourceFile, options.rootPath)
-  if (STRICT_RUNTIME_PROOF_EXCLUDED_DOMAINS.has(sourceDomain)) {
-    return true
-  }
-  if (strictRuntimeProofOffPathCronNode(node, options)) {
-    return true
-  }
-  if (isPollutedSourcePath(node.sourceFile, options.rootPath)) {
-    return true
-  }
-  const normalizedSourceFile = relativizeSourceFile(node.sourceFile, options.rootPath).replace(/\\/g, '/').toLowerCase()
-  return /(?:^|\/)(?:examples?|samples?|demos?|playground)(?:\/|$)|\.(?:png|jpe?g|gif|webp|svg)$/i.test(normalizedSourceFile)
-}
-
-function runtimeProofCandidateFromSliceNode(node: SliceScoredNode): {
-  label: string
-  source_file: string
-  line_number: number
-  node_kind?: string | undefined
-  framework_role?: string | undefined
-} {
-  return {
-    label: node.label,
-    source_file: node.sourceFile,
-    line_number: 0,
-    ...(node.nodeKind ? { node_kind: node.nodeKind } : {}),
-    ...(node.frameworkRole ? { framework_role: node.frameworkRole } : {}),
-  }
-}
-
-function runtimeProofCandidateFromGraphNode(graph: KnowledgeGraph, nodeId: string): {
-  label: string
-  source_file: string
-  line_number: number
-  node_kind?: string | undefined
-  framework_role?: string | undefined
-} {
-  const attributes = graph.nodeAttributes(nodeId)
-  return {
-    label: String(attributes.label ?? nodeId),
-    source_file: String(attributes.source_file ?? ''),
-    line_number: 0,
-    ...(typeof attributes.node_kind === 'string' ? { node_kind: attributes.node_kind } : {}),
-    ...(typeof attributes.framework_role === 'string' ? { framework_role: attributes.framework_role } : {}),
-  }
-}
-
-function strictRuntimeProofAnchorBaseScore(node: SliceScoredNode, profile: RuntimeProofProfile): number {
-  const candidate = runtimeProofCandidateFromSliceNode(node)
-  const entrypointBonus = Math.max(0, ...profile.obligations
-    .filter((obligation) => obligation.kind === 'entrypoint')
-    .map((obligation) => runtimeProofObligationMatchScore(candidate, obligation)))
-  return runtimeProofAnchorBonus(candidate, profile)
-    + runtimeGenerationAnchorValue(node)
-    + (entrypointBonus * 4)
-    + (routeOrControllerLikeNode(node) ? 18 : 0)
-    + (routeLikeNode(node) ? 10 : 0)
-}
-
-function strictRuntimeProofNeighborhood(
-  graph: KnowledgeGraph,
-  startId: string,
-  maxDepth: number = 6,
-): Array<{ nodeId: string; depth: number }> {
-  const orderedNodes: Array<{ nodeId: string; depth: number }> = []
-  const queue = [{ nodeId: startId, depth: 0 }]
-  const seen = new Set<string>()
-
-  while (queue.length > 0) {
-    const current = queue.shift()!
-    if (seen.has(current.nodeId)) {
-      continue
-    }
-    seen.add(current.nodeId)
-    orderedNodes.push(current)
-    if (current.depth >= maxDepth) {
-      continue
-    }
-
-    const neighbors = [
-      ...graph.predecessors(current.nodeId).map((nodeId) => ({
-        nodeId,
-        relation: String(graph.edgeAttributes(nodeId, current.nodeId).relation ?? 'related_to'),
-      })),
-      ...graph.successors(current.nodeId).map((nodeId) => ({
-        nodeId,
-        relation: String(graph.edgeAttributes(current.nodeId, nodeId).relation ?? 'related_to'),
-      })),
-    ]
-      .filter((neighbor) => STRICT_RUNTIME_PROOF_FLOW_RELATIONS.has(neighbor.relation))
-
-    for (const neighbor of neighbors) {
-      if (!seen.has(neighbor.nodeId)) {
-        queue.push({ nodeId: neighbor.nodeId, depth: current.depth + 1 })
-      }
-    }
-  }
-
-  return orderedNodes
-}
-
-function strictRuntimeProofCoverageScore(
-  graph: KnowledgeGraph,
-  node: SliceScoredNode,
-  profile: RuntimeProofProfile,
-): number {
-  const neighborhood = strictRuntimeProofNeighborhood(graph, node.id)
-  const assessment = buildRuntimeProofAssessment(
-    profile,
-    neighborhood.map(({ nodeId }) => runtimeProofCandidateFromGraphNode(graph, nodeId)),
-  )
-  if (!assessment) {
-    return Number.NEGATIVE_INFINITY
-  }
-
-  const obligationsById = new Map(profile.obligations.map((obligation) => [obligation.id, obligation] as const))
-  const closestEvidenceDepthByObligation = new Map<string, number>()
-  for (const { nodeId, depth } of neighborhood) {
-    const candidate = runtimeProofCandidateFromGraphNode(graph, nodeId)
-    for (const obligation of profile.obligations) {
-      if (!runtimeProofProvidesDirectEvidence(candidate, obligation)) {
-        continue
-      }
-      const currentDepth = closestEvidenceDepthByObligation.get(obligation.id)
-      if (currentDepth === undefined || depth < currentDepth) {
-        closestEvidenceDepthByObligation.set(obligation.id, depth)
-      }
-    }
-  }
-  const coveredCount = assessment.obligations.length - assessment.missing_obligations.length
-  const missingEntryCount = assessment.missing_obligations.filter((obligationId) => obligationsById.get(obligationId)?.kind === 'entrypoint').length
-  const missingTerminalCount = assessment.missing_obligations.filter((obligationId) => obligationsById.get(obligationId)?.kind === 'terminal').length
-  const evidenceDepthPenalty = [...closestEvidenceDepthByObligation.values()].reduce((total, depth) => total + depth, 0)
-
-  let score = coveredCount * 180
-  score -= assessment.missing_obligations.length * 260
-  score -= missingEntryCount * 140
-  score -= missingTerminalCount * 120
-  score -= evidenceDepthPenalty * 35
-  if (missingEntryCount === 0) score += 90
-  if (missingTerminalCount === 0) score += 70
-  if (coveredCount > 0 && evidenceDepthPenalty <= coveredCount * 2) score += 80
-  if (routeOrControllerLikeNode(node)) score += 25
-
-  return score
-}
 
 function semanticGenerationCoreAnchorValue(node: SliceScoredNode, prompt: string | undefined): number {
   const lower = `${node.label} ${node.nodeKind ?? ''} ${node.frameworkRole ?? ''} ${node.sourceFile}`.toLowerCase()
@@ -573,12 +388,6 @@ function shouldSuppressNode(
   }
 
   const sourceDomain = classifySourceDomain(node.sourceFile, options.rootPath)
-  if (options.runtimeProofProfile?.strict_runtime_proof && STRICT_RUNTIME_PROOF_EXCLUDED_DOMAINS.has(sourceDomain)) {
-    return true
-  }
-  if (options.runtimeProofProfile?.strict_runtime_proof && strictRuntimeProofOffPathCronNode(node, options)) {
-    return true
-  }
   if ((options.excludedDomains ?? []).includes(sourceDomain)) {
     return true
   }
@@ -605,7 +414,16 @@ function buildAnchors(graph: KnowledgeGraph, scored: readonly SliceScoredNode[],
   const anchors: ContextPackSliceAnchor[] = []
   const seen = new Set<string>()
   const matchedAnchors = scored.filter((node) => node.exactLabelMatch || node.sourcePathMatch)
-  const exactMethodAnchors = matchedAnchors.filter((node) => node.exactLabelMatch && methodLikeNode(node))
+  const exactMethodAnchors = matchedAnchors
+    .filter((node) => node.exactLabelMatch && methodLikeNode(node))
+    // A qualified symbol can also weakly match a same-named method on a
+    // different class. Preserve the score from retrieval so the explicitly
+    // named Class.method remains the entry-point anchor.
+    .sort((left, right) => (
+      (right.symbolMatchScore ?? 0) - (left.symbolMatchScore ?? 0)
+      || right.score - left.score
+      || left.id.localeCompare(right.id)
+    ))
   const nonBarrelMatchedAnchors = matchedAnchors.filter((node) => !isBarrelLike(node.label, node.sourceFile))
   const broadRuntimeGeneration = broadRuntimeGenerationPrompt(options)
   const reportGenerationPrompt = promptWantsReportGenerationCore(options.prompt)
@@ -637,132 +455,6 @@ function buildAnchors(graph: KnowledgeGraph, scored: readonly SliceScoredNode[],
       .sort((left, right) => right.value - left.value || right.node.score - left.node.score)
       .map((entry) => entry.node)
     : []
-  const runtimeProofAnchors = options.runtimeProofProfile?.strict_runtime_proof
-    ? (() => {
-      const anchorableNodes = scored.filter((node) => !isBarrelLike(node.label, node.sourceFile) && !frontendDisplayLikeNode(node))
-      const preferredNodes = anchorableNodes.filter((node) => !strictRuntimeProofAnchorExcluded(node, options))
-      const candidateNodes = preferredNodes.length > 0 ? preferredNodes : anchorableNodes
-      const baseEntries = candidateNodes
-        .map((node) => ({
-          node,
-          baseValue: strictRuntimeProofAnchorBaseScore(node, options.runtimeProofProfile!),
-        }))
-        .filter((entry) => entry.baseValue > 0)
-      const baseSeedWindow = options.runtimeProofProfile!.strict_runtime_proof ? 64 : 24
-      const seedEntriesById = new Map<string, { node: SliceScoredNode; baseValue: number }>()
-      for (const entry of [...baseEntries]
-        .sort((left, right) => right.baseValue - left.baseValue || right.node.score - left.node.score)
-        .slice(0, baseSeedWindow)) {
-        seedEntriesById.set(entry.node.id, entry)
-      }
-
-      const obligationSeedWindow = options.runtimeProofProfile!.strict_runtime_proof ? 16 : 8
-      for (const obligation of options.runtimeProofProfile!.obligations) {
-        for (const entry of [...baseEntries]
-          .map((baseEntry) => {
-            const candidate = runtimeProofCandidateFromSliceNode(baseEntry.node)
-            return {
-              ...baseEntry,
-              directEvidenceScore: runtimeProofProvidesDirectEvidence(candidate, obligation)
-                ? runtimeProofObligationMatchScore(candidate, obligation)
-                : 0,
-            }
-          })
-          .filter((entry) => entry.directEvidenceScore > 0)
-          .sort((left, right) =>
-            right.directEvidenceScore - left.directEvidenceScore
-            || right.baseValue - left.baseValue
-            || right.node.score - left.node.score
-          )
-          .slice(0, obligationSeedWindow)) {
-          seedEntriesById.set(entry.node.id, {
-            node: entry.node,
-            baseValue: entry.baseValue,
-          })
-        }
-      }
-
-      return [...seedEntriesById.values()]
-        .map((entry) => ({
-          ...entry,
-          coverageValue: strictRuntimeProofCoverageScore(graph, entry.node, options.runtimeProofProfile!),
-        }))
-        .sort((left, right) =>
-          right.coverageValue - left.coverageValue
-          || right.baseValue - left.baseValue
-          || right.node.score - left.node.score
-        )
-        .map((entry) => entry.node)
-    })()
-    : []
-  const runtimeProofEntrypointAnchors = options.runtimeProofProfile?.strict_runtime_proof
-    ? runtimeProofAnchors.filter((node) => {
-      const candidate = runtimeProofCandidateFromSliceNode(node)
-      return options.runtimeProofProfile!.obligations.some((obligation) =>
-        obligation.kind === 'entrypoint' && runtimeProofProvidesDirectEvidence(candidate, obligation)
-      )
-    })
-    : []
-  const runtimeProofFlowAnchors = options.runtimeProofProfile?.strict_runtime_proof
-    ? (() => {
-      const candidatesById = new Map<string, { node: SliceScoredNode; coverageValue: number; baseValue: number; upstreamValue: number; sameSourceValue: number }>()
-      for (const anchorNode of runtimeProofAnchors.slice(0, 8)) {
-        const predecessorIds = new Set(graph.predecessors(anchorNode.id))
-        const successorIds = new Set(graph.successors(anchorNode.id))
-        for (const neighborId of new Set([...predecessorIds, ...successorIds])) {
-          const relation = predecessorIds.has(neighborId)
-            ? String(graph.edgeAttributes(neighborId, anchorNode.id).relation ?? 'related_to')
-            : successorIds.has(neighborId)
-              ? String(graph.edgeAttributes(anchorNode.id, neighborId).relation ?? 'related_to')
-              : 'related_to'
-          if (!STRICT_RUNTIME_PROOF_FLOW_RELATIONS.has(relation)) {
-            continue
-          }
-          const neighbor = scored.find((node) => node.id === neighborId) ?? sliceNodeFromGraph(graph, neighborId)
-          if (
-            !methodLikeNode(neighbor)
-            || isBarrelLike(neighbor.label, neighbor.sourceFile)
-            || frontendDisplayLikeNode(neighbor)
-            || strictRuntimeProofAnchorExcluded(neighbor, options)
-          ) {
-            continue
-          }
-          const baseValue = strictRuntimeProofAnchorBaseScore(neighbor, options.runtimeProofProfile!)
-          if (baseValue <= 0) {
-            continue
-          }
-          const coverageValue = strictRuntimeProofCoverageScore(graph, neighbor, options.runtimeProofProfile!)
-          const upstreamValue = predecessorIds.has(neighborId) ? 40 : 0
-          const sameSourceValue = relativizeSourceFile(neighbor.sourceFile, options.rootPath)
-            === relativizeSourceFile(anchorNode.sourceFile, options.rootPath)
-            ? 80
-            : 0
-          const current = candidatesById.get(neighbor.id)
-          if (
-            !current
-            || sameSourceValue + upstreamValue > current.sameSourceValue + current.upstreamValue
-            || (
-              sameSourceValue + upstreamValue === current.sameSourceValue + current.upstreamValue
-              && (
-                coverageValue > current.coverageValue
-                || (coverageValue === current.coverageValue && baseValue > current.baseValue)
-              )
-            )
-          ) {
-            candidatesById.set(neighbor.id, { node: neighbor, coverageValue, baseValue, upstreamValue, sameSourceValue })
-          }
-        }
-      }
-      return [...candidatesById.values()]
-        .sort((left, right) =>
-          (right.sameSourceValue + right.upstreamValue) - (left.sameSourceValue + left.upstreamValue)
-          || right.coverageValue - left.coverageValue
-          || right.baseValue - left.baseValue
-          || right.node.score - left.node.score
-        )
-        .map((entry) => entry.node)
-    })()
-    : []
   const intentAnchors = (() => {
     if (options.generationIntent === 'runtime_generation' && options.targetDomainHint === 'backend_runtime') {
       return matchedAnchors
@@ -790,28 +482,6 @@ function buildAnchors(graph: KnowledgeGraph, scored: readonly SliceScoredNode[],
     anchorPool = exactMethodAnchors.slice(0, 1)
   } else if (explicitPathAnchor) {
     anchorPool = [explicitPathAnchor]
-  } else if (runtimeProofAnchors.length > 0) {
-    const runtimeProofAnchorLimit = options.runtimeProofProfile?.strict_runtime_proof
-      ? Math.max(2, Math.min(3, options.runtimeProofProfile.obligations.length))
-      : broadRuntimeGeneration ? 2 : 1
-    const prioritizedRuntimeProofAnchors: SliceScoredNode[] = []
-    const seenRuntimeProofAnchors = new Set<string>()
-    const addRuntimeProofAnchor = (node: SliceScoredNode | undefined): void => {
-      if (!node || seenRuntimeProofAnchors.has(node.id)) {
-        return
-      }
-      seenRuntimeProofAnchors.add(node.id)
-      prioritizedRuntimeProofAnchors.push(node)
-    }
-    addRuntimeProofAnchor(runtimeProofFlowAnchors[0])
-    addRuntimeProofAnchor(runtimeProofEntrypointAnchors[0])
-    for (const node of runtimeProofAnchors) {
-      addRuntimeProofAnchor(node)
-      if (prioritizedRuntimeProofAnchors.length >= runtimeProofAnchorLimit) {
-        break
-      }
-    }
-    anchorPool = prioritizedRuntimeProofAnchors
   } else if (broadRuntimeGeneration && reportGenerationPrompt && semanticCoreAnchors.length > 0) {
     const primaryRuntimeAnchor = routePromptAnchors[0]
       ?? intentAnchors[0]
@@ -857,9 +527,7 @@ function buildAnchors(graph: KnowledgeGraph, scored: readonly SliceScoredNode[],
       reason,
     })
     seen.add(node.id)
-    const maxAnchors = options.runtimeProofProfile?.strict_runtime_proof
-      ? Math.max(2, Math.min(3, options.runtimeProofProfile.obligations.length))
-      : broadRuntimeGeneration && reportGenerationPrompt ? 3 : 2
+    const maxAnchors = broadRuntimeGeneration && reportGenerationPrompt ? 3 : 2
     if (anchors.length >= maxAnchors) {
       break
     }
@@ -1137,6 +805,8 @@ export function sliceCandidatesForRetrieve(
   intent: RetrievalIntent,
   options: SliceOptions = {},
 ): { ordered_ids: string[]; metadata: ContextPackSliceMetadata } | null {
+  requireDirectedGraph(graph, 'Directional retrieval')
+
   if (scoredCandidates.length === 0) {
     return null
   }

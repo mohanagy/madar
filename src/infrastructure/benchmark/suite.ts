@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -23,6 +24,7 @@ import {
 import { generateGraph, type GenerateGraphOptions, type GenerateGraphResult } from '../generate.js'
 import { shellEscape } from '../../shared/shell.js'
 import { findPackageRoot } from '../../shared/package-metadata.js'
+import { validateGraphOutputPath } from '../../shared/security.js'
 
 export type BenchmarkSuiteMode = 'cold' | 'warm' | 'all'
 export type BenchmarkSuiteEntryStatus = 'ready' | 'planned'
@@ -65,6 +67,8 @@ export interface BenchmarkSuiteTask {
 export interface BenchmarkSuiteRunOptions {
   repo: string | null
   task: string | null
+  reposManifestPath?: string | null
+  tasksManifestPath?: string | null
   mode: BenchmarkSuiteMode
   trials: number
   outputDir: string
@@ -173,9 +177,17 @@ export interface BenchmarkSuiteSummary {
   started_at: string
   completed_at: string
   output_root: string
+  runtime_artifact: {
+    source: string
+    package_version: string | null
+    tarball_name: string | null
+    tarball_sha256: string | null
+  }
   filters: {
     repo: string | null
     task: string | null
+    repos_manifest: string | null
+    tasks_manifest: string | null
     mode: BenchmarkSuiteMode
     trials: number
   }
@@ -479,6 +491,18 @@ function portablePath(path: string): string {
   return relative(process.cwd(), path) || '.'
 }
 
+function receiptManifestPath(path: string): string {
+  const relativeToPackage = relative(findPackageRoot(), resolve(path))
+  if (
+    relativeToPackage === '..'
+    || relativeToPackage.startsWith(`..${sep}`)
+    || isAbsolute(relativeToPackage)
+  ) {
+    return '<external-manifest>'
+  }
+  return (relativeToPackage || '.').split(sep).join('/')
+}
+
 function copyWorkspace(sourceRoot: string, targetRoot: string): void {
   copyWorkspaceForBenchmark(sourceRoot, targetRoot)
 }
@@ -639,7 +663,10 @@ function prepareBenchmarkWorkspace(
     resetBenchmarkWorkspaceConfig(workspaceRoot)
   }
   ensureBenchmarkWorkspaceInstall(graphWorkspaceRoot)
-  return runGenerateGraph(graphWorkspaceRoot, kind === 'spi' ? { noHtml: true, useSpi: true } : { noHtml: true }).graphPath
+  return runGenerateGraph(graphWorkspaceRoot, {
+    noHtml: true,
+    extractionMode: kind === 'spi' ? 'spi' : 'legacy',
+  }).graphPath
 }
 
 function median(values: number[]): number | null {
@@ -964,6 +991,7 @@ function formatBenchmarkSuiteSummaryMarkdown(summary: BenchmarkSuiteSummary): st
     '# Benchmark suite summary',
     '',
     `- Generated: ${summary.completed_at}`,
+    `- Runtime artifact: source=${summary.runtime_artifact.source}, package=${summary.runtime_artifact.package_version ?? 'unknown'}, tarball_sha256=${summary.runtime_artifact.tarball_sha256 ?? 'n/a'}`,
     `- Filters: repo=${summary.filters.repo ?? 'all'}, task=${summary.filters.task ?? 'all'}, mode=${summary.filters.mode}, trials=${summary.filters.trials}`,
     `- cells_skipped_for_install: ${summary.cells_skipped_for_install} (preparation failures)`,
     `- Cells skipped for env drift: ${summary.cells_skipped_for_env_drift}`,
@@ -996,6 +1024,19 @@ function formatBenchmarkSuiteSummaryMarkdown(summary: BenchmarkSuiteSummary): st
   }
 
   return `${lines.join('\n').trimEnd()}\n`
+}
+
+function benchmarkRuntimeArtifact(): BenchmarkSuiteSummary['runtime_artifact'] {
+  const tarballPath = process.env.MADAR_BENCH_PACKAGE_TARBALL
+  const hasTarball = typeof tarballPath === 'string' && existsSync(tarballPath)
+  return {
+    source: process.env.MADAR_BENCH_RUNTIME_SOURCE ?? 'checkout',
+    package_version: process.env.MADAR_BENCH_PACKAGE_VERSION ?? null,
+    tarball_name: hasTarball ? tarballPath.split(/[\\/]/).at(-1) ?? null : null,
+    tarball_sha256: hasTarball
+      ? `sha256:${createHash('sha256').update(readFileSync(tarballPath)).digest('hex')}`
+      : null,
+  }
 }
 
 function writeSummary(outputRoot: string, summary: BenchmarkSuiteSummary): { summaryPath: string; summaryJsonPath: string } {
@@ -1071,8 +1112,10 @@ export async function runBenchmarkSuite(
   options: BenchmarkSuiteRunOptions,
   dependencies: BenchmarkSuiteDependencies = {},
 ): Promise<BenchmarkSuiteRunResult> {
-  const repos = (dependencies.repos ?? loadBenchmarkSuiteRepos()).map((repo) => normalizeBenchmarkSuiteRepo(repo))
-  const tasksPath = dependencies.tasksPath ?? (dependencies.tasks === undefined ? DEFAULT_TASKS_PATH : null)
+  const reposPath = options.reposManifestPath ? resolve(options.reposManifestPath) : DEFAULT_REPOS_PATH
+  const repos = (dependencies.repos ?? loadBenchmarkSuiteRepos(reposPath)).map((repo) => normalizeBenchmarkSuiteRepo(repo))
+  const configuredTasksPath = options.tasksManifestPath ? resolve(options.tasksManifestPath) : DEFAULT_TASKS_PATH
+  const tasksPath = dependencies.tasksPath ?? (dependencies.tasks === undefined ? configuredTasksPath : null)
   const tasks = dependencies.tasks ?? loadBenchmarkSuiteTasks(tasksPath ?? DEFAULT_TASKS_PATH)
   const now = dependencies.now ?? (() => new Date())
   const runGenerateGraph = dependencies.generateGraph ?? generateGraph
@@ -1102,7 +1145,9 @@ export async function runBenchmarkSuite(
   const preparedRepos = new Map<string, PreparedBenchmarkRepo>()
   const skippedRepos = new Map<string, string>()
   const scratchRoots: string[] = []
-  const stagingRoot = resolve('out/benchmark-suite-staging', timestampDirectoryName(startedAt))
+  const stagingRoot = validateGraphOutputPath(
+    join('out', 'benchmark-suite-staging', timestampDirectoryName(startedAt)),
+  )
   const summaryCells: BenchmarkSuiteSummaryCell[] = []
 
   try {
@@ -1327,9 +1372,12 @@ export async function runBenchmarkSuite(
     started_at: startedAt.toISOString(),
     completed_at: completedAt.toISOString(),
     output_root: portablePath(outputRoot),
+    runtime_artifact: benchmarkRuntimeArtifact(),
     filters: {
       repo: options.repo,
       task: options.task,
+      repos_manifest: receiptManifestPath(reposPath),
+      tasks_manifest: tasksPath ? receiptManifestPath(tasksPath) : null,
       mode: options.mode,
       trials: options.trials,
     },

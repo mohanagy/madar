@@ -47,7 +47,7 @@ describe('pack-quality helper', () => {
     expect(() => listPackQualityFixtures()).toThrow(/unlisted pack-quality fixture/i)
   })
 
-  it('uses SPI when a fixture declares SPI-only framework coverage', async () => {
+  it('uses strict SPI when a fixture declares SPI-only framework coverage', async () => {
     const generateSpy = vi.spyOn(generateModule, 'generateGraph')
 
     await runPackQualityFixture('framework-request-flow-owner')
@@ -56,7 +56,21 @@ describe('pack-quality helper', () => {
       expect.any(String),
       expect.objectContaining({
         noHtml: true,
-        useSpi: true,
+        extractionMode: 'spi',
+      }),
+    )
+  })
+
+  it('pins legacy mode for fixtures without an SPI requirement', async () => {
+    const generateSpy = vi.spyOn(generateModule, 'generateGraph')
+
+    await runPackQualityFixture('framework-runtime-boundary-distractor')
+
+    expect(generateSpy).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        noHtml: true,
+        extractionMode: 'legacy',
       }),
     )
   })

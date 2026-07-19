@@ -4,8 +4,10 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
+import { parse } from 'yaml'
 
 interface PackageManifest {
+  mcpName?: string
   name?: string
   scripts?: Record<string, string>
   version?: string
@@ -13,6 +15,7 @@ interface PackageManifest {
 
 interface RegistryEnvironmentVariable {
   name?: string
+  description?: string
   default?: string
   choices?: string[]
 }
@@ -59,12 +62,55 @@ interface RegistryManifest {
   packages?: RegistryPackage[]
 }
 
+interface PublishWorkflowStep {
+  name?: string
+  uses?: string
+  run?: string
+  with?: Record<string, unknown>
+  'working-directory'?: string
+}
+
+interface PublishWorkflow {
+  on?: {
+    workflow_dispatch?: {
+      inputs?: {
+        release_tag?: {
+          required?: boolean
+          type?: string
+        }
+      }
+    }
+  }
+  jobs?: {
+    publish?: {
+      permissions?: Record<string, string>
+      steps?: PublishWorkflowStep[]
+    }
+  }
+}
+
 function loadPackageManifest(): PackageManifest {
   return JSON.parse(readFileSync(resolve('package.json'), 'utf8')) as PackageManifest
 }
 
 function loadRegistryManifest(): RegistryManifest {
   return JSON.parse(readFileSync(resolve('docs/mcp-registry/server.json'), 'utf8')) as RegistryManifest
+}
+
+function loadPublishWorkflow(): string {
+  return readFileSync(resolve('.github/workflows/publish-mcp-registry.yml'), 'utf8')
+}
+
+function parsePublishWorkflow(): PublishWorkflow {
+  return parse(loadPublishWorkflow()) as PublishWorkflow
+}
+
+function publishWorkflowStep(workflow: PublishWorkflow, name: string): PublishWorkflowStep {
+  const step = workflow.jobs?.publish?.steps?.find((candidate) => candidate.name === name)
+  if (!step) {
+    throw new Error(`Missing publish workflow step: ${name}`)
+  }
+  return step
 }
 
 describe('MCP Registry metadata', () => {
@@ -80,6 +126,7 @@ describe('MCP Registry metadata', () => {
 
     expect(registryManifest.$schema).toContain('static.modelcontextprotocol.io/schemas/')
     expect(registryManifest.name).toBe('io.github.mohanagy/madar')
+    expect(packageManifest.mcpName).toBe(registryManifest.name)
     expect(registryManifest.description?.toLowerCase()).toContain('task-aware')
     expect(registryManifest.description?.toLowerCase()).toContain('typescript/node')
     expect(registryManifest.description?.toLowerCase()).toContain('local')
@@ -100,23 +147,19 @@ describe('MCP Registry metadata', () => {
     expect(npmPackage?.packageArguments?.map((entry) => entry.value)).toEqual([
       'serve',
       '--stdio',
-      undefined,
+      '--auto-refresh',
     ])
-    expect(graphPathArgument).toMatchObject({
-      type: 'positional',
-      valueHint: 'graph_path',
-      default: 'out/graph.json',
-      format: 'filepath',
-      isRequired: true,
-    })
-    expect(graphPathArgument?.description?.toLowerCase()).toContain('madar generate')
+    expect(graphPathArgument).toBeUndefined()
     expect(toolProfile).toMatchObject({
       name: 'MADAR_TOOL_PROFILE',
       default: 'core',
     })
-    expect(toolProfile?.choices).toEqual(expect.arrayContaining(['core', 'full']))
+    expect(toolProfile?.choices).toEqual(expect.arrayContaining(['core', 'strict', 'full']))
+    expect(toolProfile?.description).toContain('strict bounded context_pack/context_expand')
     expect(publisherNotes?.source).toBe('docs/mcp-registry/server.json')
+    expect(publisherNotes?.notes).toContain('When an MCP host launches')
     expect(publisherNotes?.notes).toContain('Madar is the renamed continuation of `graphify-ts`')
+    expect(publisherNotes?.notes).toContain('`madar serve --stdio --auto-refresh`')
     expect(publisherNotes?.notes).toContain('`@lubab/madar`')
     expect(publisherNotes?.notes).toContain('`https://github.com/mohanagy/madar`')
   })
@@ -174,9 +217,63 @@ describe('MCP Registry metadata', () => {
     expect(reference).toContain('docs/mcp-registry/server.json')
     expect(reference).toContain('npm run registry:validate')
     expect(reference).toContain('The official MCP Registry hosts metadata, not Madar code or your local graph artifact.')
+    expect(reference).toContain('`npx @lubab/madar serve --stdio --auto-refresh`')
     expect(reference).toContain('Private registry usage stays out of scope for the public Madar listing')
     expect(reference).toContain('If you still discover older `graphify-ts` links or listings, Madar is the current project name.')
     expect(reference).toContain('`https://github.com/mohanagy/madar`')
     expect(releaseDoc).toContain('npm run registry:validate')
+  })
+
+  it('keeps an OIDC registry-publish workflow behind an explicit release-tag dispatch', () => {
+    const workflow = parsePublishWorkflow()
+    const releaseTag = workflow.on?.workflow_dispatch?.inputs?.release_tag
+    const publish = workflow.jobs?.publish
+    const checkout = publishWorkflowStep(workflow, 'Check out released tag')
+    const setupNode = publishWorkflowStep(workflow, 'Set up Node.js')
+    const verifyTag = publishWorkflowStep(workflow, 'Verify exact release tag')
+    const install = publishWorkflowStep(workflow, 'Install dependencies')
+    const validate = publishWorkflowStep(workflow, 'Validate registry manifest')
+    const installPublisher = publishWorkflowStep(workflow, 'Install MCP Registry publisher')
+    const authenticate = publishWorkflowStep(workflow, 'Authenticate to MCP Registry')
+    const publishMetadata = publishWorkflowStep(workflow, 'Publish MCP Registry metadata')
+    const verifyPublication = publishWorkflowStep(workflow, 'Verify published Registry entry')
+    const steps = publish?.steps ?? []
+    const indexOf = (step: PublishWorkflowStep) => steps.indexOf(step)
+
+    expect(releaseTag).toMatchObject({ required: true, type: 'string' })
+    expect(publish?.permissions).toMatchObject({ contents: 'read', 'id-token': 'write' })
+    expect(checkout).toMatchObject({
+      uses: 'actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0',
+      with: {
+        ref: 'refs/tags/${{ inputs.release_tag }}',
+        'persist-credentials': false,
+      },
+    })
+    expect(setupNode).toMatchObject({
+      uses: 'actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38',
+      with: { 'node-version': '20' },
+    })
+    expect(verifyTag.run).toContain('git describe --exact-match --tags HEAD')
+    expect(install.run).toBe('npm ci --ignore-scripts')
+    expect(validate.run).toContain('npm run registry:validate')
+    expect(indexOf(checkout)).toBeLessThan(indexOf(setupNode))
+    expect(indexOf(setupNode)).toBeLessThan(indexOf(verifyTag))
+    expect(indexOf(verifyTag)).toBeLessThan(indexOf(install))
+    expect(indexOf(install)).toBeLessThan(indexOf(validate))
+    expect(indexOf(validate)).toBeLessThan(indexOf(installPublisher))
+    expect(indexOf(installPublisher)).toBeLessThan(indexOf(authenticate))
+    expect(indexOf(authenticate)).toBeLessThan(indexOf(publishMetadata))
+    expect(indexOf(publishMetadata)).toBeLessThan(indexOf(verifyPublication))
+    expect(installPublisher.run).toContain("publisher_version='1.8.0'")
+    expect(installPublisher.run).toContain('sha256sum --check -')
+    expect(authenticate.run).toBe('./mcp-publisher login github-oidc')
+    expect(publishMetadata).toMatchObject({
+      'working-directory': 'docs/mcp-registry',
+      run: '$GITHUB_WORKSPACE/mcp-publisher publish',
+    })
+    expect(verifyPublication.run).toContain('registry.modelcontextprotocol.io/v0.1/servers?search=')
+    expect(verifyPublication.run).toContain('AbortSignal.timeout(10_000)')
+    expect(verifyPublication.run).toContain('for (let attempt = 1; attempt <= attempts; attempt += 1)')
+    expect(verifyPublication.run).toContain('entry.server?.name')
   })
 })

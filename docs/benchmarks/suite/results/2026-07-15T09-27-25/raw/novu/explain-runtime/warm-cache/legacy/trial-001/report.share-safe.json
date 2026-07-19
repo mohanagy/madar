@@ -1,0 +1,629 @@
+{
+  "baseline_mode": "native_agent",
+  "task": "explain",
+  "question": "How does Novu process a notification trigger from API entry through workflow orchestration to channel delivery?",
+  "graph_path": "<project-root>/out/graph.json",
+  "isolation": true,
+  "environment": {
+    "claude_code_version": "2.1.209",
+    "host_os": "darwin-arm64",
+    "node_version": "v22.22.3",
+    "mcp_servers_active": [
+      "madar"
+    ],
+    "mcp_server_count": 1,
+    "skills_loaded": [],
+    "skills_loaded_count": 0,
+    "plugins_active": [],
+    "user_claude_md_hash": "sha256:0cf98a0a8f9c27017a0bebc7b017fc17518d9103c62ca384da20b2776b0aade7",
+    "project_claude_md_hash": "sha256:4f80545c205b6fbd91ffaae058c5f95f47566acbd8446c3a8ef7c2a29aac0b98",
+    "parent_claude_md_hashes": [],
+    "hooks_active": {
+      "user_prompt_submit": [
+        "project:command:*"
+      ],
+      "pre_tool_use": [],
+      "post_tool_use": []
+    }
+  },
+  "environment_contamination": {
+    "skills_activated_during_run": [],
+    "skills_conflicting_with_madar_rules": [],
+    "calls_to_other_mcps": {},
+    "subagent_dispatches_detected": 0,
+    "skill_alignment_score": 1
+  },
+  "exec_command": {
+    "command": null,
+    "placeholders": [
+      "{prompt_file}"
+    ],
+    "redacted": true
+  },
+  "baseline": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 58,
+      "cache_creation_input_tokens": 30791,
+      "cache_read_input_tokens": 1199458,
+      "output_tokens": 9278,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 30791,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 1,
+          "output_tokens": 2132,
+          "cache_read_input_tokens": 51185,
+          "cache_creation_input_tokens": 546,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 546
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 1230307,
+    "uncached_input_tokens_anthropic_exact": 30849,
+    "cached_input_tokens_anthropic_exact": 1199458,
+    "total_cost_usd": 1.140567,
+    "num_turns": 31,
+    "duration_ms": 224161,
+    "result_path": "<artifact-root>/baseline-answer.txt"
+  },
+  "madar": {
+    "kind": "succeeded",
+    "model": null,
+    "usage": {
+      "input_tokens": 76,
+      "cache_creation_input_tokens": 50227,
+      "cache_read_input_tokens": 2202236,
+      "output_tokens": 9478,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 50227,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 1901,
+          "cache_read_input_tokens": 72212,
+          "cache_creation_input_tokens": 877,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 877
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "total_input_tokens_anthropic_exact": 2252539,
+    "uncached_input_tokens_anthropic_exact": 50303,
+    "cached_input_tokens_anthropic_exact": 2202236,
+    "total_cost_usd": 1.8416759999999999,
+    "num_turns": 40,
+    "duration_ms": 258658,
+    "result_path": "<artifact-root>/madar-answer.txt"
+  },
+  "install_verified": true,
+  "measurement_validity": "degraded",
+  "trace_status": "trace_available",
+  "madar_mcp_call_count": 0,
+  "reductions": null,
+  "token_regression": true,
+  "token_regression_reasons": [
+    "uncached_input_tokens",
+    "cache_creation_input_tokens"
+  ],
+  "prompt_token_source": {
+    "baseline": "anthropic_provider_reported",
+    "madar": "anthropic_provider_reported"
+  },
+  "provider_proof": {
+    "baseline": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "madar": {
+      "provider": "anthropic",
+      "input_tokens_source": "anthropic_provider_reported",
+      "effective_tokens_source": "anthropic_provider_reported",
+      "total_tokens_source": "anthropic_provider_reported"
+    },
+    "reduction_basis": "provider_reported"
+  },
+  "started_at": "2026-07-15T09:46:40.185Z",
+  "completed_at": "2026-07-15T09:54:49.679Z",
+  "paths": {
+    "output_dir": "<artifact-root>",
+    "report": "<artifact-root>/report.json",
+    "share_safe_report": "<artifact-root>/report.share-safe.json",
+    "baseline_answer": "<artifact-root>/baseline-answer.txt",
+    "madar_answer": "<artifact-root>/madar-answer.txt",
+    "baseline_prompt": "<artifact-root>/baseline-prompt.txt",
+    "madar_prompt": "<artifact-root>/madar-prompt.txt",
+    "prompt_file": "<artifact-root>/madar-prompt.txt"
+  },
+  "benchmark_readiness": {
+    "status": "ready",
+    "reasons": [],
+    "suggested_graph_scope": null
+  },
+  "madar_trace": {
+    "source": "claude_messages_tool_use",
+    "summary": "39 tool calls across 39 turns",
+    "tool_call_count": 39,
+    "tool_calls_by_name": {
+      "Bash": 26,
+      "ToolSearch": 13
+    },
+    "per_turn": [
+      {
+        "turn": 2,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ],
+        "madar_tool_discovery_count": 1,
+        "madar_tool_discovery_tool_indexes": [
+          0
+        ]
+      },
+      {
+        "turn": 4,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ],
+        "madar_tool_discovery_count": 1,
+        "madar_tool_discovery_tool_indexes": [
+          0
+        ]
+      },
+      {
+        "turn": 6,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ],
+        "madar_tool_discovery_count": 1,
+        "madar_tool_discovery_tool_indexes": [
+          0
+        ]
+      },
+      {
+        "turn": 7,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ]
+      },
+      {
+        "turn": 9,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ],
+        "madar_tool_discovery_count": 1,
+        "madar_tool_discovery_tool_indexes": [
+          0
+        ]
+      },
+      {
+        "turn": 10,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ]
+      },
+      {
+        "turn": 12,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ],
+        "madar_tool_discovery_count": 1,
+        "madar_tool_discovery_tool_indexes": [
+          0
+        ]
+      },
+      {
+        "turn": 13,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ]
+      },
+      {
+        "turn": 15,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ]
+      },
+      {
+        "turn": 16,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ]
+      },
+      {
+        "turn": 18,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 19,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ],
+        "madar_tool_discovery_count": 1,
+        "madar_tool_discovery_tool_indexes": [
+          0
+        ]
+      },
+      {
+        "turn": 21,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ]
+      },
+      {
+        "turn": 24,
+        "tool_call_count": 1,
+        "tools": [
+          "ToolSearch"
+        ],
+        "madar_tool_discovery_count": 1,
+        "madar_tool_discovery_tool_indexes": [
+          0
+        ]
+      },
+      {
+        "turn": 27,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 28,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 29,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 30,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 31,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 32,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 33,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 34,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 36,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 37,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 38,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 39,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 40,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 41,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 44,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 45,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 47,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 49,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 50,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 53,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 55,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 56,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 59,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 60,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      },
+      {
+        "turn": 62,
+        "tool_call_count": 1,
+        "tools": [
+          "Bash"
+        ]
+      }
+    ],
+    "madar_mcp_call_count": 0,
+    "madar_mcp_calls_by_name": {},
+    "pre_madar_broad_exploration_tool_call_count": 32,
+    "pre_madar_broad_exploration_tool_calls_by_name": {
+      "Bash": 26,
+      "ToolSearch": 6
+    },
+    "context_pack_call_count": 0,
+    "focused_follow_up_tool_call_count": 0,
+    "broad_exploration_tool_call_count": 0,
+    "broad_exploration_tool_calls_by_name": {},
+    "exploration_outcome": "madar_available_but_unused",
+    "exploration_summary": "Madar install was verified, but no Madar MCP call was recorded."
+  },
+  "tool_call_counts": {
+    "baseline": {
+      "total": 30,
+      "Read": 4,
+      "Bash": 26,
+      "Glob": 0,
+      "Grep": 0,
+      "ToolSearch": 0,
+      "other": {}
+    },
+    "madar": {
+      "total": 39,
+      "Read": 0,
+      "Bash": 26,
+      "Glob": 0,
+      "Grep": 0,
+      "ToolSearch": 13,
+      "other": {}
+    }
+  },
+  "answer_contract": {
+    "version": 1,
+    "answer_focus": "runtime_generation",
+    "entrypoint_scope": "setup_context",
+    "required_elements": [
+      "main_pipeline_phases"
+    ],
+    "do_not_claim": [
+      "direct_producer_to_worker_calls_without_enqueues_boundary",
+      "irrelevant_model_or_provider_details"
+    ],
+    "observed_phases": [
+      "controller",
+      "notification_or_event"
+    ],
+    "missing_phases": [],
+    "confidence": "low"
+  },
+  "execution_slice": {
+    "status": "complete",
+    "confidence": "low",
+    "confidence_reasons": [
+      "missing_orchestration"
+    ],
+    "steps": [
+      {
+        "label": "CreateWorkflowCommandV0.create",
+        "source_file": "notification-template.controller.ts",
+        "line_number": 195
+      }
+    ],
+    "primary_path": {
+      "steps": [
+        {
+          "label": "CreateWorkflowCommandV0.create",
+          "source_file": "notification-template.controller.ts",
+          "line_number": 195
+        }
+      ]
+    },
+    "phase_coverage": {
+      "expected": [
+        "notification_or_event"
+      ],
+      "observed": [
+        "controller",
+        "notification_or_event"
+      ],
+      "missing": []
+    }
+  },
+  "answer_quality": {
+    "gate": "novu-explain-runtime",
+    "prompt": "How does Novu process a notification trigger from API entry through workflow orchestration to channel delivery?",
+    "baseline": {
+      "passed": true,
+      "missing_required_terms": [],
+      "forbidden_terms_present": []
+    },
+    "madar": {
+      "passed": false,
+      "missing_required_terms": [],
+      "forbidden_terms_present": [
+        "inferred"
+      ]
+    },
+    "human_review": {
+      "status": "pending",
+      "required_concepts": [
+        "The answer should describe API entry, workflow orchestration, and channel delivery."
+      ],
+      "answer_quality_notes": [
+        "Publication requires a real answer, not a permission request."
+      ],
+      "manual_review_notes": [
+        "Confirm the answer traces orchestration through to delivery instead of stopping at the API surface."
+      ]
+    }
+  },
+  "prompt_contract": {
+    "status": "violated",
+    "evidence": [
+      "no Madar MCP call was recorded",
+      "broad exploration occurred before the first Madar call"
+    ]
+  },
+  "claim_assessment": {
+    "routing_efficiency": {
+      "status": "not_measured",
+      "evidence": [
+        "Madar MCP attribution is missing."
+      ]
+    },
+    "token_reduction": {
+      "status": "not_measured",
+      "evidence": [
+        "Madar MCP attribution is missing."
+      ]
+    }
+  },
+  "benchmark_outcome": {
+    "outcome": "not_measured",
+    "checks": {
+      "routing_tool_latency": "not_measured",
+      "token": "not_measured",
+      "fresh_token": "not_measured",
+      "cost": "not_measured",
+      "turns": "not_measured"
+    },
+    "evidence": [
+      "Madar MCP attribution is missing."
+    ]
+  }
+}

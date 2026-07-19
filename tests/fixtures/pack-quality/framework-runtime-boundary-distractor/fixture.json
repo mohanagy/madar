@@ -14,6 +14,6 @@
   ],
   "expected_negative_guidance": [
     "Missing required context: supporting, structural.",
-    "High-risk shared boundary: DashboardPage() affects 4 files."
+    "High-risk shared boundary: DashboardPage() affects 2 files."
   ]
 }

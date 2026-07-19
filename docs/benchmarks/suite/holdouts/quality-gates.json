@@ -1,0 +1,14 @@
+{
+  "holdout-order-service-explain-runtime": {
+    "prompt": "How does a checkout order move from HTTP submission through inventory reservation and order persistence to confirmation publication?",
+    "require_direct_evidence": true,
+    "required_answer_terms": ["submitOrder", "reserveInventory", "saveOrder", "publishOrderConfirmed"],
+    "forbidden_answer_terms": ["mcp__madar__retrieve", "not enough evidence", "not present in this knowledge graph"]
+  },
+  "holdout-invoice-service-explain-runtime": {
+    "prompt": "How does an invoice request move from the API through billing calculation and ledger persistence to audit emission?",
+    "require_direct_evidence": true,
+    "required_answer_terms": ["create_invoice", "calculate_total", "record_invoice", "emit_invoice_created"],
+    "forbidden_answer_terms": ["mcp__madar__retrieve", "not enough evidence", "not present in this knowledge graph"]
+  }
+}

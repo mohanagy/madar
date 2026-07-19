@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "started_at": "2026-07-15T08:51:54.093Z",
+  "completed_at": "2026-07-15T09:26:59.097Z",
+  "output_root": "docs/benchmarks/suite/results/2026-07-15T08-51-54",
+  "runtime_artifact": {
+    "source": "npm_pack",
+    "package_version": "0.31.0",
+    "tarball_name": "lubab-madar-0.31.0.tgz",
+    "tarball_sha256": "sha256:9c0192e2abf390cf95aeaf89efbcbe6b8b45c19a139760df554e168542e95b4e"
+  },
+  "filters": {
+    "repo": "cal-diy",
+    "task": "explain-runtime",
+    "repos_manifest": "<external-manifest>",
+    "tasks_manifest": "<external-manifest>",
+    "mode": "warm",
+    "trials": 1
+  },
+  "cells_skipped_for_install": 0,
+  "cells_skipped_for_env_drift": 0,
+  "cells": [
+    {
+      "repoId": "cal-diy",
+      "repoName": "Cal.diy public repo",
+      "taskId": "explain-runtime",
+      "taskName": "Explain runtime flow",
+      "mode": "warm",
+      "prompt": "How does Cal.diy turn a booking request into availability validation, scheduled event persistence, and notification delivery?",
+      "status": "completed",
+      "reason": null,
+      "isolation": true,
+      "baseline": {
+        "input_tokens": {
+          "median": 1241378,
+          "min": 1241378,
+          "max": 1241378,
+          "n": 1
+        },
+        "total_tool_calls": {
+          "median": 28,
+          "min": 28,
+          "max": 28,
+          "n": 1
+        },
+        "read_calls": {
+          "median": 6,
+          "min": 6,
+          "max": 6,
+          "n": 1
+        },
+        "glob_grep_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "wall_clock_ms": {
+          "median": 270137,
+          "min": 270137,
+          "max": 270137,
+          "n": 1
+        },
+        "cost_usd": {
+          "median": 1.2427245,
+          "min": 1.2427245,
+          "max": 1.2427245,
+          "n": 1
+        }
+      },
+      "madar": {
+        "input_tokens": {
+          "median": 1488327,
+          "min": 1488327,
+          "max": 1488327,
+          "n": 1
+        },
+        "total_tool_calls": {
+          "median": 26,
+          "min": 26,
+          "max": 26,
+          "n": 1
+        },
+        "read_calls": {
+          "median": 4,
+          "min": 4,
+          "max": 4,
+          "n": 1
+        },
+        "glob_grep_calls": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "n": 1
+        },
+        "wall_clock_ms": {
+          "median": 216587,
+          "min": 216587,
+          "max": 216587,
+          "n": 1
+        },
+        "cost_usd": {
+          "median": 1.5123205,
+          "min": 1.5123205,
+          "max": 1.5123205,
+          "n": 1
+        }
+      },
+      "spi_madar": null,
+      "benchmark_outcomes": {
+        "legacy": {
+          "counts": {
+            "full_win": 0,
+            "partial_win": 0,
+            "regression": 0,
+            "not_measured": 1
+          },
+          "evidence": [
+            "Madar MCP attribution is missing."
+          ]
+        },
+        "spi_madar": null
+      },
+      "workflow_outcomes": null,
+      "artifacts": {
+        "legacy_share_safe_reports": [
+          "docs/benchmarks/suite/results/2026-07-15T08-51-54/raw/cal-diy/explain-runtime/warm-cache/legacy/trial-001/report.share-safe.json"
+        ],
+        "spi_share_safe_reports": []
+      }
+    }
+  ]
+}

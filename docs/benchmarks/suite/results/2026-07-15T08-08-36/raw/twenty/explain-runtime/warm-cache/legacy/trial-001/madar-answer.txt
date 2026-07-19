@@ -1,0 +1,40 @@
+## Madar contract note
+
+The Madar MCP server connected but exposes **no callable tools** — `mcp__madar__retrieve` (and `impact`/`graph_summary`) are not discoverable via ToolSearch, and the server returns no resources. Under the contract's explicit fallback clause ("only fall back to raw file tools if… the MCP server is unavailable"), I answered from a bounded, directory-scoped read of the mutation pipeline. No `retrieve` pack, so there is no `evidence.answerability` state to report.
+
+## How Twenty processes a CRM record mutation (e.g. `updateOne`)
+
+Twenty has no hand-written per-object resolvers — the GraphQL schema and its resolvers are **generated dynamically** from object metadata, and both the GraphQL and REST APIs funnel into one shared set of "common query runner" services.
+
+**1. API handling — dynamic resolver**
+- The request hits the workspace GraphQL schema (built by `workspace-schema.factory.ts` / `workspace-resolver-builder`). Auth guards + middleware establish the `WorkspaceAuthContext` and workspace ORM context.
+- The generated resolver fires: `api/graphql/workspace-resolver-builder/factories/update-one-resolver.factory.ts`. It reads requested fields via `graphqlFields(info)`, builds a resolver context (`createQueryRunnerContext` — carries flat object/field metadata maps), and calls the workspace service.
+
+**2. Workspace services — orchestration**
+- `CommonUpdateOneQueryRunnerService.execute()` (`api/common/common-query-runners/common-update-one-query-runner.service.ts`), inherited from `CommonBaseQueryRunnerService.execute()`, runs a fixed pipeline:
+  1. `throttleQueryExecution` (rate limit for API-key auth)
+  2. `validate` — `assertMutationNotOnRemoteObject`, `assertIsValidUuid(id)`
+  3. settings-permission check for system objects
+  4. parse selected fields (`GraphqlQueryParser`)
+  5. `processArgs` → `computeArgs` (`DataArgProcessorService` transforms/validates the input `data`) → **pre-query hooks** (`workspaceQueryHookService.executePreQueryHooks`)
+  6. query-complexity guard
+  7. `executeInWorkspaceContext(...)` via `GlobalWorkspaceOrmManager`
+- `updateOne` delegates to `CommonUpdateManyQueryRunnerService.run()` with `filter: { id: { eq } }`.
+
+**3. Persistence — twenty-orm workspace repository**
+- `prepareExtendedQueryRunnerContextWithGlobalDatasource` resolves the caller's `rolePermissionConfig` and obtains a **permission-scoped `WorkspaceRepository`** from the global workspace datasource (`twenty-orm/`).
+- `run()` builds a mutation query builder (`buildMutationQueryBuilder`) and executes `.update().set(data).returning(columnsToReturn).execute()`.
+- `WorkspaceUpdateQueryBuilder.execute()` (`twenty-orm/repository/workspace-update-query-builder.ts`) is where DB write + side effects happen: it enforces permissions (`validateQueryIsPermittedOrThrow`, row-level predicates), **snapshots `before`**, runs the SQL `UPDATE` (`super.execute()`), **snapshots `after`**, then emits a `DatabaseBatchEvent` (updated) via `eventEmitterService.emitDatabaseBatchEvent` — the hook feeding search indexing, workflows, webhooks, etc.
+- Back in the runner: nested relations are hydrated (`processNestedRelationsHelper`), results pass through `commonResultGettersService` + **post-query hooks**, and the resolver formats them into a GraphQL connection (`ObjectRecordsToGraphqlConnectionHelper`).
+
+**Key files**
+- `api/graphql/workspace-resolver-builder/factories/update-one-resolver.factory.ts` — dynamic resolver entry
+- `api/common/common-query-runners/common-base-query-runner.service.ts` — shared orchestration (`execute`)
+- `.../common-update-one-query-runner.service.ts` → `.../common-update-many-query-runner.service.ts` — mutation logic
+- `twenty-orm/repository/workspace-update-query-builder.ts` — SQL write + before/after events
+- `twenty-orm/global-workspace-datasource/global-workspace-orm.manager.ts` — datasource/repository provisioning
+
+**Caveats**
+- This traces `updateOne`; create/delete/destroy/restore/merge follow the same base-runner shape with their own query-builder variants.
+- The dynamic schema/resolver generation means there's no static resolver file per object — the flow is metadata-driven.
+- I could not cross-check this against the Madar graph because its tools were non-functional this run; the chain above is from direct reads and is internally consistent, but a graph impact pass would be the way to confirm nothing calls these runners through an alternate path.

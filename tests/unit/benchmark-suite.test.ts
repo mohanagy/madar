@@ -530,7 +530,16 @@ describe('benchmark suite manifests', () => {
     for (const gate of Object.values(gates)) {
       expect(gate.required_answer_terms.length).toBeGreaterThan(0)
       expect(gate.forbidden_answer_terms).toEqual(expect.arrayContaining(['mcp__madar__retrieve']))
+      expect(gate).not.toHaveProperty('manual_review_notes')
+      expect(gate).not.toHaveProperty('required_concepts')
     }
+
+    const humanReviews = JSON.parse(
+      readFileSync(resolve('docs/benchmarks/suite/human-review.json'), 'utf8'),
+    ) as Record<string, { prompt: string; status: string; manual_review_notes: string[] }>
+    expect(Object.keys(humanReviews).sort()).toEqual(Object.keys(gates).sort())
+    expect(Object.values(humanReviews).every((review) => review.manual_review_notes.length > 0)).toBe(true)
+    expect(Object.values(humanReviews).every((review) => review.status === 'pending')).toBe(true)
 
     expect(gates['documenso-explain-runtime'] as Record<string, unknown>).toEqual(expect.objectContaining({
       require_direct_evidence: true,
@@ -608,6 +617,28 @@ describe('benchmark suite manifests', () => {
       'workspace_service_handoff',
       'persistence',
     ]))
+  })
+
+  it('keeps blind holdout prompts and repos outside runtime-proof configuration', () => {
+    const reposPath = resolve('docs/benchmarks/suite/holdouts/repos.json')
+    const tasksPath = resolve('docs/benchmarks/suite/holdouts/tasks.json')
+    const repos = loadBenchmarkSuiteRepos(reposPath)
+    const tasks = loadBenchmarkSuiteTasks(tasksPath)
+    const prompts = Object.values(tasks[0]?.prompts ?? {})
+    const productionStdioSource = readFileSync(resolve('src/runtime/stdio/tools.ts'), 'utf8')
+
+    expect(repos.map((repo) => repo.id)).toEqual([
+      'holdout-order-service',
+      'holdout-invoice-service',
+    ])
+    expect(repos.every((repo) => repo.source?.kind === 'path' && existsSync(repo.source.path))).toBe(true)
+    expect(prompts).toHaveLength(2)
+    expect(loadBenchmarkRuntimeProofProfiles(tasksPath)).toBeNull()
+    for (const prompt of prompts) {
+      expect(productionStdioSource).not.toContain(prompt)
+    }
+    expect(existsSync(resolve('docs/benchmarks/suite/holdouts/quality-gates.json'))).toBe(true)
+    expect(existsSync(resolve('docs/benchmarks/suite/holdouts/human-review.json'))).toBe(true)
   })
 
   it('rejects runtime-proof profiles with empty evidence term arrays', async () => {
@@ -831,6 +862,8 @@ describe('runBenchmarkSuite', () => {
         {
           repo: null,
           task: 'explain-runtime',
+          reposManifestPath: join(tempDir, 'private', 'repos.json'),
+          tasksManifestPath: join(tempDir, 'private', 'tasks.json'),
           mode: 'all',
           trials: 3,
           outputDir: join(tempDir, 'results'),
@@ -841,6 +874,7 @@ describe('runBenchmarkSuite', () => {
         {
           repos,
           tasks,
+          tasksPath: join(tempDir, 'private', 'tasks.json'),
           now: () => new Date('2026-05-27T12:34:56Z'),
           generateGraph: (rootPath = '.', options = {}) => {
             const outputDir = join(rootPath, 'out')
@@ -910,6 +944,10 @@ describe('runBenchmarkSuite', () => {
       expect(result.summaryJsonPath).toBeTruthy()
 
       const summaryJson = JSON.parse(readFileSync(result.summaryJsonPath!, 'utf8')) as {
+        filters: {
+          repos_manifest: string | null
+          tasks_manifest: string | null
+        }
         cells: Array<{
           repoId: string
           taskId: string
@@ -921,6 +959,11 @@ describe('runBenchmarkSuite', () => {
         }>
       }
       const summaryMarkdown = readFileSync(result.summaryPath!, 'utf8')
+
+      expect(summaryJson.filters).toEqual(expect.objectContaining({
+        repos_manifest: '<external-manifest>',
+        tasks_manifest: '<external-manifest>',
+      }))
 
       expect(summaryJson.cells).toEqual(expect.arrayContaining([
         expect.objectContaining({
@@ -1961,7 +2004,7 @@ describe('runBenchmarkSuite', () => {
           tasks,
           now: () => new Date('2026-06-01T00:00:00Z'),
           generateGraph: (rootPath = '.', options = {}) => {
-            const outputDir = options.useSpi ? join(rootPath, 'out', 'spi') : join(rootPath, 'out')
+            const outputDir = options.extractionMode === 'spi' ? join(rootPath, 'out', 'spi') : join(rootPath, 'out')
             mkdirSync(outputDir, { recursive: true })
             const graphPath = join(outputDir, 'graph.json')
             writeFileSync(graphPath, '{}\n', 'utf8')
@@ -2654,9 +2697,9 @@ describe('runBenchmarkSuite', () => {
           generateGraph: (rootPath = '.', options = {}) => ({
             mode: options.useSpi ? 'generate' : 'generate',
             rootPath,
-            outputDir: options.useSpi ? 'C:\\tmp\\spi\\out' : 'C:\\tmp\\legacy\\out',
-            graphPath: options.useSpi ? 'C:\\tmp\\spi\\out\\graph.json' : 'C:\\tmp\\legacy\\out\\graph.json',
-            reportPath: options.useSpi ? 'C:\\tmp\\spi\\out\\GRAPH_REPORT.md' : 'C:\\tmp\\legacy\\out\\GRAPH_REPORT.md',
+            outputDir: options.extractionMode === 'spi' ? 'C:\\tmp\\spi\\out' : 'C:\\tmp\\legacy\\out',
+            graphPath: options.extractionMode === 'spi' ? 'C:\\tmp\\spi\\out\\graph.json' : 'C:\\tmp\\legacy\\out\\graph.json',
+            reportPath: options.extractionMode === 'spi' ? 'C:\\tmp\\spi\\out\\GRAPH_REPORT.md' : 'C:\\tmp\\legacy\\out\\GRAPH_REPORT.md',
             htmlPath: null,
             wikiPath: null,
             obsidianPath: null,

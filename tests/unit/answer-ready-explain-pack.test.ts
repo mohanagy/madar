@@ -141,9 +141,15 @@ describe('answer-ready explain pack', () => {
         },
         directive: {
           pack_confidence: 'high',
+          evidence_strength: 'strong',
           coverage: 'complete',
+          answerability: 'ready',
           agent_directive: 'answer_from_pack',
           missing_phases: [],
+          missing_obligation_count: 0,
+          verification_target_count: 0,
+          recovery_attempts: 0,
+          recovery_improved: false,
         },
         follow_up: {
           expandable_handle_count: 0,

@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 
 import { KnowledgeGraph } from '../contracts/graph.js'
@@ -378,6 +378,20 @@ function enrichPayloadWithBridgeMetadata(payload: HtmlPayload, bridgeMetadata: R
   }
 }
 
+function writeFileAtomically(outputPath: string, content: string): void {
+  const temporaryPath = join(
+    dirname(outputPath),
+    `.madar-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.tmp`,
+  )
+
+  try {
+    writeFileSync(temporaryPath, content, 'utf8')
+    renameSync(temporaryPath, outputPath)
+  } finally {
+    rmSync(temporaryPath, { force: true })
+  }
+}
+
 export function toJson(
   graph: KnowledgeGraph,
   communities: Communities,
@@ -392,8 +406,20 @@ export function toJson(
     directed: graph.isDirected(),
     ...(typeof graph.graph.root_path === 'string' && graph.graph.root_path.length > 0 ? { root_path: graph.graph.root_path } : {}),
     ...(graph.graph.spi_mode === true ? { spi_mode: true } : {}),
+    ...(graph.graph.generation_policy && typeof graph.graph.generation_policy === 'object' && !Array.isArray(graph.graph.generation_policy)
+      ? { generation_policy: graph.graph.generation_policy }
+      : {}),
     ...(graph.graph.graph_build_freshness && typeof graph.graph.graph_build_freshness === 'object' && !Array.isArray(graph.graph.graph_build_freshness)
       ? { graph_build_freshness: graph.graph.graph_build_freshness }
+      : {}),
+    ...(graph.graph.discovery_safety && typeof graph.graph.discovery_safety === 'object' && !Array.isArray(graph.graph.discovery_safety)
+      ? { discovery_safety: graph.graph.discovery_safety }
+      : {}),
+    ...(graph.graph.indexing_completeness && typeof graph.graph.indexing_completeness === 'object' && !Array.isArray(graph.graph.indexing_completeness)
+      ? { indexing_completeness: graph.graph.indexing_completeness }
+      : {}),
+    ...(graph.graph.extraction_receipt && typeof graph.graph.extraction_receipt === 'object' && !Array.isArray(graph.graph.extraction_receipt)
+      ? { extraction_receipt: graph.graph.extraction_receipt }
       : {}),
     ...(typeof extractorVersion === 'number' ? { extractor_version: extractorVersion } : {}),
     nodes: graph.nodeEntries().map(([id, attributes]) => ({
@@ -411,7 +437,10 @@ export function toJson(
     semantic_anomalies: semanticAnomalies,
   }
 
-  writeFileSync(outputPath, `${JSON.stringify(data, null, 2)}\n`, 'utf8')
+  // MCP readers can reload this file while a watcher rebuilds. Publishing the
+  // completed JSON with a same-directory rename prevents a reader from ever
+  // observing a truncated graph.
+  writeFileAtomically(outputPath, `${JSON.stringify(data, null, 2)}\n`)
 }
 
 function subgraphFromNodes(graph: KnowledgeGraph, nodeIds: string[]): KnowledgeGraph {

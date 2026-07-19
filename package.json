@@ -1,6 +1,7 @@
 {
     "name": "@lubab/madar",
-    "version": "0.27.9",
+    "version": "0.32.0",
+    "mcpName": "io.github.mohanagy/madar",
     "description": "Stop AI coding agents from rediscovering large TypeScript/Node repos. Madar compiles task-aware local context packs from what runs for this task.",
     "license": "MIT",
     "author": "mohanagy",
@@ -64,15 +65,17 @@
         "publish:next": "npm publish --tag next --access public",
         "publish:dry-run": "npm publish --dry-run",
         "release:verify": "node .github/scripts/verify-release-hygiene.mjs",
+        "verify:pack-parity": "node .github/scripts/verify-packed-retrieval-parity.mjs",
         "registry:validate": "node .github/scripts/validate-mcp-registry.mjs"
     },
     "devDependencies": {
-        "@types/node": "^25.6.0",
+        "@types/node": "^26.0.0",
         "@vitest/coverage-v8": "^4.1.5",
         "ajv": "^8.20.0",
         "ajv-formats": "^3.0.1",
         "vite": "^8.0.11",
-        "vitest": "^4.1.5"
+        "vitest": "^4.1.5",
+        "yaml": "^2.9.0"
     },
     "dependencies": {
         "@vscode/tree-sitter-wasm": "^0.3.1",

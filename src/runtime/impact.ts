@@ -1,5 +1,6 @@
 import { KnowledgeGraph } from '../contracts/graph.js'
 import { relativizeSourceFile } from '../shared/source-path.js'
+import { requireDirectedGraph } from './direction.js'
 import { communitiesFromGraph } from './serve.js'
 
 const MAX_IMPACT_DEPTH = 5
@@ -189,6 +190,8 @@ export function analyzeImpact(
   communityLabels: Record<number, string>,
   options: ImpactOptions,
 ): ImpactResult {
+  requireDirectedGraph(graph, 'Impact analysis')
+
   const maxDepth = Math.min(options.depth ?? 3, MAX_IMPACT_DEPTH)
   const targetNodeId = findNodeByLabel(graph, options.label)
   const rootPath = typeof graph.graph.root_path === 'string' ? graph.graph.root_path : undefined
@@ -365,6 +368,8 @@ export function callChains(
   maxHops = 8,
   edgeTypes: string[] = ['calls', 'imports_from'],
 ): string[][] {
+  requireDirectedGraph(graph, 'Call-chain analysis')
+
   const sourceNodeId = findNodeByLabel(graph, source)
   const targetNodeId = findNodeByLabel(graph, target)
 

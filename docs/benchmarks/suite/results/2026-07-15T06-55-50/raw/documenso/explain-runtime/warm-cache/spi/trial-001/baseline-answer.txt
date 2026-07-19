@@ -1,0 +1,41 @@
+I now have the full picture. Here's the trace through the repository evidence.
+
+## How Documenso moves a document from send prep → recipients → signing → notifications
+
+The system was refactored so a "document" is an **Envelope** (`EnvelopeType.DOCUMENT`), with recipients, fields, and `documentMeta` attached. Async email/PDF work runs through a **job queue** (`jobs.triggerJob`, `packages/lib/jobs`).
+
+### 1. Recipient creation (draft prep)
+`server-only/recipient/create-envelope-recipients.ts`
+- Validates the envelope isn't already complete and that action-auth is permitted (`cfr21` flag), then in a transaction creates each `Recipient` with a unique `token: nanoid()` (the signing-link identity).
+- Initial state depends on role: **CC** recipients start already done (`sendStatus: SENT`, `signingStatus: SIGNED`); everyone else starts `NOT_SENT` / `NOT_SIGNED`.
+- Writes a `RECIPIENT_CREATED` audit log per recipient.
+
+### 2. Send preparation → PENDING
+`server-only/document/send-document.ts` (`sendDocument`)
+- Guards: sender account not disabled, has recipients, under the org `recipientCount` limit, not already completed, recipients that require auth have valid emails, and every signer has required fields (`getRecipientsWithMissingFields`).
+- If form values exist, prefills each envelope item's PDF (`injectFormValuesIntoDocument` → `insertFormValuesInPdf`). For V2 envelopes it auto-inserts derivable fields (email/text/number/radio/dropdown/checkbox) via `extractFieldAutoInsertValues`.
+- In a transaction: logs `DOCUMENT_SENT`, sets recipient `expiresAt` from the expiration period, and flips the envelope **status DRAFT → PENDING**.
+- Determines who to notify: **PARALLEL** → all pending signers; **SEQUENTIAL** → only the first unsigned non-CC recipient (`recipientsToNotify`).
+- If email is enabled, enqueues **`send.signing.requested.email`** per recipient (skipping already-SENT and CC). Fires the `DOCUMENT_SENT` webhook.
+- Short-circuit: if all recipients are CC/already-signed, it skips straight to enqueuing **`internal.seal-document`**.
+
+The signing-request email is delivered by `jobs/definitions/emails/send-signing-email.handler.ts`, which renders the `document-invite` template with the recipient's token link.
+
+### 3. Signing state transitions
+`server-only/document/complete-document-with-token.ts` (`completeDocumentWithToken`)
+- Looks the recipient up by `token`; requires envelope status `PENDING`, recipient not expired/already-signed/rejected. For SEQUENTIAL, enforces turn order via `getIsRecipientsTurnToSign`.
+- Enforces access 2FA if required (`isRecipientAuthorized`, with audit logs), auto-inserts date fields at signing time (V2), and rejects if any required field is still unsigned (`fieldsContainUnsignedRequiredField`).
+- Transaction: sets the recipient **`signingStatus: SIGNED`, `signedAt`**, persists derived name/email, logs `DOCUMENT_RECIPIENT_COMPLETED`.
+- Fires the `DOCUMENT_RECIPIENT_COMPLETED` webhook and enqueues **`send.recipient.signed.email`**.
+- Recomputes pending recipients. If any remain: calls `sendPendingEmail`, and for SEQUENTIAL advances the next signer (`sendStatus: SENT`, optional dictate-next-signer) and enqueues the next **`send.signing.requested.email`**.
+- If `every` recipient is now SIGNED-or-CC, enqueues **`internal.seal-document`**, then fires the `DOCUMENT_SIGNED` webhook.
+
+### 4. Completion + notification delivery
+`jobs/definitions/internal/seal-document.handler.ts`
+- Marks recipients SIGNED, generates/seals the final PDF, logs `DOCUMENT_COMPLETED`, and sets envelope **status → `COMPLETED`** (or `REJECTED` if a recipient rejected).
+- Fires the `DOCUMENT_COMPLETED` / `DOCUMENT_REJECTED` webhook and enqueues **`send.document.completed.emails`**, whose handler emails the signed document to all parties.
+
+### Supporting notification jobs
+`jobs/definitions/emails/` — `send-signing-email` (invite), `send-recipient-signed-email`, `send-document-completed-emails`, `send-rejection-emails`, plus reminder/expiry sweeps in `jobs/definitions/internal/` (`process-signing-reminder`, `expire-recipients-sweep`).
+
+**End-to-end status path:** `DRAFT` → (`sendDocument`) → `PENDING` → (`completeDocumentWithToken` per signer, SIGNED) → (`seal-document` job) → `COMPLETED`, with every stage emitting audit logs, webhooks, and queued emails.

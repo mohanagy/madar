@@ -43,6 +43,7 @@ import { serveGraphStdio } from '../runtime/stdio-server.js'
 import { getNeighbors, getNode, loadGraph, queryGraph, shortestPath } from '../runtime/serve.js'
 import { formatTimeTravelResult } from '../runtime/time-travel.js'
 import { findPackageRoot, readPackageName, readPackageVersion } from '../shared/package-metadata.js'
+import { resolveWorkspaceGraphPath } from '../shared/workspace.js'
 import {
   disableTelemetry,
   enableTelemetry,
@@ -462,8 +463,16 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --update             rebuild incrementally from the manifest, re-extracting changed files only',
     '    --cluster-only       re-cluster an existing graph.json without re-extraction',
     '    --watch              keep watching after the initial build',
-    '    --directed           preserve edge direction (source → target) in the built graph',
+    '    --directed           preserve source → target edges (default; retained for compatibility)',
+    '    --undirected         visualization-only legacy mode; directional analysis is unavailable',
     '    --follow-symlinks    include in-root symlink targets',
+    '    --respect-gitignore  exclude files ignored by Git (falls back outside Git repositories)',
+    '    --legacy             use only the built-in legacy extractor',
+    '    --spi                use only the SPI JS/TS extractor (no language fallback)',
+    '                         default: auto — SPI for JS/TS, legacy for other supported languages',
+    '    --strict-indexing    fail when any candidate is failed or unsupported',
+    '    --max-indexing-failed N       permit N failed candidates (enables strict mode)',
+    '    --max-indexing-unsupported N  permit N unsupported candidates (enables strict mode)',
     '    --debounce S         watch debounce seconds (default 3)',
     '    --include-docs       include .md/.txt/.rst document files (excluded by default)',
     '    --docs               generate module documentation in out/docs/',
@@ -482,6 +491,7 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --output DIR         output directory (default out-federated)',
     '  watch [path]          build once, then watch for code/doc changes',
     '    --follow-symlinks    include in-root symlink targets',
+    '    --respect-gitignore  exclude files ignored by Git (falls back outside Git repositories)',
     '    --debounce S         watch debounce seconds (default 3)',
     '    --no-html            skip graph.html generation during the initial build',
     '  serve [graph.json]    serve graph artifacts over HTTP or stdio',
@@ -491,6 +501,7 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --http               explicit alias for HTTP transport',
     '    --stdio              serve graph query methods over stdio (JSON lines)',
     '    --mcp                alias for --stdio for installer/runtime parity',
+    '    --auto-refresh       reconcile and watch the active workspace while serving over stdio',
     '  summary [graph.json]  print a compact deterministic graph summary as JSON',
     '  try "<question>" [path] one-command local first proof before agent install',
     '  query "<question>"     traverse graph.json for a question',
@@ -544,6 +555,8 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --exec TEMPLATE       required unless --dry-run; supports {prompt_file}, {question}, {mode}, and {output_file}',
     '    --repo ID             limit the suite to one repo id from docs/benchmarks/suite/repos.json',
     '    --task ID             limit the suite to one task id from docs/benchmarks/suite/tasks.json',
+    '    --repos-manifest PATH use an alternate repository manifest',
+    '    --tasks-manifest PATH use an alternate task manifest and its sibling grader files',
     '    --mode MODE           cold | warm | all (default all)',
     '    --trials N            measured trials per runnable cell (default 3)',
     '    --output-dir DIR      suite results directory (default docs/benchmarks/suite/results)',
@@ -603,7 +616,7 @@ export function formatHelp(binaryName = 'madar'): string {
     '  cursor <install|uninstall> [--profile core|full|strict]  manage local Cursor madar rules',
     '  gemini <install|uninstall> [--profile core|full|strict]  manage local GEMINI.md rules and Gemini CLI hook config',
     '  copilot <install|uninstall> [--profile core|full|strict] install or remove the GitHub Copilot skill',
-    '  codex <install|uninstall>   manage local AGENTS.md + Codex hook rules',
+    '  codex <install|uninstall>   manage local AGENTS.md + Codex hook/MCP rules',
     '  opencode <install|uninstall> manage local AGENTS.md + OpenCode plugin/MCP rules',
     '  claw <install|uninstall>    manage local AGENTS.md rules',
     '  droid <install|uninstall>   manage local AGENTS.md rules',
@@ -621,7 +634,11 @@ function isGenerateLikeArgument(argument: string): boolean {
     argument === '--cluster-only' ||
     argument === '--watch' ||
     argument === '--directed' ||
+    argument === '--undirected' ||
     argument === '--follow-symlinks' ||
+    argument === '--respect-gitignore' ||
+    argument === '--legacy' ||
+    argument === '--spi' ||
     argument === '--no-html' ||
     argument === '--wiki' ||
     argument === '--obsidian' ||
@@ -636,12 +653,17 @@ function isGenerateLikeArgument(argument: string): boolean {
     argument === '--debounce' ||
     argument === '--include-docs' ||
     argument === '--docs' ||
+    argument === '--strict-indexing' ||
+    argument === '--max-indexing-failed' ||
+    argument === '--max-indexing-unsupported' ||
     argument.startsWith('--neo4j-push=') ||
     argument.startsWith('--neo4j-user=') ||
     argument.startsWith('--neo4j-password=') ||
     argument.startsWith('--neo4j-database=') ||
     argument.startsWith('--obsidian-dir=') ||
-    argument.startsWith('--debounce=')
+    argument.startsWith('--debounce=') ||
+    argument.startsWith('--max-indexing-failed=') ||
+    argument.startsWith('--max-indexing-unsupported=')
   )
 }
 
@@ -658,14 +680,43 @@ function isImplicitGenerateCommand(argument: string): boolean {
 }
 
 function formatGenerateSummary(result: GenerateGraphResult): string {
+  const extractionStrategySummary = result.indexing?.extraction_strategy_buckets
+    ? Object.entries(result.indexing.extraction_strategy_buckets)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([strategy, count]) => `${strategy}=${count}`)
+        .join(', ')
+    : null
+  const indexingLines = result.indexing
+    ? [
+        `- Indexing: ${result.indexing.state.toUpperCase()} (${result.indexing.counts.indexed} indexed, ${result.indexing.counts.indexed_with_warnings} warnings, ${result.indexing.counts.skipped_by_policy} policy skips, ${result.indexing.counts.unsupported} unsupported, ${result.indexing.counts.failed} failed)`,
+        ...(result.indexingManifestPath ? [`- Indexing manifest: ${result.indexingManifestPath}`] : []),
+      ]
+    : []
   const lines = [
     `[madar generate] ${result.mode} completed for ${result.rootPath}`,
     `- Corpus: ${result.totalFiles} file(s) · ~${result.totalWords.toLocaleString()} words`,
+    ...(result.extractionMode
+      ? [`- Extraction mode: ${result.extractionMode}${extractionStrategySummary ? ` (${extractionStrategySummary})` : ''}`]
+      : []),
     `- Extracted: ${result.codeFiles} code file(s)` + (result.nonCodeFiles > 0 ? ` (+${result.nonCodeFiles} non-code detected)` : ''),
     `- Graph: ${result.nodeCount} nodes · ${result.edgeCount} edges · ${result.communityCount} communities`,
+    ...indexingLines,
     ...(typeof result.semanticAnomalyCount === 'number' ? [`- Semantic anomalies: ${result.semanticAnomalyCount} high-signal item(s)`] : []),
     `- Outputs: ${result.graphPath}, ${result.reportPath}`,
   ]
+
+  if (result.discoverySafety && result.discoverySafety.summary.total > 0) {
+    lines.push(
+      `- Safety exclusions: ${result.discoverySafety.summary.total} (${result.discoverySafety.summary.sensitive} sensitive, ${result.discoverySafety.summary.unreadable} unreadable)`,
+    )
+    for (const exclusion of (result.discoveryExclusions ?? result.discoverySafety.exclusions).slice(0, 20)) {
+      lines.push(`  - ${JSON.stringify(exclusion.path)} (${exclusion.reason})`)
+    }
+    const exclusionCount = (result.discoveryExclusions ?? result.discoverySafety.exclusions).length
+    if (exclusionCount > 20) {
+      lines.push(`  - ... ${exclusionCount - 20} more; inspect graph.json discovery_safety.exclusions`)
+    }
+  }
 
   if (result.htmlPath) {
     lines.push(`- HTML: ${result.htmlPath}`)
@@ -710,6 +761,7 @@ function formatGenerateSummary(result: GenerateGraphResult): string {
   lines.push('')
   lines.push('Next: connect your AI assistant:')
   lines.push('  madar claude install    # Claude Code')
+  lines.push('  madar codex install     # Codex CLI')
   lines.push('  madar cursor install    # Cursor')
   lines.push('  madar copilot install   # GitHub Copilot')
   lines.push('  madar gemini install    # Gemini CLI')
@@ -758,6 +810,12 @@ function handleAgentCommand(command: AgentPlatform, args: string[], io: CliIO, d
 
   io.log(dependencies.agentsUninstall('.', command))
   return 0
+}
+
+function warnWhenWorkspaceGraphIsMissing(io: CliIO): void {
+  if (!existsSync(resolveWorkspaceGraphPath())) {
+    io.log("Warning: out/graph.json not found. Run 'madar generate .' first, then re-run this command.")
+  }
 }
 
 export async function executeCli(argv: string[], io: CliIO = console, dependencies: CliDependencies = DEFAULT_DEPENDENCIES): Promise<number> {
@@ -989,24 +1047,28 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
     if (command === 'generate' || (command !== undefined && !isAgentPlatform(command) && isImplicitGenerateCommand(command))) {
       const generateArgs = command === 'generate' ? args : [command, ...args]
       const options = parseGenerateArgs(generateArgs)
+      const spiTelemetry = options.clusterOnly
+        ? {}
+        : { spiEnabled: options.extractionMode !== 'legacy' }
       failureTelemetry = (failureBucket) => ({
         command: 'generate',
         stage: 'failed',
         ...telemetryBase(dependencies),
         failureBucket,
-        spiEnabled: options.useSpi,
+        ...spiTelemetry,
       })
       emitTelemetry(io, dependencies, () => ({
         command: 'generate',
         stage: 'started',
         ...telemetryBase(dependencies),
-        spiEnabled: options.useSpi,
+        ...spiTelemetry,
       }))
       const result = dependencies.generateGraph(options.path, {
         update: options.update,
         clusterOnly: options.clusterOnly,
         directed: options.directed,
         followSymlinks: options.followSymlinks,
+        respectGitignore: options.respectGitignore,
         noHtml: options.noHtml,
         wiki: options.wiki,
         obsidian: options.obsidian,
@@ -1016,7 +1078,15 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         neo4j: options.neo4j,
         includeDocs: options.includeDocs,
         docs: options.docs,
-        useSpi: options.useSpi,
+        ...(options.clusterOnly ? {} : { extractionMode: options.extractionMode }),
+        ...(options.strictIndexing
+          ? {
+              indexingStrict: {
+                maxFailed: options.maxIndexingFailed,
+                maxUnsupported: options.maxIndexingUnsupported,
+              },
+            }
+          : {}),
         onProgress: (step) => io.log(formatProgress(step)),
       })
       io.log(formatGenerateSummary(result))
@@ -1039,12 +1109,21 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         ...telemetryBase(dependencies),
         repoSizeBucket: repoSizeBucketFromFileCount(result.totalFiles),
         graphSizeBucket: graphSizeBucketFromNodeCount(result.nodeCount),
-        spiEnabled: options.useSpi,
+        ...spiTelemetry,
       }))
       if (options.watch) {
         await dependencies.watchGraph(options.path, options.debounceSeconds, {
           followSymlinks: options.followSymlinks,
+          respectGitignore: options.respectGitignore,
           noHtml: options.noHtml,
+          ...(options.strictIndexing
+            ? {
+                indexingStrict: {
+                  maxFailed: options.maxIndexingFailed,
+                  maxUnsupported: options.maxIndexingUnsupported,
+                },
+              }
+            : {}),
           logger: io,
         })
       }
@@ -1054,13 +1133,16 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
     if (command === 'watch') {
       const options = parseWatchArgs(args)
       const result = dependencies.generateGraph(options.path, {
+        extractionMode: 'auto',
         followSymlinks: options.followSymlinks,
+        respectGitignore: options.respectGitignore,
         noHtml: options.noHtml,
         onProgress: (step) => io.log(formatProgress(step)),
       })
       io.log(formatGenerateSummary(result))
       await dependencies.watchGraph(options.path, options.debounceSeconds, {
         followSymlinks: options.followSymlinks,
+        respectGitignore: options.respectGitignore,
         noHtml: options.noHtml,
         logger: io,
       })
@@ -1105,16 +1187,18 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
 
     if (command === 'serve') {
       const options = parseServeArgs(args)
+      const graphPath = resolveWorkspaceGraphPath(options.graphPath)
       if (options.transport === 'stdio') {
         await dependencies.serveGraphStdio({
-          graphPath: options.graphPath,
+          graphPath,
+          ...(options.autoRefresh ? { autoRefresh: true, workspaceRoot: process.cwd() } : {}),
           logger: io,
         })
         return 0
       }
 
       await dependencies.serveGraph({
-        graphPath: options.graphPath,
+        graphPath,
         host: options.host,
         port: options.port,
         logger: io,
@@ -1255,8 +1339,8 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
 
     if (command === 'claude') {
       const options = parsePlatformActionArgs(command, args)
-      if (options.action === 'install' && !existsSync('out/graph.json')) {
-        io.log("Warning: out/graph.json not found. Run 'madar generate .' first, then re-run this command.")
+      if (options.action === 'install') {
+        warnWhenWorkspaceGraphIsMissing(io)
       }
       if (options.action === 'install') {
         failureTelemetry = (failureBucket) => ({
@@ -1289,8 +1373,8 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
 
     if (command === 'cursor') {
       const options = parsePlatformActionArgs(command, args)
-      if (options.action === 'install' && !existsSync('out/graph.json')) {
-        io.log("Warning: out/graph.json not found. Run 'madar generate .' first, then re-run this command.")
+      if (options.action === 'install') {
+        warnWhenWorkspaceGraphIsMissing(io)
       }
       if (options.action === 'install') {
         failureTelemetry = (failureBucket) => ({
@@ -1323,8 +1407,8 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
 
     if (command === 'gemini') {
       const options = parsePlatformActionArgs(command, args)
-      if (options.action === 'install' && !existsSync('out/graph.json')) {
-        io.log("Warning: out/graph.json not found. Run 'madar generate .' first, then re-run this command.")
+      if (options.action === 'install') {
+        warnWhenWorkspaceGraphIsMissing(io)
       }
       if (options.action === 'install') {
         failureTelemetry = (failureBucket) => ({
@@ -1369,9 +1453,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
           ...telemetryBase(dependencies),
           agentTarget: 'copilot',
         }))
-        if (!existsSync('out/graph.json')) {
-          io.log("Warning: out/graph.json not found. Run 'madar generate .' first, then re-run this command.")
-        }
+        warnWhenWorkspaceGraphIsMissing(io)
         io.log(dependencies.installSkill('copilot'))
         io.log(dependencies.installCopilotMcp('.', options.profile ? { profile: options.profile } : {}))
         emitTelemetry(io, dependencies, () => ({

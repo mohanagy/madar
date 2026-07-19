@@ -74,7 +74,7 @@ Common failure modes:
 ## Gemini CLI
 
 - Install: `madar gemini install [--profile core\|full\|strict]`
-- Expected files/config: `~/.gemini/skills/madar/SKILL.md`, `GEMINI.md`, `.gemini/settings.json`
+- Expected files/config: `~/.gemini/skills/madar/SKILL.md`, `GEMINI.md`, `.gemini/settings.json` hook and MCP entry
 - Verify: `madar doctor` / `madar status` for `.gemini/settings.json`, then inspect the installed home skill for slash-command availability.
 
 ```bash
@@ -94,8 +94,8 @@ Common failure modes:
 ## Codex CLI
 
 - Install: `madar codex install`
-- Expected files/config: `AGENTS.md`, `.codex/hooks.json`
-- Verify: `madar doctor` / `madar status`
+- Expected files/config: `AGENTS.md`, `.codex/hooks.json`, `.codex/madar-user-prompt-submit.cjs`, plus this workspace's marker-owned block in `~/.codex/config.toml` (or `$CODEX_HOME/config.toml`)
+- Verify: `madar doctor` / `madar status` for on-disk wiring, then `/hooks` and `/mcp` or `codex mcp list` after a restart/new session
 
 ```bash
 madar codex install
@@ -104,12 +104,14 @@ madar status
 madar pack "how does password reset request enqueue the reset email" --task explain
 ```
 
-This is an instruction-only plus hook quickstart. Known limitation: No project-local MCP entry is installed for Codex.
+This installs the Madar-owned AGENTS.md section, a task-applicable `UserPromptSubmit` hook, and a workspace-scoped marker-owned MCP block in Codex's loaded user config: `~/.codex/config.toml` (or `$CODEX_HOME/config.toml`). The block has a unique server name, pins `cwd` to this workspace, and includes both startup and tool-call timeouts. The hook gives model-visible context-pack-first guidance only for local code tasks; it is guidance, not enforcement. Enable it only in a trusted repository. Restart or open a new Codex session, use `/hooks` to review and trust the project hook, then use `/mcp` or `codex mcp list` to verify the local MCP server. Known limitation: `madar doctor` / `madar status` validate on-disk wiring only, not Codex live hook trust or MCP activation.
 
 Common failure modes:
 
-- If `madar status` marks Codex as partial, inspect `.codex/hooks.json` and rerun the install.
-- If Codex ignores the guidance, confirm `AGENTS.md` still contains the Madar-owned rules.
+- If `madar status` marks Codex as partial, inspect `.codex/hooks.json`, `.codex/madar-user-prompt-submit.cjs`, and this workspace's block in `~/.codex/config.toml`, then rerun the install.
+- If Codex reports that the Madar MCP client timed out, rerun `madar codex install` and confirm its workspace block contains `startup_timeout_sec = 180` and `tool_timeout_sec = 60`. Then run `madar doctor` and `madar status`; if reconciliation remains failed, run `madar generate . --update`.
+- If Codex ignores the guidance, confirm `AGENTS.md` still contains the Madar-owned rules and that the project hook is trusted in `/hooks`.
+- `madar codex uninstall` removes only the Madar-owned AGENTS section, hook, script, and marked TOML block; unrelated hooks and TOML configuration remain.
 
 ## Aider
 

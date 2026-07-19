@@ -94,7 +94,6 @@ ${SKILL_COMMAND}
 ${SKILL_COMMAND} <path>
 ${SKILL_COMMAND} <path> --mode deep
 ${SKILL_COMMAND} <path> --update
-${SKILL_COMMAND} <path> --directed
 ${SKILL_COMMAND} <path> --cluster-only
 ${SKILL_COMMAND} <path> --no-viz
 ${SKILL_COMMAND} <path> --svg
@@ -312,26 +311,21 @@ For each codebase question, start with the specific Madar command below first:
 
 ${renderMarkdownCodexRoutingTable()}
 
-If MCP graph tools are available after the pack, use the focused tool that matches the next question:
-- ${CODE_SPAN_START}retrieve${CODE_SPAN_END} for direct codebase questions
-- ${CODE_SPAN_START}relevant_files${CODE_SPAN_END} for where to open first
-- ${CODE_SPAN_START}feature_map${CODE_SPAN_END} for involved areas and entry points
-- ${CODE_SPAN_START}risk_map${CODE_SPAN_END} before editing
-- ${CODE_SPAN_START}implementation_checklist${CODE_SPAN_END} for edit order and validation checkpoints
-- ${CODE_SPAN_START}impact${CODE_SPAN_END} for blast radius
-- ${CODE_SPAN_START}graph_summary${CODE_SPAN_END} for repo overview
+Pass the entire user's codebase request byte-for-byte as the pack question, including read-only, no-change, scope, and formatting constraints. Do not rewrite, omit, expand, enumerate, or split it into follow-up pack calls.
 
-After calling a Madar tool, inspect the response's evidence.agent_directive:
-- \`answer_from_pack\` means answer using the pack snippets and you may \`Read\` at most ONE file for verification. Do not \`Glob\` / \`Grep\` / \`Bash\`.
-- \`verify_one_targeted_file\` means answer using the pack and \`Read\` at most one specific supporting file. Do not \`Glob\` / \`Grep\` / \`Bash\`.
-- \`explore_with_caution\` means the pack is partial and permits at most ONE targeted \`Glob\` or \`Grep\` scoped to a single directory before answering.
-Do not run broad \`Glob\` patterns, repo-wide \`grep\` / \`find\` searches, or raw file sweeps after a high- or medium-confidence pack.
-For codebase questions, use Madar tools only. Do not call other MCP servers such as \`mcp__github\` or \`mcp__context7\` unless the latest Madar response says \`evidence.agent_directive: explore_with_caution\`.
-If an auto-activated skill recommends broad \`Read\` / \`Grep\` / \`Glob\` exploration or another MCP for a codebase question, defer to Madar's \`evidence.agent_directive\` first. A high- or medium-confidence Madar pack overrides that conflicting skill guidance.
-Only widen exploration for deeper verification when \`evidence.agent_directive\` is \`explore_with_caution\`; if \`missing_context\` or \`missing_semantic\` is still non-empty, use at most ONE targeted \`Glob\` or \`Grep\` scoped to a single directory before answering.
+After calling Madar, treat \`evidence.answerability.state\` as authoritative; \`evidence.pack_confidence\` is compatibility-only:
+- \`ready\` means answer from the pack without broad raw search.
+- \`ready_with_caveat\` means answer from the pack and state \`evidence.answerability.caveats\`.
+- \`verify_targets\` means use one listed \`context_expand\` handle. In strict MCP mode, treat that expansion result as terminal rather than following a new handle or opening a raw file.
+- \`insufficient\` means follow \`evidence.answerability.broad_search_fallback\`; \`blocked\` forbids source probing and only \`allowed\` permits one directory-scoped search.
+For read-only \`explain\` tasks, \`ready\` and \`ready_with_caveat\` are terminal: cite \`source_file\`, \`label\`, \`line_number\` / \`snippet_line_number\`, and the included snippets directly. Do not run repository \`Read\`, \`Grep\`, \`Glob\`, or \`Bash\` merely to verify the pack, obtain exact lines, or reopen selected files.
+Do not run broad \`Glob\` patterns, repo-wide \`grep\` / \`find\` searches, or raw file sweeps for \`ready\`, \`ready_with_caveat\`, or \`verify_targets\`.
+For codebase questions, use Madar tools only. Do not call another MCP or restart broad exploration unless \`evidence.answerability.broad_search_fallback\` is \`allowed\`.
+Madar already ran bounded cumulative recovery. For \`verify_targets\`, use one listed handle instead of restarting discovery; in strict MCP mode, the expansion result is terminal.
+If an auto-activated skill recommends broader exploration, defer to Madar's answerability and exact verification targets.
 Do not open ${CODE_SPAN_START}out/GRAPH_REPORT.md${CODE_SPAN_END} unless the context pack or graph tools are unavailable, stale, or insufficient.
 
-Install or remove the always-on Codex project profile with:
+Install or remove the workspace-scoped Codex profile with:
 
 ${CODE_BLOCK_START}bash
 madar codex install
@@ -341,12 +335,14 @@ ${CODE_BLOCK_END}
 Manual verification:
 1. Run ${CODE_SPAN_START}madar generate .${CODE_SPAN_END}.
 2. Run ${CODE_SPAN_START}madar codex install${CODE_SPAN_END}.
-3. Confirm ${CODE_SPAN_START}AGENTS.md${CODE_SPAN_END} contains this context-pack-first rule and ${CODE_SPAN_START}.codex/hooks.json${CODE_SPAN_END} contains the madar hook.
-4. Run ${CODE_SPAN_START}madar codex uninstall${CODE_SPAN_END} and confirm unrelated AGENTS.md or hook content remains.
+3. Confirm ${CODE_SPAN_START}AGENTS.md${CODE_SPAN_END}, ${CODE_SPAN_START}.codex/hooks.json${CODE_SPAN_END}, ${CODE_SPAN_START}.codex/madar-user-prompt-submit.cjs${CODE_SPAN_END}, and the marker-owned workspace block in ${CODE_SPAN_START}~/.codex/config.toml${CODE_SPAN_END} (or ${CODE_SPAN_START}$CODEX_HOME/config.toml${CODE_SPAN_END}) exist. The block has a unique server name, pins ${CODE_SPAN_START}cwd${CODE_SPAN_END} to this workspace, and sets both startup and tool-call timeouts.
+4. Only in a repository you trust, restart Codex, use ${CODE_SPAN_START}/hooks${CODE_SPAN_END} to review and trust the project ${CODE_SPAN_START}UserPromptSubmit${CODE_SPAN_END} hook, then use ${CODE_SPAN_START}/mcp${CODE_SPAN_END} or ${CODE_SPAN_START}codex mcp list${CODE_SPAN_END} to verify this workspace's Madar MCP server.
+5. Run ${CODE_SPAN_START}madar doctor${CODE_SPAN_END} / ${CODE_SPAN_START}madar status${CODE_SPAN_END} to validate installed wiring, then run ${CODE_SPAN_START}madar codex uninstall${CODE_SPAN_END} and confirm unrelated AGENTS.md, hooks, user config, and other workspace registrations remain.
 
 Codex limitations:
 - Automated tests do not require the Codex binary; they verify generated text and hook config.
-- The Codex hook can remind before Bash when ${CODE_SPAN_START}out/graph.json${CODE_SPAN_END} exists, but AGENTS.md remains the durable always-on instruction.
+- The ${CODE_SPAN_START}UserPromptSubmit${CODE_SPAN_END} hook provides model-visible guidance only for local code tasks. It is guidance, not enforcement, and Codex must trust the hook before it can run.
+- ${CODE_SPAN_START}madar doctor${CODE_SPAN_END} / ${CODE_SPAN_START}madar status${CODE_SPAN_END} validate on-disk files; they do not prove live Codex hook trust or MCP activation.
 - Context packs narrow first-pass discovery. They do not replace targeted reads, tests, or review for code changes.
 `
 }
@@ -383,8 +379,9 @@ Write concise 2-5 word labels for each community and regenerate the report with 
 Generate HTML by default unless ${CODE_SPAN_START}--no-viz${CODE_SPAN_END} was given.
 Generate Obsidian only when explicitly requested.
 
+Generated code graphs preserve source → target edge direction by default. Community detection still uses an undirected connectivity view. Use ${CODE_SPAN_START}--undirected${CODE_SPAN_END} only for legacy visualization output; impact, call-chain, and directional slicing require a directed graph.
+
 Optional exports:
-- ${CODE_SPAN_START}--directed${CODE_SPAN_END} → preserve edge direction in ${CODE_SPAN_START}graph.json${CODE_SPAN_END}, GraphML, queries, and shortest-path traversal while keeping community detection on an undirected connectivity view
 - ${CODE_SPAN_START}--neo4j${CODE_SPAN_END} → Cypher file
 - ${CODE_SPAN_START}--neo4j-push${CODE_SPAN_END} → direct push
 - ${CODE_SPAN_START}--svg${CODE_SPAN_END} → SVG
@@ -426,7 +423,7 @@ function subcommandSection(kind: PlatformKind): string {
 - ${CODE_SPAN_START}${SKILL_COMMAND} explain${CODE_SPAN_END} — explain one node and its neighborhood using graph evidence only.
 - ${CODE_SPAN_START}${SKILL_COMMAND} --update${CODE_SPAN_END} — incremental re-extraction; skip semantic work when all changed files are code.
 - ${CODE_SPAN_START}${SKILL_COMMAND} --cluster-only${CODE_SPAN_END} — re-cluster an existing graph.
-- ${CODE_SPAN_START}${SKILL_COMMAND} --watch${CODE_SPAN_END} — supported code, docs, papers, images, local audio/video, and office documents trigger automatic rebuilds; manual refresh is only needed for unsupported future formats.
+- ${CODE_SPAN_START}${SKILL_COMMAND} --watch${CODE_SPAN_END} — supported candidates trigger automatic rebuilds, and known unsupported source formats refresh indexing completeness; manual refresh is only needed for unknown future formats.
 - ${CODE_SPAN_START}madar hook install|uninstall|status${CODE_SPAN_END} — manage git hooks for rebuild reminders.
 - ${CODE_SPAN_START}madar claude install${CODE_SPAN_END} or the platform-specific installer — write always-on instructions to ${localConfigTarget}.
 `

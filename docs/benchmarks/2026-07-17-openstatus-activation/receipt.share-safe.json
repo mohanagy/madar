@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-17T08:45:30Z",
+  "status": "implementation_acceptance",
+  "release_claim_eligible": false,
+  "prompt": "Trace how a failed monitor check becomes an incident, triggers notifications, and affects the public status-page status in this repository. Cite the exact files and symbols involved, identify any inconsistent status-computation paths, and clearly state any remaining uncertainty. This is read-only; do not change files.",
+  "artifact": {
+    "source": "npm_pack",
+    "package": "@lubab/madar",
+    "version": "0.31.3",
+    "tarball_sha256": "sha256:ea71918c1e74fd7b73609f3054d2f90619f117d9d41bbb57cc167bfca525a645",
+    "registry_published": false
+  },
+  "external_repository": {
+    "url": "https://github.com/openstatusHQ/openstatus",
+    "commit": "295e5a72f52c172d326aa950e81043e72a4f20c0",
+    "worktree_clean": true
+  },
+  "graph": {
+    "bytes": 24446369,
+    "nodes": 10496,
+    "edges": 21437,
+    "indexing": {
+      "state": "partial",
+      "candidates": 2601,
+      "indexed": 2443,
+      "indexed_with_warnings": 0,
+      "skipped_by_policy": 73,
+      "unsupported": 85,
+      "failed": 0
+    }
+  },
+  "startup": {
+    "transport": "stdio",
+    "auto_refresh": true,
+    "mcp_initialization_ms": 586,
+    "first_graph_request_ms": 3893,
+    "request_count": 1,
+    "raw_fallback_count": 0,
+    "graph_rebuilt": false,
+    "acceptance_threshold_ms": 5000,
+    "passed": true
+  },
+  "response": {
+    "serialized_tokens": 1666,
+    "serialized_token_budget": 1800,
+    "budget_enforced": true,
+    "pack_confidence": "high",
+    "evidence_strength": "strong",
+    "coverage": "complete",
+    "answerability": "ready",
+    "agent_directive": "answer_from_pack",
+    "broad_search_fallback": "not_needed",
+    "discovery_exclusions_total": 15,
+    "discovery_exclusions_relevant": 0,
+    "indexing_uncertain_total": 158,
+    "indexing_uncertain_relevant": 0
+  },
+  "selected_evidence": [
+    {
+      "label": "statusPage.ts",
+      "source_file": "packages/api/src/router/statusPage.ts",
+      "line_number": 1,
+      "obligations": ["public_status_computation"]
+    },
+    {
+      "label": "triggerNotifications()",
+      "source_file": "apps/workflows/src/checker/alerting.ts",
+      "line_number": 17,
+      "obligations": ["notification_dispatch"]
+    },
+    {
+      "label": "computeEffectiveStatus()",
+      "source_file": "packages/api/src/router/effective-status.ts",
+      "line_number": 11,
+      "obligations": ["inconsistent_status_computation"]
+    },
+    {
+      "label": "upsertMonitorStatus()",
+      "source_file": "apps/workflows/src/checker/alerting.ts",
+      "line_number": 276,
+      "obligations": ["failure_transport", "incident_state"]
+    },
+    {
+      "label": "incident.ts",
+      "source_file": "packages/db/src/schema/incidents/incident.ts",
+      "line_number": 1,
+      "obligations": ["incident_state"]
+    },
+    {
+      "label": "findOpenIncident()",
+      "source_file": "apps/workflows/src/checker/index.ts",
+      "line_number": 37,
+      "obligations": ["incident_state"]
+    },
+    {
+      "label": "computeOverallStatus()",
+      "source_file": "apps/server/src/routes/rpc/handlers/status-page/index.ts",
+      "line_number": 360,
+      "obligations": ["public_status_computation", "inconsistent_status_computation"]
+    },
+    {
+      "label": "UpdateStatus()",
+      "source_file": "apps/checker/checker/update.go",
+      "line_number": 29,
+      "obligations": ["failure_transport"]
+    }
+  ],
+  "human_judgment": {
+    "selected_nodes": 8,
+    "selected_unique_files": 7,
+    "relevant_unique_files": 7,
+    "selected_file_precision": 1,
+    "unrelated_ui_files": 0,
+    "all_five_obligations_present": true
+  },
+  "pending_release_gates": [
+    "three consecutive Claude trials",
+    "three consecutive Codex trials",
+    "human semantic comparison of final answers against the direct-search baseline"
+  ]
+}

@@ -43,11 +43,12 @@
 import { createHash } from 'node:crypto'
 import {
   existsSync,
+  realpathSync,
   readFileSync,
   readdirSync,
   statSync,
 } from 'node:fs'
-import { dirname, extname, join, relative, resolve } from 'node:path'
+import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import ts from 'typescript'
 
 import {
@@ -81,6 +82,8 @@ export type BuildSpiOptions = {
   root: string
   madarVersion: string
   extractorVersion?: string
+  /** Restrict source discovery to these absolute paths. */
+  includedFiles?: ReadonlySet<string>
   // Override the wall-clock used in `generated_at`. Test-only escape hatch
   // so snapshot tests can assert deterministic output.
   now?: () => Date
@@ -95,6 +98,61 @@ const EXT_TO_LANG: Record<string, SpiLanguage> = {
   '.tsx': 'tsx',
   '.js': 'javascript',
   '.jsx': 'jsx',
+}
+
+/** The source extensions the SPI builder can parse and project. */
+export const SPI_SOURCE_EXTENSIONS: ReadonlySet<string> = new Set(Object.keys(EXT_TO_LANG))
+
+export function isSpiSupportedSourceFile(filePath: string): boolean {
+  return SPI_SOURCE_EXTENSIONS.has(extname(filePath).toLowerCase())
+}
+
+/**
+ * Resolve the explicit source set passed by generation. The detector already
+ * applies the workspace's safe symlink policy; this preserves those logical
+ * paths for SPI instead of re-walking the tree and silently dropping them.
+ */
+export function collectExplicitSpiFiles(rootPath: string, includedFiles: ReadonlySet<string>): string[] {
+  const root = resolve(rootPath)
+  const ignorePatterns = loadMadarignorePatterns(root)
+  let realRoot: string
+  try {
+    realRoot = realpathSync(root)
+  } catch {
+    return []
+  }
+
+  const files = new Set<string>()
+  for (const candidate of includedFiles) {
+    const filePath = resolve(candidate)
+    const relativePath = relative(root, filePath)
+    if (
+      !relativePath
+      || relativePath.startsWith(`..${sep}`)
+      || relativePath === '..'
+      || isAbsolute(relativePath)
+      || !isSpiSupportedSourceFile(filePath)
+      || isDiscoveryPathIgnored(filePath, root, ignorePatterns)
+    ) {
+      continue
+    }
+    try {
+      if (!statSync(filePath).isFile()) continue
+      const realFilePath = realpathSync(filePath)
+      const realRelativePath = relative(realRoot, realFilePath)
+      if (
+        realRelativePath.startsWith(`..${sep}`)
+        || realRelativePath === '..'
+        || isAbsolute(realRelativePath)
+      ) {
+        continue
+      }
+      files.add(filePath)
+    } catch {
+      // The detector records unreadable paths; SPI simply receives no source.
+    }
+  }
+  return [...files].sort()
 }
 
 const RESOLUTION_CANDIDATE_EXTS = ['', '.ts', '.tsx', '.js', '.jsx'] as const
@@ -118,9 +176,14 @@ export function buildSpi(opts: BuildSpiOptions): SemanticProgramIndex {
   const edges: SpiEdge[] = []
   const diagnostics: SpiDiagnostic[] = []
 
-  const absPaths: string[] = []
-  const ignorePatterns = loadMadarignorePatterns(root)
-  collectFiles(root, root, ignorePatterns, absPaths)
+  const absPaths = opts.includedFiles
+    ? collectExplicitSpiFiles(root, opts.includedFiles)
+    : (() => {
+        const discovered: string[] = []
+        const ignorePatterns = loadMadarignorePatterns(root)
+        collectFiles(root, root, ignorePatterns, discovered)
+        return discovered
+      })()
 
   const pathToFileId = new Map<string, string>()
   for (const abs of absPaths) {
@@ -192,7 +255,7 @@ export function buildSpi(opts: BuildSpiOptions): SemanticProgramIndex {
 // buildSpi directly.
 export const buildSpiFileLayer = buildSpi
 
-function collectFiles(root: string, dir: string, ignorePatterns: readonly string[], out: string[]): void {
+function collectFiles(root: string, dir: string, ignorePatterns: readonly string[], out: string[], includedFiles?: ReadonlySet<string>): void {
   let entries: import('node:fs').Dirent<string>[]
   try {
     entries = readdirSync(dir, { withFileTypes: true, encoding: 'utf8' })
@@ -204,9 +267,9 @@ function collectFiles(root: string, dir: string, ignorePatterns: readonly string
     const full = join(dir, entry.name)
     if (isDiscoveryPathIgnored(full, root, ignorePatterns)) continue
     if (entry.isDirectory()) {
-      collectFiles(root, full, ignorePatterns, out)
+      collectFiles(root, full, ignorePatterns, out, includedFiles)
     } else if (entry.isFile()) {
-      out.push(full)
+      if (!includedFiles || includedFiles.has(resolve(full))) out.push(full)
     }
   }
 }

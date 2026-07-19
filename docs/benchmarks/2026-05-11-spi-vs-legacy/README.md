@@ -2,6 +2,8 @@
 
 > **Tracking issues:** [#130](https://github.com/mohanagy/madar/issues/130) and the v0.21 context-compiler payoff follow-up.
 
+> **Historical harness:** the strategy-comparison section of `probe.mjs` targets commit `debf9ba602fa04766528e5f184aca578442ee8d4`. Current production retrieval intentionally has no packing-strategy override; benchmark expectations and alternate compiler-policy tests now live outside the production retrieval API. Use the pinned commit to reproduce this exact receipt, or use the current benchmark suite for a new run.
+
 ## TL;DR (latest measured run: `results/2026-05-11T163843Z/`)
 
 | Metric | Legacy | `--spi` | Δ |

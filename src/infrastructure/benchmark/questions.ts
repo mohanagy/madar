@@ -123,7 +123,7 @@ function querySubgraphMatch(graph: KnowledgeGraph, question: string, depth = 2):
     return null
   }
 
-  const traversal = bfs(graph, startNodes, depth)
+  const traversal = bfs(graph, startNodes, depth, undefined, 'incident')
   const labels = new Set(
     [...traversal.visited]
       .filter((nodeId) => graph.hasNode(nodeId))

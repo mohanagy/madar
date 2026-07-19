@@ -25,9 +25,11 @@ import type {
   ContextPackTaskContract,
   ContextPackTaskKind,
 } from '../contracts/context-pack.js'
+import type { ContextPackRetrievalPlanDetail, RetrievalQualitySnapshot } from '../contracts/retrieval-plan.js'
+import type { ContextPackRecoveryPlan } from '../contracts/context-recovery.js'
 import type { TaskIntentKind } from '../contracts/task-intent.js'
 import { KnowledgeGraph } from '../contracts/graph.js'
-import type { RuntimeProofAssessment, RuntimeProofProfile, RuntimeProofProfileObligation } from '../contracts/runtime-proof.js'
+import { reportSkippedPipelineStage } from '../core/pipeline/stage.js'
 import { godNodes, workspaceBridges } from '../pipeline/analyze.js'
 import { type Communities } from '../pipeline/cluster.js'
 import { buildCommunityLabels } from '../pipeline/community-naming.js'
@@ -44,32 +46,54 @@ import {
   compileContextPack,
   estimateContextPackEntryTokens,
   renderCompiledContextPackNodes,
-  type ContextPackSelectionStrategy,
   type ContextPackNodeCandidate,
 } from './context-pack.js'
 import type { RetrievalGateDecision, RetrievalLevel } from '../contracts/retrieval-gate.js'
 import { classifyRetrievalLevel } from './retrieval-gate.js'
-import { defaultContextKindForTaskIntent } from './task-intent.js'
+import { requireDirectedGraph } from './direction.js'
 import {
   expansionPolicyForLevel,
   predecessorAllowedForPolicy,
+  predecessorIsStructuralOwner,
   relationAllowedForPolicy,
   relationIsPrimaryForPolicy,
 } from './retrieve/expansion.js'
 import { sliceCandidatesForRetrieve } from './retrieve/slicing.js'
 import {
-  buildRuntimeProofAssessment,
-  runtimeProofAnchorBonus,
-  runtimeProofObligationMatchScore,
-  runtimeProofObligationTermMatchCount,
-  runtimeProofProvidesDirectEvidence,
-  type RuntimeProofCandidate,
-} from './runtime-proof.js'
+  CONCEPTUAL_WORKFLOW_RESERVATION_BOOST,
+  finalizeConceptualFallbackPlan,
+  evaluateQueryEvidenceCoverage,
+  flowQueryEvidenceCandidateAllowed,
+  planConceptualFallback,
+  queryEvidenceObligations,
+  queryEvidenceTermsMatch,
+  reconcileRetrievalPlanQueryEvidence,
+  underScopedDivergenceNodeIds,
+} from './retrieve/conceptual-fallback.js'
+import { recoverContextPackResult } from './context-pack-recovery.js'
+import {
+  interpretRetrievalQuery,
+  runRetrievalCandidateStage,
+  runRetrievalEvidencePlanningStage,
+  runRetrievalPackingStage,
+  runRetrievalQueryStage,
+  startRetrievalRecoveryStage,
+  tokenMatchCount,
+  tokenizeLabel,
+  tokenizeQuestion,
+  type RetrievalPipelineStage,
+  type RetrievalStageObserver,
+} from './retrieve/pipeline.js'
 import { communitiesFromGraph, estimateQueryTokens } from './serve.js'
+
+export { tokenizeLabel, tokenizeQuestion } from './retrieve/pipeline.js'
 
 const SNIPPET_HALF_WINDOW = 7
 const DERIVED_SNIPPET_HALF_WINDOW = 1
 const MAX_SNIPPET_LINE_LENGTH = 200
+const QUERY_EVIDENCE_SNIPPET_LINE_CAP = 220
+const QUERY_EVIDENCE_SNIPPET_CHAR_CAP = 300
+const QUERY_EVIDENCE_SNIPPET_MAX_LINES = 4
 export const DEFAULT_RETRIEVE_SNIPPET_BUDGET = 3000
 export const DEFAULT_RETRIEVE_TOP_N_WITH_SNIPPET = 8
 export const DEFAULT_RETRIEVE_STDIO_OUTPUT_TOKENS = 4000
@@ -85,16 +109,8 @@ const STDIO_RETRIEVE_EXPANDABLE_PREVIEW_CAP = 3
 const STDIO_RETRIEVE_EXPANDABLE_FOCUS_FILE_CAP = 12
 const STDIO_RETRIEVE_EXPANDABLE_FOCUS_RANGE_CAP = 12
 const STDIO_RETRIEVE_SLICE_PATH_CAP = 12
-
-const STOP_WORDS = new Set([
-  'how', 'does', 'the', 'is', 'a', 'an', 'in', 'to',
-  'of', 'and', 'or', 'what', 'where', 'when', 'why',
-  'which', 'this', 'that', 'with', 'for', 'from', 'are',
-  'do', 'it', 'be', 'has', 'have', 'was', 'were', 'been',
-  'can', 'could', 'would', 'should', 'will', 'may', 'might',
-  'not', 'but', 'if', 'then', 'so', 'about', 'up', 'out',
-  'on', 'at', 'by', 'into', 'all', 'my', 'its', 'no', 'i',
-])
+const CONCEPTUAL_FALLBACK_SEED_LIMIT = 12
+const CONCEPTUAL_FALLBACK_SEED_MIN_BOOST = 0.75
 
 const tokenWeightCache = new WeakMap<KnowledgeGraph, Map<string, Map<string, number>>>()
 const graphSignalCache = new WeakMap<KnowledgeGraph, RetrieveGraphSignals>()
@@ -111,17 +127,19 @@ export interface RetrieveOptions {
   semanticModel?: string
   rerank?: boolean
   rerankerModel?: string
+  /** Project root used to resolve the optional transformers package when the
+   *  server itself runs from elsewhere (npx cache, global install). */
+  projectRoot?: string
   /** #75 manual override for the retrieval gate. When set (0-5), the gate
    *  bypasses heuristic classification and emits a decision with reason
    *  'manual override' at the supplied level. Caller-side surface for the
    *  acceptance criterion that the gate be overridable via CLI/MCP. */
   retrievalLevel?: RetrievalLevel
-  /** Internal additive override for benchmarks/tests. */
-  selectionStrategy?: ContextPackSelectionStrategy
   retrievalStrategy?: ContextPackRetrievalStrategy
-  runtimeProofProfile?: RuntimeProofProfile
   snippetBudget?: number
   topNWithSnippet?: number
+  /** Source-safe stage timing/count observer; never receives prompts, paths, labels, or snippets. */
+  onStageDiagnostic?: RetrievalStageObserver
 }
 
 export interface RetrieveSnippetOptions {
@@ -133,22 +151,14 @@ export interface RetrieveStdioOptions extends RetrieveSnippetOptions {
   maxOutputTokens?: number
 }
 
-function effectiveRetrieveTaskKind(options: RetrieveOptions): ContextPackTaskKind {
-  if (options.taskKind) {
-    return options.taskKind
-  }
-  if (options.taskIntent) {
-    return defaultContextKindForTaskIntent(options.taskIntent)
-  }
-  return 'explain'
-}
-
 function classifyRetrieveTaskContract(options: RetrieveOptions): ContextPackTaskContract {
-  return classifyTaskContract(effectiveRetrieveTaskKind(options), {
+  return interpretRetrievalQuery({
+    question: options.question,
     budget: options.budget,
-    prompt: options.question,
-    ...(options.taskIntent ? { task_intent: options.taskIntent } : {}),
-  })
+    ...(options.taskKind ? { taskKind: options.taskKind } : {}),
+    ...(options.taskIntent ? { taskIntent: options.taskIntent } : {}),
+    ...(options.retrievalLevel !== undefined ? { retrievalLevel: options.retrievalLevel } : {}),
+  }).task_contract
 }
 
 export interface RetrieveMatchedNode {
@@ -163,6 +173,8 @@ export interface RetrieveMatchedNode {
   source_domain?: SourceDomain
   file_type: string
   snippet: string | null
+  snippet_line_number?: number
+  snippet_scope?: 'symbol' | 'source_file'
   snippet_truncated?: boolean
   match_score: number
   relevance_band: 'direct' | 'related' | 'peripheral'
@@ -204,6 +216,8 @@ export interface RetrieveResult {
   selection_diagnostics?: ContextPackSelectionDiagnostics
   retrieval_gate?: RetrievalGateDecision
   retrieval_strategy?: ContextPackRetrievalStrategy
+  retrieval_plan?: ContextPackRetrievalPlanDetail
+  recovery?: ContextPackRecoveryPlan
   snippet_budget_tokens_used?: number
   snippet_budget_tokens_remaining?: number
   slice?: ContextPackSliceMetadata
@@ -248,32 +262,6 @@ function stripRetrieveMatchedNodeIdentity<T extends RetrieveMatchedNode | Compac
 function stripRetrieveRelationshipIdentity<T extends RetrieveRelationship>(relationship: T): Omit<T, 'from_id' | 'to_id'> {
   const { from_id: _fromId, to_id: _toId, ...rest } = relationship
   return rest
-}
-
-export function tokenizeQuestion(question: string): string[] {
-  return question
-    .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .toLowerCase()
-    .split(/[\s_\\\-./,:;!?'"()[\]{}]+/)
-    .filter((token) => token.length > 1 && !STOP_WORDS.has(token))
-}
-
-export function tokenizeLabel(label: string): string[] {
-  return label
-    .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .toLowerCase()
-    .split(/[\s_\\\-./,:;!?'"()[\]{}]+/)
-    .filter((token) => token.length > 1)
-}
-
-function tokenMatchCount(questionToken: string, labelTokens: readonly string[]): number {
-  let matches = 0
-  for (const labelToken of labelTokens) {
-    if (labelToken.startsWith(questionToken) || questionToken.startsWith(labelToken)) {
-      matches += 1
-    }
-  }
-  return matches
 }
 
 export function scoreNode(
@@ -608,8 +596,14 @@ export function withRetrieveSnippetBudget(
   const shapedNodes = applyRetrieveSnippetBudgetToNodes(result.matched_nodes, options)
   const baseNodeTokenCount = tokenCountForMatchedNodes(result.matched_nodes)
   const shapedNodeTokenCount = tokenCountForMatchedNodes(shapedNodes.nodes)
+  const retrievalPlan = reconcileRetrievalPlanQueryEvidence(
+    result.retrieval_plan,
+    result.question,
+    shapedNodes.nodes,
+  )
   return {
     ...result,
+    ...(retrievalPlan ? { retrieval_plan: retrievalPlan } : {}),
     token_count: Math.max(0, result.token_count - baseNodeTokenCount + shapedNodeTokenCount),
     matched_nodes: shapedNodes.nodes as RetrieveMatchedNode[],
     snippet_budget_tokens_used: shapedNodes.usedTokens,
@@ -657,6 +651,731 @@ export function readSnippet(
       .slice(start, end)
       .map((line) => (line.length > MAX_SNIPPET_LINE_LENGTH ? `${line.slice(0, MAX_SNIPPET_LINE_LENGTH)}...` : line))
       .join('\n')
+  } catch {
+    return null
+  }
+}
+
+export interface QueryEvidenceSnippet {
+  snippet: string
+  lineNumber: number
+  scope: 'symbol' | 'source_file'
+}
+
+interface QueryEvidenceSnippetOptions {
+  question: string
+  label: string
+  sourceLocation?: string | null
+  fileNodeLike?: boolean
+  derived?: boolean
+  fileCache?: Map<string, string[] | null>
+}
+
+interface QueryEvidenceLine {
+  index: number
+  endIndex: number
+  text: string
+  score: number
+  matchedTerms: Set<string>
+  matchedObligations: Set<number>
+  identifierTerms: Set<string>
+}
+
+interface QueryEvidenceRange {
+  lines: QueryEvidenceLine[]
+  coveredObligations: Set<number>
+  bestScore: number
+}
+
+const QUERY_EVIDENCE_OPERATION_PATTERN = /(?:\b(?:await|case|catch|delete|dispatch|emit|enqueue|if|insert|post|publish|return|select|send|switch|throw|update|upsert|write)\b|\b(?:const|let)\s+\w+\s*=|=>|\.\w+\s*\()/i
+const QUERY_EVIDENCE_STATE_MUTATION_PATTERN = /(?:\b(?:create|insert|transition|upsert)\w*\s*\(|\.(?:create|insert|upsert)\s*\(|\bnew\s+\w+)/i
+const QUERY_EVIDENCE_LOW_VALUE_LINE_PATTERN = /^\s*(?:(?:import|package)\b|(?:export\s+)?type\b|interface\b|\/\/|\/\*|\*|[{}()[\],;]+\s*$)/i
+const QUERY_EVIDENCE_LOG_LINE_PATTERN = /\b(?:logger|log)\.\w+\s*\(/i
+const QUERY_EVIDENCE_HANDOFF_PATTERN = /(?:\b(?:createTask|dispatch|emit|enqueue|insert|publish|send|update|upsert)\w*\s*\(|\.(?:createTask|dispatch|emit|enqueue|insert|publish|send\w*|update|upsert)\s*\()/i
+const QUERY_EVIDENCE_DELIVERY_HANDOFF_PATTERN = /(?:\b(?:createTask|dispatch|emit|enqueue|publish|send|trigger)\w*\s*\(|\.(?:createTask|dispatch|emit|enqueue|publish|send\w*)\s*\()/i
+const QUERY_EVIDENCE_DELIVERY_OPERATION_PATTERN = /(?:\b(?:deliver|dispatch|emit|enqueue|publish|send)\w*\s*\(|\.(?:deliver|dispatch|emit|enqueue|publish|send)\w*\s*\()/i
+const QUERY_EVIDENCE_RETRY_PATTERN = /\b(?:backoff|exponential|retr(?:y|ied|ies))\b/i
+const QUERY_EVIDENCE_OVERALL_RESULT_PATTERN = /\boverall\w*(?:result|state|status)\w*\s*=/i
+const QUERY_EVIDENCE_DECISION_PATTERN = /(?:\b\w*(?:result|state|status)\w*\s*=.*(?:\?|\.some\s*\()|\?\s*[\w.]+\s*:)/i
+const QUERY_EVIDENCE_DECISION_ASSIGNMENT_PATTERN = /\b\w*(?:result|state|status)\w*\s*=/i
+const QUERY_EVIDENCE_PAGE_RESULT_PATTERN = /(?:\bpage\w*(?:indicator|status)\w*\s*\(|\bstatus\s*:\s*page\w*\s*\()/i
+const QUERY_EVIDENCE_PAGE_COLLECTION_PATTERN = /\breturn\s+page\.\w+/i
+const QUERY_EVIDENCE_COMPUTATION_PATTERN = /(?:\b(?:compute|derive|resolve)\w*\s*\(|\b\w*(?:indicator|result|state|status)\w*\s*=|\b\w*(?:indicator|status)\w*\s*\()/i
+const QUERY_EVIDENCE_INCIDENT_STATUS_PATTERN = /(?:\b\w+\.type\s*===?\s*["']incident["'][^\n]*!\w+\.to|!\w+\.to[^\n]*\b\w+\.type\s*===?\s*["']incident["'])/i
+const QUERY_EVIDENCE_MONITOR_ROLLUP_PATTERN = /\bstatus\s*=\s*monitors\.some\s*\(/i
+const QUERY_EVIDENCE_INPUT_PROVENANCE_PATTERN = /\bRouterOutputs\b.*\[\s*["']statusPage["']\s*\].*\[\s*["']get["']\s*\]/i
+const QUERY_EVIDENCE_PUBLIC_ROUTER_FETCH_PATTERN = /\btrpc\s*\.\s*statusPage\s*\.\s*get\s*\.\s*queryOptions\b/i
+const QUERY_EVIDENCE_DECLARATION_PATTERN = /^\s*(?:(?:export\s+)?(?:async\s+)?(?:function\b|const\s+\w+\s*=\s*async\b)|func\b)/i
+
+function boundedSourceRange(
+  lineCount: number,
+  range: { start: number; end: number },
+): { start: number; end: number } {
+  const start = Math.min(lineCount, Math.max(1, range.start))
+  const end = Math.min(lineCount, Math.max(start, range.end))
+  return { start, end }
+}
+
+interface QueryEvidenceFragment {
+  index: number
+  endIndex: number
+  text: string
+}
+
+const QUERY_EVIDENCE_CONTINUATION_START_PATTERN = /^\s*(?:[.?:]|&&|\|\|)/
+const QUERY_EVIDENCE_CONTINUATION_END_PATTERN = /(?:=>|&&|\|\||[=?:])\s*$/
+const QUERY_EVIDENCE_STRUCTURED_CALL_PATTERN = /(?:\b\w+\s*\(|:=\s*&?[\w.]+)[^;]*\{\s*$/
+const QUERY_EVIDENCE_DISCRIMINANT_PROPERTY_PATTERN = /^\s*([\w]*(?:action|event|incident|method|mode|monitor|notification|queue|route|status|type|url)[\w]*)\s*:/i
+const QUERY_EVIDENCE_PROVIDER_HANDOFF_PATTERN = /\b([A-Za-z_]\w*)\.(?:createTask|deliver\w*|dispatch\w*|emit\w*|enqueue\w*|publish\w*|send\w*|trigger\w*)\s*\(/i
+const QUERY_EVIDENCE_PROVIDER_SETUP_PATTERN = /(?:\bnew\s+\w*(?:client|provider|queue|transport)\w*\s*\(|\b\w*newClient\s*\(|\b\w*(?:client|provider|queue|transport)\w*\.)/i
+const QUERY_EVIDENCE_CONTAINER_DECLARATION_PATTERN = /^\s*(?:export\s+const\s+\w*(?:route|router)\w*\s*=|\w+\s*:\s*\w*Procedure\.query\s*\()/i
+
+function braceDelta(value: string): number {
+  return (value.match(/\{/g)?.length ?? 0) - (value.match(/\}/g)?.length ?? 0)
+}
+
+function structuredCallFragment(
+  lines: readonly string[],
+  lineNumber: number,
+  rangeEnd: number,
+): { end: number; text: string } | null {
+  const first = lines[lineNumber - 1] ?? ''
+  if (
+    QUERY_EVIDENCE_DECLARATION_PATTERN.test(first)
+    || !QUERY_EVIDENCE_STRUCTURED_CALL_PATTERN.test(first)
+  ) {
+    return null
+  }
+  let depth = braceDelta(first)
+  if (depth <= 0) {
+    return null
+  }
+  const properties: Array<{ index: number; key: string; text: string }> = []
+  const nestedHandoffs: Array<{ index: number; text: string }> = []
+  let end = lineNumber
+  const scanEnd = Math.min(rangeEnd, lineNumber + 16)
+  for (let candidateNumber = lineNumber + 1; candidateNumber <= scanEnd; candidateNumber += 1) {
+    const candidate = lines[candidateNumber - 1] ?? ''
+    const property = candidate.match(QUERY_EVIDENCE_DISCRIMINANT_PROPERTY_PATTERN)
+    if (property?.[1]) {
+      properties.push({
+        index: candidateNumber,
+        key: property[1].toLowerCase(),
+        text: candidate.trim(),
+      })
+    }
+    if (QUERY_EVIDENCE_DELIVERY_HANDOFF_PATTERN.test(candidate)) {
+      nestedHandoffs.push({ index: candidateNumber, text: candidate.trim() })
+    }
+    depth += braceDelta(candidate)
+    end = candidateNumber
+    if (depth <= 0) {
+      break
+    }
+  }
+  if (properties.length === 0 && nestedHandoffs.length === 0) {
+    return null
+  }
+  const priority = (key: string): number => {
+    if (/(?:action|event|mode|status|type)/.test(key)) return 0
+    if (/(?:incident|method|monitor|notification|queue|route|url)/.test(key)) return 1
+    return 2
+  }
+  const discriminants = properties
+    .sort((left, right) => priority(left.key) - priority(right.key) || left.index - right.index)
+    .slice(0, 3)
+    .map((property) => property.text)
+  return {
+    end,
+    text: [first, ...nestedHandoffs.slice(0, 1).map((handoff) => handoff.text), ...discriminants].join(' '),
+  }
+}
+
+function providerHandoffFragment(
+  lines: readonly string[],
+  lineNumber: number,
+  rangeStart: number,
+): { start: number; end: number; text: string } | null {
+  const handoff = lines[lineNumber - 1] ?? ''
+  const match = handoff.match(QUERY_EVIDENCE_PROVIDER_HANDOFF_PATTERN)
+  const receiver = match?.[1]
+  if (!receiver) {
+    return null
+  }
+  const receiverAssignment = new RegExp(
+    `(?:\\b(?:const|let|var)\\s+)?\\b${receiver}(?:\\s*,\\s*\\w+)?\\s*(?::=|=)`,
+  )
+  const scanStart = Math.max(rangeStart, lineNumber - 48)
+  for (let candidateNumber = lineNumber - 1; candidateNumber >= scanStart; candidateNumber -= 1) {
+    const candidate = lines[candidateNumber - 1] ?? ''
+    if (!receiverAssignment.test(candidate) || !QUERY_EVIDENCE_PROVIDER_SETUP_PATTERN.test(candidate)) {
+      continue
+    }
+    return {
+      start: candidateNumber,
+      end: lineNumber,
+      text: `${candidate.trim()} L${lineNumber}: ${handoff.trim()}`,
+    }
+  }
+  return null
+}
+
+function publicRouterFetchFragment(
+  lines: readonly string[],
+  lineNumber: number,
+  rangeStart: number,
+): { start: number; end: number; text: string } | null {
+  const queryOptions = lines[lineNumber - 1] ?? ''
+  if (!QUERY_EVIDENCE_PUBLIC_ROUTER_FETCH_PATTERN.test(queryOptions)) {
+    return null
+  }
+
+  for (let candidate = lineNumber - 1; candidate >= Math.max(rangeStart, lineNumber - 3); candidate -= 1) {
+    const fetch = lines[candidate - 1] ?? ''
+    if (!/\b(?:const|let)\s+\w+\s*=\s*await\s+\w+\.fetchQuery\s*\(/.test(fetch)) {
+      continue
+    }
+    return {
+      start: candidate,
+      end: lineNumber,
+      text: `${fetch.trim()} ${queryOptions.trim()}`,
+    }
+  }
+
+  return null
+}
+
+function incidentStatusOwnerFragment(
+  lines: readonly string[],
+  lineNumber: number,
+  rangeStart: number,
+  rangeEnd: number,
+): { start: number; end: number; text: string } | null {
+  const first = lines[lineNumber - 1] ?? ''
+  if (!/^\s*const\s+status\s*=/.test(first)) {
+    return null
+  }
+  let decisionEnd = lineNumber
+  while (decisionEnd < rangeEnd && decisionEnd - lineNumber < 5) {
+    const current = lines[decisionEnd - 1] ?? ''
+    if (/;\s*$/.test(current)) {
+      break
+    }
+    decisionEnd += 1
+  }
+  const decision = lines.slice(lineNumber - 1, decisionEnd).join(' ')
+  if (!QUERY_EVIDENCE_INCIDENT_STATUS_PATTERN.test(decision)) {
+    return null
+  }
+
+  let ownerNumber: number | null = null
+  for (let candidate = lineNumber - 1; candidate >= Math.max(rangeStart, lineNumber - 16); candidate -= 1) {
+    if (/^\s*const\s+\w+\s*=.*\.map\s*\(/.test(lines[candidate - 1] ?? '')) {
+      ownerNumber = candidate
+      break
+    }
+  }
+  if (ownerNumber === null) {
+    return null
+  }
+
+  const returnEvidence: string[] = []
+  let returnEnd = decisionEnd
+  for (let candidate = decisionEnd + 1; candidate <= Math.min(rangeEnd, decisionEnd + 20); candidate += 1) {
+    const value = lines[candidate - 1] ?? ''
+    if (returnEvidence.length === 0 && /^\s*return\s*\{/.test(value)) {
+      returnEvidence.push(value.trim())
+      returnEnd = candidate
+      continue
+    }
+    if (returnEvidence.length > 0 && /^\s*(?:\.\.\.\w+(?:\.\w+)?,|status,|events,)/.test(value)) {
+      returnEvidence.push(value.trim())
+      returnEnd = candidate
+      if (returnEvidence.some((entry) => /^status,$/.test(entry))) {
+        break
+      }
+    }
+  }
+
+  return {
+    start: ownerNumber,
+    end: Math.max(decisionEnd, returnEnd),
+    text: [
+      (lines[ownerNumber - 1] ?? '').trim(),
+      ...returnEvidence,
+      `L${lineNumber}: ${decision.trim()}`,
+    ].join(' '),
+  }
+}
+
+function queryEvidenceScoringText(value: string): string {
+  return value
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/(^|\s)\/\/.*$/g, '$1')
+}
+
+function queryEvidenceFragments(
+  lines: readonly string[],
+  range: { start: number; end: number },
+): QueryEvidenceFragment[] {
+  const fragments: QueryEvidenceFragment[] = []
+  const seen = new Set<string>()
+  for (let lineNumber = range.start; lineNumber <= range.end; lineNumber += 1) {
+    if ((lines[lineNumber - 1] ?? '').trim().length === 0) {
+      continue
+    }
+    let start = lineNumber
+    let end = lineNumber
+    if (
+      start > range.start
+      && (
+        QUERY_EVIDENCE_CONTINUATION_START_PATTERN.test(lines[start - 1] ?? '')
+        || QUERY_EVIDENCE_CONTINUATION_END_PATTERN.test(lines[start - 2] ?? '')
+      )
+    ) {
+      start -= 1
+    }
+    const incidentStatusOwner = incidentStatusOwnerFragment(lines, lineNumber, range.start, range.end)
+    const publicRouterFetch = incidentStatusOwner ? null : publicRouterFetchFragment(lines, lineNumber, range.start)
+    const providerHandoff = incidentStatusOwner || publicRouterFetch ? null : providerHandoffFragment(lines, lineNumber, range.start)
+    const structured = incidentStatusOwner || publicRouterFetch || providerHandoff ? null : structuredCallFragment(lines, lineNumber, range.end)
+    let text: string | null = null
+    if (incidentStatusOwner) {
+      start = incidentStatusOwner.start
+      end = incidentStatusOwner.end
+      text = incidentStatusOwner.text
+    } else if (publicRouterFetch) {
+      start = publicRouterFetch.start
+      end = publicRouterFetch.end
+      text = publicRouterFetch.text
+    } else if (providerHandoff) {
+      start = providerHandoff.start
+      end = providerHandoff.end
+      text = providerHandoff.text
+    } else if (structured) {
+      end = structured.end
+      text = structured.text
+    } else {
+      while (end < range.end && end - start < 3) {
+        const current = lines[end - 1] ?? ''
+        const next = lines[end] ?? ''
+        if (
+          next.trim().length === 0
+          || (!QUERY_EVIDENCE_CONTINUATION_END_PATTERN.test(current)
+            && !QUERY_EVIDENCE_CONTINUATION_START_PATTERN.test(next))
+        ) {
+          break
+        }
+        end += 1
+      }
+    }
+    const key = `${start}:${end}`
+    if (seen.has(key)) {
+      continue
+    }
+    seen.add(key)
+    fragments.push({
+      index: start,
+      endIndex: end,
+      text: text ?? lines.slice(start - 1, end).join(' '),
+    })
+  }
+  return fragments
+}
+
+function queryEvidenceRange(
+  lines: readonly string[],
+  range: { start: number; end: number },
+  question: string,
+  preferredObligations?: ReadonlySet<number>,
+): QueryEvidenceRange {
+  const obligations = queryEvidenceObligations(question)
+  const candidates = queryEvidenceFragments(lines, range)
+  const scoringTextByLine = candidates.map((candidate) => queryEvidenceScoringText(candidate.text))
+  const tokensByLine = scoringTextByLine.map((text) => tokenizeLabel(text))
+  const identifierTokensByLine = candidates.map((candidate) => tokenizeLabel(
+    queryEvidenceScoringText(candidate.text).replace(/(['"`])(?:\\.|(?!\1).)*\1/g, ' '),
+  ))
+  const tokenFrequencies = new Map<string, number>()
+  for (const tokens of identifierTokensByLine) {
+    for (const token of new Set(tokens.filter((candidate) => candidate.length >= 4))) {
+      tokenFrequencies.set(token, (tokenFrequencies.get(token) ?? 0) + 1)
+    }
+  }
+  const frequencies = new Map<string, number>()
+  for (const obligation of obligations) {
+    for (const term of obligation.terms) {
+      const count = tokensByLine.filter((tokens) => tokens.some((token) => queryEvidenceTermsMatch(term, token))).length
+      frequencies.set(`${obligation.index}:${term}`, count)
+    }
+  }
+
+  const coveredObligations = new Set<number>()
+  const scoredLines = candidates.flatMap((candidate, offset): QueryEvidenceLine[] => {
+    const { text } = candidate
+    const scoringText = scoringTextByLine[offset] ?? text
+    if (scoringText.trim().length === 0) {
+      return []
+    }
+    const tokens = tokensByLine[offset] ?? []
+    const matchedTerms = new Set<string>()
+    const matchedObligations = new Set<number>()
+    const identifierTerms = new Set(
+      (identifierTokensByLine[offset] ?? []).filter((token) => (
+        token.length >= 4 && (tokenFrequencies.get(token) ?? candidates.length) <= 2
+      )),
+    )
+    let score = 0
+    for (const obligation of obligations) {
+      if (preferredObligations && preferredObligations.size > 0 && !preferredObligations.has(obligation.index)) {
+        continue
+      }
+      let obligationMatchedTerms = 0
+      for (const term of obligation.terms) {
+        if (!tokens.some((token) => queryEvidenceTermsMatch(term, token))) {
+          continue
+        }
+        const key = `${obligation.index}:${term}`
+        matchedTerms.add(key)
+        obligationMatchedTerms += 1
+        const frequency = frequencies.get(key) ?? candidates.length
+        const preference = !preferredObligations || preferredObligations.size === 0 || preferredObligations.has(obligation.index)
+          ? 1.6
+          : 0.55
+        score += preference * (1 + Math.log((candidates.length + 1) / (frequency + 1)))
+      }
+      const lifecycleConcepts = obligation.terms.filter((term) => (
+        term === '@delivery' || term === '@failure' || term === '@transition'
+      ))
+      const lifecycleGrounded = lifecycleConcepts.every((term) => (
+        tokens.some((token) => queryEvidenceTermsMatch(term, token))
+      ))
+      const deliveryGrounded = !obligation.terms.includes('@delivery')
+        || QUERY_EVIDENCE_DELIVERY_OPERATION_PATTERN.test(scoringText)
+      const transitionGrounded = !obligation.terms.includes('@transition')
+        || QUERY_EVIDENCE_STATE_MUTATION_PATTERN.test(scoringText)
+      if (
+        obligationMatchedTerms >= Math.min(2, obligation.terms.length)
+        && lifecycleGrounded
+        && deliveryGrounded
+        && transitionGrounded
+      ) {
+        matchedObligations.add(obligation.index)
+      }
+    }
+    if (matchedTerms.size === 0) {
+      if (!preferredObligations || preferredObligations.size === 0 || !QUERY_EVIDENCE_OPERATION_PATTERN.test(scoringText)) {
+        return []
+      }
+      score = 0.5 + Math.min(2, identifierTerms.size * 0.2)
+    }
+    for (const obligation of matchedObligations) {
+      coveredObligations.add(obligation)
+    }
+    score += Math.max(0, matchedObligations.size - 1) * 1.5
+    if (QUERY_EVIDENCE_OPERATION_PATTERN.test(scoringText)) {
+      score += 1.1
+    }
+    if (QUERY_EVIDENCE_HANDOFF_PATTERN.test(scoringText)) {
+      score += 1.6
+    }
+    if (QUERY_EVIDENCE_DELIVERY_HANDOFF_PATTERN.test(scoringText)) {
+      score += 1.5
+    }
+    if (QUERY_EVIDENCE_RETRY_PATTERN.test(scoringText)) {
+      score += 1.8
+    }
+    if (QUERY_EVIDENCE_DECISION_PATTERN.test(scoringText)) {
+      score += 1.4
+    }
+    if (QUERY_EVIDENCE_COMPUTATION_PATTERN.test(scoringText)) {
+      score += 1.2
+    }
+    if (QUERY_EVIDENCE_INCIDENT_STATUS_PATTERN.test(scoringText)) {
+      score += 2.4
+    }
+    if (QUERY_EVIDENCE_MONITOR_ROLLUP_PATTERN.test(scoringText)) {
+      score += 2
+    }
+    if (QUERY_EVIDENCE_INPUT_PROVENANCE_PATTERN.test(scoringText)) {
+      score += 2.5
+    }
+    if (QUERY_EVIDENCE_PUBLIC_ROUTER_FETCH_PATTERN.test(scoringText)) {
+      score += 4
+    }
+    if (QUERY_EVIDENCE_DECLARATION_PATTERN.test(scoringText)) {
+      score -= 1.25
+    }
+    if (QUERY_EVIDENCE_LOG_LINE_PATTERN.test(scoringText)) {
+      score -= 1.75
+    }
+    score += Math.min(1.2, identifierTerms.size * 0.12)
+    if (QUERY_EVIDENCE_LOW_VALUE_LINE_PATTERN.test(scoringText)) {
+      score -= 1.5
+    }
+    return [{
+      index: candidate.index,
+      endIndex: candidate.endIndex,
+      text,
+      score,
+      matchedTerms,
+      matchedObligations,
+      identifierTerms,
+    }]
+  })
+
+  return {
+    lines: scoredLines,
+    coveredObligations,
+    bestScore: scoredLines.reduce((maximum, line) => Math.max(maximum, line.score), 0),
+  }
+}
+
+function selectQueryEvidenceLines(range: QueryEvidenceRange): QueryEvidenceLine[] {
+  const valuableLines = range.lines.filter((line) => (
+    !QUERY_EVIDENCE_LOW_VALUE_LINE_PATTERN.test(line.text)
+    || QUERY_EVIDENCE_INPUT_PROVENANCE_PATTERN.test(line.text)
+  ))
+  const remaining = [...(valuableLines.length > 0 ? valuableLines : range.lines)]
+  const selected: QueryEvidenceLine[] = []
+  const coveredTerms = new Set<string>()
+  const coveredObligations = new Set<number>()
+  const coveredIdentifiers = new Set<string>()
+  const transitionAnchor = remaining
+    .filter((line) => [...line.matchedTerms].some((term) => {
+      if (!term.endsWith(':@transition')) {
+        return false
+      }
+      const obligation = Number(term.slice(0, term.indexOf(':')))
+      return line.matchedObligations.has(obligation)
+        && QUERY_EVIDENCE_STATE_MUTATION_PATTERN.test(queryEvidenceScoringText(line.text))
+    }))
+    .sort((left, right) => right.score - left.score || left.index - right.index)[0]
+  const coherenceBoost = (line: QueryEvidenceLine): number => {
+    if (!transitionAnchor) {
+      return 0
+    }
+    return Math.max(0, 2.5 - (Math.abs(line.index - transitionAnchor.index) * 0.04))
+  }
+
+  const addSelected = (line: QueryEvidenceLine): void => {
+    selected.push(line)
+    for (const term of line.matchedTerms) coveredTerms.add(term)
+    for (const obligation of line.matchedObligations) coveredObligations.add(obligation)
+    for (const identifier of line.identifierTerms) coveredIdentifiers.add(identifier)
+    for (let index = remaining.length - 1; index >= 0; index -= 1) {
+      const candidate = remaining[index]!
+      const overlaps = candidate.index <= line.endIndex && line.index <= candidate.endIndex
+      if (overlaps) remaining.splice(index, 1)
+    }
+  }
+
+  const obligationFrequency = new Map<number, number>()
+  for (const line of remaining) {
+    for (const obligation of line.matchedObligations) {
+      obligationFrequency.set(obligation, (obligationFrequency.get(obligation) ?? 0) + 1)
+    }
+  }
+  for (const obligation of [...obligationFrequency.keys()].sort((left, right) => (
+    (obligationFrequency.get(left) ?? 0) - (obligationFrequency.get(right) ?? 0)
+    || left - right
+  ))) {
+    if (selected.length >= QUERY_EVIDENCE_SNIPPET_MAX_LINES || coveredObligations.has(obligation)) {
+      continue
+    }
+    const best = remaining
+      .filter((line) => line.matchedObligations.has(obligation))
+      .sort((left, right) => {
+        const termCount = (line: QueryEvidenceLine): number => (
+          [...line.matchedTerms].filter((term) => term.startsWith(`${obligation}:`)).length
+        )
+        const transitionMutation = (line: QueryEvidenceLine): number => (
+          line.matchedTerms.has(`${obligation}:@transition`)
+            && QUERY_EVIDENCE_STATE_MUTATION_PATTERN.test(line.text)
+            ? 1
+            : 0
+        )
+        return transitionMutation(right) - transitionMutation(left)
+          || termCount(right) - termCount(left)
+          || (right.score + coherenceBoost(right)) - (left.score + coherenceBoost(left))
+          || left.index - right.index
+      })[0]
+    if (best) addSelected(best)
+  }
+
+  for (const semanticPattern of [
+    QUERY_EVIDENCE_DELIVERY_HANDOFF_PATTERN,
+    QUERY_EVIDENCE_RETRY_PATTERN,
+    QUERY_EVIDENCE_PUBLIC_ROUTER_FETCH_PATTERN,
+    QUERY_EVIDENCE_OVERALL_RESULT_PATTERN,
+    QUERY_EVIDENCE_DECISION_PATTERN,
+    QUERY_EVIDENCE_PAGE_RESULT_PATTERN,
+    QUERY_EVIDENCE_PAGE_COLLECTION_PATTERN,
+    QUERY_EVIDENCE_INCIDENT_STATUS_PATTERN,
+    QUERY_EVIDENCE_MONITOR_ROLLUP_PATTERN,
+    QUERY_EVIDENCE_INPUT_PROVENANCE_PATTERN,
+    QUERY_EVIDENCE_COMPUTATION_PATTERN,
+  ]) {
+    if (selected.length >= QUERY_EVIDENCE_SNIPPET_MAX_LINES) {
+      break
+    }
+    if (selected.some((line) => semanticPattern.test(queryEvidenceScoringText(line.text)))) {
+      continue
+    }
+    const best = remaining
+      .filter((line) => semanticPattern.test(queryEvidenceScoringText(line.text)))
+      .sort((left, right) => (
+        (semanticPattern === QUERY_EVIDENCE_DECISION_PATTERN
+          ? Number(QUERY_EVIDENCE_DECISION_ASSIGNMENT_PATTERN.test(right.text))
+            - Number(QUERY_EVIDENCE_DECISION_ASSIGNMENT_PATTERN.test(left.text))
+          : 0)
+        || ((right.score + coherenceBoost(right)) / Math.max(1, right.text.length / 80))
+          - ((left.score + coherenceBoost(left)) / Math.max(1, left.text.length / 80))
+        || left.index - right.index
+      ))[0]
+    if (best) addSelected(best)
+  }
+
+  while (remaining.length > 0 && selected.length < QUERY_EVIDENCE_SNIPPET_MAX_LINES) {
+    const distinctCandidates = selected.length < 2
+      ? remaining
+      : remaining.filter((line) => {
+          const addsQueryEvidence = [...line.matchedTerms].some((term) => !coveredTerms.has(term))
+            || [...line.matchedObligations].some((obligation) => !coveredObligations.has(obligation))
+          const addsSemanticEvidence = [
+            QUERY_EVIDENCE_DELIVERY_HANDOFF_PATTERN,
+            QUERY_EVIDENCE_RETRY_PATTERN,
+            QUERY_EVIDENCE_PUBLIC_ROUTER_FETCH_PATTERN,
+            QUERY_EVIDENCE_OVERALL_RESULT_PATTERN,
+            QUERY_EVIDENCE_DECISION_PATTERN,
+            QUERY_EVIDENCE_PAGE_RESULT_PATTERN,
+            QUERY_EVIDENCE_PAGE_COLLECTION_PATTERN,
+            QUERY_EVIDENCE_INCIDENT_STATUS_PATTERN,
+            QUERY_EVIDENCE_MONITOR_ROLLUP_PATTERN,
+            QUERY_EVIDENCE_INPUT_PROVENANCE_PATTERN,
+            QUERY_EVIDENCE_COMPUTATION_PATTERN,
+          ].some((pattern) => (
+            pattern.test(queryEvidenceScoringText(line.text))
+            && !selected.some((selectedLine) => pattern.test(queryEvidenceScoringText(selectedLine.text)))
+          ))
+          return addsQueryEvidence || addsSemanticEvidence
+        })
+    if (distinctCandidates.length === 0) {
+      break
+    }
+    distinctCandidates.sort((left, right) => {
+      const novelty = (line: QueryEvidenceLine): number => (
+        [...line.matchedTerms].filter((term) => !coveredTerms.has(term)).length
+        + ([...line.matchedObligations].filter((obligation) => !coveredObligations.has(obligation)).length * 1.75)
+        + ([...line.identifierTerms].filter((identifier) => !coveredIdentifiers.has(identifier)).length * 0.2)
+      )
+      const redundancy = (line: QueryEvidenceLine): number => (
+        [...line.matchedTerms].filter((term) => coveredTerms.has(term)).length * 1.25
+      )
+      return (right.score + novelty(right) - redundancy(right) + coherenceBoost(right))
+        - (left.score + novelty(left) - redundancy(left) + coherenceBoost(left))
+        || left.index - right.index
+    })
+    const next = distinctCandidates[0]
+    if (!next) {
+      break
+    }
+    addSelected(next)
+  }
+
+  return selected.sort((left, right) => left.index - right.index)
+}
+
+function renderQueryEvidenceLines(lines: readonly QueryEvidenceLine[]): string | null {
+  const rendered: string[] = []
+  let usedChars = 0
+  for (const line of lines) {
+    const normalized = line.text.replace(/\s+/g, ' ').trim()
+    const content = normalized.length > QUERY_EVIDENCE_SNIPPET_LINE_CAP
+      ? `${normalized.slice(0, QUERY_EVIDENCE_SNIPPET_LINE_CAP - 3).trimEnd()}...`
+      : normalized
+    const prefix = `L${line.index}: `
+    const separatorChars = rendered.length > 0 ? 1 : 0
+    const remaining = QUERY_EVIDENCE_SNIPPET_CHAR_CAP - usedChars - separatorChars
+    if (remaining <= prefix.length + 8) {
+      break
+    }
+    const bounded = `${prefix}${content}`.slice(0, remaining).trimEnd()
+    rendered.push(bounded)
+    usedChars += bounded.length + separatorChars
+  }
+  return rendered.length > 0 ? rendered.join('\n') : null
+}
+
+/**
+ * Selects compact, query-bearing evidence from a symbol range. When a small
+ * helper is the only graph anchor for an anonymous workflow, it may select a
+ * better excerpt from the same source file and marks that scope explicitly.
+ */
+export function readQueryEvidenceSnippet(
+  sourceFile: string,
+  lineNumber: number,
+  options: QueryEvidenceSnippetOptions,
+): QueryEvidenceSnippet | null {
+  try {
+    const lines = fileLinesForSnippet(sourceFile, options.fileCache)
+    if (!lines || lines.length === 0) {
+      return null
+    }
+    const fullRange = { start: 1, end: lines.length }
+    const identityTokens = tokenizeLabel(options.label)
+    const preferredObligations = new Set(
+      queryEvidenceObligations(options.question)
+        .filter((obligation) => obligation.terms.some((term) => (
+          identityTokens.some((token) => queryEvidenceTermsMatch(term, token))
+        )))
+        .map((obligation) => obligation.index),
+    )
+    const parsedRange = lineRangeFromSourceLocation(options.sourceLocation)
+    const fallbackHalfWindow = options.derived ? DERIVED_SNIPPET_HALF_WINDOW : SNIPPET_HALF_WINDOW
+    const symbolRange = boundedSourceRange(lines.length, parsedRange ?? {
+      start: lineNumber - fallbackHalfWindow,
+      end: lineNumber + fallbackHalfWindow,
+    })
+    const symbolEvidence = queryEvidenceRange(lines, symbolRange, options.question, preferredObligations)
+    let scope: QueryEvidenceSnippet['scope'] = options.fileNodeLike ? 'source_file' : 'symbol'
+    let selectedRange = options.fileNodeLike
+      ? queryEvidenceRange(lines, fullRange, options.question)
+      : symbolEvidence
+
+    const symbolLineCount = symbolRange.end - symbolRange.start + 1
+    if (!options.fileNodeLike && symbolLineCount <= 40) {
+      const fileEvidence = queryEvidenceRange(lines, fullRange, options.question)
+      const singleLineGraphRange = parsedRange !== null && parsedRange.start === parsedRange.end
+      if (
+        (
+          singleLineGraphRange
+            ? fileEvidence.bestScore > symbolEvidence.bestScore
+            : fileEvidence.coveredObligations.size >= symbolEvidence.coveredObligations.size + 1
+        )
+        && fileEvidence.bestScore >= symbolEvidence.bestScore
+      ) {
+        scope = 'source_file'
+        selectedRange = fileEvidence
+      }
+    }
+
+    let selectedLines = selectQueryEvidenceLines(selectedRange)
+    if (
+      options.fileNodeLike
+      && selectedLines.some((line) => QUERY_EVIDENCE_INCIDENT_STATUS_PATTERN.test(queryEvidenceScoringText(line.text)))
+    ) {
+      selectedLines = selectedLines.filter((line) => !QUERY_EVIDENCE_CONTAINER_DECLARATION_PATTERN.test(line.text))
+    }
+    const snippet = renderQueryEvidenceLines(selectedLines)
+    if (!snippet || selectedLines.length === 0) {
+      return null
+    }
+    return {
+      snippet,
+      lineNumber: selectedLines[0]!.index,
+      scope,
+    }
   } catch {
     return null
   }
@@ -809,6 +1528,7 @@ function scoredNodeFromGraphEntry(
     community: parseCommunityId(attributes.community),
     frameworkBoost: frameworkBoostForNode(frameworkProfile, nodeKind, frameworkRole, frameworkMetadataFromAttributes(attributes), questionLower),
     exactLabelMatch: false,
+    symbolMatchScore: 0,
     literalPathMatch: false,
     sourcePathMatch: false,
     evidenceTier: 0,
@@ -863,10 +1583,12 @@ function storedCommunityLabelsFromGraph(graph: KnowledgeGraph): Record<number, s
 
 interface SeedScoreBreakdown {
   labelExactScore: number
+  labelPhraseScore: number
   labelTokenScore: number
   sourcePathScore: number
   promptIdentifierScore: number
   communityScore: number
+  conceptualFallbackScore: number
   total: number
 }
 
@@ -888,6 +1610,7 @@ interface SeedCandidate {
   frameworkBoost: number
   seedScore: SeedScoreBreakdown
   exactLabelMatch: boolean
+  symbolMatchScore: number
   literalPathMatch: boolean
   sourcePathMatch: boolean
   evidenceTier: 0 | 1 | 2
@@ -911,6 +1634,7 @@ interface ScoredNode {
   community: number | null
   frameworkBoost: number
   exactLabelMatch: boolean
+  symbolMatchScore: number
   literalPathMatch: boolean
   sourcePathMatch: boolean
   evidenceTier: 0 | 1 | 2
@@ -940,6 +1664,7 @@ function scoredNodeFromGraph(graph: KnowledgeGraph, nodeId: string, score: numbe
     community: parseCommunityId(attributes.community),
     frameworkBoost: 0,
     exactLabelMatch: false,
+    symbolMatchScore: 0,
     literalPathMatch: false,
     sourcePathMatch: false,
     evidenceTier: 0,
@@ -964,6 +1689,7 @@ interface FrameworkQuestionProfile {
   fastify: boolean
   trpc: boolean
   prisma: boolean
+  goRouteIntent: boolean
   routeIntent: boolean
   middlewareIntent: boolean
   handlerIntent: boolean
@@ -1353,11 +2079,29 @@ function questionLooksFileOriented(question: string, questionTokens: readonly st
   return includesAnyToken(questionTokens, ['file', 'files', 'filepath', 'path', 'paths', 'directory', 'directories', 'folder', 'folders'])
 }
 
+function questionLooksLikeDefinitionLookup(question: string): boolean {
+  return /\b(?:defined|declared|located|location|definition|declaration)\b/i.test(question)
+    || /\bwhere\s+(?:is|are)\b/i.test(question)
+}
+
+function containsTokenSequence(tokens: readonly string[], sequence: readonly string[]): boolean {
+  if (sequence.length === 0 || sequence.length > tokens.length) {
+    return false
+  }
+
+  for (let startIndex = 0; startIndex <= tokens.length - sequence.length; startIndex += 1) {
+    if (sequence.every((token, offset) => tokens[startIndex + offset] === token)) {
+      return true
+    }
+  }
+  return false
+}
+
 function evidenceTierForSeedScore(score: SeedScoreBreakdown): 0 | 1 | 2 {
-  if (score.labelExactScore > 0 || score.labelTokenScore > 0) {
+  if (score.labelExactScore > 0 || score.labelPhraseScore > 0 || score.labelTokenScore > 0 || score.conceptualFallbackScore >= 0.75) {
     return 2
   }
-  if (score.sourcePathScore > 0 || score.promptIdentifierScore > 0 || score.communityScore > 0) {
+  if (score.sourcePathScore > 0 || score.promptIdentifierScore > 0 || score.communityScore > 0 || score.conceptualFallbackScore > 0) {
     return 1
   }
   return 0
@@ -1552,9 +2296,18 @@ function scoreSeedCandidate(
   averageLabelLength: number,
   options: { fileNodeLike: boolean; fileOrientedQuestion: boolean },
 ): SeedScoreBreakdown {
+  const labelTokens = tokenizeLabel(label)
   const labelExactScore = normalizeSeedText(question) !== '' && normalizeSeedText(question) === normalizeSeedText(label) ? 2 : 0
+  // Definition lookups should keep an explicitly named multi-token concept ahead of
+  // source-path-only structural neighbors. Runtime-flow questions intentionally skip
+  // this signal so executable steps retain their established ordering.
+  const labelPhraseScore = questionLooksLikeDefinitionLookup(question)
+    && labelTokens.length >= 2
+    && containsTokenSequence(questionTokens, labelTokens)
+    ? 1
+    : 0
   const fileNodePenaltyApplies = options.fileNodeLike && !options.fileOrientedQuestion && labelExactScore === 0
-  const labelTokenScore = fileNodePenaltyApplies ? 0 : scoreNode(questionTokens, tokenizeLabel(label), tokenWeights, averageLabelLength)
+  const labelTokenScore = fileNodePenaltyApplies ? 0 : scoreNode(questionTokens, labelTokens, tokenWeights, averageLabelLength)
   const sourcePathScore = fileNodePenaltyApplies ? 0 : scoreNode(questionTokens, tokenizeLabel(sourceFile), tokenWeights) * 0.25
   const promptIdentifierScore = fileNodePenaltyApplies ? 0 : promptIdentifierMatchScore(label, sourceFile, promptIdentifiers)
   const communityScore = fileNodePenaltyApplies
@@ -1565,11 +2318,13 @@ function scoreSeedCandidate(
 
   return {
     labelExactScore,
+    labelPhraseScore,
     labelTokenScore,
     sourcePathScore,
     promptIdentifierScore,
     communityScore,
-    total: labelExactScore + labelTokenScore + sourcePathScore + promptIdentifierScore + communityScore,
+    conceptualFallbackScore: 0,
+    total: labelExactScore + labelPhraseScore + labelTokenScore + sourcePathScore + promptIdentifierScore + communityScore,
   }
 }
 
@@ -1781,6 +2536,22 @@ function lowValueReportGenerationCompactNode(
   })
     || /\b(?:title|status|suggest|guard|auth|interceptor|refund|claim|cancel|signedurl|buildperspective|letsbuild|publish|delete)\b/.test(lower)
     || /(?:^|[.#])(?:generatefallbacktitle|generatetitle|getstatusmessage|claimqueuedpipelinerun|releasequeuedpipelineclaim|releaseunusedcreditreservation|generatebuildperspective|generatesignedurl|generateletsbuild|publishidea|getidea|listideas|deleteidea|suggestimprovements)[A-Za-z_$\w]*\(?\)?$/i.test(node.label)
+}
+
+function recoveredReportGenerationNoise(
+  question: string,
+  node: Pick<ScoredNode, 'label' | 'sourceFile' | 'nodeKind' | 'frameworkRole'>,
+): boolean {
+  if (!promptWantsRuntimePipeline(question) || !promptWantsReportGenerationCore(question)) {
+    return false
+  }
+
+  return lowValueReportGenerationCompactNode({
+    label: node.label,
+    source_file: node.sourceFile,
+    node_kind: node.nodeKind,
+    framework_role: node.frameworkRole,
+  })
 }
 
 function reportGenerationCompactApplies(result: RetrieveResult): boolean {
@@ -2199,9 +2970,8 @@ function augmentSliceCandidateIdsForRuntimeExplain(
   metadata: ContextPackSliceMetadata,
   retrievalGate: RetrievalGateDecision,
   question: string,
-  runtimeProofProfile?: RuntimeProofProfile,
 ): string[] {
-  if (!runtimeGenerationSliceCandidatePromotionApplies(retrievalGate, metadata) && runtimeProofProfile?.strict_runtime_proof !== true) {
+  if (!runtimeGenerationSliceCandidatePromotionApplies(retrievalGate, metadata)) {
     return [...orderedIds]
   }
 
@@ -2225,7 +2995,7 @@ function augmentSliceCandidateIdsForRuntimeExplain(
   const anchorIds = metadata.anchors
     .map((anchor) => resolveNodeId(anchor.node_id, anchor.label))
     .filter((nodeId): nodeId is string => typeof nodeId === 'string')
-  const executionScope = collectExecutionSliceScope(graph, metadata, anchorIds, question, resolveNodeId, runtimeProofProfile)
+  const executionScope = collectExecutionSliceScope(graph, metadata, anchorIds, question, resolveNodeId)
 
   for (const nodeId of executionScope.orderedIds) {
     if (!seen.has(nodeId)) {
@@ -2241,11 +3011,7 @@ function runtimeGenerationExecutionSliceApplies(
   taskContract: ContextPackTaskContract,
   retrievalGate: RetrievalGateDecision,
   sliceMetadata: ContextPackSliceMetadata | undefined,
-  runtimeProofProfile?: RuntimeProofProfile,
 ): boolean {
-  if (runtimeProofProfile?.strict_runtime_proof === true) {
-    return taskContract.task_kind === 'explain' && sliceMetadata !== undefined
-  }
   return retrievalGate.signals.generation_intent === 'runtime_generation'
     && retrievalGate.signals.target_domain_hint === 'backend_runtime'
     && taskContract.task_kind === 'explain'
@@ -2359,276 +3125,12 @@ interface ExecutionPathCandidate {
   edges: ExecutionFlowEdge[]
 }
 
-function runtimeProofCandidateFromGraph(
-  graph: KnowledgeGraph,
-  nodeId: string,
-): RuntimeProofCandidate {
-  const attributes = graph.nodeAttributes(nodeId)
-  return {
-    label: String(attributes.label ?? nodeId),
-    source_file: String(attributes.source_file ?? ''),
-    line_number: lineNumberFromSourceLocation(String(attributes.source_location ?? '')) ?? 0,
-    ...(typeof attributes.node_kind === 'string' ? { node_kind: attributes.node_kind } : {}),
-    ...(typeof attributes.framework_role === 'string' ? { framework_role: attributes.framework_role } : {}),
-  }
-}
-
-function runtimeProofCandidateFromExecutionStep(
-  step: Pick<ContextPackExecutionSliceStep, 'label' | 'source_file' | 'line_number' | 'node_kind' | 'framework_role'>,
-): RuntimeProofCandidate {
-  return {
-    label: step.label,
-    source_file: step.source_file,
-    line_number: step.line_number,
-    ...(step.node_kind ? { node_kind: step.node_kind } : {}),
-    ...(step.framework_role ? { framework_role: step.framework_role } : {}),
-  }
-}
-
-function augmentExecutionScopeForRuntimeProof(
-  graph: KnowledgeGraph,
-  orderedIds: string[],
-  idSet: Set<string>,
-  anchorIds: readonly string[],
-  runtimeProofProfile: RuntimeProofProfile,
-): void {
-  const addPath = (path: readonly string[]): void => {
-    for (const nodeId of path) {
-      if (graph.hasNode(nodeId) && !idSet.has(nodeId)) {
-        idSet.add(nodeId)
-        orderedIds.push(nodeId)
-      }
-    }
-  }
-
-  const findTargetedPath = (
-    obligationId: string,
-    sourceIdsOverride?: readonly string[],
-    maxDepth: number = 6,
-  ): string[] | undefined => {
-    const obligation = runtimeProofProfile.obligations.find((entry) => entry.id === obligationId)
-    if (!obligation) {
-      return undefined
-    }
-    const sourceIds = sourceIdsOverride !== undefined
-      ? [...sourceIdsOverride]
-      : orderedIds.length > 0
-        ? [...orderedIds]
-        : [...anchorIds]
-    const queue = sourceIds.map((nodeId) => ({ nodeId, path: [nodeId], depth: 0 }))
-    const bestDepth = new Map(sourceIds.map((nodeId) => [nodeId, 0]))
-    let bestPath: string[] | undefined
-    let bestDirectEvidence = 0
-    let bestScore = 0
-
-    while (queue.length > 0) {
-      const current = queue.shift()!
-      const candidate = runtimeProofCandidateFromGraph(graph, current.nodeId)
-      const directEvidence = runtimeProofProvidesDirectEvidence(candidate, obligation) ? 1 : 0
-      const matchedTerms = runtimeProofObligationTermMatchCount(candidate, obligation)
-      const matchScore = matchedTerms > 0 || directEvidence > 0
-        ? runtimeProofObligationMatchScore(candidate, obligation)
-        : 0
-      if (
-        directEvidence > bestDirectEvidence
-        || (
-          directEvidence === bestDirectEvidence
-          && (
-            matchScore > bestScore
-            || (matchScore === bestScore && matchScore > 0 && bestPath !== undefined && current.path.length < bestPath.length)
-          )
-        )
-      ) {
-        bestDirectEvidence = directEvidence
-        bestScore = matchScore
-        bestPath = current.path
-      }
-      if (current.depth >= maxDepth) {
-        continue
-      }
-
-      const neighbors = [
-        ...graph.predecessors(current.nodeId).map((nodeId) => ({ nodeId, relation: String(graph.edgeAttributes(nodeId, current.nodeId).relation ?? 'related_to') })),
-        ...graph.successors(current.nodeId).map((nodeId) => ({ nodeId, relation: String(graph.edgeAttributes(current.nodeId, nodeId).relation ?? 'related_to') })),
-      ]
-        .filter((neighbor) => executionSliceFlowRelation(neighbor.relation))
-        .sort((left, right) => {
-        const leftCandidate = runtimeProofCandidateFromGraph(graph, left.nodeId)
-        const rightCandidate = runtimeProofCandidateFromGraph(graph, right.nodeId)
-        const leftDirect = runtimeProofProvidesDirectEvidence(leftCandidate, obligation) ? 1 : 0
-        const rightDirect = runtimeProofProvidesDirectEvidence(rightCandidate, obligation) ? 1 : 0
-        const leftScore = runtimeProofObligationTermMatchCount(leftCandidate, obligation) > 0 || leftDirect > 0
-          ? runtimeProofObligationMatchScore(leftCandidate, obligation)
-          : 0
-        const rightScore = runtimeProofObligationTermMatchCount(rightCandidate, obligation) > 0 || rightDirect > 0
-          ? runtimeProofObligationMatchScore(rightCandidate, obligation)
-          : 0
-        return rightDirect - leftDirect
-          || rightScore - leftScore
-          || executionSliceEdgePriority(right.relation) - executionSliceEdgePriority(left.relation)
-      })
-
-      for (const neighbor of neighbors) {
-        const nextDepth = current.depth + 1
-        const previousBest = bestDepth.get(neighbor.nodeId)
-        if (previousBest !== undefined && previousBest <= nextDepth) {
-          continue
-        }
-        bestDepth.set(neighbor.nodeId, nextDepth)
-        queue.push({
-          nodeId: neighbor.nodeId,
-          path: [...current.path, neighbor.nodeId],
-          depth: nextDepth,
-        })
-      }
-    }
-
-    return bestDirectEvidence > 0 || bestScore > 0 ? bestPath : undefined
-  }
-
-  const findFallbackNeighborhood = (obligationId: string): string[] | undefined => {
-    const obligation = runtimeProofProfile.obligations.find((entry) => entry.id === obligationId)
-    if (!obligation) {
-      return undefined
-    }
-
-    let bestNodeId: string | undefined
-    let bestDirectEvidence = 0
-    let bestScore = 0
-    for (const [nodeId] of graph.nodeEntries()) {
-      const candidate = runtimeProofCandidateFromGraph(graph, nodeId)
-      if (fileLikeNodeLabel(candidate.label)) {
-        continue
-      }
-      const directEvidence = runtimeProofProvidesDirectEvidence(candidate, obligation) ? 1 : 0
-      const matchedTerms = runtimeProofObligationTermMatchCount(candidate, obligation)
-      const matchScore = matchedTerms > 0 || directEvidence > 0
-        ? runtimeProofObligationMatchScore(candidate, obligation)
-        : 0
-      if (matchScore <= 0) {
-        continue
-      }
-      if (directEvidence > bestDirectEvidence || (directEvidence === bestDirectEvidence && matchScore > bestScore)) {
-        bestDirectEvidence = directEvidence
-        bestScore = matchScore
-        bestNodeId = nodeId
-      }
-    }
-
-    if (!bestNodeId) {
-      return undefined
-    }
-
-    const neighborhood: string[] = []
-    const seen = new Set<string>()
-    const queue = [{ nodeId: bestNodeId, depth: 0 }]
-    while (queue.length > 0) {
-      const current = queue.shift()!
-      if (seen.has(current.nodeId)) {
-        continue
-      }
-      seen.add(current.nodeId)
-      neighborhood.push(current.nodeId)
-      if (current.depth >= 2) {
-        continue
-      }
-
-      const neighbors = [
-        ...graph.predecessors(current.nodeId).map((nodeId) => ({ nodeId, relation: String(graph.edgeAttributes(nodeId, current.nodeId).relation ?? 'related_to') })),
-        ...graph.successors(current.nodeId).map((nodeId) => ({ nodeId, relation: String(graph.edgeAttributes(current.nodeId, nodeId).relation ?? 'related_to') })),
-      ]
-        .filter((neighbor) => executionSliceFlowRelation(neighbor.relation))
-        .sort((left, right) => {
-          const leftCandidate = runtimeProofCandidateFromGraph(graph, left.nodeId)
-          const rightCandidate = runtimeProofCandidateFromGraph(graph, right.nodeId)
-          const leftDirect = runtimeProofProvidesDirectEvidence(leftCandidate, obligation) ? 1 : 0
-          const rightDirect = runtimeProofProvidesDirectEvidence(rightCandidate, obligation) ? 1 : 0
-          const leftScore = runtimeProofObligationTermMatchCount(leftCandidate, obligation) > 0 || leftDirect > 0
-            ? runtimeProofObligationMatchScore(leftCandidate, obligation)
-            : 0
-          const rightScore = runtimeProofObligationTermMatchCount(rightCandidate, obligation) > 0 || rightDirect > 0
-            ? runtimeProofObligationMatchScore(rightCandidate, obligation)
-            : 0
-          return rightDirect - leftDirect
-            || rightScore - leftScore
-            || executionSliceEdgePriority(right.relation) - executionSliceEdgePriority(left.relation)
-        })
-
-      for (const neighbor of neighbors) {
-        if (!seen.has(neighbor.nodeId)) {
-          queue.push({ nodeId: neighbor.nodeId, depth: current.depth + 1 })
-        }
-      }
-    }
-
-    return neighborhood.length > 0 ? neighborhood : undefined
-  }
-
-  for (const obligationId of buildRuntimeProofAssessment(
-    runtimeProofProfile,
-    orderedIds.map((nodeId) => runtimeProofCandidateFromGraph(graph, nodeId)),
-  )?.missing_obligations ?? []) {
-    const targetedPath = findTargetedPath(obligationId) ?? findFallbackNeighborhood(obligationId)
-    if (targetedPath) {
-      addPath(targetedPath)
-    }
-  }
-
-  for (const obligation of runtimeProofProfile.obligations.filter((entry) => entry.kind === 'terminal')) {
-    const anchorEvidencePath = findTargetedPath(obligation.id, anchorIds, 4)
-    if (anchorEvidencePath) {
-      addPath(anchorEvidencePath)
-    }
-  }
-
-  const entrypointObligations = runtimeProofProfile.obligations.filter((obligation) => obligation.kind === 'entrypoint')
-  if (entrypointObligations.length === 0) {
-    return
-  }
-
-  const queue = [...orderedIds]
-  const seen = new Set(queue)
-  while (queue.length > 0) {
-    const nodeId = queue.shift()!
-    for (const predecessorId of graph.predecessors(nodeId)) {
-      if (seen.has(predecessorId)) {
-        continue
-      }
-      const relation = String(graph.edgeAttributes(predecessorId, nodeId).relation ?? 'related_to')
-      if (!executionSliceFlowRelation(relation)) {
-        continue
-      }
-      seen.add(predecessorId)
-      const predecessorStep = runtimeProofCandidateFromGraph(graph, predecessorId)
-      const entrypointScore = Math.max(0, ...entrypointObligations.map((obligation) =>
-        runtimeProofObligationMatchScore(predecessorStep, obligation)
-      ))
-      if (
-        entrypointScore > 0
-        || controllerLikeExecutionStep({
-          label: predecessorStep.label,
-          source_file: predecessorStep.source_file,
-          ...(predecessorStep.node_kind ? { node_kind: predecessorStep.node_kind } : {}),
-          ...(predecessorStep.framework_role ? { framework_role: predecessorStep.framework_role } : {}),
-        })
-      ) {
-        if (!idSet.has(predecessorId)) {
-          idSet.add(predecessorId)
-          orderedIds.unshift(predecessorId)
-        }
-        queue.push(predecessorId)
-      }
-    }
-  }
-}
-
 function collectExecutionSliceScope(
   graph: KnowledgeGraph,
   sliceMetadata: ContextPackSliceMetadata,
   anchorIds: readonly string[],
   question: string,
   resolveNodeId: (nodeId: string | undefined, label: string) => string | undefined,
-  runtimeProofProfile?: RuntimeProofProfile,
 ): { orderedIds: string[]; idSet: ReadonlySet<string> } {
   const orderedIds: string[] = []
   const idSet = new Set<string>()
@@ -2687,10 +3189,6 @@ function collectExecutionSliceScope(
     }
   }
 
-  if (runtimeProofProfile?.strict_runtime_proof === true) {
-    augmentExecutionScopeForRuntimeProof(graph, orderedIds, idSet, anchorIds, runtimeProofProfile)
-  }
-
   if (addedSelectedFlowPath) {
     return { orderedIds, idSet }
   }
@@ -2722,10 +3220,6 @@ function collectExecutionSliceScope(
         enqueueNeighbor(successorId, depth + 1)
       }
     }
-  }
-
-  if (runtimeProofProfile?.strict_runtime_proof === true) {
-    augmentExecutionScopeForRuntimeProof(graph, orderedIds, idSet, anchorIds, runtimeProofProfile)
   }
 
   return { orderedIds, idSet }
@@ -3236,7 +3730,6 @@ function executionPathScore(
   path: ExecutionPathCandidate,
   nodeById: ReadonlyMap<string, ContextPackExecutionSliceStep>,
   question: string,
-  runtimeProofProfile?: RuntimeProofProfile,
 ): number {
   const steps = path.nodeIds
     .map((nodeId) => nodeById.get(nodeId))
@@ -3282,80 +3775,8 @@ function executionPathScore(
     score -= 40
   }
 
-  if (runtimeProofProfile) {
-    const runtimeProof = buildRuntimeProofAssessment(
-      runtimeProofProfile,
-      steps.map((step) => runtimeProofCandidateFromExecutionStep(step)),
-    )
-    if (runtimeProof) {
-      const coveredCount = runtimeProof.obligations.length - runtimeProof.missing_obligations.length
-      score += coveredCount * 140
-      score -= runtimeProof.missing_obligations.length * 220
-      if (runtimeProof.missing_obligations.some((obligationId) =>
-        runtimeProofProfile.obligations.find((obligation) => obligation.id === obligationId)?.kind === 'terminal'
-      )) {
-        score -= 120
-      }
-    }
-    const firstStep = steps[0]
-    if (firstStep) {
-      const entrypointBonus = Math.max(0, ...runtimeProofProfile.obligations
-        .filter((obligation) => obligation.kind === 'entrypoint')
-        .map((obligation) => runtimeProofObligationMatchScore(runtimeProofCandidateFromExecutionStep(firstStep), obligation)))
-      score += entrypointBonus * 20
-      if (controllerLikeExecutionStep(firstStep)) {
-        score += 35
-      }
-    }
-    if (lastStep) {
-      const terminalBonus = Math.max(0, ...runtimeProofProfile.obligations
-        .filter((obligation) => obligation.kind === 'terminal')
-        .map((obligation) => runtimeProofObligationMatchScore(runtimeProofCandidateFromExecutionStep(lastStep), obligation)))
-      score += terminalBonus * 18
-      if (!serviceLikeExecutionStep(lastStep)) {
-        score += 15
-      }
-    }
-  }
-
   return score + path.edges.length
 }
-
-function executionPathRuntimeProofSummary(
-  path: ExecutionPathCandidate,
-  nodeById: ReadonlyMap<string, ContextPackExecutionSliceStep>,
-  runtimeProofProfile: RuntimeProofProfile | undefined,
-): {
-  missingCount: number
-  missingTerminalCount: number
-  coveredCount: number
-} | undefined {
-  if (!runtimeProofProfile) {
-    return undefined
-  }
-
-  const steps = path.nodeIds
-    .map((nodeId) => nodeById.get(nodeId))
-    .filter((step): step is ContextPackExecutionSliceStep => step !== undefined)
-  const runtimeProof = buildRuntimeProofAssessment(
-    runtimeProofProfile,
-    steps.map((step) => runtimeProofCandidateFromExecutionStep(step)),
-  )
-  if (!runtimeProof) {
-    return undefined
-  }
-
-  const obligationsById = new Map(runtimeProofProfile.obligations.map((obligation) => [obligation.id, obligation] as const))
-  return {
-    missingCount: runtimeProof.missing_obligations.length,
-    missingTerminalCount: runtimeProof.missing_obligations
-      .filter((obligationId) => obligationsById.get(obligationId)?.kind === 'terminal')
-      .length,
-    coveredCount: runtimeProof.obligations.length - runtimeProof.missing_obligations.length,
-  }
-}
-
-const STRICT_RUNTIME_PROOF_START_CANDIDATE_LIMIT = 64
 
 function primaryPathBoundaries(
   path: ExecutionPathCandidate,
@@ -3380,13 +3801,11 @@ function phaseCoverageForPath(
   question: string,
   scopeSteps: readonly ContextPackExecutionSliceStep[] = steps,
   tracedSteps: readonly ContextPackExecutionSliceStep[] = steps,
-  runtimeProofProfile?: RuntimeProofProfile,
 ): { expected: ExecutionPhase[]; observed: ExecutionPhase[]; missing: ExecutionPhase[] } {
   const phaseOrder = executionPhaseOrder(question)
   const expandedTaxonomy = promptUsesExpandedExecutionTaxonomy(question)
-  const proofAwareObservedTracing = expandedTaxonomy || runtimeProofProfile?.strict_runtime_proof === true
   const expectedSourceSteps = expandedTaxonomy ? scopeSteps : steps
-  const observedSourceSteps = proofAwareObservedTracing ? tracedSteps : steps
+  const observedSourceSteps = expandedTaxonomy ? tracedSteps : steps
   const expected = expectedExecutionPhases(question, expectedSourceSteps)
   const observed = new Set<ExecutionPhase>()
   for (const step of observedSourceSteps) {
@@ -3442,7 +3861,6 @@ function collectExecutionBranches(
   primaryPath: ExecutionPathCandidate,
   nodeById: ReadonlyMap<string, ContextPackExecutionSliceStep>,
   question: string,
-  runtimeProofProfile?: RuntimeProofProfile,
 ): {
   sideEffects: ContextPackExecutionSliceBranch[]
   terminalBoundaries: ContextPackExecutionSliceBranch[]
@@ -3457,49 +3875,20 @@ function collectExecutionBranches(
   const omittedBranches: ContextPackExecutionSliceOmittedBranch[] = []
   const omittedEvidenceSteps: ContextPackExecutionSliceStep[] = []
   const branchScoreCache = new Map<ExecutionPathCandidate, number>()
-  const branchProofCache = new Map<ExecutionPathCandidate, ReturnType<typeof executionPathRuntimeProofSummary>>()
   const branchScoreFor = (path: ExecutionPathCandidate): number => {
     const cached = branchScoreCache.get(path)
     if (cached !== undefined) {
       return cached
     }
-    const score = executionPathScore(path, nodeById, question, runtimeProofProfile)
+    const score = executionPathScore(path, nodeById, question)
     branchScoreCache.set(path, score)
     return score
   }
-  const branchProofFor = (path: ExecutionPathCandidate): ReturnType<typeof executionPathRuntimeProofSummary> => {
-    const cached = branchProofCache.get(path)
-    if (cached !== undefined) {
-      return cached
-    }
-    const proof = executionPathRuntimeProofSummary(path, nodeById, runtimeProofProfile)
-    branchProofCache.set(path, proof)
-    return proof
-  }
   interface RankedExecutionBranch {
     edge: ExecutionFlowEdge
-    path: ExecutionPathCandidate
     steps: ContextPackExecutionSliceStep[]
     kind: 'side_effect' | 'terminal' | 'omitted'
     reason?: string
-    score: number
-    proof?: ReturnType<typeof executionPathRuntimeProofSummary>
-    stableKey: string
-  }
-  const compareRankedBranch = (
-    left: RankedExecutionBranch,
-    right: RankedExecutionBranch,
-  ): number => {
-    if (runtimeProofProfile?.strict_runtime_proof === true && left.proof && right.proof) {
-      const proofOrder = left.proof.missingCount - right.proof.missingCount
-        || left.proof.missingTerminalCount - right.proof.missingTerminalCount
-        || right.proof.coveredCount - left.proof.coveredCount
-      if (proofOrder !== 0) {
-        return proofOrder
-      }
-    }
-    return right.score - left.score
-      || compareStableText(left.stableKey, right.stableKey)
   }
   const rankedBranches: RankedExecutionBranch[] = []
 
@@ -3513,18 +3902,6 @@ function collectExecutionBranches(
 
       const branchCandidates = enumerateExecutionPaths(adjacency, edge.toId, primaryNodeIds, 4)
       const branchPath = branchCandidates.sort((left, right) => {
-        if (runtimeProofProfile?.strict_runtime_proof === true) {
-          const leftProof = branchProofFor(left)
-          const rightProof = branchProofFor(right)
-          if (leftProof && rightProof) {
-            return leftProof.missingCount - rightProof.missingCount
-              || leftProof.missingTerminalCount - rightProof.missingTerminalCount
-              || rightProof.coveredCount - leftProof.coveredCount
-              || left.nodeIds.length - right.nodeIds.length
-              || branchScoreFor(right) - branchScoreFor(left)
-              || compareStableText(left.nodeIds.join('>'), right.nodeIds.join('>'))
-          }
-        }
         return branchScoreFor(right) - branchScoreFor(left)
           || compareStableText(left.nodeIds.join('>'), right.nodeIds.join('>'))
       })[0] ?? { nodeIds: [edge.toId], edges: [] }
@@ -3536,26 +3913,17 @@ function collectExecutionBranches(
       const branchReason = branchBoundaryReason(branchSteps, branchKind, question)
       rankedBranches.push({
         edge,
-        path: branchPath,
         steps: branchSteps,
         kind: branchKind,
         ...(branchReason ? { reason: branchReason } : {}),
-        score: branchScoreFor(branchPath),
-        ...(runtimeProofProfile?.strict_runtime_proof === true ? { proof: branchProofFor(branchPath) } : {}),
-        stableKey: `${edge.fromId}:${edge.relation}:${edge.toId}`,
       })
     }
   }
 
-  const proofAwareBranchOrdering = runtimeProofProfile?.strict_runtime_proof === true
   const sideEffectBranches = rankedBranches
     .filter((branch) => branch.kind === 'side_effect')
   const terminalBranches = rankedBranches
     .filter((branch) => branch.kind === 'terminal')
-  if (proofAwareBranchOrdering) {
-    sideEffectBranches.sort(compareRankedBranch)
-    terminalBranches.sort(compareRankedBranch)
-  }
 
   for (const branch of sideEffectBranches.slice(0, 3)) {
     sideEffects.push({
@@ -3575,10 +3943,6 @@ function collectExecutionBranches(
     ...terminalBranches.slice(3),
     ...rankedBranches.filter((branch) => branch.kind === 'omitted'),
   ]
-  if (proofAwareBranchOrdering) {
-    omittedCandidates.sort(compareRankedBranch)
-  }
-
   for (const branch of omittedCandidates.slice(0, 6)) {
     omittedEvidenceSteps.push(...branch.steps)
     const from = nodeById.get(branch.edge.fromId)?.label
@@ -3594,452 +3958,6 @@ function collectExecutionBranches(
   return { sideEffects, terminalBoundaries, omittedBranches, omittedEvidenceSteps }
 }
 
-function recoverMissingRuntimeProofBranches(
-  graph: KnowledgeGraph,
-  adjacency: ReadonlyMap<string, ExecutionFlowEdge[]>,
-  primaryPath: ExecutionPathCandidate,
-  orderedIds: readonly string[],
-  idSet: ReadonlySet<string>,
-  nodeById: ReadonlyMap<string, ContextPackExecutionSliceStep>,
-  question: string,
-  runtimeProofProfile: RuntimeProofProfile | undefined,
-  existingSideEffects: readonly ContextPackExecutionSliceBranch[],
-  existingTerminalBoundaries: readonly ContextPackExecutionSliceBranch[],
-  rootPath?: string,
-): {
-  sideEffects: ContextPackExecutionSliceBranch[]
-  terminalBoundaries: ContextPackExecutionSliceBranch[]
-} {
-  if (runtimeProofProfile?.strict_runtime_proof !== true) {
-    return { sideEffects: [], terminalBoundaries: [] }
-  }
-
-  const runtimeProofCandidates = (
-    steps: readonly ContextPackExecutionSliceStep[],
-    sideEffects: readonly ContextPackExecutionSliceBranch[],
-    terminalBoundaries: readonly ContextPackExecutionSliceBranch[],
-  ): RuntimeProofCandidate[] => [
-    ...steps.map((step) => runtimeProofCandidateFromExecutionStep(step)),
-    ...sideEffects.flatMap((branch) => branch.steps.map((step) => runtimeProofCandidateFromExecutionStep(step))),
-    ...terminalBoundaries.flatMap((branch) => branch.steps.map((step) => runtimeProofCandidateFromExecutionStep(step))),
-  ]
-
-  const branchSignature = (branch: readonly ContextPackExecutionSliceStep[]): string =>
-    branch.map((step) => step.node_id ?? `${step.source_file}:${step.line_number}:${step.label}`).join('>')
-
-  const selectedSideEffects: ContextPackExecutionSliceBranch[] = []
-  const selectedTerminalBoundaries: ContextPackExecutionSliceBranch[] = []
-  const visibleBranchSignatures = new Set<string>([
-    ...existingSideEffects.map((branch) => branchSignature(branch.steps)),
-    ...existingTerminalBoundaries.map((branch) => branchSignature(branch.steps)),
-  ])
-  const visibleNodeIds = new Set<string>([
-    ...primaryPath.nodeIds,
-    ...existingSideEffects.flatMap((branch) => branch.steps.map((step) => step.node_id).filter((nodeId): nodeId is string => typeof nodeId === 'string')),
-    ...existingTerminalBoundaries.flatMap((branch) => branch.steps.map((step) => step.node_id).filter((nodeId): nodeId is string => typeof nodeId === 'string')),
-  ])
-
-  const currentSteps = primaryPath.nodeIds
-    .map((nodeId) => nodeById.get(nodeId))
-    .filter((step): step is ContextPackExecutionSliceStep => step !== undefined)
-  const primaryBoundaries = primaryPathBoundaries(primaryPath, nodeById)
-
-  const recoveryBranchesFor = (
-    sideEffects: readonly ContextPackExecutionSliceBranch[],
-    terminalBoundaries: readonly ContextPackExecutionSliceBranch[],
-  ) => ({
-    sideEffects: [...sideEffects, ...selectedSideEffects],
-    terminalBoundaries: [...terminalBoundaries, ...selectedTerminalBoundaries],
-  })
-
-  const totalTerminalObligations = runtimeProofProfile.obligations.filter((obligation) => obligation.kind === 'terminal').length
-  const obligationsById = new Map(runtimeProofProfile.obligations.map((obligation) => [obligation.id, obligation] as const))
-  const orderedIndex = new Map(orderedIds.map((nodeId, index) => [nodeId, index] as const))
-  const phaseRelevantObligations = (phase: ExecutionPhase): RuntimeProofProfileObligation[] => {
-    if (phase === 'persistence') {
-      return runtimeProofProfile.obligations.filter((obligation) => obligation.kind === 'terminal')
-    }
-    if (phase === 'controller') {
-      return runtimeProofProfile.obligations.filter((obligation) => obligation.kind === 'entrypoint')
-    }
-    return runtimeProofProfile.obligations.filter((obligation) => obligation.kind !== 'terminal')
-  }
-
-  for (const missingObligationId of buildRuntimeProofAssessment(
-    runtimeProofProfile,
-    runtimeProofCandidates(currentSteps, existingSideEffects, existingTerminalBoundaries),
-  )?.missing_obligations ?? []) {
-    const obligation = obligationsById.get(missingObligationId)
-    if (!obligation) {
-      continue
-    }
-
-    const currentBranches = recoveryBranchesFor(existingSideEffects, existingTerminalBoundaries)
-    const currentAssessment = buildRuntimeProofAssessment(
-      runtimeProofProfile,
-      runtimeProofCandidates(currentSteps, currentBranches.sideEffects, currentBranches.terminalBoundaries),
-    )
-    const currentMissingSet = new Set(currentAssessment?.missing_obligations ?? [])
-    const currentTracedSteps = [
-      ...currentSteps,
-      ...currentBranches.sideEffects.flatMap((branch) => branch.steps),
-      ...currentBranches.terminalBoundaries.flatMap((branch) => branch.steps),
-    ]
-    const currentPhaseCoverage = phaseCoverageForPath(
-      currentSteps,
-      primaryBoundaries,
-      question,
-      currentSteps,
-      currentTracedSteps,
-      runtimeProofProfile,
-    )
-    const currentMissingPhaseSet = new Set(currentPhaseCoverage.missing)
-
-    const candidateSeedIds = [
-      ...orderedIds,
-      ...[...graph.nodeEntries()]
-        .map(([nodeId]) => nodeId)
-        .filter((nodeId) => !idSet.has(nodeId))
-        .filter((nodeId) => {
-          const candidate = runtimeProofCandidateFromGraph(graph, nodeId)
-          return runtimeProofObligationTermMatchCount(candidate, obligation) > 0
-            || runtimeProofProvidesDirectEvidence(candidate, obligation)
-        }),
-    ]
-    const rankedCandidates = candidateSeedIds
-      .filter((nodeId, index, values) => !visibleNodeIds.has(nodeId) && values.indexOf(nodeId) === index)
-      .map((nodeId) => {
-        const step = nodeById.get(nodeId) ?? (graph.hasNode(nodeId) ? executionSliceStepFromGraph(graph, nodeId, rootPath) : undefined)
-        if (!step) {
-          return undefined
-        }
-        const directCandidate = runtimeProofCandidateFromExecutionStep(step)
-        const directTermMatches = runtimeProofObligationTermMatchCount(directCandidate, obligation)
-        const directEvidence = runtimeProofProvidesDirectEvidence(directCandidate, obligation)
-        const directScore = directTermMatches > 0 || directEvidence
-          ? runtimeProofObligationMatchScore(directCandidate, obligation)
-          : 0
-        if (directScore <= 0 && !directEvidence) {
-          return undefined
-        }
-
-        const candidatePaths = idSet.has(nodeId)
-          ? enumerateExecutionPaths(adjacency, nodeId, visibleNodeIds, 4)
-          : []
-        const fallbackPath: ExecutionPathCandidate = {
-          nodeIds: idSet.has(nodeId) ? walkExecutionSlice(graph, nodeId, idSet, nodeById, question) : [nodeId],
-          edges: [],
-        }
-        const recoveryPathCandidates = candidatePaths.length > 0 ? candidatePaths : [fallbackPath]
-        const bestPath = recoveryPathCandidates
-          .map((path) => {
-            const branchSteps = path.nodeIds
-              .map((branchNodeId) => nodeById.get(branchNodeId) ?? executionSliceStepFromGraph(graph, branchNodeId, rootPath))
-              .filter((branchStep): branchStep is ContextPackExecutionSliceStep => branchStep !== undefined)
-              .slice(0, 3)
-            if (branchSteps.length === 0) {
-              return undefined
-            }
-            const branchCandidates = branchSteps.map((branchStep) => runtimeProofCandidateFromExecutionStep(branchStep))
-            const branchAssessment = buildRuntimeProofAssessment(
-              runtimeProofProfile,
-              [
-                ...runtimeProofCandidates(currentSteps, currentBranches.sideEffects, currentBranches.terminalBoundaries),
-                ...branchCandidates,
-              ],
-            )
-            const missingObligations = branchAssessment?.missing_obligations ?? runtimeProofProfile.obligations.map((entry) => entry.id)
-            const missingTerminalCount = missingObligations
-              .filter((obligationId) => obligationsById.get(obligationId)?.kind === 'terminal')
-              .length
-            const coveredCount = (branchAssessment?.obligations.length ?? 0) - missingObligations.length
-            const nonTerminalCoveredCount = (branchAssessment?.obligations ?? [])
-              .filter((entry) => entry.evidence.length > 0 && obligationsById.get(entry.id)?.kind !== 'terminal')
-              .length
-            const improvesMissingObligation = currentMissingSet.has(missingObligationId) && !missingObligations.includes(missingObligationId)
-            const branchDirectEvidence = branchCandidates.some((candidate) => runtimeProofProvidesDirectEvidence(candidate, obligation))
-            const terminalPriority = obligation.kind === 'terminal'
-              ? Math.max(...branchCandidates.map((candidate) => runtimeProofObligationMatchScore(candidate, obligation)))
-              : 0
-            const combinedPhaseCoverage = phaseCoverageForPath(
-              currentSteps,
-              primaryBoundaries,
-              question,
-              currentSteps,
-              [...currentTracedSteps, ...branchSteps],
-              runtimeProofProfile,
-            )
-            const missingPhaseCount = combinedPhaseCoverage.missing.length
-            const addedMissingPhaseCount = [...currentMissingPhaseSet]
-              .filter((phase) => combinedPhaseCoverage.observed.includes(phase))
-              .length
-            return {
-              path,
-              branchSteps,
-              missingCount: missingObligations.length,
-              missingTerminalCount,
-              coveredCount,
-              nonTerminalCoveredCount,
-              improvesMissingObligation,
-              branchDirectEvidence,
-              directScore,
-              terminalPriority,
-              missingPhaseCount,
-              addedMissingPhaseCount,
-            }
-          })
-          .filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== undefined)
-          .sort((left, right) =>
-            Number(right.improvesMissingObligation) - Number(left.improvesMissingObligation)
-            || left.missingCount - right.missingCount
-            || left.missingTerminalCount - right.missingTerminalCount
-            || left.missingPhaseCount - right.missingPhaseCount
-            || right.addedMissingPhaseCount - left.addedMissingPhaseCount
-            || right.nonTerminalCoveredCount - left.nonTerminalCoveredCount
-            || right.coveredCount - left.coveredCount
-            || Number(right.branchDirectEvidence) - Number(left.branchDirectEvidence)
-            || right.directScore - left.directScore
-            || right.terminalPriority - left.terminalPriority
-            || left.branchSteps.length - right.branchSteps.length
-            || executionPathScore(right.path, nodeById, question, runtimeProofProfile) - executionPathScore(left.path, nodeById, question, runtimeProofProfile)
-            || compareStableText(left.branchSteps.map((branchStep) => branchStep.label).join('>'), right.branchSteps.map((branchStep) => branchStep.label).join('>'))
-          )[0]
-        if (!bestPath) {
-          return undefined
-        }
-        const { branchSteps } = bestPath
-        const signature = branchSignature(branchSteps)
-        if (visibleBranchSignatures.has(signature)) {
-          return undefined
-        }
-        return {
-          branchSteps,
-          signature,
-          candidateIndex: orderedIndex.get(nodeId) ?? Number.MAX_SAFE_INTEGER,
-          missingCount: bestPath.missingCount,
-          missingTerminalCount: bestPath.missingTerminalCount,
-          coveredCount: bestPath.coveredCount,
-          nonTerminalCoveredCount: bestPath.nonTerminalCoveredCount,
-          improvesMissingObligation: bestPath.improvesMissingObligation,
-          branchDirectEvidence: bestPath.branchDirectEvidence,
-          directScore,
-          terminalPriority: bestPath.terminalPriority,
-          missingPhaseCount: bestPath.missingPhaseCount,
-          addedMissingPhaseCount: bestPath.addedMissingPhaseCount,
-        }
-      })
-      .filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== undefined)
-      .sort((left, right) =>
-        Number(right.improvesMissingObligation) - Number(left.improvesMissingObligation)
-        || left.missingCount - right.missingCount
-        || left.missingTerminalCount - right.missingTerminalCount
-        || left.missingPhaseCount - right.missingPhaseCount
-        || right.addedMissingPhaseCount - left.addedMissingPhaseCount
-        || right.nonTerminalCoveredCount - left.nonTerminalCoveredCount
-        || right.coveredCount - left.coveredCount
-        || Number(right.branchDirectEvidence) - Number(left.branchDirectEvidence)
-        || right.directScore - left.directScore
-        || right.terminalPriority - left.terminalPriority
-        || left.branchSteps.length - right.branchSteps.length
-        || left.candidateIndex - right.candidateIndex
-        || compareStableText(left.signature, right.signature)
-      )
-
-    const bestCandidate = rankedCandidates[0]
-    if (!bestCandidate || !bestCandidate.improvesMissingObligation) {
-      continue
-    }
-
-    visibleBranchSignatures.add(bestCandidate.signature)
-    for (const step of bestCandidate.branchSteps) {
-      if (step.node_id) {
-        visibleNodeIds.add(step.node_id)
-      }
-    }
-    const branch = { steps: bestCandidate.branchSteps }
-    if (obligation.kind === 'terminal' && terminalBoundaryExecutionStep(bestCandidate.branchSteps.at(-1) ?? bestCandidate.branchSteps[0]!)) {
-      selectedTerminalBoundaries.push(branch)
-      continue
-    }
-    if (obligation.kind === 'terminal' && bestCandidate.missingTerminalCount < totalTerminalObligations) {
-      selectedSideEffects.push(branch)
-      continue
-    }
-    selectedSideEffects.push(branch)
-  }
-
-  while (true) {
-    const currentBranches = recoveryBranchesFor(existingSideEffects, existingTerminalBoundaries)
-    const currentTracedSteps = [
-      ...currentSteps,
-      ...currentBranches.sideEffects.flatMap((branch) => branch.steps),
-      ...currentBranches.terminalBoundaries.flatMap((branch) => branch.steps),
-    ]
-    const currentAssessment = buildRuntimeProofAssessment(
-      runtimeProofProfile,
-      runtimeProofCandidates(currentSteps, currentBranches.sideEffects, currentBranches.terminalBoundaries),
-    )
-    const currentPhaseCoverage = phaseCoverageForPath(
-      currentSteps,
-      primaryBoundaries,
-      question,
-      currentSteps,
-      currentTracedSteps,
-      runtimeProofProfile,
-    )
-    const missingPhase = currentPhaseCoverage.missing[0]
-    if (!missingPhase) {
-      break
-    }
-
-    const relevantObligations = phaseRelevantObligations(missingPhase)
-    const candidateSeedIds = [
-      ...orderedIds,
-      ...[...graph.nodeEntries()]
-        .map(([nodeId]) => nodeId)
-        .filter((nodeId) => !idSet.has(nodeId)),
-    ]
-    const rankedCandidates = candidateSeedIds
-      .filter((nodeId, index, values) => !visibleNodeIds.has(nodeId) && values.indexOf(nodeId) === index)
-      .map((nodeId) => {
-        const step = nodeById.get(nodeId) ?? (graph.hasNode(nodeId) ? executionSliceStepFromGraph(graph, nodeId, rootPath) : undefined)
-        if (!step) {
-          return undefined
-        }
-
-        const candidatePaths = idSet.has(nodeId)
-          ? enumerateExecutionPaths(adjacency, nodeId, visibleNodeIds, 4)
-          : []
-        const fallbackPath: ExecutionPathCandidate = {
-          nodeIds: idSet.has(nodeId) ? walkExecutionSlice(graph, nodeId, idSet, nodeById, question) : [nodeId],
-          edges: [],
-        }
-        const bestPath = (candidatePaths.length > 0 ? candidatePaths : [fallbackPath])
-          .map((path) => {
-            const branchSteps = path.nodeIds
-              .map((branchNodeId) => nodeById.get(branchNodeId) ?? executionSliceStepFromGraph(graph, branchNodeId, rootPath))
-              .filter((branchStep): branchStep is ContextPackExecutionSliceStep => branchStep !== undefined)
-              .slice(0, 3)
-            if (branchSteps.length === 0) {
-              return undefined
-            }
-            const branchPhaseSet = new Set(branchSteps.flatMap((branchStep) => [...executionPhasesForStep(branchStep)]))
-            if (!branchPhaseSet.has(missingPhase)) {
-              return undefined
-            }
-
-            const branchCandidates = branchSteps.map((branchStep) => runtimeProofCandidateFromExecutionStep(branchStep))
-            const branchAssessment = buildRuntimeProofAssessment(
-              runtimeProofProfile,
-              [
-                ...runtimeProofCandidates(currentSteps, currentBranches.sideEffects, currentBranches.terminalBoundaries),
-                ...branchCandidates,
-              ],
-            )
-            const missingObligations = branchAssessment?.missing_obligations ?? runtimeProofProfile.obligations.map((entry) => entry.id)
-            const missingTerminalCount = missingObligations
-              .filter((obligationId) => obligationsById.get(obligationId)?.kind === 'terminal')
-              .length
-            const combinedPhaseCoverage = phaseCoverageForPath(
-              currentSteps,
-              primaryBoundaries,
-              question,
-              currentSteps,
-              [...currentTracedSteps, ...branchSteps],
-              runtimeProofProfile,
-            )
-            const addedMissingPhase = combinedPhaseCoverage.observed.includes(missingPhase)
-            const relevanceScore = relevantObligations.length > 0
-              ? Math.max(0, ...branchCandidates.flatMap((candidate) => relevantObligations.map((obligation) =>
-                  runtimeProofObligationMatchScore(candidate, obligation)
-                )))
-              : 0
-            return {
-              path,
-              branchSteps,
-              missingCount: missingObligations.length,
-              missingTerminalCount,
-              missingPhaseCount: combinedPhaseCoverage.missing.length,
-              addedMissingPhase,
-              relevanceScore,
-            }
-          })
-          .filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== undefined)
-          .sort((left, right) =>
-            Number(right.addedMissingPhase) - Number(left.addedMissingPhase)
-            || left.missingPhaseCount - right.missingPhaseCount
-            || left.missingCount - right.missingCount
-            || left.missingTerminalCount - right.missingTerminalCount
-            || right.relevanceScore - left.relevanceScore
-            || left.branchSteps.length - right.branchSteps.length
-            || executionPathScore(right.path, nodeById, question, runtimeProofProfile) - executionPathScore(left.path, nodeById, question, runtimeProofProfile)
-            || compareStableText(left.branchSteps.map((branchStep) => branchStep.label).join('>'), right.branchSteps.map((branchStep) => branchStep.label).join('>'))
-          )[0]
-        if (!bestPath || !bestPath.addedMissingPhase) {
-          return undefined
-        }
-
-        const signature = branchSignature(bestPath.branchSteps)
-        if (visibleBranchSignatures.has(signature)) {
-          return undefined
-        }
-        return {
-          signature,
-          candidateIndex: orderedIndex.get(nodeId) ?? candidateSeedIds.indexOf(nodeId),
-          branchSteps: bestPath.branchSteps,
-          missingCount: bestPath.missingCount,
-          missingTerminalCount: bestPath.missingTerminalCount,
-          missingPhaseCount: bestPath.missingPhaseCount,
-          relevanceScore: bestPath.relevanceScore,
-        }
-      })
-      .filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== undefined)
-      .sort((left, right) =>
-        left.missingPhaseCount - right.missingPhaseCount
-        || left.missingCount - right.missingCount
-        || left.missingTerminalCount - right.missingTerminalCount
-        || right.relevanceScore - left.relevanceScore
-        || left.branchSteps.length - right.branchSteps.length
-        || left.candidateIndex - right.candidateIndex
-        || compareStableText(left.signature, right.signature)
-      )
-
-    const bestCandidate = rankedCandidates[0]
-    if (!bestCandidate) {
-      break
-    }
-
-    visibleBranchSignatures.add(bestCandidate.signature)
-    for (const step of bestCandidate.branchSteps) {
-      if (step.node_id) {
-        visibleNodeIds.add(step.node_id)
-      }
-    }
-    const branch = { steps: bestCandidate.branchSteps }
-    selectedSideEffects.push(branch)
-
-    const nextBranches = recoveryBranchesFor(existingSideEffects, existingTerminalBoundaries)
-    const nextPhaseCoverage = phaseCoverageForPath(
-      currentSteps,
-      primaryBoundaries,
-      question,
-      currentSteps,
-      [
-        ...currentSteps,
-        ...nextBranches.sideEffects.flatMap((entry) => entry.steps),
-        ...nextBranches.terminalBoundaries.flatMap((entry) => entry.steps),
-      ],
-      runtimeProofProfile,
-    )
-    if (!nextPhaseCoverage.missing.includes(missingPhase)) {
-      continue
-    }
-    break
-  }
-
-  return { sideEffects: selectedSideEffects, terminalBoundaries: selectedTerminalBoundaries }
-}
-
 function pickExecutionSliceStart(
   adjacency: ReadonlyMap<string, readonly ExecutionFlowEdge[]>,
   anchorIds: readonly string[],
@@ -4047,7 +3965,6 @@ function pickExecutionSliceStart(
   idSet: ReadonlySet<string>,
   nodeById: ReadonlyMap<string, ContextPackExecutionSliceStep>,
   question: string,
-  runtimeProofProfile?: RuntimeProofProfile,
 ): string | undefined {
   const incomingEdgeCounts = new Map<string, number>()
   for (const edges of adjacency.values()) {
@@ -4057,141 +3974,6 @@ function pickExecutionSliceStart(
       }
       incomingEdgeCounts.set(edge.toId, (incomingEdgeCounts.get(edge.toId) ?? 0) + 1)
     }
-  }
-  if (runtimeProofProfile?.strict_runtime_proof === true) {
-    const anchoredIds = new Set(anchorIds)
-    const obligationsById = new Map(runtimeProofProfile.obligations.map((obligation) => [obligation.id, obligation] as const))
-    const entrypointObligations = runtimeProofProfile.obligations.filter((obligation) => obligation.kind === 'entrypoint')
-    const scopeAssessment = buildRuntimeProofAssessment(
-      runtimeProofProfile,
-      orderedIds
-        .map((candidateId) => nodeById.get(candidateId))
-        .filter((step): step is ContextPackExecutionSliceStep => step !== undefined)
-        .map((step) => runtimeProofCandidateFromExecutionStep(step)),
-    )
-    const scopeMissingCount = scopeAssessment?.missing_obligations.length ?? runtimeProofProfile.obligations.length
-    const scopeMissingTerminalCount = scopeAssessment?.missing_obligations
-      .filter((obligationId) => obligationsById.get(obligationId)?.kind === 'terminal')
-      .length ?? runtimeProofProfile.obligations.filter((obligation) => obligation.kind === 'terminal').length
-    const quickStartScore = (candidateId: string): number => {
-    const step = nodeById.get(candidateId)
-    if (!step) {
-      return anchoredIds.has(candidateId) ? 100 : 0
-    }
-    const candidate = runtimeProofCandidateFromExecutionStep(step)
-    const entrypointScore = entrypointObligations.length > 0
-      ? Math.max(0, ...entrypointObligations.map((obligation) => runtimeProofObligationMatchScore(candidate, obligation)))
-      : 0
-    return (anchoredIds.has(candidateId) ? 200 : 0)
-      + (entrypointScore * 40)
-      + (controllerLikeExecutionStep(step) ? 30 : 0)
-      + executionSliceStepPriority(step, question)
-      - (lowValueExecutionStepForQuestion(step, question) ? 20 : 0)
-      - (terminalBoundaryExecutionStep(step) ? 10 : 0)
-    }
-    const runtimeProofStartSummaryCache = new Map<string, {
-    missingCount: number
-    missingTerminalCount: number
-    coveredCount: number
-    nonTerminalCoveredCount: number
-    supplementedMissingCount: number
-    supplementedMissingTerminalCount: number
-    entrypointEvidence: boolean
-    entrypointScore: number
-    }>()
-    const runtimeProofStartSummary = (candidateId: string): {
-    missingCount: number
-    missingTerminalCount: number
-    coveredCount: number
-    nonTerminalCoveredCount: number
-    supplementedMissingCount: number
-    supplementedMissingTerminalCount: number
-    entrypointEvidence: boolean
-    entrypointScore: number
-    } => {
-    const cached = runtimeProofStartSummaryCache.get(candidateId)
-    if (cached) {
-      return cached
-    }
-    const queue = [candidateId]
-    const seen = new Set<string>()
-    const candidates: RuntimeProofCandidate[] = []
-    while (queue.length > 0) {
-      const nodeId = queue.shift()!
-      if (seen.has(nodeId) || !idSet.has(nodeId)) {
-        continue
-      }
-      seen.add(nodeId)
-      const step = nodeById.get(nodeId)
-      if (step) {
-        candidates.push(runtimeProofCandidateFromExecutionStep(step))
-      }
-      for (const edge of adjacency.get(nodeId) ?? []) {
-        if (idSet.has(edge.toId)) {
-          queue.push(edge.toId)
-        }
-      }
-    }
-    const assessment = buildRuntimeProofAssessment(runtimeProofProfile, candidates)
-    const entrypointObligations = runtimeProofProfile.obligations.filter((obligation) => obligation.kind === 'entrypoint')
-    const startStep = nodeById.get(candidateId)
-    const startCandidate = startStep ? runtimeProofCandidateFromExecutionStep(startStep) : undefined
-    const summary = {
-      missingCount: assessment?.missing_obligations.length ?? runtimeProofProfile.obligations.length,
-      missingTerminalCount: assessment?.missing_obligations
-        .filter((obligationId) => obligationsById.get(obligationId)?.kind === 'terminal')
-        .length ?? runtimeProofProfile.obligations.filter((obligation) => obligation.kind === 'terminal').length,
-      coveredCount: assessment ? assessment.obligations.length - assessment.missing_obligations.length : 0,
-      nonTerminalCoveredCount: (assessment?.obligations ?? [])
-        .filter((entry) => entry.evidence.length > 0 && obligationsById.get(entry.id)?.kind !== 'terminal')
-        .length,
-      supplementedMissingCount: scopeMissingCount,
-      supplementedMissingTerminalCount: scopeMissingTerminalCount,
-      entrypointEvidence: startCandidate !== undefined && entrypointObligations.some((obligation) =>
-        runtimeProofProvidesDirectEvidence(startCandidate, obligation)
-      ),
-      entrypointScore: startCandidate
-        ? Math.max(0, ...entrypointObligations.map((obligation) =>
-          runtimeProofObligationMatchScore(startCandidate, obligation)
-        ))
-        : 0,
-    }
-    runtimeProofStartSummaryCache.set(candidateId, summary)
-    return summary
-    }
-
-    const candidates = orderedIds
-    const prioritizedCandidates = [...new Set([
-    ...[...candidates]
-      .sort((left, right) =>
-        quickStartScore(right) - quickStartScore(left)
-        || compareStableText(left, right),
-      )
-      .slice(0, STRICT_RUNTIME_PROOF_START_CANDIDATE_LIMIT),
-    ...anchorIds.filter((candidateId) => candidates.includes(candidateId)).slice(0, STRICT_RUNTIME_PROOF_START_CANDIDATE_LIMIT),
-    ])]
-    return [...candidates].sort((left, right) => {
-    const leftQuickScore = quickStartScore(left)
-    const rightQuickScore = quickStartScore(right)
-    if (!prioritizedCandidates.includes(left) || !prioritizedCandidates.includes(right)) {
-      return rightQuickScore - leftQuickScore || compareStableText(left, right)
-    }
-    const leftStep = nodeById.get(left)
-    const rightStep = nodeById.get(right)
-    const leftSummary = runtimeProofStartSummary(left)
-    const rightSummary = runtimeProofStartSummary(right)
-    return leftSummary.supplementedMissingCount - rightSummary.supplementedMissingCount
-      || leftSummary.supplementedMissingTerminalCount - rightSummary.supplementedMissingTerminalCount
-      || rightSummary.nonTerminalCoveredCount - leftSummary.nonTerminalCoveredCount
-      || leftSummary.missingCount - rightSummary.missingCount
-      || rightSummary.coveredCount - leftSummary.coveredCount
-      || Number(rightSummary.entrypointEvidence) - Number(leftSummary.entrypointEvidence)
-      || rightSummary.entrypointScore - leftSummary.entrypointScore
-      || leftSummary.missingTerminalCount - rightSummary.missingTerminalCount
-      || rightQuickScore - leftQuickScore
-      || (rightStep && controllerLikeExecutionStep(rightStep) ? 1 : 0) - (leftStep && controllerLikeExecutionStep(leftStep) ? 1 : 0)
-      || (rightStep ? executionSliceStepPriority(rightStep, question) : 0) - (leftStep ? executionSliceStepPriority(leftStep, question) : 0)
-    })[0]
   }
 
   const anchoredStart = anchorIds.find((nodeId) => idSet.has(nodeId))
@@ -4313,8 +4095,6 @@ function buildExecutionSliceConfidence(
   sliceMetadata: ContextPackSliceMetadata,
   question: string,
   executionSlice: Pick<ContextPackExecutionSlice, 'status' | 'phase_coverage' | 'primary_path' | 'steps' | 'omitted_branches'>,
-  runtimeProofProfile?: RuntimeProofProfile,
-  runtimeProof?: RuntimeProofAssessment,
 ): Pick<ContextPackExecutionSlice, 'confidence' | 'confidence_reasons'> | undefined {
   const explicitAnchor = sliceMetadata.anchors.some((anchor) =>
     anchor.reason === 'symbol mention'
@@ -4328,36 +4108,18 @@ function buildExecutionSliceConfidence(
   const expectedPhasesCovered = missingPhases.length === 0
   const primaryPathSteps = executionSlice.primary_path?.steps ?? executionSlice.steps
   const observedPhases = new Set(executionSlice.phase_coverage?.observed ?? [])
-  const strictRuntimeProofComplete = runtimeProofProfile?.strict_runtime_proof === true
-    && runtimeProof !== undefined
-    && runtimeProof.missing_obligations.length === 0
-  const strictRuntimeProofNeedsHandoff = runtimeProofProfile?.strict_runtime_proof === true
-    && runtimeProofProfile.obligations.some((obligation: RuntimeProofProfileObligation) => obligation.kind === 'handoff')
-  const strictRuntimeProofHasEntrypoint = runtimeProof?.obligations.some((obligation) =>
-    obligation.kind === 'entrypoint' && obligation.evidence.length > 0,
-  ) ?? false
-  const strictRuntimeProofHasHandoff = runtimeProof?.obligations.some((obligation) =>
-    obligation.kind === 'handoff' && obligation.evidence.length > 0,
-  ) ?? false
-  const strictRuntimeProofHasTerminal = runtimeProof?.obligations.some((obligation) =>
-    obligation.kind === 'terminal' && obligation.evidence.length > 0,
-  ) ?? false
   const hasEntrypoint =
     observedPhases.has('controller')
-    || strictRuntimeProofHasEntrypoint
     || primaryPathSteps.some((step) => /\b(?:route|controller|handler|endpoint)\b/i.test(`${step.label} ${step.framework_role ?? ''} ${step.node_kind ?? ''}`))
   const hasOrchestration =
     runtimeHandoff
-    || strictRuntimeProofHasHandoff
-    || (strictRuntimeProofComplete && !strictRuntimeProofNeedsHandoff)
     || observedPhases.has('service')
     || observedPhases.has('orchestrator')
     || observedPhases.has('planner')
     || observedPhases.has('queue')
     || observedPhases.has('worker')
   const hasTerminalEffect =
-    strictRuntimeProofHasTerminal
-    || observedPhases.has('persistence')
+    observedPhases.has('persistence')
     || observedPhases.has('notification_or_event')
     || observedPhases.has('renderer_or_synthesis')
     || observedPhases.has('report_builder')
@@ -4367,12 +4129,11 @@ function buildExecutionSliceConfidence(
     !runtimeHandoff
     && promptWantsRuntimePipeline(question)
     && !hasTerminalEffect
-    && !(strictRuntimeProofComplete && !strictRuntimeProofNeedsHandoff)
   const lowValuePrimaryPath = primaryPathSteps.length > 0
     && primaryPathSteps.filter((step) => lowValueExecutionStepForQuestion(step, question)).length >= Math.ceil(primaryPathSteps.length / 2)
 
   if (
-    (explicitAnchor || strictRuntimeProofComplete)
+    explicitAnchor
     && hasEntrypoint
     && hasOrchestration
     && hasTerminalEffect
@@ -4382,7 +4143,7 @@ function buildExecutionSliceConfidence(
     return {
       confidence: 'high',
       confidence_reasons: [
-        ...(explicitAnchor ? ['explicit_anchor'] : ['runtime_proof_complete']),
+        'explicit_anchor',
         ...(runtimeHandoff ? ['runtime_handoff_evidence'] : ['orchestration_evidence']),
         'expected_phases_covered',
         'terminal_effect_evidence',
@@ -4434,9 +4195,8 @@ function buildRuntimeGenerationAnswerContract(
   matchedNodes: readonly Pick<RetrieveMatchedNode, 'label' | 'source_file' | 'node_kind' | 'framework_role'>[],
   executionSlice: ContextPackExecutionSlice | undefined,
   sliceMetadata: ContextPackSliceMetadata | undefined,
-  runtimeProofProfile?: RuntimeProofProfile,
 ): ContextPackRuntimeGenerationAnswerContract | undefined {
-  if (!runtimeGenerationExecutionSliceApplies(taskContract, retrievalGate, sliceMetadata, runtimeProofProfile) || !executionSlice) {
+  if (!runtimeGenerationExecutionSliceApplies(taskContract, retrievalGate, sliceMetadata) || !executionSlice) {
     return undefined
   }
 
@@ -4459,26 +4219,9 @@ function buildRuntimeGenerationAnswerContract(
     missing_phases: missingPhases,
   }
 
-  const runtimeProof = buildRuntimeProofAssessment(
-    runtimeProofProfile,
-    [
-      ...executionSlice.steps.map((step) => runtimeProofCandidateFromExecutionStep(step)),
-      ...(executionSlice.side_effects ?? []).flatMap((branch) => branch.steps.map((step) => runtimeProofCandidateFromExecutionStep(step))),
-      ...(executionSlice.terminal_boundaries ?? []).flatMap((branch) => branch.steps.map((step) => runtimeProofCandidateFromExecutionStep(step))),
-    ],
-  )
-  if (runtimeProof) {
-    answerContract.runtime_proof = runtimeProof
-  }
-
-  const missingRuntimeObligations = runtimeProof?.missing_obligations
-    .map((obligationId) => runtimeProofProfile?.obligations.find((obligation) => obligation.id === obligationId)?.label ?? obligationId)
-    ?? []
-  if (executionSlice.status === 'partial' || missingPhases.length > 0 || missingRuntimeObligations.length > 0) {
+  if (executionSlice.status === 'partial' || missingPhases.length > 0) {
     answerContract.uncertainty_notes = [
-      missingRuntimeObligations.length > 0
-        ? `Do not infer unobserved runtime obligations; if the full flow is requested, answer: not enough evidence; missing ${missingRuntimeObligations.join(', ')}`
-        : missingPhases.length > 0
+      missingPhases.length > 0
         ? `Do not infer unobserved runtime phases; if the full flow is requested, answer: not enough evidence; missing ${missingPhases.join(', ')}`
         : 'Do not infer unobserved runtime phases; if the full flow is requested, answer: not enough evidence.',
     ]
@@ -4498,10 +4241,9 @@ function buildExecutionSlice(
   retrievalGate: RetrievalGateDecision,
   question: string,
   sliceMetadata: ContextPackSliceMetadata | undefined,
-  runtimeProofProfile?: RuntimeProofProfile,
   rootPath?: string,
 ): ContextPackExecutionSlice | undefined {
-  if (!runtimeGenerationExecutionSliceApplies(taskContract, retrievalGate, sliceMetadata, runtimeProofProfile) || !sliceMetadata) {
+  if (!runtimeGenerationExecutionSliceApplies(taskContract, retrievalGate, sliceMetadata) || !sliceMetadata) {
     return undefined
   }
 
@@ -4532,7 +4274,7 @@ function buildExecutionSlice(
     .map((anchor) => resolveNodeId(anchor.node_id, anchor.label))
     .filter((nodeId): nodeId is string => typeof nodeId === 'string')
   const scopeStart = Date.now()
-  const { orderedIds, idSet } = collectExecutionSliceScope(graph, sliceMetadata, anchorIds, question, resolveNodeId, runtimeProofProfile)
+  const { orderedIds, idSet } = collectExecutionSliceScope(graph, sliceMetadata, anchorIds, question, resolveNodeId)
   logExecutionSliceDebug('scope', {
     ms: Date.now() - scopeStart,
     anchors: anchorIds.length,
@@ -4561,7 +4303,7 @@ function buildExecutionSlice(
     edges: [...adjacency.values()].reduce((total, edges) => total + edges.length, 0),
   })
   const startPickStart = Date.now()
-  const startId = pickExecutionSliceStart(adjacency, anchorIds, orderedIds, idSet, nodeById, question, runtimeProofProfile)
+  const startId = pickExecutionSliceStart(adjacency, anchorIds, orderedIds, idSet, nodeById, question)
   logExecutionSliceDebug('start', {
     ms: Date.now() - startPickStart,
     start_id: startId ?? null,
@@ -4582,270 +4324,23 @@ function buildExecutionSlice(
     ms: Date.now() - pathStart,
     count: pathCandidates.length,
   })
-  const supportsFastRuntimeProofPathMetrics = runtimeProofProfile !== undefined && runtimeProofProfile.obligations.length <= 30
-  const phaseBitByName = new Map<ExecutionPhase, number>([
-    ['controller', 1 << 0],
-    ['auth_guard', 1 << 1],
-    ['validation', 1 << 2],
-    ['service', 1 << 3],
-    ['orchestrator', 1 << 4],
-    ['planner', 1 << 5],
-    ['queue', 1 << 6],
-    ['worker', 1 << 7],
-    ['external_research_or_api', 1 << 8],
-    ['report_builder', 1 << 9],
-    ['scoring', 1 << 10],
-    ['quality_gate', 1 << 11],
-    ['renderer_or_synthesis', 1 << 12],
-    ['persistence', 1 << 13],
-    ['notification_or_event', 1 << 14],
-  ])
-  const countBits = (value: number): number => {
-    let count = 0
-    let bits = value >>> 0
-    while (bits > 0) {
-      bits &= bits - 1
-      count += 1
-    }
-    return count
-  }
-  const totalObligationCount = runtimeProofProfile?.obligations.length ?? 0
-  const terminalObligationMask = runtimeProofProfile?.obligations.reduce((mask, obligation, index) =>
-    obligation.kind === 'terminal' ? (mask | (1 << index)) : mask,
-  0) ?? 0
-  const totalTerminalObligationCount = runtimeProofProfile?.obligations.filter((obligation) => obligation.kind === 'terminal').length ?? 0
-  const stepPathMetricsById = new Map<string, {
-    step: ContextPackExecutionSliceStep
-    phaseMask: number
-    obligationMask: number
-    stepPriority: number
-    entrypointScore: number
-    terminalScore: number
-  }>([...nodeById.entries()].map(([nodeId, step]) => {
-    let phaseMask = 0
-    for (const phase of executionPhasesForStep(step)) {
-      phaseMask |= phaseBitByName.get(phase) ?? 0
-    }
-    let obligationMask = 0
-    let entrypointScore = 0
-    let terminalScore = 0
-    if (runtimeProofProfile && supportsFastRuntimeProofPathMetrics) {
-      const candidate = runtimeProofCandidateFromExecutionStep(step)
-      runtimeProofProfile.obligations.forEach((obligation, index) => {
-        if (runtimeProofProvidesDirectEvidence(candidate, obligation)) {
-          obligationMask |= (1 << index)
-        }
-        const score = runtimeProofObligationMatchScore(candidate, obligation)
-        if (obligation.kind === 'entrypoint') {
-          entrypointScore = Math.max(entrypointScore, score)
-        }
-        if (obligation.kind === 'terminal') {
-          terminalScore = Math.max(terminalScore, score)
-        }
-      })
-    }
-    return [
-      nodeId,
-      {
-        step,
-        phaseMask,
-        obligationMask,
-        stepPriority: executionSliceStepPriority(step, question),
-        entrypointScore,
-        terminalScore,
-      },
-    ] as const
-  }))
-  const primaryPathMetricsCache = new Map<ExecutionPathCandidate, {
-    phaseMask: number
-    obligationMask: number
-    branchTerminalObligationMask: number
-    stepPrioritySum: number
-    hasEnqueueBoundary: boolean
-    firstStep: ContextPackExecutionSliceStep | undefined
-    lastStep: ContextPackExecutionSliceStep | undefined
-    firstStepEntrypointScore: number
-    lastStepTerminalScore: number
-  }>()
-  const primaryPathMetricsFor = (path: ExecutionPathCandidate): {
-    phaseMask: number
-    obligationMask: number
-    branchTerminalObligationMask: number
-    stepPrioritySum: number
-    hasEnqueueBoundary: boolean
-    firstStep: ContextPackExecutionSliceStep | undefined
-    lastStep: ContextPackExecutionSliceStep | undefined
-    firstStepEntrypointScore: number
-    lastStepTerminalScore: number
-  } => {
-    const cached = primaryPathMetricsCache.get(path)
-    if (cached) {
-      return cached
-    }
-    let phaseMask = 0
-    let obligationMask = 0
-    let branchTerminalObligationMask = 0
-    let stepPrioritySum = 0
-    let firstStep: ContextPackExecutionSliceStep | undefined
-    let lastStep: ContextPackExecutionSliceStep | undefined
-    let firstStepEntrypointScore = 0
-    let lastStepTerminalScore = 0
-    const primaryNextById = new Map(path.edges.map((edge) => [edge.fromId, edge.toId] as const))
-    const primaryNodeIds = new Set(path.nodeIds)
-    for (const nodeId of path.nodeIds) {
-      const metrics = stepPathMetricsById.get(nodeId)
-      if (!metrics) {
-        continue
-      }
-      phaseMask |= metrics.phaseMask
-      obligationMask |= metrics.obligationMask
-      stepPrioritySum += metrics.stepPriority
-      if (!firstStep) {
-        firstStep = metrics.step
-        firstStepEntrypointScore = metrics.entrypointScore
-      }
-      lastStep = metrics.step
-      lastStepTerminalScore = metrics.terminalScore
-      if (supportsFastRuntimeProofPathMetrics) {
-        const nextPrimaryNodeId = primaryNextById.get(nodeId)
-        for (const edge of adjacency.get(nodeId) ?? []) {
-          if (edge.toId === nextPrimaryNodeId || primaryNodeIds.has(edge.toId)) {
-            continue
-          }
-          const branchMetrics = stepPathMetricsById.get(edge.toId)
-          if (!branchMetrics) {
-            continue
-          }
-          branchTerminalObligationMask |= branchMetrics.obligationMask & terminalObligationMask
-        }
-      }
-    }
-    const built = {
-      phaseMask,
-      obligationMask,
-      branchTerminalObligationMask,
-      stepPrioritySum,
-      hasEnqueueBoundary: path.edges.some((edge) => edge.relation === 'enqueues_job'),
-      firstStep,
-      lastStep,
-      firstStepEntrypointScore,
-      lastStepTerminalScore,
-    }
-    primaryPathMetricsCache.set(path, built)
-    return built
-  }
   const primaryPathScoreCache = new Map<ExecutionPathCandidate, number>()
   const primaryPathScoreFor = (path: ExecutionPathCandidate): number => {
     const cached = primaryPathScoreCache.get(path)
     if (cached !== undefined) {
       return cached
     }
-    if (!supportsFastRuntimeProofPathMetrics) {
-      const score = executionPathScore(path, nodeById, question, runtimeProofProfile)
-      primaryPathScoreCache.set(path, score)
-      return score
-    }
-    const metrics = primaryPathMetricsFor(path)
-    let score = metrics.stepPrioritySum
-    const observedPhases = {
-      controller: (metrics.phaseMask & (phaseBitByName.get('controller') ?? 0)) !== 0,
-      service: (metrics.phaseMask & (phaseBitByName.get('service') ?? 0)) !== 0,
-      queue: (metrics.phaseMask & (phaseBitByName.get('queue') ?? 0)) !== 0,
-      worker: (metrics.phaseMask & (phaseBitByName.get('worker') ?? 0)) !== 0,
-      persistence: (metrics.phaseMask & (phaseBitByName.get('persistence') ?? 0)) !== 0,
-    }
-    if (observedPhases.controller) score += 10
-    if (observedPhases.service) score += 20
-    if (observedPhases.queue) score += 35
-    if (observedPhases.worker) score += 45
-    if (observedPhases.persistence) score += 90
-    if (metrics.hasEnqueueBoundary) score += 30
-    if (promptExpectsPersistenceStep(question) && !observedPhases.persistence) {
-      score -= 120
-    }
-    if (promptWantsRuntimePipeline(question) && observedPhases.queue && !observedPhases.worker) {
-      score -= 60
-    }
-    const lastStep = metrics.lastStep
-    const lastStepPhases = lastStep ? executionPhasesForStep(lastStep) : new Set<ExecutionPhase>()
-    if (
-      promptExpectsPersistenceStep(question)
-      && observedPhases.worker
-      && !observedPhases.persistence
-      && lastStep
-      && !lastStepPhases.has('worker')
-      && !lastStepPhases.has('persistence')
-    ) {
-      score -= 35
-    }
-    if (lastStep && terminalBoundaryExecutionStep(lastStep)) {
-      score -= 15
-    }
-    if (lastStep && lowValueExecutionStepForQuestion(lastStep, question)) {
-      score -= 40
-    }
-    const effectiveObligationMask = metrics.obligationMask | metrics.branchTerminalObligationMask
-    const coveredCount = countBits(effectiveObligationMask)
-    const missingCount = totalObligationCount - coveredCount
-    const missingTerminalCount = totalTerminalObligationCount - countBits(effectiveObligationMask & terminalObligationMask)
-    score += coveredCount * 140
-    score -= missingCount * 220
-    if (missingTerminalCount > 0) {
-      score -= 120
-    }
-    if (metrics.firstStep) {
-      score += metrics.firstStepEntrypointScore * 20
-      if (controllerLikeExecutionStep(metrics.firstStep)) {
-        score += 35
-      }
-    }
-    if (lastStep) {
-      score += metrics.lastStepTerminalScore * 18
-      if (!serviceLikeExecutionStep(lastStep)) {
-        score += 15
-      }
-    }
-    const finalScore = score + path.edges.length
-    primaryPathScoreCache.set(path, finalScore)
-    return finalScore
-  }
-  const primaryPathProofCache = new Map<ExecutionPathCandidate, ReturnType<typeof executionPathRuntimeProofSummary>>()
-  const primaryPathProofFor = (path: ExecutionPathCandidate): ReturnType<typeof executionPathRuntimeProofSummary> => {
-    if (primaryPathProofCache.has(path)) {
-      return primaryPathProofCache.get(path)
-    }
-    const summary = !supportsFastRuntimeProofPathMetrics
-      ? executionPathRuntimeProofSummary(path, nodeById, runtimeProofProfile)
-      : (() => {
-        const metrics = primaryPathMetricsFor(path)
-        const effectiveObligationMask = metrics.obligationMask | metrics.branchTerminalObligationMask
-        const coveredCount = countBits(effectiveObligationMask)
-        return {
-          missingCount: totalObligationCount - coveredCount,
-          missingTerminalCount: totalTerminalObligationCount - countBits(effectiveObligationMask & terminalObligationMask),
-          coveredCount,
-        }
-      })()
-    primaryPathProofCache.set(path, summary)
-    return summary
+    const score = executionPathScore(path, nodeById, question)
+    primaryPathScoreCache.set(path, score)
+    return score
   }
   const primaryPathCandidates = pathCandidates.length > 0 ? pathCandidates : [{
     nodeIds: walkExecutionSlice(graph, startId, idSet, nodeById, question),
     edges: [] as ExecutionFlowEdge[],
   }]
   const primaryPath = primaryPathCandidates.sort((left, right) =>
-    (() => {
-      const leftProof = primaryPathProofFor(left)
-      const rightProof = primaryPathProofFor(right)
-      if (leftProof && rightProof) {
-        return leftProof.missingCount - rightProof.missingCount
-          || leftProof.missingTerminalCount - rightProof.missingTerminalCount
-          || rightProof.coveredCount - leftProof.coveredCount
-          || left.nodeIds.length - right.nodeIds.length
-          || primaryPathScoreFor(right) - primaryPathScoreFor(left)
-      }
-      return primaryPathScoreFor(right) - primaryPathScoreFor(left)
-    })()
+    primaryPathScoreFor(right) - primaryPathScoreFor(left)
+    || compareStableText(left.nodeIds.join('>'), right.nodeIds.join('>'))
   )[0]!
 
   const steps = primaryPath.nodeIds
@@ -4856,54 +4351,28 @@ function buildExecutionSlice(
     .map((nodeId) => nodeById.get(nodeId))
     .filter((step): step is ContextPackExecutionSliceStep => step !== undefined)
   const branchStart = Date.now()
-  const branches = collectExecutionBranches(adjacency, primaryPath, nodeById, question, runtimeProofProfile)
-  const recoveryBranches = recoverMissingRuntimeProofBranches(
-    graph,
-    adjacency,
-    primaryPath,
-    orderedIds,
-    idSet,
-    nodeById,
-    question,
-    runtimeProofProfile,
-    branches.sideEffects,
-    branches.terminalBoundaries,
-    rootPath,
-  )
+  const branches = collectExecutionBranches(adjacency, primaryPath, nodeById, question)
   logExecutionSliceDebug('branches', {
     ms: Date.now() - branchStart,
-    side_effects: branches.sideEffects.length + recoveryBranches.sideEffects.length,
-    terminal_boundaries: branches.terminalBoundaries.length + recoveryBranches.terminalBoundaries.length,
+    side_effects: branches.sideEffects.length,
+    terminal_boundaries: branches.terminalBoundaries.length,
     omitted_branches: branches.omittedBranches.length,
   })
-  const sideEffects = [...branches.sideEffects, ...recoveryBranches.sideEffects]
-  const terminalBoundaries = [...branches.terminalBoundaries, ...recoveryBranches.terminalBoundaries]
+  const sideEffects = branches.sideEffects
+  const terminalBoundaries = branches.terminalBoundaries
   const tracedSteps = [
     ...steps,
     ...sideEffects.flatMap((branch) => branch.steps),
     ...terminalBoundaries.flatMap((branch) => branch.steps),
     ...branches.omittedEvidenceSteps,
   ]
-  const phaseCoverage = phaseCoverageForPath(steps, boundaries, question, scopeSteps, tracedSteps, runtimeProofProfile)
-  const runtimeProof = buildRuntimeProofAssessment(
-    runtimeProofProfile,
-    tracedSteps.map((step) => runtimeProofCandidateFromExecutionStep(step)),
-  )
-  const missingRuntimeObligation = runtimeProofProfile?.strict_runtime_proof === true
-    ? runtimeProof?.missing_obligations
-      .map((obligationId) =>
-        runtimeProofProfile.obligations.find((obligation) => obligation.id === obligationId)?.label
-          ?? obligationId.replaceAll('_', ' ')
-      )[0]
-    : undefined
+  const phaseCoverage = phaseCoverageForPath(steps, boundaries, question, scopeSteps, tracedSteps)
   const missingPhase = phaseCoverage.missing[0]
-  const boundaryReason = missingRuntimeObligation
-    ? `missing runtime proof obligation: ${missingRuntimeObligation}`
-    : missingPhase
+  const boundaryReason = missingPhase
     ? missingExecutionPhaseBoundaryReason(missingPhase)
     : undefined
   const executionSlice: ContextPackExecutionSlice = {
-    status: missingRuntimeObligation || missingPhase ? 'partial' : 'complete',
+    status: missingPhase ? 'partial' : 'complete',
     ...(boundaryReason ? { boundary_reason: boundaryReason } : {}),
     steps,
     primary_path: {
@@ -4919,7 +4388,7 @@ function buildExecutionSlice(
 
   return {
     ...executionSlice,
-    ...(buildExecutionSliceConfidence(sliceMetadata, question, executionSlice, runtimeProofProfile, runtimeProof) ?? {}),
+    ...(buildExecutionSliceConfidence(sliceMetadata, question, executionSlice) ?? {}),
   }
 }
 
@@ -4981,6 +4450,7 @@ function buildFrameworkQuestionProfile(question: string, questionTokens: readonl
   const explicitFastify = includesAnyToken(questionTokens, ['fastify'])
   const explicitTrpc = includesAnyToken(questionTokens, ['trpc', 'procedure', 'procedures'])
   const explicitPrisma = includesAnyToken(questionTokens, ['prisma'])
+  const explicitGin = includesAnyToken(questionTokens, ['gin'])
   const routerIntent = includesAnyToken(questionTokens, ['router', 'routers'])
   const resolverIntent = includesAnyToken(questionTokens, ['resolver', 'resolvers', 'graphql'])
   const pluginIntent = includesAnyToken(questionTokens, ['plugin', 'plugins'])
@@ -5052,8 +4522,7 @@ function buildFrameworkQuestionProfile(question: string, questionTokens: readonl
     explicitNextPagesArtifact ||
     layoutIntent ||
     clientIntent ||
-    serverIntent ||
-    apiIntent
+    serverIntent
   const hono = explicitHono
   const fastify = explicitFastify || pluginIntent
   const trpc =
@@ -5061,6 +4530,8 @@ function buildFrameworkQuestionProfile(question: string, questionTokens: readonl
     || procedureIntent
     || (routerIntent && (queryIntent || mutationIntent || subscriptionIntent))
   const repository = storageEndpointIntent
+  const goRouteIntent = explicitGin
+    || /\b(?:go|golang)\s+(?:api|application|app|service|server)\b/i.test(question)
   const prisma = explicitPrisma || modelIntent || persistenceIntent || (
     (storageReadIntent || storageWriteIntent)
     && (modelIntent || explicitPrisma || persistenceIntent)
@@ -5099,7 +4570,7 @@ function buildFrameworkQuestionProfile(question: string, questionTokens: readonl
       includesAnyToken(questionTokens, ['route', 'routes', 'middleware', 'action', 'actions', 'page', 'pages']))
 
   return {
-    frameworkShaped: express || routingControllers || redux || reactRouter || nest || next || repository || hono || fastify || trpc || prisma,
+    frameworkShaped: express || routingControllers || redux || reactRouter || nest || next || repository || hono || fastify || trpc || prisma || goRouteIntent,
     express,
     routingControllers,
     redux,
@@ -5111,6 +4582,7 @@ function buildFrameworkQuestionProfile(question: string, questionTokens: readonl
     fastify,
     trpc,
     prisma,
+    goRouteIntent,
     routeIntent,
     middlewareIntent,
     handlerIntent,
@@ -5452,6 +4924,14 @@ function frameworkBoostForNode(
     }
   }
 
+  // A Go API question is language-shaped, not a declaration that the entire
+  // repository uses Gin. Give extracted Gin routes a local ranking signal
+  // while leaving the rest of the candidate pool available for mixed-runtime
+  // repos and the downstream handler/service flow.
+  if (profile.goRouteIntent && frameworkRole === 'gin_route') {
+    boost += profile.routeIntent ? 4 : 1.5
+  }
+
   if (profile.frameworkShaped && boost === 0 && ['function', 'class', 'variable'].includes(nodeKind)) {
     boost -= 0.5
   }
@@ -5520,6 +5000,8 @@ export function contextPackFromRetrieveResult(
     coverage: result.coverage ?? fallbackRetrieveCoverage(result),
     ...(result.selection_diagnostics ? { selection_diagnostics: result.selection_diagnostics } : {}),
     ...(result.retrieval_strategy ? { retrieval_strategy: result.retrieval_strategy } : {}),
+    ...(result.retrieval_plan ? { retrieval_plan: result.retrieval_plan } : {}),
+    ...(result.recovery ? { recovery: result.recovery } : {}),
     ...(result.slice ? { slice: result.slice } : {}),
     ...(result.execution_slice ? { execution_slice: result.execution_slice } : {}),
     ...(result.answer_contract ? { answer_contract: result.answer_contract } : {}),
@@ -5553,7 +5035,6 @@ function buildRetrieveResultFromOrderedCandidates(
     retrievalGate,
     options.question,
     sliceMetadata,
-    options.runtimeProofProfile,
     rootPath,
   )
   const nodeCandidates: Array<ContextPackNodeCandidate<ContextPackNode>> = orderedCandidates.map((node) => {
@@ -5574,7 +5055,15 @@ function buildRetrieveResultFromOrderedCandidates(
         return builtEntry
       }
 
-      const snippet = node.storedSnippet ?? readSnippet(node.sourceFile, node.lineNumber, {
+      const queryEvidenceSnippet = readQueryEvidenceSnippet(node.sourceFile, node.lineNumber, {
+        question: options.question,
+        label: node.label,
+        sourceLocation: node.sourceLocation,
+        fileNodeLike: node.fileNodeLike,
+        derived: node.lineNumberDerived,
+        fileCache: snippetFileCache,
+      })
+      const snippet = queryEvidenceSnippet?.snippet ?? node.storedSnippet ?? readSnippet(node.sourceFile, node.lineNumber, {
         derived: node.lineNumberDerived,
         fileCache: snippetFileCache,
       })
@@ -5588,6 +5077,12 @@ function buildRetrieveResultFromOrderedCandidates(
         source_domain: node.sourceDomain,
         file_type: node.fileType,
         snippet,
+        ...(queryEvidenceSnippet
+          ? {
+              snippet_line_number: queryEvidenceSnippet.lineNumber,
+              snippet_scope: queryEvidenceSnippet.scope,
+            }
+          : {}),
         match_score: node.score,
         relevance_band: node.relevanceBand,
         community: node.community,
@@ -5642,7 +5137,9 @@ function buildRetrieveResultFromOrderedCandidates(
     }
   })
 
-  const pack = compileContextPack<ContextPackNode, RetrieveRelationship, RetrieveCommunityContext>({
+  const pack = runRetrievalPackingStage({
+    candidate_count: nodeCandidates.length,
+  }, () => compileContextPack<ContextPackNode, RetrieveRelationship, RetrieveCommunityContext>({
     task_contract: taskContract,
     nodes: nodeCandidates,
     relationships: collectRelationships(graph, orderedCandidateIds),
@@ -5654,9 +5151,9 @@ function buildRetrieveResultFromOrderedCandidates(
       }))
       .sort((left, right) => right.node_count - left.node_count),
     graph_signals: graphSignalLabels,
-    selection_strategy: options.selectionStrategy ?? 'value-per-token',
+    selection_strategy: 'value-per-token',
     retrieval_gate: retrievalGate,
-  })
+  }), options.onStageDiagnostic)
   const matchedNodes = pack.nodes as RetrieveMatchedNode[]
   const answerContract = buildRuntimeGenerationAnswerContract(
     taskContract,
@@ -5665,8 +5162,18 @@ function buildRetrieveResultFromOrderedCandidates(
     matchedNodes,
     executionSlice,
     sliceMetadata,
-    options.runtimeProofProfile,
   )
+  runRetrievalEvidencePlanningStage({
+    taskContract: pack.task_contract,
+    coverage: pack.coverage,
+    expandable: pack.expandable,
+    ...(executionSlice ? { executionSlice } : {}),
+    ...(answerContract ? { answerContract } : {}),
+    missingPhases: answerContract?.missing_phases ?? executionSlice?.phase_coverage?.missing ?? [],
+    coveredWorkflowOwners: matchedNodes.map((node) => node.source_file),
+    selectedNodeCount: matchedNodes.length,
+    selectedRelationshipCount: pack.relationships.length,
+  }, options.onStageDiagnostic)
 
   return {
     question: options.question,
@@ -5688,26 +5195,58 @@ function buildRetrieveResultFromOrderedCandidates(
   }
 }
 
-export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions): RetrieveResult {
+const RETRIEVAL_PASS_STAGES_AFTER_INTERPRETATION: readonly RetrievalPipelineStage[] = [
+  'seed_generation',
+  'structural_expansion',
+  'candidate_ranking',
+  'budgeted_packing',
+  'evidence_planning',
+]
+
+const reportSkippedRetrievalPassStages = (options: RetrieveOptions, inputCount: number): void => {
+  for (const stage of RETRIEVAL_PASS_STAGES_AFTER_INTERPRETATION) {
+    reportSkippedPipelineStage({
+      pipeline: 'retrieval',
+      stage,
+      inputCount,
+      ...(options.onStageDiagnostic ? { observer: options.onStageDiagnostic } : {}),
+    })
+  }
+}
+
+function retrieveContextPass(
+  graph: KnowledgeGraph,
+  options: RetrieveOptions,
+  conceptualNodeBoosts: ReadonlyMap<string, number> = new Map(),
+  preserveConceptualObligationOrder = false,
+): RetrieveResult {
+  // Guard before candidate expansion, which also reads directional adjacency.
+  // sliceCandidatesForRetrieve repeats the guard to protect its direct callers.
+  if (options.retrievalStrategy === 'slice-v1') {
+    requireDirectedGraph(graph, 'Directional retrieval')
+  }
+
   const { question, budget } = options
-  const questionTokens = tokenizeQuestion(question)
+  const queryStage = runRetrievalQueryStage({
+    question,
+    budget,
+    ...(options.taskKind ? { taskKind: options.taskKind } : {}),
+    ...(options.taskIntent ? { taskIntent: options.taskIntent } : {}),
+    ...(options.retrievalLevel !== undefined ? { retrievalLevel: options.retrievalLevel } : {}),
+  }, options.onStageDiagnostic)
+  const questionTokens = queryStage.question_tokens
   const graphRootPath = typeof graph.graph.root_path === 'string' && graph.graph.root_path.length > 0
     ? graph.graph.root_path
     : undefined
   const classificationRootPath = inferredGraphRoot(graph)
-  const retrievalGate = classifyRetrievalLevel({
-    prompt: question,
-    ...(options.retrievalLevel !== undefined ? { manualOverride: options.retrievalLevel } : {}),
-  })
-  const effectiveRetrievalLevel: RetrievalLevel = options.retrievalLevel !== undefined
-    ? retrievalGate.level
-    : retrievalGate.level === 0
-      ? 0
-      : (Math.max(retrievalGate.level, 3) as RetrievalLevel)
+  const retrievalGate = queryStage.retrieval_gate
+  const effectiveRetrievalLevel = queryStage.effective_retrieval_level
+  const underScopedDivergenceIds = underScopedDivergenceNodeIds(graph, question)
 
   if (questionTokens.length === 0) {
+    reportSkippedRetrievalPassStages(options, graph.numberOfNodes())
     const emptyPack = compileContextPack({
-      task_contract: classifyRetrieveTaskContract(options),
+      task_contract: queryStage.task_contract,
       nodes: [],
       relationships: [],
       community_context: [],
@@ -5732,8 +5271,9 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
   }
 
   if (effectiveRetrievalLevel === 0) {
+    reportSkippedRetrievalPassStages(options, graph.numberOfNodes())
     const emptyPack = compileContextPack({
-      task_contract: classifyRetrieveTaskContract(options),
+      task_contract: queryStage.task_contract,
       nodes: [],
       relationships: [],
       community_context: [],
@@ -5757,6 +5297,10 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
     }
   }
 
+  const seedOutput = runRetrievalCandidateStage(
+    'seed_generation',
+    { candidate_count: graph.numberOfNodes() },
+    () => {
   // Pre-compute community labels so seed scoring can treat them as secondary evidence.
   const communities = communitiesFromGraph(graph)
   const frameworkProfile = buildFrameworkQuestionProfile(question, questionTokens)
@@ -5799,6 +5343,16 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
     const symbolMatch = symbolReferenceMatchScore(label, sourceFile, mentionedSymbolRefs)
     const exactAnchorMatch = symbolMatch >= 3
     const mentionedPathMatch = sourceFileMatchesMentionedPath(sourceFile, mentionedPaths)
+    if (underScopedDivergenceIds.has(id) && !exactAnchorMatch && !mentionedPathMatch) {
+      continue
+    }
+    if (!exactAnchorMatch && !mentionedPathMatch && !flowQueryEvidenceCandidateAllowed(question, {
+      label,
+      sourceFile,
+      nodeKind,
+    })) {
+      continue
+    }
     const framework = typeof attributes.framework === 'string' ? attributes.framework : undefined
     const frameworkRole = String(attributes.framework_role ?? '')
     const score = scoreSeedCandidate(
@@ -5858,18 +5412,10 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
       },
     )
 
-    const runtimeProofBonus = runtimeProofAnchorBonus(
-      {
-        label,
-        source_file: sourceFile,
-        ...(nodeKind.length > 0 ? { node_kind: nodeKind } : {}),
-        ...(frameworkRole ? { framework_role: frameworkRole } : {}),
-      },
-      options.runtimeProofProfile,
-    )
     const domainIntentPenalty = runtimeGenerationSourceDomainPenalty(retrievalGate, sourceDomain, explicitlyAnchored)
     const scriptMigrationPenalty = scriptMigrationPathPenalty(retrievalGate, sourceFile, label, question, explicitlyAnchored)
-    const totalSeedScore = effectiveScore.total + anchorScore + metadataBoost + domainAdjustment + runtimeProofBonus
+    const conceptualFallbackScore = conceptualNodeBoosts.get(id) ?? 0
+    const totalSeedScore = effectiveScore.total + anchorScore + metadataBoost + domainAdjustment + conceptualFallbackScore
       - sourceDomainPenalty - domainIntentPenalty - scriptMigrationPenalty
     const hasPositiveSeedEvidence = totalSeedScore > 0 || exactAnchorMatch || mentionedPathMatch
     if (hasPositiveSeedEvidence) {
@@ -5895,17 +5441,25 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
         seedScore: {
           ...effectiveScore,
           labelExactScore: effectiveScore.labelExactScore + anchorScore,
+          conceptualFallbackScore,
           total: totalSeedScore,
         },
         exactLabelMatch: effectiveScore.labelExactScore > 0 || exactAnchorMatch,
+        symbolMatchScore: symbolMatch,
         literalPathMatch: mentionedPathMatch,
         sourcePathMatch: effectiveScore.sourcePathScore > 0 || mentionedPathMatch,
         // When the seed only made it in via metadata boost, give it at
         // least evidence tier 1 so it's not at the bottom of the heap.
-        evidenceTier: metadataBoost > 0 || domainAdjustment > 0 || runtimeProofBonus > 0
-          ? (Math.max(evidenceTierForSeedScore(effectiveScore), 1) as 0 | 1 | 2)
-          : (exactAnchorMatch || mentionedPathMatch ? 2 : evidenceTierForSeedScore(effectiveScore)),
-        relevanceBand: effectiveScore.labelExactScore > 0 || exactAnchorMatch || effectiveScore.labelTokenScore > 0 || runtimeProofBonus > 0
+        evidenceTier: Math.max(
+          metadataBoost > 0 || domainAdjustment > 0 ? 1 : 0,
+          exactAnchorMatch || mentionedPathMatch ? 2 : evidenceTierForSeedScore(effectiveScore),
+          conceptualFallbackScore >= 0.75 ? 2 : conceptualFallbackScore > 0 ? 1 : 0,
+        ) as 0 | 1 | 2,
+        relevanceBand: conceptualFallbackScore >= CONCEPTUAL_WORKFLOW_RESERVATION_BOOST
+          || effectiveScore.labelExactScore > 0
+          || effectiveScore.labelPhraseScore > 0
+          || exactAnchorMatch
+          || effectiveScore.labelTokenScore > 0
           ? 'direct'
           : 'related',
       })
@@ -5925,12 +5479,14 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
 
   const fusedSeedScores = reciprocalRankFuse([
     rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.labelExactScore),
+    rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.labelPhraseScore),
     rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.labelTokenScore),
     rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.promptIdentifierScore),
     rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.sourcePathScore),
     rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.communityScore),
+    rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.conceptualFallbackScore),
   ], {
-    weights: [2, 1.5, 0.5, 0.25, 0.25],
+    weights: [2, 1.5, 1.5, 0.5, 0.25, 0.25, 1.75],
   })
   const scored: ScoredNode[] = filteredSeedCandidates.map((candidate) => ({
     id: candidate.id,
@@ -5948,22 +5504,15 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
     community: candidate.community,
     frameworkBoost: candidate.frameworkBoost,
     exactLabelMatch: candidate.exactLabelMatch,
+    symbolMatchScore: candidate.symbolMatchScore,
     literalPathMatch: candidate.literalPathMatch,
     sourcePathMatch: candidate.sourcePathMatch,
     evidenceTier: candidate.evidenceTier,
     score: Math.max(
       0.05,
       ((fusedSeedScores.get(candidate.id) ?? 0) * SEED_FUSION_SCORE_SCALE)
+        + candidate.seedScore.conceptualFallbackScore
         + candidate.frameworkBoost
-        + runtimeProofAnchorBonus(
-          {
-            label: candidate.label,
-            source_file: candidate.sourceFile,
-            ...(candidate.nodeKind.length > 0 ? { node_kind: candidate.nodeKind } : {}),
-            ...(candidate.frameworkRole ? { framework_role: candidate.frameworkRole } : {}),
-          },
-          options.runtimeProofProfile,
-        )
         + retrievalDomainAdjustment(retrievalGate, candidate)
         - defaultSourceDomainPenalty(candidate.sourceDomain, retrievalGate.intent, question, questionTokens)
         - runtimeGenerationSourceDomainPenalty(retrievalGate, candidate.sourceDomain, candidate.exactLabelMatch || candidate.literalPathMatch)
@@ -5978,13 +5527,64 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
   const anchoredSeedPool = (mentionedSymbolRefs.length > 0 || mentionedPaths.length > 0)
     ? scored.filter((node) => symbolReferenceMatchScore(node.label, node.sourceFile, mentionedSymbolRefs) > 0 || sourceFileMatchesMentionedPath(node.sourceFile, mentionedPaths))
     : []
-  const seedPool = effectiveRetrievalLevel <= 2 && anchoredSeedPool.length > 0 ? anchoredSeedPool : scored
+  const conceptualSeedPool = conceptualNodeBoosts.size > 0
+    ? scored
+        .filter((node) => (conceptualNodeBoosts.get(node.id) ?? 0) >= CONCEPTUAL_FALLBACK_SEED_MIN_BOOST)
+        .sort((left, right) => (
+          (conceptualNodeBoosts.get(right.id) ?? 0) - (conceptualNodeBoosts.get(left.id) ?? 0)
+          || compareScoredNodes(graph, left, right)
+        ))
+    : []
+  const seedPool = conceptualSeedPool.length > 0
+    ? conceptualSeedPool
+    : effectiveRetrievalLevel <= 2 && anchoredSeedPool.length > 0 ? anchoredSeedPool : scored
+      return {
+        candidate_count: seedPool.length,
+        communities,
+        frameworkProfile,
+        activeFrameworks,
+        communityLabels,
+        mentionedSymbolRefs,
+        mentionedPaths,
+        excludedDomains,
+        excludedTerms,
+        excludedPathHints,
+        scored,
+        expansionPolicy,
+        seedPool,
+      }
+    },
+    options.onStageDiagnostic,
+  )
+  const {
+    communities,
+    frameworkProfile,
+    activeFrameworks,
+    communityLabels,
+    mentionedSymbolRefs,
+    mentionedPaths,
+    excludedDomains,
+    excludedTerms,
+    excludedPathHints,
+    scored,
+    expansionPolicy,
+    seedPool,
+  } = seedOutput
 
   // Step 3: Multi-hop expansion — take top seeds, expand 2 hops with decaying scores
+  const expansionOutput = runRetrievalCandidateStage(
+    'structural_expansion',
+    { candidate_count: seedPool.length },
+    () => {
   const hasExactSeedMatch = seedPool.some((node) => node.exactLabelMatch)
   const seedCount = effectiveRetrievalLevel === 1 && hasExactSeedMatch
     ? Math.min(seedPool.length, 1)
-    : Math.min(seedPool.length, expansionPolicy.seed_limit)
+    : Math.min(
+        seedPool.length,
+        conceptualNodeBoosts.size > 0
+          ? Math.max(expansionPolicy.seed_limit, CONCEPTUAL_FALLBACK_SEED_LIMIT)
+          : expansionPolicy.seed_limit,
+      )
   const seedIds = new Set(seedPool.slice(0, seedCount).map((node) => node.id))
   const directSeeds = seedPool
     .filter((node) => node.relevanceBand === 'direct')
@@ -6030,11 +5630,18 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
           if (expansionSeedIds.has(predecessorId)) {
             continue
           }
+          const relation = String(graph.edgeAttributes(predecessorId, seed.id).relation ?? 'related_to')
           const predecessorCommunity = parseCommunityId(graph.nodeAttributes(predecessorId).community)
-          if (!predecessorAllowedForPolicy(expansionPolicy.predecessor_mode, seedCommunity, predecessorCommunity)) {
+          // File/container ownership is exact extractor evidence, so it must
+          // not disappear merely because community detection placed the file
+          // node and its symbol in adjacent clusters. Keeping this owner hop
+          // also lets hop two reach the symbol's imported collaborators.
+          if (
+            !predecessorIsStructuralOwner(relation)
+            && !predecessorAllowedForPolicy(expansionPolicy.predecessor_mode, seedCommunity, predecessorCommunity)
+          ) {
             continue
           }
-          const relation = String(graph.edgeAttributes(predecessorId, seed.id).relation ?? 'related_to')
           if (!relationAllowedForPolicy(expansionPolicy.hop1_relations, relation)) {
             continue
           }
@@ -6092,11 +5699,14 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
           if (seedIds.has(predecessorId) || hop1Ids.has(predecessorId)) {
             continue
           }
+          const relation = String(graph.edgeAttributes(predecessorId, hop1Id).relation ?? 'related_to')
           const predecessorCommunity = parseCommunityId(graph.nodeAttributes(predecessorId).community)
-          if (!predecessorAllowedForPolicy(expansionPolicy.predecessor_mode, seedCommunity, predecessorCommunity)) {
+          if (
+            !predecessorIsStructuralOwner(relation)
+            && !predecessorAllowedForPolicy(expansionPolicy.predecessor_mode, seedCommunity, predecessorCommunity)
+          ) {
             continue
           }
-          const relation = String(graph.edgeAttributes(predecessorId, hop1Id).relation ?? 'related_to')
           if (!relationAllowedForPolicy(expansionPolicy.hop2_relations, relation)) {
             continue
           }
@@ -6174,6 +5784,7 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
       community,
       frameworkBoost: 0,
       exactLabelMatch: symbolMatch >= 3,
+      symbolMatchScore: symbolMatch,
       literalPathMatch: pathMatch,
       sourcePathMatch: pathMatch,
       evidenceTier: hopDistances.get(nodeId) === 1 ? (hopEvidenceTiers.get(nodeId) ?? 0) : 0,
@@ -6182,6 +5793,19 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
     })
   }
 
+      return {
+        candidate_count: scored.length,
+        seedIds,
+        hopScores,
+      }
+    },
+    options.onStageDiagnostic,
+  )
+  const { seedIds, hopScores } = expansionOutput
+  const rankingOutput = runRetrievalCandidateStage(
+    'candidate_ranking',
+    { candidate_count: scored.length },
+    () => {
   // Apply structural signal boosts before final sort
   const retrieveGraphSignals = graphSignalsForRetrieve(graph, communities, communityLabels)
   const topSeed = seedPool.length > 0 ? seedPool[0] : scored[0]
@@ -6194,14 +5818,28 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
     if (boostedSeedCommunity !== undefined && node.community === boostedSeedCommunity && node.community !== -1) node.score += 0.1
   }
 
-  // Re-sort: seeds first by score, then neighbors by degree
-  scored.sort((a, b) => compareScoredNodes(graph, a, b))
+  // Conceptual recovery already paid the cost of finding a bounded set of
+  // obligation-grounded workflow owners. Keep those seeds ahead of expanded
+  // helper calls; otherwise dense call trees can replace the cross-layer
+  // spine with cheap leaves such as parser and retry helpers.
+  scored.sort((a, b) => (
+    conceptualNodeBoosts.size > 0
+      ? Number(seedIds.has(b.id)) - Number(seedIds.has(a.id))
+      : 0
+  ) || (
+    conceptualNodeBoosts.size > 0 && seedIds.has(a.id) && seedIds.has(b.id)
+      ? (conceptualNodeBoosts.get(b.id) ?? 0) - (conceptualNodeBoosts.get(a.id) ?? 0)
+      : 0
+  ) || compareScoredNodes(graph, a, b))
 
+  const conceptuallyReserved = (node: ScoredNode): boolean => (
+    (conceptualNodeBoosts.get(node.id) ?? 0) >= CONCEPTUAL_WORKFLOW_RESERVATION_BOOST
+  )
   const frameworkCompatibleCandidates = frameworkProfile.frameworkShaped
-    ? scored.filter((node) => isFrameworkCompatible(activeFrameworks, node.framework))
+    ? scored.filter((node) => isFrameworkCompatible(activeFrameworks, node.framework) || conceptuallyReserved(node))
     : scored
   const frameworkIncompatibleCandidates = frameworkProfile.frameworkShaped
-    ? scored.filter((node) => !isFrameworkCompatible(activeFrameworks, node.framework))
+    ? scored.filter((node) => !isFrameworkCompatible(activeFrameworks, node.framework) && !conceptuallyReserved(node))
     : []
   const primaryCandidates = frameworkCompatibleCandidates.filter((node) => (seedIds.has(node.id) || hopScores.has(node.id)) && node.relevanceBand !== 'peripheral')
   const peripheralCandidates = frameworkCompatibleCandidates.filter((node) => (seedIds.has(node.id) || hopScores.has(node.id)) && node.relevanceBand === 'peripheral')
@@ -6238,86 +5876,302 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
   const inclusionOrder = expansionPolicy.include_peripheral
     ? frameworkOrderedCandidates
     : frameworkOrderedCandidates.filter((node) => node.relevanceBand !== 'peripheral')
+      // Cross-domain conceptual recovery can intentionally keep disconnected
+      // evidence outside one slice. For a report-generation workflow, exclude
+      // known side actions from that preserved set so controller siblings such
+      // as list/status/health do not displace the execution path.
+      let orderedCandidates = preserveConceptualObligationOrder
+        ? inclusionOrder.filter((node) => !recoveredReportGenerationNoise(question, node))
+        : inclusionOrder
+      let sliceMetadata: ContextPackSliceMetadata | undefined
+      // A multi-obligation conceptual fallback can deliberately assemble
+      // cross-service and cross-language owners that do not form one local
+      // slice. Only that explicitly selected recovery mode bypasses slice-v1;
+      // ordinary conceptual reranking and symbol/path-anchored questions keep
+      // the established slice contract.
+      if (options.retrievalStrategy === 'slice-v1' && !preserveConceptualObligationOrder) {
+        const sliced = sliceCandidatesForRetrieve(
+          graph,
+          scored.map((node) => ({
+            id: node.id,
+            label: node.label,
+            sourceFile: node.sourceFile,
+            exactLabelMatch: node.exactLabelMatch,
+            symbolMatchScore: node.symbolMatchScore,
+            sourcePathMatch: node.sourcePathMatch,
+            literalPathMatch: node.literalPathMatch,
+            score: node.score,
+            nodeKind: node.nodeKind,
+            frameworkRole: node.frameworkRole,
+          })),
+          retrievalGate.intent,
+          {
+            prompt: question,
+            generationIntent: retrievalGate.signals.generation_intent,
+            targetDomainHint: retrievalGate.signals.target_domain_hint,
+            mentionedSymbols: retrievalGate.signals.mentioned_symbols,
+            excludedDomains: retrievalGate.signals.excluded_domains,
+            excludedTerms: retrievalGate.signals.excluded_terms,
+            excludedPathHints: retrievalGate.signals.excluded_path_hints,
+            rootPath: classificationRootPath,
+          },
+        )
 
-  if (options.retrievalStrategy === 'slice-v1') {
-    const strictRuntimeProof = options.runtimeProofProfile?.strict_runtime_proof === true
-    const sliced = sliceCandidatesForRetrieve(
-      graph,
-      scored.map((node) => ({
-        id: node.id,
-        label: node.label,
-        sourceFile: node.sourceFile,
-        exactLabelMatch: node.exactLabelMatch,
-      sourcePathMatch: node.sourcePathMatch,
-      literalPathMatch: node.literalPathMatch,
-      score: node.score,
-      nodeKind: node.nodeKind,
-      frameworkRole: node.frameworkRole,
-      })),
-      retrievalGate.intent,
-      {
-        prompt: question,
-        generationIntent: strictRuntimeProof ? 'runtime_generation' : retrievalGate.signals.generation_intent,
-        targetDomainHint: strictRuntimeProof ? 'backend_runtime' : retrievalGate.signals.target_domain_hint,
-        runtimeProofProfile: options.runtimeProofProfile,
-        mentionedSymbols: retrievalGate.signals.mentioned_symbols,
-        excludedDomains: retrievalGate.signals.excluded_domains,
-        excludedTerms: retrievalGate.signals.excluded_terms,
-        excludedPathHints: retrievalGate.signals.excluded_path_hints,
-        rootPath: classificationRootPath,
-      },
-    )
-
-    if (sliced) {
-      const scoredById = new Map(scored.map((node) => [node.id, node]))
-      const runtimeExpandedSliceIds = augmentSliceCandidateIdsForRuntimeExplain(
-        graph,
-        sliced.ordered_ids,
-        sliced.metadata,
-        retrievalGate,
-        options.question,
-        options.runtimeProofProfile,
-      )
-      const orderedSliceIds = augmentSliceCandidateIdsForDebug(graph, runtimeExpandedSliceIds, sliced.metadata)
-      const sliceCandidates = orderedSliceIds.map((nodeId, index) => (
-        scoredById.get(nodeId) ?? scoredNodeFromGraph(graph, nodeId, Math.max(0.25, 2 - (index * 0.1)), classificationRootPath)
-      ))
-
-      return buildRetrieveResultFromOrderedCandidates(
-        graph,
-        options,
-        sliceCandidates,
-        communities,
-        communityLabels,
+        if (sliced) {
+          const scoredById = new Map(scored.map((node) => [node.id, node]))
+          const runtimeExpandedSliceIds = augmentSliceCandidateIdsForRuntimeExplain(
+            graph,
+            sliced.ordered_ids,
+            sliced.metadata,
+            retrievalGate,
+            options.question,
+          )
+          const orderedSliceIds = augmentSliceCandidateIdsForDebug(
+            graph,
+            runtimeExpandedSliceIds,
+            sliced.metadata,
+          )
+          orderedCandidates = orderedSliceIds.map((nodeId, index) => (
+            scoredById.get(nodeId)
+              ?? scoredNodeFromGraph(
+                graph,
+                nodeId,
+                Math.max(0.25, 2 - (index * 0.1)),
+                classificationRootPath,
+              )
+          ))
+          sliceMetadata = sliced.metadata
+        }
+      }
+      return {
+        candidate_count: orderedCandidates.length,
+        orderedCandidates,
         retrieveGraphSignals,
-        retrievalGate,
-        graphRootPath,
-        sliced.metadata,
-      )
-    }
-  }
+        sliceMetadata,
+      }
+    },
+    options.onStageDiagnostic,
+  )
+  const { orderedCandidates, retrieveGraphSignals, sliceMetadata } = rankingOutput
 
   return buildRetrieveResultFromOrderedCandidates(
     graph,
     options,
-    inclusionOrder,
+    orderedCandidates,
     communities,
     communityLabels,
     retrieveGraphSignals,
     retrievalGate,
     graphRootPath,
+    sliceMetadata,
+  )
+}
+
+function selectedNodeIds(result: RetrieveResult): string[] {
+  return [...new Set(
+    result.matched_nodes
+      .map((node) => matchedNodeId(node))
+      .filter((nodeId): nodeId is string => nodeId !== null),
+  )]
+}
+
+function selectedSourceFiles(result: RetrieveResult): Set<string> {
+  return new Set(
+    result.matched_nodes
+      .map((node) => node.source_file.trim())
+      .filter((sourceFile) => sourceFile.length > 0),
+  )
+}
+
+function selectedWorkflowCoherence(graph: KnowledgeGraph, nodeIds: readonly string[]): number {
+  if (nodeIds.length === 0) {
+    return 0
+  }
+  if (nodeIds.length === 1) {
+    return 1
+  }
+
+  const visited = new Set<string>()
+  let largestComponent = 0
+  for (const start of nodeIds) {
+    if (visited.has(start) || !graph.hasNode(start)) {
+      continue
+    }
+    const queue = [start]
+    visited.add(start)
+    let componentSize = 0
+    while (queue.length > 0) {
+      const current = queue.shift()
+      if (!current) {
+        break
+      }
+      componentSize += 1
+      // The delivered set is small and budget-bounded. Checking only pairs in
+      // that set is exact and avoids materializing every neighbor of a selected
+      // god node merely to discard nodes that were not delivered.
+      for (const candidate of nodeIds) {
+        if (
+          candidate !== current
+          && !visited.has(candidate)
+          && (graph.hasEdge(current, candidate) || graph.hasEdge(candidate, current))
+        ) {
+          visited.add(candidate)
+          queue.push(candidate)
+        }
+      }
+    }
+    largestComponent = Math.max(largestComponent, componentSize)
+  }
+  return Number((largestComponent / nodeIds.length).toFixed(3))
+}
+
+function retrievalQualitySnapshot(graph: KnowledgeGraph, result: RetrieveResult): RetrievalQualitySnapshot {
+  const nodeIds = selectedNodeIds(result)
+  const explicitSliceAnchors = result.slice?.anchors.filter((anchor) => (
+    anchor.reason === 'symbol mention' || anchor.reason === 'path mention'
+  )).length ?? 0
+  const explicitGateAnchors = (result.retrieval_gate?.signals.mentioned_symbols.length ?? 0)
+    + (result.retrieval_gate?.signals.mentioned_paths.length ?? 0)
+  return {
+    selected_nodes: nodeIds.length,
+    selected_files: selectedSourceFiles(result).size,
+    direct_matches: result.matched_nodes.filter((node) => node.relevance_band === 'direct').length,
+    explicit_anchors: Math.max(explicitSliceAnchors, explicitGateAnchors),
+    workflow_coherence: selectedWorkflowCoherence(graph, nodeIds),
+    missing_required_evidence: result.coverage?.missing_required.length ?? 0,
+    missing_semantic_evidence: result.coverage?.missing_semantic.length ?? 0,
+    token_count: result.token_count,
+  }
+}
+
+function notNeededRetrievalPlan(quality: RetrievalQualitySnapshot): ContextPackRetrievalPlanDetail {
+  return {
+    version: 1,
+    status: 'not_needed',
+    reasons: [],
+    initial: quality,
+    final: quality,
+    attempts: [],
+  }
+}
+
+function retrieveContextWithConceptualFallback(graph: KnowledgeGraph, options: RetrieveOptions): RetrieveResult {
+  const initial = retrieveContextPass(graph, options)
+  const initialQuality = retrievalQualitySnapshot(graph, initial)
+  if (
+    tokenizeQuestion(options.question).length === 0
+    || initial.retrieval_gate?.level === 0
+    // Implementation packs already run the dedicated task-context planner over
+    // this result. Re-ranking their seed set here makes that planner less
+    // stable without improving conceptual answerability.
+    || options.taskKind === 'implement'
+  ) {
+    return { ...initial, retrieval_plan: notNeededRetrievalPlan(initialQuality) }
+  }
+
+  const initialQueryEvidence = evaluateQueryEvidenceCoverage(options.question, initial.matched_nodes)
+  const hasMultipleQueryObligations = queryEvidenceObligations(options.question).length >= 2
+  const conceptualQuality = hasMultipleQueryObligations && initialQueryEvidence.missing_obligations.length > 0
+    ? {
+        ...initialQuality,
+        missing_required_evidence: Math.max(1, initialQuality.missing_required_evidence),
+      }
+    : initialQuality
+  const proposal = planConceptualFallback(graph, {
+    question: options.question,
+    initialQuality: conceptualQuality,
+    selectedNodes: initial.matched_nodes.flatMap((node) => {
+      const nodeId = matchedNodeId(node)
+      return nodeId
+        ? [{
+            nodeId,
+            sourceFile: node.source_file,
+            relevanceBand: node.relevance_band,
+            matchScore: node.match_score,
+          }]
+        : []
+    }),
+    initialQueryEvidence,
+    ...(options.community !== undefined ? { community: options.community } : {}),
+    ...(options.fileType !== undefined ? { fileType: options.fileType } : {}),
+  })
+  if (proposal.nodeBoosts.size === 0) {
+    return { ...initial, retrieval_plan: proposal.plan }
+  }
+
+  const preserveConceptualObligationOrder = initialQuality.explicit_anchors === 0
+    && (proposal.plan.query_obligations?.total ?? 0) >= 4
+  const recovered = retrieveContextPass(
+    graph,
+    options,
+    proposal.nodeBoosts,
+    preserveConceptualObligationOrder,
+  )
+  const finalized = finalizeConceptualFallbackPlan(
+    proposal,
+    retrievalQualitySnapshot(graph, recovered),
+    selectedSourceFiles(initial),
+    selectedSourceFiles(recovered),
+    new Set(selectedNodeIds(recovered)),
+    evaluateQueryEvidenceCoverage(options.question, recovered.matched_nodes),
+  )
+  return {
+    ...(finalized.useRecovered ? recovered : initial),
+    retrieval_plan: finalized.plan,
+  }
+}
+
+const recoverContextPackWithStage = (
+  graph: KnowledgeGraph,
+  initial: RetrieveResult,
+  options: RetrieveOptions,
+  runPass: (nodeBoosts: ReadonlyMap<string, number>) => RetrieveResult,
+): RetrieveResult => {
+  const recoveryStage = startRetrievalRecoveryStage({
+    selected_node_count: initial.matched_nodes.length,
+  }, options.onStageDiagnostic)
+  try {
+    const result = recoverContextPackResult(graph, initial, options, runPass)
+    recoveryStage.complete({
+      selected_node_count: result.matched_nodes.length,
+      insufficient: result.recovery?.final_state === 'insufficient',
+    })
+    return result
+  } catch (error) {
+    recoveryStage.fail()
+    throw error
+  }
+}
+
+export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions): RetrieveResult {
+  const initial = retrieveContextWithConceptualFallback(graph, options)
+  return recoverContextPackWithStage(
+    graph,
+    initial,
+    options,
+    (nodeBoosts) => retrieveContextPass(graph, options, nodeBoosts),
   )
 }
 
 export async function retrieveContextAsync(graph: KnowledgeGraph, options: RetrieveOptions): Promise<RetrieveResult> {
-  const lexicalResult = retrieveContext(graph, options)
+  const lexicalResult = retrieveContextWithConceptualFallback(graph, options)
   if (options.semantic !== true && options.rerank !== true) {
-    return lexicalResult
+    return recoverContextPackWithStage(
+      graph,
+      lexicalResult,
+      options,
+      (nodeBoosts) => retrieveContextPass(graph, options, nodeBoosts),
+    )
   }
 
   const questionTokens = tokenizeQuestion(options.question)
   if (questionTokens.length === 0) {
-    return lexicalResult
+    return recoverContextPackWithStage(
+      graph,
+      lexicalResult,
+      options,
+      (nodeBoosts) => retrieveContextPass(graph, options, nodeBoosts),
+    )
   }
 
   const frameworkProfile = buildFrameworkQuestionProfile(options.question, questionTokens)
@@ -6359,7 +6213,12 @@ export async function retrieveContextAsync(graph: KnowledgeGraph, options: Retri
       .map(([id, attributes]) => [id, scoredNodeFromGraphEntry(id, attributes, frameworkProfile, questionLower, classificationRootPath)] as const),
   )
   if (candidatesById.size === 0) {
-    return lexicalResult
+    return recoverContextPackWithStage(
+      graph,
+      lexicalResult,
+      options,
+      (nodeBoosts) => retrieveContextPass(graph, options, nodeBoosts),
+    )
   }
 
   let semanticScores = new Map<string, number>()
@@ -6369,7 +6228,10 @@ export async function retrieveContextAsync(graph: KnowledgeGraph, options: Retri
     semanticScores = await rankCandidatesBySemanticSimilarity(
       options.question,
       [...candidatesById.values()].map((node) => ({ id: node.id, text: semanticTextForNode(node) })),
-      options.semanticModel ? { model: options.semanticModel } : {},
+      {
+        ...(options.semanticModel ? { model: options.semanticModel } : {}),
+        ...(options.projectRoot ? { projectRoot: options.projectRoot } : {}),
+      },
     )
   }
 
@@ -6386,7 +6248,12 @@ export async function retrieveContextAsync(graph: KnowledgeGraph, options: Retri
   }
 
   if (candidateIds.size === 0) {
-    return lexicalResult
+    return recoverContextPackWithStage(
+      graph,
+      lexicalResult,
+      options,
+      (nodeBoosts) => retrieveContextPass(graph, options, nodeBoosts),
+    )
   }
 
   const candidatePool = [...candidateIds]
@@ -6398,7 +6265,10 @@ export async function retrieveContextAsync(graph: KnowledgeGraph, options: Retri
     rerankScores = await rerankCandidatesWithCrossEncoder(
       options.question,
       candidatePool.map((node) => ({ id: node.id, text: semanticTextForNode(node) })),
-      options.rerankerModel ? { model: options.rerankerModel } : {},
+      {
+        ...(options.rerankerModel ? { model: options.rerankerModel } : {}),
+        ...(options.projectRoot ? { projectRoot: options.projectRoot } : {}),
+      },
     )
   }
 
@@ -6427,7 +6297,7 @@ export async function retrieveContextAsync(graph: KnowledgeGraph, options: Retri
       ]
     : candidatePool
 
-  return buildRetrieveResultFromOrderedCandidates(
+  const semanticResult = buildRetrieveResultFromOrderedCandidates(
     graph,
     options,
     orderedCandidates,
@@ -6440,6 +6310,16 @@ export async function retrieveContextAsync(graph: KnowledgeGraph, options: Retri
     }),
     graphRootPath,
     lexicalResult.slice,
+  )
+  const semanticWithPlan = {
+    ...semanticResult,
+    ...(lexicalResult.retrieval_plan ? { retrieval_plan: lexicalResult.retrieval_plan } : {}),
+  }
+  return recoverContextPackWithStage(
+    graph,
+    semanticWithPlan,
+    options,
+    (nodeBoosts) => retrieveContextPass(graph, options, nodeBoosts),
   )
 }
 
@@ -6471,16 +6351,24 @@ export function compactRetrieveResult(result: RetrieveResult, options: RetrieveS
     (total, node) => total + estimateRetrieveEntryTokens(node.label, node.source_file, node.line_number, node.snippet ?? null),
     0,
   )
+  const matchedNodes = shapedNodes.nodes.map(({ evidence_class: _evidenceClass, ...node }) => node as CompactRetrieveMatchedNode)
+  const retrievalPlan = reconcileRetrievalPlanQueryEvidence(
+    result.retrieval_plan,
+    result.question,
+    matchedNodes,
+  )
 
   return {
     question: result.question,
     token_count: Math.max(0, compactPack.token_count - compactPackNodeTokenCount + shapedNodeTokenCount),
-    matched_nodes: shapedNodes.nodes.map(({ evidence_class: _evidenceClass, ...node }) => node as CompactRetrieveMatchedNode),
+    matched_nodes: matchedNodes,
     relationships: compactPack.relationships,
     community_context: compactPack.community_context,
     graph_signals: compactPack.graph_signals ?? { god_nodes: [], bridge_nodes: [] },
     ...(compactPack.shared_file_type ? { shared_file_type: compactPack.shared_file_type } : {}),
     retrieval_strategy: result.retrieval_strategy ?? 'default',
+    ...(retrievalPlan ? { retrieval_plan: retrievalPlan } : {}),
+    ...(result.recovery ? { recovery: result.recovery } : {}),
     snippet_budget_tokens_used: shapedNodes.usedTokens,
     snippet_budget_tokens_remaining: shapedNodes.remainingTokens,
     ...(result.slice ? { slice: result.slice } : {}),
@@ -6606,7 +6494,36 @@ function compactRetrievePayloadForStdioProfile(
   payload: StdioRetrieveResult,
   profile: RetrieveStdioCompactionProfile,
 ): StdioRetrieveResult {
-  const matchedNodes = payload.matched_nodes.slice(0, profile.matchedNodeCap)
+  const claims: NonNullable<StdioRetrieveResult['claims']> = []
+  const pinnedNodes: StdioRetrieveResult['matched_nodes'] = []
+  const pinnedNodeSet = new Set<StdioRetrieveResult['matched_nodes'][number]>()
+
+  for (const claim of payload.claims?.slice(0, profile.claimCap) ?? []) {
+    const supportingNodes = claim.node_labels.map((label) => (
+      payload.matched_nodes.find((node) => node.label === label)
+    )).filter((node): node is StdioRetrieveResult['matched_nodes'][number] => node !== undefined)
+    if (supportingNodes.length !== claim.node_labels.length) {
+      continue
+    }
+    const newSupportingNodes = supportingNodes.filter((node) => !pinnedNodeSet.has(node))
+    if (pinnedNodes.length + newSupportingNodes.length > profile.matchedNodeCap) {
+      continue
+    }
+    claims.push(claim)
+    for (const node of newSupportingNodes) {
+      pinnedNodes.push(node)
+      pinnedNodeSet.add(node)
+    }
+  }
+
+  const remainingCapacity = Math.max(0, profile.matchedNodeCap - pinnedNodes.length)
+  const selectedNodeSet = new Set([
+    ...pinnedNodes,
+    ...payload.matched_nodes.filter((node) => !pinnedNodeSet.has(node)).slice(0, remainingCapacity),
+  ])
+  const matchedNodes = payload.matched_nodes
+    .filter((node) => selectedNodeSet.has(node))
+    .slice(0, profile.matchedNodeCap)
   const retainedNodeIds = new Set(
     matchedNodes
       .map((node) => node.node_id)
@@ -6615,16 +6532,33 @@ function compactRetrievePayloadForStdioProfile(
   const retainsRelationshipEndpoints = (relationship: RetrieveRelationship): boolean =>
     (typeof relationship.from_id !== 'string' || retainedNodeIds.has(relationship.from_id))
     && (typeof relationship.to_id !== 'string' || retainedNodeIds.has(relationship.to_id))
-  return {
+  const compacted = {
     ...payload,
     matched_nodes: matchedNodes,
     relationships: payload.relationships
       .filter((relationship) => retainsRelationshipEndpoints(relationship))
       .slice(0, profile.relationshipCap),
     community_context: payload.community_context.slice(0, profile.communityCap),
-    ...(payload.claims ? { claims: payload.claims.slice(0, profile.claimCap) } : {}),
+    ...(payload.claims ? { claims } : {}),
     ...(payload.expandable ? { expandable: compactExpandableRefsForStdio(payload.expandable, profile) } : {}),
     ...(payload.slice ? { slice: compactSliceForStdio(payload.slice, profile) } : {}),
+  }
+  return reconcileStdioRetrievalPlan(compacted)
+}
+
+function reconcileStdioRetrievalPlan(payload: StdioRetrieveResult): StdioRetrieveResult {
+  const retrievalPlan = reconcileRetrievalPlanQueryEvidence(
+    payload.retrieval_plan,
+    payload.question,
+    payload.matched_nodes,
+  )
+  if (!retrievalPlan || retrievalPlan === payload.retrieval_plan) {
+    return payload
+  }
+
+  return {
+    ...payload,
+    retrieval_plan: retrievalPlan,
   }
 }
 
@@ -6642,6 +6576,8 @@ export function compactRetrieveResultForStdio(result: RetrieveResult, options: R
     ...(result.expandable ? { expandable: result.expandable } : {}),
     ...(result.coverage ? { coverage: result.coverage } : {}),
     retrieval_strategy: result.retrieval_strategy ?? 'default',
+    ...(compactResult.retrieval_plan ? { retrieval_plan: compactResult.retrieval_plan } : {}),
+    ...(result.recovery ? { recovery: result.recovery } : {}),
     snippet_budget_tokens_used: compactResult.snippet_budget_tokens_used,
     snippet_budget_tokens_remaining: compactResult.snippet_budget_tokens_remaining,
     ...(result.slice ? { slice: result.slice } : {}),
@@ -6651,6 +6587,7 @@ export function compactRetrieveResultForStdio(result: RetrieveResult, options: R
   }
 
   const maxOutputTokens = options.maxOutputTokens ?? DEFAULT_RETRIEVE_STDIO_OUTPUT_TOKENS
+  payload = reconcileStdioRetrievalPlan(payload)
   if (estimateRetrievePayloadTokens(payload) <= maxOutputTokens) {
     return payload
   }

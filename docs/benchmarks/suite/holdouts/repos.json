@@ -1,0 +1,24 @@
+[
+  {
+    "id": "holdout-order-service",
+    "name": "Order workflow holdout",
+    "path": "docs/benchmarks/suite/holdouts/fixtures/order-service",
+    "description": "TypeScript holdout with an HTTP-to-inventory-to-persistence workflow.",
+    "size": "small",
+    "language": "typescript",
+    "shape": "http-service",
+    "status": "ready",
+    "supportsSpi": false
+  },
+  {
+    "id": "holdout-invoice-service",
+    "name": "Invoice workflow holdout",
+    "path": "docs/benchmarks/suite/holdouts/fixtures/invoice-service",
+    "description": "Python holdout with API, calculation, ledger, and audit boundaries.",
+    "size": "small",
+    "language": "python",
+    "shape": "api-service",
+    "status": "ready",
+    "supportsSpi": false
+  }
+]

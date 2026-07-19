@@ -1,7 +1,9 @@
 import { dirname, isAbsolute, resolve } from 'node:path'
 
 import type { ContextPackFormat, ContextPackRetrievalStrategy, ContextPackTaskKind } from '../contracts/context-pack.js'
+import type { ExtractionMode } from '../contracts/generation-policy.js'
 import { validateGraphOutputPath, validateGraphPath } from '../shared/security.js'
+import { resolveWorkspaceGraphPath } from '../shared/workspace.js'
 import { type InstallPlatform, isInstallPlatform, type InstallProfile, isInstallProfile } from '../infrastructure/install.js'
 
 export class UsageError extends Error {
@@ -111,6 +113,8 @@ export interface BenchmarkCliOptions {
 export interface BenchSuiteCliOptions {
   repo: string | null
   task: string | null
+  reposManifestPath: string | null
+  tasksManifestPath: string | null
   mode: 'cold' | 'warm' | 'all'
   trials: number
   outputDir: string
@@ -163,6 +167,7 @@ export interface GenerateCliOptions {
   watch: boolean
   directed: boolean
   followSymlinks: boolean
+  respectGitignore: boolean
   debounceSeconds: number
   noHtml: boolean
   wiki: boolean
@@ -177,16 +182,17 @@ export interface GenerateCliOptions {
   neo4jDatabase: string | null
   includeDocs: boolean
   docs: boolean
-  /** v0.18 (#85 candidate): opt-in to the SPI v1 build pipeline.
-   *  When true, `buildSpiCached` + `projectSpiToExtraction` replace the
-   *  legacy `extract()` call site so framework_role / framework_metadata
-   *  flows into graph.json. Default false — same output as before v0.14. */
-  useSpi: boolean
+  strictIndexing: boolean
+  maxIndexingFailed: number
+  maxIndexingUnsupported: number
+  /** Default auto mode uses SPI where it is capable and legacy elsewhere. */
+  extractionMode: ExtractionMode
 }
 
 export interface WatchCliOptions {
   path: string
   followSymlinks: boolean
+  respectGitignore: boolean
   debounceSeconds: number
   noHtml: boolean
 }
@@ -196,6 +202,7 @@ export interface ServeCliOptions {
   host: string
   port: number
   transport: 'http' | 'stdio'
+  autoRefresh: boolean
 }
 
 export interface DoctorCliOptions {
@@ -1193,6 +1200,8 @@ export function parseBenchmarkArgs(args: string[], commandName = 'benchmark'): B
 export function parseBenchSuiteArgs(args: string[]): BenchSuiteCliOptions {
   let repo: string | null = null
   let task: string | null = null
+  let reposManifestPath: string | null = null
+  let tasksManifestPath: string | null = null
   let mode: BenchSuiteCliOptions['mode'] = 'all'
   let trials = 3
   let outputDir = resolve('docs/benchmarks/suite/results')
@@ -1227,6 +1236,30 @@ export function parseBenchSuiteArgs(args: string[]): BenchSuiteCliOptions {
     if (argument.startsWith('--task=')) {
       const [, value] = argument.split('=', 2)
       task = requireOptionValue('--task', value)
+      continue
+    }
+
+    if (argument === '--repos-manifest') {
+      reposManifestPath = resolve(requireOptionValue('--repos-manifest', args[index + 1]))
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--repos-manifest=')) {
+      const [, value] = argument.split('=', 2)
+      reposManifestPath = resolve(requireOptionValue('--repos-manifest', value))
+      continue
+    }
+
+    if (argument === '--tasks-manifest') {
+      tasksManifestPath = resolve(requireOptionValue('--tasks-manifest', args[index + 1]))
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--tasks-manifest=')) {
+      const [, value] = argument.split('=', 2)
+      tasksManifestPath = resolve(requireOptionValue('--tasks-manifest', value))
       continue
     }
 
@@ -1302,7 +1335,7 @@ export function parseBenchSuiteArgs(args: string[]): BenchSuiteCliOptions {
     throw new UsageError('error: --exec is required unless --dry-run is set')
   }
 
-  return { repo, task, mode, trials, outputDir, execTemplate, dryRun, yes }
+  return { repo, task, reposManifestPath, tasksManifestPath, mode, trials, outputDir, execTemplate, dryRun, yes }
 }
 
 export function parseCompareArgs(args: string[]): CompareCliOptions {
@@ -1501,11 +1534,18 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
     throw new UsageError('error: --exec is required')
   }
 
-  outputDir = validateGraphOutputPath(outputDir)
+  const resolvedGraphPath = resolveWorkspaceGraphPath(graphPath)
+  const graphArtifactDir = dirname(resolve(resolvedGraphPath))
+  // Keep compare receipts beside the graph. This is especially important for
+  // linked worktrees, whose graph artifact directory intentionally lives
+  // outside the source checkout.
+  outputDir = outputDir === 'out/compare'
+    ? validateGraphOutputPath(resolve(graphArtifactDir, 'compare'), graphArtifactDir)
+    : validateGraphOutputPath(outputDir)
 
   return {
     question,
-    graphPath,
+    graphPath: resolvedGraphPath,
     execTemplate,
     questionsPath,
     outputDir,
@@ -1606,10 +1646,16 @@ export function parseReviewCompareArgs(args: string[]): ReviewCompareCliOptions 
     throw new UsageError('error: --exec is required')
   }
 
+  const resolvedGraphPath = resolveWorkspaceGraphPath(graphPath)
+  const graphArtifactDir = dirname(resolve(resolvedGraphPath))
+  const resolvedOutputDir = outputDir === 'out/review-compare'
+    ? validateGraphOutputPath(resolve(graphArtifactDir, 'review-compare'), graphArtifactDir)
+    : validateReviewCompareOutputDir(outputDir)
+
   return {
-    graphPath,
+    graphPath: resolvedGraphPath,
     execTemplate,
-    outputDir: validateReviewCompareOutputDir(outputDir),
+    outputDir: resolvedOutputDir,
     baseBranch,
     budget,
     yes,
@@ -1692,8 +1738,10 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
   let update = false
   let clusterOnly = false
   let watch = false
-  let directed = false
+  let directed = true
+  let directionOption: 'directed' | 'undirected' | null = null
   let followSymlinks = false
+  let respectGitignore = false
   let debounceSeconds = 3
   let noHtml = false
   let wiki = false
@@ -1708,7 +1756,10 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
   let neo4jDatabase: string | null = null
   let includeDocs = false
   let docs = false
-  let useSpi = false
+  let extractionMode: ExtractionMode = 'auto'
+  let strictIndexing = false
+  let maxIndexingFailed = 0
+  let maxIndexingUnsupported = 0
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index]
@@ -1717,14 +1768,58 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
     }
 
     if (argument === '--spi') {
-      useSpi = true
+      if (extractionMode === 'legacy') {
+        throw new UsageError('error: --legacy and --spi cannot be used together')
+      }
+      extractionMode = 'spi'
+      continue
+    }
+
+    if (argument === '--legacy') {
+      if (extractionMode === 'spi') {
+        throw new UsageError('error: --legacy and --spi cannot be used together')
+      }
+      extractionMode = 'legacy'
+      continue
+    }
+
+    if (argument === '--strict-indexing') {
+      strictIndexing = true
+      continue
+    }
+
+    if (argument === '--max-indexing-failed') {
+      maxIndexingFailed = parseNonNegativeInteger('--max-indexing-failed', requireNonEmptyValue('--max-indexing-failed', args[index + 1]))
+      strictIndexing = true
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--max-indexing-failed=')) {
+      const [, value] = argument.split('=', 2)
+      maxIndexingFailed = parseNonNegativeInteger('--max-indexing-failed', requireNonEmptyValue('--max-indexing-failed', value))
+      strictIndexing = true
+      continue
+    }
+
+    if (argument === '--max-indexing-unsupported') {
+      maxIndexingUnsupported = parseNonNegativeInteger('--max-indexing-unsupported', requireNonEmptyValue('--max-indexing-unsupported', args[index + 1]))
+      strictIndexing = true
+      index += 1
+      continue
+    }
+
+    if (argument.startsWith('--max-indexing-unsupported=')) {
+      const [, value] = argument.split('=', 2)
+      maxIndexingUnsupported = parseNonNegativeInteger('--max-indexing-unsupported', requireNonEmptyValue('--max-indexing-unsupported', value))
+      strictIndexing = true
       continue
     }
 
     if (!argument.startsWith('--')) {
       if (path !== '.') {
         throw new UsageError(
-          'Usage: madar generate [path] [--update] [--cluster-only] [--watch] [--directed] [--follow-symlinks] [--debounce S] [--no-html] [--wiki] [--obsidian] [--obsidian-dir DIR] [--svg] [--graphml] [--neo4j] [--neo4j-push URI] [--neo4j-user USER] [--neo4j-password PW] [--neo4j-database DB] [--spi]',
+          'Usage: madar generate [path] [--update] [--cluster-only] [--watch] [--legacy|--spi] [--directed|--undirected] [--follow-symlinks] [--respect-gitignore] [--debounce S] [--no-html] [--wiki] [--obsidian] [--obsidian-dir DIR] [--svg] [--graphml] [--neo4j] [--neo4j-push URI] [--neo4j-user USER] [--neo4j-password PW] [--neo4j-database DB] [--strict-indexing] [--max-indexing-failed N] [--max-indexing-unsupported N]',
         )
       }
       path = argument
@@ -1747,12 +1842,30 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
     }
 
     if (argument === '--directed') {
+      if (directionOption === 'undirected') {
+        throw new UsageError('error: --directed and --undirected cannot be used together')
+      }
+      directionOption = 'directed'
       directed = true
+      continue
+    }
+
+    if (argument === '--undirected') {
+      if (directionOption === 'directed') {
+        throw new UsageError('error: --directed and --undirected cannot be used together')
+      }
+      directionOption = 'undirected'
+      directed = false
       continue
     }
 
     if (argument === '--follow-symlinks') {
       followSymlinks = true
+      continue
+    }
+
+    if (argument === '--respect-gitignore') {
+      respectGitignore = true
       continue
     }
 
@@ -1876,6 +1989,9 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
   if (update && clusterOnly) {
     throw new UsageError('error: --update and --cluster-only cannot be used together')
   }
+  if (clusterOnly && extractionMode !== 'auto') {
+    throw new UsageError('error: --cluster-only cannot be combined with --legacy or --spi; it reuses the existing graph without extraction')
+  }
 
   return {
     path,
@@ -1884,6 +2000,7 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
     watch,
     directed,
     followSymlinks,
+    respectGitignore,
     debounceSeconds,
     noHtml,
     wiki,
@@ -1898,13 +2015,17 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
     neo4jDatabase,
     includeDocs,
     docs,
-    useSpi,
+    extractionMode,
+    strictIndexing,
+    maxIndexingFailed,
+    maxIndexingUnsupported,
   }
 }
 
 export function parseWatchArgs(args: string[]): WatchCliOptions {
   let path = '.'
   let followSymlinks = false
+  let respectGitignore = false
   let debounceSeconds = 3
   let noHtml = false
 
@@ -1916,7 +2037,7 @@ export function parseWatchArgs(args: string[]): WatchCliOptions {
 
     if (!argument.startsWith('--')) {
       if (path !== '.') {
-        throw new UsageError('Usage: madar watch [path] [--follow-symlinks] [--debounce S] [--no-html]')
+        throw new UsageError('Usage: madar watch [path] [--follow-symlinks] [--respect-gitignore] [--debounce S] [--no-html]')
       }
       path = argument
       continue
@@ -1924,6 +2045,11 @@ export function parseWatchArgs(args: string[]): WatchCliOptions {
 
     if (argument === '--follow-symlinks') {
       followSymlinks = true
+      continue
+    }
+
+    if (argument === '--respect-gitignore') {
+      respectGitignore = true
       continue
     }
 
@@ -1947,7 +2073,7 @@ export function parseWatchArgs(args: string[]): WatchCliOptions {
     throw new UsageError(`error: unknown option for watch: ${argument}`)
   }
 
-  return { path, followSymlinks, debounceSeconds, noHtml }
+  return { path, followSymlinks, respectGitignore, debounceSeconds, noHtml }
 }
 
 export function parseServeArgs(args: string[]): ServeCliOptions {
@@ -1955,6 +2081,7 @@ export function parseServeArgs(args: string[]): ServeCliOptions {
   let host = '127.0.0.1'
   let port = 4173
   let transport: 'http' | 'stdio' = 'http'
+  let autoRefresh = false
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index]
@@ -1964,7 +2091,7 @@ export function parseServeArgs(args: string[]): ServeCliOptions {
 
     if (!argument.startsWith('--')) {
       if (graphPath !== 'out/graph.json') {
-        throw new UsageError('Usage: madar serve [graph.json] [--host H] [--port N] [--transport http|stdio] [--http|--stdio|--mcp]')
+        throw new UsageError('Usage: madar serve [graph.json] [--host H] [--port N] [--transport http|stdio] [--http|--stdio|--mcp] [--auto-refresh]')
       }
       graphPath = argument
       continue
@@ -1977,6 +2104,11 @@ export function parseServeArgs(args: string[]): ServeCliOptions {
 
     if (argument === '--stdio' || argument === '--mcp') {
       transport = 'stdio'
+      continue
+    }
+
+    if (argument === '--auto-refresh') {
+      autoRefresh = true
       continue
     }
 
@@ -2019,7 +2151,7 @@ export function parseServeArgs(args: string[]): ServeCliOptions {
     throw new UsageError(`error: unknown option for serve: ${argument}`)
   }
 
-  return { graphPath, host, port, transport }
+  return { graphPath, host, port, transport, autoRefresh }
 }
 
 export function parseDoctorArgs(args: string[], commandName: 'doctor' | 'status' = 'doctor'): DoctorCliOptions {
@@ -2154,11 +2286,12 @@ export function parseProofReportArgs(args: string[]): ProofReportCliOptions {
     graphPath = argument
   }
 
-  const graphBase = dirname(resolve(graphPath))
+  const resolvedGraphPath = resolveWorkspaceGraphPath(graphPath)
+  const graphBase = dirname(resolve(resolvedGraphPath))
   return {
-    graphPath,
-    outputDir: outputDir ?? resolve(graphBase, 'proof-report'),
-    compareDir: compareDir ?? resolve(graphBase, 'compare'),
+    graphPath: resolvedGraphPath,
+    outputDir: outputDir ?? validateGraphOutputPath(resolve(graphBase, 'proof-report'), graphBase),
+    compareDir: compareDir ?? validateGraphOutputPath(resolve(graphBase, 'compare'), graphBase),
     packPath,
   }
 }

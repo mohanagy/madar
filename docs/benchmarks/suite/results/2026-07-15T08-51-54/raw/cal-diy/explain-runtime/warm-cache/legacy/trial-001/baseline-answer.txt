@@ -1,0 +1,46 @@
+I now have a complete picture of the flow. Here's the answer.
+
+## How Cal.diy turns a booking request into availability validation, persistence, and notification
+
+The whole flow is one orchestrated pipeline. A public booking request enters a thin HTTP route, which delegates to a booking **service** that runs a single large `handler` function covering validation → availability → persistence → calendar sync → notifications/webhooks.
+
+### 1. Request entry (thin transport layer)
+- `apps/web/pages/api/book/event.ts` — the public `POST /api/book/event` endpoint. Before any booking logic it runs Turnstile/bot checks (`BotDetectionService`), rate limiting (`checkRateLimitAndThrowError`), resolves the session, tags `creationSource: WEBAPP`, then calls `getRegularBookingService().createBooking({ bookingData: req.body, bookingMeta })`.
+- `packages/features/bookings/di/RegularBookingService.container.ts` wires the service via DI. The same service is reached from the API v2 controllers (`apps/api/v2/.../bookings.controller.ts`) — so web and API share one code path.
+- `RegularBookingService.createBooking` (`packages/features/bookings/lib/service/RegularBookingService.ts:2653`) just does `handler.bind(this)(...)` — the ~2000-line `handler` (starts line 486) is the real orchestrator.
+
+### 2. Input parsing & pre-availability validation
+Inside `handler`:
+- `getBookingData` (`handleNewBooking/getBookingData.ts`) — parses/validates the request body against the event-type's zod schema (`getBookingDataSchema`), producing typed `reqBody` (start/end times, attendee responses, location, etc.).
+- `getEventType` / `getEventTypesFromDB` — loads the event type being booked.
+- `getRequiresConfirmationFlags` (line 668) — computes `isConfirmedByDefault` (whether the booking auto-confirms or needs organizer approval), which steers persistence status and notifications later.
+- `validateBookingTimeIsNotOutOfBounds` (line 764) and `validateEventLength` (line 772) — reject slots outside the event's booking window or of the wrong duration.
+- `checkBookingAndDurationLimitsService.checkBookingAndDurationLimits` (line 817) — enforces per-event/global frequency and duration caps.
+
+### 3. Availability validation & host selection
+- `loadAndValidateUsers` / `loadUsers` load the candidate hosts.
+- `ensureAvailableUsers` (`handleNewBooking/ensureAvailableUsers.ts`, called at lines 902/917/936/962/1066) is the core availability gate. It calls `getUserAvailabilityService().getUsersAvailability(...)`, builds each host's `dateRanges` (schedule minus busy/OOO times), checks `hasDateRangeForBooking` that the requested slot fits a free range, and runs `checkForConflicts` against buffered busy times. It also enforces restriction schedules. If nobody is free it throws `ErrorCode.NoAvailableUsersFound`.
+- For round-robin events, the handler then picks "lucky users" from the available pool (lines ~1000–1130), guaranteeing a fixed host becomes the organizer.
+
+### 4. Scheduled-event persistence (DB)
+- The service assembles the `CalendarEvent` (`evt`) plus webhook `subscriberOptions` (line 1461, `BOOKING_CREATED` / `BOOKING_RESCHEDULED` / `MEETING_STARTED` / `MEETING_ENDED`).
+- `createBooking` (`handleNewBooking/createBooking.ts`, called at line 1707) writes the row via `tx.booking.create`. Status is set from confirmation flags: `BookingStatus.ACCEPTED` when `isConfirmedByDefault`, else `BookingStatus.PENDING` (`createBooking.ts:192`). Seated events instead append the attendee to the existing booking (`getSeatedBooking` / `bookingSeat.create`).
+
+### 5. Calendar/video sync (external "scheduled event")
+- `EventManager` (`packages/features/bookings/lib/EventManager.ts`, instantiated at line 1833 with the organizer's credentials).
+  - New confirmed booking → `eventManager.create(evt, ...)` (line 2052) creates the real Google/Office calendar event and video meeting (Zoom/Meet/etc.).
+  - Reschedule → `eventManager.reschedule(...)` (line 1909), deleting the old host's event when the organizer changes.
+- `handleAppsStatus` (lines 2012/2028/2133) records per-app success/failure; the returned references (calendar IDs, `iCalUID`, meeting URL) are written back onto the booking.
+
+### 6. Notification delivery
+- **Emails/SMS** go through `BookingEmailSmsHandler.send(...)` (`packages/features/bookings/lib/BookingEmailSmsHandler.ts`), branched on the confirmation flag:
+  - `isConfirmedByDefault` → `BookingActionMap.confirmed` (line 2153) → `sendScheduledEmailsAndSMS` (attendee + organizer confirmations); reschedules send `sendRescheduledEmailsAndSMS` (line 2031).
+  - Needs approval (`!isConfirmedByDefault`) → `BookingActionMap.requested` (line 2197) → `sendOrganizerRequestEmail` + `sendAttendeeRequestEmailAndSMS` (BookingEmailSmsHandler.ts:309).
+- **Webhooks**: `handleWebhookTrigger` (line 2433) fires `BOOKING_CREATED`/`BOOKING_RESCHEDULED` to subscribers; `scheduleTrigger` (lines 2394/2406) schedules future `MEETING_STARTED`/`MEETING_ENDED` deliveries; `BOOKING_REQUESTED` is queued after the booking update (line 2465); payment bookings fire `BOOKING_PAYMENT_INITIATED` (line 2319).
+- **No-show & analytics**: `scheduleNoShowTriggers` (line 2496) schedules no-show tasks for confirmed bookings; `handleAnalyticsEvents` (line 2516) fires analytics.
+- **Internal event bus**: `this.fireBookingEvents(...)` (line 2217 → method at 2588) emits `bookingEventHandler.onBookingCreated` / `onBookingRescheduled`, the internal fan-out that downstream consumers (workflow reminders, etc.) subscribe to.
+
+### Summary of the spine
+`api/book/event.ts` → `RegularBookingService.createBooking` → `handler` → **validate** (`getBookingData`, `validateBookingTimeIsNotOutOfBounds`, `validateEventLength`, `checkBookingAndDurationLimits`) → **availability** (`ensureAvailableUsers` + host selection) → **persist** (`createBooking`, status by `isConfirmedByDefault`) → **calendar/video** (`EventManager.create`/`reschedule`) → **notify** (`BookingEmailSmsHandler`, `handleWebhookTrigger`/`scheduleTrigger`, `scheduleNoShowTriggers`, `fireBookingEvents`).
+
+Note that pending (requires-confirmation) bookings only complete steps 5–6's confirmed path later, when the organizer approves them via `packages/features/bookings/lib/handleConfirmation.ts`.

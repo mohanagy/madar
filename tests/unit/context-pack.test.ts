@@ -306,6 +306,198 @@ describe('context-pack', () => {
       ])
     })
 
+    it('places router-output input provenance before generic evidence claims', () => {
+      const pack = compileContextPack({
+        task_contract: classifyTaskContract('explain', {
+          budget: 80,
+          prompt: 'Explain how the public status JSON gets its page status.',
+        }),
+        nodes: [
+          nodeCandidate({
+            node_id: 'unresolved_incidents',
+            label: 'unresolvedIncidents()',
+            source_file: 'apps/status-page/src/content/status-json.ts',
+            line_number: 50,
+            file_type: 'code',
+            snippet: [
+              'type Page = NonNullable<RouterOutputs["statusPage"]["get"]>;',
+              'function unresolvedIncidents(page: Page) {',
+              '  return page.statusReports.filter((report) => !report.resolvedAt)',
+              '}',
+            ].join('\n'),
+            match_score: 9,
+            relevance_band: 'direct',
+            community: 0,
+            community_label: 'Public status JSON',
+          }, 'primary', 20),
+        ],
+      })
+
+      expect(pack.claims).toEqual([
+        {
+          evidence_class: 'primary',
+          text: 'input provenance: unresolvedIncidents() consumes data typed as the RouterOutputs["statusPage"]["get"] router output',
+          node_labels: ['unresolvedIncidents()'],
+        },
+        expect.objectContaining({
+          evidence_class: 'primary',
+          text: 'primary evidence: unresolvedIncidents()',
+        }),
+      ])
+    })
+
+    it('makes a split public-status projection explicit and deduplicates file-level provenance', () => {
+      const pack = compileContextPack({
+        task_contract: classifyTaskContract('explain', {
+          budget: 160,
+          prompt: 'Compare public status computation paths.',
+        }),
+        nodes: [
+          nodeCandidate({
+            node_id: 'unresolved_incidents',
+            label: 'unresolvedIncidents()',
+            source_file: 'apps/status-page/src/content/status-json.ts',
+            line_number: 50,
+            file_type: 'code',
+            snippet: [
+              'type Page = NonNullable<RouterOutputs["statusPage"]["get"]>;',
+              'status: pageIndicator(page.status),',
+              'return page.statusReports.filter((report) => report.status !== "resolved")',
+            ].join('\n'),
+            match_score: 9,
+            relevance_band: 'direct',
+            community: 0,
+          }, 'primary', 20),
+          nodeCandidate({
+            node_id: 'status_json',
+            label: 'status-json.ts',
+            source_file: 'apps/status-page/src/content/status-json.ts',
+            line_number: 1,
+            file_type: 'code',
+            snippet: 'type Page = NonNullable<RouterOutputs["statusPage"]["get"]>;',
+            match_score: 8,
+            relevance_band: 'direct',
+            community: 0,
+          }, 'primary', 10),
+          nodeCandidate({
+            node_id: 'status_page_router',
+            label: 'statusPage.ts',
+            source_file: 'packages/api/src/router/statusPage.ts',
+            line_number: 226,
+            file_type: 'code',
+            snippet: 'events.some((e) => e.type === "incident" && !e.to) && barType !== "manual" ? "error" : activeReportStatus(events)',
+            match_score: 8,
+            relevance_band: 'direct',
+            community: 1,
+          }, 'primary', 20),
+        ],
+      })
+
+      expect(pack.claims.filter((claim) => claim.text.startsWith('input provenance:'))).toHaveLength(1)
+      expect(pack.claims[0]).toEqual({
+        evidence_class: 'primary',
+        text: 'public payload divergence: when barType is not manual, an open incident event can make page.status "error" in packages/api/src/router/statusPage.ts; apps/status-page/src/content/status-json.ts builds unresolved incident entries only from page.statusReports, so an auto-created incident without a status report can yield an error indicator with an empty incidents list',
+        node_labels: ['unresolvedIncidents()', 'statusPage.ts'],
+      })
+      expect(pack.claims[1]?.text).toBe(
+        'input provenance: unresolvedIncidents() consumes data typed as the RouterOutputs["statusPage"]["get"] router output',
+      )
+    })
+
+    it('states the public runtime router provenance separately from an alternate computation', () => {
+      const pack = compileContextPack({
+        task_contract: classifyTaskContract('explain', {
+          budget: 180,
+          prompt: 'Identify inconsistent public status computation paths.',
+        }),
+        nodes: [
+          nodeCandidate({
+            node_id: 'public_status_route',
+            label: 'GET()',
+            source_file: 'apps/status-page/src/app/api/status/[[...path]]/route.ts',
+            line_number: 34,
+            file_type: 'code',
+            snippet: 'const data = await queryClient.fetchQuery(trpc.statusPage.get.queryOptions({ slug })); const payload = toStatus(data, baseUrl)',
+            match_score: 10,
+            relevance_band: 'direct',
+            community: 0,
+          }, 'primary', 20),
+          nodeCandidate({
+            node_id: 'status_page_router',
+            label: 'statusPage.ts',
+            source_file: 'packages/api/src/router/statusPage.ts',
+            line_number: 226,
+            file_type: 'code',
+            snippet: 'events.some((e) => e.type === "incident" && !e.to) && barType !== "manual"',
+            match_score: 9,
+            relevance_band: 'direct',
+            community: 1,
+          }, 'primary', 20),
+          nodeCandidate({
+            node_id: 'alternate_status',
+            label: 'computeOverallStatus()',
+            source_file: 'apps/server/src/routes/rpc/handlers/status-page/index.ts',
+            line_number: 360,
+            file_type: 'code',
+            snippet: 'const overallStatus = hasActiveStatusReport ? DEGRADED : hasActiveMaintenance ? MAINTENANCE : OPERATIONAL',
+            match_score: 8,
+            relevance_band: 'direct',
+            community: 2,
+          }, 'primary', 20),
+        ],
+      })
+
+      expect(pack.claims[0]).toEqual({
+        evidence_class: 'primary',
+        text: 'public runtime provenance: apps/status-page/src/app/api/status/[[...path]]/route.ts GET() fetches trpc.statusPage.get and passes that data to the public status-json serializers backed by packages/api/src/router/statusPage.ts; packages/api/src/router/statusPage.ts treats an open incident event as "error" outside manual mode, while apps/server/src/routes/rpc/handlers/status-page/index.ts computeOverallStatus() derives overall status from active status reports and maintenance',
+        node_labels: ['GET()', 'statusPage.ts', 'computeOverallStatus()'],
+      })
+    })
+
+    it('states the failed-check transport handoff across Go owners', () => {
+      const pack = compileContextPack({
+        task_contract: classifyTaskContract('explain', {
+          budget: 120,
+          prompt: 'Trace a failed monitor check into the workflow.',
+        }),
+        nodes: [
+          nodeCandidate({
+            node_id: 'http_checker_handler',
+            label: '.HTTPCheckerHandler()',
+            source_file: 'apps/checker/handlers/checker.go',
+            line_number: 47,
+            file_type: 'code',
+            snippet: 'checker.UpdateStatus(ctx, checker.UpdateData{ Status: "error", MonitorId: req.MonitorID })',
+            match_score: 10,
+            relevance_band: 'direct',
+            community: 0,
+          }, 'primary', 20),
+          nodeCandidate({
+            node_id: 'update_status',
+            label: 'UpdateStatus()',
+            source_file: 'apps/checker/checker/update.go',
+            line_number: 29,
+            file_type: 'code',
+            snippet: 'client, err := cloudtasks.NewClient(ctx); _, err = client.CreateTask(ctx, req)',
+            match_score: 9,
+            relevance_band: 'direct',
+            community: 0,
+          }, 'primary', 20),
+        ],
+      })
+
+      expect(pack.claims[0]).toEqual({
+        evidence_class: 'primary',
+        text: 'failure detection: apps/checker/handlers/checker.go .HTTPCheckerHandler() sends Status "error" to UpdateStatus',
+        node_labels: ['.HTTPCheckerHandler()'],
+      })
+      expect(pack.claims[1]).toEqual({
+        evidence_class: 'primary',
+        text: 'cross-runtime handoff: apps/checker/checker/update.go UpdateStatus() enqueues the checker status update with Cloud Tasks',
+        node_labels: ['UpdateStatus()'],
+      })
+    })
+
     it('keeps the same selected labels while task-aware rendering changes representation cost after selection', () => {
       const nodes = [
         nodeCandidate({

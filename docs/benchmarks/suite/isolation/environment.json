@@ -6,7 +6,7 @@
   "skills_loaded": [],
   "plugins_active": [],
   "user_claude_md_hash": "sha256:0cf98a0a8f9c27017a0bebc7b017fc17518d9103c62ca384da20b2776b0aade7",
-  "project_claude_md_hash": "sha256:f756cedc14b026ff7879bccec92865638324e29e05860c83d7858375465d0940",
+  "project_claude_md_hash": "sha256:4f80545c205b6fbd91ffaae058c5f95f47566acbd8446c3a8ef7c2a29aac0b98",
   "parent_claude_md_hashes": [],
   "hooks_active": {
     "user_prompt_submit": [
