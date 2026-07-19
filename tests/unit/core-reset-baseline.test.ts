@@ -340,6 +340,7 @@ describe('Core Reset baseline contract', () => {
   const contractPath = 'tools/eval/core-reset/contracts/evaluation-contract.json'
   const contractSchemaPath = 'tools/eval/core-reset/schemas/evaluation-contract.schema.json'
   const receiptSchemaPath = 'tools/eval/core-reset/schemas/baseline-receipt.schema.json'
+  const acceptedReceiptPath = 'docs/core-reset/evidence/baseline-v0.32.0.json'
 
   it('schema-validates the frozen contract and its semantic invariants', () => {
     const contract = readJson(contractPath)
@@ -358,6 +359,26 @@ describe('Core Reset baseline contract', () => {
     expect(contract.questions.flatMap((question: JsonObject) => question.source_issues)).toEqual(
       expect.arrayContaining([565, 574]),
     )
+  })
+
+  it('keeps the committed baseline receipt schema-valid and bound to the frozen contract', () => {
+    const contract = readJson(contractPath)
+    const receipt = readJson(acceptedReceiptPath)
+    const validate = validator(readJson(receiptSchemaPath))
+
+    expect(validate(receipt), JSON.stringify(validate.errors)).toBe(true)
+    expect(validateReceiptSemantics(receipt, contract)).toBe(true)
+    expect(receipt.baseline_target).toMatchObject({
+      commit: contract.baseline.madar.commit,
+      source_tree_matches_baseline: true,
+      worktree_dirty: false,
+    })
+    expect(receipt.production_source.production_loc_delta).toEqual({
+      added: 0,
+      removed: 0,
+      net: 0,
+    })
+    expect(receipt.one_call_retrieval.status).toBe('measured')
   })
 
   it('rejects duplicate ids, dangling repositories, unverified paths, and comparator drift', () => {

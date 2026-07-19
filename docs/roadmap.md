@@ -11,30 +11,29 @@ Madar is executing an accepted Core Reset. The roadmap is outcome-driven: work a
 - [Removal manifest](core-reset/removal-manifest.yml) — keep, rebuild, move, delete, and defer decisions
 - [Scorecard](core-reset/scorecard.md) — technical and business evidence gates
 
-The RFC is **accepted**. Scope and baseline is the only authorized phase; every replacement phase remains blocked until its predecessor's evidence gate passes.
+The RFC is **accepted**. Scope and baseline has passed with a [committed evidence receipt](core-reset/evidence/baseline-v0.32.0.json). Directed multigraph is **Ready**, but implementation does not start until its own accepted work item is moved to `In progress`; every later replacement phase remains blocked by its predecessor.
 
-## Now — scope and baseline
+## Ready — directed multigraph
 
-The current work is limited to:
+The next authorized work item must be limited to the `directed-multigraph` removal-manifest entry:
 
-1. Treat the accepted product contract, non-goals, architecture, deletion policy, and release gates in #577 as fixed unless an explicit amendment is approved.
-2. Record reproducible baselines for graph correctness, indexing, retrieval, CLI/MCP startup, package contents, and production source size.
-3. Freeze held-out repositories, questions, expected evidence paths, and human review rules.
-4. Complete the removal manifest so every production subsystem has one disposition.
+1. Preserve multiple typed edges between the same ordered node pair.
+2. Give nodes and edges deterministic IDs and preserve direction and provenance through serialization.
+3. Replace the owned graph path under the accepted destination rather than creating a permanent V1/V2 split.
+4. Delete the predecessor graph path when the phase gate passes, with net-negative production LOC.
 
-No replacement implementation starts before this gate closes.
+The observed failures and exact comparison contract are frozen in the [Scope/Baseline scorecard](core-reset/scorecard.md). No canonical-index, retrieval, delivery, or other later-phase work may enter this phase.
 
 ## Next — dependency-ordered replacement
 
-After RFC acceptance, only one technical phase may be active at a time:
+Only one technical phase may be active at a time. After Directed multigraph passes, the remaining order is:
 
-1. Directed multigraph schema.
-2. Canonical TypeScript/JavaScript indexer and deletion of legacy extraction.
-3. Full-rebuild-equivalent incremental refresh.
-4. Generic evidence-path retrieval and deletion of the context/governance stack.
-5. Thin MCP, CLI, Claude Code, and Codex delivery.
-6. Move evaluation tooling outside runtime and reduce the npm package.
-7. Publish a beta under npm tag `next` for external validation.
+1. Canonical TypeScript/JavaScript indexer and deletion of legacy extraction.
+2. Full-rebuild-equivalent incremental refresh.
+3. Generic evidence-path retrieval and deletion of the context/governance stack.
+4. Thin MCP, CLI, Claude Code, and Codex delivery.
+5. Move evaluation tooling outside runtime and reduce the npm package.
+6. Publish a beta under npm tag `next` for external validation.
 
 Every replacement issue has an exact deletion contract. New and old implementations may coexist only temporarily on the reset integration branch; the old path cannot survive the phase.
 

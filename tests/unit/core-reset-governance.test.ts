@@ -30,7 +30,7 @@ describe('core reset governance', () => {
     expect(roadmap).toContain('projects/8')
     expect(roadmap).toContain('removal-manifest.yml')
     expect(roadmap).toContain('scorecard.md')
-    expect(roadmap).toContain('## Now')
+    expect(roadmap).toContain('## Ready')
     expect(roadmap).toContain('## Next')
     expect(roadmap).toContain('## Later')
     expect(roadmap).toContain('accepted Core Reset')
