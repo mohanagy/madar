@@ -1,80 +1,97 @@
 # Public roadmap
 
-This page is the contributor-facing roadmap for `madar`. It is the current source of truth for post-rename roadmap work, and it intentionally separates **recently shipped** work from the **future roadmap** so contributors do not have to know the rename history to understand what is current.
+Madar is in a proposed Core Reset. The roadmap is outcome-driven: work advances only when its predecessor is complete and its technical or business exit gate has evidence.
 
-## How to read the roadmap
+## Sources of truth
 
-- Version headings are planning buckets, not hard release promises.
-- `priority:*` tells you how urgent the work is.
-- `area:*` points at the subsystem, such as `area:retrieval`, `area:context-pack`, or `area:docs`.
-- `type:*` explains the work shape, such as `type:feature`, `type:benchmark`, or `type:docs`.
-- `help wanted` means the issue is open for contributors.
-- `good first issue` marks smaller, lower-risk tasks that are better entry points for new contributors.
+- [Core Reset RFC #577](https://github.com/mohanagy/madar/issues/577) — discussion, acceptance, and weekly checkpoints
+- [`v0.40.0 — Core Reset` milestone](https://github.com/mohanagy/madar/milestone/7) — release-blocking work
+- [Madar Roadmap project](https://github.com/users/mohanagy/projects/8) — execution status and dependencies
+- [Versioned design](designs/2026-07-19-core-reset.md) — normative product and architecture contract after acceptance
+- [Removal manifest](core-reset/removal-manifest.yml) — keep, rebuild, move, delete, and defer decisions
+- [Scorecard](core-reset/scorecard.md) — technical and business evidence gates
 
-## Recently shipped
+The RFC is currently **proposed**. Reset implementation is blocked until its acceptance checklist and governing documentation are approved.
 
-These items already landed and are no longer part of the future roadmap:
+## Now — scope and baseline
 
-- [#257 — Improve runtime-generation quality by selecting the semantic generation core](https://github.com/mohanagy/madar/issues/257)
-- [#259 — Add runtime-generation false-positive routing regressions](https://github.com/mohanagy/madar/issues/259)
-- [#258 — Add v0.25.1 runtime-routing validation benchmark artifact](https://github.com/mohanagy/madar/issues/258)
-- [#245 — Plan and validate Madar rebrand migration](https://github.com/mohanagy/madar/issues/245)
-- [#236 — Add typestack/routing-controllers framework detector](https://github.com/mohanagy/madar/issues/236)
-- [#233 — Add answer-quality scoring to benchmark suite summaries](https://github.com/mohanagy/madar/issues/233)
-- [#425 — Run design-partner workflow loops and publish anonymized evidence](https://github.com/mohanagy/madar/issues/425) added **design-partner workflow loops** as **anonymized workflow notes** and synthetic reproductions under `docs/benchmarks/2026-06-01-design-partner-workflow-loops/`.
-- [#429 — Make federation a flagship multi-repo enterprise workflow](https://github.com/mohanagy/madar/issues/429) added a **synthetic federation receipt** for a **frontend/backend/shared** fixture so the flagship multi-repo enterprise workflow is reproducible without pretending it is already a broad benchmark.
+The committed work is limited to:
 
-## v0.26 — Runtime trust and routing precision
+1. Review and accept or amend the product contract, non-goals, architecture, deletion policy, and release gates in #577.
+2. Record reproducible baselines for graph correctness, indexing, retrieval, CLI/MCP startup, package contents, and production source size.
+3. Freeze held-out repositories, questions, expected evidence paths, and human review rules.
+4. Complete the removal manifest so every production subsystem has one disposition.
 
-Focus: make runtime-generation output easier to trust, audit, and debug before adding broader expansion work.
+No replacement implementation starts before this gate closes.
 
-- [#260 — Add execution_slice confidence scoring and confidence reasons](https://github.com/mohanagy/madar/issues/260)
-- [#261 — Expand runtime phase taxonomy beyond controller/service/queue/worker/persistence](https://github.com/mohanagy/madar/issues/261)
-- [#263 — Add explain-routing output for pack and compare](https://github.com/mohanagy/madar/issues/263)
+## Next — dependency-ordered replacement
 
-## v0.27 — Benchmark credibility, docs honesty, and answer quality
+After RFC acceptance, only one technical phase may be active at a time:
 
-Focus: make benchmark claims safer, keep public docs honest, and make runtime-generation answers easier to compare against an explicit contract.
+1. Directed multigraph schema.
+2. Canonical TypeScript/JavaScript indexer and deletion of legacy extraction.
+3. Full-rebuild-equivalent incremental refresh.
+4. Generic evidence-path retrieval and deletion of the context/governance stack.
+5. Thin MCP, CLI, Claude Code, and Codex delivery.
+6. Move evaluation tooling outside runtime and reduce the npm package.
+7. Publish a beta under npm tag `next` for external validation.
 
-- [#262 — Add context-pack answer contract for runtime-generation prompts](https://github.com/mohanagy/madar/issues/262)
-- [#331 — Align README, package metadata, CHANGELOG and docs with demonstrated behavior](https://github.com/mohanagy/madar/issues/331)
-- [#332 — Build the reproducible benchmark suite with per-repo spread](https://github.com/mohanagy/madar/issues/332)
-- Build on the shipped validation artifact from [#258](https://github.com/mohanagy/madar/issues/258) instead of treating benchmark credibility as a greenfield problem again.
-- Keep docs honesty ahead of benchmark ambition: no single-number cross-repo headline until the suite exists.
+Every replacement issue has an exact deletion contract. New and old implementations may coexist only temporarily on the reset integration branch; the old path cannot survive the phase.
 
-## v0.28 — TypeScript/Node framework depth
+## Validation — release decision
 
-Focus: deepen TypeScript and Node.js framework coverage now that the basic routing and runtime-generation path is in place.
+The stable release depends on two separate evidence tracks:
 
-- Use the shipped framework groundwork from [#236](https://github.com/mohanagy/madar/issues/236) as the baseline.
-- Favor real framework/runtime semantics over broad language expansion.
-- Cut new framework-depth issues after the v0.26-v0.27 trust and quality work lands.
+### Capability
 
-## v0.29 — MCP/session efficiency
+- Compare native Claude/Codex search, Graphify, and Madar on frozen held-out TypeScript repositories.
+- Require correctness no worse than the best comparator.
+- Require material provider-input and end-to-end latency improvement.
+- Count graph generation and refresh cost separately and report amortized break-even.
+- Reject repository-specific production tuning.
 
-Focus: reduce repeated work across packs, compares, and longer agent sessions once the runtime trust surface is stable.
+### Activation and retention
 
-- Build on the shipped MCP efficiency foundation from [#159](https://github.com/mohanagy/madar/issues/159), [#161](https://github.com/mohanagy/madar/issues/161), and [#162](https://github.com/mohanagy/madar/issues/162).
-- Scope new work around duplicate suppression, trace clarity, and session-aware retrieval once current routing/answer work settles.
+- Interview 15 qualified users and recruit five real design partners.
+- Observe natural installation and tool invocation rather than forcing Madar use.
+- Measure time to first useful result, broad-search restart, voluntary reuse, and paid intent.
+- Treat downloads, stars, registry listings, and graph generations as distribution signals, not retention evidence.
 
-## v0.30 — Adoption and contributor experience
+If the narrow reset cannot beat native search or produce voluntary repeat use, the decision is to pivot or stop—not add more surfaces.
 
-Focus: make Madar easier to adopt, evaluate, and contribute to after the runtime and benchmark surfaces stop moving quickly.
+## Later — only after validation
 
-- [#474 — Create a proof-first launch checklist for releases and benchmark milestones](https://github.com/mohanagy/madar/issues/474) so release/distribution work has a **launch checklist**, explicit channel tracking, and benchmark-backed launch drafts before broader promotion.
-- [#472 — Create a design-partner feedback loop with reproducible receipts](https://github.com/mohanagy/madar/issues/472) so **design-partner reports**, a public 10-slot tracker, and tagged follow-up issues live in one share-safe program.
-- Follow the first **design-partner workflow loops** bundle with stronger partner-approved receipts once the repo can replace some **anonymized workflow notes** with repeated public outcomes.
-- Refresh contributor-facing docs, examples, and onboarding after the v0.26-v0.29 work is stable.
-- Keep the near-term roadmap centered on runtime trust, answer quality, framework depth, and MCP/session efficiency before expanding into broader polish work.
+These are deliberately outside the reset:
 
-## Parked / not near-term
+- additional languages and non-code ingestion;
+- more agent-specific installers;
+- hosted dashboards or enterprise administration;
+- federation, Neo4j, time travel, and broader graph exports;
+- general implementation, PR-review, and security products;
+- a cloud control plane.
 
-- Python extraction now covers conservative FastAPI router composition/dependency semantics and first-pass Django URL-conf mapping, but broader language-parity work still stays outside the near-term roadmap.
-- Go first-pass support already shipped in [#234](https://github.com/mohanagy/madar/issues/234), so near-term work stays focused on TypeScript/Node depth instead of starting a new language track.
-- [#430 — Evaluate hosted dashboard for share-safe artifacts](https://github.com/mohanagy/madar/issues/430) stays parked until there is **explicit customer demand** beyond the current **local html report** path (`graph.html`, `GRAPH_REPORT.md`, `report.share-safe.json`). Any revisit must stay share-safe and keep the no-cloud-indexing assumption explicit.
-- [#432 — Explore plugin and distribution channels for agent ecosystems](https://github.com/mohanagy/madar/issues/432) stays parked until **proof/onboarding readiness** is stronger than the current shipped installer set. Near-term work should deepen current distribution channels first, keep the official MCP Registry publication flow bounded to the current local-first runtime, treat broader **MCP directories** and listing pages as later leverage, and avoid heavy marketplace work before adoption proof exists.
-- [#431 — Decide language expansion after TypeScript/Node proof strengthens](https://github.com/mohanagy/madar/issues/431) keeps broader **language expansion** behind explicit **evidence gates**: stronger **TypeScript/Node proof**, language-specific benchmark or fixture evidence, and **no broad parity claim** before those receipts exist.
+A deferred capability returns to the roadmap only after at least three independent target users request it and the change fits the accepted product job and architecture.
 
-## Where to start
+## Existing open issues
 
-Start with the open `priority:p0` and `priority:p1` issues first. Before starting work, check the issue for active discussion, confirm there is no open PR already covering it, and keep your branch scoped to a single issue.
+| Issue | Reset disposition before RFC acceptance |
+| --- | --- |
+| [#565](https://github.com/mohanagy/madar/issues/565) | Retain as a real acceptance failure and held-out retrieval input |
+| [#574](https://github.com/mohanagy/madar/issues/574) | Do not implement as another patch; absorb its outcome into generic retrieval replacement |
+| [#567](https://github.com/mohanagy/madar/issues/567) | Fold into thin Codex delivery and keep as a beta activation blocker |
+| [#571](https://github.com/mohanagy/madar/issues/571) | Supersede if the accepted reset removes extraction modes |
+
+Their final milestone, project, and closure state is changed only after #577 is accepted.
+
+## Contribution and drift rules
+
+- Start from an accepted RFC requirement and one ready issue.
+- Keep one technical phase in progress.
+- State the user outcome, removal-manifest IDs, dependency, exit gate, and non-goals.
+- Record production LOC added and removed.
+- Do not add a permanent fallback, parallel engine, repository-specific rule, or runtime dependency on evaluation tooling.
+- Do not close an issue merely because code merged; deletion and evidence gates must pass.
+- Resolve every required CI check and review thread before merge.
+- Amend #577 before implementing any scope expansion.
+
+The roadmap is a decision system, not a feature list or release-date promise.

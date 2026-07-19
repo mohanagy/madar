@@ -1,0 +1,105 @@
+name: Core Reset work item
+description: Propose dependency-ordered work governed by Core Reset RFC #577.
+title: "[Core Reset]: "
+labels:
+  - core-reset
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this only after RFC #577 is accepted and the preceding phase gate has passed. A replacement is incomplete until its predecessor is deleted.
+
+  - type: input
+    id: parent
+    attributes:
+      label: Parent RFC and phase
+      description: Link RFC #577 and name the current dependency-ordered phase.
+      placeholder: "#577 — Directed multigraph"
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and user outcome
+      description: State the current failure and the user-visible outcome this work must improve.
+    validations:
+      required: true
+
+  - type: input
+    id: manifest
+    attributes:
+      label: Removal-manifest IDs
+      description: List every docs/core-reset/removal-manifest.yml item changed by this work.
+    validations:
+      required: true
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Identify the phase/issue that must be complete first.
+    validations:
+      required: true
+
+  - type: textarea
+    id: implementation
+    attributes:
+      label: Proposed replacement
+      description: Describe the smallest implementation that satisfies the accepted architecture.
+    validations:
+      required: true
+
+  - type: textarea
+    id: deletion
+    attributes:
+      label: Exact deletion contract
+      description: List predecessor paths, imports, flags, tests, docs, and dependencies that must be removed before closure.
+    validations:
+      required: true
+
+  - type: textarea
+    id: budget
+    attributes:
+      label: Production LOC budget
+      description: Estimate production LOC added, removed, and the expected net delta.
+    validations:
+      required: true
+
+  - type: textarea
+    id: gates
+    attributes:
+      label: Acceptance and exit gates
+      description: Provide objective tests, measurements, and held-out evidence required for completion.
+    validations:
+      required: true
+
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification commands
+      description: Commands and receipts that will prove the gate.
+    validations:
+      required: true
+
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Non-goals
+      description: State adjacent changes that must remain outside this issue.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: reset_contract
+    attributes:
+      label: Reset contract
+      options:
+        - label: The preceding phase gate is passed and linked above.
+          required: true
+        - label: This work will not leave a permanent fallback or parallel implementation.
+          required: true
+        - label: This work adds no evaluation-repository-specific production logic.
+          required: true
+        - label: Completion includes updating the removal manifest and scorecard.
+          required: true

@@ -1,0 +1,232 @@
+schema_version: 1
+status: proposed
+tracking_issue: https://github.com/mohanagy/madar/issues/577
+milestone: https://github.com/mohanagy/madar/milestone/7
+project: https://github.com/users/mohanagy/projects/8
+
+baseline:
+  recorded_at: 2026-07-19
+  commit: 754a806ff4c51fd4bbfd839dafc9852a53ad9589
+  package_version: 0.32.0
+  production_typescript_files: 181
+  production_typescript_loc: 96766
+
+targets:
+  production_typescript_files_max: 80
+  production_typescript_loc_min: 25000
+  production_typescript_loc_max: 35000
+  npm_files_max: 150
+  npm_unpacked_bytes_max: 1500000
+  cli_commands_max: 6
+  mcp_tools_max: 5
+
+rules:
+  - A rebuild item is incomplete until its predecessor code, imports, flags, obsolete tests, docs, and dependencies are removed.
+  - Production code must not import moved evaluation tooling.
+  - No permanent V1/V2 implementation, extraction mode, or fallback engine may survive the reset.
+  - No repository-specific path, symbol, expected answer, or proof profile may exist in production retrieval.
+  - Every reset PR records its net production LOC delta.
+
+items:
+  - id: safe-workspace-primitives
+    disposition: keep
+    status: proposed
+    sources:
+      - src/shared/atomic-file.ts
+      - src/shared/discovery-safety.ts
+      - src/shared/security.ts
+      - src/shared/source-path.ts
+      - src/shared/source-location.ts
+      - src/shared/git.ts
+      - src/shared/graph-source-root.ts
+      - src/shared/workspace.ts
+      - src/shared/workspace-copy.ts
+    destination: adapters/filesystem and focused domain value objects
+    exit_gate: Preserved safety and linked-worktree tests pass through the new application boundary.
+
+  - id: provenance
+    disposition: keep
+    status: proposed
+    sources:
+      - src/core/provenance/**
+    destination: domain/graph provenance contract
+    exit_gate: One validated provenance vocabulary is used by index and query results.
+
+  - id: directed-multigraph
+    disposition: rebuild
+    status: proposed
+    sources:
+      - src/contracts/graph.ts
+      - src/pipeline/build.ts
+      - src/core/schema/normalize.ts
+    destination: src/domain/graph/**
+    remove_when: Schema-v2 invariant, serialization, migration-error, and deterministic-ID tests pass.
+    exit_gate: Parallel relationship kinds and direction survive build, store, and load.
+
+  - id: canonical-typescript-index
+    disposition: rebuild
+    status: proposed
+    sources:
+      - src/pipeline/spi/**
+      - src/contracts/extraction.ts
+      - src/contracts/types.ts
+    destination: src/domain/index/** and src/adapters/typescript/**
+    preserve:
+      - Generic TypeScript semantic-resolution algorithms
+      - Framework detectors that satisfy the canonical adapter contract
+    remove_when: Labelled language and framework fixtures pass without legacy augmentation.
+    exit_gate: One canonical index schema writes the graph directly.
+
+  - id: legacy-extraction
+    disposition: delete
+    status: proposed
+    sources:
+      - src/pipeline/extract.ts
+      - src/pipeline/extract/**
+      - src/pipeline/tree-sitter-wasm.ts
+    blocked_by: canonical-typescript-index
+    exit_gate: Canonical TypeScript fixtures pass and no production import references the legacy engine.
+
+  - id: non-code-and-other-language-ingest
+    disposition: delete
+    status: proposed
+    sources:
+      - src/pipeline/docs.ts
+      - src/pipeline/wiki.ts
+      - src/shared/binary-ingest-sidecar.ts
+      - Go, Python, PDF, document, image, audio, and video extraction paths
+    blocked_by: canonical-typescript-index
+    exit_gate: Package, docs, flags, dependencies, and tests no longer claim unsupported ingestion.
+
+  - id: generation-and-incremental
+    disposition: rebuild
+    status: proposed
+    sources:
+      - src/infrastructure/generate.ts
+      - src/infrastructure/generation-policy.ts
+      - src/infrastructure/indexing-manifest.ts
+      - src/pipeline/indexing-generation.ts
+      - src/pipeline/indexing-outcomes.ts
+      - src/infrastructure/watch.ts
+      - src/infrastructure/background-auto-refresh.ts
+      - src/runtime/freshness.ts
+    destination: src/application/generate-index.ts, src/application/update-index.ts, and focused adapters
+    remove_when: Add, change, delete, rename, worktree, and full-rebuild equivalence tests pass.
+    exit_gate: madar generate uses one engine and incremental output equals a clean rebuild.
+
+  - id: evidence-path-query
+    disposition: rebuild
+    status: proposed
+    sources:
+      - src/runtime/retrieve.ts
+      - src/runtime/retrieve/**
+      - src/runtime/context-pack.ts
+    destination: src/domain/query/** and src/application/retrieve-context.ts
+    remove_when: Held-out one-call correctness and efficiency gates pass.
+    exit_gate: Generic anchor, traversal, ranking, and evidence slicing need no repository-specific rules.
+
+  - id: context-governance-stack
+    disposition: delete
+    status: proposed
+    sources:
+      - src/contracts/context-*
+      - src/contracts/retrieval-*
+      - src/contracts/task-*
+      - src/contracts/handoff.ts
+      - src/contracts/runtime-proof.ts
+      - src/runtime/context-*
+      - src/runtime/task-*
+      - src/runtime/retrieval-gate.ts
+      - src/runtime/mcp-response-evidence.ts
+    blocked_by: evidence-path-query
+    exit_gate: Query results state exact evidence and missing targets without the superseded governance layers.
+
+  - id: derived-product-wrappers
+    disposition: delete
+    status: proposed
+    sources:
+      - src/runtime/feature-map.ts
+      - src/runtime/risk-map.ts
+      - src/runtime/implementation-checklist.ts
+      - src/runtime/implementation-pack.ts
+      - src/runtime/relevant-files.ts
+      - src/runtime/pr-impact.ts
+    blocked_by: evidence-path-query
+    exit_gate: Public MCP and CLI no longer expose or document these wrappers.
+
+  - id: thin-delivery
+    disposition: rebuild
+    status: proposed
+    sources:
+      - src/cli/**
+      - src/runtime/serve.ts
+      - src/runtime/stdio-server.ts
+      - src/runtime/stdio/**
+      - src/infrastructure/install.ts
+    destination: src/adapters/cli/** and src/adapters/mcp/**
+    remove_when: Startup, MCP contract, Claude, Codex, uninstall, and worktree activation tests pass.
+    exit_gate: No more than five MCP tools and the accepted narrow CLI ship with lazy loading.
+
+  - id: evaluation-tooling
+    disposition: move
+    status: proposed
+    sources:
+      - src/infrastructure/benchmark.ts
+      - src/infrastructure/benchmark/**
+      - src/infrastructure/compare.ts
+      - src/infrastructure/review-compare.ts
+      - src/infrastructure/proof-report.ts
+      - src/infrastructure/prompt-runner.ts
+      - src/infrastructure/save-query-result.ts
+      - src/infrastructure/try-command.ts
+      - src/runtime/benchmark/**
+      - src/shared/share-safe-artifacts.ts
+    destination: tools/eval/** with a dev-only build boundary
+    exit_gate: Evaluation remains runnable but is excluded from dist, npm, and production imports.
+
+  - id: non-core-graph-products
+    disposition: delete
+    status: proposed
+    sources:
+      - src/pipeline/cluster.ts
+      - src/pipeline/community-details.ts
+      - src/pipeline/community-naming.ts
+      - src/pipeline/analyze.ts
+      - src/pipeline/export/**
+      - src/pipeline/federate.ts
+      - src/infrastructure/neo4j.ts
+      - src/infrastructure/time-travel.ts
+      - src/runtime/time-travel.ts
+      - src/runtime/diff.ts
+      - src/runtime/graph-summary.ts
+      - src/runtime/http-server.ts
+      - src/runtime/semantic.ts
+    exit_gate: Removed from code, package, dependencies, CLI/MCP, docs, and tests.
+
+  - id: activation-and-extra-integrations
+    disposition: delete
+    status: proposed
+    sources:
+      - src/infrastructure/hooks.ts
+      - src/infrastructure/install-routing-guidance.ts
+      - src/infrastructure/install-skill-templates.ts
+      - src/infrastructure/context-prompt-command.ts
+      - src/infrastructure/context-prompt.ts
+      - src/infrastructure/handoff-command.ts
+      - src/shared/telemetry.ts
+      - src/shared/update-notifier.ts
+      - Cursor, Gemini, and Copilot-specific installer paths
+    blocked_by: thin-delivery
+    exit_gate: Claude and Codex natural activation passes without hidden routing profiles or prompt hooks.
+
+  - id: post-validation-products
+    disposition: defer
+    status: proposed
+    capabilities:
+      - General implementation planning
+      - PR review and security analysis
+      - Hosted dashboard or control plane
+      - Enterprise administration
+      - Multi-repository federation
+      - Additional languages and agent-specific installers
+    exit_gate: Reconsider only after core technical gates, repeat external use, and independent customer demand.
