@@ -65,6 +65,10 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Validate Core Reset evidence contract
+        if: matrix.os == 'ubuntu-latest' && matrix.node-version == '22'
+        run: npx vitest run tests/unit/core-reset-baseline.test.ts
+
       - name: Verify checkout and packed retrieval parity
         if: matrix.os == 'ubuntu-latest' && matrix.node-version == '22'
         run: npm run verify:pack-parity
@@ -101,4 +105,4 @@ jobs:
 
       - name: Validate npm package contents
         if: matrix.os == 'ubuntu-latest' && matrix.node-version == '20'
-        run: npm pack --dry-run
+        run: node tools/eval/core-reset/verify-isolation.mjs
