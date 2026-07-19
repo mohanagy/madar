@@ -7,5 +7,5 @@ contact_links:
     url: https://github.com/mohanagy/madar/blob/main/CONTRIBUTING.md
     about: Read local setup, testing, and pull request expectations before contributing.
   - name: Public roadmap
-    url: https://github.com/mohanagy/madar/issues/155
+    url: https://github.com/mohanagy/madar/blob/main/docs/roadmap.md
     about: See planned work and roadmap-linked issues before proposing larger changes.

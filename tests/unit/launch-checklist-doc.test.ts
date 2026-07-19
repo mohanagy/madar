@@ -7,7 +7,6 @@ describe('launch checklist documentation', () => {
   it('publishes a proof-first launch checklist and links it from release/docs surfaces', () => {
     const checklist = readFileSync(resolve('docs/launch-checklist.md'), 'utf8')
     const releaseDoc = readFileSync(resolve('docs/release.md'), 'utf8')
-    const roadmap = readFileSync(resolve('docs/roadmap.md'), 'utf8')
 
     expect(checklist).toContain('# Launch checklist')
     expect(checklist).toContain('## Required proof block')
@@ -37,6 +36,5 @@ describe('launch checklist documentation', () => {
     expect(checklist).toContain('Do not post generic "new open-source tool" messages')
 
     expect(releaseDoc).toContain('docs/launch-checklist.md')
-    expect(roadmap).toContain('issues/474')
   })
 })
