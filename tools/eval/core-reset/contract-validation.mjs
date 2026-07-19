@@ -351,7 +351,10 @@ export function validateContractSemantics(contract) {
   return true
 }
 
-function canonicalSha256(value) {
+// Baseline receipts bind the exact JSON key order emitted by their producer.
+// This is intentionally not RFC 8785 JCS; comparator dependency manifests use
+// the separate JCS rule frozen in the evaluation contract.
+function orderedJsonSha256(value) {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex')
 }
 
@@ -388,7 +391,7 @@ export function validateReceiptSemantics(receipt, contract, options = {}) {
   const requireSourceMatch = options.requireSourceMatch !== false
   const requireMeasuredRetrieval = options.requireMeasuredRetrieval !== false
   assert(receipt.contract_id === contract.contract_id, 'receipt contract_id must match the frozen contract')
-  assert(receipt.contract_sha256 === canonicalSha256(contract), 'receipt contract hash must use canonical JSON')
+  assert(receipt.contract_sha256 === orderedJsonSha256(contract), 'receipt contract hash must preserve the recorded JSON key order')
   assert(receipt.baseline_target.package === contract.baseline.madar.name, 'receipt baseline package must match the contract')
   assert(receipt.baseline_target.version === contract.baseline.madar.version, 'receipt baseline version must match the contract')
   assert(receipt.baseline_target.commit === contract.baseline.madar.commit, 'receipt baseline commit must match the contract')
@@ -430,7 +433,7 @@ export function validateReceiptSemantics(receipt, contract, options = {}) {
     'package install command must install only the measured tarball with frozen safety flags',
   )
   assert(
-    packageMeasurement.resolved_dependency_lock_sha256 === canonicalSha256(packageMeasurement.resolved_dependency_lock),
+    packageMeasurement.resolved_dependency_lock_sha256 === orderedJsonSha256(packageMeasurement.resolved_dependency_lock),
     'resolved dependency lock hash must match the captured lock',
   )
   const resolvedPackages = packageMeasurement.resolved_dependency_lock.packages ?? {}

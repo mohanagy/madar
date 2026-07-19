@@ -19,12 +19,12 @@ This is the phase-gate evidence ledger. An issue or PR link is not evidence by i
 | Incremental fixture equivalence | Add/change/delete/rename/linked-worktree all equal clean generation; linked-worktree artifact is outside the worktree | Full-rebuild equivalence for every operation | [Baseline receipt](evidence/baseline-v0.32.0.json) |
 | Untuned strict OpenStatus flow | 2 of 4 in-scope phases covered (50%); partial / `verify_targets`; 9 matched files, 8 snippets, and 3 verification targets | Complete in one call plus <=2 focused reads | [Baseline receipt](evidence/baseline-v0.32.0.json), #565, and #574 |
 | OpenStatus graph build | 224,485.466 ms / 36,310,715-byte graph / 20,137 nodes / 23,452 edges | Report separately and amortize | [Baseline receipt](evidence/baseline-v0.32.0.json) |
-| OpenStatus retrieval | 79,372.482 ms end-to-end MCP startup plus one retrieve / 1,522 reported context tokens / 16,324 response bytes | Warm p95 <500 ms; typical result <=4,000 input tokens | [Baseline receipt](evidence/baseline-v0.32.0.json) |
+| OpenStatus retrieval | Cold startup plus one retrieve: 79,372.482 ms / 1,522 reported context tokens / 16,324 response bytes. **Warm p95 unknown:** the receipt records one cold run; reproduce with the frozen warm comparator trials. | Warm p95 <500 ms; typical result <=4,000 input tokens | [Baseline receipt](evidence/baseline-v0.32.0.json) and [evaluation contract](../../tools/eval/core-reset/contracts/evaluation-contract.json) |
 | Provider input for one-call retrieval | **Unknown:** direct MCP probing has no provider session usage; reproduce with the frozen agent comparator protocol | >=25–30% below native | [Baseline receipt](evidence/baseline-v0.32.0.json) and [evaluation contract](../../tools/eval/core-reset/contracts/evaluation-contract.json) |
 | Held-out refresh and break-even cost | **Unknown:** the three-sample Graphify/Madar refresh protocol and formula are frozen but not yet run | Report refresh separately and calculate amortized break-even | [Evaluation contract](../../tools/eval/core-reset/contracts/evaluation-contract.json) |
 | Verified live design partners | 0 of 5 | 5 trials; >=3 retained | `docs/claims-and-evidence.md` |
 
-The schema-validated, share-safe receipt was recorded at tooling checkout `250a637`; it proves `src/**` exactly matches frozen runtime baseline `33951d6`. Unknown values remain unknown rather than being estimated or treated as zero.
+The schema-validated, share-safe receipt was recorded at tooling checkout `250a637e03b736ab0146c9f87c102e90bca2af2e`; it proves `src/**` exactly matches frozen runtime baseline `33951d6cb57f6f4c33c8a8610fd61dcc94443f1f`. Unknown values remain unknown rather than being estimated or treated as zero.
 
 ## Phase gates
 
