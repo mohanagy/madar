@@ -2,7 +2,7 @@
 
 > **RFC:** [#577](https://github.com/mohanagy/madar/issues/577)
 > **Milestone:** [`v0.40.0 — Core Reset`](https://github.com/mohanagy/madar/milestone/7)
-> **Status:** accepted; scope and baseline is the only authorized phase
+> **Status:** accepted; Scope/Baseline passed and Directed multigraph is ready
 
 This is the phase-gate evidence ledger. An issue or PR link is not evidence by itself; each gate needs a reproducible test, receipt, measurement, or external-user record.
 
@@ -10,22 +10,28 @@ This is the phase-gate evidence ledger. An issue or PR link is not evidence by i
 
 | Metric | Current baseline | Target | Evidence |
 | --- | ---: | ---: | --- |
-| Production TypeScript source | 181 files / 96,766 LOC | <=80 files / 25,000–35,000 LOC | Repository inventory, 2026-07-19 |
-| Parallel edge preservation | Fails: same source/target overwrites | 100% invariant coverage | Pending fixture |
-| Default extraction paths for supported JS/TS | SPI plus legacy augmentation | One canonical indexer | `src/infrastructure/generate.ts` |
-| Untuned strict OpenStatus flow | Partial | Complete in one call plus <=2 focused reads | #565 and #574 |
+| Production TypeScript source | 181 files / 96,766 LOC; `+0 / -0 / net 0` in baseline phase | <=80 files / 25,000–35,000 LOC | [Baseline receipt](evidence/baseline-v0.32.0.json) |
+| npm package | 398 files / 3,777,995 unpacked bytes (fails) | <150 files / <1,500,000 bytes | [Baseline receipt](evidence/baseline-v0.32.0.json) |
+| CLI startup | 315.601 ms median / 220,151,808 bytes max RSS (fails) | <100 ms / <83,886,080 bytes | [Baseline receipt](evidence/baseline-v0.32.0.json) |
+| MCP startup and public surface | 308.235 ms median `tools/list` (passes); 7 tools (fails) | <1,000 ms / <=5 tools | [Baseline receipt](evidence/baseline-v0.32.0.json) |
+| Directed multigraph contract | Directed, reverse edge, and provenance pass; parallel edges, edge IDs, and exact serialization fail; 2 of 3 fixture edges survive | Every invariant passes | [Baseline receipt](evidence/baseline-v0.32.0.json) |
+| Default extraction for supported JS/TS | Auto routes 8 files through SPI and all 8 through legacy augmentation; `.js`, `.jsx`, `.ts`, and `.tsx` symbols are found; node IDs are stable but edge IDs are absent/unstable | One canonical indexer with stable node and edge IDs | [Baseline receipt](evidence/baseline-v0.32.0.json) |
+| Incremental fixture equivalence | Add/change/delete/rename/linked-worktree all equal clean generation; linked-worktree artifact is outside the worktree | Full-rebuild equivalence for every operation | [Baseline receipt](evidence/baseline-v0.32.0.json) |
+| Untuned strict OpenStatus flow | 2 of 4 in-scope phases covered (50%); partial / `verify_targets`; 9 matched files, 8 snippets, and 3 verification targets | Complete in one call plus <=2 focused reads | [Baseline receipt](evidence/baseline-v0.32.0.json), #565, and #574 |
+| OpenStatus graph build | 224,485.466 ms / 36,310,715-byte graph / 20,137 nodes / 23,452 edges | Report separately and amortize | [Baseline receipt](evidence/baseline-v0.32.0.json) |
+| OpenStatus retrieval | Cold startup plus one retrieve: 79,372.482 ms / 1,522 reported context tokens / 16,324 response bytes. **Warm p95 unknown:** the receipt records one cold run; reproduce with the frozen warm comparator trials. | Warm p95 <500 ms; typical result <=4,000 input tokens | [Baseline receipt](evidence/baseline-v0.32.0.json) and [evaluation contract](../../tools/eval/core-reset/contracts/evaluation-contract.json) |
+| Provider input for one-call retrieval | **Unknown:** direct MCP probing has no provider session usage; reproduce with the frozen agent comparator protocol | >=25–30% below native | [Baseline receipt](evidence/baseline-v0.32.0.json) and [evaluation contract](../../tools/eval/core-reset/contracts/evaluation-contract.json) |
+| Held-out refresh and break-even cost | **Unknown:** the three-sample Graphify/Madar refresh protocol and formula are frozen but not yet run | Report refresh separately and calculate amortized break-even | [Evaluation contract](../../tools/eval/core-reset/contracts/evaluation-contract.json) |
 | Verified live design partners | 0 of 5 | 5 trials; >=3 retained | `docs/claims-and-evidence.md` |
-| npm package | Record in baseline issue | <150 files / <1.5 MB unpacked | Pending baseline receipt |
-| CLI startup | Record in baseline issue | <100 ms / <80 MB RSS | Pending baseline receipt |
 
-Baseline values that are not yet reproducible are recorded as unknown rather than estimated.
+The schema-validated, share-safe receipt was recorded at tooling checkout `250a637e03b736ab0146c9f87c102e90bca2af2e`; it proves `src/**` exactly matches frozen runtime baseline `33951d6cb57f6f4c33c8a8610fd61dcc94443f1f`. Unknown values remain unknown rather than being estimated or treated as zero.
 
 ## Phase gates
 
 | Phase | Status | Exit gate | Evidence |
 | --- | --- | --- | --- |
-| Scope and baseline | Ready | Baseline script/receipt committed; held-out evaluation contract frozen; removal manifest reviewed | #577 and #579 |
-| Directed multigraph | Not started | Parallel types, direction, stable IDs, provenance, and serialization pass | Pending |
+| Scope and baseline | **Passed** | Baseline script/receipt committed; held-out evaluation contract frozen; removal manifest reviewed | [#580](https://github.com/mohanagy/madar/issues/580), [receipt](evidence/baseline-v0.32.0.json), and [manifest](removal-manifest.yml) |
+| Directed multigraph | **Ready** | Parallel types, direction, stable IDs, provenance, and serialization pass | Baseline failures are frozen in the [receipt](evidence/baseline-v0.32.0.json); implementation has not started |
 | Canonical TypeScript index | Not started | Labelled TS/framework gates pass without legacy augmentation | Pending |
 | Incremental index | Not started | Add/change/delete/rename output equals clean rebuild | Pending |
 | Evidence-path query | Not started | Held-out correctness and one-call completeness gates pass without repo-specific logic | Pending |
@@ -131,3 +137,4 @@ Copy this into a comment on [#577](https://github.com/mohanagy/madar/issues/577)
 | --- | --- | --- | --- |
 | 2026-07-19 | Initial proposed scorecard | Deep technical and business review | #577 |
 | 2026-07-19 | RFC accepted; scope-and-baseline phase authorized | Green governance PR and completed acceptance checklist | #577 and #579 |
+| 2026-07-19 | Scope/Baseline passed; Directed multigraph became ready | Schema-validated clean-checkout receipt, frozen comparator contract, and complete removal-manifest review | #580 |

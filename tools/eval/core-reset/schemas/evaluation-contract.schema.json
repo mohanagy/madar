@@ -1,0 +1,825 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mohanagy/madar/tools/eval/core-reset/schemas/evaluation-contract.schema.json",
+  "title": "Madar Core Reset held-out evaluation contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "contract_id",
+    "frozen_at",
+    "status",
+    "product_scope",
+    "baseline",
+    "repositories",
+    "questions",
+    "protocols",
+    "trial_design",
+    "measurements",
+    "human_rubric",
+    "anti_tuning"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "contract_id": { "type": "string", "minLength": 1 },
+    "frozen_at": { "type": "string", "format": "date" },
+    "status": { "const": "frozen" },
+    "product_scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope_statement",
+        "supported_languages",
+        "excluded_languages",
+        "scope_guard_policy",
+        "comparison_question_roles"
+      ],
+      "properties": {
+        "scope_statement": { "type": "string", "minLength": 20 },
+        "supported_languages": { "const": ["typescript", "javascript"] },
+        "excluded_languages": { "const": ["go"] },
+        "scope_guard_policy": { "type": "string", "minLength": 20 },
+        "comparison_question_roles": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["blocking", "scope_guard"],
+          "properties": {
+            "blocking": { "const": "included" },
+            "scope_guard": { "const": "diagnostic_only" }
+          }
+        }
+      }
+    },
+    "baseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["madar", "graphify"],
+      "properties": {
+        "madar": { "$ref": "#/$defs/comparator" },
+        "graphify": { "$ref": "#/$defs/comparator" }
+      }
+    },
+    "repositories": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "url", "commit", "tree_paths_sha256", "tree_paths_verified_at", "verified_evidence_paths", "languages", "graph_root", "evidence_path_base", "role"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]+$" },
+          "url": { "type": "string", "format": "uri" },
+          "commit": { "$ref": "#/$defs/sha" },
+          "tree_paths_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "tree_paths_verified_at": { "type": "string", "format": "date" },
+          "verified_evidence_paths": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "languages": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "enum": ["typescript", "javascript", "go"] }
+          },
+          "graph_root": { "type": "string", "minLength": 1 },
+          "evidence_path_base": { "const": "repository_root" },
+          "role": { "enum": ["blocking", "scope_guard"] }
+        }
+      }
+    },
+    "questions": {
+      "type": "array",
+      "minItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "repository_id",
+          "prompt",
+          "source_issues",
+          "gate_role",
+          "comparison_role",
+          "required_phases"
+        ],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]+$" },
+          "repository_id": { "type": "string", "minLength": 1 },
+          "prompt": { "type": "string", "minLength": 20 },
+          "source_issues": {
+            "type": "array",
+            "items": { "type": "integer", "minimum": 1 },
+            "uniqueItems": true
+          },
+          "gate_role": { "enum": ["blocking", "scope_guard"] },
+          "comparison_role": { "enum": ["included", "diagnostic_only"] },
+          "required_phases": {
+            "type": "array",
+            "minItems": 3,
+            "items": { "$ref": "#/$defs/phase" }
+          }
+        }
+      }
+    },
+    "protocols": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["common", "native_agent", "graphify", "madar", "madar_strict_diagnostic"],
+      "properties": {
+        "common": { "$ref": "#/$defs/protocol" },
+        "native_agent": { "$ref": "#/$defs/protocol" },
+        "graphify": { "$ref": "#/$defs/protocol" },
+        "madar": { "$ref": "#/$defs/protocol" },
+        "madar_strict_diagnostic": { "$ref": "#/$defs/protocol" }
+      }
+    },
+    "trial_design": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "randomization_seed",
+        "cold_definition",
+        "warm_definition",
+        "graphify_build",
+        "condition_matrix",
+        "dependency_environment",
+        "refresh_measurement",
+        "execution_isolation",
+        "provider_cache_policy",
+        "network_after_setup",
+        "temperatures",
+        "trials_per_temperature",
+        "total_tool_call_budget",
+        "timeout_seconds",
+        "randomization_prng",
+        "randomization_seed_frame",
+        "temperature_serialization",
+        "trial_order_algorithm",
+        "tool_schema_policy",
+        "agent_version_policy"
+      ],
+      "properties": {
+        "randomization_seed": { "type": "string", "minLength": 1 },
+        "cold_definition": { "type": "string", "minLength": 1 },
+        "warm_definition": { "type": "string", "minLength": 1 },
+        "graphify_build": {
+          "const": {
+            "executable": "graphify",
+            "argv": ["extract", ".", "--code-only"],
+            "code_only": true,
+            "directed": false,
+            "artifact": "graphify-out/graph.json",
+            "build_provider_tokens_expected_total": 0
+          }
+        },
+        "condition_matrix": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "unit",
+            "cells",
+            "pairing_rule",
+            "artifact_verification",
+            "trial_count_rule",
+            "execution_order"
+          ],
+          "properties": {
+            "unit": { "type": "string", "minLength": 20 },
+            "cells": {
+              "type": "array",
+              "minItems": 5,
+              "maxItems": 5,
+              "prefixItems": [
+                { "$ref": "#/$defs/nativeCondition" },
+                { "$ref": "#/$defs/graphifyColdCondition" },
+                { "$ref": "#/$defs/graphifyWarmCondition" },
+                { "$ref": "#/$defs/madarColdCondition" },
+                { "$ref": "#/$defs/madarWarmCondition" }
+              ],
+              "items": false
+            },
+            "pairing_rule": { "type": "string", "minLength": 20 },
+            "artifact_verification": { "type": "string", "minLength": 20 },
+            "trial_count_rule": { "type": "string", "minLength": 20 },
+            "execution_order": { "type": "string", "minLength": 20 }
+          }
+        },
+        "dependency_environment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "canonicalization",
+            "graphify_manifest",
+            "madar_manifest",
+            "capture_point",
+            "reuse_rule",
+            "mismatch_policy"
+          ],
+          "properties": {
+            "canonicalization": { "type": "string", "minLength": 20 },
+            "graphify_manifest": { "type": "string", "minLength": 20 },
+            "madar_manifest": { "type": "string", "minLength": 20 },
+            "capture_point": { "type": "string", "minLength": 20 },
+            "reuse_rule": { "type": "string", "minLength": 20 },
+            "mismatch_policy": { "type": "string", "minLength": 20 }
+          }
+        },
+        "refresh_measurement": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version",
+            "sample_count_per_repository_arm",
+            "timeout_seconds",
+            "independent_samples",
+            "mutation_application_in_timed_window",
+            "repositories",
+            "commands",
+            "pre_state",
+            "acceptance",
+            "failure_policy"
+          ],
+          "properties": {
+            "schema_version": { "const": 1 },
+            "sample_count_per_repository_arm": { "const": 3 },
+            "timeout_seconds": { "type": "integer", "minimum": 1 },
+            "independent_samples": { "const": true },
+            "mutation_application_in_timed_window": { "const": false },
+            "repositories": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": { "$ref": "#/$defs/refreshRepository" }
+            },
+            "commands": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["graphify", "madar"],
+              "properties": {
+                "graphify": { "$ref": "#/$defs/refreshArm" },
+                "madar": { "$ref": "#/$defs/refreshArm" }
+              }
+            },
+            "pre_state": { "type": "string", "minLength": 20 },
+            "acceptance": { "type": "string", "minLength": 20 },
+            "failure_policy": { "type": "string", "minLength": 20 }
+          }
+        },
+        "execution_isolation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "filesystem_root",
+            "realpath_policy",
+            "graph_artifact_exception",
+            "repository_checkout_policy",
+            "pair_local_build_configuration",
+            "generated_output_policy",
+            "ephemeral_configuration",
+            "forbidden_context",
+            "graphify_logging",
+            "update_checks",
+            "provider_credentials"
+          ],
+          "properties": {
+            "filesystem_root": { "type": "string", "minLength": 20 },
+            "realpath_policy": { "type": "string", "minLength": 20 },
+            "graph_artifact_exception": { "type": "string", "minLength": 20 },
+            "repository_checkout_policy": { "type": "string", "minLength": 20 },
+            "pair_local_build_configuration": { "type": "string", "minLength": 20 },
+            "generated_output_policy": { "type": "string", "minLength": 20 },
+            "ephemeral_configuration": { "type": "string", "minLength": 20 },
+            "forbidden_context": { "type": "string", "minLength": 20 },
+            "graphify_logging": { "type": "string", "minLength": 20 },
+            "update_checks": { "type": "string", "minLength": 20 },
+            "provider_credentials": { "type": "string", "minLength": 20 }
+          }
+        },
+        "provider_cache_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["control", "capture", "total_input_formula", "input_cost_formula", "validity"],
+          "properties": {
+            "control": { "type": "string", "minLength": 20 },
+            "capture": { "type": "string", "minLength": 20 },
+            "total_input_formula": { "type": "string", "minLength": 20 },
+            "input_cost_formula": { "type": "string", "minLength": 20 },
+            "validity": { "type": "string", "minLength": 20 }
+          }
+        },
+        "network_after_setup": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "repository_egress",
+            "package_registry_and_update_egress",
+            "comparator_telemetry_egress",
+            "provider_egress",
+            "all_other_egress"
+          ],
+          "properties": {
+            "repository_egress": { "const": "disabled" },
+            "package_registry_and_update_egress": { "const": "disabled" },
+            "comparator_telemetry_egress": { "const": "disabled" },
+            "provider_egress": { "const": "allowed_only_to_recorded_agent_model_endpoint" },
+            "all_other_egress": { "const": "disabled" }
+          }
+        },
+        "temperatures": { "const": [0, 0.7] },
+        "trials_per_temperature": { "const": 3 },
+        "total_tool_call_budget": { "type": "integer", "minimum": 1 },
+        "timeout_seconds": { "type": "integer", "minimum": 1 },
+        "randomization_prng": { "const": "sha256-counter-v1" },
+        "randomization_seed_frame": { "type": "string", "minLength": 20 },
+        "temperature_serialization": { "type": "string", "minLength": 20 },
+        "trial_order_algorithm": { "type": "string", "minLength": 1 },
+        "tool_schema_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "non_graph_tools",
+            "native_agent_graph_tools",
+            "graphify_graph_tools",
+            "madar_graph_tools",
+            "capture"
+          ],
+          "properties": {
+            "non_graph_tools": { "type": "string", "minLength": 20 },
+            "native_agent_graph_tools": { "const": "none" },
+            "graphify_graph_tools": { "type": "string", "minLength": 20 },
+            "madar_graph_tools": { "type": "string", "minLength": 20 },
+            "capture": { "type": "string", "minLength": 20 }
+          }
+        },
+        "agent_version_policy": { "type": "string", "minLength": 1 }
+      }
+    },
+    "measurements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["baseline_targets", "measurement_boundaries", "task_metrics", "index_costs", "metric_definitions", "break_even", "machine_gates"],
+      "properties": {
+        "baseline_targets": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["production_source", "package", "cli_startup", "mcp_startup", "default_extraction"],
+          "properties": {
+            "production_source": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["expected_files", "expected_loc"],
+              "properties": {
+                "expected_files": { "type": "integer", "minimum": 1 },
+                "expected_loc": { "type": "integer", "minimum": 1 }
+              }
+            },
+            "package": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["file_count_max", "unpacked_bytes_max", "comparison"],
+              "properties": {
+                "file_count_max": { "type": "integer", "minimum": 1 },
+                "unpacked_bytes_max": { "type": "integer", "minimum": 1 },
+                "comparison": { "const": "strict_less_than" }
+              }
+            },
+            "cli_startup": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "elapsed_ms_max",
+                "peak_rss_bytes_max",
+                "sample_count",
+                "comparison",
+                "subject_command",
+                "measurement_command",
+                "instrumentation_caveat"
+              ],
+              "properties": {
+                "elapsed_ms_max": { "type": "number", "exclusiveMinimum": 0 },
+                "peak_rss_bytes_max": { "type": "integer", "minimum": 1 },
+                "sample_count": { "type": "integer", "minimum": 3 },
+                "comparison": { "const": "strict_less_than" },
+                "subject_command": { "$ref": "#/$defs/command" },
+                "measurement_command": { "$ref": "#/$defs/command" },
+                "instrumentation_caveat": { "type": "string", "minLength": 20 }
+              }
+            },
+            "mcp_startup": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["tools_list_ms_max", "tool_count_max", "sample_count", "latency_comparison", "tool_count_comparison"],
+              "properties": {
+                "tools_list_ms_max": { "type": "number", "exclusiveMinimum": 0 },
+                "tool_count_max": { "type": "integer", "minimum": 1 },
+                "sample_count": { "type": "integer", "minimum": 3 },
+                "latency_comparison": { "const": "strict_less_than" },
+                "tool_count_comparison": { "const": "less_than_or_equal" }
+              }
+            },
+            "default_extraction": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["expected_extensions"],
+              "properties": {
+                "expected_extensions": {
+                  "type": "array",
+                  "minItems": 4,
+                  "uniqueItems": true,
+                  "items": { "enum": [".js", ".jsx", ".ts", ".tsx"] }
+                }
+              }
+            }
+          }
+        },
+        "measurement_boundaries": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["clock_source", "task_elapsed_boundary", "build_elapsed_boundary", "refresh_elapsed_boundary", "peak_rss_boundary", "setup_exclusions"],
+          "properties": {
+            "clock_source": { "type": "string", "minLength": 20 },
+            "task_elapsed_boundary": { "type": "string", "minLength": 20 },
+            "build_elapsed_boundary": { "type": "string", "minLength": 20 },
+            "refresh_elapsed_boundary": { "type": "string", "minLength": 20 },
+            "peak_rss_boundary": { "type": "string", "minLength": 20 },
+            "setup_exclusions": { "type": "string", "minLength": 20 }
+          }
+        },
+        "task_metrics": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "index_costs": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["capture_stage", "baseline_receipt_requirement", "rationale", "metrics", "graph_build_provider_tokens"],
+          "properties": {
+            "capture_stage": { "const": "comparative_trials" },
+            "baseline_receipt_requirement": { "const": "not_required" },
+            "rationale": { "type": "string", "minLength": 20 },
+            "metrics": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1 }
+            },
+            "graph_build_provider_tokens": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "capture",
+                "total_definition",
+                "graphify_code_only_expected_total",
+                "graphify_nonzero_policy"
+              ],
+              "properties": {
+                "capture": { "type": "string", "minLength": 20 },
+                "total_definition": { "type": "string", "minLength": 20 },
+                "graphify_code_only_expected_total": { "const": 0 },
+                "graphify_nonzero_policy": { "type": "string", "minLength": 20 }
+              }
+            }
+          }
+        },
+        "metric_definitions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["selected_file", "relevant_file", "selected_file_precision", "unrelated_file", "incorrect_load_bearing_claim", "broad_search_restart", "focused_read"],
+          "properties": {
+            "selected_file": { "type": "string", "minLength": 1 },
+            "relevant_file": { "type": "string", "minLength": 1 },
+            "selected_file_precision": { "type": "string", "minLength": 1 },
+            "unrelated_file": { "type": "string", "minLength": 1 },
+            "incorrect_load_bearing_claim": { "type": "string", "minLength": 1 },
+            "broad_search_restart": { "type": "string", "minLength": 1 },
+            "focused_read": { "type": "string", "minLength": 1 }
+          }
+        },
+        "break_even": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["workload_scenarios", "time_formula", "token_formula", "task_condition_policy", "zero_savings_rule", "unknown_inputs_rule"],
+          "properties": {
+            "workload_scenarios": {
+              "type": "array",
+              "minItems": 3,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "tasks", "refreshes"],
+                "properties": {
+                  "id": { "type": "string", "minLength": 1 },
+                  "tasks": { "type": "integer", "minimum": 1 },
+                  "refreshes": { "type": "integer", "minimum": 0 }
+                }
+              }
+            },
+            "time_formula": { "type": "string", "minLength": 1 },
+            "token_formula": { "type": "string", "minLength": 1 },
+            "task_condition_policy": { "type": "string", "minLength": 20 },
+            "zero_savings_rule": { "type": "string", "minLength": 1 },
+            "unknown_inputs_rule": { "type": "string", "minLength": 20 }
+          }
+        },
+        "machine_gates": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "required_in_scope_phase_coverage",
+            "selected_file_precision_min",
+            "unrelated_files_max",
+            "incorrect_load_bearing_claims_max",
+            "broad_search_restarts_max",
+            "strict_madar_calls_max",
+            "focused_reads_max"
+          ],
+          "properties": {
+            "required_in_scope_phase_coverage": { "const": 1 },
+            "selected_file_precision_min": { "type": "number", "minimum": 0, "maximum": 1 },
+            "unrelated_files_max": { "type": "integer", "minimum": 0 },
+            "incorrect_load_bearing_claims_max": { "const": 0 },
+            "broad_search_restarts_max": { "const": 0 },
+            "strict_madar_calls_max": { "const": 1 },
+            "focused_reads_max": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "human_rubric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["blind_review", "reviewers", "adjudication", "dimensions", "phase_score", "dimension_score", "trial_total_formula", "condition_policy", "aggregation", "pass_rule"],
+      "properties": {
+        "blind_review": { "const": true },
+        "reviewers": { "type": "integer", "minimum": 2 },
+        "adjudication": { "type": "string", "minLength": 1 },
+        "dimensions": {
+          "type": "array",
+          "minItems": 4,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "phase_score": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["0", "1", "2"],
+          "properties": {
+            "0": { "type": "string", "minLength": 1 },
+            "1": { "type": "string", "minLength": 1 },
+            "2": { "type": "string", "minLength": 1 }
+          }
+        },
+        "dimension_score": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["0", "1", "2"],
+          "properties": {
+            "0": { "type": "string", "minLength": 1 },
+            "1": { "type": "string", "minLength": 1 },
+            "2": { "type": "string", "minLength": 1 }
+          }
+        },
+        "trial_total_formula": { "type": "string", "minLength": 1 },
+        "condition_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "aggregation_key",
+            "graph_conditions",
+            "native_condition",
+            "matching_rule",
+            "graph_pass_requirement",
+            "break_even_condition"
+          ],
+          "properties": {
+            "aggregation_key": { "type": "string", "minLength": 20 },
+            "graph_conditions": { "const": ["cold", "warm"] },
+            "native_condition": { "type": "string", "minLength": 20 },
+            "matching_rule": { "type": "string", "minLength": 20 },
+            "graph_pass_requirement": { "type": "string", "minLength": 20 },
+            "break_even_condition": { "type": "string", "minLength": 20 }
+          }
+        },
+        "aggregation": { "type": "string", "minLength": 1 },
+        "pass_rule": { "type": "string", "minLength": 1 }
+      }
+    },
+    "anti_tuning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "production_contract_access",
+        "agent_inputs",
+        "agent_madar_checkout_access",
+        "grading_order",
+        "change_policy",
+        "repository_rule"
+      ],
+      "properties": {
+        "production_contract_access": { "const": "forbidden" },
+        "agent_inputs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["product_scope_statement", "frozen_prompt", "target_repository"] }
+        },
+        "agent_madar_checkout_access": { "const": "forbidden" },
+        "grading_order": { "type": "string", "minLength": 1 },
+        "change_policy": { "type": "string", "minLength": 1 },
+        "repository_rule": { "type": "string", "minLength": 1 }
+      }
+    }
+  },
+  "$defs": {
+    "sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "command": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string" }
+    },
+    "refreshRepository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository_id", "commit", "graph_root", "mutation"],
+      "properties": {
+        "repository_id": { "enum": ["documenso", "formbricks"] },
+        "commit": { "$ref": "#/$defs/sha" },
+        "graph_root": { "type": "string", "minLength": 1 },
+        "mutation": { "$ref": "#/$defs/refreshMutation" }
+      }
+    },
+    "refreshMutation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation", "path", "path_from_graph_root", "expected_symbol",
+        "base_bytes", "base_git_blob_oid", "base_blob_sha256",
+        "result_bytes", "result_blob_sha256", "patch_encoding",
+        "patch_bytes", "patch_sha256", "patch_utf8"
+      ],
+      "properties": {
+        "operation": { "const": "apply_unified_diff" },
+        "path": { "type": "string", "minLength": 1 },
+        "path_from_graph_root": { "type": "string", "minLength": 1 },
+        "expected_symbol": { "type": "string", "minLength": 1 },
+        "base_bytes": { "type": "integer", "minimum": 1 },
+        "base_git_blob_oid": { "$ref": "#/$defs/sha" },
+        "base_blob_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "result_bytes": { "type": "integer", "minimum": 1 },
+        "result_blob_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "patch_encoding": { "const": "utf-8-lf" },
+        "patch_bytes": { "type": "integer", "minimum": 1 },
+        "patch_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "patch_utf8": { "type": "string", "minLength": 20 }
+      }
+    },
+    "refreshArm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "clean", "refresh", "incremental_mode", "artifact", "missing_incremental_policy",
+        "required_environment", "provider_tokens_expected_total"
+      ],
+      "properties": {
+        "clean": { "$ref": "#/$defs/refreshCommand" },
+        "refresh": { "$ref": "#/$defs/refreshCommand" },
+        "incremental_mode": { "const": "supported" },
+        "artifact": { "enum": ["graphify-out/graph.json", "out/graph.json"] },
+        "missing_incremental_policy": { "type": "string", "minLength": 20 },
+        "required_environment": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "type": "string" }
+        },
+        "required_unset_environment": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "provider_tokens_expected_total": { "const": 0 }
+      }
+    },
+    "refreshCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["executable", "argv"],
+      "properties": {
+        "executable": { "type": "string", "minLength": 1 },
+        "argv": { "$ref": "#/$defs/command" }
+      }
+    },
+    "comparator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "commit", "source"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "commit": { "$ref": "#/$defs/sha" },
+        "source": { "type": "string", "format": "uri" }
+      }
+    },
+    "phase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "scope", "path_match", "expected_evidence_paths", "minimum_path_matches"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_]+$" },
+        "label": { "type": "string", "minLength": 1 },
+        "scope": { "enum": ["required", "unsupported_language"] },
+        "path_match": { "const": "exact" },
+        "expected_evidence_paths": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "minimum_path_matches": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "nativeCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["arm", "condition", "trials", "graph_state"],
+      "properties": {
+        "arm": { "const": "native_agent" },
+        "condition": { "const": "native" },
+        "trials": { "const": 3 },
+        "graph_state": { "type": "string", "minLength": 20 }
+      }
+    },
+    "graphifyColdCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["arm", "condition", "trials", "graph_state"],
+      "properties": {
+        "arm": { "const": "graphify" },
+        "condition": { "const": "cold" },
+        "trials": { "const": 3 },
+        "graph_state": { "type": "string", "minLength": 20 }
+      }
+    },
+    "graphifyWarmCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["arm", "condition", "trials", "graph_state"],
+      "properties": {
+        "arm": { "const": "graphify" },
+        "condition": { "const": "warm" },
+        "trials": { "const": 3 },
+        "graph_state": { "type": "string", "minLength": 20 }
+      }
+    },
+    "madarColdCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["arm", "condition", "trials", "graph_state"],
+      "properties": {
+        "arm": { "const": "madar" },
+        "condition": { "const": "cold" },
+        "trials": { "const": 3 },
+        "graph_state": { "type": "string", "minLength": 20 }
+      }
+    },
+    "madarWarmCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["arm", "condition", "trials", "graph_state"],
+      "properties": {
+        "arm": { "const": "madar" },
+        "condition": { "const": "warm" },
+        "trials": { "const": 3 },
+        "graph_state": { "type": "string", "minLength": 20 }
+      }
+    },
+    "protocol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["steps", "allowed_repository_tools", "required_capture"],
+      "properties": {
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "allowed_repository_tools": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "required_capture": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

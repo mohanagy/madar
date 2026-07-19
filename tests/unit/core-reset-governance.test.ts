@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
@@ -5,6 +6,15 @@ import { parse } from 'yaml'
 import { describe, expect, it } from 'vitest'
 
 const read = (path: string): string => readFileSync(resolve(path), 'utf8')
+
+const manifestGlob = (pattern: string): RegExp => {
+  const escaped = pattern
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replaceAll('**', '\u0000')
+    .replaceAll('*', '[^/]*')
+    .replaceAll('\u0000', '.*')
+  return new RegExp(`^${escaped}$`)
+}
 
 describe('core reset governance', () => {
   it('keeps one linked roadmap and RFC contract', () => {
@@ -20,7 +30,7 @@ describe('core reset governance', () => {
     expect(roadmap).toContain('projects/8')
     expect(roadmap).toContain('removal-manifest.yml')
     expect(roadmap).toContain('scorecard.md')
-    expect(roadmap).toContain('## Now')
+    expect(roadmap).toContain('## Ready')
     expect(roadmap).toContain('## Next')
     expect(roadmap).toContain('## Later')
     expect(roadmap).toContain('accepted Core Reset')
@@ -75,6 +85,38 @@ describe('core reset governance', () => {
         expect(item.remove_when?.trim().length).toBeGreaterThan(0)
       }
     }
+  })
+
+  it('assigns every production TypeScript file to exactly one removal-manifest item', () => {
+    const manifest = parse(read('docs/core-reset/removal-manifest.yml')) as {
+      review: {
+        status: string
+        production_files_reviewed: number
+        files_with_one_owner: number
+        unowned_files: number
+        overlapping_files: number
+        disposition_changes: number
+      }
+      items: Array<{ id: string; sources?: string[] }>
+    }
+    const productionFiles = execFileSync('git', ['ls-files', 'src/**/*.ts'], {
+      encoding: 'utf8',
+    }).trim().split('\n').filter(Boolean)
+
+    expect(productionFiles).toHaveLength(181)
+    for (const file of productionFiles) {
+      const owners = manifest.items.filter((item) =>
+        (item.sources ?? []).some((pattern) => manifestGlob(pattern).test(file)))
+      expect(owners.map((item) => item.id), `${file} must have exactly one owner`).toHaveLength(1)
+    }
+    expect(manifest.review).toMatchObject({
+      status: 'complete',
+      production_files_reviewed: 181,
+      files_with_one_owner: 181,
+      unowned_files: 0,
+      overlapping_files: 0,
+      disposition_changes: 0,
+    })
   })
 
   it('routes contributors through the reset contract', () => {

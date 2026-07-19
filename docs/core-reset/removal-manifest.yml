@@ -6,10 +6,22 @@ project: https://github.com/users/mohanagy/projects/8
 
 baseline:
   recorded_at: 2026-07-19
-  commit: 754a806ff4c51fd4bbfd839dafc9852a53ad9589
+  commit: 33951d6cb57f6f4c33c8a8610fd61dcc94443f1f
   package_version: 0.32.0
   production_typescript_files: 181
   production_typescript_loc: 96766
+
+review:
+  status: complete
+  reviewed_at: 2026-07-19
+  issue: https://github.com/mohanagy/madar/issues/580
+  evidence_receipt: docs/core-reset/evidence/baseline-v0.32.0.json
+  production_files_reviewed: 181
+  files_with_one_owner: 181
+  unowned_files: 0
+  overlapping_files: 0
+  disposition_changes: 0
+  amendment: Source lists were completed and de-overlapped so every current production TypeScript file has exactly one existing disposition; no keep, rebuild, move, delete, or defer decision changed.
 
 targets:
   production_typescript_files_max: 80
@@ -39,6 +51,7 @@ items:
       - src/shared/source-location.ts
       - src/shared/git.ts
       - src/shared/graph-source-root.ts
+      - src/shared/guards.ts
       - src/shared/workspace.ts
       - src/shared/workspace-copy.ts
     destination: adapters/filesystem and focused domain value objects
@@ -58,7 +71,9 @@ items:
     sources:
       - src/contracts/graph.ts
       - src/pipeline/build.ts
+      - src/pipeline/export.ts
       - src/core/schema/normalize.ts
+      - src/runtime/direction.ts
     destination: src/domain/graph/**
     remove_when: Schema-v2 invariant, serialization, migration-error, and deterministic-ID tests pass.
     exit_gate: Parallel relationship kinds and direction survive build, store, and load.
@@ -70,6 +85,7 @@ items:
       - src/pipeline/spi/**
       - src/contracts/extraction.ts
       - src/contracts/types.ts
+      - src/core/layers/types.ts
     destination: src/domain/index/** and src/adapters/typescript/**
     preserve:
       - Generic TypeScript semantic-resolution algorithms
@@ -82,7 +98,15 @@ items:
     status: proposed
     sources:
       - src/pipeline/extract.ts
-      - src/pipeline/extract/**
+      - src/pipeline/extract/call-resolution.ts
+      - src/pipeline/extract/combine.ts
+      - src/pipeline/extract/core.ts
+      - src/pipeline/extract/cross-file.ts
+      - src/pipeline/extract/dispatch.ts
+      - src/pipeline/extract/frameworks/**
+      - src/pipeline/extract/generic.ts
+      - src/pipeline/extract/pipeline.ts
+      - src/pipeline/extract/typescript-utils.ts
       - src/pipeline/tree-sitter-wasm.ts
     blocked_by: canonical-typescript-index
     exit_gate: Canonical TypeScript fixtures pass and no production import references the legacy engine.
@@ -98,7 +122,7 @@ items:
       - src/pipeline/extract/non-code/**
       - src/pipeline/extract/python-rationale.ts
       - src/pipeline/extract/go-cross-file.ts
-    notes: Other non-TypeScript handlers embedded in the legacy extraction engine are owned by legacy-extraction.
+    notes: These non-TypeScript handlers are excluded from legacy-extraction ownership so every production file has one disposition.
     blocked_by: canonical-typescript-index
     exit_gate: Package, docs, flags, dependencies, and tests no longer claim unsupported ingestion.
 
@@ -109,11 +133,24 @@ items:
       - src/infrastructure/generate.ts
       - src/infrastructure/generation-policy.ts
       - src/infrastructure/indexing-manifest.ts
+      - src/infrastructure/cache.ts
+      - src/infrastructure/capabilities.ts
+      - src/infrastructure/doctor.ts
+      - src/infrastructure/refresh-lease.ts
+      - src/infrastructure/watcher-state.ts
+      - src/contracts/generation-policy.ts
+      - src/contracts/indexing.ts
+      - src/contracts/watcher-state.ts
+      - src/core/pipeline/stage.ts
+      - src/pipeline/detect.ts
+      - src/pipeline/manifest.ts
       - src/pipeline/indexing-generation.ts
       - src/pipeline/indexing-outcomes.ts
       - src/infrastructure/watch.ts
       - src/infrastructure/background-auto-refresh.ts
       - src/runtime/freshness.ts
+      - src/shared/graph-build-freshness.ts
+      - src/shared/source-discovery.ts
     destination: src/application/generate-index.ts, src/application/update-index.ts, and focused adapters
     remove_when: Add, change, delete, rename, worktree, and full-rebuild equivalence tests pass.
     exit_gate: madar generate uses one engine and incremental output equals a clean rebuild.
@@ -125,6 +162,8 @@ items:
       - src/runtime/retrieve.ts
       - src/runtime/retrieve/**
       - src/runtime/context-pack.ts
+      - src/runtime/routing-debug.ts
+      - src/runtime/value-per-token.ts
     destination: src/domain/query/** and src/application/retrieve-context.ts
     remove_when: Held-out one-call correctness and efficiency gates pass.
     exit_gate: Generic anchor, traversal, ranking, and evidence slicing need no repository-specific rules.
@@ -138,7 +177,9 @@ items:
       - src/contracts/task-*
       - src/contracts/handoff.ts
       - src/contracts/runtime-proof.ts
-      - src/runtime/context-*
+      - src/runtime/context-inventory.ts
+      - src/runtime/context-pack-*.ts
+      - src/runtime/context-session.ts
       - src/runtime/task-*
       - src/runtime/retrieval-gate.ts
       - src/runtime/mcp-response-evidence.ts
@@ -155,6 +196,7 @@ items:
       - src/runtime/implementation-pack.ts
       - src/runtime/relevant-files.ts
       - src/runtime/pr-impact.ts
+      - src/runtime/impact.ts
     blocked_by: evidence-path-query
     exit_gate: Public MCP and CLI no longer expose or document these wrappers.
 
@@ -167,6 +209,9 @@ items:
       - src/runtime/stdio-server.ts
       - src/runtime/stdio/**
       - src/infrastructure/install.ts
+      - src/shared/env.ts
+      - src/shared/package-metadata.ts
+      - src/shared/shell.ts
     destination: src/adapters/cli/** and src/adapters/mcp/**
     remove_when: Startup, MCP contract, Claude, Codex, uninstall, and worktree activation tests pass.
     exit_gate: No more than five MCP tools and the accepted narrow CLI ship with lazy loading.
@@ -197,6 +242,7 @@ items:
       - src/pipeline/community-naming.ts
       - src/pipeline/analyze.ts
       - src/pipeline/export/**
+      - src/pipeline/report.ts
       - src/pipeline/federate.ts
       - src/infrastructure/neo4j.ts
       - src/infrastructure/time-travel.ts
@@ -215,6 +261,7 @@ items:
       - src/infrastructure/install-routing-guidance.ts
       - src/infrastructure/install-skill-templates.ts
       - src/infrastructure/context-prompt-command.ts
+      - src/infrastructure/context-pack-command.ts
       - src/infrastructure/context-prompt.ts
       - src/infrastructure/handoff-command.ts
       - src/shared/telemetry.ts

@@ -1,0 +1,730 @@
+{
+  "schema_version": 1,
+  "contract_id": "core-reset-held-out-v1",
+  "frozen_at": "2026-07-19",
+  "status": "frozen",
+  "product_scope": {
+    "scope_statement": "Madar Core V2 indexes and retrieves TypeScript and JavaScript source. Go is intentionally outside the product scope and must be reported as unsupported rather than treated as a required retrieval capability.",
+    "supported_languages": ["typescript", "javascript"],
+    "excluded_languages": ["go"],
+    "scope_guard_policy": "Scope-guard questions are diagnostic only. They test honest boundary reporting and are excluded from cross-arm comparator aggregation and pass/fail decisions.",
+    "comparison_question_roles": {
+      "blocking": "included",
+      "scope_guard": "diagnostic_only"
+    }
+  },
+  "baseline": {
+    "madar": {
+      "name": "@lubab/madar",
+      "version": "0.32.0",
+      "commit": "33951d6cb57f6f4c33c8a8610fd61dcc94443f1f",
+      "source": "https://github.com/mohanagy/madar"
+    },
+    "graphify": {
+      "name": "graphify",
+      "version": "v0.9.20",
+      "commit": "edec9eabeceeae6aa2375eddb3835efa1a32c0a3",
+      "source": "https://github.com/Graphify-Labs/graphify"
+    }
+  },
+  "repositories": [
+    {
+      "id": "openstatus",
+      "url": "https://github.com/openstatusHQ/openstatus",
+      "commit": "295e5a72f52c172d326aa950e81043e72a4f20c0",
+      "tree_paths_sha256": "9ccb1f1dce50c03ea67703953c124cb6026ee978a97be4f358d7276c20e764f4",
+      "tree_paths_verified_at": "2026-07-19",
+      "verified_evidence_paths": [
+        "apps/checker/checker/update.go",
+        "apps/checker/handlers/checker.go",
+        "apps/checker/pkg/tinybird/client.go",
+        "apps/server/src/routes/rpc/handlers/status-page/index.ts",
+        "apps/status-page/src/app/(status-page)/[domain]/[locale]/(public)/client.tsx",
+        "apps/status-page/src/app/api/status/[[...path]]/route.ts",
+        "apps/status-page/src/content/status-json.ts",
+        "apps/status-page/src/content/status-vocab.ts",
+        "apps/workflows/src/checker/alerting.ts",
+        "apps/workflows/src/checker/index.ts",
+        "apps/workflows/src/checker/utils.ts",
+        "packages/api/src/router/statusPage.ts",
+        "packages/db/src/schema/notifications/notification.ts",
+        "packages/services/src/page/get-content.ts"
+      ],
+      "languages": ["typescript", "javascript", "go"],
+      "graph_root": ".",
+      "evidence_path_base": "repository_root",
+      "role": "scope_guard"
+    },
+    {
+      "id": "documenso",
+      "url": "https://github.com/documenso/documenso",
+      "commit": "4ee789ea378d12c85daacf7dceda80b4dec80652",
+      "tree_paths_sha256": "48728969cb89adeb6567f030a41fdf380e6c523473a04d3a264a4f4970b95709",
+      "tree_paths_verified_at": "2026-07-19",
+      "verified_evidence_paths": [
+        "packages/lib/jobs/definitions/emails/send-document-completed-emails.handler.ts",
+        "packages/lib/jobs/definitions/emails/send-recipient-signed-email.handler.ts",
+        "packages/lib/jobs/definitions/internal/seal-document.handler.ts",
+        "packages/lib/server-only/document/complete-document-with-token.ts",
+        "packages/lib/server-only/document/send-document.ts",
+        "packages/lib/server-only/recipient/set-document-recipients.ts",
+        "packages/lib/utils/slugify.ts"
+      ],
+      "languages": ["typescript", "javascript"],
+      "graph_root": "packages/lib",
+      "evidence_path_base": "repository_root",
+      "role": "blocking"
+    },
+    {
+      "id": "formbricks",
+      "url": "https://github.com/formbricks/formbricks",
+      "commit": "415bd9828ba150f7944fe10422acdbaf3089c707",
+      "tree_paths_sha256": "d50418a92fd6dae8d07ad09e4aaecbefb53c5ed29c85e374d41320e0669a7572",
+      "tree_paths_verified_at": "2026-07-19",
+      "verified_evidence_paths": [
+        "apps/web/app/api/v2/client/[workspaceId]/responses/lib/response.ts",
+        "apps/web/app/api/v2/client/[workspaceId]/responses/route.ts",
+        "apps/web/app/lib/pipelines.ts",
+        "apps/web/instrumentation-jobs.ts",
+        "apps/web/modules/response-pipeline/lib/process-response-pipeline-job.ts",
+        "apps/web/lib/hash-string.ts"
+      ],
+      "languages": ["typescript", "javascript"],
+      "graph_root": "apps/web",
+      "evidence_path_base": "repository_root",
+      "role": "blocking"
+    }
+  ],
+  "questions": [
+    {
+      "id": "openstatus-565-runtime-flow",
+      "repository_id": "openstatus",
+      "prompt": "Trace how a failed monitor check becomes an incident, triggers notifications, and affects the public status-page status in this repository. Cite the exact files and symbols involved, identify any inconsistent status-computation paths, and clearly state any remaining uncertainty. This is read-only; do not change files.",
+      "source_issues": [565],
+      "gate_role": "scope_guard",
+      "comparison_role": "diagnostic_only",
+      "required_phases": [
+        {
+          "id": "checker_detection",
+          "label": "Go checker detects the failed HTTP check",
+          "scope": "unsupported_language",
+          "path_match": "exact",
+          "expected_evidence_paths": ["apps/checker/handlers/checker.go"],
+          "minimum_path_matches": 1
+        },
+        {
+          "id": "failure_transport",
+          "label": "Go checker schedules the workflows status update",
+          "scope": "unsupported_language",
+          "path_match": "exact",
+          "expected_evidence_paths": ["apps/checker/checker/update.go"],
+          "minimum_path_matches": 1
+        },
+        {
+          "id": "incident_state",
+          "label": "TypeScript workflow creates or resolves the incident",
+          "scope": "required",
+          "path_match": "exact",
+          "expected_evidence_paths": ["apps/workflows/src/checker/index.ts"],
+          "minimum_path_matches": 1
+        },
+        {
+          "id": "notification_dispatch",
+          "label": "Notification delivery and deduplication",
+          "scope": "required",
+          "path_match": "exact",
+          "expected_evidence_paths": [
+            "apps/workflows/src/checker/alerting.ts",
+            "apps/workflows/src/checker/utils.ts",
+            "packages/db/src/schema/notifications/notification.ts"
+          ],
+          "minimum_path_matches": 2
+        },
+        {
+          "id": "public_status",
+          "label": "Public status-page aggregation and rendering",
+          "scope": "required",
+          "path_match": "exact",
+          "expected_evidence_paths": [
+            "packages/api/src/router/statusPage.ts",
+            "apps/status-page/src/app/(status-page)/[domain]/[locale]/(public)/client.tsx",
+            "apps/status-page/src/content/status-json.ts"
+          ],
+          "minimum_path_matches": 2
+        },
+        {
+          "id": "status_inconsistency",
+          "label": "Distinct status computations or inconsistent outputs",
+          "scope": "required",
+          "path_match": "exact",
+          "expected_evidence_paths": [
+            "apps/status-page/src/content/status-json.ts",
+            "packages/services/src/page/get-content.ts",
+            "apps/server/src/routes/rpc/handlers/status-page/index.ts"
+          ],
+          "minimum_path_matches": 2
+        }
+      ]
+    },
+    {
+      "id": "openstatus-574-strict-one-call",
+      "repository_id": "openstatus",
+      "prompt": "Trace one failed HTTP monitor check from the Go checker through raw Tinybird result persistence, incident creation or update, notification delivery and deduplication, and the public status-page HTML plus JSON feeds. Determine whether an automatic incident can make the public indicator show an outage while incidents.json remains empty. Cite exact files and symbols.",
+      "source_issues": [574],
+      "gate_role": "scope_guard",
+      "comparison_role": "diagnostic_only",
+      "required_phases": [
+        {
+          "id": "checker_detection",
+          "label": "Go checker detects failure",
+          "scope": "unsupported_language",
+          "path_match": "exact",
+          "expected_evidence_paths": ["apps/checker/handlers/checker.go"],
+          "minimum_path_matches": 1
+        },
+        {
+          "id": "tinybird_persistence",
+          "label": "Go checker persists the raw result to Tinybird",
+          "scope": "unsupported_language",
+          "path_match": "exact",
+          "expected_evidence_paths": [
+            "apps/checker/handlers/checker.go",
+            "apps/checker/pkg/tinybird/client.go"
+          ],
+          "minimum_path_matches": 2
+        },
+        {
+          "id": "incident_mutation",
+          "label": "TypeScript workflow mutates incident state",
+          "scope": "required",
+          "path_match": "exact",
+          "expected_evidence_paths": ["apps/workflows/src/checker/index.ts"],
+          "minimum_path_matches": 1
+        },
+        {
+          "id": "notification_delivery",
+          "label": "Notification delivery and deduplication",
+          "scope": "required",
+          "path_match": "exact",
+          "expected_evidence_paths": [
+            "apps/workflows/src/checker/alerting.ts",
+            "apps/workflows/src/checker/utils.ts",
+            "packages/db/src/schema/notifications/notification.ts"
+          ],
+          "minimum_path_matches": 2
+        },
+        {
+          "id": "public_html",
+          "label": "Public status-page HTML derives and renders status",
+          "scope": "required",
+          "path_match": "exact",
+          "expected_evidence_paths": [
+            "packages/api/src/router/statusPage.ts",
+            "apps/status-page/src/content/status-vocab.ts",
+            "apps/status-page/src/app/(status-page)/[domain]/[locale]/(public)/client.tsx"
+          ],
+          "minimum_path_matches": 2
+        },
+        {
+          "id": "json_feeds",
+          "label": "JSON feeds serialize status and incidents",
+          "scope": "required",
+          "path_match": "exact",
+          "expected_evidence_paths": [
+            "apps/status-page/src/app/api/status/[[...path]]/route.ts",
+            "apps/status-page/src/content/status-json.ts",
+            "apps/status-page/src/content/status-vocab.ts"
+          ],
+          "minimum_path_matches": 2
+        }
+      ]
+    },
+    {
+      "id": "documenso-document-send",
+      "repository_id": "documenso",
+      "prompt": "Trace the Documenso document lifecycle from recipient creation through send, signing completion and sealing, and notification delivery. Cite the exact files and symbols for every phase, preserve the causal order, and state any missing evidence.",
+      "source_issues": [],
+      "gate_role": "blocking",
+      "comparison_role": "included",
+      "required_phases": [
+        {
+          "id": "recipient_creation",
+          "label": "Recipient creation before send",
+          "scope": "required",
+          "path_match": "exact",
+          "expected_evidence_paths": ["packages/lib/server-only/recipient/set-document-recipients.ts"],
+          "minimum_path_matches": 1
+        },
+        {
+          "id": "document_send",
+          "label": "Document send after recipients exist",
+          "scope": "required",
+          "path_match": "exact",
+          "expected_evidence_paths": ["packages/lib/server-only/document/send-document.ts"],
+          "minimum_path_matches": 1
+        },
+        {
+          "id": "signing_completion",
+          "label": "Signing completion and document sealing",
+          "scope": "required",
+          "path_match": "exact",
+          "expected_evidence_paths": [
+            "packages/lib/server-only/document/complete-document-with-token.ts",
+            "packages/lib/jobs/definitions/internal/seal-document.handler.ts"
+          ],
+          "minimum_path_matches": 2
+        },
+        {
+          "id": "notification_delivery",
+          "label": "Recipient notification delivery",
+          "scope": "required",
+          "path_match": "exact",
+          "expected_evidence_paths": [
+            "packages/lib/jobs/definitions/emails/send-document-completed-emails.handler.ts",
+            "packages/lib/jobs/definitions/emails/send-recipient-signed-email.handler.ts"
+          ],
+          "minimum_path_matches": 1
+        }
+      ]
+    },
+    {
+      "id": "formbricks-survey-response",
+      "repository_id": "formbricks",
+      "prompt": "How does Formbricks process a survey response from request handling through persistence and analytics or event tracking? Cite the exact files and symbols for every phase, and state any missing evidence.",
+      "source_issues": [],
+      "gate_role": "blocking",
+      "comparison_role": "included",
+      "required_phases": [
+        {
+          "id": "request_handling",
+          "label": "Survey response request handling and validation",
+          "scope": "required",
+          "path_match": "exact",
+          "expected_evidence_paths": ["apps/web/app/api/v2/client/[workspaceId]/responses/route.ts"],
+          "minimum_path_matches": 1
+        },
+        {
+          "id": "response_persistence",
+          "label": "Response persistence",
+          "scope": "required",
+          "path_match": "exact",
+          "expected_evidence_paths": ["apps/web/app/api/v2/client/[workspaceId]/responses/lib/response.ts"],
+          "minimum_path_matches": 1
+        },
+        {
+          "id": "event_tracking",
+          "label": "Analytics or response-event pipeline",
+          "scope": "required",
+          "path_match": "exact",
+          "expected_evidence_paths": [
+            "apps/web/app/lib/pipelines.ts",
+            "apps/web/instrumentation-jobs.ts",
+            "apps/web/modules/response-pipeline/lib/process-response-pipeline-job.ts"
+          ],
+          "minimum_path_matches": 2
+        }
+      ]
+    }
+  ],
+  "protocols": {
+    "common": {
+      "steps": [
+        "Checkout the repository at the frozen commit, set the agent working directory to the frozen graph_root, and verify a clean worktree.",
+        "Prepare dependencies, agent binaries, comparator artifacts, and repository checkouts before the trial; during the measured task block all repository, package-registry, update-check, telemetry, and arbitrary network egress while permitting only calls to the recorded model-provider endpoint.",
+        "For each graph-arm pair, run the cold build with the pair-local empty HOME/XDG/config/cache/temp policy, externalize only the exact graph artifact, delete and verify absence of every comparator-generated repository path, and expose that artifact only to the MCP process. Raw tools must never read, list, search, or shell-access generated graph reports, manifests, visualizations, or caches.",
+        "For every answer trial, create fresh empty HOME, XDG_CONFIG_HOME, XDG_CACHE_HOME, XDG_DATA_HOME, and tool-config directories. Supply only the recorded provider credential through the harness; do not copy user/global agent rules, hooks, skills, MCP settings, history, prior transcripts, Madar checkout files, or evaluation-contract files into the trial environment.",
+        "Enforce tool-level filesystem containment during the measured answer: resolve every repository-tool path, working directory, symlink target, and shell-read-only operand to a realpath under the pinned graph_root or reject the call. The sole external read exception is the arm's exact captured graph artifact realpath, accessible only to its graph MCP server and never to raw repository tools.",
+        "Give every arm the exact product_scope.scope_statement before the frozen prompt. Do not disclose expected evidence paths, phase labels, rubric terms, or prior results.",
+        "Use the same provider, immutable model identifier, reasoning setting, system instructions, non-graph tool names, non-graph tool descriptions, non-graph JSON Schemas, non-graph tool behavior, tool-call budget, timeout, and machine class for every comparative arm. Only the arm-specific graph tool surface may differ, and its complete schema is captured.",
+        "Start a new agent process and conversation for every trial; never expose the Madar checkout, any contract content beyond the explicitly allowed product scope statement and frozen prompt, expected paths, or prior results to the agent.",
+        "Save the transcript and final answer before loading expected evidence or the human rubric.",
+        "Normalize every selected, returned, read, and cited path from every arm to repository-root-relative form by prefixing graph_root when needed; grade exact paths only in that coordinate system."
+      ],
+      "allowed_repository_tools": ["read", "search", "list", "shell-read-only"],
+      "required_capture": [
+        "agent binary version, provider, immutable model identifier, and reasoning setting",
+        "system instructions and complete tool schemas",
+        "provider input and output tokens",
+        "wall-clock elapsed time",
+        "all repository and graph tool calls",
+        "final answer",
+        "index build or refresh cost",
+        "ephemeral HOME/config paths, environment allowlist, and filesystem-containment decisions",
+        "comparison-block dependency manifest hashes and pre-unit hash verification",
+        "graph artifact hash after cold build and before and after paired warm use",
+        "pair-local build HOME/XDG/config/cache/temp paths, generated-path inventory, deletion verification, and raw-tool deny decisions",
+        "provider cache controls, uncached/cache-creation/cache-read/output token categories, price rates, derived total input, and validity classification",
+        "randomization seed and trial ordinal"
+      ]
+    },
+    "native_agent": {
+      "steps": [
+        "Start the unmodified agent at graph_root with no Madar or Graphify instructions, MCP server, or generated graph files.",
+        "Give the exact frozen prompt once and allow only the common raw repository tools within the common total tool-call budget.",
+        "Stop at the first final answer, the common tool-call budget, or the common timeout."
+      ],
+      "allowed_repository_tools": ["read", "search", "list", "shell-read-only"],
+      "required_capture": ["raw tool transcript", "files read", "searches", "provider usage", "elapsed time", "budget termination"]
+    },
+    "graphify": {
+      "steps": [
+        "Use CPython 3.12.11 and record the uv version; once per comparison block, during setup, invoke uv directly, without a shell or eval layer, with argv: [\"tool\",\"install\",\"--force\",\"--python\",\"3.12.11\",\"graphifyy[mcp] @ git+https://github.com/Graphify-Labs/graphify@edec9eabeceeae6aa2375eddb3835efa1a32c0a3\"]. Resolve and record the installed graphify and graphify-mcp executable paths, then capture and hash the canonical installed Python dependency manifest required by trial_design.dependency_environment before network isolation. Every Graphify schedule unit in that comparison block must reuse those exact executable paths and environment; re-resolution or reinstallation starts a new block.",
+        "Launch Graphify build and MCP processes with GRAPHIFY_QUERY_LOG_DISABLE=1 and with GRAPHIFY_QUERY_LOG, GRAPHIFY_QUERY_LOG_ENABLE, and GRAPHIFY_QUERY_LOG_RESPONSES absent. After setup, prohibit Graphify, uv, and pip update/install/check commands and enforce the common package-registry, update-check, telemetry, and arbitrary-egress blocks.",
+        "At graph_root invoke the resolved executable directly, without shell expansion, with argv: [\"extract\",\".\",\"--code-only\"]. This is the pinned CLI's supported code-extraction command. It excludes document, PDF, and image ingestion and their LLM-dependent processing. It writes graphify-out/graph.json with Graphify's default undirected graph semantics; do not pass unsupported --directed or --no-viz flags and do not reinterpret the output as directed. Record clean build cost and provider token usage separately, with Graphify code-only graph-build provider input, output, and total tokens all expected to be zero. Move only graphify-out/graph.json to the captured pair artifact path outside graph_root, then delete graphify-out and every other generated path before either answer.",
+        "Expose the pinned stdio server by invoking the resolved graphify-mcp executable directly, without a shell, with argv: [\"<external-pair-artifact>/graph.json\"]. Capture the exact MCP tool names, descriptions, and input JSON Schemas returned by initialization.",
+        "Give the exact frozen prompt once; allow Graphify MCP plus the common raw repository tools within the same common total tool-call budget.",
+        "Stop at the first final answer, the common tool-call budget, or the common timeout."
+      ],
+      "allowed_repository_tools": ["read", "search", "list", "shell-read-only", "graphify-mcp"],
+      "required_capture": ["Python and uv versions", "canonical resolved Python dependency manifest and SHA-256", "resolved Graphify environment and executable paths reused within the comparison block", "Graphify query-log environment and blocked update-check evidence", "graph commands", "graph direction as undirected", "graph build provider input, output, and total tokens, each expected to be zero for code-only extraction", "graph calls", "raw repository calls", "provider usage", "elapsed time", "budget termination"]
+    },
+    "madar": {
+      "steps": [
+        "Once per comparison block, pack @lubab/madar from the evaluated commit, place it at the deterministic relative path artifacts/lubab-madar-0.32.0.tgz inside one isolated install root, install that tarball, capture and hash the complete canonical resolved npm package-lock required by trial_design.dependency_environment, and run only that unpacked artifact. Every Madar schedule unit in the block must reuse the exact installed environment and packed artifact; re-packing, re-resolution, or reinstallation starts a new block.",
+        "At graph_root run the packed CLI: madar generate . --no-html. Record clean build cost separately, move only out/graph.json to the captured pair artifact path outside graph_root, then delete out and every other generated path before either answer.",
+        "Expose the packed default Madar stdio MCP profile using only <external-pair-artifact>/graph.json to the otherwise unmodified agent and capture the exact MCP tool names, descriptions, and input JSON Schemas returned by initialization.",
+        "Give the exact frozen prompt once; allow Madar MCP plus the common raw repository tools within the same common total tool-call budget.",
+        "Stop at the first final answer, the common tool-call budget, or the common timeout."
+      ],
+      "allowed_repository_tools": ["read", "search", "list", "shell-read-only", "madar-mcp"],
+      "required_capture": ["packed artifact hash", "canonical complete resolved npm package-lock and SHA-256", "resolved Madar install environment reused within the comparison block", "graph command", "graph build provider input, output, and total tokens", "Madar calls", "raw repository calls", "provider usage", "elapsed time", "budget termination"]
+    },
+    "madar_strict_diagnostic": {
+      "steps": [
+        "Run only the openstatus-574-strict-one-call scope-guard question against the packed Madar artifact and pinned OpenStatus graph.",
+        "Give the agent the product scope statement and require it to label Go phases as outside product scope even if legacy baseline extraction happens to return Go evidence.",
+        "Allow exactly one retrieve call with the exact prompt and a 20000-token response budget.",
+        "After the response, allow at most two direct reads of files returned by retrieve; prohibit search, list, shell discovery, rewritten prompts, and another graph call.",
+        "Record this diagnostic separately; do not compare its constrained timings with the three comparative arms."
+      ],
+      "allowed_repository_tools": ["madar-retrieve", "focused-read"],
+      "required_capture": ["retrieve request and response", "returned files and snippets", "focused reads", "answer", "provider usage", "elapsed time"]
+    }
+  },
+  "trial_design": {
+    "randomization_seed": "core-reset-held-out-v1-20260719",
+    "cold_definition": "For one graph-arm pair, create a fresh standalone disposable clone at the frozen commit (never a linked Git worktree) plus new empty pair-local HOME, XDG_CONFIG_HOME, XDG_CACHE_HOME, XDG_DATA_HOME, tool-config, temp, and comparator-cache directories outside the dependency-install directories; delete and verify absence of every declared repository output/cache root; build exactly once with the block's already-resolved dependency environment; move only the exact graph artifact to a harness-owned path outside graph_root; delete and verify absence of all generated repository outputs before starting the cold answer in a new agent process and conversation. Dependency installation is setup, not a cold build.",
+    "warm_definition": "For the same graph-arm pair and trial ordinal, run the warm answer immediately after its cold answer in a new agent process, conversation, provider context, and empty answer-trial HOME/XDG/config set, reusing only the byte-for-byte external graph artifact from the cold build without rebuild, refresh, mutation, or access to the destroyed build HOME/cache/output directories.",
+    "graphify_build": {
+      "executable": "graphify",
+      "argv": ["extract", ".", "--code-only"],
+      "code_only": true,
+      "directed": false,
+      "artifact": "graphify-out/graph.json",
+      "build_provider_tokens_expected_total": 0
+    },
+    "condition_matrix": {
+      "unit": "One block is one repository_id, one included question_id, one temperature, one immutable agent/model/reasoning/tool-schema configuration, and one pair of frozen comparator dependency environments.",
+      "cells": [
+        {
+          "arm": "native_agent",
+          "condition": "native",
+          "trials": 3,
+          "graph_state": "no graph, graph server, graph output, or comparator cache exists"
+        },
+        {
+          "arm": "graphify",
+          "condition": "cold",
+          "trials": 3,
+          "graph_state": "fresh graphify-out built once with pair-local empty config/cache, then only graph.json moved outside graph_root and graphify-out deleted before the answer"
+        },
+        {
+          "arm": "graphify",
+          "condition": "warm",
+          "trials": 3,
+          "graph_state": "byte-for-byte external artifact from the same ordinal's Graphify cold trial; no graphify-out, build cache, rebuild, or refresh"
+        },
+        {
+          "arm": "madar",
+          "condition": "cold",
+          "trials": 3,
+          "graph_state": "fresh out built once with pair-local empty config/cache, then only graph.json moved outside graph_root and out deleted before the answer"
+        },
+        {
+          "arm": "madar",
+          "condition": "warm",
+          "trials": 3,
+          "graph_state": "byte-for-byte external artifact from the same ordinal's Madar cold trial; no out directory, build cache, rebuild, or refresh"
+        }
+      ],
+      "pairing_rule": "For Graphify and Madar, cold ordinal n and warm ordinal n are one indivisible schedule unit. The cold answer runs first and the warm answer immediately second; both use the same frozen checkout and exact graph artifact. Native ordinal n is one standalone schedule unit and has no synthetic warm duplicate.",
+      "artifact_verification": "Hash the graph artifact after the cold build and again before and after the paired warm answer. All three hashes must match; otherwise discard the pair and mark it invalid rather than rebuilding in place.",
+      "trial_count_rule": "trials_per_temperature applies to every matrix cell: each block contains 3 native answers, 3 Graphify cold/warm pairs, and 3 Madar cold/warm pairs, for 15 answer trials total.",
+      "execution_order": "Randomize the nine schedule units defined by trial_order_algorithm; expand every graph-arm unit in place as cold then warm, with no other trial between the pair."
+    },
+    "dependency_environment": {
+      "canonicalization": "Serialize each resolved dependency manifest as RFC 8785 JSON Canonicalization Scheme (JCS) UTF-8 bytes and compute lowercase SHA-256 over those exact bytes.",
+      "graphify_manifest": "From the resolved Graphify tool environment, capture CPython and uv versions, the pinned Graphify commit requirement, and every installed Python distribution as normalized name, exact installed version, and direct_url metadata when present, sorted by normalized name. Capture executable realpaths separately; exclude machine-specific absolute paths from the canonical dependency manifest.",
+      "madar_manifest": "Capture the complete npm package-lock.json produced by installing the exact packed Madar tarball from the deterministic block-relative path artifacts/lubab-madar-0.32.0.tgz, including the root tarball reference/integrity and every resolved package version, URL, and integrity field present in the lock; also bind the manifest record to the tarball SHA-256.",
+      "capture_point": "Create both manifests and hashes once after dependency setup and before any measured schedule unit or network isolation in the comparison block.",
+      "reuse_rule": "Every schedule unit in a comparison block must reuse the same Graphify environment directory and the same Madar install directory and tarball. Before each unit, recompute the applicable canonical manifest hash and require equality with the block's captured hash; do not run a package resolver or installer again inside the block.",
+      "mismatch_policy": "A missing or changed manifest, hash, environment path, executable path, or Madar tarball hash invalidates the entire comparison block; start a new block after setup rather than repairing or mixing trials."
+    },
+    "refresh_measurement": {
+      "schema_version": 1,
+      "sample_count_per_repository_arm": 3,
+      "timeout_seconds": 300,
+      "independent_samples": true,
+      "mutation_application_in_timed_window": false,
+      "repositories": [
+        {
+          "repository_id": "documenso",
+          "commit": "4ee789ea378d12c85daacf7dceda80b4dec80652",
+          "graph_root": "packages/lib",
+          "mutation": {
+            "operation": "apply_unified_diff",
+            "path": "packages/lib/utils/slugify.ts",
+            "path_from_graph_root": "utils/slugify.ts",
+            "expected_symbol": "documensoRefreshProbe",
+            "base_bytes": 100,
+            "base_git_blob_oid": "e8f03f3ce4897e10393369a23d8ba4dfc18b3fa7",
+            "base_blob_sha256": "8e5b33371ef98a7ba42014ef6e602d9eec36b98eb487e4dd0affdb939af69952",
+            "result_bytes": 189,
+            "result_blob_sha256": "fba7b46678768b98bdbcbda8ef717fe9acce741fe0a55cdb6608f47c46e9b751",
+            "patch_encoding": "utf-8-lf",
+            "patch_bytes": 359,
+            "patch_sha256": "89df2f1505adf3382bd4ca4174c392fb89c9d1298d4709e5fce4f3d06c9b5bfc",
+            "patch_utf8": "diff --git a/packages/lib/utils/slugify.ts b/packages/lib/utils/slugify.ts\n--- a/packages/lib/utils/slugify.ts\n+++ b/packages/lib/utils/slugify.ts\n@@ -1,3 +1,7 @@\n export * from '@sindresorhus/slugify';\n \n export { default as slugify } from '@sindresorhus/slugify';\n+\n+export function documensoRefreshProbe(value: string): string {\n+  return value.trim();\n+}\n"
+          }
+        },
+        {
+          "repository_id": "formbricks",
+          "commit": "415bd9828ba150f7944fe10422acdbaf3089c707",
+          "graph_root": "apps/web",
+          "mutation": {
+            "operation": "apply_unified_diff",
+            "path": "apps/web/lib/hash-string.ts",
+            "path_from_graph_root": "lib/hash-string.ts",
+            "expected_symbol": "formbricksRefreshProbe",
+            "base_bytes": 148,
+            "base_git_blob_oid": "beb699867824183580346b83f0b279c81cec27e3",
+            "base_blob_sha256": "fc4219065ed5a3228efb1a44484191078163093d52eca3b33be976fb723ca84b",
+            "result_bytes": 238,
+            "result_blob_sha256": "cd53c180055c443a8dfa8db00b25b207116017e203c5a19712dae12a9f535c73",
+            "patch_encoding": "utf-8-lf",
+            "patch_bytes": 402,
+            "patch_sha256": "34c94bfad9b0d28f1e1f6ac42be38a7f512eed1013f3c9fcea583074b9c5270b",
+            "patch_utf8": "diff --git a/apps/web/lib/hash-string.ts b/apps/web/lib/hash-string.ts\n--- a/apps/web/lib/hash-string.ts\n+++ b/apps/web/lib/hash-string.ts\n@@ -1,5 +1,9 @@\n import crypto from \"crypto\";\n \n export const hashString = (string: string) => {\n   return crypto.createHash(\"sha256\").update(string).digest(\"hex\");\n };\n+\n+export function formbricksRefreshProbe(value: string): string {\n+  return value.trim();\n+}\n"
+          }
+        }
+      ],
+      "commands": {
+        "graphify": {
+          "clean": { "executable": "<resolved-graphify-executable>", "argv": ["extract", ".", "--code-only"] },
+          "refresh": { "executable": "<resolved-graphify-executable>", "argv": ["update", "."] },
+          "incremental_mode": "supported",
+          "artifact": "graphify-out/graph.json",
+          "missing_incremental_policy": "If the pinned update command is unavailable or fails, mark the repository/arm refresh block failed and cost unknown; never substitute a clean rebuild.",
+          "required_environment": { "GRAPHIFY_QUERY_LOG_DISABLE": "1" },
+          "required_unset_environment": ["GRAPHIFY_QUERY_LOG", "GRAPHIFY_QUERY_LOG_ENABLE", "GRAPHIFY_QUERY_LOG_RESPONSES"],
+          "provider_tokens_expected_total": 0
+        },
+        "madar": {
+          "clean": { "executable": "<resolved-packed-madar-executable>", "argv": ["generate", ".", "--no-html"] },
+          "refresh": { "executable": "<resolved-packed-madar-executable>", "argv": ["generate", ".", "--update", "--no-html"] },
+          "incremental_mode": "supported",
+          "artifact": "out/graph.json",
+          "missing_incremental_policy": "If the packed update command is unavailable or fails, mark the repository/arm refresh block failed and cost unknown; never substitute a clean rebuild.",
+          "required_environment": { "MADAR_TELEMETRY": "off", "NO_UPDATE_NOTIFIER": "1" },
+          "provider_tokens_expected_total": 0
+        }
+      },
+      "pre_state": "For every sample create a fresh standalone disposable clone at the pinned commit, never git worktree add or another linked-worktree form; verify HEAD, clean status, dependency-manifest hash, target base blob/OID/SHA-256, and absent comparator outputs/caches. Run the arm's clean command with fresh pair-local state and require graphify-out/graph.json or out/graph.json inside graph_root as declared; retain its output/cache only inside that sample. Outside the refresh timer verify and apply the exact patch, verify the result hash, and require the target to be the only tracked change.",
+      "acceptance": "A sample is valid only when the direct refresh command exits zero within timeout, graph.json is a regular file, the mutated source hash remains exact, only the target source changed, and the refreshed graph contains expected_symbol owned by path_from_graph_root. Record pre/post graph hashes and bytes, elapsed time, peak process-tree RSS, stdout/stderr hashes, and provider input/output/total token counters.",
+      "failure_policy": "Base, patch, result, dependency, or pre-state mismatch aborts the complete repository/arm block before measurement. Timeout, nonzero exit, missing/corrupt graph, escaped process, absent expected symbol, or unexpected source change is retained as a failed sample without retry. Publish a median only when all three samples are valid; otherwise report refresh capability failed and cost unknown. Any remediation starts a new block ID."
+    },
+    "execution_isolation": {
+      "filesystem_root": "The measured agent's only repository filesystem authority is the realpath of the frozen graph_root checkout; path normalization alone is insufficient.",
+      "realpath_policy": "Resolve every raw repository-tool path, cwd, glob root, search root, symlink target, and shell-read-only filesystem operand before execution and reject it unless contained by graph_root. Reject traversal through symlinks and reject commands whose operands cannot be proven contained.",
+      "graph_artifact_exception": "Only the arm-specific graph MCP server may read the exact graph artifact realpath captured after build, even if it is outside graph_root. The agent and raw tools receive no direct filesystem access to that exception.",
+      "repository_checkout_policy": "Every native trial and graph schedule unit uses a fresh standalone disposable local clone checked out detached at the frozen commit; never use git worktree add, a linked worktree, or a checkout whose git-common-dir is outside its own clone. Clone/checkout setup is outside measured time, network is disabled, and the clone is destroyed after the unit.",
+      "pair_local_build_configuration": "Every Graphify and Madar cold build receives a newly created pair-local empty HOME, XDG_CONFIG_HOME, XDG_CACHE_HOME, XDG_DATA_HOME, tool-config directory, comparator-cache directory, and temp directory. These paths are distinct from the reused dependency-install directories, captured in the transcript, and destroyed immediately after the exact graph artifact is externalized; no build cache survives into another pair.",
+      "generated_output_policy": "Declared repository output/cache roots are Graphify graphify-out/** and Madar out/**. Before each build capture the full graph_root Git status plus tracked-tree and untracked-path hashes; after moving only graphify-out/graph.json or out/graph.json to a harness-owned regular-file path outside graph_root, delete the declared root and every unexpected generated path, then require the original clean status and both content/path hashes exactly. Raw read/search/list/shell tools must deny declared output names and all captured generated paths even before deletion; only the graph MCP process may read the one external artifact.",
+      "ephemeral_configuration": "Each answer trial gets newly created empty HOME, XDG_CONFIG_HOME, XDG_CACHE_HOME, XDG_DATA_HOME, and agent configuration directories that are destroyed after capture; no user or global configuration is inherited.",
+      "forbidden_context": "The Madar source checkout, evaluation contract, schemas, expected evidence, rubric, prior answers/transcripts, global agent instructions, rules, hooks, skills, and unrelated MCP configuration must be absent from the trial namespace and prompt.",
+      "graphify_logging": "Set GRAPHIFY_QUERY_LOG_DISABLE=1 and leave GRAPHIFY_QUERY_LOG, GRAPHIFY_QUERY_LOG_ENABLE, and GRAPHIFY_QUERY_LOG_RESPONSES unset for every Graphify process; verify no query log is created.",
+      "update_checks": "Complete all dependency setup before the block, then prohibit comparator/uv/npm/pip install, update, version-check, or resolution commands and block registry/update-check/telemetry egress for every measured build and answer trial.",
+      "provider_credentials": "The harness may inject only the recorded model-provider credential and endpoint required for agent inference into the agent/provider boundary; comparator build and graph MCP child processes receive no provider credential. All injected environment keys are captured by name with values redacted."
+    },
+    "provider_cache_policy": {
+      "control": "Disable explicit and automatic provider prompt caching for every measured answer when the provider API supports a cache-off control, and use a fresh provider conversation/context plus a unique non-semantic cache namespace per trial when supported. Capture the exact control values.",
+      "capture": "For every provider call capture uncached_input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens, and the provider/model price rates applied to each input category. A provider-omitted category is unknown, not zero.",
+      "total_input_formula": "provider_total_input_tokens = uncached_input_tokens + cache_creation_input_tokens + cache_read_input_tokens",
+      "input_cost_formula": "provider_input_cost = uncached_input_tokens * uncached_input_rate + cache_creation_input_tokens * cache_creation_input_rate + cache_read_input_tokens * cache_read_input_rate",
+      "validity": "A cell is valid for cold/warm latency attribution only when cache-off is confirmed and every token category is captured. If cache-off is unavailable but all categories are captured, quality and token/cost results are qualified and latency attribution is invalid. If controls or any category cannot be accounted, invalidate the cell; never treat an absent field as zero."
+    },
+    "network_after_setup": {
+      "repository_egress": "disabled",
+      "package_registry_and_update_egress": "disabled",
+      "comparator_telemetry_egress": "disabled",
+      "provider_egress": "allowed_only_to_recorded_agent_model_endpoint",
+      "all_other_egress": "disabled"
+    },
+    "temperatures": [0, 0.7],
+    "trials_per_temperature": 3,
+    "total_tool_call_budget": 12,
+    "timeout_seconds": 300,
+    "randomization_prng": "sha256-counter-v1",
+    "randomization_seed_frame": "UTF-8 bytes of randomization_seed, repository_id, question_id, and the temperature's exact JSON number token joined in that order by one NUL byte (0x00). For each draw append a NUL byte and an unsigned 64-bit big-endian counter starting at zero, then SHA-256 the complete frame.",
+    "temperature_serialization": "Use the exact JSON number tokens from temperatures without locale formatting: 0 and 0.7.",
+    "trial_order_algorithm": "Comparator ordering applies only to questions with comparison_role=included. For each repository, question, and temperature block, build nine schedule units [graphify-pair:1..3, madar-pair:1..3, native_agent:1..3] in lexical arm order then ordinal order. Apply Fisher-Yates from i=n-1 down to 1. For each j draw, interpret the first 64 digest bits from sha256-counter-v1 as an unsigned big-endian integer; reject values at or above floor(2^64/(i+1))*(i+1), increment the counter, and retry; otherwise set j=value mod (i+1), swap i and j, and increment the counter. Persist the framed seed bytes as lowercase hex and the nine-unit final order before any trial starts. Expand each graph pair in place as cold then warm; do not randomize within a pair.",
+    "tool_schema_policy": {
+      "non_graph_tools": "The raw read, search, list, and shell-read-only tools use identical names, descriptions, input JSON Schemas, and behavior in every comparative arm.",
+      "native_agent_graph_tools": "none",
+      "graphify_graph_tools": "Use exactly the tool names, descriptions, and input JSON Schemas exposed by the pinned graphify-mcp stdio server; do not wrap or rename them.",
+      "madar_graph_tools": "Use exactly the tool names, descriptions, and input JSON Schemas exposed by the packed default Madar stdio server; do not wrap or rename them.",
+      "capture": "Persist every complete tool schema with the trial transcript; arm-specific graph schemas are expected to differ and are not parity requirements."
+    },
+    "agent_version_policy": "Within one comparison block, all arms use the same recorded agent binary, immutable provider model identifier, reasoning setting, system instructions, non-graph tool schemas, and product scope statement; a version change starts a new block. Arm-specific graph tool schemas may differ and must be captured exactly."
+  },
+  "measurements": {
+    "baseline_targets": {
+      "production_source": {
+        "expected_files": 181,
+        "expected_loc": 96766
+      },
+      "package": {
+        "file_count_max": 150,
+        "unpacked_bytes_max": 1500000,
+        "comparison": "strict_less_than"
+      },
+      "cli_startup": {
+        "elapsed_ms_max": 100,
+        "peak_rss_bytes_max": 83886080,
+        "sample_count": 3,
+        "comparison": "strict_less_than",
+        "subject_command": ["node", "<packed-install>/dist/src/cli/bin.js", "--version"],
+        "measurement_command": ["node", "--require", "<rss-probe.cjs>", "<packed-install>/dist/src/cli/bin.js", "--version"],
+        "instrumentation_caveat": "A Node preload records process.resourceUsage().maxRSS at exit; reported elapsed time and RSS include the preload's own overhead."
+      },
+      "mcp_startup": {
+        "tools_list_ms_max": 1000,
+        "tool_count_max": 5,
+        "sample_count": 3,
+        "latency_comparison": "strict_less_than",
+        "tool_count_comparison": "less_than_or_equal"
+      },
+      "default_extraction": {
+        "expected_extensions": [".js", ".jsx", ".ts", ".tsx"]
+      }
+    },
+    "measurement_boundaries": {
+      "clock_source": "Use one harness-side monotonic high-resolution clock for every elapsed measurement; never use wall-clock timestamps for durations.",
+      "task_elapsed_boundary": "Start immediately before spawning the fresh agent process and its configured MCP child; stop when the final answer is durably captured or the timeout/tool-budget termination is recorded. Agent startup, MCP startup, initialize, tools/list, model calls, and tool calls are included; dependency setup and graph build/refresh are excluded and reported separately.",
+      "build_elapsed_boundary": "Start immediately before spawning the comparator build command and stop when that process tree exits after closing stdout/stderr. Dependency resolution/install, artifact hashing/externalization, and answer/MCP startup are excluded and separately recorded.",
+      "refresh_elapsed_boundary": "Start immediately before spawning the frozen refresh command against the mutated checkout and stop when that process tree exits after closing stdout/stderr. Mutation application, dependency setup, artifact hashing/externalization, and answer/MCP startup are excluded and separately recorded.",
+      "peak_rss_boundary": "For build and refresh, sample at no more than 10 ms intervals from root-process spawn until the full descendant process tree exits; at each sample sum RSS bytes for the root and all live descendants and report the maximum aggregate. Do not substitute root-only maxRSS, child maximum, or a sum of per-process maxima.",
+      "setup_exclusions": "Dependency installation and resolution, repository checkout, mutation application, provider authentication, contract loading, artifact hashing/moving, grading, and report serialization are setup or post-processing and are not included in task, build, or refresh elapsed time."
+    },
+    "task_metrics": [
+      "human phase score",
+      "incorrect claim count",
+      "selected-file precision",
+      "provider uncached input tokens",
+      "provider cache creation input tokens",
+      "provider cache read input tokens",
+      "provider total input tokens",
+      "provider output tokens",
+      "provider input cost",
+      "end-to-end elapsed milliseconds",
+      "graph calls",
+      "focused reads",
+      "broad-search restart"
+    ],
+    "index_costs": {
+      "capture_stage": "comparative_trials",
+      "baseline_receipt_requirement": "not_required",
+      "rationale": "The issue #580 baseline receipt characterizes the frozen Madar implementation and retrieval fixture. Cross-arm clean-build and refresh cost distributions require the later comparative trial runner and are not fabricated by the baseline recorder.",
+      "metrics": [
+        "clean build elapsed milliseconds",
+        "clean build peak RSS bytes",
+        "graph build provider input tokens",
+        "graph build provider output tokens",
+        "graph build provider total tokens",
+        "incremental refresh elapsed milliseconds",
+        "incremental refresh peak RSS bytes",
+        "refresh provider input tokens",
+        "refresh provider output tokens",
+        "refresh provider total tokens",
+        "artifact bytes"
+      ],
+      "graph_build_provider_tokens": {
+        "capture": "Record provider input tokens, output tokens, and their sum for every clean build and incremental refresh; unknown is not interchangeable with zero.",
+        "total_definition": "graph_build_provider_total_tokens = graph_build_provider_input_tokens + graph_build_provider_output_tokens",
+        "graphify_code_only_expected_total": 0,
+        "graphify_nonzero_policy": "A nonzero Graphify code-only graph-build provider token count violates the frozen comparator protocol and invalidates that pair."
+      }
+    },
+    "metric_definitions": {
+      "selected_file": "A unique repository-root-relative file whose content or snippet is delivered to the agent by any raw or graph tool before the final answer; filenames mentioned without content do not count.",
+      "relevant_file": "A selected file listed in an in-scope required phase's frozen expected_evidence_paths for that question.",
+      "selected_file_precision": "relevant unique selected files divided by all unique selected files; zero when no file is selected.",
+      "unrelated_file": "A selected file that is not a relevant_file under the frozen contract.",
+      "incorrect_load_bearing_claim": "A factual claim needed for a required handoff or conclusion that both reviewers mark contradicted by the pinned source, or that the adjudicator marks contradicted after disagreement.",
+      "broad_search_restart": "After a graph call, any repository-wide search/list/shell discovery that is not limited to a returned file, verification target, or returned symbol; native trials record false because they have no graph-assisted phase to restart from.",
+      "focused_read": "A direct read of one file explicitly returned as a matched file or verification target by the graph tool; repeated ranges from the same file count once."
+    },
+    "break_even": {
+      "workload_scenarios": [
+        { "id": "stable-20", "tasks": 20, "refreshes": 0 },
+        { "id": "active-20", "tasks": 20, "refreshes": 4 },
+        { "id": "refresh-every-task-20", "tasks": 20, "refreshes": 20 }
+      ],
+      "time_formula": "For each fixed workload scenario: native_total_ms = tasks * median(native_task_ms); graph_total_ms = median(clean_build_ms) + refreshes * median(refresh_ms) + tasks * median(graph_task_ms). For cadence break-even let refresh_rate = refreshes / tasks and report break_even_tasks = ceil(median(clean_build_ms) / (median(native_task_ms) - median(graph_task_ms) - refresh_rate * median(refresh_ms))).",
+      "token_formula": "All break-even token quantities are provider input tokens only. For each fixed workload scenario: native_total_input_tokens = tasks * median(native_provider_total_input_tokens); graph_total_input_tokens = median(graph_build_provider_input_tokens) + refreshes * median(refresh_provider_input_tokens) + tasks * median(graph_provider_total_input_tokens). For cadence break-even let refresh_rate = refreshes / tasks and report break_even_tasks = ceil(median(graph_build_provider_input_tokens) / (median(native_provider_total_input_tokens) - median(graph_provider_total_input_tokens) - refresh_rate * median(refresh_provider_input_tokens))). Provider output and input-cost metrics are reported separately and never mixed into this token formula.",
+      "task_condition_policy": "Use native_agent/native trials for native_task_ms and native provider total input tokens. Use only the warm condition of the selected graph arm for graph_task_ms and graph provider total input tokens because build cost is added separately. Use clean-build costs and graph-build provider input tokens from that arm's paired cold builds. Report cold answer latency and quality, but do not substitute cold answer latency into break-even. Incremental refresh costs and refresh provider input tokens come only from separately identified refresh measurements.",
+      "zero_savings_rule": "For time and tokens, if the cadence-adjusted denominator is zero or negative, break-even is never; do not report a finite value.",
+      "unknown_inputs_rule": "If any required build, refresh, task, token-category, rate, or cost input is unknown, the affected total and break-even result are unknown; never substitute zero."
+    },
+    "machine_gates": {
+      "required_in_scope_phase_coverage": 1,
+      "selected_file_precision_min": 0.7,
+      "unrelated_files_max": 2,
+      "incorrect_load_bearing_claims_max": 0,
+      "broad_search_restarts_max": 0,
+      "strict_madar_calls_max": 1,
+      "focused_reads_max": 2
+    }
+  },
+  "human_rubric": {
+    "blind_review": true,
+    "reviewers": 2,
+    "adjudication": "Two reviewers score anonymized answers independently. Any phase-score disagreement or incorrect-claim disagreement is resolved by a third reviewer before unblinding arms.",
+    "dimensions": [
+      "phase coverage",
+      "causal ordering",
+      "citation correctness",
+      "uncertainty honesty",
+      "answer usefulness"
+    ],
+    "phase_score": {
+      "0": "Missing, wrong, or supported only by an unrelated citation.",
+      "1": "Partially correct but missing a load-bearing handoff, symbol, or citation.",
+      "2": "Correctly explains the phase and its handoff with direct file and symbol evidence."
+    },
+    "dimension_score": {
+      "0": "Materially wrong or absent.",
+      "1": "Useful but incomplete or imprecise.",
+      "2": "Correct, complete, and appropriately scoped."
+    },
+    "trial_total_formula": "Sum every required in-scope phase score and all five dimension scores for one adjudicated trial; compare totals only within the same question, temperature, arm, and condition cell.",
+    "condition_policy": {
+      "aggregation_key": "repository_id, question_id, temperature, arm, and condition",
+      "graph_conditions": ["cold", "warm"],
+      "native_condition": "Native has one condition named native and three standalone trials per block; its same condition median is the native comparator for both graph conditions.",
+      "matching_rule": "Compare Madar cold with Graphify cold and native; compare Madar warm with Graphify warm and native. Never pool cold and warm trials or medians.",
+      "graph_pass_requirement": "Madar must satisfy the complete pass rule independently in both cold and warm conditions; success in one graph condition cannot compensate for failure in the other.",
+      "break_even_condition": "Break-even uses graph warm task latency and provider tokens, native native-condition latency and provider tokens, plus graph build costs and build tokens from paired cold builds."
+    },
+    "aggregation": "For each question with comparison_role=included, temperature, arm, and condition cell, report all three trials plus the cell's median adjudicated trial total. Native has only condition=native; Graphify and Madar each have distinct cold and warm cells. A numeric tie is no worse. Failed, timed-out, invalidated, and budget-terminated trials receive zero and are never dropped or pooled across conditions. Report comparison_role=diagnostic_only questions in a separate diagnostic section without cross-arm medians.",
+    "pass_rule": "Pass/fail and cross-arm medians use only questions with comparison_role=included. For every included question and temperature, Madar cold and Madar warm must each independently have at least two of three trials satisfy every machine gate and score 2 on every required in-scope phase; no accepted Madar trial may contain an incorrect load-bearing claim. Madar cold's median must tie or exceed Graphify cold's median and the native median; Madar warm's median must tie or exceed Graphify warm's median and the same native median. Both Madar graph conditions must pass. Questions with comparison_role=diagnostic_only never affect comparator aggregation or pass/fail; their separate report must identify every unsupported-language phase explicitly."
+  },
+  "anti_tuning": {
+    "production_contract_access": "forbidden",
+    "agent_inputs": ["product_scope_statement", "frozen_prompt", "target_repository"],
+    "agent_madar_checkout_access": "forbidden",
+    "grading_order": "Expected paths and rubric are loaded only after the agent transcript and final answer are immutable.",
+    "change_policy": "Any contract edit creates a new contract_id and invalidates cross-version comparisons; failed rows remain in history.",
+    "repository_rule": "No repository id, path, symbol, expected answer, phase, or scoring term may be copied into src, dist, generated graph inputs, agent instructions, or retrieval rules."
+  }
+}
