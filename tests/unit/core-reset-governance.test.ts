@@ -22,7 +22,8 @@ describe('core reset governance', () => {
     expect(roadmap).toContain('## Now')
     expect(roadmap).toContain('## Next')
     expect(roadmap).toContain('## Later')
-    expect(roadmap).not.toContain('## v0.26')
+    expect(roadmap).not.toMatch(/^##\s+v?\d+(?:\.\d+)+\b/im)
+    expect(roadmap).not.toMatch(/^##\s+Features?\b/im)
 
     expect(design).toContain('issues/577')
     expect(design).toContain('not a permanent V1/V2 split')
@@ -43,6 +44,7 @@ describe('core reset governance', () => {
         id: string
         disposition: string
         status: string
+        sources?: string[]
         exit_gate: string
         remove_when?: string
       }>
@@ -53,25 +55,55 @@ describe('core reset governance', () => {
     expect(manifest.rules.length).toBeGreaterThan(0)
     expect(manifest.items.length).toBeGreaterThan(10)
 
-    const ids = manifest.items.map((item) => item.id)
+    const ids = manifest.items.map((item) => item.id.trim())
     expect(new Set(ids).size).toBe(ids.length)
 
     for (const item of manifest.items) {
+      expect(item.id.trim().length).toBeGreaterThan(0)
       expect(['keep', 'rebuild', 'move', 'delete', 'defer']).toContain(item.disposition)
       expect(['proposed', 'planned', 'in_progress', 'complete', 'approved_exception']).toContain(item.status)
-      expect(item.exit_gate.length).toBeGreaterThan(0)
+      expect(item.exit_gate.trim().length).toBeGreaterThan(0)
+      for (const source of item.sources ?? []) {
+        expect(source.trim()).toMatch(/^(?:\.github|docs|examples|src|tests|tools)\//)
+      }
       if (item.disposition === 'rebuild') {
-        expect(item.remove_when?.length).toBeGreaterThan(0)
+        expect(item.remove_when?.trim().length).toBeGreaterThan(0)
       }
     }
   })
 
   it('routes contributors through the reset contract', () => {
     const issueConfig = read('.github/ISSUE_TEMPLATE/config.yml')
+    const workItem = parse(read('.github/ISSUE_TEMPLATE/core_reset_work_item.yml')) as {
+      body: Array<{
+        id?: string
+        validations?: { required?: boolean }
+        attributes?: { options?: Array<{ required?: boolean }> }
+      }>
+    }
     const pullRequestTemplate = read('.github/pull_request_template.md')
 
     expect(issueConfig).toContain('/blob/main/docs/roadmap.md')
     expect(issueConfig).not.toContain('/issues/155')
+
+    const requiredFieldIds = [
+      'parent',
+      'problem',
+      'manifest',
+      'dependencies',
+      'implementation',
+      'deletion',
+      'budget',
+      'gates',
+      'verification',
+      'non_goals',
+    ]
+    for (const id of requiredFieldIds) {
+      expect(workItem.body.find((field) => field.id === id)?.validations?.required).toBe(true)
+    }
+    const resetContract = workItem.body.find((field) => field.id === 'reset_contract')
+    expect(resetContract?.attributes?.options?.length).toBeGreaterThan(0)
+    expect(resetContract?.attributes?.options?.every((option) => option.required)).toBe(true)
 
     expect(pullRequestTemplate).toContain('## Core Reset contract')
     expect(pullRequestTemplate).toContain('Removal-manifest IDs')

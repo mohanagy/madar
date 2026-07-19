@@ -94,7 +94,11 @@ items:
       - src/pipeline/docs.ts
       - src/pipeline/wiki.ts
       - src/shared/binary-ingest-sidecar.ts
-      - Go, Python, PDF, document, image, audio, and video extraction paths
+      - src/pipeline/extract/non-code.ts
+      - src/pipeline/extract/non-code/**
+      - src/pipeline/extract/python-rationale.ts
+      - src/pipeline/extract/go-cross-file.ts
+    notes: Other non-TypeScript handlers embedded in the legacy extraction engine are owned by legacy-extraction.
     blocked_by: canonical-typescript-index
     exit_gate: Package, docs, flags, dependencies, and tests no longer claim unsupported ingestion.
 
@@ -215,7 +219,7 @@ items:
       - src/infrastructure/handoff-command.ts
       - src/shared/telemetry.ts
       - src/shared/update-notifier.ts
-      - Cursor, Gemini, and Copilot-specific installer paths
+    notes: Cursor, Gemini, and Copilot-specific branches inside the shared installer and CLI are removed with this item and thin-delivery.
     blocked_by: thin-delivery
     exit_gate: Claude and Codex natural activation passes without hidden routing profiles or prompt hooks.
 
