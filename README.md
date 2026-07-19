@@ -191,7 +191,9 @@ Read the [benchmark suite and all dated receipts](https://github.com/mohanagy/ma
 
 ## Current Release
 
-Current version: `0.31.4`.
+Current version: `0.32.0`.
+
+`0.32.0` makes `madar generate .` capability-aware by default: SPI metadata and legacy relationship semantics work together for JavaScript/TypeScript, with legacy fallback elsewhere. It adds an MCP Registry publishing path.
 
 `0.31.4` keeps receipts tied to visible context and hardens Claude/Codex hook handling.
 
@@ -203,7 +205,7 @@ Current version: `0.31.4`.
 
 `0.31.0` made code graphs directed by default, separated evidence strength from answer readiness, added bounded context recovery, made indexing completeness explicit, preserved generation policy during automatic refresh, isolated linked-worktree artifacts, and removed benchmark expectations from production retrieval.
 
-Read the full notes in the [0.31.4 changelog](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md#0314---2026-07-18).
+Read the full notes in the [0.32.0 changelog](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md#0320---2026-07-19).
 
 ## Documentation
 

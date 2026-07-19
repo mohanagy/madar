@@ -4,6 +4,13 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-07-19
+
+### Added
+
+- **Capability-aware auto extraction is now the default**: `madar generate .` and programmatic generation combine SPI node and framework metadata with proven legacy relationship semantics for JavaScript/TypeScript, while using legacy fallback for SPI-unsupported languages. `--legacy` remains legacy-only and `--spi` remains strict SPI code extraction without legacy semantic augmentation or unsupported-language fallback. Addresses #570.
+- **Official MCP Registry publication is part of the release path**: the package now declares its canonical `mcpName`, ships an official Registry manifest for the local stdio server, and provides an OIDC-protected workflow that verifies the public npm package before publishing and checking the Registry entry.
+
 ## [0.31.4] - 2026-07-18
 
 ### Changed
