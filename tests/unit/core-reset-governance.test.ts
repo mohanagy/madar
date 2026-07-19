@@ -10,6 +10,7 @@ describe('core reset governance', () => {
   it('keeps one linked roadmap and RFC contract', () => {
     const roadmap = read('docs/roadmap.md')
     const design = read('docs/designs/2026-07-19-core-reset.md')
+    const scorecard = read('docs/core-reset/scorecard.md')
     const readme = read('README.md')
     const contributing = read('CONTRIBUTING.md')
 
@@ -22,12 +23,16 @@ describe('core reset governance', () => {
     expect(roadmap).toContain('## Now')
     expect(roadmap).toContain('## Next')
     expect(roadmap).toContain('## Later')
+    expect(roadmap).toContain('accepted Core Reset')
+    expect(roadmap).not.toContain('currently **proposed**')
     expect(roadmap).not.toMatch(/^##\s+v?\d+(?:\.\d+)+\b/im)
     expect(roadmap).not.toMatch(/^##\s+Features?\b/im)
 
     expect(design).toContain('issues/577')
+    expect(design).toContain('**Status:** accepted')
     expect(design).toContain('not a permanent V1/V2 split')
     expect(design).toContain('Merging code alone is not completion')
+    expect(scorecard).toContain('**Status:** accepted')
     expect(readme).toContain('docs/roadmap.md')
     expect(contributing).toContain('docs/roadmap.md')
   })
@@ -51,7 +56,7 @@ describe('core reset governance', () => {
     }
 
     expect(manifest.schema_version).toBe(1)
-    expect(manifest.status).toBe('proposed')
+    expect(manifest.status).toBe('accepted')
     expect(manifest.rules.length).toBeGreaterThan(0)
     expect(manifest.items.length).toBeGreaterThan(10)
 

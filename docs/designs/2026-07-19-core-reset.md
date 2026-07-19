@@ -3,7 +3,7 @@
 > **Tracking issue:** [#577](https://github.com/mohanagy/madar/issues/577)
 > **Milestone:** [`v0.40.0 — Core Reset`](https://github.com/mohanagy/madar/milestone/7)
 > **Project:** [Madar Roadmap](https://github.com/users/mohanagy/projects/8)
-> **Status:** proposed — implementation is blocked until the RFC checklist is accepted
+> **Status:** accepted — scope and baseline is the only authorized phase
 
 ## Decision
 
@@ -186,7 +186,7 @@ The detailed scorecard is [`docs/core-reset/scorecard.md`](../core-reset/scoreca
 - [#571](https://github.com/mohanagy/madar/issues/571) is superseded if extraction modes are removed.
 - [#567](https://github.com/mohanagy/madar/issues/567) is folded into thin Codex delivery and remains a beta activation blocker.
 
-Their final disposition occurs only after this RFC is accepted.
+Their final disposition is applied only through the dependency-ordered phase that owns each issue.
 
 ## Risks and stop conditions
 
@@ -198,7 +198,7 @@ Their final disposition occurs only after this RFC is accepted.
 
 ## Superseded direction
 
-If accepted, this RFC supersedes the additive architecture direction in the earlier SPI design and the compatibility/fallback direction in `docs/decisions/2026-05-11-spi-default-readiness.md`. Those documents remain as historical records; they do not authorize a surviving legacy engine.
+This RFC supersedes the additive architecture direction in the earlier SPI design and the compatibility/fallback direction in `docs/decisions/2026-05-11-spi-default-readiness.md`. Those documents remain as historical records; they do not authorize a surviving legacy engine.
 
 ## Amendment rule
 
@@ -210,10 +210,11 @@ Any change to the product job, non-goals, architecture boundary, compatibility p
 
 ## Acceptance
 
-The RFC is accepted when every acceptance checkbox in [#577](https://github.com/mohanagy/madar/issues/577) is resolved and the governing documentation PR is merged. Acceptance authorizes dependency-ordered implementation; it does not waive any phase gate.
+The repository owner accepted this RFC on 2026-07-19 in [#577](https://github.com/mohanagy/madar/issues/577) after the governance review passed. Merging the governing documentation PR makes this contract authoritative and authorizes only the scope-and-baseline phase. Acceptance does not waive any later phase gate.
 
 ## Decision log
 
 | Date | Status | Decision |
 | --- | --- | --- |
 | 2026-07-19 | Proposed | Opened #577 and created the deletion-led product, architecture, validation, and change-control contract. |
+| 2026-07-19 | Accepted | The repository owner approved the complete checklist; scope and baseline may begin after the governing documentation PR merges. |

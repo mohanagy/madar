@@ -1,6 +1,6 @@
 # Public roadmap
 
-Madar is in a proposed Core Reset. The roadmap is outcome-driven: work advances only when its predecessor is complete and its technical or business exit gate has evidence.
+Madar is executing an accepted Core Reset. The roadmap is outcome-driven: work advances only when its predecessor is complete and its technical or business exit gate has evidence.
 
 ## Sources of truth
 
@@ -11,13 +11,13 @@ Madar is in a proposed Core Reset. The roadmap is outcome-driven: work advances 
 - [Removal manifest](core-reset/removal-manifest.yml) — keep, rebuild, move, delete, and defer decisions
 - [Scorecard](core-reset/scorecard.md) — technical and business evidence gates
 
-The RFC is currently **proposed**. Reset implementation is blocked until its acceptance checklist and governing documentation are approved.
+The RFC is **accepted**. Scope and baseline is the only authorized phase; every replacement phase remains blocked until its predecessor's evidence gate passes.
 
 ## Now — scope and baseline
 
-The committed work is limited to:
+The current work is limited to:
 
-1. Review and accept or amend the product contract, non-goals, architecture, deletion policy, and release gates in #577.
+1. Treat the accepted product contract, non-goals, architecture, deletion policy, and release gates in #577 as fixed unless an explicit amendment is approved.
 2. Record reproducible baselines for graph correctness, indexing, retrieval, CLI/MCP startup, package contents, and production source size.
 3. Freeze held-out repositories, questions, expected evidence paths, and human review rules.
 4. Complete the removal manifest so every production subsystem has one disposition.
@@ -74,14 +74,14 @@ A deferred capability returns to the roadmap only after at least three independe
 
 ## Existing open issues
 
-| Issue | Reset disposition before RFC acceptance |
+| Issue | Accepted reset disposition |
 | --- | --- |
 | [#565](https://github.com/mohanagy/madar/issues/565) | Retain as a real acceptance failure and held-out retrieval input |
 | [#574](https://github.com/mohanagy/madar/issues/574) | Do not implement as another patch; absorb its outcome into generic retrieval replacement |
 | [#567](https://github.com/mohanagy/madar/issues/567) | Fold into thin Codex delivery and keep as a beta activation blocker |
 | [#571](https://github.com/mohanagy/madar/issues/571) | Supersede if the accepted reset removes extraction modes |
 
-Their final milestone, project, and closure state is changed only after #577 is accepted.
+Their milestone, project, and closure state changes only through the dependency-ordered phase that owns each issue.
 
 ## Contribution and drift rules
 

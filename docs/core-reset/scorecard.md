@@ -2,7 +2,7 @@
 
 > **RFC:** [#577](https://github.com/mohanagy/madar/issues/577)
 > **Milestone:** [`v0.40.0 — Core Reset`](https://github.com/mohanagy/madar/milestone/7)
-> **Status:** proposed; no implementation phase is authorized yet
+> **Status:** accepted; scope and baseline is the only authorized phase
 
 This is the phase-gate evidence ledger. An issue or PR link is not evidence by itself; each gate needs a reproducible test, receipt, measurement, or external-user record.
 
@@ -24,7 +24,7 @@ Baseline values that are not yet reproducible are recorded as unknown rather tha
 
 | Phase | Status | Exit gate | Evidence |
 | --- | --- | --- | --- |
-| Scope and baseline | Blocked on RFC acceptance | RFC accepted; baseline script/receipt committed; removal manifest reviewed | #577 |
+| Scope and baseline | Ready | Baseline script/receipt committed; held-out evaluation contract frozen; removal manifest reviewed | #577 and #579 |
 | Directed multigraph | Not started | Parallel types, direction, stable IDs, provenance, and serialization pass | Pending |
 | Canonical TypeScript index | Not started | Labelled TS/framework gates pass without legacy augmentation | Pending |
 | Incremental index | Not started | Add/change/delete/rename output equals clean rebuild | Pending |
@@ -130,3 +130,4 @@ Copy this into a comment on [#577](https://github.com/mohanagy/madar/issues/577)
 | Date | Change | Evidence | Approved in |
 | --- | --- | --- | --- |
 | 2026-07-19 | Initial proposed scorecard | Deep technical and business review | #577 |
+| 2026-07-19 | RFC accepted; scope-and-baseline phase authorized | Green governance PR and completed acceptance checklist | #577 and #579 |
