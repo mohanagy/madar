@@ -193,7 +193,7 @@ Read the [benchmark suite and all dated receipts](https://github.com/mohanagy/ma
 
 Current version: `0.32.0`.
 
-`0.32.0` makes `madar generate .` capability-aware by default: SPI metadata and legacy relationship semantics work together for JavaScript/TypeScript, with legacy fallback for other supported languages. It also adds the official MCP Registry publication path for Madar's local stdio server.
+`0.32.0` makes `madar generate .` capability-aware by default: SPI metadata and legacy relationship semantics work together for JavaScript/TypeScript, with legacy fallback elsewhere. It adds an MCP Registry publishing path.
 
 `0.31.4` keeps receipts tied to visible context and hardens Claude/Codex hook handling.
 
