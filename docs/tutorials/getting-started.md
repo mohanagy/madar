@@ -26,7 +26,7 @@ madar generate examples/sample-workspace --no-html
 
 This creates `examples/sample-workspace/out/graph.json`.
 
-Default generation already uses SPI for supported TypeScript/JavaScript files while retaining legacy extraction for other supported languages. Use strict SPI mode only when you intentionally want to inspect the JS/TS-only result without language fallback:
+Default generation combines SPI metadata with proven legacy semantics for supported TypeScript/JavaScript code, while retaining legacy fallback for other supported languages. Strict SPI mode restricts code extraction to SPI-supported JS/TS without legacy semantics or language fallback; eligible non-code evidence remains included:
 
 ```bash
 madar generate examples/sample-workspace --spi --no-html
@@ -119,7 +119,7 @@ On Windows, use `--exec "type {prompt_file}"` for the same smoke check because `
 - **`madar: command not found`**: make sure the global npm install succeeded, or run from a local repo checkout after `npm run build`.
 - **`graph.json` missing**: rerun `madar generate . --no-html` before `pack`, `prompt`, or `compare`.
 - **`doctor` or `status` says the install is missing**: rerun your chosen `madar <agent> install` command from the sample workspace root, then rerun the verification commands for Claude, Cursor, Gemini, or Copilot.
-- **Need a strict JS/TS-only diagnostic?** Regenerate with `madar generate . --spi --no-html`. Normal `madar generate . --no-html` already includes framework-aware JS/TS hints and retains Go, Python, and other supported legacy languages.
+- **Need a strict JS/TS code-extraction diagnostic?** Regenerate with `madar generate . --spi --no-html`; eligible non-code evidence remains included. Normal `madar generate . --no-html` already includes framework-aware JS/TS hints and retains Go, Python, and other supported legacy languages.
 - **`compare` looks noisy**: the `cat {prompt_file}` runner (or `type {prompt_file}` on Windows) is only a local smoke check. Use a real terminal model runner later if you want meaningful answer comparisons.
 - **Need more questions?** Start with `examples/sample-workspace/prompt-examples.json`.
 

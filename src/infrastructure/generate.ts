@@ -91,8 +91,10 @@ export interface GenerateGraphOptions {
   includeDocs?: boolean
   docs?: boolean
   /** Select capability-aware auto extraction, legacy-only extraction, or
-   * strict SPI-only extraction. CLI generation defaults to `auto`; omitted
-   * programmatic options retain the pre-v0.32 legacy behavior. */
+   * strict SPI code extraction without unsupported-language fallback.
+   * Eligible non-code evidence remains included. CLI and programmatic
+   * generation default to `auto`; explicit `useSpi` retains its legacy
+   * compatibility mapping. */
   extractionMode?: ExtractionMode
   /** @deprecated Use `extractionMode`. Retained for programmatic callers. */
   useSpi?: boolean
@@ -564,6 +566,11 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   const legacyFallbackCodeFiles = extractionMode === 'auto'
     ? codeFiles.filter((filePath) => !isSpiSupportedSourceFile(filePath))
     : []
+  // SPI contributes node and framework metadata for supported files, while
+  // the legacy extractor preserves established relationship semantics for
+  // those same files. This is an augmentation pass, not a fallback: explicit
+  // --spi stays strict and explicit --legacy never invokes SPI.
+  const legacyAugmentationCodeFiles = extractionMode === 'auto' ? spiCodeFiles : []
   // SPI code and non-code/legacy passes are merged afterward, so each output
   // graph needs one shared ID namespace across the files it actually emits.
   // Strict SPI intentionally excludes unsupported source languages from that
@@ -578,6 +585,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
       : undefined
   let extractedFiles = options.clusterOnly ? 0 : extractableFiles.length
   let cacheSummary: GenerateGraphCacheSummary | null = null
+  let spiProducedEvidence = false
 
   progress?.({ step: 'detect', message: `Found ${detected.total_files} files (~${detected.total_words.toLocaleString()} words)` })
 
@@ -643,6 +651,23 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
           ...(sharedFileStems ? { fileStemByAbsolutePath: sharedFileStems } : {}),
         }), 'spi')
       : emptyExtraction()
+    spiProducedEvidence = spiExtraction.nodes.length > 0 || spiExtraction.edges.length > 0
+    // Legacy owns the shared JS/TS nodes and their established relationship
+    // semantics. Retain SPI-only nodes as supplemental evidence, but avoid
+    // mixing competing relationship projections into the primary topology.
+    const spiSupplementalExtraction: ExtractionData = {
+      ...spiExtraction,
+      edges: [],
+      hyperedges: [],
+    }
+    const legacyAugmentationExtraction =
+      legacyAugmentationCodeFiles.length > 0
+        ? withExtractionStrategy(extract(legacyAugmentationCodeFiles, {
+            allowedTargets: extractableFiles,
+            contextNodes: spiExtraction.nodes,
+            ...(sharedFileStems ? { fileStemByAbsolutePath: sharedFileStems } : {}),
+          }), 'legacy')
+        : emptyExtraction()
     const legacyFallbackExtraction =
       legacyFallbackCodeFiles.length > 0
         ? withExtractionStrategy(extract(legacyFallbackCodeFiles, {
@@ -652,7 +677,13 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
             onFileOutcome: recordExtractionOutcome('legacy_fallback', 'spi_unsupported_language'),
           }), 'legacy_fallback')
         : emptyExtraction()
-    const codeExtraction = mergeExtractions([spiExtraction, legacyFallbackExtraction])
+    const codeExtraction = extractionMode === 'auto'
+      ? mergeExtractions([
+          legacyAugmentationExtraction,
+          spiSupplementalExtraction,
+          legacyFallbackExtraction,
+        ])
+      : spiExtraction
     const nonCodeExtraction =
       nonCodeExtractableFiles.length > 0
         ? withExtractionStrategy(extract(nonCodeExtractableFiles, {
@@ -677,6 +708,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     }
 
     extractedFiles = (built ? (built.cache.hit ? 0 : built.cache.file_count) : 0)
+      + legacyAugmentationCodeFiles.length
       + legacyFallbackCodeFiles.length
       + nonCodeExtractableFiles.length
     cacheSummary = built
@@ -697,7 +729,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     }
     if (extractionMode === 'auto') {
       notes.push(
-        `Auto extraction: SPI indexed ${spiCodeFiles.length} supported source file(s); legacy fallback indexed ${legacyFallbackCodeFiles.length} SPI-unsupported source file(s).`,
+        `Auto extraction: SPI routed ${spiCodeFiles.length} supported source file(s); legacy semantic augmentation routed ${legacyAugmentationCodeFiles.length} supported source file(s); legacy fallback routed ${legacyFallbackCodeFiles.length} SPI-unsupported source file(s).`,
       )
     }
     return buildFromJson(mergeExtractions([codeExtraction, nonCodeExtraction]), { directed })
@@ -872,7 +904,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   // graph based on the currently discovered corpus without re-extracting it.
   const graphUsesSpi = options.clusterOnly
     ? existingGraph?.graph.spi_mode === true
-    : extractionMode === 'spi' || (extractionMode === 'auto' && spiCodeFiles.length > 0)
+    : spiProducedEvidence
   if (graphUsesSpi) {
     graph.graph.spi_mode = true
   } else {

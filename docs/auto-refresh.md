@@ -11,7 +11,7 @@ There is no file-count cutoff. A reconciliation scans every supported candidate 
 Every generated `graph.json` and `manifest.json` contains the same versioned `generation_policy` and SHA-256 fingerprint. The policy covers:
 
 - directed versus legacy undirected graph semantics;
-- extraction mode: capability-aware auto, legacy-only, or strict SPI-only;
+- extraction mode: capability-aware auto, legacy-only, or strict SPI code extraction without unsupported-language fallback;
 - Git-ignore enforcement and the active Git/Madar exclusion controls;
 - symlink traversal;
 - document/non-code inclusion policy;

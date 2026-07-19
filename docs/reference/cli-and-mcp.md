@@ -88,9 +88,9 @@ The stdio transport and MCP discovery stay responsive while initial reconciliati
 ## Common commands
 
 ```bash
-madar generate .                          # auto: SPI for JS/TS + legacy fallback for other supported languages
+madar generate .                          # auto: SPI metadata + legacy semantics for JS/TS, plus legacy fallback for other languages
 madar generate . --legacy                 # force legacy extraction only
-madar generate . --spi                    # force strict SPI-only JS/TS extraction
+madar generate . --spi                    # force strict SPI code extraction without legacy augmentation or language fallback
 madar generate . --respect-gitignore      # exclude files ignored by Git
 madar generate . --strict-indexing        # fail on any failed/unsupported candidate
 madar generate . --max-indexing-failed 1 --max-indexing-unsupported 3

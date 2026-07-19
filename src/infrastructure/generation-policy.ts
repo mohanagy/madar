@@ -39,15 +39,17 @@ export interface StoredPolicyGenerationOptions {
 }
 
 /**
- * Resolve programmatic compatibility separately from the CLI default. Older
- * library callers that omitted `useSpi` retain legacy extraction; CLI and
- * user-facing command paths pass `extractionMode: 'auto'` explicitly.
+ * Preserve explicit compatibility settings while making auto the shared
+ * default for both CLI and programmatic generation.
  */
 export function resolveExtractionMode(options: Pick<BuildGenerationPolicyOptions, 'extractionMode' | 'useSpi'>): ExtractionMode {
-  if (options.extractionMode) {
+  if (options.extractionMode !== undefined) {
     return options.extractionMode
   }
-  return options.useSpi === true ? 'spi' : 'legacy'
+  if (options.useSpi !== undefined) {
+    return options.useSpi ? 'spi' : 'legacy'
+  }
+  return 'auto'
 }
 
 function optionalGitPath(rootPath: string, args: string[]): string | null {

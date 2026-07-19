@@ -1668,6 +1668,61 @@ describe('cli main', () => {
     ])
   })
 
+  it('omits SPI telemetry for cluster-only generation because the stored graph owns its extraction mode', async () => {
+    const { io, errors } = createIo()
+    const dependencies = createDependencies() as CliDependencies & {
+      recordTelemetryEvent: (event: unknown) => void
+      readInstalledVersion: () => string
+    }
+    const telemetryEvents: unknown[] = []
+
+    dependencies.recordTelemetryEvent = (event) => {
+      telemetryEvents.push(event)
+    }
+    dependencies.readInstalledVersion = () => '0.27.4'
+
+    const exitCode = await executeCli(['generate', '.', '--cluster-only'], io, dependencies)
+
+    expect(exitCode).toBe(0)
+    expect(errors).toEqual([])
+    expect(telemetryEvents).toEqual([
+      expect.objectContaining({ command: 'generate', stage: 'started' }),
+      expect.objectContaining({ command: 'generate', stage: 'succeeded' }),
+    ])
+    for (const event of telemetryEvents) {
+      expect(event).not.toHaveProperty('spiEnabled')
+    }
+  })
+
+  it('omits SPI telemetry for failed cluster-only generation too', async () => {
+    const { io, errors } = createIo()
+    const dependencies = createDependencies() as CliDependencies & {
+      recordTelemetryEvent: (event: unknown) => void
+      readInstalledVersion: () => string
+    }
+    const telemetryEvents: unknown[] = []
+
+    dependencies.generateGraph = () => {
+      throw new Error('cluster-only failed')
+    }
+    dependencies.recordTelemetryEvent = (event) => {
+      telemetryEvents.push(event)
+    }
+    dependencies.readInstalledVersion = () => '0.27.4'
+
+    const exitCode = await executeCli(['generate', '.', '--cluster-only'], io, dependencies)
+
+    expect(exitCode).toBe(1)
+    expect(errors).toContain('error: cluster-only failed')
+    expect(telemetryEvents).toEqual([
+      expect.objectContaining({ command: 'generate', stage: 'started' }),
+      expect.objectContaining({ command: 'generate', stage: 'failed' }),
+    ])
+    for (const event of telemetryEvents) {
+      expect(event).not.toHaveProperty('spiEnabled')
+    }
+  })
+
   it('records telemetry after install success across install entrypoints', async () => {
     const generic = createIo()
     const agent = createIo()

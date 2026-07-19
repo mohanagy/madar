@@ -74,7 +74,8 @@
         "ajv": "^8.20.0",
         "ajv-formats": "^3.0.1",
         "vite": "^8.0.11",
-        "vitest": "^4.1.5"
+        "vitest": "^4.1.5",
+        "yaml": "^2.9.0"
     },
     "dependencies": {
         "@vscode/tree-sitter-wasm": "^0.3.1",

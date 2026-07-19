@@ -67,7 +67,7 @@ Use the synthetic fixture in CI, and use the local-repo run when you want realis
 ## Interpreting results
 
 - `extractable_files` is the total corpus eligible for extraction in that workspace state.
-- `extracted_files` is the number of files freshly re-extracted for that run. It should drop to `0` for SPI warm-cache hits, update no-op runs, and cluster-only refreshes.
+- `extracted_files` is the number of files freshly re-extracted for that run. It should drop to `0` for strict-SPI warm-cache hits, update no-op runs, and cluster-only refreshes. Auto mode still refreshes its legacy semantic augmentation after an SPI cache hit.
 - `cache_reason` is only populated for SPI runs. Typical values are `no-cache`, `fresh-cache`, and `key-mismatch`.
 - Compare `graph_size_bytes` and `output_size_bytes` together: the graph file can stay flat while the total output directory still grows.
 

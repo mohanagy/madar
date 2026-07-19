@@ -229,7 +229,10 @@ export async function runPackQualityFixture(
     const workspaceRoot = copyFixtureWorkspace(name, tempDir)
     const graph = generateGraph(workspaceRoot, {
       noHtml: true,
-      ...(runFixture.use_spi ? { useSpi: true } : {}),
+      // Fixtures are regression baselines: pin their extraction strategy so a
+      // product-default change does not silently rewrite their expectations.
+      // Default-auto behavior is exercised directly in generation tests.
+      extractionMode: runFixture.use_spi ? 'spi' : 'legacy',
     })
     const graphPath = join(workspaceRoot, 'out', 'graph.json')
     const packOutput = await runContextPackCommand({

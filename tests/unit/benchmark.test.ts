@@ -383,7 +383,7 @@ describe('runBenchmark', () => {
   test('uses the checked-in mixed-workspace fixture as a reproducible parity baseline', () => {
     withTempDir((tempDir) => {
       const workspaceRoot = copyFixtureCorpus('workspace-parity', tempDir)
-      const generation = generateGraph(workspaceRoot, { noHtml: true })
+      const generation = generateGraph(workspaceRoot, { noHtml: true, extractionMode: 'legacy' })
       const benchmark = runBenchmark(generation.graphPath, null, ['create session login'])
 
       expect('reduction_ratio' in benchmark).toBe(true)
@@ -419,7 +419,7 @@ describe('runBenchmark', () => {
   test('tracks fixture-backed question coverage for the mixed-workspace baseline', () => {
     withTempDir((tempDir) => {
       const workspaceRoot = copyFixtureCorpus('workspace-parity', tempDir)
-      const generation = generateGraph(workspaceRoot, { noHtml: true })
+      const generation = generateGraph(workspaceRoot, { noHtml: true, extractionMode: 'legacy' })
       const questions = readWorkspaceParityQuestions()
       const benchmark = runBenchmark(generation.graphPath, null, questions)
 
@@ -544,7 +544,7 @@ describe('runBenchmark', () => {
   test('normalizes expected labels for benchmark matching', () => {
     withTempDir((tempDir) => {
       const workspaceRoot = copyFixtureCorpus('workspace-parity', tempDir)
-      const generation = generateGraph(workspaceRoot, { noHtml: true })
+      const generation = generateGraph(workspaceRoot, { noHtml: true, extractionMode: 'legacy' })
       const benchmark = runBenchmark(generation.graphPath, null, [
         { question: 'shared auth helper', expected_labels: ['DEFAULT', 'auth ts', 'index-ts'] },
       ])

@@ -1,5 +1,5 @@
-// Capability-aware extraction modes. The CLI defaults to auto: SPI owns
-// JS/TS and legacy extraction retains all other supported languages.
+// Capability-aware extraction modes. The CLI defaults to auto: SPI supplies
+// JS/TS metadata while legacy semantics preserve the established topology.
 
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync, readFileSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -68,10 +68,10 @@ describe('generateGraph capability-aware auto extraction', () => {
     writeFile(sandbox, 'docs/notes.md', '# Notes\nMixed-language graph\n')
   }
 
-  it('keeps SPI metadata, legacy-only Go, documents, and collision-safe IDs in one graph', () => {
+  it('keeps SPI metadata, legacy semantics, Go fallback, documents, and collision-safe IDs in one graph', () => {
     writeMixedWorkspace()
 
-    const result = generateGraph(sandbox, { extractionMode: 'auto', noHtml: true })
+    const result = generateGraph(sandbox, { noHtml: true })
     const graph = JSON.parse(readFileSync(result.graphPath, 'utf8')) as {
       spi_mode?: unknown
       generation_policy?: { version?: unknown; settings?: { extraction_mode?: unknown } }
@@ -136,10 +136,10 @@ describe('generateGraph capability-aware auto extraction', () => {
     expect(indexing.outcomes).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ path: 'cmd/main.go', reason: 'unsupported_spi_language' }),
     ]))
-    expect(result.notes.join('\n')).toContain('Auto extraction: SPI indexed 1 supported source file(s); legacy fallback indexed 1 SPI-unsupported source file(s).')
+    expect(result.notes.join('\n')).toContain('Auto extraction: SPI routed 1 supported source file(s); legacy semantic augmentation routed 1 supported source file(s); legacy fallback routed 1 SPI-unsupported source file(s).')
   })
 
-  it('uses the SPI cache for JS/TS while re-extracting the legacy fallback on a warm auto build', () => {
+  it('uses the SPI cache while retaining legacy semantics and re-extracting the fallback on a warm auto build', () => {
     writeMixedWorkspace()
 
     const first = generateGraph(sandbox, { extractionMode: 'auto', noHtml: true })
@@ -150,7 +150,8 @@ describe('generateGraph capability-aware auto extraction', () => {
 
     expect(first.cache).toEqual(expect.objectContaining({ strategy: 'spi', hit: false, fileCount: 1 }))
     expect(second.cache).toEqual(expect.objectContaining({ strategy: 'spi', hit: true, fileCount: 1 }))
-    expect(second.extractedFiles).toBe(2)
+    expect(first.extractedFiles).toBe(4)
+    expect(second.extractedFiles).toBe(3)
     expect(secondGraph.nodes).toEqual(expect.arrayContaining([
       expect.objectContaining({ label: 'main()', source_file: expect.stringMatching(/cmd\/main\.go$/) }),
     ]))
@@ -178,6 +179,18 @@ describe('generateGraph capability-aware auto extraction', () => {
       }),
     ]))
     expect(indexing.requested_extraction_mode).toBe('spi')
+  })
+
+  it('does not mark strict SPI mode when its code candidates produce no SPI evidence', () => {
+    writeFile(sandbox, 'cmd/main.go', 'package main\nfunc main() {}\n')
+    writeFile(sandbox, 'docs/notes.md', '# Retained non-code evidence\n')
+
+    const result = generateGraph(sandbox, { extractionMode: 'spi', noHtml: true })
+    const graph = JSON.parse(readFileSync(result.graphPath, 'utf8')) as {
+      spi_mode?: unknown
+    }
+
+    expect(graph.spi_mode).toBeUndefined()
   })
 
   it('preserves an existing auto graph SPI marker during a cluster-only rebuild', () => {

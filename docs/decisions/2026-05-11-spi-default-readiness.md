@@ -1,22 +1,22 @@
 # SPI default-readiness criteria + legacy-extractor fallback plan
 
 > **Tracking issue:** [#134](https://github.com/mohanagy/madar/issues/134).
-> **Status:** partially superseded by capability-aware auto extraction in [#570](https://github.com/mohanagy/madar/issues/570). The pure-SPI graduation criteria remain historical evidence gates, not the current default contract.
+> **Status:** partially superseded by capability-aware auto-extraction in [#570](https://github.com/mohanagy/madar/issues/570). The pure-SPI graduation criteria remain historical evidence gates, not the current default contract.
 
 ## What this document is
 
 A concrete, measurable contract that originally described when `madar generate --spi` could graduate to a **pure** default pipeline, and what fallback escape hatch would remain after that flip.
 
-This is not the contract for capability-aware auto mode. Auto mode intentionally keeps the mature legacy extractors for languages SPI does not support, so it does not claim that SPI has reached universal language parity.
+This is not the contract for capability-aware auto mode. Auto mode combines SPI metadata with mature legacy semantics for supported JS/TS and keeps legacy fallback for languages SPI does not support, so it does not claim that SPI has reached universal language parity.
 
 ## Current mode contract
 
 `madar generate <path>` now defaults to **auto**:
 
-- SPI extracts supported `.ts`, `.tsx`, `.js`, and `.jsx` files, including its framework-aware metadata.
+- SPI extracts supported `.ts`, `.tsx`, `.js`, and `.jsx` files, including its framework-aware metadata; auto mode retains the legacy relationships for those files as semantic augmentation.
 - The legacy extractor handles every other supported language and non-code artifact in the same graph.
 - `madar generate <path> --legacy` is strict legacy-only extraction.
-- `madar generate <path> --spi` is strict SPI-only extraction; it intentionally does not fall back to legacy languages.
+- `madar generate <path> --spi` is strict SPI code extraction; it intentionally omits legacy semantic augmentation and does not fall back to legacy languages, while eligible non-code evidence remains included.
 
 The selected mode is stored in the generation policy, so automatic refresh preserves an explicit `--legacy` or `--spi` choice and preserves the auto partition for normal generation.
 

@@ -663,7 +663,10 @@ function prepareBenchmarkWorkspace(
     resetBenchmarkWorkspaceConfig(workspaceRoot)
   }
   ensureBenchmarkWorkspaceInstall(graphWorkspaceRoot)
-  return runGenerateGraph(graphWorkspaceRoot, kind === 'spi' ? { noHtml: true, useSpi: true } : { noHtml: true }).graphPath
+  return runGenerateGraph(graphWorkspaceRoot, {
+    noHtml: true,
+    extractionMode: kind === 'spi' ? 'spi' : 'legacy',
+  }).graphPath
 }
 
 function median(values: number[]): number | null {

@@ -124,7 +124,7 @@ madar summary
 madar pack "how does auth work?" --task explain --format text
 ```
 
-By default, `madar generate .` uses SPI for JavaScript/TypeScript and legacy extraction for other supported languages. Strict modes are in the [CLI reference](https://github.com/mohanagy/madar/blob/main/docs/reference/cli-and-mcp.md).
+By default, `madar generate .` combines SPI metadata with proven legacy semantics for JavaScript/TypeScript, and uses legacy fallback for other supported languages. Strict modes are in the [CLI reference](https://github.com/mohanagy/madar/blob/main/docs/reference/cli-and-mcp.md).
 
 Create a provider-ready prompt:
 

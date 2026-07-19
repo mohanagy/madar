@@ -38,7 +38,7 @@ describe('benchmark suite docs', () => {
     expect(content).toContain('--allowedTools mcp__madar__retrieve')
     expect(content).toContain('`Legacy` runs the explicit `--legacy` extractor')
     expect(content).toContain('`SPI` runs strict `--spi`')
-    expect(content).toContain('capability-aware auto extraction')
+    expect(content).toContain('capability-aware auto-extraction')
     expect(content).toContain('two attributable Madar calls occurred')
     expect(content).not.toContain('one warm-cache measured trial per row')
     expect(content).toContain('results/2026-05-31T12-00-00/summary.md')

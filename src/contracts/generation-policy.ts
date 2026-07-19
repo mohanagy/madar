@@ -110,8 +110,8 @@ export function generationPolicyFingerprint(settings: GenerationPolicySettingsV1
   return createHash('sha256').update(canonicalPolicyDocument(settings)).digest('hex')
 }
 
-export function createGenerationPolicy(settings: GenerationPolicySettingsV1): GenerationPolicyV1
 export function createGenerationPolicy(settings: GenerationPolicySettingsV2): GenerationPolicyV2
+export function createGenerationPolicy(settings: GenerationPolicySettingsV1): GenerationPolicyV1
 export function createGenerationPolicy(
   settings: GenerationPolicySettingsV1 | GenerationPolicySettingsV2,
 ): GenerationPolicy {

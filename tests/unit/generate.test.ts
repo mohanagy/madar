@@ -1156,7 +1156,7 @@ describe('generateGraph', () => {
         'utf8',
       )
 
-      generateGraph(tempDir, { noHtml: true })
+      generateGraph(tempDir, { noHtml: true, extractionMode: 'legacy' })
 
       const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
         nodes: Array<Record<string, unknown>>
@@ -1174,7 +1174,7 @@ describe('generateGraph', () => {
   test('builds graph artifacts with stitched relative workspace anonymous default-export barrel imports while keeping the worker isolated', () => {
     withTempDir((tempDir) => {
       const workspaceRoot = copyFixtureCorpus('workspace-parity', tempDir)
-      const result = generateGraph(workspaceRoot, { noHtml: true })
+      const result = generateGraph(workspaceRoot, { noHtml: true, extractionMode: 'legacy' })
       const graphData = JSON.parse(readFileSync(join(workspaceRoot, 'out', 'graph.json'), 'utf8')) as {
         nodes: Array<Record<string, unknown>>
         links: Array<{ source: string; target: string; relation: string }>
@@ -4549,7 +4549,7 @@ describe('generateGraph', () => {
         'utf8',
       )
 
-      const initial = generateGraph(tempDir, { noHtml: true })
+      const initial = generateGraph(tempDir, { noHtml: true, extractionMode: 'legacy' })
       const staleGraphData = JSON.parse(readFileSync(initial.graphPath, 'utf8')) as {
         extractor_version?: number
         nodes: Array<Record<string, unknown>>
@@ -4561,7 +4561,7 @@ describe('generateGraph', () => {
       staleGraphData.links = staleGraphData.links.filter((edge) => edge.target !== 'auth_default')
       writeFileSync(initial.graphPath, `${JSON.stringify(staleGraphData, null, 2)}\n`, 'utf8')
 
-      const updated = generateGraph(tempDir, { update: true, noHtml: true })
+      const updated = generateGraph(tempDir, { update: true, noHtml: true, extractionMode: 'legacy' })
       const updatedGraphData = JSON.parse(readFileSync(updated.graphPath, 'utf8')) as {
         extractor_version?: number
         nodes: Array<Record<string, unknown>>
@@ -4610,7 +4610,7 @@ describe('generateGraph', () => {
         'utf8',
       )
 
-      const initial = generateGraph(tempDir, { noHtml: true })
+      const initial = generateGraph(tempDir, { noHtml: true, extractionMode: 'legacy' })
       const staleGraphData = JSON.parse(readFileSync(initial.graphPath, 'utf8')) as {
         extractor_version?: number
         nodes: Array<Record<string, unknown>>
@@ -4622,7 +4622,7 @@ describe('generateGraph', () => {
       staleGraphData.links = staleGraphData.links.filter((edge) => edge.target !== 'auth_default')
       writeFileSync(initial.graphPath, `${JSON.stringify(staleGraphData, null, 2)}\n`, 'utf8')
 
-      const updated = generateGraph(tempDir, { update: true, noHtml: true })
+      const updated = generateGraph(tempDir, { update: true, noHtml: true, extractionMode: 'legacy' })
       const updatedGraphData = JSON.parse(readFileSync(updated.graphPath, 'utf8')) as {
         extractor_version?: number
         nodes: Array<Record<string, unknown>>
@@ -4662,7 +4662,7 @@ describe('generateGraph', () => {
         'utf8',
       )
 
-      const initial = generateGraph(tempDir, { noHtml: true })
+      const initial = generateGraph(tempDir, { noHtml: true, extractionMode: 'legacy' })
       const initialGraphData = JSON.parse(readFileSync(initial.graphPath, 'utf8')) as {
         nodes: Array<Record<string, unknown>>
       }
@@ -4691,7 +4691,7 @@ describe('generateGraph', () => {
         'utf8',
       )
 
-      const updated = generateGraph(tempDir, { update: true, noHtml: true })
+      const updated = generateGraph(tempDir, { update: true, noHtml: true, extractionMode: 'legacy' })
       const updatedGraphData = JSON.parse(readFileSync(updated.graphPath, 'utf8')) as {
         nodes: Array<Record<string, unknown>>
       }
@@ -4758,7 +4758,7 @@ describe('generateGraph', () => {
       writeFileSync(sourcePath, 'def greet():\n    return helper()\n', 'utf8')
       writeFileSync(helperPath, 'def helper():\n    return 1\n', 'utf8')
 
-      const initial = generateGraph(tempDir, { noHtml: true })
+      const initial = generateGraph(tempDir, { noHtml: true, extractionMode: 'legacy' })
       const graphData = JSON.parse(readFileSync(initial.graphPath, 'utf8')) as {
         schema_version?: number
         nodes: Array<Record<string, unknown>>
@@ -4781,7 +4781,7 @@ describe('generateGraph', () => {
       await delay(10)
       writeFileSync(sourcePath, 'def greet():\n    return helper()\n\ndef other():\n    return greet()\n', 'utf8')
 
-      const updated = generateGraph(tempDir, { update: true, noHtml: true })
+      const updated = generateGraph(tempDir, { update: true, noHtml: true, extractionMode: 'legacy' })
       const updatedGraphData = JSON.parse(readFileSync(updated.graphPath, 'utf8')) as {
         schema_version?: number
         nodes: Array<Record<string, unknown>>
@@ -4806,7 +4806,7 @@ describe('generateGraph', () => {
       const helperPath = join(tempDir, 'helper.py')
       writeFileSync(sourcePath, 'def greet():\n    return helper()\n', 'utf8')
       writeFileSync(helperPath, 'def helper():\n    return 1\n', 'utf8')
-      generateGraph(tempDir)
+      generateGraph(tempDir, { extractionMode: 'legacy' })
 
       await delay(10)
       writeFileSync(sourcePath, 'def greet():\n    return helper()\n\ndef other():\n    return greet()\n', 'utf8')
@@ -4821,7 +4821,7 @@ describe('generateGraph', () => {
 
       try {
         const generateModule = await import('../../src/infrastructure/generate.js')
-        const result = generateModule.generateGraph(tempDir, { update: true, noHtml: true })
+        const result = generateModule.generateGraph(tempDir, { update: true, noHtml: true, extractionMode: 'legacy' })
         const graph = loadGraph(result.graphPath)
 
         expect(extractSpy).toHaveBeenCalledTimes(1)
@@ -5051,7 +5051,7 @@ describe('generateGraph', () => {
         'utf8',
       )
 
-      const result = generateGraph(tempDir, { noHtml: true })
+      const result = generateGraph(tempDir, { noHtml: true, extractionMode: 'legacy' })
       const graphData = JSON.parse(readFileSync(result.graphPath, 'utf8')) as {
         nodes: Array<{ id: string; label: string; node_kind?: string }>
         links: Array<{ source: string; target: string; relation: string }>
@@ -5087,7 +5087,7 @@ describe('generateGraph', () => {
       )
       writeFileSync(join(tempDir, 'docs', 'notes.md'), '# Notes\n', 'utf8')
 
-      const legacy = generateGraph(tempDir, { noHtml: true })
+      const legacy = generateGraph(tempDir, { noHtml: true, extractionMode: 'legacy' })
       expect(legacy.extractableFiles).toBe(3)
       expect(legacy.extractedFiles).toBe(3)
       expect(legacy.cache).toBeNull()
@@ -5112,7 +5112,7 @@ describe('generateGraph', () => {
         fileCount: 2,
       }))
 
-      const updateNoop = generateGraph(tempDir, { update: true, noHtml: true })
+      const updateNoop = generateGraph(tempDir, { update: true, noHtml: true, extractionMode: 'legacy' })
       expect(updateNoop.extractableFiles).toBe(3)
       expect(updateNoop.changedFiles).toBe(0)
       expect(updateNoop.extractedFiles).toBe(3)
@@ -5121,7 +5121,7 @@ describe('generateGraph', () => {
 
       await delay(10)
       writeFileSync(join(tempDir, 'src', 'beta.ts'), 'export function beta(): number { return 2 }\n', 'utf8')
-      const updateChanged = generateGraph(tempDir, { update: true, noHtml: true })
+      const updateChanged = generateGraph(tempDir, { update: true, noHtml: true, extractionMode: 'legacy' })
       expect(updateChanged.extractableFiles).toBe(3)
       expect(updateChanged.changedFiles).toBe(1)
       expect(updateChanged.extractedFiles).toBe(1)

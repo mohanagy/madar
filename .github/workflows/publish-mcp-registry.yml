@@ -8,32 +8,29 @@ on:
         required: true
         type: string
 
-permissions:
-  contents: read
-  id-token: write
-
 jobs:
   publish:
+    permissions:
+      contents: read
+      id-token: write
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
       - name: Check out released tag
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           ref: refs/tags/${{ inputs.release_tag }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: '20'
           cache: npm
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Verify release tag and registry manifest
+      - name: Verify exact release tag
         env:
           REQUESTED_TAG: ${{ inputs.release_tag }}
         run: |
@@ -43,6 +40,13 @@ jobs:
           checked_out_tag="$(git describe --exact-match --tags HEAD)"
           test "$REQUESTED_TAG" = "$expected_tag"
           test "$checked_out_tag" = "$expected_tag"
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Validate registry manifest
+        run: |
+          set -euo pipefail
           npm run registry:validate
 
       - name: Verify the npm package is public and registry-ready
@@ -95,17 +99,36 @@ jobs:
           import { readFileSync } from 'node:fs'
 
           const server = JSON.parse(readFileSync('docs/mcp-registry/server.json', 'utf8'))
-          const response = await fetch(
-            `https://registry.modelcontextprotocol.io/v0.1/servers?search=${encodeURIComponent(server.name)}`,
-          )
-          if (!response.ok) {
-            throw new Error(`Registry lookup failed: ${response.status}`)
+          const attempts = 5
+          const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds))
+          let found = false
+          let lastFailure = null
+
+          for (let attempt = 1; attempt <= attempts; attempt += 1) {
+            try {
+              const response = await fetch(
+                `https://registry.modelcontextprotocol.io/v0.1/servers?search=${encodeURIComponent(server.name)}`,
+                { signal: AbortSignal.timeout(10_000) },
+              )
+              if (!response.ok) {
+                throw new Error(`Registry lookup failed: ${response.status}`)
+              }
+              const payload = await response.json()
+              found = payload.servers?.some(
+                (entry) => entry.server?.name === server.name && entry.server?.version === server.version,
+              ) === true
+              if (found) break
+              lastFailure = new Error(`Registry did not return ${server.name}@${server.version}`)
+            } catch (error) {
+              lastFailure = error instanceof Error ? error : new Error(String(error))
+            }
+
+            if (attempt < attempts) {
+              await delay(attempt * 3_000)
+            }
           }
-          const payload = await response.json()
-          const found = payload.servers?.some(
-            (entry) => entry.server?.name === server.name && entry.server?.version === server.version,
-          )
+
           if (!found) {
-            throw new Error(`Registry did not return ${server.name}@${server.version}`)
+            throw lastFailure ?? new Error(`Registry did not return ${server.name}@${server.version}`)
           }
           NODE

@@ -1047,18 +1047,21 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
     if (command === 'generate' || (command !== undefined && !isAgentPlatform(command) && isImplicitGenerateCommand(command))) {
       const generateArgs = command === 'generate' ? args : [command, ...args]
       const options = parseGenerateArgs(generateArgs)
+      const spiTelemetry = options.clusterOnly
+        ? {}
+        : { spiEnabled: options.extractionMode !== 'legacy' }
       failureTelemetry = (failureBucket) => ({
         command: 'generate',
         stage: 'failed',
         ...telemetryBase(dependencies),
         failureBucket,
-        spiEnabled: options.extractionMode !== 'legacy',
+        ...spiTelemetry,
       })
       emitTelemetry(io, dependencies, () => ({
         command: 'generate',
         stage: 'started',
         ...telemetryBase(dependencies),
-        spiEnabled: options.extractionMode !== 'legacy',
+        ...spiTelemetry,
       }))
       const result = dependencies.generateGraph(options.path, {
         update: options.update,
@@ -1106,7 +1109,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         ...telemetryBase(dependencies),
         repoSizeBucket: repoSizeBucketFromFileCount(result.totalFiles),
         graphSizeBucket: graphSizeBucketFromNodeCount(result.nodeCount),
-        spiEnabled: options.extractionMode !== 'legacy',
+        ...spiTelemetry,
       }))
       if (options.watch) {
         await dependencies.watchGraph(options.path, options.debounceSeconds, {

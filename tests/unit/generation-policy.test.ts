@@ -5,13 +5,18 @@ import { join } from 'node:path'
 
 import { describe, expect, test } from 'vitest'
 
-import { createGenerationPolicy, parseGenerationPolicy } from '../../src/contracts/generation-policy.js'
+import {
+  createGenerationPolicy,
+  parseGenerationPolicy,
+  type GenerationPolicyV2,
+} from '../../src/contracts/generation-policy.js'
 import { generateGraph } from '../../src/infrastructure/generate.js'
 import {
   buildGenerationPolicy,
   exclusionRulesFingerprint,
   generationOptionsFromPolicy,
   readStoredGenerationPolicy,
+  resolveExtractionMode,
 } from '../../src/infrastructure/generation-policy.js'
 import { loadManifestMetadata } from '../../src/pipeline/detect.js'
 import { loadGraph } from '../../src/runtime/serve.js'
@@ -26,6 +31,14 @@ function withTempDir<T>(callback: (tempDir: string) => T): T {
 }
 
 describe('generation policy contract', () => {
+  test('defaults programmatic extraction to auto while preserving explicit compatibility settings', () => {
+    expect(resolveExtractionMode({})).toBe('auto')
+    expect(resolveExtractionMode({ useSpi: false })).toBe('legacy')
+    expect(resolveExtractionMode({ useSpi: true })).toBe('spi')
+    expect(resolveExtractionMode({ extractionMode: 'auto', useSpi: false })).toBe('auto')
+    expect(resolveExtractionMode({ extractionMode: 'legacy', useSpi: true })).toBe('legacy')
+  })
+
   test('has a stable authenticated fingerprint and rejects tampering', () => {
     const policy = createGenerationPolicy({
       directed: true,
@@ -66,6 +79,7 @@ describe('generation policy contract', () => {
     const autoV2 = buildGenerationPolicy('/workspace', {
       extractionMode: 'auto',
     }, 68, null)
+    const inferredV2: GenerationPolicyV2 = createGenerationPolicy(autoV2.settings)
 
     expect(legacyV1.version).toBe(1)
     expect(generationOptionsFromPolicy(legacyV1)).toMatchObject({ extractionMode: 'spi' })
@@ -77,6 +91,7 @@ describe('generation policy contract', () => {
       },
     })
     expect(parseGenerationPolicy(autoV2)).toEqual(autoV2)
+    expect(inferredV2).toEqual(autoV2)
   })
 
   test('fingerprints Madar and Git exclusion controls without persisting their contents', () => {
@@ -142,7 +157,7 @@ describe('generation policy contract', () => {
       writeFileSync(join(tempDir, '.madarignore'), '', 'utf8')
       const exclusionsChanged = generateGraph(tempDir, { update: true, includeDocs: false, noHtml: true })
       expect(exclusionsChanged.notes.join('\n')).toContain('Generation policy changed')
-      expect(exclusionsChanged.extractedFiles).toBe(2)
+      expect(exclusionsChanged.extractedFiles).toBe(4)
 
       writeFileSync(join(tempDir, 'README.md'), '# Included now\n', 'utf8')
       const documentsChanged = generateGraph(tempDir, { update: true, includeDocs: true, noHtml: true })
