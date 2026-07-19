@@ -146,7 +146,9 @@
         "graphify_build",
         "condition_matrix",
         "dependency_environment",
+        "refresh_measurement",
         "execution_isolation",
+        "provider_cache_policy",
         "network_after_setup",
         "temperatures",
         "trials_per_temperature",
@@ -225,6 +227,47 @@
             "mismatch_policy": { "type": "string", "minLength": 20 }
           }
         },
+        "refresh_measurement": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version",
+            "sample_count_per_repository_arm",
+            "timeout_seconds",
+            "independent_samples",
+            "mutation_application_in_timed_window",
+            "repositories",
+            "commands",
+            "pre_state",
+            "acceptance",
+            "failure_policy"
+          ],
+          "properties": {
+            "schema_version": { "const": 1 },
+            "sample_count_per_repository_arm": { "const": 3 },
+            "timeout_seconds": { "type": "integer", "minimum": 1 },
+            "independent_samples": { "const": true },
+            "mutation_application_in_timed_window": { "const": false },
+            "repositories": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": { "$ref": "#/$defs/refreshRepository" }
+            },
+            "commands": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["graphify", "madar"],
+              "properties": {
+                "graphify": { "$ref": "#/$defs/refreshArm" },
+                "madar": { "$ref": "#/$defs/refreshArm" }
+              }
+            },
+            "pre_state": { "type": "string", "minLength": 20 },
+            "acceptance": { "type": "string", "minLength": 20 },
+            "failure_policy": { "type": "string", "minLength": 20 }
+          }
+        },
         "execution_isolation": {
           "type": "object",
           "additionalProperties": false,
@@ -232,6 +275,9 @@
             "filesystem_root",
             "realpath_policy",
             "graph_artifact_exception",
+            "repository_checkout_policy",
+            "pair_local_build_configuration",
+            "generated_output_policy",
             "ephemeral_configuration",
             "forbidden_context",
             "graphify_logging",
@@ -242,11 +288,26 @@
             "filesystem_root": { "type": "string", "minLength": 20 },
             "realpath_policy": { "type": "string", "minLength": 20 },
             "graph_artifact_exception": { "type": "string", "minLength": 20 },
+            "repository_checkout_policy": { "type": "string", "minLength": 20 },
+            "pair_local_build_configuration": { "type": "string", "minLength": 20 },
+            "generated_output_policy": { "type": "string", "minLength": 20 },
             "ephemeral_configuration": { "type": "string", "minLength": 20 },
             "forbidden_context": { "type": "string", "minLength": 20 },
             "graphify_logging": { "type": "string", "minLength": 20 },
             "update_checks": { "type": "string", "minLength": 20 },
             "provider_credentials": { "type": "string", "minLength": 20 }
+          }
+        },
+        "provider_cache_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["control", "capture", "total_input_formula", "input_cost_formula", "validity"],
+          "properties": {
+            "control": { "type": "string", "minLength": 20 },
+            "capture": { "type": "string", "minLength": 20 },
+            "total_input_formula": { "type": "string", "minLength": 20 },
+            "input_cost_formula": { "type": "string", "minLength": 20 },
+            "validity": { "type": "string", "minLength": 20 }
           }
         },
         "network_after_setup": {
@@ -299,7 +360,7 @@
     "measurements": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["baseline_targets", "task_metrics", "index_costs", "metric_definitions", "break_even", "machine_gates"],
+      "required": ["baseline_targets", "measurement_boundaries", "task_metrics", "index_costs", "metric_definitions", "break_even", "machine_gates"],
       "properties": {
         "baseline_targets": {
           "type": "object",
@@ -328,12 +389,23 @@
             "cli_startup": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["elapsed_ms_max", "peak_rss_bytes_max", "sample_count", "comparison"],
+              "required": [
+                "elapsed_ms_max",
+                "peak_rss_bytes_max",
+                "sample_count",
+                "comparison",
+                "subject_command",
+                "measurement_command",
+                "instrumentation_caveat"
+              ],
               "properties": {
                 "elapsed_ms_max": { "type": "number", "exclusiveMinimum": 0 },
                 "peak_rss_bytes_max": { "type": "integer", "minimum": 1 },
                 "sample_count": { "type": "integer", "minimum": 3 },
-                "comparison": { "const": "strict_less_than" }
+                "comparison": { "const": "strict_less_than" },
+                "subject_command": { "$ref": "#/$defs/command" },
+                "measurement_command": { "$ref": "#/$defs/command" },
+                "instrumentation_caveat": { "type": "string", "minLength": 20 }
               }
             },
             "mcp_startup": {
@@ -361,6 +433,19 @@
                 }
               }
             }
+          }
+        },
+        "measurement_boundaries": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["clock_source", "task_elapsed_boundary", "build_elapsed_boundary", "refresh_elapsed_boundary", "peak_rss_boundary", "setup_exclusions"],
+          "properties": {
+            "clock_source": { "type": "string", "minLength": 20 },
+            "task_elapsed_boundary": { "type": "string", "minLength": 20 },
+            "build_elapsed_boundary": { "type": "string", "minLength": 20 },
+            "refresh_elapsed_boundary": { "type": "string", "minLength": 20 },
+            "peak_rss_boundary": { "type": "string", "minLength": 20 },
+            "setup_exclusions": { "type": "string", "minLength": 20 }
           }
         },
         "task_metrics": {
@@ -418,7 +503,7 @@
         "break_even": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["workload_scenarios", "time_formula", "token_formula", "task_condition_policy", "zero_savings_rule"],
+          "required": ["workload_scenarios", "time_formula", "token_formula", "task_condition_policy", "zero_savings_rule", "unknown_inputs_rule"],
           "properties": {
             "workload_scenarios": {
               "type": "array",
@@ -437,7 +522,8 @@
             "time_formula": { "type": "string", "minLength": 1 },
             "token_formula": { "type": "string", "minLength": 1 },
             "task_condition_policy": { "type": "string", "minLength": 20 },
-            "zero_savings_rule": { "type": "string", "minLength": 1 }
+            "zero_savings_rule": { "type": "string", "minLength": 1 },
+            "unknown_inputs_rule": { "type": "string", "minLength": 20 }
           }
         },
         "machine_gates": {
@@ -551,6 +637,83 @@
   },
   "$defs": {
     "sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "command": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string" }
+    },
+    "refreshRepository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository_id", "commit", "graph_root", "mutation"],
+      "properties": {
+        "repository_id": { "enum": ["documenso", "formbricks"] },
+        "commit": { "$ref": "#/$defs/sha" },
+        "graph_root": { "type": "string", "minLength": 1 },
+        "mutation": { "$ref": "#/$defs/refreshMutation" }
+      }
+    },
+    "refreshMutation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation", "path", "path_from_graph_root", "expected_symbol",
+        "base_bytes", "base_git_blob_oid", "base_blob_sha256",
+        "result_bytes", "result_blob_sha256", "patch_encoding",
+        "patch_bytes", "patch_sha256", "patch_utf8"
+      ],
+      "properties": {
+        "operation": { "const": "apply_unified_diff" },
+        "path": { "type": "string", "minLength": 1 },
+        "path_from_graph_root": { "type": "string", "minLength": 1 },
+        "expected_symbol": { "type": "string", "minLength": 1 },
+        "base_bytes": { "type": "integer", "minimum": 1 },
+        "base_git_blob_oid": { "$ref": "#/$defs/sha" },
+        "base_blob_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "result_bytes": { "type": "integer", "minimum": 1 },
+        "result_blob_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "patch_encoding": { "const": "utf-8-lf" },
+        "patch_bytes": { "type": "integer", "minimum": 1 },
+        "patch_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "patch_utf8": { "type": "string", "minLength": 20 }
+      }
+    },
+    "refreshArm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "clean", "refresh", "incremental_mode", "artifact", "missing_incremental_policy",
+        "required_environment", "provider_tokens_expected_total"
+      ],
+      "properties": {
+        "clean": { "$ref": "#/$defs/refreshCommand" },
+        "refresh": { "$ref": "#/$defs/refreshCommand" },
+        "incremental_mode": { "const": "supported" },
+        "artifact": { "enum": ["graphify-out/graph.json", "out/graph.json"] },
+        "missing_incremental_policy": { "type": "string", "minLength": 20 },
+        "required_environment": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "type": "string" }
+        },
+        "required_unset_environment": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "provider_tokens_expected_total": { "const": 0 }
+      }
+    },
+    "refreshCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["executable", "argv"],
+      "properties": {
+        "executable": { "type": "string", "minLength": 1 },
+        "argv": { "$ref": "#/$defs/command" }
+      }
+    },
     "comparator": {
       "type": "object",
       "additionalProperties": false,

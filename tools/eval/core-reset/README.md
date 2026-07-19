@@ -84,6 +84,11 @@ is recorded in the receipt. Machine-specific timing is expected to differ; the
 receipt always records the environment and raw samples. Unknown values are kept
 as `unknown` with a reproducible reason rather than replaced by zero.
 
+CLI startup records both the unmodified subject command and the actual measured
+command. The latter preloads a tiny exit hook that writes
+`process.resourceUsage().maxRSS`; elapsed time and RSS therefore include the
+probe's own overhead, and the receipt carries that caveat explicitly.
+
 The baseline receipt is characterization evidence for the frozen Madar
 implementation. Cross-arm clean-index time, incremental-refresh time, peak RSS,
 and artifact-size distributions belong to the later comparative trial runner;
@@ -124,23 +129,46 @@ images and their LLM-dependent processing. The resulting
 protocol does not pass `--directed` or `--no-viz`, and does not claim directed
 parity with Madar. Graph-build provider input, output, and total tokens are
 captured explicitly and must all be zero for this code-only Graphify run. The
-MCP command is
-`graphify-mcp graphify-out/graph.json` over stdio.
+MCP command is `graphify-mcp <external-pair-artifact>/graph.json` over stdio
+after the harness has removed `graphify-out` from the repository namespace.
 
 For every repository, included question, and temperature, the frozen matrix has
 three native trials, three Graphify cold/warm pairs, and three Madar cold/warm
 pairs: 15 answers total. The nine schedule units (three native and six graph
 pairs) are seeded and randomized; each graph pair expands in place as cold then
 warm. A cold trial starts without pair-local graph output or cache and builds
-once. Its paired warm trial immediately reuses the byte-identical artifact in a
-fresh agent process, conversation, and provider context. Artifact hashes before
+once in a fresh standalone clone with a new empty build `HOME`, XDG, config,
+cache, and temp set. Only the exact graph artifact is moved outside
+`graph_root`; every generated report, manifest, visualization, output, and cache
+is removed, the original repository tree/status hashes are reverified, and raw
+tools deny those paths. Its paired warm trial immediately reuses the
+byte-identical external artifact in a fresh agent process, conversation, and
+provider context. Artifact hashes before
 and after warm use must match. Medians and gates are computed per arm and
 condition, never by pooling cold and warm. Madar must pass both conditions;
 Madar cold is compared with Graphify cold and native, while Madar warm is
 compared with Graphify warm and the same native median. Break-even uses warm
-graph task cost plus the paired cold build cost.
+graph task cost plus paired cold-build and frozen refresh costs; an unknown cost
+stays unknown, and a non-positive cadence-adjusted saving never receives a
+finite break-even.
 
-Every answer trial runs with fresh empty `HOME` and XDG/config directories.
+Provider prompt caching is disabled when supported. Every call records
+uncached, cache-creation, cache-read, and output token categories plus the
+applicable price rates. If caching cannot be disabled, token/cost results are
+qualified and latency attribution is invalid; missing cache accounting
+invalidates the cell instead of silently becoming zero.
+
+Refresh measurement uses three independent samples per graph arm and blocking
+repository. The contract pins exact Documenso and Formbricks unified diffs,
+base/patch/result hashes, Graphify `update .`, Madar
+`generate . --update --no-html`, pre-state, acceptance, and failure behavior.
+Mutation application is outside the timer. Elapsed time uses a monotonic clock;
+build/refresh RSS is the maximum sampled aggregate of the root and full child
+process tree, not root-only `maxRSS`.
+
+Every answer trial runs from a standalone disposable clone with fresh empty
+`HOME` and XDG/config directories; linked Git worktrees are forbidden because
+they can redirect Madar artifacts through the Git common directory.
 Global rules, hooks, skills, MCP settings, prior transcripts, the Madar source
 checkout, and the evaluation contract are not exposed. Repository tools enforce
 realpath containment beneath the pinned `graph_root`, including symlink and

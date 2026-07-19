@@ -12,9 +12,9 @@ import { describe, expect, it } from 'vitest'
 // @ts-expect-error -- the isolated evaluator does not ship declarations in the npm package
 import { validateContractSemantics, validateReceiptSemantics } from '../../tools/eval/core-reset/contract-validation.mjs'
 // @ts-expect-error -- the isolated evaluator does not ship declarations in the npm package
-import { controlledEnvironment, importedSpecifiers, normalizedEvidenceFile } from '../../tools/eval/core-reset/record-baseline.mjs'
+import { characterizeGeneratedIds, controlledEnvironment, importedSpecifiers, normalizedEvidenceFile } from '../../tools/eval/core-reset/record-baseline.mjs'
 // @ts-expect-error -- the isolated evaluator does not ship declarations in the npm package
-import { treePathHash, verifyRepository } from '../../tools/eval/core-reset/verify-held-out-repositories.mjs'
+import { treePathHash, verifyRefreshMutation, verifyRepository } from '../../tools/eval/core-reset/verify-held-out-repositories.mjs'
 
 type JsonObject = Record<string, any>
 
@@ -144,7 +144,9 @@ function semanticReceipt(contract: JsonObject): JsonObject {
     },
     cli_startup: {
       status: 'measured',
-      command: ['node', '<packed-install>/dist/src/cli/bin.js', '--version'],
+      subject_command: targets.cli_startup.subject_command,
+      measurement_command: targets.cli_startup.measurement_command,
+      instrumentation_caveat: targets.cli_startup.instrumentation_caveat,
       cold_process_samples: [
         { elapsed_ms: 10, peak_rss_bytes: 1_000 },
         { elapsed_ms: 20, peak_rss_bytes: 3_000 },
@@ -242,9 +244,23 @@ function semanticReceipt(contract: JsonObject): JsonObject {
       generated_node_ids_present_and_unique: true,
       first_node_ids_sha256: fixtureHash('b'),
       second_node_ids_sha256: fixtureHash('b'),
+      first_node_identity_id_bindings_sha256: fixtureHash('1'),
+      second_node_identity_id_bindings_sha256: fixtureHash('1'),
+      first_edge_count: 2,
+      first_valid_edge_id_count: 2,
+      first_unique_edge_id_count: 2,
+      second_edge_count: 2,
+      second_valid_edge_id_count: 2,
+      second_unique_edge_id_count: 2,
+      generated_edge_ids_present_and_unique: true,
+      first_edge_ids_sha256: fixtureHash('2'),
+      second_edge_ids_sha256: fixtureHash('2'),
+      first_edge_identity_id_bindings_sha256: fixtureHash('3'),
+      second_edge_identity_id_bindings_sha256: fixtureHash('3'),
       first_graph_sha256: fixtureHash('c'),
       second_graph_sha256: fixtureHash('c'),
       stable_node_ids_across_clean_rebuilds: true,
+      stable_edge_ids_across_clean_rebuilds: true,
       stable_serialized_graph_across_clean_rebuilds: true,
     },
     incremental_equivalence: {
@@ -394,7 +410,44 @@ describe('Core Reset baseline contract', () => {
     const providerCostDrift = structuredClone(readJson(contractPath))
     providerCostDrift.measurements.index_costs.metrics = providerCostDrift.measurements.index_costs.metrics
       .filter((metric: string) => metric !== 'graph build provider total tokens')
-    expect(() => validateContractSemantics(providerCostDrift)).toThrow(/graph-build provider tokens/)
+    expect(() => validateContractSemantics(providerCostDrift)).toThrow(/graph-build and refresh provider tokens/)
+
+    const cliInstrumentationDrift = structuredClone(readJson(contractPath))
+    cliInstrumentationDrift.measurements.baseline_targets.cli_startup.measurement_command
+      = cliInstrumentationDrift.measurements.baseline_targets.cli_startup.subject_command
+    expect(() => validateContractSemantics(cliInstrumentationDrift)).toThrow(/disclosed RSS preload/)
+
+    const generatedOutputLeak = structuredClone(readJson(contractPath))
+    generatedOutputLeak.trial_design.execution_isolation.generated_output_policy
+      = 'Leave graphify-out and out beneath graph_root so raw tools can inspect them.'
+    expect(() => validateContractSemantics(generatedOutputLeak)).toThrow(/filesystem, configuration, and logging isolation/)
+
+    const promptCacheDrift = structuredClone(readJson(contractPath))
+    promptCacheDrift.trial_design.provider_cache_policy.validity = 'Assume omitted cache tokens are zero.'
+    expect(() => validateContractSemantics(promptCacheDrift)).toThrow(/prompt-cache effects/)
+
+    const refreshTokenDrift = structuredClone(readJson(contractPath))
+    refreshTokenDrift.measurements.break_even.token_formula
+      = refreshTokenDrift.measurements.break_even.token_formula.replace('refreshes * median(refresh_provider_input_tokens) + ', '')
+    expect(() => validateContractSemantics(refreshTokenDrift)).toThrow(/break-even must include/)
+
+    const rssBoundaryDrift = structuredClone(readJson(contractPath))
+    rssBoundaryDrift.measurements.measurement_boundaries.peak_rss_boundary
+      = 'Read root process maxRSS once when the command exits.'
+    expect(() => validateContractSemantics(rssBoundaryDrift)).toThrow(/process-tree RSS/)
+
+    const refreshPatchDrift = structuredClone(readJson(contractPath))
+    refreshPatchDrift.trial_design.refresh_measurement.repositories[0].mutation.patch_utf8 += '\n'
+    expect(() => validateContractSemantics(refreshPatchDrift)).toThrow(/patch byte count must match/)
+
+    const refreshCommandDrift = structuredClone(readJson(contractPath))
+    refreshCommandDrift.trial_design.refresh_measurement.commands.graphify.refresh.argv = ['extract', '.', '--code-only']
+    expect(() => validateContractSemantics(refreshCommandDrift)).toThrow(/refresh commands and no-fallback policy/)
+
+    const linkedWorktreeDrift = structuredClone(readJson(contractPath))
+    linkedWorktreeDrift.trial_design.execution_isolation.repository_checkout_policy
+      = 'Use git worktree add for every measured checkout.'
+    expect(() => validateContractSemantics(linkedWorktreeDrift)).toThrow(/filesystem, configuration, and logging isolation/)
   })
 
   it('binds every expected path to a verified pinned-tree path in one coordinate system', () => {
@@ -504,6 +557,43 @@ describe('Core Reset baseline contract', () => {
     ])
   })
 
+  it('detects semantic node-ID swaps and missing generated edge IDs', () => {
+    const workspace = '/fixture'
+    const first = characterizeGeneratedIds({
+      nodes: [
+        { id: 'node-a', label: 'alpha', node_kind: 'function', source_file: '/fixture/src/a.ts', line_number: 1 },
+        { id: 'node-b', label: 'beta', node_kind: 'function', source_file: '/fixture/src/b.ts', line_number: 2 },
+      ],
+      edges: [
+        { id: 'edge-a-b', source: 'node-a', target: 'node-b', relation: 'calls' },
+        { id: 'edge-b-a', source: 'node-b', target: 'node-a', relation: 'imports_from' },
+      ],
+    }, workspace)
+    const swapped = characterizeGeneratedIds({
+      nodes: [
+        { id: 'node-b', label: 'alpha', node_kind: 'function', source_file: '/fixture/src/a.ts', line_number: 1 },
+        { id: 'node-a', label: 'beta', node_kind: 'function', source_file: '/fixture/src/b.ts', line_number: 2 },
+      ],
+      edges: [
+        { id: 'edge-b-a', source: 'node-b', target: 'node-a', relation: 'calls' },
+        { id: 'edge-a-b', source: 'node-a', target: 'node-b', relation: 'imports_from' },
+      ],
+    }, workspace)
+    const missingEdgeId = characterizeGeneratedIds({
+      nodes: [{ id: 'node-a', label: 'alpha', source_file: '/fixture/src/a.ts' }],
+      edges: [{ source: 'node-a', target: 'node-a', relation: 'calls' }],
+    }, workspace)
+
+    expect(first.nodeIdsSha256).toBe(swapped.nodeIdsSha256)
+    expect(first.nodeIdentityIdBindingsSha256).not.toBe(swapped.nodeIdentityIdBindingsSha256)
+    expect(first.edgeIdentityIdBindingsSha256).not.toBe(swapped.edgeIdentityIdBindingsSha256)
+    expect(missingEdgeId).toMatchObject({
+      edgeCount: 1,
+      validEdgeIdCount: 0,
+      uniqueEdgeIdCount: 0,
+    })
+  })
+
   it('verifies frozen Git blobs and rejects symlink evidence entries', () => {
     const repositoryRoot = mkdtempSync(join(tmpdir(), 'core-reset-held-out-'))
     try {
@@ -528,6 +618,58 @@ describe('Core Reset baseline contract', () => {
         commit,
         verified_evidence_paths: 1,
       })
+      const base = 'export const service = true\n'
+      const result = `${base}export const refreshProbe = true\n`
+      const patch = [
+        'diff --git a/src/service.ts b/src/service.ts',
+        '--- a/src/service.ts',
+        '+++ b/src/service.ts',
+        '@@ -1 +1,2 @@',
+        ' export const service = true',
+        '+export const refreshProbe = true',
+        '',
+      ].join('\n')
+      const sha256 = (value: string) => createHash('sha256').update(value).digest('hex')
+      const mutation = {
+        operation: 'apply_unified_diff',
+        path: 'src/service.ts',
+        path_from_graph_root: 'src/service.ts',
+        expected_symbol: 'refreshProbe',
+        base_bytes: Buffer.byteLength(base),
+        base_git_blob_oid: execFileSync(
+          'git', ['rev-parse', `${commit}:src/service.ts`], { cwd: repositoryRoot, encoding: 'utf8' },
+        ).trim(),
+        base_blob_sha256: sha256(base),
+        result_bytes: Buffer.byteLength(result),
+        result_blob_sha256: sha256(result),
+        patch_encoding: 'utf-8-lf',
+        patch_bytes: Buffer.byteLength(patch),
+        patch_sha256: sha256(patch),
+        patch_utf8: patch,
+      }
+      expect(verifyRefreshMutation(repository, mutation, repositoryRoot)).toMatchObject({
+        path: 'src/service.ts',
+        patch_sha256: mutation.patch_sha256,
+        result_blob_sha256: mutation.result_blob_sha256,
+      })
+      const multiFilePatch = `${patch}diff --git a/src/extra.ts b/src/extra.ts\nnew file mode 100644\n--- /dev/null\n+++ b/src/extra.ts\n@@ -0,0 +1 @@\n+export const leakedChange = true\n`
+      const multiFileMutation = {
+        ...mutation,
+        patch_bytes: Buffer.byteLength(multiFilePatch),
+        patch_sha256: sha256(multiFilePatch),
+        patch_utf8: multiFilePatch,
+      }
+      expect(() => verifyRefreshMutation(repository, multiFileMutation, repositoryRoot)).toThrow(/other than its frozen target/)
+      const ignoredExtraPatch = `${patch}diff --git a/.gitignore b/.gitignore\nnew file mode 100644\n--- /dev/null\n+++ b/.gitignore\n@@ -0,0 +1 @@\n+generated.tmp\ndiff --git a/generated.tmp b/generated.tmp\nnew file mode 100644\n--- /dev/null\n+++ b/generated.tmp\n@@ -0,0 +1 @@\n+hidden\n`
+      const ignoredExtraMutation = {
+        ...mutation,
+        patch_bytes: Buffer.byteLength(ignoredExtraPatch),
+        patch_sha256: sha256(ignoredExtraPatch),
+        patch_utf8: ignoredExtraPatch,
+      }
+      expect(() => verifyRefreshMutation(repository, ignoredExtraMutation, repositoryRoot)).toThrow(/other than its frozen target/)
+      mutation.result_blob_sha256 = fixtureHash('0')
+      expect(() => verifyRefreshMutation(repository, mutation, repositoryRoot)).toThrow(/result bytes\/hash/)
       if (process.platform !== 'win32') {
         repository.verified_evidence_paths = ['src/alias.ts']
         expect(() => verifyRepository(repository, repositoryRoot)).toThrow(/symbolic link/)
@@ -551,7 +693,10 @@ describe('Core Reset baseline contract', () => {
     ]))
     expect(extractionRequired).toEqual(expect.arrayContaining([
       'requested_extraction_mode',
+      'first_node_identity_id_bindings_sha256',
       'stable_node_ids_across_clean_rebuilds',
+      'first_edge_identity_id_bindings_sha256',
+      'stable_edge_ids_across_clean_rebuilds',
     ]))
     expect(incrementalRequired).toEqual(expect.arrayContaining([
       'scenarios',
@@ -589,6 +734,14 @@ describe('Core Reset baseline contract', () => {
     const cliSamples = semanticReceipt(contract)
     cliSamples.cli_startup.cold_process_samples.pop()
     expect(() => validateReceiptSemantics(cliSamples, contract)).toThrow(/CLI sample count must match/)
+
+    const cliMeasurementCommand = semanticReceipt(contract)
+    cliMeasurementCommand.cli_startup.measurement_command = cliMeasurementCommand.cli_startup.subject_command
+    expect(() => validateReceiptSemantics(cliMeasurementCommand, contract)).toThrow(/measurement command must disclose/)
+
+    const cliInstrumentationCaveat = semanticReceipt(contract)
+    cliInstrumentationCaveat.cli_startup.instrumentation_caveat = 'Uninstrumented.'
+    expect(() => validateReceiptSemantics(cliInstrumentationCaveat, contract)).toThrow(/instrumentation caveat must match/)
 
     const mcpSamples = semanticReceipt(contract)
     mcpSamples.mcp_startup.cold_process_samples.pop()
@@ -684,12 +837,20 @@ describe('Core Reset baseline contract', () => {
     expect(() => validateReceiptSemantics(lostProvenance, contract)).toThrow(/provenance round-trip flag/)
 
     const defaultNodeFlag = semanticReceipt(contract)
-    defaultNodeFlag.default_extraction.second_node_ids_sha256 = fixtureHash('9')
+    defaultNodeFlag.default_extraction.second_node_identity_id_bindings_sha256 = fixtureHash('9')
     expect(() => validateReceiptSemantics(defaultNodeFlag, contract)).toThrow(/node-id stability flag/)
 
     const missingGeneratedIds = semanticReceipt(contract)
     missingGeneratedIds.default_extraction.first_valid_node_id_count -= 1
     expect(() => validateReceiptSemantics(missingGeneratedIds, contract)).toThrow(/node-id presence and uniqueness flag/)
+
+    const defaultEdgeFlag = semanticReceipt(contract)
+    defaultEdgeFlag.default_extraction.second_edge_identity_id_bindings_sha256 = fixtureHash('8')
+    expect(() => validateReceiptSemantics(defaultEdgeFlag, contract)).toThrow(/edge-id stability flag/)
+
+    const missingGeneratedEdgeIds = semanticReceipt(contract)
+    missingGeneratedEdgeIds.default_extraction.first_valid_edge_id_count -= 1
+    expect(() => validateReceiptSemantics(missingGeneratedEdgeIds, contract)).toThrow(/edge-id presence and uniqueness flag/)
 
     const defaultGraphFlag = semanticReceipt(contract)
     defaultGraphFlag.default_extraction.second_graph_sha256 = fixtureHash('8')

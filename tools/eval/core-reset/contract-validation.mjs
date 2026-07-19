@@ -14,6 +14,17 @@ function isInsideGraphRoot(path, graphRoot) {
   return path === graphRoot || path.startsWith(`${graphRoot}/`)
 }
 
+function assertContractPath(path, label) {
+  assert(
+    typeof path === 'string'
+      && path.length > 0
+      && !isAbsolute(path)
+      && !path.includes('*')
+      && !path.split('/').includes('..'),
+    `${label} must be a safe repository-relative path`,
+  )
+}
+
 export function validateContractSemantics(contract) {
   const repositories = contract.repositories ?? []
   const questions = contract.questions ?? []
@@ -105,6 +116,22 @@ export function validateContractSemantics(contract) {
   )
   assert(contract.trial_design.trials_per_temperature >= 3, 'at least three trials are required')
   assert(contract.trial_design.total_tool_call_budget > 0, 'comparative tool budget must be positive')
+  const cliMeasurement = contract.measurements.baseline_targets.cli_startup
+  assert(
+    JSON.stringify(cliMeasurement.subject_command)
+      === JSON.stringify(['node', '<packed-install>/dist/src/cli/bin.js', '--version']),
+    'CLI subject command must remain the packed version probe',
+  )
+  assert(
+    JSON.stringify(cliMeasurement.measurement_command)
+      === JSON.stringify(['node', '--require', '<rss-probe.cjs>', '<packed-install>/dist/src/cli/bin.js', '--version']),
+    'CLI measurement command must retain the disclosed RSS preload',
+  )
+  assert(
+    cliMeasurement.instrumentation_caveat
+      === "A Node preload records process.resourceUsage().maxRSS at exit; reported elapsed time and RSS include the preload's own overhead.",
+    'CLI instrumentation overhead policy must remain explicit',
+  )
   const graphifyBuildStep = contract.protocols.graphify.steps.find((step) => step.startsWith('At graph_root invoke')) ?? ''
   assert(
     JSON.stringify(contract.trial_design.graphify_build) === JSON.stringify({
@@ -157,15 +184,123 @@ export function validateContractSemantics(contract) {
       && dependencyEnvironment.mismatch_policy.includes('invalidates the entire comparison block'),
     'dependency manifests must be canonical, rechecked, and block-scoped',
   )
+  const refresh = contract.trial_design.refresh_measurement
+  const blockingRepositoryIds = repositories
+    .filter((repository) => repository.role === 'blocking')
+    .map((repository) => repository.id)
+    .sort()
+  assert(
+    refresh.sample_count_per_repository_arm === 3
+      && refresh.independent_samples === true
+      && refresh.mutation_application_in_timed_window === false,
+    'refresh measurements must use three independent samples with mutation outside the timer',
+  )
+  assert(
+    sameValues(refresh.repositories.map((entry) => entry.repository_id), blockingRepositoryIds),
+    'refresh fixtures must cover every blocking repository exactly once',
+  )
+  for (const entry of refresh.repositories) {
+    const repository = repositoriesById.get(entry.repository_id)
+    const mutation = entry.mutation
+    assert(
+      repository
+        && entry.commit === repository.commit
+        && entry.graph_root === repository.graph_root,
+      `${entry.repository_id} refresh fixture must match its frozen repository`,
+    )
+    assertContractPath(mutation.path, `${entry.repository_id} refresh path`)
+    assertContractPath(mutation.path_from_graph_root, `${entry.repository_id} graph-root refresh path`)
+    assert(
+      mutation.path === (entry.graph_root === '.'
+        ? mutation.path_from_graph_root
+        : `${entry.graph_root}/${mutation.path_from_graph_root}`),
+      `${entry.repository_id} refresh paths must share one coordinate system`,
+    )
+    assert(
+      repository.verified_evidence_paths.includes(mutation.path),
+      `${entry.repository_id} refresh target must be verified against the pinned tree`,
+    )
+    const patchBytes = Buffer.from(mutation.patch_utf8, 'utf8')
+    assert(!mutation.patch_utf8.includes('\r'), `${entry.repository_id} refresh patch must use LF`)
+    assert(mutation.patch_bytes === patchBytes.length, `${entry.repository_id} refresh patch byte count must match`)
+    assert(
+      mutation.patch_sha256 === createHash('sha256').update(patchBytes).digest('hex'),
+      `${entry.repository_id} refresh patch hash must match exact UTF-8 bytes`,
+    )
+    assert(
+      mutation.patch_utf8.startsWith(`diff --git a/${mutation.path} b/${mutation.path}\n`)
+        && mutation.patch_utf8.includes(mutation.expected_symbol)
+        && mutation.base_blob_sha256 !== mutation.result_blob_sha256,
+      `${entry.repository_id} refresh patch must bind its target, symbol, and changed result`,
+    )
+  }
+  assert(
+    JSON.stringify(refresh.commands.graphify.clean)
+      === JSON.stringify({ executable: '<resolved-graphify-executable>', argv: ['extract', '.', '--code-only'] })
+      && JSON.stringify(refresh.commands.graphify.refresh)
+        === JSON.stringify({ executable: '<resolved-graphify-executable>', argv: ['update', '.'] })
+      && JSON.stringify(refresh.commands.madar.clean)
+        === JSON.stringify({ executable: '<resolved-packed-madar-executable>', argv: ['generate', '.', '--no-html'] })
+      && JSON.stringify(refresh.commands.madar.refresh)
+        === JSON.stringify({ executable: '<resolved-packed-madar-executable>', argv: ['generate', '.', '--update', '--no-html'] })
+      && refresh.commands.graphify.artifact === 'graphify-out/graph.json'
+      && refresh.commands.madar.artifact === 'out/graph.json'
+      && refresh.commands.graphify.missing_incremental_policy.includes('never substitute a clean rebuild')
+      && refresh.commands.madar.missing_incremental_policy.includes('never substitute a clean rebuild'),
+    'refresh commands and no-fallback policy must remain frozen',
+  )
+  assert(
+    refresh.pre_state.includes('only tracked change')
+      && refresh.acceptance.includes('expected_symbol')
+      && refresh.failure_policy.includes('without retry')
+      && refresh.failure_policy.includes('cost unknown'),
+    'refresh pre-state, acceptance, and failure handling must remain explicit',
+  )
   const isolation = contract.trial_design.execution_isolation
+  const graphifyProtocol = contract.protocols.graphify.steps.join('\n')
+  const madarProtocol = contract.protocols.madar.steps.join('\n')
   assert(
     isolation.filesystem_root.includes('realpath')
       && isolation.realpath_policy.includes('symlink')
+      && isolation.repository_checkout_policy.includes('standalone disposable local clone')
+      && isolation.repository_checkout_policy.includes('never use git worktree add')
+      && isolation.pair_local_build_configuration.includes('pair-local empty HOME')
+      && isolation.pair_local_build_configuration.includes('destroyed immediately')
+      && isolation.generated_output_policy.includes('graphify-out/**')
+      && isolation.generated_output_policy.includes('Madar out/**')
+      && isolation.generated_output_policy.includes('outside graph_root')
+      && isolation.generated_output_policy.includes('original clean status')
+      && isolation.generated_output_policy.includes('both content/path hashes exactly')
+      && isolation.generated_output_policy.includes('Raw read/search/list/shell tools must deny')
       && isolation.ephemeral_configuration.includes('HOME')
       && isolation.forbidden_context.includes('evaluation contract')
       && isolation.graphify_logging.includes('GRAPHIFY_QUERY_LOG_DISABLE=1')
       && isolation.update_checks.includes('prohibit'),
     'comparative trials must enforce frozen filesystem, configuration, and logging isolation',
+  )
+  assert(
+    contract.trial_design.cold_definition.includes('empty pair-local HOME')
+      && contract.trial_design.cold_definition.includes('outside graph_root')
+      && contract.trial_design.warm_definition.includes('reusing only')
+      && graphifyProtocol.includes('delete graphify-out and every other generated path')
+      && graphifyProtocol.includes('<external-pair-artifact>/graph.json')
+      && madarProtocol.includes('delete out and every other generated path')
+      && madarProtocol.includes('<external-pair-artifact>/graph.json'),
+    'graph arms must externalize only the MCP artifact and remove raw-tool-visible outputs',
+  )
+  const providerCache = contract.trial_design.provider_cache_policy
+  assert(
+    providerCache.control.includes('Disable explicit and automatic provider prompt caching')
+      && providerCache.capture.includes('uncached_input_tokens')
+      && providerCache.capture.includes('cache_creation_input_tokens')
+      && providerCache.capture.includes('cache_read_input_tokens')
+      && providerCache.total_input_formula
+        === 'provider_total_input_tokens = uncached_input_tokens + cache_creation_input_tokens + cache_read_input_tokens'
+      && providerCache.input_cost_formula
+        === 'provider_input_cost = uncached_input_tokens * uncached_input_rate + cache_creation_input_tokens * cache_creation_input_rate + cache_read_input_tokens * cache_read_input_rate'
+      && providerCache.validity.includes('latency attribution is invalid')
+      && providerCache.validity.includes('never treat an absent field as zero'),
+    'provider prompt-cache effects must be disabled or fully accounted and qualified',
   )
   const conditionPolicy = contract.human_rubric.condition_policy
   assert(
@@ -179,8 +314,35 @@ export function validateContractSemantics(contract) {
   assert(
     ['graph build provider input tokens', 'graph build provider output tokens', 'graph build provider total tokens']
       .every((metric) => contract.measurements.index_costs.metrics.includes(metric))
+      && ['refresh provider input tokens', 'refresh provider output tokens', 'refresh provider total tokens']
+        .every((metric) => contract.measurements.index_costs.metrics.includes(metric))
       && contract.measurements.index_costs.graph_build_provider_tokens.graphify_code_only_expected_total === 0,
-    'index costs must capture graph-build provider tokens and Graphify code-only zero',
+    'index costs must capture graph-build and refresh provider tokens and Graphify code-only zero',
+  )
+  const breakEven = contract.measurements.break_even
+  assert(
+    breakEven.time_formula.includes('refresh_rate = refreshes / tasks')
+      && breakEven.time_formula.includes('refresh_rate * median(refresh_ms)')
+      && breakEven.time_formula.includes('median(native_task_ms) - median(graph_task_ms)')
+      && breakEven.token_formula.includes('All break-even token quantities are provider input tokens only')
+      && breakEven.token_formula.includes('refreshes * median(refresh_provider_input_tokens)')
+      && breakEven.token_formula.includes('refresh_rate * median(refresh_provider_input_tokens)')
+      && breakEven.token_formula.includes('median(native_provider_total_input_tokens) - median(graph_provider_total_input_tokens)')
+      && breakEven.token_formula.includes('Provider output and input-cost metrics are reported separately')
+      && breakEven.zero_savings_rule.includes('cadence-adjusted denominator')
+      && breakEven.unknown_inputs_rule.includes('never substitute zero'),
+    'break-even must include fixed refresh cost, cadence-adjusted denominators, and unknown propagation',
+  )
+  const boundaries = contract.measurements.measurement_boundaries
+  assert(
+    boundaries.clock_source.includes('monotonic')
+      && boundaries.task_elapsed_boundary.includes('MCP startup')
+      && boundaries.build_elapsed_boundary.includes('comparator build command')
+      && boundaries.refresh_elapsed_boundary.includes('frozen refresh command')
+      && boundaries.peak_rss_boundary.includes('full descendant process tree')
+      && boundaries.peak_rss_boundary.includes('maximum aggregate')
+      && boundaries.setup_exclusions.includes('Dependency installation'),
+    'measurement clocks, inclusion boundaries, and process-tree RSS must be frozen',
   )
   assert(
     sameValues(contract.anti_tuning.agent_inputs, ['product_scope_statement', 'frozen_prompt', 'target_repository']),
@@ -301,6 +463,18 @@ export function validateReceiptSemantics(receipt, contract, options = {}) {
   assert(packageMeasurement.forbidden_metadata.length === 0, 'accepted package metadata must exclude evaluation commands and paths')
 
   const cli = receipt.cli_startup
+  assert(
+    JSON.stringify(cli.subject_command) === JSON.stringify(baselineTargets.cli_startup.subject_command),
+    'CLI subject command must match the contract',
+  )
+  assert(
+    JSON.stringify(cli.measurement_command) === JSON.stringify(baselineTargets.cli_startup.measurement_command),
+    'CLI measurement command must disclose the frozen RSS instrumentation',
+  )
+  assert(
+    cli.instrumentation_caveat === baselineTargets.cli_startup.instrumentation_caveat,
+    'CLI instrumentation caveat must match the contract',
+  )
   assert(cli.cold_process_samples.length === baselineTargets.cli_startup.sample_count, 'CLI sample count must match the contract')
   assert(
     cli.targets.elapsed_ms_max === baselineTargets.cli_startup.elapsed_ms_max
@@ -484,11 +658,30 @@ export function validateReceiptSemantics(receipt, contract, options = {}) {
     extraction.generated_node_ids_present_and_unique === generatedIdsPresentAndUnique,
     'generated node-id presence and uniqueness flag must match raw counts',
   )
+  const generatedEdgeIdsPresentAndUnique =
+    extraction.first_edge_count === extraction.first_valid_edge_id_count
+    && extraction.first_valid_edge_id_count === extraction.first_unique_edge_id_count
+    && extraction.second_edge_count === extraction.second_valid_edge_id_count
+    && extraction.second_valid_edge_id_count === extraction.second_unique_edge_id_count
+  assert(
+    extraction.generated_edge_ids_present_and_unique === generatedEdgeIdsPresentAndUnique,
+    'generated edge-id presence and uniqueness flag must match raw counts',
+  )
   assert(
     extraction.stable_node_ids_across_clean_rebuilds
       === (generatedIdsPresentAndUnique
-        && extraction.first_node_ids_sha256 === extraction.second_node_ids_sha256),
-    'default extraction node-id stability flag must require valid unique IDs and matching hashes',
+        && extraction.first_node_ids_sha256 === extraction.second_node_ids_sha256
+        && extraction.first_node_identity_id_bindings_sha256
+          === extraction.second_node_identity_id_bindings_sha256),
+    'default extraction node-id stability flag must require valid unique IDs and matching semantic bindings',
+  )
+  assert(
+    extraction.stable_edge_ids_across_clean_rebuilds
+      === (generatedEdgeIdsPresentAndUnique
+        && extraction.first_edge_ids_sha256 === extraction.second_edge_ids_sha256
+        && extraction.first_edge_identity_id_bindings_sha256
+          === extraction.second_edge_identity_id_bindings_sha256),
+    'default extraction edge-id stability flag must require valid unique IDs and matching semantic bindings',
   )
   assert(
     extraction.stable_serialized_graph_across_clean_rebuilds

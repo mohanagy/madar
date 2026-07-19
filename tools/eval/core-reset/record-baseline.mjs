@@ -523,7 +523,9 @@ function measureCliStartup(cliPath, cliTargets) {
     const maxPeakRssBytes = Math.max(...samples.map((sample) => sample.peak_rss_bytes))
     return {
       status: 'measured',
-      command: command('node', '<packed-install>/dist/src/cli/bin.js', '--version'),
+      subject_command: cliTargets.subject_command,
+      measurement_command: cliTargets.measurement_command,
+      instrumentation_caveat: cliTargets.instrumentation_caveat,
       cold_process_samples: samples,
       median_elapsed_ms: medianElapsedMs,
       max_peak_rss_bytes: maxPeakRssBytes,
@@ -964,6 +966,86 @@ function canonicalGraph(graphPath, workspace) {
   return JSON.stringify(normalized)
 }
 
+function generatedEdges(graph) {
+  if (Array.isArray(graph.edges)) return graph.edges
+  if (Array.isArray(graph.links)) return graph.links
+  return []
+}
+
+function semanticNodeIdentity(node, workspace) {
+  const sourceFile = typeof node?.source_file === 'string'
+    ? normalizedGraphValue(node.source_file, workspace)
+    : null
+  return JSON.stringify({
+    source_file: sourceFile,
+    label: typeof node?.label === 'string' ? node.label : null,
+    kind: typeof node?.node_kind === 'string'
+      ? node.node_kind
+      : (typeof node?.kind === 'string' ? node.kind : (typeof node?.type === 'string' ? node.type : null)),
+    line_number: Number.isInteger(node?.line_number) ? node.line_number : null,
+    column_number: Number.isInteger(node?.column_number) ? node.column_number : null,
+  })
+}
+
+function endpointId(endpoint) {
+  if (typeof endpoint === 'string') return endpoint
+  if (endpoint && typeof endpoint === 'object' && typeof endpoint.id === 'string') return endpoint.id
+  return null
+}
+
+function semanticEdgeIdentity(edge, nodeIdentityById, workspace) {
+  const sourceId = endpointId(edge?.source)
+  const targetId = endpointId(edge?.target)
+  const sourceFile = typeof edge?.source_file === 'string'
+    ? normalizedGraphValue(edge.source_file, workspace)
+    : null
+  return JSON.stringify({
+    source: (sourceId && nodeIdentityById.get(sourceId)) ?? sourceId,
+    target: (targetId && nodeIdentityById.get(targetId)) ?? targetId,
+    relation: typeof edge?.relation === 'string'
+      ? edge.relation
+      : (typeof edge?.kind === 'string' ? edge.kind : (typeof edge?.type === 'string' ? edge.type : null)),
+    source_file: sourceFile,
+    line_number: Number.isInteger(edge?.line_number) ? edge.line_number : null,
+  })
+}
+
+export function characterizeGeneratedIds(graph, workspace) {
+  const nodes = Array.isArray(graph.nodes) ? graph.nodes : []
+  const edges = generatedEdges(graph)
+  const nodeIds = nodes
+    .map((node) => node?.id)
+    .filter((id) => typeof id === 'string' && id.length > 0)
+    .sort()
+  const edgeIds = edges
+    .map((edge) => edge?.id)
+    .filter((id) => typeof id === 'string' && id.length > 0)
+    .sort()
+  const nodeIdentityById = new Map()
+  const nodeBindings = nodes.map((node) => {
+    const identity = semanticNodeIdentity(node, workspace)
+    const id = typeof node?.id === 'string' && node.id.length > 0 ? node.id : null
+    if (id) nodeIdentityById.set(id, identity)
+    return JSON.stringify({ identity, id })
+  }).sort()
+  const edgeBindings = edges.map((edge) => JSON.stringify({
+    identity: semanticEdgeIdentity(edge, nodeIdentityById, workspace),
+    id: typeof edge?.id === 'string' && edge.id.length > 0 ? edge.id : null,
+  })).sort()
+  return {
+    nodeCount: nodes.length,
+    validNodeIdCount: nodeIds.length,
+    uniqueNodeIdCount: new Set(nodeIds).size,
+    nodeIdsSha256: sha256(JSON.stringify(nodeIds)),
+    nodeIdentityIdBindingsSha256: sha256(JSON.stringify(nodeBindings)),
+    edgeCount: edges.length,
+    validEdgeIdCount: edgeIds.length,
+    uniqueEdgeIdCount: new Set(edgeIds).size,
+    edgeIdsSha256: sha256(JSON.stringify(edgeIds)),
+    edgeIdentityIdBindingsSha256: sha256(JSON.stringify(edgeBindings)),
+  }
+}
+
 async function characterizeDefaultExtraction(cliPath, extractionTargets, packageRoot) {
   const root = mkdtempSync(join(tmpdir(), 'madar-core-reset-extraction-'))
   try {
@@ -975,20 +1057,7 @@ async function characterizeDefaultExtraction(cliPath, extractionTargets, package
       `${pathToFileURL(join(packageRoot, 'dist', 'src', 'runtime', 'serve.js')).href}?default-extraction=${Date.now()}`
     )
     const loadedFirstGraph = serveModule.loadGraph(first.graphPath)
-    const nodeIdStats = (graph) => {
-      const nodes = Array.isArray(graph.nodes) ? graph.nodes : []
-      const validIds = nodes
-        .map((node) => node?.id)
-        .filter((id) => typeof id === 'string' && id.length > 0)
-        .sort()
-      return {
-        nodeCount: nodes.length,
-        validIdCount: validIds.length,
-        uniqueIdCount: new Set(validIds).size,
-        validIds,
-      }
-    }
-    const firstIdStats = nodeIdStats(firstGraphJson)
+    const firstIdStats = characterizeGeneratedIds(firstGraphJson, root)
     const indexing = readJson(first.manifestPath)
     const fixtureSymbolEvidence = extractionTargets.expected_extensions.map((extension) => {
       const fixture = defaultExtractionFixtureSymbols[extension]
@@ -1017,12 +1086,17 @@ async function characterizeDefaultExtraction(cliPath, extractionTargets, package
     rmSync(dirname(first.graphPath), { recursive: true, force: true })
     const second = runGenerate(cliPath, root)
     const secondGraph = canonicalGraph(second.graphPath, root)
-    const secondIdStats = nodeIdStats(readJson(second.graphPath))
+    const secondIdStats = characterizeGeneratedIds(readJson(second.graphPath), root)
     const generatedNodeIdsPresentAndUnique =
-      firstIdStats.nodeCount === firstIdStats.validIdCount
-      && firstIdStats.validIdCount === firstIdStats.uniqueIdCount
-      && secondIdStats.nodeCount === secondIdStats.validIdCount
-      && secondIdStats.validIdCount === secondIdStats.uniqueIdCount
+      firstIdStats.nodeCount === firstIdStats.validNodeIdCount
+      && firstIdStats.validNodeIdCount === firstIdStats.uniqueNodeIdCount
+      && secondIdStats.nodeCount === secondIdStats.validNodeIdCount
+      && secondIdStats.validNodeIdCount === secondIdStats.uniqueNodeIdCount
+    const generatedEdgeIdsPresentAndUnique =
+      firstIdStats.edgeCount === firstIdStats.validEdgeIdCount
+      && firstIdStats.validEdgeIdCount === firstIdStats.uniqueEdgeIdCount
+      && secondIdStats.edgeCount === secondIdStats.validEdgeIdCount
+      && secondIdStats.validEdgeIdCount === secondIdStats.uniqueEdgeIdCount
     const autoSummary = first.stdout.match(/Auto extraction: ([^\n]+)/)?.[1] ?? null
     return {
       status: 'measured',
@@ -1039,19 +1113,37 @@ async function characterizeDefaultExtraction(cliPath, extractionTargets, package
         (firstGraphJson.directed === true) === loadedFirstGraph.isDirected(),
       canonicalization_excluded_fields: canonicalGraphExcludedFields,
       first_node_count: firstIdStats.nodeCount,
-      first_valid_node_id_count: firstIdStats.validIdCount,
-      first_unique_node_id_count: firstIdStats.uniqueIdCount,
+      first_valid_node_id_count: firstIdStats.validNodeIdCount,
+      first_unique_node_id_count: firstIdStats.uniqueNodeIdCount,
       second_node_count: secondIdStats.nodeCount,
-      second_valid_node_id_count: secondIdStats.validIdCount,
-      second_unique_node_id_count: secondIdStats.uniqueIdCount,
+      second_valid_node_id_count: secondIdStats.validNodeIdCount,
+      second_unique_node_id_count: secondIdStats.uniqueNodeIdCount,
       generated_node_ids_present_and_unique: generatedNodeIdsPresentAndUnique,
-      first_node_ids_sha256: sha256(JSON.stringify(firstIdStats.validIds)),
-      second_node_ids_sha256: sha256(JSON.stringify(secondIdStats.validIds)),
+      first_node_ids_sha256: firstIdStats.nodeIdsSha256,
+      second_node_ids_sha256: secondIdStats.nodeIdsSha256,
+      first_node_identity_id_bindings_sha256: firstIdStats.nodeIdentityIdBindingsSha256,
+      second_node_identity_id_bindings_sha256: secondIdStats.nodeIdentityIdBindingsSha256,
+      first_edge_count: firstIdStats.edgeCount,
+      first_valid_edge_id_count: firstIdStats.validEdgeIdCount,
+      first_unique_edge_id_count: firstIdStats.uniqueEdgeIdCount,
+      second_edge_count: secondIdStats.edgeCount,
+      second_valid_edge_id_count: secondIdStats.validEdgeIdCount,
+      second_unique_edge_id_count: secondIdStats.uniqueEdgeIdCount,
+      generated_edge_ids_present_and_unique: generatedEdgeIdsPresentAndUnique,
+      first_edge_ids_sha256: firstIdStats.edgeIdsSha256,
+      second_edge_ids_sha256: secondIdStats.edgeIdsSha256,
+      first_edge_identity_id_bindings_sha256: firstIdStats.edgeIdentityIdBindingsSha256,
+      second_edge_identity_id_bindings_sha256: secondIdStats.edgeIdentityIdBindingsSha256,
       first_graph_sha256: sha256(firstGraph),
       second_graph_sha256: sha256(secondGraph),
       stable_node_ids_across_clean_rebuilds:
         generatedNodeIdsPresentAndUnique
-        && JSON.stringify(firstIdStats.validIds) === JSON.stringify(secondIdStats.validIds),
+        && firstIdStats.nodeIdsSha256 === secondIdStats.nodeIdsSha256
+        && firstIdStats.nodeIdentityIdBindingsSha256 === secondIdStats.nodeIdentityIdBindingsSha256,
+      stable_edge_ids_across_clean_rebuilds:
+        generatedEdgeIdsPresentAndUnique
+        && firstIdStats.edgeIdsSha256 === secondIdStats.edgeIdsSha256
+        && firstIdStats.edgeIdentityIdBindingsSha256 === secondIdStats.edgeIdentityIdBindingsSha256,
       stable_serialized_graph_across_clean_rebuilds: firstGraph === secondGraph,
     }
   } finally {

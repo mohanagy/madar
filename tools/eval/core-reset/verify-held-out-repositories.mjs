@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync, realpathSync } from 'node:fs'
-import { dirname, isAbsolute, resolve } from 'node:path'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const scriptRoot = dirname(fileURLToPath(import.meta.url))
@@ -35,7 +36,8 @@ function usage() {
     '  --contract path        Use another contract file (development only).',
     '  --help                 Print this help.',
     '',
-    'The verifier reads only local Git objects. It never fetches, pulls, or clones.',
+    'The verifier reads only local Git objects and applies frozen patches in disposable temp directories.',
+    'It never fetches, pulls, clones, or changes a supplied checkout.',
   ].join('\n')
 }
 
@@ -94,6 +96,22 @@ function git(cwd, args) {
       : Buffer.isBuffer(error?.stderr)
         ? error.stderr.toString('utf8').trim()
         : ''
+    const detail = stderr ? `: ${stderr}` : ''
+    throw new Error(`git ${args.join(' ')} failed in ${cwd}${detail}`)
+  }
+}
+
+function gitBuffer(cwd, args) {
+  try {
+    return execFileSync(gitBinary, ['-C', cwd, ...args], {
+      env: gitEnvironment,
+      maxBuffer: 64 * 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+  } catch (error) {
+    const stderr = Buffer.isBuffer(error?.stderr)
+      ? error.stderr.toString('utf8').trim()
+      : (typeof error?.stderr === 'string' ? error.stderr.trim() : '')
     const detail = stderr ? `: ${stderr}` : ''
     throw new Error(`git ${args.join(' ')} failed in ${cwd}${detail}`)
   }
@@ -191,6 +209,75 @@ export function verifyRepository(repository, suppliedPath) {
   }
 }
 
+export function verifyRefreshMutation(repository, mutation, suppliedPath) {
+  const checkout = realpathSync(resolve(suppliedPath))
+  assertContractPath(mutation.path, `${repository.id} refresh path`)
+  assertContractPath(mutation.path_from_graph_root, `${repository.id} graph-root refresh path`)
+  const expectedPath = repository.graph_root === '.'
+    ? mutation.path_from_graph_root
+    : `${repository.graph_root}/${mutation.path_from_graph_root}`
+  if (mutation.path !== expectedPath) {
+    throw new Error(`${repository.id} refresh path does not match graph_root coordinates: ${mutation.path}`)
+  }
+
+  const observedOid = git(checkout, ['rev-parse', `${repository.commit}:${mutation.path}`]).trim()
+  if (observedOid !== mutation.base_git_blob_oid) {
+    throw new Error(`${repository.id} refresh base blob OID ${observedOid} does not match frozen ${mutation.base_git_blob_oid}`)
+  }
+  const base = gitBuffer(checkout, ['cat-file', 'blob', observedOid])
+  const baseSha256 = createHash('sha256').update(base).digest('hex')
+  if (base.length !== mutation.base_bytes || baseSha256 !== mutation.base_blob_sha256) {
+    throw new Error(`${repository.id} refresh base bytes/hash do not match the frozen mutation`)
+  }
+
+  const patch = Buffer.from(mutation.patch_utf8, 'utf8')
+  const patchSha256 = createHash('sha256').update(patch).digest('hex')
+  if (patch.length !== mutation.patch_bytes || patchSha256 !== mutation.patch_sha256) {
+    throw new Error(`${repository.id} refresh patch bytes/hash do not match the frozen mutation`)
+  }
+
+  const temporaryRoot = mkdtempSync(join(tmpdir(), `madar-refresh-${repository.id}-`))
+  try {
+    git(temporaryRoot, ['init', '-q'])
+    const target = join(temporaryRoot, ...mutation.path.split('/'))
+    mkdirSync(dirname(target), { recursive: true })
+    writeFileSync(target, base)
+    git(temporaryRoot, ['add', '--', mutation.path])
+    const patchPath = join(temporaryRoot, '.git', 'refresh.patch')
+    writeFileSync(patchPath, patch)
+    git(temporaryRoot, ['apply', '--check', '--whitespace=nowarn', patchPath])
+    git(temporaryRoot, ['apply', '--whitespace=nowarn', patchPath])
+    const changedPaths = new Set([
+      ...git(temporaryRoot, ['diff', '--name-only', '--']).trim().split(/\r?\n/),
+      ...git(temporaryRoot, ['diff', '--cached', '--name-only', '--']).trim().split(/\r?\n/),
+      ...git(temporaryRoot, ['ls-files', '--others']).trim().split(/\r?\n/),
+    ].filter(Boolean))
+    if (changedPaths.size !== 1 || !changedPaths.has(mutation.path)) {
+      throw new Error(
+        `${repository.id} refresh patch changes paths other than its frozen target: ${[...changedPaths].sort().join(', ')}`,
+      )
+    }
+    const result = readFileSync(target)
+    const resultSha256 = createHash('sha256').update(result).digest('hex')
+    if (result.length !== mutation.result_bytes || resultSha256 !== mutation.result_blob_sha256) {
+      throw new Error(`${repository.id} refresh result bytes/hash do not match the frozen mutation`)
+    }
+    if (!result.toString('utf8').includes(mutation.expected_symbol)) {
+      throw new Error(`${repository.id} refresh result does not contain ${mutation.expected_symbol}`)
+    }
+  } finally {
+    rmSync(temporaryRoot, { recursive: true, force: true })
+  }
+
+  return {
+    path: mutation.path,
+    base_git_blob_oid: observedOid,
+    base_blob_sha256: baseSha256,
+    patch_sha256: patchSha256,
+    result_blob_sha256: mutation.result_blob_sha256,
+  }
+}
+
 function main() {
   const { contractPath, repositories: suppliedRepositories } = parseArguments(process.argv.slice(2))
   if (!existsSync(contractPath)) fail(`Contract does not exist: ${contractPath}`)
@@ -209,17 +296,31 @@ function main() {
     fail(`Missing frozen repositories: ${missing.join(', ')}`)
   }
 
-  const results = frozenRepositories.map((repository) => verifyRepository(
-    repository,
-    suppliedRepositories.get(repository.id),
-  ))
+  const refreshByRepository = new Map(
+    (contract.trial_design?.refresh_measurement?.repositories ?? [])
+      .map((entry) => [entry.repository_id, entry.mutation]),
+  )
+  const results = frozenRepositories.map((repository) => {
+    const suppliedPath = suppliedRepositories.get(repository.id)
+    const result = verifyRepository(repository, suppliedPath)
+    const mutation = refreshByRepository.get(repository.id)
+    return {
+      ...result,
+      refresh_mutation: mutation
+        ? verifyRefreshMutation(repository, mutation, suppliedPath)
+        : null,
+    }
+  })
 
   process.stdout.write([
-    'Held-out repositories verified from local Git objects (no network operations).',
+    'Held-out repositories and refresh fixtures verified from local Git objects (no network operations).',
     ...results.map((result) => [
       `- ${result.id}: ${result.commit}`,
       `  tree paths: ${result.tree_paths_sha256}`,
       `  evidence files: ${result.verified_evidence_paths}`,
+      ...(result.refresh_mutation
+        ? [`  refresh fixture: ${result.refresh_mutation.path} (${result.refresh_mutation.patch_sha256})`]
+        : []),
       `  checkout: ${result.checkout}`,
     ].join('\n')),
   ].join('\n') + '\n')
