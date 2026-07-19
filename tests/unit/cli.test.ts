@@ -191,7 +191,7 @@ function createDependencies(): CliTestDependencies {
       codeFiles: 2,
       nonCodeFiles: 1,
       extractableFiles: 3,
-      extractedFiles: options.useSpi ? 2 : 3,
+      extractedFiles: options.extractionMode !== 'legacy' ? 2 : 3,
       totalWords: 120,
       nodeCount: 5,
       edgeCount: 4,
@@ -199,7 +199,7 @@ function createDependencies(): CliTestDependencies {
       semanticAnomalyCount: 2,
       changedFiles: options.update ? 1 : 0,
       deletedFiles: 0,
-      cache: options.useSpi ? { strategy: 'spi', hit: false, reason: 'no-cache', fileCount: 2 } : null,
+      cache: options.extractionMode !== 'legacy' ? { strategy: 'spi', hit: false, reason: 'no-cache', fileCount: 2 } : null,
       warning: null,
       notes: ['test note'],
       discoverySafety: {
@@ -944,7 +944,7 @@ describe('cli parser', () => {
       neo4jDatabase: null,
       includeDocs: false,
       docs: false,
-      useSpi: false,
+      extractionMode: 'auto',
       strictIndexing: false,
       maxIndexingFailed: 0,
       maxIndexingUnsupported: 0,
@@ -1002,7 +1002,7 @@ describe('cli parser', () => {
       neo4jDatabase: 'madar',
       includeDocs: false,
       docs: false,
-      useSpi: false,
+      extractionMode: 'auto',
       strictIndexing: true,
       maxIndexingFailed: 2,
       maxIndexingUnsupported: 3,
@@ -1285,6 +1285,9 @@ describe('cli main', () => {
     expect(help).toContain('watch [path]')
     expect(help).toContain('serve [graph.json]')
     expect(help).toContain('--directed')
+    expect(help).toContain('--legacy')
+    expect(help).toContain('--spi')
+    expect(help).toContain('default: auto')
     expect(help).toContain('--respect-gitignore')
     expect(help).toContain('--strict-indexing')
     expect(help).toContain('--max-indexing-failed')
@@ -1650,7 +1653,7 @@ describe('cli main', () => {
         version: '0.27.4',
         os: process.platform,
         nodeMajor: expect.any(Number),
-        spiEnabled: false,
+        spiEnabled: true,
       },
       {
         command: 'generate',
@@ -1660,9 +1663,64 @@ describe('cli main', () => {
         nodeMajor: expect.any(Number),
         repoSizeBucket: '1-24',
         graphSizeBucket: '1-99',
-        spiEnabled: false,
+        spiEnabled: true,
       },
     ])
+  })
+
+  it('omits SPI telemetry for cluster-only generation because the stored graph owns its extraction mode', async () => {
+    const { io, errors } = createIo()
+    const dependencies = createDependencies() as CliDependencies & {
+      recordTelemetryEvent: (event: unknown) => void
+      readInstalledVersion: () => string
+    }
+    const telemetryEvents: unknown[] = []
+
+    dependencies.recordTelemetryEvent = (event) => {
+      telemetryEvents.push(event)
+    }
+    dependencies.readInstalledVersion = () => '0.27.4'
+
+    const exitCode = await executeCli(['generate', '.', '--cluster-only'], io, dependencies)
+
+    expect(exitCode).toBe(0)
+    expect(errors).toEqual([])
+    expect(telemetryEvents).toEqual([
+      expect.objectContaining({ command: 'generate', stage: 'started' }),
+      expect.objectContaining({ command: 'generate', stage: 'succeeded' }),
+    ])
+    for (const event of telemetryEvents) {
+      expect(event).not.toHaveProperty('spiEnabled')
+    }
+  })
+
+  it('omits SPI telemetry for failed cluster-only generation too', async () => {
+    const { io, errors } = createIo()
+    const dependencies = createDependencies() as CliDependencies & {
+      recordTelemetryEvent: (event: unknown) => void
+      readInstalledVersion: () => string
+    }
+    const telemetryEvents: unknown[] = []
+
+    dependencies.generateGraph = () => {
+      throw new Error('cluster-only failed')
+    }
+    dependencies.recordTelemetryEvent = (event) => {
+      telemetryEvents.push(event)
+    }
+    dependencies.readInstalledVersion = () => '0.27.4'
+
+    const exitCode = await executeCli(['generate', '.', '--cluster-only'], io, dependencies)
+
+    expect(exitCode).toBe(1)
+    expect(errors).toContain('error: cluster-only failed')
+    expect(telemetryEvents).toEqual([
+      expect.objectContaining({ command: 'generate', stage: 'started' }),
+      expect.objectContaining({ command: 'generate', stage: 'failed' }),
+    ])
+    for (const event of telemetryEvents) {
+      expect(event).not.toHaveProperty('spiEnabled')
+    }
   })
 
   it('records telemetry after install success across install entrypoints', async () => {
@@ -2700,14 +2758,14 @@ describe('cli main', () => {
         codeFiles: 2,
         nonCodeFiles: 1,
         extractableFiles: 3,
-        extractedFiles: options.useSpi ? 2 : 3,
+        extractedFiles: options.extractionMode !== 'legacy' ? 2 : 3,
         totalWords: 120,
         nodeCount: 5,
         edgeCount: 4,
         communityCount: 2,
         changedFiles: 0,
         deletedFiles: 0,
-        cache: options.useSpi ? { strategy: 'spi', hit: false, reason: 'no-cache', fileCount: 2 } : null,
+        cache: options.extractionMode !== 'legacy' ? { strategy: 'spi', hit: false, reason: 'no-cache', fileCount: 2 } : null,
         warning: null,
         notes: [],
       }
@@ -2749,7 +2807,7 @@ describe('cli main', () => {
       neo4j: true,
       includeDocs: false,
       docs: false,
-      useSpi: false,
+      extractionMode: 'auto',
       indexingStrict: {
         maxFailed: 1,
         maxUnsupported: 2,
@@ -2797,6 +2855,23 @@ describe('cli main', () => {
 
     expect(exitCode).toBe(0)
     expect(logs[0]).toContain('[madar generate] cluster-only completed')
+  })
+
+  it('lets cluster-only reuse its stored extraction mode instead of passing the default auto mode', async () => {
+    const { io } = createIo()
+    const dependencies = createDependencies()
+    const originalGenerateGraph = dependencies.generateGraph
+    let capturedOptions: Parameters<CliDependencies['generateGraph']>[1] | undefined
+    dependencies.generateGraph = (rootPath = '.', options = {}) => {
+      capturedOptions = options
+      return originalGenerateGraph(rootPath, options)
+    }
+
+    const exitCode = await executeCli(['generate', 'src', '--cluster-only'], io, dependencies)
+
+    expect(exitCode).toBe(0)
+    expect(capturedOptions).toMatchObject({ clusterOnly: true })
+    expect(capturedOptions).not.toHaveProperty('extractionMode')
   })
 
   it('executes save-result commands via injected dependencies', async () => {

@@ -2004,7 +2004,7 @@ describe('runBenchmarkSuite', () => {
           tasks,
           now: () => new Date('2026-06-01T00:00:00Z'),
           generateGraph: (rootPath = '.', options = {}) => {
-            const outputDir = options.useSpi ? join(rootPath, 'out', 'spi') : join(rootPath, 'out')
+            const outputDir = options.extractionMode === 'spi' ? join(rootPath, 'out', 'spi') : join(rootPath, 'out')
             mkdirSync(outputDir, { recursive: true })
             const graphPath = join(outputDir, 'graph.json')
             writeFileSync(graphPath, '{}\n', 'utf8')
@@ -2697,9 +2697,9 @@ describe('runBenchmarkSuite', () => {
           generateGraph: (rootPath = '.', options = {}) => ({
             mode: options.useSpi ? 'generate' : 'generate',
             rootPath,
-            outputDir: options.useSpi ? 'C:\\tmp\\spi\\out' : 'C:\\tmp\\legacy\\out',
-            graphPath: options.useSpi ? 'C:\\tmp\\spi\\out\\graph.json' : 'C:\\tmp\\legacy\\out\\graph.json',
-            reportPath: options.useSpi ? 'C:\\tmp\\spi\\out\\GRAPH_REPORT.md' : 'C:\\tmp\\legacy\\out\\GRAPH_REPORT.md',
+            outputDir: options.extractionMode === 'spi' ? 'C:\\tmp\\spi\\out' : 'C:\\tmp\\legacy\\out',
+            graphPath: options.extractionMode === 'spi' ? 'C:\\tmp\\spi\\out\\graph.json' : 'C:\\tmp\\legacy\\out\\graph.json',
+            reportPath: options.extractionMode === 'spi' ? 'C:\\tmp\\spi\\out\\GRAPH_REPORT.md' : 'C:\\tmp\\legacy\\out\\GRAPH_REPORT.md',
             htmlPath: null,
             wikiPath: null,
             obsidianPath: null,

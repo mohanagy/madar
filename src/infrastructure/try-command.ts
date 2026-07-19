@@ -200,7 +200,7 @@ async function prepareWorkspace(
   }
 
   try {
-    const result = dependencies.generateGraph(workspace, { noHtml: true })
+    const result = dependencies.generateGraph(workspace, { extractionMode: 'auto', noHtml: true })
     const graphTooSmall = tooSmallReason(result.nodeCount)
     if (graphTooSmall) {
       return {

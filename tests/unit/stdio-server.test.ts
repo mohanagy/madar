@@ -2692,6 +2692,7 @@ describe('stdio runtime', () => {
         const graph = JSON.parse(readFileSync(graphPath, 'utf8')) as { nodes?: Array<{ source_file?: string }> }
         return graph.nodes?.some((node) => node.source_file?.endsWith('initial.ts')) === true
       })
+      const initialGraph = JSON.parse(readFileSync(graphPath, 'utf8')) as { nodes?: unknown[] }
 
       input.write(`${JSON.stringify({ id: 1, method: 'stats' })}\n`)
       await waitFor(() => outputText.includes('"id":1'))
@@ -2714,7 +2715,7 @@ describe('stdio runtime', () => {
       const after = responses.find((response) => response.id === 2)
       const refreshedGraph = JSON.parse(readFileSync(graphPath, 'utf8')) as { nodes?: unknown[] }
 
-      expect(before?.result).toContain('Nodes: 1')
+      expect(before?.result).toContain(`Nodes: ${initialGraph.nodes?.length ?? 0}`)
       expect(after?.result).toContain(`Nodes: ${refreshedGraph.nodes?.length ?? 0}`)
       expect(after?.result).not.toBe(before?.result)
     } finally {

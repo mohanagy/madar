@@ -194,6 +194,7 @@ function main() {
   }
 
   assert.equal(registryManifest.name, REGISTRY_NAME, 'server.json name must use the verified GitHub namespace')
+  assert.equal(packageManifest.mcpName, REGISTRY_NAME, 'package.json mcpName must match the MCP Registry server name')
   assert.equal(registryManifest.repository.id, REPOSITORY_ID, 'server.json repository.id must match the GitHub repository id')
   assert.equal(registryManifest.version, packageManifest.version, 'server.json version must match package.json version')
 

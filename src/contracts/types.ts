@@ -1,5 +1,6 @@
 import type { ExtractionLayer } from '../core/layers/types.js'
 import type { ExtractionProvenance } from '../core/provenance/types.js'
+import type { ExtractionStrategy } from './indexing.js'
 
 export type { ExtractionLayer } from '../core/layers/types.js'
 export type { ExtractionProvenance } from '../core/provenance/types.js'
@@ -22,6 +23,8 @@ export interface ExtractionNode {
   source_file: string
   source_location?: string
   snippet?: string
+  /** The pipeline route that emitted this graph evidence. */
+  extraction_strategy?: ExtractionStrategy
   layer?: ExtractionLayer
   provenance?: ExtractionProvenance[]
   semantic_kind?: 'citation' | 'reference'
@@ -41,6 +44,8 @@ export interface ExtractionEdge {
   confidence: Confidence
   source_file: string
   source_location?: string
+  /** The pipeline route that emitted this graph evidence. */
+  extraction_strategy?: ExtractionStrategy
   layer?: ExtractionLayer
   provenance?: ExtractionProvenance[]
   weight?: number
@@ -55,6 +60,8 @@ export interface Hyperedge {
   confidence?: Extract<Confidence, 'EXTRACTED' | 'INFERRED'>
   confidence_score?: number
   source_file?: string
+  /** The pipeline route that emitted this graph evidence. */
+  extraction_strategy?: ExtractionStrategy
   layer?: ExtractionLayer
   provenance?: ExtractionProvenance[]
   [key: string]: unknown

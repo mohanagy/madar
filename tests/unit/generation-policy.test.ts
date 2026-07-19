@@ -5,9 +5,19 @@ import { join } from 'node:path'
 
 import { describe, expect, test } from 'vitest'
 
-import { createGenerationPolicy, parseGenerationPolicy } from '../../src/contracts/generation-policy.js'
+import {
+  createGenerationPolicy,
+  parseGenerationPolicy,
+  type GenerationPolicyV2,
+} from '../../src/contracts/generation-policy.js'
 import { generateGraph } from '../../src/infrastructure/generate.js'
-import { exclusionRulesFingerprint, readStoredGenerationPolicy } from '../../src/infrastructure/generation-policy.js'
+import {
+  buildGenerationPolicy,
+  exclusionRulesFingerprint,
+  generationOptionsFromPolicy,
+  readStoredGenerationPolicy,
+  resolveExtractionMode,
+} from '../../src/infrastructure/generation-policy.js'
 import { loadManifestMetadata } from '../../src/pipeline/detect.js'
 import { loadGraph } from '../../src/runtime/serve.js'
 
@@ -21,6 +31,14 @@ function withTempDir<T>(callback: (tempDir: string) => T): T {
 }
 
 describe('generation policy contract', () => {
+  test('defaults programmatic extraction to auto while preserving explicit compatibility settings', () => {
+    expect(resolveExtractionMode({})).toBe('auto')
+    expect(resolveExtractionMode({ useSpi: false })).toBe('legacy')
+    expect(resolveExtractionMode({ useSpi: true })).toBe('spi')
+    expect(resolveExtractionMode({ extractionMode: 'auto', useSpi: false })).toBe('auto')
+    expect(resolveExtractionMode({ extractionMode: 'legacy', useSpi: true })).toBe('legacy')
+  })
+
   test('has a stable authenticated fingerprint and rejects tampering', () => {
     const policy = createGenerationPolicy({
       directed: true,
@@ -40,6 +58,40 @@ describe('generation policy contract', () => {
       ...policy,
       settings: { ...policy.settings, include_documents: true },
     })).toBeNull()
+    expect(parseGenerationPolicy({
+      ...policy,
+      settings: { ...policy.settings, extraction_mode: 'auto' },
+    })).toBeNull()
+  })
+
+  test('records the explicit v2 extraction mode and reads v1 policies as strict modes', () => {
+    const legacyV1 = createGenerationPolicy({
+      directed: true,
+      use_spi: true,
+      respect_gitignore: false,
+      follow_symlinks: false,
+      include_documents: true,
+      include_non_code: true,
+      extractor_cache_version: 68,
+      exclusion_rules_fingerprint: 'b'.repeat(64),
+      indexing_strict: null,
+    })
+    const autoV2 = buildGenerationPolicy('/workspace', {
+      extractionMode: 'auto',
+    }, 68, null)
+    const inferredV2: GenerationPolicyV2 = createGenerationPolicy(autoV2.settings)
+
+    expect(legacyV1.version).toBe(1)
+    expect(generationOptionsFromPolicy(legacyV1)).toMatchObject({ extractionMode: 'spi' })
+    expect(autoV2).toMatchObject({
+      version: 2,
+      settings: {
+        extraction_mode: 'auto',
+        use_spi: true,
+      },
+    })
+    expect(parseGenerationPolicy(autoV2)).toEqual(autoV2)
+    expect(inferredV2).toEqual(autoV2)
   })
 
   test('fingerprints Madar and Git exclusion controls without persisting their contents', () => {
@@ -65,6 +117,7 @@ describe('generation policy contract', () => {
       writeFileSync(join(tempDir, 'main.ts'), 'export const value = 1\n', 'utf8')
       const result = generateGraph(tempDir, {
         directed: false,
+        extractionMode: 'auto',
         includeDocs: false,
         noHtml: true,
         indexingStrict: { maxFailed: 1, maxUnsupported: 2 },
@@ -77,6 +130,7 @@ describe('generation policy contract', () => {
       expect(manifestPolicy).toEqual(graphPolicy)
       expect(graphPolicy?.settings).toMatchObject({
         directed: false,
+        extraction_mode: 'auto',
         include_documents: false,
         indexing_strict: { max_failed: 1, max_unsupported: 2 },
       })
@@ -103,7 +157,7 @@ describe('generation policy contract', () => {
       writeFileSync(join(tempDir, '.madarignore'), '', 'utf8')
       const exclusionsChanged = generateGraph(tempDir, { update: true, includeDocs: false, noHtml: true })
       expect(exclusionsChanged.notes.join('\n')).toContain('Generation policy changed')
-      expect(exclusionsChanged.extractedFiles).toBe(2)
+      expect(exclusionsChanged.extractedFiles).toBe(4)
 
       writeFileSync(join(tempDir, 'README.md'), '# Included now\n', 'utf8')
       const documentsChanged = generateGraph(tempDir, { update: true, includeDocs: true, noHtml: true })

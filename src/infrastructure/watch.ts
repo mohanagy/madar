@@ -612,7 +612,9 @@ function rebuildCodeUnderLease(
         'Existing graph has no valid generation-policy metadata. Run `madar generate . --update` once to migrate it before enabling auto-refresh.',
       )
     }
-    const policyOptions: GenerateGraphOptions = graphPolicy ? generationOptionsFromPolicy(graphPolicy) : {}
+    const policyOptions: GenerateGraphOptions = graphPolicy
+      ? generationOptionsFromPolicy(graphPolicy)
+      : { extractionMode: 'auto' }
     const result: GenerateGraphResult = generateGraph(resolvedWatchPath, {
       ...policyOptions,
       ...(canUpdate ? { update: true } : {}),
@@ -749,7 +751,12 @@ function updateWatcherPolicyState(
   const manifestPath = join(outputDir, 'manifest.json')
   const storedPolicy = readStoredGenerationPolicy(graphPath, manifestPath)
   const graphPolicy = readGraphGenerationPolicy(graphPath)
+  const indexingManifest = readIndexingManifestForGraph(graphPath)
   state.stored_policy_fingerprint = graphPolicy?.fingerprint ?? null
+  state.requested_extraction_mode = graphPolicy
+    ? generationOptionsFromPolicy(graphPolicy).extractionMode
+    : null
+  state.extraction_strategy_buckets = indexingManifest?.summary.extraction_strategy_buckets ?? null
 
   if (!storedPolicy) {
     state.current_policy_fingerprint = null

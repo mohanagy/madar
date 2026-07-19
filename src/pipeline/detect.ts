@@ -2,7 +2,7 @@ import { accessSync, constants, Dirent, lstatSync, mkdirSync, readFileSync, read
 import { dirname, extname, relative, resolve, sep } from 'node:path'
 
 import type { IndexingOutcome } from '../contracts/indexing.js'
-import { parseGenerationPolicy, type GenerationPolicyV1 } from '../contracts/generation-policy.js'
+import { parseGenerationPolicy, type GenerationPolicy } from '../contracts/generation-policy.js'
 import { sidecarAwareFileFingerprint } from '../shared/binary-ingest-sidecar.js'
 import { writeTextFileAtomically } from '../shared/atomic-file.js'
 import {
@@ -98,7 +98,7 @@ export const MANIFEST_METADATA_KEY = '__madar_meta__'
 
 export interface ManifestMetadata {
   total_words?: number
-  generation_policy?: GenerationPolicyV1
+  generation_policy?: GenerationPolicy
 }
 
 export interface ManifestSnapshot {

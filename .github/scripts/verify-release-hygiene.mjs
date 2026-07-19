@@ -10,6 +10,7 @@ const REPOSITORY_WEB_URL = 'https://github.com/mohanagy/madar'
 const REPOSITORY_GIT_URL = 'git+https://github.com/mohanagy/madar.git'
 const BUGS_URL = `${REPOSITORY_WEB_URL}/issues`
 const HOMEPAGE_URL = `${REPOSITORY_WEB_URL}#readme`
+const MCP_SERVER_NAME = 'io.github.mohanagy/madar'
 const RELEASE_BRANCHED_README_PATHS = new Set([
   'docs/team-enterprise-offer.md',
   'docs/telemetry.md',
@@ -67,6 +68,7 @@ function main() {
   assert.equal(packageManifest.repository?.url, REPOSITORY_GIT_URL, 'package.json repository.url must point at the public Madar GitHub repo')
   assert.equal(packageManifest.bugs?.url, BUGS_URL, 'package.json bugs.url must point at the public Madar issue tracker')
   assert.equal(packageManifest.homepage, HOMEPAGE_URL, 'package.json homepage must point at the public Madar README')
+  assert.equal(packageManifest.mcpName, MCP_SERVER_NAME, 'package.json mcpName must match the public MCP Registry server name')
 
   assert.ok(
     changelog.includes(`## [${packageManifest.version}]`),

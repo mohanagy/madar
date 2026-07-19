@@ -418,6 +418,9 @@ export function toJson(
     ...(graph.graph.indexing_completeness && typeof graph.graph.indexing_completeness === 'object' && !Array.isArray(graph.graph.indexing_completeness)
       ? { indexing_completeness: graph.graph.indexing_completeness }
       : {}),
+    ...(graph.graph.extraction_receipt && typeof graph.graph.extraction_receipt === 'object' && !Array.isArray(graph.graph.extraction_receipt)
+      ? { extraction_receipt: graph.graph.extraction_receipt }
+      : {}),
     ...(typeof extractorVersion === 'number' ? { extractor_version: extractorVersion } : {}),
     nodes: graph.nodeEntries().map(([id, attributes]) => ({
       id,

@@ -762,10 +762,17 @@ function formatGraphLine(graph: GraphCheck): string[] {
   } else {
     const watcher = graph.watcherState
     const liveLabel = watcher.status === 'stopped' ? 'inactive' : graph.watcherLive ? 'live' : 'not live'
+    const strategyReceipt = watcher.extraction_strategy_buckets
+      ? Object.entries(watcher.extraction_strategy_buckets)
+          .sort(([left], [right]) => left.localeCompare(right))
+          .map(([strategy, count]) => `${strategy}=${count}`)
+          .join(', ')
+      : 'unavailable'
     lines.push(
       `- watcher: ${watcher.status} (${liveLabel}; coverage=${watcher.coverage}; mode=${watcher.event_mode}; interval=${watcher.current_interval_ms}ms)`,
       `- watcher last reconciliation: ${watcher.last_reconciliation_at ?? 'never'} (${watcher.last_reconciliation_duration_ms ?? 'unknown'}ms; files=${watcher.last_reconciliation_file_count ?? 'unknown'}; directories=${watcher.last_reconciliation_directory_count ?? 'unknown'})`,
       `- watcher policy: ${watcher.policy_match === null || graph.watcherPolicyMatchesPublished === null ? 'unknown' : watcher.policy_match && graph.watcherPolicyMatchesPublished ? 'match' : 'mismatch'} (stored=${watcher.stored_policy_fingerprint?.slice(0, 12) ?? 'none'}; current=${watcher.current_policy_fingerprint?.slice(0, 12) ?? 'none'}; published=${graph.generationPolicy.storedFingerprint?.slice(0, 12) ?? 'none'})`,
+      `- watcher extraction receipt: requested=${watcher.requested_extraction_mode ?? 'unknown'}; strategies=${strategyReceipt}`,
     )
     if (watcher.pending_since) {
       lines.push(`- watcher pending since: ${watcher.pending_since}`)
@@ -870,8 +877,14 @@ export function runStatusCommand(options: DoctorCommandOptions = {}): string {
         .join(', ') || 'none'
     : 'none'
   const watcher = report.graph.watcherState
+  const watcherStrategies = watcher?.extraction_strategy_buckets
+    ? Object.entries(watcher.extraction_strategy_buckets)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([strategy, count]) => `${strategy}=${count}`)
+        .join(',')
+    : 'unavailable'
   const watcherSummary = watcher
-    ? `${watcher.status} (live=${report.graph.watcherLive}, coverage=${watcher.coverage}, mode=${watcher.event_mode}, interval=${watcher.current_interval_ms}ms, published_policy=${report.graph.watcherPolicyMatchesPublished === null ? 'unknown' : report.graph.watcherPolicyMatchesPublished ? 'match' : 'mismatch'}, pending=${watcher.pending_since ?? 'no'}, failure=${watcher.failure_reason ?? 'none'})`
+    ? `${watcher.status} (live=${report.graph.watcherLive}, coverage=${watcher.coverage}, mode=${watcher.event_mode}, interval=${watcher.current_interval_ms}ms, requested_extraction=${watcher.requested_extraction_mode ?? 'unknown'}, strategies=${watcherStrategies}, published_policy=${report.graph.watcherPolicyMatchesPublished === null ? 'unknown' : report.graph.watcherPolicyMatchesPublished ? 'match' : 'mismatch'}, pending=${watcher.pending_since ?? 'no'}, failure=${watcher.failure_reason ?? 'none'})`
     : 'inactive'
   const reconciliationSummary = watcher
     ? `${watcher.last_reconciliation_at ?? 'never'} (duration=${watcher.last_reconciliation_duration_ms ?? 'unknown'}ms, files=${watcher.last_reconciliation_file_count ?? 'unknown'}, directories=${watcher.last_reconciliation_directory_count ?? 'unknown'}, next=${watcher.next_reconciliation_at ?? 'none'})`

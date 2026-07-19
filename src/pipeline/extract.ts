@@ -42,6 +42,7 @@ import {
   normalizeLabel,
   stripHashComment,
   withExtractionFileStemContext,
+  withExtractionFileStemMapContext,
 } from './extract/core.js'
 import { unparenthesizeExpression } from './extract/typescript-utils.js'
 import {
@@ -3696,6 +3697,8 @@ function extractSingleFile(
 export interface ExtractOptions {
   allowedTargets?: Iterable<string>
   contextNodes?: ExtractionNode[]
+  /** Reuse corpus-wide file stems when this pass is merged with another one. */
+  fileStemByAbsolutePath?: ReadonlyMap<string, string>
   onFileOutcome?: (outcome: ExtractionFileOutcome) => void
   /** Source-safe stage timing/count observer; never receives paths, labels, source, or snippets. */
   onStageDiagnostic?: ExtractionStageObserver
@@ -3723,7 +3726,11 @@ function runExtractionPipeline(
     ...(options.allowedTargets ? { allowedTargets: options.allowedTargets } : {}),
     ...(options.contextNodes ? { contextNodes: options.contextNodes } : {}),
   }))
-  return withExtractionFileStemContext(discovery.stemContextFiles, () => {
+  const runWithStemContext = <T>(callback: () => T): T => options.fileStemByAbsolutePath
+    ? withExtractionFileStemMapContext(options.fileStemByAbsolutePath, callback)
+    : withExtractionFileStemContext(discovery.stemContextFiles, callback)
+
+  return runWithStemContext(() => {
     const dispatchResults = discovery.files.map((filePath) => extractSingleFile(
       filePath,
       discovery.allowedTargets,

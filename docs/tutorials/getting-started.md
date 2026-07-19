@@ -26,7 +26,7 @@ madar generate examples/sample-workspace --no-html
 
 This creates `examples/sample-workspace/out/graph.json`.
 
-If your real repo is framework-heavy TypeScript/JavaScript and you care about richer NestJS / Next.js / Prisma / tRPC retrieval hints, rerun the same step with the still-opt-in SPI pipeline:
+Default generation combines SPI metadata with proven legacy semantics for supported TypeScript/JavaScript code, while retaining legacy fallback for other supported languages. Strict SPI mode restricts code extraction to SPI-supported JS/TS without legacy semantics or language fallback; eligible non-code evidence remains included:
 
 ```bash
 madar generate examples/sample-workspace --spi --no-html
@@ -119,7 +119,7 @@ On Windows, use `--exec "type {prompt_file}"` for the same smoke check because `
 - **`madar: command not found`**: make sure the global npm install succeeded, or run from a local repo checkout after `npm run build`.
 - **`graph.json` missing**: rerun `madar generate . --no-html` before `pack`, `prompt`, or `compare`.
 - **`doctor` or `status` says the install is missing**: rerun your chosen `madar <agent> install` command from the sample workspace root, then rerun the verification commands for Claude, Cursor, Gemini, or Copilot.
-- **Need stronger framework-aware hints?** Regenerate with `madar generate . --spi --no-html` if your real workspace relies on Next.js App Router, NestJS, Prisma, or similar framework-specific boundaries.
+- **Need a strict JS/TS code-extraction diagnostic?** Regenerate with `madar generate . --spi --no-html`; eligible non-code evidence remains included. Normal `madar generate . --no-html` already includes framework-aware JS/TS hints and retains Go, Python, and other supported legacy languages.
 - **`compare` looks noisy**: the `cat {prompt_file}` runner (or `type {prompt_file}` on Windows) is only a local smoke check. Use a real terminal model runner later if you want meaningful answer comparisons.
 - **Need more questions?** Start with `examples/sample-workspace/prompt-examples.json`.
 

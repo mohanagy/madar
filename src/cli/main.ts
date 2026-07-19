@@ -467,6 +467,9 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --undirected         visualization-only legacy mode; directional analysis is unavailable',
     '    --follow-symlinks    include in-root symlink targets',
     '    --respect-gitignore  exclude files ignored by Git (falls back outside Git repositories)',
+    '    --legacy             use only the built-in legacy extractor',
+    '    --spi                use only the SPI JS/TS extractor (no language fallback)',
+    '                         default: auto — SPI for JS/TS, legacy for other supported languages',
     '    --strict-indexing    fail when any candidate is failed or unsupported',
     '    --max-indexing-failed N       permit N failed candidates (enables strict mode)',
     '    --max-indexing-unsupported N  permit N unsupported candidates (enables strict mode)',
@@ -634,6 +637,8 @@ function isGenerateLikeArgument(argument: string): boolean {
     argument === '--undirected' ||
     argument === '--follow-symlinks' ||
     argument === '--respect-gitignore' ||
+    argument === '--legacy' ||
+    argument === '--spi' ||
     argument === '--no-html' ||
     argument === '--wiki' ||
     argument === '--obsidian' ||
@@ -675,6 +680,12 @@ function isImplicitGenerateCommand(argument: string): boolean {
 }
 
 function formatGenerateSummary(result: GenerateGraphResult): string {
+  const extractionStrategySummary = result.indexing?.extraction_strategy_buckets
+    ? Object.entries(result.indexing.extraction_strategy_buckets)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([strategy, count]) => `${strategy}=${count}`)
+        .join(', ')
+    : null
   const indexingLines = result.indexing
     ? [
         `- Indexing: ${result.indexing.state.toUpperCase()} (${result.indexing.counts.indexed} indexed, ${result.indexing.counts.indexed_with_warnings} warnings, ${result.indexing.counts.skipped_by_policy} policy skips, ${result.indexing.counts.unsupported} unsupported, ${result.indexing.counts.failed} failed)`,
@@ -684,6 +695,9 @@ function formatGenerateSummary(result: GenerateGraphResult): string {
   const lines = [
     `[madar generate] ${result.mode} completed for ${result.rootPath}`,
     `- Corpus: ${result.totalFiles} file(s) · ~${result.totalWords.toLocaleString()} words`,
+    ...(result.extractionMode
+      ? [`- Extraction mode: ${result.extractionMode}${extractionStrategySummary ? ` (${extractionStrategySummary})` : ''}`]
+      : []),
     `- Extracted: ${result.codeFiles} code file(s)` + (result.nonCodeFiles > 0 ? ` (+${result.nonCodeFiles} non-code detected)` : ''),
     `- Graph: ${result.nodeCount} nodes · ${result.edgeCount} edges · ${result.communityCount} communities`,
     ...indexingLines,
@@ -1033,18 +1047,21 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
     if (command === 'generate' || (command !== undefined && !isAgentPlatform(command) && isImplicitGenerateCommand(command))) {
       const generateArgs = command === 'generate' ? args : [command, ...args]
       const options = parseGenerateArgs(generateArgs)
+      const spiTelemetry = options.clusterOnly
+        ? {}
+        : { spiEnabled: options.extractionMode !== 'legacy' }
       failureTelemetry = (failureBucket) => ({
         command: 'generate',
         stage: 'failed',
         ...telemetryBase(dependencies),
         failureBucket,
-        spiEnabled: options.useSpi,
+        ...spiTelemetry,
       })
       emitTelemetry(io, dependencies, () => ({
         command: 'generate',
         stage: 'started',
         ...telemetryBase(dependencies),
-        spiEnabled: options.useSpi,
+        ...spiTelemetry,
       }))
       const result = dependencies.generateGraph(options.path, {
         update: options.update,
@@ -1061,7 +1078,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         neo4j: options.neo4j,
         includeDocs: options.includeDocs,
         docs: options.docs,
-        useSpi: options.useSpi,
+        ...(options.clusterOnly ? {} : { extractionMode: options.extractionMode }),
         ...(options.strictIndexing
           ? {
               indexingStrict: {
@@ -1092,7 +1109,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         ...telemetryBase(dependencies),
         repoSizeBucket: repoSizeBucketFromFileCount(result.totalFiles),
         graphSizeBucket: graphSizeBucketFromNodeCount(result.nodeCount),
-        spiEnabled: options.useSpi,
+        ...spiTelemetry,
       }))
       if (options.watch) {
         await dependencies.watchGraph(options.path, options.debounceSeconds, {
@@ -1116,6 +1133,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
     if (command === 'watch') {
       const options = parseWatchArgs(args)
       const result = dependencies.generateGraph(options.path, {
+        extractionMode: 'auto',
         followSymlinks: options.followSymlinks,
         respectGitignore: options.respectGitignore,
         noHtml: options.noHtml,

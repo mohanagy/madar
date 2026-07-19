@@ -22,7 +22,12 @@ function normalizeStemPath(filePath: string): string {
   return resolve(filePath).replaceAll('\\', '/')
 }
 
-function buildFileStemMap(filePaths: Iterable<string>): Map<string, string> {
+/**
+ * Build deterministic, collision-free stems for a complete extraction corpus.
+ * SPI projection reuses this in hybrid mode so a JS/TS file and a legacy-only
+ * file with the same basename cannot overwrite one another after merging.
+ */
+export function createFileStemMap(filePaths: Iterable<string>): Map<string, string> {
   const normalizedPaths = [...new Set([...filePaths].map((filePath) => normalizeStemPath(filePath)))]
   const stemCounts = new Map<string, number>()
   for (const filePath of normalizedPaths) {
@@ -80,7 +85,25 @@ function buildFileStemMap(filePaths: Iterable<string>): Map<string, string> {
 
 export function withExtractionFileStemContext<T>(filePaths: Iterable<string>, callback: () => T): T {
   const previous = currentFileStemByPath
-  currentFileStemByPath = buildFileStemMap(filePaths)
+  currentFileStemByPath = createFileStemMap(filePaths)
+  try {
+    return callback()
+  } finally {
+    currentFileStemByPath = previous
+  }
+}
+
+/**
+ * Reuse a precomputed corpus-wide stem map across separate extraction passes.
+ * Hybrid generation needs this because SPI code, legacy-only code, and
+ * non-code files are extracted independently but share one final graph.
+ */
+export function withExtractionFileStemMapContext<T>(
+  fileStemByAbsolutePath: ReadonlyMap<string, string>,
+  callback: () => T,
+): T {
+  const previous = currentFileStemByPath
+  currentFileStemByPath = fileStemByAbsolutePath
   try {
     return callback()
   } finally {

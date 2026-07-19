@@ -130,6 +130,33 @@ describe('rebuildCode', () => {
     })
   })
 
+  test('keeps capability-aware auto extraction and its legacy language fallback during refresh', () => {
+    withTempDir((tempDir) => {
+      mkdirSync(join(tempDir, 'cmd'), { recursive: true })
+      const tsPath = join(tempDir, 'main.ts')
+      const goPath = join(tempDir, 'cmd', 'main.go')
+      writeFileSync(tsPath, 'export const original = true\n', 'utf8')
+      writeFileSync(goPath, 'package main\n\nfunc main() {}\n', 'utf8')
+      generateGraph(tempDir, { extractionMode: 'auto', noHtml: true })
+
+      writeFileSync(goPath, 'package main\n\nfunc main() { println("refreshed") }\n', 'utf8')
+      expect(rebuildCode(tempDir, { noHtml: true })).toBe(true)
+
+      const graph = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+        spi_mode?: unknown
+        generation_policy?: unknown
+        nodes: Array<{ label?: unknown; source_file?: unknown }>
+      }
+      const policy = parseGenerationPolicy(graph.generation_policy)
+
+      expect(graph.spi_mode).toBe(true)
+      expect(policy?.settings).toMatchObject({ extraction_mode: 'auto' })
+      expect(graph.nodes).toEqual(expect.arrayContaining([
+        expect.objectContaining({ label: 'main()', source_file: expect.stringMatching(/cmd\/main\.go$/) }),
+      ]))
+    })
+  })
+
   test('reuses every stored corpus-affecting generation option during refresh', () => {
     withTempDir((tempDir) => {
       execFileSync('git', ['init'], { cwd: tempDir, stdio: 'pipe' })
@@ -183,7 +210,7 @@ describe('watch', () => {
   test('settles startup without rebuilding an unchanged valid graph', async () => {
     await withTempDirAsync(async (tempDir) => {
       writeFileSync(join(tempDir, 'main.ts'), 'export const value = 1\n', 'utf8')
-      const generated = generateGraph(tempDir, { noHtml: true })
+      const generated = generateGraph(tempDir, { extractionMode: 'auto', noHtml: true })
       const rebuild = vi.fn(() => true)
       const refresh = startGraphAutoRefresh(tempDir, 0.02, {
         pollIntervalMs: 20,
@@ -201,6 +228,8 @@ describe('watch', () => {
           status: 'idle',
           coverage: 'complete',
           policy_match: true,
+          requested_extraction_mode: 'auto',
+          extraction_strategy_buckets: expect.objectContaining({ spi: 1 }),
         })
       } finally {
         refresh.stop()
