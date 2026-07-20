@@ -261,10 +261,14 @@ export function sourceInventory() {
   return { files: paths.length, loc, paths, filesystemViolations }
 }
 
+export function commandOutputLines(output) {
+  return output.split(/\r\n|\n|\r/).filter(Boolean)
+}
+
 export function productionSourceDelta(baselineCommit) {
-  const lines = run(gitCommand, ['diff', '--no-ext-diff', '--no-renames', '--numstat', baselineCommit, '--', 'src']).stdout
-    .split('\n')
-    .filter(Boolean)
+  const lines = commandOutputLines(
+    run(gitCommand, ['diff', '--no-ext-diff', '--no-renames', '--numstat', baselineCommit, '--', 'src']).stdout,
+  )
   let added = 0
   let removed = 0
   for (const line of lines) {
@@ -272,12 +276,12 @@ export function productionSourceDelta(baselineCommit) {
     added += rawAdded === '-' ? 0 : Number(rawAdded)
     removed += rawRemoved === '-' ? 0 : Number(rawRemoved)
   }
-  const baselinePaths = new Set(run(gitCommand, [
+  const baselinePaths = new Set(commandOutputLines(run(gitCommand, [
     'ls-tree', '-r', '--full-tree', '--name-only', baselineCommit, '--', 'src',
-  ]).stdout.split('\n').filter((path) => path.endsWith('.ts')))
-  const pathsVisibleToGitDiff = new Set(run(gitCommand, [
+  ]).stdout).filter((path) => path.endsWith('.ts')))
+  const pathsVisibleToGitDiff = new Set(commandOutputLines(run(gitCommand, [
     'diff', '--no-ext-diff', '--no-renames', '--name-only', baselineCommit, '--', 'src',
-  ]).stdout.split('\n').filter(Boolean))
+  ]).stdout))
   const actualPaths = sourceInventory().paths
   for (const path of actualPaths.filter((candidate) =>
     !baselinePaths.has(candidate) && !pathsVisibleToGitDiff.has(candidate))) {

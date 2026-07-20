@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 
 // Development-only JavaScript is deliberately outside the production TypeScript build.
 // @ts-expect-error -- the isolated evaluator does not ship declarations in the npm package
-import { productionSourceDelta, sourceInventory } from '../../tools/eval/core-reset/record-baseline.mjs'
+import { commandOutputLines, productionSourceDelta, sourceInventory } from '../../tools/eval/core-reset/record-baseline.mjs'
 
 const read = (path: string): string => readFileSync(resolve(path), 'utf8')
 
@@ -102,6 +102,12 @@ describe('core reset governance', () => {
         expect(item.remove_when?.trim().length).toBeGreaterThan(0)
       }
     }
+  })
+
+  it('normalizes Git command output across Unix and Windows line endings', () => {
+    const expected = ['1\t2\tsrc/a.ts', '3\t4\tsrc/b.ts']
+    expect(commandOutputLines(`${expected[0]}\n${expected[1]}\n`)).toEqual(expected)
+    expect(commandOutputLines(`${expected[0]}\r\n${expected[1]}\r\n`)).toEqual(expected)
   })
 
   it('measures the current source inventory and phase delta from the recorded protected base', () => {
