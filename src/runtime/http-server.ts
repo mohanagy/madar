@@ -1,12 +1,14 @@
+import { createHash } from 'node:crypto'
 import { createServer, type Server, type ServerResponse } from 'node:http'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 import { validateGraphPath } from '../shared/security.js'
+import { readGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
 import { graphFreshnessHeaders, graphFreshnessMetadata, resourceFreshnessHeaders, resourceFreshnessMetadata } from './freshness.js'
 import { communitiesFromGraph, getCommunity, getNeighbors, getNode, graphStats, loadGraph, queryGraph, semanticAnomaliesSummary, shortestPath } from './serve.js'
 import type { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
-import { GRAPH_ARTIFACT_REGENERATE_MESSAGE } from '../domain/graph/artifact.js'
+import { deserializeGraphArtifact, GRAPH_ARTIFACT_REGENERATE_MESSAGE } from '../domain/graph/artifact.js'
 
 export interface ServeLogger {
   log(message?: string): void
@@ -213,6 +215,7 @@ export async function startGraphServer(options: ServeGraphOptions = {}): Promise
   const outputDir = dirname(graphPath)
   const graph = createGraphLoader(graphPath)
   const rateLimitState = new Map<string, { count: number; resetAt: number }>()
+  let validatedGraphHash: string | null = null
 
   const server = createServer((request, response) => {
     try {
@@ -222,16 +225,20 @@ export async function startGraphServer(options: ServeGraphOptions = {}): Promise
       }
 
       const url = new URL(request.url ?? '/', `http://${host}`)
+      if (url.pathname === '/graph.json') {
+        const artifact = readGraphArtifact(graphPath)
+        const artifactHash = createHash('sha256').update(artifact).digest('hex')
+        if (artifactHash !== validatedGraphHash) {
+          deserializeGraphArtifact(artifact)
+          validatedGraphHash = artifactHash
+        }
+        sendText(response, 200, artifact, 'application/json; charset=utf-8', resourceFreshnessHeaders(resourceFreshnessMetadata(graphPath, graphPath, artifact, artifactHash)))
+        return
+      }
       const graphHeaders = graphFreshnessHeaders(graphFreshnessMetadata(graphPath))
 
       if (url.pathname === '/' || url.pathname === '/index.html') {
         sendText(response, 200, renderIndex(outputDir), 'text/html; charset=utf-8', graphHeaders)
-        return
-      }
-
-      if (url.pathname === '/graph.json') {
-        loadGraph(graphPath)
-        sendText(response, 200, readFileSync(graphPath, 'utf8'), 'application/json; charset=utf-8', resourceFreshnessHeaders(resourceFreshnessMetadata(graphPath, graphPath)))
         return
       }
 

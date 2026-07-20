@@ -535,18 +535,21 @@ export function requireFreshSelectedContext(
   )
 }
 
-export function resourceFreshnessMetadata(graphPath: string, resourcePath: string): ResourceFreshnessMetadata {
-  const graphFreshness = graphFreshnessMetadata(graphPath)
+export function resourceFreshnessMetadata(graphPath: string, resourcePath: string, validatedGraphContent?: string, validatedGraphHash?: string): ResourceFreshnessMetadata {
   const resourceStat = statSync(resourcePath)
   const resourceModifiedMs = truncateMtime(resourceStat.mtimeMs)
   const resourceName = basename(resourcePath)
+  const graphFreshness = validatedGraphContent === undefined
+    ? graphFreshnessMetadata(graphPath)
+    : { graphVersion: (validatedGraphHash ?? createHash('sha256').update(validatedGraphContent).digest('hex')).slice(0, VERSION_HASH_LENGTH), graphModifiedMs: resourceModifiedMs, graphModifiedAt: new Date(resourceModifiedMs).toUTCString() }
+  const resourceBytes = validatedGraphContent === undefined ? resourceStat.size : Buffer.byteLength(validatedGraphContent)
 
   return {
     ...graphFreshness,
-    resourceBytes: resourceStat.size,
+    resourceBytes,
     resourceModifiedMs,
     resourceModifiedAt: new Date(resourceModifiedMs).toUTCString(),
-    etag: `W/"madar-${graphFreshness.graphVersion}-${resourceName}-${resourceStat.size}-${resourceModifiedMs}"`,
+    etag: `W/"madar-${graphFreshness.graphVersion}-${resourceName}-${resourceBytes}-${resourceModifiedMs}"`,
   }
 }
 

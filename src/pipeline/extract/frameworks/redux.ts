@@ -1115,7 +1115,8 @@ function handleExportedMembers(
       ? lineOf(element.name, context.sourceFile)
       : slice.memberLines.get(`${kind.frameworkRole}:${exportName}`) ?? lineOf(element.name, context.sourceFile)
     addNode(nodes, seenIds, {
-      ...(baseNode ?? createNode(nodeId, exportName, context.filePath, sourceLine)),
+      ...(baseNode ?? {}),
+      ...createNode(nodeId, exportName, context.filePath, sourceLine),
       id: nodeId,
       node_kind: 'function',
       framework: 'redux-toolkit',

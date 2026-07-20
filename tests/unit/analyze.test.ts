@@ -456,6 +456,44 @@ describe('analyze', () => {
     expect(diffGraphs(oldGraph, newGraph)).toContain(`[edge ${addedEdgeId}] evidence={"line":20}`)
   })
 
+  it('reports attribute-only edge changes with both old and new values', () => {
+    const oldGraph = makeSimpleGraph([
+      ['n1', 'Alpha'],
+      ['n2', 'Beta'],
+    ], [])
+    const oldEdgeId = oldGraph.addEdge('n1', 'n2', {
+      relation: 'calls',
+      confidence: 'INFERRED',
+      source_file: 'test.py',
+    })
+
+    const newGraph = makeSimpleGraph([
+      ['n1', 'Alpha'],
+      ['n2', 'Beta'],
+    ], [])
+    const newEdgeId = newGraph.addEdge('n1', 'n2', {
+      relation: 'calls',
+      confidence: 'EXTRACTED',
+      source_file: 'test.py',
+    })
+
+    expect(newEdgeId).toBe(oldEdgeId)
+
+    const diff = graphDiff(oldGraph, newGraph)
+
+    expect(diff.new_edges).toEqual([expect.objectContaining({
+      id: newEdgeId,
+      confidence: 'EXTRACTED',
+      attributes: expect.objectContaining({ confidence: 'EXTRACTED' }),
+    })])
+    expect(diff.removed_edges).toEqual([expect.objectContaining({
+      id: oldEdgeId,
+      confidence: 'INFERRED',
+      attributes: expect.objectContaining({ confidence: 'INFERRED' }),
+    })])
+    expect(diff.summary).toBe('1 new edge, 1 edge removed')
+  })
+
   it('generates suggested questions from graph signals', () => {
     const graph = new KnowledgeGraph()
     for (const [nodeId, label, sourceFile] of [

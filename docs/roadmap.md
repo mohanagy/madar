@@ -22,7 +22,7 @@ The `directed-multigraph` removal-manifest entry delivered:
 3. Replace the owned graph path under the accepted destination rather than creating a permanent V1/V2 split.
 4. Delete the predecessor graph path when the phase gate passes, with net-negative production LOC.
 
-The five predecessor files and obsolete exporter surfaces are absent on the working branch. Current measurements are 178 production TypeScript files / 93,832 LOC with a `+1,193 / -4,127 / net -2,934` source delta and no dependency additions. Final CI and review gates are still open; the frozen baseline receipt remains unchanged.
+The five predecessor files and obsolete exporter surfaces are absent on the working branch. Current measurements are 178 production TypeScript files / 93,801 LOC with a `+1,192 / -4,157 / net -2,965` source delta and no dependency additions. Final CI and review gates are still open; the frozen baseline receipt remains unchanged.
 
 ## Blocked — canonical TypeScript/JavaScript index
 

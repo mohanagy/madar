@@ -1,4 +1,5 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, truncateSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -93,11 +94,24 @@ describe('startGraphServer', () => {
         expect(anomalyText).toContain('HttpClient bridges the code graph and document graph.')
         expect(anomalies.headers.get('x-madar-graph-version')).toBe(healthVersion)
 
+        const expectedGraphJson = readFileSync(graphPath, 'utf8')
+        const expectedGraphVersion = createHash('sha256').update(expectedGraphJson).digest('hex').slice(0, 12)
         const graphResponse = await fetch(`${handle.url}graph.json`)
         expect(graphResponse.status).toBe(200)
-        expect(graphResponse.headers.get('x-madar-graph-version')).toBe(healthVersion)
+        expect(graphResponse.headers.get('x-madar-graph-version')).toBe(expectedGraphVersion)
         expect(graphResponse.headers.get('last-modified')).toBeTruthy()
-        expect(graphResponse.headers.get('etag')).toBeTruthy()
+        expect(graphResponse.headers.get('etag')).toContain(expectedGraphVersion)
+        expect(graphResponse.headers.get('x-madar-resource-bytes')).toBe(String(Buffer.byteLength(expectedGraphJson)))
+        const graphJson = await graphResponse.text()
+        expect(graphJson).toBe(expectedGraphJson)
+        expect(JSON.parse(graphJson)).toMatchObject({
+          schema: 'madar.graph',
+          version: 1,
+          directed: true,
+          nodes: expect.arrayContaining([
+            expect.objectContaining({ id: 'n1', attributes: expect.objectContaining({ label: 'HttpClient' }) }),
+          ]),
+        })
 
         writeCanonicalGraphFixture(
           graphPath,
@@ -163,6 +177,64 @@ describe('startGraphServer', () => {
           expect(response.status).toBe(500)
           expect(await response.text()).toContain(GRAPH_REGENERATION_INSTRUCTION)
         }
+      } finally {
+        await handle.close()
+      }
+    })
+  })
+
+  test('validates the exact graph bytes when size and mtime match a prior response', async () => {
+    await withTempDir(async (tempDir) => {
+      const graphPath = join(tempDir, 'out', 'graph.json')
+      mkdirSync(join(tempDir, 'out'), { recursive: true })
+      writeCanonicalGraphFixture(graphPath, {
+        nodes: [{ id: 'n1', label: 'Node', source_file: 'node.ts', file_type: 'code' }],
+        links: [],
+        hyperedges: [],
+      })
+      const validArtifact = readFileSync(graphPath, 'utf8')
+      const originalTimes = statSync(graphPath)
+      const handle = await startGraphServer({ graphPath, port: 0, logger: { log() {}, error() {} } })
+
+      try {
+        const initialResponse = await fetch(`${handle.url}graph.json`)
+        expect(initialResponse.status).toBe(200)
+
+        const rewrittenArtifact = validArtifact.replace('"Node"', '"Mode"')
+        expect(rewrittenArtifact).toHaveLength(validArtifact.length)
+        writeFileSync(graphPath, rewrittenArtifact, 'utf8')
+        utimesSync(graphPath, originalTimes.atime, originalTimes.mtime)
+        const rewrittenResponse = await fetch(`${handle.url}graph.json`)
+        const rewrittenVersion = createHash('sha256').update(rewrittenArtifact).digest('hex').slice(0, 12)
+        expect(rewrittenResponse.status).toBe(200)
+        expect(rewrittenResponse.headers.get('x-madar-graph-version')).toBe(rewrittenVersion)
+        expect(await rewrittenResponse.text()).toBe(rewrittenArtifact)
+
+        const unsupportedArtifact = rewrittenArtifact.replace('"version": 1', '"version": 0')
+        writeFileSync(graphPath, unsupportedArtifact, 'utf8')
+        utimesSync(graphPath, originalTimes.atime, originalTimes.mtime)
+
+        const response = await fetch(`${handle.url}graph.json`)
+        expect(response.status).toBe(500)
+        expect(await response.text()).toContain(GRAPH_REGENERATION_INSTRUCTION)
+      } finally {
+        await handle.close()
+      }
+    })
+  })
+
+  test('rejects oversized graph artifacts before reading them', async () => {
+    await withTempDir(async (tempDir) => {
+      const graphPath = join(tempDir, 'out', 'graph.json')
+      mkdirSync(join(tempDir, 'out'), { recursive: true })
+      writeFileSync(graphPath, '', 'utf8')
+      truncateSync(graphPath, 100 * 1024 * 1024 + 1)
+      const handle = await startGraphServer({ graphPath, port: 0, logger: { log() {}, error() {} } })
+
+      try {
+        const response = await fetch(`${handle.url}graph.json`)
+        expect(response.status).toBe(500)
+        expect(await response.text()).toBe('Internal server error')
       } finally {
         await handle.close()
       }

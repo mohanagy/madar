@@ -2,52 +2,32 @@ import { canonicalJsonString, canonicalJsonValue } from './canonical-json.js'
 import { KnowledgeGraph, type GraphAttributes } from './directed-multigraph.js'
 export const GRAPH_ARTIFACT_SCHEMA = 'madar.graph' as const
 export const GRAPH_ARTIFACT_VERSION = 1 as const
-export const GRAPH_ARTIFACT_REGENERATE_MESSAGE =
-  'Unsupported Madar graph artifact. Run `madar generate . --update` to regenerate it.'
-export interface GraphArtifact {
-  schema: typeof GRAPH_ARTIFACT_SCHEMA
-  version: typeof GRAPH_ARTIFACT_VERSION
-  directed: true
-  metadata: GraphAttributes
-  nodes: Array<{ id: string; attributes: GraphAttributes }>
-  edges: Array<{ id: string; source: string; target: string; attributes: GraphAttributes }>
-}
+export const GRAPH_ARTIFACT_REGENERATE_MESSAGE = 'Unsupported Madar graph artifact. Run `madar generate . --update` to regenerate it.'
 const isRecord = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
-function invalidArtifact(detail?: string): never {
-  throw new Error(detail ? `${detail}. ${GRAPH_ARTIFACT_REGENERATE_MESSAGE}` : GRAPH_ARTIFACT_REGENERATE_MESSAGE)
-}
-const hasOnlyKeys = (value: Record<string, unknown>, keys: string[]): boolean =>
-  Object.keys(value).sort().join('\0') === [...keys].sort().join('\0')
-export function graphArtifact(graph: KnowledgeGraph): GraphArtifact {
+function invalidArtifact(detail?: string): never { throw new Error(detail ? `${detail}. ${GRAPH_ARTIFACT_REGENERATE_MESSAGE}` : GRAPH_ARTIFACT_REGENERATE_MESSAGE) }
+const hasOnlyKeys = (value: Record<string, unknown>, keys: string[]): boolean => Object.keys(value).sort().join('\0') === [...keys].sort().join('\0')
+export function graphArtifact(graph: KnowledgeGraph) {
   return {
     schema: GRAPH_ARTIFACT_SCHEMA,
     version: GRAPH_ARTIFACT_VERSION,
-    directed: true,
+    directed: true as const,
     metadata: canonicalJsonValue(graph.graph, 'graph.metadata') as GraphAttributes,
     nodes: graph.nodeEntries().map(([id, attributes]) => ({ id, attributes })),
     edges: graph.edgeEntries().map(([source, target, attributes, id]) => ({ id, source, target, attributes })),
   }
 }
+export type GraphArtifact = ReturnType<typeof graphArtifact>
 export const serializeGraphArtifact = (graph: KnowledgeGraph): string => `${canonicalJsonString(graphArtifact(graph), true)}\n`
 export function deserializeGraphArtifact(input: string | unknown): KnowledgeGraph {
   let parsed: unknown = input
   if (typeof input === 'string') {
-    try {
-      parsed = JSON.parse(input)
-    } catch (error) {
-      invalidArtifact(`Madar graph artifact is corrupted${error instanceof Error ? ` (${error.message})` : ''}`)
-    }
+    try { parsed = JSON.parse(input) }
+    catch (error) { invalidArtifact(`Madar graph artifact is corrupted${error instanceof Error ? ` (${error.message})` : ''}`) }
   }
   if (!isRecord(parsed)
-    || !hasOnlyKeys(parsed, ['schema', 'version', 'directed', 'metadata', 'nodes', 'edges'])
-    || parsed.schema !== GRAPH_ARTIFACT_SCHEMA
-    || parsed.version !== GRAPH_ARTIFACT_VERSION
-    || parsed.directed !== true
-    || !isRecord(parsed.metadata)
-    || !Array.isArray(parsed.nodes)
-    || !Array.isArray(parsed.edges)) {
-    invalidArtifact()
-  }
+    || !hasOnlyKeys(parsed, ['schema', 'version', 'directed', 'metadata', 'nodes', 'edges']) || parsed.schema !== GRAPH_ARTIFACT_SCHEMA
+    || parsed.version !== GRAPH_ARTIFACT_VERSION || parsed.directed !== true || !isRecord(parsed.metadata)
+    || !Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) invalidArtifact()
   try {
     const graph = new KnowledgeGraph(parsed.metadata)
     const nodeIds = new Set<string>()

@@ -1,3 +1,4 @@
+import { canonicalJsonString } from '../domain/graph/canonical-json.js'
 import { KnowledgeGraph, type GraphAttributes } from '../domain/graph/directed-multigraph.js'
 import { AUDIO_EXTENSIONS, CODE_EXTENSIONS, DOC_EXTENSIONS, IMAGE_EXTENSIONS, PAPER_EXTENSIONS, VIDEO_EXTENSIONS } from './detect.js'
 import { cluster, cohesionScore, type Communities } from './cluster.js'
@@ -952,15 +953,14 @@ export function graphDiff(oldGraph: KnowledgeGraph, newGraph: KnowledgeGraph): G
   const newNodesList = [...newNodes].filter((nodeId) => !oldNodes.has(nodeId)).map((nodeId) => ({ id: nodeId, label: nodeLabel(newGraph, nodeId) }))
   const removedNodesList = [...oldNodes].filter((nodeId) => !newNodes.has(nodeId)).map((nodeId) => ({ id: nodeId, label: nodeLabel(oldGraph, nodeId) }))
 
-  const [oldEdges, newEdges] = [oldGraph, newGraph].map((graph) => new Set(graph.edgeEntries().map(([, , , id]) => id))) as [Set<string>, Set<string>]
+  const oldEdges = new Map(oldGraph.edgeEntries().map(([, , attributes, id]) => [id, canonicalJsonString(attributes)]))
+  const newEdges = new Map(newGraph.edgeEntries().map(([, , attributes, id]) => [id, canonicalJsonString(attributes)]))
 
-  const newEdgesList = newGraph
-    .edgeEntries()
-    .filter(([, , , id]) => !oldEdges.has(id))
+  const newEdgesList = newGraph.edgeEntries()
+    .filter(([, , attributes, id]) => oldEdges.get(id) !== canonicalJsonString(attributes))
     .map(([source, target, attributes, id]) => ({ id, source, target, relation: String(attributes.relation ?? ''), confidence: String(attributes.confidence ?? ''), attributes }))
-  const removedEdgesList = oldGraph
-    .edgeEntries()
-    .filter(([, , , id]) => !newEdges.has(id))
+  const removedEdgesList = oldGraph.edgeEntries()
+    .filter(([, , attributes, id]) => newEdges.get(id) !== canonicalJsonString(attributes))
     .map(([source, target, attributes, id]) => ({ id, source, target, relation: String(attributes.relation ?? ''), confidence: String(attributes.confidence ?? ''), attributes }))
 
   const summaryParts: string[] = []

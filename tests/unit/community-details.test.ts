@@ -133,6 +133,25 @@ describe('community-details', () => {
         { from: 'Callee', to: 'Caller', relation: 'returns_to', evidence: { expression: 'callback()' } },
       ]))
     })
+
+    it('uses indexed adjacency without enumerating unrelated graph edges', () => {
+      const { graph, communities, labels } = buildTestGraph()
+      const enumerateAllEdges = vi.spyOn(graph, 'edgeEntries').mockImplementation(() => {
+        throw new Error('community details must not enumerate the full graph')
+      })
+
+      const mid = communityDetailsMid(graph, communities, labels, 0)
+      const macro = communityDetailsMacro(graph, communities, labels, 0)
+
+      expect(enumerateAllEdges).not.toHaveBeenCalled()
+      expect(mid).toMatchObject({
+        edge_count: 2,
+        entry_points: [{ label: 'TokenValidator', in_degree: 1 }],
+        exit_points: [{ label: 'SessionManager', target_community: 'Database' }],
+      })
+      expect(macro?.internal_edges).toHaveLength(2)
+      expect(macro?.cross_community_edges).toHaveLength(2)
+    })
   })
 
   describe('communityDetailsAtZoom', () => {

@@ -68,9 +68,7 @@ function edgeIdentity(source: string, target: string, attributes: GraphAttribute
 }
 const sorted = (values: Iterable<string>): string[] => [...values].sort()
 function addToIndex(index: Map<string, Set<string>>, key: string, value: string): void {
-  const values = index.get(key) ?? new Set<string>()
-  values.add(value)
-  index.set(key, values)
+  index.set(key, (index.get(key) ?? new Set()).add(value))
 }
 const endpointKey = (source: string, target: string): string => `${source}\u0000${target}`
 const edgeId = (identity: string): string => `edge_${createHash('sha256').update(identity).digest('hex').slice(0, 32)}`
@@ -88,6 +86,7 @@ export class KnowledgeGraph {
   private readonly successorMap = new Map<string, Set<string>>()
   private readonly predecessorMap = new Map<string, Set<string>>()
   private readonly endpointMap = new Map<string, Set<string>>()
+  private readonly degreeMap = new Map<string, number>()
   constructor(metadata: GraphAttributes = {}) {
     if (Object.hasOwn(metadata, 'directed') && metadata.directed !== true) throw new Error('Madar graphs are always directed; regenerate the graph without an undirected option')
     const stored = cloneAttributes(metadata, 'graph.metadata')
@@ -130,6 +129,7 @@ export class KnowledgeGraph {
     if (existing && canonicalJsonString(existing) !== canonicalJsonString(nextAttributes)) throw new Error(`Conflicting graph node facts share ID ${JSON.stringify(nodeId)}`)
     if (existing) return nodeId
     this.nodeMap.set(nodeId, nextAttributes)
+    this.degreeMap.set(nodeId, 0)
     return nodeId
   }
   replaceNodeAttributes(id: string, attributes: GraphAttributes): void {
@@ -154,6 +154,8 @@ export class KnowledgeGraph {
     addToIndex(this.successorMap, sourceId, targetId)
     addToIndex(this.predecessorMap, targetId, sourceId)
     addToIndex(this.endpointMap, endpointKey(sourceId, targetId), id)
+    this.degreeMap.set(sourceId, (this.degreeMap.get(sourceId) ?? 0) + 1)
+    this.degreeMap.set(targetId, (this.degreeMap.get(targetId) ?? 0) + 1)
     return id
   }
   isDirected(): true { return true }
@@ -219,14 +221,7 @@ export class KnowledgeGraph {
     }
     return result
   }
-  degree(id: string): number {
-    let degree = 0
-    for (const edge of this.edgeMap.values()) {
-      if (edge.source === id) degree += 1
-      if (edge.target === id) degree += 1
-    }
-    return degree
-  }
+  degree(id: string): number { return this.degreeMap.get(id) ?? 0 }
   nodeAttributes(id: string): GraphAttributes {
     const attributes = this.nodeMap.get(id)
     if (!attributes) throw new Error(`Unknown node: ${id}`)

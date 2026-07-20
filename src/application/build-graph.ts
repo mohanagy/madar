@@ -9,9 +9,7 @@ import { KnowledgeGraph, normalizeGraphPathIdentity } from '../domain/graph/dire
 import { isRecord } from '../shared/guards.js'
 type Normalized<T> = T & { layer: ExtractionLayer; provenance: ExtractionProvenance[] }
 export type NormalizedExtractionNode = Normalized<ExtractionNode>
-export type NormalizedExtractionEdge = Normalized<ExtractionEdge>
-export type NormalizedHyperedge = Normalized<Hyperedge>
-export type NormalizedExtractionData = Omit<ExtractionData, 'schema_version' | 'nodes' | 'edges' | 'hyperedges'> & { schema_version: ExtractionSchemaVersion; nodes: NormalizedExtractionNode[]; edges: NormalizedExtractionEdge[]; hyperedges: NormalizedHyperedge[] }
+export type NormalizedExtractionData = Omit<ExtractionData, 'schema_version' | 'nodes' | 'edges' | 'hyperedges'> & { schema_version: ExtractionSchemaVersion; nodes: NormalizedExtractionNode[]; edges: Normalized<ExtractionEdge>[]; hyperedges: Normalized<Hyperedge>[] }
 export interface BuildGraphOptions { rootPath?: string; validateExtraction?: boolean }
 type BuildableExtraction = Pick<ExtractionData, 'nodes' | 'edges'> & Partial<Pick<ExtractionData, 'schema_version' | 'hyperedges' | 'input_tokens' | 'output_tokens'>>
 interface NodeOccurrence { node: NormalizedExtractionNode; originalId: string; sourceIdentity: string; semanticIdentity: string }
@@ -22,8 +20,7 @@ function sanitize(value: unknown): unknown {
   if (!isRecord(value)) return value
   return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined).map(([key, entry]) => [key, sanitize(entry)]))
 }
-const normalizeLayer = (value: unknown): ExtractionLayer =>
-  value === 'semantic' || value === 'media' || value === 'base' ? value : DEFAULT_EXTRACTION_LAYER
+const normalizeLayer = (value: unknown): ExtractionLayer => value === 'semantic' || value === 'media' || value === 'base' ? value : DEFAULT_EXTRACTION_LAYER
 function ingestProvenance(nodes: unknown): Map<string, ExtractionProvenance[]> {
   const byFile = new Map<string, Map<string, ExtractionProvenance>>()
   for (const node of records(nodes)) {
@@ -73,12 +70,9 @@ export function normalizeExtractionData(extraction: unknown): NormalizedExtracti
 }
 function confidenceScore(attributes: Record<string, unknown>): number | undefined {
   if (typeof attributes.confidence_score === 'number' && Number.isFinite(attributes.confidence_score)) return attributes.confidence_score
-  return attributes.confidence === 'AMBIGUOUS' ? 0.2
-    : attributes.confidence === 'INFERRED' ? 0.5
-      : attributes.confidence === 'EXTRACTED' ? 1 : undefined
+  return attributes.confidence === 'AMBIGUOUS' ? 0.2 : attributes.confidence === 'INFERRED' ? 0.5 : attributes.confidence === 'EXTRACTED' ? 1 : undefined
 }
-const sourceIdentity = (value: unknown, rootPath?: string): string =>
-  normalizeGraphPathIdentity(value, rootPath) ?? '<unknown-source>'
+const sourceIdentity = (value: unknown, rootPath?: string): string => normalizeGraphPathIdentity(value, rootPath) ?? '<unknown-source>'
 function semanticIdentity(node: NormalizedExtractionNode, source: string): string {
   const location = typeof node.source_location === 'string' ? node.source_location.trim() : ''
   const start = /^L?(\d+)(?:(?:C|:)(\d+))?/i.exec(location)
@@ -215,7 +209,7 @@ export function buildGraphFromExtraction(extraction: unknown, options: BuildGrap
       return []
     }
     return [{ ...edge, nodes: [...new Set(nodes as string[])].sort(compareCodeUnits) }]
-  })) as NormalizedHyperedge[]
+  })) as Normalized<Hyperedge>[]
   Object.assign(graph.graph, {
     schema_version: normalized.schema_version,
     ...(hyperedges.length > 0 ? { hyperedges } : {}),

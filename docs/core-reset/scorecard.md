@@ -46,8 +46,8 @@ Only one technical phase may be `In progress` at a time.
 
 - One always-directed `KnowledgeGraph` implementation now lives under `src/domain/graph/**`; there is no V1/V2 alias, mode, fallback loader, or second graph store.
 - The five owned predecessor files are deleted. Obsolete HTML, SVG, GraphML, Cypher, and Obsidian exporter code was not recreated.
-- Current working-branch production inventory: 178 TypeScript files / 93,832 LOC.
-- Working-branch delta from protected base `647c2912e9ff000b5d92cae3fc61395d9e556062`: `+1,193 / -4,127 / net -2,934`; five new production files; zero dependency changes.
+- Current working-branch production inventory: 178 TypeScript files / 93,801 LOC.
+- Working-branch delta from protected base `647c2912e9ff000b5d92cae3fc61395d9e556062`: `+1,192 / -4,157 / net -2,965`; five new production files; zero dependency changes.
 - Deterministic multigraph, build-adapter, serialization, schema rejection, provenance, collision, traversal, and consumer regressions are present as tests on the working branch. The baseline receipt remains unchanged.
 - Local pre-review gates ran on 2026-07-20. The phase does not pass until the final branch rerun, required CI, and review threads are all green.
 

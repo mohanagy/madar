@@ -1202,16 +1202,22 @@ describe('js framework extraction contract', () => {
       expect.arrayContaining([
         expect.objectContaining({ label: 'auth slice', node_kind: 'slice', framework_role: 'redux_slice', framework: 'redux-toolkit' }),
         expect.objectContaining({ label: 'fetchProfile', framework_role: 'redux_thunk', framework: 'redux-toolkit' }),
-        expect.objectContaining({ label: 'loginSucceeded', framework_role: 'redux_action', framework: 'redux-toolkit' }),
-        expect.objectContaining({ label: 'logout', framework_role: 'redux_action', framework: 'redux-toolkit' }),
-        expect.objectContaining({ label: 'selectToken', framework_role: 'redux_selector', framework: 'redux-toolkit' }),
-        expect.objectContaining({ label: 'selectStatus', framework_role: 'redux_selector', framework: 'redux-toolkit' }),
+        expect.objectContaining({ label: 'loginSucceeded', source_location: 'L9', framework_role: 'redux_action', framework: 'redux-toolkit' }),
+        expect.objectContaining({ label: 'logout', source_location: 'L12', framework_role: 'redux_action', framework: 'redux-toolkit' }),
+        expect.objectContaining({ label: 'selectToken', source_location: 'L17', framework_role: 'redux_selector', framework: 'redux-toolkit' }),
+        expect.objectContaining({ label: 'selectStatus', source_location: 'L18', framework_role: 'redux_selector', framework: 'redux-toolkit' }),
         expect.objectContaining({ label: 'store', node_kind: 'store', framework_role: 'redux_store', framework: 'redux-toolkit' }),
       ]),
     )
 
     const sliceNodeId = nodeIdForLabel(result, 'auth slice')
     const storeNodeId = nodeIdForLabel(result, 'store')
+    expect(result.nodes.find((node) => node.id === _makeId(filePath, 'loginSucceeded', 'redux_action'))?.provenance).toEqual(
+      expect.arrayContaining([expect.objectContaining({ source_file: filePath, source_location: 'L9' })]),
+    )
+    expect(result.nodes.find((node) => node.id === _makeId(filePath, 'selectToken', 'redux_selector'))?.provenance).toEqual(
+      expect.arrayContaining([expect.objectContaining({ source_file: filePath, source_location: 'L17' })]),
+    )
 
     expect(result.edges).toEqual(
       expect.arrayContaining([
