@@ -1,14 +1,14 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
-import { buildFromJson } from '../../src/pipeline/build.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
+import { buildGraphFromExtraction } from '../../src/application/build-graph.js'
 import { cluster, cohesionScore, scoreAll } from '../../src/pipeline/cluster.js'
 
 const FIXTURES_DIR = join(process.cwd(), 'tests', 'fixtures')
 
 function makeGraph(): KnowledgeGraph {
-  return buildFromJson(JSON.parse(readFileSync(join(FIXTURES_DIR, 'extraction.json'), 'utf8')))
+  return buildGraphFromExtraction(JSON.parse(readFileSync(join(FIXTURES_DIR, 'extraction.json'), 'utf8')))
 }
 
 function makeBridgeGraph(): KnowledgeGraph {
@@ -22,6 +22,29 @@ function makeBridgeGraph(): KnowledgeGraph {
     graph.addEdge(`b${index}`, `b${index + 1}`, { relation: 'calls', confidence: 'EXTRACTED', source_file: 'single.py', weight: 1.0 })
   }
   graph.addEdge('a4', 'b0', { relation: 'references', confidence: 'INFERRED', source_file: 'single.py', weight: 0.5 })
+  return graph
+}
+
+function makeOrderSensitiveGraph(reverseEdges = false): KnowledgeGraph {
+  const graph = new KnowledgeGraph()
+  for (const nodeId of ['action-file', 'action', 'page-file', 'page', 'route', 'route-page', 'client-file', 'client']) {
+    graph.addNode(nodeId, { label: nodeId, file_type: 'code', source_file: `${nodeId}.ts` })
+  }
+  const edges = [
+    ['action-file', 'action', 'contains'],
+    ['page-file', 'action-file', 'imports_from'],
+    ['page-file', 'client-file', 'imports_from'],
+    ['page-file', 'page', 'contains'],
+    ['route', 'route-page', 'depends_on'],
+    ['route-page', 'page', 'renders'],
+    ['client-file', 'client', 'contains'],
+    ['page-file', 'action', 'imports_from'],
+    ['page-file', 'client', 'imports_from'],
+  ] as const
+
+  for (const [source, target, relation] of reverseEdges ? [...edges].reverse() : edges) {
+    graph.addEdge(source, target, { relation, confidence: 'EXTRACTED', source_file: `${source}.ts`, weight: 1 })
+  }
   return graph
 }
 
@@ -43,19 +66,8 @@ describe('cluster', () => {
     expect(Object.keys(communities).length).toBeGreaterThanOrEqual(2)
   })
 
-  it('treats directed graphs like their undirected equivalents for clustering', () => {
-    const directedGraph = new KnowledgeGraph(true)
-    const undirectedGraph = new KnowledgeGraph()
-
-    for (const graph of [directedGraph, undirectedGraph]) {
-      graph.addNode('a', { label: 'A', file_type: 'code', source_file: 'directed.py' })
-      graph.addNode('b', { label: 'B', file_type: 'code', source_file: 'directed.py' })
-      graph.addNode('c', { label: 'C', file_type: 'code', source_file: 'directed.py' })
-      graph.addEdge('a', 'b', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'directed.py', weight: 1.0 })
-      graph.addEdge('b', 'c', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'directed.py', weight: 1.0 })
-    }
-
-    expect(cluster(directedGraph)).toEqual(cluster(undirectedGraph))
+  it('is independent of edge insertion order when community gains tie', () => {
+    expect(cluster(makeOrderSensitiveGraph())).toEqual(cluster(makeOrderSensitiveGraph(true)))
   })
 
   it('scores complete graphs at 1.0 cohesion', () => {

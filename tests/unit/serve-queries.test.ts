@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import { getCommunity, getNeighbors, getNode, graphStats, queryGraph, shortestPath } from '../../src/runtime/serve.js'
 
 function makeGraph(): KnowledgeGraph {
@@ -10,19 +10,19 @@ function makeGraph(): KnowledgeGraph {
   graph.addNode('n3', { label: 'build', source_file: 'build.py', source_location: 'L1', community: 1, file_type: 'code' })
   graph.addNode('n4', { label: 'report', source_file: 'report.py', source_location: 'L1', community: 1, file_type: 'code' })
   graph.addNode('n5', { label: 'isolated', source_file: 'other.py', source_location: 'L1', community: 2, file_type: 'code' })
-  graph.addEdge('n1', 'n2', { relation: 'calls', confidence: 'INFERRED', source_file: 'extract.py', _src: 'n1', _tgt: 'n2' })
-  graph.addEdge('n2', 'n3', { relation: 'imports', confidence: 'EXTRACTED', source_file: 'cluster.py', _src: 'n2', _tgt: 'n3' })
-  graph.addEdge('n3', 'n4', { relation: 'uses', confidence: 'EXTRACTED', source_file: 'build.py', _src: 'n3', _tgt: 'n4' })
+  graph.addEdge('n1', 'n2', { relation: 'calls', confidence: 'INFERRED', source_file: 'extract.py' })
+  graph.addEdge('n2', 'n3', { relation: 'imports', confidence: 'EXTRACTED', source_file: 'cluster.py' })
+  graph.addEdge('n3', 'n4', { relation: 'uses', confidence: 'EXTRACTED', source_file: 'build.py' })
   return graph
 }
 
 function makeDirectedGraph(): KnowledgeGraph {
-  const graph = new KnowledgeGraph(true)
+  const graph = new KnowledgeGraph()
   graph.addNode('src', { label: 'source', source_file: 'extract.py', source_location: 'L1', community: 0, file_type: 'code' })
   graph.addNode('mid', { label: 'middle', source_file: 'cluster.py', source_location: 'L2', community: 0, file_type: 'code' })
   graph.addNode('sink', { label: 'sink', source_file: 'report.py', source_location: 'L3', community: 1, file_type: 'code' })
-  graph.addEdge('src', 'mid', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'extract.py', _src: 'src', _tgt: 'mid' })
-  graph.addEdge('mid', 'sink', { relation: 'uses', confidence: 'EXTRACTED', source_file: 'cluster.py', _src: 'mid', _tgt: 'sink' })
+  graph.addEdge('src', 'mid', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'extract.py' })
+  graph.addEdge('mid', 'sink', { relation: 'uses', confidence: 'EXTRACTED', source_file: 'cluster.py' })
   return graph
 }
 
@@ -77,10 +77,10 @@ describe('getNode', () => {
 })
 
 describe('getNeighbors', () => {
-  test('lists direct neighbors and relation details', () => {
+  test('lists outgoing neighbors and relation details', () => {
     const result = getNeighbors(makeGraph(), 'cluster')
     expect(result).toContain('Neighbors of cluster')
-    expect(result).toContain('extract')
+    expect(result).not.toContain('extract')
     expect(result).toContain('build')
   })
 

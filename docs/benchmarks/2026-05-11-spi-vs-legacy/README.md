@@ -95,8 +95,8 @@ For a fully manual flow:
 
 ```bash
 npm run build
-node dist/src/cli/bin.js generate /absolute/path/to/repo --no-html
-node dist/src/cli/bin.js generate /absolute/path/to/repo --spi --no-html
+node dist/src/cli/bin.js generate /absolute/path/to/repo
+node dist/src/cli/bin.js generate /absolute/path/to/repo --spi
 node docs/benchmarks/2026-05-11-spi-vs-legacy/probe.mjs \
   /absolute/path/to/repo/out/graph.json \
   docs/benchmarks/2026-05-11-spi-vs-legacy/prompts.json

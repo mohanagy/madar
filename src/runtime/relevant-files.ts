@@ -1,4 +1,4 @@
-import { KnowledgeGraph } from '../contracts/graph.js'
+import { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
 import type { ContextPackClaim, ContextPackCoverage, ContextPackEvidenceClass, ContextPackExpandableRef } from '../contracts/context-pack.js'
 import type { ContextPackTaskKind } from '../contracts/context-pack.js'
 import type { TaskIntentKind } from '../contracts/task-intent.js'

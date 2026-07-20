@@ -5,6 +5,8 @@ import { PassThrough } from 'node:stream'
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { writeCanonicalGraphFixture } from '../helpers/graph-artifact.js'
+
 interface JsonRpcLine {
   id?: string | number | null
   method?: string
@@ -20,9 +22,9 @@ function writeGraphFixture(root: string): string {
   const outDir = join(root, 'out')
   mkdirSync(outDir, { recursive: true })
   const graphPath = join(outDir, 'graph.json')
-  writeFileSync(
+  writeCanonicalGraphFixture(
     graphPath,
-    JSON.stringify({
+    {
       nodes: [
         {
           id: 'ledger_repo',
@@ -45,8 +47,7 @@ function writeGraphFixture(root: string): string {
       ],
       edges: [],
       hyperedges: [],
-    }),
-    'utf8',
+    },
   )
   return graphPath
 }

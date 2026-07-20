@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 
 import { federate } from '../../src/pipeline/federate.js'
+import { readCanonicalGraphFixture, writeCanonicalGraphFixture } from '../helpers/graph-artifact.js'
 
 function withTempDir(fn: (dir: string) => void): void {
   const dir = join(tmpdir(), `madar-federate-test-${Date.now()}-${Math.random().toString(36).slice(2)}`)
@@ -20,13 +21,12 @@ function createMiniGraph(dir: string, repoName: string, nodes: Array<{ id: strin
 
   const graphData = {
     schema_version: 1,
-    directed: false,
     nodes: nodes.map((n) => ({ id: n.id, label: n.label, file_type: 'code', source_file: `${repoName}/src/${n.id}.ts` })),
     edges: edges.map(([source, target]) => ({ source, target, relation: 'calls', confidence: 'EXTRACTED', source_file: `${repoName}/src/${source}.ts` })),
   }
 
   const graphPath = join(repoDir, 'graph.json')
-  writeFileSync(graphPath, JSON.stringify(graphData), 'utf8')
+  writeCanonicalGraphFixture(graphPath, graphData)
   return graphPath
 }
 
@@ -68,6 +68,24 @@ describe('federate', () => {
       const result = federate([graph1, graph2], { outputDir })
 
       expect(result.crossRepoEdges).toBeGreaterThan(0)
+    })
+  })
+
+  it('orients shared-label facts canonically regardless of input order', () => {
+    withTempDir((dir) => {
+      const frontend = createMiniGraph(dir, 'frontend', [{ id: 'user', label: 'UserModel' }], [])
+      const backend = createMiniGraph(dir, 'backend', [{ id: 'user', label: 'UserModel' }], [])
+      const forward = federate([frontend, backend], { outputDir: join(dir, 'forward') })
+      const reverse = federate([backend, frontend], { outputDir: join(dir, 'reverse') })
+      const sharedEdges = (path: string) => readCanonicalGraphFixture(path).edges
+        .filter((edge) => edge.relation === 'shared_across_repos')
+        .map(({ id, source, target }) => ({ id, source, target }))
+
+      expect(readFileSync(forward.graphPath, 'utf8')).toBe(readFileSync(reverse.graphPath, 'utf8'))
+      expect(sharedEdges(forward.graphPath)).toEqual(sharedEdges(reverse.graphPath))
+      expect(sharedEdges(forward.graphPath)).toEqual([
+        expect.objectContaining({ source: 'backend::user', target: 'frontend::user' }),
+      ])
     })
   })
 

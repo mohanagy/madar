@@ -1,27 +1,39 @@
 {
-  "schema_version": 1,
-  "directed": false,
-  "nodes": [
-    {
-      "id": "session-handler",
-      "label": "SessionContract",
-      "file_type": "code",
-      "source_file": "backend/src/session-handler.ts"
-    },
-    {
-      "id": "user-record",
-      "label": "UserProfile",
-      "file_type": "code",
-      "source_file": "backend/src/user-record.ts"
-    }
-  ],
+  "directed": true,
   "edges": [
     {
+      "attributes": {
+        "confidence": "EXTRACTED",
+        "relation": "calls",
+        "source_file": "backend/src/session-handler.ts"
+      },
+      "id": "edge_61d5a4ca34116c24e6f7b712ca00edb6",
       "source": "session-handler",
-      "target": "user-record",
-      "relation": "calls",
-      "confidence": "EXTRACTED",
-      "source_file": "backend/src/session-handler.ts"
+      "target": "user-record"
     }
-  ]
+  ],
+  "metadata": {
+    "directed": true,
+    "schema_version": 1
+  },
+  "nodes": [
+    {
+      "attributes": {
+        "file_type": "code",
+        "label": "SessionContract",
+        "source_file": "backend/src/session-handler.ts"
+      },
+      "id": "session-handler"
+    },
+    {
+      "attributes": {
+        "file_type": "code",
+        "label": "UserProfile",
+        "source_file": "backend/src/user-record.ts"
+      },
+      "id": "user-record"
+    }
+  ],
+  "schema": "madar.graph",
+  "version": 1
 }

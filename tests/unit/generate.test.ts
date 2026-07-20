@@ -10,6 +10,7 @@ import { generateGraph, GenerateUnsupportedCorpusError } from '../../src/infrast
 import { analyzeImpact, callChains } from '../../src/runtime/impact.js'
 import { loadGraph } from '../../src/runtime/serve.js'
 import { binaryIngestSidecarPath } from '../../src/shared/binary-ingest-sidecar.js'
+import { readCanonicalGraphFixture, rewriteCanonicalGraphFixture } from '../helpers/graph-artifact.js'
 import { normalizeAssertionPath, normalizeAssertionPaths } from './helpers/platform.js'
 
 const FIXTURES_DIR = join(process.cwd(), 'tests', 'fixtures')
@@ -966,8 +967,8 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'token.ts'), 'export function issueToken() { return "opaque" }\n', 'utf8')
       writeFileSync(join(tempDir, 'credentials.json'), '{"token":"do-not-read"}\n', 'utf8')
 
-      const result = generateGraph(tempDir, { noHtml: true })
-      const graphData = JSON.parse(readFileSync(result.graphPath, 'utf8')) as {
+      const result = generateGraph(tempDir, {  })
+      const graphData = readCanonicalGraphFixture(result.graphPath) as {
         discovery_safety?: {
           summary: { total: number; sensitive: number; unreadable: number }
           exclusions: Array<{ path: string; kind: string; reason: string }>
@@ -993,7 +994,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'fixture.bin'), Buffer.from([0xde, 0xad, 0xbe, 0xef]))
 
       try {
-        generateGraph(tempDir, { noHtml: true })
+        generateGraph(tempDir, {  })
         throw new Error('expected generateGraph() to throw')
       } catch (error) {
         expect(error).toBeInstanceOf(GenerateUnsupportedCorpusError)
@@ -1007,7 +1008,7 @@ describe('generateGraph', () => {
     withTempDir((tempDir) => {
       writeFileSync(join(tempDir, 'credentials.json'), '{"token":"do-not-read"}\n', 'utf8')
 
-      expect(() => generateGraph(tempDir, { noHtml: true })).toThrowError(
+      expect(() => generateGraph(tempDir, {  })).toThrowError(
         expect.objectContaining({
           code: 'NO_SUPPORTED_FILES',
           message: expect.stringContaining('"credentials.json" (secret_config)'),
@@ -1024,7 +1025,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'README.md'), '# Notes only\\n', 'utf8')
 
       try {
-        generateGraph(tempDir, { includeDocs: false, noHtml: true })
+        generateGraph(tempDir, { includeDocs: false })
         throw new Error('expected generateGraph() to throw')
       } catch (error) {
         expect(error).toBeInstanceOf(GenerateUnsupportedCorpusError)
@@ -1043,9 +1044,9 @@ describe('generateGraph', () => {
       execFileSync('git', ['init'], { cwd: tempDir, stdio: 'pipe' })
       execFileSync('git', ['add', '.gitignore', 'tracked.ts'], { cwd: tempDir, stdio: 'pipe' })
 
-      generateGraph(tempDir, { noHtml: true, respectGitignore: true })
+      generateGraph(tempDir, { respectGitignore: true })
 
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<{ source_file?: string }>
       }
       const sourceFiles = new Set(
@@ -1069,9 +1070,9 @@ describe('generateGraph', () => {
       execFileSync('git', ['init'], { cwd: repoRoot, stdio: 'pipe' })
       execFileSync('git', ['add', '.gitignore', 'workspace/tracked.ts'], { cwd: repoRoot, stdio: 'pipe' })
 
-      generateGraph(nestedRoot, { noHtml: true, respectGitignore: true })
+      generateGraph(nestedRoot, { respectGitignore: true })
 
-      const graphData = JSON.parse(readFileSync(join(nestedRoot, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(nestedRoot, 'out', 'graph.json')) as {
         nodes: Array<{ source_file?: string }>
       }
       const sourceFiles = new Set(
@@ -1096,9 +1097,9 @@ describe('generateGraph', () => {
 
         const aliasedRoot = join(aliasParent, 'workspace')
         symlinkSync(realRoot, aliasedRoot, 'dir')
-        generateGraph(aliasedRoot, { noHtml: true, respectGitignore: true })
+        generateGraph(aliasedRoot, { respectGitignore: true })
 
-        const graphData = JSON.parse(readFileSync(join(aliasedRoot, 'out', 'graph.json'), 'utf8')) as {
+        const graphData = readCanonicalGraphFixture(join(aliasedRoot, 'out', 'graph.json')) as {
           nodes: Array<{ source_file?: string }>
         }
         const sourceFiles = new Set(graphData.nodes.map((node) => node.source_file))
@@ -1117,7 +1118,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'guide.md'), '# Guide\n', 'utf8')
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
         links: Array<Record<string, unknown>>
         semantic_anomalies?: unknown
@@ -1132,7 +1133,7 @@ describe('generateGraph', () => {
       expect(result.semanticAnomalyCount).toEqual(expect.any(Number))
       expect(existsSync(join(tempDir, 'out', 'graph.json'))).toBe(true)
       expect(existsSync(join(tempDir, 'out', 'GRAPH_REPORT.md'))).toBe(true)
-      expect(existsSync(join(tempDir, 'out', 'graph.html'))).toBe(true)
+      expect(existsSync(join(tempDir, 'out', 'graph.html'))).toBe(false)
       expect(existsSync(join(tempDir, 'out', 'manifest.json'))).toBe(true)
       expect(manifestData.__madar_meta__?.total_words).toBe(result.totalWords)
       expect(readFileSync(join(tempDir, 'out', 'GRAPH_REPORT.md'), 'utf8')).toContain('## God Nodes')
@@ -1142,9 +1143,56 @@ describe('generateGraph', () => {
       for (const edge of graphData.links) {
         expect(edge).not.toHaveProperty('_src')
         expect(edge).not.toHaveProperty('_tgt')
-        expect(edge).not.toHaveProperty('confidence_score')
+        expect(edge.confidence_score).toEqual(expect.any(Number))
       }
       expect(Array.isArray(graphData.semantic_anomalies)).toBe(true)
+    })
+  }, generateGraphIntegrationTimeoutMs)
+
+  test('removes obsolete generated graph views only after a successful generation', () => {
+    withTempDir((tempDir) => {
+      const outputDir = join(tempDir, 'out')
+      mkdirSync(join(outputDir, 'graph-pages'), { recursive: true })
+      mkdirSync(join(outputDir, 'obsidian'), { recursive: true })
+      for (const path of ['graph.html', 'graph.svg', 'graph.graphml', 'cypher.txt', 'graph-pages/community-0.html', 'obsidian/Auth.md', 'keep.txt']) {
+        writeFileSync(join(outputDir, path), 'stale\n', 'utf8')
+      }
+      writeFileSync(join(tempDir, 'main.ts'), 'export function main() { return true }\n', 'utf8')
+
+      generateGraph(tempDir, { extractionMode: 'legacy' })
+
+      for (const path of ['graph.html', 'graph.svg', 'graph.graphml', 'cypher.txt', 'graph-pages', 'obsidian']) {
+        expect(existsSync(join(outputDir, path))).toBe(false)
+      }
+      expect(readFileSync(join(outputDir, 'keep.txt'), 'utf8')).toBe('stale\n')
+    })
+  }, generateGraphIntegrationTimeoutMs)
+
+  test('requires explicit update and fully rebuilds unsupported graph artifacts', () => {
+    withTempDir((tempDir) => {
+      const outputDir = join(tempDir, 'out')
+      const graphPath = join(outputDir, 'graph.json')
+      const legacyArtifact = '{"directed":true,"nodes":[],"links":[]}\n'
+      mkdirSync(outputDir, { recursive: true })
+      writeFileSync(join(tempDir, 'main.ts'), 'export function main() { return true }\n', 'utf8')
+      writeFileSync(graphPath, legacyArtifact, 'utf8')
+
+      expect(() => generateGraph(tempDir, { extractionMode: 'legacy' }))
+        .toThrow('Run `madar generate . --update` to regenerate it.')
+      expect(readFileSync(graphPath, 'utf8')).toBe(legacyArtifact)
+
+      const result = generateGraph(tempDir, { update: true, extractionMode: 'legacy' })
+      const artifact = JSON.parse(readFileSync(graphPath, 'utf8')) as {
+        schema?: string
+        version?: number
+        directed?: boolean
+        nodes?: unknown[]
+      }
+
+      expect(result.mode).toBe('update')
+      expect(result.notes.join('\n')).toContain('Existing graph predates complete generation-policy metadata')
+      expect(artifact).toMatchObject({ schema: 'madar.graph', version: 1, directed: true })
+      expect(artifact.nodes?.length).toBeGreaterThan(0)
     })
   }, generateGraphIntegrationTimeoutMs)
 
@@ -1156,9 +1204,9 @@ describe('generateGraph', () => {
         'utf8',
       )
 
-      generateGraph(tempDir, { noHtml: true, extractionMode: 'legacy' })
+      generateGraph(tempDir, { extractionMode: 'legacy' })
 
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
       const authService = graphData.nodes.find((node) => node.label === 'AuthService')
@@ -1174,8 +1222,8 @@ describe('generateGraph', () => {
   test('builds graph artifacts with stitched relative workspace anonymous default-export barrel imports while keeping the worker isolated', () => {
     withTempDir((tempDir) => {
       const workspaceRoot = copyFixtureCorpus('workspace-parity', tempDir)
-      const result = generateGraph(workspaceRoot, { noHtml: true, extractionMode: 'legacy' })
-      const graphData = JSON.parse(readFileSync(join(workspaceRoot, 'out', 'graph.json'), 'utf8')) as {
+      const result = generateGraph(workspaceRoot, { extractionMode: 'legacy' })
+      const graphData = readCanonicalGraphFixture(join(workspaceRoot, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
         links: Array<{ source: string; target: string; relation: string }>
       }
@@ -1224,7 +1272,7 @@ describe('generateGraph', () => {
       )
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
         links: Array<{ source: string; target: string; relation: string }>
       }
@@ -1263,7 +1311,7 @@ describe('generateGraph', () => {
       )
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
         links: Array<{ source: string; target: string; relation: string }>
       }
@@ -1303,7 +1351,7 @@ describe('generateGraph', () => {
       )
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
         links: Array<{ source: string; target: string; relation: string }>
       }
@@ -1344,7 +1392,7 @@ describe('generateGraph', () => {
       )
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
         links: Array<{ source: string; target: string; relation: string }>
       }
@@ -1371,7 +1419,7 @@ describe('generateGraph', () => {
       )
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
         links: Array<{ source: string; target: string; relation: string }>
       }
@@ -1410,7 +1458,7 @@ describe('generateGraph', () => {
       )
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
         links: Array<{ source: string; target: string; relation: string }>
       }
@@ -1454,7 +1502,7 @@ describe('generateGraph', () => {
       )
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
         links: Array<{ source: string; target: string; relation: string }>
       }
@@ -1496,7 +1544,7 @@ describe('generateGraph', () => {
       )
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
         links: Array<{ source: string; target: string; relation: string }>
       }
@@ -1535,7 +1583,7 @@ describe('generateGraph', () => {
       )
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
         links: Array<{ source: string; target: string; relation: string }>
       }
@@ -1573,7 +1621,7 @@ describe('generateGraph', () => {
       )
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
         links: Array<{ source: string; target: string; relation: string }>
       }
@@ -1603,7 +1651,7 @@ describe('generateGraph', () => {
       )
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
         links: Array<{ source: string; target: string; relation: string }>
       }
@@ -1644,7 +1692,7 @@ describe('generateGraph', () => {
       )
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
         links: Array<{ source: string; target: string; relation: string }>
       }
@@ -1691,7 +1739,7 @@ describe('generateGraph', () => {
       )
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
         links: Array<{ source: string; target: string; relation: string }>
       }
@@ -1725,7 +1773,7 @@ describe('generateGraph', () => {
       )
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
         links: Array<{ source: string; target: string; relation: string }>
       }
@@ -1757,7 +1805,7 @@ describe('generateGraph', () => {
       )
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
         links: Array<{ source: string; target: string; relation: string }>
       }
@@ -1794,7 +1842,7 @@ describe('generateGraph', () => {
       )
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
         links: Array<{ source: string; target: string; relation: string }>
       }
@@ -1828,7 +1876,7 @@ describe('generateGraph', () => {
       )
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
         links: Array<{ source: string; target: string; relation: string }>
       }
@@ -1849,7 +1897,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'diagram.svg'), '<svg xmlns="http://www.w3.org/2000/svg"><title>Diagram</title></svg>', 'utf8')
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -1869,7 +1917,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'demo.mp4'), Buffer.from([0, 0, 0, 24, 102, 116, 121, 112]))
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -1905,7 +1953,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'clip.mp4'), mp4Buffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -1940,7 +1988,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'episode.mp3'), mp3Buffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -1986,7 +2034,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'voice.opus'), opusBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -2055,7 +2103,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'prefixed-opus.opus'), opusBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -2114,7 +2162,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'large-prefixed-opus.opus'), opusBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -2163,7 +2211,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'episode.m4a'), m4aBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -2199,7 +2247,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'multiblock.aac'), aacBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -2239,7 +2287,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'archive.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -2288,7 +2336,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'clip.mov'), movBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -2316,7 +2364,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'clip.avi'), aviBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -2344,7 +2392,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'session.webm'), webmBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -2377,7 +2425,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'archive.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -2411,7 +2459,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'seekhead-windowed.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -2444,7 +2492,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'top-level-windowed.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -2483,7 +2531,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'top-level-tracks-clear-audio.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
       const mkvNode = graphData.nodes.find((node) => node.file_type === 'video' && node.label === 'top-level-tracks-clear-audio.mkv')
@@ -2521,7 +2569,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'top-level-tracks-clear-video.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
       const mkvNode = graphData.nodes.find((node) => node.file_type === 'video' && node.label === 'top-level-tracks-clear-video.mkv')
@@ -2559,7 +2607,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'seekhead-tracks-unreadable.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const mkvNode = (JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const mkvNode = (readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }).nodes.find((node) => node.file_type === 'video' && node.label === 'seekhead-tracks-unreadable.mkv')
 
@@ -2594,7 +2642,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'top-level-tracks-unreadable.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
       const mkvNode = graphData.nodes.find((node) => node.file_type === 'video' && node.label === 'top-level-tracks-unreadable.mkv')
@@ -2631,7 +2679,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'top-level-tracks-trailing-child-clear-audio.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
       const mkvNode = graphData.nodes.find((node) => node.file_type === 'video' && node.label === 'top-level-tracks-trailing-child-clear-audio.mkv')
@@ -2670,7 +2718,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'top-level-tracks-trailing-child-clear-video.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
       const mkvNode = graphData.nodes.find((node) => node.file_type === 'video' && node.label === 'top-level-tracks-trailing-child-clear-video.mkv')
@@ -2708,7 +2756,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'top-level-tracks-trailing-child-corrective.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
       const mkvNode = graphData.nodes.find((node) => node.file_type === 'video' && node.label === 'top-level-tracks-trailing-child-corrective.mkv')
@@ -2747,7 +2795,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'top-level-tracks-trailing-child-overrun-stale.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
       const mkvNode = graphData.nodes.find((node) => node.file_type === 'video' && node.label === 'top-level-tracks-trailing-child-overrun-stale.mkv')
@@ -2786,7 +2834,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'top-level-tracks-trailing-child-truncated-stale.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
       const mkvNode = graphData.nodes.find((node) => node.file_type === 'video' && node.label === 'top-level-tracks-trailing-child-truncated-stale.mkv')
@@ -2821,7 +2869,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'top-level-info-clear-duration.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
       const mkvNode = graphData.nodes.find((node) => node.file_type === 'video' && node.label === 'top-level-info-clear-duration.mkv')
@@ -2857,7 +2905,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'top-level-info-trailing-child-clear-duration.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
       const mkvNode = graphData.nodes.find((node) => node.file_type === 'video' && node.label === 'top-level-info-trailing-child-clear-duration.mkv')
@@ -2893,7 +2941,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'top-level-info-trailing-child-invalid-duration.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
       const mkvNode = graphData.nodes.find((node) => node.file_type === 'video' && node.label === 'top-level-info-trailing-child-invalid-duration.mkv')
@@ -2929,7 +2977,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'top-level-info-trailing-child-invalid-overrun-stale.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
       const mkvNode = graphData.nodes.find((node) => node.file_type === 'video' && node.label === 'top-level-info-trailing-child-invalid-overrun-stale.mkv')
@@ -2965,7 +3013,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'top-level-info-trailing-child-omitted-overrun-stale.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
       const mkvNode = graphData.nodes.find((node) => node.file_type === 'video' && node.label === 'top-level-info-trailing-child-omitted-overrun-stale.mkv')
@@ -3001,7 +3049,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'top-level-info-trailing-child-omitted-truncated-stale.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
       const mkvNode = graphData.nodes.find((node) => node.file_type === 'video' && node.label === 'top-level-info-trailing-child-omitted-truncated-stale.mkv')
@@ -3037,7 +3085,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'top-level-info-trailing-child-invalid-truncated-stale.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
       const mkvNode = graphData.nodes.find((node) => node.file_type === 'video' && node.label === 'top-level-info-trailing-child-invalid-truncated-stale.mkv')
@@ -3072,7 +3120,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'top-level-info-trailing-child-corrective.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
       const mkvNode = graphData.nodes.find((node) => node.file_type === 'video' && node.label === 'top-level-info-trailing-child-corrective.mkv')
@@ -3104,7 +3152,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'seekhead-tracks-partial.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -3135,7 +3183,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'direct-info-partial.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -3162,7 +3210,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'direct-info-trailing-padding.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -3189,7 +3237,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'direct-info-trailing-child.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -3219,7 +3267,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'direct-info-unreadable-stale.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -3248,7 +3296,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'direct-tracks-partial.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -3281,7 +3329,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'direct-tracks-trailing-padding.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -3314,7 +3362,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'direct-tracks-trailing-child.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -3350,7 +3398,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'direct-info-corrective.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -3384,7 +3432,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'direct-info-trailing-padding-corrective.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -3414,7 +3462,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'direct-info-trailing-child-corrective.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -3445,7 +3493,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'direct-info-trailing-padding-clear-duration.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
       const mkvNode = graphData.nodes.find((node) => node.file_type === 'video' && node.label === 'direct-info-trailing-padding-clear-duration.mkv')
@@ -3474,7 +3522,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'direct-info-trailing-padding-omit-duration.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
       const mkvNode = graphData.nodes.find((node) => node.file_type === 'video' && node.label === 'direct-info-trailing-padding-omit-duration.mkv')
@@ -3503,7 +3551,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'direct-info-trailing-child-omit-duration.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
       const mkvNode = graphData.nodes.find((node) => node.file_type === 'video' && node.label === 'direct-info-trailing-child-omit-duration.mkv')
@@ -3532,7 +3580,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'direct-info-trailing-child-invalid-duration.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
       const mkvNode = graphData.nodes.find((node) => node.file_type === 'video' && node.label === 'direct-info-trailing-child-invalid-duration.mkv')
@@ -3561,7 +3609,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'direct-info-trailing-child-invalid-overrun-stale.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
       const mkvNode = graphData.nodes.find((node) => node.file_type === 'video' && node.label === 'direct-info-trailing-child-invalid-overrun-stale.mkv')
@@ -3590,7 +3638,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'direct-info-trailing-child-invalid-truncated-stale.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
       const mkvNode = graphData.nodes.find((node) => node.file_type === 'video' && node.label === 'direct-info-trailing-child-invalid-truncated-stale.mkv')
@@ -3619,7 +3667,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'direct-info-trailing-child-overrun-stale.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
       const mkvNode = graphData.nodes.find((node) => node.file_type === 'video' && node.label === 'direct-info-trailing-child-overrun-stale.mkv')
@@ -3648,7 +3696,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'direct-info-trailing-child-omitted-truncated-stale.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
       const mkvNode = graphData.nodes.find((node) => node.file_type === 'video' && node.label === 'direct-info-trailing-child-omitted-truncated-stale.mkv')
@@ -3681,7 +3729,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'direct-tracks-corrective.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -3720,7 +3768,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'direct-tracks-trailing-padding-corrective.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -3759,7 +3807,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'direct-tracks-trailing-child-corrective.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -3798,7 +3846,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'direct-tracks-unreadable-stale.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -3837,7 +3885,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'direct-tracks-trailing-padding-clear-audio.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
       const mkvNode = graphData.nodes.find((node) => node.file_type === 'video' && node.label === 'direct-tracks-trailing-padding-clear-audio.mkv')
@@ -3874,7 +3922,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'direct-tracks-trailing-child-clear-audio.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
       const mkvNode = graphData.nodes.find((node) => node.file_type === 'video' && node.label === 'direct-tracks-trailing-child-clear-audio.mkv')
@@ -3912,7 +3960,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'direct-tracks-trailing-padding-clear-dimensions.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
       const mkvNode = graphData.nodes.find((node) => node.file_type === 'video' && node.label === 'direct-tracks-trailing-padding-clear-dimensions.mkv')
@@ -3950,7 +3998,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'direct-tracks-trailing-child-clear-dimensions.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
       const mkvNode = graphData.nodes.find((node) => node.file_type === 'video' && node.label === 'direct-tracks-trailing-child-clear-dimensions.mkv')
@@ -3985,7 +4033,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'direct-info-clear-duration.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
       const mkvNode = graphData.nodes.find((node) => node.file_type === 'video' && node.label === 'direct-info-clear-duration.mkv')
@@ -4022,7 +4070,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'direct-tracks-clear-audio.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
       const mkvNode = graphData.nodes.find((node) => node.file_type === 'video' && node.label === 'direct-tracks-clear-audio.mkv')
@@ -4060,7 +4108,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'direct-tracks-clear-dimensions.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
       const mkvNode = graphData.nodes.find((node) => node.file_type === 'video' && node.label === 'direct-tracks-clear-dimensions.mkv')
@@ -4098,7 +4146,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'direct-tracks-trailing-child-truncated-stale.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
       const mkvNode = graphData.nodes.find((node) => node.file_type === 'video' && node.label === 'direct-tracks-trailing-child-truncated-stale.mkv')
@@ -4136,7 +4184,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'direct-tracks-trailing-child-overrun-stale.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
       const mkvNode = graphData.nodes.find((node) => node.file_type === 'video' && node.label === 'direct-tracks-trailing-child-overrun-stale.mkv')
@@ -4169,7 +4217,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'seekhead-split.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -4209,7 +4257,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'seekhead-corrective.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -4246,7 +4294,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'seekhead-info-corrective.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -4286,7 +4334,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'seekhead-tracks-clear-audio.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const mkvNode = (JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const mkvNode = (readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }).nodes.find((node) => node.file_type === 'video' && node.label === 'seekhead-tracks-clear-audio.mkv')
 
@@ -4322,7 +4370,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'seekhead-tracks-clear-video.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const mkvNode = (JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const mkvNode = (readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }).nodes.find((node) => node.file_type === 'video' && node.label === 'seekhead-tracks-clear-video.mkv')
 
@@ -4355,7 +4403,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'seekhead-info-clear-duration.mkv'), mkvBuffer)
 
       const result = generateGraph(tempDir)
-      const mkvNode = (JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const mkvNode = (readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }).nodes.find((node) => node.file_type === 'video' && node.label === 'seekhead-info-clear-duration.mkv')
 
@@ -4379,7 +4427,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'tkhd-fallback.mp4'), mp4Buffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -4407,7 +4455,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'mdhd-fallback.mp4'), mp4Buffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -4435,7 +4483,7 @@ describe('generateGraph', () => {
       writeFileSync(join(tempDir, 'zero-scale.webm'), webmBuffer)
 
       const result = generateGraph(tempDir)
-      const graphData = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json')) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -4478,8 +4526,8 @@ describe('generateGraph', () => {
         'utf8',
       )
 
-      const result = generateGraph(tempDir, { noHtml: true })
-      const graphData = JSON.parse(readFileSync(result.graphPath, 'utf8')) as {
+      const result = generateGraph(tempDir, {  })
+      const graphData = readCanonicalGraphFixture(result.graphPath) as {
         nodes: Array<Record<string, unknown>>
         links: Array<Record<string, unknown>>
       }
@@ -4549,20 +4597,15 @@ describe('generateGraph', () => {
         'utf8',
       )
 
-      const initial = generateGraph(tempDir, { noHtml: true, extractionMode: 'legacy' })
-      const staleGraphData = JSON.parse(readFileSync(initial.graphPath, 'utf8')) as {
-        extractor_version?: number
-        nodes: Array<Record<string, unknown>>
-        links: Array<Record<string, unknown>>
-      }
+      const initial = generateGraph(tempDir, { extractionMode: 'legacy' })
+      rewriteCanonicalGraphFixture(initial.graphPath, {
+        mapMetadata: (metadata) => ({ ...metadata, extractor_version: 59 }),
+        filterNode: (_id, attributes) => attributes.label !== 'default()',
+        filterEdge: (_source, target) => target !== 'auth_default',
+      })
 
-      staleGraphData.extractor_version = 59
-      staleGraphData.nodes = staleGraphData.nodes.filter((node) => node.label !== 'default()')
-      staleGraphData.links = staleGraphData.links.filter((edge) => edge.target !== 'auth_default')
-      writeFileSync(initial.graphPath, `${JSON.stringify(staleGraphData, null, 2)}\n`, 'utf8')
-
-      const updated = generateGraph(tempDir, { update: true, noHtml: true, extractionMode: 'legacy' })
-      const updatedGraphData = JSON.parse(readFileSync(updated.graphPath, 'utf8')) as {
+      const updated = generateGraph(tempDir, { update: true, extractionMode: 'legacy' })
+      const updatedGraphData = readCanonicalGraphFixture(updated.graphPath) as {
         extractor_version?: number
         nodes: Array<Record<string, unknown>>
         links: Array<{ source: string; target: string; relation: string }>
@@ -4610,20 +4653,15 @@ describe('generateGraph', () => {
         'utf8',
       )
 
-      const initial = generateGraph(tempDir, { noHtml: true, extractionMode: 'legacy' })
-      const staleGraphData = JSON.parse(readFileSync(initial.graphPath, 'utf8')) as {
-        extractor_version?: number
-        nodes: Array<Record<string, unknown>>
-        links: Array<Record<string, unknown>>
-      }
+      const initial = generateGraph(tempDir, { extractionMode: 'legacy' })
+      rewriteCanonicalGraphFixture(initial.graphPath, {
+        mapMetadata: ({ extractor_version: _extractorVersion, ...metadata }) => metadata,
+        filterNode: (_id, attributes) => attributes.label !== 'default()',
+        filterEdge: (_source, target) => target !== 'auth_default',
+      })
 
-      delete staleGraphData.extractor_version
-      staleGraphData.nodes = staleGraphData.nodes.filter((node) => node.label !== 'default()')
-      staleGraphData.links = staleGraphData.links.filter((edge) => edge.target !== 'auth_default')
-      writeFileSync(initial.graphPath, `${JSON.stringify(staleGraphData, null, 2)}\n`, 'utf8')
-
-      const updated = generateGraph(tempDir, { update: true, noHtml: true, extractionMode: 'legacy' })
-      const updatedGraphData = JSON.parse(readFileSync(updated.graphPath, 'utf8')) as {
+      const updated = generateGraph(tempDir, { update: true, extractionMode: 'legacy' })
+      const updatedGraphData = readCanonicalGraphFixture(updated.graphPath) as {
         extractor_version?: number
         nodes: Array<Record<string, unknown>>
         links: Array<{ source: string; target: string; relation: string }>
@@ -4662,8 +4700,8 @@ describe('generateGraph', () => {
         'utf8',
       )
 
-      const initial = generateGraph(tempDir, { noHtml: true, extractionMode: 'legacy' })
-      const initialGraphData = JSON.parse(readFileSync(initial.graphPath, 'utf8')) as {
+      const initial = generateGraph(tempDir, { extractionMode: 'legacy' })
+      const initialGraphData = readCanonicalGraphFixture(initial.graphPath) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -4691,8 +4729,8 @@ describe('generateGraph', () => {
         'utf8',
       )
 
-      const updated = generateGraph(tempDir, { update: true, noHtml: true, extractionMode: 'legacy' })
-      const updatedGraphData = JSON.parse(readFileSync(updated.graphPath, 'utf8')) as {
+      const updated = generateGraph(tempDir, { update: true, extractionMode: 'legacy' })
+      const updatedGraphData = readCanonicalGraphFixture(updated.graphPath) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -4718,8 +4756,8 @@ describe('generateGraph', () => {
       writeFileSync(targetPath, Buffer.from('ID3'))
       symlinkSync(targetPath, linkPath)
 
-      const initial = generateGraph(tempDir, { followSymlinks: true, noHtml: true })
-      const initialGraphData = JSON.parse(readFileSync(initial.graphPath, 'utf8')) as {
+      const initial = generateGraph(tempDir, { followSymlinks: true })
+      const initialGraphData = readCanonicalGraphFixture(initial.graphPath) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -4733,8 +4771,8 @@ describe('generateGraph', () => {
         ]),
       )
 
-      const updated = generateGraph(tempDir, { update: true, followSymlinks: true, noHtml: true })
-      const updatedGraphData = JSON.parse(readFileSync(updated.graphPath, 'utf8')) as {
+      const updated = generateGraph(tempDir, { update: true, followSymlinks: true })
+      const updatedGraphData = readCanonicalGraphFixture(updated.graphPath) as {
         nodes: Array<Record<string, unknown>>
       }
 
@@ -4758,31 +4796,23 @@ describe('generateGraph', () => {
       writeFileSync(sourcePath, 'def greet():\n    return helper()\n', 'utf8')
       writeFileSync(helperPath, 'def helper():\n    return 1\n', 'utf8')
 
-      const initial = generateGraph(tempDir, { noHtml: true, extractionMode: 'legacy' })
-      const graphData = JSON.parse(readFileSync(initial.graphPath, 'utf8')) as {
-        schema_version?: number
-        nodes: Array<Record<string, unknown>>
-        links: Array<Record<string, unknown>>
-        hyperedges?: Array<Record<string, unknown>>
-      }
-
-      graphData.schema_version = 2
-      graphData.nodes = graphData.nodes.map((node) =>
-        node.label === 'helper()'
+      const initial = generateGraph(tempDir, { extractionMode: 'legacy' })
+      rewriteCanonicalGraphFixture(initial.graphPath, {
+        mapMetadata: (metadata) => ({ ...metadata, schema_version: 2 }),
+        mapNode: (_id, attributes) => attributes.label === 'helper()'
           ? {
-              ...node,
+              ...attributes,
               layer: 'semantic',
               provenance: [{ capability_id: 'test:seed-helper', stage: 'seed' }],
             }
-          : node,
-      )
-      writeFileSync(initial.graphPath, `${JSON.stringify(graphData, null, 2)}\n`, 'utf8')
+          : attributes,
+      })
 
       await delay(10)
       writeFileSync(sourcePath, 'def greet():\n    return helper()\n\ndef other():\n    return greet()\n', 'utf8')
 
-      const updated = generateGraph(tempDir, { update: true, noHtml: true, extractionMode: 'legacy' })
-      const updatedGraphData = JSON.parse(readFileSync(updated.graphPath, 'utf8')) as {
+      const updated = generateGraph(tempDir, { update: true, extractionMode: 'legacy' })
+      const updatedGraphData = readCanonicalGraphFixture(updated.graphPath) as {
         schema_version?: number
         nodes: Array<Record<string, unknown>>
       }
@@ -4821,7 +4851,7 @@ describe('generateGraph', () => {
 
       try {
         const generateModule = await import('../../src/infrastructure/generate.js')
-        const result = generateModule.generateGraph(tempDir, { update: true, noHtml: true, extractionMode: 'legacy' })
+        const result = generateModule.generateGraph(tempDir, { update: true, extractionMode: 'legacy' })
         const graph = loadGraph(result.graphPath)
 
         expect(extractSpy).toHaveBeenCalledTimes(1)
@@ -4835,32 +4865,18 @@ describe('generateGraph', () => {
     })
   })
 
-  test('writes optional wiki, obsidian, svg, graphml, and cypher artifacts when requested', () => {
+  test('writes the optional wiki when requested', () => {
     withTempDir((tempDir) => {
       writeFileSync(join(tempDir, 'main.py'), 'class Greeter:\n    def hello(self):\n        return 1\n', 'utf8')
       writeFileSync(join(tempDir, 'README.md'), '# Notes\nSee [Guide](guide.md)\n', 'utf8')
       writeFileSync(join(tempDir, 'guide.md'), '# Guide\n', 'utf8')
 
-      const obsidianDir = join(tempDir, 'vault')
       const result = generateGraph(tempDir, {
         wiki: true,
-        obsidian: true,
-        obsidianDir,
-        svg: true,
-        graphml: true,
-        neo4j: true,
       })
 
       expect(existsSync(join(tempDir, 'out', 'wiki', 'index.md'))).toBe(true)
-      expect(existsSync(join(obsidianDir, '.obsidian', 'graph.json'))).toBe(true)
-      expect(existsSync(join(tempDir, 'out', 'graph.svg'))).toBe(true)
-      expect(existsSync(join(tempDir, 'out', 'graph.graphml'))).toBe(true)
-      expect(existsSync(join(tempDir, 'out', 'cypher.txt'))).toBe(true)
       expect(result.wikiPath).toBe(join(tempDir, 'out', 'wiki'))
-      expect(result.obsidianPath).toBe(obsidianDir)
-      expect(result.svgPath).toBe(join(tempDir, 'out', 'graph.svg'))
-      expect(result.graphmlPath).toBe(join(tempDir, 'out', 'graph.graphml'))
-      expect(result.cypherPath).toBe(join(tempDir, 'out', 'cypher.txt'))
     })
   })
 
@@ -4875,9 +4891,9 @@ describe('generateGraph', () => {
       )
       writeFileSync(join(tempDir, 'src', 'pipeline', 'export.ts'), 'export function toHtml() { return toSvg() }\nexport function toSvg() { return 1 }\n', 'utf8')
 
-      const result = generateGraph(tempDir, { noHtml: true })
+      const result = generateGraph(tempDir, {  })
       const report = readFileSync(result.reportPath, 'utf8')
-      const graphData = JSON.parse(readFileSync(result.graphPath, 'utf8')) as {
+      const graphData = readCanonicalGraphFixture(result.graphPath) as {
         community_labels?: Record<string, string>
       }
 
@@ -4888,31 +4904,6 @@ describe('generateGraph', () => {
         0: expect.any(String),
       })
       expect(Object.values(graphData.community_labels ?? {})).toEqual(expect.arrayContaining(['Infrastructure Install', 'Pipeline Export']))
-    })
-  })
-
-  test('propagates forced overview html mode through generateGraph', () => {
-    withTempDir((tempDir) => {
-      mkdirSync(join(tempDir, 'src', 'infrastructure'), { recursive: true })
-      mkdirSync(join(tempDir, 'src', 'pipeline'), { recursive: true })
-      writeFileSync(
-        join(tempDir, 'src', 'infrastructure', 'install.ts'),
-        'export function claudeInstall() { return ensureArray() }\nexport function ensureArray() { return [] }\n',
-        'utf8',
-      )
-      writeFileSync(join(tempDir, 'src', 'pipeline', 'export.ts'), 'export function toHtml() { return toSvg() }\nexport function toSvg() { return 1 }\n', 'utf8')
-
-      const result = generateGraph(tempDir, { htmlMode: 'overview' })
-      expect(result.htmlPath).not.toBeNull()
-      if (!result.htmlPath) {
-        throw new Error('Expected htmlPath to be written when HTML export is enabled')
-      }
-
-      const overview = readFileSync(result.htmlPath, 'utf8')
-
-      expect(result.notes).toEqual(expect.arrayContaining([expect.stringContaining('Large graph mode enabled')]))
-      expect(overview).toContain('Overview-first large-graph mode')
-      expect(readFileSync(join(tempDir, 'out', 'graph-pages', 'community-0.html'), 'utf8')).toContain('Back to overview')
     })
   })
 
@@ -4941,9 +4932,9 @@ describe('generateGraph', () => {
         'utf8',
       )
 
-      const result = generateGraph(tempDir, { noHtml: true })
+      const result = generateGraph(tempDir, {  })
       const graph = loadGraph(result.graphPath)
-      const graphData = JSON.parse(readFileSync(result.graphPath, 'utf8')) as { directed?: boolean }
+      const graphData = readCanonicalGraphFixture(result.graphPath) as { directed?: boolean }
 
       expect(graph.isDirected()).toBe(true)
       expect(graphData.directed).toBe(true)
@@ -4960,76 +4951,12 @@ describe('generateGraph', () => {
     })
   })
 
-  test('allows callers to explicitly generate an undirected visualization graph', () => {
-    withTempDir((tempDir) => {
-      writeFileSync(join(tempDir, 'main.py'), 'class Greeter:\n    def hello(self):\n        return helper()\n\ndef helper():\n    return 1\n', 'utf8')
-
-      const result = generateGraph(tempDir, { directed: false })
-      const graph = loadGraph(result.graphPath)
-
-      expect(graph.isDirected()).toBe(false)
-      expect(readFileSync(result.reportPath, 'utf8')).toContain('# Graph Report')
-      expect(result.htmlPath).not.toBeNull()
-      expect(result.htmlPath && existsSync(result.htmlPath)).toBe(true)
-    })
-  })
-
-  test('makes a directed-to-undirected cluster-only downgrade explicit and disables directional analysis', () => {
-    withTempDir((tempDir) => {
-      writeFileSync(
-        join(tempDir, 'main.py'),
-        'def alpha():\n    return beta()\n\ndef beta():\n    return alpha()\n',
-        'utf8',
-      )
-      const directedResult = generateGraph(tempDir, { noHtml: true })
-      const directedGraph = loadGraph(directedResult.graphPath)
-      expect(directedGraph.isDirected()).toBe(true)
-      expect(callChains(directedGraph, 'alpha()', 'beta()')).not.toEqual([])
-      expect(callChains(directedGraph, 'beta()', 'alpha()')).not.toEqual([])
-
-      const downgraded = generateGraph(tempDir, { clusterOnly: true, directed: false, noHtml: true })
-      const undirectedGraph = loadGraph(downgraded.graphPath)
-
-      expect(undirectedGraph.isDirected()).toBe(false)
-      expect(undirectedGraph.numberOfEdges()).toBeLessThan(directedGraph.numberOfEdges())
-      expect(downgraded.notes).toContain('Migrated the existing graph from directed to undirected edge traversal.')
-      expect(() => callChains(undirectedGraph, 'alpha()', 'beta()')).toThrow(
-        'Call-chain analysis requires a directed graph',
-      )
-    })
-  })
-
-  test('migrates a legacy undirected graph during an unchanged update', () => {
-    withTempDir((tempDir) => {
-      writeFileSync(join(tempDir, 'main.py'), 'def hello():\n    return 1\n', 'utf8')
-      const legacy = generateGraph(tempDir, { directed: false, noHtml: true })
-      expect(loadGraph(legacy.graphPath).isDirected()).toBe(false)
-
-      const updated = generateGraph(tempDir, { update: true, noHtml: true })
-
-      expect(loadGraph(updated.graphPath).isDirected()).toBe(true)
-      expect(updated.extractedFiles).toBeGreaterThan(0)
-      expect(updated.notes).toContain('Existing graph was undirected, so --update rebuilt the full graph with directed edges.')
-    })
-  })
-
-  test('refuses to guess lost edge directions during cluster-only regeneration', () => {
-    withTempDir((tempDir) => {
-      writeFileSync(join(tempDir, 'main.py'), 'def hello():\n    return 1\n', 'utf8')
-      generateGraph(tempDir, { directed: false, noHtml: true })
-
-      expect(() => generateGraph(tempDir, { clusterOnly: true, noHtml: true })).toThrow(
-        '--cluster-only cannot safely recover edge directions from an undirected graph.',
-      )
-    })
-  })
-
   test('writes root_path into graph.json', () => {
     withTempDir((tempDir) => {
       writeFileSync(join(tempDir, 'main.py'), 'def hello():\n    return 1\n', 'utf8')
 
-      const result = generateGraph(tempDir, { noHtml: true })
-      const graphData = JSON.parse(readFileSync(result.graphPath, 'utf8')) as {
+      const result = generateGraph(tempDir, {  })
+      const graphData = readCanonicalGraphFixture(result.graphPath) as {
         root_path?: string
       }
 
@@ -5051,8 +4978,8 @@ describe('generateGraph', () => {
         'utf8',
       )
 
-      const result = generateGraph(tempDir, { noHtml: true, extractionMode: 'legacy' })
-      const graphData = JSON.parse(readFileSync(result.graphPath, 'utf8')) as {
+      const result = generateGraph(tempDir, { extractionMode: 'legacy' })
+      const graphData = readCanonicalGraphFixture(result.graphPath) as {
         nodes: Array<{ id: string; label: string; node_kind?: string }>
         links: Array<{ source: string; target: string; relation: string }>
       }
@@ -5087,12 +5014,12 @@ describe('generateGraph', () => {
       )
       writeFileSync(join(tempDir, 'docs', 'notes.md'), '# Notes\n', 'utf8')
 
-      const legacy = generateGraph(tempDir, { noHtml: true, extractionMode: 'legacy' })
+      const legacy = generateGraph(tempDir, { extractionMode: 'legacy' })
       expect(legacy.extractableFiles).toBe(3)
       expect(legacy.extractedFiles).toBe(3)
       expect(legacy.cache).toBeNull()
 
-      const spiCold = generateGraph(tempDir, { useSpi: true, noHtml: true })
+      const spiCold = generateGraph(tempDir, { useSpi: true })
       expect(spiCold.extractableFiles).toBe(3)
       expect(spiCold.extractedFiles).toBe(3)
       expect(spiCold.cache).toEqual(expect.objectContaining({
@@ -5102,7 +5029,7 @@ describe('generateGraph', () => {
         fileCount: 2,
       }))
 
-      const spiWarm = generateGraph(tempDir, { useSpi: true, noHtml: true })
+      const spiWarm = generateGraph(tempDir, { useSpi: true })
       expect(spiWarm.extractableFiles).toBe(3)
       expect(spiWarm.extractedFiles).toBe(1)
       expect(spiWarm.cache).toEqual(expect.objectContaining({
@@ -5112,7 +5039,7 @@ describe('generateGraph', () => {
         fileCount: 2,
       }))
 
-      const updateNoop = generateGraph(tempDir, { update: true, noHtml: true, extractionMode: 'legacy' })
+      const updateNoop = generateGraph(tempDir, { update: true, extractionMode: 'legacy' })
       expect(updateNoop.extractableFiles).toBe(3)
       expect(updateNoop.changedFiles).toBe(0)
       expect(updateNoop.extractedFiles).toBe(3)
@@ -5121,13 +5048,13 @@ describe('generateGraph', () => {
 
       await delay(10)
       writeFileSync(join(tempDir, 'src', 'beta.ts'), 'export function beta(): number { return 2 }\n', 'utf8')
-      const updateChanged = generateGraph(tempDir, { update: true, noHtml: true, extractionMode: 'legacy' })
+      const updateChanged = generateGraph(tempDir, { update: true, extractionMode: 'legacy' })
       expect(updateChanged.extractableFiles).toBe(3)
       expect(updateChanged.changedFiles).toBe(1)
       expect(updateChanged.extractedFiles).toBe(1)
       expect(updateChanged.cache).toBeNull()
 
-      const clusterOnly = generateGraph(tempDir, { clusterOnly: true, noHtml: true })
+      const clusterOnly = generateGraph(tempDir, { clusterOnly: true })
       expect(clusterOnly.mode).toBe('cluster-only')
       expect(clusterOnly.extractableFiles).toBe(3)
       expect(clusterOnly.extractedFiles).toBe(0)

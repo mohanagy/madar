@@ -3,8 +3,9 @@ import { dirname, join, relative, resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
-import { build } from '../../src/pipeline/build.js'
+import { serializeGraphArtifact } from '../../src/domain/graph/artifact.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
+import { buildGraph } from '../../src/application/build-graph.js'
 import {
   buildNativeAgentPrompt,
   executeNativeAgentCompare,
@@ -17,8 +18,12 @@ import {
   type NativeAgentRunner,
 } from '../../src/infrastructure/compare.js'
 import { claudeInstall } from '../../src/infrastructure/install.js'
-import { toJson } from '../../src/pipeline/export.js'
 import { resolveMadarOutputDirectory } from '../../src/shared/workspace.js'
+import {
+  rewriteCanonicalGraphFixture,
+  writeCanonicalGraphFixture,
+  writeCanonicalGraphFixtureFromGraph,
+} from '../helpers/graph-artifact.js'
 
 const TEST_OUTPUT_ROOT = resolveMadarOutputDirectory()
 const FIXTURE_PARENT = join(TEST_OUTPUT_ROOT, 'test-runtime', 'native-agent')
@@ -26,10 +31,6 @@ const COMPARE_OUTPUT_PARENT = join(TEST_OUTPUT_ROOT, 'compare', 'test-runtime-na
 
 function writeClaudeInstallArtifacts(projectDir: string): void {
   claudeInstall(projectDir)
-}
-
-function isObjectRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
 function writeLineAnchoredSourceFile(filePath: string, lineNumber: number, content: string): void {
@@ -53,10 +54,9 @@ function makeFixtureProject(
   const outputDir = mkdtempSync(join(COMPARE_OUTPUT_PARENT, 'out-'))
   // Build a minimal out/graph.json so the snapshot has something to rename.
   mkdirSync(join(projectDir, 'out'), { recursive: true })
-  writeFileSync(
+  writeCanonicalGraphFixture(
     join(projectDir, 'out', 'graph.json'),
-    JSON.stringify({
-      directed: true,
+    {
       community_labels: { '0': 'Mock' },
       ...(options.spiMode === true ? { spi_mode: true } : {}),
       nodes: [
@@ -64,8 +64,7 @@ function makeFixtureProject(
       ],
       edges: [],
       hyperedges: [],
-    }),
-    'utf8',
+    },
   )
   const graphPath = join(projectDir, 'out', 'graph.json')
   const installClaudeWithProfile = claudeInstall as (projectDir?: string, options?: { profile?: 'core' | 'full' | 'strict' }) => string
@@ -177,7 +176,7 @@ function makeImplementationFixtureProject(): {
     'utf8',
   )
 
-  const graph = new KnowledgeGraph({ directed: true })
+  const graph = new KnowledgeGraph()
   graph.graph.root_path = projectDir
   graph.addNode('session_manager', {
     label: 'SessionManager',
@@ -213,7 +212,7 @@ function makeImplementationFixtureProject(): {
   })
 
   const graphPath = join(projectDir, 'out', 'graph.json')
-  toJson(graph, { 0: ['session_manager', 'config'], 1: ['session_test'] }, graphPath)
+  writeCanonicalGraphFixtureFromGraph(graph, { 0: ['session_manager', 'config'], 1: ['session_test'] }, graphPath)
 
   return { projectDir, graphPath, outputDir, questionsPath }
 }
@@ -350,7 +349,7 @@ function makeRescopedReadinessFixtureProjectWithOptions(options: {
     )
   }
 
-  const graph = build(
+  const graph = buildGraph(
     [
       {
         schema_version: 1,
@@ -375,12 +374,11 @@ function makeRescopedReadinessFixtureProjectWithOptions(options: {
         ],
       },
     ],
-    { directed: true },
+    { rootPath: projectDir },
   )
-  graph.graph.root_path = projectDir
 
   const graphPath = join(projectDir, 'out', 'graph.json')
-  toJson(
+  writeCanonicalGraphFixtureFromGraph(
     graph,
     {
       0: ['login_route', 'login_controller', 'login_service'],
@@ -391,7 +389,7 @@ function makeRescopedReadinessFixtureProjectWithOptions(options: {
 
   if (includeScopedGraph) {
     const scopedGraphPath = join(projectDir, 'backend', 'out', 'graph.json')
-    toJson(
+    writeCanonicalGraphFixtureFromGraph(
       graph,
       {
         0: ['login_route', 'login_controller', 'login_service'],
@@ -399,25 +397,20 @@ function makeRescopedReadinessFixtureProjectWithOptions(options: {
       },
       scopedGraphPath,
     )
-    const scopedGraph = JSON.parse(readFileSync(scopedGraphPath, 'utf8')) as Record<string, unknown>
-    if (scopedGraphUsesScopedRoot) {
-      const scopedRoot = join(projectDir, 'backend')
-      scopedGraph.root_path = scopedRoot
-      const scopedNodes = Array.isArray(scopedGraph.nodes) ? scopedGraph.nodes : []
-      for (const node of scopedNodes) {
-        if (isObjectRecord(node) && typeof node.source_file === 'string') {
-          node.source_file = relative(scopedRoot, node.source_file).replaceAll('\\', '/')
-        }
-      }
-      const scopedLinks = Array.isArray(scopedGraph.links) ? scopedGraph.links : []
-      for (const link of scopedLinks) {
-        if (isObjectRecord(link) && typeof link.source_file === 'string') {
-          link.source_file = relative(scopedRoot, link.source_file).replaceAll('\\', '/')
-        }
-      }
-    }
-    scopedGraph.spi_mode = true
-    writeFileSync(scopedGraphPath, `${JSON.stringify(scopedGraph, null, 2)}\n`, 'utf8')
+    const scopedRoot = join(projectDir, 'backend')
+    const scopeSourceFile = (attributes: Record<string, unknown>): Record<string, unknown> =>
+      scopedGraphUsesScopedRoot && typeof attributes.source_file === 'string'
+        ? { ...attributes, source_file: relative(scopedRoot, attributes.source_file).replaceAll('\\', '/') }
+        : attributes
+    rewriteCanonicalGraphFixture(scopedGraphPath, {
+      mapMetadata: (metadata) => ({
+        ...metadata,
+        ...(scopedGraphUsesScopedRoot ? { root_path: scopedRoot } : {}),
+        spi_mode: true,
+      }),
+      mapNode: (_id, attributes) => scopeSourceFile(attributes),
+      mapEdge: (_source, _target, attributes) => scopeSourceFile(attributes),
+    })
   }
 
   return { projectDir, graphPath, outputDir }
@@ -464,7 +457,7 @@ function makeDoubleRescopedReadinessFixtureProject(): {
     'export const authStore = "auth-store-proof"',
   )
 
-  const graph = build(
+  const graph = buildGraph(
     [
       {
         schema_version: 1,
@@ -485,46 +478,30 @@ function makeDoubleRescopedReadinessFixtureProject(): {
         ],
       },
     ],
-    { directed: true },
+    { rootPath: projectDir },
   )
-  graph.graph.root_path = projectDir
 
   const graphPath = join(projectDir, 'out', 'graph.json')
-  toJson(graph, { 0: ['login_route', 'login_controller', 'login_service'], 1: ['queue_registry', 'login_worker', 'session_store'] }, graphPath)
+  writeCanonicalGraphFixtureFromGraph(graph, { 0: ['login_route', 'login_controller', 'login_service'], 1: ['queue_registry', 'login_worker', 'session_store'] }, graphPath)
 
   const backendGraphPath = join(projectDir, 'backend', 'out', 'graph.json')
-  toJson(graph, { 0: ['login_route', 'login_controller', 'login_service'], 1: ['queue_registry', 'login_worker', 'session_store'] }, backendGraphPath)
-  const backendGraph = JSON.parse(readFileSync(backendGraphPath, 'utf8')) as Record<string, unknown>
-  backendGraph.root_path = join(projectDir, 'backend')
-  for (const node of Array.isArray(backendGraph.nodes) ? backendGraph.nodes : []) {
-    if (isObjectRecord(node) && typeof node.source_file === 'string') {
-      node.source_file = relative(join(projectDir, 'backend'), node.source_file).replaceAll('\\', '/')
-    }
+  writeCanonicalGraphFixtureFromGraph(graph, { 0: ['login_route', 'login_controller', 'login_service'], 1: ['queue_registry', 'login_worker', 'session_store'] }, backendGraphPath)
+  const rescopeGraph = (path: string, scopedRoot: string): void => {
+    const scopeSourceFile = (attributes: Record<string, unknown>): Record<string, unknown> =>
+      typeof attributes.source_file === 'string'
+        ? { ...attributes, source_file: relative(scopedRoot, attributes.source_file).replaceAll('\\', '/') }
+        : attributes
+    rewriteCanonicalGraphFixture(path, {
+      mapMetadata: (metadata) => ({ ...metadata, root_path: scopedRoot, spi_mode: true }),
+      mapNode: (_id, attributes) => scopeSourceFile(attributes),
+      mapEdge: (_source, _target, attributes) => scopeSourceFile(attributes),
+    })
   }
-  for (const link of Array.isArray(backendGraph.links) ? backendGraph.links : []) {
-    if (isObjectRecord(link) && typeof link.source_file === 'string') {
-      link.source_file = relative(join(projectDir, 'backend'), link.source_file).replaceAll('\\', '/')
-    }
-  }
-  backendGraph.spi_mode = true
-  writeFileSync(backendGraphPath, `${JSON.stringify(backendGraph, null, 2)}\n`, 'utf8')
+  rescopeGraph(backendGraphPath, join(projectDir, 'backend'))
 
   const authGraphPath = join(projectDir, 'backend', 'auth', 'out', 'graph.json')
-  toJson(graph, { 0: ['login_route', 'login_controller', 'login_service'], 1: ['queue_registry', 'login_worker', 'session_store'] }, authGraphPath)
-  const authGraph = JSON.parse(readFileSync(authGraphPath, 'utf8')) as Record<string, unknown>
-  authGraph.root_path = join(projectDir, 'backend', 'auth')
-  for (const node of Array.isArray(authGraph.nodes) ? authGraph.nodes : []) {
-    if (isObjectRecord(node) && typeof node.source_file === 'string') {
-      node.source_file = relative(join(projectDir, 'backend', 'auth'), node.source_file).replaceAll('\\', '/')
-    }
-  }
-  for (const link of Array.isArray(authGraph.links) ? authGraph.links : []) {
-    if (isObjectRecord(link) && typeof link.source_file === 'string') {
-      link.source_file = relative(join(projectDir, 'backend', 'auth'), link.source_file).replaceAll('\\', '/')
-    }
-  }
-  authGraph.spi_mode = true
-  writeFileSync(authGraphPath, `${JSON.stringify(authGraph, null, 2)}\n`, 'utf8')
+  writeCanonicalGraphFixtureFromGraph(graph, { 0: ['login_route', 'login_controller', 'login_service'], 1: ['queue_registry', 'login_worker', 'session_store'] }, authGraphPath)
+  rescopeGraph(authGraphPath, join(projectDir, 'backend', 'auth'))
 
   return { projectDir, graphPath, outputDir }
 }
@@ -573,7 +550,7 @@ function makeImplementFixtureProject(): { projectDir: string; graphPath: string;
     }, null, 2),
     'utf8',
   )
-  const graph = build(
+  const graph = buildGraph(
     [
       {
         schema_version: 1,
@@ -596,23 +573,11 @@ function makeImplementFixtureProject(): { projectDir: string; graphPath: string;
         ],
       },
     ],
-    { directed: true },
+    { rootPath: projectDir },
   )
-  graph.graph.root_path = projectDir
+  graph.graph.community_labels = { 0: 'Auth entry', 1: 'Auth workflow', 2: 'Tests' }
   const graphPath = join(projectDir, 'out', 'graph.json')
-  writeFileSync(
-    graphPath,
-    `${JSON.stringify({
-      schema_version: graph.graph.schema_version === 2 ? 2 : 1,
-      directed: graph.isDirected(),
-      root_path: projectDir,
-      nodes: graph.nodeEntries().map(([id, attributes]) => ({ id, ...attributes })),
-      links: graph.edgeEntries().map(([source, target, attributes]) => ({ source, target, ...attributes })),
-      hyperedges: Array.isArray(graph.graph.hyperedges) ? graph.graph.hyperedges : [],
-      community_labels: { 0: 'Auth entry', 1: 'Auth workflow', 2: 'Tests' },
-    }, null, 2)}\n`,
-    'utf8',
-  )
+  writeFileSync(graphPath, serializeGraphArtifact(graph), 'utf8')
 
   return { projectDir, graphPath, outputDir }
 }
@@ -3700,20 +3665,25 @@ describe('executeNativeAgentCompare', () => {
     })
     writeClaudeInstallArtifacts(join(projectDir, 'backend'))
     const graphPath = join(projectDir, 'backend', 'out', 'graph.json')
-    const scopedGraph = JSON.parse(readFileSync(graphPath, 'utf8')) as {
-      nodes?: Array<Record<string, unknown>>
-    }
-    for (const node of scopedGraph.nodes ?? []) {
-      if (node.id === 'login_controller') {
-        node.label = 'AuthController.login()'
-        node.source_file = join(projectDir, 'backend', 'src', 'auth', 'index.ts')
-      }
-      if (node.id === 'session_store') {
-        node.label = 'SessionStore.createSession()'
-        node.source_file = join(projectDir, 'backend', 'src', 'session', 'index.ts')
-      }
-    }
-    writeFileSync(graphPath, `${JSON.stringify(scopedGraph, null, 2)}\n`, 'utf8')
+    rewriteCanonicalGraphFixture(graphPath, {
+      mapNode: (id, attributes) => {
+        if (id === 'login_controller') {
+          return {
+            ...attributes,
+            label: 'AuthController.login()',
+            source_file: join(projectDir, 'backend', 'src', 'auth', 'index.ts'),
+          }
+        }
+        if (id === 'session_store') {
+          return {
+            ...attributes,
+            label: 'SessionStore.createSession()',
+            source_file: join(projectDir, 'backend', 'src', 'session', 'index.ts'),
+          }
+        }
+        return attributes
+      },
+    })
 
     const question = 'How does login create a session from request handling through persistence?'
     const questionsPath = writeRuntimeProofFixture(
@@ -3793,15 +3763,11 @@ describe('executeNativeAgentCompare', () => {
     })
     writeClaudeInstallArtifacts(join(projectDir, 'backend'))
     const graphPath = join(projectDir, 'backend', 'out', 'graph.json')
-    const scopedGraph = JSON.parse(readFileSync(graphPath, 'utf8')) as {
-      nodes?: Array<Record<string, unknown>>
-    }
-    for (const node of scopedGraph.nodes ?? []) {
-      if (node.id === 'session_store') {
-        node.label = 'SessionPersistence.writeSession'
-      }
-    }
-    writeFileSync(graphPath, `${JSON.stringify(scopedGraph, null, 2)}\n`, 'utf8')
+    rewriteCanonicalGraphFixture(graphPath, {
+      mapNode: (id, attributes) => id === 'session_store'
+        ? { ...attributes, label: 'SessionPersistence.writeSession' }
+        : attributes,
+    })
 
     const question = 'How does login create a session from request handling through persistence?'
     const questionsPath = writeRuntimeProofFixture(
@@ -3867,27 +3833,20 @@ describe('executeNativeAgentCompare', () => {
     const scopedRoot = join(projectDir, 'backend')
     writeLineAnchoredSourceFile(join(scopedRoot, 'src', 'request', 'index.ts'), 10, 'export const requestIndex = "request-index-proof"')
     writeLineAnchoredSourceFile(join(scopedRoot, 'src', 'session', 'index.ts'), 60, 'export const sessionIndex = "session-index-proof"')
-    const scopedGraph = JSON.parse(readFileSync(graphPath, 'utf8')) as {
-      nodes?: Array<Record<string, unknown>>
-      links?: Array<Record<string, unknown>>
-    }
-    for (const node of scopedGraph.nodes ?? []) {
-      if (node.id === 'login_route') {
-        node.source_file = 'src/request/index.ts'
-      }
-      if (node.id === 'session_store') {
-        node.source_file = 'src/session/index.ts'
-      }
-    }
-    for (const link of scopedGraph.links ?? []) {
-      if (link.source === 'login_route') {
-        link.source_file = 'src/request/index.ts'
-      }
-      if (link.source === 'login_worker' && link.target === 'session_store') {
-        link.source_file = 'src/session/index.ts'
-      }
-    }
-    writeFileSync(graphPath, `${JSON.stringify(scopedGraph, null, 2)}\n`, 'utf8')
+    rewriteCanonicalGraphFixture(graphPath, {
+      mapNode: (id, attributes) => {
+        if (id === 'login_route') return { ...attributes, source_file: 'src/request/index.ts' }
+        if (id === 'session_store') return { ...attributes, source_file: 'src/session/index.ts' }
+        return attributes
+      },
+      mapEdge: (source, target, attributes) => {
+        if (source === 'login_route') return { ...attributes, source_file: 'src/request/index.ts' }
+        if (source === 'login_worker' && target === 'session_store') {
+          return { ...attributes, source_file: 'src/session/index.ts' }
+        }
+        return attributes
+      },
+    })
 
     const question = 'How does login create a session from request handling through persistence?'
     const questionsPath = writeRuntimeProofFixture(
@@ -4872,10 +4831,9 @@ describe('executeNativeAgentCompare', () => {
     const projectDir = mkdtempSync(join(FIXTURE_PARENT, 'bare-'))
     const outputDir = mkdtempSync(join(COMPARE_OUTPUT_PARENT, 'bare-out-'))
     mkdirSync(join(projectDir, 'out'), { recursive: true })
-    writeFileSync(
+    writeCanonicalGraphFixture(
       join(projectDir, 'out', 'graph.json'),
-      JSON.stringify({ nodes: [], edges: [], hyperedges: [] }),
-      'utf8',
+      { nodes: [], edges: [], hyperedges: [] },
     )
     try {
       await executeNativeAgentCompare(

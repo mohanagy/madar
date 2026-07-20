@@ -1,27 +1,39 @@
 {
-  "schema_version": 1,
-  "directed": false,
-  "nodes": [
-    {
-      "id": "session-contract",
-      "label": "SessionContract",
-      "file_type": "code",
-      "source_file": "shared/src/session-contract.ts"
-    },
-    {
-      "id": "user-profile",
-      "label": "UserProfile",
-      "file_type": "code",
-      "source_file": "shared/src/user-profile.ts"
-    }
-  ],
+  "directed": true,
   "edges": [
     {
+      "attributes": {
+        "confidence": "EXTRACTED",
+        "relation": "calls",
+        "source_file": "shared/src/session-contract.ts"
+      },
+      "id": "edge_35b5e2e1210ffd54f147388932ff11d1",
       "source": "session-contract",
-      "target": "user-profile",
-      "relation": "calls",
-      "confidence": "EXTRACTED",
-      "source_file": "shared/src/session-contract.ts"
+      "target": "user-profile"
     }
-  ]
+  ],
+  "metadata": {
+    "directed": true,
+    "schema_version": 1
+  },
+  "nodes": [
+    {
+      "attributes": {
+        "file_type": "code",
+        "label": "SessionContract",
+        "source_file": "shared/src/session-contract.ts"
+      },
+      "id": "session-contract"
+    },
+    {
+      "attributes": {
+        "file_type": "code",
+        "label": "UserProfile",
+        "source_file": "shared/src/user-profile.ts"
+      },
+      "id": "user-profile"
+    }
+  ],
+  "schema": "madar.graph",
+  "version": 1
 }

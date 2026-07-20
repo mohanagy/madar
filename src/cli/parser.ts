@@ -88,13 +88,6 @@ export interface ExplainCliOptions {
   relation: string
 }
 
-export interface AddCliOptions {
-  url: string
-  path: string
-  followSymlinks: boolean
-  noHtml: boolean
-}
-
 export interface SaveResultCliOptions {
   question: string
   answer: string
@@ -165,17 +158,10 @@ export interface GenerateCliOptions {
   update: boolean
   clusterOnly: boolean
   watch: boolean
-  directed: boolean
   followSymlinks: boolean
   respectGitignore: boolean
   debounceSeconds: number
-  noHtml: boolean
   wiki: boolean
-  obsidian: boolean
-  obsidianDir: string | null
-  svg: boolean
-  graphml: boolean
-  neo4j: boolean
   neo4jPushUri: string | null
   neo4jUser: string | null
   neo4jPassword: string | null
@@ -194,7 +180,6 @@ export interface WatchCliOptions {
   followSymlinks: boolean
   respectGitignore: boolean
   debounceSeconds: number
-  noHtml: boolean
 }
 
 export interface ServeCliOptions {
@@ -1025,46 +1010,6 @@ export function parseExplainArgs(args: string[]): ExplainCliOptions {
   return { label: normalizedLabel, graphPath, relation }
 }
 
-export function parseAddArgs(args: string[]): AddCliOptions {
-  const url = args[0]?.trim()
-  if (!url) {
-    throw new UsageError('Usage: madar add <url> [path] [--follow-symlinks] [--no-html]')
-  }
-
-  let path = '.'
-  let followSymlinks = false
-  let noHtml = false
-
-  for (let index = 1; index < args.length; index += 1) {
-    const argument = args[index]
-    if (!argument) {
-      continue
-    }
-
-    if (!argument.startsWith('--')) {
-      if (path !== '.') {
-        throw new UsageError('Usage: madar add <url> [path] [--follow-symlinks] [--no-html]')
-      }
-      path = argument
-      continue
-    }
-
-    if (argument === '--follow-symlinks') {
-      followSymlinks = true
-      continue
-    }
-
-    if (argument === '--no-html') {
-      noHtml = true
-      continue
-    }
-
-    throw new UsageError(`error: unknown option for add: ${argument}`)
-  }
-
-  return { url, path, followSymlinks, noHtml }
-}
-
 export function parseSaveResultArgs(args: string[]): SaveResultCliOptions {
   let question = ''
   let answer = ''
@@ -1738,18 +1683,10 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
   let update = false
   let clusterOnly = false
   let watch = false
-  let directed = true
-  let directionOption: 'directed' | 'undirected' | null = null
   let followSymlinks = false
   let respectGitignore = false
   let debounceSeconds = 3
-  let noHtml = false
   let wiki = false
-  let obsidian = false
-  let obsidianDir: string | null = null
-  let svg = false
-  let graphml = false
-  let neo4j = false
   let neo4jPushUri: string | null = null
   let neo4jUser: string | null = null
   let neo4jPassword: string | null = null
@@ -1819,7 +1756,7 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
     if (!argument.startsWith('--')) {
       if (path !== '.') {
         throw new UsageError(
-          'Usage: madar generate [path] [--update] [--cluster-only] [--watch] [--legacy|--spi] [--directed|--undirected] [--follow-symlinks] [--respect-gitignore] [--debounce S] [--no-html] [--wiki] [--obsidian] [--obsidian-dir DIR] [--svg] [--graphml] [--neo4j] [--neo4j-push URI] [--neo4j-user USER] [--neo4j-password PW] [--neo4j-database DB] [--strict-indexing] [--max-indexing-failed N] [--max-indexing-unsupported N]',
+          'Usage: madar generate [path] [--update] [--cluster-only] [--watch] [--legacy|--spi] [--follow-symlinks] [--respect-gitignore] [--debounce S] [--wiki] [--neo4j-push URI] [--neo4j-user USER] [--neo4j-password PW] [--neo4j-database DB] [--strict-indexing] [--max-indexing-failed N] [--max-indexing-unsupported N]',
         )
       }
       path = argument
@@ -1841,24 +1778,6 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
       continue
     }
 
-    if (argument === '--directed') {
-      if (directionOption === 'undirected') {
-        throw new UsageError('error: --directed and --undirected cannot be used together')
-      }
-      directionOption = 'directed'
-      directed = true
-      continue
-    }
-
-    if (argument === '--undirected') {
-      if (directionOption === 'directed') {
-        throw new UsageError('error: --directed and --undirected cannot be used together')
-      }
-      directionOption = 'undirected'
-      directed = false
-      continue
-    }
-
     if (argument === '--follow-symlinks') {
       followSymlinks = true
       continue
@@ -1869,33 +1788,8 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
       continue
     }
 
-    if (argument === '--no-html') {
-      noHtml = true
-      continue
-    }
-
     if (argument === '--wiki') {
       wiki = true
-      continue
-    }
-
-    if (argument === '--obsidian') {
-      obsidian = true
-      continue
-    }
-
-    if (argument === '--graphml') {
-      graphml = true
-      continue
-    }
-
-    if (argument === '--svg') {
-      svg = true
-      continue
-    }
-
-    if (argument === '--neo4j') {
-      neo4j = true
       continue
     }
 
@@ -1947,20 +1841,6 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
       continue
     }
 
-    if (argument === '--obsidian-dir') {
-      obsidianDir = requireNonEmptyValue('--obsidian-dir', args[index + 1])
-      obsidian = true
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--obsidian-dir=')) {
-      const [, value] = argument.split('=', 2)
-      obsidianDir = requireNonEmptyValue('--obsidian-dir', value)
-      obsidian = true
-      continue
-    }
-
     if (argument === '--debounce') {
       debounceSeconds = parseNonNegativeNumber('--debounce', requireNonEmptyValue('--debounce', args[index + 1]))
       index += 1
@@ -1998,17 +1878,10 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
     update,
     clusterOnly,
     watch,
-    directed,
     followSymlinks,
     respectGitignore,
     debounceSeconds,
-    noHtml,
     wiki,
-    obsidian,
-    obsidianDir,
-    svg,
-    graphml,
-    neo4j,
     neo4jPushUri,
     neo4jUser,
     neo4jPassword,
@@ -2027,7 +1900,6 @@ export function parseWatchArgs(args: string[]): WatchCliOptions {
   let followSymlinks = false
   let respectGitignore = false
   let debounceSeconds = 3
-  let noHtml = false
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index]
@@ -2037,7 +1909,7 @@ export function parseWatchArgs(args: string[]): WatchCliOptions {
 
     if (!argument.startsWith('--')) {
       if (path !== '.') {
-        throw new UsageError('Usage: madar watch [path] [--follow-symlinks] [--respect-gitignore] [--debounce S] [--no-html]')
+        throw new UsageError('Usage: madar watch [path] [--follow-symlinks] [--respect-gitignore] [--debounce S]')
       }
       path = argument
       continue
@@ -2050,11 +1922,6 @@ export function parseWatchArgs(args: string[]): WatchCliOptions {
 
     if (argument === '--respect-gitignore') {
       respectGitignore = true
-      continue
-    }
-
-    if (argument === '--no-html') {
-      noHtml = true
       continue
     }
 
@@ -2073,7 +1940,7 @@ export function parseWatchArgs(args: string[]): WatchCliOptions {
     throw new UsageError(`error: unknown option for watch: ${argument}`)
   }
 
-  return { path, followSymlinks, respectGitignore, debounceSeconds, noHtml }
+  return { path, followSymlinks, respectGitignore, debounceSeconds }
 }
 
 export function parseServeArgs(args: string[]): ServeCliOptions {

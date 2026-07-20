@@ -11,6 +11,7 @@ import { runDoctorCommand, runStatusCommand } from '../../src/infrastructure/doc
 import { generateGraph } from '../../src/infrastructure/generate.js'
 import { runHandoffCommand } from '../../src/infrastructure/handoff-command.js'
 import { handleStdioRequest } from '../../src/runtime/stdio-server.js'
+import { writeCanonicalGraphFixture } from '../helpers/graph-artifact.js'
 
 const sandboxRoots: string[] = []
 const PACKAGE_VERSION = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as { version: string }
@@ -108,10 +109,9 @@ function createFreshnessFixture(state: FixtureState): FreshnessFixture {
     )
   }
 
-  writeFileSync(
+  writeCanonicalGraphFixture(
     graphPath,
-    JSON.stringify({
-      directed: true,
+    {
       root_path: root,
       community_labels: {
         '0': 'Auth runtime',
@@ -175,8 +175,7 @@ function createFreshnessFixture(state: FixtureState): FreshnessFixture {
         },
       ],
       hyperedges: [],
-    }),
-    'utf8',
+    },
   )
 
   utimesSync(authPath, sourceTime, sourceTime)

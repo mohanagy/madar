@@ -6,7 +6,7 @@ Use `examples/sample-workspace/` when you want a fast, reproducible TypeScript w
 
 ```bash
 npm run build # run from the repository root to build madar locally
-madar generate examples/sample-workspace --no-html
+madar generate examples/sample-workspace
 ```
 
 This creates `examples/sample-workspace/out/graph.json`.

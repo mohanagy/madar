@@ -11,7 +11,6 @@ import type { GraphAutoRefreshController } from '../infrastructure/watch.js'
 import { readWatcherStateForGraph } from '../infrastructure/watcher-state.js'
 import { readStoredGenerationPolicy } from '../infrastructure/generation-policy.js'
 import { watcherStateBlocksGraphReads } from '../contracts/watcher-state.js'
-import { DirectedGraphRequiredError } from './direction.js'
 import { diffGraphs } from './diff.js'
 import { buildGraphSummary } from './graph-summary.js'
 import { MCP_PROMPTS, MCP_TOOLS, activeMcpTools, isToolEnabledInProfile, resolveToolProfileFromEnv, type McpPromptDefinition } from './stdio/definitions.js'
@@ -51,6 +50,7 @@ import {
 import { findPackageRoot, readPackageVersion } from '../shared/package-metadata.js'
 import { resolveGraphSourceRoot } from '../shared/graph-source-root.js'
 import { resolveMadarWorkspace } from '../shared/workspace.js'
+import { GRAPH_ARTIFACT_REGENERATE_MESSAGE } from '../domain/graph/artifact.js'
 
 const JSONRPC_PARSE_ERROR = -32700
 const JSONRPC_INVALID_REQUEST = -32600
@@ -1105,10 +1105,7 @@ export function handleStdioRequest(
         return failure(id, JSONRPC_METHOD_NOT_FOUND, `Method not found: ${method}`)
     }
   } catch (error) {
-    if (error instanceof DirectedGraphRequiredError) {
-      return failure(id, JSONRPC_SERVER_ERROR, error.message)
-    }
-    return failure(id, JSONRPC_SERVER_ERROR, 'Graph query failed')
+    return failure(id, JSONRPC_SERVER_ERROR, error instanceof Error && error.message.includes(GRAPH_ARTIFACT_REGENERATE_MESSAGE) ? error.message : 'Graph query failed')
   }
 }
 
@@ -1138,7 +1135,6 @@ export async function serveGraphStdio(options: ServeGraphStdioOptions): Promise<
     autoRefresh = startAutoRefresh(workspace.rootPath, options.autoRefreshDebounceSeconds ?? 1, {
       // The MCP server needs graph.json; avoid regenerating the browser view on
       // every coalesced agent edit.
-      noHtml: true,
       logger: {
         log() {},
         error(message) {

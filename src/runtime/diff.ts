@@ -1,13 +1,15 @@
-import type { KnowledgeGraph } from '../contracts/graph.js'
+import type { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
 import { graphDiff } from '../pipeline/analyze.js'
 
 const DEFAULT_GRAPH_DIFF_LIMIT = 10
 
 interface GraphDiffEdgeLike {
+  id: string
   source: string
   target: string
   relation: string
   confidence: string
+  attributes: Record<string, unknown>
 }
 
 interface GraphDiffNodeLike {
@@ -36,7 +38,7 @@ function formatEdge(graph: KnowledgeGraph, edge: GraphDiffEdgeLike): string {
   const sourceLabel = graph.hasNode(edge.source) ? String(graph.nodeAttributes(edge.source).label ?? edge.source) : edge.source
   const targetLabel = graph.hasNode(edge.target) ? String(graph.nodeAttributes(edge.target).label ?? edge.target) : edge.target
   const confidence = edge.confidence ? ` [${edge.confidence}]` : ''
-  return `${sourceLabel} --${edge.relation}${confidence}--> ${targetLabel}`
+  return `${sourceLabel} --${edge.relation}${confidence}--> ${targetLabel} [edge ${edge.id}] evidence=${JSON.stringify(edge.attributes.evidence ?? null)} provenance=${JSON.stringify(edge.attributes.provenance ?? [])}`
 }
 
 function sectionHeading(title: string, total: number, limit: number): string {

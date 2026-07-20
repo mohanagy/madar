@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ContextPackCoverage, ImplementationPackGuidance } from '../../src/contracts/context-pack.js'
 import type { RetrievalGateDecision } from '../../src/contracts/retrieval-gate.js'
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import { runContextPackCommand, type ContextPackCommandDependencies } from '../../src/infrastructure/context-pack-command.js'
 import type { RetrieveResult } from '../../src/runtime/retrieve.js'
 

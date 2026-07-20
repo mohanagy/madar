@@ -1,4 +1,4 @@
-import { KnowledgeGraph } from '../contracts/graph.js'
+import { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
 import {
   analysisEntityDegree,
   isAnalysisEntityNode,
@@ -205,10 +205,8 @@ export function generate(
     lines.push('')
     lines.push('## Ambiguous Edges')
     for (const [sourceNodeId, targetNodeId, attributes] of ambiguousEdges) {
-      const directedSourceId = typeof attributes._src === 'string' && graph.hasNode(attributes._src) ? attributes._src : sourceNodeId
-      const directedTargetId = typeof attributes._tgt === 'string' && graph.hasNode(attributes._tgt) ? attributes._tgt : targetNodeId
       lines.push(
-        `- ${formatInlineCode(String(graph.nodeAttributes(directedSourceId).label ?? directedSourceId))} → ${formatInlineCode(String(graph.nodeAttributes(directedTargetId).label ?? directedTargetId))}  [AMBIGUOUS]`,
+        `- ${formatInlineCode(String(graph.nodeAttributes(sourceNodeId).label ?? sourceNodeId))} → ${formatInlineCode(String(graph.nodeAttributes(targetNodeId).label ?? targetNodeId))}  [AMBIGUOUS]`,
       )
       lines.push(`  ${escapeMarkdownInline(String(attributes.source_file ?? ''))} · relation: ${escapeMarkdownInline(String(attributes.relation ?? 'unknown'))}`)
     }

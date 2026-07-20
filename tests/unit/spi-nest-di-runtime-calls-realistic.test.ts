@@ -2,13 +2,13 @@ import { relative as pathRelative, resolve as pathResolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import type { KnowledgeGraph } from '../../src/contracts/graph.js'
+import type { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import type {
   ExtractionData,
   ExtractionEdge,
   ExtractionNode,
 } from '../../src/contracts/types.js'
-import { buildFromJson } from '../../src/pipeline/build.js'
+import { buildGraphFromExtraction } from '../../src/application/build-graph.js'
 import { buildSpi } from '../../src/pipeline/spi/build.js'
 import { projectSpiToExtraction } from '../../src/pipeline/spi/projector.js'
 import type {
@@ -36,6 +36,17 @@ function toWindowsFixturePath(sourceFile: string): string {
   return `${WINDOWS_FIXTURE_ROOT}\\${relativePath}`
 }
 
+function toWindowsFixtureEvidence<T>(value: T): T {
+  if (Array.isArray(value)) return value.map(toWindowsFixtureEvidence) as T
+  if (!value || typeof value !== 'object') return value
+  return Object.fromEntries(Object.entries(value).map(([key, entry]) => [
+    key,
+    key === 'source_file' && typeof entry === 'string'
+      ? toWindowsFixturePath(entry)
+      : toWindowsFixtureEvidence(entry),
+  ])) as T
+}
+
 function buildFixtureSpi(): SemanticProgramIndex {
   return buildSpi({
     root: FIXTURE_ROOT,
@@ -51,22 +62,9 @@ function buildFixtureExtraction(): ExtractionData {
 
 function buildFixtureGraph(options: { windowsSourcePaths?: boolean } = {}): KnowledgeGraph {
   const extraction = buildFixtureExtraction()
-  if (!options.windowsSourcePaths) {
-    return buildFromJson({ ...extraction, root_path: FIXTURE_ROOT }, { directed: true })
-  }
-
-  return buildFromJson({
-    ...extraction,
-    root_path: WINDOWS_FIXTURE_ROOT,
-    nodes: extraction.nodes.map((node) => ({
-      ...node,
-      source_file: toWindowsFixturePath(node.source_file),
-    })),
-    edges: extraction.edges.map((edge) => ({
-      ...edge,
-      source_file: edge.source_file ? toWindowsFixturePath(edge.source_file) : undefined,
-    })),
-  }, { directed: true })
+  return options.windowsSourcePaths
+    ? buildGraphFromExtraction(toWindowsFixtureEvidence(extraction), { rootPath: WINDOWS_FIXTURE_ROOT })
+    : buildGraphFromExtraction(extraction, { rootPath: FIXTURE_ROOT })
 }
 
 function findSymbol(
@@ -139,7 +137,7 @@ function outgoingCallLabels(
 function graphOutgoingCallLabels(graph: KnowledgeGraph, sourceId: string): string[] {
   return graph.successors(sourceId)
     .filter(
-      (targetId) => String(graph.edgeAttributes(sourceId, targetId).relation ?? '') === 'calls',
+      (targetId) => String(graph.uniqueEdgeBetween(sourceId, targetId).attributes.relation ?? '') === 'calls',
     )
     .map((targetId) => String(graph.nodeAttributes(targetId).label ?? targetId))
 }
@@ -265,7 +263,7 @@ describe('SPI realistic Nest DI runtime-call fixture', () => {
 
   it('preserves realistic route-method outgoing calls through SPI projection and graph building', () => {
     const extraction = buildFixtureExtraction()
-    const graph = buildFromJson({ ...extraction, root_path: FIXTURE_ROOT }, { directed: true })
+    const graph = buildGraphFromExtraction(extraction, { rootPath: FIXTURE_ROOT })
     const routeNode = findNode(
       extraction,
       (node) =>

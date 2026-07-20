@@ -228,7 +228,6 @@ export async function runPackQualityFixture(
   return withTempDir(async (tempDir) => {
     const workspaceRoot = copyFixtureWorkspace(name, tempDir)
     const graph = generateGraph(workspaceRoot, {
-      noHtml: true,
       // Fixtures are regression baselines: pin their extraction strategy so a
       // product-default change does not silently rewrite their expectations.
       // Default-auto behavior is exercised directly in generation tests.

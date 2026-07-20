@@ -4,7 +4,7 @@ import { dirname, join, relative } from 'node:path'
 import * as ts from 'typescript'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { build, buildFromJson } from '../../src/pipeline/build.js'
+import { buildGraph as buildGraphBase, buildGraphFromExtraction as buildGraphFromExtractionBase } from '../../src/application/build-graph.js'
 import * as detectModule from '../../src/pipeline/detect.js'
 import { _makeId, createEdge, createNode } from '../../src/pipeline/extract/core.js'
 import { applyJsFrameworkAdapters } from '../../src/pipeline/extract/frameworks/core.js'
@@ -17,6 +17,10 @@ import { inspectReduxModuleExports } from '../../src/pipeline/extract/frameworks
 const REPO_ROOT = process.cwd()
 const FIXTURES_DIR = join(REPO_ROOT, 'tests', 'fixtures')
 const TEST_ARTIFACTS_DIR = join(REPO_ROOT, '.test-artifacts', 'framework-adapter-tests')
+const buildGraph: typeof buildGraphBase = (extractions, options = {}) =>
+  buildGraphBase(extractions, { rootPath: REPO_ROOT, ...options })
+const buildGraphFromExtraction: typeof buildGraphFromExtractionBase = (extraction, options = {}) =>
+  buildGraphFromExtractionBase(extraction, { rootPath: REPO_ROOT, ...options })
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -56,7 +60,7 @@ function nodeIdForLabel(fragment: ExtractionFragment, label: string): string {
   return nodeId!
 }
 
-function graphNodeIdForLabel(graph: ReturnType<typeof build>, label: string): string {
+function graphNodeIdForLabel(graph: ReturnType<typeof buildGraph>, label: string): string {
   for (const [nodeId, attributes] of graph.nodeEntries()) {
     if (attributes.label === label) {
       return nodeId
@@ -116,14 +120,14 @@ describe('js framework extraction contract', () => {
     }
 
     const result = applyJsFrameworkAdapters(baseExtraction, createFrameworkContext(filePath, sourceText, baseExtraction), [adapter])
-    const graph = buildFromJson({
+    const graph = buildGraphFromExtraction({
       nodes: result.nodes,
       edges: result.edges,
     })
 
     expect(result.nodes.find((node) => node.id === routeNodeId)?.label).toBe('AppRoute')
     expect(graph.hasNode(routeNodeId)).toBe(true)
-    expect(graph.edgeAttributes(fileNodeId, routeNodeId).relation).toBe('framework_declares_route')
+    expect(graph.uniqueEdgeBetween(fileNodeId, routeNodeId).attributes.relation).toBe('framework_declares_route')
   })
 
   it('treats TypeScript SourceFile names as equivalent across path separators', () => {
@@ -163,7 +167,7 @@ describe('js framework extraction contract', () => {
     }
 
     const result = applyJsFrameworkAdapters(baseExtraction, createFrameworkContext(filePath, sourceText, baseExtraction), [adapter])
-    const graph = buildFromJson({
+    const graph = buildGraphFromExtraction({
       nodes: result.nodes,
       edges: result.edges,
     })
@@ -222,7 +226,7 @@ describe('js framework extraction contract', () => {
     )
   })
 
-  it('does not let same-pair framework edges replace baseline relations in the default undirected graph build', () => {
+  it('preserves same-pair baseline and framework relations as parallel edges', () => {
     const filePath = join(FIXTURES_DIR, 'router.tsx')
     const sourceText = ['export function App() {', '  return null', '}'].join('\n')
     const fileNodeId = _makeId('app')
@@ -246,59 +250,18 @@ describe('js framework extraction contract', () => {
     }
 
     const result = applyJsFrameworkAdapters(baseExtraction, createFrameworkContext(filePath, sourceText, baseExtraction), [adapter])
-    const graph = buildFromJson({
+    const graph = buildGraphFromExtraction({
       nodes: result.nodes,
       edges: result.edges,
     })
 
-    expect(graph.edgeAttributes(fileNodeId, componentNodeId)).toEqual(
-      expect.objectContaining({
-        relation: 'declares',
-      }),
-    )
-  })
-
-  it('preserves reverse-direction framework edges in extraction output while keeping the baseline relation in the default undirected build', () => {
-    const filePath = join(FIXTURES_DIR, 'router.tsx')
-    const sourceText = ['export function App() {', '  return null', '}'].join('\n')
-    const fileNodeId = _makeId('app')
-    const componentNodeId = _makeId('app', 'component')
-    const baseExtraction: ExtractionFragment = {
-      nodes: [createNode(fileNodeId, 'app.tsx', filePath, 1), createNode(componentNodeId, 'App', filePath, 1)],
-      edges: [createEdge(fileNodeId, componentNodeId, 'declares', filePath, 1)],
-    }
-
-    const adapter: JsFrameworkAdapter = {
-      id: 'test:framework-reverse-edge-collision',
-      matches() {
-        return true
-      },
-      extract() {
-        return {
-          nodes: [],
-          edges: [createEdge(componentNodeId, fileNodeId, 'framework_references_component', filePath, 2)],
-        }
-      },
-    }
-
-    const result = applyJsFrameworkAdapters(baseExtraction, createFrameworkContext(filePath, sourceText, baseExtraction), [adapter])
-    const graph = buildFromJson({
-      nodes: result.nodes,
-      edges: result.edges,
-    })
-
-    expect(result.edges.filter((edge) => new Set([edge.source, edge.target]).size === 2)).toEqual([
-      expect.objectContaining({ source: componentNodeId, target: fileNodeId, relation: 'framework_references_component' }),
-      expect.objectContaining({ source: fileNodeId, target: componentNodeId, relation: 'declares' }),
+    expect(graph.relationKindsBetween(fileNodeId, componentNodeId)).toEqual([
+      'declares',
+      'framework_declares_component',
     ])
-    expect(graph.edgeAttributes(fileNodeId, componentNodeId)).toEqual(
-      expect.objectContaining({
-        relation: 'declares',
-      }),
-    )
   })
 
-  it('preserves reverse-direction framework edges for directed graph builds', () => {
+  it('preserves reverse-direction framework edges', () => {
     const filePath = join(FIXTURES_DIR, 'router.tsx')
     const sourceText = ['export function App() {', '  return null', '}'].join('\n')
     const fileNodeId = _makeId('app')
@@ -322,24 +285,23 @@ describe('js framework extraction contract', () => {
     }
 
     const result = applyJsFrameworkAdapters(baseExtraction, createFrameworkContext(filePath, sourceText, baseExtraction), [adapter])
-    const graph = buildFromJson(
+    const graph = buildGraphFromExtraction(
       {
         nodes: result.nodes,
         edges: result.edges,
       },
-      { directed: true },
     )
 
     expect(result.edges.filter((edge) => new Set([edge.source, edge.target]).size === 2)).toEqual([
       expect.objectContaining({ source: componentNodeId, target: fileNodeId, relation: 'framework_references_component' }),
       expect.objectContaining({ source: fileNodeId, target: componentNodeId, relation: 'declares' }),
     ])
-    expect(graph.edgeAttributes(fileNodeId, componentNodeId)).toEqual(
+    expect(graph.uniqueEdgeBetween(fileNodeId, componentNodeId).attributes).toEqual(
       expect.objectContaining({
         relation: 'declares',
       }),
     )
-    expect(graph.edgeAttributes(componentNodeId, fileNodeId)).toEqual(
+    expect(graph.uniqueEdgeBetween(componentNodeId, fileNodeId).attributes).toEqual(
       expect.objectContaining({
         relation: 'framework_references_component',
       }),
@@ -379,7 +341,7 @@ describe('js framework extraction contract', () => {
       }),
     ])
 
-    const graph = build([
+    const graph = buildGraph([
       {
         schema_version: 1,
         nodes: result.nodes,
@@ -393,7 +355,7 @@ describe('js framework extraction contract', () => {
     ])
 
     expect(graph.hasNode(routeNodeId)).toBe(true)
-    expect(graph.edgeAttributes(fileNodeId, routeNodeId)).toEqual(
+    expect(graph.uniqueEdgeBetween(fileNodeId, routeNodeId).attributes).toEqual(
       expect.objectContaining({
         relation: 'framework_registers_route',
       }),
@@ -548,7 +510,7 @@ describe('js framework extraction contract', () => {
       ]),
     )
 
-    const graph = build([
+    const graph = buildGraph([
       {
         schema_version: 1,
         nodes: appResult.nodes ?? [],
@@ -562,7 +524,7 @@ describe('js framework extraction contract', () => {
     ])
 
     expect(graph.hasNode(apiRouterNodeId)).toBe(true)
-    expect(graph.edgeAttributes(appNodeId, apiRouterNodeId)).toEqual(
+    expect(graph.uniqueEdgeBetween(appNodeId, apiRouterNodeId).attributes).toEqual(
       expect.objectContaining({
         relation: 'mounts_router',
       }),
@@ -649,8 +611,8 @@ describe('js framework extraction contract', () => {
       ]),
     )
 
-    const namespaceGraph = build([namespaceParentResult, namespaceChildResult])
-    const commonjsGraph = build([commonjsParentResult, commonjsChildResult])
+    const namespaceGraph = buildGraph([namespaceParentResult, namespaceChildResult])
+    const commonjsGraph = buildGraph([commonjsParentResult, commonjsChildResult])
 
     expect(graphNodeIdForLabel(namespaceGraph, 'GET /api/users/:id')).toBeDefined()
     expect(graphNodeIdForLabel(commonjsGraph, 'GET /api/users/:id')).toBeDefined()
@@ -854,7 +816,7 @@ describe('js framework extraction contract', () => {
     const parentFilePath = join(FIXTURES_DIR, 'express-import-equals-parent.ts')
     const childFilePath = join(FIXTURES_DIR, 'express-import-equals-child.ts')
 
-    const graph = build([extractJs(parentFilePath), extractJs(childFilePath)], { directed: true })
+    const graph = buildGraph([extractJs(parentFilePath), extractJs(childFilePath)])
 
     expect(graph.nodeAttributes(graphNodeIdForLabel(graph, 'GET /api/users/:id'))).toEqual(
       expect.objectContaining({ route_path: '/api/users/:id' }),
@@ -865,7 +827,7 @@ describe('js framework extraction contract', () => {
     const parentFilePath = join(FIXTURES_DIR, 'express-commonjs-object-parent.ts')
     const childFilePath = join(FIXTURES_DIR, 'express-commonjs-object-child.ts')
 
-    const graph = build([extractJs(parentFilePath), extractJs(childFilePath)], { directed: true })
+    const graph = buildGraph([extractJs(parentFilePath), extractJs(childFilePath)])
 
     expect(graph.nodeAttributes(graphNodeIdForLabel(graph, 'GET /api/users/:id'))).toEqual(
       expect.objectContaining({ route_path: '/api/users/:id' }),
@@ -975,12 +937,12 @@ describe('js framework extraction contract', () => {
       ]),
     )
 
-    const esmGraph = build([esmMiddlewareResult, esmHandlerResult, esmParentResult], { directed: true })
-    const commonjsGraph = build([commonjsMiddlewareResult, commonjsHandlerResult, commonjsParentResult], { directed: true })
+    const esmGraph = buildGraph([esmMiddlewareResult, esmHandlerResult, esmParentResult])
+    const commonjsGraph = buildGraph([commonjsMiddlewareResult, commonjsHandlerResult, commonjsParentResult])
 
     expect(esmGraph.hasNode(nodeIdForLabel(esmMiddlewareResult, 'requireAuth()'))).toBe(true)
     expect(commonjsGraph.hasNode(commonjsMiddlewareId)).toBe(true)
-    expect(commonjsGraph.edgeAttributes(commonjsHandlerId, commonjsRouteId)).toEqual(
+    expect(commonjsGraph.uniqueEdgeBetween(commonjsHandlerId, commonjsRouteId).attributes).toEqual(
       expect.objectContaining({ relation: 'handles_route' }),
     )
   })
@@ -1015,7 +977,7 @@ describe('js framework extraction contract', () => {
       ]),
     )
 
-    const graph = build([middlewareResult, handlerResult, parentResult], { directed: true })
+    const graph = buildGraph([middlewareResult, handlerResult, parentResult])
 
     expect(graph.hasNode(middlewareEdge!.source)).toBe(true)
     expect(graph.hasNode(handlerId)).toBe(true)
@@ -1072,8 +1034,8 @@ describe('js framework extraction contract', () => {
       ]),
     )
 
-    const moduleGraph = build([moduleMiddlewareResult, moduleHandlerResult, moduleParentResult], { directed: true })
-    const exportsGraph = build([exportsMiddlewareResult, exportsHandlerResult, exportsParentResult], { directed: true })
+    const moduleGraph = buildGraph([moduleMiddlewareResult, moduleHandlerResult, moduleParentResult])
+    const exportsGraph = buildGraph([exportsMiddlewareResult, exportsHandlerResult, exportsParentResult])
 
     expect(moduleGraph.hasNode(moduleMiddlewareId)).toBe(true)
     expect(moduleGraph.hasNode(moduleHandlerId)).toBe(true)
@@ -1085,7 +1047,7 @@ describe('js framework extraction contract', () => {
     const parentFilePath = join(FIXTURES_DIR, 'express-mounted-router-parent.ts')
     const childFilePath = join(FIXTURES_DIR, 'express-mounted-router-child.ts')
 
-    const graph = build([extractJs(parentFilePath), extractJs(childFilePath)], { directed: true })
+    const graph = buildGraph([extractJs(parentFilePath), extractJs(childFilePath)])
 
     const mountedRouteId = graphNodeIdForLabel(graph, 'GET /api/users/:id')
     const middlewareId = graphNodeIdForLabel(graph, 'requireAuth()')
@@ -1098,8 +1060,8 @@ describe('js framework extraction contract', () => {
         route_path: '/api/users/:id',
       }),
     )
-    expect(graph.edgeAttributes(middlewareId, mountedRouteId)).toEqual(expect.objectContaining({ relation: 'middleware' }))
-    expect(graph.edgeAttributes(handlerId, mountedRouteId)).toEqual(expect.objectContaining({ relation: 'handles_route' }))
+    expect(graph.uniqueEdgeBetween(middlewareId, mountedRouteId).attributes).toEqual(expect.objectContaining({ relation: 'middleware' }))
+    expect(graph.uniqueEdgeBetween(handlerId, mountedRouteId).attributes).toEqual(expect.objectContaining({ relation: 'handles_route' }))
   })
 
   it('recursively propagates nested mounted router prefixes and inherited middleware', () => {
@@ -1107,7 +1069,7 @@ describe('js framework extraction contract', () => {
     const childFilePath = join(FIXTURES_DIR, 'express-nested-router-child.ts')
     const grandchildFilePath = join(FIXTURES_DIR, 'express-nested-router-grandchild.ts')
 
-    const graph = build([extractJs(parentFilePath), extractJs(childFilePath), extractJs(grandchildFilePath)], { directed: true })
+    const graph = buildGraph([extractJs(parentFilePath), extractJs(childFilePath), extractJs(grandchildFilePath)])
 
     const mountedRouteId = graphNodeIdForLabel(graph, 'GET /api/v1/users/:id')
     const authMiddlewareId = graphNodeIdForLabel(graph, 'requireAuth()')
@@ -1121,9 +1083,9 @@ describe('js framework extraction contract', () => {
         route_path: '/api/v1/users/:id',
       }),
     )
-    expect(graph.edgeAttributes(authMiddlewareId, mountedRouteId)).toEqual(expect.objectContaining({ relation: 'middleware' }))
-    expect(graph.edgeAttributes(auditMiddlewareId, mountedRouteId)).toEqual(expect.objectContaining({ relation: 'middleware' }))
-    expect(graph.edgeAttributes(handlerId, mountedRouteId)).toEqual(expect.objectContaining({ relation: 'handles_route' }))
+    expect(graph.uniqueEdgeBetween(authMiddlewareId, mountedRouteId).attributes).toEqual(expect.objectContaining({ relation: 'middleware' }))
+    expect(graph.uniqueEdgeBetween(auditMiddlewareId, mountedRouteId).attributes).toEqual(expect.objectContaining({ relation: 'middleware' }))
+    expect(graph.uniqueEdgeBetween(handlerId, mountedRouteId).attributes).toEqual(expect.objectContaining({ relation: 'handles_route' }))
   })
 
   it('handles circular cross-file router imports without recursing indefinitely', () => {
@@ -1131,7 +1093,7 @@ describe('js framework extraction contract', () => {
     const routerAFilePath = join(FIXTURES_DIR, 'express-cross-file-cycle-router-a.ts')
     const routerBFilePath = join(FIXTURES_DIR, 'express-cross-file-cycle-router-b.ts')
 
-    const graph = build([extractJs(appFilePath), extractJs(routerAFilePath), extractJs(routerBFilePath)], { directed: true })
+    const graph = buildGraph([extractJs(appFilePath), extractJs(routerAFilePath), extractJs(routerBFilePath)])
 
     expect(graph.nodeAttributes(graphNodeIdForLabel(graph, 'GET /api/local'))).toEqual(
       expect.objectContaining({ route_path: '/api/local' }),
@@ -1145,7 +1107,7 @@ describe('js framework extraction contract', () => {
     const parentFilePath = join(FIXTURES_DIR, 'express-directory-import-parent.ts')
     const routesFilePath = join(FIXTURES_DIR, 'express-directory-routes', 'index.ts')
 
-    const graph = build([extractJs(parentFilePath), extractJs(routesFilePath)], { directed: true })
+    const graph = buildGraph([extractJs(parentFilePath), extractJs(routesFilePath)])
 
     expect(graph.nodeAttributes(graphNodeIdForLabel(graph, 'GET /api/users'))).toEqual(
       expect.objectContaining({ route_path: '/api/users' }),
@@ -1173,7 +1135,7 @@ describe('js framework extraction contract', () => {
     const baseExtraction = createBaseExtraction(filePath, 'virtual-express-cycle', ['showUser'])
 
     const result = applyJsFrameworkAdapters(baseExtraction, createFrameworkContext(filePath, sourceText, baseExtraction))
-    const graph = build([result], { directed: true })
+    const graph = buildGraph([result])
 
     expect(graph.nodeAttributes(graphNodeIdForLabel(graph, 'GET /a/sub/leaf'))).toEqual(
       expect.objectContaining({ route_path: '/a/sub/leaf' }),
@@ -1231,7 +1193,7 @@ describe('js framework extraction contract', () => {
     ])
 
     const result = applyJsFrameworkAdapters(baseExtraction, createFrameworkContext(filePath, sourceText, baseExtraction))
-    const graph = buildFromJson({
+    const graph = buildGraphFromExtraction({
       nodes: result.nodes,
       edges: result.edges,
     })
@@ -1267,7 +1229,7 @@ describe('js framework extraction contract', () => {
         node_kind: 'slice',
       }),
     )
-    expect(graph.edgeAttributes(sliceNodeId, storeNodeId)).toEqual(
+    expect(graph.uniqueEdgeBetween(sliceNodeId, storeNodeId).attributes).toEqual(
       expect.objectContaining({
         relation: 'registered_in_store',
       }),
@@ -1944,7 +1906,7 @@ describe('js framework extraction contract', () => {
 
     const sliceResult = extractJs(sliceFilePath)
     const storeResult = extractJs(storeFilePath)
-    const graph = build([sliceResult, storeResult], { directed: true })
+    const graph = buildGraph([sliceResult, storeResult])
 
     const sliceNodeId = nodeIdForLabel(sliceResult, 'auth slice')
     const storeNodeId = nodeIdForLabel(storeResult, 'store')
@@ -1959,7 +1921,7 @@ describe('js framework extraction contract', () => {
         expect.objectContaining({ source: sliceNodeId, target: storeNodeId, relation: 'registered_in_store' }),
       ]),
     )
-    expect(graph.edgeAttributes(sliceNodeId, storeNodeId)).toEqual(
+    expect(graph.uniqueEdgeBetween(sliceNodeId, storeNodeId).attributes).toEqual(
       expect.objectContaining({
         relation: 'registered_in_store',
       }),
@@ -2027,7 +1989,7 @@ describe('js framework extraction contract', () => {
 
     const sliceResult = extractJs(sliceFilePath)
     const storeResult = extractJs(storeFilePath)
-    const graph = build([sliceResult, storeResult], { directed: true })
+    const graph = buildGraph([sliceResult, storeResult])
 
     const sliceNodeId = nodeIdForLabel(sliceResult, 'auth slice')
     const storeNodeId = nodeIdForLabel(storeResult, 'store')
@@ -2042,7 +2004,7 @@ describe('js framework extraction contract', () => {
         expect.objectContaining({ source: sliceNodeId, target: storeNodeId, relation: 'registered_in_store' }),
       ]),
     )
-    expect(graph.edgeAttributes(sliceNodeId, storeNodeId)).toEqual(
+    expect(graph.uniqueEdgeBetween(sliceNodeId, storeNodeId).attributes).toEqual(
       expect.objectContaining({
         relation: 'registered_in_store',
       }),
@@ -2086,7 +2048,13 @@ describe('js framework extraction contract', () => {
     )
     expect(consumerResult.nodes).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: logoutActionNodeId, label: 'logout', source_file: sliceFilePath, framework_role: 'redux_action' }),
+        expect.objectContaining({
+          id: logoutActionNodeId,
+          label: 'logout',
+          source_file: sliceFilePath,
+          source_location: sliceResult.nodes.find((node) => node.id === logoutActionNodeId)?.source_location,
+          framework_role: 'redux_action',
+        }),
       ]),
     )
     expect(consumerResult.edges).toEqual(
@@ -2550,7 +2518,7 @@ describe('js framework extraction contract', () => {
     const moduleResult = extractJs(moduleFilePath)
     const controllerResult = extractJs(controllerFilePath)
     const serviceResult = extractJs(serviceFilePath)
-    const graph = build([moduleResult, controllerResult, serviceResult], { directed: true })
+    const graph = buildGraph([moduleResult, controllerResult, serviceResult])
 
     const moduleNodeId = nodeIdForLabel(moduleResult, 'AuthModule')
     const controllerNodeId = nodeIdForLabel(controllerResult, 'AuthController')
@@ -2560,7 +2528,6 @@ describe('js framework extraction contract', () => {
     const interceptorNodeId = nodeIdForLabel(controllerResult, 'AuditInterceptor')
     const profileRouteNodeId = nodeIdForLabel(controllerResult, 'GET /auth/profile')
     const loginRouteNodeId = nodeIdForLabel(controllerResult, 'POST /auth/login')
-
     expect([...moduleResult.nodes, ...controllerResult.nodes, ...serviceResult.nodes]).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ label: 'AuthModule', node_kind: 'class', framework: 'nestjs', framework_role: 'nest_module' }),
@@ -2604,14 +2571,14 @@ describe('js framework extraction contract', () => {
       ]),
     )
 
-    expect(graph.edgeAttributes(moduleNodeId, controllerNodeId)).toEqual(expect.objectContaining({ relation: 'declares_controller' }))
-    expect(graph.edgeAttributes(moduleNodeId, serviceNodeId)).toEqual(expect.objectContaining({ relation: 'provides' }))
-    expect(graph.edgeAttributes(controllerNodeId, serviceNodeId)).toEqual(expect.objectContaining({ relation: 'injects' }))
-    expect(graph.edgeAttributes(controllerNodeId, profileRouteNodeId)).toEqual(expect.objectContaining({ relation: 'handles_route' }))
-    expect(graph.edgeAttributes(profileRouteNodeId, controllerNodeId)).toEqual(expect.objectContaining({ relation: 'depends_on' }))
-    expect(graph.edgeAttributes(profileRouteNodeId, guardNodeId)).toEqual(expect.objectContaining({ relation: 'uses_guard' }))
-    expect(graph.edgeAttributes(profileRouteNodeId, pipeNodeId)).toEqual(expect.objectContaining({ relation: 'uses_pipe' }))
-    expect(graph.edgeAttributes(profileRouteNodeId, interceptorNodeId)).toEqual(expect.objectContaining({ relation: 'uses_interceptor' }))
+    expect(graph.uniqueEdgeBetween(moduleNodeId, controllerNodeId).attributes).toEqual(expect.objectContaining({ relation: 'declares_controller' }))
+    expect(graph.uniqueEdgeBetween(moduleNodeId, serviceNodeId).attributes).toEqual(expect.objectContaining({ relation: 'provides' }))
+    expect(graph.uniqueEdgeBetween(controllerNodeId, serviceNodeId).attributes).toEqual(expect.objectContaining({ relation: 'injects' }))
+    expect(graph.uniqueEdgeBetween(controllerNodeId, profileRouteNodeId).attributes).toEqual(expect.objectContaining({ relation: 'handles_route' }))
+    expect(graph.uniqueEdgeBetween(profileRouteNodeId, controllerNodeId).attributes).toEqual(expect.objectContaining({ relation: 'depends_on' }))
+    expect(graph.uniqueEdgeBetween(profileRouteNodeId, guardNodeId).attributes).toEqual(expect.objectContaining({ relation: 'uses_guard' }))
+    expect(graph.uniqueEdgeBetween(profileRouteNodeId, pipeNodeId).attributes).toEqual(expect.objectContaining({ relation: 'uses_pipe' }))
+    expect(graph.uniqueEdgeBetween(profileRouteNodeId, interceptorNodeId).attributes).toEqual(expect.objectContaining({ relation: 'uses_interceptor' }))
   })
 
   it('extracts next app-router, pages-router, middleware, and boundary semantics across files', () => {
@@ -2650,7 +2617,7 @@ describe('js framework extraction contract', () => {
     const pagesDocumentResult = extractJs(pagesDocumentFilePath)
     const pagesErrorResult = extractJs(pagesErrorFilePath)
     const pagesApiResult = extractJs(pagesApiFilePath)
-    const graph = build([
+    const graph = buildGraph([
       middlewareResult,
       layoutResult,
       pageResult,
@@ -2667,7 +2634,7 @@ describe('js framework extraction contract', () => {
       pagesDocumentResult,
       pagesErrorResult,
       pagesApiResult,
-    ], { directed: true })
+    ])
 
     const appRouteNodeId = nodeIdForLabel(pageResult, '/dashboard/[team]')
     const appPageNodeId = nodeIdForLabel(pageResult, 'page /dashboard/[team]')
@@ -2756,10 +2723,10 @@ describe('js framework extraction contract', () => {
       ]),
     )
 
-    expect(graph.edgeAttributes(appRouteNodeId, appPageNodeId)).toEqual(expect.objectContaining({ relation: 'depends_on' }))
-    expect(graph.edgeAttributes(appRouteNodeId, middlewareNodeId)).toEqual(expect.objectContaining({ relation: 'middleware' }))
-    expect(graph.edgeAttributes(apiGetNodeId, middlewareNodeId)).toEqual(expect.objectContaining({ relation: 'middleware' }))
-    expect(graph.edgeAttributes(pagesRouteNodeId, pagesAppNodeId)).toEqual(expect.objectContaining({ relation: 'depends_on' }))
+    expect(graph.uniqueEdgeBetween(appRouteNodeId, appPageNodeId).attributes).toEqual(expect.objectContaining({ relation: 'depends_on' }))
+    expect(graph.uniqueEdgeBetween(appRouteNodeId, middlewareNodeId).attributes).toEqual(expect.objectContaining({ relation: 'middleware' }))
+    expect(graph.uniqueEdgeBetween(apiGetNodeId, middlewareNodeId).attributes).toEqual(expect.objectContaining({ relation: 'middleware' }))
+    expect(graph.uniqueEdgeBetween(pagesRouteNodeId, pagesAppNodeId).attributes).toEqual(expect.objectContaining({ relation: 'depends_on' }))
   })
 
   it('does not duplicate pages-router API route handlers', () => {
@@ -2983,7 +2950,7 @@ describe('js framework extraction contract', () => {
       const moduleResult = extractJs(join(scratchDir, 'app.module.ts'))
       const featureResult = extractJs(join(scratchDir, 'feature', 'auth.service.ts'))
       const userResult = extractJs(join(scratchDir, 'users', 'auth.service.ts'))
-      const graph = build([moduleResult, featureResult, userResult], { directed: true })
+      const graph = buildGraph([moduleResult, featureResult, userResult])
       const providerNodes = moduleResult.nodes.filter((node) => node.label === 'AuthService' && node.framework_role === 'nest_provider')
 
       expect(providerNodes).toHaveLength(2)

@@ -3,8 +3,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { validateExtraction } from '../../src/contracts/extraction.js'
-import { buildFromJson } from '../../src/pipeline/build.js'
-import { toJson } from '../../src/pipeline/export.js'
+import { buildGraphFromExtraction } from '../../src/application/build-graph.js'
+import {
+  readCanonicalGraphFixture,
+  writeCanonicalGraphFixtureFromGraph,
+} from '../helpers/graph-artifact.js'
 
 const FIXTURES_DIR = join(process.cwd(), 'tests', 'fixtures')
 
@@ -52,11 +55,11 @@ describe('schema v2 extraction contracts', () => {
   })
 
   it('preserves layered metadata when building a graph', () => {
-    const graph = buildFromJson(loadFixture())
+    const graph = buildGraphFromExtraction(loadFixture())
     const hyperedges = Array.isArray(graph.graph.hyperedges) ? graph.graph.hyperedges : []
 
     expect(graph.nodeAttributes('n_auth_client').layer).toBe('base')
-    expect(graph.edgeAttributes('n_auth_client', 'n_oauth_concept').layer).toBe('semantic')
+    expect(graph.uniqueEdgeBetween('n_auth_client', 'n_oauth_concept').attributes.layer).toBe('semantic')
     expect(hyperedges).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -68,18 +71,13 @@ describe('schema v2 extraction contracts', () => {
   })
 
   it('preserves layered metadata in exported json', () => {
-    const graph = buildFromJson(loadFixture())
+    const graph = buildGraphFromExtraction(loadFixture())
     const tempDir = mkdtempSync(join(tmpdir(), 'madar-schema-v2-'))
 
     try {
       const outputPath = join(tempDir, 'graph.json')
-      toJson(graph, { 0: ['n_auth_client', 'n_oauth_concept'] }, outputPath)
-      const data = JSON.parse(readFileSync(outputPath, 'utf8')) as {
-        schema_version?: number
-        nodes: Array<Record<string, unknown>>
-        links: Array<Record<string, unknown>>
-        hyperedges: Array<Record<string, unknown>>
-      }
+      writeCanonicalGraphFixtureFromGraph(graph, { 0: ['n_auth_client', 'n_oauth_concept'] }, outputPath)
+      const data = readCanonicalGraphFixture(outputPath)
 
       expect(data.schema_version).toBe(2)
       expect(data.nodes).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'n_oauth_concept', layer: 'semantic' })]))

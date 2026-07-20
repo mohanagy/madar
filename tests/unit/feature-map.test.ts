@@ -1,11 +1,11 @@
 import { vi } from 'vitest'
 
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import { featureMap } from '../../src/runtime/feature-map.js'
 
 describe('featureMap', () => {
   it('returns communities, entry points, and starter files for a feature question', () => {
-    const graph = new KnowledgeGraph({ directed: true })
+    const graph = new KnowledgeGraph()
     graph.graph.root_path = '/workspace'
     graph.graph.community_labels = {
       0: 'Routes',

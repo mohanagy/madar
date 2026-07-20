@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { buildFromJson } from '../../src/pipeline/build.js'
+import { buildGraphFromExtraction } from '../../src/application/build-graph.js'
 import { buildSpi } from '../../src/pipeline/spi/build.js'
 import { projectSpiToExtraction } from '../../src/pipeline/spi/projector.js'
 import type { SemanticProgramIndex, SpiSymbol, SpiSymbolKind } from '../../src/pipeline/spi/types.js'
@@ -242,10 +242,10 @@ describe('SPI scoped roots reuse ancestor tsconfig project context', () => {
       }),
     ]))
 
-    const graph = buildFromJson({ ...extraction, root_path: engineRoot }, { directed: true })
+    const graph = buildGraphFromExtraction({ ...extraction, root_path: engineRoot })
 
-    expect(graph.edgeAttributes(projectedDirectExecutionService.id, projectedCreateOneResolverFactory.id).relation).toBe('injects')
-    expect(graph.edgeAttributes(projectedExecuteField.id, projectedCreate.id).relation).toBe('calls')
-    expect(graph.edgeAttributes(projectedCreate.id, projectedQueryRunnerExecute.id).relation).toBe('calls')
+    expect(graph.uniqueEdgeBetween(projectedDirectExecutionService.id, projectedCreateOneResolverFactory.id).attributes.relation).toBe('injects')
+    expect(graph.uniqueEdgeBetween(projectedExecuteField.id, projectedCreate.id).attributes.relation).toBe('calls')
+    expect(graph.uniqueEdgeBetween(projectedCreate.id, projectedQueryRunnerExecute.id).attributes.relation).toBe('calls')
   })
 })

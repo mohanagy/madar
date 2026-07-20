@@ -9,6 +9,7 @@ import { EXTRACTOR_CACHE_VERSION } from '../../src/pipeline/extract.js'
 import { compareRefs, loadOrBuildSnapshot, type CompareRefsDependencies, type SnapshotDependencies } from '../../src/infrastructure/time-travel.js'
 import type { TimeTravelResult } from '../../src/runtime/time-travel.js'
 import { resolveMadarWorkspace } from '../../src/shared/workspace.js'
+import { writeCanonicalGraphFixture } from '../helpers/graph-artifact.js'
 
 const createdRoots = new Set<string>()
 
@@ -47,27 +48,25 @@ function writeGraphArtifacts(root: string, relativeDir: string, schemaVersion = 
   mkdirSync(outputDir, { recursive: true })
   const graphPath = join(outputDir, 'graph.json')
   const reportPath = join(outputDir, 'GRAPH_REPORT.md')
-  writeFileSync(graphPath, JSON.stringify({
+  writeCanonicalGraphFixture(graphPath, {
     schema_version: schemaVersion,
-    directed: true,
     extractor_version: EXTRACTOR_CACHE_VERSION,
     nodes: [],
     edges: [],
-  }))
+  })
   writeFileSync(reportPath, '# report\n')
   return { graphPath, reportPath }
 }
 
-function writeCachedSnapshot(root: string, commitSha: string, schemaVersion = 2, directed = true): void {
+function writeCachedSnapshot(root: string, commitSha: string, schemaVersion = 2): void {
   const snapshotDir = join(root, 'out', 'time-travel', 'snapshots', commitSha)
   mkdirSync(snapshotDir, { recursive: true })
-  writeFileSync(join(snapshotDir, 'graph.json'), JSON.stringify({
+  writeCanonicalGraphFixture(join(snapshotDir, 'graph.json'), {
     schema_version: schemaVersion,
-    directed,
     extractor_version: EXTRACTOR_CACHE_VERSION,
     nodes: [],
     edges: [],
-  }))
+  })
   writeFileSync(join(snapshotDir, 'GRAPH_REPORT.md'), '# cached report\n')
   writeFileSync(join(snapshotDir, 'metadata.json'), JSON.stringify({
     commitSha,
@@ -144,18 +143,6 @@ describe('time travel infrastructure', () => {
     expect(result.fromCache).toBe(false)
     expect(existsSync(join(rootDir, 'out', 'time-travel', 'snapshots', 'commit-head-1', 'graph.json'))).toBe(true)
     expect(deps.git.removeWorktree).toHaveBeenCalledTimes(1)
-  })
-
-  it('rebuilds a cached legacy undirected snapshot before time-travel analysis', async () => {
-    const rootDir = createTestRoot('legacy-undirected')
-    writeCachedSnapshot(rootDir, 'cached-sha', 2, false)
-    const deps = createSnapshotDependencies(rootDir)
-
-    const result = await loadOrBuildSnapshot({ ref: 'main', refresh: false }, deps)
-
-    expect(result.fromCache).toBe(false)
-    expect(deps.generateGraph).toHaveBeenCalledTimes(1)
-    expect(deps.git.createDetachedWorktree).toHaveBeenCalledTimes(1)
   })
 
   it('forces a rebuild when refresh is true', async () => {

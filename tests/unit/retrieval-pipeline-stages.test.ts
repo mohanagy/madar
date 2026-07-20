@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { ContextPackCoverage, ContextPackExpandableRef } from '../../src/contracts/context-pack.js'
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import { assessMadarResponseEvidence } from '../../src/runtime/mcp-response-evidence.js'
 import { retrieveContext } from '../../src/runtime/retrieve.js'
 import {
@@ -47,7 +47,7 @@ const verificationTarget: ContextPackExpandableRef = {
 }
 
 const retrievalGraph = (): KnowledgeGraph => {
-  const graph = new KnowledgeGraph({ directed: true })
+  const graph = new KnowledgeGraph()
   graph.addNode('controller', {
     label: 'AuthController.login',
     source_file: 'src/auth/controller.ts',

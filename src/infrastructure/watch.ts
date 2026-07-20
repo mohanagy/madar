@@ -21,6 +21,7 @@ import { sidecarAwareFileFingerprint } from '../shared/binary-ingest-sidecar.js'
 import { collectGitVisibleFiles } from '../shared/git.js'
 import { isDiscoveryPathIgnored, loadMadarignorePatterns } from '../shared/source-discovery.js'
 import { resolveMadarOutputDirectory } from '../shared/workspace.js'
+import { loadGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
 import { generateGraph, type GenerateGraphOptions, type GenerateGraphResult } from './generate.js'
 import {
   buildGenerationPolicy,
@@ -93,7 +94,6 @@ export interface WatchLogger {
 export interface RebuildCodeOptions {
   followSymlinks?: boolean
   respectGitignore?: boolean
-  noHtml?: boolean
   indexingStrict?: IndexingStrictThresholds
   logger?: WatchLogger
 }
@@ -249,14 +249,10 @@ function sameFilesystemPath(left: string, right: string): boolean {
 }
 
 function graphBelongsToWorkspace(graphPath: string, workspaceRoot: string): boolean {
-  try {
-    const parsed = JSON.parse(readFileSync(graphPath, 'utf8')) as { root_path?: unknown }
-    return typeof parsed.root_path === 'string'
-      && parsed.root_path.trim().length > 0
-      && sameFilesystemPath(parsed.root_path, workspaceRoot)
-  } catch {
-    return false
-  }
+  const rootPath = loadGraphArtifact(graphPath).graph.root_path
+  return typeof rootPath === 'string'
+    && rootPath.trim().length > 0
+    && sameFilesystemPath(rootPath, workspaceRoot)
 }
 
 function canReuseFreshGraphOnStart(
@@ -268,12 +264,16 @@ function canReuseFreshGraphOnStart(
   const graphPath = join(outputDir, 'graph.json')
   const manifestPath = join(outputDir, 'manifest.json')
   if (
-    state.policy_match !== true
-    || !existsSync(graphPath)
+    !existsSync(graphPath)
     || !existsSync(manifestPath)
     || existsSync(join(outputDir, 'needs_update'))
-    || !graphBelongsToWorkspace(graphPath, workspaceRoot)
   ) {
+    return false
+  }
+  if (!graphBelongsToWorkspace(graphPath, workspaceRoot)) {
+    return false
+  }
+  if (state.policy_match !== true) {
     return false
   }
 
@@ -620,7 +620,6 @@ function rebuildCodeUnderLease(
       ...(canUpdate ? { update: true } : {}),
       ...(options.followSymlinks !== undefined ? { followSymlinks: options.followSymlinks } : {}),
       ...(options.respectGitignore !== undefined ? { respectGitignore: options.respectGitignore } : {}),
-      ...(options.noHtml !== undefined ? { noHtml: options.noHtml } : {}),
       ...(options.indexingStrict ? { indexingStrict: options.indexingStrict } : {}),
     })
 
@@ -735,7 +734,6 @@ function rebuildOptionsFromWatch(options: WatchOptions, logger: WatchLogger): Re
     logger,
     ...(options.followSymlinks !== undefined ? { followSymlinks: options.followSymlinks } : {}),
     ...(options.respectGitignore !== undefined ? { respectGitignore: options.respectGitignore } : {}),
-    ...(options.noHtml !== undefined ? { noHtml: options.noHtml } : {}),
     ...(options.indexingStrict ? { indexingStrict: options.indexingStrict } : {}),
   }
 }

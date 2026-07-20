@@ -5,6 +5,9 @@ import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
 
 import { startGraphServer } from '../../src/runtime/http-server.js'
+import { writeCanonicalGraphFixture } from '../helpers/graph-artifact.js'
+
+const GRAPH_REGENERATION_INSTRUCTION = 'Run `madar generate . --update` to regenerate it.'
 
 function withTempDir<T>(callback: (tempDir: string) => Promise<T> | T): Promise<T> | T {
   const tempDir = mkdtempSync(join(tmpdir(), 'madar-http-'))
@@ -31,9 +34,9 @@ describe('startGraphServer', () => {
       const outputDir = join(tempDir, 'out')
       const graphPath = join(outputDir, 'graph.json')
       mkdirSync(outputDir, { recursive: true })
-      writeFileSync(
+      writeCanonicalGraphFixture(
         graphPath,
-        `${JSON.stringify({
+        {
           semantic_anomalies: [
             {
               id: 'bridge-httpclient',
@@ -51,11 +54,9 @@ describe('startGraphServer', () => {
           ],
           links: [{ source: 'n1', target: 'n2', relation: 'calls', confidence: 'EXTRACTED', source_file: 'client.ts' }],
           hyperedges: [],
-        })}\n`,
-        'utf8',
+        },
       )
       writeFileSync(join(outputDir, 'GRAPH_REPORT.md'), '# report\n', 'utf8')
-      writeFileSync(join(outputDir, 'graph.html'), '<html><body>graph</body></html>\n', 'utf8')
 
       const handle = await startGraphServer({ graphPath, port: 0 })
 
@@ -98,14 +99,13 @@ describe('startGraphServer', () => {
         expect(graphResponse.headers.get('last-modified')).toBeTruthy()
         expect(graphResponse.headers.get('etag')).toBeTruthy()
 
-        writeFileSync(
+        writeCanonicalGraphFixture(
           graphPath,
-          `${JSON.stringify({
+          {
             nodes: [{ id: 'updated', label: 'UpdatedNode', source_file: 'updated.ts', file_type: 'code', community: 0 }],
             links: [],
             hyperedges: [],
-          })}\n`,
-          'utf8',
+          },
         )
 
         const updatedStats = await fetch(`${handle.url}stats`)
@@ -115,7 +115,9 @@ describe('startGraphServer', () => {
 
         const index = await fetch(handle.url)
         expect(index.status).toBe(200)
-        expect(await index.text()).toContain('graph')
+        const indexText = await index.text()
+        expect(indexText).toContain('graph.json')
+        expect(indexText).not.toContain('graph.html')
       } finally {
         await handle.close()
       }
@@ -127,14 +129,13 @@ describe('startGraphServer', () => {
       const outputDir = join(tempDir, 'out')
       const graphPath = join(outputDir, 'graph.json')
       mkdirSync(outputDir, { recursive: true })
-      writeFileSync(
+      writeCanonicalGraphFixture(
         graphPath,
-        `${JSON.stringify({
+        {
           nodes: [{ id: 'n1', label: 'HttpClient', source_file: 'client.ts', file_type: 'code', community: 0 }],
           links: [],
           hyperedges: [],
-        })}\n`,
-        'utf8',
+        },
       )
 
       const handle = await startGraphServer({ graphPath, port: 0 })
@@ -143,6 +144,25 @@ describe('startGraphServer', () => {
         const response = await fetch(`${handle.url}query?q=${'x'.repeat(2501)}`)
         expect(response.status).toBe(400)
         expect(await response.text()).toContain('exceeds maximum length')
+      } finally {
+        await handle.close()
+      }
+    })
+  })
+
+  test('returns the graph regeneration instruction for legacy artifacts', async () => {
+    await withTempDir(async (tempDir) => {
+      const graphPath = join(tempDir, 'out', 'graph.json')
+      mkdirSync(join(tempDir, 'out'), { recursive: true })
+      writeFileSync(graphPath, JSON.stringify({ nodes: [], links: [] }), 'utf8')
+      const handle = await startGraphServer({ graphPath, port: 0, logger: { log() {}, error() {} } })
+
+      try {
+        for (const endpoint of ['stats', 'query?q=auth', 'graph.json']) {
+          const response = await fetch(`${handle.url}${endpoint}`)
+          expect(response.status).toBe(500)
+          expect(await response.text()).toContain(GRAPH_REGENERATION_INSTRUCTION)
+        }
       } finally {
         await handle.close()
       }

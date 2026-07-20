@@ -10,7 +10,7 @@ new benchmark product and is not part of the Madar runtime.
   expected evidence paths, comparator protocols, measurements, human rubric,
   and anti-tuning rules.
 - `schemas/` validates the contract and baseline receipt in CI.
-- `record-baseline.mjs` records the current implementation without changing it.
+- `record-baseline.mjs` records the frozen `@lubab/madar@0.32.0` baseline without changing it. Its legacy CLI arguments are part of that version-pinned receipt protocol, not commands for the current candidate build.
 - The accepted receipt lives under `docs/core-reset/evidence/`; generated raw
   outputs and external repository contents are never committed.
 
@@ -158,10 +158,10 @@ applicable price rates. If caching cannot be disabled, token/cost results are
 qualified and latency attribution is invalid; missing cache accounting
 invalidates the cell instead of silently becoming zero.
 
-Refresh measurement uses three independent samples per graph arm and blocking
+Refresh measurement in the frozen v0.32.0 contract uses three independent samples per graph arm and blocking
 repository. The contract pins exact Documenso and Formbricks unified diffs,
 base/patch/result hashes, Graphify `update .`, Madar
-`generate . --update --no-html`, pre-state, acceptance, and failure behavior.
+`generate . --update --no-html`, pre-state, acceptance, and failure behavior. Current candidate CI invokes `madar generate` without that retired exporter flag; changing the frozen command would invalidate the accepted receipt's contract hash.
 Mutation application is outside the timer. Elapsed time uses a monotonic clock;
 build/refresh RSS is the maximum sampled aggregate of the root and full child
 process tree, not root-only `maxRSS`.

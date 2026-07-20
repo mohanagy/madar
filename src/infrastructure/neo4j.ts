@@ -1,6 +1,6 @@
 import { resolve } from 'node:path'
 
-import { type GraphAttributes, KnowledgeGraph } from '../contracts/graph.js'
+import { type GraphAttributes, KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
 import { getEnvValue } from '../shared/env.js'
 import { sanitizeLabel } from '../shared/security.js'
 
@@ -189,12 +189,13 @@ export async function pushGraphToNeo4j(graph: KnowledgeGraph, options: Neo4jPush
         })
       }
 
-      for (const [source, target, attributes] of graph.edgeEntries()) {
+      for (const [source, target, attributes, edgeId] of graph.edgeEntries()) {
         const relation = sanitizeNeo4jRelation(String(attributes.relation ?? 'RELATED_TO'))
-        await tx.run(`MATCH (a {id: $src}), (b {id: $tgt}) MERGE (a)-[r:${relation}]->(b) SET r += $props`, {
+        await tx.run(`MATCH (a {id: $src}), (b {id: $tgt}) MERGE (a)-[r:${relation} {id: $edgeId}]->(b) SET r += $props`, {
           src: source,
           tgt: target,
-          props: primitiveProperties(attributes),
+          edgeId,
+          props: { ...primitiveProperties(attributes), id: edgeId },
         })
       }
     })

@@ -3,9 +3,9 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, 
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
-import type { KnowledgeGraph } from '../contracts/graph.js'
+import { loadGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
+import type { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
 import { EXTRACTOR_CACHE_VERSION } from '../pipeline/extract.js'
-import { loadGraph } from '../runtime/serve.js'
 import { compareTimeTravelGraphs, type CompareTimeTravelGraphsOptions, type TimeTravelResult } from '../runtime/time-travel.js'
 import { validateGraphOutputPath } from '../shared/security.js'
 import { resolveMadarOutputDirectory, resolveMadarWorkspace } from '../shared/workspace.js'
@@ -130,21 +130,8 @@ function snapshotTempDir(rootDir: string, commitSha: string): string {
 }
 
 function readGraphSchemaVersion(graphPath: string): number | null {
-  try {
-    const parsed = JSON.parse(readFileSync(graphPath, 'utf8')) as { schema_version?: unknown }
-    return typeof parsed.schema_version === 'number' && Number.isFinite(parsed.schema_version) ? parsed.schema_version : null
-  } catch {
-    return null
-  }
-}
-
-function graphIsDirected(graphPath: string): boolean {
-  try {
-    const parsed = JSON.parse(readFileSync(graphPath, 'utf8')) as { directed?: unknown }
-    return parsed.directed === true
-  } catch {
-    return false
-  }
+  const schemaVersion = loadGraphArtifact(graphPath).graph.schema_version
+  return typeof schemaVersion === 'number' && Number.isFinite(schemaVersion) ? schemaVersion : null
 }
 
 function readSnapshotMetadata(rootDir: string, commitSha: string): SnapshotMetadata | null {
@@ -161,9 +148,13 @@ function readSnapshotMetadata(rootDir: string, commitSha: string): SnapshotMetad
 }
 
 function canReuseSnapshot(rootDir: string, commitSha: string): boolean {
-  const metadata = readSnapshotMetadata(rootDir, commitSha)
   const graphPath = snapshotGraphPath(rootDir, commitSha)
-  if (!metadata || !existsSync(graphPath)) {
+  if (!existsSync(graphPath)) {
+    return false
+  }
+  const graphSchemaVersion = readGraphSchemaVersion(graphPath)
+  const metadata = readSnapshotMetadata(rootDir, commitSha)
+  if (!metadata) {
     return false
   }
 
@@ -171,8 +162,7 @@ function canReuseSnapshot(rootDir: string, commitSha: string): boolean {
     metadata.commitSha === commitSha
     && metadata.extractorVersion === EXTRACTOR_CACHE_VERSION
     && metadata.schemaVersion !== null
-    && metadata.schemaVersion === readGraphSchemaVersion(graphPath)
-    && graphIsDirected(graphPath)
+    && metadata.schemaVersion === graphSchemaVersion
   )
 }
 
@@ -305,7 +295,7 @@ function resolvedCompareDependencies(dependencies: CompareRefsDependencies): Req
   const snapshotDependencies = resolvedSnapshotDependencies(dependencies)
   return {
     ...snapshotDependencies,
-    loadGraph: dependencies.loadGraph ?? loadGraph,
+    loadGraph: dependencies.loadGraph ?? loadGraphArtifact,
     compareTimeTravelGraphs: dependencies.compareTimeTravelGraphs ?? compareTimeTravelGraphs,
   }
 }
@@ -339,7 +329,7 @@ export async function loadOrBuildSnapshot(input: SnapshotRequest, dependencies: 
       const transientWorkspace = resolveMadarWorkspace(materializedWorktree)
       transientArtifactRoot = transientWorkspace.isLinkedWorktree ? transientWorkspace.artifactRoot : null
 
-      const generated = await deps.generateGraph(materializedWorktree, { extractionMode: 'auto', noHtml: true })
+      const generated = await deps.generateGraph(materializedWorktree, { extractionMode: 'auto' })
       const extractorVersion = deps.loadGraphExtractorVersion(generated.graphPath)
       return persistSnapshot(deps.rootDir, input.ref, commitSha, generated, extractorVersion)
     } catch (error) {

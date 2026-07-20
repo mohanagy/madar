@@ -8,7 +8,7 @@
 //                          ↓
 //                    ExtractionData
 //                          ↓
-//          buildFromJson() → cluster() → analyze() → toJson()
+//     buildGraphFromExtraction() → cluster() → analyze() → writeGraphArtifact()
 //                          ↓
 //                       graph.json
 //

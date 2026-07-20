@@ -11,29 +11,32 @@ Madar is executing an accepted Core Reset. The roadmap is outcome-driven: work a
 - [Removal manifest](core-reset/removal-manifest.yml) — keep, rebuild, move, delete, and defer decisions
 - [Scorecard](core-reset/scorecard.md) — technical and business evidence gates
 
-The RFC is **accepted**. Scope and baseline has passed with a [committed evidence receipt](core-reset/evidence/baseline-v0.32.0.json). Directed multigraph is **Ready**, but implementation does not start until its own accepted work item is moved to `In progress`; every later replacement phase remains blocked by its predecessor.
+The RFC is **accepted**. Scope and baseline has passed with a [committed evidence receipt](core-reset/evidence/baseline-v0.32.0.json). Directed multigraph is the only **In progress** phase and is still under merge verification. Canonical TypeScript/JavaScript index and every later replacement phase remain blocked until that PR merges with green checks and resolved review threads.
 
-## Ready — directed multigraph
+## In progress — directed multigraph
 
-The next authorized work item must be limited to the `directed-multigraph` removal-manifest entry:
+The `directed-multigraph` removal-manifest entry delivered:
 
 1. Preserve multiple typed edges between the same ordered node pair.
 2. Give nodes and edges deterministic IDs and preserve direction and provenance through serialization.
 3. Replace the owned graph path under the accepted destination rather than creating a permanent V1/V2 split.
 4. Delete the predecessor graph path when the phase gate passes, with net-negative production LOC.
 
-The observed failures and exact comparison contract are frozen in the [Scope/Baseline scorecard](core-reset/scorecard.md). No canonical-index, retrieval, delivery, or other later-phase work may enter this phase.
+The five predecessor files and obsolete exporter surfaces are absent on the working branch. Current measurements are 178 production TypeScript files / 93,832 LOC with a `+1,193 / -4,127 / net -2,934` source delta and no dependency additions. Final CI and review gates are still open; the frozen baseline receipt remains unchanged.
+
+## Blocked — canonical TypeScript/JavaScript index
+
+After the Directed multigraph PR merges, the next authorized work item is limited to the `canonical-typescript-index` removal-manifest entry. It must write canonical graph facts directly, satisfy the labelled language/framework fixtures, and make legacy augmentation removable. Until then, canonical indexing, incremental refresh, retrieval replacement, and delivery remain blocked.
 
 ## Next — dependency-ordered replacement
 
-Only one technical phase may be active at a time. After Directed multigraph passes, the remaining order is:
+Only one technical phase may be active at a time. After Directed multigraph merges and passes, the remaining order is:
 
-1. Canonical TypeScript/JavaScript indexer and deletion of legacy extraction.
-2. Full-rebuild-equivalent incremental refresh.
-3. Generic evidence-path retrieval and deletion of the context/governance stack.
-4. Thin MCP, CLI, Claude Code, and Codex delivery.
-5. Move evaluation tooling outside runtime and reduce the npm package.
-6. Publish a beta under npm tag `next` for external validation.
+1. Full-rebuild-equivalent incremental refresh.
+2. Generic evidence-path retrieval and deletion of the context/governance stack.
+3. Thin MCP, CLI, Claude Code, and Codex delivery.
+4. Move evaluation tooling outside runtime and reduce the npm package.
+5. Publish a beta under npm tag `next` for external validation.
 
 Every replacement issue has an exact deletion contract. New and old implementations may coexist only temporarily on the reset integration branch; the old path cannot survive the phase.
 

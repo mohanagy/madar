@@ -41,7 +41,6 @@ describe('generation policy contract', () => {
 
   test('has a stable authenticated fingerprint and rejects tampering', () => {
     const policy = createGenerationPolicy({
-      directed: true,
       use_spi: false,
       respect_gitignore: false,
       follow_symlinks: false,
@@ -66,7 +65,6 @@ describe('generation policy contract', () => {
 
   test('records the explicit v2 extraction mode and reads v1 policies as strict modes', () => {
     const legacyV1 = createGenerationPolicy({
-      directed: true,
       use_spi: true,
       respect_gitignore: false,
       follow_symlinks: false,
@@ -116,24 +114,22 @@ describe('generation policy contract', () => {
     withTempDir((tempDir) => {
       writeFileSync(join(tempDir, 'main.ts'), 'export const value = 1\n', 'utf8')
       const result = generateGraph(tempDir, {
-        directed: false,
         extractionMode: 'auto',
         includeDocs: false,
-        noHtml: true,
         indexingStrict: { maxFailed: 1, maxUnsupported: 2 },
       })
-      const rawGraph = JSON.parse(readFileSync(result.graphPath, 'utf8')) as { generation_policy?: unknown }
-      const graphPolicy = parseGenerationPolicy(rawGraph.generation_policy)
+      const graphPolicy = parseGenerationPolicy(loadGraph(result.graphPath).graph.generation_policy)
       const manifestPolicy = loadManifestMetadata(join(result.outputDir, 'manifest.json')).generation_policy
 
       expect(graphPolicy).not.toBeNull()
       expect(manifestPolicy).toEqual(graphPolicy)
       expect(graphPolicy?.settings).toMatchObject({
-        directed: false,
         extraction_mode: 'auto',
         include_documents: false,
         indexing_strict: { max_failed: 1, max_unsupported: 2 },
       })
+      expect(graphPolicy?.settings).not.toHaveProperty('directed')
+      expect(loadGraph(result.graphPath).isDirected()).toBe(true)
       expect(loadGraph(result.graphPath).graph.generation_policy).toEqual(graphPolicy)
       expect(readStoredGenerationPolicy(result.graphPath, join(result.outputDir, 'manifest.json'))).toEqual(graphPolicy)
 
@@ -152,15 +148,15 @@ describe('generation policy contract', () => {
       writeFileSync(join(tempDir, 'main.ts'), 'export const main = true\n', 'utf8')
       writeFileSync(join(tempDir, 'ignored.ts'), 'export const ignored = true\n', 'utf8')
       writeFileSync(join(tempDir, '.madarignore'), 'ignored.ts\n', 'utf8')
-      generateGraph(tempDir, { includeDocs: false, noHtml: true })
+      generateGraph(tempDir, { includeDocs: false })
 
       writeFileSync(join(tempDir, '.madarignore'), '', 'utf8')
-      const exclusionsChanged = generateGraph(tempDir, { update: true, includeDocs: false, noHtml: true })
+      const exclusionsChanged = generateGraph(tempDir, { update: true, includeDocs: false })
       expect(exclusionsChanged.notes.join('\n')).toContain('Generation policy changed')
       expect(exclusionsChanged.extractedFiles).toBe(4)
 
       writeFileSync(join(tempDir, 'README.md'), '# Included now\n', 'utf8')
-      const documentsChanged = generateGraph(tempDir, { update: true, includeDocs: true, noHtml: true })
+      const documentsChanged = generateGraph(tempDir, { update: true, includeDocs: true })
       expect(documentsChanged.notes.join('\n')).toContain('Generation policy changed')
       expect(documentsChanged.extractedFiles).toBe(3)
     })

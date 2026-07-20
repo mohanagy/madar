@@ -1,8 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
+
+import { writeCanonicalGraphFixture } from '../helpers/graph-artifact.js'
 
 import type { ContextPackCoverage } from '../../src/contracts/context-pack.js'
 import { buildMadarResponseEvidence } from '../../src/runtime/mcp-response-evidence.js'
@@ -266,7 +268,7 @@ describe('mcp-response-evidence', () => {
     const graphPath = join(root, 'out', 'graph.json')
     try {
       mkdirSync(dirname(graphPath), { recursive: true })
-      writeFileSync(graphPath, JSON.stringify({
+      writeCanonicalGraphFixture(graphPath, {
         discovery_safety: {
           version: 1,
           summary: {
@@ -283,7 +285,7 @@ describe('mcp-response-evidence', () => {
             { path: 'src/auth/token-loader.ts', kind: 'unreadable', reason: 'unreadable_path' },
           ],
         },
-      }), 'utf8')
+      })
 
       const evidence = buildMadarResponseEvidence({
         graphPath,
@@ -591,7 +593,7 @@ describe('mcp-response-evidence', () => {
     const graphPath = join(root, 'git-artifacts', 'worktree', 'out', 'graph.json')
     try {
       mkdirSync(dirname(graphPath), { recursive: true })
-      writeFileSync(graphPath, JSON.stringify({ root_path: sourceRoot }), 'utf8')
+      writeCanonicalGraphFixture(graphPath, { root_path: sourceRoot })
 
       const evidence = buildMadarResponseEvidence({
         graphPath,

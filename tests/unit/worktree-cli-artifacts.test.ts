@@ -6,10 +6,10 @@ import { dirname, join } from 'node:path'
 import { describe, expect, test } from 'vitest'
 
 import { parseCompareArgs, parseProofReportArgs, parseReviewCompareArgs } from '../../src/cli/parser.js'
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import { runProofReportCommand } from '../../src/infrastructure/proof-report.js'
-import { toJson } from '../../src/pipeline/export.js'
 import { resolveMadarWorkspace } from '../../src/shared/workspace.js'
+import { writeCanonicalGraphFixtureFromGraph } from '../helpers/graph-artifact.js'
 
 function git(directory: string, args: string[]): void {
   execFileSync('git', args, { cwd: directory, stdio: 'pipe' })
@@ -42,7 +42,7 @@ describe('linked-worktree CLI artifact routing', () => {
         node_kind: 'variable',
         file_type: 'code',
       })
-      toJson(graph, { 0: ['entry'] }, workspace.graphPath)
+      writeCanonicalGraphFixtureFromGraph(graph, { 0: ['entry'] }, workspace.graphPath)
 
       process.chdir(linked)
 

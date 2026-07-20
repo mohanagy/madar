@@ -15,7 +15,7 @@ import type {
   ContextPackWorkflowCenter,
   ContextPackRecommendedFirstRead,
 } from '../contracts/context-pack.js'
-import type { KnowledgeGraph } from '../contracts/graph.js'
+import type { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
 import type { TaskContextPlan } from '../contracts/task-context-plan.js'
 import type { PackCliOptions } from '../cli/parser.js'
 import { classifyTaskContract, compileContextPack, estimateContextPackEntryTokens, type ContextPackNodeCandidate } from '../runtime/context-pack.js'

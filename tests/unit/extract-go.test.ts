@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 
-import { buildFromJson } from '../../src/pipeline/build.js'
+import { buildGraphFromExtraction } from '../../src/application/build-graph.js'
 import { extract } from '../../src/pipeline/extract.js'
 import { normalizeAssertionPath } from './helpers/platform.js'
 
@@ -123,7 +123,7 @@ describe('Go semantic extraction', () => {
   })
 
   it('keeps duplicate main.go files and main() symbols distinct in the built graph', () => {
-    const graph = buildFromJson(extract(FIXTURE_FILES), { directed: true })
+    const graph = buildGraphFromExtraction(extract(FIXTURE_FILES), { rootPath: FIXTURE_ROOT })
     const nodes = [...graph.nodeEntries()].map(([id, attributes]) => ({
       id,
       label: String(attributes.label ?? ''),

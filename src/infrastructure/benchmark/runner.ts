@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 
-import { KnowledgeGraph } from '../../contracts/graph.js'
+import { KnowledgeGraph } from '../../domain/graph/directed-multigraph.js'
 import type { ContextSessionDiagnostics, ContextSessionState } from '../../contracts/context-session.js'
 import { type RetrieveResult, retrieveContext } from '../../runtime/retrieve.js'
 import { QUERY_TOKEN_ESTIMATOR } from '../../runtime/serve.js'

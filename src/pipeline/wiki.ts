@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { KnowledgeGraph } from '../contracts/graph.js'
+import { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
 
 export interface WikiOptions {
   communityLabels?: Record<number, string>
@@ -18,7 +18,7 @@ export function safeFilename(name: string): string {
   return candidate.slice(0, 200)
 }
 
-type ConnectionDirection = 'incoming' | 'outgoing' | 'undirected'
+type ConnectionDirection = 'incoming' | 'outgoing'
 
 interface NodeConnection {
   neighborId: string
@@ -27,14 +27,13 @@ interface NodeConnection {
 }
 
 function nodeConnections(graph: KnowledgeGraph, nodeId: string): NodeConnection[] {
-  const directionForUndirected = 'undirected' as const
   const connections: NodeConnection[] = []
 
   for (const [source, target, attributes] of graph.edgeEntries()) {
     if (source === nodeId) {
       connections.push({
         neighborId: target,
-        direction: graph.isDirected() ? 'outgoing' : directionForUndirected,
+        direction: 'outgoing',
         attributes,
       })
       continue
@@ -43,7 +42,7 @@ function nodeConnections(graph: KnowledgeGraph, nodeId: string): NodeConnection[
     if (target === nodeId) {
       connections.push({
         neighborId: source,
-        direction: graph.isDirected() ? 'incoming' : directionForUndirected,
+        direction: 'incoming',
         attributes,
       })
     }
@@ -53,13 +52,7 @@ function nodeConnections(graph: KnowledgeGraph, nodeId: string): NodeConnection[
 }
 
 function connectionPrefix(direction: ConnectionDirection): string {
-  if (direction === 'incoming') {
-    return '← '
-  }
-  if (direction === 'outgoing') {
-    return '→ '
-  }
-  return ''
+  return direction === 'incoming' ? '← ' : '→ '
 }
 
 export function crossCommunityLinks(graph: KnowledgeGraph, nodes: string[], ownCommunityId: number, labels: Record<number, string>): Array<[string, number]> {

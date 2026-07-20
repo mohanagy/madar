@@ -463,8 +463,6 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --update             rebuild incrementally from the manifest, re-extracting changed files only',
     '    --cluster-only       re-cluster an existing graph.json without re-extraction',
     '    --watch              keep watching after the initial build',
-    '    --directed           preserve source → target edges (default; retained for compatibility)',
-    '    --undirected         visualization-only legacy mode; directional analysis is unavailable',
     '    --follow-symlinks    include in-root symlink targets',
     '    --respect-gitignore  exclude files ignored by Git (falls back outside Git repositories)',
     '    --legacy             use only the built-in legacy extractor',
@@ -476,13 +474,7 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --debounce S         watch debounce seconds (default 3)',
     '    --include-docs       include .md/.txt/.rst document files (excluded by default)',
     '    --docs               generate module documentation in out/docs/',
-    '    --no-html            skip graph.html generation',
     '    --wiki               also export a crawlable wiki to out/wiki',
-    '    --obsidian           also export an Obsidian vault',
-    '    --obsidian-dir DIR   custom Obsidian vault path (implies --obsidian)',
-    '    --svg                also export graph.svg for static embeds',
-    '    --graphml            also export graph.graphml for graph tools',
-    '    --neo4j              also export cypher.txt for Neo4j import',
     '    --neo4j-push URI     also push the generated graph directly to Neo4j',
     '    --neo4j-user USER    Neo4j username (defaults to NEO4J_USER or neo4j)',
     '    --neo4j-password PW  Neo4j password (or set NEO4J_PASSWORD/.env)',
@@ -493,7 +485,6 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --follow-symlinks    include in-root symlink targets',
     '    --respect-gitignore  exclude files ignored by Git (falls back outside Git repositories)',
     '    --debounce S         watch debounce seconds (default 3)',
-    '    --no-html            skip graph.html generation during the initial build',
     '  serve [graph.json]    serve graph artifacts over HTTP or stdio',
     '    --host H             host interface (default 127.0.0.1)',
     '    --port N             port (default 4173; use 0 for a random port)',
@@ -633,23 +624,15 @@ function isGenerateLikeArgument(argument: string): boolean {
     argument === '--update' ||
     argument === '--cluster-only' ||
     argument === '--watch' ||
-    argument === '--directed' ||
-    argument === '--undirected' ||
     argument === '--follow-symlinks' ||
     argument === '--respect-gitignore' ||
     argument === '--legacy' ||
     argument === '--spi' ||
-    argument === '--no-html' ||
     argument === '--wiki' ||
-    argument === '--obsidian' ||
-    argument === '--svg' ||
-    argument === '--graphml' ||
-    argument === '--neo4j' ||
     argument === '--neo4j-push' ||
     argument === '--neo4j-user' ||
     argument === '--neo4j-password' ||
     argument === '--neo4j-database' ||
-    argument === '--obsidian-dir' ||
     argument === '--debounce' ||
     argument === '--include-docs' ||
     argument === '--docs' ||
@@ -660,7 +643,6 @@ function isGenerateLikeArgument(argument: string): boolean {
     argument.startsWith('--neo4j-user=') ||
     argument.startsWith('--neo4j-password=') ||
     argument.startsWith('--neo4j-database=') ||
-    argument.startsWith('--obsidian-dir=') ||
     argument.startsWith('--debounce=') ||
     argument.startsWith('--max-indexing-failed=') ||
     argument.startsWith('--max-indexing-unsupported=')
@@ -718,28 +700,8 @@ function formatGenerateSummary(result: GenerateGraphResult): string {
     }
   }
 
-  if (result.htmlPath) {
-    lines.push(`- HTML: ${result.htmlPath}`)
-  }
-
   if (result.wikiPath) {
     lines.push(`- Wiki: ${result.wikiPath}`)
-  }
-
-  if (result.obsidianPath) {
-    lines.push(`- Obsidian: ${result.obsidianPath}`)
-  }
-
-  if (result.svgPath) {
-    lines.push(`- SVG: ${result.svgPath}`)
-  }
-
-  if (result.graphmlPath) {
-    lines.push(`- GraphML: ${result.graphmlPath}`)
-  }
-
-  if (result.cypherPath) {
-    lines.push(`- Neo4j Cypher: ${result.cypherPath}`)
   }
 
   if (result.docsPath) {
@@ -1066,16 +1028,9 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
       const result = dependencies.generateGraph(options.path, {
         update: options.update,
         clusterOnly: options.clusterOnly,
-        directed: options.directed,
         followSymlinks: options.followSymlinks,
         respectGitignore: options.respectGitignore,
-        noHtml: options.noHtml,
         wiki: options.wiki,
-        obsidian: options.obsidian,
-        obsidianDir: options.obsidianDir,
-        svg: options.svg,
-        graphml: options.graphml,
-        neo4j: options.neo4j,
         includeDocs: options.includeDocs,
         docs: options.docs,
         ...(options.clusterOnly ? {} : { extractionMode: options.extractionMode }),
@@ -1115,7 +1070,6 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         await dependencies.watchGraph(options.path, options.debounceSeconds, {
           followSymlinks: options.followSymlinks,
           respectGitignore: options.respectGitignore,
-          noHtml: options.noHtml,
           ...(options.strictIndexing
             ? {
                 indexingStrict: {
@@ -1136,14 +1090,12 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         extractionMode: 'auto',
         followSymlinks: options.followSymlinks,
         respectGitignore: options.respectGitignore,
-        noHtml: options.noHtml,
         onProgress: (step) => io.log(formatProgress(step)),
       })
       io.log(formatGenerateSummary(result))
       await dependencies.watchGraph(options.path, options.debounceSeconds, {
         followSymlinks: options.followSymlinks,
         respectGitignore: options.respectGitignore,
-        noHtml: options.noHtml,
         logger: io,
       })
       return 0

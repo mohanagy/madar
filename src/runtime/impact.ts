@@ -1,6 +1,5 @@
-import { KnowledgeGraph } from '../contracts/graph.js'
+import { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
 import { relativizeSourceFile } from '../shared/source-path.js'
-import { requireDirectedGraph } from './direction.js'
 import { communitiesFromGraph } from './serve.js'
 
 const MAX_IMPACT_DEPTH = 5
@@ -119,15 +118,16 @@ function impactNeighbors(graph: KnowledgeGraph, nodeId: string, edgeTypes: strin
   const candidates = new Map<string, TraversalCandidate>()
 
   for (const dependentId of graph.predecessors(nodeId)) {
-    const relation = edgeRelation(graph, dependentId, nodeId)
-    if (matchesEdgeType(relation, edgeTypes)) {
+    const relation = matchingEdgeRelation(graph, dependentId, nodeId, edgeTypes)
+    if (relation) {
       candidates.set(`pred:${dependentId}`, { neighborId: dependentId, relation })
     }
   }
 
   for (const successorId of graph.successors(nodeId)) {
-    const relation = edgeRelation(graph, nodeId, successorId)
-    if (forwardImpactRelation(relation) && matchesEdgeType(relation, edgeTypes)) {
+    const relation = graph.relationKindsBetween(nodeId, successorId)
+      .find((candidate) => forwardImpactRelation(candidate) && matchesEdgeType(candidate, edgeTypes))
+    if (relation) {
       candidates.set(`succ:${successorId}`, { neighborId: successorId, relation })
     }
   }
@@ -166,16 +166,15 @@ function parseCommunityId(raw: unknown): number | null {
   return null
 }
 
-function edgeRelation(graph: KnowledgeGraph, source: string, target: string): string {
-  try {
-    return String(graph.edgeAttributes(source, target).relation ?? 'related_to')
-  } catch {
-    try {
-      return String(graph.edgeAttributes(target, source).relation ?? 'related_to')
-    } catch {
-      return 'related_to'
-    }
-  }
+function matchingEdgeRelation(
+  graph: KnowledgeGraph,
+  source: string,
+  target: string,
+  edgeTypes: string[] | undefined,
+): string | undefined {
+  const relations = graph.relationKindsBetween(source, target)
+  if (!edgeTypes || edgeTypes.length === 0) return relations[0]
+  return edgeTypes.find((relation) => relations.includes(relation))
 }
 
 function matchesEdgeType(relation: string, edgeTypes: string[] | undefined): boolean {
@@ -190,8 +189,6 @@ export function analyzeImpact(
   communityLabels: Record<number, string>,
   options: ImpactOptions,
 ): ImpactResult {
-  requireDirectedGraph(graph, 'Impact analysis')
-
   const maxDepth = Math.min(options.depth ?? 3, MAX_IMPACT_DEPTH)
   const targetNodeId = findNodeByLabel(graph, options.label)
   const rootPath = typeof graph.graph.root_path === 'string' ? graph.graph.root_path : undefined
@@ -368,8 +365,6 @@ export function callChains(
   maxHops = 8,
   edgeTypes: string[] = ['calls', 'imports_from'],
 ): string[][] {
-  requireDirectedGraph(graph, 'Call-chain analysis')
-
   const sourceNodeId = findNodeByLabel(graph, source)
   const targetNodeId = findNodeByLabel(graph, target)
 
@@ -393,13 +388,13 @@ export function callChains(
       return
     }
 
-    for (const neighbor of graph.neighbors(current)) {
+    for (const neighbor of graph.successors(current)) {
       if (visited.has(neighbor)) {
         continue
       }
 
-      const relation = edgeRelation(graph, current, neighbor)
-      if (!matchesEdgeType(relation, edgeTypes)) {
+      const relation = matchingEdgeRelation(graph, current, neighbor, edgeTypes)
+      if (!relation) {
         continue
       }
 

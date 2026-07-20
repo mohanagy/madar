@@ -19,11 +19,10 @@ export interface GenerationPolicyStrictThresholdsV1 {
 
 /**
  * Every setting here can change the graph corpus, extraction semantics, or
- * whether a graph is publishable. Output-only choices such as HTML rendering
- * deliberately do not belong in this contract.
+ * whether a graph is publishable. Output-only presentation choices deliberately
+ * do not belong in this contract.
  */
 export interface GenerationPolicySettingsV1 {
-  directed: boolean
   use_spi: boolean
   respect_gitignore: boolean
   follow_symlinks: boolean
@@ -46,7 +45,6 @@ export interface GenerationPolicyV1 {
  * policy enables SPI; `extraction_mode` is the authoritative setting.
  */
 export interface GenerationPolicySettingsV2 {
-  directed: boolean
   use_spi: boolean
   extraction_mode: ExtractionMode
   respect_gitignore: boolean
@@ -86,7 +84,6 @@ function isGenerationPolicySettingsV2(
 
 function canonicalPolicyDocument(settings: GenerationPolicySettingsV1 | GenerationPolicySettingsV2): string {
   const baseSettings = {
-    directed: settings.directed,
     use_spi: settings.use_spi,
     respect_gitignore: settings.respect_gitignore,
     follow_symlinks: settings.follow_symlinks,
@@ -130,8 +127,7 @@ function isExtractionMode(value: unknown): value is ExtractionMode {
 
 function hasValidSharedSettings(settings: Record<string, unknown>): settings is Record<string, unknown> & GenerationPolicySettingsV1 {
   const strict = settings.indexing_strict
-  return typeof settings.directed === 'boolean'
-    && typeof settings.use_spi === 'boolean'
+  return typeof settings.use_spi === 'boolean'
     && typeof settings.respect_gitignore === 'boolean'
     && typeof settings.follow_symlinks === 'boolean'
     && typeof settings.include_documents === 'boolean'
@@ -168,7 +164,6 @@ export function parseGenerationPolicy(value: unknown): GenerationPolicy | null {
   }
 
   const sharedSettings = {
-    directed: settings.directed,
     use_spi: settings.use_spi,
     respect_gitignore: settings.respect_gitignore,
     follow_symlinks: settings.follow_symlinks,

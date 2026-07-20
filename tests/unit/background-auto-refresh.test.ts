@@ -115,7 +115,7 @@ describe('background auto-refresh', () => {
       const refresh = startGraphAutoRefreshInBackground(
         root,
         0.02,
-        { noHtml: true, logger: { log() {}, error() {} } },
+        { logger: { log() {}, error() {} } },
         { watchModuleUrl: pathToFileURL(watchModulePath) },
       )
       refresh.stop()
@@ -142,7 +142,7 @@ describe('background auto-refresh', () => {
       const refresh = startGraphAutoRefreshInBackground(
         root,
         0.02,
-        { noHtml: true, logger: { log() {}, error() {} } },
+        { logger: { log() {}, error() {} } },
         { watchModuleUrl: pathToFileURL(watchModulePath) },
       )
 
@@ -181,7 +181,7 @@ describe('background auto-refresh', () => {
       outputText += chunk.toString('utf8')
     })
     writeFileSync(join(root, 'main.ts'), 'export const value = 1\n', 'utf8')
-    generateGraph(root, { noHtml: true })
+    generateGraph(root, {  })
     writeFileSync(watchModulePath, SLOW_WATCH_MODULE, 'utf8')
 
     input.write(`${[
@@ -268,7 +268,7 @@ describe('background auto-refresh', () => {
       outputText += chunk.toString('utf8')
     })
     writeFileSync(join(root, 'main.ts'), 'export const value = 1\n', 'utf8')
-    generateGraph(root, { noHtml: true })
+    generateGraph(root, {  })
     const policy = readStoredGenerationPolicy(graphPath, join(root, 'out', 'manifest.json'))
     if (!policy) {
       throw new Error('Expected generated policy metadata')
@@ -399,7 +399,7 @@ describe('background auto-refresh', () => {
       outputText += chunk.toString('utf8')
     })
     writeFileSync(join(root, 'main.ts'), 'export const value = 1\n', 'utf8')
-    generateGraph(root, { noHtml: true })
+    generateGraph(root, {  })
     publishReadyWatcherState(root, graphPath)
     input.end([
       JSON.stringify({ id: 21, method: 'initialize' }),
@@ -448,7 +448,7 @@ describe('background auto-refresh', () => {
       const refresh = startGraphAutoRefreshInBackground(
         root,
         0.02,
-        { noHtml: true, logger: { log() {}, error(message) { errors.push(String(message)) } } },
+        { logger: { log() {}, error(message) { errors.push(String(message)) } } },
         { watchModuleUrl: pathToFileURL(watchModulePath) },
       )
       rmSync(outputDir, { recursive: true, force: true })

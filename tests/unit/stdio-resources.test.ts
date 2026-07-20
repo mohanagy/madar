@@ -3,22 +3,21 @@ import { mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:
 import { join, resolve } from 'node:path'
 
 import { emitResourceNotifications } from '../../src/runtime/stdio/resources.js'
+import { writeCanonicalGraphFixture } from '../helpers/graph-artifact.js'
 
 function createGraphFixtureRoot(): string {
   const parentDir = resolve('out', 'test-runtime')
   mkdirSync(parentDir, { recursive: true })
   const root = mkdtempSync(join(parentDir, 'madar-stdio-resources-'))
-  writeFileSync(
+  writeCanonicalGraphFixture(
     join(root, 'graph.json'),
-    JSON.stringify({
+    {
       nodes: [{ id: 'auth', label: 'AuthService', source_file: 'auth.ts', source_location: '1', file_type: 'code', community: 0 }],
       edges: [],
       hyperedges: [],
-    }),
-    'utf8',
+    },
   )
   writeFileSync(join(root, 'GRAPH_REPORT.md'), '# Graph Report\n', 'utf8')
-  writeFileSync(join(root, 'graph.html'), '<!doctype html><title>madar</title>', 'utf8')
   return root
 }
 
@@ -40,7 +39,7 @@ describe('stdio resource helpers', () => {
       }
 
       emitResourceNotifications(output, graphPath, sessionState)
-      unlinkSync(join(root, 'graph.html'))
+      unlinkSync(join(root, 'GRAPH_REPORT.md'))
       emitResourceNotifications(output, graphPath, sessionState)
 
       const messages = outputText

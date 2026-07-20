@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import { runContextPromptCommand, type ContextPromptCommandDependencies } from '../../src/infrastructure/context-prompt-command.js'
 
 function expectGraphFreshnessContract(value: unknown): void {

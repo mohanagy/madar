@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import type { ContextPackCoverage, ContextPackExpandableRef } from '../../src/contracts/context-pack.js'
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import { recoverContextPackResult } from '../../src/runtime/context-pack-recovery.js'
 import type { RetrieveResult } from '../../src/runtime/retrieve.js'
 
@@ -122,7 +122,7 @@ function result(input: {
 }
 
 function recoveryGraph(): KnowledgeGraph {
-  const graph = new KnowledgeGraph({ directed: true })
+  const graph = new KnowledgeGraph()
   graph.addNode('primary', { label: 'PrimaryController.run', source_file: 'src/primary.ts', file_type: 'code' })
   graph.addNode('supporting', { label: 'SupportingStore.save', source_file: 'src/supporting.ts', file_type: 'code' })
   graph.addNode('alternate', { label: 'AlternateVerifier.check', source_file: 'src/alternate.ts', file_type: 'code' })

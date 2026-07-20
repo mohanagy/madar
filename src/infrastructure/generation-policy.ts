@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { basename, isAbsolute, relative, resolve, sep } from 'node:path'
 
+import { loadGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
 import {
   createGenerationPolicy,
   parseGenerationPolicy,
@@ -15,7 +16,6 @@ import { loadManifestMetadata } from '../pipeline/detect.js'
 import { DEFAULT_HARD_IGNORE_GLOBS } from '../shared/source-discovery.js'
 
 export interface BuildGenerationPolicyOptions {
-  directed?: boolean
   /**
    * `auto` uses SPI where it has a source-language capability and otherwise
    * falls back to the legacy extractor. Explicit modes stay strict.
@@ -30,7 +30,6 @@ export interface BuildGenerationPolicyOptions {
 }
 
 export interface StoredPolicyGenerationOptions {
-  directed: boolean
   extractionMode: ExtractionMode
   respectGitignore: boolean
   followSymlinks: boolean
@@ -150,7 +149,6 @@ export function buildGenerationPolicy(
   const strict = options.indexingStrict
   const extractionMode = resolveExtractionMode(options)
   return createGenerationPolicy({
-    directed: options.directed !== false,
     use_spi: extractionMode !== 'legacy',
     extraction_mode: extractionMode,
     respect_gitignore: options.respectGitignore === true,
@@ -168,7 +166,6 @@ export function buildGenerationPolicy(
 export function generationOptionsFromPolicy(policy: GenerationPolicy): StoredPolicyGenerationOptions {
   const strict = policy.settings.indexing_strict
   return {
-    directed: policy.settings.directed,
     extractionMode: policy.version === 1
       ? policy.settings.use_spi ? 'spi' : 'legacy'
       : policy.settings.extraction_mode,
@@ -182,12 +179,10 @@ export function generationOptionsFromPolicy(policy: GenerationPolicy): StoredPol
 }
 
 export function readGraphGenerationPolicy(graphPath: string): GenerationPolicy | null {
-  try {
-    const parsed = JSON.parse(readFileSync(graphPath, 'utf8')) as { generation_policy?: unknown }
-    return parseGenerationPolicy(parsed.generation_policy)
-  } catch {
+  if (!existsSync(graphPath)) {
     return null
   }
+  return parseGenerationPolicy(loadGraphArtifact(graphPath).graph.generation_policy)
 }
 
 export function readStoredGenerationPolicy(graphPath: string, manifestPath?: string): GenerationPolicy | null {

@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
-import { build } from '../../src/pipeline/build.js'
+import { buildGraph } from '../../src/application/build-graph.js'
 import { buildImplementationPackGuidance } from '../../src/runtime/implementation-pack.js'
 
 const tempFixtureRoots: string[] = []
@@ -28,7 +28,7 @@ function buildQuotedTestPathGraph(testFilePath: string) {
     },
   }))
 
-  const graph = build(
+  const graph = buildGraph(
     [
       {
         schema_version: 1,
@@ -43,10 +43,8 @@ function buildQuotedTestPathGraph(testFilePath: string) {
         ],
       },
     ],
-    { directed: true },
+    { rootPath: root },
   )
-
-  graph.graph.root_path = root
   return graph
 }
 
@@ -63,7 +61,7 @@ function buildWorkflowCenterGraph() {
     },
   }))
 
-  const graph = build(
+  const graph = buildGraph(
     [
       {
         schema_version: 1,
@@ -89,10 +87,8 @@ function buildWorkflowCenterGraph() {
         ],
       },
     ],
-    { directed: true },
+    { rootPath: root },
   )
-
-  graph.graph.root_path = root
   return graph
 }
 
@@ -109,7 +105,7 @@ function buildLikelyTargetsGraph() {
     },
   }))
 
-  const graph = build(
+  const graph = buildGraph(
     [
       {
         schema_version: 1,
@@ -132,10 +128,8 @@ function buildLikelyTargetsGraph() {
         ],
       },
     ],
-    { directed: true },
+    { rootPath: root },
   )
-
-  graph.graph.root_path = root
   return graph
 }
 
@@ -152,7 +146,7 @@ function buildIndirectSeedExpansionGraph() {
     },
   }))
 
-  const graph = build(
+  const graph = buildGraph(
     [
       {
         schema_version: 1,
@@ -175,10 +169,8 @@ function buildIndirectSeedExpansionGraph() {
         ],
       },
     ],
-    { directed: true },
+    { rootPath: root },
   )
-
-  graph.graph.root_path = root
   return graph
 }
 
@@ -195,7 +187,7 @@ function buildFrameworkWorkflowOwnerGraph() {
     },
   }))
 
-  const graph = build(
+  const graph = buildGraph(
     [
       {
         schema_version: 1,
@@ -223,10 +215,8 @@ function buildFrameworkWorkflowOwnerGraph() {
         ],
       },
     ],
-    { directed: true },
+    { rootPath: root },
   )
-
-  graph.graph.root_path = root
   return graph
 }
 
@@ -243,7 +233,7 @@ function buildServerActionPreferenceGraph() {
     },
   }))
 
-  const graph = build(
+  const graph = buildGraph(
     [
       {
         schema_version: 1,
@@ -265,10 +255,8 @@ function buildServerActionPreferenceGraph() {
         ],
       },
     ],
-    { directed: true },
+    { rootPath: root },
   )
-
-  graph.graph.root_path = root
   return graph
 }
 
@@ -388,7 +376,7 @@ describe('buildImplementationPackGuidance workflow-center scoring (#295)', () =>
       },
     }))
 
-    const graph = build(
+    const graph = buildGraph(
       [
         {
           schema_version: 1,
@@ -399,9 +387,8 @@ describe('buildImplementationPackGuidance workflow-center scoring (#295)', () =>
           edges: [],
         },
       ],
-      { directed: true },
+      { rootPath: root },
     )
-    graph.graph.root_path = root
 
     const retrieval = {
       question: 'update invoice retry workflow',
@@ -1056,7 +1043,7 @@ describe('buildImplementationPackGuidance likely edit/test targets (#296)', () =
       },
     }))
 
-    const graph = build(
+    const graph = buildGraph(
       [
         {
           schema_version: 1,
@@ -1069,9 +1056,8 @@ describe('buildImplementationPackGuidance likely edit/test targets (#296)', () =
           ],
         },
       ],
-      { directed: true },
+      { rootPath: root },
     )
-    graph.graph.root_path = root
 
     const retrieval = {
       question: 'adjust retry window logic',
@@ -1132,7 +1118,7 @@ describe('buildImplementationPackGuidance likely edit/test targets (#296)', () =
       },
     }))
 
-    const graph = build(
+    const graph = buildGraph(
       [
         {
           schema_version: 1,
@@ -1145,9 +1131,8 @@ describe('buildImplementationPackGuidance likely edit/test targets (#296)', () =
           ],
         },
       ],
-      { directed: true },
+      { rootPath: root },
     )
-    graph.graph.root_path = root
 
     const retrieval = {
       question: 'change profile update validation',

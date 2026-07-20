@@ -34,73 +34,28 @@ const PLATFORM_KIND_BY_INSTALL_PLATFORM: Record<SkillInstallPlatform, PlatformKi
   windows: 'windows',
 }
 
-const FRONTMATTER: Record<PlatformKind, string> = {
-  default: `---
+const SKILL_FRONTMATTER = `---
 name: ${SKILL_NAME}
-description: any input (code, docs, papers, images, media) → knowledge graph → clustered communities → HTML + JSON + audit report
+description: any input (code, docs, papers, images, media) → directed knowledge multigraph → clustered communities → canonical JSON + audit report
 trigger: ${SKILL_COMMAND}
----`,
-  codex: `---
-name: ${SKILL_NAME}
-description: any input (code, docs, papers, images, media) → knowledge graph → clustered communities → HTML + JSON + audit report
-trigger: ${SKILL_COMMAND}
----`,
-  gemini: `---
-name: ${SKILL_NAME}
-description: any input (code, docs, papers, images, media) → knowledge graph → clustered communities → HTML + JSON + audit report
-trigger: ${SKILL_COMMAND}
----`,
-  aider: `---
-name: ${SKILL_NAME}
-description: any input (code, docs, papers, images, media) → knowledge graph → clustered communities → HTML + JSON + audit report
-trigger: ${SKILL_COMMAND}
----`,
-  opencode: `---
-name: ${SKILL_NAME}
-description: any input (code, docs, papers, images, media) → knowledge graph → clustered communities → HTML + JSON + audit report
-trigger: ${SKILL_COMMAND}
----`,
-  claw: `---
-name: ${SKILL_NAME}
-description: any input (code, docs, papers, images, media) → knowledge graph → clustered communities → HTML + JSON + audit report
-trigger: ${SKILL_COMMAND}
----`,
-  droid: `---
-name: ${SKILL_NAME}
-description: any input (code, docs, papers, images, media) → knowledge graph → clustered communities → HTML + JSON + audit report
-trigger: ${SKILL_COMMAND}
----`,
-  trae: `---
-name: ${SKILL_NAME}
-description: any input (code, docs, papers, images, media) → knowledge graph → clustered communities → HTML + JSON + audit report
-trigger: ${SKILL_COMMAND}
----`,
-  windows: `---
-name: ${SKILL_NAME}
-description: any input (code, docs, papers, images, media) → knowledge graph → clustered communities → HTML + JSON + audit report
-trigger: ${SKILL_COMMAND}
----`,
-}
+---`
+const FRONTMATTER = Object.fromEntries(
+  [...new Set(Object.values(PLATFORM_KIND_BY_INSTALL_PLATFORM))].map((kind) => [kind, SKILL_FRONTMATTER]),
+) as Record<PlatformKind, string>
 
 function commonOverview(): string {
   return `# ${SKILL_COMMAND}
 
-Turn any folder of files into a navigable knowledge graph with community detection, an honest audit trail, and three outputs: interactive HTML, GraphRAG-ready JSON, and a plain-language GRAPH_REPORT.md.
+Turn any folder of files into a directed knowledge multigraph with community detection, an honest audit trail, a canonical graph.json artifact, and a plain-language GRAPH_REPORT.md.
 
 ## Usage
 
 ${CODE_BLOCK_START}
 ${SKILL_COMMAND}
 ${SKILL_COMMAND} <path>
-${SKILL_COMMAND} <path> --mode deep
 ${SKILL_COMMAND} <path> --update
 ${SKILL_COMMAND} <path> --cluster-only
-${SKILL_COMMAND} <path> --no-viz
-${SKILL_COMMAND} <path> --svg
-${SKILL_COMMAND} <path> --graphml
-${SKILL_COMMAND} <path> --neo4j
 ${SKILL_COMMAND} <path> --neo4j-push bolt://localhost:7687
-${SKILL_COMMAND} <path> --mcp
 ${SKILL_COMMAND} <path> --watch
 ${SKILL_COMMAND} query "<question>"
 ${SKILL_COMMAND} query "<question>" --dfs
@@ -255,8 +210,6 @@ Use the Agent tool once per chunk and launch every worker in the same response. 
 function extractionRules(): string {
   return `### Step 3 - Extract entities and relationships
 
-Before starting, note whether ${CODE_SPAN_START}--mode deep${CODE_SPAN_END} was given. Pass that state through every semantic worker.
-
 This step has two parts: structural extraction (deterministic, free) and semantic extraction (LLM, costs tokens).
 
 Run Part A (AST) and Part B (semantic) in parallel whenever possible.
@@ -374,19 +327,11 @@ After merging AST + semantic extraction:
 
 Write concise 2-5 word labels for each community and regenerate the report with those labels.
 
-### Step 6 - HTML, optional Obsidian, and optional extra exports
+### Step 6 - Publish the canonical graph
 
-Generate HTML by default unless ${CODE_SPAN_START}--no-viz${CODE_SPAN_END} was given.
-Generate Obsidian only when explicitly requested.
+Write the versioned graph.json artifact only after clustering and analysis complete. Madar graphs always preserve source → target direction and parallel evidence-bearing edges. Community detection may use an undirected connectivity projection internally, but stored graph facts are never rewritten as undirected edges.
 
-Generated code graphs preserve source → target edge direction by default. Community detection still uses an undirected connectivity view. Use ${CODE_SPAN_START}--undirected${CODE_SPAN_END} only for legacy visualization output; impact, call-chain, and directional slicing require a directed graph.
-
-Optional exports:
-- ${CODE_SPAN_START}--neo4j${CODE_SPAN_END} → Cypher file
-- ${CODE_SPAN_START}--neo4j-push${CODE_SPAN_END} → direct push
-- ${CODE_SPAN_START}--svg${CODE_SPAN_END} → SVG
-- ${CODE_SPAN_START}--graphml${CODE_SPAN_END} → GraphML
-- ${CODE_SPAN_START}--mcp${CODE_SPAN_END} → start the TypeScript stdio runtime with a minimal MCP-compatible prompt/resource/tool surface
+Use ${CODE_SPAN_START}--neo4j-push${CODE_SPAN_END} only when a direct external Neo4j copy is explicitly requested.
 
 ### Step 7 - Benchmark and cleanup
 
@@ -436,7 +381,6 @@ function honestyRules(): string {
 - Never skip the corpus size warning.
 - Always surface token cost.
 - Show raw cohesion scores.
-- Warn before attempting HTML visualization on graphs larger than 5,000 nodes.
 - Never install or invoke Python, pip, a legacy Python package, or a deleted reference checkout as a fallback.
 `
 }

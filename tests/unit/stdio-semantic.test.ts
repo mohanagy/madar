@@ -4,12 +4,14 @@ import { join } from 'node:path'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { writeCanonicalGraphFixture } from '../helpers/graph-artifact.js'
+
 function createGraphFixtureRoot(): string {
   const root = mkdtempSync(join(tmpdir(), 'madar-stdio-semantic-'))
   mkdirSync(root, { recursive: true })
-  writeFileSync(
+  writeCanonicalGraphFixture(
     join(root, 'graph.json'),
-    JSON.stringify({
+    {
       nodes: [
         {
           id: 'ledger_repo',
@@ -32,8 +34,7 @@ function createGraphFixtureRoot(): string {
       ],
       edges: [],
       hyperedges: [],
-    }),
-    'utf8',
+    },
   )
   return root
 }

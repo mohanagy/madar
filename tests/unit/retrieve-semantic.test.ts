@@ -1,4 +1,4 @@
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import { describe, expect, it, vi } from 'vitest'
 
 describe('retrieve semantic path', () => {
@@ -93,7 +93,7 @@ describe('retrieve semantic path', () => {
     }))
 
     const { retrieveContextAsync } = await import('../../src/runtime/retrieve.js')
-    const graph = new KnowledgeGraph({ directed: true })
+    const graph = new KnowledgeGraph()
     graph.addNode('auth_service', {
       label: 'AuthService.login',
       file_type: 'code',

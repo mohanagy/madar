@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import { handleStdioRequest } from '../../src/runtime/stdio-server.js'
 import { estimateQueryTokens } from '../../src/runtime/serve.js'
+import { writeCanonicalGraphFixture } from '../helpers/graph-artifact.js'
 
 function createRepo(options: { reviewHeavy?: boolean } = {}): string {
   const root = mkdtempSync(join(tmpdir(), 'madar-stdio-pr-impact-'))
@@ -145,10 +146,9 @@ function createRepo(options: { reviewHeavy?: boolean } = {}): string {
   for (const fixtureFile of reviewFixtureFiles) {
     writeFileSync(join(root, fixtureFile.relativePath), fixtureFile.lines.join('\n'), 'utf8')
   }
-  writeFileSync(
+  writeCanonicalGraphFixture(
     join(root, 'out', 'graph.json'),
-    JSON.stringify({
-      directed: true,
+    {
       community_labels: {
         '0': 'Auth Layer',
         '1': 'API Layer',
@@ -293,8 +293,7 @@ function createRepo(options: { reviewHeavy?: boolean } = {}): string {
       ],
       hyperedges: [],
       root_path: root,
-    }),
-    'utf8',
+    },
   )
 
   execFileSync('git', ['init', '-b', 'main'], { cwd: root, stdio: 'pipe' })

@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto'
 import { basename, dirname, isAbsolute, resolve } from 'node:path'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 
-import type { KnowledgeGraph } from '../contracts/graph.js'
+import { loadGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
+import type { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
 import { classifyFile } from '../pipeline/detect.js'
 import type { RetrieveResult } from './retrieve.js'
 import {
@@ -241,25 +242,7 @@ function indexedSourceFilesFromGraph(
 }
 
 function indexedSourceFilesFromGraphJson(graphPath: string): IndexedSourceFiles {
-  const parsed = JSON.parse(readFileSync(graphPath, 'utf8')) as {
-    root_path?: unknown
-    graph_build_freshness?: unknown
-    nodes?: Array<{ source_file?: unknown }>
-  }
-  const rootPath = typeof parsed.root_path === 'string' && parsed.root_path.trim().length > 0
-    ? parsed.root_path.trim()
-    : dirname(graphPath)
-  const sourceFiles = [...new Set(
-    (Array.isArray(parsed.nodes) ? parsed.nodes : [])
-      .map((node) => typeof node?.source_file === 'string' ? normalizeFreshnessSourceFile(rootPath, node.source_file) : '')
-      .filter((sourceFile) => sourceFile.length > 0),
-  )]
-
-  return {
-    rootPath,
-    sourceFiles,
-    buildFreshness: graphBuildFreshnessFromValue(parsed.graph_build_freshness),
-  }
+  return indexedSourceFilesFromGraph(loadGraphArtifact(graphPath), graphPath)
 }
 
 function resolveIndexedSourcePath(rootPath: string, sourceFile: string): string {
@@ -422,6 +405,10 @@ function graphVersionForPath(graphPath: string): { graphVersion: string; mtimeMs
     }
   }
 
+  // Validate the canonical artifact before publishing freshness metadata. A
+  // legacy or corrupt graph must not look fresh merely because its bytes are
+  // stable.
+  loadGraphArtifact(safeGraphPath)
   const graphVersion = createHash('sha256').update(readFileSync(safeGraphPath)).digest('hex').slice(0, VERSION_HASH_LENGTH)
   graphVersionCache.set(safeGraphPath, {
     graphVersion,

@@ -1,12 +1,13 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { writeGraphArtifact } from '../../src/adapters/filesystem/graph-artifact.js'
+import { deserializeGraphArtifact } from '../../src/domain/graph/artifact.js'
 import { godNodes, suggestQuestions, surprisingConnections } from '../../src/pipeline/analyze.js'
-import { buildFromJson } from '../../src/pipeline/build.js'
+import { buildGraphFromExtraction } from '../../src/application/build-graph.js'
 import { cluster, scoreAll } from '../../src/pipeline/cluster.js'
 import { detect } from '../../src/pipeline/detect.js'
-import { toHtml, toJson, toObsidian } from '../../src/pipeline/export.js'
 import { extract } from '../../src/pipeline/extract.js'
 import { generate } from '../../src/pipeline/report.js'
 
@@ -34,7 +35,7 @@ function runPipeline(tempDir: string) {
   expect(extraction.nodes.length).toBeGreaterThan(0)
   expect(extraction.edges.length).toBeGreaterThan(0)
 
-  const graph = buildFromJson(extraction)
+  const graph = buildGraphFromExtraction(extraction, { rootPath: FIXTURES_DIR })
   expect(graph.numberOfNodes()).toBeGreaterThan(0)
   expect(graph.numberOfEdges()).toBeGreaterThan(0)
 
@@ -73,29 +74,24 @@ function runPipeline(tempDir: string) {
   expect(report.length).toBeGreaterThan(100)
 
   const jsonPath = join(tempDir, 'graph.json')
-  toJson(graph, communities, jsonPath)
+  writeGraphArtifact(graph, jsonPath)
   const jsonData = JSON.parse(readFileSync(jsonPath, 'utf8'))
+  expect(jsonData).toMatchObject({ schema: 'madar.graph', version: 1, directed: true })
   expect(jsonData).toHaveProperty('nodes')
-  expect(jsonData).toHaveProperty('links')
+  expect(jsonData).toHaveProperty('edges')
   for (const node of jsonData.nodes as Array<Record<string, unknown>>) {
-    expect(node).toHaveProperty('community')
+    expect(node).toHaveProperty('id')
+    expect(node).toHaveProperty('attributes')
   }
-  for (const edge of jsonData.links as Array<Record<string, unknown>>) {
-    expect(edge).not.toHaveProperty('_src')
-    expect(edge).not.toHaveProperty('_tgt')
-    expect(edge).not.toHaveProperty('confidence_score')
+  for (const edge of jsonData.edges as Array<Record<string, unknown>>) {
+    expect(edge).toHaveProperty('id')
+    expect(edge).toHaveProperty('source')
+    expect(edge).toHaveProperty('target')
+    expect(edge).toHaveProperty('attributes')
   }
-
-  const htmlPath = join(tempDir, 'graph.html')
-  toHtml(graph, communities, htmlPath, labels)
-  const html = readFileSync(htmlPath, 'utf8')
-  expect(html).toContain('vis-network')
-  expect(html).toContain('RAW_NODES')
-
-  const obsidianPath = join(tempDir, 'obsidian')
-  const noteCount = toObsidian(graph, communities, obsidianPath, labels, cohesion)
-  expect(noteCount).toBeGreaterThan(0)
-  expect(existsSync(join(obsidianPath, '.obsidian', 'graph.json'))).toBe(true)
+  const loaded = deserializeGraphArtifact(readFileSync(jsonPath, 'utf8'))
+  expect(loaded.numberOfNodes()).toBe(graph.numberOfNodes())
+  expect(loaded.numberOfEdges()).toBe(graph.numberOfEdges())
 
   return {
     detection,

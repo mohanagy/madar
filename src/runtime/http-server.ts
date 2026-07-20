@@ -5,7 +5,8 @@ import { dirname, join } from 'node:path'
 import { validateGraphPath } from '../shared/security.js'
 import { graphFreshnessHeaders, graphFreshnessMetadata, resourceFreshnessHeaders, resourceFreshnessMetadata } from './freshness.js'
 import { communitiesFromGraph, getCommunity, getNeighbors, getNode, graphStats, loadGraph, queryGraph, semanticAnomaliesSummary, shortestPath } from './serve.js'
-import type { KnowledgeGraph } from '../contracts/graph.js'
+import type { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
+import { GRAPH_ARTIFACT_REGENERATE_MESSAGE } from '../domain/graph/artifact.js'
 
 export interface ServeLogger {
   log(message?: string): void
@@ -58,10 +59,6 @@ function sendJson(response: ServerResponse, statusCode: number, body: unknown, h
   response.end(`${JSON.stringify(body, null, 2)}\n`)
 }
 
-function readUtf8File(filePath: string): string {
-  return readFileSync(filePath, 'utf8')
-}
-
 function renderIndex(outputDir: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -78,7 +75,6 @@ function renderIndex(outputDir: string): string {
   <h1>madar runtime</h1>
   <p>Serving graph artifacts from <code>${outputDir}</code>.</p>
   <ul>
-    <li><a href="/graph.html">graph.html</a></li>
     <li><a href="/graph.json">graph.json</a></li>
     <li><a href="/GRAPH_REPORT.md">GRAPH_REPORT.md</a></li>
     <li><a href="/stats">/stats</a></li>
@@ -95,10 +91,6 @@ function renderIndex(outputDir: string): string {
   </ul>
 </body>
 </html>`
-}
-
-function graphOutputDirectory(graphPath: string): string {
-  return dirname(validateGraphPath(graphPath))
 }
 
 function parseQueryText(value: string | null, field: string, maxLength: number): string {
@@ -218,7 +210,7 @@ export async function startGraphServer(options: ServeGraphOptions = {}): Promise
   const host = options.host ?? '127.0.0.1'
   const port = parsePort(options.port)
   const graphPath = validateGraphPath(options.graphPath ?? 'out/graph.json')
-  const outputDir = graphOutputDirectory(graphPath)
+  const outputDir = dirname(graphPath)
   const graph = createGraphLoader(graphPath)
   const rateLimitState = new Map<string, { count: number; resetAt: number }>()
 
@@ -233,24 +225,13 @@ export async function startGraphServer(options: ServeGraphOptions = {}): Promise
       const graphHeaders = graphFreshnessHeaders(graphFreshnessMetadata(graphPath))
 
       if (url.pathname === '/' || url.pathname === '/index.html') {
-        const htmlPath = join(outputDir, 'graph.html')
-        const html = existsSync(htmlPath) ? readUtf8File(htmlPath) : renderIndex(outputDir)
-        sendText(response, 200, html, 'text/html; charset=utf-8', graphHeaders)
-        return
-      }
-
-      if (url.pathname === '/graph.html') {
-        const htmlPath = join(outputDir, 'graph.html')
-        if (!existsSync(htmlPath)) {
-          sendText(response, 404, 'graph.html not found. Re-run madar generate without --no-html.')
-          return
-        }
-        sendText(response, 200, readUtf8File(htmlPath), 'text/html; charset=utf-8', resourceFreshnessHeaders(resourceFreshnessMetadata(graphPath, htmlPath)))
+        sendText(response, 200, renderIndex(outputDir), 'text/html; charset=utf-8', graphHeaders)
         return
       }
 
       if (url.pathname === '/graph.json') {
-        sendText(response, 200, readUtf8File(graphPath), 'application/json; charset=utf-8', resourceFreshnessHeaders(resourceFreshnessMetadata(graphPath, graphPath)))
+        loadGraph(graphPath)
+        sendText(response, 200, readFileSync(graphPath, 'utf8'), 'application/json; charset=utf-8', resourceFreshnessHeaders(resourceFreshnessMetadata(graphPath, graphPath)))
         return
       }
 
@@ -260,7 +241,7 @@ export async function startGraphServer(options: ServeGraphOptions = {}): Promise
           sendText(response, 404, 'GRAPH_REPORT.md not found.')
           return
         }
-        sendText(response, 200, readUtf8File(reportPath), 'text/markdown; charset=utf-8', resourceFreshnessHeaders(resourceFreshnessMetadata(graphPath, reportPath)))
+        sendText(response, 200, readFileSync(reportPath, 'utf8'), 'text/markdown; charset=utf-8', resourceFreshnessHeaders(resourceFreshnessMetadata(graphPath, reportPath)))
         return
       }
 
@@ -351,7 +332,7 @@ export async function startGraphServer(options: ServeGraphOptions = {}): Promise
       }
 
       output.error(`[madar serve] Request failed: ${message}`)
-      sendText(response, 500, 'Internal server error')
+      sendText(response, 500, message.includes(GRAPH_ARTIFACT_REGENERATE_MESSAGE) ? message : 'Internal server error')
     }
   })
 

@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 
 function buildBeforeGraph(): KnowledgeGraph {
-  const graph = new KnowledgeGraph({ directed: true })
+  const graph = new KnowledgeGraph()
 
   graph.addNode('web', { label: 'WebApp', source_file: '/src/web.ts', node_kind: 'module', file_type: 'code', community: 2 })
   graph.addNode('mobile', { label: 'MobileClient', source_file: '/src/mobile.ts', node_kind: 'module', file_type: 'code', community: 2 })
@@ -12,11 +12,11 @@ function buildBeforeGraph(): KnowledgeGraph {
   graph.addNode('session', { label: 'SessionStore', source_file: '/src/session.ts', node_kind: 'class', file_type: 'code', community: 0 })
   graph.addNode('db', { label: 'DatabaseConnection', source_file: '/src/db.ts', node_kind: 'class', file_type: 'code', community: 1 })
 
-  graph.addEdge('web', 'api', { relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/web.ts' })
-  graph.addEdge('mobile', 'api', { relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/mobile.ts' })
-  graph.addEdge('api', 'auth', { relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/api.ts' })
-  graph.addEdge('auth', 'session', { relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth.ts' })
-  graph.addEdge('session', 'db', { relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/session.ts' })
+  graph.addEdge('web', 'api', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'src/web.ts' })
+  graph.addEdge('mobile', 'api', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'src/mobile.ts' })
+  graph.addEdge('api', 'auth', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'src/api.ts' })
+  graph.addEdge('auth', 'session', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'src/auth.ts' })
+  graph.addEdge('session', 'db', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'src/session.ts' })
 
   graph.graph.community_labels = {
     0: 'Auth Layer',
@@ -28,7 +28,7 @@ function buildBeforeGraph(): KnowledgeGraph {
 }
 
 function buildAfterGraph(): KnowledgeGraph {
-  const graph = new KnowledgeGraph({ directed: true })
+  const graph = new KnowledgeGraph()
 
   graph.addNode('web', { label: 'WebApp', source_file: '/src/web.ts', node_kind: 'module', file_type: 'code', community: 2 })
   graph.addNode('mobile', { label: 'MobileClient', source_file: '/src/mobile.ts', node_kind: 'module', file_type: 'code', community: 2 })
@@ -38,11 +38,11 @@ function buildAfterGraph(): KnowledgeGraph {
   graph.addNode('db', { label: 'DatabaseConnection', source_file: '/src/db.ts', node_kind: 'class', file_type: 'code', community: 1 })
   graph.addNode('guide', { label: 'MigrationGuide', source_file: '/docs/migration.md', node_kind: 'document', file_type: 'document', community: 3 })
 
-  graph.addEdge('web', 'api', { relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/web.ts' })
-  graph.addEdge('mobile', 'api', { relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/mobile.ts' })
-  graph.addEdge('api', 'auth', { relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/api.ts' })
-  graph.addEdge('auth', 'session', { relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth.ts' })
-  graph.addEdge('session', 'db', { relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/session.ts' })
+  graph.addEdge('web', 'api', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'src/web.ts' })
+  graph.addEdge('mobile', 'api', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'src/mobile.ts' })
+  graph.addEdge('api', 'auth', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'src/api.ts' })
+  graph.addEdge('auth', 'session', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'src/auth.ts' })
+  graph.addEdge('session', 'db', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'src/session.ts' })
 
   graph.graph.community_labels = {
     0: 'Auth Layer',
@@ -55,25 +55,25 @@ function buildAfterGraph(): KnowledgeGraph {
 }
 
 function buildUnlabeledBeforeGraph(): KnowledgeGraph {
-  const graph = new KnowledgeGraph({ directed: true })
+  const graph = new KnowledgeGraph()
 
   graph.addNode('web', { label: 'WebApp', source_file: '/src/web.ts', node_kind: 'module', file_type: 'code', community: 2 })
   graph.addNode('gateway', { source_file: '/src/gateway.ts', node_kind: 'function', file_type: 'code', community: 1 })
 
-  graph.addEdge('web', 'gateway', { relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/web.ts' })
+  graph.addEdge('web', 'gateway', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'src/web.ts' })
 
   return graph
 }
 
 function buildUnlabeledAfterGraph(): KnowledgeGraph {
-  const graph = new KnowledgeGraph({ directed: true })
+  const graph = new KnowledgeGraph()
 
   graph.addNode('web', { label: 'WebApp', source_file: '/src/web.ts', node_kind: 'module', file_type: 'code', community: 2 })
   graph.addNode('gateway', { source_file: '/src/gateway.ts', node_kind: 'function', file_type: 'code', community: 1 })
   graph.addNode('mobile', { label: 'MobileClient', source_file: '/src/mobile.ts', node_kind: 'module', file_type: 'code', community: 2 })
 
-  graph.addEdge('web', 'gateway', { relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/web.ts' })
-  graph.addEdge('mobile', 'gateway', { relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/mobile.ts' })
+  graph.addEdge('web', 'gateway', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'src/web.ts' })
+  graph.addEdge('mobile', 'gateway', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'src/mobile.ts' })
 
   return graph
 }

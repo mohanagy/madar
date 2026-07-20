@@ -1,4 +1,4 @@
-import type { KnowledgeGraph } from '../../contracts/graph.js'
+import type { KnowledgeGraph } from '../../domain/graph/directed-multigraph.js'
 import type {
   ContextPackRetrievalPlanDetail,
   RepositoryVocabularySource,
@@ -1354,8 +1354,9 @@ function diversifyAnchors(
         .flatMap((nodeId) => {
           const anchor = rankedById.get(nodeId)
           if (!anchor) return []
-          const relation = String(graph.edgeAttributes(nodeId, boundaryOwner.id).relation ?? '')
-          return /^(?:calls|dispatches|emits|enqueues|invokes|publishes|triggers)$/.test(relation)
+          const isBoundaryCall = graph.relationKindsBetween(nodeId, boundaryOwner.id)
+            .some((relation) => /^(?:calls|dispatches|emits|enqueues|invokes|publishes|triggers)$/.test(relation))
+          return isBoundaryCall
             ? [anchor]
             : []
         })

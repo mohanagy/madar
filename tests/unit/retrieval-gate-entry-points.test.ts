@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
-import { build } from '../../src/pipeline/build.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
+import { buildGraph } from '../../src/application/build-graph.js'
 import { retrieveContext } from '../../src/runtime/retrieve.js'
 
 function buildSmallGraph(): KnowledgeGraph {
-  return build([
+  return buildGraph([
     {
       schema_version: 1,
       nodes: [

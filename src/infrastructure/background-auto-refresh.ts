@@ -48,7 +48,6 @@ void (async () => {
     workerData.watchPath,
     workerData.debounceSeconds,
     {
-      noHtml: workerData.noHtml,
       logger,
     },
   )
@@ -75,7 +74,6 @@ void (async () => {
 `
 
 export interface BackgroundAutoRefreshOptions {
-  noHtml?: boolean
   logger?: WatchLogger
 }
 
@@ -169,7 +167,6 @@ export function startGraphAutoRefreshInBackground(
         watchModuleUrl: watchModuleUrl.href,
         watchPath,
         debounceSeconds,
-        noHtml: options.noHtml ?? false,
       },
     })
   } catch (error) {

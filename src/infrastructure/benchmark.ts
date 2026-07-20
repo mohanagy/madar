@@ -1,5 +1,5 @@
 import { QUERY_TOKEN_ESTIMATOR, loadGraph } from '../runtime/serve.js'
-import { KnowledgeGraph } from '../contracts/graph.js'
+import { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
 import type { ContextSessionState } from '../contracts/context-session.js'
 import { graphStructureMetrics, type GraphStructureMetrics } from '../pipeline/analyze.js'
 import { formatTokenRatio, resolveCorpusBaseline, type CorpusBaselineSource } from './benchmark/corpus.js'

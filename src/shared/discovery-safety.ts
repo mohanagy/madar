@@ -1,5 +1,7 @@
-import { readFileSync, statSync } from 'node:fs'
+import { statSync } from 'node:fs'
 import { basename, dirname, extname, relative, sep } from 'node:path'
+
+import { loadGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
 
 export type DiscoveryExclusionKind = 'sensitive' | 'unreadable'
 
@@ -125,7 +127,6 @@ const RELEVANCE_TOKEN_ALIASES: Readonly<Record<string, string>> = {
   tokens: 'token',
 }
 const ENVIRONMENT_CONFIG_INTENT_PATTERN = /(?:^|[^a-z0-9])\.env(?:[^a-z0-9]|$)|\b(?:config(?:uration)?|credentials?|deploy(?:ment)?|environment|key|password|runtime\s+variable|secret|settings|token)\b/i
-const MAX_GRAPH_ARTIFACT_BYTES = 100 * 1024 * 1024
 const MAX_STORED_EXCLUSIONS = 10_000
 const MAX_METADATA_CACHE_ENTRIES = 16
 const discoveryMetadataCache = new Map<string, {
@@ -288,30 +289,24 @@ export function parseDiscoverySafetyMetadata(value: unknown): DiscoverySafetyMet
 }
 
 export function readDiscoverySafetyMetadata(graphPath: string): DiscoverySafetyMetadata | null {
+  let stats: ReturnType<typeof statSync>
   try {
-    const stats = statSync(graphPath)
-    if (stats.size > MAX_GRAPH_ARTIFACT_BYTES) {
-      return null
-    }
-    const cached = discoveryMetadataCache.get(graphPath)
-    if (cached && cached.mtimeMs === stats.mtimeMs && cached.size === stats.size) {
-      return cached.value
-    }
-    const parsed = JSON.parse(readFileSync(graphPath, 'utf8')) as unknown
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return null
-    }
-    const value = parseDiscoverySafetyMetadata((parsed as Record<string, unknown>).discovery_safety)
-    discoveryMetadataCache.set(graphPath, { mtimeMs: stats.mtimeMs, size: stats.size, value })
-    while (discoveryMetadataCache.size > MAX_METADATA_CACHE_ENTRIES) {
-      const oldestKey = discoveryMetadataCache.keys().next().value as string | undefined
-      if (!oldestKey) break
-      discoveryMetadataCache.delete(oldestKey)
-    }
-    return value
+    stats = statSync(graphPath)
   } catch {
     return null
   }
+  const cached = discoveryMetadataCache.get(graphPath)
+  if (cached && cached.mtimeMs === stats.mtimeMs && cached.size === stats.size) {
+    return cached.value
+  }
+  const value = parseDiscoverySafetyMetadata(loadGraphArtifact(graphPath).graph.discovery_safety)
+  discoveryMetadataCache.set(graphPath, { mtimeMs: stats.mtimeMs, size: stats.size, value })
+  while (discoveryMetadataCache.size > MAX_METADATA_CACHE_ENTRIES) {
+    const oldestKey = discoveryMetadataCache.keys().next().value as string | undefined
+    if (!oldestKey) break
+    discoveryMetadataCache.delete(oldestKey)
+  }
+  return value
 }
 
 function relevanceTokens(value: string): Set<string> {

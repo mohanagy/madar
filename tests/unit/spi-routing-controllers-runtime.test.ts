@@ -67,7 +67,7 @@ describe('routing-controllers runtime surfaces', () => {
   it('includes routing-controllers in graph_summary and surfaces routing entrypoints', () => {
     writeRoutingControllersWorkspace(sandbox)
 
-    const result = generateGraph(sandbox, { useSpi: true, noHtml: true })
+    const result = generateGraph(sandbox, { useSpi: true })
     const graph = loadGraph(result.graphPath)
     const summary = buildGraphSummary(graph)
 
@@ -80,7 +80,7 @@ describe('routing-controllers runtime surfaces', () => {
   it('retrieves the routing-controller route, service call, and DTO for a route question', () => {
     writeRoutingControllersWorkspace(sandbox)
 
-    const result = generateGraph(sandbox, { useSpi: true, noHtml: true })
+    const result = generateGraph(sandbox, { useSpi: true })
     const graph = loadGraph(result.graphPath)
     const retrieved = retrieveContext(graph, {
       question: 'Explain the user creation route in routing-controllers',
@@ -99,7 +99,7 @@ describe('routing-controllers runtime surfaces', () => {
   it('retrieves routing-controller nodes for generic HTTP verb and controller questions', () => {
     writeRoutingControllersWorkspace(sandbox)
 
-    const result = generateGraph(sandbox, { useSpi: true, noHtml: true })
+    const result = generateGraph(sandbox, { useSpi: true })
     const graph = loadGraph(result.graphPath)
     const httpRetrieved = retrieveContext(graph, {
       question: 'Explain POST /users',

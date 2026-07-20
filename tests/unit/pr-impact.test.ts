@@ -5,7 +5,7 @@ import { join } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import { analyzePrImpact, compactPrImpactResult, type PrImpactResult } from '../../src/runtime/pr-impact.js'
 import { estimateQueryTokens } from '../../src/runtime/serve.js'
 
@@ -80,7 +80,7 @@ function updateFile(root: string, relativePath: string, mutate: (content: string
 }
 
 function buildGraph(root: string): KnowledgeGraph {
-  const graph = new KnowledgeGraph({ directed: true })
+  const graph = new KnowledgeGraph()
   graph.graph.root_path = root
   graph.graph.community_labels = {
     0: 'Auth Layer',
@@ -122,7 +122,7 @@ function buildGraph(root: string): KnowledgeGraph {
 }
 
 function buildNestedRepoGraph(root: string): KnowledgeGraph {
-  const graph = new KnowledgeGraph({ directed: true })
+  const graph = new KnowledgeGraph()
   graph.graph.root_path = root
   graph.graph.community_labels = {
     0: 'Auth Layer',
@@ -156,7 +156,7 @@ function buildNestedRepoGraph(root: string): KnowledgeGraph {
 }
 
 function buildFallbackGraph(root: string): KnowledgeGraph {
-  const graph = new KnowledgeGraph({ directed: true })
+  const graph = new KnowledgeGraph()
   graph.graph.root_path = root
 
   graph.addNode('auth_user', {
@@ -201,7 +201,7 @@ function createDeletionOnlyRepo(): string {
 }
 
 function buildDeletionOnlyGraph(root: string): KnowledgeGraph {
-  const graph = new KnowledgeGraph({ directed: true })
+  const graph = new KnowledgeGraph()
   graph.graph.root_path = root
   graph.graph.community_labels = {
     0: 'Deletion Layer',

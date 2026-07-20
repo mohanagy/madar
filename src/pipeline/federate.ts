@@ -1,23 +1,20 @@
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 
-import { KnowledgeGraph } from '../contracts/graph.js'
-import { buildFromJson } from './build.js'
+import { loadGraphArtifact, writeGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
+import { KnowledgeGraph, normalizeGraphPathIdentity } from '../domain/graph/directed-multigraph.js'
 import { cluster, scoreAll } from './cluster.js'
 import { buildCommunityLabels } from './community-naming.js'
 import { generate as generateReport } from './report.js'
-import { toJson } from './export.js'
-import { isRecord } from '../shared/guards.js'
 import { readGraphSourceRoot } from '../shared/graph-source-root.js'
 import { validateGraphPath } from '../shared/security.js'
+import { writeTextFileAtomically } from '../shared/atomic-file.js'
 import { godNodes, semanticAnomalies, suggestQuestions, surprisingConnections } from './analyze.js'
 
-const MAX_GRAPH_BYTES = 100 * 1024 * 1024
 const MAX_GRAPHS = 50
 
 export interface FederateOptions {
   outputDir?: string | undefined
-  directed?: boolean | undefined
 }
 
 export interface FederateResult {
@@ -35,28 +32,13 @@ interface GraphSource {
   graphPath: string
   graph: KnowledgeGraph
 }
+const portableAttributes = (attributes: Record<string, unknown>, root: unknown): Record<string, unknown> =>
+  JSON.parse(JSON.stringify(attributes, (key, value) =>
+    key === 'source_file' ? normalizeGraphPathIdentity(value, root) : value)) as Record<string, unknown>
 
 function loadSourceGraph(graphPath: string): { graph: KnowledgeGraph; graphPath: string } {
   const safePath = validateGraphPath(graphPath)
-  if (readFileSync(safePath).byteLength > MAX_GRAPH_BYTES) {
-    throw new Error(`Graph file too large: ${safePath}`)
-  }
-
-  const parsed = JSON.parse(readFileSync(safePath, 'utf8'))
-  if (!isRecord(parsed)) {
-    throw new Error(`Invalid graph file: ${safePath}`)
-  }
-
-  return {
-    graphPath: safePath,
-    graph: buildFromJson({
-    schema_version: parsed.schema_version,
-    directed: parsed.directed === true,
-    nodes: Array.isArray(parsed.nodes) ? parsed.nodes : [],
-    edges: Array.isArray(parsed.links) ? parsed.links : Array.isArray(parsed.edges) ? parsed.edges : [],
-    hyperedges: Array.isArray(parsed.hyperedges) ? parsed.hyperedges : [],
-    }, { directed: false, validateExtraction: false }),
-  }
+  return { graphPath: safePath, graph: loadGraphArtifact(safePath) }
 }
 
 function inferRepoName(graphPath: string): string {
@@ -100,6 +82,8 @@ function findCrossRepoEdges(
       continue
     }
 
+    nodes.sort((left, right) => left.nodeId < right.nodeId ? -1 : left.nodeId > right.nodeId ? 1 : 0)
+
     // Connect all cross-repo nodes with the same label
     for (let i = 0; i < nodes.length; i += 1) {
       for (let j = i + 1; j < nodes.length; j += 1) {
@@ -134,8 +118,7 @@ export function federate(graphPaths: string[], options: FederateOptions = {}): F
     throw new Error(`Too many graphs to federate (max ${MAX_GRAPHS})`)
   }
 
-  const directed = options.directed === true
-  const federatedGraph = new KnowledgeGraph({ directed })
+  const federatedGraph = new KnowledgeGraph()
   const sources: GraphSource[] = []
 
   // Load all graphs and merge into federated graph
@@ -148,7 +131,7 @@ export function federate(graphPaths: string[], options: FederateOptions = {}): F
     for (const [nodeId, attributes] of source.graph.nodeEntries()) {
       const prefixedId = prefixNodeId(repoName, nodeId)
       federatedGraph.addNode(prefixedId, {
-        ...attributes,
+        ...portableAttributes(attributes, source.graph.graph.root_path),
         source_repo: repoName,
         original_id: nodeId,
       })
@@ -159,7 +142,7 @@ export function federate(graphPaths: string[], options: FederateOptions = {}): F
       const prefixedSource = prefixNodeId(repoName, sourceNode)
       const prefixedTarget = prefixNodeId(repoName, target)
       federatedGraph.addEdge(prefixedSource, prefixedTarget, {
-        ...attributes,
+        ...portableAttributes(attributes, source.graph.graph.root_path),
         source_repo: repoName,
       })
     }
@@ -207,8 +190,10 @@ export function federate(graphPaths: string[], options: FederateOptions = {}): F
     questions,
   )
 
-  toJson(federatedGraph, communities, graphPath, communityLabels, anomalies)
-  writeFileSync(reportPath, report, 'utf8')
+  Object.assign(federatedGraph.graph, { community_labels: communityLabels, semantic_anomalies: anomalies })
+  for (const [communityId, nodeIds] of Object.entries(communities)) for (const nodeId of nodeIds) federatedGraph.replaceNodeAttributes(nodeId, { ...federatedGraph.nodeAttributes(nodeId), community: Number(communityId) })
+  writeGraphArtifact(federatedGraph, graphPath)
+  writeTextFileAtomically(reportPath, `${report}\n`)
 
   return {
     graphPath,

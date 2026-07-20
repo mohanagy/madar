@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import type { ExtractionEdge, ExtractionNode } from '../../src/contracts/types.js'
-import { build } from '../../src/pipeline/build.js'
-import { compactRetrieveResult, retrieveContext } from '../../src/runtime/retrieve.js'
+import { buildGraph } from '../../src/application/build-graph.js'
+import { compactRetrieveResult, executionFlowAdjacency, retrieveContext } from '../../src/runtime/retrieve.js'
 
 interface ExecutionSliceExpectation {
   status: 'complete' | 'partial'
@@ -71,7 +71,7 @@ function buildSliceGraph(
     workerFrameworkRole = 'worker',
   } = options
 
-  return build(
+  return buildGraph(
     [
       {
         schema_version: 1,
@@ -126,12 +126,12 @@ function buildSliceGraph(
         ],
       },
     ],
-    { directed: true },
+      { rootPath: '/' },
   )
 }
 
 function buildWorkerSegmentGraph() {
-  return build(
+  return buildGraph(
     [
       {
         schema_version: 1,
@@ -146,12 +146,12 @@ function buildWorkerSegmentGraph() {
         ],
       },
     ],
-    { directed: true },
+      { rootPath: '/' },
   )
 }
 
 function buildDirectPersistenceGraph() {
-  return build(
+  return buildGraph(
     [
       {
         schema_version: 1,
@@ -168,7 +168,7 @@ function buildDirectPersistenceGraph() {
         ],
       },
     ],
-    { directed: true },
+      { rootPath: '/' },
   )
 }
 
@@ -195,27 +195,28 @@ function labelsFor(prompt: string, overrides: Record<string, unknown> = {}): str
 }
 
 describe('retrieveContext retrievalStrategy=slice-v1', () => {
-  it('rejects undirected graphs before directional slicing can traverse them', () => {
-    const graph = build([
-      {
-        schema_version: 1,
-        nodes: [
-          { id: 'caller', label: 'caller', file_type: 'code', source_file: '/src/caller.ts' },
-          { id: 'dependency', label: 'dependency', file_type: 'code', source_file: '/src/dependency.ts' },
-        ],
-        edges: [
-          { source: 'caller', target: 'dependency', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/caller.ts' },
-        ],
-      },
-    ])
-
-    expect(() => retrieveContext(graph, {
-      question: 'Explain caller',
-      budget: 3000,
-      retrievalStrategy: 'slice-v1',
-    } as never)).toThrow(
-      'Directional retrieval requires a directed graph because edge orientation is part of the result.',
+  it('preserves both orientations of reciprocal execution-flow edges', () => {
+    const graph = buildGraph([{
+      nodes: [
+        { id: 'alpha', label: 'Alpha', source_file: '/src/alpha.ts', node_kind: 'function', file_type: 'code' },
+        { id: 'beta', label: 'Beta', source_file: '/src/beta.ts', node_kind: 'function', file_type: 'code' },
+      ],
+      edges: [
+        { source: 'alpha', target: 'beta', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/alpha.ts' },
+        { source: 'beta', target: 'alpha', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/beta.ts' },
+      ],
+      hyperedges: [],
+    }], { rootPath: '/' })
+    const adjacency = executionFlowAdjacency(
+      graph,
+      { selected_paths: [] } as never,
+      new Set(['alpha', 'beta']),
+      'Trace the execution flow',
+      (nodeId) => nodeId,
     )
+
+    expect(adjacency.get('alpha')).toEqual([expect.objectContaining({ fromId: 'alpha', toId: 'beta', relation: 'calls' })])
+    expect(adjacency.get('beta')).toEqual([expect.objectContaining({ fromId: 'beta', toId: 'alpha', relation: 'calls' })])
   })
 
   it('keeps explain slices bounded around the anchored symbol instead of broad impact expansion', () => {

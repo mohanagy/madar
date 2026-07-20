@@ -12,6 +12,7 @@ import {
   type ReviewCompareReport,
 } from '../../src/infrastructure/review-compare.js'
 import { estimateQueryTokens } from '../../src/runtime/serve.js'
+import { writeCanonicalGraphFixture } from '../helpers/graph-artifact.js'
 
 function normalizePortablePath(path: string): string {
   return path.replaceAll('\\', '/')
@@ -55,10 +56,9 @@ function createRepo(options: { pathLikeNodeIds?: boolean; pathWithSpaces?: boole
   ].join('\n'), 'utf8')
   writeFileSync(join(root, 'tests', 'auth.test.ts'), 'describe("auth", () => {})\n', 'utf8')
 
-  writeFileSync(
+  writeCanonicalGraphFixture(
     join(root, 'out', 'graph.json'),
-    JSON.stringify({
-      directed: true,
+    {
       community_labels: {
         '0': 'Auth Layer',
         '1': 'API Layer',
@@ -111,8 +111,7 @@ function createRepo(options: { pathLikeNodeIds?: boolean; pathWithSpaces?: boole
       ],
       hyperedges: [],
       root_path: root,
-    }),
-    'utf8',
+    },
   )
 
   execFileSync('git', ['init', '-b', 'main'], { cwd: root, stdio: 'pipe' })

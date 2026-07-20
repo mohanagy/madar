@@ -31,7 +31,7 @@ import {
   parseWatchArgs,
   UsageError,
 } from '../../src/cli/parser.js'
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import { resolveMadarOutputDirectory, resolveWorkspaceGraphPath } from '../../src/shared/workspace.js'
 
 const ACTIVE_OUTPUT_DIR = resolveMadarOutputDirectory()
@@ -180,12 +180,7 @@ function createDependencies(): CliTestDependencies {
       outputDir: resolve(rootPath, 'out'),
       graphPath: resolve(rootPath, 'out', 'graph.json'),
       reportPath: resolve(rootPath, 'out', 'GRAPH_REPORT.md'),
-      htmlPath: options.noHtml ? null : resolve(rootPath, 'out', 'graph.html'),
       wikiPath: options.wiki ? resolve(rootPath, 'out', 'wiki') : null,
-      obsidianPath: options.obsidian ? resolve(options.obsidianDir ?? resolve(rootPath, 'out', 'obsidian')) : null,
-      svgPath: options.svg ? resolve(rootPath, 'out', 'graph.svg') : null,
-      graphmlPath: options.graphml ? resolve(rootPath, 'out', 'graph.graphml') : null,
-      cypherPath: options.neo4j ? resolve(rootPath, 'out', 'cypher.txt') : null,
       docsPath: null,
       totalFiles: 3,
       codeFiles: 2,
@@ -927,17 +922,10 @@ describe('cli parser', () => {
       update: false,
       clusterOnly: false,
       watch: false,
-      directed: true,
       followSymlinks: false,
       respectGitignore: false,
       debounceSeconds: 3,
-      noHtml: false,
       wiki: false,
-      obsidian: false,
-      obsidianDir: null,
-      svg: false,
-      graphml: false,
-      neo4j: false,
       neo4jPushUri: null,
       neo4jUser: null,
       neo4jPassword: null,
@@ -955,19 +943,11 @@ describe('cli parser', () => {
         'src',
         '--update',
         '--watch',
-        '--directed',
         '--follow-symlinks',
         '--respect-gitignore',
         '--debounce',
         '1.5',
-        '--no-html',
         '--wiki',
-        '--obsidian',
-        '--obsidian-dir',
-        'vault',
-        '--svg',
-        '--graphml',
-        '--neo4j',
         '--neo4j-push',
         'bolt://localhost:7687',
         '--neo4j-user',
@@ -985,17 +965,10 @@ describe('cli parser', () => {
       update: true,
       clusterOnly: false,
       watch: true,
-      directed: true,
       followSymlinks: true,
       respectGitignore: true,
       debounceSeconds: 1.5,
-      noHtml: true,
       wiki: true,
-      obsidian: true,
-      obsidianDir: 'vault',
-      svg: true,
-      graphml: true,
-      neo4j: true,
       neo4jPushUri: 'bolt://localhost:7687',
       neo4jUser: 'neo4j',
       neo4jPassword: 'secret',
@@ -1010,13 +983,6 @@ describe('cli parser', () => {
 
     expect(() => parseGenerateArgs(['src', 'other'])).toThrow('Usage: madar generate')
     expect(() => parseGenerateArgs(['--update', '--cluster-only'])).toThrow('cannot be used together')
-    expect(parseGenerateArgs(['src', '--undirected']).directed).toBe(false)
-    expect(() => parseGenerateArgs(['--directed', '--undirected'])).toThrow(
-      '--directed and --undirected cannot be used together',
-    )
-    expect(() => parseGenerateArgs(['--undirected', '--directed'])).toThrow(
-      '--directed and --undirected cannot be used together',
-    )
     expect(parseGenerateArgs(['--strict-indexing'])).toMatchObject({
       strictIndexing: true,
       maxIndexingFailed: 0,
@@ -1028,15 +994,21 @@ describe('cli parser', () => {
     expect(() => parseGenerateArgs(['--max-indexing-unsupported=abc'])).toThrow(
       '--max-indexing-unsupported must be a non-negative integer',
     )
+    expect(parseGenerateArgs(['examples/demo-repo'])).toMatchObject({
+      path: 'examples/demo-repo',
+      extractionMode: 'auto',
+    })
+    expect(() => parseGenerateArgs(['examples/demo-repo', '--no-html'])).toThrow(
+      'unknown option for generate: --no-html',
+    )
   })
 
   it('parses watch args', () => {
-    expect(parseWatchArgs(['src', '--follow-symlinks', '--respect-gitignore', '--debounce=2', '--no-html'])).toEqual({
+    expect(parseWatchArgs(['src', '--follow-symlinks', '--respect-gitignore', '--debounce=2'])).toEqual({
       path: 'src',
       followSymlinks: true,
       respectGitignore: true,
       debounceSeconds: 2,
-      noHtml: true,
     })
 
     expect(() => parseWatchArgs(['src', 'other'])).toThrow('Usage: madar watch')
@@ -1284,7 +1256,8 @@ describe('cli main', () => {
     expect(help).toContain('generate [path]')
     expect(help).toContain('watch [path]')
     expect(help).toContain('serve [graph.json]')
-    expect(help).toContain('--directed')
+    expect(help).not.toContain('--directed')
+    expect(help).not.toContain('--undirected')
     expect(help).toContain('--legacy')
     expect(help).toContain('--spi')
     expect(help).toContain('default: auto')
@@ -1293,12 +1266,12 @@ describe('cli main', () => {
     expect(help).toContain('--max-indexing-failed')
     expect(help).toContain('--max-indexing-unsupported')
     expect(help).toContain('--wiki')
-    expect(help).toContain('--obsidian')
-    expect(help).toContain('--svg')
-    expect(help).toContain('--graphml')
+    expect(help).not.toContain('--obsidian')
+    expect(help).not.toContain('--svg')
+    expect(help).not.toContain('--graphml')
     expect(help).toContain('--allow-no-install')
-    expect(help).toContain('--neo4j')
     expect(help).toContain('--neo4j-push')
+    expect(help).not.toContain('cypher.txt')
     expect(help).toContain('--transport')
     expect(help).toContain('--http')
     expect(help).toContain('--stdio')
@@ -2714,7 +2687,7 @@ describe('cli main', () => {
   it('rejects add commands because URL ingest is no longer part of the CLI surface', async () => {
     const { io, logs, errors } = createIo()
 
-    const exitCode = await executeCli(['add', 'https://example.com/post', 'workspace', '--no-html'], io, createDependencies())
+    const exitCode = await executeCli(['add', 'https://example.com/post', 'workspace'], io, createDependencies())
 
     expect(exitCode).toBe(1)
     expect(logs).toEqual([])
@@ -2733,87 +2706,6 @@ describe('cli main', () => {
     expect(logs[0]).toContain('Safety exclusions: 1 (1 sensitive, 0 unreadable)')
     expect(logs[0]).toContain('"config/credentials.json" (secret_config)')
     expect(logs[0]).toContain('madar codex install     # Codex CLI')
-  })
-
-  it('passes optional export flags through generate commands', async () => {
-    const { io } = createIo()
-    let capturedOptions: Record<string, unknown> | undefined
-    const dependencies = createDependencies()
-    dependencies.generateGraph = (rootPath = '.', options = {}) => {
-      capturedOptions = { rootPath, ...options }
-      return {
-        mode: options.clusterOnly ? 'cluster-only' : options.update ? 'update' : 'generate',
-        rootPath: resolve(rootPath),
-        outputDir: resolve(rootPath, 'out'),
-        graphPath: resolve(rootPath, 'out', 'graph.json'),
-        reportPath: resolve(rootPath, 'out', 'GRAPH_REPORT.md'),
-        htmlPath: options.noHtml ? null : resolve(rootPath, 'out', 'graph.html'),
-        wikiPath: options.wiki ? resolve(rootPath, 'out', 'wiki') : null,
-        obsidianPath: options.obsidian ? resolve(options.obsidianDir ?? resolve(rootPath, 'out', 'obsidian')) : null,
-        svgPath: options.svg ? resolve(rootPath, 'out', 'graph.svg') : null,
-        graphmlPath: options.graphml ? resolve(rootPath, 'out', 'graph.graphml') : null,
-        cypherPath: options.neo4j ? resolve(rootPath, 'out', 'cypher.txt') : null,
-      docsPath: null,
-        totalFiles: 3,
-        codeFiles: 2,
-        nonCodeFiles: 1,
-        extractableFiles: 3,
-        extractedFiles: options.extractionMode !== 'legacy' ? 2 : 3,
-        totalWords: 120,
-        nodeCount: 5,
-        edgeCount: 4,
-        communityCount: 2,
-        changedFiles: 0,
-        deletedFiles: 0,
-        cache: options.extractionMode !== 'legacy' ? { strategy: 'spi', hit: false, reason: 'no-cache', fileCount: 2 } : null,
-        warning: null,
-        notes: [],
-      }
-    }
-
-    const exitCode = await executeCli(
-      [
-        'generate',
-        'src',
-        '--directed',
-        '--wiki',
-        '--obsidian',
-        '--obsidian-dir',
-        'vault',
-        '--svg',
-        '--graphml',
-        '--neo4j',
-        '--max-indexing-failed=1',
-        '--max-indexing-unsupported',
-        '2',
-      ],
-      io,
-      dependencies,
-    )
-
-    expect(exitCode).toBe(0)
-    expect(capturedOptions).toMatchObject({
-      rootPath: 'src',
-      update: false,
-      clusterOnly: false,
-      directed: true,
-      followSymlinks: false,
-      noHtml: false,
-      wiki: true,
-      obsidian: true,
-      obsidianDir: 'vault',
-      svg: true,
-      graphml: true,
-      neo4j: true,
-      includeDocs: false,
-      docs: false,
-      extractionMode: 'auto',
-      indexingStrict: {
-        maxFailed: 1,
-        maxUnsupported: 2,
-      },
-    })
-    expect(typeof capturedOptions?.onProgress).toBe('function')
   })
 
   it('pushes the generated graph to neo4j when requested', async () => {
@@ -3108,7 +3000,7 @@ describe('cli main', () => {
       stdioOptions = options
     }
 
-    const watchExitCode = await executeCli(['watch', 'src', '--respect-gitignore', '--debounce', '1', '--no-html'], io, dependencies)
+    const watchExitCode = await executeCli(['watch', 'src', '--respect-gitignore', '--debounce', '1'], io, dependencies)
     const serveExitCode = await executeCli(['serve', 'out/graph.json', '--port', '0'], io, dependencies)
     const stdioExitCode = await executeCli(['serve', 'out/graph.json', '--mcp', '--auto-refresh'], io, dependencies)
 
@@ -3118,9 +3010,7 @@ describe('cli main', () => {
     expect(watched).toBe(true)
     expect(served).toBe(true)
     expect(servedOverStdio).toBe(true)
-    expect(lastGenerateOptions?.noHtml).toBe(true)
     expect(lastGenerateOptions?.respectGitignore).toBe(true)
-    expect(lastWatchOptions?.noHtml).toBe(true)
     expect(lastWatchOptions?.respectGitignore).toBe(true)
     expect(stdioOptions).toMatchObject({ graphPath: ACTIVE_GRAPH_PATH, autoRefresh: true, workspaceRoot: process.cwd() })
     expect(logs[0]).toContain('[madar generate]')

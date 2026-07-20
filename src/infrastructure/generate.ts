@@ -1,8 +1,8 @@
-import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
-import { KnowledgeGraph } from '../contracts/graph.js'
-import type { ExtractionMode } from '../contracts/generation-policy.js'
+import { loadGraphArtifact, writeGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
+import { parseGenerationPolicy, type ExtractionMode } from '../contracts/generation-policy.js'
 import type {
   ExtractionFallbackReason,
   ExtractionStrategy,
@@ -13,8 +13,10 @@ import type {
   IndexingSummary,
 } from '../contracts/indexing.js'
 import type { ExtractionData, ExtractionEdge, ExtractionNode, ExtractionSchemaVersion, Hyperedge } from '../contracts/types.js'
+import { GRAPH_ARTIFACT_REGENERATE_MESSAGE } from '../domain/graph/artifact.js'
+import { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
 import { godNodes, semanticAnomalies, suggestQuestions, surprisingConnections } from '../pipeline/analyze.js'
-import { buildFromJson } from '../pipeline/build.js'
+import { buildGraphFromExtraction } from '../application/build-graph.js'
 import { cluster, scoreAll } from '../pipeline/cluster.js'
 import { buildCommunityLabels } from '../pipeline/community-naming.js'
 import {
@@ -27,7 +29,6 @@ import {
   writeManifestSnapshot,
 } from '../pipeline/detect.js'
 import { generateDocs as generateDocsArtifacts } from '../pipeline/docs.js'
-import { toCypher, toGraphml, toHtml, toJson, toObsidian, toSvg } from '../pipeline/export.js'
 import { extract, EXTRACTOR_CACHE_VERSION } from '../pipeline/extract.js'
 import { createFileStemMap } from '../pipeline/extract/core.js'
 import {
@@ -41,7 +42,6 @@ import { isSpiSupportedSourceFile } from '../pipeline/spi/build.js'
 import { projectSpiToExtraction } from '../pipeline/spi/projector.js'
 import { generate as generateReport } from '../pipeline/report.js'
 import { toWiki } from '../pipeline/wiki.js'
-import { loadGraph } from '../runtime/serve.js'
 import { buildGraphBuildFreshnessMetadata } from '../shared/graph-build-freshness.js'
 import { collectGitVisibleFiles } from '../shared/git.js'
 import { writeTextFileAtomically } from '../shared/atomic-file.js'
@@ -55,7 +55,6 @@ import {
 import {
   buildGenerationPolicy,
   generationOptionsFromPolicy,
-  readGraphGenerationPolicy,
   resolveExtractionMode,
 } from './generation-policy.js'
 import {
@@ -75,19 +74,10 @@ export type ProgressStep =
 export interface GenerateGraphOptions {
   update?: boolean
   clusterOnly?: boolean
-  /** Generated code graphs are directed by default. Set false only for visualization-only legacy output. */
-  directed?: boolean
   followSymlinks?: boolean
   /** Restrict discovery to files that Git does not ignore. Falls back outside Git repositories. */
   respectGitignore?: boolean
-  noHtml?: boolean
-  htmlMode?: 'auto' | 'inline' | 'overview'
   wiki?: boolean
-  obsidian?: boolean
-  obsidianDir?: string | null
-  svg?: boolean
-  graphml?: boolean
-  neo4j?: boolean
   includeDocs?: boolean
   docs?: boolean
   /** Select capability-aware auto extraction, legacy-only extraction, or
@@ -110,12 +100,7 @@ export interface GenerateGraphResult {
   outputDir: string
   graphPath: string
   reportPath: string
-  htmlPath: string | null
   wikiPath: string | null
-  obsidianPath: string | null
-  svgPath: string | null
-  graphmlPath: string | null
-  cypherPath: string | null
   docsPath: string | null
   totalFiles: number
   codeFiles: number
@@ -342,20 +327,6 @@ function isIncrementalDetectResult(detection: DetectResult | IncrementalDetectRe
   return 'new_total' in detection && 'new_files' in detection && 'deleted_files' in detection
 }
 
-function copyGraphWithDirection(graph: KnowledgeGraph, directed: boolean): KnowledgeGraph {
-  const copied = new KnowledgeGraph({ directed })
-  Object.assign(copied.graph, graph.graph, { directed })
-
-  for (const [nodeId, attributes] of graph.nodeEntries()) {
-    copied.addNode(nodeId, attributes)
-  }
-  for (const [source, target, attributes] of graph.edgeEntries()) {
-    copied.addEdge(source, target, attributes)
-  }
-
-  return copied
-}
-
 function outputDirectory(rootPath: string): string {
   return resolveMadarOutputDirectory(rootPath)
 }
@@ -390,17 +361,9 @@ function missingCodeExtractionError(totalFiles: number, discoverySafety?: Discov
 }
 
 export function loadGraphExtractorVersion(graphPath: string): number | null {
-  try {
-    const parsed = JSON.parse(readFileSync(graphPath, 'utf8')) as unknown
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return null
-    }
-
-    const extractorVersion = (parsed as { extractor_version?: unknown }).extractor_version
-    return typeof extractorVersion === 'number' && Number.isFinite(extractorVersion) ? extractorVersion : null
-  } catch {
-    return null
-  }
+  if (!existsSync(graphPath)) return null
+  const extractorVersion = loadGraphArtifact(graphPath).graph.extractor_version
+  return typeof extractorVersion === 'number' && Number.isFinite(extractorVersion) ? extractorVersion : null
 }
 
 export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}): GenerateGraphResult {
@@ -412,19 +375,21 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   const resolvedOutputDir = outputDirectory(resolvedRootPath)
   const graphPath = join(resolvedOutputDir, 'graph.json')
   const reportPath = join(resolvedOutputDir, 'GRAPH_REPORT.md')
-  const htmlPath = join(resolvedOutputDir, 'graph.html')
   const wikiPath = options.wiki ? join(resolvedOutputDir, 'wiki') : null
-  const obsidianPath = options.obsidian ? resolve(options.obsidianDir ?? join(resolvedOutputDir, 'obsidian')) : null
-  const svgPath = options.svg ? join(resolvedOutputDir, 'graph.svg') : null
-  const graphmlPath = options.graphml ? join(resolvedOutputDir, 'graph.graphml') : null
-  const cypherPath = options.neo4j ? join(resolvedOutputDir, 'cypher.txt') : null
   const manifestPath = join(resolvedOutputDir, 'manifest.json')
 
   mkdirSync(resolvedOutputDir, { recursive: true })
   const progress = options.onProgress
 
   progress?.({ step: 'detect', message: 'Scanning files...' })
-  const graphGenerationPolicy = existsSync(graphPath) ? readGraphGenerationPolicy(graphPath) : null
+  const graphExists = existsSync(graphPath)
+  let existingArtifact: KnowledgeGraph | null = null
+  try {
+    existingArtifact = graphExists ? loadGraphArtifact(graphPath) : null
+  } catch (error) {
+    if (!options.update || !(error instanceof Error) || !error.message.includes(GRAPH_ARTIFACT_REGENERATE_MESSAGE)) throw error
+  }
+  const graphGenerationPolicy = existingArtifact ? parseGenerationPolicy(existingArtifact.graph.generation_policy) : null
   if (options.clusterOnly && !graphGenerationPolicy) {
     throw new Error(
       '--cluster-only requires valid generation-policy metadata. Run `madar generate . --update` to migrate and re-extract the graph first.',
@@ -459,7 +424,6 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     storedClusterOptions
       ? {
           ...storedClusterOptions,
-          directed: options.directed !== false,
           ...(options.indexingStrict ? { indexingStrict: options.indexingStrict } : {}),
         }
       : options,
@@ -469,7 +433,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   const manifestGenerationPolicy = existsSync(manifestPath) ? loadManifestMetadata(manifestPath).generation_policy ?? null : null
   const storedPolicyMatches = graphGenerationPolicy?.fingerprint === generationPolicy.fingerprint
     && manifestGenerationPolicy?.fingerprint === generationPolicy.fingerprint
-  const generationPolicyMismatch = options.update === true && existsSync(graphPath) && !storedPolicyMatches
+  const generationPolicyMismatch = options.update === true && graphExists && (!existingArtifact || !storedPolicyMatches)
   const detectionOptions = detectOptions(corpusOptions, gitVisibleFiles)
   const detected = options.update && !generationPolicyMismatch
     ? detectIncremental(resolvedRootPath, manifestPath, detectionOptions)
@@ -589,23 +553,11 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
 
   progress?.({ step: 'detect', message: `Found ${detected.total_files} files (~${detected.total_words.toLocaleString()} words)` })
 
-  const loadedExistingGraph = options.clusterOnly || (options.update && existsSync(graphPath)) ? loadGraph(graphPath) : null
-  const existingGraphExtractorVersion = options.update && existsSync(graphPath) ? loadGraphExtractorVersion(graphPath) : null
-  const directed = options.directed !== false
+  const loadedExistingGraph = options.clusterOnly || options.update ? existingArtifact : null
+  const rawExistingExtractorVersion = loadedExistingGraph?.graph.extractor_version
+  const existingGraphExtractorVersion = typeof rawExistingExtractorVersion === 'number' ? rawExistingExtractorVersion : null
   const generationPolicyToPublish = generationPolicy
-  const upgradingLegacyDirection = loadedExistingGraph?.isDirected() === false && directed
-
-  if (options.clusterOnly && upgradingLegacyDirection) {
-    throw new Error(
-      '--cluster-only cannot safely recover edge directions from an undirected graph. '
-      + 'Run `madar generate . --update` to re-extract the source graph with directed edges.',
-    )
-  }
-
-  const policyCompatibleGraph = generationPolicyMismatch ? null : loadedExistingGraph
-  const existingGraph = policyCompatibleGraph && policyCompatibleGraph.isDirected() !== directed && !upgradingLegacyDirection
-    ? copyGraphWithDirection(policyCompatibleGraph, directed)
-    : policyCompatibleGraph
+  const existingGraph = generationPolicyMismatch ? null : loadedExistingGraph
 
   if (options.clusterOnly) {
     const retainedSourceFiles = indexedSourceFilesFromGraph(existingGraph, resolvedRootPath)
@@ -617,14 +569,6 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     }))
   }
 
-  if (upgradingLegacyDirection) {
-    notes.push('Existing graph was undirected, so --update rebuilt the full graph with directed edges.')
-  } else if (loadedExistingGraph && loadedExistingGraph.isDirected() !== directed) {
-    notes.push(
-      'Migrated the existing graph from directed to undirected edge traversal.',
-    )
-  }
-
   if (!options.clusterOnly) {
     progress?.({ step: 'extract', message: `Extracting ${extractableFiles.length} files...`, current: 0, total: extractableFiles.length })
   }
@@ -633,7 +577,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   // mode we run that cacheable build only for SPI-capable files, then merge
   // one legacy extraction for supported languages SPI does not implement.
   // Explicit --spi never falls back; explicit --legacy never invokes SPI.
-  const buildViaSpi = (): ReturnType<typeof buildFromJson> | null => {
+  const buildViaSpi = (): ReturnType<typeof buildGraphFromExtraction> | null => {
     if (extractableFiles.length === 0) return null
     const spiExtractorVersion = `spi-v1.0.0-enqueues-job-${EXTRACTOR_CACHE_VERSION}`
     const built =
@@ -732,22 +676,13 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
         `Auto extraction: SPI routed ${spiCodeFiles.length} supported source file(s); legacy semantic augmentation routed ${legacyAugmentationCodeFiles.length} supported source file(s); legacy fallback routed ${legacyFallbackCodeFiles.length} SPI-unsupported source file(s).`,
       )
     }
-    return buildFromJson(mergeExtractions([codeExtraction, nonCodeExtraction]), { directed })
+    return buildGraphFromExtraction(mergeExtractions([codeExtraction, nonCodeExtraction]), { rootPath: resolvedRootPath })
   }
 
   const graph = options.clusterOnly
     ? existingGraph
     : extractionMode !== 'legacy'
       ? buildViaSpi()
-    : options.update && existingGraph && upgradingLegacyDirection
-      ? (() => {
-          extractedFiles = extractableFiles.length
-          return extractableFiles.length > 0
-            ? buildFromJson(withExtractionStrategy(extract(extractableFiles, {
-                onFileOutcome: recordExtractionOutcome('legacy'),
-              }), 'legacy'), { directed })
-            : null
-        })()
     : options.update && existingGraph && isIncrementalDetectResult(detected)
         ? (() => {
             if (existingGraphExtractorVersion == null || existingGraphExtractorVersion !== EXTRACTOR_CACHE_VERSION) {
@@ -758,9 +693,9 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
               )
               extractedFiles = extractableFiles.length
               return extractableFiles.length > 0
-                ? buildFromJson(withExtractionStrategy(extract(extractableFiles, {
+                ? buildGraphFromExtraction(withExtractionStrategy(extract(extractableFiles, {
                     onFileOutcome: recordExtractionOutcome('legacy'),
-                  }), 'legacy'), { directed })
+                  }), 'legacy'), { rootPath: resolvedRootPath })
                 : null
             }
 
@@ -802,12 +737,12 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
               `Incremental update re-extracted ${changedExtractableFiles.length} changed file(s) and retained ${new Set(retainedExtraction.nodes.map((node) => node.source_file)).size} unchanged file(s) from the existing graph.`,
             )
 
-          return buildFromJson(mergeExtractions([retainedExtraction, changedExtraction]), { directed })
+          return buildGraphFromExtraction(mergeExtractions([retainedExtraction, changedExtraction]), { rootPath: resolvedRootPath })
         })()
       : extractableFiles.length > 0
-        ? buildFromJson(withExtractionStrategy(extract(extractableFiles, {
+        ? buildGraphFromExtraction(withExtractionStrategy(extract(extractableFiles, {
             onFileOutcome: recordExtractionOutcome('legacy'),
-          }), 'legacy'), { directed })
+          }), 'legacy'), { rootPath: resolvedRootPath })
       : options.update && existingGraph
           ? existingGraph
           : null
@@ -897,7 +832,6 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     suggestedQuestions,
   )
 
-  graph.graph.root_path = resolvedRootPath
   graph.graph.discovery_safety = discoverySafety
   graph.graph.generation_policy = generationPolicyToPublish
   // Cluster-only mode reuses the existing graph; it must not relabel that
@@ -917,19 +851,25 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
       .map(([, attributes]) => String(attributes.source_file ?? '').trim())
       .filter((sourceFile) => sourceFile.length > 0),
   )
+  graph.graph.extractor_version = EXTRACTOR_CACHE_VERSION
+  graph.graph.community_labels = communityLabels
+  graph.graph.semantic_anomalies = semanticAnomalyList
+  for (const [nodeId, attributes] of graph.nodeEntries()) {
+    graph.replaceNodeAttributes(nodeId, { ...attributes, community: -1 })
+  }
+  for (const [communityId, nodeIds] of Object.entries(communities)) {
+    for (const nodeId of nodeIds) {
+      if (!graph.hasNode(nodeId)) continue
+      graph.replaceNodeAttributes(nodeId, {
+        ...graph.nodeAttributes(nodeId),
+        community: Number(communityId),
+      })
+    }
+  }
 
   progress?.({ step: 'export', message: 'Writing outputs...' })
   writeTextFileAtomically(reportPath, `${report}\n`)
-  toJson(graph, communities, graphPath, communityLabels, semanticAnomalyList, EXTRACTOR_CACHE_VERSION)
-  if (!options.noHtml) {
-    const htmlResult = toHtml(graph, communities, htmlPath, communityLabels, {
-      mode: options.htmlMode ?? 'auto',
-      cohesionScores,
-    })
-    if (htmlResult.mode === 'overview') {
-      notes.push(`Large graph mode enabled: graph.html now opens an overview page with ${htmlResult.communityPageCount} community page(s).`)
-    }
-  }
+  writeGraphArtifact(graph, graphPath)
   if (wikiPath) {
     const articleCount = toWiki(graph, communities, wikiPath, {
       communityLabels,
@@ -938,20 +878,6 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     })
     notes.push(`Generated ${articleCount} wiki article(s).`)
   }
-  if (obsidianPath) {
-    const noteCount = toObsidian(graph, communities, obsidianPath, communityLabels, cohesionScores)
-    notes.push(`Generated ${noteCount} Obsidian note(s).`)
-  }
-  if (svgPath) {
-    toSvg(graph, communities, svgPath, communityLabels)
-  }
-  if (graphmlPath) {
-    toGraphml(graph, communities, graphmlPath)
-  }
-  if (cypherPath) {
-    toCypher(graph, cypherPath)
-  }
-
   let docsPath: string | null = null
   if (options.docs) {
     const docsResult = generateDocsArtifacts(graph, communities, communityLabels, resolvedOutputDir)
@@ -963,6 +889,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   // The indexing audit manifests intentionally remain available on failed runs.
   const indexingArtifacts = writeIndexingManifests(resolvedOutputDir, indexingManifest)
   writeManifestSnapshot(sourceManifestSnapshot, manifestPath)
+  for (const name of ['graph.html', 'graph-pages', 'graph.svg', 'graph.graphml', 'cypher.txt', 'obsidian']) rmSync(join(resolvedOutputDir, name), { recursive: true, force: true })
 
   return {
     mode,
@@ -971,12 +898,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     outputDir: resolvedOutputDir,
     graphPath,
     reportPath,
-    htmlPath: options.noHtml ? null : htmlPath,
     wikiPath,
-    obsidianPath,
-    svgPath,
-    graphmlPath,
-    cypherPath,
     docsPath,
     totalFiles: detected.total_files,
     codeFiles: codeFiles.length,

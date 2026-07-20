@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 
 import { describe, expect, test } from 'vitest'
 
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import { toWiki } from '../../src/pipeline/wiki.js'
 
 function withTempDir(callback: (tempDir: string) => void): void {
@@ -91,7 +91,7 @@ describe('toWiki', () => {
 
   test('counts directed incoming links in community articles', () => {
     withTempDir((tempDir) => {
-      const directedGraph = new KnowledgeGraph({ directed: true })
+      const directedGraph = new KnowledgeGraph()
       directedGraph.addNode('n1', { label: 'parse', file_type: 'code', source_file: 'parser.py', community: 0 })
       directedGraph.addNode('n2', { label: 'render', file_type: 'code', source_file: 'renderer.py', community: 1 })
       directedGraph.addEdge('n2', 'n1', { relation: 'feeds', confidence: 'INFERRED', weight: 1.0 })
@@ -106,7 +106,7 @@ describe('toWiki', () => {
 
   test('shows incoming directed relations in god node articles', () => {
     withTempDir((tempDir) => {
-      const directedGraph = new KnowledgeGraph({ directed: true })
+      const directedGraph = new KnowledgeGraph()
       directedGraph.addNode('n1', { label: 'parse', file_type: 'code', source_file: 'parser.py', community: 0 })
       directedGraph.addNode('n2', { label: 'render', file_type: 'code', source_file: 'renderer.py', community: 1 })
       directedGraph.addEdge('n2', 'n1', { relation: 'feeds', confidence: 'INFERRED', weight: 1.0 })

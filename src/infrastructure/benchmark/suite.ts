@@ -664,7 +664,6 @@ function prepareBenchmarkWorkspace(
   }
   ensureBenchmarkWorkspaceInstall(graphWorkspaceRoot)
   return runGenerateGraph(graphWorkspaceRoot, {
-    noHtml: true,
     extractionMode: kind === 'spi' ? 'spi' : 'legacy',
   }).graphPath
 }

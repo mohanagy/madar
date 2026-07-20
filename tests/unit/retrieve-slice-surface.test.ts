@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { parsePackArgs } from '../../src/cli/parser.js'
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import { runContextPackCommand, type ContextPackCommandDependencies } from '../../src/infrastructure/context-pack-command.js'
 
 describe('slice-v1 CLI surface', () => {

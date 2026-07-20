@@ -11,7 +11,7 @@ import type {
   ContextPackNode,
   ContextPackTaskContract,
 } from '../contracts/context-pack.js'
-import { KnowledgeGraph } from '../contracts/graph.js'
+import { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
 import type { TaskIntentKind } from '../contracts/task-intent.js'
 import { godNodes, workspaceBridges } from '../pipeline/analyze.js'
 import { communitiesFromGraph } from './serve.js'
@@ -667,6 +667,11 @@ function relationWeight(relation: string): number {
   return 0.75
 }
 
+function maxRelationWeightBetween(graph: KnowledgeGraph, sourceId: string, targetId: string): number {
+  return graph.relationKindsBetween(sourceId, targetId)
+    .reduce((maximum, relation) => Math.max(maximum, relationWeight(relation)), 0)
+}
+
 function portablePath(path: string): string {
   return path.replaceAll('\\', '/')
 }
@@ -839,8 +844,10 @@ function buildReviewBundle(
   const firstHopIds = new Set<string>()
   for (const seedNode of seedNodes) {
     for (const predecessor of graph.predecessors(seedNode.node_id)) {
-      const relation = String(graph.edgeAttributes(predecessor, seedNode.node_id).relation ?? 'related_to')
-      candidateScores.set(predecessor, Math.max(candidateScores.get(predecessor) ?? 0, 6 + relationWeight(relation)))
+      candidateScores.set(
+        predecessor,
+        Math.max(candidateScores.get(predecessor) ?? 0, 6 + maxRelationWeightBetween(graph, predecessor, seedNode.node_id)),
+      )
       if (!candidateKinds.has(predecessor)) {
         candidateKinds.set(predecessor, 'first_hop')
       }
@@ -848,8 +855,10 @@ function buildReviewBundle(
     }
 
     for (const successor of graph.successors(seedNode.node_id)) {
-      const relation = String(graph.edgeAttributes(seedNode.node_id, successor).relation ?? 'related_to')
-      candidateScores.set(successor, Math.max(candidateScores.get(successor) ?? 0, 5 + relationWeight(relation)))
+      candidateScores.set(
+        successor,
+        Math.max(candidateScores.get(successor) ?? 0, 5 + maxRelationWeightBetween(graph, seedNode.node_id, successor)),
+      )
       if (!candidateKinds.has(successor)) {
         candidateKinds.set(successor, 'first_hop')
       }

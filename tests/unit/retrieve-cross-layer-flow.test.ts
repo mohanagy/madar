@@ -4,6 +4,7 @@ import { performance } from 'node:perf_hooks'
 
 import { describe, expect, it } from 'vitest'
 
+import { serializeGraphArtifact } from '../../src/domain/graph/artifact.js'
 import { readQueryEvidenceSnippet, retrieveContext } from '../../src/runtime/retrieve.js'
 import { assessMadarResponseEvidence } from '../../src/runtime/mcp-response-evidence.js'
 import { buildRetrievalEvidencePlanFromResult } from '../../src/runtime/retrieve/pipeline.js'
@@ -21,13 +22,7 @@ const AGENT_SHORTENED_QUESTION = 'Explain the exact end-to-end path from a faile
 function writeCrossLayerGraphFixture(root: string): string {
   const graph = buildCrossLayerMonitorFlowFixture()
   const graphPath = join(root, 'graph.json')
-  writeFileSync(graphPath, JSON.stringify({
-    ...graph.graph,
-    directed: graph.isDirected(),
-    nodes: graph.nodeEntries().map(([id, attributes]) => ({ id, ...attributes })),
-    edges: graph.edgeEntries().map(([source, target, attributes]) => ({ source, target, ...attributes })),
-    hyperedges: [],
-  }), 'utf8')
+  writeFileSync(graphPath, serializeGraphArtifact(graph), 'utf8')
   return graphPath
 }
 

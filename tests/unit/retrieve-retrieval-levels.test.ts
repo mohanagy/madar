@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { build } from '../../src/pipeline/build.js'
+import { buildGraph } from '../../src/application/build-graph.js'
 import { retrieveContext } from '../../src/runtime/retrieve.js'
 
 function buildRetrievalLevelGraph() {
-  return build(
+  return buildGraph(
     [
       {
         schema_version: 1,
@@ -37,7 +37,7 @@ function buildRetrievalLevelGraph() {
         ],
       },
     ],
-    { directed: true },
+      { rootPath: '/' },
   )
 }
 

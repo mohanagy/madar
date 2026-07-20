@@ -1,4 +1,4 @@
-import { KnowledgeGraph } from '../../contracts/graph.js'
+import { KnowledgeGraph } from '../../domain/graph/directed-multigraph.js'
 import { retrieveContext, type RetrieveResult } from '../../runtime/retrieve.js'
 import { formatTokenRatio, resolveCorpusBaseline, type CorpusBaselineSource } from './corpus.js'
 import { normalizeBenchmarkQuestion, normalizeExpectedLabel, type BenchmarkQuestionSpec } from './questions.js'
@@ -138,10 +138,6 @@ export const GOLD_QUESTIONS: GoldQuestion[] = [
   {
     question: 'how does the graph report get generated',
     expected_labels: ['generate', 'reportts'],
-  },
-  {
-    question: 'how does the HTML export build the interactive explorer',
-    expected_labels: ['tohtml'],
   },
 ]
 

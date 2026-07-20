@@ -12,7 +12,7 @@ import type {
   ImplementationPackRiskBoundary,
   ImplementationPackSurfaceHint,
 } from '../contracts/context-pack.js'
-import type { KnowledgeGraph } from '../contracts/graph.js'
+import type { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
 import type { TaskIntentKind } from '../contracts/task-intent.js'
 import { shellEscapeIfNeeded } from '../shared/shell.js'
 import { classifySourceDomain } from '../shared/source-discovery.js'
@@ -37,6 +37,13 @@ const EXPLICIT_CLIENT_TARGET_PATTERN = /(?:client(?:\s+component)?|presentationa
 const EXPLICIT_SERVER_ACTION_TARGET_PATTERN = /\bserver(?:\s+action)?\b/i
 const WORKFLOW_EDGE_RELATIONS = new Set(['calls', 'controller_route', 'depends_on', 'imports_from', 'enqueues_job'])
 const SURFACE_ATTACHMENT_RELATIONS = new Set(['calls', 'controller_route', 'depends_on', 'imports_from'])
+const WORKFLOW_RELATION_PRIORITY = new Map([
+  ['enqueues_job', 5],
+  ['calls', 4],
+  ['controller_route', 3],
+  ['depends_on', 2],
+  ['imports_from', 1],
+])
 const TEST_EDIT_PATTERN = /\b(?:add|update|modify|change|fix|write|edit|refactor|rename|remove)\b.{0,24}\b(?:test|tests|spec|specs|e2e|integration)\b|\b(?:test|tests|spec|specs|e2e|integration)\b.{0,24}\b(?:add|update|modify|change|fix|write|edit|refactor|rename|remove)\b/i
 const E2E_TEST_PATTERN = /(?:^|\/)(?:e2e|integration)(?:\/|$)|\.(?:e2e|integration)\.[^/]+$/i
 const GENERIC_MODULE_TOKENS = new Set([
@@ -465,8 +472,14 @@ function classifyWorkflowDomain(graph: KnowledgeGraph, nodeId: string, rootPath?
   return classifySourceDomain(graphNodeFile(graph, nodeId), rootPath)
 }
 
-function graphRelation(graph: KnowledgeGraph, sourceId: string, targetId: string): string {
-  return String(graph.edgeAttributes(sourceId, targetId).relation ?? '')
+function preferredGraphRelation(
+  graph: KnowledgeGraph,
+  sourceId: string,
+  targetId: string,
+  allowedRelations: ReadonlySet<string>,
+): string | undefined {
+  return graph.bestRelationBetween(sourceId, targetId, (relation) => allowedRelations.has(relation),
+    (relation) => WORKFLOW_RELATION_PRIORITY.get(relation) ?? 0)
 }
 
 function upsertWorkflowCandidate(
@@ -531,8 +544,8 @@ function workflowCandidates(
     }
 
     for (const predecessorId of graph.predecessors(node.node_id)) {
-      const relation = graphRelation(graph, predecessorId, node.node_id)
-      if (!WORKFLOW_EDGE_RELATIONS.has(relation)) {
+      const relation = preferredGraphRelation(graph, predecessorId, node.node_id, WORKFLOW_EDGE_RELATIONS)
+      if (!relation) {
         continue
       }
       if (classifyWorkflowDomain(graph, predecessorId, rootPath) !== 'production') {
@@ -553,8 +566,8 @@ function workflowCandidates(
     }
 
     for (const successorId of graph.successors(node.node_id)) {
-      const relation = graphRelation(graph, node.node_id, successorId)
-      if (!WORKFLOW_EDGE_RELATIONS.has(relation)) {
+      const relation = preferredGraphRelation(graph, node.node_id, successorId, WORKFLOW_EDGE_RELATIONS)
+      if (!relation) {
         continue
       }
       if (classifyWorkflowDomain(graph, successorId, rootPath) !== 'production') {
@@ -609,8 +622,8 @@ function nearestEntryPointDistance(
     }
 
     for (const predecessorId of graph.predecessors(current.nodeId)) {
-      const relation = graphRelation(graph, predecessorId, current.nodeId)
-      if (!WORKFLOW_EDGE_RELATIONS.has(relation) || classifyWorkflowDomain(graph, predecessorId, rootPath) !== 'production') {
+      const relation = preferredGraphRelation(graph, predecessorId, current.nodeId, WORKFLOW_EDGE_RELATIONS)
+      if (!relation || classifyWorkflowDomain(graph, predecessorId, rootPath) !== 'production') {
         continue
       }
       queue.push({ nodeId: predecessorId, distance: current.distance + 1 })
@@ -632,8 +645,8 @@ function nonTestDegrees(
   const seenSideEffects = new Set<string>()
 
   for (const predecessorId of graph.predecessors(nodeId)) {
-    const relation = graphRelation(graph, predecessorId, nodeId)
-    if (relation === 'covered_by') {
+    const relations = graph.relationKindsBetween(predecessorId, nodeId)
+    if (relations.every((relation) => relation === 'covered_by')) {
       continue
     }
     if (classifyWorkflowDomain(graph, predecessorId, rootPath) !== 'production') {
@@ -643,15 +656,15 @@ function nonTestDegrees(
   }
 
   for (const successorId of graph.successors(nodeId)) {
-    const relation = graphRelation(graph, nodeId, successorId)
+    const relations = graph.relationKindsBetween(nodeId, successorId)
     const successorAttributes = graph.nodeAttributes(successorId)
     const successorLabel = String(successorAttributes.label ?? successorId)
     const successorFile = String(successorAttributes.source_file ?? '')
     const successorDomain = classifySourceDomain(successorFile, rootPath)
-    if (relation === 'covered_by') {
-      if (successorDomain === 'test') {
-        coveredByTests += 1
-      }
+    if (successorDomain === 'test' && relations.includes('covered_by')) {
+      coveredByTests += 1
+    }
+    if (relations.every((relation) => relation === 'covered_by')) {
       continue
     }
     if (successorDomain !== 'production') {
@@ -659,7 +672,7 @@ function nonTestDegrees(
     }
     outgoing += 1
     if (
-      SIDE_EFFECT_PATTERN.test(relation)
+      relations.some((relation) => SIDE_EFFECT_PATTERN.test(relation))
       || SIDE_EFFECT_PATTERN.test(successorLabel)
       || SIDE_EFFECT_PATTERN.test(successorFile)
     ) {
@@ -1075,8 +1088,7 @@ function coveredTestNodes(
     }
 
     for (const successorId of graph.successors(node.node_id)) {
-      const edge = graph.edgeAttributes(node.node_id, successorId)
-      if (String(edge.relation ?? '') !== 'covered_by') {
+      if (!graph.relationKindsBetween(node.node_id, successorId).includes('covered_by')) {
         continue
       }
 
@@ -1236,8 +1248,8 @@ function buildSurfaceHints(
 
     for (const nodeId of graphNodesForPath(graph, center.path, rootPath)) {
       for (const predecessorId of graph.predecessors(nodeId)) {
-        const relation = graphRelation(graph, predecessorId, nodeId)
-        if (!SURFACE_ATTACHMENT_RELATIONS.has(relation)) {
+        const relation = preferredGraphRelation(graph, predecessorId, nodeId, SURFACE_ATTACHMENT_RELATIONS)
+        if (!relation) {
           continue
         }
         const neighbor = retrieveMatchedNodeFromGraph(graph, predecessorId)
@@ -1252,8 +1264,8 @@ function buildSurfaceHints(
       }
 
       for (const successorId of graph.successors(nodeId)) {
-        const relation = graphRelation(graph, nodeId, successorId)
-        if (!SURFACE_ATTACHMENT_RELATIONS.has(relation)) {
+        const relation = preferredGraphRelation(graph, nodeId, successorId, SURFACE_ATTACHMENT_RELATIONS)
+        if (!relation) {
           continue
         }
         const neighbor = retrieveMatchedNodeFromGraph(graph, successorId)

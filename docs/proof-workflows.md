@@ -9,7 +9,7 @@ This repo ships a checked-in demo workspace plus a labeled question set under `e
 ```bash
 npm install
 npm run build
-node dist/src/cli/bin.js generate examples/demo-repo --no-html
+node dist/src/cli/bin.js generate examples/demo-repo
 node dist/src/cli/bin.js benchmark examples/demo-repo/out/graph.json --questions examples/demo-repo/benchmark-questions.json \
   --exec 'cat {prompt_file} | claude -p' \
   --yes
