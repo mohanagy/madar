@@ -1,15 +1,25 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 
 import { parse } from 'yaml'
 import { describe, expect, it } from 'vitest'
 
 // Development-only JavaScript is deliberately outside the production TypeScript build.
 // @ts-expect-error -- the isolated evaluator does not ship declarations in the npm package
-import { commandOutputLines, productionSourceDelta, sourceInventory } from '../../tools/eval/core-reset/record-baseline.mjs'
+import { productionSourceDelta, sourceInventory } from '../../tools/eval/core-reset/record-baseline.mjs'
 
 const read = (path: string): string => readFileSync(resolve(path), 'utf8')
+const git = process.platform === 'win32' ? 'git.exe' : 'git'
 
 function productionTypeScriptFiles(directory = 'src'): string[] {
   return readdirSync(resolve(directory), { withFileTypes: true }).flatMap((entry) => {
@@ -104,10 +114,26 @@ describe('core reset governance', () => {
     }
   })
 
-  it('normalizes Git command output across Unix and Windows line endings', () => {
-    const expected = ['1\t2\tsrc/a.ts', '3\t4\tsrc/b.ts']
-    expect(commandOutputLines(`${expected[0]}\n${expected[1]}\n`)).toEqual(expected)
-    expect(commandOutputLines(`${expected[0]}\r\n${expected[1]}\r\n`)).toEqual(expected)
+  it('measures logical LOC independently from checkout line endings', () => {
+    const root = mkdtempSync(join(tmpdir(), 'madar-core-reset-loc-'))
+    try {
+      mkdirSync(join(root, 'src'), { recursive: true })
+      writeFileSync(join(root, 'src', 'tracked.ts'), 'export const one = 1\nexport const two = 2\n')
+      execFileSync(git, ['init', '-b', 'main'], { cwd: root })
+      execFileSync(git, ['config', 'core.autocrlf', 'false'], { cwd: root })
+      execFileSync(git, ['config', 'user.email', 'madar-core-reset@example.invalid'], { cwd: root })
+      execFileSync(git, ['config', 'user.name', 'Madar Core Reset'], { cwd: root })
+      execFileSync(git, ['add', '.'], { cwd: root })
+      execFileSync(git, ['commit', '-m', 'baseline'], { cwd: root })
+      const baseline = execFileSync(git, ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim()
+
+      writeFileSync(join(root, 'src', 'tracked.ts'), 'export const one = 1\r\nexport const two = 3\r\n')
+      writeFileSync(join(root, 'src', 'untracked.ts'), 'export const added = true\r\n')
+
+      expect(productionSourceDelta(baseline, root)).toEqual({ added: 2, removed: 1, net: 1 })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('measures the current source inventory and phase delta from the recorded protected base', () => {
@@ -126,8 +152,6 @@ describe('core reset governance', () => {
       }>
     }
     const { current } = manifest
-    const git = process.platform === 'win32' ? 'git.exe' : 'git'
-
     expect(execFileSync(git, ['cat-file', '-t', `${current.base_commit}^{commit}`], { encoding: 'utf8' }).trim()).toBe('commit')
     expect(() => execFileSync(git, ['merge-base', '--is-ancestor', current.base_commit, 'HEAD'])).not.toThrow()
 

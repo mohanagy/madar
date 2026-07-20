@@ -235,13 +235,13 @@ function regularFileInside(path, root, label) {
   return resolvedPath
 }
 
-export function sourceInventory() {
+export function sourceInventory(root = repositoryRoot) {
   const paths = []
   const filesystemViolations = []
   const visit = (directory) => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const absolute = join(directory, entry.name)
-      const path = normalizePath(relative(repositoryRoot, absolute))
+      const path = normalizePath(relative(root, absolute))
       if (entry.isSymbolicLink()) {
         filesystemViolations.push(`${path}: symbolic link under src`)
       } else if (entry.isDirectory()) {
@@ -251,23 +251,24 @@ export function sourceInventory() {
       }
     }
   }
-  visit(join(repositoryRoot, 'src'))
+  visit(join(root, 'src'))
   paths.sort()
   const loc = paths.reduce((total, path) => {
-    const source = readFileSync(join(repositoryRoot, path), 'utf8')
+    const source = readFileSync(join(root, path), 'utf8')
     const lineFeeds = source.match(/\n/g)?.length ?? 0
     return total + lineFeeds + (source.length > 0 && !source.endsWith('\n') ? 1 : 0)
   }, 0)
   return { files: paths.length, loc, paths, filesystemViolations }
 }
 
-export function commandOutputLines(output) {
-  return output.split(/\r\n|\n|\r/).filter(Boolean)
-}
+const commandOutputRecords = (output) => output.split('\0').filter(Boolean)
 
-export function productionSourceDelta(baselineCommit) {
-  const lines = commandOutputLines(
-    run(gitCommand, ['diff', '--no-ext-diff', '--no-renames', '--numstat', baselineCommit, '--', 'src']).stdout,
+export function productionSourceDelta(baselineCommit, root = repositoryRoot) {
+  // The controlled Git environment removes autocrlf; ignore checkout-only CR bytes so LOC stays platform-neutral.
+  const lines = commandOutputRecords(
+    run(gitCommand, [
+      'diff', '--ignore-cr-at-eol', '--no-ext-diff', '--no-renames', '--numstat', '-z', baselineCommit, '--', 'src',
+    ], { cwd: root }).stdout,
   )
   let added = 0
   let removed = 0
@@ -276,16 +277,12 @@ export function productionSourceDelta(baselineCommit) {
     added += rawAdded === '-' ? 0 : Number(rawAdded)
     removed += rawRemoved === '-' ? 0 : Number(rawRemoved)
   }
-  const baselinePaths = new Set(commandOutputLines(run(gitCommand, [
-    'ls-tree', '-r', '--full-tree', '--name-only', baselineCommit, '--', 'src',
-  ]).stdout).filter((path) => path.endsWith('.ts')))
-  const pathsVisibleToGitDiff = new Set(commandOutputLines(run(gitCommand, [
-    'diff', '--no-ext-diff', '--no-renames', '--name-only', baselineCommit, '--', 'src',
-  ]).stdout))
-  const actualPaths = sourceInventory().paths
-  for (const path of actualPaths.filter((candidate) =>
-    !baselinePaths.has(candidate) && !pathsVisibleToGitDiff.has(candidate))) {
-    const source = readFileSync(join(repositoryRoot, path), 'utf8')
+  const trackedPaths = new Set(commandOutputRecords(
+    run(gitCommand, ['ls-files', '--cached', '-z', '--', 'src'], { cwd: root }).stdout,
+  ).map(normalizePath))
+  const actualPaths = sourceInventory(root).paths
+  for (const path of actualPaths.filter((candidate) => !trackedPaths.has(candidate))) {
+    const source = readFileSync(join(root, path), 'utf8')
     const lineFeeds = source.match(/\n/g)?.length ?? 0
     added += lineFeeds + (source.length > 0 && !source.endsWith('\n') ? 1 : 0)
   }
