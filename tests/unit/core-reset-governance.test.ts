@@ -47,6 +47,19 @@ function deletedProductionFiles(commit: string): string[] {
   return output.split('\n').filter((path) => path.endsWith('.ts'))
 }
 
+function productionTypeScriptFilesAtCommit(commit: string): string[] {
+  const output = execFileSync(git, ['ls-tree', '-r', '--name-only', commit, '--', 'src'], { encoding: 'utf8' })
+  return output.split('\n').filter((path) => path.endsWith('.ts'))
+}
+
+function logicalLocAtCommit(commit: string, paths: readonly string[]): number {
+  return paths.reduce((total, path) => {
+    const source = execFileSync(git, ['show', `${commit}:${path}`], { encoding: 'utf8' })
+    const lineFeeds = source.match(/\n/g)?.length ?? 0
+    return total + lineFeeds + (source.length > 0 && !source.endsWith('\n') ? 1 : 0)
+  }, 0)
+}
+
 describe('core reset governance', () => {
   it('keeps one linked roadmap and RFC contract', () => {
     const roadmap = read('docs/roadmap.md')
@@ -122,6 +135,7 @@ describe('core reset governance', () => {
         production_file_budget?: { added_max: number; removed_min: number }
         production_loc_budget?: { added_max: number; removed_min: number; net_max: number }
         runtime_dependency_budget?: { added_max: number; removed_min: number }
+        runtime_dependencies_removed?: string[]
         retired_cli_flags?: string[]
         completion?: {
           issue: string
@@ -233,6 +247,7 @@ describe('core reset governance', () => {
       production_file_budget: { added_max: 1, removed_min: 31 },
       production_loc_budget: { added_max: 900, removed_min: 20_951, net_max: -20_000 },
       runtime_dependency_budget: { added_max: 0, removed_min: 3 },
+      runtime_dependencies_removed: ['@vscode/tree-sitter-wasm', 'web-tree-sitter', 'fflate'],
       retired_cli_flags: ['--legacy', '--spi', '--include-docs', '--docs', '--wiki'],
     })
     expect(legacy?.transferred_sources).toEqual([
@@ -242,6 +257,14 @@ describe('core reset governance', () => {
       'src/infrastructure/capabilities.ts',
     ])
     expect(nonCode).toMatchObject({ status: 'planned', absorbed_by: 'legacy-extraction' })
+    const deletionOwners = [legacy, ...(legacy?.absorbs ?? []).map((id) => manifest.items.find((item) => item.id === id))]
+    expect(deletionOwners.every(Boolean)).toBe(true)
+    const baseFiles = productionTypeScriptFilesAtCommit(manifest.current.base_commit)
+    const deletionFiles = baseFiles.filter((file) =>
+      deletionOwners.some((item) => (item?.sources ?? []).some((pattern) => manifestGlob(pattern).test(file))),
+    )
+    expect(new Set(deletionFiles).size).toBe(31)
+    expect(logicalLocAtCommit(manifest.current.base_commit, deletionFiles)).toBe(20_951)
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id)).toEqual([
       'legacy-extraction',
     ])
@@ -286,6 +309,7 @@ describe('core reset governance', () => {
       }
       items: Array<{
         id: string
+        status: string
         production_loc_budget?: { added_max: number; removed_min: number; net_max: number }
       }>
     }
@@ -300,7 +324,11 @@ describe('core reset governance', () => {
     expect(budget).toBeDefined()
     expect(inventory.filesystemViolations).toEqual([])
     expect(delta.added).toBeLessThanOrEqual(budget!.added_max)
-    const isActivationOnly = delta.removed === 0 && delta.net === 0
+    const isActivationOnly = current.active_phase !== null
+      && phase?.status === 'in_progress'
+      && delta.added === 0
+      && delta.removed === 0
+      && delta.net === 0
     const meetsExitBudget = delta.removed >= budget!.removed_min && delta.net <= budget!.net_max
     expect(isActivationOnly || meetsExitBudget).toBe(true)
     expect({
