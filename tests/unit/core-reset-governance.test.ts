@@ -363,7 +363,7 @@ describe('core reset governance', () => {
         files_with_one_owner: number
         unowned_files: number
         overlapping_files: number
-      disposition_changes: number
+        disposition_changes: number
       }
       items: Array<{
         id: string
