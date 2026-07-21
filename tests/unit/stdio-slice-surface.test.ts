@@ -8,6 +8,7 @@ import { handleStdioRequest } from '../../src/runtime/stdio-server.js'
 import * as retrieveRuntime from '../../src/runtime/retrieve.js'
 import { evaluateQueryEvidenceCoverage } from '../../src/runtime/retrieve/conceptual-fallback.js'
 import { estimateQueryTokens } from '../../src/runtime/serve.js'
+import { writeCanonicalGraphFixture } from '../helpers/graph-artifact.js'
 
 const tempRoots: string[] = []
 const scratchRoot = join(process.cwd(), '.test-artifacts', 'stdio-slice-surface')
@@ -27,8 +28,7 @@ function createGraphPath(): string {
   writeFileSync(join(root, 'session-store.ts'), 'export class SessionStore { createSession() {} }\n', 'utf8')
   writeFileSync(join(root, 'auth.spec.ts'), 'test("login", () => {})\n', 'utf8')
   writeFileSync(join(madarOut, 'GRAPH_REPORT.md'), '# Graph report\n', 'utf8')
-  writeFileSync(graphPath, JSON.stringify({
-    directed: true,
+  writeCanonicalGraphFixture(graphPath, {
     root_path: root,
     nodes: [
       { id: 'auth_route', label: 'POST /login', source_file: join(root, 'routes.ts'), source_location: 'L1', file_type: 'code', node_kind: 'route', framework: 'express', framework_role: 'express_route', community: 0 },
@@ -44,7 +44,7 @@ function createGraphPath(): string {
       { source: 'auth_service', target: 'auth_test', relation: 'covered_by', confidence: 'EXTRACTED', source_file: join(root, 'auth.ts') },
     ],
     hyperedges: [],
-  }), 'utf8')
+  })
   return graphPath
 }
 
@@ -61,8 +61,7 @@ function createBackendRuntimeGraphPath(): string {
   writeFileSync(join(root, 'backend', 'src', 'spi', 'auth-service.spi.ts'), 'export interface AuthServiceSpi { login(): Promise<void> }\n', 'utf8')
   writeFileSync(join(root, 'backend', 'src', 'runtime', 'auth-service.ts'), 'export class AuthService { login() {} }\n', 'utf8')
   writeFileSync(join(root, 'out', 'GRAPH_REPORT.md'), '# Graph report\n', 'utf8')
-  writeFileSync(graphPath, JSON.stringify({
-    directed: true,
+  writeCanonicalGraphFixture(graphPath, {
     root_path: root,
     nodes: [
       { id: 'auth_route', label: 'POST /login', source_file: join(root, 'backend', 'src', 'auth-route.ts'), source_location: 'L1', file_type: 'code', node_kind: 'route', framework: 'express', framework_role: 'express_route', community: 0 },
@@ -76,7 +75,7 @@ function createBackendRuntimeGraphPath(): string {
       { source: 'auth_spi', target: 'auth_service', relation: 'implements', confidence: 'EXTRACTED', source_file: join(root, 'backend', 'src', 'spi', 'auth-service.spi.ts') },
     ],
     hyperedges: [],
-  }), 'utf8')
+  })
   return graphPath
 }
 

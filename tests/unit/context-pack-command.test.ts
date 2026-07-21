@@ -5,15 +5,16 @@ import { dirname, join } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import type { ContextPackSelectionDiagnostics } from '../../src/contracts/context-pack.js'
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import { buildAnswerReadyPackSchema, runContextPackCommand, type ContextPackCommandDependencies } from '../../src/infrastructure/context-pack-command.js'
-import { build } from '../../src/pipeline/build.js'
+import { buildGraph } from '../../src/application/build-graph.js'
 import { assessMadarResponseEvidence } from '../../src/runtime/mcp-response-evidence.js'
 import { compactRetrieveResult, retrieveContext, type RetrieveResult } from '../../src/runtime/retrieve.js'
 import { evaluateQueryEvidenceCoverage } from '../../src/runtime/retrieve/conceptual-fallback.js'
 import { buildRetrievalEvidencePlanFromResult } from '../../src/runtime/retrieve/pipeline.js'
 import { estimateQueryTokens } from '../../src/runtime/serve.js'
 import { buildCrossLayerMonitorFlowFixture } from '../fixtures/cross-layer-monitor-flow.js'
+import { writeCanonicalGraphFixture } from '../helpers/graph-artifact.js'
 
 const tempFixtureRoots: string[] = []
 const repoGraphFixturePath = join(process.cwd(), 'out', 'graph.json')
@@ -32,7 +33,7 @@ beforeAll(() => {
       mkdirSync(repoGraphDir, { recursive: true })
       createdRepoGraphFixtureDir = true
     }
-    writeFileSync(repoGraphFixturePath, JSON.stringify({ fixture: true }))
+    writeCanonicalGraphFixture(repoGraphFixturePath, {})
     createdRepoGraphFixture = true
   }
   if (existsSync(repoBackendGraphFixturePath)) {
@@ -43,7 +44,7 @@ beforeAll(() => {
     mkdirSync(repoBackendGraphDir, { recursive: true })
     createdRepoBackendGraphFixtureDir = true
   }
-  writeFileSync(repoBackendGraphFixturePath, JSON.stringify({ fixture: true }))
+  writeCanonicalGraphFixture(repoBackendGraphFixturePath, {})
   createdRepoBackendGraphFixture = true
 })
 
@@ -72,7 +73,7 @@ afterEach(() => {
 })
 
 function buildRuntimeGenerationGraph() {
-  return build(
+  return buildGraph(
     [
       {
         schema_version: 1,
@@ -97,7 +98,7 @@ function buildRuntimeGenerationGraph() {
         ],
       },
     ],
-    { directed: true },
+    { rootPath: '/' },
   )
 }
 
@@ -113,7 +114,7 @@ function buildImplementationPackGraph() {
       'test:run': 'vitest run',
     },
   }))
-  const graph = build(
+  const graph = buildGraph(
     [
       {
         schema_version: 1,
@@ -148,9 +149,8 @@ function buildImplementationPackGraph() {
         ],
       },
     ],
-    { directed: true },
+    { rootPath: root },
   )
-  graph.graph.root_path = root
   return graph
 }
 
@@ -166,7 +166,7 @@ function buildImplementationPackDistractorGraph() {
       'test:run': 'vitest run',
     },
   }))
-  const graph = build(
+  const graph = buildGraph(
     [
       {
         schema_version: 1,
@@ -183,9 +183,8 @@ function buildImplementationPackDistractorGraph() {
         ],
       },
     ],
-    { directed: true },
+    { rootPath: root },
   )
-  graph.graph.root_path = root
   return graph
 }
 
@@ -382,7 +381,7 @@ describe('context-pack-command', () => {
     tempFixtureRoots.push(root)
     const graphPath = join(root, 'out', 'graph.json')
     mkdirSync(dirname(graphPath), { recursive: true })
-    writeFileSync(graphPath, JSON.stringify({
+    writeCanonicalGraphFixture(graphPath, {
       discovery_safety: {
         version: 1,
         summary: { total: 1, sensitive: 1, unreadable: 0, reasons: { secret_config: 1 } },
@@ -390,7 +389,7 @@ describe('context-pack-command', () => {
           { path: 'src/billing/credentials.json', kind: 'sensitive', reason: 'secret_config' },
         ],
       },
-    }))
+    })
 
     const graph = buildRuntimeGenerationGraph()
     graph.graph.discovery_safety = {

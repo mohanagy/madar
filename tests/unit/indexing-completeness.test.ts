@@ -16,6 +16,7 @@ import {
   retainedIndexingOutcomes,
 } from '../../src/pipeline/indexing-generation.js'
 import {
+  EXTRACTOR_CACHE_VERSION,
   readCachedExtraction,
   writeCachedExtraction,
 } from '../../src/pipeline/extract.js'
@@ -306,7 +307,7 @@ describe('indexing extraction cache', () => {
       })
 
       expect(JSON.parse(readFileSync(cachePath, 'utf8'))).toMatchObject({
-        __madarTsExtractorVersion: 68,
+        __madarTsExtractorVersion: EXTRACTOR_CACHE_VERSION,
         diagnostics: [{
           code: 'tree_sitter_python_fallback',
           level: 'warning',

@@ -6,7 +6,7 @@ Before any agent-specific install, start with the [getting started tutorial](htt
 
 ```bash
 madar try "how does auth work?"
-madar generate . --no-html
+madar generate .
 ```
 
 That trial flow is the shared baseline for every quickstart below.

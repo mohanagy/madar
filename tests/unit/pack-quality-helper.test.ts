@@ -55,7 +55,6 @@ describe('pack-quality helper', () => {
     expect(generateSpy).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({
-        noHtml: true,
         extractionMode: 'spi',
       }),
     )
@@ -69,7 +68,6 @@ describe('pack-quality helper', () => {
     expect(generateSpy).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({
-        noHtml: true,
         extractionMode: 'legacy',
       }),
     )

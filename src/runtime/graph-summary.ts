@@ -1,4 +1,4 @@
-import { KnowledgeGraph } from '../contracts/graph.js'
+import { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
 import { sanitizeLabel } from '../shared/security.js'
 import { communitiesFromGraph, communityLabelsFromGraph } from './serve.js'
 
@@ -475,10 +475,13 @@ function bestRuntimeTraversals(
       .sort(compareNodeIdentity)
 
     for (const neighbor of neighbors) {
-      const edge = graph.edgeAttributes(nodeId, neighbor.id)
+      const edgeRelationScore = Math.max(
+        0,
+        ...graph.relationKindsBetween(nodeId, neighbor.id).map(relationQualityScore),
+      )
       const candidate: RuntimeTraversal = {
         hops: traversal.hops + 1,
-        relationScore: traversal.relationScore + relationQualityScore(edge.relation),
+        relationScore: traversal.relationScore + edgeRelationScore,
         minDomainScore: Math.min(traversal.minDomainScore, sourceDomainScore(neighbor.sourceDomain)),
       }
       const existing = traversals.get(neighbor.id)

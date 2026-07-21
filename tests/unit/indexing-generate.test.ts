@@ -9,6 +9,7 @@ import {
   generateGraph,
   IndexingCompletenessError,
 } from '../../src/infrastructure/generate.js'
+import { readCanonicalGraphFixture } from '../helpers/graph-artifact.js'
 
 function withWorkspace(run: (root: string) => void): void {
   const root = mkdtempSync(join(tmpdir(), 'madar-indexing-generate-'))
@@ -32,12 +33,12 @@ describe('generate indexing completeness', () => {
       writeFileSync(join(root, '.madarignore'), 'ignored.ts\n', 'utf8')
       writeFileSync(join(root, 'ignored.ts'), 'export const ignored = true\n', 'utf8')
 
-      const result = generateGraph(root, { noHtml: true })
+      const result = generateGraph(root, {  })
       const manifestPath = join(root, 'out', 'indexing-manifest.json')
       const shareSafePath = join(root, 'out', 'indexing-manifest.share-safe.json')
       const manifest = readJson<IndexingManifestV1>(manifestPath)
       const shareSafe = readJson<ShareSafeIndexingManifestV1>(shareSafePath)
-      const graph = readJson<Record<string, unknown>>(join(root, 'out', 'graph.json'))
+      const graph = readCanonicalGraphFixture(join(root, 'out', 'graph.json'))
       const report = readFileSync(join(root, 'out', 'GRAPH_REPORT.md'), 'utf8')
 
       expect(result.indexing).toMatchObject({
@@ -78,7 +79,6 @@ describe('generate indexing completeness', () => {
       let thrown: unknown
       try {
         generateGraph(root, {
-          noHtml: true,
           indexingStrict: { maxFailed: 0, maxUnsupported: 0 },
         })
       } catch (error) {
@@ -107,7 +107,7 @@ describe('generate indexing completeness', () => {
       const sourceManifestPath = join(root, 'out', 'manifest.json')
       const graphPath = join(root, 'out', 'graph.json')
       writeFileSync(sourcePath, 'export function initialFlow() { return 1 }\n', 'utf8')
-      generateGraph(root, { noHtml: true })
+      generateGraph(root, {  })
       const manifestBeforeFailure = readFileSync(sourceManifestPath, 'utf8')
       const indexingManifestBeforeFailure = readFileSync(join(root, 'out', 'indexing-manifest.json'), 'utf8')
 
@@ -118,18 +118,17 @@ describe('generate indexing completeness', () => {
 
       expect(() => generateGraph(root, {
         update: true,
-        noHtml: true,
         indexingStrict: { maxFailed: 0, maxUnsupported: 0 },
       })).toThrow(IndexingCompletenessError)
 
       expect(readFileSync(sourceManifestPath, 'utf8')).toBe(manifestBeforeFailure)
       expect(readFileSync(join(root, 'out', 'indexing-manifest.json'), 'utf8')).toBe(indexingManifestBeforeFailure)
       expect(existsSync(join(root, 'out', 'indexing-manifest.failed.json'))).toBe(true)
-      expect(JSON.stringify(readJson<Record<string, unknown>>(graphPath))).not.toContain('updatedFlow')
+      expect(JSON.stringify(readCanonicalGraphFixture(graphPath))).not.toContain('updatedFlow')
 
       unlinkSync(unsupportedPath)
-      const retry = generateGraph(root, { update: true, noHtml: true })
-      const retriedGraph = readJson<{ nodes: Array<{ label?: string }> }>(graphPath)
+      const retry = generateGraph(root, { update: true })
+      const retriedGraph = readCanonicalGraphFixture(graphPath)
 
       expect(retry.changedFiles).toBeGreaterThan(0)
       expect(retriedGraph.nodes.some((node) => node.label?.includes('updatedFlow'))).toBe(true)

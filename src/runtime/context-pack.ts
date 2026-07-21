@@ -60,6 +60,7 @@ export interface ContextPackNodeCandidate<TNode extends ContextPackNode = Contex
   snippet?: string | null
   evidence_class: ContextPackEvidenceClass
   expandable_ref?: ContextPackExpandablePreview
+  suppress_expandable_line_fallback?: boolean
   estimate_tokens: () => number
   build_entry: () => TNode
 }
@@ -598,7 +599,7 @@ function expandablePreviewForCandidate(candidate: ContextPackNodeCandidate): Con
     return fallback
   }
   const providedLineRange = normalizeExpandableLineRange(candidate.expandable_ref?.line_range)
-  const lineRange = providedLineRange ?? (() => {
+  const lineRange = providedLineRange ?? (candidate.suppress_expandable_line_fallback ? undefined : (() => {
     const lineNumber = typeof candidate.line_number === 'number' ? candidate.line_number : fallbackEntry().line_number
     return Number.isFinite(lineNumber) && Number.isInteger(lineNumber) && lineNumber > 0
       ? {
@@ -606,7 +607,7 @@ function expandablePreviewForCandidate(candidate: ContextPackNodeCandidate): Con
           end_line: lineNumber,
         }
       : undefined
-  })()
+  })())
   const fallbackNodeId = typeof candidate.node_id === 'string'
     ? candidate.node_id
     : typeof fallback?.node_id === 'string'

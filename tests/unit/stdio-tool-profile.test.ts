@@ -12,14 +12,15 @@ import {
 } from '../../src/runtime/stdio/definitions.js'
 import { handleStdioRequest } from '../../src/runtime/stdio-server.js'
 import { constrainStrictContextPackPayload } from '../../src/runtime/stdio/tools.js'
+import { writeCanonicalGraphFixture } from '../helpers/graph-artifact.js'
 
 function createMinimalGraphRoot(): string {
   const parentDir = resolve('out', 'test-runtime')
   mkdirSync(parentDir, { recursive: true })
   const root = mkdtempSync(join(parentDir, 'madar-tool-profile-'))
-  writeFileSync(
+  writeCanonicalGraphFixture(
     join(root, 'graph.json'),
-    JSON.stringify({
+    {
       community_labels: {},
       nodes: [
         { id: 'a', label: 'A', source_file: 'a.ts', source_location: '1', file_type: 'code', community: 0 },
@@ -27,8 +28,7 @@ function createMinimalGraphRoot(): string {
       ],
       edges: [{ source: 'a', target: 'b', relation: 'calls', confidence: 'EXTRACTED', source_file: 'a.ts' }],
       hyperedges: [],
-    }),
-    'utf8',
+    },
   )
   return root
 }
@@ -45,9 +45,9 @@ function createOverflowExpansionGraphRoot(): string {
     (_, index) => `export const evidence_${index + 1} = '${'cross layer runtime status evidence '.repeat(12)}'`,
   )
   writeFileSync(sourceFile, `${sourceLines.join('\n')}\n`, 'utf8')
-  writeFileSync(
+  writeCanonicalGraphFixture(
     join(root, 'graph.json'),
-    JSON.stringify({
+    {
       community_labels: {},
       nodes: Array.from({ length: 600 }, (_, index) => ({
         id: `overflow-${index + 1}`,
@@ -59,8 +59,7 @@ function createOverflowExpansionGraphRoot(): string {
       })),
       edges: [],
       hyperedges: [],
-    }),
-    'utf8',
+    },
   )
   return root
 }

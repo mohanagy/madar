@@ -83,7 +83,7 @@ body:
       label: Madar commands
       description: Do not include source paths or source code. Capture only the share-safe command shapes that produced the receipt.
       placeholder: |
-        madar generate . --spi --no-html
+        madar generate . --spi
         madar pack "how does password reset enqueue the email job" --task explain
     validations:
       required: true

@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative, resolve, sep } from 'node:path'
 
@@ -8,6 +8,7 @@ import { describe, expect, test } from 'vitest'
 import { generateGraph } from '../../src/infrastructure/generate.js'
 import { validateGraphOutputPath } from '../../src/shared/security.js'
 import { resolveMadarWorkspace, resolveWorkspaceGraphPath, resolveWorkspaceOutputPath } from '../../src/shared/workspace.js'
+import { readCanonicalGraphFixture } from '../helpers/graph-artifact.js'
 
 function git(directory: string, args: string[]): void {
   execFileSync('git', args, { cwd: directory, stdio: 'pipe' })
@@ -74,8 +75,8 @@ describe('worktree artifact routing', () => {
       expect(validateGraphOutputPath('out/compare', 'out', linked)).toBe(join(linkedWorkspace.outputDir, 'compare'))
 
       writeFileSync(join(linked, 'feature.ts'), 'export function worktreeOnlyFeature() { return 2 }\n', 'utf8')
-      const result = generateGraph(linked, { noHtml: true })
-      const graph = JSON.parse(readFileSync(result.graphPath, 'utf8')) as { root_path?: string; nodes?: Array<{ source_file?: string }> }
+      const result = generateGraph(linked, {  })
+      const graph = readCanonicalGraphFixture(result.graphPath)
 
       expect(result.outputDir).toBe(linkedWorkspace.outputDir)
       expect(result.graphPath).toBe(linkedWorkspace.graphPath)
@@ -84,10 +85,10 @@ describe('worktree artifact routing', () => {
       expect(graph.nodes?.some((node) => node.source_file?.endsWith('feature.ts'))).toBe(true)
 
       writeFileSync(join(linked, 'feature.ts'), 'export function worktreeOnlyFeature() { return 3 }\n', 'utf8')
-      const update = generateGraph(linked, { update: true, noHtml: true })
+      const update = generateGraph(linked, { update: true })
       expect(update.outputDir).toBe(linkedWorkspace.outputDir)
 
-      const spi = generateGraph(linked, { useSpi: true, noHtml: true })
+      const spi = generateGraph(linked, { useSpi: true })
       expect(spi.outputDir).toBe(linkedWorkspace.outputDir)
       expect(existsSync(join(linked, 'out'))).toBe(false)
       expect(existsSync(join(linkedWorkspace.outputDir, '.spi-cache'))).toBe(true)

@@ -8,7 +8,7 @@ import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import { generateGraph } from '../../src/infrastructure/generate.js'
 import { retrieveContext } from '../../src/runtime/retrieve.js'
 import { loadGraph } from '../../src/runtime/serve.js'
@@ -38,7 +38,7 @@ describe('Framework metadata-aware retrieval boost (#133)', () => {
       'app.get("/users/:id", getUserById)',
     ].join('\n') + '\n')
 
-    const result = generateGraph(sandbox, { useSpi: true, noHtml: true })
+    const result = generateGraph(sandbox, { useSpi: true })
     const graph = loadGraph(result.graphPath)
     const retrieved = retrieveContext(graph, {
       question: 'Find the express handler for GET /users/:id',
@@ -66,7 +66,7 @@ describe('Framework metadata-aware retrieval boost (#133)', () => {
       'app.post("/users", createUser)',
     ].join('\n') + '\n')
 
-    const result = generateGraph(sandbox, { useSpi: true, noHtml: true })
+    const result = generateGraph(sandbox, { useSpi: true })
     const graph = loadGraph(result.graphPath)
     const retrieved = retrieveContext(graph, {
       question: 'Which route handles POST requests to /users',
@@ -98,7 +98,7 @@ describe('Framework metadata-aware retrieval boost (#133)', () => {
       '})',
     ].join('\n') + '\n')
 
-    const result = generateGraph(sandbox, { useSpi: true, noHtml: true })
+    const result = generateGraph(sandbox, { useSpi: true })
     const graph = loadGraph(result.graphPath)
     const retrieved = retrieveContext(graph, {
       question: 'Which slice handles auth state',
@@ -120,7 +120,7 @@ describe('Framework metadata-aware retrieval boost (#133)', () => {
       '})',
     ].join('\n') + '\n')
 
-    const result = generateGraph(sandbox, { useSpi: true, noHtml: true })
+    const result = generateGraph(sandbox, { useSpi: true })
     const graph = loadGraph(result.graphPath)
     const retrieved = retrieveContext(graph, {
       question: 'How does the cancelOrder tRPC mutation work',
@@ -145,7 +145,7 @@ describe('Framework metadata-aware retrieval boost (#133)', () => {
       'app.get("/orders/:id", h)',
     ].join('\n') + '\n')
 
-    const result = generateGraph(sandbox, { useSpi: true, noHtml: true })
+    const result = generateGraph(sandbox, { useSpi: true })
     const graph = loadGraph(result.graphPath)
     const retrieved = retrieveContext(graph, {
       question: 'Find the handler for the /orders/:id endpoint',
@@ -165,7 +165,7 @@ describe('Framework metadata-aware retrieval boost (#133)', () => {
       'app.get("/items", listItems)',
     ].join('\n') + '\n')
 
-    const result = generateGraph(sandbox, { useSpi: true, noHtml: true })
+    const result = generateGraph(sandbox, { useSpi: true })
     const graph = loadGraph(result.graphPath)
     // Question mentions "budget" (which CONTAINS the substring "get")
     // but NOT the literal verb GET. The word-boundary regex must not
@@ -197,7 +197,7 @@ describe('Framework metadata-aware retrieval boost (#133)', () => {
       'app.get("/users", listUsers)',
     ].join('\n') + '\n')
 
-    const result = generateGraph(sandbox, { useSpi: true, noHtml: true })
+    const result = generateGraph(sandbox, { useSpi: true })
     const graph = loadGraph(result.graphPath)
     // Question is completely unrelated to /users or GET.
     const retrievedUnrelated = retrieveContext(graph, {
@@ -218,7 +218,7 @@ describe('Framework metadata-aware retrieval boost (#133)', () => {
   })
 
   it('boosts runtime_boundary metadata only for matching client/server prompts', () => {
-    const graph = new KnowledgeGraph({ directed: true })
+    const graph = new KnowledgeGraph()
     graph.addNode('server_boundary', {
       label: 'persistDashboardOwnerFilter()',
       source_file: '/app/dashboard/actions.ts',
@@ -265,7 +265,7 @@ describe('Framework metadata-aware retrieval boost (#133)', () => {
   })
 
   it('does not let runtime_boundary metadata alone seed unrelated server/client nodes', () => {
-    const graph = new KnowledgeGraph({ directed: true })
+    const graph = new KnowledgeGraph()
     graph.addNode('relevant_server_boundary', {
       label: 'persistDashboardOwnerFilter()',
       source_file: '/app/dashboard/actions.ts',

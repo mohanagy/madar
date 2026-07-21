@@ -13,6 +13,7 @@ import { readWatcherStateForGraph } from '../../src/infrastructure/watcher-state
 import { tryAcquireRefreshLease } from '../../src/infrastructure/refresh-lease.js'
 import { resolveMadarWorkspace } from '../../src/shared/workspace.js'
 import { binaryIngestSidecarPath } from '../../src/shared/binary-ingest-sidecar.js'
+import { readCanonicalGraphFixture } from '../helpers/graph-artifact.js'
 
 function withTempDir(callback: (tempDir: string) => void): void {
   const tempDir = mkdtempSync(join(tmpdir(), 'madar-watch-'))
@@ -120,12 +121,12 @@ describe('rebuildCode', () => {
     withTempDir((tempDir) => {
       const sourcePath = join(tempDir, 'main.ts')
       writeFileSync(sourcePath, 'export const original = true\n', 'utf8')
-      generateGraph(tempDir, { useSpi: true, noHtml: true })
+      generateGraph(tempDir, { useSpi: true })
 
       writeFileSync(sourcePath, 'export const refreshed = true\n', 'utf8')
-      expect(rebuildCode(tempDir, { noHtml: true })).toBe(true)
+      expect(rebuildCode(tempDir, {  })).toBe(true)
 
-      const graph = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as { spi_mode?: unknown }
+      const graph = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json'))
       expect(graph.spi_mode).toBe(true)
     })
   })
@@ -137,16 +138,12 @@ describe('rebuildCode', () => {
       const goPath = join(tempDir, 'cmd', 'main.go')
       writeFileSync(tsPath, 'export const original = true\n', 'utf8')
       writeFileSync(goPath, 'package main\n\nfunc main() {}\n', 'utf8')
-      generateGraph(tempDir, { extractionMode: 'auto', noHtml: true })
+      generateGraph(tempDir, { extractionMode: 'auto' })
 
       writeFileSync(goPath, 'package main\n\nfunc main() { println("refreshed") }\n', 'utf8')
-      expect(rebuildCode(tempDir, { noHtml: true })).toBe(true)
+      expect(rebuildCode(tempDir, {  })).toBe(true)
 
-      const graph = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
-        spi_mode?: unknown
-        generation_policy?: unknown
-        nodes: Array<{ label?: unknown; source_file?: unknown }>
-      }
+      const graph = readCanonicalGraphFixture(join(tempDir, 'out', 'graph.json'))
       const policy = parseGenerationPolicy(graph.generation_policy)
 
       expect(graph.spi_mode).toBe(true)
@@ -164,31 +161,29 @@ describe('rebuildCode', () => {
       writeFileSync(sourcePath, 'export const original = true\n', 'utf8')
       writeFileSync(join(tempDir, 'README.md'), '# excluded documents\n', 'utf8')
       const initial = generateGraph(tempDir, {
-        directed: false,
         followSymlinks: true,
         respectGitignore: true,
         includeDocs: false,
-        noHtml: true,
         indexingStrict: { maxFailed: 0, maxUnsupported: 0 },
       })
       const before = parseGenerationPolicy(
-        (JSON.parse(readFileSync(initial.graphPath, 'utf8')) as { generation_policy?: unknown }).generation_policy,
+        readCanonicalGraphFixture(initial.graphPath).generation_policy,
       )
 
       writeFileSync(sourcePath, 'export const refreshed = true\n', 'utf8')
-      expect(rebuildCode(tempDir, { noHtml: true })).toBe(true)
+      expect(rebuildCode(tempDir, {  })).toBe(true)
 
       const after = parseGenerationPolicy(
-        (JSON.parse(readFileSync(initial.graphPath, 'utf8')) as { generation_policy?: unknown }).generation_policy,
+        readCanonicalGraphFixture(initial.graphPath).generation_policy,
       )
       expect(after).toEqual(before)
       expect(after?.settings).toMatchObject({
-        directed: false,
         follow_symlinks: true,
         respect_gitignore: true,
         include_documents: false,
         indexing_strict: { max_failed: 0, max_unsupported: 0 },
       })
+      expect(after?.settings).not.toHaveProperty('directed')
     })
   })
 
@@ -200,7 +195,7 @@ describe('rebuildCode', () => {
       const lockPath = join(outputDir, '.madar-refresh.lock')
       writeFileSync(lockPath, `999999999 abandoned-lease ${new Date().toISOString()}\n`, 'utf8')
 
-      expect(rebuildCode(tempDir, { noHtml: true })).toBe(true)
+      expect(rebuildCode(tempDir, {  })).toBe(true)
       expect(existsSync(lockPath)).toBe(false)
     })
   })
@@ -210,11 +205,10 @@ describe('watch', () => {
   test('settles startup without rebuilding an unchanged valid graph', async () => {
     await withTempDirAsync(async (tempDir) => {
       writeFileSync(join(tempDir, 'main.ts'), 'export const value = 1\n', 'utf8')
-      const generated = generateGraph(tempDir, { extractionMode: 'auto', noHtml: true })
+      const generated = generateGraph(tempDir, { extractionMode: 'auto' })
       const rebuild = vi.fn(() => true)
       const refresh = startGraphAutoRefresh(tempDir, 0.02, {
         pollIntervalMs: 20,
-        noHtml: true,
         rebuildCode: rebuild,
         logger: { log() {}, error() {} },
       })
@@ -241,13 +235,12 @@ describe('watch', () => {
   test('does not rebuild when managed root agent instructions were added after generation', async () => {
     await withTempDirAsync(async (tempDir) => {
       writeFileSync(join(tempDir, 'main.ts'), 'export const value = 1\n', 'utf8')
-      const generated = generateGraph(tempDir, { noHtml: true })
+      const generated = generateGraph(tempDir, {  })
       writeFileSync(join(tempDir, 'AGENTS.md'), '# Madar instructions\n', 'utf8')
       writeFileSync(join(tempDir, 'CLAUDE.md'), '# Madar instructions\n', 'utf8')
       const rebuild = vi.fn(() => true)
       const refresh = startGraphAutoRefresh(tempDir, 0.02, {
         pollIntervalMs: 20,
-        noHtml: true,
         rebuildCode: rebuild,
         logger: { log() {}, error() {} },
       })
@@ -274,11 +267,10 @@ describe('watch', () => {
       writeFileSync(join(tempDir, 'main.ts'), 'export const value = 1\n', 'utf8')
       mkdirSync(join(tempDir, 'logs'), { recursive: true })
       writeFileSync(join(tempDir, 'logs', 'client.tsx'), 'export const ignored = true\n', 'utf8')
-      generateGraph(tempDir, { noHtml: true })
+      generateGraph(tempDir, {  })
       const rebuild = vi.fn(() => true)
       const refresh = startGraphAutoRefresh(tempDir, 0.02, {
         pollIntervalMs: 20,
-        noHtml: true,
         rebuildCode: rebuild,
         logger: { log() {}, error() {} },
       })
@@ -298,12 +290,11 @@ describe('watch', () => {
     await withTempDirAsync(async (tempDir) => {
       const sourcePath = join(tempDir, 'main.ts')
       writeFileSync(sourcePath, 'export const value = 1\n', 'utf8')
-      generateGraph(tempDir, { noHtml: true })
+      generateGraph(tempDir, {  })
       writeFileSync(sourcePath, 'export const value = 2\n', 'utf8')
       const rebuild = vi.fn(() => true)
       const refresh = startGraphAutoRefresh(tempDir, 0.02, {
         pollIntervalMs: 20,
-        noHtml: true,
         rebuildCode: rebuild,
         logger: { log() {}, error() {} },
       })
@@ -323,12 +314,11 @@ describe('watch', () => {
   test('still rebuilds before startup settles when a new source was added', async () => {
     await withTempDirAsync(async (tempDir) => {
       writeFileSync(join(tempDir, 'main.ts'), 'export const value = 1\n', 'utf8')
-      generateGraph(tempDir, { noHtml: true })
+      generateGraph(tempDir, {  })
       writeFileSync(join(tempDir, 'added.ts'), 'export const added = 2\n', 'utf8')
       const rebuild = vi.fn(() => true)
       const refresh = startGraphAutoRefresh(tempDir, 0.02, {
         pollIntervalMs: 20,
-        noHtml: true,
         rebuildCode: rebuild,
         logger: { log() {}, error() {} },
       })
@@ -348,14 +338,13 @@ describe('watch', () => {
   test('keeps startup unsettled during live lease contention and recovers after release', async () => {
     await withTempDirAsync(async (tempDir) => {
       writeFileSync(join(tempDir, 'main.ts'), 'export const value = 1\n', 'utf8')
-      const generated = generateGraph(tempDir, { noHtml: true })
+      const generated = generateGraph(tempDir, {  })
       writeFileSync(join(tempDir, 'main.ts'), 'export const value = 2\n', 'utf8')
       const releaseOwner = tryAcquireRefreshLease(generated.outputDir)
       expect(releaseOwner).toBeTypeOf('function')
 
       const refresh = startGraphAutoRefresh(tempDir, 0.02, {
         pollIntervalMs: 20,
-        noHtml: true,
         logger: { log() {}, error() {} },
       })
       try {
@@ -391,7 +380,6 @@ describe('watch', () => {
       const workspace = resolveMadarWorkspace(linked)
       const refresh = startGraphAutoRefresh(linked, 0.02, {
         pollIntervalMs: 20,
-        noHtml: true,
         logger: { log() {}, error() {} },
       })
       try {
@@ -404,8 +392,8 @@ describe('watch', () => {
 
         writeFileSync(join(linked, 'added.ts'), 'export const linkedValue = 2\n', 'utf8')
         await waitFor(() => {
-          const graph = JSON.parse(readFileSync(workspace.graphPath, 'utf8')) as { nodes?: Array<{ source_file?: string }> }
-          return graph.nodes?.some((node) => node.source_file?.endsWith('added.ts')) === true
+          const graph = readCanonicalGraphFixture(workspace.graphPath)
+          return graph.nodes.some((node) => node.source_file.endsWith('added.ts'))
         })
       } finally {
         refresh.stop()
@@ -484,7 +472,7 @@ describe('watch', () => {
   test('persists pending and stopped watcher health without answering silently stale', async () => {
     await withTempDirAsync(async (tempDir) => {
       writeFileSync(join(tempDir, 'main.ts'), 'export const initial = true\n', 'utf8')
-      generateGraph(tempDir, { noHtml: true })
+      generateGraph(tempDir, {  })
       const graphPath = join(tempDir, 'out', 'graph.json')
       const controller = new AbortController()
       const watcher = watch(tempDir, 1, {
@@ -508,17 +496,16 @@ describe('watch', () => {
   test('detects and repairs graph/source-manifest policy disagreement', async () => {
     await withTempDirAsync(async (tempDir) => {
       writeFileSync(join(tempDir, 'main.ts'), 'export const value = 1\n', 'utf8')
-      const generated = generateGraph(tempDir, { noHtml: true })
+      const generated = generateGraph(tempDir, {  })
       const manifestPath = join(generated.outputDir, 'manifest.json')
       const graphPolicy = parseGenerationPolicy(
-        (JSON.parse(readFileSync(generated.graphPath, 'utf8')) as { generation_policy?: unknown }).generation_policy,
+        readCanonicalGraphFixture(generated.graphPath).generation_policy,
       )
       const controller = new AbortController()
       const watcher = watch(tempDir, 0, {
         signal: controller.signal,
         pollIntervalMs: 20,
         maxPollIntervalMs: 40,
-        noHtml: true,
         logger: { log() {}, error() {} },
       })
 
@@ -577,7 +564,6 @@ describe('watch', () => {
       writeFileSync(join(tempDir, 'main.ts'), 'export const initialValue = 1\n', 'utf8')
       const refresh = startGraphAutoRefresh(tempDir, 0.02, {
         pollIntervalMs: 10,
-        noHtml: true,
         logger: { log() {}, error() {} },
       })
 
@@ -588,8 +574,8 @@ describe('watch', () => {
 
         writeFileSync(join(tempDir, 'added.ts'), 'export function addedDuringSession() { return 2 }\n', 'utf8')
         await waitFor(() => {
-          const graph = JSON.parse(readFileSync(graphPath, 'utf8')) as { nodes?: Array<{ source_file?: string }> }
-          return graph.nodes?.some((node) => node.source_file?.endsWith('added.ts')) === true
+          const graph = readCanonicalGraphFixture(graphPath)
+          return graph.nodes.some((node) => node.source_file.endsWith('added.ts'))
         })
       } finally {
         refresh.stop()
@@ -603,7 +589,6 @@ describe('watch', () => {
       writeFileSync(join(tempDir, 'main.ts'), 'export const initialValue = 1\n', 'utf8')
       const refresh = startGraphAutoRefresh(tempDir, 0.02, {
         pollIntervalMs: 10,
-        noHtml: true,
         logger: { log() {}, error() {} },
       })
 

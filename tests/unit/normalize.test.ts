@@ -2,8 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { LEGACY_NORMALIZATION_CAPABILITY_ID } from '../../src/core/provenance/types.js'
-import { normalizeExtractionData } from '../../src/core/schema/normalize.js'
-import { buildFromJson } from '../../src/pipeline/build.js'
+import { buildGraphFromExtraction, normalizeExtractionData } from '../../src/application/build-graph.js'
 
 const FIXTURES_DIR = join(process.cwd(), 'tests', 'fixtures')
 
@@ -667,9 +666,9 @@ describe('normalizeExtractionData', () => {
   })
 })
 
-describe('buildFromJson normalization', () => {
+describe('buildGraphFromExtraction normalization', () => {
   it('applies normalization defaults to legacy payloads before building the graph', () => {
-    const graph = buildFromJson({
+    const graph = buildGraphFromExtraction({
       nodes: [
         { id: 'n1', label: 'Alpha', file_type: 'code', source_file: 'alpha.py', source_location: 'L1' },
         { id: 'n2', label: 'Beta', file_type: 'document', source_file: 'beta.md' },
@@ -702,7 +701,7 @@ describe('buildFromJson normalization', () => {
         ],
       }),
     )
-    expect(graph.edgeAttributes('n1', 'n2')).toEqual(
+    expect(graph.uniqueEdgeBetween('n1', 'n2').attributes).toEqual(
       expect.objectContaining({
         layer: 'base',
         provenance: [expect.objectContaining({ capability_id: LEGACY_NORMALIZATION_CAPABILITY_ID })],
@@ -721,13 +720,13 @@ describe('buildFromJson normalization', () => {
 
   it('preserves an explicit schema version when building v2 payloads', () => {
     const fixture = JSON.parse(readFileSync(join(FIXTURES_DIR, 'extraction-v2.json'), 'utf8')) as unknown
-    const graph = buildFromJson(fixture)
+    const graph = buildGraphFromExtraction(fixture)
 
     expect(graph.graph.schema_version).toBe(2)
   })
 
   it('projects ingest provenance into built graph attributes from flat frontmatter metadata', () => {
-    const graph = buildFromJson({
+    const graph = buildGraphFromExtraction({
       nodes: [
         {
           id: 'n_doc',
@@ -765,7 +764,7 @@ describe('buildFromJson normalization', () => {
         provenance: expect.arrayContaining([expect.objectContaining({ capability_id: 'builtin:ingest:github', stage: 'ingest' })]),
       }),
     )
-    expect(graph.edgeAttributes('n_doc', 'n_heading')).toEqual(
+    expect(graph.uniqueEdgeBetween('n_doc', 'n_heading').attributes).toEqual(
       expect.objectContaining({
         provenance: expect.arrayContaining([expect.objectContaining({ capability_id: 'builtin:ingest:github', stage: 'ingest' })]),
       }),

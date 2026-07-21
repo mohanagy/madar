@@ -4,7 +4,7 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { strToU8, zipSync } from 'fflate'
 import { vi } from 'vitest'
 
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import {
   assessBenchmarkReadinessFromRetrieveResult,
   buildBaselinePromptPack,
@@ -24,13 +24,13 @@ import { runContextPackCommand } from '../../src/infrastructure/context-pack-com
 import { claudeInstall } from '../../src/infrastructure/install.js'
 import { parsePromptRunnerOutput } from '../../src/infrastructure/prompt-runner.js'
 import { saveManifest } from '../../src/pipeline/manifest.js'
-import { toJson } from '../../src/pipeline/export.js'
 import * as retrieveRuntime from '../../src/runtime/retrieve.js'
 import { retrieveContext } from '../../src/runtime/retrieve.js'
 import { estimateQueryTokens } from '../../src/runtime/serve.js'
 import { MAX_TEXT_BYTES } from '../../src/shared/security.js'
 import { sanitizeShareSafeText } from '../../src/shared/share-safe-artifacts.js'
 import { resolveMadarOutputDirectory } from '../../src/shared/workspace.js'
+import { writeCanonicalGraphFixtureFromGraph } from '../helpers/graph-artifact.js'
 
 const TEST_OUTPUT_ROOT = resolveMadarOutputDirectory()
 const PROJECT_FIXTURE_ROOT = join(TEST_OUTPUT_ROOT, 'test-runtime', 'compare-runtime-project')
@@ -39,7 +39,7 @@ const COMPARE_OUTPUT_ROOT = join(TEST_OUTPUT_ROOT, 'compare', 'test-runtime')
 type MadarPromptPackRetrieval = Parameters<typeof buildMadarPromptPack>[0]['retrieval']
 
 function makeGraph(): KnowledgeGraph {
-  const graph = new KnowledgeGraph({ directed: true })
+  const graph = new KnowledgeGraph()
   graph.addNode('auth_user', {
     label: 'authenticateUser',
     source_file: 'src/auth.ts',
@@ -222,7 +222,7 @@ function makeLongGraphBackedExcerpt(kind: 'pdf' | 'docx' | 'xlsx'): string {
 }
 
 function makeSingleSourceGraph(relativePath: string, nodeLabel: string, fileType: 'paper' | 'document'): KnowledgeGraph {
-  const graph = new KnowledgeGraph({ directed: true })
+  const graph = new KnowledgeGraph()
   graph.addNode('graph_backed_source', {
     label: nodeLabel,
     source_file: relativePath,
@@ -248,7 +248,7 @@ function writeProjectFiles(projectRoot: string = PROJECT_FIXTURE_ROOT): void {
 function writeGraphFixture(graph: KnowledgeGraph, graphFixtureRoot: string = GRAPH_FIXTURE_ROOT): string {
   mkdirSync(graphFixtureRoot, { recursive: true })
   const graphPath = join(graphFixtureRoot, 'graph.json')
-  toJson(graph, { 0: ['auth_user', 'session_manager'], 1: ['session_store'] }, graphPath)
+  writeCanonicalGraphFixtureFromGraph(graph, { 0: ['auth_user', 'session_manager'], 1: ['session_store'] }, graphPath)
   return graphPath
 }
 
@@ -5210,13 +5210,13 @@ describe('assessBenchmarkReadinessFromRetrieveResult', () => {
     })
   })
 
-  it('fails closed when SPI graph metadata cannot be parsed', () => {
+  it('rejects corrupt graph artifacts with actionable regeneration guidance', () => {
     const graphFixtureRoot = join(PROJECT_FIXTURE_ROOT, 'backend', 'out')
     mkdirSync(graphFixtureRoot, { recursive: true })
     const graphPath = join(graphFixtureRoot, 'graph.json')
     writeFileSync(graphPath, '{not-valid-json', 'utf8')
 
-    const readiness = assessBenchmarkReadinessFromRetrieveResult({
+    expect(() => assessBenchmarkReadinessFromRetrieveResult({
       graphPath,
       retrieval: makeRuntimeGenerationRetrieval({
         matched_nodes: [
@@ -5233,13 +5233,7 @@ describe('assessBenchmarkReadinessFromRetrieveResult', () => {
           },
         ],
       }),
-    })
-
-    expect(readiness).toEqual({
-      status: 'degraded',
-      reasons: ['no SPI evidence found in the current pack'],
-      suggested_graph_scope: null,
-    })
+    })).toThrow(/corrupted.*madar generate \. --update/i)
   })
 
   it('marks root SPI runtime-generation packs degraded when downstream phases are still missing', () => {

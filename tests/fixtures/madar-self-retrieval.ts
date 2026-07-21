@@ -1,4 +1,4 @@
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 
 interface FixtureNode {
   id: string
@@ -36,7 +36,7 @@ const NODES: FixtureNode[] = [
 
   { id: 'impact_analysis', label: 'analyzeImpact', source: '/src/runtime/impact.ts', community: 4 },
   { id: 'dependency_walk', label: 'walkDependencyGraph', source: '/src/runtime/impact.ts', community: 4 },
-  { id: 'direction_guard', label: 'requireDirectedGraph', source: '/src/runtime/direction.ts', community: 4 },
+  { id: 'direction_traversal', label: 'KnowledgeGraph.predecessors', source: '/src/domain/graph/directed-multigraph.ts', community: 4 },
   { id: 'impact_bridge', label: 'DirectionalImpactTraversal.run', source: '/src/runtime/impact.ts', community: 4 },
   { id: 'impact_distractor', label: 'ImpactDirectionLegend', source: '/src/pipeline/report.ts', community: 9 },
 ]
@@ -56,11 +56,11 @@ const EDGES: Array<[string, string, string]> = [
   ['install_routing', 'stdio_tools', 'controls'],
   ['impact_bridge', 'impact_analysis', 'coordinates'],
   ['impact_bridge', 'dependency_walk', 'coordinates'],
-  ['impact_bridge', 'direction_guard', 'coordinates'],
+  ['impact_bridge', 'direction_traversal', 'coordinates'],
 ]
 
 export function buildMadarSelfRetrievalFixture(): KnowledgeGraph {
-  const graph = new KnowledgeGraph({ directed: true })
+  const graph = new KnowledgeGraph()
   graph.graph.root_path = '/'
   graph.graph.community_labels = {
     0: 'Graph generation and source extraction',

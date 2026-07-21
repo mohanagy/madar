@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import { extract } from '../../src/pipeline/extract.js'
 import type { ExtractionFileOutcome } from '../../src/pipeline/extract/dispatch.js'
 import { retrieveContext } from '../../src/runtime/retrieve.js'
@@ -35,7 +35,7 @@ const fixture = JSON.parse(readFileSync(
 )) as PipelineCharacterizationFixture
 
 function characterizationGraph(): KnowledgeGraph {
-  const graph = new KnowledgeGraph({ directed: true })
+  const graph = new KnowledgeGraph()
   graph.addNode('auth-controller', {
     label: 'AuthController.login',
     source_file: 'src/auth/auth.controller.ts',

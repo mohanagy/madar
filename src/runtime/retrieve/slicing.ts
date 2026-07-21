@@ -3,7 +3,7 @@ import type {
   ContextPackSliceMetadata,
   ContextPackSlicePath,
 } from '../../contracts/context-pack.js'
-import type { KnowledgeGraph } from '../../contracts/graph.js'
+import type { KnowledgeGraph } from '../../domain/graph/directed-multigraph.js'
 import type {
   RetrievalGenerationIntent,
   RetrievalIntent,
@@ -11,7 +11,6 @@ import type {
 } from '../../contracts/retrieval-gate.js'
 import { classifySourceDomain, isPollutedSourcePath } from '../../shared/source-discovery.js'
 import { relativizeSourceFile } from '../../shared/source-path.js'
-import { requireDirectedGraph } from '../direction.js'
 
 export interface SliceScoredNode {
   id: string
@@ -365,6 +364,17 @@ function runtimeFlowRelationPriority(
   return value
 }
 
+function relationSetPriority(relations: ReadonlySet<string>, relation: string): number {
+  const ordered = [...relations]
+  const index = ordered.indexOf(relation)
+  return index < 0 ? -1 : ordered.length - index
+}
+
+function preferredRelationBetween(graph: KnowledgeGraph, sourceId: string, targetId: string,
+  relations: ReadonlySet<string>, score = (relation: string) => relationSetPriority(relations, relation)) {
+  return graph.bestRelationBetween(sourceId, targetId, (relation) => relations.has(relation), score)
+}
+
 function displayRenderingAnchorValue(node: SliceScoredNode): number {
   const lower = `${node.label} ${node.nodeKind ?? ''} ${node.frameworkRole ?? ''} ${node.sourceFile}`.toLowerCase()
   let value = 0
@@ -590,18 +600,30 @@ function traverseDirection(
     const orderedNeighbors = [...neighbors].sort((leftId, rightId) => {
       const leftSourceId = direction === 'forward' ? current.id : leftId
       const leftTargetId = direction === 'forward' ? leftId : current.id
-      const leftRelation = String(graph.edgeAttributes(leftSourceId, leftTargetId).relation ?? 'related_to')
       const leftNode = scoredById.get(leftId) ?? sliceNodeFromGraph(graph, leftId)
       scoredById.set(leftId, leftNode)
+      const leftRelation = preferredRelationBetween(
+        graph,
+        leftSourceId,
+        leftTargetId,
+        relations,
+        (relation) => runtimeFlowRelationPriority(relation, leftNode, runtimeFlowOnly),
+      )
 
       const rightSourceId = direction === 'forward' ? current.id : rightId
       const rightTargetId = direction === 'forward' ? rightId : current.id
-      const rightRelation = String(graph.edgeAttributes(rightSourceId, rightTargetId).relation ?? 'related_to')
       const rightNode = scoredById.get(rightId) ?? sliceNodeFromGraph(graph, rightId)
       scoredById.set(rightId, rightNode)
+      const rightRelation = preferredRelationBetween(
+        graph,
+        rightSourceId,
+        rightTargetId,
+        relations,
+        (relation) => runtimeFlowRelationPriority(relation, rightNode, runtimeFlowOnly),
+      )
 
-      return runtimeFlowRelationPriority(rightRelation, rightNode, runtimeFlowOnly)
-        - runtimeFlowRelationPriority(leftRelation, leftNode, runtimeFlowOnly)
+      return runtimeFlowRelationPriority(rightRelation ?? '', rightNode, runtimeFlowOnly)
+        - runtimeFlowRelationPriority(leftRelation ?? '', leftNode, runtimeFlowOnly)
         || rightNode.score - leftNode.score
         || graph.degree(rightId) - graph.degree(leftId)
     })
@@ -609,8 +631,8 @@ function traverseDirection(
     for (const neighborId of orderedNeighbors) {
       const sourceId = direction === 'forward' ? current.id : neighborId
       const targetId = direction === 'forward' ? neighborId : current.id
-      const relation = String(graph.edgeAttributes(sourceId, targetId).relation ?? 'related_to')
-      if (!relations.has(relation)) {
+      const relation = preferredRelationBetween(graph, sourceId, targetId, relations)
+      if (!relation) {
         continue
       }
 
@@ -718,8 +740,8 @@ function addHelperNeighbors(
     }
 
     for (const neighborId of graph.successors(currentId)) {
-      const relation = String(graph.edgeAttributes(currentId, neighborId).relation ?? 'related_to')
-      if (!helperRelations.has(relation)) {
+      const relation = preferredRelationBetween(graph, currentId, neighborId, helperRelations)
+      if (!relation) {
         continue
       }
 
@@ -763,8 +785,8 @@ function addAnchorPredecessors(
     scoredById.set(anchorId, anchorNode)
 
     for (const predecessorId of graph.predecessors(anchorId)) {
-      const relation = String(graph.edgeAttributes(predecessorId, anchorId).relation ?? 'related_to')
-      if (!relations.has(relation)) {
+      const relation = preferredRelationBetween(graph, predecessorId, anchorId, relations)
+      if (!relation) {
         continue
       }
 
@@ -805,8 +827,6 @@ export function sliceCandidatesForRetrieve(
   intent: RetrievalIntent,
   options: SliceOptions = {},
 ): { ordered_ids: string[]; metadata: ContextPackSliceMetadata } | null {
-  requireDirectedGraph(graph, 'Directional retrieval')
-
   if (scoredCandidates.length === 0) {
     return null
   }

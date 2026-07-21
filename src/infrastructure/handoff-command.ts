@@ -3,7 +3,7 @@ import { dirname, resolve } from 'node:path'
 import type { HandoffCliOptions } from '../cli/parser.js'
 import type { ContextPackSchemaV1 } from '../contracts/context-pack.js'
 import type { HandoffArtifactSchemaV1, HandoffConsumer } from '../contracts/handoff.js'
-import type { KnowledgeGraph } from '../contracts/graph.js'
+import type { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
 import {
   runContextPackCommand,
   type ContextPackCommandDependencies,

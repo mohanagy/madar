@@ -58,7 +58,7 @@ describe('examples/sample-workspace', () => {
       const firstPrompt = promptExamples[0]
 
       expect(firstPrompt).toBeDefined()
-      const result = generateGraph(sampleRoot, { noHtml: true })
+      const result = generateGraph(sampleRoot, {  })
       const graphPath = join(sampleRoot, 'out', 'graph.json')
       const packOutput = await runContextPackCommand({
         prompt: firstPrompt?.question ?? '',

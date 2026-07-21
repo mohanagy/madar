@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { KnowledgeGraph } from '../contracts/graph.js'
+import { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
 import type { Communities } from './cluster.js'
 import { communityDetailsMid } from './community-details.js'
 

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
+import { loadGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
 import type { IndexingManifestV1 } from '../contracts/indexing.js'
 import { watcherStateBlocksGraphReads, type WatcherStateV1 } from '../contracts/watcher-state.js'
 import {
@@ -351,14 +352,10 @@ function readMcpCheck(
 }
 
 function graphRootPath(graphPath: string, fallback: string): string {
-  try {
-    const parsed = JSON.parse(readFileSync(graphPath, 'utf8')) as { root_path?: unknown }
-    return typeof parsed.root_path === 'string' && parsed.root_path.trim().length > 0
-      ? resolve(parsed.root_path)
-      : resolve(fallback)
-  } catch {
-    return resolve(fallback)
-  }
+  const rootPath = loadGraphArtifact(graphPath).graph.root_path
+  return typeof rootPath === 'string' && rootPath.trim().length > 0
+    ? resolve(rootPath)
+    : resolve(fallback)
 }
 
 function watcherProcessIsLive(state: WatcherStateV1 | null): boolean {

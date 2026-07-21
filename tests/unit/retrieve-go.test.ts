@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
-import { build } from '../../src/pipeline/build.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
+import { buildGraph } from '../../src/application/build-graph.js'
 import { extract } from '../../src/pipeline/extract.js'
 import { retrieveContext } from '../../src/runtime/retrieve.js'
 
@@ -26,9 +26,9 @@ function stripFileNodes(extraction: ReturnType<typeof extract>): ReturnType<type
 describe('retrieve Go semantic context', () => {
   it('returns route-centric runtime context beyond the tree-sitter-only baseline', () => {
     const semanticExtraction = stripFileNodes(extract(FIXTURE_FILES))
-    const semanticGraph = build([semanticExtraction], { directed: true })
+    const semanticGraph = buildGraph([semanticExtraction], { rootPath: FIXTURE_ROOT })
 
-    const baselineGraph = new KnowledgeGraph({ directed: true })
+    const baselineGraph = new KnowledgeGraph({ root_path: FIXTURE_ROOT })
     baselineGraph.addNode('handler_create_user', {
       label: '.CreateUser()',
       source_file: join(FIXTURE_ROOT, 'internal', 'handlers', 'user_handler.go'),

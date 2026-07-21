@@ -33,6 +33,9 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
@@ -79,7 +82,7 @@ jobs:
 
       - name: Generate demo graph for eval regression
         if: matrix.os == 'ubuntu-latest' && matrix.node-version == '22'
-        run: node dist/src/cli/bin.js generate examples/demo-repo --no-html
+        run: node dist/src/cli/bin.js generate examples/demo-repo
 
       - name: Enforce eval regression thresholds
         if: matrix.os == 'ubuntu-latest' && matrix.node-version == '22'

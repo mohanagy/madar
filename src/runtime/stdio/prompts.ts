@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 
 import { godNodes, suggestQuestions } from '../../pipeline/analyze.js'
 import { buildCommunityLabels } from '../../pipeline/community-naming.js'
@@ -47,27 +47,21 @@ function formatCount(count: number, singular: string, plural = `${singular}s`): 
 
 export function readStoredCommunityLabels(graphPath: string): Record<number, string> {
   const safeGraphPath = validateGraphPath(graphPath)
-
-  try {
-    const parsed = JSON.parse(readFileSync(safeGraphPath, 'utf8')) as { community_labels?: unknown }
-    const rawLabels = parsed.community_labels
-    if (!rawLabels || typeof rawLabels !== 'object' || Array.isArray(rawLabels)) {
-      return {}
-    }
-
-    const labels = new Map<number, string>()
-    for (const [communityIdRaw, labelRaw] of Object.entries(rawLabels as Record<string, unknown>)) {
-      const communityId = Number(communityIdRaw)
-      const label = typeof labelRaw === 'string' ? labelRaw.trim() : ''
-      if (Number.isInteger(communityId) && communityId >= 0 && label.length > 0) {
-        labels.set(communityId, label)
-      }
-    }
-
-    return Object.fromEntries(labels.entries())
-  } catch {
+  const rawLabels = loadGraph(safeGraphPath).graph.community_labels
+  if (!rawLabels || typeof rawLabels !== 'object' || Array.isArray(rawLabels)) {
     return {}
   }
+
+  const labels = new Map<number, string>()
+  for (const [communityIdRaw, labelRaw] of Object.entries(rawLabels as Record<string, unknown>)) {
+    const communityId = Number(communityIdRaw)
+    const label = typeof labelRaw === 'string' ? labelRaw.trim() : ''
+    if (Number.isInteger(communityId) && communityId >= 0 && label.length > 0) {
+      labels.set(communityId, label)
+    }
+  }
+
+  return Object.fromEntries(labels.entries())
 }
 
 function nodeCommunityMap(communities: ReturnType<typeof communitiesFromGraph>): Record<string, number> {
@@ -257,22 +251,19 @@ function communityBridgeLines(context: PromptContext, communityId: number): stri
   const nodeSet = new Set(nodeIds)
   const lines = new Set<string>()
 
-  for (const nodeId of nodeIds) {
-    for (const neighborId of context.graph.neighbors(nodeId)) {
-      if (nodeSet.has(neighborId)) {
-        continue
-      }
-
-      const sourceLabel = String(context.graph.nodeAttributes(nodeId).label ?? nodeId)
-      const targetLabel = String(context.graph.nodeAttributes(neighborId).label ?? neighborId)
-      const targetCommunityId = context.nodeCommunity[neighborId]
-      const targetCommunityLabel =
-        targetCommunityId === undefined ? 'outside named communities' : (context.communityLabels[targetCommunityId] ?? `Community ${targetCommunityId}`)
-      lines.add(`${sourceLabel} -> ${targetLabel} (${targetCommunityLabel})`)
-      if (lines.size >= 4) {
-        return [...lines]
-      }
-    }
+  for (const [sourceId, targetId] of context.graph.edgeEntries()) {
+    const sourceInside = nodeSet.has(sourceId)
+    const targetInside = nodeSet.has(targetId)
+    if (sourceInside === targetInside) continue
+    const externalId = sourceInside ? targetId : sourceId
+    const externalCommunityId = context.nodeCommunity[externalId]
+    const externalCommunityLabel = externalCommunityId === undefined
+      ? 'outside named communities'
+      : (context.communityLabels[externalCommunityId] ?? `Community ${externalCommunityId}`)
+    const sourceLabel = String(context.graph.nodeAttributes(sourceId).label ?? sourceId)
+    const targetLabel = String(context.graph.nodeAttributes(targetId).label ?? targetId)
+    lines.add(`${sourceLabel} -> ${targetLabel} (${externalCommunityLabel})`)
+    if (lines.size >= 4) return [...lines]
   }
 
   return [...lines]

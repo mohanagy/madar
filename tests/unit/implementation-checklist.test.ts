@@ -1,9 +1,9 @@
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import { implementationChecklist } from '../../src/runtime/implementation-checklist.js'
 
 describe('implementationChecklist', () => {
   it('returns ordered edit steps plus validation checkpoints for a feature question', () => {
-    const graph = new KnowledgeGraph({ directed: true })
+    const graph = new KnowledgeGraph()
     graph.graph.root_path = '/workspace'
     graph.graph.community_labels = {
       0: 'Routes',

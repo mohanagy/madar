@@ -1,6 +1,6 @@
 import { isAbsolute, relative, sep } from 'node:path'
 
-import { KnowledgeGraph } from '../contracts/graph.js'
+import { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
 import type { Communities } from './cluster.js'
 
 const GENERIC_PATH_SEGMENTS = new Set(['src', 'tests', 'test', 'dist', 'lib', 'out', 'worked'])

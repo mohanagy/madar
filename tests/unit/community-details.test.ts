@@ -1,4 +1,4 @@
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import { communityDetailsMicro, communityDetailsMid, communityDetailsMacro, communityDetailsAtZoom } from '../../src/pipeline/community-details.js'
 
 function buildTestGraph(): { graph: KnowledgeGraph; communities: Record<number, string[]>; labels: Record<number, string> } {
@@ -10,10 +10,11 @@ function buildTestGraph(): { graph: KnowledgeGraph; communities: Record<number, 
   graph.addNode('b1', { label: 'DatabasePool', source_file: '/src/db.ts', node_kind: 'class', file_type: 'code', community: 1 })
   graph.addNode('b2', { label: 'QueryBuilder', source_file: '/src/db.ts', node_kind: 'class', file_type: 'code', community: 1 })
 
-  graph.addEdge('a1', 'a2', { relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth.ts' })
-  graph.addEdge('a1', 'a3', { relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth.ts' })
-  graph.addEdge('a2', 'b1', { relation: 'depends_on', confidence: 'EXTRACTED', source_file: '/src/auth.ts' })
-  graph.addEdge('b1', 'b2', { relation: 'contains', confidence: 'EXTRACTED', source_file: '/src/db.ts' })
+  graph.addEdge('a1', 'a2', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'src/auth.ts' })
+  graph.addEdge('a1', 'a3', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'src/auth.ts' })
+  graph.addEdge('a2', 'b1', { relation: 'depends_on', confidence: 'EXTRACTED', source_file: 'src/auth.ts' })
+  graph.addEdge('b1', 'b2', { relation: 'contains', confidence: 'EXTRACTED', source_file: 'src/db.ts' })
+  graph.addEdge('b2', 'a3', { relation: 'notifies', confidence: 'EXTRACTED', source_file: 'src/db.ts' })
 
   return {
     graph,
@@ -59,6 +60,14 @@ describe('community-details', () => {
 
       expect(result!.exit_points.length).toBeGreaterThan(0)
       expect(result!.exit_points.some((e) => e.target_community === 'Database')).toBe(true)
+      expect(result!.exit_points.every((e) => e.label === 'SessionManager')).toBe(true)
+    })
+
+    it('counts only external incoming edges as entry points', () => {
+      const { graph, communities, labels } = buildTestGraph()
+      const result = communityDetailsMid(graph, communities, labels, 0)
+
+      expect(result!.entry_points).toEqual([{ label: 'TokenValidator', in_degree: 1 }])
     })
 
     it('returns null for unknown community', () => {
@@ -84,6 +93,64 @@ describe('community-details', () => {
 
       expect(result!.file_distribution.length).toBeGreaterThan(0)
       expect(result!.file_distribution[0]!.file).toBe('/src/auth.ts')
+    })
+
+    it('preserves parallel edge identity, direction, relation, and evidence', () => {
+      const graph = new KnowledgeGraph()
+      graph.addNode('caller', { label: 'Caller', source_file: '/src/caller.ts' })
+      graph.addNode('callee', { label: 'Callee', source_file: '/src/callee.ts' })
+      graph.addEdge('caller', 'callee', {
+        relation: 'calls',
+        confidence: 'EXTRACTED',
+        source_file: 'src/caller.ts',
+        evidence: { expression: 'first()' },
+      })
+      graph.addEdge('caller', 'callee', {
+        relation: 'imports',
+        confidence: 'INFERRED',
+        source_file: 'src/caller.ts',
+        evidence: { specifier: './callee.js' },
+      })
+      graph.addEdge('callee', 'caller', {
+        relation: 'returns_to',
+        confidence: 'AMBIGUOUS',
+        source_file: 'src/callee.ts',
+        evidence: { expression: 'callback()' },
+      })
+      const communities = { 0: ['caller', 'callee'] }
+
+      expect(communityDetailsMid(graph, communities, { 0: 'Flow' }, 0)?.edge_count).toBe(3)
+      const edges = communityDetailsMacro(graph, communities, { 0: 'Flow' }, 0)!.internal_edges
+      expect(new Set(edges.map((edge) => edge.id)).size).toBe(3)
+      expect(edges.map(({ from, to, relation, attributes }) => ({
+        from,
+        to,
+        relation,
+        evidence: attributes.evidence,
+      }))).toEqual(expect.arrayContaining([
+        { from: 'Caller', to: 'Callee', relation: 'calls', evidence: { expression: 'first()' } },
+        { from: 'Caller', to: 'Callee', relation: 'imports', evidence: { specifier: './callee.js' } },
+        { from: 'Callee', to: 'Caller', relation: 'returns_to', evidence: { expression: 'callback()' } },
+      ]))
+    })
+
+    it('uses indexed adjacency without enumerating unrelated graph edges', () => {
+      const { graph, communities, labels } = buildTestGraph()
+      const enumerateAllEdges = vi.spyOn(graph, 'edgeEntries').mockImplementation(() => {
+        throw new Error('community details must not enumerate the full graph')
+      })
+
+      const mid = communityDetailsMid(graph, communities, labels, 0)
+      const macro = communityDetailsMacro(graph, communities, labels, 0)
+
+      expect(enumerateAllEdges).not.toHaveBeenCalled()
+      expect(mid).toMatchObject({
+        edge_count: 2,
+        entry_points: [{ label: 'TokenValidator', in_degree: 1 }],
+        exit_points: [{ label: 'SessionManager', target_community: 'Database' }],
+      })
+      expect(macro?.internal_edges).toHaveLength(2)
+      expect(macro?.cross_community_edges).toHaveLength(2)
     })
   })
 

@@ -13,7 +13,7 @@
 //     dynamic Module.forRoot/forRootAsync handling.
 //   * Structural projector — projectSpiToExtraction(spi, { root }) bridges
 //     the SPI substrate to the existing graph.json pipeline by producing
-//     ExtractionData of the same shape buildFromJson() consumes. Slice
+//     ExtractionData of the same shape buildGraphFromExtraction() consumes. Slice
 //     1c-ii will extend it to byte-equivalence on examples/demo-repo/.
 
 export type {

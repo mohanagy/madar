@@ -10,6 +10,9 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { handleStdioRequest, serveGraphStdio } from '../../src/runtime/stdio-server.js'
 import { graphFreshnessMetadata } from '../../src/runtime/freshness.js'
 import { readWatcherStateForGraph, writeWatcherState } from '../../src/infrastructure/watcher-state.js'
+import { appendCanonicalGraphNode, readCanonicalGraphFixture, writeCanonicalGraphFixture } from '../helpers/graph-artifact.js'
+
+const GRAPH_REGENERATION_INSTRUCTION = 'Run `madar generate . --update` to regenerate it.'
 
 async function waitFor(condition: () => boolean, timeoutMs = 5_000): Promise<void> {
   const deadline = Date.now() + timeoutMs
@@ -29,22 +32,20 @@ function createGraphFixtureRoot(): string {
   writeFileSync(join(root, 'auth.ts'), 'export function AuthService() {\n  return new HttpClient()\n}\n', 'utf8')
   writeFileSync(join(root, 'client.ts'), 'export class HttpClient {\n  request() {\n    return new Transport()\n  }\n}\n', 'utf8')
   writeFileSync(join(root, 'transport.ts'), 'export class Transport {}\n', 'utf8')
-  writeFileSync(
+  writeCanonicalGraphFixture(
     join(root, 'baseline.graph.json'),
-    JSON.stringify({
+    {
       nodes: [
         { id: 'auth', label: 'AuthService', source_file: 'auth.ts', source_location: '1', file_type: 'code', community: 0 },
         { id: 'client', label: 'HttpClient', source_file: 'client.ts', source_location: '2', file_type: 'code', community: 0 },
       ],
       edges: [{ source: 'auth', target: 'client', relation: 'calls', confidence: 'EXTRACTED', source_file: 'auth.ts' }],
       hyperedges: [],
-    }),
-    'utf8',
+    },
   )
-  writeFileSync(
+  writeCanonicalGraphFixture(
     join(root, 'graph.json'),
-    JSON.stringify({
-      directed: true,
+    {
       community_labels: {
         '0': 'Auth Services',
         '1': 'Transport Layer',
@@ -69,11 +70,9 @@ function createGraphFixtureRoot(): string {
         { source: 'client', target: 'transport', relation: 'uses', confidence: 'EXTRACTED', source_file: 'client.ts' },
       ],
       hyperedges: [],
-    }),
-    'utf8',
+    },
   )
   writeFileSync(join(root, 'GRAPH_REPORT.md'), '# Graph Report\n\n- AuthService calls HttpClient\n', 'utf8')
-  writeFileSync(join(root, 'graph.html'), '<!doctype html><title>madar</title>', 'utf8')
   return root
 }
 
@@ -104,11 +103,11 @@ function createRetrieveOverflowFixtureRoot(): string {
   mkdirSync(parentDir, { recursive: true })
   const root = mkdtempSync(join(parentDir, 'madar-stdio-retrieve-overflow-'))
   const nodes = [
-    { id: 'auth', label: 'AuthService', source_file: '/src/auth.ts', source_location: 'L1-L4', file_type: 'code', community: 0 },
+    { id: 'auth', label: 'AuthService', source_file: join(root, 'src', 'auth.ts'), source_location: 'L1-L4', file_type: 'code', community: 0 },
     ...Array.from({ length: 220 }, (_, index) => ({
       id: `support-${index}`,
       label: `SupportNode${index}`,
-      source_file: `/src/support-${index}.ts`,
+      source_file: join(root, 'src', `support-${index}.ts`),
       source_location: `L${index + 1}-L${index + 2}`,
       file_type: 'code',
       community: 1,
@@ -119,12 +118,12 @@ function createRetrieveOverflowFixtureRoot(): string {
     target: `support-${index}`,
     relation: 'calls',
     confidence: 'EXTRACTED',
-    source_file: '/src/auth.ts',
+    source_file: join(root, 'src', 'auth.ts'),
   }))
 
-  writeFileSync(
+  writeCanonicalGraphFixture(
     join(root, 'graph.json'),
-    JSON.stringify({
+    {
       root_path: root,
       community_labels: {
         '0': 'Auth',
@@ -133,8 +132,7 @@ function createRetrieveOverflowFixtureRoot(): string {
       nodes,
       edges,
       hyperedges: [],
-    }),
-    'utf8',
+    },
   )
 
   return root
@@ -164,10 +162,9 @@ function createPrImpactFixtureRoot(): string {
   writeFileSync(join(root, 'src', 'api.ts'), `${apiLines.join('\n')}\n`, 'utf8')
   writeFileSync(join(root, 'tests', 'auth.test.ts'), 'describe("auth", () => {})\n', 'utf8')
   writeFileSync(join(root, 'tests', 'api.test.ts'), 'describe("api", () => {})\n', 'utf8')
-  writeFileSync(
+  writeCanonicalGraphFixture(
     join(root, 'out', 'graph.json'),
-    JSON.stringify({
-      directed: true,
+    {
       community_labels: {
         '0': 'Auth Layer',
         '1': 'API Layer',
@@ -203,8 +200,7 @@ function createPrImpactFixtureRoot(): string {
       ],
       hyperedges: [],
       root_path: root,
-    }),
-    'utf8',
+    },
   )
 
   execFileSync('git', ['init', '-b', 'main'], { cwd: root, stdio: 'pipe' })
@@ -274,6 +270,14 @@ describe('stdio runtime', () => {
           arguments: { community_id: '0' },
         },
       }))
+      const inboundCommunityPrompt = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 9,
+        method: 'prompts/get',
+        params: {
+          name: 'graph_community_summary_prompt',
+          arguments: { community_id: '1' },
+        },
+      }))
       const timeTravelCall = await Promise.resolve(handleStdioRequest(
         graphPath,
         {
@@ -314,8 +318,9 @@ describe('stdio runtime', () => {
         expect.arrayContaining(['graph_query_prompt', 'graph_path_prompt', 'graph_explain_prompt', 'graph_community_summary_prompt']),
       )
       expect((resources?.result as { resources: Array<{ uri: string }> }).resources.map((resource) => resource.uri)).toEqual(
-        expect.arrayContaining(['madar://artifact/graph.json', 'madar://artifact/GRAPH_REPORT.md', 'madar://artifact/graph.html']),
+        expect.arrayContaining(['madar://artifact/graph.json', 'madar://artifact/GRAPH_REPORT.md']),
       )
+      expect((resources?.result as { resources: Array<{ uri: string }> }).resources).toHaveLength(2)
       const graphResource = (resources?.result as { resources: Array<{ uri: string; annotations?: Record<string, unknown> }> }).resources.find(
         (resource) => resource.uri === 'madar://artifact/graph.json',
       )
@@ -352,6 +357,9 @@ describe('stdio runtime', () => {
       expect((communityPrompt?.result as { messages: Array<{ content: { text: string } }> }).messages[0]?.content.text).toContain('Auth Services')
       expect((communityPrompt?.result as { messages: Array<{ content: { text: string } }> }).messages[0]?.content.text).toContain('AuthService')
       expect((communityPrompt?.result as { messages: Array<{ content: { text: string } }> }).messages[0]?.content.text).toContain('HttpClient')
+      const inboundCommunityText = (inboundCommunityPrompt?.result as { messages: Array<{ content: { text: string } }> }).messages[0]?.content.text ?? ''
+      expect(inboundCommunityText).toContain('HttpClient -> Transport (Auth Services)')
+      expect(inboundCommunityText).not.toContain('Transport -> HttpClient')
       expect(initializedNotification).toBeNull()
     } finally {
       rmSync(root, { recursive: true, force: true })
@@ -485,14 +493,13 @@ describe('stdio runtime', () => {
       input.write(`${JSON.stringify({ id: 2, method: 'resources/subscribe', params: { uri: 'madar://artifact/graph.json' } })}\n`)
 
       await delay(25)
-      writeFileSync(
+      writeCanonicalGraphFixture(
         graphPath,
-        JSON.stringify({
+        {
           nodes: [{ id: 'updated', label: 'UpdatedNode', source_file: 'updated.ts', source_location: '1', file_type: 'code', community: 0 }],
           edges: [],
           hyperedges: [],
-        }),
-        'utf8',
+        },
       )
 
       input.write(`${JSON.stringify({ id: 3, method: 'ping' })}\n`)
@@ -500,14 +507,13 @@ describe('stdio runtime', () => {
       input.write(`${JSON.stringify({ id: 4, method: 'resources/unsubscribe', params: { uri: 'madar://artifact/graph.json' } })}\n`)
 
       await delay(25)
-      writeFileSync(
+      writeCanonicalGraphFixture(
         graphPath,
-        JSON.stringify({
+        {
           nodes: [{ id: 'updated-again', label: 'UpdatedAgain', source_file: 'updated-again.ts', source_location: '1', file_type: 'code', community: 0 }],
           edges: [],
           hyperedges: [],
-        }),
-        'utf8',
+        },
       )
 
       input.end(`${JSON.stringify({ id: 5, method: 'ping' })}\n`)
@@ -702,63 +708,14 @@ describe('stdio runtime', () => {
     }
   })
 
-  it('returns actionable MCP errors for directional tools on an undirected legacy graph', async () => {
-    const root = createGraphFixtureRoot()
-    try {
-      const graphPath = join(root, 'legacy-undirected.json')
-      writeFileSync(
-        graphPath,
-        JSON.stringify({
-          directed: false,
-          nodes: [
-            { id: 'caller', label: 'caller', source_file: '/src/caller.ts', file_type: 'code', community: 0 },
-            { id: 'dependency', label: 'dependency', source_file: '/src/dependency.ts', file_type: 'code', community: 0 },
-          ],
-          edges: [
-            { source: 'caller', target: 'dependency', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/caller.ts' },
-          ],
-        }),
-        'utf8',
-      )
-
-      const impact = await Promise.resolve(handleStdioRequest(graphPath, {
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'tools/call',
-        params: { name: 'impact', arguments: { label: 'caller' } },
-      }))
-      const callChain = await Promise.resolve(handleStdioRequest(graphPath, {
-        jsonrpc: '2.0',
-        id: 2,
-        method: 'tools/call',
-        params: { name: 'call_chain', arguments: { source: 'dependency', target: 'caller' } },
-      }))
-      const retrieve = await Promise.resolve(handleStdioRequest(graphPath, {
-        jsonrpc: '2.0',
-        id: 3,
-        method: 'tools/call',
-        params: { name: 'retrieve', arguments: { question: 'Explain caller', budget: 1000, retrieval_strategy: 'slice-v1' } },
-      }))
-
-      expect(impact?.error?.message).toContain('Impact analysis requires a directed graph')
-      expect(callChain?.error?.message).toContain('Call-chain analysis requires a directed graph')
-      expect((retrieve?.result as { isError?: boolean }).isError).toBe(true)
-      expect((retrieve?.result as { content: Array<{ text: string }> }).content[0]?.text).toContain(
-        'Directional retrieval requires a directed graph',
-      )
-    } finally {
-      rmSync(root, { recursive: true, force: true })
-    }
-  })
-
   it('returns compact retrieve and impact payloads by default and keeps verbose mode as an escape hatch', async () => {
     const root = createGraphFixtureRoot()
     try {
       const graphPath = join(root, 'graph.json')
-      writeFileSync(
+      writeCanonicalGraphFixture(
         graphPath,
-        JSON.stringify({
-          directed: true,
+        {
+          root_path: '/',
           community_labels: {
             '0': 'Routes',
             '1': 'State',
@@ -788,8 +745,7 @@ describe('stdio runtime', () => {
             { source: 'dashboard_route', target: 'dashboard_page_primary', relation: 'depends_on', confidence: 'EXTRACTED', source_file: '/src/routes/dashboard.tsx' },
           ],
           hyperedges: [],
-        }),
-        'utf8',
+        },
       )
 
       const retrieveDefault = await Promise.resolve(handleStdioRequest(graphPath, {
@@ -1809,11 +1765,7 @@ describe('stdio runtime', () => {
         },
       }, sessionState))
 
-      const graph = JSON.parse(readFileSync(graphPath, 'utf8')) as {
-        nodes: Array<Record<string, unknown>>
-      }
-      graph.nodes.push({
-        id: 'fresh-cache-node',
+      appendCanonicalGraphNode(graphPath, 'fresh-cache-node', {
         label: 'FreshCacheNode',
         source_file: '/workspace/src/cache.ts',
         line_number: 1,
@@ -1821,7 +1773,6 @@ describe('stdio runtime', () => {
         file_type: 'code',
         community: 0,
       })
-      writeFileSync(graphPath, JSON.stringify(graph), 'utf8')
 
       const second = await Promise.resolve(handleStdioRequest(graphPath, {
         id: 2,
@@ -2088,18 +2039,13 @@ describe('stdio runtime', () => {
       const sourcePath = join(root, 'line-number.ts')
       writeFileSync(sourcePath, 'const first = 1\nconst second = process.env.SECRET\n', 'utf8')
 
-      const graph = JSON.parse(readFileSync(graphPath, 'utf8')) as {
-        nodes: Array<Record<string, unknown>>
-      }
-      graph.nodes.push({
-        id: 'line-node',
+      appendCanonicalGraphNode(graphPath, 'line-node', {
         label: 'LineNode',
         source_file: sourcePath,
         line_number: 2,
         file_type: 'code',
         community: 0,
       })
-      writeFileSync(graphPath, JSON.stringify(graph), 'utf8')
 
       const sessionState = {
         logLevel: 'info' as const,
@@ -2158,18 +2104,13 @@ describe('stdio runtime', () => {
       const graphPath = join(root, 'graph.json')
       writeFileSync(outsidePath, 'const first = 1\nconst secret = process.env.OUTSIDE_SECRET\n', 'utf8')
 
-      const graph = JSON.parse(readFileSync(graphPath, 'utf8')) as {
-        nodes: Array<Record<string, unknown>>
-      }
-      graph.nodes.push({
-        id: 'outside-node',
+      appendCanonicalGraphNode(graphPath, 'outside-node', {
         label: 'OutsideSecret',
         source_file: outsidePath,
         line_number: 2,
         file_type: 'code',
         community: 0,
       })
-      writeFileSync(graphPath, JSON.stringify(graph), 'utf8')
 
       const sessionState = {
         logLevel: 'info' as const,
@@ -2266,10 +2207,9 @@ describe('stdio runtime', () => {
     const root = createGraphFixtureRoot()
     try {
       const graphPath = join(root, 'graph.json')
-      writeFileSync(
+      writeCanonicalGraphFixture(
         graphPath,
-        JSON.stringify({
-          directed: true,
+        {
           root_path: '/workspace',
           nodes: [
             { id: 'route_users_show', label: 'GET /users/:id', source_file: '/workspace/src/routes/users.ts', line_number: 12, node_kind: 'route', file_type: 'code', framework: 'express', framework_role: 'express_route', community: 0 },
@@ -2283,8 +2223,7 @@ describe('stdio runtime', () => {
             { source: 'show_user_profile', target: 'logger', relation: 'calls', confidence: 'EXTRACTED', source_file: '/workspace/src/routes/users.ts' },
           ],
           hyperedges: [],
-        }),
-        'utf8',
+        },
       )
 
       const tools = await Promise.resolve(handleStdioRequest(graphPath, { id: 1, method: 'tools/list' }))
@@ -2328,10 +2267,9 @@ describe('stdio runtime', () => {
     const root = createGraphFixtureRoot()
     try {
       const graphPath = join(root, 'graph.json')
-      writeFileSync(
+      writeCanonicalGraphFixture(
         graphPath,
-        JSON.stringify({
-          directed: true,
+        {
           root_path: '/workspace',
           community_labels: {
             '0': 'Routes',
@@ -2350,8 +2288,7 @@ describe('stdio runtime', () => {
             { source: 'show_user_profile', target: 'logger', relation: 'calls', confidence: 'EXTRACTED', source_file: '/workspace/src/routes/users.ts' },
           ],
           hyperedges: [],
-        }),
-        'utf8',
+        },
       )
 
       const tools = await Promise.resolve(handleStdioRequest(graphPath, { id: 1, method: 'tools/list' }))
@@ -2395,10 +2332,9 @@ describe('stdio runtime', () => {
     const root = createGraphFixtureRoot()
     try {
       const graphPath = join(root, 'graph.json')
-      writeFileSync(
+      writeCanonicalGraphFixture(
         graphPath,
-        JSON.stringify({
-          directed: true,
+        {
           root_path: '/workspace',
           community_labels: {
             '0': 'Routes',
@@ -2420,8 +2356,7 @@ describe('stdio runtime', () => {
             { source: 'get_user_profile', target: 'database', relation: 'calls', confidence: 'EXTRACTED', source_file: '/workspace/src/services/users.ts' },
           ],
           hyperedges: [],
-        }),
-        'utf8',
+        },
       )
 
       const tools = await Promise.resolve(handleStdioRequest(graphPath, { id: 1, method: 'tools/list' }))
@@ -2470,10 +2405,9 @@ describe('stdio runtime', () => {
     const root = createGraphFixtureRoot()
     try {
       const graphPath = join(root, 'graph.json')
-      writeFileSync(
+      writeCanonicalGraphFixture(
         graphPath,
-        JSON.stringify({
-          directed: true,
+        {
           root_path: '/workspace',
           community_labels: {
             '0': 'Routes',
@@ -2495,8 +2429,7 @@ describe('stdio runtime', () => {
             { source: 'get_user_profile', target: 'database', relation: 'calls', confidence: 'EXTRACTED', source_file: '/workspace/src/services/users.ts' },
           ],
           hyperedges: [],
-        }),
-        'utf8',
+        },
       )
 
       const tools = await Promise.resolve(handleStdioRequest(graphPath, { id: 1, method: 'tools/list' }))
@@ -2569,14 +2502,13 @@ describe('stdio runtime', () => {
       const before = handleStdioRequest(graphPath, { id: 1, method: 'stats' })
       const freshnessBefore = handleStdioRequest(graphPath, { id: 11, method: 'resources/list' })
 
-      writeFileSync(
+      writeCanonicalGraphFixture(
         graphPath,
-        JSON.stringify({
+        {
           nodes: [{ id: 'replacement', label: 'ReplacementNode', source_file: 'replacement.ts', source_location: '1', file_type: 'code', community: 0 }],
           edges: [],
           hyperedges: [],
-        }),
-        'utf8',
+        },
       )
 
       const after = handleStdioRequest(graphPath, { id: 2, method: 'node', params: { label: 'ReplacementNode' } })
@@ -2629,14 +2561,13 @@ describe('stdio runtime', () => {
       const before = isolatedHandleStdioRequest(graphPath, { id: 1, method: 'stats' })
       const freshnessBefore = isolatedHandleStdioRequest(graphPath, { id: 11, method: 'resources/list' })
 
-      writeFileSync(
+      writeCanonicalGraphFixture(
         graphPath,
-        JSON.stringify({
+        {
           nodes: [{ id: 'replacement', label: 'ReplacementNode', source_file: 'replacement.ts', source_location: '1', file_type: 'code', community: 0 }],
           edges: [],
           hyperedges: [],
-        }),
-        'utf8',
+        },
       )
       freezeGraphMtime = true
 
@@ -2689,18 +2620,18 @@ describe('stdio runtime', () => {
         if (!existsSync(graphPath)) {
           return false
         }
-        const graph = JSON.parse(readFileSync(graphPath, 'utf8')) as { nodes?: Array<{ source_file?: string }> }
-        return graph.nodes?.some((node) => node.source_file?.endsWith('initial.ts')) === true
+        const graph = readCanonicalGraphFixture(graphPath)
+        return graph.nodes.some((node) => node.source_file.endsWith('initial.ts'))
       })
-      const initialGraph = JSON.parse(readFileSync(graphPath, 'utf8')) as { nodes?: unknown[] }
+      const initialGraph = readCanonicalGraphFixture(graphPath)
 
       input.write(`${JSON.stringify({ id: 1, method: 'stats' })}\n`)
       await waitFor(() => outputText.includes('"id":1'))
 
       writeFileSync(join(root, 'added.ts'), 'export function addedDuringSession() { return 2 }\n', 'utf8')
       await waitFor(() => {
-        const graph = JSON.parse(readFileSync(graphPath, 'utf8')) as { nodes?: Array<{ source_file?: string }> }
-        return graph.nodes?.some((node) => node.source_file?.endsWith('added.ts')) === true
+        const graph = readCanonicalGraphFixture(graphPath)
+        return graph.nodes.some((node) => node.source_file.endsWith('added.ts'))
       })
 
       input.end(`${JSON.stringify({ id: 2, method: 'stats' })}\n`)
@@ -2713,10 +2644,10 @@ describe('stdio runtime', () => {
         .map((line) => JSON.parse(line)) as Array<{ id?: number; result?: string }>
       const before = responses.find((response) => response.id === 1)
       const after = responses.find((response) => response.id === 2)
-      const refreshedGraph = JSON.parse(readFileSync(graphPath, 'utf8')) as { nodes?: unknown[] }
+      const refreshedGraph = readCanonicalGraphFixture(graphPath)
 
-      expect(before?.result).toContain(`Nodes: ${initialGraph.nodes?.length ?? 0}`)
-      expect(after?.result).toContain(`Nodes: ${refreshedGraph.nodes?.length ?? 0}`)
+      expect(before?.result).toContain(`Nodes: ${initialGraph.nodes.length}`)
+      expect(after?.result).toContain(`Nodes: ${refreshedGraph.nodes.length}`)
       expect(after?.result).not.toBe(before?.result)
     } finally {
       input.destroy()
@@ -2761,8 +2692,8 @@ describe('stdio runtime', () => {
         if (readWatcherStateForGraph(graphPath)?.status !== 'idle') {
           return false
         }
-        const graph = JSON.parse(readFileSync(graphPath, 'utf8')) as { nodes?: Array<{ source_file?: string }> }
-        return graph.nodes?.some((node) => node.source_file?.endsWith('added.ts')) === true
+        const graph = readCanonicalGraphFixture(graphPath)
+        return graph.nodes.some((node) => node.source_file.endsWith('added.ts'))
       })
       await waitFor(() => outputText.includes('"id":31'))
       input.end(`${JSON.stringify({ id: 32, method: 'stats' })}\n`)
@@ -2959,6 +2890,35 @@ describe('stdio runtime', () => {
         id: 9,
         error: { code: -32601, message: 'Method not found: mystery' },
       })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('preserves the graph regeneration instruction for legacy artifacts across MCP reads', async () => {
+    const root = createGraphFixtureRoot()
+    try {
+      const graphPath = join(root, 'graph.json')
+      writeFileSync(graphPath, JSON.stringify({ nodes: [], links: [] }), 'utf8')
+
+      const responses = await Promise.all([
+        Promise.resolve(handleStdioRequest(graphPath, { id: 1, method: 'stats' })),
+        Promise.resolve(handleStdioRequest(graphPath, {
+          id: 2,
+          method: 'tools/call',
+          params: { name: 'graph_stats', arguments: {} },
+        })),
+        Promise.resolve(handleStdioRequest(graphPath, {
+          id: 3,
+          method: 'resources/read',
+          params: { uri: 'madar://artifact/graph.json' },
+        })),
+      ])
+
+      for (const response of responses) {
+        expect(response?.error?.code).toBe(-32000)
+        expect(response?.error?.message).toContain(GRAPH_REGENERATION_INSTRUCTION)
+      }
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

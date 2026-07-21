@@ -4,8 +4,8 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
-import { toJson } from '../../src/pipeline/export.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
+import { writeCanonicalGraphFixtureFromGraph } from '../helpers/graph-artifact.js'
 
 const tempRoots: string[] = []
 
@@ -85,7 +85,11 @@ function writeGraphFixture(root: string, outDir = 'out'): string {
   const graphDir = join(root, outDir)
   mkdirSync(graphDir, { recursive: true })
   const graphPath = join(graphDir, 'graph.json')
-  toJson(buildProofGraph(), { 0: ['route', 'controller', 'service'], 1: ['worker'] }, graphPath)
+  writeCanonicalGraphFixtureFromGraph(
+    buildProofGraph(),
+    { 0: ['route', 'controller', 'service'], 1: ['worker'] },
+    graphPath,
+  )
   return graphPath
 }
 

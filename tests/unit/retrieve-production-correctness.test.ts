@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { build } from '../../src/pipeline/build.js'
+import { buildGraph } from '../../src/application/build-graph.js'
 import { computeContextPackDiagnostics } from '../../src/runtime/context-pack-diagnostics.js'
 import { compactRetrieveResult, contextPackFromRetrieveResult, retrieveContext } from '../../src/runtime/retrieve.js'
 
 function buildProductionPipelineGraph() {
-  return build(
+  return buildGraph(
     [
       {
         schema_version: 1,
@@ -44,7 +44,7 @@ function buildProductionPipelineGraph() {
         ],
       },
     ],
-    { directed: true },
+      { rootPath: '/' },
   )
 }
 
@@ -57,7 +57,7 @@ function retrieve(prompt: string) {
 }
 
 function buildBidirectionalHubGraph() {
-  return build(
+  return buildGraph(
     [
       {
         schema_version: 1,
@@ -103,12 +103,12 @@ function buildBidirectionalHubGraph() {
         ],
       },
     ],
-    { directed: true },
+      { rootPath: '/' },
   )
 }
 
 function buildBroadReportGenerationGraph() {
-  return build(
+  return buildGraph(
     [
       {
         schema_version: 1,
@@ -144,12 +144,12 @@ function buildBroadReportGenerationGraph() {
         ],
       },
     ],
-    { directed: true },
+      { rootPath: '/' },
   )
 }
 
 function buildReportGenerationLeafHelperGraph() {
-  return build(
+  return buildGraph(
     [
       {
         schema_version: 1,
@@ -176,12 +176,12 @@ function buildReportGenerationLeafHelperGraph() {
         ],
       },
     ],
-    { directed: true },
+      { rootPath: '/' },
   )
 }
 
 function buildReverseFlowReportGenerationGraph() {
-  return build(
+  return buildGraph(
     [
       {
         schema_version: 1,
@@ -210,7 +210,7 @@ function buildReverseFlowReportGenerationGraph() {
         ],
       },
     ],
-    { directed: true },
+      { rootPath: '/' },
   )
 }
 

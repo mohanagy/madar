@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto'
 import { basename, dirname, isAbsolute, resolve } from 'node:path'
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 
-import type { KnowledgeGraph } from '../contracts/graph.js'
+import { loadGraphArtifact, readGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
+import { deserializeGraphArtifact } from '../domain/graph/artifact.js'
+import type { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
 import { classifyFile } from '../pipeline/detect.js'
 import type { RetrieveResult } from './retrieve.js'
 import {
@@ -63,7 +65,7 @@ interface IndexedSourceFiles {
 }
 
 const VERSION_HASH_LENGTH = 12
-const graphVersionCache = new Map<string, { graphVersion: string; mtimeMs: number; size: number }>()
+const graphVersionCache = new Map<string, { graphVersion: string; contentHash: string }>()
 // Agent instruction files are execution guidance, not repository source
 // evidence. Madar's installers deliberately add or update these files after a
 // graph exists; letting that invalidate the graph forces a large auto-refresh
@@ -241,25 +243,7 @@ function indexedSourceFilesFromGraph(
 }
 
 function indexedSourceFilesFromGraphJson(graphPath: string): IndexedSourceFiles {
-  const parsed = JSON.parse(readFileSync(graphPath, 'utf8')) as {
-    root_path?: unknown
-    graph_build_freshness?: unknown
-    nodes?: Array<{ source_file?: unknown }>
-  }
-  const rootPath = typeof parsed.root_path === 'string' && parsed.root_path.trim().length > 0
-    ? parsed.root_path.trim()
-    : dirname(graphPath)
-  const sourceFiles = [...new Set(
-    (Array.isArray(parsed.nodes) ? parsed.nodes : [])
-      .map((node) => typeof node?.source_file === 'string' ? normalizeFreshnessSourceFile(rootPath, node.source_file) : '')
-      .filter((sourceFile) => sourceFile.length > 0),
-  )]
-
-  return {
-    rootPath,
-    sourceFiles,
-    buildFreshness: graphBuildFreshnessFromValue(parsed.graph_build_freshness),
-  }
+  return indexedSourceFilesFromGraph(loadGraphArtifact(graphPath), graphPath)
 }
 
 function resolveIndexedSourcePath(rootPath: string, sourceFile: string): string {
@@ -413,21 +397,15 @@ function graphVersionForPath(graphPath: string): { graphVersion: string; mtimeMs
   const safeGraphPath = validateGraphPath(graphPath)
   const graphStat = statSync(safeGraphPath)
   const truncatedMtime = truncateMtime(graphStat.mtimeMs)
+  const artifact = readGraphArtifact(safeGraphPath)
+  const contentHash = createHash('sha256').update(artifact).digest('hex')
   const cached = graphVersionCache.get(safeGraphPath)
 
-  if (cached && cached.mtimeMs === truncatedMtime && cached.size === graphStat.size) {
-    return {
-      graphVersion: cached.graphVersion,
-      mtimeMs: truncatedMtime,
-    }
-  }
+  if (cached?.contentHash === contentHash) return { graphVersion: cached.graphVersion, mtimeMs: truncatedMtime }
 
-  const graphVersion = createHash('sha256').update(readFileSync(safeGraphPath)).digest('hex').slice(0, VERSION_HASH_LENGTH)
-  graphVersionCache.set(safeGraphPath, {
-    graphVersion,
-    mtimeMs: truncatedMtime,
-    size: graphStat.size,
-  })
+  deserializeGraphArtifact(artifact)
+  const graphVersion = contentHash.slice(0, VERSION_HASH_LENGTH)
+  graphVersionCache.set(safeGraphPath, { graphVersion, contentHash })
 
   return {
     graphVersion,
@@ -548,18 +526,21 @@ export function requireFreshSelectedContext(
   )
 }
 
-export function resourceFreshnessMetadata(graphPath: string, resourcePath: string): ResourceFreshnessMetadata {
-  const graphFreshness = graphFreshnessMetadata(graphPath)
+export function resourceFreshnessMetadata(graphPath: string, resourcePath: string, validatedGraphContent?: string, validatedGraphHash?: string): ResourceFreshnessMetadata {
   const resourceStat = statSync(resourcePath)
   const resourceModifiedMs = truncateMtime(resourceStat.mtimeMs)
   const resourceName = basename(resourcePath)
+  const graphFreshness = validatedGraphContent === undefined
+    ? graphFreshnessMetadata(graphPath)
+    : { graphVersion: (validatedGraphHash ?? createHash('sha256').update(validatedGraphContent).digest('hex')).slice(0, VERSION_HASH_LENGTH), graphModifiedMs: resourceModifiedMs, graphModifiedAt: new Date(resourceModifiedMs).toUTCString() }
+  const resourceBytes = validatedGraphContent === undefined ? resourceStat.size : Buffer.byteLength(validatedGraphContent)
 
   return {
     ...graphFreshness,
-    resourceBytes: resourceStat.size,
+    resourceBytes,
     resourceModifiedMs,
     resourceModifiedAt: new Date(resourceModifiedMs).toUTCString(),
-    etag: `W/"madar-${graphFreshness.graphVersion}-${resourceName}-${resourceStat.size}-${resourceModifiedMs}"`,
+    etag: `W/"madar-${graphFreshness.graphVersion}-${resourceName}-${resourceBytes}-${resourceModifiedMs}"`,
   }
 }
 

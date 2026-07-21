@@ -1,9 +1,9 @@
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import { buildRankedRisk, compareRankedRisks, riskMap } from '../../src/runtime/risk-map.js'
 
 describe('riskMap', () => {
   it('returns blast radius risks plus structural hotspots for a feature question', () => {
-    const graph = new KnowledgeGraph({ directed: true })
+    const graph = new KnowledgeGraph()
     graph.graph.root_path = '/workspace'
     graph.graph.community_labels = {
       0: 'Routes',

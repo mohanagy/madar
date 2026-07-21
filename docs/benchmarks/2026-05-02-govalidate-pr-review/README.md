@@ -63,7 +63,7 @@ MADAR_TS_CLI=/path/to/madar/dist/src/cli/bin.js
 PLATFORM_REPO=/path/to/govalidate/platform
 
 cd "$PLATFORM_REPO"
-node "$MADAR_TS_CLI" generate . --no-html
+node "$MADAR_TS_CLI" generate .
 
 node "$MADAR_TS_CLI" review-compare out/graph.json \
   --base-branch origin/main \

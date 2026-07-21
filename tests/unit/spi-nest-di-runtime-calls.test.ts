@@ -3,7 +3,7 @@ import { relative as pathRelative, resolve as pathResolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { buildFromJson } from '../../src/pipeline/build.js'
+import { buildGraphFromExtraction } from '../../src/application/build-graph.js'
 import { extractJs } from '../../src/pipeline/extract.js'
 import { buildSpi } from '../../src/pipeline/spi/build.js'
 import { projectSpiToExtraction } from '../../src/pipeline/spi/projector.js'
@@ -14,7 +14,7 @@ import type {
 } from '../../src/contracts/types.js'
 import { computeContextPackDiagnostics } from '../../src/runtime/context-pack-diagnostics.js'
 import { contextPackFromRetrieveResult, retrieveContext } from '../../src/runtime/retrieve.js'
-import type { KnowledgeGraph } from '../../src/contracts/graph.js'
+import type { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import type {
   SemanticProgramIndex,
   SpiEdge,
@@ -51,24 +51,22 @@ function rebaseFixturePath(sourceFile: string, rootPath: string): string {
   return `${rootPath.replace(/\/+$/u, '')}/${relativePath}`
 }
 
+function rebaseFixtureEvidence<T>(value: T, rootPath: string): T {
+  if (Array.isArray(value)) return value.map((entry) => rebaseFixtureEvidence(entry, rootPath)) as T
+  if (!value || typeof value !== 'object') return value
+  return Object.fromEntries(Object.entries(value).map(([key, entry]) => [
+    key,
+    key === 'source_file' && typeof entry === 'string'
+      ? rebaseFixturePath(entry, rootPath)
+      : rebaseFixtureEvidence(entry, rootPath),
+  ])) as T
+}
+
 function buildFixtureGraph(options: { rootPath?: string } = {}): KnowledgeGraph {
   const extraction = buildFixtureExtraction()
-  if (!options.rootPath) {
-    return buildFromJson({ ...extraction, root_path: FIXTURE_ROOT }, { directed: true })
-  }
-
-  return buildFromJson({
-    ...extraction,
-    root_path: options.rootPath,
-    nodes: extraction.nodes.map((node) => ({
-      ...node,
-      source_file: rebaseFixturePath(node.source_file, options.rootPath!),
-    })),
-    edges: extraction.edges.map((edge) => ({
-      ...edge,
-      source_file: edge.source_file ? rebaseFixturePath(edge.source_file, options.rootPath!) : undefined,
-    })),
-  }, { directed: true })
+  return options.rootPath
+    ? buildGraphFromExtraction(rebaseFixtureEvidence(extraction, options.rootPath), { rootPath: options.rootPath })
+    : buildGraphFromExtraction(extraction, { rootPath: FIXTURE_ROOT })
 }
 
 function buildLegacyQueueBridgeGraph(): KnowledgeGraph {
@@ -178,7 +176,7 @@ function buildLegacyQueueBridgeGraph(): KnowledgeGraph {
   ].join('\n'))
 
   const extraction = extractJs(fixturePath)
-  return buildFromJson({ ...extraction, root_path: scratchDir }, { directed: true })
+  return buildGraphFromExtraction(extraction, { rootPath: scratchDir })
 }
 
 function findSymbol(
@@ -240,7 +238,7 @@ function outgoingCallLabels(
 function graphOutgoingCallLabels(graph: KnowledgeGraph, sourceId: string): string[] {
   return graph.successors(sourceId)
     .filter(
-      (targetId) => String(graph.edgeAttributes(sourceId, targetId).relation ?? '') === 'calls',
+      (targetId) => String(graph.uniqueEdgeBetween(sourceId, targetId).attributes.relation ?? '') === 'calls',
     )
     .map((targetId) => String(graph.nodeAttributes(targetId).label ?? targetId))
 }
@@ -317,7 +315,7 @@ describe('SPI Nest DI runtime-call fixture', () => {
 
   it('preserves the route method outgoing calls through SPI projection and graph building', () => {
     const extraction = buildFixtureExtraction()
-    const graph = buildFromJson({ ...extraction, root_path: FIXTURE_ROOT }, { directed: true })
+    const graph = buildGraphFromExtraction(extraction, { rootPath: FIXTURE_ROOT })
     const routeNode = findNode(
       extraction,
       (node) =>

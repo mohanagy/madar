@@ -8,6 +8,7 @@ import { agentsInstall, claudeInstall, isMadarCodexMcpConfig, resolveCodexMcpCon
 import { runDoctorCommand, runStatusCommand } from '../../src/infrastructure/doctor.js'
 import { generateGraph } from '../../src/infrastructure/generate.js'
 import { createWatcherState, writeWatcherState } from '../../src/infrastructure/watcher-state.js'
+import { writeCanonicalGraphFixture } from '../helpers/graph-artifact.js'
 
 const PACKAGE_CLI_RELATIVE_PATH = join('dist', 'src', 'cli', 'bin.js')
 
@@ -41,6 +42,11 @@ function writeJson(path: string, value: unknown): void {
 function writeText(path: string, content: string): void {
   mkdirSync(dirname(path), { recursive: true })
   writeFileSync(path, content, 'utf8')
+}
+
+function writeGraph(path: string, metadata: Record<string, unknown> = {}): void {
+  mkdirSync(dirname(path), { recursive: true })
+  writeCanonicalGraphFixture(path, metadata)
 }
 
 function managedCodexMcpBlockForWorkspace(content: string, projectDir: string): { serverName: string; start: number; end: number } {
@@ -85,7 +91,7 @@ describe('doctor command', () => {
   test('shows watcher coverage, reconciliation, failure, and generation-policy mismatch', () => {
     withSandbox((sandboxDir) => {
       writeText(resolve(sandboxDir, 'main.ts'), 'export const value = 1\n')
-      const generated = generateGraph(sandboxDir, { noHtml: true })
+      const generated = generateGraph(sandboxDir, {  })
       writeText(resolve(sandboxDir, '.madarignore'), 'new-exclusion/**\n')
       const watcher = createWatcherState('recursive-events', 30_000)
       watcher.status = 'failed'
@@ -115,10 +121,8 @@ describe('doctor command', () => {
 
   test('shows indexing completeness, affected local paths, and SPI diagnostics in doctor and status', () => {
     withSandbox((sandboxDir) => {
-      writeJson(resolve(sandboxDir, 'out', 'graph.json'), {
+      writeGraph(resolve(sandboxDir, 'out', 'graph.json'), {
         generated_at: new Date().toISOString(),
-        nodes: [],
-        edges: [],
       })
       writeJson(resolve(sandboxDir, 'out', 'indexing-manifest.json'), {
         version: 1,
@@ -170,9 +174,7 @@ describe('doctor command', () => {
 
   test('shows local safety exclusion counts, reasons, and escaped paths in doctor and status', () => {
     withSandbox((sandboxDir) => {
-      writeJson(resolve(sandboxDir, 'out', 'graph.json'), {
-        nodes: [],
-        edges: [],
+      writeGraph(resolve(sandboxDir, 'out', 'graph.json'), {
         discovery_safety: {
           version: 1,
           summary: {
@@ -220,7 +222,7 @@ describe('doctor command', () => {
   test('reports healthy status when graph and configs are wired', () => {
     withSandbox((sandboxDir) => {
       const graphPath = resolve(sandboxDir, 'out', 'graph.json')
-      writeText(graphPath, '{"nodes":[],"edges":[]}\n')
+      writeGraph(graphPath)
       writeText(resolve(sandboxDir, 'GEMINI.md'), '## madar\n')
       writeText(resolve(sandboxDir, '.cursor', 'rules', 'madar.mdc'), 'rule')
       writeJson(resolve(sandboxDir, '.gemini', 'settings.json'), {
@@ -262,7 +264,7 @@ describe('doctor command', () => {
 
   test('recognizes the current Claude UserPromptSubmit hook as configured', () => {
     withSandbox((sandboxDir) => {
-      writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
+      writeGraph(resolve(sandboxDir, 'out', 'graph.json'))
       claudeInstall(sandboxDir)
 
       const doctor = runDoctorCommand({
@@ -277,7 +279,7 @@ describe('doctor command', () => {
 
   test('recognizes an exact legacy Claude prompt hook script during upgrade', () => {
     withSandbox((sandboxDir) => {
-      writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
+      writeGraph(resolve(sandboxDir, 'out', 'graph.json'))
       claudeInstall(sandboxDir)
       const scriptPath = resolve(sandboxDir, '.claude', 'madar-user-prompt-submit.cjs')
       writeText(
@@ -297,7 +299,7 @@ describe('doctor command', () => {
 
   test('reports Claude as partial when its managed prompt hook script is missing', () => {
     withSandbox((sandboxDir) => {
-      writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
+      writeGraph(resolve(sandboxDir, 'out', 'graph.json'))
       claudeInstall(sandboxDir)
       rmSync(resolve(sandboxDir, '.claude', 'madar-user-prompt-submit.cjs'), { force: true })
 
@@ -313,7 +315,7 @@ describe('doctor command', () => {
 
   test('reports Claude as partial when its managed prompt hook script is corrupted', () => {
     withSandbox((sandboxDir) => {
-      writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
+      writeGraph(resolve(sandboxDir, 'out', 'graph.json'))
       claudeInstall(sandboxDir)
       writeText(resolve(sandboxDir, '.claude', 'madar-user-prompt-submit.cjs'), 'console.log("corrupted")\n')
 
@@ -329,7 +331,7 @@ describe('doctor command', () => {
 
   test('reports Claude as partial when its managed hook identity has the wrong command', () => {
     withSandbox((sandboxDir) => {
-      writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
+      writeGraph(resolve(sandboxDir, 'out', 'graph.json'))
       claudeInstall(sandboxDir)
       writeJson(resolve(sandboxDir, '.claude', 'settings.json'), {
         hooks: {
@@ -353,7 +355,7 @@ describe('doctor command', () => {
 
   test('does not treat an arbitrary PreToolUse out reference as a Madar Claude hook', () => {
     withSandbox((sandboxDir) => {
-      writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
+      writeGraph(resolve(sandboxDir, 'out', 'graph.json'))
       writeText(resolve(sandboxDir, 'CLAUDE.md'), '## madar\n')
       writeJson(resolve(sandboxDir, '.claude', 'settings.json'), {
         hooks: {
@@ -376,7 +378,7 @@ describe('doctor command', () => {
     withSandbox((sandboxDir) => {
       const graphPath = resolve(sandboxDir, 'out', 'graph.json')
       const wrongGraphPath = resolve(sandboxDir, 'out', 'old-graph.json')
-      writeText(graphPath, '{"nodes":[],"edges":[]}\n')
+      writeGraph(graphPath)
       writeText(resolve(sandboxDir, 'CLAUDE.md'), '## madar\n')
       writeJson(resolve(sandboxDir, '.claude', 'settings.json'), {
         hooks: {
@@ -400,7 +402,7 @@ describe('doctor command', () => {
   test('does not treat unrelated checkout hooks as configured', () => {
     withSandbox((sandboxDir) => {
       const graphPath = resolve(sandboxDir, 'out', 'graph.json')
-      writeText(graphPath, '{"nodes":[],"edges":[]}\n')
+      writeGraph(graphPath)
       writeText(resolve(sandboxDir, 'CLAUDE.md'), '## madar\n')
       writeText(resolve(sandboxDir, 'GEMINI.md'), '## madar\n')
       writeJson(resolve(sandboxDir, '.claude', 'settings.json'), {
@@ -428,7 +430,7 @@ describe('doctor command', () => {
 
   test('reports codex as configured when AGENTS.md, the managed prompt hook, and MCP config are wired', () => {
     withSandbox((sandboxDir) => {
-      writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
+      writeGraph(resolve(sandboxDir, 'out', 'graph.json'))
       agentsInstall(sandboxDir, 'codex')
 
       const doctor = runDoctorCommand({
@@ -450,7 +452,7 @@ describe('doctor command', () => {
 
   test('flags the pre-#550 Codex core marker until reinstall migrates it to strict', () => {
     withSandbox((sandboxDir) => {
-      writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
+      writeGraph(resolve(sandboxDir, 'out', 'graph.json'))
       agentsInstall(sandboxDir, 'codex')
       const configPath = resolveCodexMcpConfigPath()
       const config = readFileSync(configPath, 'utf8')
@@ -471,7 +473,7 @@ describe('doctor command', () => {
 
   test('reports an incomplete Codex profile as partial and recommends reinstall', () => {
     withSandbox((sandboxDir) => {
-      writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
+      writeGraph(resolve(sandboxDir, 'out', 'graph.json'))
       agentsInstall(sandboxDir, 'codex')
       rmSync(resolve(sandboxDir, '.codex', 'madar-user-prompt-submit.cjs'), { force: true })
 
@@ -495,7 +497,7 @@ describe('doctor command', () => {
 
   test('reports a marker-prefixed but stale Codex prompt script as partial', () => {
     withSandbox((sandboxDir) => {
-      writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
+      writeGraph(resolve(sandboxDir, 'out', 'graph.json'))
       agentsInstall(sandboxDir, 'codex')
       writeText(
         resolve(sandboxDir, '.codex', 'madar-user-prompt-submit.cjs'),
@@ -517,7 +519,7 @@ describe('doctor command', () => {
 
   test('reports a managed Codex MCP block with a later user conflict as partial', () => {
     withSandbox((sandboxDir) => {
-      writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
+      writeGraph(resolve(sandboxDir, 'out', 'graph.json'))
       agentsInstall(sandboxDir, 'codex')
       const configPath = resolveCodexMcpConfigPath()
       const config = readFileSync(configPath, 'utf8')
@@ -548,7 +550,7 @@ describe('doctor command', () => {
 
   test('reports duplicate, stale, or legacy managed Codex hooks as partial', () => {
     withSandbox((sandboxDir) => {
-      writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
+      writeGraph(resolve(sandboxDir, 'out', 'graph.json'))
       agentsInstall(sandboxDir, 'codex')
       const hooksPath = resolve(sandboxDir, '.codex', 'hooks.json')
       const hooksConfig = JSON.parse(readFileSync(hooksPath, 'utf8')) as {
@@ -591,7 +593,7 @@ describe('doctor command', () => {
 
   test('reports a managed Codex prompt hook with an extra command as partial', () => {
     withSandbox((sandboxDir) => {
-      writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
+      writeGraph(resolve(sandboxDir, 'out', 'graph.json'))
       agentsInstall(sandboxDir, 'codex')
       const hooksPath = resolve(sandboxDir, '.codex', 'hooks.json')
       const hooksConfig = JSON.parse(readFileSync(hooksPath, 'utf8')) as {
@@ -618,7 +620,7 @@ describe('doctor command', () => {
 
   test('reports OpenCode as configured when the AGENTS profile, plugin, and MCP entry are wired', () => {
     withSandbox((sandboxDir) => {
-      writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
+      writeGraph(resolve(sandboxDir, 'out', 'graph.json'))
       withOpenCodePackageRoot((packageRoot) => {
         agentsInstall(sandboxDir, 'opencode', { packageRoot })
 
@@ -642,7 +644,7 @@ describe('doctor command', () => {
 
   test('ignores unrelated OpenCode config files that do not contain Madar wiring', () => {
     withSandbox((sandboxDir) => {
-      writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
+      writeGraph(resolve(sandboxDir, 'out', 'graph.json'))
       writeJson(resolve(sandboxDir, 'opencode.json'), {
         mcp: {
           other: {
@@ -669,7 +671,7 @@ describe('doctor command', () => {
 
   test('flags stale OpenCode AGENTS guidance and recommends reinstall', () => {
     withSandbox((sandboxDir) => {
-      writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
+      writeGraph(resolve(sandboxDir, 'out', 'graph.json'))
       withOpenCodePackageRoot((packageRoot) => {
         agentsInstall(sandboxDir, 'opencode', { packageRoot })
         writeText(resolve(sandboxDir, 'AGENTS.md'), '## madar\n\nOld guidance.\n')

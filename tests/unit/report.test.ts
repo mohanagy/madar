@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import { godNodes, semanticAnomalies, suggestQuestions, surprisingConnections } from '../../src/pipeline/analyze.js'
-import { buildFromJson } from '../../src/pipeline/build.js'
+import { buildGraphFromExtraction } from '../../src/application/build-graph.js'
 import { cluster, scoreAll } from '../../src/pipeline/cluster.js'
 import { generate } from '../../src/pipeline/report.js'
 
@@ -11,7 +11,7 @@ const FIXTURES_DIR = join(process.cwd(), 'tests', 'fixtures')
 
 function makeInputs() {
   const extraction = JSON.parse(readFileSync(join(FIXTURES_DIR, 'extraction.json'), 'utf8'))
-  const graph = buildFromJson(extraction)
+  const graph = buildGraphFromExtraction(extraction)
   const communities = cluster(graph)
   const cohesion = scoreAll(graph, communities)
   const labels = Object.fromEntries(Object.keys(communities).map((communityId) => [Number(communityId), `Community ${communityId}`]))
@@ -26,11 +26,14 @@ function makeInputs() {
 }
 
 function makeLowCohesionInputs() {
-  const graph = new KnowledgeGraph(true)
+  const graph = new KnowledgeGraph()
+  for (let index = 1; index <= 15; index += 1) {
+    const nodeId = `n${index}`
+    graph.addNode(nodeId, { label: `Node ${index}`, source_file: `module-${index}.ts`, file_type: 'code' })
+  }
   for (let index = 1; index <= 15; index += 1) {
     const nodeId = `n${index}`
     const nextNodeId = `n${index === 15 ? 1 : index + 1}`
-    graph.addNode(nodeId, { label: `Node ${index}`, source_file: `module-${index}.ts`, file_type: 'code' })
     graph.addEdge(nodeId, nextNodeId, { relation: 'calls', confidence: 'EXTRACTED', source_file: `module-${index}.ts` })
   }
   graph.addNode('file', { label: 'module-1.ts', source_file: 'module-1.ts', file_type: 'code' })
@@ -46,7 +49,7 @@ function makeLowCohesionInputs() {
 }
 
 function makeBridgeInputs() {
-  const graph = new KnowledgeGraph(true)
+  const graph = new KnowledgeGraph()
   graph.addNode('api', { label: 'loginUser()', source_file: 'backend/api.ts', file_type: 'code' })
   graph.addNode('web', { label: 'loadSession()', source_file: 'web-app/session.ts', file_type: 'code' })
   graph.addNode('worker', { label: 'syncSession()', source_file: 'worker/jobs.ts', file_type: 'code' })

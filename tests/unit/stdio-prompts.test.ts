@@ -1,16 +1,17 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 import { handleCompletion, handlePromptGet, promptDefinitionsForGraph } from '../../src/runtime/stdio/prompts.js'
 import { MCP_PROMPTS } from '../../src/runtime/stdio/definitions.js'
+import { writeCanonicalGraphFixture } from '../helpers/graph-artifact.js'
 
 function createGraphFixtureRoot(): string {
   const parentDir = resolve('out', 'test-runtime')
   mkdirSync(parentDir, { recursive: true })
   const root = mkdtempSync(join(parentDir, 'madar-stdio-prompts-'))
-  writeFileSync(
+  writeCanonicalGraphFixture(
     join(root, 'graph.json'),
-    JSON.stringify({
+    {
       community_labels: {
         '0': 'Auth Services',
         '1': 'Transport Layer',
@@ -25,8 +26,7 @@ function createGraphFixtureRoot(): string {
         { source: 'client', target: 'transport', relation: 'uses', confidence: 'EXTRACTED', source_file: 'client.ts' },
       ],
       hyperedges: [],
-    }),
-    'utf8',
+    },
   )
   return root
 }

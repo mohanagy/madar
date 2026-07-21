@@ -81,7 +81,7 @@ import {
   semanticAnomaliesSummary,
   shortestPath,
 } from '../serve.js'
-import type { KnowledgeGraph } from '../../contracts/graph.js'
+import type { KnowledgeGraph } from '../../domain/graph/directed-multigraph.js'
 
 interface StdioResponse {
   jsonrpc: '2.0'

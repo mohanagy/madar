@@ -17,6 +17,7 @@ interface SliceRecord {
   label: string
   sourceFile: string
   line: number
+  memberLines: Map<string, number>
 }
 
 interface NamedReferenceOptions {
@@ -33,6 +34,7 @@ interface ReduxReference {
   nodeKind: NonNullable<ExtractionNode['node_kind']>
   frameworkRole: string
   kind: 'slice' | 'thunk' | 'action' | 'selector'
+  memberLines?: ReadonlyMap<string, number>
 }
 
 interface ReduxModuleAnalysis {
@@ -138,6 +140,20 @@ function objectProperty(node: ts.ObjectLiteralExpression, propertyName: string):
 
   return null
 }
+function sliceMemberLines(options: ts.ObjectLiteralExpression, sourceFile: ts.SourceFile): Map<string, number> {
+  const lines = new Map<string, number>()
+  for (const [propertyName, role] of [['reducers', 'redux_action'], ['selectors', 'redux_selector']] as const) {
+    const property = objectProperty(options, propertyName)
+    if (!property || !ts.isPropertyAssignment(property)) continue
+    const members = unparenthesizeExpression(property.initializer)
+    if (!ts.isObjectLiteralExpression(members)) continue
+    for (const member of members.properties) {
+      const name = 'name' in member && member.name ? propertyNameText(member.name) : null
+      if (name) lines.set(`${role}:${name}`, lineOf(member, sourceFile))
+    }
+  }
+  return lines
+}
 
 function sliceReference(record: SliceRecord): ReduxReference {
   return {
@@ -148,6 +164,7 @@ function sliceReference(record: SliceRecord): ReduxReference {
     nodeKind: 'slice',
     frameworkRole: 'redux_slice',
     kind: 'slice',
+    memberLines: record.memberLines,
   }
 }
 
@@ -204,7 +221,7 @@ function sliceActionReference(
     id: baseNode?.id ?? _makeId(slice.sourceFile, actionName, 'redux_action'),
     label: actionName,
     sourceFile: slice.sourceFile,
-    line: slice.line,
+    line: slice.memberLines?.get(`redux_action:${actionName}`) ?? slice.line,
     nodeKind: 'function',
     frameworkRole: 'redux_action',
     kind: 'action',
@@ -342,6 +359,7 @@ function analyzeReduxModule(filePath: string, cache: Map<string, ReduxModuleAnal
         ...actionReference(sliceBinding.sourceFile, '__placeholder__', sliceBinding.line, 'redux_action'),
         id: '',
         label: '',
+        ...(sliceBinding.memberLines ? { memberLines: sliceBinding.memberLines } : {}),
       }
     }
 
@@ -350,6 +368,7 @@ function analyzeReduxModule(filePath: string, cache: Map<string, ReduxModuleAnal
         ...selectorReference(sliceBinding.sourceFile, '__placeholder__', sliceBinding.line),
         id: '',
         label: '',
+        ...(sliceBinding.memberLines ? { memberLines: sliceBinding.memberLines } : {}),
       }
     }
 
@@ -464,7 +483,9 @@ function analyzeReduxModule(filePath: string, cache: Map<string, ReduxModuleAnal
 
             const bindingName = element.name.text
             const aliased = !!element.propertyName
-            const bindingLine = lineOf(element.name, sourceFile)
+            const bindingLine = !aliased
+              ? sliceMemberBinding.memberLines?.get(`${sliceMemberBinding.frameworkRole}:${bindingName}`) ?? lineOf(element.name, sourceFile)
+              : lineOf(element.name, sourceFile)
             const binding = exportedSliceMemberReference(
               sliceMemberBinding.sourceFile,
               bindingName,
@@ -505,6 +526,8 @@ function analyzeReduxModule(filePath: string, cache: Map<string, ReduxModuleAnal
           label: `${sliceName} slice`,
           sourceFile: resolvedFilePath,
           line: bindingLine,
+          memberLines: sliceOptions && ts.isObjectLiteralExpression(sliceOptions)
+            ? sliceMemberLines(sliceOptions, sourceFile) : new Map(),
         })
       } else if (isCreateCall(initializer, toolkitBindings, toolkitBindings.createAsyncThunk, 'createAsyncThunk')) {
         thunkBindings.set(bindingName, actionReference(resolvedFilePath, bindingName, bindingLine, 'redux_thunk'))
@@ -609,7 +632,8 @@ function recordActionOrSelectorMembers(
       continue
     }
 
-    const memberId = addNamedNode(context, nodes, seenIds, memberName, lineOf(member, context.sourceFile), {
+    const memberLine = lineOf(member, context.sourceFile)
+    const memberId = addNamedNode(context, nodes, seenIds, memberName, memberLine, {
       nodeKind: 'function',
       frameworkRole,
       fallbackSuffix: frameworkRole,
@@ -1087,8 +1111,12 @@ function handleExportedMembers(
 
     const nodeId = _makeId(context.filePath, exportName, element.propertyName ? kind.fallbackSuffix : kind.frameworkRole)
     const baseNode = findBaseNode(context, exportName)
+    const sourceLine = element.propertyName
+      ? lineOf(element.name, context.sourceFile)
+      : slice.memberLines.get(`${kind.frameworkRole}:${exportName}`) ?? lineOf(element.name, context.sourceFile)
     addNode(nodes, seenIds, {
-      ...(baseNode ?? createNode(nodeId, exportName, context.filePath, lineOf(element.name, context.sourceFile))),
+      ...(baseNode ?? {}),
+      ...createNode(nodeId, exportName, context.filePath, sourceLine),
       id: nodeId,
       node_kind: 'function',
       framework: 'redux-toolkit',
@@ -1161,6 +1189,7 @@ function handleSliceDeclaration(
     label: `${sliceName} slice`,
     sourceFile: context.filePath,
     line: lineOf(declaration.name, context.sourceFile),
+    memberLines: sliceMemberLines(sliceOptions, context.sourceFile),
   }
   slicesByBinding.set(declaration.name.text, sliceRecord)
 

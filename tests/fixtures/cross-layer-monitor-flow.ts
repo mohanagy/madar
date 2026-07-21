@@ -1,4 +1,4 @@
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 
 interface FlowNode {
   id: string
@@ -127,7 +127,7 @@ export const CROSS_LAYER_MONITOR_FLOW_FILES = [
 ] as const
 
 export function buildCrossLayerMonitorFlowFixture(): KnowledgeGraph {
-  const graph = new KnowledgeGraph({ directed: true })
+  const graph = new KnowledgeGraph()
   graph.graph.root_path = '/'
   graph.graph.community_labels = {
     1: 'Monitor check execution',

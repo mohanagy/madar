@@ -1,4 +1,4 @@
-import type { KnowledgeGraph } from '../contracts/graph.js'
+import type { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
 import { graphDiff, type GraphDiffResult } from '../pipeline/analyze.js'
 import { buildCommunityLabels } from '../pipeline/community-naming.js'
 import { analyzeImpact } from './impact.js'

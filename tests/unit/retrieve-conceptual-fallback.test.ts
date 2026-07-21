@@ -2,7 +2,7 @@ import { performance } from 'node:perf_hooks'
 
 import { describe, expect, it, vi } from 'vitest'
 
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import type { RetrievalQualitySnapshot } from '../../src/contracts/retrieval-plan.js'
 import {
   compactRetrieveResult,
@@ -52,7 +52,7 @@ function lowQuality(): RetrievalQualitySnapshot {
 }
 
 function conceptualWorkflowGraph(): KnowledgeGraph {
-  const graph = new KnowledgeGraph({ directed: true })
+  const graph = new KnowledgeGraph()
   addNode(graph, 'snapshot', 'TopologySnapshot.publish', '/src/map/topology-snapshot.ts')
   addNode(graph, 'observer', 'ChangeObserver.reconcileModifications', '/src/refresh/change-observer.ts')
   addNode(graph, 'coordinator', 'RefreshCoordinator.run', '/src/refresh/coordinator.ts')
@@ -158,7 +158,7 @@ describe('conceptual-query fallback planner', () => {
 
   it('reports snippet-grounded obligation coverage rather than vocabulary-anchor coverage', () => {
     const question = 'Trace how a failed monitor check becomes an incident, triggers notifications, and affects the public status-page status. Identify inconsistent status-computation paths.'
-    const proposal = planConceptualFallback(new KnowledgeGraph({ directed: true }), {
+    const proposal = planConceptualFallback(new KnowledgeGraph(), {
       question,
       initialQuality: lowQuality(),
       selectedNodes: [],
@@ -241,7 +241,7 @@ describe('conceptual-query fallback planner', () => {
   })
 
   it('excludes generic computations from a repository-scoped divergence comparison', () => {
-    const graph = new KnowledgeGraph({ directed: true })
+    const graph = new KnowledgeGraph()
     addNode(graph, 'page-status', 'computeOverallStatus()', '/apps/server/status-page/index.ts')
     addNode(graph, 'generic-status', 'computePhaseStatus()', '/packages/services/import/utils.ts')
 
@@ -322,7 +322,7 @@ describe('conceptual-query fallback planner', () => {
   })
 
   it('derives fallback terms from every supported repository-local vocabulary source', () => {
-    const graph = new KnowledgeGraph({ directed: true })
+    const graph = new KnowledgeGraph()
     graph.graph.community_labels = { 1: 'Refresh lifecycle' }
     addNode(graph, 'exported', 'TopologyPublisher', '/src/map/publisher.ts', { community: 1 })
     addNode(graph, 'module', 'run', '/src/reconciliation/change-observer.ts', { community: 1 })
@@ -381,7 +381,7 @@ describe('conceptual-query fallback planner', () => {
   })
 
   it('applies the lifecycle vocabulary to an unrelated search-index workflow', () => {
-    const graph = new KnowledgeGraph({ directed: true })
+    const graph = new KnowledgeGraph()
     graph.graph.community_labels = { 7: 'Order changes and search projection synchronization' }
     addNode(graph, 'orders', 'OrderChangeSubscriber', '/services/search/order-events.ts', { community: 7 })
     addNode(graph, 'sync', 'SearchProjectionSynchronizer', '/services/search/projection-sync.ts', { community: 7 })
@@ -408,7 +408,7 @@ describe('conceptual-query fallback planner', () => {
   })
 
   it('reserves the cross-runtime caller that owns the first failure transition', () => {
-    const graph = new KnowledgeGraph({ directed: true })
+    const graph = new KnowledgeGraph()
     addNode(graph, 'failure-log', 'FailedMonitorLog', '/packages/services/monitor/failure-log.ts')
     addNode(graph, 'status-update', 'UpdateStatus()', '/apps/checker/checker/update.go')
     addNode(graph, 'http-checker', '.HTTPCheckerHandler()', '/apps/checker/handlers/checker.go', {
@@ -437,7 +437,7 @@ describe('conceptual-query fallback planner', () => {
   })
 
   it('reserves workflow-local creation and delivery owners for natural wording', () => {
-    const graph = new KnowledgeGraph({ directed: true })
+    const graph = new KnowledgeGraph()
     addNode(graph, 'http-checker', '.HTTPCheckerHandler()', '/apps/checker/handlers/checker.go')
     addNode(graph, 'status-update', 'UpdateStatus()', '/apps/checker/checker/update.go')
     addNode(graph, 'incident-owner', 'findOpenIncident()', '/apps/workflows/src/checker/index.ts')
@@ -466,7 +466,7 @@ describe('conceptual-query fallback planner', () => {
   })
 
   it('reserves the public HTTP boundary separately from status computation owners', () => {
-    const graph = new KnowledgeGraph({ directed: true })
+    const graph = new KnowledgeGraph()
     addNode(graph, 'public-json-route', 'GET()', '/apps/status-page/src/app/api/status/[[...path]]/route.ts', {
       framework_role: 'next_route_handler',
     })
@@ -495,7 +495,7 @@ describe('conceptual-query fallback planner', () => {
   })
 
   it('caps every BFS neighbor read on a hub-heavy graph', () => {
-    const graph = new KnowledgeGraph({ directed: true })
+    const graph = new KnowledgeGraph()
     addNode(graph, 'snapshot', 'TopologySnapshot', '/runtime/topology/snapshot.ts')
     addNode(graph, 'observer', 'ModificationObserver', '/runtime/topology/modification-observer.ts')
     addNode(graph, 'hub', 'TopologyRefreshCoordinator', '/runtime/topology/refresh-coordinator.ts')

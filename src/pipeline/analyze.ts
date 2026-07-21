@@ -1,4 +1,5 @@
-import { KnowledgeGraph } from '../contracts/graph.js'
+import { canonicalJsonString } from '../domain/graph/canonical-json.js'
+import { KnowledgeGraph, type GraphAttributes } from '../domain/graph/directed-multigraph.js'
 import { AUDIO_EXTENSIONS, CODE_EXTENSIONS, DOC_EXTENSIONS, IMAGE_EXTENSIONS, PAPER_EXTENSIONS, VIDEO_EXTENSIONS } from './detect.js'
 import { cluster, cohesionScore, type Communities } from './cluster.js'
 
@@ -37,8 +38,8 @@ export interface SemanticAnomaly {
 export interface GraphDiffResult {
   new_nodes: Array<{ id: string; label: string }>
   removed_nodes: Array<{ id: string; label: string }>
-  new_edges: Array<{ source: string; target: string; relation: string; confidence: string }>
-  removed_edges: Array<{ source: string; target: string; relation: string; confidence: string }>
+  new_edges: Array<{ id: string; source: string; target: string; relation: string; confidence: string; attributes: GraphAttributes }>
+  removed_edges: Array<{ id: string; source: string; target: string; relation: string; confidence: string; attributes: GraphAttributes }>
   summary: string
 }
 
@@ -77,13 +78,6 @@ const MAX_SEMANTIC_ANOMALIES_PER_KIND = 3
 const LOW_COHESION_THRESHOLD = 0.15
 const LOW_COHESION_MIN_NODES = 5
 const nodeBetweennessCache = new WeakMap<KnowledgeGraph, Map<string, number>>()
-
-function edgeKey(left: string, right: string, relation: string, directed = false): string {
-  if (directed) {
-    return `${left}\u0000${right}\u0000${relation}`
-  }
-  return [left, right].sort().join('\u0000') + `\u0000${relation}`
-}
 
 function edgePairKey(left: string, right: string): string {
   return [left, right].sort().join('\u0000')
@@ -130,7 +124,7 @@ function edgeBetweenness(graph: KnowledgeGraph): Map<string, number> {
       }
       stack.push(vertex)
 
-      for (const neighbor of graph.neighbors(vertex)) {
+      for (const neighbor of graph.incidentNeighbors(vertex)) {
         if ((distance.get(neighbor) ?? -1) < 0) {
           queue.push(neighbor)
           distance.set(neighbor, (distance.get(vertex) ?? 0) + 1)
@@ -190,7 +184,7 @@ function nodeBetweenness(graph: KnowledgeGraph): Map<string, number> {
       }
       stack.push(vertex)
 
-      for (const neighbor of graph.neighbors(vertex)) {
+      for (const neighbor of graph.incidentNeighbors(vertex)) {
         if ((distance.get(neighbor) ?? -1) < 0) {
           queue.push(neighbor)
           distance.set(neighbor, (distance.get(vertex) ?? 0) + 1)
@@ -305,7 +299,7 @@ function analysisCommunityNodeIds(graph: KnowledgeGraph, nodeIds: string[]): str
 }
 
 function analysisGraph(graph: KnowledgeGraph): KnowledgeGraph {
-  const entityGraph = new KnowledgeGraph(graph.isDirected())
+  const entityGraph = new KnowledgeGraph(typeof graph.graph.root_path === 'string' ? { root_path: graph.graph.root_path } : {})
   const nodeIds = analysisNodeIds(graph)
   const nodeIdSet = new Set(nodeIds)
   for (const nodeId of nodeIds) {
@@ -632,15 +626,12 @@ function crossFileSurprises(graph: KnowledgeGraph, communities: Communities, top
       }
 
       const [score, reasons] = _surpriseScore(graph, sourceNodeId, targetNodeId, edgeData, nodeCommunity, sourceFile, targetFile)
-      const directedSourceId = typeof edgeData._src === 'string' && graph.hasNode(edgeData._src) ? edgeData._src : sourceNodeId
-      const directedTargetId = typeof edgeData._tgt === 'string' && graph.hasNode(edgeData._tgt) ? edgeData._tgt : targetNodeId
-
       return {
         _score: score,
         connection: {
-          source: nodeLabel(graph, directedSourceId),
-          target: nodeLabel(graph, directedTargetId),
-          source_files: [nodeSourceFile(graph, directedSourceId), nodeSourceFile(graph, directedTargetId)] as [string, string],
+          source: nodeLabel(graph, sourceNodeId),
+          target: nodeLabel(graph, targetNodeId),
+          source_files: [nodeSourceFile(graph, sourceNodeId), nodeSourceFile(graph, targetNodeId)] as [string, string],
           confidence: String(edgeData.confidence ?? 'EXTRACTED'),
           ...(typeof edgeData.confidence_score === 'number' ? { confidence_score: edgeData.confidence_score } : {}),
           relation,
@@ -699,16 +690,13 @@ function crossCommunitySurprises(graph: KnowledgeGraph, communities: Communities
       continue
     }
 
-    const directedSourceId = typeof edgeData._src === 'string' && graph.hasNode(edgeData._src) ? edgeData._src : sourceNodeId
-    const directedTargetId = typeof edgeData._tgt === 'string' && graph.hasNode(edgeData._tgt) ? edgeData._tgt : targetNodeId
-
     candidates.push({
       pair: [sourceCommunity, targetCommunity].sort((left, right) => left - right).join('\u0000'),
       priority: order.get(String(edgeData.confidence ?? 'EXTRACTED')) ?? 3,
       connection: {
-        source: nodeLabel(graph, directedSourceId),
-        target: nodeLabel(graph, directedTargetId),
-        source_files: [nodeSourceFile(graph, directedSourceId), nodeSourceFile(graph, directedTargetId)],
+        source: nodeLabel(graph, sourceNodeId),
+        target: nodeLabel(graph, targetNodeId),
+        source_files: [nodeSourceFile(graph, sourceNodeId), nodeSourceFile(graph, targetNodeId)],
         confidence: String(edgeData.confidence ?? 'EXTRACTED'),
         ...(typeof edgeData.confidence_score === 'number' ? { confidence_score: edgeData.confidence_score } : {}),
         relation,
@@ -777,7 +765,7 @@ export function semanticAnomalies(graph: KnowledgeGraph, communities: Communitie
       const communityId = nodeCommunity[nodeId]
       const neighborCommunities = new Set(
         graph
-          .neighbors(nodeId)
+          .incidentNeighbors(nodeId)
           .map((neighborId) => nodeCommunity[neighborId])
           .filter((neighborCommunityId): neighborCommunityId is number => neighborCommunityId !== undefined && neighborCommunityId !== communityId),
       )
@@ -877,7 +865,7 @@ export function suggestQuestions(graph: KnowledgeGraph, communities: Communities
       const communityName = communityId !== undefined ? (communityLabels[communityId] ?? `Community ${communityId}`) : 'unknown'
       const neighborCommunities = new Set(
         graph
-          .neighbors(nodeId)
+          .incidentNeighbors(nodeId)
           .map((neighborId) => nodeCommunity[neighborId])
           .filter((neighborCommunityId): neighborCommunityId is number => neighborCommunityId !== undefined && neighborCommunityId !== communityId),
       )
@@ -912,10 +900,8 @@ export function suggestQuestions(graph: KnowledgeGraph, communities: Communities
       continue
     }
 
-    const otherLabels = inferred.slice(0, 2).map(([sourceNodeId, targetNodeId, edgeData]) => {
-      const directedSourceId = typeof edgeData._src === 'string' && graph.hasNode(edgeData._src) ? edgeData._src : sourceNodeId
-      const directedTargetId = typeof edgeData._tgt === 'string' && graph.hasNode(edgeData._tgt) ? edgeData._tgt : targetNodeId
-      const otherNodeId = directedSourceId === nodeId ? directedTargetId : directedSourceId
+    const otherLabels = inferred.slice(0, 2).map(([sourceNodeId, targetNodeId]) => {
+      const otherNodeId = sourceNodeId === nodeId ? targetNodeId : sourceNodeId
       return nodeLabel(graph, otherNodeId)
     })
 
@@ -967,27 +953,15 @@ export function graphDiff(oldGraph: KnowledgeGraph, newGraph: KnowledgeGraph): G
   const newNodesList = [...newNodes].filter((nodeId) => !oldNodes.has(nodeId)).map((nodeId) => ({ id: nodeId, label: nodeLabel(newGraph, nodeId) }))
   const removedNodesList = [...oldNodes].filter((nodeId) => !newNodes.has(nodeId)).map((nodeId) => ({ id: nodeId, label: nodeLabel(oldGraph, nodeId) }))
 
-  const oldEdges = new Set(oldGraph.edgeEntries().map(([source, target, attrs]) => edgeKey(source, target, String(attrs.relation ?? ''), oldGraph.isDirected())))
-  const newEdges = new Set(newGraph.edgeEntries().map(([source, target, attrs]) => edgeKey(source, target, String(attrs.relation ?? ''), newGraph.isDirected())))
+  const oldEdges = new Map(oldGraph.edgeEntries().map(([, , attributes, id]) => [id, canonicalJsonString(attributes)]))
+  const newEdges = new Map(newGraph.edgeEntries().map(([, , attributes, id]) => [id, canonicalJsonString(attributes)]))
 
-  const newEdgesList = newGraph
-    .edgeEntries()
-    .filter(([source, target, attrs]) => !oldEdges.has(edgeKey(source, target, String(attrs.relation ?? ''), newGraph.isDirected())))
-    .map(([source, target, attrs]) => ({
-      source,
-      target,
-      relation: String(attrs.relation ?? ''),
-      confidence: String(attrs.confidence ?? ''),
-    }))
-  const removedEdgesList = oldGraph
-    .edgeEntries()
-    .filter(([source, target, attrs]) => !newEdges.has(edgeKey(source, target, String(attrs.relation ?? ''), oldGraph.isDirected())))
-    .map(([source, target, attrs]) => ({
-      source,
-      target,
-      relation: String(attrs.relation ?? ''),
-      confidence: String(attrs.confidence ?? ''),
-    }))
+  const newEdgesList = newGraph.edgeEntries()
+    .filter(([, , attributes, id]) => oldEdges.get(id) !== canonicalJsonString(attributes))
+    .map(([source, target, attributes, id]) => ({ id, source, target, relation: String(attributes.relation ?? ''), confidence: String(attributes.confidence ?? ''), attributes }))
+  const removedEdgesList = oldGraph.edgeEntries()
+    .filter(([, , attributes, id]) => newEdges.get(id) !== canonicalJsonString(attributes))
+    .map(([source, target, attributes, id]) => ({ id, source, target, relation: String(attributes.relation ?? ''), confidence: String(attributes.confidence ?? ''), attributes }))
 
   const summaryParts: string[] = []
   if (newNodesList.length > 0) {

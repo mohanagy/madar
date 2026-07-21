@@ -5,14 +5,14 @@ import { tmpdir } from 'node:os'
 
 import { describe, expect, test, vi } from 'vitest'
 
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import { generateGraph } from '../../src/infrastructure/generate.js'
 import { loadBenchmarkQuestions, runBenchmark, printBenchmark, querySubgraphTokens, type BenchmarkQuestionInput } from '../../src/infrastructure/benchmark.js'
 import { corpusTokensFromWords } from '../../src/infrastructure/benchmark/corpus.js'
 import { evaluateRetrievalQuality, formatQualityReport } from '../../src/infrastructure/benchmark/quality.js'
 import { evaluateBenchmarkQuestion } from '../../src/infrastructure/benchmark/questions.js'
-import { toJson } from '../../src/pipeline/export.js'
 import { estimateQueryTokens, loadGraph, queryGraph } from '../../src/runtime/serve.js'
+import { writeCanonicalGraphFixtureFromGraph } from '../helpers/graph-artifact.js'
 
 const FIXTURES_DIR = join(process.cwd(), 'tests', 'fixtures')
 const DEMO_REPO_DIR = join(process.cwd(), 'examples', 'demo-repo')
@@ -71,7 +71,7 @@ function makeGraph(): KnowledgeGraph {
 }
 
 function makeWorkspaceGraph(): KnowledgeGraph {
-  const graph = new KnowledgeGraph(true)
+  const graph = new KnowledgeGraph()
   graph.addNode('a', { label: 'authentication', source_file: 'auth.ts', source_location: 'L1', community: 0, file_type: 'code' })
   graph.addNode('b', { label: 'api_handler', source_file: 'api.ts', source_location: 'L5', community: 0, file_type: 'code' })
   graph.addNode('c', { label: 'main_entry', source_file: 'main.ts', source_location: 'L1', community: 0, file_type: 'code' })
@@ -226,7 +226,7 @@ describe('runBenchmark', () => {
     withTempDir((tempDir) => {
       const graphPath = join(tempDir, 'out', 'graph.json')
       mkdirSync(join(tempDir, 'out'), { recursive: true })
-      toJson(makeGraph(), { 0: ['n1', 'n2'], 1: ['n3', 'n4'], 2: ['n5'] }, graphPath)
+      writeCanonicalGraphFixtureFromGraph(makeGraph(), { 0: ['n1', 'n2'], 1: ['n3', 'n4'], 2: ['n5'] }, graphPath)
 
       const result = runBenchmark(graphPath, 10_000, [
         {
@@ -257,7 +257,7 @@ describe('runBenchmark', () => {
     withTempDir((tempDir) => {
       const graphPath = join(tempDir, 'out', 'graph.json')
       mkdirSync(join(tempDir, 'out'), { recursive: true })
-      toJson(makeGraph(), { 0: ['n1', 'n2'], 1: ['n3', 'n4'], 2: ['n5'] }, graphPath)
+      writeCanonicalGraphFixtureFromGraph(makeGraph(), { 0: ['n1', 'n2'], 1: ['n3', 'n4'], 2: ['n5'] }, graphPath)
       const result = runBenchmark(graphPath, 10_000)
       expect('reduction_ratio' in result).toBe(true)
       if ('reduction_ratio' in result) {
@@ -272,7 +272,7 @@ describe('runBenchmark', () => {
     withTempDir((tempDir) => {
       const graphPath = join(tempDir, 'out', 'graph.json')
       mkdirSync(join(tempDir, 'out'), { recursive: true })
-      toJson(new KnowledgeGraph(), {}, graphPath)
+      writeCanonicalGraphFixtureFromGraph(new KnowledgeGraph(), {}, graphPath)
       const result = runBenchmark(graphPath, 1_000)
       expect(result).toEqual(expect.objectContaining({ error: expect.stringMatching(/no matching nodes/i) }))
     })
@@ -282,7 +282,7 @@ describe('runBenchmark', () => {
     withTempDir((tempDir) => {
       const graphPath = join(tempDir, 'out', 'graph.json')
       mkdirSync(join(tempDir, 'out'), { recursive: true })
-      toJson(makeGraph(), { 0: ['n1', 'n2'], 1: ['n3', 'n4'], 2: ['n5'] }, graphPath)
+      writeCanonicalGraphFixtureFromGraph(makeGraph(), { 0: ['n1', 'n2'], 1: ['n3', 'n4'], 2: ['n5'] }, graphPath)
 
       const result = runBenchmark(graphPath, 1_000, [])
 
@@ -298,7 +298,7 @@ describe('runBenchmark', () => {
     withTempDir((tempDir) => {
       const graphPath = join(tempDir, 'out', 'graph.json')
       mkdirSync(join(tempDir, 'out'), { recursive: true })
-      toJson(makeGraph(), { 0: ['n1', 'n2'], 1: ['n3', 'n4'], 2: ['n5'] }, graphPath)
+      writeCanonicalGraphFixtureFromGraph(makeGraph(), { 0: ['n1', 'n2'], 1: ['n3', 'n4'], 2: ['n5'] }, graphPath)
 
       const result = runBenchmark(graphPath, 1_000, ['quantum entanglement physics'])
 
@@ -319,7 +319,7 @@ describe('runBenchmark', () => {
       graph.addNode('n1', { label: 'authentication', file_type: 'code', community: 0 })
       graph.addNode('n2', { label: 'api_handler', file_type: 'code', community: 0 })
       graph.addEdge('n1', 'n2', { relation: 'calls', confidence: 'EXTRACTED' })
-      toJson(graph, { 0: ['n1', 'n2'] }, graphPath)
+      writeCanonicalGraphFixtureFromGraph(graph, { 0: ['n1', 'n2'] }, graphPath)
 
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
       const result = runBenchmark(graphPath, 1_000, ['how does authentication work'])
@@ -343,7 +343,7 @@ describe('runBenchmark', () => {
       graph.addNode('n1', { label: 'authentication', file_type: 'code', community: 0, source_file: 'auth.ts' })
       graph.addNode('n2', { label: 'api_handler', file_type: 'code', community: 0 })
       graph.addEdge('n1', 'n2', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'auth.ts' })
-      toJson(graph, { 0: ['n1', 'n2'] }, graphPath)
+      writeCanonicalGraphFixtureFromGraph(graph, { 0: ['n1', 'n2'] }, graphPath)
 
       const result = runBenchmark(graphPath, 1_000, ['how does authentication work'])
 
@@ -358,7 +358,7 @@ describe('runBenchmark', () => {
     withTempDir((tempDir) => {
       const graphPath = join(tempDir, 'out', 'graph.json')
       mkdirSync(join(tempDir, 'out'), { recursive: true })
-      toJson(makeWorkspaceGraph(), { 0: ['a', 'b', 'c'], 1: ['d', 'e'], 2: ['f'], 3: ['concept'] }, graphPath)
+      writeCanonicalGraphFixtureFromGraph(makeWorkspaceGraph(), { 0: ['a', 'b', 'c'], 1: ['d', 'e'], 2: ['f'], 3: ['concept'] }, graphPath)
 
       const result = runBenchmark(graphPath, 12_000, ['how does authentication work'])
 
@@ -383,7 +383,7 @@ describe('runBenchmark', () => {
   test('uses the checked-in mixed-workspace fixture as a reproducible parity baseline', () => {
     withTempDir((tempDir) => {
       const workspaceRoot = copyFixtureCorpus('workspace-parity', tempDir)
-      const generation = generateGraph(workspaceRoot, { noHtml: true, extractionMode: 'legacy' })
+      const generation = generateGraph(workspaceRoot, { extractionMode: 'legacy' })
       const benchmark = runBenchmark(generation.graphPath, null, ['create session login'])
 
       expect('reduction_ratio' in benchmark).toBe(true)
@@ -419,7 +419,7 @@ describe('runBenchmark', () => {
   test('tracks fixture-backed question coverage for the mixed-workspace baseline', () => {
     withTempDir((tempDir) => {
       const workspaceRoot = copyFixtureCorpus('workspace-parity', tempDir)
-      const generation = generateGraph(workspaceRoot, { noHtml: true, extractionMode: 'legacy' })
+      const generation = generateGraph(workspaceRoot, { extractionMode: 'legacy' })
       const questions = readWorkspaceParityQuestions()
       const benchmark = runBenchmark(generation.graphPath, null, questions)
 
@@ -477,7 +477,7 @@ describe('runBenchmark', () => {
 
     withTempDir((tempDir) => {
       const workspaceRoot = copyDemoRepo(tempDir)
-      const generation = generateGraph(workspaceRoot, { noHtml: true })
+      const generation = generateGraph(workspaceRoot, {  })
       const questions = loadBenchmarkQuestions(join(workspaceRoot, 'benchmark-questions.json'))
       const graph = loadGraph(generation.graphPath)
       const graphLabels = new Set(graph.nodeEntries().map(([, attributes]) => String(attributes.label ?? '')))
@@ -544,7 +544,7 @@ describe('runBenchmark', () => {
   test('normalizes expected labels for benchmark matching', () => {
     withTempDir((tempDir) => {
       const workspaceRoot = copyFixtureCorpus('workspace-parity', tempDir)
-      const generation = generateGraph(workspaceRoot, { noHtml: true, extractionMode: 'legacy' })
+      const generation = generateGraph(workspaceRoot, { extractionMode: 'legacy' })
       const benchmark = runBenchmark(generation.graphPath, null, [
         { question: 'shared auth helper', expected_labels: ['DEFAULT', 'auth ts', 'index-ts'] },
       ])
@@ -567,7 +567,7 @@ describe('runBenchmark', () => {
   })
 
   test('scores owning context through incoming containment edges on directed graphs', () => {
-    const graph = new KnowledgeGraph(true)
+    const graph = new KnowledgeGraph()
     graph.addNode('owner', { label: 'AuthService', source_file: 'service.ts', source_location: 'L1' })
     graph.addNode('method', { label: 'loginWithPassword()', source_file: 'login.ts', source_location: 'L5' })
     graph.addEdge('owner', 'method', { relation: 'contains', confidence: 'EXTRACTED' })
@@ -586,7 +586,7 @@ describe('runBenchmark', () => {
       const graphPath = join(tempDir, 'out', 'graph.json')
       const benchmarkOutputDir = join(tempDir, 'out', 'benchmark')
       mkdirSync(join(tempDir, 'out'), { recursive: true })
-      toJson(makeGraph(), { 0: ['n1', 'n2'], 1: ['n3', 'n4'], 2: ['n5'] }, graphPath)
+      writeCanonicalGraphFixtureFromGraph(makeGraph(), { 0: ['n1', 'n2'], 1: ['n3', 'n4'], 2: ['n5'] }, graphPath)
 
       const executions: Array<{
         question: string

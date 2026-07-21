@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { buildSpi } from '../../src/pipeline/spi/build.js'
 import { projectSpiToExtraction } from '../../src/pipeline/spi/projector.js'
 import { extract } from '../../src/pipeline/extract.js'
-import { buildFromJson } from '../../src/pipeline/build.js'
+import { buildGraphFromExtraction } from '../../src/application/build-graph.js'
 import type { ExtractionData, ExtractionEdge, ExtractionNode } from '../../src/contracts/types.js'
 
 const FROZEN_NOW = () => new Date('2026-05-10T12:34:56.000Z')
@@ -337,13 +337,13 @@ describe('projectSpiToExtraction (slice 1c-i of #72)', () => {
       }
     })
 
-    it('the projection feeds buildFromJson() without warnings', () => {
+    it('the projection feeds buildGraphFromExtraction() without warnings', () => {
       writeFile(sandbox, 'src/svc.ts', [
         'export function caller(): number { return helper() }',
         'export function helper(): number { return 1 }',
       ].join('\n') + '\n')
       const extraction = project(sandbox)
-      const graph = buildFromJson(extraction)
+      const graph = buildGraphFromExtraction(extraction, { rootPath: sandbox })
 
       // Non-zero nodes/edges and the file→function/function→function edges land.
       expect(graph.numberOfNodes()).toBeGreaterThan(0)

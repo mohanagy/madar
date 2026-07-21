@@ -3,8 +3,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpath
 import { tmpdir } from 'node:os'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
+import { loadGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
 import type { ContextPackExecutionPhase, ContextPackRoutingDebug, ContextPackTaskKind, ImplementationPackGuidance } from '../contracts/context-pack.js'
-import { KnowledgeGraph } from '../contracts/graph.js'
+import { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
 import type { ContextSessionDiagnostics, ContextSessionState } from '../contracts/context-session.js'
 import { buildContextPrompt, type ContextPromptStableSection } from './context-prompt.js'
 import { buildAnswerReadyPackSchema, buildExplainPackPayloadCore } from './context-pack-command.js'
@@ -25,7 +26,7 @@ import { buildImplementationPackGuidance } from '../runtime/implementation-pack.
 import { classifyRetrievalLevel } from '../runtime/retrieval-gate.js'
 import { compactRetrieveResult, retrieveContext, tokenizeLabel, type CompactRetrieveResult, type RetrieveResult } from '../runtime/retrieve.js'
 import { buildRoutingDebug } from '../runtime/routing-debug.js'
-import { QUERY_TOKEN_ESTIMATOR, estimateQueryTokens, loadGraph } from '../runtime/serve.js'
+import { QUERY_TOKEN_ESTIMATOR, estimateQueryTokens } from '../runtime/serve.js'
 import { resolveToolProfileFromEnv, type McpToolProfile } from '../runtime/stdio/definitions.js'
 import { sidecarAwareFileFingerprint } from '../shared/binary-ingest-sidecar.js'
 import { sanitizeShareSafeText, toShareSafeArtifactPath, type ShareSafePathRoots } from '../shared/share-safe-artifacts.js'
@@ -2293,7 +2294,7 @@ function createCompareRetrievalGraph(
   graph: KnowledgeGraph,
   projectRoot: string,
 ): { graph: KnowledgeGraph; originalSourceFiles: Map<string, string> } {
-  const retrievalGraph = new KnowledgeGraph(graph.isDirected())
+  const retrievalGraph = new KnowledgeGraph()
   Object.assign(retrievalGraph.graph, graph.graph)
 
   const originalSourceFiles = new Map<string, string>()
@@ -2410,17 +2411,7 @@ function graphPathHasSpiMode(graphPath: string): boolean {
   if (!existsSync(graphPath)) {
     return false
   }
-
-  try {
-    const parsed = JSON.parse(readFileSync(graphPath, 'utf8')) as unknown
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return false
-    }
-
-    return (parsed as { spi_mode?: unknown }).spi_mode === true
-  } catch {
-    return false
-  }
+  return loadGraphArtifact(graphPath).graph.spi_mode === true
 }
 
 function benchmarkReadinessSeverity(current: BenchmarkReadinessStatus, next: BenchmarkReadinessStatus): BenchmarkReadinessStatus {
@@ -2596,7 +2587,7 @@ function prepareNativeAgentBenchmarkReadiness(input: {
 
     visitedGraphPaths.add(nextGraphPath)
     rescopedTo = relativeGraphScopeFrom(input.graphPath, nextGraphPath)
-    const rescopedGraph = input.graphCache.get(nextGraphPath) ?? loadGraph(nextGraphPath)
+    const rescopedGraph = input.graphCache.get(nextGraphPath) ?? loadGraphArtifact(nextGraphPath)
     input.graphCache.set(nextGraphPath, rescopedGraph)
     currentGraphPath = nextGraphPath
     currentProjectRoot = realpathSync(inferProjectRootFromGraphPath(currentGraphPath))
@@ -2961,7 +2952,7 @@ export function resolveCompareQuestions(options: Pick<GenerateCompareArtifactsIn
 
 export function generateCompareArtifacts(input: GenerateCompareArtifactsInput): GenerateCompareArtifactsResult {
   const graphPath = validateGraphPath(input.graphPath)
-  const graph = loadGraph(graphPath)
+  const graph = loadGraphArtifact(graphPath)
   const corpusText = input.corpusText ?? deriveBaselineCorpusText(graphPath, graph)
   const questions = resolveCompareQuestions(input)
   const outputDir = validateGraphOutputPath(input.outputDir)
@@ -3423,8 +3414,8 @@ export async function runCompareCommand(
 // baseline prompt-token count.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// What to hide from the baseline agent. We hide the *graph artifacts* (graph.json,
-// GRAPH_REPORT.md, graph.html) rather than the entire `out/` directory
+// What to hide from the baseline agent. We hide the graph artifacts rather
+// than the entire `out/` directory
 // because the compare run writes its prompt and answer artifacts into
 // `out/compare/<ts>/` — renaming the parent would make those paths
 // inaccessible during the baseline run. We additionally hide `.mcp.json`,
@@ -3433,7 +3424,6 @@ export async function runCompareCommand(
 const NATIVE_AGENT_SNAPSHOT_TARGETS = [
   'out/graph.json',
   'out/GRAPH_REPORT.md',
-  'out/graph.html',
   '.mcp.json',
   'CLAUDE.md',
   '.claude',
@@ -5371,7 +5361,7 @@ export async function executeNativeAgentCompare(
   const outputRoot = createCompareOutputRoot(outputDir, timestamp)
   const runner = dependencies.runner ?? defaultNativeAgentRunner
   const assessBenchmarkReadiness = dependencies.assessBenchmarkReadiness
-  const graph = loadGraph(graphPath)
+  const graph = loadGraphArtifact(graphPath)
   const graphCache = new Map<string, KnowledgeGraph>([[graphPath, graph]])
   const reports: NativeAgentCompareReport[] = []
   const answerQualityGates = loadNativeAgentAnswerQualityGates(input.questionsPath)

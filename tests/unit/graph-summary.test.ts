@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import { buildGraphSummary } from '../../src/runtime/graph-summary.js'
 
 const SUMMARY_ARRAY_CAP = 10
@@ -52,7 +52,7 @@ function makeRichGraph(options?: {
   graphVersion?: string
   generatedAt?: string
 }): KnowledgeGraph {
-  const graph = new KnowledgeGraph(true) // directed
+  const graph = new KnowledgeGraph() // directed
 
   // Community 0: auth layer (production, express)
   graph.addNode('n1', { label: 'AuthService', source_file: 'src/auth/service.ts', source_location: 'L10', file_type: 'code', community: 0, source_domain: 'production', framework: 'express' })
@@ -89,7 +89,7 @@ function makeRichGraph(options?: {
 }
 
 function makeManyEntrypointsGraph(count = SUMMARY_ARRAY_CAP + 2): KnowledgeGraph {
-  const graph = new KnowledgeGraph(true)
+  const graph = new KnowledgeGraph()
 
   for (let index = count - 1; index >= 0; index--) {
     const suffix = padIndex(index)
@@ -107,7 +107,7 @@ function makeManyEntrypointsGraph(count = SUMMARY_ARRAY_CAP + 2): KnowledgeGraph
 }
 
 function makeManyRuntimePathsGraph(count = SUMMARY_ARRAY_CAP + 2): KnowledgeGraph {
-  const graph = new KnowledgeGraph(true)
+  const graph = new KnowledgeGraph()
 
   for (let index = count - 1; index >= 0; index--) {
     const suffix = padIndex(index)
@@ -152,7 +152,7 @@ function makeManyRuntimePathsGraph(count = SUMMARY_ARRAY_CAP + 2): KnowledgeGrap
 }
 
 function makeBidirectionalRuntimePipelineGraph(): KnowledgeGraph {
-  const graph = new KnowledgeGraph(true)
+  const graph = new KnowledgeGraph()
 
   graph.addNode('route', {
     label: 'IdeasController.generate',
@@ -242,7 +242,7 @@ function makeBidirectionalRuntimePipelineGraph(): KnowledgeGraph {
 }
 
 function makeNoRuntimePathGraph(): KnowledgeGraph {
-  const graph = new KnowledgeGraph(true)
+  const graph = new KnowledgeGraph()
 
   graph.addNode('isolated', {
     label: 'IdeaTitleFormatter',
@@ -267,7 +267,7 @@ describe('buildGraphSummary', () => {
   })
 
   it('counts unique source files rather than raw nodes for file_count', () => {
-    const graph = new KnowledgeGraph(true)
+    const graph = new KnowledgeGraph()
     graph.addNode('service', {
       label: 'AuthService',
       source_file: 'src/auth/service.ts',
@@ -375,7 +375,7 @@ describe('buildGraphSummary', () => {
   })
 
   it('caps top_modules at 10 entries even when many nodes exist', () => {
-    const graph = new KnowledgeGraph(true)
+    const graph = new KnowledgeGraph()
     for (let index = 0; index < 15; index++) {
       graph.addNode(`n${index}`, {
         label: `Module${index}`,
@@ -506,7 +506,7 @@ describe('buildGraphSummary', () => {
   })
 
   it('ranks queue-backed runtime paths ahead of shallow helper paths', () => {
-    const graph = new KnowledgeGraph(true)
+    const graph = new KnowledgeGraph()
 
     graph.addNode('helper-entry', {
       label: 'AHelperEntry',
@@ -578,7 +578,7 @@ describe('buildGraphSummary', () => {
   })
 
   it('admits worker-style runtime starts even when they have runtime predecessors', () => {
-    const graph = new KnowledgeGraph(true)
+    const graph = new KnowledgeGraph()
 
     graph.addNode('registration', {
       label: 'QueueRegistrar.register',
@@ -628,7 +628,7 @@ describe('buildGraphSummary', () => {
   })
 
   it('admits metadata-less worker starts from camel-cased labels and files', () => {
-    const graph = new KnowledgeGraph(true)
+    const graph = new KnowledgeGraph()
 
     graph.addNode('registration', {
       label: 'QueueRegistrar.register',
@@ -677,7 +677,7 @@ describe('buildGraphSummary', () => {
   })
 
   it('admits metadata-less job starts from source-file hints', () => {
-    const graph = new KnowledgeGraph(true)
+    const graph = new KnowledgeGraph()
 
     graph.addNode('registration', {
       label: 'QueueRegistrar.register',
@@ -797,7 +797,7 @@ describe('buildGraphSummary', () => {
   })
 
   it('prefers service boundaries over trailing job helper leaves', () => {
-    const graph = new KnowledgeGraph(true)
+    const graph = new KnowledgeGraph()
 
     graph.addNode('controller', {
       label: '.startPipeline()',
@@ -867,7 +867,7 @@ describe('buildGraphSummary', () => {
   })
 
   it('prefers service boundaries over trailing build helper leaves', () => {
-    const graph = new KnowledgeGraph(true)
+    const graph = new KnowledgeGraph()
 
     graph.addNode('controller', {
       label: '.getIdea()',
@@ -925,7 +925,7 @@ describe('buildGraphSummary', () => {
   })
 
   it('prefers worker boundaries over deeper gateway calls', () => {
-    const graph = new KnowledgeGraph(true)
+    const graph = new KnowledgeGraph()
 
     graph.addNode('controller', {
       label: '.proceedWithAnalysis()',
@@ -1019,7 +1019,7 @@ describe('buildGraphSummary', () => {
   })
 
   it('keeps distinct runtime paths when labels contain control characters', () => {
-    const graph = new KnowledgeGraph(true)
+    const graph = new KnowledgeGraph()
 
     graph.addNode('entry-1', {
       label: 'Entry',
@@ -1101,7 +1101,7 @@ describe('buildGraphSummary', () => {
   })
 
   it('keeps the strongest runtime path when duplicate label pairs exist', () => {
-    const graph = new KnowledgeGraph(true)
+    const graph = new KnowledgeGraph()
 
     graph.addNode('entry-long', {
       label: 'Entry',

@@ -1,11 +1,33 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 
 import { parse } from 'yaml'
 import { describe, expect, it } from 'vitest'
 
+// Development-only JavaScript is deliberately outside the production TypeScript build.
+// @ts-expect-error -- the isolated evaluator does not ship declarations in the npm package
+import { productionSourceDelta, sourceInventory } from '../../tools/eval/core-reset/record-baseline.mjs'
+
 const read = (path: string): string => readFileSync(resolve(path), 'utf8')
+const git = process.platform === 'win32' ? 'git.exe' : 'git'
+
+function productionTypeScriptFiles(directory = 'src'): string[] {
+  return readdirSync(resolve(directory), { withFileTypes: true }).flatMap((entry) => {
+    const path = `${directory}/${entry.name}`
+    if (entry.isDirectory()) return productionTypeScriptFiles(path)
+    return entry.isFile() && path.endsWith('.ts') ? [path] : []
+  })
+}
 
 const manifestGlob = (pattern: string): RegExp => {
   const escaped = pattern
@@ -30,7 +52,8 @@ describe('core reset governance', () => {
     expect(roadmap).toContain('projects/8')
     expect(roadmap).toContain('removal-manifest.yml')
     expect(roadmap).toContain('scorecard.md')
-    expect(roadmap).toContain('## Ready')
+    expect(roadmap).toContain('## In progress')
+    expect(roadmap).toContain('## Blocked')
     expect(roadmap).toContain('## Next')
     expect(roadmap).toContain('## Later')
     expect(roadmap).toContain('accepted Core Reset')
@@ -60,6 +83,7 @@ describe('core reset governance', () => {
         disposition: string
         status: string
         sources?: string[]
+        removed_sources?: string[]
         exit_gate: string
         remove_when?: string
       }>
@@ -81,14 +105,90 @@ describe('core reset governance', () => {
       for (const source of item.sources ?? []) {
         expect(source.trim()).toMatch(/^(?:\.github|docs|examples|src|tests|tools)\//)
       }
+      for (const source of item.removed_sources ?? []) {
+        expect(source.trim()).toMatch(/^(?:\.github|docs|examples|src|tests|tools)\//)
+      }
       if (item.disposition === 'rebuild') {
         expect(item.remove_when?.trim().length).toBeGreaterThan(0)
       }
     }
   })
 
+  it('measures logical LOC independently from checkout line endings', () => {
+    const root = mkdtempSync(join(tmpdir(), 'madar-core-reset-loc-'))
+    try {
+      mkdirSync(join(root, 'src'), { recursive: true })
+      writeFileSync(join(root, 'src', 'tracked.ts'), 'export const one = 1\nexport const two = 2\n')
+      execFileSync(git, ['init', '-b', 'main'], { cwd: root })
+      execFileSync(git, ['config', 'core.autocrlf', 'false'], { cwd: root })
+      execFileSync(git, ['config', 'user.email', 'madar-core-reset@example.invalid'], { cwd: root })
+      execFileSync(git, ['config', 'user.name', 'Madar Core Reset'], { cwd: root })
+      execFileSync(git, ['add', '.'], { cwd: root })
+      execFileSync(git, ['commit', '-m', 'baseline'], { cwd: root })
+      const baseline = execFileSync(git, ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim()
+
+      writeFileSync(join(root, 'src', 'tracked.ts'), 'export const one = 1\r\nexport const two = 3\r\n')
+      writeFileSync(join(root, 'src', 'untracked.ts'), 'export const added = true\r\n')
+
+      expect(productionSourceDelta(baseline, root)).toEqual({ added: 2, removed: 1, net: 1 })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('measures the current source inventory and phase delta from the recorded protected base', () => {
+    const manifest = parse(read('docs/core-reset/removal-manifest.yml')) as {
+      current: {
+        base_commit: string
+        production_typescript_files: number
+        production_typescript_loc: number
+        production_loc_added: number
+        production_loc_removed: number
+        production_loc_net: number
+      }
+      items: Array<{
+        id: string
+        production_loc_budget?: { added_max: number; removed_min: number; net_max: number }
+      }>
+    }
+    const { current } = manifest
+    expect(execFileSync(git, ['cat-file', '-t', `${current.base_commit}^{commit}`], { encoding: 'utf8' }).trim()).toBe('commit')
+    expect(() => execFileSync(git, ['merge-base', '--is-ancestor', current.base_commit, 'HEAD'])).not.toThrow()
+
+    const inventory = sourceInventory()
+    const delta = productionSourceDelta(current.base_commit)
+    const budget = manifest.items.find((item) => item.id === 'directed-multigraph')?.production_loc_budget
+    expect(budget).toBeDefined()
+    expect(inventory.filesystemViolations).toEqual([])
+    expect(delta.added).toBeLessThanOrEqual(budget!.added_max)
+    expect(delta.removed).toBeGreaterThanOrEqual(budget!.removed_min)
+    expect(delta.net).toBeLessThanOrEqual(budget!.net_max)
+    expect({
+      production_typescript_files: inventory.files,
+      production_typescript_loc: inventory.loc,
+      production_loc_added: delta.added,
+      production_loc_removed: delta.removed,
+      production_loc_net: delta.net,
+    }).toEqual({
+      production_typescript_files: current.production_typescript_files,
+      production_typescript_loc: current.production_typescript_loc,
+      production_loc_added: current.production_loc_added,
+      production_loc_removed: current.production_loc_removed,
+      production_loc_net: current.production_loc_net,
+    })
+  })
+
+  it('keeps retired exporter flags out of active commands without rewriting frozen v0.32 evidence', () => {
+    expect(read('.github/workflows/ci.yml')).not.toContain('--no-html')
+    expect(read('.github/ISSUE_TEMPLATE/design_partner_report.yml')).not.toContain('--no-html')
+    expect(read('tools/eval/core-reset/record-baseline.mjs')).toContain("'--no-html'")
+    expect(read('tools/eval/core-reset/contracts/evaluation-contract.json')).toContain('"--no-html"')
+    expect(read('docs/core-reset/evidence/baseline-v0.32.0.json')).toContain('"--no-html"')
+  })
+
   it('assigns every production TypeScript file to exactly one removal-manifest item', () => {
     const manifest = parse(read('docs/core-reset/removal-manifest.yml')) as {
+      current: { production_typescript_files: number }
       review: {
         status: string
         production_files_reviewed: number
@@ -97,17 +197,23 @@ describe('core reset governance', () => {
         overlapping_files: number
         disposition_changes: number
       }
-      items: Array<{ id: string; sources?: string[] }>
+      items: Array<{ id: string; sources?: string[]; removed_sources?: string[] }>
     }
-    const productionFiles = execFileSync('git', ['ls-files', 'src/**/*.ts'], {
-      encoding: 'utf8',
-    }).trim().split('\n').filter(Boolean)
+    const productionFiles = productionTypeScriptFiles()
 
-    expect(productionFiles).toHaveLength(181)
+    expect(productionFiles).toHaveLength(manifest.current.production_typescript_files)
     for (const file of productionFiles) {
       const owners = manifest.items.filter((item) =>
         (item.sources ?? []).some((pattern) => manifestGlob(pattern).test(file)))
       expect(owners.map((item) => item.id), `${file} must have exactly one owner`).toHaveLength(1)
+    }
+    const directed = manifest.items.find((item) => item.id === 'directed-multigraph')
+    expect(directed).toBeDefined()
+    for (const removed of directed?.removed_sources ?? []) {
+      expect(existsSync(resolve(removed)), `${removed} must be deleted by its current phase`).toBe(false)
+      const futureOwners = manifest.items.filter((item) =>
+        item.id !== directed?.id && (item.sources ?? []).some((pattern) => manifestGlob(pattern).test(removed)))
+      expect(futureOwners.map((item) => item.id), `${removed} cannot remain assigned to a later phase`).toEqual([])
     }
     expect(manifest.review).toMatchObject({
       status: 'complete',

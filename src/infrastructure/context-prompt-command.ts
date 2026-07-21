@@ -1,5 +1,5 @@
 import type { PromptCliOptions, PromptCliProvider } from '../cli/parser.js'
-import type { KnowledgeGraph } from '../contracts/graph.js'
+import type { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
 import { buildMadarPromptPack, type ComparePromptPack } from './compare.js'
 import {
   analyzeGraphContextFreshness,

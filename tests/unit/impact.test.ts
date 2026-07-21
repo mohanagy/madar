@@ -1,12 +1,12 @@
 import { join } from 'node:path'
 
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
-import { build } from '../../src/pipeline/build.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
+import { buildGraph } from '../../src/application/build-graph.js'
 import { extractJs } from '../../src/pipeline/extract.js'
 import { analyzeImpact, callChains, compactImpactResult } from '../../src/runtime/impact.js'
 
 function buildTestGraph(): KnowledgeGraph {
-  const graph = new KnowledgeGraph({ directed: true })
+  const graph = new KnowledgeGraph()
 
   graph.addNode('auth', { label: 'authenticateUser', source_file: '/src/auth.ts', node_kind: 'function', file_type: 'code', community: 0 })
   graph.addNode('session', { label: 'SessionManager', source_file: '/src/session.ts', node_kind: 'class', file_type: 'code', community: 0 })
@@ -15,17 +15,17 @@ function buildTestGraph(): KnowledgeGraph {
   graph.addNode('api', { label: 'ApiHandler', source_file: '/src/api.ts', node_kind: 'function', file_type: 'code', community: 2 })
   graph.addNode('logger', { label: 'Logger', source_file: '/src/utils/logger.ts', node_kind: 'class', file_type: 'code', community: 3 })
 
-  graph.addEdge('api', 'auth', { relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/api.ts' })
-  graph.addEdge('auth', 'session', { relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth.ts' })
-  graph.addEdge('auth', 'user', { relation: 'uses', confidence: 'EXTRACTED', source_file: '/src/auth.ts' })
-  graph.addEdge('session', 'db', { relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/session.ts' })
-  graph.addEdge('auth', 'logger', { relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth.ts' })
+  graph.addEdge('api', 'auth', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'src/api.ts' })
+  graph.addEdge('auth', 'session', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'src/auth.ts' })
+  graph.addEdge('auth', 'user', { relation: 'uses', confidence: 'EXTRACTED', source_file: 'src/auth.ts' })
+  graph.addEdge('session', 'db', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'src/session.ts' })
+  graph.addEdge('auth', 'logger', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'src/auth.ts' })
 
   return graph
 }
 
 function buildExpressRouteGraph(): KnowledgeGraph {
-  const graph = new KnowledgeGraph({ directed: true })
+  const graph = new KnowledgeGraph()
 
   graph.addNode('require_auth', {
     label: 'requireAuth',
@@ -52,22 +52,22 @@ function buildExpressRouteGraph(): KnowledgeGraph {
   graph.addEdge('require_auth', 'route_users_show', {
     relation: 'middleware',
     confidence: 'EXTRACTED',
-    source_file: '/src/routes/users.ts',
+    source_file: 'src/routes/users.ts',
   })
   graph.addEdge('show_user', 'route_users_show', {
     relation: 'handles_route',
     confidence: 'EXTRACTED',
-    source_file: '/src/routes/users.ts',
+    source_file: 'src/routes/users.ts',
   })
   graph.addEdge('route_users_show', 'require_auth', {
     relation: 'depends_on',
     confidence: 'EXTRACTED',
-    source_file: '/src/routes/users.ts',
+    source_file: 'src/routes/users.ts',
   })
   graph.addEdge('route_users_show', 'show_user', {
     relation: 'depends_on',
     confidence: 'EXTRACTED',
-    source_file: '/src/routes/users.ts',
+    source_file: 'src/routes/users.ts',
   })
 
   return graph
@@ -75,17 +75,6 @@ function buildExpressRouteGraph(): KnowledgeGraph {
 
 describe('impact', () => {
   describe('analyzeImpact', () => {
-    it('rejects undirected graphs instead of reporting reverse-edge false positives', () => {
-      const graph = new KnowledgeGraph()
-      graph.addNode('caller', { label: 'caller', source_file: '/src/caller.ts' })
-      graph.addNode('dependency', { label: 'dependency', source_file: '/src/dependency.ts' })
-      graph.addEdge('caller', 'dependency', { relation: 'calls' })
-
-      expect(() => analyzeImpact(graph, {}, { label: 'caller' })).toThrow(
-        'Impact analysis requires a directed graph because edge orientation is part of the result.',
-      )
-    })
-
     it('finds direct dependents of a node', () => {
       const graph = buildTestGraph()
       const result = analyzeImpact(graph, {}, { label: 'authenticateUser' })
@@ -112,8 +101,7 @@ describe('impact', () => {
     })
 
     it('relativizes in-root impact paths while preserving outside-root files', () => {
-      const graph = new KnowledgeGraph({ directed: true })
-      graph.graph.root_path = '/workspace/app'
+      const graph = new KnowledgeGraph({ root_path: '/workspace/app' })
       graph.addNode('db', {
         label: 'DatabaseConnection',
         source_file: '/workspace/app/src/db.ts',
@@ -136,7 +124,7 @@ describe('impact', () => {
         community: 1,
       })
       graph.addEdge('service', 'db', { relation: 'calls', confidence: 'EXTRACTED', source_file: '/workspace/app/src/auth/service.ts' })
-      graph.addEdge('vendor', 'service', { relation: 'calls', confidence: 'EXTRACTED', source_file: '/opt/shared/audit/logger.ts' })
+      graph.addEdge('vendor', 'service', { relation: 'calls', confidence: 'EXTRACTED' })
 
       const result = analyzeImpact(graph, {}, { label: 'DatabaseConnection', depth: 3 })
 
@@ -232,10 +220,10 @@ describe('impact', () => {
 
     it('shows mounted child routes as direct dependents of inherited mount middleware', () => {
       const fixturesDir = join(process.cwd(), 'tests', 'fixtures')
-      const graph = build([
+      const graph = buildGraph([
         extractJs(join(fixturesDir, 'express-mounted-router-parent.ts')),
         extractJs(join(fixturesDir, 'express-mounted-router-child.ts')),
-      ], { directed: true })
+      ], { rootPath: process.cwd() })
 
       const result = analyzeImpact(graph, {}, { label: 'requireAuth' })
 
@@ -255,11 +243,11 @@ describe('impact', () => {
 
     it('shows recursively mounted child routes as direct dependents of inherited mount middleware', () => {
       const fixturesDir = join(process.cwd(), 'tests', 'fixtures')
-      const graph = build([
+      const graph = buildGraph([
         extractJs(join(fixturesDir, 'express-nested-router-parent.ts')),
         extractJs(join(fixturesDir, 'express-nested-router-child.ts')),
         extractJs(join(fixturesDir, 'express-nested-router-grandchild.ts')),
-      ], { directed: true })
+      ], { rootPath: process.cwd() })
 
       const authImpact = analyzeImpact(graph, {}, { label: 'requireAuth' })
       const auditImpact = analyzeImpact(graph, {}, { label: 'auditTrail' })
@@ -282,7 +270,7 @@ describe('impact', () => {
 
     it('shows patch and all express routes as direct dependents of middleware and handlers', () => {
       const fixturesDir = join(process.cwd(), 'tests', 'fixtures')
-      const graph = build([extractJs(join(fixturesDir, 'express-patch-all.ts'))], { directed: true })
+      const graph = buildGraph([extractJs(join(fixturesDir, 'express-patch-all.ts'))], { rootPath: process.cwd() })
 
       const middlewareImpact = analyzeImpact(graph, {}, { label: 'requireAuth' })
       const patchHandlerImpact = analyzeImpact(graph, {}, { label: 'patchUser' })
@@ -304,12 +292,12 @@ describe('impact', () => {
 
     it('shows imported middleware routes as direct dependents across files', () => {
       const fixturesDir = join(process.cwd(), 'tests', 'fixtures')
-      const graph = build(
+      const graph = buildGraph(
         [
           extractJs(join(fixturesDir, 'express-imported-middleware.ts')),
           extractJs(join(fixturesDir, 'express-imported-middleware-parent.ts')),
         ],
-        { directed: true },
+          { rootPath: process.cwd() },
       )
 
       const result = analyzeImpact(graph, {}, { label: 'requireAuth' })
@@ -326,12 +314,12 @@ describe('impact', () => {
 
     it('shows mounted child routes as direct dependents of cross-file handlers', () => {
       const fixturesDir = join(process.cwd(), 'tests', 'fixtures')
-      const graph = build(
+      const graph = buildGraph(
         [
           extractJs(join(fixturesDir, 'express-mounted-router-parent.ts')),
           extractJs(join(fixturesDir, 'express-mounted-router-child.ts')),
         ],
-        { directed: true },
+          { rootPath: process.cwd() },
       )
 
       const result = analyzeImpact(graph, {}, { label: 'showUser' })
@@ -348,14 +336,14 @@ describe('impact', () => {
 
     it('shows imported-owner express routes as direct dependents of cross-file handlers', () => {
       const fixturesDir = join(process.cwd(), 'tests', 'fixtures')
-      const graph = build(
+      const graph = buildGraph(
         [
           extractJs(join(fixturesDir, 'express-imported-owner-router-child.ts')),
           extractJs(join(fixturesDir, 'express-imported-owner-router-parent.ts')),
           extractJs(join(fixturesDir, 'express-imported-owner-app-child.ts')),
           extractJs(join(fixturesDir, 'express-imported-owner-app-parent.ts')),
         ],
-        { directed: true },
+          { rootPath: process.cwd() },
       )
 
       const routerResult = analyzeImpact(graph, {}, { label: 'showUser' })
@@ -371,14 +359,14 @@ describe('impact', () => {
 
     it('shows module-object mounted child routes as direct dependents of inherited mount middleware', () => {
       const fixturesDir = join(process.cwd(), 'tests', 'fixtures')
-      const namespaceGraph = build([
+      const namespaceGraph = buildGraph([
         extractJs(join(fixturesDir, 'express-namespace-module-parent.ts')),
         extractJs(join(fixturesDir, 'express-namespace-module-child.ts')),
-      ], { directed: true })
-      const commonjsGraph = build([
+      ], { rootPath: process.cwd() })
+      const commonjsGraph = buildGraph([
         extractJs(join(fixturesDir, 'express-commonjs-module-parent.ts')),
         extractJs(join(fixturesDir, 'express-commonjs-module-child.ts')),
-      ], { directed: true })
+      ], { rootPath: process.cwd() })
 
       const namespaceResult = analyzeImpact(namespaceGraph, {}, { label: 'requireAuth' })
       const commonjsResult = analyzeImpact(commonjsGraph, {}, { label: 'requireAuth' })
@@ -392,7 +380,7 @@ describe('impact', () => {
     })
 
     it('shows redux slice blast radius through selectors, components, and routes', () => {
-      const graph = new KnowledgeGraph({ directed: true })
+      const graph = new KnowledgeGraph()
 
       graph.addNode('auth_slice', {
         label: 'auth slice',
@@ -441,22 +429,22 @@ describe('impact', () => {
       graph.addEdge('auth_slice', 'select_auth_status', {
         relation: 'defines_selector',
         confidence: 'EXTRACTED',
-        source_file: '/src/state/authSlice.ts',
+        source_file: 'src/state/authSlice.ts',
       })
       graph.addEdge('auth_slice', 'store', {
         relation: 'registered_in_store',
         confidence: 'EXTRACTED',
-        source_file: '/src/state/store.ts',
+        source_file: 'src/state/store.ts',
       })
       graph.addEdge('auth_status_badge', 'select_auth_status', {
         relation: 'uses',
         confidence: 'EXTRACTED',
-        source_file: '/src/components/AuthStatusBadge.tsx',
+        source_file: 'src/components/AuthStatusBadge.tsx',
       })
       graph.addEdge('settings_route', 'auth_status_badge', {
         relation: 'renders',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/settings.tsx',
+        source_file: 'src/routes/settings.tsx',
       })
 
       const result = analyzeImpact(graph, { 0: 'State', 1: 'UI' }, { label: 'auth slice', depth: 4 })
@@ -476,7 +464,7 @@ describe('impact', () => {
     })
 
     it('prefers higher-level route summaries for service blast radius within a community', () => {
-      const graph = new KnowledgeGraph({ directed: true })
+      const graph = new KnowledgeGraph()
 
       graph.addNode('user_service', {
         label: 'userService',
@@ -514,17 +502,17 @@ describe('impact', () => {
       graph.addEdge('normalize_user_record', 'user_service', {
         relation: 'calls',
         confidence: 'EXTRACTED',
-        source_file: '/src/controllers/users.ts',
+        source_file: 'src/controllers/users.ts',
       })
       graph.addEdge('show_user', 'user_service', {
         relation: 'calls',
         confidence: 'EXTRACTED',
-        source_file: '/src/controllers/users.ts',
+        source_file: 'src/controllers/users.ts',
       })
       graph.addEdge('route_users_show', 'show_user', {
         relation: 'depends_on',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/users.ts',
+        source_file: 'src/routes/users.ts',
       })
 
       const result = analyzeImpact(graph, { 0: 'Data', 1: 'Delivery' }, { label: 'userService', depth: 4 })
@@ -546,7 +534,7 @@ describe('impact', () => {
     })
 
     it('prefers higher-level route summaries for loader blast radius within a community', () => {
-      const graph = new KnowledgeGraph({ directed: true })
+      const graph = new KnowledgeGraph()
 
       graph.addNode('dashboard_loader_service', {
         label: 'dashboardLoaderService',
@@ -584,17 +572,17 @@ describe('impact', () => {
       graph.addEdge('coerce_dashboard_data', 'dashboard_loader_service', {
         relation: 'calls',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/dashboard.tsx',
+        source_file: 'src/routes/dashboard.tsx',
       })
       graph.addEdge('dashboard_loader', 'dashboard_loader_service', {
         relation: 'calls',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/dashboard.tsx',
+        source_file: 'src/routes/dashboard.tsx',
       })
       graph.addEdge('dashboard_route', 'dashboard_loader', {
         relation: 'loads_route',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/dashboard.tsx',
+        source_file: 'src/routes/dashboard.tsx',
       })
 
       const result = analyzeImpact(graph, { 0: 'Data', 1: 'Routes' }, { label: 'dashboardLoaderService', depth: 4 })
@@ -616,7 +604,7 @@ describe('impact', () => {
     })
 
     it('sorts framework-aware direct dependents ahead of generic functions', () => {
-      const graph = new KnowledgeGraph({ directed: true })
+      const graph = new KnowledgeGraph()
 
       graph.addNode('dashboard_loader_service', {
         label: 'dashboardLoaderService',
@@ -645,12 +633,12 @@ describe('impact', () => {
       graph.addEdge('coerce_dashboard_data', 'dashboard_loader_service', {
         relation: 'calls',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/dashboard.tsx',
+        source_file: 'src/routes/dashboard.tsx',
       })
       graph.addEdge('dashboard_loader', 'dashboard_loader_service', {
         relation: 'calls',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/dashboard.tsx',
+        source_file: 'src/routes/dashboard.tsx',
       })
 
       const result = analyzeImpact(graph, { 0: 'Data', 1: 'Routes' }, { label: 'dashboardLoaderService', depth: 2 })
@@ -675,7 +663,7 @@ describe('impact', () => {
     })
 
     it('omits empty node_kind from raw and compact impact payloads', () => {
-      const graph = new KnowledgeGraph({ directed: true })
+      const graph = new KnowledgeGraph()
       graph.addNode('db', {
         label: 'DatabaseConnection',
         source_file: '/src/db.ts',
@@ -689,7 +677,7 @@ describe('impact', () => {
         file_type: 'code',
         community: 0,
       })
-      graph.addEdge('auth', 'db', { relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth.ts' })
+      graph.addEdge('auth', 'db', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'src/auth.ts' })
 
       const rawResult = analyzeImpact(graph, {}, { label: 'DatabaseConnection', depth: 2 })
       const compactResult = compactImpactResult(rawResult)
@@ -700,11 +688,11 @@ describe('impact', () => {
 
     it('shows nest controllers, modules, and routes as dependents of injected services', () => {
       const fixturesDir = join(process.cwd(), 'tests', 'fixtures')
-      const graph = build([
+      const graph = buildGraph([
         extractJs(join(fixturesDir, 'nest-auth.module.ts')),
         extractJs(join(fixturesDir, 'nest-auth.controller.ts')),
         extractJs(join(fixturesDir, 'nest-auth.service.ts')),
-      ], { directed: true })
+      ], { rootPath: process.cwd() })
 
       const result = analyzeImpact(graph, {}, { label: 'AuthService', depth: 2 })
 
@@ -724,7 +712,7 @@ describe('impact', () => {
 
     it('shows next routes as dependents of middleware and shared pages wrappers', () => {
       const fixturesDir = join(process.cwd(), 'tests', 'fixtures')
-      const graph = build([
+      const graph = buildGraph([
         extractJs(join(fixturesDir, 'next-app', 'middleware.ts')),
         extractJs(join(fixturesDir, 'next-app', 'app', '(marketing)', 'dashboard', '[team]', 'layout.tsx')),
         extractJs(join(fixturesDir, 'next-app', 'app', '(marketing)', 'dashboard', '[team]', 'page.tsx')),
@@ -741,7 +729,7 @@ describe('impact', () => {
         extractJs(join(fixturesDir, 'next-pages', 'pages', '_document.tsx')),
         extractJs(join(fixturesDir, 'next-pages', 'pages', '_error.tsx')),
         extractJs(join(fixturesDir, 'next-pages', 'pages', 'api', 'auth', '[...nextauth].ts')),
-      ], { directed: true })
+      ], { rootPath: process.cwd() })
 
       const middlewareResult = analyzeImpact(graph, {}, { label: 'middleware', depth: 2 })
       expect(middlewareResult.direct_dependents).toEqual(
@@ -762,17 +750,6 @@ describe('impact', () => {
   })
 
   describe('callChains', () => {
-    it('rejects undirected graphs instead of inventing reverse call chains', () => {
-      const graph = new KnowledgeGraph()
-      graph.addNode('caller', { label: 'caller' })
-      graph.addNode('dependency', { label: 'dependency' })
-      graph.addEdge('caller', 'dependency', { relation: 'calls' })
-
-      expect(() => callChains(graph, 'dependency', 'caller')).toThrow(
-        'Call-chain analysis requires a directed graph because edge orientation is part of the result.',
-      )
-    })
-
     it('finds execution paths between two nodes', () => {
       const graph = buildTestGraph()
       const chains = callChains(graph, 'ApiHandler', 'DatabaseConnection')

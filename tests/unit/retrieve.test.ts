@@ -3,9 +3,9 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import * as analyze from '../../src/pipeline/analyze.js'
-import { build } from '../../src/pipeline/build.js'
+import { buildGraph } from '../../src/application/build-graph.js'
 import { extractJs } from '../../src/pipeline/extract.js'
 import { inspectReduxModuleExports } from '../../src/pipeline/extract/frameworks/redux.js'
 import { classifyTaskContract, compactContextPack } from '../../src/runtime/context-pack.js'
@@ -153,10 +153,10 @@ describe('retrieve', () => {
         community: 2,
       })
 
-      graph.addEdge('auth_user', 'session_mgr', { relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth.ts' })
-      graph.addEdge('auth_user', 'user_model', { relation: 'uses', confidence: 'EXTRACTED', source_file: '/src/auth.ts' })
-      graph.addEdge('session_mgr', 'db_conn', { relation: 'depends_on', confidence: 'EXTRACTED', source_file: '/src/session.ts' })
-      graph.addEdge('auth_user', 'logger', { relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth.ts' })
+      graph.addEdge('auth_user', 'session_mgr', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'src/auth.ts' })
+      graph.addEdge('auth_user', 'user_model', { relation: 'uses', confidence: 'EXTRACTED', source_file: 'src/auth.ts' })
+      graph.addEdge('session_mgr', 'db_conn', { relation: 'depends_on', confidence: 'EXTRACTED', source_file: 'src/session.ts' })
+      graph.addEdge('auth_user', 'logger', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'src/auth.ts' })
 
       return graph
     }
@@ -263,41 +263,41 @@ describe('retrieve', () => {
         community: 1,
       })
 
-      graph.addEdge('auth_user', 'session_mgr', { relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth.ts' })
+      graph.addEdge('auth_user', 'session_mgr', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'src/auth.ts' })
       graph.addEdge('auth_flow_controller', 'session_validator', {
         relation: 'imports_from',
         confidence: 'EXTRACTED',
-        source_file: '/src/auth/flow-controller.ts',
+        source_file: 'src/auth/flow-controller.ts',
       })
       graph.addEdge('auth_guard', 'session_router', {
         relation: 'calls',
         confidence: 'EXTRACTED',
-        source_file: '/src/auth/guard.ts',
+        source_file: 'src/auth/guard.ts',
       })
       graph.addEdge('auth_policy', 'session_policy', {
         relation: 'defines',
         confidence: 'EXTRACTED',
-        source_file: '/src/auth/policy.ts',
+        source_file: 'src/auth/policy.ts',
       })
       graph.addEdge('auth_guard', 'billing_store', {
         relation: 'depends_on',
         confidence: 'EXTRACTED',
-        source_file: '/src/auth/guard.ts',
+        source_file: 'src/auth/guard.ts',
       })
       graph.addEdge('billing_store', 'billing_cache', {
         relation: 'depends_on',
         confidence: 'EXTRACTED',
-        source_file: '/src/billing.ts',
+        source_file: 'src/billing.ts',
       })
       graph.addEdge('billing_store', 'invoice_ledger', {
         relation: 'uses',
         confidence: 'EXTRACTED',
-        source_file: '/src/billing.ts',
+        source_file: 'src/billing.ts',
       })
       graph.addEdge('billing_store', 'tax_rules', {
         relation: 'uses',
         confidence: 'EXTRACTED',
-        source_file: '/src/billing.ts',
+        source_file: 'src/billing.ts',
       })
       graph.graph.community_labels = {
         0: 'Authentication',
@@ -321,6 +321,7 @@ describe('retrieve', () => {
       sliceExtraction: ReturnType<typeof extractJs>,
       storeExtraction: ReturnType<typeof extractJs>,
       sliceFilePath: string,
+      rootPath: string,
     ): KnowledgeGraph {
       const exportedBindings = inspectReduxModuleExports(sliceFilePath)
       const semanticSliceNode = sliceExtraction.nodes.find((node) => node.label === 'auth slice')
@@ -338,7 +339,7 @@ describe('retrieve', () => {
       const authReducerBinding = exportedBindings.get('authReducer')!
       const selectAuthStatusBinding = exportedBindings.get('selectAuthStatus')!
 
-      return build(
+      return buildGraph(
         [
           {
             nodes: [
@@ -402,7 +403,7 @@ describe('retrieve', () => {
             ],
           },
         ],
-        { directed: true },
+        { rootPath },
       )
     }
 
@@ -450,7 +451,7 @@ describe('retrieve', () => {
     })
 
     it('ranks express route nodes first for route-shaped questions', () => {
-      const graph = new KnowledgeGraph({ directed: true })
+      const graph = new KnowledgeGraph()
       graph.addNode('route_users_show', {
         label: 'GET /users/:id',
         source_file: '/src/routes/users.ts',
@@ -478,22 +479,22 @@ describe('retrieve', () => {
       graph.addEdge('require_auth', 'route_users_show', {
         relation: 'middleware',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/users.ts',
+        source_file: 'src/routes/users.ts',
       })
       graph.addEdge('show_user', 'route_users_show', {
         relation: 'handles_route',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/users.ts',
+        source_file: 'src/routes/users.ts',
       })
       graph.addEdge('route_users_show', 'require_auth', {
         relation: 'depends_on',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/users.ts',
+        source_file: 'src/routes/users.ts',
       })
       graph.addEdge('route_users_show', 'show_user', {
         relation: 'depends_on',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/users.ts',
+        source_file: 'src/routes/users.ts',
       })
 
       const result = retrieveContext(graph, {
@@ -512,7 +513,7 @@ describe('retrieve', () => {
     })
 
     it('prefers express route summaries for middleware-shaped questions over helper functions', () => {
-      const graph = new KnowledgeGraph({ directed: true })
+      const graph = new KnowledgeGraph()
       graph.addNode('route_users_show', {
         label: 'GET /users/:id',
         source_file: '/src/routes/users.ts',
@@ -554,27 +555,27 @@ describe('retrieve', () => {
       graph.addEdge('require_auth', 'route_users_show', {
         relation: 'middleware',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/users.ts',
+        source_file: 'src/routes/users.ts',
       })
       graph.addEdge('show_user', 'route_users_show', {
         relation: 'handles_route',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/users.ts',
+        source_file: 'src/routes/users.ts',
       })
       graph.addEdge('route_users_show', 'require_auth', {
         relation: 'depends_on',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/users.ts',
+        source_file: 'src/routes/users.ts',
       })
       graph.addEdge('route_users_show', 'show_user', {
         relation: 'depends_on',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/users.ts',
+        source_file: 'src/routes/users.ts',
       })
       graph.addEdge('auth_users_helper', 'require_auth', {
         relation: 'calls',
         confidence: 'EXTRACTED',
-        source_file: '/src/utils/auth-users.ts',
+        source_file: 'src/utils/auth-users.ts',
       })
 
       const result = retrieveContext(graph, {
@@ -597,7 +598,7 @@ describe('retrieve', () => {
     })
 
     it('does not boost react router routes for express-shaped questions in mixed-framework graphs', () => {
-      const graph = new KnowledgeGraph({ directed: true })
+      const graph = new KnowledgeGraph()
       graph.addNode('express_route', {
         label: 'GET /users',
         source_file: '/src/server/users.ts',
@@ -651,17 +652,17 @@ describe('retrieve', () => {
       graph.addEdge('express_route', 'require_auth', {
         relation: 'depends_on',
         confidence: 'EXTRACTED',
-        source_file: '/src/server/users.ts',
+        source_file: 'src/server/users.ts',
       })
       graph.addEdge('express_route', 'show_user', {
         relation: 'depends_on',
         confidence: 'EXTRACTED',
-        source_file: '/src/server/users.ts',
+        source_file: 'src/server/users.ts',
       })
       graph.addEdge('react_route', 'users_page', {
         relation: 'renders',
         confidence: 'EXTRACTED',
-        source_file: '/src/app/routes.tsx',
+        source_file: 'src/app/routes.tsx',
       })
 
       const result = retrieveContext(graph, {
@@ -679,7 +680,7 @@ describe('retrieve', () => {
     })
 
     it('does not boost express routes for react-router-shaped questions in mixed-framework graphs', () => {
-      const graph = new KnowledgeGraph({ directed: true })
+      const graph = new KnowledgeGraph()
       graph.addNode('express_route', {
         label: 'GET /users',
         source_file: '/src/server/users.ts',
@@ -723,12 +724,12 @@ describe('retrieve', () => {
       graph.addEdge('express_route', 'show_user', {
         relation: 'depends_on',
         confidence: 'EXTRACTED',
-        source_file: '/src/server/users.ts',
+        source_file: 'src/server/users.ts',
       })
       graph.addEdge('react_route', 'users_page', {
         relation: 'renders',
         confidence: 'EXTRACTED',
-        source_file: '/src/app/routes.tsx',
+        source_file: 'src/app/routes.tsx',
       })
 
       const result = retrieveContext(graph, {
@@ -747,10 +748,10 @@ describe('retrieve', () => {
 
     it('ranks mounted express route nodes by their propagated prefix', () => {
       const fixturesDir = join(process.cwd(), 'tests', 'fixtures')
-      const graph = build([
+      const graph = buildGraph([
         extractJs(join(fixturesDir, 'express-mounted-router-parent.ts')),
         extractJs(join(fixturesDir, 'express-mounted-router-child.ts')),
-      ])
+      ], { rootPath: process.cwd() })
 
       const result = retrieveContext(graph, {
         question: 'where is GET /api/users/:id defined',
@@ -769,11 +770,11 @@ describe('retrieve', () => {
 
     it('ranks recursively mounted express route nodes by their propagated prefixes', () => {
       const fixturesDir = join(process.cwd(), 'tests', 'fixtures')
-      const graph = build([
+      const graph = buildGraph([
         extractJs(join(fixturesDir, 'express-nested-router-parent.ts')),
         extractJs(join(fixturesDir, 'express-nested-router-child.ts')),
         extractJs(join(fixturesDir, 'express-nested-router-grandchild.ts')),
-      ])
+      ], { rootPath: process.cwd() })
 
       const result = retrieveContext(graph, {
         question: 'where is GET /api/v1/users/:id defined',
@@ -792,7 +793,7 @@ describe('retrieve', () => {
 
     it('ranks patch and all express route nodes by their verb labels', () => {
       const fixturesDir = join(process.cwd(), 'tests', 'fixtures')
-      const graph = build([extractJs(join(fixturesDir, 'express-patch-all.ts'))])
+      const graph = buildGraph([extractJs(join(fixturesDir, 'express-patch-all.ts'))], { rootPath: process.cwd() })
 
       const patchResult = retrieveContext(graph, {
         question: 'where is PATCH /users/:id/profile defined',
@@ -822,7 +823,7 @@ describe('retrieve', () => {
     })
 
     it('does not route-boost free-text middleware usage questions because of "use"', () => {
-      const graph = new KnowledgeGraph({ directed: true })
+      const graph = new KnowledgeGraph()
       graph.addNode('auth_middleware_route', {
         label: 'USE /auth',
         source_file: '/src/server/auth.ts',
@@ -854,12 +855,12 @@ describe('retrieve', () => {
       graph.addEdge('auth_middleware_route', 'auth_middleware', {
         relation: 'depends_on',
         confidence: 'EXTRACTED',
-        source_file: '/src/server/auth.ts',
+        source_file: 'src/server/auth.ts',
       })
       graph.addEdge('apply_auth_middleware', 'auth_middleware', {
         relation: 'calls',
         confidence: 'EXTRACTED',
-        source_file: '/src/server/bootstrap.ts',
+        source_file: 'src/server/bootstrap.ts',
       })
 
       const result = retrieveContext(graph, {
@@ -882,7 +883,7 @@ describe('retrieve', () => {
     })
 
     it('does not route-boost free-text handler questions', () => {
-      const graph = new KnowledgeGraph({ directed: true })
+      const graph = new KnowledgeGraph()
       graph.addNode('auth_handler_route', {
         label: 'GET /auth',
         source_file: '/src/server/auth.ts',
@@ -914,12 +915,12 @@ describe('retrieve', () => {
       graph.addEdge('auth_handler_route', 'auth_handler', {
         relation: 'depends_on',
         confidence: 'EXTRACTED',
-        source_file: '/src/server/auth.ts',
+        source_file: 'src/server/auth.ts',
       })
       graph.addEdge('bind_auth_handler', 'auth_handler', {
         relation: 'calls',
         confidence: 'EXTRACTED',
-        source_file: '/src/server/bootstrap.ts',
+        source_file: 'src/server/bootstrap.ts',
       })
 
       const result = retrieveContext(graph, {
@@ -942,7 +943,7 @@ describe('retrieve', () => {
     })
 
     it('does not infer express route intent from "all" in redux selector questions', () => {
-      const graph = new KnowledgeGraph({ directed: true })
+      const graph = new KnowledgeGraph()
       graph.addNode('all_auth_route', {
         label: 'ALL /auth',
         source_file: '/src/server/auth.ts',
@@ -976,7 +977,7 @@ describe('retrieve', () => {
       graph.addEdge('auth_slice', 'select_auth_state', {
         relation: 'defines_selector',
         confidence: 'EXTRACTED',
-        source_file: '/src/state/authSlice.ts',
+        source_file: 'src/state/authSlice.ts',
       })
 
       const result = retrieveContext(graph, {
@@ -999,7 +1000,7 @@ describe('retrieve', () => {
     })
 
     it('still route-boosts real HEAD route questions', () => {
-      const graph = new KnowledgeGraph({ directed: true })
+      const graph = new KnowledgeGraph()
       graph.addNode('head_health', {
         label: 'HEAD /health',
         source_file: '/src/server/health.ts',
@@ -1023,7 +1024,7 @@ describe('retrieve', () => {
       graph.addEdge('head_health', 'health_handler', {
         relation: 'depends_on',
         confidence: 'EXTRACTED',
-        source_file: '/src/server/health.ts',
+        source_file: 'src/server/health.ts',
       })
 
       const result = retrieveContext(graph, {
@@ -1042,7 +1043,7 @@ describe('retrieve', () => {
     })
 
     it('still route-boosts HEAD request questions without an explicit route path', () => {
-      const graph = new KnowledgeGraph({ directed: true })
+      const graph = new KnowledgeGraph()
       graph.addNode('head_health', {
         label: 'HEAD /health',
         source_file: '/src/server/health.ts',
@@ -1066,7 +1067,7 @@ describe('retrieve', () => {
       graph.addEdge('head_health', 'health_handler', {
         relation: 'depends_on',
         confidence: 'EXTRACTED',
-        source_file: '/src/server/health.ts',
+        source_file: 'src/server/health.ts',
       })
 
       const result = retrieveContext(graph, {
@@ -1085,7 +1086,7 @@ describe('retrieve', () => {
     })
 
     it('does not infer express route intent from "all requests" in redux questions', () => {
-      const graph = new KnowledgeGraph({ directed: true })
+      const graph = new KnowledgeGraph()
       graph.addNode('all_auth_route', {
         label: 'ALL /auth',
         source_file: '/src/server/auth.ts',
@@ -1119,7 +1120,7 @@ describe('retrieve', () => {
       graph.addEdge('auth_slice', 'select_auth_state', {
         relation: 'defines_selector',
         confidence: 'EXTRACTED',
-        source_file: '/src/state/authSlice.ts',
+        source_file: 'src/state/authSlice.ts',
       })
 
       const result = retrieveContext(graph, {
@@ -1143,12 +1144,12 @@ describe('retrieve', () => {
 
     it('ranks routes registered on imported express owners without local express imports', () => {
       const fixturesDir = join(process.cwd(), 'tests', 'fixtures')
-      const graph = build([
+      const graph = buildGraph([
         extractJs(join(fixturesDir, 'express-imported-owner-router-child.ts')),
         extractJs(join(fixturesDir, 'express-imported-owner-router-parent.ts')),
         extractJs(join(fixturesDir, 'express-imported-owner-app-child.ts')),
         extractJs(join(fixturesDir, 'express-imported-owner-app-parent.ts')),
-      ])
+      ], { rootPath: process.cwd() })
 
       const namedResult = retrieveContext(graph, {
         question: 'where is GET /users/:id defined',
@@ -1179,14 +1180,14 @@ describe('retrieve', () => {
 
     it('ranks module-object mounted express route nodes by their propagated prefixes', () => {
       const fixturesDir = join(process.cwd(), 'tests', 'fixtures')
-      const namespaceGraph = build([
+      const namespaceGraph = buildGraph([
         extractJs(join(fixturesDir, 'express-namespace-module-parent.ts')),
         extractJs(join(fixturesDir, 'express-namespace-module-child.ts')),
-      ])
-      const commonjsGraph = build([
+      ], { rootPath: process.cwd() })
+      const commonjsGraph = buildGraph([
         extractJs(join(fixturesDir, 'express-commonjs-module-parent.ts')),
         extractJs(join(fixturesDir, 'express-commonjs-module-child.ts')),
-      ])
+      ], { rootPath: process.cwd() })
 
       const namespaceResult = retrieveContext(namespaceGraph, {
         question: 'where is GET /api/users/:id defined',
@@ -1216,12 +1217,18 @@ describe('retrieve', () => {
     })
 
     it('answers auth slice questions from extracted redux toolkit graphs with fewer low-level baseline matches', () => {
-      const sliceFilePath = join(process.cwd(), 'tests', 'fixtures', 'redux-retrieve-auth-slice.ts')
-      const storeFilePath = join(process.cwd(), 'tests', 'fixtures', 'redux-retrieve-auth-store.ts')
+      const fixtureRoot = join(process.cwd(), 'tests', 'fixtures')
+      const sliceFilePath = join(fixtureRoot, 'redux-retrieve-auth-slice.ts')
+      const storeFilePath = join(fixtureRoot, 'redux-retrieve-auth-store.ts')
       const semanticSliceExtraction = stripFileNodes(extractJs(sliceFilePath))
       const semanticStoreExtraction = stripFileNodes(extractJs(storeFilePath))
-      const semanticGraph = build([semanticSliceExtraction, semanticStoreExtraction], { directed: true })
-      const baselineGraph = buildReduxAliasBaselineGraph(semanticSliceExtraction, semanticStoreExtraction, sliceFilePath)
+      const semanticGraph = buildGraph([semanticSliceExtraction, semanticStoreExtraction], { rootPath: fixtureRoot })
+      const baselineGraph = buildReduxAliasBaselineGraph(
+        semanticSliceExtraction,
+        semanticStoreExtraction,
+        sliceFilePath,
+        fixtureRoot,
+      )
 
       const semanticResult = retrieveContext(semanticGraph, {
         question: 'which slice owns auth state',
@@ -1273,7 +1280,7 @@ describe('retrieve', () => {
     })
 
     it('prefers redux slice and selector summaries over utility helpers for redux-shaped questions', () => {
-      const graph = new KnowledgeGraph({ directed: true })
+      const graph = new KnowledgeGraph()
       graph.addNode('auth_slice', {
         label: 'auth slice',
         source_file: '/src/state/authSlice.ts',
@@ -1315,17 +1322,17 @@ describe('retrieve', () => {
       graph.addEdge('auth_slice', 'select_auth_status', {
         relation: 'defines_selector',
         confidence: 'EXTRACTED',
-        source_file: '/src/state/authSlice.ts',
+        source_file: 'src/state/authSlice.ts',
       })
       graph.addEdge('auth_slice', 'store', {
         relation: 'registered_in_store',
         confidence: 'EXTRACTED',
-        source_file: '/src/state/store.ts',
+        source_file: 'src/state/store.ts',
       })
       graph.addEdge('auth_state_helpers', 'select_auth_status', {
         relation: 'uses',
         confidence: 'EXTRACTED',
-        source_file: '/src/utils/authStateHelpers.ts',
+        source_file: 'src/utils/authStateHelpers.ts',
       })
 
       const result = retrieveContext(graph, {
@@ -1346,7 +1353,7 @@ describe('retrieve', () => {
     })
 
     it('does not boost redux metadata for non-framework-shaped questions', () => {
-      const graph = new KnowledgeGraph({ directed: true })
+      const graph = new KnowledgeGraph()
       graph.addNode('auth_status_helper', {
         label: 'AuthStatus',
         source_file: '/src/utils/auth-status.ts',
@@ -1385,12 +1392,12 @@ describe('retrieve', () => {
       graph.addEdge('status_formatter', 'auth_status_helper', {
         relation: 'calls',
         confidence: 'EXTRACTED',
-        source_file: '/src/utils/status-formatter.ts',
+        source_file: 'src/utils/status-formatter.ts',
       })
       graph.addEdge('status_labels', 'auth_status_helper', {
         relation: 'uses',
         confidence: 'EXTRACTED',
-        source_file: '/src/utils/status-labels.ts',
+        source_file: 'src/utils/status-labels.ts',
       })
 
       const result = retrieveContext(graph, {
@@ -1411,7 +1418,7 @@ describe('retrieve', () => {
     })
 
     it('does not treat a generic path query as framework-shaped', () => {
-      const graph = new KnowledgeGraph({ directed: true })
+      const graph = new KnowledgeGraph()
       graph.addNode('path_builder', {
         label: 'PathBuilder',
         source_file: '/src/utils/path-builder.ts',
@@ -1443,7 +1450,7 @@ describe('retrieve', () => {
     })
 
     it('does not treat file path component questions as react router route intent', () => {
-      const graph = new KnowledgeGraph({ directed: true })
+      const graph = new KnowledgeGraph()
       graph.addNode('login_component', {
         label: 'Login',
         source_file: '/src/auth/Login.tsx',
@@ -1475,7 +1482,7 @@ describe('retrieve', () => {
       graph.addEdge('login_route', 'login_page', {
         relation: 'renders',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/login.tsx',
+        source_file: 'src/routes/login.tsx',
       })
 
       const result = retrieveContext(graph, {
@@ -1494,7 +1501,7 @@ describe('retrieve', () => {
     })
 
     it('does not treat a generic router question as react router intent', () => {
-      const graph = new KnowledgeGraph({ directed: true })
+      const graph = new KnowledgeGraph()
       graph.addNode('settings_router', {
         label: 'SettingsRouter',
         source_file: '/src/server/settings-router.ts',
@@ -1526,7 +1533,7 @@ describe('retrieve', () => {
       graph.addEdge('settings_route', 'settings_page', {
         relation: 'renders',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/settings.tsx',
+        source_file: 'src/routes/settings.tsx',
       })
 
       const result = retrieveContext(graph, {
@@ -1551,7 +1558,7 @@ describe('retrieve', () => {
       const semanticNodeIds = new Set(
         semanticExtraction.nodes.filter((node) => node.label !== 'react-router-imported-router.tsx').map((node) => node.id),
       )
-      const semanticGraph = build(
+      const semanticGraph = buildGraph(
         [
           {
             ...semanticExtraction,
@@ -1559,10 +1566,10 @@ describe('retrieve', () => {
             edges: semanticExtraction.edges.filter((edge) => semanticNodeIds.has(edge.source) && semanticNodeIds.has(edge.target)),
           },
         ],
-        { directed: true },
+        { rootPath: process.cwd() },
       )
 
-      const baselineGraph = new KnowledgeGraph({ directed: true })
+      const baselineGraph = new KnowledgeGraph()
       baselineGraph.addNode('router_variable', {
         label: 'router',
         source_file: routerFilePath,
@@ -1598,17 +1605,17 @@ describe('retrieve', () => {
       baselineGraph.addEdge('router_variable', 'settings_page_component', {
         relation: 'uses',
         confidence: 'EXTRACTED',
-        source_file: routerFilePath,
+        source_file: 'tests/fixtures/react-router-imported-router.tsx',
       })
       baselineGraph.addEdge('router_variable', 'settings_loader_baseline', {
         relation: 'uses',
         confidence: 'EXTRACTED',
-        source_file: routerFilePath,
+        source_file: 'tests/fixtures/react-router-imported-router.tsx',
       })
       baselineGraph.addEdge('router_variable', 'settings_action_baseline', {
         relation: 'uses',
         confidence: 'EXTRACTED',
-        source_file: routerFilePath,
+        source_file: 'tests/fixtures/react-router-imported-router.tsx',
       })
 
       const semanticResult = retrieveContext(semanticGraph, {
@@ -1655,7 +1662,7 @@ describe('retrieve', () => {
     })
 
     it('keeps react router boosts when react-specific route evidence is present', () => {
-      const graph = new KnowledgeGraph({ directed: true })
+      const graph = new KnowledgeGraph()
       graph.addNode('settings_route', {
         label: '/settings',
         source_file: '/src/routes/settings.tsx',
@@ -1687,7 +1694,7 @@ describe('retrieve', () => {
       graph.addEdge('settings_route', 'settings_page', {
         relation: 'renders',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/settings.tsx',
+        source_file: 'src/routes/settings.tsx',
       })
 
       const result = retrieveContext(graph, {
@@ -1706,7 +1713,7 @@ describe('retrieve', () => {
     })
 
     it('keeps framework boosts for framework-shaped react router path questions', () => {
-      const graph = new KnowledgeGraph({ directed: true })
+      const graph = new KnowledgeGraph()
       graph.addNode('settings_route', {
         label: '/settings/path',
         source_file: '/src/routes/settings.tsx',
@@ -1738,7 +1745,7 @@ describe('retrieve', () => {
       graph.addEdge('settings_route', 'settings_page', {
         relation: 'renders',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/settings.tsx',
+        source_file: 'src/routes/settings.tsx',
       })
 
       const result = retrieveContext(graph, {
@@ -1765,7 +1772,7 @@ describe('retrieve', () => {
     })
 
     it('keeps framework boosts for real route path questions', () => {
-      const graph = new KnowledgeGraph({ directed: true })
+      const graph = new KnowledgeGraph()
       graph.addNode('login_route', {
         label: '/login',
         source_file: '/src/routes/login.tsx',
@@ -1797,7 +1804,7 @@ describe('retrieve', () => {
       graph.addEdge('login_route', 'login_page', {
         relation: 'renders',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/login.tsx',
+        source_file: 'src/routes/login.tsx',
       })
 
       const result = retrieveContext(graph, {
@@ -1822,7 +1829,7 @@ describe('retrieve', () => {
     })
 
     it('keeps framework boosts for real route path questions with trailing punctuation', () => {
-      const graph = new KnowledgeGraph({ directed: true })
+      const graph = new KnowledgeGraph()
       graph.addNode('login_route', {
         label: '/login',
         source_file: '/src/routes/login.tsx',
@@ -1846,7 +1853,7 @@ describe('retrieve', () => {
       graph.addEdge('login_route', 'login_page', {
         relation: 'renders',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/login.tsx',
+        source_file: 'src/routes/login.tsx',
       })
 
       const result = retrieveContext(graph, {
@@ -1865,7 +1872,7 @@ describe('retrieve', () => {
     })
 
     it('requires explicit route intent before boosting react router nodes', () => {
-      const graph = new KnowledgeGraph({ directed: true })
+      const graph = new KnowledgeGraph()
       graph.addNode('settings_route', {
         label: '/settings',
         source_file: '/src/routes/settings.tsx',
@@ -1889,7 +1896,7 @@ describe('retrieve', () => {
       graph.addEdge('settings_route', 'settings_component', {
         relation: 'renders',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/settings.tsx',
+        source_file: 'src/routes/settings.tsx',
       })
 
       const genericReactResult = retrieveContext(graph, {
@@ -1966,12 +1973,12 @@ describe('retrieve', () => {
       graph.addEdge('path_only', 'guide_a', {
         relation: 'calls',
         confidence: 'EXTRACTED',
-        source_file: '/src/login/handler.ts',
+        source_file: 'src/login/handler.ts',
       })
       graph.addEdge('path_only', 'guide_d', {
         relation: 'calls',
         confidence: 'EXTRACTED',
-        source_file: '/src/login/handler.ts',
+        source_file: 'src/login/handler.ts',
       })
 
       const result = retrieveContext(graph, { question: 'login', budget: 5000, fileType: 'code' })
@@ -2034,12 +2041,12 @@ describe('retrieve', () => {
       graph.addEdge('community_only', 'guide_a', {
         relation: 'depends_on',
         confidence: 'EXTRACTED',
-        source_file: '/src/session.ts',
+        source_file: 'src/session.ts',
       })
       graph.addEdge('community_only', 'guide_d', {
         relation: 'depends_on',
         confidence: 'EXTRACTED',
-        source_file: '/src/session.ts',
+        source_file: 'src/session.ts',
       })
       graph.graph.community_labels = { 0: 'Auth' }
 
@@ -2092,7 +2099,7 @@ describe('retrieve', () => {
     })
 
     it('includes predecessors of matched nodes in directed graphs', () => {
-      const graph = new KnowledgeGraph({ directed: true })
+      const graph = new KnowledgeGraph()
       graph.addNode('caller', {
         label: 'CallerService',
         source_file: '/src/caller.ts',
@@ -2110,7 +2117,7 @@ describe('retrieve', () => {
       graph.addEdge('caller', 'target', {
         relation: 'calls',
         confidence: 'EXTRACTED',
-        source_file: '/src/caller.ts',
+        source_file: 'src/caller.ts',
       })
 
       const result = retrieveContext(graph, { question: 'target', budget: 5000, retrievalLevel: 4 })
@@ -2122,7 +2129,7 @@ describe('retrieve', () => {
     })
 
     it('keeps a matched method with its declaring class across community boundaries', () => {
-      const graph = new KnowledgeGraph({ directed: true })
+      const graph = new KnowledgeGraph()
       graph.addNode('owner', {
         label: 'PersistenceGateway',
         source_file: '/src/session-store.ts',
@@ -2142,7 +2149,7 @@ describe('retrieve', () => {
       graph.addEdge('owner', 'method', {
         relation: 'method',
         confidence: 'EXTRACTED',
-        source_file: '/src/session-store.ts',
+        source_file: 'src/session-store.ts',
       })
 
       const result = retrieveContext(graph, {
@@ -2209,7 +2216,7 @@ describe('retrieve', () => {
     })
 
     it('keeps supporting code nodes alongside top framework matches in compact framework-shaped retrievals', () => {
-      const graph = new KnowledgeGraph({ directed: true })
+      const graph = new KnowledgeGraph()
 
       graph.addNode('settings_route', {
         label: '/settings',
@@ -2281,32 +2288,32 @@ describe('retrieve', () => {
       graph.addEdge('settings_route', 'settings_loader', {
         relation: 'loads_route',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/settings.tsx',
+        source_file: 'src/routes/settings.tsx',
       })
       graph.addEdge('settings_route', 'settings_action', {
         relation: 'submits_route',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/settings.tsx',
+        source_file: 'src/routes/settings.tsx',
       })
       graph.addEdge('settings_route', 'settings_page', {
         relation: 'renders',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/settings.tsx',
+        source_file: 'src/routes/settings.tsx',
       })
       graph.addEdge('settings_layout', 'settings_route', {
         relation: 'contains',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/settings.tsx',
+        source_file: 'src/routes/settings.tsx',
       })
       graph.addEdge('settings_loader', 'load_settings_data', {
         relation: 'calls',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/settings.tsx',
+        source_file: 'src/routes/settings.tsx',
       })
       graph.addEdge('settings_action', 'save_settings_data', {
         relation: 'calls',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/settings.tsx',
+        source_file: 'src/routes/settings.tsx',
       })
 
       const result = retrieveContext(graph, {
@@ -2436,13 +2443,13 @@ describe('retrieve', () => {
         label: 'SessionManager',
         file_type: 'code',
         source_file: '/src/session.ts',
-        line_number: Infinity,
+        line_number: 'Infinity',
         community: 0,
       })
       graph.addEdge('auth_service', 'session_mgr', {
         relation: 'calls',
         confidence: 'EXTRACTED',
-        source_file: '/src/auth.ts',
+        source_file: 'src/auth.ts',
       })
 
       const result = retrieveContext(graph, { question: 'auth', budget: 1 })
@@ -2591,7 +2598,7 @@ describe('retrieve', () => {
     })
 
     it('keeps raw framework retrieval budget-driven and caps only compact serialization', () => {
-      const graph = new KnowledgeGraph({ directed: true })
+      const graph = new KnowledgeGraph()
       graph.addNode('dashboard_route', {
         label: '/dashboard',
         source_file: '/src/routes/dashboard.tsx',
@@ -2663,32 +2670,32 @@ describe('retrieve', () => {
       graph.addEdge('dashboard_route', 'dashboard_layout', {
         relation: 'renders',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/dashboard.tsx',
+        source_file: 'src/routes/dashboard.tsx',
       })
       graph.addEdge('dashboard_route', 'dashboard_page', {
         relation: 'renders',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/dashboard.tsx',
+        source_file: 'src/routes/dashboard.tsx',
       })
       graph.addEdge('dashboard_route', 'dashboard_loader', {
         relation: 'loads_route',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/dashboard.tsx',
+        source_file: 'src/routes/dashboard.tsx',
       })
       graph.addEdge('dashboard_route', 'dashboard_action', {
         relation: 'submits_route',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/dashboard.tsx',
+        source_file: 'src/routes/dashboard.tsx',
       })
       graph.addEdge('dashboard_router', 'dashboard_route', {
         relation: 'contains',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/router.tsx',
+        source_file: 'src/routes/router.tsx',
       })
       graph.addEdge('dashboard_helper', 'dashboard_loader', {
         relation: 'calls',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/dashboard-helper.ts',
+        source_file: 'src/routes/dashboard-helper.ts',
       })
 
       const rawResult = retrieveContext(graph, {
@@ -2705,7 +2712,7 @@ describe('retrieve', () => {
     })
 
     it('recomputes compact token_count after truncating matched nodes', () => {
-      const graph = new KnowledgeGraph({ directed: true })
+      const graph = new KnowledgeGraph()
       graph.addNode('dashboard_route', {
         label: '/dashboard',
         source_file: '/src/routes/dashboard.tsx',
@@ -2777,32 +2784,32 @@ describe('retrieve', () => {
       graph.addEdge('dashboard_route', 'dashboard_layout', {
         relation: 'renders',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/dashboard.tsx',
+        source_file: 'src/routes/dashboard.tsx',
       })
       graph.addEdge('dashboard_route', 'dashboard_page', {
         relation: 'renders',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/dashboard.tsx',
+        source_file: 'src/routes/dashboard.tsx',
       })
       graph.addEdge('dashboard_route', 'dashboard_loader', {
         relation: 'loads_route',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/dashboard.tsx',
+        source_file: 'src/routes/dashboard.tsx',
       })
       graph.addEdge('dashboard_route', 'dashboard_action', {
         relation: 'submits_route',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/dashboard.tsx',
+        source_file: 'src/routes/dashboard.tsx',
       })
       graph.addEdge('dashboard_router', 'dashboard_route', {
         relation: 'contains',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/router.tsx',
+        source_file: 'src/routes/router.tsx',
       })
       graph.addEdge('dashboard_helper', 'dashboard_loader', {
         relation: 'calls',
         confidence: 'EXTRACTED',
-        source_file: '/src/routes/dashboard-helper.ts',
+        source_file: 'src/routes/dashboard-helper.ts',
       })
 
       const rawResult = retrieveContext(graph, {
@@ -3567,8 +3574,7 @@ describe('retrieve', () => {
     })
 
     it('relativizes in-root source files while preserving outside-root matches', () => {
-      const graph = new KnowledgeGraph({ directed: true })
-      graph.graph.root_path = '/workspace/app'
+      const graph = new KnowledgeGraph({ root_path: '/workspace/app' })
       graph.addNode('auth_service', {
         label: 'AuthService',
         source_file: '/workspace/app/src/auth/service.ts',
@@ -3598,8 +3604,7 @@ describe('retrieve', () => {
     })
 
     it('does not special-case repository source paths during retrieve serialization', () => {
-      const graph = new KnowledgeGraph()
-      graph.graph.root_path = '/workspace/app'
+      const graph = new KnowledgeGraph({ root_path: '/workspace/app' })
       graph.addNode('report_repository_save', {
         label: 'save()',
         source_file: '/workspace/app/src/repositories/report.repository.ts',
@@ -3802,7 +3807,7 @@ describe('retrieve', () => {
         node_kind: 'class',
         file_type: 'code',
       })
-      graph.addEdge('session_mgr', 'billing_store', { relation: 'depends_on', confidence: 'EXTRACTED', source_file: '/src/session.ts' })
+      graph.addEdge('session_mgr', 'billing_store', { relation: 'depends_on', confidence: 'EXTRACTED', source_file: 'src/session.ts' })
       const result = retrieveContext(graph, { question: 'auth', budget: 5000, retrievalLevel: 4 })
 
       expect(result.matched_nodes.find((node) => node.label === 'authenticateUser')?.relevance_band).toBe('direct')
@@ -3812,11 +3817,11 @@ describe('retrieve', () => {
 
     it('answers nest controller and service questions with extracted nest semantics', () => {
       const fixturesDir = join(process.cwd(), 'tests', 'fixtures')
-      const graph = build([
+      const graph = buildGraph([
         extractJs(join(fixturesDir, 'nest-auth.module.ts')),
         extractJs(join(fixturesDir, 'nest-auth.controller.ts')),
         extractJs(join(fixturesDir, 'nest-auth.service.ts')),
-      ])
+      ], { rootPath: process.cwd() })
 
       const result = retrieveContext(graph, {
         question: 'which nest controller calls AuthService',
@@ -3836,7 +3841,7 @@ describe('retrieve', () => {
 
     it('answers next route, client, and server-action questions with extracted next semantics', () => {
       const fixturesDir = join(process.cwd(), 'tests', 'fixtures')
-      const graph = build([
+      const graph = buildGraph([
         extractJs(join(fixturesDir, 'next-app', 'middleware.ts')),
         extractJs(join(fixturesDir, 'next-app', 'app', '(marketing)', 'dashboard', '[team]', 'layout.tsx')),
         extractJs(join(fixturesDir, 'next-app', 'app', '(marketing)', 'dashboard', '[team]', 'page.tsx')),
@@ -3853,7 +3858,7 @@ describe('retrieve', () => {
         extractJs(join(fixturesDir, 'next-pages', 'pages', '_document.tsx')),
         extractJs(join(fixturesDir, 'next-pages', 'pages', '_error.tsx')),
         extractJs(join(fixturesDir, 'next-pages', 'pages', 'api', 'auth', '[...nextauth].ts')),
-      ])
+      ], { rootPath: process.cwd() })
 
       const routeResult = retrieveContext(graph, {
         question: 'which next route owns the team settings page',

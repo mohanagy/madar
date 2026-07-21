@@ -4,7 +4,7 @@ import { join, relative, resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { buildFromJson } from '../../src/pipeline/build.js'
+import { buildGraphFromExtraction } from '../../src/application/build-graph.js'
 import { extract } from '../../src/pipeline/extract.js'
 
 function createSandbox(): string {
@@ -33,7 +33,7 @@ describe('extract duplicate file stems', () => {
         writeFile(sandbox, 'apps/web/ui/shared/icons/link.tsx', 'export function Link() { return null }\n'),
       ].map((filePath) => resolve(filePath))
 
-      const graph = buildFromJson(extract(files), { directed: true })
+      const graph = buildGraphFromExtraction(extract(files), { rootPath: sandbox })
       const nodes = [...graph.nodeEntries()].map(([id, attrs]) => ({
         id,
         label: String(attrs.label ?? ''),
@@ -72,7 +72,7 @@ describe('extract duplicate file stems', () => {
         writeFile(sandbox, 'apps/web/foo_bar.ts', 'export function fooUnderscore() { return 2 }\n'),
       ].map((filePath) => resolve(filePath))
 
-      const graph = buildFromJson(extract(files), { directed: true })
+      const graph = buildGraphFromExtraction(extract(files), { rootPath: sandbox })
       const nodes = [...graph.nodeEntries()].map(([id, attrs]) => ({
         id,
         label: String(attrs.label ?? ''),
@@ -107,7 +107,7 @@ describe('extract duplicate file stems', () => {
         ].join('\n') + '\n'),
       ].map((filePath) => resolve(filePath))
 
-      const graph = buildFromJson(extract(files), { directed: true })
+      const graph = buildGraphFromExtraction(extract(files), { rootPath: sandbox })
       const nodes = [...graph.nodeEntries()].map(([id, attrs]) => ({
         id,
         label: String(attrs.label ?? ''),

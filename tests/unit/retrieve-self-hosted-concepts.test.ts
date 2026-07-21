@@ -44,8 +44,8 @@ const CASES: RegressionCase[] = [
   {
     name: 'impact direction',
     question: 'How does impact analysis follow dependency direction?',
-    expected: ['src/runtime/impact.ts', 'src/runtime/direction.ts'],
-    relevant: ['src/runtime/impact.ts', 'src/runtime/direction.ts'],
+    expected: ['src/runtime/impact.ts', 'src/domain/graph/directed-multigraph.ts'],
+    relevant: ['src/runtime/impact.ts', 'src/domain/graph/directed-multigraph.ts'],
   },
 ]
 

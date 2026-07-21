@@ -1,11 +1,11 @@
 import { vi } from 'vitest'
 
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import { relevantFiles } from '../../src/runtime/relevant-files.js'
 
 describe('relevantFiles', () => {
   it('ranks files and explains why they matter for a feature question', () => {
-    const graph = new KnowledgeGraph({ directed: true })
+    const graph = new KnowledgeGraph()
     graph.graph.root_path = '/workspace'
     graph.addNode('route_users_show', {
       label: 'GET /users/:id',

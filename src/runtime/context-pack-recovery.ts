@@ -1,5 +1,5 @@
 import type { ContextPackRecoveryPlan, MadarAnswerabilityState, MadarVerificationTarget } from '../contracts/context-recovery.js'
-import type { KnowledgeGraph } from '../contracts/graph.js'
+import type { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
 import { assessMadarResponseEvidence } from './mcp-response-evidence.js'
 import { reconcileRetrievalPlanQueryEvidence } from './retrieve/conceptual-fallback.js'
 import { buildRetrievalEvidencePlanFromResult } from './retrieve/pipeline.js'

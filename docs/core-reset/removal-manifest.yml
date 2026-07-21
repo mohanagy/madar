@@ -23,6 +23,17 @@ review:
   disposition_changes: 0
   amendment: Source lists were completed and de-overlapped so every current production TypeScript file has exactly one existing disposition; no keep, rebuild, move, delete, or defer decision changed.
 
+current:
+  updated_at: 2026-07-20
+  completed_phase: scope-and-baseline
+  active_phase: directed-multigraph
+  base_commit: 647c2912e9ff000b5d92cae3fc61395d9e556062
+  production_typescript_files: 178
+  production_typescript_loc: 93792
+  production_loc_added: 1197
+  production_loc_removed: 4171
+  production_loc_net: -2974
+
 targets:
   production_typescript_files_max: 80
   production_typescript_loc_min: 25000
@@ -67,14 +78,28 @@ items:
 
   - id: directed-multigraph
     disposition: rebuild
-    status: proposed
+    status: in_progress
     sources:
+      - src/adapters/filesystem/graph-artifact.ts
+      - src/application/build-graph.ts
+      - src/domain/graph/artifact.ts
+      - src/domain/graph/canonical-json.ts
+      - src/domain/graph/directed-multigraph.ts
+    removed_sources:
       - src/contracts/graph.ts
       - src/pipeline/build.ts
       - src/pipeline/export.ts
+      - src/pipeline/export/community-summary.ts
+      - src/pipeline/export/overview-bridges.ts
+      - src/pipeline/export/overview-navigation.ts
       - src/core/schema/normalize.ts
       - src/runtime/direction.ts
     destination: src/domain/graph/**
+    notes: The obsolete exporter helpers moved from the later non-core-products bucket to this phase because #582 deletes the entire legacy exporter surface; no later phase retains ownership of those files.
+    production_loc_budget:
+      added_max: 1200
+      removed_min: 2852
+      net_max: -1500
     remove_when: Schema-v2 invariant, serialization, migration-error, and deterministic-ID tests pass.
     exit_gate: Parallel relationship kinds and direction survive build, store, and load.
 
@@ -241,7 +266,6 @@ items:
       - src/pipeline/community-details.ts
       - src/pipeline/community-naming.ts
       - src/pipeline/analyze.ts
-      - src/pipeline/export/**
       - src/pipeline/report.ts
       - src/pipeline/federate.ts
       - src/infrastructure/neo4j.ts

@@ -1,18 +1,13 @@
-import { readFileSync, statSync } from 'node:fs'
-
 import { countTokens } from 'gpt-tokenizer/encoding/cl100k_base'
 
 import { godNodes, semanticAnomalies, workspaceBridges, type SemanticAnomaly, type WorkspaceBridge } from '../pipeline/analyze.js'
-import { buildFromJson } from '../pipeline/build.js'
-import { parseDiscoverySafetyMetadata } from '../shared/discovery-safety.js'
 import { buildCommunityLabels } from '../pipeline/community-naming.js'
 import type { Communities } from '../pipeline/cluster.js'
+import { loadGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
 import { isRecord } from '../shared/guards.js'
 import { sanitizeLabel, validateGraphPath } from '../shared/security.js'
-import { KnowledgeGraph } from '../contracts/graph.js'
-import { parseGenerationPolicy } from '../contracts/generation-policy.js'
+import type { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
 
-const MAX_GRAPH_BYTES = 100 * 1024 * 1024
 const MAX_TRAVERSAL_DEPTH = 6
 const MAX_STORED_SEMANTIC_ANOMALIES = 10_000
 const MAX_STORED_ANOMALY_ID_LENGTH = 256
@@ -118,14 +113,7 @@ function describeQueryFilters(filters?: QueryFilters): string | null {
 }
 
 function readGraphArtifactRecord(graphPath: string): Record<string, unknown> {
-  const safePath = validateGraphPath(graphPath)
-
-  try {
-    const parsed = JSON.parse(readFileSync(safePath, 'utf8'))
-    return isRecord(parsed) ? parsed : {}
-  } catch {
-    return {}
-  }
+  return loadGraphArtifact(graphPath).graph
 }
 
 function storedCommunityLabels(rawLabels: unknown): Record<number, string> {
@@ -206,60 +194,7 @@ function workspaceBridgeMap(graph: KnowledgeGraph): Map<string, WorkspaceBridge>
 }
 
 export function loadGraph(graphPath: string): KnowledgeGraph {
-  const safePath = validateGraphPath(graphPath)
-  if (statSync(safePath).size > MAX_GRAPH_BYTES) {
-    throw new Error(`Graph file too large: ${safePath}`)
-  }
-
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(readFileSync(safePath, 'utf8'))
-  } catch (error) {
-    if (error instanceof SyntaxError) {
-      throw new Error(`graph.json is corrupted (${error.message}). Re-run madar to rebuild.`)
-    }
-    throw error
-  }
-
-  if (!isRecord(parsed)) {
-    return new KnowledgeGraph()
-  }
-
-  const extraction = {
-    schema_version: parsed.schema_version,
-    directed: parsed.directed === true,
-    root_path: parsed.root_path,
-    nodes: Array.isArray(parsed.nodes) ? parsed.nodes : [],
-    edges: Array.isArray(parsed.links) ? parsed.links : Array.isArray(parsed.edges) ? parsed.edges : [],
-    hyperedges: Array.isArray(parsed.hyperedges) ? parsed.hyperedges : [],
-  }
-
-  const graph = buildFromJson(extraction, { directed: extraction.directed, validateExtraction: false })
-  if (typeof parsed.root_path === 'string' && parsed.root_path.trim().length > 0) {
-    graph.graph.root_path = parsed.root_path
-  }
-  if (parsed.spi_mode === true) {
-    graph.graph.spi_mode = true
-  }
-  const generationPolicy = parseGenerationPolicy(parsed.generation_policy)
-  if (generationPolicy) {
-    graph.graph.generation_policy = generationPolicy
-  }
-  const communityLabels = storedCommunityLabels(parsed.community_labels)
-  if (Object.keys(communityLabels).length > 0) {
-    graph.graph.community_labels = communityLabels
-  }
-  const discoverySafety = parseDiscoverySafetyMetadata(parsed.discovery_safety)
-  if (discoverySafety) {
-    graph.graph.discovery_safety = discoverySafety
-  }
-  if (isRecord(parsed.indexing_completeness)) {
-    graph.graph.indexing_completeness = parsed.indexing_completeness
-  }
-  if (isRecord(parsed.extraction_receipt)) {
-    graph.graph.extraction_receipt = parsed.extraction_receipt
-  }
-  return graph
+  return loadGraphArtifact(graphPath)
 }
 
 export function communitiesFromGraph(graph: KnowledgeGraph): Communities {
@@ -333,7 +268,7 @@ function traversalSteps(
     neighbor,
     edge: [nodeId, neighbor] as [string, string],
   }))
-  if (direction === 'outgoing' || !graph.isDirected()) {
+  if (direction === 'outgoing') {
     return outgoing
   }
 
@@ -437,6 +372,7 @@ export function subgraphToText(graph: KnowledgeGraph, nodes: Set<string>, edges:
 
   const charBudget = tokenBudget * QUERY_CHARS_PER_TOKEN
   const lines: string[] = []
+  const emittedEdgeIds = new Set<string>()
 
   const sortedNodes = [...nodes].filter((nodeId) => graph.hasNode(nodeId)).sort((left, right) => graph.degree(right) - graph.degree(left) || left.localeCompare(right))
   for (const nodeId of sortedNodes) {
@@ -454,10 +390,15 @@ export function subgraphToText(graph: KnowledgeGraph, nodes: Set<string>, edges:
       continue
     }
 
-    const attributes = graph.edgeAttributes(source, target)
-    lines.push(
-      `EDGE ${sanitizeLabel(String(graph.nodeAttributes(source).label ?? source))} --${String(attributes.relation ?? '')} [${String(attributes.confidence ?? '')}]--> ${sanitizeLabel(String(graph.nodeAttributes(target).label ?? target))}`,
-    )
+    for (const edge of graph.edgesBetween(source, target)) {
+      if (emittedEdgeIds.has(edge.id)) {
+        continue
+      }
+      emittedEdgeIds.add(edge.id)
+      lines.push(
+        `EDGE ${sanitizeLabel(String(graph.nodeAttributes(source).label ?? source))} --${String(edge.attributes.relation ?? '')} [${String(edge.attributes.confidence ?? '')}]--> ${sanitizeLabel(String(graph.nodeAttributes(target).label ?? target))}`,
+      )
+    }
   }
 
   const output = lines.join('\n')
@@ -557,13 +498,14 @@ export function getNeighbors(graph: KnowledgeGraph, label: string, relationFilte
 
   const normalizedFilter = relationFilter.toLowerCase()
   const lines = [`Neighbors of ${String(graph.nodeAttributes(match).label ?? match)}:`]
-  for (const neighbor of graph.neighbors(match)) {
-    const edgeAttributes = graph.edgeAttributes(match, neighbor)
-    const relation = String(edgeAttributes.relation ?? '')
-    if (normalizedFilter && !relation.toLowerCase().includes(normalizedFilter)) {
-      continue
+  for (const neighbor of graph.successors(match)) {
+    for (const edge of graph.edgesBetween(match, neighbor)) {
+      const relation = String(edge.attributes.relation ?? '')
+      if (normalizedFilter && !relation.toLowerCase().includes(normalizedFilter)) {
+        continue
+      }
+      lines.push(`  --> ${String(graph.nodeAttributes(neighbor).label ?? neighbor)} [${relation}] [${String(edge.attributes.confidence ?? '')}]`)
     }
-    lines.push(`  --> ${String(graph.nodeAttributes(neighbor).label ?? neighbor)} [${relation}] [${String(edgeAttributes.confidence ?? '')}]`)
   }
   return lines.join('\n')
 }
@@ -659,7 +601,7 @@ function shortestPathNodeIds(graph: KnowledgeGraph, sourceNodeId: string, target
       continue
     }
 
-    for (const neighbor of graph.neighbors(nodeId)) {
+    for (const neighbor of graph.successors(nodeId)) {
       if (visited.has(neighbor)) {
         continue
       }
@@ -731,11 +673,12 @@ export function shortestPath(graph: KnowledgeGraph, source: string, target: stri
     if (!sourceNodeId || !targetNodeId) {
       continue
     }
-    const edgeAttributes = graph.edgeAttributes(sourceNodeId, targetNodeId)
-    const confidence = String(edgeAttributes.confidence ?? '')
-    segments.push(
-      `--${String(edgeAttributes.relation ?? '')}${confidence ? ` [${confidence}]` : ''}--> ${String(graph.nodeAttributes(targetNodeId).label ?? targetNodeId)}`,
-    )
+    const edgeLabels = graph.edgesBetween(sourceNodeId, targetNodeId).map((edge) => {
+      const confidence = String(edge.attributes.confidence ?? '')
+      return `${String(edge.attributes.relation ?? '')}${confidence ? ` [${confidence}]` : ''}`
+    })
+    const relationText = edgeLabels.length === 1 ? edgeLabels[0] : `{${edgeLabels.join(' | ')}}`
+    segments.push(`--${relationText}--> ${String(graph.nodeAttributes(targetNodeId).label ?? targetNodeId)}`)
   }
 
   return `Shortest path (${hops} hops):\n  ${segments.join(' ')}`

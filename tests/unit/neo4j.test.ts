@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 import { describe, expect, test, vi } from 'vitest'
 
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import { type Neo4jDependencies, pushGraphToNeo4j, resolveNeo4jPushConfig, sanitizeNeo4jLabel, sanitizeNeo4jRelation } from '../../src/infrastructure/neo4j.js'
 
 function withTempDir<T>(callback: (tempDir: string) => T): T {
@@ -20,7 +20,8 @@ function makeGraph(): KnowledgeGraph {
   const graph = new KnowledgeGraph()
   graph.addNode('auth', { label: 'AuthService', file_type: 'code', source_file: 'main.py', community: 1 })
   graph.addNode('client', { label: 'HttpClient', file_type: 'code', source_file: 'client.py', community: 1 })
-  graph.addEdge('auth', 'client', { relation: 'depends on', confidence: 'EXTRACTED' })
+  graph.addEdge('auth', 'client', { relation: 'depends on', confidence: 'EXTRACTED', source_location: 'L1' })
+  graph.addEdge('auth', 'client', { relation: 'depends on', confidence: 'EXTRACTED', source_location: 'L2' })
   return graph
 }
 
@@ -128,12 +129,17 @@ describe('neo4j integration helpers', () => {
     expect(sessionFactory).toHaveBeenCalledWith({ database: 'madar' })
     expect(executeWriteSpy).toHaveBeenCalledTimes(1)
     expect(run).toHaveBeenCalledWith(expect.stringContaining('MERGE (n:Code {id: $id})'), expect.objectContaining({ id: 'auth' }))
-    expect(run).toHaveBeenCalledWith(expect.stringContaining('MERGE (a)-[r:DEPENDS_ON]->(b)'), expect.objectContaining({ src: 'auth', tgt: 'client' }))
+    expect(run).toHaveBeenCalledWith(
+      expect.stringContaining('MERGE (a)-[r:DEPENDS_ON {id: $edgeId}]->(b)'),
+      expect.objectContaining({ src: 'auth', tgt: 'client', edgeId: expect.stringMatching(/^edge_[a-f0-9]{32}$/) }),
+    )
+    expect(run.mock.calls.filter(([query]) => String(query).includes('MERGE (a)-[r:DEPENDS_ON')).map(([, params]) => params.edgeId)).toHaveLength(2)
+    expect(new Set(run.mock.calls.filter(([query]) => String(query).includes('MERGE (a)-[r:DEPENDS_ON')).map(([, params]) => params.edgeId)).size).toBe(2)
     expect(result).toEqual({
       uri: 'bolt://localhost:7687',
       database: 'madar',
       nodes: 2,
-      edges: 1,
+      edges: 2,
     })
     expect(sessionClose).toHaveBeenCalledTimes(1)
     expect(driverClose).toHaveBeenCalledTimes(1)

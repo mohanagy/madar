@@ -236,8 +236,8 @@ describe('public marketing copy honesty', () => {
 
     it('starts the walkthrough with the one-command trial flow before the manual generate path', () => {
       expect(content).toContain('madar try "how does password reset request enqueue the reset email" examples/sample-workspace')
-      expect(content).toContain('madar generate examples/sample-workspace --no-html')
-      expect(content.indexOf('madar try')).toBeLessThan(content.indexOf('madar generate examples/sample-workspace --no-html'))
+      expect(content).toContain('madar generate examples/sample-workspace')
+      expect(content.indexOf('madar try')).toBeLessThan(content.indexOf('madar generate examples/sample-workspace'))
       expect(content).toContain('cd examples/sample-workspace')
       expect(content).toContain('madar summary out/graph.json')
       expect(content).toContain('madar pack')
@@ -245,7 +245,7 @@ describe('public marketing copy honesty', () => {
     })
 
     it('mentions the strict SPI comparison path and the compare artifacts users should notice', () => {
-      expect(content).toContain('madar generate examples/sample-workspace --spi --no-html')
+      expect(content).toContain('madar generate examples/sample-workspace --spi')
       expect(content).toContain('--baseline-mode pack_only')
       expect(content).toContain('report.share-safe.json')
       expect(lower).toContain('execution_slice')
@@ -345,7 +345,7 @@ describe('public marketing copy honesty', () => {
     it('keeps hosted-dashboard positioning deferred until share-safe demand exceeds the local report path', () => {
       expect(lower).toContain('hosted dashboard')
       expect(lower).toContain('report.share-safe.json')
-      expect(lower).toContain('graph.html')
+      expect(lower).toContain('canonical `graph.json`')
       expect(lower).toContain('explicit customer demand')
       expect(lower).toContain('no cloud indexing assumption')
     })
@@ -418,10 +418,10 @@ describe('public marketing copy honesty', () => {
     it('recommends deferring a hosted dashboard in favor of the current local report bundle', () => {
       expect(content).toContain('# Share-safe dashboard decision')
       expect(lower).toContain('recommendation: defer')
-      expect(lower).toContain('graph.html')
+      expect(lower).toContain('madar serve')
       expect(lower).toContain('graph_report.md')
       expect(lower).toContain('report.share-safe.json')
-      expect(lower).toContain('local html report')
+      expect(lower).toContain('local query and inspection endpoints')
     })
 
     it('defines the trust boundary and the threshold for revisiting the idea', () => {

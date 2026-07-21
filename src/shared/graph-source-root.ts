@@ -1,6 +1,7 @@
-import { readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { basename, dirname, resolve } from 'node:path'
 
+import { loadGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
 import { resolveWorkspaceGraphPath } from './workspace.js'
 
 interface GraphRootCarrier {
@@ -10,9 +11,9 @@ interface GraphRootCarrier {
 }
 
 /**
- * Returns the source workspace recorded in a graph. New graphs always carry
- * `root_path`; the path-based fallback preserves compatibility with older
- * `<project>/out/graph.json` artifacts.
+ * Returns the source workspace recorded in a graph. Canonical artifacts
+ * normally carry `root_path`; in-memory graphs without it retain the
+ * path-based workspace inference used by programmatic callers.
  */
 export function resolveGraphSourceRoot(graphPath: string, graph?: GraphRootCarrier): string {
   const storedRoot = graph?.graph?.root_path
@@ -24,13 +25,16 @@ export function resolveGraphSourceRoot(graphPath: string, graph?: GraphRootCarri
   return basename(graphDirectory) === 'out' ? dirname(graphDirectory) : graphDirectory
 }
 
-/** Reads just enough of graph.json to resolve its recorded source workspace. */
+/**
+ * Resolves the source workspace from canonical metadata when an artifact exists.
+ * Pure path callers may pass a prospective graph path, so a missing artifact
+ * retains deterministic path inference. Existing artifacts are always parsed
+ * strictly; legacy or corrupt files must be regenerated.
+ */
 export function readGraphSourceRoot(graphPath: string): string {
   const resolvedGraphPath = resolveWorkspaceGraphPath(graphPath)
-  try {
-    const parsed = JSON.parse(readFileSync(resolvedGraphPath, 'utf8')) as { root_path?: unknown }
-    return resolveGraphSourceRoot(resolvedGraphPath, { graph: { root_path: parsed.root_path } })
-  } catch {
+  if (!existsSync(resolvedGraphPath)) {
     return resolveGraphSourceRoot(resolvedGraphPath)
   }
+  return resolveGraphSourceRoot(resolvedGraphPath, loadGraphArtifact(resolvedGraphPath))
 }

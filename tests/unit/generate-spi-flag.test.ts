@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, test } from 'vitest'
 
 import { parseGenerateArgs } from '../../src/cli/parser.js'
 import { generateGraph } from '../../src/infrastructure/generate.js'
+import { readCanonicalGraphFixture } from '../helpers/graph-artifact.js'
 
 function mkSandbox(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix))
@@ -37,10 +38,8 @@ describe('parseGenerateArgs extraction modes', () => {
   })
 
   it('keeps extraction flags mutually exclusive and co-exists with other flags', () => {
-    const opts = parseGenerateArgs(['--spi', '--directed', '--no-html'])
+    const opts = parseGenerateArgs(['--spi'])
     expect(opts.extractionMode).toBe('spi')
-    expect(opts.directed).toBe(true)
-    expect(opts.noHtml).toBe(true)
     expect(() => parseGenerateArgs(['--legacy', '--spi'])).toThrow('--legacy and --spi cannot be used together')
     expect(() => parseGenerateArgs(['--spi', '--legacy'])).toThrow('--legacy and --spi cannot be used together')
     expect(() => parseGenerateArgs(['--cluster-only', '--legacy'])).toThrow('--cluster-only cannot be combined with --legacy or --spi')
@@ -71,13 +70,8 @@ describe('generateGraph capability-aware auto extraction', () => {
   it('keeps SPI metadata, legacy semantics, Go fallback, documents, and collision-safe IDs in one graph', () => {
     writeMixedWorkspace()
 
-    const result = generateGraph(sandbox, { noHtml: true })
-    const graph = JSON.parse(readFileSync(result.graphPath, 'utf8')) as {
-      spi_mode?: unknown
-      generation_policy?: { version?: unknown; settings?: { extraction_mode?: unknown } }
-      extraction_receipt?: Record<string, unknown>
-      nodes: Array<Record<string, unknown>>
-    }
+    const result = generateGraph(sandbox, {  })
+    const graph = readCanonicalGraphFixture(result.graphPath)
     const indexing = JSON.parse(readFileSync(result.indexingManifestPath!, 'utf8')) as {
       requested_extraction_mode?: unknown
       outcomes: Array<Record<string, unknown>>
@@ -142,11 +136,9 @@ describe('generateGraph capability-aware auto extraction', () => {
   it('uses the SPI cache while retaining legacy semantics and re-extracting the fallback on a warm auto build', () => {
     writeMixedWorkspace()
 
-    const first = generateGraph(sandbox, { extractionMode: 'auto', noHtml: true })
-    const second = generateGraph(sandbox, { extractionMode: 'auto', noHtml: true })
-    const secondGraph = JSON.parse(readFileSync(second.graphPath, 'utf8')) as {
-      nodes: Array<Record<string, unknown>>
-    }
+    const first = generateGraph(sandbox, { extractionMode: 'auto' })
+    const second = generateGraph(sandbox, { extractionMode: 'auto' })
+    const secondGraph = readCanonicalGraphFixture(second.graphPath)
 
     expect(first.cache).toEqual(expect.objectContaining({ strategy: 'spi', hit: false, fileCount: 1 }))
     expect(second.cache).toEqual(expect.objectContaining({ strategy: 'spi', hit: true, fileCount: 1 }))
@@ -160,10 +152,8 @@ describe('generateGraph capability-aware auto extraction', () => {
   it('does not use the fallback in explicit SPI mode', () => {
     writeMixedWorkspace()
 
-    const result = generateGraph(sandbox, { extractionMode: 'spi', noHtml: true })
-    const graph = JSON.parse(readFileSync(result.graphPath, 'utf8')) as {
-      nodes: Array<Record<string, unknown>>
-    }
+    const result = generateGraph(sandbox, { extractionMode: 'spi' })
+    const graph = readCanonicalGraphFixture(result.graphPath)
     const indexing = JSON.parse(readFileSync(result.indexingManifestPath!, 'utf8')) as {
       requested_extraction_mode?: unknown
       outcomes: Array<Record<string, unknown>>
@@ -185,25 +175,21 @@ describe('generateGraph capability-aware auto extraction', () => {
     writeFile(sandbox, 'cmd/main.go', 'package main\nfunc main() {}\n')
     writeFile(sandbox, 'docs/notes.md', '# Retained non-code evidence\n')
 
-    const result = generateGraph(sandbox, { extractionMode: 'spi', noHtml: true })
-    const graph = JSON.parse(readFileSync(result.graphPath, 'utf8')) as {
-      spi_mode?: unknown
-    }
+    const result = generateGraph(sandbox, { extractionMode: 'spi' })
+    const graph = readCanonicalGraphFixture(result.graphPath)
 
     expect(graph.spi_mode).toBeUndefined()
   })
 
   it('preserves an existing auto graph SPI marker during a cluster-only rebuild', () => {
     writeFile(sandbox, 'src/only-spi.ts', 'export const answer = 42\n')
-    generateGraph(sandbox, { extractionMode: 'auto', noHtml: true })
+    generateGraph(sandbox, { extractionMode: 'auto' })
 
     rmSync(join(sandbox, 'src/only-spi.ts'))
     writeFile(sandbox, 'cmd/main.go', 'package main\nfunc main() {}\n')
 
-    const clustered = generateGraph(sandbox, { clusterOnly: true, noHtml: true })
-    const graph = JSON.parse(readFileSync(clustered.graphPath, 'utf8')) as {
-      spi_mode?: unknown
-    }
+    const clustered = generateGraph(sandbox, { clusterOnly: true })
+    const graph = readCanonicalGraphFixture(clustered.graphPath)
     const indexing = JSON.parse(readFileSync(clustered.indexingManifestPath!, 'utf8')) as {
       outcomes: Array<Record<string, unknown>>
     }
@@ -227,11 +213,8 @@ describe('generateGraph capability-aware auto extraction', () => {
     const result = generateGraph(sandbox, {
       extractionMode: 'auto',
       followSymlinks: true,
-      noHtml: true,
     })
-    const graph = JSON.parse(readFileSync(result.graphPath, 'utf8')) as {
-      nodes: Array<Record<string, unknown>>
-    }
+    const graph = readCanonicalGraphFixture(result.graphPath)
     const indexing = JSON.parse(readFileSync(result.indexingManifestPath!, 'utf8')) as {
       outcomes: Array<Record<string, unknown>>
     }
@@ -246,7 +229,6 @@ describe('generateGraph capability-aware auto extraction', () => {
     const warm = generateGraph(sandbox, {
       extractionMode: 'auto',
       followSymlinks: true,
-      noHtml: true,
     })
     expect(warm.cache).toEqual(expect.objectContaining({ strategy: 'spi', hit: true, fileCount: 1 }))
   })
@@ -263,11 +245,8 @@ describe('generateGraph strict SPI extraction', () => {
       'export function bar(): number { return foo() }',
     ].join('\n') + '\n')
 
-    const result = generateGraph(sandbox, { extractionMode: 'spi', noHtml: true })
-    const parsed = JSON.parse(readFileSync(result.graphPath, 'utf8')) as {
-      spi_mode?: unknown
-      nodes: Array<Record<string, unknown>>
-    }
+    const result = generateGraph(sandbox, { extractionMode: 'spi' })
+    const parsed = readCanonicalGraphFixture(result.graphPath)
 
     // Standard graph.json should exist with code nodes for foo + bar.
     expect(existsSync(result.graphPath)).toBe(true)
@@ -291,10 +270,8 @@ describe('generateGraph strict SPI extraction', () => {
       'app.get("/users", listUsers)',
     ].join('\n') + '\n')
 
-    const result = generateGraph(sandbox, { extractionMode: 'spi', noHtml: true })
-    const parsed = JSON.parse(readFileSync(result.graphPath, 'utf8')) as {
-      nodes: Array<Record<string, unknown>>
-    }
+    const result = generateGraph(sandbox, { extractionMode: 'spi' })
+    const parsed = readCanonicalGraphFixture(result.graphPath)
     const listUsersNode = parsed.nodes.find((n) => n.label === 'listUsers()')
     expect(listUsersNode).toBeDefined()
     expect(listUsersNode?.framework).toBe('express')
@@ -306,10 +283,10 @@ describe('generateGraph strict SPI extraction', () => {
   it('uses the SPI cache on the second call (notes include "cache hit")', () => {
     writeFile(sandbox, 'src/foo.ts', 'export function foo(): number { return 1 }\n')
 
-    const first = generateGraph(sandbox, { extractionMode: 'spi', noHtml: true })
+    const first = generateGraph(sandbox, { extractionMode: 'spi' })
     expect(first.notes.some((n) => n.includes('SPI build'))).toBe(true)
 
-    const second = generateGraph(sandbox, { extractionMode: 'spi', noHtml: true })
+    const second = generateGraph(sandbox, { extractionMode: 'spi' })
     expect(second.notes.some((n) => n.toLowerCase().includes('cache hit'))).toBe(true)
   })
 
@@ -317,10 +294,8 @@ describe('generateGraph strict SPI extraction', () => {
     writeFile(sandbox, 'src/foo.ts', 'export function foo(): number { return 1 }\n')
     writeFile(sandbox, 'docs/notes.md', '# Notes\nGraph docs\n')
 
-    const first = generateGraph(sandbox, { extractionMode: 'spi', noHtml: true })
-    const firstGraph = JSON.parse(readFileSync(first.graphPath, 'utf8')) as {
-      nodes: Array<Record<string, unknown>>
-    }
+    const first = generateGraph(sandbox, { extractionMode: 'spi' })
+    const firstGraph = readCanonicalGraphFixture(first.graphPath)
     expect(first.extractableFiles).toBe(2)
     expect(first.extractedFiles).toBe(2)
     expect(first.cache).toEqual(expect.objectContaining({
@@ -336,7 +311,7 @@ describe('generateGraph strict SPI extraction', () => {
       ]),
     )
 
-    const second = generateGraph(sandbox, { extractionMode: 'spi', noHtml: true })
+    const second = generateGraph(sandbox, { extractionMode: 'spi' })
     expect(second.extractableFiles).toBe(2)
     expect(second.extractedFiles).toBe(1)
     expect(second.cache).toEqual(expect.objectContaining({
@@ -350,11 +325,8 @@ describe('generateGraph strict SPI extraction', () => {
   it('uses the legacy extract pipeline when explicitly selected', () => {
     writeFile(sandbox, 'src/foo.ts', 'export function foo(): number { return 1 }\n')
 
-    const result = generateGraph(sandbox, { extractionMode: 'legacy', noHtml: true })
-    const parsed = JSON.parse(readFileSync(result.graphPath, 'utf8')) as {
-      spi_mode?: unknown
-      nodes: Array<Record<string, unknown>>
-    }
+    const result = generateGraph(sandbox, { extractionMode: 'legacy' })
+    const parsed = readCanonicalGraphFixture(result.graphPath)
 
     // No SPI notes in the legacy path.
     const hasSpiNote = result.notes.some((note) => note.toLowerCase().includes('spi'))
@@ -368,32 +340,24 @@ describe('generateGraph strict SPI extraction', () => {
   it('clears stale spi_mode on an explicit legacy update after an SPI build', () => {
     writeFile(sandbox, 'src/foo.ts', 'export function foo(): number { return 1 }\n')
 
-    const spiResult = generateGraph(sandbox, { extractionMode: 'spi', noHtml: true })
-    const spiGraph = JSON.parse(readFileSync(spiResult.graphPath, 'utf8')) as {
-      spi_mode?: unknown
-    }
+    const spiResult = generateGraph(sandbox, { extractionMode: 'spi' })
+    const spiGraph = readCanonicalGraphFixture(spiResult.graphPath)
     expect(spiGraph.spi_mode).toBe(true)
 
-    const updated = generateGraph(sandbox, { extractionMode: 'legacy', update: true, noHtml: true })
-    const updatedGraph = JSON.parse(readFileSync(updated.graphPath, 'utf8')) as {
-      spi_mode?: unknown
-    }
+    const updated = generateGraph(sandbox, { extractionMode: 'legacy', update: true })
+    const updatedGraph = readCanonicalGraphFixture(updated.graphPath)
     expect(updatedGraph.spi_mode).toBeUndefined()
   })
 
   it('does not let unsupported files alter strict SPI source IDs', () => {
     writeFile(sandbox, 'src/main.ts', 'export function answer(): number { return 42 }\n')
-    const before = generateGraph(sandbox, { extractionMode: 'spi', noHtml: true })
-    const beforeGraph = JSON.parse(readFileSync(before.graphPath, 'utf8')) as {
-      nodes: Array<Record<string, unknown>>
-    }
+    const before = generateGraph(sandbox, { extractionMode: 'spi' })
+    const beforeGraph = readCanonicalGraphFixture(before.graphPath)
     const beforeSource = beforeGraph.nodes.find((node) => String(node.source_file).endsWith('/src/main.ts'))
 
     writeFile(sandbox, 'cmd/main.go', 'package main\nfunc main() {}\n')
-    const after = generateGraph(sandbox, { extractionMode: 'spi', noHtml: true })
-    const afterGraph = JSON.parse(readFileSync(after.graphPath, 'utf8')) as {
-      nodes: Array<Record<string, unknown>>
-    }
+    const after = generateGraph(sandbox, { extractionMode: 'spi' })
+    const afterGraph = readCanonicalGraphFixture(after.graphPath)
     const afterSource = afterGraph.nodes.find((node) => String(node.source_file).endsWith('/src/main.ts'))
 
     expect(afterSource?.id).toBe(beforeSource?.id)
@@ -401,12 +365,11 @@ describe('generateGraph strict SPI extraction', () => {
 
   it('rejects a programmatic cluster-only request that conflicts with the stored extraction mode', () => {
     writeFile(sandbox, 'src/foo.ts', 'export const foo = 1\n')
-    generateGraph(sandbox, { extractionMode: 'spi', noHtml: true })
+    generateGraph(sandbox, { extractionMode: 'spi' })
 
     expect(() => generateGraph(sandbox, {
       clusterOnly: true,
       extractionMode: 'legacy',
-      noHtml: true,
     })).toThrow('cannot change extraction mode from spi to legacy')
   })
 })

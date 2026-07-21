@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 
-import { KnowledgeGraph } from '../../contracts/graph.js'
+import { KnowledgeGraph } from '../../domain/graph/directed-multigraph.js'
 import type { ContextSessionDiagnostics } from '../../contracts/context-session.js'
 import { bfs, estimateQueryTokens, queryGraph, scoreNodes } from '../../runtime/serve.js'
 

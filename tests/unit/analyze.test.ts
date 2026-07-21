@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
-import { buildFromJson } from '../../src/pipeline/build.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
+import { buildGraphFromExtraction } from '../../src/application/build-graph.js'
 import {
   _fileCategory,
   _isConceptNode,
@@ -16,11 +16,12 @@ import {
   workspaceBridges,
 } from '../../src/pipeline/analyze.js'
 import { cluster } from '../../src/pipeline/cluster.js'
+import { diffGraphs } from '../../src/runtime/diff.js'
 
 const FIXTURES_DIR = join(process.cwd(), 'tests', 'fixtures')
 
 function makeGraph(): KnowledgeGraph {
-  return buildFromJson(JSON.parse(readFileSync(join(FIXTURES_DIR, 'extraction.json'), 'utf8')))
+  return buildGraphFromExtraction(JSON.parse(readFileSync(join(FIXTURES_DIR, 'extraction.json'), 'utf8')))
 }
 
 function makeSimpleGraph(nodes: Array<[string, string]>, edges: Array<[string, string, string, string]>): KnowledgeGraph {
@@ -152,8 +153,8 @@ describe('analyze', () => {
     graph.addEdge('c', 'd', { relation: 'calls', confidence: 'EXTRACTED', weight: 1.0, source_file: 'repo1/data.py' })
 
     const nodeCommunity = { a: 0, c: 0, b: 1, d: 1 }
-    const ambiguous = _surpriseScore(graph, 'a', 'b', graph.edgeAttributes('a', 'b'), nodeCommunity, 'repo1/model.py', 'repo2/train.py')
-    const extracted = _surpriseScore(graph, 'c', 'd', graph.edgeAttributes('c', 'd'), nodeCommunity, 'repo1/data.py', 'repo2/eval.py')
+    const ambiguous = _surpriseScore(graph, 'a', 'b', graph.uniqueEdgeBetween('a', 'b').attributes, nodeCommunity, 'repo1/model.py', 'repo2/train.py')
+    const extracted = _surpriseScore(graph, 'c', 'd', graph.uniqueEdgeBetween('c', 'd').attributes, nodeCommunity, 'repo1/data.py', 'repo2/eval.py')
     expect(ambiguous[0]).toBeGreaterThan(extracted[0])
   })
 
@@ -171,8 +172,8 @@ describe('analyze', () => {
     graph.addEdge('c', 'd', { relation: 'calls', confidence: 'EXTRACTED', weight: 1.0, source_file: 'code/train.py' })
 
     const nodeCommunity = { a: 0, b: 1, c: 0, d: 0 }
-    const crossType = _surpriseScore(graph, 'a', 'b', graph.edgeAttributes('a', 'b'), nodeCommunity, 'code/model.py', 'papers/flash.pdf')
-    const sameType = _surpriseScore(graph, 'c', 'd', graph.edgeAttributes('c', 'd'), nodeCommunity, 'code/train.py', 'code/data.py')
+    const crossType = _surpriseScore(graph, 'a', 'b', graph.uniqueEdgeBetween('a', 'b').attributes, nodeCommunity, 'code/model.py', 'papers/flash.pdf')
+    const sameType = _surpriseScore(graph, 'c', 'd', graph.uniqueEdgeBetween('c', 'd').attributes, nodeCommunity, 'code/train.py', 'code/data.py')
     expect(crossType[0]).toBeGreaterThan(sameType[0])
     expect(crossType[1].some((reason) => reason.includes('code') && reason.includes('paper'))).toBe(true)
   })
@@ -199,7 +200,7 @@ describe('analyze', () => {
   })
 
   it('measures weakly connected fragmentation signals for workspace parity reporting', () => {
-    const graph = new KnowledgeGraph(true)
+    const graph = new KnowledgeGraph()
     for (const nodeId of ['a', 'b', 'c', 'd', 'e']) {
       graph.addNode(nodeId, { label: nodeId.toUpperCase(), source_file: `${nodeId}.ts`, file_type: 'code' })
     }
@@ -227,11 +228,14 @@ describe('analyze', () => {
   })
 
   it('measures low-cohesion community signals on the shared entity basis', () => {
-    const graph = new KnowledgeGraph(true)
+    const graph = new KnowledgeGraph()
+    for (let index = 1; index <= 15; index += 1) {
+      const nodeId = `n${index}`
+      graph.addNode(nodeId, { label: `Node ${index}`, source_file: `module-${index}.ts`, file_type: 'code' })
+    }
     for (let index = 1; index <= 15; index += 1) {
       const nodeId = `n${index}`
       const nextNodeId = `n${index === 15 ? 1 : index + 1}`
-      graph.addNode(nodeId, { label: `Node ${index}`, source_file: `module-${index}.ts`, file_type: 'code' })
       graph.addEdge(nodeId, nextNodeId, { relation: 'calls', confidence: 'EXTRACTED', source_file: `module-${index}.ts` })
     }
     graph.addNode('file', { label: 'module-1.ts', source_file: 'module-1.ts', file_type: 'code' })
@@ -252,12 +256,15 @@ describe('analyze', () => {
   })
 
   it('ignores non-entity connectors when deriving low-cohesion communities', () => {
-    const graph = new KnowledgeGraph(true)
+    const graph = new KnowledgeGraph()
     for (const prefix of ['a', 'b'] as const) {
       for (let index = 1; index <= 8; index += 1) {
         const nodeId = `${prefix}${index}`
-        const nextNodeId = `${prefix}${index === 8 ? 1 : index + 1}`
         graph.addNode(nodeId, { label: `${prefix.toUpperCase()} Node ${index}`, source_file: `${nodeId}.ts`, file_type: 'code' })
+      }
+      for (let index = 1; index <= 8; index += 1) {
+        const nodeId = `${prefix}${index}`
+        const nextNodeId = `${prefix}${index === 8 ? 1 : index + 1}`
         graph.addEdge(nodeId, nextNodeId, { relation: 'calls', confidence: 'EXTRACTED', source_file: `${nodeId}.ts` })
       }
     }
@@ -281,7 +288,7 @@ describe('analyze', () => {
   })
 
   it('returns zeroed structure metrics when only file and concept nodes exist', () => {
-    const graph = new KnowledgeGraph(true)
+    const graph = new KnowledgeGraph()
     graph.addNode('file', { label: 'file.ts', source_file: 'file.ts', file_type: 'code' })
     graph.addNode('concept', { label: 'Shared infra', source_file: '' })
     graph.addEdge('file', 'concept', { relation: 'contains', confidence: 'EXTRACTED', source_file: 'file.ts' })
@@ -388,20 +395,103 @@ describe('analyze', () => {
   })
 
   it('treats opposite edge directions as different changes for directed graphs', () => {
-    const oldGraph = new KnowledgeGraph(true)
+    const oldGraph = new KnowledgeGraph()
     oldGraph.addNode('n1', { label: 'Alpha', source_file: 'test.py', file_type: 'code' })
     oldGraph.addNode('n2', { label: 'Beta', source_file: 'test.py', file_type: 'code' })
     oldGraph.addEdge('n1', 'n2', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'test.py' })
 
-    const newGraph = new KnowledgeGraph(true)
+    const newGraph = new KnowledgeGraph()
     newGraph.addNode('n1', { label: 'Alpha', source_file: 'test.py', file_type: 'code' })
     newGraph.addNode('n2', { label: 'Beta', source_file: 'test.py', file_type: 'code' })
     newGraph.addEdge('n2', 'n1', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'test.py' })
 
     const diff = graphDiff(oldGraph, newGraph)
 
-    expect(diff.new_edges).toEqual([{ source: 'n2', target: 'n1', relation: 'calls', confidence: 'EXTRACTED' }])
-    expect(diff.removed_edges).toEqual([{ source: 'n1', target: 'n2', relation: 'calls', confidence: 'EXTRACTED' }])
+    expect(diff.new_edges).toEqual([expect.objectContaining({ source: 'n2', target: 'n1', relation: 'calls', confidence: 'EXTRACTED' })])
+    expect(diff.removed_edges).toEqual([expect.objectContaining({ source: 'n1', target: 'n2', relation: 'calls', confidence: 'EXTRACTED' })])
+  })
+
+  it('reports parallel edges that differ only by evidence', () => {
+    const oldGraph = makeSimpleGraph([
+      ['n1', 'Alpha'],
+      ['n2', 'Beta'],
+    ], [])
+    oldGraph.addEdge('n1', 'n2', {
+      relation: 'calls',
+      confidence: 'EXTRACTED',
+      source_file: 'test.py',
+      source_location: 'L10',
+    })
+
+    const newGraph = makeSimpleGraph([
+      ['n1', 'Alpha'],
+      ['n2', 'Beta'],
+    ], [])
+    newGraph.addEdge('n1', 'n2', {
+      relation: 'calls',
+      confidence: 'EXTRACTED',
+      source_file: 'test.py',
+      source_location: 'L10',
+    })
+    const addedEdgeId = newGraph.addEdge('n1', 'n2', {
+      relation: 'calls',
+      confidence: 'EXTRACTED',
+      source_file: 'test.py',
+      source_location: 'L20',
+      evidence: { line: 20 },
+    })
+
+    const diff = graphDiff(oldGraph, newGraph)
+
+    expect(diff.new_edges).toEqual([expect.objectContaining({
+      id: addedEdgeId,
+      source: 'n1',
+      target: 'n2',
+      relation: 'calls',
+      confidence: 'EXTRACTED',
+      attributes: expect.objectContaining({ evidence: { line: 20 } }),
+    })])
+    expect(diff.removed_edges).toEqual([])
+    expect(diff.summary).toBe('1 new edge')
+    expect(diffGraphs(oldGraph, newGraph)).toContain(`[edge ${addedEdgeId}] evidence={"line":20}`)
+  })
+
+  it('reports attribute-only edge changes with both old and new values', () => {
+    const oldGraph = makeSimpleGraph([
+      ['n1', 'Alpha'],
+      ['n2', 'Beta'],
+    ], [])
+    const oldEdgeId = oldGraph.addEdge('n1', 'n2', {
+      relation: 'calls',
+      confidence: 'INFERRED',
+      source_file: 'test.py',
+    })
+
+    const newGraph = makeSimpleGraph([
+      ['n1', 'Alpha'],
+      ['n2', 'Beta'],
+    ], [])
+    const newEdgeId = newGraph.addEdge('n1', 'n2', {
+      relation: 'calls',
+      confidence: 'EXTRACTED',
+      source_file: 'test.py',
+    })
+
+    expect(newEdgeId).toBe(oldEdgeId)
+
+    const diff = graphDiff(oldGraph, newGraph)
+
+    expect(diff.new_edges).toEqual([expect.objectContaining({
+      id: newEdgeId,
+      confidence: 'EXTRACTED',
+      attributes: expect.objectContaining({ confidence: 'EXTRACTED' }),
+    })])
+    expect(diff.removed_edges).toEqual([expect.objectContaining({
+      id: oldEdgeId,
+      confidence: 'INFERRED',
+      attributes: expect.objectContaining({ confidence: 'INFERRED' }),
+    })])
+    expect(diff.summary).toBe('1 new edge, 1 edge removed')
   })
 
   it('generates suggested questions from graph signals', () => {
@@ -475,8 +565,11 @@ describe('analyze', () => {
     const graph = new KnowledgeGraph()
     for (let index = 0; index < 15; index += 1) {
       const nodeId = `n${index}`
-      const nextNodeId = `n${index === 14 ? 0 : index + 1}`
       graph.addNode(nodeId, { label: `Cycle ${index}`, source_file: `cycle-${index}.ts`, file_type: 'code' })
+    }
+    for (let index = 0; index < 15; index += 1) {
+      const nodeId = `n${index}`
+      const nextNodeId = `n${index === 14 ? 0 : index + 1}`
       graph.addEdge(nodeId, nextNodeId, { relation: 'calls', confidence: 'EXTRACTED', source_file: `cycle-${index}.ts` })
     }
     graph.addNode('file', { label: 'cycle-0.ts', source_file: 'cycle-0.ts', file_type: 'code' })

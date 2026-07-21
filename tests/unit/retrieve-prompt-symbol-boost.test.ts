@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import { compactRetrieveResult, retrieveContext } from '../../src/runtime/retrieve.js'
 
 function buildPromptCompetitionGraph(): KnowledgeGraph {

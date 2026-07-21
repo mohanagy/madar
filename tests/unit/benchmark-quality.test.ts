@@ -4,10 +4,10 @@ import { join } from 'node:path'
 
 import { existsSync } from 'node:fs'
 
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import { evaluateRetrievalQuality, formatQualityReport, GOLD_QUESTIONS, type GoldQuestion } from '../../src/infrastructure/benchmark/quality.js'
 import { type BenchmarkQuestionSpec } from '../../src/infrastructure/benchmark/questions.js'
-import { build } from '../../src/pipeline/build.js'
+import { buildGraph } from '../../src/application/build-graph.js'
 import { extractJs } from '../../src/pipeline/extract.js'
 import { retrieveContext } from '../../src/runtime/retrieve.js'
 import { loadGraph } from '../../src/runtime/serve.js'
@@ -24,8 +24,8 @@ function buildTestGraph(): KnowledgeGraph {
   return graph
 }
 
-function buildNamedConceptRankingGraph(directed: boolean): KnowledgeGraph {
-  const graph = new KnowledgeGraph(directed)
+function buildNamedConceptRankingGraph(): KnowledgeGraph {
+  const graph = new KnowledgeGraph()
   graph.addNode('auth_file', { label: 'auth-service.ts', file_type: 'code', source_file: 'src/auth/auth-service.ts', source_location: 'L1' })
   graph.addNode('auth_service', { label: 'AuthService', node_kind: 'class', file_type: 'code', source_file: 'src/auth/auth-service.ts', source_location: 'L3' })
   graph.addNode('login', { label: '.loginWithPassword()', node_kind: 'method', file_type: 'code', source_file: 'src/auth/auth-service.ts', source_location: 'L8' })
@@ -61,7 +61,7 @@ function stripFileNodes(extraction: ReturnType<typeof extractJs>): ReturnType<ty
 
 function buildFrameworkSupportGraph(): KnowledgeGraph {
   const fixturesDir = join(process.cwd(), 'tests', 'fixtures')
-  return build(
+  return buildGraph(
     [
       stripFileNodes(extractJs(join(fixturesDir, 'express-namespace-module-parent.ts'))),
       stripFileNodes(extractJs(join(fixturesDir, 'express-namespace-module-child.ts'))),
@@ -88,7 +88,7 @@ function buildFrameworkSupportGraph(): KnowledgeGraph {
       stripFileNodes(extractJs(join(fixturesDir, 'next-pages', 'pages', '_error.tsx'))),
       stripFileNodes(extractJs(join(fixturesDir, 'next-pages', 'pages', 'api', 'auth', '[...nextauth].ts'))),
     ],
-    { directed: true },
+    { rootPath: fixturesDir },
   )
 }
 
@@ -175,8 +175,8 @@ describe('retrieval quality benchmark', () => {
     expect(report.mrr).toBe(1)
   })
 
-  it.each([true, false])('ranks an explicitly named concept first for definition lookups (directed=%s)', (directed) => {
-    const graph = buildNamedConceptRankingGraph(directed)
+  it('ranks an explicitly named concept first for definition lookups', () => {
+    const graph = buildNamedConceptRankingGraph()
     const report = evaluateRetrievalQuality(
       graph,
       [{ question: 'where is tenant context defined for billing and auth', expected_labels: ['TenantContext'] }],
@@ -189,7 +189,7 @@ describe('retrieval quality benchmark', () => {
 
   it('does not let incidental concept phrases displace executable steps in runtime-flow questions', () => {
     const report = evaluateRetrievalQuality(
-      buildNamedConceptRankingGraph(true),
+      buildNamedConceptRankingGraph(),
       [{ question: 'how does password policy login create a tenant session', expected_labels: ['.loginWithPassword()'] }],
       3000,
     )

@@ -1,4 +1,4 @@
-import { KnowledgeGraph } from '../contracts/graph.js'
+import { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
 
 export type Communities = Record<number, string[]>
 
@@ -10,14 +10,9 @@ function edgeKey(left: string, right: string): string {
   return [left, right].sort().join('\u0000')
 }
 
-function edgeWeight(graph: KnowledgeGraph, source: string, target: string): number {
-  try {
-    const attributes = graph.edgeAttributes(source, target)
-    const weight = attributes.weight
-    return typeof weight === 'number' && Number.isFinite(weight) && weight > 0 ? weight : 1
-  } catch {
-    return 1
-  }
+function edgeWeight(attributes: Record<string, unknown>): number {
+  const weight = attributes.weight
+  return typeof weight === 'number' && Number.isFinite(weight) && weight > 0 ? weight : 1
 }
 
 interface LouvainState {
@@ -48,8 +43,8 @@ function buildLouvainState(graph: KnowledgeGraph): LouvainState {
 
   // Build adjacency with weights
   let totalWeight = 0
-  for (const [source, target] of graph.edgeEntries()) {
-    const weight = edgeWeight(graph, source, target)
+  for (const [source, target, attributes] of graph.edgeEntries()) {
+    const weight = edgeWeight(attributes)
     totalWeight += weight
 
     const sourceNeighbors = neighborWeights.get(source)
@@ -163,7 +158,8 @@ function louvainPass(state: LouvainState): boolean {
     const currentWeight = communityWeights.get(currentCommunity) ?? 0
     const stayGain = modularityGain(state, nodeId, currentCommunity, currentWeight)
 
-    for (const [candidateCommunity, weightToCommunity] of communityWeights) {
+    for (const [candidateCommunity, weightToCommunity] of [...communityWeights.entries()]
+      .sort(([leftCommunity], [rightCommunity]) => leftCommunity - rightCommunity)) {
       const gain = modularityGain(state, nodeId, candidateCommunity, weightToCommunity)
       if (gain - stayGain > 1e-10) {
         if (gain - stayGain > bestGain) {
@@ -212,7 +208,7 @@ function subClusterLargeCommunity(graph: KnowledgeGraph, nodeIds: string[], dept
 
   // Build a subgraph with only the community's nodes
   const nodeSet = new Set(nodeIds)
-  const subgraph = new KnowledgeGraph()
+  const subgraph = new KnowledgeGraph(typeof graph.graph.root_path === 'string' ? { root_path: graph.graph.root_path } : {})
 
   for (const nodeId of nodeIds) {
     subgraph.addNode(nodeId, graph.nodeAttributes(nodeId))
