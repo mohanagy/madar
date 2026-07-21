@@ -63,8 +63,9 @@ describe('core reset governance', () => {
     expect(roadmap).toContain('scorecard.md')
     expect(roadmap).toContain('## Passed — directed multigraph')
     expect(roadmap).toContain('## Passed — canonical TypeScript/JavaScript index')
-    expect(roadmap).toContain('## Ready — delete legacy extraction and non-code/other-language ingestion')
-    expect(roadmap).toContain('No phase is In progress')
+    expect(roadmap).toContain('## In progress — delete legacy extraction and non-code/other-language ingestion')
+    expect(roadmap).toContain('issues/588')
+    expect(roadmap).not.toContain('No phase is In progress')
     expect(roadmap).not.toContain('## In progress — canonical TypeScript/JavaScript index')
     expect(roadmap).toContain('## Next')
     expect(roadmap).toContain('## Later')
@@ -80,7 +81,8 @@ describe('core reset governance', () => {
     expect(scorecard).toContain('**Status:** accepted')
     expect(scorecard).toContain('| Directed multigraph | **Passed**')
     expect(scorecard).toContain('| Canonical TypeScript index | **Passed**')
-    expect(scorecard).toContain('| Legacy extraction plus non-code/other-language ingestion | **Ready — not In progress**')
+    expect(scorecard).toContain('| Legacy extraction plus non-code/other-language ingestion | **In progress**')
+    expect(scorecard).toContain('single In progress phase through #588')
     expect(scorecard).toContain('final CodeRabbit rerun was rate-limited')
     expect(scorecard).toContain('owner-approved exception')
     expect(scorecard).not.toContain('CI and review remain pending')
@@ -114,6 +116,13 @@ describe('core reset governance', () => {
         disposition: string
         status: string
         notes?: string
+        absorbs?: string[]
+        absorbed_by?: string
+        transferred_sources?: string[]
+        production_file_budget?: { added_max: number; removed_min: number }
+        production_loc_budget?: { added_max: number; removed_min: number; net_max: number }
+        runtime_dependency_budget?: { added_max: number; removed_min: number }
+        retired_cli_flags?: string[]
         completion?: {
           issue: string
           pull_request: string
@@ -145,15 +154,15 @@ describe('core reset governance', () => {
     expect(manifest.current).toMatchObject({
       updated_at: '2026-07-21',
       completed_phase: 'canonical-typescript-index',
-      active_phase: null,
-      ready_phase: 'legacy-extraction',
-      base_commit: 'f68d64482578f0c7992ec63095fa00e19ac25880',
+      active_phase: 'legacy-extraction',
+      ready_phase: null,
+      base_commit: '9a762d0a4e10a0ae210ba3f53bb1d4468367e81e',
       completed_phase_commit: '4dfd48194f2fab00b2cd2271a6f7917909dde9d4',
       production_typescript_files: 170,
       production_typescript_loc: 91_539,
-      production_loc_added: 5_538,
-      production_loc_removed: 7_791,
-      production_loc_net: -2_253,
+      production_loc_added: 0,
+      production_loc_removed: 0,
+      production_loc_net: 0,
     })
     expect(manifest.rules.length).toBeGreaterThan(0)
     expect(manifest.items.length).toBeGreaterThan(10)
@@ -216,9 +225,26 @@ describe('core reset governance', () => {
       independent_review_receipt: 'https://github.com/mohanagy/madar/pull/586#issuecomment-5036311350',
       unresolved_review_threads: 0,
     })
-    expect(manifest.items.find((item) => item.id === 'legacy-extraction')?.status).toBe('planned')
-    expect(manifest.items.find((item) => item.id === 'non-code-and-other-language-ingest')?.status).toBe('planned')
-    expect(manifest.items.filter((item) => item.status === 'in_progress')).toEqual([])
+    const legacy = manifest.items.find((item) => item.id === 'legacy-extraction')
+    const nonCode = manifest.items.find((item) => item.id === 'non-code-and-other-language-ingest')
+    expect(legacy).toMatchObject({
+      status: 'in_progress',
+      absorbs: ['non-code-and-other-language-ingest'],
+      production_file_budget: { added_max: 1, removed_min: 31 },
+      production_loc_budget: { added_max: 900, removed_min: 20_951, net_max: -20_000 },
+      runtime_dependency_budget: { added_max: 0, removed_min: 3 },
+      retired_cli_flags: ['--legacy', '--spi', '--include-docs', '--docs', '--wiki'],
+    })
+    expect(legacy?.transferred_sources).toEqual([
+      'src/application/build-graph.ts',
+      'src/core/provenance/ingest.ts',
+      'src/infrastructure/cache.ts',
+      'src/infrastructure/capabilities.ts',
+    ])
+    expect(nonCode).toMatchObject({ status: 'planned', absorbed_by: 'legacy-extraction' })
+    expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id)).toEqual([
+      'legacy-extraction',
+    ])
     for (const id of ['generation-and-incremental', 'evidence-path-query', 'thin-delivery']) {
       expect(manifest.items.find((item) => item.id === id)?.status).toBe('proposed')
     }
@@ -250,6 +276,7 @@ describe('core reset governance', () => {
     const manifest = parse(read('docs/core-reset/removal-manifest.yml')) as {
       current: {
         completed_phase: string
+        active_phase: string | null
         base_commit: string
         production_typescript_files: number
         production_typescript_loc: number
@@ -268,12 +295,14 @@ describe('core reset governance', () => {
 
     const inventory = sourceInventory()
     const delta = productionSourceDelta(current.base_commit)
-    const budget = manifest.items.find((item) => item.id === current.completed_phase)?.production_loc_budget
+    const phase = manifest.items.find((item) => item.id === (current.active_phase ?? current.completed_phase))
+    const budget = phase?.production_loc_budget
     expect(budget).toBeDefined()
     expect(inventory.filesystemViolations).toEqual([])
     expect(delta.added).toBeLessThanOrEqual(budget!.added_max)
-    expect(delta.removed).toBeGreaterThanOrEqual(budget!.removed_min)
-    expect(delta.net).toBeLessThanOrEqual(budget!.net_max)
+    const isActivationOnly = delta.removed === 0 && delta.net === 0
+    const meetsExitBudget = delta.removed >= budget!.removed_min && delta.net <= budget!.net_max
+    expect(isActivationOnly || meetsExitBudget).toBe(true)
     expect({
       production_typescript_files: inventory.files,
       production_typescript_loc: inventory.loc,
@@ -306,7 +335,7 @@ describe('core reset governance', () => {
         files_with_one_owner: number
         unowned_files: number
         overlapping_files: number
-        disposition_changes: number
+      disposition_changes: number
       }
       items: Array<{
         id: string
@@ -322,6 +351,23 @@ describe('core reset governance', () => {
       const owners = manifest.items.filter((item) =>
         (item.sources ?? []).some((pattern) => manifestGlob(pattern).test(file)))
       expect(owners.map((item) => item.id), `${file} must have exactly one owner`).toHaveLength(1)
+    }
+    const legacy = manifest.items.find((item) => item.id === 'legacy-extraction')
+    const transferred = [
+      'src/application/build-graph.ts',
+      'src/core/provenance/ingest.ts',
+      'src/infrastructure/cache.ts',
+      'src/infrastructure/capabilities.ts',
+    ]
+    expect(legacy?.sources?.filter((source) => transferred.includes(source))).toEqual(transferred)
+    for (const source of transferred) {
+      expect(
+        manifest.items
+          .filter((item) => item.id !== 'legacy-extraction')
+          .filter((item) => (item.sources ?? []).some((pattern) => manifestGlob(pattern).test(source)))
+          .map((item) => item.id),
+        `${source} must transfer exclusively to legacy-extraction`,
+      ).toEqual([])
     }
     for (const completedId of ['directed-multigraph', 'canonical-typescript-index']) {
       const completed = manifest.items.find((item) => item.id === completedId)
@@ -360,7 +406,7 @@ describe('core reset governance', () => {
       files_with_one_owner: 181,
       unowned_files: 0,
       overlapping_files: 0,
-      disposition_changes: 0,
+      disposition_changes: 4,
     })
   })
 

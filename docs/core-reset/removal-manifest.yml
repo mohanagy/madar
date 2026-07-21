@@ -20,21 +20,21 @@ review:
   files_with_one_owner: 181
   unowned_files: 0
   overlapping_files: 0
-  disposition_changes: 0
-  amendment: Source lists were completed and de-overlapped so every current production TypeScript file has exactly one existing disposition; no keep, rebuild, move, delete, or defer decision changed.
+  disposition_changes: 4
+  amendment: Source lists remain complete and de-overlapped. Issue #588 transfers four guaranteed extraction orphans into the active deletion contract without changing their long-term disposition.
 
 current:
   updated_at: 2026-07-21
   completed_phase: canonical-typescript-index
-  active_phase: null
-  ready_phase: legacy-extraction
-  base_commit: f68d64482578f0c7992ec63095fa00e19ac25880
+  active_phase: legacy-extraction
+  ready_phase: null
+  base_commit: 9a762d0a4e10a0ae210ba3f53bb1d4468367e81e
   completed_phase_commit: 4dfd48194f2fab00b2cd2271a6f7917909dde9d4
   production_typescript_files: 170
   production_typescript_loc: 91539
-  production_loc_added: 5538
-  production_loc_removed: 7791
-  production_loc_net: -2253
+  production_loc_added: 0
+  production_loc_removed: 0
+  production_loc_net: 0
 
 targets:
   production_typescript_files_max: 80
@@ -74,7 +74,7 @@ items:
     disposition: keep
     status: proposed
     sources:
-      - src/core/provenance/**
+      - src/core/provenance/types.ts
     destination: domain/graph provenance contract
     exit_gate: One validated provenance vocabulary is used by index and query results.
 
@@ -83,7 +83,6 @@ items:
     status: complete
     sources:
       - src/adapters/filesystem/graph-artifact.ts
-      - src/application/build-graph.ts
       - src/domain/graph/artifact.ts
       - src/domain/graph/canonical-json.ts
       - src/domain/graph/directed-multigraph.ts
@@ -97,7 +96,7 @@ items:
       - src/core/schema/normalize.ts
       - src/runtime/direction.ts
     destination: src/domain/graph/**
-    notes: 'The obsolete exporter helpers moved from the later non-core-products bucket to this phase because #582 deletes the entire legacy exporter surface; no later phase retains ownership of those files.'
+    notes: 'The obsolete exporter helpers moved from the later non-core-products bucket to this phase because #582 deletes the entire legacy exporter surface; no later phase retains ownership of those files. The transitional src/application/build-graph.ts adapter moved to #588 because it becomes an orphan only when legacy and non-code extraction are deleted.'
     production_loc_budget:
       added_max: 1200
       removed_min: 2852
@@ -161,21 +160,55 @@ items:
 
   - id: legacy-extraction
     disposition: delete
-    status: planned
+    status: in_progress
     sources:
+      - src/application/build-graph.ts
+      - src/core/provenance/ingest.ts
+      - src/infrastructure/cache.ts
+      - src/infrastructure/capabilities.ts
       - src/pipeline/extract.ts
       - src/pipeline/extract/call-resolution.ts
       - src/pipeline/extract/combine.ts
       - src/pipeline/extract/core.ts
       - src/pipeline/extract/cross-file.ts
       - src/pipeline/extract/dispatch.ts
-      - src/pipeline/extract/frameworks/**
+      - src/pipeline/extract/frameworks/core.ts
+      - src/pipeline/extract/frameworks/express.ts
+      - src/pipeline/extract/frameworks/js-import-paths.ts
+      - src/pipeline/extract/frameworks/nest.ts
+      - src/pipeline/extract/frameworks/next.ts
+      - src/pipeline/extract/frameworks/react-router.ts
+      - src/pipeline/extract/frameworks/redux.ts
+      - src/pipeline/extract/frameworks/types.ts
       - src/pipeline/extract/generic.ts
       - src/pipeline/extract/pipeline.ts
       - src/pipeline/extract/typescript-utils.ts
       - src/pipeline/extract/contracts.ts
       - src/pipeline/tree-sitter-wasm.ts
-    notes: 'This is the scalar Ready handle for one combined deletion work item that must also delete non-code-and-other-language-ingest; neither manifest item is In progress until an accepted issue records the exact inventory, budget, and gates.'
+    absorbs:
+      - non-code-and-other-language-ingest
+    transferred_sources:
+      - src/application/build-graph.ts
+      - src/core/provenance/ingest.ts
+      - src/infrastructure/cache.ts
+      - src/infrastructure/capabilities.ts
+    production_file_budget:
+      added_max: 1
+      removed_min: 31
+    production_loc_budget:
+      added_max: 900
+      removed_min: 20951
+      net_max: -20000
+    runtime_dependency_budget:
+      added_max: 0
+      removed_min: 3
+    retired_cli_flags:
+      - --legacy
+      - --spi
+      - --include-docs
+      - --docs
+      - --wiki
+    notes: 'Accepted in #588 and active from protected base 9a762d0a4e10a0ae210ba3f53bb1d4468367e81e. This scalar handle owns one combined deletion of 31 production files, including the non-code-and-other-language-ingest item and four transferred extraction orphans; every later phase remains blocked.'
     exit_gate: Canonical TypeScript fixtures pass and no production import references the legacy engine.
 
   - id: non-code-and-other-language-ingest
@@ -189,7 +222,8 @@ items:
       - src/pipeline/extract/non-code/**
       - src/pipeline/extract/python-rationale.ts
       - src/pipeline/extract/go-cross-file.ts
-    notes: 'These non-TypeScript handlers have distinct file ownership but are Ready only as the secondary scope of the same combined deletion work item represented by legacy-extraction; splitting them would preserve a temporary companion path.'
+    absorbed_by: legacy-extraction
+    notes: 'These non-TypeScript handlers retain distinct file ownership but are absorbed by active issue #588 under the single legacy-extraction phase handle; splitting them would preserve a temporary companion path.'
     exit_gate: Package, docs, flags, dependencies, and tests no longer claim unsupported ingestion.
 
   - id: generation-and-incremental
@@ -199,8 +233,6 @@ items:
       - src/infrastructure/generate.ts
       - src/infrastructure/generation-policy.ts
       - src/infrastructure/indexing-manifest.ts
-      - src/infrastructure/cache.ts
-      - src/infrastructure/capabilities.ts
       - src/infrastructure/doctor.ts
       - src/infrastructure/refresh-lease.ts
       - src/infrastructure/watcher-state.ts
