@@ -1162,6 +1162,7 @@ function addTypeCheckerEdges(ctx: TypeCheckerEdgeContext): void {
       symbols,
       edges,
       checker,
+      pathToFileId,
     })
     detectPrismaFramework({
       sourceFile,

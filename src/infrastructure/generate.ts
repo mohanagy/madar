@@ -18,6 +18,7 @@ import type {
 } from '../contracts/indexing.js'
 import type { ExtractionData, ExtractionEdge, ExtractionNode, ExtractionSchemaVersion, Hyperedge } from '../pipeline/extract/contracts.js'
 import { GRAPH_ARTIFACT_REGENERATE_MESSAGE } from '../domain/graph/artifact.js'
+import { canonicalJsonString } from '../domain/graph/canonical-json.js'
 import { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
 import { godNodes, semanticAnomalies, suggestQuestions, surprisingConnections } from '../pipeline/analyze.js'
 import { buildGraphFromExtraction } from '../application/build-graph.js'
@@ -342,8 +343,13 @@ function mergeCanonicalAndCompanionGraphs(
     if (!canonical.hasNode(source) || !canonical.hasNode(target)) continue
     canonical.addEdge(source, target, attributes)
   }
-  const hyperedges = Array.isArray(companion.graph.hyperedges) ? companion.graph.hyperedges : []
-  if (hyperedges.length > 0) canonical.graph.hyperedges = hyperedges
+  const hyperedges = [
+    ...(Array.isArray(canonical.graph.hyperedges) ? canonical.graph.hyperedges : []),
+    ...(Array.isArray(companion.graph.hyperedges) ? companion.graph.hyperedges : []),
+  ]
+  if (hyperedges.length > 0) {
+    canonical.graph.hyperedges = [...new Map(hyperedges.map((hyperedge) => [canonicalJsonString(hyperedge), hyperedge])).values()]
+  }
   return canonical
 }
 
@@ -796,6 +802,8 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   graph.graph.generation_policy = generationPolicyToPublish
   // Cluster-only mode reuses the existing graph; it must not relabel that
   // graph based on the currently discovered corpus without re-extracting it.
+  // `spi_mode` is retained for graph-consumer compatibility; canonical index
+  // evidence now drives its value rather than SPI-specific detection.
   const graphUsesSpi = options.clusterOnly
     ? existingGraph?.graph.spi_mode === true
     : canonicalProducedEvidence

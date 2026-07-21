@@ -68,6 +68,7 @@ describe('core reset governance', () => {
     expect(scorecard).toContain('**Status:** accepted')
     expect(scorecard).toContain('| Directed multigraph | **Passed**')
     expect(scorecard).toContain('| Canonical TypeScript index | **In progress**')
+    expect(scorecard).toContain('npm run test:run -- tests/unit/canonical-index-language.test.ts tests/unit/canonical-index-frameworks.test.ts --maxWorkers=1')
     expect(scorecard).not.toContain('CI and review remain pending')
     expect(readme).toContain('docs/roadmap.md')
     expect(contributing).toContain('docs/roadmap.md')
@@ -130,10 +131,10 @@ describe('core reset governance', () => {
       base_commit: 'f68d64482578f0c7992ec63095fa00e19ac25880',
       completed_phase_commit: '63c59049178e82bd6bd1c928f6666ef159365bbe',
       production_typescript_files: 170,
-      production_typescript_loc: 91_557,
-      production_loc_added: 5_556,
+      production_typescript_loc: 91_539,
+      production_loc_added: 5_538,
       production_loc_removed: 7_791,
-      production_loc_net: -2_235,
+      production_loc_net: -2_253,
     })
     expect(manifest.rules.length).toBeGreaterThan(0)
     expect(manifest.items.length).toBeGreaterThan(10)

@@ -21,6 +21,7 @@ describe('telemetry documentation', () => {
     expect(doc).toContain('node_major')
     expect(doc).toContain('graph_size_bucket')
     expect(doc).toContain('repo_size_bucket')
+    expect(doc).toContain('`true` for default `auto` and explicit `--spi`')
     expect(doc).toContain('failure_bucket')
     expect(doc).toContain('status_bucket')
     expect(doc).toContain('initial_answerability_bucket')

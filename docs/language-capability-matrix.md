@@ -6,7 +6,7 @@ This is the public support matrix for `madar` on the current mainline. It distin
 - **Fallback path** - what happens when a parser is unavailable at runtime
 - **No extractor** - extensions with no registered capability yet
 
-The registry lives in `src/infrastructure/capabilities.ts`. The extractor bindings live in `src/pipeline/extract.ts`. Tree-sitter WASM grammars are currently bundled for **Go, Java, Python, Ruby, and Rust**.
+The registry lives in `src/infrastructure/capabilities.ts`. Canonical TypeScript/JavaScript extractor bindings live under `src/adapters/typescript/**`; `src/pipeline/extract.ts` is the isolated legacy companion for unsupported source languages and non-code inputs. Tree-sitter WASM grammars are currently bundled for **Go, Java, Python, Ruby, and Rust**.
 
 **TypeScript/Node remains the near-term depth priority.** **Python and Go are useful first-pass support**, but **broader parity is parked** until the evidence gates in [`docs/language-expansion-decision.md`](./language-expansion-decision.md) are met. Java and Rust should be read as extractor coverage, not a public parity claim.
 

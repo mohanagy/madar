@@ -511,6 +511,8 @@ describe('public marketing copy honesty', () => {
     })
 
     it('describes deeper framework hints conservatively and keeps the generic AST fallback explicit', () => {
+      expect(content).toContain('src/adapters/typescript/**')
+      expect(content).toContain('`src/pipeline/extract.ts` is the isolated legacy companion')
       expect(content).toContain('Hono')
       expect(content).toContain('Fastify')
       expect(content).toContain('tRPC')

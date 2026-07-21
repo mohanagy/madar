@@ -39,7 +39,9 @@ export function detectFastifyFramework(ctx: DetectFastifyFrameworkContext): void
         const prefix = objectStringProperty(matched.call.arguments[1], 'prefix')
         mergeFrameworkMetadata(plugin, prefix === null ? {} : { mount_path: prefix })
         emitFrameworkEdge(ctx, matched.receiver.owner, plugin, matched.call, prefix === null ? {} : { mount_path: prefix })
-        const parameter = firstParameter(resolvedDeclaration(arg, ctx.checker))
+        const parameter = arg && (ts.isArrowFunction(arg) || ts.isFunctionExpression(arg))
+          ? arg.parameters[0] ?? null
+          : firstParameter(resolvedDeclaration(arg, ctx.checker))
         if (parameter && ts.isIdentifier(parameter.name)) {
           receivers.push({ name: parameter.name.text, owner: plugin, declaration: parameter })
         }

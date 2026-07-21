@@ -32,7 +32,7 @@ The schema-validated, share-safe receipt was recorded at tooling checkout `250a6
 | --- | --- | --- | --- |
 | Scope and baseline | **Passed** | Baseline script/receipt committed; held-out evaluation contract frozen; removal manifest reviewed | [#580](https://github.com/mohanagy/madar/issues/580), [receipt](evidence/baseline-v0.32.0.json), and [manifest](removal-manifest.yml) |
 | Directed multigraph | **Passed** | Parallel types, direction, stable IDs, provenance, and serialization pass | [#582](https://github.com/mohanagy/madar/issues/582), merged [PR #583](https://github.com/mohanagy/madar/pull/583), invariant tests, six green CI jobs, successful CodeRabbit review, and zero unresolved threads |
-| Canonical TypeScript index | **In progress** | Labelled TS/framework gates pass without legacy augmentation | Accepted [#585](https://github.com/mohanagy/madar/issues/585), protected base `f68d64482578f0c7992ec63095fa00e19ac25880` |
+| Canonical TypeScript index | **In progress** | Labelled TS/framework gates pass without legacy augmentation | `npm run test:run -- tests/unit/canonical-index-language.test.ts tests/unit/canonical-index-frameworks.test.ts --maxWorkers=1`; accepted [#585](https://github.com/mohanagy/madar/issues/585), protected base `f68d64482578f0c7992ec63095fa00e19ac25880` |
 | Incremental index | Not started | Add/change/delete/rename output equals clean rebuild | Pending |
 | Evidence-path query | Not started | Held-out correctness and one-call completeness gates pass without repo-specific logic | Pending |
 | Delivery and package | Not started | Thin MCP/CLI, activation, startup, and package budgets pass | Pending |
@@ -55,9 +55,9 @@ Only one technical phase may be `In progress` at a time.
 
 - One scanner-scoped TypeScript Program writes supported `.js`, `.jsx`, `.ts`, and `.tsx` facts directly to the canonical graph; no SPI projector, cache, diff overlay, test layer, or legacy augmentation participates.
 - The 20 owned predecessor files are deleted. The candidate adds 12 production files and no runtime dependency.
-- Candidate inventory is 170 production TypeScript files / 91,557 LOC. Delta from protected base `f68d64482578f0c7992ec63095fa00e19ac25880` is `+5,556 / -7,791 / net -2,235`, within the accepted phase budget.
+- Candidate inventory is 170 production TypeScript files / 91,539 LOC. Delta from protected base `f68d64482578f0c7992ec63095fa00e19ac25880` is `+5,538 / -7,791 / net -2,253`, within the accepted phase budget.
 - The gold harness uses one-to-one fact matching, forbidden facts, copied-root and repeated-run determinism, scanner-read isolation, and independent node/edge scoring. Import/re-export and call/framework edge recall are 100%; all eight framework buckets report 100% recall and precision with no unexpected facts.
-- Local verification passes 186 test files / 2,520 tests (2 skipped). V8 coverage is 84.47% statements, 75.84% branches, 91.48% functions, and 84.92% lines; typecheck, build, release hygiene, registry validation, packed retrieval parity, package isolation, and high-severity dependency audit also pass.
+- Local verification passes 188 test files / 2,525 tests (2 skipped). V8 coverage is 84.62% statements, 75.99% branches, 91.50% functions, and 85.04% lines; typecheck, build, release hygiene, registry validation, packed retrieval parity, package isolation, and high-severity dependency audit also pass.
 - Final CI matrix, CodeRabbit, and unresolved-thread evidence remains pending and is not claimed here.
 
 ## Graph gates

@@ -31,10 +31,10 @@ current:
   base_commit: f68d64482578f0c7992ec63095fa00e19ac25880
   completed_phase_commit: 63c59049178e82bd6bd1c928f6666ef159365bbe
   production_typescript_files: 170
-  production_typescript_loc: 91557
-  production_loc_added: 5556
+  production_typescript_loc: 91539
+  production_loc_added: 5538
   production_loc_removed: 7791
-  production_loc_net: -2235
+  production_loc_net: -2253
 
 targets:
   production_typescript_files_max: 80

@@ -1,6 +1,7 @@
 import ts from 'typescript'
 
 import type { IndexEdge, IndexFrameworkRole, IndexSymbol } from '../../domain/index/model.js'
+import { resolveIdentifier, resolvedDeclaration } from './framework-http.js'
 
 const PROCEDURE_ROLES: ReadonlyMap<string, IndexFrameworkRole> = new Map([
   ['query', 'trpc_procedure_query'],
@@ -15,6 +16,7 @@ export type DetectTrpcFrameworkContext = {
   symbols: IndexSymbol[]
   edges: IndexEdge[]
   checker: ts.TypeChecker
+  pathToFileId: Map<string, string>
 }
 
 export function detectTrpcFramework(ctx: DetectTrpcFrameworkContext): void {
@@ -26,11 +28,19 @@ export function detectTrpcFramework(ctx: DetectTrpcFrameworkContext): void {
     const router = tagSymbol(ctx, decl.name.text, 'trpc_router')
     if (!router) return
     for (const prop of config.properties) {
-      if (!ts.isPropertyAssignment(prop)) continue
-      const name = propertyName(prop.name)
-      const role = procedureRole(prop.initializer, ctx.checker)
+      const initializer = ts.isPropertyAssignment(prop)
+        ? prop.initializer
+        : ts.isShorthandPropertyAssignment(prop)
+          ? prop.name
+          : null
+      if (!initializer) continue
+      const name = ts.isPropertyAssignment(prop) || ts.isShorthandPropertyAssignment(prop)
+        ? propertyName(prop.name)
+        : null
+      const role = procedureRole(initializer, ctx.checker, new Set())
       if (!name || !role) continue
-      const procedure = synthesizeProcedure(ctx, name, role, decl.name.text, prop)
+      const referenced = ts.isIdentifier(initializer) ? resolveIdentifier(ctx, initializer) : null
+      const procedure = synthesizeProcedure(ctx, name, role, decl.name.text, prop, referenced)
       ctx.edges.push({
         from: router.id,
         to: procedure.id,
@@ -58,7 +68,14 @@ type TrpcDerivation = 'instance' | 'router' | 'procedure'
 function procedureRole(
   expr: ts.Expression,
   checker: ts.TypeChecker,
+  seen: Set<ts.Declaration>,
 ): IndexFrameworkRole | null {
+  if (ts.isIdentifier(expr)) {
+    const declaration = resolvedDeclaration(expr, checker)
+    if (!declaration || seen.has(declaration) || !ts.isVariableDeclaration(declaration) || !declaration.initializer) return null
+    seen.add(declaration)
+    return procedureRole(declaration.initializer, checker, seen)
+  }
   if (!ts.isCallExpression(expr) || !ts.isPropertyAccessExpression(expr.expression)) return null
   const role = PROCEDURE_ROLES.get(expr.expression.name.text) ?? null
   return role && deriveTrpc(expr.expression.expression, checker, new Set()) === 'procedure' ? role : null
@@ -115,28 +132,18 @@ function isNamedImport(identifier: ts.Identifier, module: string, importedName: 
   return false
 }
 
-function resolvedDeclaration(identifier: ts.Identifier, checker: ts.TypeChecker): ts.Declaration | null {
-  let symbol = checker.getSymbolAtLocation(identifier)
-  if ((symbol?.flags ?? 0) & ts.SymbolFlags.Alias) {
-    try { symbol = checker.getAliasedSymbol(symbol as ts.Symbol) } catch { return null }
-  }
-  return symbol?.declarations?.[0] ?? null
-}
-
 function synthesizeProcedure(
   ctx: DetectTrpcFrameworkContext,
   name: string,
   role: IndexFrameworkRole,
   routerName: string,
-  prop: ts.PropertyAssignment,
+  prop: ts.ObjectLiteralElementLike,
+  referenced: IndexSymbol | null,
 ): IndexSymbol {
-  const existing = (ctx.symbolsByFile.get(ctx.fileId) ?? []).find((symbol) =>
-    symbol.name === name && symbol.framework_role === undefined,
-  )
-  if (existing) {
-    existing.framework_role = role
-    existing.framework_metadata = { procedure_name: name, router_name: routerName }
-    return existing
+  if (referenced && (referenced.framework_role === undefined || referenced.framework_role === role)) {
+    referenced.framework_role = role
+    referenced.framework_metadata = { procedure_name: name, router_name: routerName }
+    return referenced
   }
   const range = rangeOf(prop, ctx.sourceFile)
   const symbol: IndexSymbol = {

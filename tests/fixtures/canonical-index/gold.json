@@ -54,6 +54,7 @@
     { "from_file": "core/service.ts", "from_name": "Service.run", "relation": "calls", "to_name": "helper", "source_location": "L9" },
     { "from_file": "core/service.ts", "from_name": "Service.run", "relation": "calls", "to_name": "helper", "source_location": "L10" },
     { "from_file": "core/service.ts", "from_name": "Service.run", "relation": "param_type", "to_name": "RequestInput" },
+    { "from_file": "core/service.ts", "from_name": "Service.run", "relation": "param_type", "to_name": "ResponseOutput" },
     { "from_file": "core/service.ts", "from_name": "Service.run", "relation": "return_type", "to_name": "ResponseOutput" },
     { "from_file": "packages/app/src/use-shared.ts", "from_name": "sharedId", "relation": "param_type", "to_file": "packages/shared/src/model.ts", "to_name": "SharedModel" }
   ],

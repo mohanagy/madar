@@ -5,8 +5,8 @@ export function helper(input: RequestInput): ResponseOutput {
 }
 
 export class Service extends BaseRunner implements Runner {
-  run(input: RequestInput): ResponseOutput {
-    helper(input)
-    return helper(input)
+  async run(input: Array<RequestInput | ResponseOutput>): Promise<ResponseOutput[]> {
+    input.map((item) => helper(item))
+    return input.map((item) => helper(item))
   }
 }

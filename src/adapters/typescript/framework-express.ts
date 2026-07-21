@@ -2,6 +2,7 @@
 import ts from 'typescript'
 
 import type { IndexEdge, IndexFrameworkRole, IndexSymbol } from '../../domain/index/model.js'
+import { resolveIdentifier } from './framework-http.js'
 
 const EXPRESS_MODULE_SPECIFIER = 'express'
 
@@ -113,10 +114,7 @@ function emitMiddlewareForCall(
   for (const arg of args) {
     let handlerSymbol: IndexSymbol | null = null
     if (ts.isIdentifier(arg)) {
-      handlerSymbol = resolveHandlerSymbol(arg, ctx)
-      if (!handlerSymbol) {
-        handlerSymbol = resolveCrossFileSymbol(arg, ctx)
-      }
+      handlerSymbol = resolveIdentifier(ctx, arg)
     } else if (ts.isArrowFunction(arg) || ts.isFunctionExpression(arg)) {
       handlerSymbol = mintSyntheticHandlerSymbol(ctx, callExpr, arg, 'express_middleware')
     }
@@ -201,7 +199,7 @@ function emitRouteForCall(
 
   let handlerSymbol: IndexSymbol | null = null
   if (ts.isIdentifier(handlerArg)) {
-    handlerSymbol = resolveHandlerSymbol(handlerArg, ctx) ?? resolveCrossFileSymbol(handlerArg, ctx)
+    handlerSymbol = resolveIdentifier(ctx, handlerArg)
   } else if (ts.isArrowFunction(handlerArg) || ts.isFunctionExpression(handlerArg)) {
     handlerSymbol = mintSyntheticHandlerSymbol(ctx, callExpr, handlerArg, 'express_route')
   }
@@ -269,7 +267,7 @@ function mintSyntheticHandlerSymbol(
   const bindingName = callee.expression.text
   const methodName = callee.name.text
   const range = rangeOfNode(handler, ctx.sourceFile)
-  const name = `${bindingName}.${methodName}.L${range.start.line}`
+  const name = `${bindingName}.${methodName}.L${range.start.line}.C${range.start.column}`
   const id = `symbol:${ctx.fileId}/function/${name}`
 
   const fileSymbols = ctx.symbolsByFile.get(ctx.fileId)
@@ -303,78 +301,6 @@ function rangeOfNode(node: ts.Node, sourceFile: ts.SourceFile): IndexSymbol['ran
     start: { line: start.line + 1, column: start.character + 1 },
     end: { line: end.line + 1, column: end.character + 1 },
   }
-}
-
-/** Resolve an imported mounted router back to its canonical symbol. */
-function resolveCrossFileSymbol(
-  identifier: ts.Identifier,
-  ctx: DetectExpressFrameworkContext,
-): IndexSymbol | null {
-  if (!ctx.checker || !ctx.pathToFileId) return null
-  const localSymbol = ctx.checker.getSymbolAtLocation(identifier)
-  if (!localSymbol) return null
-  const aliasedSymbol = (localSymbol.flags & ts.SymbolFlags.Alias) !== 0
-    ? safeGetAliasedSymbol(localSymbol, ctx.checker)
-    : localSymbol
-  if (!aliasedSymbol) return null
-  const declaration = aliasedSymbol.declarations?.[0]
-  if (!declaration) return null
-  if (!isTopLevelDeclaration(declaration)) return null
-
-  const declSourceFile = declaration.getSourceFile()
-  const declaredFileId = ctx.pathToFileId.get(declSourceFile.fileName)
-  if (!declaredFileId) return null
-
-  const declName = declaredName(declaration)
-  if (!declName) return null
-  const fileSymbols = ctx.symbolsByFile.get(declaredFileId) ?? []
-  return fileSymbols.find((s) =>
-    s.name === declName && (s.kind === 'function' || s.kind === 'constant' || s.kind === 'variable'),
-  ) ?? null
-}
-
-function safeGetAliasedSymbol(symbol: ts.Symbol, checker: ts.TypeChecker): ts.Symbol | null {
-  try {
-    return checker.getAliasedSymbol(symbol)
-  } catch {
-    return null
-  }
-}
-
-function declaredName(decl: ts.Declaration): string | null {
-  if (ts.isFunctionDeclaration(decl) && decl.name) return decl.name.text
-  if (ts.isVariableDeclaration(decl) && ts.isIdentifier(decl.name)) return decl.name.text
-  return null
-}
-
-function resolveHandlerSymbol(
-  handlerIdentifier: ts.Identifier,
-  ctx: DetectExpressFrameworkContext,
-): IndexSymbol | null {
-  const symbols = ctx.symbolsByFile.get(ctx.fileId) ?? []
-  const handlerName = handlerIdentifier.text
-
-  if (ctx.checker) {
-    const tsSymbol = ctx.checker.getSymbolAtLocation(handlerIdentifier)
-    const declarations = tsSymbol?.declarations
-    if (!declarations || declarations.length === 0) return null
-    const isTopLevel = declarations.some((decl) => isTopLevelDeclaration(decl))
-    if (!isTopLevel) return null
-  }
-
-  return symbols.find((s) =>
-    s.name === handlerName && (s.kind === 'function' || s.kind === 'constant' || s.kind === 'variable'),
-  ) ?? null
-}
-
-function isTopLevelDeclaration(decl: ts.Declaration): boolean {
-  if (ts.isFunctionDeclaration(decl)) return ts.isSourceFile(decl.parent)
-  if (ts.isVariableDeclaration(decl)) {
-    const list = decl.parent
-    const stmt = list.parent
-    return ts.isVariableStatement(stmt) && ts.isSourceFile(stmt.parent)
-  }
-  return false
 }
 
 function collectExpressBindings(sourceFile: ts.SourceFile): ExpressBindings {
@@ -421,6 +347,10 @@ function factoryCallRole(initializer: ts.Expression, bindings: ExpressBindings):
   const callee = initializer.expression
 
   if (ts.isIdentifier(callee) && bindings.appFactory.has(callee.text)) {
+    return 'express_app'
+  }
+
+  if (ts.isIdentifier(callee) && bindings.namespaceAlias.has(callee.text)) {
     return 'express_app'
   }
 

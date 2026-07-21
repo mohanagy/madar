@@ -2,10 +2,15 @@ import ts from 'typescript'
 
 import type { IndexEdge, IndexFrameworkRole, IndexSymbol } from '../../domain/index/model.js'
 
-export type FrameworkHttpContext = {
+export type FrameworkIdentifierContext = {
+  symbolsByFile: Map<string, IndexSymbol[]>
+  checker?: ts.TypeChecker
+  pathToFileId?: Map<string, string>
+}
+
+export type FrameworkHttpContext = FrameworkIdentifierContext & {
   sourceFile: ts.SourceFile
   fileId: string
-  symbolsByFile: Map<string, IndexSymbol[]>
   symbols: IndexSymbol[]
   edges: IndexEdge[]
   checker: ts.TypeChecker
@@ -52,29 +57,58 @@ export function resolveOrMintHandler(
   return symbol
 }
 
-export function resolveIdentifier(ctx: FrameworkHttpContext, identifier: ts.Identifier): IndexSymbol | null {
+export function resolveIdentifier(ctx: FrameworkIdentifierContext, identifier: ts.Identifier): IndexSymbol | null {
+  if (!ctx.checker || !ctx.pathToFileId) return null
   const declaration = resolvedDeclaration(identifier, ctx.checker)
-  if (!declaration) return null
+  if (!declaration || !isTopLevelDeclaration(declaration)) return null
   const fileId = ctx.pathToFileId.get(declaration.getSourceFile().fileName.replaceAll('\\', '/'))
   const name = declarationName(declaration)
-  return fileId && name
-    ? (ctx.symbolsByFile.get(fileId) ?? []).find((candidate) => candidate.name === name) ?? null
-    : null
+  const kind = declarationKind(declaration)
+  if (!fileId || !name || !kind) return null
+  const range = rangeOf(declaration, declaration.getSourceFile())
+  return (ctx.symbolsByFile.get(fileId) ?? []).find((candidate) =>
+    candidate.name === name
+    && candidate.kind === kind
+    && containsRange(candidate.range, range),
+  ) ?? null
 }
 
 export function resolvedDeclaration(expr: ts.Expression | undefined, checker: ts.TypeChecker): ts.Declaration | undefined {
   if (!expr || !ts.isIdentifier(expr)) return undefined
-  let symbol = checker.getSymbolAtLocation(expr)
+  let symbol = ts.isShorthandPropertyAssignment(expr.parent) && expr.parent.name === expr
+    ? checker.getShorthandAssignmentValueSymbol(expr.parent)
+    : checker.getSymbolAtLocation(expr)
   if ((symbol?.flags ?? 0) & ts.SymbolFlags.Alias) {
     try { symbol = checker.getAliasedSymbol(symbol as ts.Symbol) } catch { return undefined }
   }
   return symbol?.declarations?.[0]
 }
 
+export function isTopLevelDeclaration(decl: ts.Declaration): boolean {
+  if (ts.isFunctionDeclaration(decl)) return ts.isSourceFile(decl.parent)
+  if (!ts.isVariableDeclaration(decl)) return false
+  const statement = decl.parent.parent
+  return ts.isVariableStatement(statement) && ts.isSourceFile(statement.parent)
+}
+
 function declarationName(decl: ts.Declaration): string | null {
   if (ts.isFunctionDeclaration(decl) && decl.name) return decl.name.text
   if (ts.isVariableDeclaration(decl) && ts.isIdentifier(decl.name)) return decl.name.text
   return null
+}
+
+function declarationKind(decl: ts.Declaration): IndexSymbol['kind'] | null {
+  if (ts.isFunctionDeclaration(decl)) return 'function'
+  if (!ts.isVariableDeclaration(decl) || !ts.isVariableDeclarationList(decl.parent)) return null
+  return (decl.parent.flags & ts.NodeFlags.Const) !== 0 ? 'constant' : 'variable'
+}
+
+function containsRange(outer: IndexSymbol['range'], inner: IndexSymbol['range']): boolean {
+  return comparePosition(outer.start, inner.start) <= 0 && comparePosition(outer.end, inner.end) >= 0
+}
+
+function comparePosition(left: IndexSymbol['range']['start'], right: IndexSymbol['range']['start']): number {
+  return left.line - right.line || left.column - right.column
 }
 
 export function mergeFrameworkMetadata(symbol: IndexSymbol, metadata: Record<string, unknown>): void {
