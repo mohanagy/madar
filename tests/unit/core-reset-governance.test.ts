@@ -53,7 +53,7 @@ describe('core reset governance', () => {
     expect(roadmap).toContain('removal-manifest.yml')
     expect(roadmap).toContain('scorecard.md')
     expect(roadmap).toContain('## Passed — directed multigraph')
-    expect(roadmap).toContain('## Ready — canonical TypeScript/JavaScript index')
+    expect(roadmap).toContain('## In progress — canonical TypeScript/JavaScript index')
     expect(roadmap).toContain('## Next')
     expect(roadmap).toContain('## Later')
     expect(roadmap).toContain('accepted Core Reset')
@@ -67,7 +67,8 @@ describe('core reset governance', () => {
     expect(design).toContain('Merging code alone is not completion')
     expect(scorecard).toContain('**Status:** accepted')
     expect(scorecard).toContain('| Directed multigraph | **Passed**')
-    expect(scorecard).toContain('| Canonical TypeScript index | **Ready — not In progress**')
+    expect(scorecard).toContain('| Canonical TypeScript index | **In progress**')
+    expect(scorecard).toContain('npm run test:run -- tests/unit/canonical-index-language.test.ts tests/unit/canonical-index-frameworks.test.ts --maxWorkers=1')
     expect(scorecard).not.toContain('CI and review remain pending')
     expect(readme).toContain('docs/roadmap.md')
     expect(contributing).toContain('docs/roadmap.md')
@@ -84,8 +85,8 @@ describe('core reset governance', () => {
       current: {
         updated_at: string
         completed_phase: string
-        active_phase: null
-        ready_phase: string
+        active_phase: string
+        ready_phase: null
         base_commit: string
         completed_phase_commit: string
         production_typescript_files: number
@@ -125,15 +126,15 @@ describe('core reset governance', () => {
     expect(manifest.current).toMatchObject({
       updated_at: '2026-07-21',
       completed_phase: 'directed-multigraph',
-      active_phase: null,
-      ready_phase: 'canonical-typescript-index',
-      base_commit: '647c2912e9ff000b5d92cae3fc61395d9e556062',
+      active_phase: 'canonical-typescript-index',
+      ready_phase: null,
+      base_commit: 'f68d64482578f0c7992ec63095fa00e19ac25880',
       completed_phase_commit: '63c59049178e82bd6bd1c928f6666ef159365bbe',
-      production_typescript_files: 178,
-      production_typescript_loc: 93_792,
-      production_loc_added: 1_197,
-      production_loc_removed: 4_171,
-      production_loc_net: -2_974,
+      production_typescript_files: 170,
+      production_typescript_loc: 91_539,
+      production_loc_added: 5_538,
+      production_loc_removed: 7_791,
+      production_loc_net: -2_253,
     })
     expect(manifest.rules.length).toBeGreaterThan(0)
     expect(manifest.items.length).toBeGreaterThan(10)
@@ -174,10 +175,10 @@ describe('core reset governance', () => {
       unresolved_review_threads: 0,
     })
     const canonical = manifest.items.find((item) => item.id === 'canonical-typescript-index')
-    expect(canonical?.status).toBe('planned')
-    expect(canonical?.notes).toContain('Implementation requires an accepted work item')
+    expect(canonical?.status).toBe('in_progress')
+    expect(canonical?.notes).toContain('#585')
     expect(canonical?.notes).toContain('remain blocked until this fixture gate passes')
-    expect(manifest.items.filter((item) => item.status === 'in_progress')).toEqual([])
+    expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id)).toEqual(['canonical-typescript-index'])
   })
 
   it('measures logical LOC independently from checkout line endings', () => {
@@ -205,6 +206,7 @@ describe('core reset governance', () => {
   it('measures the current source inventory and phase delta from the recorded protected base', () => {
     const manifest = parse(read('docs/core-reset/removal-manifest.yml')) as {
       current: {
+        active_phase: string
         base_commit: string
         production_typescript_files: number
         production_typescript_loc: number
@@ -223,7 +225,7 @@ describe('core reset governance', () => {
 
     const inventory = sourceInventory()
     const delta = productionSourceDelta(current.base_commit)
-    const budget = manifest.items.find((item) => item.id === 'directed-multigraph')?.production_loc_budget
+    const budget = manifest.items.find((item) => item.id === current.active_phase)?.production_loc_budget
     expect(budget).toBeDefined()
     expect(inventory.filesystemViolations).toEqual([])
     expect(delta.added).toBeLessThanOrEqual(budget!.added_max)

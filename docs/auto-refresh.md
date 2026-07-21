@@ -10,11 +10,11 @@ There is no file-count cutoff. A reconciliation scans every supported candidate 
 
 Every generated `graph.json` and `manifest.json` contains the same versioned `generation_policy` and SHA-256 fingerprint. The policy covers:
 
-- extraction mode: capability-aware auto, legacy-only, or strict SPI code extraction without unsupported-language fallback;
+- extraction mode: capability-aware auto, legacy-only, or strict canonical JS/TS indexing (selected by the compatibility `--spi` flag) without unsupported-language fallback;
 - Git-ignore enforcement and the active Git/Madar exclusion controls;
 - symlink traversal;
 - document/non-code inclusion policy;
-- extractor cache version; and
+- legacy companion extractor/cache version (retained as a policy compatibility guard); and
 - strict indexing thresholds.
 
 Automatic refresh reconstructs these inputs from the stored policy. In particular, a graph generated with `--legacy` or `--spi` keeps that strict mode during refresh; an auto graph keeps its capability-aware partition. An explicit policy override or a change to `.madarignore`, applicable `.gitignore` files, `.git/info/exclude`, or `core.excludesFile` forces a full rebuild instead of incremental reuse.

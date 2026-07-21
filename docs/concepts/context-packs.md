@@ -61,11 +61,11 @@ Runtime-generation prompts stay compact by following the strongest backend path 
 
 ## Extraction modes
 
-`madar generate .` is capability-aware by default: it combines SPI metadata with proven legacy semantics for supported TypeScript/JavaScript files, and keeps legacy fallback for other supported languages in the same graph.
+`madar generate .` is capability-aware by default: supported TypeScript and JavaScript files go through one compiler-backed canonical index, while temporarily supported non-JS/TS and non-code inputs stay on their later-owned companion path.
 
-Use `--legacy` when you intentionally need the old extraction path everywhere. Use `--spi` when you intentionally need strict SPI code extraction without legacy semantic augmentation or a language fallback; eligible non-code evidence remains included. Auto mode is the normal choice for NestJS, Next.js App Router, Prisma, tRPC, Hono, Fastify, mixed-language monorepos, and first runs.
+Use `--legacy` only when you explicitly need the old extraction path everywhere. Until the extraction-mode cleanup in #571, `--spi` is the compatibility spelling for strict canonical JS/TS indexing without a language fallback; eligible non-code evidence remains included. Auto mode is the normal choice.
 
-Deepest extraction is still TypeScript/JavaScript with framework-aware passes for Express, NestJS, Next.js, React Router, Redux Toolkit, Hono, Fastify, tRPC, Prisma, and routing-controllers. Python now has conservative cross-file import/call resolution, FastAPI router composition plus route/dependency semantics, and first-pass Django URL-conf route-to-view mapping. Go has conservative local-package import resolution, receiver/method call edges, and statically visible `net/http` / Gin / Chi route relationships. Ruby, Java, and Rust still use the tree-sitter AST baseline. C / Kotlin / C# / Scala / PHP / Swift / Zig use a generic structural extractor.
+Deepest extraction is TypeScript/JavaScript with framework-aware passes for Express, NestJS, Next.js, React Router, Hono, Fastify, tRPC, and Prisma. The temporary legacy companion retains conservative Python cross-file calls, FastAPI router composition, first-pass Django URL-conf mapping, and Go local-package/route relationships until its separately governed deletion phase.
 
 Full coverage details: [`docs/language-capability-matrix.md`](../language-capability-matrix.md).
 

@@ -165,7 +165,7 @@ describe('doctor command', () => {
       expect(doctor).toContain('indexing completeness: partial (1 indexed, 0 warnings, 0 policy skips, 1 unsupported, 1 failed)')
       expect(doctor).toContain('"src/auth/broken.ts" (failed; extractor_error; builtin:extract:typescript)')
       expect(doctor).toContain('"src/legacy.vue" (unsupported; unsupported_file_type; no capability)')
-      expect(doctor).toContain('SPI diagnostics: 1')
+      expect(doctor).toContain('Index diagnostics: 1')
       expect(status).toContain('indexing partial (indexed=1, warnings=0, skipped=0, unsupported=1, failed=1)')
       expect(status).toContain('"src/auth/broken.ts"[extractor_error]')
       expect(status).toContain('"src/legacy.vue"[unsupported_file_type]')

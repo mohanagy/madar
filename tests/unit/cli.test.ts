@@ -194,7 +194,7 @@ function createDependencies(): CliTestDependencies {
       semanticAnomalyCount: 2,
       changedFiles: options.update ? 1 : 0,
       deletedFiles: 0,
-      cache: options.extractionMode !== 'legacy' ? { strategy: 'spi', hit: false, reason: 'no-cache', fileCount: 2 } : null,
+      cache: null,
       warning: null,
       notes: ['test note'],
       discoverySafety: {

@@ -9,18 +9,18 @@ import type {
   IndexingSpiDiagnostic,
 } from '../contracts/indexing.js'
 import { builtinCapabilityRegistry } from '../infrastructure/capabilities.js'
+import type { CanonicalTypeScriptIndexResult } from '../adapters/typescript/index.js'
+import { isCanonicalTypeScriptSourceFile } from '../adapters/typescript/index.js'
 import type { ExtractionFileOutcome } from './extract/dispatch.js'
 import { classifyFile } from './detect.js'
-import type { BuildSpiCachedResult } from './spi/cache.js'
-import { isSpiSupportedSourceFile } from './spi/build.js'
 import { localIndexingPath } from './indexing-outcomes.js'
 
-function missingSpiCapability(filePath: string): string {
+function canonicalTypeScriptCapability(filePath: string): string {
   switch (extname(filePath).toLowerCase()) {
-    case '.js': return 'spi:javascript'
-    case '.jsx': return 'spi:jsx'
-    case '.tsx': return 'spi:tsx'
-    default: return 'spi:typescript'
+    case '.js': return 'canonical:javascript'
+    case '.jsx': return 'canonical:jsx'
+    case '.tsx': return 'canonical:tsx'
+    default: return 'canonical:typescript'
   }
 }
 
@@ -48,18 +48,18 @@ export function localExtractionIndexingOutcome(
   }
 }
 
-function spiDiagnosticsByFile(result: BuildSpiCachedResult): {
+function canonicalDiagnosticsByFile(result: CanonicalTypeScriptIndexResult): {
   byFileId: Map<string, IndexingDiagnostic[]>
   projected: IndexingSpiDiagnostic[]
 } {
-  const filePathById = new Map(result.spi.files.map((file) => [file.id, normalizeLocalPath(file.path)]))
+  const filePathById = new Map(result.files.map((file) => [file.id, normalizeLocalPath(file.path)]))
   const byFileId = new Map<string, IndexingDiagnostic[]>()
   const globalDiagnostics: IndexingDiagnostic[] = []
-  const projected = result.spi.diagnostics.map((diagnostic): IndexingSpiDiagnostic => {
+  const projected = result.diagnostics.map((diagnostic): IndexingSpiDiagnostic => {
     const fileId = diagnostic.evidence?.file_id
     const filePath = fileId ? filePathById.get(fileId) : undefined
     const level = diagnostic.level === 'warn' ? 'warning' : diagnostic.level
-    if (fileId && filePath) {
+    if (fileId && filePath && diagnostic.level !== 'info') {
       const existing = byFileId.get(fileId) ?? []
       byFileId.set(fileId, [...existing, {
         code: diagnostic.id,
@@ -76,13 +76,13 @@ function spiDiagnosticsByFile(result: BuildSpiCachedResult): {
     return {
       id: diagnostic.id,
       level: diagnostic.level,
-      reason: 'spi_diagnostic',
+      reason: 'canonical_diagnostic',
       ...(filePath ? { path: filePath } : {}),
       message: diagnostic.message,
     }
   })
   if (globalDiagnostics.length > 0) {
-    for (const file of result.spi.files) {
+    for (const file of result.files) {
       const existing = byFileId.get(file.id) ?? []
       byFileId.set(file.id, [...existing, ...globalDiagnostics])
     }
@@ -90,52 +90,50 @@ function spiDiagnosticsByFile(result: BuildSpiCachedResult): {
   return { byFileId, projected }
 }
 
-export function projectSpiIndexingOutcomes(input: {
+export function canonicalTypeScriptIndexingOutcomes(input: {
   rootPath: string
   codeFiles: readonly string[]
-  result: BuildSpiCachedResult
+  result: CanonicalTypeScriptIndexResult
 }): { outcomes: IndexingOutcome[]; diagnostics: IndexingSpiDiagnostic[] } {
-  const { byFileId, projected } = spiDiagnosticsByFile(input.result)
-  const spiFileByAbsolutePath = new Map(
-    input.result.spi.files.map((file) => [resolve(input.rootPath, file.path), file]),
+  const { byFileId, projected } = canonicalDiagnosticsByFile(input.result)
+  const indexedFileByAbsolutePath = new Map(
+    input.result.files.map((file) => [resolve(input.rootPath, file.path), file]),
   )
   const outcomes = input.codeFiles.map((filePath): IndexingOutcome => {
     const absolutePath = resolve(filePath)
     const localPath = localIndexingPath(input.rootPath, absolutePath)
-    const spiFile = spiFileByAbsolutePath.get(absolutePath)
-    if (!spiFile) {
-      return isSpiSupportedSourceFile(filePath)
+    const indexedFile = indexedFileByAbsolutePath.get(absolutePath)
+    if (!indexedFile) {
+      return isCanonicalTypeScriptSourceFile(filePath)
         ? {
             path: localPath,
             kind: 'file',
             status: 'failed',
-            reason: 'spi_file_missing',
-            capability: missingSpiCapability(filePath),
-            extraction_strategy: 'spi',
+            reason: 'canonical_file_missing',
+            capability: canonicalTypeScriptCapability(filePath),
+            extraction_strategy: 'canonical',
           }
         : {
             path: localPath,
             kind: 'file',
             status: 'unsupported',
-            reason: 'unsupported_spi_language',
+            reason: 'unsupported_canonical_language',
             capability: null,
-            extraction_strategy: 'spi',
+            extraction_strategy: 'canonical',
           }
     }
 
-    const diagnostics = byFileId.get(spiFile.id) ?? []
+    const diagnostics = byFileId.get(indexedFile.id) ?? []
     const hasError = diagnostics.some((diagnostic) => diagnostic.level === 'error')
     return {
       path: localPath,
       kind: 'file',
       status: hasError ? 'failed' : diagnostics.length > 0 ? 'indexed_with_warnings' : 'indexed',
       reason: diagnostics.length > 0
-        ? 'spi_diagnostic'
-        : input.result.cache.hit
-          ? 'indexed_from_cache'
-          : 'indexed',
-      capability: `spi:${spiFile.language}`,
-      extraction_strategy: 'spi',
+        ? 'canonical_diagnostic'
+        : 'indexed',
+      capability: `canonical:${indexedFile.language}`,
+      extraction_strategy: 'canonical',
       ...(diagnostics.length > 0 ? { diagnostics } : {}),
     }
   })

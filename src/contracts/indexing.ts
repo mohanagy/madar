@@ -4,10 +4,12 @@ export const INDEXING_MANIFEST_VERSION = 1 as const
 
 /**
  * The actual pipeline route used for a candidate. `legacy_fallback` is
- * intentionally distinct from `legacy`: it proves that auto mode chose SPI
- * first, then retained a source language SPI does not implement.
+ * intentionally distinct from `legacy`: it proves that auto mode chose the
+ * canonical TypeScript/JavaScript index first, then retained an unsupported
+ * source language through the legacy fallback.
  */
 export const EXTRACTION_STRATEGIES = [
+  'canonical',
   'spi',
   'legacy',
   'legacy_fallback',
@@ -18,6 +20,7 @@ export const EXTRACTION_STRATEGIES = [
 export type ExtractionStrategy = (typeof EXTRACTION_STRATEGIES)[number]
 
 export const EXTRACTION_FALLBACK_REASONS = [
+  'canonical_unsupported_language',
   'spi_unsupported_language',
 ] as const
 
@@ -60,10 +63,13 @@ export const INDEXING_REASON_CODES = [
   'docs_disabled',
   'unsupported_file_type',
   'unsupported_spi_language',
+  'unsupported_canonical_language',
   'capability_missing',
   'extractor_error',
   'spi_diagnostic',
   'spi_file_missing',
+  'canonical_diagnostic',
+  'canonical_file_missing',
   'manifest_stat_failed',
 ] as const
 
@@ -84,7 +90,7 @@ export interface IndexingOutcome {
   capability: string | null
   /** Actual route selected for this candidate in the published graph. */
   extraction_strategy?: ExtractionStrategy
-  /** Present only when auto mode deliberately routed a file away from SPI. */
+  /** Present only when auto mode deliberately routed a file away from the canonical index. */
   fallback_reason?: ExtractionFallbackReason
   diagnostics?: IndexingDiagnostic[]
 }
@@ -113,7 +119,7 @@ export interface IndexingSummary {
 export interface IndexingSpiDiagnostic {
   id: string
   level: 'info' | 'warn' | 'error'
-  reason: 'spi_diagnostic'
+  reason: 'spi_diagnostic' | 'canonical_diagnostic'
   path?: string
   /** Local-only diagnostic. Share-safe projections never include messages. */
   message?: string

@@ -58,7 +58,7 @@
         "typecheck": "tsc --noEmit",
         "test": "vitest",
         "test:run": "vitest run",
-        "test:coverage": "vitest run --coverage",
+        "test:coverage": "vitest run --coverage --maxWorkers=1",
         "prepack": "npm run clean && npm run build",
         "pack:dry-run": "npm pack --dry-run",
         "publish:public": "npm publish --access public",

@@ -4,7 +4,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import { strFromU8, unzipSync, type UnzipFileInfo } from 'fflate'
 import * as ts from 'typescript'
 
-import type { ExtractionData, ExtractionEdge, ExtractionNode } from '../contracts/types.js'
+import type { ExtractionData, ExtractionEdge, ExtractionNode } from './extract/contracts.js'
 import { runPipelineStage } from '../core/pipeline/stage.js'
 import { loadCached, saveCached } from '../infrastructure/cache.js'
 import { builtinCapabilityRegistry } from '../infrastructure/capabilities.js'

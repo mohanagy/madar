@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { validateExtraction } from '../../src/contracts/extraction.js'
+import { validateExtraction } from '../../src/pipeline/extract/contracts.js'
 import { buildGraphFromExtraction } from '../../src/application/build-graph.js'
 import {
   readCanonicalGraphFixture,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { ExtractionEdge, ExtractionNode } from '../../src/contracts/types.js'
+import type { ExtractionEdge, ExtractionNode } from '../../src/pipeline/extract/contracts.js'
 import { buildGraph } from '../../src/application/build-graph.js'
 import { compactRetrieveResult, executionFlowAdjacency, retrieveContext } from '../../src/runtime/retrieve.js'
 

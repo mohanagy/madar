@@ -1,4 +1,4 @@
-import type { ExtractionData, ExtractionNode } from '../../contracts/types.js'
+import type { ExtractionData, ExtractionNode } from './contracts.js'
 import { lineNumberFromSourceLocation } from '../../shared/source-location.js'
 import { addUniqueEdge, createEdge, normalizeLabel } from './core.js'
 import type { ExtractionFragment } from './dispatch.js'

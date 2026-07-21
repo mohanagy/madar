@@ -3,7 +3,7 @@ import { readFileSync, statSync } from 'node:fs'
 
 import { strFromU8, unzipSync, type UnzipFileInfo } from 'fflate'
 
-import type { ExtractionEdge, ExtractionNode } from '../../../contracts/types.js'
+import type { ExtractionEdge, ExtractionNode } from '../contracts.js'
 import { MAX_TEXT_BYTES, sanitizeLabel } from '../../../shared/security.js'
 
 const BASELINE_TEXT_CONTROL_CHAR_RE = /[\x00-\x1f\x7f]/g

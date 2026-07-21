@@ -5,23 +5,23 @@ A valid `graph.json` proves that Madar produced a readable graph artifact. It do
 Madar writes a separate, versioned completeness receipt for each generation:
 
 - `indexing-manifest.json` is local-only and contains aggregate counts, terminal file or directory outcomes, capabilities, and safe diagnostics.
-- `indexing-manifest.share-safe.json` contains counts, reason buckets, capability buckets, and SPI diagnostic counts. It omits paths, per-file outcomes, and diagnostic messages.
+- `indexing-manifest.share-safe.json` contains counts, reason buckets, capability buckets, and index diagnostic counts. It omits paths, per-file outcomes, and diagnostic messages. The schema-v1 field remains named `spi_diagnostics` so existing artifacts stay readable.
 
 In a linked Git worktree these files live beside the external worktree-specific graph, not inside the checkout. `madar generate`, `madar doctor`, and `madar status` print the resolved local location or the relevant counts.
 
 ## What counts as an indexed file
 
-An indexed file is a discovered candidate for which an extractor produced usable graph evidence, or whose previously indexed evidence was safely reused from an unchanged graph or cache.
+An indexed file is a discovered candidate for which the canonical index or a companion extractor produced usable graph evidence, or whose previously indexed evidence was safely reused from an unchanged graph. The temporary legacy companion can also reuse its extraction cache; supported JS/TS canonical indexing is uncached.
 
 Each discovered candidate with a supported or explicitly known unsupported source/document/media extension, outside Madar's hard-ignored artifact trees, receives one terminal outcome:
 
 | Outcome | Meaning |
 | --- | --- |
-| `indexed` | Extraction completed without a reported warning. This includes explicit cache and unchanged-graph reuse reason codes. |
-| `indexed_with_warnings` | Usable evidence was produced, but a parser fallback or SPI diagnostic may reduce coverage. |
+| `indexed` | Indexing or extraction completed without a reported warning. This includes unchanged-graph reuse and legacy-companion cache reason codes. |
+| `indexed_with_warnings` | Usable evidence was produced, but a parser fallback or index diagnostic may reduce coverage. |
 | `skipped_by_policy` | Madar deliberately did not read the path, for example because it was sensitive, hidden, ignored, excluded by Git policy, or disabled by an option. |
 | `unsupported` | Madar recognized the candidate as source-like but has no applicable extraction capability in the selected pipeline. |
-| `failed` | Discovery, stat, parser, extractor, SPI projection, or empty-extraction handling failed for the candidate. |
+| `failed` | Discovery, stat, parser, canonical indexing, legacy extraction, or empty-extraction handling failed for the candidate. |
 
 An unreadable or deliberately untraversed directory can have a directory outcome because Madar cannot safely claim individual file knowledge below it. Generated artifacts and dependency trees that Madar hard-ignores, such as `.git/`, `node_modules/`, and `out/`, are outside the candidate set and are not enumerated merely to inflate policy counts.
 

@@ -171,7 +171,7 @@ export interface GenerateCliOptions {
   strictIndexing: boolean
   maxIndexingFailed: number
   maxIndexingUnsupported: number
-  /** Default auto mode uses SPI where it is capable and legacy elsewhere. */
+  /** Auto uses the canonical JS/TS index and the temporary legacy companion elsewhere. */
   extractionMode: ExtractionMode
 }
 

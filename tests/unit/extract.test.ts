@@ -10880,6 +10880,7 @@ describe('extract', () => {
         [
           '.py',
           '.js',
+          '.jsx',
           '.ts',
           '.tsx',
           '.go',

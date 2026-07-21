@@ -3,7 +3,7 @@ import { resolve } from 'node:path'
 
 import * as ts from 'typescript'
 
-import type { ExtractionNode } from '../../../contracts/types.js'
+import type { ExtractionNode } from '../contracts.js'
 import { addNode, addUniqueEdge, createEdge, createNode, _makeId } from '../core.js'
 import { unparenthesizeExpression } from '../typescript-utils.js'
 import { resolveImportPath, scriptKindForPath } from './js-import-paths.js'

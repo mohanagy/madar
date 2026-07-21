@@ -2,6 +2,10 @@ import { existsSync, mkdirSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 import { loadGraphArtifact, writeGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
+import {
+  buildCanonicalTypeScriptIndex,
+  isCanonicalTypeScriptSourceFile,
+} from '../adapters/typescript/index.js'
 import { parseGenerationPolicy, type ExtractionMode } from '../contracts/generation-policy.js'
 import type {
   ExtractionFallbackReason,
@@ -12,8 +16,9 @@ import type {
   IndexingStrictThresholds,
   IndexingSummary,
 } from '../contracts/indexing.js'
-import type { ExtractionData, ExtractionEdge, ExtractionNode, ExtractionSchemaVersion, Hyperedge } from '../contracts/types.js'
+import type { ExtractionData, ExtractionEdge, ExtractionNode, ExtractionSchemaVersion, Hyperedge } from '../pipeline/extract/contracts.js'
 import { GRAPH_ARTIFACT_REGENERATE_MESSAGE } from '../domain/graph/artifact.js'
+import { canonicalJsonString } from '../domain/graph/canonical-json.js'
 import { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
 import { godNodes, semanticAnomalies, suggestQuestions, surprisingConnections } from '../pipeline/analyze.js'
 import { buildGraphFromExtraction } from '../application/build-graph.js'
@@ -32,14 +37,11 @@ import { generateDocs as generateDocsArtifacts } from '../pipeline/docs.js'
 import { extract, EXTRACTOR_CACHE_VERSION } from '../pipeline/extract.js'
 import { createFileStemMap } from '../pipeline/extract/core.js'
 import {
+  canonicalTypeScriptIndexingOutcomes,
   localExtractionIndexingOutcome,
-  projectSpiIndexingOutcomes,
   retainedIndexingOutcomes,
 } from '../pipeline/indexing-generation.js'
 import { createIndexingManifest, indexingStrictViolations, localIndexingPath } from '../pipeline/indexing-outcomes.js'
-import { buildSpiCached, type SpiCacheStats } from '../pipeline/spi/cache.js'
-import { isSpiSupportedSourceFile } from '../pipeline/spi/build.js'
-import { projectSpiToExtraction } from '../pipeline/spi/projector.js'
 import { generate as generateReport } from '../pipeline/report.js'
 import { toWiki } from '../pipeline/wiki.js'
 import { buildGraphBuildFreshnessMetadata } from '../shared/graph-build-freshness.js'
@@ -81,7 +83,7 @@ export interface GenerateGraphOptions {
   includeDocs?: boolean
   docs?: boolean
   /** Select capability-aware auto extraction, legacy-only extraction, or
-   * strict SPI code extraction without unsupported-language fallback.
+   * strict canonical JS/TS indexing without unsupported-language fallback.
    * Eligible non-code evidence remains included. CLI and programmatic
    * generation default to `auto`; explicit `useSpi` retains its legacy
    * compatibility mapping. */
@@ -114,7 +116,7 @@ export interface GenerateGraphResult {
   semanticAnomalyCount?: number
   changedFiles: number
   deletedFiles: number
-  cache: GenerateGraphCacheSummary | null
+  cache: null
   warning: string | null
   notes: string[]
   discoverySafety?: DiscoverySafetyMetadata
@@ -122,13 +124,6 @@ export interface GenerateGraphResult {
   indexingManifestPath?: string
   indexingShareSafeManifestPath?: string
   indexing?: IndexingSummary
-}
-
-export interface GenerateGraphCacheSummary {
-  strategy: 'spi'
-  hit: boolean
-  reason: SpiCacheStats['reason']
-  fileCount: number
 }
 
 export type GenerateUnsupportedCorpusCode = 'NO_SUPPORTED_FILES' | 'NO_GRAPH_NODES'
@@ -321,6 +316,41 @@ function retainedExtractionFromGraph(graph: KnowledgeGraph, removedSourceFiles: 
     input_tokens: 0,
     output_tokens: 0,
   }
+}
+
+function extractionContextNodes(graph: KnowledgeGraph): ExtractionNode[] {
+  return graph.nodeEntries().map(([id, attributes]) => ({
+    id,
+    ...attributes,
+    label: String(attributes.label ?? id),
+    file_type: String(attributes.file_type ?? 'code') as ExtractionNode['file_type'],
+    source_file: String(attributes.source_file ?? ''),
+  }))
+}
+
+function mergeCanonicalAndCompanionGraphs(
+  canonical: KnowledgeGraph | null,
+  companion: KnowledgeGraph | null,
+  contextNodeIds: ReadonlySet<string>,
+): KnowledgeGraph | null {
+  if (!canonical) return companion
+  if (!companion) return canonical
+  for (const [id, attributes] of companion.nodeEntries()) {
+    if (contextNodeIds.has(id) || canonical.hasNode(id)) continue
+    canonical.addNode(id, attributes)
+  }
+  for (const [source, target, attributes] of companion.edgeEntries()) {
+    if (!canonical.hasNode(source) || !canonical.hasNode(target)) continue
+    canonical.addEdge(source, target, attributes)
+  }
+  const hyperedges = [
+    ...(Array.isArray(canonical.graph.hyperedges) ? canonical.graph.hyperedges : []),
+    ...(Array.isArray(companion.graph.hyperedges) ? companion.graph.hyperedges : []),
+  ]
+  if (hyperedges.length > 0) {
+    canonical.graph.hyperedges = [...new Map(hyperedges.map((hyperedge) => [canonicalJsonString(hyperedge), hyperedge])).values()]
+  }
+  return canonical
 }
 
 function isIncrementalDetectResult(detection: DetectResult | IncrementalDetectResult): detection is IncrementalDetectResult {
@@ -522,34 +552,18 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     ...detected.files[FileType.AUDIO],
     ...detected.files[FileType.VIDEO],
   ]
-  const spiCodeFiles = extractionMode === 'legacy'
+  const canonicalCodeFiles = extractionMode === 'legacy'
     ? []
     : extractionMode === 'spi'
       ? codeFiles
-      : codeFiles.filter((filePath) => isSpiSupportedSourceFile(filePath))
+      : codeFiles.filter((filePath) => isCanonicalTypeScriptSourceFile(filePath))
   const legacyFallbackCodeFiles = extractionMode === 'auto'
-    ? codeFiles.filter((filePath) => !isSpiSupportedSourceFile(filePath))
+    ? codeFiles.filter((filePath) => !isCanonicalTypeScriptSourceFile(filePath))
     : []
-  // SPI contributes node and framework metadata for supported files, while
-  // the legacy extractor preserves established relationship semantics for
-  // those same files. This is an augmentation pass, not a fallback: explicit
-  // --spi stays strict and explicit --legacy never invokes SPI.
-  const legacyAugmentationCodeFiles = extractionMode === 'auto' ? spiCodeFiles : []
-  // SPI code and non-code/legacy passes are merged afterward, so each output
-  // graph needs one shared ID namespace across the files it actually emits.
-  // Strict SPI intentionally excludes unsupported source languages from that
-  // namespace: adding a Go/Python file must not alter JS/TS graph IDs.
-  const sharedFileStems = extractionMode === 'auto'
-    ? createFileStemMap(extractableFiles)
-    : extractionMode === 'spi'
-      ? createFileStemMap([
-          ...codeFiles.filter((filePath) => isSpiSupportedSourceFile(filePath)),
-          ...nonCodeExtractableFiles,
-        ])
-      : undefined
+  const companionFiles = [...legacyFallbackCodeFiles, ...nonCodeExtractableFiles]
+  const companionFileStems = companionFiles.length > 0 ? createFileStemMap(companionFiles) : undefined
   let extractedFiles = options.clusterOnly ? 0 : extractableFiles.length
-  let cacheSummary: GenerateGraphCacheSummary | null = null
-  let spiProducedEvidence = false
+  let canonicalProducedEvidence = false
 
   progress?.({ step: 'detect', message: `Found ${detected.total_files} files (~${detected.total_words.toLocaleString()} words)` })
 
@@ -573,116 +587,68 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     progress?.({ step: 'extract', message: `Extracting ${extractableFiles.length} files...`, current: 0, total: extractableFiles.length })
   }
 
-  // SPI builds are all-or-nothing at the TypeScript-program layer. In auto
-  // mode we run that cacheable build only for SPI-capable files, then merge
-  // one legacy extraction for supported languages SPI does not implement.
-  // Explicit --spi never falls back; explicit --legacy never invokes SPI.
-  const buildViaSpi = (): ReturnType<typeof buildGraphFromExtraction> | null => {
+  const buildViaCanonicalIndex = (): KnowledgeGraph | null => {
     if (extractableFiles.length === 0) return null
-    const spiExtractorVersion = `spi-v1.0.0-enqueues-job-${EXTRACTOR_CACHE_VERSION}`
-    const built =
-      spiCodeFiles.length > 0
-        ? buildSpiCached({
-            root: resolvedRootPath,
-            madarVersion: `spi-extractor-${EXTRACTOR_CACHE_VERSION}`,
-            extractorVersion: spiExtractorVersion,
-            includedFiles: new Set(spiCodeFiles.map((filePath) => resolve(filePath))),
-          })
-        : null
-    const spiExtraction = built
-      ? withExtractionStrategy(projectSpiToExtraction(built.spi, {
-          root: resolvedRootPath,
-          ...(sharedFileStems ? { fileStemByAbsolutePath: sharedFileStems } : {}),
-        }), 'spi')
-      : emptyExtraction()
-    spiProducedEvidence = spiExtraction.nodes.length > 0 || spiExtraction.edges.length > 0
-    // Legacy owns the shared JS/TS nodes and their established relationship
-    // semantics. Retain SPI-only nodes as supplemental evidence, but avoid
-    // mixing competing relationship projections into the primary topology.
-    const spiSupplementalExtraction: ExtractionData = {
-      ...spiExtraction,
-      edges: [],
-      hyperedges: [],
-    }
-    const legacyAugmentationExtraction =
-      legacyAugmentationCodeFiles.length > 0
-        ? withExtractionStrategy(extract(legacyAugmentationCodeFiles, {
-            allowedTargets: extractableFiles,
-            contextNodes: spiExtraction.nodes,
-            ...(sharedFileStems ? { fileStemByAbsolutePath: sharedFileStems } : {}),
-          }), 'legacy')
-        : emptyExtraction()
+    const canonical = canonicalCodeFiles.length > 0
+      ? buildCanonicalTypeScriptIndex({ root: resolvedRootPath, files: canonicalCodeFiles })
+      : null
+    canonicalProducedEvidence = (canonical?.graph.numberOfNodes() ?? 0) > 0
+    const contextNodes = canonical ? extractionContextNodes(canonical.graph) : []
     const legacyFallbackExtraction =
       legacyFallbackCodeFiles.length > 0
         ? withExtractionStrategy(extract(legacyFallbackCodeFiles, {
             allowedTargets: extractableFiles,
-            contextNodes: spiExtraction.nodes,
-            ...(sharedFileStems ? { fileStemByAbsolutePath: sharedFileStems } : {}),
-            onFileOutcome: recordExtractionOutcome('legacy_fallback', 'spi_unsupported_language'),
+            contextNodes,
+            ...(companionFileStems ? { fileStemByAbsolutePath: companionFileStems } : {}),
+            onFileOutcome: recordExtractionOutcome('legacy_fallback', 'canonical_unsupported_language'),
           }), 'legacy_fallback')
         : emptyExtraction()
-    const codeExtraction = extractionMode === 'auto'
-      ? mergeExtractions([
-          legacyAugmentationExtraction,
-          spiSupplementalExtraction,
-          legacyFallbackExtraction,
-        ])
-      : spiExtraction
     const nonCodeExtraction =
       nonCodeExtractableFiles.length > 0
         ? withExtractionStrategy(extract(nonCodeExtractableFiles, {
             allowedTargets: extractableFiles,
-            contextNodes: codeExtraction.nodes,
-            ...(sharedFileStems ? { fileStemByAbsolutePath: sharedFileStems } : {}),
+            contextNodes,
+            ...(companionFileStems ? { fileStemByAbsolutePath: companionFileStems } : {}),
             onFileOutcome: recordExtractionOutcome('non_code'),
           }), 'non_code')
         : emptyExtraction()
 
-    if (built) {
-      const spiIndexing = projectSpiIndexingOutcomes({
+    if (canonical) {
+      const canonicalIndexing = canonicalTypeScriptIndexingOutcomes({
         rootPath: resolvedRootPath,
-        codeFiles: spiCodeFiles,
-        result: built,
+        codeFiles: canonicalCodeFiles,
+        result: canonical,
       })
-      indexingOutcomes.push(...spiIndexing.outcomes)
-      spiDiagnostics.push(...spiIndexing.diagnostics)
-      if (spiIndexing.diagnostics.length > 0) {
-        notes.push(`SPI reported ${spiIndexing.diagnostics.length} diagnostic(s); inspect ${join(resolvedOutputDir, 'indexing-manifest.json')}.`)
+      indexingOutcomes.push(...canonicalIndexing.outcomes)
+      spiDiagnostics.push(...canonicalIndexing.diagnostics)
+      if (canonicalIndexing.diagnostics.length > 0) {
+        notes.push(`Canonical TypeScript index reported ${canonicalIndexing.diagnostics.length} diagnostic(s); inspect ${join(resolvedOutputDir, 'indexing-manifest.json')}.`)
       }
     }
 
-    extractedFiles = (built ? (built.cache.hit ? 0 : built.cache.file_count) : 0)
-      + legacyAugmentationCodeFiles.length
+    extractedFiles = (canonical?.files.length ?? 0)
       + legacyFallbackCodeFiles.length
       + nonCodeExtractableFiles.length
-    cacheSummary = built
-      ? {
-          strategy: 'spi',
-          hit: built.cache.hit,
-          reason: built.cache.reason,
-          fileCount: built.cache.file_count,
-        }
-      : null
-
-    if (built) {
-      if (built.cache.hit) {
-        notes.push(`SPI cache hit (${built.cache.file_count} files, key ${built.cache.cache_key.slice(0, 8)}).`)
-      } else {
-        notes.push(`SPI build via projector (${built.cache.file_count} files, reason=${built.cache.reason}).`)
-      }
-    }
+    if (canonical) notes.push(`Canonical TypeScript index built ${canonical.files.length} source file(s).`)
     if (extractionMode === 'auto') {
       notes.push(
-        `Auto extraction: SPI routed ${spiCodeFiles.length} supported source file(s); legacy semantic augmentation routed ${legacyAugmentationCodeFiles.length} supported source file(s); legacy fallback routed ${legacyFallbackCodeFiles.length} SPI-unsupported source file(s).`,
+        `Auto extraction: canonical TypeScript index routed ${canonicalCodeFiles.length} supported source file(s); legacy fallback routed ${legacyFallbackCodeFiles.length} unsupported source file(s).`,
       )
     }
-    return buildGraphFromExtraction(mergeExtractions([codeExtraction, nonCodeExtraction]), { rootPath: resolvedRootPath })
+    const companionExtraction = mergeExtractions([legacyFallbackExtraction, nonCodeExtraction])
+    const companionGraph = companionExtraction.nodes.length > 0
+      ? buildGraphFromExtraction({
+          ...companionExtraction,
+          nodes: [...contextNodes, ...companionExtraction.nodes],
+        }, { rootPath: resolvedRootPath })
+      : null
+    return mergeCanonicalAndCompanionGraphs(canonical?.graph ?? null, companionGraph, new Set(contextNodes.map((node) => node.id)))
   }
 
   const graph = options.clusterOnly
     ? existingGraph
     : extractionMode !== 'legacy'
-      ? buildViaSpi()
+      ? buildViaCanonicalIndex()
     : options.update && existingGraph && isIncrementalDetectResult(detected)
         ? (() => {
             if (existingGraphExtractorVersion == null || existingGraphExtractorVersion !== EXTRACTOR_CACHE_VERSION) {
@@ -836,9 +802,11 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   graph.graph.generation_policy = generationPolicyToPublish
   // Cluster-only mode reuses the existing graph; it must not relabel that
   // graph based on the currently discovered corpus without re-extracting it.
+  // `spi_mode` is retained for graph-consumer compatibility; canonical index
+  // evidence now drives its value rather than SPI-specific detection.
   const graphUsesSpi = options.clusterOnly
     ? existingGraph?.graph.spi_mode === true
-    : spiProducedEvidence
+    : canonicalProducedEvidence
   if (graphUsesSpi) {
     graph.graph.spi_mode = true
   } else {
@@ -912,7 +880,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     semanticAnomalyCount: semanticAnomalyList.length,
     changedFiles,
     deletedFiles,
-    cache: cacheSummary,
+    cache: null,
     warning: detected.warning,
     notes,
     discoverySafety,

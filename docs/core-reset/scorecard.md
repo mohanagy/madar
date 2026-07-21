@@ -2,7 +2,7 @@
 
 > **RFC:** [#577](https://github.com/mohanagy/madar/issues/577)
 > **Milestone:** [`v0.40.0 — Core Reset`](https://github.com/mohanagy/madar/milestone/7)
-> **Status:** accepted; Scope/Baseline and Directed multigraph passed; Canonical TypeScript index is Ready but not In progress
+> **Status:** accepted; Scope/Baseline and Directed multigraph passed; Canonical TypeScript index is the single In progress phase
 
 This is the phase-gate evidence ledger. An issue or PR link is not evidence by itself; each gate needs a reproducible test, receipt, measurement, or external-user record.
 
@@ -32,7 +32,7 @@ The schema-validated, share-safe receipt was recorded at tooling checkout `250a6
 | --- | --- | --- | --- |
 | Scope and baseline | **Passed** | Baseline script/receipt committed; held-out evaluation contract frozen; removal manifest reviewed | [#580](https://github.com/mohanagy/madar/issues/580), [receipt](evidence/baseline-v0.32.0.json), and [manifest](removal-manifest.yml) |
 | Directed multigraph | **Passed** | Parallel types, direction, stable IDs, provenance, and serialization pass | [#582](https://github.com/mohanagy/madar/issues/582), merged [PR #583](https://github.com/mohanagy/madar/pull/583), invariant tests, six green CI jobs, successful CodeRabbit review, and zero unresolved threads |
-| Canonical TypeScript index | **Ready — not In progress** | Labelled TS/framework gates pass without legacy augmentation | Work item contract and owner acceptance required before implementation starts |
+| Canonical TypeScript index | **In progress** | Labelled TS/framework gates pass without legacy augmentation | `npm run test:run -- tests/unit/canonical-index-language.test.ts tests/unit/canonical-index-frameworks.test.ts --maxWorkers=1`; accepted [#585](https://github.com/mohanagy/madar/issues/585), protected base `f68d64482578f0c7992ec63095fa00e19ac25880` |
 | Incremental index | Not started | Add/change/delete/rename output equals clean rebuild | Pending |
 | Evidence-path query | Not started | Held-out correctness and one-call completeness gates pass without repo-specific logic | Pending |
 | Delivery and package | Not started | Thin MCP/CLI, activation, startup, and package budgets pass | Pending |
@@ -51,6 +51,15 @@ Only one technical phase may be `In progress` at a time.
 - Deterministic multigraph, build-adapter, serialization, schema rejection, provenance, collision, traversal, and consumer regressions are committed as tests. The baseline receipt remains unchanged.
 - PR #583 was squash-merged at `63c59049178e82bd6bd1c928f6666ef159365bbe` after all six CI matrix jobs passed, CodeRabbit completed successfully, and every review thread was resolved.
 
+### Canonical TypeScript index candidate evidence (pending PR review)
+
+- One scanner-scoped TypeScript Program writes supported `.js`, `.jsx`, `.ts`, and `.tsx` facts directly to the canonical graph; no SPI projector, cache, diff overlay, test layer, or legacy augmentation participates.
+- The 20 owned predecessor files are deleted. The candidate adds 12 production files and no runtime dependency.
+- Candidate inventory is 170 production TypeScript files / 91,539 LOC. Delta from protected base `f68d64482578f0c7992ec63095fa00e19ac25880` is `+5,538 / -7,791 / net -2,253`, within the accepted phase budget.
+- The gold harness uses one-to-one fact matching, forbidden facts, copied-root and repeated-run determinism, scanner-read isolation, and independent node/edge scoring. Import/re-export and call/framework edge recall are 100%; all eight framework buckets report 100% recall and precision with no unexpected facts.
+- Local verification passes 188 test files / 2,525 tests (2 skipped). V8 coverage is 84.62% statements, 75.99% branches, 91.50% functions, and 85.04% lines; typecheck, build, release hygiene, registry validation, packed retrieval parity, package isolation, and high-severity dependency audit also pass.
+- Final CI matrix, CodeRabbit, and unresolved-thread evidence remains pending and is not claimed here.
+
 ## Graph gates
 
 - [x] Multiple edge kinds between the same two nodes survive build, serialization, and load.
@@ -63,11 +72,11 @@ Only one technical phase may be `In progress` at a time.
 
 Labelled fixtures cover ESM, CJS, barrel exports, aliases, TypeScript paths, project references, calls, types, classes, interfaces, Express, NestJS, Next.js, tRPC, Prisma, React Router, Fastify, and Hono.
 
-- [ ] Import/re-export recall >=95%.
-- [ ] Call/framework-edge recall >=90%.
-- [ ] Precision is independently reported and accepted against the frozen baseline.
-- [ ] No legacy augmentation or projector participates.
-- [ ] No evaluation-repository identifier exists under production source.
+- [x] Import/re-export recall >=95% (canonical gold fixture: 100%).
+- [x] Call/framework-edge recall >=90% (canonical gold fixture: 100%; all eight framework edge slices report 100%).
+- [x] Precision is independently reported and accepted against the frozen baseline (100% node and edge precision with exact unexpected-fact reporting).
+- [x] No legacy augmentation or projector participates in supported JS/TS indexing.
+- [x] No evaluation-repository identifier exists under production source.
 
 ## Query and product gates
 
@@ -149,3 +158,4 @@ Copy this into a comment on [#577](https://github.com/mohanagy/madar/issues/577)
 | 2026-07-19 | Scope/Baseline passed; Directed multigraph became ready | Schema-validated clean-checkout receipt, frozen comparator contract, and complete removal-manifest review | #580 |
 | 2026-07-20 | Obsolete exporter-helper deletion moved into the active Directed multigraph phase; successor phase remains blocked pending merge | Removal manifest and executable governance checks | #582 |
 | 2026-07-21 | Directed multigraph passed; Canonical TypeScript index became ready | Merged PR #583, final source delta, six green CI jobs, successful CodeRabbit review, and zero unresolved threads | #582 and #583 |
+| 2026-07-21 | Canonical TypeScript index accepted and moved to In progress | Exact predecessor inventory, source budget, labelled fixture gates, and protected base recorded | #585 |

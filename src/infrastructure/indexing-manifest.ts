@@ -72,11 +72,11 @@ function isIndexingOutcome(value: unknown): value is IndexingOutcome {
     )
 }
 
-function isSpiDiagnostic(value: unknown): boolean {
+function isIndexDiagnostic(value: unknown): boolean {
   return isRecord(value)
     && typeof value.id === 'string'
     && (value.level === 'info' || value.level === 'warn' || value.level === 'error')
-    && value.reason === 'spi_diagnostic'
+    && (value.reason === 'spi_diagnostic' || value.reason === 'canonical_diagnostic')
     && (value.path === undefined || typeof value.path === 'string')
     && (value.message === undefined || typeof value.message === 'string')
 }
@@ -92,7 +92,7 @@ export function parseIndexingManifest(value: unknown): IndexingManifestV1 | null
     && (typeof value.requested_extraction_mode !== 'string' || !EXTRACTION_MODE_VALUES.has(value.requested_extraction_mode))) {
     return null
   }
-  if (!value.outcomes.every(isIndexingOutcome) || !value.spi_diagnostics.every(isSpiDiagnostic)) {
+  if (!value.outcomes.every(isIndexingOutcome) || !value.spi_diagnostics.every(isIndexDiagnostic)) {
     return null
   }
   const outcomes = value.outcomes as IndexingOutcome[]

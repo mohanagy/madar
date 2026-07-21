@@ -1,5 +1,5 @@
 // #133 — framework metadata-aware retrieval boost.
-// Verifies route_path / http_method / slice_name / procedure_name substring
+// Verifies route_path / http_method / procedure_name substring
 // matches add explicit boost on top of the role-based boost from PR #129.
 
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
@@ -80,40 +80,10 @@ describe('Framework metadata-aware retrieval boost (#133)', () => {
     expect((createUser?.framework_boost ?? 0)).toBeGreaterThan(listUsers?.framework_boost ?? 0)
   })
 
-  it('boosts the Redux slice whose slice_name matches the question', () => {
-    writeFile(sandbox, 'src/auth-slice.ts', [
-      'import { createSlice } from "@reduxjs/toolkit"',
-      'export const authSlice = createSlice({',
-      '  name: "auth",',
-      '  initialState: {},',
-      '  reducers: { login(state) { return state } },',
-      '})',
-    ].join('\n') + '\n')
-    writeFile(sandbox, 'src/counter-slice.ts', [
-      'import { createSlice } from "@reduxjs/toolkit"',
-      'export const counterSlice = createSlice({',
-      '  name: "counter",',
-      '  initialState: 0,',
-      '  reducers: { inc(state: number): number { return state + 1 } },',
-      '})',
-    ].join('\n') + '\n')
-
-    const result = generateGraph(sandbox, { useSpi: true })
-    const graph = loadGraph(result.graphPath)
-    const retrieved = retrieveContext(graph, {
-      question: 'Which slice handles auth state',
-      budget: 2000,
-    })
-
-    const authSlice = retrieved.matched_nodes.find((n) => n.label === 'authSlice')
-    const counterSlice = retrieved.matched_nodes.find((n) => n.label === 'counterSlice')
-    expect((authSlice?.framework_boost ?? 0)).toBeGreaterThan(counterSlice?.framework_boost ?? 0)
-  })
-
   it('boosts the tRPC procedure whose procedure_name appears in the question', () => {
     writeFile(sandbox, 'src/router.ts', [
       'import { initTRPC } from "@trpc/server"',
-      'declare const t: ReturnType<typeof initTRPC.create>',
+      'const t = initTRPC.create()',
       'export const appRouter = t.router({',
       '  getUser: t.procedure.query(() => null),',
       '  cancelOrder: t.procedure.mutation(() => null),',

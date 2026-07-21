@@ -809,7 +809,7 @@ function formatGraphLine(graph: GraphCheck): string[] {
       }
     }
     if (graph.indexingManifest.spi_diagnostics.length > 0) {
-      lines.push(`- SPI diagnostics: ${graph.indexingManifest.spi_diagnostics.length} (inspect indexing-manifest.json)`)
+      lines.push(`- Index diagnostics: ${graph.indexingManifest.spi_diagnostics.length} (inspect indexing-manifest.json)`)
     }
   } else {
     lines.push("- indexing completeness: unavailable (regenerate with 'madar generate . --update')")

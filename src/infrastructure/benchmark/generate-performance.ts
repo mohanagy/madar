@@ -2,19 +2,17 @@ import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rm
 import { extname, join, resolve } from 'node:path'
 
 import { generateGraph, type GenerateGraphOptions, type GenerateGraphResult } from '../generate.js'
-import type { SpiCacheStats } from '../../pipeline/spi/cache.js'
 
 export type GeneratePerformanceVariantName =
   | 'generate-legacy'
-  | 'generate-spi-cold'
-  | 'generate-spi-warm'
+  | 'generate-canonical'
   | 'update-noop'
   | 'update-changed'
   | 'cluster-only'
 
 export interface GeneratePerformanceVariantSummary {
   mode: GenerateGraphResult['mode']
-  strategy: 'legacy' | 'spi'
+  strategy: 'legacy' | 'canonical'
   wall_clock_ms: number
   total_files: number
   code_files: number
@@ -27,9 +25,6 @@ export interface GeneratePerformanceVariantSummary {
   edge_count: number
   output_size_bytes: number
   graph_size_bytes: number
-  cache_hit: boolean | null
-  cache_reason: SpiCacheStats['reason'] | null
-  cache_file_count: number | null
   notes: string[]
 }
 
@@ -68,9 +63,6 @@ const METRICS_TRACKED = [
   'deleted_files',
   'node_count',
   'edge_count',
-  'cache_hit',
-  'cache_reason',
-  'cache_file_count',
   'graph_size_bytes',
   'output_size_bytes',
 ] as const
@@ -105,7 +97,7 @@ function prepareWorkspace(fixtureRoot: string, workDir: string, name: string): s
 function summarizeVariant(
   result: GenerateGraphResult,
   wallClockMs: number,
-  strategy: 'legacy' | 'spi',
+  strategy: 'legacy' | 'canonical',
 ): GeneratePerformanceVariantSummary {
   const graphSizeBytes = existsSync(result.graphPath) ? statSync(result.graphPath).size : 0
   return {
@@ -123,9 +115,6 @@ function summarizeVariant(
     edge_count: result.edgeCount,
     output_size_bytes: directorySize(result.outputDir),
     graph_size_bytes: graphSizeBytes,
-    cache_hit: result.cache?.hit ?? null,
-    cache_reason: result.cache?.reason ?? null,
-    cache_file_count: result.cache?.fileCount ?? null,
     notes: result.notes,
   }
 }
@@ -135,7 +124,7 @@ function runVariant(
   workDir: string,
   name: GeneratePerformanceVariantName,
   options: GenerateGraphOptions,
-  strategy: 'legacy' | 'spi',
+  strategy: 'legacy' | 'canonical',
 ): GeneratePerformanceVariantSummary {
   const workspace = prepareWorkspace(fixtureRoot, workDir, name)
   const startedAt = Date.now()
@@ -182,7 +171,7 @@ function runPreparedVariant(
   workDir: string,
   name: GeneratePerformanceVariantName,
   options: GenerateGraphOptions,
-  strategy: 'legacy' | 'spi',
+  strategy: 'legacy' | 'canonical',
 ): GeneratePerformanceVariantSummary {
   const startedAt = Date.now()
   const result = generateGraph(workspace, options)
@@ -199,17 +188,7 @@ export function runGeneratePerformanceBenchmark(options: RunGeneratePerformanceB
 
   const variants = {} as Record<GeneratePerformanceVariantName, GeneratePerformanceVariantSummary>
   variants['generate-legacy'] = runVariant(fixtureRoot, workDir, 'generate-legacy', { extractionMode: 'legacy' }, 'legacy')
-  variants['generate-spi-cold'] = runVariant(fixtureRoot, workDir, 'generate-spi-cold', { extractionMode: 'spi' }, 'spi')
-
-  const spiWarmWorkspace = prepareWorkspace(fixtureRoot, workDir, 'generate-spi-warm')
-  generateGraph(spiWarmWorkspace, { extractionMode: 'spi' })
-  variants['generate-spi-warm'] = runPreparedVariant(
-    spiWarmWorkspace,
-    workDir,
-    'generate-spi-warm',
-    { extractionMode: 'spi' },
-    'spi',
-  )
+  variants['generate-canonical'] = runVariant(fixtureRoot, workDir, 'generate-canonical', { extractionMode: 'auto' }, 'canonical')
 
   const updateNoopWorkspace = prepareWorkspace(fixtureRoot, workDir, 'update-noop')
   generateGraph(updateNoopWorkspace, { extractionMode: 'legacy' })

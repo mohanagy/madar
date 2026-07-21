@@ -1050,12 +1050,12 @@ describe('generateGraph', () => {
         nodes: Array<{ source_file?: string }>
       }
       const sourceFiles = new Set(
-        graphData.nodes.flatMap((node) => (typeof node.source_file === 'string' ? [normalizeAssertionPath(realpathSync(node.source_file))] : [])),
+        graphData.nodes.flatMap((node) => (typeof node.source_file === 'string' ? [normalizeAssertionPath(node.source_file)] : [])),
       )
 
-      expect(sourceFiles).toContain(normalizeAssertionPath(realpathSync(join(tempDir, 'tracked.ts'))))
-      expect(sourceFiles).toContain(normalizeAssertionPath(realpathSync(join(tempDir, 'untracked.ts'))))
-      expect(sourceFiles).not.toContain(normalizeAssertionPath(realpathSync(join(tempDir, 'ignored.ts'))))
+      expect(sourceFiles).toContain('tracked.ts')
+      expect(sourceFiles).toContain('untracked.ts')
+      expect(sourceFiles).not.toContain('ignored.ts')
     })
   }, generateGraphIntegrationTimeoutMs)
 
@@ -1076,12 +1076,12 @@ describe('generateGraph', () => {
         nodes: Array<{ source_file?: string }>
       }
       const sourceFiles = new Set(
-        graphData.nodes.flatMap((node) => (typeof node.source_file === 'string' ? [normalizeAssertionPath(realpathSync(node.source_file))] : [])),
+        graphData.nodes.flatMap((node) => (typeof node.source_file === 'string' ? [normalizeAssertionPath(node.source_file)] : [])),
       )
 
-      expect(sourceFiles).toContain(normalizeAssertionPath(realpathSync(join(nestedRoot, 'tracked.ts'))))
-      expect(sourceFiles).toContain(normalizeAssertionPath(realpathSync(join(nestedRoot, 'untracked.ts'))))
-      expect(sourceFiles).not.toContain(normalizeAssertionPath(realpathSync(join(nestedRoot, 'ignored.ts'))))
+      expect(sourceFiles).toContain('tracked.ts')
+      expect(sourceFiles).toContain('untracked.ts')
+      expect(sourceFiles).not.toContain('ignored.ts')
     })
   }, generateGraphIntegrationTimeoutMs)
 
@@ -1104,9 +1104,9 @@ describe('generateGraph', () => {
         }
         const sourceFiles = new Set(graphData.nodes.map((node) => node.source_file))
 
-        expect(sourceFiles).toContain(join(aliasedRoot, 'tracked.ts'))
-        expect(sourceFiles).toContain(join(aliasedRoot, 'untracked.ts'))
-        expect(sourceFiles).not.toContain(join(aliasedRoot, 'ignored.ts'))
+        expect(sourceFiles).toContain('tracked.ts')
+        expect(sourceFiles).toContain('untracked.ts')
+        expect(sourceFiles).not.toContain('ignored.ts')
       })
     })
   }, generateGraphIntegrationTimeoutMs)
@@ -5019,25 +5019,15 @@ describe('generateGraph', () => {
       expect(legacy.extractedFiles).toBe(3)
       expect(legacy.cache).toBeNull()
 
-      const spiCold = generateGraph(tempDir, { useSpi: true })
-      expect(spiCold.extractableFiles).toBe(3)
-      expect(spiCold.extractedFiles).toBe(3)
-      expect(spiCold.cache).toEqual(expect.objectContaining({
-        strategy: 'spi',
-        hit: false,
-        reason: 'no-cache',
-        fileCount: 2,
-      }))
+      const canonicalFirst = generateGraph(tempDir, { useSpi: true })
+      expect(canonicalFirst.extractableFiles).toBe(3)
+      expect(canonicalFirst.extractedFiles).toBe(3)
+      expect(canonicalFirst.cache).toBeNull()
 
-      const spiWarm = generateGraph(tempDir, { useSpi: true })
-      expect(spiWarm.extractableFiles).toBe(3)
-      expect(spiWarm.extractedFiles).toBe(1)
-      expect(spiWarm.cache).toEqual(expect.objectContaining({
-        strategy: 'spi',
-        hit: true,
-        reason: 'fresh-cache',
-        fileCount: 2,
-      }))
+      const canonicalSecond = generateGraph(tempDir, { useSpi: true })
+      expect(canonicalSecond.extractableFiles).toBe(3)
+      expect(canonicalSecond.extractedFiles).toBe(3)
+      expect(canonicalSecond.cache).toBeNull()
 
       const updateNoop = generateGraph(tempDir, { update: true, extractionMode: 'legacy' })
       expect(updateNoop.extractableFiles).toBe(3)

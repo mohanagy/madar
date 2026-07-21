@@ -1,7 +1,7 @@
 import { basename, dirname, extname, relative, resolve } from 'node:path'
 import { existsSync, readFileSync } from 'node:fs'
 
-import type { ExtractionData, ExtractionEdge, ExtractionNode } from '../../contracts/types.js'
+import type { ExtractionData, ExtractionEdge, ExtractionNode } from './contracts.js'
 import { _makeId, addNode, addUniqueEdge, createEdge, createNode } from './core.js'
 
 export interface ResolveGoSemanticsOptions {

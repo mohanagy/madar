@@ -229,7 +229,6 @@ describe('package metadata', () => {
 
     expect(matrix).toContain('## Framework awareness')
     expect(matrix).toContain('Express')
-    expect(matrix).toContain('Redux Toolkit')
     expect(matrix).toContain('React Router')
     expect(matrix).toContain('NestJS')
     expect(matrix).toContain('Next.js')

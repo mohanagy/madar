@@ -1,4 +1,4 @@
-import type { ExtractionEdge, ExtractionNode } from '../../contracts/types.js'
+import type { ExtractionEdge, ExtractionNode } from './contracts.js'
 import { createEdge, normalizeLabel } from './core.js'
 
 export interface PendingCall {

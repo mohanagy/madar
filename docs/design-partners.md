@@ -35,7 +35,7 @@ task_type: explain-runtime
 baseline_commands:
   - claude "how does password reset enqueue the email job"
 madar_commands:
-  - madar generate . --spi
+  - madar generate .
   - madar pack "how does password reset enqueue the email job" --task explain
 result:
   outcome: better

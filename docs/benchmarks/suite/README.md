@@ -45,7 +45,7 @@ Current wiring is still conservative, but it is no longer a single-cell scaffold
 
 Current public TypeScript `explain-runtime` receipts (July 15, 2026; packed `0.31.0` artifact; one warm-cache trial per row):
 
-`Legacy` runs the explicit `--legacy` extractor. `SPI` runs strict `--spi` with additional framework-shaped metadata and disk-cache behavior. Normal `madar generate .` now uses capability-aware auto-extraction instead of either benchmark-only mode.
+In these packed `0.31.0` receipts, `Legacy` means the then-current explicit `--legacy` extractor and `SPI` means the then-current strict SPI/cache implementation. The current harness retains those arm labels for schema compatibility, but `--spi` now selects the uncached canonical JS/TS index without unsupported-language fallback; new canonical measurements require a new receipt. Normal `madar generate .` uses the canonical JS/TS index plus temporary fallback only for other supported languages.
 
 | Repo | Bundle | Legacy outcome | SPI outcome |
 | --- | --- | --- | --- |

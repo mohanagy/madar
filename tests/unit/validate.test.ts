@@ -1,4 +1,4 @@
-import { assertValid, validateExtraction } from '../../src/contracts/extraction.js'
+import { assertValid, validateExtraction } from '../../src/pipeline/extract/contracts.js'
 
 const VALID_EXTRACTION = {
   nodes: [

@@ -1,7 +1,14 @@
 import { createHash } from 'node:crypto'
-import { validateExtraction } from '../contracts/extraction.js'
-import type { ExtractionData, ExtractionEdge, ExtractionNode, ExtractionSchemaVersion, Hyperedge } from '../contracts/types.js'
-import { DEFAULT_EXTRACTION_LAYER, type ExtractionLayer } from '../core/layers/types.js'
+import {
+  DEFAULT_EXTRACTION_LAYER,
+  validateExtraction,
+  type ExtractionData,
+  type ExtractionEdge,
+  type ExtractionLayer,
+  type ExtractionNode,
+  type ExtractionSchemaVersion,
+  type Hyperedge,
+} from '../pipeline/extract/contracts.js'
 import { appendDerivedProvenance, deriveIngestProvenanceFromRecord, normalizeMetadataString } from '../core/provenance/ingest.js'
 import { createBaselineProvenance, type ExtractionProvenance } from '../core/provenance/types.js'
 import { canonicalJsonString, compareCodeUnits } from '../domain/graph/canonical-json.js'
