@@ -25,11 +25,11 @@ review:
 
 current:
   updated_at: 2026-07-21
-  completed_phase: directed-multigraph
-  active_phase: canonical-typescript-index
-  ready_phase: null
+  completed_phase: canonical-typescript-index
+  active_phase: null
+  ready_phase: legacy-extraction
   base_commit: f68d64482578f0c7992ec63095fa00e19ac25880
-  completed_phase_commit: 63c59049178e82bd6bd1c928f6666ef159365bbe
+  completed_phase_commit: 4dfd48194f2fab00b2cd2271a6f7917909dde9d4
   production_typescript_files: 170
   production_typescript_loc: 91539
   production_loc_added: 5538
@@ -120,29 +120,48 @@ items:
 
   - id: canonical-typescript-index
     disposition: rebuild
-    status: in_progress
+    status: complete
     sources:
+      - src/domain/index/**
+      - src/adapters/typescript/**
+    removed_sources:
       - src/pipeline/spi/**
       - src/contracts/extraction.ts
       - src/contracts/types.ts
       - src/core/layers/types.ts
-      - src/domain/index/**
-      - src/adapters/typescript/**
     destination: src/domain/index/** and src/adapters/typescript/**
     preserve:
       - Generic TypeScript semantic-resolution algorithms
       - Framework detectors that satisfy the canonical adapter contract
-    notes: 'Accepted in #585 and active from protected base f68d64482578f0c7992ec63095fa00e19ac25880; legacy extraction and non-code/other-language ingestion remain blocked until this fixture gate passes.'
+    notes: 'Completed by #585 and PR #586 from protected base f68d64482578f0c7992ec63095fa00e19ac25880; the final CodeRabbit rerun was rate-limited and merged under the explicit owner exception recorded below after all nine actionable comments and two review-body nitpicks were fixed, independent review passed, six CI jobs passed, and no review thread remained unresolved.'
     production_loc_budget:
       added_max: 5900
       removed_min: 7564
       net_max: -1500
+    completion:
+      issue: https://github.com/mohanagy/madar/issues/585
+      pull_request: https://github.com/mohanagy/madar/pull/586
+      commit: 4dfd48194f2fab00b2cd2271a6f7917909dde9d4
+      production_typescript_files: 170
+      production_typescript_loc: 91539
+      production_loc_added: 5538
+      production_loc_removed: 7791
+      production_loc_net: -2253
+      dependencies_added: 0
+      ci_matrix_jobs_passed: 6
+      coderabbit: rate_limited_owner_exception
+      coderabbit_findings_addressed: 9
+      coderabbit_findings_confirmed: 8
+      coderabbit_review_body_nitpicks_addressed: 2
+      independent_review: passed
+      independent_review_receipt: https://github.com/mohanagy/madar/pull/586#issuecomment-5036311350
+      unresolved_review_threads: 0
     remove_when: Labelled language and framework fixtures pass without legacy augmentation.
     exit_gate: One canonical index schema writes the graph directly.
 
   - id: legacy-extraction
     disposition: delete
-    status: proposed
+    status: planned
     sources:
       - src/pipeline/extract.ts
       - src/pipeline/extract/call-resolution.ts
@@ -156,12 +175,12 @@ items:
       - src/pipeline/extract/typescript-utils.ts
       - src/pipeline/extract/contracts.ts
       - src/pipeline/tree-sitter-wasm.ts
-    blocked_by: canonical-typescript-index
+    notes: 'This is the scalar Ready handle for one combined deletion work item that must also delete non-code-and-other-language-ingest; neither manifest item is In progress until an accepted issue records the exact inventory, budget, and gates.'
     exit_gate: Canonical TypeScript fixtures pass and no production import references the legacy engine.
 
   - id: non-code-and-other-language-ingest
     disposition: delete
-    status: proposed
+    status: planned
     sources:
       - src/pipeline/docs.ts
       - src/pipeline/wiki.ts
@@ -170,8 +189,7 @@ items:
       - src/pipeline/extract/non-code/**
       - src/pipeline/extract/python-rationale.ts
       - src/pipeline/extract/go-cross-file.ts
-    notes: These non-TypeScript handlers are excluded from legacy-extraction ownership so every production file has one disposition.
-    blocked_by: canonical-typescript-index
+    notes: 'These non-TypeScript handlers have distinct file ownership but are Ready only as the secondary scope of the same combined deletion work item represented by legacy-extraction; splitting them would preserve a temporary companion path.'
     exit_gate: Package, docs, flags, dependencies, and tests no longer claim unsupported ingestion.
 
   - id: generation-and-incremental

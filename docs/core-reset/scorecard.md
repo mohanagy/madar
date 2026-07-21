@@ -2,7 +2,7 @@
 
 > **RFC:** [#577](https://github.com/mohanagy/madar/issues/577)
 > **Milestone:** [`v0.40.0 — Core Reset`](https://github.com/mohanagy/madar/milestone/7)
-> **Status:** accepted; Scope/Baseline and Directed multigraph passed; Canonical TypeScript index is the single In progress phase
+> **Status:** accepted; Scope/Baseline, Directed multigraph, and Canonical TypeScript index passed; the combined legacy/non-code deletion is Ready; no phase is In progress
 
 This is the phase-gate evidence ledger. An issue or PR link is not evidence by itself; each gate needs a reproducible test, receipt, measurement, or external-user record.
 
@@ -32,7 +32,8 @@ The schema-validated, share-safe receipt was recorded at tooling checkout `250a6
 | --- | --- | --- | --- |
 | Scope and baseline | **Passed** | Baseline script/receipt committed; held-out evaluation contract frozen; removal manifest reviewed | [#580](https://github.com/mohanagy/madar/issues/580), [receipt](evidence/baseline-v0.32.0.json), and [manifest](removal-manifest.yml) |
 | Directed multigraph | **Passed** | Parallel types, direction, stable IDs, provenance, and serialization pass | [#582](https://github.com/mohanagy/madar/issues/582), merged [PR #583](https://github.com/mohanagy/madar/pull/583), invariant tests, six green CI jobs, successful CodeRabbit review, and zero unresolved threads |
-| Canonical TypeScript index | **In progress** | Labelled TS/framework gates pass without legacy augmentation | `npm run test:run -- tests/unit/canonical-index-language.test.ts tests/unit/canonical-index-frameworks.test.ts --maxWorkers=1`; accepted [#585](https://github.com/mohanagy/madar/issues/585), protected base `f68d64482578f0c7992ec63095fa00e19ac25880` |
+| Canonical TypeScript index | **Passed** | Labelled TS/framework gates pass without legacy augmentation | [#585](https://github.com/mohanagy/madar/issues/585), merged [PR #586](https://github.com/mohanagy/madar/pull/586), merge commit `4dfd48194f2fab00b2cd2271a6f7917909dde9d4`, six green CI jobs, [independent review passed](https://github.com/mohanagy/madar/pull/586#issuecomment-5036311350), nine actionable CodeRabbit comments and two review-body nitpicks addressed, and zero unresolved threads; the final CodeRabbit rerun was rate-limited and merged under an explicit owner-approved exception |
+| Legacy extraction plus non-code/other-language ingestion | **Ready — not In progress** | Delete both manifest-owned paths in one work item while canonical JS/TS fixtures remain green and no package/docs/flag claims unsupported ingestion | Exact inventory, source budget, and verification contract must be accepted in one issue before implementation starts |
 | Incremental index | Not started | Add/change/delete/rename output equals clean rebuild | Pending |
 | Evidence-path query | Not started | Held-out correctness and one-call completeness gates pass without repo-specific logic | Pending |
 | Delivery and package | Not started | Thin MCP/CLI, activation, startup, and package budgets pass | Pending |
@@ -40,7 +41,7 @@ The schema-validated, share-safe receipt was recorded at tooling checkout `250a6
 | External validation | Not started | Activation, retention, and paid-intent gates pass | Pending |
 | Stable release | Not started | Every blocking gate passed; old core absent; migration docs ready | Pending |
 
-Only one technical phase may be `In progress` at a time.
+Only one technical phase may be `In progress` at a time. No phase is currently In progress; the combined deletion is only Ready.
 
 ### Directed multigraph phase evidence (passed)
 
@@ -51,14 +52,14 @@ Only one technical phase may be `In progress` at a time.
 - Deterministic multigraph, build-adapter, serialization, schema rejection, provenance, collision, traversal, and consumer regressions are committed as tests. The baseline receipt remains unchanged.
 - PR #583 was squash-merged at `63c59049178e82bd6bd1c928f6666ef159365bbe` after all six CI matrix jobs passed, CodeRabbit completed successfully, and every review thread was resolved.
 
-### Canonical TypeScript index candidate evidence (pending PR review)
+### Canonical TypeScript index phase evidence (passed)
 
 - One scanner-scoped TypeScript Program writes supported `.js`, `.jsx`, `.ts`, and `.tsx` facts directly to the canonical graph; no SPI projector, cache, diff overlay, test layer, or legacy augmentation participates.
-- The 20 owned predecessor files are deleted. The candidate adds 12 production files and no runtime dependency.
-- Candidate inventory is 170 production TypeScript files / 91,539 LOC. Delta from protected base `f68d64482578f0c7992ec63095fa00e19ac25880` is `+5,538 / -7,791 / net -2,253`, within the accepted phase budget.
+- The 20 owned predecessor files are deleted. The completed phase adds 12 production files and no runtime dependency.
+- Final protected-branch inventory is 170 production TypeScript files / 91,539 LOC. Delta from protected base `f68d64482578f0c7992ec63095fa00e19ac25880` is `+5,538 / -7,791 / net -2,253`, within the accepted phase budget.
 - The gold harness uses one-to-one fact matching, forbidden facts, copied-root and repeated-run determinism, scanner-read isolation, and independent node/edge scoring. Import/re-export and call/framework edge recall are 100%; all eight framework buckets report 100% recall and precision with no unexpected facts.
 - Local verification passes 188 test files / 2,525 tests (2 skipped). V8 coverage is 84.62% statements, 75.99% branches, 91.50% functions, and 85.04% lines; typecheck, build, release hygiene, registry validation, packed retrieval parity, package isolation, and high-severity dependency audit also pass.
-- Final CI matrix, CodeRabbit, and unresolved-thread evidence remains pending and is not claimed here.
+- PR #586 was squash-merged at `4dfd48194f2fab00b2cd2271a6f7917909dde9d4` after all six CI matrix jobs passed and every review thread was resolved. All nine actionable CodeRabbit comments and both review-body nitpicks were addressed; eight of the nine actionable remediations were confirmed by CodeRabbit before its final rerun was rate-limited. An [independent adversarial review passed](https://github.com/mohanagy/madar/pull/586#issuecomment-5036311350), and the owner explicitly approved merging under that review-automation exception. This record does not claim that the final CodeRabbit rerun passed.
 
 ## Graph gates
 
@@ -100,7 +101,7 @@ Labelled fixtures cover ESM, CJS, barrel exports, aliases, TypeScript paths, pro
 - [ ] `madar --version` is <100 ms and <80 MB RSS.
 - [ ] MCP handshake and tool listing is <1 second cold.
 - [ ] Warm retrieval p95 is <500 ms on an approximately 15,000-node graph.
-- [x] All required CI checks and review threads are green/resolved at the current completed phase head.
+- [x] At the current completed phase head, all six CI jobs passed and all review threads were resolved; the rate-limited final CodeRabbit rerun is recorded as an owner-approved exception backed by an independent review, not as a successful CodeRabbit check.
 
 ## Business gates
 
@@ -159,3 +160,4 @@ Copy this into a comment on [#577](https://github.com/mohanagy/madar/issues/577)
 | 2026-07-20 | Obsolete exporter-helper deletion moved into the active Directed multigraph phase; successor phase remains blocked pending merge | Removal manifest and executable governance checks | #582 |
 | 2026-07-21 | Directed multigraph passed; Canonical TypeScript index became ready | Merged PR #583, final source delta, six green CI jobs, successful CodeRabbit review, and zero unresolved threads | #582 and #583 |
 | 2026-07-21 | Canonical TypeScript index accepted and moved to In progress | Exact predecessor inventory, source budget, labelled fixture gates, and protected base recorded | #585 |
+| 2026-07-21 | Canonical TypeScript index passed; combined legacy/non-code deletion became Ready with no active phase | Merged PR #586, final source delta, six green CI jobs, nine actionable CodeRabbit comments and two review-body nitpicks addressed, eight actionable remediations confirmed before rate limiting, independent review receipt, explicit owner exception, and zero unresolved threads | #585 and #586 |

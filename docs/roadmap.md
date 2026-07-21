@@ -11,7 +11,7 @@ Madar is executing an accepted Core Reset. The roadmap is outcome-driven: work a
 - [Removal manifest](core-reset/removal-manifest.yml) — keep, rebuild, move, delete, and defer decisions
 - [Scorecard](core-reset/scorecard.md) — technical and business evidence gates
 
-The RFC is **accepted**. Scope and baseline has passed with a [committed evidence receipt](core-reset/evidence/baseline-v0.32.0.json), and Directed multigraph passed through [#582](https://github.com/mohanagy/madar/issues/582) and [PR #583](https://github.com/mohanagy/madar/pull/583). The Canonical TypeScript/JavaScript index is the single **In progress** phase through [#585](https://github.com/mohanagy/madar/issues/585); every later replacement phase remains blocked.
+The RFC is **accepted**. Scope and baseline has passed with a [committed evidence receipt](core-reset/evidence/baseline-v0.32.0.json), Directed multigraph passed through [#582](https://github.com/mohanagy/madar/issues/582) and [PR #583](https://github.com/mohanagy/madar/pull/583), and the Canonical TypeScript/JavaScript index passed through [#585](https://github.com/mohanagy/madar/issues/585) and [PR #586](https://github.com/mohanagy/madar/pull/586). No phase is In progress. One combined deletion of legacy extraction and non-code/other-language ingestion is Ready for an accepted work-item contract; every later replacement phase remains blocked.
 
 ## Passed — directed multigraph
 
@@ -24,22 +24,27 @@ The `directed-multigraph` removal-manifest entry delivered:
 
 The five predecessor files and obsolete exporter surfaces are absent. PR #583 was squash-merged into the protected `core-reset` branch at `63c59049178e82bd6bd1c928f6666ef159365bbe`. Final measurements are 178 production TypeScript files / 93,792 LOC with a `+1,197 / -4,171 / net -2,974` source delta, five new production files, and no dependency additions. All six CI matrix jobs passed, CodeRabbit completed successfully, every review thread was resolved, and the frozen baseline receipt remains unchanged.
 
-## In progress — canonical TypeScript/JavaScript index
+## Passed — canonical TypeScript/JavaScript index
 
-The active work item is limited to the `canonical-typescript-index` removal-manifest entry accepted in [#585](https://github.com/mohanagy/madar/issues/585), based on protected `core-reset` commit `f68d64482578f0c7992ec63095fa00e19ac25880`. It must write canonical graph facts directly, delete the 20-file / 7,564-LOC SPI and projection contract, satisfy the labelled language/framework fixtures, and stay within `+5,900 / -7,564 / net -1,500` production LOC with no runtime dependency. Legacy extraction and non-code/other-language ingestion become eligible for deletion only after this fixture gate passes; incremental refresh, retrieval replacement, and delivery remain blocked.
+The `canonical-typescript-index` removal-manifest entry accepted in [#585](https://github.com/mohanagy/madar/issues/585) now writes canonical graph facts directly from one scanner-scoped TypeScript Program. It deleted the 20-file SPI and projection contract, satisfies the labelled language/framework fixtures without legacy augmentation, and adds no runtime dependency.
 
-The current review candidate deletes all 20 predecessor files, adds 12 production files and no runtime dependency, and measures 170 production TypeScript files / 91,539 LOC with a `+5,538 / -7,791 / net -2,253` delta. Its strengthened gold harness reports 100% import/re-export recall and 100% call/framework-edge recall; all eight accepted framework buckets report 100% recall and precision with no unexpected facts. These are candidate measurements only: the phase remains In progress until exact-head CI, CodeRabbit, and review-thread gates pass and the protected branch records closure.
+PR #586 was squash-merged into protected `core-reset` at `4dfd48194f2fab00b2cd2271a6f7917909dde9d4`. Final measurements are 170 production TypeScript files / 91,539 LOC with a `+5,538 / -7,791 / net -2,253` delta from protected phase base `f68d64482578f0c7992ec63095fa00e19ac25880`. The strengthened gold harness reports 100% import/re-export recall and 100% call/framework-edge recall; all eight accepted framework buckets report 100% recall and precision with no unexpected facts. All six CI jobs passed, all nine actionable CodeRabbit comments and both review-body nitpicks were addressed, eight of the nine actionable remediations were confirmed by CodeRabbit, and every review thread was resolved. The final CodeRabbit rerun was rate-limited, so the owner approved an explicit exception after an [independent adversarial review passed](https://github.com/mohanagy/madar/pull/586#issuecomment-5036311350); the final automation result is not represented as green.
+
+## Ready — delete legacy extraction and non-code/other-language ingestion
+
+This is one deletion work item covering both `legacy-extraction` and `non-code-and-other-language-ingest`. The latter remains a distinct manifest ownership ID, but it cannot be implemented as a separate phase because current unsupported and non-code routes still depend on the legacy companion path. The issue must record the exact owned-file inventory, production LOC budget, dependency removals, package/docs/flag cleanup, and canonical JS/TS regression gates before implementation begins.
+
+Ready does not mean In progress. There is no active technical phase until that deletion contract is accepted. Incremental refresh remains blocked until both deletion IDs are complete and the old engine cannot be reached from production.
 
 ## Next — dependency-ordered replacement
 
-Only one technical phase may be active at a time. After the Canonical TypeScript/JavaScript index passes, the remaining order is:
+Only one technical phase may be active at a time. After the combined deletion passes, the remaining order is:
 
-1. Delete legacy extraction and non-code/other-language ingestion after their blocker clears.
-2. Full-rebuild-equivalent incremental refresh.
-3. Generic evidence-path retrieval and deletion of the context/governance stack.
-4. Thin MCP, CLI, Claude Code, and Codex delivery.
-5. Move evaluation tooling outside runtime and reduce the npm package.
-6. Publish a beta under npm tag `next` for external validation.
+1. Full-rebuild-equivalent incremental refresh.
+2. Generic evidence-path retrieval and deletion of the context/governance stack.
+3. Thin MCP, CLI, Claude Code, and Codex delivery.
+4. Move evaluation tooling outside runtime and reduce the npm package.
+5. Publish a beta under npm tag `next` for external validation.
 
 Every replacement issue has an exact deletion contract. New and old implementations may coexist only temporarily on the reset integration branch; the old path cannot survive the phase.
 
@@ -96,7 +101,7 @@ Their milestone, project, and closure state changes only through the dependency-
 - Record production LOC added and removed.
 - Do not add a permanent fallback, parallel engine, repository-specific rule, or runtime dependency on evaluation tooling.
 - Do not close an issue merely because code merged; deletion and evidence gates must pass.
-- Resolve every required CI check and review thread before merge.
+- Resolve every required CI check and review thread before merge. If review automation is unavailable or rate-limited, record explicit owner approval and a completed independent review instead of representing the automation as passed.
 - Amend #577 before implementing any scope expansion.
 
 The roadmap is a decision system, not a feature list or release-date promise.
