@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto'
 import { basename, dirname, isAbsolute, resolve } from 'node:path'
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 
-import { loadGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
+import { loadGraphArtifact, readGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
+import { deserializeGraphArtifact } from '../domain/graph/artifact.js'
 import type { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
 import { classifyFile } from '../pipeline/detect.js'
 import type { RetrieveResult } from './retrieve.js'
@@ -64,7 +65,7 @@ interface IndexedSourceFiles {
 }
 
 const VERSION_HASH_LENGTH = 12
-const graphVersionCache = new Map<string, { graphVersion: string; mtimeMs: number; size: number }>()
+const graphVersionCache = new Map<string, { graphVersion: string; contentHash: string }>()
 // Agent instruction files are execution guidance, not repository source
 // evidence. Madar's installers deliberately add or update these files after a
 // graph exists; letting that invalidate the graph forces a large auto-refresh
@@ -396,25 +397,15 @@ function graphVersionForPath(graphPath: string): { graphVersion: string; mtimeMs
   const safeGraphPath = validateGraphPath(graphPath)
   const graphStat = statSync(safeGraphPath)
   const truncatedMtime = truncateMtime(graphStat.mtimeMs)
+  const artifact = readGraphArtifact(safeGraphPath)
+  const contentHash = createHash('sha256').update(artifact).digest('hex')
   const cached = graphVersionCache.get(safeGraphPath)
 
-  if (cached && cached.mtimeMs === truncatedMtime && cached.size === graphStat.size) {
-    return {
-      graphVersion: cached.graphVersion,
-      mtimeMs: truncatedMtime,
-    }
-  }
+  if (cached?.contentHash === contentHash) return { graphVersion: cached.graphVersion, mtimeMs: truncatedMtime }
 
-  // Validate the canonical artifact before publishing freshness metadata. A
-  // legacy or corrupt graph must not look fresh merely because its bytes are
-  // stable.
-  loadGraphArtifact(safeGraphPath)
-  const graphVersion = createHash('sha256').update(readFileSync(safeGraphPath)).digest('hex').slice(0, VERSION_HASH_LENGTH)
-  graphVersionCache.set(safeGraphPath, {
-    graphVersion,
-    mtimeMs: truncatedMtime,
-    size: graphStat.size,
-  })
+  deserializeGraphArtifact(artifact)
+  const graphVersion = contentHash.slice(0, VERSION_HASH_LENGTH)
+  graphVersionCache.set(safeGraphPath, { graphVersion, contentHash })
 
   return {
     graphVersion,

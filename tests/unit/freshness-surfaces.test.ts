@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
@@ -10,6 +10,7 @@ import { runContextPromptCommand } from '../../src/infrastructure/context-prompt
 import { runDoctorCommand, runStatusCommand } from '../../src/infrastructure/doctor.js'
 import { generateGraph } from '../../src/infrastructure/generate.js'
 import { runHandoffCommand } from '../../src/infrastructure/handoff-command.js'
+import { graphFreshnessMetadata } from '../../src/runtime/freshness.js'
 import { handleStdioRequest } from '../../src/runtime/stdio-server.js'
 import { writeCanonicalGraphFixture } from '../helpers/graph-artifact.js'
 
@@ -336,6 +337,23 @@ async function loadAnalyzeGraphContextFreshness(): Promise<AnalyzeGraphContextFr
 }
 
 describe('freshness surfaces', () => {
+  it('validates same-metadata graph rewrites before publishing freshness', () => {
+    const fixture = createFreshnessFixture('fresh')
+    const first = graphFreshnessMetadata(fixture.graphPath)
+    const original = readFileSync(fixture.graphPath, 'utf8')
+    const times = statSync(fixture.graphPath)
+    const rewritten = original.replace('AuthService', 'XuthService')
+    expect(rewritten).toHaveLength(original.length)
+
+    writeFileSync(fixture.graphPath, rewritten, 'utf8')
+    utimesSync(fixture.graphPath, times.atime, times.mtime)
+    expect(graphFreshnessMetadata(fixture.graphPath).graphVersion).not.toBe(first.graphVersion)
+
+    writeFileSync(fixture.graphPath, rewritten.replace('"version": 1', '"version": 0'), 'utf8')
+    utimesSync(fixture.graphPath, times.atime, times.mtime)
+    expect(() => graphFreshnessMetadata(fixture.graphPath)).toThrow(/madar generate \. --update/)
+  })
+
   it('classifies fresh, modified, deleted, and missing graph states', async () => {
     const analyzeGraphContextFreshness = await loadAnalyzeGraphContextFreshness()
 
