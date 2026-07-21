@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
-import type { ExtractionData, ExtractionNode } from '../../src/contracts/types.js'
+import type { ExtractionData, ExtractionNode } from '../../src/pipeline/extract/contracts.js'
 import { resolveCrossFilePythonImports } from '../../src/pipeline/extract/cross-file.js'
 
 function createTempRoot(): string {

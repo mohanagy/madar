@@ -1,0 +1,183 @@
+{
+  "required_nodes": [
+    { "source_file": "core/contracts.ts", "node_kind": "file", "language": "typescript" },
+    { "source_file": "core/common.js", "node_kind": "file", "language": "javascript" },
+    { "source_file": "core/view.jsx", "node_kind": "file", "language": "jsx" },
+    { "source_file": "core/consumer.tsx", "node_kind": "file", "language": "tsx" },
+    { "source_file": "core/contracts.ts", "qualified_name": "RequestInput", "node_kind": "interface", "exported": true },
+    { "source_file": "core/contracts.ts", "qualified_name": "ResponseOutput", "node_kind": "interface", "exported": true },
+    { "source_file": "core/contracts.ts", "qualified_name": "Runner", "node_kind": "interface", "exported": true },
+    { "source_file": "core/contracts.ts", "qualified_name": "Runner.run", "node_kind": "method" },
+    { "source_file": "core/contracts.ts", "qualified_name": "Result", "node_kind": "type", "exported": true },
+    { "source_file": "core/contracts.ts", "qualified_name": "BaseRunner", "node_kind": "class", "exported": true },
+    { "source_file": "core/contracts.ts", "qualified_name": "BaseRunner.normalize", "node_kind": "method" },
+    { "source_file": "core/service.ts", "qualified_name": "Service", "node_kind": "class", "exported": true },
+    { "source_file": "core/service.ts", "qualified_name": "Service.run", "node_kind": "method" },
+    { "source_file": "core/default.ts", "qualified_name": "defaultHandler", "node_kind": "function", "exported": true },
+    { "source_file": "core/common.js", "qualified_name": "cjsHandler", "node_kind": "function", "language": "javascript", "exported": true },
+    { "source_file": "core/consumer.tsx", "qualified_name": "Consumer", "node_kind": "function", "language": "tsx" },
+    { "source_file": "core/view.jsx", "qualified_name": "JsxView", "node_kind": "function", "language": "jsx" },
+    { "source_file": "packages/shared/src/model.ts", "qualified_name": "SharedModel", "node_kind": "interface" },
+    { "source_file": "packages/app/src/use-shared.ts", "qualified_name": "sharedId", "node_kind": "function" }
+  ],
+  "module_facts": [
+    { "from_file": "core/barrel-a.ts", "relation": "reexports_from", "to_file": "core/default.ts", "source_location": "L1", "module_form": "named-reexport", "module_bindings": ["default:renamedDefault"], "is_type_only": false },
+    { "from_file": "core/barrel-a.ts", "relation": "reexports_from", "to_file": "core/service.ts", "source_location": "L2", "module_form": "named-reexport", "module_bindings": ["helper:renamedHelper"], "is_type_only": false },
+    { "from_file": "core/barrel-a.ts", "relation": "reexports_from", "to_file": "core/contracts.ts", "source_location": "L3", "module_form": "named-reexport", "module_bindings": ["RequestInput:AliasedInput"], "is_type_only": true },
+    { "from_file": "core/barrel-a.ts", "relation": "reexports_from", "to_file": "core/contracts.ts", "source_location": "L4", "module_form": "wildcard-reexport", "module_bindings": [], "is_type_only": false },
+    { "from_file": "core/barrel-b.ts", "relation": "reexports_from", "to_file": "core/barrel-a.ts", "source_location": "L1", "module_form": "wildcard-reexport" },
+    { "from_file": "core/common-barrel.js", "relation": "reexports_from", "to_file": "core/barrel-b.ts", "source_location": "L1", "module_form": "commonjs-reexport" },
+    { "from_file": "core/common.js", "relation": "imports_from", "to_file": "core/service.ts", "source_location": "L1", "module_form": "commonjs-require" },
+    { "from_file": "core/consumer.tsx", "relation": "imports_from", "to_file": "core/barrel-b.ts", "source_location": "L1", "module_form": "import", "module_bindings": ["AliasedInput:AliasedInput", "renamedDefault:invokeDefault"] },
+    { "from_file": "core/consumer.tsx", "relation": "imports_from", "to_file": "core/contracts.ts", "source_location": "L2", "module_form": "import", "module_bindings": ["ResponseOutput:ResponseOutput"], "is_type_only": true },
+    { "from_file": "core/service.ts", "relation": "imports_from", "to_file": "core/contracts.ts", "source_location": "L1", "module_form": "import", "module_bindings": ["BaseRunner:BaseRunner", "RequestInput:RequestInput", "ResponseOutput:ResponseOutput", "Runner:Runner"] },
+    { "from_file": "packages/app/src/use-shared.ts", "relation": "imports_from", "to_file": "packages/shared/src/model.ts", "source_location": "L1", "module_form": "import", "module_bindings": ["SharedModel:SharedModel"], "is_type_only": true },
+    { "from_file": "frameworks/express-positive.ts", "relation": "imports_from", "to_file": "frameworks/express-handler.ts", "source_location": "L2", "module_form": "import", "module_bindings": ["expressHandler:expressHandler"], "is_type_only": false },
+    { "from_file": "frameworks/fastify-positive.ts", "relation": "imports_from", "to_file": "frameworks/fastify-plugin.ts", "source_location": "L2", "module_form": "import", "module_bindings": ["fastifyPlugin:fastifyPlugin"], "is_type_only": false },
+    { "from_file": "frameworks/react-router-positive.ts", "relation": "imports_from", "to_file": "frameworks/react-router-handlers.ts", "source_location": "L2", "module_form": "import", "module_bindings": ["action:action", "loader:loader"], "is_type_only": false },
+    { "from_file": "frameworks/trpc-positive.ts", "relation": "imports_from", "to_file": "frameworks/trpc-base.ts", "source_location": "L1", "module_form": "import", "module_bindings": ["publicProcedure:publicProcedure", "router:router"], "is_type_only": false }
+  ],
+  "semantic_facts": [
+    { "from_file": "core/common.js", "from_name": "cjsHandler", "relation": "calls", "to_file": "core/service.ts", "to_name": "helper", "source_location": "L4" },
+    { "from_file": "core/consumer.tsx", "from_name": "Consumer", "relation": "calls", "to_file": "core/default.ts", "to_name": "defaultHandler", "source_location": "L5" },
+    { "from_file": "core/consumer.tsx", "from_name": "Consumer", "relation": "param_type", "to_name": "RequestInput" },
+    { "from_file": "core/consumer.tsx", "from_name": "Consumer", "relation": "return_type", "to_name": "ResponseOutput" },
+    { "from_file": "core/contracts.ts", "from_name": "BaseRunner.normalize", "relation": "param_type", "to_name": "RequestInput" },
+    { "from_file": "core/contracts.ts", "from_name": "BaseRunner.normalize", "relation": "return_type", "to_name": "ResponseOutput" },
+    { "from_file": "core/contracts.ts", "from_name": "Runner.run", "relation": "param_type", "to_name": "RequestInput" },
+    { "from_file": "core/contracts.ts", "from_name": "Runner.run", "relation": "param_type", "to_name": "ResponseOutput" },
+    { "from_file": "core/contracts.ts", "from_name": "Runner.run", "relation": "return_type", "to_name": "ResponseOutput" },
+    { "from_file": "core/service.ts", "from_name": "helper", "relation": "param_type", "to_name": "RequestInput" },
+    { "from_file": "core/service.ts", "from_name": "helper", "relation": "return_type", "to_name": "ResponseOutput" },
+    { "from_file": "core/service.ts", "from_name": "Service", "relation": "extends", "to_name": "BaseRunner" },
+    { "from_file": "core/service.ts", "from_name": "Service", "relation": "implements", "to_name": "Runner" },
+    { "from_file": "core/service.ts", "from_name": "Service.run", "relation": "calls", "to_name": "helper", "source_location": "L9" },
+    { "from_file": "core/service.ts", "from_name": "Service.run", "relation": "calls", "to_name": "helper", "source_location": "L10" },
+    { "from_file": "core/service.ts", "from_name": "Service.run", "relation": "param_type", "to_name": "RequestInput" },
+    { "from_file": "core/service.ts", "from_name": "Service.run", "relation": "return_type", "to_name": "ResponseOutput" },
+    { "from_file": "packages/app/src/use-shared.ts", "from_name": "sharedId", "relation": "param_type", "to_file": "packages/shared/src/model.ts", "to_name": "SharedModel" }
+  ],
+  "calls": [
+    { "from_file": "core/common.js", "from_name": "cjsHandler", "to_name": "helper", "source_location": "L4" },
+    { "from_file": "core/consumer.tsx", "from_name": "Consumer", "to_name": "defaultHandler", "source_location": "L5" },
+    { "from_file": "core/service.ts", "from_name": "Service.run", "to_name": "helper", "source_location": "L9" },
+    { "from_file": "core/service.ts", "from_name": "Service.run", "to_name": "helper", "source_location": "L10" },
+    { "from_file": "frameworks/express-positive.ts", "from_name": "expressApp", "to_name": "express()" },
+    { "from_file": "frameworks/fastify-negative.ts", "from_name": "fakeFastifyApp", "to_name": "fastify" },
+    { "from_file": "frameworks/fastify-positive.ts", "from_name": "fastifyApp", "to_name": "fastify()" },
+    { "from_file": "frameworks/nest-positive.ts", "from_name": "UsersController.list", "to_name": "UsersService.list" },
+    { "from_file": "frameworks/react-router-negative.ts", "from_name": "fakeBrowserRouter", "to_name": "createBrowserRouter" },
+    { "from_file": "frameworks/react-router-positive.ts", "from_name": "browserRouter", "to_name": "createBrowserRouter()" },
+    { "from_file": "frameworks/trpc-base.ts", "from_name": "trpc", "to_name": "initTRPC.create" },
+    { "from_file": "frameworks/prisma-positive.ts", "from_name": "listPrismaUsers", "to_file": "frameworks/prisma-positive.ts", "source_location": "L5" },
+    { "from_file": "frameworks/prisma-positive.ts", "from_name": "createPrismaUsers", "to_file": "frameworks/prisma-positive.ts", "source_location": "L8" }
+  ],
+  "frameworks": {
+    "express": {
+      "negative_file": "frameworks/express-negative.ts",
+      "nodes": [
+        { "source_file": "frameworks/express-positive.ts", "qualified_name": "expressApp", "framework_role": "express_app" },
+        { "source_file": "frameworks/express-handler.ts", "qualified_name": "expressHandler", "framework_role": "express_route", "route_path": "/users" }
+      ],
+      "edges": [
+        { "from_file": "frameworks/express-positive.ts", "from_name": "expressApp", "relation": "route_handler", "to_name": "expressHandler" }
+      ]
+    },
+    "nestjs": {
+      "negative_file": "frameworks/nest-negative.ts",
+      "nodes": [
+        { "source_file": "frameworks/nest-positive.ts", "qualified_name": "UsersService", "framework_role": "nest_provider" },
+        { "source_file": "frameworks/nest-positive.ts", "qualified_name": "UsersController", "framework_role": "nest_controller" },
+        { "source_file": "frameworks/nest-positive.ts", "qualified_name": "UsersController.list", "framework_role": "nest_route" },
+        { "source_file": "frameworks/nest-positive.ts", "qualified_name": "UsersModule", "framework_role": "nest_module" }
+      ],
+      "edges": [
+        { "from_name": "UsersController", "relation": "controller_route", "to_name": "UsersController.list" },
+        { "from_name": "UsersController", "relation": "injects", "to_name": "UsersService" },
+        { "from_name": "UsersModule", "relation": "module_provides", "to_name": "UsersController" },
+        { "from_name": "UsersModule", "relation": "module_provides", "to_name": "UsersService" }
+      ]
+    },
+    "nextjs": {
+      "negative_file": "frameworks/next-negative.tsx",
+      "nodes": [
+        { "source_file": "app/status/page.tsx", "qualified_name": "StatusPage", "framework_role": "nextjs_app_page", "route_path": "/status" }
+      ],
+      "edges": [
+        { "from_file": "app/status/page.tsx", "from_name": "page.tsx", "relation": "contains", "to_name": "StatusPage" }
+      ]
+    },
+    "trpc": {
+      "negative_file": "frameworks/trpc-negative.ts",
+      "nodes": [
+        { "source_file": "frameworks/trpc-positive.ts", "qualified_name": "appRouter", "framework_role": "trpc_router" },
+        { "source_file": "frameworks/trpc-positive.ts", "qualified_name": "appRouter.health", "framework_role": "trpc_procedure_query" },
+        { "source_file": "frameworks/trpc-positive.ts", "qualified_name": "appRouter.update", "framework_role": "trpc_procedure_mutation" }
+      ],
+      "edges": [
+        { "from_file": "frameworks/trpc-positive.ts", "from_name": "appRouter", "relation": "route_handler", "to_name": "appRouter.health", "source_location": "L4" },
+        { "from_file": "frameworks/trpc-positive.ts", "from_name": "appRouter", "relation": "route_handler", "to_name": "appRouter.update", "source_location": "L5" }
+      ]
+    },
+    "prisma": {
+      "negative_file": "frameworks/prisma-negative.ts",
+      "nodes": [
+        { "source_file": "frameworks/prisma-positive.ts", "qualified_name": "prisma", "framework_role": "prisma_client" },
+        { "source_file": "frameworks/prisma-positive.ts", "framework_role": "prisma_model_reader", "storage_operation": "findMany" },
+        { "source_file": "frameworks/prisma-positive.ts", "framework_role": "prisma_model_writer", "storage_operation": "createMany" }
+      ],
+      "edges": [
+        { "from_file": "frameworks/prisma-positive.ts", "from_name": "listPrismaUsers", "relation": "calls", "to_file": "frameworks/prisma-positive.ts", "source_location": "L5" },
+        { "from_file": "frameworks/prisma-positive.ts", "from_name": "createPrismaUsers", "relation": "calls", "to_file": "frameworks/prisma-positive.ts", "source_location": "L8" }
+      ]
+    },
+    "react-router": {
+      "negative_file": "frameworks/react-router-negative.ts",
+      "nodes": [
+        { "source_file": "frameworks/react-router-positive.ts", "qualified_name": "browserRouter", "framework_role": "react_router_router", "route_path": "/account" },
+        { "source_file": "frameworks/react-router-handlers.ts", "qualified_name": "loader", "framework_role": "react_router_loader", "route_path": "/account" },
+        { "source_file": "frameworks/react-router-handlers.ts", "qualified_name": "action", "framework_role": "react_router_action", "route_path": "/account" }
+      ],
+      "edges": [
+        { "from_file": "frameworks/react-router-positive.ts", "from_name": "browserRouter", "relation": "route_handler", "to_name": "loader", "source_location": "L5" },
+        { "from_file": "frameworks/react-router-positive.ts", "from_name": "browserRouter", "relation": "route_handler", "to_name": "action", "source_location": "L5" }
+      ]
+    },
+    "fastify": {
+      "negative_file": "frameworks/fastify-negative.ts",
+      "nodes": [
+        { "source_file": "frameworks/fastify-positive.ts", "qualified_name": "fastifyApp", "framework_role": "fastify_app" },
+        { "source_file": "frameworks/fastify-positive.ts", "qualified_name": "fastifyHandler", "framework_role": "fastify_route", "route_path": "/fast" },
+        { "source_file": "frameworks/fastify-plugin.ts", "qualified_name": "fastifyPlugin", "framework_role": "fastify_plugin" },
+        { "source_file": "frameworks/fastify-plugin.ts", "qualified_name": "fastify.fastify_route.L4.C23", "framework_role": "fastify_route", "route_path": "/plugin" }
+      ],
+      "edges": [
+        { "from_file": "frameworks/fastify-positive.ts", "from_name": "fastifyApp", "relation": "route_handler", "to_name": "fastifyHandler", "source_location": "L6" },
+        { "from_file": "frameworks/fastify-positive.ts", "from_name": "fastifyApp", "relation": "route_handler", "to_file": "frameworks/fastify-plugin.ts", "to_name": "fastifyPlugin", "source_location": "L7" },
+        { "from_file": "frameworks/fastify-plugin.ts", "from_name": "fastifyPlugin", "relation": "route_handler", "to_name": "fastify.fastify_route.L4.C23", "source_location": "L4" }
+      ]
+    },
+    "hono": {
+      "negative_file": "frameworks/hono-negative.ts",
+      "nodes": [
+        { "source_file": "frameworks/hono-positive.ts", "qualified_name": "honoApp", "framework_role": "hono_app" },
+        { "source_file": "frameworks/hono-positive.ts", "qualified_name": "honoHandler", "framework_role": "hono_route", "route_path": "/hono" }
+      ],
+      "edges": [
+        { "from_file": "frameworks/hono-positive.ts", "from_name": "honoApp", "relation": "route_handler", "to_name": "honoHandler", "source_location": "L5" }
+      ]
+    }
+  },
+  "forbidden": {
+    "framework_roles_in_negative_files": true,
+    "legacy_extraction_strategy": true,
+    "absolute_source_paths": true,
+    "decorator_runtime_calls": [
+      { "from_name": "UsersController.list", "relation": "calls", "to_name": "Get()" }
+    ]
+  },
+  "thresholds": {
+    "module_recall": 0.95,
+    "call_framework_recall": 0.9
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "baseUrl": ".",
+    "experimentalDecorators": true,
+    "jsx": "preserve",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "paths": {
+      "@core/*": ["core/*"],
+      "@shared/*": ["packages/shared/src/*"]
+    },
+    "target": "ES2022"
+  }
+}

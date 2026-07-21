@@ -5,8 +5,8 @@ export const GENERATION_POLICY_VERSION = 2 as const
 
 /**
  * The extraction strategy recorded with a graph. `auto` is capability-aware:
- * SPI owns its supported JS/TS corpus and the legacy pipeline owns every
- * other supported language. The explicit modes deliberately do not fall back.
+ * the canonical index owns supported JS/TS while the temporary legacy
+ * companion owns other supported languages. Explicit modes do not fall back.
  */
 export const EXTRACTION_MODES = ['auto', 'legacy', 'spi'] as const
 
@@ -40,9 +40,9 @@ export interface GenerationPolicyV1 {
 }
 
 /**
- * V2 makes the extraction strategy explicit. `use_spi` remains a derived
- * compatibility signal for consumers that only need to know whether the
- * policy enables SPI; `extraction_mode` is the authoritative setting.
+ * V2 makes the extraction strategy explicit. `use_spi` remains a derived,
+ * schema-compatible signal for consumers that distinguish canonical JS/TS
+ * indexing from explicit legacy mode; `extraction_mode` is authoritative.
  */
 export interface GenerationPolicySettingsV2 {
   use_spi: boolean

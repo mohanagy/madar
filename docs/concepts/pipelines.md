@@ -18,29 +18,45 @@ Madar's default retrieval and extraction paths are organized around typed stages
 
 Benchmark expectations do not enter `RetrieveOptions` or any production retrieval stage. Historical packing-strategy comparisons and deterministic expected-evidence gates belong to benchmark fixtures or focused context-compiler tests. Production retrieval has one default packing policy.
 
-## Extraction
+## Generation and extraction
+
+Generation partitions the scanner-owned source set before indexing:
+
+- In normal `auto` mode, `.ts`, `.tsx`, `.js`, and `.jsx` files enter one canonical TypeScript compiler program and write graph facts directly. They do not pass through a projector, extraction cache, framework-augmentation pass, or legacy JS/TS extractor.
+- Other supported source languages use the temporary legacy companion extractor. Eligible non-code files use their separate companion extractors.
+- `--legacy` routes all extractable inputs through the legacy pipeline. The compatibility `--spi` spelling selects strict canonical JS/TS indexing without the unsupported-language fallback; eligible non-code inputs remain independent.
+
+The canonical JS/TS path has one owner for each phase:
 
 | Stage | Input | Output | Invariant |
 | --- | --- | --- | --- |
-| Discovery outcome | Discovered files, allowed targets, optional context nodes | Normalized discovery plan | Input iterables are materialized once and paths are not emitted through telemetry. |
+| Source selection | Explicit scanner-owned JS/TS paths | Stable canonical file set | The adapter never walks the repository or reads a second source set. |
+| Program construction | Canonical file set and project references | One TypeScript compiler program | Each supported JS/TS source is indexed exactly once. |
+| Semantic indexing | Program, source files, and type checker | Files, symbols, relationships, and diagnostics | Imports, calls, type relationships, and framework facts share the same symbol identities. |
+| Direct graph write | Canonical index facts | Directed graph | Framework roles, metadata, relationship evidence, and provenance are written without projection or legacy augmentation. |
+
+The companion/legacy pipeline remains separate:
+
+| Stage | Input | Output | Invariant |
+| --- | --- | --- | --- |
+| Discovery outcome | Companion files, allowed targets, optional canonical context nodes | Normalized discovery plan | Input iterables are materialized once and paths are not emitted through telemetry. |
 | Capability selection | One file and the capability registry | File classification and extractor capability | Selection happens before handler execution and can be tested independently. |
 | Per-language extraction | File, allowed targets, selected handler | File fragment | A pipeline-result call produces one explicit outcome even for a recovered file failure. |
-| Framework augmentation | A staged language fragment | Framework-enriched fragment | Augmentation is separate for JavaScript/TypeScript and explicitly skipped for other or cached capabilities. |
-| Fragment merge | Per-file fragments | One extraction graph | Node/edge combination preserves the existing merge contract. |
-| Cross-file relationships | Merged graph, files, optional context nodes | Resolved corpus graph | Imports, framework semantics, Go links, JSX proxies, and source references run after merge. |
+| Fragment merge | Per-file fragments | One extraction graph | Node/edge combination preserves the legacy companion merge contract. |
+| Cross-file relationships | Merged graph, files, optional context nodes | Resolved companion graph | Language-specific links and source references run after merge. |
 | Diagnostics projection | Per-file outcomes | File-owned diagnostics | A diagnostic remains attached to its file outcome and capability. |
 
-`extract()` keeps its existing return type. `extractWithPipelineResult()` is an additive TypeScript API that returns:
+`extract()` and `extractWithPipelineResult()` describe this companion/legacy pipeline; they are not a second supported-JS/TS pass in auto mode. `extractWithPipelineResult()` returns:
 
 - `data`: the same extraction graph returned by `extract()`;
 - `fileOutcomes`: one first-class outcome per processed file;
 - `diagnostics`: parser/extractor diagnostics projected with their owning file outcome.
 
-The new pipeline-result API recovers individual extractor failures into failed file outcomes so callers can inspect completeness. Legacy `extract()` keeps its prior behavior: it throws an extractor failure unless the existing `onFileOutcome` callback opts into per-file recovery.
+The pipeline-result API recovers individual extractor failures into failed file outcomes so callers can inspect completeness. `extract()` throws an extractor failure unless the existing `onFileOutcome` callback opts into per-file recovery.
 
 ## Source-safe observability
 
-`RetrieveOptions.onStageDiagnostic` and `ExtractOptions.onStageDiagnostic` receive best-effort local stage events. Observer failures cannot change pipeline behavior. Each event contains only:
+`RetrieveOptions.onStageDiagnostic` and the companion extractor's `ExtractOptions.onStageDiagnostic` receive best-effort local stage events. Observer failures cannot change pipeline behavior. Each event contains only:
 
 - pipeline and bounded stage name;
 - completed, skipped, or failed status;
@@ -52,6 +68,6 @@ Events never contain prompt text, paths, labels, snippets, repository names, sou
 
 ## Compatibility and correctness gates
 
-This refactor is internal to the TypeScript runtime. Existing CLI commands, MCP tool inputs, MCP result schemas, and `extract()` output remain unchanged. The new observer callbacks and `extractWithPipelineResult()` are additive.
+CLI and MCP response schemas remain compatible: `auto`, `legacy`, and the temporary `spi` selector remain readable in generation-policy and indexing receipts. Newly indexed supported JS/TS evidence records `extraction_strategy: "canonical"`; historical SPI-named fields remain compatibility data, not a current projector/cache architecture.
 
-Characterization fixtures lock retrieval selection, relationships, extraction symbols, framework output, and per-file outcome semantics before stage movement. Focused stage tests cover each boundary; the normal CLI/runtime and extraction suites remain the final correctness gate.
+Gold fixtures lock canonical language facts, framework roles and relationships, per-file ownership, deterministic ordering, and negative-file precision. Focused companion-pipeline tests retain the non-JS/TS and non-code behavior until those paths reach their separately governed replacement or deletion phase.

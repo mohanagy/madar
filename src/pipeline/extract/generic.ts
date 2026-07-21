@@ -1,7 +1,7 @@
 import { basename, extname } from 'node:path'
 import { readFileSync } from 'node:fs'
 
-import type { ExtractionData, ExtractionEdge, ExtractionNode } from '../../contracts/types.js'
+import type { ExtractionData, ExtractionEdge, ExtractionNode } from './contracts.js'
 import { addPendingCall, addResolvedCalls, braceDelta, normalizeImportTarget, type PendingCall } from './call-resolution.js'
 import { _makeId, addEdge, addNode, createEdge, createNode, fileNodeIdForPath, fileStemForPath, stripHashComment } from './core.js'
 

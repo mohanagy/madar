@@ -153,7 +153,7 @@ describe('generation policy contract', () => {
       writeFileSync(join(tempDir, '.madarignore'), '', 'utf8')
       const exclusionsChanged = generateGraph(tempDir, { update: true, includeDocs: false })
       expect(exclusionsChanged.notes.join('\n')).toContain('Generation policy changed')
-      expect(exclusionsChanged.extractedFiles).toBe(4)
+      expect(exclusionsChanged.extractedFiles).toBe(2)
 
       writeFileSync(join(tempDir, 'README.md'), '# Included now\n', 'utf8')
       const documentsChanged = generateGraph(tempDir, { update: true, includeDocs: true })

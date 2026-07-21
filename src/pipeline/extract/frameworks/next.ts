@@ -3,7 +3,7 @@ import { basename, dirname, extname, join, relative, resolve, sep } from 'node:p
 
 import * as ts from 'typescript'
 
-import type { ExtractionNode } from '../../../contracts/types.js'
+import type { ExtractionNode } from '../contracts.js'
 import { addNode, addUniqueEdge, createEdge, createNode, _makeId } from '../core.js'
 import type { ExtractionFragment } from '../dispatch.js'
 import { unparenthesizeExpression } from '../typescript-utils.js'

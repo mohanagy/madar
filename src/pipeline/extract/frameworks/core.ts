@@ -1,4 +1,4 @@
-import type { ExtractionEdge, ExtractionNode } from '../../../contracts/types.js'
+import type { ExtractionEdge, ExtractionNode } from '../contracts.js'
 import type { ExtractionFragment } from '../dispatch.js'
 import { expressAdapter } from './express.js'
 import { nestAdapter } from './nest.js'

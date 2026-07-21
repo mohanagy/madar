@@ -6,14 +6,13 @@ This benchmark is a **measurement harness**, not a performance gate. Its job is 
 
 ## What the benchmark covers
 
-The synthetic harness runs six variants on isolated fixture copies:
+The synthetic harness runs five variants on isolated fixture copies:
 
 1. `generate-legacy` — explicit `generate --legacy`
-2. `generate-spi-cold` — first `generate --spi` run
-3. `generate-spi-warm` — second `generate --spi` run on the same workspace to measure the cache-hit path
-4. `update-noop` — `generate --update` with no source changes
-5. `update-changed` — `generate --update` after mutating one code file
-6. `cluster-only` — `generate --cluster-only` after a baseline graph already exists
+2. `generate-canonical` — default generation through the canonical TypeScript/JavaScript index
+3. `update-noop` — `generate --update` with no source changes
+4. `update-changed` — `generate --update` after mutating one code file
+5. `cluster-only` — `generate --cluster-only` after a baseline graph already exists
 
 ## Metrics tracked
 
@@ -25,7 +24,6 @@ Every variant records the same structured fields in `<variant>.json` and `summar
 - incremental counts (`changed_files`, `deleted_files`)
 - graph size (`node_count`, `edge_count`, `graph_size_bytes`)
 - output size (`output_size_bytes`)
-- cache behavior (`cache_hit`, `cache_reason`, `cache_file_count`)
 
 The benchmark reads these from structured `GenerateGraphResult` fields where possible instead of scraping human-readable terminal notes.
 
@@ -44,7 +42,7 @@ Artifacts land under `docs/benchmarks/performance/results/<timestamp>/`:
 2. `summary.json` with the full matrix
 3. the copied per-variant workspaces used for the run
 
-This fixture is intentionally small. It is for **schema and cache-behavior coverage**, not for proving absolute throughput on real repositories.
+This fixture is intentionally small. It is for **schema and path coverage**, not for proving absolute throughput on real repositories.
 
 ## Manual large-repo benchmark flow
 
@@ -62,13 +60,12 @@ Use the synthetic fixture in CI, and use the local-repo run when you want realis
 - initial `generate`
 - incremental `update` after a narrow change
 - `cluster-only` refresh cost
-- SPI cold vs warm cache behavior
+- canonical full-build cost
 
 ## Interpreting results
 
 - `extractable_files` is the total corpus eligible for extraction in that workspace state.
-- `extracted_files` is the number of files freshly re-extracted for that run. It should drop to `0` for strict-SPI warm-cache hits, update no-op runs, and cluster-only refreshes. Auto mode still refreshes its legacy semantic augmentation after an SPI cache hit.
-- `cache_reason` is only populated for SPI runs. Typical values are `no-cache`, `fresh-cache`, and `key-mismatch`.
+- `extracted_files` is the number of files indexed or extracted for that run. It should drop to `0` for update no-op and cluster-only refreshes.
 - Compare `graph_size_bytes` and `output_size_bytes` together: the graph file can stay flat while the total output directory still grows.
 
 ## Non-goals

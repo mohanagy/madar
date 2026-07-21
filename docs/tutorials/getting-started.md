@@ -26,7 +26,7 @@ madar generate examples/sample-workspace
 
 This creates `examples/sample-workspace/out/graph.json`.
 
-Default generation combines SPI metadata with proven legacy semantics for supported TypeScript/JavaScript code, while retaining legacy fallback for other supported languages. Strict SPI mode restricts code extraction to SPI-supported JS/TS without legacy semantics or language fallback; eligible non-code evidence remains included:
+Default generation indexes TypeScript and JavaScript once through the canonical compiler-backed path, while retaining the legacy fallback for other supported languages. `--spi` is temporarily the compatibility spelling for strict canonical JS/TS indexing without a language fallback; eligible non-code evidence remains included:
 
 ```bash
 madar generate examples/sample-workspace --spi

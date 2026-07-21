@@ -79,7 +79,7 @@ describe('Framework-aware retrieval boost for v0.17 substrates (#83 → v0.19)',
   it('tRPC "mutation" question boosts trpc_procedure_mutation nodes', () => {
     writeFile(sandbox, 'src/router.ts', [
       'import { initTRPC } from "@trpc/server"',
-      'declare const t: ReturnType<typeof initTRPC.create>',
+      'const t = initTRPC.create()',
       'export const appRouter = t.router({',
       '  getUser: t.procedure.query(() => null),',
       '  updateUser: t.procedure.mutation(() => null),',
@@ -107,7 +107,7 @@ describe('Framework-aware retrieval boost for v0.17 substrates (#83 → v0.19)',
   it('bare mutation questions do not boost tRPC nodes without tRPC signals', () => {
     writeFile(sandbox, 'src/router.ts', [
       'import { initTRPC } from "@trpc/server"',
-      'declare const t: ReturnType<typeof initTRPC.create>',
+      'const t = initTRPC.create()',
       'export const appRouter = t.router({',
       '  updateWorkspace: t.procedure.mutation(() => null),',
       '})',
@@ -165,41 +165,35 @@ describe('Framework-aware retrieval boost for v0.17 substrates (#83 → v0.19)',
     expect(client?.framework_boost ?? 0).toBeGreaterThan(0)
   })
 
-  it('storage question boosts repository save endpoints over generic save helpers', () => {
+  it('storage-write questions boost canonical Prisma writers over readers', () => {
     writeFile(sandbox, 'src/persistence/report.repository.ts', [
-      'export class ReportRepository {',
-      '  async save(): Promise<void> {}',
+      'import { PrismaClient } from "@prisma/client"',
+      'const prisma = new PrismaClient()',
+      'export async function loadReports(): Promise<void> {',
+      '  await prisma.report.findMany()',
       '}',
-    ].join('\n') + '\n')
-    writeFile(sandbox, 'src/ui/report-footer.ts', [
-      'export class ReportFooter {',
-      '  save(): void {}',
+      'export async function createReport(): Promise<void> {',
+      '  await prisma.report.create({ data: { title: "report" } })',
       '}',
     ].join('\n') + '\n')
 
     const result = generateGraph(sandbox, { useSpi: true })
     const graph = loadGraph(result.graphPath)
     const retrieved = retrieveContext(graph, {
-      question: 'Which method writes the report to the database?',
+      question: 'Which Prisma operation creates and writes the report to the database?',
       budget: 2000,
     })
 
-    const repoSaveIndex = retrieved.matched_nodes.findIndex((node) =>
-      node.label === '.save()' && normalizePathForAssertion(node.source_file).endsWith('src/persistence/report.repository.ts'))
-    const repoClassIndex = retrieved.matched_nodes.findIndex((node) =>
-      node.label === 'ReportRepository' && normalizePathForAssertion(node.source_file).endsWith('src/persistence/report.repository.ts'))
-    const helperSaveIndex = retrieved.matched_nodes.findIndex((node) =>
-      node.label === '.save()' && normalizePathForAssertion(node.source_file).endsWith('src/ui/report-footer.ts'))
-    const repoSave = repoSaveIndex >= 0 ? retrieved.matched_nodes[repoSaveIndex] : undefined
+    const writer = retrieved.matched_nodes.find((node) =>
+      node.framework_role === 'prisma_model_writer'
+      && normalizePathForAssertion(node.source_file).endsWith('src/persistence/report.repository.ts'))
+    const reader = retrieved.matched_nodes.find((node) =>
+      node.framework_role === 'prisma_model_reader'
+      && normalizePathForAssertion(node.source_file).endsWith('src/persistence/report.repository.ts'))
 
-    expect(repoSaveIndex).toBeGreaterThanOrEqual(0)
-    expect(repoSave?.framework_boost ?? 0).toBeGreaterThan(0)
-    if (repoClassIndex >= 0) {
-      expect(repoSaveIndex).toBeLessThan(repoClassIndex)
-    }
-    if (helperSaveIndex >= 0) {
-      expect(repoSaveIndex).toBeLessThan(helperSaveIndex)
-    }
+    expect(writer).toBeDefined()
+    expect(writer?.framework_boost ?? 0).toBeGreaterThan(0)
+    expect(writer?.framework_boost ?? 0).toBeGreaterThan(reader?.framework_boost ?? 0)
   })
 
   it('non-framework question receives no framework boost on Hono nodes', () => {

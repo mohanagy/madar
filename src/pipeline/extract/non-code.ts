@@ -3,7 +3,7 @@ import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } fro
 
 import { strFromU8, unzipSync, type UnzipFileInfo } from 'fflate'
 
-import type { ExtractionEdge, ExtractionNode } from '../../contracts/types.js'
+import type { ExtractionEdge, ExtractionNode } from './contracts.js'
 import { appendDerivedProvenance, deriveIngestProvenanceFromRecord } from '../../core/provenance/ingest.js'
 import type { ExtractionProvenance } from '../../core/provenance/types.js'
 import { readBinaryIngestSidecar } from '../../shared/binary-ingest-sidecar.js'

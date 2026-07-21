@@ -1,5 +1,5 @@
 import type { IndexingDiagnostic, IndexingOutcomeStatus, IndexingReasonCode } from '../../contracts/indexing.js'
-import type { ExtractionEdge, ExtractionNode } from '../../contracts/types.js'
+import type { ExtractionEdge, ExtractionNode } from './contracts.js'
 import { reportSkippedPipelineStage, runPipelineStage } from '../../core/pipeline/stage.js'
 import { builtinCapabilityRegistry, type CapabilityRegistry } from '../../infrastructure/capabilities.js'
 import { classifyFile, type FileTypeValue } from '../detect.js'

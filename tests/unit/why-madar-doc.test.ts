@@ -110,7 +110,7 @@ describe('public marketing copy honesty', () => {
     })
 
     it('keeps extraction guidance concise in the README and documents strict modes in deeper docs', () => {
-      expect(lower).toContain('by default, `madar generate .` combines spi metadata with proven legacy semantics')
+      expect(lower).toContain('by default, `madar generate .` indexes javascript/typescript once through the canonical compiler-backed path')
       expect(publicDocs).toContain('--legacy')
       expect(publicDocs).toContain('--spi')
       expect(languageMatrix).toContain('Storage-oriented prompts in auto mode')

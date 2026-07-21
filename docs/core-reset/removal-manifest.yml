@@ -26,15 +26,15 @@ review:
 current:
   updated_at: 2026-07-21
   completed_phase: directed-multigraph
-  active_phase: null
-  ready_phase: canonical-typescript-index
-  base_commit: 647c2912e9ff000b5d92cae3fc61395d9e556062
+  active_phase: canonical-typescript-index
+  ready_phase: null
+  base_commit: f68d64482578f0c7992ec63095fa00e19ac25880
   completed_phase_commit: 63c59049178e82bd6bd1c928f6666ef159365bbe
-  production_typescript_files: 178
-  production_typescript_loc: 93792
-  production_loc_added: 1197
-  production_loc_removed: 4171
-  production_loc_net: -2974
+  production_typescript_files: 170
+  production_typescript_loc: 91557
+  production_loc_added: 5556
+  production_loc_removed: 7791
+  production_loc_net: -2235
 
 targets:
   production_typescript_files_max: 80
@@ -120,17 +120,23 @@ items:
 
   - id: canonical-typescript-index
     disposition: rebuild
-    status: planned
+    status: in_progress
     sources:
       - src/pipeline/spi/**
       - src/contracts/extraction.ts
       - src/contracts/types.ts
       - src/core/layers/types.ts
+      - src/domain/index/**
+      - src/adapters/typescript/**
     destination: src/domain/index/** and src/adapters/typescript/**
     preserve:
       - Generic TypeScript semantic-resolution algorithms
       - Framework detectors that satisfy the canonical adapter contract
-    notes: Ready after Directed multigraph passed. Implementation requires an accepted work item; legacy extraction and non-code/other-language ingestion remain blocked until this fixture gate passes.
+    notes: 'Accepted in #585 and active from protected base f68d64482578f0c7992ec63095fa00e19ac25880; legacy extraction and non-code/other-language ingestion remain blocked until this fixture gate passes.'
+    production_loc_budget:
+      added_max: 5900
+      removed_min: 7564
+      net_max: -1500
     remove_when: Labelled language and framework fixtures pass without legacy augmentation.
     exit_gate: One canonical index schema writes the graph directly.
 
@@ -148,6 +154,7 @@ items:
       - src/pipeline/extract/generic.ts
       - src/pipeline/extract/pipeline.ts
       - src/pipeline/extract/typescript-utils.ts
+      - src/pipeline/extract/contracts.ts
       - src/pipeline/tree-sitter-wasm.ts
     blocked_by: canonical-typescript-index
     exit_gate: Canonical TypeScript fixtures pass and no production import references the legacy engine.

@@ -223,7 +223,7 @@ describe('watch', () => {
           coverage: 'complete',
           policy_match: true,
           requested_extraction_mode: 'auto',
-          extraction_strategy_buckets: expect.objectContaining({ spi: 1 }),
+          extraction_strategy_buckets: expect.objectContaining({ canonical: 1 }),
         })
       } finally {
         refresh.stop()

@@ -1,4 +1,4 @@
-import type { ExtractionEdge, ExtractionNode } from '../../src/contracts/types.js'
+import type { ExtractionEdge, ExtractionNode } from '../../src/pipeline/extract/contracts.js'
 import { addPendingCall, addResolvedCalls, braceDelta, type PendingCall } from '../../src/pipeline/extract/call-resolution.js'
 
 describe('extract call resolution helpers', () => {

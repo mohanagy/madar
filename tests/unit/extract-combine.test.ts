@@ -1,4 +1,4 @@
-import type { ExtractionNode } from '../../src/contracts/types.js'
+import type { ExtractionNode } from '../../src/pipeline/extract/contracts.js'
 import { mergeExtractionFragments, resolveSourceNodeReferences } from '../../src/pipeline/extract/combine.js'
 
 describe('mergeExtractionFragments', () => {

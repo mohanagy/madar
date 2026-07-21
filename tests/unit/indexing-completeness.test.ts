@@ -5,6 +5,8 @@ import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import type { IndexingOutcome } from '../../src/contracts/indexing.js'
+import type { CanonicalTypeScriptIndexResult } from '../../src/adapters/typescript/index.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import { cacheDir, fileHash } from '../../src/infrastructure/cache.js'
 import {
   parseIndexingManifest,
@@ -12,7 +14,7 @@ import {
 } from '../../src/infrastructure/indexing-manifest.js'
 import {
   localExtractionIndexingOutcome,
-  projectSpiIndexingOutcomes,
+  canonicalTypeScriptIndexingOutcomes,
   retainedIndexingOutcomes,
 } from '../../src/pipeline/indexing-generation.js'
 import {
@@ -25,7 +27,6 @@ import {
   indexingStrictViolations,
   shareSafeIndexingManifest,
 } from '../../src/pipeline/indexing-outcomes.js'
-import type { BuildSpiCachedResult } from '../../src/pipeline/spi/cache.js'
 
 function outcome(overrides: Partial<IndexingOutcome> = {}): IndexingOutcome {
   return {
@@ -38,32 +39,12 @@ function outcome(overrides: Partial<IndexingOutcome> = {}): IndexingOutcome {
   }
 }
 
-function spiResult(overrides: Partial<BuildSpiCachedResult['spi']> = {}): BuildSpiCachedResult {
+function canonicalResult(overrides: Partial<Pick<CanonicalTypeScriptIndexResult, 'files' | 'diagnostics'>> = {}): CanonicalTypeScriptIndexResult {
   return {
-    spi: {
-      version: 1,
-      generated_at: '2026-07-15T00:00:00.000Z',
-      workspace: {
-        root: '/repo',
-        fingerprint: 'fixture',
-        extractor_version: 'fixture',
-        madar_version: 'fixture',
-      },
-      files: [
-        { id: 'file:src/index.ts', path: 'src/index.ts', language: 'typescript', loc: 1, hash: 'a' },
-      ],
-      symbols: [],
-      edges: [],
-      diagnostics: [],
-      ...overrides,
-    },
-    cache: {
-      hit: false,
-      reason: 'no-cache',
-      file_count: 1,
-      cache_key: 'fixture',
-      duration_ms: 1,
-    },
+    graph: new KnowledgeGraph({ root_path: '/repo' }),
+    files: [{ id: 'file:src/index.ts', path: 'src/index.ts', language: 'typescript', loc: 1, hash: 'a' }],
+    diagnostics: [],
+    ...overrides,
   }
 }
 
@@ -326,9 +307,9 @@ describe('indexing extraction cache', () => {
   })
 })
 
-describe('SPI indexing projection', () => {
-  it('projects file diagnostics and unsupported SPI languages into terminal outcomes', () => {
-    const result = spiResult({
+describe('canonical TypeScript indexing projection', () => {
+  it('projects canonical diagnostics and unsupported languages into terminal outcomes', () => {
+    const result = canonicalResult({
       diagnostics: [{
         id: 'spi.file-warning',
         level: 'warn',
@@ -337,7 +318,7 @@ describe('SPI indexing projection', () => {
       }],
     })
 
-    const projected = projectSpiIndexingOutcomes({
+    const projected = canonicalTypeScriptIndexingOutcomes({
       rootPath: '/repo',
       codeFiles: ['/repo/src/index.ts', '/repo/src/main.py'],
       result,
@@ -347,14 +328,14 @@ describe('SPI indexing projection', () => {
       expect.objectContaining({
         path: 'src/index.ts',
         status: 'indexed_with_warnings',
-        reason: 'spi_diagnostic',
-        extraction_strategy: 'spi',
+        reason: 'canonical_diagnostic',
+        extraction_strategy: 'canonical',
       }),
       expect.objectContaining({
         path: 'src/main.py',
         status: 'unsupported',
-        reason: 'unsupported_spi_language',
-        extraction_strategy: 'spi',
+        reason: 'unsupported_canonical_language',
+        extraction_strategy: 'canonical',
       }),
     ]))
     expect(projected.diagnostics).toEqual([
@@ -362,8 +343,8 @@ describe('SPI indexing projection', () => {
     ])
   })
 
-  it('applies a global SPI warning to every SPI file so completeness cannot stay false-green', () => {
-    const result = spiResult({
+  it('applies a global compiler warning to every indexed file so completeness cannot stay false-green', () => {
+    const result = canonicalResult({
       diagnostics: [{
         id: 'spi.call.program-create-failed',
         level: 'warn',
@@ -371,7 +352,7 @@ describe('SPI indexing projection', () => {
       }],
     })
 
-    const projected = projectSpiIndexingOutcomes({
+    const projected = canonicalTypeScriptIndexingOutcomes({
       rootPath: '/repo',
       codeFiles: ['/repo/src/index.ts'],
       result,
@@ -381,7 +362,7 @@ describe('SPI indexing projection', () => {
       expect.objectContaining({
         path: 'src/index.ts',
         status: 'indexed_with_warnings',
-        reason: 'spi_diagnostic',
+        reason: 'canonical_diagnostic',
       }),
     ])
   })

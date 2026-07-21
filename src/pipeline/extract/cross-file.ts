@@ -3,7 +3,7 @@ import { basename, dirname, extname, resolve } from 'node:path'
 
 import ts from 'typescript'
 
-import type { ExtractionData, ExtractionNode } from '../../contracts/types.js'
+import type { ExtractionData, ExtractionNode } from './contracts.js'
 import {
   _makeId,
   addNode,

@@ -40,7 +40,7 @@ Optional coarse fields are added only when they help explain adoption drop-off w
 - `agent_target` — install target such as `claude`, `cursor`, `copilot`, `gemini`, `aider`, `codex`, or `opencode`
 - `repo_size_bucket` — coarse file-count bucket
 - `graph_size_bucket` — coarse node-count bucket
-- `spi_enabled` — whether `madar generate` ran with `--use-spi`
+- `spi_enabled` — schema-compatible signal that strict canonical JS/TS indexing was explicitly selected (the CLI compatibility spelling is `--spi`)
 - `failure_bucket` — coarse actionable category such as `usage_error`, `invalid_params`, `missing_graph`, `stale_graph`, `stale_context`, `tool_profile`, `unsupported_corpus`, `install_error`, or `unknown`
 - `status_bucket` — coarse doctor/status outcome (`healthy` or `attention_needed`)
 - `initial_answerability_bucket` / `final_answerability_bucket` — `ready`, `ready_with_caveat`, `verify_targets`, or `insufficient`

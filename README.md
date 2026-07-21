@@ -124,7 +124,7 @@ madar summary
 madar pack "how does auth work?" --task explain --format text
 ```
 
-By default, `madar generate .` combines SPI metadata with proven legacy semantics for JavaScript/TypeScript, and uses legacy fallback for other supported languages. Strict modes are in the [CLI reference](https://github.com/mohanagy/madar/blob/main/docs/reference/cli-and-mcp.md).
+By default, `madar generate .` indexes JavaScript/TypeScript once through the canonical compiler-backed path and uses the legacy fallback only for other supported languages. Strict and compatibility modes are in the [CLI reference](https://github.com/mohanagy/madar/blob/main/docs/reference/cli-and-mcp.md).
 
 Create a provider-ready prompt:
 
@@ -193,7 +193,7 @@ Read the [benchmark suite and all dated receipts](https://github.com/mohanagy/ma
 
 Current version: `0.32.0`.
 
-`0.32.0` makes `madar generate .` capability-aware by default: SPI metadata and legacy relationship semantics work together for JavaScript/TypeScript, with legacy fallback elsewhere. It adds an MCP Registry publishing path.
+`0.32.0` introduced capability-aware generation and MCP Registry publishing. Core Reset replaces that release's dual JS/TS extraction with one canonical index before the next release.
 
 `0.31.4` keeps receipts tied to visible context and hardens Claude/Codex hook handling.
 

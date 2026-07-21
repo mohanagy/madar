@@ -1,7 +1,7 @@
 import { resolve } from 'node:path'
 
 import type { IndexingDiagnostic } from '../../contracts/indexing.js'
-import type { ExtractionData, ExtractionNode } from '../../contracts/types.js'
+import type { ExtractionData, ExtractionNode } from './contracts.js'
 import type {
   PipelineStageDiagnostic,
   PipelineStageObserver,

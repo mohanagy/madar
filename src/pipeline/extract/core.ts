@@ -1,7 +1,6 @@
 import { basename, extname, resolve } from 'node:path'
 
-import type { ExtractionEdge, ExtractionNode } from '../../contracts/types.js'
-import { DEFAULT_EXTRACTION_LAYER } from '../../core/layers/types.js'
+import { DEFAULT_EXTRACTION_LAYER, type ExtractionEdge, type ExtractionNode } from './contracts.js'
 import { createBaselineProvenance } from '../../core/provenance/types.js'
 import { builtinCapabilityRegistry } from '../../infrastructure/capabilities.js'
 import { sanitizeLabel } from '../../shared/security.js'
@@ -24,8 +23,8 @@ function normalizeStemPath(filePath: string): string {
 
 /**
  * Build deterministic, collision-free stems for a complete extraction corpus.
- * SPI projection reuses this in hybrid mode so a JS/TS file and a legacy-only
- * file with the same basename cannot overwrite one another after merging.
+ * The temporary legacy and non-code companion passes reuse this map so files
+ * with the same basename cannot overwrite one another after merging.
  */
 export function createFileStemMap(filePaths: Iterable<string>): Map<string, string> {
   const normalizedPaths = [...new Set([...filePaths].map((filePath) => normalizeStemPath(filePath)))]
@@ -94,9 +93,9 @@ export function withExtractionFileStemContext<T>(filePaths: Iterable<string>, ca
 }
 
 /**
- * Reuse a precomputed corpus-wide stem map across separate extraction passes.
- * Hybrid generation needs this because SPI code, legacy-only code, and
- * non-code files are extracted independently but share one final graph.
+ * Reuse a precomputed corpus-wide stem map across separate companion passes.
+ * Legacy-only code and non-code files are extracted independently but share
+ * one final graph with the canonical JS/TS index.
  */
 export function withExtractionFileStemMapContext<T>(
   fileStemByAbsolutePath: ReadonlyMap<string, string>,

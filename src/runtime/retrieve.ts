@@ -4604,10 +4604,7 @@ function buildFrameworkQuestionProfile(question: string, questionTokens: readonl
   }
 }
 
-/** Metadata available on a node for framework-aware boost matching. All
- *  fields are optional because not every node carries every field — only
- *  framework-tagged nodes do, and even then the SPI projector only emits
- *  the ones each substrate populates. */
+/** Optional metadata emitted by framework-aware index adapters. */
 interface FrameworkNodeMetadata {
   /** Express / Hono / Fastify / Next.js — the URL path string. */
   route_path?: string

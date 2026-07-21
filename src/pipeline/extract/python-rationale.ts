@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { basename, extname } from 'node:path'
 
-import type { ExtractionEdge, ExtractionNode } from '../../contracts/types.js'
+import type { ExtractionEdge, ExtractionNode } from './contracts.js'
 import { sanitizeLabel } from '../../shared/security.js'
 import { _makeId, addNode, addUniqueEdge, createEdge, createNode, fileNodeIdForPath, fileStemForPath, indentationLevel } from './core.js'
 

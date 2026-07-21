@@ -17,8 +17,10 @@ import { DEFAULT_HARD_IGNORE_GLOBS } from '../shared/source-discovery.js'
 
 export interface BuildGenerationPolicyOptions {
   /**
-   * `auto` uses SPI where it has a source-language capability and otherwise
-   * falls back to the legacy extractor. Explicit modes stay strict.
+   * `auto` uses the canonical TypeScript/JavaScript index where supported and
+   * otherwise falls back to the legacy extractor. Explicit modes stay strict;
+   * `spi` is retained only as the compatibility name for strict canonical
+   * JavaScript/TypeScript indexing.
    */
   extractionMode?: ExtractionMode
   /** @deprecated Use `extractionMode`. Retained for programmatic callers. */

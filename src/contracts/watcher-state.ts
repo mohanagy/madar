@@ -55,7 +55,14 @@ function isExtractionStrategyBuckets(value: unknown): value is Partial<Record<Ex
   if (!isRecord(value)) {
     return false
   }
-  const allowed = new Set<ExtractionStrategy>(['spi', 'legacy', 'legacy_fallback', 'non_code', 'not_extracted'])
+  const allowed = new Set<ExtractionStrategy>([
+    'canonical',
+    'spi',
+    'legacy',
+    'legacy_fallback',
+    'non_code',
+    'not_extracted',
+  ])
   return Object.entries(value).every(([strategy, count]) =>
     allowed.has(strategy as ExtractionStrategy)
     && typeof count === 'number'

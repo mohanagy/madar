@@ -28,7 +28,7 @@ function writeFixture(root: string): void {
 }
 
 describe('generate performance benchmark harness', () => {
-  it('covers generate, update, cluster-only, and SPI cache variants with structured metrics', () => {
+  it('covers legacy, canonical, update, and cluster-only variants with structured metrics', () => {
     withTempDir((dir) => {
       const fixtureRoot = join(dir, 'fixture')
       const workDir = join(dir, 'runs')
@@ -47,14 +47,11 @@ describe('generate performance benchmark harness', () => {
         'extracted_files',
         'node_count',
         'edge_count',
-        'cache_hit',
-        'cache_reason',
         'output_size_bytes',
       ]))
       expect(Object.keys(summary.variants)).toEqual([
         'generate-legacy',
-        'generate-spi-cold',
-        'generate-spi-warm',
+        'generate-canonical',
         'update-noop',
         'update-changed',
         'cluster-only',
@@ -71,19 +68,10 @@ describe('generate performance benchmark harness', () => {
         expect(variant.output_size_bytes).toBeGreaterThanOrEqual(variant.graph_size_bytes)
       }
 
-      expect(summary.variants['generate-spi-cold']).toEqual(expect.objectContaining({
+      expect(summary.variants['generate-canonical']).toEqual(expect.objectContaining({
         mode: 'generate',
-        strategy: 'spi',
-        cache_hit: false,
-        cache_reason: 'no-cache',
+        strategy: 'canonical',
         extracted_files: 3,
-      }))
-      expect(summary.variants['generate-spi-warm']).toEqual(expect.objectContaining({
-        mode: 'generate',
-        strategy: 'spi',
-        cache_hit: true,
-        cache_reason: 'fresh-cache',
-        extracted_files: 1,
       }))
       expect(summary.variants['update-noop']).toEqual(expect.objectContaining({
         mode: 'update',
@@ -108,7 +96,7 @@ describe('generate performance benchmark harness', () => {
 
     expect(readme).toContain('`generate`, `update`, and `cluster-only`')
     expect(readme).toContain('wall_clock_ms')
-    expect(readme).toContain('cache_reason')
+    expect(readme).toContain('generate-canonical')
     expect(readme).toContain('Manual large-repo benchmark flow')
     expect(readme).toContain('MADAR_PERF_FIXTURE')
 

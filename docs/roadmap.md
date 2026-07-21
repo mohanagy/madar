@@ -11,7 +11,7 @@ Madar is executing an accepted Core Reset. The roadmap is outcome-driven: work a
 - [Removal manifest](core-reset/removal-manifest.yml) — keep, rebuild, move, delete, and defer decisions
 - [Scorecard](core-reset/scorecard.md) — technical and business evidence gates
 
-The RFC is **accepted**. Scope and baseline has passed with a [committed evidence receipt](core-reset/evidence/baseline-v0.32.0.json), and Directed multigraph passed through [#582](https://github.com/mohanagy/madar/issues/582) and [PR #583](https://github.com/mohanagy/madar/pull/583). No technical phase is currently in progress. Canonical TypeScript/JavaScript index is the only **Ready** phase; every later replacement phase remains blocked.
+The RFC is **accepted**. Scope and baseline has passed with a [committed evidence receipt](core-reset/evidence/baseline-v0.32.0.json), and Directed multigraph passed through [#582](https://github.com/mohanagy/madar/issues/582) and [PR #583](https://github.com/mohanagy/madar/pull/583). The Canonical TypeScript/JavaScript index is the single **In progress** phase through [#585](https://github.com/mohanagy/madar/issues/585); every later replacement phase remains blocked.
 
 ## Passed — directed multigraph
 
@@ -24,9 +24,11 @@ The `directed-multigraph` removal-manifest entry delivered:
 
 The five predecessor files and obsolete exporter surfaces are absent. PR #583 was squash-merged into the protected `core-reset` branch at `63c59049178e82bd6bd1c928f6666ef159365bbe`. Final measurements are 178 production TypeScript files / 93,792 LOC with a `+1,197 / -4,171 / net -2,974` source delta, five new production files, and no dependency additions. All six CI matrix jobs passed, CodeRabbit completed successfully, every review thread was resolved, and the frozen baseline receipt remains unchanged.
 
-## Ready — canonical TypeScript/JavaScript index
+## In progress — canonical TypeScript/JavaScript index
 
-The next authorized work item is limited to the `canonical-typescript-index` removal-manifest entry. It must write canonical graph facts directly, satisfy the labelled language/framework fixtures, and make legacy augmentation removable. It remains Ready—not In progress—until its exact deletion contract is accepted and recorded. Legacy extraction and non-code/other-language ingestion become eligible for deletion only after this fixture gate passes; incremental refresh, retrieval replacement, and delivery remain blocked.
+The active work item is limited to the `canonical-typescript-index` removal-manifest entry accepted in [#585](https://github.com/mohanagy/madar/issues/585), based on protected `core-reset` commit `f68d64482578f0c7992ec63095fa00e19ac25880`. It must write canonical graph facts directly, delete the 20-file / 7,564-LOC SPI and projection contract, satisfy the labelled language/framework fixtures, and stay within `+5,900 / -7,564 / net -1,500` production LOC with no runtime dependency. Legacy extraction and non-code/other-language ingestion become eligible for deletion only after this fixture gate passes; incremental refresh, retrieval replacement, and delivery remain blocked.
+
+The current review candidate deletes all 20 predecessor files, adds 12 production files and no runtime dependency, and measures 170 production TypeScript files / 91,557 LOC with a `+5,556 / -7,791 / net -2,235` delta. Its strengthened gold harness reports 100% import/re-export recall and 100% call/framework-edge recall; all eight accepted framework buckets report 100% recall and precision with no unexpected facts. These are candidate measurements only: the phase remains In progress until exact-head CI, CodeRabbit, and review-thread gates pass and the protected branch records closure.
 
 ## Next — dependency-ordered replacement
 
