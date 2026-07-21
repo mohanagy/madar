@@ -52,8 +52,8 @@ describe('core reset governance', () => {
     expect(roadmap).toContain('projects/8')
     expect(roadmap).toContain('removal-manifest.yml')
     expect(roadmap).toContain('scorecard.md')
-    expect(roadmap).toContain('## In progress')
-    expect(roadmap).toContain('## Blocked')
+    expect(roadmap).toContain('## Passed — directed multigraph')
+    expect(roadmap).toContain('## Ready — canonical TypeScript/JavaScript index')
     expect(roadmap).toContain('## Next')
     expect(roadmap).toContain('## Later')
     expect(roadmap).toContain('accepted Core Reset')
@@ -66,6 +66,9 @@ describe('core reset governance', () => {
     expect(design).toContain('not a permanent V1/V2 split')
     expect(design).toContain('Merging code alone is not completion')
     expect(scorecard).toContain('**Status:** accepted')
+    expect(scorecard).toContain('| Directed multigraph | **Passed**')
+    expect(scorecard).toContain('| Canonical TypeScript index | **Ready — not In progress**')
+    expect(scorecard).not.toContain('CI and review remain pending')
     expect(readme).toContain('docs/roadmap.md')
     expect(contributing).toContain('docs/roadmap.md')
   })
@@ -78,10 +81,17 @@ describe('core reset governance', () => {
       schema_version: number
       status: string
       rules: string[]
+      current: {
+        completed_phase: string
+        active_phase: null
+        ready_phase: string
+        completed_phase_commit: string
+      }
       items: Array<{
         id: string
         disposition: string
         status: string
+        notes?: string
         sources?: string[]
         removed_sources?: string[]
         exit_gate: string
@@ -91,6 +101,12 @@ describe('core reset governance', () => {
 
     expect(manifest.schema_version).toBe(1)
     expect(manifest.status).toBe('accepted')
+    expect(manifest.current).toMatchObject({
+      completed_phase: 'directed-multigraph',
+      active_phase: null,
+      ready_phase: 'canonical-typescript-index',
+      completed_phase_commit: '63c59049178e82bd6bd1c928f6666ef159365bbe',
+    })
     expect(manifest.rules.length).toBeGreaterThan(0)
     expect(manifest.items.length).toBeGreaterThan(10)
 
@@ -112,6 +128,10 @@ describe('core reset governance', () => {
         expect(item.remove_when?.trim().length).toBeGreaterThan(0)
       }
     }
+    expect(manifest.items.find((item) => item.id === 'directed-multigraph')?.status).toBe('complete')
+    expect(manifest.items.find((item) => item.id === 'directed-multigraph')?.notes).toContain('#582')
+    expect(manifest.items.find((item) => item.id === 'canonical-typescript-index')?.status).toBe('planned')
+    expect(manifest.items.filter((item) => item.status === 'in_progress')).toEqual([])
   })
 
   it('measures logical LOC independently from checkout line endings', () => {

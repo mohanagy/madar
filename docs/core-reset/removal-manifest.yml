@@ -24,10 +24,12 @@ review:
   amendment: Source lists were completed and de-overlapped so every current production TypeScript file has exactly one existing disposition; no keep, rebuild, move, delete, or defer decision changed.
 
 current:
-  updated_at: 2026-07-20
-  completed_phase: scope-and-baseline
-  active_phase: directed-multigraph
+  updated_at: 2026-07-21
+  completed_phase: directed-multigraph
+  active_phase: null
+  ready_phase: canonical-typescript-index
   base_commit: 647c2912e9ff000b5d92cae3fc61395d9e556062
+  completed_phase_commit: 63c59049178e82bd6bd1c928f6666ef159365bbe
   production_typescript_files: 178
   production_typescript_loc: 93792
   production_loc_added: 1197
@@ -78,7 +80,7 @@ items:
 
   - id: directed-multigraph
     disposition: rebuild
-    status: in_progress
+    status: complete
     sources:
       - src/adapters/filesystem/graph-artifact.ts
       - src/application/build-graph.ts
@@ -95,17 +97,30 @@ items:
       - src/core/schema/normalize.ts
       - src/runtime/direction.ts
     destination: src/domain/graph/**
-    notes: The obsolete exporter helpers moved from the later non-core-products bucket to this phase because #582 deletes the entire legacy exporter surface; no later phase retains ownership of those files.
+    notes: 'The obsolete exporter helpers moved from the later non-core-products bucket to this phase because #582 deletes the entire legacy exporter surface; no later phase retains ownership of those files.'
     production_loc_budget:
       added_max: 1200
       removed_min: 2852
       net_max: -1500
+    completion:
+      issue: https://github.com/mohanagy/madar/issues/582
+      pull_request: https://github.com/mohanagy/madar/pull/583
+      commit: 63c59049178e82bd6bd1c928f6666ef159365bbe
+      production_typescript_files: 178
+      production_typescript_loc: 93792
+      production_loc_added: 1197
+      production_loc_removed: 4171
+      production_loc_net: -2974
+      dependencies_added: 0
+      ci_matrix_jobs_passed: 6
+      coderabbit: passed
+      unresolved_review_threads: 0
     remove_when: Schema-v2 invariant, serialization, migration-error, and deterministic-ID tests pass.
     exit_gate: Parallel relationship kinds and direction survive build, store, and load.
 
   - id: canonical-typescript-index
     disposition: rebuild
-    status: proposed
+    status: planned
     sources:
       - src/pipeline/spi/**
       - src/contracts/extraction.ts
@@ -115,6 +130,7 @@ items:
     preserve:
       - Generic TypeScript semantic-resolution algorithms
       - Framework detectors that satisfy the canonical adapter contract
+    notes: Ready after Directed multigraph passed. Implementation requires an accepted work item; legacy extraction and non-code/other-language ingestion remain blocked until this fixture gate passes.
     remove_when: Labelled language and framework fixtures pass without legacy augmentation.
     exit_gate: One canonical index schema writes the graph directly.
 

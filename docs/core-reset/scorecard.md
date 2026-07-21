@@ -2,7 +2,7 @@
 
 > **RFC:** [#577](https://github.com/mohanagy/madar/issues/577)
 > **Milestone:** [`v0.40.0 — Core Reset`](https://github.com/mohanagy/madar/milestone/7)
-> **Status:** accepted; Scope/Baseline passed; Directed multigraph is in verification; Canonical TypeScript index remains blocked
+> **Status:** accepted; Scope/Baseline and Directed multigraph passed; Canonical TypeScript index is Ready but not In progress
 
 This is the phase-gate evidence ledger. An issue or PR link is not evidence by itself; each gate needs a reproducible test, receipt, measurement, or external-user record.
 
@@ -31,8 +31,8 @@ The schema-validated, share-safe receipt was recorded at tooling checkout `250a6
 | Phase | Status | Exit gate | Evidence |
 | --- | --- | --- | --- |
 | Scope and baseline | **Passed** | Baseline script/receipt committed; held-out evaluation contract frozen; removal manifest reviewed | [#580](https://github.com/mohanagy/madar/issues/580), [receipt](evidence/baseline-v0.32.0.json), and [manifest](removal-manifest.yml) |
-| Directed multigraph | **In progress — verification** | Parallel types, direction, stable IDs, provenance, and serialization pass | [#582](https://github.com/mohanagy/madar/issues/582), branch invariant tests, and the phase evidence below; CI and review remain pending |
-| Canonical TypeScript index | **Blocked** | Labelled TS/framework gates pass without legacy augmentation | Becomes ready only after the Directed multigraph PR merges with all required checks and review threads resolved |
+| Directed multigraph | **Passed** | Parallel types, direction, stable IDs, provenance, and serialization pass | [#582](https://github.com/mohanagy/madar/issues/582), merged [PR #583](https://github.com/mohanagy/madar/pull/583), invariant tests, six green CI jobs, successful CodeRabbit review, and zero unresolved threads |
+| Canonical TypeScript index | **Ready — not In progress** | Labelled TS/framework gates pass without legacy augmentation | Work item contract and owner acceptance required before implementation starts |
 | Incremental index | Not started | Add/change/delete/rename output equals clean rebuild | Pending |
 | Evidence-path query | Not started | Held-out correctness and one-call completeness gates pass without repo-specific logic | Pending |
 | Delivery and package | Not started | Thin MCP/CLI, activation, startup, and package budgets pass | Pending |
@@ -42,14 +42,14 @@ The schema-validated, share-safe receipt was recorded at tooling checkout `250a6
 
 Only one technical phase may be `In progress` at a time.
 
-### Directed multigraph phase evidence (pre-merge)
+### Directed multigraph phase evidence (passed)
 
 - One always-directed `KnowledgeGraph` implementation now lives under `src/domain/graph/**`; there is no V1/V2 alias, mode, fallback loader, or second graph store.
 - The five owned predecessor files are deleted. Obsolete HTML, SVG, GraphML, Cypher, and Obsidian exporter code was not recreated.
-- Current working-branch production inventory: 178 TypeScript files / 93,792 LOC.
-- Working-branch delta from protected base `647c2912e9ff000b5d92cae3fc61395d9e556062`: `+1,197 / -4,171 / net -2,974`; five new production files; zero dependency changes.
-- Deterministic multigraph, build-adapter, serialization, schema rejection, provenance, collision, traversal, and consumer regressions are present as tests on the working branch. The baseline receipt remains unchanged.
-- Local pre-review gates ran on 2026-07-20. The phase does not pass until the final branch rerun, required CI, and review threads are all green.
+- Final protected-branch production inventory: 178 TypeScript files / 93,792 LOC.
+- Final delta from protected phase base `647c2912e9ff000b5d92cae3fc61395d9e556062`: `+1,197 / -4,171 / net -2,974`; five new production files; zero dependency changes.
+- Deterministic multigraph, build-adapter, serialization, schema rejection, provenance, collision, traversal, and consumer regressions are committed as tests. The baseline receipt remains unchanged.
+- PR #583 was squash-merged at `63c59049178e82bd6bd1c928f6666ef159365bbe` after all six CI matrix jobs passed, CodeRabbit completed successfully, and every review thread was resolved.
 
 ## Graph gates
 
@@ -57,7 +57,7 @@ Only one technical phase may be `In progress` at a time.
 - [x] Directed callers/callees and import/export relationships traverse correctly.
 - [x] Node and edge IDs are deterministic across unchanged rebuilds.
 - [x] Evidence locations and provenance survive serialization.
-- [ ] Deleted and renamed files leave no stale nodes or edges.
+- [ ] Deleted and renamed files leave no stale nodes or edges. (Deferred to the accepted incremental-equivalence phase.)
 
 ## Index gates
 
@@ -91,7 +91,7 @@ Labelled fixtures cover ESM, CJS, barrel exports, aliases, TypeScript paths, pro
 - [ ] `madar --version` is <100 ms and <80 MB RSS.
 - [ ] MCP handshake and tool listing is <1 second cold.
 - [ ] Warm retrieval p95 is <500 ms on an approximately 15,000-node graph.
-- [ ] All CI checks and review threads are green/resolved.
+- [x] All required CI checks and review threads are green/resolved at the current completed phase head.
 
 ## Business gates
 
@@ -148,3 +148,4 @@ Copy this into a comment on [#577](https://github.com/mohanagy/madar/issues/577)
 | 2026-07-19 | RFC accepted; scope-and-baseline phase authorized | Green governance PR and completed acceptance checklist | #577 and #579 |
 | 2026-07-19 | Scope/Baseline passed; Directed multigraph became ready | Schema-validated clean-checkout receipt, frozen comparator contract, and complete removal-manifest review | #580 |
 | 2026-07-20 | Obsolete exporter-helper deletion moved into the active Directed multigraph phase; successor phase remains blocked pending merge | Removal manifest and executable governance checks | #582 |
+| 2026-07-21 | Directed multigraph passed; Canonical TypeScript index became ready | Merged PR #583, final source delta, six green CI jobs, successful CodeRabbit review, and zero unresolved threads | #582 and #583 |
