@@ -2,7 +2,7 @@
 
 > **RFC:** [#577](https://github.com/mohanagy/madar/issues/577)
 > **Milestone:** [`v0.40.0 — Core Reset`](https://github.com/mohanagy/madar/milestone/7)
-> **Status:** accepted; Scope/Baseline, Directed multigraph, and Canonical TypeScript index passed; the combined legacy/non-code deletion is Ready; no phase is In progress
+> **Status:** accepted; Scope/Baseline, Directed multigraph, and Canonical TypeScript index passed; the combined legacy/non-code deletion is the single In progress phase through #588
 
 This is the phase-gate evidence ledger. An issue or PR link is not evidence by itself; each gate needs a reproducible test, receipt, measurement, or external-user record.
 
@@ -33,7 +33,7 @@ The schema-validated, share-safe receipt was recorded at tooling checkout `250a6
 | Scope and baseline | **Passed** | Baseline script/receipt committed; held-out evaluation contract frozen; removal manifest reviewed | [#580](https://github.com/mohanagy/madar/issues/580), [receipt](evidence/baseline-v0.32.0.json), and [manifest](removal-manifest.yml) |
 | Directed multigraph | **Passed** | Parallel types, direction, stable IDs, provenance, and serialization pass | [#582](https://github.com/mohanagy/madar/issues/582), merged [PR #583](https://github.com/mohanagy/madar/pull/583), invariant tests, six green CI jobs, successful CodeRabbit review, and zero unresolved threads |
 | Canonical TypeScript index | **Passed** | Labelled TS/framework gates pass without legacy augmentation | [#585](https://github.com/mohanagy/madar/issues/585), merged [PR #586](https://github.com/mohanagy/madar/pull/586), merge commit `4dfd48194f2fab00b2cd2271a6f7917909dde9d4`, six green CI jobs, [independent review passed](https://github.com/mohanagy/madar/pull/586#issuecomment-5036311350), nine actionable CodeRabbit comments and two review-body nitpicks addressed, and zero unresolved threads; the final CodeRabbit rerun was rate-limited and merged under an explicit owner-approved exception |
-| Legacy extraction plus non-code/other-language ingestion | **Ready — not In progress** | Delete both manifest-owned paths in one work item while canonical JS/TS fixtures remain green and no package/docs/flag claims unsupported ingestion | Exact inventory, source budget, and verification contract must be accepted in one issue before implementation starts |
+| Legacy extraction plus non-code/other-language ingestion | **In progress** | Delete both manifest-owned paths in one work item while canonical JS/TS fixtures remain green and no package/docs/flag claims unsupported ingestion | [#588](https://github.com/mohanagy/madar/issues/588), protected base `9a762d0a4e10a0ae210ba3f53bb1d4468367e81e`, and the accepted deletion/budget/verification contract |
 | Incremental index | Not started | Add/change/delete/rename output equals clean rebuild | Pending |
 | Evidence-path query | Not started | Held-out correctness and one-call completeness gates pass without repo-specific logic | Pending |
 | Delivery and package | Not started | Thin MCP/CLI, activation, startup, and package budgets pass | Pending |
@@ -41,7 +41,7 @@ The schema-validated, share-safe receipt was recorded at tooling checkout `250a6
 | External validation | Not started | Activation, retention, and paid-intent gates pass | Pending |
 | Stable release | Not started | Every blocking gate passed; old core absent; migration docs ready | Pending |
 
-Only one technical phase may be `In progress` at a time. No phase is currently In progress; the combined deletion is only Ready.
+Only one technical phase may be `In progress` at a time. `legacy-extraction` is the scalar active handle for #588 and absorbs `non-code-and-other-language-ingest`; all later phases remain blocked.
 
 ### Directed multigraph phase evidence (passed)
 
@@ -60,6 +60,14 @@ Only one technical phase may be `In progress` at a time. No phase is currently I
 - The gold harness uses one-to-one fact matching, forbidden facts, copied-root and repeated-run determinism, scanner-read isolation, and independent node/edge scoring. Import/re-export and call/framework edge recall are 100%; all eight framework buckets report 100% recall and precision with no unexpected facts.
 - Local verification passes 188 test files / 2,525 tests (2 skipped). V8 coverage is 84.62% statements, 75.99% branches, 91.50% functions, and 85.04% lines; typecheck, build, release hygiene, registry validation, packed retrieval parity, package isolation, and high-severity dependency audit also pass.
 - PR #586 was squash-merged at `4dfd48194f2fab00b2cd2271a6f7917909dde9d4` after all six CI matrix jobs passed and every review thread was resolved. All nine actionable CodeRabbit comments and both review-body nitpicks were addressed; eight of the nine actionable remediations were confirmed by CodeRabbit before its final rerun was rate-limited. An [independent adversarial review passed](https://github.com/mohanagy/madar/pull/586#issuecomment-5036311350), and the owner explicitly approved merging under that review-automation exception. This record does not claim that the final CodeRabbit rerun passed.
+
+### Legacy and non-code deletion contract (in progress)
+
+- Owner-approved [#588](https://github.com/mohanagy/madar/issues/588) starts from protected `core-reset` commit `9a762d0a4e10a0ae210ba3f53bb1d4468367e81e` at 170 production TypeScript files / 91,539 LOC.
+- One scalar `legacy-extraction` phase absorbs the distinct `non-code-and-other-language-ingest` ownership group. No second deletion phase or later replacement phase is active.
+- The contract deletes 27 directly owned files plus four guaranteed orphans transferred from earlier ownership: `src/application/build-graph.ts`, `src/core/provenance/ingest.ts`, `src/infrastructure/cache.ts`, and `src/infrastructure/capabilities.ts`.
+- The accepted budget is at most one new production file / 900 added LOC, at least 31 deleted production files / 20,951 removed LOC, net at most `-20,000` LOC, zero runtime dependencies added, and three removed.
+- `--legacy`, `--spi`, `--include-docs`, `--docs`, and `--wiki` must disappear. The only surviving index path is canonical TypeScript/JavaScript generation into the directed multigraph; old mixed-mode artifacts require regeneration rather than a compatibility layer.
 
 ## Graph gates
 
@@ -161,3 +169,4 @@ Copy this into a comment on [#577](https://github.com/mohanagy/madar/issues/577)
 | 2026-07-21 | Directed multigraph passed; Canonical TypeScript index became ready | Merged PR #583, final source delta, six green CI jobs, successful CodeRabbit review, and zero unresolved threads | #582 and #583 |
 | 2026-07-21 | Canonical TypeScript index accepted and moved to In progress | Exact predecessor inventory, source budget, labelled fixture gates, and protected base recorded | #585 |
 | 2026-07-21 | Canonical TypeScript index passed; combined legacy/non-code deletion became Ready with no active phase | Merged PR #586, final source delta, six green CI jobs, nine actionable CodeRabbit comments and two review-body nitpicks addressed, eight actionable remediations confirmed before rate limiting, independent review receipt, explicit owner exception, and zero unresolved threads | #585 and #586 |
+| 2026-07-21 | Combined legacy/non-code deletion accepted and moved to In progress | #588 records the protected base, exact 31-file / 20,951-LOC deletion, four ownership transfers, three dependency removals, five retired flags, source budget, and exit gates | #588 |

@@ -11,7 +11,7 @@ Madar is executing an accepted Core Reset. The roadmap is outcome-driven: work a
 - [Removal manifest](core-reset/removal-manifest.yml) — keep, rebuild, move, delete, and defer decisions
 - [Scorecard](core-reset/scorecard.md) — technical and business evidence gates
 
-The RFC is **accepted**. Scope and baseline has passed with a [committed evidence receipt](core-reset/evidence/baseline-v0.32.0.json), Directed multigraph passed through [#582](https://github.com/mohanagy/madar/issues/582) and [PR #583](https://github.com/mohanagy/madar/pull/583), and the Canonical TypeScript/JavaScript index passed through [#585](https://github.com/mohanagy/madar/issues/585) and [PR #586](https://github.com/mohanagy/madar/pull/586). No phase is In progress. One combined deletion of legacy extraction and non-code/other-language ingestion is Ready for an accepted work-item contract; every later replacement phase remains blocked.
+The RFC is **accepted**. Scope and baseline has passed with a [committed evidence receipt](core-reset/evidence/baseline-v0.32.0.json), Directed multigraph passed through [#582](https://github.com/mohanagy/madar/issues/582) and [PR #583](https://github.com/mohanagy/madar/pull/583), and the Canonical TypeScript/JavaScript index passed through [#585](https://github.com/mohanagy/madar/issues/585) and [PR #586](https://github.com/mohanagy/madar/pull/586). The combined deletion of legacy extraction and non-code/other-language ingestion is the single In progress phase through [#588](https://github.com/mohanagy/madar/issues/588); every later replacement phase remains blocked.
 
 ## Passed — directed multigraph
 
@@ -30,11 +30,11 @@ The `canonical-typescript-index` removal-manifest entry accepted in [#585](https
 
 PR #586 was squash-merged into protected `core-reset` at `4dfd48194f2fab00b2cd2271a6f7917909dde9d4`. Final measurements are 170 production TypeScript files / 91,539 LOC with a `+5,538 / -7,791 / net -2,253` delta from protected phase base `f68d64482578f0c7992ec63095fa00e19ac25880`. The strengthened gold harness reports 100% import/re-export recall and 100% call/framework-edge recall; all eight accepted framework buckets report 100% recall and precision with no unexpected facts. All six CI jobs passed, all nine actionable CodeRabbit comments and both review-body nitpicks were addressed, eight of the nine actionable remediations were confirmed by CodeRabbit, and every review thread was resolved. The final CodeRabbit rerun was rate-limited, so the owner approved an explicit exception after an [independent adversarial review passed](https://github.com/mohanagy/madar/pull/586#issuecomment-5036311350); the final automation result is not represented as green.
 
-## Ready — delete legacy extraction and non-code/other-language ingestion
+## In progress — delete legacy extraction and non-code/other-language ingestion
 
-This is one deletion work item covering both `legacy-extraction` and `non-code-and-other-language-ingest`. The latter remains a distinct manifest ownership ID, but it cannot be implemented as a separate phase because current unsupported and non-code routes still depend on the legacy companion path. The issue must record the exact owned-file inventory, production LOC budget, dependency removals, package/docs/flag cleanup, and canonical JS/TS regression gates before implementation begins.
+[#588](https://github.com/mohanagy/madar/issues/588) is one accepted deletion work item covering both `legacy-extraction` and `non-code-and-other-language-ingest`. The latter remains a distinct manifest ownership ID but is absorbed by the single active phase because current unsupported and non-code routes depend on the same legacy companion path.
 
-Ready does not mean In progress. There is no active technical phase until that deletion contract is accepted. Incremental refresh remains blocked until both deletion IDs are complete and the old engine cannot be reached from production.
+The protected base is `9a762d0a4e10a0ae210ba3f53bb1d4468367e81e`: 170 production TypeScript files / 91,539 LOC. The accepted contract deletes at least 31 production files and 20,951 LOC, removes three runtime dependencies and five extraction flags, adds at most one production file / 900 LOC, and finishes at net `-20,000` LOC or lower. Four guaranteed extraction orphans transfer into this phase so no compatibility adapter survives. Incremental refresh remains blocked until both deletion IDs are complete and the old engine cannot be reached from production.
 
 ## Next — dependency-ordered replacement
 
