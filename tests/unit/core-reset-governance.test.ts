@@ -52,8 +52,8 @@ describe('core reset governance', () => {
     expect(roadmap).toContain('projects/8')
     expect(roadmap).toContain('removal-manifest.yml')
     expect(roadmap).toContain('scorecard.md')
-    expect(roadmap).toContain('## In progress')
-    expect(roadmap).toContain('## Blocked')
+    expect(roadmap).toContain('## Passed — directed multigraph')
+    expect(roadmap).toContain('## Ready — canonical TypeScript/JavaScript index')
     expect(roadmap).toContain('## Next')
     expect(roadmap).toContain('## Later')
     expect(roadmap).toContain('accepted Core Reset')
@@ -66,6 +66,9 @@ describe('core reset governance', () => {
     expect(design).toContain('not a permanent V1/V2 split')
     expect(design).toContain('Merging code alone is not completion')
     expect(scorecard).toContain('**Status:** accepted')
+    expect(scorecard).toContain('| Directed multigraph | **Passed**')
+    expect(scorecard).toContain('| Canonical TypeScript index | **Ready — not In progress**')
+    expect(scorecard).not.toContain('CI and review remain pending')
     expect(readme).toContain('docs/roadmap.md')
     expect(contributing).toContain('docs/roadmap.md')
   })
@@ -78,10 +81,38 @@ describe('core reset governance', () => {
       schema_version: number
       status: string
       rules: string[]
+      current: {
+        updated_at: string
+        completed_phase: string
+        active_phase: null
+        ready_phase: string
+        base_commit: string
+        completed_phase_commit: string
+        production_typescript_files: number
+        production_typescript_loc: number
+        production_loc_added: number
+        production_loc_removed: number
+        production_loc_net: number
+      }
       items: Array<{
         id: string
         disposition: string
         status: string
+        notes?: string
+        completion?: {
+          issue: string
+          pull_request: string
+          commit: string
+          production_typescript_files: number
+          production_typescript_loc: number
+          production_loc_added: number
+          production_loc_removed: number
+          production_loc_net: number
+          dependencies_added: number
+          ci_matrix_jobs_passed: number
+          coderabbit: string
+          unresolved_review_threads: number
+        }
         sources?: string[]
         removed_sources?: string[]
         exit_gate: string
@@ -91,6 +122,19 @@ describe('core reset governance', () => {
 
     expect(manifest.schema_version).toBe(1)
     expect(manifest.status).toBe('accepted')
+    expect(manifest.current).toMatchObject({
+      updated_at: '2026-07-21',
+      completed_phase: 'directed-multigraph',
+      active_phase: null,
+      ready_phase: 'canonical-typescript-index',
+      base_commit: '647c2912e9ff000b5d92cae3fc61395d9e556062',
+      completed_phase_commit: '63c59049178e82bd6bd1c928f6666ef159365bbe',
+      production_typescript_files: 178,
+      production_typescript_loc: 93_792,
+      production_loc_added: 1_197,
+      production_loc_removed: 4_171,
+      production_loc_net: -2_974,
+    })
     expect(manifest.rules.length).toBeGreaterThan(0)
     expect(manifest.items.length).toBeGreaterThan(10)
 
@@ -112,6 +156,28 @@ describe('core reset governance', () => {
         expect(item.remove_when?.trim().length).toBeGreaterThan(0)
       }
     }
+    const directed = manifest.items.find((item) => item.id === 'directed-multigraph')
+    expect(directed?.status).toBe('complete')
+    expect(directed?.notes).toContain('#582')
+    expect(directed?.completion).toEqual({
+      issue: 'https://github.com/mohanagy/madar/issues/582',
+      pull_request: 'https://github.com/mohanagy/madar/pull/583',
+      commit: '63c59049178e82bd6bd1c928f6666ef159365bbe',
+      production_typescript_files: 178,
+      production_typescript_loc: 93_792,
+      production_loc_added: 1_197,
+      production_loc_removed: 4_171,
+      production_loc_net: -2_974,
+      dependencies_added: 0,
+      ci_matrix_jobs_passed: 6,
+      coderabbit: 'passed',
+      unresolved_review_threads: 0,
+    })
+    const canonical = manifest.items.find((item) => item.id === 'canonical-typescript-index')
+    expect(canonical?.status).toBe('planned')
+    expect(canonical?.notes).toContain('Implementation requires an accepted work item')
+    expect(canonical?.notes).toContain('remain blocked until this fixture gate passes')
+    expect(manifest.items.filter((item) => item.status === 'in_progress')).toEqual([])
   })
 
   it('measures logical LOC independently from checkout line endings', () => {

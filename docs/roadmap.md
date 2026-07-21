@@ -11,9 +11,9 @@ Madar is executing an accepted Core Reset. The roadmap is outcome-driven: work a
 - [Removal manifest](core-reset/removal-manifest.yml) — keep, rebuild, move, delete, and defer decisions
 - [Scorecard](core-reset/scorecard.md) — technical and business evidence gates
 
-The RFC is **accepted**. Scope and baseline has passed with a [committed evidence receipt](core-reset/evidence/baseline-v0.32.0.json). Directed multigraph is the only **In progress** phase and is still under merge verification. Canonical TypeScript/JavaScript index and every later replacement phase remain blocked until that PR merges with green checks and resolved review threads.
+The RFC is **accepted**. Scope and baseline has passed with a [committed evidence receipt](core-reset/evidence/baseline-v0.32.0.json), and Directed multigraph passed through [#582](https://github.com/mohanagy/madar/issues/582) and [PR #583](https://github.com/mohanagy/madar/pull/583). No technical phase is currently in progress. Canonical TypeScript/JavaScript index is the only **Ready** phase; every later replacement phase remains blocked.
 
-## In progress — directed multigraph
+## Passed — directed multigraph
 
 The `directed-multigraph` removal-manifest entry delivered:
 
@@ -22,21 +22,22 @@ The `directed-multigraph` removal-manifest entry delivered:
 3. Replace the owned graph path under the accepted destination rather than creating a permanent V1/V2 split.
 4. Delete the predecessor graph path when the phase gate passes, with net-negative production LOC.
 
-The five predecessor files and obsolete exporter surfaces are absent on the working branch. Current measurements are 178 production TypeScript files / 93,792 LOC with a `+1,197 / -4,171 / net -2,974` source delta and no dependency additions. Final CI and review gates are still open; the frozen baseline receipt remains unchanged.
+The five predecessor files and obsolete exporter surfaces are absent. PR #583 was squash-merged into the protected `core-reset` branch at `63c59049178e82bd6bd1c928f6666ef159365bbe`. Final measurements are 178 production TypeScript files / 93,792 LOC with a `+1,197 / -4,171 / net -2,974` source delta, five new production files, and no dependency additions. All six CI matrix jobs passed, CodeRabbit completed successfully, every review thread was resolved, and the frozen baseline receipt remains unchanged.
 
-## Blocked — canonical TypeScript/JavaScript index
+## Ready — canonical TypeScript/JavaScript index
 
-After the Directed multigraph PR merges, the next authorized work item is limited to the `canonical-typescript-index` removal-manifest entry. It must write canonical graph facts directly, satisfy the labelled language/framework fixtures, and make legacy augmentation removable. Until then, canonical indexing, incremental refresh, retrieval replacement, and delivery remain blocked.
+The next authorized work item is limited to the `canonical-typescript-index` removal-manifest entry. It must write canonical graph facts directly, satisfy the labelled language/framework fixtures, and make legacy augmentation removable. It remains Ready—not In progress—until its exact deletion contract is accepted and recorded. Legacy extraction and non-code/other-language ingestion become eligible for deletion only after this fixture gate passes; incremental refresh, retrieval replacement, and delivery remain blocked.
 
 ## Next — dependency-ordered replacement
 
-Only one technical phase may be active at a time. After Directed multigraph merges and passes, the remaining order is:
+Only one technical phase may be active at a time. After the Canonical TypeScript/JavaScript index passes, the remaining order is:
 
-1. Full-rebuild-equivalent incremental refresh.
-2. Generic evidence-path retrieval and deletion of the context/governance stack.
-3. Thin MCP, CLI, Claude Code, and Codex delivery.
-4. Move evaluation tooling outside runtime and reduce the npm package.
-5. Publish a beta under npm tag `next` for external validation.
+1. Delete legacy extraction and non-code/other-language ingestion after their blocker clears.
+2. Full-rebuild-equivalent incremental refresh.
+3. Generic evidence-path retrieval and deletion of the context/governance stack.
+4. Thin MCP, CLI, Claude Code, and Codex delivery.
+5. Move evaluation tooling outside runtime and reduce the npm package.
+6. Publish a beta under npm tag `next` for external validation.
 
 Every replacement issue has an exact deletion contract. New and old implementations may coexist only temporarily on the reset integration branch; the old path cannot survive the phase.
 
