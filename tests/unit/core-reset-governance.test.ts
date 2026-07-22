@@ -76,10 +76,12 @@ describe('core reset governance', () => {
     expect(roadmap).toContain('scorecard.md')
     expect(roadmap).toContain('## Passed — directed multigraph')
     expect(roadmap).toContain('## Passed — canonical TypeScript/JavaScript index')
-    expect(roadmap).toContain('## In progress — delete legacy extraction and non-code/other-language ingestion')
+    expect(roadmap).toContain('## Passed — delete legacy extraction and non-code/other-language ingestion')
+    expect(roadmap).toContain('## Ready — generation and incremental index')
     expect(roadmap).toContain('issues/588')
-    expect(roadmap).not.toContain('No phase is In progress')
+    expect(roadmap).toContain('No phase is In progress')
     expect(roadmap).not.toContain('## In progress — canonical TypeScript/JavaScript index')
+    expect(roadmap).not.toContain('## In progress — delete legacy extraction and non-code/other-language ingestion')
     expect(roadmap).toContain('## Next')
     expect(roadmap).toContain('## Later')
     expect(roadmap).toContain('accepted Core Reset')
@@ -94,8 +96,9 @@ describe('core reset governance', () => {
     expect(scorecard).toContain('**Status:** accepted')
     expect(scorecard).toContain('| Directed multigraph | **Passed**')
     expect(scorecard).toContain('| Canonical TypeScript index | **Passed**')
-    expect(scorecard).toContain('| Legacy extraction plus non-code/other-language ingestion | **In progress**')
-    expect(scorecard).toContain('single In progress phase through #588')
+    expect(scorecard).toContain('| Legacy extraction plus non-code/other-language ingestion | **Passed**')
+    expect(scorecard).toContain('| Incremental index | **Ready — not In progress**')
+    expect(scorecard).toContain('No phase is In progress')
     expect(scorecard).toContain('final CodeRabbit rerun was rate-limited')
     expect(scorecard).toContain('owner-approved exception')
     expect(scorecard).not.toContain('CI and review remain pending')
@@ -141,13 +144,20 @@ describe('core reset governance', () => {
           issue: string
           pull_request: string
           commit: string
+          production_files_added?: number
+          production_files_removed?: number
           production_typescript_files: number
           production_typescript_loc: number
           production_loc_added: number
           production_loc_removed: number
           production_loc_net: number
           dependencies_added: number
+          dependencies_removed?: number
+          npm_files?: number
+          npm_packed_bytes?: number
+          npm_unpacked_bytes?: number
           ci_matrix_jobs_passed: number
+          ci_run?: string
           coderabbit: string
           coderabbit_findings_addressed?: number
           coderabbit_findings_confirmed?: number
@@ -167,11 +177,11 @@ describe('core reset governance', () => {
     expect(manifest.status).toBe('accepted')
     expect(manifest.current).toMatchObject({
       updated_at: '2026-07-22',
-      completed_phase: 'canonical-typescript-index',
-      active_phase: 'legacy-extraction',
-      ready_phase: null,
+      completed_phase: 'legacy-extraction',
+      active_phase: null,
+      ready_phase: 'generation-and-incremental',
       base_commit: '9a762d0a4e10a0ae210ba3f53bb1d4468367e81e',
-      completed_phase_commit: '4dfd48194f2fab00b2cd2271a6f7917909dde9d4',
+      completed_phase_commit: 'd46031eed7b0cf2d8bb7b7b6267a51322d9e2490',
       production_typescript_files: 139,
       production_typescript_loc: 68_954,
       production_loc_added: 815,
@@ -242,7 +252,7 @@ describe('core reset governance', () => {
     const legacy = manifest.items.find((item) => item.id === 'legacy-extraction')
     const nonCode = manifest.items.find((item) => item.id === 'non-code-and-other-language-ingest')
     expect(legacy).toMatchObject({
-      status: 'in_progress',
+      status: 'complete',
       absorbs: ['non-code-and-other-language-ingest'],
       production_file_budget: { added_max: 1, removed_min: 31 },
       production_loc_budget: { added_max: 900, removed_min: 20_951, net_max: -20_000 },
@@ -250,25 +260,48 @@ describe('core reset governance', () => {
       runtime_dependencies_removed: ['@vscode/tree-sitter-wasm', 'web-tree-sitter', 'fflate'],
       retired_cli_flags: ['--legacy', '--spi', '--include-docs', '--docs', '--wiki'],
     })
+    expect(legacy?.notes).toContain('CodeRabbit skipped the actual review')
+    expect(legacy?.completion).toEqual({
+      issue: 'https://github.com/mohanagy/madar/issues/588',
+      pull_request: 'https://github.com/mohanagy/madar/pull/590',
+      commit: 'd46031eed7b0cf2d8bb7b7b6267a51322d9e2490',
+      production_files_added: 0,
+      production_files_removed: 31,
+      production_typescript_files: 139,
+      production_typescript_loc: 68_954,
+      production_loc_added: 815,
+      production_loc_removed: 23_400,
+      production_loc_net: -22_585,
+      dependencies_added: 0,
+      dependencies_removed: 3,
+      npm_files: 314,
+      npm_packed_bytes: 592_783,
+      npm_unpacked_bytes: 2_794_076,
+      ci_matrix_jobs_passed: 6,
+      ci_run: 'https://github.com/mohanagy/madar/actions/runs/29899357806',
+      coderabbit: 'skipped_base_owner_exception',
+      independent_review: 'passed',
+      independent_review_receipt: 'https://github.com/mohanagy/madar/pull/590#issuecomment-5043069972',
+      unresolved_review_threads: 0,
+    })
     expect(legacy?.transferred_sources).toEqual([
       'src/application/build-graph.ts',
       'src/core/provenance/ingest.ts',
       'src/infrastructure/cache.ts',
       'src/infrastructure/capabilities.ts',
     ])
-    expect(nonCode).toMatchObject({ status: 'planned', absorbed_by: 'legacy-extraction' })
+    expect(nonCode).toMatchObject({ status: 'complete', absorbed_by: 'legacy-extraction' })
     const deletionOwners = [legacy, ...(legacy?.absorbs ?? []).map((id) => manifest.items.find((item) => item.id === id))]
     expect(deletionOwners.every(Boolean)).toBe(true)
     const baseFiles = productionTypeScriptFilesAtCommit(manifest.current.base_commit)
     const deletionFiles = baseFiles.filter((file) =>
-      deletionOwners.some((item) => (item?.sources ?? []).some((pattern) => manifestGlob(pattern).test(file))),
+      deletionOwners.some((item) => (item?.removed_sources ?? []).some((pattern) => manifestGlob(pattern).test(file))),
     )
     expect(new Set(deletionFiles).size).toBe(31)
     expect(logicalLocAtCommit(manifest.current.base_commit, deletionFiles)).toBe(20_951)
-    expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id)).toEqual([
-      'legacy-extraction',
-    ])
-    for (const id of ['generation-and-incremental', 'evidence-path-query', 'thin-delivery']) {
+    expect(manifest.items.filter((item) => item.status === 'in_progress')).toEqual([])
+    expect(manifest.items.find((item) => item.id === 'generation-and-incremental')?.status).toBe('planned')
+    for (const id of ['evidence-path-query', 'thin-delivery']) {
       expect(manifest.items.find((item) => item.id === id)?.status).toBe('proposed')
     }
   })
@@ -367,6 +400,8 @@ describe('core reset governance', () => {
       }
       items: Array<{
         id: string
+        absorbs?: string[]
+        absorbed_by?: string
         sources?: string[]
         removed_sources?: string[]
         completion?: { commit: string }
@@ -387,7 +422,7 @@ describe('core reset governance', () => {
       'src/infrastructure/cache.ts',
       'src/infrastructure/capabilities.ts',
     ]
-    expect(legacy?.sources?.filter((source) => transferred.includes(source))).toEqual(transferred)
+    expect(legacy?.removed_sources?.filter((source) => transferred.includes(source))).toEqual(transferred)
     for (const source of transferred) {
       expect(
         manifest.items
@@ -397,11 +432,14 @@ describe('core reset governance', () => {
         `${source} must transfer exclusively to legacy-extraction`,
       ).toEqual([])
     }
-    for (const completedId of ['directed-multigraph', 'canonical-typescript-index']) {
+    for (const completedId of ['directed-multigraph', 'canonical-typescript-index', 'legacy-extraction']) {
       const completed = manifest.items.find((item) => item.id === completedId)
       expect(completed).toBeDefined()
       expect(completed?.completion?.commit).toBeDefined()
-      const removedSources = completed?.removed_sources ?? []
+      const completedOwnerIds = new Set([completedId, ...(completed?.absorbs ?? [])])
+      const completedOwners = manifest.items.filter((item) => completedOwnerIds.has(item.id))
+      expect(completedOwners).toHaveLength(completedOwnerIds.size)
+      const removedSources = completedOwners.flatMap((item) => item.removed_sources ?? [])
       const deletedFiles = deletedProductionFiles(completed!.completion!.commit)
       const deletedPredecessors = deletedFiles.filter((path) =>
         removedSources.some((pattern) => manifestGlob(pattern).test(path)))
@@ -424,7 +462,7 @@ describe('core reset governance', () => {
 
       for (const removedFile of deletedPredecessors) {
         const futureOwners = manifest.items.filter((item) =>
-          item.id !== completedId && (item.sources ?? []).some((pattern) => manifestGlob(pattern).test(removedFile)))
+          !completedOwnerIds.has(item.id) && (item.sources ?? []).some((pattern) => manifestGlob(pattern).test(removedFile)))
         expect(futureOwners.map((item) => item.id), `${removedFile} cannot remain assigned to a later phase`).toEqual([])
       }
     }
@@ -476,10 +514,12 @@ describe('core reset governance', () => {
     expect(pullRequestTemplate).toContain('Net production LOC')
   })
 
-  it('does not retain stale canonical-index phase language', () => {
+  it('does not retain stale completed-phase language', () => {
     const governance = `${read('docs/roadmap.md')}\n${read('docs/core-reset/scorecard.md')}`
     expect(governance).not.toContain('candidate evidence')
     expect(governance).not.toContain('pending PR review')
     expect(governance).not.toContain('Final CI matrix, CodeRabbit, and unresolved-thread evidence remains pending')
+    expect(governance).not.toContain('single In progress phase through #588')
+    expect(governance).not.toContain('Legacy and non-code deletion contract (in progress)')
   })
 })

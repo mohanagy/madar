@@ -11,7 +11,7 @@ Madar is executing an accepted Core Reset. The roadmap is outcome-driven: work a
 - [Removal manifest](core-reset/removal-manifest.yml) — keep, rebuild, move, delete, and defer decisions
 - [Scorecard](core-reset/scorecard.md) — technical and business evidence gates
 
-The RFC is **accepted**. Scope and baseline has passed with a [committed evidence receipt](core-reset/evidence/baseline-v0.32.0.json), Directed multigraph passed through [#582](https://github.com/mohanagy/madar/issues/582) and [PR #583](https://github.com/mohanagy/madar/pull/583), and the Canonical TypeScript/JavaScript index passed through [#585](https://github.com/mohanagy/madar/issues/585) and [PR #586](https://github.com/mohanagy/madar/pull/586). The combined deletion of legacy extraction and non-code/other-language ingestion is the single In progress phase through [#588](https://github.com/mohanagy/madar/issues/588); every later replacement phase remains blocked.
+The RFC is **accepted**. Scope and baseline has passed with a [committed evidence receipt](core-reset/evidence/baseline-v0.32.0.json), Directed multigraph passed through [#582](https://github.com/mohanagy/madar/issues/582) and [PR #583](https://github.com/mohanagy/madar/pull/583), the Canonical TypeScript/JavaScript index passed through [#585](https://github.com/mohanagy/madar/issues/585) and [PR #586](https://github.com/mohanagy/madar/pull/586), and the combined deletion of legacy extraction and non-code/other-language ingestion passed through [#588](https://github.com/mohanagy/madar/issues/588) and [PR #590](https://github.com/mohanagy/madar/pull/590). No phase is In progress. Generation and incremental index is Ready only; it requires a separately accepted issue and explicit owner activation.
 
 ## Passed — directed multigraph
 
@@ -30,15 +30,23 @@ The `canonical-typescript-index` removal-manifest entry accepted in [#585](https
 
 PR #586 was squash-merged into protected `core-reset` at `4dfd48194f2fab00b2cd2271a6f7917909dde9d4`. Final measurements are 170 production TypeScript files / 91,539 LOC with a `+5,538 / -7,791 / net -2,253` delta from protected phase base `f68d64482578f0c7992ec63095fa00e19ac25880`. The strengthened gold harness reports 100% import/re-export recall and 100% call/framework-edge recall; all eight accepted framework buckets report 100% recall and precision with no unexpected facts. All six CI jobs passed, all nine actionable CodeRabbit comments and both review-body nitpicks were addressed, eight of the nine actionable remediations were confirmed by CodeRabbit, and every review thread was resolved. The final CodeRabbit rerun was rate-limited, so the owner approved an explicit exception after an [independent adversarial review passed](https://github.com/mohanagy/madar/pull/586#issuecomment-5036311350); the final automation result is not represented as green.
 
-## In progress — delete legacy extraction and non-code/other-language ingestion
+## Passed — delete legacy extraction and non-code/other-language ingestion
 
-[#588](https://github.com/mohanagy/madar/issues/588) is one accepted deletion work item covering both `legacy-extraction` and `non-code-and-other-language-ingest`. The latter remains a distinct manifest ownership ID but is absorbed by the single active phase because current unsupported and non-code routes depend on the same legacy companion path.
+[#588](https://github.com/mohanagy/madar/issues/588) completed one deletion work item covering both `legacy-extraction` and `non-code-and-other-language-ingest`. The latter remains a distinct manifest ownership ID but was absorbed by the single phase because the unsupported and non-code routes depended on the same legacy companion path.
 
-The protected base is `9a762d0a4e10a0ae210ba3f53bb1d4468367e81e`: 170 production TypeScript files / 91,539 LOC. The accepted contract deletes at least 31 production files and 20,951 LOC, removes three runtime dependencies and five extraction flags, adds at most one production file / 900 LOC, and finishes at net `-20,000` LOC or lower. Four guaranteed extraction orphans transfer into this phase so no compatibility adapter survives. Incremental refresh remains blocked until both deletion IDs are complete and the old engine cannot be reached from production.
+PR #590 was squash-merged into protected `core-reset` at `d46031eed7b0cf2d8bb7b7b6267a51322d9e2490` from final PR head `0d5aab99b9aeaf01a17830bacafd6e8027ded72f`. The phase removed 31 production files and finished at 139 production TypeScript files / 68,954 LOC, a `+815 / -23,400 / net -22,585` delta from protected base `9a762d0a4e10a0ae210ba3f53bb1d4468367e81e`. The three legacy runtime dependencies and five extraction flags are absent. The full local suite reported 1,907 passed / 2 skipped with 85.17% statement, 76.97% branch, 90.59% function, and 85.85% line coverage. All six jobs in [CI run 29899357806](https://github.com/mohanagy/madar/actions/runs/29899357806) passed and zero review threads remained. CodeRabbit skipped the actual review because reviews are disabled for the `core-reset` base branch; the owner approved an explicit exception backed by a passing [independent strict review](https://github.com/mohanagy/madar/pull/590#issuecomment-5043069972).
+
+The resulting npm package has 314 files, 592,783 packed bytes, and 2,794,076 unpacked bytes. It is materially smaller than baseline but still fails the final `<150` files / `<1,500,000` unpacked-byte package gate; deletion completion does not claim otherwise.
+
+## Ready — generation and incremental index
+
+`generation-and-incremental` is the next dependency-ordered phase, but Ready is not active. No phase is In progress. Work may start only after a separate implementation issue records the exact predecessor deletion, source budget, acceptance tests, and non-goals, and the owner explicitly activates it.
+
+Its accepted exit gate includes full-rebuild-equivalent add/change/delete/rename/worktree behavior. Cross-artifact transactional publication was intentionally left out of PR #590; the successor proposal must define its exact artifact boundary and seek approval before implementation, and the deletion phase must not be represented as having delivered it.
 
 ## Next — dependency-ordered replacement
 
-Only one technical phase may be active at a time. After the combined deletion passes, the remaining order is:
+Only one technical phase may be active at a time. With the deletion complete and no phase active, the remaining order is:
 
 1. Full-rebuild-equivalent incremental refresh.
 2. Generic evidence-path retrieval and deletion of the context/governance stack.
@@ -82,21 +90,21 @@ These are deliberately outside the reset:
 
 A deferred capability returns to the roadmap only after at least three independent target users request it and the change fits the accepted product job and architecture.
 
-## Existing open issues
+## Existing tracked issues
 
 | Issue | Accepted reset disposition |
 | --- | --- |
 | [#565](https://github.com/mohanagy/madar/issues/565) | Retain as a real acceptance failure and held-out retrieval input |
 | [#574](https://github.com/mohanagy/madar/issues/574) | Do not implement as another patch; absorb its outcome into generic retrieval replacement |
 | [#567](https://github.com/mohanagy/madar/issues/567) | Fold into thin Codex delivery and keep as a beta activation blocker |
-| [#571](https://github.com/mohanagy/madar/issues/571) | Supersede if the accepted reset removes extraction modes |
+| [#571](https://github.com/mohanagy/madar/issues/571) | Closed as obsolete by the extraction-mode deletion in #588 and PR #590 |
 
-Their milestone, project, and closure state changes only through the dependency-ordered phase that owns each issue.
+The remaining issues' milestone, project, and closure state changes only through the dependency-ordered phase that owns each issue.
 
 ## Contribution and drift rules
 
 - Start from an accepted RFC requirement and one ready issue.
-- Keep one technical phase in progress.
+- Keep at most one technical phase in progress, and activate it only after its implementation issue is accepted and the owner explicitly approves activation.
 - State the user outcome, removal-manifest IDs, dependency, exit gate, and non-goals.
 - Record production LOC added and removed.
 - Do not add a permanent fallback, parallel engine, repository-specific rule, or runtime dependency on evaluation tooling.
