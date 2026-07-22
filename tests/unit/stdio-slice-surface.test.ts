@@ -43,7 +43,6 @@ function createGraphPath(): string {
       { source: 'auth_service', target: 'session_store', relation: 'calls', confidence: 'EXTRACTED', source_file: join(root, 'auth.ts') },
       { source: 'auth_service', target: 'auth_test', relation: 'covered_by', confidence: 'EXTRACTED', source_file: join(root, 'auth.ts') },
     ],
-    hyperedges: [],
   })
   return graphPath
 }
@@ -74,7 +73,6 @@ function createBackendRuntimeGraphPath(): string {
       { source: 'auth_controller', target: 'auth_spi', relation: 'calls', confidence: 'EXTRACTED', source_file: join(root, 'backend', 'src', 'auth-controller.ts') },
       { source: 'auth_spi', target: 'auth_service', relation: 'implements', confidence: 'EXTRACTED', source_file: join(root, 'backend', 'src', 'spi', 'auth-service.spi.ts') },
     ],
-    hyperedges: [],
   })
   return graphPath
 }

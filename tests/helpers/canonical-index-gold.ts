@@ -63,7 +63,6 @@ export type CanonicalGoldDefinition = {
   }>
   forbidden: {
     framework_roles_in_negative_files: boolean
-    legacy_extraction_strategy: boolean
     absolute_source_paths: boolean
     decorator_runtime_calls: GoldSelector[]
   }

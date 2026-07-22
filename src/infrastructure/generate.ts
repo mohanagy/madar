@@ -1,52 +1,41 @@
-import { existsSync, mkdirSync, rmSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, mkdirSync, renameSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 import { loadGraphArtifact, writeGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
-import {
-  buildCanonicalTypeScriptIndex,
-  isCanonicalTypeScriptSourceFile,
-} from '../adapters/typescript/index.js'
-import { parseGenerationPolicy, type ExtractionMode } from '../contracts/generation-policy.js'
+import { buildCanonicalTypeScriptIndex } from '../adapters/typescript/index.js'
 import type {
-  ExtractionFallbackReason,
-  ExtractionStrategy,
-  IndexingManifestV1,
+  IndexingManifest,
   IndexingOutcome,
-  IndexingSpiDiagnostic,
   IndexingStrictThresholds,
   IndexingSummary,
 } from '../contracts/indexing.js'
-import type { ExtractionData, ExtractionEdge, ExtractionNode, ExtractionSchemaVersion, Hyperedge } from '../pipeline/extract/contracts.js'
 import { GRAPH_ARTIFACT_REGENERATE_MESSAGE } from '../domain/graph/artifact.js'
 import { canonicalJsonString } from '../domain/graph/canonical-json.js'
 import { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
 import { godNodes, semanticAnomalies, suggestQuestions, surprisingConnections } from '../pipeline/analyze.js'
-import { buildGraphFromExtraction } from '../application/build-graph.js'
 import { cluster, scoreAll } from '../pipeline/cluster.js'
 import { buildCommunityLabels } from '../pipeline/community-naming.js'
 import {
   createManifestSnapshot,
   type DetectResult,
   detect,
-  detectIncremental,
   FileType,
-  loadManifestMetadata,
+  loadManifestDocument, loadManifestMetadata,
   writeManifestSnapshot,
 } from '../pipeline/detect.js'
-import { generateDocs as generateDocsArtifacts } from '../pipeline/docs.js'
-import { extract, EXTRACTOR_CACHE_VERSION } from '../pipeline/extract.js'
-import { createFileStemMap } from '../pipeline/extract/core.js'
-import {
-  canonicalTypeScriptIndexingOutcomes,
-  localExtractionIndexingOutcome,
-  retainedIndexingOutcomes,
-} from '../pipeline/indexing-generation.js'
+import { canonicalTypeScriptIndexingOutcomes } from '../pipeline/indexing-generation.js'
 import { createIndexingManifest, indexingStrictViolations, localIndexingPath } from '../pipeline/indexing-outcomes.js'
 import { generate as generateReport } from '../pipeline/report.js'
-import { toWiki } from '../pipeline/wiki.js'
+import { writeTextFileAtomically } from '../shared/atomic-file.js'
+import {
+  buildDiscoverySafetyMetadata,
+  parseDiscoverySafetyMetadata,
+  type DiscoveryExclusion,
+  type DiscoverySafetyMetadata,
+} from '../shared/discovery-safety.js'
 import { buildGraphBuildFreshnessMetadata } from '../shared/graph-build-freshness.js'
 import { collectGitVisibleFiles } from '../shared/git.js'
-import { writeTextFileAtomically } from '../shared/atomic-file.js'
 import { resolveMadarOutputDirectory } from '../shared/workspace.js'
 import {
   INDEXING_MANIFEST_FILENAME,
@@ -57,17 +46,12 @@ import {
 import {
   buildGenerationPolicy,
   generationOptionsFromPolicy,
-  resolveExtractionMode,
+  readStoredGenerationPolicy,
 } from './generation-policy.js'
-import {
-  buildDiscoverySafetyMetadata,
-  type DiscoveryExclusion,
-  type DiscoverySafetyMetadata,
-} from '../shared/discovery-safety.js'
 
 export type ProgressStep =
   | { step: 'detect'; message: string }
-  | { step: 'extract'; message: string; current?: number; total?: number }
+  | { step: 'index'; message: string; current?: number; total?: number }
   | { step: 'build'; message: string }
   | { step: 'cluster'; message: string }
   | { step: 'analyze'; message: string }
@@ -79,51 +63,31 @@ export interface GenerateGraphOptions {
   followSymlinks?: boolean
   /** Restrict discovery to files that Git does not ignore. Falls back outside Git repositories. */
   respectGitignore?: boolean
-  wiki?: boolean
-  includeDocs?: boolean
-  docs?: boolean
-  /** Select capability-aware auto extraction, legacy-only extraction, or
-   * strict canonical JS/TS indexing without unsupported-language fallback.
-   * Eligible non-code evidence remains included. CLI and programmatic
-   * generation default to `auto`; explicit `useSpi` retains its legacy
-   * compatibility mapping. */
-  extractionMode?: ExtractionMode
-  /** @deprecated Use `extractionMode`. Retained for programmatic callers. */
-  useSpi?: boolean
   indexingStrict?: IndexingStrictThresholds
   onProgress?: (progress: ProgressStep) => void
 }
 
 export interface GenerateGraphResult {
   mode: 'generate' | 'update' | 'cluster-only'
-  /** User-facing requested extraction mode used for this graph. */
-  extractionMode?: ExtractionMode
   rootPath: string
   outputDir: string
   graphPath: string
   reportPath: string
-  wikiPath: string | null
-  docsPath: string | null
   totalFiles: number
   codeFiles: number
-  nonCodeFiles: number
-  extractableFiles: number
-  extractedFiles: number
+  indexedFiles: number
   totalWords: number
   nodeCount: number
   edgeCount: number
   communityCount: number
-  semanticAnomalyCount?: number
-  changedFiles: number
-  deletedFiles: number
-  cache: null
+  semanticAnomalyCount: number
   warning: string | null
   notes: string[]
-  discoverySafety?: DiscoverySafetyMetadata
-  discoveryExclusions?: DiscoveryExclusion[]
-  indexingManifestPath?: string
-  indexingShareSafeManifestPath?: string
-  indexing?: IndexingSummary
+  discoverySafety: DiscoverySafetyMetadata
+  discoveryExclusions: DiscoveryExclusion[]
+  indexingManifestPath: string
+  indexingShareSafeManifestPath: string
+  indexing: IndexingSummary
 }
 
 export type GenerateUnsupportedCorpusCode = 'NO_SUPPORTED_FILES' | 'NO_GRAPH_NODES'
@@ -154,9 +118,10 @@ export class IndexingCompletenessError extends Error {
   }
 }
 
-type IncrementalDetectResult = ReturnType<typeof detectIncremental>
-
-function detectOptions(options: GenerateGraphOptions, gitVisibleFiles: string[] | null): { followSymlinks?: boolean; includedFiles?: ReadonlySet<string> } {
+function detectOptions(
+  options: GenerateGraphOptions,
+  gitVisibleFiles: string[] | null,
+): { followSymlinks?: boolean; includedFiles?: ReadonlySet<string> } {
   const includedFiles = gitVisibleFiles ? new Set(gitVisibleFiles.map((filePath) => resolve(filePath))) : undefined
   return {
     ...(options.followSymlinks ? { followSymlinks: true } : {}),
@@ -164,213 +129,37 @@ function detectOptions(options: GenerateGraphOptions, gitVisibleFiles: string[] 
   }
 }
 
-function countNonCodeFiles(files: DetectResult['files']): number {
-  return files[FileType.DOCUMENT].length + files[FileType.PAPER].length + files[FileType.IMAGE].length + files[FileType.AUDIO].length + files[FileType.VIDEO].length
-}
-
-function detectionSummary(detection: DetectResult, indexing?: IndexingSummary): Record<string, unknown> {
-  const discoverySafety = buildDiscoverySafetyMetadata(detection.exclusions)
+function detectionSummary(detection: DetectResult, indexing: IndexingSummary): Record<string, unknown> {
   return {
     files: detection.files,
     total_files: detection.total_files,
     total_words: detection.total_words,
     warning: detection.warning,
-    discovery_safety: discoverySafety.summary,
-    ...(indexing ? { indexing_completeness: indexing } : {}),
+    discovery_safety: buildDiscoverySafetyMetadata(detection.exclusions).summary,
+    indexing_completeness: indexing,
   }
 }
 
-function graphIndexingMetadata(manifest: IndexingManifestV1): Record<string, unknown> {
+function graphIndexingMetadata(manifest: IndexingManifest): Record<string, unknown> {
   return {
     version: manifest.version,
     generated_at: manifest.generated_at,
-    ...(manifest.requested_extraction_mode
-      ? { requested_extraction_mode: manifest.requested_extraction_mode }
-      : {}),
     summary: manifest.summary,
   }
 }
 
-function collectExtractableFiles(files: DetectResult['files']): string[] {
-  return [...files[FileType.CODE], ...files[FileType.DOCUMENT], ...files[FileType.PAPER], ...files[FileType.IMAGE], ...files[FileType.AUDIO], ...files[FileType.VIDEO]]
-}
-
-function emptyExtraction(): ExtractionData {
-  return {
-    schema_version: 1,
-    nodes: [],
-    edges: [],
-    hyperedges: [],
-    input_tokens: 0,
-    output_tokens: 0,
-  }
-}
-
-/**
- * Extraction fragments intentionally retain their language-level provenance
- * (for example builtin:extract:go). This receipt is separate: it records the
- * pipeline route that emitted the evidence, including auto's legacy fallback.
- * Apply it after extraction so per-file cache entries stay mode-neutral.
- */
-function withExtractionStrategy(
-  extraction: ExtractionData,
-  extractionStrategy: ExtractionStrategy,
-): ExtractionData {
-  return {
-    ...extraction,
-    nodes: extraction.nodes.map((node) => ({ ...node, extraction_strategy: extractionStrategy })),
-    edges: extraction.edges.map((edge) => ({ ...edge, extraction_strategy: extractionStrategy })),
-    ...(extraction.hyperedges
-      ? { hyperedges: extraction.hyperedges.map((hyperedge) => ({ ...hyperedge, extraction_strategy: extractionStrategy })) }
-      : {}),
-  }
-}
-
-function mergeSchemaVersion(current: ExtractionData['schema_version'], next: ExtractionData['schema_version']): ExtractionSchemaVersion {
-  if (current === 2 || next === 2) {
-    return 2
-  }
-
-  return 1
-}
-
-function mergeExtractions(extractions: ExtractionData[]): ExtractionData {
-  return extractions.reduce<ExtractionData>((combined, extraction) => {
-    combined.schema_version = mergeSchemaVersion(combined.schema_version, extraction.schema_version)
-    combined.nodes.push(...extraction.nodes)
-    combined.edges.push(...extraction.edges)
-    if (extraction.hyperedges && extraction.hyperedges.length > 0) {
-      combined.hyperedges = [...(combined.hyperedges ?? []), ...extraction.hyperedges]
-    }
-    combined.input_tokens = (combined.input_tokens ?? 0) + (extraction.input_tokens ?? 0)
-    combined.output_tokens = (combined.output_tokens ?? 0) + (extraction.output_tokens ?? 0)
-    return combined
-  }, emptyExtraction())
-}
-
-function sourceFileKey(sourceFile: unknown): string | null {
-  return typeof sourceFile === 'string' && sourceFile.length > 0 ? resolve(sourceFile) : null
-}
-
-function indexedSourceFilesFromGraph(graph: KnowledgeGraph | null, rootPath: string): ReadonlySet<string> | undefined {
-  if (!graph) {
-    return undefined
-  }
-  return new Set(
-    graph.nodeEntries().flatMap(([, attributes]) => {
-      const sourceFile = typeof attributes.source_file === 'string' ? attributes.source_file.trim() : ''
-      return sourceFile.length > 0 ? [resolve(rootPath, sourceFile)] : []
-    }),
-  )
-}
-
-function retainedExtractionFromGraph(graph: KnowledgeGraph, removedSourceFiles: ReadonlySet<string>): ExtractionData {
-  const nodes: ExtractionNode[] = graph
-    .nodeEntries()
-    .filter(([, attributes]) => {
-      const sourceFile = sourceFileKey(attributes.source_file)
-      return !sourceFile || !removedSourceFiles.has(sourceFile)
-    })
-    .map(([id, attributes]) => ({
-      id,
-      ...attributes,
-      label: String(attributes.label ?? id),
-      file_type: String(attributes.file_type ?? 'code') as ExtractionNode['file_type'],
-      source_file: String(attributes.source_file ?? ''),
-    }))
-
-  const nodeIds = new Set(nodes.map((node) => node.id))
-  const edges: ExtractionEdge[] = graph
-    .edgeEntries()
-    .filter(([source, target, attributes]) => {
-      const sourceFile = sourceFileKey(attributes.source_file)
-      return nodeIds.has(source) && nodeIds.has(target) && (!sourceFile || !removedSourceFiles.has(sourceFile))
-    })
-    .map(([source, target, attributes]) => ({
-      source,
-      target,
-      ...attributes,
-      relation: String(attributes.relation ?? 'related_to'),
-      confidence: String(attributes.confidence ?? 'EXTRACTED') as ExtractionEdge['confidence'],
-      source_file: String(attributes.source_file ?? ''),
-    }))
-
-  const hyperedges = (Array.isArray(graph.graph.hyperedges) ? graph.graph.hyperedges : []).filter((hyperedge): hyperedge is Hyperedge => {
-    if (!hyperedge || typeof hyperedge !== 'object' || Array.isArray(hyperedge)) {
-      return false
-    }
-
-    const sourceFile = sourceFileKey((hyperedge as Hyperedge).source_file)
-    if (sourceFile && removedSourceFiles.has(sourceFile)) {
-      return false
-    }
-
-    return Array.isArray((hyperedge as Hyperedge).nodes) && (hyperedge as Hyperedge).nodes.every((nodeId) => nodeIds.has(nodeId))
-  })
-
-  return {
-    schema_version: graph.graph.schema_version === 2 ? 2 : 1,
-    nodes,
-    edges,
-    hyperedges,
-    input_tokens: 0,
-    output_tokens: 0,
-  }
-}
-
-function extractionContextNodes(graph: KnowledgeGraph): ExtractionNode[] {
-  return graph.nodeEntries().map(([id, attributes]) => ({
-    id,
-    ...attributes,
-    label: String(attributes.label ?? id),
-    file_type: String(attributes.file_type ?? 'code') as ExtractionNode['file_type'],
-    source_file: String(attributes.source_file ?? ''),
-  }))
-}
-
-function mergeCanonicalAndCompanionGraphs(
-  canonical: KnowledgeGraph | null,
-  companion: KnowledgeGraph | null,
-  contextNodeIds: ReadonlySet<string>,
-): KnowledgeGraph | null {
-  if (!canonical) return companion
-  if (!companion) return canonical
-  for (const [id, attributes] of companion.nodeEntries()) {
-    if (contextNodeIds.has(id) || canonical.hasNode(id)) continue
-    canonical.addNode(id, attributes)
-  }
-  for (const [source, target, attributes] of companion.edgeEntries()) {
-    if (!canonical.hasNode(source) || !canonical.hasNode(target)) continue
-    canonical.addEdge(source, target, attributes)
-  }
-  const hyperedges = [
-    ...(Array.isArray(canonical.graph.hyperedges) ? canonical.graph.hyperedges : []),
-    ...(Array.isArray(companion.graph.hyperedges) ? companion.graph.hyperedges : []),
-  ]
-  if (hyperedges.length > 0) {
-    canonical.graph.hyperedges = [...new Map(hyperedges.map((hyperedge) => [canonicalJsonString(hyperedge), hyperedge])).values()]
-  }
-  return canonical
-}
-
-function isIncrementalDetectResult(detection: DetectResult | IncrementalDetectResult): detection is IncrementalDetectResult {
-  return 'new_total' in detection && 'new_files' in detection && 'deleted_files' in detection
-}
+const artifactDigest = (value: unknown): string => createHash('sha256').update(canonicalJsonString(value)).digest('hex')
 
 function outputDirectory(rootPath: string): string {
   return resolveMadarOutputDirectory(rootPath)
 }
 
-function missingCodeExtractionMessage(totalFiles: number, discoverySafety?: DiscoverySafetyMetadata): string {
+function missingCanonicalIndexMessage(totalFiles: number, discoverySafety?: DiscoverySafetyMetadata): string {
   const baseMessage = totalFiles === 0
-    ? 'No supported files were found in the target path.'
-    : 'No graph nodes could be generated from the detected corpus. The current TypeScript extractor supports Python, JavaScript/TypeScript, documents, text-like papers, and image assets, but some detected formats still have shallow coverage.'
-  if (!discoverySafety || discoverySafety.summary.total === 0) {
-    return baseMessage
-  }
-
-  const exclusions = discoverySafety.exclusions
-    .slice(0, 20)
+    ? 'No supported TypeScript or JavaScript files were found in the target path.'
+    : 'The canonical TypeScript/JavaScript index did not produce graph nodes from the detected source files.'
+  if (!discoverySafety || discoverySafety.summary.total === 0) return baseMessage
+  const exclusions = discoverySafety.exclusions.slice(0, 20)
     .map((entry) => `- ${JSON.stringify(entry.path)} (${entry.reason})`)
   if (discoverySafety.exclusions.length > 20) {
     exclusions.push(`- ... ${discoverySafety.exclusions.length - 20} more safety exclusions`)
@@ -382,395 +171,236 @@ function missingCodeExtractionMessage(totalFiles: number, discoverySafety?: Disc
   ].join('\n')
 }
 
-function missingCodeExtractionError(totalFiles: number, discoverySafety?: DiscoverySafetyMetadata): GenerateUnsupportedCorpusError {
+function missingCanonicalIndexError(
+  totalFiles: number,
+  discoverySafety?: DiscoverySafetyMetadata,
+): GenerateUnsupportedCorpusError {
   return new GenerateUnsupportedCorpusError(
     totalFiles === 0 ? 'NO_SUPPORTED_FILES' : 'NO_GRAPH_NODES',
-    missingCodeExtractionMessage(totalFiles, discoverySafety),
+    missingCanonicalIndexMessage(totalFiles, discoverySafety),
     discoverySafety,
   )
 }
 
-export function loadGraphExtractorVersion(graphPath: string): number | null {
-  if (!existsSync(graphPath)) return null
-  const extractorVersion = loadGraphArtifact(graphPath).graph.extractor_version
-  return typeof extractorVersion === 'number' && Number.isFinite(extractorVersion) ? extractorVersion : null
+function storedDiscoverySafety(graph: KnowledgeGraph): DiscoverySafetyMetadata {
+  return parseDiscoverySafetyMetadata(graph.graph.discovery_safety) ?? buildDiscoverySafetyMetadata([])
+}
+
+const RETIRED_OUTPUTS = ['cache', 'docs', 'wiki', 'graph.html', 'graph-pages', 'graph.svg', 'graph.graphml', 'cypher.txt', 'obsidian']
+
+function commitStagedPublication(outputDir: string, transactionDir: string, names: readonly string[], retired: readonly string[]): void {
+  const [stageDir, backupDir] = ['staged', 'previous'].map((name) => join(transactionDir, name)) as [string, string]
+  const moved: Array<[string, string]> = [], published: string[] = []
+  mkdirSync(backupDir, { recursive: true })
+  try {
+    for (const [index, name] of [...new Set([...names, ...retired])].entries()) {
+      const target = join(outputDir, name)
+      if (!existsSync(target)) continue
+      const backup = join(backupDir, String(index))
+      renameSync(target, backup)
+      moved.push([target, backup])
+    }
+    for (const name of names) {
+      const target = join(outputDir, name)
+      renameSync(join(stageDir, name), target)
+      published.push(target)
+    }
+  } catch (error) {
+    for (const target of published.reverse()) rmSync(target, { recursive: true, force: true })
+    for (const [target, backup] of moved.reverse()) renameSync(backup, target)
+    throw error
+  } finally {
+    try { rmSync(transactionDir, { recursive: true, force: true }) } catch { /* named retired outputs are already absent */ }
+  }
 }
 
 export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}): GenerateGraphResult {
-  if (options.update && options.clusterOnly) {
-    throw new Error('--update and --cluster-only cannot be used together')
-  }
+  if (options.update && options.clusterOnly) throw new Error('--update and --cluster-only cannot be used together')
 
   const resolvedRootPath = resolve(rootPath)
   const resolvedOutputDir = outputDirectory(resolvedRootPath)
   const graphPath = join(resolvedOutputDir, 'graph.json')
   const reportPath = join(resolvedOutputDir, 'GRAPH_REPORT.md')
-  const wikiPath = options.wiki ? join(resolvedOutputDir, 'wiki') : null
   const manifestPath = join(resolvedOutputDir, 'manifest.json')
-
-  mkdirSync(resolvedOutputDir, { recursive: true })
+  const indexingManifestPath = join(resolvedOutputDir, INDEXING_MANIFEST_FILENAME)
+  const mode: GenerateGraphResult['mode'] = options.clusterOnly ? 'cluster-only' : options.update ? 'update' : 'generate'
+  const notes: string[] = []
   const progress = options.onProgress
 
-  progress?.({ step: 'detect', message: 'Scanning files...' })
-  const graphExists = existsSync(graphPath)
-  let existingArtifact: KnowledgeGraph | null = null
-  try {
-    existingArtifact = graphExists ? loadGraphArtifact(graphPath) : null
-  } catch (error) {
-    if (!options.update || !(error instanceof Error) || !error.message.includes(GRAPH_ARTIFACT_REGENERATE_MESSAGE)) throw error
-  }
-  const graphGenerationPolicy = existingArtifact ? parseGenerationPolicy(existingArtifact.graph.generation_policy) : null
-  if (options.clusterOnly && !graphGenerationPolicy) {
-    throw new Error(
-      '--cluster-only requires valid generation-policy metadata. Run `madar generate . --update` to migrate and re-extract the graph first.',
-    )
-  }
-  const storedClusterOptions = options.clusterOnly && graphGenerationPolicy
-    ? generationOptionsFromPolicy(graphGenerationPolicy)
-    : null
-  if (
-    options.clusterOnly
-    && options.extractionMode !== undefined
-    && storedClusterOptions
-    && options.extractionMode !== storedClusterOptions.extractionMode
-  ) {
-    throw new Error(
-      `--cluster-only cannot change extraction mode from ${storedClusterOptions.extractionMode} to ${options.extractionMode}. Run \`madar generate . --update\` instead.`,
-    )
-  }
-  const corpusOptions = storedClusterOptions ?? options
-  const extractionMode = resolveExtractionMode(corpusOptions)
-  const gitVisibleFiles = corpusOptions.respectGitignore ? collectGitVisibleFiles(resolvedRootPath) : null
-  if (storedClusterOptions && graphGenerationPolicy) {
-    const currentStoredPolicy = buildGenerationPolicy(resolvedRootPath, storedClusterOptions, EXTRACTOR_CACHE_VERSION, gitVisibleFiles)
-    if (currentStoredPolicy.fingerprint !== graphGenerationPolicy.fingerprint) {
+  mkdirSync(resolvedOutputDir, { recursive: true })
+
+  let graph: KnowledgeGraph
+  let indexingManifest: IndexingManifest
+  let discoverySafety: DiscoverySafetyMetadata
+  let reportCorpus: Record<string, unknown>
+  let totalFiles: number
+  let codeFiles: number
+  let indexedFiles: number
+  let totalWords: number
+  let warning: string | null
+  let sourceManifestSnapshot: ReturnType<typeof createManifestSnapshot> | null = null
+
+  if (options.clusterOnly) {
+    if (!existsSync(graphPath)) {
+      throw new Error('--cluster-only requires an existing graph. Run `madar generate .` first.')
+    }
+    graph = loadGraphArtifact(graphPath)
+    const storedPolicy = readStoredGenerationPolicy(graphPath, manifestPath)
+    if (!storedPolicy) {
       throw new Error(
-        '--cluster-only cannot reuse a graph whose generation policy no longer matches current exclusion controls. Run `madar generate . --update`.',
+        '--cluster-only requires the current canonical generation policy. Run `madar generate . --update` to regenerate the graph.',
       )
     }
-  }
-  const generationPolicy = buildGenerationPolicy(
-    resolvedRootPath,
-    storedClusterOptions
-      ? {
-          ...storedClusterOptions,
-          ...(options.indexingStrict ? { indexingStrict: options.indexingStrict } : {}),
-        }
-      : options,
-    EXTRACTOR_CACHE_VERSION,
-    gitVisibleFiles,
-  )
-  const manifestGenerationPolicy = existsSync(manifestPath) ? loadManifestMetadata(manifestPath).generation_policy ?? null : null
-  const storedPolicyMatches = graphGenerationPolicy?.fingerprint === generationPolicy.fingerprint
-    && manifestGenerationPolicy?.fingerprint === generationPolicy.fingerprint
-  const generationPolicyMismatch = options.update === true && graphExists && (!existingArtifact || !storedPolicyMatches)
-  const detectionOptions = detectOptions(corpusOptions, gitVisibleFiles)
-  const detected = options.update && !generationPolicyMismatch
-    ? detectIncremental(resolvedRootPath, manifestPath, detectionOptions)
-    : detect(resolvedRootPath, detectionOptions)
-  const discoverySafety = buildDiscoverySafetyMetadata(detected.exclusions)
-  const previousIndexingManifest = readIndexingManifestForGraph(graphPath)
-  const indexingOutcomes: IndexingOutcome[] = (detected.indexing_outcomes ?? []).map((outcome) => ({
-    ...outcome,
-    extraction_strategy: outcome.extraction_strategy ?? 'not_extracted',
-  }))
-  const spiDiagnostics: IndexingSpiDiagnostic[] = []
-  const recordExtractionOutcome = (
-    extractionStrategy: ExtractionStrategy,
-    fallbackReason?: ExtractionFallbackReason,
-  ) => (outcome: Parameters<typeof localExtractionIndexingOutcome>[1]): void => {
-    indexingOutcomes.push(localExtractionIndexingOutcome(resolvedRootPath, outcome, {
-      extractionStrategy,
-      ...(fallbackReason ? { fallbackReason } : {}),
-    }))
-  }
+    if (options.indexingStrict !== undefined) {
+      throw new Error('--cluster-only cannot change indexing thresholds. Run `madar generate . --update` instead.')
+    }
+    const storedOptions = generationOptionsFromPolicy(storedPolicy)
+    const currentPolicy = buildGenerationPolicy(resolvedRootPath, storedOptions, null)
+    if (currentPolicy.fingerprint !== storedPolicy.fingerprint) {
+      throw new Error(
+        '--cluster-only cannot reuse a graph whose source controls changed. Run `madar generate . --update`.',
+      )
+    }
+    const storedManifest = readIndexingManifestForGraph(graphPath)
+    if (!storedManifest) {
+      throw new Error(
+        '--cluster-only requires the current indexing manifest. Run `madar generate . --update` to regenerate it.',
+      )
+    }
+    const binding = graph.graph.publication_binding as { source_manifest_sha256?: unknown; indexing_manifest_sha256?: unknown } | undefined
+    if (binding?.source_manifest_sha256 !== artifactDigest(loadManifestDocument(manifestPath)) || binding.indexing_manifest_sha256 !== artifactDigest(storedManifest)) {
+      throw new Error('--cluster-only requires indexing metadata from the same generation. Run `madar generate . --update`.')
+    }
+    indexingManifest = storedManifest
+    discoverySafety = storedDiscoverySafety(graph)
+    indexedFiles = indexingManifest.summary.counts.indexed + indexingManifest.summary.counts.indexed_with_warnings
+    codeFiles = indexingManifest.outcomes.filter((outcome) =>
+      outcome.capability?.startsWith('builtin:index:') === true).length
+    totalFiles = codeFiles
+    totalWords = loadManifestMetadata(manifestPath).total_words ?? 0
+    warning = null
+    reportCorpus = {
+      total_files: totalFiles,
+      total_words: totalWords,
+      warning: null,
+      discovery_safety: discoverySafety.summary,
+      indexing_completeness: indexingManifest.summary,
+    }
+    notes.push('Re-clustered and re-analyzed the existing canonical graph without scanning or indexing source files.')
+  } else {
+    if (options.update && existsSync(graphPath)) {
+      try {
+        loadGraphArtifact(graphPath)
+      } catch (error) {
+        if (!(error instanceof Error) || !error.message.includes(GRAPH_ARTIFACT_REGENERATE_MESSAGE)) throw error
+        notes.push('The previous graph used a retired artifact schema, so --update replaced it with a canonical graph.')
+      }
+      notes.push('--update performs a full canonical TypeScript/JavaScript rebuild.')
+    }
 
-  if (corpusOptions.includeDocs === false) {
-    indexingOutcomes.push(...detected.files[FileType.DOCUMENT].map((filePath): IndexingOutcome => ({
+    const gitVisibleFiles = options.respectGitignore ? collectGitVisibleFiles(resolvedRootPath) : null
+    const generationPolicy = buildGenerationPolicy(resolvedRootPath, options, gitVisibleFiles)
+    progress?.({ step: 'detect', message: 'Scanning TypeScript and JavaScript files...' })
+    const detected = detect(resolvedRootPath, detectOptions(options, gitVisibleFiles))
+    discoverySafety = buildDiscoverySafetyMetadata(detected.exclusions)
+    const indexingOutcomes: IndexingOutcome[] = [...(detected.indexing_outcomes ?? [])]
+    const detectedCodeFiles = detected.files[FileType.CODE]
+
+    totalFiles = detected.total_files
+    codeFiles = detectedCodeFiles.length
+    totalWords = detected.total_words
+    warning = detected.warning
+    progress?.({
+      step: 'detect',
+      message: `Found ${detected.total_files} supported source file(s) (~${detected.total_words.toLocaleString()} words)`,
+    })
+    progress?.({
+      step: 'index',
+      message: `Indexing ${detectedCodeFiles.length} TypeScript/JavaScript file(s)...`,
+      current: 0,
+      total: detectedCodeFiles.length,
+    })
+
+    // Every non-cluster generation owns exactly one whole-program canonical index build.
+    const canonical = buildCanonicalTypeScriptIndex({ root: resolvedRootPath, files: detectedCodeFiles })
+    const canonicalIndexing = canonicalTypeScriptIndexingOutcomes({
+      rootPath: resolvedRootPath,
+      codeFiles: detectedCodeFiles,
+      result: canonical,
+    })
+    indexingOutcomes.push(...canonicalIndexing.outcomes)
+    indexedFiles = canonical.files.length
+
+    sourceManifestSnapshot = createManifestSnapshot(detected.files, {
+      total_words: detected.total_words,
+      generation_policy: generationPolicy,
+    })
+    indexingOutcomes.push(...sourceManifestSnapshot.failedPaths.map((filePath): IndexingOutcome => ({
       path: localIndexingPath(resolvedRootPath, filePath),
       kind: 'file',
-      status: 'skipped_by_policy',
-      reason: 'docs_disabled',
+      status: 'failed',
+      reason: 'manifest_stat_failed',
       capability: null,
-      extraction_strategy: 'not_extracted',
     })))
-    detected.files[FileType.DOCUMENT] = []
-    if (isIncrementalDetectResult(detected)) {
-      detected.new_files[FileType.DOCUMENT] = []
-      detected.unchanged_files[FileType.DOCUMENT] = []
+    indexingManifest = createIndexingManifest({
+      outcomes: indexingOutcomes,
+      indexDiagnostics: canonicalIndexing.diagnostics,
+    })
+
+    if (canonicalIndexing.diagnostics.length > 0) {
+      notes.push(
+        `Canonical index reported ${canonicalIndexing.diagnostics.length} diagnostic(s); inspect ${indexingManifestPath}.`,
+      )
     }
-  }
-  const notes: string[] = []
-  const mode: GenerateGraphResult['mode'] = options.clusterOnly ? 'cluster-only' : options.update ? 'update' : 'generate'
-
-  notes.push(`Extraction mode: ${extractionMode}.`)
-
-  if (generationPolicyMismatch) {
-    notes.push(
-      graphGenerationPolicy && manifestGenerationPolicy
-        ? 'Generation policy changed, so --update rebuilt the full graph instead of reusing incompatible extraction state.'
-        : 'Existing graph predates complete generation-policy metadata, so --update rebuilt the full graph.',
-    )
-  }
-
-  if (options.clusterOnly) {
-    notes.push('Re-clustered the existing graph without re-extracting source files.')
-  }
-
-  const nonCodeFiles = countNonCodeFiles(detected.files)
-  if (nonCodeFiles > 0) {
-    notes.push(`${nonCodeFiles} non-code file(s) were included in extraction alongside source code.`)
-  }
-  if (discoverySafety.summary.total > 0) {
-    notes.push(
-      `${discoverySafety.summary.total} safety exclusion(s) were not indexed (${discoverySafety.summary.sensitive} sensitive, ${discoverySafety.summary.unreadable} unreadable).`,
-    )
-  }
-
-  let changedFiles = 0
-  let deletedFiles = 0
-  if (isIncrementalDetectResult(detected)) {
-    changedFiles = detected.new_total
-    deletedFiles = detected.deleted_files.length
-
-    const changedNonCodeFiles = countNonCodeFiles(detected.new_files)
-    if (changedNonCodeFiles > 0) {
-      notes.push(`${changedNonCodeFiles} changed non-code file(s) were included during --update.`)
+    if (indexingManifest.summary.state !== 'complete') {
+      const counts = indexingManifest.summary.counts
+      notes.push(
+        `Indexing ${indexingManifest.summary.state}: ${counts.indexed} indexed, ${counts.indexed_with_warnings} with warnings, ${counts.skipped_by_policy} skipped by policy, ${counts.unsupported} unsupported, ${counts.failed} failed. See ${indexingManifestPath}.`,
+      )
+    }
+    if (discoverySafety.summary.total > 0) {
+      notes.push(
+        `${discoverySafety.summary.total} safety exclusion(s) were not indexed (${discoverySafety.summary.sensitive} sensitive, ${discoverySafety.summary.unreadable} unreadable).`,
+      )
     }
 
-    if (deletedFiles > 0) {
-      notes.push(`${deletedFiles} deleted file(s) were detected, so the graph was rebuilt from the current code corpus.`)
-    }
-  }
-
-  const codeFiles = detected.files[FileType.CODE]
-  const extractableFiles = collectExtractableFiles(detected.files)
-  const nonCodeExtractableFiles = [
-    ...detected.files[FileType.DOCUMENT],
-    ...detected.files[FileType.PAPER],
-    ...detected.files[FileType.IMAGE],
-    ...detected.files[FileType.AUDIO],
-    ...detected.files[FileType.VIDEO],
-  ]
-  const canonicalCodeFiles = extractionMode === 'legacy'
-    ? []
-    : extractionMode === 'spi'
-      ? codeFiles
-      : codeFiles.filter((filePath) => isCanonicalTypeScriptSourceFile(filePath))
-  const legacyFallbackCodeFiles = extractionMode === 'auto'
-    ? codeFiles.filter((filePath) => !isCanonicalTypeScriptSourceFile(filePath))
-    : []
-  const companionFiles = [...legacyFallbackCodeFiles, ...nonCodeExtractableFiles]
-  const companionFileStems = companionFiles.length > 0 ? createFileStemMap(companionFiles) : undefined
-  let extractedFiles = options.clusterOnly ? 0 : extractableFiles.length
-  let canonicalProducedEvidence = false
-
-  progress?.({ step: 'detect', message: `Found ${detected.total_files} files (~${detected.total_words.toLocaleString()} words)` })
-
-  const loadedExistingGraph = options.clusterOnly || options.update ? existingArtifact : null
-  const rawExistingExtractorVersion = loadedExistingGraph?.graph.extractor_version
-  const existingGraphExtractorVersion = typeof rawExistingExtractorVersion === 'number' ? rawExistingExtractorVersion : null
-  const generationPolicyToPublish = generationPolicy
-  const existingGraph = generationPolicyMismatch ? null : loadedExistingGraph
-
-  if (options.clusterOnly) {
-    const retainedSourceFiles = indexedSourceFilesFromGraph(existingGraph, resolvedRootPath)
-    indexingOutcomes.push(...retainedIndexingOutcomes({
-      rootPath: resolvedRootPath,
-      files: extractableFiles,
-      previousManifest: previousIndexingManifest,
-      ...(retainedSourceFiles ? { retainedSourceFiles } : {}),
-    }))
-  }
-
-  if (!options.clusterOnly) {
-    progress?.({ step: 'extract', message: `Extracting ${extractableFiles.length} files...`, current: 0, total: extractableFiles.length })
-  }
-
-  const buildViaCanonicalIndex = (): KnowledgeGraph | null => {
-    if (extractableFiles.length === 0) return null
-    const canonical = canonicalCodeFiles.length > 0
-      ? buildCanonicalTypeScriptIndex({ root: resolvedRootPath, files: canonicalCodeFiles })
-      : null
-    canonicalProducedEvidence = (canonical?.graph.numberOfNodes() ?? 0) > 0
-    const contextNodes = canonical ? extractionContextNodes(canonical.graph) : []
-    const legacyFallbackExtraction =
-      legacyFallbackCodeFiles.length > 0
-        ? withExtractionStrategy(extract(legacyFallbackCodeFiles, {
-            allowedTargets: extractableFiles,
-            contextNodes,
-            ...(companionFileStems ? { fileStemByAbsolutePath: companionFileStems } : {}),
-            onFileOutcome: recordExtractionOutcome('legacy_fallback', 'canonical_unsupported_language'),
-          }), 'legacy_fallback')
-        : emptyExtraction()
-    const nonCodeExtraction =
-      nonCodeExtractableFiles.length > 0
-        ? withExtractionStrategy(extract(nonCodeExtractableFiles, {
-            allowedTargets: extractableFiles,
-            contextNodes,
-            ...(companionFileStems ? { fileStemByAbsolutePath: companionFileStems } : {}),
-            onFileOutcome: recordExtractionOutcome('non_code'),
-          }), 'non_code')
-        : emptyExtraction()
-
-    if (canonical) {
-      const canonicalIndexing = canonicalTypeScriptIndexingOutcomes({
-        rootPath: resolvedRootPath,
-        codeFiles: canonicalCodeFiles,
-        result: canonical,
-      })
-      indexingOutcomes.push(...canonicalIndexing.outcomes)
-      spiDiagnostics.push(...canonicalIndexing.diagnostics)
-      if (canonicalIndexing.diagnostics.length > 0) {
-        notes.push(`Canonical TypeScript index reported ${canonicalIndexing.diagnostics.length} diagnostic(s); inspect ${join(resolvedOutputDir, 'indexing-manifest.json')}.`)
+    if (options.indexingStrict) {
+      const violations = indexingStrictViolations(indexingManifest.summary, options.indexingStrict)
+      if (violations.length > 0) {
+        const failedArtifacts = writeFailedIndexingManifests(resolvedOutputDir, indexingManifest)
+        throw new IndexingCompletenessError(failedArtifacts.manifestPath, indexingManifest.summary, violations)
       }
     }
 
-    extractedFiles = (canonical?.files.length ?? 0)
-      + legacyFallbackCodeFiles.length
-      + nonCodeExtractableFiles.length
-    if (canonical) notes.push(`Canonical TypeScript index built ${canonical.files.length} source file(s).`)
-    if (extractionMode === 'auto') {
-      notes.push(
-        `Auto extraction: canonical TypeScript index routed ${canonicalCodeFiles.length} supported source file(s); legacy fallback routed ${legacyFallbackCodeFiles.length} unsupported source file(s).`,
-      )
+    graph = canonical.graph
+    if (graph.numberOfNodes() === 0) {
+      writeFailedIndexingManifests(resolvedOutputDir, indexingManifest)
+      throw missingCanonicalIndexError(detected.total_files, discoverySafety)
     }
-    const companionExtraction = mergeExtractions([legacyFallbackExtraction, nonCodeExtraction])
-    const companionGraph = companionExtraction.nodes.length > 0
-      ? buildGraphFromExtraction({
-          ...companionExtraction,
-          nodes: [...contextNodes, ...companionExtraction.nodes],
-        }, { rootPath: resolvedRootPath })
-      : null
-    return mergeCanonicalAndCompanionGraphs(canonical?.graph ?? null, companionGraph, new Set(contextNodes.map((node) => node.id)))
-  }
-
-  const graph = options.clusterOnly
-    ? existingGraph
-    : extractionMode !== 'legacy'
-      ? buildViaCanonicalIndex()
-    : options.update && existingGraph && isIncrementalDetectResult(detected)
-        ? (() => {
-            if (existingGraphExtractorVersion == null || existingGraphExtractorVersion !== EXTRACTOR_CACHE_VERSION) {
-              notes.push(
-                existingGraphExtractorVersion == null
-                  ? 'Existing graph predates extractor version metadata, so --update rebuilt the full graph.'
-                  : `Existing graph uses extractor version ${existingGraphExtractorVersion}, so --update rebuilt the full graph.`,
-              )
-              extractedFiles = extractableFiles.length
-              return extractableFiles.length > 0
-                ? buildGraphFromExtraction(withExtractionStrategy(extract(extractableFiles, {
-                    onFileOutcome: recordExtractionOutcome('legacy'),
-                  }), 'legacy'), { rootPath: resolvedRootPath })
-                : null
-            }
-
-            const changedExtractableFiles = collectExtractableFiles(detected.new_files)
-            const removedSourceFiles = new Set([...changedExtractableFiles, ...detected.deleted_files].map((filePath) => resolve(filePath)))
-
-            if (changedExtractableFiles.length === 0 && detected.deleted_files.length === 0) {
-              notes.push('No changed files detected - reused the existing graph.')
-              extractedFiles = 0
-              const retainedSourceFiles = indexedSourceFilesFromGraph(existingGraph, resolvedRootPath)
-              indexingOutcomes.push(...retainedIndexingOutcomes({
-                rootPath: resolvedRootPath,
-                files: extractableFiles,
-                previousManifest: previousIndexingManifest,
-                ...(retainedSourceFiles ? { retainedSourceFiles } : {}),
-              }))
-              return existingGraph
-            }
-
-            const retainedExtraction = retainedExtractionFromGraph(existingGraph, removedSourceFiles)
-            const changedExtraction =
-              changedExtractableFiles.length > 0
-                ? withExtractionStrategy(extract(changedExtractableFiles, {
-                    allowedTargets: extractableFiles,
-                    contextNodes: retainedExtraction.nodes,
-                    onFileOutcome: recordExtractionOutcome('legacy'),
-                  }), 'legacy')
-                : emptyExtraction()
-            const retainedSourceFiles = indexedSourceFilesFromGraph(existingGraph, resolvedRootPath)
-            indexingOutcomes.push(...retainedIndexingOutcomes({
-              rootPath: resolvedRootPath,
-              files: collectExtractableFiles(detected.unchanged_files),
-              previousManifest: previousIndexingManifest,
-              ...(retainedSourceFiles ? { retainedSourceFiles } : {}),
-            }))
-            extractedFiles = changedExtractableFiles.length
-
-            notes.push(
-              `Incremental update re-extracted ${changedExtractableFiles.length} changed file(s) and retained ${new Set(retainedExtraction.nodes.map((node) => node.source_file)).size} unchanged file(s) from the existing graph.`,
-            )
-
-          return buildGraphFromExtraction(mergeExtractions([retainedExtraction, changedExtraction]), { rootPath: resolvedRootPath })
-        })()
-      : extractableFiles.length > 0
-        ? buildGraphFromExtraction(withExtractionStrategy(extract(extractableFiles, {
-            onFileOutcome: recordExtractionOutcome('legacy'),
-          }), 'legacy'), { rootPath: resolvedRootPath })
-      : options.update && existingGraph
-          ? existingGraph
-          : null
-
-  const sourceManifestSnapshot = createManifestSnapshot(detected.files, {
-    total_words: detected.total_words,
-    generation_policy: generationPolicyToPublish,
-  })
-  indexingOutcomes.push(...sourceManifestSnapshot.failedPaths.map((filePath): IndexingOutcome => ({
-    path: localIndexingPath(resolvedRootPath, filePath),
-    kind: 'file',
-    status: 'failed',
-    reason: 'manifest_stat_failed',
-    capability: null,
-    extraction_strategy: 'not_extracted',
-  })))
-  // Discovery, retained-evidence, and manifest-stat outcomes never emit graph
-  // evidence themselves. Normalize every remaining path here so the receipt
-  // is total even during cluster-only and incremental reconciliation paths.
-  const receiptOutcomes = indexingOutcomes.map((outcome) => ({
-    ...outcome,
-    extraction_strategy: outcome.extraction_strategy ?? 'not_extracted' as const,
-  }))
-  const indexingManifest = createIndexingManifest({
-    outcomes: receiptOutcomes,
-    spiDiagnostics,
-    requestedExtractionMode: extractionMode,
-  })
-  const indexingManifestPath = join(resolvedOutputDir, INDEXING_MANIFEST_FILENAME)
-
-  if (indexingManifest.summary.state !== 'complete') {
-    const counts = indexingManifest.summary.counts
-    notes.push(
-      `Indexing ${indexingManifest.summary.state}: ${counts.indexed} indexed, ${counts.indexed_with_warnings} with warnings, ${counts.skipped_by_policy} skipped by policy, ${counts.unsupported} unsupported, ${counts.failed} failed. See ${indexingManifestPath}.`,
+    graph.graph.indexing_completeness = graphIndexingMetadata(indexingManifest)
+    graph.graph.discovery_safety = discoverySafety
+    graph.graph.generation_policy = generationPolicy
+    graph.graph.publication_binding = { source_manifest_sha256: artifactDigest(sourceManifestSnapshot.document), indexing_manifest_sha256: artifactDigest(indexingManifest) }
+    graph.graph.graph_build_freshness = buildGraphBuildFreshnessMetadata(
+      resolvedRootPath,
+      graph.nodeEntries()
+        .map(([, attributes]) => String(attributes.source_file ?? '').trim())
+        .filter((sourceFile) => sourceFile.length > 0),
+      {
+        supportedReceiptPaths: detected.files.code,
+        unsupportedReceiptPaths: indexingManifest.outcomes
+          .filter((outcome) => outcome.kind === 'file' && outcome.status === 'unsupported')
+          .map((outcome) => outcome.path),
+        compilerControlPaths: detected.compiler_control_paths,
+        followSymlinks: generationPolicy.settings.follow_symlinks,
+        respectGitignore: generationPolicy.settings.respect_gitignore,
+      },
     )
-  }
-
-  if (!graph) {
-    writeFailedIndexingManifests(resolvedOutputDir, indexingManifest)
-    throw missingCodeExtractionError(detected.total_files, discoverySafety)
-  }
-
-  if (!options.clusterOnly && graph.numberOfNodes() === 0) {
-    writeFailedIndexingManifests(resolvedOutputDir, indexingManifest)
-    throw missingCodeExtractionError(detected.total_files, discoverySafety)
+    reportCorpus = detectionSummary(detected, indexingManifest.summary)
   }
 
   graph.graph.indexing_completeness = graphIndexingMetadata(indexingManifest)
-  graph.graph.extraction_receipt = {
-    requested_mode: extractionMode,
-    strategies: indexingManifest.summary.extraction_strategy_buckets ?? {},
-    fallbacks: indexingManifest.summary.fallback_reason_buckets ?? {},
-  }
-  const effectiveIndexingStrict = options.indexingStrict ?? storedClusterOptions?.indexingStrict
-  if (effectiveIndexingStrict) {
-    const violations = indexingStrictViolations(indexingManifest.summary, effectiveIndexingStrict)
-    if (violations.length > 0) {
-      const failedArtifacts = writeFailedIndexingManifests(resolvedOutputDir, indexingManifest)
-      throw new IndexingCompletenessError(failedArtifacts.manifestPath, indexingManifest.summary, violations)
-    }
-  }
-
+  graph.graph.discovery_safety = discoverySafety
   progress?.({ step: 'build', message: `Built graph: ${graph.numberOfNodes()} nodes, ${graph.numberOfEdges()} edges` })
 
   progress?.({ step: 'cluster', message: 'Clustering communities...' })
@@ -784,42 +414,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   const surpriseList = surprisingConnections(graph, communities)
   const semanticAnomalyList = semanticAnomalies(graph, communities, communityLabels)
   const suggestedQuestions = suggestQuestions(graph, communities, communityLabels)
-  const report = generateReport(
-    graph,
-    communities,
-    cohesionScores,
-    communityLabels,
-    godNodeList,
-    surpriseList,
-    semanticAnomalyList,
-    detectionSummary(detected, indexingManifest.summary),
-    { input: 0, output: 0 },
-    resolvedRootPath,
-    suggestedQuestions,
-  )
 
-  graph.graph.discovery_safety = discoverySafety
-  graph.graph.generation_policy = generationPolicyToPublish
-  // Cluster-only mode reuses the existing graph; it must not relabel that
-  // graph based on the currently discovered corpus without re-extracting it.
-  // `spi_mode` is retained for graph-consumer compatibility; canonical index
-  // evidence now drives its value rather than SPI-specific detection.
-  const graphUsesSpi = options.clusterOnly
-    ? existingGraph?.graph.spi_mode === true
-    : canonicalProducedEvidence
-  if (graphUsesSpi) {
-    graph.graph.spi_mode = true
-  } else {
-    delete graph.graph.spi_mode
-  }
-  graph.graph.graph_build_freshness = buildGraphBuildFreshnessMetadata(
-    resolvedRootPath,
-    graph
-      .nodeEntries()
-      .map(([, attributes]) => String(attributes.source_file ?? '').trim())
-      .filter((sourceFile) => sourceFile.length > 0),
-  )
-  graph.graph.extractor_version = EXTRACTOR_CACHE_VERSION
   graph.graph.community_labels = communityLabels
   graph.graph.semantic_anomalies = semanticAnomalyList
   for (const [nodeId, attributes] of graph.nodeEntries()) {
@@ -835,53 +430,57 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     }
   }
 
-  progress?.({ step: 'export', message: 'Writing outputs...' })
-  writeTextFileAtomically(reportPath, `${report}\n`)
-  writeGraphArtifact(graph, graphPath)
-  if (wikiPath) {
-    const articleCount = toWiki(graph, communities, wikiPath, {
-      communityLabels,
-      cohesion: cohesionScores,
-      godNodes: godNodeList,
-    })
-    notes.push(`Generated ${articleCount} wiki article(s).`)
-  }
-  let docsPath: string | null = null
-  if (options.docs) {
-    const docsResult = generateDocsArtifacts(graph, communities, communityLabels, resolvedOutputDir)
-    docsPath = docsResult.docsPath
-    notes.push(`${docsResult.fileCount} module doc(s) generated in ${docsPath}.`)
-  }
+  const report = generateReport(
+    graph,
+    communities,
+    cohesionScores,
+    communityLabels,
+    godNodeList,
+    surpriseList,
+    semanticAnomalyList,
+    reportCorpus,
+    { input: 0, output: 0 },
+    resolvedRootPath,
+    suggestedQuestions,
+  )
 
-  // Advance incremental fingerprints only after every graph artifact succeeds.
-  // The indexing audit manifests intentionally remain available on failed runs.
-  const indexingArtifacts = writeIndexingManifests(resolvedOutputDir, indexingManifest)
-  writeManifestSnapshot(sourceManifestSnapshot, manifestPath)
-  for (const name of ['graph.html', 'graph-pages', 'graph.svg', 'graph.graphml', 'cypher.txt', 'obsidian']) rmSync(join(resolvedOutputDir, name), { recursive: true, force: true })
+  progress?.({ step: 'export', message: 'Writing outputs...' })
+  const indexingArtifacts = { manifestPath: indexingManifestPath, shareSafeManifestPath: join(resolvedOutputDir, 'indexing-manifest.share-safe.json') }
+  const transactionDir = join(resolvedOutputDir, `.madar-publication-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`)
+  const stageDir = join(transactionDir, 'staged')
+  const publishedNames = ['GRAPH_REPORT.md']
+  try {
+    mkdirSync(stageDir, { recursive: true })
+    writeTextFileAtomically(join(stageDir, 'GRAPH_REPORT.md'), `${report}\n`)
+    if (!options.clusterOnly && sourceManifestSnapshot) {
+      writeIndexingManifests(stageDir, indexingManifest)
+      writeManifestSnapshot(sourceManifestSnapshot, join(stageDir, 'manifest.json'))
+      publishedNames.push(INDEXING_MANIFEST_FILENAME, 'indexing-manifest.share-safe.json', 'manifest.json')
+    }
+    writeGraphArtifact(graph, join(stageDir, 'graph.json'))
+    publishedNames.push('graph.json')
+    const failedNames = options.clusterOnly ? [] : ['indexing-manifest.failed.json', 'indexing-manifest.failed.share-safe.json']
+    commitStagedPublication(resolvedOutputDir, transactionDir, publishedNames, [...RETIRED_OUTPUTS, ...failedNames])
+  } catch (error) {
+    rmSync(transactionDir, { recursive: true, force: true })
+    throw error
+  }
 
   return {
     mode,
-    extractionMode,
     rootPath: resolvedRootPath,
     outputDir: resolvedOutputDir,
     graphPath,
     reportPath,
-    wikiPath,
-    docsPath,
-    totalFiles: detected.total_files,
-    codeFiles: codeFiles.length,
-    nonCodeFiles,
-    extractableFiles: extractableFiles.length,
-    extractedFiles,
-    totalWords: detected.total_words,
+    totalFiles,
+    codeFiles,
+    indexedFiles,
+    totalWords,
     nodeCount: graph.numberOfNodes(),
     edgeCount: graph.numberOfEdges(),
     communityCount: Object.keys(communities).length,
     semanticAnomalyCount: semanticAnomalyList.length,
-    changedFiles,
-    deletedFiles,
-    cache: null,
-    warning: detected.warning,
+    warning,
     notes,
     discoverySafety,
     discoveryExclusions: discoverySafety.exclusions,

@@ -109,7 +109,6 @@ function createRepo(options: { pathLikeNodeIds?: boolean; pathWithSpaces?: boole
           source_file: join(root, 'src', 'auth.ts'),
         },
       ],
-      hyperedges: [],
       root_path: root,
     },
   )

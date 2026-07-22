@@ -88,10 +88,6 @@ describe('worktree artifact routing', () => {
       const update = generateGraph(linked, { update: true })
       expect(update.outputDir).toBe(linkedWorkspace.outputDir)
 
-      const compatibilityMode = generateGraph(linked, { useSpi: true })
-      expect(compatibilityMode.outputDir).toBe(linkedWorkspace.outputDir)
-      expect(existsSync(join(linked, 'out'))).toBe(false)
-      expect(existsSync(join(linkedWorkspace.outputDir, '.spi-cache'))).toBe(false)
     } finally {
       if (existsSync(primary)) {
         try {

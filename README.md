@@ -107,7 +107,7 @@ Context for the current question
 Claude, Codex, Cursor, or another coding agent
 ```
 
-1. Madar indexes source files, symbols, imports, calls, routes, handlers, framework metadata, and selected documentation.
+1. Madar indexes JavaScript and TypeScript source files, symbols, imports, calls, routes, handlers, and framework metadata.
 2. A question selects a bounded context pack rather than dumping the whole repository into the prompt.
 3. The response reports evidence strength, coverage, freshness, and whether focused verification is still needed.
 4. Installed MCP profiles watch the active workspace and refresh graph-backed context after relevant changes.
@@ -124,7 +124,7 @@ madar summary
 madar pack "how does auth work?" --task explain --format text
 ```
 
-By default, `madar generate .` indexes JavaScript/TypeScript once through the canonical compiler-backed path and uses the legacy fallback only for other supported languages. Strict and compatibility modes are in the [CLI reference](https://github.com/mohanagy/madar/blob/main/docs/reference/cli-and-mcp.md).
+`madar generate .` has one compiler-backed indexing path for `.js`, `.jsx`, `.ts`, and `.tsx`. Other source languages and non-code files do not enter the graph; recognized unsupported files remain visible in the indexing-completeness receipt so missing coverage is explicit. See the [CLI reference](https://github.com/mohanagy/madar/blob/main/docs/reference/cli-and-mcp.md).
 
 Create a provider-ready prompt:
 

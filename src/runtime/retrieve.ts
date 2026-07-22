@@ -4658,7 +4658,7 @@ function frameworkBoostForNode(
     // match 'budget' / 'forget' / 'target' / etc. Verb is lowercased to
     // match questionLower which is already lowercased upstream.
     // CodeRabbit follow-up: escape regex metacharacters so an unexpected
-    // verb (e.g. user-supplied data leaking in via SPI metadata) can't
+    // verb (for example user-supplied data leaking in via graph metadata) can't
     // break the RegExp constructor or match unintended substrings.
     const verb = metadata.http_method.toLowerCase()
     if (verb && new RegExp(`\\b${escapeRegexLiteral(verb)}\\b`).test(questionLower)) {

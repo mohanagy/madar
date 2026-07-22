@@ -1,17 +1,24 @@
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
-
 import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import { godNodes, semanticAnomalies, suggestQuestions, surprisingConnections } from '../../src/pipeline/analyze.js'
-import { buildGraphFromExtraction } from '../../src/application/build-graph.js'
 import { cluster, scoreAll } from '../../src/pipeline/cluster.js'
 import { generate } from '../../src/pipeline/report.js'
-
-const FIXTURES_DIR = join(process.cwd(), 'tests', 'fixtures')
+import { createTestGraph } from '../helpers/knowledge-graph.js'
 
 function makeInputs() {
-  const extraction = JSON.parse(readFileSync(join(FIXTURES_DIR, 'extraction.json'), 'utf8'))
-  const graph = buildGraphFromExtraction(extraction)
+  const graph = createTestGraph({
+    nodes: [
+      ['n_transformer', { label: 'Transformer', file_type: 'code', source_file: 'model.ts' }],
+      ['n_attention', { label: 'MultiHeadAttention', file_type: 'code', source_file: 'attention.ts' }],
+      ['n_layernorm', { label: 'LayerNorm', file_type: 'code', source_file: 'normalization.ts' }],
+      ['n_kernel', { label: 'AttentionKernel', file_type: 'code', source_file: 'kernel.ts' }],
+    ],
+    edges: [
+      ['n_transformer', 'n_attention', { relation: 'contains', confidence: 'EXTRACTED', source_file: 'model.ts' }],
+      ['n_transformer', 'n_layernorm', { relation: 'contains', confidence: 'EXTRACTED', source_file: 'model.ts' }],
+      ['n_attention', 'n_kernel', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'attention.ts' }],
+      ['n_layernorm', 'n_kernel', { relation: 'references', confidence: 'INFERRED', source_file: 'normalization.ts' }],
+    ],
+  })
   const communities = cluster(graph)
   const cohesion = scoreAll(graph, communities)
   const labels = Object.fromEntries(Object.keys(communities).map((communityId) => [Number(communityId), `Community ${communityId}`]))
@@ -20,7 +27,7 @@ function makeInputs() {
   const anomalies = semanticAnomalies(graph, communities, labels)
   const questions = suggestQuestions(graph, communities, labels)
   const detection = { total_files: 4, total_words: 62400, needs_graph: true, warning: null }
-  const tokens = { input: extraction.input_tokens, output: extraction.output_tokens }
+  const tokens = { input: 1200, output: 340 }
 
   return { graph, communities, cohesion, labels, gods, surprises, anomalies, questions, detection, tokens }
 }
@@ -93,7 +100,7 @@ describe('report', () => {
     expect(report).toContain('Weakly connected components')
     expect(report).toContain('Largest component')
     expect(report).toContain('## Communities')
-    expect(report).toContain('## Ambiguous Edges')
+    expect(report).not.toContain('## Ambiguous Edges')
     expect(report).toContain('## Suggested Questions')
     expect(report).toContain('## Knowledge Gaps')
   })
@@ -140,7 +147,7 @@ describe('report', () => {
     expect(report).not.toContain('Questions this graph is uniquely positioned to answer')
   })
 
-  it('escapes markdown-sensitive content and reports hyperedges', () => {
+  it('escapes markdown-sensitive content', () => {
     const { graph, communities, cohesion, labels, detection, tokens } = makeInputs()
     const report = generate(
       graph,
@@ -152,7 +159,7 @@ describe('report', () => {
         {
           source: '[source](javascript:alert(1))',
           target: '`target`',
-          source_files: ['a.md', 'b.md'],
+          source_files: ['a.ts', 'b.ts'],
           confidence: 'INFERRED',
           confidence_score: 0.75,
           relation: ']] exploit',
@@ -175,22 +182,8 @@ describe('report', () => {
       [],
     )
 
-    graph.graph.hyperedges = [
-      {
-        id: 'h1',
-        label: 'Cross-cutting flow',
-        nodes: ['alpha', 'beta', 'gamma'],
-        confidence: 'INFERRED',
-        confidence_score: 0.9,
-      },
-    ]
-
-    const hyperedgeReport = generate(graph, communities, cohesion, labels, [], [], [], detection, tokens, './project', [])
-
     expect(report).not.toContain('[source](javascript:alert(1))')
     expect(report).toContain('## Semantic Anomalies')
     expect(report).toContain('INFERRED 0.75')
-    expect(hyperedgeReport).toContain('## Hyperedges (group relationships)')
-    expect(hyperedgeReport).toContain('Cross\-cutting flow')
   })
 })

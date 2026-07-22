@@ -224,7 +224,7 @@ describe('package metadata', () => {
     expect(ciWorkflow).toContain('mrr < 0.95')
   })
 
-  it('documents framework-aware JS/TS support and conservative deeper retrieval hints in the language capability matrix', () => {
+  it('documents canonical framework-aware JS/TS support and explicit unsupported input', () => {
     const matrix = loadLanguageCapabilityMatrix()
 
     expect(matrix).toContain('## Framework awareness')
@@ -237,14 +237,13 @@ describe('package metadata', () => {
     expect(matrix).toContain('tRPC')
     expect(matrix).toContain('Prisma')
     expect(matrix).toContain('`framework_role`')
-    expect(matrix).toContain('compact MCP payloads by default')
     expect(matrix).toContain('request-flow')
     expect(matrix).toContain('storage')
-    expect(matrix).toContain('runtime-boundary')
-    expect(matrix).toContain('generic AST structure')
-    expect(matrix).toContain('visible client/server boundaries')
-    expect(matrix).toContain('source-visible Hono/Fastify route ownership')
-    expect(matrix).toContain('In default auto mode, Hono, Fastify, tRPC, and Prisma contribute conservative request-flow and storage hints')
+    expect(matrix).toContain('`runtime_boundary`')
+    expect(matrix).toContain('## Explicitly unsupported input')
+    expect(matrix).toContain('There is no language mode, secondary extractor, parser fallback, or generic structural pass.')
+    expect(matrix).toContain('Other source languages and non-code formats do not produce graph nodes or edges.')
+    expect(matrix).toContain('static structural hints, not runtime traces')
   })
 
   it('pins non-vulnerable dependency floors for the CI security audit', () => {

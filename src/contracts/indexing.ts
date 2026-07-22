@@ -1,30 +1,4 @@
-import type { ExtractionMode } from './generation-policy.js'
-
-export const INDEXING_MANIFEST_VERSION = 1 as const
-
-/**
- * The actual pipeline route used for a candidate. `legacy_fallback` is
- * intentionally distinct from `legacy`: it proves that auto mode chose the
- * canonical TypeScript/JavaScript index first, then retained an unsupported
- * source language through the legacy fallback.
- */
-export const EXTRACTION_STRATEGIES = [
-  'canonical',
-  'spi',
-  'legacy',
-  'legacy_fallback',
-  'non_code',
-  'not_extracted',
-] as const
-
-export type ExtractionStrategy = (typeof EXTRACTION_STRATEGIES)[number]
-
-export const EXTRACTION_FALLBACK_REASONS = [
-  'canonical_unsupported_language',
-  'spi_unsupported_language',
-] as const
-
-export type ExtractionFallbackReason = (typeof EXTRACTION_FALLBACK_REASONS)[number]
+export const INDEXING_MANIFEST_VERSION = 2 as const
 
 export const INDEXING_OUTCOME_STATUSES = [
   'indexed',
@@ -35,16 +9,10 @@ export const INDEXING_OUTCOME_STATUSES = [
 ] as const
 
 export type IndexingOutcomeStatus = (typeof INDEXING_OUTCOME_STATUSES)[number]
-
 export type IndexingOutcomeKind = 'file' | 'directory'
 
 export const INDEXING_REASON_CODES = [
   'indexed',
-  'indexed_from_cache',
-  'retained_from_graph',
-  'retained_evidence_missing',
-  'parser_fallback',
-  'empty_extraction',
   'environment_file',
   'private_key',
   'credential_store',
@@ -60,14 +28,7 @@ export const INDEXING_REASON_CODES = [
   'symlink_disabled',
   'symlink_outside_root',
   'symlink_cycle',
-  'docs_disabled',
   'unsupported_file_type',
-  'unsupported_spi_language',
-  'unsupported_canonical_language',
-  'capability_missing',
-  'extractor_error',
-  'spi_diagnostic',
-  'spi_file_missing',
   'canonical_diagnostic',
   'canonical_file_missing',
   'manifest_stat_failed',
@@ -88,10 +49,6 @@ export interface IndexingOutcome {
   status: IndexingOutcomeStatus
   reason: IndexingReasonCode
   capability: string | null
-  /** Actual route selected for this candidate in the published graph. */
-  extraction_strategy?: ExtractionStrategy
-  /** Present only when auto mode deliberately routed a file away from the canonical index. */
-  fallback_reason?: ExtractionFallbackReason
   diagnostics?: IndexingDiagnostic[]
 }
 
@@ -111,36 +68,30 @@ export interface IndexingSummary {
   counts: IndexingStatusCounts
   reason_buckets: Partial<Record<IndexingReasonCode, number>>
   capability_buckets: Record<string, number>
-  /** Omitted for pre-receipt manifests so they remain readable. */
-  extraction_strategy_buckets?: Partial<Record<ExtractionStrategy, number>>
-  fallback_reason_buckets?: Partial<Record<ExtractionFallbackReason, number>>
 }
 
-export interface IndexingSpiDiagnostic {
+export interface IndexDiagnosticReceipt {
   id: string
   level: 'info' | 'warn' | 'error'
-  reason: 'spi_diagnostic' | 'canonical_diagnostic'
+  reason: 'canonical_diagnostic'
   path?: string
   /** Local-only diagnostic. Share-safe projections never include messages. */
   message?: string
 }
 
-export interface IndexingManifestV1 {
+export interface IndexingManifest {
   version: typeof INDEXING_MANIFEST_VERSION
   generated_at: string
-  /** Requested user-facing mode, independent from the per-file route below. */
-  requested_extraction_mode?: ExtractionMode
   summary: IndexingSummary
   outcomes: IndexingOutcome[]
-  spi_diagnostics: IndexingSpiDiagnostic[]
+  index_diagnostics: IndexDiagnosticReceipt[]
 }
 
-export interface ShareSafeIndexingManifestV1 {
+export interface ShareSafeIndexingManifest {
   version: typeof INDEXING_MANIFEST_VERSION
   generated_at: string
-  requested_extraction_mode?: ExtractionMode
   summary: IndexingSummary
-  spi_diagnostics: {
+  index_diagnostics: {
     total: number
     levels: Record<'info' | 'warn' | 'error', number>
   }

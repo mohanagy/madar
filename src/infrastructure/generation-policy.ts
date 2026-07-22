@@ -5,52 +5,25 @@ import { basename, isAbsolute, relative, resolve, sep } from 'node:path'
 
 import { loadGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
 import {
+  CANONICAL_INDEX_FORMAT_VERSION,
   createGenerationPolicy,
   parseGenerationPolicy,
-  type ExtractionMode,
   type GenerationPolicy,
-  type GenerationPolicyV2,
 } from '../contracts/generation-policy.js'
 import type { IndexingStrictThresholds } from '../contracts/indexing.js'
 import { loadManifestMetadata } from '../pipeline/detect.js'
 import { DEFAULT_HARD_IGNORE_GLOBS } from '../shared/source-discovery.js'
 
 export interface BuildGenerationPolicyOptions {
-  /**
-   * `auto` uses the canonical TypeScript/JavaScript index where supported and
-   * otherwise falls back to the legacy extractor. Explicit modes stay strict;
-   * `spi` is retained only as the compatibility name for strict canonical
-   * JavaScript/TypeScript indexing.
-   */
-  extractionMode?: ExtractionMode
-  /** @deprecated Use `extractionMode`. Retained for programmatic callers. */
-  useSpi?: boolean
   respectGitignore?: boolean
   followSymlinks?: boolean
-  includeDocs?: boolean
   indexingStrict?: IndexingStrictThresholds
 }
 
 export interface StoredPolicyGenerationOptions {
-  extractionMode: ExtractionMode
   respectGitignore: boolean
   followSymlinks: boolean
-  includeDocs: boolean
   indexingStrict?: IndexingStrictThresholds
-}
-
-/**
- * Preserve explicit compatibility settings while making auto the shared
- * default for both CLI and programmatic generation.
- */
-export function resolveExtractionMode(options: Pick<BuildGenerationPolicyOptions, 'extractionMode' | 'useSpi'>): ExtractionMode {
-  if (options.extractionMode !== undefined) {
-    return options.extractionMode
-  }
-  if (options.useSpi !== undefined) {
-    return options.useSpi ? 'spi' : 'legacy'
-  }
-  return 'auto'
 }
 
 function optionalGitPath(rootPath: string, args: string[]): string | null {
@@ -145,19 +118,13 @@ export function exclusionRulesFingerprint(
 export function buildGenerationPolicy(
   rootPath: string,
   options: BuildGenerationPolicyOptions,
-  extractorCacheVersion: number,
   gitVisibleFiles: readonly string[] | null,
-): GenerationPolicyV2 {
+): GenerationPolicy {
   const strict = options.indexingStrict
-  const extractionMode = resolveExtractionMode(options)
   return createGenerationPolicy({
-    use_spi: extractionMode !== 'legacy',
-    extraction_mode: extractionMode,
+    index_format_version: CANONICAL_INDEX_FORMAT_VERSION,
     respect_gitignore: options.respectGitignore === true,
     follow_symlinks: options.followSymlinks === true,
-    include_documents: options.includeDocs !== false,
-    include_non_code: true,
-    extractor_cache_version: extractorCacheVersion,
     exclusion_rules_fingerprint: exclusionRulesFingerprint(rootPath, options.respectGitignore === true, gitVisibleFiles),
     indexing_strict: strict
       ? { max_failed: strict.maxFailed, max_unsupported: strict.maxUnsupported }
@@ -168,12 +135,8 @@ export function buildGenerationPolicy(
 export function generationOptionsFromPolicy(policy: GenerationPolicy): StoredPolicyGenerationOptions {
   const strict = policy.settings.indexing_strict
   return {
-    extractionMode: policy.version === 1
-      ? policy.settings.use_spi ? 'spi' : 'legacy'
-      : policy.settings.extraction_mode,
     respectGitignore: policy.settings.respect_gitignore,
     followSymlinks: policy.settings.follow_symlinks,
-    includeDocs: policy.settings.include_documents,
     ...(strict
       ? { indexingStrict: { maxFailed: strict.max_failed, maxUnsupported: strict.max_unsupported } }
       : {}),

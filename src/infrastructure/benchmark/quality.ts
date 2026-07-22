@@ -112,8 +112,8 @@ export const GOLD_QUESTIONS: GoldQuestion[] = [
     expected_labels: ['scorenode'],
   },
   {
-    question: 'how does javascript extraction work',
-    expected_labels: ['extractjs', 'extractionnode'],
+    question: 'how does canonical TypeScript indexing build graph nodes',
+    expected_labels: ['buildcanonicaltypescriptindex', 'collectcanonicaltypescriptfiles'],
   },
   {
     question: 'how does the CLI parse command arguments',
@@ -132,8 +132,8 @@ export const GOLD_QUESTIONS: GoldQuestion[] = [
     expected_labels: ['buildcommunitylabels'],
   },
   {
-    question: 'how does incremental update detect changed files',
-    expected_labels: ['detectincremental'],
+    question: 'how does graph generation discover the current source files',
+    expected_labels: ['generategraph', 'detect'],
   },
   {
     question: 'how does the graph report get generated',

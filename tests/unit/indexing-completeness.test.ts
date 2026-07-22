@@ -1,27 +1,13 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
-
 import { describe, expect, it } from 'vitest'
 
-import type { IndexingOutcome } from '../../src/contracts/indexing.js'
 import type { CanonicalTypeScriptIndexResult } from '../../src/adapters/typescript/index.js'
+import type { IndexingOutcome } from '../../src/contracts/indexing.js'
 import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
-import { cacheDir, fileHash } from '../../src/infrastructure/cache.js'
 import {
   parseIndexingManifest,
   relevantIndexingUncertainty,
 } from '../../src/infrastructure/indexing-manifest.js'
-import {
-  localExtractionIndexingOutcome,
-  canonicalTypeScriptIndexingOutcomes,
-  retainedIndexingOutcomes,
-} from '../../src/pipeline/indexing-generation.js'
-import {
-  EXTRACTOR_CACHE_VERSION,
-  readCachedExtraction,
-  writeCachedExtraction,
-} from '../../src/pipeline/extract.js'
+import { canonicalTypeScriptIndexingOutcomes } from '../../src/pipeline/indexing-generation.js'
 import {
   createIndexingManifest,
   indexingStrictViolations,
@@ -34,12 +20,14 @@ function outcome(overrides: Partial<IndexingOutcome> = {}): IndexingOutcome {
     kind: 'file',
     status: 'indexed',
     reason: 'indexed',
-    capability: 'builtin:extract:typescript',
+    capability: 'builtin:index:typescript',
     ...overrides,
   }
 }
 
-function canonicalResult(overrides: Partial<Pick<CanonicalTypeScriptIndexResult, 'files' | 'diagnostics'>> = {}): CanonicalTypeScriptIndexResult {
+function canonicalResult(
+  overrides: Partial<Pick<CanonicalTypeScriptIndexResult, 'files' | 'diagnostics'>> = {},
+): CanonicalTypeScriptIndexResult {
   return {
     graph: new KnowledgeGraph({ root_path: '/repo' }),
     files: [{ id: 'file:src/index.ts', path: 'src/index.ts', language: 'typescript', loc: 1, hash: 'a' }],
@@ -56,8 +44,8 @@ describe('indexing completeness manifests', () => {
         outcome(),
         outcome({
           status: 'indexed_with_warnings',
-          reason: 'parser_fallback',
-          diagnostics: [{ code: 'parser_fallback', level: 'warning', message: 'local parser detail' }],
+          reason: 'canonical_diagnostic',
+          diagnostics: [{ code: 'typescript.partial-analysis', level: 'warning', message: 'local detail' }],
         }),
         outcome({
           path: 'src/legacy.vue',
@@ -86,8 +74,8 @@ describe('indexing completeness manifests', () => {
         failed: 0,
       },
       reason_buckets: {
+        canonical_diagnostic: 1,
         hidden_path: 1,
-        parser_fallback: 1,
         unsupported_file_type: 1,
       },
     })
@@ -100,31 +88,31 @@ describe('indexing completeness manifests', () => {
         outcome({
           path: 'src/auth/private-loader.ts',
           status: 'failed',
-          reason: 'extractor_error',
-          diagnostics: [{ code: 'extractor_error', level: 'error', message: 'secret local detail' }],
+          reason: 'canonical_file_missing',
+          diagnostics: [{ code: 'typescript.file-missing', level: 'error', message: 'secret local detail' }],
         }),
       ],
-      spiDiagnostics: [{
-        id: 'spi.failure',
+      indexDiagnostics: [{
+        id: 'typescript.file-missing',
         level: 'error',
-        reason: 'spi_diagnostic',
+        reason: 'canonical_diagnostic',
         path: 'src/auth/private-loader.ts',
-        message: 'secret SPI detail',
+        message: 'secret index detail',
       }],
     })
 
     const shareSafe = shareSafeIndexingManifest(manifest)
     const serialized = JSON.stringify(shareSafe)
 
-    expect(shareSafe.spi_diagnostics).toEqual({
+    expect(shareSafe.index_diagnostics).toEqual({
       total: 1,
       levels: { info: 0, warn: 0, error: 1 },
     })
     expect(serialized).not.toContain('private-loader.ts')
     expect(serialized).not.toContain('secret local detail')
-    expect(serialized).not.toContain('secret SPI detail')
+    expect(serialized).not.toContain('secret index detail')
     expect(serialized).not.toContain('outcomes')
-    expect(shareSafe.summary.reason_buckets).toEqual({ extractor_error: 1 })
+    expect(shareSafe.summary.reason_buckets).toEqual({ canonical_file_missing: 1 })
   })
 
   it('recomputes aggregate counts when parsing and rejects invalid reason codes', () => {
@@ -151,7 +139,7 @@ describe('indexing completeness manifests', () => {
         outcome({
           path: 'src/auth/token-loader.ts',
           status: 'failed',
-          reason: 'extractor_error',
+          reason: 'canonical_file_missing',
         }),
         outcome({
           path: 'src/billing/legacy.vue',
@@ -168,7 +156,7 @@ describe('indexing completeness manifests', () => {
     })).toMatchObject({
       total: 2,
       relevant: 1,
-      relevant_reasons: { extractor_error: 1 },
+      relevant_reasons: { canonical_file_missing: 1 },
       has_relevant_failures: true,
     })
     expect(relevantIndexingUncertainty(manifest, {
@@ -180,11 +168,10 @@ describe('indexing completeness manifests', () => {
     ])
   })
 
-  it('does not treat same-domain env, docs, hidden paths, or unrelated artifacts as code-flow uncertainty', () => {
+  it('does not treat same-domain env, hidden paths, or unrelated artifacts as code-flow uncertainty', () => {
     const manifest = createIndexingManifest({
       outcomes: [
         outcome({ path: 'apps/status-page/.env.example', status: 'skipped_by_policy', reason: 'environment_file', capability: null }),
-        outcome({ path: 'apps/status-page/README.md', status: 'skipped_by_policy', reason: 'docs_disabled', capability: null }),
         outcome({ path: '.github', kind: 'directory', status: 'skipped_by_policy', reason: 'hidden_path', capability: null }),
         outcome({ path: 'apps/status-page/public/logo.svg', status: 'unsupported', reason: 'unsupported_file_type', capability: null }),
       ],
@@ -199,9 +186,6 @@ describe('indexing completeness manifests', () => {
     expect(relevantIndexingUncertainty(manifest, {
       question: 'Which environment config controls the status page?',
     }).relevant_reasons).toEqual({ environment_file: 1 })
-    expect(relevantIndexingUncertainty(manifest, {
-      question: 'What does the status-page README document?',
-    }).relevant_reasons).toEqual({ docs_disabled: 1 })
     expect(relevantIndexingUncertainty(manifest, {
       question: 'How is the status-page logo.svg asset used?',
     }).relevant_reasons).toEqual({ unsupported_file_type: 1 })
@@ -222,96 +206,13 @@ describe('indexing completeness manifests', () => {
       counts: { indexed: 0, indexed_with_warnings: 0, unsupported: 1, failed: 0 },
     })
   })
-
-  it('normalizes extraction paths without leaking an external parent path', () => {
-    expect(localExtractionIndexingOutcome('/repo', {
-      filePath: join('/repo', 'src', 'index.ts'),
-      status: 'indexed',
-      reason: 'indexed',
-      capability: 'builtin:extract:typescript',
-    }).path).toBe('src/index.ts')
-
-    expect(localExtractionIndexingOutcome('/repo', {
-      filePath: join('/outside', 'private.ts'),
-      status: 'failed',
-      reason: 'extractor_error',
-      capability: null,
-    }).path).toBe('private.ts')
-  })
-
-  it('does not claim legacy retained evidence for a file absent from the graph', () => {
-    const rootPath = resolve('/repo')
-    const presentFile = resolve(rootPath, 'src', 'present.ts')
-    const missingFile = resolve(rootPath, 'src', 'missing.ts')
-    const retained = retainedIndexingOutcomes({
-      rootPath,
-      files: [presentFile, missingFile],
-      previousManifest: null,
-      retainedSourceFiles: new Set([presentFile]),
-    })
-
-    expect(retained).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        path: 'src/present.ts',
-        status: 'indexed',
-        reason: 'retained_from_graph',
-      }),
-      expect.objectContaining({
-        path: 'src/missing.ts',
-        status: 'failed',
-        reason: 'retained_evidence_missing',
-      }),
-    ]))
-  })
-})
-
-describe('indexing extraction cache', () => {
-  it('round-trips parser diagnostics so cache hits cannot become false-complete', () => {
-    const root = mkdtempSync(join(tmpdir(), 'madar-indexing-cache-'))
-    const filePath = join(root, 'fallback.py')
-    writeFileSync(filePath, 'def fallback():\n    return True\n', 'utf8')
-    const cachePath = join(cacheDir(), `${fileHash(filePath)}.json`)
-    try {
-      writeCachedExtraction(filePath, {
-        nodes: [{
-          id: 'fallback_file',
-          label: 'fallback.py',
-          file_type: 'code',
-          source_file: filePath,
-        }],
-        edges: [],
-        diagnostics: [{
-          code: 'tree_sitter_python_fallback',
-          level: 'warning',
-          message: 'tree-sitter unavailable',
-        }],
-      })
-
-      expect(JSON.parse(readFileSync(cachePath, 'utf8'))).toMatchObject({
-        __madarTsExtractorVersion: EXTRACTOR_CACHE_VERSION,
-        diagnostics: [{
-          code: 'tree_sitter_python_fallback',
-          level: 'warning',
-          message: 'tree-sitter unavailable',
-        }],
-      })
-      expect(readCachedExtraction(filePath)?.diagnostics).toEqual([{
-        code: 'tree_sitter_python_fallback',
-        level: 'warning',
-        message: 'tree-sitter unavailable',
-      }])
-    } finally {
-      rmSync(cachePath, { force: true })
-      rmSync(root, { recursive: true, force: true })
-    }
-  })
 })
 
 describe('canonical TypeScript indexing projection', () => {
-  it('projects canonical diagnostics and unsupported languages into terminal outcomes', () => {
+  it('projects canonical diagnostics into terminal outcomes', () => {
     const result = canonicalResult({
       diagnostics: [{
-        id: 'spi.file-warning',
+        id: 'typescript.file-warning',
         level: 'warn',
         message: 'partial semantic analysis',
         evidence: { file_id: 'file:src/index.ts' },
@@ -320,33 +221,27 @@ describe('canonical TypeScript indexing projection', () => {
 
     const projected = canonicalTypeScriptIndexingOutcomes({
       rootPath: '/repo',
-      codeFiles: ['/repo/src/index.ts', '/repo/src/main.py'],
+      codeFiles: ['/repo/src/index.ts'],
       result,
     })
 
-    expect(projected.outcomes).toEqual(expect.arrayContaining([
+    expect(projected.outcomes).toEqual([
       expect.objectContaining({
         path: 'src/index.ts',
         status: 'indexed_with_warnings',
         reason: 'canonical_diagnostic',
-        extraction_strategy: 'canonical',
+        capability: 'builtin:index:typescript',
       }),
-      expect.objectContaining({
-        path: 'src/main.py',
-        status: 'unsupported',
-        reason: 'unsupported_canonical_language',
-        extraction_strategy: 'canonical',
-      }),
-    ]))
+    ])
     expect(projected.diagnostics).toEqual([
-      expect.objectContaining({ id: 'spi.file-warning', path: 'src/index.ts' }),
+      expect.objectContaining({ id: 'typescript.file-warning', path: 'src/index.ts' }),
     ])
   })
 
-  it('applies a global compiler warning to every indexed file so completeness cannot stay false-green', () => {
+  it('applies a global compiler warning to every indexed file', () => {
     const result = canonicalResult({
       diagnostics: [{
-        id: 'spi.call.program-create-failed',
+        id: 'typescript.program-create-failed',
         level: 'warn',
         message: 'call layer skipped',
       }],
@@ -363,6 +258,23 @@ describe('canonical TypeScript indexing projection', () => {
         path: 'src/index.ts',
         status: 'indexed_with_warnings',
         reason: 'canonical_diagnostic',
+      }),
+    ])
+  })
+
+  it('marks a requested TypeScript file missing from the canonical index as failed', () => {
+    const projected = canonicalTypeScriptIndexingOutcomes({
+      rootPath: '/repo',
+      codeFiles: ['/repo/src/missing.ts'],
+      result: canonicalResult({ files: [] }),
+    })
+
+    expect(projected.outcomes).toEqual([
+      expect.objectContaining({
+        path: 'src/missing.ts',
+        status: 'failed',
+        reason: 'canonical_file_missing',
+        capability: 'builtin:index:typescript',
       }),
     ])
   })

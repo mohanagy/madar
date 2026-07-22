@@ -5,6 +5,7 @@ import { join } from 'node:path'
 
 import { describe, expect, test } from 'vitest'
 
+import { GRAPH_ARTIFACT_VERSION } from '../../src/domain/graph/artifact.js'
 import { startGraphServer } from '../../src/runtime/http-server.js'
 import { writeCanonicalGraphFixture } from '../helpers/graph-artifact.js'
 
@@ -53,8 +54,7 @@ describe('startGraphServer', () => {
             { id: 'n2', label: 'buildHeaders', source_file: 'client.ts', file_type: 'code', community: 0 },
             { id: 'n3', label: 'HttpClientGuide', source_file: 'guide.md', file_type: 'document', community: 1 },
           ],
-          links: [{ source: 'n1', target: 'n2', relation: 'calls', confidence: 'EXTRACTED', source_file: 'client.ts' }],
-          hyperedges: [],
+          edges: [{ source: 'n1', target: 'n2', relation: 'calls', confidence: 'EXTRACTED', source_file: 'client.ts' }],
         },
       )
       writeFileSync(join(outputDir, 'GRAPH_REPORT.md'), '# report\n', 'utf8')
@@ -106,7 +106,7 @@ describe('startGraphServer', () => {
         expect(graphJson).toBe(expectedGraphJson)
         expect(JSON.parse(graphJson)).toMatchObject({
           schema: 'madar.graph',
-          version: 1,
+          version: GRAPH_ARTIFACT_VERSION,
           directed: true,
           nodes: expect.arrayContaining([
             expect.objectContaining({ id: 'n1', attributes: expect.objectContaining({ label: 'HttpClient' }) }),
@@ -117,8 +117,7 @@ describe('startGraphServer', () => {
           graphPath,
           {
             nodes: [{ id: 'updated', label: 'UpdatedNode', source_file: 'updated.ts', file_type: 'code', community: 0 }],
-            links: [],
-            hyperedges: [],
+            edges: [],
           },
         )
 
@@ -147,8 +146,7 @@ describe('startGraphServer', () => {
         graphPath,
         {
           nodes: [{ id: 'n1', label: 'HttpClient', source_file: 'client.ts', file_type: 'code', community: 0 }],
-          links: [],
-          hyperedges: [],
+          edges: [],
         },
       )
 
@@ -189,8 +187,7 @@ describe('startGraphServer', () => {
       mkdirSync(join(tempDir, 'out'), { recursive: true })
       writeCanonicalGraphFixture(graphPath, {
         nodes: [{ id: 'n1', label: 'Node', source_file: 'node.ts', file_type: 'code' }],
-        links: [],
-        hyperedges: [],
+        edges: [],
       })
       const validArtifact = readFileSync(graphPath, 'utf8')
       const originalTimes = statSync(graphPath)
@@ -210,7 +207,7 @@ describe('startGraphServer', () => {
         expect(rewrittenResponse.headers.get('x-madar-graph-version')).toBe(rewrittenVersion)
         expect(await rewrittenResponse.text()).toBe(rewrittenArtifact)
 
-        const unsupportedArtifact = rewrittenArtifact.replace('"version": 1', '"version": 0')
+        const unsupportedArtifact = rewrittenArtifact.replace(`"version": ${GRAPH_ARTIFACT_VERSION}`, '"version": 0')
         writeFileSync(graphPath, unsupportedArtifact, 'utf8')
         utimesSync(graphPath, originalTimes.atime, originalTimes.mtime)
 

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { ExtractionEdge, ExtractionNode } from '../../src/pipeline/extract/contracts.js'
-import { buildGraph } from '../../src/application/build-graph.js'
+import { createTestGraph } from '../helpers/knowledge-graph.js'
 import { compactRetrieveResult, executionFlowAdjacency, retrieveContext } from '../../src/runtime/retrieve.js'
 
 interface ExecutionSliceExpectation {
@@ -71,105 +70,192 @@ function buildSliceGraph(
     workerFrameworkRole = 'worker',
   } = options
 
-  return buildGraph(
-    [
-      {
-        schema_version: 1,
-        nodes: [
-          { id: 'auth_route', label: 'POST /login', file_type: 'code', source_file: '/src/auth/routes.ts', source_location: 'L10', node_kind: 'route', framework: 'express', framework_role: 'express_route', community: 0 },
-          { id: 'auth_controller', label: 'AuthController.login', file_type: 'code', source_file: '/src/auth/controller.ts', source_location: 'L20', node_kind: 'method', framework: 'nestjs', framework_role: 'nest_controller', community: 0 },
-          { id: 'auth_guard', label: 'AuthGuard', file_type: 'code', source_file: '/src/auth/guard.ts', source_location: 'L30', node_kind: 'class', community: 0 },
-          { id: 'auth_service', label: 'AuthService.login', file_type: 'code', source_file: '/src/auth/service.ts', source_location: 'L40', node_kind: 'method', community: 0 },
-          { id: 'login_validator', label: 'LoginValidator.validate', file_type: 'code', source_file: '/src/auth/login-validator.ts', source_location: 'L50', node_kind: 'method', community: 0 },
-          { id: 'queue_registry', label: 'QueueRegistry.addJob', file_type: 'code', source_file: '/src/queue/registry.ts', source_location: 'L60', node_kind: 'method', community: 1 },
-          { id: 'auth_worker', label: workerLabel, file_type: 'code', source_file: workerSourceFile, source_location: 'L70', node_kind: 'method', framework_role: workerFrameworkRole, community: 1 },
-          { id: 'session_store', label: 'SessionStore.createSession', file_type: 'code', source_file: '/src/session/store.ts', source_location: 'L80', node_kind: 'method', community: 1 },
-          { id: 'audit_publisher', label: 'AuditPublisher.publishLogin', file_type: 'code', source_file: '/src/auth/audit.ts', source_location: 'L90', node_kind: 'method', community: 2 },
-          { id: 'session_notifier', label: 'SessionNotifier.sendLoginWebhook', file_type: 'code', source_file: '/src/auth/notifier.ts', source_location: 'L100', node_kind: 'method', community: 2 },
-          { id: 'status_helper', label: 'AuthController.getStatusMessage', file_type: 'code', source_file: '/src/auth/controller.ts', source_location: 'L110', node_kind: 'method', community: 0 },
-          { id: 'auth_logger', label: 'Logger.info', file_type: 'code', source_file: '/src/auth/logger.ts', source_location: 'L120', node_kind: 'method', community: 2 },
-          { id: 'auth_env', label: 'AUTH_COOKIE_DOMAIN', file_type: 'code', source_file: '/src/config/auth.ts', source_location: 'L130', community: 3 },
-          { id: 'auth_contract', label: 'LoginInput', file_type: 'code', source_file: '/src/contracts/auth.ts', source_location: 'L140', community: 0 },
-          { id: 'auth_test', label: 'AuthService.login.spec', file_type: 'code', source_file: '/tests/auth.service.spec.ts', source_location: 'L150', node_kind: 'function', community: 4 },
-          { id: 'billing_exporter', label: 'BillingExporter.syncSessions', file_type: 'code', source_file: '/src/billing/exporter.ts', source_location: 'L160', node_kind: 'method', community: 5 },
-          { id: 'billing_metrics', label: 'BillingMetrics.flush', file_type: 'code', source_file: '/src/billing/metrics.ts', source_location: 'L170', node_kind: 'method', community: 5 },
-          { id: 'api_client', label: 'ApiClient.syncBilling', file_type: 'code', source_file: '/src/api/client.ts', source_location: 'L180', node_kind: 'method', community: 5 },
-          { id: 'shared_index', label: 'index.ts', file_type: 'code', source_file: '/src/shared/index.ts', source_location: 'L190', community: 6 },
-          { id: 'shared_cookie', label: 'CookieService', file_type: 'code', source_file: '/src/shared/cookie.ts', source_location: 'L200', node_kind: 'class', community: 6 },
-        ],
-        edges: [
-          { source: 'auth_route', target: 'auth_controller', relation: 'controller_route', confidence: 'EXTRACTED', source_file: '/src/auth/routes.ts' },
-          { source: 'auth_controller', target: 'auth_guard', relation: 'uses_guard', confidence: 'EXTRACTED', source_file: '/src/auth/controller.ts' },
-          { source: 'auth_controller', target: 'auth_service', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/controller.ts' },
-          { source: 'auth_controller', target: 'status_helper', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/controller.ts' },
-          { source: 'auth_controller', target: 'auth_logger', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/controller.ts' },
-          { source: 'auth_service', target: 'login_validator', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts' },
-          { source: 'auth_service', target: 'queue_registry', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts' },
-          { source: 'auth_service', target: 'audit_publisher', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts' },
-          ...(includeWorkerStep
-            ? [{ source: 'queue_registry', target: 'auth_worker', relation: 'enqueues_job', confidence: 'EXTRACTED', source_file: '/src/queue/registry.ts' } as const]
-            : []),
-          ...(includePersistenceStep && includeWorkerStep
-            ? [{ source: 'auth_worker', target: 'session_store', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/worker.ts' } as const]
-            : []),
-          ...(includeWorkerStep
-            ? [{ source: 'auth_worker', target: 'session_notifier', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/worker.ts' } as const]
-            : []),
-          { source: 'auth_service', target: 'auth_env', relation: 'reads_env', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts' },
-          { source: 'auth_service', target: 'auth_contract', relation: 'depends_on', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts' },
-          { source: 'auth_service', target: 'auth_test', relation: 'covered_by', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts' },
-          { source: 'billing_exporter', target: 'auth_service', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/billing/exporter.ts' },
-          { source: 'billing_exporter', target: 'billing_metrics', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/billing/exporter.ts' },
-          { source: 'api_client', target: 'billing_exporter', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/api/client.ts' },
-          { source: 'auth_service', target: 'shared_index', relation: 'imports_from', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts' },
-          { source: 'shared_index', target: 'shared_cookie', relation: 'exports', confidence: 'EXTRACTED', source_file: '/src/shared/index.ts' },
-        ],
-      },
+  return createTestGraph({
+    metadata: { root_path: '/' },
+    nodes: [
+        ['auth_route', {
+                label: 'POST /login', file_type: 'code', source_file: '/src/auth/routes.ts', source_location: 'L10', node_kind: 'route', framework: 'express', framework_role: 'express_route', community: 0
+            }],
+        ['auth_controller', {
+                label: 'AuthController.login', file_type: 'code', source_file: '/src/auth/controller.ts', source_location: 'L20', node_kind: 'method', framework: 'nestjs', framework_role: 'nest_controller', community: 0
+            }],
+        ['auth_guard', {
+                label: 'AuthGuard', file_type: 'code', source_file: '/src/auth/guard.ts', source_location: 'L30', node_kind: 'class', community: 0
+            }],
+        ['auth_service', {
+                label: 'AuthService.login', file_type: 'code', source_file: '/src/auth/service.ts', source_location: 'L40', node_kind: 'method', community: 0
+            }],
+        ['login_validator', {
+                label: 'LoginValidator.validate', file_type: 'code', source_file: '/src/auth/login-validator.ts', source_location: 'L50', node_kind: 'method', community: 0
+            }],
+        ['queue_registry', {
+                label: 'QueueRegistry.addJob', file_type: 'code', source_file: '/src/queue/registry.ts', source_location: 'L60', node_kind: 'method', community: 1
+            }],
+        ['auth_worker', {
+                label: workerLabel, file_type: 'code', source_file: workerSourceFile, source_location: 'L70', node_kind: 'method', framework_role: workerFrameworkRole, community: 1
+            }],
+        ['session_store', {
+                label: 'SessionStore.createSession', file_type: 'code', source_file: '/src/session/store.ts', source_location: 'L80', node_kind: 'method', community: 1
+            }],
+        ['audit_publisher', {
+                label: 'AuditPublisher.publishLogin', file_type: 'code', source_file: '/src/auth/audit.ts', source_location: 'L90', node_kind: 'method', community: 2
+            }],
+        ['session_notifier', {
+                label: 'SessionNotifier.sendLoginWebhook', file_type: 'code', source_file: '/src/auth/notifier.ts', source_location: 'L100', node_kind: 'method', community: 2
+            }],
+        ['status_helper', {
+                label: 'AuthController.getStatusMessage', file_type: 'code', source_file: '/src/auth/controller.ts', source_location: 'L110', node_kind: 'method', community: 0
+            }],
+        ['auth_logger', {
+                label: 'Logger.info', file_type: 'code', source_file: '/src/auth/logger.ts', source_location: 'L120', node_kind: 'method', community: 2
+            }],
+        ['auth_env', {
+                label: 'AUTH_COOKIE_DOMAIN', file_type: 'code', source_file: '/src/config/auth.ts', source_location: 'L130', community: 3
+            }],
+        ['auth_contract', {
+                label: 'LoginInput', file_type: 'code', source_file: '/src/contracts/auth.ts', source_location: 'L140', community: 0
+            }],
+        ['auth_test', {
+                label: 'AuthService.login.spec', file_type: 'code', source_file: '/tests/auth.service.spec.ts', source_location: 'L150', node_kind: 'function', community: 4
+            }],
+        ['billing_exporter', {
+                label: 'BillingExporter.syncSessions', file_type: 'code', source_file: '/src/billing/exporter.ts', source_location: 'L160', node_kind: 'method', community: 5
+            }],
+        ['billing_metrics', {
+                label: 'BillingMetrics.flush', file_type: 'code', source_file: '/src/billing/metrics.ts', source_location: 'L170', node_kind: 'method', community: 5
+            }],
+        ['api_client', {
+                label: 'ApiClient.syncBilling', file_type: 'code', source_file: '/src/api/client.ts', source_location: 'L180', node_kind: 'method', community: 5
+            }],
+        ['shared_index', {
+                label: 'index.ts', file_type: 'code', source_file: '/src/shared/index.ts', source_location: 'L190', community: 6
+            }],
+        ['shared_cookie', {
+                label: 'CookieService', file_type: 'code', source_file: '/src/shared/cookie.ts', source_location: 'L200', node_kind: 'class', community: 6
+            }]
     ],
-      { rootPath: '/' },
-  )
+    edges: [
+        ['auth_route', 'auth_controller', {
+                relation: 'controller_route', confidence: 'EXTRACTED', source_file: '/src/auth/routes.ts'
+            }],
+        ['auth_controller', 'auth_guard', {
+                relation: 'uses_guard', confidence: 'EXTRACTED', source_file: '/src/auth/controller.ts'
+            }],
+        ['auth_controller', 'auth_service', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/controller.ts'
+            }],
+        ['auth_controller', 'status_helper', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/controller.ts'
+            }],
+        ['auth_controller', 'auth_logger', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/controller.ts'
+            }],
+        ['auth_service', 'login_validator', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts'
+            }],
+        ['auth_service', 'queue_registry', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts'
+            }],
+        ['auth_service', 'audit_publisher', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts'
+            }],
+        ...(includeWorkerStep ? [
+            ['queue_registry', 'auth_worker', {
+                    relation: 'enqueues_job', confidence: 'EXTRACTED', source_file: '/src/queue/registry.ts'
+                }] as const
+        ] : []),
+        ...(includePersistenceStep && includeWorkerStep ? [
+            ['auth_worker', 'session_store', {
+                    relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/worker.ts'
+                }] as const
+        ] : []),
+        ...(includeWorkerStep ? [
+            ['auth_worker', 'session_notifier', {
+                    relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/worker.ts'
+                }] as const
+        ] : []),
+        ['auth_service', 'auth_env', {
+                relation: 'reads_env', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts'
+            }],
+        ['auth_service', 'auth_contract', {
+                relation: 'depends_on', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts'
+            }],
+        ['auth_service', 'auth_test', {
+                relation: 'covered_by', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts'
+            }],
+        ['billing_exporter', 'auth_service', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/billing/exporter.ts'
+            }],
+        ['billing_exporter', 'billing_metrics', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/billing/exporter.ts'
+            }],
+        ['api_client', 'billing_exporter', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/api/client.ts'
+            }],
+        ['auth_service', 'shared_index', {
+                relation: 'imports_from', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts'
+            }],
+        ['shared_index', 'shared_cookie', {
+                relation: 'exports', confidence: 'EXTRACTED', source_file: '/src/shared/index.ts'
+            }]
+    ]
+})
 }
 
 function buildWorkerSegmentGraph() {
-  return buildGraph(
-    [
-      {
-        schema_version: 1,
-        nodes: [
-          { id: 'queue_registry', label: 'QueueRegistry.addJob', file_type: 'code', source_file: '/src/queue/registry.ts', source_location: 'L10', node_kind: 'method', framework_role: 'queue', community: 0 },
-          { id: 'auth_worker', label: 'AuthWorker.process', file_type: 'code', source_file: '/src/auth/worker.ts', source_location: 'L20', node_kind: 'method', framework_role: 'worker', community: 1 },
-          { id: 'session_store', label: 'SessionStore.createSession', file_type: 'code', source_file: '/src/session/store.ts', source_location: 'L30', node_kind: 'method', framework_role: 'repository', community: 1 },
-        ],
-        edges: [
-          { source: 'queue_registry', target: 'auth_worker', relation: 'enqueues_job', confidence: 'EXTRACTED', source_file: '/src/queue/registry.ts' },
-          { source: 'auth_worker', target: 'session_store', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/worker.ts' },
-        ],
-      },
+  return createTestGraph({
+    metadata: { root_path: '/' },
+    nodes: [
+        ['queue_registry', {
+                label: 'QueueRegistry.addJob', file_type: 'code', source_file: '/src/queue/registry.ts', source_location: 'L10', node_kind: 'method', framework_role: 'queue', community: 0
+            }],
+        ['auth_worker', {
+                label: 'AuthWorker.process', file_type: 'code', source_file: '/src/auth/worker.ts', source_location: 'L20', node_kind: 'method', framework_role: 'worker', community: 1
+            }],
+        ['session_store', {
+                label: 'SessionStore.createSession', file_type: 'code', source_file: '/src/session/store.ts', source_location: 'L30', node_kind: 'method', framework_role: 'repository', community: 1
+            }]
     ],
-      { rootPath: '/' },
-  )
+    edges: [
+        ['queue_registry', 'auth_worker', {
+                relation: 'enqueues_job', confidence: 'EXTRACTED', source_file: '/src/queue/registry.ts'
+            }],
+        ['auth_worker', 'session_store', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/worker.ts'
+            }]
+    ]
+})
 }
 
 function buildDirectPersistenceGraph() {
-  return buildGraph(
-    [
-      {
-        schema_version: 1,
-        nodes: [
-          { id: 'login_route', label: 'POST /login', file_type: 'code', source_file: '/src/auth/routes.ts', source_location: 'L10', node_kind: 'route', framework_role: 'express_route', community: 0 },
-          { id: 'login_controller', label: 'AuthController.login', file_type: 'code', source_file: '/src/auth/controller.ts', source_location: 'L20', node_kind: 'method', framework_role: 'nest_controller', community: 0 },
-          { id: 'login_service', label: 'AuthService.login', file_type: 'code', source_file: '/src/auth/service.ts', source_location: 'L30', node_kind: 'method', framework_role: 'nest_provider', community: 0 },
-          { id: 'session_store', label: 'SessionStore.createSession', file_type: 'code', source_file: '/src/session/store.ts', source_location: 'L40', node_kind: 'method', framework_role: 'repository', community: 1 },
-        ],
-        edges: [
-          { source: 'login_route', target: 'login_controller', relation: 'controller_route', confidence: 'EXTRACTED', source_file: '/src/auth/routes.ts' },
-          { source: 'login_controller', target: 'login_service', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/controller.ts' },
-          { source: 'login_service', target: 'session_store', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts' },
-        ],
-      },
+  return createTestGraph({
+    metadata: { root_path: '/' },
+    nodes: [
+        ['login_route', {
+                label: 'POST /login', file_type: 'code', source_file: '/src/auth/routes.ts', source_location: 'L10', node_kind: 'route', framework_role: 'express_route', community: 0
+            }],
+        ['login_controller', {
+                label: 'AuthController.login', file_type: 'code', source_file: '/src/auth/controller.ts', source_location: 'L20', node_kind: 'method', framework_role: 'nest_controller', community: 0
+            }],
+        ['login_service', {
+                label: 'AuthService.login', file_type: 'code', source_file: '/src/auth/service.ts', source_location: 'L30', node_kind: 'method', framework_role: 'nest_provider', community: 0
+            }],
+        ['session_store', {
+                label: 'SessionStore.createSession', file_type: 'code', source_file: '/src/session/store.ts', source_location: 'L40', node_kind: 'method', framework_role: 'repository', community: 1
+            }]
     ],
-      { rootPath: '/' },
-  )
+    edges: [
+        ['login_route', 'login_controller', {
+                relation: 'controller_route', confidence: 'EXTRACTED', source_file: '/src/auth/routes.ts'
+            }],
+        ['login_controller', 'login_service', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/controller.ts'
+            }],
+        ['login_service', 'session_store', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts'
+            }]
+    ]
+})
 }
 
 function compactFor(prompt: string, graph = buildSliceGraph()) {
@@ -196,17 +282,25 @@ function labelsFor(prompt: string, overrides: Record<string, unknown> = {}): str
 
 describe('retrieveContext retrievalStrategy=slice-v1', () => {
   it('preserves both orientations of reciprocal execution-flow edges', () => {
-    const graph = buildGraph([{
-      nodes: [
-        { id: 'alpha', label: 'Alpha', source_file: '/src/alpha.ts', node_kind: 'function', file_type: 'code' },
-        { id: 'beta', label: 'Beta', source_file: '/src/beta.ts', node_kind: 'function', file_type: 'code' },
-      ],
-      edges: [
-        { source: 'alpha', target: 'beta', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/alpha.ts' },
-        { source: 'beta', target: 'alpha', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/beta.ts' },
-      ],
-      hyperedges: [],
-    }], { rootPath: '/' })
+    const graph = createTestGraph({
+    metadata: { root_path: '/' },
+    nodes: [
+        ['alpha', {
+                label: 'Alpha', source_file: '/src/alpha.ts', node_kind: 'function', file_type: 'code'
+            }],
+        ['beta', {
+                label: 'Beta', source_file: '/src/beta.ts', node_kind: 'function', file_type: 'code'
+            }]
+    ],
+    edges: [
+        ['alpha', 'beta', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/alpha.ts'
+            }],
+        ['beta', 'alpha', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/beta.ts'
+            }]
+    ]
+})
     const adjacency = executionFlowAdjacency(
       graph,
       { selected_paths: [] } as never,

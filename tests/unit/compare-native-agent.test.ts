@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 
 import { serializeGraphArtifact } from '../../src/domain/graph/artifact.js'
 import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
-import { buildGraph } from '../../src/application/build-graph.js'
+import { createTestGraph } from '../helpers/knowledge-graph.js'
 import {
   buildNativeAgentPrompt,
   executeNativeAgentCompare,
@@ -45,7 +45,6 @@ function makeFixtureProject(
   options: {
     installState?: 'managed' | 'valid' | 'missing'
     profile?: 'core' | 'full' | 'strict'
-    spiMode?: boolean
   } = {},
 ): { projectDir: string; graphPath: string; outputDir: string } {
   mkdirSync(FIXTURE_PARENT, { recursive: true })
@@ -58,12 +57,10 @@ function makeFixtureProject(
     join(projectDir, 'out', 'graph.json'),
     {
       community_labels: { '0': 'Mock' },
-      ...(options.spiMode === true ? { spi_mode: true } : {}),
       nodes: [
         { id: 'a', label: 'Alpha', source_file: 'a.ts', source_location: '1', file_type: 'code', community: 0 },
       ],
       edges: [],
-      hyperedges: [],
     },
   )
   const graphPath = join(projectDir, 'out', 'graph.json')
@@ -283,7 +280,6 @@ function writeRuntimeProofFixture(
       [profileId]: {
         prompt: question,
         strict_runtime_proof: true,
-        expected_spi: false,
         obligations,
       },
     }, null, 2),
@@ -349,33 +345,50 @@ function makeRescopedReadinessFixtureProjectWithOptions(options: {
     )
   }
 
-  const graph = buildGraph(
-    [
-      {
-        schema_version: 1,
-        nodes: [
-          { id: 'login_route', label: 'POST /login', file_type: 'code', source_file: join(projectDir, 'backend', 'src', 'auth', 'routes.ts'), source_location: 'L10', line_number: 10, node_kind: 'route', framework_role: 'express_route', community: 0 },
-          { id: 'login_controller', label: 'AuthController.login', file_type: 'code', source_file: join(projectDir, 'backend', 'src', 'auth', 'controller.ts'), source_location: 'L20', line_number: 20, node_kind: 'method', framework_role: 'nest_controller', community: 0 },
-          { id: 'login_service', label: 'AuthService.login', file_type: 'code', source_file: join(projectDir, 'backend', 'src', 'auth', 'service.ts'), source_location: 'L30', line_number: 30, node_kind: 'method', framework_role: 'nest_provider', community: 0 },
-          { id: 'queue_registry', label: 'QueueRegistry.addJob', file_type: 'code', source_file: join(projectDir, 'backend', 'src', 'queue', 'registry.ts'), source_location: 'L40', line_number: 40, node_kind: 'method', framework_role: 'queue', community: 1 },
-          { id: 'login_worker', label: 'AuthWorker.process', file_type: 'code', source_file: join(projectDir, 'backend', 'src', 'auth', 'worker.ts'), source_location: 'L50', line_number: 50, node_kind: 'method', framework_role: 'worker', community: 1 },
-          ...(includePersistenceStep
-            ? [{ id: 'session_store', label: 'SessionStore.createSession', file_type: 'code', source_file: join(projectDir, 'backend', 'src', 'session', 'store.ts'), source_location: 'L60', line_number: 60, node_kind: 'method', framework_role: 'repository', community: 1 } as const]
-            : []),
-        ],
-        edges: [
-          { source: 'login_route', target: 'login_controller', relation: 'controller_route', confidence: 'EXTRACTED', source_file: join(projectDir, 'backend', 'src', 'auth', 'routes.ts') },
-          { source: 'login_controller', target: 'login_service', relation: 'calls', confidence: 'EXTRACTED', source_file: join(projectDir, 'backend', 'src', 'auth', 'controller.ts') },
-          { source: 'login_service', target: 'queue_registry', relation: 'calls', confidence: 'EXTRACTED', source_file: join(projectDir, 'backend', 'src', 'auth', 'service.ts') },
-          { source: 'queue_registry', target: 'login_worker', relation: 'enqueues_job', confidence: 'EXTRACTED', source_file: join(projectDir, 'backend', 'src', 'queue', 'registry.ts') },
-          ...(includePersistenceStep
-            ? [{ source: 'login_worker', target: 'session_store', relation: 'calls', confidence: 'EXTRACTED', source_file: join(projectDir, 'backend', 'src', 'auth', 'worker.ts') } as const]
-            : []),
-        ],
-      },
+  const graph = createTestGraph({
+    metadata: { root_path: projectDir },
+    nodes: [
+        ['login_route', {
+                label: 'POST /login', file_type: 'code', source_file: join(projectDir, 'backend', 'src', 'auth', 'routes.ts'), source_location: 'L10', line_number: 10, node_kind: 'route', framework_role: 'express_route', community: 0
+            }],
+        ['login_controller', {
+                label: 'AuthController.login', file_type: 'code', source_file: join(projectDir, 'backend', 'src', 'auth', 'controller.ts'), source_location: 'L20', line_number: 20, node_kind: 'method', framework_role: 'nest_controller', community: 0
+            }],
+        ['login_service', {
+                label: 'AuthService.login', file_type: 'code', source_file: join(projectDir, 'backend', 'src', 'auth', 'service.ts'), source_location: 'L30', line_number: 30, node_kind: 'method', framework_role: 'nest_provider', community: 0
+            }],
+        ['queue_registry', {
+                label: 'QueueRegistry.addJob', file_type: 'code', source_file: join(projectDir, 'backend', 'src', 'queue', 'registry.ts'), source_location: 'L40', line_number: 40, node_kind: 'method', framework_role: 'queue', community: 1
+            }],
+        ['login_worker', {
+                label: 'AuthWorker.process', file_type: 'code', source_file: join(projectDir, 'backend', 'src', 'auth', 'worker.ts'), source_location: 'L50', line_number: 50, node_kind: 'method', framework_role: 'worker', community: 1
+            }],
+        ...(includePersistenceStep ? [
+            ['session_store', {
+                    label: 'SessionStore.createSession', file_type: 'code', source_file: join(projectDir, 'backend', 'src', 'session', 'store.ts'), source_location: 'L60', line_number: 60, node_kind: 'method', framework_role: 'repository', community: 1
+                }] as const
+        ] : [])
     ],
-    { rootPath: projectDir },
-  )
+    edges: [
+        ['login_route', 'login_controller', {
+                relation: 'controller_route', confidence: 'EXTRACTED', source_file: join(projectDir, 'backend', 'src', 'auth', 'routes.ts')
+            }],
+        ['login_controller', 'login_service', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: join(projectDir, 'backend', 'src', 'auth', 'controller.ts')
+            }],
+        ['login_service', 'queue_registry', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: join(projectDir, 'backend', 'src', 'auth', 'service.ts')
+            }],
+        ['queue_registry', 'login_worker', {
+                relation: 'enqueues_job', confidence: 'EXTRACTED', source_file: join(projectDir, 'backend', 'src', 'queue', 'registry.ts')
+            }],
+        ...(includePersistenceStep ? [
+            ['login_worker', 'session_store', {
+                    relation: 'calls', confidence: 'EXTRACTED', source_file: join(projectDir, 'backend', 'src', 'auth', 'worker.ts')
+                }] as const
+        ] : [])
+    ]
+})
 
   const graphPath = join(projectDir, 'out', 'graph.json')
   writeCanonicalGraphFixtureFromGraph(
@@ -406,7 +419,6 @@ function makeRescopedReadinessFixtureProjectWithOptions(options: {
       mapMetadata: (metadata) => ({
         ...metadata,
         ...(scopedGraphUsesScopedRoot ? { root_path: scopedRoot } : {}),
-        spi_mode: true,
       }),
       mapNode: (_id, attributes) => scopeSourceFile(attributes),
       mapEdge: (_source, _target, attributes) => scopeSourceFile(attributes),
@@ -457,29 +469,46 @@ function makeDoubleRescopedReadinessFixtureProject(): {
     'export const authStore = "auth-store-proof"',
   )
 
-  const graph = buildGraph(
-    [
-      {
-        schema_version: 1,
-        nodes: [
-          { id: 'login_route', label: 'POST /login', file_type: 'code', source_file: join(projectDir, 'backend', 'auth', 'routes.ts'), source_location: 'L10', line_number: 10, node_kind: 'route', framework_role: 'express_route', community: 0 },
-          { id: 'login_controller', label: 'AuthController.login', file_type: 'code', source_file: join(projectDir, 'backend', 'auth', 'controller.ts'), source_location: 'L20', line_number: 20, node_kind: 'method', framework_role: 'nest_controller', community: 0 },
-          { id: 'login_service', label: 'AuthService.login', file_type: 'code', source_file: join(projectDir, 'backend', 'auth', 'service.ts'), source_location: 'L30', line_number: 30, node_kind: 'method', framework_role: 'nest_provider', community: 0 },
-          { id: 'queue_registry', label: 'AuthQueue.addJob', file_type: 'code', source_file: join(projectDir, 'backend', 'auth', 'queue.ts'), source_location: 'L40', line_number: 40, node_kind: 'method', framework_role: 'queue', community: 1 },
-          { id: 'login_worker', label: 'AuthWorker.process', file_type: 'code', source_file: join(projectDir, 'backend', 'auth', 'worker.ts'), source_location: 'L50', line_number: 50, node_kind: 'method', framework_role: 'worker', community: 1 },
-          { id: 'session_store', label: 'SessionStore.createSession', file_type: 'code', source_file: join(projectDir, 'backend', 'auth', 'store.ts'), source_location: 'L60', line_number: 60, node_kind: 'method', framework_role: 'repository', community: 1 },
-        ],
-        edges: [
-          { source: 'login_route', target: 'login_controller', relation: 'controller_route', confidence: 'EXTRACTED', source_file: join(projectDir, 'backend', 'auth', 'routes.ts') },
-          { source: 'login_controller', target: 'login_service', relation: 'calls', confidence: 'EXTRACTED', source_file: join(projectDir, 'backend', 'auth', 'controller.ts') },
-          { source: 'login_service', target: 'queue_registry', relation: 'calls', confidence: 'EXTRACTED', source_file: join(projectDir, 'backend', 'auth', 'service.ts') },
-          { source: 'queue_registry', target: 'login_worker', relation: 'enqueues_job', confidence: 'EXTRACTED', source_file: join(projectDir, 'backend', 'auth', 'queue.ts') },
-          { source: 'login_worker', target: 'session_store', relation: 'calls', confidence: 'EXTRACTED', source_file: join(projectDir, 'backend', 'auth', 'worker.ts') },
-        ],
-      },
+  const graph = createTestGraph({
+    metadata: { root_path: projectDir },
+    nodes: [
+        ['login_route', {
+                label: 'POST /login', file_type: 'code', source_file: join(projectDir, 'backend', 'auth', 'routes.ts'), source_location: 'L10', line_number: 10, node_kind: 'route', framework_role: 'express_route', community: 0
+            }],
+        ['login_controller', {
+                label: 'AuthController.login', file_type: 'code', source_file: join(projectDir, 'backend', 'auth', 'controller.ts'), source_location: 'L20', line_number: 20, node_kind: 'method', framework_role: 'nest_controller', community: 0
+            }],
+        ['login_service', {
+                label: 'AuthService.login', file_type: 'code', source_file: join(projectDir, 'backend', 'auth', 'service.ts'), source_location: 'L30', line_number: 30, node_kind: 'method', framework_role: 'nest_provider', community: 0
+            }],
+        ['queue_registry', {
+                label: 'AuthQueue.addJob', file_type: 'code', source_file: join(projectDir, 'backend', 'auth', 'queue.ts'), source_location: 'L40', line_number: 40, node_kind: 'method', framework_role: 'queue', community: 1
+            }],
+        ['login_worker', {
+                label: 'AuthWorker.process', file_type: 'code', source_file: join(projectDir, 'backend', 'auth', 'worker.ts'), source_location: 'L50', line_number: 50, node_kind: 'method', framework_role: 'worker', community: 1
+            }],
+        ['session_store', {
+                label: 'SessionStore.createSession', file_type: 'code', source_file: join(projectDir, 'backend', 'auth', 'store.ts'), source_location: 'L60', line_number: 60, node_kind: 'method', framework_role: 'repository', community: 1
+            }]
     ],
-    { rootPath: projectDir },
-  )
+    edges: [
+        ['login_route', 'login_controller', {
+                relation: 'controller_route', confidence: 'EXTRACTED', source_file: join(projectDir, 'backend', 'auth', 'routes.ts')
+            }],
+        ['login_controller', 'login_service', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: join(projectDir, 'backend', 'auth', 'controller.ts')
+            }],
+        ['login_service', 'queue_registry', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: join(projectDir, 'backend', 'auth', 'service.ts')
+            }],
+        ['queue_registry', 'login_worker', {
+                relation: 'enqueues_job', confidence: 'EXTRACTED', source_file: join(projectDir, 'backend', 'auth', 'queue.ts')
+            }],
+        ['login_worker', 'session_store', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: join(projectDir, 'backend', 'auth', 'worker.ts')
+            }]
+    ]
+})
 
   const graphPath = join(projectDir, 'out', 'graph.json')
   writeCanonicalGraphFixtureFromGraph(graph, { 0: ['login_route', 'login_controller', 'login_service'], 1: ['queue_registry', 'login_worker', 'session_store'] }, graphPath)
@@ -492,7 +521,7 @@ function makeDoubleRescopedReadinessFixtureProject(): {
         ? { ...attributes, source_file: relative(scopedRoot, attributes.source_file).replaceAll('\\', '/') }
         : attributes
     rewriteCanonicalGraphFixture(path, {
-      mapMetadata: (metadata) => ({ ...metadata, root_path: scopedRoot, spi_mode: true }),
+      mapMetadata: (metadata) => ({ ...metadata, root_path: scopedRoot }),
       mapNode: (_id, attributes) => scopeSourceFile(attributes),
       mapEdge: (_source, _target, attributes) => scopeSourceFile(attributes),
     })
@@ -550,31 +579,52 @@ function makeImplementFixtureProject(): { projectDir: string; graphPath: string;
     }, null, 2),
     'utf8',
   )
-  const graph = buildGraph(
-    [
-      {
-        schema_version: 1,
-        nodes: [
-          { id: 'login_route', label: 'POST /login', file_type: 'code', source_file: join(projectDir, 'src', 'http', 'login-routes.ts'), source_location: 'L10', node_kind: 'route', framework_role: 'express_route', community: 0 },
-          { id: 'login_controller', label: 'LoginController.submit', file_type: 'code', source_file: join(projectDir, 'src', 'auth', 'login-controller.ts'), source_location: 'L20', node_kind: 'method', framework_role: 'nest_controller', community: 0 },
-          { id: 'login_service', label: 'LoginService.validate', file_type: 'code', source_file: join(projectDir, 'src', 'auth', 'login-service.ts'), source_location: 'L30', node_kind: 'method', framework_role: 'nest_provider', community: 1 },
-          { id: 'login_repository', label: 'LoginAuditRepository.saveAttempt', file_type: 'code', source_file: join(projectDir, 'src', 'auth', 'login-audit-repository.ts'), source_location: 'L40', node_kind: 'method', community: 1 },
-          { id: 'login_helper', label: 'normalizeLoginPayload', file_type: 'code', source_file: join(projectDir, 'src', 'auth', 'login-helper.ts'), source_location: 'L18', node_kind: 'function', community: 1 },
-          { id: 'login_unit_test', label: 'LoginService.validate.spec', file_type: 'code', source_file: join(projectDir, 'tests', 'unit', 'login-service.test.ts'), source_location: 'L1', node_kind: 'function', community: 2 },
-          { id: 'login_e2e_test', label: 'login flow e2e', file_type: 'code', source_file: join(projectDir, 'tests', 'e2e', 'login-flow.test.ts'), source_location: 'L1', node_kind: 'function', community: 2 },
-        ],
-        edges: [
-          { source: 'login_route', target: 'login_controller', relation: 'controller_route', confidence: 'EXTRACTED', source_file: join(projectDir, 'src', 'http', 'login-routes.ts') },
-          { source: 'login_controller', target: 'login_service', relation: 'calls', confidence: 'EXTRACTED', source_file: join(projectDir, 'src', 'auth', 'login-controller.ts') },
-          { source: 'login_service', target: 'login_repository', relation: 'calls', confidence: 'EXTRACTED', source_file: join(projectDir, 'src', 'auth', 'login-service.ts') },
-          { source: 'login_service', target: 'login_helper', relation: 'calls', confidence: 'EXTRACTED', source_file: join(projectDir, 'src', 'auth', 'login-service.ts') },
-          { source: 'login_service', target: 'login_unit_test', relation: 'covered_by', confidence: 'EXTRACTED', source_file: join(projectDir, 'src', 'auth', 'login-service.ts') },
-          { source: 'login_route', target: 'login_e2e_test', relation: 'covered_by', confidence: 'EXTRACTED', source_file: join(projectDir, 'src', 'http', 'login-routes.ts') },
-        ],
-      },
+  const graph = createTestGraph({
+    metadata: { root_path: projectDir },
+    nodes: [
+        ['login_route', {
+                label: 'POST /login', file_type: 'code', source_file: join(projectDir, 'src', 'http', 'login-routes.ts'), source_location: 'L10', node_kind: 'route', framework_role: 'express_route', community: 0
+            }],
+        ['login_controller', {
+                label: 'LoginController.submit', file_type: 'code', source_file: join(projectDir, 'src', 'auth', 'login-controller.ts'), source_location: 'L20', node_kind: 'method', framework_role: 'nest_controller', community: 0
+            }],
+        ['login_service', {
+                label: 'LoginService.validate', file_type: 'code', source_file: join(projectDir, 'src', 'auth', 'login-service.ts'), source_location: 'L30', node_kind: 'method', framework_role: 'nest_provider', community: 1
+            }],
+        ['login_repository', {
+                label: 'LoginAuditRepository.saveAttempt', file_type: 'code', source_file: join(projectDir, 'src', 'auth', 'login-audit-repository.ts'), source_location: 'L40', node_kind: 'method', community: 1
+            }],
+        ['login_helper', {
+                label: 'normalizeLoginPayload', file_type: 'code', source_file: join(projectDir, 'src', 'auth', 'login-helper.ts'), source_location: 'L18', node_kind: 'function', community: 1
+            }],
+        ['login_unit_test', {
+                label: 'LoginService.validate.spec', file_type: 'code', source_file: join(projectDir, 'tests', 'unit', 'login-service.test.ts'), source_location: 'L1', node_kind: 'function', community: 2
+            }],
+        ['login_e2e_test', {
+                label: 'login flow e2e', file_type: 'code', source_file: join(projectDir, 'tests', 'e2e', 'login-flow.test.ts'), source_location: 'L1', node_kind: 'function', community: 2
+            }]
     ],
-    { rootPath: projectDir },
-  )
+    edges: [
+        ['login_route', 'login_controller', {
+                relation: 'controller_route', confidence: 'EXTRACTED', source_file: join(projectDir, 'src', 'http', 'login-routes.ts')
+            }],
+        ['login_controller', 'login_service', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: join(projectDir, 'src', 'auth', 'login-controller.ts')
+            }],
+        ['login_service', 'login_repository', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: join(projectDir, 'src', 'auth', 'login-service.ts')
+            }],
+        ['login_service', 'login_helper', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: join(projectDir, 'src', 'auth', 'login-service.ts')
+            }],
+        ['login_service', 'login_unit_test', {
+                relation: 'covered_by', confidence: 'EXTRACTED', source_file: join(projectDir, 'src', 'auth', 'login-service.ts')
+            }],
+        ['login_route', 'login_e2e_test', {
+                relation: 'covered_by', confidence: 'EXTRACTED', source_file: join(projectDir, 'src', 'http', 'login-routes.ts')
+            }]
+    ]
+})
   graph.graph.community_labels = { 0: 'Auth entry', 1: 'Auth workflow', 2: 'Tests' }
   const graphPath = join(projectDir, 'out', 'graph.json')
   writeFileSync(graphPath, serializeGraphArtifact(graph), 'utf8')
@@ -1753,7 +1803,6 @@ describe('executeNativeAgentCompare', () => {
       const report = result.reports[0] as NativeAgentCompareReport
       const baselinePrompt = readFileSync(report.paths.baseline_prompt, 'utf8')
       const madarPrompt = readFileSync(report.paths.madar_prompt, 'utf8')
-      const legacyPrompt = readFileSync(join(dirname(report.paths.baseline_prompt), 'native_agent-prompt.txt'), 'utf8')
 
       expect(baselinePrompt).toContain('Answer the question from normal repository evidence.')
       expect(baselinePrompt).toContain('Do not call Madar-specific tools')
@@ -1773,10 +1822,6 @@ describe('executeNativeAgentCompare', () => {
       expect(madarPrompt).toContain('Only insufficient with evidence.answerability.broad_search_fallback set to allowed permits one directory-scoped raw search')
       expect(madarPrompt).toContain('Madar already ran bounded cumulative recovery')
       expect(madarPrompt).toContain('Question: What is the cluster module?')
-
-      expect(legacyPrompt).toBe(baselinePrompt)
-      expect(legacyPrompt).not.toContain('Call retrieve first')
-      expect(legacyPrompt).not.toContain('Follow the Madar pack contract')
 
       expect(report.paths.prompt_file).toBe(report.paths.madar_prompt)
     } finally {
@@ -2091,7 +2136,7 @@ describe('executeNativeAgentCompare', () => {
             now: () => new Date('2026-05-01T00:00:00Z'),
             assessBenchmarkReadiness: () => ({
               status: 'not_ready',
-              reasons: ['SPI missing for runtime spine evidence'],
+              reasons: ['missing downstream runtime phases: delivery'],
               suggested_graph_scope: 'backend/out/graph.json',
             }),
           } as Parameters<typeof executeNativeAgentCompare>[1] & {
@@ -2108,7 +2153,7 @@ describe('executeNativeAgentCompare', () => {
       expect(JSON.parse(readFileSync(reportPath, 'utf8'))).toEqual(expect.objectContaining({
         benchmark_readiness: {
           status: 'not_ready',
-          reasons: ['SPI missing for runtime spine evidence'],
+          reasons: ['missing downstream runtime phases: delivery'],
           suggested_graph_scope: 'backend/out/graph.json',
         },
       }))
@@ -2133,7 +2178,7 @@ describe('executeNativeAgentCompare', () => {
           now: () => new Date('2026-05-01T00:00:00Z'),
           assessBenchmarkReadiness: () => ({
             status: 'not_ready',
-            reasons: ['SPI missing for runtime spine evidence', 'scope locality is weak'],
+            reasons: ['missing downstream runtime phases: delivery', 'scope locality is weak'],
             suggested_graph_scope: 'backend/out/graph.json',
           }),
         } as Parameters<typeof executeNativeAgentCompare>[1] & {
@@ -2164,12 +2209,12 @@ describe('executeNativeAgentCompare', () => {
 
       expect(report.benchmark_readiness).toEqual({
         status: 'not_ready',
-        reasons: ['SPI missing for runtime spine evidence', 'scope locality is weak'],
+        reasons: ['missing downstream runtime phases: delivery', 'scope locality is weak'],
         suggested_graph_scope: 'backend/out/graph.json',
       })
       expect(savedReport.benchmark_readiness).toEqual({
         status: 'not_ready',
-        reasons: ['SPI missing for runtime spine evidence', 'scope locality is weak'],
+        reasons: ['missing downstream runtime phases: delivery', 'scope locality is weak'],
         suggested_graph_scope: 'backend/out/graph.json',
       })
       expect(claimAssessment).toEqual(expect.objectContaining({
@@ -2186,7 +2231,7 @@ describe('executeNativeAgentCompare', () => {
       expect(summary).toContain('benchmark_readiness: not_ready')
       expect(summary).toContain('claim_assessment: routing_efficiency not_measured')
       expect(summary).toContain('benchmark_outcome: not_measured')
-      expect(summary).toContain('SPI missing for runtime spine evidence')
+      expect(summary).toContain('missing downstream runtime phases: delivery')
       expect(summary).toContain('Next step: retry with backend/out/graph.json')
     } finally {
       rmSync(projectDir, { recursive: true, force: true })
@@ -3440,7 +3485,7 @@ describe('executeNativeAgentCompare', () => {
   })
 
   it('classifies native-agent benchmark outcomes as full wins only when every measured gate passes', async () => {
-    const { projectDir, graphPath, outputDir } = makeFixtureProject({ spiMode: true })
+    const { projectDir, graphPath, outputDir } = makeFixtureProject()
     try {
       const result = await executeNativeAgentCompare(
         {
@@ -4291,7 +4336,7 @@ describe('executeNativeAgentCompare', () => {
   }, 60_000)
 
   it('marks routing latency as a loss when latency regresses and tool counts are unavailable', async () => {
-    const { projectDir, graphPath, outputDir } = makeFixtureProject({ spiMode: true })
+    const { projectDir, graphPath, outputDir } = makeFixtureProject()
     try {
       const result = await executeNativeAgentCompare(
         {
@@ -4332,7 +4377,7 @@ describe('executeNativeAgentCompare', () => {
   })
 
   it('marks routing tool usage as a loss when tool counts regress and latency is flat', async () => {
-    const { projectDir, graphPath, outputDir } = makeFixtureProject({ spiMode: true })
+    const { projectDir, graphPath, outputDir } = makeFixtureProject()
     try {
       const result = await executeNativeAgentCompare(
         {
@@ -4374,7 +4419,7 @@ describe('executeNativeAgentCompare', () => {
   })
 
   it('does not mark routing/tool latency as a win when tool calls improve but latency regresses', async () => {
-    const { projectDir, graphPath, outputDir } = makeFixtureProject({ spiMode: true })
+    const { projectDir, graphPath, outputDir } = makeFixtureProject()
     try {
       const result = await executeNativeAgentCompare(
         {
@@ -4422,7 +4467,7 @@ describe('executeNativeAgentCompare', () => {
   })
 
   it('separates routing wins from token-reduction proof for GoValidate-style token regressions', async () => {
-    const { projectDir, graphPath, outputDir } = makeFixtureProject({ spiMode: true })
+    const { projectDir, graphPath, outputDir } = makeFixtureProject()
     try {
       const result = await executeNativeAgentCompare(
         {
@@ -4833,7 +4878,7 @@ describe('executeNativeAgentCompare', () => {
     mkdirSync(join(projectDir, 'out'), { recursive: true })
     writeCanonicalGraphFixture(
       join(projectDir, 'out', 'graph.json'),
-      { nodes: [], edges: [], hyperedges: [] },
+      { nodes: [], edges: [] },
     )
     try {
       await executeNativeAgentCompare(

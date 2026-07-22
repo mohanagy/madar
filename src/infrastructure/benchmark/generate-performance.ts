@@ -4,23 +4,18 @@ import { extname, join, resolve } from 'node:path'
 import { generateGraph, type GenerateGraphOptions, type GenerateGraphResult } from '../generate.js'
 
 export type GeneratePerformanceVariantName =
-  | 'generate-legacy'
-  | 'generate-canonical'
+  | 'generate'
   | 'update-noop'
   | 'update-changed'
   | 'cluster-only'
 
 export interface GeneratePerformanceVariantSummary {
   mode: GenerateGraphResult['mode']
-  strategy: 'legacy' | 'canonical'
   wall_clock_ms: number
   total_files: number
   code_files: number
-  non_code_files: number
-  extractable_files: number
-  extracted_files: number
-  changed_files: number
-  deleted_files: number
+  indexed_files: number
+  unsupported_files: number
   node_count: number
   edge_count: number
   output_size_bytes: number
@@ -34,33 +29,26 @@ export interface RunGeneratePerformanceBenchmarkOptions {
 }
 
 export interface GeneratePerformanceBenchmarkSummary {
-  schema_version: 1
+  schema_version: 2
   fixture_path: string
   work_dir: string
   metrics_tracked: string[]
   variants: Record<GeneratePerformanceVariantName, GeneratePerformanceVariantSummary>
 }
 
-const CODE_MUTATION_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.rs', '.java'])
+const CODE_MUTATION_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx'])
 const CODE_MUTATION_MARKERS: Record<string, string> = {
   '.ts': 'export const __madarBenchmarkTouch = true',
   '.tsx': 'export const __madarBenchmarkTouch = true',
   '.js': 'export const __madarBenchmarkTouch = true',
   '.jsx': 'export const __madarBenchmarkTouch = true',
-  '.py': '# __madarBenchmarkTouch = True',
-  '.go': '// __madarBenchmarkTouch = true',
-  '.rs': '// __madarBenchmarkTouch = true',
-  '.java': '// __madarBenchmarkTouch = true',
 }
 const METRICS_TRACKED = [
   'wall_clock_ms',
   'total_files',
   'code_files',
-  'non_code_files',
-  'extractable_files',
-  'extracted_files',
-  'changed_files',
-  'deleted_files',
+  'indexed_files',
+  'unsupported_files',
   'node_count',
   'edge_count',
   'graph_size_bytes',
@@ -97,20 +85,15 @@ function prepareWorkspace(fixtureRoot: string, workDir: string, name: string): s
 function summarizeVariant(
   result: GenerateGraphResult,
   wallClockMs: number,
-  strategy: 'legacy' | 'canonical',
 ): GeneratePerformanceVariantSummary {
   const graphSizeBytes = existsSync(result.graphPath) ? statSync(result.graphPath).size : 0
   return {
     mode: result.mode,
-    strategy,
     wall_clock_ms: wallClockMs,
     total_files: result.totalFiles,
     code_files: result.codeFiles,
-    non_code_files: result.nonCodeFiles,
-    extractable_files: result.extractableFiles,
-    extracted_files: result.extractedFiles,
-    changed_files: result.changedFiles,
-    deleted_files: result.deletedFiles,
+    indexed_files: result.indexedFiles,
+    unsupported_files: result.indexing?.counts.unsupported ?? 0,
     node_count: result.nodeCount,
     edge_count: result.edgeCount,
     output_size_bytes: directorySize(result.outputDir),
@@ -124,12 +107,11 @@ function runVariant(
   workDir: string,
   name: GeneratePerformanceVariantName,
   options: GenerateGraphOptions,
-  strategy: 'legacy' | 'canonical',
 ): GeneratePerformanceVariantSummary {
   const workspace = prepareWorkspace(fixtureRoot, workDir, name)
   const startedAt = Date.now()
   const result = generateGraph(workspace, options)
-  const summary = summarizeVariant(result, Date.now() - startedAt, strategy)
+  const summary = summarizeVariant(result, Date.now() - startedAt)
   writeFileSync(join(workDir, `${name}.json`), `${JSON.stringify(summary, null, 2)}\n`, 'utf8')
   return summary
 }
@@ -171,11 +153,10 @@ function runPreparedVariant(
   workDir: string,
   name: GeneratePerformanceVariantName,
   options: GenerateGraphOptions,
-  strategy: 'legacy' | 'canonical',
 ): GeneratePerformanceVariantSummary {
   const startedAt = Date.now()
   const result = generateGraph(workspace, options)
-  const summary = summarizeVariant(result, Date.now() - startedAt, strategy)
+  const summary = summarizeVariant(result, Date.now() - startedAt)
   writeFileSync(join(workDir, `${name}.json`), `${JSON.stringify(summary, null, 2)}\n`, 'utf8')
   return summary
 }
@@ -187,36 +168,33 @@ export function runGeneratePerformanceBenchmark(options: RunGeneratePerformanceB
   mkdirSync(join(workDir, 'workspaces'), { recursive: true })
 
   const variants = {} as Record<GeneratePerformanceVariantName, GeneratePerformanceVariantSummary>
-  variants['generate-legacy'] = runVariant(fixtureRoot, workDir, 'generate-legacy', { extractionMode: 'legacy' }, 'legacy')
-  variants['generate-canonical'] = runVariant(fixtureRoot, workDir, 'generate-canonical', { extractionMode: 'auto' }, 'canonical')
+  variants.generate = runVariant(fixtureRoot, workDir, 'generate', {})
 
   const updateNoopWorkspace = prepareWorkspace(fixtureRoot, workDir, 'update-noop')
-  generateGraph(updateNoopWorkspace, { extractionMode: 'legacy' })
-  variants['update-noop'] = runPreparedVariant(updateNoopWorkspace, workDir, 'update-noop', { extractionMode: 'legacy', update: true }, 'legacy')
+  generateGraph(updateNoopWorkspace, {})
+  variants['update-noop'] = runPreparedVariant(updateNoopWorkspace, workDir, 'update-noop', { update: true })
 
   const updateChangedWorkspace = prepareWorkspace(fixtureRoot, workDir, 'update-changed')
-  generateGraph(updateChangedWorkspace, { extractionMode: 'legacy' })
+  generateGraph(updateChangedWorkspace, {})
   appendMutation(updateChangedWorkspace)
   variants['update-changed'] = runPreparedVariant(
     updateChangedWorkspace,
     workDir,
     'update-changed',
-    { extractionMode: 'legacy', update: true },
-    'legacy',
+    { update: true },
   )
 
   const clusterOnlyWorkspace = prepareWorkspace(fixtureRoot, workDir, 'cluster-only')
-  generateGraph(clusterOnlyWorkspace, { extractionMode: 'legacy' })
+  generateGraph(clusterOnlyWorkspace, {})
   variants['cluster-only'] = runPreparedVariant(
     clusterOnlyWorkspace,
     workDir,
     'cluster-only',
-    { extractionMode: 'legacy', clusterOnly: true },
-    'legacy',
+    { clusterOnly: true },
   )
 
   const summary: GeneratePerformanceBenchmarkSummary = {
-    schema_version: 1,
+    schema_version: 2,
     fixture_path: fixtureRoot,
     work_dir: workDir,
     metrics_tracked: [...METRICS_TRACKED],

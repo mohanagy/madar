@@ -24,17 +24,17 @@ review:
   amendment: Source lists remain complete and de-overlapped. Issue #588 amends four guaranteed extraction orphans from prior keep/rebuild ownership to the active delete contract because no surviving path uses them after legacy extraction is removed.
 
 current:
-  updated_at: 2026-07-21
+  updated_at: 2026-07-22
   completed_phase: canonical-typescript-index
   active_phase: legacy-extraction
   ready_phase: null
   base_commit: 9a762d0a4e10a0ae210ba3f53bb1d4468367e81e
   completed_phase_commit: 4dfd48194f2fab00b2cd2271a6f7917909dde9d4
-  production_typescript_files: 170
-  production_typescript_loc: 91539
-  production_loc_added: 0
-  production_loc_removed: 0
-  production_loc_net: 0
+  production_typescript_files: 139
+  production_typescript_loc: 69127
+  production_loc_added: 900
+  production_loc_removed: 23312
+  production_loc_net: -22412
 
 targets:
   production_typescript_files_max: 80

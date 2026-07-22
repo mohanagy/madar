@@ -1,1 +1,1 @@
-export { saveManifest, loadManifest, detectIncremental } from './detect.js'
+export { saveManifest, loadManifest } from './detect.js'

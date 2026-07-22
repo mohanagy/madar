@@ -4,12 +4,12 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 import { loadGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
+import { CANONICAL_INDEX_FORMAT_VERSION } from '../contracts/generation-policy.js'
 import type { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
-import { EXTRACTOR_CACHE_VERSION } from '../pipeline/extract.js'
 import { compareTimeTravelGraphs, type CompareTimeTravelGraphsOptions, type TimeTravelResult } from '../runtime/time-travel.js'
 import { validateGraphOutputPath } from '../shared/security.js'
 import { resolveMadarOutputDirectory, resolveMadarWorkspace } from '../shared/workspace.js'
-import { generateGraph, loadGraphExtractorVersion, type GenerateGraphOptions, type GenerateGraphResult } from './generate.js'
+import { generateGraph, type GenerateGraphOptions, type GenerateGraphResult } from './generate.js'
 
 type MaybePromise<T> = T | Promise<T>
 
@@ -17,7 +17,7 @@ const inflightSnapshotBuilds = new Map<string, Promise<TimeTravelSnapshot>>()
 
 interface SnapshotMetadata {
   commitSha: string
-  extractorVersion: number | null
+  indexFormatVersion: number | null
   schemaVersion: number | null
 }
 
@@ -44,7 +44,6 @@ export interface SnapshotDependencies {
   rootDir?: string
   git?: SnapshotGitDependencies
   generateGraph?: (rootPath: string, options: GenerateGraphOptions) => MaybePromise<GenerateGraphResult | Pick<GenerateGraphResult, 'graphPath' | 'reportPath'>>
-  loadGraphExtractorVersion?: (graphPath: string) => number | null
 }
 
 export interface CompareRefsInput extends Omit<CompareTimeTravelGraphsOptions, 'fromRef' | 'toRef'> {
@@ -139,7 +138,7 @@ function readSnapshotMetadata(rootDir: string, commitSha: string): SnapshotMetad
     const parsed = JSON.parse(readFileSync(snapshotMetadataPath(rootDir, commitSha), 'utf8')) as Partial<SnapshotMetadata>
     return {
       commitSha: typeof parsed.commitSha === 'string' ? parsed.commitSha : '',
-      extractorVersion: typeof parsed.extractorVersion === 'number' && Number.isFinite(parsed.extractorVersion) ? parsed.extractorVersion : null,
+      indexFormatVersion: typeof parsed.indexFormatVersion === 'number' && Number.isFinite(parsed.indexFormatVersion) ? parsed.indexFormatVersion : null,
       schemaVersion: typeof parsed.schemaVersion === 'number' && Number.isFinite(parsed.schemaVersion) ? parsed.schemaVersion : null,
     }
   } catch {
@@ -160,13 +159,13 @@ function canReuseSnapshot(rootDir: string, commitSha: string): boolean {
 
   return (
     metadata.commitSha === commitSha
-    && metadata.extractorVersion === EXTRACTOR_CACHE_VERSION
+    && metadata.indexFormatVersion === CANONICAL_INDEX_FORMAT_VERSION
     && metadata.schemaVersion !== null
     && metadata.schemaVersion === graphSchemaVersion
   )
 }
 
-function persistSnapshot(rootDir: string, ref: string, commitSha: string, generated: Pick<GenerateGraphResult, 'graphPath' | 'reportPath'>, extractorVersion: number | null): TimeTravelSnapshot {
+function persistSnapshot(rootDir: string, ref: string, commitSha: string, generated: Pick<GenerateGraphResult, 'graphPath' | 'reportPath'>): TimeTravelSnapshot {
   const destinationDir = snapshotDir(rootDir, commitSha)
   const tempDir = snapshotTempDir(rootDir, commitSha)
   mkdirSync(tempDir, { recursive: true })
@@ -188,7 +187,7 @@ function persistSnapshot(rootDir: string, ref: string, commitSha: string, genera
 
     writeFileSync(tempMetadataPath, JSON.stringify({
       commitSha,
-      extractorVersion,
+      indexFormatVersion: CANONICAL_INDEX_FORMAT_VERSION,
       schemaVersion: readGraphSchemaVersion(tempGraphPath),
     }))
 
@@ -287,7 +286,6 @@ function resolvedSnapshotDependencies(dependencies: SnapshotDependencies): Requi
       ...(dependencies.git ?? {}),
     },
     generateGraph: dependencies.generateGraph ?? generateGraph,
-    loadGraphExtractorVersion: dependencies.loadGraphExtractorVersion ?? loadGraphExtractorVersion,
   }
 }
 
@@ -329,9 +327,8 @@ export async function loadOrBuildSnapshot(input: SnapshotRequest, dependencies: 
       const transientWorkspace = resolveMadarWorkspace(materializedWorktree)
       transientArtifactRoot = transientWorkspace.isLinkedWorktree ? transientWorkspace.artifactRoot : null
 
-      const generated = await deps.generateGraph(materializedWorktree, { extractionMode: 'auto' })
-      const extractorVersion = deps.loadGraphExtractorVersion(generated.graphPath)
-      return persistSnapshot(deps.rootDir, input.ref, commitSha, generated, extractorVersion)
+      const generated = await deps.generateGraph(materializedWorktree, {})
+      return persistSnapshot(deps.rootDir, input.ref, commitSha, generated)
     } catch (error) {
       buildError = error
       throw error

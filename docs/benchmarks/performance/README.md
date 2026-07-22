@@ -6,22 +6,21 @@ This benchmark is a **measurement harness**, not a performance gate. Its job is 
 
 ## What the benchmark covers
 
-The synthetic harness runs five variants on isolated fixture copies:
+The synthetic harness runs four variants on isolated fixture copies:
 
-1. `generate-legacy` — explicit `generate --legacy`
-2. `generate-canonical` — default generation through the canonical TypeScript/JavaScript index
-3. `update-noop` — `generate --update` with no source changes
-4. `update-changed` — `generate --update` after mutating one code file
-5. `cluster-only` — `generate --cluster-only` after a baseline graph already exists
+1. `generate` — generation through the canonical TypeScript/JavaScript index
+2. `update-noop` — a full canonical `generate --update` with no source changes
+3. `update-changed` — a full canonical `generate --update` after mutating one code file
+4. `cluster-only` — `generate --cluster-only` after a baseline graph already exists
+
+`--update` is intentionally measured as a full rebuild in this phase. The benchmark does not claim per-file incremental extraction or cache-hit behavior.
 
 ## Metrics tracked
 
 Every variant records the same structured fields in `<variant>.json` and `summary.json`:
 
 - wall-clock time (`wall_clock_ms`)
-- file counts (`total_files`, `code_files`, `non_code_files`)
-- extraction counts (`extractable_files`, `extracted_files`)
-- incremental counts (`changed_files`, `deleted_files`)
+- supported and unsupported indexing counts from the canonical completeness receipt
 - graph size (`node_count`, `edge_count`, `graph_size_bytes`)
 - output size (`output_size_bytes`)
 
@@ -58,14 +57,14 @@ node docs/benchmarks/performance/run.mjs
 Use the synthetic fixture in CI, and use the local-repo run when you want realistic wall-clock measurements for:
 
 - initial `generate`
-- incremental `update` after a narrow change
+- full canonical `update` after a narrow change
 - `cluster-only` refresh cost
 - canonical full-build cost
 
 ## Interpreting results
 
-- `extractable_files` is the total corpus eligible for extraction in that workspace state.
-- `extracted_files` is the number of files indexed or extracted for that run. It should drop to `0` for update no-op and cluster-only refreshes.
+- Supported counts cover `.ts`, `.tsx`, `.js`, and `.jsx`. Recognized files outside that scope remain unsupported and contribute no graph facts.
+- `update-noop` still rebuilds the canonical graph. Only `cluster-only` skips source indexing.
 - Compare `graph_size_bytes` and `output_size_bytes` together: the graph file can stay flat while the total output directory still grows.
 
 ## Non-goals

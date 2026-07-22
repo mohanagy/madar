@@ -1,6 +1,6 @@
 // v0.19 — Hono / Fastify / tRPC / Prisma framework boost in retrieve().
 // Mirrors the existing express/redux/nest/next boost tests but for the
-// substrates added in v0.17 (#83). This is the slice that makes --spi
+// substrates added in v0.17 (#83). This is the slice that makes canonical indexing
 // actually move tokens: questions about the new frameworks now route
 // matches via framework_role-based boosting instead of label-matching alone.
 
@@ -42,7 +42,7 @@ describe('Framework-aware retrieval boost for v0.17 substrates (#83 → v0.19)',
       'app.get("/users", listUsers)',
     ].join('\n') + '\n')
 
-    const result = generateGraph(sandbox, { useSpi: true })
+    const result = generateGraph(sandbox)
     const graph = loadGraph(result.graphPath)
     // Include a label overlap ("listUsers") so the retrieval candidate
     // set finds the node; the boost then promotes it ABOVE plain
@@ -65,7 +65,7 @@ describe('Framework-aware retrieval boost for v0.17 substrates (#83 → v0.19)',
       'app.register(authPlugin, { prefix: "/api" })',
     ].join('\n') + '\n')
 
-    const result = generateGraph(sandbox, { useSpi: true })
+    const result = generateGraph(sandbox)
     const graph = loadGraph(result.graphPath)
     const retrieved = retrieveContext(graph, {
       question: 'What Fastify plugins are registered?',
@@ -86,7 +86,7 @@ describe('Framework-aware retrieval boost for v0.17 substrates (#83 → v0.19)',
       '})',
     ].join('\n') + '\n')
 
-    const result = generateGraph(sandbox, { useSpi: true })
+    const result = generateGraph(sandbox)
     const graph = loadGraph(result.graphPath)
     const retrieved = retrieveContext(graph, {
       question: 'Which tRPC mutations update users?',
@@ -113,7 +113,7 @@ describe('Framework-aware retrieval boost for v0.17 substrates (#83 → v0.19)',
       '})',
     ].join('\n') + '\n')
 
-    const result = generateGraph(sandbox, { useSpi: true })
+    const result = generateGraph(sandbox)
     const graph = loadGraph(result.graphPath)
     const retrieved = retrieveContext(graph, {
       question: 'How does the API mutation flow through workspace services to persistence?',
@@ -136,7 +136,7 @@ describe('Framework-aware retrieval boost for v0.17 substrates (#83 → v0.19)',
       '}',
     ].join('\n') + '\n')
 
-    const result = generateGraph(sandbox, { useSpi: true })
+    const result = generateGraph(sandbox)
     const graph = loadGraph(result.graphPath)
     const retrieved = retrieveContext(graph, {
       question: 'How does the API mutation flow through workspace services to persistence?',
@@ -154,7 +154,7 @@ describe('Framework-aware retrieval boost for v0.17 substrates (#83 → v0.19)',
       'export const prisma = new PrismaClient()',
     ].join('\n') + '\n')
 
-    const result = generateGraph(sandbox, { useSpi: true })
+    const result = generateGraph(sandbox)
     const graph = loadGraph(result.graphPath)
     const retrieved = retrieveContext(graph, {
       question: 'Where is the Prisma database client used?',
@@ -177,7 +177,7 @@ describe('Framework-aware retrieval boost for v0.17 substrates (#83 → v0.19)',
       '}',
     ].join('\n') + '\n')
 
-    const result = generateGraph(sandbox, { useSpi: true })
+    const result = generateGraph(sandbox)
     const graph = loadGraph(result.graphPath)
     const retrieved = retrieveContext(graph, {
       question: 'Which Prisma operation creates and writes the report to the database?',
@@ -204,7 +204,7 @@ describe('Framework-aware retrieval boost for v0.17 substrates (#83 → v0.19)',
       'app.get("/users", listUsers)',
     ].join('\n') + '\n')
 
-    const result = generateGraph(sandbox, { useSpi: true })
+    const result = generateGraph(sandbox)
     const graph = loadGraph(result.graphPath)
     const retrieved = retrieveContext(graph, {
       question: 'how do i convert a string to a number',  // unrelated

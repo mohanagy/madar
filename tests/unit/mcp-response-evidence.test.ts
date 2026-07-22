@@ -160,14 +160,14 @@ describe('mcp-response-evidence', () => {
           kind: 'file',
           status: 'indexed',
           reason: 'indexed',
-          capability: 'builtin:extract:typescript',
+          capability: 'builtin:index:typescript',
         },
         {
           path: 'src/auth/token-loader.ts',
           kind: 'file',
           status: 'failed',
-          reason: 'extractor_error',
-          capability: 'builtin:extract:typescript',
+          reason: 'canonical_file_missing',
+          capability: 'builtin:index:typescript',
           diagnostics: [{ code: 'parser_failed', level: 'error', message: 'private parser detail' }],
         },
         {
@@ -216,8 +216,8 @@ describe('mcp-response-evidence', () => {
       state: 'partial',
       total_uncertain: 2,
       relevant_uncertain: 1,
-      reasons: { extractor_error: 1, unsupported_file_type: 1 },
-      relevant_reasons: { extractor_error: 1 },
+      reasons: { canonical_file_missing: 1, unsupported_file_type: 1 },
+      relevant_reasons: { canonical_file_missing: 1 },
     })
     expect(JSON.stringify(relevant)).not.toContain('token-loader.ts')
     expect(JSON.stringify(relevant)).not.toContain('private parser detail')

@@ -3,15 +3,18 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { writeGraphArtifact } from '../../src/adapters/filesystem/graph-artifact.js'
-import { deserializeGraphArtifact } from '../../src/domain/graph/artifact.js'
+import { deserializeGraphArtifact, GRAPH_ARTIFACT_VERSION } from '../../src/domain/graph/artifact.js'
 import { godNodes, suggestQuestions, surprisingConnections } from '../../src/pipeline/analyze.js'
-import { buildGraphFromExtraction } from '../../src/application/build-graph.js'
 import { cluster, scoreAll } from '../../src/pipeline/cluster.js'
 import { detect } from '../../src/pipeline/detect.js'
-import { extract } from '../../src/pipeline/extract.js'
 import { generate } from '../../src/pipeline/report.js'
+import {
+  CANONICAL_INDEX_FIXTURE_ROOT,
+  canonicalFixtureSourceFiles,
+} from '../helpers/canonical-index-gold.js'
+import { buildCanonicalTestGraph } from '../helpers/knowledge-graph.js'
 
-const FIXTURES_DIR = join(process.cwd(), 'tests', 'fixtures')
+const FIXTURES_DIR = CANONICAL_INDEX_FIXTURE_ROOT
 
 function escapeMarkdownInline(value: string): string {
   return value.replace(/\r?\n+/g, ' ').replace(/([\\`*_[\]()!])/g, '\\$1')
@@ -30,12 +33,9 @@ function runPipeline(tempDir: string) {
   const detection = detect(FIXTURES_DIR)
   expect(detection.total_files).toBeGreaterThan(0)
   expect(detection.files.code.length).toBeGreaterThan(0)
+  expect(detection.files.code).toEqual(canonicalFixtureSourceFiles())
 
-  const extraction = extract([...detection.files.code, ...detection.files.document, ...detection.files.paper, ...detection.files.image])
-  expect(extraction.nodes.length).toBeGreaterThan(0)
-  expect(extraction.edges.length).toBeGreaterThan(0)
-
-  const graph = buildGraphFromExtraction(extraction, { rootPath: FIXTURES_DIR })
+  const graph = buildCanonicalTestGraph({ root: FIXTURES_DIR, files: detection.files.code })
   expect(graph.numberOfNodes()).toBeGreaterThan(0)
   expect(graph.numberOfEdges()).toBeGreaterThan(0)
 
@@ -65,7 +65,7 @@ function runPipeline(tempDir: string) {
     surprises,
     [],
     detection as unknown as Record<string, unknown>,
-    { input: extraction.input_tokens, output: extraction.output_tokens },
+    { input: 0, output: 0 },
     FIXTURES_DIR,
     questions,
   )
@@ -76,7 +76,7 @@ function runPipeline(tempDir: string) {
   const jsonPath = join(tempDir, 'graph.json')
   writeGraphArtifact(graph, jsonPath)
   const jsonData = JSON.parse(readFileSync(jsonPath, 'utf8'))
-  expect(jsonData).toMatchObject({ schema: 'madar.graph', version: 1, directed: true })
+  expect(jsonData).toMatchObject({ schema: 'madar.graph', version: GRAPH_ARTIFACT_VERSION, directed: true })
   expect(jsonData).toHaveProperty('nodes')
   expect(jsonData).toHaveProperty('edges')
   for (const node of jsonData.nodes as Array<Record<string, unknown>>) {
@@ -95,7 +95,6 @@ function runPipeline(tempDir: string) {
 
   return {
     detection,
-    extraction,
     graph,
     communities,
     cohesion,
@@ -107,9 +106,8 @@ function runPipeline(tempDir: string) {
 }
 
 describe('pipeline', () => {
-  // The full CI matrix runs this CPU-heavy reference corpus beside other
-  // extraction suites. It can exceed the normal 30s deadline under parallel
-  // load without indicating a correctness regression.
+  // The full CI matrix runs this compiler-backed reference corpus beside
+  // other canonical index suites.
   const referenceFixturesTimeoutMs = 180_000
   let referenceResult: ReturnType<typeof runPipeline>
 
@@ -133,16 +131,15 @@ describe('pipeline', () => {
     expect(referenceResult.report).toContain(`\`${escapeMarkdownInline(referenceResult.gods[0]?.label ?? '')}\``)
   })
 
-  it('detects both code and docs in the fixture corpus', () => {
+  it('passes only supported TypeScript and JavaScript files into the index', () => {
     expect(referenceResult.detection.files.code.length).toBeGreaterThan(0)
-    expect(referenceResult.detection.files.document.length).toBeGreaterThan(0)
-    expect(referenceResult.extraction.nodes.some((node) => node.file_type === 'document')).toBe(true)
+    expect(Object.keys(referenceResult.detection.files)).toEqual(['code'])
   })
 
-  it('keeps extraction confidence labels within the expected set', () => {
+  it('keeps canonical edge confidence labels within the expected set', () => {
     const valid = new Set(['EXTRACTED', 'INFERRED', 'AMBIGUOUS'])
-    for (const edge of referenceResult.extraction.edges) {
-      expect(valid.has(edge.confidence)).toBe(true)
+    for (const [, , attributes] of referenceResult.graph.edgeEntries()) {
+      expect(valid.has(String(attributes.confidence))).toBe(true)
     }
   })
 

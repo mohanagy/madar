@@ -10,8 +10,7 @@ import type { ContextSessionDiagnostics, ContextSessionState } from '../contract
 import { buildContextPrompt, type ContextPromptStableSection } from './context-prompt.js'
 import { buildAnswerReadyPackSchema, buildExplainPackPayloadCore } from './context-pack-command.js'
 import { CLAUDE_PROMPT_HOOK_SCRIPT_RELATIVE_PATH, isMadarProjectHook } from './install.js'
-import { CODE_EXTENSIONS, DOC_EXTENSIONS, MANIFEST_METADATA_KEY, OFFICE_EXTENSIONS, PAPER_EXTENSIONS } from '../pipeline/detect.js'
-import { extractCompareBaselineNonCodeText } from '../pipeline/extract/non-code.js'
+import { CODE_EXTENSIONS, MANIFEST_METADATA_KEY } from '../pipeline/detect.js'
 import { loadBenchmarkQuestions } from './benchmark/questions.js'
 import {
   benchmarkIsolationEnabled,
@@ -28,7 +27,6 @@ import { compactRetrieveResult, retrieveContext, tokenizeLabel, type CompactRetr
 import { buildRoutingDebug } from '../runtime/routing-debug.js'
 import { QUERY_TOKEN_ESTIMATOR, estimateQueryTokens } from '../runtime/serve.js'
 import { resolveToolProfileFromEnv, type McpToolProfile } from '../runtime/stdio/definitions.js'
-import { sidecarAwareFileFingerprint } from '../shared/binary-ingest-sidecar.js'
 import { sanitizeShareSafeText, toShareSafeArtifactPath, type ShareSafePathRoots } from '../shared/share-safe-artifacts.js'
 import { readGraphSourceRoot } from '../shared/graph-source-root.js'
 import { resolveShellCommand, shellEscape } from '../shared/shell.js'
@@ -2182,13 +2180,7 @@ function isPathWithinRoot(targetPath: string, rootPath: string): boolean {
 }
 
 function isReadableCorpusPath(filePath: string): boolean {
-  const extension = extname(filePath).toLowerCase()
-  return (
-    CODE_EXTENSIONS.has(extension) ||
-    DOC_EXTENSIONS.has(extension) ||
-    PAPER_EXTENSIONS.has(extension) ||
-    OFFICE_EXTENSIONS.has(extension)
-  )
+  return CODE_EXTENSIONS.has(extname(filePath).toLowerCase())
 }
 
 function collectGraphBackedCorpusFiles(graph: KnowledgeGraph, projectRoot: string): string[] {
@@ -2407,13 +2399,6 @@ function suggestBenchmarkGraphScope(graphPath: string, sourceFiles: readonly str
   return normalizedGraphPath.endsWith(`/${suggested}`) ? null : suggested
 }
 
-function graphPathHasSpiMode(graphPath: string): boolean {
-  if (!existsSync(graphPath)) {
-    return false
-  }
-  return loadGraphArtifact(graphPath).graph.spi_mode === true
-}
-
 function benchmarkReadinessSeverity(current: BenchmarkReadinessStatus, next: BenchmarkReadinessStatus): BenchmarkReadinessStatus {
   const rank: Record<BenchmarkReadinessStatus, number> = {
     ready: 0,
@@ -2460,15 +2445,6 @@ export function assessBenchmarkReadinessFromRetrieveResult(input: {
   } else if (confidence === 'medium') {
     status = benchmarkReadinessSeverity(status, 'degraded')
     reasons.push('runtime slice confidence is medium')
-  }
-
-  if (!graphPathHasSpiMode(graphPath)) {
-    status = benchmarkReadinessSeverity(status, suggestedGraphScope ? 'not_ready' : 'degraded')
-    reasons.push(
-      suggestedGraphScope
-        ? `no SPI evidence found in the current pack; retry with ${suggestedGraphScope} or another SPI-scoped graph`
-        : 'no SPI evidence found in the current pack',
-    )
   }
 
   if (suggestedGraphScope) {
@@ -2647,7 +2623,7 @@ function addBaselineCorpusFile(
 
   if (expectedFingerprint !== undefined) {
     const modifiedAt = statSync(candidatePath).mtimeMs
-    if (sidecarAwareFileFingerprint(candidatePath, modifiedAt) !== expectedFingerprint) {
+    if (Math.round(modifiedAt) !== expectedFingerprint) {
       throw new Error(`Compare baseline graph-backed file is out of sync with the saved graph snapshot: ${candidatePath}`)
     }
   }
@@ -2666,17 +2642,10 @@ function addBaselineCorpusFile(
 }
 
 function readBaselineCorpusFile(filePath: string): string | null {
-  const extension = extname(filePath).toLowerCase()
-
-  if (CODE_EXTENSIONS.has(extension) || DOC_EXTENSIONS.has(extension)) {
-    if (statSync(filePath).size > MAX_TEXT_BYTES) {
-      return null
-    }
-    return readFileSync(filePath, 'utf8').trimEnd()
+  if (!CODE_EXTENSIONS.has(extname(filePath).toLowerCase()) || statSync(filePath).size > MAX_TEXT_BYTES) {
+    return null
   }
-
-  const nonCodeText = extractCompareBaselineNonCodeText(filePath)
-  return nonCodeText
+  return readFileSync(filePath, 'utf8').trimEnd()
 }
 
 function deriveBaselineCorpusText(graphPath: string, graph: KnowledgeGraph): string {
@@ -3823,7 +3792,7 @@ function snapshotWorkspaceFiles(rootPath: string): Map<string, number> {
       continue
     }
     const relativePath = relative(rootPath, currentPath).replaceAll(sep, '/')
-    snapshot.set(relativePath, sidecarAwareFileFingerprint(currentPath, stats.mtimeMs))
+    snapshot.set(relativePath, Math.round(stats.mtimeMs))
   }
   return snapshot
 }
@@ -5398,7 +5367,6 @@ export async function executeNativeAgentCompare(
 
     const baselinePromptFile = join(questionDir, 'baseline-prompt.txt')
     const madarPromptFile = join(questionDir, 'madar-prompt.txt')
-    const legacyPromptFile = join(questionDir, 'native_agent-prompt.txt')
     const baselinePrompt = buildNativeAgentBaselinePrompt(question, { task })
     const runtimeFlowGuidance = benchmarkReadiness
       ? runtimeFlowPromptOptions(retrieval, benchmarkReadiness)
@@ -5411,7 +5379,6 @@ export async function executeNativeAgentCompare(
     })
     writeFileSync(baselinePromptFile, baselinePrompt, 'utf8')
     writeFileSync(madarPromptFile, madarPrompt, 'utf8')
-    writeFileSync(legacyPromptFile, baselinePrompt, 'utf8')
     const baselineAnswerPath = answerFilePath(questionDir, 'baseline')
     const madarAnswerPath = answerFilePath(questionDir, 'madar')
     const reportPath = join(questionDir, 'report.json')

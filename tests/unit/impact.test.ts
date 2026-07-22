@@ -1,9 +1,41 @@
-import { join } from 'node:path'
-
 import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
-import { buildGraph } from '../../src/application/build-graph.js'
-import { extractJs } from '../../src/pipeline/extract.js'
 import { analyzeImpact, callChains, compactImpactResult } from '../../src/runtime/impact.js'
+import { createTestGraph } from '../helpers/knowledge-graph.js'
+
+interface ImpactFixtureNode {
+  id: string
+  label: string
+  source_file: string
+  node_kind: string
+  framework?: string
+  framework_role?: string
+}
+
+interface ImpactFixtureEdge {
+  source: string
+  target: string
+  relation: string
+}
+
+function createImpactFixtureGraph(
+  nodes: readonly ImpactFixtureNode[],
+  edges: readonly ImpactFixtureEdge[],
+): KnowledgeGraph {
+  return createTestGraph({
+    nodes: nodes.map((node) => [node.id, {
+      label: node.label,
+      source_file: node.source_file,
+      node_kind: node.node_kind,
+      file_type: 'code',
+      ...(node.framework ? { framework: node.framework } : {}),
+      ...(node.framework_role ? { framework_role: node.framework_role } : {}),
+    }] as const),
+    edges: edges.map((edge) => [edge.source, edge.target, {
+      relation: edge.relation,
+      confidence: 'EXTRACTED',
+    }] as const),
+  })
+}
 
 function buildTestGraph(): KnowledgeGraph {
   const graph = new KnowledgeGraph()
@@ -219,35 +251,82 @@ describe('impact', () => {
     })
 
     it('shows mounted child routes as direct dependents of inherited mount middleware', () => {
-      const fixturesDir = join(process.cwd(), 'tests', 'fixtures')
-      const graph = buildGraph([
-        extractJs(join(fixturesDir, 'express-mounted-router-parent.ts')),
-        extractJs(join(fixturesDir, 'express-mounted-router-child.ts')),
-      ], { rootPath: process.cwd() })
+      const graph = createImpactFixtureGraph(
+        [
+          {
+            id: 'require_auth',
+            label: 'requireAuth',
+            source_file: 'middleware/auth.ts',
+            node_kind: 'function',
+            framework: 'express',
+            framework_role: 'express_middleware',
+          },
+          {
+            id: 'mount_api',
+            label: 'USE /api',
+            source_file: 'routes/api.ts',
+            node_kind: 'route',
+            framework: 'express',
+            framework_role: 'express_route',
+          },
+          {
+            id: 'route_user',
+            label: 'GET /api/users/:id',
+            source_file: 'routes/users.ts',
+            node_kind: 'route',
+            framework: 'express',
+            framework_role: 'express_route',
+          },
+        ],
+        [
+          { source: 'mount_api', target: 'require_auth', relation: 'depends_on' },
+          { source: 'route_user', target: 'require_auth', relation: 'depends_on' },
+        ],
+      )
 
       const result = analyzeImpact(graph, {}, { label: 'requireAuth' })
 
       expect(result.direct_dependents).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({
-            label: 'USE /api',
-            relation: 'depends_on',
-          }),
-          expect.objectContaining({
-            label: 'GET /api/users/:id',
-            relation: 'depends_on',
-          }),
+          expect.objectContaining({ label: 'USE /api', relation: 'depends_on' }),
+          expect.objectContaining({ label: 'GET /api/users/:id', relation: 'depends_on' }),
         ]),
       )
     })
 
     it('shows recursively mounted child routes as direct dependents of inherited mount middleware', () => {
-      const fixturesDir = join(process.cwd(), 'tests', 'fixtures')
-      const graph = buildGraph([
-        extractJs(join(fixturesDir, 'express-nested-router-parent.ts')),
-        extractJs(join(fixturesDir, 'express-nested-router-child.ts')),
-        extractJs(join(fixturesDir, 'express-nested-router-grandchild.ts')),
-      ], { rootPath: process.cwd() })
+      const graph = createImpactFixtureGraph(
+        [
+          {
+            id: 'require_auth',
+            label: 'requireAuth',
+            source_file: 'middleware/auth.ts',
+            node_kind: 'function',
+            framework: 'express',
+            framework_role: 'express_middleware',
+          },
+          {
+            id: 'audit_trail',
+            label: 'auditTrail',
+            source_file: 'middleware/audit.ts',
+            node_kind: 'function',
+            framework: 'express',
+            framework_role: 'express_middleware',
+          },
+          {
+            id: 'route_user',
+            label: 'GET /api/v1/users/:id',
+            source_file: 'routes/users.ts',
+            node_kind: 'route',
+            framework: 'express',
+            framework_role: 'express_route',
+          },
+        ],
+        [
+          { source: 'route_user', target: 'require_auth', relation: 'depends_on' },
+          { source: 'route_user', target: 'audit_trail', relation: 'depends_on' },
+        ],
+      )
 
       const authImpact = analyzeImpact(graph, {}, { label: 'requireAuth' })
       const auditImpact = analyzeImpact(graph, {}, { label: 'auditTrail' })
@@ -269,8 +348,56 @@ describe('impact', () => {
     })
 
     it('shows patch and all express routes as direct dependents of middleware and handlers', () => {
-      const fixturesDir = join(process.cwd(), 'tests', 'fixtures')
-      const graph = buildGraph([extractJs(join(fixturesDir, 'express-patch-all.ts'))], { rootPath: process.cwd() })
+      const graph = createImpactFixtureGraph(
+        [
+          {
+            id: 'require_auth',
+            label: 'requireAuth',
+            source_file: 'middleware/auth.ts',
+            node_kind: 'function',
+            framework: 'express',
+            framework_role: 'express_middleware',
+          },
+          {
+            id: 'patch_user',
+            label: 'patchUser',
+            source_file: 'controllers/users.ts',
+            node_kind: 'function',
+            framework: 'express',
+            framework_role: 'express_handler',
+          },
+          {
+            id: 'handle_audit',
+            label: 'handleAudit',
+            source_file: 'controllers/audit.ts',
+            node_kind: 'function',
+            framework: 'express',
+            framework_role: 'express_handler',
+          },
+          {
+            id: 'patch_route',
+            label: 'PATCH /users/:id/profile',
+            source_file: 'routes/users.ts',
+            node_kind: 'route',
+            framework: 'express',
+            framework_role: 'express_route',
+          },
+          {
+            id: 'all_route',
+            label: 'ALL /users/:id/audit',
+            source_file: 'routes/users.ts',
+            node_kind: 'route',
+            framework: 'express',
+            framework_role: 'express_route',
+          },
+        ],
+        [
+          { source: 'patch_route', target: 'require_auth', relation: 'depends_on' },
+          { source: 'all_route', target: 'require_auth', relation: 'depends_on' },
+          { source: 'patch_route', target: 'patch_user', relation: 'depends_on' },
+          { source: 'all_route', target: 'handle_audit', relation: 'depends_on' },
+        ],
+      )
 
       const middlewareImpact = analyzeImpact(graph, {}, { label: 'requireAuth' })
       const patchHandlerImpact = analyzeImpact(graph, {}, { label: 'patchUser' })
@@ -291,59 +418,109 @@ describe('impact', () => {
     })
 
     it('shows imported middleware routes as direct dependents across files', () => {
-      const fixturesDir = join(process.cwd(), 'tests', 'fixtures')
-      const graph = buildGraph(
+      const graph = createImpactFixtureGraph(
         [
-          extractJs(join(fixturesDir, 'express-imported-middleware.ts')),
-          extractJs(join(fixturesDir, 'express-imported-middleware-parent.ts')),
+          {
+            id: 'require_auth',
+            label: 'requireAuth',
+            source_file: 'middleware/auth.ts',
+            node_kind: 'function',
+            framework: 'express',
+            framework_role: 'express_middleware',
+          },
+          {
+            id: 'mount_api',
+            label: 'USE /api',
+            source_file: 'routes/api.ts',
+            node_kind: 'route',
+            framework: 'express',
+            framework_role: 'express_route',
+          },
         ],
-          { rootPath: process.cwd() },
+        [{ source: 'mount_api', target: 'require_auth', relation: 'depends_on' }],
       )
 
       const result = analyzeImpact(graph, {}, { label: 'requireAuth' })
 
       expect(result.direct_dependents).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({
-            label: 'USE /api',
-            relation: 'depends_on',
-          }),
+          expect.objectContaining({ label: 'USE /api', relation: 'depends_on' }),
         ]),
       )
     })
 
     it('shows mounted child routes as direct dependents of cross-file handlers', () => {
-      const fixturesDir = join(process.cwd(), 'tests', 'fixtures')
-      const graph = buildGraph(
+      const graph = createImpactFixtureGraph(
         [
-          extractJs(join(fixturesDir, 'express-mounted-router-parent.ts')),
-          extractJs(join(fixturesDir, 'express-mounted-router-child.ts')),
+          {
+            id: 'show_user',
+            label: 'showUser',
+            source_file: 'controllers/users.ts',
+            node_kind: 'function',
+            framework: 'express',
+            framework_role: 'express_handler',
+          },
+          {
+            id: 'route_user',
+            label: 'GET /api/users/:id',
+            source_file: 'routes/users.ts',
+            node_kind: 'route',
+            framework: 'express',
+            framework_role: 'express_route',
+          },
         ],
-          { rootPath: process.cwd() },
+        [{ source: 'route_user', target: 'show_user', relation: 'depends_on' }],
       )
 
       const result = analyzeImpact(graph, {}, { label: 'showUser' })
 
       expect(result.direct_dependents).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({
-            label: 'GET /api/users/:id',
-            relation: 'depends_on',
-          }),
+          expect.objectContaining({ label: 'GET /api/users/:id', relation: 'depends_on' }),
         ]),
       )
     })
 
     it('shows imported-owner express routes as direct dependents of cross-file handlers', () => {
-      const fixturesDir = join(process.cwd(), 'tests', 'fixtures')
-      const graph = buildGraph(
+      const graph = createImpactFixtureGraph(
         [
-          extractJs(join(fixturesDir, 'express-imported-owner-router-child.ts')),
-          extractJs(join(fixturesDir, 'express-imported-owner-router-parent.ts')),
-          extractJs(join(fixturesDir, 'express-imported-owner-app-child.ts')),
-          extractJs(join(fixturesDir, 'express-imported-owner-app-parent.ts')),
+          {
+            id: 'show_user',
+            label: 'showUser',
+            source_file: 'controllers/users.ts',
+            node_kind: 'function',
+            framework: 'express',
+            framework_role: 'express_handler',
+          },
+          {
+            id: 'create_user',
+            label: 'createUser',
+            source_file: 'controllers/users.ts',
+            node_kind: 'function',
+            framework: 'express',
+            framework_role: 'express_handler',
+          },
+          {
+            id: 'get_user_route',
+            label: 'GET /users/:id',
+            source_file: 'routes/users.ts',
+            node_kind: 'route',
+            framework: 'express',
+            framework_role: 'express_route',
+          },
+          {
+            id: 'post_user_route',
+            label: 'POST /users',
+            source_file: 'routes/users.ts',
+            node_kind: 'route',
+            framework: 'express',
+            framework_role: 'express_route',
+          },
         ],
-          { rootPath: process.cwd() },
+        [
+          { source: 'get_user_route', target: 'show_user', relation: 'depends_on' },
+          { source: 'post_user_route', target: 'create_user', relation: 'depends_on' },
+        ],
       )
 
       const routerResult = analyzeImpact(graph, {}, { label: 'showUser' })
@@ -358,15 +535,48 @@ describe('impact', () => {
     })
 
     it('shows module-object mounted child routes as direct dependents of inherited mount middleware', () => {
-      const fixturesDir = join(process.cwd(), 'tests', 'fixtures')
-      const namespaceGraph = buildGraph([
-        extractJs(join(fixturesDir, 'express-namespace-module-parent.ts')),
-        extractJs(join(fixturesDir, 'express-namespace-module-child.ts')),
-      ], { rootPath: process.cwd() })
-      const commonjsGraph = buildGraph([
-        extractJs(join(fixturesDir, 'express-commonjs-module-parent.ts')),
-        extractJs(join(fixturesDir, 'express-commonjs-module-child.ts')),
-      ], { rootPath: process.cwd() })
+      const namespaceGraph = createImpactFixtureGraph(
+        [
+          {
+            id: 'require_auth',
+            label: 'requireAuth',
+            source_file: 'namespace/middleware/auth.ts',
+            node_kind: 'function',
+            framework: 'express',
+            framework_role: 'express_middleware',
+          },
+          {
+            id: 'route_user',
+            label: 'GET /api/users/:id',
+            source_file: 'namespace/routes/users.ts',
+            node_kind: 'route',
+            framework: 'express',
+            framework_role: 'express_route',
+          },
+        ],
+        [{ source: 'route_user', target: 'require_auth', relation: 'depends_on' }],
+      )
+      const commonjsGraph = createImpactFixtureGraph(
+        [
+          {
+            id: 'require_auth',
+            label: 'requireAuth',
+            source_file: 'commonjs/middleware/auth.js',
+            node_kind: 'function',
+            framework: 'express',
+            framework_role: 'express_middleware',
+          },
+          {
+            id: 'route_user',
+            label: 'GET /api/users/:id',
+            source_file: 'commonjs/routes/users.js',
+            node_kind: 'route',
+            framework: 'express',
+            framework_role: 'express_route',
+          },
+        ],
+        [{ source: 'route_user', target: 'require_auth', relation: 'depends_on' }],
+      )
 
       const namespaceResult = analyzeImpact(namespaceGraph, {}, { label: 'requireAuth' })
       const commonjsResult = analyzeImpact(commonjsGraph, {}, { label: 'requireAuth' })
@@ -462,7 +672,6 @@ describe('impact', () => {
         ]),
       )
     })
-
     it('prefers higher-level route summaries for service blast radius within a community', () => {
       const graph = new KnowledgeGraph()
 
@@ -687,12 +896,56 @@ describe('impact', () => {
     })
 
     it('shows nest controllers, modules, and routes as dependents of injected services', () => {
-      const fixturesDir = join(process.cwd(), 'tests', 'fixtures')
-      const graph = buildGraph([
-        extractJs(join(fixturesDir, 'nest-auth.module.ts')),
-        extractJs(join(fixturesDir, 'nest-auth.controller.ts')),
-        extractJs(join(fixturesDir, 'nest-auth.service.ts')),
-      ], { rootPath: process.cwd() })
+      const graph = createImpactFixtureGraph(
+        [
+          {
+            id: 'auth_service',
+            label: 'AuthService',
+            source_file: 'auth/auth.service.ts',
+            node_kind: 'class',
+            framework: 'nest',
+            framework_role: 'nest_provider',
+          },
+          {
+            id: 'auth_controller',
+            label: 'AuthController',
+            source_file: 'auth/auth.controller.ts',
+            node_kind: 'class',
+            framework: 'nest',
+            framework_role: 'nest_controller',
+          },
+          {
+            id: 'auth_module',
+            label: 'AuthModule',
+            source_file: 'auth/auth.module.ts',
+            node_kind: 'class',
+            framework: 'nest',
+            framework_role: 'nest_module',
+          },
+          {
+            id: 'profile_route',
+            label: 'GET /auth/profile',
+            source_file: 'auth/auth.controller.ts',
+            node_kind: 'route',
+            framework: 'nest',
+            framework_role: 'nest_route',
+          },
+          {
+            id: 'login_route',
+            label: 'POST /auth/login',
+            source_file: 'auth/auth.controller.ts',
+            node_kind: 'route',
+            framework: 'nest',
+            framework_role: 'nest_route',
+          },
+        ],
+        [
+          { source: 'auth_controller', target: 'auth_service', relation: 'injects' },
+          { source: 'auth_module', target: 'auth_service', relation: 'provides' },
+          { source: 'profile_route', target: 'auth_controller', relation: 'depends_on' },
+          { source: 'login_route', target: 'auth_controller', relation: 'depends_on' },
+        ],
+      )
 
       const result = analyzeImpact(graph, {}, { label: 'AuthService', depth: 2 })
 
@@ -711,25 +964,64 @@ describe('impact', () => {
     })
 
     it('shows next routes as dependents of middleware and shared pages wrappers', () => {
-      const fixturesDir = join(process.cwd(), 'tests', 'fixtures')
-      const graph = buildGraph([
-        extractJs(join(fixturesDir, 'next-app', 'middleware.ts')),
-        extractJs(join(fixturesDir, 'next-app', 'app', '(marketing)', 'dashboard', '[team]', 'layout.tsx')),
-        extractJs(join(fixturesDir, 'next-app', 'app', '(marketing)', 'dashboard', '[team]', 'page.tsx')),
-        extractJs(join(fixturesDir, 'next-app', 'app', '(marketing)', 'dashboard', '[team]', 'template.tsx')),
-        extractJs(join(fixturesDir, 'next-app', 'app', '(marketing)', 'dashboard', '[team]', 'loading.tsx')),
-        extractJs(join(fixturesDir, 'next-app', 'app', '(marketing)', 'dashboard', '[team]', 'error.tsx')),
-        extractJs(join(fixturesDir, 'next-app', 'app', '(marketing)', 'dashboard', '[team]', 'not-found.tsx')),
-        extractJs(join(fixturesDir, 'next-app', 'app', '(marketing)', 'dashboard', '[team]', '@modal', 'default.tsx')),
-        extractJs(join(fixturesDir, 'next-app', 'app', '(marketing)', 'dashboard', '[team]', 'actions.ts')),
-        extractJs(join(fixturesDir, 'next-app', 'app', '(marketing)', 'dashboard', '[team]', 'ClientTeamPanel.tsx')),
-        extractJs(join(fixturesDir, 'next-app', 'app', 'api', 'teams', '[team]', 'route.ts')),
-        extractJs(join(fixturesDir, 'next-pages', 'pages', 'account.tsx')),
-        extractJs(join(fixturesDir, 'next-pages', 'pages', '_app.tsx')),
-        extractJs(join(fixturesDir, 'next-pages', 'pages', '_document.tsx')),
-        extractJs(join(fixturesDir, 'next-pages', 'pages', '_error.tsx')),
-        extractJs(join(fixturesDir, 'next-pages', 'pages', 'api', 'auth', '[...nextauth].ts')),
-      ], { rootPath: process.cwd() })
+      const graph = createImpactFixtureGraph(
+        [
+          {
+            id: 'middleware',
+            label: 'middleware',
+            source_file: 'middleware.ts',
+            node_kind: 'function',
+            framework: 'next',
+            framework_role: 'next_middleware',
+          },
+          {
+            id: 'dashboard_route',
+            label: '/dashboard/[team]',
+            source_file: 'app/(marketing)/dashboard/[team]/page.tsx',
+            node_kind: 'route',
+            framework: 'next',
+            framework_role: 'next_route',
+          },
+          {
+            id: 'get_team_route',
+            label: 'GET /api/teams/[team]',
+            source_file: 'app/api/teams/[team]/route.ts',
+            node_kind: 'route',
+            framework: 'next',
+            framework_role: 'next_route_handler',
+          },
+          {
+            id: 'post_team_route',
+            label: 'POST /api/teams/[team]',
+            source_file: 'app/api/teams/[team]/route.ts',
+            node_kind: 'route',
+            framework: 'next',
+            framework_role: 'next_route_handler',
+          },
+          {
+            id: 'pages_app',
+            label: '_app',
+            source_file: 'pages/_app.tsx',
+            node_kind: 'component',
+            framework: 'next',
+            framework_role: 'next_pages_app',
+          },
+          {
+            id: 'account_route',
+            label: '/account',
+            source_file: 'pages/account.tsx',
+            node_kind: 'route',
+            framework: 'next',
+            framework_role: 'next_route',
+          },
+        ],
+        [
+          { source: 'dashboard_route', target: 'middleware', relation: 'middleware' },
+          { source: 'get_team_route', target: 'middleware', relation: 'middleware' },
+          { source: 'post_team_route', target: 'middleware', relation: 'middleware' },
+          { source: 'account_route', target: 'pages_app', relation: 'depends_on' },
+        ],
+      )
 
       const middlewareResult = analyzeImpact(graph, {}, { label: 'middleware', depth: 2 })
       expect(middlewareResult.direct_dependents).toEqual(

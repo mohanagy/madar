@@ -38,7 +38,7 @@ describe('Framework metadata-aware retrieval boost (#133)', () => {
       'app.get("/users/:id", getUserById)',
     ].join('\n') + '\n')
 
-    const result = generateGraph(sandbox, { useSpi: true })
+    const result = generateGraph(sandbox)
     const graph = loadGraph(result.graphPath)
     const retrieved = retrieveContext(graph, {
       question: 'Find the express handler for GET /users/:id',
@@ -66,7 +66,7 @@ describe('Framework metadata-aware retrieval boost (#133)', () => {
       'app.post("/users", createUser)',
     ].join('\n') + '\n')
 
-    const result = generateGraph(sandbox, { useSpi: true })
+    const result = generateGraph(sandbox)
     const graph = loadGraph(result.graphPath)
     const retrieved = retrieveContext(graph, {
       question: 'Which route handles POST requests to /users',
@@ -90,7 +90,7 @@ describe('Framework metadata-aware retrieval boost (#133)', () => {
       '})',
     ].join('\n') + '\n')
 
-    const result = generateGraph(sandbox, { useSpi: true })
+    const result = generateGraph(sandbox)
     const graph = loadGraph(result.graphPath)
     const retrieved = retrieveContext(graph, {
       question: 'How does the cancelOrder tRPC mutation work',
@@ -115,7 +115,7 @@ describe('Framework metadata-aware retrieval boost (#133)', () => {
       'app.get("/orders/:id", h)',
     ].join('\n') + '\n')
 
-    const result = generateGraph(sandbox, { useSpi: true })
+    const result = generateGraph(sandbox)
     const graph = loadGraph(result.graphPath)
     const retrieved = retrieveContext(graph, {
       question: 'Find the handler for the /orders/:id endpoint',
@@ -135,7 +135,7 @@ describe('Framework metadata-aware retrieval boost (#133)', () => {
       'app.get("/items", listItems)',
     ].join('\n') + '\n')
 
-    const result = generateGraph(sandbox, { useSpi: true })
+    const result = generateGraph(sandbox)
     const graph = loadGraph(result.graphPath)
     // Question mentions "budget" (which CONTAINS the substring "get")
     // but NOT the literal verb GET. The word-boundary regex must not
@@ -167,7 +167,7 @@ describe('Framework metadata-aware retrieval boost (#133)', () => {
       'app.get("/users", listUsers)',
     ].join('\n') + '\n')
 
-    const result = generateGraph(sandbox, { useSpi: true })
+    const result = generateGraph(sandbox)
     const graph = loadGraph(result.graphPath)
     // Question is completely unrelated to /users or GET.
     const retrievedUnrelated = retrieveContext(graph, {

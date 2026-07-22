@@ -27,7 +27,6 @@ function createMinimalGraphRoot(): string {
         { id: 'b', label: 'B', source_file: 'b.ts', source_location: '2', file_type: 'code', community: 0 },
       ],
       edges: [{ source: 'a', target: 'b', relation: 'calls', confidence: 'EXTRACTED', source_file: 'a.ts' }],
-      hyperedges: [],
     },
   )
   return root
@@ -58,7 +57,6 @@ function createOverflowExpansionGraphRoot(): string {
         community: 0,
       })),
       edges: [],
-      hyperedges: [],
     },
   )
   return root

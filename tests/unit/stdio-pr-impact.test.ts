@@ -291,7 +291,6 @@ function createRepo(options: { reviewHeavy?: boolean } = {}): string {
           },
         ]),
       ],
-      hyperedges: [],
       root_path: root,
     },
   )

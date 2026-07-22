@@ -10,16 +10,14 @@ There is no file-count cutoff. A reconciliation scans every supported candidate 
 
 Every generated `graph.json` and `manifest.json` contains the same versioned `generation_policy` and SHA-256 fingerprint. The policy covers:
 
-- extraction mode: capability-aware auto, legacy-only, or strict canonical JS/TS indexing (selected by the compatibility `--spi` flag) without unsupported-language fallback;
+- the canonical JavaScript/TypeScript index format;
 - Git-ignore enforcement and the active Git/Madar exclusion controls;
-- symlink traversal;
-- document/non-code inclusion policy;
-- legacy companion extractor/cache version (retained as a policy compatibility guard); and
+- symlink traversal; and
 - strict indexing thresholds.
 
-Automatic refresh reconstructs these inputs from the stored policy. In particular, a graph generated with `--legacy` or `--spi` keeps that strict mode during refresh; an auto graph keeps its capability-aware partition. An explicit policy override or a change to `.madarignore`, applicable `.gitignore` files, `.git/info/exclude`, or `core.excludesFile` forces a full rebuild instead of incremental reuse.
+Automatic refresh reconstructs those inputs from the stored policy. A source change, an explicit policy override, or a change to `.madarignore`, applicable `.gitignore` files, `.git/info/exclude`, or `core.excludesFile` forces one full canonical rebuild. Refresh does not reuse per-file extraction fragments or preserve an extraction-mode choice.
 
-Graphs created before the current extraction-mode policy cannot prove which discovery options produced them. Migrate once before relying on auto-refresh:
+Graphs created by a predecessor mixed-mode pipeline do not satisfy the canonical generation policy. Regenerate once before relying on auto-refresh:
 
 ```bash
 madar generate . --update
@@ -34,7 +32,7 @@ The local `watcher-state.json` beside `graph.json` is written atomically and inc
 - last reconciliation time, duration, file/directory counts, and next interval;
 - pending/failure details; and
 - stored/current policy fingerprints and match state; and
-- the requested extraction mode plus the current aggregate extraction-strategy receipt.
+- aggregate canonical indexing completeness.
 
 `madar doctor` and `madar status` render those fields. During an auto-refresh MCP session, graph-backed prompts, resources, completions, and tool calls remain fail-closed until the watcher is `idle` with matching published policy. A request that arrives while the graph is transiently `starting`, `pending`, or `reconciling` waits for readiness for up to 25 seconds by default. If reconciliation finishes, that same request completes against the ready graph; the agent does not need to issue it again. If the bounded wait expires, Madar returns `madar_graph_not_ready` with `retryable: true`, the measured `waited_ms`, `retry_after_ms: 1000`, and `suggested_action: "retry_same_request"`. Terminal `failed`, incomplete, and policy-mismatched states return immediately with `retryable: false` and `suggested_action: "repair_graph"`; inspect `madar status`, then run `madar generate . --update` when repair is required.
 

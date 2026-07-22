@@ -1,7 +1,7 @@
 import { canonicalJsonString, canonicalJsonValue } from './canonical-json.js'
 import { KnowledgeGraph, type GraphAttributes } from './directed-multigraph.js'
 export const GRAPH_ARTIFACT_SCHEMA = 'madar.graph' as const
-export const GRAPH_ARTIFACT_VERSION = 1 as const
+export const GRAPH_ARTIFACT_VERSION = 2 as const
 export const GRAPH_ARTIFACT_REGENERATE_MESSAGE = 'Unsupported Madar graph artifact. Run `madar generate . --update` to regenerate it.'
 const isRecord = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
 function invalidArtifact(detail?: string): never { throw new Error(detail ? `${detail}. ${GRAPH_ARTIFACT_REGENERATE_MESSAGE}` : GRAPH_ARTIFACT_REGENERATE_MESSAGE) }

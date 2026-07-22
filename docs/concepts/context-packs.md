@@ -59,13 +59,11 @@ When the selected question is a runtime-generation flow, compact responses can c
 
 Runtime-generation prompts stay compact by following the strongest backend path first and suppressing sibling-route noise plus shared-hub fan-out on broad runtime-generation questions.
 
-## Extraction modes
+## Indexing scope
 
-`madar generate .` is capability-aware by default: supported TypeScript and JavaScript files go through one compiler-backed canonical index, while temporarily supported non-JS/TS and non-code inputs stay on their later-owned companion path.
+`madar generate .` indexes `.ts`, `.tsx`, `.js`, and `.jsx` through one compiler-backed canonical index. There is no mode selector or fallback engine. Other source languages and non-code files do not enter the graph; recognized unsupported files remain visible in the indexing-completeness receipt so the agent can state the missing scope and verify it directly when necessary.
 
-Use `--legacy` only when you explicitly need the old extraction path everywhere. Until the extraction-mode cleanup in #571, `--spi` is the compatibility spelling for strict canonical JS/TS indexing without a language fallback; eligible non-code evidence remains included. Auto mode is the normal choice.
-
-Deepest extraction is TypeScript/JavaScript with framework-aware passes for Express, NestJS, Next.js, React Router, Hono, Fastify, tRPC, and Prisma. The temporary legacy companion retains conservative Python cross-file calls, FastAPI router composition, first-pass Django URL-conf mapping, and Go local-package/route relationships until its separately governed deletion phase.
+The canonical index includes framework-aware passes for Express, NestJS, Next.js, React Router, Hono, Fastify, tRPC, and Prisma. Those facts share the same symbol identities and directed graph writer as ordinary JavaScript/TypeScript imports, calls, and types.
 
 Full coverage details: [`docs/language-capability-matrix.md`](../language-capability-matrix.md).
 

@@ -53,7 +53,6 @@ export interface TelemetryEventInput {
   repoSizeBucket?: TelemetryRepoSizeBucket
   graphSizeBucket?: TelemetryGraphSizeBucket
   agentTarget?: TelemetryAgentTarget
-  spiEnabled?: boolean
   failureBucket?: TelemetryFailureBucket
   statusBucket?: TelemetryStatusBucket
   initialAnswerabilityBucket?: TelemetryAnswerabilityBucket
@@ -104,7 +103,6 @@ interface PersistedTelemetryEvent {
   repo_size_bucket?: TelemetryRepoSizeBucket
   graph_size_bucket?: TelemetryGraphSizeBucket
   agent_target?: TelemetryAgentTarget
-  spi_enabled?: boolean
   failure_bucket?: TelemetryFailureBucket
   status_bucket?: TelemetryStatusBucket
   initial_answerability_bucket?: TelemetryAnswerabilityBucket
@@ -318,9 +316,6 @@ function normalizeTelemetryEvent(record: Partial<PersistedTelemetryEvent>): Pers
   }
   if (isTelemetryAgentTarget(record.agent_target)) {
     normalized.agent_target = record.agent_target
-  }
-  if (typeof record.spi_enabled === 'boolean') {
-    normalized.spi_enabled = record.spi_enabled
   }
   if (isTelemetryFailureBucket(record.failure_bucket)) {
     normalized.failure_bucket = record.failure_bucket
@@ -685,7 +680,6 @@ export function recordTelemetryEvent(input: TelemetryEventInput, options: Teleme
       ...(input.repoSizeBucket ? { repo_size_bucket: input.repoSizeBucket } : {}),
       ...(input.graphSizeBucket ? { graph_size_bucket: input.graphSizeBucket } : {}),
       ...(input.agentTarget ? { agent_target: input.agentTarget } : {}),
-      ...(typeof input.spiEnabled === 'boolean' ? { spi_enabled: input.spiEnabled } : {}),
       ...(input.failureBucket ? { failure_bucket: input.failureBucket } : {}),
       ...(input.statusBucket ? { status_bucket: input.statusBucket } : {}),
       ...(input.initialAnswerabilityBucket ? { initial_answerability_bucket: input.initialAnswerabilityBucket } : {}),

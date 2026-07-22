@@ -1,21 +1,20 @@
-export interface ExtractionProvenance {
+export interface GraphProvenance {
   capability_id: string
   stage?: string
   [key: string]: unknown
 }
 
-export interface BaselineProvenanceOptions {
-  capabilityId?: string
+export interface GraphProvenanceOptions {
+  capabilityId: string
   stage?: string
   sourceFile?: string
   sourceLocation?: string
 }
 
-export const LEGACY_NORMALIZATION_CAPABILITY_ID = 'builtin:normalize:legacy-extraction'
-export const DEFAULT_NORMALIZATION_STAGE = 'normalize'
+export const DEFAULT_PROVENANCE_STAGE = 'index'
 
-export function createBaselineProvenance(options: BaselineProvenanceOptions = {}): ExtractionProvenance {
-  const { capabilityId = LEGACY_NORMALIZATION_CAPABILITY_ID, stage = DEFAULT_NORMALIZATION_STAGE, sourceFile, sourceLocation } = options
+export function createGraphProvenance(options: GraphProvenanceOptions): GraphProvenance {
+  const { capabilityId, stage = DEFAULT_PROVENANCE_STAGE, sourceFile, sourceLocation } = options
 
   return {
     capability_id: capabilityId,

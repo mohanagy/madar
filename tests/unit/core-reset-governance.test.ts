@@ -166,17 +166,17 @@ describe('core reset governance', () => {
     expect(manifest.schema_version).toBe(1)
     expect(manifest.status).toBe('accepted')
     expect(manifest.current).toMatchObject({
-      updated_at: '2026-07-21',
+      updated_at: '2026-07-22',
       completed_phase: 'canonical-typescript-index',
       active_phase: 'legacy-extraction',
       ready_phase: null,
       base_commit: '9a762d0a4e10a0ae210ba3f53bb1d4468367e81e',
       completed_phase_commit: '4dfd48194f2fab00b2cd2271a6f7917909dde9d4',
-      production_typescript_files: 170,
-      production_typescript_loc: 91_539,
-      production_loc_added: 0,
-      production_loc_removed: 0,
-      production_loc_net: 0,
+      production_typescript_files: 139,
+      production_typescript_loc: 69_127,
+      production_loc_added: 900,
+      production_loc_removed: 23_312,
+      production_loc_net: -22_412,
     })
     expect(manifest.rules.length).toBeGreaterThan(0)
     expect(manifest.items.length).toBeGreaterThan(10)

@@ -47,8 +47,8 @@ describe('pipeline stage diagnostics', () => {
     const failure = new Error('parser included private source text')
 
     expect(() => runPipelineStage({
-      pipeline: 'extraction',
-      stage: 'per_language_extraction',
+      pipeline: 'retrieval',
+      stage: 'candidate_ranking',
       inputCount: Number.NaN,
       outputCount: () => 1,
       observer,

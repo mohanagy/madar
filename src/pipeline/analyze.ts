@@ -1,6 +1,5 @@
 import { canonicalJsonString } from '../domain/graph/canonical-json.js'
 import { KnowledgeGraph, type GraphAttributes } from '../domain/graph/directed-multigraph.js'
-import { AUDIO_EXTENSIONS, CODE_EXTENSIONS, DOC_EXTENSIONS, IMAGE_EXTENSIONS, PAPER_EXTENSIONS, VIDEO_EXTENSIONS } from './detect.js'
 import { cluster, cohesionScore, type Communities } from './cluster.js'
 
 export interface GodNode {
@@ -267,29 +266,6 @@ export function _isConceptNode(graph: KnowledgeGraph, nodeId: string): boolean {
   return !sourceFile.split('/').at(-1)?.includes('.')
 }
 
-export function _fileCategory(path: string): 'code' | 'paper' | 'image' | 'audio' | 'video' | 'doc' {
-  const extension = path.includes('.') ? `.${path.split('.').at(-1)?.toLowerCase() ?? ''}` : ''
-  if (CODE_EXTENSIONS.has(extension)) {
-    return 'code'
-  }
-  if (PAPER_EXTENSIONS.has(extension)) {
-    return 'paper'
-  }
-  if (IMAGE_EXTENSIONS.has(extension)) {
-    return 'image'
-  }
-  if (AUDIO_EXTENSIONS.has(extension)) {
-    return 'audio'
-  }
-  if (VIDEO_EXTENSIONS.has(extension)) {
-    return 'video'
-  }
-  if (DOC_EXTENSIONS.has(extension)) {
-    return 'doc'
-  }
-  return 'doc'
-}
-
 function analysisNodeIds(graph: KnowledgeGraph): string[] {
   return graph.nodeIds().filter((nodeId) => isAnalysisEntityNode(graph, nodeId))
 }
@@ -401,13 +377,6 @@ export function _surpriseScore(
   score += confidenceBonus
   if (confidence === 'AMBIGUOUS' || confidence === 'INFERRED') {
     reasons.push(`${confidence.toLowerCase()} connection - not explicitly stated in source`)
-  }
-
-  const sourceCategory = _fileCategory(sourceFile)
-  const targetCategory = _fileCategory(targetFile)
-  if (sourceCategory !== targetCategory) {
-    score += 2
-    reasons.push(`crosses file types (${sourceCategory} ↔ ${targetCategory})`)
   }
 
   if (topLevelDir(sourceFile) !== topLevelDir(targetFile)) {
@@ -920,7 +889,7 @@ export function suggestQuestions(graph: KnowledgeGraph, communities: Communities
     questions.push({
       type: 'isolated_nodes',
       question: `What connects ${labels.join(', ')} to the rest of the system?`,
-      why: `${isolated.length} weakly-connected nodes found - possible documentation gaps or missing edges.`,
+      why: `${isolated.length} weakly-connected nodes found - possible missing relationships.`,
     })
   }
 
@@ -938,7 +907,7 @@ export function suggestQuestions(graph: KnowledgeGraph, communities: Communities
       {
         type: 'no_signal',
         question: null,
-        why: 'Not enough signal to generate questions. This usually means the corpus has no AMBIGUOUS edges, no bridge nodes, no INFERRED relationships, and all communities are tightly cohesive. Add more files or extract richer edges.',
+        why: 'Not enough signal to generate questions. This usually means the corpus has no AMBIGUOUS edges, no bridge nodes, no INFERRED relationships, and all communities are tightly cohesive. Add more source files or index richer relationships.',
       },
     ]
   }

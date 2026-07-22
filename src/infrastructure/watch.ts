@@ -3,23 +3,12 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSy
 import { basename, extname, join, relative, resolve, sep } from 'node:path'
 
 import type { IndexingStrictThresholds } from '../contracts/indexing.js'
-import type { WatcherEventMode, WatcherStateV1 } from '../contracts/watcher-state.js'
-import {
-  AUDIO_EXTENSIONS,
-  CODE_EXTENSIONS,
-  DOC_EXTENSIONS,
-  IMAGE_EXTENSIONS,
-  OFFICE_EXTENSIONS,
-  PAPER_EXTENSIONS,
-  UNSUPPORTED_SOURCE_EXTENSIONS,
-  VIDEO_EXTENSIONS,
-} from '../pipeline/detect.js'
-import { EXTRACTOR_CACHE_VERSION } from '../pipeline/extract.js'
+import type { WatcherEventMode, WatcherState } from '../contracts/watcher-state.js'
+import { CODE_EXTENSIONS, RECOGNIZED_UNSUPPORTED_EXTENSIONS } from '../pipeline/detect.js'
 import { analyzeGraphContextFreshness } from '../runtime/freshness.js'
 import { readIndexingManifestForGraph } from './indexing-manifest.js'
-import { sidecarAwareFileFingerprint } from '../shared/binary-ingest-sidecar.js'
 import { collectGitVisibleFiles } from '../shared/git.js'
-import { isDiscoveryPathIgnored, loadMadarignorePatterns } from '../shared/source-discovery.js'
+import { isCanonicalCompilerControlFile, isDiscoveryPathIgnored, isManagedAgentInstructionFile, loadMadarignorePatterns } from '../shared/source-discovery.js'
 import { resolveMadarOutputDirectory } from '../shared/workspace.js'
 import { loadGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
 import { generateGraph, type GenerateGraphOptions, type GenerateGraphResult } from './generate.js'
@@ -38,13 +27,7 @@ import {
 
 export const WATCHED_EXTENSIONS = new Set([
   ...CODE_EXTENSIONS,
-  ...DOC_EXTENSIONS,
-  ...PAPER_EXTENSIONS,
-  ...IMAGE_EXTENSIONS,
-  ...AUDIO_EXTENSIONS,
-  ...VIDEO_EXTENSIONS,
-  ...OFFICE_EXTENSIONS,
-  ...UNSUPPORTED_SOURCE_EXTENSIONS,
+  ...RECOGNIZED_UNSUPPORTED_EXTENSIONS,
 ])
 const MAX_SYMLINK_DEPTH = 40
 const GIT_VISIBILITY_SNAPSHOT_KEY = '\0madar:git-visible-files'
@@ -55,37 +38,8 @@ const DEFAULT_POLL_RECONCILIATION_INTERVAL_MS = 1_000
 const DEFAULT_POLL_MAX_RECONCILIATION_INTERVAL_MS = 30_000
 const DEFAULT_RECONCILIATION_TIMEOUT_MS = 2 * 60_000
 const WATCH_IGNORED_DIRECTORIES = new Set(['.git', 'out', 'node_modules', 'dist', 'build', 'target', 'venv', '.venv', 'env', '.env', '__pycache__'])
-// These files can change the discovered corpus or the extraction environment
-// even when no source file changes. Treat them as refresh triggers instead of
-// waiting for an agent to remember a manual `madar generate --update`.
-const WATCHED_CONTROL_FILENAMES = new Set([
-  '.gitignore',
-  '.madarignore',
-  'package.json',
-  'tsconfig.json',
-  'tsconfig.build.json',
-  'jsconfig.json',
-  'pyproject.toml',
-  'go.mod',
-  'go.sum',
-  'Cargo.toml',
-  'Cargo.lock',
-  'pom.xml',
-  'build.gradle',
-  'build.gradle.kts',
-  'settings.gradle',
-  'settings.gradle.kts',
-])
-// Madar writes these root-level instruction files when an agent integration is
-// installed. They guide the agent, rather than describe the indexed codebase,
-// so their creation or edits must not force the first MCP request to wait for
-// a graph reconciliation.
-const MANAGED_AGENT_INSTRUCTION_FILENAMES = new Set(['AGENTS.md', 'CLAUDE.md'])
-
-function isRootManagedAgentInstructionFile(discoveryRoot: string, filePath: string): boolean {
-  return MANAGED_AGENT_INSTRUCTION_FILENAMES.has(relative(discoveryRoot, filePath).replaceAll('\\', '/'))
-}
-
+const isPolicyControlFile = (path: string) => ['.gitignore', '.madarignore'].includes(basename(path))
+const isWatchedControlFile = (path: string) => isPolicyControlFile(path) || isCanonicalCompilerControlFile(path)
 export interface WatchLogger {
   log(message?: string): void
   error(message?: string): void
@@ -123,7 +77,7 @@ export interface WatchOptions extends RebuildCodeOptions {
 }
 
 export interface GraphAutoRefreshController {
-  /** Whether the initial incremental reconciliation produced a graph. */
+  /** Whether the initial reconciliation produced a graph. */
   initialRebuilt: boolean
   /** Background controllers remain false until their initial reconciliation has settled. */
   startupComplete?(): boolean
@@ -258,7 +212,7 @@ function graphBelongsToWorkspace(graphPath: string, workspaceRoot: string): bool
 function canReuseFreshGraphOnStart(
   workspaceRoot: string,
   outputDir: string,
-  state: WatcherStateV1,
+  state: WatcherState,
   currentSnapshot: WatchSnapshot,
 ): boolean {
   const graphPath = join(outputDir, 'graph.json')
@@ -297,10 +251,10 @@ function canReuseFreshGraphOnStart(
       if (filePath === GIT_VISIBILITY_SNAPSHOT_KEY) {
         continue
       }
-      if (isRootManagedAgentInstructionFile(workspaceRoot, filePath)) {
+      if (isManagedAgentInstructionFile(filePath, workspaceRoot)) {
         continue
       }
-      if (WATCHED_CONTROL_FILENAMES.has(basename(filePath))) {
+      if (isWatchedControlFile(filePath)) {
         if (lstatSync(filePath).mtimeMs > freshness.generated_ms) {
           return false
         }
@@ -324,7 +278,7 @@ function canReuseFreshGraphOnStart(
         outcome.kind === 'file'
         && outcome.status !== 'skipped_by_policy'
         && WATCHED_EXTENSIONS.has(extname(localPath).toLowerCase())
-        && !MANAGED_AGENT_INSTRUCTION_FILENAMES.has(localPath)
+        && !isManagedAgentInstructionFile(localPath, workspaceRoot)
         && !currentCandidates.has(localPath)
       ) {
         return false
@@ -394,9 +348,10 @@ function collectWatchedFiles(
 
   for (const entry of entries) {
     assertReconciliationWithinDeadline(collection)
-    const isControlFile = WATCHED_CONTROL_FILENAMES.has(entry.name)
+    const isControlFile = isWatchedControlFile(entry.name)
+    const isPolicyControl = isPolicyControlFile(entry.name)
     const entryPath = resolve(directory, entry.name)
-    if (isRootManagedAgentInstructionFile(discoveryRoot, entryPath)) {
+    if (isManagedAgentInstructionFile(entryPath, discoveryRoot)) {
       continue
     }
     if (entry.name.startsWith('.') && !isControlFile) {
@@ -405,7 +360,7 @@ function collectWatchedFiles(
     if (WATCH_IGNORED_DIRECTORIES.has(entry.name)) {
       continue
     }
-    if (!isControlFile && isDiscoveryPathIgnored(entryPath, discoveryRoot, discoveryIgnorePatterns)) {
+    if (!isPolicyControl && isDiscoveryPathIgnored(entryPath, discoveryRoot, discoveryIgnorePatterns)) {
       continue
     }
 
@@ -470,7 +425,7 @@ function collectWatchedFiles(
 
       const extension = extname(entryPath).toLowerCase()
       if (WATCHED_EXTENSIONS.has(extension) && (!includedFiles || includedFiles.has(entryPath))) {
-        collection.fingerprints.set(entryPath, sidecarAwareFileFingerprint(entryPath, targetStats.mtimeMs))
+        collection.fingerprints.set(entryPath, Math.round(targetStats.mtimeMs))
       }
       continue
     }
@@ -480,7 +435,7 @@ function collectWatchedFiles(
     }
 
     const extension = extname(entryPath).toLowerCase()
-    if ((WATCHED_EXTENSIONS.has(extension) || isControlFile) && (!includedFiles || includedFiles.has(entryPath) || isControlFile)) {
+    if ((WATCHED_EXTENSIONS.has(extension) || isControlFile) && (!includedFiles || includedFiles.has(entryPath) || isPolicyControl)) {
       let modifiedAt: number
       try {
         modifiedAt = lstatSync(entryPath).mtimeMs
@@ -490,7 +445,7 @@ function collectWatchedFiles(
       }
       collection.fingerprints.set(
         entryPath,
-        isControlFile ? controlFileFingerprint(entryPath, modifiedAt) : sidecarAwareFileFingerprint(entryPath, modifiedAt),
+        isControlFile ? controlFileFingerprint(entryPath, modifiedAt) : Math.round(modifiedAt),
       )
     }
   }
@@ -588,10 +543,6 @@ export function notifyOnly(watchPath: string, logger?: WatchLogger): void {
   output.log(`[madar watch] Flag written to ${flagPath}`)
 }
 
-export function hasNonCode(changedPaths: string[]): boolean {
-  return changedPaths.some((filePath) => !CODE_EXTENSIONS.has(extname(filePath).toLowerCase()))
-}
-
 function rebuildCodeUnderLease(
   resolvedWatchPath: string,
   options: RebuildCodeOptions,
@@ -614,7 +565,7 @@ function rebuildCodeUnderLease(
     }
     const policyOptions: GenerateGraphOptions = graphPolicy
       ? generationOptionsFromPolicy(graphPolicy)
-      : { extractionMode: 'auto' }
+      : {}
     const result: GenerateGraphResult = generateGraph(resolvedWatchPath, {
       ...policyOptions,
       ...(canUpdate ? { update: true } : {}),
@@ -685,7 +636,7 @@ function rebuildCodeWithRecoverableLease(
 /**
  * Starts a watcher before reconciling the graph. The ordering is intentional:
  * a source edit made while the first generation is running is queued for a
- * follow-up incremental rebuild instead of being published as silently fresh.
+ * follow-up rebuild instead of being published as silently fresh.
  */
 export function startGraphAutoRefresh(
   watchPath: string,
@@ -739,7 +690,7 @@ function rebuildOptionsFromWatch(options: WatchOptions, logger: WatchLogger): Re
 }
 
 function updateWatcherPolicyState(
-  state: WatcherStateV1,
+  state: WatcherState,
   watchPath: string,
   options: WatchOptions,
   gitVisibilityCache?: GitVisibilityCache,
@@ -749,12 +700,7 @@ function updateWatcherPolicyState(
   const manifestPath = join(outputDir, 'manifest.json')
   const storedPolicy = readStoredGenerationPolicy(graphPath, manifestPath)
   const graphPolicy = readGraphGenerationPolicy(graphPath)
-  const indexingManifest = readIndexingManifestForGraph(graphPath)
   state.stored_policy_fingerprint = graphPolicy?.fingerprint ?? null
-  state.requested_extraction_mode = graphPolicy
-    ? generationOptionsFromPolicy(graphPolicy).extractionMode
-    : null
-  state.extraction_strategy_buckets = indexingManifest?.summary.extraction_strategy_buckets ?? null
 
   if (!storedPolicy) {
     state.current_policy_fingerprint = null
@@ -772,13 +718,13 @@ function updateWatcherPolicyState(
   const gitVisibleFiles = effectiveOptions.respectGitignore
     ? readGitVisibleFiles(watchPath, gitVisibilityCache)
     : null
-  const currentPolicy = buildGenerationPolicy(watchPath, effectiveOptions, EXTRACTOR_CACHE_VERSION, gitVisibleFiles)
+  const currentPolicy = buildGenerationPolicy(watchPath, effectiveOptions, gitVisibleFiles)
   state.current_policy_fingerprint = currentPolicy.fingerprint
   state.policy_match = storedPolicy.fingerprint === currentPolicy.fingerprint
 }
 
 function recordSuccessfulReconciliation(
-  state: WatcherStateV1,
+  state: WatcherState,
   snapshot: WatchSnapshot,
   intervalMs: number,
   nextReconciliationAt: number,
@@ -814,7 +760,7 @@ export async function watch(watchPath: string, debounce = 3, options: WatchOptio
   let followSymlinks = options.followSymlinks ?? storedWatchOptions?.followSymlinks ?? false
   let gitVisibilityCache: GitVisibilityCache | undefined = respectGitignore ? { visibleFiles: null, expiresAt: 0 } : undefined
   const reconciliationTimeoutMs = Math.max(1, options.reconciliationTimeoutMs ?? DEFAULT_RECONCILIATION_TIMEOUT_MS)
-  let state: WatcherStateV1 | null = null
+  let state: WatcherState | null = null
   let eventDirty = false
   let eventWatcher: { close(): void } | null = null
   let eventMode: WatcherEventMode = 'polling'
@@ -890,7 +836,7 @@ export async function watch(watchPath: string, debounce = 3, options: WatchOptio
       return false
     }
     const normalized = filename.toString().replaceAll('\\', '/').replace(/^\.\//, '')
-    if (MANAGED_AGENT_INSTRUCTION_FILENAMES.has(normalized)) {
+    if (isManagedAgentInstructionFile(normalized, resolvedWatchPath)) {
       return true
     }
     const [topLevel] = normalized.split('/')
@@ -944,7 +890,7 @@ export async function watch(watchPath: string, debounce = 3, options: WatchOptio
 
     output.log(`[madar watch] Watching ${resolvedWatchPath} - abort the process to stop`)
     output.log(
-      '[madar watch] Supported candidates rebuild automatically, and known unsupported source formats refresh indexing completeness; manual refresh is only needed for unknown future formats.',
+      '[madar watch] JavaScript/TypeScript changes rebuild the graph; recognized unsupported files refresh indexing receipts without being indexed.',
     )
     output.log(`[madar watch] Debounce: ${debounce}s; reconciliation: ${currentIntervalMs}ms adaptive`)
     if (eventWatcher) {

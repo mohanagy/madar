@@ -3,9 +3,9 @@ import { join, relative } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { buildGraphFromExtraction } from '../../src/application/build-graph.js'
 import {
   GRAPH_ARTIFACT_REGENERATE_MESSAGE,
+  GRAPH_ARTIFACT_VERSION,
   deserializeGraphArtifact,
   serializeGraphArtifact,
 } from '../../src/domain/graph/artifact.js'
@@ -18,7 +18,7 @@ const evidence = (sourceFile: string, sourceLocation: string) => ({
   source_location: sourceLocation,
   provenance: [
     {
-      capability_id: 'builtin:extract:typescript',
+      capability_id: 'builtin:index:typescript',
       stage: 'extract',
       source_file: sourceFile,
       source_location: sourceLocation,
@@ -248,7 +248,7 @@ describe('KnowledgeGraph', () => {
           source_location: 'L10-L12',
           source_file: 'src/caller.ts',
           stage: 'extract',
-          capability_id: 'builtin:extract:typescript',
+          capability_id: 'builtin:index:typescript',
         },
       ],
       confidence: 'EXTRACTED',
@@ -264,60 +264,6 @@ describe('KnowledgeGraph', () => {
     expect(loaded.relationKindsBetween('caller', 'callee')).toEqual(['calls', 'imports_from'])
     expect(loaded.relationKindsBetween('callee', 'caller')).toEqual(['returns_to'])
     expect(loaded.graph).toEqual(forward.graph)
-  })
-
-  it('keeps collision-safe node identities stable across roots and insertion order', () => {
-    const extraction = (root: string, reversed: boolean) => {
-      const nodes = [
-        { id: 'worker', label: 'AlphaWorker', file_type: 'code', source_file: `${root}/src/alpha.ts`, source_location: 'L2' },
-        { id: 'worker', label: 'BetaWorker', file_type: 'code', source_file: `${root}/src/beta.ts`, source_location: 'L8' },
-      ]
-      return { nodes: reversed ? nodes.reverse() : nodes, edges: [] }
-    }
-
-    const first = buildGraphFromExtraction(extraction('/Users/alice/repo', false), { rootPath: '/Users/alice/repo' })
-    const second = buildGraphFromExtraction(extraction('C:/Users/bob/repo', true), { rootPath: 'C:/Users/bob/repo' })
-    const binding = (graph: KnowledgeGraph) => Object.fromEntries(
-      graph.nodeEntries().map(([id, attributes]) => [id, attributes.label]),
-    )
-
-    expect(binding(second)).toEqual(binding(first))
-    expect(first.nodeIds()).toHaveLength(2)
-    expect(first.nodeIds().every((id) => /^worker__[a-f0-9]{12}$/.test(id))).toBe(true)
-  })
-
-  it('builds all directed facts from the temporary extraction adapter', () => {
-    const graph = buildGraphFromExtraction({
-      schema_version: 2,
-      root_path: '/workspace/repo',
-      nodes: [
-        { id: 'caller', label: 'caller()', file_type: 'code', source_file: '/workspace/repo/src/caller.ts' },
-        { id: 'callee', label: 'callee()', file_type: 'code', source_file: '/workspace/repo/src/callee.ts' },
-      ],
-      edges: [
-        { source: 'caller', target: 'callee', ...evidence('/workspace/repo/src/caller.ts', 'L10') },
-        {
-          source: 'caller',
-          target: 'callee',
-          ...evidence('/workspace/repo/src/caller.ts', 'L1'),
-          relation: 'imports_from',
-        },
-        {
-          source: 'callee',
-          target: 'caller',
-          ...evidence('/workspace/repo/src/callee.ts', 'L30'),
-          relation: 'returns_to',
-        },
-      ],
-    })
-
-    const loaded = deserializeGraphArtifact(serializeGraphArtifact(graph))
-    expect(loaded.numberOfEdges()).toBe(3)
-    expect(loaded.edgesBetween('caller', 'callee').map((edge) => edge.attributes.relation).sort()).toEqual([
-      'calls',
-      'imports_from',
-    ])
-    expect(loaded.edgesBetween('callee', 'caller')[0]?.attributes.relation).toBe('returns_to')
   })
 
   it('rejects old artifacts with one actionable regeneration instruction', () => {
@@ -341,7 +287,7 @@ describe('KnowledgeGraph', () => {
 
   it('round-trips metadata exactly without injecting graph flags', () => {
     const loaded = deserializeGraphArtifact({
-      schema: 'madar.graph', version: 1, directed: true,
+      schema: 'madar.graph', version: GRAPH_ARTIFACT_VERSION, directed: true,
       metadata: { owner: 'core' }, nodes: [], edges: [],
     })
     expect(loaded.graph).toEqual({ owner: 'core' })

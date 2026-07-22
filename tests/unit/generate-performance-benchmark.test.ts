@@ -28,7 +28,7 @@ function writeFixture(root: string): void {
 }
 
 describe('generate performance benchmark harness', () => {
-  it('covers legacy, canonical, update, and cluster-only variants with structured metrics', () => {
+  it('covers canonical generate, update, and cluster-only variants with structured metrics', () => {
     withTempDir((dir) => {
       const fixtureRoot = join(dir, 'fixture')
       const workDir = join(dir, 'runs')
@@ -39,19 +39,19 @@ describe('generate performance benchmark harness', () => {
         workDir,
       })
 
-      expect(summary.schema_version).toBe(1)
+      expect(summary.schema_version).toBe(2)
       expect(summary.metrics_tracked).toEqual(expect.arrayContaining([
         'wall_clock_ms',
         'total_files',
-        'extractable_files',
-        'extracted_files',
+        'code_files',
+        'indexed_files',
+        'unsupported_files',
         'node_count',
         'edge_count',
         'output_size_bytes',
       ]))
       expect(Object.keys(summary.variants)).toEqual([
-        'generate-legacy',
-        'generate-canonical',
+        'generate',
         'update-noop',
         'update-changed',
         'cluster-only',
@@ -60,32 +60,30 @@ describe('generate performance benchmark harness', () => {
       for (const variant of Object.values(summary.variants)) {
         expect(variant.wall_clock_ms).toBeGreaterThanOrEqual(0)
         expect(variant.total_files).toBeGreaterThan(0)
-        expect(variant.extractable_files).toBeGreaterThan(0)
-        expect(variant.extractable_files).toBeGreaterThanOrEqual(variant.extracted_files)
+        expect(variant.code_files).toBeGreaterThan(0)
+        expect(variant.indexed_files).toBe(variant.code_files)
+        expect(variant.unsupported_files).toBeGreaterThan(0)
         expect(variant.node_count).toBeGreaterThan(0)
         expect(variant.edge_count).toBeGreaterThan(0)
         expect(variant.graph_size_bytes).toBeGreaterThan(0)
         expect(variant.output_size_bytes).toBeGreaterThanOrEqual(variant.graph_size_bytes)
       }
 
-      expect(summary.variants['generate-canonical']).toEqual(expect.objectContaining({
+      expect(summary.variants.generate).toEqual(expect.objectContaining({
         mode: 'generate',
-        strategy: 'canonical',
-        extracted_files: 3,
+        indexed_files: 2,
       }))
       expect(summary.variants['update-noop']).toEqual(expect.objectContaining({
         mode: 'update',
-        changed_files: 0,
-        extracted_files: 0,
+        indexed_files: 2,
       }))
       expect(summary.variants['update-changed']).toEqual(expect.objectContaining({
         mode: 'update',
-        changed_files: 1,
-        extracted_files: 1,
+        indexed_files: 2,
       }))
       expect(summary.variants['cluster-only']).toEqual(expect.objectContaining({
         mode: 'cluster-only',
-        extracted_files: 0,
+        indexed_files: 2,
       }))
     })
   })
@@ -96,7 +94,7 @@ describe('generate performance benchmark harness', () => {
 
     expect(readme).toContain('`generate`, `update`, and `cluster-only`')
     expect(readme).toContain('wall_clock_ms')
-    expect(readme).toContain('generate-canonical')
+    expect(readme).toContain('canonical')
     expect(readme).toContain('Manual large-repo benchmark flow')
     expect(readme).toContain('MADAR_PERF_FIXTURE')
 
@@ -118,7 +116,7 @@ describe('generate performance benchmark harness', () => {
     })
   })
 
-  it.runIf(process.platform !== 'win32')('mutates the first real code file deterministically with language-appropriate syntax and skips symlinks', () => {
+  it.runIf(process.platform !== 'win32')('mutates the first supported code file deterministically and skips symlinks', () => {
     withTempDir((dir) => {
       const fixtureRoot = join(dir, 'fixture')
       const workDir = join(dir, 'runs')
@@ -136,12 +134,12 @@ describe('generate performance benchmark harness', () => {
         workDir,
       })
 
-      const mutatedPython = readFileSync(join(workDir, 'workspaces', 'update-changed', 'a.py'), 'utf8')
-      const untouchedTs = readFileSync(join(workDir, 'workspaces', 'update-changed', 'z.ts'), 'utf8')
+      const unsupportedPython = readFileSync(join(workDir, 'workspaces', 'update-changed', 'a.py'), 'utf8')
+      const mutatedTs = readFileSync(join(workDir, 'workspaces', 'update-changed', 'z.ts'), 'utf8')
       const outsideTarget = readFileSync(join(outside, 'linked.js'), 'utf8')
 
-      expect(mutatedPython).toContain('# __madarBenchmarkTouch = True')
-      expect(untouchedTs).not.toContain('__madarBenchmarkTouch')
+      expect(unsupportedPython).not.toContain('__madarBenchmarkTouch')
+      expect(mutatedTs).toContain('export const __madarBenchmarkTouch = true')
       expect(outsideTarget).not.toContain('__madarBenchmarkTouch')
     })
   })

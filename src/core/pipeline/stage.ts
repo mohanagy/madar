@@ -1,4 +1,4 @@
-export type PipelineKind = 'retrieval' | 'extraction'
+export type PipelineKind = 'retrieval'
 export type PipelineStageStatus = 'completed' | 'skipped' | 'failed'
 
 /**

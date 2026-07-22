@@ -1,19 +1,21 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 
-import { deserializeGraphArtifact, serializeGraphArtifact } from '../../src/domain/graph/artifact.js'
+import {
+  deserializeGraphArtifact,
+  GRAPH_ARTIFACT_VERSION,
+  serializeGraphArtifact,
+} from '../../src/domain/graph/artifact.js'
 import { KnowledgeGraph, type GraphAttributes } from '../../src/domain/graph/directed-multigraph.js'
 
 export interface GraphFixtureData extends GraphAttributes {
   directed?: never
   nodes?: Array<{ id: string } & GraphAttributes>
   edges?: Array<{ source: string; target: string } & GraphAttributes>
-  links?: Array<{ source: string; target: string } & GraphAttributes>
-  hyperedges?: unknown[]
 }
 
 export interface CanonicalGraphFixtureView extends GraphAttributes {
   schema: 'madar.graph'
-  version: 1
+  version: typeof GRAPH_ARTIFACT_VERSION
   directed: true
   nodes: Array<{
     id: string
@@ -22,13 +24,6 @@ export interface CanonicalGraphFixtureView extends GraphAttributes {
     file_type: string
   } & GraphAttributes>
   edges: Array<{
-    id: string
-    source: string
-    target: string
-    relation: string
-    confidence: string
-  } & GraphAttributes>
-  links: Array<{
     id: string
     source: string
     target: string
@@ -54,7 +49,7 @@ export function readCanonicalGraphFixture(graphPath: string): CanonicalGraphFixt
   return {
     ...graph.graph,
     schema: 'madar.graph',
-    version: 1,
+    version: GRAPH_ARTIFACT_VERSION,
     directed: true,
     nodes: graph.nodeEntries().map(([id, attributes]) => ({
       id,
@@ -64,7 +59,6 @@ export function readCanonicalGraphFixture(graphPath: string): CanonicalGraphFixt
       file_type: String(attributes.file_type ?? 'code'),
     })),
     edges,
-    links: edges,
   }
 }
 
@@ -72,19 +66,14 @@ export function serializeCanonicalGraphFixture(data: GraphFixtureData): string {
   const {
     nodes = [],
     edges = [],
-    links = [],
-    hyperedges = [],
     ...metadata
   } = data
-  const graph = new KnowledgeGraph({
-    ...metadata,
-    ...(hyperedges.length > 0 ? { hyperedges } : {}),
-  })
+  const graph = new KnowledgeGraph(metadata)
   for (const node of nodes) {
     const { id, ...attributes } = node
     graph.addNode(id, attributes)
   }
-  for (const edge of [...edges, ...links]) {
+  for (const edge of edges) {
     const { source, target, ...attributes } = edge
     graph.addEdge(source, target, attributes)
   }

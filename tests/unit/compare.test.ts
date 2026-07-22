@@ -1,7 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 
-import { strToU8, zipSync } from 'fflate'
 import { vi } from 'vitest'
 
 import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
@@ -137,102 +136,6 @@ function makeCorpusText(): string {
     .flatMap(([path, content]) => [path, content, ''])
     .join('\n')
     .trimEnd()
-}
-
-function makeGraphBackedNonCodeFixture(kind: 'pdf' | 'docx' | 'xlsx'): {
-  relativePath: string
-  fileType: 'paper' | 'document'
-  nodeLabel: string
-  expectedExcerpt: string
-  content: Buffer | string
-} {
-  if (kind === 'pdf') {
-    return {
-      relativePath: 'docs/login-flow.pdf',
-      fileType: 'paper',
-      nodeLabel: 'Login Flow PDF',
-      expectedExcerpt: 'PDF login flow creates a session token',
-      content: [
-        '%PDF-1.4',
-        '1 0 obj',
-        '<< /Title (Login Flow PDF) /Author (madar) /Subject (Authentication) >>',
-        'endobj',
-        'BT',
-        '(PDF login flow creates a session token) Tj',
-        'ET',
-      ].join('\n'),
-    }
-  }
-
-  if (kind === 'docx') {
-    return {
-      relativePath: 'docs/login-flow.docx',
-      fileType: 'document',
-      nodeLabel: 'Login Flow Docx',
-      expectedExcerpt: 'DOCX login flow creates a session token',
-      content: Buffer.from(
-        zipSync({
-          'word/document.xml': strToU8(
-            [
-              '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">',
-              '  <w:body>',
-              '    <w:p><w:r><w:t>DOCX login flow creates a session token</w:t></w:r></w:p>',
-              '  </w:body>',
-              '</w:document>',
-            ].join(''),
-          ),
-          'docProps/core.xml': strToU8(
-            '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>Login Flow Docx</dc:title></cp:coreProperties>',
-          ),
-        }),
-      ),
-    }
-  }
-
-  return {
-    relativePath: 'docs/login-flow.xlsx',
-    fileType: 'document',
-    nodeLabel: 'Login Flow Workbook',
-    expectedExcerpt: 'XLSX login flow creates a session token',
-    content: Buffer.from(
-      zipSync({
-        'xl/workbook.xml': strToU8(
-          [
-            '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">',
-            '  <sheets>',
-            '    <sheet name="LoginFlow" sheetId="1" r:id="rId1" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/>',
-            '  </sheets>',
-            '</workbook>',
-          ].join(''),
-        ),
-        'xl/sharedStrings.xml': strToU8(
-          [
-            '<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">',
-            '  <si><t>XLSX login flow creates a session token</t></si>',
-            '</sst>',
-          ].join(''),
-        ),
-      }),
-    ),
-  }
-}
-
-function makeLongGraphBackedExcerpt(kind: 'pdf' | 'docx' | 'xlsx'): string {
-  return `${kind.toUpperCase()} login flow creates a session token ${'and preserves long extracted context '.repeat(8)}`.trim()
-}
-
-function makeSingleSourceGraph(relativePath: string, nodeLabel: string, fileType: 'paper' | 'document'): KnowledgeGraph {
-  const graph = new KnowledgeGraph()
-  graph.addNode('graph_backed_source', {
-    label: nodeLabel,
-    source_file: relativePath,
-    source_location: 'L1',
-    line_number: 1,
-    node_kind: 'document',
-    file_type: fileType,
-    community: 0,
-  })
-  return graph
 }
 
 function writeProjectFiles(projectRoot: string = PROJECT_FIXTURE_ROOT): void {
@@ -4503,270 +4406,6 @@ describe('compare runtime', () => {
     expect(existsSync(secondResult.reports[0]!.paths.baseline_prompt)).toBe(true)
   })
 
-  it.each(['pdf', 'docx', 'xlsx'] as const)(
-    'writes prompt artifacts from graph-backed %s sources when corpusText is omitted',
-    (kind) => {
-      const fixture = makeGraphBackedNonCodeFixture(kind)
-      const graph = makeSingleSourceGraph(fixture.relativePath, fixture.nodeLabel, fixture.fileType)
-      const absolutePath = join(PROJECT_FIXTURE_ROOT, fixture.relativePath)
-
-      mkdirSync(dirname(absolutePath), { recursive: true })
-      writeFileSync(absolutePath, fixture.content)
-
-      const graphPath = writeGraphFixture(graph)
-
-      const result = generateCompareArtifacts({
-        graphPath,
-        question: 'how does login create a session',
-        outputDir: COMPARE_OUTPUT_ROOT,
-        execTemplate: 'claude -p "$(cat {prompt_file})"',
-        baselineMode: 'full',
-        now: new Date('2026-04-24T19:30:00Z'),
-      })
-
-      const baselinePrompt = readFileSync(result.reports[0]!.paths.baseline_prompt, 'utf8')
-      expect(baselinePrompt).toContain(fixture.expectedExcerpt)
-      expect(existsSync(result.reports[0]!.paths.madar_prompt)).toBe(true)
-      expect(existsSync(result.reports[0]!.paths.report)).toBe(true)
-    },
-  )
-
-  it.each(['pdf', 'docx', 'xlsx'] as const)(
-    'fails explicitly when graph-backed %s baseline extraction cannot produce text',
-    (kind) => {
-      const fixture = makeGraphBackedNonCodeFixture(kind)
-      const graph = makeGraph()
-      graph.addNode(`broken_${kind}_source`, {
-        label: fixture.nodeLabel,
-        source_file: fixture.relativePath,
-        source_location: 'L1',
-        line_number: 1,
-        node_kind: 'document',
-        file_type: fixture.fileType,
-        community: 0,
-      })
-
-      writeProjectFiles()
-
-      const absolutePath = join(PROJECT_FIXTURE_ROOT, fixture.relativePath)
-      mkdirSync(dirname(absolutePath), { recursive: true })
-      writeFileSync(
-        absolutePath,
-        kind === 'pdf'
-          ? [
-              '%PDF-1.4',
-              '1 0 obj',
-              '<< /Producer (madar) >>',
-              'endobj',
-            ].join('\n')
-          : Buffer.from('not-a-zip-archive'),
-      )
-
-      const graphPath = writeGraphFixture(graph)
-
-      expect(() =>
-        generateCompareArtifacts({
-          graphPath,
-          question: 'how does login create a session',
-          outputDir: COMPARE_OUTPUT_ROOT,
-          execTemplate: 'claude -p "$(cat {prompt_file})"',
-          baselineMode: 'full',
-          now: new Date('2026-04-24T19:30:00.000Z'),
-        }),
-      ).toThrow(/could not extract text|failed to extract/i)
-    },
-  )
-
-  it.each(['pdf', 'docx', 'xlsx'] as const)(
-    'preserves long extracted lines from graph-backed %s sources when corpusText is omitted',
-    (kind) => {
-      const fixture = makeGraphBackedNonCodeFixture(kind)
-      const longExcerpt = makeLongGraphBackedExcerpt(kind)
-      const graph = makeSingleSourceGraph(fixture.relativePath, fixture.nodeLabel, fixture.fileType)
-      const absolutePath = join(PROJECT_FIXTURE_ROOT, fixture.relativePath)
-
-      mkdirSync(dirname(absolutePath), { recursive: true })
-      if (kind === 'pdf') {
-        writeFileSync(
-          absolutePath,
-          [
-            '%PDF-1.4',
-            '1 0 obj',
-            '<< /Title (Login Flow PDF) /Author (madar) /Subject (Authentication) >>',
-            'endobj',
-            'BT',
-            `(${longExcerpt}) Tj`,
-            'ET',
-          ].join('\n'),
-        )
-      } else if (kind === 'docx') {
-        writeFileSync(
-          absolutePath,
-          Buffer.from(
-            zipSync({
-              'word/document.xml': strToU8(
-                [
-                  '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">',
-                  '  <w:body>',
-                  `    <w:p><w:r><w:t>${longExcerpt}</w:t></w:r></w:p>`,
-                  '  </w:body>',
-                  '</w:document>',
-                ].join(''),
-              ),
-            }),
-          ),
-        )
-      } else {
-        writeFileSync(
-          absolutePath,
-          Buffer.from(
-            zipSync({
-              'xl/workbook.xml': strToU8(
-                [
-                  '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">',
-                  '  <sheets>',
-                  '    <sheet name="LoginFlow" sheetId="1" r:id="rId1" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/>',
-                  '  </sheets>',
-                  '</workbook>',
-                ].join(''),
-              ),
-              'xl/sharedStrings.xml': strToU8(
-                [
-                  '<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">',
-                  `  <si><t>${longExcerpt}</t></si>`,
-                  '</sst>',
-                ].join(''),
-              ),
-            }),
-          ),
-        )
-      }
-
-      const graphPath = writeGraphFixture(graph)
-
-      const result = generateCompareArtifacts({
-        graphPath,
-        question: 'how does login create a session',
-        outputDir: COMPARE_OUTPUT_ROOT,
-        execTemplate: 'claude -p "$(cat {prompt_file})"',
-        baselineMode: 'full',
-        now: new Date('2026-04-24T19:30:00Z'),
-      })
-
-      const baselinePrompt = readFileSync(result.reports[0]!.paths.baseline_prompt, 'utf8')
-      expect(longExcerpt.length).toBeGreaterThan(256)
-      expect(baselinePrompt).toContain(longExcerpt)
-    },
-  )
-
-  it('preserves long XLSX core metadata lines when corpusText is omitted', () => {
-    const longTitle = `Workbook title ${'preserves long extracted core metadata '.repeat(8)}`.trim()
-    const fixture = makeGraphBackedNonCodeFixture('xlsx')
-    const graph = makeSingleSourceGraph(fixture.relativePath, fixture.nodeLabel, fixture.fileType)
-    const absolutePath = join(PROJECT_FIXTURE_ROOT, fixture.relativePath)
-
-    mkdirSync(dirname(absolutePath), { recursive: true })
-    writeFileSync(
-      absolutePath,
-      Buffer.from(
-        zipSync({
-          'docProps/core.xml': strToU8(
-            `<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>${longTitle}</dc:title></cp:coreProperties>`,
-          ),
-          'xl/workbook.xml': strToU8(
-            [
-              '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">',
-              '  <sheets>',
-              '    <sheet name="LoginFlow" sheetId="1" r:id="rId1" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/>',
-              '  </sheets>',
-              '</workbook>',
-            ].join(''),
-          ),
-          'xl/sharedStrings.xml': strToU8(
-            [
-              '<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">',
-              '  <si><t>XLSX login flow creates a session token</t></si>',
-              '</sst>',
-            ].join(''),
-          ),
-        }),
-      ),
-    )
-
-    const graphPath = writeGraphFixture(graph)
-    const result = generateCompareArtifacts({
-      graphPath,
-      question: 'how does login create a session',
-      outputDir: COMPARE_OUTPUT_ROOT,
-      execTemplate: 'claude -p "$(cat {prompt_file})"',
-      baselineMode: 'full',
-      now: new Date('2026-04-24T19:30:00Z'),
-    })
-
-    const baselinePrompt = readFileSync(result.reports[0]!.paths.baseline_prompt, 'utf8')
-    expect(longTitle.length).toBeGreaterThan(256)
-    expect(baselinePrompt).toContain(longTitle)
-  })
-
-  it('includes manifest-only files when deriving the runtime baseline corpus', () => {
-    const graph = makeGraph()
-    writeProjectFiles()
-    const graphPath = writeGraphFixture(graph)
-    const manifestOnlyDocFilePath = join(PROJECT_FIXTURE_ROOT, 'docs', 'manifest-only.md')
-    mkdirSync(dirname(manifestOnlyDocFilePath), { recursive: true })
-    writeFileSync(manifestOnlyDocFilePath, 'manifest-only notes that should appear in the compare baseline prompt\n', 'utf8')
-    writeManifestFixture(PROJECT_FIXTURE_ROOT, GRAPH_FIXTURE_ROOT, {
-      document: [manifestOnlyDocFilePath],
-    })
-
-    const result = generateCompareArtifacts({
-      graphPath,
-      question: 'how does login create a session',
-      outputDir: COMPARE_OUTPUT_ROOT,
-      execTemplate: 'claude -p "$(cat {prompt_file})"',
-      baselineMode: 'full',
-      now: new Date('2026-04-24T19:30:00Z'),
-    })
-
-    const baselinePrompt = readFileSync(result.reports[0]!.paths.baseline_prompt, 'utf8')
-    expect(baselinePrompt).toContain('return new SessionManager().createSession(credentials.userId)')
-    expect(baselinePrompt).toContain('manifest-only notes that should appear in the compare baseline prompt')
-  })
-
-  it('keeps the manifest file set as the baseline boundary when it is present', () => {
-    const graph = makeGraph()
-    graph.addNode('graph_only_notes', {
-      label: 'GraphOnlyNotes',
-      source_file: 'docs/graph-only.md',
-      source_location: 'L1',
-      line_number: 1,
-      node_kind: 'document',
-      file_type: 'document',
-      community: 0,
-    })
-    writeProjectFiles()
-    const graphPath = writeGraphFixture(graph)
-    const graphOnlyPath = join(PROJECT_FIXTURE_ROOT, 'docs', 'graph-only.md')
-    mkdirSync(dirname(graphOnlyPath), { recursive: true })
-    writeFileSync(graphOnlyPath, 'graph-only notes should stay out of the compare baseline prompt\n', 'utf8')
-    writeManifestFixture(PROJECT_FIXTURE_ROOT, GRAPH_FIXTURE_ROOT, {
-      code: [join(PROJECT_FIXTURE_ROOT, 'src', 'auth.ts')],
-    })
-
-    const result = generateCompareArtifacts({
-      graphPath,
-      question: 'how does login create a session',
-      outputDir: COMPARE_OUTPUT_ROOT,
-      execTemplate: 'claude -p "$(cat {prompt_file})"',
-      baselineMode: 'full',
-      now: new Date('2026-04-24T19:30:00Z'),
-    })
-
-    const baselinePrompt = readFileSync(result.reports[0]!.paths.baseline_prompt, 'utf8')
-    expect(baselinePrompt).toContain('return new SessionManager().createSession(credentials.userId)')
-    expect(baselinePrompt).not.toContain('graph-only notes should stay out of the compare baseline prompt')
-  })
-
   it('fails when a graph-backed text file is missing from the local runtime corpus', () => {
     const graph = makeGraph()
     writeProjectFiles()
@@ -4955,18 +4594,12 @@ describe('assessBenchmarkReadinessFromRetrieveResult', () => {
     }
   }
 
-  function writeReadinessGraphFixture(options: {
-    graphFixtureRoot: string
-    spiMode?: boolean
-  }): string {
+  function writeReadinessGraphFixture(options: { graphFixtureRoot: string }): string {
     const graph = makeGraph()
-    if (options.spiMode === true) {
-      graph.graph.spi_mode = true
-    }
     return writeGraphFixture(graph, options.graphFixtureRoot)
   }
 
-  it('marks root non-SPI runtime-generation packs not ready and suggests a scoped backend graph', () => {
+  it('marks incomplete root runtime-generation packs not ready and suggests a scoped backend graph', () => {
     const readiness = assessBenchmarkReadinessFromRetrieveResult({
       graphPath: '/repo/out/graph.json',
       retrieval: makeRuntimeGenerationRetrieval({
@@ -5004,7 +4637,6 @@ describe('assessBenchmarkReadinessFromRetrieveResult', () => {
     expect(readiness.status).toBe('not_ready')
     expect(readiness.reasons).toEqual(expect.arrayContaining([
       expect.stringContaining('missing downstream runtime phases'),
-      expect.stringContaining('no SPI evidence'),
       expect.stringContaining('backend/'),
     ]))
     expect(readiness.suggested_graph_scope).toBe('backend/out/graph.json')
@@ -5097,7 +4729,6 @@ describe('assessBenchmarkReadinessFromRetrieveResult', () => {
       login: {
         prompt: question,
         strict_runtime_proof: true,
-        expected_spi: false,
         obligations: [
           { id: 'entry', label: 'authentication entry', kind: 'entrypoint', evidence_terms: ['authenticateUser'] },
           { id: 'persistence', label: 'session persistence', kind: 'terminal', evidence_terms: ['SessionStore'] },
@@ -5147,69 +4778,6 @@ describe('assessBenchmarkReadinessFromRetrieveResult', () => {
     }
   })
 
-  it('treats SPI-mode graph metadata as SPI evidence for app-file runtime packs', () => {
-    const graphPath = writeReadinessGraphFixture({
-      graphFixtureRoot: join(PROJECT_FIXTURE_ROOT, 'backend', 'out'),
-      spiMode: true,
-    })
-
-    const readiness = assessBenchmarkReadinessFromRetrieveResult({
-      graphPath,
-      retrieval: makeRuntimeGenerationRetrieval({
-        matched_nodes: [
-          {
-            label: 'GenerateIdeaReportService.handle',
-            source_file: 'backend/src/modules/ideas/application/generate-idea-report.service.ts',
-            line_number: 42,
-            file_type: 'code',
-            snippet: null,
-            match_score: 12,
-            relevance_band: 'direct',
-            community: null,
-            community_label: null,
-          },
-        ],
-      }),
-    })
-
-    expect(readiness).toEqual({
-      status: 'ready',
-      reasons: [],
-      suggested_graph_scope: null,
-    })
-  })
-
-  it('keeps non-SPI app-file runtime packs flagged as missing SPI evidence', () => {
-    const graphPath = writeReadinessGraphFixture({
-      graphFixtureRoot: join(PROJECT_FIXTURE_ROOT, 'backend', 'out'),
-    })
-
-    const readiness = assessBenchmarkReadinessFromRetrieveResult({
-      graphPath,
-      retrieval: makeRuntimeGenerationRetrieval({
-        matched_nodes: [
-          {
-            label: 'GenerateIdeaReportService.handle',
-            source_file: 'backend/src/modules/ideas/application/generate-idea-report.service.ts',
-            line_number: 42,
-            file_type: 'code',
-            snippet: null,
-            match_score: 12,
-            relevance_band: 'direct',
-            community: null,
-            community_label: null,
-          },
-        ],
-      }),
-    })
-
-    expect(readiness).toEqual({
-      status: 'degraded',
-      reasons: ['no SPI evidence found in the current pack'],
-      suggested_graph_scope: null,
-    })
-  })
-
   it('rejects corrupt graph artifacts with actionable regeneration guidance', () => {
     const graphFixtureRoot = join(PROJECT_FIXTURE_ROOT, 'backend', 'out')
     mkdirSync(graphFixtureRoot, { recursive: true })
@@ -5236,10 +4804,9 @@ describe('assessBenchmarkReadinessFromRetrieveResult', () => {
     })).toThrow(/corrupted.*madar generate \. --update/i)
   })
 
-  it('marks root SPI runtime-generation packs degraded when downstream phases are still missing', () => {
+  it('marks root runtime-generation packs degraded when downstream phases are still missing', () => {
     const graphPath = writeReadinessGraphFixture({
       graphFixtureRoot: join(PROJECT_FIXTURE_ROOT, 'out'),
-      spiMode: true,
     })
 
     const readiness = assessBenchmarkReadinessFromRetrieveResult({
@@ -5247,8 +4814,8 @@ describe('assessBenchmarkReadinessFromRetrieveResult', () => {
       retrieval: makeRuntimeGenerationRetrieval({
         matched_nodes: [
           {
-            label: 'IdeaReportSpi.generate',
-            source_file: 'backend/src/spi/idea-report.spi.ts',
+            label: 'IdeaReportService.generate',
+            source_file: 'backend/src/idea-report.service.ts',
             line_number: 12,
             file_type: 'code',
             snippet: null,
@@ -5264,8 +4831,8 @@ describe('assessBenchmarkReadinessFromRetrieveResult', () => {
           confidence_reasons: ['persistence_boundary_not_traced'],
           steps: [
             {
-              label: 'IdeaReportSpi.generate',
-              source_file: 'backend/src/spi/idea-report.spi.ts',
+              label: 'IdeaReportService.generate',
+              source_file: 'backend/src/idea-report.service.ts',
               line_number: 12,
               node_kind: 'method',
             },
@@ -5304,7 +4871,7 @@ describe('assessBenchmarkReadinessFromRetrieveResult', () => {
         matched_nodes: [
           {
             label: 'IdeaReportSpi.generate',
-            source_file: '/repo/backend/src/spi/idea-report.spi.ts',
+            source_file: '/repo/backend/src/idea-report.service.ts',
             line_number: 12,
             file_type: 'code',
             snippet: null,
@@ -5321,7 +4888,7 @@ describe('assessBenchmarkReadinessFromRetrieveResult', () => {
           steps: [
             {
               label: 'IdeaReportSpi.generate',
-              source_file: '/repo/backend/src/spi/idea-report.spi.ts',
+              source_file: '/repo/backend/src/idea-report.service.ts',
               line_number: 12,
               node_kind: 'method',
             },
@@ -5359,10 +4926,9 @@ describe('assessBenchmarkReadinessFromRetrieveResult', () => {
     )).toBe(resolve('/tmp/bench', 'apps/out/graph.json'))
   })
 
-  it('marks backend SPI runtime-generation packs ready when runtime spine evidence is covered', () => {
+  it('marks backend runtime-generation packs ready when runtime spine evidence is covered', () => {
     const graphPath = writeReadinessGraphFixture({
       graphFixtureRoot: join(PROJECT_FIXTURE_ROOT, 'backend', 'out'),
-      spiMode: true,
     })
 
     const readiness = assessBenchmarkReadinessFromRetrieveResult({
@@ -5370,8 +4936,8 @@ describe('assessBenchmarkReadinessFromRetrieveResult', () => {
       retrieval: makeRuntimeGenerationRetrieval({
         matched_nodes: [
           {
-            label: 'IdeaReportSpi.generate',
-            source_file: 'backend/src/spi/idea-report.spi.ts',
+            label: 'IdeaReportService.generate',
+            source_file: 'backend/src/idea-report.service.ts',
             line_number: 12,
             file_type: 'code',
             snippet: null,
@@ -5391,34 +4957,4 @@ describe('assessBenchmarkReadinessFromRetrieveResult', () => {
     })
   })
 
-  it('does not treat top-level spi paths as SPI evidence without SPI graph metadata', () => {
-    const graphPath = writeReadinessGraphFixture({
-      graphFixtureRoot: join(PROJECT_FIXTURE_ROOT, 'spi', 'out'),
-    })
-
-    const readiness = assessBenchmarkReadinessFromRetrieveResult({
-      graphPath,
-      retrieval: makeRuntimeGenerationRetrieval({
-        matched_nodes: [
-          {
-            label: 'SpiRuntime.generate',
-            source_file: 'spi/runtime.ts',
-            line_number: 12,
-            file_type: 'code',
-            snippet: null,
-            match_score: 11,
-            relevance_band: 'direct',
-            community: null,
-            community_label: null,
-          },
-        ],
-      }),
-    })
-
-    expect(readiness).toEqual({
-      status: 'degraded',
-      reasons: ['no SPI evidence found in the current pack'],
-      suggested_graph_scope: null,
-    })
-  })
 })

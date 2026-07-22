@@ -2,7 +2,7 @@ import { chmodSync, mkdtempSync, rmSync, symlinkSync, writeFileSync, mkdirSync }
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 
-import { _loadMadarignore, _isIgnored, classifyFile, countWords, detect, FileType } from '../../src/pipeline/detect.js'
+import { _loadMadarignore, _isIgnored, classifyFile, collectFreshnessCandidatePaths, countWords, detect, FileType } from '../../src/pipeline/detect.js'
 import { normalizeAssertionPath, normalizeAssertionPaths } from './helpers/platform.js'
 
 const FIXTURES_DIR = join(process.cwd(), 'tests', 'fixtures')
@@ -12,15 +12,30 @@ describe('detect', () => {
     return mkdtempSync(join(tmpdir(), 'madar-detect-'))
   }
 
-  it('classifies code, docs, papers, images, audio, video, and unknown files', () => {
-    expect(classifyFile('foo.py')).toBe(FileType.CODE)
+  it('classifies only TypeScript and JavaScript as supported code', () => {
+    expect(classifyFile('foo.py')).toBeNull()
     expect(classifyFile('bar.ts')).toBe(FileType.CODE)
-    expect(classifyFile('README.md')).toBe(FileType.DOCUMENT)
-    expect(classifyFile('paper.pdf')).toBe(FileType.PAPER)
-    expect(classifyFile('screenshot.png')).toBe(FileType.IMAGE)
-    expect(classifyFile('episode.mp3')).toBe(FileType.AUDIO)
-    expect(classifyFile('demo.mp4')).toBe(FileType.VIDEO)
+    expect(classifyFile('component.tsx')).toBe(FileType.CODE)
+    expect(classifyFile('script.js')).toBe(FileType.CODE)
+    expect(classifyFile('view.jsx')).toBe(FileType.CODE)
+    expect(classifyFile('README.md')).toBeNull()
+    expect(classifyFile('paper.pdf')).toBeNull()
     expect(classifyFile('archive.zip')).toBeNull()
+  })
+
+  it('shares one path-only inventory for supported, unsupported, and compiler-control candidates', () => {
+    const root = createTempRoot()
+    try {
+      mkdirSync(join(root, 'src'))
+      writeFileSync(join(root, 'src', 'main.ts'), 'export const main = true\n', 'utf8')
+      writeFileSync(join(root, 'README.md'), '# Receipt\n', 'utf8')
+      writeFileSync(join(root, 'tsconfig.app.json'), '{}\n', 'utf8')
+      const found = collectFreshnessCandidatePaths(root)
+
+      expect(found).toEqual({ supported: ['src/main.ts'], unsupported: ['README.md'], controls: ['tsconfig.app.json'] })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('skips PDFs inside xcassets directories', () => {
@@ -37,7 +52,9 @@ describe('detect', () => {
 
     expect(result.total_files).toBeGreaterThanOrEqual(2)
     expect(result.files.code.length).toBeGreaterThan(0)
-    expect(result.files.document.length).toBeGreaterThan(0)
+    expect(result.indexing_outcomes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: 'sample.md', reason: 'unsupported_file_type' }),
+    ]))
     expect(result.needs_graph).toBe(false)
     expect(result.warning).not.toBeNull()
   })
@@ -46,7 +63,7 @@ describe('detect', () => {
     const root = createTempRoot()
     try {
       for (let index = 0; index < 201; index += 1) {
-        writeFileSync(join(root, `doc-${index}.md`), `${'word '.repeat(250)}\n`, 'utf8')
+        writeFileSync(join(root, `source-${index}.ts`), `${'word '.repeat(250)}\n`, 'utf8')
       }
 
       const result = detect(root)
@@ -70,8 +87,7 @@ describe('detect', () => {
 
       const result = detect(root)
 
-      expect(normalizeAssertionPaths(result.files.document)).not.toContain(normalizeAssertionPath(join(root, 'out', 'memory', 'query_auth.md')))
-      expect(result.files.document.some((filePath) => filePath.endsWith('GRAPH_REPORT.md'))).toBe(false)
+      expect(result.files.code.some((filePath) => filePath.includes(`${join('out', 'memory')}`))).toBe(false)
       expect(
         Object.values(result.files)
           .flat()
@@ -95,15 +111,15 @@ describe('detect', () => {
   it('loads madarignore patterns and excludes matching files', () => {
     const root = createTempRoot()
     try {
-      writeFileSync(join(root, '.madarignore'), 'vendor/\n*.generated.py\n', 'utf8')
+      writeFileSync(join(root, '.madarignore'), 'vendor/\n*.generated.ts\n', 'utf8')
       mkdirSync(join(root, 'vendor'), { recursive: true })
-      writeFileSync(join(root, 'vendor', 'lib.py'), 'x = 1', 'utf8')
-      writeFileSync(join(root, 'main.py'), 'print("hi")', 'utf8')
-      writeFileSync(join(root, 'schema.generated.py'), 'x = 1', 'utf8')
+      writeFileSync(join(root, 'vendor', 'lib.ts'), 'export const x = 1', 'utf8')
+      writeFileSync(join(root, 'main.ts'), 'export const main = true', 'utf8')
+      writeFileSync(join(root, 'schema.generated.ts'), 'export const generated = true', 'utf8')
 
       const result = detect(root)
 
-      expect(result.files.code.some((filePath) => filePath.includes('main.py'))).toBe(true)
+      expect(result.files.code.some((filePath) => filePath.includes('main.ts'))).toBe(true)
       expect(result.files.code.some((filePath) => filePath.includes('vendor'))).toBe(false)
       expect(result.files.code.some((filePath) => filePath.includes('generated'))).toBe(false)
       expect(result.madarignore_patterns).toBe(2)
@@ -115,7 +131,7 @@ describe('detect', () => {
           reason: 'madarignore',
         }),
         expect.objectContaining({
-          path: 'schema.generated.py',
+          path: 'schema.generated.ts',
           kind: 'file',
           status: 'skipped_by_policy',
           reason: 'madarignore',
@@ -170,7 +186,7 @@ describe('detect', () => {
         'src/secret-manager.ts',
         'src/secrets/credential-rotation.ts',
       ]))
-      expect(result.files.document.map((filePath) => relative(root, filePath).replaceAll('\\', '/'))).not.toContain('src/secrets/README.md')
+      expect(result.files.code.map((filePath) => relative(root, filePath).replaceAll('\\', '/'))).not.toContain('src/secrets/README.md')
       expect(result.exclusions).toEqual(expect.arrayContaining([
         { path: '.env.production', kind: 'sensitive', reason: 'environment_file' },
         { path: 'id_ed25519', kind: 'sensitive', reason: 'private_key' },
@@ -348,14 +364,14 @@ describe('detect', () => {
   it('ignores comments in madarignore files', () => {
     const root = createTempRoot()
     try {
-      writeFileSync(join(root, '.madarignore'), '# comment\n\nmain.py\n', 'utf8')
-      writeFileSync(join(root, 'main.py'), 'x = 1', 'utf8')
-      writeFileSync(join(root, 'other.py'), 'x = 2', 'utf8')
+      writeFileSync(join(root, '.madarignore'), '# comment\n\nmain.ts\n', 'utf8')
+      writeFileSync(join(root, 'main.ts'), 'export const main = true', 'utf8')
+      writeFileSync(join(root, 'other.ts'), 'export const other = true', 'utf8')
 
       const result = detect(root)
 
-      expect(result.files.code.some((filePath) => filePath.includes('main.py'))).toBe(false)
-      expect(result.files.code.some((filePath) => filePath.includes('other.py'))).toBe(true)
+      expect(result.files.code.some((filePath) => filePath.includes('main.ts'))).toBe(false)
+      expect(result.files.code.some((filePath) => filePath.includes('other.ts'))).toBe(true)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -364,12 +380,12 @@ describe('detect', () => {
   it('exposes madarignore helpers for explicit path matching', () => {
     const root = createTempRoot()
     try {
-      writeFileSync(join(root, '.madarignore'), 'vendor/\n*.generated.py\n', 'utf8')
+      writeFileSync(join(root, '.madarignore'), 'vendor/\n*.generated.ts\n', 'utf8')
       const patterns = _loadMadarignore(root)
 
-      expect(_isIgnored(join(root, 'vendor', 'lib.py'), root, patterns)).toBe(true)
-      expect(_isIgnored(join(root, 'schema.generated.py'), root, patterns)).toBe(true)
-      expect(_isIgnored(join(root, 'main.py'), root, patterns)).toBe(false)
+      expect(_isIgnored(join(root, 'vendor', 'lib.ts'), root, patterns)).toBe(true)
+      expect(_isIgnored(join(root, 'schema.generated.ts'), root, patterns)).toBe(true)
+      expect(_isIgnored(join(root, 'main.ts'), root, patterns)).toBe(false)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -395,7 +411,7 @@ describe('detect', () => {
     try {
       const realDir = join(root, 'real_lib')
       mkdirSync(realDir, { recursive: true })
-      writeFileSync(join(realDir, 'util.py'), 'x = 1', 'utf8')
+      writeFileSync(join(realDir, 'util.ts'), 'export const util = true', 'utf8')
       symlinkSync(realDir, join(root, 'linked_lib'))
 
       const resultWithoutSymlinks = detect(root)
@@ -412,14 +428,14 @@ describe('detect', () => {
   it('follows symlinked files when requested', () => {
     const root = createTempRoot()
     try {
-      const realFile = join(root, 'real.py')
+      const realFile = join(root, 'real.ts')
       writeFileSync(realFile, 'x = 1', 'utf8')
-      symlinkSync(realFile, join(root, 'link.py'))
+      symlinkSync(realFile, join(root, 'link.ts'))
 
       const result = detect(root, { followSymlinks: true })
 
-      expect(result.files.code.some((filePath) => filePath.includes('real.py'))).toBe(true)
-      expect(result.files.code.some((filePath) => filePath.includes('link.py'))).toBe(true)
+      expect(result.files.code.some((filePath) => filePath.includes('real.ts'))).toBe(true)
+      expect(result.files.code.some((filePath) => filePath.includes('link.ts'))).toBe(true)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -430,12 +446,12 @@ describe('detect', () => {
     try {
       const subDir = join(root, 'a')
       mkdirSync(subDir, { recursive: true })
-      writeFileSync(join(subDir, 'main.py'), 'x = 1', 'utf8')
+      writeFileSync(join(subDir, 'main.ts'), 'export const main = true', 'utf8')
       symlinkSync(root, join(subDir, 'loop'))
 
       const result = detect(root, { followSymlinks: true })
 
-      expect(result.files.code.some((filePath) => filePath.includes('main.py'))).toBe(true)
+      expect(result.files.code.some((filePath) => filePath.includes('main.ts'))).toBe(true)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

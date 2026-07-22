@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import { handleStdioRequest, serveGraphStdio } from '../../src/runtime/stdio-server.js'
 import { graphFreshnessMetadata } from '../../src/runtime/freshness.js'
+import { fileContentFingerprint } from '../../src/shared/graph-build-freshness.js'
 import { readWatcherStateForGraph, writeWatcherState } from '../../src/infrastructure/watcher-state.js'
 import { appendCanonicalGraphNode, readCanonicalGraphFixture, writeCanonicalGraphFixture } from '../helpers/graph-artifact.js'
 
@@ -32,6 +33,26 @@ function createGraphFixtureRoot(): string {
   writeFileSync(join(root, 'auth.ts'), 'export function AuthService() {\n  return new HttpClient()\n}\n', 'utf8')
   writeFileSync(join(root, 'client.ts'), 'export class HttpClient {\n  request() {\n    return new Transport()\n  }\n}\n', 'utf8')
   writeFileSync(join(root, 'transport.ts'), 'export class Transport {}\n', 'utf8')
+  const generatedMs = Date.now()
+  const graphBuildFreshness = {
+    format_version: 3,
+    strategy: 'filesystem',
+    generated_at: new Date(generatedMs).toISOString(),
+    generated_ms: generatedMs,
+    supported_receipt_paths: ['auth.ts', 'client.ts', 'transport.ts'],
+    unsupported_receipt_paths: [],
+    control_file_fingerprints: {},
+    follow_symlinks: false,
+    respect_gitignore: false,
+    filesystem: {
+      file_fingerprints: Object.fromEntries(
+        ['auth.ts', 'client.ts', 'transport.ts'].map((sourceFile) => [
+          sourceFile,
+          fileContentFingerprint(join(root, sourceFile)),
+        ]),
+      ),
+    },
+  } as const
   writeCanonicalGraphFixture(
     join(root, 'baseline.graph.json'),
     {
@@ -40,12 +61,13 @@ function createGraphFixtureRoot(): string {
         { id: 'client', label: 'HttpClient', source_file: 'client.ts', source_location: '2', file_type: 'code', community: 0 },
       ],
       edges: [{ source: 'auth', target: 'client', relation: 'calls', confidence: 'EXTRACTED', source_file: 'auth.ts' }],
-      hyperedges: [],
     },
   )
   writeCanonicalGraphFixture(
     join(root, 'graph.json'),
     {
+      root_path: root,
+      graph_build_freshness: graphBuildFreshness,
       community_labels: {
         '0': 'Auth Services',
         '1': 'Transport Layer',
@@ -69,7 +91,6 @@ function createGraphFixtureRoot(): string {
         { source: 'auth', target: 'client', relation: 'calls', confidence: 'EXTRACTED', source_file: 'auth.ts' },
         { source: 'client', target: 'transport', relation: 'uses', confidence: 'EXTRACTED', source_file: 'client.ts' },
       ],
-      hyperedges: [],
     },
   )
   writeFileSync(join(root, 'GRAPH_REPORT.md'), '# Graph Report\n\n- AuthService calls HttpClient\n', 'utf8')
@@ -131,7 +152,6 @@ function createRetrieveOverflowFixtureRoot(): string {
       },
       nodes,
       edges,
-      hyperedges: [],
     },
   )
 
@@ -198,7 +218,6 @@ function createPrImpactFixtureRoot(): string {
           source_file: join(root, 'src', 'api.ts'),
         },
       ],
-      hyperedges: [],
       root_path: root,
     },
   )
@@ -498,7 +517,6 @@ describe('stdio runtime', () => {
         {
           nodes: [{ id: 'updated', label: 'UpdatedNode', source_file: 'updated.ts', source_location: '1', file_type: 'code', community: 0 }],
           edges: [],
-          hyperedges: [],
         },
       )
 
@@ -512,7 +530,6 @@ describe('stdio runtime', () => {
         {
           nodes: [{ id: 'updated-again', label: 'UpdatedAgain', source_file: 'updated-again.ts', source_location: '1', file_type: 'code', community: 0 }],
           edges: [],
-          hyperedges: [],
         },
       )
 
@@ -744,7 +761,6 @@ describe('stdio runtime', () => {
             { source: 'dashboard_page_primary', target: 'select_auth_status', relation: 'uses', confidence: 'EXTRACTED', source_file: '/src/routes/dashboard-page.tsx' },
             { source: 'dashboard_route', target: 'dashboard_page_primary', relation: 'depends_on', confidence: 'EXTRACTED', source_file: '/src/routes/dashboard.tsx' },
           ],
-          hyperedges: [],
         },
       )
 
@@ -2222,7 +2238,6 @@ describe('stdio runtime', () => {
             { source: 'show_user_profile', target: 'get_user_profile', relation: 'calls', confidence: 'EXTRACTED', source_file: '/workspace/src/routes/users.ts' },
             { source: 'show_user_profile', target: 'logger', relation: 'calls', confidence: 'EXTRACTED', source_file: '/workspace/src/routes/users.ts' },
           ],
-          hyperedges: [],
         },
       )
 
@@ -2287,7 +2302,6 @@ describe('stdio runtime', () => {
             { source: 'show_user_profile', target: 'get_user_profile', relation: 'calls', confidence: 'EXTRACTED', source_file: '/workspace/src/routes/users.ts' },
             { source: 'show_user_profile', target: 'logger', relation: 'calls', confidence: 'EXTRACTED', source_file: '/workspace/src/routes/users.ts' },
           ],
-          hyperedges: [],
         },
       )
 
@@ -2355,7 +2369,6 @@ describe('stdio runtime', () => {
             { source: 'hydrate_account', target: 'get_user_profile', relation: 'calls', confidence: 'EXTRACTED', source_file: '/workspace/src/account/screen.ts' },
             { source: 'get_user_profile', target: 'database', relation: 'calls', confidence: 'EXTRACTED', source_file: '/workspace/src/services/users.ts' },
           ],
-          hyperedges: [],
         },
       )
 
@@ -2428,7 +2441,6 @@ describe('stdio runtime', () => {
             { source: 'hydrate_account', target: 'get_user_profile', relation: 'calls', confidence: 'EXTRACTED', source_file: '/workspace/src/account/screen.ts' },
             { source: 'get_user_profile', target: 'database', relation: 'calls', confidence: 'EXTRACTED', source_file: '/workspace/src/services/users.ts' },
           ],
-          hyperedges: [],
         },
       )
 
@@ -2507,7 +2519,6 @@ describe('stdio runtime', () => {
         {
           nodes: [{ id: 'replacement', label: 'ReplacementNode', source_file: 'replacement.ts', source_location: '1', file_type: 'code', community: 0 }],
           edges: [],
-          hyperedges: [],
         },
       )
 
@@ -2566,7 +2577,6 @@ describe('stdio runtime', () => {
         {
           nodes: [{ id: 'replacement', label: 'ReplacementNode', source_file: 'replacement.ts', source_location: '1', file_type: 'code', community: 0 }],
           edges: [],
-          hyperedges: [],
         },
       )
       freezeGraphMtime = true

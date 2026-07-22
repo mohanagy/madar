@@ -4,24 +4,24 @@ A valid `graph.json` proves that Madar produced a readable graph artifact. It do
 
 Madar writes a separate, versioned completeness receipt for each generation:
 
-- `indexing-manifest.json` is local-only and contains aggregate counts, terminal file or directory outcomes, capabilities, and safe diagnostics.
-- `indexing-manifest.share-safe.json` contains counts, reason buckets, capability buckets, and index diagnostic counts. It omits paths, per-file outcomes, and diagnostic messages. The schema-v1 field remains named `spi_diagnostics` so existing artifacts stay readable.
+- `indexing-manifest.json` is local-only and contains the schema-v2 `summary`, terminal `outcomes`, and source-safe `index_diagnostics` produced by the canonical JavaScript/TypeScript index.
+- `indexing-manifest.share-safe.json` contains aggregate counts, reason buckets, and diagnostic counts. It omits paths, per-file outcomes, and diagnostic messages.
 
 In a linked Git worktree these files live beside the external worktree-specific graph, not inside the checkout. `madar generate`, `madar doctor`, and `madar status` print the resolved local location or the relevant counts.
 
 ## What counts as an indexed file
 
-An indexed file is a discovered candidate for which the canonical index or a companion extractor produced usable graph evidence, or whose previously indexed evidence was safely reused from an unchanged graph. The temporary legacy companion can also reuse its extraction cache; supported JS/TS canonical indexing is uncached.
+An indexed file is a discovered `.ts`, `.tsx`, `.js`, or `.jsx` candidate for which the canonical compiler-backed index produced usable graph evidence. Publishing an unchanged already-current graph is whole-artifact reuse; Madar does not cache or merge per-file extraction fragments.
 
-Each discovered candidate with a supported or explicitly known unsupported source/document/media extension, outside Madar's hard-ignored artifact trees, receives one terminal outcome:
+Each supported candidate, plus each recognized source-like file that Madar can report as unsupported, receives one terminal outcome outside Madar's hard-ignored artifact trees:
 
 | Outcome | Meaning |
 | --- | --- |
-| `indexed` | Indexing or extraction completed without a reported warning. This includes unchanged-graph reuse and legacy-companion cache reason codes. |
-| `indexed_with_warnings` | Usable evidence was produced, but a parser fallback or index diagnostic may reduce coverage. |
+| `indexed` | Canonical indexing completed without a reported warning. |
+| `indexed_with_warnings` | Usable canonical evidence was produced, but an index diagnostic may reduce coverage. |
 | `skipped_by_policy` | Madar deliberately did not read the path, for example because it was sensitive, hidden, ignored, excluded by Git policy, or disabled by an option. |
-| `unsupported` | Madar recognized the candidate as source-like but has no applicable extraction capability in the selected pipeline. |
-| `failed` | Discovery, stat, parser, canonical indexing, legacy extraction, or empty-extraction handling failed for the candidate. |
+| `unsupported` | Madar recognized the file as source-like, but it is outside the current JavaScript/TypeScript product scope and contributes no graph facts. |
+| `failed` | Discovery, stat, or canonical indexing failed for a supported candidate. |
 
 An unreadable or deliberately untraversed directory can have a directory outcome because Madar cannot safely claim individual file knowledge below it. Generated artifacts and dependency trees that Madar hard-ignores, such as `.git/`, `node_modules/`, and `out/`, are outside the candidate set and are not enumerated merely to inflate policy counts.
 
@@ -43,7 +43,7 @@ madar doctor
 madar status
 ```
 
-Reason and capability buckets are stable machine-readable fields. Diagnostic messages remain local because parser errors can contain source paths or source-derived text. The share-safe manifest retains the category and count without retaining that content.
+Reason buckets and `index_diagnostics` counts are stable machine-readable fields. Diagnostic messages remain local because compiler errors can contain source paths or source-derived text. The share-safe manifest retains the category and count without retaining that content.
 
 Graph metadata and agent-facing evidence receive aggregate completeness only. They do not copy local outcome paths into shareable graph summaries or context-pack evidence.
 

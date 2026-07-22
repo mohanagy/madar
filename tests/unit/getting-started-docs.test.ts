@@ -37,7 +37,10 @@ describe('getting started tutorial', () => {
     expect(tutorial).toContain('`doctor`/`status` also report Codex, Aider, and OpenCode when their AGENTS/hook/plugin/MCP signals are present')
     expect(tutorial).toContain('madar pack "how does password reset request enqueue the reset email"')
     expect(tutorial).toContain('madar generate .')
-    expect(tutorial).toContain('madar generate . --spi')
+    expect(tutorial).toContain('canonical compiler-backed path')
+    for (const retiredFlag of ['--legacy', '--spi', '--include-docs', '--docs', '--wiki']) {
+      expect(tutorial).not.toContain(retiredFlag)
+    }
     expect(tutorial.toLowerCase()).toContain('paid model')
     expect(tutorial.toLowerCase()).toContain('10-minute')
     expect(readme).toContain('## Connect Your Agent')

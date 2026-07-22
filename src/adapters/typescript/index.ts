@@ -10,6 +10,7 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } 
 import ts from 'typescript'
 
 import { KnowledgeGraph } from '../../domain/graph/directed-multigraph.js'
+import { CANONICAL_INDEX_FORMAT_VERSION } from '../../contracts/generation-policy.js'
 import type {
   IndexDiagnostic,
   IndexEdge,
@@ -21,7 +22,7 @@ import type {
   IndexSymbol,
   IndexSymbolKind,
 } from '../../domain/index/model.js'
-import { createBaselineProvenance } from '../../core/provenance/types.js'
+import { createGraphProvenance } from '../../core/provenance/types.js'
 import { collectBullWorkerIndex, collectNestTokenMap, detectNestFramework } from './framework-nestjs.js'
 import { detectExpressFramework, finalizeExpressMountPrefixes } from './framework-express.js'
 import { detectNextjsFramework } from './framework-nextjs.js'
@@ -170,7 +171,11 @@ function writeCanonicalGraph(
   symbols: readonly IndexSymbol[],
   edges: readonly IndexEdge[],
 ): KnowledgeGraph {
-  const graph = new KnowledgeGraph({ root_path: root, schema_version: 1, canonical_typescript_index: true })
+  const graph = new KnowledgeGraph({
+    root_path: root,
+    schema_version: CANONICAL_INDEX_FORMAT_VERSION,
+    canonical_typescript_index: true,
+  })
   const fileById = new Map(files.map((file) => [file.id, file]))
   const symbolById = new Map(symbols.map((symbol) => [symbol.id, symbol]))
 
@@ -185,7 +190,6 @@ function writeCanonicalGraph(
       language: file.language,
       loc: file.loc,
       content_hash: file.hash,
-      extraction_strategy: 'canonical',
       layer: 'semantic',
       provenance: [provenance(file.path, 'L1')],
     })
@@ -207,7 +211,6 @@ function writeCanonicalGraph(
       end_line_number: symbol.range.end.line,
       language: file.language,
       exported: symbol.exported,
-      extraction_strategy: 'canonical',
       layer: 'semantic',
       ...(symbol.framework_role ? {
         framework: frameworkName(symbol.framework_role),
@@ -254,7 +257,6 @@ function writeCanonicalGraph(
       source_file: sourceFile,
       source_location: location,
       layer: 'semantic',
-      extraction_strategy: 'canonical',
       evidence: { source: edge.source, ...(range ? { range } : {}) },
       ...(edge.metadata ?? {}),
       provenance: [provenance(sourceFile, location)],
@@ -270,7 +272,7 @@ function writeCanonicalGraph(
 }
 
 function provenance(sourceFile: string, sourceLocation: string) {
-  return createBaselineProvenance({
+  return createGraphProvenance({
     capabilityId: 'builtin:index:typescript',
     stage: 'index',
     sourceFile,

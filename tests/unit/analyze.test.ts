@@ -1,11 +1,5 @@
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
-
 import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
-import { buildGraphFromExtraction } from '../../src/application/build-graph.js'
 import {
-  _fileCategory,
-  _isConceptNode,
   _surpriseScore,
   godNodes,
   graphStructureMetrics,
@@ -17,20 +11,32 @@ import {
 } from '../../src/pipeline/analyze.js'
 import { cluster } from '../../src/pipeline/cluster.js'
 import { diffGraphs } from '../../src/runtime/diff.js'
-
-const FIXTURES_DIR = join(process.cwd(), 'tests', 'fixtures')
+import { createTestGraph } from '../helpers/knowledge-graph.js'
 
 function makeGraph(): KnowledgeGraph {
-  return buildGraphFromExtraction(JSON.parse(readFileSync(join(FIXTURES_DIR, 'extraction.json'), 'utf8')))
+  return createTestGraph({
+    nodes: [
+      ['n_transformer', { label: 'Transformer', file_type: 'code', source_file: 'model.ts', source_location: 'L1' }],
+      ['n_attention', { label: 'MultiHeadAttention', file_type: 'code', source_file: 'attention.ts', source_location: 'L10' }],
+      ['n_layernorm', { label: 'LayerNorm', file_type: 'code', source_file: 'normalization.ts', source_location: 'L20' }],
+      ['n_kernel', { label: 'AttentionKernel', file_type: 'code', source_file: 'kernel.ts', source_location: 'L30' }],
+    ],
+    edges: [
+      ['n_transformer', 'n_attention', { relation: 'contains', confidence: 'EXTRACTED', source_file: 'model.ts', weight: 1 }],
+      ['n_transformer', 'n_layernorm', { relation: 'contains', confidence: 'EXTRACTED', source_file: 'model.ts', weight: 1 }],
+      ['n_attention', 'n_kernel', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'attention.ts', weight: 1 }],
+      ['n_layernorm', 'n_kernel', { relation: 'references', confidence: 'INFERRED', source_file: 'normalization.ts', weight: 0.8 }],
+    ],
+  })
 }
 
 function makeSimpleGraph(nodes: Array<[string, string]>, edges: Array<[string, string, string, string]>): KnowledgeGraph {
   const graph = new KnowledgeGraph()
   for (const [nodeId, label] of nodes) {
-    graph.addNode(nodeId, { label, source_file: 'test.py', file_type: 'code' })
+    graph.addNode(nodeId, { label, source_file: 'test.ts', file_type: 'code' })
   }
   for (const [source, target, relation, confidence] of edges) {
-    graph.addEdge(source, target, { relation, confidence, source_file: 'test.py' })
+    graph.addEdge(source, target, { relation, confidence, source_file: 'test.ts' })
   }
   return graph
 }
@@ -113,27 +119,17 @@ describe('analyze', () => {
     }
   })
 
-  it('excludes concept nodes from surprising connections', () => {
-    const graph = makeGraph()
-    graph.addNode('concept_x', { label: 'Abstract Concept', file_type: 'document', source_file: '' })
-    graph.addEdge('n_transformer', 'concept_x', { relation: 'relates_to', confidence: 'INFERRED', source_file: '', weight: 0.5 })
-
-    const surprises = surprisingConnections(graph, cluster(graph))
-    const labels = surprises.flatMap((surprise) => [surprise.source, surprise.target])
-    expect(labels).not.toContain('Abstract Concept')
-  })
-
   it('uses cross-community bridges for single-source graphs', () => {
     const graph = new KnowledgeGraph()
     for (let index = 0; index < 5; index += 1) {
-      graph.addNode(`a${index}`, { label: `A${index}`, file_type: 'code', source_file: 'single.py', source_location: `L${index}` })
-      graph.addNode(`b${index}`, { label: `B${index}`, file_type: 'code', source_file: 'single.py', source_location: `L${index + 10}` })
+      graph.addNode(`a${index}`, { label: `A${index}`, file_type: 'code', source_file: 'single.ts', source_location: `L${index}` })
+      graph.addNode(`b${index}`, { label: `B${index}`, file_type: 'code', source_file: 'single.ts', source_location: `L${index + 10}` })
     }
     for (let index = 0; index < 4; index += 1) {
-      graph.addEdge(`a${index}`, `a${index + 1}`, { relation: 'calls', confidence: 'EXTRACTED', source_file: 'single.py', weight: 1.0 })
-      graph.addEdge(`b${index}`, `b${index + 1}`, { relation: 'calls', confidence: 'EXTRACTED', source_file: 'single.py', weight: 1.0 })
+      graph.addEdge(`a${index}`, `a${index + 1}`, { relation: 'calls', confidence: 'EXTRACTED', source_file: 'single.ts', weight: 1.0 })
+      graph.addEdge(`b${index}`, `b${index + 1}`, { relation: 'calls', confidence: 'EXTRACTED', source_file: 'single.ts', weight: 1.0 })
     }
-    graph.addEdge('a4', 'b0', { relation: 'references', confidence: 'INFERRED', source_file: 'single.py', weight: 0.5 })
+    graph.addEdge('a4', 'b0', { relation: 'references', confidence: 'INFERRED', source_file: 'single.ts', weight: 0.5 })
 
     const surprises = surprisingConnections(graph, cluster(graph))
     expect(surprises.length).toBeGreaterThan(0)
@@ -142,61 +138,20 @@ describe('analyze', () => {
   it('scores ambiguous edges above extracted ones', () => {
     const graph = new KnowledgeGraph()
     for (const [nodeId, label, sourceFile] of [
-      ['a', 'Alpha', 'repo1/model.py'],
-      ['b', 'Beta', 'repo2/train.py'],
-      ['c', 'Gamma', 'repo1/data.py'],
-      ['d', 'Delta', 'repo2/eval.py'],
+      ['a', 'Alpha', 'repo1/model.ts'],
+      ['b', 'Beta', 'repo2/train.ts'],
+      ['c', 'Gamma', 'repo1/data.ts'],
+      ['d', 'Delta', 'repo2/eval.ts'],
     ] as const) {
       graph.addNode(nodeId, { label, source_file: sourceFile, file_type: 'code' })
     }
-    graph.addEdge('a', 'b', { relation: 'calls', confidence: 'AMBIGUOUS', weight: 1.0, source_file: 'repo1/model.py' })
-    graph.addEdge('c', 'd', { relation: 'calls', confidence: 'EXTRACTED', weight: 1.0, source_file: 'repo1/data.py' })
+    graph.addEdge('a', 'b', { relation: 'calls', confidence: 'AMBIGUOUS', weight: 1.0, source_file: 'repo1/model.ts' })
+    graph.addEdge('c', 'd', { relation: 'calls', confidence: 'EXTRACTED', weight: 1.0, source_file: 'repo1/data.ts' })
 
     const nodeCommunity = { a: 0, c: 0, b: 1, d: 1 }
-    const ambiguous = _surpriseScore(graph, 'a', 'b', graph.uniqueEdgeBetween('a', 'b').attributes, nodeCommunity, 'repo1/model.py', 'repo2/train.py')
-    const extracted = _surpriseScore(graph, 'c', 'd', graph.uniqueEdgeBetween('c', 'd').attributes, nodeCommunity, 'repo1/data.py', 'repo2/eval.py')
+    const ambiguous = _surpriseScore(graph, 'a', 'b', graph.uniqueEdgeBetween('a', 'b').attributes, nodeCommunity, 'repo1/model.ts', 'repo2/train.ts')
+    const extracted = _surpriseScore(graph, 'c', 'd', graph.uniqueEdgeBetween('c', 'd').attributes, nodeCommunity, 'repo1/data.ts', 'repo2/eval.ts')
     expect(ambiguous[0]).toBeGreaterThan(extracted[0])
-  })
-
-  it('scores cross-type edges above same-type edges', () => {
-    const graph = new KnowledgeGraph()
-    for (const [nodeId, label, sourceFile] of [
-      ['a', 'Transformer', 'code/model.py'],
-      ['b', 'FlashAttn', 'papers/flash.pdf'],
-      ['c', 'Trainer', 'code/train.py'],
-      ['d', 'Dataset', 'code/data.py'],
-    ] as const) {
-      graph.addNode(nodeId, { label, source_file: sourceFile, file_type: 'code' })
-    }
-    graph.addEdge('a', 'b', { relation: 'references', confidence: 'EXTRACTED', weight: 1.0, source_file: 'code/model.py' })
-    graph.addEdge('c', 'd', { relation: 'calls', confidence: 'EXTRACTED', weight: 1.0, source_file: 'code/train.py' })
-
-    const nodeCommunity = { a: 0, b: 1, c: 0, d: 0 }
-    const crossType = _surpriseScore(graph, 'a', 'b', graph.uniqueEdgeBetween('a', 'b').attributes, nodeCommunity, 'code/model.py', 'papers/flash.pdf')
-    const sameType = _surpriseScore(graph, 'c', 'd', graph.uniqueEdgeBetween('c', 'd').attributes, nodeCommunity, 'code/train.py', 'code/data.py')
-    expect(crossType[0]).toBeGreaterThan(sameType[0])
-    expect(crossType[1].some((reason) => reason.includes('code') && reason.includes('paper'))).toBe(true)
-  })
-
-  it('categorizes file extensions correctly', () => {
-    expect(_fileCategory('model.py')).toBe('code')
-    expect(_fileCategory('flash.pdf')).toBe('paper')
-    expect(_fileCategory('diagram.png')).toBe('image')
-    expect(_fileCategory('episode.mp3')).toBe('audio')
-    expect(_fileCategory('demo.mp4')).toBe('video')
-    expect(_fileCategory('notes.md')).toBe('doc')
-    expect(_fileCategory('app.swift')).toBe('code')
-    expect(_fileCategory('plugin.lua')).toBe('code')
-    expect(_fileCategory('build.zig')).toBe('code')
-  })
-
-  it('identifies concept nodes by missing source files', () => {
-    const graph = new KnowledgeGraph()
-    graph.addNode('c1', { source_file: '' })
-    graph.addNode('n1', { source_file: 'model.py' })
-
-    expect(_isConceptNode(graph, 'c1')).toBe(true)
-    expect(_isConceptNode(graph, 'n1')).toBe(false)
   })
 
   it('measures weakly connected fragmentation signals for workspace parity reporting', () => {
@@ -396,14 +351,14 @@ describe('analyze', () => {
 
   it('treats opposite edge directions as different changes for directed graphs', () => {
     const oldGraph = new KnowledgeGraph()
-    oldGraph.addNode('n1', { label: 'Alpha', source_file: 'test.py', file_type: 'code' })
-    oldGraph.addNode('n2', { label: 'Beta', source_file: 'test.py', file_type: 'code' })
-    oldGraph.addEdge('n1', 'n2', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'test.py' })
+    oldGraph.addNode('n1', { label: 'Alpha', source_file: 'test.ts', file_type: 'code' })
+    oldGraph.addNode('n2', { label: 'Beta', source_file: 'test.ts', file_type: 'code' })
+    oldGraph.addEdge('n1', 'n2', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'test.ts' })
 
     const newGraph = new KnowledgeGraph()
-    newGraph.addNode('n1', { label: 'Alpha', source_file: 'test.py', file_type: 'code' })
-    newGraph.addNode('n2', { label: 'Beta', source_file: 'test.py', file_type: 'code' })
-    newGraph.addEdge('n2', 'n1', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'test.py' })
+    newGraph.addNode('n1', { label: 'Alpha', source_file: 'test.ts', file_type: 'code' })
+    newGraph.addNode('n2', { label: 'Beta', source_file: 'test.ts', file_type: 'code' })
+    newGraph.addEdge('n2', 'n1', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'test.ts' })
 
     const diff = graphDiff(oldGraph, newGraph)
 
@@ -419,7 +374,7 @@ describe('analyze', () => {
     oldGraph.addEdge('n1', 'n2', {
       relation: 'calls',
       confidence: 'EXTRACTED',
-      source_file: 'test.py',
+      source_file: 'test.ts',
       source_location: 'L10',
     })
 
@@ -430,13 +385,13 @@ describe('analyze', () => {
     newGraph.addEdge('n1', 'n2', {
       relation: 'calls',
       confidence: 'EXTRACTED',
-      source_file: 'test.py',
+      source_file: 'test.ts',
       source_location: 'L10',
     })
     const addedEdgeId = newGraph.addEdge('n1', 'n2', {
       relation: 'calls',
       confidence: 'EXTRACTED',
-      source_file: 'test.py',
+      source_file: 'test.ts',
       source_location: 'L20',
       evidence: { line: 20 },
     })
@@ -464,7 +419,7 @@ describe('analyze', () => {
     const oldEdgeId = oldGraph.addEdge('n1', 'n2', {
       relation: 'calls',
       confidence: 'INFERRED',
-      source_file: 'test.py',
+      source_file: 'test.ts',
     })
 
     const newGraph = makeSimpleGraph([
@@ -474,7 +429,7 @@ describe('analyze', () => {
     const newEdgeId = newGraph.addEdge('n1', 'n2', {
       relation: 'calls',
       confidence: 'EXTRACTED',
-      source_file: 'test.py',
+      source_file: 'test.ts',
     })
 
     expect(newEdgeId).toBe(oldEdgeId)
@@ -497,23 +452,23 @@ describe('analyze', () => {
   it('generates suggested questions from graph signals', () => {
     const graph = new KnowledgeGraph()
     for (const [nodeId, label, sourceFile] of [
-      ['a1', 'Alpha One', 'alpha.py'],
-      ['a2', 'Alpha Two', 'alpha.py'],
-      ['a3', 'Alpha Three', 'alpha.py'],
-      ['a4', 'Alpha Four', 'alpha.py'],
-      ['a5', 'Alpha Five', 'alpha.py'],
-      ['b1', 'Beta One', 'beta.py'],
-      ['b2', 'Beta Two', 'beta.py'],
-      ['b3', 'Beta Three', 'beta.py'],
-      ['b4', 'Beta Four', 'beta.py'],
-      ['b5', 'Beta Five', 'beta.py'],
-      ['bridge', 'Bridge Layer', 'shared.py'],
-      ['loner', 'Lone Node', 'loner.py'],
-      ['c1', 'Gamma One', 'gamma.py'],
-      ['c2', 'Gamma Two', 'gamma.py'],
-      ['c3', 'Gamma Three', 'gamma.py'],
-      ['c4', 'Gamma Four', 'gamma.py'],
-      ['c5', 'Gamma Five', 'gamma.py'],
+      ['a1', 'Alpha One', 'alpha.ts'],
+      ['a2', 'Alpha Two', 'alpha.ts'],
+      ['a3', 'Alpha Three', 'alpha.ts'],
+      ['a4', 'Alpha Four', 'alpha.ts'],
+      ['a5', 'Alpha Five', 'alpha.ts'],
+      ['b1', 'Beta One', 'beta.ts'],
+      ['b2', 'Beta Two', 'beta.ts'],
+      ['b3', 'Beta Three', 'beta.ts'],
+      ['b4', 'Beta Four', 'beta.ts'],
+      ['b5', 'Beta Five', 'beta.ts'],
+      ['bridge', 'Bridge Layer', 'shared.ts'],
+      ['loner', 'Lone Node', 'loner.ts'],
+      ['c1', 'Gamma One', 'gamma.ts'],
+      ['c2', 'Gamma Two', 'gamma.ts'],
+      ['c3', 'Gamma Three', 'gamma.ts'],
+      ['c4', 'Gamma Four', 'gamma.ts'],
+      ['c5', 'Gamma Five', 'gamma.ts'],
     ] as const) {
       graph.addNode(nodeId, { label, source_file: sourceFile, file_type: 'code' })
     }
@@ -534,7 +489,7 @@ describe('analyze', () => {
       ['a1', 'b1', 'relates_to', 'AMBIGUOUS'],
       ['c1', 'c2', 'calls', 'EXTRACTED'],
     ] as const) {
-      graph.addEdge(source, target, { relation, confidence, source_file: 'test.py' })
+      graph.addEdge(source, target, { relation, confidence, source_file: 'test.ts' })
     }
 
     const questions = suggestQuestions(
@@ -602,7 +557,7 @@ describe('analyze', () => {
       ['n3', 'Three'],
       ['n4', 'Four'],
     ] as const) {
-      graph.addNode(nodeId, { label, source_file: 'clean.py', file_type: 'code' })
+      graph.addNode(nodeId, { label, source_file: 'clean.ts', file_type: 'code' })
     }
     for (const [source, target] of [
       ['n1', 'n2'],
@@ -612,7 +567,7 @@ describe('analyze', () => {
       ['n2', 'n4'],
       ['n3', 'n4'],
     ] as const) {
-      graph.addEdge(source, target, { relation: 'calls', confidence: 'EXTRACTED', source_file: 'clean.py' })
+      graph.addEdge(source, target, { relation: 'calls', confidence: 'EXTRACTED', source_file: 'clean.ts' })
     }
 
     expect(suggestQuestions(graph, { 0: ['n1', 'n2', 'n3', 'n4'] }, { 0: 'Clean' })).toEqual([expect.objectContaining({ type: 'no_signal', question: null })])

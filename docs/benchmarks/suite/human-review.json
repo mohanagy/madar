@@ -31,8 +31,8 @@
     "prompt": "How does Cal.diy turn a booking request into availability validation, scheduled event persistence, and notification delivery?",
     "status": "pending",
     "required_concepts": ["The answer should cover availability validation, persistence, and notification delivery."],
-    "answer_quality_notes": ["Fallback raw-read answers can still be usable if they satisfy the deterministic gate."],
-    "manual_review_notes": ["Confirm the answer follows the booking flow end to end and calls out the fallback caveat if needed."]
+    "answer_quality_notes": ["Focused raw-read verification can still be usable if it satisfies the deterministic gate."],
+    "manual_review_notes": ["Confirm the answer follows the booking flow end to end and states any direct-verification caveat."]
   },
   "novu-explain-runtime": {
     "prompt": "How does Novu process a notification trigger from API entry through workflow orchestration to channel delivery?",

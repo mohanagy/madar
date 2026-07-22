@@ -6,7 +6,7 @@ This suite exists to make Madar's benchmark claims reproducible without collapsi
 
 The fixed repo set is tracked in [`repos.json`](./repos.json).
 
-- Keep the shape mix explicit: small TypeScript, mid-size service, larger TypeScript monorepo, Python service, Go service.
+- Keep the supported shape mix explicit: small TypeScript, mid-size JavaScript/TypeScript service, and larger TypeScript monorepo.
 - The suite may use public repos or fixture-style proxies. It must not require the private GoValidate codebase.
 - The current public git-backed rows are `documenso`, `formbricks`, `dub`, `twenty`, `cal-diy`, and `novu`.
 - `status: "ready"` means the repo/task cell is prompt-wired and intended to run once the local install gate passes.
@@ -35,10 +35,11 @@ The fixed task set is tracked in [`tasks.json`](./tasks.json).
 - Run modes:
   - **cold** — measured directly with no suite-managed priming run
   - **warm** — one priming compare run is executed and discarded before the measured run
-- Each measured cell currently records:
+- Each new measured cell records:
   - baseline
-  - Madar
-  - the historical SPI-labelled Madar arm, now the compatibility `--spi` selector for strict canonical JS/TS, when the repo entry supports it
+  - one canonical JavaScript/TypeScript Madar arm
+
+Dated receipts may retain historical alternate-arm labels in their immutable artifacts. The live runner does not expose those removed extraction architectures as current choices.
 
 When a benchmark run uses an ordered question list, Madar keeps one session across that list so repeated-turn savings can be measured instead of only first-turn cost. Those per-question receipts include `reused_context_tokens`, `effective_query_tokens`, and `session_diagnostics`; single-question cells remain first-turn only.
 
